@@ -268,3 +268,86 @@ urbi_aux_diag_to_stderr(struct UVM *vm, int level, const char *fmt, ...)
 
     fprintf(stderr, "[urbi %s] %s\n", tag, buf);
 }
+
+/* === W4/v0.10.3: urbi_aux_value_to_* checked-accessor family ============= */
+/*
+ * Each accessor: returns URBI_OK + writes *out on kind match; returns
+ * URBI_ERR_TYPE (-26) and leaves *out untouched on kind mismatch.
+ * NULL out is accepted — acts as a pure type check.
+ *
+ * All use urbi_value_is_*() predicates from <urbi/types.h> (header-only
+ * inlines) and the existing unchecked urbi_value_as_*() accessors.
+ * No private headers accessed — strictly public-API-only per aux governance.
+ *
+ * Closes api-ergonomics F1.
+ */
+
+int urbi_aux_value_to_int(UValue v, int64_t *out)
+{
+    if (!urbi_value_is_int(v)) return URBI_ERR_TYPE;
+    if (out != NULL) *out = urbi_value_as_int(v);
+    return URBI_OK;
+}
+
+int urbi_aux_value_to_float(UValue v, double *out)
+{
+    if (!urbi_value_is_float(v)) return URBI_ERR_TYPE;
+    if (out != NULL) *out = urbi_value_as_float(v);
+    return URBI_OK;
+}
+
+int urbi_aux_value_to_bool(UValue v, bool *out)
+{
+    if (!urbi_value_is_bool(v)) return URBI_ERR_TYPE;
+    if (out != NULL) *out = urbi_value_as_bool(v);
+    return URBI_OK;
+}
+
+int urbi_aux_value_to_str(UValue v, const char **out, size_t *out_len)
+{
+    if (!urbi_value_is_str(v)) return URBI_ERR_TYPE;
+    if (out != NULL || out_len != NULL) {
+        const char *s = urbi_value_as_str(v, out_len);
+        if (out != NULL) *out = s;
+    }
+    return URBI_OK;
+}
+
+int urbi_aux_value_to_ptr(UValue v, void **out)
+{
+    if (!urbi_value_is_ptr(v)) return URBI_ERR_TYPE;
+    if (out != NULL) *out = urbi_value_as_ptr(v);
+    return URBI_OK;
+}
+
+int urbi_aux_value_to_object(UValue v, struct UObject **out)
+{
+    if (!urbi_value_is_object(v)) return URBI_ERR_TYPE;
+    if (out != NULL) *out = urbi_value_as_object(v);
+    return URBI_OK;
+}
+
+int urbi_aux_value_to_event(UValue v, struct UEvent **out)
+{
+    if (!urbi_value_is_event(v)) return URBI_ERR_TYPE;
+    if (out != NULL) *out = urbi_value_as_event(v);
+    return URBI_OK;
+}
+
+int urbi_aux_value_to_closure(UValue v, struct UClosure **out)
+{
+    if (!urbi_value_is_closure(v)) return URBI_ERR_TYPE;
+    if (out != NULL) *out = urbi_value_as_closure(v);
+    return URBI_OK;
+}
+
+int urbi_aux_value_to_tag(UValue v, struct UTag **out)
+{
+    if (!urbi_value_is_tag(v)) return URBI_ERR_TYPE;
+    /* UVAL_TAG stores UTag* in v.v.p; no public urbi_value_as_tag accessor
+     * exists yet — read directly from the opaque UValue storage via cast.
+     * This is safe because urbi_value_is_tag verified the kind byte, and
+     * UVAL_TAG is documented to store UTag* in v.p (types.h:254-261). */
+    if (out != NULL) *out = (struct UTag *)urbi_value_as_ptr(v);
+    return URBI_OK;
+}

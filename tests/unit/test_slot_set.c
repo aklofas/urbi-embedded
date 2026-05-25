@@ -128,7 +128,7 @@ UTEST(slot_set_const_slot_rejected)
     urbi_vm_destroy(&vm);
 }
 
-/* === Sub-test 4: set on UVAL_INT → URBI_ERR_INVALID_ARG === */
+/* === Sub-test 4: set on UVAL_INT → URBI_ERR_TYPE (kind mismatch) === */
 
 UTEST(slot_set_atom_receiver_rejected)
 {
@@ -137,7 +137,7 @@ UTEST(slot_set_atom_receiver_rejected)
 
     UValue int_val = urbi_make_int(10);
     int rc = urbi_slot_set(&vm, int_val, "x", 1, urbi_make_int(5));
-    UASSERT_EQ(rc, URBI_ERR_INVALID_ARG);
+    UASSERT_EQ(rc, URBI_ERR_TYPE);
 
     urbi_vm_destroy(&vm);
 }

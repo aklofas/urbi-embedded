@@ -191,6 +191,30 @@ int urbi_aux_dump_value(struct UVM *vm, UValue v,
  * level convention (URBI_LOG_DEBUG/INFO/WARN/ERROR). */
 void urbi_aux_diag_to_stderr(struct UVM *vm, int level, const char *fmt, ...);
 
+/* === W4/v0.10.3: checked-accessor family ===
+ *
+ * Single-call safe extract: returns URBI_OK + writes *out on type match;
+ * returns URBI_ERR_TYPE (-26) and leaves *out unmodified on kind mismatch.
+ *
+ * When out is NULL (single-out variants), or when both out and out_len are
+ * NULL (for urbi_aux_value_to_str), the call acts as a pure type check —
+ * returns URBI_OK or URBI_ERR_TYPE without writing.  This is useful when
+ * the caller only needs to verify kind before dispatching to an unchecked
+ * urbi_value_as_* path.
+ *
+ * Implemented in src/urbi_aux.c alongside the other aux helpers.
+ *
+ * Closes api-ergonomics F1 (value-ctor / accessor asymmetry). */
+int urbi_aux_value_to_int    (UValue v, int64_t           *out);
+int urbi_aux_value_to_float  (UValue v, double            *out);
+int urbi_aux_value_to_bool   (UValue v, bool              *out);
+int urbi_aux_value_to_str    (UValue v, const char       **out, size_t *out_len);
+int urbi_aux_value_to_ptr    (UValue v, void             **out);
+int urbi_aux_value_to_object (UValue v, struct UObject  **out);
+int urbi_aux_value_to_event  (UValue v, struct UEvent   **out);
+int urbi_aux_value_to_closure(UValue v, struct UClosure **out);
+int urbi_aux_value_to_tag    (UValue v, struct UTag     **out);
+
 #ifdef __cplusplus
 }
 #endif

@@ -85,8 +85,9 @@ int c_log(struct UVM *vm, UValue self,
         UValue v = args[i];
         size_t room = sizeof buf - off;
         int written = 0;
-        switch ((int)v.kind) {
-        case UVAL_STR: {
+        /* W4/v0.10.3: use urbi_value_is_* predicates — no internal UVAL_*
+         * constants needed.  Closes api-ergonomics F1. */
+        if (urbi_value_is_str(v)) {
             size_t len = 0U;
             const char *s = urbi_value_as_str(v, &len);
             if (s != NULL) {
@@ -94,26 +95,19 @@ int c_log(struct UVM *vm, UValue self,
                 memcpy(buf + off, s, len);
                 written = (int)len;
             }
-            break;
-        }
-        case UVAL_INT:
+        } else if (urbi_value_is_int(v)) {
             written = snprintf(buf + off, room, "%lld",
                                (long long)urbi_value_as_int(v));
-            break;
-        case UVAL_FLOAT:
+        } else if (urbi_value_is_float(v)) {
             written = snprintf(buf + off, room, "%g",
                                urbi_value_as_float(v));
-            break;
-        case UVAL_BOOL:
+        } else if (urbi_value_is_bool(v)) {
             written = snprintf(buf + off, room, "%s",
                                urbi_value_as_bool(v) ? "true" : "false");
-            break;
-        case UVAL_NIL:
+        } else if (urbi_value_is_nil(v)) {
             written = snprintf(buf + off, room, "nil");
-            break;
-        default:
+        } else {
             written = snprintf(buf + off, room, "<kind=%d>", (int)v.kind);
-            break;
         }
         if (written < 0) break;
         off += (size_t)written;
