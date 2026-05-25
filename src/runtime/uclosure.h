@@ -3,7 +3,7 @@
  *
  * UClosure embeds UCell as its first member at offset 0 (M4 — closes the
  * M3 baseline TODO at gc/ugc_incremental.h).  This makes the
- * UClosure* → UCell* cast performed by urbi_gc_upvalue_write well-defined.
+ * UClosure* → UCell* cast performed by urbi_gc_upvalue_pre_store well-defined.
  *
  * Lives outside umodule.h because the struct definition needs both UValue
  * (from umodule.h) and UCell (from gc/ugc.h), and gc/ugc.h itself includes

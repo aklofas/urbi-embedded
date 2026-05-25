@@ -23,7 +23,7 @@
                                    urbi_tag_info_t, URBI_OK, URBI_ERR_INVALID_ARG */
 #include "runtime/umacros.h"    /* URBI_ASSERT_NOT_ISR */
 #include "gc/ugc_incremental.h" /* gc_shade_gray (Dijkstra forward barrier) */
-#include "urbi/gc.h"            /* urbi_gc_slot_write */
+#include "urbi/gc.h"            /* urbi_gc_slot_store / urbi_gc_slot_pre_store */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -72,10 +72,10 @@ urbi_tag_create(struct UVM *vm, struct URealm *realm,
         UValue name_val;
         name_val.kind = (uint8_t)UVAL_STR;
         name_val.v.p  = (void *)interned;
-        /* Write via GC barrier: tag is a fresh white cell under a possibly-black
-         * realm-root, so shade the name value to maintain tri-color invariant. */
-        urbi_gc_slot_write(vm, (UCell *)tag, 0U, name_val);
-        tag->name = name_val;
+        /* Write via combined barrier + store (F12): tag is a fresh white cell under
+         * a possibly-black realm-root, so shade the name value to maintain
+         * tri-color invariant. */
+        urbi_gc_slot_store(vm, (UCell *)tag, 0U, &tag->name, name_val);
     }
 
     /* Parent under realm's root tag.  All host-created tags are children of

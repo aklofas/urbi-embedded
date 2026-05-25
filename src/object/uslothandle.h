@@ -69,7 +69,7 @@ URBI_STATIC_ASSERT(sizeof(USlotHandle) == 40,
  *   Validate-or-refresh on entry.  If the slot was removed since creation
  *   (re-resolve by name fails), returns -1; the handle is permanently
  *   invalid in that case.  Returns 0 on success.  write_value applies the
- *   GC slot-write barrier (urbi_gc_slot_write) before storing. */
+ *   combined barrier + store (urbi_gc_slot_store). */
 USlotHandle *urbi_object_get_slot       (struct UVM *vm, UObject *obj, USymbol *name);
 int          urbi_slothandle_read_value (struct UVM *vm, USlotHandle *h, UValue *out);
 int          urbi_slothandle_write_value(struct UVM *vm, USlotHandle *h, UValue v);

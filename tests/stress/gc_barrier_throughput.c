@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Stress test: GC write-barrier throughput.
  *
- * Calls urbi_gc_slot_write() 100 000 times using synthetic parent/child cells
+ * Calls urbi_gc_slot_pre_store() 100 000 times using synthetic parent/child cells
  * allocated via urbi_gc_alloc (test-only pattern — same as test_ugc_barrier.c).
  * Times the loop with clock_gettime(CLOCK_MONOTONIC) and prints ops/sec.
  *
@@ -63,7 +63,7 @@ int main(void)
         child->gc_byte = (uint8_t)((child->gc_byte & ~UGC_COLOR_MASK)
                                    | vm.current_white);
 
-        urbi_gc_slot_write(&vm, parent, (uint32_t)(i % 8), uvalue_from_cell(child));
+        urbi_gc_slot_pre_store(&vm, parent, (uint32_t)(i % 8), uvalue_from_cell(child));
 
         /* Reset child back to black so the next iteration's parent slot write
          * hits the barrier condition again (keep exercising the shade path). */

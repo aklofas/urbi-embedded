@@ -503,9 +503,11 @@ dispatch:
                 uint8_t b = uinstr_b(*s->pc);
                 UUpvalCell *uvc = cur_cl->upvals[b];
                 /* GC barrier (M4): UClosure now embeds UCell at offset 0,
-                 * so urbi_gc_upvalue_write may safely cast UClosure* → UCell*
-                 * for the color check.  Hook fires before the actual store. */
-                urbi_gc_upvalue_write(vm, cur_cl, b, s->R[a]);
+                 * so urbi_gc_upvalue_pre_store may safely cast UClosure* → UCell*
+                 * for the color check.  Hook fires before the actual store
+                 * (which differs by on_heap vs stack-resident upvalue — caller
+                 * does the store explicitly, so this is the barrier-only path). */
+                urbi_gc_upvalue_pre_store(vm, cur_cl, b, s->R[a]);
                 if (uvc->on_heap) {
                     uvc->u.value = s->R[a];
                 } else {
@@ -1187,8 +1189,8 @@ dispatch:
                          * first cached recv's slot.  Forward Dijkstra
                          * barrier fires on the actual recv cell. */
                         uint32_t s_idx = (uint32_t)ic->slot_idx[k];
-                        urbi_gc_slot_write(vm, (UCell *)recv, s_idx, v);
-                        recv->slots[s_idx] = v;
+                        urbi_gc_slot_store(vm, (UCell *)recv, s_idx,
+                                           &recv->slots[s_idx], v);
                         urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
                         slow_path = 0;
                         break;
@@ -1240,16 +1242,15 @@ dispatch:
             }
             /* Fire the write barrier on the slow path so watchers whose
              * read-set includes recv see the write.  Mirrors the fast-path
-             * urbi_gc_slot_write call earlier in this OP_SETSLOT arm (the
-             * URBI_SLOT_FLAG_LOCAL branch above) — see urbi_gc_slot_write
-             * in src/gc/ugc_incremental.c for the barrier itself.  The
-             * actual store was already performed inside urbi_slot_set_slow;
-             * calling the barrier after the store is correct because
-             * observer_dirty only bumps watcher_dirty_count and
-             * watcher_eval_dirty runs at the next safepoint, not inline
-             * here.  Slot index 0 is passed as a conservative sentinel —
-             * observer_dirty ignores the key at M5. */
-            urbi_gc_slot_write(vm, (UCell *)recv, 0U, v);
+             * urbi_gc_slot_store call earlier in this OP_SETSLOT arm (the
+             * URBI_SLOT_FLAG_LOCAL branch above).  The actual store was
+             * already performed inside urbi_slot_set_slow, so this is the
+             * barrier-only pre_store path — calling the barrier after the
+             * store is correct because observer_dirty only bumps
+             * watcher_dirty_count and watcher_eval_dirty runs at the next
+             * safepoint, not inline here.  Slot index 0 is passed as a
+             * conservative sentinel — observer_dirty ignores the key at M5. */
+            urbi_gc_slot_pre_store(vm, (UCell *)recv, 0U, v);
             urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
             NEXT();
         }

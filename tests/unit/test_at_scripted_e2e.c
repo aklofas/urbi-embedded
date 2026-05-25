@@ -89,7 +89,7 @@ UTEST(scripted_at_fires_on_rising_edge)
 
     /* === Phase 2: trigger the rising edge ===
      *
-     * Mechanism: OP_SETSLOT writes Realm.x through urbi_gc_slot_write,
+     * Mechanism: OP_SETSLOT writes Realm.x through urbi_gc_slot_store,
      * which calls observer_dirty (UGC_HAS_WATCHER_OBSERVER is set from
      * phase 1).  The non-top-frame OP_RET safepoint then calls
      * watcher_eval_dirty, which spawns the body strand on rising edge.

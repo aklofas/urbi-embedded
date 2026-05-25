@@ -50,16 +50,27 @@ struct UVM;
 struct UStrand;
 struct UClosure;
 
-/* === Three barrier surfaces — all no-op static inlines ===
+/* === Barrier surfaces — all no-op static inlines under URBI_GC_NONE ===
  *
  * Under URBI_GC_NONE there is no incremental barrier; writes are always
- * safe.  The inlines expand to nothing and the compiler removes them. */
+ * safe.  The inlines expand to nothing and the compiler removes them.
+ * API mirrors ugc_incremental.h (runtime-invariants F12). */
 
+/* urbi_gc_slot_pre_store — barrier-only stub (no-op under NONE). */
 static inline void
-urbi_gc_slot_write(struct UVM *vm, UCell *parent,
-                   uint32_t key, UValue child)
+urbi_gc_slot_pre_store(struct UVM *vm, UCell *parent,
+                       uint32_t key, UValue child)
 {
     (void)vm; (void)parent; (void)key; (void)child;
+}
+
+/* urbi_gc_slot_store — combined barrier + store.  Under NONE, just stores. */
+static inline void
+urbi_gc_slot_store(struct UVM *vm, UCell *parent, uint32_t key,
+                   UValue *dst, UValue child)
+{
+    (void)vm; (void)parent; (void)key;
+    *dst = child;
 }
 
 static inline void
@@ -69,9 +80,10 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s,
     (void)vm; (void)s; (void)reg_idx; (void)child;
 }
 
+/* urbi_gc_upvalue_pre_store — barrier-only stub (no-op under NONE). */
 static inline void
-urbi_gc_upvalue_write(struct UVM *vm, const struct UClosure *closure,
-                      uint8_t up_idx, UValue child)
+urbi_gc_upvalue_pre_store(struct UVM *vm, const struct UClosure *closure,
+                          uint8_t up_idx, UValue child)
 {
     (void)vm; (void)closure; (void)up_idx; (void)child;
 }

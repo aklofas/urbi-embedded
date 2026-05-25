@@ -10,8 +10,8 @@
 #include "object/ushape.h"
 #include "vm/uvm.h"
 #include "urbi/types.h"         /* URBI_OK / URBI_ERR_* — OBJ-007 distinct codes */
-#include "urbi/gc.h"            /* urbi_gc_alloc + urbi_gc_slot_write barrier */
-#include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_write */
+#include "urbi/gc.h"            /* urbi_gc_alloc + urbi_gc_slot_store barrier */
+#include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_store */
 #include "gc/ugc.h"             /* UTYPE_SLOT_ARRAY / UTYPE_PROPS / UTYPE_PROPS_TABLE */
 #include "changed/uchanged_node.h" /* urbi_emit_slot_change_if_subscribed */
 #include "chunk/uchunk.h"
@@ -43,7 +43,7 @@ uprops_alloc(UVM *vm)
  *   1. Slot already exists on this lineage (urbi_shape_find_slot returns
  *      an index >= 0): in-place value update.  No shape transition, no
  *      USlotArray reallocation, no topology_gen bump.  The new value is
- *      written through the Dijkstra forward barrier (urbi_gc_slot_write):
+ *      written through the combined barrier + store (urbi_gc_slot_store):
  *      if the receiver UObject is BLACK and the new value is a white
  *      heap cell, the barrier shades the new value GRAY to maintain the
  *      tri-color invariant.  The old value (about to be overwritten)
@@ -71,17 +71,17 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     }
 
     /* Case 1: slot already in this lineage — in-place value update.
-     * Route through the Dijkstra forward slot-write barrier: if the
+     * Route through the combined barrier + store (urbi_gc_slot_store): if the
      * receiver UObject cell is BLACK and the new value is a white
      * heap cell, the barrier shades the new value gray.  Without the
      * barrier, the new white child under a black parent would be
      * unreachable in the mark phase and could be swept while still
-     * reachable via this slot.  The barrier helper is a hook only;
-     * the actual store happens immediately after. */
+     * reachable via this slot.  The combined helper performs barrier +
+     * store atomically from the caller's point of view (F12). */
     int32_t existing = urbi_shape_find_slot(obj->shape, name);
     if (existing >= 0) {
-        urbi_gc_slot_write(vm, (UCell *)obj, (uint32_t)existing, value);
-        obj->slots[existing] = value;
+        urbi_gc_slot_store(vm, (UCell *)obj, (uint32_t)existing,
+                           &obj->slots[existing], value);
         urbi_emit_slot_change_if_subscribed(vm, obj, name, value);
         return 0;
     }
