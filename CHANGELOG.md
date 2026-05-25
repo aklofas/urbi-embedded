@@ -1,5 +1,80 @@
 # Changelog
 
+## v0.10.0-truthfulness — 2026-05-25
+
+Wave 1 of the v0.10.x architectural refactor arc: documentation,
+manifests, and CI gates brought into agreement with the actual code
+state. Zero runtime C semantics modified. ABI 0/14/0 and wire format
+v1.8 (0x18) unchanged. 14 parallel worktrees + 1 manifest/CHANGELOG
+bump commit.
+
+### Changed
+
+- **README.md** refreshed: status banner, ABI/wire/tag claims, source
+  layout description, and supported-target table (now 5-column:
+  Target / Status / CI gate / Runtime smoke / Hardware evidence).
+- **docs/ROADMAP.md** restructured to `shipped` / `active` /
+  `remaining` sections; surfaces the v0.10.x architectural refactor
+  arc and pushes ROS2 work to v0.11.x.
+- **docs/internals/bytecode-format.md** regenerated from current code
+  (wire v1.8, `OP_MAX=48`, `src/chunk/` layout, `UCHUNK_LOAD_*` error
+  family). Was 3 wire versions stale.
+- **docs/internals/opcodes.md** regenerated (`OP_MAX` 46 → 48;
+  `OP_LOAD_RECV` and `OP_SELF` added; method-call C-bit-7 convention
+  documented; `OP_TAG_STOP` correctly marked reserved stub).
+- **docs/internals/reactive-runtime.md** regenerated: dropped deleted
+  `URBI_WATCHER_OWNS_*` flag references (deleted at v0.8.4); added
+  UPeriodic lifecycle section; honest RUNTIME GAP callouts for
+  `whenever (event?)`, `tag.stop()` from script, and `OP_CLOSURE` in
+  watcher/every body strands.
+- **docs/internals/ports.md** updated: Pico / STM32F4 / ESP32-S3
+  hardware-verified status with `repl_demo` / `mandelbrot` /
+  `eye_demo` workload references; "pending Phase 8" markers removed.
+- **docs/embedding-guide.md** marks internal-header snippets
+  (`vm/uvm.h`, `urbi_stdlib_boot`) as DEPRECATED pending Wave 4
+  opaque-API replacement; resolves the self-contradiction about
+  `-Isrc` requirement via a new "Status of this guide" preamble.
+
+### Added
+
+- **docs/release/release-readiness.md** — v1.0 quality-bar tracker
+  scaffold (9 sections covering test conformance, coverage, memory +
+  performance, hardware support, build hygiene, C API, REPL, reactive
+  runtime, language compatibility). Rows filled progressively across
+  the arc.
+- **docs/release/hardware-validation.md** — canonical hardware
+  bring-up evidence registry pre-populated with Pi Pico (v0.9.4),
+  ESP32-S3 (v0.7.2), STM32F4 (v0.8.2) bring-ups.
+- **docs/language-compatibility-matrix.md** — v1.0 conformance tracker
+  with per-construct rows (control flow, exceptions, reactive, tags,
+  identifiers + literals, object model, concurrency, stdlib). 230
+  legacy `tests/2.x/*.chk` fixtures vs 256 currently ported.
+- **tests/scripts/check-version-sync.sh** + `make check-version-sync`
+  CI gate enforcing four sync invariants (ESP-IDF manifest ↔ release
+  tag; README ABI ↔ `include/urbi/version.h`; README wire ↔
+  `src/chunk/uchunk.h` byte; README tag ↔ latest release tag). New
+  `version-sync` GHA job.
+- `make docs-check` extended to `examples/**/*.md`, `components/**/*.md`,
+  and `tests/qemu/**/*.md` markdown trees (with `build/` and `_deps/`
+  exclusions to keep pico-sdk vendored content out of scope).
+- `.gitignore` entries for Pi Pico CMake build outputs
+  (`examples/pico/*/build/`).
+
+### Cleanup
+
+- **components/esp32-idf/idf_component.yml** version bumped from stale
+  `0.7.2-esp32` to `0.10.0-truthfulness`.
+- **Public-doc scrub** (~80 references across 50 files): removed
+  `docs/superpowers/`, `/home/aklofas/`, `REVIVAL.md`,
+  `REVIVAL §14 L14` references from `CHANGELOG.md`, `CONTRIBUTING.md`,
+  component docs, internal docs, embedding guide, examples, and string
+  literals in `src/parse/uparse*.c` (with matching `.chk` golden
+  updates in `tests/chk/function/definition.chk`,
+  `tests/chk/migration/bare_function.chk`,
+  `tests/chk/migration/closure_keyword.chk`).
+- Removed untracked `examples/pico/repl_demo/build/` tree (~31 MB of
+  vendored pico-sdk `_deps/` checkouts).
+
 ## v0.9.4-pico-example — 2026-05-24
 
 ### Added
