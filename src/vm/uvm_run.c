@@ -103,8 +103,9 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     strand.pc_base    = strand.root_proto->instructions;
     strand.cur_consts = strand.root_proto->constants;
     /* v0.8.1 Phase 2 (Variant B fusion): strand-bind bump goes to root_proto.
-     * Decrement fires in ustrand_destroy at the end of this function. */
-    uproto_refcount_inc(strand.root_proto);
+     * Decrement fires in ustrand_destroy at the end of this function.
+     * v0.10.1 W4: typed-handle acquire for diagnostics (F3 transient site). */
+    urbi_proto_strand_ref_acquire(strand.root_proto, URBI_PROTO_REF_OWNER_TRANSIENT);
     /* M4 follow-up / T72 fix: always create a fresh UChunkInstance for each
      * urbi_vm_run call.  urbi_get_or_create_chunk_instance is unsuitable here
      * because urbi_repl_eval heap-allocates UProto per line and reuses the same

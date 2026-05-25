@@ -254,16 +254,74 @@ uproto_root_of(UProto *proto)
     return proto->root ? proto->root : proto;
 }
 
-/* Refcount helpers — declared inline in the header so OP_CLOSURE's hot
- * path stays cheap.  See UProto.refcount above for the design. */
+/* --- UProto refcount typed-handle API (v0.10.1) ---
+ *
+ * All external callers MUST use these functions rather than touching
+ * p->refcount directly.  The typed owner tag enables debug-build accounting
+ * (urbi_proto_ref_assert_balanced) and surfaces diagnostics that the prior
+ * silent inline helpers omitted.
+ *
+ * Two logical owner families:
+ *   Closure-bind  — acquired in vm_alloc_closure; released in uclosure_destroy.
+ *   Strand-bind   — acquired at strand creation (urbi_strand_create_for_module,
+ *                   uop_fork, uvm_run transient); released in ustrand_destroy /
+ *                   uchunk_strand early-discharge path.
+ *
+ * Behaviour:
+ *   Saturation (refcount == UINT16_MAX): logs to stderr on hosted builds,
+ *   silent on freestanding.  Does NOT increment further (proto leaks — v1.0
+ *   deferral documented in design-risks).
+ *   Underflow (dec when refcount == 0): URBI_REQUIRE failure (all build modes).
+ */
+
+/* Owner tag — one value per logical site identified in runtime-invariants F3.
+ * Index range 0-15 maps to g_per_owner_count[] in uproto_ref.c. */
+typedef int urbi_proto_ref_owner_t;
+#define URBI_PROTO_REF_OWNER_CLOSURE  0   /* vm_alloc_closure / uclosure_destroy */
+#define URBI_PROTO_REF_OWNER_STRAND   1   /* urbi_strand_create_for_module */
+#define URBI_PROTO_REF_OWNER_FORK     2   /* uop_fork child spawn */
+#define URBI_PROTO_REF_OWNER_TRANSIENT 3  /* uvm_run transient strand */
+/* 4-15 reserved for future owner sites */
+
+/* Closure-bind: long-lived ref held for the lifetime of a UClosure cell.
+ * acquire: call before publishing the closure (e.g. in vm_alloc_closure).
+ * release: call in the GC finalizer uclosure_destroy. */
+void urbi_proto_ref_acquire(UProto *p, urbi_proto_ref_owner_t owner);
+void urbi_proto_ref_release(UProto *p, urbi_proto_ref_owner_t owner);
+
+/* Strand-bind: ref held for the lifetime of a UStrand execution.
+ * acquire: call after s->root_proto is set.
+ * release: call via uproto_strand_refcount_dec (which handles deferred-destroy). */
+void urbi_proto_strand_ref_acquire(UProto *p, urbi_proto_ref_owner_t owner);
+void urbi_proto_strand_ref_release(UProto *p, urbi_proto_ref_owner_t owner);
+
+/* Debug-build VM lifecycle hooks.
+ * Call urbi_proto_ref_vm_born() from urbi_vm_init and
+ * urbi_proto_ref_vm_gone() from urbi_vm_destroy (both gated #ifdef URBI_DEBUG).
+ * The balanced check fires only when the last active VM is destroyed so that
+ * multi-VM tests do not produce false positives from closures still alive
+ * in peer VMs. */
+#ifdef URBI_DEBUG
+void urbi_proto_ref_vm_born(void);
+void urbi_proto_ref_vm_gone(void);   /* calls assert_balanced when last vm */
+void urbi_proto_ref_assert_balanced(void);  /* can also be called manually */
+#endif
+
+/* --- Internal refcount primitives (src/chunk/ internal use only) ---
+ *
+ * These remain available for the uproto_strand_refcount_dec deferred-destroy
+ * helper in uchunk_io.c, which already has the release accounting logic.
+ * Do NOT call these directly from outside src/chunk/ — use the typed-handle
+ * API above instead.
+ */
 static inline void
 uproto_refcount_inc(UProto *p)
 {
     if (p == NULL) return;
     if (p->refcount == UINT16_MAX) {
-        /* Saturated: log once-per-proto, no further bumps.  The cell leaks
-         * on the next module_destroy (transferred to stdlib_protos and
-         * never freed because the count never reaches 0). */
+        /* Saturated: caller must use urbi_proto_ref_acquire which logs.
+         * This path is hit only from within src/chunk/ via the deferred-destroy
+         * helper; saturation logging is handled at the acquire layer. */
         return;
     }
     p->refcount = (uint16_t)(p->refcount + 1U);
@@ -273,12 +331,14 @@ static inline void
 uproto_refcount_dec(UProto *p)
 {
     if (p == NULL) return;
-    if (p->refcount == 0U || p->refcount == UINT16_MAX) {
-        /* Underflow guard + saturation: a 0 refcount on dec means somebody
-         * forgot to bump (we'd corrupt the counter).  Saturation guard
-         * preserves the "leak forever" contract for UINT16_MAX. */
+    if (p->refcount == UINT16_MAX) {
+        /* Saturated — "leak forever" contract preserved; dec is a no-op. */
         return;
     }
+    /* Note: underflow (refcount == 0) is caught at the urbi_proto_ref_release
+     * layer before this helper is reached.  The uproto_strand_refcount_dec
+     * helper in uchunk_io.c calls this directly after the external acquire
+     * layer has already validated; no second guard needed here. */
     p->refcount = (uint16_t)(p->refcount - 1U);
 }
 

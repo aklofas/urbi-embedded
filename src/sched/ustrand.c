@@ -482,7 +482,8 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
      * the count on error.
      * v0.9.2: s->module deleted; root_proto IS the sole chunk identity. */
     s->root_proto = root;
-    uproto_refcount_inc(s->root_proto);
+    /* v0.10.1 W4: typed-handle acquire for diagnostics (F3 strand-bind site). */
+    urbi_proto_strand_ref_acquire(s->root_proto, URBI_PROTO_REF_OWNER_STRAND);
 
     /* Allocate and zero the per-strand register stack.
      * On failure: urbi_strand_destroy drops the refcount and frees the strand. */

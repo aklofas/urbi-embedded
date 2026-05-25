@@ -1443,7 +1443,9 @@ void
 uproto_strand_refcount_dec(UProto *root, struct UVM *vm)
 {
     if (root == NULL) return;
-    uproto_refcount_dec(root);
+    /* v0.10.1 W4: use typed-handle release for underflow detection + debug
+     * accounting (runtime-invariants F3 strand-bind release site). */
+    urbi_proto_strand_ref_release(root, URBI_PROTO_REF_OWNER_STRAND);
     /* Deferred-destroy trigger: self-link sentinel means uchunk_destroy was
      * called with vm=NULL while a strand was still alive.  Now that the last
      * strand-bind ref is gone and the sentinel is set, perform the actual

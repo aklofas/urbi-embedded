@@ -19,7 +19,6 @@
  */
 
 #include "urbi/require.h"
-#include <stddef.h>    /* NULL — needed in freestanding builds */
 
 #include <stddef.h>  /* NULL — freestanding-safe; see C99 7.17 */
 
