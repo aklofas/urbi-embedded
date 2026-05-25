@@ -231,3 +231,13 @@ jobs:
         run: npm install -g markdownlint-cli2@0.13 markdown-link-check@3.12
       - name: Run docs-check
         run: make docs-check
+
+  version-sync:
+    name: Version sync (manifest + README)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # need full tag history
+      - name: Check version sync
+        run: make check-version-sync
