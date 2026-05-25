@@ -33,9 +33,9 @@
 static int g_warn_count;
 
 static void
-capture_log(struct UVM *vm, int level, const char *fmt, ...)
+capture_log(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 {
-    (void)vm; (void)fmt;
+    (void)vm; (void)ud; (void)fmt;
     if (level == URBI_LOG_WARN)
         g_warn_count++;
 }

@@ -56,7 +56,7 @@ void *port_psram_alloc(void *ptr, size_t nbytes, void *ud);
 /* Monotonic-microseconds time source.  Signature matches urbi_time_us_fn
  * (include/urbi/urbi.h) — pass to urbi_set_time_us.  Backed by
  * esp_timer_get_time(); resolution is 1 µs, wrap is ~292 000 years. */
-uint64_t port_time_us(void);
+uint64_t port_time_us(void *ud);
 
 /* Channel-dispatching writer.  Signature matches urbi_writer_fn
  * (include/urbi/urbi.h) — pass to urbi_set_writer.  Routes "cerr" through
@@ -68,10 +68,10 @@ void port_writer(void *ud,
                  uint64_t ts_us);
 
 /* ISR-context predicate.  Signature matches the predicate type accepted by
- * urbi_set_isr_check_fn(vm, fn) — `bool (*)(void)` — pass directly.
+ * urbi_set_isr_check_fn(vm, fn, ud) — `bool (*)(void *)` — pass directly.
  * Backed by xPortInIsrContext(); returns true when called from an ESP-IDF
  * ISR (including nested ISR dispatch). */
-bool port_in_isr(void);
+bool port_in_isr(void *ud);
 
 /* FreeRTOS task entry that drives urbi_step in a budget-bounded loop.
  * Pass to xTaskCreate / xTaskCreateStatic as the task entry; `arg` must
@@ -98,7 +98,7 @@ void port_wake_from_inject(void *ud);
  * Without this (or some equivalent), the runtime's URBI_LOG_WARN messages
  * — watcher body throws, spawn OOM, watchdog warnings — drop on the floor
  * because the host_log_fn default is NULL with no script-side sink. */
-void port_diag_to_esp(struct UVM *vm, int level, const char *fmt, ...);
+void port_diag_to_esp(struct UVM *vm, void *ud, int level, const char *fmt, ...);
 
 #ifdef __cplusplus
 }

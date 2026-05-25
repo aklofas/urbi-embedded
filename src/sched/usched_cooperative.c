@@ -686,7 +686,7 @@ sched_post_dispatch(UVM *vm, UStrand *s)
      * active union arm; assert at the loop head to surface a queue-invariant
      * break in -DURBI_DEBUG builds. */
     if (vm->sleep_q_head != NULL && vm->host_time_us != NULL) {
-        uint64_t now = vm->host_time_us();
+        uint64_t now = vm->host_time_us(vm->host_time_ud);
         while (vm->sleep_q_head != NULL) {
             URBI_INTERNAL_ASSERT(
                 USTRAND_GET_REASON(vm->sleep_q_head) == USTRAND_REASON_SLEEP);

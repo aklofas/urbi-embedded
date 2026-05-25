@@ -23,9 +23,9 @@
 static const char *TAG = "urbi-runtime";
 
 void
-port_diag_to_esp(struct UVM *vm, int level, const char *fmt, ...)
+port_diag_to_esp(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 {
-    (void)vm;
+    (void)vm; (void)ud;
 
     char buf[192];
     va_list ap;

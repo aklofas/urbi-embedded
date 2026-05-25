@@ -176,7 +176,7 @@ int urbi_aux_dump_value(struct UVM *vm, UValue v,
  * don't have a platform log system can pass this directly to
  * urbi_set_diag_fn:
  *
- *     urbi_set_diag_fn(vm, urbi_aux_diag_to_stderr);
+ *     urbi_set_diag_fn(vm, urbi_aux_diag_to_stderr, NULL);
  *
  * Formats the message with a "[urbi level=N] " prefix and a trailing
  * newline, then writes to stderr via fputs.  No allocation, no
@@ -187,9 +187,11 @@ int urbi_aux_dump_value(struct UVM *vm, UValue v,
  * a libc should wire urbi_set_diag_fn to a platform-specific shim
  * (e.g., port_diag_to_esp on ESP-IDF).
  *
+ * v0.10.3 (W3): signature gains void *ud to match urbi_diag_fn convention.
  * Signature matches urbi_diag_fn — see <urbi/urbi.h> for the
  * level convention (URBI_LOG_DEBUG/INFO/WARN/ERROR). */
-void urbi_aux_diag_to_stderr(struct UVM *vm, int level, const char *fmt, ...);
+void urbi_aux_diag_to_stderr(struct UVM *vm, void *ud, int level,
+                             const char *fmt, ...);
 
 /* === W4/v0.10.3: checked-accessor family ===
  *

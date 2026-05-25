@@ -24,11 +24,11 @@ typedef struct {
 
 static DrainCapture g_capture;
 
-static void capture_drain_handler(struct UVM *vm,
+static void capture_drain_handler(struct UVM *vm, void *ud,
                                   uint32_t event_id,
                                   UValue payload)
 {
-    (void)vm;
+    (void)vm; (void)ud;
     if (g_capture.call_count < (uint32_t)CAPTURE_MAX) {
         g_capture.event_ids[g_capture.call_count]    = event_id;
         g_capture.payload_kinds[g_capture.call_count] = payload.kind;
@@ -43,7 +43,7 @@ UTEST(drain_handler_called_per_entry)
     urbi_vm_init(&vm, NULL, NULL);
 
     g_capture.call_count = 0U;
-    urbi_register_event_drain(&vm, capture_drain_handler);
+    urbi_register_event_drain(&vm, capture_drain_handler, NULL);
 
     urbi_inject_event(&vm, 10U, NULL, 0U);
     urbi_inject_event(&vm, 20U, NULL, 0U);
@@ -69,7 +69,7 @@ UTEST(drain_handler_payload_is_nil)
     urbi_vm_init(&vm, NULL, NULL);
 
     g_capture.call_count = 0U;
-    urbi_register_event_drain(&vm, capture_drain_handler);
+    urbi_register_event_drain(&vm, capture_drain_handler, NULL);
 
     urbi_inject_event(&vm, 99U, NULL, 0U);
     uevent_ring_drain(&vm);
@@ -110,9 +110,9 @@ UTEST(null_handler_removes_drain_callback)
     urbi_vm_init(&vm, NULL, NULL);
 
     g_capture.call_count = 0U;
-    urbi_register_event_drain(&vm, capture_drain_handler);
+    urbi_register_event_drain(&vm, capture_drain_handler, NULL);
     /* Now remove it. */
-    urbi_register_event_drain(&vm, NULL);
+    urbi_register_event_drain(&vm, NULL, NULL);
 
     urbi_inject_event(&vm, 7U, NULL, 0U);
     uint32_t before = vm.event_queue_count;
@@ -133,7 +133,7 @@ UTEST(drain_empty_ring_does_not_call_handler)
     urbi_vm_init(&vm, NULL, NULL);
 
     g_capture.call_count = 0U;
-    urbi_register_event_drain(&vm, capture_drain_handler);
+    urbi_register_event_drain(&vm, capture_drain_handler, NULL);
 
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
     uevent_ring_drain(&vm);
@@ -150,7 +150,7 @@ UTEST(drain_handler_fifo_ordering)
     urbi_vm_init(&vm, NULL, NULL);
 
     g_capture.call_count = 0U;
-    urbi_register_event_drain(&vm, capture_drain_handler);
+    urbi_register_event_drain(&vm, capture_drain_handler, NULL);
 
     urbi_inject_event(&vm, 100U, NULL, 0U);
     urbi_inject_event(&vm, 200U, NULL, 0U);

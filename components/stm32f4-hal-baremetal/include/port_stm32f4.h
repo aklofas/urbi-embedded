@@ -42,7 +42,7 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud);
  * (include/urbi/urbi.h) — pass to urbi_set_time_us.  Backed by the DWT
  * cycle counter at 180 MHz; resolution is 1 cycle (~5.5 ns), wraps at
  * uint64_t (~73 years). */
-uint64_t port_time_us(void);
+uint64_t port_time_us(void *ud);
 
 /* Channel-dispatching writer over USART1 (ST-Link VCP).  Signature matches
  * urbi_writer_fn (include/urbi/urbi.h) — pass to urbi_set_writer.  All
@@ -53,15 +53,15 @@ void port_writer(void *ud,
                  const char *msg,     size_t msg_len,
                  uint64_t ts_us);
 
-/* ISR-context predicate.  Signature matches bool (*)(void) accepted by
- * urbi_set_isr_check_fn(vm, fn).  Backed by __get_IPSR() != 0. */
-bool port_in_isr(void);
+/* ISR-context predicate.  Signature matches bool (*)(void *) accepted by
+ * urbi_set_isr_check_fn(vm, fn, ud).  Backed by __get_IPSR() != 0. */
+bool port_in_isr(void *ud);
 
 /* Runtime diagnostic channel routed to USART1 via port_writer.  Signature
  * matches urbi_diag_fn (include/urbi/urbi.h) — pass to urbi_set_diag_fn.
  * Levels: URBI_LOG_DEBUG/INFO/WARN/ERROR printed with [D]/[I]/[W]/[E]
  * prefix.  vsnprintf into a 192-byte stack buffer; truncates silently. */
-void port_diag(struct UVM *vm, int level, const char *fmt, ...);
+void port_diag(struct UVM *vm, void *ud, int level, const char *fmt, ...);
 
 /* USART1 init: 115200 8N1 on PA9 (TX) / PA10 (RX), routed to ST-Link VCP.
  * Call once from main() before the urbi VM is created. */

@@ -42,7 +42,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      * than URBI_ATOMIC_MAX_US microseconds.  Requires host_time_us. */
 #ifdef URBI_DEBUG
     if (vm->atomic_active && vm->host_time_us != NULL) {
-        uint64_t now     = vm->host_time_us();
+        uint64_t now     = vm->host_time_us(vm->host_time_ud);
         uint64_t elapsed = now - vm->atomic_begin_us;
         if (elapsed > (uint64_t)URBI_ATOMIC_MAX_US) {
             urbi_panic("atomic section exceeded URBI_ATOMIC_MAX_US");

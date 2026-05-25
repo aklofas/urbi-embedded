@@ -32,7 +32,7 @@ static void counting_wake(void *ud)
 }
 
 /* ISR predicate that always returns true — simulates ISR context. */
-static bool always_in_isr(void) { return true; }
+static bool always_in_isr(void *ud) { (void)ud; return true; }
 
 static void reset_wake(void)
 {
@@ -71,7 +71,7 @@ UTEST(wake_fires_from_isr_context)
     UASSERT_EQ(rc, URBI_OK);
 
     /* Simulate ISR context — isr_check_fn returns true. */
-    urbi_set_isr_check_fn(&vm, always_in_isr);
+    urbi_set_isr_check_fn(&vm, always_in_isr, NULL);
 
     reset_wake();
     urbi_set_wake_fn(&vm, counting_wake, NULL);
@@ -83,7 +83,7 @@ UTEST(wake_fires_from_isr_context)
 
     /* Uninstall ISR predicate before VM destroy — destroy calls non-ISR-safe
      * functions; URBI_ASSERT_NOT_ISR would fire if the predicate stayed. */
-    urbi_set_isr_check_fn(&vm, NULL);
+    urbi_set_isr_check_fn(&vm, NULL, NULL);
     urbi_vm_destroy(&vm);
 }
 

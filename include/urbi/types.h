@@ -541,19 +541,51 @@ typedef enum {
     URBI_ERR_TYPE                       = -26
 } UErrCode;
 
-/* URBI_ERR_WATCHER_UNREGISTER: sentinel return code for urbi_watcher_fn
- * callbacks (Gap J, v0.7.1).  A host-side watcher callback returns this
- * value to request auto-unregistration after this firing.  It is NOT a
- * UErrCode enum member because it must pass through the `int` return of
- * urbi_watcher_fn without conflicting with URBI_OK (0) or any negative
- * error.  Chosen as -18 (first slot outside UErrCode range, held by
- * Sub-Bundle 2 for this purpose). */
-#define URBI_ERR_WATCHER_UNREGISTER  (-18)
+/* === W3: error model === */
+
+/* === UCallbackSignal: positive return values for host callbacks ===
+ *
+ * v0.10.3 (W3): All public API functions return int with one convention:
+ *   URBI_OK  (0)        — success.
+ *   negative URBI_ERR_* — failure; also published to urbi_last_error ring.
+ *   positive UCallbackSignal — ONLY for urbi_native_method_fn and
+ *                              urbi_watcher_fn returns; signals a successful
+ *                              operation with a side-effect.
+ *
+ * Positive values are in a separate namespace from UErrCode's negative range
+ * so a callback return can be unambiguously classified:
+ *   rc < 0 → error
+ *   rc == 0 → URBI_CB_OK / URBI_OK
+ *   rc > 0 → callback signal (auto-unregister, host throw, etc.)
+ *
+ * UVM internal code that previously used UVMError or UExecStatus to classify
+ * results uses int + URBI_OK / URBI_ERR_* / UCallbackSignal constants now.
+ * UExecStatus is retained for the strand-unwind-status public API family
+ * (urbi_strand_unwind_status, urbi_strand_is_fatal) pending W5 migration. */
+typedef enum {
+    URBI_CB_OK         = 0, /* callback succeeded; no side-effect */
+    URBI_CB_UNREGISTER = 1, /* watcher_fn: auto-unregister after this firing */
+    URBI_CB_THROW      = 2  /* native_method_fn: host raised a script exception */
+} UCallbackSignal;
+
+/* Legacy alias: URBI_ERR_WATCHER_UNREGISTER was -18 pre-v0.10.3.
+ * Now maps to URBI_CB_UNREGISTER (positive 1) so callback return semantics
+ * unify with the positive-signal convention.  Retained for one release cycle
+ * so existing host code using the old name still compiles without change.
+ * New code should use URBI_CB_UNREGISTER directly.
+ * (W7 may decorate this alias with URBI_DEPRECATED.) */
+#define URBI_ERR_WATCHER_UNREGISTER  ((int)URBI_CB_UNREGISTER)
 
 /* === UExecStatus: strand-level execution status ===
  *
  * Mirror of the internal enum at src/sched/ustrand.h.  Numeric values are
- * not pinned cross-version; the enum is purely symbolic. */
+ * not pinned cross-version; the enum is purely symbolic.
+ *
+ * Note: UExecStatus remains in this header because the public API functions
+ * urbi_strand_unwind_status() and urbi_strand_is_fatal() use it.  Those
+ * signatures are pending migration in W5; until W5 lands, UExecStatus is
+ * part of the public surface.  The internal scheduler's enum in
+ * src/sched/ustrand.h is unchanged. */
 typedef enum {
     UEXEC_OK       = 0,
     UEXEC_RETURN,
@@ -562,14 +594,22 @@ typedef enum {
     UEXEC_CANCEL
 } UExecStatus;
 
-/* === UVMError: VM-run result code ===
+/* === UVMError: retired — replaced by int + URBI_OK / URBI_ERR_* ===
  *
- * Returned by urbi_vm_run.  Mirror of the internal enum at src/vm/uvm.h. */
-typedef enum {
-    UVM_OK         = 0,
-    UVM_TYPE_ERROR,
-    UVM_OOM
-} UVMError;
+ * urbi_vm_run now returns int (URBI_OK / URBI_ERR_OOM / URBI_ERR_STRAND_FATAL).
+ * UVMError is retired from the public API surface in v0.10.3 (W3).
+ * The vm->last_error internal field is now typed int.
+ *
+ * Legacy shims below preserve source compatibility for one release cycle.
+ * New code should use URBI_OK / URBI_ERR_OOM / URBI_ERR_STRAND_FATAL. */
+/* UVM_OK is now URBI_OK (0). */
+#define UVM_OK         (URBI_OK)
+/* UVM_TYPE_ERROR corresponds to a strand fatal (unhandled throw / type error). */
+#define UVM_TYPE_ERROR (URBI_ERR_STRAND_FATAL)
+/* UVM_OOM corresponds to an out-of-memory failure. */
+#define UVM_OOM        (URBI_ERR_OOM)
+/* UVMError typedef retained as int alias so old declarations compile. */
+typedef int UVMError;
 
 /* === UVMAllocFn: pluggable allocator signature ===
  *

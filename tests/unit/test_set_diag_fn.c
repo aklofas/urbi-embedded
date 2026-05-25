@@ -29,9 +29,9 @@ static int  g_last_level = -1;
 static char g_last_msg[128];
 
 static void
-capture_diag(struct UVM *vm, int level, const char *fmt, ...)
+capture_diag(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 {
-    (void)vm;
+    (void)vm; (void)ud;
     g_diag_calls++;
     g_last_level = level;
     /* Stash the format string itself for assertion — today's runtime
@@ -55,12 +55,12 @@ UTEST(set_diag_fn_installs_callback)
     /* Default is NULL. */
     UASSERT(vm.host_log_fn == NULL);
 
-    urbi_set_diag_fn(&vm, capture_diag);
+    urbi_set_diag_fn(&vm, capture_diag, NULL);
     UASSERT(vm.host_log_fn != NULL);
     /* Function-pointer comparison: explicit cast suppresses the
      * pedantic warning about comparing two callable types when one
      * has a more abstract signature. */
-    UASSERT(vm.host_log_fn == (void (*)(struct UVM *, int, const char *, ...))capture_diag);
+    UASSERT(vm.host_log_fn == (void (*)(struct UVM *, void *, int, const char *, ...))capture_diag);
 
     urbi_vm_destroy(&vm);
 }
@@ -69,9 +69,9 @@ UTEST(set_diag_fn_null_uninstalls)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
-    urbi_set_diag_fn(&vm, capture_diag);
+    urbi_set_diag_fn(&vm, capture_diag, NULL);
     UASSERT(vm.host_log_fn != NULL);
-    urbi_set_diag_fn(&vm, NULL);
+    urbi_set_diag_fn(&vm, NULL, NULL);
     UASSERT(vm.host_log_fn == NULL);
     urbi_vm_destroy(&vm);
 }
@@ -79,8 +79,8 @@ UTEST(set_diag_fn_null_uninstalls)
 UTEST(set_diag_fn_null_vm_is_noop)
 {
     /* Must not crash. */
-    urbi_set_diag_fn(NULL, capture_diag);
-    urbi_set_diag_fn(NULL, NULL);
+    urbi_set_diag_fn(NULL, capture_diag, NULL);
+    urbi_set_diag_fn(NULL, NULL, NULL);
 }
 
 void

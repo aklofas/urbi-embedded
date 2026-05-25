@@ -249,9 +249,10 @@ urbi_aux_dump_value(struct UVM *vm, UValue v,
  * sites all use fixed short strings, so this is plenty.  Long
  * formatted reports are a future-design concern, not today's. */
 void
-urbi_aux_diag_to_stderr(struct UVM *vm, int level, const char *fmt, ...)
+urbi_aux_diag_to_stderr(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 {
     (void)vm;
+    (void)ud;
     static const char *const tag_for_level[] = {
         "debug", "info", "warn", "error",
     };

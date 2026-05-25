@@ -44,9 +44,9 @@ typedef struct {
 static DoneCapture g_done;
 
 static void
-done_capture_fn(struct UVM *vm, urbi_watcher_handle_t handle, int status)
+done_capture_fn(struct UVM *vm, void *ud, urbi_watcher_handle_t handle, int status)
 {
-    (void)vm;
+    (void)vm; (void)ud;
     if (g_done.call_count < DONE_MAX) {
         g_done.handles[g_done.call_count]  = handle;
         g_done.statuses[g_done.call_count] = status;
@@ -85,7 +85,7 @@ UTEST(done_fn_fires_for_host_watcher)
     UASSERT(realm != NULL);
 
     g_done.call_count = 0;
-    urbi_set_watcher_body_done_fn(&vm, done_capture_fn);
+    urbi_set_watcher_body_done_fn(&vm, done_capture_fn, NULL);
 
     urbi_event_id_t id = urbi_event_register(&vm, realm, "fan1", NULL, NULL);
     UASSERT(id != URBI_EVENT_ID_INVALID);
@@ -119,7 +119,7 @@ UTEST(done_fn_handle_zero_for_script)
     UASSERT(realm != NULL);
 
     g_done.call_count = 0;
-    urbi_set_watcher_body_done_fn(&vm, done_capture_fn);
+    urbi_set_watcher_body_done_fn(&vm, done_capture_fn, NULL);
 
     /* Pre-install Realm.fan2_fired = 0. */
     int rc = urbi_realm_set_global(&vm, realm, "fan2_fired", 10,
@@ -176,7 +176,7 @@ UTEST(done_fn_fires_for_auto_unregister)
     UASSERT(realm != NULL);
 
     g_done.call_count = 0;
-    urbi_set_watcher_body_done_fn(&vm, done_capture_fn);
+    urbi_set_watcher_body_done_fn(&vm, done_capture_fn, NULL);
 
     urbi_event_id_t id = urbi_event_register(&vm, realm, "fan3", NULL, NULL);
     UASSERT(id != URBI_EVENT_ID_INVALID);
@@ -209,7 +209,7 @@ UTEST(done_fn_fanout_two_watchers_same_event)
     UASSERT(realm != NULL);
 
     g_done.call_count = 0;
-    urbi_set_watcher_body_done_fn(&vm, done_capture_fn);
+    urbi_set_watcher_body_done_fn(&vm, done_capture_fn, NULL);
 
     /* Pre-install counter. */
     int rc = urbi_realm_set_global(&vm, realm, "fan4_fired", 10,

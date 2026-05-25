@@ -13,7 +13,7 @@
 
 static void test_diag_info(void) {
     mock_bsp_reset();
-    port_diag(NULL, URBI_LOG_INFO, "hello %d", 42);
+    port_diag(NULL, NULL, URBI_LOG_INFO, "hello %d", 42);
     assert(mock_uart.call_count >= 1);
     assert(strstr(mock_uart.buf, "hello 42") != NULL);
     /* Expect [I] prefix somewhere */
@@ -24,7 +24,7 @@ static void test_diag_info(void) {
 
 static void test_diag_error_routing(void) {
     mock_bsp_reset();
-    port_diag(NULL, URBI_LOG_ERROR, "oops");
+    port_diag(NULL, NULL, URBI_LOG_ERROR, "oops");
     assert(strstr(mock_uart.buf, "oops") != NULL);
     assert(strstr(mock_uart.buf, "[E]") != NULL ||
            strstr(mock_uart.buf, "ERROR") != NULL);

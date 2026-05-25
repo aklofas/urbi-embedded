@@ -141,7 +141,7 @@ uhost_watcher_table_walk_event(UHostWatcherTable *t, struct UVM *vm,
 
             /* T70: fire done_fn after cb returns. */
             if (vm->watcher_body_done_fn != NULL) {
-                vm->watcher_body_done_fn(vm, e->handle, result);
+                vm->watcher_body_done_fn(vm, vm->watcher_body_done_ud, e->handle, result);
             }
 
             if (result == URBI_ERR_WATCHER_UNREGISTER) {

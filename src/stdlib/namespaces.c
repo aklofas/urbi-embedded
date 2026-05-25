@@ -161,7 +161,7 @@ sys_time(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "System.time", 0, nargs, out);
-    uint64_t us = (vm->host_time_us != NULL) ? vm->host_time_us() : 0U;
+    uint64_t us = (vm->host_time_us != NULL) ? vm->host_time_us(vm->host_time_ud) : 0U;
     *out = val_float((double)us / 1000000.0);
     return UEXEC_OK;
 }
@@ -181,7 +181,7 @@ sys_time_us(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "System.time_us", 0, nargs, out);
-    uint64_t us = (vm->host_time_us != NULL) ? vm->host_time_us() : 0U;
+    uint64_t us = (vm->host_time_us != NULL) ? vm->host_time_us(vm->host_time_ud) : 0U;
     *out = val_int((int64_t)us);
     return UEXEC_OK;
 }

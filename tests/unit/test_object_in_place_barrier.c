@@ -705,9 +705,9 @@ change_event_oom_alloc(void *ptr, size_t n, void *ud)
 }
 
 static void
-change_event_oom_log(struct UVM *vm, int level, const char *fmt, ...)
+change_event_oom_log(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 {
-    (void)vm; (void)level; (void)fmt;
+    (void)vm; (void)ud; (void)level; (void)fmt;
     g_change_event_log_calls++;
 }
 

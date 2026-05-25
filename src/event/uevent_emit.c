@@ -168,7 +168,7 @@ run_event_body_on_scratch(struct UVM *vm, struct UWatcher *w, UValue payload)
     (void)urbi_run_closure_on_scratch_with_payload(vm, w->body, payload,
                                                     &out, &threw);
     if (threw && vm->host_log_fn) {
-        vm->host_log_fn(vm, URBI_LOG_WARN,
+        vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
             "at sync(e?) body threw; suppressed");
     }
 
@@ -204,7 +204,7 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
         if (!vm->event_sync_degradation_warned) {
             vm->event_sync_degradation_warned = 1;
             if (vm->host_log_fn)
-                vm->host_log_fn(vm, URBI_LOG_WARN,
+                vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                     "sync emit on event degraded to async (nested in scratch context)");
         }
         c_event_emit_async(vm, e, payload);
@@ -273,7 +273,7 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
     /* Scratch / eval context guard (spec §7.1 safety note). */
     if (vm->in_watcher_scratch || vm->in_watcher_eval) {
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "waituntil from scratch context — undefined; returning NIL");
         return payload;
     }

@@ -114,9 +114,9 @@ static int g_log_count_warn;
 static int g_log_count_total;
 
 static void
-capture_log_fn(struct UVM *vm, int level, const char *fmt, ...)
+capture_log_fn(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 {
-    (void)vm; (void)fmt;
+    (void)vm; (void)ud; (void)fmt;
     g_log_count_total++;
     if (level == URBI_LOG_WARN) g_log_count_warn++;
 }

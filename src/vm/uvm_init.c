@@ -60,7 +60,9 @@ static void *uvm_stdlib_realloc(void *ptr, size_t nbytes, void *ud) {
    urbi_default_host_time_us is the non-static alias used by uvm_writer.c so
    that urbi_set_time_us(vm, NULL) can restore the built-in default without
    duplicating the #ifdef logic. */
-static uint64_t default_host_time_us_stub(void) {
+/* v0.10.3 (W3): signature gains void *ud (urbi_time_us_fn convention). */
+static uint64_t default_host_time_us_stub(void *ud) {
+    (void)ud;
 #if defined(UVM_INIT_HAVE_CLOCK_GETTIME)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -72,8 +74,8 @@ static uint64_t default_host_time_us_stub(void) {
 }
 
 /* Non-static alias: lets uvm_writer.c restore the built-in time source. */
-uint64_t urbi_default_host_time_us(void) {
-    return default_host_time_us_stub();
+uint64_t urbi_default_host_time_us(void *ud) {
+    return default_host_time_us_stub(ud);
 }
 
 /* === vm_misc_walk_roots (v0.8.4 Option B Step C-1) ===
@@ -221,7 +223,9 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* T19 ISR-check + debug watchdog hooks: initialize before any subsystem
      * calls URBI_ASSERT_NOT_ISR (T23 onwards). */
     vm->isr_check_fn           = NULL;
+    vm->isr_check_ud           = NULL;  /* v0.10.3 W3 */
     vm->host_log_fn            = NULL;
+    vm->host_log_ud            = NULL;  /* v0.10.3 W3 */
     vm->callback_warn_us       = URBI_CALLBACK_WARN_US;
     vm->callback_watchdog_mode = URBI_WATCHDOG_WARN;
     vm->pad_watchdog[0]        = 0U;
@@ -363,6 +367,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;
+    vm->host_time_ud = NULL;  /* v0.10.3 W3 */
 
     /* Gap E (v0.7.1): pluggable I/O writer; NULL selects the built-in default. */
     vm->writer_fn = NULL;
@@ -374,6 +379,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* T57: ISR drain handler (spec #3 §9): NULL until host registers one. */
     vm->event_drain_handler = NULL;
+    vm->event_drain_ud      = NULL;  /* v0.10.3 W3 */
 
     /* M6 Phase 3: stdlib state. */
     /* stdlib_closures + stdlib_upvalues deleted at v0.8.4 Step C-3 (GC-managed). */
@@ -406,6 +412,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* T33 (v0.7.0 Wave 1): watcher-body-completion host callback.
      * NULL default; embedders opt in via urbi_set_watcher_body_done_fn. */
     vm->watcher_body_done_fn = NULL;
+    vm->watcher_body_done_ud = NULL;  /* v0.10.3 W3 */
 
     /* Gap R (v0.7.1): atomic event section state.
      * atomic_active must be zero so that uevent_ring_drain is NOT gated on
@@ -662,8 +669,9 @@ urbi_native_protos_init(UVM *vm)
  * design assumes drain-handler installs are quiescent.  URBI_DEBUG asserts
  * the contract.
  */
+/* v0.10.3 (W3): gains void *ud parameter; event_drain_ud stored alongside. */
 void
-urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h)
+urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h, void *ud)
 {
     /* API-003: NULL check FIRST.  URBI_ASSERT_NOT_ISR expands to call
      * urbi_in_isr(vm) which is itself NULL-safe, so the prior order was
@@ -677,17 +685,22 @@ urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h)
      * the canonical "step in progress" signal in this VM (no separate
      * in_step flag exists). */
     URBI_INTERNAL_ASSERT(vm->cur_strand == NULL);
+    /* Store ud before handler so that a concurrent reader (v1.x) sees
+     * the ud before the handler pointer (handler is the "live" signal). */
+    vm->event_drain_ud = ud;
     /* EVENT-007: __ATOMIC_RELEASE store pairs with the __ATOMIC_ACQUIRE
      * load in uevent_ring_drain.  Single-threaded today; the pairing
      * inherits correctness for v1.x URBI_SCHED_PREEMPTIVE. */
     __atomic_store_n(&vm->event_drain_handler, h, __ATOMIC_RELEASE);
 }
 
-const char *uvm_error_name(UVMError code) {
-    switch (code) {
-        case UVM_OK:         return "UVM_OK";
-        case UVM_TYPE_ERROR: return "UVM_TYPE_ERROR";
-        case UVM_OOM:        return "UVM_OOM";
-    }
+/* v0.10.3 (W3): UVMError retired; parameter is now int.
+ * Returns the legacy name for backward compat with tests that check
+ * the string. UVM_OK == URBI_OK == 0; UVM_OOM == URBI_ERR_OOM == -3;
+ * UVM_TYPE_ERROR == URBI_ERR_STRAND_FATAL == -2. */
+const char *uvm_error_name(int code) {
+    if (code == 0)  return "UVM_OK";
+    if (code == -3) return "UVM_OOM";
+    if (code == -2) return "UVM_TYPE_ERROR";
     return "UVM_UNKNOWN";
 }

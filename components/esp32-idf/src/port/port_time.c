@@ -12,7 +12,8 @@
 
 #include "port_esp_idf.h"
 
-uint64_t port_time_us(void)
+uint64_t port_time_us(void *ud)
 {
+    (void)ud;
     return (uint64_t)esp_timer_get_time();
 }

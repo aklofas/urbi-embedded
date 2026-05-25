@@ -410,11 +410,11 @@ Install a callback to observe every watcher-body completion — useful for laten
 
 ```c
 /* FRAGMENT — watcher-body-done telemetry */
-static void on_body_done(struct UVM *vm,
+static void on_body_done(struct UVM *vm, void *ud,
                           urbi_watcher_handle_t handle,
                           int completion_status)
 {
-    (void)vm;
+    (void)vm; (void)ud;
     /* handle == 0: script-side at/whenever watcher.
      * handle != 0: host-side urbi_register_watcher watcher (Gap J). */
     record_watcher_latency(handle, completion_status);
@@ -422,7 +422,7 @@ static void on_body_done(struct UVM *vm,
 
 void install_telemetry(struct UVM *vm)
 {
-    urbi_set_watcher_body_done_fn(vm, on_body_done);
+    urbi_set_watcher_body_done_fn(vm, on_body_done, NULL);
 }
 ```
 
@@ -843,6 +843,46 @@ void check_error(struct UVM *vm, int rc)
 
 The `const char*` fields in `urbi_error_info_t` point into VM-owned storage and are valid until the next API call that mutates error state. Copy them if you need them across subsequent calls.
 
+### Unified error model (v0.10.3)
+
+All public API functions return `int` with a consistent three-zone convention:
+
+| Return value | Meaning |
+|---|---|
+| `URBI_OK` (0) | Success |
+| Negative (`URBI_ERR_*`) | Failure — inspect the error ring |
+| Positive (`UCallbackSignal`) | Callback-side signal — only valid as a return from host-watcher callbacks |
+
+**`UCallbackSignal`** values for watcher/event callbacks:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `URBI_CB_OK` | 0 | Stay registered, no side-effect |
+| `URBI_CB_UNREGISTER` | 1 | Auto-unregister after this callback returns |
+| `URBI_CB_THROW` | 2 | Raise an urbiscript exception in the calling strand |
+
+The legacy name `URBI_ERR_WATCHER_UNREGISTER` is kept as an alias for `URBI_CB_UNREGISTER` for source compatibility. New code should use `URBI_CB_UNREGISTER`.
+
+**Setter callbacks with `void *ud`:** all five setter functions accept a trailing `void *ud` opaque pointer that is forwarded to every callback invocation:
+
+```c
+/* FRAGMENT — ud forwarding pattern */
+static void my_diag(struct UVM *vm, void *ud, int level, const char *fmt, ...)
+{
+    (void)vm;
+    struct MyContext *ctx = (struct MyContext *)ud;
+    /* use ctx for routing */
+    (void)level; (void)fmt;
+}
+
+void setup_diag(struct UVM *vm, struct MyContext *ctx)
+{
+    urbi_set_diag_fn(vm, my_diag, ctx);
+}
+```
+
+The same pattern applies to `urbi_set_time_us`, `urbi_set_watcher_body_done_fn`, `urbi_set_isr_check_fn`, and `urbi_register_event_drain`. Pass `NULL` when no context is needed.
+
 ---
 
 ## 9. Common Patterns
@@ -975,7 +1015,7 @@ The urbi heap is managed entirely through the `UVMAllocFn` you supply at `urbi_v
 
 The only urbi API call safe from ISR context is `urbi_inject_event` (and the wake-fn callback, which must be O(1) and non-allocating). Calling any other API — `urbi_tag_stop`, `urbi_register`, `urbi_event_register`, `urbi_step` — from ISR context is undefined behavior.
 
-In debug builds, `URBI_ASSERT_NOT_ISR(vm)` placed at the top of a host function catches this class of bug at the call site. Register an ISR-check predicate via `urbi_set_isr_check_fn(vm, xPortInIsrContext)` (or the POSIX equivalent) so the assertion has real teeth.
+In debug builds, `URBI_ASSERT_NOT_ISR(vm)` placed at the top of a host function catches this class of bug at the call site. Register an ISR-check predicate via `urbi_set_isr_check_fn(vm, xPortInIsrContext, NULL)` (or the POSIX equivalent) so the assertion has real teeth.
 
 ### Sharing `UStrand` pointers across VMs
 

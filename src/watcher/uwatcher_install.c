@@ -88,7 +88,7 @@ install_watcher_runtime(
      * in-progress trace state (spec #2 §7.1 note on recursive install). */
     if (vm->in_watcher_eval) {
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher install attempted from within scratch-frame eval");
         return URBI_INSTALL_RECURSIVE;
     }
@@ -121,13 +121,13 @@ install_watcher_runtime(
     if (vm->trace_overflow) {
         vm->trace_overflow = 0;
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher install: read-set exceeds URBI_WATCHER_READSET_MAX");
         return URBI_INSTALL_READSET_OVER;
     }
     if (cond_threw) {
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher install: condition threw during trace");
         return URBI_INSTALL_TRACE_FAULT;
     }
@@ -147,7 +147,7 @@ install_watcher_runtime(
     if (vm->trace_read_set_count == 0
         && mode != UWATCHER_WAITUNTIL) {
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher install rejected: condition has no observable cells "
                 "(if intent was event subscription, use `whenever (e?)`)");
         vm->trace_overflow       = 0;
@@ -159,7 +159,7 @@ install_watcher_runtime(
     w = uwatcher_pool_alloc(vm);
     if (w == NULL) {
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher install: pool exhausted");
         /* WATCH-005: clear trace state on fall-through.  Phase 2 reset
          * trace_overflow + trace_read_set_count on entry, but Phase 3
@@ -286,7 +286,7 @@ install_at_event_runtime(
     UWatcher *w = uwatcher_pool_alloc(vm);
     if (!w) {
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher pool exhausted; AT_EVENT install dropped");
         return URBI_INSTALL_OOM_POOL;
     }

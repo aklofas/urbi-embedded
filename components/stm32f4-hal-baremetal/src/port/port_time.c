@@ -26,7 +26,8 @@
 static uint32_t last_cyc;
 static uint64_t accum_cyc;
 
-uint64_t port_time_us(void) {
+uint64_t port_time_us(void *ud) {
+    (void)ud;
     uint32_t now = DWT_CYCCNT_READ();
     uint32_t delta = now - last_cyc;  /* unsigned wrap-around handles overflow */
     accum_cyc += delta;

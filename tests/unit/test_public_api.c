@@ -162,13 +162,13 @@ UTEST(throw_return_val_tag_stop_handle_null_vm)
 UTEST(register_event_drain_null_check_before_assert)
 {
     /* NULL vm must be a clean no-op. */
-    urbi_register_event_drain(NULL, NULL);
+    urbi_register_event_drain(NULL, NULL, NULL);
     UASSERT(1);
 
     /* Valid vm with NULL handler clears the handler. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    urbi_register_event_drain(&vm, NULL);
+    urbi_register_event_drain(&vm, NULL, NULL);
     UASSERT(vm.event_drain_handler == NULL);
     urbi_vm_destroy(&vm);
 }
@@ -319,12 +319,12 @@ UTEST(urbi_version_matches_release_tag)
  * Both setters have a NULL-vm early-return then a single field assignment.
  * Test calls each with NULL (early-return path) and a real vm (assignment). */
 
-static bool stub_isr_predicate(void) { return false; }
+static bool stub_isr_predicate(void *ud) { (void)ud; return false; }
 
 UTEST(set_isr_check_fn_null_safe_and_assigns)
 {
     /* NULL vm: must early-return without crashing. */
-    urbi_set_isr_check_fn(NULL, stub_isr_predicate);
+    urbi_set_isr_check_fn(NULL, stub_isr_predicate, NULL);
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -333,12 +333,12 @@ UTEST(set_isr_check_fn_null_safe_and_assigns)
     UASSERT(vm.isr_check_fn == NULL);
 
     /* Real vm: assigns the predicate. */
-    urbi_set_isr_check_fn(&vm, stub_isr_predicate);
+    urbi_set_isr_check_fn(&vm, stub_isr_predicate, NULL);
     UASSERT(vm.isr_check_fn == stub_isr_predicate);
 
     /* Re-assigning NULL clears it (the documented "disable ISR checking"
      * default behaviour referenced in src/urbi.c:57). */
-    urbi_set_isr_check_fn(&vm, NULL);
+    urbi_set_isr_check_fn(&vm, NULL, NULL);
     UASSERT(vm.isr_check_fn == NULL);
 
     urbi_vm_destroy(&vm);
