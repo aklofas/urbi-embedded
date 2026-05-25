@@ -97,8 +97,14 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
     w = e->at_watchers_head;
     while (w) {
         struct UWatcher *next = w->next_in_event;   /* snapshot before any modification */
-        if (w->mode == UWATCHER_AT_EVENT || w->mode == UWATCHER_AT_EVENT_SYNC) {
-            /* M5 baseline: fire_context NULL; T53 wires payload into body R[0]. */
+        if (w->mode == UWATCHER_AT_EVENT
+            || w->mode == UWATCHER_AT_EVENT_SYNC
+            || w->mode == UWATCHER_WHENEVER_EVENT) {
+            /* M5 baseline: fire_context NULL; T53 wires payload into body R[0].
+             * UWATCHER_WHENEVER_EVENT (W0/v0.10.2): same dispatch path as
+             * AT_EVENT — body spawned as a coroutine.  The "re-fires on every
+             * emission" semantic is automatic because WHENEVER_EVENT watchers
+             * are never removed from at_watchers_head (no one-shot teardown). */
             do_spawn_body_coroutine(vm, w, NULL);
         }
         w = next;
@@ -195,13 +201,18 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
         return;
     }
 
-    /* Walk at_watchers_head: sync subs run inline; async subs spawn. */
+    /* Walk at_watchers_head: sync subs run inline; async subs spawn.
+     * UWATCHER_WHENEVER_EVENT (W0/v0.10.2) follows the AT_EVENT async path:
+     * spawn a body coroutine.  It is never sync (parse_whenever disallows
+     * the sync modifier).  Re-fire on every emission is automatic because
+     * WHENEVER_EVENT watchers are never removed from at_watchers_head. */
     w = e->at_watchers_head;
     while (w) {
         struct UWatcher *next = w->next_in_event;
         if (w->mode == UWATCHER_AT_EVENT_SYNC) {
             run_event_body_on_scratch(vm, w, payload);
-        } else if (w->mode == UWATCHER_AT_EVENT) {
+        } else if (w->mode == UWATCHER_AT_EVENT
+                   || w->mode == UWATCHER_WHENEVER_EVENT) {
             do_spawn_body_coroutine(vm, w, NULL);
         }
         w = next;

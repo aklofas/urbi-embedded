@@ -69,6 +69,11 @@ static void reset_log(struct UVM *vm)
     vm->host_log_fn = capture_log;
 }
 
+/* === Forward declarations needed by tests that call the T39 hook early === */
+static UCell g_t39_cell;
+static void hook_plant_one_cell(struct UVM *vm, struct UClosure *cond,
+                                UValue *out_result, int *out_threw);
+
 /* ===================================================================
  * Test cases
  * =================================================================== */
@@ -105,9 +110,12 @@ UTEST(install_returns_recursive_when_in_eval)
 
 /* 2. install_returns_ok_normally
  *
- * With default state (in_watcher_eval == 0), the skeleton must return OK.
- * A null-cond install produces an empty read-set, so one WARN fires
- * (T38: "no observable cells") — that is expected and correct behaviour. */
+ * With default state (in_watcher_eval == 0) and a cond hook that plants one
+ * observable cell into the read-set, install must return URBI_INSTALL_OK.
+ *
+ * W0/v0.10.2 update: empty read-set is now a hard reject (Phase 5a).  The
+ * hook_plant_one_cell is required for a clean OK path.  The empty-read-set
+ * rejection is tested separately (install_warns_on_empty_readset below). */
 UTEST(install_returns_ok_normally)
 {
     UVM vm;
@@ -117,12 +125,17 @@ UTEST(install_returns_ok_normally)
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
+    /* Plant one cell so the read-set is non-empty. */
+    g_t39_cell.gc_byte = 0;
+    vm.test_install_cond_hook = hook_plant_one_cell;
+
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)r, (int)URBI_INSTALL_OK);
-    /* One WARN for empty read-set is expected (T38 phase 5a). */
-    UASSERT_EQ(g_warn_count, 1);
+    UASSERT_EQ(g_warn_count, 0);  /* no warn when read-set is non-empty */
+
+    vm.test_install_cond_hook = NULL;
 
     /* Clean up the installed watcher. */
     if (vm.active_watchers_head != NULL)
@@ -154,10 +167,14 @@ test_drain_watcher_pool(UVM *vm, UWatcher **out)
 
 /* 3. install_warns_on_empty_readset
  *
- * When the cond hook leaves trace_read_set_count == 0 (no slot reads),
- * install must:
- *   - Return URBI_INSTALL_OK (inert watcher is introspectable).
- *   - Fire exactly one URBI_LOG_WARN containing "no observable cells". */
+ * W0/v0.10.2 update: when trace_read_set_count == 0 (no slot reads) for an
+ * AT/WHENEVER watcher, install must now:
+ *   - Return URBI_INSTALL_NO_OBSERVABLE_CELLS (hard reject; not OK).
+ *   - Fire exactly one URBI_LOG_WARN containing "no observable cells".
+ *   - NOT install a watcher (active_watchers_head stays NULL).
+ *
+ * Prior behavior was warn-and-proceed; this changed at W0/v0.10.2 to close
+ * reactive F1 (whenever (e?) was silently no-op'd by the old path). */
 UTEST(install_warns_on_empty_readset)
 {
     UVM    vm;
@@ -171,9 +188,11 @@ UTEST(install_warns_on_empty_readset)
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+    UASSERT_EQ((int)URBI_INSTALL_NO_OBSERVABLE_CELLS, (int)r);
     UASSERT_EQ(1, g_warn_count);
     UASSERT(strstr(g_last_msg, "no observable cells") != NULL);
+    /* No watcher installed — active_watchers_head must still be NULL. */
+    UASSERT(vm.active_watchers_head == NULL);
 
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
@@ -181,8 +200,11 @@ UTEST(install_warns_on_empty_readset)
 
 /* 4. install_returns_oom_pool_when_exhausted
  *
- * With the pool drained, install must return URBI_INSTALL_OOM_POOL
- * and fire a URBI_LOG_WARN. */
+ * With the pool drained AND a non-empty read-set (hook_plant_one_cell passes
+ * Phase 5a), install must return URBI_INSTALL_OOM_POOL and fire a WARN.
+ *
+ * W0/v0.10.2 update: the cond hook is now required; without it, Phase 5a
+ * rejects with INSTALL_NO_OBSERVABLE_CELLS before reaching the pool check. */
 UTEST(install_returns_oom_pool_when_exhausted)
 {
     UVM     vm;
@@ -196,11 +218,17 @@ UTEST(install_returns_oom_pool_when_exhausted)
 
     test_drain_watcher_pool(&vm, held);
 
+    /* Plant one cell so Phase 5a (empty-read-set check) is bypassed. */
+    g_t39_cell.gc_byte = 0;
+    vm.test_install_cond_hook = hook_plant_one_cell;
+
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_OOM_POOL, (int)r);
     UASSERT(g_warn_count >= 1);
+
+    vm.test_install_cond_hook = NULL;
 
     /* Return pool slots so urbi_vm_destroy is clean. */
     for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {
@@ -215,7 +243,10 @@ UTEST(install_returns_oom_pool_when_exhausted)
 /* 5. install_initializes_watcher_fields
  *
  * After a successful install, the watcher at vm->active_watchers_head must
- * have its mode, flags, and realm wired to the install arguments. */
+ * have its mode, flags, and realm wired to the install arguments.
+ *
+ * W0/v0.10.2 update: hook_plant_one_cell is required to pass Phase 5a
+ * (empty-read-set rejection). */
 UTEST(install_initializes_watcher_fields)
 {
     UVM     vm;
@@ -224,6 +255,10 @@ UTEST(install_initializes_watcher_fields)
     urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     reset_log(&vm);
+
+    /* Plant one cell so the install succeeds through Phase 5a. */
+    g_t39_cell.gc_byte = 0;
+    vm.test_install_cond_hook = hook_plant_one_cell;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
@@ -236,6 +271,8 @@ UTEST(install_initializes_watcher_fields)
     UASSERT_EQ((int)URBI_WATCHER_ACTIVE,  (int)(w->flags & URBI_WATCHER_ACTIVE));
     UASSERT(w->realm == s.realm);
 
+    vm.test_install_cond_hook = NULL;
+
     /* Clean up the installed watcher. */
     urbi_watcher_unregister_internal(&vm, w);
 
@@ -247,9 +284,8 @@ UTEST(install_initializes_watcher_fields)
  * T39 helpers
  * =================================================================== */
 
-/* g_t39_cell: a stack UCell that the cond hook plants into trace_read_set[].
- * Declared at file scope so the hook and the test can both see it. */
-static UCell g_t39_cell;
+/* g_t39_cell is forward-declared near the top of this file (before test 2).
+ * hook_plant_one_cell is also forward-declared there; body definition follows. */
 
 /* hook_plant_one_cell: cond hook that simulates one OP_GETSLOT read.
  * Plants &g_t39_cell into trace_read_set[0] and sets count=1. */
@@ -320,6 +356,10 @@ UTEST(install_appends_watcher_to_active_and_tag_lists)
     s.realm = r;  /* wire realm so resolve_owning_tag falls through to realm->tag */
 
     reset_log(&vm);
+
+    /* W0/v0.10.2: Phase 5a rejects empty read-sets; plant one cell. */
+    g_t39_cell.gc_byte = 0;
+    vm.test_install_cond_hook = hook_plant_one_cell;
 
     UWatcherInstallResult res = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);

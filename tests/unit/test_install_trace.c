@@ -281,6 +281,24 @@ UTEST(trace_disabled_when_flag_clear)
     urbi_vm_destroy(&vm);
 }
 
+/* W0/v0.10.2: hook that plants one sentinel cell into the read-set.
+ * Required because Phase 5a (W0) rejects empty read-sets as a programming
+ * error; any test that expects URBI_INSTALL_OK must provide at least one
+ * observable cell. */
+static UCell g_t36_cell;
+static void
+hook_plant_one_cell_t36(struct UVM *vm, struct UClosure *cond,
+                        UValue *out_result, int *out_threw)
+{
+    UValue nil = {0};
+    (void)cond;
+    g_t36_cell.gc_byte = 0;
+    vm->trace_read_set[0] = &g_t36_cell;
+    vm->trace_read_set_count = 1;
+    *out_result = nil;
+    *out_threw  = 0;
+}
+
 /* 5. install_arms_and_resets_trace_fields
  *
  * install_watcher_runtime (non-recursive path, no-throw hook) must:
@@ -301,13 +319,24 @@ UTEST(install_arms_and_resets_trace_fields)
     vm.trace_overflow       = 1;
     vm.trace_read_set_count = 7;
 
+    /* W0/v0.10.2: Phase 5a rejects empty read-sets; plant one cell so
+     * install can complete and we can observe the phase-2/4 field reset. */
+    g_t36_cell.gc_byte = 0;
+    vm.test_install_cond_hook = hook_plant_one_cell_t36;
+
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    /* Stub (no hook) returns OK; in_watcher_install must be 0 after phase 4. */
+    vm.test_install_cond_hook = NULL;
+
+    /* Stub returns OK; in_watcher_install must be 0 after phase 4. */
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
     UASSERT_EQ(0, (int)vm.in_watcher_install);
     UASSERT_EQ(0, (int)vm.trace_overflow);
+
+    /* Clean up the installed watcher so destroy is clean. */
+    if (vm.active_watchers_head != NULL)
+        urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
 
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);

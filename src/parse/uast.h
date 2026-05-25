@@ -410,10 +410,14 @@ struct UAstNode {
             UAstNode *cond;
         } waituntil;
         struct {                                            /* AST_AT_EVENT */
-            UAstNode *event_expr;          /* the `e` in `at (e?)` */
+            UAstNode *event_expr;          /* the `e` in `at (e?)` or `whenever (e?)` */
             UAstNode *body;
             UAstNode *onleave;             /* nullable */
             bool      is_sync;             /* `at sync (e?)` */
+            bool      is_whenever;         /* whenever (e?) — re-fires on each emission;
+                                            * no one-shot teardown (vs at (e?) which
+                                            * fires once per emission but does not reset
+                                            * cond state).  W0/v0.10.2. */
         } at_event;
         struct {                                            /* AST_AT_SLOT_CHANGE */
             UAstNode   *receiver;          /* the `obj` in `at (obj.x.changed?)` */

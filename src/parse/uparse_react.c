@@ -171,10 +171,11 @@ static UAstNode *parse_at_event_form(UParser *p, UToken kw,
     /* 2 segments or non-"changed" final segment: event form. */
     UAstNode *node = make_node(p, AST_AT_EVENT, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.at_event.event_expr = cond;
-    node->u.at_event.body       = body;
-    node->u.at_event.onleave    = onleave;
-    node->u.at_event.is_sync    = is_sync;
+    node->u.at_event.event_expr  = cond;
+    node->u.at_event.body        = body;
+    node->u.at_event.onleave     = onleave;
+    node->u.at_event.is_sync     = is_sync;
+    node->u.at_event.is_whenever = false;  /* W0: at (e?) is not whenever */
     return node;
 }
 
@@ -273,7 +274,13 @@ UAstNode *parse_at(UParser *p) {
     return parse_at_cond_form(p, kw, cond, mode);
 }
 
-/* --- parse_whenever: `whenever` `(` cond `)` body [`onleave` handler] --- */
+/* --- parse_whenever: `whenever` `(` cond `)` body [`onleave` handler]
+ *                   | `whenever` `(` event `?` `)` body [`onleave` handler]
+ *
+ * W0/v0.10.2: the event arm (TOK_QUESTION after cond) mirrors parse_at's
+ * parse_at_event_form path.  Produces AST_AT_EVENT with is_whenever=true.
+ * The cond arm (no `?`) produces AST_WATCHER with mode=UWATCHER_WHENEVER
+ * as before. */
 UAstNode *parse_whenever(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_WHENEVER */
 
@@ -285,9 +292,46 @@ UAstNode *parse_whenever(UParser *p) {
     }
     consume(p);
 
+    /* Enable the at_event_cond context so that `?` in the inner expression
+     * is not immediately flagged as an error — parse_whenever checks for it
+     * after the expression parse returns.  Mirrors parse_at's pattern. */
+    p->at_event_cond = true;
     UAstNode *cond = parse_inner_tier(p);
+    p->at_event_cond = false;
     if (!cond) return (UAstNode *)&uparser_oom_sentinel;
     if (cond->kind == AST_ERROR) return cond;
+
+    /* W0: event-arm branch — mirror parse_at's TOK_QUESTION handling.
+     * `whenever (e?) body` is a perpetual event subscriber: the body
+     * re-fires on every emission of e, without one-shot teardown. */
+    if (peek(p).type == TOK_QUESTION) {
+        consume(p);  /* consume '?' */
+        UToken rp2 = peek(p);
+        if (rp2.type != TOK_RPAREN) {
+            return make_error(p, PARSE_EXPECTED_RPAREN,
+                              kErrorMessages[PARSE_EXPECTED_RPAREN],
+                              rp2.line, rp2.col);
+        }
+        consume(p);
+        UAstNode *body = parse_statement_or_expr(p);
+        if (!body) return (UAstNode *)&uparser_oom_sentinel;
+        if (body->kind == AST_ERROR) return body;
+        UAstNode *onleave = NULL;
+        if (peek(p).type == TOK_KW_ONLEAVE) {
+            consume(p);
+            onleave = parse_statement_or_expr(p);
+            if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
+            if (onleave->kind == AST_ERROR) return onleave;
+        }
+        UAstNode *node = make_node(p, AST_AT_EVENT, kw.line, kw.col);
+        if (!node) return (UAstNode *)&uparser_oom_sentinel;
+        node->u.at_event.event_expr  = cond;
+        node->u.at_event.body        = body;
+        node->u.at_event.onleave     = onleave;
+        node->u.at_event.is_sync     = false;  /* whenever has no sync form */
+        node->u.at_event.is_whenever = true;   /* W0: distinguishes from at (e?) */
+        return node;
+    }
 
     UToken rp = peek(p);
     if (rp.type != TOK_RPAREN) {

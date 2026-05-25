@@ -208,6 +208,14 @@ vm_install_fault(UVM *vm, UWatcherInstallResult r, const char *opcode_name)
             vm_format_type_error_msg(vm,
                 "watcher install attempted from within scratch-frame eval");
             break;
+        case URBI_INSTALL_NO_OBSERVABLE_CELLS:
+            /* W0/v0.10.2: cond watcher with empty read-set is a program error.
+             * Use `whenever (e?) body` for event-driven subscriptions. */
+            vm->last_error = UVM_TYPE_ERROR;
+            vm_format_type_error_msg(vm,
+                "watcher install: condition observes no slots; "
+                "use 'whenever (e?) body' for event subscriptions");
+            break;
         case URBI_INSTALL_OK:
         default:
             /* Caller should not invoke this on URBI_INSTALL_OK.  Defensive. */
@@ -301,6 +309,8 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_LOAD_RECV]             = &&label_OP_LOAD_RECV,
         /* v0.7.2 S42 method-call ABI cleanup. */
         [OP_SELF]                  = &&label_OP_SELF,
+        /* v0.10.2-reactive W0 — whenever (e?) install. */
+        [OP_WHENEVER_EVENT_INSTALL] = &&label_OP_WHENEVER_EVENT_INSTALL,
     };
 
     DISPATCH();
@@ -1644,6 +1654,35 @@ dispatch:
                 install_at_event_runtime(vm, s, UWATCHER_AT_EVENT_SYNC, e, body, onleave);
             if (vm_install_result_is_fatal(r)) {
                 vm_install_fault(vm, r, "OP_AT_EVENT_SYNC_INSTALL");
+                HALT();
+            }
+            NEXT();
+        }
+
+        /* === W0/v0.10.2: OP_WHENEVER_EVENT_INSTALL ===
+         *
+         * ABC-encoded: A = event_reg, B = body_reg, C = onleave_reg (0xFF = absent).
+         * Identical shape to OP_AT_EVENT_INSTALL but arms the watcher with
+         * UWATCHER_WHENEVER_EVENT mode.  The body re-fires on every event emission
+         * (perpetual subscriber — no one-shot teardown).  Closes reactive F1. */
+        CASE(OP_WHENEVER_EVENT_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_event_operand(vm, s, A, "OP_WHENEVER_EVENT_INSTALL"))
+                HALT();
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_WHENEVER_EVENT_INSTALL", "body"))
+                HALT();
+            if (C != 0xFFU
+                && !vm_install_check_closure_operand(vm, s, C, "OP_WHENEVER_EVENT_INSTALL", "onleave"))
+                HALT();
+            UEvent   *ev      = (UEvent *)s->R[A].v.p;
+            UClosure *body    = (UClosure *)s->R[B].v.p;
+            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
+            UWatcherInstallResult r =
+                install_at_event_runtime(vm, s, UWATCHER_WHENEVER_EVENT, ev, body, onleave);
+            if (vm_install_result_is_fatal(r)) {
+                vm_install_fault(vm, r, "OP_WHENEVER_EVENT_INSTALL");
                 HALT();
             }
             NEXT();

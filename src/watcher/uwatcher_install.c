@@ -132,14 +132,27 @@ install_watcher_runtime(
         return URBI_INSTALL_TRACE_FAULT;
     }
 
-    /* Phase 5a (spec #2 §7.4): warn on empty read-set, then proceed.
-     * An inert watcher (one that never fires) is introspectable and can be
-     * stopped via its owning tag — no surprise no-op. */
-    if (vm->trace_read_set_count == 0) {
+    /* Phase 5a (W0/v0.10.2): empty read-set is a programming error for
+     * AT/WHENEVER watchers — reject.  Prior behavior was warn-and-proceed
+     * (inert watcher never fires), which silently no-op'd whenever (e?)
+     * because parse_whenever previously built AST_WATCHER and the event
+     * expression resolved no observable cells.  Now whenever (e?) routes to
+     * OP_WHENEVER_EVENT_INSTALL (not here), so any AT/WHENEVER AST_WATCHER
+     * reaching install with an empty read-set is either a parse bug or a
+     * legacy bytecode using a now-rejected pattern.  Fail loud.
+     *
+     * WAITUNTIL is exempt: its cond may observe no cells when it evaluates
+     * truthy immediately (the Phase 6 immediate-wake fast path unregisters
+     * the watcher before it needs to observe any cells).  Closes reactive F1. */
+    if (vm->trace_read_set_count == 0
+        && mode != UWATCHER_WAITUNTIL) {
         if (vm->host_log_fn)
             vm->host_log_fn(vm, URBI_LOG_WARN,
-                "watcher condition references no observable cells; will never fire");
-        /* Install proceeds — watcher is inert but introspectable. */
+                "watcher install rejected: condition has no observable cells "
+                "(if intent was event subscription, use `whenever (e?)`)");
+        vm->trace_overflow       = 0;
+        vm->trace_read_set_count = 0;
+        return URBI_INSTALL_NO_OBSERVABLE_CELLS;
     }
 
     /* Phase 5b (spec #2 §7.4): pool-alloc the watcher record. */

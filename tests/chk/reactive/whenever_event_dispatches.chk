@@ -1,0 +1,29 @@
+# Milestone: v0.10.2-reactive (W0)
+# Covers: whenever (named_event) {body} fires on every event emission.
+#         Reactive audit F1 / roadmap F5 / Pico v0.9.4 finding.
+#
+# Semantics: whenever (e?) re-fires on EVERY event emission — perpetual
+#   subscriber.  Distinct from at (e?) which is a one-shot subscriber.
+#   The body re-arms automatically; no explicit teardown/re-install needed.
+#
+# Note: W6 (sleep built-in) has not yet merged; however the body
+#   coroutines drain before the final Realm.tick_count read because the
+#   cooperative scheduler yields between each statement.  No sleep/yield
+#   workaround needed.
+#
+# Activated: 2026-05-25 as part of v0.10.2-reactive W0.
+
+Realm.tick_count = 0
+var e = Event.new()
+whenever (e?) { Realm.tick_count = Realm.tick_count + 1 }
+e!
+e!
+e!
+Realm.tick_count
+[00000000] 0
+[00000000] <event>
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] 3

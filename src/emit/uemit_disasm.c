@@ -406,6 +406,7 @@ static const char *opname(const UOpcode op) {
     case OP_LOAD_REALM_GLOBAL:    return "LOAD_REALM_GLOBAL";
     case OP_LOAD_RECV:            return "LOAD_RECV";
     case OP_SELF:                 return "SELF";
+    case OP_WHENEVER_EVENT_INSTALL: return "WHENEVER_EVENT_INSTALL";
     case OP_MAX:                  break;
     }
     return "OP?";

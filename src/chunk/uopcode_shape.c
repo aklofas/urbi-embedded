@@ -85,4 +85,8 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     /* v0.7.2 S42 OP_SELF: A=dst_reg (writes both R[A] and R[A+1]), B=recv_reg,
      * C=ic_site_index (runtime-validated like OP_GETSLOT, UOPK_UNUSED here). */
     [OP_SELF]                  = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
+
+    /* v0.10.2-reactive W0 OP_WHENEVER_EVENT_INSTALL: same ABC shape as
+     * OP_AT_EVENT_INSTALL (A=event_reg, B=body_reg, C=onleave/0xFF). */
+    [OP_WHENEVER_EVENT_INSTALL] = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
 };

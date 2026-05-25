@@ -38,11 +38,15 @@ struct UEvent;
  *                  guard fired); watcher NOT installed. */
 
 typedef enum {
-    URBI_INSTALL_OK           = 0,
-    URBI_INSTALL_OOM_POOL     = 1,
-    URBI_INSTALL_READSET_OVER = 2,
-    URBI_INSTALL_TRACE_FAULT  = 3,
-    URBI_INSTALL_RECURSIVE    = 4,
+    URBI_INSTALL_OK                  = 0,
+    URBI_INSTALL_OOM_POOL            = 1,
+    URBI_INSTALL_READSET_OVER        = 2,
+    URBI_INSTALL_TRACE_FAULT         = 3,
+    URBI_INSTALL_RECURSIVE           = 4,
+    URBI_INSTALL_NO_OBSERVABLE_CELLS = 5,  /* W0/v0.10.2: cond observes no cells;
+                                             * rejected as programming error (was
+                                             * warn-and-proceed).  Use whenever (e?)
+                                             * for event subscriptions. */
 } UWatcherInstallResult;
 
 /* === install_watcher_runtime ===
