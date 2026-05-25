@@ -8,22 +8,22 @@ All public API symbols are declared in `<urbi/urbi.h>`, `<urbi/types.h>`, `<urbi
 
 ## Status of this guide
 
-**This guide is accurate for the current API shape but retains some deprecated
-patterns that will be removed in a future release.**
+**This guide reflects the v0.10.3 API surface.** All code samples compile
+with `-Iinclude` alone; no `-Isrc` flag is required or permitted.
 
-The opaque VM allocation API (`urbi_vm_create()` / `urbi_vm_free()` /
-`urbi_vm_sizeof()` / `urbi_vm_alignof()`) landed in v0.10.3 (Wave 4 W1).
-New code should use `urbi_vm_create` and never include `src/vm/uvm.h`.
-The Quick Start section below shows the recommended pattern first.
+**API tiers.** Public symbols are classified into two tiers:
 
-Snippets still marked **DEPRECATED** in this guide include `vm/uvm.h` from
-`src/` and pass `-Isrc`; those reflect the old stack-allocation pattern and
-will be replaced by W6 of the v0.10.x refactor arc. Until then:
+- **Stable (`URBI_STABLE`)** — committed API surface; changes require a
+  minor-version bump. Everything shown in this guide without a special
+  annotation is stable.
+- **Experimental (`URBI_EXPERIMENTAL`)** — declared in `<urbi/urbi.h>` but
+  subject to change within v0.10.x. Annotated at the declaration site. Avoid
+  in production code unless you can track the changelog.
+- **Advanced (`URBI_ADVANCED`)** — for platform-port authors; documented in
+  `docs/api-surface-tiers.md`.
 
-- `urbi_stdlib_boot()` is now called automatically inside
-  `urbi_realm_global()`. Embedder code that calls it explicitly is harmless
-  today but redundant, and the symbol is not declared in any public header
-  (it lives in `src/stdlib/stdlib_boot.h`). Remove it from new code.
+See `docs/api-surface-tiers.md` for the full tier registry and stability
+guarantees.
 
 The authoritative statement of what is and is not public API remains line 5
 of this document: **never include headers from `src/` in production code**.
@@ -148,95 +148,6 @@ struct UVM *vm_init_static(UVMAllocFn alloc)
 }
 ```
 
-For a fully self-contained Quick Start using the older stack-allocation
-pattern (still supported; see `urbi_vm_init` / `urbi_vm_destroy` in the
-public header):
-
-> **DEPRECATED — internal header use.** The snippet below references
-> `vm/uvm.h` from `src/`. Do not use `-Isrc` in new code; prefer
-> `urbi_vm_create` above.
-
-```c
-/* STANDALONE EXAMPLE — compile with:
- *   cc -std=c99 -Iinclude -Isrc quick_start.c build/host/liburbi.a \
- *      build/host/liburbi_aux.a -lm -o quick_start
- *
- * DEPRECATED: `-Isrc` is required here because `vm/uvm.h` is an internal
- * header that exposes the full `struct UVM` layout for stack allocation.
- * The public headers in `include/urbi/` provide only an opaque
- * forward declaration. Prefer `urbi_vm_create` for new code.
- *
- * Requires: liburbi.a and liburbi_aux.a already built (run `make`). */
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include "urbi/urbi.h"
-#include "urbi/types.h"
-#include "urbi/aux.h"
-#include "vm/uvm.h"   /* DEPRECATED: internal header; needed today for stack allocation */
-
-/* Simple allocator that wraps the system heap. */
-static void *sys_alloc(void *ptr, size_t nbytes, void *ud)
-{
-    (void)ud;
-    if (ptr == NULL && nbytes == 0) return NULL;
-    if (nbytes == 0) { free(ptr); return NULL; }
-    return ptr ? realloc(ptr, nbytes) : malloc(nbytes);
-}
-
-/* Writer: route urbiscript cout/cerr to stdout/stderr. */
-static void writer(void *ud, const char *ch, size_t ch_len,
-                   const char *msg, size_t msg_len, uint64_t ts_us)
-{
-    (void)ud; (void)ch_len; (void)ts_us;
-    FILE *f = (ch[0] == 'c' && ch[1] == 'e') ? stderr : stdout;
-    fprintf(f, "[%s] %.*s\n", ch, (int)msg_len, msg);
-}
-
-int main(void)
-{
-    /* Confirm compile-time header matches link-time library. */
-    if (urbi_aux_check_version() != URBI_OK) {
-        fprintf(stderr, "ABI version mismatch\n");
-        return 1;
-    }
-
-    struct UVM vm;
-    if (urbi_vm_init(&vm, sys_alloc, NULL) != URBI_OK) {
-        fprintf(stderr, "urbi_vm_init: out of memory\n");
-        return 1;
-    }
-    urbi_set_writer(&vm, writer, NULL);
-
-    /* Compile a one-line script and run it. */
-    const char *src = "cout << 42 + 1 << endl;";
-    size_t src_len = 23;
-    unsigned char *bc  = NULL;
-    size_t         bc_len = 0;
-    char           errbuf[256];
-    if (urbi_compile_source(&vm, src, src_len, "<quick_start>",
-                             &bc, &bc_len, errbuf, sizeof(errbuf)) != URBI_OK) {
-        fprintf(stderr, "compile error: %s\n", errbuf);
-        urbi_vm_destroy(&vm);
-        return 1;
-    }
-
-    UValue result;
-    int rc = urbi_aux_load_and_run(&vm, bc, bc_len, &result);
-    free(bc);
-
-    if (rc != URBI_OK) {
-        fprintf(stderr, "run error: %d\n", rc);
-        urbi_vm_destroy(&vm);
-        return 1;
-    }
-
-    urbi_vm_destroy(&vm);
-    return 0;
-}
-```
-
 ### Step loop for event-driven operation
 
 In an event-driven system the host drives the VM in a loop rather than calling a single blocking `urbi_vm_run`. The step result controls what the host does next:
@@ -269,7 +180,7 @@ void urbi_task(struct UVM *vm)
 
 ### Teardown
 
-`urbi_vm_destroy` releases all GC-managed memory and unregisters event handlers. It is safe to call even if `urbi_vm_init` returned an error (partial-init state is cleaned up on the destroy path).
+`urbi_vm_free(vm)` releases all GC-managed memory and unregisters event handlers. For VMs created with `urbi_vm_init` (static/BSS allocation), use `urbi_vm_destroy(vm)` instead; both perform the same teardown but `urbi_vm_free` also frees the opaque allocation returned by `urbi_vm_create`.
 
 ---
 
@@ -316,14 +227,26 @@ loop drains it.
 
 ### See also
 
-- `docs/internals/loader-strand.md` — full mechanics.
-- `docs/internals/loader-strand.md` — persistent loader strand internals and language-level commitment.
+- `docs/internals/loader-strand.md` — full mechanics, persistent loader strand internals, and language-level commitment.
 
 ---
 
 ## 3. Allocator Strategy
 
 The VM uses a single allocator callback — `UVMAllocFn` — for every heap allocation (GC cells, intern table, scheduler queues, IC tables). The callback follows `realloc` semantics:
+
+**Default pattern for new embedders:** use `urbi_vm_create(alloc, ud)` to let
+the runtime allocate the VM struct through your allocator. This is the
+recommended path and is what all examples in this guide use.
+
+**Bundled port examples.** The bundled examples (`examples/pico/`,
+`examples/stm32f4/`, `examples/esp32/`) use `urbi_vm_sizeof` /
+`urbi_vm_alignof` + static BSS allocation via `urbi_vm_init` because they
+target deeply embedded targets (Cortex-M0+, Cortex-M4, Xtensa LX7) where
+heap budget is tight and placing `struct UVM` in a specific SRAM region is
+required. The static-allocation pattern is fully supported for advanced port
+authors; new embedders on host-class hardware should default to
+`urbi_vm_create`.
 
 | `ptr` | `nbytes` | meaning |
 |---|---|---|
@@ -459,15 +382,14 @@ heartbeat: { every (500) led_toggle() };
 heartbeat.stop();
 ```
 
-The strand inherits the caller's ambient tag scope; `tag.stop()` cancels via the existing cleanup cascade. Body execution time delays subsequent fires (body+sleep model — the period is the minimum interval between fires, not a guaranteed cadence). The scheduler's sleep-queue drives re-arming directly from C; there is no urbiscript-side `sleep()`.
+The strand inherits the caller's ambient tag scope; `tag.stop()` cancels via the existing cleanup cascade. Body execution time delays subsequent fires (body+sleep model — the period is the minimum interval between fires, not a guaranteed cadence). The scheduler's sleep-queue drives re-arming directly from C. The `sleep(duration)` built-in is available from v0.10.2 onwards.
 
 See `tests/chk/reactive/every/*.chk` for canonical behaviour.
 
-**v0.9.4 limitations** (filed against v1.x):
+**Known limitations** (filed against v1.x):
 
-- A label-prefix on `every()` must use the brace-block form (`tag: { every(P) X }`); bare-prefix `tag: every(P) X` is a parse error per `src/parse/uparse_react.c:87`.
+- A label-prefix on `every()` must use the brace-block form (`tag: { every(P) X }`); bare-prefix `tag: every(P) X` is a parse error.
 - Closure-creation inside the body fails with `TypeError: CLOSURE: proto index out of range` (the body strand's `executing_proto.nested[]` does not include child protos). Pinned as a regression target in `tests/chk/reactive/every/nested.chk`.
-- The label-bound tag identifier itself is `nil` because `Tag.new()` is v1.x-deferred; the `.stop()` half of the canonical legacy idiom needs that constructor to actually cancel via the tag.
 
 ### Watcher-body-done callback (telemetry)
 
@@ -577,7 +499,8 @@ Parameters:
 - `nargs` — argument count.
 - `out` — write the return value here; initialized to NIL before the call.
 
-Return `UEXEC_OK` (0) on success, `UEXEC_THROW` (1) to signal an exception.
+Return `URBI_CB_OK` (0) on success, `URBI_CB_THROW` (2) to signal an exception.
+The legacy names `UEXEC_OK` / `UEXEC_THROW` are retained as aliases.
 
 ### Example: registering a sensor-read function
 
@@ -882,7 +805,7 @@ The callback installed by `urbi_set_watcher_body_done_fn` fires after every watc
 
 - `handle == URBI_WATCHER_HANDLE_INVALID` (0): a script-side `at`/`whenever` watcher completed.
 - `handle != 0`: a host-side `urbi_register_watcher` watcher completed; the handle matches what `urbi_register_watcher` returned.
-- `completion_status`: mirrors the strand's fatal status for script-side (`UEXEC_OK`, `UEXEC_THROW`, `UEXEC_TAG_STOP`, `UEXEC_CANCEL`); for host-side it is `URBI_OK` or `URBI_ERR_WATCHER_UNREGISTER`.
+- `completion_status`: mirrors the strand's unwind status for script-side (`URBI_UNWIND_OK`, `URBI_UNWIND_THROW`, `URBI_UNWIND_TAG_STOP`, `URBI_UNWIND_CANCEL`); for host-side it is `URBI_OK` or `URBI_CB_UNREGISTER`.
 
 **Important constraint:** The done callback runs at a deeply nested point inside the dispatch loop. Do not call urbi VM-mutating APIs from inside it. Safe operations include reading counters, posting to a host telemetry ring, or setting a volatile flag.
 
@@ -1135,7 +1058,7 @@ Camera frame buffers and DMA buffers are typically returned to the driver immedi
 
 ### Mixing allocators
 
-The urbi heap is managed entirely through the `UVMAllocFn` you supply at `urbi_vm_init`. Passing a pointer allocated by `pvPortMalloc` to an urbi API call that will eventually free it (or vice versa) creates a cross-allocator mismatch that corrupts both heaps.
+The urbi heap is managed entirely through the `UVMAllocFn` you supply at `urbi_vm_create` (or `urbi_vm_init`). Passing a pointer allocated by `pvPortMalloc` to an urbi API call that will eventually free it (or vice versa) creates a cross-allocator mismatch that corrupts both heaps.
 
 **Correct pattern:** keep allocator domains strictly separate. All urbi-internal memory flows through `UVMAllocFn`. All driver/host memory flows through the host allocator.
 
@@ -1153,9 +1076,7 @@ Each `UStrand` is bound to the VM and realm that created it. Passing a strand po
 
 `src/vm/uvm.h`, `src/sched/ustrand.h`, and similar internal headers are not part of the public API and may change without notice. Any embedder code that `#include`s them will break across releases.
 
-**Correct pattern:** use only `<urbi/urbi.h>`, `<urbi/types.h>`, `<urbi/aux.h>`, and `<urbi/version.h>`. If you need functionality that those headers do not expose, open an issue — don't reach through the internal layer.
-
-**Known temporary exception:** the Quick Start and REPL snippets in this guide currently include `vm/uvm.h` to stack-allocate `struct UVM`. This is acknowledged as a gap (see "Status of this guide" above) and is explicitly marked DEPRECATED in those snippets. The opaque allocation API (`urbi_vm_create()` / `urbi_vm_free()`) that removes this requirement is planned for the v0.10.x architectural refactor arc.
+**Correct pattern:** use only `<urbi/urbi.h>`, `<urbi/types.h>`, `<urbi/aux.h>`, and `<urbi/version.h>`. All code in this guide compiles with `-Iinclude` alone. If you need functionality that those headers do not expose, open an issue — don't reach through the internal layer.
 
 ---
 
@@ -1207,41 +1128,35 @@ For the on-the-wire shape, thread layout, and dispatcher internals, see `docs/in
 
 ### Minimal embedder
 
-> **DEPRECATED — internal header use.** The snippet below includes
-> `vm/uvm.h` and `stdlib/stdlib_boot.h` from `src/`, and calls
-> `urbi_stdlib_boot()` which is not declared in any public header.
-> Neither is a supported public embedding pattern. `urbi_stdlib_boot()`
-> is now called automatically inside `urbi_realm_global()`; the explicit
-> call here is redundant and will be removed once the opaque VM allocation
-> API (`urbi_vm_create()` / `urbi_vm_free()`) lands in Wave 4 of the
-> v0.10.x architectural refactor arc. **Do not use these patterns in new
-> code.**
-
 ```c
 /* FRAGMENT — minimal REPL embedder.
  * Requires URBI_ENABLE_REPL=1 build flags and link against liburbi.a + -lm.
- * Compile-only validated; linking deferred (URBI_ENABLE_REPL symbols not in
- * default build).
+ * Compile-only validated with default build; URBI_ENABLE_REPL symbols require
+ * URBI_ENABLE_REPL=1 at library build time for the link to succeed.
  *
- * DEPRECATED: vm/uvm.h and stdlib/stdlib_boot.h are internal src/ headers.
- * urbi_stdlib_boot() is internal-only and is now auto-called internally.
- * This pattern will be replaced by urbi_vm_create() in a future release. */
+ * urbi_stdlib_boot() is NOT called here — it is invoked automatically inside
+ * urbi_realm_global(). Do not call it in new code. */
 
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "urbi/urbi.h"
 #include "urbi/repl.h"
-#include "vm/uvm.h"               /* DEPRECATED: internal header; needed today for stack allocation */
-#include "stdlib/stdlib_boot.h"   /* DEPRECATED: internal header; urbi_stdlib_boot is not public */
+
+static void *sys_alloc(void *ptr, size_t nbytes, void *ud)
+{
+    (void)ud;
+    if (nbytes == 0) { free(ptr); return NULL; }
+    return realloc(ptr, nbytes);
+}
 
 static volatile sig_atomic_t running = 1;
 static void on_sigint(int sig) { (void)sig; running = 0; }
 
-int main(void)
+static void repl_main(void)
 {
-    struct UVM vm;
-    if (urbi_vm_init(&vm, NULL, NULL) != URBI_OK) return 1;
-    urbi_stdlib_boot(&vm);  /* DEPRECATED: now auto-called by urbi_realm_global(); remove from new code */
+    struct UVM *vm = urbi_vm_create(sys_alloc, NULL);
+    if (!vm) { fprintf(stderr, "urbi_vm_create: OOM\n"); return; }
 
     UReplConfig cfg = {
         .bind_addr          = "127.0.0.1",  /* loopback => no token needed */
@@ -1251,11 +1166,11 @@ int main(void)
     };
 
     int err = 0;
-    UReplServer *server = urbi_repl_serve(&vm, &cfg, &err);
+    UReplServer *server = urbi_repl_serve(vm, &cfg, &err);
     if (!server) {
         fprintf(stderr, "urbi_repl_serve: err=%d\n", err);
-        urbi_vm_destroy(&vm);
-        return 1;
+        urbi_vm_free(vm);
+        return;
     }
 
     signal(SIGINT, on_sigint);
@@ -1264,12 +1179,11 @@ int main(void)
      * boundary; the listener pthread + per-client reader pthreads accept
      * and parse on their own. */
     while (running) {
-        urbi_step(&vm, 1024, NULL);
+        urbi_step(vm, 1024, NULL);
     }
 
     urbi_repl_stop(server);
-    urbi_vm_destroy(&vm);
-    return 0;
+    urbi_vm_free(vm);
 }
 ```
 

@@ -48,7 +48,7 @@ GUIDE="docs/embedding-guide.md"
 LIB="${BUILDDIR}/liburbi.a"
 LIBURBI_AUX="${BUILDDIR}/liburbi_aux.a"
 CC="${CC:-cc}"
-CFLAGS_BASE="-std=c99 -Wall -Wextra -Wpedantic -Os -Iinclude -Isrc"
+CFLAGS_BASE="-std=c99 -Wall -Wextra -Wpedantic -Os -Iinclude"
 
 # Reduce pedantic noise on fragment wrapping (unused vars, missing prototypes).
 FRAGMENT_EXTRA="-Wno-unused-variable -Wno-unused-function -Wno-unused-parameter -Wno-missing-prototypes -Wno-missing-declarations"
