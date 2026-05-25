@@ -18,8 +18,8 @@ Tiers:
   declared in any `include/urbi/*.h` header. Should not be used by
   embedders. Will be moved to `src/` visibility in a future cleanup.
 
-Note: Inline functions (`urbi_make_*`, `urbi_value_*`, `urbi_in_isr`) and
-URBI_DEBUG-only functions (`urbi_get_determinism_checksum`,
+Note: Inline functions (`urbi_make_*`, `urbi_value_*`) and URBI_DEBUG-only
+functions (`urbi_in_isr`, `urbi_get_determinism_checksum`,
 `urbi_call_host_with_watchdog`) are declared in public headers but do not
 appear as `T` symbols in `nm` output. They are documented here for
 completeness but the CI gate only checks the "exported but undocumented"
@@ -161,10 +161,6 @@ New public symbols require a PR-review-touch on this manifest.
 
 - `urbi_lock_heap`
 
-### ISR (inline — not exported as T symbol in non-debug builds)
-
-- `urbi_in_isr`
-
 ### Miscellaneous T1
 
 - `urbi_require_fail`, `urbi_set_require_fail_hook`,
@@ -177,7 +173,10 @@ New public symbols require a PR-review-touch on this manifest.
 Decorated with `URBI_ADVANCED` in the respective header.
 
 - `urbi_vm_init`, `urbi_vm_destroy` (static-allocation embedders; most
-  embedders use `urbi_vm_create`/`urbi_vm_free` instead)
+  embedders will use `urbi_vm_create`/`urbi_vm_free` once W1 lands —
+  pending W1 / opaque allocation API, not yet in liburbi.a)
+- `urbi_in_isr` (URBI_DEBUG builds only — absent in release builds;
+  regular extern function, not inline, decorated with `URBI_ADVANCED`)
 - `urbi_get_determinism_checksum` (URBI_DEBUG builds only — absent in
   release builds; used by test harnesses)
 - `urbi_chunk_instance_create`, `urbi_chunk_instance_destroy`

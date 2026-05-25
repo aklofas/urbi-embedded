@@ -12,7 +12,7 @@
 #ifndef URBI_GC_H
 #define URBI_GC_H
 
-#include "urbi/version.h"  /* URBI_ADVANCED, URBI_EXPERIMENTAL */
+#include "urbi/version.h"  /* URBI_ADVANCED (URBI_EXPERIMENTAL / URBI_DEPRECATED reserved) */
 #include "gc/ugc.h"
 
 #if URBI_GC == URBI_GC_INCREMENTAL

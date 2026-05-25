@@ -19,7 +19,7 @@
  * pre-v0.5.5 `#include "sched/ustrand.h"` that pulled an internal header
  * into the public surface; closes API-012 / INC-003 structurally.
  * v0.9.2: UModule removed (struct deleted; a module IS its root UProto). */
-#include "urbi/version.h"  /* URBI_ADVANCED, URBI_EXPERIMENTAL, URBI_DEPRECATED */
+#include "urbi/version.h"  /* URBI_ADVANCED (URBI_EXPERIMENTAL / URBI_DEPRECATED reserved) */
 #include "urbi/types.h"
 #include "urbi/require.h"  /* URBI_REQUIRE — invariant macro that fires in all build modes */
 
@@ -925,7 +925,7 @@ URBI_ADVANCED URBI_NORETURN void urbi_panic(const char *msg);
  * be written without requiring a complete struct UVM definition in the
  * embedder's TU.  Closes the structural half of API-018 / GC-012. */
 #ifdef URBI_DEBUG
-bool urbi_in_isr(const struct UVM *vm);
+URBI_ADVANCED bool urbi_in_isr(const struct UVM *vm);
 #endif
 
 /* URBI_ASSERT_NOT_ISR: in URBI_DEBUG builds, asserts the function is not

@@ -36,10 +36,16 @@ LIBS=("$LIB")
 if [ -f "$LIBAUX" ]; then
     LIBS+=("$LIBAUX")
 fi
-EXPORTED=$(nm "${LIBS[@]}" 2>/dev/null \
+EXPORTED=$(nm "${LIBS[@]}" \
     | grep ' T urbi_' \
     | awk '{print $NF}' \
-    | sort -u)
+    | sort -u \
+    || true)
+
+if [ -z "$EXPORTED" ]; then
+    echo "FAIL: nm returned no urbi_ symbols from ${LIBS[*]} — nm may have failed or the archive is empty" >&2
+    exit 1
+fi
 
 # Symbols listed in the manifest (backtick-quoted `urbi_*` patterns).
 # Pattern allows mixed-case and digits (e.g. urbi_encode_utf8,
