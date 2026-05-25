@@ -269,7 +269,9 @@ typedef enum {
     UCHUNK_LOAD_MALFORMED_UPVALUE,      /* OP_CLOSURE upvalue pseudo-instr has invalid in_stack or src_idx */
     UCHUNK_LOAD_JMP_OUT_OF_BOUNDS,      /* OP_JMP Bx target pc outside [0, instr_count) */
     UCHUNK_LOAD_CALL_NRESULTS_ZERO,     /* OP_CALL C low-7 == 0 (nresults+1 must be >= 1) */
-    UCHUNK_LOAD_RESERVED_OPCODE         /* opcode is reserved/unimplemented at this wire version */
+    UCHUNK_LOAD_RESERVED_OPCODE,        /* opcode is reserved/unimplemented at this wire version */
+    /* --- bytecode F3: ic_index DFS pre-order mirror (W8 verifier pass) --- */
+    UCHUNK_LOAD_IC_INDEX_MISMATCH       /* proto->ic_index does not match its DFS pre-order visit index */
 } UChunkLoadError;
 
 /* Per-proto cap on instruction count.  Bytecode-encoded as varint;
@@ -360,6 +362,21 @@ void uchunk_destroy(UProto *root, struct UVM *vm);
 
 /* Return a static string such as "UCHUNK_LOAD_BAD_MAGIC" for debug. */
 const char *uchunk_load_error_name(UChunkLoadError code);
+
+/* uchunk_verify_ic_index — Walk the UProto tree rooted at `root` in DFS
+ * pre-order, verifying that every proto's ic_index matches its expected visit
+ * index (root = 0, then children left-to-right, recursing depth-first).
+ *
+ * Returns UCHUNK_LOAD_OK on success, UCHUNK_LOAD_IC_INDEX_MISMATCH on the
+ * first violation, UCHUNK_LOAD_INVALID_ARG if root is NULL.  `errmsg`/`errcap`
+ * receive a human-readable diagnostic on failure; pass (NULL,0) to suppress.
+ *
+ * Called internally by uchunk_deserialize (Pass 3).  Also exposed for unit
+ * tests that construct UProto trees via uproto_alloc_nested and patch ic_index
+ * directly (the wire-format path cannot produce mismatches since the
+ * deserializer assigns ic_index by construction). */
+UChunkLoadError uchunk_verify_ic_index(const UProto *root,
+                                       char *errmsg, size_t errcap);
 
 #ifdef __cplusplus
 }

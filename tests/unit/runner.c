@@ -279,6 +279,7 @@ extern void test_require_suite(void);
 extern void test_verify_chunk_bounds_suite(void);
 extern void test_sched_post_dispatch_alt_driver_suite(void);
 extern void test_strand_destroy_during_event_wait_suite(void);
+extern void test_ic_index_dfs_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -534,6 +535,7 @@ static const struct suite_entry suites[] = {
     {"verify_chunk_bounds",              test_verify_chunk_bounds_suite},
     {"sched_post_dispatch_alt_driver",   test_sched_post_dispatch_alt_driver_suite},
     {"strand_destroy_during_event_wait", test_strand_destroy_during_event_wait_suite},
+    {"ic_index_dfs",                     test_ic_index_dfs_suite},
     /* Add new suites here as test files are added. */
 };
 
