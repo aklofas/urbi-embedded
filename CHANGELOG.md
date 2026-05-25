@@ -1,5 +1,90 @@
 # Changelog
 
+## v0.10.2-reactive — 2026-05-25
+
+Wave 3 of the v0.10.x architectural refactor arc. Reactive primitives
+that were documented but broken-by-construction on cooperative embedded
+builds become functional end-to-end. Hardware testing on v0.9.4 (Pico)
+surfaced the gaps; this wave closes them.
+
+- **`whenever (named_event)`** parser+install (reactive F1, roadmap F5).
+  `parse_whenever` grows a `TOK_QUESTION` arm mirroring
+  `parse_at_event_form`; emits `AST_AT_EVENT` with new
+  `is_whenever = true` field; routes to new
+  `OP_WHENEVER_EVENT_INSTALL` (opcode 48). Watcher mode
+  `UWATCHER_WHENEVER_EVENT = 7` dispatches identically to AT_EVENT but
+  with no one-shot teardown — body re-fires on every event emission
+  (perpetual subscriber). Empty-read-set cond installs are now rejected
+  (`URBI_INSTALL_NO_OBSERVABLE_CELLS`) instead of warn-and-proceed.
+- **`OP_CLOSURE` inside `every`/`at`/`whenever` body strands** (reactive
+  F4, audit-1 F4). Body strand entry frame now binds the body closure's
+  proto as `root_proto` (was NULL → "CLOSURE: proto index out of range"
+  for any nested function literal). Fix in `spawn_periodic_body`
+  (`src/stdlib/temporal.c`) and `do_spawn_body_coroutine`
+  (`src/watcher/uwatcher_spawn.c`).
+- **AT_EVENT watcher unlink on tag-stop** (reactive F2).
+  `pending_onleave_queue_push` now synchronously calls
+  `uevent_at_watchers_remove` for AT_EVENT, AT_EVENT_SYNC, and
+  WHENEVER_EVENT before appending to the pending-onleave FIFO. Closes
+  the UAF window between drain-push and next-safepoint drain-pop where
+  `c_event_emit_async`/`_sync` would dispatch the doomed watcher's body.
+  Defence-in-depth `URBI_WATCHER_PENDING_UNREGISTER` checks in both
+  emit paths.
+- **Deferred slot-change ring GC root provider** (reactive F6, audit-1
+  F9, runtime-invariants F18 extended). New
+  `urbi_deferred_slot_changes_walk_roots` registered with the GC root
+  registry at `urbi_vm_init`. Today's cooperative invariant keeps the
+  ring contents reachable in practice; the walker becomes load-bearing
+  under future preemption upgrades and removes a foot-gun for
+  contributors who reorder safepoint actions.
+- **`Tag.new()` + `OP_TAG_STOP` + `UVAL_TAG` + script `.stop()`**
+  (reactive F3, audit-1 F5, legacy F4/F14 partial). Tag promoted to
+  a first-class value: new `UVAL_TAG = 12` UValKind + `URBI_VALUE_TAG`
+  public mirror + `urbi_make_tag` inline helper. New native methods on
+  `vm->tag_proto`: `new`, `stop`, `freeze`, `unfreeze`, `block`,
+  `unblock`, `enter`, `leave`. `OP_TAG_STOP` (opcode 30) replaces its
+  M3 reserved-stub with a real `urbi_tag_stop` call. UVAL_TAG is
+  runtime-only — not serialized into constant pools (loader rejects
+  `>UVAL_STR` per existing v1.0 contract).
+- **Bare-prefix tag-label form** (legacy F3, audit-1 F5 partial).
+  `parse_tag_prefix` accepts a single statement after `:` (no braces
+  required); restores the canonical legacy form `tag: every(P) X` from
+  AIBO/Reeti motion code. `tag_expr` remains AST_IDENT-only at v1.0;
+  the deeper `obj.subtag: stmt` form remains v1.x scope.
+- **`sleep(duration)` script-level built-in** (legacy F15,
+  v0.9.4-era Pico follow-up). `sleep_native` registered on realm
+  globals. Accepts `UVAL_INT` (microseconds — matches `100ms` time
+  literal) or `UVAL_FLOAT` (seconds). Blocks current strand via
+  `sched_strand_block(s, USTRAND_REASON_SLEEP, now_us + duration_us)`;
+  TAG_STOP on a sleeping strand wakes it via the existing
+  `sched_strand_unbind_from_sleep_queue` path. Two pre-existing latent
+  bugs activated by `sleep()` and fixed inline: (a) `OP_CALL` native
+  dispatch now exits the dispatch loop when
+  `USTRAND_IS_WAITING(s)` after a native call (was continuing on a
+  parked strand); (b) `uchunk_loader_drive` sets `out_slot = NULL` on
+  park so `OP_RET` doesn't write past the caller's already-returned
+  stack frame.
+
+ABI 0/14/0 → 0/14/1 (additive — UVAL_TAG in UValKind public enum +
+URBI_VALUE_TAG public mirror + new OP_WHENEVER_EVENT_INSTALL opcode).
+Wire format v1.8 / 0x18 → wire v1.9 / 0x19 (opcode space extension; no
+on-disk layout change otherwise).
+
+Activates fixtures: `tests/chk/reactive/whenever_event_dispatches.chk`,
+`tests/chk/reactive/every/nested.chk` (un-pinned),
+`tests/chk/reactive/every/closure_inside_body.chk`,
+`tests/chk/reactive/at_event_function_literal_body.chk`,
+`tests/chk/parse/tag_prefix_bare_statement.chk`,
+`tests/chk/control_transfer/tag_stop_basic.chk`,
+`tests/chk/reactive/every/cancel_tag.chk` (upgraded),
+`tests/chk/tag/scope.chk`,
+`tests/chk/temporal/sleep_basic.chk`,
+`tests/chk/temporal/sleep_in_strand.chk`,
+`tests/chk/temporal/sleep_tag_stop.chk` (deferred per
+W4-merge-followup — Tag.new+sleep interaction verification). Unit
+tests added: `test_deferred_slot_change_ring_roots` (5 cases),
+`test_at_event_unlink_on_tag_stop` (5 cases).
+
 ## v0.10.1-invariants — 2026-05-25
 
 Wave 2 of the v0.10.x architectural refactor arc: documented invariants
