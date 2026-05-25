@@ -696,6 +696,19 @@ dispatch:
                         s->pc++;
                         goto safepoint;
                     }
+                    /* W6/v0.10.2: a native method may block the strand (e.g.
+                     * sleep()) by calling sched_strand_block.  If the strand
+                     * is now WAITING, advance pc past this OP_CALL so the
+                     * scheduler resumes at the correct next instruction, then
+                     * exit the dispatch loop.  Mirrors OP_WAITUNTIL_INSTALL's
+                     * WAITING-exit at line ~1591.
+                     * strand_runnable_count is already decremented by
+                     * sched_strand_block (RUNNING → WAITING path). */
+                    if (USTRAND_IS_WAITING(s)) {
+                        s->pc++;
+                        steps_consumed++;
+                        goto exit_strand;
+                    }
                     NEXT();
                 }
                 vm->last_error = UVM_TYPE_ERROR;

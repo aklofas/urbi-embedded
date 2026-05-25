@@ -1,0 +1,25 @@
+# Milestone: v0.10.2-reactive (W6)
+# Covers: sleep(duration) is a callable global that returns nil.
+# Closes legacy audit F15 + v0.9.4-era Pico follow-up.
+#
+# Duration: UVAL_INT in microseconds.  Time literals: 1us = 1us = 1, 100ms = 100000.
+# The REPL drives urbi_step; sleep parks the loader strand and the runtime
+# resumes it after the sleep-queue timer fires.
+#
+# PASS criteria: sleep(1us) and sleep(0) return nil; code after sleep runs correctly.
+
+# sleep(1us) returns nil.
+sleep(1us)
+[00000000] nil
+
+# sleep(0) also returns nil (zero-duration sleep).
+sleep(0)
+[00000001] nil
+
+# After a sleep, subsequent reads are unaffected (no out_slot corruption).
+var x = 42
+sleep(1us)
+x
+[00000002] 42
+[00000003] nil
+[00000004] 42

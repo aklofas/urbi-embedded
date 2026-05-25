@@ -1,0 +1,32 @@
+# Milestone: v0.10.2-reactive (W6, activated post W4-merge)
+# Covers: TAG_STOP wakes a sleeping strand mid-sleep.
+# defer-to: W4-merge-followup (Tag.new() + .stop() not yet in integration branch)
+#
+# When W4 (Tag.new + OP_TAG_STOP + script .stop()) merges into
+# integration/v0.10.2-reactive, this fixture can be un-deferred:
+#   1. Remove this comment block.
+#   2. Add expected output lines.
+#   3. Confirm PASS on the integration branch.
+#
+# Mechanism: TAG_STOP on a sleeping strand calls sched_strand_unblock(s)
+# via urbi_tag_stop's member_strands walk (src/runtime/uunwind.c line ~542).
+# sched_strand_unblock removes the strand from the sleep queue and makes it
+# runnable; the strand resumes in UEXEC_TAG_STOP state.
+#
+# Verified at v0.10.2 W6 dispatch: urbi_tag_stop DOES call
+# sched_strand_unblock for WAITING strands, which removes from sleep_q via
+# sched_strand_unbind_from_sleep_queue (src/sched/usched_cooperative.c
+# sched_strand_unblock at line ~293). No additional change needed for W6.
+#
+# Once W4 is merged, implement:
+#
+#   var t = Tag.new("sleeper")
+#   Realm.caught = false
+#   t: { try { sleep(500ms) } catch (e) { Realm.caught = true } }
+#   sleep(50ms)   -- give the sleeper time to enter sleep queue
+#   t.stop()
+#   sleep(50ms)   -- give the unwind time to deposit
+#   Realm.caught
+#   [00000000] nil
+#   ...
+#   [N] true
