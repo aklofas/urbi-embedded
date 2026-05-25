@@ -124,6 +124,14 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
         return;
     }
 
+    /* Step 4a: bind root_proto so OP_CLOSURE at frame_count==0 finds
+     * body_proto->nested[] (reactive F4 fix).  arm_from_closure wires
+     * pc/pc_base/cur_consts from body->proto but does NOT set root_proto;
+     * without this OP_CLOSURE's executing_proto = s->root_proto is NULL
+     * and "CLOSURE: proto index out of range" halts the body strand. */
+    body->root_proto = w->body->proto;
+    urbi_proto_strand_ref_acquire(body->root_proto, URBI_PROTO_REF_OWNER_STRAND);
+
     /* Step 4b: wire module_instance so OP_GETSLOT/SETSLOT at frame_count==0
      * can resolve the IC table for the body closure.
      *
