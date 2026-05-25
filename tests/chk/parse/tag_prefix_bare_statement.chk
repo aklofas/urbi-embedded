@@ -1,0 +1,16 @@
+# Milestone: v0.10.2
+# Covers: legacy F3 — bare-prefix tag label `tag: stmt` parses without braces.
+#         parse_tag_prefix previously required `{ ... }` after `:`.
+#         This fixture confirms the bare-statement form is syntactically accepted
+#         and the body executes (using integer as tag key, no Tag.new required).
+#
+# W5/v0.10.2: parse_tag_prefix now peeks at the next token; if LBRACE, calls
+#         parse_block (existing behaviour); otherwise parses a single statement
+#         and wraps it in an implicit single-statement AST_BLOCK so the emit
+#         path is unchanged.  Closes legacy audit F3.
+#
+# See also: tests/chk/reactive/every/cancel_tag.chk (every() inside brace form —
+#           can be updated to bare form now that this gap is closed).
+
+var x = 0; var t = 0; t: x = 42; x
+[00000000] 42

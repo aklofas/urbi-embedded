@@ -87,7 +87,28 @@ UAstNode *desugar_postfix_emit(UParser *p, UAstNode *recv, UToken bang_tok) {
 UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
     consume(p);  /* consume ':' */
 
-    UAstNode *body = parse_block(p);
+    /* W5/v0.10.2: bare-prefix `tag: stmt` form (no braces required).
+     * If next token is `{`, parse a block (existing behaviour).
+     * Otherwise, parse a single statement/expression and wrap as an
+     * implicit AST_BLOCK so the emit path (which expects AST_BLOCK body)
+     * treats both forms identically.  Closes legacy audit F3. */
+    UAstNode *body;
+    if (peek(p).type == TOK_LBRACE) {
+        body = parse_block(p);
+    } else {
+        UAstNode *stmt = parse_statement_or_expr(p);
+        if (!stmt) return (UAstNode *)&uparser_oom_sentinel;
+        if (stmt->kind == AST_ERROR) return stmt;
+        /* Wrap in single-statement block so the emit path's AST_BLOCK
+         * handler runs without modification. */
+        body = make_node(p, AST_BLOCK, name_tok.line, name_tok.col);
+        if (!body) return (UAstNode *)&uparser_oom_sentinel;
+        UAstNode **stmts = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+        if (!stmts) return (UAstNode *)&uparser_oom_sentinel;
+        stmts[0] = stmt;
+        body->u.block.stmts = stmts;
+        body->u.block.count = 1;
+    }
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 
