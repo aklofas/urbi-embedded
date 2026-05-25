@@ -519,4 +519,28 @@ typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
 }
 #endif
 
+/* === URBI_FLOAT_TYPE link-time guard (audit-1 F2, roadmap F7) ===
+ *
+ * Every TU that includes this header (other than uabi_guards.c itself)
+ * references the symbol that matches the active URBI_FLOAT_TYPE value.
+ * src/runtime/uabi_guards.c defines exactly one such symbol per build.
+ * If embedder and library disagree on URBI_FLOAT_TYPE the reference
+ * is undefined at link time, producing a diagnostic name like
+ *   urbi_abi_requires_float_type_8 (undefined)
+ * rather than silent UVAL_FLOAT truncation.
+ *
+ * Suppressed when URBI_INTERNAL_GUARD_REF=1 (i.e. inside uabi_guards.c
+ * itself, which defines the symbols and must not also reference them). */
+#ifndef URBI_INTERNAL_GUARD_REF
+#  if URBI_FLOAT_TYPE == 4
+extern const int urbi_abi_requires_float_type_4;
+static const int *urbi_abi_float_guard_ref __attribute__((unused)) =
+    &urbi_abi_requires_float_type_4;
+#  elif URBI_FLOAT_TYPE == 8
+extern const int urbi_abi_requires_float_type_8;
+static const int *urbi_abi_float_guard_ref __attribute__((unused)) =
+    &urbi_abi_requires_float_type_8;
+#  endif
+#endif /* !URBI_INTERNAL_GUARD_REF */
+
 #endif /* URBI_TYPES_H */
