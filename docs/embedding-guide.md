@@ -6,6 +6,35 @@ All public API symbols are declared in `<urbi/urbi.h>`, `<urbi/types.h>`, `<urbi
 
 ---
 
+## Status of this guide
+
+**This guide is accurate for the current API shape but contains deprecated
+patterns that will be corrected in a future release.**
+
+Today (pre-v1.0), embedders who want to stack-allocate `struct UVM` must
+include `src/vm/uvm.h` and pass `-Isrc` at compile time. This is a known
+limitation: the public headers only forward-declare `struct UVM`; they do
+not expose its full definition. The proper opaque allocation API
+(`urbi_vm_create()` / `urbi_vm_free()`) is planned for the v0.10.x
+architectural refactor arc (Wave 4 W6). Until that lands:
+
+- Snippets in this guide that include `vm/uvm.h` or `stdlib/stdlib_boot.h`
+  from `src/` are **marked DEPRECATED**. They reflect today's only available
+  pattern, not the intended public API.
+- All such snippets pass `-Isrc` at compile time. That flag and those
+  headers will become unnecessary once the opaque API ships.
+- `urbi_stdlib_boot()` is now called automatically inside
+  `urbi_realm_global()`. Embedder code that calls it explicitly is harmless
+  today but redundant, and the symbol is not declared in any public header
+  (it lives in `src/stdlib/stdlib_boot.h`). Remove it from new code.
+
+The authoritative statement of what is and is not public API remains line 5
+of this document: **never include headers from `src/` in production code**.
+The deprecated snippets below violate that rule as a temporary workaround
+only.
+
+---
+
 ## Vocabulary
 
 The runtime uses two nouns:
@@ -52,17 +81,25 @@ layout unchanged). ABI 0/12/0 → 0/13/0.
 
 The minimum viable embedding: allocate a VM, initialize it with a heap allocator, run a script, then destroy it.
 
+> **DEPRECATED — internal header use.** The snippet below references
+> `vm/uvm.h` from `src/`. This is not a supported public embedding
+> pattern; it works today only because the public API does not yet expose
+> opaque VM allocation. **Do not use in new code.** A supported opaque API
+> (`urbi_vm_create()` / `urbi_vm_free()`) lands in Wave 4 of the v0.10.x
+> architectural refactor arc; until then, embedders should treat this
+> snippet as best-effort and consult the "Status of this guide" section
+> above.
+
 ```c
 /* STANDALONE EXAMPLE — compile with:
  *   cc -std=c99 -Iinclude -Isrc quick_start.c build/host/liburbi.a \
  *      build/host/liburbi_aux.a -lm -o quick_start
  *
- * Note: `-Isrc` is needed to get the full UVM struct definition from
- * src/vm/uvm.h so you can stack-allocate `struct UVM`. On embedded
- * targets this header is copied into your component's include path as
- * part of the integration setup. Public headers in include/urbi/ provide
- * the opaque forward declaration; the full definition for stack allocation
- * lives in src/vm/uvm.h.
+ * DEPRECATED: `-Isrc` is required here because `vm/uvm.h` is an internal
+ * header that exposes the full `struct UVM` layout for stack allocation.
+ * The public headers in `include/urbi/` provide only an opaque
+ * forward declaration. This pattern will be replaced by `urbi_vm_create()`
+ * in a future release; do not use `-Isrc` in new production code.
  *
  * Requires: liburbi.a and liburbi_aux.a already built (run `make`). */
 
@@ -72,7 +109,7 @@ The minimum viable embedding: allocate a VM, initialize it with a heap allocator
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 #include "urbi/aux.h"
-#include "vm/uvm.h"   /* full UVM definition for stack allocation */
+#include "vm/uvm.h"   /* DEPRECATED: internal header; needed today for stack allocation */
 
 /* Simple allocator that wraps the system heap. */
 static void *sys_alloc(void *ptr, size_t nbytes, void *ud)
@@ -898,6 +935,8 @@ Each `UStrand` is bound to the VM and realm that created it. Passing a strand po
 
 **Correct pattern:** use only `<urbi/urbi.h>`, `<urbi/types.h>`, `<urbi/aux.h>`, and `<urbi/version.h>`. If you need functionality that those headers do not expose, open an issue — don't reach through the internal layer.
 
+**Known temporary exception:** the Quick Start and REPL snippets in this guide currently include `vm/uvm.h` to stack-allocate `struct UVM`. This is acknowledged as a gap (see "Status of this guide" above) and is explicitly marked DEPRECATED in those snippets. The opaque allocation API (`urbi_vm_create()` / `urbi_vm_free()`) that removes this requirement is planned for the v0.10.x architectural refactor arc.
+
 ---
 
 ## 11. Threading Model
@@ -948,18 +987,32 @@ For the on-the-wire shape, thread layout, and dispatcher internals, see `docs/in
 
 ### Minimal embedder
 
+> **DEPRECATED — internal header use.** The snippet below includes
+> `vm/uvm.h` and `stdlib/stdlib_boot.h` from `src/`, and calls
+> `urbi_stdlib_boot()` which is not declared in any public header.
+> Neither is a supported public embedding pattern. `urbi_stdlib_boot()`
+> is now called automatically inside `urbi_realm_global()`; the explicit
+> call here is redundant and will be removed once the opaque VM allocation
+> API (`urbi_vm_create()` / `urbi_vm_free()`) lands in Wave 4 of the
+> v0.10.x architectural refactor arc. **Do not use these patterns in new
+> code.**
+
 ```c
 /* FRAGMENT — minimal REPL embedder.
  * Requires URBI_ENABLE_REPL=1 build flags and link against liburbi.a + -lm.
  * Compile-only validated; linking deferred (URBI_ENABLE_REPL symbols not in
- * default build). */
+ * default build).
+ *
+ * DEPRECATED: vm/uvm.h and stdlib/stdlib_boot.h are internal src/ headers.
+ * urbi_stdlib_boot() is internal-only and is now auto-called internally.
+ * This pattern will be replaced by urbi_vm_create() in a future release. */
 
 #include <signal.h>
 #include <stdio.h>
 #include "urbi/urbi.h"
 #include "urbi/repl.h"
-#include "vm/uvm.h"               /* struct UVM for stack allocation */
-#include "stdlib/stdlib_boot.h"   /* urbi_stdlib_boot */
+#include "vm/uvm.h"               /* DEPRECATED: internal header; needed today for stack allocation */
+#include "stdlib/stdlib_boot.h"   /* DEPRECATED: internal header; urbi_stdlib_boot is not public */
 
 static volatile sig_atomic_t running = 1;
 static void on_sigint(int sig) { (void)sig; running = 0; }
@@ -968,7 +1021,7 @@ int main(void)
 {
     struct UVM vm;
     if (urbi_vm_init(&vm, NULL, NULL) != URBI_OK) return 1;
-    urbi_stdlib_boot(&vm);
+    urbi_stdlib_boot(&vm);  /* DEPRECATED: now auto-called by urbi_realm_global(); remove from new code */
 
     UReplConfig cfg = {
         .bind_addr          = "127.0.0.1",  /* loopback => no token needed */
