@@ -1,0 +1,24 @@
+# Milestone: v0.10.2-reactive (W1)
+# Covers: OP_CLOSURE inside at (e?) body resolves nested closure protos.
+#         Reactive audit F4 (watcher-body variant).
+#
+# Activated 2026-05-25 (W1): body strand root_proto fixed in
+# do_spawn_body_coroutine (uwatcher_spawn.c).  Prior to the fix, the watcher
+# body strand had root_proto == NULL so OP_CLOSURE at frame_count==0 halted
+# with "CLOSURE: proto index out of range".
+#
+# Semantics: at (e?) is a one-shot AT_EVENT subscriber.  One emit drives
+# one body-strand execution.  The body creates a function literal (OP_CLOSURE)
+# and calls it; the result is accumulated in Realm.tick_count.
+# Expected: inner(10) = 11; tick_count == 11 after one emit.
+
+Realm.tick_count = 0
+var e = Event.new()
+at (e?) { var inner = function (x) { x + 1 } | Realm.tick_count = Realm.tick_count + inner(10) }
+e!
+Realm.tick_count
+[00000000] 0
+[00000000] <event>
+[00000000] nil
+[00000001] nil
+[00000001] 11

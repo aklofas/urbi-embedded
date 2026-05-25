@@ -1,0 +1,29 @@
+# Milestone: v0.10.2-reactive (W1)
+# Covers: OP_CLOSURE inside every() body must resolve nested closure protos.
+#         Reactive audit F4 / audit-1 F4.
+#
+# Root cause (fixed): body strand armed without root_proto set, so at
+# frame_count == 0 OP_CLOSURE found executing_proto == NULL and halted
+# with "CLOSURE: proto index out of range".  Fix: spawn paths set
+# body->root_proto = body_closure->proto before urbi_strand_start.
+#
+# Mechanism: every(1us, body_fn) registers a UPeriodic.  The body creates
+# a function literal (OP_CLOSURE) on each fire and calls it.  The result
+# is accumulated in Realm.result.  Two trailing statement lines pump
+# enough urbi_step calls for the body to fire at least once.
+#
+# Note: sleep(duration) not yet available (W6 pending); the trailing
+# no-op lines drive the cooperative scheduler instead.
+#
+# Activated: 2026-05-25 as part of v0.10.2-reactive W1.
+
+var result = 0
+every (1us) { var local_fn = function (x) { x * 2 } | Realm.result = local_fn(7) }
+0
+0
+Realm.result
+[00000000] 0
+[00000000] nil
+[00000000] 0
+[00000000] 0
+[00000000] 14
