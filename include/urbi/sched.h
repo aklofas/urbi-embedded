@@ -56,6 +56,14 @@ extern "C" {
    selector at src/sched/usched.h:11), so the infix was pushed onto the
    first two enumerators instead. */
 #if URBI_SCHED_HAS_PRIORITY
+/* Opaque forward-declaration — full definition in src/sched/ustrand.h
+ * (internal).  Pre-v0.10.3 W2, sched.h pulled this in via
+ * <sched/usched.h>; that include was removed when public headers stopped
+ * leaking src/.  Re-declared here so the public API surface is
+ * self-consistent.  Currently latent because URBI_SCHED_HAS_PRIORITY is
+ * hard-defined to 0 by the cooperative scheduler (v1.0 baseline). */
+struct UStrand;
+
 typedef enum {
     URBI_SCHED_CLASS_DEFAULT  = 0,
     URBI_SCHED_CLASS_PRIORITY = 1,

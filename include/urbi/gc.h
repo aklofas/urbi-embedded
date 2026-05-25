@@ -36,8 +36,6 @@
 extern "C" {
 #endif
 
-/* === W2: public-header de-leak === */
-
 /* === Build-flag values (strategy selector) ===
  * Mirrors src/gc/ugc.h numeric values; both must stay in sync. */
 #define URBI_GC_INCREMENTAL    1   /* Incremental tri-color mark-sweep (default) */
@@ -105,7 +103,7 @@ typedef void (*UGcRootCallback)(struct UVM *vm, UValue *root, void *ctx);
 typedef void (*UGcRootProviderFn)(struct UVM *vm, UGcRootCallback cb, void *ctx);
 #endif
 
-/* === === end W2: public-header de-leak === === */
+/* === end W2: public-header de-leak === */
 
 /* Opaque GC-cell type — full layout (type_tag, gc_byte, payload) is in
  * src/gc/ugc.h for internal callers only.  External embedders use
@@ -132,7 +130,7 @@ void urbi_unpin(struct UVM *vm, UValue v);
  *
  * Non-inline ops (T23 provides implementations in ugc_incremental.c):
  *
- *   UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t type_tag);
+ *   struct UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t type_tag);
  *   void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);
  *   void   urbi_gc_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
  *   void   urbi_gc_register_root_provider(struct UVM *vm, UGcRootProviderFn provider);

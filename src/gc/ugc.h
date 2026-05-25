@@ -2,13 +2,16 @@
 /* GC umbrella header: common UCell/UType definitions, build-flag values,
  * type-tag constants, and non-inline GC C API declarations.
  *
- * Include hierarchy:
- *   ugc.h             <- this file (common defs + non-inline API)
- *   urbi/gc.h         <- strategy-dispatch router; includes ugc.h + strategy header
- *   ugc_incremental.h <- URBI_GC_INCREMENTAL strategy (gc_byte layout + barriers)
+ * Include hierarchy (post-W2):
  *
- * uvm.h includes urbi/gc.h so that inline barrier helpers are visible
- * throughout the interpreter.  DO NOT include uvm.h from this file (circular). */
+ *   <urbi/gc.h>              <- public surface (stands alone, no src/ includes)
+ *   src/gc/ugc.h             <- internal full struct/macros (this file)
+ *   src/gc/ugc_incremental.h <- strategy-specific inline barriers
+ *   src/gc/ugc_none.h        <- URBI_GC_NONE alternative strategy
+ *
+ * Internal callers include "gc/ugc_incremental.h" directly when they need
+ * the inline barrier helpers.  Public callers only see <urbi/gc.h>.
+ * DO NOT include uvm.h from this file (circular). */
 
 #ifndef UGC_H
 #define UGC_H
