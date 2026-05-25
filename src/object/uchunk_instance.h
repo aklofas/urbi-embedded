@@ -8,8 +8,7 @@
  * independent IC tables — IC fill in one instance does not bleed into the
  * other.
  *
- * Spec references:
- *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-getslot-setslot-encoding-design.md §4.1, §4.3
+ * Design references: pre-M4 getslot/setslot encoding §4.1/§4.3.
  *
  * Layout:
  *   UChunkInstance (GC cell, type_tag = UTYPE_MODULE_INSTANCE)

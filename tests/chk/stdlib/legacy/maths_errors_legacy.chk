@@ -3,7 +3,7 @@
 #
 # Legacy fixture asserts:
 #   - `1 / 0` raises `/: division by 0` — v1.0 returns IEEE-754 `inf`
-#     (REVIVAL §14.x divergence: arithmetic is float-IEEE-754, no
+#     (intentional v1.0 divergence: arithmetic is float-IEEE-754, no
 #     domain-error wrapping at the bytecode level).
 #   - `Math.sqrt(-10.0) / log(-10.0) / acos(-100.0) / asin(-100.0)`
 #     raise domain-specific diagnostics — v0.6.1 has no Math.sqrt /

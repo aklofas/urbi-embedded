@@ -450,7 +450,7 @@ static UAstNode *reject_bare_function_forms(UParser *p) {
         return make_error(p, PARSE_BARE_FUNCTION,
                           "bare 'function { body }' is retired at v1.0; "
                           "use 'function() { body }' (add empty parens). "
-                          "Per REVIVAL §14 L13: legacy bare functions ambiguously meant "
+                          "Legacy bare functions ambiguously meant "
                           "either 0-arg or no-formals — v1.0 requires explicit parens",
                           next.line, next.col);
     }
@@ -461,8 +461,7 @@ static UAstNode *reject_bare_function_forms(UParser *p) {
         if (peek(p).type == TOK_LBRACE) {
             return make_error(p, PARSE_BARE_FUNCTION,
                               "bare 'function name { body }' is retired at v1.0; "
-                              "use 'function name() { body }' (add empty parens). "
-                              "Per REVIVAL §14 L13",
+                              "use 'function name() { body }' (add empty parens)",
                               name_tok.line, name_tok.col);
         }
         return make_error(p, PARSE_NAMED_FUNCTION_NOT_SUPPORTED,

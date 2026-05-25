@@ -14,8 +14,8 @@
  *   System.Platform — kind constant set at compile time via #ifdef.
  *   Global        — reflective namespace; .length returns the live count
  *                   of slots on realm->global_object.
- *   CallMessage   — placeholder proto reserved for v1.x reflection
- *                   per REVIVAL §14 L14 (legacy fallback() support).
+ *   CallMessage   — placeholder proto reserved for v1.x legacy-fallback()
+ *                   reflection.
  *
  * Boot order: urbi_stdlib_register_namespaces(vm) is called from
  * urbi_stdlib_boot AFTER runtime_types.  Realm-global binding for the

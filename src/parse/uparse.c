@@ -38,7 +38,7 @@ const char * const kErrorMessages[] = {
     "expected '='",
     "expected ';', '|', or end of statement",
     "bare 'function { body }' is retired at v1.0; use 'function() { body }' (add parens)",
-    "the 'closure' keyword is retired at v1.0; use 'function' instead. MIGRATION TRAP: 'closure' bound 'this' lexically; 'function' binds at call site. See REVIVAL §14 L14",
+    "the 'closure' keyword is retired at v1.0; use 'function' instead. MIGRATION TRAP: 'closure' bound 'this' lexically; 'function' binds at call site.",
     "trailing '&' is illegal",
     "'lazy' keyword only allowed in parameter lists",
     "'try' requires at least one of 'catch' or 'finally'",

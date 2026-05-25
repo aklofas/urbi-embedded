@@ -103,9 +103,9 @@ struct UChunkInstance;   /* M4 T30 — defined in src/object/uchunk_instance.h *
  *     vm->deferred_slot_changes[head..tail] from the GC root walker (e.g.
  *     a new urbi_deferred_ring_walk_roots root provider registered with
  *     urbi_gc_register_root_provider).  Until then, runtime safety is
- *     contractual on the safepoint ordering.  See the workspace-root
- *     design-risks register entry "v1.x: deferred slot-change ring
- *     becomes weak under preemption" for the detailed upgrade plan.
+ *     contractual on the safepoint ordering.  The detailed upgrade plan
+ *     is tracked in the design-risks register under "v1.x: deferred
+ *     slot-change ring becomes weak under preemption".
  *
  * Storage: heap-allocated ring buffer, one urbi_vm-init calloc, freed in
  * urbi_vm_destroy.  NOT GC-managed at any tier — the cell entries are

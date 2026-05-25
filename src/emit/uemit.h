@@ -68,8 +68,7 @@ typedef enum {
     /* v0.6.2 Phase 2 — Gap #3 (this keyword) */
     EMIT_NO_THIS_OUTSIDE_METHOD     /* `this` used at top-level (fs->parent ==
                                        NULL).  Top-level `this` resolves to the
-                                       lobby object — deferred to v1.x
-                                       (REVIVAL §14 S29). */
+                                       lobby object — deferred to v1.x. */
 } UEmitError;
 
 /* Forward declaration for M2 FuncState lifecycle. */

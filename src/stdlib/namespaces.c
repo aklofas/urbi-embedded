@@ -373,8 +373,8 @@ urbi_stdlib_register_namespaces(UVM *vm)
 
     /* --- T91 CallMessage: stub proto ---
      *
-     * REVIVAL §14 L14 reserves CallMessage for the legacy fallback()
-     * reflection that lands at v1.x.  At v1.0 the proto exists as a
+     * CallMessage is reserved for the legacy fallback() reflection that
+     * lands at v1.x.  At v1.0 the proto exists as a
      * realm global so script code can pattern-match on its presence,
      * but no actual reflection methods are installed.  Expose a `kind`
      * marker slot so fixtures can verify the proto is bound non-nil. */

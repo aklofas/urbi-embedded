@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* ushape.h — UShape (hidden class) + UShapeMap (transition cache) + UProps.
  *
- * Spec references:
- *   docs/superpowers/specs/2026-04-24-urbi-pre-m2-object-model-design.md §3, §7.1, §7.2
- *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-uslot-uprops-collapse-design.md §4.1, §4.2, §5.1, §5.2
+ * Design references: pre-M2 object-model §3/§7.1/§7.2; pre-M4 uslot/uprops
+ * collapse §4.1/§4.2/§5.1/§5.2.
  *
  * Layout invariants pinned by tests/unit/test_ushape.c.  UShape header is
  * 56 bytes on 64-bit hosts (UCell + 6 B compiler-inserted pad + 7 payload

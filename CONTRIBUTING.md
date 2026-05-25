@@ -126,7 +126,7 @@ Keeping these independent matches Lua's `LUA_VERSION_NUM` / `LUAC_VERSION` / `LU
 
 ### Aux layer governance
 
-`<urbi/aux.h>` + `liburbi_aux.a` is the convenience layer. Rule: every aux function must be **strictly implementable via `<urbi/urbi.h>` public API**. No private header access, no internal state peeking, no performance shortcuts. Enforced at PR review: if a proposed aux function can't meet the rule, either refactor until it can, or propose the addition to core (paying the cost against the < 80-fn `urbi.h` budget per REVIVAL §6).
+`<urbi/aux.h>` + `liburbi_aux.a` is the convenience layer. Rule: every aux function must be **strictly implementable via `<urbi/urbi.h>` public API**. No private header access, no internal state peeking, no performance shortcuts. Enforced at PR review: if a proposed aux function can't meet the rule, either refactor until it can, or propose the addition to core (paying the cost against the 80-fn `urbi.h` budget cap).
 
 ## Layout policy
 
@@ -405,8 +405,8 @@ The default soft cap is 1000 LOC per `.c` source file (enforced by
   registers across opcodes.  Decomposing into per-opcode helpers would
   defeat the threading optimization that gives the VM ~10x dispatch-loop
   throughput on hosted builds and ~3x on Cortex-M7.  This exception is
-  permitted by `docs/superpowers/specs/2026-05-05-v0.5.x-cleanup-design.md`
-  §3.3 ("generated dispatch tables, opcode trampolines").
+  permitted by the v0.5.x cleanup design spec §3.3 ("generated dispatch
+  tables, opcode trampolines").
 
 ## v0.5.x cleanup ramp (2026-05-06 to 2026-05-09)
 

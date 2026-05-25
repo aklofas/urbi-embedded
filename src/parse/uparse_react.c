@@ -334,8 +334,8 @@ UAstNode *parse_whenever(UParser *p) {
  * body — so any legal statement form, including a brace block, works.
  *
  * The original urbi v2 surface used the retired `closure { ... }` form
- * here; v1.0 substitutes `function () { ... }` (see REVIVAL §14 L14).
- * The difference is at-call `this` binding vs. lexical, which doesn't
+ * here; v1.0 substitutes `function () { ... }` — the difference is
+ * at-call `this` binding vs. lexical, which doesn't
  * affect the body shape `every` runs (the helper invokes the closure
  * with no explicit receiver).
  */

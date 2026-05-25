@@ -6,8 +6,7 @@
 # get(key), has(key), remove(key).  Keys must be String at v1.0;
 # non-String keys raise TypeError.
 #
-# Iteration order is unspecified at v1.0 (REVIVAL §14 — joins
-# Lua / Ruby<1.9 / CPython pre-3.7).
+# Iteration order is unspecified at v1.0 (joins Lua / Ruby<1.9 / CPython pre-3.7).
 
 var d = Dict.new(); d.isEmpty()
 [00000000] true

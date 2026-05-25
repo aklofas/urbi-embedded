@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* test_ast_string.c — AST_STR node kind for string literals.
  *
- * Phase 1: parser folds escape sequences and adjacent-string concat
- * (REVIVAL §14.1 L3) into a heap-allocated buffer in the parser arena.
+ * Phase 1: parser folds escape sequences and adjacent-string concat (L3)
+ * into a heap-allocated buffer in the parser arena.
  * The AST_STR payload carries a non-owning view (bytes + len) into that
  * arena buffer; intern happens at emit time. */
 
@@ -70,7 +70,7 @@ static void parse_string_all_escapes(void) {
 }
 
 static void parse_adjacent_strings_concat(void) {
-    /* REVIVAL §14.1 L3: "a" "b" produces "ab" as a single AST_STR. */
+    /* Adjacent-string concat (L3): "a" "b" produces "ab" as a single AST_STR. */
     ParseCtx c;
     ctx_init(&c, "\"a\" \"b\"");
     UAstNode *expr = uparse_next_statement(&c.p);

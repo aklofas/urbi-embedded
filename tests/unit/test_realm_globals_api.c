@@ -308,8 +308,7 @@ UTEST(populate_and_set_global_const_share_reject_logic) {
      * because the packed-nibble shift is out of range past 31 bits, so
      * UProps[idx] stays NULL and the helper's UProps fallback can't see
      * a CONSTANT mark.  M6 spill-side-table will lift the cap; until
-     * then this is a documented v1.0 limitation (REVIVAL.md §14
-     * S-globals-cap-8).  The 7 names below cover the entire enforced
+     * then this is a documented v1.0 limitation (S-globals-cap-8).  The 7 names below cover the entire enforced
      * range — "Object" (slot 0) through "List" (slot 7) — so any future
      * helper divergence from populate's transition-property behaviour
      * surfaces here. */
@@ -368,8 +367,8 @@ UTEST(populate_and_set_global_const_share_reject_logic) {
  *
  * The cap is a v1.0 architectural limit; closing-via-doc + this regression
  * test pins the surface so a future M6+spill-table implementation can lift
- * it without silently regressing the contract.  See REVIVAL.md §14 row
- * S-globals-cap-8 + design-risks 'M6: realm-globals UProps spill side-table'.
+ * it without silently regressing the contract.  See design-risks entry
+ * S-globals-cap-8 / 'M6: realm-globals UProps spill side-table'.
  */
 UTEST(set_global_const_past_slot_7_installs_without_const_enforcement) {
     UVM vm;

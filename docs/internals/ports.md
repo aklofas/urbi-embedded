@@ -19,8 +19,8 @@ development target. Ports below cover bare-metal + RTOS silicon.
 - **Toolchain:** ESP-IDF v6.0.1 (`xtensa-esp32s3-elf-gcc`); hosted
   newlib (do NOT pass `-ffreestanding` to the `urbi` component;
   `urbi_aux` separately).
-- **Footprint:** ~120 KB liburbi.a text (revised cap from 105 KB during
-  bring-up; see REVIVAL §S32/§S33). PSRAM available on the EYE variant.
+- **Footprint:** ~120 KB liburbi.a text (cap revised from 105 KB during
+  bring-up). PSRAM available on the EYE variant.
 - **Numeric:** URBI_FLOAT_TYPE=4 (single precision); the Xtensa LX7
   has hardware single-precision FPU.
 - **REPL transports:** UART0 console + USB CDC (via TinyUSB ESP-IDF
@@ -78,8 +78,7 @@ development target. Ports below cover bare-metal + RTOS silicon.
   debounce → `urbi_inject_event` → event ring → `urbi_step` → C-side
   `urbi_register_watcher` callback → `gpio_xor_mask` toggles GP25 LED.
   Full hardware-validation record in
-  [`../release/hardware-validation.md`](../release/hardware-validation.md)
-  (created by a parallel doc pass).
+  [`../release/hardware-validation.md`](../release/hardware-validation.md).
 - **Toolchain:** `arm-none-eabi-gcc` 12+; ARMv6-M Thumb-2 subset
   (`-mcpu=cortex-m0plus`); soft-float + soft-double + soft-divide via
   ARM EABI libgcc helpers (`__aeabi_dadd`, `__aeabi_ddiv`, `__aeabi_f2d`,
@@ -105,7 +104,7 @@ development target. Ports below cover bare-metal + RTOS silicon.
   Calibration commands:
   `arm-none-eabi-size build/arm-cortex-m0plus/liburbi.a` (full) and
   `arm-none-eabi-size build/cross-pico-bytecode-only/liburbi.a` (BO).
-  Caps documented in REVIVAL.md §14 row S43.
+  Caps documented in CHANGELOG entry `v0.9.4-pico-example` footprint table.
 - **Numeric:** URBI_FLOAT_TYPE=4 (single precision); the M0+ has no
   FPU so all float arithmetic goes through libgcc soft-float helpers.
 - **REPL transports:** USB CDC (primary, via TinyUSB) on the native

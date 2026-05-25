@@ -239,7 +239,7 @@ Each transport is a vtable + opaque listener state. Concrete transports:
 UART transports are single-client: `accept_fn` returns success once on
 first call (the pre-opened UART fd) then returns "would block" forever
 after. No auth is required on UART by default (physical access is
-treated as auth — see REVIVAL.md §11.8).
+treated as auth).
 
 `accept_fn` returning non-zero is interpreted as "no client waiting"
 (treat as `EAGAIN`). `read_fn` / `write_fn` return positive transferred
@@ -598,5 +598,4 @@ Two known issues filed in `docs/urbi-embedded-design-risks.md`:
 - `docs/internals/realm-and-chunks.md` — URealm, the per-realm writer,
   and `urbi_realm_create_repl` (v0.9.0 foundation).
 - `<urbi/repl.h>` — public API surface.
-- REVIVAL.md §11 — protocol design rationale (NDJSON, transport
-  pluggability, default-secure posture).
+- `<urbi/repl.h>` — transport pluggability and default-secure posture rationale in header comments.

@@ -66,8 +66,7 @@ typedef struct UTag {
      * for spec stability, but the runtime does not set or read them in
      * v0.5.x — `Tag.freeze` and `Tag.stop`-state semantics land with the
      * stdlib at M6/M7.  Future flag adds need a header-comment update
-     * here and a corresponding macro at file head.  Spec #3 §3.4 + §6 +
-     * the stdlib design row in REVIVAL.md §14. */
+     * here and a corresponding macro at file head. */
     uint8_t  flags;                     /* UTAG_FLAG_FROZEN | UTAG_FLAG_STOPPED;
                                          * 0 in v0.5.x */
     uint8_t  pad1[3];

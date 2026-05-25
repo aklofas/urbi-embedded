@@ -1,8 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uobject.c — atom-family singletons + UObject allocator (M4 / T8).
  *
- * Spec references:
- *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-prototype-chain-representation-design.md §3, §4.1, §8.1
+ * Design references: pre-M4 prototype-chain representation §3/§4.1/§8.1.
  *
  * Per-VM lazy-allocated atom prototypes: root Object plus the eight built-in
  * atoms (Integer/Float/String/List/Dict/Tag/Event/Symbol).  T36's root

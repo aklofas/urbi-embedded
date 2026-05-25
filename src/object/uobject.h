@@ -5,9 +5,8 @@
  * is freestanding and may be included by any internal .c file that touches
  * object slots, prototypes, or hidden classes.
  *
- * Spec references:
- *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-prototype-chain-representation-design.md §3, §4
- *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-uslot-uprops-collapse-design.md §3
+ * Design references: pre-M4 prototype-chain representation §3/§4; pre-M4
+ * uslot/uprops collapse §3.
  *
  * Reconciliation note (T0 R-1): the spec's §3 shorthand `UGCHeader gc_hdr; // 8B`
  * collapses, in this codebase, to the existing 2-byte UCell embedded as the

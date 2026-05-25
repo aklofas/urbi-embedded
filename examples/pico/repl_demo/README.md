@@ -88,7 +88,7 @@ picocom -b 115200 --omap crlf --imap lfcrlf /dev/ttyACM0
 # or:
 screen /dev/ttyACM0 115200
 # or, with NDJSON awareness, the urbi-send / urbi-recv host tools shipped
-# under urbi-embedded/tools/ (workspace-root build).
+# built from the urbi-embedded tools/ directory.
 ```
 
 ### Option B: UART0 via USB-serial adapter

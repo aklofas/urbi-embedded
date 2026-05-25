@@ -11,7 +11,7 @@
  * Construction approach (per plan simplified path):
  *   - Note: the AST_AT_EVENT scripted-install register-allocation desync was
  *     a real codegen bug — fixed in v0.5.7-fixes Phase 2 (commits
- *     3af426c..dc98956), tracked in REVIVAL §14 row S-emit-freereg-discipline.
+ *     3af426c..dc98956).
  *   - Event.new() and scripted `at sync (e?) body` install are still not
  *     wirable end-to-end: Event.new() awaits M6 stdlib (the desync fix
  *     unblocks the codegen path but the constructor itself is still missing).

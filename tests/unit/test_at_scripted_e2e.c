@@ -94,9 +94,8 @@ UTEST(scripted_at_fires_on_rising_edge)
      * phase 1).  The non-top-frame OP_RET safepoint then calls
      * watcher_eval_dirty, which spawns the body strand on rising edge.
      * Detailed walk-through (incl. body-strand module_instance synthesis)
-     * lives in docs/superpowers/specs/2026-05-04-urbi-pre-m5-at-whenever-waituntil-design.md
-     * §4.  This test verifies presence + ordering; deep mechanism is
-     * the spec's responsibility. */
+     * lives in the M5 at/whenever/waituntil design spec §4.  This test
+     * verifies presence + ordering; deep mechanism is the spec's responsibility. */
     rc = utest_e2e_compile_and_run(&vm,
         "var trigger = function() { Realm.x = 10 }; trigger()",
         NULL);
