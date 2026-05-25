@@ -36,6 +36,19 @@ int bsp_button_register(struct UVM *vm);
  * NOOP if bsp_button_register has not yet wired up the event id. */
 void bsp_button_poll_isr(struct UVM *vm);
 
+/* DEBUG: synthetic injection of the `pressed` event from the main loop.
+ * Bypasses the BOOTSEL debounce path so we can verify watcher dispatch
+ * works independently of the QSPI_SS bit-bang trick.  Returns 0 on
+ * success, -1 if pressed_evt isn't registered yet. */
+int bsp_button_inject_synthetic_pressed(struct UVM *vm);
+
+/* Accessor for the `pressed` event id registered by bsp_button_register.
+ * Used by main.c to install a C-side watcher via urbi_register_watcher,
+ * bypassing the urbiscript-side `whenever (pressed)` path.  Returns
+ * URBI_EVENT_ID_INVALID before bsp_button_register has been called. */
+#include "urbi/urbi.h"
+urbi_event_id_t bsp_button_get_pressed_evt(void);
+
 #ifdef __cplusplus
 }
 #endif

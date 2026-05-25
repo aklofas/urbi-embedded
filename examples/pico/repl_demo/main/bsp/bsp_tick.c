@@ -76,7 +76,13 @@ static void tick_alarm_isr(void)
 
 int bsp_tick_register(struct UVM *vm)
 {
-    urbi_event_id_t evt = urbi_event_register(vm, NULL, "tick",
+    /* urbi_event_register rejects NULL realm (unlike urbi_register which
+     * defaults to global); pass the global realm explicitly. */
+    struct URealm *realm = urbi_realm_global(vm);
+    if (realm == NULL) {
+        return -1;
+    }
+    urbi_event_id_t evt = urbi_event_register(vm, realm, "tick",
                                               NULL, NULL);
     if (evt == URBI_EVENT_ID_INVALID) {
         return -1;

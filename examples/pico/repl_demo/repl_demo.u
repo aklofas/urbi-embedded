@@ -15,23 +15,32 @@
 //   button_pressed() => bool
 //   tick event    pressed event
 
-// Default-installed greeter — toggles LED + echoes on button press.
-// Brace-blocks required: `parse_tag_prefix` (uparse_react.c:87) calls
-// `parse_block` after the ':', so bare-prefix labels need `{ ... }`.
-greet: {
-    whenever (pressed) {
-        led_toggle();
-        echo("button pressed")
-    }
-};
+// MINIMAL — v0.9.4 Pico bring-up.  Just install the button watcher.
+//
+// echo() is deferred: the v0.9.1 echo is a LobbyMethods method that
+// requires a per-session Lobby, and this v0.9.4 Pico build skips the
+// REPL service entirely (heap doesn't fit — see main.c + design-risks).
+// Without echo, the watcher just toggles the LED; press BOOTSEL = LED
+// flips.  That's the demo's user-visible interaction.
+//
+// Restore echo() and the at(temp_celsius()...) watchers once the v1.x
+// lightweight-session REPL lands.
+whenever (pressed) {
+    led_toggle()
+}
 
-// Default-installed temperature threshold pair (complementary at/at).
-temp_watch_hot:  { at (temp_celsius() >  28.0) led_on()  };
-temp_watch_cool: { at (temp_celsius() <= 28.0) led_off() };
-
-// Banner — first thing visible on connect.
-echo("urbi-embedded v0.9.4 on Raspberry Pi Pico");
-echo("verbs: led_on/off/toggle, led_pwm(d), temp_celsius(), button_pressed()");
-echo("events: tick / pressed");
-echo("idiom: heartbeat: { every (P) X }; heartbeat.stop()  (Tag.new deferred v1.x)");
-echo("type 'greet.stop()' / 'temp_watch_hot.stop()' to disable defaults")
+// NOTE 1: top-level echo() calls were removed during v0.9.4 bring-up
+// because `echo` is a LobbyMethods method that requires a Lobby
+// instance — Lobby is created per-REPL-session, not at boot.  echo()
+// INSIDE watcher bodies works fine: it resolves at fire time when a
+// session exists.  Filed v1.x: "boot-time banner / no-Lobby echo".
+//
+// NOTE 2: the bare-prefix tag labels (`greet:`, `temp_watch_hot:`,
+// `temp_watch_cool:`) were stripped — the v0.9.4 parser/runtime treats
+// the prefix as a GETSLOT on an existing slot, not as a new-tag
+// declaration.  Listed as v1.x deferral in CLAUDE.md.  Without the
+// prefix the watchers still install + fire, but cannot be `.stop()`'d
+// individually.  Restore once tag-prefix labels + Tag.new() land.
+//
+// On connect, try: temp_celsius() / led_on() / led_off() to verify
+// the verb surface.

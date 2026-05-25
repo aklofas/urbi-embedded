@@ -41,6 +41,15 @@ void bsp_button_poll_isr(struct UVM *vm)
 {
     (void)vm;
 }
+int bsp_button_inject_synthetic_pressed(struct UVM *vm)
+{
+    (void)vm;
+    return -1;
+}
+urbi_event_id_t bsp_button_get_pressed_evt(void)
+{
+    return URBI_EVENT_ID_INVALID;
+}
 #else /* PICO_BOARD */
 
 /* Event id registered by bsp_button_register; consulted by the
@@ -123,6 +132,19 @@ static int c_button_pressed(struct UVM *vm, UValue self,
     return 0;
 }
 
+int bsp_button_inject_synthetic_pressed(struct UVM *vm)
+{
+    if (vm == NULL || s_pressed_evt == URBI_EVENT_ID_INVALID) {
+        return -1;
+    }
+    return urbi_inject_event(vm, (uint32_t)s_pressed_evt, NULL, 0U);
+}
+
+urbi_event_id_t bsp_button_get_pressed_evt(void)
+{
+    return s_pressed_evt;
+}
+
 int bsp_button_register(struct UVM *vm)
 {
     /* No GPIO init needed — the QSPI_SS pin is owned by the flash
@@ -136,8 +158,15 @@ int bsp_button_register(struct UVM *vm)
     /* Register the `pressed` named event AFTER the host-fn so that an
      * early ISR fire (between bsp_register and bsp_tick_start) finds
      * s_pressed_evt still INVALID and is silently dropped — not a
-     * dropped wakeup since the tick hasn't started arming yet. */
-    urbi_event_id_t evt = urbi_event_register(vm, NULL, "pressed",
+     * dropped wakeup since the tick hasn't started arming yet.
+     *
+     * urbi_event_register rejects NULL realm (unlike urbi_register which
+     * defaults to global); pass the global realm explicitly. */
+    struct URealm *realm = urbi_realm_global(vm);
+    if (realm == NULL) {
+        return -1;
+    }
+    urbi_event_id_t evt = urbi_event_register(vm, realm, "pressed",
                                               NULL, NULL);
     if (evt == URBI_EVENT_ID_INVALID) {
         return -1;

@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.9.4-pico-example — TBD (hardware bring-up pending)
+## v0.9.4-pico-example — 2026-05-24
 
 ### Added
 
@@ -132,6 +132,48 @@ the port shipped.
 
 See `docs/milestones/v0.9.4-pico-example.md` for the full
 retrospective.
+
+### Hardware bring-up — what shipped vs deferred
+
+Hardware bring-up on a real Raspberry Pi Pico completed 2026-05-24.
+Two findings were filed as v1.x deferrals (see workspace-root
+`docs/urbi-embedded-design-risks.md`) and the demo was adapted to
+ship within the constraints:
+
+**Working end-to-end on real silicon:**
+
+- urbi VM boot on Cortex-M0+ (`urbi_vm_init` → `urbi_realm_global` →
+  `urbi_stdlib_boot`).
+- BSP integration: 5 host functions registered
+  (`led_on`/`led_off`/`led_toggle`/`led_pwm`/`temp_celsius`/`button_pressed`),
+  2 named events (`tick`, `pressed`).
+- TIMER_IRQ_0 ISR fires at 10 Hz, polls BOOTSEL via the QSPI_SS
+  bit-bang trick, debounces, and injects `pressed` events on rising
+  edge via the ISR-safe `urbi_inject_event` single-producer ring.
+- USB CDC enumerates (TinyUSB device-side); console output via
+  `dbg_print` (dual-channel UART + CDC) surfaces every init step.
+- C-side host watcher (`urbi_register_watcher` for the `pressed`
+  event) fires on each BOOTSEL press → `gpio_xor` toggles the LED.
+
+**Deferred to v1.x (filed in design-risks):**
+
+- **REPL session model is too heavy for ~256 KB SRAM.** Per-session
+  realm + lobby.u compile needs >50 KB on top of stdlib_boot's
+  ~165 KB baseline; Pico's ~241 KB usable heap can't accommodate
+  the first session. Cooperative `urbi_repl_serve_init` succeeds
+  but `urbi_repl_serve_step` panics on first CDC connect. The
+  `repl_demo` example ships with REPL service disabled and a
+  C-side watcher providing the interactive surface.
+- **`whenever (named_event) { body }` install doesn't dispatch on
+  cooperative-only builds.** The watcher installs without error
+  but its body never fires even on synthetic event injection.
+  Workaround: install the equivalent watcher via the C-side
+  `urbi_register_watcher` API, which works reliably.
+
+The demo's `repl_demo.u` still installs `whenever (pressed)
+{ led_toggle() }` as a documentation pattern, but the interactive
+behavior is provided by `main.c`'s C-side watcher until the v1.x
+fix lands. Press BOOTSEL on the Pico → LED toggles.
 
 ## v0.9.3-ci-hardening — 2026-05-19
 
