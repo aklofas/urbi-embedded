@@ -62,7 +62,7 @@
 | Public headers self-contained (no `-Isrc`) | NO | audit-1 F1 | Wave 4 W1 + W2 |
 | External-embedder minimal compile test | not gated | n/a | Wave 4 W6 |
 | API surface tiered (URBI_EXPERIMENTAL) | not done | audit-1 F13 | Wave 4 W7 |
-| Build-flag mismatch link-time guards (URBI_FLOAT_TYPE, URBI_REPL_COOPERATIVE_ONLY, URBI_BYTECODE_ONLY) | not done | audit-1 F2, roadmap F7 | Wave 2 W1-W3 |
+| Build-flag mismatch link-time guards (URBI_FLOAT_TYPE, URBI_REPL_COOPERATIVE_ONLY, URBI_BYTECODE_ONLY) | done — v0.10.1-invariants W1-W3 | audit-1 F2, roadmap F7 | Wave 2 W1-W3 |
 | Error model unified | NO (4 styles) | API F2 | Wave 4 W3 |
 | ABI freeze pin | not done | n/a | Wave 7 W2 |
 | Wire format freeze pin | not done | n/a | Wave 7 W3 |

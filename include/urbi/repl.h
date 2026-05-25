@@ -122,4 +122,27 @@ int  urbi_repl_register_transport(UReplServer *server,
 }
 #endif
 
+/* === URBI_REPL_COOPERATIVE_ONLY link-time guard (audit-1 F2, roadmap F7) ===
+ *
+ * Cooperative-only builds change struct layouts in urepl_threading.h.
+ * Embedders MUST link with the same URBI_REPL_COOPERATIVE_ONLY setting
+ * the library was compiled with; a mismatch produces memory corruption
+ * or silent feature failure.  This reference forces a link-time
+ * undefined-symbol error instead, with a diagnostic name like:
+ *   urbi_abi_requires_repl_cooperative_only (undefined)
+ *
+ * Suppressed when URBI_INTERNAL_GUARD_REF=1 (uabi_guards.c defines
+ * the symbols and must not also reference them). */
+#ifndef URBI_INTERNAL_GUARD_REF
+#  ifdef URBI_REPL_COOPERATIVE_ONLY
+extern const int urbi_abi_requires_repl_cooperative_only;
+static const int *urbi_abi_repl_guard_ref __attribute__((unused)) =
+    &urbi_abi_requires_repl_cooperative_only;
+#  else
+extern const int urbi_abi_requires_repl_pthread;
+static const int *urbi_abi_repl_guard_ref __attribute__((unused)) =
+    &urbi_abi_requires_repl_pthread;
+#  endif
+#endif /* !URBI_INTERNAL_GUARD_REF */
+
 #endif /* URBI_REPL_H */

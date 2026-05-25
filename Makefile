@@ -442,7 +442,8 @@ PORT_STM32F4_TESTS := \
 	test_port_button
 
 PORT_STM32F4_TEST_DEPS_COMMON := \
-	tests/port_stm32f4/mock_bsp.c
+	tests/port_stm32f4/mock_bsp.c \
+	src/runtime/uabi_guards.c
 
 PORT_STM32F4_CFLAGS := -std=c99 -Wall -Wextra \
 	-DURBI_PORT_TEST=1 \

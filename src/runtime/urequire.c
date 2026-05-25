@@ -28,7 +28,7 @@
 #  include <stdlib.h>
 #endif
 
-static urbi_require_fail_hook_fn g_require_hook = NULL;
+static urbi_require_fail_hook_fn g_require_hook = NULL; /* NOLINT(cppcoreguidelines-avoid-non-const-global-variables) */
 
 void urbi_set_require_fail_hook(urbi_require_fail_hook_fn hook)
 {

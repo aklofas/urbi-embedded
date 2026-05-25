@@ -1218,4 +1218,27 @@ void urbi_chunk_free(struct UProto *root);
 #  include <urbi/repl.h>
 #endif
 
+/* === URBI_BYTECODE_ONLY link-time guard (audit-1 F2, roadmap F7) ===
+ *
+ * Bytecode-only builds strip src/lex/, src/parse/, src/emit/ from the
+ * archive.  An embedder that builds its application TUs without
+ * URBI_BYTECODE_ONLY=1 but links against a bytecode-only liburbi.a
+ * will see an undefined-symbol link error naming the mismatch:
+ *   urbi_abi_requires_full_parser (undefined)
+ * rather than late runtime failures from missing parser symbols.
+ *
+ * Suppressed when URBI_INTERNAL_GUARD_REF=1 (uabi_guards.c defines
+ * the symbols and must not also reference them). */
+#ifndef URBI_INTERNAL_GUARD_REF
+#  ifdef URBI_BYTECODE_ONLY
+extern const int urbi_abi_requires_bytecode_only;
+static const int *urbi_abi_bytecode_guard_ref __attribute__((unused)) =
+    &urbi_abi_requires_bytecode_only;
+#  else
+extern const int urbi_abi_requires_full_parser;
+static const int *urbi_abi_full_parser_guard_ref __attribute__((unused)) =
+    &urbi_abi_requires_full_parser;
+#  endif
+#endif /* !URBI_INTERNAL_GUARD_REF */
+
 #endif
