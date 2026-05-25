@@ -93,9 +93,9 @@ static int        g_wc_log_total;
 static const char *g_wc_last_msg;  /* points into the fmt literal */
 
 static void
-wc_capture_log(struct UVM *vm, int level, const char *fmt, ...)
+wc_capture_log(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 {
-    (void)vm;
+    (void)vm; (void)ud;
     g_wc_log_total++;
     if (level == URBI_LOG_WARN) {
         g_wc_log_warn++;

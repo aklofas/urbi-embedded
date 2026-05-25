@@ -186,7 +186,7 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
      * required for the periodic to fire (urbi_step also requires it for
      * the sleep queue). */
     uint64_t now = 0U;
-    if (vm->host_time_us != NULL) now = vm->host_time_us();
+    if (vm->host_time_us != NULL) now = vm->host_time_us(vm->host_time_ud);
     p->next_fire_us = now + period_us;
 
     /* Head-insert on vm->periodics_head — O(1). */
@@ -254,7 +254,7 @@ sleep_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     UStrand *cur = vm->cur_strand;
     URBI_INTERNAL_ASSERT(cur != NULL);
-    uint64_t now_us = (vm->host_time_us != NULL) ? vm->host_time_us() : 0U;
+    uint64_t now_us = (vm->host_time_us != NULL) ? vm->host_time_us(vm->host_time_ud) : 0U;
     sched_strand_block(cur, USTRAND_REASON_SLEEP, now_us + duration_us);
     /* sched_strand_block puts the strand on the sleep queue; the scheduler
      * resumes it when wake_us elapses (or earlier via TAG_STOP).
@@ -364,7 +364,7 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
     UStrand *body = urbi_strand_create(p->realm, p->body);
     if (body == NULL) {
         if (vm->host_log_fn != NULL) {
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "every: body spawn failed (strand alloc OOM)");
         }
         return NULL;
@@ -379,7 +379,7 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
         if (body->state == USTRAND_STATE_DEAD) {
             urbi_strand_destroy(body);
             if (vm->host_log_fn != NULL) {
-                vm->host_log_fn(vm, URBI_LOG_WARN,
+                vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                     "every: body spawn ambient-attach overflow");
             }
             return NULL;
@@ -390,7 +390,7 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
     if (urbi_strand_arm_from_closure(body, p->body) != 0) {
         urbi_strand_destroy(body);
         if (vm->host_log_fn != NULL) {
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "every: body spawn failed (stack alloc OOM)");
         }
         return NULL;
@@ -452,7 +452,7 @@ urbi_periodic_pump(UVM *vm)
     URBI_ASSERT_NOT_ISR(vm);
 
     uint64_t now = 0U;
-    if (vm->host_time_us != NULL) now = vm->host_time_us();
+    if (vm->host_time_us != NULL) now = vm->host_time_us(vm->host_time_ud);
 
     /* Phase 1: fire due periodics.  Walk the list; spawn into any slot
      * with current_strand == NULL && fire time reached && not pending
@@ -515,7 +515,7 @@ urbi_periodic_body_completed(UVM *vm, UStrand *s)
     if (s->fatal_status == UEXEC_OK || s->fatal_status == UEXEC_RETURN) {
         /* Re-arm: set next_fire_us = now + period_us. */
         uint64_t now = 0U;
-        if (vm->host_time_us != NULL) now = vm->host_time_us();
+        if (vm->host_time_us != NULL) now = vm->host_time_us(vm->host_time_ud);
         p->next_fire_us = now + p->period_us;
     } else {
         /* UEXEC_THROW / UEXEC_CANCEL / UEXEC_TAG_STOP: stop firing. */

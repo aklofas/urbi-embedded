@@ -467,12 +467,12 @@ void app_main(void)
     /* 3: port hooks.  urbi_set_diag_fn routes runtime warnings
      * (body throws, spawn OOM, watchdog) through ESP_LOG; without it
      * these would drop on the floor since host_log_fn defaults NULL. */
-    urbi_set_diag_fn(&vm, port_diag_to_esp);
-    urbi_set_time_us(&vm, port_time_us);
+    urbi_set_diag_fn(&vm, port_diag_to_esp, NULL);
+    urbi_set_time_us(&vm, port_time_us, NULL);
     urbi_set_writer (&vm, port_writer, NULL);
     urbi_set_wake_fn(&vm, port_wake_from_inject, &urbi_task_handle);
 #ifdef URBI_DEBUG
-    urbi_set_isr_check_fn(&vm, port_in_isr);
+    urbi_set_isr_check_fn(&vm, port_in_isr, NULL);
 #endif
 
     /* 4: realm + events + host fns. */

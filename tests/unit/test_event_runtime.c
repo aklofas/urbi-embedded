@@ -175,10 +175,10 @@ UTEST(event_native_register_propagates_register_oom)
  * =================================================================== */
 
 static int g_drain_count;
-static void counting_drain_handler(struct UVM *vm, uint32_t event_id,
+static void counting_drain_handler(struct UVM *vm, void *ud, uint32_t event_id,
                                    UValue payload)
 {
-    (void)vm; (void)event_id; (void)payload;
+    (void)vm; (void)ud; (void)event_id; (void)payload;
     g_drain_count++;
 }
 
@@ -189,7 +189,7 @@ UTEST(ring_drain_handles_max_capacity_correctly)
     UASSERT(vm.event_ring != NULL);
     if (vm.event_ring == NULL) { urbi_vm_destroy(&vm); return; }
 
-    urbi_register_event_drain(&vm, counting_drain_handler);
+    urbi_register_event_drain(&vm, counting_drain_handler, NULL);
     g_drain_count = 0;
 
     /* Fill the ring to its max-usable depth (DEPTH-1: SPSC reserves one slot
@@ -212,7 +212,7 @@ UTEST(ring_drain_handles_max_capacity_correctly)
     UASSERT_EQ(g_drain_count, URBI_EVENT_RING_DEPTH - 1);
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
-    urbi_register_event_drain(&vm, NULL);
+    urbi_register_event_drain(&vm, NULL, NULL);
     urbi_vm_destroy(&vm);
 }
 

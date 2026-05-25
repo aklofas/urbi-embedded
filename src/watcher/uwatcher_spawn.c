@@ -93,7 +93,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
     body = urbi_strand_create(w->realm, w->body);
     if (!body) {
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher body spawn: out of memory (strand alloc)");
         return;
     }
@@ -109,7 +109,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
         if (body->state == USTRAND_STATE_DEAD) {
             urbi_strand_destroy(body);
             if (vm->host_log_fn)
-                vm->host_log_fn(vm, URBI_LOG_WARN,
+                vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                     "watcher body spawn: ambient-attach overflow");
             return;
         }
@@ -119,7 +119,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
     if (urbi_strand_arm_from_closure(body, w->body) != 0) {
         urbi_strand_destroy(body);
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher body spawn: out of memory (stack alloc)");
         return;
     }
@@ -250,7 +250,7 @@ urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s)
 
     if (s->fatal_status == UEXEC_THROW) {
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher body uncaught throw");
         /* TODO(M6): include throw value's string repr (Object.toString) */
     }
@@ -270,7 +270,7 @@ urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s)
      * strand on a later callback.  Handle is a Wave 1 placeholder (0);
      * Wave 2 (ESP-IDF port) defines the real watcher-identity meaning. */
     if (vm->watcher_body_done_fn != NULL) {
-        vm->watcher_body_done_fn(vm, /* handle */ 0, completion_status);
+        vm->watcher_body_done_fn(vm, vm->watcher_body_done_ud, /* handle */ 0, completion_status);
     }
 
     if ((w->flags & URBI_WATCHER_PENDING_UNREGISTER) != 0) {

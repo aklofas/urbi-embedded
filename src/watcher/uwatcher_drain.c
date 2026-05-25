@@ -69,7 +69,7 @@ run_watcher_onleave(UVM *vm, UWatcher *w)
     int    threw = 0;
     (void)urbi_run_closure_on_scratch(vm, w->onleave, &out, &threw);
     if (threw && vm->host_log_fn) {
-        vm->host_log_fn(vm, URBI_LOG_WARN,
+        vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
             "tag-stop drain onleave threw; suppressed");
     }
 }

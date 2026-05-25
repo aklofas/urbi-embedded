@@ -379,9 +379,9 @@ static int g_t37_warn_count;
 static char g_t37_last_msg[256];
 
 static void
-capture_log_t37(struct UVM *vm, int level, const char *fmt, ...)
+capture_log_t37(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 {
-    (void)vm;
+    (void)vm; (void)ud;
     if (level == URBI_LOG_WARN) {
         g_t37_warn_count++;
         strncpy(g_t37_last_msg, fmt, sizeof(g_t37_last_msg) - 1);

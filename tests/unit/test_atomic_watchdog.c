@@ -40,8 +40,9 @@
 
 static uint64_t g_mock_time_us = 0U;
 
-static uint64_t mock_time_fn(void)
+static uint64_t mock_time_fn(void *ud)
 {
+    (void)ud;
     return g_mock_time_us;
 }
 
@@ -69,7 +70,7 @@ UTEST(atomic_begin_captures_timestamp)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     g_mock_time_us = 12345U;
-    urbi_set_time_us(&vm, mock_time_fn);
+    urbi_set_time_us(&vm, mock_time_fn, NULL);
 
     urbi_atomic_begin(&vm);
     UASSERT(vm.atomic_active != 0);
@@ -119,7 +120,7 @@ UTEST(atomic_end_clears_timestamp)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     g_mock_time_us = 99999U;
-    urbi_set_time_us(&vm, mock_time_fn);
+    urbi_set_time_us(&vm, mock_time_fn, NULL);
 
     urbi_atomic_begin(&vm);
     UASSERT_EQ((long long)vm.atomic_begin_us, 99999LL);

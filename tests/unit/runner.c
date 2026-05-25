@@ -283,6 +283,7 @@ extern void test_strand_destroy_during_event_wait_suite(void);
 extern void test_ic_index_dfs_suite(void);
 extern void test_op_closure_invariants_suite(void);
 extern void test_at_event_unlink_on_tag_stop_suite(void);
+extern void test_error_model_unified_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -542,6 +543,7 @@ static const struct suite_entry suites[] = {
     {"ic_index_dfs",                     test_ic_index_dfs_suite},
     {"op_closure_invariants",            test_op_closure_invariants_suite},
     {"at_event_unlink_on_tag_stop",      test_at_event_unlink_on_tag_stop_suite},
+    {"error_model_unified",              test_error_model_unified_suite},
     /* Add new suites here as test files are added. */
 };
 

@@ -41,9 +41,9 @@ static int g_log_level;
 static uint64_t g_mock_time;
 
 /* Mock host_log_fn: records calls and log level. */
-static void mock_log_fn(struct UVM *vm, int level, const char *fmt, ...)
+static void mock_log_fn(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 {
-    (void)vm;
+    (void)vm; (void)ud;
     (void)fmt;
     g_log_called++;
     g_log_level = level;
@@ -51,8 +51,9 @@ static void mock_log_fn(struct UVM *vm, int level, const char *fmt, ...)
 
 /* Controllable mock clock: increments by a configurable amount on each call. */
 static uint64_t g_time_step_us;
-static uint64_t mock_time_us(void)
+static uint64_t mock_time_us(void *ud)
 {
+    (void)ud;
     uint64_t t = g_mock_time;
     g_mock_time += g_time_step_us;
     return t;
@@ -158,14 +159,14 @@ UTEST(watchdog_slow_no_log_fn_is_silent)
 /* ---- Case 4: isr_check_fn returns false → non-ISR-safe call succeeds ------ */
 
 /* Predicate returning false (normal, non-ISR context). */
-static bool isr_check_not_in_isr(void) { return false; }
+static bool isr_check_not_in_isr(void *ud) { (void)ud; return false; }
 
 UTEST(isr_check_fn_set_returns_false_no_panic)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    urbi_set_isr_check_fn(&vm, isr_check_not_in_isr);
+    urbi_set_isr_check_fn(&vm, isr_check_not_in_isr, NULL);
     UASSERT(vm.isr_check_fn == isr_check_not_in_isr);
 
     /* urbi_realm_global has URBI_ASSERT_NOT_ISR; isr_check_fn returns false
@@ -200,9 +201,9 @@ UTEST(set_isr_check_fn_stores_and_clears)
     urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.isr_check_fn == NULL);
-    urbi_set_isr_check_fn(&vm, isr_check_not_in_isr);
+    urbi_set_isr_check_fn(&vm, isr_check_not_in_isr, NULL);
     UASSERT(vm.isr_check_fn == isr_check_not_in_isr);
-    urbi_set_isr_check_fn(&vm, NULL);
+    urbi_set_isr_check_fn(&vm, NULL, NULL);
     UASSERT(vm.isr_check_fn == NULL);
 
     urbi_vm_destroy(&vm);

@@ -232,7 +232,11 @@ typedef struct {
 typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — field order is intentional, see comment above */
     UVMAllocFn alloc_fn;
     void      *alloc_ud;
-    UVMError   last_error;
+    /* v0.10.3 (W3): last_error is now plain int (was UVMError; UVMError is now
+     * typedef int for source compat).  Values: URBI_OK (0), URBI_ERR_OOM (-3),
+     * URBI_ERR_STRAND_FATAL (-2) — same as UVM_OK / UVM_OOM / UVM_TYPE_ERROR
+     * shims in <urbi/types.h>. */
+    int        last_error;
     char       last_errmsg[UVM_ERRMSG_CAP];
 
     /* M2 additions — per pre-m2-multi-vm-audit-design.md */
@@ -347,8 +351,10 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Optional host callback installed via urbi_register_event_drain.
      * Called at safepoint (uevent_ring_drain) for each injected entry.
      * Handler maps event_id to a UEvent* and calls c_event_emit_async.
-     * NULL = no drain handler (ring entries are discarded). */
-    void (*event_drain_handler)(struct UVM *vm, uint32_t event_id, UValue payload);
+     * NULL = no drain handler (ring entries are discarded).
+     * v0.10.3 (W3): handler gains void *ud; event_drain_ud forwarded. */
+    void (*event_drain_handler)(struct UVM *vm, void *ud, uint32_t event_id, UValue payload);
+    void  *event_drain_ud;
 
     /* --- Row 10 GC state machine --- */
     uint8_t  gc_phase;                 /* 0 = IDLE per row 10 §6.2; named constant lands at T22 */
@@ -504,8 +510,10 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint16_t                deferred_slot_changes_tail;
     uint16_t                deferred_slot_changes_cap;
 
-    /* --- Row 9 host time hook --- */
-    uint64_t (*host_time_us)(void);    /* returns monotonic microseconds; default set at init */
+    /* --- Row 9 host time hook ---
+     * v0.10.3 (W3): host_time_us gains a ud parameter; host_time_ud forwarded. */
+    uint64_t (*host_time_us)(void *ud);  /* returns monotonic microseconds; default set at init */
+    void      *host_time_ud;
 
     /* --- Gap E pluggable I/O writer (v0.7.1) ---
      * writer_fn: channel-multiplexed write callback.  NULL = default writer
@@ -532,9 +540,12 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * host_log_fn: structured log callback; NULL = silent.  Called by debug-build
      *   watchdog when a host callback exceeds callback_warn_us.
      * callback_warn_us: watchdog threshold in microseconds (default URBI_CALLBACK_WARN_US).
-     * callback_watchdog_mode: URBI_WATCHDOG_WARN (0) or URBI_WATCHDOG_ASSERT (1). */
-    bool     (*isr_check_fn)(void);
-    void     (*host_log_fn)(struct UVM *vm, int level, const char *fmt, ...);
+     * callback_watchdog_mode: URBI_WATCHDOG_WARN (0) or URBI_WATCHDOG_ASSERT (1).
+     * v0.10.3 (W3): isr_check_fn + host_log_fn gain void *ud; *_ud fields forwarded. */
+    bool     (*isr_check_fn)(void *ud);
+    void      *isr_check_ud;
+    void     (*host_log_fn)(struct UVM *vm, void *ud, int level, const char *fmt, ...);
+    void      *host_log_ud;
     uint32_t   callback_warn_us;
     uint8_t    callback_watchdog_mode;
     uint8_t    pad_watchdog[3];        /* padding; zeroed */
@@ -654,8 +665,10 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * <urbi/urbi.h> (which forward-declares UVM and would create a
      * circular include).  The public typedef urbi_watcher_body_done_fn
      * in <urbi/urbi.h> expands to a function pointer with the exact same
-     * shape, so the setter wires through cleanly across the seam. */
-    void (*watcher_body_done_fn)(struct UVM *vm, int handle, int completion_status);
+     * shape, so the setter wires through cleanly across the seam.
+     * v0.10.3 (W3): gains void *ud; watcher_body_done_ud forwarded. */
+    void (*watcher_body_done_fn)(struct UVM *vm, void *ud, int handle, int completion_status);
+    void  *watcher_body_done_ud;
 
     /* --- Gap R: atomic event section state (v0.7.1) ---
      * atomic_active: true while urbi_atomic_begin has been called and
@@ -751,19 +764,22 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
    s->cur_consts, s->root_proto, and s->state = USTRAND_STATE_RUNNING. */
 uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
 
-/* Run module to completion. On UVM_OK, *out receives the RET value. On
+/* Run module to completion. On URBI_OK (0), *out receives the RET value. On
    error, vm->last_error and vm->last_errmsg are populated and *out is
    set to UVAL_NIL (kind = UVAL_NIL, value payload zeroed).
    last_error and last_errmsg are reset at entry — a caller may inspect
    them after each urbi_vm_run call without stale state from prior runs.
+
+   v0.10.3 (W3): return type changed from UVMError to int.  UVMError is now
+   typedef int for source compat; existing callsites compile unchanged.
 
    API-004 (Wave 5): the `realm` argument selects which Realm the
    transient strand runs in.  realm == NULL falls back to the VM's
    global Realm (the pre-Wave-5 implicit behavior), preserving
    source-compat for existing callers via the matching update in the
    public header. */
-UVMError urbi_vm_run(UVM *vm, struct URealm *realm,
-                     const UProto *root, UValue *out);
+int urbi_vm_run(UVM *vm, struct URealm *realm,
+                const UProto *root, UValue *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */
 void urbi_vm_destroy(UVM *vm);
@@ -777,7 +793,8 @@ void urbi_vm_destroy(UVM *vm);
 void urbi_native_protos_init(UVM *vm);
 
 /* Return a static string such as "UVM_TYPE_ERROR" for debug. */
-const char *uvm_error_name(UVMError code);
+/* v0.10.3 (W3): UVMError is now typedef int; uvm_error_name accepts int. */
+const char *uvm_error_name(int code);
 
 /* --- Internal cross-module declarations ---
  * Originally in uvm_internal.h (consolidated post-M3). All src/ headers are

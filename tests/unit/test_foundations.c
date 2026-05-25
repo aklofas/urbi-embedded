@@ -277,8 +277,8 @@ static int g_log_calls = 0;
 static char g_last_msg[128];
 static int g_last_level = -1;
 
-static void log_capture(struct UVM *vm, int level, const char *fmt, ...) {
-    (void)vm;
+static void log_capture(struct UVM *vm, void *ud, int level, const char *fmt, ...) {
+    (void)vm; (void)ud;
     g_log_calls++;
     g_last_level = level;
     /* urbi_strand_panic passes msg via "%s" format string + va-arg. */

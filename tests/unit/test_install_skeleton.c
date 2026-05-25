@@ -49,9 +49,9 @@ static int g_total_count;
 static char g_last_msg[256];
 
 static void
-capture_log(struct UVM *vm, int level, const char *fmt, ...)
+capture_log(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 {
-    (void)vm;
+    (void)vm; (void)ud;
     g_total_count++;
     if (level == URBI_LOG_WARN) {
         g_warn_count++;

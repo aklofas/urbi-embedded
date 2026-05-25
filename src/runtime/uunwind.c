@@ -199,7 +199,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
      * it uses for unhandled THROW (avoids duplicating cleanup logic). */
     if (s->cleanup_run_depth >= (uint16_t)URBI_CLEANUP_MAX) {
         if (s->vm != NULL && s->vm->host_log_fn != NULL) {
-            s->vm->host_log_fn(s->vm, URBI_LOG_ERROR,
+            s->vm->host_log_fn(s->vm, s->vm->host_log_ud, URBI_LOG_ERROR,
                                "URBI_ERR_CLEANUP_OVERFLOW: run_cleanup_with_replace "
                                "exceeded URBI_CLEANUP_MAX recursion depth");
         }
@@ -234,7 +234,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
          * embedders can detect inadvertent unwind-loss in their tag-leave
          * handlers.  host_log_fn is NULL-guarded per T19 pattern. */
         if (s->vm != NULL && s->vm->host_log_fn != NULL) {
-            s->vm->host_log_fn(s->vm, URBI_LOG_WARN,
+            s->vm->host_log_fn(s->vm, s->vm->host_log_ud, URBI_LOG_WARN,
                                "URBI_WARN_SUPPRESSED_UNWIND: cleanup body raised; "
                                "original unwind dropped");
         }
@@ -607,7 +607,7 @@ urbi_strand_panic(struct UStrand *strand, const char *msg)
      * level we have).  NULL-guarded — many tests wire vm without a log
      * callback. */
     if (msg != NULL && strand->vm != NULL && strand->vm->host_log_fn != NULL) {
-        strand->vm->host_log_fn(strand->vm, (int)URBI_LOG_ERROR, "%s", msg);
+        strand->vm->host_log_fn(strand->vm, strand->vm->host_log_ud, (int)URBI_LOG_ERROR, "%s", msg);
     }
     /* Unlink from event waiter chain before marking dead (spec #3 §6.4).
      * Prevents stale pointers in e->waiters_head if the strand is freed

@@ -80,7 +80,7 @@ run_on_scratch_core(struct UVM       *vm,
      * cur_consts / frame_count from closure->proto.  Returns -1 on OOM. */
     if (urbi_strand_arm_from_closure(&strand, closure) != 0) {
         if (vm->host_log_fn) {
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "scratch-frame arm: register-stack OOM");
         }
         return -1;
@@ -135,7 +135,7 @@ run_on_scratch_core(struct UVM       *vm,
         } else {
             scratch_arr_alloc_failed = 1;
             if (vm->host_log_fn) {
-                vm->host_log_fn(vm, URBI_LOG_WARN,
+                vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                     "scratch-frame: synthetic module_instance alloc failed");
             }
         }
@@ -211,7 +211,7 @@ run_on_scratch_core(struct UVM       *vm,
              * and event sync-emit bodies — not just cond closures. */
             *out_threw = 1;
             if (vm->host_log_fn) {
-                vm->host_log_fn(vm, URBI_LOG_WARN,
+                vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                     "scratch-frame body exceeded budget or yielded");
             }
         }

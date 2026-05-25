@@ -46,7 +46,7 @@ urbi_emit_slot_change_slow(UVM *vm, UObject *parent,
         if (!vm->slot_change_reentrancy_warned) {
             vm->slot_change_reentrancy_warned = 1;
             if (vm->host_log_fn)
-                vm->host_log_fn(vm, URBI_LOG_WARN,
+                vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                     "slot-change emit from scratch context — degraded to async");
         }
         /* Defer: drain runs at next safepoint (spec §5.4 ordering). */
@@ -88,7 +88,7 @@ urbi_defer_slot_change(UVM *vm, UObject *parent,
         if (!vm->slot_change_ring_full_warned) {
             vm->slot_change_ring_full_warned = 1;
             if (vm->host_log_fn)
-                vm->host_log_fn(vm, URBI_LOG_WARN,
+                vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                     "slot-change deferred ring full — entry dropped");
         }
         return;

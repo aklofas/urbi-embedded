@@ -97,7 +97,7 @@ invoke_body_inline(struct UVM *vm, struct UWatcher *w)
     int    threw = 0;
     (void)urbi_run_closure_on_scratch(vm, w->body, &out, &threw);
     if (threw && vm->host_log_fn) {
-        vm->host_log_fn(vm, URBI_LOG_WARN,
+        vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
             "at sync(cond) body threw; suppressed");
     }
 }
@@ -131,7 +131,7 @@ invoke_onleave_inline(struct UVM *vm, struct UWatcher *w)
     int    threw = 0;
     (void)urbi_run_closure_on_scratch(vm, w->onleave, &out, &threw);
     if (threw && vm->host_log_fn) {
-        vm->host_log_fn(vm, URBI_LOG_WARN,
+        vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
             "at(cond) onleave threw; suppressed");
     }
 }

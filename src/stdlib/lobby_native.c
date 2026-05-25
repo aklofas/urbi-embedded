@@ -167,7 +167,7 @@ builtin_lobby_send(UVM *vm, UValue self, UValue *args, uint8_t nargs,
      * urbi.h. */
     uint64_t ms = 0U;
     if (vm->host_time_us != NULL) {
-        ms = vm->host_time_us() / 1000ULL;
+        ms = vm->host_time_us(vm->host_time_ud) / 1000ULL;
     }
 
     /* Format the framed line into a stack-bounded buffer.  v0.9.1 wire-

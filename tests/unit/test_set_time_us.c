@@ -35,8 +35,9 @@
 static uint64_t g_mock_time_us;
 static int      g_mock_call_count;
 
-static uint64_t mock_time(void)
+static uint64_t mock_time(void *ud)
 {
+    (void)ud;
     g_mock_call_count++;
     return g_mock_time_us;
 }
@@ -60,7 +61,7 @@ UTEST(time_us_system_time_uses_hook)
 
     /* Install mock clock returning exactly 2 000 000 µs (= 2.0 s). */
     reset_mock(2000000ULL);
-    urbi_set_time_us(&vm, mock_time);
+    urbi_set_time_us(&vm, mock_time, NULL);
 
     UValue result = urbi_make_nil();
     rc = utest_e2e_compile_and_run(&vm, "System.time()", &result);
@@ -88,7 +89,7 @@ UTEST(time_us_hook_consulted_during_run)
     UASSERT(realm != NULL);
 
     reset_mock(500000ULL); /* 0.5 s */
-    urbi_set_time_us(&vm, mock_time);
+    urbi_set_time_us(&vm, mock_time, NULL);
 
     int before = g_mock_call_count;
 
@@ -115,8 +116,8 @@ UTEST(time_us_null_restores_default)
 
     /* Install mock, then remove. */
     reset_mock(1ULL);
-    urbi_set_time_us(&vm, mock_time);
-    urbi_set_time_us(&vm, NULL);   /* restore default */
+    urbi_set_time_us(&vm, mock_time, NULL);
+    urbi_set_time_us(&vm, NULL, NULL);   /* restore default */
 
     /* After restore, mock must not be consulted. */
     int before = g_mock_call_count;
@@ -138,7 +139,7 @@ UTEST(time_us_null_restores_default)
 UTEST(time_us_null_vm_noop)
 {
     /* Must not crash. */
-    urbi_set_time_us(NULL, mock_time);
+    urbi_set_time_us(NULL, mock_time, NULL);
     UASSERT(1);
 }
 

@@ -8,6 +8,7 @@
 #include "port_stm32f4.h"
 #include "stm32f4xx.h"  /* CMSIS device header — pulls in __get_IPSR */
 
-bool port_in_isr(void) {
+bool port_in_isr(void *ud) {
+    (void)ud;
     return __get_IPSR() != 0;
 }

@@ -13,7 +13,8 @@
 #define URBI_LOG_WARN  2
 #define URBI_LOG_ERROR 3
 
-void port_diag(struct UVM *vm, int level, const char *fmt, ...) {
+void port_diag(struct UVM *vm, void *ud, int level, const char *fmt, ...) {
+    (void)ud;
     char buf[192];
     va_list ap;
     va_start(ap, fmt);

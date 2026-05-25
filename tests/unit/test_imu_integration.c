@@ -157,7 +157,7 @@ UTEST(imu_atomic_all_three_fire)
     UASSERT(g_gyro.handle  != g_mag.handle);
 
     /* Simulate ISR: no real ISR here — use NULL isr_check_fn (always MAIN). */
-    urbi_set_isr_check_fn(&vm, NULL);
+    urbi_set_isr_check_fn(&vm, NULL, NULL);
 
     /* Atomic batch: all three axis events injected together. */
     urbi_atomic_begin(&vm);

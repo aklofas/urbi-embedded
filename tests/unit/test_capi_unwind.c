@@ -304,7 +304,7 @@ UTEST(capi_strand_cancel_unblocks_waiting_strand)
  *      URBI_ASSERT_NOT_ISR guard only fires when the registered predicate
  *      returns true, so a host that wires the check fn but is not currently
  *      in ISR sees no behavioural change. */
-static bool isr_check_always_false(void) { return false; }
+static bool isr_check_always_false(void *ud) { (void)ud; return false; }
 
 UTEST(capi_tag_stop_passes_isr_guard_when_not_in_isr)
 {
@@ -314,7 +314,7 @@ UTEST(capi_tag_stop_passes_isr_guard_when_not_in_isr)
     /* Register an ISR-check predicate that says "no, not in ISR".  The
      * URBI_ASSERT_NOT_ISR macro inside urbi_tag_stop must observe the
      * negative result and proceed without tripping the panic. */
-    urbi_set_isr_check_fn(&vm, isr_check_always_false);
+    urbi_set_isr_check_fn(&vm, isr_check_always_false, NULL);
 
     struct UTag real_tag;
     real_tag.type_tag             = 5U; /* UTYPE_TAG */

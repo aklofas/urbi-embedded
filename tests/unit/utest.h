@@ -42,6 +42,20 @@ void utest_run(const char *name, void (*fn)(void));
         }                                                           \
     } while (0)
 
+#define UASSERT_NE(a, b)                                            \
+    do {                                                            \
+        utest_checks++;                                             \
+        long long _a = (long long)(a);                              \
+        long long _b = (long long)(b);                              \
+        if (_a == _b) {                                             \
+            utest_failures++;                                       \
+            printf(                                                 \
+                "  FAIL: %s:%d: %s != %s (both == %lld)\n",        \
+                __FILE__, __LINE__, #a, #b, _a);                    \
+            fflush(stdout);                                         \
+        }                                                           \
+    } while (0)
+
 #define UASSERT_STR_EQ(a, b)                                        \
     do {                                                            \
         utest_checks++;                                             \

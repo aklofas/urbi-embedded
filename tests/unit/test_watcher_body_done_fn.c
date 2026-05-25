@@ -19,9 +19,9 @@ static int callback_fire_count;
 static int last_completion_status;
 
 static void
-test_callback(struct UVM *vm, urbi_watcher_handle_t handle, int status)
+test_callback(struct UVM *vm, void *ud, urbi_watcher_handle_t handle, int status)
 {
-    (void)vm; (void)handle;
+    (void)vm; (void)ud; (void)handle;
     callback_fire_count++;
     last_completion_status = status;
 }
@@ -36,11 +36,11 @@ UTEST(watcher_body_done_fn_setter_installs_callback)
     UASSERT(vm.watcher_body_done_fn == NULL);
 
     /* Install. */
-    urbi_set_watcher_body_done_fn(&vm, test_callback);
+    urbi_set_watcher_body_done_fn(&vm, test_callback, NULL);
     UASSERT(vm.watcher_body_done_fn == test_callback);
 
     /* Uninstall. */
-    urbi_set_watcher_body_done_fn(&vm, NULL);
+    urbi_set_watcher_body_done_fn(&vm, NULL, NULL);
     UASSERT(vm.watcher_body_done_fn == NULL);
 
     urbi_vm_destroy(&vm);
@@ -49,7 +49,7 @@ UTEST(watcher_body_done_fn_setter_installs_callback)
 UTEST(watcher_body_done_fn_null_safe)
 {
     /* Setter with NULL vm must not crash. */
-    urbi_set_watcher_body_done_fn(NULL, test_callback);
+    urbi_set_watcher_body_done_fn(NULL, test_callback, NULL);
     /* PASS if we reach here. */
     UASSERT(1);
 }

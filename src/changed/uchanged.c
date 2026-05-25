@@ -50,7 +50,7 @@ urbi_object_get_or_create_change_event(UVM *vm, UObject *obj, USymbol *name)
     UCell *nc = urbi_gc_alloc(vm, sizeof(UChangedNode), UTYPE_CHANGED_NODE);
     if (UNLIKELY(nc == NULL)) {
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN, "slot-change OOM (node alloc)");
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN, "slot-change OOM (node alloc)");
         return NULL;
     }
     UChangedNode *node = (UChangedNode *)nc;
@@ -59,7 +59,7 @@ urbi_object_get_or_create_change_event(UVM *vm, UObject *obj, USymbol *name)
     UEvent *event = urbi_event_create(vm);
     if (UNLIKELY(event == NULL)) {
         if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN, "slot-change OOM (event alloc)");
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN, "slot-change OOM (event alloc)");
         /* node is not yet linked; GC will reclaim it on the next sweep. */
         return NULL;
     }

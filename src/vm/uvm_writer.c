@@ -120,10 +120,11 @@ urbi_set_writer(struct UVM *vm, urbi_writer_fn writer, void *ud)
  *
  * NULL vm is a no-op. */
 void
-urbi_set_diag_fn(struct UVM *vm, urbi_diag_fn fn)
+urbi_set_diag_fn(struct UVM *vm, urbi_diag_fn fn, void *ud)
 {
     if (!vm) return;
     vm->host_log_fn = fn;
+    vm->host_log_ud = ud;
 }
 
 /* urbi_vm_write: emit msg to channel through the installed writer.
@@ -152,7 +153,7 @@ urbi_vm_write_in_realm(struct UVM *vm, struct URealm *realm,
 
     uint64_t ts = 0U;
     if (vm->host_time_us != NULL) {
-        ts = vm->host_time_us();
+        ts = vm->host_time_us(vm->host_time_ud);
     }
 
     /* Resolve the active writer: realm-installed -> VM-installed -> default. */
@@ -191,17 +192,19 @@ urbi_vm_write_in_realm(struct UVM *vm, struct URealm *realm,
  * To restore the default we re-run the same assignment that urbi_vm_init
  * performs.  We expose a file-scope function pointer via a thin helper in
  * uvm_init to avoid duplicating the #ifdef logic. */
-extern uint64_t urbi_default_host_time_us(void);  /* declared in uvm_init.c */
+extern uint64_t urbi_default_host_time_us(void *ud);  /* declared in uvm_init.c */
 
 void
-urbi_set_time_us(struct UVM *vm, urbi_time_us_fn fn)
+urbi_set_time_us(struct UVM *vm, urbi_time_us_fn fn, void *ud)
 {
     if (!vm) return;
     if (fn != NULL) {
         vm->host_time_us = fn;
+        vm->host_time_ud = ud;
     } else {
-        /* Restore default. */
+        /* Restore default (no ud for built-in). */
         vm->host_time_us = urbi_default_host_time_us;
+        vm->host_time_ud = NULL;
     }
 }
 

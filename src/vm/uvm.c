@@ -1728,7 +1728,7 @@ dispatch:
 
             if (s->R[B].kind != (uint8_t)UVAL_OBJECT) {
                 if (vm->host_log_fn)
-                    vm->host_log_fn(vm, URBI_LOG_WARN,
+                    vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                         "slot-change install on non-object receiver");
                 UValue nil_val;
                 nil_val.kind = (uint8_t)UVAL_NIL;

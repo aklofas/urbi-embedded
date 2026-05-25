@@ -39,9 +39,9 @@ typedef struct {
 static LegacyCapture g_legacy;
 
 static void
-legacy_capture(struct UVM *vm, uint32_t event_id, UValue payload)
+legacy_capture(struct UVM *vm, void *ud, uint32_t event_id, UValue payload)
 {
-    (void)vm; (void)payload;
+    (void)vm; (void)ud; (void)payload;
     if (g_legacy.count < (uint32_t)CAPTURE_MAX) {
         g_legacy.ids[g_legacy.count] = event_id;
         g_legacy.count++;
@@ -58,7 +58,7 @@ UTEST(drain_unregistered_out_of_range)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     g_legacy.count = 0U;
-    urbi_register_event_drain(&vm, legacy_capture);
+    urbi_register_event_drain(&vm, legacy_capture, NULL);
 
     /* 0x12345 > 0xFFFE: out of urbi_event_id_t range. */
     int rc = urbi_inject_event(&vm, 0x12345U, NULL, 0U);
@@ -82,7 +82,7 @@ UTEST(drain_unregistered_in_range_no_registry)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     g_legacy.count = 0U;
-    urbi_register_event_drain(&vm, legacy_capture);
+    urbi_register_event_drain(&vm, legacy_capture, NULL);
 
     /* id 100 is in valid range (0..0xFFFE) but no event registered at slot 100. */
     int rc = urbi_inject_event(&vm, 100U, NULL, 0U);
@@ -109,7 +109,7 @@ UTEST(drain_registered_takes_priority)
     UASSERT(realm != NULL);
 
     g_legacy.count = 0U;
-    urbi_register_event_drain(&vm, legacy_capture);
+    urbi_register_event_drain(&vm, legacy_capture, NULL);
 
     urbi_event_id_t id = urbi_event_register(&vm, realm, "priority_evt",
                                               NULL, NULL);
@@ -139,7 +139,7 @@ UTEST(drain_tombstoned_falls_through)
     UASSERT(realm != NULL);
 
     g_legacy.count = 0U;
-    urbi_register_event_drain(&vm, legacy_capture);
+    urbi_register_event_drain(&vm, legacy_capture, NULL);
 
     urbi_event_id_t id = urbi_event_register(&vm, realm, "tomb_fallthrough",
                                               NULL, NULL);

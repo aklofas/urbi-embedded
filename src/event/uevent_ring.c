@@ -175,7 +175,7 @@ uevent_ring_drain(struct UVM *vm)
                     if (argc < 0) {
                         /* Destructure error: log (if host_log_fn set) and drop. */
                         if (vm->host_log_fn) {
-                            vm->host_log_fn(vm, URBI_LOG_WARN,
+                            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                                 "event drain: destruct_fn error; dropping event");
                         }
                         rd = (rd + 1U) & (uint32_t)(URBI_EVENT_RING_DEPTH - 1U);
@@ -220,7 +220,7 @@ uevent_ring_drain(struct UVM *vm)
             UValue nil_payload;
             nil_payload.kind = (uint8_t)UVAL_NIL;
             nil_payload.v.i  = 0;
-            h(vm, e->event_id, nil_payload);
+            h(vm, vm->event_drain_ud, e->event_id, nil_payload);
         }
 
         rd = (rd + 1U) & (uint32_t)(URBI_EVENT_RING_DEPTH - 1U);

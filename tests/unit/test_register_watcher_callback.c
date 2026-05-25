@@ -248,7 +248,7 @@ UTEST(callback_runs_on_main_thread)
     g_isr_during_cb = -1;  /* sentinel: cb has not run yet */
 
     /* Install a trivial ISR check function (always false → MAIN context). */
-    urbi_set_isr_check_fn(&vm, NULL);  /* NULL = never ISR */
+    urbi_set_isr_check_fn(&vm, NULL, NULL);  /* NULL = never ISR */
 
     urbi_event_id_t id = urbi_event_register(&vm, realm, "accel4", NULL, NULL);
     UASSERT(id != URBI_EVENT_ID_INVALID);

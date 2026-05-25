@@ -30,7 +30,7 @@ urbi_atomic_begin(struct UVM *vm)
 
     /* Record timestamp for the URBI_DEBUG watchdog in urbi_step. */
     if (vm->host_time_us != NULL) {
-        vm->atomic_begin_us = vm->host_time_us();
+        vm->atomic_begin_us = vm->host_time_us(vm->host_time_ud);
     } else {
         vm->atomic_begin_us = 0;
     }

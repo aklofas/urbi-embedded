@@ -92,9 +92,9 @@ error_destruct_fn(struct UVM *vm,
 /* Legacy drain capture for sub-test 3. */
 static uint32_t g_legacy_call_count;
 static void
-legacy_drain(struct UVM *vm, uint32_t event_id, UValue payload)
+legacy_drain(struct UVM *vm, void *ud, uint32_t event_id, UValue payload)
 {
-    (void)vm; (void)event_id; (void)payload;
+    (void)vm; (void)ud; (void)event_id; (void)payload;
     g_legacy_call_count++;
 }
 
@@ -205,7 +205,7 @@ UTEST(drain_registered_no_legacy_handler)
     UASSERT(realm != NULL);
 
     g_legacy_call_count = 0U;
-    urbi_register_event_drain(&vm, legacy_drain);
+    urbi_register_event_drain(&vm, legacy_drain, NULL);
 
     urbi_event_id_t id = urbi_event_register(&vm, realm, "no_legacy_test",
                                               NULL, NULL);

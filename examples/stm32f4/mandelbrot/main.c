@@ -149,9 +149,9 @@ int main(void) {
         while (1);
     }
     urbi_set_writer   (&vm, port_writer, NULL);
-    urbi_set_time_us  (&vm, port_time_us);
-    urbi_set_diag_fn  (&vm, port_diag);
-    urbi_set_isr_check_fn(&vm, port_in_isr);
+    urbi_set_time_us  (&vm, port_time_us, NULL);
+    urbi_set_diag_fn  (&vm, port_diag, NULL);
+    urbi_set_isr_check_fn(&vm, port_in_isr, NULL);
 
     /* Obtain the default realm — NULL arg means global realm. */
     struct URealm *realm = urbi_realm_global(&vm);

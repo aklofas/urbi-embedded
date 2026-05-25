@@ -24,7 +24,7 @@
    - Returns UVM_OK with *out set on success, or the error code on failure.
    - Keeps vm->last_return_closure alive for the caller to inspect. */
 
-UVMError urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
+int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     /* Reset error state at entry so callers who run multiple modules
        don't see stale last_error from a prior failure. */
     vm->last_error = UVM_OK;
@@ -228,7 +228,7 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
         strand.realm = NULL;
     }
 
-    UVMError rc = vm->last_error;
+    int rc = vm->last_error;
     ustrand_destroy(&strand, vm);
     return rc;
 }

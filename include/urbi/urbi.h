@@ -14,11 +14,14 @@
 #include <stddef.h>   /* size_t */
 #include <stdint.h>   /* uint64_t */
 
-/* UValue, UExecStatus, UErrCode, UVMError, UVMAllocFn, opaque struct
- * fwd-decls (UVM, UStrand, UTag, URealm, UClosure).  Replaces the
- * pre-v0.5.5 `#include "sched/ustrand.h"` that pulled an internal header
- * into the public surface; closes API-012 / INC-003 structurally.
- * v0.9.2: UModule removed (struct deleted; a module IS its root UProto). */
+/* UValue, UErrCode, UCallbackSignal, UExecStatus (pending W5 migration),
+ * UVMAllocFn, opaque struct fwd-decls (UVM, UStrand, UTag, URealm, UClosure).
+ * Replaces the pre-v0.5.5 `#include "sched/ustrand.h"` that pulled an
+ * internal header into the public surface; closes API-012 / INC-003.
+ * v0.9.2: UModule removed (struct deleted; a module IS its root UProto).
+ * v0.10.3 (W3): UVMError retired; urbi_vm_run now returns int.
+ *   UExecStatus retained for urbi_strand_unwind_status / urbi_strand_is_fatal
+ *   (W5 migration pending).  UCallbackSignal added for host-callback returns. */
 #include "urbi/types.h"
 #include "urbi/require.h"  /* URBI_REQUIRE — invariant macro that fires in all build modes */
 
@@ -175,7 +178,7 @@ int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
  * globals.  module_name is currently advisory (no import-table lookup yet —
  * v1.x backlog).  Returns URBI_OK on success, URBI_ERR_INVALID_ARG if any
  * argument is NULL, URBI_ERR_OOM on UChunkInstance allocation failure, or
- * a UVMError-derived code if root-chunk execution fails. */
+ * an int error code (URBI_ERR_*) if root-chunk execution fails. */
 
 struct UProto;        /* forward decl — v0.9.2: UModule deleted; a module IS its root UProto */
 
@@ -307,8 +310,14 @@ struct UClosure;   /* forward decl — definition in src/chunk/uproto.h */
  *   nargs — argument count.
  *   out   — write the return value here; initialised to NIL before the call.
  *
- * Return UEXEC_OK (0) on success, UEXEC_THROW (1) to signal an exception
- * (see urbi_raise_* helpers in <urbi/urbi.h>).
+ * Return value (v0.10.3 W3 unified convention):
+ *   URBI_CB_OK   (0) — no exception; *out holds the result.
+ *   URBI_CB_THROW    — host raised an exception (set throw value via urbi_throw;
+ *                      *out is ignored).
+ *   negative URBI_ERR_* — host-side error (treated as fatal at v1.0).
+ * Note: UEXEC_OK (0) and UEXEC_THROW (1) are still accepted for source
+ * compatibility (UEXEC_OK == URBI_CB_OK == 0; UEXEC_THROW == URBI_CB_THROW
+ * after the UCallbackSignal update in v0.10.3).
  *
  * Promoted to the public API at v0.7.1 (was internal-only in
  * src/runtime/uclosure.h).  urbi_make_native_closure (Gap L) takes this
@@ -505,10 +514,17 @@ int urbi_inject_event(struct UVM *vm, uint32_t event_id,
  *
  * Pass NULL to remove a previously registered handler.
  * Not ISR-safe (must be called from the same thread that drives urbi_step). */
+/* v0.10.3 (W3): urbi_event_drain_handler gains a void *ud parameter
+ * (api-ergonomics F7) so the drain callback can carry per-VM state. */
 typedef void (*urbi_event_drain_handler)(struct UVM *vm,
+                                         void *ud,
                                          uint32_t event_id,
                                          UValue payload);
-void urbi_register_event_drain(struct UVM *vm, urbi_event_drain_handler h);
+/* urbi_register_event_drain: install the ISR-ring drain callback.
+ * h is the handler (NULL to remove).  ud is forwarded to every call.
+ * Not ISR-safe (must be called from the same thread that drives urbi_step). */
+void urbi_register_event_drain(struct UVM *vm, urbi_event_drain_handler h,
+                               void *ud);
 
 /* === Gap B — Named-event payload destructure fn (v0.7.1) ===
  *
@@ -673,9 +689,17 @@ extern const UCompileBudget URBI_DEFAULT_REPL_BUDGET;
  * verb-/concept-callbacks (urbi_set_wake_fn, urbi_set_isr_check_fn).
  * Lua precedent: lua_setwarnf (Lua 5.4).  SQLite precedent:
  * sqlite3_config(SQLITE_CONFIG_LOG, ...). */
-typedef void (*urbi_diag_fn)(struct UVM *vm, int level, const char *fmt, ...);
+/* === W3: error model === */
+/* v0.10.3 (W3): urbi_diag_fn gains a void *ud parameter (api-ergonomics F7).
+ * The ud is passed through by urbi_set_diag_fn and forwarded on every callback
+ * invocation.  Embedders that want per-VM log state no longer need globals. */
+typedef void (*urbi_diag_fn)(struct UVM *vm, void *ud, int level,
+                             const char *fmt, ...);
 
-void urbi_set_diag_fn(struct UVM *vm, urbi_diag_fn fn);
+/* urbi_set_diag_fn: install the runtime diagnostic channel callback.
+ * fn is the callback (NULL to uninstall).  ud is forwarded to every call.
+ * NULL vm is a no-op. */
+void urbi_set_diag_fn(struct UVM *vm, urbi_diag_fn fn, void *ud);
 
 /* urbi_vm_write: write `msg[0..msg_len)` to `channel[0..channel_len)` on `vm`.
  *
@@ -716,9 +740,14 @@ void urbi_vm_write(struct UVM *vm,
  * Pass NULL to urbi_set_time_us to restore the default.
  *
  * Thread safety: MAIN. */
-typedef uint64_t (*urbi_time_us_fn)(void);
+/* v0.10.3 (W3): urbi_time_us_fn gains a void *ud parameter (api-ergonomics F7).
+ * Embedders that maintain per-VM time state no longer need globals. */
+typedef uint64_t (*urbi_time_us_fn)(void *ud);
 
-void urbi_set_time_us(struct UVM *vm, urbi_time_us_fn fn);
+/* urbi_set_time_us: install the monotonic time source.
+ * fn is the callback (NULL restores the default).  ud is forwarded to every call.
+ * NULL vm is a no-op. */
+void urbi_set_time_us(struct UVM *vm, urbi_time_us_fn fn, void *ud);
 
 /* === Gap S — Wake notification hook (v0.7.1) ===
  *
@@ -784,7 +813,7 @@ void urbi_atomic_end(struct UVM *vm);
  * it matches the handle returned by urbi_register_watcher.
  * completion_status mirrors the strand's fatal_status (UEXEC_OK / THROW /
  * TAG_STOP / CANCEL) cast to int for script-side; for host-side it is
- * URBI_OK or URBI_ERR_WATCHER_UNREGISTER.
+ * URBI_CB_OK (0) or URBI_CB_UNREGISTER (1) / URBI_ERR_WATCHER_UNREGISTER.
  *
  * Default is NULL after urbi_vm_init; pass NULL to uninstall. */
 typedef int urbi_watcher_handle_t;
@@ -794,12 +823,18 @@ typedef int urbi_watcher_handle_t;
  * for script-side watcher-body-done notifications. */
 #define URBI_WATCHER_HANDLE_INVALID  ((urbi_watcher_handle_t)0)
 
+/* v0.10.3 (W3): urbi_watcher_body_done_fn gains a void *ud parameter
+ * (api-ergonomics F7 / reactive-runtime F7). */
 typedef void (*urbi_watcher_body_done_fn)(struct UVM *vm,
+                                          void *ud,
                                           urbi_watcher_handle_t handle,
                                           int completion_status);
 
+/* urbi_set_watcher_body_done_fn: install the watcher-body-completion hook.
+ * fn is the callback (NULL to uninstall).  ud is forwarded to every call.
+ * NULL vm is a no-op. */
 void urbi_set_watcher_body_done_fn(struct UVM *vm,
-                                   urbi_watcher_body_done_fn fn);
+                                   urbi_watcher_body_done_fn fn, void *ud);
 
 /* === Gap J — host-side reactive watchers (v0.7.1) ===
  *
@@ -815,10 +850,11 @@ void urbi_set_watcher_body_done_fn(struct UVM *vm,
  *   argc     — number of valid entries in args[].
  *   ud       — user-data pointer registered with urbi_register_watcher.
  *
- * Return value contract:
- *   URBI_OK (0)                  — remain registered; fire again on next event.
- *   URBI_ERR_WATCHER_UNREGISTER  — auto-unregister after this firing.
- *   Any other value              — treated as URBI_OK (future extension point).
+ * Return value contract (v0.10.3 W3 unified convention):
+ *   URBI_CB_OK         (0) — remain registered; fire again on next event.
+ *   URBI_CB_UNREGISTER (1) — auto-unregister after this firing.
+ *   URBI_ERR_WATCHER_UNREGISTER   — legacy alias for URBI_CB_UNREGISTER.
+ *   negative URBI_ERR_*           — host-side error (treated as fatal at v1.0).
  *
  * Thread safety: MAIN — invoked from the safepoint drain on the main thread. */
 typedef int (*urbi_watcher_fn)(struct UVM *vm,
@@ -962,8 +998,10 @@ UValue urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
 #endif
 
 /* urbi_set_isr_check_fn: register a predicate that returns true when called
- * from ISR context.  Pass NULL to disable ISR checking (default). */
-void urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void));
+ * from ISR context.  Pass NULL to disable ISR checking (default).
+ * v0.10.3 (W3): gains a trailing void *ud; the callback receives ud on each
+ * invocation so ISR-detection state can be per-VM without globals. */
+void urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void *ud), void *ud);
 
 /* urbi_set_callback_watchdog_mode: set the watchdog response mode.
  * URBI_WATCHDOG_WARN — log warning via host_log_fn.
@@ -1021,7 +1059,14 @@ void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi)
  * the return value (partial-init state is reaped on the destroy path). */
 int      urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 void     urbi_vm_destroy(struct UVM *vm);
-UVMError urbi_vm_run    (struct UVM *vm, struct URealm *realm,
+/* urbi_vm_run: run root proto to completion.
+ * v0.10.3 (W3): return type changed from UVMError to int.
+ *   URBI_OK (0) on success; *out receives the final value.
+ *   URBI_ERR_OOM if allocation fails during execution.
+ *   URBI_ERR_STRAND_FATAL if an unhandled throw or type error halts the strand.
+ * Callers that stored the result in `UVMError rc` still compile (UVMError
+ * is now a typedef for int) but should migrate to plain `int rc`. */
+int      urbi_vm_run    (struct UVM *vm, struct URealm *realm,
                          const struct UProto *root, UValue *out);
 
 /* === urbi_lock_heap (Phase 13 / T145) ===

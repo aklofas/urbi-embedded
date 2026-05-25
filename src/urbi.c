@@ -68,23 +68,28 @@ urbi_panic(const char *msg)
 }
 
 /* urbi_set_isr_check_fn: install an ISR-context predicate.
- * Pass NULL to disable ISR checking (the default after urbi_vm_init). */
+ * Pass NULL to disable ISR checking (the default after urbi_vm_init).
+ * v0.10.3 (W3): gains void *ud; forwarded on each callback invocation. */
 void
-urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void))
+urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void *ud), void *ud)
 {
     if (!vm) return;
     vm->isr_check_fn = fn;
+    vm->isr_check_ud = ud;
 }
 
 /* urbi_set_watcher_body_done_fn: install the watcher-body-completion hook.
  * Pass NULL to uninstall (the default after urbi_vm_init).  NULL vm is a
  * no-op; the cast accepts the public typedef and stores it through the
- * inline-typed slot on UVM (shape-identical).  T33 / spec §7. */
+ * inline-typed slot on UVM (shape-identical).  T33 / spec §7.
+ * v0.10.3 (W3): gains void *ud (api-ergonomics F7 / reactive-runtime F7). */
 void
-urbi_set_watcher_body_done_fn(struct UVM *vm, urbi_watcher_body_done_fn fn)
+urbi_set_watcher_body_done_fn(struct UVM *vm, urbi_watcher_body_done_fn fn,
+                               void *ud)
 {
     if (!vm) return;
     vm->watcher_body_done_fn = fn;
+    vm->watcher_body_done_ud = ud;
 }
 
 #if !defined(URBI_BYTECODE_ONLY)
@@ -231,7 +236,7 @@ urbi_in_isr(const struct UVM *vm)
 {
     return vm != NULL
         && vm->isr_check_fn != NULL
-        && vm->isr_check_fn();
+        && vm->isr_check_fn(vm->isr_check_ud);
 }
 #endif
 
@@ -256,14 +261,14 @@ urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
                              UHostFn fn, int argc, UValue *argv)
 {
     if (!vm || !fn) return urbi_make_nil();
-    uint64_t t0      = vm->host_time_us();
+    uint64_t t0      = vm->host_time_us(vm->host_time_ud);
     UValue   r       = fn(s, argc, argv);
-    uint64_t elapsed = vm->host_time_us() - t0;
+    uint64_t elapsed = vm->host_time_us(vm->host_time_ud) - t0;
     if (elapsed > (uint64_t)vm->callback_warn_us) {
         if (vm->callback_watchdog_mode == URBI_WATCHDOG_ASSERT) {
             urbi_panic("host callback exceeded watchdog threshold");
         } else if (vm->host_log_fn) {
-            vm->host_log_fn(vm, URBI_LOG_WARN,
+            vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                             "host callback exceeded %u us (took %llu us)",
                             vm->callback_warn_us, (unsigned long long)elapsed);
         }

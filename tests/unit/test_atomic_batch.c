@@ -31,11 +31,11 @@ typedef struct {
 
 static AtomicCapture g_atomic_cap;
 
-static void atomic_drain_handler(struct UVM *vm,
+static void atomic_drain_handler(struct UVM *vm, void *ud,
                                  uint32_t event_id,
                                  UValue payload)
 {
-    (void)vm; (void)payload;
+    (void)vm; (void)ud; (void)payload;
     if (g_atomic_cap.call_count < (uint32_t)CAPTURE_MAX) {
         g_atomic_cap.event_ids[g_atomic_cap.call_count] = event_id;
         g_atomic_cap.call_count++;
@@ -53,7 +53,7 @@ UTEST(events_held_during_atomic)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     g_atomic_cap.call_count = 0;
-    urbi_register_event_drain(&vm, atomic_drain_handler);
+    urbi_register_event_drain(&vm, atomic_drain_handler, NULL);
 
     urbi_atomic_begin(&vm);
     UASSERT(vm.atomic_active != 0);
@@ -84,7 +84,7 @@ UTEST(events_dispatched_after_atomic_end)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     g_atomic_cap.call_count = 0;
-    urbi_register_event_drain(&vm, atomic_drain_handler);
+    urbi_register_event_drain(&vm, atomic_drain_handler, NULL);
 
     urbi_atomic_begin(&vm);
     urbi_inject_event(&vm, 10U, NULL, 0U);
@@ -123,7 +123,7 @@ UTEST(begin_without_end_accumulates)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     g_atomic_cap.call_count = 0;
-    urbi_register_event_drain(&vm, atomic_drain_handler);
+    urbi_register_event_drain(&vm, atomic_drain_handler, NULL);
 
     urbi_atomic_begin(&vm);
     urbi_inject_event(&vm, 42U, NULL, 0U);

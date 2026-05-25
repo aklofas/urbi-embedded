@@ -159,10 +159,10 @@ void app_main(void)
 
     /* 2. Port hooks — time/writer/isr_check.  No wake_fn: the smoke drives
      * urbi_step from app_main directly, so no task-notification needed. */
-    urbi_set_time_us(&vm, port_time_us);
+    urbi_set_time_us(&vm, port_time_us, NULL);
     urbi_set_writer (&vm, port_writer, NULL);
 #ifdef URBI_DEBUG
-    urbi_set_isr_check_fn(&vm, port_in_isr);
+    urbi_set_isr_check_fn(&vm, port_in_isr, NULL);
 #endif
 
     /* 3. Realm + ping event (with destructure) + signal_pass host fn. */

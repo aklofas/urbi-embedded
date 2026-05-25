@@ -16,7 +16,8 @@
 
 #include "port_esp_idf.h"
 
-bool port_in_isr(void)
+bool port_in_isr(void *ud)
 {
+    (void)ud;
     return xPortInIsrContext() != 0;
 }
