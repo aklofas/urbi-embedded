@@ -65,7 +65,7 @@ UTEST(destroy_clears_event_waiter_head)
     UASSERT(ev != NULL);
 
     /* Allocate a strand that belongs to the realm. */
-    UStrand *s = urbi_strand_create(realm, NULL);
+    UStrand *s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s != NULL);
 
     /* Arm the strand so sched_strand_block's decrement does not underflow. */
@@ -83,7 +83,7 @@ UTEST(destroy_clears_event_waiter_head)
     vm.cur_strand = NULL;
 
     /* Destroy the strand directly (the realm-destroy path, but one strand). */
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
 
     /* The event's waiter chain must now be empty — no dangling pointer. */
     UASSERT(ev->waiters_head == NULL);
@@ -115,7 +115,7 @@ UTEST(destroy_clears_event_waiter_mid_chain)
     UASSERT(ev != NULL);
 
     /* Strand 1. */
-    UStrand *s1 = urbi_strand_create(realm, NULL);
+    UStrand *s1 = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s1 != NULL);
     s1->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
@@ -124,7 +124,7 @@ UTEST(destroy_clears_event_waiter_mid_chain)
     vm.cur_strand = NULL;
 
     /* Strand 2. */
-    UStrand *s2 = urbi_strand_create(realm, NULL);
+    UStrand *s2 = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s2 != NULL);
     s2->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
@@ -138,7 +138,7 @@ UTEST(destroy_clears_event_waiter_mid_chain)
     UASSERT(s2->next_event_waiter == NULL);
 
     /* Destroy s1 (head of chain). */
-    urbi_strand_destroy(s1);
+    urbi_strand_destroy(&vm, s1);
 
     /* s2 must still be on the chain; s1 gone. */
     UASSERT(ev->waiters_head == s2);
@@ -146,7 +146,7 @@ UTEST(destroy_clears_event_waiter_mid_chain)
     UASSERT(s2->next_event_waiter == NULL);
 
     /* Cleanup: destroy s2 normally. */
-    urbi_strand_destroy(s2);
+    urbi_strand_destroy(&vm, s2);
     UASSERT(ev->waiters_head == NULL);
 
     urbi_vm_destroy(&vm);
@@ -174,11 +174,11 @@ UTEST(destroy_wakes_joiner)
     UASSERT(realm != NULL);
 
     /* Child strand — will be destroyed. */
-    UStrand *child = urbi_strand_create(realm, NULL);
+    UStrand *child = urbi_strand_create(&vm, realm, NULL);
     UASSERT(child != NULL);
 
     /* Parent (joiner) strand — manually placed on child->joiners_head. */
-    UStrand *parent = urbi_strand_create(realm, NULL);
+    UStrand *parent = urbi_strand_create(&vm, realm, NULL);
     UASSERT(parent != NULL);
 
     /* Put the parent in WAITING_JOIN state (mirrors what OP_JOIN_WAIT does).
@@ -200,7 +200,7 @@ UTEST(destroy_wakes_joiner)
     UASSERT_EQ(vm.strand_runnable_count, 0);
 
     /* Destroy the child — should wake the parent. */
-    urbi_strand_destroy(child);
+    urbi_strand_destroy(&vm, child);
 
     /* joiners_head must be cleared (fork_wake_joiners clears it before walking). */
     /* child is freed at this point; do not dereference it. */
@@ -210,7 +210,7 @@ UTEST(destroy_wakes_joiner)
     UASSERT_EQ(vm.strand_runnable_count, 1);
 
     /* Cleanup: destroy parent. */
-    urbi_strand_destroy(parent);
+    urbi_strand_destroy(&vm, parent);
 
     urbi_vm_destroy(&vm);
 }

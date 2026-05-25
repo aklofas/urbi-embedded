@@ -90,7 +90,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
     }
 
     /* Step 2: allocate body strand (DORMANT). */
-    body = urbi_strand_create(w->realm, w->body);
+    body = urbi_strand_create(vm, w->realm, w->body);
     if (!body) {
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
@@ -107,7 +107,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
         chain[0] = w->owning_tag;
         urbi_strand_attach_ambient_tags(body, chain, 1);
         if (body->state == USTRAND_STATE_DEAD) {
-            urbi_strand_destroy(body);
+            urbi_strand_destroy(vm, body);
             if (vm->host_log_fn)
                 vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                     "watcher body spawn: ambient-attach overflow");
@@ -117,7 +117,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
 
     /* Step 4: arm — allocates register stack and wires pc/R/frame_count. */
     if (urbi_strand_arm_from_closure(body, w->body) != 0) {
-        urbi_strand_destroy(body);
+        urbi_strand_destroy(vm, body);
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher body spawn: out of memory (stack alloc)");
@@ -178,7 +178,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
     w->body_strand           = body;
 
     /* Step 6: enqueue on run-queue (DORMANT → READY). */
-    urbi_strand_start(body);
+    urbi_strand_start(vm, body);
 }
 
 void

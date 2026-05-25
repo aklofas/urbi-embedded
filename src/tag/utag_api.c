@@ -99,8 +99,9 @@ urbi_tag_create(struct UVM *vm, struct URealm *realm,
  *
  * Returns URBI_OK on success, URBI_ERR_INVALID_ARG if tag or out is NULL. */
 int
-urbi_tag_info(const struct UTag *tag, urbi_tag_info_t *out)
+urbi_tag_info(struct UVM *vm, const struct UTag *tag, urbi_tag_info_t *out)
 {
+    (void)vm;
     if (tag == NULL || out == NULL) {
         return URBI_ERR_INVALID_ARG;
     }

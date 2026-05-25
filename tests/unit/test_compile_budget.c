@@ -37,7 +37,7 @@ UTEST(budget_source_bytes_triggers)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     UCompileBudget tight = { 0U, 0U, 8U };  /* 8 bytes max source */
-    urbi_realm_set_compile_budget(r, &tight);
+    urbi_realm_set_compile_budget(&vm, r, &tight);
 
     /* "12345678" fits exactly; submit 9 bytes -> trip. */
     char buf[256];
@@ -56,7 +56,7 @@ UTEST(budget_source_bytes_at_boundary_compiles)
 
     URealm *r = urbi_realm_create(&vm);
     UCompileBudget tight = { 0U, 0U, 5U };
-    urbi_realm_set_compile_budget(r, &tight);
+    urbi_realm_set_compile_budget(&vm, r, &tight);
 
     char buf[256];
     /* "1+2+3" = 5 bytes, equals the limit (-> allowed). */
@@ -76,7 +76,7 @@ UTEST(budget_depth_limit_triggers)
 
     URealm *r = urbi_realm_create(&vm);
     UCompileBudget tight = { 5U, 0U, 1024U };
-    urbi_realm_set_compile_budget(r, &tight);
+    urbi_realm_set_compile_budget(&vm, r, &tight);
 
     /* Build "((((((1))))))" — 6 nested parens (depth 6 > limit 5). */
     char src[64];
@@ -104,7 +104,7 @@ UTEST(budget_depth_below_limit_compiles)
 
     URealm *r = urbi_realm_create(&vm);
     UCompileBudget loose = { 64U, 0U, 1024U };
-    urbi_realm_set_compile_budget(r, &loose);
+    urbi_realm_set_compile_budget(&vm, r, &loose);
 
     char buf[256];
     int rc = urbi_repl_eval(&vm, r, "((1+2))", 7, buf, sizeof(buf));
@@ -123,7 +123,7 @@ UTEST(budget_node_count_triggers)
 
     URealm *r = urbi_realm_create(&vm);
     UCompileBudget tight = { 1024U, 5U, 1024U };  /* 5-node cap */
-    urbi_realm_set_compile_budget(r, &tight);
+    urbi_realm_set_compile_budget(&vm, r, &tight);
 
     /* "1+2+3+4+5+6" produces > 5 nodes (each integer + binary). */
     char buf[256];
@@ -143,7 +143,7 @@ UTEST(budget_off_for_global_realm)
     UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
 
     URealm *r = urbi_realm_global(&vm);
-    UASSERT(urbi_realm_get_compile_budget(r) == NULL);
+    UASSERT(urbi_realm_get_compile_budget(&vm, r) == NULL);
 
     /* Build "((((((((((1))))))))))" — 10 nested parens; would trip a
      * REPL-default budget (256) somewhere far above this, but the global
@@ -170,7 +170,7 @@ UTEST(budget_repl_realm_default_compiles_normal_source)
     UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
 
     URealm *r = urbi_realm_create_repl(&vm);
-    UASSERT(urbi_realm_get_compile_budget(r) != NULL);
+    UASSERT(urbi_realm_get_compile_budget(&vm, r) != NULL);
 
     /* A normal expression compiles cleanly under the default budget. */
     char buf[256];

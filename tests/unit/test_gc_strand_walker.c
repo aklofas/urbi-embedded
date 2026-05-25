@@ -79,8 +79,8 @@ UTEST(strand_walker_visits_waiting_join_strand)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *parent = urbi_strand_create(r, NULL);
-    UStrand *child  = urbi_strand_create(r, NULL);
+    UStrand *parent = urbi_strand_create(&vm, r, NULL);
+    UStrand *child  = urbi_strand_create(&vm, r, NULL);
     UASSERT(parent != NULL);
     UASSERT(child  != NULL);
 
@@ -136,7 +136,7 @@ UTEST(strand_walker_dead_strand_filtered)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
 
     const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
@@ -180,7 +180,7 @@ UTEST(strand_walker_reaches_strand_off_scheduler_queues)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
 
     /* Confirm the strand really is OFF both scheduler queues at this point. */

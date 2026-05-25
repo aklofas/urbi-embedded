@@ -114,12 +114,12 @@ UTEST(vm_step_budget_exhausts_mid_program)
     UProto module;
     UASSERT(budget_compile(&vm, "var i = 0; while (i < 10) { i = i + 1 }", &module));
 
-    UStrand *s = urbi_strand_create(realm, NULL);
+    UStrand *s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s != NULL);
 
     UValue result = {0};
     UASSERT(budget_arm_strand(&vm, &module, s, &result));
-    urbi_strand_start(s);  /* DORMANT → READY */
+    urbi_strand_start(&vm, s);  /* DORMANT → READY */
 
     /* Call urbi_step with budget=1 opcode.  With a non-trivial program, this
      * should not be QUIESCENT after the very first call. */
@@ -163,7 +163,7 @@ UTEST(per_strand_budget_zero_causes_soft_yield)
     UProto module;
     UASSERT(budget_compile(&vm, "var i = 0; while (i < 5) { i = i + 1 }", &module));
 
-    UStrand *s = urbi_strand_create(realm, NULL);
+    UStrand *s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s != NULL);
 
     UValue result = {0};
@@ -173,7 +173,7 @@ UTEST(per_strand_budget_zero_causes_soft_yield)
     s->instruction_budget_remaining = 0;
 
     /* Start the strand. */
-    urbi_strand_start(s);
+    urbi_strand_start(&vm, s);
 
     /* Run one step with a minimal budget; the strand should soft-yield at the
      * first safepoint because instruction_budget_remaining == 0. */

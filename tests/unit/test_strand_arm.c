@@ -72,7 +72,7 @@ strand_arm_sets_exec_fields(void)
     make_trivial_closure(&cl, &proto, instr, consts);
 
     /* Create a fresh DORMANT strand (execution fields zero-init). */
-    UStrand *s = urbi_strand_create(realm, &cl);
+    UStrand *s = urbi_strand_create(&vm, realm, &cl);
     UASSERT(s != NULL);
 
     /* Arm it. */
@@ -96,7 +96,7 @@ strand_arm_sets_exec_fields(void)
     /* open_upvals must be NULL. */
     UASSERT(s->open_upvals == NULL);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -127,7 +127,7 @@ strand_arm_null_constants(void)
     cl.proto   = &proto;
     cl.nupvals = 0;
 
-    UStrand *s = urbi_strand_create(realm, &cl);
+    UStrand *s = urbi_strand_create(&vm, realm, &cl);
     UASSERT(s != NULL);
 
     int rc = urbi_strand_arm_from_closure(s, &cl);
@@ -142,7 +142,7 @@ strand_arm_null_constants(void)
     UASSERT(s->R       == s->stack);
     UASSERT_EQ(0, s->frame_count);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -174,7 +174,7 @@ strand_arm_from_closure_initializes_module_instance(void)
     UClosure cl;
     make_trivial_closure(&cl, &proto, instr, consts);
 
-    UStrand *s = urbi_strand_create(realm, &cl);
+    UStrand *s = urbi_strand_create(&vm, realm, &cl);
     UASSERT(s != NULL);
     UASSERT(s->module_instance == NULL);  /* fresh strands start with NULL */
 
@@ -191,7 +191,7 @@ strand_arm_from_closure_initializes_module_instance(void)
     UASSERT(s->module_instance == &fake_mi);
 
     s->module_instance = NULL;  /* avoid GC chase of stack-local mi */
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -217,7 +217,7 @@ strand_arm_from_closure_asserts_stack_null(void)
     UClosure cl;
     make_trivial_closure(&cl, &proto, instr, consts);
 
-    UStrand *s = urbi_strand_create(realm, &cl);
+    UStrand *s = urbi_strand_create(&vm, realm, &cl);
     UASSERT(s != NULL);
     /* Fresh strands have stack == NULL — frame-0 setup is deferred. */
     UASSERT(s->stack == NULL);
@@ -230,7 +230,7 @@ strand_arm_from_closure_asserts_stack_null(void)
     UASSERT(s->stack != NULL);
     UASSERT(s->R == s->stack);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -258,7 +258,7 @@ strand_arm_from_closure_resets_cur_consts_on_rearm(void)
     UClosure cl1;
     make_trivial_closure(&cl1, &proto1, instr1, consts1);
 
-    UStrand *s = urbi_strand_create(realm, &cl1);
+    UStrand *s = urbi_strand_create(&vm, realm, &cl1);
     UASSERT(s != NULL);
 
     /* First arm — cur_consts picks up consts1. */
@@ -293,7 +293,7 @@ strand_arm_from_closure_resets_cur_consts_on_rearm(void)
      * pool (NULL here), not retain the stale consts1 pointer from prior arm. */
     UASSERT(s->cur_consts == NULL);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

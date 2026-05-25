@@ -545,7 +545,7 @@ void app_main(void)
     /* 5: load baked bytecode.  Panic on failure -> clean coredump
      * rather than a silent boot loop. */
     char errbuf[128] = {0};
-    struct UProto *m = urbi_chunk_from_bytes(eye_demo_bytecode,
+    struct UProto *m = urbi_chunk_from_bytes(&vm, eye_demo_bytecode,
                                                eye_demo_bytecode_size,
                                                errbuf, sizeof errbuf);
     if (m == NULL) {

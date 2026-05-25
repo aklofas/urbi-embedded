@@ -48,7 +48,7 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
     UASSERT(r != NULL);
 
     /* Strand 1: drives READY → WAITING_SLEEP → READY → RUNNING → DEAD. */
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
 
     /* Initial: DORMANT, on realm.strands_head. */
@@ -56,7 +56,7 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
     UASSERT(strand_on_realm_list(r, s));
 
     /* DORMANT → READY. */
-    urbi_strand_start(s);
+    urbi_strand_start(&vm, s);
     UASSERT_EQ((int)USTRAND_GET_STATE(s), (int)USTRAND_READY);
     UASSERT(strand_on_realm_list(r, s));
 
@@ -85,7 +85,7 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
     UASSERT(strand_on_realm_list(r, s));
 
     /* RUNNING → WAITING_JOIN.  Spawn a child, park s on its joiners chain. */
-    UStrand *child = urbi_strand_create(r, NULL);
+    UStrand *child = urbi_strand_create(&vm, r, NULL);
     UASSERT(child != NULL);
     UASSERT(strand_on_realm_list(r, child));
 
@@ -118,14 +118,14 @@ UTEST(mixed_state_strands_all_remain_on_realm_list)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *a = urbi_strand_create(r, NULL);   /* will stay DORMANT */
-    UStrand *b = urbi_strand_create(r, NULL);   /* will go READY */
-    UStrand *c = urbi_strand_create(r, NULL);   /* will go WAITING_SLEEP */
-    UStrand *d = urbi_strand_create(r, NULL);   /* will go DEAD */
+    UStrand *a = urbi_strand_create(&vm, r, NULL);   /* will stay DORMANT */
+    UStrand *b = urbi_strand_create(&vm, r, NULL);   /* will go READY */
+    UStrand *c = urbi_strand_create(&vm, r, NULL);   /* will go WAITING_SLEEP */
+    UStrand *d = urbi_strand_create(&vm, r, NULL);   /* will go DEAD */
     UASSERT(a && b && c && d);
 
     /* Drive each into a different state. */
-    urbi_strand_start(b);                                         /* DORMANT → READY */
+    urbi_strand_start(&vm, b);                                         /* DORMANT → READY */
 
     sched_dequeue_ready_head(&vm);                                /* dequeues b */
     b->state = USTRAND_STATE_RUNNING;

@@ -137,8 +137,10 @@ urbi_realm_set_writer(struct UVM *vm, URealm *realm,
 }
 
 void
-urbi_realm_set_compile_budget(URealm *realm, const UCompileBudget *budget)
+urbi_realm_set_compile_budget(struct UVM *vm, URealm *realm,
+                              const UCompileBudget *budget)
 {
+    (void)vm;
     if (realm == NULL) return;
     if (budget == NULL) {
         realm->has_compile_budget = false;
@@ -150,8 +152,9 @@ urbi_realm_set_compile_budget(URealm *realm, const UCompileBudget *budget)
 }
 
 const UCompileBudget *
-urbi_realm_get_compile_budget(const URealm *realm)
+urbi_realm_get_compile_budget(struct UVM *vm, const URealm *realm)
 {
+    (void)vm;
     if (realm == NULL || !realm->has_compile_budget) return NULL;
     return &realm->compile_budget;
 }
@@ -221,7 +224,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
             UStrand *next = strand->next_in_realm;
             strand->next_in_realm = NULL;
             sched_strand_unbind_from_ready_queue(strand);
-            urbi_strand_destroy(strand);
+            urbi_strand_destroy(vm, strand);
             strand = next;
         }
     }

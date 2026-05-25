@@ -361,7 +361,7 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Step 1: allocate body strand (DORMANT). */
-    UStrand *body = urbi_strand_create(p->realm, p->body);
+    UStrand *body = urbi_strand_create(vm, p->realm, p->body);
     if (body == NULL) {
         if (vm->host_log_fn != NULL) {
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
@@ -377,7 +377,7 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
         chain[0] = p->owning_tag;
         urbi_strand_attach_ambient_tags(body, chain, 1);
         if (body->state == USTRAND_STATE_DEAD) {
-            urbi_strand_destroy(body);
+            urbi_strand_destroy(vm, body);
             if (vm->host_log_fn != NULL) {
                 vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                     "every: body spawn ambient-attach overflow");
@@ -388,7 +388,7 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
 
     /* Step 3: arm — allocates register stack, wires pc / R / frame_count. */
     if (urbi_strand_arm_from_closure(body, p->body) != 0) {
-        urbi_strand_destroy(body);
+        urbi_strand_destroy(vm, body);
         if (vm->host_log_fn != NULL) {
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "every: body spawn failed (stack alloc OOM)");
@@ -412,7 +412,7 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
     p->current_strand    = body;
 
     /* Step 6: DORMANT -> READY (enqueue on run-queue). */
-    urbi_strand_start(body);
+    urbi_strand_start(vm, body);
 
     return body;
 }

@@ -208,11 +208,11 @@ UTEST(tag_enter_setter_throws_protected_slot)
     fn(&s, 2, argv);
 
     /* Strand should now have a THROW unwind pending. */
-    UExecStatus status = urbi_strand_unwind_status(&s);
-    UASSERT_EQ((int)status, (int)UEXEC_THROW);
+    UStrandUnwind status = urbi_strand_unwind_status(&vm, &s);
+    UASSERT_EQ((int)status, (int)URBI_UNWIND_THROW);
 
     /* The thrown value should be an int == URBI_ERR_PROTECTED_SLOT. */
-    if (status == UEXEC_THROW) {
+    if (status == URBI_UNWIND_THROW) {
         UValue thrown = s.unwind_value;
         UASSERT_EQ((int)thrown.kind, (int)UVAL_INT);
         if (thrown.kind == (uint8_t)UVAL_INT) {

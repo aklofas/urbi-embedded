@@ -106,7 +106,7 @@ urbi_aux_load_and_run(struct UVM *vm,
     }
 
     char errmsg[256] = {0};
-    struct UProto *m = urbi_chunk_from_bytes(bytecode, len,
+    struct UProto *m = urbi_chunk_from_bytes(vm, bytecode, len,
                                               errmsg, sizeof errmsg);
     if (m == NULL) {
         /* Attempt to identify the error kind from the message.  The public
@@ -131,7 +131,7 @@ urbi_aux_load_and_run(struct UVM *vm,
     UValue result;
     int rc = urbi_run_chunk(vm, realm, m, &result);
 
-    urbi_chunk_free(m);
+    urbi_chunk_free(vm, m);
 
     if (rc == URBI_OK && out_result != NULL) {
         *out_result = result;

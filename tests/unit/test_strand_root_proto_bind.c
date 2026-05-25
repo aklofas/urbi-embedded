@@ -114,7 +114,7 @@ UTEST(root_proto_aliases_module_root_proto)
     UASSERT(s->root_proto == &module);
 
     /* Explicit destroy discharges the module refcount. */
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, &vm);

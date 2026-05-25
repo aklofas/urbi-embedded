@@ -45,7 +45,7 @@ UTEST(tag_info_fresh_tag)
 
     if (tag != NULL) {
         urbi_tag_info_t info;
-        int rc = urbi_tag_info(tag, &info);
+        int rc = urbi_tag_info(&vm, tag, &info);
         UASSERT_EQ(rc, URBI_OK);
         UASSERT_EQ((int)info.state, (int)URBI_TAG_RUNNING);
         UASSERT_EQ((int)info.member_count, 0);
@@ -75,7 +75,7 @@ UTEST(tag_info_after_stop)
         UASSERT_EQ(rc, URBI_OK);
 
         urbi_tag_info_t info;
-        rc = urbi_tag_info(tag, &info);
+        rc = urbi_tag_info(&vm, tag, &info);
         UASSERT_EQ(rc, URBI_OK);
         UASSERT_EQ((int)info.state, (int)URBI_TAG_STOPPED);
     }
@@ -97,7 +97,7 @@ UTEST(tag_info_realm_root_tag_no_parent)
      * (not urbi_tag_create), so parent is NULL. */
     UASSERT(realm->tag != NULL);
     urbi_tag_info_t info;
-    int rc = urbi_tag_info(realm->tag, &info);
+    int rc = urbi_tag_info(&vm, realm->tag, &info);
     UASSERT_EQ(rc, URBI_OK);
     UASSERT(info.has_parent == false);
 
@@ -127,7 +127,7 @@ UTEST(tag_info_frozen_state_from_flag)
         tag->flags |= UTAG_FLAG_FROZEN;
 
         urbi_tag_info_t info;
-        int rc = urbi_tag_info(tag, &info);
+        int rc = urbi_tag_info(&vm, tag, &info);
         UASSERT_EQ(rc, URBI_OK);
         UASSERT_EQ((int)info.state, (int)URBI_TAG_FROZEN);
         UASSERT_EQ((int)info.member_count, 0);
@@ -150,12 +150,12 @@ UTEST(tag_info_null_args_invalid)
 
     urbi_tag_info_t info;
     /* NULL tag. */
-    int rc = urbi_tag_info(NULL, &info);
+    int rc = urbi_tag_info(&vm, NULL, &info);
     UASSERT_EQ(rc, URBI_ERR_INVALID_ARG);
 
     /* NULL out. */
     if (tag != NULL) {
-        rc = urbi_tag_info(tag, NULL);
+        rc = urbi_tag_info(&vm, tag, NULL);
         UASSERT_EQ(rc, URBI_ERR_INVALID_ARG);
     }
 

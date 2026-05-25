@@ -93,7 +93,7 @@ UTEST(strand_create_null_alloc_returns_null)
     vm.alloc_fn = pool_null_alloc;
     vm.alloc_ud = NULL;
 
-    UStrand *s = urbi_strand_create(realm, NULL);
+    UStrand *s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s == NULL);  /* allocation failure must return NULL, not crash */
 
     /* Restore so destroy can free memory. */
@@ -119,14 +119,14 @@ UTEST(strand_alloc_exhaustion_returns_null)
     UASSERT(realm != NULL);
 
     /* Create one strand successfully. */
-    UStrand *s1 = urbi_strand_create(realm, NULL);
+    UStrand *s1 = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s1 != NULL);
 
     /* Cap at current count: next allocation fails. */
     ca.limit = ca.count;
 
     /* Second strand must return NULL. */
-    UStrand *s2 = urbi_strand_create(realm, NULL);
+    UStrand *s2 = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s2 == NULL);
 
     /* First strand and VM remain valid. */
@@ -137,7 +137,7 @@ UTEST(strand_alloc_exhaustion_returns_null)
     /* Re-enable allocs for cleanup. */
     ca.limit = (size_t)-1;
 
-    urbi_strand_destroy(s1);
+    urbi_strand_destroy(&vm, s1);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

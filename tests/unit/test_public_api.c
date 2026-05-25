@@ -127,20 +127,21 @@ UTEST(throw_return_val_tag_stop_handle_null_vm)
     memset(v._pad, 0, sizeof(v._pad));
     v.v.i = 42;
 
-    /* All three must be no-ops when s->vm is NULL. */
-    urbi_throw(&s, v);
+    /* All three must be no-ops when s->vm is NULL (pass vm=NULL; impl
+     * falls through to the strand->vm NULL check). */
+    urbi_throw(NULL, &s, v);
     UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
 
-    urbi_return_val(&s, v);
+    urbi_return_val(NULL, &s, v);
     UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
 
-    urbi_tag_stop_local(&s, NULL, v);
+    urbi_tag_stop_local(NULL, &s, NULL, v);
     UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
 
     /* Also verify NULL strand: must not crash. */
-    urbi_throw(NULL, v);
-    urbi_return_val(NULL, v);
-    urbi_tag_stop_local(NULL, NULL, v);
+    urbi_throw(NULL, NULL, v);
+    urbi_return_val(NULL, NULL, v);
+    urbi_tag_stop_local(NULL, NULL, NULL, v);
     UASSERT(1);
 }
 

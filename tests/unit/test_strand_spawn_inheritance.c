@@ -78,7 +78,7 @@ UTEST(capture_ambient_chain_bottom_up)
     UASSERT(r->tag != NULL);
 
     /* Create strand — auto-attaches realm->tag at depth 0. */
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
     UASSERT(s->cleanup_depth == 1);
 
@@ -97,7 +97,7 @@ UTEST(capture_ambient_chain_bottom_up)
     UASSERT(chain[2] == &inner);  /* topmost */
 
     /* Cleanup. */
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     /* Verify inner + outer unlinked. */
     UASSERT(inner.member_strands_head == NULL);
     UASSERT(outer.member_strands_head == NULL);
@@ -122,7 +122,7 @@ UTEST(capture_ambient_chain_skips_non_tag_kinds)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
 
     /* Push a TRY_FRAME (no owning_tag). */
@@ -142,7 +142,7 @@ UTEST(capture_ambient_chain_skips_non_tag_kinds)
     UASSERT(chain[0] == r->tag);
     UASSERT(chain[1] == &outer);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -160,7 +160,7 @@ UTEST(capture_ambient_chain_truncation)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
 
     tag_init_local(&a);
@@ -174,7 +174,7 @@ UTEST(capture_ambient_chain_truncation)
     n = urbi_strand_capture_ambient_chain(s, chain, 2);
     UASSERT(n == (size_t)-1);    /* SIZE_MAX — truncation detected */
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -199,7 +199,7 @@ UTEST(attach_ambient_tags_basic)
     UASSERT(r->tag != NULL);
 
     /* Parent strand for capturing the chain. */
-    UStrand *parent = urbi_strand_create(r, NULL);
+    UStrand *parent = urbi_strand_create(&vm, r, NULL);
     UASSERT(parent != NULL);
 
     tag_init_local(&outer);
@@ -249,7 +249,7 @@ UTEST(attach_ambient_tags_basic)
     /* Cleanup — destroy child first, then parent (unlinks all), then realm. */
     ustrand_destroy(child, &vm);
     vm.alloc_fn(child, 0, vm.alloc_ud);
-    urbi_strand_destroy(parent);
+    urbi_strand_destroy(&vm, parent);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -312,7 +312,7 @@ UTEST(spawned_strand_inherits_ambient_chain)
     UASSERT(r != NULL);
     UASSERT(r->tag != NULL);
 
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
 
     /* Strand should have exactly one cleanup entry: the synthetic realm->tag. */
@@ -325,7 +325,7 @@ UTEST(spawned_strand_inherits_ambient_chain)
     /* Strand must appear in realm->tag's member list. */
     UASSERT(r->tag->member_strands_head == &s->cleanup_base[0]);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     /* After destroy, realm->tag's member list must be empty. */
     UASSERT(r->tag->member_strands_head == NULL);
 
@@ -351,7 +351,7 @@ UTEST(synthetic_entries_no_onleave)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
     UASSERT(s->cleanup_depth >= 1U);
 
@@ -368,7 +368,7 @@ UTEST(synthetic_entries_no_onleave)
         UASSERT_EQ((unsigned)e->register_count, 0U);
     }
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -388,7 +388,7 @@ UTEST(synthetic_entries_unlink_on_termination)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
 
     /* Add a second synthetic entry for local_tag. */
@@ -401,7 +401,7 @@ UTEST(synthetic_entries_unlink_on_termination)
     UASSERT(local_tag.member_strands_head->strand_back == s);
 
     /* Destroy strand — strand_unlink_from_tags must unlink from local_tag. */
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
 
     UASSERT(local_tag.member_strands_head == NULL);
     /* realm->tag also cleared. */

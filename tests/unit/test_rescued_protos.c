@@ -104,7 +104,7 @@ UTEST(whole_root_proto_rescue_when_refcount_nonzero)
     UASSERT(vm.rescued_protos == module);
 
     /* Destroy the strand — decrements root->refcount back toward 0. */
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
 
     /* vm_destroy must free rescued_protos cleanly (no leaks, no double-free). */
     urbi_vm_destroy(&vm);
@@ -168,7 +168,7 @@ UTEST(two_modules_one_rescued_one_normal)
     UASSERT(vm.rescued_protos == ma);
 
     /* Clean up the strand. */
-    urbi_strand_destroy(sa);
+    urbi_strand_destroy(&vm, sa);
 
     urbi_vm_destroy(&vm);
 }

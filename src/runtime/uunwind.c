@@ -569,8 +569,9 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
 
 /* urbi_strand_cancel — deposit CANCEL (fatal, no catch) on a strand. */
 int
-urbi_strand_cancel(struct UStrand *strand, UValue cancel_reason)
+urbi_strand_cancel(struct UVM *vm, struct UStrand *strand, UValue cancel_reason)
 {
+    (void)vm;  /* vm mirrors strand->vm; accepted for API convention */
     if (!strand) return URBI_ERR_INVALID_ARG;
     if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
     if (USTRAND_GET_STATE(strand) == USTRAND_DEAD) return URBI_ERR_STRAND_FATAL;
@@ -593,12 +594,13 @@ urbi_strand_cancel(struct UStrand *strand, UValue cancel_reason)
  * is not stored (no string heap) — T16/T19 diagnostic infra will wire it.
  * The fatal_value is set to nil; T29 may upgrade to a string UValue. */
 int
-urbi_strand_panic(struct UStrand *strand, const char *msg)
+urbi_strand_panic(struct UVM *vm, struct UStrand *strand, const char *msg)
 {
     UValue nil;
     nil.kind  = UVAL_NIL;
     nil.v.i   = 0;
 
+    (void)vm;  /* vm mirrors strand->vm; accepted for API convention */
     if (!strand) return URBI_ERR_INVALID_ARG;
     if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
     /* FOUND-045: route diagnostic msg through host_log_fn before marking the
@@ -623,23 +625,28 @@ urbi_strand_panic(struct UStrand *strand, const char *msg)
     return URBI_OK;
 }
 
-/* urbi_strand_unwind_status — read pending unwind state (non-destructive). */
-UExecStatus
-urbi_strand_unwind_status(const struct UStrand *strand)
+/* urbi_strand_unwind_status — read pending unwind state (non-destructive).
+ * Returns UStrandUnwind (public mirror of UExecStatus; numeric values
+ * are identical so the cast is safe). */
+UStrandUnwind
+urbi_strand_unwind_status(struct UVM *vm, const struct UStrand *strand)
 {
+    (void)vm;
     if (strand && strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
-    return strand ? strand->pending_unwind : UEXEC_OK;
+    return (UStrandUnwind)(strand ? strand->pending_unwind : UEXEC_OK);
 }
 
 /* urbi_strand_is_fatal — query whether the strand has hit a fatal unwind.
- * Returns true and populates out_status / out_value (both nullable) if fatal. */
+ * Returns true and populates out_status / out_value (both nullable) if fatal.
+ * out_status receives a UStrandUnwind value (numerically == UExecStatus). */
 bool
-urbi_strand_is_fatal(const struct UStrand *strand,
-                     UExecStatus *out_status, UValue *out_value)
+urbi_strand_is_fatal(struct UVM *vm, const struct UStrand *strand,
+                     UStrandUnwind *out_status, UValue *out_value)
 {
+    (void)vm;
     if (strand && strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
     if (!strand || strand->fatal_status == UEXEC_OK) return false;
-    if (out_status) *out_status = strand->fatal_status;
+    if (out_status) *out_status = (UStrandUnwind)strand->fatal_status;
     if (out_value)  *out_value  = strand->fatal_value;
     return true;
 }
@@ -650,12 +657,13 @@ urbi_strand_is_fatal(const struct UStrand *strand,
  * left intact; callers are expected to re-initialise it per their session
  * semantics before the next dispatch. */
 int
-urbi_strand_reset(struct UStrand *strand)
+urbi_strand_reset(struct UVM *vm, struct UStrand *strand)
 {
     UValue nil;
     nil.kind = UVAL_NIL;
     nil.v.i  = 0;
 
+    (void)vm;
     if (!strand) return URBI_ERR_INVALID_ARG;
     if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
 
@@ -679,35 +687,42 @@ urbi_strand_reset(struct UStrand *strand)
  */
 
 /* urbi_throw — deposit THROW unwind (equiv to bytecode OP_THROW).
- * API-002: NULL strand or NULL strand->vm is a no-op (defensive); the prior
- * code derefed strand to read strand->vm and would crash on either. */
-void
-urbi_throw(struct UStrand *strand, UValue value)
+ * v0.10.3 W5: gains vm as first arg and changes void → int so NULL
+ * vm/strand can return URBI_ERR_INVALID_ARG (api-ergonomics F8). */
+int
+urbi_throw(struct UVM *vm, struct UStrand *strand, UValue value)
 {
-    if (!strand || !strand->vm) return;
+    (void)vm;
+    if (!strand || !strand->vm) return URBI_ERR_INVALID_ARG;
     URBI_ASSERT_NOT_ISR(strand->vm);
     strand->pending_unwind = UEXEC_THROW;
     strand->unwind_value   = value;
+    return URBI_OK;
 }
 
 /* urbi_return_val — deposit RETURN unwind (equiv to bytecode OP_RETURN).
  * Named urbi_return_val (not urbi_return) to avoid conflict with the C
  * keyword `return` in macro expansion contexts and to be unambiguous.
- * API-002: NULL strand or NULL strand->vm is a no-op. */
-void
-urbi_return_val(struct UStrand *strand, UValue value)
+ * v0.10.3 W5: gains vm as first arg and changes void → int. */
+int
+urbi_return_val(struct UVM *vm, struct UStrand *strand, UValue value)
 {
-    if (!strand || !strand->vm) return;
+    (void)vm;
+    if (!strand || !strand->vm) return URBI_ERR_INVALID_ARG;
     URBI_ASSERT_NOT_ISR(strand->vm);
     strand->pending_unwind = UEXEC_RETURN;
     strand->unwind_value   = value;
+    return URBI_OK;
 }
 
 /* urbi_tag_stop_local — deposit TAG_STOP from within the same strand.
+ * v0.10.3 W5: gains vm as first arg (api-ergonomics F3).
  * API-002: NULL strand or NULL strand->vm is a no-op. */
 void
-urbi_tag_stop_local(struct UStrand *strand, struct UTag *tag, UValue value)
+urbi_tag_stop_local(struct UVM *vm, struct UStrand *strand,
+                    struct UTag *tag, UValue value)
 {
+    (void)vm;
     if (!strand || !strand->vm) return;
     URBI_ASSERT_NOT_ISR(strand->vm);
     strand->pending_unwind  = UEXEC_TAG_STOP;

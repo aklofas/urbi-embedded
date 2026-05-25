@@ -127,12 +127,12 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
         UProto module;
         UASSERT(tunable_compile(&vm, "var i = 0; while (i < 20) { i = i + 1 }", &module));
 
-        UStrand *s = urbi_strand_create(realm, NULL);
+        UStrand *s = urbi_strand_create(&vm, realm, NULL);
         UASSERT(s != NULL);
 
         UValue result = {0};
         UASSERT(tunable_arm_strand(&vm, &module, s, &result));
-        urbi_strand_start(s);
+        urbi_strand_start(&vm, s);
 
         tight_count = run_to_quiescent(&vm, 1);
         UASSERT(tight_count > 0);
@@ -154,12 +154,12 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
         UProto module;
         UASSERT(tunable_compile(&vm, "var i = 0; while (i < 20) { i = i + 1 }", &module));
 
-        UStrand *s = urbi_strand_create(realm, NULL);
+        UStrand *s = urbi_strand_create(&vm, realm, NULL);
         UASSERT(s != NULL);
 
         UValue result = {0};
         UASSERT(tunable_arm_strand(&vm, &module, s, &result));
-        urbi_strand_start(s);
+        urbi_strand_start(&vm, s);
 
         loose_count = run_to_quiescent(&vm, 10000);
         UASSERT(loose_count > 0);
@@ -192,7 +192,7 @@ UTEST(zero_strand_budget_forces_mid_step_yield)
     /* Short program: just a single computation. */
     UASSERT(tunable_compile(&vm, "1 + 1", &module));
 
-    UStrand *s = urbi_strand_create(realm, NULL);
+    UStrand *s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s != NULL);
 
     UValue result = {0};
@@ -201,7 +201,7 @@ UTEST(zero_strand_budget_forces_mid_step_yield)
     /* Zero the per-strand budget: forces soft yield at first safepoint. */
     s->instruction_budget_remaining = 0;
 
-    urbi_strand_start(s);
+    urbi_strand_start(&vm, s);
 
     /* With budget_remaining=0, the strand must not complete in a single VM
      * step call regardless of the VM-wide budget.  Eventually it completes. */

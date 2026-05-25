@@ -79,14 +79,14 @@ UTEST(capi_strand_cancel_deposits_unwind)
     UValue *reg = strand_minimal(&s, &vm);
 
     /* Precondition: clean strand. */
-    UASSERT_EQ(urbi_strand_unwind_status(&s), UEXEC_OK);
+    UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_OK);
 
     /* Act: deposit CANCEL. */
-    int rc = urbi_strand_cancel(&s, make_nil());
+    int rc = urbi_strand_cancel(&vm, &s, make_nil());
     UASSERT_EQ(rc, URBI_OK);
 
     /* The unwind status must now be CANCEL. */
-    UASSERT_EQ(urbi_strand_unwind_status(&s), UEXEC_CANCEL);
+    UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_CANCEL);
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
@@ -103,7 +103,7 @@ UTEST(capi_strand_cancel_rejects_dead_strand)
     UValue *reg = strand_minimal(&s, &vm);
     s.state = USTRAND_STATE_DEAD;
 
-    int rc = urbi_strand_cancel(&s, make_nil());
+    int rc = urbi_strand_cancel(&vm, &s, make_nil());
     UASSERT_EQ(rc, URBI_ERR_STRAND_FATAL);
 
     free(reg);
@@ -120,17 +120,17 @@ UTEST(capi_strand_panic_marks_fatal)
 
     UValue *reg = strand_minimal(&s, &vm);
 
-    int rc = urbi_strand_panic(&s, "host-error");
+    int rc = urbi_strand_panic(&vm, &s, "host-error");
     UASSERT_EQ(rc, URBI_OK);
 
     /* The strand must be DEAD. */
     UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_DEAD);
 
     /* urbi_strand_is_fatal must return true with the correct status. */
-    UExecStatus status = UEXEC_OK;
+    UStrandUnwind status = URBI_UNWIND_OK;
     UValue val;
     val.kind = UVAL_NIL; val.v.i = 0;
-    bool fatal = urbi_strand_is_fatal(&s, &status, &val);
+    bool fatal = urbi_strand_is_fatal(&vm, &s, &status, &val);
     UASSERT(fatal);
     UASSERT_EQ(status, UEXEC_CANCEL);
 
@@ -149,21 +149,21 @@ UTEST(capi_strand_reset_clears_fatal_and_returns_dormant)
     UValue *reg = strand_minimal(&s, &vm);
 
     /* Panic the strand first. */
-    urbi_strand_panic(&s, "boom");
-    UASSERT(urbi_strand_is_fatal(&s, NULL, NULL));
+    urbi_strand_panic(&vm, &s, "boom");
+    UASSERT(urbi_strand_is_fatal(&vm, &s, NULL, NULL));
 
     /* Reset: should clear all unwind state. */
-    int rc = urbi_strand_reset(&s);
+    int rc = urbi_strand_reset(&vm, &s);
     UASSERT_EQ(rc, URBI_OK);
 
     /* No longer fatal. */
-    UASSERT(!urbi_strand_is_fatal(&s, NULL, NULL));
+    UASSERT(!urbi_strand_is_fatal(&vm, &s, NULL, NULL));
 
     /* Back to DORMANT. */
     UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_DORMANT);
 
     /* pending_unwind cleared. */
-    UASSERT_EQ(urbi_strand_unwind_status(&s), UEXEC_OK);
+    UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_OK);
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
@@ -179,8 +179,8 @@ UTEST(capi_strand_unwind_status_ok_on_clean_strand)
 
     UValue *reg = strand_minimal(&s, &vm);
 
-    UASSERT_EQ(urbi_strand_unwind_status(&s), UEXEC_OK);
-    UASSERT(!urbi_strand_is_fatal(&s, NULL, NULL));
+    UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_OK);
+    UASSERT(!urbi_strand_is_fatal(&vm, &s, NULL, NULL));
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
@@ -197,14 +197,14 @@ UTEST(capi_host_callback_helpers_throw_and_return)
     UValue *reg = strand_minimal(&s, &vm);
 
     /* Simulate urbi_throw from a host callback. */
-    urbi_throw(&s, make_int(42));
-    UASSERT_EQ(urbi_strand_unwind_status(&s), UEXEC_THROW);
+    urbi_throw(&vm, &s, make_int(42));
+    UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_THROW);
     UASSERT_EQ(s.unwind_value.v.i, (int64_t)42);
 
     /* Clear and simulate urbi_return_val. */
     s.pending_unwind = UEXEC_OK;
-    urbi_return_val(&s, make_int(99));
-    UASSERT_EQ(urbi_strand_unwind_status(&s), UEXEC_RETURN);
+    urbi_return_val(&vm, &s, make_int(99));
+    UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_RETURN);
     UASSERT_EQ(s.unwind_value.v.i, (int64_t)99);
 
     free(reg);
@@ -223,9 +223,9 @@ UTEST(capi_tag_stop_local_deposits_tag_stop)
 
     /* Use a non-NULL sentinel as the tag pointer (UTag not defined at M3). */
     struct UTag *fake_tag = (struct UTag *)(void *)0xdeadbeef;
-    urbi_tag_stop_local(&s, fake_tag, make_int(7));
+    urbi_tag_stop_local(&vm, &s, fake_tag, make_int(7));
 
-    UASSERT_EQ(urbi_strand_unwind_status(&s), UEXEC_TAG_STOP);
+    UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_TAG_STOP);
     UASSERT(s.unwind_target == fake_tag);
     UASSERT_EQ(s.unwind_value.v.i, (int64_t)7);
 
@@ -283,11 +283,11 @@ UTEST(capi_strand_cancel_unblocks_waiting_strand)
     /* Place the strand in a WAITING state (e.g. sleeping). */
     s.state = USTRAND_STATE_WAITING_SLEEP;
 
-    int rc = urbi_strand_cancel(&s, make_nil());
+    int rc = urbi_strand_cancel(&vm, &s, make_nil());
     UASSERT_EQ(rc, URBI_OK);
 
     /* Cancel must have deposited CANCEL. */
-    UASSERT_EQ(urbi_strand_unwind_status(&s), UEXEC_CANCEL);
+    UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_CANCEL);
 
     /* A waiting strand must be transitioned to READY so the scheduler can
      * dispatch it and run the unwind walker. */

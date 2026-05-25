@@ -92,7 +92,7 @@ UTEST(tag_stop_during_waituntil_unlinks_waiter)
     UASSERT(e != NULL);
 
     /* Create a realm-managed strand so it appears in tag's member list. */
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
 
     /* Park s on the event. */
@@ -112,7 +112,7 @@ UTEST(tag_stop_during_waituntil_unlinks_waiter)
     /* last_event_payload must remain NIL (not overwritten by emit). */
     UASSERT_EQ((int)s->last_event_payload.kind, (int)UVAL_NIL);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -140,7 +140,7 @@ UTEST(cancel_during_waituntil_unlinks_waiter)
     park_strand_on_event(&s, e, &vm);
     UASSERT(e->waiters_head == &s);
 
-    int rc = urbi_strand_cancel(&s, nil);
+    int rc = urbi_strand_cancel(&vm, &s, nil);
     UASSERT_EQ(rc, URBI_OK);
 
     /* Unlinked. */
@@ -179,7 +179,7 @@ UTEST(panic_during_waituntil_unlinks_waiter)
     park_strand_on_event(&s, e, &vm);
     UASSERT(e->waiters_head == &s);
 
-    int rc = urbi_strand_panic(&s, "test panic");
+    int rc = urbi_strand_panic(&vm, &s, "test panic");
     UASSERT_EQ(rc, URBI_OK);
 
     /* Unlinked. */
@@ -233,7 +233,7 @@ UTEST(tag_stop_middle_waiter_unlinks_correctly)
     UASSERT(s3.next_event_waiter == NULL);
 
     /* Cancel the middle waiter. */
-    int rc = urbi_strand_cancel(&s2, nil);
+    int rc = urbi_strand_cancel(&vm, &s2, nil);
     UASSERT_EQ(rc, URBI_OK);
 
     /* s2 must be unlinked; s1 → s3 chain remains. */
@@ -279,7 +279,7 @@ UTEST(unregister_idempotent_when_not_waiting)
     park_strand_on_event(&bystander, e, &vm);
 
     /* Create a realm strand NOT on the event. */
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
     UASSERT(s->wait_event_target == NULL);
 
@@ -300,7 +300,7 @@ UTEST(unregister_idempotent_when_not_waiting)
     e->waiters_head = NULL;
     ustrand_destroy(&bystander, &vm);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }

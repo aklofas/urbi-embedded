@@ -66,7 +66,7 @@ throw_oom_for_tag_event(struct UVM *vm)
         UValue err;
         err.kind = (uint8_t)UVAL_INT;
         err.v.i  = (int64_t)URBI_ERR_OOM;
-        urbi_throw(vm->cur_strand, err);
+        urbi_throw(vm, vm->cur_strand, err);
     }
     UValue nil = {0};
     nil.kind = (uint8_t)UVAL_NIL;
@@ -132,7 +132,7 @@ tag_enter_leave_setter_protected(struct UStrand *s, int argc, UValue *argv)
     UValue err;
     err.kind = (uint8_t)UVAL_INT;
     err.v.i  = (int64_t)URBI_ERR_PROTECTED_SLOT;
-    urbi_throw(s, err);
+    urbi_throw(s->vm, s, err);
     UValue nil = {0};
     nil.kind = (uint8_t)UVAL_NIL;
     return nil;

@@ -76,7 +76,7 @@ New public symbols require a PR-review-touch on this manifest.
 ### Strand
 
 - `urbi_strand_create`, `urbi_strand_spawn`, `urbi_strand_start`,
-  `urbi_strand_destroy`
+  `urbi_strand_destroy`, `urbi_strand_state`
 
 ### Error inspection
 

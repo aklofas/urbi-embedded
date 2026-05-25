@@ -538,7 +538,14 @@ typedef enum {
      * urbi_value_is_*() to guard before calling unchecked urbi_value_as_*;
      * or call urbi_aux_value_to_*() directly and handle this code.
      * Closes api-ergonomics F1. */
-    URBI_ERR_TYPE                       = -26
+    URBI_ERR_TYPE                       = -26,
+    /* W5/v0.10.3: returned by urbi_strand_destroy (and similar lifecycle
+     * functions) in debug builds when the strand is in an unsafe state for
+     * the requested operation.  For example, urbi_strand_destroy on a READY
+     * or RUNNING strand returns URBI_ERR_INVALID_STATE in -DURBI_DEBUG builds.
+     * Release builds treat the call as a no-op (pre-v1.0 permissive posture).
+     * Closes api-ergonomics F8. */
+    URBI_ERR_INVALID_STATE              = -27
 } UErrCode;
 
 /* === W3: error model === */
@@ -581,10 +588,9 @@ typedef enum {
  * Mirror of the internal enum at src/sched/ustrand.h.  Numeric values are
  * not pinned cross-version; the enum is purely symbolic.
  *
- * Note: UExecStatus remains in this header because the public API functions
- * urbi_strand_unwind_status() and urbi_strand_is_fatal() use it.  Those
- * signatures are pending migration in W5; until W5 lands, UExecStatus is
- * part of the public surface.  The internal scheduler's enum in
+ * v0.10.3 (W5): UExecStatus is retained as a deprecated alias for
+ * source compatibility for one release cycle.  New code should use the
+ * public mirror UStrandUnwind below.  The internal scheduler's enum in
  * src/sched/ustrand.h is unchanged. */
 typedef enum {
     UEXEC_OK       = 0,
@@ -593,6 +599,43 @@ typedef enum {
     UEXEC_TAG_STOP,
     UEXEC_CANCEL
 } UExecStatus;
+
+/* === W5/v0.10.3: UStrandUnwind — public mirror of UExecStatus ===
+ *
+ * Public mirror of the internal UExecStatus enum.  Numeric values are
+ * identical to UExecStatus constants so existing code using UEXEC_* still
+ * compares correctly.  New code should use URBI_UNWIND_* constants.
+ *
+ * Used as the return type of urbi_strand_unwind_status(); replaces the
+ * UExecStatus surface that was pending W5 migration per the W3 note in
+ * the urbi.h header comment.
+ *
+ * UExecStatus is retained as a deprecated alias (source compat, one cycle). */
+typedef enum {
+    URBI_UNWIND_OK       = 0,  /* == UEXEC_OK */
+    URBI_UNWIND_RETURN   = 1,  /* == UEXEC_RETURN */
+    URBI_UNWIND_THROW    = 2,  /* == UEXEC_THROW */
+    URBI_UNWIND_TAG_STOP = 3,  /* == UEXEC_TAG_STOP */
+    URBI_UNWIND_CANCEL   = 4   /* == UEXEC_CANCEL */
+} UStrandUnwind;
+
+/* === W5/v0.10.3: UStrandState — public strand lifecycle state ===
+ *
+ * Observable state of a strand as returned by urbi_strand_state().
+ * Maps the internal USTRAND_* state nibble values (src/sched/ustrand.h)
+ * to a public enum without exposing the packed-byte encoding.
+ *
+ * URBI_STRAND_BLOCKED is reserved; the cooperative scheduler uses
+ * URBI_STRAND_WAITING for all blocked-on-event / sleep / join states.
+ * The distinction between blocked sub-reasons is not exposed at v1.0. */
+typedef enum {
+    URBI_STRAND_DORMANT  = 0,  /* allocated, not yet started */
+    URBI_STRAND_READY    = 1,  /* on run-queue, awaiting dispatch */
+    URBI_STRAND_RUNNING  = 2,  /* currently executing */
+    URBI_STRAND_BLOCKED  = 3,  /* reserved (RT scheduler sub-state) */
+    URBI_STRAND_WAITING  = 4,  /* sleeping / waiting for event / join */
+    URBI_STRAND_DEAD     = 5   /* terminated — safe to destroy */
+} UStrandState;
 
 /* === UVMError: retired — replaced by int + URBI_OK / URBI_ERR_* ===
  *

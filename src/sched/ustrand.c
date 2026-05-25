@@ -218,9 +218,10 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
  * strands before making them runnable.  _spawn is the convenience composite. */
 
 UStrand *
-urbi_strand_create(struct URealm *realm, struct UClosure *entry)
+urbi_strand_create(struct UVM *vm, struct URealm *realm, struct UClosure *entry)
 {
-    struct UVM *vm = realm->vm;
+    if (!vm) vm = realm ? realm->vm : NULL;
+    if (!vm) return NULL;
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Allocate via VM pluggable allocator (no stdlib calloc — freestanding). */
@@ -278,11 +279,10 @@ urbi_strand_create(struct URealm *realm, struct UClosure *entry)
 }
 
 void
-urbi_strand_start(UStrand *s)
+urbi_strand_start(struct UVM *vm, UStrand *s)
 {
-    struct UVM *vm = s->vm;
-    URBI_ASSERT_NOT_ISR(vm);
-    (void)vm;  /* suppress -Wunused-variable in non-debug builds */
+    (void)vm;  /* mirrors s->vm; accepted for API convention */
+    URBI_ASSERT_NOT_ISR(s->vm);
     /* CHSTR-033 (T104): the precondition is "DORMANT only — no double-start".
      * sched_strand_make_runnable unconditionally tail-inserts into the
      * cooperative ready queue and bumps strand_runnable_count++; calling
@@ -301,23 +301,41 @@ urbi_strand_start(UStrand *s)
 }
 
 UStrand *
-urbi_strand_spawn(struct URealm *realm, struct UClosure *entry)
+urbi_strand_spawn(struct UVM *vm, struct URealm *realm, struct UClosure *entry)
 {
-    struct UVM *vm = realm->vm;
+    if (!vm) vm = realm ? realm->vm : NULL;
     URBI_ASSERT_NOT_ISR(vm);
-    (void)vm;  /* suppress -Wunused-variable in non-debug builds */
-    UStrand *s = urbi_strand_create(realm, entry);
-    if (s) urbi_strand_start(s);
+    UStrand *s = urbi_strand_create(vm, realm, entry);
+    if (s) urbi_strand_start(vm, s);
     return s;
 }
 
-void
-urbi_strand_destroy(UStrand *s)
+int
+urbi_strand_destroy(struct UVM *vm, UStrand *s)
 {
-    struct UVM *vm;
-    if (!s) return;
-    vm = s->vm;
+    int rc = URBI_OK;
+    if (!s) return URBI_OK;
+    if (!vm) vm = s->vm;
     if (vm) URBI_ASSERT_NOT_ISR(vm);
+
+#if URBI_DEBUG
+    /* api-ergonomics F8: warn in debug builds if the strand is in an active
+     * state.  Log the problem and record the error code, but always proceed
+     * with teardown — realm-destroy calls this on strands in any state and
+     * must complete cleanup (e.g. strand_unlink_from_tags) regardless.
+     * Release builds skip the check (pre-v1.0 permissive posture). */
+    {
+        uint8_t st = USTRAND_GET_STATE(s);
+        if (st != USTRAND_DORMANT && st != USTRAND_DEAD) {
+            if (vm != NULL && vm->host_log_fn != NULL) {
+                vm->host_log_fn(vm, vm->host_log_ud, (int)URBI_LOG_ERROR,
+                    "urbi_strand_destroy: strand in active state 0x%02x", st);
+            }
+            rc = URBI_ERR_INVALID_STATE;
+            /* fall through — cleanup must complete to maintain tag invariants */
+        }
+    }
+#endif
 
     /* T38: unlink from realm->strands_head singly-linked list so that
      * urbi_realm_destroy (which walks strands_head) does not encounter a
@@ -354,6 +372,27 @@ urbi_strand_destroy(UStrand *s)
     sched_strand_destroy(s);
     ustrand_destroy(s, vm);
     if (vm) vm->alloc_fn(s, 0, vm->alloc_ud);
+    return rc;
+}
+
+/* urbi_strand_state — query observable strand lifecycle state.
+ * Maps the packed internal state byte to the public UStrandState enum.
+ * NULL strand returns URBI_STRAND_DEAD (safe to destroy). */
+UStrandState
+urbi_strand_state(struct UVM *vm, const struct UStrand *s)
+{
+    uint8_t raw;
+    (void)vm;
+    if (!s) return URBI_STRAND_DEAD;
+    raw = USTRAND_GET_STATE(s);
+    switch (raw) {
+        case USTRAND_DORMANT: return URBI_STRAND_DORMANT;
+        case USTRAND_READY:   return URBI_STRAND_READY;
+        case USTRAND_RUNNING: return URBI_STRAND_RUNNING;
+        case USTRAND_WAITING: return URBI_STRAND_WAITING;
+        case USTRAND_DEAD:    /* fall through */
+        default:              return URBI_STRAND_DEAD;
+    }
 }
 
 /* === T29: ambient-tag inheritance helpers ===
@@ -474,7 +513,7 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
      * from root->instructions directly.  urbi_strand_create handles:
      * ustrand_init (cleanup stack alloc), realm link, ambient-tag attach,
      * sched_strand_init.  Leaves strand DORMANT. */
-    UStrand *s = urbi_strand_create(realm, NULL);
+    UStrand *s = urbi_strand_create(vm, realm, NULL);
     if (!s) return NULL;
 
     /* Bind root and bump refcount before any teardown path so
@@ -488,7 +527,7 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
     /* Allocate and zero the per-strand register stack.
      * On failure: urbi_strand_destroy drops the refcount and frees the strand. */
     if (urbi_strand_arm_init(s) != 0) {
-        urbi_strand_destroy(s);
+        urbi_strand_destroy(vm, s);
         return NULL;
     }
 
@@ -509,13 +548,13 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
      * this is a new strand owning its own IC entry. */
     s->module_instance = urbi_chunk_instance_create(vm, root);
     if (!s->module_instance) {
-        urbi_strand_destroy(s);
+        urbi_strand_destroy(vm, s);
         return NULL;
     }
 
     /* Transition DORMANT → READY so the host's urbi_step loop picks it up.
      * urbi_strand_start calls sched_strand_make_runnable internally. */
-    urbi_strand_start(s);
+    urbi_strand_start(vm, s);
 
     return s;
 }
