@@ -28,6 +28,7 @@
 #  include <stdlib.h>
 #endif
 
+/* NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) */
 static urbi_require_fail_hook_fn g_require_hook = NULL;
 
 void urbi_set_require_fail_hook(urbi_require_fail_hook_fn hook)

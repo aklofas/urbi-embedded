@@ -1273,6 +1273,48 @@ static UChunkLoadError verify_chunk_bounds(MDecCtx *d) {
     return verify_bounds_proto(d, d->rp);
 }
 
+/* --- bytecode F3: ic_index DFS pre-order verifier (W8) ---
+ *
+ * v0.8.5 truly-recursive emit assigns ic_index via uproto_alloc_nested's
+ * ++root->next_proto_serial in DFS pre-order.  The deserializer mirrors this
+ * at decode time (decode_proto recursive descent).  A corrupted chunk with
+ * mis-ordered nested[] would produce in-range but wrong proto-instance lookups
+ * in the OP_CLOSURE VM hot path (uvm.c).
+ *
+ * verify_ic_index_dfs walks the tree in DFS pre-order, matching each proto's
+ * ic_index against a running counter.  Root must be 0; children are visited
+ * left-to-right (nested[0] before nested[1]) and recursed depth-first,
+ * matching the DFS pre-order assignment that emit uses. */
+static UChunkLoadError verify_ic_index_dfs(const UProto *proto,
+                                           uint16_t *next_idx,
+                                           char *errmsg, size_t errcap) {
+    if (proto == NULL) return UCHUNK_LOAD_OK;
+    if (proto->ic_index != *next_idx) {
+        set_errmsg(errmsg, errcap,
+                   "ic_index mismatch: proto->ic_index=%u expected %u"
+                   " (DFS pre-order invariant violated; bytecode F3)",
+                   (unsigned)proto->ic_index, (unsigned)*next_idx);
+        return UCHUNK_LOAD_IC_INDEX_MISMATCH;
+    }
+    (*next_idx)++;
+    for (uint16_t i = 0U; i < (uint16_t)proto->nested_count; i++) {
+        UChunkLoadError err = verify_ic_index_dfs(proto->nested[i],
+                                                  next_idx, errmsg, errcap);
+        if (err != UCHUNK_LOAD_OK) return err;
+    }
+    return UCHUNK_LOAD_OK;
+}
+
+UChunkLoadError uchunk_verify_ic_index(const UProto *root,
+                                       char *errmsg, size_t errcap) {
+    if (root == NULL) {
+        set_errmsg(errmsg, errcap, "uchunk_verify_ic_index: root is NULL");
+        return UCHUNK_LOAD_INVALID_ARG;
+    }
+    uint16_t next_idx = 0U;
+    return verify_ic_index_dfs(root, &next_idx, errmsg, errcap);
+}
+
 /* v0.8.5: recursively set every UProto's root back-pointer.  The module's
  * root_proto gets root = NULL; every other proto in the tree gets
  * root = rp.  Mirrors set_root_recursive in uemit.c — kept independent
@@ -1342,6 +1384,8 @@ UChunkLoadError uchunk_deserialize(UProto **out_root, const uint8_t *buf, size_t
     if ((rc = decode_verify(&d))         != UCHUNK_LOAD_OK) goto fail;
     /* Pass 2 (bytecode F2): per-instruction sequence bounds. */
     if ((rc = verify_chunk_bounds(&d))   != UCHUNK_LOAD_OK) goto fail;
+    /* Pass 3 (bytecode F3): ic_index DFS pre-order mirror check. */
+    if ((rc = uchunk_verify_ic_index(rp, errmsg, errcap)) != UCHUNK_LOAD_OK) goto fail;
 
     /* Back-pointer walk: every UProto's root field points at rp.
      * v0.8.5 made this recursive (was flat-only): walks the full tree
@@ -1580,6 +1624,7 @@ const char *uchunk_load_error_name(UChunkLoadError code) {
     case UCHUNK_LOAD_JMP_OUT_OF_BOUNDS:   return "UCHUNK_LOAD_JMP_OUT_OF_BOUNDS";
     case UCHUNK_LOAD_CALL_NRESULTS_ZERO:  return "UCHUNK_LOAD_CALL_NRESULTS_ZERO";
     case UCHUNK_LOAD_RESERVED_OPCODE:     return "UCHUNK_LOAD_RESERVED_OPCODE";
+    case UCHUNK_LOAD_IC_INDEX_MISMATCH:   return "UCHUNK_LOAD_IC_INDEX_MISMATCH";
     }
     return "UCHUNK_LOAD_UNKNOWN";
 }
