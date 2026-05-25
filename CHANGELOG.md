@@ -1,5 +1,96 @@
 # Changelog
 
+## v0.10.1-invariants — 2026-05-25
+
+Wave 2 of the v0.10.x architectural refactor arc: documented invariants
+become machine-enforced. Build-flag mismatches between embedder and
+`liburbi.a` now fail at link time. The bytecode loader rejects malformed
+chunks at deserialize. Strand teardown is uniform across realm-destroy
+and normal-exit paths. ABI 0/14/0 unchanged (the new
+`<urbi/require.h>` public header is purely additive: 2 new functions,
+no existing symbol modified); wire format v1.8 (0x18) unchanged. 10
+worktrees + 1 follow-up freestanding fix + manifest/CHANGELOG bump.
+
+### Added
+
+- **`URBI_REQUIRE(cond, msg)` macro** in new public header
+  `<urbi/require.h>`. Distinct from `URBI_INTERNAL_ASSERT` (debug-only)
+  and `URBI_DISPATCH_ASSERT` (stripped in release): fires in all build
+  modes including freestanding/release. Default behavior: `fprintf` +
+  `abort` on hosted, embedder-overridable hook
+  (`urbi_set_require_fail_hook`) for freestanding. Documented in
+  `docs/internals/assertion-discipline.md`.
+- **Link-time build-flag guards** in new
+  `src/runtime/uabi_guards.c`. Mismatch between embedder and
+  `liburbi.a` on `URBI_FLOAT_TYPE`, `URBI_REPL_COOPERATIVE_ONLY`, or
+  `URBI_BYTECODE_ONLY` now produces an undefined-symbol link error
+  named after the disagreeing flag (e.g.
+  `urbi_abi_requires_float_type_4`), rather than silently truncating
+  every `UVAL_FLOAT` to 0.0 or fall-through to a different REPL
+  transport.
+- **UProto refcount typed-handle API**
+  (`urbi_proto_ref_acquire/release` + `_strand_` variants, internal
+  surface in `src/chunk/uproto.h`). Replaces six raw
+  `uproto_refcount_inc/dec` call sites with scoped pairs that log
+  `URBI_LOG_WARN` on saturation (silent before) and `URBI_REQUIRE`-fail
+  on underflow (silent before). Debug-build per-owner counter asserts
+  zero at vm-destroy.
+- **Bytecode verifier hardening** — new
+  `verify_chunk_bounds` deserialize-time pass in
+  `src/chunk/uchunk_io.c`. Rejects OP_CLOSURE with truncated upvalue
+  prelude, OP_JMP Bx pointing out of range, OP_LOAD_REALM_GLOBAL
+  symbol-id past realm table, OP_CALL nresults==0, and reserved
+  opcodes (OP_TAG_STOP at v1.8). New `UCHUNK_LOAD_*` codes:
+  `TRUNCATED_UPVALUES`, `MALFORMED_UPVALUE`, `JMP_OUT_OF_BOUNDS`,
+  `CALL_NRESULTS_ZERO`, `RESERVED_OPCODE`, `IC_INDEX_MISMATCH`.
+- **`ic_index` DFS pre-order verifier** — extends
+  `verify_chunk_bounds` with a recursive walk that ensures each
+  nested proto's `ic_index` matches its DFS pre-order rank; rejects
+  corrupted chunks that would otherwise resolve to in-range-but-wrong
+  proto instances. New helper `uchunk_verify_ic_index` exposed for
+  tests.
+- **`sched_post_dispatch(vm)` helper** in new
+  `src/sched/usched_post_dispatch.h`. Extracts four post-dispatch
+  fix-up operations (runnable-count re-increment, eager DEAD strand
+  reap, sleep-queue wake, periodic pump) that were inlined in
+  `urbi_step`. Now called from `urbi_step`, `urbi_vm_run`, and
+  available for future alternative drivers.
+- **`urbi_gc_slot_store(vm, parent, key, dst, child)` combined
+  helper** in `src/gc/ugc_incremental.h`. Performs barrier + store
+  atomically from the caller's POV; eliminates the "store without
+  barrier" footgun (runtime-invariants F12). The barrier-only
+  surfaces remain available as `urbi_gc_slot_pre_store` and
+  `urbi_gc_upvalue_pre_store` (renamed from `_write`) for cases where
+  the destination isn't a `UValue*` or the store already happened.
+
+### Changed
+
+- **OP_CLOSURE dispatch asserts** at three sites in `src/vm/uvm.c`
+  promoted from `URBI_DISPATCH_ASSERT` (stripped in release) to
+  user-visible `HALT_TYPE_ERROR` with descriptive messages. Per
+  runtime-invariants F2, a malformed bytecode chunk could previously
+  bypass the asserts in release builds and silently corrupt; now
+  raises a deterministic, embedder-observable error.
+- **`ustrand_destroy`** in `src/sched/ustrand.c` now extracts and
+  calls a new `strand_cleanup_observers(s)` helper that unregisters
+  the strand from any `UEvent.waiters_head` and wakes joiners. Per
+  scheduler F1, the realm-destroy direct sweep previously left
+  dangling waiter pointers and orphaned strands blocked on
+  `urbi_strand_join`. Convergence: both teardown paths now run
+  identical cleanup.
+- **`urbi_gc_slot_write`** renamed to `urbi_gc_slot_pre_store`;
+  `urbi_gc_upvalue_write` renamed to `urbi_gc_upvalue_pre_store`. All
+  internal callers updated. No public API change (the helpers are
+  declared in `src/gc/ugc_incremental.h`, not `<urbi/gc.h>`).
+
+### Fixed
+
+- **Freestanding build of `src/runtime/urequire.c`** — added
+  `#include <stddef.h>` so `NULL` resolves under `-ffreestanding`
+  (W0 originally relied on transitive inclusion via `<stdlib.h>`,
+  which is gated behind `__STDC_HOSTED__`). Caught by W7 during its
+  releasetest run.
+
 ## v0.10.0-truthfulness — 2026-05-25
 
 Wave 1 of the v0.10.x architectural refactor arc: documentation,
