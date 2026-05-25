@@ -41,11 +41,12 @@ struct UClosure;
  * Bit 4  — UGC_IS_PINNED: cell is exempt from sweep (host-pinned value).
  * Bit 5  — UGC_IS_FIXED: pool-managed cell; never freed by GC sweep.
  * Bit 6  — UGC_HAS_WATCHER_OBSERVER: object has at least one watcher in the
- *           read-set; triggers observer_dirty() in urbi_gc_slot_write().
- *           Maintained at row 10/11 boundary (T33).
+ *           read-set; triggers observer_dirty() in urbi_gc_slot_pre_store /
+ *           urbi_gc_slot_store.  Maintained at row 10/11 boundary (T33).
  * Bit 7  — UGC_HAS_SLOT_CHANGE_EVENT: at least one slot on this UObject has
  *           a slot-change subscriber (spec #4 §3.4); post-store hook in
- *           urbi_gc_slot_write() fires the deferred emit ring. */
+ *           urbi_gc_slot_store / urbi_gc_slot_pre_store fires the deferred
+ *           emit ring. */
 
 #define UGC_COLOR_MASK            0x03
 #define   UGC_COLOR_WHITE0          0x00
@@ -61,7 +62,8 @@ struct UClosure;
 #define UGC_HAS_SLOT_CHANGE_EVENT 0x80   /* spec #4 §3.4: at least one slot on
                                           * this UObject has a slot-change
                                           * subscriber; post-store hook in
-                                          * urbi_gc_slot_write fires the
+                                          * urbi_gc_slot_store /
+                                          * urbi_gc_slot_pre_store fires the
                                           * deferred emit ring. */
 
 /* === Two-white scheme (row 10 §3.2) ===
@@ -224,20 +226,31 @@ uvalue_as_cell(UValue v)
  * Defined in ugc_incremental.c (T25). */
 bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
 
-/* === Three inline barrier surfaces ===
+/* === Barrier surfaces — slot, register, upvalue ===
  *
- * urbi_gc_slot_write:
- *   Called when assigning a UValue to an object slot or Realm namespace binding.
- *   Implements a forward (Dijkstra) write barrier: if the parent cell is black
- *   and the child value is a white heap cell, shade the child gray to preserve
- *   the tri-color invariant.  Also hooks the watcher dirty-set (row 10/11
- *   boundary) when bit 6 is set on the parent.
- *   parent  — the containing cell (must already be GC-managed).
- *   key     — slot index or namespace key (for observer_dirty at T34).
- *   child   — the new value being stored.
- *   NOTE: the barrier is a hook; the actual store is the CALLER'S responsibility.
+ * Two tiers for slot/upvalue writes:
  *
- * urbi_gc_register_write:
+ * urbi_gc_slot_store(vm, parent, key, dst, child):
+ *   Combined barrier + store for the common case where the child value is
+ *   already computed.  Performs the Dijkstra forward barrier then writes
+ *   *dst = child atomically from the caller's point of view.  Use this
+ *   whenever the pattern is "compute child → barrier → store".
+ *   dst     — pointer to the UValue slot being updated (within parent).
+ *   child   — the new value to store.
+ *   Runtime-invariants F12.
+ *
+ * urbi_gc_slot_pre_store(vm, parent, key, child):
+ *   Barrier-only.  Use for the rare cases where:
+ *   (a) the store target is not a UValue* (e.g. a UEvent* field shaded via a
+ *       UValue wrapper, as in UTag.enter_event / UTag.leave_event), or
+ *   (b) the store was already performed by a helper (e.g. the OP_SETSLOT slow
+ *       path calls urbi_slot_set_slow first, then fires the watcher hook here),
+ *   or (c) the child pointer must be computed by code that may itself trigger
+ *       GC after the barrier fires.
+ *   The caller is responsible for performing the actual store.
+ *   Renamed from urbi_gc_slot_write (runtime-invariants F12).
+ *
+ * urbi_gc_register_write(vm, s, reg_idx, child):
  *   Called when the dispatch loop writes a UValue into a strand register
  *   (OP_MOVE, arithmetic results, OP_LOADK, etc.).
  *   Registers are roots walked at every mark phase via gc_walk_roots → strand
@@ -246,28 +259,30 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  *   reg_idx — register index within s->R[].
  *   child   — the value being stored.
  *
- * urbi_gc_upvalue_write:
- *   Called when OP_SETUPVAL stores a value through a closure's upvalue chain.
- *   Applies the GC barrier (same Dijkstra logic as slot_write); no watcher
- *   hook because closures are not directly observable by watchers in v1.
- *   closure — the closure owning the upvalue.
- *   up_idx  — index into closure->upvals[].
- *   child   — the value being stored.
- *   NOTE: the actual upvalue store is the CALLER'S responsibility.
+ * urbi_gc_upvalue_pre_store(vm, closure, up_idx, child):
+ *   Barrier-only for upvalue stores (OP_SETUPVAL).  The upvalue cell layout
+ *   has two conditional store targets (on_heap path writes uvc->u.value;
+ *   stack path writes *uvc->u.stack_ptr), so the combined form is not
+ *   applicable.  Caller performs the store after this call.
+ *   Renamed from urbi_gc_upvalue_write (runtime-invariants F12).
  *
- * Callsite status (M4):
+ * Callsite status (M4 / v0.10.1):
  *   OP_SETUPVAL handler (src/uvm.c): UClosure embeds UCell as first member at
- *   offset 0 (see uclosure.h); urbi_gc_upvalue_write is wired before the store.
- *   The barrier may safely cast UClosure* → UCell* for the color check.
+ *   offset 0 (see uclosure.h); urbi_gc_upvalue_pre_store is wired before the
+ *   conditional store.  The barrier may safely cast UClosure* → UCell*.
  *
  *   unamespace_set (src/realm/urealm_namespace.c): UNamespace still lacks a
- *   UCell header at this commit.  Wire urbi_gc_slot_write when UNamespace
+ *   UCell header at this commit.  Wire urbi_gc_slot_store when UNamespace
  *   migrates to a UCell-headed cell (later M4 task).
  *
- *   OP_SETSLOT (M4 reserved): dormant; wired alongside full IC support. */
+ *   OP_SETSLOT (v0.10.1): fast-path LOCAL arm uses urbi_gc_slot_store;
+ *   slow-path watcher notification uses urbi_gc_slot_pre_store (post-store). */
 
+/* urbi_gc_slot_pre_store — barrier-only; caller stores *dst manually.
+ * Use when the store target is not a UValue* or the store already happened.
+ * Common case: use urbi_gc_slot_store instead. */
 static inline void
-urbi_gc_slot_write(struct UVM *vm, UCell *parent, uint32_t key, UValue child)
+urbi_gc_slot_pre_store(struct UVM *vm, UCell *parent, uint32_t key, UValue child)
 {
     uint8_t parent_gc = parent->gc_byte;
 
@@ -281,16 +296,22 @@ urbi_gc_slot_write(struct UVM *vm, UCell *parent, uint32_t key, UValue child)
 
     /* (2) Watcher dirty-set hook.
      * observer_dirty (src/uwatcher.c) bumps vm->watcher_dirty_count;
-     * the scheduler calls watcher_eval_dirty on the next safepoint turn.
-     * This strategy header is always compiled with URBI_GC_INCREMENTAL, so
-     * the watcher hook is always present (no #if guard needed here). */
+     * the scheduler calls watcher_eval_dirty on the next safepoint turn. */
     if (UNLIKELY(parent_gc & UGC_HAS_WATCHER_OBSERVER)) {
         observer_dirty(vm, parent, key);
     }
+    /* Actual store is the caller's responsibility. */
+}
 
-    /* (3) Actual store — caller's responsibility.
-     * The barrier is a hook only; callers must perform the store themselves
-     * immediately after calling urbi_gc_slot_write. */
+/* urbi_gc_slot_store — combined barrier + store (runtime-invariants F12).
+ * Preferred API for slot writes where dst is a UValue* and the child value is
+ * already computed.  Eliminates the "store without barrier" footgun. */
+static inline void
+urbi_gc_slot_store(struct UVM *vm, UCell *parent, uint32_t key,
+                   UValue *dst, UValue child)
+{
+    urbi_gc_slot_pre_store(vm, parent, key, child);
+    *dst = child;
 }
 
 static inline void
@@ -306,13 +327,16 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s, uint16_t reg_idx, UVal
     (void)vm; (void)s; (void)reg_idx; (void)child;
 }
 
+/* urbi_gc_upvalue_pre_store — barrier-only for OP_SETUPVAL.
+ * Use urbi_gc_slot_store for ordinary UValue* slot writes. */
 static inline void
-urbi_gc_upvalue_write(struct UVM *vm, const struct UClosure *closure, uint8_t up_idx, UValue child)
+urbi_gc_upvalue_pre_store(struct UVM *vm, const struct UClosure *closure,
+                          uint8_t up_idx, UValue child)
 {
     const UCell *parent = (const UCell *)closure;
     uint8_t parent_gc = parent->gc_byte;
 
-    /* GC barrier: forward Dijkstra — same logic as slot_write.
+    /* GC barrier: forward Dijkstra — same logic as slot_pre_store.
      * UClosure embeds UCell at offset 0 (M4 — see uclosure.h), so the
      * cast above yields a valid header pointer. */
     if (UNLIKELY((parent_gc & UGC_COLOR_MASK) == UGC_COLOR_BLACK

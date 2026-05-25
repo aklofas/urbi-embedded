@@ -34,7 +34,9 @@
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_install_property */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (TAGCH-002), urbi_strlen, urbi_zero */
 #include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OOM, UHostFn */
-/* urbi_gc_slot_write (Dijkstra forward barrier) is reached via urbi/gc.h
+/* urbi_gc_slot_pre_store (Dijkstra forward barrier; barrier-only variant since
+ * tag->enter_event / tag->leave_event are UEvent*, not UValue*, so the
+ * combined urbi_gc_slot_store cannot be used here) is reached via urbi/gc.h
  * pulled in by vm/uvm.h above. */
 #include "sched/ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
 #include <stddef.h>
@@ -77,7 +79,7 @@ tag_enter_getter(struct UVM *vm, struct UTag *tag)
          * a UCell header at offset 0 (UTYPE_TAG); the cast is sound.
          * key=0 (no slot index — UTag isn't a UObject; UGC_HAS_WATCHER_
          * OBSERVER is never set on UTag, so observer_dirty isn't fired). */
-        urbi_gc_slot_write(vm, (UCell *)tag, 0U, uvalue_from_event(e));
+        urbi_gc_slot_pre_store(vm, (UCell *)tag, 0U, uvalue_from_event(e));
         tag->enter_event = e;
     }
     return uvalue_from_event(tag->enter_event);
@@ -93,7 +95,7 @@ tag_leave_getter(struct UVM *vm, struct UTag *tag)
         if (e == NULL) return throw_oom_for_tag_event(vm);
         /* TAGCH-001: Dijkstra forward barrier on the leave_event field
          * write — same rationale as tag_enter_getter above. */
-        urbi_gc_slot_write(vm, (UCell *)tag, 0U, uvalue_from_event(e));
+        urbi_gc_slot_pre_store(vm, (UCell *)tag, 0U, uvalue_from_event(e));
         tag->leave_event = e;
     }
     return uvalue_from_event(tag->leave_event);

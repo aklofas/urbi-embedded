@@ -77,16 +77,21 @@ void urbi_unpin(struct UVM *vm, UValue v);
  *   void   urbi_gc_force_full(struct UVM *vm);
  *   size_t urbi_gc_bytes_allocated_inline(const struct UVM *vm);
  *
- * Three barrier surfaces (always inline, defined as no-op stubs in
- * ugc_incremental.h; T25 lands the real Dijkstra forward-barrier logic):
+ * Barrier surfaces (always inline, defined in ugc_incremental.h; renamed at
+ * v0.10.1 per runtime-invariants F12 to make barrier+store atomic by default):
  *
- *   static inline void urbi_gc_slot_write(
+ *   static inline void urbi_gc_slot_store(
+ *       struct UVM *vm, UCell *parent, uint32_t key,
+ *       UValue *dst, UValue child);            -- combined barrier + store (preferred)
+ *
+ *   static inline void urbi_gc_slot_pre_store(
  *       struct UVM *vm, UCell *parent, uint32_t key, UValue child);
+ *                                                -- barrier-only; caller stores
  *
  *   static inline void urbi_gc_register_write(
  *       struct UVM *vm, struct UStrand *s, uint16_t reg_idx, UValue child);
  *
- *   static inline void urbi_gc_upvalue_write(
+ *   static inline void urbi_gc_upvalue_pre_store(
  *       struct UVM *vm, struct UClosure *closure, uint8_t up_idx, UValue child);
  *
  * These ops are declared (non-inline) and defined (inline) in the strategy

@@ -11,7 +11,7 @@
 #include "object/ushape.h"
 #include "vm/uvm.h"
 #include "urbi/gc.h"               /* urbi_gc_alloc */
-#include "gc/ugc_incremental.h"    /* urbi_gc_slot_write */
+#include "gc/ugc_incremental.h"    /* urbi_gc_slot_store */
 #include "changed/uchanged_node.h"         /* urbi_emit_slot_change_if_subscribed (T65) */
 #include "gc/ugc.h"
 #include "chunk/uchunk.h"
@@ -102,9 +102,10 @@ urbi_slothandle_write_value(UVM *vm, USlotHandle *h, UValue v)
      * black and v is a white heap value, shade v gray.  Mirrors the
      * pattern used by urbi_object_set_local_slot's in-place-update branch
      * (which inherits the barrier from the GC's per-slot mark callback —
-     * USlotHandle writes are direct so we wire the barrier explicitly). */
-    urbi_gc_slot_write(vm, (UCell *)h->owner, h->slot_index, v);
-    h->owner->slots[h->slot_index] = v;
+     * USlotHandle writes are direct so we wire the barrier explicitly).
+     * Use the combined helper to keep barrier + store atomic (F12). */
+    urbi_gc_slot_store(vm, (UCell *)h->owner, h->slot_index,
+                       &h->owner->slots[h->slot_index], v);
     urbi_emit_slot_change_if_subscribed(vm, h->owner, h->name, v);
     return 0;
 }
