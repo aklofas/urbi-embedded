@@ -2074,12 +2074,11 @@ UTEST(verify_rejects_op_closure_bx_above_nested_count) {
     uchunk_destroy(c, NULL);
 }
 
-UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
-    /* OP_JMP Bx is signed-with-32768-bias; verifier intentionally does
-     * NOT range-check Bx.  Build a module with OP_JMP Bx=0 (offset
-     * -32768) followed by OP_RET; verifier accepts even though the
-     * jump target is "out of range" — runtime surfaces the issue at
-     * dispatch, not at load. */
+UTEST(verify_rejects_op_jmp_out_of_bounds_bx) {
+    /* OP_JMP Bx is signed-with-32768-bias; the verify_chunk_bounds pass
+     * (bytecode F2 / W7) now range-checks every jump target.
+     * Bx=0 resolves to target = pc + 0 - 32768 = -32768, which is
+     * negative and therefore rejected with UCHUNK_LOAD_JMP_OUT_OF_BOUNDS. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
     buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
@@ -2099,7 +2098,7 @@ UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
     UProto *c = NULL;
     char errmsg[256];
     UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
-    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT_EQ(UCHUNK_LOAD_JMP_OUT_OF_BOUNDS, rc);
     uchunk_destroy(c, NULL);
 }
 
@@ -2365,8 +2364,8 @@ void test_module_suite(void) {
               verify_accepts_at_install_with_no_onleave_sentinel);
     utest_run("verify rejects OP_CLOSURE Bx >= nested_count",
               verify_rejects_op_closure_bx_above_nested_count);
-    utest_run("verify accepts OP_JMP with arbitrary Bx",
-              verify_accepts_op_jmp_with_arbitrary_bx);
+    utest_run("verify rejects OP_JMP out-of-bounds Bx",
+              verify_rejects_op_jmp_out_of_bounds_bx);
     utest_run("verify rejects OP_ADD C > max_reg",
               verify_rejects_arith_c_above_max_reg);
     utest_run("verify rejects OP_NEG B > max_reg",
