@@ -277,6 +277,7 @@ extern void test_introspect_each_suite(void);
 extern void test_json_parse_suite(void);
 extern void test_require_suite(void);
 extern void test_verify_chunk_bounds_suite(void);
+extern void test_sched_post_dispatch_alt_driver_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -530,6 +531,7 @@ static const struct suite_entry suites[] = {
     {"json_parse",                       test_json_parse_suite},
     {"require",                          test_require_suite},
     {"verify_chunk_bounds",              test_verify_chunk_bounds_suite},
+    {"sched_post_dispatch_alt_driver",   test_sched_post_dispatch_alt_driver_suite},
     /* Add new suites here as test files are added. */
 };
 

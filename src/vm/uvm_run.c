@@ -8,6 +8,7 @@
 #include "runtime/uclosure.h"        /* UClosure, UUpvalCell */
 #include "sched/ustrand.h"           /* UStrand, ustrand_destroy, urbi_strand_arm_init, USTRAND_IS_WAITING */
 #include "sched/usched_cooperative.h" /* sched_strand_init */
+#include "sched/usched_post_dispatch.h" /* sched_post_dispatch (scheduler F3) */
 #include "realm/urealm.h"            /* URealm, urbi_realm_global */
 #include "object/uchunk_instance.h" /* urbi_chunk_instance_create */
 #include "chunk/uchunk.h"
@@ -142,6 +143,27 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
         vm->cur_strand = &strand;
         (void)dispatch_loop_until_yield(&strand, /* step_budget */ UINT64_MAX);
         vm->cur_strand = NULL;
+
+        /* Post-dispatch fix-ups — scheduler F3.
+         *
+         * sched_post_dispatch runs the four bookkeeping steps after each
+         * dispatch-loop iteration.  For the transient strand (is_transient_strand=1):
+         *   - Step 1 (runnable-count re-increment): skipped — transient manages
+         *     its own READY-cycle increments at the dequeue site below.
+         *   - Step 2 (eager DEAD-strand reap): skipped — the strand is stack-local;
+         *     lifetime bounded by this function; freed by ustrand_destroy at exit.
+         *   - Step 3 (sleep-queue wake): runs — keeps sleep-blocked strands on the
+         *     same VM from starving while urbi_vm_run holds the call frame.
+         *   - Step 4 (periodic pump): runs — allows every()-body strands that
+         *     fire during a synchronous eval to re-arm within the same call.
+         *
+         * Note: urbi_vm_run is the synchronous-eval path and is typically short;
+         * running sleep-wake + periodic pump here is a convergence improvement but
+         * does not change the fundamental semantics (the driver is still single-
+         * strand). */
+        sched_post_dispatch(vm, &strand);
+        /* strand is still valid here (step 2 was skipped for transient). */
+
         if (strand.state == USTRAND_STATE_DEAD) break;
         if (vm->last_error != UVM_OK) break;
         if (strand.state == USTRAND_STATE_READY) {
