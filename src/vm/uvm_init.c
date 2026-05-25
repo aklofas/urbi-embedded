@@ -35,6 +35,7 @@
 #include "sched/usched_cooperative.h" /* sched_walk_roots */
 #include "chunk/uchunk.h"           /* uchunk_destroy — M6 Phase 4 stdlib_module teardown */
 #include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM — T23 return-code surface */
+#include "changed/uchanged_node.h"  /* urbi_deferred_slot_changes_walk_roots */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -250,6 +251,11 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* v0.9.4 Phase 5: every() periodic-spawn primitive — yields each
      * UPeriodic.body closure + vm->every_native_closure to the GC mark. */
     urbi_gc_register_root_provider(vm, urbi_periodic_table_walk_roots);
+    /* W3/v0.10.2: deferred slot-change ring (reactive audit F6).
+     * Makes vm->deferred_slot_changes[head..tail] visible to GC root walking.
+     * No-op on empty ring; under the cooperative scheduler this is
+     * correctness-preserving.  Becomes load-bearing at v1.x preemption. */
+    urbi_gc_register_root_provider(vm, urbi_deferred_slot_changes_walk_roots);
 
     /* Type table + host-handle table. */
     {

@@ -79,33 +79,19 @@ struct UChunkInstance;   /* M4 T30 — defined in src/object/uchunk_instance.h *
 
 /* Entry in the deferred slot-change ring (spec #4 §3.5).
  *
- * GC rooting contract (closes GC-004 — doc-only at v1.0):
- *   The (parent, key, new_value) triple is NOT walked by any GC root
- *   provider.  parent (UObject *) and any heap-bearing UValue inside
- *   new_value are weak references across a GC slice.  Correctness at v1.0
- *   relies on a strict safepoint-ordered invariant maintained by the
- *   cooperative scheduler:
+ * GC rooting contract (W3/v0.10.2 — closes reactive audit F6):
+ *   The (parent, key, new_value) triple IS walked by the GC root provider
+ *   urbi_deferred_slot_changes_walk_roots, registered at urbi_vm_init.
+ *   Under the cooperative scheduler this is correctness-preserving (no GC
+ *   slice fires between defer-site and drain in well-formed runs); under
+ *   future preemptive scheduling the walker becomes load-bearing and
+ *   prevents UAF in the drain path.
  *
+ *   Safepoint ordering (unchanged):
  *     defer-site (slot-write barrier inside a sync slot-change body)
  *       --> next safepoint
  *       --> urbi_drain_deferred_slot_changes (clears head..tail)
  *       --> watcher_eval_dirty
- *
- *   No GC slice runs between defer-site and drain because the cooperative
- *   scheduler only steps GC at the dispatch-loop safepoint, and the drain
- *   happens at that same safepoint *before* any potential GC trigger.
- *   This invariant is implicitly verified by the full 148-fixture .chk
- *   corpus passing under URBI_GC_INCREMENTAL with stress-mode allocation.
- *
- *   v1.x preemption upgrade path (filed; NOT addressed here):
- *     A preemptive scheduler that can step GC asynchronously between
- *     defer-site and drain MUST upgrade these to strong refs by visiting
- *     vm->deferred_slot_changes[head..tail] from the GC root walker (e.g.
- *     a new urbi_deferred_ring_walk_roots root provider registered with
- *     urbi_gc_register_root_provider).  Until then, runtime safety is
- *     contractual on the safepoint ordering.  The detailed upgrade plan
- *     is tracked in the design-risks register under "v1.x: deferred
- *     slot-change ring becomes weak under preemption".
  *
  * Storage: heap-allocated ring buffer, one urbi_vm-init calloc, freed in
  * urbi_vm_destroy.  NOT GC-managed at any tier — the cell entries are

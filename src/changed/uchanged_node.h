@@ -157,6 +157,14 @@ urbi_emit_slot_change_if_subscribed(struct UVM    *vm,
  * No-op when the ring is empty (head == tail) or NULL (OOM at init). */
 void urbi_drain_deferred_slot_changes(struct UVM *vm);
 
+/* === urbi_deferred_slot_changes_walk_roots (W3/v0.10.2) ===
+ *
+ * GC root provider: yields (parent, new_value) for each pending entry in
+ * vm->deferred_slot_changes[head..tail].  Registered in urbi_vm_init.
+ * Closes reactive audit F6. */
+void urbi_deferred_slot_changes_walk_roots(struct UVM *vm,
+                                            UGcRootCallback cb, void *ctx);
+
 #ifdef __cplusplus
 }
 #endif
