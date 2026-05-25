@@ -94,6 +94,35 @@
  *      (URBI_BYTECODE_VERSION_MINOR 8→9).  No struct layout change; no
  *      function signature change.  11th use of pre-v1.0 escape clause.
  *      (0/14/0 → 0/14/1)
+ *  12. v0.10.3-api-opacity — Wave 4 of v0.10.x architectural refactor
+ *      arc.  Combined 12th + 13th use of pre-v1.0 escape clause:
+ *      W3 retires UVMError + UExecStatus from the public surface (kept
+ *      as typedef int + #define shims for one release cycle); 5
+ *      callback setters gain trailing void *ud (urbi_set_diag_fn,
+ *      _time_us, _watcher_body_done_fn, _isr_check_fn,
+ *      _register_event_drain); new UCallbackSignal enum
+ *      (URBI_CB_OK/_UNREGISTER/_THROW); URBI_ERR_WATCHER_UNREGISTER
+ *      retained as #define alias for URBI_CB_UNREGISTER.
+ *      W5 changes 17 functions to take vm as new first arg
+ *      (urbi_strand_* family + urbi_throw/_return_val/_tag_stop_local
+ *      + urbi_realm_set/get_compile_budget + urbi_tag_info +
+ *      urbi_chunk_from_bytes/_free + sched priority/sched_class);
+ *      3 void-returning functions change to int (strand_destroy/throw/
+ *      return_val).  Adds UStrandState enum + urbi_strand_state(vm, s);
+ *      adds UStrandUnwind public mirror enum + URBI_ERR_INVALID_STATE
+ *      (-27); routes urbi_chunk_from_bytes alloc through vm->alloc_fn.
+ *      W1 adds opaque urbi_vm_create/_free/_sizeof/_alignof
+ *      (urbi_vm_init/_destroy retained as URBI_ADVANCED for static
+ *      embedders).  W4 adds 13 urbi_value_is_* predicates + 9
+ *      urbi_aux_value_to_* checked accessors + URBI_ERR_TYPE (-26).
+ *      W7 adds URBI_EXPERIMENTAL/_ADVANCED/_DEPRECATED attribute
+ *      macros + docs/api-surface-tiers.md manifest + test-api-manifest
+ *      CI gate.  W2 removes 4 internal-header includes from <urbi/gc.h>
+ *      + <urbi/sched.h> + adds test-external-embed-iinclude CI gate.
+ *      W6 rewrites docs/embedding-guide.md against post-Wave-4 surface
+ *      + tightens test-embedding-guide CFLAGS to -Iinclude only.
+ *      Wire format unchanged at v1.9 / 0x19 (C-API only wave).
+ *      (0/14/1 → 0/15/0)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -108,8 +137,8 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  14
-#define URBI_API_VERSION_PATCH  1
+#define URBI_API_VERSION_MINOR  15
+#define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)

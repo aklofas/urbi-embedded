@@ -1,5 +1,108 @@
 # Changelog
 
+## v0.10.3-api-opacity — 2026-05-25
+
+Wave 4 of the v0.10.x architectural refactor arc. API freeze
+preconditions: public surface becomes opaque, error model unified, tier
+classification, vm-first-arg sweep, embedding-guide rewritten against
+the new shape.
+
+- **W1: Opaque VM allocation API.** `urbi_vm_create(alloc_fn, ud)` /
+  `urbi_vm_free` allocates + initialises via the host-supplied allocator;
+  symmetric teardown. `urbi_vm_sizeof()` / `_alignof()` expose layout
+  for embedders who deliberately want static/BSS allocation without
+  reaching into `src/`. `urbi_vm_init` / `_destroy` retained as Tier 2
+  Advanced for static-allocation embedders with tight memory budgets.
+  Closes audit-1 F1 (start of fix), audit-1 F4 (VM lifecycle verbs),
+  api-ergonomics F9 (start of fix), roadmap F10 (partial).
+
+- **W2: Public headers stop including `src/`-prefixed headers.**
+  `<urbi/gc.h>` and `<urbi/sched.h>` drop 4 internal includes; barrier
+  inlines and scheduler strategy stay in `src/`. New CI gate
+  `test-external-embed-iinclude` compiles a minimal external program
+  with `-Iinclude` alone. Closes audit-1 F1 (completion of public-
+  header self-containment side).
+
+- **W3: Error model unification.** All public functions return `int`.
+  `URBI_OK` (0) + negative `URBI_ERR_*` (failure; also published to
+  per-VM error ring via `urbi_last_error`) + positive `UCallbackSignal`
+  (`URBI_CB_OK`/`URBI_CB_UNREGISTER`/`URBI_CB_THROW`) for host-callback
+  returns only. `UVMError` + `UExecStatus` enums removed from public
+  surface (kept as `typedef int` + `#define` shims for one release
+  cycle). `URBI_ERR_WATCHER_UNREGISTER` renamed `URBI_CB_UNREGISTER`
+  (legacy alias retained). 5 callback setters gain trailing `void *ud`:
+  `urbi_set_diag_fn`, `urbi_set_time_us`, `urbi_set_watcher_body_done_fn`,
+  `urbi_set_isr_check_fn`, `urbi_register_event_drain`. Closes api-
+  ergonomics F2 + F7, audit-1 F17, reactive-runtime F7.
+
+- **W4: `urbi_value_is_*` predicate family + checked accessors.** 13
+  inline static predicates in `<urbi/types.h>`:
+  `urbi_value_is_nil`/`_bool`/`_int`/`_float`/`_str`/`_closure`/`_void`/
+  `_strand`/`_object`/`_event`/`_host_fn`/`_ptr`/`_tag`. 9 checked
+  accessors in `<urbi/aux.h>`: `urbi_aux_value_to_int`/`_float`/`_bool`/
+  `_str`/`_ptr`/`_object`/`_event`/`_closure`/`_tag` — return `URBI_OK`
+  and write `*out` on type match; return new `URBI_ERR_TYPE` (-26) and
+  leave `*out` unmodified on mismatch. `urbi_slot_set` also migrated to
+  `URBI_ERR_TYPE` for kind mismatch. eye_demo example migrated off raw
+  `(int)v.kind` switch. Closes api-ergonomics F1.
+
+- **W5: vm-first-arg sweep across 17 functions.** strand family +
+  control-transfer (`urbi_throw`, `urbi_return_val`, `urbi_tag_stop_local`),
+  plus `urbi_realm_set/get_compile_budget`, `urbi_tag_info`,
+  `urbi_chunk_from_bytes`/`_free`, and sched priority/sched_class — all
+  take `vm` as new first arg. 3 void-returning functions change to int
+  per F8 safety contract (`urbi_strand_destroy`, `urbi_throw`,
+  `urbi_return_val`). New `urbi_strand_state(vm, s)` + `UStrandState`
+  enum (`URBI_STRAND_DORMANT`/`READY`/`RUNNING`/`BLOCKED`/`WAITING`/
+  `DEAD`) so embedders can query before destroy. New `UStrandUnwind`
+  public mirror enum (`URBI_UNWIND_OK`/`RETURN`/`THROW`/`TAG_STOP`/
+  `CANCEL`) replaces public exposure of internal `UExecStatus`. New
+  `URBI_ERR_INVALID_STATE` (-27). `urbi_chunk_from_bytes` now routes
+  alloc through `vm->alloc_fn` (was libc default). Closes api-
+  ergonomics F3, F5 (partial), F6 (partial), F8.
+
+- **W6: docs/embedding-guide.md rewrite.** `urbi_vm_create` is the
+  primary Quick Start pattern; static allocation is a §1 sidebar.
+  New top-level §2 "Error Model" section documenting the three-zone
+  `int` return convention. §3 Allocator Strategy documents why bundled
+  examples stay on static allocation (tight MCU heap budgets). §5 Host
+  Function Registration shows `urbi_value_is_*` predicate dispatch +
+  checked-accessor patterns. §9 Lifecycle Contracts documents the
+  `urbi_strand_state`/`urbi_strand_destroy` contract (debug-mode
+  `URBI_ERR_INVALID_STATE` is diagnostic only; teardown completes
+  regardless of return value). Status section calls out the tier
+  policy + `docs/api-surface-tiers.md` pointer. `urbi_stdlib_boot`
+  discussion deleted (auto-called since M6). `test-embedding-guide`
+  CFLAGS tightened from `-Iinclude -Isrc` to `-Iinclude` alone — W2's
+  public-header de-leak makes this enforceable. Closes audit-1 F1
+  (docs side), api-ergonomics F9 (completion).
+
+- **W7: API surface tier classification.** Three new attribute macros
+  in `<urbi/version.h>`: `URBI_EXPERIMENTAL` (emits deprecation
+  warning), `URBI_ADVANCED` (documentation-only), `URBI_DEPRECATED`
+  (emits warning). 12 functions decorated:
+  - Advanced: `urbi_get_determinism_checksum`, `urbi_chunk_instance_create`/
+    `_destroy`, `urbi_call_host_with_watchdog`, `urbi_panic`,
+    `urbi_chunk_translate_load_err`, `urbi_register_event_drain`, all
+    8 `urbi_gc_*` functions, `urbi_vm_init`/`_destroy`, `urbi_in_isr`.
+  - Experimental: `urbi_strand_set_priority`/`_get_priority`/
+    `_get_sched_class` (gated on `URBI_SCHED_HAS_PRIORITY` which the
+    cooperative scheduler hard-defines to 0; absent in shipped builds).
+  New `docs/api-surface-tiers.md` manifest enumerates every public
+  symbol with its tier (T1 Stable / T2 Advanced / T3 Experimental /
+  T4 Internal-leak). New CI gate `test-api-manifest` diffs the
+  manifest against `nm liburbi.a` symbols. 100 T4 internal-leak
+  symbols documented as a discovery for v0.10.4+ cleanup. Closes
+  audit-1 F13, api-ergonomics F12.
+
+Closes roadmap F10 (C API ready to freeze).
+
+ABI 0/14/1 → 0/15/0 (12th + 13th use of pre-v1.0 escape clause).
+Wire format unchanged at v1.9 / 0x19 (this wave is C-API only).
+
+26 releasetest gates (24 Phase 1 + 2 Phase 2). 1964 unit test cases,
+14122 checks, 0 failed.
+
 ## v0.10.2-reactive — 2026-05-25
 
 Wave 3 of the v0.10.x architectural refactor arc. Reactive primitives
