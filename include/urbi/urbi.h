@@ -20,6 +20,7 @@
  * into the public surface; closes API-012 / INC-003 structurally.
  * v0.9.2: UModule removed (struct deleted; a module IS its root UProto). */
 #include "urbi/types.h"
+#include "urbi/require.h"  /* URBI_REQUIRE — invariant macro that fires in all build modes */
 
 #ifdef __cplusplus
 extern "C" {
