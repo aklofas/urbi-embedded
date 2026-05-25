@@ -6,8 +6,9 @@
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 #include "sched/usched_cooperative.h"
+#include "sched/usched_post_dispatch.h"  /* sched_post_dispatch (scheduler F3) */
 #include "event/uevent_ring.h"
-#include "stdlib/temporal.h"   /* v0.9.4: urbi_periodic_pump / earliest_wake_us */
+#include "stdlib/temporal.h"   /* v0.9.4: urbi_periodic_pump (pre-loop) + urbi_periodic_earliest_wake_us (quiescence) */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (CHSTR-025 wait_payload arm guard) */
 #include <stddef.h>
 #include <stdint.h>
@@ -93,82 +94,22 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
             return URBI_STEP_FATAL;
         }
 
-        /* If the strand died, strand_runnable_count was NOT decremented by
-         * dispatch_loop_until_yield (per T15 Option B contract — the exit_strand:
-         * label does not decrement on DEAD).  We decremented it above via
-         * sched_dequeue_ready_head before dispatch; no further adjustment needed.
+        /* Post-dispatch fix-ups — scheduler F3.
          *
-         * If the strand BLOCKED (WAITING state) via sched_strand_block from within
-         * the dispatch loop (e.g. OP_JOIN_WAIT), sched_strand_block decrements
-         * strand_runnable_count because it sees state=RUNNING.  But that count was
-         * already decremented by sched_dequeue_ready_head above, so the block path
-         * would double-decrement and erase a child strand's runnable slot.
+         * sched_post_dispatch runs four bookkeeping steps that must execute after
+         * every dispatch-loop iteration:
+         *   1. Re-increment strand_runnable_count if the strand is now WAITING
+         *      (corrects the double-decrement from sched_dequeue_ready_head +
+         *      sched_strand_block both decrementing for state==RUNNING).
+         *   2. Eager DEAD-strand reap via urbi_strand_destroy (prevents the
+         *      register-stack accumulation wedge first seen at ~200 eye_demo body
+         *      completions on ESP32, v0.7.x).
+         *   3. Sleep-queue wake for any strand whose wake_us <= now.
+         *   4. Periodic pump so a just-completed every()-body can re-arm within
+         *      this urbi_step call.
          *
-         * Re-increment invariant: sched_dequeue_ready_head decremented
-         * strand_runnable_count when we picked this strand. If the strand
-         * transitioned to WAITING during dispatch (e.g. OP_JOIN_WAIT calls
-         * sched_strand_block which decrements for state == RUNNING), the counter
-         * is now double-decremented and the scheduler would lose track of the fact
-         * that the strand is waiting on something rather than gone entirely.
-         *
-         * Re-increment to restore symmetry. Any future blocking opcode that calls
-         * sched_strand_block from inside the dispatch loop must rely on this
-         * re-increment — adding such an opcode without checking this invariant
-         * will silently underflow the runnable count. */
-        if (USTRAND_IS_WAITING(s)) {
-            vm->strand_runnable_count++;
-        }
-
-        /* T20 (v0.7.x): eager DEAD-strand reap.  Heap-allocated strands
-         * (`urbi_strand_create` — used for watcher bodies, fork children, and
-         * any script-spawned strand) sit on `realm->strands_head` until
-         * `urbi_realm_destroy` would otherwise reap them at VM teardown.
-         * Without an eager reap during normal dispatch, DEAD strands
-         * accumulate indefinitely; each carries a register stack of
-         * `UVM_STACK_CAP * sizeof(UValue)` (32 KB at default) so the leak
-         * climbs into the multi-MB range at moderate event rates.  Surfaced
-         * on the ESP-IDF eye_demo as a hard wedge at ~200 body completions:
-         * register-stack alloc failed (`watcher body spawn: out of memory
-         * (stack alloc)` URBI_LOG_WARN), `body_strand` stayed NULL, and the
-         * at-handler dispatch went silent.
-         *
-         * Safe to reap here because: `watcher_body_owner` was cleared by
-         * `urbi_watcher_body_completed` in `exit_strand:` above; joiners
-         * were woken by `fork_wake_joiners`; ready/sleep queues were
-         * already unbound; `vm->cur_strand` was cleared after dispatch
-         * returned.  The FATAL path returned `URBI_STEP_FATAL` above so
-         * we never reap a strand the host still wants to inspect.
-         *
-         * `urbi_strand_destroy` is the canonical full teardown — unlinks
-         * from `realm->strands_head`, unbinds queues, frees cleanup
-         * stack + register stack + the strand struct itself. */
-        if (s->state == USTRAND_STATE_DEAD) {
-            urbi_strand_destroy(s);
-            /* s is freed; do not dereference past this point. */
-        }
-
-        /* Wake any sleep-queue strands whose wake_us has passed.
-         * CHSTR-025: every node on sleep_q is REASON_SLEEP, so wake_us is the
-         * active union arm; assert at the loop head to surface a queue-invariant
-         * break in -DURBI_DEBUG builds. */
-        {
-            uint64_t now = vm->host_time_us();
-            while (vm->sleep_q_head) {
-                URBI_INTERNAL_ASSERT(
-                    USTRAND_GET_REASON(vm->sleep_q_head) == USTRAND_REASON_SLEEP);
-                if (vm->sleep_q_head->wait_payload.wake_us > now) break;
-                UStrand *waker = vm->sleep_q_head;
-                /* sched_strand_unblock removes from sleep_q (decrementing
-                 * wakeup_pending_count) and calls sched_strand_make_runnable. */
-                sched_strand_unblock(waker);
-            }
-        }
-
-        /* v0.9.4: pump periodics inside the loop too so a body strand
-         * that just completed can re-arm and the next fire becomes a
-         * READY strand within this urbi_step call (no need to wait for
-         * the next host-level step). */
-        (void)urbi_periodic_pump(vm);
+         * After step 2, s may be freed.  Do NOT dereference s after this call. */
+        sched_post_dispatch(vm, s);
     }
 
     /* If any strand is still READY or RUNNING, the budget ran out. */

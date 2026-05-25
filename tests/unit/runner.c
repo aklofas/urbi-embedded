@@ -276,6 +276,7 @@ extern void test_repl_serve_step_cooperative_suite(void);
 extern void test_introspect_each_suite(void);
 extern void test_json_parse_suite(void);
 extern void test_require_suite(void);
+extern void test_sched_post_dispatch_alt_driver_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -528,6 +529,7 @@ static const struct suite_entry suites[] = {
     {"introspect_each",                  test_introspect_each_suite},
     {"json_parse",                       test_json_parse_suite},
     {"require",                          test_require_suite},
+    {"sched_post_dispatch_alt_driver",   test_sched_post_dispatch_alt_driver_suite},
     /* Add new suites here as test files are added. */
 };
 

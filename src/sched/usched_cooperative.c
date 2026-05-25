@@ -37,10 +37,13 @@
  */
 
 #include "usched_cooperative.h"
+#include "sched/usched_post_dispatch.h"  /* sched_post_dispatch declaration */
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 #include "realm/urealm.h"  /* URealm; realms_head → strands_head walk (T32) */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT (SCHED-002/003) */
+#include "urbi/urbi.h"          /* urbi_strand_destroy (sched_post_dispatch step 2) */
+#include "stdlib/temporal.h"   /* urbi_periodic_pump (sched_post_dispatch step 4) */
 #include <stdbool.h>
 #include <stdint.h>
 #include "gc/ugc.h"
@@ -603,4 +606,103 @@ sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
             strand_walk_roots(vm, s, cb, ctx);
         }
     }
+}
+
+/* === sched_post_dispatch: consolidated post-dispatch fix-up helper ===
+ *
+ * Scheduler audit F3: previously all four fix-up steps lived exclusively in
+ * urbi_step, so any alternative driver had to replicate them or silently lose
+ * forward progress, leak memory, or corrupt the runnable count.  This helper
+ * centralises them.
+ *
+ * The four steps (see usched_post_dispatch.h for full documentation):
+ *   1. Runnable-count re-increment if strand is WAITING (double-decrement fix).
+ *   2. Eager DEAD-strand reap via urbi_strand_destroy.
+ *   3. Sleep-queue wake for any strand whose wake_us <= now.
+ *   4. Periodic pump to re-arm any every()-body that just completed.
+ *
+ * Precondition: s->fatal_status was checked by the driver before this call;
+ * FATAL strands must never reach here (driver returns URBI_STEP_FATAL first).
+ * vm->cur_strand must be NULL on entry (driver clears it after dispatch). */
+void
+sched_post_dispatch(UVM *vm, UStrand *s)
+{
+    /* Step 1: Runnable-count re-increment (non-transient strands only).
+     *
+     * sched_dequeue_ready_head decremented strand_runnable_count when the strand
+     * was picked.  If the strand then transitioned to WAITING inside dispatch
+     * (via sched_strand_block, which also decrements for state==RUNNING), the
+     * counter was double-decremented.  Re-increment to restore symmetry so the
+     * scheduler does not lose track of the fact that the strand is waiting rather
+     * than gone entirely.  Any future blocking opcode that calls sched_strand_block
+     * from inside the dispatch loop must rely on this re-increment.
+     *
+     * is_transient_strand guard: urbi_vm_run transient strands bypass
+     * sched_strand_make_runnable and sched_dequeue_ready_head; they manage their
+     * own READY-cycle increments at the dequeue site inside the vm_run loop.
+     * There is no double-decrement issue for transients; incrementing here would
+     * spuriously inflate strand_runnable_count. */
+    if (USTRAND_IS_WAITING(s) && !s->is_transient_strand) {
+        vm->strand_runnable_count++;
+    }
+
+    /* Step 2: Eager DEAD-strand reap (heap-allocated strands only).
+     *
+     * Heap-allocated strands (urbi_strand_create — used for watcher bodies, fork
+     * children, and any script-spawned strand) sit on realm->strands_head until
+     * urbi_realm_destroy would otherwise reap them at VM teardown.  Without eager
+     * reap, DEAD strands accumulate indefinitely; each carries a register stack of
+     * UVM_STACK_CAP * sizeof(UValue) (~32 KB at default) so the leak climbs into
+     * the multi-MB range at moderate event rates.  Surfaced on ESP-IDF eye_demo as
+     * a hard wedge at ~200 body completions (v0.7.x).
+     *
+     * Safe to reap here because: watcher_body_owner was cleared by
+     * urbi_watcher_body_completed in exit_strand; joiners were woken by
+     * fork_wake_joiners; ready/sleep queues were already unbound; vm->cur_strand
+     * was cleared after dispatch returned.  The FATAL path returns before reaching
+     * this helper, so we never reap a strand the host still wants to inspect.
+     *
+     * is_transient_strand guard: urbi_vm_run creates a stack-local transient
+     * strand (T33 discriminator) and manages its own teardown via ustrand_destroy
+     * at function exit.  Calling urbi_strand_destroy on a stack address would
+     * free a pointer that was never heap-allocated, causing UB.  Transient
+     * strands are explicitly excluded from eager reap here; their lifetime is
+     * bounded by the urbi_vm_run call frame.
+     *
+     * urbi_strand_destroy is the canonical full teardown — unlinks from
+     * realm->strands_head, unbinds queues, frees cleanup stack + register stack
+     * + the strand struct itself.  After this call s is freed; callers MUST NOT
+     * dereference s. */
+    if (s->state == USTRAND_STATE_DEAD && !s->is_transient_strand) {
+        urbi_strand_destroy(s);
+        /* s is freed; do not dereference past this point. */
+        /* Steps 3 and 4 below only use vm, so they are safe to run after free. */
+    }
+
+    /* Step 3: Sleep-queue wake.
+     *
+     * Walk vm->sleep_q_head and wake every strand whose wake_us <= now.
+     * CHSTR-025: every node on sleep_q is REASON_SLEEP, so wake_us is the
+     * active union arm; assert at the loop head to surface a queue-invariant
+     * break in -DURBI_DEBUG builds. */
+    if (vm->sleep_q_head != NULL && vm->host_time_us != NULL) {
+        uint64_t now = vm->host_time_us();
+        while (vm->sleep_q_head != NULL) {
+            URBI_INTERNAL_ASSERT(
+                USTRAND_GET_REASON(vm->sleep_q_head) == USTRAND_REASON_SLEEP);
+            if (vm->sleep_q_head->wait_payload.wake_us > now) break;
+            UStrand *waker = vm->sleep_q_head;
+            /* sched_strand_unblock removes from sleep_q (decrementing
+             * wakeup_pending_count) and calls sched_strand_make_runnable. */
+            sched_strand_unblock(waker);
+        }
+    }
+
+    /* Step 4: Periodic pump.
+     *
+     * Fire every()-body re-spawn for any periodic whose next_fire_us has elapsed.
+     * Running this inside the dispatch loop (rather than only pre-loop) allows a
+     * body strand that just completed to re-arm and become a READY strand within
+     * the same urbi_step call without waiting for the next host-level step. */
+    (void)urbi_periodic_pump(vm);
 }
