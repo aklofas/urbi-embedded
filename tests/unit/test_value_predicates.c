@@ -251,6 +251,125 @@ static void checked_to_ptr_rejects_object(void)
 }
 
 /* =========================================================================
+ * Checked accessor: urbi_aux_value_to_str
+ * ========================================================================= */
+
+static void checked_to_str_succeeds_on_str(void)
+{
+    /* No urbi_make_str public ctor (requires live VM); build synthetically
+     * matching the UVAL_STR layout documented in types.h:254-261. */
+    UValue v;
+    v.kind = (uint8_t)UVAL_STR;
+    for (size_t i = 0; i < sizeof(v._pad); i++) v._pad[i] = 0;
+    v.v.p = (void *)"hello";
+    const char *s = NULL;
+    size_t len = 999;
+    int rc = urbi_aux_value_to_str(v, &s, &len);
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT(s != NULL);
+    UASSERT_EQ((int)len, 5); /* strlen("hello") via NUL-scan */
+}
+
+static void checked_to_str_rejects_int(void)
+{
+    UValue v = urbi_make_int(42);
+    const char *s = (const char *)0xDEADBEEFUL;
+    size_t len = 999;
+    int rc = urbi_aux_value_to_str(v, &s, &len);
+    UASSERT_EQ(rc, URBI_ERR_TYPE);
+    UASSERT(s == (const char *)0xDEADBEEFUL); /* unmodified on failure */
+    UASSERT_EQ((int)len, 999);                /* unmodified on failure */
+}
+
+/* =========================================================================
+ * Checked accessor: urbi_aux_value_to_object
+ * ========================================================================= */
+
+static void checked_to_object_succeeds_on_object(void)
+{
+    UValue v = urbi_make_object((struct UObject *)0xDEADBEEFUL);
+    struct UObject *out = NULL;
+    int rc = urbi_aux_value_to_object(v, &out);
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT(out == (struct UObject *)0xDEADBEEFUL);
+}
+
+static void checked_to_object_rejects_float(void)
+{
+    UValue v = urbi_make_float(1.5);
+    struct UObject *out = (struct UObject *)0xCAFEBABEUL;
+    int rc = urbi_aux_value_to_object(v, &out);
+    UASSERT_EQ(rc, URBI_ERR_TYPE);
+    UASSERT(out == (struct UObject *)0xCAFEBABEUL); /* unmodified */
+}
+
+/* =========================================================================
+ * Checked accessor: urbi_aux_value_to_event
+ * ========================================================================= */
+
+static void checked_to_event_succeeds_on_event(void)
+{
+    UValue v = urbi_make_event((struct UEvent *)0xCAFEBABEUL);
+    struct UEvent *out = NULL;
+    int rc = urbi_aux_value_to_event(v, &out);
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT(out == (struct UEvent *)0xCAFEBABEUL);
+}
+
+static void checked_to_event_rejects_int(void)
+{
+    UValue v = urbi_make_int(7);
+    struct UEvent *out = (struct UEvent *)0xBADF00DUL;
+    int rc = urbi_aux_value_to_event(v, &out);
+    UASSERT_EQ(rc, URBI_ERR_TYPE);
+    UASSERT(out == (struct UEvent *)0xBADF00DUL); /* unmodified */
+}
+
+/* =========================================================================
+ * Checked accessor: urbi_aux_value_to_closure
+ * ========================================================================= */
+
+static void checked_to_closure_succeeds_on_closure(void)
+{
+    UValue v = urbi_make_closure((struct UClosure *)0xBADF00DUL);
+    struct UClosure *out = NULL;
+    int rc = urbi_aux_value_to_closure(v, &out);
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT(out == (struct UClosure *)0xBADF00DUL);
+}
+
+static void checked_to_closure_rejects_object(void)
+{
+    UValue v = urbi_make_object((struct UObject *)0x12345UL);
+    struct UClosure *out = (struct UClosure *)0x99999UL;
+    int rc = urbi_aux_value_to_closure(v, &out);
+    UASSERT_EQ(rc, URBI_ERR_TYPE);
+    UASSERT(out == (struct UClosure *)0x99999UL); /* unmodified */
+}
+
+/* =========================================================================
+ * Checked accessor: urbi_aux_value_to_tag
+ * ========================================================================= */
+
+static void checked_to_tag_succeeds_on_tag(void)
+{
+    UValue v = urbi_make_tag((struct UTag *)0xDEADC0DEUL);
+    struct UTag *out = NULL;
+    int rc = urbi_aux_value_to_tag(v, &out);
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT(out == (struct UTag *)0xDEADC0DEUL);
+}
+
+static void checked_to_tag_rejects_int(void)
+{
+    UValue v = urbi_make_int(99);
+    struct UTag *out = (struct UTag *)0xABCDEFUL;
+    int rc = urbi_aux_value_to_tag(v, &out);
+    UASSERT_EQ(rc, URBI_ERR_TYPE);
+    UASSERT(out == (struct UTag *)0xABCDEFUL); /* unmodified */
+}
+
+/* =========================================================================
  * Suite registration
  * ========================================================================= */
 
@@ -274,6 +393,16 @@ void test_value_predicates_suite(void)
     utest_run("checked_to_float_rejects_int",  checked_to_float_rejects_int);
     utest_run("checked_to_bool_succeeds",      checked_to_bool_succeeds_on_bool);
     utest_run("checked_to_bool_rejects_int",   checked_to_bool_rejects_int);
-    utest_run("checked_to_ptr_succeeds",       checked_to_ptr_succeeds_on_ptr);
-    utest_run("checked_to_ptr_rejects_object", checked_to_ptr_rejects_object);
+    utest_run("checked_to_ptr_succeeds",             checked_to_ptr_succeeds_on_ptr);
+    utest_run("checked_to_ptr_rejects_object",       checked_to_ptr_rejects_object);
+    utest_run("checked_to_str_succeeds",             checked_to_str_succeeds_on_str);
+    utest_run("checked_to_str_rejects_int",          checked_to_str_rejects_int);
+    utest_run("checked_to_object_succeeds",          checked_to_object_succeeds_on_object);
+    utest_run("checked_to_object_rejects_float",     checked_to_object_rejects_float);
+    utest_run("checked_to_event_succeeds",           checked_to_event_succeeds_on_event);
+    utest_run("checked_to_event_rejects_int",        checked_to_event_rejects_int);
+    utest_run("checked_to_closure_succeeds",         checked_to_closure_succeeds_on_closure);
+    utest_run("checked_to_closure_rejects_object",   checked_to_closure_rejects_object);
+    utest_run("checked_to_tag_succeeds",             checked_to_tag_succeeds_on_tag);
+    utest_run("checked_to_tag_rejects_int",          checked_to_tag_rejects_int);
 }
