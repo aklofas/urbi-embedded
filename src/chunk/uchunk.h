@@ -263,7 +263,13 @@ typedef enum {
     UCHUNK_LOAD_CORRUPT,                /* bad opcode / out-of-range reg / count mismatch / misaligned */
     UCHUNK_LOAD_OOM,
     UCHUNK_LOAD_INVALID_ARG,            /* NULL module / NULL buf etc.; distinct from TRUNCATED */
-    UCHUNK_LOAD_OVERSIZED               /* count fields exceed compile-time per-proto caps */
+    UCHUNK_LOAD_OVERSIZED,              /* count fields exceed compile-time per-proto caps */
+    /* --- bytecode F2: per-instruction bounds hardening (W7 verifier pass) --- */
+    UCHUNK_LOAD_TRUNCATED_UPVALUES,     /* OP_CLOSURE upvalue prelude extends past bytecode end */
+    UCHUNK_LOAD_MALFORMED_UPVALUE,      /* OP_CLOSURE upvalue pseudo-instr has invalid in_stack or src_idx */
+    UCHUNK_LOAD_JMP_OUT_OF_BOUNDS,      /* OP_JMP Bx target pc outside [0, instr_count) */
+    UCHUNK_LOAD_CALL_NRESULTS_ZERO,     /* OP_CALL C low-7 == 0 (nresults+1 must be >= 1) */
+    UCHUNK_LOAD_RESERVED_OPCODE         /* opcode is reserved/unimplemented at this wire version */
 } UChunkLoadError;
 
 /* Per-proto cap on instruction count.  Bytecode-encoded as varint;

@@ -923,12 +923,12 @@ static UChunkLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
 
 /* OP_JMP Bx range note:
  *   Bx is a 16-bit unsigned field treated as signed with bias 32768
- *   (effective range -32768..+32767).  The verifier intentionally does
- *   NOT range-check Bx because the legitimate range depends on pc — a
- *   target pc' = pc + signed(Bx) - 32768 must satisfy
- *   0 <= pc' <= instr_count.  Per-instruction bounds checks would force
- *   the verifier to know absolute PC; we defer to runtime dispatch
- *   which surfaces an out-of-range jump as URBI_ERR_RUNTIME_FATAL. */
+ *   (effective range -32768..+32767).  The shape-table verifier (verify_walk_block)
+ *   accepts UBXK_JUMP_SIGNED with no per-instruction bounds because it operates
+ *   one instruction at a time without absolute PC context.  The per-sequence
+ *   verify_chunk_bounds pass (bytecode F2 / W7) computes
+ *   target = pc + signed(Bx) - 32768 and rejects targets outside [0, instr_count)
+ *   with UCHUNK_LOAD_JMP_OUT_OF_BOUNDS, replacing the prior runtime-fatal path. */
 /* Return true if `op` is an IC-bearing opcode (carries an ic_idx in C).
  * Mirror at v1.6: OP_GETSLOT, OP_SETSLOT, OP_GETSLOT_CHANGE_EVENT, OP_SELF.
  * Mirror discipline: any new IC-bearing opcode added in a future
@@ -1107,6 +1107,172 @@ static UChunkLoadError decode_verify(MDecCtx *d) {
     return verify_proto_recursive(d, d->rp);
 }
 
+/* --- bytecode F2: deserialize-time per-instruction operand bounds pass ---
+ *
+ * verify_chunk_bounds walks every UProto in the tree (DFS, mirrors
+ * verify_proto_recursive above) and applies bounds checks that require
+ * understanding instruction *sequences* or cross-instruction context, which
+ * is more than the per-opcode shape table in verify_walk_block can express:
+ *
+ *   OP_CLOSURE upvalue prelude — the nupvals pseudo-instructions that follow
+ *     an OP_CLOSURE must lie within the instruction array, and each must
+ *     encode a valid (in_stack, src_idx) pair:
+ *       in_stack = B in {0, 1}
+ *       src_idx  = C; if in_stack==1, C <= proto->max_reg (local register);
+ *                     if in_stack==0, C < proto->nupvals (re-capture from parent)
+ *   OP_JMP target — Bx is a signed offset biased by 32768; the resolved target
+ *     pc' = pc + signed(Bx) - 32768 must satisfy 0 <= pc' < instr_count.
+ *     (The bias means Bx=32768 is a no-op jump; Bx=0 jumps backward 32768.)
+ *   OP_CALL C low-7 — encodes nresults+1; must be >= 1 (0 means 0 results
+ *     which is legal at runtime but the emitter never produces it; a
+ *     hand-crafted module with C & 0x7F == 0 is malformed per the wire spec).
+ *   OP_TAG_STOP — declared in the opcode table but has no emit path and the VM
+ *     raises a fatal error at dispatch.  Reject at load time so embedders
+ *     receive a clear UCHUNK_LOAD_RESERVED_OPCODE rather than a mid-execution
+ *     URBI_ERR_RUNTIME_FATAL.
+ *
+ * Design note for W8: add ic_index DFS pre-order check here.  The function
+ * receives the proto tree already decoded; W8 can walk the tree and verify
+ * that each proto's ic_index equals its DFS visit index without touching
+ * the existing shape-table verifier. */
+static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
+    if (p == NULL) return UCHUNK_LOAD_OK;
+
+    const uint32_t *instructions = p->instructions;
+    size_t instr_count = p->instr_count;
+    uint8_t max_reg    = p->max_reg;
+
+    size_t vi = 0;
+    while (vi < instr_count) {
+        uint32_t ins = instructions[vi];
+        uint8_t  op  = (uint8_t)(ins & 0xFFU);
+
+        if (op == (uint8_t)OP_CLOSURE) {
+            /* Read the child proto index (Bx) — already bounds-checked by
+             * verify_walk_block against nested_count; no re-check needed.
+             * What we verify here is the upvalue prelude that follows. */
+            uint16_t bx = (uint16_t)((ins >> 16) & 0xFFFFU);
+            /* Fetch nupvals from the referenced child proto. */
+            size_t nupvals = 0;
+            if ((size_t)bx < p->nested_count && p->nested[bx] != NULL) {
+                nupvals = p->nested[bx]->nupvals;
+            }
+            /* The prelude is nupvals pseudo-instructions immediately after. */
+            if (vi + nupvals >= instr_count) {
+                /* Last instruction is always OP_RET; vi + nupvals must point
+                 * AT or BEFORE the last instruction (which is OP_RET at
+                 * instr_count - 1).  The prelude occupies slots vi+1 .. vi+nupvals;
+                 * the slot vi+nupvals+1 is the next real instruction (or the OP_RET).
+                 * If vi + nupvals >= instr_count the prelude would read past the end. */
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_CLOSURE at pc %zu: upvalue prelude (%zu entries)"
+                           " extends past bytecode end (instr_count=%zu)",
+                           vi, nupvals, instr_count);
+                return UCHUNK_LOAD_TRUNCATED_UPVALUES;
+            }
+            /* Validate each upvalue pseudo-instruction. */
+            for (size_t k = 1; k <= nupvals; k++) {
+                uint32_t pv = instructions[vi + k];
+                /* Only bits [8..15] (A), [16..23] (B = in_stack), [24..31] (C = src_idx)
+                 * matter.  The opcode byte is not checked — the emitter sets it to
+                 * OP_MOVE but the VM ignores it; accepting any opcode byte here
+                 * avoids a future compat issue if a different encoder is used. */
+                uint8_t in_stack = (uint8_t)((pv >> 16) & 0xFFU);  /* B */
+                uint8_t src_idx  = (uint8_t)((pv >> 24) & 0xFFU);  /* C */
+                if (in_stack > 1U) {
+                    set_errmsg(d->errmsg, d->errcap,
+                               "OP_CLOSURE at pc %zu: upvalue[%zu] in_stack=%u is not 0 or 1",
+                               vi, k - 1U, (unsigned)in_stack);
+                    return UCHUNK_LOAD_MALFORMED_UPVALUE;
+                }
+                if (in_stack) {
+                    /* Local register capture: src_idx must be a valid register. */
+                    if (src_idx > max_reg) {
+                        set_errmsg(d->errmsg, d->errcap,
+                                   "OP_CLOSURE at pc %zu: upvalue[%zu] in_stack=1"
+                                   " src_idx=%u > max_reg=%u",
+                                   vi, k - 1U, (unsigned)src_idx, (unsigned)max_reg);
+                        return UCHUNK_LOAD_MALFORMED_UPVALUE;
+                    }
+                } else {
+                    /* Re-capture from parent closure: src_idx must be a valid
+                     * parent upvalue index.  p->nupvals is the parent's count.
+                     * If the parent has no upvalues at all, any src_idx is
+                     * out of range (there is nothing to re-capture). */
+                    if (src_idx >= p->nupvals) {
+                        set_errmsg(d->errmsg, d->errcap,
+                                   "OP_CLOSURE at pc %zu: upvalue[%zu] in_stack=0"
+                                   " src_idx=%u >= parent nupvals=%u",
+                                   vi, k - 1U, (unsigned)src_idx,
+                                   (unsigned)p->nupvals);
+                        return UCHUNK_LOAD_MALFORMED_UPVALUE;
+                    }
+                }
+            }
+            /* Skip past the prelude: the outer loop increments vi once for the
+             * OP_CLOSURE itself; advance by nupvals more. */
+            vi += nupvals;
+
+        } else if (op == (uint8_t)OP_JMP) {
+            /* Bx encodes a signed offset biased by 32768:
+             *   target = pc + signed(Bx) - 32768
+             * where pc is the index of the OP_JMP instruction itself.
+             * After the jump, execution resumes at the target; valid range
+             * is [0, instr_count).  The bias means Bx=32768 is a no-op
+             * (target == vi), Bx<32768 jumps backward, Bx>32768 jumps forward. */
+            uint16_t bx = (uint16_t)((ins >> 16) & 0xFFFFU);
+            /* Compute target as signed arithmetic, guarding against underflow. */
+            int64_t signed_bx  = (int64_t)bx;
+            int64_t target_i64 = (int64_t)vi + signed_bx - (int64_t)32768;
+            if (target_i64 < 0 || (size_t)target_i64 >= instr_count) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_JMP at pc %zu: Bx=%u resolves to target=%lld"
+                           " outside [0, %zu)",
+                           vi, (unsigned)bx,
+                           (long long)target_i64, instr_count);
+                return UCHUNK_LOAD_JMP_OUT_OF_BOUNDS;
+            }
+
+        } else if (op == (uint8_t)OP_CALL) {
+            /* C encodes: bit 7 = method-call flag; low 7 bits = nresults+1.
+             * nresults+1 == 0 is nonsensical (zero results slots allocated
+             * but the call tries to write at least one result).  The emitter
+             * never produces 0 here; reject as malformed. */
+            uint8_t c = (uint8_t)((ins >> 24) & 0xFFU);
+            if ((c & 0x7FU) == 0U) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_CALL at pc %zu: C low-7=0 (nresults+1 must be >= 1)",
+                           vi);
+                return UCHUNK_LOAD_CALL_NRESULTS_ZERO;
+            }
+
+        } else if (op == (uint8_t)OP_TAG_STOP) {
+            /* OP_TAG_STOP has no emit path and the VM raises a runtime fatal at
+             * dispatch.  Reject at load time so embedders receive a clear error
+             * rather than a mid-execution fault. */
+            set_errmsg(d->errmsg, d->errcap,
+                       "OP_TAG_STOP at pc %zu: opcode is reserved (no emit path"
+                       " at wire v1.8; planned for v1.x tag-stop syntax)",
+                       vi);
+            return UCHUNK_LOAD_RESERVED_OPCODE;
+        }
+
+        vi++;
+    }
+
+    /* Recurse into nested protos (DFS, matching verify_proto_recursive order). */
+    for (size_t i = 0; i < p->nested_count; i++) {
+        UChunkLoadError rc = verify_bounds_proto(d, p->nested[i]);
+        if (rc != UCHUNK_LOAD_OK) return rc;
+    }
+    return UCHUNK_LOAD_OK;
+}
+
+/* Entry point: run verify_chunk_bounds from the root proto. */
+static UChunkLoadError verify_chunk_bounds(MDecCtx *d) {
+    return verify_bounds_proto(d, d->rp);
+}
+
 /* v0.8.5: recursively set every UProto's root back-pointer.  The module's
  * root_proto gets root = NULL; every other proto in the tree gets
  * root = rp.  Mirrors set_root_recursive in uemit.c — kept independent
@@ -1167,12 +1333,15 @@ UChunkLoadError uchunk_deserialize(UProto **out_root, const uint8_t *buf, size_t
     d.errcap = errcap;
 
     UChunkLoadError rc;
-    if ((rc = decode_header(&d))    != UCHUNK_LOAD_OK) goto fail;
+    if ((rc = decode_header(&d))         != UCHUNK_LOAD_OK) goto fail;
     /* v1.7: body = source_name + root UProto block. */
-    if ((rc = decode_metadata(&d))  != UCHUNK_LOAD_OK) goto fail;
-    if ((rc = decode_proto(&d, rp)) != UCHUNK_LOAD_OK) goto fail;
-    if ((rc = decode_trailer(&d))   != UCHUNK_LOAD_OK) goto fail;
-    if ((rc = decode_verify(&d))    != UCHUNK_LOAD_OK) goto fail;
+    if ((rc = decode_metadata(&d))       != UCHUNK_LOAD_OK) goto fail;
+    if ((rc = decode_proto(&d, rp))      != UCHUNK_LOAD_OK) goto fail;
+    if ((rc = decode_trailer(&d))        != UCHUNK_LOAD_OK) goto fail;
+    /* Pass 1: opcode-shape table, register bounds, ic_count cross-check. */
+    if ((rc = decode_verify(&d))         != UCHUNK_LOAD_OK) goto fail;
+    /* Pass 2 (bytecode F2): per-instruction sequence bounds. */
+    if ((rc = verify_chunk_bounds(&d))   != UCHUNK_LOAD_OK) goto fail;
 
     /* Back-pointer walk: every UProto's root field points at rp.
      * v0.8.5 made this recursive (was flat-only): walks the full tree
@@ -1406,6 +1575,11 @@ const char *uchunk_load_error_name(UChunkLoadError code) {
     case UCHUNK_LOAD_OOM:                 return "UCHUNK_LOAD_OOM";
     case UCHUNK_LOAD_INVALID_ARG:         return "UCHUNK_LOAD_INVALID_ARG";
     case UCHUNK_LOAD_OVERSIZED:           return "UCHUNK_LOAD_OVERSIZED";
+    case UCHUNK_LOAD_TRUNCATED_UPVALUES:  return "UCHUNK_LOAD_TRUNCATED_UPVALUES";
+    case UCHUNK_LOAD_MALFORMED_UPVALUE:   return "UCHUNK_LOAD_MALFORMED_UPVALUE";
+    case UCHUNK_LOAD_JMP_OUT_OF_BOUNDS:   return "UCHUNK_LOAD_JMP_OUT_OF_BOUNDS";
+    case UCHUNK_LOAD_CALL_NRESULTS_ZERO:  return "UCHUNK_LOAD_CALL_NRESULTS_ZERO";
+    case UCHUNK_LOAD_RESERVED_OPCODE:     return "UCHUNK_LOAD_RESERVED_OPCODE";
     }
     return "UCHUNK_LOAD_UNKNOWN";
 }

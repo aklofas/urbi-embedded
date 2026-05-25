@@ -20,10 +20,11 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     [OP_LOADVOID] = { UOPF_ABC, UOPK_REG,        UOPK_UNUSED,    UOPK_UNUSED, UBXK_UNUSED },
     [OP_GETUPVAL] = { UOPF_ABC, UOPK_REG,        UOPK_UPVAL_IDX, UOPK_UNUSED, UBXK_UNUSED },
     [OP_SETUPVAL] = { UOPF_ABC, UOPK_REG,        UOPK_UPVAL_IDX, UOPK_UNUSED, UBXK_UNUSED },
-    /* OP_CLOSURE: at v1.5 the NUP upvalue-descriptor pseudo-instructions
-     * following the OP_CLOSURE are not verified at load time — runtime
-     * dispatch consumes them.  v1.x backlog: extend the verifier to walk
-     * the prelude. */
+    /* OP_CLOSURE: the NUP upvalue-descriptor pseudo-instructions following
+     * the OP_CLOSURE are verified by the verify_chunk_bounds pass in
+     * uchunk_io.c (bytecode F2 / W7).  The shape-table verifier covers the
+     * OP_CLOSURE instruction itself (A=reg, Bx=nested_index); the bounds
+     * pass then validates in_stack/src_idx for each pseudo-instruction. */
     [OP_CLOSURE]  = { UOPF_ABX, UOPK_REG,        UOPK_UNUSED,    UOPK_UNUSED, UBXK_NESTED_INDEX },
     [OP_CLOSE]    = { UOPF_ABC, UOPK_REG,        UOPK_UNUSED,    UOPK_UNUSED, UBXK_UNUSED },
     /* OP_CALL: A = callee_reg.  B = nargs+1 (plain) or nargs+2 (method);
