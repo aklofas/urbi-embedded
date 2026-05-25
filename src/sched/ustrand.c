@@ -221,6 +221,7 @@ UStrand *
 urbi_strand_create(struct UVM *vm, struct URealm *realm, struct UClosure *entry)
 {
     if (!vm) vm = realm ? realm->vm : NULL;
+    if (!vm) return NULL;
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Allocate via VM pluggable allocator (no stdlib calloc — freestanding). */
@@ -384,7 +385,7 @@ urbi_strand_state(struct UVM *vm, const struct UStrand *s)
         case USTRAND_READY:   return URBI_STRAND_READY;
         case USTRAND_RUNNING: return URBI_STRAND_RUNNING;
         case USTRAND_WAITING: return URBI_STRAND_WAITING;
-        case USTRAND_DEAD:    return URBI_STRAND_DEAD;
+        case USTRAND_DEAD:    /* fall through */
         default:              return URBI_STRAND_DEAD;
     }
 }
