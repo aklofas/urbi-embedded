@@ -99,3 +99,9 @@ examples/esp32/*/build/
 examples/esp32/*/dependencies.lock
 examples/esp32/*/sdkconfig
 examples/esp32/*/managed_components/
+
+# Raspberry Pi Pico example build outputs (CMake + pico-sdk vendored deps)
+examples/pico/*/build/
+examples/pico/*/CMakeFiles/
+examples/pico/*/cmake_install.cmake
+examples/pico/*/CMakeCache.txt
