@@ -541,7 +541,7 @@ static int fn_set_led(struct UVM *vm,
     URBI_ASSERT_NOT_ISR(vm);
     (void)self; (void)out;
 
-    if (nargs < 1 || urbi_value_kind(args[0]) != URBI_VALUE_BOOL) {
+    if (nargs < 1 || !urbi_value_is_bool(args[0])) {
         /* Report an error via the error ring; caller can inspect with
          * urbi_last_error. */
         urbi_set_error(vm, URBI_ERR_INVALID_ARG,
@@ -597,6 +597,58 @@ static void register_driver(struct UVM *vm, struct URealm *realm)
     }
 }
 ```
+
+### Type-safe value dispatch with urbi_value_is_*
+
+`<urbi/types.h>` provides 13 zero-overhead inline predicates — one per `UValKind` — so host functions can dispatch on argument type without comparing against internal constants:
+
+```c
+/* FRAGMENT — urbi_value_is_* predicate dispatch (W4/v0.10.3) */
+#include "urbi/types.h"
+#include "urbi/aux.h"    /* urbi_aux_value_to_* checked accessors */
+
+static int fn_print_arg(struct UVM *vm,
+                         UValue self, UValue *args, uint8_t nargs,
+                         UValue *out)
+{
+    (void)self; (void)out;
+    if (nargs < 1) return UEXEC_OK;
+    UValue v = args[0];
+
+    if      (urbi_value_is_int(v))   { printf("%lld\n", (long long)urbi_value_as_int(v)); }
+    else if (urbi_value_is_float(v)) { printf("%g\n",   urbi_value_as_float(v)); }
+    else if (urbi_value_is_bool(v))  { printf("%s\n",   urbi_value_as_bool(v) ? "true" : "false"); }
+    else if (urbi_value_is_str(v))   { size_t len; const char *s = urbi_value_as_str(v, &len);
+                                        printf("%.*s\n", (int)len, s); }
+    else if (urbi_value_is_nil(v))   { printf("nil\n"); }
+    else                             { printf("<kind=%d>\n", (int)urbi_value_kind(v)); }
+    return UEXEC_OK;
+}
+```
+
+For single-call safe extraction — check and extract in one step — use the checked-accessor variants from `<urbi/aux.h>`. They return `URBI_OK` on type match or `URBI_ERR_TYPE` (-26) on mismatch, leaving `*out` unmodified:
+
+```c
+/* FRAGMENT — urbi_aux_value_to_* checked accessors (W4/v0.10.3) */
+static int fn_double_it(struct UVM *vm,
+                         UValue self, UValue *args, uint8_t nargs,
+                         UValue *out)
+{
+    (void)self;
+    int64_t n = 0;
+    if (nargs < 1 || urbi_aux_value_to_int(args[0], &n) != URBI_OK) {
+        urbi_set_error(vm, URBI_ERR_INVALID_ARG, "expects an integer",
+                        "<double_it>", 0, "fn_double_it");
+        return UEXEC_THROW;
+    }
+    *out = urbi_make_int(n * 2);
+    return UEXEC_OK;
+}
+```
+
+Available predicates: `urbi_value_is_nil`, `_bool`, `_int`, `_float`, `_str`, `_void`, `_object`, `_event`, `_closure`, `_ptr`, `_tag`, `_strand`, `_host_fn`.
+
+Available checked accessors: `urbi_aux_value_to_int`, `_float`, `_bool`, `_str`, `_ptr`, `_object`, `_event`, `_closure`, `_tag`.
 
 ### ISR safety
 

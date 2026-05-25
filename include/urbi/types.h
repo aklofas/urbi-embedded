@@ -337,6 +337,43 @@ static inline struct UClosure *urbi_value_as_closure(UValue v)
     return (struct UClosure *)v.v.p;
 }
 
+/* === W4/v0.10.3: urbi_value_is_* predicate family ===
+ *
+ * Pure tag comparison; no validation of the payload.  Header-only static
+ * inlines — zero-overhead at any optimisation level.
+ *
+ * Mirrors urbi_make_* (constructors) and urbi_value_as_* (unchecked
+ * accessors): one is_/make/as triple per exposed UValKind.
+ *
+ * Embedders use these to dispatch on UValue kind without reaching for
+ * urbi_value_kind() comparisons or internal UVAL_* constants.  Example:
+ *
+ *   if (urbi_value_is_int(v))        { int64_t n = urbi_value_as_int(v); }
+ *   else if (urbi_value_is_float(v)) { double  f = urbi_value_as_float(v); }
+ *   else if (urbi_value_is_str(v))   { size_t len; const char *s = urbi_value_as_str(v, &len); }
+ *
+ * Closes api-ergonomics F1 (value-ctor / accessor asymmetry).
+ *
+ * Note: urbi_value_is_str and urbi_value_is_strand are included for
+ * completeness; urbi_value_is_host_fn covers UVAL_HOST_FN (kind 10),
+ * which embedders may encounter in callbacks but never construct directly.
+ * The section marker helps merge-conflict resolution when other worktrees
+ * touch adjacent regions of this header. */
+
+static inline bool urbi_value_is_nil    (UValue v) { return v.kind == (uint8_t)UVAL_NIL;        }
+static inline bool urbi_value_is_bool   (UValue v) { return v.kind == (uint8_t)UVAL_BOOL;       }
+static inline bool urbi_value_is_int    (UValue v) { return v.kind == (uint8_t)UVAL_INT;        }
+static inline bool urbi_value_is_float  (UValue v) { return v.kind == (uint8_t)UVAL_FLOAT;      }
+static inline bool urbi_value_is_str    (UValue v) { return v.kind == (uint8_t)UVAL_STR;        }
+static inline bool urbi_value_is_closure(UValue v) { return v.kind == (uint8_t)UVAL_CLOSURE;    }
+static inline bool urbi_value_is_void   (UValue v) { return v.kind == (uint8_t)UVAL_VOID;       }
+static inline bool urbi_value_is_strand (UValue v) { return v.kind == (uint8_t)UVAL_STRAND;     }
+static inline bool urbi_value_is_object (UValue v) { return v.kind == (uint8_t)UVAL_OBJECT;     }
+static inline bool urbi_value_is_event  (UValue v) { return v.kind == (uint8_t)UVAL_EVENT;      }
+static inline bool urbi_value_is_host_fn(UValue v) { return v.kind == (uint8_t)UVAL_HOST_FN;   }
+static inline bool urbi_value_is_ptr    (UValue v) { return v.kind == (uint8_t)URBI_VALUE_PTR;  }
+static inline bool urbi_value_is_tag    (UValue v) { return v.kind == (uint8_t)UVAL_TAG;        }
+
 /* === UValue layout pin (Wave 1 T6) ===
  *
  * Compile-time assertion that mirrors the runtime invariants tested in
@@ -495,7 +532,13 @@ typedef enum {
      * auth_token (default-secure posture).  Embedder must either set
      * cfg->auth_token or restrict cfg->bind_addr to "127.0.0.1" / "::1"
      * / a Unix-socket path starting with '/'. */
-    URBI_ERR_INSECURE_CONFIG            = -25
+    URBI_ERR_INSECURE_CONFIG            = -25,
+    /* W4/v0.10.3: returned by urbi_aux_value_to_* checked accessors when
+     * the UValue kind does not match the requested type.  Embedders use
+     * urbi_value_is_*() to guard before calling unchecked urbi_value_as_*;
+     * or call urbi_aux_value_to_*() directly and handle this code.
+     * Closes api-ergonomics F1. */
+    URBI_ERR_TYPE                       = -26
 } UErrCode;
 
 /* URBI_ERR_WATCHER_UNREGISTER: sentinel return code for urbi_watcher_fn
