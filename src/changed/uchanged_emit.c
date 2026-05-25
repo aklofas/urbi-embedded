@@ -148,3 +148,34 @@ urbi_drain_deferred_slot_changes(UVM *vm)
         }
     }
 }
+
+/* === urbi_deferred_slot_changes_walk_roots (W3/v0.10.2) ===
+ *
+ * GC root provider for vm->deferred_slot_changes[head..tail].
+ * Yields each (parent, new_value) pair as roots so a GC slice between
+ * urbi_defer_slot_change and urbi_drain_deferred_slot_changes leaves
+ * the ring contents reachable.  Closes reactive audit F6.
+ *
+ * Today the cooperative invariant says no GC slice fires in that window,
+ * so the walker is correctness-preserving (it doesn't change which objects
+ * are kept alive in well-formed runs).  Under future preemption upgrades
+ * (v1.x scheduler), the walker becomes load-bearing and prevents UAF in
+ * the drain path.
+ *
+ * Registered with urbi_gc_register_root_provider in urbi_vm_init. */
+void
+urbi_deferred_slot_changes_walk_roots(struct UVM *vm,
+                                       UGcRootCallback cb, void *ctx)
+{
+    if (vm->deferred_slot_changes == NULL) return;
+    uint16_t i = vm->deferred_slot_changes_head;
+    while (i != vm->deferred_slot_changes_tail) {
+        UDeferredSlotChange *d = &vm->deferred_slot_changes[i];
+        if (d->parent != NULL) {
+            UValue v = { .kind = (uint8_t)UVAL_OBJECT, .v.p = d->parent };
+            cb(vm, &v, ctx);
+        }
+        cb(vm, &d->new_value, ctx);
+        i = (uint16_t)((i + 1U) % vm->deferred_slot_changes_cap);
+    }
+}
