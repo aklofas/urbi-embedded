@@ -1,8 +1,4 @@
-# Roadmap to v1.0
-
-The release sequence to v1.0, the exit criteria each release must clear, and the non-goals for v1.0.
-
----
+# urbi-embedded roadmap
 
 ## Vision
 
@@ -12,7 +8,7 @@ An embeddable runtime for urbiscript written in pure C99, single library, no ext
 | --------------- | -------------------------------------------------------------------------------------- |
 | Flash footprint | < 400 KB on Cortex-M class MCUs                                                        |
 | GC pause        | ≤ 1 ms under typical reactive workload on 32-bit embedded                              |
-| Architectures   | x86_64 Linux, ARM Cortex-M7 (STM32H7), RISC-V 32-bit (ESP32-C3); Xtensa LX7 (ESP32-S3) as a bonus port |
+| Architectures   | x86_64 Linux, ARM Cortex-M (STM32, RP2040), RISC-V 32-bit (ESP32-C3), Xtensa LX7 (ESP32-S3) |
 | Host hooks      | Pluggable allocator, time source, panic handler                                        |
 
 Language features kept native:
@@ -23,41 +19,83 @@ Language features kept native:
 | `at` / `whenever` / `every` / `waituntil` | Reactive control                |
 | Tags                                      | Structured cancellation         |
 | Time and angle literals                   | Units in the lexical grammar    |
-| `lazy` keyword                            | Opt-in lazy argument evaluation |
 
 Intended deployment surface: drone autopilots, motor controllers, agricultural robots, and research platforms.
 
-Development practice: TDD throughout.
+---
+
+## Shipped
+
+(newest first; one line per tag; see CHANGELOG.md for details)
+
+- 2026-05-24 — `v0.9.4-pico-example` — Raspberry Pi Pico hardware bring-up + REPL cooperative-portability sub-project (ABI 0/13/0 → 0/14/0).
+- 2026-05-19 — `v0.9.3-ci-hardening` — Host-side freestanding gate + cross-toolchain auto-detect.
+- 2026-05-19 — `v0.9.2-uproto-only` — UModule struct deleted; UProto absorbs root metadata (wire v1.7→v1.8 byte-identical, ABI 0/12/0→0/13/0).
+- 2026-05-19 — `v0.9.1-repl-service` — TCP/Unix/UART NDJSON REPL + listener pthread + 9 introspection primitives (ABI 0/11/0→0/12/0).
+- 2026-05-19 — `v0.9.0-repl` — REPL foundation: realm-per-session lobby model + urbi_unload + closure shrink (ABI 0/11/0).
+- 2026-05-18 — `v0.8.5-recursive-emit` — Truly-recursive emit + per-UProto ic_index DFS pre-order (ABI 0/9/0→0/10/0).
+- 2026-05-18 — `v0.8.4-closure-lifetime` — UClosure + UUpvalCell GC promotion (ABI 0/8/0→0/9/0).
+- 2026-05-18 — `v0.8.3-valgrind-and-cross-verify` — Interstitial hygiene: valgrind wedge fix + cross-esp32s3 golden refresh.
+- 2026-05-18 — `v0.8.2-stm32f4-mandelbrot` — First non-RTOS port (STM32F429I bare metal) + Mandelbrot demo + 7 latent runtime bugs fixed.
+- 2026-05-17 — `v0.8.1-uproto-root` — Variant B refcount fusion, wire format v1.7, ABI 0/8/0.
+- 2026-05-16 — `v0.8.0-loader-strand` — Persistent loader strand restores chunk-top parallel-by-syntax.
+- 2026-05-16 — `v0.7.3-bugfixes` — Cascade-wake structural fix via UProto refcount (ABI 0/7/3→0/7/4).
+- 2026-05-16 — `v0.7.2-esp32` — ESP-IDF v6.0.1 + ESP32-S3-EYE port + 10-bug runtime hardening hunt (ABI 0/7/1→0/7/3).
+- 2026-05-14 — `v0.7.1-embedding-api` — Library-complete C embedding API, 18 spec gaps closed (ABI 0/7/0→0/7/1).
+- 2026-05-10 — `v0.7.0-c-api` — Public C API formalization, ABI 0/7/0.
+- 2026-05-10 — `v0.6.2-language-completion` — 5 v1.0 emit/VM gaps closed; wire format v1.5→v1.6.
+- 2026-05-10 — `v0.6.1-stdlib` — M6 Wave 2: full Tier 1 stdlib + bake tool.
+- 2026-05-09 — `v0.6.0-stdlib-scaffold` — M6 Wave 1: string literals + atom-method dispatch + 9 Object root methods.
+- 2026-05-09 — `v0.5.8-cleanup` — Pre-M6 cleanup ramp final wave (Wave 6 of 6): strict-tooling + docstring gate.
+- 2026-05-08 — `v0.5.7.1` — Wire-format hash gate determinism hotfix.
+- 2026-05-08 — `v0.5.7-fixes` — Fix wave.
+- 2026-05-07 — `v0.5.6-bytecode` — Wire format v1.4→v1.5.
+- 2026-05-07 — `v0.5.5-naming` — Naming hygiene.
+- 2026-05-06 — `v0.5.4-decompose` — File decomposition.
+- 2026-05-06 — `v0.5.3-layout` — Source-layout reorganization.
+- 2026-05-05 — `v0.5.2-scratch-frame-followup` — Scratch-frame follow-up.
+- 2026-05-05 — `v0.5.1-cond-unstub` — Condition unstub.
+- 2026-05-04 — `v0.5.0-reactive` — M5 reactive runtime: `at` / `whenever` / `every` / `waituntil`, first-class events, tags.
+- 2026-05-02 — `v0.4.0-objects` — M4 prototype object model: slot lookup, inline cache, multi-proto MRO.
+- 2026-04-28 — `v0.3.0-concurrency` — M3 cooperative scheduler: stackful coroutines, statement separators, tags, incremental GC.
+- 2026-04-25 — `v0.2.0-expressions` — M2 expressions, closures, control flow, statement-separator parse.
+- 2026-04-24 — `v0.1.0-skeleton` — M1 walking skeleton: lexer, parser, 8-opcode VM, first `.chk` fixture.
 
 ---
 
-## Releases to v1.0
+## Active milestone arc: v0.10.x (architectural refactor before v1.0)
 
-| Tag                  | Scope                                                                                                                                                                                                                                                                                          | Done  |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| `v0.1.0-skeleton`    | End-to-end pipeline: lexer, recursive-descent parser + Pratt expressions, AST, single-pass emitter over an 8-opcode register VM (LOADK / MOVE / ADD / SUB / MUL / DIV / NEG / RET), versioned `.urb` bytecode format with 24-byte header. `urbi -i` REPL (linenoise) evaluates arithmetic; `-e` / `-f` / `--dump-bytecode` modes. First `.chk` fixture passes. Freestanding-capable arena allocator; no GC at this release — only UValue stack + arena; GC strategy (incremental tri-color + safe-point) designed and documented, implementation lands in `v0.2.0-expressions` / `v0.3.0-concurrency`. | `[x]` |
-| `v0.2.0-expressions` | Lua-FuncState-adapted register allocator with locals/blocks/closures (cascading upvalue capture). Per-parameter `lazy` keyword (sub-proto compilation; implicit force-on-read). Statement separators: `;`/`\|` ship full runtime; `,`/`&` ship parse-only (runtime at `v0.3.0-concurrency`). Minimum control-flow surface: `var`, `if`/`else`, `while`, `function` defs, calls, `return`, comparison ops, `true`/`false`/`nil`. Bytecode v1.0 → v1.1 (rejects v1.0 modules). Per-VM intern table + multi-VM isolation matrix. Deferred: strings/escapes → `v0.6.0-stdlib`; lists/dicts → `v0.6.0-stdlib`; object literals/methods/`new` → landed in `v0.4.0-objects`; `for`/`do-while` → future release; time/angle literals → landed in `v0.4.0-objects`/`v0.5.0-reactive`.                                | `[x]` |
-| `v0.3.0-concurrency` | Stackful coroutines, priority-aware scheduler, statement separators (`,` `&` `\|` `;`), tags with stop / freeze / block. Incremental tri-color mark-sweep with safe-point discipline (GC runs at statement separators, tick boundaries, or explicit `urbi_gc_slice()`); barriers and rooting activate; ≤ 1 ms GC pause on 32-bit embedded under typical reactive workload, measured and CI-gated. | `[x]` |
-| `v0.4.0-objects`     | Prototype-based object model: Shape/hidden-class slot lookup, 4-entry inline cache per call site, multi-proto MRO (declaration-order), copy-on-write for inherited slots, getters/setters, `fallback` slot. `OP_GETSLOT`/`OP_SETSLOT` opcode slots activate. `tests/2.x/{lookup,inheritance,slot-cow-const,shared-protos,class,fallback,atom-clone}/` corpus passing. | `[x]` |
-| `v0.5.0-reactive`    | First-class events, `at` / `whenever` / `every` / `waituntil`, tag enter/leave events, debouncing (`~ duration`). `tests/2.x/reactive/` corpus passing.                                                                                                                                        | `[x]` |
-| `v0.6.0-stdlib`      | Standard library: `List`, `Dict`, `Float`, `String`, `Date`, `Duration`, `Mutex`, `Tag`, `Event`, plus bounded-container variants (`FixedList`, `FixedDict`, `RingBuffer`). `urbi_lock_heap()` for static-allocation-after-init. Total Linux binary < 400 KB.                                  | `[ ]` |
-| `v0.7.0-C-API`       | Full public C API (≤ 80 functions); ESP-IDF component manifest; STM32H7 HAL integration; sandbox API (instruction and allocation budgets, host-call allow-list); LED-from-urbiscript demos on both targets. < 400 KB flash on each.                                                            | `[ ]` |
-| `v0.8.0-repl`        | NDJSON REPL protocol over TCP and UART; per-session lobbies; introspection commands (`:coros`, `:tags`, `:watchers`, ...); end-to-end hot-reload demonstrated on ESP32-C3 over UART; `urbi-send` CLI.                                                                                          | `[ ]` |
-| `v0.9.0-ros2`        | micro-ROS bridge (conditionally compiled): `ros.subscribe()`, `ros.publisher()`, `ros.client()`, `ros.service()`, plus `at (ros.topic?(var msg))` reactive integration. Primary demo: ESP32-C3 pub/sub against a Linux ROS2 graph with reactive command handling. Bridge build < 500 KB flash. | `[ ]` |
-| `v1.0.0`             | Release prep: README polish, `docs/RELEASE_CHECKLIST.md`, per-category conformance report, examples directory covering all three architectures, hardware-in-loop validation on real STM32H7 and ESP32-C3.                                                                                      | `[ ]` |
+The v0.10.x arc is a series of seven architectural refactor passes addressing structural debt surfaced by hardware testing and ten parallel static audits. Each pass ships as its own milestone tag.
 
-The expressions / concurrency / objects / reactive chain (`v0.2.0` → `v0.3.0` → `v0.4.0` → `v0.5.0`) is strictly sequential — each layer builds on the previous semantics. The embedded port (`v0.7.0`), REPL (`v0.8.0`), and ROS2 bridge (`v0.9.0`) can reorder if motivation dictates; ROS2 depends on having a stable C API and a usable REPL for debugging.
+- **v0.10.0-truthfulness** — Documentation + manifests + CI gates aligned with code state. ABI/wire unchanged. *(Active.)*
+- **v0.10.1-invariants** — Convert comment-only contracts to enforced ones (asserts that survive release + freestanding).
+- **v0.10.2-reactive** — Close language-USP gaps (`whenever` named-event, OP_CLOSURE in every body, tag cancellation, deferred slot-change ring rooting, `sleep`, `Tag.new`).
+- **v0.10.3-api-opacity** — Public API freeze preconditions (opaque UVM, error model unification, vm-first-arg sweep, embedding guide rewrite).
+- **v0.10.4-vm-decomp** — Behaviour-preserving VM dispatch + UVM struct decomposition.
+- **v0.10.5-legacy-decisions** — Explicit decision per legacy-language gap (control flow, quoted identifiers, exception syntax, etc.).
+- **v0.10.6-stabilization** — Listener teardown fix + ABI/wire freeze pin + REPL security gates + release-readiness completion.
 
-### Patch releases
+---
 
-Between `v0.5.0-reactive` and `v0.6.0-stdlib`, the following patch
-releases shipped: `v0.5.1-cond-unstub`, `v0.5.2-scratch-frame-followup`,
-`v0.5.3-layout`, `v0.5.4-decompose`, `v0.5.5-naming`, `v0.5.6-bytecode`,
-`v0.5.7-fixes`, `v0.5.7.1`, `v0.5.8-cleanup`. These do not occupy
-roadmap slots — they are routine maintenance: source-layout
-reorganization, file decomposition, naming hygiene, the wire-format
-v1.4 → v1.5 advance, fix waves, and strict-tooling promotion to
-hard-fail. The `CHANGELOG.md` carries the per-release detail.
+## Remaining (post-v0.10.x)
+
+- **v0.11.x** — ROS2 integration + Standard Robotics API (was M9).
+- **v1.0** — Release. Ships after v0.10.x arc + v0.11.x land.
+
+---
+
+## Post-v1.0 (deferred)
+
+Direction-only; not committed:
+
+- Multi-VM concurrency.
+- Generational GC.
+- Per-arena / arena-per-tag GC.
+- Preemptive scheduler mode.
+- Weak references.
+- Live-system bytecode upgrade tooling.
+- True f32 mode for FPU-less targets.
+- Method JIT for Linux.
 
 ---
 
@@ -69,30 +107,16 @@ The numbers are pass/fail gates, not aspirations:
 - ≥ 95% of ported `.chk` conformance fixtures passing
 - Worst-case GC pause ≤ 1 ms on 32-bit embedded under typical reactive workload (10–50 active coroutines, 5–20 watchers, 50–200 KB heap, 1–10 KB/s allocation rate)
 - < 400 KB binary footprint demonstrated on all three target architectures
-- A third-party developer, given only the public repo, can clone-to-working-REPL on Linux in ≤ 5 minutes and flash both embedded targets via documented vendor workflows
+- A third-party developer, given only the public repo, can clone-to-working-REPL on Linux in ≤ 5 minutes and flash embedded targets via documented vendor workflows
 
-CI runs the full battery on every commit: host (release / debug / ASan / UBSan), ARM and RISC-V cross-compile, static analysis. Per-merge to main: Valgrind sweep and a 1-hour libFuzzer run per fuzz target. Per release tag: hardware-in-loop validation on actual STM32H7 and ESP32-C3 hardware.
-
-README badges show conformance %, coverage %, p99 GC pause, fuzzer uptime, and per-architecture build status — live, updated by CI.
+CI runs the full battery on every commit: host (release / debug / ASan / UBSan), ARM and RISC-V cross-compile, static analysis. Per-merge to main: Valgrind sweep. Per release tag: hardware-in-loop validation on actual hardware.
 
 ---
 
 ## Non-goals for v1.0
 
-- **Not safety-critical.** No formal safety-certification in v1 scope. Out of scope unless customer-funded.
+- **Not safety-critical.** No formal safety-certification in v1.0 scope.
 - **Not bug-compatible with urbi 2.x.** Language is preserved; minor semantic divergences are documented with rationale rather than emulated. Conformance is measured against the 2.x corpus, but the gate is "≥ 95% pass," not "100% bug-for-bug."
-- **Not a JIT.** Bytecode interpreter only. A method JIT for Linux is a post-v1.0 consideration; tracing JIT is the wrong shape for event-driven code and stays out.
+- **Not a JIT.** Bytecode interpreter only. A method JIT for Linux is a post-v1.0 consideration.
 - **Not multi-threaded per VM.** One cooperative scheduler per VM. Parallelism comes from multiple VM instances on multiple host threads.
 - **Not a general-purpose shell.** The REPL targets behavior introspection and hot-patch, not interactive scripting ergonomics.
-
----
-
-## Beyond v1.0
-
-Direction-only sketch; not committed.
-
-- **v1.x — measurement-certified real-time.** Exhaustive worst-case characterization across all three target architectures, published pause-time distributions, regression guards. The deliverable is a Real-Time Characterization Report with concrete numbers.
-- **v2.0 — opt-in hard-real-time subset.** `URBI_MODE_REALTIME` build flag enabling a restricted language subset: no dynamic allocation after init, bounded containers only, no lazy evaluation. Static analyzer (`urbi-rt-check`) flags violations. Reference applications: drone reactive flight-mode controller, servo control loop, CAN bus handler.
-- **Other post-v1.0 work.** Xtensa LX7 port (ESP32-S3 hardware already available), Cortex-M4 bare-metal, WASM target, stackless CPS coroutines, optional method JIT for Linux, and IDE tooling (tree-sitter grammar, language server, VS Code / JetBrains plugins) maintained as separate repositories.
-
-The v1.0 design bakes in cheap-now / expensive-later affordances for v2.0: pluggable allocator with `urbi_lock_heap()`, bounded-container stdlib types from day one, configurable prototype-chain depth, deterministic opcode dispatch, scheduler priority hooks, and instruction / allocation budgets in the sandbox API.
