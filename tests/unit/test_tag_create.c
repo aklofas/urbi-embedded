@@ -36,7 +36,7 @@ UTEST(tag_create_returns_nonnull_in_running_state)
 
     if (tag != NULL) {
         urbi_tag_info_t info;
-        int rc = urbi_tag_info(tag, &info);
+        int rc = urbi_tag_info(&vm, tag, &info);
         UASSERT_EQ(rc, URBI_OK);
         UASSERT_EQ((int)info.state, (int)URBI_TAG_RUNNING);
     }
@@ -59,7 +59,7 @@ UTEST(tag_create_has_parent_under_realm)
 
     if (tag != NULL) {
         urbi_tag_info_t info;
-        int rc = urbi_tag_info(tag, &info);
+        int rc = urbi_tag_info(&vm, tag, &info);
         UASSERT_EQ(rc, URBI_OK);
         UASSERT(info.has_parent);
         /* The parent must be the realm's root tag. */

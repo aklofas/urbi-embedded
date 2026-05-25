@@ -302,7 +302,7 @@ UTEST(dispatcher_session_create_destroy)
     UASSERT(s->session_id == 1);
     UASSERT(strlen(s->lobby_id_hex) == 4);
     /* Auto-applied REPL compile budget should be visible on the realm. */
-    UASSERT(urbi_realm_get_compile_budget(s->realm) != NULL);
+    UASSERT(urbi_realm_get_compile_budget(vm, s->realm) != NULL);
     urepl_session_destroy(server, s);
     free_server(server, vm);
 }

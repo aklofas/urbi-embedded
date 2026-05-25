@@ -123,7 +123,7 @@ UTEST(loader_drive_parks_on_sleep)
 
     /* Cleanup: explicitly destroy the strand so the realm shutdown
      * isn't holding live work.  This discharges the module refcount. */
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, &vm);
@@ -289,7 +289,7 @@ UTEST(strand_create_for_module_returns_non_transient)
     /* v0.8.1 Phase 2: strand-bind refcount is on root_proto (now == module). */
     UASSERT_EQ((unsigned)1, (unsigned)module.refcount);
 
-    urbi_strand_destroy(s);  /* tears down + drops root_proto refcount */
+    urbi_strand_destroy(&vm, s);  /* tears down + drops root_proto refcount */
     UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
 
     uarena_destroy(&arena);

@@ -125,7 +125,7 @@ urepl_session_create(UReplServer *server)
                             || server->cfg.default_budget.max_ast_nodes != 0U
                             || server->cfg.default_budget.max_source_bytes != 0U);
     if (override_budget) {
-        urbi_realm_set_compile_budget(r, &server->cfg.default_budget);
+        urbi_realm_set_compile_budget(server->vm, r, &server->cfg.default_budget);
     }
     s->vm = server->vm;
     s->realm = r;

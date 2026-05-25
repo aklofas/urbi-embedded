@@ -107,7 +107,7 @@ exc_raise(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         return urbi_raise_type(vm, "Exception.raise: no active strand", out);
     }
 
-    urbi_throw(vm->cur_strand, self);
+    urbi_throw(vm, vm->cur_strand, self);
     *out = urbi_make_nil();
     /* Return UEXEC_OK so OP_CALL doesn't fatal-halt; safepoint picks up
      * the deposited pending_unwind. */

@@ -54,7 +54,7 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
     /* Precondition: caller (dispatch body in uvm.c) already checked realm != NULL. */
     URBI_INTERNAL_ASSERT(s->realm != NULL);
 
-    UStrand *child = urbi_strand_create(s->realm, child_closure);
+    UStrand *child = urbi_strand_create(s->vm, s->realm, child_closure);
     if (child == NULL) {
         s->fatal_status      = UEXEC_CANCEL;
         s->fatal_value.kind  = (uint8_t)UVAL_NIL;
@@ -85,7 +85,7 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
         urbi_strand_attach_ambient_tags(child, chain + 1, n - 1);
         if (child->state == USTRAND_STATE_DEAD) {
             /* OOM inside attach — child is already dead; treat as spawn-OOM. */
-            urbi_strand_destroy(child);
+            urbi_strand_destroy(s->vm, child);
             s->fatal_status      = UEXEC_CANCEL;
             s->fatal_value.kind  = (uint8_t)UVAL_NIL;
             s->fatal_value.v.i   = 0;
@@ -108,7 +108,7 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
      * OP_GETUPVAL dispatch. */
     if (urbi_strand_arm_from_closure(child, child_closure) != 0) {
         /* OOM allocating register stack — tear down child. */
-        urbi_strand_destroy(child);
+        urbi_strand_destroy(s->vm, child);
         s->fatal_status     = UEXEC_CANCEL;
         s->fatal_value.kind = (uint8_t)UVAL_NIL;
         s->fatal_value.v.i  = 0;
@@ -174,7 +174,7 @@ op_fork_detach(UStrand *s, UVM *vm, uint32_t instr)
     }
 
     /* DORMANT → READY: enqueue child at the tail of the run-queue. */
-    urbi_strand_start(child);
+    urbi_strand_start(vm, child);
 
     /* Parent continues with the next instruction. */
     return 0;
@@ -215,7 +215,7 @@ op_fork_join(UStrand *s, UVM *vm, uint32_t instr)
     s->R[b] = UVAL_STRAND_MAKE(child);
 
     /* DORMANT → READY. */
-    urbi_strand_start(child);
+    urbi_strand_start(vm, child);
 
     return 0;
 }

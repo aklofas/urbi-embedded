@@ -14,14 +14,15 @@
 #include <stddef.h>   /* size_t */
 #include <stdint.h>   /* uint64_t */
 
-/* UValue, UErrCode, UCallbackSignal, UExecStatus (pending W5 migration),
- * UVMAllocFn, opaque struct fwd-decls (UVM, UStrand, UTag, URealm, UClosure).
+/* UValue, UErrCode, UCallbackSignal, UExecStatus (deprecated — see UStrandUnwind),
+ * UStrandUnwind, UStrandState, UVMAllocFn, opaque struct fwd-decls.
  * Replaces the pre-v0.5.5 `#include "sched/ustrand.h"` that pulled an
  * internal header into the public surface; closes API-012 / INC-003.
  * v0.9.2: UModule removed (struct deleted; a module IS its root UProto).
  * v0.10.3 (W3): UVMError retired; urbi_vm_run now returns int.
- *   UExecStatus retained for urbi_strand_unwind_status / urbi_strand_is_fatal
- *   (W5 migration pending).  UCallbackSignal added for host-callback returns. */
+ *   UCallbackSignal added for host-callback returns.
+ * v0.10.3 (W5): UExecStatus deprecated; replaced by UStrandUnwind.
+ *   17 functions gain (struct UVM *vm, ...) first arg; 3 void→int. */
 #include "urbi/version.h"  /* URBI_ADVANCED (URBI_EXPERIMENTAL / URBI_DEPRECATED reserved) */
 #include "urbi/types.h"
 #include "urbi/require.h"  /* URBI_REQUIRE — invariant macro that fires in all build modes */
@@ -58,39 +59,64 @@ const char *urbi_version(void);
  * T31 wires the real cross-strand walk; T12 provides a validity-check stub. */
 int urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value);
 
+/* === W5/v0.10.3: vm-first-arg sweep — control-transfer family ===
+ *
+ * 9 functions previously took strand as their first argument.  They now
+ * follow the dominant (struct UVM *vm, ...) convention used by every other
+ * public API function.  Internally, vm is already available via strand->vm;
+ * the explicit vm arg adds routing clarity for the v1.x multi-VM direction
+ * and closes api-ergonomics F3.
+ *
+ * 2 functions (urbi_throw, urbi_return_val) change void→int so they can
+ * return URBI_ERR_INVALID_ARG on NULL vm/strand (api-ergonomics F8).
+ *
+ * urbi_strand_unwind_status now returns UStrandUnwind (public mirror of
+ * internal UExecStatus) instead of UExecStatus directly; numeric values
+ * are identical.  UExecStatus is deprecated but retained for one release. */
+
 /* Deposit CANCEL unwind on `strand`. Walks strand to bottom; fatal — no catch. */
-int urbi_strand_cancel(struct UStrand *strand, UValue cancel_reason);
+int urbi_strand_cancel(struct UVM *vm, struct UStrand *strand, UValue cancel_reason);
 
 /* Strand-level panic: skip walker, mark strand DEAD immediately.
  * For unrecoverable host errors where cleanup must not run. */
-int urbi_strand_panic(struct UStrand *strand, const char *msg);
+int urbi_strand_panic(struct UVM *vm, struct UStrand *strand, const char *msg);
 
-/* Read pending unwind state without modifying it. Returns UEXEC_OK if none. */
-UExecStatus urbi_strand_unwind_status(const struct UStrand *strand);
+/* Read pending unwind state without modifying it.
+ * Returns URBI_UNWIND_OK (0) if no pending unwind.  The internal
+ * UExecStatus and UStrandUnwind numeric values are identical. */
+UStrandUnwind urbi_strand_unwind_status(struct UVM *vm, const struct UStrand *strand);
 
 /* Query fatal state.  Returns true if the strand has a fatal status; populates
- * *out_status and *out_value (both may be NULL if caller doesn't need them). */
-bool urbi_strand_is_fatal(const struct UStrand *strand,
-                          UExecStatus *out_status, UValue *out_value);
+ * *out_status and *out_value (both may be NULL if caller doesn't need them).
+ * out_status receives a UStrandUnwind value; cast to UExecStatus if needed. */
+bool urbi_strand_is_fatal(struct UVM *vm, const struct UStrand *strand,
+                          UStrandUnwind *out_status, UValue *out_value);
 
 /* REPL session restart: clear fatal + unwind state, reset cleanup-stack depth,
  * return strand to DORMANT.  Does not free or reallocate any memory. */
-int urbi_strand_reset(struct UStrand *strand);
+int urbi_strand_reset(struct UVM *vm, struct UStrand *strand);
 
 /* === Host-callback reentrance helpers ===
  *
  * Call these from inside a host C callback (invoked from bytecode via OP_CALL
  * on a native function) to inject control-transfer events.  The dispatch loop
- * detects the non-OK pending_unwind when the callback returns. */
+ * detects the non-OK pending_unwind when the callback returns.
+ *
+ * v0.10.3 (W5): all three gain vm as first arg.  urbi_throw and
+ * urbi_return_val change void → int so NULL vm/strand can return
+ * URBI_ERR_INVALID_ARG (api-ergonomics F8). */
 
-/* Equivalent to executing OP_THROW with `value` from within the same strand. */
-void urbi_throw(struct UStrand *strand, UValue value);
+/* Equivalent to executing OP_THROW with `value` from within the same strand.
+ * Returns URBI_OK on success, URBI_ERR_INVALID_ARG if vm or strand is NULL. */
+int urbi_throw(struct UVM *vm, struct UStrand *strand, UValue value);
 
-/* Equivalent to executing OP_RETURN with `value` from within the same strand. */
-void urbi_return_val(struct UStrand *strand, UValue value);
+/* Equivalent to executing OP_RETURN with `value` from within the same strand.
+ * Returns URBI_OK on success, URBI_ERR_INVALID_ARG if vm or strand is NULL. */
+int urbi_return_val(struct UVM *vm, struct UStrand *strand, UValue value);
 
 /* Equivalent to executing OP_TAG_STOP for `tag` from within the same strand. */
-void urbi_tag_stop_local(struct UStrand *strand, struct UTag *tag, UValue value);
+void urbi_tag_stop_local(struct UVM *vm, struct UStrand *strand,
+                         struct UTag *tag, UValue value);
 
 /* === Row 8 chunk-lifecycle C API (M3 / T14) ===
  *
@@ -433,7 +459,8 @@ typedef struct {
 struct UTag *urbi_tag_create(struct UVM *vm, struct URealm *realm,
                              const char *name, size_t name_len);
 
-int urbi_tag_info(const struct UTag *tag, urbi_tag_info_t *out);
+/* W5/v0.10.3: vm added as first arg (api-ergonomics F6 partial). */
+int urbi_tag_info(struct UVM *vm, const struct UTag *tag, urbi_tag_info_t *out);
 
 /* === Gap K — slot read/write from host C (v0.7.1) ===
  *
@@ -483,10 +510,28 @@ int urbi_slot_set(struct UVM *vm, UValue obj,
  * Thread safety: MAIN. */
 UValue urbi_make_str_interned(struct UVM *vm, const char *s, size_t len);
 
-struct UStrand *urbi_strand_create(struct URealm *realm, struct UClosure *entry);
-void            urbi_strand_start(struct UStrand *s);
-struct UStrand *urbi_strand_spawn(struct URealm *realm, struct UClosure *entry);
-void            urbi_strand_destroy(struct UStrand *s);
+/* === W5/v0.10.3: vm-first-arg sweep — strand lifecycle ===
+ *
+ * 4 functions previously took realm/strand as their first argument.  They
+ * now follow the (struct UVM *vm, ...) convention.
+ *
+ * urbi_strand_destroy changes void → int (api-ergonomics F8): returns
+ *   URBI_OK           — success (or NULL strand no-op).
+ *   URBI_ERR_INVALID_STATE — strand is not DORMANT or DEAD (debug only;
+ *                            release behaves as unchecked teardown).
+ *
+ * urbi_strand_state: new function — query strand lifecycle state before
+ * destroying.  NULL strand returns URBI_STRAND_DEAD (safe to destroy). */
+struct UStrand *urbi_strand_create(struct UVM *vm, struct URealm *realm,
+                                   struct UClosure *entry);
+void            urbi_strand_start(struct UVM *vm, struct UStrand *s);
+struct UStrand *urbi_strand_spawn(struct UVM *vm, struct URealm *realm,
+                                  struct UClosure *entry);
+/* Returns URBI_OK on success.  URBI_ERR_INVALID_STATE in debug builds if the
+ * strand is not in DORMANT or DEAD state (call urbi_strand_state first). */
+int             urbi_strand_destroy(struct UVM *vm, struct UStrand *s);
+/* Query the current lifecycle state of a strand.  NULL strand returns DEAD. */
+UStrandState    urbi_strand_state(struct UVM *vm, const struct UStrand *s);
 
 /* === Row 9 ISR-safe event ring (M3 / T18) ===
  *
@@ -660,9 +705,11 @@ void urbi_realm_set_writer(struct UVM *vm, struct URealm *realm,
  * realm (urbi_realm_global) has no budget by default (trusted host code).
  *
  * Thread safety: MAIN. */
-void urbi_realm_set_compile_budget(struct URealm *realm,
+/* W5/v0.10.3: vm added as first arg (api-ergonomics F6 partial). */
+void urbi_realm_set_compile_budget(struct UVM *vm, struct URealm *realm,
                                    const UCompileBudget *budget);
-const UCompileBudget *urbi_realm_get_compile_budget(const struct URealm *realm);
+const UCompileBudget *urbi_realm_get_compile_budget(struct UVM *vm,
+                                                    const struct URealm *realm);
 
 /* Default budget applied by urbi_realm_create_repl.  Defined in urealm.c;
  * exported so embedders + tests can read the canonical values
@@ -1267,6 +1314,11 @@ void urbi_set_error(struct UVM *vm, int code,
 
 /* === Public bytecode deserialization (v0.7.1 spec amendment) ===
  *
+ * W5/v0.10.3: both functions gain (struct UVM *vm, ...) as first arg.
+ * urbi_chunk_from_bytes now routes allocation through vm->alloc_fn instead
+ * of libc malloc, matching the rest of the VM allocator domain and closing
+ * the cross-allocator hazard documented in api-ergonomics F3.
+ *
  * urbi_chunk_from_bytes: deserialize a wire-format bytecode buffer into a
  * heap-allocated root UProto.  (v0.9.2: was UModule*; UModule deleted.)
  *
@@ -1278,24 +1330,22 @@ void urbi_set_error(struct UVM *vm, int code,
  * errmsg[0..errcap) (NUL-terminated).
  *
  * Error conditions:
- *   NULL buf or zero len                → returns NULL (URBI_ERR_INVALID_ARG)
+ *   NULL vm or buf                      → returns NULL (URBI_ERR_INVALID_ARG)
  *   bytecode version mismatch           → returns NULL
  *   any other deserialize or OOM error  → returns NULL
  *
- * Note: this function has no UVM parameter and therefore cannot populate the
- * per-VM error ring.  Diagnostic detail is reported via errmsg/errcap instead.
- *
  * Thread safety: MAIN (calls the heap allocator). */
-struct UProto *urbi_chunk_from_bytes(const uint8_t *buf, size_t len,
-                                      char *errmsg, size_t errcap);
+struct UProto *urbi_chunk_from_bytes(struct UVM *vm, const uint8_t *buf,
+                                     size_t len,
+                                     char *errmsg, size_t errcap);
 
 /* urbi_chunk_free: free a root UProto returned by urbi_chunk_from_bytes.
  *
- * Calls uchunk_destroy (frees all owned buffers + the root struct).
- * NULL is a no-op.
+ * Frees via the same allocator domain as urbi_chunk_from_bytes (vm->alloc_fn
+ * on hosted builds; no-op on freestanding).  NULL root is a no-op.
  *
  * Thread safety: MAIN. */
-void urbi_chunk_free(struct UProto *root);
+void urbi_chunk_free(struct UVM *vm, struct UProto *root);
 
 #ifdef __cplusplus
 }

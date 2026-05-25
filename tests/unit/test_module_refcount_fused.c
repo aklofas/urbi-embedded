@@ -75,7 +75,7 @@ UTEST(strand_bind_bumps_root_proto)
     UASSERT_EQ((unsigned)1, (unsigned)module.refcount);
 
     /* Destroy the strand: should decrement root->refcount back to 0. */
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
 
     uarena_destroy(&arena);
@@ -155,7 +155,7 @@ UTEST(module_refcount_lives_on_root_proto)
     /* Strand bind increments root->refcount to 1. */
     UASSERT_EQ((unsigned)1, (unsigned)module.refcount);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     /* After strand destroy, refcount drops back to 0. */
     UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
 

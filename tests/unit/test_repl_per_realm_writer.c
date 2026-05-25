@@ -193,7 +193,7 @@ UTEST(repl_realm_has_default_compile_budget)
     URealm *r = urbi_realm_create_repl(&vm);
     UASSERT(r != NULL);
 
-    const UCompileBudget *b = urbi_realm_get_compile_budget(r);
+    const UCompileBudget *b = urbi_realm_get_compile_budget(&vm, r);
     UASSERT(b != NULL);
     UASSERT_EQ((long long)b->max_parser_depth,
                (long long)URBI_DEFAULT_REPL_BUDGET.max_parser_depth);
@@ -215,7 +215,7 @@ UTEST(global_realm_has_no_compile_budget)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UASSERT(urbi_realm_get_compile_budget(r) == NULL);
+    UASSERT(urbi_realm_get_compile_budget(&vm, r) == NULL);
 
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
@@ -230,16 +230,16 @@ UTEST(compile_budget_set_get_roundtrip)
     UASSERT(r != NULL);
 
     UCompileBudget custom = { 32U, 500U, 1024U };
-    urbi_realm_set_compile_budget(r, &custom);
+    urbi_realm_set_compile_budget(&vm, r, &custom);
 
-    const UCompileBudget *b = urbi_realm_get_compile_budget(r);
+    const UCompileBudget *b = urbi_realm_get_compile_budget(&vm, r);
     UASSERT(b != NULL);
     UASSERT_EQ((long long)b->max_parser_depth, 32LL);
     UASSERT_EQ((long long)b->max_ast_nodes,    500LL);
     UASSERT_EQ((long long)b->max_source_bytes, 1024LL);
 
-    urbi_realm_set_compile_budget(r, NULL);
-    UASSERT(urbi_realm_get_compile_budget(r) == NULL);
+    urbi_realm_set_compile_budget(&vm, r, NULL);
+    UASSERT(urbi_realm_get_compile_budget(&vm, r) == NULL);
 
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
@@ -253,8 +253,8 @@ UTEST(setters_null_realm_noop)
 
     /* These calls must not crash. */
     urbi_realm_set_writer(&vm, NULL, realm_capture, NULL);
-    urbi_realm_set_compile_budget(NULL, &URBI_DEFAULT_REPL_BUDGET);
-    UASSERT(urbi_realm_get_compile_budget(NULL) == NULL);
+    urbi_realm_set_compile_budget(&vm, NULL, &URBI_DEFAULT_REPL_BUDGET);
+    UASSERT(urbi_realm_get_compile_budget(&vm, NULL) == NULL);
 
     urbi_vm_destroy(&vm);
 }

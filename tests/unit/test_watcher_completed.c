@@ -74,11 +74,11 @@ static struct UStrand *
 test_make_dummy_body_strand(struct UVM *vm, struct URealm *realm,
                              UClosure *body_cl, struct UWatcher *w)
 {
-    struct UStrand *s = urbi_strand_create(realm, body_cl);
+    struct UStrand *s = urbi_strand_create(vm, realm, body_cl);
     if (!s)
         return NULL;
     if (urbi_strand_arm_from_closure(s, body_cl) != 0) {
-        urbi_strand_destroy(s);
+        urbi_strand_destroy(vm, s);
         return NULL;
     }
     s->watcher_body_owner = w;

@@ -120,7 +120,7 @@ UTEST(strand_scope_tag_returns_innermost)
     UASSERT(r->tag != NULL);
 
     /* Create a strand — its cleanup-stack starts with [realm->tag synthetic]. */
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
     UASSERT(s->cleanup_depth == 1);  /* one ambient entry: realm->tag */
 
@@ -158,7 +158,7 @@ UTEST(strand_scope_tag_returns_innermost)
     /* Unlink inner_tag entry before destroy (maintain invariant for utag_destroy
      * assertion; inner_tag is stack-allocated so utag_destroy isn't called on it,
      * but ustrand_destroy will unlink all TAG_SCOPE entries automatically). */
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     /* inner_tag.member_strands_head should be NULL after strand_unlink_from_tags. */
     UASSERT(inner_tag.member_strands_head == NULL);
 
@@ -508,7 +508,7 @@ UTEST(nested_tag_membership)
     UASSERT(r != NULL);
 
     /* Create strand — inherits realm->tag as depth 0. */
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
     UASSERT_EQ((unsigned)s->cleanup_depth, 1U);
 
@@ -530,7 +530,7 @@ UTEST(nested_tag_membership)
 
     /* Destroy strand: strand_unlink_from_tags must clear all three
      * stack-allocated tags' member_strands_head. */
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
 
     UASSERT(tag_a.member_strands_head == NULL);
     UASSERT(tag_b.member_strands_head == NULL);
@@ -556,7 +556,7 @@ UTEST(realm_root_at_bottom)
     UASSERT(r != NULL);
     UASSERT(r->tag != NULL);
 
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
 
     /* cleanup_depth must be at least 1. */
@@ -571,7 +571,7 @@ UTEST(realm_root_at_bottom)
     /* The strand must appear in realm->tag's member list. */
     UASSERT(count_strand_in_tag_members(r->tag, s) == 1);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -596,7 +596,7 @@ UTEST(tag_stop_synchronous_no_bytecode)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s = urbi_strand_create(r, NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
     UASSERT(s != NULL);
 
     /* Record initial state. */
@@ -614,7 +614,7 @@ UTEST(tag_stop_synchronous_no_bytecode)
     /* pc must not have advanced — urbi_tag_stop runs no bytecode. */
     UASSERT(s->pc == pc_before);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }

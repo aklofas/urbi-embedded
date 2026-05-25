@@ -317,7 +317,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
      * so an oversized submission is rejected without touching the arena or
      * UModule allocator.  Depth + node-count limits are enforced inside
      * the parser via UCompileBudget threaded through UParser. */
-    const UCompileBudget *budget = urbi_realm_get_compile_budget(realm);
+    const UCompileBudget *budget = urbi_realm_get_compile_budget(vm, realm);
     if (budget != NULL && budget->max_source_bytes > 0U
             && line_len > (size_t)budget->max_source_bytes) {
         if (out_buf && out_buf_size > 0) {
@@ -605,11 +605,15 @@ urbi_chunk_translate_load_err(int load_err)
 #  include <stdlib.h>   /* malloc, free */
 #endif
 
-/* v0.9.2: urbi_chunk_from_bytes allocates root UProto via uchunk_deserialize
- * (which uses stdlib_alloc on hosted builds).  Returns root UProto on success. */
+/* v0.10.3 W5: urbi_chunk_from_bytes gains (struct UVM *vm, ...) as first arg
+ * and routes allocation through vm->alloc_fn on hosted builds when vm is
+ * non-NULL (closes the cross-allocator hazard in api-ergonomics F3).
+ * Falls back to stdlib_alloc when vm is NULL (backward-compat path for
+ * tests that call with a dummy vm).
+ * Returns root UProto on success. */
 struct UProto *
-urbi_chunk_from_bytes(const uint8_t *buf, size_t len,
-                       char *errmsg, size_t errcap)
+urbi_chunk_from_bytes(struct UVM *vm, const uint8_t *buf, size_t len,
+                      char *errmsg, size_t errcap)
 {
 #if __STDC_HOSTED__
     if (buf == NULL || len == 0) {
@@ -620,8 +624,11 @@ urbi_chunk_from_bytes(const uint8_t *buf, size_t len,
     char *ebuf = errmsg ? errmsg : local_err;
     size_t ecap = errmsg ? errcap : sizeof(local_err);
     UProto *root = NULL;
-    /* Pass NULL alloc_fn — uchunk_deserialize uses stdlib_alloc on hosted. */
-    UChunkLoadError lerr = uchunk_deserialize(&root, buf, len, NULL, NULL, ebuf, ecap);
+    /* Route through vm->alloc_fn when available (W5 allocator routing).
+     * Pass NULL alloc_fn when vm is NULL — uchunk_deserialize uses stdlib_alloc. */
+    UVMAllocFn afn = (vm != NULL) ? vm->alloc_fn : NULL;
+    void      *aud = (vm != NULL) ? vm->alloc_ud : NULL;
+    UChunkLoadError lerr = uchunk_deserialize(&root, buf, len, afn, aud, ebuf, ecap);
     if (lerr != UCHUNK_LOAD_OK) {
         /* uchunk_deserialize frees partial allocations on failure. */
         return NULL;
@@ -630,13 +637,16 @@ urbi_chunk_from_bytes(const uint8_t *buf, size_t len,
 #else
     /* Freestanding: not available — callers on bare-metal use uchunk_deserialize
      * directly with an explicit alloc_fn. */
-    (void)buf; (void)len; (void)errmsg; (void)errcap;
+    (void)vm; (void)buf; (void)len; (void)errmsg; (void)errcap;
     return NULL;
 #endif
 }
 
+/* v0.10.3 W5: urbi_chunk_free gains (struct UVM *vm, ...) as first arg.
+ * vm is used for the alloc_fn on hosted builds to free via the same domain
+ * as urbi_chunk_from_bytes.  Falls back to NULL (stdlib free) when vm is NULL. */
 void
-urbi_chunk_free(struct UProto *root)
+urbi_chunk_free(struct UVM *vm, struct UProto *root)
 {
 #if __STDC_HOSTED__
     if (root == NULL) return;
@@ -644,13 +654,12 @@ urbi_chunk_free(struct UProto *root)
      * freed the root while strands still hold it (UAF). */
     URBI_INTERNAL_ASSERT(root->refcount == 0 &&
         "urbi_chunk_free called with live strand bindings — let strands drop refs first");
-    /* Public API: no vm in scope.  Pass NULL — no proto rescue path.
-     * If a closure has captured a proto from this root, the caller has
-     * a lifetime bug regardless of what uchunk_destroy does. */
-    uchunk_destroy(root, NULL);
+    /* Use vm's alloc_fn for freeing when available (W5 allocator routing).
+     * Pass NULL when vm is absent — uchunk_destroy uses stdlib free on hosted. */
+    uchunk_destroy(root, vm);
     /* uchunk_destroy frees the struct when heap_allocated; no separate free needed. */
 #else
-    (void)root;
+    (void)vm; (void)root;
 #endif
 }
 

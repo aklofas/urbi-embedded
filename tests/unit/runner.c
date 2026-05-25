@@ -286,6 +286,7 @@ extern void test_at_event_unlink_on_tag_stop_suite(void);
 extern void test_value_predicates_suite(void);
 extern void test_error_model_unified_suite(void);
 extern void test_vm_create_opaque_suite(void);
+extern void test_vm_first_arg_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -548,6 +549,7 @@ static const struct suite_entry suites[] = {
     {"value_predicates",                 test_value_predicates_suite},
     {"error_model_unified",              test_error_model_unified_suite},
     {"vm_create_opaque",                 test_vm_create_opaque_suite},
+    {"vm_first_arg",                     test_vm_first_arg_suite},
     /* Add new suites here as test files are added. */
 };
 

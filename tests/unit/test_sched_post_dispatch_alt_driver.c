@@ -161,7 +161,7 @@ UTEST(post_dispatch_step2_dead_heap_strand_is_reaped)
     UASSERT(realm != NULL);
 
     /* Create a heap-allocated strand. */
-    UStrand *s = urbi_strand_create(realm, &ret_cl);
+    UStrand *s = urbi_strand_create(&vm, realm, &ret_cl);
     UASSERT(s != NULL);
 
     /* Verify it is on realm->strands_head. */
@@ -393,7 +393,7 @@ UTEST(post_dispatch_all_steps_integrated)
     UASSERT(realm != NULL);
 
     /* Heap strand that just finished — will be reaped by step 2. */
-    UStrand *dead_s = urbi_strand_create(realm, &ret_cl);
+    UStrand *dead_s = urbi_strand_create(&vm, realm, &ret_cl);
     UASSERT(dead_s != NULL);
     dead_s->state = USTRAND_STATE_DEAD;
 

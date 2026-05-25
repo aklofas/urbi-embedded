@@ -674,7 +674,7 @@ sched_post_dispatch(UVM *vm, UStrand *s)
      * + the strand struct itself.  After this call s is freed; callers MUST NOT
      * dereference s. */
     if (s->state == USTRAND_STATE_DEAD && !s->is_transient_strand) {
-        urbi_strand_destroy(s);
+        urbi_strand_destroy(vm, s);
         /* s is freed; do not dereference past this point. */
         /* Steps 3 and 4 below only use vm, so they are safe to run after free. */
     }

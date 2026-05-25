@@ -61,9 +61,10 @@ typedef enum {
  *   (DEFAULT / PRIORITY / DEADLINE).
  *
  * All three operate on caller-owned UStrand; no ownership transfer. */
-URBI_EXPERIMENTAL void        urbi_strand_set_priority(struct UStrand *s, uint8_t priority);
-URBI_EXPERIMENTAL uint8_t     urbi_strand_get_priority(struct UStrand *s);
-URBI_EXPERIMENTAL USchedClass urbi_strand_get_sched_class(struct UStrand *s);
+/* W5/v0.10.3: vm added as first arg (api-ergonomics F3). */
+URBI_EXPERIMENTAL void        urbi_strand_set_priority(struct UVM *vm, struct UStrand *s, uint8_t priority);
+URBI_EXPERIMENTAL uint8_t     urbi_strand_get_priority(struct UVM *vm, struct UStrand *s);
+URBI_EXPERIMENTAL USchedClass urbi_strand_get_sched_class(struct UVM *vm, struct UStrand *s);
 #endif /* URBI_SCHED_HAS_PRIORITY */
 
 #endif /* URBI_SCHED_H */

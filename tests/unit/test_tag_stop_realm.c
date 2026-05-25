@@ -51,9 +51,9 @@ make_nil(void)
 
 /* Create a strand via urbi_strand_create (attaches realm->tag ambient). */
 static UStrand *
-create_member_strand(URealm *r)
+create_member_strand(struct UVM *vm, URealm *r)
 {
-    return urbi_strand_create(r, NULL);
+    return urbi_strand_create(vm, r, NULL);
 }
 
 /* No-op onleave hook: prevents run_watcher_onleave from dispatching the
@@ -84,8 +84,8 @@ UTEST(tag_stop_deposits_on_member_strands)
     UASSERT(r != NULL);
     UASSERT(r->tag != NULL);
 
-    UStrand *s1 = create_member_strand(r);
-    UStrand *s2 = create_member_strand(r);
+    UStrand *s1 = create_member_strand(&vm, r);
+    UStrand *s2 = create_member_strand(&vm, r);
     UASSERT(s1 != NULL);
     UASSERT(s2 != NULL);
 
@@ -101,8 +101,8 @@ UTEST(tag_stop_deposits_on_member_strands)
     UASSERT_EQ((int)s2->pending_unwind, (int)UEXEC_TAG_STOP);
     UASSERT(s2->unwind_target == r->tag);
 
-    urbi_strand_destroy(s1);
-    urbi_strand_destroy(s2);
+    urbi_strand_destroy(&vm, s1);
+    urbi_strand_destroy(&vm, s2);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -121,9 +121,9 @@ UTEST(tag_stop_increments_host_call_pending_count_per_fresh_strand)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s1 = create_member_strand(r);
-    UStrand *s2 = create_member_strand(r);
-    UStrand *s3 = create_member_strand(r);
+    UStrand *s1 = create_member_strand(&vm, r);
+    UStrand *s2 = create_member_strand(&vm, r);
+    UStrand *s3 = create_member_strand(&vm, r);
     UASSERT(s1 != NULL && s2 != NULL && s3 != NULL);
 
     UASSERT_EQ((int)vm.host_call_pending_count, 0);
@@ -132,9 +132,9 @@ UTEST(tag_stop_increments_host_call_pending_count_per_fresh_strand)
 
     UASSERT_EQ((int)vm.host_call_pending_count, 3);
 
-    urbi_strand_destroy(s1);
-    urbi_strand_destroy(s2);
-    urbi_strand_destroy(s3);
+    urbi_strand_destroy(&vm, s1);
+    urbi_strand_destroy(&vm, s2);
+    urbi_strand_destroy(&vm, s3);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -153,7 +153,7 @@ UTEST(tag_stop_idempotent_on_repeat_call)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s = create_member_strand(r);
+    UStrand *s = create_member_strand(&vm, r);
     UASSERT(s != NULL);
 
     urbi_tag_stop(&vm, r->tag, nil);
@@ -163,7 +163,7 @@ UTEST(tag_stop_idempotent_on_repeat_call)
     urbi_tag_stop(&vm, r->tag, nil);
     UASSERT_EQ((int)vm.host_call_pending_count, 1);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -184,8 +184,8 @@ UTEST(tag_stop_does_not_overwrite_cancel)
     UASSERT(r != NULL);
 
     /* Two strands: s_cancel pre-set to CANCEL; s_ok stays OK. */
-    UStrand *s_cancel = create_member_strand(r);
-    UStrand *s_ok     = create_member_strand(r);
+    UStrand *s_cancel = create_member_strand(&vm, r);
+    UStrand *s_ok     = create_member_strand(&vm, r);
     UASSERT(s_cancel != NULL && s_ok != NULL);
 
     s_cancel->pending_unwind = UEXEC_CANCEL;
@@ -200,8 +200,8 @@ UTEST(tag_stop_does_not_overwrite_cancel)
     /* Counter must only reflect the fresh deposit on s_ok (= 1), not s_cancel. */
     UASSERT_EQ((int)vm.host_call_pending_count, 1);
 
-    urbi_strand_destroy(s_cancel);
-    urbi_strand_destroy(s_ok);
+    urbi_strand_destroy(&vm, s_cancel);
+    urbi_strand_destroy(&vm, s_ok);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -219,7 +219,7 @@ UTEST(tag_stop_overwrites_throw)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s = create_member_strand(r);
+    UStrand *s = create_member_strand(&vm, r);
     UASSERT(s != NULL);
 
     s->pending_unwind = UEXEC_THROW;
@@ -233,7 +233,7 @@ UTEST(tag_stop_overwrites_throw)
     /* fresh_deposit was true (THROW maps to fresh), so counter incremented. */
     UASSERT_EQ((int)vm.host_call_pending_count, 1);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -252,24 +252,24 @@ UTEST(tag_stop_decrement_on_strand_destroy)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s1 = create_member_strand(r);
-    UStrand *s2 = create_member_strand(r);
-    UStrand *s3 = create_member_strand(r);
+    UStrand *s1 = create_member_strand(&vm, r);
+    UStrand *s2 = create_member_strand(&vm, r);
+    UStrand *s3 = create_member_strand(&vm, r);
     UASSERT(s1 != NULL && s2 != NULL && s3 != NULL);
 
     urbi_tag_stop(&vm, r->tag, nil);
     UASSERT_EQ((int)vm.host_call_pending_count, 3);
 
     /* Destroy s1 — counter must drop to 2. */
-    urbi_strand_destroy(s1);
+    urbi_strand_destroy(&vm, s1);
     UASSERT_EQ((int)vm.host_call_pending_count, 2);
 
     /* Destroy s2 — counter must drop to 1. */
-    urbi_strand_destroy(s2);
+    urbi_strand_destroy(&vm, s2);
     UASSERT_EQ((int)vm.host_call_pending_count, 1);
 
     /* Destroy s3 — counter must reach 0. */
-    urbi_strand_destroy(s3);
+    urbi_strand_destroy(&vm, s3);
     UASSERT_EQ((int)vm.host_call_pending_count, 0);
 
     urbi_realm_destroy(&vm, r);

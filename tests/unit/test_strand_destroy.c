@@ -76,7 +76,7 @@ ustrand_destroy_idempotent_on_freed_stack(void)
     memset(&cl, 0, sizeof(cl));
     cl.proto = &proto;
 
-    UStrand *s = urbi_strand_create(realm, &cl);
+    UStrand *s = urbi_strand_create(&vm, realm, &cl);
     UASSERT(s != NULL);
 
     /* Arm so a register stack is actually allocated. */
@@ -157,7 +157,7 @@ ustrand_destroy_dormant_no_stack_free(void)
     memset(&cl, 0, sizeof(cl));
     cl.proto = &proto;
 
-    UStrand *s = urbi_strand_create(realm, &cl);
+    UStrand *s = urbi_strand_create(&vm, realm, &cl);
     UASSERT(s != NULL);
     /* Strand is DORMANT — stack was never allocated. */
     UASSERT(s->stack == NULL);

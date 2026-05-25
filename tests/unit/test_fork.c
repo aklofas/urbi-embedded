@@ -76,13 +76,13 @@ fork_run_to_quiescent(UVM *vm, URealm *realm, UProto *module,
                       UValue *out_result)
 {
     /* Allocate + arm a strand for this module. */
-    UStrand *s = urbi_strand_create(realm, NULL);
+    UStrand *s = urbi_strand_create(vm, realm, NULL);
     if (!s) return -1;
 
     /* Wire execution state from module. */
     const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
     s->stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
-    if (!s->stack) { urbi_strand_destroy(s); return -1; }
+    if (!s->stack) { urbi_strand_destroy(vm, s); return -1; }
     {
         volatile unsigned char *p = (volatile unsigned char *)s->stack;
         size_t i;
@@ -106,9 +106,9 @@ fork_run_to_quiescent(UVM *vm, URealm *realm, UProto *module,
      * urbi_chunk_instance_create calls stamp_owning_mi(root_proto, mi)
      * internally — the same stamp urbi_strand_create_for_module performs. */
     s->module_instance = urbi_chunk_instance_create(vm, module);
-    if (!s->module_instance) { urbi_strand_destroy(s); return -1; }
+    if (!s->module_instance) { urbi_strand_destroy(vm, s); return -1; }
 
-    urbi_strand_start(s);  /* DORMANT → READY */
+    urbi_strand_start(vm, s);  /* DORMANT → READY */
 
     /* Drive via urbi_step until quiescent or timeout. */
     int result = 0;
@@ -274,7 +274,7 @@ UTEST(fork_wake_joiners_empty_is_noop)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UStrand *s = urbi_strand_create(realm, NULL);
+    UStrand *s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s != NULL);
     UASSERT(s->joiners_head == NULL);
 
@@ -283,7 +283,7 @@ UTEST(fork_wake_joiners_empty_is_noop)
     fork_wake_joiners(s, &vm);
     UASSERT(s->joiners_head == NULL);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -297,7 +297,7 @@ UTEST(uval_strand_round_trip)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UStrand *s = urbi_strand_create(realm, NULL);
+    UStrand *s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s != NULL);
 
     UValue v = UVAL_STRAND_MAKE(s);
@@ -307,7 +307,7 @@ UTEST(uval_strand_round_trip)
     /* Strand values are truthy. */
     UASSERT(uvalue_truthy(&v));
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&vm, s);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

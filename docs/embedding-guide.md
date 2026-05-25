@@ -762,10 +762,10 @@ void cancel_work(struct UVM *vm)
 
 ```c
 /* FRAGMENT — tag state inspection */
-void inspect_tag(void)
+void inspect_tag(struct UVM *vm, struct UTag *my_tag)
 {
     urbi_tag_info_t info;
-    if (urbi_tag_info(my_tag, &info) == URBI_OK) {
+    if (urbi_tag_info(vm, my_tag, &info) == URBI_OK) {
         switch (info.state) {
             case URBI_TAG_RUNNING: /* tag is active */                break;
             case URBI_TAG_STOPPED: /* urbi_tag_stop was called */     break;
@@ -907,6 +907,65 @@ void check_error(struct UVM *vm, int rc)
 ```
 
 The `const char*` fields in `urbi_error_info_t` point into VM-owned storage and are valid until the next API call that mutates error state. Copy them if you need them across subsequent calls.
+
+### `urbi_strand_destroy` contract (v0.10.3)
+
+`urbi_strand_destroy(vm, s)` is the public teardown function for heap-allocated strands. Callers must observe the following rules:
+
+**Allowed states:**
+
+| State | Safe? | Notes |
+|---|---|---|
+| `URBI_STRAND_DORMANT` | Yes | Strand was created but never started |
+| `URBI_STRAND_DEAD` | Yes | Strand completed and was not yet reclaimed by the scheduler |
+| `NULL` | Yes | No-op; returns `URBI_OK` |
+
+**Forbidden states (active strands):**
+
+Calling `urbi_strand_destroy` on a strand in any other state (`READY`, `RUNNING`, `BLOCKED`, `WAITING`) is undefined behaviour in release builds. In debug builds (`URBI_DEBUG` defined), the call returns `URBI_ERR_INVALID_STATE` (-27) and the strand is left intact.
+
+```c
+/* FRAGMENT — safe strand teardown */
+void safe_strand_teardown(struct UVM *vm, struct UStrand *s)
+{
+    int rc = urbi_strand_destroy(vm, s);
+    if (rc == URBI_ERR_INVALID_STATE) {
+        /* debug build caught an active strand — do not proceed */
+        (void)rc;
+    }
+}
+```
+
+**Stack-allocated strands:** strands on the C stack (e.g., created via `ustrand_init` + `ustrand_destroy`) must use the internal `ustrand_destroy(s, vm)` pair, not the public `urbi_strand_destroy`. The public API is for heap-allocated strands only.
+
+**Inspect state before destroying:** use `urbi_strand_state(vm, s)` to query the public `UStrandState` enum before calling destroy if the strand's execution state is uncertain.
+
+### `UStrandUnwind` and unwind inspection (v0.10.3)
+
+The `UStrandUnwind` enum replaces the deprecated `UExecStatus` for public API use:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `URBI_UNWIND_OK` | 0 | No unwind pending |
+| `URBI_UNWIND_RETURN` | 1 | Normal return in progress |
+| `URBI_UNWIND_THROW` | 2 | Exception throw in progress |
+| `URBI_UNWIND_TAG_STOP` | 3 | Tag stop in progress |
+| `URBI_UNWIND_CANCEL` | 4 | Strand cancellation in progress |
+
+Query the pending unwind kind via `urbi_strand_unwind_status(vm, s)`. To test for a fatal/non-resumable state and retrieve the associated value:
+
+```c
+/* FRAGMENT — unwind inspection */
+void check_strand_unwind(struct UVM *vm, struct UStrand *s)
+{
+    UStrandUnwind kind;
+    UValue val;
+    if (urbi_strand_is_fatal(vm, s, &kind, &val)) {
+        /* strand died with a throw or cancel */
+        (void)kind; (void)val;
+    }
+}
+```
 
 ### Unified error model (v0.10.3)
 

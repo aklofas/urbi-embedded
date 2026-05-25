@@ -109,7 +109,7 @@ static void *spy_alloc(void *ptr, size_t n, void *ud) {
 UTEST(strand_create_starts_dormant) {
     setup_vm_realm();
 
-    UStrand *s = urbi_strand_create(g_realm, NULL);
+    UStrand *s = urbi_strand_create(&g_vm, g_realm, NULL);
     UASSERT(s != NULL);
     UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_DORMANT);
     UASSERT(s->vm    == &g_vm);
@@ -120,7 +120,7 @@ UTEST(strand_create_starts_dormant) {
     /* strand_runnable_count must be 0 — DORMANT does not increment it */
     UASSERT_EQ(g_vm.strand_runnable_count, 0U);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&g_vm, s);
     teardown_vm_realm();
 }
 
@@ -129,12 +129,12 @@ UTEST(strand_create_starts_dormant) {
 UTEST(strand_start_transitions_to_ready) {
     setup_vm_realm();
 
-    UStrand *s = urbi_strand_create(g_realm, NULL);
+    UStrand *s = urbi_strand_create(&g_vm, g_realm, NULL);
     UASSERT(s != NULL);
     UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_DORMANT);
     UASSERT_EQ(g_vm.strand_runnable_count, 0U);
 
-    urbi_strand_start(s);
+    urbi_strand_start(&g_vm, s);
     UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_READY);
     UASSERT_EQ(g_vm.strand_runnable_count, 1U);
     /* The strand should be the ready-queue head. */
@@ -142,7 +142,7 @@ UTEST(strand_start_transitions_to_ready) {
 
     /* Dequeue manually to leave the VM in a clean state for teardown. */
     sched_dequeue_ready_head(&g_vm);
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&g_vm, s);
     teardown_vm_realm();
 }
 
@@ -151,7 +151,7 @@ UTEST(strand_start_transitions_to_ready) {
 UTEST(strand_spawn_is_create_plus_start) {
     setup_vm_realm();
 
-    UStrand *s = urbi_strand_spawn(g_realm, NULL);
+    UStrand *s = urbi_strand_spawn(&g_vm, g_realm, NULL);
     UASSERT(s != NULL);
     UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_READY);
     UASSERT(s->vm    == &g_vm);
@@ -160,14 +160,14 @@ UTEST(strand_spawn_is_create_plus_start) {
     UASSERT(g_vm.ready_head == s);
 
     sched_dequeue_ready_head(&g_vm);
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&g_vm, s);
     teardown_vm_realm();
 }
 
 /* Case 8: urbi_strand_destroy(NULL) is a safe no-op. */
 UTEST(strand_destroy_null_safe) {
     /* Must not crash. */
-    urbi_strand_destroy(NULL);
+    urbi_strand_destroy(NULL, NULL);
 }
 
 /* Case 9: create + destroy round-trip leaves the VM clean (no leaks, counter zero).
@@ -175,11 +175,11 @@ UTEST(strand_destroy_null_safe) {
 UTEST(strand_create_destroy_round_trip) {
     setup_vm_realm();
 
-    UStrand *s = urbi_strand_create(g_realm, NULL);
+    UStrand *s = urbi_strand_create(&g_vm, g_realm, NULL);
     UASSERT(s != NULL);
     UASSERT_EQ(g_vm.strand_runnable_count, 0U);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&g_vm, s);
     /* After destroy: counter must still be 0 (DORMANT never incremented it). */
     UASSERT_EQ(g_vm.strand_runnable_count, 0U);
 
@@ -190,8 +190,8 @@ UTEST(strand_create_destroy_round_trip) {
 UTEST(strand_spawn_two_fifo_order) {
     setup_vm_realm();
 
-    UStrand *a = urbi_strand_spawn(g_realm, NULL);
-    UStrand *b = urbi_strand_spawn(g_realm, NULL);
+    UStrand *a = urbi_strand_spawn(&g_vm, g_realm, NULL);
+    UStrand *b = urbi_strand_spawn(&g_vm, g_realm, NULL);
     UASSERT(a != NULL);
     UASSERT(b != NULL);
     UASSERT_EQ(g_vm.strand_runnable_count, 2U);
@@ -201,8 +201,8 @@ UTEST(strand_spawn_two_fifo_order) {
 
     sched_dequeue_ready_head(&g_vm);
     sched_dequeue_ready_head(&g_vm);
-    urbi_strand_destroy(a);
-    urbi_strand_destroy(b);
+    urbi_strand_destroy(&g_vm, a);
+    urbi_strand_destroy(&g_vm, b);
     teardown_vm_realm();
 }
 
@@ -235,7 +235,7 @@ UTEST(strand_create_returns_null_on_oom) {
     UASSERT_EQ(spy2.alloc_calls, allocs_after_realm);
 
     /* Attempt strand creation — should fail on the next alloc. */
-    s = urbi_strand_create(realm, NULL);
+    s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s == NULL);  /* OOM: alloc failed */
     UASSERT_EQ(spy2.alloc_calls, allocs_after_realm + 1);  /* tried one more */
     UASSERT_EQ(vm.strand_runnable_count, 0U);  /* counter must stay clean */
@@ -257,7 +257,7 @@ UTEST(strand_create_returns_null_on_oom) {
 UTEST(make_runnable_rejects_dead_strand) {
     setup_vm_realm();
 
-    UStrand *s = urbi_strand_create(g_realm, NULL);
+    UStrand *s = urbi_strand_create(&g_vm, g_realm, NULL);
     UASSERT(s != NULL);
     UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_DORMANT);
 
@@ -276,7 +276,7 @@ UTEST(make_runnable_rejects_dead_strand) {
 
     /* Reset state so urbi_strand_destroy doesn't trip its own asserts. */
     s->state = USTRAND_STATE_DORMANT;
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&g_vm, s);
     teardown_vm_realm();
 }
 #endif
@@ -290,9 +290,9 @@ UTEST(make_runnable_rejects_dead_strand) {
 UTEST(strand_destroy_unlinks_from_ready_queue_first) {
     setup_vm_realm();
 
-    UStrand *a = urbi_strand_spawn(g_realm, NULL);
-    UStrand *b = urbi_strand_spawn(g_realm, NULL);
-    UStrand *c = urbi_strand_spawn(g_realm, NULL);
+    UStrand *a = urbi_strand_spawn(&g_vm, g_realm, NULL);
+    UStrand *b = urbi_strand_spawn(&g_vm, g_realm, NULL);
+    UStrand *c = urbi_strand_spawn(&g_vm, g_realm, NULL);
     UASSERT(a != NULL && b != NULL && c != NULL);
     UASSERT_EQ(g_vm.strand_runnable_count, 3U);
     UASSERT(g_vm.ready_head == a);
@@ -303,7 +303,7 @@ UTEST(strand_destroy_unlinks_from_ready_queue_first) {
     UASSERT(c->ready_prev == b);
 
     /* Destroy middle strand b — must splice cleanly out of the queue. */
-    urbi_strand_destroy(b);
+    urbi_strand_destroy(&g_vm, b);
 
     /* Survivors form a 2-element queue: a → c. */
     UASSERT_EQ(g_vm.strand_runnable_count, 2U);
@@ -317,8 +317,8 @@ UTEST(strand_destroy_unlinks_from_ready_queue_first) {
     /* Drain remaining strands cleanly. */
     sched_dequeue_ready_head(&g_vm);
     sched_dequeue_ready_head(&g_vm);
-    urbi_strand_destroy(a);
-    urbi_strand_destroy(c);
+    urbi_strand_destroy(&g_vm, a);
+    urbi_strand_destroy(&g_vm, c);
     teardown_vm_realm();
 }
 
@@ -330,7 +330,7 @@ UTEST(strand_destroy_unlinks_from_ready_queue_first) {
 UTEST(strand_destroy_does_not_underflow_host_call_pending) {
     setup_vm_realm();
 
-    UStrand *s = urbi_strand_create(g_realm, NULL);
+    UStrand *s = urbi_strand_create(&g_vm, g_realm, NULL);
     UASSERT(s != NULL);
 
     /* Manually mark the strand as having a cross-strand stop deposited
@@ -341,7 +341,7 @@ UTEST(strand_destroy_does_not_underflow_host_call_pending) {
     s->cross_strand_stop_pending = 1U;
     UASSERT_EQ(g_vm.host_call_pending_count, 0U);
 
-    urbi_strand_destroy(s);
+    urbi_strand_destroy(&g_vm, s);
     /* Counter must NOT have wrapped to UINT32_MAX. */
     UASSERT_EQ(g_vm.host_call_pending_count, 0U);
 
@@ -382,7 +382,7 @@ UTEST(strand_create_returns_null_on_cleanup_oom) {
     UASSERT(realm != NULL);
     UASSERT_EQ(spy2.alloc_calls, allocs_after_realm);
 
-    s = urbi_strand_create(realm, NULL);
+    s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s == NULL);  /* cleanup-stack alloc failed → strand_create returns NULL */
     /* Two allocs were attempted: the strand struct (success) + cleanup
        stack (failure).  Anything else means the failure path leaked allocs. */

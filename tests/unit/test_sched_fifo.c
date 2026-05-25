@@ -72,23 +72,23 @@ UTEST(fifo_transition2_strand_start_goes_to_tail)
     UASSERT(realm != NULL);
 
     /* Create a first strand and make it runnable manually. */
-    UStrand *first = urbi_strand_create(realm, NULL);
+    UStrand *first = urbi_strand_create(&vm, realm, NULL);
     UASSERT(first != NULL);
     sched_strand_make_runnable(first);
     UASSERT(vm.ready_head == first);
 
     /* Fork-spawn the second strand via the public API. */
-    UStrand *second = urbi_strand_create(realm, NULL);
+    UStrand *second = urbi_strand_create(&vm, realm, NULL);
     UASSERT(second != NULL);
-    urbi_strand_start(second);  /* DORMANT → READY via sched_strand_make_runnable */
+    urbi_strand_start(&vm, second);  /* DORMANT → READY via sched_strand_make_runnable */
 
     /* second must be at the tail, first still at the head. */
     UASSERT(vm.ready_head == first);
     UASSERT(vm.ready_tail == second);
     UASSERT_EQ(vm.strand_runnable_count, 2U);
 
-    urbi_strand_destroy(second);
-    urbi_strand_destroy(first);
+    urbi_strand_destroy(&vm, second);
+    urbi_strand_destroy(&vm, first);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

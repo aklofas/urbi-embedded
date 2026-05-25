@@ -305,7 +305,7 @@ UTEST(strand_panic_invokes_host_log_fn_with_msg) {
     strand.vm = &vm;
     strand.state = USTRAND_STATE_READY;
 
-    int prc = urbi_strand_panic(&strand, "panic-test-msg");
+    int prc = urbi_strand_panic(&vm, &strand, "panic-test-msg");
     UASSERT_EQ(prc, URBI_OK);
     UASSERT(g_log_calls >= 1);
     UASSERT(strcmp(g_last_msg, "panic-test-msg") == 0);

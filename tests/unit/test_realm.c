@@ -382,12 +382,12 @@ UTEST(realm_destroy_does_not_free_strand_on_ready_queue)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UStrand *s1 = urbi_strand_create(r, NULL);
+    UStrand *s1 = urbi_strand_create(&vm, r, NULL);
     UASSERT(s1 != NULL);
-    urbi_strand_start(s1);
-    UStrand *s2 = urbi_strand_create(r, NULL);
+    urbi_strand_start(&vm, s1);
+    UStrand *s2 = urbi_strand_create(&vm, r, NULL);
     UASSERT(s2 != NULL);
-    urbi_strand_start(s2);
+    urbi_strand_start(&vm, s2);
 
     /* Sanity: both strands must be on the ready_queue before destroy. */
     UASSERT(vm.ready_head != NULL);
