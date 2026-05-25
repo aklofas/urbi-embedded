@@ -94,7 +94,7 @@ static void *sys_alloc(void *ptr, size_t nbytes, void *ud)
 {
     (void)ud;
     if (nbytes == 0) { free(ptr); return NULL; }
-    return ptr ? realloc(ptr, nbytes) : malloc(nbytes);
+    return realloc(ptr, nbytes);   /* realloc(NULL, n) == malloc(n) per C99 */
 }
 
 int main(void)
@@ -132,12 +132,16 @@ including the internal `src/vm/uvm.h` header:
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 
+/* _Alignas(8) is correct for the current UVM layout (alignof(struct UVM) is
+ * <= 8 on all targets at v0.10.3).  The runtime check below will catch if
+ * a future UVM version raises the alignment requirement. */
 static _Alignas(8) char vm_buf[/* urbi_vm_sizeof() */4096 * 64];
 
 struct UVM *vm_init_static(UVMAllocFn alloc)
 {
-    /* At startup, verify the buffer is large enough. */
+    /* At startup, verify the buffer is large enough and aligned correctly. */
     if (sizeof(vm_buf) < urbi_vm_sizeof()) return NULL;
+    if (urbi_vm_alignof() > 8) return NULL;  /* alignment guard */
     struct UVM *vm = (struct UVM *)vm_buf;
     if (urbi_vm_init(vm, alloc, NULL) != URBI_OK) return NULL;
     return vm;

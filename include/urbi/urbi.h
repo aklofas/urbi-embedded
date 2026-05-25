@@ -1066,8 +1066,9 @@ URBI_ADVANCED void             urbi_chunk_instance_destroy(struct UVM *vm, UChun
  * urbi_vm_alignof — alignment requirement for struct UVM (always a power of two).
  *
  * For static/BSS allocation (advanced; see urbi_vm_init below):
- *   alignas(urbi_vm_alignof()) static char vm_buf[urbi_vm_sizeof()];
- *   struct UVM *vm = (struct UVM *)vm_buf;
+ *   _Alignas(8) static char vm_storage[131072];  // sized for current build
+ *   if (sizeof(vm_storage) < urbi_vm_sizeof()) abort();  // runtime guard
+ *   struct UVM *vm = (struct UVM *)vm_storage;
  *   urbi_vm_init(vm, my_alloc, NULL);
  *   ... use vm ...
  *   urbi_vm_destroy(vm);
@@ -1079,7 +1080,7 @@ URBI_ADVANCED void             urbi_chunk_instance_destroy(struct UVM *vm, UChun
  */
 struct UVM *urbi_vm_create (UVMAllocFn alloc_fn, void *alloc_ud);
 void        urbi_vm_free   (struct UVM *vm);
-size_t      urbi_vm_sizeof (void);
+size_t      urbi_vm_sizeof(void);
 size_t      urbi_vm_alignof(void);
 
 /* === API-013: VM lifecycle (promoted to public at v0.5.5) ===

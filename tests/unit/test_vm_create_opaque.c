@@ -22,9 +22,21 @@ UTEST(vm_create_returns_non_null) {
     urbi_vm_free(vm);
 }
 
-UTEST(vm_create_returns_null_on_alloc_failure) {
+UTEST(vm_create_returns_null_on_null_alloc_fn) {
     /* NULL alloc_fn — urbi_vm_create must return NULL immediately. */
     struct UVM *vm = urbi_vm_create(NULL, NULL);
+    UASSERT_EQ(vm, NULL);
+}
+
+/* Always-failing allocator — simulates OOM on the very first allocation. */
+static void *fail_alloc(void *ptr, size_t nbytes, void *ud)
+{
+    (void)ptr; (void)nbytes; (void)ud;
+    return NULL;   /* always-failing allocator */
+}
+
+UTEST(vm_create_returns_null_on_oom) {
+    struct UVM *vm = urbi_vm_create(fail_alloc, NULL);
     UASSERT_EQ(vm, NULL);
 }
 
@@ -57,7 +69,8 @@ UTEST(vm_free_on_null_is_noop) {
 
 void test_vm_create_opaque_suite(void) {
     utest_run("vm_create_returns_non_null",              vm_create_returns_non_null);
-    utest_run("vm_create_returns_null_on_alloc_failure", vm_create_returns_null_on_alloc_failure);
+    utest_run("vm_create_returns_null_on_null_alloc_fn", vm_create_returns_null_on_null_alloc_fn);
+    utest_run("vm_create_returns_null_on_oom",           vm_create_returns_null_on_oom);
     utest_run("vm_create_supports_global_realm",         vm_create_supports_global_realm);
     utest_run("vm_sizeof_returns_positive",              vm_sizeof_returns_positive);
     utest_run("vm_alignof_returns_power_of_two",         vm_alignof_returns_power_of_two);
