@@ -102,6 +102,11 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * partial init.  urbi_vm_destroy stays safe on any partial-init state
      * reached before the bailout. */
     int oom_seen = 0;
+#ifdef URBI_DEBUG
+    /* v0.10.1 W4: notify the refcount accounting layer that a new VM is alive.
+     * Paired with urbi_proto_ref_vm_gone() in urbi_vm_destroy. */
+    urbi_proto_ref_vm_born();
+#endif
 
     /* v0.9.1 — must be NULLed BEFORE any subsystem init that drives
      * bytecode (urbi_run_chunk → urbi_step → urepl_dispatch_drain_if_active
@@ -482,6 +487,14 @@ void urbi_vm_destroy(UVM *vm) {
      * Realm teardown (above) releases bindings; remaining infrastructure (event ring,
      * sched queues) is freed below — none of it owns GC cells. */
     urbi_gc_destroy(vm);      /* T23: free all GC-managed cells */
+#ifdef URBI_DEBUG
+    /* v0.10.1 W4: decrement the active-VM count; fires urbi_proto_ref_assert_balanced()
+     * when the last VM is destroyed.  Runs after urealm_teardown_all (all strands
+     * destroyed → strand-bind refs released) and urbi_gc_destroy (all UClosure cells
+     * finalized → closure-bind refs released).  The balanced check only fires when
+     * zero VMs remain so multi-VM test scenarios do not produce false positives. */
+    urbi_proto_ref_vm_gone();
+#endif
     if (vm->event_ring && vm->alloc_fn) {
         vm->alloc_fn(vm->event_ring, 0, vm->alloc_ud);
         vm->event_ring = NULL;

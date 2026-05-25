@@ -51,7 +51,7 @@
 #include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent/utag chains */
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"     /* UClosure, UUpvalCell (v0.8.4 Step B) */
-#include "chunk/uchunk.h"       /* uproto_root_of, uproto_refcount_dec */
+#include "chunk/uchunk.h"       /* uproto_root_of, urbi_proto_ref_release */
 
 /* === walk_uobject ===
  *
@@ -444,7 +444,8 @@ uclosure_destroy(struct UVM *vm, void *payload)
     if (cl->proto == NULL) return;
 
     UProto *rp = uproto_root_of(cl->proto);
-    uproto_refcount_dec(rp);
+    /* v0.10.1 W4: typed-handle release for diagnostics (F3 closure-bind site). */
+    urbi_proto_ref_release(rp, URBI_PROTO_REF_OWNER_CLOSURE);
 
     /* v0.8.4 Option B Step C-2: sentinel-promotion.
      * heap_allocated=true: thread onto vm->rescued_protos so vm_destroy

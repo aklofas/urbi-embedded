@@ -81,7 +81,8 @@ tunable_arm_strand(UVM *vm, UProto *module, UStrand *s, UValue *out_result)
     s->pc          = module->instructions;
     s->pc_base     = module->instructions;
     s->cur_consts  = module->constants;
-    uproto_refcount_inc(module);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
+    /* v0.10.1 W4: use typed-handle acquire so g_strand_ref_total stays balanced. */
+    urbi_proto_strand_ref_acquire(module, URBI_PROTO_REF_OWNER_STRAND);
     s->module_instance = urbi_chunk_instance_create(vm, module);
     s->frame_count = 0;
     s->open_upvals = NULL;

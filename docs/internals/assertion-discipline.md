@@ -70,7 +70,7 @@ is silently stripped in any build with `NDEBUG` defined.  Never add new
 
 ## When to Use Which
 
-```
+```text
 Is the invariant load-bearing in production (freestanding / release)?
 │
 ├─ YES → URBI_REQUIRE(cond, msg)
