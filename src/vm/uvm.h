@@ -11,7 +11,12 @@
 #include "chunk/uchunk.h"  /* UProto (UModule deleted v0.9.2), UValue, UValKind, UOpcode */
 #include "value/uvalue.h"   /* UValue — needed for handle_table field */
 #include "runtime/uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
-#include "urbi/gc.h" /* UCell, UType, UGcRootCallback/ProviderFn, inline barriers */
+#include "urbi/gc.h" /* UCell (opaque), UGcRootCallback/ProviderFn, non-inline ops */
+/* W2: urbi/gc.h no longer includes the strategy header; pull it here so
+ * internal callers that reach gc state via uvm.h still get the inline
+ * barrier helpers (urbi_gc_slot_store, urbi_gc_register_write, etc.) and
+ * the UGC_* bit-flag macros without an additional explicit include. */
+#include "gc/ugc_incremental.h" /* inline barriers + UGC_* flags + UCell full layout */
 
 #ifdef __cplusplus
 extern "C" {

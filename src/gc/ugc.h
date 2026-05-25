@@ -2,13 +2,16 @@
 /* GC umbrella header: common UCell/UType definitions, build-flag values,
  * type-tag constants, and non-inline GC C API declarations.
  *
- * Include hierarchy:
- *   ugc.h             <- this file (common defs + non-inline API)
- *   urbi/gc.h         <- strategy-dispatch router; includes ugc.h + strategy header
- *   ugc_incremental.h <- URBI_GC_INCREMENTAL strategy (gc_byte layout + barriers)
+ * Include hierarchy (post-W2):
  *
- * uvm.h includes urbi/gc.h so that inline barrier helpers are visible
- * throughout the interpreter.  DO NOT include uvm.h from this file (circular). */
+ *   <urbi/gc.h>              <- public surface (stands alone, no src/ includes)
+ *   src/gc/ugc.h             <- internal full struct/macros (this file)
+ *   src/gc/ugc_incremental.h <- strategy-specific inline barriers
+ *   src/gc/ugc_none.h        <- URBI_GC_NONE alternative strategy
+ *
+ * Internal callers include "gc/ugc_incremental.h" directly when they need
+ * the inline barrier helpers.  Public callers only see <urbi/gc.h>.
+ * DO NOT include uvm.h from this file (circular). */
 
 #ifndef UGC_H
 #define UGC_H
@@ -36,8 +39,11 @@
 struct UVM;
 
 /* === GC root provider callbacks ===
- * Declared here (not in uvm.h) so urbi/gc.h and ugc_incremental.h can use them
- * without pulling in the full UVM struct definition.
+ * W2: UGcRootCallback and UGcRootProviderFn are now also declared in
+ * include/urbi/gc.h (public header) so external embedders using -Iinclude
+ * alone can resolve them.  The declarations below are guarded to avoid
+ * -Wpedantic "redefinition of typedef" diagnostics when ugc.h is included
+ * after urbi/gc.h (the common case for internal src/ TUs).
  *
  * UGcRootCallback: called once per GC root during a root walk.
  *   vm   — the owning VM.
@@ -51,8 +57,11 @@ struct UVM;
  * UGcWalkPayloadFn: per-type precise scanner stored in UType.walk_payload.
  *   Called during the mark phase to shade all UValues reachable from a cell's
  *   payload.  payload is the raw bytes immediately after the UCell header. */
+#ifndef URBI_GC_ROOT_CALLBACK_DEFINED
+#  define URBI_GC_ROOT_CALLBACK_DEFINED 1
 typedef void (*UGcRootCallback)(struct UVM *vm, UValue *root, void *ctx);
 typedef void (*UGcRootProviderFn)(struct UVM *vm, UGcRootCallback cb, void *ctx);
+#endif
 typedef void (*UGcWalkPayloadFn)(struct UVM *vm, void *payload,
                                  UGcRootCallback cb, void *ctx);
 
