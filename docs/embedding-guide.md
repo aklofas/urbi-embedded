@@ -11,16 +11,13 @@ All public API symbols are declared in `<urbi/urbi.h>`, `<urbi/types.h>`, `<urbi
 **This guide reflects the v0.10.3 API surface.** All code samples compile
 with `-Iinclude` alone; no `-Isrc` flag is required or permitted.
 
-**API tiers.** Public symbols are classified into two tiers:
+The public API surface (`include/urbi/*.h`) is classified into three tiers per `docs/api-surface-tiers.md`:
 
-- **Stable (`URBI_STABLE`)** — committed API surface; changes require a
-  minor-version bump. Everything shown in this guide without a special
-  annotation is stable.
-- **Experimental (`URBI_EXPERIMENTAL`)** — declared in `<urbi/urbi.h>` but
-  subject to change within v0.10.x. Annotated at the declaration site. Avoid
-  in production code unless you can track the changelog.
-- **Advanced (`URBI_ADVANCED`)** — for platform-port authors; documented in
-  `docs/api-surface-tiers.md`.
+- **Stable (T1)** — frozen at v1.0. Carries NO annotation macro at the declaration site (stable by default). Changes require a major-version bump.
+- **Advanced (T2)** — decorated with `URBI_ADVANCED` at the declaration site. Stable but non-hot-path; most embedders don't need these symbols.
+- **Experimental (T3)** — decorated with `URBI_EXPERIMENTAL` at the declaration site. RESERVED for v1.x; using one emits a compiler deprecation warning (suppressible with `-Wno-deprecated-declarations`).
+
+`URBI_DEPRECATED` also exists for scheduled removals; nothing in this guide currently uses it.
 
 See `docs/api-surface-tiers.md` for the full tier registry and stability
 guarantees.
@@ -184,7 +181,49 @@ void urbi_task(struct UVM *vm)
 
 ---
 
-## 2. Loading and Running
+## 2. Error Model
+
+Every public API function returns `int`. The return convention is three-zone:
+
+| Zone | Range | Meaning |
+|------|-------|---------|
+| Zero | `URBI_OK` (0) | Success |
+| Negative | `URBI_ERR_*` | Failure — also published to the per-VM error ring |
+| Positive | `URBI_CB_*` | Host-callback signals: success-with-side-effect (valid only as a return from watcher/event callbacks) |
+
+**`UCallbackSignal`** values for watcher/event callbacks:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `URBI_CB_OK` | 0 | Stay registered, no side-effect |
+| `URBI_CB_UNREGISTER` | 1 | Auto-unregister after this callback returns |
+| `URBI_CB_THROW` | 2 | Raise an urbiscript exception in the calling strand |
+
+The legacy name `URBI_ERR_WATCHER_UNREGISTER` is kept as an alias for `URBI_CB_UNREGISTER` for source compatibility. New code should use `URBI_CB_UNREGISTER`.
+
+**Setter callbacks with `void *ud`:** all five setter functions accept a trailing `void *ud` opaque pointer that is forwarded to every callback invocation:
+
+```c
+/* FRAGMENT — ud forwarding pattern */
+static void my_diag(struct UVM *vm, void *ud, int level, const char *fmt, ...)
+{
+    (void)vm;
+    struct MyContext *ctx = (struct MyContext *)ud;
+    /* use ctx for routing */
+    (void)level; (void)fmt;
+}
+
+void setup_diag(struct UVM *vm, struct MyContext *ctx)
+{
+    urbi_set_diag_fn(vm, my_diag, ctx);
+}
+```
+
+The same pattern applies to `urbi_set_time_us`, `urbi_set_watcher_body_done_fn`, `urbi_set_isr_check_fn`, and `urbi_register_event_drain`. Pass `NULL` when no context is needed.
+
+---
+
+## 3. Loading and Running
 
 `urbi_run_chunk(vm, realm, module, &out)` compiles/loads bytecode into the
 realm and runs it under a persistent scheduler-managed strand.  Unlike
@@ -231,7 +270,7 @@ loop drains it.
 
 ---
 
-## 3. Allocator Strategy
+## 4. Allocator Strategy
 
 The VM uses a single allocator callback — `UVMAllocFn` — for every heap allocation (GC cells, intern table, scheduler queues, IC tables). The callback follows `realloc` semantics:
 
@@ -299,7 +338,7 @@ Do not call `urbi_lock_heap` in v1.0 use-cases unless you specifically need the 
 
 ---
 
-## 4. Event Flow
+## 5. Event Flow
 
 Events are the primary mechanism for moving data from C drivers (or ISR handlers) into the urbiscript reactive layer. The flow has three stages: register the event, inject from C (possibly from ISR), and consume in urbiscript via `at`.
 
@@ -476,7 +515,7 @@ at (mag?(mx, my, mz))   { fuse_sensors(ax, ay, az, gx, gy, gz, mx, my, mz) };
 
 ---
 
-## 5. Host Function Registration
+## 6. Host Function Registration
 
 `urbi_register` installs a C function as a script-visible global constant. The binding is const — re-registering the same name returns `URBI_ERR_CONST_SLOT_WRITE`.
 
@@ -519,7 +558,7 @@ static int fn_read_temperature(struct UVM *vm,
 
     float temp_c = hardware_read_temperature();
     *out = urbi_make_float(temp_c);
-    return UEXEC_OK;
+    return URBI_CB_OK;
 }
 
 static int fn_set_led(struct UVM *vm,
@@ -535,11 +574,11 @@ static int fn_set_led(struct UVM *vm,
         urbi_set_error(vm, URBI_ERR_INVALID_ARG,
                         "set_led expects a boolean argument",
                         "<set_led>", 0, "fn_set_led");
-        return UEXEC_THROW;
+        return URBI_CB_THROW;
     }
     hardware_set_led(urbi_value_as_bool(args[0]));
     *out = urbi_make_nil();
-    return UEXEC_OK;
+    return URBI_CB_OK;
 }
 
 void register_host_functions(struct UVM *vm, struct URealm *realm)
@@ -600,7 +639,7 @@ static int fn_print_arg(struct UVM *vm,
                          UValue *out)
 {
     (void)self; (void)out;
-    if (nargs < 1) return UEXEC_OK;
+    if (nargs < 1) return URBI_CB_OK;
     UValue v = args[0];
 
     if      (urbi_value_is_int(v))   { printf("%lld\n", (long long)urbi_value_as_int(v)); }
@@ -610,7 +649,7 @@ static int fn_print_arg(struct UVM *vm,
                                         printf("%.*s\n", (int)len, s); }
     else if (urbi_value_is_nil(v))   { printf("nil\n"); }
     else                             { printf("<kind=%d>\n", (int)urbi_value_kind(v)); }
-    return UEXEC_OK;
+    return URBI_CB_OK;
 }
 ```
 
@@ -627,10 +666,10 @@ static int fn_double_it(struct UVM *vm,
     if (nargs < 1 || urbi_aux_value_to_int(args[0], &n) != URBI_OK) {
         urbi_set_error(vm, URBI_ERR_INVALID_ARG, "expects an integer",
                         "<double_it>", 0, "fn_double_it");
-        return UEXEC_THROW;
+        return URBI_CB_THROW;
     }
     *out = urbi_make_int(n * 2);
-    return UEXEC_OK;
+    return URBI_CB_OK;
 }
 ```
 
@@ -644,7 +683,7 @@ Any host function may be called from a script `at` body that fires on the main t
 
 ---
 
-## 6. Tag Management
+## 7. Tag Management
 
 Tags are the cancellation primitive in urbiscript. A tag groups one or more strands; stopping the tag signals all of them to unwind cooperatively.
 
@@ -717,7 +756,7 @@ void expose_tag(struct UVM *vm, struct URealm *realm)
 
 ---
 
-## 7. Reference Management
+## 8. Reference Management
 
 GC-managed objects (closures, events, tags, objects) can be collected once no GC root keeps them alive. A `urbi_ref` pins a UValue as a GC root for the lifetime of the handle.
 
@@ -771,7 +810,7 @@ Use a ref whenever you need to hold a GC-managed object in C between API calls o
 
 ---
 
-## 8. Lifecycle Contracts
+## 9. Lifecycle Contracts
 
 This section documents exactly when script-side watchers and host-side watchers are unbound. Understanding these contracts prevents use-after-free on the C side and ensures cleanup callbacks fire in the expected order.
 
@@ -894,49 +933,9 @@ void check_strand_unwind(struct UVM *vm, struct UStrand *s)
 }
 ```
 
-### Unified error model (v0.10.3)
-
-All public API functions return `int` with a consistent three-zone convention:
-
-| Return value | Meaning |
-|---|---|
-| `URBI_OK` (0) | Success |
-| Negative (`URBI_ERR_*`) | Failure — inspect the error ring |
-| Positive (`UCallbackSignal`) | Callback-side signal — only valid as a return from host-watcher callbacks |
-
-**`UCallbackSignal`** values for watcher/event callbacks:
-
-| Constant | Value | Meaning |
-|---|---|---|
-| `URBI_CB_OK` | 0 | Stay registered, no side-effect |
-| `URBI_CB_UNREGISTER` | 1 | Auto-unregister after this callback returns |
-| `URBI_CB_THROW` | 2 | Raise an urbiscript exception in the calling strand |
-
-The legacy name `URBI_ERR_WATCHER_UNREGISTER` is kept as an alias for `URBI_CB_UNREGISTER` for source compatibility. New code should use `URBI_CB_UNREGISTER`.
-
-**Setter callbacks with `void *ud`:** all five setter functions accept a trailing `void *ud` opaque pointer that is forwarded to every callback invocation:
-
-```c
-/* FRAGMENT — ud forwarding pattern */
-static void my_diag(struct UVM *vm, void *ud, int level, const char *fmt, ...)
-{
-    (void)vm;
-    struct MyContext *ctx = (struct MyContext *)ud;
-    /* use ctx for routing */
-    (void)level; (void)fmt;
-}
-
-void setup_diag(struct UVM *vm, struct MyContext *ctx)
-{
-    urbi_set_diag_fn(vm, my_diag, ctx);
-}
-```
-
-The same pattern applies to `urbi_set_time_us`, `urbi_set_watcher_body_done_fn`, `urbi_set_isr_check_fn`, and `urbi_register_event_drain`. Pass `NULL` when no context is needed.
-
 ---
 
-## 9. Common Patterns
+## 10. Common Patterns
 
 ### Peripheral driver shape
 
@@ -956,9 +955,9 @@ static int fn_set_motor(struct UVM *vm, UValue self,
 {
     URBI_ASSERT_NOT_ISR(vm);
     (void)self; (void)out;
-    if (nargs < 1) return UEXEC_THROW;
+    if (nargs < 1) return URBI_CB_THROW;
     hardware_set_motor((int)urbi_value_as_int(args[0]));
-    return UEXEC_OK;
+    return URBI_CB_OK;
 }
 
 void setup_motor_driver(struct UVM *vm, struct URealm *realm)
@@ -1042,7 +1041,7 @@ void setup_watchdog(struct UVM *vm, struct URealm *realm,
 
 ---
 
-## 10. Anti-Patterns
+## 11. Anti-Patterns
 
 ### Heavy compute in an `at` body
 
@@ -1080,7 +1079,7 @@ Each `UStrand` is bound to the VM and realm that created it. Passing a strand po
 
 ---
 
-## 11. Threading Model
+## 12. Threading Model
 
 urbi-embedded's threading model follows a clear progression from today's single-VM design toward future multi-VM and reactive-messaging architectures. The commitment below is stable: design decisions today do not foreclose the v1.x or v2.0+ paths.
 
@@ -1118,7 +1117,7 @@ the simpler shape is shipped: every UProto looks the same.
 
 ---
 
-## 12. REPL Service
+## 13. REPL Service
 
 Build with `URBI_ENABLE_REPL=1`. Adds `<urbi/repl.h>`, the `src/repl/` subsystem (NDJSON codec, MPSC eval queue, per-session output ringbuf, dispatcher, pluggable transports), and the `urbi-server` / `urbi-send` host binaries.
 
