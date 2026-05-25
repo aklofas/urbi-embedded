@@ -105,7 +105,7 @@ static int hex_digit_unchecked(char c) {
 }
 
 /* parse_string_literal — consume a TOK_STRING (possibly followed by adjacent
- * TOK_STRING tokens per REVIVAL §14.1 L3 concat) and produce AST_STR.
+ * TOK_STRING tokens per the L3 adjacent-string-concat rule) and produce AST_STR.
  *
  * Resolves Wave-1 escape sequences (\n / \t / \\ / \") and the v0.6.1
  * Wave-2 \uXXXX / \u{HHHHHH} Unicode escapes into raw bytes (UTF-8 for
@@ -214,7 +214,7 @@ static UAstNode *parse_string_literal(UParser *p) {
             }
         }
 
-        /* Peek for adjacent TOK_STRING (REVIVAL §14.1 L3 concat).  If found,
+        /* Peek for adjacent TOK_STRING (L3 adjacent-string-concat).  If found,
          * consume it and grow the buffer to fit. */
         UToken nxt = peek(p);
         if (nxt.type != TOK_STRING) break;
@@ -271,7 +271,7 @@ UAstNode *parse_prefix(UParser *p) {
  * PARSE-032 closure (doc-only): time-literal suffixes (`100ms`, `1s`, `1d`)
  * + angle suffixes (`180deg`, `2pi`, `200grad`) are absorbed at the lexer
  * (`src/lex/ulex.c` rolls suffix into TOK_INT.u.i — microseconds for time,
- * milli-radians or fixed-point for angle, per REVIVAL §3.2).  parse_atom
+ * milli-radians or fixed-point for angle).  parse_atom
  * intentionally only handles the bare TOK_INT here — the audit was filed
  * because the parser surface looked incomplete; the apparent gap is the
  * lex-side absorption.  When v1.x adds suffix overloading for non-int
@@ -332,9 +332,7 @@ UAstNode *parse_atom(UParser *p) {
     case TOK_KW_CLOSURE:
         consume(p);
         return make_error(p, PARSE_CLOSURE_KEYWORD,
-                          "the 'closure' keyword is retired at v1.0; use 'function' instead. "
-                          "MIGRATION TRAP: 'closure' bound 'this' lexically; 'function' binds at call site. "
-                          "See REVIVAL §14 L14 for 'lobby.receive' rebind pattern",
+                          kErrorMessages[PARSE_CLOSURE_KEYWORD],
                           t.line, t.col);
     case TOK_EOF:
         return make_error(p, PARSE_UNEXPECTED_EOF,

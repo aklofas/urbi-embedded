@@ -127,8 +127,7 @@ UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t type_tag);
  * Step budget: incremental work is bounded so that any single
  * urbi_gc_slice() call returns within ~1ms on the host CI runner.
  * Verified by `make test-gc-pause` CI gate.  See M3 retrospective at
- * docs/milestones/m3-concurrency.md (workspace-root) for the
- * end-to-end pause-time history.
+ * docs/milestones/m3-concurrency.md for the end-to-end pause-time history.
  *
  * ISR note: NOT ISR-safe — allocates/frees memory and modifies VM state. */
 void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);

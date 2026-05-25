@@ -572,8 +572,8 @@ list_diff(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  * Mutable, string-keyed open-address hash table.  Methods: new, length,
  * isEmpty, get(key), set(key, value), has(key), remove(key).
  *
- * Iteration order is unspecified at v1.0 (REVIVAL §14 — Dict iteration
- * order joins Lua/Ruby<1.9 in declining the insertion-order guarantee).
+ * Iteration order is unspecified at v1.0 (Dict iteration order joins
+ * Lua/Ruby<1.9 in declining the insertion-order guarantee).
  *
  * Hash: FNV-1a over string bytes.  Capacity grows by doubling when load
  * factor crosses 0.5. */

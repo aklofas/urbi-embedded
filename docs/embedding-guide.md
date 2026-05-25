@@ -215,7 +215,7 @@ loop drains it.
 ### See also
 
 - `docs/internals/loader-strand.md` — full mechanics.
-- REVIVAL.md §14 S-loader-strand — language-level commitment.
+- `docs/internals/loader-strand.md` — persistent loader strand internals and language-level commitment.
 
 ---
 

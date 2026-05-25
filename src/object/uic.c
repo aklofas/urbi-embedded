@@ -1,10 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uic.c — IC slow-path helpers (urbi_slot_get_slow / urbi_slot_set_slow).
  *
- * Spec references:
- *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-getslot-setslot-encoding-design.md §6.3
- *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-uslot-uprops-collapse-design.md §4.2, §5.1
- *   docs/superpowers/specs/2026-04-24-urbi-pre-m2-object-model-design.md §6.1, §8.1
+ * Design references: pre-M4 getslot/setslot encoding §6.3; pre-M4 uslot/uprops
+ * collapse §4.2/§5.1; pre-M2 object-model §6.1/§8.1.
  *
  * Two entry points called from the OP_GETSLOT / OP_SETSLOT dispatch arms
  * when the inline-cache fast path misses (no shape+topology match).  Both

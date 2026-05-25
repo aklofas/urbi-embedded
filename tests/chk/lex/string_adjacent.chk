@@ -1,5 +1,5 @@
 # Milestone: M6
-# Covers: REVIVAL §14.1 row L3 — adjacent string literals concatenate at
+# Covers: adjacent string literals concatenate at
 #         parse time.  "a" "b" produces the same interned UVAL_STR
 #         pointer as "ab" so equality (pointer-compare) is true.
 

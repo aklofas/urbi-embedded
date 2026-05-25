@@ -13,7 +13,7 @@
  *
  * All barriers are no-op static inlines.  All allocator ops are declared as
  * no-op stubs; linking against a real URBI_GC_NONE library is deferred to v2.
- * See docs/superpowers/specs/ Row 10 §2.1 for the freeze strategy.
+ * The GC-NONE tier freeze strategy is documented in the GC design (Row 10 §2.1).
  */
 
 #ifndef UGC_NONE_H

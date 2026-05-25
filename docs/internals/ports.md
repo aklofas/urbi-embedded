@@ -19,8 +19,8 @@ development target. Ports below cover bare-metal + RTOS silicon.
 - **Toolchain:** ESP-IDF v6.0.1 (`xtensa-esp32s3-elf-gcc`); hosted
   newlib (do NOT pass `-ffreestanding` to the `urbi` component;
   `urbi_aux` separately).
-- **Footprint:** ~120 KB liburbi.a text (revised cap from 105 KB during
-  bring-up; see REVIVAL §S32/§S33). PSRAM available on the EYE variant.
+- **Footprint:** ~120 KB liburbi.a text (cap revised from 105 KB during
+  bring-up). PSRAM available on the EYE variant.
 - **Numeric:** URBI_FLOAT_TYPE=4 (single precision); the Xtensa LX7
   has hardware single-precision FPU.
 - **REPL transports:** UART0 console + USB CDC (via TinyUSB ESP-IDF
@@ -72,10 +72,9 @@ development target. Ports below cover bare-metal + RTOS silicon.
 
 ## Raspberry Pi Pico (RP2040, Cortex-M0+)
 
-- **Status:** Designed at `v0.9.4-pico-example` (2026-05-20). Hardware
-  bring-up pending Phase 8 of the workspace-root
-  `docs/superpowers/plans/2026-05-19-v0.9.4-pico-example.md`
-  execution plan (workspace-root tree, not tracked in this repo).
+- **Status:** Shipped at `v0.9.4-pico-example` (2026-05-24). Hardware
+  bring-up on real RP2040 silicon completed; see CHANGELOG entry and
+  `docs/milestones/v0.9.4-pico-example.md` retrospective.
 - **Toolchain:** `arm-none-eabi-gcc` 12+; ARMv6-M Thumb-2 subset
   (`-mcpu=cortex-m0plus`); soft-float + soft-double + soft-divide via
   ARM EABI libgcc helpers (`__aeabi_dadd`, `__aeabi_ddiv`, `__aeabi_f2d`,
@@ -101,7 +100,7 @@ development target. Ports below cover bare-metal + RTOS silicon.
   bring-up. Calibration commands:
   `arm-none-eabi-size build/arm-cortex-m0plus/liburbi.a` (full) and
   `arm-none-eabi-size build/cross-pico-bytecode-only/liburbi.a` (BO).
-  Caps documented in REVIVAL.md §14 row S43.
+  Caps documented in CHANGELOG entry `v0.9.4-pico-example` footprint table.
 - **Numeric:** URBI_FLOAT_TYPE=4 (single precision); the M0+ has no
   FPU so all float arithmetic goes through libgcc soft-float helpers.
 - **REPL transports:** USB CDC (primary, via TinyUSB) on the native

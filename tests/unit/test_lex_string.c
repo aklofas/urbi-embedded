@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* test_lex_string.c — LEX-035 / Phase 1: string-literal lex.
  *
- * Per REVIVAL §14.1 row L3 (preserve adjacent-string concat) + spec
+ * Adjacent-string concat is preserved (L3) + spec
  * Phase 1: "foo" lexes to TOK_STRING with start/len pointing into the
  * source buffer (lifetime aliased to the source span — see UToken docs
  * at src/lex/ulex.h).  Escape resolution happens at parse time so the

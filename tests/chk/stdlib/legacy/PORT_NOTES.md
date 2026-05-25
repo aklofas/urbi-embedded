@@ -45,7 +45,7 @@ v0.6.1 does ship, drop everything else."
 | `date_legacy.chk` | `tests/2.x/date.chk` | Date.fromSeconds/.seconds()/.asString(); legacy `Date.epoch - Date.epoch + N` arithmetic seam not implemented (Date.epoch absent at v1.0) |
 | `system_legacy.chk` | `tests/2.x/system/platform.chk`, `system/hostname.chk` | System.Platform.kind in {`linux`,`darwin`,`windows`,`freertos`,`unknown`}; hostname blocked (Process subsystem absent) |
 | `large_string_legacy.chk` | `tests/2.x/large-string.chk` | 4097-byte string lex via adjacent-literal concat, exercises UQueue 4 KiB grow path; `for (var i = 0; i < 12; i++)` doubling loop blocked |
-| `maths_errors_legacy.chk` | `tests/2.x/maths-errors.chk` (very reduced) | Lookup-failure for missing `Math.sqrt`/`log`/`sqr`; the `1/0` legacy diagnostic returns `inf` at v1.0 (IEEE-754 semantics — REVIVAL §14.x divergence, not a bug) |
+| `maths_errors_legacy.chk` | `tests/2.x/maths-errors.chk` (very reduced) | Lookup-failure for missing `Math.sqrt`/`log`/`sqr`; the `1/0` legacy diagnostic returns `inf` at v1.0 (IEEE-754 semantics — intentional v1.0 divergence, not a bug) |
 
 ## What deferred to v1.x (full-fixture port backlog)
 

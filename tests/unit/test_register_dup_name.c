@@ -60,7 +60,7 @@ static int fn_returns_2(struct UVM *vm, UValue self,
  * Any user-registered name lands at slot >= 15, beyond the 8-slot packed-
  * nibble CONSTANT enforcement range.  urbi_realm_set_global_const finds the
  * slot is not marked CONSTANT and succeeds.  This is the documented v1.0
- * behaviour (see REVIVAL.md §14 S-globals-cap-8).
+ * behaviour (see design-risks entry S-globals-cap-8).
  * ========================================================================= */
 
 UTEST(dup_name_second_call_succeeds)

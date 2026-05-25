@@ -5,8 +5,7 @@ UModule thin loader shell, the `UProto` recursive-children layout, module-grain
 lifetime via refcount fusion, the v1.7 wire format, strand binding, and the
 vm_destroy lifetime ordering invariant.
 
-For full design rationale, see spec §§2–4 of
-`docs/superpowers/specs/2026-05-17-v0.8.1-uproto-root-design.md`.
+For full design rationale, see the v0.8.1 uproto-root design spec §§2–4.
 The predecessor model (v0.8.0 persistent loader strand + dual refcount) is
 documented in [loader-strand.md](loader-strand.md).
 
@@ -307,8 +306,8 @@ explaining the ordering requirement.  Both sweeps are O(N).
 
 ## 7. References
 
-- **Spec:** `docs/superpowers/specs/2026-05-17-v0.8.1-uproto-root-design.md`
-  §§2–4 — architecture, refcount fusion, wire format, risk register.
+- **Spec:** v0.8.1 uproto-root design §§2–4 — architecture, refcount
+  fusion, wire format, risk register.
 - **Predecessor model:** [loader-strand.md](loader-strand.md) — v0.8.0
   persistent loader strand + UModule.refcount (now fused with root_proto).
 - **Realm context:** [realm-and-chunks.md](realm-and-chunks.md) — per-realm

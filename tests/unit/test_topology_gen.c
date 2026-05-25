@@ -1,8 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests for the M4 topology_gen wiring contract.
  *
- * Spec references:
- *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-topology-generation-design.md §4.1, §4.2
+ * Design references: pre-M4 topology-generation design §4.1/§4.2.
  *
  * §4.1 enumerates the 12 surfaces that MUST bump vm->topology_gen so cached
  * IC entries observe the change.  §4.2 enumerates surfaces that MUST NOT

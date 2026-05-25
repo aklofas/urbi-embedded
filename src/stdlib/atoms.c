@@ -217,9 +217,8 @@ int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === Integer bitops (T40) =================================================
  *
- * Per REVIVAL §14 S14, bitwise are NAMED methods (no symbolic-operator
- * lex tokens reserve `&` / `|` for bitwise — `&` is the parallel-join
- * concurrency separator).  Shift amount out of [0, 64) returns 0 (well-
+ * Bitwise ops are NAMED methods (no symbolic-operator lex tokens reserve
+ * `&` / `|` for bitwise — `&` is the parallel-join concurrency separator).  Shift amount out of [0, 64) returns 0 (well-
  * defined; avoids signed shift UB on x86 + cross-arm-cortex-m). */
 
 #define DEF_INT_BINOP(name, op)                                              \

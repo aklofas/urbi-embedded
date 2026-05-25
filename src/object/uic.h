@@ -1,8 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uic.h — UIC inline-cache record + URBI_IC_ENTRIES_PER_SITE tunable.
  *
- * Spec references:
- *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-getslot-setslot-encoding-design.md §4.1, §4.3
+ * Design references: pre-M4 getslot/setslot encoding §4.1/§4.3.
  *
  * One UIC is reserved per GETSLOT/SETSLOT bytecode site (allocated alongside
  * the function's IC table per pre-M4 §4.1).  Each entry caches a (recv_shape,
@@ -95,7 +94,7 @@ int urbi_slot_set_slow(struct UVM *vm, UObject *recv, UIC *ic,
  *
  * Closes OBJ-033 (defer:M6 / smell): the helper was historically file-
  * private to uic.c but is anticipated to be shared with megamorphic-
- * bail call sites (REVIVAL §8.5.1 / IC invalidation upgrade path).
+ * bail call sites (IC invalidation upgrade path, filed in design-risks).
  * Hoisting the declaration costs nothing today (no external callers
  * yet) and avoids a follow-up edit when those callers land.
  *

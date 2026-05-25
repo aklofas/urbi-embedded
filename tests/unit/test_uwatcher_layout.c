@@ -6,7 +6,7 @@
  *   - pending_refire_count / max_refire_queue uint8_t fields are present
  *     and addressable (formerly a single URBI_WATCHER_PENDING_REFIRE flag
  *     bit; widened in v0.7.x to a bounded counter to fix the per-drain
- *     event-loss cap — see docs/superpowers/specs/.../m5-reactive.md §3.2).
+ *     event-loss cap per the M5 reactive-runtime design §3.2).
  *   - sizeof(UWatcher) >= 216 at the default preset (READSET_MAX=16). */
 
 #include "utest.h"

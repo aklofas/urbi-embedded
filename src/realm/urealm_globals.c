@@ -301,8 +301,7 @@ realm_install_const(UVM *vm, URealm *realm, USymbol *sym, UValue value,
      * set_local_slot above (its value is reachable by name); only the
      * CONSTANT bit is dropped on the floor.  Public-API callers that
      * need true CONSTANT enforcement past slot 7 must wait for M6 — the
-     * v1.0 limitation is documented at REVIVAL.md §14 row S-globals-
-     * cap-8 / docs/urbi-embedded-design-risks.md. */
+     * v1.0 limitation is tracked in the design-risks register (S-globals-cap-8). */
     int32_t idx = urbi_shape_find_slot(realm->global_object->shape, sym);
     if (idx >= 0 && idx < 8) {
         rc = urbi_object_install_property(vm, realm->global_object, sym,

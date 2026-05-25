@@ -4,8 +4,8 @@ Upstream vendor SDKs that urbi-embedded's port layer consumes, pinned
 to specific tags + commit SHAs so a fresh clone reproduces the exact
 silicon-side toolchain in CI and in published examples. None of these
 SDKs are vendored into the urbi-embedded repository; they live as peer
-checkouts under the workspace-root `tools/` directory and are picked
-up by per-target Makefiles + CMake glue.
+checkouts alongside the repository and are picked up by per-target
+Makefiles + CMake glue.
 
 For per-target build recipes (`cross-arm`, `cross-pico`, `cross-esp32s3`,
 ...), see [internals/build-system.md](../internals/build-system.md).

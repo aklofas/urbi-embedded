@@ -1,7 +1,7 @@
 # Milestone: M6 Wave 2
 # Covers: Phase 5 Integer bitwise methods.
 #
-# Per REVIVAL §14 S14, bitwise ops are NAMED methods (not symbolic
+# Bitwise ops are NAMED methods (not symbolic
 # operators).  The v1.0 lex has no `&`-as-bitwise / `|`-as-bitwise
 # tokens (TOK_AMP is the parallel-join concurrency separator).
 #

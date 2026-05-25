@@ -59,7 +59,7 @@ uint8_t emit_float_arm(UEmitter *e, const UAstNode *n) {
  * places in register R0 of the callee's frame.  Emits OP_MOVE dst, R0.
  *
  * Top-level `this` (fs->parent == NULL) is a v1.x feature (lobby alias);
- * raise EMIT_NO_THIS_OUTSIDE_METHOD for now (REVIVAL §14 S29). */
+ * raise EMIT_NO_THIS_OUTSIDE_METHOD for now. */
 
 uint8_t emit_this_arm(UEmitter *e, const UAstNode *n) {
     const UFuncState *fs = e->current_fs;

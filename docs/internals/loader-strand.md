@@ -284,7 +284,7 @@ The v0.8.0 persistent loader strand is a structural improvement but not the
 canonical end-state.  The next step in the trajectory is the **UModule layout
 refactor**, described in:
 
-> `docs/superpowers/specs/2026-05-16-persistent-loader-strand-design.md` §11
+> the v0.8.0 persistent-loader-strand design spec §11
 
 Summary of that refactor:
 
@@ -307,11 +307,10 @@ as the M8 REPL milestone milestone work.
 
 ## 9. References
 
-- **Spec:** `docs/superpowers/specs/2026-05-16-persistent-loader-strand-design.md`
-  — full design with state-machine diagrams, refcount policy, and the §11 forward
-  path.
-- **REVIVAL.md §14 S-loader-strand** — compatibility-decisions ledger entry,
-  language-level commitment, and §14.9 cross-reference.
+- **Spec:** v0.8.0 persistent-loader-strand design — full design with
+  state-machine diagrams, refcount policy, and the §11 forward path.
+- **S-loader-strand** — compatibility-decisions ledger entry for the
+  language-level commitment to persistent loader semantics.
 - **v0.7.3 UProto refcount precedent** — CHANGELOG entry `v0.7.3-bugfixes`
   "Changed" section; design-risks entry "WATCH-015 cascade-wake".
 - **CHSTR-051** — commit `9e2c725`, `tests/chk/exceptions/throw_in_finally.chk`.

@@ -10,8 +10,7 @@
   freestanding signature golden gate
   `test-cross-pico-freestanding-golden`, and GHA job `cross-pico`.
   `releasetest` auto-detects cross-pico when `arm-none-eabi-gcc`
-  probe-compile passes. Hardware validation pending Phase 8 of
-  `docs/superpowers/plans/2026-05-19-v0.9.4-pico-example.md`.
+  probe-compile passes. Hardware validation completed 2026-05-24.
 - **USB CDC REPL transport** for Pi Pico
   (`src/repl/urepl_transport_usb_cdc_pico.c`,
   `UREPL_USB_CDC_PICO_TRANSPORT`). TinyUSB CDC, single-host,
@@ -114,8 +113,7 @@ Caps locked at full **130 KB** / bytecode-only **95 KB** — 10 KB
 above M4F/M7 to absorb the M0+ libgcc-helper floor (no FPU, no
 integer divide, no LDREX/STREX, so every float op, every `/`/`%`,
 and every atomic resolves through `__aeabi_*` / `__atomic_*`
-helpers). Per S35 cap-revision policy; documented in REVIVAL.md
-§14 row S43.
+helpers). Per S35 cap-revision policy (S43).
 
 ### Why
 
@@ -136,8 +134,7 @@ retrospective.
 ### Hardware bring-up — what shipped vs deferred
 
 Hardware bring-up on a real Raspberry Pi Pico completed 2026-05-24.
-Two findings were filed as v1.x deferrals (see workspace-root
-`docs/urbi-embedded-design-risks.md`) and the demo was adapted to
+Two findings were filed as v1.x deferrals (see design-risks register) and the demo was adapted to
 ship within the constraints:
 
 **Working end-to-end on real silicon:**
@@ -231,7 +228,7 @@ No ABI / wire / corpus changes. ABI stays `0/13/0`, wire stays `v1.8`.
 
 ### Changed
 
-- **Type model.** `UModule` struct removed entirely. `UProto` absorbs the root-only metadata fields (`source_name`, `origin_vm`, `next_proto_serial`, `total_proto_count`, `next_in_realm`, `owning_realm`, `heap_allocated`). Every chunk submitted to the runtime is now a `UProto*` (root proto). Closes REVIVAL §11 canonical trajectory step N+3.
+- **Type model.** `UModule` struct removed entirely. `UProto` absorbs the root-only metadata fields (`source_name`, `origin_vm`, `next_proto_serial`, `total_proto_count`, `next_in_realm`, `owning_realm`, `heap_allocated`). Every chunk submitted to the runtime is now a `UProto*` (root proto). Closes canonical trajectory step N+3.
 - **Public API.** 7 functions renamed: `urbi_load_module` → `urbi_load_chunk`, `urbi_module_from_bytes` → `urbi_chunk_from_bytes`, `urbi_module_free` → `urbi_chunk_free`, `urbi_module_instance_{create,destroy}` → `urbi_chunk_instance_{create,destroy}`, `urbi_get_or_create_module_instance` → `urbi_get_or_create_chunk_instance`, `urbi_load_translate_load_err` → `urbi_chunk_translate_load_err`. Argument types: any `UModule*` parameter is now `UProto*`. Six functions keep their names (`urbi_run_chunk`, `urbi_run_script`, `urbi_unload`) but change argument type.
 - **Wire format v1.7 → v1.8.** Semantic bump only — byte layout unchanged (Task 4.1's cliff preserved v1.7 byte ordering; the spec §4.1 description of a separate UModule-header section was imprecise). v1.7 bytecode rejected with `UCHUNK_LOAD_UNSUPPORTED_VERSION`. Re-emit from source to migrate.
 - **ABI 0/12/0 → 0/13/0** (9th use of pre-v1.0 escape clause).
@@ -242,7 +239,7 @@ No ABI / wire / corpus changes. ABI stays `0/13/0`, wire stays `v1.8`.
 - `UModuleInstance` → `UChunkInstance`.
 - `UModuleAllocFn` → `UChunkAllocFn` (note: spec originally proposed `UAllocFn` but that name was already taken by `src/value/uarena.h`).
 - `UModuleLoadError` → `UChunkLoadError`; enum values `ULOAD_*` → `UCHUNK_LOAD_*`.
-- `umodule_*` functions → `uproto_*` / `uchunk_*` per `docs/superpowers/specs/2026-05-19-v0.9.2-uproto-only-design.md` §5.3.
+- `umodule_*` functions → `uproto_*` / `uchunk_*` (per uproto-only design §5.3).
 - `src/module/` → `src/chunk/`. `umodule.h` split into `uproto.h` (type + per-proto ops) + `uchunk.h` (loader/IO API). Strand-driver files renamed `uchunk_strand.{c,h}` to disambiguate.
 - `urbi-embedded/docs/internals/realm-and-modules.md` → `realm-and-chunks.md`.
 
@@ -1051,8 +1048,8 @@ exercised them.
 
 ### Spec / plan
 
-- Spec: `docs/superpowers/specs/2026-05-17-v0.8.2-stm32f4-mandelbrot-design.md`
-- Plan: `docs/superpowers/plans/2026-05-17-v0.8.2-stm32f4-mandelbrot.md`
+- Spec: v0.8.2 STM32F4 Mandelbrot design
+- Plan: v0.8.2 STM32F4 Mandelbrot execution plan
 - Retrospective: `docs/milestones/v0.8.2-stm32f4-mandelbrot.md`
 
 ### Wire format / ABI
@@ -1203,8 +1200,8 @@ realm-owned `loaded_protos[]` registry.
 
 ### Spec / plan
 
-- Spec: `docs/superpowers/specs/2026-05-17-v0.8.1-uproto-root-design.md`
-- Plan: `docs/superpowers/plans/2026-05-17-v0.8.1-uproto-root.md`
+- Spec: v0.8.1 uproto-root design
+- Plan: v0.8.1 uproto-root execution plan
 
 ---
 
@@ -1290,8 +1287,7 @@ runnable.
   UModule shrinks to thin loader shell.  Pre-M8 prerequisite work;
   tracked in the v0.8.0-loader-strand spec §11 "Forward path."
 - **Realm-owned `loaded_protos[]` registry.**  Multi-chunk, REPL eval,
-  disconnect-cleanup at the realm level per REVIVAL §11.  M8 REPL
-  milestone.
+  disconnect-cleanup at the realm level.  M8 REPL milestone.
 - **`vm->last_loader_strand` introspection seam.**  Forward-compat for
   multi-chunk callers to interrogate loader state.  Reserved for the
   next step; no caller demand today.
@@ -1331,8 +1327,8 @@ runnable.
 
 ### Spec / plan
 
-- Spec: `docs/superpowers/specs/2026-05-16-closure-lifetime-fix-design.md`
-- Plan: `docs/superpowers/plans/2026-05-16-closure-lifetime-fix.md` (executed through T7 + T9 + T28; T8 deferred per investigation; T10-T27 + T29-T33 deferred to a future release)
+- Spec: v0.7.3 closure-lifetime fix design
+- Plan: v0.7.3 closure-lifetime fix execution plan (executed through T7 + T9 + T28; T8 deferred per investigation; T10-T27 + T29-T33 deferred to a future release)
 
 ---
 
@@ -1541,7 +1537,7 @@ All strict-tooling gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
 | Public headers | 5 | 7 (added `<urbi/version.h>`, `<urbi/aux.h>`) | +2 |
 | Build archives | `liburbi.a` | `liburbi.a` + `liburbi_aux.a` | +1 (separate aux archive) |
 | New CI gates | — | `test-freestanding`, `test-gc-roots-coverage`, `cross-arm-bytecode-only`, `cross-riscv-bytecode-only` | +4 |
-| REVIVAL §14 entries | through S32 | + S33 (ABI versioning), S34 (URBI_BYTECODE_ONLY strip), S35 (per-target cap revision schema) | +3 |
+| Compatibility-ledger entries | through S32 | + S33 (ABI versioning), S34 (URBI_BYTECODE_ONLY strip), S35 (per-target cap revision schema) | +3 |
 
 All four hard-fail strict-tooling gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan-build 0 / docstring-coverage 0 missing. Cross-arm + cross-riscv green. ASan / UBSan / GC-stress / GC-none / 3-preset × 100-run determinism / bake-determinism (3-run byte-identity) all green. Coverage 85-87%. **Full valgrind run deferred to follow-up** — Phase 2 valgrind under the +18-case corpus took >19 min wall-clock (vs v0.6.2 baseline ~10 min); killed in the interest of shipping. T23's 4 failing-allocator OOM cases (each calling `urbi_vm_init` ~30 times to bisect OOM call-indices) are the likely cause. ASan + UBSan + scan-build covered most of the same heap/leak/UB ground in Phase 1. **TODO follow-up:** `make test-valgrind` separately on `main` post-merge; if the OOM-bisect cases are the bottleneck, rework them to use a deterministic fail-at index per case instead of looping.
 
@@ -1592,13 +1588,13 @@ All four hard-fail strict-tooling gates green at ship: cppcheck-strict 0 / tidy-
 | Unit cases | 1429 | ~1500 | +~70 |
 | `.chk` fixtures | 215 | 236 | +21 |
 | Footprint host | 193 994 B | 207 362 B | +13 368 B (+6.9 %), 51.8 % of 400 KB cap |
-| Footprint arm | 94 191 B | 100 300 B | +6 109 B (+6.5 %), **over 100 KB nominal cap by 300 B; v1.0 cap revised to 105 KB (REVIVAL §S32)** |
+| Footprint arm | 94 191 B | 100 300 B | +6 109 B (+6.5 %), **over 100 KB nominal cap by 300 B; v1.0 cap revised to 105 KB (cap-revision S32)** |
 | Footprint riscv | 118 460 B | 126 460 B | +8 000 B (+6.8 %), 97.3 % of 130 KB cap |
 | Wire format | v1.5 (0x15) | **v1.6 (0x16)** | bumped: new opcode `OP_LOAD_RECV=46` + UCallFrame.recv field |
 | Bytecode blob (`urbi_stdlib_bytecode`) | 1071 B | 4205 B | +3134 B (3.9×) |
 | Public C API surface | (no change) | (no change) | (M7 will formalise) |
 | New stdlib overlays | 2 (mixins, exception_subclasses) | 7 (+singleton, number, list, dict, string) | +5 |
-| REVIVAL §14 entries | through S28 | through S32 | +4 (S29-S32) |
+| Compatibility-ledger entries | through S28 | through S32 | +4 (S29-S32) |
 | Wave commits | — | 45 | (on `topic/v0.6.2-language-completion`) |
 
 ### Process notes
@@ -1630,7 +1626,7 @@ All four hard-fail strict-tooling gates green at ship: cppcheck-strict 0 / tidy-
 - **Value (Phase 4):** `ustr_op_name(vm, op)` helper interning operator slot names (`"+"`, `"-"`, `"*"`, `"/"`, `"=="`, `"!="`, `"<"`, `"<="`).
 - **Build (Phase 0):** `make oracle-diff` target + `tests/scripts/oracle-diff.sh` harness (urbiforge oracle parity check; advisory only, NOT in releasetest).
 - **Tests (Phases 1-6):** ~70 new unit cases, 21 new `.chk` fixtures, 4 legacy-corpus subset ports.
-- **Docs:** Plan-precondition evidence file; Phase 5 audit doc; REVIVAL §14 S29-S32 + §14.9 cross-references; this CHANGELOG; m6-wave3-language-completion retrospective.
+- **Docs:** Plan-precondition evidence file; Phase 5 audit doc; compatibility-ledger entries S29-S32; this CHANGELOG; m6-wave3-language-completion retrospective.
 
 ### Wire format / bytecode
 
@@ -1642,7 +1638,7 @@ All four hard-fail strict-tooling gates green at ship: cppcheck-strict 0 / tidy-
 ### Footprint
 
 - host: 207 362 B / 400 000 B cap = 51.8 % (vs v0.6.1 49 % — +6.9 %).
-- arm-cortex-m7: **100 300 B / 105 000 B revised cap = 95.5 %** (vs v0.6.1 94 % of original 100 KB cap — +6.5 %). Cap revised from 100 KB to 105 KB at v1.0 per REVIVAL §S32; M7 will revisit per-target caps under actual STM32H7 / ESP32-S3 flash constraints.
+- arm-cortex-m7: **100 300 B / 105 000 B revised cap = 95.5 %** (vs v0.6.1 94 % of original 100 KB cap — +6.5 %). Cap revised from 100 KB to 105 KB at v1.0 (cap-revision S32); M7 will revisit per-target caps under actual STM32H7 / ESP32-S3 flash constraints.
 - riscv-rv32imc: 126 460 B / 130 000 B cap = 97.3 % (vs v0.6.1 91 % — +6.8 %).
 
 ### Strict-tooling state
@@ -1832,7 +1828,7 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
   variables + suppression table updated to new line numbers; `uvm.c`
   `bugprone-branch-clone` fix (merged redundant else to else-only); `uvm_init.c`
   explicit `(void *)` cast for multilevel-pointer-to-void conversion.
-- **Markdown:** `docs/superpowers/plans/2026-05-10-v0.6.2-phase5-audit.md` — 8
+- **Markdown:** v0.6.2 Phase 5 audit doc — 8
   MD031/MD040/MD026 lint errors fixed (blank lines around fences, language tags,
   removed trailing punctuation in heading).
 - **Test corpus:** 1483 unit / 8232 checks; **236 .chk fixtures** (was 215 at
@@ -1862,12 +1858,10 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
   resulting archive still exports `urbi_stdlib_boot` /
   `urbi_vm_init` / `urbi_vm_destroy` / `urbi_lock_heap`.  Wired
   into `make releasetest` Phase 1 via `test-bytecode-only`.
-- (Phase 13) **REVIVAL §14 compatibility-ledger entries** (workspace
-  root, not committed): S25 (byte-counted `String.length`),
-  S26 (Date / Duration v1.0 surface — no timezones, no leap
-  seconds), S27 (namespace bouncing bind-time vs lookup-time —
-  defer to v1.x), S28 (Dict insertion-order iteration).  §14.9
-  cross-references updated for each.
+- (Phase 13) **Compatibility-ledger entries**: S25 (byte-counted
+  `String.length`), S26 (Date / Duration v1.0 surface — no timezones,
+  no leap seconds), S27 (namespace bouncing bind-time vs lookup-time —
+  defer to v1.x), S28 (Dict insertion-order iteration).
 - (Phase 1) **String-literal Unicode escapes.** `\uXXXX` (4-hex BMP)
   and `\u{HHHHHH}` (1-6 hex full-plane up to U+10FFFF) escape forms
   added at the lexer, materialized as UTF-8 bytes in `UVAL_STR` via
@@ -1877,8 +1871,7 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
   / `LEX_UNICODE_ESCAPE_TOO_SHORT` lex errors.  Multi-byte UTF-8 in
   source files continues to flow through the existing byte-passthrough
   lex path lex-clean.  Runtime `String.length` / `String.size` stay
-  byte counts (code-point-counted variant deferred to v1.x per
-  REVIVAL §14).
+  byte counts (code-point-counted variant deferred to v1.x).
 - (Phase 2) **T41 `get` / `set` parse sugar.** `get x() { body }` and
   `set y(v) { body }` desugar at emit time to
   `recv.setProperty("x", "oget"|"oset", function() body)`.  Parse-only
@@ -1922,8 +1915,8 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
     `'!'` slot).
   - `Integer.asString` / `asFloat` / `asBoolean` / `asInteger`;
     `bitand` / `bitor` / `bitxor` / `bitnot` / `shl` / `shr`.
-    Bitwise are NAMED methods per REVIVAL §14 S14 (no symbolic-op
-    lex tokens — `&` is the parallel-join concurrency separator).
+    Bitwise are NAMED methods (no symbolic-op lex tokens —
+    `&` is the parallel-join concurrency separator).
   - `Float.sqrt` / `sin` / `cos` / `tan` / `asin` / `acos` / `atan` /
     `atan2` / `log` / `log10` / `exp` / `pow` / `floor` / `ceil` /
     `abs` / `round`; `isNaN` / `isInfinite`; `asString` /
@@ -1963,7 +1956,7 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
   - `Dict` (mutable string-keyed open-address linear-probe hash table
     with FNV-1a hashing; methods: `new`, `length`, `isEmpty`,
     `set(key, value)`, `get(key)`, `has(key)`, `remove(key)`).
-    Iteration order is unspecified at v1.0 (REVIVAL §14 — joins
+    Iteration order is unspecified at v1.0 (joins
     Lua / Ruby<1.9 / CPython pre-3.7).  Keys must be String at v1.0;
     non-String keys raise TypeError.
 
@@ -2057,8 +2050,8 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
   - `Global.length`: reflective slot count of the active realm's
     `global_object`.  Stub for v1.x reflection (`Global.names()`
     etc.).
-  - `CallMessage`: stub proto with a `kind` marker slot, reserved per
-    REVIVAL §14 L14 for v1.x legacy-`fallback()` reflection.
+  - `CallMessage`: stub proto with a `kind` marker slot, reserved for
+    v1.x legacy-`fallback()` reflection.
 - (Phase 8) **VM fields + GC roots.** `UVM` grows five proto-singleton
   pointers (`math_proto`, `system_proto`, `platform_proto`,
   `global_namespace_proto`, `callmessage_proto`).  Allocated by
@@ -2353,8 +2346,8 @@ cleanup IDs.
   remain on the v1.x literal-suffix backlog.
 - (Phase 6) **Class declarations.** `class Foo : public A, B { body }`
   parse + emit. Surface compiles to a clone-Object idiom + multi-proto
-  insertFront in declaration order (left-most proto wins MRO; matches
-  REVIVAL §3.2 MRO ledger). Body forms desugar inside the class
+  insertFront in declaration order (left-most proto wins MRO). Body forms
+  desugar inside the class
   scope. Nested-class shadow scoping (S-class-name-scope): a
   declaration-local class binding shadows an outer same-name binding
   for the duration of the enclosing scope. New keywords `class` and
@@ -2406,8 +2399,7 @@ cleanup IDs.
   `UVAL_NIL` value singleton). New enum members
   `URBI_ATOM_BOOLEAN` / `URBI_ATOM_NIL` / `URBI_ATOM_VOID`. C-native
   method registration extended for atom protos. **Compatibility
-  rename:** `Bool` → `Boolean` (matches REVIVAL §14.7 atom-proto
-  naming ledger).
+  rename:** `Bool` → `Boolean` (v1.0 atom-proto naming convention).
 - (Phase 5) **`Object.protos.insertFront`.** Synthetic protos-list
   surface gains `insertFront` (mutates the proto chain non-
   destructively from the front). Wave 1 stub — full `List`-shaped
@@ -2487,8 +2479,8 @@ format}-hashes.txt`.
   (closes REALM-017; in turn the `const`-qualification follow-up
   sweep is purely additive at the source level since the renamed
   function is the only callsite).
-- **Atom-proto naming:** `Bool` → `Boolean` realm global (matches
-  REVIVAL §14.7 atom-proto naming ledger). Old name not exported in
+- **Atom-proto naming:** `Bool` → `Boolean` realm global (v1.0 naming
+  convention). Old name not exported in
   v0.5.x.
 - **Module wire format:** unchanged at v1.5. v1.4 modules continue
   to be rejected with `ULOAD_UNSUPPORTED_VERSION` (now mapped to
@@ -2901,8 +2893,7 @@ Wave 5 of v0.5.x cleanup ramp.
 
 - 123 audit findings dispositioned `wave-5-fixes` (53 bug + 39 unsafe + 11 cov +
   12 smell + 5 doc + 3 dead). Closing-commit table at
-  `docs/superpowers/specs/2026-05-05-v0.5.x-cleanup-audit-findings.md` Wave-5
-  Resolutions section.
+  the v0.5.x cleanup audit findings Wave-5 Resolutions section.
 - 4 prior-wave carry-forwards: API-004 (`urbi_run_chunk` realm threading),
   WATCH-023 (test-seam removal — 47 call sites lifted to
   `tests/unit/twatcher_install_helper`), EMIT-019 underlying (JMP offset
@@ -3053,7 +3044,7 @@ Wave 4 of v0.5.x cleanup ramp.
   comment retired.
 - (T21) `docs/internals/bytecode-format.md` updated for v1.5 sections;
   `docs/internals/opcodes.md` reflects renumber + OP_INVOKE retirement.
-- (T22) REVIVAL.md §14 gains S-bytecode-v1.5 row.
+- (T22) Compatibility-ledger gains S-bytecode-v1.5 row.
 
 ### Verification
 
@@ -3391,8 +3382,7 @@ not include internal types" hygiene (API-012/018/027 + INC-003 +
 GC-012 in their structural form, beyond the path-fix mechanical
 close landed here).
 
-See `docs/superpowers/specs/2026-05-05-v0.5.x-cleanup-audit-findings.md`
-for full audit context.
+See the v0.5.x cleanup audit findings doc for full audit context.
 
 ---
 

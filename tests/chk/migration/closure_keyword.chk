@@ -2,7 +2,7 @@
 # Covers: migration error for 'closure' keyword; MIGRATION TRAP hint
 
 closure(x) { x + 1 }
-[00000001] !!! <stdin>:1:1: the 'closure' keyword is retired at v1.0; use 'function' instead. MIGRATION TRAP: 'closure' bound 'this' lexically; 'function' binds at call site. See REVIVAL §14 L14 for 'lobby.receive' rebind pattern
+[00000001] !!! <stdin>:1:1: the 'closure' keyword is retired at v1.0; use 'function' instead. MIGRATION TRAP: 'closure' bound 'this' lexically; 'function' binds at call site.
 
 # Recovery: REPL continues after error
 42
