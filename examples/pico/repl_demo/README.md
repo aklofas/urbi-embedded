@@ -114,7 +114,7 @@ Lines starting with `>` are typed by you; the response immediately
 follows.  All REPL lines are NDJSON-framed on the wire; the surface
 shown here is the human-friendly form a frontend would render.
 
-```
+```text
 urbi v0.9.4-pico booting
 urbi-embedded v0.9.4 on Raspberry Pi Pico
 verbs: led_on/off/toggle, led_pwm(d), temp_celsius(), button_pressed()
@@ -184,7 +184,7 @@ exercises (every-loop tags allocate; watchers use a 16-slot pool).
 
 ## File layout
 
-```
+```text
 examples/pico/repl_demo/
 ├── CMakeLists.txt            # build script (pico-sdk + urbi)
 ├── pico_sdk_import.cmake     # vendored from pico-sdk/external/
