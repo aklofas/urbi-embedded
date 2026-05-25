@@ -37,6 +37,7 @@ New public symbols require a PR-review-touch on this manifest.
 
 ### VM lifecycle
 
+- `urbi_vm_create`, `urbi_vm_free`, `urbi_vm_sizeof`, `urbi_vm_alignof`
 - `urbi_vm_has_live_work`, `urbi_vm_run`
 
 ### Realm
@@ -123,6 +124,11 @@ New public symbols require a PR-review-touch on this manifest.
   `urbi_aux_register_function_table`, `urbi_aux_set_error`,
   `urbi_aux_load_and_run`, `urbi_aux_dump_value`,
   `urbi_aux_diag_to_stderr`
+- `urbi_aux_value_to_int`, `urbi_aux_value_to_float`,
+  `urbi_aux_value_to_bool`, `urbi_aux_value_to_str`,
+  `urbi_aux_value_to_ptr`, `urbi_aux_value_to_object`,
+  `urbi_aux_value_to_event`, `urbi_aux_value_to_closure`,
+  `urbi_aux_value_to_tag`
 
 ### REPL (T1, present only when URBI_ENABLE_REPL=1)
 
@@ -172,9 +178,8 @@ New public symbols require a PR-review-touch on this manifest.
 
 Decorated with `URBI_ADVANCED` in the respective header.
 
-- `urbi_vm_init`, `urbi_vm_destroy` (static-allocation embedders; most
-  embedders will use `urbi_vm_create`/`urbi_vm_free` once W1 lands —
-  pending W1 / opaque allocation API, not yet in liburbi.a)
+- `urbi_vm_init`, `urbi_vm_destroy` (static-allocation embedders; prefer
+  `urbi_vm_create`/`urbi_vm_free` from T1 for new code)
 - `urbi_in_isr` (URBI_DEBUG builds only — absent in release builds;
   regular extern function, not inline, decorated with `URBI_ADVANCED`)
 - `urbi_get_determinism_checksum` (URBI_DEBUG builds only — absent in
