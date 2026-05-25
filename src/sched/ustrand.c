@@ -16,6 +16,7 @@
 #include "chunk/uchunk.h"
 #include "object/uchunk_instance.h"
 #include "runtime/uframe.h"
+#include "event/uevent_emit.h"  /* uevent_waiter_unregister (scheduler F1) */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -102,8 +103,70 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
     s->open_upvals = NULL;
 }
 
+/* strand_cleanup_observers
+ *
+ * Scheduler F1: single point of truth for "this strand will never run again —
+ * scrub all external references to it."  Called by ustrand_destroy so that
+ * EVERY teardown path (urbi_strand_destroy public API, urbi_realm_destroy
+ * sweep, OOM early-exit in urbi_strand_create) performs the same scrub.
+ *
+ * Two classes of external reference:
+ *
+ *   1. Event-waiter chain: if s is parked on a UEvent.waiters_head chain,
+ *      splice it out now.  Without this, the next urbi_event_emit call walks
+ *      the chain and dereferences freed memory.  uevent_waiter_unregister is
+ *      idempotent (returns immediately if s->wait_event_target == NULL) so
+ *      calling it even when the strand was not waiting is safe.
+ *
+ *   2. Join-blocked parents: any parent strand threaded onto s->joiners_head
+ *      via OP_JOIN_WAIT would block forever because nothing else will ever
+ *      wake it.  The walk here clears joiners_head before walking so
+ *      re-entrant calls are no-ops (idempotent).  The walk also guards against
+ *      DEAD joiners (which can appear in adversarial teardown sequences) so the
+ *      teardown path is safe regardless of joiner state.
+ *
+ * exit_strand in uvm.c (the normal dispatch-loop teardown path) also calls
+ * fork_wake_joiners.  That call is kept as an "eager wake while we still have
+ * CPU" optimisation; it becomes a no-op here because joiners_head is cleared
+ * on the first call.  Similarly, uevent_waiter_unregister in the unwind/cancel
+ * paths is idempotent, so double-calls are safe. */
+static void
+strand_cleanup_observers(UStrand *s)
+{
+    /* Splice out of event waiter chain if parked on waituntil(). */
+    uevent_waiter_unregister(s);
+
+    /* Wake any JOIN-blocked parents so they do not stall forever.
+     * Inline the walk from fork_wake_joiners with a DEAD-joiner guard:
+     * in adversarial teardown sequences a joiner may itself have been
+     * forcibly DEAD before the child is destroyed (e.g., in test teardown
+     * or multi-realm destroy ordering).  Calling sched_strand_make_runnable
+     * on a DEAD strand trips an assertion in hosted builds; guard here so the
+     * teardown path is safe regardless of joiner state.  Joiners in WAITING
+     * or any other live state are woken normally. */
+    if (s->joiners_head != NULL) {
+        UStrand *joiner = s->joiners_head;
+        s->joiners_head = NULL;  /* clear first — idempotent on re-entry */
+        while (joiner != NULL) {
+            UStrand *next_joiner = joiner->wait_next;
+            joiner->wait_next = NULL;
+            if (USTRAND_GET_STATE(joiner) != USTRAND_DEAD)
+                sched_strand_make_runnable(joiner);
+            joiner = next_joiner;
+        }
+    }
+}
+
 void
 ustrand_destroy(UStrand *s, struct UVM *vm) {
+    /* Scheduler F1: unregister from event-waiter chains and wake any
+     * join-blocked parents BEFORE tearing down the strand's own resources.
+     * This ensures every teardown path (urbi_strand_destroy, realm-destroy
+     * sweep, OOM early-exit) has identical external-reference cleanup, not
+     * just the normal dispatch-loop path through exit_strand. */
+    if (vm != NULL)
+        strand_cleanup_observers(s);
+
     /* v0.8.1 Phase 2 (Variant B fusion): drop strand-bind ref on root_proto.
      * Pairs with the bump in urbi_strand_create_for_module (below), uvm_run.c
      * (transient path), and uop_fork.c (child spawn).

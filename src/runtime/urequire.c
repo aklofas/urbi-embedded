@@ -19,6 +19,7 @@
  */
 
 #include "urbi/require.h"
+#include <stddef.h>    /* NULL — needed in freestanding builds */
 
 #include <stddef.h>  /* NULL — freestanding-safe; see C99 7.17 */
 
@@ -28,7 +29,7 @@
 #  include <stdlib.h>
 #endif
 
-static urbi_require_fail_hook_fn g_require_hook = NULL; /* NOLINT(cppcoreguidelines-avoid-non-const-global-variables) */
+static urbi_require_fail_hook_fn g_require_hook = NULL;  /* NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — intentionally mutable; set once at embedder init */
 
 void urbi_set_require_fail_hook(urbi_require_fail_hook_fn hook)
 {
