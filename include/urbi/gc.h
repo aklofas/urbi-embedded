@@ -12,6 +12,7 @@
 #ifndef URBI_GC_H
 #define URBI_GC_H
 
+#include "urbi/version.h"  /* URBI_ADVANCED, URBI_EXPERIMENTAL */
 #include "gc/ugc.h"
 
 #if URBI_GC == URBI_GC_INCREMENTAL
@@ -112,7 +113,7 @@ void urbi_unpin(struct UVM *vm, UValue v);
  * Increments gc_debt and sets gc_pending if debt turns positive and GC is
  * not paused.  Does NOT advance the collector (no slice is run here).
  * Returns NULL on OOM. */
-UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t type_tag);
+URBI_ADVANCED UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t type_tag);
 
 /* Advance the incremental GC by approximately byte_budget bytes of work.
  * Called from the dispatcher when gc_pending != 0 (cooperative safepoints).
@@ -135,7 +136,7 @@ UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t type_tag);
  * docs/milestones/m3-concurrency.md for the end-to-end pause-time history.
  *
  * ISR note: NOT ISR-safe — allocates/frees memory and modifies VM state. */
-void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);
+URBI_ADVANCED void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);
 
 /* Iterate every registered root provider, invoking cb(vm, slot, ctx) once
  * per UValue root reached.  Provided for host/test use; the GC mark phase
@@ -143,20 +144,20 @@ void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);
  * are reached through providers — there is no separate VM-globals walk.
  * cb and ctx are caller-owned and must remain valid for the duration of
  * the call.  Not ISR-safe. */
-void   urbi_gc_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
+URBI_ADVANCED void   urbi_gc_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 /* Append `provider` to the VM's fixed root-provider array (capacity
  * URBI_MAX_ROOT_PROVIDERS = 12 per row 10 §5.1; bumped from 8 at Step C-1).  The provider function
  * pointer is borrowed: callee retains it for the lifetime of `vm`, and
  * caller must keep the underlying code object alive at least that long.
  * URBI_INTERNAL_ASSERT fires on overflow.  Not ISR-safe. */
-void   urbi_gc_register_root_provider(struct UVM *vm, UGcRootProviderFn provider);
+URBI_ADVANCED void   urbi_gc_register_root_provider(struct UVM *vm, UGcRootProviderFn provider);
 
 /* Initialize the GC fields on a fresh UVM.  Called from urbi_vm_init after
  * its zero-init pass; sets the only fields whose correct initial value is
  * NOT zero (gc_threshold, gc_debt).  Caller owns `vm`; no allocation.
  * Not ISR-safe. */
-void   urbi_gc_init(struct UVM *vm);
+URBI_ADVANCED void   urbi_gc_init(struct UVM *vm);
 
 /* Tear down the GC: walks the all-cells sidecar list and frees every cell
  * via the VM allocator (ignoring UGC_IS_FIXED / UGC_IS_PINNED — at teardown
@@ -164,19 +165,19 @@ void   urbi_gc_init(struct UVM *vm);
  * destroy callback before free.  Must be the LAST subsystem teardown step
  * in urbi_vm_destroy, after every other subsystem that allocates GC cells
  * has dropped its references.  Caller owns `vm`.  Not ISR-safe. */
-void   urbi_gc_destroy(struct UVM *vm);
+URBI_ADVANCED void   urbi_gc_destroy(struct UVM *vm);
 
 /* Run the GC state machine to completion synchronously.  If currently IDLE,
  * starts a new cycle (flips current_white, enters MARK_ROOTS).  Runs slices
  * with SIZE_MAX budget per call until back to IDLE.  Intended for tests and
  * explicit-collection requests; NOT for production MCU use where bounded
  * pauses matter.  Caller owns `vm`.  Not ISR-safe. */
-void   urbi_gc_force_full(struct UVM *vm);
+URBI_ADVANCED void   urbi_gc_force_full(struct UVM *vm);
 
 /* Read total GC-tracked bytes allocated since VM creation (vm->gc_total_
  * allocated).  Pure read of a single size_t field; safe to call from any
  * non-ISR context.  Used by test harnesses + the determinism checksum. */
-size_t urbi_gc_bytes_allocated_inline(const struct UVM *vm);
+URBI_ADVANCED size_t urbi_gc_bytes_allocated_inline(const struct UVM *vm);
 
 /* === Root provider forward declarations (T26) ===
  * Each subsystem's root-walker function is declared here so that urbi_vm_init

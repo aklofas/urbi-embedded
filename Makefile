@@ -537,6 +537,15 @@ test-docstring-coverage:
 test-aux-symbols: $(LIB)
 	@./scripts/check_aux_symbols.sh $(BUILDDIR)/liburbi.a
 
+# API manifest gate — verifies that every urbi_ symbol exported from
+# liburbi.a and liburbi_aux.a is enumerated in docs/api-surface-tiers.md.
+# Catches new internal symbols accidentally becoming public and ensures the
+# manifest stays in sync with the library.  Closes audit-1 F13 /
+# api-ergonomics F12.  See tests/scripts/check-api-manifest.sh.
+.PHONY: test-api-manifest
+test-api-manifest: $(LIB) $(LIBURBI_AUX)
+	@./tests/scripts/check-api-manifest.sh $(BUILDDIR)
+
 # Embedding-guide code-sample drift detection — compiles every C block
 # in docs/embedding-guide.md to catch API-signature drift.  Lightweight
 # (<5 s); wired into releasetest Phase 1.  See
@@ -784,8 +793,8 @@ RELEASETEST_PHASE1 := \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
     test-bake-smoke test-bytecode-only test-freestanding-host \
-    test-gc-roots-coverage test-aux-symbols test-embedding-guide \
-    test-port-stm32f4
+    test-gc-roots-coverage test-api-manifest test-aux-symbols \
+    test-embedding-guide test-port-stm32f4
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -1521,4 +1530,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
