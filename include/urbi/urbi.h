@@ -100,7 +100,9 @@ void urbi_tag_stop_local(struct UStrand *strand, struct UTag *tag, UValue value)
  * Thread safety: none at M3 — same single-threaded constraint as row 7 API. */
 struct URealm;
 
-/* Create a fresh, empty Realm bound to vm.  Returns NULL on OOM. */
+/* Create a fresh, empty Realm bound to vm.  Returns NULL on OOM.
+ * On failure returns NULL; the per-VM error ring (queryable via
+ * urbi_last_error) is populated with the failure code. */
 struct URealm *urbi_realm_create(struct UVM *vm);
 
 /* Destroy realm: stop its tag (no-op at M3), free namespace, unlink from VM.
@@ -109,7 +111,9 @@ void           urbi_realm_destroy(struct UVM *vm, struct URealm *realm);
 
 /* Return (auto-creating if needed) the VM-level global Realm singleton.
  * The global Realm has REALM_GLOBAL set and persists until urbi_vm_destroy().
- * Returns NULL on OOM. */
+ * Returns NULL on OOM.
+ * On failure returns NULL; the per-VM error ring (queryable via
+ * urbi_last_error) is populated with the failure code. */
 struct URealm *urbi_realm_global(struct UVM *vm);
 
 /* Convenience wrapper: creates a URealm and sets REALM_REPL on it.  Equivalent
@@ -119,6 +123,8 @@ struct URealm *urbi_realm_global(struct UVM *vm);
  * introspection visibility).
  *
  * Returns NULL on OOM.
+ * On failure returns NULL; the per-VM error ring (queryable via
+ * urbi_last_error) is populated with the failure code.
  * Thread safety: MAIN. */
 struct URealm *urbi_realm_create_repl(struct UVM *vm);
 
@@ -345,6 +351,8 @@ typedef int (*urbi_native_method_fn)(struct UVM *vm,
  * does this atomically) or hold a urbi_ref to it (Gap Q).
  *
  * Returns NULL on OOM or if vm == NULL or fn == NULL.
+ * On failure returns NULL; the per-VM error ring (queryable via
+ * urbi_last_error) is populated with the failure code.
  *
  * Thread safety: MAIN. */
 struct UClosure *urbi_make_native_closure(struct UVM *vm,
@@ -408,6 +416,8 @@ typedef struct {
  * urbi_tag_create: allocate a GC-managed UTag, intern its name, and parent
  *   it under realm->tag so urbi_tag_info reports has_parent = true.
  *   Returns NULL on OOM or if vm/realm is NULL.
+ *   On failure returns NULL; the per-VM error ring (queryable via
+ *   urbi_last_error) is populated with the failure code.
  *   The returned UTag is GC-managed: it lives until it becomes unreachable
  *   from the GC root set.  The caller is responsible for keeping it reachable
  *   (e.g. store it in an object slot or hold a urbi_ref — Gap Q).
@@ -1235,6 +1245,9 @@ void urbi_set_error(struct UVM *vm, int code,
  *   NULL buf or zero len                → returns NULL (URBI_ERR_INVALID_ARG)
  *   bytecode version mismatch           → returns NULL
  *   any other deserialize or OOM error  → returns NULL
+ *
+ * Note: this function has no UVM parameter and therefore cannot populate the
+ * per-VM error ring.  Diagnostic detail is reported via errmsg/errcap instead.
  *
  * Thread safety: MAIN (calls the heap allocator). */
 struct UProto *urbi_chunk_from_bytes(const uint8_t *buf, size_t len,

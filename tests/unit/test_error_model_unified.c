@@ -170,6 +170,42 @@ UTEST(diag_ud_forwarded)
     urbi_vm_destroy(&vm);
 }
 
+/* ---- T5: INVALID-returning API calls populate the per-VM error ring ------- */
+
+UTEST(error_ring_populated_on_null_returners)
+{
+    UVM vm;
+    int vm_ok;
+    vm_init_or_skip(&vm, &vm_ok);
+    if (!vm_ok) {
+        UASSERT_EQ(0, 0); /* skip */
+        return;
+    }
+
+    urbi_error_info_t info;
+    int rc;
+
+    /* urbi_event_register with NULL realm returns URBI_EVENT_ID_INVALID and
+     * must populate the per-VM error ring.  NULL realm is an invalid arg. */
+    urbi_event_id_t id = urbi_event_register(&vm, NULL, "test_ring", NULL, 0);
+    UASSERT_EQ((int)URBI_EVENT_ID_INVALID, (int)id);
+
+    rc = urbi_last_error(&vm, &info);
+    UASSERT(rc != URBI_OK);   /* error ring has an entry */
+    UASSERT(info.code != 0);
+
+    urbi_clear_error(&vm);
+
+    /* After clearing, a second INVALID-returning call re-populates the ring. */
+    urbi_event_id_t id2 = urbi_event_register(&vm, NULL, "test_ring2", NULL, 0);
+    UASSERT_EQ((int)URBI_EVENT_ID_INVALID, (int)id2);
+
+    rc = urbi_last_error(&vm, &info);
+    UASSERT(rc != URBI_OK);   /* ring populated again */
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ---- suite --------------------------------------------------------------- */
 void test_error_model_unified_suite(void)
 {
@@ -182,4 +218,6 @@ void test_error_model_unified_suite(void)
               setter_ud_signatures_present);
     utest_run("diag_ud_forwarded",
               diag_ud_forwarded);
+    utest_run("error_ring_populated_on_null_returners",
+              error_ring_populated_on_null_returners);
 }
