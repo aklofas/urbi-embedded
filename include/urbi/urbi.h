@@ -19,6 +19,7 @@
  * pre-v0.5.5 `#include "sched/ustrand.h"` that pulled an internal header
  * into the public surface; closes API-012 / INC-003 structurally.
  * v0.9.2: UModule removed (struct deleted; a module IS its root UProto). */
+#include "urbi/version.h"  /* URBI_ADVANCED (URBI_EXPERIMENTAL / URBI_DEPRECATED reserved) */
 #include "urbi/types.h"
 #include "urbi/require.h"  /* URBI_REQUIRE — invariant macro that fires in all build modes */
 
@@ -230,7 +231,7 @@ int urbi_unload(struct UVM *vm, struct UProto *root);
  * API-005: URBI_ERR_BYTECODE_VERSION_MISMATCH is now reachable from a
  * public-API call site, even though the deserialize-bytes entry point
  * itself remains M6 work in progress. */
-int urbi_chunk_translate_load_err(int load_err);
+URBI_ADVANCED int urbi_chunk_translate_load_err(int load_err);
 
 /* === Phase 10 stdlib bake (M6 Wave 2) ===
  *
@@ -508,7 +509,7 @@ int urbi_inject_event(struct UVM *vm, uint32_t event_id,
 typedef void (*urbi_event_drain_handler)(struct UVM *vm,
                                          uint32_t event_id,
                                          UValue payload);
-void urbi_register_event_drain(struct UVM *vm, urbi_event_drain_handler h);
+URBI_ADVANCED void urbi_register_event_drain(struct UVM *vm, urbi_event_drain_handler h);
 
 /* === Gap B — Named-event payload destructure fn (v0.7.1) ===
  *
@@ -906,7 +907,7 @@ typedef UValue (*UHostFn)(struct UStrand *s, int argc, UValue *argv);
  * On hosted builds: prints msg to stderr and calls abort().
  * On freestanding builds: spins forever (no OS, no abort).
  * Declared here; defined in urbi.c. */
-URBI_NORETURN void urbi_panic(const char *msg);
+URBI_ADVANCED URBI_NORETURN void urbi_panic(const char *msg);
 
 /* URBI_CALLBACK_WARN_US: default watchdog threshold (microseconds).
  * Overridable at compile time: -DURBI_CALLBACK_WARN_US=2000 */
@@ -924,7 +925,7 @@ URBI_NORETURN void urbi_panic(const char *msg);
  * be written without requiring a complete struct UVM definition in the
  * embedder's TU.  Closes the structural half of API-018 / GC-012. */
 #ifdef URBI_DEBUG
-bool urbi_in_isr(const struct UVM *vm);
+URBI_ADVANCED bool urbi_in_isr(const struct UVM *vm);
 #endif
 
 /* URBI_ASSERT_NOT_ISR: in URBI_DEBUG builds, asserts the function is not
@@ -953,8 +954,8 @@ bool urbi_in_isr(const struct UVM *vm);
  * argc, argv — arguments forwarded to fn. */
 #ifdef URBI_DEBUG
 /* URBI_DEBUG builds: real function defined in urbi.c (needs full UVM struct). */
-UValue urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
-                                    UHostFn fn, int argc, UValue *argv);
+URBI_ADVANCED UValue urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
+                                                  UHostFn fn, int argc, UValue *argv);
 #else
 /* Non-debug builds: zero-overhead macro — collapsed to a bare call. */
 #  define urbi_call_host_with_watchdog(vm, s, fn, argc, argv) \
@@ -996,8 +997,8 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
 typedef struct UChunkInstance UChunkInstance;
 #endif
 
-UChunkInstance *urbi_chunk_instance_create (struct UVM *vm, struct UProto *root);
-void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi);
+URBI_ADVANCED UChunkInstance *urbi_chunk_instance_create (struct UVM *vm, struct UProto *root);
+URBI_ADVANCED void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi);
 
 /* === API-013: VM lifecycle (promoted to public at v0.5.5) ===
  *
@@ -1019,8 +1020,8 @@ void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi)
  * is permitted under the pre-v1.0 ABI escape clause documented in
  * <urbi/version.h>.  urbi_vm_destroy remains safe to call regardless of
  * the return value (partial-init state is reaped on the destroy path). */
-int      urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
-void     urbi_vm_destroy(struct UVM *vm);
+URBI_ADVANCED int      urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
+URBI_ADVANCED void     urbi_vm_destroy(struct UVM *vm);
 UVMError urbi_vm_run    (struct UVM *vm, struct URealm *realm,
                          const struct UProto *root, UValue *out);
 
@@ -1067,7 +1068,7 @@ void urbi_lock_heap(struct UVM *vm);
  * (as used by test_determinism_two_runs).
  *
  * URBI_DEBUG only: zero overhead in non-debug builds (function absent). */
-uint64_t urbi_get_determinism_checksum(struct UVM *vm);
+URBI_ADVANCED uint64_t urbi_get_determinism_checksum(struct UVM *vm);
 #endif /* URBI_DEBUG */
 
 /* === Gap P — error inspection (v0.7.1) ===

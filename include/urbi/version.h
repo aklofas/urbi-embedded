@@ -117,6 +117,36 @@ extern "C" {
 /* Runtime getter. NULL-tolerant per arg. */
 void urbi_api_version(int *out_major, int *out_minor, int *out_patch);
 
+/* === W7/v0.10.3: API tier annotation macros ===
+ *
+ * URBI_EXPERIMENTAL — RESERVED for v1.x; do not depend on across releases.
+ *                     Compiler emits a deprecation warning when used.
+ *                     Suppress with -Wno-deprecated-declarations.
+ *
+ * URBI_ADVANCED     — Stable but non-hot-path.  Most embedders do not need
+ *                     this; reach for it only when the basic API is not
+ *                     sufficient.  No warning emitted; the macro is
+ *                     documentation only.
+ *
+ * URBI_DEPRECATED   — Scheduled for removal in a future MAJOR bump.
+ *                     Compiler emits a deprecation warning.  Suppress with
+ *                     -Wno-deprecated-declarations.
+ *
+ * The macros work on GCC and Clang; on other compilers they expand to nothing
+ * (no warning, no behaviour change).
+ *
+ * The authoritative tier manifest is docs/api-surface-tiers.md.
+ * CI gate: make test-api-manifest. */
+#if defined(__GNUC__) || defined(__clang__)
+#  define URBI_EXPERIMENTAL  __attribute__((deprecated("RESERVED for v1.x — may change before v1.0")))
+#  define URBI_ADVANCED      /* documentation only — no compiler warning */
+#  define URBI_DEPRECATED    __attribute__((deprecated))
+#else
+#  define URBI_EXPERIMENTAL
+#  define URBI_ADVANCED
+#  define URBI_DEPRECATED
+#endif
+
 #ifdef __cplusplus
 }
 #endif
