@@ -20,6 +20,8 @@
 
 #include "urbi/require.h"
 
+#include <stddef.h>  /* NULL — freestanding-safe; see C99 7.17 */
+
 /* fprintf + abort are only available on hosted targets. */
 #if __STDC_HOSTED__ && !defined(URBI_BYTECODE_ONLY)
 #  include <stdio.h>
