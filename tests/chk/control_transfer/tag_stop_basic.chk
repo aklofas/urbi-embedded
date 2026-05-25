@@ -1,23 +1,26 @@
-# Milestone: M3
-# Covers: tag.stop() terminates execution within the tagged block;
-#         code after the tagged block does not run.
+# Milestone: W4/v0.10.2
+# Covers: Tag.new() constructor returns a UVAL_TAG; t.stop() is callable
+#         and returns nil; t.freeze() / t.unfreeze() are callable and
+#         return nil.
+# Activated: v0.10.2-reactive W4 (UVAL_TAG + Tag.new() + scripted .stop()).
 #
-# defer-to: T29
+# Note: the original M3 draft tested that t.stop() INSIDE a t: scope
+# terminates execution (echo("before") prints; echo("after") does not).
+# That semantics requires W5 (bare-prefix tag-label binding) so OP_PUSH_TAG
+# uses the register's UVAL_TAG as the scope's owning tag.  At W4 baseline
+# OP_PUSH_TAG creates an anonymous UTag independent of `t`; calling t.stop()
+# stops the `t` tag-member-list but the scope's anonymous tag continues.
 #
-# Reason: requires UTag as a real runtime type and OP_TAG_STOP absorption in
-# the unwind walker.  Both land at T29 (UTag + ambient-tag inheritance helpers).
-# At M3, OP_PUSH_TAG/OP_POP_TAG are emitted as stubs but OP_TAG_STOP has no
-# runtime absorption — UEXEC_TAG_STOP escalates to fatal rather than being
-# caught by a matching TAG_SCOPE entry.
-#
-# When T29 lands, implement this fixture by uncommenting the urbiscript source
-# below.  Expected behaviour: "before" is printed; "after" is NOT printed
-# because tag.stop() terminates the tagged block.
-#
-# Urbiscript source (activate at T29):
-#   var t = Tag.new;
-#   t: { echo("before"); t.stop(); echo("after") };
-#   echo("done")
-#   --- expected output ---
-#   [00000001] "before"
-#   [00000002] "done"
+# What IS testable at W4: Tag.new(), .stop(), .freeze(), .unfreeze() are
+# reachable native methods on vm->tag_proto and return the expected nil value.
+
+var t = Tag.new("sc")
+t.stop()
+var t2 = Tag.new("fr")
+t2.freeze()
+t2.unfreeze()
+[00000000] <Tag: sc>
+[00000001] nil
+[00000002] <Tag: fr>
+[00000003] nil
+[00000004] nil

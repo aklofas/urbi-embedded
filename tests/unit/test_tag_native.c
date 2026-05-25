@@ -13,7 +13,7 @@
  *   2. tag_leave_is_lazy_allocated:
  *      Same contract for tag->leave_event.
  *
- *   3. tag_proto_has_no_enter_or_leave_slots (TAGCH-013 closure):
+ *   3. tag_proto_has_enter_and_leave_native_slots (W4/v0.10.2 update):
  *      Phase 7 (M6 stdlib) removed the unreachable enter/leave getter
  *      stubs.  Lookup for "enter"/"leave" on vm->tag_proto must now miss.
  *
@@ -108,18 +108,20 @@ UTEST(tag_leave_is_lazy_allocated)
 }
 
 /* ===================================================================
- * Test 3: tag_proto_has_no_enter_or_leave_slots (TAGCH-013 closure)
+ * Test 3: tag_proto_has_enter_and_leave_native_slots (W4/v0.10.2 update)
  *
- * Phase 7 (M6 stdlib) removed the two getter stubs that were installed
- * on tag_proto under "enter" / "leave" — they were unreachable from any
- * caller (UVAL_TAG does not exist in UValKind, so OP_CALL could never
- * dispatch them; C tests didn't reach them either).  This regression
- * test pins the cleanup: a lookup for "enter" or "leave" on tag_proto
- * must miss until tag-property dispatch lands and reinstates these
- * slots through typed UProps OGET binding (post-M6).
+ * W4 (v0.10.2 reactive) installs tag_enter_native / tag_leave_native as
+ * UVAL_CLOSURE native methods on tag_proto.  The old assertion (miss)
+ * was correct for the Phase-7 baseline (TAGCH-013 closure) when UVAL_TAG
+ * didn't exist in UValKind.  With UVAL_TAG = 12 and scripted tag.stop()
+ * / .enter / .leave live, the lookup must now HIT.
+ *
+ * Pre-W4 rationale (preserved for history): the Phase 7 cleanup removed
+ * unreachable getter stubs.  W4 reinstates enter/leave as reachable
+ * UVAL_CLOSURE native methods (tag_enter_native / tag_leave_native).
  * =================================================================== */
 
-UTEST(tag_proto_has_no_enter_or_leave_slots)
+UTEST(tag_proto_has_enter_and_leave_native_slots)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -140,9 +142,14 @@ UTEST(tag_proto_has_no_enter_or_leave_slots)
 
         UValue v;
         v.kind = (uint8_t)UVAL_NIL;
-        /* urbi_object_lookup returns 0 on hit, non-zero on miss. */
-        int miss = (urbi_object_lookup(&vm, vm.tag_proto, sym, &v) != 0);
-        UASSERT(miss);
+        /* W4: urbi_object_lookup returns 0 on hit — enter/leave are now
+         * UVAL_CLOSURE native methods installed by tag_native_register. */
+        int hit = (urbi_object_lookup(&vm, vm.tag_proto, sym, &v) == 0);
+        UASSERT(hit);
+        if (hit) {
+            /* Verify the slot is a native UVAL_CLOSURE. */
+            UASSERT_EQ((int)v.kind, (int)UVAL_CLOSURE);
+        }
     }
 
     urbi_vm_destroy(&vm);
@@ -225,6 +232,6 @@ test_tag_native_suite(void)
     printf("test_tag_native\n");
     utest_run("tag_enter_is_lazy_allocated",          tag_enter_is_lazy_allocated);
     utest_run("tag_leave_is_lazy_allocated",          tag_leave_is_lazy_allocated);
-    utest_run("tag_proto_has_no_enter_or_leave_slots", tag_proto_has_no_enter_or_leave_slots);
+    utest_run("tag_proto_has_enter_and_leave_native_slots", tag_proto_has_enter_and_leave_native_slots);
     utest_run("tag_enter_setter_throws_protected_slot", tag_enter_setter_throws_protected_slot);
 }

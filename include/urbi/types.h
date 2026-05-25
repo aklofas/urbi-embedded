@@ -75,7 +75,12 @@ struct UEvent;
  *
  * Numeric values pinned by the bytecode wire format (uchunk.h is the
  * runtime mirror; this header is the consumer-facing copy). 11-15 are
- * reserved; the loader rejects > UVAL_STR in constant pools at v1.0. */
+ * reserved; the loader rejects > UVAL_STR in constant pools at v1.0.
+ *
+ * UVAL_TAG = 12 is runtime-only — it carries a UTag* in v.p and is never
+ * serialized into constant pools (the loader already rejects > UVAL_STR
+ * per the v1.0 contract, wire format v1.8 / 0x18 unchanged).  Slot 11 is
+ * reserved for the public-only URBI_VALUE_PTR mirror. */
 typedef enum {
     UVAL_NIL     = 0,
     UVAL_INT     = 1,
@@ -87,7 +92,11 @@ typedef enum {
     UVAL_STRAND  = 7,
     UVAL_OBJECT  = 8,
     UVAL_EVENT   = 9,
-    UVAL_HOST_FN = 10
+    UVAL_HOST_FN = 10,
+    /* slot 11 reserved for the public-only URBI_VALUE_PTR mirror */
+    UVAL_TAG     = 12   /* W4/v0.10.2: runtime-only — not serialized into
+                           constant pools (loader rejects > UVAL_STR per
+                           v1.0 contract).  Carries UTag* in v.p. */
 } UValKind;
 
 /* === UValue: 16-byte tagged union ===
@@ -128,7 +137,8 @@ typedef enum {
     URBI_VALUE_VOID    = 6,   /* == UVAL_VOID */
     URBI_VALUE_OBJECT  = 8,   /* == UVAL_OBJECT */
     URBI_VALUE_EVENT   = 9,   /* == UVAL_EVENT */
-    URBI_VALUE_PTR     = 11   /* public-only: host opaque pointer, no UVAL_* mirror */
+    URBI_VALUE_PTR     = 11,  /* public-only: host opaque pointer, no UVAL_* mirror */
+    URBI_VALUE_TAG     = 12   /* == UVAL_TAG; W4/v0.10.2: runtime-only UTag* */
 } urbi_value_kind_t;
 
 URBI_STATIC_ASSERT((int)URBI_VALUE_INT     == (int)UVAL_INT,     "urbi_value_kind_t/UVAL_* drift: INT");
@@ -137,6 +147,7 @@ URBI_STATIC_ASSERT((int)URBI_VALUE_STR     == (int)UVAL_STR,     "urbi_value_kin
 URBI_STATIC_ASSERT((int)URBI_VALUE_OBJECT  == (int)UVAL_OBJECT,  "urbi_value_kind_t/UVAL_* drift: OBJECT");
 URBI_STATIC_ASSERT((int)URBI_VALUE_EVENT   == (int)UVAL_EVENT,   "urbi_value_kind_t/UVAL_* drift: EVENT");
 URBI_STATIC_ASSERT((int)URBI_VALUE_CLOSURE == (int)UVAL_CLOSURE, "urbi_value_kind_t/UVAL_* drift: CLOSURE");
+URBI_STATIC_ASSERT((int)URBI_VALUE_TAG     == (int)UVAL_TAG,     "urbi_value_kind_t/UVAL_* drift: TAG");
 
 /* === Gap N: urbi_make_* value constructors (inline) ===
  *
@@ -233,6 +244,19 @@ static inline UValue urbi_make_closure(struct UClosure *c)
     v.kind = (uint8_t)UVAL_CLOSURE;
     for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
     v.v.p = (void *)c;
+    return v;
+}
+
+/* urbi_make_tag — W4/v0.10.2: runtime-only UTag* wrapper.
+ * UVAL_TAG values are never serialized into constant pools — the constant-pool
+ * loader at v1.0 already rejects > UVAL_STR (wire format v1.8 / 0x18
+ * unchanged).  Use only for runtime values returned by Tag.new() etc. */
+static inline UValue urbi_make_tag(struct UTag *tag)
+{
+    UValue v;
+    v.kind = (uint8_t)UVAL_TAG;
+    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+    v.v.p = (void *)tag;
     return v;
 }
 

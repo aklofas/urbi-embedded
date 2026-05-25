@@ -7,6 +7,7 @@
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"    /* URBI_INTERNAL_ASSERT */
 #include "chunk/uchunk.h"
+#include "tag/utag.h"           /* UTag, UVAL_TAG format (W4/v0.10.2) */
 
 /* --- Value semantic helpers (freestanding-safe). --- */
 
@@ -29,6 +30,7 @@ bool uvalue_truthy(const UValue *v) {
         case UVAL_CLOSURE: /* closure ref is truthy */
         case UVAL_EVENT:   /* event ref is truthy */
         case UVAL_HOST_FN: /* host-function ref is truthy */
+        case UVAL_TAG:     /* tag reference is truthy (W4/v0.10.2) */
             return true;
         default:
             /* FOUND-039: corrupt kind byte — fail-safe in release. */
@@ -59,6 +61,7 @@ bool uvalue_equal(const UValue *a, const UValue *b) {
             case UVAL_OBJECT:  /* object identity */
             case UVAL_EVENT:   /* event identity */
             case UVAL_HOST_FN: /* fn-pointer identity */
+            case UVAL_TAG:     /* tag pointer identity (W4/v0.10.2) */
                 return a->v.p == b->v.p;
             default:
                 /* FOUND-039: corrupt kind byte — fail-safe in release. */
@@ -263,6 +266,18 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
         /* FOUND-047 / COV-006: explicit case for event values. */
         n = snprintf(buf, cap, "<event>");
         break;
+    case UVAL_TAG: {
+        /* W4/v0.10.2: format as <Tag: name> where name is the tag's
+         * interned string name, or <Tag> if the name is nil/missing. */
+        const UTag *_t = (const UTag *)v->v.p;
+        if (_t != NULL && _t->name.kind == (uint8_t)UVAL_STR
+                       && _t->name.v.p != NULL) {
+            n = snprintf(buf, cap, "<Tag: %s>", (const char *)_t->name.v.p);
+        } else {
+            n = snprintf(buf, cap, "<Tag>");
+        }
+        break;
+    }
     default:
         /* UVAL_CLOSURE / UVAL_VOID intentionally fall through to "<?>" to
          * preserve their pre-v0.5.7 output (existing fixture goldens

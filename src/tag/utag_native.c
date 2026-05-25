@@ -8,32 +8,44 @@
  *   subscribes — matters for the typical hot-path tag (used for cleanup,
  *   never observed).
  *
+ * W4/v0.10.2: Tag scripted surface (reactive audit F3, audit-1 F5).
+ *   tag_new_native:   Tag.new(name) — allocate + name + realm-parent.
+ *   tag_stop_native:  tag.stop()    — forward to urbi_tag_stop.
+ *   tag_freeze_native:   tag.freeze()   — set UTAG_FLAG_FROZEN.
+ *   tag_unfreeze_native: tag.unfreeze() — clear UTAG_FLAG_FROZEN.
+ *   tag_block_native:    tag.block()    — future; raises NotImplemented at v1.0.
+ *   tag_unblock_native:  tag.unblock()  — future; raises NotImplemented at v1.0.
+ *   tag_enter_native:    tag.enter — return lazy enter_event.
+ *   tag_leave_native:    tag.leave — return lazy leave_event.
+ *
  * Native getter binding on vm->tag_proto:
- *   Phase 7 (M6 stdlib) closed TAGCH-013 partially by removing the two
- *   getter stubs (`enter`/`leave`) that were unreachable from any caller
- *   — UVAL_TAG does not exist in UValKind, so OP_CALL could never dispatch
- *   them and C tests had no reason to invoke them indirectly.  When tag-
- *   property dispatch lands (post-M6 — M7 C-API or later) the proper
- *   UProps OGET/OSET path will reinstate scripted access via the tag
- *   getter helpers (tag_enter_getter / tag_leave_getter), still typed.
+ *   W4 promotes vm->tag_proto to a UVAL_CLOSURE-slot proto so OP_CALL
+ *   can dispatch scripted tag.stop() etc.  vm->atom_tag is unified with
+ *   vm->tag_proto (same UObject) so urbi_atom_proto_for_value(UVAL_TAG)
+ *   finds the native methods.
  *
  * tag_enter_leave_setter_protected:
  *   Any write to tag.enter or tag.leave raises URBI_ERR_PROTECTED_SLOT.
  *   A UVAL_HOST_FN setter stub is installed on the `_enter_set`/`_leave_set`
- *   slot names; reachable today from C-level tests via direct slot lookup.
- *   Full OP_SETSLOT getter/setter dispatch via UProps OGET/OSET lands when
- *   property dispatch lands. */
+ *   slot names; reachable today from C-level tests via direct slot lookup. */
 
 #include "tag/utag_native.h"
 
 #include "vm/uvm.h"
 #include "tag/utag.h"              /* UTag, tag->enter_event / leave_event */
+/* urbi_tag_create + urbi_tag_stop declared in include/urbi/urbi.h (W4) */
 #include "event/uevent.h"            /* UEvent, urbi_event_create */
 #include "event/uevent_native.h"      /* uvalue_from_event */
 #include "value/uintern.h"           /* ustr_intern */
-#include "object/uobject.h"    /* urbi_object_alloc, urbi_object_install_property */
+#include "object/uobject.h"    /* urbi_object_alloc, urbi_object_set_protos_single */
+#include "urbi/object.h"       /* urbi_object_root (W4) */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (TAGCH-002), urbi_strlen, urbi_zero */
-#include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OOM, UHostFn */
+#include "runtime/uclosure.h"  /* UClosure, urbi_native_method_fn (W4) */
+#include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OOM, UHostFn,
+                                   urbi_tag_stop, urbi_tag_create */
+#include "urbi/types.h"        /* urbi_make_tag, urbi_make_nil (W4) */
+#include "realm/urealm.h"      /* URealm, realm->tag (W4) */
+#include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_* (W4) */
 /* urbi_gc_slot_pre_store (Dijkstra forward barrier; barrier-only variant since
  * tag->enter_event / tag->leave_event are UEvent*, not UValue*, so the
  * combined urbi_gc_slot_store cannot be used here) is reached via urbi/gc.h
@@ -160,33 +172,247 @@ register_host_fn(struct UVM *vm, struct UObject *proto,
     return urbi_object_set_local_slot(vm, proto, sym, v);
 }
 
+/* === register_native_method (W4) ===
+ *
+ * Install a UVAL_CLOSURE slot named `name` on `proto` with native_fn = fn.
+ * OP_CALL dispatches through native_fn directly (Phase-3 ABI).
+ * Returns URBI_OK on success, URBI_ERR_OOM on alloc/intern failure. */
+static int
+register_native_method_tag(struct UVM *vm, struct UObject *proto,
+                           const char *name, urbi_native_method_fn fn)
+{
+    if (vm == NULL || proto == NULL || fn == NULL || name == NULL) {
+        return URBI_ERR_INVALID_ARG;
+    }
+    UClosure *cl = urbi_native_closure_create(vm, fn);
+    if (cl == NULL) return URBI_ERR_OOM;
+
+    USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
+    if (sym == NULL) return URBI_ERR_OOM;
+
+    UValue v;
+    urbi_zero(&v, sizeof(v));
+    v.kind = (uint8_t)UVAL_CLOSURE;
+    v.v.p  = (void *)cl;
+    if (urbi_object_set_local_slot(vm, proto, sym, v) != 0) {
+        return URBI_ERR_OOM;
+    }
+    return URBI_OK;
+}
+
+/* === W4/v0.10.2 native method implementations (Phase-3 ABI) ===
+ *
+ * All methods: int fn(UVM *vm, UValue self, UValue *args, uint8_t nargs,
+ *                     UValue *out).
+ * self: for method calls (preceded by OP_SELF), this is the UVAL_TAG value.
+ * Return UEXEC_OK on success, UEXEC_THROW on error. */
+
+/* tag_new_native: Tag.new() / Tag.new(name) — allocate a UTag + name + parent.
+ *
+ * self: the Tag proto (ignored — acts as a factory).
+ * args[0]: optional string name for the new tag (legacy uses Tag.new with 0 args).
+ * Returns UVAL_TAG wrapping the new UTag.
+ *
+ * 0 args: anonymous tag (no name stored).
+ * 1 arg:  string name interned into tag->name.
+ *
+ * Uses the cur_strand's realm so the tag lives in the right scope.
+ * Falls back to the VM's global realm if cur_strand->realm is NULL. */
+static int
+tag_new_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+               UValue *out)
+{
+    (void)self;
+    if (nargs > 1) return urbi_raise_arity(vm, "Tag.new", 1, nargs, out);
+
+    const char *name_cstr = NULL;
+    size_t name_len = 0;
+    if (nargs == 1) {
+        if (args[0].kind != (uint8_t)UVAL_STR)
+            return urbi_raise_type(vm, "Tag.new: argument must be a String name", out);
+        name_cstr = (const char *)args[0].v.p;
+        name_len = urbi_strlen(name_cstr);
+    }
+
+    /* Determine the realm from the dispatching strand. */
+    struct URealm *r = NULL;
+    if (vm->cur_strand != NULL && vm->cur_strand->realm != NULL) {
+        r = vm->cur_strand->realm;
+    } else {
+        r = urbi_realm_global(vm);
+    }
+    if (r == NULL) return urbi_raise_oom(vm, out);
+
+    UTag *t = urbi_tag_create(vm, r, name_cstr, name_len);
+    if (t == NULL) return urbi_raise_oom(vm, out);
+
+    *out = urbi_make_tag(t);
+    return UEXEC_OK;
+}
+
+/* tag_stop_native: tag.stop() — deposit TAG_STOP on all member strands.
+ *
+ * self must be UVAL_TAG.  Forwards to urbi_tag_stop with a nil stop-value.
+ * Returns nil. */
+static int
+tag_stop_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Tag.stop", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_TAG)
+        return urbi_raise_type(vm, "Tag.stop: self must be a Tag", out);
+
+    UTag *t = (UTag *)self.v.p;
+    if (t == NULL) return urbi_raise_type(vm, "Tag.stop: NULL tag pointer", out);
+
+    urbi_tag_stop(vm, t, urbi_make_nil());
+    *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+/* tag_freeze_native: tag.freeze() — set UTAG_FLAG_FROZEN.
+ *
+ * At v1.0, freeze semantics (suspending strands) is not yet wired; this
+ * sets the flag bit so tag.frozen reads true.  Full strand-suspension
+ * implementation is a v1.x follow-up.  Returns nil. */
+static int
+tag_freeze_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                  UValue *out)
+{
+    (void)vm; (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Tag.freeze", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_TAG)
+        return urbi_raise_type(vm, "Tag.freeze: self must be a Tag", out);
+
+    UTag *t = (UTag *)self.v.p;
+    if (t != NULL) t->flags |= (uint8_t)UTAG_FLAG_FROZEN;
+    *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+/* tag_unfreeze_native: tag.unfreeze() — clear UTAG_FLAG_FROZEN. */
+static int
+tag_unfreeze_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                    UValue *out)
+{
+    (void)vm; (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Tag.unfreeze", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_TAG)
+        return urbi_raise_type(vm, "Tag.unfreeze: self must be a Tag", out);
+
+    UTag *t = (UTag *)self.v.p;
+    if (t != NULL) t->flags &= (uint8_t)~UTAG_FLAG_FROZEN;
+    *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+/* tag_block_native: tag.block() — v1.x deferred; sets no flag at v1.0.
+ * Raises a NotImplemented-style TypeError until the blocked-strand
+ * suspension mechanism lands. */
+static int
+tag_block_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                 UValue *out)
+{
+    (void)self; (void)args; (void)nargs;
+    return urbi_raise_type(vm, "Tag.block: not implemented at v1.0 (v1.x follow-up)", out);
+}
+
+/* tag_unblock_native: tag.unblock() — v1.x deferred; symmetric stub. */
+static int
+tag_unblock_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                   UValue *out)
+{
+    (void)self; (void)args; (void)nargs;
+    return urbi_raise_type(vm, "Tag.unblock: not implemented at v1.0 (v1.x follow-up)", out);
+}
+
+/* tag_enter_native: tag.enter — lazy-allocate enter_event and return it.
+ * Used by `at (t.enter?)` watcher installs from script. */
+static int
+tag_enter_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                 UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Tag.enter", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_TAG)
+        return urbi_raise_type(vm, "Tag.enter: self must be a Tag", out);
+
+    UTag *t = (UTag *)self.v.p;
+    if (t == NULL) return urbi_raise_type(vm, "Tag.enter: NULL tag pointer", out);
+
+    *out = tag_enter_getter(vm, t);
+    return UEXEC_OK;
+}
+
+/* tag_leave_native: tag.leave — lazy-allocate leave_event and return it.
+ * Used by `at (t.leave?)` watcher installs from script. */
+static int
+tag_leave_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                 UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Tag.leave", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_TAG)
+        return urbi_raise_type(vm, "Tag.leave: self must be a Tag", out);
+
+    UTag *t = (UTag *)self.v.p;
+    if (t == NULL) return urbi_raise_type(vm, "Tag.leave: NULL tag pointer", out);
+
+    *out = tag_leave_getter(vm, t);
+    return UEXEC_OK;
+}
+
 /* === tag_native_register === */
 
 UVMError
 tag_native_register(struct UVM *vm)
 {
-    /* TAGCH-016: drives urbi_object_alloc + urbi_register_fn slot installs,
-     * neither of which is ISR-safe.  Mirror src/changed/uchanged.c:32. */
+    /* TAGCH-016: drives urbi_object_alloc + slot installs, neither of which
+     * is ISR-safe.  Mirror src/changed/uchanged.c:32. */
     URBI_ASSERT_NOT_ISR(vm);
     UObject *proto = urbi_object_alloc(vm, URBI_ATOM_TAG);
     if (proto == NULL) {
         return UVM_OOM;   /* OOM: leave tag_proto NULL */
     }
+
+    /* Chain the tag proto onto root Object so OP_GETSLOT can walk past
+     * Tag.* into Object.* (clone, getSlot, setSlot, etc.).  Mirrors the
+     * same hookup done by event_native_register for Event. */
+    UObject *root = urbi_object_root(vm);
+    if (root == NULL) {
+        return UVM_OOM;
+    }
+    urbi_object_set_protos_single(vm, proto, root);
+
     vm->tag_proto = proto;
 
-    /* TAGCH-004: propagate slot-install failures.  The previous code
-     * dropped the return values, so an OOM during slot intern/install
-     * left a partially populated tag_proto on the VM.  Chain with || and
-     * on any non-zero return clear vm->tag_proto and surface UVM_OOM.
+    /* W4/v0.10.2: unify vm->atom_tag with vm->tag_proto so
+     * urbi_atom_proto_for_value(UVAL_TAG) finds the native method slots via
+     * urbi_object_atom(vm, URBI_ATOM_TAG).  Mirrors the event_native_register
+     * pattern: vm->atom_event = vm->event_proto = proto. */
+    vm->atom_tag = proto;
+
+    /* TAGCH-004: propagate slot-install failures.  Chain with || and on any
+     * non-zero return clear vm->tag_proto / vm->atom_tag and surface UVM_OOM.
      * The proto cell stays GC-managed and is collected at the next sweep.
      *
-     * TAGCH-013 (Phase 7 partial close): the two getter stubs were
-     * removed; only the protected setter stays installed (`_enter_set` /
-     * `_leave_set`) until tag-property dispatch lands and replaces this
-     * scaffold with typed UProps OGET/OSET binding. */
+     * W4 adds scripted Tag.new / .stop / .freeze / .unfreeze / .block /
+     * .unblock / .enter / .leave as UVAL_CLOSURE native methods.
+     * The `_enter_set` / `_leave_set` host-fn stubs stay for C-test
+     * compatibility until tag-property UProps dispatch lands (v1.x). */
     if (register_host_fn(vm, proto, "_enter_set", tag_enter_leave_setter_protected) != 0
-     || register_host_fn(vm, proto, "_leave_set", tag_enter_leave_setter_protected) != 0) {
+     || register_host_fn(vm, proto, "_leave_set", tag_enter_leave_setter_protected) != 0
+     || register_native_method_tag(vm, proto, "new",      tag_new_native)      != URBI_OK
+     || register_native_method_tag(vm, proto, "stop",     tag_stop_native)     != URBI_OK
+     || register_native_method_tag(vm, proto, "freeze",   tag_freeze_native)   != URBI_OK
+     || register_native_method_tag(vm, proto, "unfreeze", tag_unfreeze_native) != URBI_OK
+     || register_native_method_tag(vm, proto, "block",    tag_block_native)    != URBI_OK
+     || register_native_method_tag(vm, proto, "unblock",  tag_unblock_native)  != URBI_OK
+     || register_native_method_tag(vm, proto, "enter",    tag_enter_native)    != URBI_OK
+     || register_native_method_tag(vm, proto, "leave",    tag_leave_native)    != URBI_OK) {
         vm->tag_proto = NULL;
+        vm->atom_tag  = NULL;
         return UVM_OOM;
     }
     return UVM_OK;
