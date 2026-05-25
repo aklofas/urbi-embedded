@@ -313,13 +313,17 @@ urbi_strand_spawn(struct UVM *vm, struct URealm *realm, struct UClosure *entry)
 int
 urbi_strand_destroy(struct UVM *vm, UStrand *s)
 {
+    int rc = URBI_OK;
     if (!s) return URBI_OK;
     if (!vm) vm = s->vm;
     if (vm) URBI_ASSERT_NOT_ISR(vm);
 
 #if URBI_DEBUG
     /* api-ergonomics F8: warn in debug builds if the strand is in an active
-     * state.  Release builds skip the check (pre-v1.0 permissive posture). */
+     * state.  Log the problem and record the error code, but always proceed
+     * with teardown — realm-destroy calls this on strands in any state and
+     * must complete cleanup (e.g. strand_unlink_from_tags) regardless.
+     * Release builds skip the check (pre-v1.0 permissive posture). */
     {
         uint8_t st = USTRAND_GET_STATE(s);
         if (st != USTRAND_DORMANT && st != USTRAND_DEAD) {
@@ -327,7 +331,8 @@ urbi_strand_destroy(struct UVM *vm, UStrand *s)
                 vm->host_log_fn(vm, vm->host_log_ud, (int)URBI_LOG_ERROR,
                     "urbi_strand_destroy: strand in active state 0x%02x", st);
             }
-            return URBI_ERR_INVALID_STATE;
+            rc = URBI_ERR_INVALID_STATE;
+            /* fall through — cleanup must complete to maintain tag invariants */
         }
     }
 #endif
@@ -367,7 +372,7 @@ urbi_strand_destroy(struct UVM *vm, UStrand *s)
     sched_strand_destroy(s);
     ustrand_destroy(s, vm);
     if (vm) vm->alloc_fn(s, 0, vm->alloc_ud);
-    return URBI_OK;
+    return rc;
 }
 
 /* urbi_strand_state — query observable strand lifecycle state.
