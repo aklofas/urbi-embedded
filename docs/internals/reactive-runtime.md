@@ -21,7 +21,7 @@ v0.10.x arc that closes it.
 | `waituntil (cond)` | emits `OP_WAITUNTIL_INSTALL` | working; blocking until rising edge |
 | `at (e?) body` | emits `OP_AT_EVENT_INSTALL` | working; fires on `Event.emit` |
 | `at sync (e?) body` | emits `OP_AT_EVENT_SYNC_INSTALL` | working with sync-degradation caveat (Finding 7) |
-| `whenever (e?) body` | **RUNTIME GAP (Finding 1)** — parser routes to `AST_WATCHER`/`UWATCHER_WHENEVER`; event identifier treated as cond expression; watcher installs with empty read-set and never fires. **RUNTIME GAP — closes in Wave 3 of v0.10.x arc.** | |
+| `whenever (e?) body` | emits `OP_WHENEVER_EVENT_INSTALL` (W0/v0.10.2) | working; perpetual event subscriber — re-fires on every emission (not one-shot like `at (e?)`) |
 | `every (period) body` | desugars to `every(period_us, fn)` C-native call | working; re-spawn cadence via `UPeriodic` |
 | `tag.stop()` from script | **RUNTIME GAP (Finding 3)** — `OP_TAG_STOP` is a reserved type-error stub; `Tag.new()` does not exist; bare-prefix `mytag: stmt` is parse-rejected. **RUNTIME GAP — closes in Wave 3 of v0.10.x arc.** Cancellation is C-only via `urbi_tag_stop`. | |
 
@@ -44,7 +44,7 @@ Reactive forms parse to four AST node kinds, all handled in
 | -------------------- | ------------------------------------------- | ------------------------------------------------------- |
 | `AST_WATCHER`        | `at`, `at sync`, `whenever`                 | `OP_AT_INSTALL` / `OP_AT_SYNC_INSTALL` / `OP_WHENEVER_INSTALL` |
 | `AST_WAITUNTIL`      | `waituntil (cond)`                          | `OP_WAITUNTIL_INSTALL`                                  |
-| `AST_AT_EVENT`       | `at (e?) body`, `at sync (e?) body`         | `OP_AT_EVENT_INSTALL` / `OP_AT_EVENT_SYNC_INSTALL`      |
+| `AST_AT_EVENT`       | `at (e?) body`, `at sync (e?) body`, `whenever (e?) body` | `OP_AT_EVENT_INSTALL` / `OP_AT_EVENT_SYNC_INSTALL` / `OP_WHENEVER_EVENT_INSTALL` |
 | `AST_AT_SLOT_CHANGE` | `at (obj.x.changed?) body` and sync variant | `OP_GETSLOT_CHANGE_EVENT` then `OP_AT_EVENT_INSTALL`    |
 
 Every install opcode is ABC-encoded. `AST_WATCHER` lays out
@@ -79,7 +79,8 @@ marks active watchers but does not reclaim slots.
 `UWatcher.mode` selects the firing behaviour:
 `UWATCHER_AT` (edge), `UWATCHER_WHENEVER` (level),
 `UWATCHER_AT_SYNC`, `UWATCHER_WAITUNTIL`, `UWATCHER_AT_EVENT`,
-`UWATCHER_AT_EVENT_SYNC`.
+`UWATCHER_AT_EVENT_SYNC`, `UWATCHER_WHENEVER_EVENT` (perpetual event subscriber;
+re-fires on every emission, added W0/v0.10.2).
 
 ### Flag bits
 
@@ -119,13 +120,20 @@ Tail-append (not prepend) preserves the determinism contract: install
 order equals eval order.
 
 `install_at_event_runtime` is the thinner sibling for
-`AT_EVENT` / `AT_EVENT_SYNC`. It skips the trace probe (events fire on
-emit, not on slot writes) and links onto `event->at_watchers_head`
-instead of `vm->active_watchers_head`.
+`AT_EVENT` / `AT_EVENT_SYNC` / `WHENEVER_EVENT`. It skips the trace probe
+(events fire on emit, not on slot writes) and links onto
+`event->at_watchers_head` instead of `vm->active_watchers_head`.
 
 The result enum is `UWatcherInstallResult` —
 `URBI_INSTALL_OK`, `_OOM_POOL`, `_READSET_OVER`, `_TRACE_FAULT`,
-`_RECURSIVE`.
+`_RECURSIVE`, `_NO_OBSERVABLE_CELLS` (W0/v0.10.2: empty read-set rejected
+for `AT`/`WHENEVER` watchers; `WAITUNTIL` is exempt).
+
+The `_NO_OBSERVABLE_CELLS` result closes reactive audit **Finding 1** (the
+legacy `whenever (e?)` silently installed a no-op cond watcher with an empty
+read-set). Now `whenever (e?)` routes to `OP_WHENEVER_EVENT_INSTALL` and any
+`AT`/`WHENEVER` watcher reaching `install_watcher_runtime` with an empty
+read-set is rejected as a programming error.
 
 ### Fire (eval pass)
 
@@ -423,7 +431,11 @@ Wave 3 unless noted.
 
 - **Finding 1** (`whenever (e?)` silent no-op): parser does not produce
   `AST_AT_EVENT` for `whenever`; installs empty-read-set cond watcher
-  that never fires. Closes **Wave 3**.
+  that never fires. **CLOSED W0/v0.10.2** — `parse_whenever` now produces
+  `AST_AT_EVENT` with `is_whenever=true` when the condition ends with `?`;
+  `OP_WHENEVER_EVENT_INSTALL` (opcode 48, wire v1.9) routes to
+  `UWATCHER_WHENEVER_EVENT` mode; empty-read-set installs are now
+  rejected as `URBI_INSTALL_NO_OBSERVABLE_CELLS`.
 - **Finding 2** (AT_EVENT dangling on `event->at_watchers_head` after
   tag-stop): `pending_onleave_queue_push` does not unlink from the event
   chain; `c_event_emit_async/sync` re-fires logically-dead watchers.

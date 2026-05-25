@@ -24,16 +24,18 @@ static void version_contains_milestone_suffix(void) {
     UASSERT(strchr(v, '-') != NULL);
 }
 
-static void urbi_bytecode_version_byte_is_v1_8(void) {
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_BYTE, 0x18U);
+static void urbi_bytecode_version_byte_is_v1_9(void) {
+    /* W0/v0.10.2-reactive: opcode space extension (OP_WHENEVER_EVENT_INSTALL at
+     * slot 48) bumps minor from 8 to 9 (wire format v1.9 / 0x19). */
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_BYTE, 0x19U);
     UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MAJOR, 1U);
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MINOR, 8U);
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MINOR, 9U);
 }
 
 void test_version_suite(void) {
     utest_run("version_is_nonempty", version_is_nonempty);
     utest_run("version_starts_with_zero", version_starts_with_zero);
     utest_run("version_contains_milestone_suffix", version_contains_milestone_suffix);
-    utest_run("urbi_bytecode_version_byte_is_v1_8",
-              urbi_bytecode_version_byte_is_v1_8);
+    utest_run("urbi_bytecode_version_byte_is_v1_9",
+              urbi_bytecode_version_byte_is_v1_9);
 }

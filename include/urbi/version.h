@@ -87,6 +87,13 @@
  *      Struct layouts therefore differ between the two modes — same silent-
  *      divergence trap class as URBI_FLOAT_TYPE.  10th use of pre-v1.0
  *      escape clause.  (0/13/0 → 0/14/0)
+ *  11. v0.10.2-reactive W0 — UWatcherInstallResult gains
+ *      URBI_INSTALL_NO_OBSERVABLE_CELLS (value 5); uwatcher.h adds
+ *      UWATCHER_WHENEVER_EVENT (7); uchunk.h adds OP_WHENEVER_EVENT_INSTALL
+ *      (48) and bumps OP_MAX 48→49; wire format v1.8→v1.9
+ *      (URBI_BYTECODE_VERSION_MINOR 8→9).  No struct layout change; no
+ *      function signature change.  11th use of pre-v1.0 escape clause.
+ *      (0/14/0 → 0/14/1)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -102,7 +109,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  14
-#define URBI_API_VERSION_PATCH  0
+#define URBI_API_VERSION_PATCH  1
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)

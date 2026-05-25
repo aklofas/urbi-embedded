@@ -229,10 +229,11 @@ uint8_t emit_at_event_arm(UEmitter *e, UAstNode *n) {
         return 0U;
     }
 
-    UAstNode *event_ast   = n->u.at_event.event_expr;
-    UAstNode *body_ast    = n->u.at_event.body;
-    UAstNode *onleave_ast = n->u.at_event.onleave;
-    bool      sync_flag   = n->u.at_event.is_sync;
+    UAstNode *event_ast     = n->u.at_event.event_expr;
+    UAstNode *body_ast      = n->u.at_event.body;
+    UAstNode *onleave_ast   = n->u.at_event.onleave;
+    bool      sync_flag     = n->u.at_event.is_sync;
+    bool      whenever_flag = n->u.at_event.is_whenever;
 
     uint8_t event_reg = emit_expr(e, event_ast);
     if (e->error != EMIT_OK) return 0U;
@@ -269,7 +270,15 @@ uint8_t emit_at_event_arm(UEmitter *e, UAstNode *n) {
         : 0xFFU;
     if (e->error != EMIT_OK) return 0U;
 
-    UOpcode op = sync_flag ? OP_AT_EVENT_SYNC_INSTALL : OP_AT_EVENT_INSTALL;
+    /* W0/v0.10.2: three-way opcode select.
+     *   whenever (e?)  → OP_WHENEVER_EVENT_INSTALL (=48; re-fires every emit)
+     *   at sync (e?)   → OP_AT_EVENT_SYNC_INSTALL  (=43; sync, one-shot per emit)
+     *   at (e?)        → OP_AT_EVENT_INSTALL        (=42; async, one-shot per emit)
+     * whenever-sync has no valid surface syntax; parse_whenever never sets
+     * is_sync=true, so whenever_flag && sync_flag cannot both be true. */
+    UOpcode op = whenever_flag ? OP_WHENEVER_EVENT_INSTALL
+               : sync_flag    ? OP_AT_EVENT_SYNC_INSTALL
+               :                OP_AT_EVENT_INSTALL;
     emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
                (uint32_t)n->line);
 

@@ -44,6 +44,10 @@ extern "C" {
                 emitting runtime treats every chunk as a UProto with no
                 separate loader-shell type.  v1.7 rejected as
                 UCHUNK_LOAD_UNSUPPORTED_VERSION.).
+   v1.9 = 0x19 (v0.10.2-reactive W0 — opcode space extension: new
+                OP_WHENEVER_EVENT_INSTALL at slot 48 for whenever (e?)
+                event-subscriber installs.  OP_MAX was 48; now 49.
+                v1.8 rejected as UCHUNK_LOAD_UNSUPPORTED_VERSION.).
 
    Version-mismatch policy: exact-match.  Any byte other than VERSION_BYTE is
    a hard UCHUNK_LOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
@@ -52,7 +56,7 @@ extern "C" {
    Re-emit from source to migrate. */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1U
-#define URBI_BYTECODE_VERSION_MINOR  8U
+#define URBI_BYTECODE_VERSION_MINOR  9U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- Header canary bytes (offsets 6-11) ---
@@ -217,6 +221,16 @@ typedef enum {
                                          can read self from R[A+1] without
                                          relying on the deprecated
                                          vm->last_recv side channel. */
+
+    /* v0.10.2-reactive W0 — whenever (e?) install (wire v1.9) */
+    OP_WHENEVER_EVENT_INSTALL  = 48,  /* ABC: A=event_reg, B=body_reg,
+                                         C=onleave_reg (0xFF = absent).
+                                         Same shape as OP_AT_EVENT_INSTALL
+                                         but arms the watcher with
+                                         UWATCHER_WHENEVER_EVENT mode so
+                                         the body re-fires on every event
+                                         emission instead of one-shot
+                                         teardown.  Closes reactive F1. */
 
     OP_MAX
 } UOpcode;

@@ -40,12 +40,15 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
 
 /* === Watcher mode constants === */
 
-#define UWATCHER_AT             1   /* at (cond) body — edge-triggered */
-#define UWATCHER_WHENEVER       2   /* whenever (cond) body — level-triggered */
-#define UWATCHER_AT_SYNC        3   /* at (cond) body synchronous variant */
-#define UWATCHER_WAITUNTIL      4   /* waituntil(cond) — blocks caller until edge (spec #2 §5.1) */
-#define UWATCHER_AT_EVENT       5   /* at (event) body — fires on Event.emit (spec #3 §3.2) */
-#define UWATCHER_AT_EVENT_SYNC  6   /* at (event) body synchronous variant (spec #3 §3.2) */
+#define UWATCHER_AT                 1   /* at (cond) body — edge-triggered */
+#define UWATCHER_WHENEVER           2   /* whenever (cond) body — level-triggered */
+#define UWATCHER_AT_SYNC            3   /* at (cond) body synchronous variant */
+#define UWATCHER_WAITUNTIL          4   /* waituntil(cond) — blocks caller until edge (spec #2 §5.1) */
+#define UWATCHER_AT_EVENT           5   /* at (event) body — fires on Event.emit (spec #3 §3.2) */
+#define UWATCHER_AT_EVENT_SYNC      6   /* at (event) body synchronous variant (spec #3 §3.2) */
+#define UWATCHER_WHENEVER_EVENT     7   /* whenever (e?) body — perpetual event subscriber;
+                                         * body re-fires on every emission, no one-shot
+                                         * teardown.  W0/v0.10.2.  Closes reactive F1. */
 
 /* === Watcher flag bits (stored in UWatcher.flags) === */
 
