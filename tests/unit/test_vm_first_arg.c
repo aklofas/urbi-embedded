@@ -76,6 +76,32 @@ UTEST(strand_create_takes_vm_first) {
     urbi_vm_free(vm);
 }
 
+/* --- urbi_strand_state coverage --------------------------------------- */
+
+UTEST(strand_state_null_tolerance) {
+    /* urbi_strand_state(NULL, NULL) must return URBI_STRAND_DEAD (NULL-safe). */
+    UStrandState st = urbi_strand_state(NULL, NULL);
+    UASSERT_EQ((int)st, (int)URBI_STRAND_DEAD);
+}
+
+UTEST(strand_state_dormant) {
+    /* A freshly created strand with no entry closure is DORMANT. */
+    struct UVM *vm = urbi_vm_create(w5_test_alloc, NULL);
+    UASSERT_NE(vm, NULL);
+    struct URealm *r = urbi_realm_global(vm);
+    UASSERT_NE(r, NULL);
+    struct UStrand *s = urbi_strand_create(vm, r, NULL);
+    if (s != NULL) {
+        UASSERT_EQ((int)urbi_strand_state(vm, s), (int)URBI_STRAND_DORMANT);
+        /* Non-DORMANT destroy is covered indirectly by realm-teardown tests
+         * in test_strand_spawn_inheritance.c and test_scheduler_invariant.c,
+         * which exercise urbi_realm_destroy walking active strands. */
+        int rc = urbi_strand_destroy(vm, s);
+        UASSERT_EQ(rc, URBI_OK);
+    }
+    urbi_vm_free(vm);
+}
+
 /* --- urbi_throw returns int ------------------------------------------- */
 
 UTEST(throw_returns_int) {
@@ -109,6 +135,8 @@ void test_vm_first_arg_suite(void) {
     utest_run("invalid_state_error_code",   invalid_state_error_code_exists);
     utest_run("strand_destroy_returns_int", strand_destroy_returns_int);
     utest_run("strand_create_takes_vm_first", strand_create_takes_vm_first);
+    utest_run("strand_state_null_tolerance", strand_state_null_tolerance);
+    utest_run("strand_state_dormant",       strand_state_dormant);
     utest_run("throw_returns_int",          throw_returns_int);
     utest_run("chunk_from_bytes_takes_vm",  chunk_from_bytes_takes_vm);
     utest_run("return_val_returns_int",     return_val_returns_int);

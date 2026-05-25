@@ -922,7 +922,11 @@ The `const char*` fields in `urbi_error_info_t` point into VM-owned storage and 
 
 **Forbidden states (active strands):**
 
-Calling `urbi_strand_destroy` on a strand in any other state (`READY`, `RUNNING`, `BLOCKED`, `WAITING`) is undefined behaviour in release builds. In debug builds (`URBI_DEBUG` defined), the call returns `URBI_ERR_INVALID_STATE` (-27) and the strand is left intact.
+Calling `urbi_strand_destroy` on a strand in any other state (`READY`, `RUNNING`, `BLOCKED`, `WAITING`) is undefined behaviour in release builds. In debug builds (`URBI_DEBUG` defined), the call returns `URBI_ERR_INVALID_STATE` (-27) **but teardown still completes** — the strand pointer is invalid after the call regardless of the return value. The error code is purely diagnostic; cleanup must proceed to maintain tag-member-list and other lifecycle invariants. For example, `urbi_realm_destroy` walks all strands (including active ones) and they must be torn down for the realm-destroy assertions to pass.
+
+In release builds, no error is returned; teardown completes silently.
+
+Embedders that want strict pre-destroy validation should query `urbi_strand_state(vm, s)` first and skip the `urbi_strand_destroy` call if the state is neither `URBI_STRAND_DORMANT` nor `URBI_STRAND_DEAD`.
 
 ```c
 /* FRAGMENT — safe strand teardown */
@@ -930,7 +934,7 @@ void safe_strand_teardown(struct UVM *vm, struct UStrand *s)
 {
     int rc = urbi_strand_destroy(vm, s);
     if (rc == URBI_ERR_INVALID_STATE) {
-        /* debug build caught an active strand — do not proceed */
+        /* URBI_ERR_INVALID_STATE returned; strand pointer no longer valid */
         (void)rc;
     }
 }
