@@ -23,9 +23,20 @@
 
 /* === Feature-flag overrides ===
  * URBI_GC_NONE has no GC-managed cells, no pinning, no finalizer tracking,
- * and no incremental barrier. */
+ * and no incremental barrier.
+ *
+ * W2: include/urbi/gc.h now defines default values for these macros via
+ * #ifndef guards.  When ugc_none.h is included after urbi/gc.h (the correct
+ * order for internal callers who include both), the defaults are already set.
+ * #undef + redefine is the standard C idiom for intentional override.  The
+ * compiler may emit a "macro redefined" warning with -Wundef-redef or similar
+ * flags, but -Wpedantic itself does not fire on #undef+redefine (only on
+ * plain redefinition without an intervening #undef). */
+#undef  URBI_GC_HAS_FINALIZERS
 #define URBI_GC_HAS_FINALIZERS       0
+#undef  URBI_GC_HAS_PINNING
 #define URBI_GC_HAS_PINNING          0
+#undef  URBI_GC_INCREMENTAL_BARRIER
 #define URBI_GC_INCREMENTAL_BARRIER  0
 
 /* === gc_byte layout — no color tracking under NONE === */

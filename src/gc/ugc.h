@@ -36,8 +36,11 @@
 struct UVM;
 
 /* === GC root provider callbacks ===
- * Declared here (not in uvm.h) so urbi/gc.h and ugc_incremental.h can use them
- * without pulling in the full UVM struct definition.
+ * W2: UGcRootCallback and UGcRootProviderFn are now also declared in
+ * include/urbi/gc.h (public header) so external embedders using -Iinclude
+ * alone can resolve them.  The declarations below are guarded to avoid
+ * -Wpedantic "redefinition of typedef" diagnostics when ugc.h is included
+ * after urbi/gc.h (the common case for internal src/ TUs).
  *
  * UGcRootCallback: called once per GC root during a root walk.
  *   vm   — the owning VM.
@@ -51,8 +54,11 @@ struct UVM;
  * UGcWalkPayloadFn: per-type precise scanner stored in UType.walk_payload.
  *   Called during the mark phase to shade all UValues reachable from a cell's
  *   payload.  payload is the raw bytes immediately after the UCell header. */
+#ifndef URBI_GC_ROOT_CALLBACK_DEFINED
+#  define URBI_GC_ROOT_CALLBACK_DEFINED 1
 typedef void (*UGcRootCallback)(struct UVM *vm, UValue *root, void *ctx);
 typedef void (*UGcRootProviderFn)(struct UVM *vm, UGcRootCallback cb, void *ctx);
+#endif
 typedef void (*UGcWalkPayloadFn)(struct UVM *vm, void *payload,
                                  UGcRootCallback cb, void *ctx);
 

@@ -8,9 +8,15 @@
  * Assembly inspection (-S + grep for barrier symbol) is a T46 / diagnostic
  * exercise.  At M3 the acceptance criterion is simply: this file compiles.
  *
+ * W2 note: urbi/gc.h no longer includes the strategy header directly; internal
+ * callers include it explicitly via -Isrc.  This file includes "gc/ugc_none.h"
+ * directly to exercise the URBI_GC_NONE barrier stubs.
+ *
  * Row 10 acceptance #9.  T28. */
 
 #include "urbi/gc.h"
+/* W2: strategy header must now be included explicitly by internal callers. */
+#include "gc/ugc_none.h"
 
 /* Dummy values that satisfy the type signatures without UVM internals. */
 static UCell  g_parent;

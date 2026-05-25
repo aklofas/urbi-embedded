@@ -1,25 +1,40 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Per-scheduler API umbrella.
+/* Public per-scheduler API.
  *
- * Stability: core.
+ * Stability: core (feature flags); experimental (priority API — v1.x only).
  *
- * Consumers include this header (not usched.h directly) to get both the
- * chosen scheduler's interface and the URBI_SCHED_HAS_* flags with correct
- * defaults.
- * Include order: urbi/sched.h → usched.h → usched_cooperative.h (for M3).
- * usched_cooperative.h hard-defines URBI_SCHED_HAS_* to 0; the #ifndef
- * guards below are no-ops for cooperative and provide defaults for future
- * RT/deadline schedulers that omit some flags. */
+ * Declares the scheduler strategy enum, per-scheduler feature flags, and
+ * priority-accessor prototypes (compiled only when the selected scheduler
+ * exposes URBI_SCHED_HAS_PRIORITY).
+ *
+ * === W2: public-header de-leak ===
+ * Before v0.10.3, this header included "sched/usched.h" — a src/-prefixed
+ * path that caused header-not-found errors for embedders using -Iinclude
+ * alone.  The public-facing content (feature flags, USchedClass enum, and 3
+ * priority-accessor prototypes) is now declared directly in this header.
+ * Internal src/ callers that need the cooperative-scheduler implementation
+ * details continue to #include "sched/usched.h" directly with -Isrc.
+ * Closes audit-1 F1 (completion).
+ * === end W2 === */
 
 #ifndef URBI_SCHED_H
 #define URBI_SCHED_H
 
+#include <stdint.h>
+
 #include "urbi/version.h"  /* URBI_EXPERIMENTAL */
-#include "sched/usched.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* === W2: public-header de-leak === */
 
 /* Per-scheduler feature flags — cooperative defaults (all 0).
-   RT/deadline schedulers hard-define these before this point via their own
-   header, which usched.h includes first; the #ifndef guards preserve them. */
+   RT/deadline schedulers hard-define these before including this header via
+   their own implementation header; the #ifndef guards preserve them.
+   Include order for internal callers: "sched/usched.h" → "sched/usched_cooperative.h"
+   (cooperative) sets URBI_SCHED_HAS_PRIORITY to 0, confirming the default. */
 #ifndef URBI_SCHED_HAS_PRIORITY
 #  define URBI_SCHED_HAS_PRIORITY  0
 #endif
@@ -31,8 +46,8 @@
 #endif
 
 /* Priority API — only compiled when the selected scheduler supports it.
-   Cooperative never defines URBI_SCHED_HAS_PRIORITY != 0, so these
-   declarations are absent in M3 builds.
+   Cooperative (v1.0 baseline) never defines URBI_SCHED_HAS_PRIORITY != 0,
+   so these declarations are absent in shipped builds.
 
    v0.5.5 (T11) made the `_CLASS_` infix uniform across all three
    enumerators (closes API-019).  The original asymmetric form had only
@@ -65,5 +80,11 @@ URBI_EXPERIMENTAL void        urbi_strand_set_priority(struct UStrand *s, uint8_
 URBI_EXPERIMENTAL uint8_t     urbi_strand_get_priority(struct UStrand *s);
 URBI_EXPERIMENTAL USchedClass urbi_strand_get_sched_class(struct UStrand *s);
 #endif /* URBI_SCHED_HAS_PRIORITY */
+
+/* === end W2: public-header de-leak === */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* URBI_SCHED_H */
