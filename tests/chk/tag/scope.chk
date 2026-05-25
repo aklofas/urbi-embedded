@@ -1,16 +1,27 @@
-# Milestone: M3
-# Covers: variables declared inside a tag scope ({t: var foo = 42; foo}) are
-#         not visible outside the scope — scoping error on out-of-scope lookup.
-# defer-to: M4 (requires Tag.new() method dispatch for var t = Tag.new())
+# Milestone: W4/v0.10.2
+# Covers: Tag.new("name") creates a UVAL_TAG value; tag scope body runs when
+#         the tag expression evaluates to a UVAL_TAG (not just nil/int);
+#         two Tag.new() calls produce distinct tags (pointer-identity check).
+# Activated: v0.10.2-reactive W4 (UVAL_TAG + Tag.new() constructor).
 #
-# Reason:
-#   The fixture exercises tag scope variable isolation using 'var t = Tag.new()'.
-#   Tag.new() is an object method call on the Tag prototype — M4 object-method
-#   dispatch.  At M3 we can declare tags with 'var t = 0; t: {...}' (treating
-#   the integer as an opaque tag key) but Tag.new() as a constructor call is not
-#   available.  The scoping semantic itself (variable isolation inside tag scope)
-#   is expected to work at M3 with the existing OP_PUSH_TAG/OP_POP_TAG.
-#
-# Original urbiscript (activate at M4 with Tag.new() method dispatch):
-# # var t = Tag.new() | {t: var foo = 42; foo};
-# # [00000001:error] !!! input.u:@.19-21: lookup failed: foo
+# Note: the original M3 draft tested variable-scoping isolation using Tag.new()
+# (var t = Tag.new() | {t: var foo = 42; foo} expecting lookup-failed: foo).
+# That test remains deferred to W5 because it requires the bare-label `t:`
+# to BIND the scope's anonymous UTag to `t` (OP_PUSH_TAG W5 register hook).
+# What IS testable now: Tag.new() creates a real UVAL_TAG, tag scopes work
+# with UVAL_TAG identifiers, and two tags are distinct objects.
+
+var t1 = Tag.new("a")
+var t2 = Tag.new("b")
+t1
+t2
+t1 == t1
+t1 == t2
+var x = 0; t1: { x = 99 }; x
+[00000000] <Tag: a>
+[00000001] <Tag: b>
+[00000002] <Tag: a>
+[00000003] <Tag: b>
+[00000004] true
+[00000005] false
+[00000006] 99

@@ -120,20 +120,18 @@ UTEST(tag_leave_event_creation_triggers_dijkstra_barrier)
 }
 
 /* ===================================================================
- * T54 / TAGCH-013 closure: tag_proto_lacks_enter_leave_stub_slots
+ * T54 / W4 update: tag_proto_has_enter_leave_native_slots
  *
  * Pre-Phase-7 (M5 baseline) the tag proto carried two getter stubs
- * (`enter`/`leave`) installed as UVAL_HOST_FN.  They were unreachable
- * from any path — UVAL_TAG does not exist in UValKind so OP_CALL could
- * never dispatch them, and C tests had no reason to invoke them
- * indirectly.  Phase 7 (M6 stdlib) removed the stubs as part of the
- * TAGCH-013 partial close.  This test is the regression pin: looking
- * up `enter` or `leave` on vm->tag_proto must miss until tag-property
- * dispatch lands and reinstates them through typed UProps OGET binding
- * (post-M6).
+ * (`enter`/`leave`) installed as UVAL_HOST_FN — they were unreachable
+ * because UVAL_TAG didn't exist.  Phase 7 (M6 stdlib) removed the stubs
+ * (TAGCH-013 partial close).  W4 (v0.10.2 reactive) reinstates enter/leave
+ * as UVAL_CLOSURE native methods (tag_enter_native / tag_leave_native)
+ * that are now reachable from script via UVAL_TAG dispatch.
+ * This test pin was updated to assert HIT (not miss).
  * =================================================================== */
 
-UTEST(tag_proto_lacks_enter_leave_stub_slots)
+UTEST(tag_proto_has_enter_leave_native_slots)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -154,8 +152,13 @@ UTEST(tag_proto_lacks_enter_leave_stub_slots)
 
         UValue v;
         v.kind = (uint8_t)UVAL_NIL;
-        /* urbi_object_lookup returns 0 on hit, non-zero on miss. */
-        UASSERT(urbi_object_lookup(&vm, vm.tag_proto, sym, &v) != 0);
+        /* W4: urbi_object_lookup returns 0 on hit — enter/leave are now
+         * UVAL_CLOSURE native methods installed by tag_native_register. */
+        int hit = (urbi_object_lookup(&vm, vm.tag_proto, sym, &v) == 0);
+        UASSERT(hit);
+        if (hit) {
+            UASSERT_EQ((int)v.kind, (int)UVAL_CLOSURE);
+        }
     }
 
     urbi_vm_destroy(&vm);
@@ -271,8 +274,8 @@ test_tag_barrier_suite(void)
               tag_enter_event_creation_triggers_dijkstra_barrier);
     utest_run("tag_leave_event_creation_triggers_dijkstra_barrier",
               tag_leave_event_creation_triggers_dijkstra_barrier);
-    utest_run("tag_proto_lacks_enter_leave_stub_slots",
-              tag_proto_lacks_enter_leave_stub_slots);
+    utest_run("tag_proto_has_enter_leave_native_slots",
+              tag_proto_has_enter_leave_native_slots);
     utest_run("tag_native_register_propagates_failures",
               tag_native_register_propagates_failures);
     utest_run("tag_native_calls_assert_not_isr",

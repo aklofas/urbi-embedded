@@ -59,10 +59,14 @@ urbi_atom_proto_for_value(struct UVM *vm, UValue v)
             return urbi_object_atom(vm, URBI_ATOM_VOID);
 
         case UVAL_EVENT:
-            /* Tag values flow through the Object kind today (no UVAL_TAG
-             * in the public union); UEvent has its own UValKind, and
-             * Phase 4 maps it to URBI_ATOM_EVENT here directly. */
             return urbi_object_atom(vm, URBI_ATOM_EVENT);
+
+        case UVAL_TAG:
+            /* W4/v0.10.2: UVAL_TAG routes to URBI_ATOM_TAG (= vm->atom_tag),
+             * which is unified with vm->tag_proto by tag_native_register.
+             * This allows scripted tag.stop() / .freeze() etc. to dispatch
+             * through the OP_CALL native-method path. */
+            return urbi_object_atom(vm, URBI_ATOM_TAG);
 
         case UVAL_CLOSURE:
         case UVAL_STRAND:

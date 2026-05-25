@@ -1480,22 +1480,36 @@ dispatch:
             NEXT();
         }
 
-        /* OP_TAG_STOP: runtime path is host-callable urbi_tag_stop (M3 row 7),
-         * which runs no bytecode.  The bytecode opcode is reserved for a
-         * future emit path; no parser produces it today.  The dispatch entry
-         * stays as a typed-error stub so that any rogue OP_TAG_STOP that
-         * leaks into a chunk (e.g. via the test_emit round-trip) faults
-         * cleanly instead of executing undefined behaviour. */
+        /* OP_TAG_STOP: W4/v0.10.2 — real implementation replacing the M3
+         * reserved-stub.  ABC encoding: A = reg_tag (UVAL_TAG), B = reg_value
+         * (stop payload, reserved at v1.0 — pass nil), C = 0.
+         *
+         * Forwards to urbi_tag_stop which deposits UEXEC_TAG_STOP on every
+         * member strand, walks the onleave watcher cascade, and sets
+         * UTAG_FLAG_STOPPED.  Wire format v1.8 / 0x18 unchanged — OP_TAG_STOP
+         * opcode value 30 is already in the bytecode table; no emit path
+         * produced it until W4, when Tag.new() + .stop() become scripted.
+         *
+         * Type-check: R[A] must be UVAL_TAG.  script-side `.stop()` resolves
+         * through Tag.new() which always returns UVAL_TAG, so a TYPE_ERROR
+         * here indicates a VM bug, not a user error. */
 #if UVM_USE_COMPUTED_GOTO
         label_row7_stub:
 #else
         case OP_TAG_STOP:
 #endif
         {
-            URBI_DISPATCH_ASSERT(0 && "OP_TAG_STOP at runtime: emit path reserved for v1.x");
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "OP_TAG_STOP: bytecode emit path is reserved; use urbi_tag_stop host call");
-            HALT();
+            uint8_t A = uinstr_a(*s->pc);
+            if (s->R[A].kind != (uint8_t)UVAL_TAG) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm,
+                    "OP_TAG_STOP: R[A] must be UVAL_TAG");
+                HALT();
+            }
+            UTag *_stop_tag = (UTag *)s->R[A].v.p;
+            URBI_INTERNAL_ASSERT(_stop_tag != NULL);
+            urbi_tag_stop(vm, _stop_tag, urbi_make_nil());
+            NEXT();
         }
 
         /* === T41: OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL ===

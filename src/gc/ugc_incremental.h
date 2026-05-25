@@ -190,13 +190,22 @@ void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
  * (tests/scripts/check-gc-roots-coverage.sh) enforces that every UVAL_*
  * declared in <urbi/types.h> appears at least once under src/gc/.
  *
- * TODO(M5+): extend for UVAL_STRING (when strings move to heap), UVAL_ARRAY,
- * UVAL_TAG, UVAL_WATCHER once those UValKinds exist. */
+ * W4/v0.10.2: UVAL_TAG added to the heap-bearing list.  UTag is a GC-managed
+ * cell (UTYPE_TAG, allocated via urbi_gc_alloc) with UCell at offset 0, so
+ * uvalue_as_cell() is well-defined for UVAL_TAG values.  The existing
+ * walk_utag in src/object/utypes_init.c walks the cell graph (enter/leave
+ * events, parent pointer, member_watchers chain).  Adding UVAL_TAG here
+ * ensures that a UTag held only as a UVAL_TAG in a register or slot is
+ * shaded gray by mark_root_callback and not collected prematurely.
+ *
+ * TODO(v1.x+): extend for UVAL_STRING (when strings move to heap), UVAL_ARRAY,
+ * UVAL_WATCHER once those UValKinds exist. */
 
 static inline bool
 uvalue_is_heap(UValue v)
 {
-    return v.kind == UVAL_CLOSURE || v.kind == UVAL_OBJECT || v.kind == UVAL_EVENT;
+    return v.kind == UVAL_CLOSURE || v.kind == UVAL_OBJECT
+        || v.kind == UVAL_EVENT   || v.kind == UVAL_TAG;
 }
 
 static inline UCell *
