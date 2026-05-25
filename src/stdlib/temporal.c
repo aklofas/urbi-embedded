@@ -197,6 +197,73 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === sleep_native ========================================================
+ *
+ * W6/v0.10.2: sleep(duration) stdlib C-native — blocks current strand via
+ * USTRAND_REASON_SLEEP.  Closes legacy audit F15 + v0.9.4-era Pico
+ * follow-up (whenever(named_event) workaround required C-side watcher;
+ * native sleep unblocks the simplest blocking-wait pattern from script).
+ *
+ * Duration accepted as:
+ *   UVAL_INT   — microseconds.  Matches the time-literal lexer output:
+ *                `100ms` → UVAL_INT(100000), `1s` → UVAL_INT(1000000).
+ *   UVAL_FLOAT — seconds, converted via *1e6 (same scale as the int form).
+ * Other kinds raise TypeError.  Negative values raise TypeError.
+ *
+ * Blocks the current strand by calling sched_strand_block(s,
+ * USTRAND_REASON_SLEEP, now_us + duration_us).  The scheduler's existing
+ * sleep-queue infrastructure wakes the strand when host_time_us() reaches
+ * the target.
+ *
+ * TAG_STOP on a sleeping strand wakes it via the existing
+ * sched_strand_unblock path in urbi_tag_stop's member_strands walk
+ * (src/runtime/uunwind.c) — verified at v0.10.2 W6.
+ *
+ * Returns nil after wakeup (or when TAG_STOP interrupts the sleep;
+ * the TAG_STOP unwind delivers UEXEC_TAG_STOP before the nil return
+ * can be observed by the caller). */
+static int
+sleep_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self;
+    if (nargs != 1) {
+        return urbi_raise_arity(vm, "sleep", 1, nargs, out);
+    }
+    uint64_t duration_us;
+    if (args[0].kind == (uint8_t)UVAL_INT) {
+        int64_t i = args[0].v.i;
+        if (i < 0) {
+            return urbi_raise_type(vm, "sleep: negative duration", out);
+        }
+        duration_us = (uint64_t)i;
+    } else if (args[0].kind == (uint8_t)UVAL_FLOAT) {
+        double f = (double)args[0].v.f;
+        if (f < 0.0 || f != f) {    /* f != f catches NaN */
+            return urbi_raise_type(vm, "sleep: negative duration", out);
+        }
+        /* Cast via int64_t to reuse __fixdfdi (double→int64, already in the
+         * freestanding-golden symbol list) rather than pulling in the
+         * distinct __fixunsdfdi (double→uint64) libgcc helper.  The f >= 0
+         * check above guarantees non-negative, so int64_t cast is safe. */
+        duration_us = (uint64_t)(int64_t)(f * 1e6);
+    } else {
+        return urbi_raise_type(vm,
+            "sleep: duration must be UVAL_INT (microseconds) or UVAL_FLOAT (seconds)",
+            out);
+    }
+
+    UStrand *cur = vm->cur_strand;
+    URBI_INTERNAL_ASSERT(cur != NULL);
+    uint64_t now_us = (vm->host_time_us != NULL) ? vm->host_time_us() : 0U;
+    sched_strand_block(cur, USTRAND_REASON_SLEEP, now_us + duration_us);
+    /* sched_strand_block puts the strand on the sleep queue; the scheduler
+     * resumes it when wake_us elapses (or earlier via TAG_STOP).
+     * Returns nil after wakeup — the strand yields immediately here and
+     * the scheduler drives the actual wait. */
+    *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
 /* === urbi_temporal_native_register =====================================
  *
  * Allocates vm->every_native_closure and stores it.  Realm-global binding
@@ -218,11 +285,32 @@ int
 urbi_temporal_native_register_globals(UVM *vm, URealm *realm)
 {
     if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
-    if (vm->every_native_closure == NULL) return URBI_OK;  /* no closure -> nothing to bind */
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_CLOSURE;
-    v.v.p  = (void *)vm->every_native_closure;
-    return urbi_realm_set_global(vm, realm, "every", 5, v);
+
+    /* Bind "every" as a realm global pointing at vm->every_native_closure. */
+    if (vm->every_native_closure != NULL) {
+        UValue ev;
+        ev.kind = (uint8_t)UVAL_CLOSURE;
+        ev.v.p  = (void *)vm->every_native_closure;
+        int rc = urbi_realm_set_global(vm, realm, "every", 5, ev);
+        if (rc != URBI_OK) return rc;
+    }
+
+    /* W6/v0.10.2: bind "sleep" as a realm global.  Allocate the closure
+     * here (no UVM field — GC reachability via the realm-global slot,
+     * same as the comment above for every_native_closure).  One
+     * allocation per realm creation; the realm's global_object slot keeps
+     * the closure alive for the lifetime of the realm. */
+    {
+        UClosure *sl_cl = urbi_native_closure_create(vm, sleep_native);
+        if (sl_cl == NULL) return URBI_ERR_OOM;
+        UValue sv;
+        sv.kind = (uint8_t)UVAL_CLOSURE;
+        sv.v.p  = (void *)sl_cl;
+        int rc = urbi_realm_set_global(vm, realm, "sleep", 5, sv);
+        if (rc != URBI_OK) return rc;
+    }
+
+    return URBI_OK;
 }
 
 /* === GC root walker ==================================================== */

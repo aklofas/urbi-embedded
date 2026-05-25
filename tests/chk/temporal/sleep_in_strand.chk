@@ -1,0 +1,24 @@
+# Milestone: v0.10.2-reactive (W6)
+# Covers: sleep(duration) inside an every() body strand does not crash.
+#
+# every() spawns a body strand per period.  If the body calls sleep(),
+# the body strand parks on the sleep queue.  The body+sleep cadence
+# (spec §11.4) means the periodic's current_strand pointer is held while
+# the body sleeps.  urbi_periodic_body_completed fires after the body strand
+# resumes from sleep and reaches OP_RET — not while it is sleeping.
+# The periodic only re-arms after the body (including its sleep) finishes.
+#
+# PASS criteria: every(1us) body that calls sleep(1us) completes without
+# crashing; subsequent reads are valid.
+
+# Install every() that calls sleep inside its body.
+Realm.done = 0
+every (1us) sleep(1us)
+0
+0
+true
+[00000000] 0
+[00000001] nil
+[00000002] 0
+[00000003] 0
+[00000004] true

@@ -205,7 +205,15 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
          * WAITING_SLEEP, WAIT_WATCHER, WAIT_EVENT, WAITING_JOIN, WAITING_HOST. */
         if (USTRAND_IS_WAITING(loader)) {
             /* Parked.  Strand persists in realm; caller continues with
-             * their own urbi_step loop.  out_result stays nil. */
+             * their own urbi_step loop.  out_result stays nil.
+             *
+             * W6/v0.10.2: clear out_slot so OP_RET on resume does not write
+             * to a dangling pointer (the caller's UValue result local is on
+             * the stack of urbi_repl_eval which has already returned).
+             * OP_RET guards against NULL out_slot (uvm.c CASE(OP_RET)), so
+             * the strand's return value is silently discarded — the REPL
+             * already emitted nil for the parked call. */
+            loader->out_slot = NULL;
             return URBI_OK;
         }
 
