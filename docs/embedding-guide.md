@@ -168,7 +168,7 @@ void urbi_task(struct UVM *vm)
                 break;
             case URBI_STEP_FATAL:
                 /* A strand entered a fatal state — inspect or tear down. */
-                handle_fatal(&vm);
+                handle_fatal(vm);
                 return;
         }
     }
@@ -220,6 +220,8 @@ void setup_diag(struct UVM *vm, struct MyContext *ctx)
 ```
 
 The same pattern applies to `urbi_set_time_us`, `urbi_set_watcher_body_done_fn`, `urbi_set_isr_check_fn`, and `urbi_register_event_drain`. Pass `NULL` when no context is needed.
+
+For full watcher and strand callback unbind/lifecycle semantics, see §9 Lifecycle Contracts.
 
 ---
 
@@ -506,9 +508,9 @@ void IMU_DataReady_ISR(void)
 The urbiscript side sees all three as one dispatch:
 
 ```urbiscript
-at (accel?(ax, ay, az)) { process_accel(ax, ay, az) };
-at (gyro?(gx, gy, gz))  { process_gyro(gx, gy, gz) };
-at (mag?(mx, my, mz))   { fuse_sensors(ax, ay, az, gx, gy, gz, mx, my, mz) };
+at (accel?(ax, ay, az)) { Realm.last_accel = [ax, ay, az] };
+at (gyro?(gx, gy, gz))  { Realm.last_gyro  = [gx, gy, gz] };
+at (mag?(mx, my, mz))   { fuse_sensors(Realm.last_accel, Realm.last_gyro, [mx, my, mz]) };
 ```
 
 `urbi_atomic_begin`/`urbi_atomic_end` are NOT ISR-safe on their own — they must be called from the MAIN thread or from an ISR only when the main thread is known to be blocked waiting for notification (the typical FreeRTOS pattern: ISR calls `urbi_atomic_begin`, does burst inject, calls `urbi_atomic_end`, then posts a task notification; the urbi task was blocking on `xTaskNotifyWait` and wakes to drain). Do not call them from a nested ISR or from a thread that contends with the main urbi thread.
@@ -702,7 +704,7 @@ void setup_tag(struct UVM *vm, struct URealm *realm)
         /* OOM — handle error */
     }
     /* Keep the tag reachable: store it in a realm global or hold a
-     * urbi_ref (see Section 6), otherwise the GC may collect it. */
+     * urbi_ref (see Section 8), otherwise the GC may collect it. */
 }
 ```
 
@@ -834,7 +836,7 @@ A host-side watcher installed via `urbi_register_watcher` unbinds when any of th
 |---|---|
 | Event unregistered (`urbi_event_unregister`) | Callback fires one final time with a "removed" sentinel (argc=0, event_id=`URBI_EVENT_ID_INVALID`), then unbinds |
 | `urbi_unregister_watcher(handle)` called | No final callback; clean deferred unbind at end of current drain pass |
-| Callback returns `URBI_ERR_WATCHER_UNREGISTER` | Auto-unbinds after the current callback returns |
+| Callback returns `URBI_CB_UNREGISTER` (legacy alias: `URBI_ERR_WATCHER_UNREGISTER`) | Auto-unbinds after the current callback returns |
 | VM destroyed | Callback fires one final time with event_id=`URBI_EVENT_ID_INVALID`, then unbinds |
 | Heap locked | Existing watchers continue; new `urbi_register_watcher` returns `URBI_WATCHER_HANDLE_INVALID` |
 
@@ -1009,10 +1011,11 @@ Combine `urbi_set_watcher_body_done_fn` with a lock-free ring buffer to record p
 static volatile uint32_t watcher_fire_count = 0;
 
 static void telemetry_done(struct UVM *vm,
+                            void *ud,
                             urbi_watcher_handle_t handle,
-                            int status)
+                            int completion_status)
 {
-    (void)vm; (void)handle; (void)status;
+    (void)vm; (void)ud; (void)handle; (void)completion_status;
     /* Atomic increment safe here: the done callback runs on MAIN thread. */
     watcher_fire_count++;
 }
@@ -1029,7 +1032,7 @@ static int watchdog_watcher(struct UVM *vm, urbi_event_id_t id,
 {
     (void)vm; (void)id; (void)args; (void)argc; (void)ud;
     hardware_watchdog_kick();
-    return URBI_OK;   /* stay registered */
+    return URBI_CB_OK;   /* stay registered */
 }
 
 void setup_watchdog(struct UVM *vm, struct URealm *realm,
