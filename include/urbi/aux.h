@@ -196,9 +196,11 @@ void urbi_aux_diag_to_stderr(struct UVM *vm, int level, const char *fmt, ...);
  * Single-call safe extract: returns URBI_OK + writes *out on type match;
  * returns URBI_ERR_TYPE (-26) and leaves *out unmodified on kind mismatch.
  *
- * When out is NULL the call acts as a pure type check — returns URBI_OK or
- * URBI_ERR_TYPE without writing.  This is useful when the caller only needs
- * to verify kind before dispatching to an unchecked urbi_value_as_* path.
+ * When out is NULL (single-out variants), or when both out and out_len are
+ * NULL (for urbi_aux_value_to_str), the call acts as a pure type check —
+ * returns URBI_OK or URBI_ERR_TYPE without writing.  This is useful when
+ * the caller only needs to verify kind before dispatching to an unchecked
+ * urbi_value_as_* path.
  *
  * Implemented in src/urbi_aux.c alongside the other aux helpers.
  *

@@ -433,7 +433,8 @@ int urbi_tag_info(const struct UTag *tag, urbi_tag_info_t *out);
  *   with URBI_ERR_CONST_SLOT_WRITE.  COW-inherited slots (slot on a
  *   prototype) receive a mutable local copy per pre-M2 §6.1.
  *   Returns URBI_OK on success.
- *   Returns URBI_ERR_INVALID_ARG if vm or name is NULL, or obj is not UVAL_OBJECT.
+ *   Returns URBI_ERR_INVALID_ARG if vm or name is NULL.
+ *   Returns URBI_ERR_TYPE if obj is not UVAL_OBJECT (type mismatch).
  *   Returns URBI_ERR_CONST_SLOT_WRITE if the slot is locally const-flagged.
  *   Returns URBI_ERR_OOM on allocation failure.
  *

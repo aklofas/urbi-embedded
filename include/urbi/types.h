@@ -342,8 +342,8 @@ static inline struct UClosure *urbi_value_as_closure(UValue v)
  * Pure tag comparison; no validation of the payload.  Header-only static
  * inlines — zero-overhead at any optimisation level.
  *
- * Mirrors urbi_make_* (constructors) and urbi_value_as_* (unchecked
- * accessors): one is_/make/as triple per exposed UValKind.
+ * Ordered by UValKind numeric value (not by urbi_make_* declaration order,
+ * which is lexical; not by urbi_value_as_* declaration order).
  *
  * Embedders use these to dispatch on UValue kind without reaching for
  * urbi_value_kind() comparisons or internal UVAL_* constants.  Example:
@@ -354,9 +354,9 @@ static inline struct UClosure *urbi_value_as_closure(UValue v)
  *
  * Closes api-ergonomics F1 (value-ctor / accessor asymmetry).
  *
- * Note: urbi_value_is_str and urbi_value_is_strand are included for
- * completeness; urbi_value_is_host_fn covers UVAL_HOST_FN (kind 10),
- * which embedders may encounter in callbacks but never construct directly.
+ * urbi_value_is_strand and urbi_value_is_host_fn are diagnostic-only
+ * predicates: the corresponding kinds (UVAL_STRAND / UVAL_HOST_FN) can
+ * appear in slots visible to callbacks but have no public constructors.
  * The section marker helps merge-conflict resolution when other worktrees
  * touch adjacent regions of this header. */
 

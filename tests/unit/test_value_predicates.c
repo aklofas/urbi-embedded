@@ -370,6 +370,42 @@ static void checked_to_tag_rejects_int(void)
 }
 
 /* =========================================================================
+ * Checked accessor: urbi_aux_value_to_str — NULL-out pure type check
+ * ========================================================================= */
+
+static void checked_to_str_null_out_is_type_check(void)
+{
+    /* Build a UVAL_STR synthetically (no live VM needed). */
+    UValue v;
+    v.kind = (uint8_t)UVAL_STR;
+    for (size_t i = 0; i < sizeof(v._pad); i++) v._pad[i] = 0;
+    v.v.p = (void *)"hi";
+    int rc = urbi_aux_value_to_str(v, NULL, NULL);
+    UASSERT(rc == URBI_OK);   /* type matches; both outs NULL = pure type check */
+
+    UValue v2 = urbi_make_int(7);
+    rc = urbi_aux_value_to_str(v2, NULL, NULL);
+    UASSERT(rc == URBI_ERR_TYPE);
+}
+
+/* =========================================================================
+ * Predicates: is_strand + is_host_fn — negative cases
+ * (no public constructor exists; positive cases require synthetic build)
+ * ========================================================================= */
+
+static void is_strand_rejects_int(void)
+{
+    UASSERT(urbi_value_is_strand(urbi_make_int(0)) == false);
+    UASSERT(urbi_value_is_strand(urbi_make_nil()) == false);
+}
+
+static void is_host_fn_rejects_object(void)
+{
+    UASSERT(urbi_value_is_host_fn(urbi_make_object((struct UObject *)0x1000)) == false);
+    UASSERT(urbi_value_is_host_fn(urbi_make_nil()) == false);
+}
+
+/* =========================================================================
  * Suite registration
  * ========================================================================= */
 
@@ -405,4 +441,7 @@ void test_value_predicates_suite(void)
     utest_run("checked_to_closure_rejects_object",   checked_to_closure_rejects_object);
     utest_run("checked_to_tag_succeeds",             checked_to_tag_succeeds_on_tag);
     utest_run("checked_to_tag_rejects_int",          checked_to_tag_rejects_int);
+    utest_run("checked_to_str_null_out_is_type_check", checked_to_str_null_out_is_type_check);
+    utest_run("is_strand_rejects_int",               is_strand_rejects_int);
+    utest_run("is_host_fn_rejects_object",           is_host_fn_rejects_object);
 }

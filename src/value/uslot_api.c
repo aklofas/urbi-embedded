@@ -17,7 +17,7 @@
  *   urbi_slot_set:
  *     UVAL_OBJECT → install local slot via urbi_object_set_local_slot.
  *       Respects const-flag: URBI_ERR_CONST_SLOT_WRITE if already const.
- *     Any atom (non-OBJECT) → URBI_ERR_INVALID_ARG (atoms are immutable).
+ *     Any atom (non-OBJECT) → URBI_ERR_TYPE (type mismatch; atoms are immutable).
  *     OOM → URBI_ERR_OOM.
  *     URBI_OK on success.
  *
@@ -129,10 +129,10 @@ urbi_slot_set(struct UVM *vm, UValue obj,
     }
     /* Atoms (non-OBJECT) do not accept local slot writes. */
     if (obj.kind != (uint8_t)UVAL_OBJECT) {
-        urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+        urbi_set_error_internal(vm, URBI_ERR_TYPE,
             "urbi_slot_set: receiver is not an object",
             NULL, 0, "urbi_slot_set");
-        return URBI_ERR_INVALID_ARG;
+        return URBI_ERR_TYPE;
     }
 
     {
