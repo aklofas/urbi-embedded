@@ -19,6 +19,7 @@
  */
 
 #include "urbi/require.h"
+#include <stddef.h>    /* NULL — needed in freestanding builds */
 
 /* fprintf + abort are only available on hosted targets. */
 #if __STDC_HOSTED__ && !defined(URBI_BYTECODE_ONLY)
@@ -26,7 +27,7 @@
 #  include <stdlib.h>
 #endif
 
-static urbi_require_fail_hook_fn g_require_hook = NULL;
+static urbi_require_fail_hook_fn g_require_hook = NULL;  /* NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — intentionally mutable; set once at embedder init */
 
 void urbi_set_require_fail_hook(urbi_require_fail_hook_fn hook)
 {
