@@ -241,3 +241,11 @@ jobs:
           fetch-depth: 0  # need full tag history
       - name: Check version sync
         run: make check-version-sync
+
+  wire-freeze:
+    name: wire-format freeze pin sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check wire-format freeze pin
+        run: make test-wire-freeze
