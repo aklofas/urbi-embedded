@@ -13,9 +13,10 @@ each gap's current status follows.
   decimal literals lex and evaluate correctly.  Fixtures blocked solely
   on float literals can now be activated.
 
-- **No List / Dict literals.**  `[1, 2, 3]`, `["a" => 1]` are not yet
-  implemented.  Constructed via `List.new(...)` and `Dict.new()` as
-  before.  Wave 6 W10 decides the implementation path.
+- **List / Dict literals: implemented (Wave 6 W10).**  `[1, 2, 3]` and
+  `["a" => 1]` are supported.  They lower to `List.new(...)` and
+  `Dict.new()` + `.set(k, v)` respectively; no new opcode.
+  See `tests/chk/objects/list_literal.chk` and `dict_literal.chk`.
 
 - **Closure upvalue capture:** supported since v0.8.4 (closure-lifetime
   GC promotion).  `function () { outer_var }` now captures upvalues from
@@ -27,8 +28,11 @@ each gap's current status follows.
 - **Multi-slot class bodies:** supported since v0.6.2 Wave 3 (Gap #2).
   `class C { var x; var y; var m = function() {} }` works.
 
-- **No `var x.foo = "..."` slot-install form.**  Still not implemented.
-  Wave 6 W10 decides.
+- **`var obj.slot = value` slot-install form: implemented (Wave 6 W10).**
+  `var obj.slot = value` desugars to `obj.slot = value` (AST_MEMBER_SET)
+  at parse time.  OP_SETSLOT installs the slot when absent.  Deep chains
+  `var a.b.c = v` also work via intermediate MEMBER_GET nodes.
+  See `tests/chk/objects/var_obj_slot.chk`.
 
 - **`echo` realm global:** shipped as a Lobby method since v0.9.1
   (`Lobby.echo(msg, tag, prefix)`).  Legacy fixtures that call `echo`
@@ -74,8 +78,8 @@ v0.6.1 does ship, drop everything else."
 
 | Port | Legacy origin | Coverage |
 |---|---|---|
-| `dict_legacy.chk` | `tests/2.x/dictionary.chk` | Dict.new() + set/get/has/length/remove without `=>` literal sugar |
-| `list_legacy.chk` | `tests/2.x/list.chk` (heavily reduced) | List.new() + add/get/set/length/contains; `+=` / `each(closure)` / list-literal sections all blocked |
+| `dict_legacy.chk` | `tests/2.x/dictionary.chk` | Dict.new() + set/get/has/length/remove; `["k" => v]` literal sugar now works (W10) |
+| `list_legacy.chk` | `tests/2.x/list.chk` (heavily reduced) | List.new() + add/get/set/length/contains; list literals now work (W10); `each(closure)` / `<<` / `+=` identity preservation still blocked |
 | `mutex_legacy.chk` | `tests/2.x/mutex/basic.chk` (reduced) | Mutex.new()/lock/unlock/tryLock; threaded `func1`/`func2`/`func3` choreography blocked (closure upvalues + cooperative-semantic divergence) |
 | `date_legacy.chk` | `tests/2.x/date.chk` | Date.fromSeconds/.seconds()/.asString(); legacy `Date.epoch - Date.epoch + N` arithmetic seam not implemented (Date.epoch absent at v1.0) |
 | `system_legacy.chk` | `tests/2.x/system/platform.chk`, `system/hostname.chk` | System.Platform.kind in {`linux`,`darwin`,`windows`,`freertos`,`unknown`}; hostname blocked (Process subsystem absent) |
@@ -90,9 +94,9 @@ listed gaps close.  Tracked here as a v1.x port-completion backlog;
 mirrored in `docs/urbi-embedded-backlog.md` under "legacy fixture
 parity".
 
-- `tests/2.x/list.chk` (full): list literals, `each(closure)`, `<<`,
-  list `+=` identity preservation.
-- `tests/2.x/dictionary.chk` (full): `["a" => 42]` dict literal, `extend`.
+- `tests/2.x/list.chk` (full): `each(closure)`, `<<`, list `+=` identity
+  preservation (list literals and subscript now work via W10).
+- `tests/2.x/dictionary.chk` (full): `extend` (dict literals now work via W10).
 - `tests/2.x/string/{comparison,escape,split}.chk`: String comparison
   ops on string atoms (`<`, `>=`), `\B(...)` escape, `split(...)`.
 - `tests/2.x/mutex/{basic,queued,tagged}.chk`: closure-upvalue captures
@@ -112,11 +116,12 @@ parity".
   only).  `1/0` gives `inf` at v1.0 (IEEE-754); legacy raises a
   domain error.
 - `tests/2.x/atoms.chk` Wave-1 deferred section: `var one.foo = ...`
-  slot-install form not in v0.6.1 lex.
+  slot-install form is now implemented (Wave 6 W10); this deferred item
+  can be re-activated once any remaining atom-auto-boxing gaps are closed.
 - `tests/2.x/fallback.chk` Wave-1 deferred section: `function fallback`
   + `call.message` + `do (recv) { ... }`.
-- `tests/2.x/inheritance.chk` Wave-1 deferred section: list literals
-  for `setProtos([Global, Math])`.
+- `tests/2.x/inheritance.chk` Wave-1 deferred section: `setProtos([Global, Math])`
+  (list literals now work via W10; `setProtos` dispatch may still need attention).
 
 ## Wave 3 additions (M6 Wave 3 / Phase 3-4, 2026-05-10)
 
@@ -156,11 +161,12 @@ parity".
   name for the call operator and `call.evalArgs()` (CallMessage
   reflection).  Neither is available in v0.6.x.
 
-- `edit-container.chk` (deferred to v1.x): tests `l[i] += N` compound
-  subscript assignment on List and Dict.  Requires list/dict literal
-  syntax (`[1, 2, 3]`, `["a" => 0]`) and compound-assignment desugar
-  (`l[i] += v` → `l.set(i, l.get(i) + v)`), none of which exist in
-  v0.6.x.
+- `edit-container.chk` (partially activated — Wave 6 W10): `l[i] += N`
+  compound subscript assignment is now implemented.  `l[i]` lowers to
+  `l.get(i)`, `l[i] = v` to `l.set(i, v)`, `l[i] += v` to
+  `l.set(i, l.get(i) + v)`.  List and Dict literals are also implemented.
+  See `tests/chk/objects/subscript_basic.chk`,
+  `subscript_compound.chk`, `list_literal.chk`, `dict_literal.chk`.
 
 ## Adjustments applied during port
 

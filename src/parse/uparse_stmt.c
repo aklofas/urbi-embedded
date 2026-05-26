@@ -38,6 +38,71 @@ UAstNode *parse_var_decl(UParser *p) {
     }
     consume(p);
 
+    /* === W10/v0.10.5: `var obj.slot = value` slot-install form.
+     *
+     * If the token after the IDENT is TOK_DOT (not TOK_EQ), this is the
+     * legacy slot-install form `var obj.slot = value`.  Desugar to
+     * `obj.slot = value` (AST_MEMBER_SET): OP_SETSLOT installs the slot
+     * when absent, so no new opcode is needed.
+     *
+     * Handles arbitrarily deep chains: `var a.b.c = v` →
+     *   temp = a.b  (AST_MEMBER_GET)
+     *   temp.c = v  (AST_MEMBER_SET)
+     * achieved naturally by building a full `a.b.c = v` AST_MEMBER_SET
+     * tree where the receiver is AST_MEMBER_GET for `a.b`.
+     *
+     * Ruling: implemented (Wave 6 W10, legacy F14). */
+    if (peek(p).type == TOK_DOT) {
+        /* Build receiver node from the already-consumed IDENT. */
+        UAstNode *recv = make_ident(p, name.u.str.start, name.u.str.len,
+                                    name.line, name.col);
+        if (!recv) return NULL;
+        /* Parse one or more `.slot` member-access suffixes.  After the final
+         * DOT we expect `IDENT = value`; intermediate DOTs extend the chain. */
+        for (;;) {
+            consume(p);  /* consume TOK_DOT */
+            UToken slot_name = peek(p);
+            if (slot_name.type != TOK_IDENT) {
+                return make_error(p, PARSE_EXPECTED_IDENT,
+                                  kErrorMessages[PARSE_EXPECTED_IDENT],
+                                  slot_name.line, slot_name.col);
+            }
+            consume(p);
+            if (peek(p).type == TOK_DOT) {
+                /* Intermediate: build MEMBER_GET and continue. */
+                UAstNode *mg = make_node(p, AST_MEMBER_GET,
+                                         slot_name.line, slot_name.col);
+                if (!mg) return NULL;
+                mg->u.member.recv       = recv;
+                mg->u.member.name_start = slot_name.u.str.start;
+                mg->u.member.name_len   = slot_name.u.str.len;
+                mg->u.member.value      = NULL;
+                recv = mg;
+                continue;
+            }
+            /* Final slot: consume `=` and parse RHS, produce MEMBER_SET. */
+            UToken eq2 = peek(p);
+            if (eq2.type != TOK_EQ) {
+                return make_error(p, PARSE_VAR_OBJ_SLOT_NO_INIT,
+                                  kErrorMessages[PARSE_VAR_OBJ_SLOT_NO_INIT],
+                                  eq2.line, eq2.col);
+            }
+            consume(p);
+            UAstNode *val = parse_expression(p, 0);
+            if (!val) return NULL;
+            if (val->kind == AST_ERROR) return val;
+            UAstNode *ms = make_node(p, AST_MEMBER_SET,
+                                      slot_name.line, slot_name.col);
+            if (!ms) return NULL;
+            ms->u.member.recv       = recv;
+            ms->u.member.name_start = slot_name.u.str.start;
+            ms->u.member.name_len   = slot_name.u.str.len;
+            ms->u.member.value      = val;
+            return ms;
+        }
+    }
+    /* === end W10/v0.10.5: var obj.slot form === */
+
     UToken eq = peek(p);
     if (eq.type != TOK_EQ) {
         return make_error(p, PARSE_EXPECTED_EQ,

@@ -1,0 +1,30 @@
+# Wave 6 W10 — var obj.slot = value slot-install form (v0.10.5)
+# Covers: `var obj.slot = value` desugars to `obj.slot = value` (AST_MEMBER_SET).
+# OP_SETSLOT installs a new slot when absent, so no new opcode is needed.
+# Ruling: implemented — parser desugar; no new opcode.
+# Audit: closes legacy F14 (var-obj-slot gap).
+# Source: legacy tests/2.x/atoms.chk var-slot-install sections.
+
+# --- basic slot install on Object clone ---
+var o = Object.clone(); var o.x = 42; o.x
+[00000000] 42
+
+# --- slot install then modify ---
+var o = Object.clone(); var o.count = 0; o.count = o.count + 1; o.count
+[00000001] 1
+
+# --- install two slots on same object ---
+var o = Object.clone(); var o.a = 10; var o.b = 20; o.a + o.b
+[00000002] 30
+
+# --- slot install with string value ---
+var o = Object.clone(); var o.name = "hello"; o.name
+[00000003] "hello"
+
+# --- slot install then read back ---
+var o = Object.clone(); var o.value = 99; o.value
+[00000004] 99
+
+# --- chained slot access (sub-object slot) ---
+var o = Object.clone(); var o.inner = Object.clone(); var o.inner.x = 7; o.inner.x
+[00000005] 7

@@ -266,6 +266,127 @@ UAstNode *parse_prefix(UParser *p) {
     return parse_atom(p);
 }
 
+/* === W10/v0.10.5: parse_bracket_literal =====================================
+ * Parses `[...]` — either a list literal `[e1, e2, e3]` or a dict literal
+ * `["k1" => v1, "k2" => v2]`.  Disambiguation: after the first element, if
+ * `=>` is present it is a dict; otherwise it is a list.  An empty `[]` is
+ * an empty list; `[=>]` is not supported (use `Dict.new()`).
+ *
+ * Caller has confirmed peek() is TOK_LBRACKET.  Consumes `[` + contents + `]`.
+ *
+ * List:   AST_LIST_LIT { elems[], count }
+ * Dict:   AST_DICT_LIT { keys[], vals[], count }
+ * ========================================================================== */
+
+UAstNode *parse_bracket_literal(UParser *p) {
+    UToken lbr = consume(p);  /* consume '[' */
+
+    int cap = 4;
+    UAstNode **elems = (UAstNode **)uarena_alloc(p->arena,
+                                                  (size_t)cap * sizeof(UAstNode *));
+    if (!elems) return (UAstNode *)&uparser_oom_sentinel;
+
+    int count = 0;
+    bool is_dict = false;    /* determined on first element with `=>` */
+    bool dict_decided = false;
+
+    /* keys/vals for dict — lazy-allocated when we discover is_dict. */
+    UAstNode **keys = NULL;
+    UAstNode **vals = NULL;
+
+    /* Empty list: `[]` */
+    if (peek(p).type == TOK_RBRACKET) {
+        consume(p);
+        UAstNode *n = make_node(p, AST_LIST_LIT, lbr.line, lbr.col);
+        if (!n) return NULL;
+        n->u.list_lit.elems = elems;  /* empty; valid pointer */
+        n->u.list_lit.count = 0;
+        return n;
+    }
+
+    while (peek(p).type != TOK_RBRACKET && peek(p).type != TOK_EOF) {
+        /* Parse the first part of each element (key or element value). */
+        UAstNode *first = parse_expression(p, 0);
+        if (!first) return (UAstNode *)&uparser_oom_sentinel;
+        if (first->kind == AST_ERROR) return first;
+
+        if (!dict_decided) {
+            /* Decide list vs dict based on presence of `=>` after first elem. */
+            is_dict = (peek(p).type == TOK_FAT_ARROW);
+            dict_decided = true;
+            if (is_dict) {
+                /* Allocate keys/vals from arena (same initial cap). */
+                keys = (UAstNode **)uarena_alloc(p->arena,
+                                                  (size_t)cap * sizeof(UAstNode *));
+                vals = (UAstNode **)uarena_alloc(p->arena,
+                                                  (size_t)cap * sizeof(UAstNode *));
+                if (!keys || !vals) return (UAstNode *)&uparser_oom_sentinel;
+            }
+        }
+
+        if (is_dict) {
+            /* Dict mode: `key => value`. */
+            if (peek(p).type != TOK_FAT_ARROW) {
+                return make_error(p, PARSE_DICT_EXPECTED_FAT_ARROW,
+                                  kErrorMessages[PARSE_DICT_EXPECTED_FAT_ARROW],
+                                  peek(p).line, peek(p).col);
+            }
+            consume(p);  /* consume '=>' */
+            UAstNode *val = parse_expression(p, 0);
+            if (!val) return (UAstNode *)&uparser_oom_sentinel;
+            if (val->kind == AST_ERROR) return val;
+            if (count == cap) {
+                if (!arena_grow_node_array(p, &keys, &cap, count))
+                    return (UAstNode *)&uparser_oom_sentinel;
+                /* vals was allocated with same original cap; grow it too. */
+                int vals_cap = count; /* before grow */
+                if (!arena_grow_node_array(p, &vals, &vals_cap, count))
+                    return (UAstNode *)&uparser_oom_sentinel;
+            }
+            keys[count] = first;
+            vals[count] = val;
+            count++;
+        } else {
+            /* List mode. */
+            if (count == cap) {
+                if (!arena_grow_node_array(p, &elems, &cap, count))
+                    return (UAstNode *)&uparser_oom_sentinel;
+            }
+            elems[count++] = first;
+        }
+
+        if (peek(p).type == TOK_COMMA) {
+            consume(p);
+        } else {
+            break;
+        }
+    }
+
+    UToken rb = peek(p);
+    if (rb.type != TOK_RBRACKET) {
+        return make_error(p, PARSE_EXPECTED_RBRACKET,
+                          kErrorMessages[PARSE_EXPECTED_RBRACKET],
+                          rb.line, rb.col);
+    }
+    consume(p);  /* consume ']' */
+
+    if (is_dict) {
+        UAstNode *n = make_node(p, AST_DICT_LIT, lbr.line, lbr.col);
+        if (!n) return NULL;
+        n->u.dict_lit.keys  = keys;
+        n->u.dict_lit.vals  = vals;
+        n->u.dict_lit.count = count;
+        return n;
+    } else {
+        UAstNode *n = make_node(p, AST_LIST_LIT, lbr.line, lbr.col);
+        if (!n) return NULL;
+        n->u.list_lit.elems = elems;
+        n->u.list_lit.count = count;
+        return n;
+    }
+}
+/* === end W10/v0.10.5: parse_bracket_literal === */
+
 /* --- parse_atom: INT | IDENT | true | false | nil | ( expr ) | error.
  *
  * PARSE-032 closure (doc-only): time-literal suffixes (`100ms`, `1s`, `1d`)
@@ -334,6 +455,10 @@ UAstNode *parse_atom(UParser *p) {
         return make_error(p, PARSE_CLOSURE_KEYWORD,
                           kErrorMessages[PARSE_CLOSURE_KEYWORD],
                           t.line, t.col);
+    /* === W10/v0.10.5: list/dict literals === */
+    case TOK_LBRACKET:
+        return parse_bracket_literal(p);
+    /* === end W10/v0.10.5 === */
     case TOK_EOF:
         return make_error(p, PARSE_UNEXPECTED_EOF,
                           kErrorMessages[PARSE_UNEXPECTED_EOF],
@@ -571,6 +696,67 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             if (lhs->kind == AST_ERROR) return lhs;
             continue;
         }
+
+        /* === W10/v0.10.5: subscript `l[i]`, `l[i] = v`, `l[i] += v` ===
+         * Postfix `[index]` — subscript access.  Lowers to:
+         *   l[i]      → AST_SUBSCRIPT_GET  (emit: l.get(i))
+         *   l[i] = v  → AST_SUBSCRIPT_SET  (emit: l.set(i, v))
+         *   l[i] += v → AST_SUBSCRIPT_SET  (emit: l.set(i, l.get(i) + v),
+         *                                   is_compound_add=true)
+         * No new opcode needed; same precedence tier as member/call. */
+        if (op.type == TOK_LBRACKET && min_prec <= PARSE_PREC_POSTFIX) {
+            consume(p);  /* consume '[' */
+            UAstNode *index = parse_expression(p, 0);
+            if (!index) return NULL;
+            if (index->kind == AST_ERROR) return index;
+            UToken rb = peek(p);
+            if (rb.type != TOK_RBRACKET) {
+                return make_error(p, PARSE_SUBSCRIPT_EXPECTED_RBRACKET,
+                                  kErrorMessages[PARSE_SUBSCRIPT_EXPECTED_RBRACKET],
+                                  rb.line, rb.col);
+            }
+            consume(p);  /* consume ']' */
+            /* Peek for assignment or compound-assign. */
+            UToken nxt = peek(p);
+            if (nxt.type == TOK_EQ) {
+                consume(p);  /* consume '=' */
+                UAstNode *val = parse_expression(p, 0);
+                if (!val) return NULL;
+                if (val->kind == AST_ERROR) return val;
+                UAstNode *ss = make_node(p, AST_SUBSCRIPT_SET, op.line, op.col);
+                if (!ss) return NULL;
+                ss->u.subscript.recv            = lhs;
+                ss->u.subscript.index           = index;
+                ss->u.subscript.value           = val;
+                ss->u.subscript.is_compound_add = false;
+                lhs = ss;
+                break;  /* assignment terminates postfix chain */
+            }
+            if (nxt.type == TOK_PLUS_EQ) {
+                consume(p);  /* consume '+=' */
+                UAstNode *rhs = parse_expression(p, 0);
+                if (!rhs) return NULL;
+                if (rhs->kind == AST_ERROR) return rhs;
+                UAstNode *ss = make_node(p, AST_SUBSCRIPT_SET, op.line, op.col);
+                if (!ss) return NULL;
+                ss->u.subscript.recv            = lhs;
+                ss->u.subscript.index           = index;
+                ss->u.subscript.value           = rhs;
+                ss->u.subscript.is_compound_add = true;
+                lhs = ss;
+                break;  /* assignment terminates postfix chain */
+            }
+            /* Plain get. */
+            UAstNode *sg = make_node(p, AST_SUBSCRIPT_GET, op.line, op.col);
+            if (!sg) return NULL;
+            sg->u.subscript.recv            = lhs;
+            sg->u.subscript.index           = index;
+            sg->u.subscript.value           = NULL;
+            sg->u.subscript.is_compound_add = false;
+            lhs = sg;
+            continue;
+        }
+        /* === end W10/v0.10.5: subscript === */
 
         /* Postfix `?` — only valid inside at(...) condition.
          * When at_event_cond is set, pass through (parse_at will consume it).

@@ -128,12 +128,30 @@ typedef enum {
                              * fs->parent == NULL. */
 
     /* === W3/v0.10.5: assert keyword === */
-    AST_ASSERT = 38         /* assert(expr) / assert { block }
+    AST_ASSERT = 38,        /* assert(expr) / assert { block }
                              * Lowered to: if (!expr) throw "assertion failed: <src>"
                              * No new opcode needed.  src_text/src_len is the
                              * zero-copy source span of the expression (paren form);
                              * NULL/0 for block form.
                              * Ruling: implemented (Wave 6 W3, legacy F9). */
+
+    /* === W10/v0.10.5: list/dict literals + subscript + var-obj-slot === */
+    AST_LIST_LIT = 39,      /* [e1, e2, e3]
+                             * Lowered to: List.new(e1, e2, e3)
+                             * No new opcode needed.
+                             * Ruling: implemented (Wave 6 W10, legacy F14). */
+    AST_DICT_LIT = 40,      /* ["a" => 1, "b" => 2]
+                             * Lowered to: var _d = Dict.new(); _d.set("a", 1); ...
+                             * No new opcode needed.
+                             * Ruling: implemented (Wave 6 W10, legacy F14). */
+    AST_SUBSCRIPT_GET = 41, /* l[i]  → l.get(i)
+                             * No new opcode needed.
+                             * Ruling: implemented (Wave 6 W10, legacy F14). */
+    AST_SUBSCRIPT_SET = 42  /* l[i] = v  → l.set(i, v)
+                             * l[i] += v  → l.set(i, l.get(i) + v)  (compound desugar)
+                             * No new opcode needed.
+                             * Ruling: implemented (Wave 6 W10, legacy F14). */
+    /* === end W10/v0.10.5 === */
 } UAstKind;
 
 /* Method/property-decl kind discriminator (T41 — M6 Wave 2). */
@@ -214,12 +232,21 @@ typedef enum {
                                               edge to hook (M5 spec §3) */
 
     /* M6 Wave 2 additions */
-    PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED /* T41: `get name() {...}` /
+    PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED, /* T41: `get name() {...}` /
                                             `set name(v) {...}` at statement
                                             start.  The implicit-receiver form
                                             has no v1.0 resolver outside a
                                             class body; deferred to v1.x
                                             implicit-this. */
+
+    /* === W10/v0.10.5: list/dict literal + subscript errors === */
+    PARSE_EXPECTED_RBRACKET,    /* missing `]` in list/dict literal or subscript */
+    PARSE_DICT_EXPECTED_FAT_ARROW, /* dict literal: `key` not followed by `=>` */
+    PARSE_SUBSCRIPT_EXPECTED_RBRACKET, /* `l[i` missing `]` */
+    PARSE_VAR_OBJ_SLOT_NO_INIT,        /* `var obj.slot` with no `= value` */
+    PARSE_SUBSCRIPT_COMPOUND_OP_V1X    /* compound subscript op other than +=
+                                        * (e.g. -=, *=) — deferred to v1.x */
+    /* === end W10/v0.10.5 === */
 } UParseError;
 
 /*
@@ -267,6 +294,10 @@ typedef enum {
  *                                        name + getter/setter kind + params
  *                                        + body
  *   u.assert_stmt — AST_ASSERT:          expression/block + source text span
+ *   u.list_lit    — AST_LIST_LIT:        arena array of element nodes
+ *   u.dict_lit    — AST_DICT_LIT:        arena arrays of key + value nodes
+ *   u.subscript   — AST_SUBSCRIPT_GET, AST_SUBSCRIPT_SET:
+ *                                        recv + index + (SET: value + compound_op)
  *
  * Slot/prop name storage: zero-copy lexeme view (name_start + name_len), as
  * with var_decl/assign/param.  The parser has no UVM and therefore cannot
@@ -468,6 +499,23 @@ struct UAstNode {
                                             * NULL for block form */
             int         src_len;           /* byte count; 0 for block form */
         } assert_stmt;
+        /* === W10/v0.10.5: list/dict literals + subscript === */
+        struct {                                            /* AST_LIST_LIT */
+            UAstNode  **elems;             /* arena array of element expressions */
+            int         count;             /* number of elements (0 for []) */
+        } list_lit;
+        struct {                                            /* AST_DICT_LIT */
+            UAstNode  **keys;              /* arena array of key expressions */
+            UAstNode  **vals;              /* arena array of value expressions */
+            int         count;             /* number of key-value pairs (0 for [=>]) */
+        } dict_lit;
+        struct {                           /* AST_SUBSCRIPT_GET, AST_SUBSCRIPT_SET */
+            UAstNode   *recv;              /* the list/dict expression */
+            UAstNode   *index;             /* the subscript index */
+            UAstNode   *value;             /* SET only: rhs value; NULL for GET */
+            bool        is_compound_add;   /* true when desugared from `l[i] += v` */
+        } subscript;
+        /* === end W10/v0.10.5 === */
     } u;
 };
 

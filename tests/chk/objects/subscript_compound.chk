@@ -1,0 +1,30 @@
+# Wave 6 W10 — compound subscript assignment l[i] += v (v0.10.5)
+# Covers: l[i] += v → l.set(i, l.get(i) + v) desugar.
+# Ruling: implemented — stdlib-call lowering; no new opcode.
+# Audit: closes legacy F14 (compound subscript gap).
+# Source: legacy edit-container.chk compound-assignment sections.
+
+# --- list compound add ---
+var l = [10, 20, 30]; l[0] += 5; l[0]
+[00000000] 15
+
+var l = [10, 20, 30]; l[2] += 100; l[2]
+[00000001] 130
+
+# --- compound += preserves other elements ---
+var l = [1, 2, 3]; l[1] += 10; l[0]
+[00000002] 1
+
+var l = [1, 2, 3]; l[1] += 10; l[2]
+[00000003] 3
+
+# --- dict compound add ---
+var d = ["score" => 0]; d["score"] += 10; d["score"]
+[00000004] 10
+
+var d = ["score" => 100]; d["score"] += 50; d["score"]
+[00000005] 150
+
+# --- repeated compound add ---
+var l = [0]; l[0] += 1; l[0] += 1; l[0] += 1; l[0]
+[00000006] 3

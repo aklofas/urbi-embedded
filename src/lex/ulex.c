@@ -54,6 +54,9 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_KW_THIS",
     /* === W3/v0.10.5: assert keyword === */
     "TOK_KW_ASSERT",
+    /* === W10/v0.10.5: list/dict literals + subscript + compound assign === */
+    "TOK_LBRACKET", "TOK_RBRACKET", "TOK_FAT_ARROW", "TOK_PLUS_EQ",
+    /* === end W10/v0.10.5 === */
     "TOK_ERROR"
 };
 /* LEX-014: positional alignment with UTokenType — guard against silent
@@ -1203,11 +1206,13 @@ static UTriviaResult skip_trivia(ULexer *l) {
 
 /* Purely single-char punctuation tokens — 0 (TOK_EOF) means "not here". */
 static const UTokenType kPunctTable[256] = {
-    ['+'] = TOK_PLUS,   ['*'] = TOK_STAR,    ['/'] = TOK_SLASH,
+    ['*'] = TOK_STAR,    ['/'] = TOK_SLASH,
     ['('] = TOK_LPAREN, [')'] = TOK_RPAREN,
     ['|'] = TOK_PIPE,   [';'] = TOK_SEMI,    [','] = TOK_COMMA,
     ['&'] = TOK_AMP,    ['{'] = TOK_LBRACE,  ['}'] = TOK_RBRACE,
     [':'] = TOK_COLON,  ['.'] = TOK_DOT,     ['?'] = TOK_QUESTION,
+    /* === W10/v0.10.5: subscript brackets === */
+    ['['] = TOK_LBRACKET, [']'] = TOK_RBRACKET,
 };
 
 UToken ulex_next(ULexer *lex) {
@@ -1260,6 +1265,14 @@ UToken ulex_next(ULexer *lex) {
 
     /* Multi-char tokens and the default fall-through. */
     switch (c) {
+    /* === W10/v0.10.5: `+` can be TOK_PLUS or TOK_PLUS_EQ === */
+    case '+':
+        if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
+            lex->cur += 2;
+            return make_tok(lex, TOK_PLUS_EQ, start, 2);
+        }
+        lex->cur++;
+        return make_tok(lex, TOK_PLUS, start, 1);
     case '-':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '>') {
             lex->cur += 2;
@@ -1271,6 +1284,11 @@ UToken ulex_next(ULexer *lex) {
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;
             return make_tok(lex, TOK_EQEQ, start, 2);
+        }
+        /* === W10/v0.10.5: `=>` fat-arrow for dict literals === */
+        if (lex->cur + 1 < lex->end && lex->cur[1] == '>') {
+            lex->cur += 2;
+            return make_tok(lex, TOK_FAT_ARROW, start, 2);
         }
         lex->cur++;
         return make_tok(lex, TOK_EQ, start, 1);

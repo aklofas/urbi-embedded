@@ -106,11 +106,12 @@
 | Prototype chain | implemented | — |
 | Multi-proto MRO | implemented | — |
 | Local slot install (`obj.slot = value`) | implemented | — |
-| `var obj.slot = value` slot install form | NOT implemented | legacy F14; Wave 6 W10 |
-| Sub-object slot install (`Lobby.led.on`) | NOT implemented | requires API not in v0.7.1; Wave 6 W10 |
-| List literal `[1, 2, 3]` | NOT implemented | legacy F14; Wave 6 W10 |
-| Dict literal `["a" => 1]` | NOT implemented | legacy F14; Wave 6 W10 |
-| Subscript assignment `l[i] += v` | NOT implemented | legacy F14; Wave 6 W10 |
+| `var obj.slot = value` slot install form | implemented | legacy F14; Wave 6 W10 — parser desugar to `obj.slot = value` (AST_MEMBER_SET); OP_SETSLOT installs absent slots; see `tests/chk/objects/var_obj_slot.chk` |
+| Sub-object slot install (`Lobby.led.on`) | implemented | legacy F14; Wave 6 W10 — handled by chained AST_MEMBER_SET (`var a.b.c = v` desugars via intermediate MEMBER_GET); see `tests/chk/objects/var_obj_slot.chk` |
+| List literal `[1, 2, 3]` | implemented | legacy F14; Wave 6 W10 — stdlib-call lowering: `[e1, e2, e3]` → `List.new(e1, e2, e3)`; no new opcode; see `tests/chk/objects/list_literal.chk` |
+| Dict literal `["a" => 1]` | implemented | legacy F14; Wave 6 W10 — stdlib-call lowering: `["k" => v, ...]` → `Dict.new()` + repeated `.set(k,v)`; no new opcode; see `tests/chk/objects/dict_literal.chk` |
+| Subscript get/set `l[i]` / `l[i] = v` | implemented | legacy F14; Wave 6 W10 — stdlib-call lowering: `l[i]` → `l.get(i)`, `l[i] = v` → `l.set(i,v)`; no new opcode; see `tests/chk/objects/subscript_basic.chk` |
+| Subscript compound `l[i] += v` | implemented | legacy F14; Wave 6 W10 — desugar: `l.set(i, l.get(i) + v)`; no new opcode; see `tests/chk/objects/subscript_compound.chk` |
 | Top-level `this` / Lobby singleton | migration | legacy F13; use `Realm` — see [top-level-this-lobby-migration.md](migration/top-level-this-lobby-migration.md) |
 | `setSlot` (host-side reflection) | implemented | — |
 
