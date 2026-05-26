@@ -147,11 +147,32 @@ typedef enum {
     AST_SUBSCRIPT_GET = 41, /* l[i]  → l.get(i)
                              * No new opcode needed.
                              * Ruling: implemented (Wave 6 W10, legacy F14). */
-    AST_SUBSCRIPT_SET = 42  /* l[i] = v  → l.set(i, v)
+    AST_SUBSCRIPT_SET = 42, /* l[i] = v  → l.set(i, v)
                              * l[i] += v  → l.set(i, l.get(i) + v)  (compound desugar)
                              * No new opcode needed.
                              * Ruling: implemented (Wave 6 W10, legacy F14). */
     /* === end W10/v0.10.5 === */
+
+    /* === W1/v0.10.5: control flow === */
+    AST_FOR_EACH = 43,  /* for (var x : iter) body  / for (var x in iter) body
+                         * Lowered to a while loop using list.length() + list.get(i).
+                         * Also handles for (var x : list_expr) where list_expr is
+                         * evaluated once before the loop.  No new opcode needed.
+                         * Ruling: implemented (Wave 6 W1, legacy F2). */
+    AST_BREAK    = 44,  /* break — exits innermost for/while loop.
+                         * Lowered to OP_JMP with the exit address patched after the loop.
+                         * No new opcode needed.
+                         * Ruling: implemented (Wave 6 W1, legacy F2). */
+    AST_CONTINUE = 45,  /* continue — jumps to next iteration of innermost for/while.
+                         * Lowered to OP_JMP with the continue address patched after the loop.
+                         * No new opcode needed.
+                         * Ruling: implemented (Wave 6 W1, legacy F2). */
+    AST_SWITCH   = 46   /* switch (expr) { case v1: body1; case v2: body2; }
+                         * Equality-based dispatch only (no pattern matching).
+                         * Lowered to a chain of if (expr == vN) { bodyN }.
+                         * No new opcode needed.
+                         * Ruling: implemented (Wave 6 W1, legacy F2). */
+    /* === end W1/v0.10.5: control flow === */
 } UAstKind;
 
 /* Method/property-decl kind discriminator (T41 — M6 Wave 2). */
@@ -244,9 +265,18 @@ typedef enum {
     PARSE_DICT_EXPECTED_FAT_ARROW, /* dict literal: `key` not followed by `=>` */
     PARSE_SUBSCRIPT_EXPECTED_RBRACKET, /* `l[i` missing `]` */
     PARSE_VAR_OBJ_SLOT_NO_INIT,        /* `var obj.slot` with no `= value` */
-    PARSE_SUBSCRIPT_COMPOUND_OP_V1X    /* compound subscript op other than +=
+    PARSE_SUBSCRIPT_COMPOUND_OP_V1X,   /* compound subscript op other than +=
                                         * (e.g. -=, *=) — deferred to v1.x */
     /* === end W10/v0.10.5 === */
+
+    /* === W1/v0.10.5: control flow === */
+    PARSE_FOR_EXPECTED_VAR,            /* for loop header missing `var` keyword */
+    PARSE_FOR_EXPECTED_COLON_OR_IN,    /* for (var x ...) — missing `:` or `in` */
+    PARSE_BREAK_OUTSIDE_LOOP,          /* `break` not inside a for/while loop */
+    PARSE_CONTINUE_OUTSIDE_LOOP,       /* `continue` not inside a for/while loop */
+    PARSE_SWITCH_EXPECTED_CASE,        /* switch body contains non-case statement */
+    PARSE_SWITCH_EXPECTED_COLON        /* case label missing trailing `:` */
+    /* === end W1/v0.10.5: control flow === */
 } UParseError;
 
 /*
@@ -294,6 +324,10 @@ typedef enum {
  *                                        name + getter/setter kind + params
  *                                        + body
  *   u.assert_stmt — AST_ASSERT:          expression/block + source text span
+ *   u.for_each    — AST_FOR_EACH:        var name + iterable + body block
+ *   [none]        — AST_BREAK:           no payload (exits innermost loop)
+ *   [none]        — AST_CONTINUE:        no payload (next iteration)
+ *   u.switch_stmt — AST_SWITCH:          expr + parallel arrays of vals + bodies
  *   u.list_lit    — AST_LIST_LIT:        arena array of element nodes
  *   u.dict_lit    — AST_DICT_LIT:        arena arrays of key + value nodes
  *   u.subscript   — AST_SUBSCRIPT_GET, AST_SUBSCRIPT_SET:
@@ -499,6 +533,22 @@ struct UAstNode {
                                             * NULL for block form */
             int         src_len;           /* byte count; 0 for block form */
         } assert_stmt;
+        /* === W1/v0.10.5: control flow === */
+        struct {                                            /* AST_FOR_EACH */
+            const char *var_name_start;  /* zero-copy lexeme view of loop variable */
+            int         var_name_len;
+            UAstNode   *iter_expr;       /* iterable expression (evaluated once) */
+            UAstNode   *body;            /* AST_BLOCK — loop body */
+        } for_each;
+        /* AST_BREAK and AST_CONTINUE carry no payload beyond line/col */
+        struct {                                            /* AST_SWITCH */
+            UAstNode   *expr;            /* switch expression (evaluated once) */
+            UAstNode  **case_vals;       /* arena array of case value expressions */
+            UAstNode  **case_bodies;     /* arena array of case body blocks */
+            int         case_count;
+        } switch_stmt;
+        /* === end W1/v0.10.5: control flow === */
+
         /* === W10/v0.10.5: list/dict literals + subscript === */
         struct {                                            /* AST_LIST_LIT */
             UAstNode  **elems;             /* arena array of element expressions */

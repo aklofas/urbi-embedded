@@ -41,6 +41,13 @@ typedef struct {
      * at parse time when this is zero — the implicit-receiver form has no
      * v1.0 resolver outside a class body (deferred to v1.x implicit-this). */
     int class_body_depth;
+    /* === W1/v0.10.5: control flow ===
+     * Nesting depth of for/while loops currently being parsed.  Bumped
+     * around each loop body parse so that break/continue can be detected
+     * outside any loop (PARSE_BREAK_OUTSIDE_LOOP / PARSE_CONTINUE_OUTSIDE_LOOP).
+     * Checked at parse time in parse_break / parse_continue; does not affect
+     * emit (the emitter independently tracks break/continue patch lists). */
+    int loop_depth;
 
     /* === v0.9.1 compile-budget guard ===
      *

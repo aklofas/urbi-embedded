@@ -356,6 +356,12 @@ UAstNode *parse_statement_or_expr(UParser *p) {
     case TOK_KW_CLASS:    return parse_class_declaration(p);
     /* W3/v0.10.5: assert keyword */
     case TOK_KW_ASSERT:   return parse_assert(p);
+    /* === W1/v0.10.5: control flow === */
+    case TOK_KW_FOR:      return parse_for(p);
+    case TOK_KW_BREAK:    return parse_break(p);
+    case TOK_KW_CONTINUE: return parse_continue(p);
+    case TOK_KW_SWITCH:   return parse_switch(p);
+    /* === end W1/v0.10.5: control flow === */
     /* S47 (2026-05-16): allow `{ stmts }` as a statement-or-expression.
      * Original urbi spec supports brace blocks in at-bodies, onleave
      * handlers, whenever bodies, and any inner-tier position (see
@@ -469,7 +475,10 @@ UAstNode *parse_while(UParser *p) {
     }
     consume(p);
 
+    /* W1/v0.10.5: bump loop_depth so break/continue are legal in body. */
+    p->loop_depth++;
     UAstNode *body = parse_block(p);
+    p->loop_depth--;
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 
@@ -966,3 +975,282 @@ UAstNode *parse_try(UParser *p) {
     node->u.try_stmt.finally_body    = finally_body;
     return node;
 }
+
+/* === W1/v0.10.5: control flow ===
+ *
+ * parse_for — `for (var x : iter_expr) body` or `for (var x in iter_expr) body`
+ *
+ * Ruling: implemented (Wave 6 W1, legacy F2).
+ *
+ * Supports only the for-each form.  C-style `for (init; cond; step)` is a
+ * migration (see docs/migration/control-flow-migration.md).  Count-form
+ * `for (N) body` and flavoured `for|`/`for&` are deferred-v1.x.
+ *
+ * Produces AST_FOR_EACH with:
+ *   var_name_start / var_name_len — the loop variable name
+ *   iter_expr                     — the iterable (evaluated once)
+ *   body                          — AST_BLOCK (loop body)
+ *
+ * The emitter lowers AST_FOR_EACH to a while-loop index pattern:
+ *   var _iter = iter_expr;
+ *   var _n    = _iter.length();
+ *   var _i    = 0;
+ *   while (_i < _n) { var x = _iter.get(_i); body; _i = _i + 1 }
+ *
+ * break/continue work inside AST_FOR_EACH bodies because the emitter
+ * tracks the break/continue patch-lists in the loop context. */
+UAstNode *parse_for(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_FOR */
+
+    UToken lp = peek(p);
+    if (lp.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          lp.line, lp.col);
+    }
+    consume(p);
+
+    /* Require `var` before the loop variable. */
+    UToken var_tok = peek(p);
+    if (var_tok.type != TOK_KW_VAR) {
+        return make_error(p, PARSE_FOR_EXPECTED_VAR,
+                          kErrorMessages[PARSE_FOR_EXPECTED_VAR],
+                          var_tok.line, var_tok.col);
+    }
+    consume(p);
+
+    UToken name_tok = peek(p);
+    if (name_tok.type != TOK_IDENT) {
+        return make_error(p, PARSE_EXPECTED_IDENT,
+                          kErrorMessages[PARSE_EXPECTED_IDENT],
+                          name_tok.line, name_tok.col);
+    }
+    consume(p);
+
+    /* Separator: `:` or `in`. */
+    UToken sep_tok = peek(p);
+    if (sep_tok.type == TOK_COLON) {
+        consume(p);
+    } else if (sep_tok.type == TOK_IDENT &&
+               ident_equals(sep_tok.u.str.start, sep_tok.u.str.len, "in", 2)) {
+        consume(p);
+    } else {
+        return make_error(p, PARSE_FOR_EXPECTED_COLON_OR_IN,
+                          kErrorMessages[PARSE_FOR_EXPECTED_COLON_OR_IN],
+                          sep_tok.line, sep_tok.col);
+    }
+
+    /* Iterable expression (allows commas inside parens — parse_inner_tier). */
+    UAstNode *iter = parse_inner_tier(p);
+    if (!iter) return (UAstNode *)&uparser_oom_sentinel;
+    if (iter->kind == AST_ERROR) return iter;
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);
+
+    /* Body block.  Bump loop_depth so break/continue are valid inside. */
+    p->loop_depth++;
+    UAstNode *body = parse_block(p);
+    p->loop_depth--;
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    UAstNode *node = make_node(p, AST_FOR_EACH, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.for_each.var_name_start = name_tok.u.str.start;
+    node->u.for_each.var_name_len   = name_tok.u.str.len;
+    node->u.for_each.iter_expr      = iter;
+    node->u.for_each.body           = body;
+    return node;
+}
+
+/* parse_break — `break` (statement).
+ * Ruling: implemented (Wave 6 W1, legacy F2).
+ * No payload beyond position.  Error if not inside a for/while. */
+UAstNode *parse_break(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_BREAK */
+    if (p->loop_depth == 0) {
+        return make_error(p, PARSE_BREAK_OUTSIDE_LOOP,
+                          kErrorMessages[PARSE_BREAK_OUTSIDE_LOOP],
+                          kw.line, kw.col);
+    }
+    UAstNode *node = make_node(p, AST_BREAK, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    return node;
+}
+
+/* parse_continue — `continue` (statement).
+ * Ruling: implemented (Wave 6 W1, legacy F2).
+ * No payload beyond position.  Error if not inside a for/while. */
+UAstNode *parse_continue(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_CONTINUE */
+    if (p->loop_depth == 0) {
+        return make_error(p, PARSE_CONTINUE_OUTSIDE_LOOP,
+                          kErrorMessages[PARSE_CONTINUE_OUTSIDE_LOOP],
+                          kw.line, kw.col);
+    }
+    UAstNode *node = make_node(p, AST_CONTINUE, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    return node;
+}
+
+/* parse_switch — `switch (expr) { case v1: body1; case v2: body2; }`
+ *
+ * Ruling: implemented (Wave 6 W1, legacy F2).
+ * Equality-based only (no pattern matching — that is deferred-v1.x).
+ * Produces AST_SWITCH with parallel arrays of case-value nodes and body nodes.
+ *
+ * Grammar:
+ *   switch ( expr ) { ( case expr : stmts )* }
+ *
+ * The emitter lowers to a chain of if-else comparisons.
+ * Break inside a case body exits the switch (switch is a loop-context
+ * in the emitter's patch-list sense). */
+UAstNode *parse_switch(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_SWITCH */
+
+    UToken lp = peek(p);
+    if (lp.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          lp.line, lp.col);
+    }
+    consume(p);
+
+    UAstNode *expr = parse_inner_tier(p);
+    if (!expr) return (UAstNode *)&uparser_oom_sentinel;
+    if (expr->kind == AST_ERROR) return expr;
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);
+
+    UToken lb = peek(p);
+    if (lb.type != TOK_LBRACE) {
+        return make_error(p, PARSE_EXPECTED_LBRACE,
+                          kErrorMessages[PARSE_EXPECTED_LBRACE],
+                          lb.line, lb.col);
+    }
+    consume(p);
+
+    /* Parse case list. */
+    int cap = 4;
+    UAstNode **case_vals   = (UAstNode **)uarena_alloc(p->arena,
+                                                        (size_t)cap * sizeof(UAstNode *));
+    UAstNode **case_bodies = (UAstNode **)uarena_alloc(p->arena,
+                                                        (size_t)cap * sizeof(UAstNode *));
+    if (!case_vals || !case_bodies) return (UAstNode *)&uparser_oom_sentinel;
+    int case_count = 0;
+
+    /* switch body: break inside a case must exit the switch */
+    p->loop_depth++;
+
+    while (peek(p).type != TOK_RBRACE && peek(p).type != TOK_EOF) {
+        /* Skip statement separators between cases. */
+        while (peek(p).type == TOK_SEMI || peek(p).type == TOK_PIPE) {
+            consume(p);
+        }
+        if (peek(p).type == TOK_RBRACE || peek(p).type == TOK_EOF) break;
+
+        UToken case_tok = peek(p);
+        if (case_tok.type != TOK_KW_CASE) {
+            p->loop_depth--;
+            return make_error(p, PARSE_SWITCH_EXPECTED_CASE,
+                              kErrorMessages[PARSE_SWITCH_EXPECTED_CASE],
+                              case_tok.line, case_tok.col);
+        }
+        consume(p);  /* consume 'case' */
+
+        /* Case value expression (not a separator tier — parse as atom/prefix). */
+        UAstNode *val = parse_expression(p, 0);
+        if (!val) { p->loop_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+        if (val->kind == AST_ERROR) { p->loop_depth--; return val; }
+
+        UToken colon = peek(p);
+        if (colon.type != TOK_COLON) {
+            p->loop_depth--;
+            return make_error(p, PARSE_SWITCH_EXPECTED_COLON,
+                              kErrorMessages[PARSE_SWITCH_EXPECTED_COLON],
+                              colon.line, colon.col);
+        }
+        consume(p);  /* consume ':' */
+
+        /* Collect statements until the next `case`, `}`, or EOF.
+         * Build them into an implicit AST_BLOCK. */
+        int stmt_cap = 4;
+        UAstNode **stmts = (UAstNode **)uarena_alloc(p->arena,
+                                                       (size_t)stmt_cap * sizeof(UAstNode *));
+        if (!stmts) { p->loop_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+        int stmt_count = 0;
+
+        while (peek(p).type != TOK_KW_CASE &&
+               peek(p).type != TOK_RBRACE &&
+               peek(p).type != TOK_EOF) {
+            /* Use parse_statement_or_expr (not parse_outer_tier) so that ';'
+             * between case bodies is not greedily consumed across 'case'
+             * boundaries — parse_outer_tier would eat the ';' and then try to
+             * parse 'case' as an expression, yielding "expected expression". */
+            UAstNode *s = parse_statement_or_expr(p);
+            if (!s) { p->loop_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+            if (s->kind == AST_ERROR) { p->loop_depth--; return s; }
+
+            if (stmt_count == stmt_cap) {
+                if (!arena_grow_node_array(p, &stmts, &stmt_cap, stmt_count)) {
+                    p->loop_depth--;
+                    return (UAstNode *)&uparser_oom_sentinel;
+                }
+            }
+            stmts[stmt_count++] = s;
+
+            /* Consume separator if present. */
+            if (peek(p).type == TOK_SEMI || peek(p).type == TOK_PIPE) {
+                consume(p);
+            }
+        }
+
+        UAstNode *body = make_node(p, AST_BLOCK, case_tok.line, case_tok.col);
+        if (!body) { p->loop_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+        body->u.block.stmts = stmts;
+        body->u.block.count = stmt_count;
+
+        /* Grow parallel arrays if needed. */
+        if (case_count == cap) {
+            if (!arena_grow_node_array(p, &case_vals,   &cap, case_count) ||
+                !arena_grow_node_array(p, &case_bodies, &cap, case_count)) {
+                p->loop_depth--;
+                return (UAstNode *)&uparser_oom_sentinel;
+            }
+        }
+        case_vals[case_count]   = val;
+        case_bodies[case_count] = body;
+        case_count++;
+    }
+
+    p->loop_depth--;
+
+    UToken rb = peek(p);
+    if (rb.type != TOK_RBRACE) {
+        return make_error(p, PARSE_EXPECTED_RBRACE,
+                          kErrorMessages[PARSE_EXPECTED_RBRACE],
+                          rb.line, rb.col);
+    }
+    consume(p);
+
+    UAstNode *node = make_node(p, AST_SWITCH, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.switch_stmt.expr        = expr;
+    node->u.switch_stmt.case_vals   = case_vals;
+    node->u.switch_stmt.case_bodies = case_bodies;
+    node->u.switch_stmt.case_count  = case_count;
+    return node;
+}
+/* === end W1/v0.10.5: control flow === */
