@@ -97,10 +97,19 @@ UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
 }
 
 /* parse_assign_or_expr: IDENT already consumed as `name`.
-   Handles assignment (`x = expr`), tag-prefix (`mytag: { body }`), and
-   expression statements that start with an identifier (call chains,
-   member accesses, arithmetic).  The non-assign/non-tag path delegates
-   to parse_inner_tier_from_lhs to avoid duplicating the Pratt loop. */
+   Handles assignment (`x = expr`), tag-prefix (`mytag: { body }` and
+   `expr: { body }`), and expression statements that start with an
+   identifier (call chains, member accesses, arithmetic).
+   The non-assign/non-tag path delegates to parse_inner_tier_from_lhs
+   to avoid duplicating the Pratt loop.
+
+   W8/v0.10.5: member-expr tag form.  After parsing a postfix chain
+   (member-access, calls, etc.) from the leading IDENT, if the result
+   is followed by `:` at statement level, treat the whole expression as
+   the tag-expr of an AST_TAG_PREFIX.  This enables `Tag.scope: body`
+   and similar forms.  The check is inserted between parse_expression_cont
+   (which builds the chain) and pipe_amp_fold (which folds `|`/`&`) —
+   exactly the split that parse_inner_tier_from_lhs performs internally. */
 static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
     /* T41 statement-start getter/setter sugar: `get IDENT (...)` or
      * `set IDENT (...)` produces an AST_PROPERTY_DECL.  Recognized only
@@ -139,14 +148,25 @@ static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
     if (peek(p).type == TOK_COLON) {
         return parse_tag_prefix(p, name);
     }
-    /* Not assignment or tag: build the ident node and hand to the
-     * inner-tier entry point that accepts an already-parsed lhs.  This
-     * runs parse_expression_cont (Pratt climb) + the pipe/amp fold —
-     * identical to parse_inner_tier but without re-consuming the IDENT. */
+    /* Not assignment or bare-IDENT tag: build the ident node and run the
+     * Pratt climb (parse_expression_cont) to collect postfix chains such
+     * as `.member`, `(args)`, `!`.  Then check for `:` again — a colon
+     * after a postfix chain is the member-expr tag form `Tag.scope: body`
+     * (W8/v0.10.5).  If no colon, finish with the pipe/amp fold as before. */
     UAstNode *lhs = make_ident(p, name.u.str.start, name.u.str.len,
                                name.line, name.col);
     if (!lhs) return NULL;
-    return parse_inner_tier_from_lhs(p, lhs);
+    /* Pratt climb: builds full postfix chain from the leading IDENT. */
+    lhs = parse_expression_cont(p, lhs, 0);
+    if (!lhs) return NULL;
+    if (lhs->kind == AST_ERROR) return lhs;
+    /* === W8/v0.10.5: member-expr tag check === */
+    if (peek(p).type == TOK_COLON) {
+        return parse_tag_prefix_from_expr(p, lhs);
+    }
+    /* === end W8/v0.10.5 === */
+    /* Normal expression statement: fold `|` and `&` separators. */
+    return pipe_amp_fold(p, lhs);
 }
 
 /* --- parse_class_declaration: `class Name [: public P1, P2, ...] { body }`.
