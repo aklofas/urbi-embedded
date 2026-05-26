@@ -72,26 +72,21 @@ UAstNode *desugar_postfix_emit(UParser *p, UAstNode *recv, UToken bang_tok) {
     return call;
 }
 
-/* --- parse_tag_prefix: `name : { body }`
-   Called from parse_statement_or_expr after consuming `name` and seeing `:`.
-   Produces AST_TAG_PREFIX with tag_expr = AST_IDENT(name), body = AST_BLOCK.
-
-   PARSE-033 closure: the AST_TAG_PREFIX.onleave field is always NULL at
-   v1.0 — the surface form `tag: { body } onleave handler` is v1.x scope
-   (M5 spec deferred it; M6 stdlib confirmed v1.0 ships without it).  The
-   AST field is retained on the union variant so the v1.x parser change
-   lands as an addition rather than an AST shape break.  `at (cond) body
-   onleave handler` (AST_WATCHER) is the supported onleave form today;
-   see uast.h tag_prefix.onleave for the canonical comment. --- */
-
-UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
-    consume(p);  /* consume ':' */
-
-    /* W5/v0.10.2: bare-prefix `tag: stmt` form (no braces required).
-     * If next token is `{`, parse a block (existing behaviour).
-     * Otherwise, parse a single statement/expression and wrap as an
-     * implicit AST_BLOCK so the emit path (which expects AST_BLOCK body)
-     * treats both forms identically.  Closes legacy audit F3. */
+/* === W8/v0.10.5: tag-expr widening ===
+ *
+ * parse_tag_prefix_body: shared body-parse helper for both `name:` and
+ * `expr:` tag-prefix forms.  Called after `:` has been consumed.
+ * `pos_line`/`pos_col` are the position of the tag expression (for the
+ * implicit-block node position).
+ *
+ * PARSE-033 closure: the AST_TAG_PREFIX.onleave field is always NULL at
+ * v1.0 — the surface form `tag: { body } onleave handler` is v1.x scope
+ * (M5 spec deferred it; M6 stdlib confirmed v1.0 ships without it).
+ * `at (cond) body onleave handler` (AST_WATCHER) IS the supported
+ * onleave form today; see uast.h tag_prefix.onleave for the canonical
+ * comment. */
+static UAstNode *parse_tag_prefix_body(UParser *p, UAstNode *tag_expr,
+                                        int pos_line, int pos_col) {
     UAstNode *body;
     if (peek(p).type == TOK_LBRACE) {
         body = parse_block(p);
@@ -101,7 +96,7 @@ UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
         if (stmt->kind == AST_ERROR) return stmt;
         /* Wrap in single-statement block so the emit path's AST_BLOCK
          * handler runs without modification. */
-        body = make_node(p, AST_BLOCK, name_tok.line, name_tok.col);
+        body = make_node(p, AST_BLOCK, pos_line, pos_col);
         if (!body) return (UAstNode *)&uparser_oom_sentinel;
         UAstNode **stmts = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
         if (!stmts) return (UAstNode *)&uparser_oom_sentinel;
@@ -112,17 +107,42 @@ UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 
-    UAstNode *tag_expr = make_ident(p, name_tok.u.str.start, name_tok.u.str.len,
-                                    name_tok.line, name_tok.col);
-    if (!tag_expr) return (UAstNode *)&uparser_oom_sentinel;
-
-    UAstNode *node = make_node(p, AST_TAG_PREFIX, name_tok.line, name_tok.col);
+    UAstNode *node = make_node(p, AST_TAG_PREFIX, pos_line, pos_col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
     node->u.tag_prefix.tag_expr = tag_expr;
     node->u.tag_prefix.body     = body;
     node->u.tag_prefix.onleave  = NULL;  /* tag-prefix onleave is v1.x — see fn comment + uast.h */
     return node;
 }
+
+/* --- parse_tag_prefix: `name : body`
+   Called from parse_assign_or_expr after consuming `name` and seeing `:`.
+   Produces AST_TAG_PREFIX with tag_expr = AST_IDENT(name).
+   W5/v0.10.2: body may be bare stmt (no braces required) — both forms
+   produce an AST_BLOCK child so the emit path is uniform.
+   Partially closes legacy audit F3; member-expr tag form closed by W8. */
+UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
+    consume(p);  /* consume ':' */
+    UAstNode *tag_expr = make_ident(p, name_tok.u.str.start, name_tok.u.str.len,
+                                    name_tok.line, name_tok.col);
+    if (!tag_expr) return (UAstNode *)&uparser_oom_sentinel;
+    return parse_tag_prefix_body(p, tag_expr, name_tok.line, name_tok.col);
+}
+
+/* --- parse_tag_prefix_from_expr: `expr : body`                   (W8/v0.10.5)
+ *
+ * Called from parse_assign_or_expr when a postfix-chain expression is
+ * followed by `:` at statement level.  Enables `Tag.scope: { body }` and
+ * other member-expr tag forms (legacy manual §9.1.1 example).
+ *
+ * Contract: `:` has already been peeked (but NOT consumed) by the caller.
+ * `tag_expr` is the fully-parsed expression to the left of `:`.
+ * Closes legacy audit finding F3 (member-expr tag position). */
+UAstNode *parse_tag_prefix_from_expr(UParser *p, UAstNode *tag_expr) {
+    consume(p);  /* consume ':' */
+    return parse_tag_prefix_body(p, tag_expr, tag_expr->line, tag_expr->col);
+}
+/* === end W8/v0.10.5 === */
 
 /* --- parse_at_slot_change_form: `at (obj.x.changed?) body [onleave h]`
  *

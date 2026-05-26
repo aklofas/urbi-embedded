@@ -84,6 +84,10 @@ UAstCompareOp compare_op(UTokenType t);
 
 /* --- Separator loop (defined in uparse_separators.c). --- */
 bool at_statement_end(UParser *p);
+/* pipe_amp_fold: left-fold `|` / `&` from an already-parsed lhs.
+ * W8/v0.10.5: promoted from static to allow parse_assign_or_expr to call
+ * it directly after intercepting the member-expr tag-prefix form. */
+UAstNode *pipe_amp_fold(UParser *p, UAstNode *lhs);
 UAstNode *parse_inner_tier(UParser *p);
 UAstNode *parse_inner_tier_from_lhs(UParser *p, UAstNode *lhs);
 UAstNode *parse_outer_tier(UParser *p);
@@ -118,6 +122,9 @@ UAstNode *parse_whenever(UParser *p);
 UAstNode *parse_waituntil(UParser *p);
 UAstNode *parse_every(UParser *p);
 UAstNode *parse_tag_prefix(UParser *p, UToken name_tok);
+/* W8/v0.10.5: member-expr tag form `expr: body` — called when a postfix
+ * chain ends in `:` at statement level.  `:` not yet consumed. */
+UAstNode *parse_tag_prefix_from_expr(UParser *p, UAstNode *tag_expr);
 
 /* --- Entry points + recovery (defined in uparse_top.c). --- */
 void sync_to_statement_boundary(UParser *p);

@@ -20,8 +20,9 @@ bool at_statement_end(UParser *p) {
 }
 
 /* pipe_amp_fold: left-fold `|` and `&` binops starting from an already-parsed
-   lhs.  Shared by parse_inner_tier and parse_inner_tier_from_lhs. */
-static UAstNode *pipe_amp_fold(UParser *p, UAstNode *lhs) {
+   lhs.  Shared by parse_inner_tier, parse_inner_tier_from_lhs, and
+   parse_assign_or_expr (W8/v0.10.5 member-expr tag form). */
+UAstNode *pipe_amp_fold(UParser *p, UAstNode *lhs) {
     for (;;) {
         UToken sep = peek(p);
         if (sep.type != TOK_PIPE && sep.type != TOK_AMP) break;
