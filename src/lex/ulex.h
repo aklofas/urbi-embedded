@@ -113,6 +113,9 @@ typedef enum {
      * body (does not include the surrounding single-quote delimiters). */
     /* === end W2/v0.10.5: quoted identifiers === */
 
+    /* === W3/v0.10.5: assert keyword === */
+    TOK_KW_ASSERT,
+
     TOK_ERROR,        /* malformed input */
 
     TOK__LAST          /* sentinel; not a real token type — used to size

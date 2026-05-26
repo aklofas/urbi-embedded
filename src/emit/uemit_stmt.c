@@ -8,6 +8,7 @@
  *   AST_CALL     — function call with lazy-arg support
  *   AST_RETURN   — return statement
  *   AST_FUNCTION — function literal (thin caller for emit_function_literal)
+ *   AST_ASSERT   — assert(expr) / assert { block } (W3/v0.10.5, legacy F9)
  *
  * Also contains the shared function-building primitives:
  *   emit_function_literal — compile a function literal into UProto + OP_CLOSURE
@@ -18,6 +19,7 @@
 
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
 #include "value/uintern.h"        /* ustr_intern */
+#include "value/uarena.h"         /* uarena_alloc (W3: assert message building) */
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
 #include "parse/uast.h"
@@ -793,4 +795,129 @@ uint8_t emit_function_arm(UEmitter *e, UAstNode *n) {
                                  n->u.func.param_count,
                                  n->u.func.body,
                                  /*as_expression=*/true);
+}
+
+/* === W3/v0.10.5: assert keyword ===
+ * emit_assert_arm — AST_ASSERT: assert(expr) / assert { block }.
+ *
+ * Lowering (no new opcode needed):
+ *
+ *   cond_reg = emit_expr(n->u.assert_stmt.expr)
+ *   TEST  cond_reg, 0, 1     ; skip JMP when cond is truthy (assertion passes)
+ *   JMP   <throw_site>       ; falsy → throw
+ *   LOADNIL rd               ; truthy path: assertion passed → result is nil
+ *   JMP   <end>              ; skip throw site
+ *   <throw_site>:
+ *   LOADK  msg_reg, <msg_k>  ; load "assertion failed[: <src>]"
+ *   THROW  msg_reg           ; raise; doesn't fall through
+ *   <end>:                   ; patching target; result in rd
+ *
+ * Diagnostic message:
+ *   Paren form: "assertion failed: <src_text>"  (source text from parser)
+ *   Block form: "assertion failed"
+ *
+ * System.ndebug: not supported at v1.0; assertions always run.
+ * Evaluated-result display: deferred to v1.x. */
+uint8_t emit_assert_arm(UEmitter *e, UAstNode *n) {
+    static const char kMsgBase[]   = "assertion failed";
+    static const char kMsgPrefix[] = "assertion failed: ";
+    /* kMsgBaseLen = strlen("assertion failed") = 16 */
+#define KASSERT_BASE_LEN   (sizeof(kMsgBase) - 1U)
+    /* kMsgPrefixLen = strlen("assertion failed: ") = 18 */
+#define KASSERT_PREFIX_LEN (sizeof(kMsgPrefix) - 1U)
+
+    if (e->current_fs == NULL || e->vm == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+
+    /* 1. Build the failure message string.
+     *    Paren form: "assertion failed: <src_text>" (arena-allocated).
+     *    Block form: "assertion failed"              (static — intern directly). */
+    const char *msg_interned;
+    if (n->u.assert_stmt.src_text != NULL && n->u.assert_stmt.src_len > 0) {
+        size_t msg_len = KASSERT_PREFIX_LEN + (size_t)n->u.assert_stmt.src_len;
+        char  *msg_buf = (char *)uarena_alloc(e->arena, msg_len + 1U);
+        if (msg_buf == NULL) { e->error = EMIT_OOM; return 0U; }
+        emit_memcpy(msg_buf, kMsgPrefix, KASSERT_PREFIX_LEN);
+        emit_memcpy(msg_buf + KASSERT_PREFIX_LEN,
+                    n->u.assert_stmt.src_text,
+                    (size_t)n->u.assert_stmt.src_len);
+        msg_buf[msg_len] = '\0';
+        msg_interned = ustr_intern(e->vm, msg_buf, msg_len);
+    } else {
+        msg_interned = ustr_intern(e->vm, kMsgBase, KASSERT_BASE_LEN);
+    }
+    if (msg_interned == NULL) { e->error = EMIT_OOM; return 0U; }
+
+    /* 2. Add message string to constant pool. */
+    const uint16_t msg_k = add_const_str(e, msg_interned);
+    if (e->error != EMIT_OK) return 0U;
+
+    /* 3. rd is the result register. */
+    uint8_t rd = e->next_reg;
+
+    /* 4. Compile the asserted expression/block into cond_reg. */
+    uint8_t cond_reg = emit_expr(e, n->u.assert_stmt.expr);
+    if (e->error != EMIT_OK) return 0U;
+
+    /* 5. TEST cond_reg, 0, 1 — skip JMP-to-throw when cond is truthy. */
+    emit_instr(e, uinstr_enc_abc(OP_TEST, cond_reg, 0U, 1U), (uint32_t)n->line);
+
+    /* 6. JMP placeholder to throw_site (patched below). */
+    int jmp_to_throw = (int)emit_instr_count(e);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+
+    /* 7. Truthy path: reset cursor to rd, emit LOADNIL. */
+    e->next_reg = rd;
+    {
+        uint8_t floor_val = fs_temp_floor(e->current_fs);
+        if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+        if (e->next_reg < floor_val) e->next_reg = floor_val;
+        if (e->next_reg < rd) e->next_reg = rd;
+    }
+    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
+
+    /* 8. JMP placeholder to end (patched below — skip throw site). */
+    int jmp_to_end = (int)emit_instr_count(e);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+
+    /* 9. Patch jmp_to_throw → here (start of throw_site). */
+    {
+        int throw_target = (int)emit_instr_count(e);
+        emit_patch_instr(e, jmp_to_throw,
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(jmp_to_throw, throw_target)));
+    }
+
+    /* 10. Throw site: allocate msg_reg fresh, load message string, throw. */
+    {
+        /* Allocate msg_reg above rd so it doesn't stomp rd. */
+        uint8_t msg_reg = rd + 1U;
+        if (msg_reg > e->max_reg_seen) e->max_reg_seen = msg_reg;
+        if (e->current_fs != NULL && msg_reg > e->current_fs->max_reg_seen)
+            e->current_fs->max_reg_seen = msg_reg;
+        emit_instr(e, uinstr_enc_abx(OP_LOADK, msg_reg, msg_k), (uint32_t)n->line);
+        uemit_throw(e, msg_reg, (uint32_t)n->line);
+    }
+
+    /* 11. Patch jmp_to_end → here (past throw site). */
+    {
+        int end_target = (int)emit_instr_count(e);
+        emit_patch_instr(e, jmp_to_end,
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(jmp_to_end, end_target)));
+    }
+
+    /* 12. Advance next_reg past rd.  Match emit_if_arm protocol. */
+    e->next_reg = rd + 1U;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->current_fs != NULL) {
+        if (e->next_reg > e->current_fs->max_reg_seen)
+            e->current_fs->max_reg_seen = e->next_reg;
+    }
+    return rd;
+
+#undef KASSERT_BASE_LEN
+#undef KASSERT_PREFIX_LEN
 }

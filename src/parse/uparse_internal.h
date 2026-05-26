@@ -100,6 +100,8 @@ UAstNode *parse_return(UParser *p);
 UAstNode *parse_throw(UParser *p);
 UAstNode *parse_try(UParser *p);
 UAstNode *parse_class_declaration(UParser *p);
+/* W3/v0.10.5: assert keyword — parse_assert handles both paren and block forms. */
+UAstNode *parse_assert(UParser *p);
 /* T41 — property declaration helper.  `recv` is the explicit receiver
  * (or NULL for class-body / implicit self).  `name_tok` is the slot-
  * name IDENT (already consumed by the caller).  The next token must be

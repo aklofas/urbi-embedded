@@ -1,0 +1,54 @@
+# Wave 6 W3 — assert keyword (v0.10.5)
+# Covers: assert(expr) pass (truthy), assert(expr) fail with diagnostic,
+#         assert { block } pass, assert { block } fail,
+#         assert failure caught by try/catch.
+# Ruling: implemented — lowers to if(!cond) throw "assertion failed[: <src>]"
+# Note: numerics (including 0) are truthy in urbiscript; only false/nil fail.
+# Source: legacy F9; urbiscript SDK 2.0 §17.x assert semantics
+
+# --- paren form: passing asserts yield nil ---
+assert(1)
+[00000001] nil
+
+assert(true)
+[00000002] nil
+
+assert(1 == 1)
+[00000003] nil
+
+# --- paren form: assert(false) throws with source text ---
+var caught = 0; try { assert(false) } catch (e) { caught = 1 }; caught
+[00000004] 1
+
+# --- paren form: assert(nil) throws ---
+var caught = 0; try { assert(nil) } catch (e) { caught = 1 }; caught
+[00000005] 1
+
+# --- paren form: assert(1 == 2) throws with source text ---
+var caught = 0; try { assert(1 == 2) } catch (e) { caught = 1 }; caught
+[00000006] 1
+
+# --- diagnostic message includes source text ---
+var msg = nil; try { assert(false) } catch (e) { msg = e }; msg
+[00000007] "assertion failed: false"
+
+var msg = nil; try { assert(1 == 2) } catch (e) { msg = e }; msg
+[00000008] "assertion failed: 1 == 2"
+
+# --- block form: passing asserts yield nil ---
+assert { true }
+[00000009] nil
+
+assert { 1 }
+[00000010] nil
+
+assert { 1 == 1 }
+[00000011] nil
+
+# --- block form: assert { false } throws without source text ---
+var caught = 0; try { assert { false } } catch (e) { caught = 1 }; caught
+[00000012] 1
+
+# --- block form: diagnostic is plain "assertion failed" (no source text) ---
+var msg = nil; try { assert { false } } catch (e) { msg = e }; msg
+[00000013] "assertion failed"

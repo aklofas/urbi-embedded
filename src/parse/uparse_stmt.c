@@ -269,6 +269,8 @@ UAstNode *parse_statement_or_expr(UParser *p) {
     case TOK_KW_WAITUNTIL: return parse_waituntil(p);
     case TOK_KW_EVERY:    return parse_every(p);
     case TOK_KW_CLASS:    return parse_class_declaration(p);
+    /* W3/v0.10.5: assert keyword */
+    case TOK_KW_ASSERT:   return parse_assert(p);
     /* S47 (2026-05-16): allow `{ stmts }` as a statement-or-expression.
      * Original urbi spec supports brace blocks in at-bodies, onleave
      * handlers, whenever bodies, and any inner-tier position (see
@@ -687,6 +689,88 @@ UAstNode *parse_throw(UParser *p) {
     UAstNode *node = make_node(p, AST_THROW, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
     node->u.throw_expr.value = value;
+    return node;
+}
+
+/* === W3/v0.10.5: assert keyword ===
+ * parse_assert — `assert(expr)` or `assert { block }`.
+ *
+ * Paren form:   assert(expr)
+ *   Records the source text span of `expr` for use in the failure diagnostic.
+ *   src_text points into the source buffer between the `(` and `)` characters
+ *   (trailing whitespace trimmed).
+ *
+ * Block form:   assert { stmts }
+ *   Evaluates the block; truthy final value = pass (no throw).
+ *   src_text/src_len = NULL/0.
+ *
+ * Ruling: implemented (Wave 6 W3, legacy F9).
+ * Lowers at emit time to: if (!expr) throw "assertion failed[: <src>]"
+ * No new opcode needed. */
+UAstNode *parse_assert(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_ASSERT */
+
+    UToken next = peek(p);
+
+    if (next.type == TOK_LBRACE) {
+        /* Block form: assert { stmts } */
+        UAstNode *block = parse_block(p);
+        if (!block) return (UAstNode *)&uparser_oom_sentinel;
+        if (block->kind == AST_ERROR) return block;
+
+        UAstNode *node = make_node(p, AST_ASSERT, kw.line, kw.col);
+        if (!node) return (UAstNode *)&uparser_oom_sentinel;
+        node->u.assert_stmt.expr     = block;
+        node->u.assert_stmt.src_text = NULL;
+        node->u.assert_stmt.src_len  = 0;
+        return node;
+    }
+
+    if (next.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          next.line, next.col);
+    }
+    consume(p);  /* consume '(' */
+
+    /* Capture source text start: p->lex->cur is now right after '('.
+     * Trim leading whitespace so the diagnostic text starts at the expression.
+     * The source buffer is guaranteed to outlive the AST node. */
+    const char *src_start = p->lex->cur;
+    while (*src_start == ' ' || *src_start == '\t'
+           || *src_start == '\r' || *src_start == '\n') {
+        src_start++;
+    }
+
+    UAstNode *expr = parse_inner_tier(p);
+    if (!expr) return (UAstNode *)&uparser_oom_sentinel;
+    if (expr->kind == AST_ERROR) return expr;
+
+    /* Compute source text end: after parse_inner_tier, the parser has peeked
+     * the first token after the expression.  That peeked token (')') was
+     * produced by ulex_next which advanced p->lex->cur past ')'.
+     * The ')' starts at (p->lex->cur - p->peek.len) when have_peek is set. */
+    const char *src_end = p->have_peek ? (p->lex->cur - (size_t)p->peek.len)
+                                       : p->lex->cur;
+    /* Trim trailing whitespace so the diagnostic text is clean. */
+    while (src_end > src_start && (src_end[-1] == ' ' || src_end[-1] == '\t'
+                                    || src_end[-1] == '\r' || src_end[-1] == '\n')) {
+        src_end--;
+    }
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);  /* consume ')' */
+
+    UAstNode *node = make_node(p, AST_ASSERT, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.assert_stmt.expr     = expr;
+    node->u.assert_stmt.src_text = src_start;
+    node->u.assert_stmt.src_len  = (int)(src_end - src_start);
     return node;
 }
 

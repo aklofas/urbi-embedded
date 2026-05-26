@@ -35,9 +35,10 @@ each gap's current status follows.
   at the top level will resolve it through the session Lobby in a
   REPL context; standalone fixtures that lack a Lobby context may still
   need adaptation.
-- **`assert`:** not yet implemented as a language construct.  Wave 6 W3
-  decides the ruling (`implemented` vs. `deferred-v1.x`).  Until W3
-  lands, fixtures that lean on `assert` remain deferred.
+- **`assert`:** implemented as a language keyword (Wave 6 W3, v0.10.5).
+  `assert(expr)` lowers to `if (!expr) throw "assertion failed: <src>"`.
+  `assert { block }` lowers to `if (!block) throw "assertion failed"`.
+  Fixtures deferred for other reasons (not just `assert`) remain deferred.
 
 - **No string `+` concatenation.**  `arith_add` handles numbers only;
   no `"+"` slot is registered on String proto (T46 explicitly dropped in
