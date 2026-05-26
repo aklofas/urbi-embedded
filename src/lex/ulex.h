@@ -107,6 +107,12 @@ typedef enum {
     /* M6 wave 3 — this keyword (Gap #3) */
     TOK_KW_THIS,
 
+    /* === W2/v0.10.5: quoted identifiers === */
+    /* TOK_IDENT is reused for quoted identifiers; no new token type needed.
+     * scan_quoted_ident emits TOK_IDENT with u.str pointing at the unquoted
+     * body (does not include the surrounding single-quote delimiters). */
+    /* === end W2/v0.10.5: quoted identifiers === */
+
     TOK_ERROR,        /* malformed input */
 
     TOK__LAST          /* sentinel; not a real token type — used to size
@@ -135,6 +141,10 @@ typedef enum {
     LEX_FLOAT_TRAILING_DOT,          /* 1. — no fraction digits after the decimal point */
     LEX_FLOAT_EXPONENT_NO_DIGITS,    /* 1.5e+ or 1e — exponent marker with no digits */
     LEX_FLOAT_OVERFLOW,              /* float literal exceeds representable range (±inf) */
+    /* === W2/v0.10.5: quoted identifiers === */
+    LEX_UNTERMINATED_QUOTED_IDENT,   /* 'name opened but not closed before EOF/newline */
+    LEX_EMPTY_QUOTED_IDENT,          /* '' — zero-length quoted identifier */
+    /* === end W2/v0.10.5: quoted identifiers === */
     LEX__LAST          /* sentinel; not a real error code — used to size
                           ERR_MSG[] and detect drift via URBI_STATIC_ASSERT */
 } ULexError;

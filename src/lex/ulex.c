@@ -79,7 +79,11 @@ static const char * const ERR_MSG[] = {
     "unicode escape resolves to a lone surrogate",
     "float literal has no fraction digits after the decimal point",
     "float literal exponent marker has no digits",
-    "float literal exceeds representable range"
+    "float literal exceeds representable range",
+    /* === W2/v0.10.5: quoted identifiers === */
+    "unterminated quoted identifier (missing closing single-quote)",
+    "empty quoted identifier ('' is not a valid name)"
+    /* === end W2/v0.10.5: quoted identifiers === */
 };
 /* LEX-015: same drift guard for ERR_MSG[] vs ULexError. */
 URBI_STATIC_ASSERT(sizeof(ERR_MSG) / sizeof(ERR_MSG[0]) == LEX__LAST,
@@ -696,6 +700,65 @@ static UToken scan_ident(ULexer *lex) {
     return t;
 }
 
+/* === W2/v0.10.5: quoted identifiers === */
+
+/* scan_quoted_ident — scan a 'X' quoted-identifier form (legacy §20.1.4).
+ *
+ * On entry lex->cur points at the opening single-quote character.
+ * On success: lex->cur is advanced past the closing single-quote; returns
+ *   TOK_IDENT with u.str.{start,len} pointing at the unquoted body (i.e.
+ *   the characters between the quotes).  The token's len field covers the
+ *   full quoted form including delimiters (for diagnostic span purposes).
+ * On error: cursor is advanced for recovery; returns TOK_ERROR.
+ *
+ * Constraints (legacy manual §20.1.4):
+ *   - The body may contain any character except newline ('\n').
+ *   - An empty body ('') is rejected (empty identifier has no meaning).
+ *   - The quote must be closed before EOF or newline (unterminated → error).
+ *
+ * No escape sequences inside quoted identifiers.  The legacy manual says
+ * they "may contain any character" with no mention of escaping. */
+static UToken scan_quoted_ident(ULexer *lex) {
+    const char *outer_start = lex->cur;          /* points at opening '\'' */
+    const int start_line = lex->line;
+    const int start_col = (int)(outer_start - lex->line_start) + 1;
+    lex->cur++;                                   /* skip opening '\'' */
+
+    const char *body_start = lex->cur;
+
+    while (lex->cur < lex->end) {
+        const char ch = *lex->cur;
+        if (ch == '\'') {
+            /* Found the closing quote. */
+            const char *body_end = lex->cur;
+            lex->cur++;                           /* skip closing '\'' */
+            const int body_len = (int)(body_end - body_start);
+            if (body_len == 0) {
+                /* '' — empty quoted identifier is invalid. */
+                const int span = (int)(lex->cur - outer_start);
+                return make_error(LEX_EMPTY_QUOTED_IDENT, start_line, start_col, span);
+            }
+            /* Emit TOK_IDENT; u.str points at unquoted body. */
+            UToken t = make_tok_base(TOK_IDENT, start_line, start_col);
+            t.len = (int)(lex->cur - outer_start); /* full quoted span */
+            t.u.str.start = body_start;
+            t.u.str.len   = body_len;
+            return t;
+        }
+        if (ch == '\n') {
+            /* Newline before close quote — unterminated. */
+            break;
+        }
+        lex->cur++;
+    }
+
+    /* Reached EOF or newline without a closing quote. */
+    const int span = (int)(lex->cur - outer_start);
+    return make_error(LEX_UNTERMINATED_QUOTED_IDENT, start_line, start_col, span);
+}
+
+/* === end W2/v0.10.5: quoted identifiers === */
+
 /* urbi_encode_utf8 — emit 1-4 UTF-8 bytes for a code point.  See the
  * docstring in src/lex/ulex_internal.h for the full contract; this
  * helper is non-validating and assumes the caller has already rejected
@@ -1167,6 +1230,16 @@ UToken ulex_next(ULexer *lex) {
         const int start_col = (int)(start - lex->line_start) + 1;
         return lex_string(lex, start_line, start_col);
     }
+
+    /* === W2/v0.10.5: quoted identifiers ===
+     * 'X' — single-quote-delimited identifier (legacy §20.1.4).
+     * Emits TOK_IDENT with u.str pointing at the unquoted body.
+     * Branched ahead of the punct fast-path (single-quote is not in
+     * kPunctTable so would fall through to LEX_UNKNOWN_CHAR anyway). */
+    if (c == '\'') {
+        return scan_quoted_ident(lex);
+    }
+    /* === end W2/v0.10.5: quoted identifiers === */
 
     /* Leading-dot float: '.5', '.123', etc.  Must be checked before the
      * punct table fast-path (which would otherwise emit TOK_DOT).
