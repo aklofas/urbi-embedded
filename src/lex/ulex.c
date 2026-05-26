@@ -54,6 +54,9 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_KW_THIS",
     /* === W3/v0.10.5: assert keyword === */
     "TOK_KW_ASSERT",
+    /* === W1/v0.10.5: control flow === */
+    "TOK_KW_FOR", "TOK_KW_BREAK", "TOK_KW_CONTINUE", "TOK_KW_SWITCH", "TOK_KW_CASE",
+    /* === end W1/v0.10.5: control flow === */
     /* === W10/v0.10.5: list/dict literals + subscript + compound assign === */
     "TOK_LBRACKET", "TOK_RBRACKET", "TOK_FAT_ARROW", "TOK_PLUS_EQ",
     /* === end W10/v0.10.5 === */
@@ -648,13 +651,17 @@ static const UKeyword KEYWORDS[] = {
     KW_ENTRY("assert",    TOK_KW_ASSERT),    /* W3/v0.10.5 */
     KW_ENTRY("async",     TOK_KW_ASYNC),
     KW_ENTRY("at",        TOK_KW_AT),
+    KW_ENTRY("break",     TOK_KW_BREAK),    /* W1/v0.10.5 */
+    KW_ENTRY("case",      TOK_KW_CASE),     /* W1/v0.10.5 */
     KW_ENTRY("catch",     TOK_KW_CATCH),
     KW_ENTRY("class",     TOK_KW_CLASS),
     KW_ENTRY("closure",   TOK_KW_CLOSURE),
+    KW_ENTRY("continue",  TOK_KW_CONTINUE), /* W1/v0.10.5 */
     KW_ENTRY("else",      TOK_KW_ELSE),
     KW_ENTRY("every",     TOK_KW_EVERY),
     KW_ENTRY("false",     TOK_KW_FALSE),
     KW_ENTRY("finally",   TOK_KW_FINALLY),
+    KW_ENTRY("for",       TOK_KW_FOR),      /* W1/v0.10.5 */
     KW_ENTRY("function",  TOK_KW_FUNCTION),
     KW_ENTRY("if",        TOK_KW_IF),
     KW_ENTRY("lazy",      TOK_KW_LAZY),
@@ -662,6 +669,7 @@ static const UKeyword KEYWORDS[] = {
     KW_ENTRY("onleave",   TOK_KW_ONLEAVE),
     KW_ENTRY("public",    TOK_KW_PUBLIC),
     KW_ENTRY("return",    TOK_KW_RETURN),
+    KW_ENTRY("switch",    TOK_KW_SWITCH),   /* W1/v0.10.5 */
     KW_ENTRY("sync",      TOK_KW_SYNC),
     KW_ENTRY("this",      TOK_KW_THIS),
     KW_ENTRY("throw",     TOK_KW_THROW),

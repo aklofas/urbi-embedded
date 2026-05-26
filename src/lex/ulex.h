@@ -116,6 +116,14 @@ typedef enum {
     /* === W3/v0.10.5: assert keyword === */
     TOK_KW_ASSERT,
 
+    /* === W1/v0.10.5: control flow === */
+    TOK_KW_FOR,      /* for — for-each range loop */
+    TOK_KW_BREAK,    /* break — exit innermost loop */
+    TOK_KW_CONTINUE, /* continue — skip to next iteration */
+    TOK_KW_SWITCH,   /* switch — equality-dispatch statement */
+    TOK_KW_CASE,     /* case — label inside switch body */
+    /* === end W1/v0.10.5: control flow === */
+
     /* === W10/v0.10.5: list/dict literals + subscript + compound assign === */
     TOK_LBRACKET,    /* [ — list/dict literal open; subscript open */
     TOK_RBRACKET,    /* ] — list/dict literal close; subscript close */
