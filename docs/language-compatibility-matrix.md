@@ -52,7 +52,7 @@
 | `try { } catch { } else { }` | NOT implemented | legacy F6; Wave 6 W5 |
 | `try { } finally { }` | implemented | — |
 | `throw` | implemented | — |
-| `assert (expr)` / `assert { }` | NOT implemented | legacy F9; Wave 6 W3 |
+| `assert (expr)` / `assert { }` | implemented | closes legacy F9; Wave 6 W3 |
 
 ### Reactive
 
