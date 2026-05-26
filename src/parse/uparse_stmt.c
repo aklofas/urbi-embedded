@@ -1029,16 +1029,15 @@ UAstNode *parse_for(UParser *p) {
 
     /* Separator: `:` or `in`. */
     UToken sep_tok = peek(p);
-    if (sep_tok.type == TOK_COLON) {
-        consume(p);
-    } else if (sep_tok.type == TOK_IDENT &&
-               ident_equals(sep_tok.u.str.start, sep_tok.u.str.len, "in", 2)) {
-        consume(p);
-    } else {
+    const int sep_is_colon = (sep_tok.type == TOK_COLON);
+    const int sep_is_in    = (sep_tok.type == TOK_IDENT &&
+                              ident_equals(sep_tok.u.str.start, sep_tok.u.str.len, "in", 2));
+    if (!sep_is_colon && !sep_is_in) {
         return make_error(p, PARSE_FOR_EXPECTED_COLON_OR_IN,
                           kErrorMessages[PARSE_FOR_EXPECTED_COLON_OR_IN],
                           sep_tok.line, sep_tok.col);
     }
+    consume(p);
 
     /* Iterable expression (allows commas inside parens — parse_inner_tier). */
     UAstNode *iter = parse_inner_tier(p);
