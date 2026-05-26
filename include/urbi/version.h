@@ -157,6 +157,36 @@
  *      change (no new opcodes in this wave).  docs/language-compatibility-
  *      matrix.md fully populated; v1.0 conformance denominator now
  *      computable.  15th use of pre-v1.0 escape clause.  (0/16/0 → 0/17/0)
+ *  16. v0.10.6-stabilization — Wave 7 of v0.10.x architectural refactor
+ *      arc; the arc-closing wave.  W1 listener-teardown race fix
+ *      (urepl_request_teardown + urepl_session_reap_pending; reader
+ *      threads request, VM thread reaps under sessions_mutex).  W2
+ *      ABI freeze pin (_Static_assert in version.h + docs/api-stability.md
+ *      + test-abi-freeze gate).  W3 wire-format freeze pin
+ *      (_Static_assert in uchunk_io.c + v1.8 → v1.9 doc-drift fix +
+ *      test-wire-freeze gate).  W4 REPL security gates: 6 named tests
+ *      (loopback-no-token / token-mismatch-teardown / rate-limit /
+ *      compile-budget-denial / malformed-NDJSON-tolerance / output-
+ *      isolation) + 5 OOM-injection tests + UReplConfig gains
+ *      rate_limit_per_second int field (POSIX-only enforcement,
+ *      cooperative builds have no network threat model);
+ *      URBI_ERR_INVALID_CONFIG added as #define alias for the pre-
+ *      existing URBI_ERR_INSECURE_CONFIG (-25), no new error slot.
+ *      W5 release-readiness.md fully populated (32/32 rows resolved);
+ *      coverage policy Path A enforced at --fail-under-line 85 (line
+ *      87% at baseline; aspirational 90% as v1.x target); branch +
+ *      condition coverage removed from v1.0 claims;
+ *      test-stdlib-bytecode-fresh + test-dependency-pins gates added.
+ *      W6 design-risks register triaged (8 v1.0-rc / v0.9.x / "Handle
+ *      before v1.0" entries closed/downgraded/mapped to release-
+ *      readiness; workspace-root, no commit trail).  Public-ABI driver
+ *      is the W4 UReplConfig.rate_limit_per_second field addition —
+ *      struct layout change visible across the boundary, additive at
+ *      the tail so old embedders zero-init it to unlimited.  No wire
+ *      format change at v1.9 / 0x19 (W3 pins the existing format).
+ *      16th and FINAL use of pre-v1.0 escape clause as the symbolic
+ *      ABI freeze pin; further pre-v1.0 changes follow the post-freeze
+ *      policy at docs/api-stability.md §3.  (0/17/0 → 0/18/0)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -171,7 +201,7 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  17
+#define URBI_API_VERSION_MINOR  18
 #define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
@@ -191,10 +221,17 @@ extern "C" {
  * Failing to bump the static_assert breaks the build, which is the point —
  * deliberate intent at every change, not silent ABI drift.
  *
- * Pin target: v0.10.6-stabilization ships at 0/17/0.
+ * Pin target: v0.10.6-stabilization ships at 0/18/0.
+ *
+ * The pin landed in commit `bdad57c` (W2) at 0/17/0; bumped to 0/18/0 at
+ * wave wrap-up to capture the W4 UReplConfig.rate_limit_per_second field
+ * addition.  This dual bump is the worked example of the post-freeze
+ * policy — the W2 pin documented intent; the wave wrap-up enumerated the
+ * break in this file's leading comment (#16) and bumped both the pin and
+ * the macros in lockstep before tag.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
-            && URBI_API_VERSION_MINOR == 17
+            && URBI_API_VERSION_MINOR == 18
             && URBI_API_VERSION_PATCH == 0,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 

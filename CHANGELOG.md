@@ -1,10 +1,88 @@
 # Changelog
 
-## v0.10.6-stabilization — pending
+## v0.10.6-stabilization — 2026-05-26
 
-Wave 7 of the v0.10.x architectural refactor arc (arc-closing wave). See
-controller changelog entry for full wave summary. W5 note: the following
-v1.0 quality-bar claims are formally removed from v1.0 scope at this tag.
+**Wave 7 of the v0.10.x architectural refactor arc — the arc-closing
+wave.** ABI **frozen at 0/18/0** with `_Static_assert` pin in
+`include/urbi/version.h`; further pre-v1.0 changes follow the post-freeze
+policy at `docs/api-stability.md` §3. Wire format **frozen at v1.9 /
+0x19** with `_Static_assert` pin in `src/chunk/uchunk_io.c`. 6 worktrees:
+
+### Supported now
+
+- **Listener-teardown race fixed (W1).** Single-owner session-teardown
+  model: reader threads request via atomic `needs_teardown` flag; VM
+  thread reaps under `sessions_mutex` at dispatch entry. The previously
+  opt-in `test_repl_multi_client` suite is now a default `make
+  releasetest` participant + a dedicated `repl-multi-client-stress` CI
+  job (ASan, 100 connect+teardown trials). Closes audit-1 F6, roadmap F9.
+  Two latent bugs surfaced and fixed inline: `strdup` was POSIX (not
+  C99) and silently truncated 64-bit pointers under `-std=c99` (3 test
+  files swept to a `tdup()` helper); `CRTSCTS` was gated behind
+  `_GNU_SOURCE` on Linux and disabled by `-std=c99`
+  (`urepl_transport_uart_linux.c` gains an `#ifndef` fallback).
+
+- **C API freeze pinned (W2).** `_Static_assert(URBI_API_VERSION_MAJOR
+  == 0 && URBI_API_VERSION_MINOR == 18 && URBI_API_VERSION_PATCH == 0)`
+  in `include/urbi/version.h`. New `docs/api-stability.md` documents
+  the post-freeze breaking-change policy (CHANGELOG entry plus assert
+  bump plus macros bump plus code review). Belt-and-braces gate
+  `tests/scripts/check-abi-freeze.sh` runs as `make test-abi-freeze` and
+  the GHA `test-abi-freeze` matrix job. Closes roadmap F10 completion.
+
+- **Wire format freeze pinned (W3).** `_Static_assert(URBI_BYTECODE_-
+  VERSION_MAJOR == 1 && URBI_BYTECODE_VERSION_MINOR == 9 &&
+  URBI_BYTECODE_VERSION_BYTE == 0x19)` in `src/chunk/uchunk_io.c`.
+  `docs/internals/bytecode-format.md` reconciled (the v1.8 references
+  were stale since v0.10.2 shipped v1.9) and gains a Post-freeze policy
+  section. New `tests/scripts/check-wire-freeze.sh` runs as `make
+  test-wire-freeze` and the GHA `wire-freeze` job. Closes bytecode-
+  pipeline F1 completion.
+
+- **REPL security gates (W4).** Six named tests for the network-facing
+  surface — non-loopback bind without auth refuses
+  (`URBI_ERR_INVALID_CONFIG` `#define` alias for `URBI_ERR_INSECURE_-
+  CONFIG`), token accept/mismatch with explicit error envelope + clean
+  teardown, per-source rate-limit token bucket
+  (`UReplConfig.rate_limit_per_second` int field; POSIX only — freestanding
+  targets have no network threat model), compile-budget denial returns
+  explicit response, malformed-NDJSON tolerated under 50-input stress,
+  per-session output isolation. Plus five OOM-injection tests (session
+  create, job alloc, inbound buffer alloc, output staging, ringbuf init
+  — closes audit-1 F16). New `test-repl-security` Makefile target
+  (`URBI_ENABLE_REPL=1`) gated as Phase 1 of releasetest + a dedicated
+  GHA job that runs the suite under ASan. Closes release F13.
+
+- **release-readiness fully populated (W5).** Every TBD row in
+  `docs/release/release-readiness.md` is now resolved — 32/32: 22
+  passing-evidence (pointing at named CI gates), 4 manual-procedure
+  (linked to new `docs/release/manual-procedures.md` for shiptest-only
+  steps such as cross-target REPL hardware bring-up), 6 formally removed
+  from v1.0 claims (see below). Coverage policy: **Path A — enforce**
+  `--fail-under-line 85` (line coverage 87% at this baseline; aspirational
+  90% remains a v1.x target). Three new gates: `test-stdlib-bytecode-
+  fresh` (regenerate-and-diff against checked-in
+  `urbi_stdlib_bytecode.gen.c`; closes release F7), `test-dependency-
+  pins` (parse CI workflow image/SDK tags + compare to
+  `docs/reference/embedded-port-sources.md`; closes release F14), and
+  `make coverage` now gates the threshold itself. Test-tier definitions
+  at `docs/release/test-tiers.md` (devtest / releasetest / shiptest;
+  closes release F5). Release-notes template at
+  `docs/release/release-notes-template.md` separates "supported now" from
+  "known deferrals" (closes release F15). Closes roadmap F4 completion.
+
+- **design-risks register triaged (W6).** Walked the workspace-root
+  `docs/urbi-embedded-design-risks.md` register for `v1.0-rc` / `v0.9.x`
+  / "Handle before v1.0" entries (8 matches). Dispositions: 2 closed
+  (`URBI_FLOAT_TYPE` + `URBI_REPL_COOPERATIVE_ONLY` link-time guards
+  shipped at v0.10.1-invariants W1, commit `6b1884d`), 1 downgraded to
+  post-v1.x (closure-body bare-name resolution gap; workaround stable),
+  1 mapped to release-readiness (multi-client listener teardown stress
+  → §REPL "Multi-client teardown stress" row, owned by Wave 7 W1), 3
+  already properly v1.x (grep false-positives on body text), 1 already
+  inside a `✅ RESOLVED` block (UModule removal at v0.9.2-uproto-only).
+  Arc exit criterion §11 satisfied — 0 entries remain open for v1.0-rc.
+  Workspace-root, no commit trail. Closes roadmap F13.
 
 ### v1.0 quality-bar claim removals (Wave 7 W5)
 
