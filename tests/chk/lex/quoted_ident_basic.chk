@@ -1,0 +1,33 @@
+# Milestone: v0.10.5-legacy-decisions Wave 6 W2
+# Covers: quoted-identifier lexer form 'X' (legacy §20.1.4).
+#         Single-quote-delimited; body may contain any character except
+#         newline; emits TOK_IDENT with start/len pointing at unquoted body.
+# Audit:  Closes legacy F5 (quoted-identifier / operator-slot gap).
+
+# --- plain quoted identifier as a variable name ---
+var 'myVar' = 42
+[00000000] 42
+
+'myVar'
+[00000001] 42
+
+# --- keyword escaping: 'if' as a variable ---
+var 'if' = 99
+[00000002] 99
+
+'if'
+[00000003] 99
+
+# --- multi-character punctuation quoted identifier ---
+var 'abc-def' = "hyphen"
+[00000004] "hyphen"
+
+'abc-def'
+[00000005] "hyphen"
+
+# --- quoted identifier containing spaces ---
+var '1 2 3' = "spaces"
+[00000006] "spaces"
+
+'1 2 3'
+[00000007] "spaces"

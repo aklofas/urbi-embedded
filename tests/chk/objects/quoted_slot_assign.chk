@@ -1,0 +1,28 @@
+# Milestone: v0.10.5-legacy-decisions Wave 6 W2
+# Covers: quoted-identifier operator-slot assign and invocation.
+#         setSlot(name, value) installs an operator-named slot;
+#         obj.'name'(args) invokes it via the quoted-identifier form.
+# Audit:  Closes legacy F5 (operator-slot + quoted-identifier gap).
+# Note:   1.'+'(0) is NOT tested here — Float's '+' is handled by the VM
+#         numeric fast-path and is not stored as a named slot; that case
+#         remains a PORT_NOTES deferred item (float/arity.chk).
+
+# --- install a '+' operator method via setSlot, call via quoted ident ---
+var o = Object.clone(); o.setSlot("+", function(other) { return "added" }); o.'+'(1)
+[00000000] "added"
+
+# --- call-operator slot '()' ---
+o.setSlot("()", function() { return "called" }); o.'()'()
+[00000001] "called"
+
+# --- inequality slot '!=' ---
+o.setSlot("!=", function(other) { return "notequal" }); o.'!='(2)
+[00000002] "notequal"
+
+# --- reassign operator slot via quoted-ident assignment ---
+o.'!=' = function(other) { return "reassigned" }; o.'!='(3)
+[00000003] "reassigned"
+
+# --- quoted-ident get: retrieve slot value without calling it ---
+var o2 = Object.clone(); o2.setSlot("x-slot", 77); o2.'x-slot'
+[00000004] 77
