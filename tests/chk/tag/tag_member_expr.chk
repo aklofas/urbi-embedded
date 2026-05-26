@@ -1,0 +1,19 @@
+# Milestone: W8/v0.10.5
+# Covers: member-expression in tag-prefix position: `expr: body`.
+#         Legacy manual §9.1.1 uses `Tag.scope: at (v > 100) ...` as a
+#         canonical example (html-manual/urbiscript-language-reference-manual
+#         .html:9141).  Closes legacy audit finding F3 (member-expr tag).
+#
+# Forms tested:
+#   obj.slot: { block }  — one-segment member-get with brace block
+#   obj.slot: stmt       — one-segment member-get with bare statement
+#   a.b.t: { block }     — two-segment member-get chain as tag-expr
+
+var obj = Object.new(); obj.t = Tag.new("t"); var x = 0; obj.t: { x = 42 }; x
+[00000000] 42
+
+var obj2 = Object.new(); obj2.t = Tag.new("t2"); var y = 0; obj2.t: y = 99; y
+[00000001] 99
+
+var outer = Object.new(); outer.inner = Object.new(); outer.inner.t = Tag.new("ti"); var z = 0; outer.inner.t: { z = 77 }; z
+[00000002] 77
