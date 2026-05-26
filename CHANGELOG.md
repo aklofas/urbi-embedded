@@ -1,5 +1,74 @@
 # Changelog
 
+## v0.10.4-vm-decomp — 2026-05-25
+
+Wave 5 of the v0.10.x architectural refactor arc. Behaviour-preserving
+decomposition of the VM monolith. Internal-architecture-only — no
+public-API changes, no behaviour changes, no signature changes, no wire
+format change.
+
+- **W1: VM dispatch helper extraction.** `src/vm/uvm.c` shrinks from
+  2040 to 1728 lines. New internal TUs `src/vm/uvm_slot.h`/`.c` (helper
+  API: `UVmSlotResult` enum + 8 functions — `vm_resolve_ic`,
+  `vm_trace_slot_read_if_needed`, `vm_getslot_value`,
+  `vm_dispatch_getter`, `vm_setslot_value`, `vm_dispatch_setter`,
+  `vm_getslot_slow`, `vm_setslot_slow`) and `src/vm/uvm_self.c`
+  (`vm_self_lookup`). OP_GETSLOT (162 → 43 lines), OP_SETSLOT
+  (172 → 60 lines), and OP_SELF (132 → 48 lines) arms each shrink to
+  decode → call helper → branch on UVmSlotResult. LOCAL-slot
+  discipline (recv-specific `slots[]` cache vs `slot_idx[]`
+  re-resolution; OBJ-IC-POLY pin) lives in `vm_resolve_ic`
+  exclusively. 6 new OBJ-IC-POLY regression tests in
+  `tests/unit/test_vm_slot_helpers.c` pass at baseline AND
+  post-refactor. Closes audit-1 F3, runtime-invariants F8, bytecode
+  F4 (partial — per-opcode duplication for slot ops reduced; the
+  canonical-opcode-table refactor remains v0.11+). The plan's ≤1100
+  target for `uvm.c` was arithmetically unachievable within W1's
+  scope of 3 OP arms (max removal ~315 lines); the actual 1728 is
+  the math floor. See milestone retrospective.
+
+- **W2: UWatcherState struct extraction.** 10 watcher-related fields
+  (`watcher_active_count`, `watcher_dirty_count`, `watcher_pool_*` 5
+  fields, `in_watcher_eval`/`_scratch`/`_install`) move from
+  `struct UVM` to new `struct UWatcherState` in
+  `src/watcher/uwatcher_state.{h,c}`. UVM gains
+  `struct UWatcherState *watchers` allocated at `urbi_vm_init`,
+  freed at `urbi_vm_destroy`. ~79 source-tree + ~131 test-tree
+  callsites swept across `src/watcher/`, `src/event/`,
+  `src/changed/`, `src/urbi.c`, `src/realm/`, `src/vm/`,
+  `src/sched/`, plus `examples/esp32/eye_demo`. NULL guards in
+  `uwatcher_pool_init`/`_alloc`/`_destroy` cover the OOM partial-init
+  case. `active_watchers_head` deliberately retained on UVM (GC
+  walker + drain loop hot path; avoids one pointer indirection per
+  iteration). The plan's mention of `watcher_pool_cap` and the
+  watcher-pool GC root provider update was incorrect; no such field
+  exists in baseline and the GC walker uses `active_watchers_head`
+  (kept on UVM). Closes audit-1 F8 (partial).
+
+- **W3: UReplState + UTestHooks struct extraction.** `vm->repl_server`
+  (1 field) moves to `struct UReplState *repl` in
+  `src/repl/urepl_state.{h,c}` — single back-pointer to the
+  heap-allocated UReplServer; structured form for future expansion;
+  lazy-allocated in `urbi_repl_serve`. 4 test-hook function pointers
+  (`test_watcher_condition_hook`/`_fire_hook`/`_onleave_hook`/
+  `test_install_cond_hook`) move to `struct UTestHooks *test_hooks`
+  in `src/runtime/utest_hooks.{h,c}`. UTestHooks allocated
+  **unconditionally** (not URBI_DEBUG-gated as the plan suggested;
+  gating would null-deref under `make test-asan` which doesn't define
+  URBI_DEBUG). All production callers NULL-check `vm->test_hooks` for
+  freestanding-build safety. `urbi_vm_destroy` now frees the
+  UReplState wrapper if the embedder skipped `urbi_repl_stop`. ~6
+  REPL callsites + ~19 src + ~65 test-side test-hook callsites swept.
+  Closes audit-1 F8 (partial).
+
+ABI 0/15/0 → 0/16/0 (14th use of pre-v1.0 escape clause — struct UVM
+size shift visible to `urbi_vm_sizeof()` callers from W1 of
+v0.10.3-api-opacity). Wire format unchanged at v1.9 / 0x19.
+
+26 releasetest gates green. 1970 unit test cases (+6 from W1
+OBJ-IC-POLY pins), 14199 checks, 0 failed. ASan + UBSan + valgrind
+clean.
+
 ## v0.10.3-api-opacity — 2026-05-25
 
 Wave 4 of the v0.10.x architectural refactor arc. API freeze

@@ -123,6 +123,21 @@
  *      + tightens test-embedding-guide CFLAGS to -Iinclude only.
  *      Wire format unchanged at v1.9 / 0x19 (C-API only wave).
  *      (0/14/1 → 0/15/0)
+ *  13. v0.10.4-vm-decomp — Wave 5 of v0.10.x architectural refactor
+ *      arc.  Behaviour-preserving decomposition of the VM monolith.
+ *      W1 extracts slot-access helpers from src/vm/uvm.c (2040 →
+ *      1728 lines; original ≤1100 plan target was arithmetically
+ *      unachievable within W1's scope of 3 OP arms — see milestone
+ *      retrospective).  LOCAL-slot discipline lives in vm_resolve_ic
+ *      exclusively (closes OBJ-IC-POLY regression risk).  W2 extracts
+ *      UWatcherState off UVM root (10 fields relocated; ~79 src + ~131
+ *      test callsites swept).  W3 extracts UReplState + UTestHooks off
+ *      UVM root (UTestHooks unconditionally allocated — URBI_DEBUG
+ *      gating from plan would null-deref under test-asan).  No public-
+ *      API change; no signature change; no wire format change.
+ *      struct UVM size shifts (visible to embedders calling
+ *      urbi_vm_sizeof() per W1 of v0.10.3-api-opacity).  14th use of
+ *      pre-v1.0 escape clause.  (0/15/0 → 0/16/0)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -137,7 +152,7 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  15
+#define URBI_API_VERSION_MINOR  16
 #define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
