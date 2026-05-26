@@ -1,0 +1,29 @@
+# Wave: v0.10.5-legacy-decisions W9
+# Covers: waituntil (e?) — blocks strand until e fires; payload delivered.
+#         Ruling: implemented (Wave 6 W9, legacy F4).
+#
+# Semantics: `waituntil (e?)` parks the calling strand on e's waiters_head
+#   via c_event_waituntil.  When e is emitted, the emit payload is deposited
+#   in strand->last_event_payload; on resume, dispatch_loop_until_yield
+#   delivers the payload to the OP_CALL result register before the first
+#   instruction executes.  The expression evaluates to the emit payload.
+#
+# Test layout: a tag-prefixed block runs concurrently and blocks on
+#   waituntil(e?); the main thread fires e!(99); Realm.got is then 99.
+#
+# Note: single-line form required; REPL processes one line at a time.
+#
+# Activated: 2026-05-26 as part of v0.10.5-legacy-decisions W9.
+
+var e = Event.new()
+var got = 0
+var myTag = Tag.new()
+myTag: { Realm.got = waituntil(e?) }
+e!(99)
+Realm.got
+[00000000] <event>
+[00000000] 0
+[00000000] <Tag>
+[00000000] nil
+[00000000] nil
+[00000000] 99

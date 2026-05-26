@@ -144,6 +144,66 @@ UAstNode *parse_tag_prefix_from_expr(UParser *p, UAstNode *tag_expr) {
 }
 /* === end W8/v0.10.5 === */
 
+/* --- parse_event_payload_binding: `(var x)` optional suffix after `?`
+ *
+ * W9/v0.10.5: handles the optional payload-binding suffix that may appear
+ * after `?` in event-subscribe forms:
+ *   at (e?(var result)) body
+ *   whenever (e?(var n)) body
+ *   waituntil (e?(var x))
+ *
+ * Called after the preceding `?` has been consumed.  If the next token is
+ * NOT `(`, the function returns NULL (success) with *out_name=NULL and
+ * *out_len=0 — the payload variable defaults to `__payload` in the emitter.
+ *
+ * If `(` is present the function consumes `(var ident)` and writes the
+ * identifier into *out_name and *out_len.  Returns an AST_ERROR node on any
+ * parse failure, NULL on success.  The returned pointer is used as:
+ *   UAstNode *err = parse_event_payload_binding(...);
+ *   if (err) return err;   // propagate error */
+static UAstNode *parse_event_payload_binding(UParser *p,
+                                              const char **out_name,
+                                              int         *out_len)
+{
+    *out_name = NULL;
+    *out_len  = 0;
+
+    if (peek(p).type != TOK_LPAREN)
+        return NULL;   /* no payload binding — use default __payload */
+
+    consume(p);   /* consume '(' */
+
+    /* Expect `var` keyword. */
+    if (peek(p).type != TOK_KW_VAR) {
+        UToken bad = peek(p);
+        return make_error(p, PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR,
+                          kErrorMessages[PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR],
+                          bad.line, bad.col);
+    }
+    consume(p);   /* consume 'var' */
+
+    /* Expect identifier. */
+    if (peek(p).type != TOK_IDENT) {
+        UToken bad = peek(p);
+        return make_error(p, PARSE_EVENT_PAYLOAD_BIND_EXPECTED_IDENT,
+                          kErrorMessages[PARSE_EVENT_PAYLOAD_BIND_EXPECTED_IDENT],
+                          bad.line, bad.col);
+    }
+    UToken id_tok = consume(p);
+    *out_name = id_tok.u.str.start;
+    *out_len  = (int)id_tok.u.str.len;
+
+    /* Expect closing ')'. */
+    if (peek(p).type != TOK_RPAREN) {
+        UToken bad = peek(p);
+        return make_error(p, PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN],
+                          bad.line, bad.col);
+    }
+    consume(p);   /* consume ')' */
+    return NULL;  /* success */
+}
+
 /* --- parse_at_slot_change_form: `at (obj.x.changed?) body [onleave h]`
  *
  * Called when cond is a ≥3-segment `obj.x.changed` MEMBER_GET chain.
@@ -173,6 +233,13 @@ static UAstNode *parse_at_slot_change_form(UParser *p, UToken kw,
  * Disambiguates slot-change vs plain event form. */
 static UAstNode *parse_at_event_form(UParser *p, UToken kw,
                                       UAstNode *cond, bool is_sync) {
+    /* W9: optional `(var x)` payload binding immediately after `?` and
+     * before the `)` that closes the at-condition. */
+    const char *pname = NULL;
+    int         plen  = 0;
+    UAstNode *perr = parse_event_payload_binding(p, &pname, &plen);
+    if (perr) return perr;
+
     UToken rp2 = peek(p);
     if (rp2.type != TOK_RPAREN) {
         return make_error(p, PARSE_EXPECTED_RPAREN,
@@ -212,11 +279,13 @@ static UAstNode *parse_at_event_form(UParser *p, UToken kw,
     /* 2 segments or non-"changed" final segment: event form. */
     UAstNode *node = make_node(p, AST_AT_EVENT, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.at_event.event_expr  = cond;
-    node->u.at_event.body        = body;
-    node->u.at_event.onleave     = onleave;
-    node->u.at_event.is_sync     = is_sync;
-    node->u.at_event.is_whenever = false;  /* W0: at (e?) is not whenever */
+    node->u.at_event.event_expr      = cond;
+    node->u.at_event.body            = body;
+    node->u.at_event.onleave         = onleave;
+    node->u.at_event.is_sync         = is_sync;
+    node->u.at_event.is_whenever     = false;  /* W0: at (e?) is not whenever */
+    node->u.at_event.payload_var_name = pname;  /* W9: user name or NULL */
+    node->u.at_event.payload_var_len  = plen;
     return node;
 }
 
@@ -258,10 +327,11 @@ static UAstNode *parse_at_cond_form(UParser *p, UToken kw,
 
     UAstNode *node = make_node(p, AST_WATCHER, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.watcher.cond    = cond;
-    node->u.watcher.body    = body;
-    node->u.watcher.onleave = onleave;
-    node->u.watcher.mode    = mode;
+    node->u.watcher.cond      = cond;
+    node->u.watcher.body      = body;
+    node->u.watcher.onleave   = onleave;
+    node->u.watcher.else_body = NULL;   /* W9: only WHENEVER sets else_body */
+    node->u.watcher.mode      = mode;
     return node;
 }
 
@@ -344,9 +414,17 @@ UAstNode *parse_whenever(UParser *p) {
 
     /* W0: event-arm branch — mirror parse_at's TOK_QUESTION handling.
      * `whenever (e?) body` is a perpetual event subscriber: the body
-     * re-fires on every emission of e, without one-shot teardown. */
+     * re-fires on every emission of e, without one-shot teardown.
+     * W9: optional `(var x)` payload binding after `?`. */
     if (peek(p).type == TOK_QUESTION) {
         consume(p);  /* consume '?' */
+
+        /* W9: optional payload binding. */
+        const char *pname = NULL;
+        int         plen  = 0;
+        UAstNode *perr = parse_event_payload_binding(p, &pname, &plen);
+        if (perr) return perr;
+
         UToken rp2 = peek(p);
         if (rp2.type != TOK_RPAREN) {
             return make_error(p, PARSE_EXPECTED_RPAREN,
@@ -366,11 +444,13 @@ UAstNode *parse_whenever(UParser *p) {
         }
         UAstNode *node = make_node(p, AST_AT_EVENT, kw.line, kw.col);
         if (!node) return (UAstNode *)&uparser_oom_sentinel;
-        node->u.at_event.event_expr  = cond;
-        node->u.at_event.body        = body;
-        node->u.at_event.onleave     = onleave;
-        node->u.at_event.is_sync     = false;  /* whenever has no sync form */
-        node->u.at_event.is_whenever = true;   /* W0: distinguishes from at (e?) */
+        node->u.at_event.event_expr       = cond;
+        node->u.at_event.body             = body;
+        node->u.at_event.onleave          = onleave;
+        node->u.at_event.is_sync          = false;  /* whenever has no sync form */
+        node->u.at_event.is_whenever      = true;   /* W0: distinguishes from at (e?) */
+        node->u.at_event.payload_var_name = pname;  /* W9: user name or NULL */
+        node->u.at_event.payload_var_len  = plen;
         return node;
     }
 
@@ -395,12 +475,23 @@ UAstNode *parse_whenever(UParser *p) {
         if (onleave->kind == AST_ERROR) return onleave;
     }
 
+    /* W9: `whenever (cond) body else else_body` — falling-edge handler.
+     * `else` is consumed only for WHENEVER mode; `at` does not support it. */
+    UAstNode *else_body = NULL;
+    if (peek(p).type == TOK_KW_ELSE) {
+        consume(p);
+        else_body = parse_statement_or_expr(p);
+        if (!else_body) return (UAstNode *)&uparser_oom_sentinel;
+        if (else_body->kind == AST_ERROR) return else_body;
+    }
+
     UAstNode *node = make_node(p, AST_WATCHER, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.watcher.cond    = cond;
-    node->u.watcher.body    = body;
-    node->u.watcher.onleave = onleave;
-    node->u.watcher.mode    = UWATCHER_WHENEVER;
+    node->u.watcher.cond      = cond;
+    node->u.watcher.body      = body;
+    node->u.watcher.onleave   = onleave;
+    node->u.watcher.else_body = else_body;  /* W9: nullable falling-edge handler */
+    node->u.watcher.mode      = UWATCHER_WHENEVER;
     return node;
 }
 
@@ -480,7 +571,15 @@ UAstNode *parse_every(UParser *p) {
     return call;
 }
 
-/* --- parse_waituntil: `waituntil` `(` cond `)` --- */
+/* --- parse_waituntil: `waituntil` `(` cond[?[(var x)]] `)`
+ *
+ * W9/v0.10.5: two forms:
+ *   waituntil (cond)          — condition-based block; existing form
+ *   waituntil (e?)            — event-subscribe block; desugars to e.waituntil()
+ *   waituntil (e?(var x))     — event-subscribe with named payload binding
+ *
+ * The event form is identified by trailing `?` after the condition expression,
+ * mirroring parse_at's pattern.  The cond form is unchanged. */
 UAstNode *parse_waituntil(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_WAITUNTIL */
 
@@ -492,9 +591,25 @@ UAstNode *parse_waituntil(UParser *p) {
     }
     consume(p);
 
+    /* Enable at_event_cond so `?` in the inner expression isn't flagged. */
+    p->at_event_cond = true;
     UAstNode *cond = parse_inner_tier(p);
+    p->at_event_cond = false;
     if (!cond) return (UAstNode *)&uparser_oom_sentinel;
     if (cond->kind == AST_ERROR) return cond;
+
+    /* W9: detect trailing `?` — event form. */
+    bool is_event_form = false;
+    const char *pname = NULL;
+    int         plen  = 0;
+    if (peek(p).type == TOK_QUESTION) {
+        consume(p);  /* consume '?' */
+        is_event_form = true;
+
+        /* Optional payload binding `(var x)`. */
+        UAstNode *perr = parse_event_payload_binding(p, &pname, &plen);
+        if (perr) return perr;
+    }
 
     UToken rp = peek(p);
     if (rp.type != TOK_RPAREN) {
@@ -506,6 +621,9 @@ UAstNode *parse_waituntil(UParser *p) {
 
     UAstNode *node = make_node(p, AST_WAITUNTIL, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.waituntil.cond = cond;
+    node->u.waituntil.cond             = cond;
+    node->u.waituntil.is_event_form    = is_event_form;
+    node->u.waituntil.payload_var_name = pname;
+    node->u.waituntil.payload_var_len  = plen;
     return node;
 }

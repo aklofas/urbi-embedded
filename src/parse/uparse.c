@@ -64,8 +64,14 @@ const char * const kErrorMessages[] = {
     "'break' is only valid inside a 'for' or 'while' loop",
     "'continue' is only valid inside a 'for' or 'while' loop",
     "switch body must contain only 'case' labels (non-case statement found)",
-    "case label must be followed by ':' (e.g. case \"foo\":)"
+    "case label must be followed by ':' (e.g. case \"foo\":)",
     /* === end W1/v0.10.5: control flow errors === */
+
+    /* === W9/v0.10.5: event payload binding errors === */
+    "event payload binding requires 'var' keyword (e.g. at (e?(var x)) body)",
+    "event payload binding requires an identifier after 'var' (e.g. at (e?(var x)) body)",
+    "event payload binding is missing closing ')' (e.g. at (e?(var x)) body)"
+    /* === end W9/v0.10.5 === */
 };
 
 static const char * const kErrorNames[] = {
@@ -108,8 +114,13 @@ static const char * const kErrorNames[] = {
     "PARSE_BREAK_OUTSIDE_LOOP",
     "PARSE_CONTINUE_OUTSIDE_LOOP",
     "PARSE_SWITCH_EXPECTED_CASE",
-    "PARSE_SWITCH_EXPECTED_COLON"
+    "PARSE_SWITCH_EXPECTED_COLON",
     /* === end W1/v0.10.5: control flow === */
+    /* === W9/v0.10.5: event payload binding === */
+    "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR",
+    "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_IDENT",
+    "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN"
+    /* === end W9/v0.10.5 === */
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
@@ -118,10 +129,10 @@ static const char * const kErrorNames[] = {
  * are indexed by UParseError, so their length must equal the count of
  * UParseError enumerators.  Update both when adding new codes.
  * Closes PARSE-017. */
-URBI_STATIC_ASSERT(N_PARSE_ERROR_CODES == (int)PARSE_SWITCH_EXPECTED_COLON + 1,
+URBI_STATIC_ASSERT(N_PARSE_ERROR_CODES == (int)PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN + 1,
                "kErrorNames length must match UParseError enum count");
 URBI_STATIC_ASSERT((int)(sizeof kErrorMessages / sizeof kErrorMessages[0])
-               == (int)PARSE_SWITCH_EXPECTED_COLON + 1,
+               == (int)PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN + 1,
                "kErrorMessages length must match UParseError enum count");
 
 /* --- Postfix-emit method name.  Promoted to file scope so the postfix

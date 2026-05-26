@@ -1,0 +1,23 @@
+# Wave: v0.10.5-legacy-decisions W9
+# Covers: at (e?(var x)) body — payload binding names the emission payload.
+#         Ruling: implemented (Wave 6 W9, legacy F4).
+#
+# Semantics: `at (e?(var payload)) body` desugars so the body closure has
+#   one formal parameter named `payload`.  When `e!(42)` fires, 42 is
+#   passed into R[0] of the body strand before it runs.  The body can then
+#   reference `payload` as a local.
+#
+# Note: single-line body form required; REPL processes one line at a time.
+#
+# Activated: 2026-05-26 as part of v0.10.5-legacy-decisions W9.
+
+var e = Event.new()
+var result = 0
+at (e?(var payload)) { Realm.result = payload }
+e!(42)
+Realm.result
+[00000000] <event>
+[00000000] 0
+[00000000] nil
+[00000000] nil
+[00000000] 42

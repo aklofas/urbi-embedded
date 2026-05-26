@@ -118,10 +118,19 @@ uint8_t emit_watcher_arm(UEmitter *e, UAstNode *n) {
         return 0U;
     }
 
-    UAstNode *cond_ast    = n->u.watcher.cond;
-    UAstNode *body_ast    = n->u.watcher.body;
-    UAstNode *onleave_ast = n->u.watcher.onleave;  /* NULL if absent */
-    int       mode        = n->u.watcher.mode;
+    UAstNode *cond_ast      = n->u.watcher.cond;
+    UAstNode *body_ast      = n->u.watcher.body;
+    UAstNode *onleave_ast   = n->u.watcher.onleave;  /* NULL if absent */
+    UAstNode *else_body_ast = n->u.watcher.else_body; /* W9: nullable; WHENEVER only */
+    int       mode          = n->u.watcher.mode;
+
+    /* W9: for WHENEVER mode, else_body takes precedence over onleave as the
+     * alt closure stored in register C of OP_WHENEVER_INSTALL.  The runtime
+     * invokes the alt on the falling edge (true→false transition) after at
+     * least one body firing.  AT/AT_SYNC modes do not support else_body. */
+    UAstNode *alt_ast = (mode == UWATCHER_WHENEVER && else_body_ast != NULL)
+                      ? else_body_ast
+                      : onleave_ast;
 
     /* Compile-time best-effort cond side-effect warn (spec #2 Q7b). */
     if (cond_has_direct_side_effect(cond_ast)) {
@@ -139,8 +148,11 @@ uint8_t emit_watcher_arm(UEmitter *e, UAstNode *n) {
         : 0xFFU;
     if (e->error != EMIT_OK) return 0U;
 
-    uint8_t onleave_reg = (onleave_ast != NULL)
-        ? emit_function_literal(e, NULL, 0, onleave_ast, /*as_expression=*/false)
+    /* alt_reg: compiled from else_body_ast (W9 WHENEVER) or onleave_ast.
+     * alt_ast is pre-selected above; when both else_body and onleave are
+     * absent alt_ast is NULL → 0xFF sentinel. */
+    uint8_t alt_reg = (alt_ast != NULL)
+        ? emit_function_literal(e, NULL, 0, alt_ast, /*as_expression=*/false)
         : 0xFFU;
     if (e->error != EMIT_OK) return 0U;
 
@@ -151,17 +163,17 @@ uint8_t emit_watcher_arm(UEmitter *e, UAstNode *n) {
         case UWATCHER_WHENEVER: op = OP_WHENEVER_INSTALL; break;
         default:                op = OP_AT_INSTALL;       break;
     }
-    emit_instr(e, uinstr_enc_abc(op, cond_reg, body_reg, onleave_reg),
+    emit_instr(e, uinstr_enc_abc(op, cond_reg, body_reg, alt_reg),
                (uint32_t)n->line);
 
     /* Release temporary closure regs — watcher install is a statement.
      * EMIT-010 (Wave 5): use free_reg_freereg_synced so freereg unwinds
      * symmetrically with next_reg.  emit_function_literal raised both
-     * cursors when compiling the cond/body/onleave closures; plain
+     * cursors when compiling the cond/body/alt closures; plain
      * free_reg() would leave freereg promoted, leaking 1-3 register
      * slots past the install statement. */
-    if (onleave_ast != NULL) free_reg_freereg_synced(e);
-    if (body_ast    != NULL) free_reg_freereg_synced(e);
+    if (alt_ast  != NULL) free_reg_freereg_synced(e);
+    if (body_ast != NULL) free_reg_freereg_synced(e);
     free_reg_freereg_synced(e);  /* cond_reg */
 
     /* Return a nil register as the install expression's value. */
@@ -181,10 +193,48 @@ uint8_t emit_watcher_arm(UEmitter *e, UAstNode *n) {
 uint8_t emit_waituntil_arm(UEmitter *e, UAstNode *n) {
     /* T33: waituntil (cond) — one-shot strand-block primitive.
      * Build a cond closure, emit OP_WAITUNTIL_INSTALL (=41).
-     * Side-effect check per spec #2 §9.2. */
+     * Side-effect check per spec #2 §9.2.
+     *
+     * W9/v0.10.5: waituntil (e?) event form desugars to e.waituntil().
+     * The `c_event_waituntil` runtime function parks the calling strand on
+     * the event's waiters_head until an emit fires; the emit payload is
+     * deposited in s->last_event_payload and becomes the call's return
+     * value when the strand resumes.  Stack-allocated AST nodes avoid arena
+     * allocation for the desugar — their lifetime spans only this emit call. */
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
+    }
+
+    /* W9: event form — desugar waituntil (e?) to e.waituntil(). */
+    if (n->u.waituntil.is_event_form) {
+        UAstNode *event_ast = n->u.waituntil.cond;
+
+        /* Build stack-allocated AST: member_node = AST_MEMBER_GET(event_ast, "waituntil") */
+        UAstNode member_node;
+        urbi_zero(&member_node, sizeof member_node);
+        member_node.kind                 = AST_MEMBER_GET;
+        member_node.line                 = n->line;
+        member_node.col                  = n->col;
+        member_node.u.member.recv        = event_ast;
+        member_node.u.member.name_start  = "waituntil";
+        member_node.u.member.name_len    = 9;
+        member_node.u.member.value       = NULL;
+
+        /* Build stack-allocated AST: call_node = AST_CALL(member_node, args=NULL, 0) */
+        UAstNode call_node;
+        urbi_zero(&call_node, sizeof call_node);
+        call_node.kind            = AST_CALL;
+        call_node.line            = n->line;
+        call_node.col             = n->col;
+        call_node.u.call.callee   = &member_node;
+        call_node.u.call.args     = NULL;
+        call_node.u.call.arg_count = 0;
+
+        /* Emit the desugared call — result is the payload value returned
+         * by c_event_waituntil / the strand's last_event_payload on resume. */
+        uint8_t rd = emit_expr(e, &call_node);
+        return rd;
     }
 
     UAstNode *cond_ast = n->u.waituntil.cond;
@@ -250,14 +300,23 @@ uint8_t emit_at_event_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs->freereg < e->next_reg)
         e->current_fs->freereg = e->next_reg;
 
-    /* Body closure: 1 param (payload). */
+    /* Body closure: 1 param (payload).
+     * W9: use user-specified name from `at (e?(var x))` if present;
+     * fall back to `__payload` for anonymous payload (legacy default). */
+    const char *pname = (n->u.at_event.payload_var_name != NULL)
+                      ? n->u.at_event.payload_var_name
+                      : "__payload";
+    int plen = (n->u.at_event.payload_var_name != NULL)
+             ? n->u.at_event.payload_var_len
+             : 9;
+
     UAstNode payload_param;
     urbi_zero(&payload_param, sizeof payload_param);
     payload_param.kind               = AST_PARAM;
     payload_param.line               = body_ast ? body_ast->line : n->line;
     payload_param.col                = 1;
-    payload_param.u.param.name_start = "__payload";
-    payload_param.u.param.name_len   = 9;
+    payload_param.u.param.name_start = pname;
+    payload_param.u.param.name_len   = plen;
     UAstNode *params_arr[1] = { &payload_param };
 
     uint8_t body_reg = (body_ast != NULL)

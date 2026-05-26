@@ -450,6 +450,12 @@ UAstNode *parse_atom(UParser *p) {
         return parse_try(p);
     case TOK_KW_THROW:
         return parse_throw(p);
+    /* W9/v0.10.5: waituntil(e?) used as expression (e.g. `var r = waituntil(e?)`).
+     * parse_atom is the expression-parser entry; parse_statement_or_expr also
+     * handles it at statement-start level.  Adding it here allows waituntil
+     * to appear on the right-hand side of assignments and inside function bodies. */
+    case TOK_KW_WAITUNTIL:
+        return parse_waituntil(p);
     case TOK_KW_CLOSURE:
         consume(p);
         return make_error(p, PARSE_CLOSURE_KEYWORD,
