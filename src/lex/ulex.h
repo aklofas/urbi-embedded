@@ -107,6 +107,9 @@ typedef enum {
     /* M6 wave 3 — this keyword (Gap #3) */
     TOK_KW_THIS,
 
+    /* === W3/v0.10.5: assert keyword === */
+    TOK_KW_ASSERT,
+
     TOK_ERROR,        /* malformed input */
 
     TOK__LAST          /* sentinel; not a real token type — used to size

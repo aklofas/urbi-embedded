@@ -52,6 +52,8 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_QUESTION", "TOK_BANG",
     "TOK_KW_CLASS", "TOK_KW_PUBLIC",
     "TOK_KW_THIS",
+    /* === W3/v0.10.5: assert keyword === */
+    "TOK_KW_ASSERT",
     "TOK_ERROR"
 };
 /* LEX-014: positional alignment with UTokenType — guard against silent
@@ -636,6 +638,7 @@ typedef struct {
  * with the keyword set, faster than a hash for this size (LEX-017: count
  * elided to avoid drift between comment and table). */
 static const UKeyword KEYWORDS[] = {
+    KW_ENTRY("assert",    TOK_KW_ASSERT),    /* W3/v0.10.5 */
     KW_ENTRY("async",     TOK_KW_ASYNC),
     KW_ENTRY("at",        TOK_KW_AT),
     KW_ENTRY("catch",     TOK_KW_CATCH),
