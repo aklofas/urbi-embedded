@@ -1,0 +1,18 @@
+# Milestone: v0.10.5 / W1
+# Covers: break and continue inside for-each and while loops.
+
+# --- break exits loop early
+var s = 0; for (var x : [1, 2, 3, 4, 5]) { if (x == 3) { break }; s = s + x }; s
+[00000000] 3
+
+# --- continue skips rest of body iteration
+var s2 = 0; for (var x : [1, 2, 3, 4]) { if (x == 2) { continue }; s2 = s2 + x }; s2
+[00000001] 8
+
+# --- break inside while
+var n = 0; while (true) { n = n + 1; if (n == 3) { break } }; n
+[00000002] 3
+
+# --- continue inside while: skip iterations 2 and 4
+var n2 = 0; var i = 0; while (i < 4) { i = i + 1; if (i == 2) { continue }; n2 = n2 + i }; n2
+[00000003] 8
