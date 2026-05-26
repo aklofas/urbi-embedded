@@ -52,7 +52,7 @@ Float is per-ABI flavor because FPU capability is the axis that actually varies 
 
 Scientific notation is always Float, even when the mathematical value is integral. `1e3` is Float 1000.0, not Integer 1000. This matches Lua 5.3's rule and removes an ambiguity at the lexer level.
 
-Time literals compile to Integer nanoseconds — see §2. Angle literals (`180deg`, `pi`) compile to Float in radians.
+Time literals compile to Integer nanoseconds — see §2. Angle literals (`180deg`, `90deg`, `1rad`, `200grad`) compile to Float in radians — see §2.4. `Math.pi` is a named constant (not a lexer literal) that evaluates to the same Float value as `180deg`.
 
 ### 1.3 Arithmetic semantics
 
@@ -172,14 +172,29 @@ Sub-ns precision is out of scope. Domains that need it (e.g. RF signal processin
 
 ### 2.4 Angles are different
 
-Angle literals (`180deg`, `pi`, `pi/2`) compile to **Float in radians**, matching the legacy spec:
+Angle literals (`180deg`, `90deg`, `1rad`, `200grad`) compile to **Float in radians**, matching the legacy spec (legacy §20.1.6.1, Table 20.2). Three unit suffixes are supported:
+
+| Suffix | Unit | Conversion |
+|---|---|---|
+| `deg` | degree | `n / 180 * π` |
+| `grad` | gradian | `n / 200 * π` |
+| `rad` | radian | `n` (identity) |
+
+The conversion formula uses divide-then-multiply (`value / from * π`) to match the legacy lexer's exact IEEE-754 rounding behaviour (so `180deg == Math.pi` and `200grad == Math.pi` are guaranteed `true`).
+
+`Math.pi` is a **named constant** (installed by `urbi_stdlib_register_namespaces`), not a lexer literal. Programs should write `Math.pi` for the π constant directly; `180deg` for 180 degrees expressed as a radian Float.
 
 ```urbi
-180deg == pi          // true (Float comparison, within ULP)
-pi/4                  // Float, 0.7853...
+180deg == Math.pi     // true (same IEEE-754 representation)
+200grad == Math.pi    // true
+90deg == Math.pi / 2  // true
+1rad == 1.0           // true
+Math.pi / 4           // Float, 0.7853...
 ```
 
 Angles are inherently FP (transcendental math), so Integer representation would be lossy before it even hit a `sin()` call. The asymmetry with time is deliberate — they're different physical quantities with different computational needs.
+
+Physical literals (e.g. `1kg`, `1m/s`) are not implemented in v1.0 and are deferred to v1.x.
 
 ---
 
