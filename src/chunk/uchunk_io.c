@@ -22,6 +22,21 @@ static void module_memcpy(void *dst, const void *src, size_t n) {
 
 /* Canary constant lives in chunk/uchunk.h as URBI_BYTECODE_CANARY (MOD-029). */
 
+/* === W3/v0.10.6: wire-format freeze pin ====================================
+ *
+ * Pins the on-disk wire format byte at v1.9 / 0x19.  Any change to the
+ * wire format after this tag follows the post-freeze policy in
+ * docs/internals/bytecode-format.md §"Post-freeze policy".
+ *
+ * The static_assert here, the URBI_BYTECODE_VERSION_BYTE macro in
+ * uchunk.h, and the public docs MUST move together.  CI gate
+ * test-wire-freeze enforces sync.
+ */
+_Static_assert(URBI_BYTECODE_VERSION_MAJOR == 1
+            && URBI_BYTECODE_VERSION_MINOR == 9
+            && URBI_BYTECODE_VERSION_BYTE  == 0x19,
+    "wire format freeze pin: see docs/internals/bytecode-format.md before bumping");
+
 #if __STDC_HOSTED__
 #  include <stdio.h>
 #  include <stdlib.h>

@@ -2,12 +2,12 @@
 
 ## Wire Format Version
 
-The current wire format version byte is **`0x18`** (v1.8), defined as:
+The current wire format version byte is **`0x19`** (v1.9), defined as:
 
 ```c
 /* src/chunk/uchunk.h */
 #define URBI_BYTECODE_VERSION_MAJOR  1U
-#define URBI_BYTECODE_VERSION_MINOR  8U
+#define URBI_BYTECODE_VERSION_MINOR  9U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 ```
 
@@ -19,7 +19,7 @@ tolerance: all v1.x changes are hard breaks.
 
 `.urb` is the on-disk serialized form of a chunk — the interface between the
 front end (emitter) and the back end (VM). At v0.9.2 the `UModule` struct was
-deleted; a chunk IS its root `UProto`. The format is pinned to the v1.8
+deleted; a chunk IS its root `UProto`. The format is pinned to the v1.9
 version byte in the header; the loader rejects any version mismatch with a
 specific diagnostic. No run-time coercion is attempted.
 
@@ -36,11 +36,11 @@ Source files:
 ## Header (24 bytes)
 
 ```text
-Offset  Size  Field         Value at v1.8
+Offset  Size  Field         Value at v1.9
 ------  ----  ----------    -----------------------------------------------
      0     4  magic         0x55 0x52 0x42 0x49  ("URBI")
-     4     1  version       16·major + minor;  v1.8 = 0x18
-     5     1  flags         0x00 at v1.8; loader ignores for forward-compat
+     4     1  version       16·major + minor;  v1.9 = 0x19
+     5     1  flags         0x00 at v1.9; loader ignores for forward-compat
      6     6  canary        0x19 0x93 0x0D 0x0A 0x1A 0x0A
     12     1  int_width     8  (i64 on every v1 target)
     13     1  float_type    4 (f32) or 8 (f64); per-target pin
@@ -85,6 +85,9 @@ forward- or backward-compatibility tolerance at v1.x.
 | 0x18 | v1.8    | v0.9.2-uproto-only   | Semantic bump only — UModule struct    |
 |      |         |                      | deleted; chunk IS its root UProto.     |
 |      |         |                      | Byte layout unchanged from v1.7.       |
+| 0x19 | v1.9    | v0.10.2-reactive     | Semantic bump only — whenever-event    |
+|      |         |                      | + OP_CLOSURE-in-body reactive fixes;   |
+|      |         |                      | byte layout unchanged from v1.8.       |
 
 ---
 
@@ -229,7 +232,7 @@ Encodes the per-proto IC site names. Mirrors `UProto.ic_count` +
 `ic_name_strs` array; module-instance create interns each into a `USymbol`
 via the receiving VM and populates `ic_names`.
 
-IC-bearing opcodes at v1.8: `OP_GETSLOT`, `OP_SETSLOT`,
+IC-bearing opcodes at v1.9: `OP_GETSLOT`, `OP_SETSLOT`,
 `OP_GETSLOT_CHANGE_EVENT`, `OP_SELF`. The C operand of each carries the
 `ic_idx` (0-based index into `ic_names`).
 
@@ -314,7 +317,7 @@ stops, sets the diagnostic string, and returns the indicated error code.
 
 - Buffer is at least 24 bytes (`UCHUNK_LOAD_TRUNCATED`).
 - Bytes 0–3 equal `"URBI"` (`UCHUNK_LOAD_BAD_MAGIC`).
-- Version byte equals `URBI_BYTECODE_VERSION_BYTE` = `0x18` (`UCHUNK_LOAD_UNSUPPORTED_VERSION`).
+- Version byte equals `URBI_BYTECODE_VERSION_BYTE` = `0x19` (`UCHUNK_LOAD_UNSUPPORTED_VERSION`).
 - Bytes 6–11 equal `URBI_BYTECODE_CANARY` exactly (`UCHUNK_LOAD_BAD_MAGIC`).
 - `int_width` (byte 12) equals `URBI_INT_WIDTH` (`UCHUNK_LOAD_FLAVOR_MISMATCH`).
 - `float_type` (byte 13) equals `URBI_FLOAT_TYPE` (`UCHUNK_LOAD_FLAVOR_MISMATCH`).
@@ -362,7 +365,7 @@ field of ABx-format opcodes is interpreted per `UBxKind` (constant pool
 index / nested-proto index / signed jump / handler PC / symbol id) and
 validated against the matching section count.
 
-At v1.8, the verifier passes **each proto's own `nested_count`** for
+At v1.9, the verifier passes **each proto's own `nested_count`** for
 `OP_CLOSURE Bx` range checks (per-parent index space). This matches the
 truly-recursive emitter contract added in v0.8.5.
 
@@ -437,3 +440,25 @@ int64_t  v = (int64_t)((u >> 1) ^ -(int64_t)(u & 1));   /* decode */
 
 This maps 0 → 0, -1 → 1, 1 → 2, -2 → 3, etc., making small negative
 integers compact. Same as Protocol Buffers `sint64`.
+
+---
+
+## Post-freeze policy
+
+> Status: wire format pinned at v1.9 / 0x19 by v0.10.6-stabilization.
+> See `docs/api-stability.md` for the C-API analogue.
+
+To break the freeze after v0.10.6:
+
+1. **CHANGELOG.md entry** under the new tag's section, explaining the bump
+   and the loader's strict-rejection contract.
+2. **Static-assert bump** in `src/chunk/uchunk_io.c`.  The build will not
+   compile until updated.
+3. **Macros bump** in `src/chunk/uchunk.h` (`URBI_BYTECODE_VERSION_MINOR`
+   and the derived `_BYTE`).
+4. **This document update** — table at the top + any byte-layout changes
+   below.
+
+The loader does NOT silently coerce wire formats.  A v1.x consumer
+loading a v1.(x+1) blob receives `UCHUNK_LOAD_UNSUPPORTED_VERSION`.  Live
+upgrade tooling is a v1.x deferral (see `docs/urbi-embedded-design-risks.md`).
