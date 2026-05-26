@@ -25,7 +25,8 @@
 void
 vm_trace_slot_read_if_needed(UVM *vm, UObject *recv)
 {
-    if (!vm->in_watcher_install)
+    /* Pre: urbi_vm_init succeeded, so vm->watchers is non-NULL. */
+    if (!vm->watchers->in_install)
         return;
 
     UCell *cell = (UCell *)recv;

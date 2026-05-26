@@ -173,7 +173,7 @@ URealm *urbi_realm_global(struct UVM *vm);
 URealm *urbi_realm_create_repl(struct UVM *vm);
 
 /* VM-wide liveness inspection.
- * Reads vm->strand_runnable_count / vm->watcher_active_count /
+ * Reads vm->strand_runnable_count / vm->watchers->active_count /
  * vm->wakeup_pending_count.  out_strands, out_watchers, out_wakes may be
  * NULL.  Returns true if any liveness counter is positive.
  *

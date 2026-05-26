@@ -79,12 +79,12 @@ UVmSlotResult vm_resolve_ic(UVM *vm,
                              uint8_t *out_fresh_k);
 
 /* vm_trace_slot_read_if_needed: add recv's GC cell to vm->trace_read_set[]
- * during watcher-install cond evaluation (vm->in_watcher_install == true).
+ * during watcher-install cond evaluation (vm->watchers->in_install == true).
  *
  * This is the EXCLUSIVE site for the read-set trace probe; after W1,
  * OP_GETSLOT and OP_SELF never implement this inline.
  *
- * No-op when vm->in_watcher_install is false (normal hot path — zero cost). */
+ * No-op when vm->watchers->in_install is false (normal hot path — zero cost). */
 void vm_trace_slot_read_if_needed(UVM *vm, UObject *recv);
 
 /* vm_getslot_value: IC-fast-path get for OP_GETSLOT.

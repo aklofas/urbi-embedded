@@ -134,9 +134,9 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
  * meaningfully handle their exceptions).
  *
  * Re-entry guard asymmetry vs. the eval-pass / drain wires:
- * This site sets vm->in_watcher_scratch explicitly, while the eval-pass
+ * This site sets vm->watchers->in_scratch explicitly, while the eval-pass
  * wires (invoke_body_inline / invoke_onleave_inline) and the drain wire
- * (run_watcher_onleave) rely on caller-owned vm->in_watcher_eval for
+ * (run_watcher_onleave) rely on caller-owned vm->watchers->in_eval for
  * re-entry protection. Reason: c_event_emit_sync may be called from
  * contexts that haven't already entered watcher-eval (e.g., a synchronous
  * emit invoked from main code or from a host C callback), so this
@@ -151,14 +151,14 @@ run_event_body_on_scratch(struct UVM *vm, struct UWatcher *w, UValue payload)
      * The early-return below is defensive belt-and-suspenders against a
      * future second caller that does not pre-check; the assertion catches
      * such a regression in URBI_DEBUG builds before the silent skip. */
-    URBI_INTERNAL_ASSERT(!vm->in_watcher_scratch);
+    URBI_INTERNAL_ASSERT(!vm->watchers->in_scratch);
 
     /* Defensive guard: never re-enter scratch execution from within scratch.
      * Load-bearing only when triggered (covered by the assert above in
      * URBI_DEBUG); kept in release for safety. */
-    if (vm->in_watcher_scratch) return;
+    if (vm->watchers->in_scratch) return;
 
-    vm->in_watcher_scratch = 1;
+    vm->watchers->in_scratch = 1;
 
     /* Real bytecode dispatch on the scratch frame with R[0] = payload.
      * Throws are suppressed (sync emit caller cannot propagate; spec
@@ -172,7 +172,7 @@ run_event_body_on_scratch(struct UVM *vm, struct UWatcher *w, UValue payload)
             "at sync(e?) body threw; suppressed");
     }
 
-    vm->in_watcher_scratch = 0;
+    vm->watchers->in_scratch = 0;
 }
 
 /* === c_event_emit_sync (spec #3 §5.3 + §5.4) ===
@@ -197,7 +197,7 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
      * reaches this function with no ISR re-entry possible. */
     URBI_ASSERT_NOT_ISR(vm);
 
-    if (vm->in_watcher_scratch || vm->in_watcher_eval || vm->in_watcher_install) {
+    if (vm->watchers->in_scratch || vm->watchers->in_eval || vm->watchers->in_install) {
         /* EMITR-005: one-shot warn (mirrors urbi_emit_slot_change_slow's
          * slot_change_reentrancy_warned shape).  Pre-fix the warn fired on
          * every degraded call; in a tight loop that flooded host_log_fn. */
@@ -271,7 +271,7 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Scratch / eval context guard (spec §7.1 safety note). */
-    if (vm->in_watcher_scratch || vm->in_watcher_eval) {
+    if (vm->watchers->in_scratch || vm->watchers->in_eval) {
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "waituntil from scratch context — undefined; returning NIL");

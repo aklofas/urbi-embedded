@@ -137,9 +137,9 @@ UTEST(watcher_body_completion_clears_back_pointer_before_destroy)
     UASSERT(w->body_strand == NULL);
 
     /* Spawn body strand (simulates watcher_eval_dirty firing the watcher). */
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
     do_spawn_body_coroutine(&vm, w, NULL);
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     /* Body strand must have been created and enqueued. */
     UASSERT(w->body_strand != NULL);
@@ -183,9 +183,9 @@ UTEST(unregister_while_body_alive_defers_drain)
     UASSERT(w != NULL);
 
     /* Spawn body strand (body_strand != NULL, state READY). */
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
     do_spawn_body_coroutine(&vm, w, NULL);
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
     UASSERT(w->body_strand != NULL);
 
     /* Push watcher onto the onleave queue while body is still alive.
@@ -230,7 +230,7 @@ UTEST(unregister_while_body_alive_defers_drain)
     UASSERT(vm.pending_onleave_tail == NULL);
 
     /* watcher_active_count must be 0 (unregister_internal decremented it). */
-    UASSERT_EQ((int)vm.watcher_active_count, 0);
+    UASSERT_EQ((int)vm.watchers->active_count, 0);
 
     /* Realm destroy: frees all realm-managed strands. */
     urbi_realm_destroy(&vm, r);

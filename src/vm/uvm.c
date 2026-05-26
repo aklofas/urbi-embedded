@@ -1678,7 +1678,8 @@ safepoint:
     if (vm->gc_pending)           urbi_gc_slice(vm, URBI_GC_SLICE_BUDGET);
     if (vm->pending_onleave_head) drain_pending_onleave_queue(vm);
     urbi_drain_deferred_slot_changes(vm);   /* spec #4 §5.4: before watcher_eval_dirty */
-    if (vm->watcher_dirty_count > 0) watcher_eval_dirty(vm);
+    /* Pre: urbi_vm_init succeeded, so vm->watchers is non-NULL. */
+    if (vm->watchers->dirty_count > 0) watcher_eval_dirty(vm);
     /* Preemption flag reserved for v2; not checked at M3. */
     /* Resume dispatch. */
 #if UVM_USE_COMPUTED_GOTO

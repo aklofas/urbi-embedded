@@ -120,7 +120,7 @@ hook_onleave_count(struct UVM *vm, struct UWatcher *w)
 static void
 run_one_dirty_pass(struct UVM *vm)
 {
-    vm->watcher_dirty_count = 1U;
+    vm->watchers->dirty_count = 1U;
     watcher_eval_dirty(vm);
 }
 

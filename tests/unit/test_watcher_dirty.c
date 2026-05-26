@@ -161,9 +161,9 @@ UTEST(observer_dirty_bumps_counter)
     c.type_tag = UTYPE_OBJECT;
     c.gc_byte  = 0;
 
-    uint32_t before = vm.watcher_dirty_count;
+    uint32_t before = vm.watchers->dirty_count;
     observer_dirty(&vm, &c, 42U);
-    UASSERT_EQ((long long)vm.watcher_dirty_count, (long long)(before + 1U));
+    UASSERT_EQ((long long)vm.watchers->dirty_count, (long long)(before + 1U));
 
     urbi_vm_destroy(&vm);
 }
@@ -179,19 +179,19 @@ UTEST(watcher_active_count_tracks_install_unregister)
 
     urbi_vm_init(&vm, NULL, NULL);
 
-    UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
+    UASSERT_EQ((long long)vm.watchers->active_count, 0LL);
 
     for (i = 0; i < 3; i++) {
         w[i] = urbi_watcher_install_for_test(
             &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0U);
         UASSERT(w[i] != NULL);
     }
-    UASSERT_EQ((long long)vm.watcher_active_count, 3LL);
+    UASSERT_EQ((long long)vm.watchers->active_count, 3LL);
 
     for (i = 0; i < 3; i++) {
         urbi_watcher_unregister_internal(&vm, w[i]);
     }
-    UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
+    UASSERT_EQ((long long)vm.watchers->active_count, 0LL);
 
     urbi_vm_destroy(&vm);
 }
@@ -253,7 +253,7 @@ UTEST(watcher_install_readset_overflow_returns_null)
 
     UASSERT(w == NULL);
     /* Pool must be untouched — no slot consumed. */
-    UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
+    UASSERT_EQ((int)vm.watchers->pool_in_use, 0);
 
     urbi_vm_destroy(&vm);
 }
@@ -315,9 +315,9 @@ UTEST(watcher_eval_dirty_skips_when_count_zero)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UASSERT_EQ((int)vm.watcher_dirty_count, 0);
+    UASSERT_EQ((int)vm.watchers->dirty_count, 0);
     watcher_eval_dirty(&vm);
-    UASSERT(!vm.in_watcher_eval);
+    UASSERT(!vm.watchers->in_eval);
 
     urbi_vm_destroy(&vm);
 }
@@ -329,10 +329,10 @@ UTEST(watcher_eval_dirty_resets_count_to_zero)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    vm.watcher_dirty_count = 5U;
+    vm.watchers->dirty_count = 5U;
     watcher_eval_dirty(&vm);
-    UASSERT_EQ((int)vm.watcher_dirty_count, 0);
-    UASSERT(!vm.in_watcher_eval);
+    UASSERT_EQ((int)vm.watchers->dirty_count, 0);
+    UASSERT(!vm.watchers->in_eval);
 
     urbi_vm_destroy(&vm);
 }
@@ -364,18 +364,18 @@ UTEST(watcher_eval_at_edge_only_fires_on_false_to_true)
     UASSERT_EQ((int)w->last_value_cache.kind, (int)UVAL_NIL);
 
     /* Pass 1: still false → no fire. */
-    vm.watcher_dirty_count = 1U;
+    vm.watchers->dirty_count = 1U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 0);
 
     /* Pass 2: flip to true → edge fires. */
     g_condition_truthy = 1;
-    vm.watcher_dirty_count = 1U;
+    vm.watchers->dirty_count = 1U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 1);
 
     /* Pass 3: still true → no fire (no rising edge). */
-    vm.watcher_dirty_count = 1U;
+    vm.watchers->dirty_count = 1U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 1);
 
@@ -404,9 +404,9 @@ UTEST(watcher_eval_whenever_level_fires_each_dirty_pass)
     UASSERT(w != NULL);
 
     /* Three passes — WHENEVER fires every time condition is truthy. */
-    vm.watcher_dirty_count = 1U; watcher_eval_dirty(&vm);
-    vm.watcher_dirty_count = 1U; watcher_eval_dirty(&vm);
-    vm.watcher_dirty_count = 1U; watcher_eval_dirty(&vm);
+    vm.watchers->dirty_count = 1U; watcher_eval_dirty(&vm);
+    vm.watchers->dirty_count = 1U; watcher_eval_dirty(&vm);
+    vm.watchers->dirty_count = 1U; watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 3);
 
     urbi_watcher_unregister_internal(&vm, w);
@@ -439,7 +439,7 @@ UTEST(watcher_eval_skips_pending_unregister)
     /* Mark pending-unregister before eval. */
     w->flags |= URBI_WATCHER_PENDING_UNREGISTER;
 
-    vm.watcher_dirty_count = 1U;
+    vm.watchers->dirty_count = 1U;
     watcher_eval_dirty(&vm);
 
     /* No fire, last_value_cache unchanged. */
@@ -477,7 +477,7 @@ UTEST(watcher_install_seeds_last_value_cache)
     UASSERT(w->last_value_cache.kind == UVAL_BOOL && w->last_value_cache.v.i == 1);
 
     /* First dirty pass: old=true, new=true → no rising edge → no fire. */
-    vm.watcher_dirty_count = 1U;
+    vm.watchers->dirty_count = 1U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 0);
 
@@ -556,12 +556,12 @@ UTEST(pending_onleave_push_sets_flag_and_unlinks_from_active)
     UASSERT(vm.pending_onleave_tail == w);
     UASSERT(w->next_active == NULL);
     /* watcher_active_count NOT decremented at push — still 1. */
-    UASSERT_EQ((long long)vm.watcher_active_count, 1LL);
+    UASSERT_EQ((long long)vm.watchers->active_count, 1LL);
 
     /* Drain to clean up (unregisters the watcher). */
     drain_pending_onleave_queue(&vm);
     UASSERT(vm.pending_onleave_head == NULL);
-    UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
+    UASSERT_EQ((long long)vm.watchers->active_count, 0LL);
 
     utag_destroy(&vm, tag);
     urbi_vm_destroy(&vm);
@@ -583,8 +583,8 @@ UTEST(pending_onleave_drain_walks_until_empty)
             &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0U);
         UASSERT(w[i] != NULL);
     }
-    UASSERT_EQ((long long)vm.watcher_active_count, 5LL);
-    UASSERT_EQ((int)vm.watcher_pool_in_use, 5);
+    UASSERT_EQ((long long)vm.watchers->active_count, 5LL);
+    UASSERT_EQ((int)vm.watchers->pool_in_use, 5);
 
     for (i = 0; i < 5; i++) {
         pending_onleave_queue_push(&vm, w[i]);
@@ -594,9 +594,9 @@ UTEST(pending_onleave_drain_walks_until_empty)
 
     UASSERT(vm.pending_onleave_head == NULL);
     UASSERT(vm.pending_onleave_tail == NULL);
-    UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
-    UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
-    UASSERT(!vm.in_watcher_eval);
+    UASSERT_EQ((long long)vm.watchers->active_count, 0LL);
+    UASSERT_EQ((int)vm.watchers->pool_in_use, 0);
+    UASSERT(!vm.watchers->in_eval);
 
     urbi_vm_destroy(&vm);
 }
@@ -655,7 +655,7 @@ UTEST(pending_onleave_drain_skips_null_onleave)
     /* Hook must NOT be called when onleave is NULL. */
     UASSERT_EQ(g_onleave_count, 0);
     UASSERT(vm.pending_onleave_head == NULL);
-    UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
+    UASSERT_EQ((int)vm.watchers->pool_in_use, 0);
 
     urbi_vm_destroy(&vm);
 }
@@ -918,7 +918,7 @@ UTEST(spawn_body_coroutine_relocated_still_works)
     vm.test_watcher_fire_hook      = fire_hook_count;
 
     /* Trigger one dirty eval — rising edge: nil→true fires once. */
-    vm.watcher_dirty_count = 1U;
+    vm.watchers->dirty_count = 1U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 1);
 
@@ -964,7 +964,7 @@ UTEST(eval_pass_walks_all_watchers)
     vm.test_watcher_fire_hook      = fire_hook_count;
 
     /* Single dirty-eval pass — all 3 see nil→true rising edge. */
-    vm.watcher_dirty_count = 1U;
+    vm.watchers->dirty_count = 1U;
     watcher_eval_dirty(&vm);
 
     /* All 3 must have fired. */

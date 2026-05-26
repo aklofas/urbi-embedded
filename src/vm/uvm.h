@@ -43,6 +43,9 @@ struct UChunkInstance;   /* M4 T30 — defined in src/object/uchunk_instance.h *
 /* Gap J (v0.7.1): host-side watcher table — full type needed in UVM struct. */
 #include "watcher/uwatcher_host.h"
 
+/* W2/v0.10.4: UWatcherState substate extracted from struct UVM per audit-1 F8. */
+#include "watcher/uwatcher_state.h"
+
 /* --- M3 capacity macros --- */
 /* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
  * double-definition warnings if ugc_incremental.h is included standalone. */
@@ -321,7 +324,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * (always 0; included here for completeness per row 9 §2.6). */
     uint32_t strand_runnable_count;    /* row 8 §3 + row 9 §2.6 */
     uint32_t strand_suspended_count;   /* row 9 §2.6; always 0 at M3 */
-    uint32_t watcher_active_count;     /* row 8 §3; M5 maintains */
+    /* watcher_active_count moved to vm->watchers->active_count (W2/v0.10.4) */
     uint32_t event_queue_count;        /* row 8 §3; M5+ shape */
     uint32_t wakeup_pending_count;     /* row 8 §3; scheduler timer heap */
     uint32_t host_call_pending_count;  /* row 8 §3 + row 9; cross-strand stop injection */
@@ -342,7 +345,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
 
     /* --- Row 9 dispatcher hooks --- */
     uint16_t gc_pending;               /* non-zero → gc_slice() at next safepoint */
-    uint32_t watcher_dirty_count;      /* non-zero → watcher_eval_dirty() at scheduler turn */
+    /* watcher_dirty_count moved to vm->watchers->dirty_count (W2/v0.10.4) */
 
     /* --- Row 9 v2 reservation --- */
     uint8_t  flag_preemption;          /* RESERVED — always 0 at M3 */
@@ -396,38 +399,15 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint32_t  handle_table_cap;
     uint32_t  handle_table_next_id;
 
-    /* --- Row 11 watcher pool (T32 allocates) --- */
-    struct UWatcher *watcher_pool_base;      /* base of pre-allocated pool */
-    struct UWatcher *watcher_pool_freelist;  /* freelist head */
-    struct UWatcher *active_watchers_head;   /* linked list of live watchers */
-    uint16_t         watcher_pool_in_use;
-    uint16_t         watcher_pool_high_water;
-
-    /* --- Row 11 watcher dirty-set --- */
-    /* in_watcher_eval (WATCH-010): true while an at/whenever cond is being
-     * evaluated.
-     *
-     * Drain dependency: urbi_emit_slot_change_slow re-routes through the
-     * deferred ring when this flag is set; the at/whenever body wouldn't
-     * see its own write-during-eval otherwise.  The flag is owner-set by
-     * watcher_eval_dirty / drain_pending_onleave_queue and cleared on
-     * cond return.
-     *
-     * Invariant: vm->in_watcher_eval implies that any urbi_emit_slot_change_slow
-     * invocation routes the slot-change emit through the deferred ring, NOT the
-     * immediate path. See src/changed/uchanged_emit.c for the routing. */
-    uint8_t  in_watcher_eval;          /* reentrancy guard */
-    /* in_watcher_scratch (WATCH-036): caller-owned re-entry guard.  Set
-     * TRUE before calling urbi_run_closure_on_scratch[_with_payload];
-     * clear after.  The helper itself does NOT manage this flag — see
-     * WATCH-011 (uwatcher_scratch.c head comment on
-     * urbi_run_closure_on_scratch) for the asymmetry rationale.
-     *
-     * spec #3 §5.4: also set while running event body inline on the
-     * scratch frame; guards re-entrancy in c_event_emit_sync /
-     * c_event_waituntil. */
-    uint8_t  in_watcher_scratch;
-    uint8_t  pad_in_eval[2];           /* padding; zeroed */
+    /* --- Row 11 watcher substate (T32 allocates pool slab) --- */
+    /* === W2/v0.10.4: watcher substate (extracted per audit-1 F8) === */
+    UWatcherState *watchers;           /* heap-allocated; NULL until urbi_vm_init */
+    /* Linked list of live watchers — NOT in UWatcherState.
+     * GC walker (watcher_table_walk_roots) and the pending-onleave drain
+     * loop walk this on every safepoint; keeping it on UVM avoids one
+     * pointer indirection per iteration.  W2/v0.10.4 deliberate retention,
+     * audit-1 F8 partial. */
+    struct UWatcher *active_watchers_head;
 
     /* --- spec #3 §7.1: currently-dispatching strand ---
      * Set to the running strand by urbi_step before dispatch_loop_until_yield,
@@ -436,19 +416,18 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UStrand *cur_strand;
 
     /* --- spec #2 §5.2 install-time trace state ---
-     * in_watcher_install: set while evaluating cond during watcher install
-     *   to enable OP_GETSLOT read-set tracing.  Mutually exclusive with
-     *   in_watcher_eval (never both set at once; URBI_DEBUG asserts land in R4).
+     * in_watcher_install: moved to vm->watchers->in_install (W2/v0.10.4).
      * trace_overflow: set when trace_read_set[] is full and a new cell would
      *   have been recorded.  Install treats overflow as "untrackable — skip IC".
      * trace_read_set_count: number of valid UCell* entries written into
      *   trace_read_set[].  Reset to 0 at the start of each install evaluation.
      * trace_read_set[]: ring buffer of UCell pointers touched during install
-     *   cond evaluation; written by OP_GETSLOT when in_watcher_install is set.
-     *   Array is uninitialized storage; only indices [0, trace_read_set_count)
-     *   are valid.  Sized by URBI_WATCHER_READSET_MAX. */
-    uint8_t   in_watcher_install;
+     *   cond evaluation; written by OP_GETSLOT when in_watcher_install is set
+     *   (vm->watchers->in_install).  Array is uninitialized storage; only
+     *   indices [0, trace_read_set_count) are valid.  Sized by
+     *   URBI_WATCHER_READSET_MAX. */
     uint8_t   trace_overflow;
+    uint8_t   _pad_trace[3];          /* padding; aligns trace_read_set_count */
     uint16_t  trace_read_set_count;
     struct UCell *trace_read_set[URBI_WATCHER_READSET_MAX];
 

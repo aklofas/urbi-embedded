@@ -18,7 +18,7 @@
  *
  * These tests are written against existing dispatch surfaces — they do not
  * require new test seams beyond what was already wired for M5.  The
- * watcher-pool drain trick (vm.watcher_pool_freelist = NULL) exhausts the
+ * watcher-pool drain trick (vm.watchers->pool_freelist = NULL) exhausts the
  * pool without injecting an alternate allocator. */
 
 #include "utest.h"
@@ -110,7 +110,7 @@ UTEST(reactive_install_propagates_pool_oom)
     UASSERT_EQ(0, rc);
 
     /* Drain the watcher pool — the next pool_alloc returns NULL. */
-    ctx.vm.watcher_pool_freelist = NULL;
+    ctx.vm.watchers->pool_freelist = NULL;
 
     UValue out;
     UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
@@ -126,7 +126,7 @@ UTEST(whenever_install_propagates_pool_oom)
     int rc = compile_source(&ctx, "var c = 0; var b = 0; whenever (c) b");
     UASSERT_EQ(0, rc);
 
-    ctx.vm.watcher_pool_freelist = NULL;
+    ctx.vm.watchers->pool_freelist = NULL;
 
     UValue out;
     UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
@@ -142,7 +142,7 @@ UTEST(at_sync_install_propagates_pool_oom)
     int rc = compile_source(&ctx, "var c = 0; var b = 0; at sync (c) b");
     UASSERT_EQ(0, rc);
 
-    ctx.vm.watcher_pool_freelist = NULL;
+    ctx.vm.watchers->pool_freelist = NULL;
 
     UValue out;
     UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
@@ -165,7 +165,7 @@ UTEST(waituntil_install_propagates_pool_oom)
     int rc = compile_source(&ctx, "var x = 0; waituntil (x)");
     UASSERT_EQ(0, rc);
 
-    ctx.vm.watcher_pool_freelist = NULL;
+    ctx.vm.watchers->pool_freelist = NULL;
 
     UValue out;
     UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
@@ -194,7 +194,7 @@ UTEST(at_event_install_propagates_pool_oom)
     int rc = compile_source(&ctx, "var x = 0; at (x > 5) x");
     UASSERT_EQ(0, rc);
 
-    ctx.vm.watcher_pool_freelist = NULL;
+    ctx.vm.watchers->pool_freelist = NULL;
 
     UValue out;
     UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
@@ -344,7 +344,7 @@ UTEST(reactive_install_kind_checks_cond_operand)
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
     /* Watcher pool untouched. */
-    UASSERT_EQ(0, (int)vm.watcher_pool_in_use);
+    UASSERT_EQ(0, (int)vm.watchers->pool_in_use);
 
     free(cleanup_base);
     free(reg_stack);

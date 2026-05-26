@@ -180,7 +180,7 @@ UTEST(watcher_spawn_happy_path)
 
     make_trivial_closure(&body_cl, &proto, instr);
 
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
 
     UWatcher *w = make_body_watcher(&vm, r, &body_cl);
     UASSERT(w != NULL);
@@ -195,7 +195,7 @@ UTEST(watcher_spawn_happy_path)
     /* urbi_strand_start transitions DORMANT → READY (enqueues on run-queue). */
     UASSERT_EQ((unsigned)w->body_strand->state, (unsigned)USTRAND_READY);
 
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     /* Clean up — unregister watcher (releases from pool) then destroy realm
      * (walks strands_head and frees all realm-managed strands). */
@@ -245,9 +245,9 @@ UTEST(watcher_spawn_oom_strand_alloc)
     vm.alloc_fn = null_alloc;
     vm.alloc_ud = NULL;
 
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
     do_spawn_body_coroutine(&vm, w, NULL);
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     /* Restore allocator before cleanup assertions. */
     vm.alloc_fn = saved_alloc;
@@ -329,9 +329,9 @@ UTEST(watcher_spawn_oom_stack_alloc)
     vm.alloc_fn = fail_after_n_alloc;
     vm.alloc_ud = &fa;
 
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
     do_spawn_body_coroutine(&vm, w, NULL);
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     vm.alloc_fn = saved_alloc;
     vm.alloc_ud = saved_ud;
@@ -380,12 +380,12 @@ UTEST(watcher_spawn_rejects_at_sync)
 
     /* Override mode to AT_SYNC after install. */
     w->mode = UWATCHER_AT_SYNC;
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
 
     /* AT_SYNC mode must trigger the mode assert inside spawn_body_coroutine. */
     EXPECT_ABORT(spawn_body_coroutine(&vm, w));
 
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
@@ -415,7 +415,7 @@ UTEST(watcher_respawn_skips_eval_assert)
     UASSERT(w != NULL);
 
     /* in_watcher_eval == 0: this is the completion path. */
-    UASSERT(vm.in_watcher_eval == 0);
+    UASSERT(vm.watchers->in_eval == 0);
 
     respawn_body_coroutine(&vm, w);
 
@@ -470,11 +470,11 @@ UTEST(watcher_spawn_queues_pending_refire_when_body_alive)
 
     /* Three back-to-back fires while body is "running" — counter must
      * increment to 3 (well under the default cap of 15). */
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
     do_spawn_body_coroutine(&vm, w, NULL);
     do_spawn_body_coroutine(&vm, w, NULL);
     do_spawn_body_coroutine(&vm, w, NULL);
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     /* body_strand must be unchanged — sentinel pointer still there. */
     UASSERT(w->body_strand == &sentinel);
@@ -515,11 +515,11 @@ UTEST(watcher_spawn_saturates_at_max_refire_queue)
     w->exhaust_policy    = URBI_EXHAUST_QUEUE;
     w->max_refire_queue  = 4;   /* tighten the cap for the test */
 
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
     for (int i = 0; i < 20; i++) {
         do_spawn_body_coroutine(&vm, w, NULL);
     }
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     /* Counter saturates at 4 — the 16 excess fires were silently dropped. */
     UASSERT_EQ((unsigned)w->pending_refire_count, 4U);
@@ -559,9 +559,9 @@ UTEST(watcher_spawn_drops_silently_under_exhaust_drop)
     w->body_strand    = &sentinel;
     w->exhaust_policy = URBI_EXHAUST_DROP;
 
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
     do_spawn_body_coroutine(&vm, w, NULL);
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     /* body_strand must still point at the sentinel. */
     UASSERT(w->body_strand == &sentinel);

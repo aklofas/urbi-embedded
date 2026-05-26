@@ -73,7 +73,7 @@ urbi_watcher_install_for_test(
     }
 
     /* Track active count. */
-    vm->watcher_active_count++;
+    vm->watchers->active_count++;
 
     /* Seed last_value_cache with the current condition result per spec §6.3
      * ("at fires on transitions; not on initial truthy state").  The install-

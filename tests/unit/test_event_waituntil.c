@@ -65,9 +65,9 @@ UTEST(waituntil_from_scratch_warns_and_returns_nil)
     g_warn_count = 0;
     vm.host_log_fn = capture_log;
 
-    vm.in_watcher_scratch = 1;
+    vm.watchers->in_scratch = 1;
     UValue r = c_event_waituntil(&vm, e);
-    vm.in_watcher_scratch = 0;
+    vm.watchers->in_scratch = 0;
 
     /* Must return NIL. */
     UASSERT_EQ((int)r.kind, (int)UVAL_NIL);

@@ -260,13 +260,13 @@ run_on_scratch_core(struct UVM       *vm,
 /* urbi_run_closure_on_scratch (WATCH-011): synchronously run the closure
  * body on a scratch frame.
  *
- * NOTE: this function does NOT set vm->in_watcher_scratch despite the
+ * NOTE: this function does NOT set vm->watchers->in_scratch despite the
  * name.  The flag is owned by callers that need re-entry guarding
  * (specifically c_event_emit_sync's run_event_body_on_scratch in
  * src/event/uevent_emit.c, which sets the flag around its call to this
  * helper).  Other callers — install_watcher_runtime, invoke_condition_closure,
  * invoke_body_inline, invoke_onleave_inline, run_watcher_onleave — rely on
- * caller-owned vm->in_watcher_eval / in_watcher_install for re-entry
+ * caller-owned vm->watchers->in_eval / in_watcher_install for re-entry
  * protection instead.  See WATCH-036 (uvm.h field comment on
  * in_watcher_scratch) for the asymmetry rationale. */
 int

@@ -231,7 +231,7 @@ UValue invoke_condition_closure(struct UVM *vm, struct UWatcher *w);
 
 /* watcher_eval_dirty: walk active_watchers_head, evaluate each condition, and
  * call spawn_body_coroutine on edge (AT/AT_SYNC) or level (WHENEVER) fire.
- * Called from the safepoint when vm->watcher_dirty_count > 0. Per spec §6.2. */
+ * Called from the safepoint when vm->watchers->dirty_count > 0. Per spec §6.2. */
 void   watcher_eval_dirty(struct UVM *vm);
 
 /* === Pending-onleave queue ===

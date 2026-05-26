@@ -33,7 +33,7 @@
  * deferred ring (urbi_drain_deferred_slot_changes runs at the next
  * safepoint before watcher_eval_dirty) and emit a one-shot URBI_LOG_WARN.
  *
- * WATCH-010 drain dependency: vm->in_watcher_eval is the at/whenever-cond
+ * WATCH-010 drain dependency: vm->watchers->in_eval is the at/whenever-cond
  * eval flag.  When set, this function MUST route through the deferred
  * ring — the at/whenever body wouldn't see its own write-during-eval
  * otherwise, since the body strand is driven by the same eval pass.
@@ -42,7 +42,7 @@ void
 urbi_emit_slot_change_slow(UVM *vm, UObject *parent,
                            USymbol *key, UValue new_value)
 {
-    if (vm->in_watcher_eval || vm->in_watcher_install || vm->in_watcher_scratch) {
+    if (vm->watchers->in_eval || vm->watchers->in_install || vm->watchers->in_scratch) {
         if (!vm->slot_change_reentrancy_warned) {
             vm->slot_change_reentrancy_warned = 1;
             if (vm->host_log_fn)
@@ -108,7 +108,7 @@ urbi_defer_slot_change(UVM *vm, UObject *parent,
  * VM-016: the empty-ring fast path returns before any work.  Every
  * safepoint calls this drain unconditionally; the typical safepoint
  * has nothing pending (deferred entries are pushed only from within
- * watcher-scratch context — vm->in_watcher_scratch != 0 — and drained
+ * watcher-scratch context — vm->watchers->in_scratch != 0 — and drained
  * once the scratch frame returns).  An explicit head-equals-tail early
  * return makes the no-work path two loads + a branch and avoids the
  * cost of entering the while loop's condition + post-condition cleanup

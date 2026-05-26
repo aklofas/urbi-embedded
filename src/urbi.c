@@ -368,7 +368,7 @@ urbi_get_determinism_checksum(struct UVM *vm)
     }
 
     /* 2. Watcher pool high-water mark (watcher lifecycle observable state). */
-    FNV1A_MIX(ctx.h, (uint64_t)vm->watcher_pool_high_water);
+    FNV1A_MIX(ctx.h, (uint64_t)vm->watchers->pool_high_water);
 
     /* 3. GC total allocated bytes (monotonic allocation counter). */
     FNV1A_MIX(ctx.h, (uint64_t)vm->gc_total_allocated);

@@ -348,7 +348,7 @@ urbi_vm_has_live_work(const struct UVM *vm,
     }
 
     strands  = vm->strand_runnable_count;
-    watchers = vm->watcher_active_count;
+    watchers = vm->watchers->active_count;
     wakes    = vm->wakeup_pending_count;
 
     if (out_strands)  *out_strands  = strands;

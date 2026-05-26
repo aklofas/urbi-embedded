@@ -175,7 +175,7 @@ UTEST(trace_records_slot_reads_during_install)
     UObject *obj = make_object_with_x_slot(&vm);
     UASSERT(obj != NULL);
 
-    vm.in_watcher_install   = 1;
+    vm.watchers->in_install   = 1;
     vm.trace_overflow        = 0;
     vm.trace_read_set_count  = 0;
 
@@ -186,7 +186,7 @@ UTEST(trace_records_slot_reads_during_install)
     UASSERT(vm.trace_read_set[0] == (UCell *)obj);
     UASSERT_EQ(0, (int)vm.trace_overflow);
 
-    vm.in_watcher_install = 0;
+    vm.watchers->in_install = 0;
     urbi_vm_destroy(&vm);
 }
 
@@ -203,7 +203,7 @@ UTEST(trace_deduplicates_same_receiver)
     UObject *obj = make_object_with_x_slot(&vm);
     UASSERT(obj != NULL);
 
-    vm.in_watcher_install   = 1;
+    vm.watchers->in_install   = 1;
     vm.trace_overflow        = 0;
     vm.trace_read_set_count  = 0;
 
@@ -216,7 +216,7 @@ UTEST(trace_deduplicates_same_receiver)
     UASSERT_EQ(1, (int)vm.trace_read_set_count);
     UASSERT_EQ(0, (int)vm.trace_overflow);
 
-    vm.in_watcher_install = 0;
+    vm.watchers->in_install = 0;
     urbi_vm_destroy(&vm);
 }
 
@@ -241,7 +241,7 @@ UTEST(trace_overflow_sets_flag_and_caps)
         UASSERT(objs[i] != NULL);
     }
 
-    vm.in_watcher_install   = 1;
+    vm.watchers->in_install   = 1;
     vm.trace_overflow        = 0;
     vm.trace_read_set_count  = 0;
 
@@ -252,7 +252,7 @@ UTEST(trace_overflow_sets_flag_and_caps)
     UASSERT_EQ((int)URBI_WATCHER_READSET_MAX, (int)vm.trace_read_set_count);
     UASSERT_EQ(1, (int)vm.trace_overflow);
 
-    vm.in_watcher_install = 0;
+    vm.watchers->in_install = 0;
     free(objs);
     urbi_vm_destroy(&vm);
 }
@@ -271,7 +271,7 @@ UTEST(trace_disabled_when_flag_clear)
     UASSERT(obj != NULL);
 
     /* Default: in_watcher_install == 0. */
-    UASSERT_EQ(0, (int)vm.in_watcher_install);
+    UASSERT_EQ(0, (int)vm.watchers->in_install);
     vm.trace_read_set_count = 0;
 
     run_one_getslot(&vm, obj);
@@ -331,7 +331,7 @@ UTEST(install_arms_and_resets_trace_fields)
 
     /* Stub returns OK; in_watcher_install must be 0 after phase 4. */
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
-    UASSERT_EQ(0, (int)vm.in_watcher_install);
+    UASSERT_EQ(0, (int)vm.watchers->in_install);
     UASSERT_EQ(0, (int)vm.trace_overflow);
 
     /* Clean up the installed watcher so destroy is clean. */
@@ -416,7 +416,7 @@ UTEST(install_returns_readset_over_when_overflow)
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_READSET_OVER, (int)r);
-    UASSERT_EQ(0, (int)vm.in_watcher_install);
+    UASSERT_EQ(0, (int)vm.watchers->in_install);
     UASSERT_EQ(0, (int)vm.trace_overflow);   /* cleared by phase 4 */
     UASSERT_EQ(1, g_t37_warn_count);
     UASSERT(strstr(g_t37_last_msg, "read-set exceeds") != NULL);
@@ -448,7 +448,7 @@ UTEST(install_returns_trace_fault_on_cond_throw)
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_TRACE_FAULT, (int)r);
-    UASSERT_EQ(0, (int)vm.in_watcher_install);
+    UASSERT_EQ(0, (int)vm.watchers->in_install);
     UASSERT_EQ(1, g_t37_warn_count);
     UASSERT(strstr(g_t37_last_msg, "condition threw") != NULL);
 

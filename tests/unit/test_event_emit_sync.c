@@ -12,7 +12,7 @@
  *      We confirm AT_EVENT (async) sub spawns a body_strand and AT_EVENT_SYNC
  *      sub does NOT spawn a body_strand (runs inline instead).
  *   2. sync_emit_degrades_when_in_watcher_eval:
- *      Set vm->in_watcher_eval = 1 before calling c_event_emit_sync;
+ *      Set vm->watchers->in_eval = 1 before calling c_event_emit_sync;
  *      expect URBI_LOG_WARN "degraded to async" and the emit to proceed
  *      asynchronously (waiter woken). */
 
@@ -152,7 +152,7 @@ UTEST(sync_emit_runs_sync_subs_inline)
 /* ===================================================================
  * Case 2: sync_emit_degrades_when_in_watcher_eval
  *
- * With vm->in_watcher_eval = 1, c_event_emit_sync must:
+ * With vm->watchers->in_eval = 1, c_event_emit_sync must:
  *   - Log URBI_LOG_WARN containing "degraded to async".
  *   - Delegate to c_event_emit_async (waiter still gets woken).
  * =================================================================== */
@@ -180,9 +180,9 @@ UTEST(sync_emit_degrades_when_in_watcher_eval)
     g_log_total  = 0;
     vm.host_log_fn = capture_log;
 
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
     c_event_emit_sync(&vm, e, make_int(55));
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     /* Must have emitted exactly one URBI_LOG_WARN. */
     UASSERT_EQ(g_warn_count, 1);
@@ -224,12 +224,12 @@ UTEST(sync_emit_degradation_warn_is_one_shot)
      * Pre-fix: g_warn_count == 100 (warn-flooding).
      * Post-fix: g_warn_count == 1 (one-shot guard via
      *           vm->event_sync_degradation_warned). */
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
     int i;
     for (i = 0; i < 100; i++) {
         c_event_emit_sync(&vm, e, make_int(i));
     }
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     UASSERT_EQ(g_warn_count, 1);
 

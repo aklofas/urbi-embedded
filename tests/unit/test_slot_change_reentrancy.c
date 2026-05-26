@@ -100,10 +100,10 @@ UTEST(deferred_ring_drains_at_safepoint)
     uint32_t runnable_before = vm.strand_runnable_count;
 
     /* Simulate being inside a scratch context and push a deferred entry. */
-    vm.in_watcher_scratch = 1;
+    vm.watchers->in_scratch = 1;
     UValue v; v.kind = UVAL_INT; v.v.i = 7;
     urbi_emit_slot_change_if_subscribed(&vm, o, sym, v);
-    vm.in_watcher_scratch = 0;
+    vm.watchers->in_scratch = 0;
 
     /* Ring should have one entry; no strand spawned yet. */
     UASSERT(vm.deferred_slot_changes_tail != vm.deferred_slot_changes_head);

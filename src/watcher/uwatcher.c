@@ -34,11 +34,12 @@ uwatcher_pool_alloc(struct UVM *vm)
     UWatcher *w;
     uint16_t i;
 
-    if (vm->watcher_pool_freelist == NULL) return NULL;
+    if (vm->watchers == NULL) return NULL;
+    if (vm->watchers->pool_freelist == NULL) return NULL;
 
     /* Pop from freelist head. */
-    w = vm->watcher_pool_freelist;
-    vm->watcher_pool_freelist = w->next_active;
+    w = vm->watchers->pool_freelist;
+    vm->watchers->pool_freelist = w->next_active;
 
     /* Re-init cell header and clear payload. */
     w->type_tag        = UTYPE_WATCHER;
@@ -67,9 +68,9 @@ uwatcher_pool_alloc(struct UVM *vm)
     }
 
     /* Update pool counters. */
-    vm->watcher_pool_in_use++;
-    if (vm->watcher_pool_in_use > vm->watcher_pool_high_water) {
-        vm->watcher_pool_high_water = vm->watcher_pool_in_use;
+    vm->watchers->pool_in_use++;
+    if (vm->watchers->pool_in_use > vm->watchers->pool_high_water) {
+        vm->watchers->pool_high_water = vm->watchers->pool_in_use;
     }
 
     return w;
@@ -84,7 +85,7 @@ static void
 pool_free(struct UVM *vm, UWatcher *w)
 {
     URBI_INTERNAL_ASSERT(w != NULL);
-    URBI_INTERNAL_ASSERT(vm->watcher_pool_in_use > 0);
+    URBI_INTERNAL_ASSERT(vm->watchers->pool_in_use > 0);
 
     /* v0.8.4 Step C-3: URBI_WATCHER_OWNS_* flags and their free arms deleted.
      * UClosure lifetime is GC-managed since Step C-2; watcher condition/body/
@@ -95,9 +96,9 @@ pool_free(struct UVM *vm, UWatcher *w)
      * recycled ones. */
     w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_ACTIVE);
 
-    w->next_active             = vm->watcher_pool_freelist;
-    vm->watcher_pool_freelist  = w;
-    vm->watcher_pool_in_use--;
+    w->next_active             = vm->watchers->pool_freelist;
+    vm->watchers->pool_freelist  = w;
+    vm->watchers->pool_in_use--;
 }
 
 /* drain_watcher_list: pop every watcher from *head (linked via next_active),
@@ -110,8 +111,8 @@ drain_watcher_list(struct UVM *vm, UWatcher **head)
     while (*head != NULL) {
         UWatcher *w = *head;
         *head = w->next_active;
-        vm->watcher_active_count = vm->watcher_active_count > 0
-                                   ? vm->watcher_active_count - 1U : 0U;
+        vm->watchers->active_count = vm->watchers->active_count > 0
+                                   ? vm->watchers->active_count - 1U : 0U;
         pool_free(vm, w);
     }
 }
@@ -126,6 +127,11 @@ uwatcher_pool_init(struct UVM *vm)
     uint16_t   i;
 
     URBI_ASSERT_NOT_ISR(vm);
+
+    /* W2/v0.10.4: vm->watchers is heap-allocated in urbi_vm_init before this
+     * call.  If OOM during uwatcher_state_create, vm->watchers is NULL — bail
+     * early so we don't deref a NULL pointer writing pool fields. */
+    if (vm->watchers == NULL) return -1;
 
     slab_bytes = (size_t)URBI_WATCHER_POOL_SIZE * sizeof(UWatcher);
 
@@ -153,11 +159,11 @@ uwatcher_pool_init(struct UVM *vm)
 
     /* Wire pool fields on the VM (defensive zero — urbi_vm_init already did this,
      * but explicit is clearer for future readers). */
-    vm->watcher_pool_base      = slab;
-    vm->watcher_pool_freelist  = &slab[0];
+    vm->watchers->pool_base      = slab;
+    vm->watchers->pool_freelist  = &slab[0];
     vm->active_watchers_head   = NULL;
-    vm->watcher_pool_in_use    = 0U;
-    vm->watcher_pool_high_water = 0U;
+    vm->watchers->pool_in_use    = 0U;
+    vm->watchers->pool_high_water = 0U;
 
     return 0;
 }
@@ -167,7 +173,9 @@ uwatcher_pool_destroy(struct UVM *vm)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
-    if (vm->watcher_pool_base == NULL) return;
+    /* W2/v0.10.4: vm->watchers may be NULL on OOM partial-init. */
+    if (vm->watchers == NULL) return;
+    if (vm->watchers->pool_base == NULL) return;
     if (vm->alloc_fn == NULL) return;
 
     /* Drain active and pending-onleave watcher lists so pool_free marks them
@@ -194,7 +202,7 @@ uwatcher_pool_destroy(struct UVM *vm)
     {
         uint16_t i;
         for (i = 0; i < (uint16_t)URBI_WATCHER_POOL_SIZE; i++) {
-            UWatcher *w = &vm->watcher_pool_base[i];
+            UWatcher *w = &vm->watchers->pool_base[i];
             if ((w->flags & URBI_WATCHER_ACTIVE) == 0U) continue;
             if (w->mode != UWATCHER_AT_EVENT &&
                 w->mode != UWATCHER_AT_EVENT_SYNC) continue;
@@ -202,20 +210,20 @@ uwatcher_pool_destroy(struct UVM *vm)
                 uevent_at_watchers_remove(w->event, w);
                 w->event = NULL;
             }
-            vm->watcher_active_count = vm->watcher_active_count > 0
-                                       ? vm->watcher_active_count - 1U : 0U;
+            vm->watchers->active_count = vm->watchers->active_count > 0
+                                       ? vm->watchers->active_count - 1U : 0U;
             pool_free(vm, w);
         }
     }
 
-    vm->alloc_fn(vm->watcher_pool_base, 0, vm->alloc_ud);
+    vm->alloc_fn(vm->watchers->pool_base, 0, vm->alloc_ud);
 
     /* Defensive: zero all pool pointers.  pending_onleave_head/tail were
      * already NULL'd above (drain loop's *head = w->next_active terminator
      * + explicit tail = NULL), but explicit zeroing here keeps the invariant
      * robust against future refactors of drain_watcher_list (WATCH-003). */
-    vm->watcher_pool_base      = NULL;
-    vm->watcher_pool_freelist  = NULL;
+    vm->watchers->pool_base      = NULL;
+    vm->watchers->pool_freelist  = NULL;
     vm->active_watchers_head   = NULL;
     vm->pending_onleave_head   = NULL;
     vm->pending_onleave_tail   = NULL;
@@ -287,7 +295,7 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
         }
     }
 
-    vm->watcher_active_count--;
+    vm->watchers->active_count--;
     pool_free(vm, w);
 }
 
@@ -302,7 +310,7 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
  * slot key is unnecessary — watcher_eval_dirty visits every active watcher
  * whose read-set might be affected.
  *
- * ISR re-entry guard (WATCH-009): observer_dirty mutates vm->watcher_dirty_count
+ * ISR re-entry guard (WATCH-009): observer_dirty mutates vm->watchers->dirty_count
  * non-atomically; any ISR re-entry that triggers a slot write on a bit-6 cell
  * would corrupt the count under read-modify-write interleaving.  Slot writes
  * are not allowed from ISR context per the URBI_ASSERT_NOT_ISR contract that
@@ -314,5 +322,5 @@ observer_dirty(struct UVM *vm, UCell *cell, uint32_t key)
     URBI_ASSERT_NOT_ISR(vm);
     (void)cell;
     (void)key;
-    vm->watcher_dirty_count++;
+    vm->watchers->dirty_count++;
 }
