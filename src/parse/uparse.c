@@ -55,8 +55,17 @@ const char * const kErrorMessages[] = {
     "dict literal key must be followed by '=>' (e.g. \"key\" => value)",
     "expected ']' to close subscript expression",
     "'var obj.slot' requires an initializer: use 'var obj.slot = value'",
-    "compound subscript operator other than '+=' is not supported at v1.0; use 'obj[i] = obj[i] op v'"
+    "compound subscript operator other than '+=' is not supported at v1.0; use 'obj[i] = obj[i] op v'",
     /* === end W10/v0.10.5 === */
+
+    /* === W1/v0.10.5: control flow errors === */
+    "for-each loop header must start with 'var' (e.g. for (var x : list))",
+    "for-each loop header must use ':' or 'in' between variable and iterable",
+    "'break' is only valid inside a 'for' or 'while' loop",
+    "'continue' is only valid inside a 'for' or 'while' loop",
+    "switch body must contain only 'case' labels (non-case statement found)",
+    "case label must be followed by ':' (e.g. case \"foo\":)"
+    /* === end W1/v0.10.5: control flow errors === */
 };
 
 static const char * const kErrorNames[] = {
@@ -91,21 +100,28 @@ static const char * const kErrorNames[] = {
     "PARSE_DICT_EXPECTED_FAT_ARROW",
     "PARSE_SUBSCRIPT_EXPECTED_RBRACKET",
     "PARSE_VAR_OBJ_SLOT_NO_INIT",
-    "PARSE_SUBSCRIPT_COMPOUND_OP_V1X"
+    "PARSE_SUBSCRIPT_COMPOUND_OP_V1X",
     /* === end W10/v0.10.5 === */
+    /* === W1/v0.10.5: control flow === */
+    "PARSE_FOR_EXPECTED_VAR",
+    "PARSE_FOR_EXPECTED_COLON_OR_IN",
+    "PARSE_BREAK_OUTSIDE_LOOP",
+    "PARSE_CONTINUE_OUTSIDE_LOOP",
+    "PARSE_SWITCH_EXPECTED_CASE",
+    "PARSE_SWITCH_EXPECTED_COLON"
+    /* === end W1/v0.10.5: control flow === */
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
 
 /* Compile-time parity check: the kErrorNames / kErrorMessages tables
  * are indexed by UParseError, so their length must equal the count of
- * UParseError enumerators.  PARSE_SLOT_CHANGED_EMIT_V1 is the last
- * enumerator (added in M5 spec #4); update both forms together when
- * adding a new code.  Closes PARSE-017. */
-URBI_STATIC_ASSERT(N_PARSE_ERROR_CODES == (int)PARSE_SUBSCRIPT_COMPOUND_OP_V1X + 1,
+ * UParseError enumerators.  Update both when adding new codes.
+ * Closes PARSE-017. */
+URBI_STATIC_ASSERT(N_PARSE_ERROR_CODES == (int)PARSE_SWITCH_EXPECTED_COLON + 1,
                "kErrorNames length must match UParseError enum count");
 URBI_STATIC_ASSERT((int)(sizeof kErrorMessages / sizeof kErrorMessages[0])
-               == (int)PARSE_SUBSCRIPT_COMPOUND_OP_V1X + 1,
+               == (int)PARSE_SWITCH_EXPECTED_COLON + 1,
                "kErrorMessages length must match UParseError enum count");
 
 /* --- Postfix-emit method name.  Promoted to file scope so the postfix

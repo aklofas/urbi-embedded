@@ -457,6 +457,12 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_SUBSCRIPT_GET:   return emit_subscript_get_arm(e, n);
     case AST_SUBSCRIPT_SET:   return emit_subscript_set_arm(e, n);
     /* === end W10/v0.10.5 === */
+    /* === W1/v0.10.5: control flow === */
+    case AST_FOR_EACH:        return emit_for_each_arm(e, n);
+    case AST_BREAK:           return emit_break_arm(e, n);
+    case AST_CONTINUE:        return emit_continue_arm(e, n);
+    case AST_SWITCH:          return emit_switch_arm(e, n);
+    /* === end W1/v0.10.5: control flow === */
     case AST_PROP_GET:
     case AST_PROP_SET:
     case AST_LOCAL_REF:

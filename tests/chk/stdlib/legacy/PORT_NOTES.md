@@ -49,8 +49,13 @@ each gap's current status follows.
   atoms.c).  Fixtures that require string `+` remain blocked.
 - **No `<<` append operator.**  Not in the lexer or parser.  Fixtures
   using `<<` remain blocked.
-- **No `for (init; cond; step)` / `for (var x : iter)`.**  Wave 6 W1
-  decides the ruling.  Fixtures using `for` remain deferred.
+- **`for (var x : iter)` / `for (var x in iter)`: implemented (Wave 6 W1).**
+  The for-each range form is now fully supported.  Fixtures blocked solely
+  on this form can now be activated.  `break` and `continue` inside for-each
+  loops are also implemented.
+- **No `for (init; cond; step)`.**  The C-style three-part form remains
+  deferred to v1.x.  Use a `while` loop instead.  See
+  `docs/migration/control-flow-migration.md`.
 
 - **Operator-via-slot-install** (`Date.'+' = function ...`) still
   doesn't intercept inline VM opcodes.  The VM's Gap #4 slot-fallback

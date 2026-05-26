@@ -228,6 +228,71 @@ static inline void free_reg_freereg_synced(UEmitter *e) {
         e->current_fs->freereg = e->next_reg;
 }
 
+/* === W1/v0.10.5: loop-context helpers (inline — shared by uemit_stmt.c) ===
+ * These must be placed AFTER uemit_jmp_offset and emit_patch_instr are
+ * declared/defined so the inline patch helpers can reference them.
+ *
+ * uemit_loop_push — open a new loop context.  Returns false (sets
+ *   EMIT_NESTING_TOO_DEEP) on overflow.
+ * uemit_loop_pop — close the current loop context.
+ * uemit_loop_record_break / _continue — record placeholder JMP PCs.
+ * uemit_loop_patch_breaks / _continues — batch-patch to a known target. */
+
+static inline bool uemit_loop_push(UEmitter *e) {
+    if (e->loop_depth >= UEMIT_LOOP_CTX_MAX) {
+        e->error = EMIT_NESTING_TOO_DEEP;
+        return false;
+    }
+    ULoopCtx *ctx = &e->loop_stack[e->loop_depth];
+    ctx->break_count    = 0;
+    ctx->continue_count = 0;
+    e->loop_depth++;
+    return true;
+}
+
+static inline void uemit_loop_pop(UEmitter *e) {
+    if (e->loop_depth > 0) e->loop_depth--;
+}
+
+static inline void uemit_loop_record_break(UEmitter *e, int pc) {
+    if (e->loop_depth == 0) return;
+    ULoopCtx *ctx = &e->loop_stack[e->loop_depth - 1];
+    if (ctx->break_count < UEMIT_LOOP_PATCH_MAX)
+        ctx->break_pcs[ctx->break_count++] = pc;
+}
+
+static inline void uemit_loop_record_continue(UEmitter *e, int pc) {
+    if (e->loop_depth == 0) return;
+    ULoopCtx *ctx = &e->loop_stack[e->loop_depth - 1];
+    if (ctx->continue_count < UEMIT_LOOP_PATCH_MAX)
+        ctx->continue_pcs[ctx->continue_count++] = pc;
+}
+
+static inline void uemit_loop_patch_breaks(UEmitter *e, int exit_target) {
+    if (e->loop_depth == 0) return;
+    ULoopCtx *ctx = &e->loop_stack[e->loop_depth - 1];
+    int i;
+    for (i = 0; i < ctx->break_count; i++) {
+        int from_pc = ctx->break_pcs[i];
+        emit_patch_instr(e, from_pc,
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(from_pc, exit_target)));
+    }
+}
+
+static inline void uemit_loop_patch_continues(UEmitter *e, int cont_target) {
+    if (e->loop_depth == 0) return;
+    ULoopCtx *ctx = &e->loop_stack[e->loop_depth - 1];
+    int i;
+    for (i = 0; i < ctx->continue_count; i++) {
+        int from_pc = ctx->continue_pcs[i];
+        emit_patch_instr(e, from_pc,
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(from_pc, cont_target)));
+    }
+}
+/* === end W1/v0.10.5: loop-context helpers === */
+
 /* Statement / control-flow AST arm helpers (defined in uemit_stmt.c).
  * Called from emit_expr via forwarding stubs; bodies live in uemit_stmt.c. */
 uint8_t emit_if_arm(UEmitter *e, UAstNode *n);
@@ -243,6 +308,12 @@ uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_subscript_get_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n);
 /* === end W10/v0.10.5 === */
+/* === W1/v0.10.5: control flow === */
+uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_break_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_continue_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_switch_arm(UEmitter *e, UAstNode *n);
+/* === end W1/v0.10.5: control flow === */
 
 /* Leaf-expression AST arm helpers (defined in uemit_expr.c).
  * Called from emit_expr via forwarding stubs; bodies live in uemit_expr.c. */

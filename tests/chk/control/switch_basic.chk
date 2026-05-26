@@ -1,0 +1,22 @@
+# Milestone: v0.10.5 / W1
+# Covers: switch equality-dispatch; no fall-through; break exits switch.
+
+# --- match first case
+var x = 1; switch (x) { case 1: { "one" }; case 2: { "two" }; case 3: { "three" } }
+[00000000] nil
+
+# --- match second case (via side effect)
+var r = "none"; var y = 2; switch (y) { case 1: { r = "one" }; case 2: { r = "two" }; case 3: { r = "three" } }; r
+[00000001] "two"
+
+# --- no match: no case body executes
+var r2 = "none"; switch (99) { case 1: { r2 = "one" }; case 2: { r2 = "two" } }; r2
+[00000002] "none"
+
+# --- break inside case exits switch
+var r3 = "none"; switch (1) { case 1: { r3 = "hit"; break; r3 = "never" }; case 2: { r3 = "two" } }; r3
+[00000003] "hit"
+
+# --- string match
+var r4 = ""; switch ("hello") { case "world": { r4 = "world" }; case "hello": { r4 = "hello" } }; r4
+[00000004] "hello"

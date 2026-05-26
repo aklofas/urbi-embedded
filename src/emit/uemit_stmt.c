@@ -443,19 +443,25 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
  *       <body stmts>         ; body block opened with is_loop=true
  *       emit_loop_back_close ; OP_CLOSE if any local captured
  *       JMP loop_start       ; back-edge
- *     exit: */
+ *     exit:
+ *
+ * W1/v0.10.5: pushes a ULoopCtx so break/continue inside the body are
+ * lowered to OP_JMP with the targets patched here at exit. */
 uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     }
 
+    /* W1/v0.10.5: open loop context for break/continue. */
+    if (!uemit_loop_push(e)) return 0U;
+
     int loop_start = (int)emit_instr_count(e);
 
     /* 1. Compile cond into rx. */
     uint8_t rx = e->next_reg;
     emit_expr(e, n->u.while_stmt.cond);
-    if (e->error != EMIT_OK) return 0U;
+    if (e->error != EMIT_OK) { uemit_loop_pop(e); return 0U; }
 
     /* 2. TEST rx, 0, 1 — skip JMP-to-exit when cond is truthy. */
     emit_instr(e, uinstr_enc_abc(OP_TEST, rx, 0U, 1U), (uint32_t)n->line);
@@ -472,16 +478,19 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
           which opens with is_loop=false). */
     if (n->u.while_stmt.body->kind != AST_BLOCK) {
         e->error = EMIT_UNSUPPORTED_AST;
+        uemit_loop_pop(e);
         return 0U;
     }
     {
         UAstNode *body = n->u.while_stmt.body;
-        if (!uemit_open_block(e, /*is_loop=*/true)) return 0U;
+        if (!uemit_open_block(e, /*is_loop=*/true)) { uemit_loop_pop(e); return 0U; }
 
-        for (int i = 0; i < body->u.block.count; i++) {
+        int i;
+        for (i = 0; i < body->u.block.count; i++) {
             emit_expr(e, body->u.block.stmts[i]);
             if (e->error != EMIT_OK) {
                 uemit_close_block(e);
+                uemit_loop_pop(e);
                 return 0U;
             }
             /* Release temps between body statements; locals stay. */
@@ -491,6 +500,12 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
 
         /* 5. OP_CLOSE-on-back-edge if any local in the loop block was captured. */
         uemit_emit_loop_back_close(e);
+
+        /* W1/v0.10.5: continue PCs land here (before the back-edge JMP). */
+        {
+            int cont_target = (int)emit_instr_count(e);
+            uemit_loop_patch_continues(e, cont_target);
+        }
 
         /* 6. Back-edge JMP to loop_start. */
         {
@@ -502,7 +517,7 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
 
         /* 7. Close the loop block (emits OP_CLOSE if has_captured, then pops
               actvars back). */
-        if (!uemit_close_block(e)) return 0U;
+        if (!uemit_close_block(e)) { uemit_loop_pop(e); return 0U; }
     }
 
     /* 8. Patch the exit JMP to current pc. */
@@ -511,7 +526,11 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
         emit_patch_instr(e, jmp_to_exit,
             uinstr_enc_abx(OP_JMP, 0U,
                            uemit_jmp_offset(jmp_to_exit, exit_target)));
+        /* W1/v0.10.5: patch break PCs to exit_target. */
+        uemit_loop_patch_breaks(e, exit_target);
     }
+
+    uemit_loop_pop(e);
 
     /* while-loop is a statement; it doesn't produce a value.
        Return a register that holds nil to give callers a valid reg. */
@@ -921,3 +940,589 @@ uint8_t emit_assert_arm(UEmitter *e, UAstNode *n) {
 #undef KASSERT_BASE_LEN
 #undef KASSERT_PREFIX_LEN
 }
+
+/* === W1/v0.10.5: control-flow emit arms ===
+ *
+ * emit_break_arm — AST_BREAK: `break`
+ *   Emits a placeholder OP_JMP and records the PC in the innermost loop
+ *   context so the enclosing loop can patch it to the exit address.
+ *
+ * emit_continue_arm — AST_CONTINUE: `continue`
+ *   Emits a placeholder OP_JMP and records the PC in the innermost loop
+ *   context so the enclosing loop can patch it to the continue address.
+ *
+ * emit_for_each_arm — AST_FOR_EACH: `for (var x : iter) body`
+ *   Lowered to a while-loop index pattern:
+ *     _iter = iter_expr       ; evaluate iterable once
+ *     _n    = _iter.length()  ; number of elements
+ *     _i    = 0               ; current index (integer)
+ *     loop_start:
+ *       TEST (_i < _n)        ; exit if done
+ *       JMP <exit>
+ *       x = _iter.get(_i)     ; bind loop variable
+ *       body                  ; execute body
+ *       continue_target:
+ *       _i = _i + 1           ; advance
+ *       JMP loop_start
+ *     exit:
+ *   No new opcodes.  The var `x` is a proper local in the body's block scope.
+ *
+ * emit_switch_arm — AST_SWITCH: `switch (expr) { case v: body ... }`
+ *   Lowered to a chain of if-else comparisons:
+ *     _sw = expr              ; evaluate discriminant once
+ *     if (_sw == v0) { body0 } else
+ *     if (_sw == v1) { body1 } else
+ *     ...
+ *   Equality uses OP_EQ.  break inside a case body exits the switch.
+ *   No new opcodes. */
+
+/* emit_break_arm */
+uint8_t emit_break_arm(UEmitter *e, UAstNode *n) {
+    if (e->loop_depth == 0) {
+        /* Parser should have caught this; defensive. */
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+    /* Emit placeholder JMP and record the PC for patching. */
+    int jmp_pc = (int)emit_instr_count(e);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+    uemit_loop_record_break(e, jmp_pc);
+
+    /* break doesn't produce a value; return a nil register. */
+    uint8_t r = e->next_reg;
+    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0U, 0U), (uint32_t)n->line);
+    e->next_reg++;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->current_fs != NULL && e->next_reg > e->current_fs->max_reg_seen)
+        e->current_fs->max_reg_seen = e->next_reg;
+    return r;
+}
+
+/* emit_continue_arm */
+uint8_t emit_continue_arm(UEmitter *e, UAstNode *n) {
+    if (e->loop_depth == 0) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+    int jmp_pc = (int)emit_instr_count(e);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+    uemit_loop_record_continue(e, jmp_pc);
+
+    uint8_t r = e->next_reg;
+    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0U, 0U), (uint32_t)n->line);
+    e->next_reg++;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->current_fs != NULL && e->next_reg > e->current_fs->max_reg_seen)
+        e->current_fs->max_reg_seen = e->next_reg;
+    return r;
+}
+
+/* Helper: emit a method call `recv_reg.method_name()` with no args.
+ * Returns the result register (next_reg before the call).
+ * Uses stack-allocated synthetic AST nodes (same pattern as emit_lazy_thunk). */
+static uint8_t emit_method_call_0arg(UEmitter *e, uint8_t recv_reg,
+                                      const char *method, int method_len,
+                                      uint32_t line) {
+    /* Build synthetic: recv_reg.method() */
+    UAstNode recv_node;
+    urbi_zero(&recv_node, sizeof(recv_node));
+    recv_node.kind         = AST_IDENT;   /* placeholder; emit_call_arm uses recv_reg directly */
+    recv_node.line         = (int)line;
+    recv_node.col          = 1;
+
+    UAstNode member_node;
+    urbi_zero(&member_node, sizeof(member_node));
+    member_node.kind                = AST_MEMBER_GET;
+    member_node.line                = (int)line;
+    member_node.col                 = 1;
+    member_node.u.member.recv       = &recv_node;
+    member_node.u.member.name_start = method;
+    member_node.u.member.name_len   = method_len;
+    member_node.u.member.value      = NULL;
+
+    UAstNode call_node;
+    urbi_zero(&call_node, sizeof(call_node));
+    call_node.kind            = AST_CALL;
+    call_node.line            = (int)line;
+    call_node.col             = 1;
+    call_node.u.call.callee   = &member_node;
+    call_node.u.call.args     = NULL;
+    call_node.u.call.arg_count = 0;
+
+    /* emit_call_arm with a method-shaped callee will evaluate the receiver.
+     * But the receiver here is a synthetic IDENT node that doesn't resolve
+     * to a local — we need to emit OP_SELF with the actual recv_reg.
+     * Simplest: inline the OP_SELF + OP_CALL pattern directly. */
+    (void)call_node;  /* not passed through emit_call_arm */
+
+    /* Inline OP_SELF + OP_CALL for zero-arg method call. */
+    if (e->current_fs == NULL) { e->error = EMIT_UNSUPPORTED_AST; return 0U; }
+
+    /* Intern the method name as a USymbol for IC. */
+    const char *interned = ustr_intern(e->vm, method, (size_t)method_len);
+    if (interned == NULL) { e->error = EMIT_OOM; return 0U; }
+    USymbol *sym = (USymbol *)interned;
+    int ic_idx = uemit_assign_ic_index(e, sym);
+    if (ic_idx < 0) return 0U;
+
+    uint8_t dst = e->next_reg;
+    if (dst >= 254U) { e->error = EMIT_REG_EXHAUSTED; return 0U; }
+
+    /* OP_SELF dst, recv_reg, ic_idx — writes method into R[dst], recv into R[dst+1]. */
+    emit_instr(e, uinstr_enc_abc(OP_SELF, dst, recv_reg, (uint8_t)ic_idx), line);
+    e->next_reg += 2U;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->next_reg > e->current_fs->max_reg_seen)
+        e->current_fs->max_reg_seen = e->next_reg;
+
+    /* OP_CALL dst, 2 (method + self), 2 | 0x80 (1 result, method flag). */
+    emit_instr(e, uinstr_enc_abc(OP_CALL, dst, 2U, 2U | 0x80U), line);
+
+    /* Result in R[dst]; cursor stays at dst+2, then we reset to dst+1 as the
+     * "next available" since the call leaves result in dst. */
+    e->next_reg = dst + 1U;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->next_reg > e->current_fs->max_reg_seen)
+        e->current_fs->max_reg_seen = e->next_reg;
+    if (e->current_fs->freereg < e->next_reg)
+        e->current_fs->freereg = e->next_reg;
+    return dst;
+}
+
+/* Helper: emit `recv_reg.method_name(arg_reg)` — one-arg method call.
+ * Returns the result register. */
+static uint8_t emit_method_call_1arg(UEmitter *e, uint8_t recv_reg,
+                                      const char *method, int method_len,
+                                      uint8_t arg_reg,
+                                      uint32_t line) {
+    if (e->current_fs == NULL) { e->error = EMIT_UNSUPPORTED_AST; return 0U; }
+
+    const char *interned = ustr_intern(e->vm, method, (size_t)method_len);
+    if (interned == NULL) { e->error = EMIT_OOM; return 0U; }
+    USymbol *sym = (USymbol *)interned;
+    int ic_idx = uemit_assign_ic_index(e, sym);
+    if (ic_idx < 0) return 0U;
+
+    uint8_t dst = e->next_reg;
+    if (dst >= 253U) { e->error = EMIT_REG_EXHAUSTED; return 0U; }
+
+    /* OP_SELF dst, recv_reg, ic_idx */
+    emit_instr(e, uinstr_enc_abc(OP_SELF, dst, recv_reg, (uint8_t)ic_idx), line);
+    e->next_reg += 2U;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->next_reg > e->current_fs->max_reg_seen)
+        e->current_fs->max_reg_seen = e->next_reg;
+
+    /* Move arg into R[dst+2]. */
+    emit_instr(e, uinstr_enc_abc(OP_MOVE, dst + 2U, arg_reg, 0U), line);
+    e->next_reg = dst + 3U;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->next_reg > e->current_fs->max_reg_seen)
+        e->current_fs->max_reg_seen = e->next_reg;
+
+    /* OP_CALL dst, 3 (method + self + 1 arg), 2 | 0x80. */
+    emit_instr(e, uinstr_enc_abc(OP_CALL, dst, 3U, 2U | 0x80U), line);
+
+    e->next_reg = dst + 1U;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->next_reg > e->current_fs->max_reg_seen)
+        e->current_fs->max_reg_seen = e->next_reg;
+    if (e->current_fs->freereg < e->next_reg)
+        e->current_fs->freereg = e->next_reg;
+    return dst;
+}
+
+/* emit_for_each_arm
+ *
+ * Lowering of `for (var x : iter) { body }` to an index loop.
+ *
+ * Register layout (all declared as proper locals so fs_temp_floor stays
+ * above them across the body's temp resets):
+ *
+ *   outer block:
+ *     _iter   slot = freereg_at_entry + 0   (the iterable)
+ *     _n      slot = freereg_at_entry + 1   (length, constant through loop)
+ *     _i      slot = freereg_at_entry + 2   (current index)
+ *
+ *   inner block (is_loop=true):
+ *     x       slot = freereg_at_outer_end   (loop variable)
+ *
+ * Bytecode shape:
+ *   <eval iter>     → _iter
+ *   _n = _iter.length()
+ *   _i = 0
+ *   loop_start:
+ *     LT A=0, _i, _n   ; skip JMP-to-exit when _i < _n
+ *     JMP <exit>
+ *     x = _iter.get(_i)
+ *     <body>
+ *     CLOSE (if body captured)
+ *     [continue target]
+ *     _i = _i + 1
+ *     JMP <loop_start>
+ *   exit:               ← break PCs and jmp_to_exit all patch here
+ */
+uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n) {
+    if (e->current_fs == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+    if (n->u.for_each.body->kind != AST_BLOCK) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+
+    uint32_t line = (uint32_t)n->line;
+    UFuncState *fs = e->current_fs;
+
+    /* Pre-reserve the global object slot before declaring any synthetic
+     * loop-state locals.  Without this, the lazy global-slot claim (in
+     * emit_ident_arm / emit_var_decl_arm) fires INSIDE emit_expr for the
+     * iter expression, at which point freereg may already be above our
+     * declared local slots, causing the LOAD_REALM_GLOBAL prologue to land
+     * at a register that aliases an existing local.
+     *
+     * By pre-reserving here (same logic as emit_var_decl_arm's lazy path),
+     * r_global_slot is pinned at the current freereg (e.g. R0 at chunk-top)
+     * BEFORE we declare _iter/_n/_i at freereg+1/+2/+3.
+     * If no global is actually referenced during the loop, references_global
+     * stays false and the prologue is never emitted — the slot is harmlessly
+     * "wasted" (but still protected by fs_temp_floor). */
+    if (fs->parent == NULL && !fs->global_slot_reserved) {
+        if (fs->freereg >= (uint8_t)(UFS_MAX_REGS - 1)) {
+            e->error = EMIT_REG_EXHAUSTED;
+            return 0U;
+        }
+        fs->r_global_slot = fs->freereg;
+        fs->global_slot_reserved = true;
+        fs->freereg++;
+        if (fs->freereg > fs->max_reg_seen) fs->max_reg_seen = fs->freereg;
+        if (e->next_reg < fs->freereg) {
+            e->next_reg = fs->freereg;
+            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        }
+    }
+
+    /* Open outer block scope: _iter, _n, _i live here as proper locals.
+     * This ensures fs_temp_floor = nactvar + 3 throughout the loop body,
+     * preventing any temp-register reset from clobbering loop state. */
+    if (!uemit_open_block(e, /*is_loop=*/false)) return 0U;
+
+    /* 1. Declare _iter, evaluate iterable, MOVE result into _iter slot.
+     *
+     * Declaration order: _iter FIRST so its slot is pinned before iter
+     * expression is compiled (iter_tmp = next_reg after declaration). */
+    const char *iter_name = ustr_intern(e->vm, "\x01iter", 5);
+    if (iter_name == NULL) { uemit_close_block(e); e->error = EMIT_OOM; return 0U; }
+
+    int iter_slot = uemit_declare_local(e, iter_name, 5);
+    if (iter_slot < 0) { uemit_close_block(e); return 0U; }
+
+    /* Emit the iterable expression into a temp above iter_slot. */
+    uint8_t iter_tmp = e->next_reg;
+    emit_expr(e, n->u.for_each.iter_expr);
+    if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+    if (iter_tmp != (uint8_t)iter_slot) {
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)iter_slot, iter_tmp, 0U), line);
+    }
+    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->next_reg = e->current_fs->freereg;
+
+    /* 2. Declare _n, then compute length(). */
+    const char *n_name = ustr_intern(e->vm, "\x01n", 2);
+    if (n_name == NULL) { uemit_close_block(e); e->error = EMIT_OOM; return 0U; }
+    int n_slot = uemit_declare_local(e, n_name, 2);
+    if (n_slot < 0) { uemit_close_block(e); return 0U; }
+
+    uint8_t len_tmp = emit_method_call_0arg(e, (uint8_t)iter_slot, "length", 6, line);
+    if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+    if (len_tmp != (uint8_t)n_slot) {
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)n_slot, len_tmp, 0U), line);
+    }
+    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->next_reg = e->current_fs->freereg;
+
+    /* 3. Declare _i, then load 0. */
+    const char *i_name = ustr_intern(e->vm, "\x01i", 2);
+    if (i_name == NULL) { uemit_close_block(e); e->error = EMIT_OOM; return 0U; }
+    int i_slot = uemit_declare_local(e, i_name, 2);
+    if (i_slot < 0) { uemit_close_block(e); return 0U; }
+
+    uint8_t i_reg = (uint8_t)i_slot;   /* alias for clarity */
+    uint8_t n_reg = (uint8_t)n_slot;
+    {
+        uint8_t k0 = (uint8_t)add_const_int(e, 0LL);
+        if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+        emit_instr(e, uinstr_enc_abx(OP_LOADK, i_reg, k0), line);
+    }
+    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->next_reg = e->current_fs->freereg;
+
+    /* Open loop context for break/continue. */
+    if (!uemit_loop_push(e)) { uemit_close_block(e); return 0U; }
+
+    /* 4. loop_start: check _i < _n.
+     * OP_LT A=0, B=i_reg, C=n_reg:
+     *   if (i < n) != 0 → skip next (skip JMP-to-exit) when i < n
+     *   fall through to JMP-to-exit when i >= n */
+    int loop_start = (int)emit_instr_count(e);
+    emit_instr(e, uinstr_enc_abc(OP_LT, 0U, i_reg, n_reg), line);
+    int jmp_to_exit = (int)emit_instr_count(e);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
+
+    /* 5. Open inner body block and declare loop variable x. */
+    if (!uemit_open_block(e, /*is_loop=*/true)) {
+        uemit_loop_pop(e);
+        uemit_close_block(e);
+        return 0U;
+    }
+
+    const char *var_canonical = ustr_intern(e->vm,
+                                             n->u.for_each.var_name_start,
+                                             (size_t)n->u.for_each.var_name_len);
+    if (var_canonical == NULL) {
+        uemit_close_block(e); uemit_loop_pop(e); uemit_close_block(e);
+        e->error = EMIT_OOM;
+        return 0U;
+    }
+    int var_slot = uemit_declare_local(e, var_canonical, n->u.for_each.var_name_len);
+    if (var_slot < 0) {
+        uemit_close_block(e); uemit_loop_pop(e); uemit_close_block(e);
+        return 0U;
+    }
+
+    /* Emit x = _iter.get(_i). */
+    uint8_t get_result = emit_method_call_1arg(e, (uint8_t)iter_slot, "get", 3, i_reg, line);
+    if (e->error != EMIT_OK) {
+        uemit_close_block(e); uemit_loop_pop(e); uemit_close_block(e);
+        return 0U;
+    }
+    if (get_result != (uint8_t)var_slot) {
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)var_slot, get_result, 0U), line);
+    }
+    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->next_reg = e->current_fs->freereg;
+
+    /* 6. Execute body. */
+    UAstNode *body = n->u.for_each.body;
+    int bi;
+    for (bi = 0; bi < body->u.block.count; bi++) {
+        emit_expr(e, body->u.block.stmts[bi]);
+        if (e->error != EMIT_OK) {
+            uemit_close_block(e); uemit_loop_pop(e); uemit_close_block(e);
+            return 0U;
+        }
+        e->current_fs->freereg = fs_temp_floor(e->current_fs);
+        e->next_reg = e->current_fs->freereg;
+    }
+
+    /* 7. OP_CLOSE on back-edge (if inner body captured any vars). */
+    uemit_emit_loop_back_close(e);
+
+    /* continue PCs land here (before _i++). */
+    {
+        int cont_target = (int)emit_instr_count(e);
+        uemit_loop_patch_continues(e, cont_target);
+    }
+
+    /* 8. Close inner body block before _i++. */
+    if (!uemit_close_block(e)) {
+        uemit_loop_pop(e); uemit_close_block(e);
+        return 0U;
+    }
+    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->next_reg = e->current_fs->freereg;
+
+    /* 9. _i = _i + 1. */
+    {
+        uint8_t k1 = (uint8_t)add_const_int(e, 1LL);
+        if (e->error != EMIT_OK) { uemit_loop_pop(e); uemit_close_block(e); return 0U; }
+        uint8_t tmp = e->next_reg;
+        emit_instr(e, uinstr_enc_abx(OP_LOADK, tmp, k1), line);
+        e->next_reg++;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        if (e->next_reg > e->current_fs->max_reg_seen)
+            e->current_fs->max_reg_seen = e->next_reg;
+        emit_instr(e, uinstr_enc_abc(OP_ADD, i_reg, i_reg, tmp), line);
+        e->current_fs->freereg = fs_temp_floor(e->current_fs);
+        e->next_reg = e->current_fs->freereg;
+    }
+
+    /* 10. Back-edge JMP to loop_start.
+     *
+     * Backward JMPs use the safepoint path (no NEXT()): the VM dispatcher
+     * executes the instruction at s->pc directly without incrementing first.
+     * uemit_jmp_offset(from, target) = target - from - 1 + BIAS, which is
+     * correct for forward JMPs (NEXT() adds the +1), but lands at
+     * loop_start - 1 for backward JMPs.
+     *
+     * While loops are immune because their loop_start - 1 is always a YIELD
+     * instruction (from the ';' separator) that harmlessly advances pc+1.
+     * For-each has no such YIELD before the condition LT, so we compensate
+     * by targeting loop_start + 1: the formula then gives offset =
+     * (loop_start + 1) - from - 1 = loop_start - from, and the backward
+     * safepoint dispatches at from + (loop_start - from) = loop_start. */
+    {
+        int from_pc = (int)emit_instr_count(e);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U,
+                                     uemit_jmp_offset(from_pc, loop_start + 1)), line);
+    }
+
+    /* 11. Patch exit JMP and break PCs. */
+    {
+        int exit_target = (int)emit_instr_count(e);
+        emit_patch_instr(e, jmp_to_exit,
+            uinstr_enc_abx(OP_JMP, 0U, uemit_jmp_offset(jmp_to_exit, exit_target)));
+        uemit_loop_patch_breaks(e, exit_target);
+    }
+
+    uemit_loop_pop(e);
+
+    /* 12. Close outer block (removes _iter, _n, _i from scope). */
+    if (!uemit_close_block(e)) return 0U;
+    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->next_reg = e->current_fs->freereg;
+
+    /* for-each is a statement; return a nil register. */
+    uint8_t r = e->next_reg;
+    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0U, 0U), line);
+    e->next_reg++;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->current_fs->freereg < e->next_reg)
+        e->current_fs->freereg = e->next_reg;
+    return r;
+}
+
+/* emit_switch_arm — AST_SWITCH: switch (expr) { case v1: body1 ... }
+ * Lowered to a chain of if/else-if comparisons.
+ * break inside any case body exits the switch. */
+uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
+    if (e->current_fs == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+
+    uint32_t line = (uint32_t)n->line;
+
+    /* Open loop context so break exits the switch. */
+    if (!uemit_loop_push(e)) return 0U;
+
+    /* 1. Evaluate the switch expression once into sw_reg. */
+    uint8_t sw_reg = e->next_reg;
+    emit_expr(e, n->u.switch_stmt.expr);
+    if (e->error != EMIT_OK) { uemit_loop_pop(e); return 0U; }
+    /* Keep sw_reg as a "permanent" local for the duration. */
+    if (e->current_fs->freereg <= sw_reg)
+        e->current_fs->freereg = sw_reg + 1U;
+    e->next_reg = e->current_fs->freereg;
+
+    /* 2. Chain: for each case i, emit:
+     *     OP_EQ 0, sw_reg, case_val_reg  ; skip next if sw == val (A=0: skip when equal)
+     *     Wait — OP_EQ A=0: if ((R[B]==R[C]) != 0) pc++ → skip JMP to case body when equal.
+     *     We want: if sw_reg == val THEN execute body, else skip to next case.
+     *     EQ A=1: if ((R[B]==R[C]) != 1) pc++ → skip JMP when NOT equal.
+     *     So: OP_EQ A=1 → skip JMP-to-case-body when NOT equal → fall to JMP-to-case-body when equal.
+     *
+     *     Layout per case:
+     *       val_reg = case_val
+     *       OP_EQ 1, sw_reg, val_reg   ; skip JMP-to-body when NOT equal
+     *       JMP <next_case>            ; skip body when not equal
+     *       <body>
+     *       JMP <exit>                 ; break implicit at end of each case (no fallthrough)
+     *     next_case:
+     *     ...
+     *     exit:
+     *
+     * Actually, for ergonomics: each case body ends with an implicit JMP to exit
+     * (no fall-through — legacy urbiscript switch has no fallthrough). */
+
+    int exit_jmps[64];   /* PCs of JMPs that jump to exit after each case body */
+    int n_exit_jmps = 0;
+
+    int i;
+    for (i = 0; i < n->u.switch_stmt.case_count; i++) {
+        /* Compile case value. */
+        uint8_t val_reg = e->next_reg;
+        emit_expr(e, n->u.switch_stmt.case_vals[i]);
+        if (e->error != EMIT_OK) { uemit_loop_pop(e); return 0U; }
+        e->current_fs->freereg = fs_temp_floor(e->current_fs);
+        if (e->current_fs->freereg <= sw_reg)
+            e->current_fs->freereg = sw_reg + 1U;
+        e->next_reg = e->current_fs->freereg;
+
+        /* OP_EQ 1, sw_reg, val_reg — skip JMP-to-next-case when equal.
+         * (A=1 means: skip when (sw==val) IS true, so the JMP fires when NOT equal). */
+        /* Wait: we want to skip the body JMP when NOT equal.
+         * OP_EQ A=0: if ((B==C) != 0) pc++ → skip when equal.
+         * OP_EQ A=1: if ((B==C) != 1) pc++ → skip when NOT equal.
+         *
+         * We want: if NOT equal, jump to next case; else fall through to body.
+         * Layout:
+         *   OP_EQ 0, sw, val    ; skip JMP-to-next-case when equal (A=0 skips when eq)
+         *   JMP <next_case>     ; not equal: skip this case's body
+         *   <body>
+         *   JMP <exit>          ; done with body
+         * next_case:
+         */
+        emit_instr(e, uinstr_enc_abc(OP_EQ, 0U, sw_reg, val_reg), line);
+
+        int jmp_to_next = (int)emit_instr_count(e);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
+
+        /* Body. */
+        UAstNode *body = n->u.switch_stmt.case_bodies[i];
+        if (body->kind == AST_BLOCK) {
+            int j;
+            for (j = 0; j < body->u.block.count; j++) {
+                emit_expr(e, body->u.block.stmts[j]);
+                if (e->error != EMIT_OK) { uemit_loop_pop(e); return 0U; }
+                e->current_fs->freereg = fs_temp_floor(e->current_fs);
+                if (e->current_fs->freereg <= sw_reg)
+                    e->current_fs->freereg = sw_reg + 1U;
+                e->next_reg = e->current_fs->freereg;
+            }
+        } else {
+            emit_expr(e, body);
+            if (e->error != EMIT_OK) { uemit_loop_pop(e); return 0U; }
+        }
+
+        /* Implicit JMP to exit after body (no fall-through). */
+        if (n_exit_jmps < 64) {
+            exit_jmps[n_exit_jmps] = (int)emit_instr_count(e);
+            n_exit_jmps++;
+        }
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
+
+        /* Patch jmp_to_next → here (next case). */
+        {
+            int next_case = (int)emit_instr_count(e);
+            emit_patch_instr(e, jmp_to_next,
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_to_next, next_case)));
+        }
+    }
+
+    /* exit: patch all exit JMPs and break PCs. */
+    {
+        int exit_target = (int)emit_instr_count(e);
+        int j;
+        for (j = 0; j < n_exit_jmps; j++) {
+            emit_patch_instr(e, exit_jmps[j],
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(exit_jmps[j], exit_target)));
+        }
+        uemit_loop_patch_breaks(e, exit_target);
+    }
+
+    uemit_loop_pop(e);
+
+    /* switch is a statement; return a nil register. */
+    uint8_t r = e->next_reg;
+    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0U, 0U), line);
+    e->next_reg++;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->current_fs->freereg < e->next_reg)
+        e->current_fs->freereg = e->next_reg;
+    return r;
+}
+/* === end W1/v0.10.5: control-flow emit arms === */

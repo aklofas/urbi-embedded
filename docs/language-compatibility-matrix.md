@@ -33,13 +33,13 @@
 |---|---|---|
 | `if / else` | implemented | — |
 | `while` | implemented | — |
-| `for (var x : iter)` | TBD | legacy F2; Wave 6 W1 decision |
-| `for (init; cond; step)` | TBD | legacy F2; Wave 6 W1 decision |
-| `break` | TBD | legacy F2; Wave 6 W1 |
-| `continue` | TBD | legacy F2; Wave 6 W1 |
-| `switch` | TBD | legacy F2; Wave 6 W1 |
-| `do (receiver) { ... }` | TBD | legacy F2; Wave 6 W1 |
-| `loop` | TBD | legacy F2; Wave 6 W1 |
+| `for (var x : iter)` | implemented | Wave 6 W1; lowered to index loop via `.length()` + `.get(i)`; `in` alias supported |
+| `for (init; cond; step)` | deferred (v1.x) | C-style three-part form; use `while` instead; see `docs/migration/control-flow-migration.md` |
+| `break` | implemented | Wave 6 W1; exits innermost loop or switch |
+| `continue` | implemented | Wave 6 W1; skips to next iteration of for-each or while |
+| `switch` | implemented | Wave 6 W1; equality-dispatch only; no fall-through; break exits switch |
+| `do (receiver) { ... }` | deferred (v1.x) | receiver-bound block form; uncommon in practice |
+| `loop` | deferred (v1.x) | infinite loop sugar; use `while (true)` instead |
 | `return` | implemented | — |
 
 ### Exceptions

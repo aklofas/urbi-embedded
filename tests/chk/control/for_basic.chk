@@ -1,0 +1,23 @@
+# Milestone: v0.10.5 / W1
+# Covers: for-each range loop; `for (var x : iter) body`
+#         lowered to index loop via .length() + .get(i).
+
+# --- simple iteration: collect sum
+var s = 0; for (var x : [1, 2, 3]) { s = s + x }; s
+[00000000] 6
+
+# --- single-element list
+var s2 = 0; for (var x : [42]) { s2 = x }; s2
+[00000001] 42
+
+# --- empty list: body never executes
+var s3 = 99; for (var x : []) { s3 = 0 }; s3
+[00000002] 99
+
+# --- `in` keyword alias: `for (var x in iter)`
+var s4 = 0; for (var x in [10, 20]) { s4 = s4 + x }; s4
+[00000003] 30
+
+# --- loop variable is scoped to body: not visible after loop
+var found = 0; for (var item : [7]) { found = item }; found
+[00000004] 7
