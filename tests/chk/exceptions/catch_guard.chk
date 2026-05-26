@@ -1,0 +1,26 @@
+# Wave 6 W5 — catch guard (v0.10.5)
+# Covers: `catch (var e if cond)` — catch with guard expression;
+#         guard passes: catch body runs normally;
+#         guard fails: exception re-thrown (caught by outer catch or propagates).
+# Ruling: implemented — guard check emitted as TEST+JMP+THROW before catch body.
+# Source: legacy F6; legacy/repos/aldebaran-urbi/tests/2.x/exceptions/exceptions.chk
+
+# --- guard passes: catch body runs ---
+var r = 0; try { throw(42) } catch (var e if e == 42) { r = 1 }; r
+[00000001] 1
+
+# --- guard evaluates thrown value correctly ---
+var r = 0; try { throw(5) } catch (var e if e == 5) { r = e + 1 }; r
+[00000002] 6
+
+# --- guard fails: exception propagates to outer catch ---
+var r = 0; try { try { throw(42) } catch (var e if e == 99) { r = 1 } } catch (var e) { r = 2 }; r
+[00000003] 2
+
+# --- guard with false: always re-throws ---
+var r = 0; try { try { throw(7) } catch (var e if false) { r = 1 } } catch (var e) { r = 2 }; r
+[00000004] 2
+
+# --- nested try with guards: correct handler fires ---
+var r = 0; try { try { throw(10) } catch (var e if e == 99) { r = 1 } } catch (var e if e == 10) { r = 3 }; r
+[00000005] 3
