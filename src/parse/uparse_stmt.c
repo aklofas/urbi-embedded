@@ -774,8 +774,15 @@ UAstNode *parse_assert(UParser *p) {
     return node;
 }
 
-/* --- parse_try: `try { body } [catch (e) { handler }] [finally { cleanup }]`
-   Both catch and finally are optional, but at least one must be present. --- */
+/* --- parse_try: `try { body } [catch ([var] e [if guard]) { handler }] [else { body }] [finally { cleanup }]`
+ *
+ * Wave 6 W5 (v0.10.5): extended grammar to accept:
+ *   - optional `var` keyword before the catch variable name
+ *   - optional `if expr` guard after the catch variable name
+ *   - optional `else { body }` clause after catch (runs when no exception thrown)
+ *
+ * Both catch and finally remain optional, but at least one must be present.
+ * `else` requires a preceding catch clause. */
 
 UAstNode *parse_try(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_TRY */
@@ -787,6 +794,8 @@ UAstNode *parse_try(UParser *p) {
     const char *catch_var_start = NULL;
     int         catch_var_len   = 0;
     UAstNode   *catch_body      = NULL;
+    UAstNode   *catch_guard     = NULL;
+    UAstNode   *else_body       = NULL;
     UAstNode   *finally_body    = NULL;
 
     /* Optional catch clause. */
@@ -801,6 +810,11 @@ UAstNode *parse_try(UParser *p) {
         }
         consume(p);
 
+        /* Accept optional `var` keyword before the catch variable name. */
+        if (peek(p).type == TOK_KW_VAR) {
+            consume(p);  /* consume 'var' — treated as sugar, no semantic change */
+        }
+
         UToken var_tok = peek(p);
         if (var_tok.type != TOK_IDENT) {
             return make_error(p, PARSE_EXPECTED_IDENT,
@@ -810,6 +824,14 @@ UAstNode *parse_try(UParser *p) {
         consume(p);
         catch_var_start = var_tok.u.str.start;
         catch_var_len   = var_tok.u.str.len;
+
+        /* Accept optional `if expr` guard. */
+        if (peek(p).type == TOK_KW_IF) {
+            consume(p);  /* consume 'if' */
+            catch_guard = parse_expression(p, 0);
+            if (!catch_guard) return (UAstNode *)&uparser_oom_sentinel;
+            if (catch_guard->kind == AST_ERROR) return catch_guard;
+        }
 
         UToken rp = peek(p);
         if (rp.type != TOK_RPAREN) {
@@ -822,6 +844,14 @@ UAstNode *parse_try(UParser *p) {
         catch_body = parse_block(p);
         if (!catch_body) return (UAstNode *)&uparser_oom_sentinel;
         if (catch_body->kind == AST_ERROR) return catch_body;
+
+        /* Accept optional `else { body }` clause after catch. */
+        if (peek(p).type == TOK_KW_ELSE) {
+            consume(p);  /* consume 'else' */
+            else_body = parse_block(p);
+            if (!else_body) return (UAstNode *)&uparser_oom_sentinel;
+            if (else_body->kind == AST_ERROR) return else_body;
+        }
     }
 
     /* Optional finally clause. */
@@ -846,6 +876,8 @@ UAstNode *parse_try(UParser *p) {
     node->u.try_stmt.catch_var_start = catch_var_start;
     node->u.try_stmt.catch_var_len   = catch_var_len;
     node->u.try_stmt.catch_body      = catch_body;
+    node->u.try_stmt.catch_guard     = catch_guard;
+    node->u.try_stmt.else_body       = else_body;
     node->u.try_stmt.finally_body    = finally_body;
     return node;
 }

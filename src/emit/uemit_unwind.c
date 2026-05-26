@@ -91,13 +91,24 @@ void uemit_load_catch_value(UEmitter *e, uint8_t reg, uint32_t line) {
  * -------------------------------------------------------------------------- */
 
 /* Emit the catch-handler section: reset temps, declare the catch variable
- * (if named), emit OP_LOAD_CATCH_VALUE, emit catch_body in a new block,
+ * (if named), emit OP_LOAD_CATCH_VALUE, optionally emit a guard check that
+ * re-throws if the guard expression is falsy, emit catch_body in a new block,
  * then un-declare the catch var.
  *
  * Called once from the catch+finally path and once from the catch-only path.
- * Both callers have already patched the TRY_BEGIN Bx to the current PC. */
+ * Both callers have already patched the TRY_BEGIN Bx to the current PC.
+ *
+ * Wave 6 W5: if catch_guard != NULL, emit:
+ *   OP_LOAD_CATCH_VALUE → e_reg
+ *   <guard expr> → guard_reg
+ *   OP_TEST guard_reg, 0, 1   ; skip JMP if guard is truthy (guard passes)
+ *   OP_JMP  throw_pc          ; guard failed — re-throw
+ *   <catch body>
+ *   OP_JMP  past_throw_pc
+ *   [throw_pc]: OP_THROW e_reg */
 static void emit_catch_handler_section(UEmitter *e, UAstNode *n) {
     const char *cv_name = NULL;
+    uint8_t     e_reg   = 0U;  /* register holding the caught exception value */
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
     e->next_reg = e->current_fs->freereg;
 
@@ -109,12 +120,36 @@ static void emit_catch_handler_section(UEmitter *e, UAstNode *n) {
         int slot = uemit_declare_local(e, cv_name,
                                        n->u.try_stmt.catch_var_len);
         if (slot < 0) return;
-        uemit_load_catch_value(e, (uint8_t)slot, (uint32_t)n->line);
+        e_reg = (uint8_t)slot;
+        uemit_load_catch_value(e, e_reg, (uint32_t)n->line);
         if (e->error != EMIT_OK) return;
     } else {
-        uint8_t tmp = e->next_reg++;
+        e_reg = e->next_reg++;
         if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-        uemit_load_catch_value(e, tmp, (uint32_t)n->line);
+        uemit_load_catch_value(e, e_reg, (uint32_t)n->line);
+        if (e->error != EMIT_OK) return;
+    }
+
+    /* Optional guard: `catch (var e if cond)` — re-throw if guard is falsy.
+     * Layout:
+     *   <guard expr> → guard_reg
+     *   OP_TEST guard_reg, 0, 1   ; skip JMP if guard is truthy (pass)
+     *   OP_JMP  rethrow_pc        ; guard failed — re-throw
+     *   <catch body>
+     *   OP_JMP  past_rethrow_pc
+     *   [rethrow_pc]: OP_THROW e_reg */
+    int jmp_past_throw_pc = -1;
+    if (n->u.try_stmt.catch_guard != NULL) {
+        uint8_t guard_reg = emit_expr(e, n->u.try_stmt.catch_guard);
+        if (e->error != EMIT_OK) return;
+
+        /* TEST guard_reg, 0, 1 — skip the JMP when guard is truthy (pass) */
+        emit_instr(e, uinstr_enc_abc(OP_TEST, guard_reg, 0U, 1U), (uint32_t)n->line);
+        if (e->error != EMIT_OK) return;
+
+        /* JMP to re-throw when guard is falsy (patched after catch body) */
+        jmp_past_throw_pc = (int)emit_instr_count(e);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
         if (e->error != EMIT_OK) return;
     }
 
@@ -122,6 +157,35 @@ static void emit_catch_handler_section(UEmitter *e, UAstNode *n) {
     emit_expr(e, n->u.try_stmt.catch_body);
     if (e->error != EMIT_OK) { uemit_close_block(e); return; }
     if (!uemit_close_block(e)) return;
+
+    if (n->u.try_stmt.catch_guard != NULL) {
+        /* JMP past the re-throw (catch body has finished, guard passed) */
+        int jmp_past_rethrow_pc = (int)emit_instr_count(e);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+        if (e->error != EMIT_OK) return;
+
+        /* Patch jmp_past_throw → here: guard failed, re-throw */
+        {
+            int rethrow_target = (int)emit_instr_count(e);
+            emit_patch_instr(e, jmp_past_throw_pc,
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_past_throw_pc,
+                                                rethrow_target)));
+        }
+
+        /* OP_THROW e_reg — re-throw the original exception value */
+        uemit_throw(e, e_reg, (uint32_t)n->line);
+        if (e->error != EMIT_OK) return;
+
+        /* Patch jmp_past_rethrow → here */
+        {
+            int past_rethrow_target = (int)emit_instr_count(e);
+            emit_patch_instr(e, jmp_past_rethrow_pc,
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_past_rethrow_pc,
+                                                past_rethrow_target)));
+        }
+    }
 
     if (cv_name != NULL && e->current_fs->nactvar > 0) {
         e->current_fs->nactvar--;
@@ -136,10 +200,14 @@ static void emit_catch_handler_section(UEmitter *e, UAstNode *n) {
  * rd = result register (pre-allocated by emit_try_arm).
  *
  * Returns rd on success or 0 on error (e->error set).
- * Emits identical bytecode to the original three inline branches. */
+ *
+ * Wave 6 W5: else_body is emitted inline on the normal-exit path (after
+ * TRY_END, before JMP past_handler) so finally still wraps it correctly
+ * in the catch+finally case.  Guard logic lives in emit_catch_handler_section. */
 static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
     const int has_catch   = (n->u.try_stmt.catch_body   != NULL);
     const int has_finally = (n->u.try_stmt.finally_body != NULL);
+    const int has_else    = (n->u.try_stmt.else_body    != NULL);
 
     if (has_catch && has_finally) {
         /* === OUTER TRY_FRAME: finally wrapper === */
@@ -162,6 +230,17 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* OP_TRY_END (inner) */
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+
+        /* Optional else body: runs on normal exit, still inside outer finally frame */
+        if (has_else) {
+            e->next_reg = rd;
+            e->current_fs->freereg = fs_temp_floor(e->current_fs);
+            if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+            if (!uemit_open_block(e, false)) return 0U;
+            emit_expr(e, n->u.try_stmt.else_body);
+            if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+            if (!uemit_close_block(e)) return 0U;
+        }
 
         /* JMP past catch */
         int jmp_past_catch_pc = (int)emit_instr_count(e);
@@ -241,6 +320,17 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+
+        /* Optional else body: runs on normal exit (after TRY_END, before JMP past handler) */
+        if (has_else) {
+            e->next_reg = rd;
+            e->current_fs->freereg = fs_temp_floor(e->current_fs);
+            if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+            if (!uemit_open_block(e, false)) return 0U;
+            emit_expr(e, n->u.try_stmt.else_body);
+            if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+            if (!uemit_close_block(e)) return 0U;
+        }
 
         /* JMP past handler */
         int jmp_past_handler_pc = (int)emit_instr_count(e);

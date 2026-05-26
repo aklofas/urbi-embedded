@@ -368,10 +368,13 @@ struct UAstNode {
         } assign;
         struct {                                            /* AST_TRY */
             UAstNode   *body;              /* AST_BLOCK — the try body */
-            /* catch clause — both NULL when no catch */
+            /* catch clause — all NULL when no catch */
             const char *catch_var_start;   /* zero-copy catch variable name */
             int         catch_var_len;
             UAstNode   *catch_body;        /* AST_BLOCK or NULL */
+            UAstNode   *catch_guard;       /* guard expr from `catch (var e if cond)`, or NULL */
+            /* else clause — runs when try body completes without exception */
+            UAstNode   *else_body;         /* AST_BLOCK or NULL */
             /* finally clause */
             UAstNode   *finally_body;      /* AST_BLOCK or NULL */
         } try_stmt;
