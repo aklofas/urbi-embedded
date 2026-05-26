@@ -55,6 +55,24 @@ jobs:
           grep -q "repl_security_bind_auth" /tmp/sec-asan.log
           ! grep -qE "AddressSanitizer|SIGABRT|SIGSEGV" /tmp/sec-asan.log
 
+  stdlib-bytecode-fresh:
+    name: stdlib bytecode freshness (W5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y gcc make
+      - name: Build and check stdlib freshness
+        run: make test-stdlib-bytecode-fresh
+
+  dependency-pins:
+    name: dependency pin static check (W5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check CI/docs dependency-pin sync
+        run: make test-dependency-pins
+
   cross-arm:
     name: cross-compile (ARM Cortex-M7)
     runs-on: ubuntu-latest

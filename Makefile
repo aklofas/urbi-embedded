@@ -571,6 +571,22 @@ test-embedding-guide: $(LIB) $(LIBURBI_AUX)
 test-abi-freeze:
 	@./tests/scripts/check-abi-freeze.sh
 
+# W5/v0.10.6: stdlib bytecode freshness gate (release F7).
+# Regenerates the stdlib bytecode blob and diffs against the checked-in
+# src/stdlib/urbi_stdlib_bytecode.gen.c.  Detects .u edits that were not
+# followed by a re-bake commit.  Depends on the bake tool being built.
+.PHONY: test-stdlib-bytecode-fresh
+test-stdlib-bytecode-fresh: tools/urbi-compile-stdlib
+	@./tests/scripts/check-stdlib-fresh.sh
+
+# W5/v0.10.6: dependency-pin static check (release F14).
+# Parses CI for Docker/SDK/toolchain version pins and compares them to
+# docs/reference/embedded-port-sources.md.  Catches CI/docs drift without
+# needing network access or a live toolchain.
+.PHONY: test-dependency-pins
+test-dependency-pins:
+	@./tests/scripts/check-dependency-pins.sh
+
 # W4/v0.10.6: REPL security gate aggregate.
 # Runs all repl_security_* and repl_oom_paths tests via the unit-test runner.
 # Wired into RELEASETEST_PHASE1; also runs standalone for CI cost budgeting.
@@ -830,7 +846,8 @@ RELEASETEST_PHASE1 := \
     test-bake-smoke test-bytecode-only test-freestanding-host \
     test-gc-roots-coverage test-api-manifest test-aux-symbols \
     test-embedding-guide test-external-embed-iinclude test-port-stm32f4 \
-    test-abi-freeze test-wire-freeze test-repl-security
+    test-abi-freeze test-wire-freeze test-repl-security \
+    test-stdlib-bytecode-fresh test-dependency-pins
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -1448,10 +1465,14 @@ coverage: coverage-tools
 	$(MAKE) TARGET=host-coverage \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g --coverage" \
 		test
+	# W5/v0.10.6: enforce ≥85% line coverage (Path A — see release-readiness.md §Coverage).
+	# Threshold set at 85% to match measured baseline at v0.10.6-stabilization (87%).
+	# Aspirational target for v1.0 is 90%; raise the threshold when the gap closes.
 	gcovr --root . \
 	      --object-directory build/host-coverage \
 	      --filter 'src/' \
 	      --merge-mode-functions=merge-use-line-min \
+	      --fail-under-line 85 \
 	      --txt \
 	      --html-details build/host-coverage/report.html
 	@echo ""
@@ -1566,4 +1587,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins
