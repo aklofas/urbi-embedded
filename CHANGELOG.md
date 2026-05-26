@@ -1,5 +1,72 @@
 # Changelog
 
+## v0.10.5-legacy-decisions — 2026-05-26
+
+Wave 6 of the v0.10.x architectural refactor arc. Per-construct decisions
+on every legacy-language compatibility gap. `docs/language-compatibility-
+matrix.md` fully populated; v1.0 conformance denominator now computable.
+11 worktrees:
+
+- **W1: control flow.** `for (var x : iter)` / `for (var x in iter)`,
+  `break`, `continue`, `switch` IMPLEMENTED — lowered to OP_JMP with
+  loop-context patch-lists (no new opcodes). C-style `for (init; cond;
+  step)`, `loop`, `do (recv) { }` DEFERRED-v1.x; migration recipe at
+  `docs/migration/control-flow-migration.md`. Closes legacy F2.
+- **W2: quoted identifiers + operator slots.** `'+'`, `'()'`, quoted-
+  keyword slot access IMPLEMENTED; lexer adds `scan_quoted_ident`
+  emitting `TOK_IDENT` with body pointer. Closes legacy F5.
+- **W3: assert keyword.** `assert(expr)` + `assert { block }`
+  IMPLEMENTED, lowered to `if-throw` (no new opcode). Closes legacy F9.
+- **W4: angle literals.** `180deg` / `1rad` / `200grad` numeric
+  suffixes producing `TOK_FLOAT` (radians) IMPLEMENTED via
+  `apply_angle_suffix` (divide-then-multiply for exact IEEE-754
+  multiples of pi). `Math.pi` already shipped as named constant.
+  Physical literals DEFERRED-v1.x. Closes legacy F8.
+- **W5: exception syntax.** `catch (var e)`, `catch (var e if guard)`,
+  `try-catch-else` all IMPLEMENTED (`parse_try` extension plus emit
+  guard / else paths). Closes legacy F6.
+- **W6: block comments.** Non-nesting DROPPED-LOCKED (intentional
+  divergence from legacy; manual-unwind migration recipe at
+  `docs/migration/block-comments-migration.md`). Closes legacy F7.
+- **W7: CallMessage migration.** Permanently DROPPED (introspection
+  removed at object-model level — incompatible with cooperative
+  single-VM-per-thread scheduler plus embedded heap budgets). 278-line
+  migration design at `docs/migration/callmessage-migration.md`.
+  `tests/chk/stdlib/legacy/PORT_NOTES.md` walked end-to-end; stale
+  "no float literals" / "no closure upvalue capture" / "no multi-
+  slot class bodies" claims removed. Closes legacy F10 plus F11.
+- **W8: tag-expr widening.** `Tag.scope: body` (member-expr tag)
+  IMPLEMENTED. `tag: body onleave handler` DEFERRED-v1.x.
+  (Wave 3 W5 already closed bare-statement form.) Closes legacy F3
+  completion.
+- **W9: reactive surface.** `at (e?(var x)) body`,
+  `whenever (e?(var x)) body` (payload binding), whenever-else
+  (falling-edge), `waituntil (e?)` IMPLEMENTED. `at (cond ~ duration)`,
+  `watch(expr)`, `$wheneverOn` / `$wheneverOff` DEFERRED-v1.x.
+  Closes legacy F4 completion.
+- **W10: list/dict literals plus subscript plus slot-install.** `[1, 2, 3]`,
+  `["a" => 1]`, `l[i]`, `l[i] = v`, `l[i] += v`, `var obj.slot = v`
+  all IMPLEMENTED via stdlib-call lowering (`List.new` plus `.append`,
+  `Dict.new` plus `.set`, `.get` / `.set` for subscript). 4 new tokens
+  (`[`, `]`, `=>`, `+=`); 4 new AST kinds. No new opcodes. Closes
+  legacy F14.
+- **W11: top-level `this` / Lobby singleton.** MIGRATED to `Realm`
+  (already-shipped per-realm global singleton since v0.9.0).
+  Migration recipe at `docs/migration/top-level-this-lobby-migration.md`.
+  Closes legacy F13.
+
+ABI 0/16/0 to 0/17/0 (15th use of pre-v1.0 escape clause; MINOR bump
+for new public surface — 5 new tokens, 6 plus new AST node kinds, 4
+plus new parser entry points). Wire format unchanged at v1.9 / 0x19
+(no new opcodes — all new constructs lowered to existing OPs via
+stdlib calls or jmp patterns).
+
+26 releasetest gates green. 269 chk fixtures times 2 sanitizers (498 to
+538 fixture-sanitizer runs). 1970 unit cases. ASan plus UBSan clean.
+
+audit-1 F14 (test conformance manifest) becomes computable as a side
+effect of matrix completion.
+
 ## v0.10.4-vm-decomp — 2026-05-25
 
 Wave 5 of the v0.10.x architectural refactor arc. Behaviour-preserving

@@ -138,6 +138,25 @@
  *      struct UVM size shifts (visible to embedders calling
  *      urbi_vm_sizeof() per W1 of v0.10.3-api-opacity).  14th use of
  *      pre-v1.0 escape clause.  (0/15/0 → 0/16/0)
+ *  14. v0.10.5-legacy-decisions — Wave 6 of v0.10.x architectural refactor
+ *      arc.  Per-construct decisions on every legacy-language compatibility
+ *      gap.  11 worktrees: W6 block-comment non-nesting LOCKED (dropped);
+ *      W7 CallMessage permanently dropped (migration design + PORT_NOTES
+ *      refresh); W4 angle literals deg/rad/grad implemented; W2 quoted
+ *      identifiers implemented; W3 assert keyword implemented (lowered to
+ *      if-throw, no new opcode); W5 catch (var e [if guard]) + try-else
+ *      implemented; W11 top-level this/Lobby migrated to Realm (named
+ *      singleton); W8 tag-expr member-expr implemented (onleave deferred-
+ *      v1.x); W10 list/dict literals + subscript + var-obj-slot all
+ *      implemented via stdlib-call lowering (no opcodes); W1 for-each +
+ *      break/continue + switch implemented (C-style for / loop / do-recv
+ *      deferred-v1.x); W9 at(e?(var x)) + whenever(e?(var x)) payload +
+ *      whenever-else + waituntil(e?) implemented (W9.2 ~duration + W9.4
+ *      watch(expr) + W9.5 $wheneverOn/Off deferred-v1.x).  ABI MINOR bump
+ *      for new public token + AST + parser surface.  No wire format
+ *      change (no new opcodes in this wave).  docs/language-compatibility-
+ *      matrix.md fully populated; v1.0 conformance denominator now
+ *      computable.  15th use of pre-v1.0 escape clause.  (0/16/0 → 0/17/0)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -152,7 +171,7 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  16
+#define URBI_API_VERSION_MINOR  17
 #define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
