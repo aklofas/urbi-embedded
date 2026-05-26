@@ -339,23 +339,22 @@ reader_main(void *arg)
     }
     r->client_fd = -1;
 
-    /* Tear down the session.  After this point the dispatcher will no
-     * longer find this session_id (urepl_session_destroy unlinks it),
-     * so any jobs already on the queue addressed to this session are
-     * dropped cleanly by urepl_dispatch_job's "unknown session" path. */
-    UREPL_MUTEX_LOCK(&server->sessions_mutex);
-    /* Detach session-side back-pointer before destroy so the wake-all
-     * walk in urepl_listener_wake_all_readers doesn't dereference us
-     * after free. */
+    /* === W1: single-owner teardown — request, don't destroy ============
+     * Previously this called urepl_session_destroy here, which raced with
+     * urepl_listener_stop_and_join's defensive destroy on the same session,
+     * causing ~50% segfault rate under 4-session TCP stress.
+     *
+     * After W1: reader thread ONLY sets the needs_teardown flag.  The VM
+     * thread (urepl_dispatch_drain_if_active → urepl_session_reap_pending)
+     * observes the flag at the next safepoint and runs urepl_session_destroy
+     * as the sole owner.  r->session is NULL'd immediately so any late
+     * flush_session_output call in this thread won't dereference a
+     * mid-teardown pointer. */
     if (r->session != NULL) {
-        r->session->reader = NULL;
-    }
-    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
-
-    if (r->session != NULL) {
-        urepl_session_destroy(server, r->session);
+        urepl_request_teardown(r->session);
         r->session = NULL;
     }
+    /* === end W1 ======================================================== */
 
     return NULL;
 }

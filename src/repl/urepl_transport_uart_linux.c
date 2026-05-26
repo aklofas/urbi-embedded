@@ -26,6 +26,14 @@
 #include <termios.h>
 #include <unistd.h>
 
+/* CRTSCTS (hardware flow-control flag) is POSIX XSI but gated behind
+ * _GNU_SOURCE on Linux.  -std=c99 with -Wpedantic doesn't define it.
+ * Provide a safe fallback: if the kernel header doesn't expose it via
+ * the current feature-test set, use 0 (clear nothing extra). */
+#ifndef CRTSCTS
+#  define CRTSCTS 0
+#endif
+
 typedef struct UUartLinuxState {
     int  fd;
     bool accepted;
