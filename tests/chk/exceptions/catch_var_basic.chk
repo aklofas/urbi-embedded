@@ -1,0 +1,23 @@
+# Wave 6 W5 — catch (var e) syntax (v0.10.5)
+# Covers: optional `var` keyword before catch variable name;
+#         `catch (var e)` is syntactic sugar for `catch (e)` — same semantics.
+# Ruling: implemented — parser drops `var` keyword, bind semantics unchanged.
+# Source: legacy F6; legacy/repos/aldebaran-urbi/tests/2.x/exceptions/exceptions.chk
+
+# --- catch (var e) works like catch (e) ---
+var caught = 0; try { throw(1) } catch (var e) { caught = 1 }; caught
+[00000001] 1
+
+# --- catch variable receives the thrown value ---
+var val = 0; try { throw(42) } catch (var e) { val = e }; val
+[00000002] 42
+
+# --- catch (var e) on no-throw leaves try result ---
+var r = 0; try { r = 7 } catch (var e) { r = 0 }; r
+[00000003] 7
+
+# --- catch (var e) and catch (e) are interchangeable ---
+var a = 0; try { throw(1) } catch (e) { a = 1 }; a
+[00000004] 1
+var b = 0; try { throw(1) } catch (var e) { b = 1 }; b
+[00000005] 1
