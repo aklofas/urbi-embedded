@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.10.6-stabilization — pending
+
+Wave 7 of the v0.10.x architectural refactor arc (arc-closing wave). See
+controller changelog entry for full wave summary. W5 note: the following
+v1.0 quality-bar claims are formally removed from v1.0 scope at this tag.
+
+### v1.0 quality-bar claim removals (Wave 7 W5)
+
+- **Branch-coverage gate:** Branch coverage is measured per-tag via
+  `make test-branch-coverage` (gcovr `--branches`) and reported in the
+  release log, but is NOT gated. The v0.10.5 baseline was below 80%; gating
+  a threshold we cannot currently meet would create an unenforced-in-
+  practice gate. Branch coverage ≥80% is an aspirational v1.x target.
+  Line coverage ≥85% IS enforced (`make coverage --fail-under-line 85`);
+  current baseline 87% at v0.10.6.
+
+- **Condition (MC/DC) coverage gate:** No standard gcovr mode for C99 MC/DC
+  coverage. The metric would require branch-level gcov instrumentation which
+  is already captured by the branch-coverage measurement. Dropped from v1.0
+  quality bars entirely.
+
+- **GC pause ≤1ms SLA:** No representative reactive workload is defined;
+  measuring under a synthetic microbenchmark would not be a reliable claim.
+  GC-pause measurement and SLA deferred to v1.x post-v0.11 (ROS2 milestone
+  will define representative workloads). Tracking entry in
+  `docs/urbi-embedded-design-risks.md`.
+
+- **STM32H7 target:** Not brought up at v0.10.6; no CI gate. Deferred to
+  v1.x / ROS2 milestone.
+
+- **ESP32-C3 target:** Not brought up at v0.10.6; no CI gate. Deferred to
+  v1.x.
+
 ## v0.10.5-legacy-decisions — 2026-05-26
 
 Wave 6 of the v0.10.x architectural refactor arc. Per-construct decisions
