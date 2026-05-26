@@ -110,8 +110,8 @@ install_watcher_runtime(
      * urbi_run_closure_on_scratch (uwatcher_scratch.c).  The OP_GETSLOT
      * probe (armed above via in_watcher_install) records reads into
      * vm->trace_read_set during this dispatch. */
-    if (vm->test_install_cond_hook != NULL) {
-        vm->test_install_cond_hook(vm, cond, &cond_value, &cond_threw);
+    if (vm->test_hooks != NULL && vm->test_hooks->install_cond != NULL) {
+        vm->test_hooks->install_cond(vm, cond, &cond_value, &cond_threw);
     } else {
         (void)urbi_run_closure_on_scratch(vm, cond, &cond_value, &cond_threw);
     }

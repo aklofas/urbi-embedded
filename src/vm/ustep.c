@@ -16,7 +16,7 @@
 /* v0.9.1 — REPL service step-driver hook.  Defined in src/repl/
  * urepl_dispatch.c when URBI_ENABLE_REPL=1, weak/no-op otherwise so
  * the default build links cleanly without the REPL TUs.  The hook
- * reads vm->repl_server: if non-NULL, drains the per-server job queue
+ * reads vm->repl->server: if non-NULL, drains the per-server job queue
  * and signals reader subthreads to flush output.  Called BEFORE any
  * other step work so REPL commands submitted between steps are
  * visible to bytecode that runs this tick. */

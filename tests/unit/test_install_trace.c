@@ -322,12 +322,12 @@ UTEST(install_arms_and_resets_trace_fields)
     /* W0/v0.10.2: Phase 5a rejects empty read-sets; plant one cell so
      * install can complete and we can observe the phase-2/4 field reset. */
     g_t36_cell.gc_byte = 0;
-    vm.test_install_cond_hook = hook_plant_one_cell_t36;
+    vm.test_hooks->install_cond = hook_plant_one_cell_t36;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
 
     /* Stub returns OK; in_watcher_install must be 0 after phase 4. */
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
@@ -410,7 +410,7 @@ UTEST(install_returns_readset_over_when_overflow)
 
     g_t37_warn_count = 0;
     vm.host_log_fn            = capture_log_t37;
-    vm.test_install_cond_hook = hook_force_overflow;
+    vm.test_hooks->install_cond = hook_force_overflow;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
@@ -421,7 +421,7 @@ UTEST(install_returns_readset_over_when_overflow)
     UASSERT_EQ(1, g_t37_warn_count);
     UASSERT(strstr(g_t37_last_msg, "read-set exceeds") != NULL);
 
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
@@ -442,7 +442,7 @@ UTEST(install_returns_trace_fault_on_cond_throw)
 
     g_t37_warn_count = 0;
     vm.host_log_fn            = capture_log_t37;
-    vm.test_install_cond_hook = hook_force_throw;
+    vm.test_hooks->install_cond = hook_force_throw;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
@@ -452,7 +452,7 @@ UTEST(install_returns_trace_fault_on_cond_throw)
     UASSERT_EQ(1, g_t37_warn_count);
     UASSERT(strstr(g_t37_last_msg, "condition threw") != NULL);
 
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }

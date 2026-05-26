@@ -352,8 +352,8 @@ UTEST(watcher_eval_at_edge_only_fires_on_false_to_true)
     g_fire_count       = 0;
     g_condition_truthy = 0;  /* start false */
 
-    vm.test_watcher_condition_hook = condition_hook_toggle;
-    vm.test_watcher_fire_hook      = fire_hook_count;
+    vm.test_hooks->watcher_condition = condition_hook_toggle;
+    vm.test_hooks->watcher_fire      = fire_hook_count;
 
     w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, /*condition=*/make_dummy_closure(&vm),
@@ -395,8 +395,8 @@ UTEST(watcher_eval_whenever_level_fires_each_dirty_pass)
 
     g_fire_count = 0;
 
-    vm.test_watcher_condition_hook = condition_hook_fixed_true;
-    vm.test_watcher_fire_hook      = fire_hook_count;
+    vm.test_hooks->watcher_condition = condition_hook_fixed_true;
+    vm.test_hooks->watcher_fire      = fire_hook_count;
 
     w = urbi_watcher_install_for_test(
         &vm, UWATCHER_WHENEVER, NULL, /*condition=*/make_dummy_closure(&vm),
@@ -426,8 +426,8 @@ UTEST(watcher_eval_skips_pending_unregister)
 
     g_fire_count = 0;
 
-    vm.test_watcher_condition_hook = condition_hook_fixed_true;
-    vm.test_watcher_fire_hook      = fire_hook_count;
+    vm.test_hooks->watcher_condition = condition_hook_fixed_true;
+    vm.test_hooks->watcher_fire      = fire_hook_count;
 
     w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, /*condition=*/make_dummy_closure(&vm),
@@ -466,8 +466,8 @@ UTEST(watcher_install_seeds_last_value_cache)
 
     g_fire_count = 0;
 
-    vm.test_watcher_condition_hook = condition_hook_fixed_true;
-    vm.test_watcher_fire_hook      = fire_hook_count;
+    vm.test_hooks->watcher_condition = condition_hook_fixed_true;
+    vm.test_hooks->watcher_fire      = fire_hook_count;
 
     w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, /*condition=*/make_dummy_closure(&vm),
@@ -613,7 +613,7 @@ UTEST(pending_onleave_drain_invokes_hook_when_onleave_set)
 
     g_onleave_count     = 0;
     g_onleave_order_idx = 0;
-    vm.test_watcher_onleave_hook = onleave_hook_count;
+    vm.test_hooks->watcher_onleave = onleave_hook_count;
 
     /* Pass a real GC-managed onleave closure so run_watcher_onleave is entered.
      * The hook (onleave_hook_count) intercepts before any bytecode dispatch. */
@@ -642,7 +642,7 @@ UTEST(pending_onleave_drain_skips_null_onleave)
     urbi_vm_init(&vm, NULL, NULL);
 
     g_onleave_count = 0;
-    vm.test_watcher_onleave_hook = onleave_hook_count;
+    vm.test_hooks->watcher_onleave = onleave_hook_count;
 
     w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, NULL, NULL,
@@ -671,7 +671,7 @@ UTEST(pending_onleave_drain_ordering_FIFO)
 
     g_onleave_count     = 0;
     g_onleave_order_idx = 0;
-    vm.test_watcher_onleave_hook = onleave_hook_count;
+    vm.test_hooks->watcher_onleave = onleave_hook_count;
 
     wa = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, NULL, NULL, make_dummy_closure(&vm), NULL, 0U);
@@ -833,7 +833,7 @@ UTEST(watcher_root_walker_visits_pending_onleave)
      * dispatching the native closure through urbi_run_closure_on_scratch
      * (which would crash because native closures have proto == NULL).
      * Test only verifies walker presence (count_pending >= 2 above). */
-    vm.test_watcher_onleave_hook = onleave_drain_noop;
+    vm.test_hooks->watcher_onleave = onleave_drain_noop;
     drain_pending_onleave_queue(&vm);
 
     urbi_vm_destroy(&vm);
@@ -914,8 +914,8 @@ UTEST(spawn_body_coroutine_relocated_still_works)
     UASSERT(w->last_value_cache.kind == UVAL_NIL);
 
     /* Now set the condition hook (returns true) and the fire hook. */
-    vm.test_watcher_condition_hook = condition_hook_fixed_true;
-    vm.test_watcher_fire_hook      = fire_hook_count;
+    vm.test_hooks->watcher_condition = condition_hook_fixed_true;
+    vm.test_hooks->watcher_fire      = fire_hook_count;
 
     /* Trigger one dirty eval — rising edge: nil→true fires once. */
     vm.watcher_dirty_count = 1U;
@@ -960,8 +960,8 @@ UTEST(eval_pass_walks_all_watchers)
 
     /* Set hooks to fire: condition_hook_fixed_true returns truthy;
      * fire_hook_count increments g_fire_count once per fired watcher. */
-    vm.test_watcher_condition_hook = condition_hook_fixed_true;
-    vm.test_watcher_fire_hook      = fire_hook_count;
+    vm.test_hooks->watcher_condition = condition_hook_fixed_true;
+    vm.test_hooks->watcher_fire      = fire_hook_count;
 
     /* Single dirty-eval pass — all 3 see nil→true rising edge. */
     vm.watcher_dirty_count = 1U;

@@ -36,6 +36,7 @@
 #include "chunk/uchunk.h"           /* uchunk_destroy — M6 Phase 4 stdlib_module teardown */
 #include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM — T23 return-code surface */
 #include "changed/uchanged_node.h"  /* urbi_deferred_slot_changes_walk_roots */
+#include "runtime/utest_hooks.h"    /* W3/v0.10.4: UTestHooks lifecycle */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -111,11 +112,13 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     urbi_proto_ref_vm_born();
 #endif
 
-    /* v0.9.1 — must be NULLed BEFORE any subsystem init that drives
-     * bytecode (urbi_run_chunk → urbi_step → urepl_dispatch_drain_if_active
+    /* v0.9.1 / W3-v0.10.4 — must be NULLed BEFORE any subsystem init that
+     * drives bytecode (urbi_run_chunk → urbi_step → urepl_dispatch_drain_if_active
      * reads this field).  Initialized first so partial-init bailout paths
-     * never leave it as stack garbage. */
-    vm->repl_server = NULL;
+     * never leave it as stack garbage.  vm->repl is allocated by
+     * urepl_state_create (src/repl/urepl.c) only when a REPL server is
+     * started; it stays NULL until then. */
+    vm->repl = NULL;
     /* v0.9.1 Task 22 — must be NULLed BEFORE object_roots_walker runs.
      * Tests that don't call urbi_stdlib_boot still trigger GC slices via
      * realm creation, and the walker dereferences vm->debug_proto if
@@ -318,10 +321,9 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->trace_read_set_count   = 0U;
     /* trace_read_set[] is uninitialized: only read when in_watcher_install is set,
      * and entries are written before they are read. */
-    vm->test_watcher_condition_hook = NULL;
-    vm->test_watcher_fire_hook      = NULL;
-    vm->test_watcher_onleave_hook   = NULL;
-    vm->test_install_cond_hook      = NULL;
+    /* W3/v0.10.4: watcher/install test seams moved to UTestHooks; allocated
+     * below after the allocator is wired so alloc_fn is available. */
+    vm->test_hooks = NULL;
     vm->pending_onleave_head   = NULL;
     vm->pending_onleave_tail   = NULL;
 
@@ -446,9 +448,21 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->ref_table.free_list_head = (size_t)-1;  /* SIZE_MAX: no free slots */
     urbi_gc_register_root_provider(vm, ref_table_walk_roots);
 
-    /* vm->repl_server already cleared at the top of urbi_vm_init (the
-     * step-driver hook reads it on every urbi_step call, including those
-     * issued by partial-init paths). */
+    /* vm->repl already NULLed at the top of urbi_vm_init (the step-driver
+     * hook reads it on every urbi_step call, including those issued by
+     * partial-init paths).  REPL state is allocated by urepl_state_create
+     * only when a server is started (W3/v0.10.4). */
+
+    /* W3/v0.10.4: allocate the UTestHooks wrapper so tests can install
+     * watcher/install seams via vm->test_hooks->watcher_condition etc.
+     * vm->test_hooks is NULL-checked at every use site so freestanding
+     * builds (alloc_fn == NULL) are safe. */
+    if (vm->alloc_fn != NULL) {
+        vm->test_hooks = utest_hooks_create(vm);
+        if (vm->test_hooks == NULL) {
+            oom_seen = 1;
+        }
+    }
 
     /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
@@ -524,6 +538,12 @@ void urbi_vm_destroy(UVM *vm) {
     if (vm->handle_table != NULL && vm->alloc_fn != NULL) {
         vm->alloc_fn(vm->handle_table, 0, vm->alloc_ud);
         vm->handle_table = NULL;
+    }
+
+    /* W3/v0.10.4: free UTestHooks wrapper (audit-1 F8). */
+    if (vm->test_hooks != NULL) {
+        utest_hooks_destroy(vm, vm->test_hooks);
+        vm->test_hooks = NULL;
     }
 
     /* Gap #4 (M6 Wave 3): free heap-allocated operator-overload IC. */

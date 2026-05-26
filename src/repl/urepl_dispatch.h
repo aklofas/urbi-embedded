@@ -99,9 +99,9 @@ void urepl_dispatch_job(UReplServer *server, UReplJob *job);
 void urepl_dispatch_drain(UReplServer *server);
 
 /* Step-driver hook (Phase 3).  Called from urbi_step at the top of
- * every host-thread driver invocation: if vm->repl_server is non-NULL,
- * drains its job queue + dispatches each job, then signals all session
- * reader subthreads to flush their output ringbufs to socket.
+ * every host-thread driver invocation: if vm->repl (and vm->repl->server)
+ * is non-NULL, drains its job queue + dispatches each job, then signals
+ * all session reader subthreads to flush their output ringbufs to socket.
  *
  * The src/vm/ustep.c side declares this as a weak symbol so the default
  * build (URBI_ENABLE_REPL=0) links cleanly even though no urepl_*.o

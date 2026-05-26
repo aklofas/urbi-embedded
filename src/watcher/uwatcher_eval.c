@@ -39,8 +39,8 @@ invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
 
     if (w->condition == NULL) return nil;
 
-    if (vm->test_watcher_condition_hook != NULL) {
-        return vm->test_watcher_condition_hook(vm, w);
+    if (vm->test_hooks != NULL && vm->test_hooks->watcher_condition != NULL) {
+        return vm->test_hooks->watcher_condition(vm, w);
     }
 
     /* Real bytecode dispatch on the scratch frame.  Eval-time throws
@@ -85,8 +85,8 @@ invoke_body_inline(struct UVM *vm, struct UWatcher *w)
     URBI_INTERNAL_ASSERT(w->body != NULL);
 #endif
 
-    if (vm->test_watcher_fire_hook != NULL) {
-        vm->test_watcher_fire_hook(vm, w);
+    if (vm->test_hooks != NULL && vm->test_hooks->watcher_fire != NULL) {
+        vm->test_hooks->watcher_fire(vm, w);
         return;
     }
 
@@ -120,8 +120,8 @@ invoke_onleave_inline(struct UVM *vm, struct UWatcher *w)
     URBI_INTERNAL_ASSERT(w->onleave != NULL);
 #endif
 
-    if (vm->test_watcher_onleave_hook != NULL) {
-        vm->test_watcher_onleave_hook(vm, w);
+    if (vm->test_hooks != NULL && vm->test_hooks->watcher_onleave != NULL) {
+        vm->test_hooks->watcher_onleave(vm, w);
         return;
     }
 
@@ -213,8 +213,9 @@ watcher_eval_dirty(struct UVM *vm)
                 if (rising) {
                     if (w->body != NULL) {
                         spawn_body_coroutine(vm, w);
-                    } else if (vm->test_watcher_fire_hook != NULL) {
-                        vm->test_watcher_fire_hook(vm, w);
+                    } else if (vm->test_hooks != NULL
+                               && vm->test_hooks->watcher_fire != NULL) {
+                        vm->test_hooks->watcher_fire(vm, w);
                     }
                     w->flags |= URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE;
                 }
@@ -231,8 +232,9 @@ watcher_eval_dirty(struct UVM *vm)
                 if (rising) {
                     if (w->body != NULL) {
                         invoke_body_inline(vm, w);
-                    } else if (vm->test_watcher_fire_hook != NULL) {
-                        vm->test_watcher_fire_hook(vm, w);
+                    } else if (vm->test_hooks != NULL
+                               && vm->test_hooks->watcher_fire != NULL) {
+                        vm->test_hooks->watcher_fire(vm, w);
                     }
                     w->flags |= URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE;
                 }
@@ -250,8 +252,9 @@ watcher_eval_dirty(struct UVM *vm)
                 if (uvalue_truthy(&new_val)) {
                     if (w->body != NULL) {
                         spawn_body_coroutine(vm, w);
-                    } else if (vm->test_watcher_fire_hook != NULL) {
-                        vm->test_watcher_fire_hook(vm, w);
+                    } else if (vm->test_hooks != NULL
+                               && vm->test_hooks->watcher_fire != NULL) {
+                        vm->test_hooks->watcher_fire(vm, w);
                     }
                 }
                 w->last_value_cache = new_val;

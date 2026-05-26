@@ -58,8 +58,8 @@ run_watcher_onleave(UVM *vm, UWatcher *w)
     URBI_INTERNAL_ASSERT(w != NULL);
     URBI_INTERNAL_ASSERT(w->onleave != NULL);
 
-    if (vm->test_watcher_onleave_hook != NULL) {
-        vm->test_watcher_onleave_hook(vm, w);
+    if (vm->test_hooks != NULL && vm->test_hooks->watcher_onleave != NULL) {
+        vm->test_hooks->watcher_onleave(vm, w);
         return;
     }
 

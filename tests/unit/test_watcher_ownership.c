@@ -262,7 +262,7 @@ UTEST(waituntil_immediate_wake_state_explicit)
     s.realm = urbi_realm_global(&vm);
 
     /* Register the hook so install_watcher_runtime sees a truthy cond. */
-    vm.test_install_cond_hook = truthy_cond_hook;
+    vm.test_hooks->install_cond = truthy_cond_hook;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_WAITUNTIL,
@@ -278,7 +278,7 @@ UTEST(waituntil_immediate_wake_state_explicit)
     UASSERT_EQ((unsigned)USTRAND_RUNNING, (unsigned)s.state);
 
     /* Cleanup hook so subsequent tests in the same suite are unaffected. */
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
     urbi_vm_destroy(&vm);
 }
 

@@ -95,7 +95,7 @@ UTEST(waituntil_immediate_wake_when_cond_starts_true)
     s.state = USTRAND_RUNNING;
     reset_log(&vm);
 
-    vm.test_install_cond_hook = hook_true;
+    vm.test_hooks->install_cond = hook_true;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_WAITUNTIL, NULL, NULL, NULL, &s);
@@ -106,7 +106,7 @@ UTEST(waituntil_immediate_wake_when_cond_starts_true)
     /* Strand must NOT be in WAITING state. */
     UASSERT(!USTRAND_IS_WAITING(&s));
 
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
@@ -127,7 +127,7 @@ UTEST(waituntil_blocks_strand_when_cond_starts_false)
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
-    vm.test_install_cond_hook = hook_false;
+    vm.test_hooks->install_cond = hook_false;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_WAITUNTIL, NULL, NULL, NULL, &s);
@@ -143,7 +143,7 @@ UTEST(waituntil_blocks_strand_when_cond_starts_false)
     /* Clean up: unregister the installed watcher. */
     urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
 
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
