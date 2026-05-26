@@ -167,8 +167,16 @@ UTEST(setslot_polymorphic_same_shape_writes_correct_per_instance_slot)
 /* === Test 3: OP_SELF polymorphic same-shape — correct receiver binding.
  *
  * OP_SELF writes R[A+1] = recv AND loads R[A] = method.  Same-shape
- * instances; the `this` binding inside the method body must be the
- * correct per-instance receiver. */
+ * instances share an IC entry after the first call; on the second call the
+ * IC hits but the receiver is a DIFFERENT instance.  The LOCAL-slot
+ * discipline in vm_resolve_ic must re-bind the actual receiver for the
+ * call, not reuse the cached slots[] pointer from the first call.
+ *
+ * Pattern: a.id() returns `this` (identity function).  After both calls,
+ * Realm.first must be the same UObject* as `a`, and Realm.second must be
+ * the same UObject* as `b`.  If the LOCAL-slot discipline is broken,
+ * the second call returns `a` for both — test 1 and 2 do NOT catch this
+ * because they compare integer slot values, not object identity. */
 UTEST(self_polymorphic_same_shape_loads_method_from_correct_instance)
 {
     UVM vm;
@@ -177,47 +185,52 @@ UTEST(self_polymorphic_same_shape_loads_method_from_correct_instance)
     URealm *r = urbi_realm_global(&vm);
     UASSERT(r != NULL);
 
-    urbi_event_id_t ev = urbi_event_register(&vm, r, "poly_self", NULL, NULL);
-    UASSERT(ev != URBI_EVENT_ID_INVALID);
-
-    /* Each instance has a per-instance local `x`; method returns `this.x`.
-     * The OP_SELF site inside the at-handler picks the right receiver. */
+    /* Create two same-shape instances of Cls3; `id` returns `this`.
+     * Realm.first3 = a3.id()  — IC miss: fills entry for Cls3/id.
+     * Realm.second3 = b3.id() — IC hit: must re-bind b3 as receiver.
+     *
+     * Use Object.clone() + setSlot pattern (established in this-in-method.chk)
+     * rather than class syntax, because `class` creates a Realm-global name
+     * and the anonymous `var Cls = class {}` form is a local that may not
+     * survive across `;` within the same compile_and_run source string. */
     int rc = utest_e2e_compile_and_run(&vm,
-        "class Sf {"
-        "  var init = function(n) { this.x = n; this }"
-        "};"
-        "Realm.objs_sf = List.new("
-        "    Sf.new().init(11),"
-        "    Sf.new().init(22));"
-        "Realm.idx_sf  = 0;"
-        "Realm.obs_sf  = -1;"
-        "at (poly_self?) Realm.obs_sf = Realm.objs_sf.get(Realm.idx_sf).x",
+        "class Cls3 { var id = function() { this } };"
+        "Realm.a3 = Cls3.new();"
+        "Realm.b3 = Cls3.new();"
+        "Realm.first3  = Realm.a3.id();"
+        "Realm.second3 = Realm.b3.id()",
         NULL);
     UASSERT_EQ(URBI_OK, rc);
 
-    /* First fire: idx=0 → obj[0].x = 11. */
-    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "idx_sf", 6,
-                                               utest_e2e_make_int(0)));
-    urbi_inject_event(&vm, (uint32_t)ev, NULL, 0U);
-    drain_vm(&vm);
-    {
-        UValue v = utest_e2e_make_nil();
-        UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "obs_sf", 6, &v));
-        UASSERT_EQ((int)UVAL_INT, (int)v.kind);
-        UASSERT_EQ((int64_t)11, v.v.i);
-    }
+    /* Read back all four globals. */
+    UValue first_v  = utest_e2e_make_nil();
+    UValue second_v = utest_e2e_make_nil();
+    UValue a_v      = utest_e2e_make_nil();
+    UValue b_v      = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "first3",  6, &first_v));
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "second3", 7, &second_v));
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "a3",      2, &a_v));
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "b3",      2, &b_v));
 
-    /* Second fire: idx=1 → obj[1].x = 22. */
-    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "idx_sf", 6,
-                                               utest_e2e_make_int(1)));
-    urbi_inject_event(&vm, (uint32_t)ev, NULL, 0U);
-    drain_vm(&vm);
-    {
-        UValue v = utest_e2e_make_nil();
-        UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "obs_sf", 6, &v));
-        UASSERT_EQ((int)UVAL_INT, (int)v.kind);
-        UASSERT_EQ((int64_t)22, v.v.i);
-    }
+    /* All four must be UVAL_OBJECT. */
+    UASSERT(urbi_value_is_object(first_v));
+    UASSERT(urbi_value_is_object(second_v));
+    UASSERT(urbi_value_is_object(a_v));
+    UASSERT(urbi_value_is_object(b_v));
+
+    /* Identity assertions: first == a, second == b, first != b. */
+    struct UObject *first_p  = urbi_value_as_object(first_v);
+    struct UObject *second_p = urbi_value_as_object(second_v);
+    struct UObject *a_p      = urbi_value_as_object(a_v);
+    struct UObject *b_p      = urbi_value_as_object(b_v);
+
+    UASSERT(first_p  != NULL);
+    UASSERT(second_p != NULL);
+    UASSERT(a_p      != NULL);
+    UASSERT(b_p      != NULL);
+    UASSERT(first_p  == a_p);   /* a.id() returned a */
+    UASSERT(second_p == b_p);   /* b.id() returned b */
+    UASSERT(first_p  != b_p);   /* cross-check: not the same object */
 
     urbi_vm_destroy(&vm);
 }
