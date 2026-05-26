@@ -186,7 +186,7 @@ spawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
 {
 #ifdef URBI_DEBUG
     URBI_ASSERT_NOT_ISR(vm);
-    URBI_INTERNAL_ASSERT(vm->in_watcher_eval == 1);
+    URBI_INTERNAL_ASSERT(vm->watchers->in_eval == 1);
     URBI_INTERNAL_ASSERT(w != NULL);
     /* AT (1) / WHENEVER (2) / AT_EVENT (5) all spawn body strands and can
      * legitimately refire.  AT_SYNC, WAITUNTIL, AT_EVENT_SYNC fire inline

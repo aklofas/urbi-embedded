@@ -14,12 +14,12 @@ static void uvm_trace_fields_zero_at_create(void)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UASSERT_EQ(0, (int)vm.in_watcher_install);
+    UASSERT_EQ(0, (int)vm.watchers->in_install);
     UASSERT_EQ(0, (int)vm.trace_overflow);
     UASSERT_EQ(0, (int)vm.trace_read_set_count);
 
     /* Mutually exclusive with M3 in_watcher_eval flag: both zero at create. */
-    UASSERT_EQ(0, (int)vm.in_watcher_eval);
+    UASSERT_EQ(0, (int)vm.watchers->in_eval);
 
     /* Cap macro defined and large enough for minimum useful read-set. */
     UASSERT(URBI_WATCHER_READSET_MAX >= 4);

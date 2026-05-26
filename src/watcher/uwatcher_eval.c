@@ -73,14 +73,14 @@ invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
  *   contract.
  *
  * Preconditions (URBI_DEBUG asserted):
- *   - vm->in_watcher_eval == 1 (we are inside watcher_eval_dirty).
+ *   - vm->watchers->in_eval == 1 (we are inside watcher_eval_dirty).
  *   - w->mode == UWATCHER_AT_SYNC.
  *   - w->body != NULL.                                             */
 static void
 invoke_body_inline(struct UVM *vm, struct UWatcher *w)
 {
 #ifdef URBI_DEBUG
-    URBI_INTERNAL_ASSERT(vm->in_watcher_eval == 1);
+    URBI_INTERNAL_ASSERT(vm->watchers->in_eval == 1);
     URBI_INTERNAL_ASSERT(w->mode == UWATCHER_AT_SYNC);
     URBI_INTERNAL_ASSERT(w->body != NULL);
 #endif
@@ -110,13 +110,13 @@ invoke_body_inline(struct UVM *vm, struct UWatcher *w)
  * not propagate per spec §6.4 no-yield contract).
  *
  * Preconditions (URBI_DEBUG asserted):
- *   - vm->in_watcher_eval == 1.
+ *   - vm->watchers->in_eval == 1.
  *   - w->onleave != NULL.                                         */
 static void
 invoke_onleave_inline(struct UVM *vm, struct UWatcher *w)
 {
 #ifdef URBI_DEBUG
-    URBI_INTERNAL_ASSERT(vm->in_watcher_eval == 1);
+    URBI_INTERNAL_ASSERT(vm->watchers->in_eval == 1);
     URBI_INTERNAL_ASSERT(w->onleave != NULL);
 #endif
 
@@ -165,7 +165,7 @@ watcher_eval_dirty(struct UVM *vm)
 
     URBI_ASSERT_NOT_ISR(vm);
 
-    if (vm->watcher_dirty_count == 0) return;
+    if (vm->watchers->dirty_count == 0) return;
 
 #ifdef URBI_DEBUG
     urbi_watcher_check_invariants(vm);
@@ -182,10 +182,10 @@ watcher_eval_dirty(struct UVM *vm)
     }
 #endif
 
-    vm->watcher_dirty_count = 0;
+    vm->watchers->dirty_count = 0;
 
-    URBI_INTERNAL_ASSERT(!vm->in_watcher_eval);
-    vm->in_watcher_eval = 1;
+    URBI_INTERNAL_ASSERT(!vm->watchers->in_eval);
+    vm->watchers->in_eval = 1;
 
     w = vm->active_watchers_head;
     while (w != NULL) {
@@ -294,7 +294,7 @@ watcher_eval_dirty(struct UVM *vm)
         w = next;
     }
 
-    vm->in_watcher_eval = 0;
+    vm->watchers->in_eval = 0;
 }
 
 /* spawn_body_coroutine lives in uwatcher_spawn.c.

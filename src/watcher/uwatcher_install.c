@@ -86,7 +86,7 @@ install_watcher_runtime(
      * This catches the case where a watcher condition closure itself
      * attempts to install a new watcher — which would corrupt the
      * in-progress trace state (spec #2 §7.1 note on recursive install). */
-    if (vm->in_watcher_eval) {
+    if (vm->watchers->in_eval) {
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher install attempted from within scratch-frame eval");
@@ -94,13 +94,13 @@ install_watcher_runtime(
     }
 
     /* Safety: install must not be re-entered from the install path itself. */
-    URBI_INTERNAL_ASSERT(vm->in_watcher_install == 0);
+    URBI_INTERNAL_ASSERT(vm->watchers->in_install == 0);
 
     /* Phase 2 (spec #2 §7.3): arm the OP_GETSLOT read-set trace.
      * in_watcher_install gates the UNLIKELY probe in the dispatch loop.
      * trace_overflow and trace_read_set_count are reset here so the probe
      * starts collecting from a clean slate for this install invocation. */
-    vm->in_watcher_install   = 1;
+    vm->watchers->in_install   = 1;
     vm->trace_overflow       = 0;
     vm->trace_read_set_count = 0;
 
@@ -115,7 +115,7 @@ install_watcher_runtime(
     } else {
         (void)urbi_run_closure_on_scratch(vm, cond, &cond_value, &cond_threw);
     }
-    vm->in_watcher_install = 0;
+    vm->watchers->in_install = 0;
 
     /* Phase 4 (spec #2 §7.3): check overflow and cond-throw. */
     if (vm->trace_overflow) {
@@ -196,7 +196,7 @@ install_watcher_runtime(
 
     /* Phase 5d (spec #2 §7.6): copy read-set cells + mark bit-6.
      * UGC_HAS_WATCHER_OBSERVER (bit 6) on each cell causes the slot-write
-     * barrier to bump vm->watcher_dirty_count on any write to that cell. */
+     * barrier to bump vm->watchers->dirty_count on any write to that cell. */
     {
         size_t ri;
         for (ri = 0; ri < (size_t)vm->trace_read_set_count; ri++) {
@@ -229,7 +229,7 @@ install_watcher_runtime(
         }
     }
 
-    vm->watcher_active_count++;
+    vm->watchers->active_count++;
 
     /* WAITUNTIL strand-block (spec #2 §7.7):
      *

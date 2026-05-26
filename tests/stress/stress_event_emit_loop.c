@@ -101,7 +101,7 @@ int main(void)
         watchers[i] = w;
     }
 
-    uint16_t pool_in_use_after_install = vm.watcher_pool_in_use;
+    uint16_t pool_in_use_after_install = vm.watchers->pool_in_use;
     if (pool_in_use_after_install != NUM_SUBS) {
         fprintf(stderr, "FAIL: expected %d watchers in use after install, got %u\n",
                 NUM_SUBS, (unsigned)pool_in_use_after_install);
@@ -137,10 +137,10 @@ int main(void)
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
     /* Pool in-use must still be NUM_SUBS — emit doesn't allocate watchers. */
-    if (vm.watcher_pool_in_use != NUM_SUBS) {
+    if (vm.watchers->pool_in_use != NUM_SUBS) {
         fprintf(stderr, "FAIL: pool_in_use changed during emit: "
                 "expected %d got %u\n",
-                NUM_SUBS, (unsigned)vm.watcher_pool_in_use);
+                NUM_SUBS, (unsigned)vm.watchers->pool_in_use);
         ustrand_destroy(&strand, &vm);
         urbi_realm_destroy(&vm, realm);
         urbi_vm_destroy(&vm);
@@ -153,9 +153,9 @@ int main(void)
     }
 
     /* After unregister, pool_in_use must be 0 (all watchers returned). */
-    if (vm.watcher_pool_in_use != 0) {
+    if (vm.watchers->pool_in_use != 0) {
         fprintf(stderr, "FAIL: pool_in_use %u after unregister (expected 0)\n",
-                (unsigned)vm.watcher_pool_in_use);
+                (unsigned)vm.watchers->pool_in_use);
         ustrand_destroy(&strand, &vm);
         urbi_realm_destroy(&vm, realm);
         urbi_vm_destroy(&vm);

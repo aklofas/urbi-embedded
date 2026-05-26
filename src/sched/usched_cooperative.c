@@ -317,7 +317,7 @@ sched_quiescent(const UVM *vm)
     /* Per row 8 §3 Rule X: 5 counters AND'd zero.
        strand_suspended_count is excluded (always 0 at M3). */
     return vm->strand_runnable_count  == 0
-        && vm->watcher_active_count   == 0
+        && vm->watchers->active_count   == 0
         && vm->event_queue_count      == 0
         && vm->wakeup_pending_count   == 0
         && vm->host_call_pending_count == 0;

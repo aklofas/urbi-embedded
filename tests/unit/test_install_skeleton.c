@@ -3,10 +3,10 @@
  *
  * T34 cases:
  *   1. install_returns_recursive_when_in_eval:
- *      vm->in_watcher_eval=1 → install returns URBI_INSTALL_RECURSIVE and
+ *      vm->watchers->in_eval=1 → install returns URBI_INSTALL_RECURSIVE and
  *      fires exactly one URBI_LOG_WARN containing "from within scratch-frame eval".
  *   2. install_returns_ok_normally:
- *      vm->in_watcher_eval=0 (default) → stub returns URBI_INSTALL_OK, no warn.
+ *      vm->watchers->in_eval=0 (default) → stub returns URBI_INSTALL_OK, no warn.
  *
  * T38 cases (spec #2 §7.4–§7.5):
  *   3. install_warns_on_empty_readset:
@@ -80,7 +80,7 @@ static void hook_plant_one_cell(struct UVM *vm, struct UClosure *cond,
 
 /* 1. install_returns_recursive_when_in_eval
  *
- * With vm->in_watcher_eval = 1, install_watcher_runtime must:
+ * With vm->watchers->in_eval = 1, install_watcher_runtime must:
  *   - Return URBI_INSTALL_RECURSIVE.
  *   - Fire exactly one URBI_LOG_WARN containing "from within scratch-frame eval". */
 UTEST(install_returns_recursive_when_in_eval)
@@ -92,7 +92,7 @@ UTEST(install_returns_recursive_when_in_eval)
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
-    vm.in_watcher_eval = 1;
+    vm.watchers->in_eval = 1;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
@@ -102,7 +102,7 @@ UTEST(install_returns_recursive_when_in_eval)
     /* Verify the message mentions the expected phrase. */
     UASSERT(strstr(g_last_msg, "from within scratch-frame eval") != NULL);
 
-    vm.in_watcher_eval = 0;
+    vm.watchers->in_eval = 0;
 
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);

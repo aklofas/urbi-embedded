@@ -173,7 +173,7 @@ UTEST(emit_defers_when_in_scratch_context)
     (void)head_before;
 
     /* Simulate being inside a sync scratch context. */
-    vm.in_watcher_scratch = 1;
+    vm.watchers->in_scratch = 1;
 
     UValue v; v.kind = UVAL_INT; v.v.i = 99;
     urbi_emit_slot_change_if_subscribed(&vm, o, x, v);
@@ -189,7 +189,7 @@ UTEST(emit_defers_when_in_scratch_context)
     UASSERT(vm.deferred_slot_changes_tail != tail_after_first);
     UASSERT_EQ(1, (int)vm.slot_change_reentrancy_warned);
 
-    vm.in_watcher_scratch = 0;
+    vm.watchers->in_scratch = 0;
     urbi_vm_destroy(&vm);
 }
 

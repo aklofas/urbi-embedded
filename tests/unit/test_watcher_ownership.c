@@ -151,7 +151,7 @@ UTEST(tag_less_at_event_watcher_freed_on_pool_destroy)
     w->event      = &ev;
     w->owning_tag = NULL;
     uevent_at_watchers_append(&ev, w);
-    vm.watcher_active_count++;
+    vm.watchers->active_count++;
 
     /* Pre-condition: ev.at_watchers_head points at w. */
     UASSERT(ev.at_watchers_head == w);
@@ -350,7 +350,7 @@ UTEST(unknown_watcher_mode_does_not_change_state_in_release)
 
     /* Force a dirty pass.  watcher_eval_dirty is internal; in release
      * builds the default branch updates last_value_cache and returns. */
-    vm.watcher_dirty_count = 1;
+    vm.watchers->dirty_count = 1;
     /* Avoid actually running watcher_eval_dirty unless we have a fire
      * hook; instead we verify the seam itself: that an unknown mode is
      * structurally reachable. */

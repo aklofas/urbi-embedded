@@ -26,15 +26,15 @@ UTEST(watcher_pool_init_threads_freelist)
     urbi_vm_init(&vm, NULL, NULL);
 
     /* Pool must be allocated. */
-    UASSERT(vm.watcher_pool_base != NULL);
-    UASSERT(vm.watcher_pool_freelist == &vm.watcher_pool_base[0]);
+    UASSERT(vm.watchers->pool_base != NULL);
+    UASSERT(vm.watchers->pool_freelist == &vm.watchers->pool_base[0]);
     UASSERT(vm.active_watchers_head == NULL);
-    UASSERT_EQ((int)vm.watcher_pool_in_use,    0);
-    UASSERT_EQ((int)vm.watcher_pool_high_water, 0);
+    UASSERT_EQ((int)vm.watchers->pool_in_use,    0);
+    UASSERT_EQ((int)vm.watchers->pool_high_water, 0);
 
     /* Walk the freelist and count entries. */
     {
-        UWatcher *cur = vm.watcher_pool_freelist;
+        UWatcher *cur = vm.watchers->pool_freelist;
         int count = 0;
         while (cur != NULL) {
             count++;
@@ -91,14 +91,14 @@ UTEST(pool_alloc_returns_active_watcher)
     /* gc_byte must have UGC_IS_FIXED set. */
     UASSERT(w->gc_byte & UGC_IS_FIXED);
     /* in_use should be 1. */
-    UASSERT_EQ((int)vm.watcher_pool_in_use, 1);
+    UASSERT_EQ((int)vm.watchers->pool_in_use, 1);
     /* active_watchers_head must point to this watcher. */
     UASSERT(vm.active_watchers_head == w);
 
     /* Unregister. */
     urbi_watcher_unregister_internal(&vm, w);
 
-    UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
+    UASSERT_EQ((int)vm.watchers->pool_in_use, 0);
     UASSERT(vm.active_watchers_head == NULL);
 
     urbi_vm_destroy(&vm);
@@ -129,14 +129,14 @@ UTEST(pool_exhaustion_returns_null)
         UASSERT(extra == NULL);
     }
 
-    UASSERT_EQ((int)vm.watcher_pool_in_use, URBI_WATCHER_POOL_SIZE);
+    UASSERT_EQ((int)vm.watchers->pool_in_use, URBI_WATCHER_POOL_SIZE);
 
     /* Unregister all to clean up before destroy. */
     for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {
         urbi_watcher_unregister_internal(&vm, watchers[i]);
     }
 
-    UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
+    UASSERT_EQ((int)vm.watchers->pool_in_use, 0);
 
     urbi_vm_destroy(&vm);
 }
@@ -156,16 +156,16 @@ UTEST(pool_high_water_tracks_peak)
     w[2] = urbi_watcher_install_for_test(&vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
 
     UASSERT(w[0] != NULL && w[1] != NULL && w[2] != NULL);
-    UASSERT_EQ((int)vm.watcher_pool_in_use,    3);
-    UASSERT_EQ((int)vm.watcher_pool_high_water, 3);
+    UASSERT_EQ((int)vm.watchers->pool_in_use,    3);
+    UASSERT_EQ((int)vm.watchers->pool_high_water, 3);
 
     /* Unregister two. */
     urbi_watcher_unregister_internal(&vm, w[0]);
     urbi_watcher_unregister_internal(&vm, w[1]);
 
-    UASSERT_EQ((int)vm.watcher_pool_in_use,    1);
+    UASSERT_EQ((int)vm.watchers->pool_in_use,    1);
     /* high_water must still be 3 — peak is not reduced by frees. */
-    UASSERT_EQ((int)vm.watcher_pool_high_water, 3);
+    UASSERT_EQ((int)vm.watchers->pool_high_water, 3);
 
     /* Clean up. */
     urbi_watcher_unregister_internal(&vm, w[2]);

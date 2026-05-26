@@ -116,7 +116,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
     if (vm->strand_runnable_count > 0) return URBI_STEP_RUNNING;
 
     /* No runnable strands.  Check other liveness sources per row 8 §3 Rule X. */
-    if (vm->watcher_active_count   > 0 ||
+    if (vm->watchers->active_count   > 0 ||
         vm->event_queue_count      > 0 ||
         vm->host_call_pending_count > 0) {
         /* Watchers or pending events can make strands runnable on the next tick. */

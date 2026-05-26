@@ -133,7 +133,7 @@ UTEST(whenever_chunktop_write_fires_cond_baseline)
  * body that increments a Realm slot does not trigger cond watchers
  * subscribed to that slot, because the body never hits a safepoint.
  *
- * `vm.watcher_dirty_count` will accumulate (the write barrier IS firing
+ * `vm.watchers->dirty_count` will accumulate (the write barrier IS firing
  * observer_dirty correctly).  But watcher_eval_dirty is never invoked
  * to drain it.  fire_count remains 0 even though cond's underlying
  * value crosses the threshold.
@@ -179,7 +179,7 @@ UTEST(at_handler_body_without_call_does_not_drain_dirty)
     UASSERT_EQ(5LL, x.v.i);
 
     /* The dirty count accumulates: 5 writes, no eval, count = 5. */
-    UASSERT(vm.watcher_dirty_count >= 5);
+    UASSERT(vm.watchers->dirty_count >= 5);
 
     /* But the watcher never fires — eval never ran. */
     UValue fired = utest_e2e_make_nil();

@@ -145,7 +145,7 @@ UTEST(suspended_count_excluded_from_quiescence)
     UASSERT_EQ(vm.strand_runnable_count, 0U);
     UASSERT_EQ(vm.wakeup_pending_count,  0U);
     UASSERT_EQ(vm.host_call_pending_count, 0U);
-    UASSERT_EQ(vm.watcher_active_count,  0U);
+    UASSERT_EQ(vm.watchers->active_count,  0U);
     UASSERT_EQ(vm.event_queue_count,     0U);
 
     ustrand_destroy(&a, &vm);

@@ -166,15 +166,15 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
  *      decrements watcher_active_count.
  *
  * Called from the dispatcher safepoint BEFORE watcher_eval_dirty per spec §6.5.
- * Reuses vm->in_watcher_eval as a reentrancy guard (same scratch-frame contract
+ * Reuses vm->watchers->in_eval as a reentrancy guard (same scratch-frame contract
  * as watcher_eval_dirty — drain and eval are always sequential, never nested). */
 void
 drain_pending_onleave_queue(UVM *vm)
 {
     URBI_ASSERT_NOT_ISR(vm);
-    URBI_INTERNAL_ASSERT(!vm->in_watcher_eval);
+    URBI_INTERNAL_ASSERT(!vm->watchers->in_eval);
 
-    vm->in_watcher_eval = 1;
+    vm->watchers->in_eval = 1;
 
     /* Spec #1 §6.3: iterate with a pointer-to-pointer walk so we can skip
      * (defer) entries whose body strand is still alive without disturbing
@@ -223,5 +223,5 @@ drain_pending_onleave_queue(UVM *vm)
         vm->pending_onleave_tail = t;
     }
 
-    vm->in_watcher_eval = 0;
+    vm->watchers->in_eval = 0;
 }

@@ -494,7 +494,7 @@ UTEST(wedge_batched_drain_characterization)
                 "runnable=%u, pool_in_use=%u, overflow=%u\n",
                 b, now, delta, events_per_batch,
                 (unsigned)vm.strand_runnable_count,
-                (unsigned)vm.watcher_pool_in_use,
+                (unsigned)vm.watchers->pool_in_use,
                 (unsigned)(vm.event_ring ? vm.event_ring->overflow_count : 0U));
         }
         prev_counter = now;

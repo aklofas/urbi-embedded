@@ -25,6 +25,7 @@
 #include "event/uevent_ring.h"    /* UEventRing, uevent_ring_init */
 #include "runtime/uhandle.h"      /* host_handle_walk_roots */
 #include "watcher/uwatcher.h"     /* uwatcher_pool_init/destroy, watcher_table_walk_roots */
+#include "watcher/uwatcher_state.h" /* uwatcher_state_create/destroy (W2/v0.10.4) */
 #include "stdlib/temporal.h"      /* urbi_periodic_table_walk_roots, urbi_periodic_destroy_all */
 #include "stdlib/containers.h"    /* M6 Phase 6: urbi_stdlib_containers_destroy */
 #include "event/uevent_native.h"  /* event_native_register */
@@ -168,7 +169,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* 5-flag liveness counters (Rule X). */
     vm->strand_runnable_count   = 0U;
     vm->strand_suspended_count  = 0U;
-    vm->watcher_active_count    = 0U;
+    /* watcher_active_count moved to vm->watchers->active_count (W2/v0.10.4) */
     vm->event_queue_count       = 0U;
     vm->wakeup_pending_count    = 0U;
     vm->host_call_pending_count = 0U;
@@ -185,7 +186,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->sleep_q_head           = NULL;
     vm->step_budget_remaining  = 0U;
     vm->gc_pending             = 0U;
-    vm->watcher_dirty_count    = 0U;
+    /* watcher_dirty_count moved to vm->watchers->dirty_count (W2/v0.10.4) */
     vm->flag_preemption        = 0U;
     vm->flag_reserved[0]       = 0U;
     vm->flag_reserved[1]       = 0U;
@@ -298,26 +299,25 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->handle_table_cap     = 0U;
     vm->handle_table_next_id = 0U;
 
-    /* Watcher pool. */
-    vm->watcher_pool_base      = NULL;
-    vm->watcher_pool_freelist  = NULL;
-    vm->active_watchers_head   = NULL;
-    vm->watcher_pool_in_use    = 0U;
-    vm->watcher_pool_high_water = 0U;
-    vm->in_watcher_eval        = 0U;
-    vm->pad_in_eval[0]         = 0U;
-    vm->pad_in_eval[1]         = 0U;   /* array is [2]; index 2 removed */
-    /* Zero-initialize the in_watcher_scratch re-entrancy guard so the
-     * dispatcher's slow-path detection in c_event_emit_sync /
-     * c_event_waituntil starts from the correct "not currently inside a
-     * scratch-frame body" state on a fresh VM (spec #3 §5.4). */
-    vm->in_watcher_scratch     = 0U;
-    /* spec #2 §5.2 install-time trace state. */
-    vm->in_watcher_install     = 0U;
-    vm->trace_overflow         = 0U;
-    vm->trace_read_set_count   = 0U;
-    /* trace_read_set[] is uninitialized: only read when in_watcher_install is set,
-     * and entries are written before they are read. */
+    /* Watcher substate (W2/v0.10.4): allocate UWatcherState struct.
+     * Pool storage is allocated separately by uwatcher_pool_init below.
+     * The struct itself is heap-allocated; uwatcher_state_create zero-fills it. */
+    vm->watchers = NULL;
+    vm->active_watchers_head = NULL;
+    vm->trace_overflow       = 0U;
+    vm->_pad_trace[0]        = 0U;
+    vm->_pad_trace[1]        = 0U;
+    vm->_pad_trace[2]        = 0U;
+    vm->trace_read_set_count = 0U;
+    /* trace_read_set[] is uninitialized: only read when watchers->in_install is
+     * set, and entries are written before they are read. */
+    {
+        UWatcherState *ws = uwatcher_state_create(vm);
+        if (ws == NULL) {
+            oom_seen = 1;
+        }
+        vm->watchers = ws;
+    }
     vm->test_watcher_condition_hook = NULL;
     vm->test_watcher_fire_hook      = NULL;
     vm->test_watcher_onleave_hook   = NULL;
@@ -332,7 +332,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->cur_strand             = NULL;
 
     /* Watcher pool: allocate after field zero-init and after GC init
-     * so pool_alloc can use vm->current_white and vm->alloc_fn is set. */
+     * so pool_alloc can use vm->current_white and vm->alloc_fn is set.
+     * uwatcher_pool_init writes vm->watchers->pool_base / pool_freelist. */
     if (uwatcher_pool_init(vm) != 0) {
         /* T23: surface OOM.  pool_alloc still returns NULL at use sites,
          * so the install path remains safe even if we did not bail.
@@ -482,6 +483,9 @@ void urbi_vm_destroy(UVM *vm) {
      * Subsystem-owned teardowns are deferred to their landing tasks. */
     urealm_teardown_all(vm);  /* T14: destroy all live Realms */
     uwatcher_pool_destroy(vm);  /* T32: free pool slab before GC */
+    /* W2/v0.10.4: free UWatcherState struct after pool slab is freed. */
+    uwatcher_state_destroy(vm, vm->watchers);
+    vm->watchers = NULL;
     /* v0.9.4: free any periodics left dangling after realm teardown.
      * urbi_realm_destroy marks per-realm periodics for unregister but
      * (intentionally) doesn't unlink-and-free them — that work is the

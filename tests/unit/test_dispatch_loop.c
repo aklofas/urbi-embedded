@@ -841,7 +841,7 @@ UTEST(dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint) {
     s.instruction_budget_remaining = 100U;
 
     /* Set watcher_dirty_count; it will be tested at the backward-branch safepoint. */
-    vm.watcher_dirty_count = 1;
+    vm.watchers->dirty_count = 1;
 
     uint64_t consumed = dispatch_loop_until_yield(&s, 100000U);
 

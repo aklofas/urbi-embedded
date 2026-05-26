@@ -161,7 +161,7 @@ typedef void (*UGcCellCallback)(struct UVM *vm, UCell *cell, void *ctx);
 void urbi_gc_walk_all_cells(struct UVM *vm, UGcCellCallback cb, void *ctx);
 
 /* === observer_dirty — watcher dirty-set hook ===
- * Defined in src/uwatcher.c.  Increments vm->watcher_dirty_count; the
+ * Defined in src/uwatcher.c.  Increments vm->watchers->dirty_count; the
  * scheduler calls watcher_eval_dirty (T34) on the next safepoint turn. */
 void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
 
@@ -304,7 +304,7 @@ urbi_gc_slot_pre_store(struct UVM *vm, UCell *parent, uint32_t key, UValue child
     }
 
     /* (2) Watcher dirty-set hook.
-     * observer_dirty (src/uwatcher.c) bumps vm->watcher_dirty_count;
+     * observer_dirty (src/uwatcher.c) bumps vm->watchers->dirty_count;
      * the scheduler calls watcher_eval_dirty on the next safepoint turn. */
     if (UNLIKELY(parent_gc & UGC_HAS_WATCHER_OBSERVER)) {
         observer_dirty(vm, parent, key);

@@ -1,0 +1,41 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* src/watcher/uwatcher_state.h — UWatcherState: watcher substate extracted
+ * from struct UVM per audit-1 F8 (v0.10.4-vm-decomp Wave 5 W2). */
+
+#ifndef URBI_WATCHER_STATE_H
+#define URBI_WATCHER_STATE_H
+
+#include <stdint.h>
+
+struct UVM;
+struct UWatcher;
+
+/* === W2/v0.10.4: UWatcherState — extracted from struct UVM per audit-1 F8 === */
+typedef struct UWatcherState {
+    /* Liveness counters */
+    uint32_t active_count;       /* was vm->watcher_active_count */
+    uint32_t dirty_count;        /* was vm->watcher_dirty_count */
+
+    /* Watcher pool */
+    struct UWatcher *pool_base;       /* was vm->watcher_pool_base */
+    struct UWatcher *pool_freelist;   /* was vm->watcher_pool_freelist */
+    uint16_t pool_in_use;        /* was vm->watcher_pool_in_use */
+    uint16_t pool_high_water;    /* was vm->watcher_pool_high_water */
+
+    /* Re-entry guards */
+    uint8_t  in_eval;            /* was vm->in_watcher_eval */
+    uint8_t  in_scratch;         /* was vm->in_watcher_scratch */
+    uint8_t  in_install;         /* was vm->in_watcher_install */
+} UWatcherState;
+
+/* uwatcher_state_create: allocate and zero-initialize a UWatcherState.
+ * Pool storage (pool_base / pool_freelist) is NOT allocated here — that
+ * is done by uwatcher_pool_init (uwatcher.c).  Returns NULL on OOM. */
+UWatcherState *uwatcher_state_create(struct UVM *vm);
+
+/* uwatcher_state_destroy: free the UWatcherState struct.
+ * Does NOT free the watcher pool slab — uwatcher_pool_destroy owns that.
+ * NULL-tolerant. */
+void           uwatcher_state_destroy(struct UVM *vm, UWatcherState *ws);
+
+#endif /* URBI_WATCHER_STATE_H */

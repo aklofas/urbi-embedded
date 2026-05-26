@@ -148,12 +148,12 @@ UTEST(barrier_observer_bit_calls_stub)
     parent->gc_byte  = (uint8_t)((parent->gc_byte & ~UGC_COLOR_MASK) | UGC_COLOR_BLACK);
     child->gc_byte   = (uint8_t)((child->gc_byte  & ~UGC_COLOR_MASK) | vm.current_white);
 
-    uint32_t dirty_before = vm.watcher_dirty_count;
+    uint32_t dirty_before = vm.watchers->dirty_count;
 
     urbi_gc_slot_pre_store(&vm, parent, 42U, uvalue_from_test_cell(child));
 
     /* T25: stub does nothing — watcher_dirty_count unchanged.
-     * T34: UASSERT_EQ(vm.watcher_dirty_count, dirty_before + 1U); */
+     * T34: UASSERT_EQ(vm.watchers->dirty_count, dirty_before + 1U); */
     (void)dirty_before;
 
     /* GC barrier still fires: child was white + parent was black → child gray. */

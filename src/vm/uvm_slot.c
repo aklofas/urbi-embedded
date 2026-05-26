@@ -25,7 +25,7 @@
 void
 vm_trace_slot_read_if_needed(UVM *vm, UObject *recv)
 {
-    if (!vm->in_watcher_install)
+    if (!vm->watchers->in_install)
         return;
 
     UCell *cell = (UCell *)recv;

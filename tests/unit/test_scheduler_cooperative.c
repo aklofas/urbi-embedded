@@ -613,10 +613,10 @@ UTEST(sched_quiescent_false_when_watcher_active_nonzero)
 
     UASSERT(sched_quiescent(&vm));
 
-    vm.watcher_active_count = 1;
+    vm.watchers->active_count = 1;
     UASSERT(!sched_quiescent(&vm));
 
-    vm.watcher_active_count = 0;
+    vm.watchers->active_count = 0;
     UASSERT(sched_quiescent(&vm));
 
     urbi_vm_destroy(&vm);
