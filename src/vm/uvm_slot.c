@@ -58,8 +58,6 @@ vm_resolve_ic(UVM *vm,
               UValue *out_value,
               uint8_t *out_fresh_k)
 {
-    (void)out_fresh_k; /* filled only on GETTER_NEEDED / SETTER_NEEDED */
-
     for (uint8_t k = 0; k < ic->n; k++) {
         if (ic->recv_shapes[k]  != recv->shape)   continue;
         if (ic->topology_gen[k] != vm->topology_gen) continue;
@@ -119,12 +117,16 @@ vm_dispatch_getter(UVM *vm,
                    const char *opname,
                    UValue *out_result)
 {
-    (void)opname; /* available for future diagnostic enrichment */
-
     if (up == NULL || up->oget.kind != (uint8_t)UVAL_CLOSURE
                    || up->oget.v.p == NULL) {
         vm->last_error = UVM_TYPE_ERROR;
-        vm_format_type_error_msg(vm, "getter is not a closure");
+        {
+            UDiagWriter _w;
+            diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+            diag_write_cstr(&_w, "TypeError: ");
+            diag_write_cstr(&_w, opname);
+            diag_write_cstr(&_w, ": getter is not a closure");
+        }
         return VM_SLOT_MISSING;
     }
     UValue result; int threw = 0;
@@ -149,12 +151,16 @@ vm_dispatch_setter(UVM *vm,
                    const char *opname,
                    UValue payload)
 {
-    (void)opname;
-
     if (up == NULL || up->oset.kind != (uint8_t)UVAL_CLOSURE
                    || up->oset.v.p == NULL) {
         vm->last_error = UVM_TYPE_ERROR;
-        vm_format_type_error_msg(vm, "setter is not a closure");
+        {
+            UDiagWriter _w;
+            diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+            diag_write_cstr(&_w, "TypeError: ");
+            diag_write_cstr(&_w, opname);
+            diag_write_cstr(&_w, ": setter is not a closure");
+        }
         return VM_SLOT_MISSING;
     }
     UValue result; int threw = 0;
@@ -212,7 +218,6 @@ vm_getslot_slow(UVM *vm,
                 const char *opname,
                 UValue *out_value)
 {
-    (void)opname;
     UValue v;
     int rc = urbi_slot_get_slow(vm, recv, ic, &v);
     if (rc != 0) {
@@ -251,7 +256,6 @@ vm_setslot_slow(UVM *vm,
                 UValue v,
                 const char *opname)
 {
-    (void)opname;
     int rc = urbi_slot_set_slow(vm, recv, ic, v);
     if (rc != 0) {
         vm->last_error = UVM_TYPE_ERROR;

@@ -105,8 +105,8 @@ UVmSlotResult vm_getslot_value(UVM *vm,
  * `up` must be ic->uprops[k] where flags[k] has FLAG_OGET set.
  * `opname` is the opcode name string used in diagnostic messages.
  * On success, *out_result holds the return value.
- * Returns VM_SLOT_OK on success, VM_SLOT_OOM / VM_SLOT_MISSING on error
- * (caller should HALT after setting vm->last_error). */
+ * Returns VM_SLOT_OK on success; VM_SLOT_MISSING on error
+ * (vm->last_error set; caller should HALT). */
 UVmSlotResult vm_dispatch_getter(UVM *vm,
                                   UProps *up,
                                   const char *opname,
@@ -129,7 +129,8 @@ UVmSlotResult vm_setslot_value(UVM *vm,
  *
  * `up` must be ic->uprops[k] where flags[k] has FLAG_OSET set.
  * Setter return value is discarded (OP_SETSLOT has no scripted result).
- * Returns VM_SLOT_OK on success, VM_SLOT_OOM / VM_SLOT_MISSING on error. */
+ * Returns VM_SLOT_OK on success; VM_SLOT_MISSING on error
+ * (vm->last_error set; caller should HALT). */
 UVmSlotResult vm_dispatch_setter(UVM *vm,
                                   UProps *up,
                                   const char *opname,
@@ -150,12 +151,12 @@ UVmSlotResult vm_self_lookup(UVM *vm,
  *
  * Calls urbi_slot_get_slow, formats "not found" error on failure,
  * checks the freshly-filled IC entry for FLAG_OGET and dispatches the
- * getter closure if present.
+ * getter closure inline if present.
  *
- * Returns VM_SLOT_OK with *out_value filled on success.
- * Returns VM_SLOT_MISSING on not-found (vm->last_error set).
- * Returns VM_SLOT_GETTER_NEEDED if getter ran successfully (result in *out_value).
- * Returns VM_SLOT_OOM on getter error (vm->last_error set).
+ * Returns VM_SLOT_OK with *out_value filled on success (including after
+ * a getter dispatch — the getter result lands in *out_value).
+ * Returns VM_SLOT_MISSING on error (slot not found or getter raised;
+ * vm->last_error set in both cases).
  *
  * `opname` is used in error messages ("GETSLOT" or "SELF"). */
 UVmSlotResult vm_getslot_slow(UVM *vm,
