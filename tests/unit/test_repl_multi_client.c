@@ -193,9 +193,10 @@ harness_teardown(Harness *h)
             shutdown(h->client_fd[i], SHUT_RDWR);
         }
     }
-    /* Drive the VM so listener picks up EOF + reader subthreads call
-     * urepl_session_destroy under their own pthread before we call
-     * urbi_repl_stop (which would otherwise race to destroy them). */
+    /* Drive the VM so the dispatcher reaps sessions flagged by reader
+     * subthreads (urepl_session_reap_pending in urepl_dispatch_drain_if_active),
+     * then call urbi_repl_stop to join remaining threads and destroy any
+     * unflagged sessions. */
     drive_vm(h->vm, 50);  /* ~100 ms */
     for (int i = 0; i < CLIENT_COUNT; ++i) {
         if (h->client_fd[i] >= 0) {
@@ -336,56 +337,49 @@ UTEST(four_clients_disconnect_drops_session_from_lobbies)
     harness_teardown(&h);
 }
 
-/* The multi-client suite covers cross-session isolation, wall fan-out,
- * and disconnect cleanup over real TCP loopback.  It exercises the
- * Phase 3 listener pthread + per-session reader subthreads more
- * intensively than any other test (4 simultaneous sessions per
- * scenario, three scenarios with their own VM init/teardown cycles).
+/* W1: stress test is now default.  Previously opt-in via
+ * URBI_TEST_MULTI_CLIENT=1 because of the listener-teardown race fixed
+ * in v0.10.6.  The race caused ~50% segfault during harness teardown
+ * (double-destroy of UReplSession between reader_main and
+ * urepl_listener_stop_and_join).  The single-owner model (reader calls
+ * urepl_request_teardown; VM thread reaps via urepl_session_reap_pending)
+ * eliminates the race.
  *
- * At v0.9.1 ship time this suite is intermittently flaky on the dev
- * host: ~50 % of runs segfault during one of the scenarios' harness
- * teardown, sometimes between scenarios and sometimes mid-eval.  The
- * crash signature is "double free or corruption" (SIGABRT) or
- * SIGSEGV in libc's malloc internals, suggesting a race in the
- * listener-pthread + reader-subthread + urbi_repl_stop teardown
- * sequence.  The individual scenarios PASS when they complete; the
- * failure window is around suite shutdown.
- *
- * Underlying race is filed as v1.x follow-up (urepl_listener teardown
- * stress: real-TCP, 4 sessions, repeated full-VM cycles).  Until
- * fixed, the suite is opt-in via URBI_TEST_MULTI_CLIENT=1 so the
- * default `make test URBI_ENABLE_REPL=1` stays green.
- *
- * The exit-criteria covered by these scenarios overlap with green
- * unit-test coverage:
- *
- *   #4 cross-session echo isolation       — dispatcher_session_create_*
- *                                            + per_realm_writer tests
- *   #5 wall fan-out                       — dispatch_session_create
- *                                            + Lobby.lobbies length
- *   #14 disconnect cleanup                — dispatcher_session_create_-
- *                                            grows_lobby_lobbies
- *                                            + handleDisconnect_invoked_-
- *                                            on_destroy
- *
- * So skipping the suite by default doesn't reduce semantic coverage;
- * it only defers the real-TCP-end-to-end stress that surfaced the
- * race. */
+ * Structure:
+ *   1. Correctness pass — three named scenarios run once each.
+ *   2. Teardown stress — 100 trials of 4-session connect + disconnect
+ *      (harness_setup + harness_teardown) to stress the post-fix
+ *      ownership model.  Any residual race surfaces as SIGSEGV or
+ *      SIGABRT within a few trials under ASan. */
+
+/* Teardown stress helper: set up 4 TCP clients, then tear down without
+ * executing any eval payloads.  The race window is purely in the
+ * concurrent reader-thread exit + urbi_repl_stop interaction. */
+static void
+four_clients_teardown_stress(void)
+{
+    Harness h;
+    UASSERT_EQ(harness_setup(&h), 0);
+    harness_teardown(&h);
+}
+
 void
 test_repl_multi_client_suite(void)
 {
-    const char *enable = getenv("URBI_TEST_MULTI_CLIENT");
-    if (enable == NULL || enable[0] == '\0' || enable[0] == '0') {
-        printf("test_repl_multi_client (skipped — set URBI_TEST_MULTI_CLIENT=1 to enable)\n");
-        return;
-    }
     printf("test_repl_multi_client\n");
+
+    /* Correctness scenarios (one pass each). */
     utest_run("four_clients_echo_isolated_to_writer_session",
               four_clients_echo_isolated_to_writer_session);
     utest_run("four_clients_wall_iteration_reaches_each_peer_writer",
               four_clients_wall_iteration_reaches_each_peer_writer);
     utest_run("four_clients_disconnect_drops_session_from_lobbies",
               four_clients_disconnect_drops_session_from_lobbies);
+
+    /* Teardown stress: 100 trials of 4-concurrent-client lifecycles. */
+    for (int trial = 0; trial < 100; trial++) {
+        utest_run("four_clients_teardown_stress", four_clients_teardown_stress);
+    }
 }
 
 #else  /* !URBI_ENABLE_REPL */
