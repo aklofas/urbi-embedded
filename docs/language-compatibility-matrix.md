@@ -111,7 +111,7 @@
 | List literal `[1, 2, 3]` | NOT implemented | legacy F14; Wave 6 W10 |
 | Dict literal `["a" => 1]` | NOT implemented | legacy F14; Wave 6 W10 |
 | Subscript assignment `l[i] += v` | NOT implemented | legacy F14; Wave 6 W10 |
-| Top-level `this` / Lobby singleton | TBD | legacy F13; Wave 6 W11 |
+| Top-level `this` / Lobby singleton | migration | legacy F13; use `Realm` — see [top-level-this-lobby-migration.md](migration/top-level-this-lobby-migration.md) |
 | `setSlot` (host-side reflection) | implemented | — |
 
 ### Concurrency / strands

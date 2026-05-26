@@ -1,0 +1,34 @@
+# Milestone: v0.10.5-legacy-decisions W11
+# Origin: migration pattern for legacy tests/2.x/this.chk + tests/2.x/lobby.chk
+# Covers: Realm as the urbi-embedded replacement for top-level `this` / Lobby.
+#
+# Legacy urbiscript used `this` at the top level to reach the Lobby singleton.
+# urbi-embedded does not model a Lobby singleton; top-level `this` is a
+# compile-time error (EMIT_NO_THIS_OUTSIDE_METHOD).  `Realm` is the
+# replacement: it is the per-realm global_object, registered as a const realm
+# global via urealm_globals.c since v0.9.0.
+#
+# Decision ruling: migration (option b) — legacy F13 closed.
+# See docs/migration/top-level-this-lobby-migration.md for the full recipe.
+
+# --- Identity: Realm is the same object as itself ---
+Realm == Realm
+[00000000] true
+
+# --- Slot install at top level (replaces legacy `this.x = 42`) ---
+Realm.lobby_test_slot = 42
+[00000001] 42
+
+Realm.lobby_test_slot
+[00000002] 42
+
+# --- Slot update ---
+Realm.lobby_test_slot = Realm.lobby_test_slot + 1
+[00000003] 43
+
+# --- Slot install: string value ---
+Realm.lobby_test_name = "hello"
+[00000004] "hello"
+
+Realm.lobby_test_name
+[00000005] "hello"

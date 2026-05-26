@@ -135,15 +135,22 @@ parity".
   Deferred: `.operator +(1)` explicit-method call syntax, `bitor`,
   and `in` operator are not in the v0.6.x parser.
 
-- `this.chk` (deferred entirely to v1.x): port of `tests/2.x/this.chk`.
+- `this.chk` (migration — use `Realm`): port of `tests/2.x/this.chk`.
   The legacy fixture has 3 test lines, all using `this` at the top level
   to access the Lobby object (`this == this`, `this == { this }`,
   `this.type`).  At v1.0 `this` is only valid inside a method body;
   top-level `this` is a compile-time error (`EMIT_NO_THIS_OUTSIDE_METHOD`).
-  The "Lobby" concept (a singleton global namespace object) is not
-  modelled in the v1.0 runtime.  No subset is shippable: all three lines
-  are structurally deferred.  Tracked in `docs/urbi-embedded-backlog.md`
-  under "legacy fixture parity."
+  Decision (v0.10.5-legacy-decisions W11, legacy F13): **migration** — replace
+  `this` at the top level with `Realm`.  `Realm` is the per-realm global object
+  (a singleton since v0.9.0) and is the direct functional replacement for the
+  legacy Lobby singleton.  A migration-aware fixture is active at
+  `tests/chk/objects/realm_as_lobby_at_top_level.chk`.  See
+  `docs/migration/top-level-this-lobby-migration.md` for the full recipe.
+  The `this == { this }` line (block returning `this`) remains unported
+  because bare brace-block as expression is not in the v1.0 parser.
+  `lobby.chk` (full Lobby class with `addProto` / `protos` / session hooks)
+  remains deferred to v1.x — Lobby named global exists but the full class-method
+  set is not ported.
 
 - `operator-parens.chk` (deferred to v1.x): requires the `'()'` slot
   name for the call operator and `call.evalArgs()` (CallMessage
