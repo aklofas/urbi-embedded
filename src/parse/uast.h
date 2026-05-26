@@ -120,12 +120,20 @@ typedef enum {
                              * OP_LOADK with a UVAL_FLOAT constant. */
 
     /* v0.6.2 Phase 2 — this keyword (Gap #3) */
-    AST_THIS = 37           /* `this` keyword — resolves to receiver (R0) in
+    AST_THIS = 37,          /* `this` keyword — resolves to receiver (R0) in
                              * method bodies.  Carries no payload; line+col
                              * are inherited from the base node.  Top-level
                              * `this` (lobby alias) is deferred to v1.x;
                              * emitter raises EMIT_NO_THIS_OUTSIDE_METHOD when
                              * fs->parent == NULL. */
+
+    /* === W3/v0.10.5: assert keyword === */
+    AST_ASSERT = 38         /* assert(expr) / assert { block }
+                             * Lowered to: if (!expr) throw "assertion failed: <src>"
+                             * No new opcode needed.  src_text/src_len is the
+                             * zero-copy source span of the expression (paren form);
+                             * NULL/0 for block form.
+                             * Ruling: implemented (Wave 6 W3, legacy F9). */
 } UAstKind;
 
 /* Method/property-decl kind discriminator (T41 — M6 Wave 2). */
@@ -258,6 +266,7 @@ typedef enum {
  *   u.property_decl — AST_PROPERTY_DECL: get/set sugar — receiver + slot
  *                                        name + getter/setter kind + params
  *                                        + body
+ *   u.assert_stmt — AST_ASSERT:          expression/block + source text span
  *
  * Slot/prop name storage: zero-copy lexeme view (name_start + name_len), as
  * with var_decl/assign/param.  The parser has no UVM and therefore cannot
@@ -449,6 +458,13 @@ struct UAstNode {
             UAstMethodKind kind;           /* UAST_METHOD_GETTER / UAST_METHOD_SETTER */
             UAstNode      *func;           /* AST_FUNCTION carrying params + body */
         } property_decl;
+        /* === W3/v0.10.5: assert keyword === */
+        struct {                                            /* AST_ASSERT */
+            UAstNode   *expr;              /* expression or block to assert */
+            const char *src_text;          /* zero-copy source span (paren form);
+                                            * NULL for block form */
+            int         src_len;           /* byte count; 0 for block form */
+        } assert_stmt;
     } u;
 };
 
