@@ -127,7 +127,7 @@ UTEST(install_returns_ok_normally)
 
     /* Plant one cell so the read-set is non-empty. */
     g_t39_cell.gc_byte = 0;
-    vm.test_install_cond_hook = hook_plant_one_cell;
+    vm.test_hooks->install_cond = hook_plant_one_cell;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
@@ -135,7 +135,7 @@ UTEST(install_returns_ok_normally)
     UASSERT_EQ((int)r, (int)URBI_INSTALL_OK);
     UASSERT_EQ(g_warn_count, 0);  /* no warn when read-set is non-empty */
 
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
 
     /* Clean up the installed watcher. */
     if (vm.active_watchers_head != NULL)
@@ -220,7 +220,7 @@ UTEST(install_returns_oom_pool_when_exhausted)
 
     /* Plant one cell so Phase 5a (empty-read-set check) is bypassed. */
     g_t39_cell.gc_byte = 0;
-    vm.test_install_cond_hook = hook_plant_one_cell;
+    vm.test_hooks->install_cond = hook_plant_one_cell;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
@@ -228,7 +228,7 @@ UTEST(install_returns_oom_pool_when_exhausted)
     UASSERT_EQ((int)URBI_INSTALL_OOM_POOL, (int)r);
     UASSERT(g_warn_count >= 1);
 
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
 
     /* Return pool slots so urbi_vm_destroy is clean. */
     for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {
@@ -258,7 +258,7 @@ UTEST(install_initializes_watcher_fields)
 
     /* Plant one cell so the install succeeds through Phase 5a. */
     g_t39_cell.gc_byte = 0;
-    vm.test_install_cond_hook = hook_plant_one_cell;
+    vm.test_hooks->install_cond = hook_plant_one_cell;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
@@ -271,7 +271,7 @@ UTEST(install_initializes_watcher_fields)
     UASSERT_EQ((int)URBI_WATCHER_ACTIVE,  (int)(w->flags & URBI_WATCHER_ACTIVE));
     UASSERT(w->realm == s.realm);
 
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
 
     /* Clean up the installed watcher. */
     urbi_watcher_unregister_internal(&vm, w);
@@ -320,7 +320,7 @@ UTEST(install_marks_observed_cells_with_bit6)
     reset_log(&vm);
 
     g_t39_cell.gc_byte = 0;
-    vm.test_install_cond_hook = hook_plant_one_cell;
+    vm.test_hooks->install_cond = hook_plant_one_cell;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
@@ -328,7 +328,7 @@ UTEST(install_marks_observed_cells_with_bit6)
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
     UASSERT(g_t39_cell.gc_byte & UGC_HAS_WATCHER_OBSERVER);
 
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
     /* Clean up: unregister installed watcher. */
     if (vm.active_watchers_head != NULL)
         urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
@@ -359,7 +359,7 @@ UTEST(install_appends_watcher_to_active_and_tag_lists)
 
     /* W0/v0.10.2: Phase 5a rejects empty read-sets; plant one cell. */
     g_t39_cell.gc_byte = 0;
-    vm.test_install_cond_hook = hook_plant_one_cell;
+    vm.test_hooks->install_cond = hook_plant_one_cell;
 
     UWatcherInstallResult res = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
@@ -425,7 +425,7 @@ UTEST(install_oom_pool_clears_trace_state)
      * have run (Phase 3) but Phase 5b alloc will fail. */
     test_drain_watcher_pool(&vm, held);
 
-    vm.test_install_cond_hook = hook_populate_trace;
+    vm.test_hooks->install_cond = hook_populate_trace;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
@@ -435,7 +435,7 @@ UTEST(install_oom_pool_clears_trace_state)
     UASSERT_EQ(0, (int)vm.trace_read_set_count);
     UASSERT_EQ(0, (int)vm.trace_overflow);
 
-    vm.test_install_cond_hook = NULL;
+    vm.test_hooks->install_cond = NULL;
 
     /* Return pool slots so urbi_vm_destroy is clean. */
     for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {

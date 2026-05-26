@@ -145,8 +145,8 @@ UTEST(at_rising_edge_fires_body)
     UASSERT(w != NULL);
     UASSERT_EQ((int)w->last_value_cache.kind, (int)UVAL_NIL);
 
-    vm.test_watcher_condition_hook = hook_cond_toggle;
-    vm.test_watcher_fire_hook      = hook_fire_count;
+    vm.test_hooks->watcher_condition = hook_cond_toggle;
+    vm.test_hooks->watcher_fire      = hook_fire_count;
 
     /* Pass 1: cond still false → no fire (NIL→NIL, no rising edge). */
     run_one_dirty_pass(&vm);
@@ -166,8 +166,8 @@ UTEST(at_rising_edge_fires_body)
     run_one_dirty_pass(&vm);
     UASSERT_EQ(g_fire_count, 1);   /* body count unchanged */
 
-    vm.test_watcher_condition_hook = NULL;
-    vm.test_watcher_fire_hook      = NULL;
+    vm.test_hooks->watcher_condition = NULL;
+    vm.test_hooks->watcher_fire      = NULL;
     urbi_watcher_unregister_internal(&vm, w);
     urbi_vm_destroy(&vm);
 }
@@ -195,9 +195,9 @@ UTEST(at_with_onleave_fires_on_falling_edge)
         NULL, 0U);
     UASSERT(w != NULL);
 
-    vm.test_watcher_condition_hook = hook_cond_toggle;
-    vm.test_watcher_fire_hook      = hook_fire_count;
-    vm.test_watcher_onleave_hook   = hook_onleave_count;
+    vm.test_hooks->watcher_condition = hook_cond_toggle;
+    vm.test_hooks->watcher_fire      = hook_fire_count;
+    vm.test_hooks->watcher_onleave   = hook_onleave_count;
 
     /* Rising edge: body fires, BODY_FIRED_SINCE_ONLEAVE set. */
     g_cond_truthy = 1;
@@ -217,9 +217,9 @@ UTEST(at_with_onleave_fires_on_falling_edge)
     run_one_dirty_pass(&vm);
     UASSERT_EQ(g_onleave_count, 1);
 
-    vm.test_watcher_condition_hook = NULL;
-    vm.test_watcher_fire_hook      = NULL;
-    vm.test_watcher_onleave_hook   = NULL;
+    vm.test_hooks->watcher_condition = NULL;
+    vm.test_hooks->watcher_fire      = NULL;
+    vm.test_hooks->watcher_onleave   = NULL;
     urbi_watcher_unregister_internal(&vm, w);
     urbi_vm_destroy(&vm);
 }
@@ -241,8 +241,8 @@ UTEST(whenever_fires_every_pass_while_truthy)
     /* Install with hook already active so seed is truthy.
      * WHENEVER fires every pass regardless of edge — seed value is irrelevant
      * for the fire decision but we set it consistently. */
-    vm.test_watcher_condition_hook = hook_cond_toggle;
-    vm.test_watcher_fire_hook      = hook_fire_count;
+    vm.test_hooks->watcher_condition = hook_cond_toggle;
+    vm.test_hooks->watcher_fire      = hook_fire_count;
 
     w = urbi_watcher_install_for_test(
         &vm, UWATCHER_WHENEVER, NULL, make_dummy_closure(&vm),
@@ -259,8 +259,8 @@ UTEST(whenever_fires_every_pass_while_truthy)
     run_one_dirty_pass(&vm);
     UASSERT_EQ(g_fire_count, 2);
 
-    vm.test_watcher_condition_hook = NULL;
-    vm.test_watcher_fire_hook      = NULL;
+    vm.test_hooks->watcher_condition = NULL;
+    vm.test_hooks->watcher_fire      = NULL;
     urbi_watcher_unregister_internal(&vm, w);
     urbi_vm_destroy(&vm);
 }
@@ -289,8 +289,8 @@ UTEST(at_sync_runs_inline)
         NULL, NULL, 0U);
     UASSERT(w != NULL);
 
-    vm.test_watcher_condition_hook = hook_cond_toggle;
-    vm.test_watcher_fire_hook      = hook_fire_count;
+    vm.test_hooks->watcher_condition = hook_cond_toggle;
+    vm.test_hooks->watcher_fire      = hook_fire_count;
 
     /* Rising edge: inline body fires (via fire hook). */
     g_cond_truthy = 1;
@@ -304,8 +304,8 @@ UTEST(at_sync_runs_inline)
     /* No body strand created (AT_SYNC runs inline — no spawn). */
     UASSERT(w->body_strand == NULL);
 
-    vm.test_watcher_condition_hook = NULL;
-    vm.test_watcher_fire_hook      = NULL;
+    vm.test_hooks->watcher_condition = NULL;
+    vm.test_hooks->watcher_fire      = NULL;
     urbi_watcher_unregister_internal(&vm, w);
     urbi_vm_destroy(&vm);
 }
@@ -328,7 +328,7 @@ UTEST(waituntil_rising_edge_wakes_waiter)
      * install_watcher_runtime does via OP_WAITUNTIL_INSTALL). */
     waiter.state = USTRAND_WAIT_WATCHER;
 
-    vm.test_watcher_condition_hook = hook_cond_toggle;
+    vm.test_hooks->watcher_condition = hook_cond_toggle;
 
     /* Install WAITUNTIL with waiter_strand wired. */
     UWatcher *w = urbi_watcher_install_for_test(
@@ -349,7 +349,7 @@ UTEST(waituntil_rising_edge_wakes_waiter)
     UASSERT(vm.active_watchers_head == NULL);
     UASSERT_EQ((int)waiter.state, (int)USTRAND_STATE_READY);
 
-    vm.test_watcher_condition_hook = NULL;
+    vm.test_hooks->watcher_condition = NULL;
     /* Dequeue waiter from ready queue before destroying vm. */
     if (vm.ready_head == &waiter) {
         vm.ready_head = waiter.ready_next;
@@ -384,8 +384,8 @@ UTEST(at_no_onleave_falling_edge_no_crash)
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
-    vm.test_watcher_condition_hook = hook_cond_toggle;
-    vm.test_watcher_fire_hook      = hook_fire_count;
+    vm.test_hooks->watcher_condition = hook_cond_toggle;
+    vm.test_hooks->watcher_fire      = hook_fire_count;
 
     /* Rising edge fires body. */
     g_cond_truthy = 1;
@@ -401,8 +401,8 @@ UTEST(at_no_onleave_falling_edge_no_crash)
      * the falling-edge onleave check short-circuits on onleave == NULL.
      * The flag state itself is an implementation detail; verify no crash only. */
 
-    vm.test_watcher_condition_hook = NULL;
-    vm.test_watcher_fire_hook      = NULL;
+    vm.test_hooks->watcher_condition = NULL;
+    vm.test_hooks->watcher_fire      = NULL;
     urbi_watcher_unregister_internal(&vm, w);
     urbi_vm_destroy(&vm);
 }

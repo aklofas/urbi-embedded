@@ -336,7 +336,7 @@ UTEST(realm_destroy_drain_ordering)
      * intercepts dispatch so urbi_run_closure_on_scratch is never called on the
      * native closure (native closures have proto==NULL and would crash the
      * scratch-frame arming path).  Test observes drain state only. */
-    vm.test_watcher_onleave_hook = onleave_drain_noop;
+    vm.test_hooks->watcher_onleave = onleave_drain_noop;
 
     UWatcher *w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, NULL, NULL,

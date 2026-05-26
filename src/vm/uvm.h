@@ -43,8 +43,16 @@ struct UChunkInstance;   /* M4 T30 — defined in src/object/uchunk_instance.h *
 /* Gap J (v0.7.1): host-side watcher table — full type needed in UVM struct. */
 #include "watcher/uwatcher_host.h"
 
-/* W2/v0.10.4: UWatcherState substate extracted from struct UVM per audit-1 F8. */
+/* === W2+W3/v0.10.4: substate struct headers (audit-1 F8) ===
+ * Full types are required for the pointer fields in struct UVM below.
+ * uwatcher_state.h is always compiled (src/watcher/).
+ * urepl_state.h is in src/repl/ (compiled only with URBI_ENABLE_REPL=1);
+ * the forward declaration below keeps uvm.h freestanding-safe for non-REPL
+ * builds — callers that need the full UReplState type include it directly.
+ * utest_hooks.h is in src/runtime/ (always compiled). */
 #include "watcher/uwatcher_state.h"
+struct UReplState;   /* forward-decl; full type in repl/urepl_state.h */
+#include "runtime/utest_hooks.h"
 
 /* --- M3 capacity macros --- */
 /* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
@@ -431,38 +439,22 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint16_t  trace_read_set_count;
     struct UCell *trace_read_set[URBI_WATCHER_READSET_MAX];
 
-    /* Test seams for the watcher fast path.  Originally introduced as M3
-     * stubs and retained at v0.5.5 because all four are still load-bearing
-     * for C-level unit tests; structural removal of these seams is deferred
-     * to Wave 5 (v0.5.7-fixes) per WATCH-023.  Production code paths (real
-     * watcher dispatch via urbi_run_closure_on_scratch) coexist with the
-     * hooks: each consumer checks the hook pointer and falls through to the
-     * real path when NULL.
+    /* === W3/v0.10.4: substate pointers (extracted per audit-1 F8) ===
+     * Watcher/install test seams previously lived as four inline function
+     * pointer fields; they are now bundled in UTestHooks (runtime/utest_hooks.h).
+     * Production callers NULL-check vm->test_hooks before dereferencing, matching
+     * the pre-W3 pattern of checking each hook pointer individually.
      *
-     * test_watcher_condition_hook: replaces invoke_condition_closure when non-NULL.
-     *   Tests install this to feed deterministic condition values for edge/level
-     *   firing tests.  NULL → invoke_condition_closure runs the real cond closure.
+     * vm->test_hooks is allocated by utest_hooks_create at urbi_vm_init and is
+     * non-NULL in all hosted builds.  Callers in src/watcher/ check
+     * vm->test_hooks != NULL before any field access so freestanding builds
+     * (where alloc_fn may be NULL) remain safe.
      *
-     * test_watcher_fire_hook: invoked by spawn_body_coroutine when non-NULL.
-     *   Tests install this to observe watcher body fires.  NULL → real body spawn. */
-    UValue (*test_watcher_condition_hook)(struct UVM *vm, struct UWatcher *w);
-    void   (*test_watcher_fire_hook)(struct UVM *vm, struct UWatcher *w);
-
-    /* Test seam for run_watcher_onleave; same Wave-5 deferral as above.
-     * NULL → run_watcher_onleave runs the real onleave path. */
-    void   (*test_watcher_onleave_hook)(struct UVM *vm, struct UWatcher *w);
-
-    /* Install-time cond-eval test seam.
-     * When non-NULL, install_watcher_runtime calls this hook instead of the
-     * real urbi_run_closure_on_scratch (uwatcher_scratch.c) — used by C-level
-     * unit tests that inject specific cond results or simulate cond-throws.
-     *   Signature: hook(vm, cond, out_result, out_threw)
-     *   - out_result receives the simulated return value.
-     *   - *out_threw is set to 1 to simulate a cond-throw (URBI_INSTALL_TRACE_FAULT).
-     * NULL → install_watcher_runtime calls the real urbi_run_closure_on_scratch.
-     * Same Wave-5 deferral as the three watcher hooks above. */
-    void   (*test_install_cond_hook)(struct UVM *vm, struct UClosure *cond,
-                                     UValue *out_result, int *out_threw);
+     * vm->repl is allocated by urepl_state_create (src/repl/) when a REPL
+     * server is started; it is NULL until then.  Callers check vm->repl != NULL
+     * before dereferencing (matching the former vm->repl_server != NULL check). */
+    struct UReplState  *repl;        /* was vm->repl_server (1 field) */
+    struct UTestHooks  *test_hooks;  /* was vm->test_watcher_* + test_install_cond_hook */
 
     /* --- Row 11 pending on-leave queue --- */
     struct UWatcher *pending_onleave_head;
@@ -704,15 +696,6 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Freed at urbi_vm_destroy.  GC roots walked by ref_table_walk_roots
      * (registered at urbi_vm_init). */
     URefTable ref_table;
-
-    /* --- v0.9.1 REPL service back-pointer ---
-     * Set by urbi_repl_serve when a server is started against this VM;
-     * cleared by urbi_repl_stop.  Read by urepl_dispatch_drain_if_active
-     * (weakly linked from src/vm/ustep.c) to find the queue/sessions
-     * during each urbi_step boundary.  void* keeps the core VM header
-     * free of an URBI_ENABLE_REPL conditional include cascade; the REPL
-     * TUs cast back to UReplServer*. */
-    void *repl_server;
 
     /* --- v0.9.1 Debug namespace proto (Task 22) ---
      * Lazily allocated by urbi_debug_namespace_register on first call;

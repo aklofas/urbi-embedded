@@ -14,6 +14,7 @@
 #include "repl/urepl_introspect.h"
 #include "repl/urepl_listener.h"
 #include "repl/urepl_ndjson.h"
+#include "repl/urepl_state.h"  /* W3/v0.10.4: UReplState (vm->repl->server) */
 #include "realm/urealm.h"
 #include "stdlib/lobby_native.h"  /* v0.9.1 Phase 5 — Lobby.lobbies + handleDisconnect */
 #include "vm/uvm.h"
@@ -595,10 +596,10 @@ urepl_dispatch_drain(UReplServer *server)
 void
 urepl_dispatch_drain_if_active(struct UVM *vm)
 {
-    if (vm == NULL || vm->repl_server == NULL) {
+    if (vm == NULL || vm->repl == NULL || vm->repl->server == NULL) {
         return;
     }
-    UReplServer *server = (UReplServer *)vm->repl_server;
+    UReplServer *server = (UReplServer *)vm->repl->server;
     urepl_listener_drain_accepts(server);
     urepl_dispatch_drain(server);
     urepl_listener_wake_all_readers(server);

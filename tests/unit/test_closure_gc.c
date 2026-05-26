@@ -251,7 +251,7 @@ UTEST(watcher_closure_survives_multi_gc_then_collected)
     /* Install the watcher with the closure as condition.
      * Set the hook so install-time seed (via urbi_watcher_install_for_test)
      * uses the hook to get nil; prevents real bytecode dispatch. */
-    vm.test_watcher_condition_hook = noop_condition_hook;
+    vm.test_hooks->watcher_condition = noop_condition_hook;
     UWatcher *w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL,
         /*condition=*/cl,
@@ -259,7 +259,7 @@ UTEST(watcher_closure_survives_multi_gc_then_collected)
         /*onleave=*/  NULL,
         NULL, 0U);
     UASSERT(w != NULL);
-    vm.test_watcher_condition_hook = NULL;   /* clear — no eval in this test */
+    vm.test_hooks->watcher_condition = NULL;   /* clear — no eval in this test */
 
     /* Watcher is on active_watchers_head; closure rooted via it.
      * Run 3 full GC cycles — closure must survive each one. */

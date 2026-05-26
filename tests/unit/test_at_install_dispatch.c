@@ -177,12 +177,12 @@ UTEST(waituntil_does_not_yield_when_cond_true)
     UASSERT_EQ(0, rc);
 
     /* Install hook before run: cond always true → immediate-wake path. */
-    ctx.vm.test_install_cond_hook = hook_cond_true;
+    ctx.vm.test_hooks->install_cond = hook_cond_true;
 
     UValue out;
     UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
 
-    ctx.vm.test_install_cond_hook = NULL;
+    ctx.vm.test_hooks->install_cond = NULL;
 
     UASSERT_EQ(UVM_OK, (int)vm_rc);
     /* Watcher unregistered immediately — no watcher survives. */

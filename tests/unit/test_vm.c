@@ -704,15 +704,17 @@ UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
  *   #2  UWatcherState struct (W2/v0.10.4 — extracted from inline fields)
  *   #3  watcher pool slab
  *   #4  deferred slot-change ring
- *   #5  operator-overload IC (Gap #4, M6 Wave 3)
- *   #6  call-frame stack (inside urbi_vm_run, not urbi_vm_init)
+ *   #5  UTestHooks wrapper (W3/v0.10.4: watcher/install test seams)
+ *   #6  operator-overload IC (Gap #4, M6 Wave 3)
+ *   #7  call-frame stack (inside urbi_vm_run, not urbi_vm_init)
  * The former allocation #3 (watcher scratch frame) was removed by Wave 1
- * of v0.5.x cleanup ramp (WATCH-022).  W2 (v0.10.4) added UWatcherState as
- * alloc #2, shifting all subsequent allocations by one.
- * We fail allocation #6 to exercise the OOM path inside urbi_vm_run. */
+ * of v0.5.x cleanup ramp (WATCH-022).  W2/v0.10.4 added UWatcherState as
+ * alloc #2; W3/v0.10.4 added UTestHooks as alloc #5; both shift subsequent
+ * allocations and together push the call-frame stack from #5 to #7.
+ * We fail allocation #7 to exercise the OOM path inside urbi_vm_run. */
 UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
     uvm_alloc_fail_nth_count  = 0;
-    uvm_alloc_fail_nth_target = 6;  /* fail the 6th alloc (call-frame stack) */
+    uvm_alloc_fail_nth_target = 7;  /* fail the 7th alloc (call-frame stack) */
     UProto c; fab_module_ret_only(&c, 0);
     UVM vm; urbi_vm_init(&vm, uvm_alloc_fail_nth, NULL);
     UValue out;

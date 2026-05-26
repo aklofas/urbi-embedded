@@ -86,8 +86,9 @@ urbi_watcher_install_for_test(
      * calls run_closure_on_scratch_frame_with_result for real bytecode eval.
      * This helper is used by tests that may pass fake closure sentinels
      * without setting a condition hook. */
-    if (w->condition != NULL && vm->test_watcher_condition_hook != NULL) {
-        w->last_value_cache = vm->test_watcher_condition_hook(vm, w);
+    if (w->condition != NULL && vm->test_hooks != NULL
+            && vm->test_hooks->watcher_condition != NULL) {
+        w->last_value_cache = vm->test_hooks->watcher_condition(vm, w);
     } else {
         UValue nil = {0};
         w->last_value_cache = nil;

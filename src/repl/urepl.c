@@ -11,6 +11,7 @@
 #include "repl/urepl_dispatch.h"
 #include "repl/urepl_listener.h"
 #include "repl/urepl_queue.h"
+#include "repl/urepl_state.h"  /* W3/v0.10.4: UReplState lifecycle */
 #include "vm/uvm.h"
 
 #include <stdlib.h>
@@ -142,8 +143,16 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
 #endif /* URBI_REPL_COOPERATIVE_ONLY */
 
     /* Register the server on the VM so urepl_dispatch_drain_if_active
-     * (the step-driver hook) finds it without a global lookup table. */
-    vm->repl_server = server;
+     * (the step-driver hook) finds it without a global lookup table.
+     * W3/v0.10.4: vm->repl is a UReplState wrapper; allocate on first use. */
+    vm->repl = urepl_state_create(vm);
+    if (vm->repl == NULL) {
+        /* OOM: server allocation succeeded but state wrapper failed.
+         * Destroy the server and signal failure to the caller. */
+        free(server);
+        return NULL;
+    }
+    vm->repl->server = server;
 
     return server;
 }
@@ -211,10 +220,14 @@ urbi_repl_stop(UReplServer *server)
     }
     UREPL_MUTEX_DESTROY(&server->accept_queue_mutex);
 
-    /* Unhook the VM back-pointer so the step-driver drain hook no
-     * longer sees a freed server. */
-    if (server->vm != NULL && server->vm->repl_server == server) {
-        server->vm->repl_server = NULL;
+    /* Unhook the VM back-pointer so the step-driver drain hook no longer
+     * sees a freed server.  W3/v0.10.4: clear vm->repl->server and free
+     * the UReplState wrapper so vm->repl returns to NULL. */
+    if (server->vm != NULL && server->vm->repl != NULL
+            && server->vm->repl->server == server) {
+        server->vm->repl->server = NULL;
+        urepl_state_destroy(server->vm, server->vm->repl);
+        server->vm->repl = NULL;
     }
 
     UREPL_MUTEX_DESTROY(&server->sessions_mutex);

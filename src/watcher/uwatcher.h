@@ -220,7 +220,7 @@ void urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w);
 /* === Eval pass === */
 
 /* invoke_condition_closure: evaluate w->condition on the VM scratch frame.
- * Routes to `vm->test_watcher_condition_hook` if set (existing fire-path
+ * Routes to `vm->test_hooks->watcher_condition` if set (existing fire-path
  * tests inject specific values); otherwise dispatches real bytecode via
  * `urbi_run_closure_on_scratch` (uwatcher_scratch.c).  Eval-time throws
  * fail-soft as nil — the watcher does not fire this pass and the caller
@@ -262,9 +262,9 @@ void   do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w,
 
 /* spawn_body_coroutine: eval-pass entry called by watcher_eval_dirty.
  * Precondition: w->body != NULL (watcher_eval_dirty only calls this when body
- * is set; body-less watchers use test_watcher_fire_hook directly in eval).
- * In URBI_DEBUG builds, asserts: in_watcher_eval == 1, AT/WHENEVER mode,
- * ACTIVE, no PENDING_UNREGISTER, body and realm non-NULL. */
+ * is set; body-less watchers use vm->test_hooks->watcher_fire directly in
+ * eval).  In URBI_DEBUG builds, asserts: in_watcher_eval == 1, AT/WHENEVER
+ * mode, ACTIVE, no PENDING_UNREGISTER, body and realm non-NULL. */
 void   spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
 
 /* respawn_body_coroutine: completion-path entry (spec #1 §5.2).
