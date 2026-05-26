@@ -811,3 +811,303 @@ uint8_t emit_block_arm(UEmitter *e, UAstNode *n) {
     if (!uemit_close_block(e)) return 0U;
     return r;
 }
+
+/* === W10/v0.10.5: list/dict literals + subscript emit =====================
+ *
+ * Stdlib-call lowering — no new opcodes.  Wire format stays at v1.9.
+ *
+ *   [e1, e2, e3]      → List.new(e1, e2, e3)
+ *   ["k" => v, ...]   → _d = Dict.new(); _d.set("k", v); ... ; _d
+ *   l[i]              → l.get(i)
+ *   l[i] = v          → l.set(i, v)
+ *   l[i] += v         → l.set(i, l.get(i) + v)
+ *
+ * All lowerings use synthetic AST_IDENT + AST_CALL + AST_MEMBER_GET nodes
+ * built on the arena and fed back through emit_expr — this inherits the
+ * existing method-call ABI (OP_SELF + OP_CALL), realm-global resolution,
+ * and IC index assignment for free.
+ * ========================================================================= */
+
+/* Helper: intern a C-string name into a synthetic AST_IDENT on the arena. */
+static UAstNode *synth_ident(UEmitter *e, const char *name, int line) {
+    UAstNode *n = (UAstNode *)uarena_alloc(e->arena, sizeof(UAstNode));
+    if (!n) { e->error = EMIT_OOM; return NULL; }
+    urbi_zero(n, sizeof(*n));
+    n->kind = AST_IDENT;
+    n->line = line;
+    n->col  = 0;
+    n->u.ident.start = name;  /* static / interned lifetime; safe */
+    n->u.ident.len   = 0;
+    /* Compute length by scanning (name is a short compile-time literal). */
+    {
+        int l = 0;
+        while (name[l] != '\0') l++;
+        n->u.ident.len = l;
+    }
+    return n;
+}
+
+/* Helper: build a synthetic AST_MEMBER_GET (recv.method_name). */
+static UAstNode *synth_member_get(UEmitter *e, UAstNode *recv,
+                                   const char *method_name, int line) {
+    UAstNode *n = (UAstNode *)uarena_alloc(e->arena, sizeof(UAstNode));
+    if (!n) { e->error = EMIT_OOM; return NULL; }
+    urbi_zero(n, sizeof(*n));
+    n->kind = AST_MEMBER_GET;
+    n->line = line;
+    n->col  = 0;
+    n->u.member.recv       = recv;
+    n->u.member.name_start = method_name;
+    {
+        int l = 0;
+        while (method_name[l] != '\0') l++;
+        n->u.member.name_len = l;
+    }
+    n->u.member.value = NULL;
+    return n;
+}
+
+/* Helper: build a synthetic AST_CALL (callee(args[0..nargs-1])). */
+static UAstNode *synth_call(UEmitter *e, UAstNode *callee,
+                             UAstNode **args, int nargs, int line) {
+    UAstNode *n = (UAstNode *)uarena_alloc(e->arena, sizeof(UAstNode));
+    if (!n) { e->error = EMIT_OOM; return NULL; }
+    urbi_zero(n, sizeof(*n));
+    n->kind = AST_CALL;
+    n->line = line;
+    n->col  = 0;
+    n->u.call.callee    = callee;
+    n->u.call.args      = args;
+    n->u.call.arg_count = nargs;
+    return n;
+}
+
+/* --- emit_list_lit_arm — AST_LIST_LIT: [e1, e2, ...]
+ *
+ * Lowers to: List.new(e1, e2, ...)
+ *
+ * Builds: AST_CALL { callee = AST_MEMBER_GET{List, "new"}, args = [e1...] }
+ * then recurses through emit_call_arm for the standard method-call ABI. */
+
+uint8_t emit_list_lit_arm(UEmitter *e, UAstNode *n) {
+    if (e->current_fs == NULL || e->vm == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+    int line = n->line;
+
+    /* Build: List.new — MEMBER_GET on "List" ident. */
+    UAstNode *list_ident = synth_ident(e, "List", line);
+    if (!list_ident) return 0U;
+    UAstNode *callee = synth_member_get(e, list_ident, "new", line);
+    if (!callee) return 0U;
+
+    /* Allocate args array from arena. */
+    int argc = n->u.list_lit.count;
+    UAstNode **args = NULL;
+    if (argc > 0) {
+        args = (UAstNode **)uarena_alloc(e->arena,
+                                          (size_t)argc * sizeof(UAstNode *));
+        if (!args) { e->error = EMIT_OOM; return 0U; }
+        for (int i = 0; i < argc; i++) args[i] = n->u.list_lit.elems[i];
+    }
+
+    UAstNode *call = synth_call(e, callee, args, argc, line);
+    if (!call) return 0U;
+
+    return emit_call_arm(e, call);
+}
+
+/* --- emit_dict_lit_arm — AST_DICT_LIT: ["k1" => v1, "k2" => v2, ...]
+ *
+ * Lowers to:
+ *   _d = Dict.new()
+ *   _d.set("k1", v1)
+ *   _d.set("k2", v2)
+ *   ...
+ *   _d   (result)
+ *
+ * Implemented by emitting the instructions directly: alloc _d_reg, emit
+ * Dict.new() call, then for each pair emit the .set() call.  Result is _d_reg.
+ *
+ * Note: _d_reg is held across the .set() calls.  Each .set() call is emitted
+ * as a synthetic CALL where the callee is MEMBER_GET{_d_ident, "set"}.
+ * However, since _d is a local temp (not in the actvar table), we cannot
+ * use AST_IDENT to reference it — instead we emit its register directly via a
+ * special synthetic pattern.
+ *
+ * Simpler direct approach: emit Dict.new() call → result in rd; then for each
+ * pair emit OP_SELF + OP_CALL for .set(k, v) using rd as receiver. */
+
+uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
+    if (e->current_fs == NULL || e->vm == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+    int line = n->line;
+
+    /* Step 1: emit Dict.new() → result register becomes rd. */
+    uint8_t rd;
+    {
+        UAstNode *dict_ident = synth_ident(e, "Dict", line);
+        if (!dict_ident) return 0U;
+        UAstNode *callee = synth_member_get(e, dict_ident, "new", line);
+        if (!callee) return 0U;
+        UAstNode *call0 = synth_call(e, callee, NULL, 0, line);
+        if (!call0) return 0U;
+        /* emit_call_arm returns callee_reg which is where the result lives.
+         * After the call, next_reg = r + 1 (per emit_call_arm contract). */
+        rd = emit_call_arm(e, call0);
+        if (e->error != EMIT_OK) return 0U;
+    }
+
+    /* Step 2: for each key-value pair, emit rd.set(key, value).
+     * We use direct bytecode emission (OP_SELF + args + OP_CALL) to keep
+     * rd stable across iterations without declaring a local. */
+    {
+        const char *set_name = "set";
+        USymbol *set_sym = (USymbol *)ustr_intern(e->vm, set_name, 3U);
+        if (!set_sym) { e->error = EMIT_OOM; return 0U; }
+
+        for (int i = 0; i < n->u.dict_lit.count; i++) {
+            /* Layout: R[call_base] = method, R[call_base+1] = self (rd),
+             *         R[call_base+2] = key,  R[call_base+3] = value. */
+            e->next_reg = rd + 1U;  /* reuse temps above rd */
+            if (e->current_fs->freereg < e->next_reg)
+                e->current_fs->freereg = e->next_reg;
+
+            uint8_t call_base = alloc_reg(e);
+            if (e->error != EMIT_OK) return 0U;
+            uint8_t self_reg = alloc_reg(e); /* callee_reg+1 = self */
+            if (e->error != EMIT_OK) return 0U;
+            (void)self_reg;  /* OP_SELF fills it */
+
+            /* OP_SELF: load method + snapshot receiver into call_base/call_base+1. */
+            int ic_idx = uemit_assign_ic_index(e, set_sym);
+            if (ic_idx < 0) return 0U;
+            emit_instr(e, uinstr_enc_abc(OP_SELF, call_base, rd, (uint8_t)ic_idx),
+                       (uint32_t)line);
+
+            /* Reset next_reg to args position (call_base+2). */
+            e->next_reg = (uint8_t)(call_base + 2U);
+            if (e->current_fs->freereg > e->next_reg)
+                e->current_fs->freereg = e->next_reg;
+
+            /* Emit key arg. */
+            if (e->current_fs->freereg < e->next_reg)
+                e->current_fs->freereg = e->next_reg;
+            uint8_t key_r = emit_expr(e, n->u.dict_lit.keys[i]);
+            if (e->error != EMIT_OK) return 0U;
+            uint8_t key_expected = (uint8_t)(call_base + 2U);
+            if (key_r != key_expected) {
+                emit_instr(e, uinstr_enc_abc(OP_MOVE, key_expected, key_r, 0U),
+                           (uint32_t)line);
+                e->next_reg = key_expected + 1U;
+            }
+
+            /* Emit value arg. */
+            if (e->current_fs->freereg < e->next_reg)
+                e->current_fs->freereg = e->next_reg;
+            uint8_t val_r = emit_expr(e, n->u.dict_lit.vals[i]);
+            if (e->error != EMIT_OK) return 0U;
+            uint8_t val_expected = (uint8_t)(call_base + 3U);
+            if (val_r != val_expected) {
+                emit_instr(e, uinstr_enc_abc(OP_MOVE, val_expected, val_r, 0U),
+                           (uint32_t)line);
+            }
+
+            /* OP_CALL: method call with 2 explicit args (B = 2+2 = 4). */
+            emit_instr(e, uinstr_enc_abc(OP_CALL, call_base, 4U, 0x82U),
+                       (uint32_t)line);
+
+            /* Result of .set() is discarded; restore next_reg to rd+1. */
+            e->next_reg = rd + 1U;
+            if (e->current_fs->freereg > e->next_reg)
+                e->current_fs->freereg = e->next_reg;
+        }
+    }
+
+    /* Result is rd (the dict object). */
+    e->next_reg = rd + 1U;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->current_fs != NULL && e->next_reg > e->current_fs->max_reg_seen)
+        e->current_fs->max_reg_seen = e->next_reg;
+    return rd;
+}
+
+/* --- emit_subscript_get_arm — AST_SUBSCRIPT_GET: l[i] → l.get(i) */
+
+uint8_t emit_subscript_get_arm(UEmitter *e, UAstNode *n) {
+    if (e->current_fs == NULL || e->vm == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+    int line = n->line;
+
+    /* Build: recv.get(index)
+     * Args array must be arena-allocated — synth_call stores the pointer and
+     * emit_call_arm may read it after this stack frame returns. */
+    UAstNode *mg = synth_member_get(e, n->u.subscript.recv, "get", line);
+    if (!mg) return 0U;
+    UAstNode **args = (UAstNode **)uarena_alloc(e->arena, sizeof(UAstNode *));
+    if (!args) { e->error = EMIT_OOM; return 0U; }
+    args[0] = n->u.subscript.index;
+    UAstNode *call = synth_call(e, mg, args, 1, line);
+    if (!call) return 0U;
+
+    return emit_call_arm(e, call);
+}
+
+/* --- emit_subscript_set_arm — AST_SUBSCRIPT_SET:
+ *   l[i] = v    → l.set(i, v)
+ *   l[i] += v   → l.set(i, l.get(i) + v)   (is_compound_add=true) */
+
+uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
+    if (e->current_fs == NULL || e->vm == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+    int line = n->line;
+
+    UAstNode *rhs_val = n->u.subscript.value;
+
+    if (n->u.subscript.is_compound_add) {
+        /* Compound add: l.set(i, l.get(i) + v)
+         * Build: l.get(i) + v as a synthetic AST_BINARY, then pass as value.
+         * get_args must be arena-allocated (see emit_subscript_get_arm note). */
+        UAstNode *get_mg = synth_member_get(e, n->u.subscript.recv, "get", line);
+        if (!get_mg) return 0U;
+        UAstNode **get_args = (UAstNode **)uarena_alloc(e->arena, sizeof(UAstNode *));
+        if (!get_args) { e->error = EMIT_OOM; return 0U; }
+        get_args[0] = n->u.subscript.index;
+        UAstNode *get_call = synth_call(e, get_mg, get_args, 1, line);
+        if (!get_call) return 0U;
+
+        /* AST_BINARY: get_call + rhs_val */
+        UAstNode *add_node = (UAstNode *)uarena_alloc(e->arena, sizeof(UAstNode));
+        if (!add_node) { e->error = EMIT_OOM; return 0U; }
+        urbi_zero(add_node, sizeof(*add_node));
+        add_node->kind = AST_BINARY;
+        add_node->line = line;
+        add_node->u.binary.op  = BOP_ADD;
+        add_node->u.binary.lhs = get_call;
+        add_node->u.binary.rhs = rhs_val;
+
+        rhs_val = add_node;
+    }
+
+    /* Build: recv.set(index, rhs_val)
+     * set_args must be arena-allocated (see emit_subscript_get_arm note). */
+    UAstNode *mg = synth_member_get(e, n->u.subscript.recv, "set", line);
+    if (!mg) return 0U;
+    UAstNode **set_args = (UAstNode **)uarena_alloc(e->arena,
+                                                     2U * sizeof(UAstNode *));
+    if (!set_args) { e->error = EMIT_OOM; return 0U; }
+    set_args[0] = n->u.subscript.index;
+    set_args[1] = rhs_val;
+    UAstNode *call = synth_call(e, mg, set_args, 2, line);
+    if (!call) return 0U;
+
+    return emit_call_arm(e, call);
+}
+/* === end W10/v0.10.5 === */

@@ -451,6 +451,12 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_PROPERTY_DECL:  return emit_property_decl_arm(e, n);
     /* W3/v0.10.5: assert keyword */
     case AST_ASSERT:         return emit_assert_arm(e, n);
+    /* === W10/v0.10.5: list/dict literals + subscript === */
+    case AST_LIST_LIT:        return emit_list_lit_arm(e, n);
+    case AST_DICT_LIT:        return emit_dict_lit_arm(e, n);
+    case AST_SUBSCRIPT_GET:   return emit_subscript_get_arm(e, n);
+    case AST_SUBSCRIPT_SET:   return emit_subscript_set_arm(e, n);
+    /* === end W10/v0.10.5 === */
     case AST_PROP_GET:
     case AST_PROP_SET:
     case AST_LOCAL_REF:

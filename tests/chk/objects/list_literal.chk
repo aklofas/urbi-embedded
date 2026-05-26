@@ -1,0 +1,42 @@
+# Wave 6 W10 — list literal [e1, e2, ...] (v0.10.5)
+# Covers: list literal parsing + lowering to List.new(e1, e2, ...).
+# Ruling: implemented — stdlib-call lowering; no new opcode.
+# Audit: closes legacy F14 (list literal gap).
+# Source: legacy tests/2.x/list.chk list-literal sections.
+
+# --- empty list literal ---
+var l = []; l.length()
+[00000000] 0
+
+# --- single-element list ---
+var l = [42]; l.length()
+[00000001] 1
+
+var l = [42]; l.get(0)
+[00000002] 42
+
+# --- three-element list ---
+var l = [1, 2, 3]; l.length()
+[00000003] 3
+
+var l = [1, 2, 3]; l.get(0)
+[00000004] 1
+
+var l = [1, 2, 3]; l.get(2)
+[00000005] 3
+
+# --- list literal with expressions ---
+var x = 10; var l = [x, x + 1, x + 2]; l.get(1)
+[00000006] 11
+
+# --- list literal with string elements ---
+var l = ["hello", "world"]; l.get(0)
+[00000007] "hello"
+
+# --- list literal is mutable ---
+var l = [1, 2, 3]; l.set(0, 99); l.get(0)
+[00000008] 99
+
+# --- nested list literals ---
+var outer = [[1, 2], [3, 4]]; outer.length()
+[00000009] 2

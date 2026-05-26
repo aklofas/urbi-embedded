@@ -1,0 +1,28 @@
+# Wave 6 W10 — subscript get/set l[i] (v0.10.5)
+# Covers: l[i] → l.get(i) and l[i] = v → l.set(i, v).
+# Ruling: implemented — stdlib-call lowering; no new opcode.
+# Audit: closes legacy F14 (subscript gap).
+# Source: legacy edit-container.chk + list/dict stdlib tests.
+
+# --- list subscript get ---
+var l = [10, 20, 30]; l[0]
+[00000000] 10
+
+var l = [10, 20, 30]; l[2]
+[00000001] 30
+
+# --- list subscript set ---
+var l = [1, 2, 3]; l[1] = 99; l[1]
+[00000002] 99
+
+# --- dict subscript get ---
+var d = ["a" => 42]; d["a"]
+[00000003] 42
+
+# --- dict subscript set ---
+var d = ["a" => 1]; d["a"] = 77; d["a"]
+[00000004] 77
+
+# --- subscript in expression context ---
+var l = [5, 6, 7]; var x = l[0] + l[2]; x
+[00000005] 12

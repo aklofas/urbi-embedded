@@ -77,6 +77,9 @@ UAstNode *parse_prefix(UParser *p);
 UAstNode *parse_atom(UParser *p);
 UAstNode *parse_call_args(UParser *p, UAstNode *callee);
 UAstNode *parse_member_access(UParser *p, UAstNode *recv, bool *out_is_assign);
+/* === W10/v0.10.5: list/dict literal + subscript === */
+UAstNode *parse_bracket_literal(UParser *p);
+/* === end W10/v0.10.5 === */
 int infix_prec(UTokenType t);
 UAstBinaryOp infix_binop(UTokenType t);
 bool is_compare_token(UTokenType t);

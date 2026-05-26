@@ -237,6 +237,12 @@ uint8_t emit_return_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_function_arm(UEmitter *e, UAstNode *n);
 /* W3/v0.10.5: assert keyword */
 uint8_t emit_assert_arm(UEmitter *e, UAstNode *n);
+/* === W10/v0.10.5: list/dict literals + subscript === */
+uint8_t emit_list_lit_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_subscript_get_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n);
+/* === end W10/v0.10.5 === */
 
 /* Leaf-expression AST arm helpers (defined in uemit_expr.c).
  * Called from emit_expr via forwarding stubs; bodies live in uemit_expr.c. */

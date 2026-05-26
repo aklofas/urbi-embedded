@@ -116,6 +116,13 @@ typedef enum {
     /* === W3/v0.10.5: assert keyword === */
     TOK_KW_ASSERT,
 
+    /* === W10/v0.10.5: list/dict literals + subscript + compound assign === */
+    TOK_LBRACKET,    /* [ — list/dict literal open; subscript open */
+    TOK_RBRACKET,    /* ] — list/dict literal close; subscript close */
+    TOK_FAT_ARROW,   /* => — dict key-value separator (e.g. "a" => 1) */
+    TOK_PLUS_EQ,     /* += — compound add-assign (l[i] += v desugar) */
+    /* === end W10/v0.10.5 === */
+
     TOK_ERROR,        /* malformed input */
 
     TOK__LAST          /* sentinel; not a real token type — used to size
