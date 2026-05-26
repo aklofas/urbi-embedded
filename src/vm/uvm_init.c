@@ -37,6 +37,9 @@
 #include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM — T23 return-code surface */
 #include "changed/uchanged_node.h"  /* urbi_deferred_slot_changes_walk_roots */
 #include "runtime/utest_hooks.h"    /* W3/v0.10.4: UTestHooks lifecycle */
+#if URBI_ENABLE_REPL
+#  include "repl/urepl_state.h"     /* W3/v0.10.4: UReplState lifecycle (destroy in vm teardown) */
+#endif
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -545,6 +548,18 @@ void urbi_vm_destroy(UVM *vm) {
         utest_hooks_destroy(vm, vm->test_hooks);
         vm->test_hooks = NULL;
     }
+
+#if URBI_ENABLE_REPL
+    /* W3/v0.10.4: free UReplState wrapper if allocated (embedder skipped
+     * urbi_repl_stop).  Pre-W3 vm->repl_server was an inline void* (no heap
+     * allocation); W3 introduced an 8-byte heap wrapper that leaked when
+     * urbi_vm_destroy ran without a preceding urbi_repl_stop.
+     * urepl_state_destroy is NULL-tolerant; VMs that never started REPL have
+     * vm->repl == NULL and this is a no-op.  Must run before alloc_fn is
+     * freed (urepl_state_destroy calls vm->alloc_fn). */
+    urepl_state_destroy(vm, vm->repl);
+    vm->repl = NULL;
+#endif
 
     /* Gap #4 (M6 Wave 3): free heap-allocated operator-overload IC. */
     if (vm->op_overload_ic != NULL && vm->alloc_fn != NULL) {

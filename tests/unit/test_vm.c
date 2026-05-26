@@ -703,14 +703,14 @@ UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
  *   #1  event ring
  *   #2  watcher pool slab
  *   #3  deferred slot-change ring
- *   #4  operator-overload IC (Gap #4, M6 Wave 3)
- *   #5  UTestHooks wrapper (W3/v0.10.4: watcher/install test seams)
+ *   #4  UTestHooks wrapper (W3/v0.10.4: watcher/install test seams)
+ *   #5  operator-overload IC (Gap #4, M6 Wave 3)
  *   #6  call-frame stack (inside urbi_vm_run, not urbi_vm_init)
  * The former allocation #3 (watcher scratch frame) was removed by Wave 1
  * of v0.5.x cleanup ramp (WATCH-022); the call-frame stack moved from
  * #5 to #4 as a result.  Gap #4 (Wave 3) inserted the IC as alloc #4,
  * pushing the call-frame stack back to #5.  W3/v0.10.4 inserted UTestHooks
- * as alloc #5, pushing the call-frame stack to #6.
+ * as alloc #4, pushing the IC to #5 and the call-frame stack to #6.
  * We fail allocation #6 to exercise the OOM path inside urbi_vm_run. */
 UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
     uvm_alloc_fail_nth_count  = 0;
