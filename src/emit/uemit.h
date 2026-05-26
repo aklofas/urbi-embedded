@@ -74,6 +74,42 @@ typedef enum {
 /* Forward declaration for M2 FuncState lifecycle. */
 struct UFuncState;
 
+/* === W1/v0.10.5: break/continue loop-context infrastructure ===
+ *
+ * break and continue lower to OP_JMP with the target patched after the loop.
+ * Each for/while/switch body opens a ULoopCtx on the emitter's loop_stack[]
+ * array; AST_BREAK / AST_CONTINUE record their OP_JMP PCs here so the
+ * enclosing loop can patch them after it knows the exit / continue addresses.
+ *
+ * break_pcs[] — list of OP_JMP instruction PCs that must be patched to
+ *               jump to the instruction AFTER the loop (exit target).
+ * continue_pcs[] — list of OP_JMP instruction PCs that must be patched to
+ *               jump to the loop-condition check (continue target).
+ *               For switch statements this list is always empty (no `continue`
+ *               inside switch — the parser rejected it).  But since `switch`
+ *               opens a loop-context too (to allow `break`), it shares the
+ *               same infrastructure.
+ *
+ * Maximum break/continue sites per loop nesting level: 64.  Any excess
+ * silently saturates (the PC list fills; excess sites retain the placeholder
+ * JMP offset until the loop emitter patches them — safe, just wrong on
+ * overflow).  64 is far beyond any realistic loop body; a full-program limit
+ * would require dynamic allocation which we avoid for freestanding targets.
+ *
+ * loop_depth tracks nesting so emit_break_arm / emit_continue_arm always
+ * target the INNERMOST enclosing loop (top of loop_stack[]). */
+
+#define UEMIT_LOOP_CTX_MAX       8   /* max for/while/switch nesting depth */
+#define UEMIT_LOOP_PATCH_MAX    16   /* max break/continue sites per loop */
+
+typedef struct {
+    int break_pcs[UEMIT_LOOP_PATCH_MAX];      /* OP_JMP PCs to patch to exit */
+    int break_count;
+    int continue_pcs[UEMIT_LOOP_PATCH_MAX];   /* OP_JMP PCs to patch to cond */
+    int continue_count;
+} ULoopCtx;
+/* === end W1/v0.10.5 === */
+
 /* --- UEmitter state (caller stack-allocates, emitter fills) --- */
 
 typedef struct UEmitter {
@@ -99,6 +135,15 @@ typedef struct UEmitter {
     UEmitDiag   *diag_buf;
     int          diag_count;
     int          diag_cap;
+
+    /* === W1/v0.10.5: break/continue loop context stack ===
+     * Pushed by emit_for_each_arm / emit_while_arm / emit_switch_arm when
+     * entering a loop; popped after the exit target is known.  break and
+     * continue sites record their placeholder OP_JMP PCs here for batch
+     * patching.  See ULoopCtx documentation above. */
+    ULoopCtx     loop_stack[UEMIT_LOOP_CTX_MAX];
+    int          loop_depth;  /* current nesting depth (0 = not in a loop) */
+    /* === end W1/v0.10.5 === */
 } UEmitter;
 
 /* --- API --- */
