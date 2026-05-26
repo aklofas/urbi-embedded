@@ -249,7 +249,7 @@ static int c_watchers_in_use(struct UVM *vm, UValue self,
                               UValue *args, uint8_t nargs, UValue *out)
 {
     (void)self; (void)args; (void)nargs;
-    if (out != NULL) *out = urbi_make_int((int64_t)vm->watcher_pool_in_use);
+    if (out != NULL) *out = urbi_make_int((int64_t)vm->watchers->pool_in_use);
     return UEXEC_OK;
 }
 
@@ -257,7 +257,7 @@ static int c_watchers_high_water(struct UVM *vm, UValue self,
                                   UValue *args, uint8_t nargs, UValue *out)
 {
     (void)self; (void)args; (void)nargs;
-    if (out != NULL) *out = urbi_make_int((int64_t)vm->watcher_pool_high_water);
+    if (out != NULL) *out = urbi_make_int((int64_t)vm->watchers->pool_high_water);
     return UEXEC_OK;
 }
 
