@@ -435,7 +435,11 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   indices [0, trace_read_set_count) are valid.  Sized by
      *   URBI_WATCHER_READSET_MAX. */
     uint8_t   trace_overflow;
-    uint8_t   _pad_trace[3];          /* padding; aligns trace_read_set_count */
+    uint8_t   _pad_trace[3];          /* padding to 4-byte boundary so the
+                                         following uint16_t trace_read_set_count
+                                         is naturally aligned (and the
+                                         subsequent pointer array starts at a
+                                         pointer-aligned offset). */
     uint16_t  trace_read_set_count;
     struct UCell *trace_read_set[URBI_WATCHER_READSET_MAX];
 

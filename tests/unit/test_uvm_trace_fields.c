@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: UVM install-time trace fields (spec #2 §5.2).
  *
- * Checks:
- *   - in_watcher_install, trace_overflow, trace_read_set_count are zero at create.
- *   - in_watcher_eval is also zero (mutual-exclusion with install flag).
+ * Checks (post-W2: watcher substate lives on vm->watchers; trace fields
+ * remain on UVM root):
+ *   - vm->watchers->in_install, vm->trace_overflow, vm->trace_read_set_count
+ *     are zero at create.
+ *   - vm->watchers->in_eval is also zero (mutual-exclusion with install flag).
  *   - URBI_WATCHER_READSET_MAX is defined and >= 4. */
 
 #include "utest.h"

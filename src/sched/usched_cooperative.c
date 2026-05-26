@@ -29,8 +29,10 @@
  *                             Invariant: number of pending host-injected
  *                             unwind events. M3 stub: always 0 until T31.
  *
- *   watcher_active_count    — owned by M5 (active watcher list).
+ *   vm->watchers->active_count
+ *                           — owned by M5 (active watcher list).
  *                             Invariant: number of live watchers; M3 stub: 0.
+ *                             (Pre-W2 name: vm->watcher_active_count.)
  *
  *   event_queue_count       — owned by M5+ (event scheduler).
  *                             Invariant: number of pending events; M3 stub: 0.

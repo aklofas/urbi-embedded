@@ -149,10 +149,11 @@ invoke_onleave_inline(struct UVM *vm, struct UWatcher *w)
  *   WAITUNTIL rising edge  → wake waiter_strand, unregister self
  *
  * Per spec #2 §8.3:
- *   - Early-exit if watcher_dirty_count == 0.
- *   - Reset watcher_dirty_count BEFORE the loop so any condition that
- *     re-triggers the dirty bit during eval is caught on the next safepoint.
- *   - in_watcher_eval reentrancy guard prevents recursive install/eval.
+ *   - Early-exit if vm->watchers->dirty_count == 0.
+ *   - Reset vm->watchers->dirty_count BEFORE the loop so any condition
+ *     that re-triggers the dirty bit during eval is caught on the next
+ *     safepoint.
+ *   - vm->watchers->in_eval reentrancy guard prevents recursive install/eval.
  *   - Watchers with URBI_WATCHER_PENDING_UNREGISTER are skipped.
  *   - last_value_cache updated after firing decision.
  *   - WAITUNTIL: capture next_active before calling unregister_internal

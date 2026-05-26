@@ -266,9 +266,10 @@ run_on_scratch_core(struct UVM       *vm,
  * src/event/uevent_emit.c, which sets the flag around its call to this
  * helper).  Other callers — install_watcher_runtime, invoke_condition_closure,
  * invoke_body_inline, invoke_onleave_inline, run_watcher_onleave — rely on
- * caller-owned vm->watchers->in_eval / in_watcher_install for re-entry
+ * caller-owned vm->watchers->in_eval / vm->watchers->in_install for re-entry
  * protection instead.  See WATCH-036 (uvm.h field comment on
- * in_watcher_scratch) for the asymmetry rationale. */
+ * in_watcher_scratch — pre-W2 name; current field is in_scratch) for the
+ * asymmetry rationale. */
 int
 urbi_run_closure_on_scratch(struct UVM      *vm,
                             struct UClosure *closure,

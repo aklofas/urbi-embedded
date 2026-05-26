@@ -3,7 +3,7 @@
  *
  * T36 cases:
  *   1. trace_records_slot_reads_during_install:
- *      Set in_watcher_install=1, run OP_GETSLOT against a real UObject.
+ *      Set in_install=1, run OP_GETSLOT against a real UObject.
  *      Verify trace_read_set[0] == (UCell *)obj and trace_read_set_count == 1.
  *   2. trace_deduplicates_same_receiver:
  *      Run OP_GETSLOT twice with the same receiver.
@@ -12,9 +12,9 @@
  *      Run OP_GETSLOT URBI_WATCHER_READSET_MAX+2 times with distinct receivers.
  *      trace_read_set_count must clamp to URBI_WATCHER_READSET_MAX; trace_overflow=1.
  *   4. trace_disabled_when_flag_clear:
- *      in_watcher_install=0 (default): OP_GETSLOT does NOT touch trace_read_set_count.
+ *      in_install=0 (default): OP_GETSLOT does NOT touch trace_read_set_count.
  *   5. install_arms_trace_fields:
- *      install_watcher_runtime (non-recursive path) sets in_watcher_install=1,
+ *      install_watcher_runtime (non-recursive path) sets in_install=1,
  *      trace_overflow=0, trace_read_set_count=0 before returning the stub OK. */
 
 #include "utest.h"
@@ -164,7 +164,7 @@ run_one_getslot(UVM *vm, UObject *obj)
 
 /* 1. trace_records_slot_reads_during_install
  *
- * With in_watcher_install=1, running OP_GETSLOT must append the receiver's
+ * With in_install=1, running OP_GETSLOT must append the receiver's
  * UCell* to trace_read_set and increment trace_read_set_count to 1. */
 UTEST(trace_records_slot_reads_during_install)
 {
@@ -192,7 +192,7 @@ UTEST(trace_records_slot_reads_during_install)
 
 /* 2. trace_deduplicates_same_receiver
  *
- * Running OP_GETSLOT twice against the same object while in_watcher_install=1
+ * Running OP_GETSLOT twice against the same object while in_install=1
  * must leave trace_read_set_count at 1 (dedupe by linear scan). */
 UTEST(trace_deduplicates_same_receiver)
 {
@@ -259,7 +259,7 @@ UTEST(trace_overflow_sets_flag_and_caps)
 
 /* 4. trace_disabled_when_flag_clear
  *
- * With in_watcher_install=0 (default), OP_GETSLOT must NOT touch
+ * With in_install=0 (default), OP_GETSLOT must NOT touch
  * trace_read_set_count — the UNLIKELY branch is not taken. */
 UTEST(trace_disabled_when_flag_clear)
 {
@@ -270,7 +270,7 @@ UTEST(trace_disabled_when_flag_clear)
     UObject *obj = make_object_with_x_slot(&vm);
     UASSERT(obj != NULL);
 
-    /* Default: in_watcher_install == 0. */
+    /* Default: in_install == 0. */
     UASSERT_EQ(0, (int)vm.watchers->in_install);
     vm.trace_read_set_count = 0;
 
@@ -302,9 +302,9 @@ hook_plant_one_cell_t36(struct UVM *vm, struct UClosure *cond,
 /* 5. install_arms_and_resets_trace_fields
  *
  * install_watcher_runtime (non-recursive path, no-throw hook) must:
- *   - Phase 2: set in_watcher_install=1, clear trace_overflow and
+ *   - Phase 2: set in_install=1, clear trace_overflow and
  *     trace_read_set_count.
- *   - Phase 4: clear in_watcher_install=0 after running the cond stub.
+ *   - Phase 4: clear in_install=0 after running the cond stub.
  *   - Return URBI_INSTALL_OK when the cond hook does not throw and
  *     no overflow occurs. */
 UTEST(install_arms_and_resets_trace_fields)
@@ -329,7 +329,7 @@ UTEST(install_arms_and_resets_trace_fields)
 
     vm.test_hooks->install_cond = NULL;
 
-    /* Stub returns OK; in_watcher_install must be 0 after phase 4. */
+    /* Stub returns OK; in_install must be 0 after phase 4. */
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
     UASSERT_EQ(0, (int)vm.watchers->in_install);
     UASSERT_EQ(0, (int)vm.trace_overflow);
@@ -397,7 +397,7 @@ capture_log_t37(struct UVM *vm, void *ud, int level, const char *fmt, ...)
  *
  * When the cond hook forces trace_overflow=1, install_watcher_runtime must:
  *   - Return URBI_INSTALL_READSET_OVER.
- *   - Reset in_watcher_install to 0.
+ *   - Reset in_install to 0.
  *   - Clear trace_overflow.
  *   - Fire a URBI_LOG_WARN containing "read-set exceeds". */
 UTEST(install_returns_readset_over_when_overflow)
@@ -430,7 +430,7 @@ UTEST(install_returns_readset_over_when_overflow)
  *
  * When the cond hook sets *out_threw=1, install_watcher_runtime must:
  *   - Return URBI_INSTALL_TRACE_FAULT.
- *   - Reset in_watcher_install to 0.
+ *   - Reset in_install to 0.
  *   - Fire a URBI_LOG_WARN containing "condition threw". */
 UTEST(install_returns_trace_fault_on_cond_throw)
 {
