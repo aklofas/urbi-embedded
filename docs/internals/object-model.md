@@ -220,43 +220,73 @@ into `vm->type_table[]` by `urbi_object_builtin_types_init`.
 
 ---
 
-## Slot operations: OP_GETSLOT / OP_SETSLOT
+## Slot operations: OP_GETSLOT / OP_SETSLOT / OP_SELF
 
-Bytecode encodes slot access with two ABC-form opcodes:
+Bytecode encodes slot access with three ABC-form opcodes:
 
 - `OP_GETSLOT A B C`: `R[A] := R[B].slot[ic_index=C]`
 - `OP_SETSLOT A B C`: `R[B].slot[ic_index=C] := R[A]`
+- `OP_SELF A B C`:    `R[A] := R[B].slot[ic_index=C]`, `R[A+1] := R[B]` (receiver snapshot for method call)
 
 C is not a register — it's an inline-cache site index into the function's
 per-call-site IC table. The emitter assigns one IC slot per `GETSLOT` /
-`SETSLOT` site at compile time; the runtime allocates the IC table when the
-module is bound to a VM. The IC table itself lives in the per-VM
+`SETSLOT` / `SELF` site at compile time; the runtime allocates the IC table
+when the module is bound to a VM. The IC table itself lives in the per-VM
 `UProtoInstance` (see [realm-and-chunks.md](realm-and-chunks.md) for the
 chunk-instance binding protocol and the per-VM IC RAM tier).
 
-Dispatch flow in `src/vm/uvm.c`:
+**W1 (v0.10.4): slot-access helper layer.** The dispatch arms in
+`src/vm/uvm.c` now delegate all IC policy to `src/vm/uvm_slot.c`:
+
+- `vm_resolve_ic` — IC fast-path lookup with LOCAL-slot re-dispatch.
+  This is the **exclusive site** for the OBJ-IC-POLY discipline: when
+  `URBI_SLOT_FLAG_LOCAL` is set, the cached IC entry holds a slot
+  **index** (`ic->slot_idx[k]`), not a fixed pointer, so each receiver
+  re-resolves `recv->slots[ic->slot_idx[k]]` independently. Pre-W1 this
+  was duplicated inline in all three OP arms; audit-1 F3 + runtime-
+  invariants F8 both cite this as a regression risk. Post-W1 it lives
+  here only.
+- `vm_trace_slot_read_if_needed` — adds `recv`'s GC cell to
+  `vm->trace_read_set[]` when `vm->in_watcher_install` is set (watcher
+  install-time cond evaluation). Also single-site post-W1.
+- `vm_getslot_value` / `vm_setslot_value` — combine the trace probe +
+  IC fast-path for the get and set sides.
+- `vm_dispatch_getter` / `vm_dispatch_setter` — invoke property closures
+  via `urbi_run_closure_on_scratch[_with_payload]`.
+- `vm_getslot_slow` / `vm_setslot_slow` — slow-path wrappers around
+  `urbi_slot_get_slow` / `urbi_slot_set_slow` with error formatting and
+  post-fill getter/setter dispatch.
+
+`src/vm/uvm_self.c` holds `vm_self_lookup` (delegates to
+`vm_getslot_value`; the receiver-snapshot contract for `OP_SELF` is
+documented there).
+
+Dispatch flow in `src/vm/uvm.c` (post-W1):
 
 1. Resolve the per-VM `UProtoInstance` via `ic_resolve_pi(s)`. Each call
    frame carries the proto-instance for its owning closure
    (see [closures.md](closures.md) — `UClosure.proto_inst`).
 2. Look up the `UIC` at `pi->ic_table[ic_index]`.
-3. Type-check the receiver: must be `UVAL_OBJECT`.
-4. Linear-scan `ic->n` entries for a `(recv->shape, vm->topology_gen)`
-   match. On hit, take the fast path.
-5. On miss, call `urbi_slot_get_slow` / `urbi_slot_set_slow`.
+3. Type-check the receiver; for atom values, route through the atom proto.
+4. Call `vm_getslot_value` / `vm_setslot_value` / `vm_self_lookup`
+   (fast path: IC scan + LOCAL re-dispatch + watcher trace).
+5. On `VM_SLOT_GETTER_NEEDED` / `VM_SLOT_SETTER_NEEDED`: call
+   `vm_dispatch_getter` / `vm_dispatch_setter`.
+6. On `VM_SLOT_MISSING`: call `vm_getslot_slow` / `vm_setslot_slow`
+   (slow path: prototype-chain DFS, IC fill, getter/setter post-fill
+   check, GC barrier on set path).
 
 For `OP_GETSLOT` the fast path copies `*ic->slots[k]` into `R[A]`, modulo
-a getter check (OGET flag in `ic->flags[k]` triggers a getter dispatch
-that's currently a clean diagnostic — getter dispatch wires through with
-the stdlib bring-up).
+the LOCAL re-dispatch (see `vm_resolve_ic`) and getter check.
 
 For `OP_SETSLOT` the fast path is more layered. On shape+topology hit:
 
-- OSET flag set → setter dispatch (also diagnose-only at v1.0).
+- OSET flag set → setter dispatch via `vm_dispatch_setter`.
 - CONSTANT flag set → reject the write with a TypeError.
-- LOCAL flag set → in-place write through the GC's
-  `urbi_gc_slot_write` barrier.
-- LOCAL flag clear → fall to the slow path for **copy-on-write**.
+- LOCAL flag set → in-place write through `urbi_gc_slot_store` (GC
+  barrier + store in one call) using the cached slot **index** for
+  OBJ-IC-POLY correctness.
+- LOCAL flag clear → fall to slow path for **copy-on-write**.
 
 Copy-on-write is the legacy urbiscript semantics for an inherited slot:
 writing through a receiver that resolves the slot on a prototype installs

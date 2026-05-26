@@ -32,6 +32,7 @@
 #include "runtime/uframe.h"
 #include "vm/uvm_op_overload.h"  /* vm_arith_method_fallback / _unary / _cmp (Gap #4) */
 #include "value/uintern.h"       /* ustr_op_name (Gap #4 operator-name interning) */
+#include "vm/uvm_slot.h"         /* vm_getslot_value, vm_setslot_value, vm_self_lookup, vm_dispatch_getter/setter, vm_trace_slot_read_if_needed (W1) */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -948,24 +949,15 @@ dispatch:
 
         CASE(OP_GETSLOT) {
             /* OP_GETSLOT ABC: R[A] := R[B].slot[ic_index].
-             *   A = dst_reg, B = recv_reg, C = ic_index.
              *
-             * Fast path: linear scan of the IC entries for a (recv->shape,
-             * vm->topology_gen) match.  On hit, copy *slots[k] into R[A]
-             * (or, if FLAG_OGET set, dispatch the getter — currently raises
-             * a diagnostic; full getter dispatch lands when the frame-push
-             * wrapper API matures, see TODO below).
-             *
-             * Slow path: urbi_slot_get_slow walks the prototype chain,
-             * fills exactly one IC entry at ic->replace_cursor, and either
-             * copies the slot value to *out (no OGET) or signals OGET-flag
-             * present (caller would dispatch). */
+             * Post-W1: thin arm — decode, resolve IC + recv, call helpers.
+             * All policy (IC fast-path, trace, getter, slow path + error)
+             * lives in uvm_slot.c. */
             uint32_t i = *s->pc;
             uint8_t  dst_reg  = uinstr_a(i);
             uint8_t  recv_reg = uinstr_b(i);
             uint8_t  ic_index = uinstr_c(i);
 
-            /* Resolve IC table (ic_resolve_pi, VM-008). */
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
@@ -973,13 +965,6 @@ dispatch:
                 HALT();
             }
             UIC *ic = &pi->ic_table[ic_index];
-
-            /* Phase 2 atom-method dispatch: when the receiver is not an
-             * Object value, route the slot lookup through the realm-global
-             * atom proto (Integer / Float / String / Event proto) rather
-             * than failing.  IC entries cache the atom proto's shape, so
-             * subsequent calls with the same atom kind hit the fast path
-             * (every UVAL_INT routes to the same Integer atom proto). */
             UObject *recv;
             if (s->R[recv_reg].kind == (uint8_t)UVAL_OBJECT) {
                 recv = (UObject *)s->R[recv_reg].v.p;
@@ -991,142 +976,30 @@ dispatch:
                     HALT();
                 }
             }
-
-            /* v1.6 S42: vm->last_recv is gone.  OP_GETSLOT no longer
-             * publishes a receiver — method-call sites use OP_SELF to
-             * place the receiver in R[A+1] and OP_CALL reads it from
-             * there.  OP_GETSLOT is now strictly a value load.
-             *
-             * Trace probe (spec #2 §7.3 phase 2+3): when watcher install is
-             * tracing reads, record the receiver's GC cell.
-             * UNLIKELY: this branch is taken only during install-time cond eval
-             * — never on the normal hot path.  Zero overhead when bit is clear. */
-            if (UNLIKELY(vm->in_watcher_install)) {
-                UCell *cell = (UCell *)recv;
-                bool already_present = false;
-                size_t _ti;
-                for (_ti = 0; _ti < (size_t)vm->trace_read_set_count; _ti++) {
-                    if (vm->trace_read_set[_ti] == cell) {
-                        already_present = true;
-                        break;
-                    }
-                }
-                if (!already_present) {
-                    if ((size_t)vm->trace_read_set_count < (size_t)URBI_WATCHER_READSET_MAX) {
-                        vm->trace_read_set[vm->trace_read_set_count++] = cell;
-                    } else {
-                        vm->trace_overflow = 1;
-                    }
-                }
+            UValue out_val; uint8_t fk = 0;
+            UVmSlotResult sr = vm_getslot_value(vm, ic, recv, &out_val, &fk);
+            if (sr == VM_SLOT_OK)             { s->R[dst_reg] = out_val; NEXT(); }
+            if (sr == VM_SLOT_GETTER_NEEDED)  {
+                UValue gr;
+                if (vm_dispatch_getter(vm, ic->uprops[fk], "GETSLOT", &gr) != VM_SLOT_OK) HALT();
+                s->R[dst_reg] = gr; NEXT();
             }
-
-            /* Fast path: linear scan over ic->n entries. */
-            for (uint8_t k = 0; k < ic->n; k++) {
-                if (ic->recv_shapes[k]  == recv->shape
-                 && ic->topology_gen[k] == vm->topology_gen) {
-                    if (ic->flags[k] & URBI_SLOT_FLAG_OGET) {
-                        /* T41 (M6 Wave 2): dispatch the getter closure on a
-                         * transient scratch strand.  The getter takes no args
-                         * (the user-written `function() { body }` is the
-                         * shape) and returns the slot value.  Receiver
-                         * binding (`this`) is not yet wired — the v0.6.1
-                         * scaffold supports getter bodies that compute their
-                         * value without referencing self; full self-binding
-                         * lands when the implicit-`this` resolver does. */
-                        UProps *up_g = ic->uprops[k];
-                        if (up_g == NULL || up_g->oget.kind != (uint8_t)UVAL_CLOSURE
-                            || up_g->oget.v.p == NULL) {
-                            vm->last_error = UVM_TYPE_ERROR;
-                            vm_format_type_error_msg(vm, "GETSLOT: getter is not a closure");
-                            HALT();
-                        }
-                        UValue getter_result; int getter_threw = 0;
-                        int rc_g = urbi_run_closure_on_scratch(
-                            vm, (UClosure *)up_g->oget.v.p,
-                            &getter_result, &getter_threw);
-                        if (rc_g != 0 || getter_threw) {
-                            vm->last_error = UVM_TYPE_ERROR;
-                            vm_format_type_error_msg(vm, "GETSLOT: getter raised");
-                            HALT();
-                        }
-                        s->R[dst_reg] = getter_result;
-                        NEXT();
-                    }
-                    /* OBJ-IC-POLY: re-resolve the slot per recv when the IC
-                     * entry caches a local slot — the absolute `slots[k]`
-                     * pointer is recv-specific and would return the first
-                     * cached recv's value for any polymorphic same-shape
-                     * recv that follows. */
-                    UValue loaded = (ic->flags[k] & URBI_SLOT_FLAG_LOCAL)
-                                    ? recv->slots[ic->slot_idx[k]]
-                                    : *ic->slots[k];
-                    s->R[dst_reg] = loaded;
-                    NEXT();
-                }
-            }
-
-            /* Slow path. */
-            UValue v;
-            int rc = urbi_slot_get_slow(vm, recv, ic, &v);
-            if (rc != 0) {
-                vm->last_error = UVM_TYPE_ERROR;
-                {
-                    UDiagWriter _w;
-                    diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
-                    diag_write_cstr(&_w, "TypeError: GETSLOT: slot '");
-                    if (ic->name != NULL)
-                        diag_write_cstr(&_w, (const char *)ic->name);
-                    diag_write_cstr(&_w, "' not found");
-                }
-                HALT();
-            }
-            /* Inspect the just-filled IC entry to decide if a getter is
-             * pending.  T41: dispatch identically to the fast-path arm. */
-            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
-                                        % URBI_IC_ENTRIES_PER_SITE);
-            if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
-                UProps *up_g = ic->uprops[fresh_k];
-                if (up_g == NULL || up_g->oget.kind != (uint8_t)UVAL_CLOSURE
-                    || up_g->oget.v.p == NULL) {
-                    vm->last_error = UVM_TYPE_ERROR;
-                    vm_format_type_error_msg(vm, "GETSLOT: getter is not a closure");
-                    HALT();
-                }
-                UValue getter_result; int getter_threw = 0;
-                int rc_g = urbi_run_closure_on_scratch(
-                    vm, (UClosure *)up_g->oget.v.p,
-                    &getter_result, &getter_threw);
-                if (rc_g != 0 || getter_threw) {
-                    vm->last_error = UVM_TYPE_ERROR;
-                    vm_format_type_error_msg(vm, "GETSLOT: getter raised");
-                    HALT();
-                }
-                s->R[dst_reg] = getter_result;
-                NEXT();
-            }
-            s->R[dst_reg] = v;
+            /* MISSING — slow path (error formatting + getter check inside helper). */
+            if (vm_getslot_slow(vm, ic, recv, "GETSLOT", &out_val) != VM_SLOT_OK) HALT();
+            s->R[dst_reg] = out_val;
             NEXT();
         }
 
         CASE(OP_SETSLOT) {
             /* OP_SETSLOT ABC: R[B].slot[ic_index] := R[A].
-             *   A = src_reg, B = recv_reg, C = ic_index.
              *
-             * Fast path: scan IC entries; on shape+topology match, dispatch
-             * setter (FLAG_OSET — currently diagnoses), reject CONSTANT, or
-             * write in place if FLAG_LOCAL.  A proto-chain hit (no LOCAL,
-             * no OSET) breaks out of the fast path so the slow path can do
-             * COW.
-             *
-             * Slow path: urbi_slot_set_slow walks the prototype chain and
-             * either installs a fresh local slot on recv (miss / COW) or
-             * fills the IC and writes through (local hit / setter pending). */
+             * Post-W1: thin arm — decode, guard, call helpers.
+             * All IC policy (fast-path + slow-path + error) lives in uvm_slot.c. */
             uint32_t i = *s->pc;
             uint8_t  src_reg  = uinstr_a(i);
             uint8_t  recv_reg = uinstr_b(i);
             uint8_t  ic_index = uinstr_c(i);
 
-            /* Resolve IC table (ic_resolve_pi, VM-008). */
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
@@ -1134,7 +1007,6 @@ dispatch:
                 HALT();
             }
             UIC *ic = &pi->ic_table[ic_index];
-
             if (s->R[recv_reg].kind != (uint8_t)UVAL_OBJECT) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "SETSLOT: receiver is not an Object");
@@ -1142,19 +1014,10 @@ dispatch:
             }
             UObject *recv = (UObject *)s->R[recv_reg].v.p;
             if (recv == NULL) {
-                /* UVAL_OBJECT with v.p == NULL is an invariant violation —
-                 * defend against it explicitly so downstream dereferences
-                 * are safe (and so the static analyzer can prove it). */
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "SETSLOT: receiver is NULL");
                 HALT();
             }
-            /* v0.9.1: bytecode-side mutation of a readonly atom proto raises
-             * TypeError per spec §4.2.  The check fires before the IC fast-
-             * path so polymorphic same-shape callers still pay only one
-             * branch.  Host-side C API mutators (urbi_object_set_local_slot,
-             * the stdlib registration helpers) bypass this check entirely —
-             * they populate the proto before the readonly bit is set. */
             if ((recv->flags & URBI_OBJ_FLAG_READONLY) != 0U) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm,
@@ -1162,119 +1025,26 @@ dispatch:
                 HALT();
             }
             UValue v = s->R[src_reg];
-
-            int slow_path = 1;
-            for (uint8_t k = 0; k < ic->n; k++) {
-                if (ic->recv_shapes[k]  == recv->shape
-                 && ic->topology_gen[k] == vm->topology_gen) {
-                    if (ic->flags[k] & URBI_SLOT_FLAG_OSET) {
-                        /* T41 (M6 Wave 2): dispatch the setter closure on a
-                         * transient scratch strand with the new value as
-                         * payload (R[0]).  The setter shape is
-                         * `function(v) { body }`. */
-                        UProps *up_s = ic->uprops[k];
-                        if (up_s == NULL || up_s->oset.kind != (uint8_t)UVAL_CLOSURE
-                            || up_s->oset.v.p == NULL) {
-                            vm->last_error = UVM_TYPE_ERROR;
-                            vm_format_type_error_msg(vm, "SETSLOT: setter is not a closure");
-                            HALT();
-                        }
-                        UValue setter_result; int setter_threw = 0;
-                        int rc_s = urbi_run_closure_on_scratch_with_payload(
-                            vm, (UClosure *)up_s->oset.v.p, v,
-                            &setter_result, &setter_threw);
-                        if (rc_s != 0 || setter_threw) {
-                            vm->last_error = UVM_TYPE_ERROR;
-                            vm_format_type_error_msg(vm, "SETSLOT: setter raised");
-                            HALT();
-                        }
-                        /* Setter return value is discarded; SETSLOT has no
-                         * scripted return value. */
-                        NEXT();
-                    }
-                    if (ic->flags[k] & URBI_SLOT_FLAG_CONSTANT) {
-                        vm->last_error = UVM_TYPE_ERROR;
-                        {
-                            UDiagWriter _w;
-                            diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
-                            diag_write_cstr(&_w, "TypeError: SETSLOT: cannot write to constant slot '");
-                            if (ic->name != NULL)
-                                diag_write_cstr(&_w, (const char *)ic->name);
-                            diag_write_cstr(&_w, "'");
-                        }
-                        HALT();
-                    }
-                    if (ic->flags[k] & URBI_SLOT_FLAG_LOCAL) {
-                        /* OBJ-IC-POLY: re-resolve the slot per recv using
-                         * the cached index — the absolute ic->slots[k]
-                         * pointer is recv-specific and writing to it on a
-                         * polymorphic same-shape recv would corrupt the
-                         * first cached recv's slot.  Forward Dijkstra
-                         * barrier fires on the actual recv cell. */
-                        uint32_t s_idx = (uint32_t)ic->slot_idx[k];
-                        urbi_gc_slot_store(vm, (UCell *)recv, s_idx,
-                                           &recv->slots[s_idx], v);
-                        urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
-                        slow_path = 0;
-                        break;
-                    }
-                    /* Proto-chain hit (no LOCAL, no OSET, not CONSTANT) →
-                     * fall to slow path for COW. */
-                    break;
-                }
-            }
-            if (!slow_path) {
+            uint8_t fk = 0;
+            UVmSlotResult sr = vm_setslot_value(vm, ic, recv, v, &fk);
+            if (sr == VM_SLOT_OK)            { NEXT(); }
+            if (sr == VM_SLOT_SETTER_NEEDED) {
+                if (vm_dispatch_setter(vm, ic->uprops[fk], "SETSLOT", v) != VM_SLOT_OK) HALT();
                 NEXT();
             }
-
-            /* Slow path. */
-            int rc = urbi_slot_set_slow(vm, recv, ic, v);
-            if (rc != 0) {
+            if (sr == VM_SLOT_CONST_WRITE)   {
                 vm->last_error = UVM_TYPE_ERROR;
                 {
                     UDiagWriter _w;
                     diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
-                    diag_write_cstr(&_w, "TypeError: SETSLOT: slot write failed for '");
-                    if (ic->name != NULL)
-                        diag_write_cstr(&_w, (const char *)ic->name);
-                    diag_write_cstr(&_w, "' (constant, OOM, or resolve overflow)");
+                    diag_write_cstr(&_w, "TypeError: SETSLOT: cannot write to constant slot '");
+                    if (ic->name != NULL) diag_write_cstr(&_w, (const char *)ic->name);
+                    diag_write_cstr(&_w, "'");
                 }
                 HALT();
             }
-            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
-                                        % URBI_IC_ENTRIES_PER_SITE);
-            if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OSET)) {
-                /* T41: dispatch identically to the fast-path arm. */
-                UProps *up_s = ic->uprops[fresh_k];
-                if (up_s == NULL || up_s->oset.kind != (uint8_t)UVAL_CLOSURE
-                    || up_s->oset.v.p == NULL) {
-                    vm->last_error = UVM_TYPE_ERROR;
-                    vm_format_type_error_msg(vm, "SETSLOT: setter is not a closure");
-                    HALT();
-                }
-                UValue setter_result; int setter_threw = 0;
-                int rc_s = urbi_run_closure_on_scratch_with_payload(
-                    vm, (UClosure *)up_s->oset.v.p, v,
-                    &setter_result, &setter_threw);
-                if (rc_s != 0 || setter_threw) {
-                    vm->last_error = UVM_TYPE_ERROR;
-                    vm_format_type_error_msg(vm, "SETSLOT: setter raised");
-                    HALT();
-                }
-                NEXT();
-            }
-            /* Fire the write barrier on the slow path so watchers whose
-             * read-set includes recv see the write.  Mirrors the fast-path
-             * urbi_gc_slot_store call earlier in this OP_SETSLOT arm (the
-             * URBI_SLOT_FLAG_LOCAL branch above).  The actual store was
-             * already performed inside urbi_slot_set_slow, so this is the
-             * barrier-only pre_store path — calling the barrier after the
-             * store is correct because observer_dirty only bumps
-             * watcher_dirty_count and watcher_eval_dirty runs at the next
-             * safepoint, not inline here.  Slot index 0 is passed as a
-             * conservative sentinel — observer_dirty ignores the key at M5. */
-            urbi_gc_slot_pre_store(vm, (UCell *)recv, 0U, v);
-            urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
+            /* MISSING — slow path (error formatting + setter/barrier inside helper). */
+            if (vm_setslot_slow(vm, ic, recv, v, "SETSLOT") != VM_SLOT_OK) HALT();
             NEXT();
         }
 
@@ -1819,6 +1589,10 @@ dispatch:
          *     the getter body once implicit-this lands).
          *   * No vm->last_recv side effect — that field is gone at v1.6. */
         CASE(OP_SELF) {
+            /* OP_SELF ABC: R[A] := R[B].slot[ic_index],  R[A+1] := R[B].
+             *
+             * Post-W1: thin arm.  Receiver-snapshot BEFORE lookup (dst_reg
+             * may alias recv_reg); R[A+1] is always written before R[A]. */
             uint32_t i = *s->pc;
             uint8_t  dst_reg  = uinstr_a(i);
             uint8_t  recv_reg = uinstr_b(i);
@@ -1832,12 +1606,7 @@ dispatch:
             }
             UIC *ic = &pi->ic_table[ic_index];
 
-            /* Snapshot the user-visible receiver BEFORE any lookup work —
-             * dst_reg may alias recv_reg, in which case writing R[A] later
-             * would otherwise destroy the receiver we need to copy to
-             * R[A+1].  Snapshot first; write R[A+1] before R[A]. */
-            UValue self_value = s->R[recv_reg];
-
+            UValue self_value = s->R[recv_reg]; /* snapshot before possible alias */
             UObject *recv;
             if (self_value.kind == (uint8_t)UVAL_OBJECT) {
                 recv = (UObject *)self_value.v.p;
@@ -1850,101 +1619,20 @@ dispatch:
                 }
             }
 
-            if (UNLIKELY(vm->in_watcher_install)) {
-                UCell *cell = (UCell *)recv;
-                bool already_present = false;
-                size_t _ti;
-                for (_ti = 0; _ti < (size_t)vm->trace_read_set_count; _ti++) {
-                    if (vm->trace_read_set[_ti] == cell) {
-                        already_present = true;
-                        break;
-                    }
-                }
-                if (!already_present) {
-                    if ((size_t)vm->trace_read_set_count < (size_t)URBI_WATCHER_READSET_MAX) {
-                        vm->trace_read_set[vm->trace_read_set_count++] = cell;
-                    } else {
-                        vm->trace_overflow = 1;
-                    }
-                }
+            UValue out_slot; uint8_t fk = 0;
+            UVmSlotResult sr = vm_self_lookup(vm, ic, recv, &out_slot, &fk);
+            if (sr == VM_SLOT_OK) {
+                s->R[dst_reg + 1U] = self_value; s->R[dst_reg] = out_slot; NEXT();
             }
-
-            /* Fast path. */
-            for (uint8_t k = 0; k < ic->n; k++) {
-                if (ic->recv_shapes[k]  == recv->shape
-                 && ic->topology_gen[k] == vm->topology_gen) {
-                    if (ic->flags[k] & URBI_SLOT_FLAG_OGET) {
-                        UProps *up_g = ic->uprops[k];
-                        if (up_g == NULL || up_g->oget.kind != (uint8_t)UVAL_CLOSURE
-                            || up_g->oget.v.p == NULL) {
-                            vm->last_error = UVM_TYPE_ERROR;
-                            vm_format_type_error_msg(vm, "SELF: getter is not a closure");
-                            HALT();
-                        }
-                        UValue getter_result; int getter_threw = 0;
-                        int rc_g = urbi_run_closure_on_scratch(
-                            vm, (UClosure *)up_g->oget.v.p,
-                            &getter_result, &getter_threw);
-                        if (rc_g != 0 || getter_threw) {
-                            vm->last_error = UVM_TYPE_ERROR;
-                            vm_format_type_error_msg(vm, "SELF: getter raised");
-                            HALT();
-                        }
-                        s->R[dst_reg + 1U] = self_value;
-                        s->R[dst_reg]      = getter_result;
-                        NEXT();
-                    }
-                    /* OBJ-IC-POLY: re-resolve per recv for local slots —
-                     * mirrors the OP_GETSLOT fast path above. */
-                    UValue loaded = (ic->flags[k] & URBI_SLOT_FLAG_LOCAL)
-                                    ? recv->slots[ic->slot_idx[k]]
-                                    : *ic->slots[k];
-                    s->R[dst_reg + 1U] = self_value;
-                    s->R[dst_reg]      = loaded;
-                    NEXT();
-                }
+            if (sr == VM_SLOT_GETTER_NEEDED) {
+                UValue gr;
+                if (vm_dispatch_getter(vm, ic->uprops[fk], "SELF", &gr) != VM_SLOT_OK) HALT();
+                s->R[dst_reg + 1U] = self_value; s->R[dst_reg] = gr; NEXT();
             }
-
-            /* Slow path. */
-            UValue v;
-            int rc = urbi_slot_get_slow(vm, recv, ic, &v);
-            if (rc != 0) {
-                vm->last_error = UVM_TYPE_ERROR;
-                {
-                    UDiagWriter _w;
-                    diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
-                    diag_write_cstr(&_w, "TypeError: SELF: slot '");
-                    if (ic->name != NULL)
-                        diag_write_cstr(&_w, (const char *)ic->name);
-                    diag_write_cstr(&_w, "' not found");
-                }
-                HALT();
-            }
-            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
-                                        % URBI_IC_ENTRIES_PER_SITE);
-            if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
-                UProps *up_g = ic->uprops[fresh_k];
-                if (up_g == NULL || up_g->oget.kind != (uint8_t)UVAL_CLOSURE
-                    || up_g->oget.v.p == NULL) {
-                    vm->last_error = UVM_TYPE_ERROR;
-                    vm_format_type_error_msg(vm, "SELF: getter is not a closure");
-                    HALT();
-                }
-                UValue getter_result; int getter_threw = 0;
-                int rc_g = urbi_run_closure_on_scratch(
-                    vm, (UClosure *)up_g->oget.v.p,
-                    &getter_result, &getter_threw);
-                if (rc_g != 0 || getter_threw) {
-                    vm->last_error = UVM_TYPE_ERROR;
-                    vm_format_type_error_msg(vm, "SELF: getter raised");
-                    HALT();
-                }
-                s->R[dst_reg + 1U] = self_value;
-                s->R[dst_reg]      = getter_result;
-                NEXT();
-            }
+            /* MISSING — slow path. */
+            if (vm_getslot_slow(vm, ic, recv, "SELF", &out_slot) != VM_SLOT_OK) HALT();
             s->R[dst_reg + 1U] = self_value;
-            s->R[dst_reg]      = v;
+            s->R[dst_reg]      = out_slot;
             NEXT();
         }
 
