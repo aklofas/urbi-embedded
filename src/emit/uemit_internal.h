@@ -235,6 +235,8 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_call_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_return_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_function_arm(UEmitter *e, UAstNode *n);
+/* W3/v0.10.5: assert keyword */
+uint8_t emit_assert_arm(UEmitter *e, UAstNode *n);
 
 /* Leaf-expression AST arm helpers (defined in uemit_expr.c).
  * Called from emit_expr via forwarding stubs; bodies live in uemit_expr.c. */
