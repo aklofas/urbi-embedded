@@ -78,9 +78,9 @@
 | Construct | Status | Reason / fix milestone |
 |---|---|---|
 | `mytag : { body }` (brace-block prefix) | implemented | — |
-| `mytag : stmt` (bare-statement prefix) | NOT implemented | legacy F3; Wave 3 W5 |
-| `Tag.scope : body` (member-expr tag) | NOT implemented | legacy F3; Wave 6 W8 |
-| `tag : body onleave handler` | NOT implemented | legacy F3 / parser comment notes v1.x; Wave 6 W8 |
+| `mytag : stmt` (bare-statement prefix) | implemented | legacy F3; Wave 3 W5 closed |
+| `Tag.scope : body` (member-expr tag) | implemented | legacy F3; Wave 6 W8 — `parse_tag_prefix_from_expr` via postfix-chain COLON intercept; `tests/chk/tag/tag_member_expr.chk` |
+| `tag : body onleave handler` | deferred-v1.x | PARSE-033: AST field retained; scheduler tag-stack lifecycle design open; Wave 6 W8 ruling |
 | `Tag.new()` (script-side constructor) | NOT implemented | reactive F3; Wave 3 W4 |
 | `mytag.stop()` (script-side cancellation) | NOT implemented | OP_TAG_STOP is reserved stub; Wave 3 W4 |
 | Tag scope events (enter/leave) | partial | works as tag-stack lifecycle; script API TBD |
