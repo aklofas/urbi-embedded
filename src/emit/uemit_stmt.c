@@ -977,7 +977,7 @@ uint8_t emit_assert_arm(UEmitter *e, UAstNode *n) {
  *   No new opcodes. */
 
 /* emit_break_arm */
-uint8_t emit_break_arm(UEmitter *e, UAstNode *n) {
+uint8_t emit_break_arm(UEmitter *e, const UAstNode *n) {
     if (e->loop_depth == 0) {
         /* Parser should have caught this; defensive. */
         e->error = EMIT_UNSUPPORTED_AST;
@@ -999,7 +999,7 @@ uint8_t emit_break_arm(UEmitter *e, UAstNode *n) {
 }
 
 /* emit_continue_arm */
-uint8_t emit_continue_arm(UEmitter *e, UAstNode *n) {
+uint8_t emit_continue_arm(UEmitter *e, const UAstNode *n) {
     if (e->loop_depth == 0) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;

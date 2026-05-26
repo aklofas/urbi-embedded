@@ -310,8 +310,8 @@ uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n);
 /* === end W10/v0.10.5 === */
 /* === W1/v0.10.5: control flow === */
 uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_break_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_continue_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_break_arm(UEmitter *e, const UAstNode *n);
+uint8_t emit_continue_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_switch_arm(UEmitter *e, UAstNode *n);
 /* === end W1/v0.10.5: control flow === */
 
