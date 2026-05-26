@@ -177,6 +177,27 @@ extern "C" {
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
 
+/* === W2/v0.10.6: ABI freeze pin ============================================
+ *
+ * This is the symbolic pre-v1.0 freeze.  Any change to the public C API
+ * after this tag is a "post-freeze breaking change" and must:
+ *
+ *   1. Be enumerated in CHANGELOG.md with an explicit "freeze override"
+ *      comment referencing docs/api-stability.md §3.
+ *   2. Bump the expected values in this _Static_assert.
+ *   3. Bump URBI_API_VERSION_MAJOR/MINOR/PATCH per the policy in this
+ *      file's leading comment.
+ *
+ * Failing to bump the static_assert breaks the build, which is the point —
+ * deliberate intent at every change, not silent ABI drift.
+ *
+ * Pin target: v0.10.6-stabilization ships at 0/17/0.
+ */
+_Static_assert(URBI_API_VERSION_MAJOR == 0
+            && URBI_API_VERSION_MINOR == 17
+            && URBI_API_VERSION_PATCH == 0,
+    "ABI freeze pin: see docs/api-stability.md §3 before bumping");
+
 /* Runtime getter. NULL-tolerant per arg. */
 void urbi_api_version(int *out_major, int *out_minor, int *out_patch);
 
