@@ -96,7 +96,7 @@
 | Angle literals (`180deg`, `pi`) | NOT implemented (lexer suffix table missing `deg`/`rad`) | legacy F8; Wave 6 W4 |
 | Physical literals | NOT implemented | legacy F8; Wave 6 W4 |
 | String literals | implemented | — |
-| Block comments | non-nesting (diverges from legacy) | legacy F7; Wave 6 W6 decision |
+| Block comments | dropped (locked non-nesting) | legacy F7; Wave 6 W6 — scanner uses C-style non-nesting; see [LANG-CONVENTIONS.md §7](LANG-CONVENTIONS.md#7-block-comments--divergence-from-legacy) and [migration recipe](migration/block-comments-migration.md) |
 | Synclines (`//#line`, `//#push`, `//#pop`) | implemented | needs compat fixture per legacy F16 |
 
 ### Object model
