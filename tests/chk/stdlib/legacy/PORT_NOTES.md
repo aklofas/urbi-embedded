@@ -6,30 +6,64 @@ fixtures, adapted to the v0.6.1 (Wave 2) language subset.
 ## Triage outcome
 
 The plan envisioned 9-12 ports.  Most legacy fixtures depend on
-language features that v0.6.1 does not yet ship — primarily:
+language features that urbi-embedded does not yet ship — a summary of
+each gap's current status follows.
 
-- **No float literals.**  Lex rejects `1.5`, `3.14`.  Float values are
-  reachable only via `Integer.asFloat()` and `Float`-returning native
-  methods (`Math.pi`, `Math.e`, `System.time()`, etc.).
-- **No List / Dict literals.**  `[1, 2, 3]`, `["a" => 1]` lex as
-  errors.  Constructed via `List.new(...)` and `Dict.new()`.
-- **No closure upvalue capture.**  `function () { outer_var }` raises
-  `EMIT_UNRESOLVED_NAME`.  Blocks every legacy fixture using `for&`,
-  `each(closure (x) { ... })`, fresh-default-value tricks, etc.
-- **Multi-slot class bodies.**  `class C { var x; var y; method m() {} }`
-  raised `EMIT_UNSUPPORTED_AST`.  Fixed in Wave 3 (Gap #2).
-- **No `var x.foo = "..."` slot-install form.**  Wave 1 partial-port
-  remainders (`atoms.chk`, `fallback.chk`) need this.
-- **No `assert`, `echo` realm globals.**  Legacy fixtures lean on
-  these heavily.
-- **No string concat (`+`), no `<<`, no `for (...)`.**  Most legacy
-  control flow is blocked.
-- **Operator-via-slot-install** (`Date.'+' = function ...`) doesn't
-  intercept inline VM opcodes.
+- **Float literals:** supported since v0.6.2.  `1.5`, `3.14`, and other
+  decimal literals lex and evaluate correctly.  Fixtures blocked solely
+  on float literals can now be activated.
+
+- **No List / Dict literals.**  `[1, 2, 3]`, `["a" => 1]` are not yet
+  implemented.  Constructed via `List.new(...)` and `Dict.new()` as
+  before.  Wave 6 W10 decides the implementation path.
+
+- **Closure upvalue capture:** supported since v0.8.4 (closure-lifetime
+  GC promotion).  `function () { outer_var }` now captures upvalues from
+  enclosing scopes correctly.  Fixtures that were blocked solely on
+  upvalue capture can now be activated.  Note: the `closure` keyword
+  itself is retired; replace with `function` — see
+  `docs/migration/callmessage-migration.md` §closure keyword migration.
+
+- **Multi-slot class bodies:** supported since v0.6.2 Wave 3 (Gap #2).
+  `class C { var x; var y; var m = function() {} }` works.
+
+- **No `var x.foo = "..."` slot-install form.**  Still not implemented.
+  Wave 6 W10 decides.
+
+- **`echo` realm global:** shipped as a Lobby method since v0.9.1
+  (`Lobby.echo(msg, tag, prefix)`).  Legacy fixtures that call `echo`
+  at the top level will resolve it through the session Lobby in a
+  REPL context; standalone fixtures that lack a Lobby context may still
+  need adaptation.
+- **`assert`:** not yet implemented as a language construct.  Wave 6 W3
+  decides the ruling (`implemented` vs. `deferred-v1.x`).  Until W3
+  lands, fixtures that lean on `assert` remain deferred.
+
+- **No string `+` concatenation.**  `arith_add` handles numbers only;
+  no `"+"` slot is registered on String proto (T46 explicitly dropped in
+  atoms.c).  Fixtures that require string `+` remain blocked.
+- **No `<<` append operator.**  Not in the lexer or parser.  Fixtures
+  using `<<` remain blocked.
+- **No `for (init; cond; step)` / `for (var x : iter)`.**  Wave 6 W1
+  decides the ruling.  Fixtures using `for` remain deferred.
+
+- **Operator-via-slot-install** (`Date.'+' = function ...`) still
+  doesn't intercept inline VM opcodes.  The VM's Gap #4 slot-fallback
+  handles the `+` operator only after the numeric fast-path fails, so
+  operator methods on non-numeric protos work for custom types (see
+  `operators_legacy.chk`) but cannot override the numeric fast path.
+  Wave 6 W2 (quoted identifiers) may expand this surface.
+
 - **No fallback protocol, no `call.message`, no `do (recv) { ... }`.**
-  Wave 2 stdlib doesn't grow these.
+  - `call.message` / `call.evalArgAt`: **PERMANENTLY DROPPED.**  See
+    `docs/migration/callmessage-migration.md` for migration patterns
+    (lazy-param alternatives, try/catch fallback, accepted losses).
+  - Legacy `fallback` function + `do (recv) { ... }`: separate question
+    from CallMessage; neither is implemented.  `do (recv)` is Wave 6 W1
+    deferred.
 
-These are tracked as Phase 10 v1.0 emit gaps and v1.x backlog items.
+These gaps are tracked in `docs/language-compatibility-matrix.md` (per-
+construct rows) and `docs/urbi-embedded-backlog.md` (v1.x backlog).
 
 ## What ported
 

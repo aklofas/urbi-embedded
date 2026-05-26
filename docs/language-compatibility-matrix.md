@@ -120,14 +120,14 @@
 |---|---|---|
 | `;` `\|` `,` `&` separators | implemented | — |
 | Chunk-top `&`/`,` fork | implemented | v0.8.0 loader strand |
-| `closure { }` (legacy) | migration | legacy F11; Wave 6 W7 migration doc |
+| `closure { }` (legacy) | migration | legacy F11; see [callmessage-migration.md §closure](migration/callmessage-migration.md#closure-keyword-migration) — replace with `function`; upvalue capture works since v0.8.4 |
 | `function () { }` (M6+) | implemented | — |
 
 ### Stdlib + reflection
 
 | Construct | Status | Reason / fix milestone |
 |---|---|---|
-| `CallMessage` / `evalArgAt` (legacy reflection) | dropped (permanent) | legacy F10; Wave 6 W7 migration doc |
+| `CallMessage` / `evalArgAt` (legacy reflection) | dropped (permanent) | legacy F10; introspection removed — scheduler + heap cost prohibitive; see [callmessage-migration.md](migration/callmessage-migration.md) for lazy-param + try/catch alternatives |
 | `Class.new()` | implemented | — |
 | `Object.clone()` | implemented | — |
 | Operator overload (9 ops) | implemented | v0.6.2 |
