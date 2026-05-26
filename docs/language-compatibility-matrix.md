@@ -47,9 +47,9 @@
 | Construct | Status | Reason / fix milestone |
 |---|---|---|
 | `try { } catch (e) { }` | implemented | bare-ident catch only |
-| `catch (var e) { }` | NOT implemented | legacy F6; Wave 6 W5 |
-| `catch (var e if cond) { }` (guarded) | NOT implemented | legacy F6; Wave 6 W5 |
-| `try { } catch { } else { }` | NOT implemented | legacy F6; Wave 6 W5 |
+| `catch (var e) { }` | implemented | Wave 6 W5; `var` is optional sugar — closes legacy F6 |
+| `catch (var e if cond) { }` (guarded) | implemented | Wave 6 W5; guard re-throws on false — closes legacy F6 |
+| `try { } catch { } else { }` | implemented | Wave 6 W5; else runs on normal exit — closes legacy F6 |
 | `try { } finally { }` | implemented | — |
 | `throw` | implemented | — |
 | `assert (expr)` / `assert { }` | implemented | closes legacy F9; Wave 6 W3 |
