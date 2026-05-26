@@ -53,6 +53,18 @@
 
 #define UTEST(name) static void name(void)
 
+/* strdup is POSIX (not C99); avoid implicit declaration under -std=c99. */
+static char *
+tdup(const char *s)
+{
+    if (s == NULL) { return NULL; }
+    size_t n = strlen(s) + 1;
+    char *p = (char *)malloc(n);
+    if (p == NULL) { return NULL; }
+    memcpy(p, s, n);
+    return p;
+}
+
 /* Default chk dir relative to the cwd from which the runner is invoked
  * (the Makefile sets cwd = urbi-embedded/). */
 static const char *
@@ -127,7 +139,7 @@ append_substr(Fixture *fx, size_t idx, const char *substr)
     char **new_arr = (char **)realloc(fx->resp_lines[idx],
                                       (old + 2) * sizeof(char *));
     if (new_arr == NULL) return -1;
-    new_arr[old] = strdup(substr);
+    new_arr[old] = tdup(substr);
     new_arr[old + 1] = NULL;
     if (new_arr[old] == NULL) {
         fx->resp_lines[idx] = new_arr;
@@ -175,7 +187,7 @@ static int
 parse_fixture(const char *path, Fixture *fx)
 {
     memset(fx, 0, sizeof(*fx));
-    fx->path = strdup(path);
+    fx->path = tdup(path);
     /* Derive base name (last '/' to last '.'). */
     const char *slash = strrchr(path, '/');
     const char *base = (slash != NULL) ? slash + 1 : path;
@@ -214,7 +226,7 @@ parse_fixture(const char *path, Fixture *fx)
             char **new_reqs = (char **)realloc(fx->req_lines,
                                        (fx->req_count + 1) * sizeof(char *));
             if (new_reqs == NULL) { fclose(fp); return -1; }
-            new_reqs[fx->req_count] = strdup(rest);
+            new_reqs[fx->req_count] = tdup(rest);
             if (new_reqs[fx->req_count] == NULL) {
                 fx->req_lines = new_reqs;
                 fclose(fp);
@@ -528,7 +540,7 @@ run_all_chk_fixtures(void)
     while ((e = readdir(d)) != NULL && n_names < 64) {
         if (e->d_name[0] == '.') continue;
         if (!ends_with(e->d_name, ".chk")) continue;
-        names[n_names] = strdup(e->d_name);
+        names[n_names] = tdup(e->d_name);
         if (names[n_names] != NULL) n_names += 1;
     }
     closedir(d);

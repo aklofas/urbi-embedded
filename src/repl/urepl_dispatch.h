@@ -88,6 +88,19 @@ UReplSession *urepl_session_find_by_lobby(UReplServer *server, const char *lobby
 /* Unlink + free a session.  Also destroys the underlying URealm. */
 void urepl_session_destroy(UReplServer *server, UReplSession *session);
 
+/* === W1: single-owner teardown contract ===
+ * Reader threads MUST NOT call urepl_session_destroy directly.  Instead
+ * they call urepl_request_teardown(s) which sets needs_teardown atomically.
+ * The VM-thread dispatcher reaps flagged sessions at the start of each
+ * urepl_dispatch_drain call via urepl_session_reap_pending.  After this
+ * call returns the caller owns no further reference to s.  Idempotent. */
+void urepl_request_teardown(UReplSession *s);
+
+/* Reap any sessions with needs_teardown set.  Called by the VM thread
+ * at the head of urepl_dispatch_drain_if_active before job dispatch.
+ * Only safe to call from the VM thread. */
+void urepl_session_reap_pending(UReplServer *server);
+
 /* Drive a single job.  Looks up the session, runs the op handler,
  * writes response envelopes to the session's output ringbuf, and
  * frees the job + its req strings.  Errors (unknown session, auth

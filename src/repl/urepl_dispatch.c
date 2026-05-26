@@ -24,6 +24,7 @@
 #include <string.h>
 #ifndef URBI_REPL_COOPERATIVE_ONLY
 #include <time.h>
+#include <unistd.h>   /* close() — used by urepl_session_reap_pending */
 #endif
 
 /* Default per-session output ringbuf cap (used when cfg.output_ringbuf_cap
@@ -253,6 +254,124 @@ urepl_session_destroy(UReplServer *server, UReplSession *session)
     }
     free(session);
 }
+
+/* === W1: single-owner teardown helpers ================================ */
+
+/* Thread-safe teardown request.  Reader threads call this instead of
+ * urepl_session_destroy so that session memory is only freed on the VM
+ * thread.  Uses RELAXED ordering: the corresponding ACQUIRE load in
+ * urepl_session_reap_pending provides the visibility guarantee; no
+ * sequential-consistency needed for a single one-shot flag transition. */
+void
+urepl_request_teardown(UReplSession *s)
+{
+    if (s == NULL) {
+        return;
+    }
+    __atomic_store_n(&s->needs_teardown, true, __ATOMIC_RELAXED);
+}
+
+/* Reap sessions flagged for teardown by POSIX reader threads.  Called
+ * by the VM thread at the head of urepl_dispatch_drain_if_active, before
+ * job dispatch.  Unlinking sessions here means urepl_session_find will
+ * not find them during the subsequent dispatch pass.
+ *
+ * Scope: only sessions whose paired reader is a POSIX pthread
+ * (reader->started == true).  Cooperative sessions (reader->started ==
+ * false, reader->cooperative == true) are owned by urepl_disconnect_sweep
+ * which runs from urbi_repl_serve_step — we skip them here to avoid
+ * double-reap.
+ *
+ * Locking note: we unlink under sessions_mutex, then release before
+ * calling urepl_session_destroy (which can invoke handleDisconnect —
+ * arbitrary urbiscript — and must not run under sessions_mutex). */
+void
+urepl_session_reap_pending(UReplServer *server)
+{
+#ifndef URBI_REPL_COOPERATIVE_ONLY
+    if (server == NULL) {
+        return;
+    }
+    for (;;) {
+        /* Find the first POSIX-thread session that needs teardown. */
+        UREPL_MUTEX_LOCK(&server->sessions_mutex);
+        UReplSession *found = NULL;
+        UReplSession **link = &server->sessions_head;
+        while (*link != NULL) {
+            UReplSession *s = *link;
+            bool flagged = __atomic_load_n(&s->needs_teardown,
+                                           __ATOMIC_ACQUIRE);
+            /* Only reap sessions backed by a started POSIX reader thread;
+             * leave cooperative sessions for urepl_disconnect_sweep. */
+            bool posix_reader = (s->reader != NULL && s->reader->started);
+            if (flagged && posix_reader) {
+                found = s;
+                *link = s->next;   /* unlink */
+                break;
+            }
+            link = &s->next;
+        }
+
+        /* Unlink the paired reader from readers_head while we still hold
+         * the lock so urepl_listener_wake_all_readers won't dereference
+         * a reader whose session we're about to destroy. */
+        UReplReader *reader = NULL;
+        if (found != NULL) {
+            reader = found->reader;
+            if (reader != NULL) {
+                UReplReader **cur = &server->readers_head;
+                while (*cur != NULL) {
+                    if (*cur == reader) {
+                        *cur = reader->next;
+                        break;
+                    }
+                    cur = &(*cur)->next;
+                }
+                found->reader   = NULL;
+                reader->session = NULL;
+            }
+        }
+        UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
+
+        if (found == NULL) {
+            break;   /* no more pending POSIX-thread teardowns */
+        }
+
+        /* Join the reader thread (it already exited — reader_main called
+         * urepl_request_teardown then returned).  client_fd was closed
+         * by reader_main before requesting teardown. */
+        if (reader != NULL) {
+            if (reader->started) {
+                UREPL_THREAD_JOIN(reader->thread);
+            }
+            if (reader->wake_eventfd >= 0) {
+                close(reader->wake_eventfd);
+                reader->wake_eventfd = -1;
+            }
+            /* client_fd was set to -1 by reader_main; this is a no-op
+             * guard in case a future code path misses the close. */
+            if (reader->client_fd >= 0 && reader->transport != NULL
+                && reader->transport->close_fn != NULL) {
+                reader->transport->close_fn(reader->client_fd);
+                reader->client_fd = -1;
+            }
+            free(reader);
+        }
+
+        /* Destroy the session outside the lock — may run arbitrary
+         * urbiscript (handleDisconnect) via urbi_lobby_invoke_handleDisconnect.
+         * urepl_session_destroy's own unlink pass is a no-op because we
+         * already removed found from sessions_head above. */
+        urepl_session_destroy(server, found);
+    }
+#else
+    (void)server;
+    /* Cooperative-only builds have no POSIX reader threads; all session
+     * reaping is handled by urepl_disconnect_sweep. */
+#endif /* !URBI_REPL_COOPERATIVE_ONLY */
+}
+
+/* === end W1 =========================================================== */
 
 /* ---- Op handlers ----------------------------------------------------- */
 
@@ -601,6 +720,10 @@ urepl_dispatch_drain_if_active(struct UVM *vm)
     }
     UReplServer *server = (UReplServer *)vm->repl->server;
     urepl_listener_drain_accepts(server);
+    /* W1: reap sessions flagged for teardown by reader threads before
+     * dispatching new jobs — ensures stale session_ids resolve to NULL
+     * in the subsequent job-dispatch pass. */
+    urepl_session_reap_pending(server);
     urepl_dispatch_drain(server);
     urepl_listener_wake_all_readers(server);
 }

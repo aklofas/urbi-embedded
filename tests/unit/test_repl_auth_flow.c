@@ -19,6 +19,18 @@
 
 #define UTEST(name) static void name(void)
 
+/* strdup is POSIX (not C99); avoid implicit declaration under -std=c99. */
+static char *
+tdup(const char *s)
+{
+    if (s == NULL) { return NULL; }
+    size_t n = strlen(s) + 1;
+    char *p = (char *)malloc(n);
+    if (p == NULL) { return NULL; }
+    memcpy(p, s, n);
+    return p;
+}
+
 /* ---- Constant-time compare ------------------------------------------ */
 
 UTEST(auth_token_match_equal)
@@ -96,7 +108,7 @@ UTEST(auth_op_with_correct_token_grants_authed)
     job->session_id = s->session_id;
     job->req.id = 1;
     job->req.op = UREPL_OP_AUTH;
-    job->req.token = strdup("sekret");
+    job->req.token = tdup("sekret");
     urepl_dispatch_job(server, job);
     UASSERT(s->authed == true);
 
@@ -117,7 +129,7 @@ UTEST(auth_op_with_wrong_token_rejects)
     job->session_id = s->session_id;
     job->req.id = 2;
     job->req.op = UREPL_OP_AUTH;
-    job->req.token = strdup("wrong");
+    job->req.token = tdup("wrong");
     urepl_dispatch_job(server, job);
     UASSERT(s->authed == false);
 
@@ -162,7 +174,7 @@ UTEST(preauth_eval_rejected_when_token_required)
     job->session_id = s->session_id;
     job->req.id = 4;
     job->req.op = UREPL_OP_EVAL;
-    job->req.code = strdup("1+1");
+    job->req.code = tdup("1+1");
     job->req.code_len = 3;
     urepl_dispatch_job(server, job);
 
@@ -187,7 +199,7 @@ UTEST(post_auth_eval_runs)
     a->session_id = s->session_id;
     a->req.id = 5;
     a->req.op = UREPL_OP_AUTH;
-    a->req.token = strdup("tok");
+    a->req.token = tdup("tok");
     urepl_dispatch_job(server, a);
     UASSERT(s->authed == true);
 
@@ -199,7 +211,7 @@ UTEST(post_auth_eval_runs)
     e->session_id = s->session_id;
     e->req.id = 6;
     e->req.op = UREPL_OP_EVAL;
-    e->req.code = strdup("2+3");
+    e->req.code = tdup("2+3");
     e->req.code_len = 3;
     urepl_dispatch_job(server, e);
 

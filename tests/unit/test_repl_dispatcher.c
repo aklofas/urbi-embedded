@@ -21,6 +21,19 @@
 
 #define UTEST(name) static void name(void)
 
+/* strdup is POSIX (not C99); avoid implicit declaration truncation under
+ * -std=c99 -Wpedantic.  This helper matches test_vm.c's pattern. */
+static char *
+tdup(const char *s)
+{
+    if (s == NULL) { return NULL; }
+    size_t n = strlen(s) + 1;
+    char *p = (char *)malloc(n);
+    if (p == NULL) { return NULL; }
+    memcpy(p, s, n);
+    return p;
+}
+
 /* ---- Queue tests ----------------------------------------------------- */
 
 UTEST(queue_init_destroy_empty)
@@ -420,7 +433,7 @@ UTEST(dispatcher_auth_op_with_correct_token)
     job->session_id = s->session_id;
     job->req.id = 4;
     job->req.op = UREPL_OP_AUTH;
-    job->req.token = strdup("hunter2");
+    job->req.token = tdup("hunter2");
     urepl_dispatch_job(server, job);
     UASSERT(s->authed == true);
 
@@ -447,7 +460,7 @@ UTEST(dispatcher_auth_op_with_wrong_token_rejects)
     job->session_id = s->session_id;
     job->req.id = 5;
     job->req.op = UREPL_OP_AUTH;
-    job->req.token = strdup("wrong");
+    job->req.token = tdup("wrong");
     urepl_dispatch_job(server, job);
     UASSERT(s->authed == false);
 
@@ -478,7 +491,7 @@ UTEST(dispatcher_preauth_eval_rejected_when_token_required)
     job->session_id = s->session_id;
     job->req.id = 6;
     job->req.op = UREPL_OP_EVAL;
-    job->req.code = strdup("1+2");
+    job->req.code = tdup("1+2");
     job->req.code_len = 3;
     urepl_dispatch_job(server, job);
 
@@ -500,7 +513,7 @@ UTEST(dispatcher_unknown_session_dropped)
     job->session_id = 99999;
     job->req.id = 7;
     job->req.op = UREPL_OP_EVAL;
-    job->req.code = strdup("1");
+    job->req.code = tdup("1");
     job->req.code_len = 1;
     urepl_dispatch_job(server, job);  /* must not crash */
     free_server(server, vm);
@@ -520,7 +533,7 @@ UTEST(dispatcher_eval_id_tracking_round_trip)
     job->session_id = s->session_id;
     job->req.id = 42;
     job->req.op = UREPL_OP_EVAL;
-    job->req.code = strdup("1+2");
+    job->req.code = tdup("1+2");
     job->req.code_len = 3;
     urepl_dispatch_job(server, job);
     UASSERT_EQ(s->current_eval_id, 0);
@@ -538,7 +551,7 @@ UTEST(dispatcher_handles_introspect_coros)
     job->session_id = s->session_id;
     job->req.id = 99;
     job->req.op = UREPL_OP_INTROSPECT;
-    job->req.what = strdup("coros");
+    job->req.what = tdup("coros");
     urepl_dispatch_job(server, job);
 
     char out[4096];
@@ -562,7 +575,7 @@ UTEST(dispatcher_handles_introspect_gc)
     job->session_id = s->session_id;
     job->req.id = 100;
     job->req.op = UREPL_OP_INTROSPECT;
-    job->req.what = strdup("gc");
+    job->req.what = tdup("gc");
     urepl_dispatch_job(server, job);
 
     char out[4096];
@@ -584,7 +597,7 @@ UTEST(dispatcher_introspect_unknown_what_emits_error)
     job->session_id = s->session_id;
     job->req.id = 101;
     job->req.op = UREPL_OP_INTROSPECT;
-    job->req.what = strdup("nonsense");
+    job->req.what = tdup("nonsense");
     urepl_dispatch_job(server, job);
 
     char out[1024];

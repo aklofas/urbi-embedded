@@ -21,6 +21,21 @@ jobs:
       - name: Build and test
         run: make ${{ matrix.mode }}
 
+  repl-multi-client-stress:
+    name: repl multi-client stress (ASan, 100 trials)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y gcc make
+      - name: Build and run stress (100 teardown trials)
+        run: |
+          make clean
+          make URBI_ENABLE_REPL=1 test-asan 2>&1 | tee /tmp/stress.log
+          grep -q "four_clients_teardown_stress" /tmp/stress.log
+          grep -q "PASS four_clients_teardown_stress" /tmp/stress.log
+          ! grep -qE "AddressSanitizer|SIGABRT|SIGSEGV" /tmp/stress.log
+
   cross-arm:
     name: cross-compile (ARM Cortex-M7)
     runs-on: ubuntu-latest
