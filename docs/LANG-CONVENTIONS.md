@@ -447,6 +447,38 @@ First aux functions land in `v0.7.0-C-API` when the C API release forces them. E
 
 ---
 
+## 7. Block comments — divergence from legacy
+
+urbi-embedded uses **C-style non-nesting block comments**.  A `/*` token
+inside an already-open block comment does not open a nested comment; the first
+`*/` sequence closes the comment unconditionally.  This matches standard C
+semantics.
+
+Legacy urbiscript (aldebaran urbi 2.x) supported **nested block comments**:
+`/* outer /* inner */ outer */` was a single comment spanning the full extent.
+urbi-embedded does not replicate this behaviour.
+
+**Rationale:**
+
+- Scanner simplicity: non-nesting block comments are a single-pass state
+  machine without a depth counter.  The implementation in `src/lex/ulex.c`
+  (LEX-034) reflects this.
+- Predictability and pin-fixture lock: the behaviour is locked by
+  `tests/chk/lex/block_comment_no_nest.chk`; any inadvertent regression is
+  caught by the test suite.
+- Rarity in practice: nested block comments appeared in no production
+  urbiscript codebase surveyed in the third-party corpus audit (2026-04-24);
+  the feature was essentially unused.
+
+The compatibility matrix row is
+[`docs/language-compatibility-matrix.md` — Identifiers + literals — Block comments](language-compatibility-matrix.md#identifiers--literals).
+
+**Migration:** See [`docs/migration/block-comments-migration.md`](migration/block-comments-migration.md)
+for the manual-unwind recipe.  In brief: replace inner block comments with
+line comments (`//`) or restructure the enclosing span to avoid nesting.
+
+---
+
 ## Revisions
 
 These conventions are not immutable. When a rule in this doc turns out to be wrong:

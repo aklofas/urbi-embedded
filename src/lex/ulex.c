@@ -998,9 +998,18 @@ static UTriviaResult skip_trivia(ULexer *l) {
         } else if (c == '/' && l->cur + 1 < l->end && l->cur[1] == '*') {
             /* Block comment — NON-NESTING (LEX-034).  The first occurrence
              * of "*"+"/" closes the comment regardless of intervening
-             * "/"+"*" sequences.  Matches C semantics; locked in by the
-             * tests/chk/lex/block_comment_no_nest.chk fixture.  Record
-             * start for error reporting. */
+             * "/"+"*" sequences.  Matches C semantics.
+             *
+             * This diverges from legacy urbiscript (aldebaran 2.x), which
+             * supported nested block comments.  The choice is locked by the
+             * tests/chk/lex/block_comment_no_nest.chk pin fixture and
+             * documented at:
+             *   docs/LANG-CONVENTIONS.md §7 "Block comments — divergence
+             *   from legacy"
+             *   docs/language-compatibility-matrix.md row "Block comments"
+             *   (status: dropped / locked non-nesting; legacy F7 / Wave 6 W6)
+             *
+             * Record start for error reporting. */
             const int start_line = l->line;
             const int start_col = (int)(l->cur - l->line_start) + 1;
             const char *const start = l->cur;
