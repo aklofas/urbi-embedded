@@ -69,6 +69,11 @@ struct UReplSession {
     /* v0.9.4: set by the cooperative read sweep on a clean EOF (peer
      * disconnect, read_fn == 0).  Task 4.5's close sweep reaps these. */
     bool                  needs_teardown;
+    /* === W4: per-session job rate limit (rate_limit_per_second) ===
+     * Counts jobs dispatched in the current clock-second.  Resets when
+     * rate_window_sec advances.  Only checked when server->cfg.rate_limit_per_second > 0. */
+    int                   rate_jobs_this_sec;
+    int64_t               rate_window_sec;   /* seconds since epoch of current window */
     struct UReplSession  *next;
 };
 
