@@ -1,0 +1,65 @@
+# Milestone: v0.10.5-legacy-decisions Wave 6 W4
+# Covers: angle-literal suffixes deg / grad / rad (legacy §20.1.6.1).
+#         All three produce TOK_FLOAT in radians; conversion formula
+#         matches legacy utoken.l: value / from * pi (divide-then-multiply
+#         so that integer multiples of a full circle are exactly representable).
+# Audit:  Closes legacy F8 (angle-literal lexer gap).
+
+# --- deg: 180deg == Math.pi ---
+180deg
+[00000000] 3.1415926535898
+
+Math.pi == 180deg
+[00000001] true
+
+# --- deg: quarter turn ---
+90deg
+[00000002] 1.5707963267949
+
+90deg == Math.pi / 2
+[00000003] true
+
+# --- rad: identity (value in radians already) ---
+1rad
+[00000004] 1.0
+
+1rad == 1.0
+[00000005] true
+
+# --- grad: 200grad == Math.pi (200 gradians = π radians = half circle) ---
+200grad
+[00000006] 3.1415926535898
+
+Math.pi == 200grad
+[00000007] true
+
+# --- float argument + angle suffix ---
+1.5deg
+[00000008] 0.026179938779915
+
+0.5rad
+[00000009] 0.5
+
+# --- angle literal in arithmetic expression ---
+var angle = 45deg
+[0000000a] 0.78539816339745
+
+angle + 45deg
+[0000000b] 1.5707963267949
+
+# --- zero ---
+0deg
+[0000000c] 0.0
+
+0grad
+[0000000d] 0.0
+
+0rad
+[0000000e] 0.0
+
+# --- boundary: suffix followed by ident-cont chars does NOT match ---
+# (suffix is treated as start of an identifier; the parser rejects the
+# juxtaposition of INT/FLOAT + IDENT as a syntax error)
+# Negative test: 5degs — 's' is ident-cont after "deg", so "degs" is an
+# identifier, not the angle suffix; this is a parse error.
+# (skipped — error output format is not portable across tooling shapes)

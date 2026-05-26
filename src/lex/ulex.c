@@ -278,6 +278,65 @@ static const UDurationSuffix kDurationSuffixes[] = {
     { NULL, 0,             0LL },
 };
 
+/* === W4/v0.10.5: angle literals === */
+
+/* Angle-suffix table (legacy §20.1.6.1).  Each entry carries:
+ *   suffix  — the literal suffix text (NUL-terminated for clarity).
+ *   sufflen — byte length of the suffix.
+ *   from    — divisor for the unit (deg: 180; grad: 200; rad: 1).
+ *   to      — multiplier for the unit (deg/grad: π; rad: 1).
+ *
+ * Conversion formula matches legacy utoken.l RETURN_UNIT macro exactly:
+ *   radians = value / from * to
+ * This is intentionally "divide then multiply" (not "multiply by
+ * precomputed ratio") so that integer multiples of a full circle are
+ * exactly representable.  E.g. 200grad: 200/200 * π = 1.0 * π = exactly π.
+ *
+ * All three entries produce TOK_FLOAT regardless of whether the numeric
+ * part was scanned as integer or float.  Longer suffixes first: "grad" (4)
+ * before "deg" and "rad" (3) — same longest-first discipline as duration
+ * table (LEX-008). */
+typedef struct {
+    const char *suffix;
+    int         sufflen;
+    double      from;
+    double      to;
+} UAngleSuffix;
+
+/* M_PI equivalent without requiring <math.h> on freestanding targets.
+ * IEEE-754 double has enough precision (53-bit mantissa) to hold this
+ * constant to the last representable ULP. */
+#define URBI_PI_D 3.14159265358979323846
+
+static const UAngleSuffix kAngleSuffixes[] = {
+    { "grad", 4, 200.0, URBI_PI_D },  /* grade/gradian: n / 200 * π */
+    { "deg",  3, 180.0, URBI_PI_D },  /* degree:        n / 180 * π */
+    { "rad",  3,   1.0, 1.0       },  /* radian:        n / 1   * 1 */
+    { NULL,   0,   0.0, 0.0       },
+};
+
+/* apply_angle_suffix — if lex->cur sits at an angle suffix ("deg", "rad",
+   "grad"), consume it and store the radian-converted double in *out_rad.
+   Returns 1 if a suffix was matched and consumed (caller must emit
+   TOK_FLOAT); 0 if no angle suffix present (caller continues as before).
+   Ident-cont boundary check: next char after suffix must not be ident-cont
+   (same discipline as apply_duration_suffix — closes LEX-008 for angles). */
+static int apply_angle_suffix(ULexer *lex, double in_value, double *out_rad) {
+    for (const UAngleSuffix *e = kAngleSuffixes; e->suffix != NULL; e++) {
+        if (lex->cur + e->sufflen > lex->end) continue;
+        if (!urbi_memeq(lex->cur, e->suffix, e->sufflen)) continue;
+        /* Boundary: next char must not be ident-cont. */
+        if (lex->cur + e->sufflen < lex->end &&
+            is_ident_cont(lex->cur[e->sufflen])) continue;
+        lex->cur += e->sufflen;
+        *out_rad = in_value / e->from * e->to;
+        return 1;
+    }
+    return 0;
+}
+
+/* === end W4/v0.10.5: angle literals === */
+
 /* Result of dispatch_radix_prefix: either we routed to scan_radix / produced
    an AMBIGUOUS_LEADING_ZERO error (handled=1, tok carries the value), or
    the caller should fall through to decimal accumulation (handled=0). */
@@ -447,6 +506,21 @@ static UToken scan_float_body(ULexer *lex, const char *start,
         return make_error(LEX_FLOAT_OVERFLOW, start_line, start_col, span);
     }
 
+    /* === W4/v0.10.5: angle literals — float path ===
+     * After the strtod conversion, check for an angle suffix.  If present,
+     * apply the radian conversion and extend the token span to include the
+     * suffix.  This handles "1.5deg", "0.5rad", etc. */
+    {
+        double rad_val;
+        if (apply_angle_suffix(lex, val, &rad_val)) {
+            UToken ta = make_tok_base(TOK_FLOAT, start_line, start_col);
+            ta.len = (int)(lex->cur - start);
+            ta.u.f = rad_val;
+            return ta;
+        }
+    }
+    /* === end W4/v0.10.5: angle literals — float path === */
+
     UToken t = make_tok_base(TOK_FLOAT, start_line, start_col);
     t.len = span;
     t.u.f = val;
@@ -525,6 +599,21 @@ static UToken scan_number(ULexer *lex) {
         return make_error(LEX_INT_OVERFLOW, start_line, start_col,
                           (int)(lex->cur - start));
     }
+
+    /* === W4/v0.10.5: angle literals — integer path ===
+     * Check for angle suffix AFTER duration (duration suffixes have already
+     * consumed their tokens above).  apply_angle_suffix handles "deg", "grad",
+     * "rad" with the same ident-cont boundary check used by duration. */
+    {
+        double rad_val;
+        if (apply_angle_suffix(lex, (double)value, &rad_val)) {
+            UToken ta = make_tok_base(TOK_FLOAT, start_line, start_col);
+            ta.len = (int)(lex->cur - start);
+            ta.u.f = rad_val;
+            return ta;
+        }
+    }
+    /* === end W4/v0.10.5: angle literals — integer path === */
 
     UToken t = make_tok_base(TOK_INT, start_line, start_col);
     t.len = (int)(lex->cur - start);
