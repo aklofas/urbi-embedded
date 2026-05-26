@@ -1,0 +1,26 @@
+# Wave: v0.10.5-legacy-decisions W9
+# Covers: whenever (e?(var n)) body — payload binding for whenever event form.
+#         Ruling: implemented (Wave 6 W9, legacy F4).
+#
+# Semantics: `whenever (e?(var n)) body` re-fires the body on every emission
+#   of e.  The named parameter `n` receives the emit payload each time.
+#   Multiple emits accumulate via Realm.total.
+#
+# Note: single-line body form required; REPL processes one line at a time.
+#
+# Activated: 2026-05-26 as part of v0.10.5-legacy-decisions W9.
+
+var e = Event.new()
+var total = 0
+whenever (e?(var n)) { Realm.total = Realm.total + n }
+e!(10)
+e!(20)
+e!(30)
+Realm.total
+[00000000] <event>
+[00000000] 0
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] 60

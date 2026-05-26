@@ -247,6 +247,28 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
     s->state = USTRAND_STATE_RUNNING;
     vm->step_budget_remaining = step_budget_in;
 
+    /* W9/v0.10.5: deliver event payload to the OP_CALL result register on
+     * resume from WAIT_EVENT.  c_event_waituntil parks the strand by setting
+     * state=WAIT_EVENT, advancing pc past the OP_CALL, and exiting.  On wake,
+     * c_event_emit_* deposits the payload in s->last_event_payload before
+     * sched_strand_make_runnable (see wake_event_waiters in uevent_emit.c).
+     * At this point s->pc points to the instruction AFTER the OP_CALL, so
+     * s->pc[-1] is the parked OP_CALL instruction; uinstr_a(s->pc[-1]) gives
+     * the destination register.  Writing there before the first dispatch
+     * delivers the payload as the waituntil() call's return value.
+     *
+     * Guard: pc[-1] must be OP_CALL (not another park opcode) and pc must be
+     * at least one instruction past the base.  UVAL_NIL payload is the "no
+     * data" sentinel used throughout uevent_emit.c (EMITR-007 convention). */
+    if (s->last_event_payload.kind != (uint8_t)UVAL_NIL
+            && s->pc > s->pc_base) {
+        uint32_t parked_instr = s->pc[-1];
+        if (uinstr_op(parked_instr) == OP_CALL) {
+            s->R[uinstr_a(parked_instr)] = s->last_event_payload;
+            s->last_event_payload = (UValue){0};
+        }
+    }
+
 #if UVM_USE_COMPUTED_GOTO
     /* Suppress -Wpedantic for the computed-goto dispatch: both `&&label`
        (label-address) and `goto *expr` (indirect goto) are GCC extensions.

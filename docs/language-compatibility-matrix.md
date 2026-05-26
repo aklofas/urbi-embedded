@@ -59,16 +59,16 @@
 | Construct | Status | Reason / fix milestone |
 |---|---|---|
 | `at (cond) body` | partial | core form works; missing `~ duration`, `sync`, `onleave` per legacy F4 / Wave 6 W9 |
-| `at (event?) body` | partial | event form parses; payload binding TBD per legacy F4 / Wave 6 W9 |
-| `at (event?(var x)) body` | NOT implemented | legacy F4; Wave 6 W9 |
+| `at (event?) body` | implemented | payload binding with named var: `at (e?(var x)) body`; shipped v0.10.5 W9 |
+| `at (event?(var x)) body` | implemented | legacy F4; shipped v0.10.5 W9 |
 | `at sync ... onleave ...` | NOT implemented | currently rejected per reactive audit; Wave 6 W9 |
-| `at (cond ~ duration) body` | NOT implemented | debounce/hold; Wave 6 W9 |
+| `at (cond ~ duration) body` | NOT implemented | debounce/hold; deferred v1.x (Wave 6 W9 ruling) |
 | `whenever (cond) body` | implemented | — |
-| `whenever (event?) body` | BROKEN by construction | reactive F1; Wave 3 W0 |
-| `whenever (...) body else body` | NOT implemented | legacy F4; Wave 6 W9 |
-| `$wheneverOn` / `$wheneverOff` tags | NOT implemented | legacy F4; Wave 6 W9 |
+| `whenever (event?) body` | implemented | payload binding with named var: `whenever (e?(var x)) body`; shipped v0.10.5 W9 |
+| `whenever (...) body else body` | implemented | else fires on falling edge (true→false); shipped v0.10.5 W9 |
+| `$wheneverOn` / `$wheneverOff` tags | NOT implemented | deferred v1.x (Wave 6 W9 ruling) |
 | `waituntil (cond)` | implemented | — |
-| `waituntil (event?)` | NOT implemented | legacy F4; Wave 6 W9 |
+| `waituntil (event?)` | implemented | payload delivered on resume; shipped v0.10.5 W9 |
 | `watch (expr)` returns event | NOT implemented | legacy F4; Wave 6 W9 |
 | `every (duration) body` | partial | core form works; OP_CLOSURE in nested body broken per reactive F4 / Wave 3 W1 |
 | `sleep (duration)` | NOT implemented | legacy F15; Wave 3 W6 |

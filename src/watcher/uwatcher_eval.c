@@ -249,7 +249,8 @@ watcher_eval_dirty(struct UVM *vm)
                 break;
 
             case UWATCHER_WHENEVER:
-                /* Level-triggered: fires every dirty pass while condition truthy. */
+                /* Level-triggered: fires every dirty pass while condition truthy.
+                 * W9: track whether body has fired (for falling-edge else guard). */
                 if (uvalue_truthy(&new_val)) {
                     if (w->body != NULL) {
                         spawn_body_coroutine(vm, w);
@@ -257,6 +258,21 @@ watcher_eval_dirty(struct UVM *vm)
                                && vm->test_hooks->watcher_fire != NULL) {
                         vm->test_hooks->watcher_fire(vm, w);
                     }
+                    w->flags |= URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE;
+                }
+                /* W9: falling-edge else_body / onleave dispatch.
+                 * The `onleave` slot doubles as the else_body closure when the
+                 * parser compiles `whenever (cond) body else else_body` —
+                 * emit_watcher_arm stores else_body in register C of
+                 * OP_WHENEVER_INSTALL, which is the onleave slot.
+                 * URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE gate prevents the
+                 * else from firing at watcher install time when the condition
+                 * starts false (mirrors AT's onleave guard). */
+                if (falling
+                    && (w->flags & URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE)
+                    && w->onleave != NULL) {
+                    invoke_onleave_inline(vm, w);
+                    w->flags &= (uint8_t)~(uint8_t)URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE;
                 }
                 w->last_value_cache = new_val;
                 break;

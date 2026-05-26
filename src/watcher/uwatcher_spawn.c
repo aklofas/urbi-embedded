@@ -58,7 +58,7 @@ uprotoinstance_arr_is_contiguous(const UProtoInstanceArr *arr)
 #endif
 
 void
-do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
+do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, const void *fire_context)
 {
     struct UStrand *body;
 
@@ -173,9 +173,25 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
     }
 
     /* Step 5: wire back-pointers. */
-    (void)fire_context;   /* M5 baseline: NULL; spec #2 wires patterns */
     body->watcher_body_owner = w;
     w->body_strand           = body;
+
+    /* Step 5a: write emit payload into body R[0] when fire_context is non-NULL.
+     *
+     * fire_context is a `const UValue *` pointing to the event payload.  The
+     * body closure was compiled with a 1-param function literal (the first
+     * local slot R[0] holds the payload parameter).  arm_from_closure (Step 4)
+     * zero-initialises all registers via urbi_strand_register_stack_zero, so
+     * R[0] is UVAL_NIL until we overwrite it here.  Write before urbi_strand_start
+     * (Step 6) so the body sees the payload on its first instruction.
+     *
+     * W9/v0.10.5: wires payload delivery for AT_EVENT and WHENEVER_EVENT body
+     * strands.  M5 baseline always passed NULL; now c_event_emit_async/_sync
+     * pass &payload for event-subscribe body spawns. */
+    if (fire_context != NULL && body->R != NULL) {
+        const UValue *payload = (const UValue *)fire_context;
+        body->R[0] = *payload;
+    }
 
     /* Step 6: enqueue on run-queue (DORMANT → READY). */
     urbi_strand_start(vm, body);

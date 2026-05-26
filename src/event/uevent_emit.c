@@ -110,12 +110,15 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
         if (w->mode == UWATCHER_AT_EVENT
             || w->mode == UWATCHER_AT_EVENT_SYNC
             || w->mode == UWATCHER_WHENEVER_EVENT) {
-            /* M5 baseline: fire_context NULL; T53 wires payload into body R[0].
+            /* W9/v0.10.5: pass &payload so do_spawn_body_coroutine writes it
+             * into body->R[0] before enqueue.  The body closure was compiled
+             * with a 1-param function literal (param name == user's `var x` or
+             * `__payload` default); R[0] is the payload parameter slot.
              * UWATCHER_WHENEVER_EVENT (W0/v0.10.2): same dispatch path as
              * AT_EVENT — body spawned as a coroutine.  The "re-fires on every
              * emission" semantic is automatic because WHENEVER_EVENT watchers
              * are never removed from at_watchers_head (no one-shot teardown). */
-            do_spawn_body_coroutine(vm, w, NULL);
+            do_spawn_body_coroutine(vm, w, (void *)&payload);
         }
         w = next;
     }
@@ -229,7 +232,8 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
             run_event_body_on_scratch(vm, w, payload);
         } else if (w->mode == UWATCHER_AT_EVENT
                    || w->mode == UWATCHER_WHENEVER_EVENT) {
-            do_spawn_body_coroutine(vm, w, NULL);
+            /* W9/v0.10.5: pass &payload for body R[0] delivery (same as async path). */
+            do_spawn_body_coroutine(vm, w, (void *)&payload);
         }
         w = next;
     }

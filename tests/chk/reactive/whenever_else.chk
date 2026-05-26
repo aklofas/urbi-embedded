@@ -1,0 +1,36 @@
+# Wave: v0.10.5-legacy-decisions W9
+# Covers: whenever (cond) body else else_body — else fires on falling edge.
+#         Ruling: implemented (Wave 6 W9, legacy F4).
+#
+# Semantics: `whenever (cond) body else else_body` — the body fires each pass
+#   the condition is truthy (level-triggered); the else_body fires once on the
+#   transition from true to false (falling edge), but only after the body has
+#   fired at least once.
+#
+# The BODY_FIRED_SINCE_ONLEAVE gate (shared with AT) prevents the else body
+# from firing at watcher install time when the condition starts false.
+#
+# Note: WHENEVER is level-triggered — on_count reflects multiple safepoints
+#   where condition is truthy during trigger() execution.  off_count is always
+#   1 because the falling edge fires exactly once per true→false transition.
+#
+# Note: single-line form required; REPL processes one line at a time.
+#
+# Activated: 2026-05-26 as part of v0.10.5-legacy-decisions W9.
+
+var x = 0
+var on_count = 0
+var off_count = 0
+whenever (Realm.x > 5) { Realm.on_count = Realm.on_count + 1 } else { Realm.off_count = Realm.off_count + 1 }
+var trigger = function() { Realm.x = 10 }; trigger()
+var lower = function() { Realm.x = 0 }; lower()
+Realm.on_count
+Realm.off_count
+[00000000] 0
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] 10
+[00000000] 0
+[00000000] 2
+[00000000] 1

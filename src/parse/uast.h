@@ -275,8 +275,14 @@ typedef enum {
     PARSE_BREAK_OUTSIDE_LOOP,          /* `break` not inside a for/while loop */
     PARSE_CONTINUE_OUTSIDE_LOOP,       /* `continue` not inside a for/while loop */
     PARSE_SWITCH_EXPECTED_CASE,        /* switch body contains non-case statement */
-    PARSE_SWITCH_EXPECTED_COLON        /* case label missing trailing `:` */
+    PARSE_SWITCH_EXPECTED_COLON,       /* case label missing trailing `:` */
     /* === end W1/v0.10.5: control flow === */
+
+    /* === W9/v0.10.5: event payload binding === */
+    PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR,    /* `at (e?(x))` — must be `(var x)` */
+    PARSE_EVENT_PAYLOAD_BIND_EXPECTED_IDENT,  /* `at (e?(var))` — identifier missing */
+    PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN  /* `at (e?(var x` — missing `)` */
+    /* === end W9/v0.10.5 === */
 } UParseError;
 
 /*
@@ -479,12 +485,19 @@ struct UAstNode {
             UAstNode *cond;
             UAstNode *body;
             UAstNode *onleave;             /* nullable */
+            UAstNode *else_body;           /* nullable; W9: fires on falling edge
+                                            * (WHENEVER mode only).  NULL for AT/AT_SYNC.
+                                            * When non-NULL, takes precedence over onleave
+                                            * as the alt closure passed to OP_WHENEVER_INSTALL. */
             int       mode;               /* UWATCHER_AT / UWATCHER_AT_SYNC /
                                            * UWATCHER_WHENEVER — int for now;
                                            * UWatcherMode enum lands in T12 */
         } watcher;
         struct {                                            /* AST_WAITUNTIL */
             UAstNode *cond;
+            bool      is_event_form;       /* W9: true when `waituntil (e?)` form */
+            const char *payload_var_name;  /* W9: user-given name from `(var x)`, or NULL */
+            int         payload_var_len;
         } waituntil;
         struct {                                            /* AST_AT_EVENT */
             UAstNode *event_expr;          /* the `e` in `at (e?)` or `whenever (e?)` */
@@ -495,6 +508,9 @@ struct UAstNode {
                                             * no one-shot teardown (vs at (e?) which
                                             * fires once per emission but does not reset
                                             * cond state).  W0/v0.10.2. */
+            const char *payload_var_name;  /* W9: user-given name from `at (e?(var x))`,
+                                            * or NULL (body param name defaults to __payload) */
+            int         payload_var_len;
         } at_event;
         struct {                                            /* AST_AT_SLOT_CHANGE */
             UAstNode   *receiver;          /* the `obj` in `at (obj.x.changed?)` */

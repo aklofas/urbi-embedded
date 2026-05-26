@@ -258,7 +258,7 @@ void drain_pending_onleave_queue(struct UVM *vm);
  *   and tear down any partial state — watcher remains installed for future
  *   fires.  fire_context is NULL today; spec #2 wires patterns later. */
 void   do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w,
-                               void *fire_context);
+                               const void *fire_context);
 
 /* spawn_body_coroutine: eval-pass entry called by watcher_eval_dirty.
  * Precondition: w->body != NULL (watcher_eval_dirty only calls this when body
