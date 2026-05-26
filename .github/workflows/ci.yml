@@ -36,6 +36,25 @@ jobs:
           grep -q "PASS four_clients_teardown_stress" /tmp/stress.log
           ! grep -qE "AddressSanitizer|SIGABRT|SIGSEGV" /tmp/stress.log
 
+  repl-security:
+    name: repl security gates (W4)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y gcc make
+      - name: Run REPL security gates (default build)
+        run: |
+          make clean
+          make test-repl-security 2>&1 | tee /tmp/sec.log
+          grep -qE "repl_security_bind_auth|repl_security_rate_limit|repl_security_compile_budget|repl_security_malformed|repl_security_output_isolation|repl_oom_paths" /tmp/sec.log
+      - name: Run REPL security gates under ASan
+        run: |
+          make clean
+          make test-asan 2>&1 | tee /tmp/sec-asan.log
+          grep -q "repl_security_bind_auth" /tmp/sec-asan.log
+          ! grep -qE "AddressSanitizer|SIGABRT|SIGSEGV" /tmp/sec-asan.log
+
   cross-arm:
     name: cross-compile (ARM Cortex-M7)
     runs-on: ubuntu-latest

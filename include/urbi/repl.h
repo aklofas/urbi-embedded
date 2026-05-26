@@ -52,6 +52,15 @@ typedef struct UReplConfig {
     int            max_clients;
     size_t         output_ringbuf_cap;
     UCompileBudget default_budget;
+    /* === W4: per-source job rate limit ===
+     * Maximum NDJSON jobs accepted per session per second.  0 = unlimited
+     * (default).  When a session exceeds this burst, the connection is
+     * terminated with a rate_limit_exceeded error envelope.  Counts all
+     * ops (auth, eval, cancel, introspect); does not discriminate by op
+     * type.  The counter resets each clock-second (wall clock, not relative).
+     * Only enforced when URBI_ENABLE_REPL=1 and not URBI_REPL_COOPERATIVE_ONLY
+     * (freestanding targets have no network threat model). */
+    int            rate_limit_per_second;
 } UReplConfig;
 
 typedef struct UReplServer UReplServer;

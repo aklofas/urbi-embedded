@@ -501,10 +501,16 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
             push_env(s, env, n);
         }
     } else {
+        /* === W4: explicit error response + clean close on token mismatch ===
+         * Emit the auth_failed envelope so the client sees a structured
+         * error (not just EOF), then schedule teardown so the VM thread
+         * closes the session on the next reap pass.  This prevents a
+         * brute-force loop from keeping the session open indefinitely. */
         if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
                                     "auth_failed", NULL, &n) == 0) {
             push_env(s, env, n);
         }
+        urepl_request_teardown(s);
     }
 #else
     /* Cooperative-only: auth TU is not compiled in; auto-approve.
@@ -639,6 +645,37 @@ urepl_dispatch_job(UReplServer *server, UReplJob *job)
         free(job);
         return;
     }
+
+    /* === W4: per-source job rate limit ===
+     * Enforce rate_limit_per_second when configured.  Uses wall-clock seconds
+     * to define the window.  On the first job of each new second the counter
+     * resets; once the counter hits the limit the session is torn down with an
+     * explicit error envelope.  Only compiled for POSIX (clock_gettime). */
+#ifndef URBI_REPL_COOPERATIVE_ONLY
+    if (server->cfg.rate_limit_per_second > 0) {
+        struct timespec rate_ts;
+        clock_gettime(CLOCK_MONOTONIC, &rate_ts);
+        int64_t now_sec = (int64_t)rate_ts.tv_sec;
+        if (now_sec != s->rate_window_sec) {
+            s->rate_window_sec  = now_sec;
+            s->rate_jobs_this_sec = 0;
+        }
+        s->rate_jobs_this_sec++;
+        if (s->rate_jobs_this_sec > server->cfg.rate_limit_per_second) {
+            char env[256];
+            size_t n = 0;
+            if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
+                                        "rate_limit_exceeded",
+                                        "too many requests per second", &n) == 0) {
+                push_env(s, env, n);
+            }
+            urepl_request_teardown(s);
+            urepl_ndjson_free_req(&job->req);
+            free(job);
+            return;
+        }
+    }
+#endif /* URBI_REPL_COOPERATIVE_ONLY */
 
     /* Pre-auth gate: only 'auth' is allowed before authed=true (spec §7). */
     if (!s->authed

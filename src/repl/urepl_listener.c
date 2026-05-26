@@ -156,7 +156,28 @@ parse_lines_to_jobs(UReplServer *server, uint32_t session_id,
                         free(job);
                     }
                 } else {
+                    /* === W4: malformed-NDJSON tolerance ===
+                     * Emit an explicit error envelope into the session's
+                     * output ringbuf rather than silently dropping the line.
+                     * This gives the client a structured signal (not EOF)
+                     * and the session stays alive for subsequent well-formed
+                     * lines.  The ringbuf write is mutex-protected and safe
+                     * to call from the reader thread.
+                     * The session lookup holds sessions_mutex briefly; on a
+                     * miss (session already torn down) we skip silently. */
                     free(job);
+                    /* urepl_session_find acquires sessions_mutex internally. */
+                    UReplSession *s = urepl_session_find(server, session_id);
+                    if (s != NULL) {
+                        char env[256];
+                        size_t n = 0;
+                        if (urepl_ndjson_emit_error(env, sizeof(env), 0U,
+                                                    "malformed_ndjson",
+                                                    "line is not valid NDJSON",
+                                                    &n) == 0) {
+                            urepl_ringbuf_write(&s->output, env, n);
+                        }
+                    }
                 }
             }
         }

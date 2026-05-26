@@ -531,8 +531,11 @@ typedef enum {
     /* v0.9.1: urbi_repl_serve refused a non-loopback bind without an
      * auth_token (default-secure posture).  Embedder must either set
      * cfg->auth_token or restrict cfg->bind_addr to "127.0.0.1" / "::1"
-     * / a Unix-socket path starting with '/'. */
+     * / a Unix-socket path starting with '/'.
+     * W4/v0.10.6: URBI_ERR_INVALID_CONFIG is a synonym for this code;
+     * the canonical name remains URBI_ERR_INSECURE_CONFIG. */
     URBI_ERR_INSECURE_CONFIG            = -25,
+#define URBI_ERR_INVALID_CONFIG URBI_ERR_INSECURE_CONFIG
     /* W4/v0.10.3: returned by urbi_aux_value_to_* checked accessors when
      * the UValue kind does not match the requested type.  Embedders use
      * urbi_value_is_*() to guard before calling unchecked urbi_value_as_*;
