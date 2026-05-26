@@ -402,7 +402,12 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     /* --- Row 11 watcher substate (T32 allocates pool slab) --- */
     /* === W2/v0.10.4: watcher substate (extracted per audit-1 F8) === */
     UWatcherState *watchers;           /* heap-allocated; NULL until urbi_vm_init */
-    struct UWatcher *active_watchers_head;   /* linked list of live watchers */
+    /* Linked list of live watchers — NOT in UWatcherState.
+     * GC walker (watcher_table_walk_roots) and the pending-onleave drain
+     * loop walk this on every safepoint; keeping it on UVM avoids one
+     * pointer indirection per iteration.  W2/v0.10.4 deliberate retention,
+     * audit-1 F8 partial. */
+    struct UWatcher *active_watchers_head;
 
     /* --- spec #3 §7.1: currently-dispatching strand ---
      * Set to the running strand by urbi_step before dispatch_loop_until_yield,
