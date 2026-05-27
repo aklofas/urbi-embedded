@@ -148,9 +148,11 @@ typedef enum {
                              * No new opcode needed.
                              * Ruling: implemented (Wave 6 W10, legacy F14). */
     AST_SUBSCRIPT_SET = 42, /* l[i] = v  → l.set(i, v)
-                             * l[i] += v  → l.set(i, l.get(i) + v)  (compound desugar)
+                             * l[i] += v  → tmp=recv, tmpi=idx, tmp.set(tmpi, tmp.get(tmpi)+v)
+                             *              recv and idx evaluated exactly once (W2/v0.10.7).
                              * No new opcode needed.
-                             * Ruling: implemented (Wave 6 W10, legacy F14). */
+                             * Ruling: implemented (Wave 6 W10, legacy F14);
+                             * single-eval fix (Wave 7 W2/v0.10.7, closes audit-1 F4). */
     /* === end W10/v0.10.5 === */
 
     /* === W1/v0.10.5: control flow === */
@@ -167,12 +169,21 @@ typedef enum {
                          * Lowered to OP_JMP with the continue address patched after the loop.
                          * No new opcode needed.
                          * Ruling: implemented (Wave 6 W1, legacy F2). */
-    AST_SWITCH   = 46   /* switch (expr) { case v1: body1; case v2: body2; }
+    AST_SWITCH   = 46,  /* switch (expr) { case v1: body1; case v2: body2; }
                          * Equality-based dispatch only (no pattern matching).
                          * Lowered to a chain of if (expr == vN) { bodyN }.
                          * No new opcode needed.
                          * Ruling: implemented (Wave 6 W1, legacy F2). */
     /* === end W1/v0.10.5: control flow === */
+
+    /* === W2/v0.10.7: synthetic register-reference leaf === */
+    AST_REG_REF  = 47   /* synthetic emit-only: reference to a previously-allocated
+                         * register.  Never produced by the parser; created inside
+                         * emit_subscript_set_arm to pin recv/index temps so the
+                         * compound-subscript lowering evaluates each exactly once.
+                         * Lowers to OP_MOVE (or no-op when target == source).
+                         * Not serialised; not visible to the parser. */
+    /* === end W2/v0.10.7 === */
 } UAstKind;
 
 /* Method/property-decl kind discriminator (T41 — M6 Wave 2). */
@@ -582,6 +593,12 @@ struct UAstNode {
             bool        is_compound_add;   /* true when desugared from `l[i] += v` */
         } subscript;
         /* === end W10/v0.10.5 === */
+
+        /* === W2/v0.10.7: synthetic register-reference leaf === */
+        struct {                           /* AST_REG_REF */
+            uint8_t reg;                   /* register index to reference */
+        } reg_ref;
+        /* === end W2/v0.10.7 === */
     } u;
 };
 

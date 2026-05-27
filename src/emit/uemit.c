@@ -463,6 +463,19 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_CONTINUE:        return emit_continue_arm(e, n);
     case AST_SWITCH:          return emit_switch_arm(e, n);
     /* === end W1/v0.10.5: control flow === */
+    /* === W2/v0.10.7: synthetic register-reference leaf === */
+    case AST_REG_REF: {
+        /* Emit a reference to a previously-allocated register.
+         * If the target register differs from source, emit OP_MOVE.
+         * If they are the same, this is a no-op (register is already there). */
+        uint8_t dst = alloc_reg(e);
+        if (e->error != EMIT_OK) return 0U;
+        if (dst != n->u.reg_ref.reg) {
+            emit_instr(e, uinstr_enc_abc(OP_MOVE, dst, n->u.reg_ref.reg, 0U), n->line);
+        }
+        return dst;
+    }
+    /* === end W2/v0.10.7 === */
     case AST_PROP_GET:
     case AST_PROP_SET:
     case AST_LOCAL_REF:
