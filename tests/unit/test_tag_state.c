@@ -1,0 +1,222 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* Unit tests: W3a — SUSPENDED scheduler state primitives
+ * (v0.10.9-tag-state).
+ *
+ * W3a covers the strand-level suspend/resume helpers; W3b/W3c append
+ * tag.block / tag.freeze tests once those public APIs are implemented.
+ *
+ * Tests cover:
+ *  1. urbi_strand_suspend(REASON_BLOCK) transitions READY → SUSPENDED_BLOCK
+ *     and removes the strand from the cooperative ready queue.
+ *  2. urbi_strand_resume returns SUSPENDED → READY and re-enqueues.
+ *  3. urbi_strand_suspend is a no-op for DEAD/DORMANT/WAITING strands.
+ *  4. urbi_strand_suspend(REASON_FREEZE) is independent of REASON_BLOCK.
+ *  5. urbi_strand_suspend / _resume accept NULL strand (no crash).
+ *
+ * Mirrors tests/unit/test_capi_unwind.c's minimal-strand harness pattern.
+ */
+
+#include "utest.h"
+#include "urbi/urbi.h"
+#include "sched/ustrand.h"
+#include "sched/usched_cooperative.h"
+#include "runtime/ucleanup.h"
+#include "vm/uvm.h"
+#include "tag/utag.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+#define UTEST(name) static void name(void)
+
+/* --- Helpers --- */
+
+static UValue
+make_nil(void)
+{
+    UValue v;
+    v.kind = UVAL_NIL;
+    v.v.i  = 0;
+    return v;
+}
+
+static UValue
+make_int(int64_t i)
+{
+    UValue v;
+    v.kind = UVAL_INT;
+    v.v.i  = i;
+    return v;
+}
+
+/* Minimal-strand harness: heap-alloc a register stack and zero a UStrand.
+ * Mirrors tests/unit/test_capi_unwind.c's strand_minimal pattern. */
+static UValue *
+strand_minimal(UStrand *s, UVM *vm)
+{
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    if (!reg_stack) return NULL;
+
+    memset(s, 0, sizeof(*s));
+    s->vm             = vm;
+    s->state          = USTRAND_STATE_DORMANT;
+    s->stack          = reg_stack;
+    s->R              = reg_stack;
+    s->pending_unwind = UEXEC_OK;
+    s->fatal_status   = UEXEC_OK;
+
+    strand_cleanup_stack_init(s, vm, (uint16_t)URBI_CLEANUP_MAX);
+    return reg_stack;
+}
+
+/* ===== Tests ===== */
+
+/* W3a: urbi_strand_suspend on READY strand transitions to SUSPENDED_BLOCK and
+ * removes the strand from the ready queue. */
+UTEST(suspend_ready_to_suspended_block)
+{
+    UVM vm;
+    UStrand s;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UValue *reg = strand_minimal(&s, &vm);
+    sched_strand_make_runnable(&s);
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_READY);
+    UASSERT_EQ(vm.strand_runnable_count, 1u);
+
+    UTag tag;
+    memset(&tag, 0, sizeof(tag));
+    tag.type_tag = 5U;  /* UTYPE_TAG */
+
+    urbi_strand_suspend(&s, USTRAND_REASON_BLOCK, &tag);
+
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_SUSPENDED);
+    UASSERT_EQ((int)USTRAND_GET_REASON(&s), (int)USTRAND_REASON_BLOCK);
+    UASSERT(s.wait_payload.suspend_tag == &tag);
+    UASSERT_EQ(vm.strand_runnable_count, 0u);
+
+    free(reg);
+    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* W3a: urbi_strand_resume restores SUSPENDED → READY and re-enqueues. */
+UTEST(resume_suspended_to_ready)
+{
+    UVM vm;
+    UStrand s;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UValue *reg = strand_minimal(&s, &vm);
+    sched_strand_make_runnable(&s);
+
+    UTag tag;
+    memset(&tag, 0, sizeof(tag));
+    tag.type_tag = 5U;
+
+    urbi_strand_suspend(&s, USTRAND_REASON_BLOCK, &tag);
+    UASSERT_EQ(vm.strand_runnable_count, 0u);
+
+    urbi_strand_resume(&s, make_int(42));
+
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_READY);
+    UASSERT_EQ(vm.strand_runnable_count, 1u);
+    UASSERT_EQ(s.unblock_value.kind, (uint8_t)UVAL_INT);
+    UASSERT_EQ(s.unblock_value.v.i, (int64_t)42);
+    UASSERT(s.wait_payload.suspend_tag == NULL);
+
+    free(reg);
+    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* W3a: suspend is a no-op for DEAD strands (defensive). */
+UTEST(suspend_dead_strand_is_noop)
+{
+    UVM vm;
+    UStrand s;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UValue *reg = strand_minimal(&s, &vm);
+    s.state = USTRAND_STATE_DEAD;
+
+    UTag tag;
+    memset(&tag, 0, sizeof(tag));
+    tag.type_tag = 5U;
+
+    urbi_strand_suspend(&s, USTRAND_REASON_BLOCK, &tag);
+
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_DEAD);
+
+    free(reg);
+    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* W3a: REASON_FREEZE and REASON_BLOCK are distinct sub-codes. */
+UTEST(suspend_freeze_distinct_from_block)
+{
+    UVM vm;
+    UStrand s;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UValue *reg = strand_minimal(&s, &vm);
+    sched_strand_make_runnable(&s);
+
+    UTag tag;
+    memset(&tag, 0, sizeof(tag));
+    tag.type_tag = 5U;
+
+    urbi_strand_suspend(&s, USTRAND_REASON_FREEZE, &tag);
+
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_SUSPENDED);
+    UASSERT_EQ((int)USTRAND_GET_REASON(&s), (int)USTRAND_REASON_FREEZE);
+
+    free(reg);
+    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* W3a: urbi_strand_suspend / _resume tolerate NULL strand (no crash). */
+UTEST(suspend_resume_null_strand)
+{
+    UTag tag;
+    memset(&tag, 0, sizeof(tag));
+    tag.type_tag = 5U;
+
+    /* Should not crash; behaviour is silent no-op. */
+    urbi_strand_suspend(NULL, USTRAND_REASON_BLOCK, &tag);
+    urbi_strand_resume(NULL, make_nil());
+
+    /* Tag pointer NULL is also tolerated (silent no-op). */
+    UVM vm;
+    UStrand s;
+    urbi_vm_init(&vm, NULL, NULL);
+    UValue *reg = strand_minimal(&s, &vm);
+    sched_strand_make_runnable(&s);
+
+    urbi_strand_suspend(&s, USTRAND_REASON_BLOCK, NULL);
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_READY);  /* unchanged */
+
+    free(reg);
+    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===== Suite ===== */
+void test_tag_state_suite(void);
+
+void
+test_tag_state_suite(void)
+{
+    utest_run("suspend_ready_to_suspended_block",
+              suspend_ready_to_suspended_block);
+    utest_run("resume_suspended_to_ready",
+              resume_suspended_to_ready);
+    utest_run("suspend_dead_strand_is_noop",
+              suspend_dead_strand_is_noop);
+    utest_run("suspend_freeze_distinct_from_block",
+              suspend_freeze_distinct_from_block);
+    utest_run("suspend_resume_null_strand",
+              suspend_resume_null_strand);
+}

@@ -641,3 +641,67 @@ urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
     s->out_slot     = NULL;
     return 0;
 }
+
+/* === W3a (v0.10.9): SUSPENDED ↔ READY transitions ===
+ *
+ * Tag.block / Tag.freeze cross-strand suspension primitives.  The header
+ * comment in ustrand.h documents the contract; this is the implementation. */
+
+void
+urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
+{
+    if (strand == NULL || tag == NULL) return;
+    URBI_ASSERT_NOT_ISR(strand->vm);
+
+    /* Only READY and RUNNING strands transition cleanly into SUSPENDED.
+     *
+     * READY: splice out of the cooperative scheduler's ready queue so the
+     *   dispatch loop doesn't pick the strand up.  sched_strand_unbind_from_
+     *   ready_queue idempotently decrements strand_runnable_count when the
+     *   strand was actually on the queue.
+     *
+     * RUNNING: the strand is currently dispatching (called urbi_strand_suspend
+     *   indirectly from within a host callback, or set up for valued-block).
+     *   Not on the queue; just stamp the state.  The dispatch loop's run-step
+     *   sees the SUSPENDED state byte on the next NEXT() and exits at the
+     *   appropriate yield boundary.  At v0.10.9 the only callers are
+     *   urbi_tag_block / urbi_tag_freeze, both invoked from outside dispatch
+     *   (from a host callback) so the strand here is typically READY; the
+     *   RUNNING arm is forward-defensive for in-dispatch use.
+     *
+     * Any other state (DORMANT, WAITING, SUSPENDED, DEAD): silent no-op.
+     * Suspending a WAITING strand would corrupt sleep/event waiter chains;
+     * suspending a DEAD strand would un-reap it.  Callers that legitimately
+     * want to cancel a wait must transition through READY first via the
+     * appropriate unblock path. */
+    const uint8_t cur_state = strand->state & USTRAND_STATE_MASK;
+    if (cur_state != USTRAND_READY && cur_state != USTRAND_RUNNING) return;
+
+    if (cur_state == USTRAND_READY) {
+        sched_strand_unbind_from_ready_queue(strand);
+    }
+
+    strand->state = (uint8_t)(USTRAND_SUSPENDED |
+                              (reason & USTRAND_REASON_MASK));
+    strand->wait_payload.suspend_tag = tag;
+}
+
+void
+urbi_strand_resume(struct UStrand *strand, UValue resume_value)
+{
+    if (strand == NULL) return;
+    URBI_ASSERT_NOT_ISR(strand->vm);
+
+    if (!USTRAND_IS_SUSPENDED(strand)) return;
+
+    /* Write resume_value to unblock_value so a future opcode-level handoff
+     * (W3f, deferred at v0.10.9) can deliver it into the strand's result
+     * register.  At v0.10.9 the value is stored but not delivered. */
+    strand->unblock_value = resume_value;
+    strand->wait_payload.suspend_tag = NULL;
+
+    /* SUSPENDED → READY via sched_strand_make_runnable so queue accounting
+     * (ready_head/tail + strand_runnable_count) stays consistent.  The
+     * helper sets state = USTRAND_STATE_READY itself. */
+    sched_strand_make_runnable(strand);
+}

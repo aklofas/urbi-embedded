@@ -71,6 +71,19 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
         UStrand *s = sched_pick_next(vm);
         if (!s) break;
 
+        /* W3a (v0.10.9): defence-in-depth skip for SUSPENDED strands.
+         * urbi_strand_suspend always splices SUSPENDED strands out of the
+         * ready queue via sched_strand_unbind_from_ready_queue, so this
+         * branch should be unreachable today.  Guard kept so a future caller
+         * that transitions a strand to SUSPENDED without unbinding cannot
+         * crash the dispatcher by dispatching into a suspended strand.  The
+         * strand is dequeued (correcting strand_runnable_count) and skipped;
+         * resume() puts it back via sched_strand_make_runnable. */
+        if (USTRAND_IS_SUSPENDED(s)) {
+            sched_dequeue_ready_head(vm);
+            continue;
+        }
+
         /* Remove the strand from the ready queue and charge the count.
          * sched_dequeue_ready_head decrements strand_runnable_count.
          * If the strand yields mid-run, dispatch_loop_until_yield calls

@@ -59,6 +59,8 @@ extern "C" {
 #define USTRAND_REASON_EVENT   0x03U
 #define USTRAND_REASON_JOIN    0x04U
 #define USTRAND_REASON_HOST    0x05U  /* RESERVED v1.x/v2 */
+#define USTRAND_REASON_BLOCK   0x06U  /* SUSPENDED via tag.block / urbi_tag_block (W3a) */
+#define USTRAND_REASON_FREEZE  0x07U  /* SUSPENDED via tag.freeze / urbi_tag_freeze (W3a) */
 
 /* Composite values stored in strand->state. */
 #define USTRAND_STATE_DORMANT         (USTRAND_DORMANT)
@@ -71,6 +73,13 @@ extern "C" {
 #define USTRAND_STATE_WAITING_JOIN    (USTRAND_WAITING | USTRAND_REASON_JOIN)
 #define USTRAND_STATE_WAITING_HOST    (USTRAND_WAITING | USTRAND_REASON_HOST)
 
+/* W3a: SUSPENDED composite states — distinguish block vs freeze via the
+ * reason sub-code so tag.unblock can target only BLOCK-suspended strands
+ * (and likewise tag.unfreeze for FREEZE).  block and freeze are
+ * independent gates per workspace ledger §S6. */
+#define USTRAND_STATE_SUSPENDED_BLOCK   (USTRAND_SUSPENDED | USTRAND_REASON_BLOCK)
+#define USTRAND_STATE_SUSPENDED_FREEZE  (USTRAND_SUSPENDED | USTRAND_REASON_FREEZE)
+
 /* spec #2 §7.7 — waituntil(cond) strand parked awaiting edge fire.
    0x32 = USTRAND_WAITING (0x30) | USTRAND_REASON_WATCHER (0x02). */
 #define USTRAND_WAIT_WATCHER          (USTRAND_WAITING | USTRAND_REASON_WATCHER)
@@ -81,6 +90,7 @@ extern "C" {
 
 /* Helper macros — take a pointer to UStrand. */
 #define USTRAND_IS_WAITING(s)  (((s)->state & USTRAND_STATE_MASK) == USTRAND_WAITING)
+#define USTRAND_IS_SUSPENDED(s) (((s)->state & USTRAND_STATE_MASK) == USTRAND_SUSPENDED)
 #define USTRAND_GET_STATE(s)   ((s)->state & USTRAND_STATE_MASK)
 #define USTRAND_GET_REASON(s)  ((s)->state & USTRAND_REASON_MASK)
 
@@ -198,6 +208,8 @@ struct UStrand {
      *   USTRAND_REASON_SLEEP  (0x01) -> wait_payload.wake_us       (sleep queue)
      *   USTRAND_REASON_EVENT  (0x03) -> wait_payload.event         (event-wait)
      *   USTRAND_REASON_JOIN   (0x04) -> wait_payload.join_parent   (join-wait)
+     *   USTRAND_REASON_BLOCK  (0x06) -> wait_payload.suspend_tag   (tag.block)  (W3a)
+     *   USTRAND_REASON_FREEZE (0x07) -> wait_payload.suspend_tag   (tag.freeze) (W3a)
      *
      * USTRAND_REASON_WATCHER (0x02) does NOT use wait_payload (the strand
      * parks via UWatcher's own waiters list, not the union).  Read-site
@@ -207,6 +219,7 @@ struct UStrand {
         uint64_t            wake_us;       /* USTRAND_REASON_SLEEP */
         struct UEvent      *event;         /* USTRAND_REASON_EVENT */
         UStrand            *join_parent;   /* USTRAND_REASON_JOIN: child we are waiting on */
+        struct UTag        *suspend_tag;   /* USTRAND_REASON_BLOCK / _FREEZE (W3a) */
     } wait_payload;
 
     /* --- Watcher body ownership (spec #1 §4.2) ---
@@ -230,6 +243,13 @@ struct UStrand {
     struct UStrand         *next_event_waiter;
     struct UEvent          *wait_event_target;
     UValue                  last_event_payload;
+
+    /* --- Suspend resume-value (W3a; workspace ledger §S5 valued-block) ---
+     * Written by urbi_tag_block (and the C API) when SUSPENDED via REASON_BLOCK
+     * so unblock can deliver the value back to the strand.  Cleared on resume.
+     * Distinct from unwind_value (which is for stop/cancel/throw unwinding).
+     * Mirroring last_event_payload's role for event-wait. */
+    UValue                  unblock_value;
 
     /* --- Join-blocker list (OP_FORK_JOIN / OP_JOIN_WAIT) ---
      * Singly-linked list of strands that are JOIN-blocked on THIS strand.
@@ -289,10 +309,12 @@ struct UStrand {
  * Guarded on pointer width to avoid a hard failure on 32-bit cross
  * targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3896,
+URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3912,
                "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change"
                /* v0.9.2 Task 4.1: -8 B from deleting s->module pointer (3896 → 3888).
-                * v0.9.4: +8 B for periodic_owner back-pointer (3888 → 3896). */);
+                * v0.9.4: +8 B for periodic_owner back-pointer (3888 → 3896).
+                * v0.10.9 W3a: +16 B for unblock_value (UValue) supporting
+                *              SUSPENDED↔READY tag.block/unblock plumbing (3896 → 3912). */);
 #endif
 
 /* === Lifecycle functions ===
@@ -320,6 +342,32 @@ URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3896,
  * into ustrand.h's include chain (circular dependency risk). */
 int  ustrand_init(UStrand *s, struct UVM *vm);
 void ustrand_destroy(UStrand *s, struct UVM *vm);
+
+/* === W3a (v0.10.9): SUSPENDED ↔ READY transitions ===
+ *
+ * urbi_strand_suspend: transition a READY or RUNNING strand to SUSPENDED with
+ *   the supplied reason sub-code (USTRAND_REASON_BLOCK or USTRAND_REASON_FREEZE)
+ *   and back-pointer to the owning UTag.  No-op if the strand is already
+ *   SUSPENDED, WAITING, DEAD, or DORMANT.  Not ISR-safe.
+ *
+ *   Internal contract — not part of the public C API.  The public surface is
+ *   urbi_tag_block / urbi_tag_unblock / urbi_tag_freeze / urbi_tag_unfreeze
+ *   in include/urbi/urbi.h which walk tag->member_strands_head and call this
+ *   helper for each member strand.
+ *
+ * urbi_strand_resume: transition a SUSPENDED strand back to READY.  Writes
+ *   resume_value to strand->unblock_value so a future opcode-level handoff
+ *   (W3f, deferred at v0.10.9) can deliver it.  No-op if the strand is not
+ *   SUSPENDED.  Not ISR-safe.
+ *
+ * Both functions handle the run-queue side-effects required to keep the
+ * cooperative scheduler's bookkeeping correct:
+ *   - Suspending a READY strand splices it out of vm->ready_head and
+ *     decrements vm->strand_runnable_count.
+ *   - Resuming a SUSPENDED strand routes through sched_strand_make_runnable. */
+void urbi_strand_suspend(struct UStrand *strand, uint8_t reason,
+                         struct UTag    *tag);
+void urbi_strand_resume(struct UStrand *strand, UValue resume_value);
 
 /* === T29: ambient-tag inheritance helpers ===
  *
