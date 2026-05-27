@@ -83,7 +83,7 @@
 | `waituntil (event?)` | implemented | payload delivered on resume; shipped v0.10.5 W9 |
 | `watch (expr)` returns event | NOT implemented | legacy F4; Wave 6 W9 |
 | `every (duration) body` | partial | core form works; OP_CLOSURE in nested body broken per reactive F4 / Wave 3 W1 |
-| `sleep (duration)` | NOT implemented | legacy F15; Wave 3 W6 |
+| `sleep (duration)` | implemented | v0.10.2 W6; legacy F15 closed; `tests/chk/temporal/sleep_basic.chk` + `sleep_in_strand.chk` |
 
 ### Tags
 
@@ -93,8 +93,8 @@
 | `mytag : stmt` (bare-statement prefix) | implemented | legacy F3; Wave 3 W5 closed |
 | `Tag.scope : body` (member-expr tag) | implemented | legacy F3; Wave 6 W8 — `parse_tag_prefix_from_expr` via postfix-chain COLON intercept; `tests/chk/tag/tag_member_expr.chk` |
 | `tag : body onleave handler` | deferred-v1.x | PARSE-033: AST field retained; scheduler tag-stack lifecycle design open; Wave 6 W8 ruling |
-| `Tag.new()` (script-side constructor) | NOT implemented | reactive F3; Wave 3 W4 |
-| `mytag.stop()` (script-side cancellation) | NOT implemented | OP_TAG_STOP is reserved stub; Wave 3 W4 |
+| `Tag.new()` (script-side constructor) | implemented | v0.10.2 W4; UVAL_TAG + Tag.new(name) returns a Tag value; `tests/chk/control_transfer/tag_stop_basic.chk` |
+| `mytag.stop()` (script-side cancellation) | implemented | v0.10.2 W4; native method on Tag proto; `tests/chk/control_transfer/tag_stop_skips_catch.chk` + `tag_stop_basic.chk` |
 | Tag scope events (enter/leave) | partial | works as tag-stack lifecycle; script API TBD |
 | Ambient-tag inheritance | implemented | — |
 
