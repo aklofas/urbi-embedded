@@ -6,17 +6,11 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** v0.10.7-audit-followup — post-arc fix wave addressing 14 findings from two external audits of the v0.10.x arc. ABI 0/18/1 (PATCH bump only — no public surface change). Wire v1.9 / 0x19 unchanged. 7 worktrees:
+**Status:** v0.10.8-string-concat — runtime `String + String` concatenation (S-string-plus). OP_ADD gains an atom fast path: when both operands are `UVAL_STR`, the result is a fresh interned `UVAL_STR` allocated via `ustr_intern`. Mixed-type coercion (`"x" + 1`) deferred to v1.x — caller uses explicit `.asString()` at v1.0. No new opcodes; wire v1.9 / 0x19 unchanged. ABI 0/18/2 (PATCH bump from 0/18/1 — atom fast path is internal to the dispatch loop; the public C API is untouched).
 
-- **W1 — switch/continue semantic fix.** Separate parser break-target from continue-target so `continue` inside a switch with no enclosing loop is a parse error and `continue` in switch-in-loop targets the outer loop (matches C/JavaScript semantics). Closes audit-2 #1.
-- **W2 — compound subscript single-evaluation.** `l[i] += v` now evaluates `l` and `i` exactly once via temp registers + new `AST_REG_REF` emit-only synthetic node. Closes audit-1 F4 / audit-2 #2.
-- **W3 — REPL single-owner teardown.** Fixed `__ATOMIC_RELAXED` store → `RELEASE`; `r->session = NULL` writes serialized under `sessions_mutex`; stop-path direct destroy documented as single-threaded by construction. Closes audit-1 F1 / audit-2 #6.
-- **W4 — doc-drift sweep.** 6 truthfulness defects: ABI freeze docs `0/17/0` → `0/18/0`, wire v1.7 → v1.9 in `module-system.md` + `uemit_serialize.c` comment, reactive-runtime internals refreshed to shipped state, GC cell-inventory `UStrand`/`UTag` sizes corrected against static asserts, CallMessage impact taxonomy unified (23 files via single ripgrep), coverage gate hard-local-vs-advisory-CI clarified.
-- **W5 — public-doc scrub gate.** New `tests/scripts/check-public-doc-scrub.sh` wired into `make docs-check` greps tracked files for workspace-private paths + tool-context filenames; honors `scrub-allow:` opt-out. Cleaned 9 pre-existing violations. Closes audit-2 #3.
-- **W6 — freeze-gate breadth.** `check-abi-freeze.sh` + `check-wire-freeze.sh` now lint hardcoded test literals (`tests/unit/test_api_version.c`, `test_version.c`) AND release-evidence docs (`api-stability.md`, `release-readiness.md`) against `version.h` macros. Catches the W7-followup-#1 drift class. Closes audit-1 F3 / audit-2 #5.
-- **W7 — `.chk` defer-to taxonomy.** Retired `defer-to: M*/T*` labels on 106 deferred fixtures. New 4-bucket taxonomy: `active` / `deferred: v1.x` / `dropped` / `blocked: <work-item>`. 5 fixtures flipped to active (features shipped during arc, marker stale). New `docs/release/chk-deferred-taxonomy.md`. v1.0 conformance denominator computable. Closes audit-2 #8.
+Closes the "T46 dropped" annotation across 11 `.chk` fixtures. The 2026-05-27 re-audit of v0.10.7 `blocked:` fixtures showed that label never resolved to a canonical drop decision; legacy urbi 2.x supported runtime String concat. Restoring legacy parity. New fixture `tests/chk/operators/add_string.chk` covers basic concat, empty-operand variants, chained left-associative concat, intern stability, UTF-8 byte pass-through, mixed-type rejection, and numeric regression.
 
-ABI 0/18/0 → 0/18/1 (PATCH-only; pre-v1.0 escape clause not invoked). Wire v1.9 / 0x19 unchanged. Next milestone: **v0.11.x ROS2 (M9)**. Tagged `v0.10.7-audit-followup`.
+Next milestone: **v0.11.x ROS2 (M9)**. Tagged `v0.10.8-string-concat`.
 
 ## Design goals
 

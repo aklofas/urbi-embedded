@@ -3,9 +3,8 @@
 #         Mixed-type coercion ("x" + 1) deferred to v1.x and rejected with
 #         the existing OP_ADD type error.
 #
-# See: REVIVAL.md §S-string-plus +
-#      docs/refactor-1/urbi-embedded-v0.10.7-string-plus-concat-decision.md
-#      for the design rationale.
+# See: workspace-root compatibility-decisions ledger §S-string-plus for
+#      the design rationale.
 
 # Basic concat.
 "a" + "b"
