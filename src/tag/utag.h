@@ -27,8 +27,9 @@ struct UEvent;
 
 /* === UTag flag bits (stored in UTag.flags) === */
 
-#define UTAG_FLAG_FROZEN  0x01U  /* RESERVED — Tag.freeze (M5/M6) */
+#define UTAG_FLAG_FROZEN  0x01U  /* set by urbi_tag_freeze since v0.10.9 (W3c) */
 #define UTAG_FLAG_STOPPED 0x02U  /* set by urbi_tag_stop since v0.7.1 (Gap M) */
+#define UTAG_FLAG_BLOCKED 0x04U  /* set by urbi_tag_block since v0.10.9 (W3b) */
 
 /* === UTag struct (row 11 §3.2, extended M5 spec #3 §3.4) ===
  *

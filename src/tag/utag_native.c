@@ -362,24 +362,49 @@ tag_unfreeze_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
-/* tag_block_native: tag.block() — v1.x deferred; sets no flag at v1.0.
- * Raises a NotImplemented-style TypeError until the blocked-strand
- * suspension mechanism lands. */
+/* tag_block_native: tag.block() / tag.block(value) — cross-strand suspend.
+ *
+ * Forwards to urbi_tag_block (W3b).  0-arg form uses nil as the resume value;
+ * 1-arg form passes the supplied value.  Sets UTAG_FLAG_BLOCKED on the tag
+ * and suspends every member strand.  Returns nil.
+ *
+ * Script-side delivery of resume_value into the strand's result register
+ * (valued-block) is deferred to v1.x (W3f); the C API already accepts the
+ * value so callers don't need a re-API later. */
 static int
 tag_block_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                  UValue *out)
 {
-    (void)self; (void)args; (void)nargs;
-    return urbi_raise_type(vm, "Tag.block: not implemented at v1.0 (v1.x follow-up)", out);
+    if (nargs > 1) return urbi_raise_arity(vm, "Tag.block", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_TAG)
+        return urbi_raise_type(vm, "Tag.block: self must be a Tag", out);
+
+    UTag *t = (UTag *)self.v.p;
+    if (t == NULL) return urbi_raise_type(vm, "Tag.block: NULL tag pointer", out);
+
+    UValue resume_value = (nargs == 1) ? args[0] : urbi_make_nil();
+    urbi_tag_block(vm, t, resume_value);
+    *out = urbi_make_nil();
+    return UEXEC_OK;
 }
 
-/* tag_unblock_native: tag.unblock() — v1.x deferred; symmetric stub. */
+/* tag_unblock_native: tag.unblock() — symmetric to tag.block().
+ * Clears UTAG_FLAG_BLOCKED and resumes BLOCK-suspended members. */
 static int
 tag_unblock_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                    UValue *out)
 {
-    (void)self; (void)args; (void)nargs;
-    return urbi_raise_type(vm, "Tag.unblock: not implemented at v1.0 (v1.x follow-up)", out);
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Tag.unblock", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_TAG)
+        return urbi_raise_type(vm, "Tag.unblock: self must be a Tag", out);
+
+    UTag *t = (UTag *)self.v.p;
+    if (t == NULL) return urbi_raise_type(vm, "Tag.unblock: NULL tag pointer", out);
+
+    urbi_tag_unblock(vm, t);
+    *out = urbi_make_nil();
+    return UEXEC_OK;
 }
 
 /* tag_enter_native: tag.enter — lazy-allocate enter_event and return it.

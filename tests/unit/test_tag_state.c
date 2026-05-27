@@ -1,17 +1,21 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: W3a — SUSPENDED scheduler state primitives
- * (v0.10.9-tag-state).
- *
- * W3a covers the strand-level suspend/resume helpers; W3b/W3c append
- * tag.block / tag.freeze tests once those public APIs are implemented.
+/* Unit tests: W3a/W3b — SUSPENDED scheduler state + tag.block
+ * (v0.10.9-tag-state).  W3c appends tag.freeze tests.
  *
  * Tests cover:
- *  1. urbi_strand_suspend(REASON_BLOCK) transitions READY → SUSPENDED_BLOCK
- *     and removes the strand from the cooperative ready queue.
- *  2. urbi_strand_resume returns SUSPENDED → READY and re-enqueues.
- *  3. urbi_strand_suspend is a no-op for DEAD/DORMANT/WAITING strands.
- *  4. urbi_strand_suspend(REASON_FREEZE) is independent of REASON_BLOCK.
- *  5. urbi_strand_suspend / _resume accept NULL strand (no crash).
+ *  W3a:
+ *    1. urbi_strand_suspend(REASON_BLOCK) transitions READY → SUSPENDED_BLOCK
+ *       and removes the strand from the cooperative ready queue.
+ *    2. urbi_strand_resume returns SUSPENDED → READY and re-enqueues.
+ *    3. urbi_strand_suspend is a no-op for DEAD/DORMANT/WAITING strands.
+ *    4. urbi_strand_suspend(REASON_FREEZE) is independent of REASON_BLOCK.
+ *    5. urbi_strand_suspend / _resume accept NULL strand (no crash).
+ *
+ *  W3b:
+ *    6. urbi_tag_block sets UTAG_FLAG_BLOCKED and suspends member strands.
+ *    7. urbi_tag_unblock clears UTAG_FLAG_BLOCKED and resumes BLOCK-suspended
+ *       members but leaves FREEZE-suspended members alone.
+ *    8. urbi_tag_block / _unblock validate NULL args.
  *
  * Mirrors tests/unit/test_capi_unwind.c's minimal-strand harness pattern.
  */
@@ -203,6 +207,135 @@ UTEST(suspend_resume_null_strand)
     urbi_vm_destroy(&vm);
 }
 
+/* Link strand to tag->member_strands_head via a synthetic TAG_SCOPE
+ * cleanup entry — mirrors what OP_PUSH_TAG does at runtime. */
+static void
+link_strand_to_tag(UStrand *s, UTag *tag)
+{
+    UCleanupEntry *e = strand_cleanup_push(s);
+    UASSERT(e != NULL);
+    e->kind             = (uint8_t)UCLEANUP_TAG_SCOPE;
+    e->flags            = 0U;
+    e->handler_pc       = 0U;
+    e->register_base    = 0U;
+    e->register_count   = 0U;
+    e->owning_tag       = tag;
+    e->catch_pattern    = NULL;
+    e->next_member      = tag->member_strands_head;
+    e->strand_back      = s;
+    tag->member_strands_head = e;
+}
+
+/* W3b: urbi_tag_block sets UTAG_FLAG_BLOCKED and suspends each member strand. */
+UTEST(tag_block_sets_flag_and_suspends_members)
+{
+    UVM vm;
+    UStrand s;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UValue *reg = strand_minimal(&s, &vm);
+    sched_strand_make_runnable(&s);
+
+    UTag tag;
+    memset(&tag, 0, sizeof(tag));
+    tag.type_tag = 5U;
+    link_strand_to_tag(&s, &tag);
+
+    int rc = urbi_tag_block(&vm, &tag, make_int(7));
+    UASSERT_EQ(rc, URBI_OK);
+
+    UASSERT((tag.flags & UTAG_FLAG_BLOCKED) != 0U);
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_SUSPENDED);
+    UASSERT_EQ((int)USTRAND_GET_REASON(&s), (int)USTRAND_REASON_BLOCK);
+    UASSERT_EQ(s.unblock_value.kind, (uint8_t)UVAL_INT);
+    UASSERT_EQ(s.unblock_value.v.i, (int64_t)7);
+
+    /* Clear the synthetic tag-link so ustrand_destroy / strand_cleanup_stack_destroy
+     * teardown does not assert on a non-empty member list. */
+    tag.member_strands_head = NULL;
+
+    free(reg);
+    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* W3b: urbi_tag_unblock clears flag and resumes only BLOCK-suspended members. */
+UTEST(tag_unblock_clears_flag_and_resumes_block_members)
+{
+    UVM vm;
+    UStrand s;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UValue *reg = strand_minimal(&s, &vm);
+    sched_strand_make_runnable(&s);
+
+    UTag tag;
+    memset(&tag, 0, sizeof(tag));
+    tag.type_tag = 5U;
+    link_strand_to_tag(&s, &tag);
+
+    UASSERT_EQ(urbi_tag_block(&vm, &tag, make_nil()), URBI_OK);
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_SUSPENDED);
+
+    UASSERT_EQ(urbi_tag_unblock(&vm, &tag), URBI_OK);
+
+    UASSERT((tag.flags & UTAG_FLAG_BLOCKED) == 0U);
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_READY);
+
+    tag.member_strands_head = NULL;
+    free(reg);
+    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* W3b/W3c: unblock does NOT touch FREEZE-suspended strands. */
+UTEST(tag_unblock_leaves_freeze_suspended_alone)
+{
+    UVM vm;
+    UStrand s;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UValue *reg = strand_minimal(&s, &vm);
+    sched_strand_make_runnable(&s);
+
+    UTag tag;
+    memset(&tag, 0, sizeof(tag));
+    tag.type_tag = 5U;
+    link_strand_to_tag(&s, &tag);
+
+    /* Freeze first, then unblock — must be a no-op on the strand. */
+    urbi_strand_suspend(&s, USTRAND_REASON_FREEZE, &tag);
+    UASSERT_EQ((int)USTRAND_GET_REASON(&s), (int)USTRAND_REASON_FREEZE);
+
+    UASSERT_EQ(urbi_tag_unblock(&vm, &tag), URBI_OK);
+
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_SUSPENDED);
+    UASSERT_EQ((int)USTRAND_GET_REASON(&s), (int)USTRAND_REASON_FREEZE);
+
+    tag.member_strands_head = NULL;
+    free(reg);
+    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* W3b: urbi_tag_block / _unblock validate NULL args. */
+UTEST(tag_block_rejects_null_args)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UTag tag;
+    memset(&tag, 0, sizeof(tag));
+    tag.type_tag = 5U;
+
+    UASSERT_EQ(urbi_tag_block(NULL, &tag, make_nil()), URBI_ERR_INVALID_ARG);
+    UASSERT_EQ(urbi_tag_block(&vm, NULL, make_nil()), URBI_ERR_INVALID_ARG);
+    UASSERT_EQ(urbi_tag_unblock(NULL, &tag), URBI_ERR_INVALID_ARG);
+    UASSERT_EQ(urbi_tag_unblock(&vm, NULL), URBI_ERR_INVALID_ARG);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite ===== */
 void test_tag_state_suite(void);
 
@@ -219,4 +352,12 @@ test_tag_state_suite(void)
               suspend_freeze_distinct_from_block);
     utest_run("suspend_resume_null_strand",
               suspend_resume_null_strand);
+    utest_run("tag_block_sets_flag_and_suspends_members",
+              tag_block_sets_flag_and_suspends_members);
+    utest_run("tag_unblock_clears_flag_and_resumes_block_members",
+              tag_unblock_clears_flag_and_resumes_block_members);
+    utest_run("tag_unblock_leaves_freeze_suspended_alone",
+              tag_unblock_leaves_freeze_suspended_alone);
+    utest_run("tag_block_rejects_null_args",
+              tag_block_rejects_null_args);
 }

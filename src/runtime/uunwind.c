@@ -567,6 +567,76 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
     return URBI_OK;
 }
 
+/* === W3b (v0.10.9): urbi_tag_block / urbi_tag_unblock ===
+ *
+ * Block is the second of three cancellation modes (§S6 ratified at the
+ * Cat. E re-audit on 2026-05-27): stop / block / freeze.  All three
+ * walk tag->member_strands_head; block and freeze suspend rather than
+ * deposit an unwind, and they are independent gates (unblock only
+ * resumes BLOCK-suspended strands; unfreeze only FREEZE-suspended).
+ *
+ * urbi_tag_block sets UTAG_FLAG_BLOCKED and calls urbi_strand_suspend
+ * with REASON_BLOCK on every member strand.  resume_value is stashed
+ * on each strand's unblock_value so a future result-register handoff
+ * (W3f, deferred) can deliver it on resume.
+ *
+ * urbi_tag_unblock clears UTAG_FLAG_BLOCKED and resumes every
+ * BLOCK-suspended member.  FREEZE-suspended members stay suspended.
+ *
+ * Not ISR-safe.  Returns URBI_ERR_INVALID_ARG on NULL vm or tag. */
+int
+urbi_tag_block(struct UVM *vm, struct UTag *tag, UValue resume_value)
+{
+    if (vm == NULL || tag == NULL) return URBI_ERR_INVALID_ARG;
+    URBI_ASSERT_NOT_ISR(vm);
+
+    tag->flags |= (uint8_t)UTAG_FLAG_BLOCKED;
+
+    /* Snapshot-next iteration because urbi_strand_suspend does not unlink
+     * the cleanup entry from tag->member_strands_head — but a hypothetical
+     * future variant might, so be defensive. */
+    UCleanupEntry *e    = tag->member_strands_head;
+    UCleanupEntry *next;
+    while (e != NULL) {
+        next = e->next_member;
+        UStrand *s = e->strand_back;
+        if (s != NULL) {
+            /* Stash the value first so a races-against-resume can deliver
+             * the right value to a strand that gets immediately unblocked.
+             * urbi_strand_suspend itself does not write unblock_value. */
+            s->unblock_value = resume_value;
+            urbi_strand_suspend(s, USTRAND_REASON_BLOCK, tag);
+        }
+        e = next;
+    }
+    return URBI_OK;
+}
+
+int
+urbi_tag_unblock(struct UVM *vm, struct UTag *tag)
+{
+    if (vm == NULL || tag == NULL) return URBI_ERR_INVALID_ARG;
+    URBI_ASSERT_NOT_ISR(vm);
+
+    tag->flags &= (uint8_t)~UTAG_FLAG_BLOCKED;
+
+    UCleanupEntry *e    = tag->member_strands_head;
+    UCleanupEntry *next;
+    while (e != NULL) {
+        next = e->next_member;
+        UStrand *s = e->strand_back;
+        if (s != NULL
+         && USTRAND_IS_SUSPENDED(s)
+         && USTRAND_GET_REASON(s) == USTRAND_REASON_BLOCK) {
+            /* Re-deliver the value stashed by urbi_tag_block (or by a
+             * subsequent tag.block(value) call). */
+            urbi_strand_resume(s, s->unblock_value);
+        }
+        e = next;
+    }
+    return URBI_OK;
+}
+
 /* urbi_strand_cancel — deposit CANCEL (fatal, no catch) on a strand. */
 int
 urbi_strand_cancel(struct UVM *vm, struct UStrand *strand, UValue cancel_reason)

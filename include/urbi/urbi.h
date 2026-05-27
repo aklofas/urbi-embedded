@@ -59,6 +59,23 @@ const char *urbi_version(void);
  * T31 wires the real cross-strand walk; T12 provides a validity-check stub. */
 int urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value);
 
+/* W3b/v0.10.9: urbi_tag_block / urbi_tag_unblock — cross-strand suspend.
+ *
+ * urbi_tag_block walks tag->member_strands_head and transitions every
+ * member READY/RUNNING strand to SUSPENDED with the block-reason sub-code.
+ * Each strand's unblock_value is set to resume_value so a future resume
+ * can deliver it.  Sets UTAG_FLAG_BLOCKED on the tag.
+ *
+ * urbi_tag_unblock clears UTAG_FLAG_BLOCKED and resumes only the
+ * BLOCK-suspended member strands; FREEZE-suspended members stay
+ * suspended.  Block and freeze are independent gates per workspace
+ * ledger §S6.
+ *
+ * Not ISR-safe.  Returns URBI_OK on success or URBI_ERR_INVALID_ARG
+ * on NULL vm/tag. */
+int urbi_tag_block(struct UVM *vm, struct UTag *tag, UValue resume_value);
+int urbi_tag_unblock(struct UVM *vm, struct UTag *tag);
+
 /* === W5/v0.10.3: vm-first-arg sweep — control-transfer family ===
  *
  * 9 functions previously took strand as their first argument.  They now
