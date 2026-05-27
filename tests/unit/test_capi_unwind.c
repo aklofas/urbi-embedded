@@ -17,9 +17,11 @@
 #include "urbi/urbi.h"
 #include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
+#include "runtime/uunwind.h"  /* urbi_unwind — internal walker, used by W2 D3 test */
 #include "vm/uvm.h"
 #include "chunk/uchunk.h"
 #include "tag/utag.h"    /* UTag — needed for urbi_tag_stop real impl (T31) */
+#include "realm/urealm.h" /* URealm — needed for tag-creation in W2 D3 test */
 
 #include <stdlib.h>
 #include <string.h>
@@ -367,6 +369,49 @@ UTEST(capi_cleanup_stack_init_fails_on_null_alloc)
     urbi_vm_destroy(&vm);
 }
 
+/* 11. W2 v0.10.9-tag-state D3 ratify: urbi_tag_stop_local deposited on a
+ *     strand that has no TAG_SCOPE for the target tag in its cleanup stack
+ *     escalates to fatal via the unwind walker (uunwind.c:304
+ *     "empty cleanup stack → fatal escalation").  Closes design-risks
+ *     v0.10.7-D.  This unit test mirrors what tag_stop_native triggers when
+ *     t.member_strands_head == NULL && !strand_has_tag_in_scope(cur, t). */
+UTEST(capi_tag_stop_no_target_escalates_to_fatal)
+{
+    UVM vm;
+    UStrand s;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    UTag *t = urbi_tag_create(&vm, realm, "orphan", 6);
+    UASSERT(t != NULL);
+
+    UValue *reg = strand_minimal(&s, &vm);
+
+    /* Pre: clean strand, empty cleanup stack, no TAG_SCOPE entry for t. */
+    UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_OK);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
+
+    /* Deposit TAG_STOP locally — what tag_stop_native does for the D3
+     * outside-scope case (member_strands_head empty + no scope). */
+    urbi_tag_stop_local(&vm, &s, t, make_nil());
+    UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_TAG_STOP);
+    UASSERT(s.unwind_target == t);
+
+    /* Run the walker.  With an empty cleanup stack and pending TAG_STOP,
+     * the walker MUST escalate to fatal at uunwind.c:304. */
+    urbi_unwind(&s);
+
+    UASSERT_EQ((unsigned)s.fatal_status, (unsigned)UEXEC_TAG_STOP);
+    UASSERT_EQ((unsigned)s.state, (unsigned)USTRAND_STATE_DEAD);
+
+    free(reg);
+    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -395,4 +440,6 @@ test_capi_unwind_suite(void)
               capi_strand_cancel_unblocks_waiting_strand);
     utest_run("capi_cleanup_stack_init_fails_on_null_alloc",
               capi_cleanup_stack_init_fails_on_null_alloc);
+    utest_run("capi_tag_stop_no_target_escalates_to_fatal",
+              capi_tag_stop_no_target_escalates_to_fatal);
 }

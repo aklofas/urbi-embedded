@@ -151,3 +151,16 @@ knownConditionTrueFalse:src/repl/urepl_queue.c
 // points keep matching signatures across the call chain; cascading const
 // into the dispatcher's contract is out of scope for the portability fix.
 constParameterPointer:src/repl/urepl_dispatch.c
+
+// audit:v0_10_9_W2_D3 — src/runtime/umacros.h urbi_strncpy_truncating is a
+// bounded-copy helper whose loop condition `n + 1U < cap && src[n] != '\0'`
+// safely stops on either bound.  When called with a constant cap larger
+// than the literal string source (e.g., UVM_ERRMSG_CAP=128 with a 30-char
+// literal in src/tag/utag_native.c:tag_stop_native), cppcheck's
+// inter-procedural analysis flags the loop body as "out-of-bounds at
+// src[126]" — but the `src[n] != '\0'` short-circuit fires first.  Other
+// call sites pass variable cap (out_buf_size) so cppcheck cannot constant-
+// propagate and the warning silently stays clear.  File-wide suppression
+// because the helper itself is unchanged; every constant-cap caller would
+// otherwise need a per-site suppression.
+arrayIndexOutOfBoundsCond:src/runtime/umacros.h

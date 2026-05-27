@@ -51,6 +51,8 @@
  * combined urbi_gc_slot_store cannot be used here) is reached via urbi/gc.h
  * pulled in by vm/uvm.h above. */
 #include "sched/ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
+#include "runtime/ucleanup.h"        /* UCleanupEntry, UCLEANUP_TAG_SCOPE (W2 v0.10.9) */
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -250,23 +252,76 @@ tag_new_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
-/* tag_stop_native: tag.stop() — deposit TAG_STOP on all member strands.
+/* W2 v0.10.9 helper for D3 fatal outside-scope check.
  *
- * self must be UVAL_TAG.  Forwards to urbi_tag_stop with a nil stop-value.
- * Returns nil. */
+ * Walk the calling strand's cleanup stack to find a TAG_SCOPE entry whose
+ * owning_tag matches t.  Returns true if found.  Used by the D3
+ * outside-scope check in tag_stop_native below. */
+static bool
+strand_has_tag_in_scope(const struct UStrand *s, const UTag *t)
+{
+    if (s == NULL || t == NULL) return false;
+    for (uint16_t i = 0; i < s->cleanup_depth; i++) {
+        const UCleanupEntry *e = &s->cleanup_base[i];
+        if (e->kind == (uint8_t)UCLEANUP_TAG_SCOPE && e->owning_tag == t) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* tag_stop_native: tag.stop() / tag.stop(value) — deposit TAG_STOP on all
+ * member strands.
+ *
+ * self must be UVAL_TAG.  Forwards to urbi_tag_stop with the optional
+ * stop-value (nil if no argument).  Returns nil.
+ *
+ * v0.10.9 W1: valued-stop arity relax — accepts 0 or 1 argument; args[0]
+ * is plumbed through as the unwind_value (S5 valued-stop ratification).
+ *
+ * v0.10.9 W2: D3 fatal outside-scope check — if there are no member
+ * strands AND the calling strand has no TAG_SCOPE for the receiver in
+ * its cleanup stack, deposit a local TAG_STOP via urbi_tag_stop_local so
+ * the unwind walker (uunwind.c:304 "empty cleanup stack → fatal escalation")
+ * escalates.  Closes design-risks v0.10.7-D (D3 ratified 2026-05-27). */
 static int
 tag_stop_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                 UValue *out)
 {
-    (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Tag.stop", 0, nargs, out);
+    if (nargs > 1) return urbi_raise_arity(vm, "Tag.stop", 1, nargs, out);
     if (self.kind != (uint8_t)UVAL_TAG)
         return urbi_raise_type(vm, "Tag.stop: self must be a Tag", out);
 
     UTag *t = (UTag *)self.v.p;
     if (t == NULL) return urbi_raise_type(vm, "Tag.stop: NULL tag pointer", out);
 
-    urbi_tag_stop(vm, t, urbi_make_nil());
+    UValue stop_value = (nargs == 1) ? args[0] : urbi_make_nil();
+
+    /* Cross-strand deposit on member strands (existing path). */
+    urbi_tag_stop(vm, t, stop_value);
+
+    /* D3 (workspace-root compatibility-decisions ledger §S5c, design-risks
+     * v0.10.7-D ratified 2026-05-27): if neither the calling strand nor any
+     * other strand has this tag in their cleanup stack, deposit TAG_STOP
+     * locally so the unwind walker escalates to fatal.  Cross-strand
+     * deposit above handled the "other strands" half; the local deposit
+     * covers the case where member_strands_head was empty AND we're not
+     * in t's scope.  If we ARE in t's scope, urbi_tag_stop already
+     * deposited on us via member_strands_head; no local deposit needed.
+     *
+     * Surface the error in vm->last_error / last_errmsg so REPL recovery
+     * (urbi_repl_eval at src/chunk/uchunk_strand.c) doesn't silently
+     * convert the fatal-escalated strand to nil — script-level unhandled
+     * `throw` keeps that recovery contract; D3 outside-scope tag.stop()
+     * surfaces as a visible runtime error per the ratified semantics. */
+    if (t->member_strands_head == NULL &&
+        !strand_has_tag_in_scope(vm->cur_strand, t)) {
+        vm->last_error = UVM_TYPE_ERROR;
+        urbi_strncpy_truncating(vm->last_errmsg, UVM_ERRMSG_CAP,
+            "tag.stop with no active scope");
+        urbi_tag_stop_local(vm, vm->cur_strand, t, stop_value);
+    }
+
     *out = urbi_make_nil();
     return UEXEC_OK;
 }

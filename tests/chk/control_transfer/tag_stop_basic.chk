@@ -1,7 +1,7 @@
-# Milestone: W4/v0.10.2
-# Covers: Tag.new() constructor returns a UVAL_TAG; t.stop() is callable
-#         and returns nil; t.freeze() / t.unfreeze() are callable and
-#         return nil.
+# Milestone: W4/v0.10.2 (updated v0.10.9-tag-state W2: D3 outside-scope fatal)
+# Covers: Tag.new() constructor returns a UVAL_TAG; t.stop() called outside
+#         any active scope for `t` escalates to fatal (D3 ratify); t.freeze()
+#         / t.unfreeze() are callable and return nil.
 # Activated: v0.10.2-reactive W4 (UVAL_TAG + Tag.new() + scripted .stop()).
 #
 # Note: the original M3 draft tested that t.stop() INSIDE a t: scope
@@ -11,8 +11,10 @@
 # OP_PUSH_TAG creates an anonymous UTag independent of `t`; calling t.stop()
 # stops the `t` tag-member-list but the scope's anonymous tag continues.
 #
-# What IS testable at W4: Tag.new(), .stop(), .freeze(), .unfreeze() are
-# reachable native methods on vm->tag_proto and return the expected nil value.
+# v0.10.9-tag-state W2: t.stop() outside any active scope for the receiver
+# escalates to fatal (was silent nil pre-W2).  Workspace-root
+# compatibility-decisions ledger §S5c.  Closes design-risks v0.10.7-D.
+# Test now exercises both reachability AND the D3 outside-scope fatal path.
 
 var t = Tag.new("sc")
 t.stop()
@@ -20,7 +22,7 @@ var t2 = Tag.new("fr")
 t2.freeze()
 t2.unfreeze()
 [00000000] <Tag: sc>
-[00000001] nil
+[00000001] !!! tag.stop with no active scope
 [00000002] <Tag: fr>
 [00000003] nil
 [00000004] nil
