@@ -1,12 +1,12 @@
 # C API stability policy
 
-> Status: ABI freeze pinned at v0.10.6-stabilization (0/17/0).
+> Status: ABI freeze pinned at v0.10.6-stabilization (0/18/0).
 > Any change after this tag must follow §3.
 
 ## 1. The freeze pin
 
 `include/urbi/version.h` contains a `_Static_assert` pinning the public
-ABI to `0/17/0`.  Any change to the public C API after v0.10.6-stabilization
+ABI to `0/18/0`.  Any change to the public C API after v0.10.6-stabilization
 either bumps the macros AND the assert in lockstep (deliberate intent), or
 fails to compile.
 

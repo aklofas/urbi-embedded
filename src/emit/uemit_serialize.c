@@ -207,7 +207,7 @@ ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap) {
 
     /* --- 24-byte header --- */
     buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';
-    buf[4] = (uint8_t)URBI_BYTECODE_VERSION_BYTE;  /* version v1.7 */
+    buf[4] = (uint8_t)URBI_BYTECODE_VERSION_BYTE;  /* wire-format version byte (see include/urbi/version.h) */
     buf[5] = 0x00U;              /* flags: none defined */
     emit_memcpy(buf + 6, URBI_BYTECODE_CANARY, URBI_BYTECODE_CANARY_LEN);
     buf[12] = (uint8_t)URBI_INT_WIDTH;

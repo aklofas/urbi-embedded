@@ -6,10 +6,9 @@ This document covers the reactive subsystem: condition watchers (`at` /
 primitive that backs every synchronous fire path. Read
 [architecture.md](./architecture.md) first.
 
-**Current runtime gaps**: several headline language primitives are present in
-the emitter but not fully wired at the runtime level. Each gap is called out
-inline with the marker **RUNTIME GAP** and a reference to the wave of the
-v0.10.x arc that closes it.
+All headline reactive language primitives are fully wired as of v0.10.2-reactive.
+Legacy gap markers (Findings 1–6 from the v0.10.x arc) are documented as CLOSED
+inline with their shipping milestone.
 
 ## Reactive primitives surface
 
@@ -23,7 +22,7 @@ v0.10.x arc that closes it.
 | `at sync (e?) body` | emits `OP_AT_EVENT_SYNC_INSTALL` | working with sync-degradation caveat (Finding 7) |
 | `whenever (e?) body` | emits `OP_WHENEVER_EVENT_INSTALL` (W0/v0.10.2) | working; perpetual event subscriber — re-fires on every emission (not one-shot like `at (e?)`) |
 | `every (period) body` | desugars to `every(period_us, fn)` C-native call | working; re-spawn cadence via `UPeriodic` |
-| `tag.stop()` from script | **RUNTIME GAP (Finding 3)** — `OP_TAG_STOP` is a reserved type-error stub; `Tag.new()` does not exist; bare-prefix `mytag: stmt` is parse-rejected. **RUNTIME GAP — closes in Wave 3 of v0.10.x arc.** Cancellation is C-only via `urbi_tag_stop`. | |
+| `tag.stop()` from script | emits `OP_TAG_STOP` (opcode 30) | working — **CLOSED W3/v0.10.2**: `Tag.new()` + `OP_TAG_STOP` + script-level `.stop()`, `.freeze()`, `.unfreeze()`, `.block()`, `.unblock()` all shipped. Bare-prefix `mytag: stmt` and member-expr `Tag.scope: body` (W6/v0.10.5) also working. C-level `urbi_tag_stop` remains the ISR-safe path. |
 
 ## Reactive vocabulary at the lexer
 
@@ -160,13 +159,12 @@ FIFO order, runs `onleave` if present, and calls
 `urbi_watcher_unregister_internal`. Watchers whose body strand is still
 alive are deferred to the next safepoint.
 
-**RUNTIME GAP (Finding 2)** — `pending_onleave_queue_push` unlinks from
-`vm->active_watchers_head` and from `owning_tag->member_watchers_head`
-but does NOT unlink from `event->at_watchers_head`. Between push and the
-drain that calls `urbi_watcher_unregister_internal`, a concurrent
-`c_event_emit_async` or `c_event_emit_sync` walks the event's watcher
-chain and can re-fire a logically-dead AT_EVENT watcher. **RUNTIME GAP —
-closes in Wave 3 of v0.10.x arc.**
+**CLOSED W3/v0.10.2 (Finding 2)** — `pending_onleave_queue_push` now
+synchronously calls `uevent_at_watchers_remove` for AT_EVENT, AT_EVENT_SYNC,
+and WHENEVER_EVENT before appending to the pending-onleave FIFO.  This closes
+the UAF window where `c_event_emit_async`/`_sync` would dispatch a
+logically-dead AT_EVENT watcher.  Defence-in-depth
+`URBI_WATCHER_PENDING_UNREGISTER` checks remain in both emit paths.
 
 ### Unbind
 
@@ -275,14 +273,14 @@ deposits `PENDING_UNWIND=UEXEC_TAG_STOP` on member strands, walks
 `UTAG_FLAG_STOPPED`. It is documented as NOT ISR-safe and is only callable
 from host C code.
 
-**RUNTIME GAP (Finding 3)** — `OP_TAG_STOP` is a reserved type-error stub
-at the bytecode level; `Tag.new()` does not exist; the bare-prefix
-`mytag: stmt` form is parse-rejected; `tag.enter?` / `tag.leave?` are
-reachable from C via the lazy-alloc getters but not from script because
-`UVAL_TAG` is not a `UValKind` variant and OP_CALL cannot dispatch tag-
-proto methods. The headline cancellation primitive `mytag.stop()` is
-reachable only from C via `urbi_tag_stop`. **RUNTIME GAP — closes in
-Wave 3 of v0.10.x arc.**
+**CLOSED W3/v0.10.2 (Finding 3)** — Tag manipulation is fully
+script-accessible.  `UVAL_TAG = 12` is a first-class `UValKind` variant;
+`Tag.new()` creates tags; `OP_TAG_STOP` (opcode 30) calls `urbi_tag_stop`;
+`.freeze()`, `.unfreeze()`, `.block()`, `.unblock()`, `.enter`, `.leave`
+are registered on `vm->tag_proto`.  Bare-prefix `mytag: stmt` (v0.10.2-W4)
+and member-expression `Tag.scope: body` (v0.10.5-W8) are parser-accepted.
+`urbi_tag_stop` remains the ISR-safe C path; script-level `.stop()` routes
+through it.
 
 ## UPeriodic lifecycle (`every`)
 
@@ -310,13 +308,11 @@ Body completion is notified via `urbi_periodic_body_completed` from the
 `exit_strand` path in `uvm.c`, which mirrors `urbi_watcher_body_completed`
 in structure.
 
-**RUNTIME GAP (Finding 4 — shared with watcher body strands)** — body
-strands spawned by `spawn_periodic_body` and by `do_spawn_body_coroutine`
-arm from the body closure without installing a synthetic entry frame whose
-`executing_proto->nested[]` contains inner closures. Any `OP_CLOSURE`
-inside a body that creates a function literal, nested reactive primitive,
-or any other closure-emitting construct will fail to resolve
-`child_proto`. **RUNTIME GAP — closes in Wave 3 of v0.10.x arc.**
+**CLOSED W3/v0.10.2 (Finding 4)** — body strands spawned by
+`spawn_periodic_body` and `do_spawn_body_coroutine` now bind the body
+closure's proto as `root_proto` in the entry frame, so `OP_CLOSURE` inside
+`every`/`at`/`whenever` bodies correctly resolves `nested[]` children.
+Function literals and nested reactive primitives inside reactive bodies work.
 
 ## Per-VM trace read-set + deferred slot-change ring
 
@@ -337,16 +333,12 @@ Two VM-level data structures support the reactive subsystem
   every safepoint *before* `watcher_eval_dirty`. Ring-full silently drops
   with a one-shot warn. The cap is reduced for footprint targets.
 
-**RUNTIME GAP (Finding 6)** — the deferred ring entries are NOT walked
-by any GC root provider. The comment in `src/vm/uvm.h` documents that
-correctness relies on a cooperative invariant: no GC slice fires between
-the defer-site (inside a scratch context) and the drain at the next
-safepoint. Today this invariant holds because `urbi_gc_slice` runs at the
-top of the safepoint sequence, before `drain_pending_onleave_queue` and
-`urbi_drain_deferred_slot_changes`. Under any future preemptive-GC or
-reordered safepoint path, the unrooted ring entries become dangling
-references. **RUNTIME GAP — closes in Wave 3 of v0.10.x arc** (adding a
-`deferred_slot_changes_walk_roots` root provider).
+**CLOSED W3/v0.10.2 (Finding 6)** — `urbi_deferred_slot_changes_walk_roots`
+is registered with the GC root registry at `urbi_vm_init`, making deferred
+ring entries explicit GC roots.  The cooperative safepoint ordering
+(GC before drain) remains the primary invariant, but the root walker
+removes the foot-gun for future contributors who might reorder safepoint
+actions or introduce preemptive GC.
 
 ## Slot-change events
 
@@ -423,32 +415,28 @@ would remove the O(N) walk.
 See [scheduler-design.md](./scheduler-design.md) for the strand state
 machine and run-queue contract.
 
-## Known gaps closing in v0.10.x
+## Reactive arc findings — all closed v0.10.2
 
-The following reactive runtime gaps are tracked in the v0.10.x
-architectural refactor arc and are referenced above. All are slated for
-Wave 3 unless noted.
+The following reactive runtime gaps were tracked in the v0.10.x
+architectural refactor arc.  All were closed in Wave 3 (v0.10.2-reactive)
+unless noted; the inline sections above have been updated accordingly.
 
-- **Finding 1** (`whenever (e?)` silent no-op): parser does not produce
-  `AST_AT_EVENT` for `whenever`; installs empty-read-set cond watcher
-  that never fires. **CLOSED W0/v0.10.2** — `parse_whenever` now produces
-  `AST_AT_EVENT` with `is_whenever=true` when the condition ends with `?`;
-  `OP_WHENEVER_EVENT_INSTALL` (opcode 48, wire v1.9) routes to
-  `UWATCHER_WHENEVER_EVENT` mode; empty-read-set installs are now
+- **Finding 1** (`whenever (e?)` silent no-op): **CLOSED W0/v0.10.2** —
+  `parse_whenever` now produces `AST_AT_EVENT` with `is_whenever=true`
+  when the condition ends with `?`; `OP_WHENEVER_EVENT_INSTALL` (opcode 48,
+  wire v1.9) routes to `UWATCHER_WHENEVER_EVENT`; empty-read-set installs
   rejected as `URBI_INSTALL_NO_OBSERVABLE_CELLS`.
 - **Finding 2** (AT_EVENT dangling on `event->at_watchers_head` after
-  tag-stop): `pending_onleave_queue_push` does not unlink from the event
-  chain; `c_event_emit_async/sync` re-fires logically-dead watchers.
-  Closes **Wave 3**.
+  tag-stop): **CLOSED W3/v0.10.2** — `pending_onleave_queue_push`
+  synchronously calls `uevent_at_watchers_remove` for AT_EVENT,
+  AT_EVENT_SYNC, and WHENEVER_EVENT before appending to the FIFO.
 - **Finding 3** (`OP_TAG_STOP` reserved stub; no script-level tag
-  cancellation): `mytag.stop()` unreachable from script; `Tag.new()`
-  absent; bare-prefix `mytag: stmt` parse-rejected. Closes **Wave 3**.
-- **Finding 4** (`OP_CLOSURE` in reactive body strands): body-strand entry
-  frame does not ensure `executing_proto->nested[]` contains inner
-  closures of the body. Affects `at`/`whenever`/`at(e?)`/`every` bodies
-  that create function literals or nested reactive primitives at runtime.
-  Closes **Wave 3**.
-- **Finding 6** (deferred slot-change ring weakly rooted): ring entries
-  are not walked by any GC root provider; correctness depends on implicit
-  cooperative invariant. Closes **Wave 3** (add
-  `deferred_slot_changes_walk_roots` root provider).
+  cancellation): **CLOSED W3/v0.10.2** — `Tag.new()`, `OP_TAG_STOP`,
+  bare-prefix `mytag: stmt`, and full `vm->tag_proto` method suite shipped.
+  Member-expression `Tag.scope: body` closed in W8/v0.10.5.
+- **Finding 4** (`OP_CLOSURE` in reactive body strands): **CLOSED
+  W3/v0.10.2** — `spawn_periodic_body` and `do_spawn_body_coroutine` bind
+  body closure proto as entry-frame `root_proto`.
+- **Finding 6** (deferred slot-change ring weakly rooted): **CLOSED
+  W3/v0.10.2** — `urbi_deferred_slot_changes_walk_roots` registered with
+  GC root registry at `urbi_vm_init`.

@@ -178,12 +178,12 @@ size pin (host = 64-bit pointers; embedded targets noted separately):
 |------|-----------|--------|-----------------|-------|
 | `UObject` | `UTYPE_OBJECT` (1) | yes | 56 B | `_Static_assert` in `src/object/uobject.h` |
 | `UClosure` | `UTYPE_CLOSURE` (2) | yes | variable + `(nupvals - 1) * sizeof(UUpvalCell*)` | `UCell` first member |
-| `UStrand` | `UTYPE_COROUTINE` (7) | yes | 2880 B | bulk is the embedded `frames[UVM_MAX_FRAMES]` array; `_Static_assert` in `src/sched/ustrand.h` |
+| `UStrand` | `UTYPE_COROUTINE` (7) | yes | 3896 B | bulk is the embedded `frames[UVM_MAX_FRAMES]` array; `_Static_assert` in `src/sched/ustrand.h` |
 | `UVM` | n/a | n/a | n/a | not a GC cell — owns the heap, walked as the root container |
 | `UWatcher` | `UTYPE_WATCHER` (6) | pool | 240 B | pool-managed (`UGC_IS_FIXED`); `_Static_assert` in `src/watcher/uwatcher.h` |
 | `UEvent` | `UTYPE_EVENT` (18) | yes | 40 B | `_Static_assert` in `src/event/uevent.h` |
 | `UChangedNode` | `UTYPE_CHANGED_NODE` (19) | yes | 32 B (host) / 16 B (32-bit) | `_Static_assert` in `src/changed/uchanged_node.h`, guarded on pointer width |
-| `UTag` | `UTYPE_TAG` (5) | yes | 56 B | promoted to a GC cell in the `v0.5.0-reactive` release; `_Static_assert` in `src/tag/utag.h` |
+| `UTag` | `UTYPE_TAG` (5) | yes | 64 B | promoted to a GC cell in the `v0.5.0-reactive` release; `_Static_assert` in `src/tag/utag.h` |
 
 `UTag` was a pool-managed value before `v0.5.0-reactive`; promoting it to a
 proper GC cell let it own GC-managed `UValue` slots safely. `UEvent` and
