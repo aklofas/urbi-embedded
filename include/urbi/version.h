@@ -218,6 +218,13 @@
  *      auto-deps + test_repl_stop_path UAF fix.  All script-side
  *      surface — NO new public C API symbols.  PATCH bump only.
  *      (0/19/1 → 0/19/2)
+ *  20. v0.10.12-cat-e-activation — final tag of the 4-tag Cat. E
+ *      ratification arc.  Fixture-and-doc-only tag: D2 cross-spec
+ *      at→event chain activate-now via 3-fixture Realm-capture rewrite
+ *      (W1), at.sync 4-fixture syntax normalization to canonical `at sync`
+ *      keyword form per §S-watcher-3 (W2), Cat. E doc-sweep close-out (W3).
+ *      No new public C API symbols.  No new opcodes.  PATCH bump only.
+ *      (0/19/2 → 0/19/3)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -233,7 +240,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  19
-#define URBI_API_VERSION_PATCH  2
+#define URBI_API_VERSION_PATCH  3
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -252,7 +259,7 @@ extern "C" {
  * Failing to bump the static_assert breaks the build, which is the point —
  * deliberate intent at every change, not silent ABI drift.
  *
- * Pin target: v0.10.11-channel-and-isA ships at 0/19/2.
+ * Pin target: v0.10.12-cat-e-activation ships at 0/19/3.
  *
  * The pin landed in commit `bdad57c` (W2 of v0.10.6) at 0/17/0; bumped to
  * 0/18/0 at v0.10.6 wave wrap-up to capture the W4 UReplConfig.rate_limit_per_second
@@ -273,11 +280,15 @@ extern "C" {
  * D6 + isA + D5 Cat. E ratification (Channel proto, cout/cerr/clog,
  * '<<' infix, isA(), Object unfreeze) plus bundled carry-overs
  * (Makefile -MMD/-MP + REPL UAF fix).  All script-side; zero new
- * public C API symbols.
+ * public C API symbols.  Bumped to 0/19/3 at v0.10.12-cat-e-activation —
+ * PATCH-only, final tag of the 4-tag Cat. E ratification arc.  Fixture-
+ * and-doc-only tag: D2 cross-spec at→event chain activate-now (W1),
+ * at.sync keyword normalization (W2), Cat. E close-out (W3).  Zero new
+ * public C API symbols; no functional changes.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 19
-            && URBI_API_VERSION_PATCH == 2,
+            && URBI_API_VERSION_PATCH == 3,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

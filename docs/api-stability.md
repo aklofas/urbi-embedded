@@ -1,11 +1,11 @@
 # C API stability policy
 
-> Status: ABI pin at v0.10.11-channel-and-isA (0/19/2) — PATCH bump
-> from v0.10.10-job-introspection (0/19/1).  19th use of pre-v1.0
-> escape clause.  D6 + isA + D5 Cat. E ratification (Channel proto,
-> cout/cerr/clog, '<<' infix, isA(), Object unfreeze) plus bundled
-> carry-overs (Makefile -MMD/-MP + REPL UAF fix) — all script-side;
-> zero new public C API symbols.  PATCH-only, not freeze-override
+> Status: ABI pin at v0.10.12-cat-e-activation (0/19/3) — PATCH bump
+> from v0.10.11-channel-and-isA (0/19/2).  20th use of pre-v1.0
+> escape clause.  Final tag of the 4-tag Cat. E ratification arc —
+> fixture-and-doc-only tag (D2 cross-spec activation, at.sync keyword
+> normalization, Cat. E close-out); no new public C API symbols, no
+> new opcodes, no functional changes.  PATCH-only, not freeze-override
 > under §3 (the ledger numbers every bump; only MINOR/MAJOR bumps
 > require §3's freeze-override review).  The freeze pin is a forcing
 > function (deliberate intent at every bump), not a hard cap.  Any
@@ -14,7 +14,7 @@
 ## 1. The freeze pin
 
 `include/urbi/version.h` contains a `_Static_assert` pinning the public
-ABI to `0/19/2`.  Any change to the public C API after v0.10.6-stabilization
+ABI to `0/19/3`.  Any change to the public C API after v0.10.6-stabilization
 either bumps the macros AND the assert in lockstep (deliberate intent), or
 fails to compile.
 
@@ -99,3 +99,12 @@ plus one policy change (Object atom proto unfrozen) — all script-side,
 no new public C API symbols.  PATCH bump only: 0/19/1 to 0/19/2.
 Recorded for ledger completeness; this is NOT a freeze-override
 under §3.
+
+### Escape #20 — v0.10.12-cat-e-activation (PATCH-only)
+
+Final tag of the 4-tag Cat. E ratification arc.  Fixture-and-doc-
+only tag: D2 cross-spec at→event chain activation (W1), at.sync
+keyword normalization (W2), Cat. E close-out (W3).  No new public
+C API symbols — only the ABI macro bump.  PATCH bump: 0/19/2 →
+0/19/3.  Recorded for ledger completeness; this is NOT a freeze-
+override under §3.

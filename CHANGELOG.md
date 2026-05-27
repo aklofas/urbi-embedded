@@ -1,5 +1,90 @@
 # Changelog
 
+## v0.10.12-cat-e-activation — 2026-05-27
+
+Fourth and final tag of the Cat. E ratification arc.  Fixture-and-
+doc-only tag: D2 cross-spec at→event chain activation via Realm-
+capture fixture rewrites; at.sync 4-fixture normalization to
+canonical `at sync` keyword form; Cat. E doc-sweep close-out.  No
+new public C API symbols.  No new opcodes.  No functional changes.
+
+### Activated
+
+- **3 reactive cross-spec fixtures** via the v0.10.10 W3 `Realm.x = v`
+  capture pattern (W1):
+  - `tests/chk/reactive/cross-spec/at_then_event_chain.chk` — at(cond)
+    body emits event!; at(e?) subscriber observes the event chain.
+  - `tests/chk/reactive/cross-spec/event_driven_slot_write.chk` —
+    at(e?) body performs slot write that fires downstream watcher.
+  - `tests/chk/reactive/cross-spec/det/det_event_chain.chk` —
+    minimal-correctness activation only; full 100x3-preset determinism
+    still blocked on T39 chk-runner tunables-extension (v0.10.7-G).
+
+  Per Cat. E re-audit D2 verdict B ("Activation-now via fixture
+  rewrite") — the original `blocked: chain does not propagate` label
+  was unsubstantiated by C-level evidence (`c_event_emit_async` is
+  non-allocating + body-strand-safe + unit-tested via
+  `test_event_emit_async.c`).
+
+### Changed
+
+- **5 reactive fixtures normalized for `at.sync` dot-syntax → canonical
+  `at sync` keyword form** per §S-watcher-3 (W2).  Per Cat. E re-audit
+  Cluster #15 verdict A: the dot-syntax was a fixture-authoring error
+  from M5 era; urbiscript has no dot-syntax for sync watchers.
+  - `tests/chk/reactive/slot-change/slot_change_sync.chk` — body
+    rewritten dot→keyword; narrowed on pre-existing slot-change
+    double-fire bug (same blocker as `slot_change_basic.chk`;
+    v1.0-rc investigation, NOT a new v0.10.12-* design-risk).
+  - `tests/chk/reactive/cross-spec/det/det_slot_change_burst.chk` —
+    body rewritten dot→keyword; narrowed on T39 only.
+  - `tests/chk/reactive/slot_change_fifo_determinism.chk` — header-
+    only narrow (at.sync mention dropped).
+  - `tests/chk/reactive/slot_change_reentrancy_determinism.chk` —
+    header-only narrow (at.sync mention dropped).
+
+### Internal
+
+- ABI 0/19/2 → 0/19/3 (escape #20; PATCH-only — no new public C
+  surface; no functional changes).
+- Wire format UNCHANGED at v1.9 / 0x19.
+- `idf_component.yml` version bumped to `0.10.12-cat-e-activation`.
+
+### Closed audit findings
+
+- **Cat. E re-audit COMPLETE.**  All 7 D-decisions (D1 SUSPENDED + D2
+  cross-spec + D3 fatal-outside-scope + D4 begin/end + D5 unfreeze
+  Object + D6 full Channel + D7 full Job) ratified and shipped across
+  v0.10.9 + v0.10.10 + v0.10.11 + v0.10.12.  Closes workspace-root
+  design-risks `v0.10.7-A` ("Re-audit W7's 76 blocked fixtures") —
+  the Cat. E re-audit IS the requested re-audit; the arc covered ~26
+  fixtures organized by Cluster (not all 76 from the original W7
+  count), arc completed 2026-05-27.
+
+### Wire format
+
+UNCHANGED at v1.9 / 0x19.  No new opcodes; no new constructs.
+
+### ABI
+
+0/19/2 → 0/19/3.  PATCH bump — no new public C API symbols.  Escape
+ledger entry #20.
+
+### Test corpus
+
+`make releasetest` 31+ gates green.  304 chk fixtures total (288
+non-repl active + 16 REPL-gated; unchanged from v0.10.11 — W1+W2
+activated 3 fixtures in-place via body rewrites rather than adding new
+fixture files).  Unit-case counts inherit from v0.10.11 (2012 cases /
+14385 checks) — no new C-side tests added in this fixture-and-doc-only
+tag.
+
+### Cat. E arc status
+
+**COMPLETE.**  Tag 4 of 4 shipped.  Next: **v0.11.x ROS2 (M9)** —
+micro-ROS / ROS2 integration; Standard Robotics API per REVIVAL
+§11/§12; subsystem prefix `ros:` comes online.  Then **v1.0-rc**.
+
 ## v0.10.11-channel-and-isA — 2026-05-27
 
 Third tag of the Cat. E ratification arc.  D6 full Channel + isA

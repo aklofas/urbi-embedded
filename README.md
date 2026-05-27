@@ -6,11 +6,11 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** v0.10.11-channel-and-isA — Cat. E ratification arc tag 3 of 4. D6 full Channel proto + `cout`/`cerr`/`clog` realm globals + `<<` infix operator; `isA(Proto)` universal type-test on Object root; D5: Object atom proto unfrozen (Lobby stays frozen); `Lobby.echo` bare-name fix. All new surface is script-side — zero new public C API symbols. ABI 0/19/2 (PATCH bump from 0/19/1; 19th use of pre-v1.0 escape clause). Wire v1.9 / 0x19 unchanged. Closes REVIVAL §14.9 Y3 commitment (Channel was attributed M8 but M8 shipped only `Lobby.echo`/`Lobby.wall`).
+**Status:** v0.10.12-cat-e-activation — **Cat. E ratification arc COMPLETE** (4 tags shipped: v0.10.9 + v0.10.10 + v0.10.11 + v0.10.12). Final tag is fixture-and-doc-only: D2 cross-spec at→event chain activation via 3-fixture Realm-capture rewrite, at.sync 5-fixture syntax normalization to canonical `at sync` keyword form per §S-watcher-3, Cat. E doc-sweep close-out. No new public C API symbols; no new opcodes; no functional changes. ABI 0/19/3 (PATCH bump from 0/19/2; 20th use of pre-v1.0 escape clause). Wire v1.9 / 0x19 unchanged.
 
-Previously: **v0.10.10-job-introspection** — D7 full-ship: Job proto + `detach`/`disown` + `scopeTag` + `Lobby.connectionTag`. ABI 0/19/1.
+Previously: **v0.10.11-channel-and-isA** — D6 full Channel proto + `cout`/`cerr`/`clog` realm globals + `<<` infix operator; `isA(Proto)` universal type-test; D5: Object atom proto unfrozen. ABI 0/19/2.
 
-Next milestone: **v0.10.12-cat-e-activation** (D2 cross-spec at to event activate-now + at.sync rewrites + Cat. E doc-sweep), then **v0.11.x ROS2 (M9)**. Tagged `v0.10.11-channel-and-isA`.
+Next milestone: **v0.11.x ROS2 (M9)** — micro-ROS / ROS2 integration; Standard Robotics API per REVIVAL §11/§12; subsystem prefix `ros:` comes online. Then **v1.0-rc**. Tagged `v0.10.12-cat-e-activation`.
 
 ## Design goals
 

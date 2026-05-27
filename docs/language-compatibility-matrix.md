@@ -73,7 +73,8 @@
 | `at (cond) body` | partial | core form works; missing `~ duration`, `sync`, `onleave` per legacy F4 / Wave 6 W9 |
 | `at (event?) body` | implemented | payload binding with named var: `at (e?(var x)) body`; shipped v0.10.5 W9 |
 | `at (event?(var x)) body` | implemented | legacy F4; shipped v0.10.5 W9 |
-| `at sync ... onleave ...` | NOT implemented | currently rejected per reactive audit; Wave 6 W9 |
+| `at sync (cond) body` | implemented | M5 / §S-watcher-3 — `at sync` keyword form is canonical (shipped M5); the `at.sync` dot-syntax variant was a fixture-authoring error from M5 era and never existed in urbiscript.  v0.10.12 W2 normalized 4 fixture headers/bodies (Cat. E re-audit Cluster #15 verdict A) |
+| `at sync ... onleave ...` | partial | `at sync` keyword form ships; `onleave` clause deferred-v1.x (PARSE-033, Wave 6 W8 / W9) |
 | `at (cond ~ duration) body` | NOT implemented | debounce/hold; deferred v1.x (Wave 6 W9 ruling) |
 | `whenever (cond) body` | implemented | — |
 | `whenever (event?) body` | implemented | payload binding with named var: `whenever (e?(var x)) body`; shipped v0.10.5 W9 |
