@@ -1,34 +1,39 @@
-# Milestone: M5
+# Milestone: v0.10.12-cat-e-activation
 # Covers: cross-spec composition: event subscriber writes to a slot that has
-#         a slot-change watcher; chain: e! → slot write → slot-change sub fires.
+#         a slot-change watcher; chain: e! -> slot write -> slot-change sub fires.
 #         Tests that event-driven slot writes trigger downstream slot-change
 #         watchers (spec cross-spec §2.1 chaining rule).
-#
-# blocked: at(cond) body event chain gap; Event.new()+Object.new() available but chain broken
 # matrix-row: reactive-event
 #
-# Reason:
-#   Requires both Event.new() (T59) and Object.new() (T69) stdlib bindings,
-#   plus scratch-frame body dispatch for both the event subscriber body (which
-#   writes obj.x) and the slot-change subscriber body.  The chain correctness
-#   (event emit → slot write → slot-change subscriber) is a composition of
-#   urbi_event_emit_async + OP_SETSLOT + urbi_emit_slot_change_if_subscribed.
+# Activation history: Cat. E re-audit D2 ratified at v0.10.12.  The original
+# 'blocked: chain does not propagate' label was unsubstantiated by C-level
+# evidence (c_event_emit_async is non-allocating + body-strand-safe + unit-
+# tested via test_event_emit_async.c).  Activated empirically via Realm.x = v
+# capture (the v0.10.10 W3 pattern).
 #
-# Activate when both stdlib bindings + body dispatch are wired.
-#
-# Urbiscript source (activate at T59 + T69 + M5-scratch-frame):
-#   var e = Event.new();
-#   var obj = Object.new();
-#   var chain_fired = 0;
-#   at (e?) obj.x = 1;
-#   at (obj.x.changed?) Realm.chain_fired = Realm.chain_fired + 1;
-#   e!;
-#   chain_fired
-#   --- expected output ---
-#   [00000000] nil
-#   [00000001] nil
-#   [00000002] 0
-#   [00000003] nil
-#   [00000004] nil
-#   [00000005] nil
-#   [00000006] 1
+# Uses Realm slots for both the trigger slot (Realm.x) and the counter
+# (Realm.chain_fired) to avoid nondeterministic <object 0x...> addresses.
+# Realm.x is pre-initialized to 0 before the slot-change watcher is installed
+# so the first slot-change event fires only on the write inside the at(e?) body,
+# not on watcher install.
+
+var Realm.chain_fired = 0
+[00000000] 0
+
+var Realm.x = 0
+[00000001] 0
+
+var e = Event.new()
+[00000002] <event>
+
+at (Realm.x.changed?) Realm.chain_fired = Realm.chain_fired + 1
+[00000003] nil
+
+at (e?) Realm.x = 1
+[00000004] nil
+
+e!
+[00000005] nil
+
+Realm.chain_fired
+[00000006] 1

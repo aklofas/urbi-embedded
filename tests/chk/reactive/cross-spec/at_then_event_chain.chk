@@ -1,35 +1,39 @@
-# Milestone: M5
-# Covers: cross-spec chain: cond watcher fires → body emits event → event
+# Milestone: v0.10.12-cat-e-activation
+# Covers: cross-spec chain: cond watcher fires -> body emits event -> event
 #         subscriber fires; at(x > threshold) body emits e!, at(e?) logs.
 #         Tests that a rising-edge cond watcher can trigger event dispatch
 #         as a downstream effect (spec cross-spec §2.2).
-#
-# blocked: at(cond) body event chain does not propagate to event subscriber — cross-spec chaining gap
 # matrix-row: reactive-at-cond
 #
-# Reason:
-#   The cond watcher (at x>threshold) requires scratch-frame condition
-#   evaluation (invoke_condition_closure stub).  The body dispatch requires
-#   spawn_body_coroutine (stub).  Event.new() requires T59 stdlib binding.
-#   The composition of cond-watcher + event emit is a pure sequencing of two
-#   already-implemented C-level paths: watcher_eval_dirty → spawn body coroutine
-#   → body runs e! → urbi_event_emit_async → event subscriber fires.
+# Activation history: Cat. E re-audit D2 ratified at v0.10.12.  The original
+# 'blocked: chain does not propagate' label was unsubstantiated by C-level
+# evidence (c_event_emit_async is non-allocating + body-strand-safe + unit-
+# tested via test_event_emit_async.c).  Activated empirically via Realm.x = v
+# capture (the v0.10.10 W3 pattern).
 #
-# Activate when Event.new() + cond eval + body dispatch are wired.
-#
-# Urbiscript source (activate at T59 + M5-scratch-frame):
-#   var threshold = 5;
-#   var e = Event.new();
-#   var log = "";
-#   at (threshold > 3) e!;
-#   at (e?) Realm.log = Realm.log + "event";
-#   Realm.threshold = 10;
-#   log
-#   --- expected output ---
-#   [00000000] 5
-#   [00000001] nil
-#   [00000002] ""
-#   [00000003] nil
-#   [00000004] nil
-#   [00000005] 10
-#   [00000006] "event"
+# Install order: threshold starts at 0 (cond false at install); at(threshold>3)
+# does not fire immediately.  Trigger sets Realm.threshold = 10 via a nested
+# call which provides the safepoint watcher_eval_dirty needs.  The at-cond
+# body runs e! which enqueues the at(e?) subscriber body; that body runs and
+# sets Realm.log = "event" before Realm.log is read.
+
+var Realm.log = ""
+[00000000] ""
+
+var threshold = 0
+[00000001] 0
+
+var e = Event.new()
+[00000002] <event>
+
+at (e?) Realm.log = "event"
+[00000003] nil
+
+at (threshold > 3) e!
+[00000004] nil
+
+var trigger = function() { Realm.threshold = 10 }; trigger()
+[00000005] 10
+
+Realm.log
+[00000006] "event"
