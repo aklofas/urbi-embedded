@@ -29,8 +29,11 @@ struct URealm;
  * Must be called AFTER urbi_run_chunk (which runs channel_overlay.u and
  * installs the Channel class as a realm global).  Idempotent — returns
  * URBI_OK immediately if vm->channel_proto is already set.
- * Returns URBI_OK on success, URBI_ERR_INVALID_STATE if "Channel" not
- * yet present. */
+ * Returns:
+ *   URBI_OK                  — proto cached (or was already cached).
+ *   URBI_ERR_SLOT_NOT_FOUND  — Channel class not installed yet
+ *                              (urbi_realm_get_global pass-through).
+ *   URBI_ERR_INVALID_STATE   — Channel slot exists but is not a UObject. */
 int urbi_channel_proto_resolve(struct UVM *vm, struct URealm *realm);
 
 /* Bind Channel + cout/cerr/clog as realm globals.  cout uses

@@ -99,7 +99,11 @@ int
 urbi_channel_register_globals(UVM *vm, URealm *realm)
 {
     if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
-    if (vm->channel_proto == NULL) return URBI_OK;   /* not yet resolved */
+    /* Caller-contract: urbi_channel_proto_resolve(vm, realm) must have
+     * run successfully before this call (header §usage).  If channel_proto
+     * is NULL here, the caller violated the contract — surface the error
+     * rather than silently install zero globals. */
+    if (vm->channel_proto == NULL) return URBI_ERR_INVALID_STATE;
 
     /* Bind "Channel" realm-global pointing at the cached proto. */
     UValue cv;
