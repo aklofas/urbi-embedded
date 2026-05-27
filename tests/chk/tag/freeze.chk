@@ -1,7 +1,7 @@
 # Milestone: M3
 # Covers: tag.freeze() suspends all strands under that tag; the strand stays
 #         frozen until t2.stop() terminates the outer scope.
-# deferred: v1.x — tag.freeze()/tag.unfreeze() methods not implemented; SUSPENDED strand state
+# blocked: T39 chk-driver (parallel `,` step) AND v0.10.9-B (user-tag→scope-tag binding) — tag.freeze()/.unfreeze() + SUSPENDED machinery shipped at v0.10.9 W3a+W3c (see tests/chk/tag/freeze_basic.chk for the working minimal fixture)
 # matrix-row: tag-freeze
 #
 # Reason:

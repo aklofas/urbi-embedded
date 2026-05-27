@@ -1,7 +1,7 @@
 # Milestone: M3
 # Covers: deep tag hierarchy (a.b.c.k); stopping any ancestor cascades to all
 #         descendants; 'at sync (a.enter?)' reactive enter/leave tracing; freeze.
-# blocked: at sync watcher not implemented + tag.freeze() not implemented
+# blocked: T39 chk-driver AND deeper proto chain — tag.freeze() shipped at v0.10.9 W3c but child-tag-as-slot (a.b.c.k) requires per-tag UVAL_TAG slot scaffolding beyond v0.10.9 W3 surface
 # matrix-row: tag-freeze
 #
 # Reason:

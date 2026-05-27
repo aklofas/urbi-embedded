@@ -1,7 +1,7 @@
 # Milestone: M3
 # Covers: hierarchical tag stopping — stopping a parent tag t terminates strands
 #         under child t.u; 'at (x == 2)' watcher is silenced after t.stop().
-# blocked: tag.block() + at() watcher on tag.u child-slot not implemented
+# blocked: at() watcher on tag.u child-slot + deeper proto chain (tag.block() shipped at v0.10.9 W3b)
 # matrix-row: tag-block
 #
 # Reason:

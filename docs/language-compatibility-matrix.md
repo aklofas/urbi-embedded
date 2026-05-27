@@ -95,6 +95,17 @@
 | `tag : body onleave handler` | deferred-v1.x | PARSE-033: AST field retained; scheduler tag-stack lifecycle design open; Wave 6 W8 ruling |
 | `Tag.new()` (script-side constructor) | implemented | v0.10.2 W4; UVAL_TAG + Tag.new(name) returns a Tag value; `tests/chk/control_transfer/tag_stop_basic.chk` |
 | `mytag.stop()` (script-side cancellation) | implemented | v0.10.2 W4; native method on Tag proto; `tests/chk/control_transfer/tag_stop_skips_catch.chk` + `tag_stop_basic.chk` |
+| `tag.block()` | implemented (v0.10.9 W3b) — sets UTAG_FLAG_BLOCKED + suspends member strands via urbi_strand_suspend(REASON_BLOCK) | tag-block |
+| `tag.unblock()` | implemented (v0.10.9 W3b) | tag-block |
+| `tag.block(value)` valued-block | partial (v0.10.9): C API urbi_tag_block accepts resume_value; script-side return-on-resume defers v1.x | tag-block-valued |
+| `tag.blocked` getter | implemented as 0-arg method (v0.10.9 W3d); property-style OPROPS dispatch v1.x | tag-blocked |
+| `tag.freeze()` real SUSPENDED | implemented (v0.10.9 W3c) — replaces flag-only stub from v0.10.2 W4 | tag-freeze |
+| `tag.unfreeze()` | implemented (v0.10.9 W3c) | tag-freeze |
+| `tag.frozen` getter | implemented as 0-arg method (v0.10.9 W3d) | tag-frozen |
+| `tag.stop(value)` valued-stop | partial (v0.10.9 W1): C API accepts value; script-side observable result defers v1.x (TAG_SCOPE absorption pending) | tag-stop-valued |
+| `tag.stop()` outside-scope fatal | implemented (v0.10.9 W2) — `!!! tag.stop with no active scope` | tag-stop-outside-scope |
+| `Tag.begin` / `Tag.end` clone-getter notation | deferred — 5 prereq primitives needed (design-risks v0.10.9-A) | tag-begin-end |
+| `Tag.enter?` / `Tag.leave?` script-side events | partial — C-level shipped v0.10.2 W4; script-side `at(t.enter?)` rejects (HOST_FN-via-closure binding returns closure, not UVAL_EVENT) | tag-events |
 | Tag scope events (enter/leave) | partial | works as tag-stack lifecycle; script API TBD |
 | Ambient-tag inheritance | implemented | — |
 

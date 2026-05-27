@@ -1,7 +1,7 @@
 # Milestone: M3
 # Covers: tags[n].block(result) — blocks the strand under that tag with a
 #         return value injected on unblock; used to implement parallel memoized Fibonacci.
-# blocked: tag.block(val) not implemented
+# blocked: T39 chk-driver (parallel `,` step) AND v0.10.9-B (user-tag→scope-tag binding) AND v0.10.9-C (valued-block script-side resume-value delivery)
 # matrix-row: tag-block
 #
 # Reason:

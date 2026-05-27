@@ -187,6 +187,23 @@
  *      16th and FINAL use of pre-v1.0 escape clause as the symbolic
  *      ABI freeze pin; further pre-v1.0 changes follow the post-freeze
  *      policy at docs/api-stability.md §3.  (0/17/0 → 0/18/0)
+ *  17. v0.10.9-tag-state — MINOR bump for new public C API surface:
+ *      urbi_tag_block(vm, tag, resume_value), urbi_tag_unblock(vm, tag),
+ *      urbi_tag_freeze(vm, tag), urbi_tag_unfreeze(vm, tag) — 4 new
+ *      symbols backing the D1 SUSPENDED-machinery ratification (real
+ *      block/unblock + freeze/unfreeze cross-strand suspend via
+ *      USTRAND_REASON_BLOCK + USTRAND_REASON_FREEZE).  UStrand size
+ *      pin 3896 → 3912 (gains `unblock_value` UValue field for the
+ *      resume-value stash; C API plumbs the value through, script-side
+ *      delivery on SUSPENDED→READY defers v1.x — see workspace-root
+ *      design-risks v0.10.9-C).  UTag flag UTAG_FLAG_BLOCKED (0x04) added
+ *      (UTAG_FLAG_FROZEN at 0x02 was pre-existing from v0.10.2 W4).
+ *      Symmetric with urbi_tag_stop family.  17th use of pre-v1.0
+ *      escape clause; first post-freeze MINOR break per docs/api-
+ *      stability.md §3 (the freeze pin from v0.10.6 W2 explicitly
+ *      allows further MINORs with enumerated rationale — supersedes
+ *      the prior "16th and FINAL" framing).  Wire format unchanged at
+ *      v1.9 / 0x19.  (0/18/2 → 0/19/0)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -201,8 +218,8 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  18
-#define URBI_API_VERSION_PATCH  2
+#define URBI_API_VERSION_MINOR  19
+#define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -221,7 +238,7 @@ extern "C" {
  * Failing to bump the static_assert breaks the build, which is the point —
  * deliberate intent at every change, not silent ABI drift.
  *
- * Pin target: v0.10.8-string-concat ships at 0/18/2.
+ * Pin target: v0.10.9-tag-state ships at 0/19/0.
  *
  * The pin landed in commit `bdad57c` (W2 of v0.10.6) at 0/17/0; bumped to
  * 0/18/0 at v0.10.6 wave wrap-up to capture the W4 UReplConfig.rate_limit_per_second
@@ -230,11 +247,15 @@ extern "C" {
  * doc/gate drift without touching the C API); bumped to 0/18/2 at
  * v0.10.8-string-concat — PATCH-only, OP_ADD atom fast path adds runtime
  * String + String concatenation (S-string-plus) without touching the
- * public C API surface.
+ * public C API surface; bumped to 0/19/0 at v0.10.9-tag-state — MINOR,
+ * 4 new public C API symbols (urbi_tag_block/_unblock/_freeze/_unfreeze)
+ * backing the D1 SUSPENDED-machinery ratification.  First post-freeze
+ * MINOR break per docs/api-stability.md §3; supersedes v0.10.6's
+ * aspirational "16th and FINAL" framing.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
-            && URBI_API_VERSION_MINOR == 18
-            && URBI_API_VERSION_PATCH == 2,
+            && URBI_API_VERSION_MINOR == 19
+            && URBI_API_VERSION_PATCH == 0,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

@@ -1,7 +1,7 @@
 # Milestone: M3
 # Covers: tag.stop(42) injects a return value into all sleeping strands under
 #         that tag; echo of the stopped block shows the injected value.
-# blocked: complex concurrent `,` fixture; tag.stop(val) needs parallel chk step driver
+# blocked: T39 chk-driver (parallel `,` step) AND TAG_SCOPE absorption — script-side observable valued-stop result defers v1.x (C API urbi_tag_stop accepts value; user-tag→scope-tag binding pending — see workspace-root design-risks v0.10.9-B + S5)
 # matrix-row: tag-stop
 #
 # Reason:

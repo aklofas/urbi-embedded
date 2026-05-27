@@ -1,5 +1,159 @@
 # Changelog
 
+## v0.10.9-tag-state — 2026-05-27
+
+**SUSPENDED tag-state machinery (D1) + fatal outside-scope `tag.stop()`
+(D3) ratified.** Replaces the flag-only stubs from v0.10.2 W4 with real
+cross-strand `block`/`unblock` and `freeze`/`unfreeze` via a new
+`USTRAND_SUSPENDED` state and two suspend reasons (`REASON_BLOCK` 0x06,
+`REASON_FREEZE` 0x07). `tag.stop()` from outside any active scope is
+now fatal with the canonical error `!!! tag.stop with no active scope`
+(was silent-nil pre-v0.10.9). ABI bumped 0/18/2 → 0/19/0 (MINOR; 17th
+use of pre-v1.0 escape clause; first post-freeze MINOR break per
+`docs/api-stability.md` §3 — supersedes v0.10.6's aspirational "16th
+and FINAL" framing). Wire format unchanged at v1.9 / 0x19.
+
+### Post-freeze break: 4 new public symbols
+
+Backing the D1 ratification:
+
+- `urbi_tag_block(struct UVM *vm, struct UTag *tag, UValue resume_value)`
+  — sets `UTAG_FLAG_BLOCKED` (0x04) and walks `tag->member_strands_head`
+  transitioning every RUNNABLE strand to SUSPENDED via internal
+  `urbi_strand_suspend(REASON_BLOCK)`. The `resume_value` is stashed on
+  each member strand's new `unblock_value` `UValue` field.
+- `urbi_tag_unblock(struct UVM *vm, struct UTag *tag)` — clears the
+  flag and resumes only the BLOCK-suspended strands (freeze-suspended
+  strands stay suspended; block and freeze are independent gates per
+  §S6).
+- `urbi_tag_freeze(struct UVM *vm, struct UTag *tag)` — sets
+  `UTAG_FLAG_FROZEN` (0x02, pre-existing from v0.10.2 W4) and suspends
+  with `REASON_FREEZE`. Replaces the v0.10.2 W4 flag-only stub with
+  real SUSPENDED machinery.
+- `urbi_tag_unfreeze(struct UVM *vm, struct UTag *tag)` — clears
+  `UTAG_FLAG_FROZEN` and resumes only the FREEZE-suspended strands.
+
+Symmetric with the pre-existing `urbi_tag_stop` family. `UStrand`
+gains `unblock_value` `UValue` field for the resume-value stash;
+struct size pin 3896 → 3912.
+
+### Supported now
+
+- **`tag.block()` / `tag.unblock()` (W3b).** Public C API + script-side
+  0-arg native methods on the Tag proto. Cross-strand suspend on every
+  member of `tag->member_strands_head`. `tag.unblock()` resumes only
+  BLOCK-suspended strands; freeze-suspended members stay suspended.
+- **`tag.freeze()` / `tag.unfreeze()` (W3c).** Public C API + script
+  natives backed by real SUSPENDED machinery (REASON_FREEZE). Block and
+  freeze are independent gates: a strand may be both BLOCK and FREEZE
+  suspended; both flags must clear before it returns to RUNNABLE.
+- **`tag.blocked` / `tag.frozen` getters (W3d).** 0-arg method-style
+  natives reading `UTAG_FLAG_BLOCKED` and `UTAG_FLAG_FROZEN`. Property-
+  style OPROPS dispatch defers v1.x (TAGCH-013).
+- **D3 fatal outside-scope `tag.stop()` (W2).** `tag.stop()` from
+  outside any active scope deposits `URBI_UNWIND_TAG_STOP` via
+  `urbi_tag_stop_local`; the existing unwind walker
+  (`src/runtime/uunwind.c:304`) escalates to fatal. The native
+  pre-sets `vm->last_error = UVM_TYPE_ERROR` to bypass `urbi_repl_eval`'s
+  silent script-level `THROW → nil` recovery. Canonical error message:
+  `!!! tag.stop with no active scope`.
+- **W1 valued-stop arity relax (C API).** `tag.stop(value)` native
+  now accepts 0 or 1 arguments and forwards `args[0]` to
+  `urbi_tag_stop(vm, tag, value)`. Script-side observable result on
+  the absorbed tag scope defers v1.x (TAG_SCOPE absorption pending);
+  the existing `tests/chk/tag/valued-stop.chk` remains `blocked:` with
+  the canonical residual blocker in its header.
+- **Scheduler skip (W3a).** `src/sched/uschedule.c` skips SUSPENDED
+  strands at dispatch entry; the SUSPENDED↔RUNNABLE transition lives
+  in `urbi_strand_suspend` / `urbi_strand_resume` internal helpers.
+  Two new suspend reasons: `USTRAND_REASON_BLOCK` (0x06) and
+  `USTRAND_REASON_FREEZE` (0x07).
+
+### Tests
+
+- **`tests/chk/tag/state.chk` activated (W3d).** 8-step toggle exercising
+  `.blocked` / `.frozen` getter assertions across the four
+  block/freeze combinations.
+- **`tests/chk/tag/freeze_basic.chk` added (W3c+W3d).** 3-step minimal
+  flag round-trip covering `t.freeze()` → `.frozen` true →
+  `t.unfreeze()` → `.frozen` false.
+- **`tests/chk/control_transfer/tag_stop_no_target.chk` activated (W2).**
+  Outside-scope `tag.stop()` raises the canonical fatal error.
+- **`tests/chk/control_transfer/tag_stop_basic.chk` and
+  `tag_stop_skips_catch.chk` updated (W2).** Both previously
+  contained outside-scope `t.stop()` patterns that silently returned
+  `nil` pre-D3; now exercise the fatal escalation deliberately.
+
+### Deferred to follow-up tags
+
+Three workspace-root design-risks entries filed in the design-risks
+register (workspace-root, uncommitted):
+
+- **v0.10.9-A** — D4 `Tag.begin` / `Tag.end` clone-getter overlay
+  deferred. The audit framing ("~30-line .u overlay") underestimated.
+  Five prereq primitives empirically missing: `Tag.clone()` returning
+  a fresh sub-tag (`object_root.c:354` short-circuits non-UVAL_OBJECT
+  to identity); `t.enter` bound as an oget property returning
+  `UVAL_EVENT` (currently HOST_FN-via-closure binding returns a
+  closure); `t.name` as a script-visible slot; top-level `echo`
+  resolvable from realm scope; `%` String format operator. Estimate
+  25–50 PD. D4 ratification stays at v1.0; just not v0.10.9. The
+  workspace-root compatibility-decisions ledger row `S-tag-begin-end`
+  carries the breakdown.
+- **v0.10.9-B** — user-tag → scope-tag binding at `OP_PUSH_TAG`.
+  `OP_PUSH_TAG` (`src/vm/uvm.c:1171-1228`) always creates an anonymous
+  scope-tag and ignores the `tag_reg` nibble the emitter packs into
+  `A[3:0]` (`src/emit/uemit_unwind.c:556`). v0.10.5 W8 parsed the
+  member-expr scope syntax (`Tag.scope: body`) but didn't wire the
+  binding semantic. Blocks W3e newcomers-stay-blocked plus
+  `tests/chk/tag/{block,block-propagation}.chk`. Estimate 1–3 PD.
+- **v0.10.9-C** — valued-block script-side resume-value delivery.
+  `urbi_tag_block(vm, tag, resume_value)` C API accepts the value and
+  the per-strand `unblock_value` stash works; script-side
+  `var x = t.block(default)` returning the resume-value requires
+  `OP_CALL` / dispatch coordination on the SUSPENDED→READY transition
+  (write `strand->unblock_value` into the result register). Estimate
+  ~1–3 PD.
+
+### Changes
+
+- `include/urbi/urbi.h` — 4 new function declarations
+  (`urbi_tag_block`, `urbi_tag_unblock`, `urbi_tag_freeze`,
+  `urbi_tag_unfreeze`).
+- `include/urbi/sched.h` / `src/sched/uschedule.c` — new
+  `USTRAND_REASON_BLOCK` and `USTRAND_REASON_FREEZE` enum slots;
+  `urbi_strand_suspend` / `urbi_strand_resume` internal helpers;
+  scheduler skip of SUSPENDED state at dispatch entry.
+- `include/urbi/types.h` (`UStrand`) — `unblock_value` `UValue` field
+  added at tail; size pin 3896 → 3912.
+- `src/runtime/utag.c` — `urbi_tag_block` / `_unblock` / `_freeze` /
+  `_unfreeze` implementations; member-walk via
+  `member_strands_head`; `UTAG_FLAG_BLOCKED` (0x04) flag bit.
+- `src/runtime/utag_native.c` — `tag_block_native`,
+  `tag_unblock_native`, `tag_freeze_native`, `tag_unfreeze_native`,
+  `tag_blocked_native`, `tag_frozen_native`; `tag_stop_native`
+  outside-scope fatal escalation + valued-stop arity relax.
+- `tests/chk/tag/state.chk` — activated.
+- `tests/chk/tag/freeze_basic.chk` — new fixture.
+- `tests/chk/control_transfer/tag_stop_no_target.chk` — activated.
+- `tests/chk/control_transfer/tag_stop_basic.chk` +
+  `tag_stop_skips_catch.chk` — updated for D3 fatal-outside-scope
+  semantics.
+- 7 still-`blocked:` fixture headers refreshed to point at the
+  canonical residual blocker post-v0.10.9.
+- `docs/language-compatibility-matrix.md` — Tags subsection populated
+  with 11 new rows for the v0.10.9 surface.
+- `docs/api-surface-tiers.md` — 4 new public-tier entries.
+- `include/urbi/version.h` + `tests/unit/test_api_version.c` +
+  `docs/api-stability.md` + `docs/release/release-readiness.md` —
+  ABI 0/18/2 → 0/19/0 in lockstep (freeze pin + test literal + both
+  evidence docs).
+- `components/esp32-idf/idf_component.yml` — version `0.10.8-string-concat`
+  → `0.10.9-tag-state`.
+- Workspace-root compatibility-decisions ledger — new rows
+  `S-tag-state-full`, `S-tag-stop-outside-fatal`, `S-tag-enter-leave`,
+  `S-tag-begin-end`, `S5c`, `S-newcomer-blocked`, `S-valued-block-script`.
+
 ## v0.10.8-string-concat — 2026-05-27
 
 **Runtime `String + String` concatenation (S-string-plus).** OP_ADD gains

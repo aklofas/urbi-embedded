@@ -6,11 +6,11 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** v0.10.8-string-concat — runtime `String + String` concatenation (S-string-plus). OP_ADD gains an atom fast path: when both operands are `UVAL_STR`, the result is a fresh interned `UVAL_STR` allocated via `ustr_intern`. Mixed-type coercion (`"x" + 1`) deferred to v1.x — caller uses explicit `.asString()` at v1.0. No new opcodes; wire v1.9 / 0x19 unchanged. ABI 0/18/2 (PATCH bump from 0/18/1 — atom fast path is internal to the dispatch loop; the public C API is untouched).
+**Status:** v0.10.9-tag-state — SUSPENDED tag-state machinery (D1) + fatal outside-scope `tag.stop()` (D3) ratified. Replaces the v0.10.2 W4 flag-only stubs with real cross-strand `block`/`unblock` and `freeze`/`unfreeze` via a new `USTRAND_SUSPENDED` state and two suspend reasons (`REASON_BLOCK` 0x06 + `REASON_FREEZE` 0x07). `tag.stop()` from outside any active scope is now fatal with the canonical error `!!! tag.stop with no active scope` (was silent-nil pre-v0.10.9). ABI 0/19/0 — first post-freeze MINOR break per `docs/api-stability.md` §3 — 4 new public symbols: `urbi_tag_block(vm, tag, resume_value)`, `urbi_tag_unblock(vm, tag)`, `urbi_tag_freeze(vm, tag)`, `urbi_tag_unfreeze(vm, tag)`, symmetric with the pre-existing `urbi_tag_stop` family. Wire v1.9 / 0x19 unchanged.
 
-Closes the "T46 dropped" annotation across 11 `.chk` fixtures. The 2026-05-27 re-audit of v0.10.7 `blocked:` fixtures showed that label never resolved to a canonical drop decision; legacy urbi 2.x supported runtime String concat. Restoring legacy parity. New fixture `tests/chk/operators/add_string.chk` covers basic concat, empty-operand variants, chained left-associative concat, intern stability, UTF-8 byte pass-through, mixed-type rejection, and numeric regression.
+D4 (`Tag.begin`/`Tag.end` clone-getter overlay) + W3e newcomers-stay-blocked + W3f valued-block script-side resume-value delivery deferred to follow-up tags. Three new design-risks entries (v0.10.9-A/B/C) filed; D4 ratification target stays at v1.0.
 
-Next milestone: **v0.11.x ROS2 (M9)**. Tagged `v0.10.8-string-concat`.
+Next milestone: **v0.11.x ROS2 (M9)**. Tagged `v0.10.9-tag-state`.
 
 ## Design goals
 
