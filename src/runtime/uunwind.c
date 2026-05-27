@@ -637,6 +637,68 @@ urbi_tag_unblock(struct UVM *vm, struct UTag *tag)
     return URBI_OK;
 }
 
+/* === W3c (v0.10.9): urbi_tag_freeze / urbi_tag_unfreeze ===
+ *
+ * Third cancellation mode after stop (urbi_tag_stop) and block
+ * (urbi_tag_block).  Structurally identical to W3b but with REASON_FREEZE
+ * and UTAG_FLAG_FROZEN.
+ *
+ * Replaces the flag-only stub previously installed by tag_freeze_native /
+ * tag_unfreeze_native at v0.10.2 W4.  Those native methods now forward
+ * through this C API so the strand-suspension semantic actually fires.
+ *
+ * unfreeze resumes only FREEZE-suspended strands.  BLOCK-suspended
+ * strands (W3b) stay suspended.  Block and freeze are independent gates
+ * per workspace ledger §S6.
+ *
+ * Not ISR-safe.  Returns URBI_ERR_INVALID_ARG for NULL vm/tag. */
+int
+urbi_tag_freeze(struct UVM *vm, struct UTag *tag)
+{
+    if (vm == NULL || tag == NULL) return URBI_ERR_INVALID_ARG;
+    URBI_ASSERT_NOT_ISR(vm);
+
+    tag->flags |= (uint8_t)UTAG_FLAG_FROZEN;
+
+    UCleanupEntry *e    = tag->member_strands_head;
+    UCleanupEntry *next;
+    while (e != NULL) {
+        next = e->next_member;
+        UStrand *s = e->strand_back;
+        if (s != NULL) {
+            urbi_strand_suspend(s, USTRAND_REASON_FREEZE, tag);
+        }
+        e = next;
+    }
+    return URBI_OK;
+}
+
+int
+urbi_tag_unfreeze(struct UVM *vm, struct UTag *tag)
+{
+    if (vm == NULL || tag == NULL) return URBI_ERR_INVALID_ARG;
+    URBI_ASSERT_NOT_ISR(vm);
+
+    tag->flags &= (uint8_t)~UTAG_FLAG_FROZEN;
+
+    UCleanupEntry *e    = tag->member_strands_head;
+    UCleanupEntry *next;
+    while (e != NULL) {
+        next = e->next_member;
+        UStrand *s = e->strand_back;
+        if (s != NULL
+         && USTRAND_IS_SUSPENDED(s)
+         && USTRAND_GET_REASON(s) == USTRAND_REASON_FREEZE) {
+            /* freeze has no resume-value semantic; pass nil. */
+            UValue nil = {0};
+            nil.kind = (uint8_t)UVAL_NIL;
+            urbi_strand_resume(s, nil);
+        }
+        e = next;
+    }
+    return URBI_OK;
+}
+
 /* urbi_strand_cancel — deposit CANCEL (fatal, no catch) on a strand. */
 int
 urbi_strand_cancel(struct UVM *vm, struct UStrand *strand, UValue cancel_reason)

@@ -326,38 +326,43 @@ tag_stop_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
-/* tag_freeze_native: tag.freeze() — set UTAG_FLAG_FROZEN.
+/* tag_freeze_native: tag.freeze() — cross-strand SUSPENDED via FREEZE.
  *
- * At v1.0, freeze semantics (suspending strands) is not yet wired; this
- * sets the flag bit so tag.frozen reads true.  Full strand-suspension
- * implementation is a v1.x follow-up.  Returns nil. */
+ * Forwards to urbi_tag_freeze (W3c).  Sets UTAG_FLAG_FROZEN and suspends
+ * every member strand with USTRAND_REASON_FREEZE.  Replaces the flag-only
+ * stub from v0.10.2 W4.  Returns nil. */
 static int
 tag_freeze_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                   UValue *out)
 {
-    (void)vm; (void)args;
+    (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "Tag.freeze", 0, nargs, out);
     if (self.kind != (uint8_t)UVAL_TAG)
         return urbi_raise_type(vm, "Tag.freeze: self must be a Tag", out);
 
     UTag *t = (UTag *)self.v.p;
-    if (t != NULL) t->flags |= (uint8_t)UTAG_FLAG_FROZEN;
+    if (t == NULL) return urbi_raise_type(vm, "Tag.freeze: NULL tag pointer", out);
+
+    urbi_tag_freeze(vm, t);
     *out = urbi_make_nil();
     return UEXEC_OK;
 }
 
-/* tag_unfreeze_native: tag.unfreeze() — clear UTAG_FLAG_FROZEN. */
+/* tag_unfreeze_native: tag.unfreeze() — symmetric to tag.freeze().
+ * Clears UTAG_FLAG_FROZEN and resumes FREEZE-suspended members. */
 static int
 tag_unfreeze_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                     UValue *out)
 {
-    (void)vm; (void)args;
+    (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "Tag.unfreeze", 0, nargs, out);
     if (self.kind != (uint8_t)UVAL_TAG)
         return urbi_raise_type(vm, "Tag.unfreeze: self must be a Tag", out);
 
     UTag *t = (UTag *)self.v.p;
-    if (t != NULL) t->flags &= (uint8_t)~UTAG_FLAG_FROZEN;
+    if (t == NULL) return urbi_raise_type(vm, "Tag.unfreeze: NULL tag pointer", out);
+
+    urbi_tag_unfreeze(vm, t);
     *out = urbi_make_nil();
     return UEXEC_OK;
 }

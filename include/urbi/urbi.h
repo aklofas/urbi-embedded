@@ -76,6 +76,17 @@ int urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value);
 int urbi_tag_block(struct UVM *vm, struct UTag *tag, UValue resume_value);
 int urbi_tag_unblock(struct UVM *vm, struct UTag *tag);
 
+/* W3c/v0.10.9: urbi_tag_freeze / urbi_tag_unfreeze — cross-strand suspend.
+ *
+ * Same shape as urbi_tag_block / _unblock but with REASON_FREEZE.  Sets and
+ * clears UTAG_FLAG_FROZEN.  unfreeze resumes only FREEZE-suspended members;
+ * BLOCK-suspended members are independent and stay suspended.
+ *
+ * Not ISR-safe.  Returns URBI_OK on success or URBI_ERR_INVALID_ARG
+ * on NULL vm/tag. */
+int urbi_tag_freeze(struct UVM *vm, struct UTag *tag);
+int urbi_tag_unfreeze(struct UVM *vm, struct UTag *tag);
+
 /* === W5/v0.10.3: vm-first-arg sweep — control-transfer family ===
  *
  * 9 functions previously took strand as their first argument.  They now
