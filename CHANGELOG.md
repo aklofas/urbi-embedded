@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.10.7-audit-followup — 2026-05-27
+
+### Freeze-gate breadth (W6)
+
+- `test-abi-freeze` and `test-wire-freeze` now lint hardcoded test
+  literals (`tests/unit/test_api_version.c`, `tests/unit/test_version.c`)
+  and release-evidence documents (`docs/api-stability.md`,
+  `docs/release/release-readiness.md`) for drift against
+  `include/urbi/version.h` and `src/chunk/uchunk.h`. Closes the
+  v0.10.6 W7-followup drift class (audit-1 F3, partial audit-2 plus5).
+
 ## v0.10.6-stabilization — 2026-05-26
 
 **Wave 7 of the v0.10.x architectural refactor arc — the arc-closing
