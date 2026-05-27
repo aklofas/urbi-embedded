@@ -582,20 +582,26 @@ Two known issues filed in `docs/urbi-embedded-design-risks.md`:
   in the v0.9.1 `.chk` corpus + multi-client integration test: call
   `Lobby.__builtin_lobby_send(...)` directly. Disposition: v1.x emit
   follow-up (implicit-this fallback in `emit_ident_arm`).
-- **Listener-teardown race under multi-client stress.** The 4-client
-  multi-client integration test (`tests/unit/test_repl_multi_client.c`)
-  intermittently segfaults (~50% rate) during harness teardown — race
-  between `urepl_session_destroy` running on the listener pthread (on
-  EOF) and `urbi_repl_stop` running on the test thread. Mitigation in
-  v0.9.1: the suite is opt-in via `URBI_TEST_MULTI_CLIENT=1`; default
-  `make test URBI_ENABLE_REPL=1` stays green. The scenarios' semantic
-  coverage is covered by green unit tests. Disposition: v0.9.x or
-  v1.0-rc — investigate under `--tool=helgrind`.
+- **Listener-teardown race — RESOLVED v0.10.6/v0.10.7.** The original
+  race (reader pthread calling `urepl_session_destroy` concurrently with
+  `urbi_repl_stop`) was closed in v0.10.6 W1 (single-owner model: reader
+  threads only request teardown; the VM thread is the sole destroyer).
+  Three residual defects in the surrounding code were corrected in
+  v0.10.7 W3: atomic ordering (`__ATOMIC_RELAXED` → `__ATOMIC_RELEASE`
+  in `urepl_request_teardown`), unguarded `r->session = NULL` in
+  `reader_main` (now under `sessions_mutex`), and `stop_and_join`
+  directly calling `urepl_session_destroy` (now routed through the
+  reaper).  The multi-client test runs by default; a dedicated CI job
+  (`repl-multi-client-stress`) runs 100 ASan trials.  Ownership contract
+  documented in `docs/internals/repl-teardown.md`.  TSAN coverage
+  deferred to v1.x (image lacks runtime).
 
 ## See also
 
 - `docs/embedding-guide.md` §12 — public-facing how-to for embedders.
 - `docs/internals/realm-and-chunks.md` — URealm, the per-realm writer,
   and `urbi_realm_create_repl` (v0.9.0 foundation).
-- `<urbi/repl.h>` — public API surface.
-- `<urbi/repl.h>` — transport pluggability and default-secure posture rationale in header comments.
+- `docs/internals/repl-teardown.md` — ownership model for session
+  teardown: roles, field ownership, lifecycle states, synchronizes-with
+  edges, and stop-path contract.
+- `<urbi/repl.h>` — public API surface and transport pluggability.

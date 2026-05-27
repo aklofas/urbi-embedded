@@ -259,16 +259,18 @@ urepl_session_destroy(UReplServer *server, UReplSession *session)
 
 /* Thread-safe teardown request.  Reader threads call this instead of
  * urepl_session_destroy so that session memory is only freed on the VM
- * thread.  Uses RELAXED ordering: the corresponding ACQUIRE load in
- * urepl_session_reap_pending provides the visibility guarantee; no
- * sequential-consistency needed for a single one-shot flag transition. */
+ * thread.  Release store paired with the acquire load in
+ * urepl_session_reap_pending forms a synchronizes-with edge: all writes
+ * made by this thread up to this point (e.g. client_fd close, parse
+ * buffer state) are visible to the reaper before it observes the flag.
+ * See docs/internals/repl-teardown.md §4. */
 void
 urepl_request_teardown(UReplSession *s)
 {
     if (s == NULL) {
         return;
     }
-    __atomic_store_n(&s->needs_teardown, true, __ATOMIC_RELAXED);
+    __atomic_store_n(&s->needs_teardown, true, __ATOMIC_RELEASE);
 }
 
 /* Reap sessions flagged for teardown by POSIX reader threads.  Called

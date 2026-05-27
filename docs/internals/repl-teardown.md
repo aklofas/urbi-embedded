@@ -80,7 +80,7 @@ from `urepl_listener_stop_and_join` are under `sessions_mutex` (see § 5).
 
 ## 3. Lifecycle states
 
-```
+```text
 ACCEPT → ACTIVE → FLAGGED → UNLINKED → FREED
 ```
 
@@ -121,28 +121,34 @@ structural mutations (pointer rewrites in the linked lists).
 
 ## 5. Stop path (`urepl_listener_stop_and_join`)
 
-The stop path is called from the VM thread during `urbi_repl_stop`.  After
-joining each reader's pthread it routes remaining session cleanup through
-the reaper rather than calling `urepl_session_destroy` directly:
+The stop path is called during `urbi_repl_stop` after the embedding loop
+has ended.  By the time it reaches session cleanup:
+
+- The listener pthread has been joined (no new accepts).
+- Each reader pthread has been joined (no concurrent session access).
+- `urbi_step` is no longer running (no background reaper firing).
+
+Because no other thread is active, the stop path IS the effective sole
+owner of destruction at this point.  It calls `urepl_request_teardown`
+(idempotent atomic release store) then `urepl_session_destroy` directly:
 
 ```c
 if (head->session != NULL) {
-    urepl_request_teardown(head->session);  /* atomic release store */
+    urepl_request_teardown(head->session);   /* idempotent; sets flag */
+    head->session->reader = NULL;
+    urepl_session_destroy(server, head->session);
+    head->session = NULL;
 }
-urepl_session_reap_pending(server);          /* VM thread reaps */
-UREPL_MUTEX_LOCK(&server->sessions_mutex);
-head->session = NULL;                        /* guarded clear */
-UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
 ```
 
-This keeps `urepl_session_destroy` ownership on the VM thread and
-eliminates the pre-W3 path where `stop_and_join` called
-`urepl_session_destroy` directly (bypassing single-owner).
+The pre-W3 bug was not in calling `urepl_session_destroy` per se but in
+the stale comment claiming "session destroyed by reader_main's exit path"
+(contradicting the W1 model) and in the missing `urepl_request_teardown`
+before the destroy call.  W3 corrects both.
 
-`urepl_session_reap_pending` is called once after flagging each head.
-Because the stop path holds no mutex when calling it (the function
-acquires/releases `sessions_mutex` internally), the reaper can complete
-normally.
+The background reaper (`urepl_session_reap_pending`) is NOT called from
+the stop path; it is designed for the concurrent normal case where
+`urbi_step` is running and reader threads are live.
 
 ---
 
