@@ -60,6 +60,9 @@ static const char * const TOKEN_NAMES[] = {
     /* === W10/v0.10.5: list/dict literals + subscript + compound assign === */
     "TOK_LBRACKET", "TOK_RBRACKET", "TOK_FAT_ARROW", "TOK_PLUS_EQ",
     /* === end W10/v0.10.5 === */
+    /* === W3/v0.10.11: shift-write operator === */
+    "TOK_LSHIFT",
+    /* === end W3/v0.10.11 === */
     "TOK_ERROR"
 };
 /* LEX-014: positional alignment with UTokenType — guard against silent
@@ -1311,6 +1314,10 @@ UToken ulex_next(ULexer *lex) {
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;
             return make_tok(lex, TOK_LE, start, 2);
+        }
+        if (lex->cur + 1 < lex->end && lex->cur[1] == '<') {
+            lex->cur += 2;
+            return make_tok(lex, TOK_LSHIFT, start, 2);
         }
         lex->cur++;
         return make_tok(lex, TOK_LT, start, 1);

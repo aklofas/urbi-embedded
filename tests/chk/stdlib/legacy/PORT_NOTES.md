@@ -49,8 +49,11 @@ each gap's current status follows.
   fresh interned UVAL_STR.  Mixed-type coercion (`"x" + 1` etc.) remains
   deferred to v1.x — caller must use explicit `.asString()` /
   string-builder patterns at v1.0.
-- **No `<<` append operator.**  Not in the lexer or parser.  Fixtures
-  using `<<` remain blocked.
+- **`<<` infix operator** (v0.10.11 W3).  `TOK_LSHIFT` is now in the
+  lexer; the Pratt parser desugars `a << b` to `a.'<<'(b)` at parse
+  time (precedence 2, below equality).  Fixtures using `<<` on objects
+  that define a `'<<'` slot now work.  Fixtures relying on `List <<`
+  remain blocked until Channel/List defines the slot.
 - **`for (var x : iter)` / `for (var x in iter)`: implemented (Wave 6 W1).**
   The for-each range form is now fully supported.  Fixtures blocked solely
   on this form can now be activated.  `break` and `continue` inside for-each

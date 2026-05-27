@@ -131,6 +131,10 @@ typedef enum {
     TOK_PLUS_EQ,     /* += — compound add-assign (l[i] += v desugar) */
     /* === end W10/v0.10.5 === */
 
+    /* === W3/v0.10.11: shift-write operator === */
+    TOK_LSHIFT,       /* << — desugars to method-call .'<<'(rhs) */
+    /* === end W3/v0.10.11 === */
+
     TOK_ERROR,        /* malformed input */
 
     TOK__LAST          /* sentinel; not a real token type — used to size

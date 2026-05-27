@@ -1,0 +1,22 @@
+# Milestone: v0.10.11-channel-and-isA
+# Covers: `a << b` desugars to `a.'<<'(b)` at parse time.  Verified
+#         end-to-end via setSlot on user classes.
+# matrix-row: operators-lshift
+
+# Basic dispatch: << invokes the '<<' slot on the receiver.
+class Acc {}; Acc.setSlot("<<", function(x) { x * 2 }); var a = Acc.new(); a << 5
+[00000000] 10
+
+# Left-associative chaining: (ch << 1) << 2 << 3.  The slot returns `this`
+# so each call produces the receiver again.  Confirm result is the original object.
+class Chain {}; var ch = Chain.new(); Chain.setSlot("<<", function(x) { this }); (ch << 1 << 2 << 3) == ch
+[00000001] true
+
+# Precedence: << binds looser than equality (prec 2 < 3), so `p << x == y`
+# parses as `p << (x == y)`.  The slot receives a bool; slot returns it back.
+class Prec {}; Prec.setSlot("<<", function(x) { x }); var p = Prec.new(); p << (2 == 2)
+[00000002] true
+
+# Missing '<<' slot produces a type error (not a lex error).
+class NoSlot {}; var ns = NoSlot.new(); ns << 7
+[00000003] !!! TypeError: SELF: slot '<<' not found

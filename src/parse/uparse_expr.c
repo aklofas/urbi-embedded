@@ -24,6 +24,9 @@
          directly in parse_expression_cont). */
 int infix_prec(UTokenType t) {
     switch (t) {
+    /* === W3/v0.10.11: << method-call desugar — prec 2 (below equality) === */
+    case TOK_LSHIFT: return 2;
+    /* === end W3/v0.10.11 === */
     case TOK_EQEQ:
     case TOK_NEQ:   return 3;
     case TOK_LT:
@@ -785,6 +788,38 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
         UAstNode *right = parse_expression(p, prec + 1);
         if (!right) return NULL;
         if (right->kind == AST_ERROR) return right;
+
+        /* === W3/v0.10.11: << desugars to lhs.'<<'(rhs) method call ===
+         *
+         * Builds:  AST_CALL { callee = AST_MEMBER_GET(lhs, "<<"), args=[rhs] }
+         *
+         * The member name "<<" is a quoted-ident selector — the runtime
+         * dispatches it via the normal OP_GETSLOT + OP_CALL pipeline for
+         * any object that defines a '<<' slot (e.g. Channel, or any class).
+         * Left-associative (prec+1 on right above), so:
+         *   cout << a << b  →  (cout << a) << b
+         * which is the standard streaming / chaining convention. */
+        if (op.type == TOK_LSHIFT) {
+            /* Selector: the two-byte string "<<" (quoted-ident style). */
+            static const char kLShiftSelector[] = "<<";
+            UAstNode *member = make_node(p, AST_MEMBER_GET, op.line, op.col);
+            if (!member) return NULL;
+            member->u.member.recv       = lhs;
+            member->u.member.name_start = kLShiftSelector;
+            member->u.member.name_len   = 2;
+            member->u.member.value      = NULL;
+            UAstNode **args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+            if (!args) return (UAstNode *)&uparser_oom_sentinel;
+            args[0] = right;
+            UAstNode *call = make_node(p, AST_CALL, op.line, op.col);
+            if (!call) return NULL;
+            call->u.call.callee    = member;
+            call->u.call.args      = args;
+            call->u.call.arg_count = 1;
+            lhs = call;
+            continue;
+        }
+        /* === end W3/v0.10.11 === */
 
         if (is_compare_token(op.type)) {
             lhs = make_compare(p, compare_op(op.type), lhs, right,
