@@ -1,0 +1,24 @@
+# Milestone: v0.10.10-job-introspection
+# Covers: scopeTag() returns the innermost ambient TAG_SCOPE.owning_tag
+#         as a UVAL_TAG.  Outside any user-tag scope it equals
+#         Lobby.connectionTag (the realm-root tag at the bottom of the
+#         cleanup-stack chain).
+# matrix-row: tag-scopetag
+#
+# Note: scopeTag is a call-style native at v0.10.10.  The legacy
+# share/urbi/system.u:212-213 form (`scopeTag` as a getter property,
+# auto-invoked on bare-name read) requires getter dispatch via the
+# UProps OGET path — which at v1.0 baseline routes through
+# urbi_run_closure_on_scratch, a bytecode-only path that crashes on
+# native closures (entry->proto NULL).  Bridging native closures into
+# the OGET path is tracked as a v1.x follow-up; for v0.10.10 scope-
+# tag.chk and scope-tag2.chk legacy fixtures remain blocked on this
+# path in addition to the T39 chk driver.
+#
+# A stronger "inside `t: { scopeTag() } == t`" check is deferred to a
+# follow-up tag — v0.10.9-B (workspace-root design-risks) — until
+# OP_PUSH_TAG wires the user-tag → scope-tag binding nibble.  Today
+# `t: stmt` always produces an anonymous TAG_SCOPE.
+
+scopeTag() == Lobby.connectionTag
+[00000001] true

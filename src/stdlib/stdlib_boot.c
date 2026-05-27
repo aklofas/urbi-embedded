@@ -125,6 +125,12 @@ urbi_stdlib_boot(UVM *vm)
     rc = urbi_job_proto_register(vm);
     if (rc != URBI_OK) return rc;
 
+    /* v0.10.10 / D7-D: scopeTag is bound per-realm in
+     * urbi_tag_globals_register_globals (called from urbi_populate_-
+     * realm_globals).  No VM-level setup needed here — the call-style
+     * native is just a realm-global closure, mirroring the `every` /
+     * `sleep` patterns. */
+
     /* v0.9.4 Phase 5: every() periodic-spawn primitive.  Allocates the
      * C-native UClosure stored on vm->every_native_closure.  Realm-global
      * binding for "every" is deferred to urbi_temporal_native_register_-

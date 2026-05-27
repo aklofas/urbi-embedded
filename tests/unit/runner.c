@@ -298,6 +298,8 @@ extern void test_vm_slot_helpers_suite(void);
 extern void test_tag_state_suite(void);
 extern void test_job_proto_suite(void);
 extern void test_detach_disown_suite(void);
+extern void test_scope_tag_suite(void);
+extern void test_connection_tag_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -572,6 +574,8 @@ static const struct suite_entry suites[] = {
     {"tag_state",                        test_tag_state_suite},
     {"job_proto",                        test_job_proto_suite},
     {"detach_disown",                    test_detach_disown_suite},
+    {"scope_tag",                        test_scope_tag_suite},
+    {"connection_tag",                   test_connection_tag_suite},
     /* Add new suites here as test files are added. */
 };
 

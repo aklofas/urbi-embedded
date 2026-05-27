@@ -325,15 +325,49 @@ urbi_lobby_native_register(UVM *vm)
  *
  * Post-registry hook: bind "Lobby" as a realm-global on `realm`.  Lands
  * at slots 15+, past the v1.0 packed-flag CONSTANT enforcement range
- * (slots 0..7).  Mirrors urbi_stdlib_register_primitives_globals. */
+ * (slots 0..7).  Mirrors urbi_stdlib_register_primitives_globals.
+ *
+ * v0.10.10 / D7-E: also installs the `connectionTag` slot on
+ * vm->lobby_proto pointing at realm->tag — the realm-root UTag — so that
+ * the script expression `Lobby.connectionTag` resolves to a UVAL_TAG.
+ * The slot is set via urbi_object_set_local_slot (C-side, bypasses the
+ * OP_SETSLOT URBI_OBJ_FLAG_READONLY check that fires only on script-
+ * side writes).  Idempotent — repeated registration overwrites with the
+ * same value.
+ *
+ * Multi-realm note: vm->lobby_proto is a VM-singleton, so the
+ * connectionTag slot value reflects the last realm registered.  Per-
+ * session correctness is delivered by urbi_lobby_register_session below,
+ * which sets connectionTag on the session's per-instance Lobby
+ * (session_realm->global_object) — `this.connectionTag` inside a session
+ * always sees the session's own realm->tag.  Single-realm hosts (the
+ * embedded default) see the correct value via Lobby.connectionTag. */
 
 int
 urbi_lobby_native_register_globals(UVM *vm, URealm *realm)
 {
     if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
     if (vm->lobby_proto == NULL) return URBI_OK;  /* no proto -> nothing to bind */
-    return urbi_realm_set_global(vm, realm, "Lobby", 5,
-                                 val_obj_local(vm->lobby_proto));
+
+    int rc = urbi_realm_set_global(vm, realm, "Lobby", 5,
+                                   val_obj_local(vm->lobby_proto));
+    if (rc != URBI_OK) return rc;
+
+    /* v0.10.10 / D7-E: install connectionTag slot on vm->lobby_proto
+     * pointing at realm->tag.  Honors REVIVAL §14.9 S11 commitment —
+     * the auto-cancel-on-disconnect behavior shipped at v0.9.1; the
+     * script-visible slot lands here. */
+    if (realm->tag != NULL) {
+        USymbol *sym = (USymbol *)ustr_intern(vm, "connectionTag", 13);
+        if (sym == NULL) return URBI_ERR_OOM;
+        UValue tv = urbi_make_nil();
+        tv.kind = (uint8_t)UVAL_TAG;
+        tv.v.p  = (void *)realm->tag;
+        if (urbi_object_set_local_slot(vm, vm->lobby_proto, sym, tv) != 0) {
+            return URBI_ERR_OOM;
+        }
+    }
+    return URBI_OK;
 }
 
 /* === Lobby.lobbies maintenance from C side ============================== */
@@ -359,6 +393,24 @@ urbi_lobby_register_session(UVM *vm, URealm *session_realm)
 {
     if (vm == NULL || session_realm == NULL) return URBI_ERR_INVALID_ARG;
     if (session_realm->global_object == NULL) return URBI_OK;
+
+    /* v0.10.10 / D7-E: set the per-session Lobby instance's connectionTag
+     * slot pointing at the session's realm-root tag (session_realm->tag).
+     * On session disconnect the realm-teardown path at urealm.c stops
+     * realm->tag which cascades to every strand tagged under it — the
+     * connection-tag is the per-session boundary.  `this.connectionTag`
+     * inside the session resolves here (instance wins over Lobby proto). */
+    if (session_realm->tag != NULL) {
+        USymbol *sym = (USymbol *)ustr_intern(vm, "connectionTag", 13);
+        if (sym == NULL) return URBI_ERR_OOM;
+        UValue tv = urbi_make_nil();
+        tv.kind = (uint8_t)UVAL_TAG;
+        tv.v.p  = (void *)session_realm->tag;
+        if (urbi_object_set_local_slot(vm, session_realm->global_object,
+                                       sym, tv) != 0) {
+            return URBI_ERR_OOM;
+        }
+    }
 
     UObject *lobbies = fetch_lobbies_list(vm);
     /* lobbies is NULL when lobby.u hasn't yet populated Lobby.lobbies

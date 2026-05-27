@@ -30,6 +30,7 @@
 #include "stdlib/lobby_native.h"   /* urbi_lobby_native_register_globals — v0.9.1 Phase 5 */
 #include "stdlib/temporal.h"       /* urbi_temporal_native_register_globals — v0.9.4 Phase 5 */
 #include "stdlib/control_native.h" /* urbi_control_native_register_globals — v0.10.10 D7-C */
+#include "stdlib/tag_globals.h"    /* urbi_tag_globals_register_globals — v0.10.10 D7-D */
 #ifdef URBI_ENABLE_REPL
 #  include "stdlib/debug_namespace.h" /* urbi_debug_namespace_register_globals — v0.9.1 */
 #endif
@@ -483,6 +484,18 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * globals backing the detach/disown overlay wrappers. */
     {
         int rc = urbi_control_native_register_globals(vm, realm);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+    }
+
+    /* v0.10.10 / D7-D: bind "scopeTag" as a realm-global pointing at a
+     * native closure that wraps urbi_strand_scope_tag.  Script-side
+     * invocation `scopeTag()` returns the innermost ambient
+     * UCLEANUP_TAG_SCOPE.owning_tag as UVAL_TAG.  Per REVIVAL §3.8 the
+     * Go-defer / C++-RAII analog. */
+    {
+        int rc = urbi_tag_globals_register_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }

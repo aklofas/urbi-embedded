@@ -1,0 +1,17 @@
+# Milestone: v0.10.10-job-introspection
+# Covers: Lobby.connectionTag is bound to a Tag value pointing at the
+#         realm's root tag (realm->tag).  Two reads return the same
+#         identity.  scopeTag() at top level returns the same tag.
+# matrix-row: tag-connectiontag
+#
+# Note: the legacy fixture tests/chk/tag/connection.chk uses
+# `Job.current.tags[0] == connectionTag` to express the same invariant.
+# That form is deferred until W1 ships Job.current introspection — this
+# fixture exercises the connectionTag slot itself, which W4 ships.
+
+var a = Lobby.connectionTag
+a == Lobby.connectionTag
+a == scopeTag()
+[00000000] <Tag>
+[00000001] true
+[00000002] true

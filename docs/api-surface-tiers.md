@@ -352,6 +352,10 @@ CI gate tracks this list to prevent silent growth.
 
 - `urbi_control_native_register_globals`
 
+### Tag globals stdlib internals
+
+- `urbi_tag_globals_register`, `urbi_tag_globals_register_globals`
+
 ### Temporal stdlib internals
 
 - `urbi_temporal_native_register`, `urbi_temporal_native_register_globals`
