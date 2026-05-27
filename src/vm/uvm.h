@@ -609,6 +609,13 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * `lobbies` list slot populated at lobby.u runtime.  GC
      * reachability via object_roots_walker. */
     struct UObject *lobby_proto;
+    /* v0.10.10 / D7-A: Job proto singleton.  Allocated by
+     * urbi_job_proto_register (called from urbi_stdlib_boot after
+     * lobby_native_register).  Bound as realm-global "Job" by
+     * urbi_job_proto_register_globals in the post-loop hook inside
+     * urbi_populate_realm_globals.  GC reachability via
+     * urbi_object_register_gc_roots (object_roots_walker). */
+    struct UObject *job_proto;
     /* v0.9.4 Phase 5: every() periodic-spawn primitive.
      * - every_native_closure: the C-native UClosure that script-side `every`
      *   resolves to.  Allocated by urbi_temporal_native_register (called

@@ -327,6 +327,9 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
      * walk (transitively reached via the proto's UShape + slots[]). */
     if (vm->lobby_proto != NULL) gc_shade_gray(vm, (UCell *)vm->lobby_proto);
 
+    /* v0.10.10 / D7-A: Job proto singleton (R4). */
+    if (vm->job_proto != NULL) gc_shade_gray(vm, (UCell *)vm->job_proto);
+
     /* v0.9.1 Debug namespace proto.  Always present when URBI_ENABLE_REPL=1
      * AND urbi_debug_namespace_register has run; NULL on default builds.
      * The void* in UVM keeps this header REPL-condition-free; cast back

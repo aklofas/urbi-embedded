@@ -1,0 +1,11 @@
+# Milestone: v0.10.10-job-introspection
+# Covers: Job.current() returns a Job; .uid() is a positive integer;
+#         .status() is "running" from script context;
+#         .tags() is a List (may be empty for a transient eval strand).
+# matrix-row: stdlib-job-current
+var j = Job.current(); j.uid() > 0
+[00000001] true
+var j = Job.current(); j.status()
+[00000002] "running"
+var j = Job.current(); j.tags().length() >= 0
+[00000003] true

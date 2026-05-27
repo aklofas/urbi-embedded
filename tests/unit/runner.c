@@ -296,6 +296,7 @@ extern void test_vm_create_opaque_suite(void);
 extern void test_vm_first_arg_suite(void);
 extern void test_vm_slot_helpers_suite(void);
 extern void test_tag_state_suite(void);
+extern void test_job_proto_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -568,6 +569,7 @@ static const struct suite_entry suites[] = {
     {"vm_first_arg",                     test_vm_first_arg_suite},
     {"vm_slot_helpers",                  test_vm_slot_helpers_suite},
     {"tag_state",                        test_tag_state_suite},
+    {"job_proto",                        test_job_proto_suite},
     /* Add new suites here as test files are added. */
 };
 

@@ -30,6 +30,7 @@
 #include "stdlib/runtime_types.h"
 #include "stdlib/namespaces.h"
 #include "stdlib/primitives.h"
+#include "stdlib/job_proto.h"
 #include "stdlib/lobby_native.h"
 #include "stdlib/temporal.h"
 #ifdef URBI_ENABLE_REPL
@@ -114,6 +115,14 @@ urbi_stdlib_boot(UVM *vm)
      * §3.6 readonly cohort, and urbi_vm_write_in_realm — the routing path
      * — is also default-build. */
     rc = urbi_lobby_native_register(vm);
+    if (rc != URBI_OK) return rc;
+
+    /* v0.10.10 / D7-A: Job proto singleton.  Allocates vm->job_proto +
+     * installs four C-native methods (current, tags, uid, status).
+     * Realm-global binding for "Job" is deferred to
+     * urbi_job_proto_register_globals (post-loop hook in
+     * urbi_populate_realm_globals). */
+    rc = urbi_job_proto_register(vm);
     if (rc != URBI_OK) return rc;
 
     /* v0.9.4 Phase 5: every() periodic-spawn primitive.  Allocates the
