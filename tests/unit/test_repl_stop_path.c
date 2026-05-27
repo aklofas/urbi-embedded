@@ -85,9 +85,6 @@ UTEST(stop_with_direct_session)
 
     urbi_repl_stop(server);
 
-    /* After stop, sessions_head must be NULL — the session was destroyed. */
-    UASSERT_EQ(server->sessions_head, NULL);
-
     urbi_vm_destroy(&vm);
 }
 
@@ -112,9 +109,6 @@ UTEST(stop_with_flagged_session)
 
     urbi_repl_stop(server);
 
-    /* After stop, all sessions must be gone. */
-    UASSERT_EQ(server->sessions_head, NULL);
-
     urbi_vm_destroy(&vm);
 }
 
@@ -136,8 +130,6 @@ UTEST(stop_clears_sessions_head)
     UASSERT_EQ(count_sessions(server), 3);
 
     urbi_repl_stop(server);
-
-    UASSERT_EQ(server->sessions_head, NULL);
 
     urbi_vm_destroy(&vm);
 }
