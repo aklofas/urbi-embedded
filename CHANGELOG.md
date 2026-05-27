@@ -80,7 +80,7 @@ ledger entry #19.
 
 ### Test corpus
 
-`make releasetest` 31+ gates green.  2013 cases / 14387 checks
+`make releasetest` 31+ gates green.  2012 cases / 14385 checks
 (v0.10.11) up from 1994 / 14327 (v0.10.10).  304 chk fixtures total
 (288 non-repl + 16 REPL-gated); v0.10.10 had 296 total.
 

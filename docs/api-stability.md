@@ -14,7 +14,7 @@
 ## 1. The freeze pin
 
 `include/urbi/version.h` contains a `_Static_assert` pinning the public
-ABI to `0/19/1`.  Any change to the public C API after v0.10.6-stabilization
+ABI to `0/19/2`.  Any change to the public C API after v0.10.6-stabilization
 either bumps the macros AND the assert in lockstep (deliberate intent), or
 fails to compile.
 

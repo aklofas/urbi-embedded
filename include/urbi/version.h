@@ -194,13 +194,6 @@
  *      detach/disown lazy-arg overlay wrappers + 2 C-natives; scopeTag
  *      realm global; Lobby.connectionTag slot.  All script-side surface —
  *      NO new public C API symbols.  PATCH bump only.  (0/19/0 → 0/19/1)
- *  19. v0.10.11-channel-and-isA — D6 + isA + D5 Cat. E ratification:
- *      Channel proto + cout/cerr/clog + '<<' infix sugar; isA universal
- *      type-test on Object root; Object atom unfrozen (Lobby stays
- *      frozen).  Plus bundled v0.10.10 carry-overs: Makefile -MMD -MP
- *      auto-deps + test_repl_stop_path UAF fix.  All script-side
- *      surface — NO new public C API symbols.  PATCH bump only.
- *      (0/19/1 → 0/19/2)
  *  17. v0.10.9-tag-state — MINOR bump for new public C API surface:
  *      urbi_tag_block(vm, tag, resume_value), urbi_tag_unblock(vm, tag),
  *      urbi_tag_freeze(vm, tag), urbi_tag_unfreeze(vm, tag) — 4 new
@@ -218,6 +211,13 @@
  *      allows further MINORs with enumerated rationale — supersedes
  *      the prior "16th and FINAL" framing).  Wire format unchanged at
  *      v1.9 / 0x19.  (0/18/2 → 0/19/0)
+ *  19. v0.10.11-channel-and-isA — D6 + isA + D5 Cat. E ratification:
+ *      Channel proto + cout/cerr/clog + '<<' infix sugar; isA universal
+ *      type-test on Object root; Object atom unfrozen (Lobby stays
+ *      frozen).  Plus bundled v0.10.10 carry-overs: Makefile -MMD -MP
+ *      auto-deps + test_repl_stop_path UAF fix.  All script-side
+ *      surface — NO new public C API symbols.  PATCH bump only.
+ *      (0/19/1 → 0/19/2)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
