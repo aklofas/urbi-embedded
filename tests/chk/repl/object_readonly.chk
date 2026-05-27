@@ -1,10 +1,13 @@
-# v0.9.1 Phase 8 Task 32 — Object is frozen against mutation.
+# v0.10.11 D5 update — Object proto unfrozen; mutation now succeeds.
 #
-# Spec §4.3 / §14 exit-criterion 6: Object.foo = 5 raises TypeError
-# ("cannot mutate frozen prototype").  In the dispatcher this surfaces
-# as the "runtime" error code (URBI_ERR_STRAND_FATAL) with a message
-# containing the frozen-proto diagnostic.
+# Pre-D5 (v0.9.1 Phase 8 Task 32): Object.foo = 5 raised TypeError
+# ("cannot mutate frozen prototype").  D5 (Cat. E re-audit at v0.10.11)
+# removes Object from the readonly cohort so the canonical
+# `var Object.x = ...` / `Object.x = ...` idiom works.
+#
+# This fixture pins the new behaviour: the eval succeeds and the value
+# round-trips.  Lobby stays frozen (set Lobby.x raises TypeError).
 
-> {"id":11,"op":"eval","code":"Object.foo = 5"}
-< "id":11 | "kind":"error" | "code":"runtime"
+> {"id":11,"op":"eval","code":"Object.foo = 5; Object.foo"}
+< "id":11 | "kind":"result" | "value":"5"
 < "id":11 | "kind":"done"

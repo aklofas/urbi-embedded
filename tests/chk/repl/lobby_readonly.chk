@@ -1,0 +1,11 @@
+# Milestone: v0.10.11-channel-and-isA (D5 companion fixture)
+#
+# Lobby stays in the readonly cohort after D5 unfreezes Object.  The
+# Lobby.lobbies session-registry invariant is load-bearing for REPL
+# session management and must remain C-managed.
+#
+# Assigning to Lobby from script must still raise TypeError.
+
+> {"id":12,"op":"eval","code":"Lobby.forbidden = 99"}
+< "id":12 | "kind":"error" | "code":"runtime"
+< "id":12 | "kind":"done"

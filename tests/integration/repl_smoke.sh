@@ -360,14 +360,17 @@ else
     fail "Global.foo not visible across REPL lines: rc=$rc, out='$out'"
 fi
 
-# --- REPL realm: Object is frozen at v0.9.1 (spec §4.2 breaking change) ---
+# --- REPL realm: Object is mutable post-D5 (v0.10.11 Cat. E ratify) ---
+# D5 removed Object from the readonly cohort; `Object.foo = 42` must
+# now succeed and the value round-trip.  Lobby stays frozen (separate
+# gate not included here — covered by tests/chk/repl/lobby_readonly.chk).
 test_case
-out=$(printf 'Object.foo = 42\n' | "$URBI" -i)
+out=$(printf 'Object.foo = 42; Object.foo\n' | "$URBI" -i)
 rc=$?
-if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qE 'frozen prototype|UPROTO_READONLY|TypeError'; then
-    ok 'Object.x = ... raises TypeError (frozen prototype, v0.9.1)'
+if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q '42'; then
+    ok 'Object.x = ... succeeds (unfrozen at v0.10.11 D5)'
 else
-    fail "Object.foo mutation not denied: rc=$rc, out='$out'"
+    fail "Object.foo mutation failed post-D5: rc=$rc, out='$out'"
 fi
 
 printf '\n%d/%d tests passed\n' "$((TOTAL - FAIL))" "$TOTAL"

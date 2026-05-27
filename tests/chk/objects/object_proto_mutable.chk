@@ -1,0 +1,9 @@
+# Milestone: v0.10.11-channel-and-isA
+# Covers: Object proto is no longer readonly — `var Object.x = 42`
+#         succeeds and the slot becomes globally visible.  Per Cat. E
+#         re-audit D5 (unfreeze Object only; Lobby stays frozen).
+# matrix-row: object-proto-mutable
+var Object.tagline = "hello"; Object.tagline
+[00000000] "hello"
+class C {}; var c = C.new(); c.tagline
+[00000001] "hello"

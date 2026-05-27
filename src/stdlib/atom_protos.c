@@ -177,26 +177,22 @@ urbi_atom_protos_register(UVM *vm)
     return URBI_OK;
 }
 
-/* === urbi_atom_protos_mark_readonly (v0.9.1, spec §4.2) ===
+/* === urbi_atom_protos_mark_readonly (v0.9.1, spec §4.2; D5 at v0.10.11) ===
  *
  * Walks the builtin atom + runtime-type protos registered earlier in
- * urbi_stdlib_boot and sets UPROTO_FLAG_READONLY on each so that
+ * urbi_stdlib_boot and sets URBI_OBJ_FLAG_READONLY on each so that
  * urbiscript-side mutation (OP_SETSLOT) raises TypeError.
  *
- * The cohort marked here closely tracks the spec's 15-element list
- * (Object, Number, String, Float, Bool, Nil, List, Dict, Tag, Event,
- * Function, Closure, Date, Mutex, Lobby) but adapts to the actual proto
- * inventory in this codebase:
- *   - "Number"   -> URBI_ATOM_INTEGER (mapped per CHANGELOG entry)
- *   - "Bool"     -> URBI_ATOM_BOOLEAN
- *   - "Lobby"    -> vm->lobby_proto (v0.9.1 Phase 5)
- *   - "Function" / "Closure" — no standalone atom proto exists at
- *     v0.9.1; surfaced when the closure inheritance work in v1.0 lands.
- * Plus the M6 Phase 4-9 runtime-type protos (Mutex/Date) and
- * the Symbol/Void/Duration protos that exist for parity.
- *
- * Global (vm->global_namespace_proto) is deliberately NOT marked readonly
- * per spec §4.1 — it's the designated mutable shared-state proto.
+ * The cohort marked here tracks the spec's 15-element list minus
+ * Object — which D5 (Cat. E ratify at v0.10.11) unfroze so legacy
+ * `var Object.x = ...` and `Object.x = ...` work as canonical "add
+ * a global" idiom (matches tests/2.x/basic.chk:1 + fallback.chk:21
+ * + same-as.chk:8 in the third-party corpus).  14 protos marked
+ * here; Lobby stays frozen via the explicit branch below (the
+ * `Lobby.lobbies` session-registry invariant is load-bearing for
+ * the REPL session-management contract).  Global (vm->global_-
+ * namespace_proto) was already excluded as the designated mutable
+ * shared-state surface.
  *
  * Idempotent: setting the same bit on the same UObject repeatedly is a
  * no-op.  No allocation, no failure mode. */
@@ -205,9 +201,9 @@ urbi_atom_protos_mark_readonly(UVM *vm)
 {
     if (vm == NULL) return URBI_ERR_INVALID_ARG;
 
-    /* Atom singletons populated by urbi_object_atom at boot. */
+    /* Atom singletons populated by urbi_object_atom at boot.
+     * NB: URBI_ATOM_OBJECT is intentionally absent — D5 unfroze it. */
     static const URBIAtomFamily ATOM_FAMILIES[] = {
-        URBI_ATOM_OBJECT,    /* Object  */
         URBI_ATOM_INTEGER,   /* Number  (legacy: Integer)         */
         URBI_ATOM_FLOAT,     /* Float                              */
         URBI_ATOM_STRING,    /* String                             */
@@ -228,8 +224,8 @@ urbi_atom_protos_mark_readonly(UVM *vm)
 
     /* Runtime-type protos owned by VM singletons (Tag/Event/Mutex/Date/
      * Duration/Lobby).  Lobby joins the cohort at v0.9.1 Phase 5 — spec
-     * §3.6 lists it as one of the 15 readonly protos that anchor the
-     * builtin name surface. */
+     * §3.6 lists it as one of the 15 readonly protos; Object was removed
+     * from this cohort at v0.10.11 (D5), leaving 14 protos total. */
     if (vm->tag_proto      != NULL) vm->tag_proto->flags      |= URBI_OBJ_FLAG_READONLY;
     if (vm->event_proto    != NULL) vm->event_proto->flags    |= URBI_OBJ_FLAG_READONLY;
     if (vm->mutex_proto    != NULL) vm->mutex_proto->flags    |= URBI_OBJ_FLAG_READONLY;

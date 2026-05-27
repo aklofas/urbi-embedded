@@ -123,10 +123,11 @@ UTEST(all_builtin_atom_protos_are_readonly)
 
     /* Names that must resolve to readonly UObjects at boot.  Tracks the
      * urbi_atom_protos_mark_readonly cohort: atom singletons + runtime-
-     * type singletons; excludes Global (mutable per spec §4.1).
+     * type singletons; excludes Global (mutable per spec §4.1) and
+     * Object (unfrozen at v0.10.11 D5 — see test_object_unfrozen.c).
      * v0.9.1 Phase 5 adds "Lobby" — the lobby-stdlib proto. */
     static const char *READONLY_NAMES[] = {
-        "Object", "Integer", "Float", "String",
+        "Integer", "Float", "String",
         "Boolean", "Nil", "Void",
         "List", "Dict", "Symbol",
         "Tag", "Event", "Mutex", "Date", "Duration",
@@ -169,19 +170,23 @@ UTEST(global_atom_is_not_readonly)
     urbi_vm_destroy(&vm);
 }
 
-/* ---- T6: Object.foo = 5 at fresh boot raises (without our test poking) - */
-UTEST(boot_object_setslot_raises_typeerror)
+/* ---- T6: Object.foo = 5 at fresh boot succeeds (D5 unfreeze at v0.10.11) -
+ *
+ * Object was removed from the readonly cohort at v0.10.11 (Cat. E D5) so
+ * the canonical `var Object.x = ...` idiom works.  This test verifies the
+ * assignment succeeds and the value round-trips. */
+UTEST(boot_object_setslot_succeeds_post_d5)
 {
     UVM vm;
     UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
 
+    static const char src[] = "Object.d5check = 7; Object.d5check";
     char buf[256];
     buf[0] = '\0';
-    int rc = urbi_repl_eval(&vm, NULL, "Object.foo = 5", 14, buf, sizeof(buf));
-    UASSERT(rc != URBI_OK);
-    UASSERT(strstr(buf, "frozen") != NULL ||
-            strstr(buf, "UPROTO_READONLY") != NULL ||
-            strstr(buf, "TypeError") != NULL);
+    int rc = urbi_repl_eval(&vm, NULL,
+        src, sizeof(src) - 1, buf, sizeof(buf));
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT(strcmp(buf, "7") == 0);
 
     urbi_vm_destroy(&vm);
 }
@@ -196,5 +201,5 @@ test_repl_uproto_readonly_suite(void)
     utest_run("setslot_readonly_can_be_cleared",    setslot_readonly_can_be_cleared);
     utest_run("all_builtin_atom_protos_are_readonly", all_builtin_atom_protos_are_readonly);
     utest_run("global_atom_is_not_readonly",        global_atom_is_not_readonly);
-    utest_run("boot_object_setslot_raises_typeerror", boot_object_setslot_raises_typeerror);
+    utest_run("boot_object_setslot_succeeds_post_d5", boot_object_setslot_succeeds_post_d5);
 }
