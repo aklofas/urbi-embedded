@@ -371,9 +371,16 @@ reader_main(void *arg)
      * as the sole owner.  r->session is NULL'd immediately so any late
      * flush_session_output call in this thread won't dereference a
      * mid-teardown pointer. */
+    /* Coordinate r->session clear under sessions_mutex with the reaper,
+     * which also writes reader->session = NULL during reap.  Without
+     * the mutex, both threads could write the same field concurrently —
+     * an unsynchronized shared write not detectable by ASan.
+     * See docs/internals/repl-teardown.md §2. */
     if (r->session != NULL) {
         urepl_request_teardown(r->session);
+        UREPL_MUTEX_LOCK(&r->server->sessions_mutex);
         r->session = NULL;
+        UREPL_MUTEX_UNLOCK(&r->server->sessions_mutex);
     }
     /* === end W1 ======================================================== */
 
@@ -771,10 +778,8 @@ urepl_listener_stop_and_join(UReplServer *server)
             head->wake_eventfd = -1;
         }
         /* For pollable readers client_fd was already closed by
-         * reader_main on its way out + session was destroyed there.
-         * Cooperative readers (v0.9.4) never ran reader_main — close
-         * the client_fd here so the transport sees a clean teardown,
-         * then fall through to the defensive session-destroy below. */
+         * reader_main on its way out.  Cooperative readers (v0.9.4)
+         * never ran reader_main — close the client_fd here. */
         if (head->cooperative
             && head->client_fd >= 0
             && head->transport != NULL
@@ -782,10 +787,20 @@ urepl_listener_stop_and_join(UReplServer *server)
             head->transport->close_fn(head->client_fd);
             head->client_fd = -1;
         }
-        /* client_fd already closed by reader_main + session destroyed
-         * (by reader_main's exit path).  Defensive: if reader_main
-         * never ran the session is still attached; clean up. */
+        /* W3/v0.10.7: the reader thread is fully joined at this point —
+         * no concurrent access to head->session remains.  Flag the
+         * session for teardown (idempotent if reader_main already did
+         * so) then destroy it directly.  This is safe because:
+         *   (a) the reader pthread has exited and been joined above,
+         *   (b) the listener pthread was joined at the top of this
+         *       function, and
+         *   (c) urbi_step is no longer running (stop is called after
+         *       the embedding loop ends), so the background reaper has
+         *       no concurrent thread to race with.
+         * The single-owner contract (docs/internals/repl-teardown.md §5)
+         * holds: this stop path IS the sole active thread at this point. */
         if (head->session != NULL) {
+            urepl_request_teardown(head->session);
             head->session->reader = NULL;
             urepl_session_destroy(server, head->session);
             head->session = NULL;
@@ -1021,14 +1036,14 @@ urepl_write_sweep_nonpollable(UReplServer *server)
             && t->pollable_fd_fn(r->client_fd) >= 0) {
             continue;
         }
-        if (s->needs_teardown) {
+        if (__atomic_load_n(&s->needs_teardown, __ATOMIC_ACQUIRE)) {
             continue;  /* close sweep (Task 4.5) will reap */
         }
         int n = urepl_session_write_drain_one(s, t, r->client_fd);
         if (n > 0) {
             total += n;
         } else if (n < 0) {
-            s->needs_teardown = true;
+            __atomic_store_n(&s->needs_teardown, true, __ATOMIC_RELEASE);
         }
         /* n == 0: nothing pending or would-block — fine. */
     }
@@ -1142,7 +1157,7 @@ urepl_read_sweep_nonpollable(UReplServer *server)
         } else if (n == 0 || n == -2) {
             /* n == 0: clean EOF; n == -2: hard transport error.
              * Both defer teardown to Task 4.5's close sweep. */
-            s->needs_teardown = true;
+            __atomic_store_n(&s->needs_teardown, true, __ATOMIC_RELEASE);
         }
         /* n == -1: would-block, normal. */
         s = next;
@@ -1191,7 +1206,7 @@ urepl_disconnect_sweep(UReplServer *server)
     UReplSession *prev = NULL;
     while (s != NULL) {
         UReplSession *next = s->next;
-        if (!s->needs_teardown) {
+        if (!__atomic_load_n(&s->needs_teardown, __ATOMIC_ACQUIRE)) {
             prev = s;
             s = next;
             continue;

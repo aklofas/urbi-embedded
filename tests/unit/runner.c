@@ -280,6 +280,7 @@ extern void test_repl_security_compile_budget_suite(void);
 extern void test_repl_security_malformed_suite(void);
 extern void test_repl_security_output_isolation_suite(void);
 extern void test_repl_oom_paths_suite(void);
+extern void test_repl_stop_path_suite(void);
 extern void test_introspect_each_suite(void);
 extern void test_json_parse_suite(void);
 extern void test_require_suite(void);
@@ -550,6 +551,7 @@ static const struct suite_entry suites[] = {
     {"repl_security_malformed",          test_repl_security_malformed_suite},
     {"repl_security_output_isolation",   test_repl_security_output_isolation_suite},
     {"repl_oom_paths",                   test_repl_oom_paths_suite},
+    {"repl_stop_path",                   test_repl_stop_path_suite},
     {"introspect_each",                  test_introspect_each_suite},
     {"json_parse",                       test_json_parse_suite},
     {"require",                          test_require_suite},

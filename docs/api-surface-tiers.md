@@ -281,6 +281,13 @@ CI gate tracks this list to prevent silent growth.
 
 - `urbi_populate_realm_globals`
 
+### REPL introspection internals (URBI_ENABLE_REPL=1 only)
+
+- `urbi_introspect_coros`, `urbi_introspect_events`, `urbi_introspect_gc`,
+  `urbi_introspect_lobbies`, `urbi_introspect_profile`,
+  `urbi_introspect_slots`, `urbi_introspect_stack`, `urbi_introspect_tags`,
+  `urbi_introspect_watchers`
+
 ### Proto / ref internals
 
 - `urbi_proto_list_create`, `urbi_proto_ref_acquire`,
