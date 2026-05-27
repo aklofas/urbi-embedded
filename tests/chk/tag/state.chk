@@ -1,24 +1,27 @@
-# Milestone: M3
-# Covers: tag.frozen and tag.blocked property access; freeze/unfreeze toggle;
-#         block/unblock toggle; independent flag tracking.
-# blocked: tag.freeze() / tag.block() / tag.frozen / tag.blocked not implemented
-# matrix-row: tag-freeze
-#             tag.frozen, tag.blocked — all require M4 method/slot dispatch)
+# Milestone: v0.10.9-tag-state
+# Covers: tag.frozen() / tag.blocked() getters + freeze/unfreeze/block/unblock
+#         toggles + independent flag tracking.  Workspace-root compatibility-
+#         decisions ledger §S6 ratifies the three cancellation modes.
+# matrix-row: tag-freeze + tag-block + tag-frozen + tag-blocked
 #
-# Reason:
-#   Every statement in this fixture uses a method or slot on a UTag value (frozen,
-#   blocked, freeze(), unfreeze(), block(), unblock()).  These are prototype-OOP
-#   dispatch operations scheduled for M4.  At M3 the UTag struct exists and
-#   freeze/block flags are defined in the C struct but there is no urbiscript-level
-#   method/slot dispatch surface.
-#
-# Original urbiscript (activate at M4 with full tag method dispatch):
-# # var t = Tag.new() | t.frozen;
-# # [00000001] false
-# # t.blocked;
-# # [00000002] false
-# # t.freeze(); t.frozen;
-# # [00000003] true
-# # t.blocked;
-# # [00000004] false
-# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/tag/state.chk)
+# Note: explicit-call syntax (.frozen() / .blocked() with parens) — full
+# OPROPS property-style dispatch is OPROPS-deferred to v1.x per TAGCH-013.
+
+var t = Tag.new()
+t.frozen()
+t.blocked()
+t.freeze(); t.frozen()
+t.blocked()
+t.block(); t.blocked()
+t.unfreeze(); t.frozen()
+t.blocked()
+t.unblock(); t.blocked()
+[00000000] <Tag>
+[00000001] false
+[00000002] false
+[00000003] true
+[00000004] false
+[00000005] true
+[00000006] false
+[00000007] true
+[00000008] false

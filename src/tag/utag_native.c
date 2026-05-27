@@ -412,6 +412,60 @@ tag_unblock_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
+/* W3d (v0.10.9): tag.frozen() and tag.blocked() — 0-arg method-style getters.
+ *
+ * Read UTAG_FLAG_FROZEN / UTAG_FLAG_BLOCKED bits and return a Boolean.
+ * Full property-style dispatch (so `tag.frozen` without parens reads as a
+ * property) is OPROPS-deferred to v1.x per TAGCH-013 — at v1.0 these are
+ * 0-arg method calls.  Returns urbi_make_bool(...).
+ *
+ * Mirrors the urbi_make_bool helper installed by the boolean stdlib. */
+
+static UValue
+tag_make_bool(bool b)
+{
+    /* Inline minimal Bool — boolean stdlib's urbi_make_bool lives elsewhere
+     * and pulling it into utag_native.c risks circular includes.  The atom
+     * dispatch path treats UVAL_BOOL with v.i ∈ {0,1} as the canonical
+     * Boolean encoding. */
+    UValue v;
+    v.kind = (uint8_t)UVAL_BOOL;
+    v.v.i  = b ? 1 : 0;
+    return v;
+}
+
+static int
+tag_frozen_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                  UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Tag.frozen", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_TAG)
+        return urbi_raise_type(vm, "Tag.frozen: self must be a Tag", out);
+
+    UTag *t = (UTag *)self.v.p;
+    if (t == NULL) return urbi_raise_type(vm, "Tag.frozen: NULL tag pointer", out);
+
+    *out = tag_make_bool((t->flags & UTAG_FLAG_FROZEN) != 0U);
+    return UEXEC_OK;
+}
+
+static int
+tag_blocked_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                   UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Tag.blocked", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_TAG)
+        return urbi_raise_type(vm, "Tag.blocked: self must be a Tag", out);
+
+    UTag *t = (UTag *)self.v.p;
+    if (t == NULL) return urbi_raise_type(vm, "Tag.blocked: NULL tag pointer", out);
+
+    *out = tag_make_bool((t->flags & UTAG_FLAG_BLOCKED) != 0U);
+    return UEXEC_OK;
+}
+
 /* tag_enter_native: tag.enter — lazy-allocate enter_event and return it.
  * Used by `at (t.enter?)` watcher installs from script. */
 static int
@@ -494,6 +548,8 @@ tag_native_register(struct UVM *vm)
      || register_native_method_tag(vm, proto, "unfreeze", tag_unfreeze_native) != URBI_OK
      || register_native_method_tag(vm, proto, "block",    tag_block_native)    != URBI_OK
      || register_native_method_tag(vm, proto, "unblock",  tag_unblock_native)  != URBI_OK
+     || register_native_method_tag(vm, proto, "frozen",   tag_frozen_native)   != URBI_OK
+     || register_native_method_tag(vm, proto, "blocked",  tag_blocked_native)  != URBI_OK
      || register_native_method_tag(vm, proto, "enter",    tag_enter_native)    != URBI_OK
      || register_native_method_tag(vm, proto, "leave",    tag_leave_native)    != URBI_OK) {
         vm->tag_proto = NULL;

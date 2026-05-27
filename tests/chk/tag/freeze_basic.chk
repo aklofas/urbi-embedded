@@ -1,0 +1,15 @@
+# Milestone: v0.10.9-tag-state
+# Covers: freeze() / unfreeze() flag toggles on a tag with no member strands.
+#         Pure flag-state test — no scheduler interaction.  Complements
+#         state.chk which mixes block + freeze.  Workspace-root compatibility-
+#         decisions ledger §S6.
+# matrix-row: tag-freeze + tag-frozen
+
+var t = Tag.new()
+t.frozen()
+t.freeze(); t.frozen()
+t.unfreeze(); t.frozen()
+[00000000] <Tag>
+[00000001] false
+[00000002] true
+[00000003] false
