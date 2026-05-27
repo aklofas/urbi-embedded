@@ -1,0 +1,21 @@
+# Milestone: v0.10.11-channel-and-isA
+# Covers: isA on atom-typed receivers — integers route through atom_integer,
+#         floats through atom_float, etc.  Uses the realm-global proto names
+#         exposed at urbi_populate_realm_globals.
+# matrix-row: stdlib-isa-atoms
+1.isA(Integer)
+[00000001] true
+1.5.isA(Float)
+[00000002] true
+"foo".isA(String)
+[00000003] true
+true.isA(Boolean)
+[00000004] true
+nil.isA(Nil)
+[00000005] true
+var xs = [1, 2, 3]; xs.isA(List)
+[00000006] true
+1.isA(Float)
+[00000007] false
+1.isA(String)
+[00000008] false

@@ -1,0 +1,20 @@
+# Milestone: v0.10.11-channel-and-isA
+# Covers: isA(Proto) on UObject receiver returns true for self-proto,
+#         true for transitive proto, false for unrelated proto.
+# matrix-row: stdlib-isa
+
+# a.isA(A) — receiver matches its own proto.
+class A {}; var a = A.new(); a.isA(A)
+[00000001] true
+
+# b.isA(A) — transitive: B inherits A, so b is-a A.
+class A2 {}; class B2 : public A2 {}; var b2 = B2.new(); b2.isA(A2)
+[00000002] true
+
+# b.isA(B) — b's direct proto.
+class A3 {}; class B3 : public A3 {}; var b3 = B3.new(); b3.isA(B3)
+[00000003] true
+
+# a.isA(B) — false: A does not inherit from B.
+class A4 {}; class B4 : public A4 {}; var a4 = A4.new(); a4.isA(B4)
+[00000004] false

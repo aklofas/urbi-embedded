@@ -297,6 +297,7 @@ extern void test_vm_first_arg_suite(void);
 extern void test_vm_slot_helpers_suite(void);
 extern void test_tag_state_suite(void);
 extern void test_job_proto_suite(void);
+extern void test_isa_method_suite(void);
 extern void test_detach_disown_suite(void);
 extern void test_scope_tag_suite(void);
 extern void test_connection_tag_suite(void);
@@ -576,6 +577,7 @@ static const struct suite_entry suites[] = {
     {"vm_slot_helpers",                  test_vm_slot_helpers_suite},
     {"tag_state",                        test_tag_state_suite},
     {"job_proto",                        test_job_proto_suite},
+    {"isa_method",                       test_isa_method_suite},
     {"detach_disown",                    test_detach_disown_suite},
     {"scope_tag",                        test_scope_tag_suite},
     {"connection_tag",                   test_connection_tag_suite},

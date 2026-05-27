@@ -30,6 +30,7 @@
 #include "stdlib/runtime_types.h"
 #include "stdlib/namespaces.h"
 #include "stdlib/primitives.h"
+#include "stdlib/isa_method.h"
 #include "stdlib/job_proto.h"
 #include "stdlib/lobby_native.h"
 #include "stdlib/temporal.h"
@@ -186,6 +187,15 @@ urbi_stdlib_boot(UVM *vm)
     {
         int rc_ro = urbi_atom_protos_mark_readonly(vm);
         if (rc_ro != URBI_OK) return rc_ro;
+    }
+
+    /* v0.10.11 / Cat. E Cluster #17: isA on Object root.  Runs after
+     * mark_readonly because C-side urbi_object_set_local_slot ignores
+     * URBI_OBJ_FLAG_READONLY; safe either way.  isA is reachable from
+     * every proto chain (atom_object is the root). */
+    {
+        int rc_isa = urbi_isa_method_register(vm);
+        if (rc_isa != URBI_OK) return rc_isa;
     }
 
     vm->stdlib_booted = 1U;
