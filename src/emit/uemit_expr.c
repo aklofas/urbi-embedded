@@ -1035,6 +1035,22 @@ uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
     return rd;
 }
 
+/* Helper: build a synthetic AST_REG_REF leaf (W2/v0.10.7).
+ *
+ * Used in emit_subscript_set_arm to pin recv and index into temp registers
+ * before building the synthetic .get/.set calls, so each expression is
+ * evaluated exactly once even when the caller is a side-effectful expression
+ * like makeList()[nextIdx()] += v. */
+static UAstNode *synth_reg_ref(UEmitter *e, uint8_t reg, int line) {
+    UAstNode *n = (UAstNode *)uarena_alloc(e->arena, sizeof(UAstNode));
+    if (!n) { e->error = EMIT_OOM; return NULL; }
+    urbi_zero(n, sizeof(*n));
+    n->kind = AST_REG_REF;
+    n->line = line;
+    n->u.reg_ref.reg = reg;
+    return n;
+}
+
 /* --- emit_subscript_get_arm — AST_SUBSCRIPT_GET: l[i] → l.get(i) */
 
 uint8_t emit_subscript_get_arm(UEmitter *e, UAstNode *n) {
@@ -1072,18 +1088,53 @@ uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
     UAstNode *rhs_val = n->u.subscript.value;
 
     if (n->u.subscript.is_compound_add) {
-        /* Compound add: l.set(i, l.get(i) + v)
-         * Build: l.get(i) + v as a synthetic AST_BINARY, then pass as value.
-         * get_args must be arena-allocated (see emit_subscript_get_arm note). */
-        UAstNode *get_mg = synth_member_get(e, n->u.subscript.recv, "get", line);
+        /* W2/v0.10.7: Single-evaluate recv and index.
+         *
+         * Previous lowering re-emitted n->u.subscript.recv and
+         * n->u.subscript.index for both the synthetic .get and .set calls,
+         * causing side-effectful expressions like makeList()[nextIdx()] to
+         * fire twice.  Fix: emit each expression once into a temp register,
+         * then build synth calls against AST_REG_REF leaves so the emitter
+         * moves from the already-evaluated register rather than re-evaluating
+         * the original AST node.
+         *
+         * Register pinning: save next_reg before each emit_expr, then bump
+         * freereg past the result so subsequent alloc_reg calls don't reuse
+         * the slot. */
+
+        /* --- Single-evaluate receiver --- */
+        uint8_t recv_reg = e->next_reg;
+        (void)emit_expr(e, n->u.subscript.recv);
+        if (e->error != EMIT_OK) return 0U;
+        /* recv_reg now holds the receiver value (emit_call_arm contract:
+         * result at callee_reg, next_reg = callee_reg + 1). */
+        if (e->current_fs->freereg <= recv_reg)
+            e->current_fs->freereg = recv_reg + 1U;
+        e->next_reg = e->current_fs->freereg;
+
+        /* --- Single-evaluate index --- */
+        uint8_t idx_reg = e->next_reg;
+        (void)emit_expr(e, n->u.subscript.index);
+        if (e->error != EMIT_OK) return 0U;
+        if (e->current_fs->freereg <= idx_reg)
+            e->current_fs->freereg = idx_reg + 1U;
+        e->next_reg = e->current_fs->freereg;
+
+        /* --- Build AST_REG_REF wrappers --- */
+        UAstNode *recv_ref = synth_reg_ref(e, recv_reg, line);
+        UAstNode *idx_ref  = synth_reg_ref(e, idx_reg,  line);
+        if (!recv_ref || !idx_ref) return 0U;
+
+        /* --- recv.get(idx_ref) --- */
+        UAstNode *get_mg = synth_member_get(e, recv_ref, "get", line);
         if (!get_mg) return 0U;
         UAstNode **get_args = (UAstNode **)uarena_alloc(e->arena, sizeof(UAstNode *));
         if (!get_args) { e->error = EMIT_OOM; return 0U; }
-        get_args[0] = n->u.subscript.index;
+        get_args[0] = idx_ref;
         UAstNode *get_call = synth_call(e, get_mg, get_args, 1, line);
         if (!get_call) return 0U;
 
-        /* AST_BINARY: get_call + rhs_val */
+        /* --- AST_BINARY: get_call + rhs_val --- */
         UAstNode *add_node = (UAstNode *)uarena_alloc(e->arena, sizeof(UAstNode));
         if (!add_node) { e->error = EMIT_OOM; return 0U; }
         urbi_zero(add_node, sizeof(*add_node));
@@ -1092,12 +1143,23 @@ uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
         add_node->u.binary.op  = BOP_ADD;
         add_node->u.binary.lhs = get_call;
         add_node->u.binary.rhs = rhs_val;
-
         rhs_val = add_node;
+
+        /* --- recv.set(idx_ref, rhs_val) using the same pinned refs --- */
+        UAstNode *set_mg = synth_member_get(e, recv_ref, "set", line);
+        if (!set_mg) return 0U;
+        UAstNode **set_args = (UAstNode **)uarena_alloc(e->arena,
+                                                         2U * sizeof(UAstNode *));
+        if (!set_args) { e->error = EMIT_OOM; return 0U; }
+        set_args[0] = idx_ref;
+        set_args[1] = rhs_val;
+        UAstNode *call = synth_call(e, set_mg, set_args, 2, line);
+        if (!call) return 0U;
+
+        return emit_call_arm(e, call);
     }
 
-    /* Build: recv.set(index, rhs_val)
-     * set_args must be arena-allocated (see emit_subscript_get_arm note). */
+    /* Non-compound: simple recv.set(index, rhs_val) — single use, no change. */
     UAstNode *mg = synth_member_get(e, n->u.subscript.recv, "set", line);
     if (!mg) return 0U;
     UAstNode **set_args = (UAstNode **)uarena_alloc(e->arena,

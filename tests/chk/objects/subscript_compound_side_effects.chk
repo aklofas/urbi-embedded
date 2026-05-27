@@ -1,0 +1,18 @@
+# Wave 7 W2 — compound subscript single-evaluation guarantee (v0.10.7)
+# Covers: l[i] += v must evaluate recv and index exactly once.
+# Ruling: single-eval guaranteed — matches C/JS/Python semantics.
+# Audit: closes audit-1 F4, audit-2 #2.
+# Source: policy decision P2 in the v0.10.7 plan.
+#
+# Technique: use Realm.* slots as mutable counters inside closures.
+# var x = 0 at chunk-top creates a Realm slot accessible via Realm.x.
+# All setup on one line so the list's <object 0x...> address is hidden;
+# the line result is the recvCount after the compound-subscript op.
+var recvCount = 0; var idxCount = 0; var l = [10, 20, 30]; var makeRecv = function() { Realm.recvCount = Realm.recvCount + 1; return Realm.l }; var makeIdx = function() { Realm.idxCount = Realm.idxCount + 1; return 1 }; makeRecv()[makeIdx()] += 5; Realm.recvCount
+[00000000] 1
+
+Realm.idxCount
+[00000001] 1
+
+Realm.l.get(1)
+[00000002] 25
