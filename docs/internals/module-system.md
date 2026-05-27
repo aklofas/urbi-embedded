@@ -2,7 +2,7 @@
 
 This document describes the post-v0.8.1 shape of the module system: the
 UModule thin loader shell, the `UProto` recursive-children layout, module-grain
-lifetime via refcount fusion, the v1.7 wire format, strand binding, and the
+lifetime via refcount fusion, the v1.9 wire format, strand binding, and the
 vm_destroy lifetime ordering invariant.
 
 For full design rationale, see the v0.8.1 uproto-root design spec §§2–4.
@@ -53,7 +53,7 @@ for both root and nested protos.
 
 ```c
 typedef struct UProto {
-    /* === Serialized fields (wire format v1.7) ==================== */
+    /* === Serialized fields (wire format v1.9) ==================== */
     uint32_t    *instructions;   size_t instr_count, instr_cap;
     UValue      *constants;      size_t const_count, const_cap;
     int8_t      *line_deltas;
@@ -182,20 +182,21 @@ for explicit module eviction.
 
 ---
 
-## 4. Wire Format v1.7
+## 4. Wire Format
 
-### Header
+Module chunks follow the standard urbi bytecode wire format, currently
+v1.9 / `0x19` (frozen at v0.10.6-stabilization).  See
+`docs/internals/bytecode-format.md` for the full header layout,
+opcode table, and post-freeze policy.
+
+### Module-specific layout
+
+The standard header is followed by:
 
 ```text
-[ header (version=0x17, descriptor, magic, canary, zero bytes 16..23) ]
 [ source_name (length-prefixed) ]
 [ root_proto block: recursive UProto serialization ]
 ```
-
-`URBI_BYTECODE_VERSION_BYTE = 0x17`.  The loader rejects any buffer with a
-different version byte as `ULOAD_UNSUPPORTED_VERSION`.
-
-### Recursive UProto block
 
 Each UProto block serializes as:
 
@@ -225,7 +226,7 @@ shape would differ but the current emitter never produces non-root nested[].
 
 ### Reject policy
 
-Loading v1.6 (or any prior) bytecode returns `ULOAD_UNSUPPORTED_VERSION`.
+Loading v1.8 (or any prior) bytecode returns `ULOAD_UNSUPPORTED_VERSION`.
 There is no in-band migration and no upgrade tool.  Embedders re-bake from
 source (same policy as every prior wire-format bump).
 
