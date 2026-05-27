@@ -1,0 +1,10 @@
+# Milestone: v0.10.11-channel-and-isA
+# Covers: Lobby.echo end-to-end — message reaches the per-realm writer
+#         via __builtin_lobby_send through the proto chain.  Pre-W4 this
+#         failed with closure-body bare-name resolution error; post-W4
+#         it works.
+# matrix-row: lobby-echo
+
+Lobby.echo("hello", "", "***")
+[00000000] *** hello
+[00000001] nil

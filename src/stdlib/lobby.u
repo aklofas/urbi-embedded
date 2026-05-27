@@ -45,9 +45,19 @@ class LobbyMethods {
     // echo(msg, tag, prefix): format and write to the current realm's
     // writer via the __builtin_lobby_send C primitive (which routes
     // through urbi_vm_write_in_realm so per-session writers win).
-    // tag is typically the empty string ""; prefix typically "***".
+    // msg, tag, prefix must all be String; tag is typically ""; prefix
+    // typically "***".
+    //
+    // v0.10.11 / W4: `this` is the session-lobby instance; the proto
+    // chain (instance -> Lobby -> root) finds __builtin_lobby_send on
+    // Lobby.  Bare-name resolution doesn't auto-walk `this`; explicit
+    // qualifier is the v1.0 workaround (root-cause emit fix deferred
+    // to v1.x — see workspace docs/urbi-embedded-design-risks.md).
+    // The original msg.asString() coercion is dropped: String.asString
+    // is not yet in the stdlib, and __builtin_lobby_send raises TypeError
+    // for non-String args directly.
     var echo = function(msg, tag, prefix) {
-        __builtin_lobby_send(msg.asString(), tag, prefix)
+        this.__builtin_lobby_send(msg, tag, prefix)
     };
 
     // wall(msg, tag): broadcast to every OTHER lobby in Lobby.lobbies.

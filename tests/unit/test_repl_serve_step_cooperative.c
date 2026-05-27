@@ -214,8 +214,9 @@ UTEST(repl_serve_step_cooperative_read_dispatch)
  * ts.write_buf via the write sweep draining session->output.
  *
  * `1+2` is the simplest expression whose result substring ("3") is
- * easy to find in the envelope and that doesn't depend on the v0.9.1
- * closure-body bare-name resolution gap that affects Lobby.echo. */
+ * easy to find in the envelope. Lobby.echo itself works as of v0.10.11
+ * W4; using `1+2` here to keep the test focused on cooperative REPL
+ * mechanics rather than on the stdlib echo path. */
 UTEST(repl_serve_step_cooperative_full_roundtrip)
 {
     UVM *vm = (UVM *)calloc(1, sizeof(UVM));
