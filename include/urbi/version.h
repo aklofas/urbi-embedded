@@ -194,6 +194,13 @@
  *      detach/disown lazy-arg overlay wrappers + 2 C-natives; scopeTag
  *      realm global; Lobby.connectionTag slot.  All script-side surface —
  *      NO new public C API symbols.  PATCH bump only.  (0/19/0 → 0/19/1)
+ *  19. v0.10.11-channel-and-isA — D6 + isA + D5 Cat. E ratification:
+ *      Channel proto + cout/cerr/clog + '<<' infix sugar; isA universal
+ *      type-test on Object root; Object atom unfrozen (Lobby stays
+ *      frozen).  Plus bundled v0.10.10 carry-overs: Makefile -MMD -MP
+ *      auto-deps + test_repl_stop_path UAF fix.  All script-side
+ *      surface — NO new public C API symbols.  PATCH bump only.
+ *      (0/19/1 → 0/19/2)
  *  17. v0.10.9-tag-state — MINOR bump for new public C API surface:
  *      urbi_tag_block(vm, tag, resume_value), urbi_tag_unblock(vm, tag),
  *      urbi_tag_freeze(vm, tag), urbi_tag_unfreeze(vm, tag) — 4 new
@@ -226,7 +233,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  19
-#define URBI_API_VERSION_PATCH  1
+#define URBI_API_VERSION_PATCH  2
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -245,7 +252,7 @@ extern "C" {
  * Failing to bump the static_assert breaks the build, which is the point —
  * deliberate intent at every change, not silent ABI drift.
  *
- * Pin target: v0.10.10-job-introspection ships at 0/19/1.
+ * Pin target: v0.10.11-channel-and-isA ships at 0/19/2.
  *
  * The pin landed in commit `bdad57c` (W2 of v0.10.6) at 0/17/0; bumped to
  * 0/18/0 at v0.10.6 wave wrap-up to capture the W4 UReplConfig.rate_limit_per_second
@@ -262,11 +269,15 @@ extern "C" {
  * v0.10.10-job-introspection — PATCH-only, D7 full-ship Cat. E
  * ratification.  All new surface (Job proto, detach/disown,
  * scopeTag, connectionTag) is script-side; zero new public C API
- * symbols.
+ * symbols.  Bumped to 0/19/2 at v0.10.11-channel-and-isA — PATCH-only,
+ * D6 + isA + D5 Cat. E ratification (Channel proto, cout/cerr/clog,
+ * '<<' infix, isA(), Object unfreeze) plus bundled carry-overs
+ * (Makefile -MMD/-MP + REPL UAF fix).  All script-side; zero new
+ * public C API symbols.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 19
-            && URBI_API_VERSION_PATCH == 1,
+            && URBI_API_VERSION_PATCH == 2,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

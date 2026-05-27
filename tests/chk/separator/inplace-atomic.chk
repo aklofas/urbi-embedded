@@ -1,16 +1,19 @@
-# Milestone: M3
+# Milestone: v0.10.11-channel-and-isA
 # Covers: compound assignment operators (+=, *=, /=, -=) are evaluated atomically;
 #         target expression is not evaluated twice even with side effects.
-# blocked: cout/Channel I/O not implemented; no output primitive for this pattern
+# blocked: T39 chk driver — interleaved output observation
 # matrix-row: separator-pipe
 #
 # Reason:
-#   The fixture defines a Base class with a foo() method returning 'this' and a
-#   val slot, then exercises compound assignment via method chaining (Base.foo().val += 2).
-#   Class/prototype definition and slot-method dispatch are M4 object-model features.
-#   'cout' channel output is also not available at M3.
+#   cout/Channel I/O shipped at v0.10.11 (D6 full Channel).  Remaining
+#   block is the T39 chk driver: the fixture interleaves `cout << "..."`
+#   output with the expected-value lines `[NNNNNNNN] 2`, which requires
+#   the T39 multi-line driver to align actual output against expected
+#   tags across the boundary.  Class/prototype definition, slot-method
+#   dispatch, and cout are all available post-v0.10.11; the test body
+#   itself is ready to activate once the T39 driver lands.
 #
-# Original urbiscript (activate at M4 with object model):
+# Original urbiscript (activate when T39 chk driver lands):
 # # cout.quote = false | class Base { function foo() { cout << "Hello world!"; return this }; var val = 0 };
 # # Base.foo().val += 2;
 # # [00000001:output] Hello world!

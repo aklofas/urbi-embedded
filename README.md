@@ -6,9 +6,11 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** v0.10.10-job-introspection — Cat. E ratification arc tag 2 of 4. D7 full-ship: Job proto + `Job.current()`/`jobs()`/`tags()`/`uid()`/`status()` (call-style methods, not auto-invoked getters — wrap-native-closures-as-getters bridge defers v1.x); `detach(expr)` / `disown(expr)` lazy-arg builtins (overlay wrappers + 2 C-natives); `scopeTag()` realm-global; `Lobby.connectionTag` slot. All new surface is script-side — zero new public C API symbols. ABI 0/19/1 (PATCH bump from 0/19/0; 18th use of pre-v1.0 escape clause, not freeze-override under `docs/api-stability.md` §3). wire v1.9 / 0x19 unchanged. Unblocks future stdlib porting of `mutex.u` / `monitoring.u` / `uobject.u`.
+**Status:** v0.10.11-channel-and-isA — Cat. E ratification arc tag 3 of 4. D6 full Channel proto + `cout`/`cerr`/`clog` realm globals + `<<` infix operator; `isA(Proto)` universal type-test on Object root; D5: Object atom proto unfrozen (Lobby stays frozen); `Lobby.echo` bare-name fix. All new surface is script-side — zero new public C API symbols. ABI 0/19/2 (PATCH bump from 0/19/1; 19th use of pre-v1.0 escape clause). Wire v1.9 / 0x19 unchanged. Closes REVIVAL §14.9 Y3 commitment (Channel was attributed M8 but M8 shipped only `Lobby.echo`/`Lobby.wall`).
 
-Next milestone: **v0.10.11-channel-and-isA** (D6 full Channel + `isA()` + D5 unfreeze Object), then **v0.10.12-cat-e-activation**, then **v0.11.x ROS2 (M9)**. Tagged `v0.10.10-job-introspection`.
+Previously: **v0.10.10-job-introspection** — D7 full-ship: Job proto + `detach`/`disown` + `scopeTag` + `Lobby.connectionTag`. ABI 0/19/1.
+
+Next milestone: **v0.10.12-cat-e-activation** (D2 cross-spec at to event activate-now + at.sync rewrites + Cat. E doc-sweep), then **v0.11.x ROS2 (M9)**. Tagged `v0.10.11-channel-and-isA`.
 
 ## Design goals
 

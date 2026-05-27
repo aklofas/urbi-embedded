@@ -139,6 +139,7 @@
 | Subscript compound `l[i] += v` | implemented | legacy F14; Wave 6 W10 — desugar: `l.set(i, l.get(i) + v)`; no new opcode; see `tests/chk/objects/subscript_compound.chk` |
 | Top-level `this` / Lobby singleton | migration | legacy F13; use `Realm` — see [top-level-this-lobby-migration.md](migration/top-level-this-lobby-migration.md) |
 | `setSlot` (host-side reflection) | implemented | — |
+| `Object` proto mutable (slot install on Object root) | implemented | v0.10.11 (D5 ratify) — `URBI_ATOM_OBJECT` dropped from readonly cohort; `var Object.x = ...` and `Object.x = ...` work; Lobby stays frozen; see design-risks v0.10.7-F (closed); matrix-row: object-proto-mutable |
 
 ### Concurrency / strands
 
@@ -160,6 +161,11 @@
 | `Class.new()` | implemented | — |
 | `Object.clone()` | implemented | — |
 | Operator overload (9 ops) | implemented | v0.6.2 |
+| `Channel` proto (`new(n)` / `echo(msg)` / `'<<'(x)`) | implemented | v0.10.11 (D6 ratify) — Channel proto + enabled/quote/name slots; per-realm cout/cerr/clog realm globals; honors §14.9 Y3; Channel.Filter deferred-v1.x; see `tests/chk/stdlib/channel_basic.chk`; matrix-row: stdlib-channel |
+| `cout << msg` / `cerr << msg` / `clog << msg` | implemented | v0.10.11 (D6 ratify) — per-realm cout/cerr/clog as Channel instances; `<<` desugars to `.'<<'(x)` method call; see `tests/chk/stdlib/channel_basic.chk`; matrix-row: stdlib-cout-shift |
+| `isA(Proto)` universal type-test | implemented | v0.10.11 (Cluster #17 ratify) — C-native on Object root; walks transitive proto chain; atom receivers route through per-VM atom-proto registry; 64-depth cycle guard; see `tests/chk/stdlib/runtime/isa_basic.chk`; matrix-row: stdlib-isa |
+| `obj.isA(Atom)` for built-in atom protos | implemented | v0.10.11 — atom receivers (UVAL_INT, UVAL_STR, UVAL_FLOAT, etc.) resolve proto via per-VM atom-proto registry and walk from there; see `tests/chk/stdlib/runtime/isa_basic.chk`; matrix-row: stdlib-isa-atoms |
+| `Lobby.echo(msg)` method | implemented | v0.10.11 W4 — body uses `this.__builtin_lobby_send(...)` (explicit `this.` qualifier; closure bare-name resolution gap stays open v1.x; see design-risks v0.10.11-A); see `tests/chk/chunk_lifecycle/repl_session_persistence.chk`; matrix-row: lobby-echo |
 
 ### Operators
 
@@ -169,6 +175,7 @@
 | `String + String` concatenation | implemented | v0.10.8 (S-string-plus) — atom fast path in OP_ADD; `arith_add` is bypassed for UVAL_STR + UVAL_STR; result is interned via `ustr_intern` |
 | `String + Int` / `String + Float` / mixed-type `+` | deferred-v1.x | v1.0 caller must use explicit `.asString()`; coercion taxonomy (which side coerces, `nil + ""`, `[] + ""`) is a deliberate v1.x design pass |
 | Operator overload via slot dispatch (9 ops) | implemented | REVIVAL §S30; v0.6.2 |
+| `<<` infix operator (left-shift / stream-insert sugar) | implemented | v0.10.11 W3 — new `TOK_LSHIFT`; parser sugar desugars `a << b` to `a.'<<'(b)` method call on quoted-ident slot; precedence 2 (below equality at 3); no new opcode; routes through OP_GETSLOT + OP_CALL; see `tests/chk/stdlib/channel_basic.chk`; matrix-row: operators-lshift |
 
 ## Per-fixture status (from tests/chk/stdlib/legacy/)
 

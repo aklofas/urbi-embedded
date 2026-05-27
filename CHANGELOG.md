@@ -1,5 +1,112 @@
 # Changelog
 
+## v0.10.11-channel-and-isA — 2026-05-27
+
+Third tag of the Cat. E ratification arc.  D6 full Channel + isA
+universal type-test + D5 unfreeze Object only, plus two bundled
+carry-overs from v0.10.10 (Makefile auto-deps + REPL UAF fix).
+
+### Added
+
+- **`Channel` proto** with `enabled` / `quote` / `name` slots plus
+  `new(n)` / `init(n)` / `echo(msg)` / `'<<'(x)` methods.  Per-realm
+  `cout` / `cerr` / `clog` instances bound as realm globals (per-realm
+  instances so multi-session REPL routes through per-session writers).
+  Honors REVIVAL §14.9 Y3 commitment (was attributed "M8 ✅" but M8
+  shipped only `Lobby.echo`/`Lobby.wall`).  `Channel.Filter` subclass
+  deferred v1.x (depends on Container.any/Container.all which need
+  stdlib porting).
+- **`<<` infix operator** (new `TOK_LSHIFT`; parser sugar desugars
+  `a << b` to method call `a.'<<'(b)` on the quoted-ident slot).  No
+  new opcode; routes through standard OP_GETSLOT + OP_CALL.
+  Precedence 2 (below equality at 3) so `cout << x == y` parses as
+  `cout << (x == y)`.
+- **`isA(Proto)`** universal type-test C-native on root Object proto.
+  Walks the receiver's transitive proto chain (UObject receivers walk
+  their own chain; atom receivers route through the per-VM atom-proto
+  registry).  64-depth guard against pathological proto cycles.
+  Per Cat. E re-audit Cluster #17 ratify.  Closes design-risks
+  `v0.10.7-E`.
+
+### Changed
+
+- **D5: Object atom proto unfrozen.**  `URBI_ATOM_OBJECT` dropped from
+  the 15-element readonly cohort in `urbi_atom_protos_mark_readonly`;
+  cohort now lists 14 atom-family + 6 runtime-type singletons = 15
+  protos still marked, but Object joins the unfrozen set with Global.
+  Legacy `var Object.x = ...` and `Object.x = ...` work again.
+  Lobby stays frozen (preserves `Lobby.lobbies` session-registry
+  invariant).  Closes design-risks `v0.10.7-F`.
+- **`Lobby.echo`** body now uses `this.__builtin_lobby_send(...)`
+  instead of bare `__builtin_lobby_send(...)`.  Closure-body bare-name
+  resolution doesn't auto-walk `this`; explicit qualifier is the v1.0
+  workaround.  Also dropped the `msg.asString()` coercion since String
+  has no `.asString` method at v0.10.11 (see design-risks
+  `v0.10.11-A`).  Root-cause emit fix stays open as v1.x followup.
+
+### Internal
+
+- **`Makefile`** per-object compile rules gain `-MMD -MP`; generated
+  `.d` files are auto-included.  Closes design-risks `v0.10.10-E`.
+  Make-doesn't-track-header-deps trap fired 4x across 3 consecutive
+  tags before this fix.
+- **`tests/unit/test_repl_stop_path.c`** UAF fixed: 3 lines reading
+  `server->sessions_head` after `urbi_repl_stop(server)` freed
+  `server` are deleted.  Closes design-risks `v0.10.10-F`.  CI `repl
+  multi-client stress (ASan, 100 trials)` job had been red since
+  v0.10.7-audit-followup.
+- New per-VM singleton `vm->channel_proto` (initialized to NULL in
+  `urbi_vm_init`; added to `object_roots_walker` for GC reachability).
+
+### Closed audit findings
+
+- Cat. E re-audit D6 (cluster #20 — Channel + cout + cerr + clog +
+  `<<`).  Full-ship verdict.  §14.9 Y3 attribution corrected
+  (M8 to v0.10.11).
+- Cat. E re-audit D5 (cluster #19 — frozen-proto policy).  Unfreeze
+  Object only.
+- Cat. E re-audit Cluster #17 isA (pre-ratified) — ship-v1.0.
+
+### Wire format
+
+UNCHANGED at v1.9 / 0x19.  No new opcodes; `<<` is parser sugar that
+desugars to AST_CALL on quoted-ident slot.  All features land in
+stdlib + overlay + parser.
+
+### ABI
+
+0/19/1 to 0/19/2.  PATCH bump — no new public C API symbols.  Escape
+ledger entry #19.
+
+### Test corpus
+
+`make releasetest` 31+ gates green.  2013 cases / 14387 checks
+(v0.10.11) up from 1994 / 14327 (v0.10.10).  304 chk fixtures total
+(288 non-repl + 16 REPL-gated); v0.10.10 had 296 total.
+
+### Blocked fixtures (header-only narrowing)
+
+6 fixtures' headers narrowed to point at remaining blockers:
+
+- `separator/inplace-atomic.chk` — T39 chk driver only (cout+class
+  now ship; remaining block is T39 driver + interleaved-output
+  observation).
+- `exceptions/exceptions.chk` — Exception structured-throw
+  (defer-v1.x) only.
+- `exceptions/regressions.chk` — same.
+- `scheduler/stack-exhausted.chk` — structured-throw + stack-depth
+  diagnostics (both defer-v1.x).
+- `closure/scopes.chk` — T39 chk driver only (Object readonly resolved
+  by W5).
+- `chunk_lifecycle/lobby_alias.chk` — Lobby readonly (defer-v1.x per
+  D5 verdict; Lobby stays in the readonly cohort).
+
+### Cat. E arc status
+
+Tag 3 of 4 shipped.  Remaining: **v0.10.12-cat-e-activation** (D2
+cross-spec at to event chain activate-now via fixture rewrite + 5
+at.sync fixture rewrites + Cat. E doc-sweep).  Then v0.11.x ROS2 (M9).
+
 ## v0.10.10-job-introspection — 2026-05-27
 
 Second tag of the Cat. E ratification arc. D7 full-ship: Job proto

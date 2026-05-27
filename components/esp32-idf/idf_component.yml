@@ -2,7 +2,7 @@
 # Bumped in lockstep with every milestone tag. Verified by
 # tests/scripts/check-version-sync.sh (run by make check-version-sync
 # and the GHA version-sync job).
-version: "0.10.10-job-introspection"
+version: "0.10.11-channel-and-isA"
 description: "Embeddable urbiscript runtime — reactive, parallel-by-default, event-driven scripting for embedded systems."
 url: "https://github.com/aklofas/urbi-embedded"
 license: "BSD-3-Clause"

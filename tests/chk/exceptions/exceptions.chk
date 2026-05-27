@@ -1,18 +1,20 @@
-# Milestone: M3
+# Milestone: v0.10.11-channel-and-isA
 # Covers: Exception.new("exc") constructor; throw/catch with isA() guard; re-throw;
 #         bare throw; nested try; finally-before-throw; Exception display.
-# blocked: requires isA() method on exception values (not implemented) + Exception type hierarchy
+# blocked: Exception structured-throw wiring (defer-v1.x)
 # matrix-row: exceptions-try-catch
 #
 # Reason:
-#   The fixture uses 'Exception.new("exc")' — a constructor call on the Exception
-#   prototype (M4 object model), 'e.isA(exc)' method dispatch (M4), exception type
-#   hierarchy (Exception.Constness, Exception.BadInteger etc. — M4 stdlib), and
-#   'e.isA(Float)' typed guards.  At M3, try/catch works with unguarded catch
-#   clauses and throw of arbitrary values, but the typed exception hierarchy and
-#   isA() dispatch are not available.
+#   isA() shipped at v0.10.11 (Cluster #17 ratify).  Remaining block is
+#   Exception structured-throw wiring (defer-v1.x): `catch (var e if
+#   e.isA(exc))` requires typed Exception instances, but the runtime
+#   currently throws diagnostic strings rather than allocating Exception
+#   proto instances.  The typed exception hierarchy (Exception.Constness,
+#   Exception.BadInteger, etc.) and the struct-throw wiring that connects
+#   OP_THROW to allocate-and-populate an Exception proto are both deferred
+#   to v1.x.  isA() itself works correctly post-v0.10.11.
 #
-# Original urbiscript (activate at M4 with exception type hierarchy):
+# Original urbiscript (activate when Exception structured-throw lands):
 # # var exc = Exception.new("exc"); [00000001] Exception `exc'
 # # throw exc; [00000002:error] !!! input.u:@.1-9: exc
 # # try { echo("before"); throw exc; echo("after") } catch(var e if e.isA(exc)) { echo("caught") };

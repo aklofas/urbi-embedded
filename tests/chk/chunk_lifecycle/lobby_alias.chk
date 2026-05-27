@@ -1,20 +1,20 @@
-# Milestone: M3
+# Milestone: v0.10.11-channel-and-isA
 # Covers: Lobby is an alias for the global Realm; bindings in Lobby are visible
 #         globally and vice versa.
 #
-# blocked: Lobby proto is UPROTO_READONLY; Lobby.x = v raises TypeError — v1.0-rc investigation
+# blocked: Lobby readonly (defer-v1.x per D5 verdict)
 # matrix-row: stdlib-lobby
 #
-# Reason: Lobby is a stdlib concept — a reflective surface that exposes the
-# global Realm as an object. The Lobby binding lands at M6 (stdlib) when the
-# standard library is bootstrapped. At M3, Realm is a C-level type only,
-# not exposed as an urbiscript binding.
+# Reason: D5 (v0.10.11 W5) unfroze Object only; Lobby remains in the readonly
+# cohort.  The `Lobby.lobbies` session-registry invariant is load-bearing for
+# the REPL session-management contract: Lobby.lobbies is written by the C REPL
+# layer at session open/close, and allowing arbitrary script-side slot
+# installation on Lobby could corrupt the registry.  Sandboxing policy for
+# post-D5 Lobby is deferred to v1.x (if a concrete threat model warrants it,
+# a capability-gated unfreeze can be introduced).  Until then, `Lobby.x = v`
+# raises TypeError.
 #
-# When M6 lands, implement this fixture by uncommenting the urbiscript source.
-# Expected behaviour: Lobby is the global Realm; setting Lobby.x sets a global
-# binding visible to all subsequent code.
-#
-# Urbiscript source (activate at M6):
+# Urbiscript source (activate when Lobby readonly is revisited at v1.x):
 #   Lobby.x = 123;
 #   x
 #   --- expected output ---

@@ -1,19 +1,21 @@
-# Milestone: M3
+# Milestone: v0.10.11-channel-and-isA
 # Covers: closure capture from definition scope, not call scope; 'var Object.f'
 #         slot assignment on a prototype; lookup of i inside f() resolves to
 #         outer global i, not inner block-local i.
-# blocked: requires mutable Object proto (UPROTO_READONLY); var Object.f fails with TypeError — v1.0-rc
+# blocked: T39 chk driver only
 # matrix-row: object-slot-install
 #
 # Reason:
-#   'var Object.f = function(x) { i += x }' assigns a function to a slot on the
-#   Object prototype — requires M4 prototype-OOP slot write dispatch.  At M3, var
-#   declarations are local to the current compilation unit (no prototype slots).
-#   The core closure-captures-definition-scope semantic is verified at M3 via
-#   tests/chk/closure/counter.chk (counter increments outer n correctly).
-#   Compound assignment (i += x) is also not yet supported at M3.
+#   Object readonly was blocked by D5 prior to v0.10.11; resolved at W5
+#   (Object atom proto unfrozen).  `var Object.f = ...` now works.
+#   Remaining block is the T39 chk driver: the expected output line
+#   `[00000002:error] !!! input.u:4.31: lookup failed: i` requires the
+#   T39 multi-line driver to match error output lines embedded among the
+#   expected-value sequence.  The core closure-captures-definition-scope
+#   semantic is verified at M3 via tests/chk/closure/counter.chk;
+#   Object slot-install works post-v0.10.11.
 #
-# Original urbiscript (activate at M4 with prototype slot assignment):
+# Original urbiscript (activate when T39 chk driver lands):
 # # var i = 41; [00000001] 41
 # # var Object.f = function(x) { i += x } | {};
 # # { var i = 0; Object.f(1) };

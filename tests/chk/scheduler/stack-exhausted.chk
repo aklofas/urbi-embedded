@@ -1,18 +1,21 @@
-# Milestone: M3
+# Milestone: v0.10.11-channel-and-isA
 # Covers: stack-exhausted exception is catchable; caught exception matches
 #         Exception.Scheduling type via isA(); message includes location.
-# blocked: Exception.Scheduling type hierarchy + isA() method dispatch not implemented
+# blocked: Exception structured-throw + stack-depth diagnostics (defer-v1.x)
 # matrix-row: exceptions-scheduling
 #
 # Reason:
-#   The fixture catches a stack-overflow via 'catch(var s if s.isA(Exception.Scheduling))'.
-#   This requires: (1) a named exception type hierarchy (Exception.Scheduling) —
-#   M4 stdlib object model; (2) isA() method dispatch on the exception value —
-#   M4 prototype-OOP.  At M3 try/catch works but only with unguarded catch clauses
-#   (no 'if cond' guard with method calls).  Stack-exhaustion detection is present
-#   in the C runtime but the typed exception hierarchy is M4.
+#   isA() shipped at v0.10.11 (Cluster #17 ratify).  Remaining block is
+#   two separate v1.x items: (1) Exception structured-throw wiring —
+#   `catch(var s if s.isA(Exception.Scheduling))` requires a named
+#   Exception.Scheduling proto instance allocated by OP_THROW; the runtime
+#   currently throws diagnostic strings; (2) stack-depth diagnostics —
+#   the `echo(s)` output `*** input.u:5.16-18: stack space exhausted`
+#   requires source-location tracking in the stack-exhaustion path, which
+#   is a separate v1.x diagnostic improvement.  Stack-exhaustion detection
+#   is present in the C runtime but the typed exception hierarchy is deferred.
 #
-# Original urbiscript (activate at M4 with exception type hierarchy):
+# Original urbiscript (activate when Exception structured-throw + stack-depth diagnostics land):
 # # function f() { f() } |;
 # # try { f() } catch(var s if s.isA(Exception.Scheduling)) { echo(s) };
 # # [00000001] *** input.u:5.16-18: stack space exhausted

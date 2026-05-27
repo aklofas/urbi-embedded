@@ -1,14 +1,15 @@
 # C API stability policy
 
-> Status: ABI pin at v0.10.10-job-introspection (0/19/1) — PATCH bump
-> from v0.10.9-tag-state (0/19/0).  18th use of pre-v1.0 escape clause.
-> D7 full-ship Cat. E ratification (Job proto, detach/disown,
-> scopeTag, connectionTag) — all script-side; zero new public C API
-> symbols.  PATCH-only, not freeze-override under §3 (the ledger
-> numbers every bump; only MINOR/MAJOR bumps require §3's freeze-
-> override review).  The freeze pin is a forcing function (deliberate
-> intent at every bump), not a hard cap.  Any further MINOR/MAJOR
-> change after this tag must follow §3.
+> Status: ABI pin at v0.10.11-channel-and-isA (0/19/2) — PATCH bump
+> from v0.10.10-job-introspection (0/19/1).  19th use of pre-v1.0
+> escape clause.  D6 + isA + D5 Cat. E ratification (Channel proto,
+> cout/cerr/clog, '<<' infix, isA(), Object unfreeze) plus bundled
+> carry-overs (Makefile -MMD/-MP + REPL UAF fix) — all script-side;
+> zero new public C API symbols.  PATCH-only, not freeze-override
+> under §3 (the ledger numbers every bump; only MINOR/MAJOR bumps
+> require §3's freeze-override review).  The freeze pin is a forcing
+> function (deliberate intent at every bump), not a hard cap.  Any
+> further MINOR/MAJOR change after this tag must follow §3.
 
 ## 1. The freeze pin
 
@@ -63,3 +64,38 @@ The pre-v1.0 escape clause expires at v1.0.0.
 - `CHANGELOG.md` — per-tag enumeration of breaking changes.
 - `docs/api-surface-tiers.md` — public/experimental/advanced tier
   classification of the API surface.
+
+## 6. Post-freeze escape ledger
+
+Summary of every ABI change since the v0.10.6-stabilization freeze pin.
+Detail in `include/urbi/version.h` ledger comment and `CHANGELOG.md`.
+
+### Escape #16 — v0.10.6-stabilization (MINOR — freeze-pin tag)
+
+UReplConfig gains `rate_limit_per_second` field (struct-layout change,
+additive at tail).  Symbolic freeze pin; declared "16th and FINAL" at
+time of writing.  0/17/0 to 0/18/0.
+
+### Escape #17 — v0.10.9-tag-state (MINOR — first post-freeze break)
+
+4 new public C API symbols: `urbi_tag_block` / `_unblock` / `_freeze` /
+`_unfreeze`.  UStrand gains `unblock_value` field (+16 B).  UTag gains
+`UTAG_FLAG_BLOCKED` (0x04).  D1 SUSPENDED-machinery ratification.
+Supersedes "16th and FINAL" framing.  0/18/2 to 0/19/0.
+
+### Escape #18 — v0.10.10-job-introspection (PATCH-only)
+
+D7 full-ship Cat. E ratification: Job proto, detach/disown, scopeTag,
+Lobby.connectionTag.  All script-side; zero new public C API symbols.
+0/19/0 to 0/19/1.  Recorded for ledger completeness; NOT a
+freeze-override under §3.
+
+### Escape #19 — v0.10.11-channel-and-isA (PATCH-only)
+
+D6 + isA + D5 Cat. E ratification, plus bundled v0.10.10 carry-overs
+(-MMD -MP auto-deps + test_repl_stop_path UAF fix).  Three new
+urbiscript surface constructs (Channel proto, `<<` infix, isA method)
+plus one policy change (Object atom proto unfrozen) — all script-side,
+no new public C API symbols.  PATCH bump only: 0/19/1 to 0/19/2.
+Recorded for ledger completeness; this is NOT a freeze-override
+under §3.

@@ -1,19 +1,21 @@
-# Milestone: M3
+# Milestone: v0.10.11-channel-and-isA
 # Covers: exception regressions: uninitialized var += in catch; asString exception
 #         in asTopLevelPrintable; 1:1 non-tag colon error; scheduler stuck on
 #         concurrent throw + freeze scenario.
-# blocked: requires isA() guard + tag.freeze() (both not implemented)
+# blocked: Exception structured-throw wiring (defer-v1.x)
 # matrix-row: exceptions-try-catch
 #
 # Reason:
-#   Several cases in this fixture require M4+: 'catch(var e if e.isA(Float))' uses
-#   isA() method dispatch (M4); 'class X { function asString() { 0/0 } }' uses
-#   class definition (M4); the scheduler-stuck regression case uses ',' and 't.freeze'
-#   method (M5).  The uninitialized-var-in-catch pattern (var test; test += 3) and
-#   bare-throw from inside a catch block could partially work at M3 but the fixture
-#   as a whole cannot pass until M4+ is available.
+#   isA() shipped at v0.10.11.  tag.freeze() shipped at v0.10.9 (D1).
+#   Remaining block is Exception structured-throw wiring (defer-v1.x):
+#   `catch(var e if e.isA(Float))` requires typed Exception instances;
+#   the runtime currently throws diagnostic strings, not allocating
+#   Exception proto instances.  The `class X { function asString() { 0/0 } }`
+#   pattern and the scheduler-stuck regression case (concurrent throw +
+#   freeze) depend on structured-throw plumbing connecting OP_THROW to
+#   allocate-and-populate an Exception proto.  Both deferred to v1.x.
 #
-# Original urbiscript (activate at M4 with exception type hierarchy and class definition):
+# Original urbiscript (activate when Exception structured-throw lands):
 # # var test; try { test += 3 } catch { test = 1; test += 3 };
 # # [00000001] 4
 # # echo(test); [00000002] *** 4
