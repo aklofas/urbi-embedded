@@ -3,7 +3,8 @@
 #         watchers, or sleeping strands remain, sched_quiescent returns true
 #         and urbi_step returns URBI_STEP_QUIESCENT.
 #
-# defer-to: T39
+# blocked: T39 chk-runner tunables header not implemented
+# matrix-row: scheduler-quiescent
 #
 # Reason: verifying the QUIESCENT return code from urbi_step requires the
 # ## host: mechanism to call urbi_step and inspect its return value from a

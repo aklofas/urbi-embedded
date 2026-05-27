@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: real-time priority (tag.setPriority(5)) causes high-priority strand to
 #         run without interruption; loop counter stays at 0 relative to origin.
-# defer-to: v1.x (URBI_SCHED_RT real-time scheduler is v1.x scope)
+# deferred: v1.x — URBI_SCHED_RT real-time scheduler is post-v1.0 scope
+# matrix-row: scheduler-rt
 #
 # Reason:
 #   This fixture tests real-time scheduling priorities via tag.setPriority(n),

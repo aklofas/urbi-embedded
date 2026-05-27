@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: implicit tag creation at Lobby scope (t:) auto-creates a UTag; invalid
 #         implicit tags (with arguments, in non-Lobby scope, composite) raise errors.
-# defer-to: M4 (requires implicit tag creation via Lobby scope lookup, t.block() method,
+# blocked: implicit tag creation via Lobby scope lookup not implemented
+# matrix-row: tag-implicit
 #             and Tag.new() method dispatch)
 #
 # Reason:

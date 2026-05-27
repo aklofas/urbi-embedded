@@ -2,7 +2,8 @@
 # Covers: exception regressions: uninitialized var += in catch; asString exception
 #         in asTopLevelPrintable; 1:1 non-tag colon error; scheduler stuck on
 #         concurrent throw + freeze scenario.
-# defer-to: M4 (requires e.isA(Float) method guard, 'at (e?)' reactive watcher, freeze)
+# blocked: requires isA() guard + tag.freeze() (both not implemented)
+# matrix-row: exceptions-try-catch
 #
 # Reason:
 #   Several cases in this fixture require M4+: 'catch(var e if e.isA(Float))' uses

@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: tag.block() called inside a tagged scope; block propagates from
 #         the scope tag to the outer join ('&'); no deadlock.
-# defer-to: M4 (requires tag.block() method dispatch)
+# blocked: tag.block() method not implemented
+# matrix-row: tag-block
 #
 # Reason:
 #   The fixture calls a.block on a tag — tag.block() is an object method that

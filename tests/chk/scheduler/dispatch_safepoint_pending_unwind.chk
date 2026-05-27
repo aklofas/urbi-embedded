@@ -3,7 +3,8 @@
 #         pending_unwind check at safepoint runs urbi_unwind(); the catch
 #         block absorbs the exception; execution continues after the try/catch.
 #
-# defer-to: T39
+# blocked: T39 chk-runner tunables header not implemented
+# matrix-row: scheduler-safepoint
 #
 # Reason: while try/catch/throw are fully wired at M3 (T10) and the safepoint
 # pending_unwind path is implemented, observing that the *safepoint* (not a

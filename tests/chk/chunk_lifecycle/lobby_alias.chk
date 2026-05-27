@@ -2,7 +2,8 @@
 # Covers: Lobby is an alias for the global Realm; bindings in Lobby are visible
 #         globally and vice versa.
 #
-# defer-to: M6
+# blocked: Lobby proto is UPROTO_READONLY; Lobby.x = v raises TypeError — v1.0-rc investigation
+# matrix-row: stdlib-lobby
 #
 # Reason: Lobby is a stdlib concept — a reflective surface that exposes the
 # global Realm as an object. The Lobby binding lands at M6 (stdlib) when the

@@ -4,7 +4,8 @@
 #         maintain that order across all M firings.  Run under all 3 tunable
 #         presets × 100 runs each to assert byte-identical output.
 #
-# defer-to: T59
+# blocked: requires string concat (T46 dropped) + at(e?) body function param
+# matrix-row: reactive-event
 #
 # Reason:
 #   The fixture requires:

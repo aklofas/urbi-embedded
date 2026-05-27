@@ -3,7 +3,8 @@
 #         50 sequential obj.x = i writes; subscriber walk order is byte-stable
 #         across 100x3 preset runs; D-slotchange-2 FIFO sub walk confirmed.
 #
-# defer-to: T69 (Object.new() stdlib) + M5-scratch-frame
+# blocked: at.sync not implemented + string concat (T46 dropped)
+# matrix-row: reactive-slot-change
 #
 # Reason:
 #   Requires Object.new() T69 stdlib binding and inline subscriber dispatch.

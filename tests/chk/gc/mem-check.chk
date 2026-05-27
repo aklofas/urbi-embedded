@@ -2,7 +2,8 @@
 # Covers: System.memCheck() verifies no memory leak for repeated allocation
 #         patterns: job creation (',', '&'), Object.new(), Tag.new(), parser,
 #         string conversion, Lobby creation.
-# defer-to: M6 (requires System.memCheck(), System.status(), System.Platform, and M6 stdlib types)
+# blocked: requires System.memCheck() / System.status() / System.Platform (not implemented)
+# matrix-row: stdlib-system
 #
 # Reason:
 #   System.memCheck() is a test-harness helper that measures VmData growth across

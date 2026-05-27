@@ -3,7 +3,8 @@
 #         inner scope's onleave handler; cleanup ordering is outer-then-inner
 #         (row 7 §6.3 worked example).
 #
-# defer-to: M5
+# deferred: v1.x — requires onleave clause (PARSE-033, deferred-v1.x per matrix)
+# matrix-row: tag-onleave
 #
 # Reason: requires tag.stop() method-call syntax (M4 object model + method
 # dispatch) and onleave clause parse/emit (M5 reactive runtime).  At M3,

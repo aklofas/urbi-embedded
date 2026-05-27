@@ -2,7 +2,8 @@
 # Covers: tag.stop() inside a try/finally block runs the finally clause
 #         before unwinding the tag scope; finally body executes exactly once.
 #
-# defer-to: T29
+# blocked: TAG_STOP does not run finally clause before unwind completes — v1.0-rc bug
+# matrix-row: tag-stop
 #
 # Reason: requires UTag runtime + TAG_STOP absorption in the unwind walker
 # (T29).  Additionally, the interaction between TAG_STOP propagation and

@@ -3,7 +3,8 @@
 #         yields back to the scheduler (soft yield) and is re-enqueued READY
 #         rather than killed; it resumes on the next scheduler turn.
 #
-# defer-to: T39
+# blocked: T39 chk-runner tunables header (## tunables: URBI_STRAND_BUDGET_MAX=N) not implemented
+# matrix-row: scheduler-budget
 #
 # Reason: observing soft-yield behaviour from a chk fixture requires the
 # ## host: tunables header to override URBI_STRAND_BUDGET_MAX to a small value

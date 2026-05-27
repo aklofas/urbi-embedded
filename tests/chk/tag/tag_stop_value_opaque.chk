@@ -3,7 +3,8 @@
 #         to urbiscript; no surface exists to read the in-flight value from
 #         inside an onleave handler or a finally block.
 #
-# defer-to: M5
+# deferred: v1.x — requires onleave clause (PARSE-033, deferred-v1.x per matrix)
+# matrix-row: tag-onleave
 #
 # Reason: requires onleave clause parse/emit (M5 reactive runtime) and
 # tag.stop(value) surface syntax (M4 object model).  At M3, the unwind_value

@@ -4,7 +4,8 @@
 #         fires before tier-1 watcher cascade (i.e., while tag is still ambient).
 #         Two successive tag-scope entries produce EinLEinL in deterministic order.
 #
-# defer-to: T59
+# deferred: v1.x — tag.enter?/tag.leave? events not implemented (T55 not shipped)
+# matrix-row: tag-scope-events
 #
 # Reason:
 #   The fixture requires:

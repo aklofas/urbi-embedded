@@ -1,6 +1,7 @@
 # Milestone: M3
 # Covers: nested '&' and '|' separator combinations; complex join-tree evaluation.
-# defer-to: M5 (chk runner needs urbi_step driver path for '&' separator)
+# blocked: top-level & separator hangs chk driver; needs T39 step-based driver
+# matrix-row: separator-and
 #
 # Reason:
 #   '&' (OP_FORK_JOIN) requires the realm-managed scheduler path.  The chk

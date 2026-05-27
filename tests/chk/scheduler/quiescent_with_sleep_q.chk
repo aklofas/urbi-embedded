@@ -4,7 +4,8 @@
 #         timer fires and strands are moved back to ready, quiescent stays false
 #         until they finish, then becomes true.
 #
-# defer-to: T39
+# blocked: T39 chk-runner tunables header not implemented
+# matrix-row: scheduler-quiescent
 #
 # Reason: observing the quiescence state machine from a chk fixture requires
 # the ## host: mechanism to call sched_quiescent() directly and inspect VM

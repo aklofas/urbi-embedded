@@ -2,7 +2,8 @@
 # Covers: two Realms have isolated bindings; var defined in one realm is not
 #         visible in another.
 #
-# defer-to: T39 (chk runner host-driver extension) + T20 (Strand C API)
+# blocked: T39 chk-runner host-driver/tunables extension not implemented
+# matrix-row: chunk-lifecycle-realm
 #
 # Reason: chk runner currently drives a single REPL session via the standalone
 # urbi binary. There is no host-driver hook to instantiate two Realms with

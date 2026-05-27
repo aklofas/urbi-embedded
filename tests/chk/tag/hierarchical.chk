@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: deep tag hierarchy (a.b.c.k); stopping any ancestor cascades to all
 #         descendants; 'at sync (a.enter?)' reactive enter/leave tracing; freeze.
-# defer-to: M5 (requires deep tag hierarchy, 'at sync' watcher, freeze, tag.stop() method)
+# blocked: at sync watcher not implemented + tag.freeze() not implemented
+# matrix-row: tag-freeze
 #
 # Reason:
 #   The fixture uses a deep tag hierarchy (a.b.c.k) with child-tag slot access

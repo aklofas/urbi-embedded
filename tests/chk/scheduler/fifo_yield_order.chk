@@ -4,7 +4,8 @@
 #         across yield boundaries — row 12 §3.4 single-entry make_runnable
 #         invariant).
 #
-# defer-to: M5 (chk runner needs urbi_step driver path)
+# blocked: chk-runner urbi_step driver path not implemented (T39)
+# matrix-row: scheduler-fifo
 #
 # Reason: verifying cross-strand FIFO ordering requires two concurrent
 # strands.  The chk runner uses the urbi_vm_run REPL path which has no realm;

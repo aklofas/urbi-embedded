@@ -2,7 +2,8 @@
 # Covers: a strand created in DORMANT state is not dispatched until
 #         urbi_strand_start transitions it to READY; after start it runs.
 #
-# defer-to: T39 + T20-promotion
+# blocked: T39 host-driver not implemented
+# matrix-row: scheduler-strand
 #
 # Reason: requires Strand.new urbiscript binding to create a strand in
 # DORMANT state and then start it.  The chk runner is REPL-driven and has

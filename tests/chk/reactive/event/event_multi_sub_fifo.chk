@@ -2,7 +2,8 @@
 # Covers: multiple subscribers on the same event receive emits in registration
 #         FIFO order; D-event-1 rule (spec #3 §10.2); 3 subs on 3 emits.
 #
-# defer-to: T59 (Event.new() stdlib) + M5-scratch-frame
+# blocked: requires string concat (T46 explicitly dropped)
+# matrix-row: reactive-event
 #
 # Reason:
 #   Same blockers as event_emit_async.chk.  The FIFO walk of event->at_watchers_head

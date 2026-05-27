@@ -3,7 +3,8 @@
 #         OP_POP_TAG executes (normal exit and tag.stop() cascades); ordering
 #         relative to tier-1 onleave clause (spec #3 §3.2).
 #
-# defer-to: T55 (tag enter/leave emit hooks) + T59 (Tag.new() stdlib)
+# deferred: v1.x — tag.leave? events not implemented (T55 tag enter/leave emit hooks)
+# matrix-row: tag-scope-events
 #
 # Reason:
 #   Same blockers as tag_enter.chk.  Additionally, the ordering between tier-1

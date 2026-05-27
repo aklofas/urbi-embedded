@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: detach() vs disown() tag-inheritance semantics; detach() inherits tags,
 #         disown() strips all tags; Job.current.tags inspection.
-# defer-to: M4 (requires disown(), detach(), Job.current.tags, and Tag.new() method dispatch)
+# blocked: disown() / detach() / Job.current.tags not implemented
+# matrix-row: separator-detach
 #
 # Reason:
 #   This fixture uses disown() and detach() builtins, Job.current introspection

@@ -2,7 +2,8 @@
 # Covers: a strand that reaches DEAD state is returned to the strand pool;
 #         a subsequent allocation reuses the same slot without new allocation.
 #
-# defer-to: M5 or v1.x
+# deferred: v1.x — dormant strand pool recycle semantics are post-v1.0 scope
+# matrix-row: scheduler-strand
 #
 # Reason: strand pooling (recycle-after-DEAD) is not implemented at M3.
 # The M3 strand C API (T20) allocates strands fresh from the VM allocator

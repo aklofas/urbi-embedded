@@ -3,7 +3,8 @@
 #         replace-on-raise): the new exception wins; the original unwind is
 #         silently suppressed.
 #
-# defer-to: T29
+# deferred: v1.x — onleave clause not implemented (PARSE-033 open; deferred-v1.x per matrix)
+# matrix-row: tag-onleave
 #
 # Reason: the C-level replace-on-raise (C-1) mechanism is fully implemented
 # in run_cleanup_with_replace() at M3 and is covered by the integration test

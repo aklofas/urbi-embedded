@@ -2,7 +2,8 @@
 # Covers: passing NULL Realm to urbi_run_chunk reuses the global default Realm;
 #         consecutive chunks in the same slot see shared bindings.
 #
-# defer-to: T39 (chk runner host-driver extension) + T20 (Strand C API)
+# blocked: T39 chk-runner host-driver/tunables extension not implemented
+# matrix-row: chunk-lifecycle-realm
 #
 # Reason: chk runner uses the standalone urbi binary which manages a single
 # global Realm internally. There is no host hook to call urbi_run_chunk(vm, NULL, ...)

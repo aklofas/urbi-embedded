@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: nonInterruptible mode prevents sleep/wait/barrier/semaphore blocking;
 #         ',' separator in non-interruptible scope raises error; freeze interaction.
-# defer-to: M6 (nonInterruptible keyword + M6 Semaphore/Barrier/Event types are hard dependencies)
+# deferred: v1.x — nonInterruptible keyword not in v1.0 scope
+# matrix-row: separator-noninterruptible
 #
 # Reason:
 #   'nonInterruptible' is a scheduler mode keyword that requires cooperation

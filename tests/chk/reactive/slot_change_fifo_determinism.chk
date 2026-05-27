@@ -5,7 +5,8 @@
 #         maintain that order across all firings.  Run under all 3 tunable
 #         presets × 100 runs to assert byte-identical output.
 #
-# defer-to: T69 (globals exposure)
+# blocked: at.sync not implemented + string concat (T46 dropped)
+# matrix-row: reactive-slot-change
 #
 # Reason:
 #   The fixture requires:

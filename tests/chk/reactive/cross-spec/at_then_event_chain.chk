@@ -4,7 +4,8 @@
 #         Tests that a rising-edge cond watcher can trigger event dispatch
 #         as a downstream effect (spec cross-spec §2.2).
 #
-# defer-to: T59 (Event.new()) + M5-scratch-frame (cond eval + body dispatch)
+# blocked: at(cond) body event chain does not propagate to event subscriber — cross-spec chaining gap
+# matrix-row: reactive-at-cond
 #
 # Reason:
 #   The cond watcher (at x>threshold) requires scratch-frame condition

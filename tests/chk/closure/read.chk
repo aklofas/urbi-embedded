@@ -2,7 +2,8 @@
 # Covers: read closure (adder pattern): inner function captures inc from outer scope;
 #         write closure (counter pattern): inner function mutates captured count;
 #         two-level closure; lobby access inside closure; call.argAt() lazy parameter.
-# defer-to: M4 (requires call.argAt(), Lobby.create(), Lobby.overrideSlot(), multi-lobby
+# dropped: requires call.argAt() / Lobby.create() / CallMessage (permanently dropped); see docs/migration/callmessage-migration.md
+# matrix-row: callmessage
 #             infrastructure, and Channel.topLevel access)
 #
 # Reason:

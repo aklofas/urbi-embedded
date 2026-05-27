@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: Mutex used as Tag via 'm:{ ... }' colon-scope notation; stop exception
 #         during mutex critical section releases the mutex; nested detach inside mutex.
-# defer-to: M6 (requires Mutex stdlib type, tag-scope colon notation on Mutex, and '&' runtime)
+# deferred: v1.x — Mutex stdlib type not in v1.0 scope
+# matrix-row: stdlib-mutex
 #
 # Reason:
 #   The 'm:{ ... }' tag-scope notation on a Mutex requires Mutex to be usable as

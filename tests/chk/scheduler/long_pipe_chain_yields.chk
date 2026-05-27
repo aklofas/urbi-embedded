@@ -5,7 +5,8 @@
 #         other strands can run, then resumes at the next instruction on the
 #         next dispatch turn (row 12 §3.2 budget-exhaustion safepoint).
 #
-# defer-to: M5 (chk runner needs urbi_step driver path)
+# blocked: chk-runner urbi_step driver path not implemented (T39)
+# matrix-row: scheduler-pipe
 #
 # Reason: the chk runner executes under urbi_vm_run which drives the entire REPL
 # input as a single transient strand without going through urbi_step or the

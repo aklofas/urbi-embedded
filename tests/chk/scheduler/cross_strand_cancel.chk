@@ -3,7 +3,8 @@
 #         is currently in WAITING state or mid-execution; the cancelled strand
 #         does not produce further output.
 #
-# defer-to: T31 + T39
+# blocked: T39 host-driver not implemented; T31 Strand.cancel() not implemented
+# matrix-row: scheduler-strand
 #
 # Reason: cross-strand tag cancellation requires urbi_tag_stop's cross-strand
 # deposit path (T31) which is not wired at M3.  At M3, tag.stop() only works

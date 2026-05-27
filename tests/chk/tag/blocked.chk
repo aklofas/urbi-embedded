@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: hierarchical tag stopping — stopping a parent tag t terminates strands
 #         under child t.u; 'at (x == 2)' watcher is silenced after t.stop().
-# defer-to: M4 (requires t.u child-tag slot, t.stop() method dispatch, and 'at' watcher)
+# blocked: tag.block() + at() watcher on tag.u child-slot not implemented
+# matrix-row: tag-block
 #
 # Reason:
 #   The fixture uses 't.u' as a child tag accessed as a slot on t (prototype-OOP

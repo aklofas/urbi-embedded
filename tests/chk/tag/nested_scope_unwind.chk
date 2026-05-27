@@ -4,7 +4,8 @@
 #         first order through nested scopes, executing each onleave body before
 #         continuing outward.
 #
-# defer-to: M5
+# blocked: requires string concat (T46 dropped) + & separator hangs chk driver
+# matrix-row: tag-stop
 #
 # Reason: requires onleave clause parse/emit (M5 reactive runtime).  At M3,
 # the row 7 unwind walker handles TAG_SCOPE absorption (pop-and-continue for

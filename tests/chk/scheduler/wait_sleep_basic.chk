@@ -3,7 +3,8 @@
 #         inserted into the sleep queue (sched_strand_block with
 #         USTRAND_REASON_SLEEP), and resumed after the timer fires.
 #
-# defer-to: T43 + T39
+# blocked: T39 chk-runner clock-tick control not implemented
+# matrix-row: temporal-sleep
 #
 # Reason: sleep() / 100ms time literals are not wired at M3.  T43 adds
 # time-literal lex (100ms, 1s) and the sleep() built-in.  T39 adds the

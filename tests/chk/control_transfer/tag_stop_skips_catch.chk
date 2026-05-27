@@ -2,22 +2,18 @@
 # Covers: TAG_STOP is not intercepted by a try/catch block; the catch clause
 #         is skipped and TAG_STOP continues propagating outward.
 #
-# defer-to: T29
+# Activated: v0.10.7 W7 — Tag.new() + tag.stop() shipped (v0.10.2 W4).
+# Old label: T29
 #
-# Reason: requires UTag runtime (T29) and TAG_STOP absorption in the unwind
-# walker.  The walker already has the correct logic at M3: UCLEANUP_TRY_FRAME
-# only absorbs UEXEC_THROW (not TAG_STOP), so TAG_STOP propagates past catch
-# clauses.  However, writing a meaningful urbiscript test requires tag.stop()
-# to be callable, which needs UTag (T29).
-#
-# When T29 lands, implement this fixture by uncommenting the source below.
-# Expected behaviour: catch block does not run; "skipped" is NOT printed.
-# The stop propagates to the outer tag scope.
-#
-# Urbiscript source (activate at T29):
-#   var t = Tag.new;
-#   var caught = 0;
-#   t: { try { t.stop() } catch (e) { caught = 1 } };
-#   caught
-#   --- expected output ---
-#   [00000001] 0
+# Semantics: the unwind walker absorbs UEXEC_THROW in UCLEANUP_TRY_FRAME but
+# does NOT absorb UEXEC_TAG_STOP; TAG_STOP propagates past catch clauses.
+# `caught` remains 0 confirming catch was not executed.
+
+var t = Tag.new()
+var caught = 0
+t: { try { t.stop() } catch (e) { Realm.caught = 1 } }
+Realm.caught
+[00000000] <Tag>
+[00000000] 0
+[00000000] nil
+[00000001] 0

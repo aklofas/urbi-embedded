@@ -3,7 +3,8 @@
 #         body runs inline before the slot-write statement returns; value
 #         visible to subscriber is the new value just written.
 #
-# defer-to: T69 (Object.new() stdlib) + M5-scratch-frame
+# blocked: at.sync syntax not implemented
+# matrix-row: reactive-slot-change
 #
 # Reason:
 #   Same blockers as slot_change_basic.chk.  The sync (AT_SYNC) vs async (AT)

@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: 'at (trace.enter?)' and 'at (trace.leave?)' reactive watchers fire
 #         on tag entry and exit; works on normal exit, stop, and exception.
-# defer-to: M5 (requires 'at (tag.enter?)' reactive watcher and tag.stop() method dispatch)
+# deferred: v1.x — at(tag.enter?)/at(tag.leave?) events not implemented (T55)
+# matrix-row: tag-scope-events
 #
 # Reason:
 #   'at (trace.enter?)' and 'at (trace.leave?)' are reactive watchers on tag-

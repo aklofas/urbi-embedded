@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: stopping an outer tag terminates nested tag scopes; stopping an inner
 #         tag leaves the outer scope running; echo traces enter/leave ordering.
-# defer-to: M4 (requires tag.stop() method dispatch and ',' separator runtime)
+# blocked: complex concurrent fixture; tag.stop() in parallel `,` strands needs chk step driver
+# matrix-row: tag-stop
 #
 # Reason:
 #   The fixture calls t.stop() and u.stop() as urbiscript method calls on UTag

@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: stopif(cond) body — terminates body no later than its end when
 #         condition becomes true; Event-based and variable-change variants.
-# defer-to: M5 (requires stopif keyword, reactive runtime, Event type, every keyword)
+# deferred: v1.x — stopif keyword not in v1.0 scope
+# matrix-row: tag-stopif
 #
 # Reason:
 #   'stopif' is a reactive construct requiring the full reactive runtime (watcher

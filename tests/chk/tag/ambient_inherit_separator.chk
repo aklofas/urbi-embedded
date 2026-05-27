@@ -3,7 +3,8 @@
 #         (fork-detach) separator; tag.stop() on the ambient tag cascades to
 #         the parallel strand (row 11 §4.3 + T38 separator runtime).
 #
-# defer-to: T38
+# blocked: top-level & separator hangs chk driver (T39) + string concat (T46 dropped)
+# matrix-row: tag-ambient
 #
 # Reason: the `,` separator runtime (OP_FORK_DETACH) is not yet wired at M3;
 # T38 activates that opcode.  Additionally, tag.stop() method-call syntax

@@ -2,7 +2,8 @@
 # Covers: a strand created in DORMANT state has a tag attached before start;
 #         when tag.stop() is called before start, the strand never runs.
 #
-# defer-to: T39 + T29
+# blocked: T39 host-driver not implemented
+# matrix-row: scheduler-strand
 #
 # Reason: requires both Strand.new binding (T20-promotion) and UTag runtime
 # (T29 — UTag + ambient-tag inheritance helpers).  The tag-attach-before-start

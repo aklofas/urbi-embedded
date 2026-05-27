@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: tag.stop() stops a sleeping strand tagged with that tag;
 #         concurrent variants: stop before vs after strand starts sleeping.
-# defer-to: M4 (requires tag.stop() method dispatch and '&' separator runtime)
+# blocked: top-level & separator hangs chk driver (T39)
+# matrix-row: tag-stop
 #
 # Reason:
 #   tag.stop() is called as an object method on a UTag value (e.g., tag.stop()).
