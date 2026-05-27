@@ -1,27 +1,32 @@
-# Milestone: M5
-# Covers: at.sync (obj.x.changed?) — synchronous slot-change subscriber;
+# Milestone: v0.10.12-cat-e-activation
+# Covers: at sync (obj.x.changed?) — synchronous slot-change subscriber;
 #         body runs inline before the slot-write statement returns; value
 #         visible to subscriber is the new value just written.
-#
-# blocked: at.sync syntax not implemented
 # matrix-row: reactive-slot-change
+#
+# Activation history: Cat. E re-audit Cluster #15 verdict A reclassified
+# the original `at.sync` dot-syntax as a fixture-authoring error
+# (urbiscript has no dot-syntax for sync watchers; the canonical form is
+# the `at sync (cond) body` keyword phrase shipped at M5 per §S-watcher-3
+# — see at_sync_no_yield.chk).  Rewritten to keyword form + attempted
+# activation at v0.10.12.
+#
+# blocked: slot-change fires on first slot-install as well as write
+#          (double-fire bug, same as slot_change_basic.chk) — v1.0-rc
+#          investigation.  The `at sync` keyword form is correct per
+#          §S-watcher-3; the remaining blocker is the scripted slot-change
+#          subscriber wiring, not the sync-watcher syntax.
 #
 # Reason:
 #   Same blockers as slot_change_basic.chk.  The sync (AT_SYNC) vs async (AT)
 #   mode distinction for slot-change watchers is documented in spec #4 §5.3 and
 #   tested in test_slot_change_reentrancy.c at the C level.
 #
-# Activate when Object.new() + slot-change scripted subscribe + inline dispatch wired.
-#
-# Urbiscript source (activate at T69 + M5-scratch-frame):
+# Urbiscript source (activate when slot-change double-fire bug resolved):
 #   var obj = Object.new();
-#   var seen = 0;
-#   at.sync (obj.x.changed?) Realm.seen = obj.x;
+#   var Realm.seen = 0;
+#   at sync (obj.x.changed?) Realm.seen = obj.x;
 #   obj.x = 7;
-#   seen
+#   Realm.seen
 #   --- expected output ---
-#   [00000000] nil
-#   [00000001] 0
-#   [00000002] nil
-#   [00000003] 7
-#   [00000004] 7
+#   [00000001] 7

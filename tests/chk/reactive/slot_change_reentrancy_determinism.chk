@@ -1,10 +1,14 @@
-# Milestone: M5
+# Milestone: v0.10.12-cat-e-activation
 # Covers: D-slotchange-3 determinism rule (spec #4 §7): a sync slot-change
 #         handler that triggers a nested slot-change write degrades to async
 #         (deferred ring); the deferred entry is dispatched at the next
 #         safepoint before watcher_eval_dirty, producing deterministic output.
 #
-# blocked: at.sync not implemented + determinism multi-preset chk-runner mode — T39 (audit Cat. A + E)
+# blocked: T39 chk-runner tunables-extension (multi-preset mode) per
+#          design-risks v0.10.7-G — the body uses keyword `at sync`
+#          correctly (not the audit's at.sync dot-syntax false-positive
+#          in the original header; Cat. E re-audit Cluster #15 verdict A
+#          corrected the misattribution).
 # matrix-row: reactive-slot-change
 #
 # Reason:

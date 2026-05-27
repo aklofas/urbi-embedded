@@ -1,9 +1,14 @@
-# Milestone: M5
+# Milestone: v0.10.12-cat-e-activation
 # Covers: determinism rule D-cross-2 — slot-change burst with 2 sync subs;
 #         50 sequential obj.x = i writes; subscriber walk order is byte-stable
 #         across 100x3 preset runs; D-slotchange-2 FIFO sub walk confirmed.
-#
-# blocked: at.sync not implemented (audit Cat. E)
+# blocked: T39 chk-runner tunables-extension (multi-preset mode) per
+#          design-risks v0.10.7-G — the `at sync` keyword form ships
+#          (Cat. E re-audit Cluster #15 verdict A reclassified the
+#          original `at.sync` dot-syntax as a fixture-authoring error;
+#          rewritten to keyword form below), but the 100x3-preset
+#          determinism guarantee additionally requires the chk-runner
+#          tunables-extension that hasn't shipped yet.
 # matrix-row: reactive-slot-change
 #
 # Reason:
@@ -12,19 +17,22 @@
 #   (FIFO walk of obj.x.changed_watchers_head) are tested by
 #   test_slot_change_callsites.c and test_slot_change_reentrancy.c.
 #
-#   When active: 50 writes × 2 subs = 100 subscriber firings → 100-line log;
+#   When active: 50 writes × 2 subs = 100 subscriber firings → 100-char log;
 #   byte-identical across 100 runs under each of the 3 tunable presets.
 #   Verifies D-slotchange-1 (program-order emit) + D-slotchange-2 (FIFO walk).
 #
-# Activate at T69 by replacing the source below with the uncommented version.
+#   When v0.10.7-G ships: replace the source below with the activated
+#   keyword-form variant.  The audit confirmed the C-level deferred-ring
+#   drain + sync subscriber walk are tested by
+#   test_slot_change_callsites.c and test_slot_change_reentrancy.c.
 #
-# Urbiscript source (activate at T69 + M5-scratch-frame):
+# Urbiscript source (activate when v0.10.7-G T39 ships):
 #   var obj = Object.new();
-#   var log = "";
-#   at.sync (obj.x.changed?) Realm.log = Realm.log + "A";
-#   at.sync (obj.x.changed?) Realm.log = Realm.log + "B";
+#   var Realm.log = "";
+#   at sync (obj.x.changed?) Realm.log = Realm.log + "A";
+#   at sync (obj.x.changed?) Realm.log = Realm.log + "B";
 #   var i = 0;
 #   while (i < 50) { obj.x = i; Realm.i = i + 1 };
-#   log
-#   --- expected output ---
-#   [00000001] "ABABAB...AB"   (100 chars: 50 repetitions of "AB")
+#   Realm.log
+#   --- expected output (100 chars: 50 repetitions of "AB") ---
+#   [00000001] "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"

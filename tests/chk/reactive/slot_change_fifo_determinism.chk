@@ -1,11 +1,15 @@
-# Milestone: M5
+# Milestone: v0.10.12-cat-e-activation
 # Covers: D-slotchange-1 (program-order emit) + D-slotchange-2 (FIFO subscriber
 #         walk) determinism rules (spec #4 §7): multiple subscribers on the same
 #         slot-change event receive notification in registration order; M writes
 #         maintain that order across all firings.  Run under all 3 tunable
 #         presets × 100 runs to assert byte-identical output.
 #
-# blocked: at.sync not implemented + determinism multi-preset chk-runner mode — T39 (audit Cat. A + E)
+# blocked: T39 chk-runner tunables-extension (multi-preset mode) per
+#          design-risks v0.10.7-G — the body uses keyword `at` (not the
+#          audit's at.sync dot-syntax false-positive in the original
+#          header; Cat. E re-audit Cluster #15 verdict A corrected the
+#          misattribution).
 # matrix-row: reactive-slot-change
 #
 # Reason:
