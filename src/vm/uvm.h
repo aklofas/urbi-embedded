@@ -616,6 +616,14 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * urbi_populate_realm_globals.  GC reachability via
      * urbi_object_register_gc_roots (object_roots_walker). */
     struct UObject *job_proto;
+    /* v0.10.11 / D6: Channel proto singleton (the Channel class object
+     * baked from channel_overlay.u).  Resolved by
+     * urbi_channel_proto_resolve after the first realm's bake-blob run
+     * in urbi_populate_realm_globals; consumed by
+     * urbi_channel_register_globals at every subsequent realm-create.
+     * NULL until the first realm is populated.  GC reachability via
+     * urbi_object_register_gc_roots (object_roots_walker). */
+    struct UObject *channel_proto;
     /* v0.9.4 Phase 5: every() periodic-spawn primitive.
      * - every_native_closure: the C-native UClosure that script-side `every`
      *   resolves to.  Allocated by urbi_temporal_native_register (called

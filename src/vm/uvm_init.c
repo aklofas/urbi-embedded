@@ -410,6 +410,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->duration_proto          = NULL;  /* M6 Phase 9 T96 */
     vm->lobby_proto             = NULL;  /* v0.9.1 Phase 5 — populated by urbi_lobby_native_register */
     vm->job_proto               = NULL;  /* v0.10.10 D7-A — populated by urbi_job_proto_register */
+    vm->channel_proto           = NULL;  /* v0.10.11 D6 — populated by urbi_channel_proto_resolve */
     vm->every_native_closure    = NULL;  /* v0.9.4 Phase 5 — populated by urbi_temporal_native_register */
     vm->periodics_head          = NULL;  /* v0.9.4 Phase 5 — every() periodic registry head */
     vm->stdlib_booted          = 0U;

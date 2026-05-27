@@ -1,0 +1,19 @@
+# Milestone: v0.10.11-channel-and-isA
+# Covers: cout/cerr/clog are realm globals; '<<' routes through Channel.echo;
+#         cerr.quote is false; channel.enabled gate works.
+# matrix-row: stdlib-cout-shift
+cout.name
+[00000001] "output"
+cerr.name
+[00000002] "error"
+clog.name
+[00000003] "clog"
+var _x = 0; cout << "first"; _x
+[00000004] *** first
+[00000005] 0
+var _x = 0; cerr << "warning"; _x
+[00000006] *** warning
+[00000007] 0
+var _x = 0; clog << "log line"; _x
+[00000008] *** log line
+[00000009] 0

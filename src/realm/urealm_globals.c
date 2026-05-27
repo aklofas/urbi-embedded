@@ -31,6 +31,7 @@
 #include "stdlib/temporal.h"       /* urbi_temporal_native_register_globals — v0.9.4 Phase 5 */
 #include "stdlib/control_native.h" /* urbi_control_native_register_globals — v0.10.10 D7-C */
 #include "stdlib/tag_globals.h"    /* urbi_tag_globals_register_globals — v0.10.10 D7-D */
+#include "stdlib/channel_native.h" /* urbi_channel_proto_resolve, urbi_channel_register_globals — v0.10.11 D6 */
 #ifdef URBI_ENABLE_REPL
 #  include "stdlib/debug_namespace.h" /* urbi_debug_namespace_register_globals — v0.9.1 */
 #endif
@@ -533,6 +534,24 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
     if (vm->stdlib_module != NULL) {
         UValue out;
         int rc = urbi_run_chunk(vm, realm, vm->stdlib_module, &out);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+    }
+
+    /* v0.10.11 / D6: Channel proto + realm-instance bindings.
+     *
+     * Must run AFTER urbi_run_chunk above, because channel_overlay.u
+     * defines the Channel class during the bake-blob run.  The resolve
+     * step caches vm->channel_proto on the first realm call (idempotent
+     * thereafter); the register step clones Channel and binds cout/cerr/
+     * clog as fresh per-realm instances (multi-session safe per P3). */
+    {
+        int rc = urbi_channel_proto_resolve(vm, realm);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+        rc = urbi_channel_register_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }

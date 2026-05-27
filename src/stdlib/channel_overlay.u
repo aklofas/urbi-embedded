@@ -1,0 +1,53 @@
+// channel_overlay.u — v0.10.11 / D6.
+//
+// Channel proto for tagged output streams.  Ports legacy
+// legacy/repos/aldebaran-urbi/share/urbi/channel.u (Gostai 2008-2012)
+// with v0.10.11 adaptations:
+//
+//   - `var this.slot = val` is not supported at v1.0 (parser requires
+//     plain IDENT before DOT in the var-obj-slot form); init uses plain
+//     assignment `this.name = n` (OP_SETSLOT creates an instance-local
+//     slot that shadows the proto default, per topology spec §4.2 row 2).
+//   - `lobby()` accessor becomes `Lobby` (realm-global singleton).
+//   - String has no `.asString` method at v0.10.11 — `echo` passes msg
+//     directly; non-string `msg` raises TypeError at Lobby.echo's C
+//     boundary (see workspace docs/urbi-embedded-design-risks v0.10.11-A
+//     for the v1.x stdlib gap).
+//   - `Channel.Filter` subclass deferred to v1.x (depends on
+//     Container.any / Container.all which need stdlib porting).
+//   - Named-function declarations (`function name(args){}`) not supported
+//     at v1.0; all methods use `var name = function(args){}`.
+//
+// Reference: legacy/repos/aldebaran-urbi/share/urbi/channel.u:24-65.
+
+class Channel {
+    var enabled = true;
+    var quote = true;
+    var name = "";
+
+    // new(n): Class.new idiom — clone proto and call init(n).
+    var new = function(n) {
+        var inst = this.clone();
+        inst.init(n)
+    };
+
+    var init = function(n) {
+        this.name = n;
+        this
+    };
+
+    // echo(msg): route through Lobby.echo with the channel name as tag.
+    var echo = function(msg) {
+        Lobby.echo(msg, this.name, "***")
+    };
+
+    // '<<' (x): legacy shift-write operator.  Returns `this` so chains
+    // like `cout << "a" << "b" << "c"` work left-associatively (per W3's
+    // parser sugar — see src/parse/uparse_expr.c LSHIFT branch).
+    var '<<' = function(x) {
+        if (this.enabled) {
+            Lobby.echo(x, this.name, "***")
+        };
+        this
+    }
+} |

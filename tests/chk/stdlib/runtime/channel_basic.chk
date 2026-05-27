@@ -1,0 +1,11 @@
+# Milestone: v0.10.11-channel-and-isA
+# Covers: Channel.new("foo") creates instance with name "foo"; .enabled
+#         defaults true; .echo routes through Lobby.echo.
+# matrix-row: stdlib-channel
+var c = Channel.new("output"); c.name
+[00000001] "output"
+var c = Channel.new("output"); c.enabled
+[00000002] true
+var c = Channel.new("mylog"); c.echo("hello"); c.name
+[00000003] *** hello
+[00000004] "mylog"
