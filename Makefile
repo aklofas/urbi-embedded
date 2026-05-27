@@ -669,9 +669,8 @@ test-ubsan:
 		test
 
 # test-switch — builds with -DURBI_VM_FORCE_SWITCH=1 to force the portable
-# switch-based VM dispatch path even on GCC/Clang. Keeps both dispatch
-# paths compiling and passing continuously; see
-# docs/superpowers/specs/2026-04-23-urbi-embedded-vm-design.md §2.4.
+# switch-based VM dispatch path even on GCC/Clang.  Keeps both dispatch
+# paths compiling and passing continuously.
 test-switch:
 	$(MAKE) TARGET=host-switch \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_VM_FORCE_SWITCH=1" \
@@ -1553,7 +1552,7 @@ DOCS_LINT_TARGETS := 'docs/**/*.md' README.md CONTRIBUTING.md CHANGELOG.md \
     'examples/**/*.md' 'components/**/*.md' 'tests/qemu/**/*.md' \
     '!**/build/**' '!**/_deps/**'
 
-docs-check: docs-check-tools
+docs-check: docs-check-tools docs-public-scrub
 	markdownlint-cli2 --config .markdownlint.yaml $(DOCS_LINT_TARGETS)
 	@echo "--- link-check ---"
 	@find docs examples components tests/qemu \
@@ -1561,6 +1560,12 @@ docs-check: docs-check-tools
 	    -name '*.md' -type f \
 	    ! -path '*/build/*' ! -path '*/_deps/*' \
 	    -exec markdown-link-check --quiet --config .markdown-link-check.json {} +
+
+# docs-public-scrub — verify no tracked file mentions workspace-private paths,
+# tool-context filenames, or AI-attribution patterns.  Allowed exceptions must
+# carry a `scrub-allow: <reason>` marker on the same line.
+docs-public-scrub:
+	@tests/scripts/check-public-doc-scrub.sh
 
 docs-check-tools:
 	@command -v markdownlint-cli2 >/dev/null 2>&1 || { \
@@ -1587,4 +1592,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins

@@ -7,8 +7,7 @@
 #
 # Targets the ESP32-S3-EYE v2.2: ESP32-S3-WROOM-1 (N8R8 — 8 MB flash,
 # 8 MB octal PSRAM), OV2640 camera on the v2 pinout, ST7789 240x240
-# LCD on SPI2, GPIO 0 BOOT button.  See REVIVAL.md and the v0.7.2-esp32
-# plan T41 for the rationale on each setting.
+# LCD on SPI2, GPIO 0 BOOT button.
 
 # Target SoC.
 CONFIG_IDF_TARGET="esp32s3"

@@ -18,7 +18,8 @@
 #
 # Env:
 #   URBI_ORACLE_ROOT  install prefix (default /tmp/urbi-oracle)
-#   LEGACY_TESTS      legacy `.chk` fixtures (default workspace `legacy/...`)
+#   LEGACY_TESTS      path to aldebaran-urbi tests/2.x directory (required;
+#                     falls back to ./legacy/repos/aldebaran-urbi/tests/2.x)
 #
 # Args (optional): one or more fixture paths relative to LEGACY_TESTS.
 # When omitted, runs the default Wave 3 fixture set.
@@ -30,7 +31,7 @@
 set -euo pipefail
 
 URBI_ORACLE_ROOT="${URBI_ORACLE_ROOT:-/tmp/urbi-oracle}"
-LEGACY_TESTS="${LEGACY_TESTS:-/home/aklofas/Projects/urbi/legacy/repos/aldebaran-urbi/tests/2.x}"
+LEGACY_TESTS="${LEGACY_TESTS:-./legacy/repos/aldebaran-urbi/tests/2.x}"
 OURS="./build/host/urbi"
 
 ORACLE_BIN="$URBI_ORACLE_ROOT/bin/urbi-launch"

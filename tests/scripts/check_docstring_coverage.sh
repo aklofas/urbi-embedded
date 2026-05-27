@@ -14,8 +14,7 @@
 # (typedef R (*F)(...);) do not break the cascade — they typically sit
 # between a docstring and the function decl that uses the type.
 #
-# Wave 6 / Phase 21 closes the docstring coverage gate.  See
-# docs/superpowers/plans/2026-05-08-v0.5.8-cleanup.md §21 and CONTRIBUTING.md.
+# See CONTRIBUTING.md for coverage policy.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
