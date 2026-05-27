@@ -1,15 +1,19 @@
-# Milestone: M3
+# Milestone: v0.10.10-job-introspection
 # Covers: scopeTag with explicit tag label kills ',' strands when function
 #         exits; without scopeTag the comma strand outlives the function call.
-# blocked: scopeTag builtin not implemented
+# blocked: T39 chk driver + OGET dispatch for native closures (v1.x bridge)
 # matrix-row: tag-scopetag
 #
 # Reason:
-#   Same as scope-tag.chk: requires scopeTag builtin (M5) and ',' separator
-#   (M5 chk driver).  This variant additionally verifies the absence-of-scopeTag
-#   case where the detached strand continues past function exit.
+#   scopeTag() shipped v0.10.10 (D7-D). Same blocker as scope-tag.chk:
+#   the fixture uses legacy bare-name `var t = scopeTag;` which requires
+#   the OGET dispatch path to wrap native closures as auto-invoked getters
+#   (defers v1.x; workspace-root design-risks v0.10.10-A). The fixture
+#   also requires `,` separator for the absence-of-scopeTag variant and
+#   multi-second observation — both T39 chk driver. Single-strand cousin
+#   `scope_tag_basic.chk` activates at v0.10.10.
 #
-# Original urbiscript (activate at M5 with scopeTag + M5 chk driver):
+# Original urbiscript (activate when T39 chk driver + native-closure OGET land):
 # # function f() { { var t = scopeTag; t: { sleep(2s); echo("foo") }, echo("bar"); sleep(1s); echo("baz") }; sleep(2s); echo("xyzzy") } | f();
 # # [00000001] *** bar
 # # ... (see legacy/repos/aldebaran-urbi/tests/2.x/scope-tag2.chk)

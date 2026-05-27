@@ -108,6 +108,8 @@
 | `Tag.enter?` / `Tag.leave?` script-side events | partial — C-level shipped v0.10.2 W4; script-side `at(t.enter?)` rejects (HOST_FN-via-closure binding returns closure, not UVAL_EVENT) | tag-events |
 | Tag scope events (enter/leave) | partial | works as tag-stack lifecycle; script API TBD |
 | Ambient-tag inheritance | implemented | — |
+| `scopeTag()` realm-global (call-style) | implemented (v0.10.10 W4) — D7-D ratify; returns innermost TAG_SCOPE.owning_tag on the current strand's cleanup stack; call-style not getter (native-closure getter wrap defers v1.x; see workspace-root design-risks v0.10.10-A); see `tests/chk/tag/scope_tag_basic.chk` | tag-scopetag |
+| `Lobby.connectionTag` slot | implemented (v0.10.10 W4) — D7-E ratify; per-REPL session for REPL contexts; per-realm fallback (`realm->tag`) for embedded host contexts; honors §14.9 S11 commitment; see `tests/chk/tag/connection_tag_basic.chk` | tag-connectiontag |
 
 ### Identifiers + literals
 
@@ -146,6 +148,9 @@
 | Chunk-top `&`/`,` fork | implemented | v0.8.0 loader strand |
 | `closure { }` (legacy) | migration | legacy F11; see [callmessage-migration.md §closure](migration/callmessage-migration.md#closure-keyword-migration) — replace with `function`; upvalue capture works since v0.8.4 |
 | `function () { }` (M6+) | implemented | — |
+| `detach(expr)` lazy-arg builtin | implemented (v0.10.10 W3) — D7-C ratify; spawns the expression as a new strand inheriting parent's ambient tag chain; 1-line overlay wrapper + C-native; see `tests/chk/separator/detach_basic.chk` | separator-detach |
+| `disown(expr)` lazy-arg builtin | implemented (v0.10.10 W3) — D7-C ratify; spawns the expression keeping only the connection tag (`realm->tag`); 1-line overlay wrapper + C-native; see `tests/chk/separator/disown_basic.chk` | separator-detach |
+| `Job` proto (`Job.current()`/`jobs()`/`tags()`/`uid()`/`status()`) | implemented (v0.10.10 W1+W2) — D7-A + D7-B ratify; call-style methods (not auto-invoked getters — wrap-native-closures-as-getters bridge defers v1.x; see workspace-root design-risks v0.10.10-A); Job.jobs enumerates live strands across all realms (DEAD excluded); see `tests/chk/stdlib/runtime/job_{current,jobs}_basic.chk` | scheduler-jobs |
 
 ### Stdlib + reflection
 

@@ -1,16 +1,23 @@
-# Milestone: M3
-# Covers: scopeTag builtin returns the implicit scope tag for the current function
-#         call; used with every() to auto-cancel a loop when function exits.
-# blocked: scopeTag builtin not implemented
+# Milestone: v0.10.10-job-introspection
+# Covers: scopeTag builtin returns the implicit scope tag for the current
+#         function call; used with every() to auto-cancel a loop when
+#         function exits.
+# blocked: T39 chk driver + OGET dispatch for native closures (v1.x bridge)
 # matrix-row: tag-scopetag
 #
 # Reason:
-#   'scopeTag' is a builtin that returns the implicit scope tag for the current
-#   activation record — not implemented at M3.  The fixture also uses 'every(1s)'
-#   reactive looping (M5 reactive runtime) and ',' for concurrent observation
-#   (M5 chk driver).
+#   scopeTag() shipped v0.10.10 (D7-D) as a call-style native (Realm
+#   global). The fixture uses legacy bare-name `var t = scopeTag;` which
+#   requires the OGET dispatch path to wrap native closures as
+#   auto-invoked getters; that bridge defers v1.x (see workspace-root
+#   design-risks v0.10.10-A: vm_dispatch_getter is bytecode-only and
+#   segfaults on native closures because proto=NULL). The fixture also
+#   uses `every(1s)` reactive looping + `,` separator for concurrent
+#   observation over a 3.5s timeline, both requiring the T39 chk driver.
+#   Single-strand cousin tests/chk/tag/scope_tag_basic.chk activates at
+#   v0.10.10 and exercises the scopeTag feature itself with call-style.
 #
-# Original urbiscript (activate at M5 with scopeTag + reactive runtime):
+# Original urbiscript (activate when T39 chk driver + native-closure OGET land):
 # # function f() { var t = scopeTag; t: every(1s) echo("foobar"), sleep(3.5s) }|;
 # # f();
 # # [00000001] *** foobar

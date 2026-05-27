@@ -1,16 +1,15 @@
-# Milestone: M3
+# Milestone: v0.10.10-job-introspection
 # Covers: spawning 100 detached strands via detach(); each increments counter
 #         twice with a 1s sleep in between; final value is 200 after 2s wait.
-# blocked: detach() builtin function not implemented
+# blocked: T39 chk driver only
 # matrix-row: separator-detach
 #
 # Reason:
-#   The fixture uses detach(), a stdlib convenience function that spawns a strand
-#   with no tag inheritance.  detach() is a M4 stdlib function.  The fixture
-#   also relies on wall-clock timing (sleep 1s / sleep 2s) across 100 concurrent
-#   strands — requires urbi_step driver with proper time advancement.
+#   detach() shipped v0.10.10 (D7-C ratify). The fixture requires the
+#   T39 chk driver for wall-clock timing (sleep 1s / sleep 2s) across
+#   100 concurrent strands. Per-feature coverage in detach_basic.chk.
 #
-# Original urbiscript (activate at M4+ with detach() builtin):
+# Original urbiscript (activate when T39 chk driver lands):
 # # var x = 0 | {};
 # # function add2() { x++; sleep(1s); x++ } | {};
 # # for (var i = 0; i < 100; i++) detach(add2());

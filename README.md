@@ -6,11 +6,9 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** v0.10.9-tag-state — SUSPENDED tag-state machinery (D1) + fatal outside-scope `tag.stop()` (D3) ratified. Replaces the v0.10.2 W4 flag-only stubs with real cross-strand `block`/`unblock` and `freeze`/`unfreeze` via a new `USTRAND_SUSPENDED` state and two suspend reasons (`REASON_BLOCK` 0x06 + `REASON_FREEZE` 0x07). `tag.stop()` from outside any active scope is now fatal with the canonical error `!!! tag.stop with no active scope` (was silent-nil pre-v0.10.9). ABI 0/19/0 — first post-freeze MINOR break per `docs/api-stability.md` §3 — 4 new public symbols: `urbi_tag_block(vm, tag, resume_value)`, `urbi_tag_unblock(vm, tag)`, `urbi_tag_freeze(vm, tag)`, `urbi_tag_unfreeze(vm, tag)`, symmetric with the pre-existing `urbi_tag_stop` family. Wire v1.9 / 0x19 unchanged.
+**Status:** v0.10.10-job-introspection — Cat. E ratification arc tag 2 of 4. D7 full-ship: Job proto + `Job.current()`/`jobs()`/`tags()`/`uid()`/`status()` (call-style methods, not auto-invoked getters — wrap-native-closures-as-getters bridge defers v1.x); `detach(expr)` / `disown(expr)` lazy-arg builtins (overlay wrappers + 2 C-natives); `scopeTag()` realm-global; `Lobby.connectionTag` slot. All new surface is script-side — zero new public C API symbols. ABI 0/19/1 (PATCH bump from 0/19/0; 18th use of pre-v1.0 escape clause, not freeze-override under `docs/api-stability.md` §3). wire v1.9 / 0x19 unchanged. Unblocks future stdlib porting of `mutex.u` / `monitoring.u` / `uobject.u`.
 
-D4 (`Tag.begin`/`Tag.end` clone-getter overlay) + W3e newcomers-stay-blocked + W3f valued-block script-side resume-value delivery deferred to follow-up tags. Three new design-risks entries (v0.10.9-A/B/C) filed; D4 ratification target stays at v1.0.
-
-Next milestone: **v0.11.x ROS2 (M9)**. Tagged `v0.10.9-tag-state`.
+Next milestone: **v0.10.11-channel-and-isA** (D6 full Channel + `isA()` + D5 unfreeze Object), then **v0.10.12-cat-e-activation**, then **v0.11.x ROS2 (M9)**. Tagged `v0.10.10-job-introspection`.
 
 ## Design goals
 

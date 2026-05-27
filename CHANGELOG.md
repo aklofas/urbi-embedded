@@ -1,5 +1,127 @@
 # Changelog
 
+## v0.10.10-job-introspection — 2026-05-27
+
+Second tag of the Cat. E ratification arc. D7 full-ship: Job proto
+introspection + detach/disown builtins + scopeTag / connectionTag slot.
+PATCH bump only — all new surface is script-side (Job.current,
+detach, disown, scopeTag, Lobby.connectionTag).  No new public C API
+symbols.  ABI 0/19/0 → 0/19/1; wire format unchanged at v1.9 / 0x19.
+
+### Added
+
+- **Script-side `Job` proto** with five **call-style** methods (NOT
+  auto-invoked getters): `Job.current()` (current running strand
+  wrapped as Job), `Job.jobs()` (`List` of `Job`s — all live strands across
+  all realms, DEAD excluded), `Job.tags()` (`List` of `Tag`s — the strand's
+  ambient TAG_SCOPE chain), `Job.uid()` (strand uid as int),
+  `Job.status()` (one of "ready"/"running"/"waiting"/"suspended"/
+  "dead"). Per legacy `share/urbi/system.u:74-75` and
+  `share/urbi/job.u`. Unblocks future stdlib porting of `mutex.u` /
+  `monitoring.u` / `uobject.u`. **Why call-style and not getter-style:**
+  `vm_dispatch_getter` (the OGET path) is bytecode-only and segfaults
+  on native closures (proto=NULL); wrap-native-closures-as-getters is
+  a v1.x bridge issue (see workspace-root design-risks
+  `v0.10.10-A`).
+- **`detach(expr)` / `disown(expr)`** lazy-arg builtins. Both spawn
+  the expression as a new strand; detach inherits the parent's
+  ambient tag chain, disown keeps only the connection tag
+  (`realm->tag`). Implementation: 1-line overlay wrappers + 2
+  C-natives. Per REVIVAL §3.7 + legacy `share/urbi/control.u:23-31`.
+- **`scopeTag()`** realm-global call-style returning the innermost
+  TAG_SCOPE.owning_tag on the current strand's cleanup stack. Per
+  REVIVAL §3.8 (Go-defer / C++-RAII analog).
+- **`Lobby.connectionTag`** slot pointing at the session's realm-root
+  tag (`realm->tag`). Per-REPL session for REPL contexts; per-realm
+  fallback for embedded host contexts. Honors §14.9 S11 commitment.
+
+### Internal
+
+- New file-static C helper `strand_unlink_member_entry` extracted
+  from `strand_unlink_from_tags` to support disown's single-entry
+  cleanup-chain drops.
+- New per-VM singleton `vm->job_proto`.
+- New realm-globals: "Job" (15-element-cohort readonly proto),
+  "scopeTag" (native closure), "__detach_strand" / "__disown_strand"
+  (private natives — bound under `__` prefix because the public
+  surface is the `.u` overlay wrappers).
+- `src/emit/uemit_funcstate.c`: known-lazy pre-seed table extended
+  with `detach` and `disown` at top-level function open, ensuring
+  cross-compilation-unit calls get lazy-arg wrapping (W3 discovery —
+  parser couldn't pre-resolve callee signature across overlays).
+
+### Closed audit findings
+
+- Cat. E re-audit D7 (cluster #14 — Job introspection + detach/disown
+and scopeTag/connectionTag). All 5 ratified sub-decisions ship:
+  Job.current, Job.jobs (full-ship variant; the audit's "lean"
+  variant would have deferred Job.jobs to v1.x), detach, disown,
+  scopeTag, connectionTag slot.
+
+### Tests
+
+- **6 new chk fixtures + 4 new unit-test files** activated. All
+  pass under both ASan + UBSan sweeps.  281 chk fixtures × 2 sanitizers
+  = 562 sanitizer runs clean; 1984 → 1994 unit cases.
+  - `tests/chk/stdlib/runtime/job_current_basic.chk` (W1) — Job
+    proto end-to-end.
+  - `tests/chk/stdlib/runtime/job_jobs_basic.chk` (W2) — Job.jobs
+    enumeration.
+  - `tests/chk/separator/detach_basic.chk` (W3) — detach lazy-arg
+plus tag inheritance.
+  - `tests/chk/separator/disown_basic.chk` (W3) — disown
+    tag-strip-to-connection-tag.
+  - `tests/chk/tag/scope_tag_basic.chk` (W4) — scopeTag returns
+    innermost TAG_SCOPE.
+  - `tests/chk/tag/connection_tag_basic.chk` (W4) — Lobby.connectionTag
+    points at realm->tag.
+
+### Deviations from plan
+
+- W1-W4 implementations chose call-style over auto-invoked getter
+  style (see "Added" above). Plan first-draft assumed getter style;
+  R1 surfaced the segfault and the call-style migration was applied
+  uniformly. Plan amended in-flight.
+- W3 found parser limitation: assignment is statement-only in v1.0
+  (not an expression). W3 .chk fixtures use `Realm.x = v` for
+  observable side-effects (member-set IS a postfix expression).
+- W4 found `urbi_shape_transition_add_slot` doesn't propagate
+  `props_table` — each child shape starts with `props_table=NULL`.
+  Means OGET/OSET properties installed BEFORE a subsequent
+  `set_local_slot` are silently dropped on the next shape
+  transition. New workspace-root design-risk filed
+  (`v0.10.10-D` shape props_table propagation).
+
+### Blocked fixtures (header-only narrowing — still blocked on T39 chk driver)
+
+7 fixtures' headers updated to point at the remaining blocker:
+
+- `tag/scope-tag.chk` — T39 chk driver + OGET dispatch for native
+  closures (v1.x bridge).
+- `tag/scope-tag2.chk` — T39 chk driver + OGET dispatch for native
+  closures (v1.x bridge).
+- `tag/connection.chk` — T39 chk driver only.
+- `separator/disown.chk` — T39 chk driver only.
+- `separator/detach-many.chk` — T39 chk driver only.
+- `separator/detach-error.chk` — T39 chk driver + script-side
+  error-format.
+- `scheduler/jobs-destruction.chk` — T39 chk driver only.
+
+### Cat. E arc status
+
+Tag 2 of 4 shipped. Remaining: **v0.10.11-channel-and-isA** (D6
+full Channel + isA + D5 unfreeze Object), **v0.10.12-cat-e-activation**
+(D2 cross-spec at→event chain + at.sync rewrites + Cat. E doc-sweep).
+Then v0.11.x ROS2 (M9).
+
+### Changes
+
+- ABI 0/19/0 → 0/19/1 (18th use of pre-v1.0 escape clause; PATCH-only,
+  not freeze-override under `docs/api-stability.md` §3).
+- Wire format unchanged at v1.9 / 0x19.
+- `components/esp32-idf/idf_component.yml` — version `0.10.9-tag-state`
+  → `0.10.10-job-introspection`.
+
 ## v0.10.9-tag-state — 2026-05-27
 
 **SUSPENDED tag-state machinery (D1) + fatal outside-scope `tag.stop()`

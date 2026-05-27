@@ -1,16 +1,17 @@
-# Milestone: M3
+# Milestone: v0.10.10-job-introspection
 # Covers: detach() vs disown() tag-inheritance semantics; detach() inherits tags,
 #         disown() strips all tags; Job.current.tags inspection.
-# blocked: disown() / detach() / Job.current.tags not implemented
+# blocked: T39 chk driver only
 # matrix-row: separator-detach
 #
 # Reason:
-#   This fixture uses disown() and detach() builtins, Job.current introspection
-#   (Job.current.tags.size), and Tag.new() method dispatch — all scheduled for M4.
-#   The tag-inheritance distinction between the two is a scheduler-level feature
-#   that depends on the strand's ambient tag list at fork time.
+#   detach() + disown() + Job.current() shipped v0.10.10 (D7-C + D7-A
+#   ratifications). The fixture requires the T39 chk driver for the
+#   tag-inheritance distinction across `Tag.new():` block-tagged scope +
+#   multi-step `sleep(10ms)` observation. Per-feature coverage in
+#   tests/chk/separator/detach_basic.chk + disown_basic.chk.
 #
-# Original urbiscript (activate at M4 with full tag + job introspection):
+# Original urbiscript (activate when T39 chk driver lands):
 # # Tag.new(): { var ntags = Job.current.tags.size | {};
 # #   assert(ntags >= 1);
 # #   detach(echo(Job.current.tags.size - ntags)); sleep(10ms);

@@ -1,16 +1,17 @@
-# Milestone: M3
+# Milestone: v0.10.10-job-introspection
 # Covers: connection tag is always present in Job.current.tags; tagged blocks
 #         add their tag to the ambient tag list visible via Job.current.tags.
-# blocked: Job.current introspection + connectionTag builtin not implemented
+# blocked: T39 chk driver only
 # matrix-row: scheduler-jobs
 #
 # Reason:
-#   The fixture uses Job.current.tags — job introspection that requires M4
-#   stdlib (Job type with current/tags accessors).  connectionTag is a lobby-
-#   level builtin also tied to M4 connection infrastructure.  '&' separator
-#   is M5 chk driver.  assert() with expression blocks requires M4 stdlib.
+#   Job.current() + Job.tags() + Lobby.connectionTag all shipped v0.10.10
+#   (D7-A / D7-E ratifications). The fixture relies on `&` separator + the
+#   T39 chk driver's strand-tag scope-stack observation across multi-step
+#   timelines. Per-feature regression coverage already lives in
+#   tests/chk/stdlib/runtime/job_current_basic.chk + connection_tag_basic.chk.
 #
-# Original urbiscript (activate at M4 with Job introspection):
+# Original urbiscript (activate when T39 chk driver lands):
 # # assert(Job.current.tags == [connectionTag]);
 # # var t = Tag.new() & assert({t: Job.current.tags} == [connectionTag, t]);
 # # ...

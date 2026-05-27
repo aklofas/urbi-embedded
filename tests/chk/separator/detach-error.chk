@@ -1,16 +1,17 @@
-# Milestone: M3
+# Milestone: v0.10.10-job-introspection
 # Covers: errors in detached code are displayed; parent block is stopped on
 #         error in sequential code; detach() call propagation semantics.
-# blocked: detach() builtin function not implemented
+# blocked: T39 chk driver + script-side error-format
 # matrix-row: separator-detach
 #
 # Reason:
-#   The fixture calls the detach() builtin function, which is a stdlib helper
-#   scheduled for M4.  It also uses ',' and '&' separators which require the
-#   urbi_step driver (M5 chk path).  Error propagation across concurrent
-#   strands depends on the full scheduler context.
+#   detach() shipped v0.10.10 (D7-C ratify). The fixture still needs:
+#   (1) T39 chk driver for `,`/`&` separators + error-strand interleaving;
+#   (2) the script-side error-format `!!! input.u:@.1: lookup failed: f`
+#   (canonical legacy diagnostic; v1.0 script-side error message remains
+#   to be aligned). Per-feature coverage in detach_basic.chk.
 #
-# Original urbiscript (activate at M4+ with detach() builtin):
+# Original urbiscript (activate when T39 chk driver + error-format land):
 # # f;
 # # [00000001:error] !!! input.u:@.1: lookup failed: f
 # # f,

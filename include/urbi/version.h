@@ -187,6 +187,13 @@
  *      16th and FINAL use of pre-v1.0 escape clause as the symbolic
  *      ABI freeze pin; further pre-v1.0 changes follow the post-freeze
  *      policy at docs/api-stability.md §3.  (0/17/0 → 0/18/0)
+ *  18. v0.10.10-job-introspection — D7 full-ship Cat. E ratification:
+ *      Job proto + Job.current/jobs/tags/uid/status (call-style methods,
+ *      not auto-invoked getters — wrap-native-closures-as-getters bridge
+ *      defers v1.x; see workspace-root design-risks v0.10.10-A).
+ *      detach/disown lazy-arg overlay wrappers + 2 C-natives; scopeTag
+ *      realm global; Lobby.connectionTag slot.  All script-side surface —
+ *      NO new public C API symbols.  PATCH bump only.  (0/19/0 → 0/19/1)
  *  17. v0.10.9-tag-state — MINOR bump for new public C API surface:
  *      urbi_tag_block(vm, tag, resume_value), urbi_tag_unblock(vm, tag),
  *      urbi_tag_freeze(vm, tag), urbi_tag_unfreeze(vm, tag) — 4 new
@@ -219,7 +226,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  19
-#define URBI_API_VERSION_PATCH  0
+#define URBI_API_VERSION_PATCH  1
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -238,7 +245,7 @@ extern "C" {
  * Failing to bump the static_assert breaks the build, which is the point —
  * deliberate intent at every change, not silent ABI drift.
  *
- * Pin target: v0.10.9-tag-state ships at 0/19/0.
+ * Pin target: v0.10.10-job-introspection ships at 0/19/1.
  *
  * The pin landed in commit `bdad57c` (W2 of v0.10.6) at 0/17/0; bumped to
  * 0/18/0 at v0.10.6 wave wrap-up to capture the W4 UReplConfig.rate_limit_per_second
@@ -251,11 +258,15 @@ extern "C" {
  * 4 new public C API symbols (urbi_tag_block/_unblock/_freeze/_unfreeze)
  * backing the D1 SUSPENDED-machinery ratification.  First post-freeze
  * MINOR break per docs/api-stability.md §3; supersedes v0.10.6's
- * aspirational "16th and FINAL" framing.
+ * aspirational "16th and FINAL" framing.  Bumped to 0/19/1 at
+ * v0.10.10-job-introspection — PATCH-only, D7 full-ship Cat. E
+ * ratification.  All new surface (Job proto, detach/disown,
+ * scopeTag, connectionTag) is script-side; zero new public C API
+ * symbols.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 19
-            && URBI_API_VERSION_PATCH == 0,
+            && URBI_API_VERSION_PATCH == 1,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

@@ -1,16 +1,16 @@
-# Milestone: M3
+# Milestone: v0.10.10-job-introspection
 # Covers: no strand leak after a block containing '&'-joined strands; Job.jobs
 #         count returns to baseline after completion.
-# blocked: Job.jobs introspection not implemented
+# blocked: T39 chk driver only
 # matrix-row: scheduler-jobs
 #
 # Reason:
-#   The fixture uses Job.jobs.size for strand-count introspection — a M4 stdlib
-#   feature.  It also uses '&' inside a block repeated 10 times via 'for' — '&'
-#   requires the M5 chk driver.  Job lifetime tracking at the urbiscript level
-#   depends on the complete lifecycle machinery including job table management.
+#   Job.jobs() shipped v0.10.10 (D7-B ratify; full-ship variant). The
+#   fixture requires the T39 chk driver for `&` inside a block repeated
+#   10 times via `for` + multi-strand lifecycle observation. Per-feature
+#   coverage in tests/chk/stdlib/runtime/job_jobs_basic.chk.
 #
-# Original urbiscript (activate at M4 with Job introspection and M5 chk driver):
+# Original urbiscript (activate when T39 chk driver lands):
 # # var njobs = Job.jobs.size|;
 # # { for(var i: 10) {1&2&3}, };
 # # assert(njobs == Job.jobs.size);

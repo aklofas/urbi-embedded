@@ -1,19 +1,19 @@
 # C API stability policy
 
-> Status: ABI pin at v0.10.9-tag-state (0/19/0) — MINOR bump from
-> v0.10.8-string-concat (0/18/2) for 4 new public symbols
-> (`urbi_tag_block`, `urbi_tag_unblock`, `urbi_tag_freeze`,
-> `urbi_tag_unfreeze`) backing the D1 SUSPENDED-machinery ratification.
-> 17th use of pre-v1.0 escape clause and first post-freeze MINOR
-> break per §3.  Supersedes v0.10.6's aspirational "16th and FINAL"
-> framing — the freeze pin is a forcing function (deliberate intent at
-> every bump), not a hard cap.
-> Any further change after this tag must follow §3.
+> Status: ABI pin at v0.10.10-job-introspection (0/19/1) — PATCH bump
+> from v0.10.9-tag-state (0/19/0).  18th use of pre-v1.0 escape clause.
+> D7 full-ship Cat. E ratification (Job proto, detach/disown,
+> scopeTag, connectionTag) — all script-side; zero new public C API
+> symbols.  PATCH-only, not freeze-override under §3 (the ledger
+> numbers every bump; only MINOR/MAJOR bumps require §3's freeze-
+> override review).  The freeze pin is a forcing function (deliberate
+> intent at every bump), not a hard cap.  Any further MINOR/MAJOR
+> change after this tag must follow §3.
 
 ## 1. The freeze pin
 
 `include/urbi/version.h` contains a `_Static_assert` pinning the public
-ABI to `0/19/0`.  Any change to the public C API after v0.10.6-stabilization
+ABI to `0/19/1`.  Any change to the public C API after v0.10.6-stabilization
 either bumps the macros AND the assert in lockstep (deliberate intent), or
 fails to compile.
 
