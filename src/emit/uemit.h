@@ -102,11 +102,19 @@ struct UFuncState;
 #define UEMIT_LOOP_CTX_MAX       8   /* max for/while/switch nesting depth */
 #define UEMIT_LOOP_PATCH_MAX    16   /* max break/continue sites per loop */
 
+/* Frame kind: distinguishes real loops (accept break+continue) from
+ * switch bodies (accept break only; continue walks past to an outer loop). */
+typedef enum {
+    ULOOP_FRAME_LOOP   = 0,  /* while/for-each — accepts both break and continue */
+    ULOOP_FRAME_SWITCH = 1,  /* switch — accepts break only; continue walks past */
+} ULoopFrameKind;
+
 typedef struct {
     int break_pcs[UEMIT_LOOP_PATCH_MAX];      /* OP_JMP PCs to patch to exit */
     int break_count;
     int continue_pcs[UEMIT_LOOP_PATCH_MAX];   /* OP_JMP PCs to patch to cond */
     int continue_count;
+    ULoopFrameKind kind;                       /* LOOP or SWITCH */
 } ULoopCtx;
 /* === end W1/v0.10.5 === */
 

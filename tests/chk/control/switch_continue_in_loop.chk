@@ -1,0 +1,12 @@
+# Milestone: v0.10.7-audit-followup W1
+# Covers: audit-2 #1 — `continue` inside a switch that is itself inside a loop
+#         targets the enclosing loop (not the switch).  i==2 skips the add,
+#         so seen ends up with [1, 3].
+
+# --- continue in switch inside loop: skips add for i==2 ---
+var i = 0; var seen = []; while (i < 3) { i = i + 1; switch (i) { case 2: continue; }; seen.add(i); }; seen.length()
+[00000000] 2
+var i2 = 0; var seen2 = []; while (i2 < 3) { i2 = i2 + 1; switch (i2) { case 2: continue; }; seen2.add(i2); }; seen2.get(0)
+[00000001] 1
+var i3 = 0; var seen3 = []; while (i3 < 3) { i3 = i3 + 1; switch (i3) { case 2: continue; }; seen3.add(i3); }; seen3.get(1)
+[00000002] 3

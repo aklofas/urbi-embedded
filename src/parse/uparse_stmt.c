@@ -1070,10 +1070,10 @@ UAstNode *parse_for(UParser *p) {
 
 /* parse_break — `break` (statement).
  * Ruling: implemented (Wave 6 W1, legacy F2).
- * No payload beyond position.  Error if not inside a for/while. */
+ * No payload beyond position.  Error if not inside a for/while/switch. */
 UAstNode *parse_break(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_BREAK */
-    if (p->loop_depth == 0) {
+    if (p->loop_depth == 0 && p->switch_depth == 0) {
         return make_error(p, PARSE_BREAK_OUTSIDE_LOOP,
                           kErrorMessages[PARSE_BREAK_OUTSIDE_LOOP],
                           kw.line, kw.col);
@@ -1150,8 +1150,10 @@ UAstNode *parse_switch(UParser *p) {
     if (!case_vals || !case_bodies) return (UAstNode *)&uparser_oom_sentinel;
     int case_count = 0;
 
-    /* switch body: break inside a case must exit the switch */
-    p->loop_depth++;
+    /* switch body: break inside a case must exit the switch.
+     * Use switch_depth (not loop_depth) so `continue` inside a switch
+     * still requires an enclosing real loop.  See parse_continue. */
+    p->switch_depth++;
 
     while (peek(p).type != TOK_RBRACE && peek(p).type != TOK_EOF) {
         /* Skip statement separators between cases. */
@@ -1162,7 +1164,7 @@ UAstNode *parse_switch(UParser *p) {
 
         UToken case_tok = peek(p);
         if (case_tok.type != TOK_KW_CASE) {
-            p->loop_depth--;
+            p->switch_depth--;
             return make_error(p, PARSE_SWITCH_EXPECTED_CASE,
                               kErrorMessages[PARSE_SWITCH_EXPECTED_CASE],
                               case_tok.line, case_tok.col);
@@ -1171,12 +1173,12 @@ UAstNode *parse_switch(UParser *p) {
 
         /* Case value expression (not a separator tier — parse as atom/prefix). */
         UAstNode *val = parse_expression(p, 0);
-        if (!val) { p->loop_depth--; return (UAstNode *)&uparser_oom_sentinel; }
-        if (val->kind == AST_ERROR) { p->loop_depth--; return val; }
+        if (!val) { p->switch_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+        if (val->kind == AST_ERROR) { p->switch_depth--; return val; }
 
         UToken colon = peek(p);
         if (colon.type != TOK_COLON) {
-            p->loop_depth--;
+            p->switch_depth--;
             return make_error(p, PARSE_SWITCH_EXPECTED_COLON,
                               kErrorMessages[PARSE_SWITCH_EXPECTED_COLON],
                               colon.line, colon.col);
@@ -1188,7 +1190,7 @@ UAstNode *parse_switch(UParser *p) {
         int stmt_cap = 4;
         UAstNode **stmts = (UAstNode **)uarena_alloc(p->arena,
                                                        (size_t)stmt_cap * sizeof(UAstNode *));
-        if (!stmts) { p->loop_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+        if (!stmts) { p->switch_depth--; return (UAstNode *)&uparser_oom_sentinel; }
         int stmt_count = 0;
 
         while (peek(p).type != TOK_KW_CASE &&
@@ -1199,12 +1201,12 @@ UAstNode *parse_switch(UParser *p) {
              * boundaries — parse_outer_tier would eat the ';' and then try to
              * parse 'case' as an expression, yielding "expected expression". */
             UAstNode *s = parse_statement_or_expr(p);
-            if (!s) { p->loop_depth--; return (UAstNode *)&uparser_oom_sentinel; }
-            if (s->kind == AST_ERROR) { p->loop_depth--; return s; }
+            if (!s) { p->switch_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+            if (s->kind == AST_ERROR) { p->switch_depth--; return s; }
 
             if (stmt_count == stmt_cap) {
                 if (!arena_grow_node_array(p, &stmts, &stmt_cap, stmt_count)) {
-                    p->loop_depth--;
+                    p->switch_depth--;
                     return (UAstNode *)&uparser_oom_sentinel;
                 }
             }
@@ -1217,7 +1219,7 @@ UAstNode *parse_switch(UParser *p) {
         }
 
         UAstNode *body = make_node(p, AST_BLOCK, case_tok.line, case_tok.col);
-        if (!body) { p->loop_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+        if (!body) { p->switch_depth--; return (UAstNode *)&uparser_oom_sentinel; }
         body->u.block.stmts = stmts;
         body->u.block.count = stmt_count;
 
@@ -1225,7 +1227,7 @@ UAstNode *parse_switch(UParser *p) {
         if (case_count == cap) {
             if (!arena_grow_node_array(p, &case_vals,   &cap, case_count) ||
                 !arena_grow_node_array(p, &case_bodies, &cap, case_count)) {
-                p->loop_depth--;
+                p->switch_depth--;
                 return (UAstNode *)&uparser_oom_sentinel;
             }
         }
@@ -1234,7 +1236,7 @@ UAstNode *parse_switch(UParser *p) {
         case_count++;
     }
 
-    p->loop_depth--;
+    p->switch_depth--;
 
     UToken rb = peek(p);
     if (rb.type != TOK_RBRACE) {

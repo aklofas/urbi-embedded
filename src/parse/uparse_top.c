@@ -27,6 +27,8 @@ void uparse_init(UParser *p, ULexer *lex, UArena *arena) {
     p->have_peek2 = false;
     p->at_event_cond = false;
     p->class_body_depth = 0;
+    p->loop_depth   = 0;
+    p->switch_depth = 0;
 
     /* v0.9.1 compile-budget guard — uninstalled by default. */
     p->budget          = NULL;
