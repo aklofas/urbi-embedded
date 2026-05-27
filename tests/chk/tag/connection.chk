@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: connection tag is always present in Job.current.tags; tagged blocks
 #         add their tag to the ambient tag list visible via Job.current.tags.
-# defer-to: M4 (requires Job.current introspection, connectionTag builtin, and '&' runtime)
+# blocked: Job.current introspection + connectionTag builtin not implemented
+# matrix-row: scheduler-jobs
 #
 # Reason:
 #   The fixture uses Job.current.tags — job introspection that requires M4

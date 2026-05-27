@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: tag.stop(42) injects a return value into all sleeping strands under
 #         that tag; echo of the stopped block shows the injected value.
-# defer-to: M4 (requires tag.stop(val) method dispatch and ',' separator runtime)
+# blocked: complex concurrent `,` fixture; tag.stop(val) needs parallel chk step driver
+# matrix-row: tag-stop
 #
 # Reason:
 #   tag.stop(42) is called as an urbiscript method on a UTag value — M4 object-

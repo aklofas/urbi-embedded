@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: System.cycle monotonically increases across sequential statements (';');
 #         '|' separator executes within the same cycle; compound expressions.
-# defer-to: M4 (requires System.cycle counter via 'import System.*' stdlib)
+# blocked: System.cycle counter not implemented
+# matrix-row: stdlib-system
 #
 # Reason:
 #   The fixture uses 'System.cycle' — a scheduler cycle counter exposed via

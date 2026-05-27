@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: tags[n].block(result) — blocks the strand under that tag with a
 #         return value injected on unblock; used to implement parallel memoized Fibonacci.
-# defer-to: M4 (requires tag.block(val) method dispatch, detach() builtin, List/index access)
+# blocked: tag.block(val) not implemented
+# matrix-row: tag-block
 #
 # Reason:
 #   The fixture uses tags[n].block(v) — calling block() with a return value on

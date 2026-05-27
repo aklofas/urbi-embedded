@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: errors in detached code are displayed; parent block is stopped on
 #         error in sequential code; detach() call propagation semantics.
-# defer-to: M4 (requires detach() builtin function and ',' / '&' separator runtime)
+# blocked: detach() builtin function not implemented
+# matrix-row: separator-detach
 #
 # Reason:
 #   The fixture calls the detach() builtin function, which is a stdlib helper

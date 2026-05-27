@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: mytag.begin: / mytag.end: scoped hooks — body executes with begin and
 #         end callbacks firing on entry and exit; tag.stop() interrupts end-tagged strand.
-# defer-to: M4 (requires mytag.begin: / mytag.end: notation and tag.stop() method dispatch)
+# blocked: mytag.begin: / mytag.end: notation not implemented
+# matrix-row: tag-begin-end
 #
 # Reason:
 #   mytag.begin: and mytag.end: are method-chained tag scope variants that require

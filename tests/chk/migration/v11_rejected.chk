@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: loader rejects v1.1 (M2) bytecode modules at v1.2 runtime
 #
-# defer-to: T44
+# blocked: T44 chk-runner binary-blob injection not implemented; C-level coverage via test_module.c
+# matrix-row: wire-format
 #
 # Reason: the chk runner (tests/integration/run_chk.sh) feeds .u source text
 # into the REPL.  There is no mechanism to inject a pre-baked binary blob and

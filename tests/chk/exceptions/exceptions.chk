@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: Exception.new("exc") constructor; throw/catch with isA() guard; re-throw;
 #         bare throw; nested try; finally-before-throw; Exception display.
-# defer-to: M4 (requires Exception type hierarchy, e.isA() method dispatch, Exception.Constness)
+# blocked: requires isA() method on exception values (not implemented) + Exception type hierarchy
+# matrix-row: exceptions-try-catch
 #
 # Reason:
 #   The fixture uses 'Exception.new("exc")' — a constructor call on the Exception

@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: scopeTag builtin returns the implicit scope tag for the current function
 #         call; used with every() to auto-cancel a loop when function exits.
-# defer-to: M5 (requires scopeTag builtin, every keyword, and ',' separator runtime)
+# blocked: scopeTag builtin not implemented
+# matrix-row: tag-scopetag
 #
 # Reason:
 #   'scopeTag' is a builtin that returns the implicit scope tag for the current

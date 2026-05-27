@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: assertion error regression in Semaphore caused by '|' implementation
 #         bug; s.release(), s.acquire() across pipe separator must not assert.
-# defer-to: M6 (requires Semaphore stdlib type)
+# deferred: v1.x — Semaphore stdlib type not in v1.0 scope
+# matrix-row: stdlib-semaphore
 #
 # Reason:
 #   This is a Semaphore regression test — Semaphore is a stdlib type scheduled

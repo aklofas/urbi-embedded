@@ -4,7 +4,8 @@
 #         finally bodies and popping TAG_SCOPE entries in order (row 12 §5.3
 #         — safepoint delivery of pending UEXEC_TAG_STOP unwind).
 #
-# defer-to: M4 (requires Tag.stop() method syntax)
+# blocked: requires string concat (T46 dropped); log = log + "a" pattern blocked
+# matrix-row: tag-stop
 #
 # Reason: verifying tag.stop() delivered at an internal pipe safepoint requires
 # calling t.stop() from within the tag scope body.  Method call syntax

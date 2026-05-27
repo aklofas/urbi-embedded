@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: no strand leak after a block containing '&'-joined strands; Job.jobs
 #         count returns to baseline after completion.
-# defer-to: M4 (requires Job.jobs introspection and '&' separator runtime)
+# blocked: Job.jobs introspection not implemented
+# matrix-row: scheduler-jobs
 #
 # Reason:
 #   The fixture uses Job.jobs.size for strand-count introspection — a M4 stdlib

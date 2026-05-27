@@ -2,7 +2,8 @@
 # Covers: onleave handler runs when the tagged block exits normally
 #         (no stop/throw); side-effect variable is set by the onleave body.
 #
-# defer-to: T29
+# deferred: v1.x — onleave clause not implemented (PARSE-033 open; deferred-v1.x per matrix)
+# matrix-row: tag-onleave
 #
 # Reason: the `onleave` keyword and its parse + emit path are not yet wired at
 # M3.  The TAG_SCOPE cleanup-entry FLAG_HAS_ONLEAVE flag and

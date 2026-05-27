@@ -4,7 +4,8 @@
 #         (deferred ring); the deferred entry is dispatched at the next
 #         safepoint before watcher_eval_dirty, producing deterministic output.
 #
-# defer-to: T69 (globals exposure)
+# blocked: at.sync not implemented + string concat (T46 dropped)
+# matrix-row: reactive-slot-change
 #
 # Reason:
 #   The fixture requires:

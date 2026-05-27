@@ -5,7 +5,8 @@
 #         completes (row 12 §3.3 — sleep-queue drain runs at the end of each
 #         dispatch turn, after dispatch_loop_until_yield returns).
 #
-# defer-to: M5 (chk runner needs urbi_step driver path)
+# blocked: chk-runner urbi_step driver path not implemented (T39)
+# matrix-row: scheduler-wake
 #
 # Reason: observing that a sleeping strand wakes while another strand is
 # running requires two concurrent strands.  The chk runner uses the urbi_vm_run

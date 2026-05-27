@@ -3,7 +3,8 @@
 #         when both conditions become true simultaneously (row 12 §6 watcher
 #         eval determinism — active_watchers_head preserves insertion order).
 #
-# defer-to: M5 (chk runner needs urbi_step driver path + M5 reactive runtime)
+# blocked: chk-runner urbi_step driver path not implemented (T39)
+# matrix-row: scheduler-fifo
 #
 # Reason: verifying watcher firing order requires installing watchers via
 # `at (cond) body` syntax, which produces watcher body strands that run via

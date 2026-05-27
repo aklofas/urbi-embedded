@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: Barrier.new() synchronization primitive; multiple waiters unblocked
 #         by signalAll/signal; interaction with tag stop.
-# defer-to: M6 (requires Barrier stdlib type and ',' separator runtime)
+# deferred: v1.x — Barrier stdlib type not in v1.0 scope
+# matrix-row: stdlib-barrier
 #
 # Reason:
 #   Barrier is a stdlib synchronization type scheduled for M6.  The fixture

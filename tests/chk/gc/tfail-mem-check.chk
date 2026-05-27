@@ -2,7 +2,8 @@
 # Covers: memory-leak regression for 'at (e?)' watchers holding a reference
 #         on their creator object; Foo instances created in a loop should be
 #         collectible after the loop (no hidden watcher root).
-# defer-to: M6 (requires Event type, 'at (e?)' reactive watcher, and System.memCheck())
+# blocked: requires System.memCheck() + Event type + at(e?) (System not implemented)
+# matrix-row: stdlib-system
 #
 # Reason:
 #   The fixture creates a Foo class with an Event slot and an 'at (e?)' watcher

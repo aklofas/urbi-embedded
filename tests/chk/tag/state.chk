@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: tag.frozen and tag.blocked property access; freeze/unfreeze toggle;
 #         block/unblock toggle; independent flag tracking.
-# defer-to: M4 (requires tag.freeze(), tag.unfreeze(), tag.block(), tag.unblock(),
+# blocked: tag.freeze() / tag.block() / tag.frozen / tag.blocked not implemented
+# matrix-row: tag-freeze
 #             tag.frozen, tag.blocked — all require M4 method/slot dispatch)
 #
 # Reason:

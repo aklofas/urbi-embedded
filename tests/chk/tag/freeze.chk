@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: tag.freeze() suspends all strands under that tag; the strand stays
 #         frozen until t2.stop() terminates the outer scope.
-# defer-to: M5 (requires tag.freeze() / tag.unfreeze() method dispatch and SUSPENDED strand state)
+# deferred: v1.x — tag.freeze()/tag.unfreeze() methods not implemented; SUSPENDED strand state
+# matrix-row: tag-freeze
 #
 # Reason:
 #   tag.freeze() requires two M4/M5 features: (1) method dispatch on a UTag

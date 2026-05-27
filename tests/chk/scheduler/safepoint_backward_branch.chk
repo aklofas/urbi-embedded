@@ -3,7 +3,8 @@
 #         the safepoint decrements instruction_budget_remaining and checks
 #         the step budget, preventing infinite-loop starvation.
 #
-# defer-to: T39
+# blocked: T39 chk-runner tunables header not implemented
+# matrix-row: scheduler-safepoint
 #
 # Reason: verifying that safepoint fires on every backward branch iteration
 # requires either (a) a tunables header to set a tiny budget so the yield

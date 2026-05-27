@@ -3,7 +3,8 @@
 #         OP_PUSH_TAG executes for `mytag`; lazy-alloc of UTag.enter_event on
 #         first subscription (spec #3 §3.1).
 #
-# defer-to: T55 (tag enter/leave emit hooks) + T59 (Tag.new() stdlib)
+# deferred: v1.x — tag.enter? events not implemented (T55 tag enter/leave emit hooks)
+# matrix-row: tag-scope-events
 #
 # Reason:
 #   Tag.new() requires T59 stdlib binding.  The tier-2 enter/leave event

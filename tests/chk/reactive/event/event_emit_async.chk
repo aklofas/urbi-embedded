@@ -2,7 +2,8 @@
 # Covers: e! (async emit) — event fires all AT_EVENT subscribers in registration
 #         order; subscriber bodies run asynchronously on spawned coroutines.
 #
-# defer-to: T59 (Event.new() stdlib binding) + M5-scratch-frame
+# blocked: requires string concat (T46 explicitly dropped); adapt with integer counters when T46 resolved
+# matrix-row: reactive-event
 #
 # Reason:
 #   Event.new() requires T59 stdlib binding (attaches Event prototype to realm

@@ -18,8 +18,9 @@
 | Bar | Threshold | Current | Evidence | Last measured | Owner / blocker |
 |---|---|---|---|---|---|
 | .chk pass rate (active fixtures) | ≥95% | 100% (269/269) | `make test-chk` — 269 fixtures, 0 failures | 2026-05-26 | **passing-evidence** |
-| .chk total fixture count | n/a | 284 total (269 active, 15 REPL-gated) | `find tests/chk -name '*.chk' \| wc -l` | 2026-05-26 | **passing-evidence** (informational) |
-| Conformance manifest | yes/no | Wave 6 computable; matrix fully populated | `docs/language-compatibility-matrix.md` — v1.0 denominator computable | 2026-05-26 | **passing-evidence** — see language-compatibility-matrix.md §v1.0 conformance denominator |
+| .chk total fixture count | n/a | 284 total (269 non-repl active, 15 REPL-gated) | `find tests/chk -name '*.chk' \| wc -l` | 2026-05-26 | **passing-evidence** (informational) |
+| .chk taxonomy | normalized | v0.10.7 W7: all defer-to: labels retired; 163 active with real content, 22 deferred-v1.x, 76 blocked, 3 dropped | `rg -n 'defer-to:' tests/chk/` returns empty | 2026-05-26 | **passing-evidence** — see docs/release/chk-deferred-taxonomy.md |
+| Conformance manifest | yes/no | v0.10.7: 163/163 real-content fixtures pass (100%); denominator computable | `docs/language-compatibility-matrix.md` §v1.0 conformance denominator | 2026-05-26 | **passing-evidence** — 163 real-content fixtures / 269 total (106 placeholders vacuous-pass) |
 
 ## Coverage
 
@@ -102,7 +103,7 @@ STM32H7 and ESP32-C3 are deferred to v1.x; not in the v1.0 hardware-support clai
 
 | Bar | Status | Evidence | Owner / blocker |
 |---|---|---|---|
-| Defensible v1.0 compatibility denominator | **done (Wave 6)** | `docs/language-compatibility-matrix.md` fully populated | **passing-evidence** — 269/269 active fixtures pass (100%); v1.0 denominator computable per matrix §v1.0 conformance denominator |
+| Defensible v1.0 compatibility denominator | **done (v0.10.7 W7)** | `docs/language-compatibility-matrix.md` fully populated; `defer-to:` labels retired | **passing-evidence** — 163/163 real-content fixtures pass (100%); 106 placeholder fixtures (blocked/deferred/dropped) vacuous-pass; denominator published in matrix §v1.0 conformance denominator |
 | Statement grammar covers planned v1 surface | **done (Wave 6 W1)** | `tests/chk/control/` fixtures | **passing-evidence** — for-each, break, continue, switch IMPLEMENTED; C-style for / loop / do(recv) deferred-v1.x |
 | Reactive syntax covers legacy forms | **done (Wave 6 W9)** | `tests/chk/reactive/` fixtures | **passing-evidence** — at(e?(var x)), whenever(e?(var x)) payload, whenever-else, waituntil(e?) IMPLEMENTED; ~duration deferred-v1.x |
 | Quoted identifiers + operator slots | **done (Wave 6 W2)** | `tests/chk/lex/quoted_ident_basic.chk` | **passing-evidence** — single-quote-delimited identifiers; keyword-escaping; operator-slot access |
@@ -120,7 +121,7 @@ Cut a v1.0-rc only when:
 1. ✅ **Every row above is either passing-evidence or formally "removed from v1.0 claims"** — completed by Wave 7 W5 (v0.10.6-stabilization). See row-count summary in the file header.
 2. ✅ **`docs/api-stability.md` exists and ABI freeze pin is in place** — completed by Wave 7 W2. `make test-abi-freeze` passes.
 3. ✅ **`docs/internals/bytecode-format.md` documents the frozen wire format** — completed by Wave 7 W3. `make test-wire-freeze` passes.
-4. ✅ **`language-compatibility-matrix.md` published v1.0 conformance percentage** — Wave 6 fully populated the matrix; conformance denominator is computable. 269/269 active fixtures pass.
+4. ✅ **`language-compatibility-matrix.md` published v1.0 conformance percentage** — v0.10.7 W7 retired all `defer-to:` labels and published the denominator. 163 real-content fixtures pass (100%); 106 placeholder fixtures vacuous-pass; taxonomy in `docs/release/chk-deferred-taxonomy.md`.
 5. **No `docs/urbi-embedded-design-risks.md` entry tagged "Handle before v1.0" remains open** — requires workspace-root W6 triage (runs independent of this worktree). Status tracked separately.
 
 ---

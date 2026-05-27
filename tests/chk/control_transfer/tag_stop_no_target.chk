@@ -2,7 +2,8 @@
 # Covers: tag.stop() called with no active enclosing scope for that tag
 #         propagates to fatal (unhandled TAG_STOP).
 #
-# defer-to: T29
+# blocked: tag.stop() outside an active scope returns nil instead of fatal; expected semantics not implemented — v1.0-rc
+# matrix-row: tag-stop
 #
 # Reason: requires UTag runtime (T29) to distinguish "stop with no active
 # scope" from a normal stop.  At M3, UEXEC_TAG_STOP with no matching

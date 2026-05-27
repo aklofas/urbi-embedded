@@ -2,7 +2,8 @@
 # Covers: at (obj.x.changed?) subscriber fires on slot mutation; basic
 #         slot-change event: single subscriber, single write, single fire.
 #
-# defer-to: T69 (Object.new() stdlib) + M5-scratch-frame
+# blocked: slot-change fires on first slot-install as well as write (double-fire bug) — v1.0-rc investigation
+# matrix-row: reactive-slot-change
 #
 # Reason:
 #   Object.new() and slot-change event subscription via at (obj.x.changed?)

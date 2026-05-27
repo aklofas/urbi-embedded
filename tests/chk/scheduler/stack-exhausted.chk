@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: stack-exhausted exception is catchable; caught exception matches
 #         Exception.Scheduling type via isA(); message includes location.
-# defer-to: M4 (requires Exception.Scheduling type hierarchy and isA() method dispatch)
+# blocked: Exception.Scheduling type hierarchy + isA() method dispatch not implemented
+# matrix-row: exceptions-scheduling
 #
 # Reason:
 #   The fixture catches a stack-overflow via 'catch(var s if s.isA(Exception.Scheduling))'.

@@ -1,6 +1,7 @@
 # Milestone: M3
 # Covers: stopif(1) 0 — trivially-true condition stops immediately; no crash.
-# defer-to: M5 (requires stopif keyword)
+# deferred: v1.x — stopif keyword not in v1.0 scope
+# matrix-row: tag-stopif
 #
 # Reason:
 #   'stopif' is a reactive construct not available at M3.  Even this minimal

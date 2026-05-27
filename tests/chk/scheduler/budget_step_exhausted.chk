@@ -3,7 +3,8 @@
 #         exits with the strand still in RUNNING state; urbi_step returns
 #         URBI_STEP_RUNNING and the host is expected to call urbi_step again.
 #
-# defer-to: T39
+# blocked: T39 chk-runner tunables header not implemented
+# matrix-row: scheduler-budget
 #
 # Reason: observing VM-wide step-budget exhaustion from a chk fixture requires
 # the ## host: mechanism to call urbi_step with a tiny step budget (e.g. 1)

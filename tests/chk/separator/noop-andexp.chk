@@ -1,6 +1,7 @@
 # Milestone: M3
 # Covers: '&' join of two empty blocks; result is the last expression value (2).
-# defer-to: M5 (chk runner needs urbi_step driver path for '&' separator)
+# blocked: top-level & separator hangs chk driver; needs T39 step-based driver
+# matrix-row: separator-and
 #
 # Reason:
 #   '&' (OP_FORK_JOIN / OP_JOIN_WAIT) requires the realm-managed scheduler path.

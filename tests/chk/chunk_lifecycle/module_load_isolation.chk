@@ -2,7 +2,8 @@
 # Covers: modules loaded into a Realm do not pollute other Realms; bindings
 #         from module are visible only in the Realm where it was loaded.
 #
-# defer-to: M6
+# blocked: T39 chk-runner host-driver extension not implemented
+# matrix-row: chunk-lifecycle-realm
 #
 # Reason: import-table registration and module-loading surface via
 # urbi_vm_import_register land at M6 (stdlib). At M3, urbi_load_chunk

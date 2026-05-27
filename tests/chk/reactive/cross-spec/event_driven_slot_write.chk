@@ -4,7 +4,8 @@
 #         Tests that event-driven slot writes trigger downstream slot-change
 #         watchers (spec cross-spec §2.1 chaining rule).
 #
-# defer-to: T59 (Event.new()) + T69 (Object.new()) + M5-scratch-frame
+# blocked: at(cond) body event chain gap; Event.new()+Object.new() available but chain broken
+# matrix-row: reactive-event
 #
 # Reason:
 #   Requires both Event.new() (T59) and Object.new() (T69) stdlib bindings,

@@ -2,20 +2,11 @@
 # Covers: REPL session persists var bindings across separate chunks (lines);
 #         each REPL frame is its own chunk but shares the implicit Realm.
 #
-# defer-to: T20
-#
-# Reason: At M3, the REPL drives each line as a separate chunk with its own
-# Namespace. Variables bound in one line are not visible in the next because
-# each chunk gets a fresh Namespace (the parse-time binding scope).
-# T20 (Strand C API) will add urbi_strand_set_realm to allow the REPL to reuse
-# the same Realm across lines, preserving bindings.
-#
-# When T20 lands, implement this fixture by uncommenting the urbiscript source.
-# Expected behaviour: line 1 binds x=41; line 2 reads x and computes x+1=42.
-#
-# Urbiscript source (activate at T20):
-#   var x = 41
-#   x + 1
-#   --- expected output ---
-#   [00000001] 41
-#   [00000002] 42
+# Activated: v0.10.7 W7 — Feature shipped (M8 / v0.9.x Strand C API).
+# The REPL reuses the same Realm across input lines, preserving bindings.
+# Old label: T20
+
+var x = 41
+x + 1
+[00000000] 41
+[00000000] 42

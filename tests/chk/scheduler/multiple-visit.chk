@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: loop body with break/continue is desugared only once; '&' inside a
 #         while loop fires both echo calls before breaking.
-# defer-to: M5 (requires '&' separator runtime in chk driver)
+# blocked: top-level & separator hangs chk driver (needs T39 step-based driver)
+# matrix-row: separator-and
 #
 # Reason:
 #   The fixture uses '&' inside while/for loop bodies to verify that the AST is

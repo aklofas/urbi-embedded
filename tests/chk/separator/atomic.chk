@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: atomicity of single-cycle operations under the urbiscript scheduler;
 #         'atomic' pattern using call.evalArgAt(0) and System.cycle comparison.
-# defer-to: M5 (requires System.cycle, call.evalArgAt, Semaphore, and '&'/'|' runtime)
+# blocked: requires System.cycle + CallMessage (permanently dropped) + & runtime
+# matrix-row: separator-pipe
 #
 # Reason:
 #   This fixture uses call.evalArgAt(0) for lazy parameter evaluation (M4

@@ -2,7 +2,8 @@
 # Covers: closure capture from definition scope, not call scope; 'var Object.f'
 #         slot assignment on a prototype; lookup of i inside f() resolves to
 #         outer global i, not inner block-local i.
-# defer-to: M4 (requires 'var Object.f' prototype slot assignment via object-model)
+# blocked: requires mutable Object proto (UPROTO_READONLY); var Object.f fails with TypeError — v1.0-rc
+# matrix-row: object-slot-install
 #
 # Reason:
 #   'var Object.f = function(x) { i += x }' assigns a function to a slot on the

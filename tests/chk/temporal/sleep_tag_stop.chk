@@ -1,6 +1,7 @@
 # Milestone: v0.10.2-reactive (W6, activated post W4-merge)
 # Covers: TAG_STOP wakes a sleeping strand mid-sleep.
-# defer-to: W4-merge-followup (Tag.new() + .stop() not yet in integration branch)
+# blocked: cooperative timing — sleep + tag-stop parallel dispatch requires T39 chk-runner multi-step drive
+# matrix-row: temporal-sleep
 #
 # When W4 (Tag.new + OP_TAG_STOP + script .stop()) merges into
 # integration/v0.10.2-reactive, this fixture can be un-deferred:

@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: freezeif(cond) body — freezes body execution while condition holds;
 #         reactive re-evaluation when condition changes; Event-based variant.
-# defer-to: M5 (requires freezeif keyword, reactive watcher activation, Event type, and ',' runtime)
+# deferred: v1.x — freezeif keyword not in v1.0 scope
+# matrix-row: tag-freeze
 #
 # Reason:
 #   'freezeif' is a reactive construct that requires the full reactive runtime

@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: s.criticalSection() releases semaphore on exception; and on tag.stop(val)
 #         with value injection; subsequent acquire succeeds after exception release.
-# defer-to: M6 (requires Semaphore stdlib type and criticalSection method)
+# deferred: v1.x — Semaphore stdlib type not in v1.0 scope
+# matrix-row: stdlib-semaphore
 #
 # Reason:
 #   Semaphore.criticalSection() is a high-level helper method on the Semaphore

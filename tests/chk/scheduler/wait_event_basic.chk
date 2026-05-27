@@ -1,20 +1,23 @@
 # Milestone: M3
-# Covers: a strand calls waituntil(event); it blocks with
-#         USTRAND_REASON_EVENT; when the event fires the strand resumes
-#         and prints its result.
+# Covers: a strand calls waituntil(event?); it blocks until the event fires;
+#         when the event is emitted the strand resumes (USTRAND_REASON_EVENT).
 #
-# defer-to: M5
+# Activated: v0.10.7 W7 — waituntil(e?) + Event.new() shipped (M5 reactive
+# runtime + v0.6.1 stdlib).
+# Old label: M5
 #
-# Reason: the reactive runtime (at(), whenever(), waituntil(), Event.new)
-# is owned entirely by M5.  There is no event-wait primitive at M3.
-# The USTRAND_REASON_EVENT sub-code is reserved in the state machine but
-# the wiring (UEvent, watcher pool, event-queue drain → strand unblock)
-# is not present.
-#
-# When M5 lands, implement this fixture by:
-#   var e = Event.new;
-#   var t = Tag.new;
-#   t: { waituntil(e?); echo("fired") };
-#   e!;
-#   --- expected output ---
-#   [00000001] "fired"
+# Note: Realm.fired used as the observable output (bare echo not available
+# as a top-level name in single-session chk driver; use Lobby.echo).
+
+var e = Event.new()
+var t = Tag.new()
+var fired = 0
+t: { waituntil(e?) | Realm.fired = 1 }
+e!
+Realm.fired
+[00000000] <event>
+[00000000] <Tag>
+[00000000] 0
+[00000000] nil
+[00000000] nil
+[00000001] 1

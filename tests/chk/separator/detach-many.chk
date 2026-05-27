@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: spawning 100 detached strands via detach(); each increments counter
 #         twice with a 1s sleep in between; final value is 200 after 2s wait.
-# defer-to: M4 (requires detach() builtin function and ',' separator runtime)
+# blocked: detach() builtin function not implemented
+# matrix-row: separator-detach
 #
 # Reason:
 #   The fixture uses detach(), a stdlib convenience function that spawns a strand

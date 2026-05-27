@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: stats() returns cycle-count dictionary; resetStats() resets the cycle
 #         counter to 1; resetStats() | stats().isNil() shows nil during reset.
-# defer-to: M4 (requires stats() and resetStats() stdlib functions)
+# blocked: requires stats() / resetStats() stdlib functions (not implemented)
+# matrix-row: stdlib-system
 #
 # Reason:
 #   stats() and resetStats() are System-namespace helpers scheduled for M4.

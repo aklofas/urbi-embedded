@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: variables declared in '&' and ',' branches are unscoped into the
 #         parent environment (not local to the branch block).
-# defer-to: M5 (requires '&' and ',' separator runtime and unscoping semantics)
+# blocked: top-level & separator hangs chk driver (T39) + cooperative unscoping semantics complex
+# matrix-row: separator-and
 #
 # Reason:
 #   The fixture exercises that 'var a & var b' and 'var a,' declared inside a

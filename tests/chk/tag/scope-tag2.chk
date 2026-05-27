@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: scopeTag with explicit tag label kills ',' strands when function
 #         exits; without scopeTag the comma strand outlives the function call.
-# defer-to: M5 (requires scopeTag builtin, every keyword, and ',' separator runtime)
+# blocked: scopeTag builtin not implemented
+# matrix-row: tag-scopetag
 #
 # Reason:
 #   Same as scope-tag.chk: requires scopeTag builtin (M5) and ',' separator

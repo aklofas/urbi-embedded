@@ -2,7 +2,8 @@
 # Covers: two strands enqueued in FIFO order; scheduler dispatches them
 #         in order A-then-B; both run to completion.
 #
-# defer-to: T39 + T20-promotion
+# blocked: T39 host-driver not implemented
+# matrix-row: scheduler-fifo
 #
 # Reason: requires Strand.new urbiscript syntax to create multiple strands
 # from within a chk fixture.  The chk runner is REPL-driven only — it has

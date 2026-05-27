@@ -2,7 +2,8 @@
 # Covers: a host-registered finalizable type runs its destroy callback when
 #         the last reference is dropped and the GC collects the cell.
 #
-# defer-to: T39 (chk-runner host-call directive) + M4 (FileHandle binding)
+# blocked: T39 chk-runner host-driver (## host: / ## expect-host-call:) not implemented
+# matrix-row: gc-finalizer
 #
 # Reason: two prerequisites are both missing at M3:
 #   (1) T39 adds the ## host: / ## expect-host-call: directive support to the

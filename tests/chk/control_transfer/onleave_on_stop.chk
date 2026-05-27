@@ -2,7 +2,8 @@
 # Covers: onleave handler runs when the tagged block is terminated by
 #         tag.stop(); the onleave body executes before the stop propagates.
 #
-# defer-to: T29
+# deferred: v1.x — onleave clause not implemented (PARSE-033 open; deferred-v1.x per matrix)
+# matrix-row: tag-onleave
 #
 # Reason: same as onleave_normal_exit.chk — requires both UTag runtime (T29)
 # and `onleave` parse/emit (M5 or whichever milestone lands it first).  The

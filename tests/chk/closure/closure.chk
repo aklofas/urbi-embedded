@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: closure() keyword; closure capturing 'this', 'call'; call.evalArgAt()
 #         for lazy-to-eager eval; Lobby.overrideSlot(); closure applied across lobbies.
-# defer-to: M4 (requires call.evalArgAt, Lobby.overrideSlot, closure keyword syntax errors,
+# dropped: requires CallMessage / evalArgAt (permanently dropped); see docs/migration/callmessage-migration.md
+# matrix-row: callmessage
 #             and multi-lobby infrastructure)
 #
 # Reason:

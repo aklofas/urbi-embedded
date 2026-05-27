@@ -1,7 +1,8 @@
 # Milestone: M3
 # Covers: compound assignment operators (+=, *=, /=, -=) are evaluated atomically;
 #         target expression is not evaluated twice even with side effects.
-# defer-to: M4 (requires method dispatch on prototype slots and cout/Channel)
+# blocked: cout/Channel I/O not implemented; no output primitive for this pattern
+# matrix-row: separator-pipe
 #
 # Reason:
 #   The fixture defines a Base class with a foo() method returning 'this' and a
