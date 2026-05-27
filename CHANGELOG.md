@@ -28,7 +28,7 @@ new public C API symbols.  No new opcodes.  No functional changes.
 
 ### Changed
 
-- **5 reactive fixtures normalized for `at.sync` dot-syntax → canonical
+- **4 reactive fixtures normalized for `at.sync` dot-syntax → canonical
   `at sync` keyword form** per §S-watcher-3 (W2).  Per Cat. E re-audit
   Cluster #15 verdict A: the dot-syntax was a fixture-authoring error
   from M5 era; urbiscript has no dot-syntax for sync watchers.
