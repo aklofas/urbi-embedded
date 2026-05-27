@@ -38,7 +38,7 @@ whenever (pressed) {
 // NOTE 2: the bare-prefix tag labels (`greet:`, `temp_watch_hot:`,
 // `temp_watch_cool:`) were stripped — the v0.9.4 parser/runtime treats
 // the prefix as a GETSLOT on an existing slot, not as a new-tag
-// declaration.  Listed as v1.x deferral in CLAUDE.md.  Without the
+// declaration.  This is a v1.x deferral.  Without the
 // prefix the watchers still install + fire, but cannot be `.stop()`'d
 // individually.  Restore once tag-prefix labels + Tag.new() land.
 //

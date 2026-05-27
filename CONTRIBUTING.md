@@ -193,7 +193,7 @@ Multi-subsystem commits: pick the dominant one, or split. Splitting is almost al
 
 ### AI-attribution rule
 
-Nothing in the public repo mentions Claude, Anthropic, Copilot, Cursor, Aider, or AI assistance of any kind. This covers commit messages (no `Co-Authored-By: Claude …` trailers), PR descriptions, release notes, tag messages, README, CHANGELOG, CONTRIBUTING, and code comments.
+Nothing in the public repo mentions Claude, Anthropic, Copilot, Cursor, Aider, or AI assistance of any kind. This covers commit messages (no `Co-Authored-By: Claude …` trailers <!-- scrub-allow: policy doc listing prohibited pattern by name -->), PR descriptions, release notes, tag messages, README, CHANGELOG, CONTRIBUTING, and code comments.
 
 ## Branching
 

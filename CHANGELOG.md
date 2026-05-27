@@ -591,7 +591,7 @@ bump commit.
 - **components/esp32-idf/idf_component.yml** version bumped from stale
   `0.7.2-esp32` to `0.10.0-truthfulness`.
 - **Public-doc scrub** (~80 references across 50 files): removed
-  `docs/superpowers/`, `/home/aklofas/`, `REVIVAL.md`,
+  `docs/superpowers/`, `/home/aklofas/`, `REVIVAL.md`, <!-- scrub-allow: historical CHANGELOG entry citing workspace path -->
   `REVIVAL §14 L14` references from `CHANGELOG.md`, `CONTRIBUTING.md`,
   component docs, internal docs, embedding guide, examples, and string
   literals in `src/parse/uparse*.c` (with matching `.chk` golden
