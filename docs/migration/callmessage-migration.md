@@ -181,9 +181,19 @@ that depend on transparent `()` operator dispatch are listed under
 
 ## Accepted losses: third-party corpus files blocked on CallMessage
 
-The following 17 files in the third-party corpus cannot be migrated
-mechanically.  Each requires hand-rewriting of the CallMessage-dependent
-logic.  They are excluded from the v1.0 conformance numerator.
+**Canonical file count: 23 files** contain direct uses of
+`call.message`, `call.evalArgAt`, `call.argv`, `call.args`, or
+`call.name` in the third-party corpus.  Derived by:
+
+```sh
+cd legacy/repos/third-party
+rg -l --type-add 'urbi:*.u' --type urbi \
+   'call\.(message|evalArgAt|argv|args|name)' | wc -l
+```
+
+Each of these 23 files requires hand-rewriting of the
+CallMessage-dependent logic and is excluded from the v1.0 conformance
+numerator.
 
 Reference: `docs/third-party-corpus-compatibility.md` §Cross-Cutting
 Feature Incidence, row `CallMessage/evalArgAt`.
@@ -216,10 +226,11 @@ Feature Incidence, row `CallMessage/evalArgAt`.
 |---|---|---|
 | Core plugin files | Unspecified introspection patterns | Unknown — requires re-audit |
 
-**Summary:** 34 occurrences across 17 files in 4 repos.  All 17 files
-require manual review.  The `lazy.u` rewrite is the highest-value target
-because it enables the `Lazy` stdlib class that other corpus files depend
-on; prioritize it when a community port effort begins.
+**Summary:** 23 files across 3 repos (jouve, urbi-debian, xcs) contain
+direct CallMessage introspection uses.  All require manual review.
+The `lazy.u` rewrite is the highest-value target because it enables the
+`Lazy` stdlib class that other corpus files depend on; prioritize it
+when a community port effort begins.
 
 ---
 
