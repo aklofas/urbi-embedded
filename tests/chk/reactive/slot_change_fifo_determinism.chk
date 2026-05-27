@@ -5,7 +5,7 @@
 #         maintain that order across all firings.  Run under all 3 tunable
 #         presets × 100 runs to assert byte-identical output.
 #
-# blocked: at.sync not implemented + string concat (T46 dropped)
+# blocked: at.sync not implemented + determinism multi-preset chk-runner mode — T39 (audit Cat. A + E)
 # matrix-row: reactive-slot-change
 #
 # Reason:

@@ -36,6 +36,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>              /* strlen, memcpy — OP_ADD String fast path */
 
 /* --- Dispatch macros.
        Under GCC/Clang with computed-goto support (and without
@@ -356,6 +357,39 @@ dispatch:
             UValue *a = &s->R[uinstr_a(*s->pc)];
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
+
+            /* S-string-plus: atom fast path for String + String concat.
+             * Mixed-type coercion ("x" + 1) deferred to v1.x — caller
+             * must use explicit .asString(). vm_arith_method_fallback
+             * short-circuits on non-UVAL_OBJECT, so installing a "+" slot
+             * on string_proto would not fire here. */
+            if (b->kind == UVAL_STR && cc->kind == UVAL_STR) {
+                const char *bs = (const char *)b->v.p;
+                const char *cs = (const char *)cc->v.p;
+                size_t bn = strlen(bs);
+                size_t cn = strlen(cs);
+                size_t total = bn + cn;
+                const char *interned;
+                if (total == 0) {
+                    interned = ustr_intern(vm, "", 0);
+                } else {
+                    /* ustr_intern takes (bytes, nbytes) and does NOT read a
+                     * NUL terminator — no terminator needed in `tmp`. */
+                    char *tmp = (char *)vm->alloc_fn(NULL, total, vm->alloc_ud);
+                    if (tmp == NULL) { vm->last_error = UVM_OOM; HALT(); }
+                    /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) — ustr_intern uses explicit nbytes. */
+                    if (bn > 0) memcpy(tmp, bs, bn);
+                    /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) — ustr_intern uses explicit nbytes. */
+                    if (cn > 0) memcpy(tmp + bn, cs, cn);
+                    interned = ustr_intern(vm, tmp, total);
+                    vm->alloc_fn(tmp, 0, vm->alloc_ud);
+                }
+                if (interned == NULL) { vm->last_error = UVM_OOM; HALT(); }
+                a->kind = (uint8_t)UVAL_STR;
+                a->v.p  = (void *)interned;
+                NEXT();
+            }
+
             UVMError rc = arith_add(a, b, cc);
             if (rc != UVM_OK) {
                 /* Gap #4: type-error fallback to operator-method dispatch. */

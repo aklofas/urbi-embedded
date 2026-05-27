@@ -202,7 +202,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  18
-#define URBI_API_VERSION_PATCH  1
+#define URBI_API_VERSION_PATCH  2
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -221,17 +221,20 @@ extern "C" {
  * Failing to bump the static_assert breaks the build, which is the point —
  * deliberate intent at every change, not silent ABI drift.
  *
- * Pin target: v0.10.7-audit-followup ships at 0/18/1.
+ * Pin target: v0.10.8-string-concat ships at 0/18/2.
  *
  * The pin landed in commit `bdad57c` (W2 of v0.10.6) at 0/17/0; bumped to
  * 0/18/0 at v0.10.6 wave wrap-up to capture the W4 UReplConfig.rate_limit_per_second
  * field addition; bumped to 0/18/1 at v0.10.7 wave wrap-up — PATCH-only,
  * no public surface change (audit followup wave fixes latent bugs and
- * doc/gate drift without touching the C API).
+ * doc/gate drift without touching the C API); bumped to 0/18/2 at
+ * v0.10.8-string-concat — PATCH-only, OP_ADD atom fast path adds runtime
+ * String + String concatenation (S-string-plus) without touching the
+ * public C API surface.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 18
-            && URBI_API_VERSION_PATCH == 1,
+            && URBI_API_VERSION_PATCH == 2,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

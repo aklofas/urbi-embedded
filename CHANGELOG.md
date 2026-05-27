@@ -1,5 +1,70 @@
 # Changelog
 
+## v0.10.8-string-concat — 2026-05-27
+
+**Runtime `String + String` concatenation (S-string-plus).** OP_ADD gains
+an atom fast path: when both operands are `UVAL_STR`, the result is a
+fresh interned `UVAL_STR` allocated through `ustr_intern`. No new opcodes;
+no wire-format change. ABI bumped 0/18/1 → 0/18/2 (PATCH-only — atom
+fast path is internal to the dispatch loop; the public C API surface is
+untouched).
+
+### Rationale
+
+The pre-existing operator-overload fallback (`vm_arith_method_fallback`)
+short-circuits on non-`UVAL_OBJECT` left-hand sides, so wiring a `"+"`
+slot on `vm->string_proto` would never fire for `String + String`. The
+atom fast path in OP_ADD is structurally required.
+
+The 2026-05-27 audit of v0.10.7 `blocked:` `.chk` fixtures
+(`docs/refactor-1/urbi-embedded-v0.10.7-blocked-chk-reaudit.md` Cat. C)
+surfaced 12 fixtures labelled `# blocked: ... (T46 dropped)`. The "T46
+dropped" annotation never resolved to a canonical drop decision in
+the workspace-root compatibility-decisions ledger, the language compatibility
+matrix, or the design-risks register. Legacy urbi 2.x supported runtime String concat; restoring
+parity is a half-day fix that unblocks a common debug/log-building
+pattern across legacy + third-party corpus.
+
+### Sub-decision: String + String only at v1.0
+
+Mixed-type coercion (`"x" + 1`, `nil + ""`, `[] + ""`) is **deferred to
+v1.x**. The coercion taxonomy is a deliberate design pass — which side
+coerces? Does `1 + "a"` differ from `"a" + 1`? How do empty strings
+interact with non-Stringable values? At v1.0, callers use explicit
+`.asString()`. If mixed-type coercion is later added, no fixture rewrite
+is required because String + String semantics stay unchanged.
+
+### Changes
+
+- `src/vm/uvm.c` — OP_ADD dispatch arm gains a `UVAL_STR + UVAL_STR`
+  branch before `arith_add`; on match, both bytes are concatenated into
+  a temp buffer allocated via `vm->alloc_fn`, the result is interned
+  via `ustr_intern`, the temp buffer is freed, and the result is written
+  to the destination register. OOM-safe (both the temp alloc and the
+  intern can fail; both report `UVM_OOM` and HALT).
+- `tests/chk/operators/add_string.chk` — new 9-case fixture (basic,
+  empty-operand variants, chained left-associative, intern stability,
+  UTF-8 byte pass-through, mixed-type rejection, numeric regression).
+- 11 `.chk` fixture headers updated to remove the unresolved "T46
+  dropped" annotation; all 11 remain `blocked:` on real remaining
+  blockers (cross-spec chain gap, at.sync, T39 chk-runner extension,
+  `&` top-level driver, spawn_body_coroutine subscriber dispatch).
+- `tests/chk/stdlib/legacy/PORT_NOTES.md` — flips "No string `+`
+  concatenation" note to document the v0.10.8 wiring.
+- `docs/language-compatibility-matrix.md` — new "Operators"
+  subsection: String + String implemented; mixed-type `+` deferred-v1.x.
+- `docs/release/chk-deferred-taxonomy.md` — fixed summary numbers
+  (76/22/5 → 73/25/6 per re-audit finding #0); rewrote per-fixture
+  notes that cited "T46 dropped" to reflect real remaining blockers;
+  removed "T46 explicitly dropped" line from the dominant-blockers
+  list.
+- Workspace-root compatibility-decisions ledger — new `S-string-plus`
+  row.
+- `include/urbi/version.h` + `tests/unit/test_api_version.c` +
+  `docs/api-stability.md` + `docs/release/release-readiness.md` —
+  ABI 0/18/1 → 0/18/2 in lockstep (freeze pin + test literal + both
+  evidence docs).
+
 ## v0.10.7-audit-followup — 2026-05-27
 
 **Post-arc audit-followup wave.** Closes 14 unique findings raised by two

@@ -3,7 +3,7 @@
 #         50 sequential obj.x = i writes; subscriber walk order is byte-stable
 #         across 100x3 preset runs; D-slotchange-2 FIFO sub walk confirmed.
 #
-# blocked: at.sync not implemented + string concat (T46 dropped)
+# blocked: at.sync not implemented (audit Cat. E)
 # matrix-row: reactive-slot-change
 #
 # Reason:

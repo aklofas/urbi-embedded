@@ -2,7 +2,7 @@
 # Covers: multiple subscribers on the same event receive emits in registration
 #         FIFO order; D-event-1 rule (spec #3 §10.2); 3 subs on 3 emits.
 #
-# blocked: requires string concat (T46 explicitly dropped)
+# blocked: subscriber walk order not observable from script — log-building pattern needs slot-write ordering verified across spawn (audit Cat. E)
 # matrix-row: reactive-event
 #
 # Reason:

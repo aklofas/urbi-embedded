@@ -44,9 +44,11 @@ each gap's current status follows.
   `assert { block }` lowers to `if (!block) throw "assertion failed"`.
   Fixtures deferred for other reasons (not just `assert`) remain deferred.
 
-- **No string `+` concatenation.**  `arith_add` handles numbers only;
-  no `"+"` slot is registered on String proto (T46 explicitly dropped in
-  atoms.c).  Fixtures that require string `+` remain blocked.
+- **String `+` String concatenation** (v0.10.8, S-string-plus).  OP_ADD
+  carries an atom fast path for `UVAL_STR + UVAL_STR` that allocates a
+  fresh interned UVAL_STR.  Mixed-type coercion (`"x" + 1` etc.) remains
+  deferred to v1.x — caller must use explicit `.asString()` /
+  string-builder patterns at v1.0.
 - **No `<<` append operator.**  Not in the lexer or parser.  Fixtures
   using `<<` remain blocked.
 - **`for (var x : iter)` / `for (var x in iter)`: implemented (Wave 6 W1).**

@@ -1,0 +1,54 @@
+# Milestone: v0.10.8-string-concat (S-string-plus)
+# Covers: runtime String + String concatenation via OP_ADD atom fast path.
+#         Mixed-type coercion ("x" + 1) deferred to v1.x and rejected with
+#         the existing OP_ADD type error.
+#
+# See: REVIVAL.md §S-string-plus +
+#      docs/refactor-1/urbi-embedded-v0.10.7-string-plus-concat-decision.md
+#      for the design rationale.
+
+# Basic concat.
+"a" + "b"
+[00000000] "ab"
+
+# Both sides empty.
+"" + ""
+[00000001] ""
+
+# Left empty.
+"" + "x"
+[00000002] "x"
+
+# Right empty.
+"x" + ""
+[00000003] "x"
+
+# Left-associative chaining (OP_ADD applied left-to-right).
+"a" + "b" + "c"
+[00000004] "abc"
+
+# Intern stability — concatenated result is pointer-equal to the literal
+# "ab" because both end up in the same intern slot. The == operator on
+# UVAL_STR compares interned pointers (which is also content-equality).
+("a" + "b") == "ab"
+[00000005] true
+
+# Multi-byte UTF-8 bytes pass through (interned-bytes opaque to lexer +
+# concat; the writer hex-escapes non-ASCII bytes when printing).
+"é" + "à"
+[00000006] "\xc3\xa9\xc3\xa0"
+
+# Mixed-type rejection: String + Integer falls through to original type
+# error (per sub-decision: String+String only at v1.0). Operator-overload
+# fallback does not fire because lhs is an atom, not UVAL_OBJECT.
+"a" + 1
+[00000007] !!! line 1: TypeError: OP_ADD operands must be Integer or Float (got String, Integer)
+
+# Mixed-type the other way.
+1 + "a"
+[00000008] !!! line 1: TypeError: OP_ADD operands must be Integer or Float (got Integer, String)
+
+# Integer + integer still uses the atom-numeric fast path (regression
+# guard — String fast path must not perturb numeric dispatch).
+1 + 2
+[00000009] 3

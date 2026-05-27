@@ -2,7 +2,7 @@
 # Covers: e.syncEmit(p) — synchronous event emit; all subscribers run inline
 #         before syncEmit returns; spec #3 §6.2 AT_EVENT_SYNC watcher mode.
 #
-# blocked: requires string concat (T46 explicitly dropped)
+# blocked: Event.syncEmit() method not yet bound on Event stdlib type (audit Cat. E)
 # matrix-row: reactive-event
 #
 # Reason:

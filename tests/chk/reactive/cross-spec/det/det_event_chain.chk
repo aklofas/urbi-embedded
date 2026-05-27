@@ -3,7 +3,7 @@
 #         each subscriber emits the next event in the chain; verify subscriber
 #         ordering is byte-stable across 100x3 preset runs.
 #
-# blocked: cross-spec event chain gap + string concat (T46 dropped) blocks expected output
+# blocked: cross-spec event chain gap — at(cond) body event chain does not propagate to event subscriber (audit Cat. E)
 # matrix-row: reactive-event
 #
 # Reason:

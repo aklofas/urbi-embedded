@@ -4,7 +4,7 @@
 #         maintain that order across all M firings.  Run under all 3 tunable
 #         presets × 100 runs each to assert byte-identical output.
 #
-# blocked: requires string concat (T46 dropped) + at(e?) body function param
+# blocked: determinism multi-preset chk-runner mode (## tunables: presets) not implemented — T39 (audit Cat. A)
 # matrix-row: reactive-event
 #
 # Reason:

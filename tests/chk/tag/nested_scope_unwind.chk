@@ -4,7 +4,7 @@
 #         first order through nested scopes, executing each onleave body before
 #         continuing outward.
 #
-# blocked: requires string concat (T46 dropped) + & separator hangs chk driver
+# blocked: top-level & separator hangs chk driver — T39 chk-runner urbi_step driver path (audit Cat. A)
 # matrix-row: tag-stop
 #
 # Reason: requires onleave clause parse/emit (M5 reactive runtime).  At M3,

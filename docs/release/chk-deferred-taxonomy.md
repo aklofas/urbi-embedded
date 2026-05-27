@@ -174,25 +174,25 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 | Fixture | Old label | New bucket | Notes |
 |---------|-----------|------------|-------|
 | `at_then_event_chain.chk` | T59+M5 | blocked | at(cond) body event chain does not propagate to event subscriber — cross-spec chaining gap |
-| `det/det_event_chain.chk` | T59+M5 | blocked | Same cross-spec chain gap + string concat blocked (T46 dropped) |
-| `det/det_slot_change_burst.chk` | T69+M5 | blocked | Requires at.sync (not implemented) + string concat (T46 dropped) |
+| `det/det_event_chain.chk` | T59+M5 | blocked | Cross-spec chain gap — at(cond) body event chain does not propagate to event subscriber |
+| `det/det_slot_change_burst.chk` | T69+M5 | blocked | Requires at.sync (not implemented) |
 | `event_driven_slot_write.chk` | T59+T69+M5 | blocked | Cross-spec chain gap; Event.new()+Object.new() available but chain broken |
 
 ### reactive/event/
 
 | Fixture | Old label | New bucket | Notes |
 |---------|-----------|------------|-------|
-| `event_emit_async.chk` | T59+M5 | blocked | Requires string concat (T46 dropped); adapt with integer counters when T46 resolved |
-| `event_multi_sub_fifo.chk` | T59+M5 | blocked | Requires string concat (T46 dropped) |
-| `event_sync_emit.chk` | T59+M5 | blocked | Requires string concat (T46 dropped) |
+| `event_emit_async.chk` | T59+M5 | blocked | spawn_body_coroutine subscriber dispatch — log-write ordering not yet observable from script |
+| `event_multi_sub_fifo.chk` | T59+M5 | blocked | Subscriber walk order not observable across spawn — needs spawn_body_coroutine activation |
+| `event_sync_emit.chk` | T59+M5 | blocked | Event.syncEmit() method not yet bound on Event stdlib type |
 
 ### reactive/
 
 | Fixture | Old label | New bucket | Notes |
 |---------|-----------|------------|-------|
-| `event_fifo_determinism.chk` | T59 | blocked | Requires string concat (T46 dropped) + determinism multi-preset run |
-| `slot_change_fifo_determinism.chk` | T69 | blocked | Requires at.sync (not implemented) + string concat (T46 dropped) |
-| `slot_change_reentrancy_determinism.chk` | T69 | blocked | Requires at.sync (not implemented) + string concat (T46 dropped) |
+| `event_fifo_determinism.chk` | T59 | blocked | T39 determinism multi-preset chk-runner mode not implemented |
+| `slot_change_fifo_determinism.chk` | T69 | blocked | at.sync not implemented + T39 multi-preset chk-runner mode |
+| `slot_change_reentrancy_determinism.chk` | T69 | blocked | at.sync not implemented + T39 multi-preset chk-runner mode |
 | `tag_enter_leave_determinism.chk` | T59 | deferred: v1.x | Requires tag.enter?/tag.leave? events (T55, not implemented) |
 
 ### reactive/slot-change/
@@ -235,7 +235,7 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 | `safepoint_backward_branch.chk` | T39 | blocked | T39 tunables header not implemented |
 | `safepoint_call_return.chk` | T39 | blocked | T39 tunables header not implemented |
 | `stack-exhausted.chk` | M4 | blocked | Requires Exception.Scheduling type hierarchy + isA() (not implemented) |
-| `tag_stop_mid_pipe.chk` | M4 | blocked | Requires string concat (T46 dropped); pipe-safepoint delivery also blocked on string concat |
+| `tag_stop_mid_pipe.chk` | M4 | blocked | Candidate for activation followup — String + concat shipped v0.10.8; verify pipe-safepoint delivery body shape end-to-end |
 | `wait_event_basic.chk` | M5 | **active** | waituntil(e?) works; activated with Realm.fired counter replacing echo |
 | `wait_sleep_basic.chk` | T43+T39 | blocked | T39 tunables/clock-tick control not implemented |
 | `wake_after_currently_running.chk` | M5 | blocked | chk-runner urbi_step driver path not implemented (T39) |
@@ -267,7 +267,7 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 
 | Fixture | Old label | New bucket | Notes |
 |---------|-----------|------------|-------|
-| `ambient_inherit_separator.chk` | T38 | blocked | Requires `&` separator chk driver (T39) + string concat (T46 dropped) |
+| `ambient_inherit_separator.chk` | T38 | blocked | Requires `&` separator chk driver (T39) |
 | `begin-end.chk` | M4 | blocked | mytag.begin:/mytag.end: notation not implemented |
 | `block-propagation.chk` | M4 | blocked | tag.block() method not implemented |
 | `block.chk` | M4 | blocked | tag.block()/unblock() methods not implemented |
@@ -278,7 +278,7 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 | `freezeif.chk` | M5 | deferred: v1.x | freezeif keyword not in v1.0 scope |
 | `hierarchical.chk` | M5 | blocked | at sync watcher not implemented + tag.freeze not implemented |
 | `implicit.chk` | M4 | blocked | Implicit tag creation via Lobby scope lookup not implemented |
-| `nested_scope_unwind.chk` | M5 | blocked | Requires string concat (T46 dropped) + `&` runtime |
+| `nested_scope_unwind.chk` | M5 | blocked | Requires `&` separator chk driver (T39) |
 | `scope-tag.chk` | M5 | blocked | scopeTag builtin not implemented |
 | `scope-tag2.chk` | M5 | blocked | scopeTag builtin not implemented |
 | `start-and-stop.chk` | M4 | blocked | `&` separator hangs chk driver (T39) |
@@ -303,26 +303,33 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 
 ## Bucket summary (post-v0.10.7)
 
+> Numbers below match the per-fixture table above and the on-disk header
+> count (`grep -rln '^# blocked:' tests/chk/`). The earlier draft of this
+> table reported 76/22/5; the 2026-05-27 re-audit
+> (`docs/refactor-1/urbi-embedded-v0.10.7-blocked-chk-reaudit.md` finding
+> #0) caught the drift.
+
 | Bucket | Count |
 |--------|-------|
-| active (newly activated in W7) | 5 |
-| deferred: v1.x | 22 |
+| active (newly activated in W7) | 6 |
+| deferred: v1.x | 25 |
 | dropped | 3 |
-| blocked (open v1.0-rc work items) | 76 |
-| **Total** | **106** |
+| blocked (open v1.0-rc work items) | 73 |
+| **Total** | **107** |
 
-The **5 newly active** fixtures are:
+The **6 newly active** fixtures are:
 
 1. `chunk_lifecycle/repl_session_persistence.chk`
 2. `chunk_lifecycle/script_at_persists.chk`
 3. `control_transfer/tag_stop_skips_catch.chk`
-4. `scheduler/gc_slice_at_safepoint.chk`
-5. `scheduler/wait_event_basic.chk`
+4. `gc/gc_slice_at_safepoint.chk`
+5. `scheduler/gc_slice_at_safepoint.chk`
+6. `scheduler/wait_event_basic.chk`
 
 The dominant open work items for blocked fixtures are:
 
 - **T39** (chk-runner `## tunables:` / `## host:` extension): blocks ~25 scheduler + gc fixtures
-- **String `+` concatenation** (T46 explicitly dropped): blocks ~12 reactive + tag fixtures
+- **String `+` concatenation**: shipped v0.10.8 (S-string-plus). Previously cited as "T46 dropped" in ~12 fixtures; that annotation never resolved to a real drop decision. The 2026-05-27 audit (`docs/refactor-1/urbi-embedded-v0.10.7-blocked-chk-reaudit.md` Cat. C) flagged it; v0.10.8 implements String+String concat. Mixed-type coercion (`"x" + 1`) deferred to v1.x.
 - **tag.freeze()/block()** methods: blocks ~8 tag fixtures
 - **onleave clause** (PARSE-033, deferred-v1.x): blocks 5 control_transfer + tag fixtures
 - **`&` separator top-level chk driver** (T39): blocks ~10 fixtures

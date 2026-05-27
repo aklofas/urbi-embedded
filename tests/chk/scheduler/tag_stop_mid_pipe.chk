@@ -4,7 +4,7 @@
 #         finally bodies and popping TAG_SCOPE entries in order (row 12 §5.3
 #         — safepoint delivery of pending UEXEC_TAG_STOP unwind).
 #
-# blocked: requires string concat (T46 dropped); log = log + "a" pattern blocked
+# blocked: candidate for activation followup — String + concat shipped v0.10.8; verify pipe-safepoint delivery body shape works end-to-end (audit Cat. A activation)
 # matrix-row: tag-stop
 #
 # Reason: verifying tag.stop() delivered at an internal pipe safepoint requires

@@ -2,7 +2,7 @@
 # Covers: e! (async emit) — event fires all AT_EVENT subscribers in registration
 #         order; subscriber bodies run asynchronously on spawned coroutines.
 #
-# blocked: requires string concat (T46 explicitly dropped); adapt with integer counters when T46 resolved
+# blocked: spawn_body_coroutine path for at(e?) subscriber dispatch — body fires once on emit but logging slot-write ordering not yet observable (audit Cat. E)
 # matrix-row: reactive-event
 #
 # Reason:

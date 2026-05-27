@@ -145,6 +145,15 @@
 | `Object.clone()` | implemented | — |
 | Operator overload (9 ops) | implemented | v0.6.2 |
 
+### Operators
+
+| Construct | Status | Reason / fix milestone |
+|---|---|---|
+| `Int + Int`, `Float + Float`, atom numeric ops | implemented | atom fast path in OP_ADD/SUB/MUL/DIV |
+| `String + String` concatenation | implemented | v0.10.8 (S-string-plus) — atom fast path in OP_ADD; `arith_add` is bypassed for UVAL_STR + UVAL_STR; result is interned via `ustr_intern` |
+| `String + Int` / `String + Float` / mixed-type `+` | deferred-v1.x | v1.0 caller must use explicit `.asString()`; coercion taxonomy (which side coerces, `nil + ""`, `[] + ""`) is a deliberate v1.x design pass |
+| Operator overload via slot dispatch (9 ops) | implemented | REVIVAL §S30; v0.6.2 |
+
 ## Per-fixture status (from tests/chk/stdlib/legacy/)
 
 (populated by Wave 6 W1-W11; row per fixture)
