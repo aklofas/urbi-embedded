@@ -391,6 +391,11 @@ void   urbi_strand_attach_ambient_tags(struct UStrand *new_s,
                                        struct UTag   **chain,
                                        size_t          chain_count);
 
+/* v0.10.10 / D7-C: single-entry tag-list unlink, exposed for the disown
+ * helper so it can strip individual TAG_SCOPE entries from a child's
+ * cleanup chain without walking the whole chain. */
+void strand_unlink_member_entry(struct UCleanupEntry *e);
+
 /* === CHSTR-044: register-stack lifecycle triplet ===
  *
  * Centralises the alloc / zero / free lifecycle for the per-strand

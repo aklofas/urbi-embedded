@@ -59,6 +59,37 @@ ustrand_init(UStrand *s, struct UVM *vm) {
  * assertion fires.  Scanning the full cap is safe: never-pushed slots are
  * zero-initialised (kind == 0, not UCLEANUP_TAG_SCOPE == 2) and are skipped;
  * already-unlinked popped entries harmlessly produce a no-op list walk. */
+/* strand_unlink_member_entry
+ *
+ * Unlink a single UCleanupEntry from its owning_tag->member_strands_head
+ * singly-linked list.  No-op if entry->owning_tag is NULL or entry is
+ * not on the list (defensive — should always be on it when called from
+ * a strand that opened the scope normally).
+ *
+ * v0.10.10: extracted from strand_unlink_from_tags' inline loop so the
+ * disown helper can call it on a single entry without walking the whole
+ * cleanup stack. */
+void
+strand_unlink_member_entry(UCleanupEntry *e)
+{
+    UTag *tag;
+    UCleanupEntry **cur;
+
+    if (e == NULL || e->kind != UCLEANUP_TAG_SCOPE) return;
+    tag = e->owning_tag;
+    if (tag == NULL) return;
+
+    cur = &tag->member_strands_head;
+    while (*cur != NULL) {
+        if (*cur == e) {
+            *cur = e->next_member;
+            e->next_member = NULL;
+            return;
+        }
+        cur = &(*cur)->next_member;
+    }
+}
+
 static void
 strand_unlink_from_tags(UStrand *s)
 {
@@ -67,24 +98,7 @@ strand_unlink_from_tags(UStrand *s)
     if (s->cleanup_base == NULL || s->cleanup_cap == 0) return;
 
     for (i = 0; i < s->cleanup_cap; i++) {
-        UCleanupEntry *e = &s->cleanup_base[i];
-        UTag *tag;
-        UCleanupEntry **cur;
-
-        if (e->kind != UCLEANUP_TAG_SCOPE) continue;
-        tag = e->owning_tag;
-        if (tag == NULL) continue;
-
-        /* Unlink e from tag->member_strands_head singly-linked list. */
-        cur = &tag->member_strands_head;
-        while (*cur != NULL) {
-            if (*cur == e) {
-                *cur = e->next_member;
-                e->next_member = NULL;
-                break;
-            }
-            cur = &(*cur)->next_member;
-        }
+        strand_unlink_member_entry(&s->cleanup_base[i]);
     }
 }
 

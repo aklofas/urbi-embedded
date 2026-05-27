@@ -1,0 +1,22 @@
+// control_overlay.u — v0.10.10 / D7-C.
+//
+// Lazy-arg wrappers around the C-native __detach_strand /
+// __disown_strand.  The lazy parameter machinery (AST_LAZY_PARAM +
+// uemit_stmt.c lazy_arg_context) wraps the call-site expression in an
+// implicit closure when detach/disown are called from the same
+// compilation unit; the natives receive that closure and spawn it as
+// a new strand.
+//
+// detach: child inherits the parent's ambient tag chain.
+// disown: child inherits the connection tag only (all user tags stripped).
+//
+// Reference: legacy share/urbi/control.u:23-31 — same shape, same
+// semantics, ported to our lazy-param syntax.
+
+var detach = function(lazy fun) {
+    __detach_strand(fun)
+};
+
+var disown = function(lazy fun) {
+    __disown_strand(fun)
+};

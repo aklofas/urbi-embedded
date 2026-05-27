@@ -348,6 +348,10 @@ CI gate tracks this list to prevent silent growth.
   `urbi_strand_resume`, `urbi_strand_suspend`,
   `urbi_strand_scope_tag`
 
+### Control stdlib internals
+
+- `urbi_control_native_register_globals`
+
 ### Temporal stdlib internals
 
 - `urbi_temporal_native_register`, `urbi_temporal_native_register_globals`

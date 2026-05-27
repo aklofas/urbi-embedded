@@ -1,0 +1,17 @@
+# Milestone: v0.10.10-job-introspection
+# Covers: detach(expr) spawns a child strand that runs expr concurrently;
+#         the child executes and its side-effect is visible after sleep.
+#         Realm.got = 42 uses member-set expression syntax (plain local
+#         assignment cannot appear inside a call-arg position at v1.0).
+# matrix-row: separator-detach-builtin
+var got = 0
+[00000001] 0
+
+detach(Realm.got = 42)
+[00000002] nil
+
+sleep(10ms)
+[00000003] nil
+
+Realm.got
+[00000004] 42

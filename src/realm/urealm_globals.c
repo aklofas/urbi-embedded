@@ -29,6 +29,7 @@
 #include "stdlib/job_proto.h"      /* urbi_job_proto_register_globals — v0.10.10 D7-A */
 #include "stdlib/lobby_native.h"   /* urbi_lobby_native_register_globals — v0.9.1 Phase 5 */
 #include "stdlib/temporal.h"       /* urbi_temporal_native_register_globals — v0.9.4 Phase 5 */
+#include "stdlib/control_native.h" /* urbi_control_native_register_globals — v0.10.10 D7-C */
 #ifdef URBI_ENABLE_REPL
 #  include "stdlib/debug_namespace.h" /* urbi_debug_namespace_register_globals — v0.9.1 */
 #endif
@@ -473,6 +474,15 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * v1.0 packed-flag CONSTANT enforcement range. */
     {
         int rc = urbi_job_proto_register_globals(vm, realm);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+    }
+
+    /* v0.10.10 / D7-C: bind __detach_strand + __disown_strand as realm
+     * globals backing the detach/disown overlay wrappers. */
+    {
+        int rc = urbi_control_native_register_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }

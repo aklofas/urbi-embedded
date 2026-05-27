@@ -1,0 +1,21 @@
+# Milestone: v0.10.10-job-introspection
+# Covers: disown(expr) spawns a child strand that runs expr with user tag
+#         scopes stripped (only the realm connection tag is kept).
+#         child executes concurrently; side-effect visible after sleep.
+#         Realm.got = 42 uses member-set expression syntax (plain local
+#         assignment cannot appear inside a call-arg position at v1.0).
+# matrix-row: separator-disown-builtin
+var got = 0
+[00000001] 0
+
+var t = Tag.new()
+[00000002] <Tag>
+
+t: { disown(Realm.got = 42) }
+[00000003] nil
+
+sleep(10ms)
+[00000004] nil
+
+Realm.got
+[00000005] 42

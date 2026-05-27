@@ -17,3 +17,4 @@ list_overlay.u
 dict_overlay.u
 string_overlay.u
 lobby.u
+control_overlay.u
