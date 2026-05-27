@@ -48,6 +48,7 @@ typedef struct {
      * Checked at parse time in parse_break / parse_continue; does not affect
      * emit (the emitter independently tracks break/continue patch lists). */
     int loop_depth;
+    int switch_depth;  /* for parse_break accept-set; parse_continue uses loop_depth only */
 
     /* === v0.9.1 compile-budget guard ===
      *

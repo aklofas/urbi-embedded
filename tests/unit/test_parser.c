@@ -1093,6 +1093,18 @@ UTEST(parse_method_call_preserved) {
     ctx_destroy(&c);
 }
 
+/* audit-2 #1 — `continue` inside a switch with no enclosing loop must be
+   a parse error, not silently accepted. */
+UTEST(parse_switch_continue_outside_loop_is_error) {
+    ParseCtx c;
+    ctx_init(&c, "switch (1) { case 1: continue; }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_CONTINUE_OUTSIDE_LOOP, (int)n->u.err.code);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -1195,4 +1207,7 @@ void test_parser_suite(void) {
     utest_run("parse: 'obj.x->prop = 1' → AST_PROP_SET on MEMBER_GET", parse_prop_set_basic);
     utest_run("parse: 'obj.method()' preserved as AST_CALL{callee=MEMBER_GET}",
               parse_method_call_preserved);
+    /* audit-2 #1 */
+    utest_run("parse: switch body continue without enclosing loop → PARSE_CONTINUE_OUTSIDE_LOOP",
+              parse_switch_continue_outside_loop_is_error);
 }

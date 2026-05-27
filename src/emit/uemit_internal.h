@@ -238,7 +238,7 @@ static inline void free_reg_freereg_synced(UEmitter *e) {
  * uemit_loop_record_break / _continue — record placeholder JMP PCs.
  * uemit_loop_patch_breaks / _continues — batch-patch to a known target. */
 
-static inline bool uemit_loop_push(UEmitter *e) {
+static inline bool uemit_loop_push(UEmitter *e, ULoopFrameKind kind) {
     if (e->loop_depth >= UEMIT_LOOP_CTX_MAX) {
         e->error = EMIT_NESTING_TOO_DEEP;
         return false;
@@ -246,6 +246,7 @@ static inline bool uemit_loop_push(UEmitter *e) {
     ULoopCtx *ctx = &e->loop_stack[e->loop_depth];
     ctx->break_count    = 0;
     ctx->continue_count = 0;
+    ctx->kind           = kind;
     e->loop_depth++;
     return true;
 }
@@ -262,10 +263,19 @@ static inline void uemit_loop_record_break(UEmitter *e, int pc) {
 }
 
 static inline void uemit_loop_record_continue(UEmitter *e, int pc) {
-    if (e->loop_depth == 0) return;
-    ULoopCtx *ctx = &e->loop_stack[e->loop_depth - 1];
-    if (ctx->continue_count < UEMIT_LOOP_PATCH_MAX)
-        ctx->continue_pcs[ctx->continue_count++] = pc;
+    /* Walk back from topmost frame; record on nearest LOOP frame.
+     * Switch frames are transparent to `continue`.  If no LOOP frame
+     * exists in the stack the parser already rejected this; defensive
+     * no-op. */
+    int d;
+    for (d = e->loop_depth; d > 0; d--) {
+        ULoopCtx *ctx = &e->loop_stack[d - 1];
+        if (ctx->kind == ULOOP_FRAME_LOOP) {
+            if (ctx->continue_count < UEMIT_LOOP_PATCH_MAX)
+                ctx->continue_pcs[ctx->continue_count++] = pc;
+            return;
+        }
+    }
 }
 
 static inline void uemit_loop_patch_breaks(UEmitter *e, int exit_target) {

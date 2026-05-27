@@ -1,0 +1,15 @@
+# Milestone: v0.10.7-audit-followup W1
+# Covers: audit-2 #1 regression — break inside a switch that is itself inside
+#         a loop exits only the switch, not the enclosing loop.  i==2 hits
+#         break, exits the switch, and execution continues after the switch,
+#         so seen.add(i) still runs for all three iterations: [1, 2, 3].
+
+# --- break in switch inside loop: exits switch only, loop continues ---
+var i = 0; var seen = []; while (i < 3) { i = i + 1; switch (i) { case 2: break; }; seen.add(i); }; seen.length()
+[00000000] 3
+var i2 = 0; var seen2 = []; while (i2 < 3) { i2 = i2 + 1; switch (i2) { case 2: break; }; seen2.add(i2); }; seen2.get(0)
+[00000001] 1
+var i3 = 0; var seen3 = []; while (i3 < 3) { i3 = i3 + 1; switch (i3) { case 2: break; }; seen3.add(i3); }; seen3.get(1)
+[00000002] 2
+var i4 = 0; var seen4 = []; while (i4 < 3) { i4 = i4 + 1; switch (i4) { case 2: break; }; seen4.add(i4); }; seen4.get(2)
+[00000003] 3

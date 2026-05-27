@@ -454,7 +454,7 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
     }
 
     /* W1/v0.10.5: open loop context for break/continue. */
-    if (!uemit_loop_push(e)) return 0U;
+    if (!uemit_loop_push(e, ULOOP_FRAME_LOOP)) return 0U;
 
     int loop_start = (int)emit_instr_count(e);
 
@@ -1259,7 +1259,7 @@ uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n) {
     e->next_reg = e->current_fs->freereg;
 
     /* Open loop context for break/continue. */
-    if (!uemit_loop_push(e)) { uemit_close_block(e); return 0U; }
+    if (!uemit_loop_push(e, ULOOP_FRAME_LOOP)) { uemit_close_block(e); return 0U; }
 
     /* 4. loop_start: check _i < _n.
      * OP_LT A=0, B=i_reg, C=n_reg:
@@ -1405,7 +1405,7 @@ uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
     uint32_t line = (uint32_t)n->line;
 
     /* Open loop context so break exits the switch. */
-    if (!uemit_loop_push(e)) return 0U;
+    if (!uemit_loop_push(e, ULOOP_FRAME_SWITCH)) return 0U;
 
     /* 1. Evaluate the switch expression once into sw_reg. */
     uint8_t sw_reg = e->next_reg;

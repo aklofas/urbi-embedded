@@ -1,0 +1,9 @@
+# Milestone: v0.10.7-audit-followup W1
+# Covers: audit-2 #1 — `continue` inside a switch with no enclosing loop is
+#         a parse error.  Before the fix, parse_switch incremented loop_depth,
+#         which caused parse_continue to accept `continue` and emit an unpatched
+#         OP_JMP placeholder.
+
+# --- continue inside switch with no enclosing loop: parse error ---
+switch (1) { case 1: continue; };
+[00000000] !!! <stdin>:1:22: 'continue' is only valid inside a 'for' or 'while' loop
