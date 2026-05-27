@@ -2,14 +2,122 @@
 
 ## v0.10.7-audit-followup — 2026-05-27
 
-### Freeze-gate breadth (W6)
+**Post-arc audit-followup wave.** Closes 14 unique findings raised by two
+external audits of the v0.10.x architectural refactor arc: 3 latent code
+bugs, 6 doc-drift defects, 2 missing-gate defects, 1 `.chk` taxonomy
+normalization. 7 worktrees. ABI bumped 0/18/0 → 0/18/1 (PATCH-only, no
+public surface change). Wire v1.9 / 0x19 unchanged.
 
-- `test-abi-freeze` and `test-wire-freeze` now lint hardcoded test
-  literals (`tests/unit/test_api_version.c`, `tests/unit/test_version.c`)
-  and release-evidence documents (`docs/api-stability.md`,
-  `docs/release/release-readiness.md`) for drift against
-  `include/urbi/version.h` and `src/chunk/uchunk.h`. Closes the
-  v0.10.6 W7-followup drift class (audit-1 F3, partial audit-2 plus5).
+### Code fixes
+
+- **`switch`/`continue` semantic fix (W1).** `parse_switch` previously
+  incremented `loop_depth`, which let `parse_continue` accept `continue`
+  inside a switch even with no enclosing real loop — the emitter then
+  recorded a placeholder JMP that was never patched, producing invalid
+  bytecode. New invariant: `parse_switch` uses `switch_depth`; `break`
+  accepts either depth; `continue` accepts `loop_depth` only. Emit frame
+  stack distinguishes `ULOOP_FRAME_LOOP` from `ULOOP_FRAME_SWITCH` and
+  `continue` walks past switch frames to the nearest loop frame. Latent
+  inline fix: `uparse_init` now explicitly zero-initializes `loop_depth`
+  and `switch_depth` (they were stack-garbage before). Three new chk
+  fixtures cover the cases. Closes audit-2 #1.
+
+- **Compound subscript single-evaluation (W2).** `l[i] += v` previously
+  re-emitted recv and index AST nodes for both synthetic `.get(i)` and
+  `.set(i, …)` calls, double-evaluating side-effectful expressions like
+  `makeList()[nextIdx()] += 1`. New shape: emit recv into temp register,
+  emit index into temp register, build synthetic calls against
+  `AST_REG_REF` leaves so each evaluates exactly once. New emit-only
+  `AST_REG_REF` AST kind (never serialized; ABI/wire unchanged). New
+  fixture asserts counter-based recv/index helpers fire exactly once.
+  Closes audit-1 F4, audit-2 #2.
+
+- **REPL single-owner teardown — ownership clarification (W3).**
+  Three concrete defects in the v0.10.6 W1 model: (1) `urepl_request_teardown`
+  stored `needs_teardown` with `__ATOMIC_RELAXED` despite the paired
+  acquire load in the reaper — promoted to `__ATOMIC_RELEASE`. (2)
+  Reader thread and reaper both wrote `r->session = NULL` without
+  coordination — acquired `sessions_mutex` around the reader-side write.
+  (3) `urepl_listener_stop_and_join` directly called
+  `urepl_session_destroy` with a stale comment; the call now precedes
+  destroy with idempotent `urepl_request_teardown`, and a block comment
+  documents the single-owner invariant (listener + reader pthreads
+  joined; `urbi_step` not running; stop path is sole active thread).
+  Cooperative-sweep plain reads/writes on the same flag promoted to
+  acquire/release atomics for hygiene. New ownership-contract document
+  at `docs/internals/repl-teardown.md`. New `test_repl_stop_path` unit
+  test (4 cases). Closes audit-1 F1, audit-2 #6. TSAN coverage deferred
+  to v1.x (cross-image lacks the runtime).
+
+### Doc-drift sweep (W4)
+
+- **ABI freeze docs corrected** from `0/17/0` to `0/18/0` in
+  `docs/api-stability.md` and the release-readiness evidence row.
+  Source pin in `include/urbi/version.h` was correct throughout. Closes
+  audit-1 F2, audit-2 #4.
+- **Wire-format v1.7 → v1.9 reconciliation** in `docs/internals/module-system.md`
+  (replaced duplicated wire-format details with a pointer to
+  `bytecode-format.md` to prevent future drift) and the stale comment
+  in `src/emit/uemit_serialize.c`. Closes audit-2 #5.
+- **Reactive runtime internals refreshed** — `Tag.new`, `tag.stop()`,
+  bare-prefix tags, and member-expression tag forms are documented as
+  shipped (W3 of v0.10.2 and W6 of v0.10.5) rather than as runtime gaps.
+  Closes audit-1 F5.
+- **GC cell-inventory sizes corrected** against current static_asserts:
+  `UStrand` 2880 → 3896 B; `UTag` 56 → 64 B (secondary drift found in
+  same sweep). Closes audit-1 F6.
+- **CallMessage impact taxonomy unified** — adopted single definition
+  (files containing direct uses of `call.{message,evalArgAt,argv,args,name}`),
+  count derived by a documented ripgrep command for reproducibility:
+  23 files across 3 third-party repos. Resolves the 44/35/34/17
+  inconsistency across migration and corpus docs. Closes audit-1 F7.
+- **Coverage gate status clarified** — `make releasetest` enforces
+  `--fail-under-line 85` as a Phase 1 hard gate locally; GitHub Actions
+  runs the same target with `continue-on-error: true` (advisory).
+  `docs/release/test-tiers.md` no longer says "not gated." Closes audit-2 #7.
+
+### Tooling
+
+- **Public-doc scrub gate (W5).** New `tests/scripts/check-public-doc-scrub.sh`
+  wired into `make docs-check`. Greps tracked files for workspace-private
+  paths, tool-context filenames, and AI-attribution patterns. Honors
+  `scrub-allow: <reason>` markers for intentional exceptions (e.g., the
+  policy line in `CONTRIBUTING.md` that names the prohibited pattern by
+  name). Cleaned 9 pre-existing violations across example demos,
+  `Makefile`, helper scripts, and a generic env-var fallback for the
+  legacy-oracle diff script. See the scrub script header for the
+  pattern list. Closes audit-2 #3.
+
+- **Freeze-gate breadth (W6).** `test-abi-freeze` and `test-wire-freeze`
+  now lint hardcoded test literals (`tests/unit/test_api_version.c`,
+  `tests/unit/test_version.c`) and release-evidence documents
+  (`docs/api-stability.md`, `docs/release/release-readiness.md`) for
+  drift against `include/urbi/version.h` and `src/chunk/uchunk.h`.
+  Closes the v0.10.6 W7-followup drift class (audit-1 F3, audit-2 #5
+  gate-extension half).
+
+### Tests
+
+- **`.chk` defer-to taxonomy retired (W7).** Replaced 106 legacy
+  `defer-to: M*/T*` labels with a four-bucket taxonomy: `active`,
+  `deferred: v1.x`, `dropped`, `blocked: <work-item>`. 5 fixtures
+  flipped to active (features shipped during the arc but the marker
+  wasn't updated): `chunk_lifecycle/repl_session_persistence.chk`,
+  `chunk_lifecycle/script_at_persists.chk`,
+  `control_transfer/tag_stop_skips_catch.chk`,
+  `scheduler/gc_slice_at_safepoint.chk`, `scheduler/wait_event_basic.chk`.
+  New `docs/release/chk-deferred-taxonomy.md` documents the buckets and
+  per-fixture classifications. v1.0 conformance denominator now
+  computable from the matrix (163 real-content fixtures / 269 total).
+  Closes audit-2 #8.
+
+### Collateral
+
+- **`docs/api-surface-tiers.md` T4 entry** added for the 9
+  `urbi_introspect_*` symbols (`coros`, `events`, `gc`, `lobbies`,
+  `profile`, `slots`, `stack`, `tags`, `watchers`) that landed in
+  v0.9.1 but were missing from the manifest. Pre-existing gap surfaced
+  by the W3 worktree's manifest gate.
 
 ## v0.10.6-stabilization — 2026-05-26
 

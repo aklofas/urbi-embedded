@@ -202,7 +202,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  18
-#define URBI_API_VERSION_PATCH  0
+#define URBI_API_VERSION_PATCH  1
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -221,18 +221,17 @@ extern "C" {
  * Failing to bump the static_assert breaks the build, which is the point —
  * deliberate intent at every change, not silent ABI drift.
  *
- * Pin target: v0.10.6-stabilization ships at 0/18/0.
+ * Pin target: v0.10.7-audit-followup ships at 0/18/1.
  *
- * The pin landed in commit `bdad57c` (W2) at 0/17/0; bumped to 0/18/0 at
- * wave wrap-up to capture the W4 UReplConfig.rate_limit_per_second field
- * addition.  This dual bump is the worked example of the post-freeze
- * policy — the W2 pin documented intent; the wave wrap-up enumerated the
- * break in this file's leading comment (#16) and bumped both the pin and
- * the macros in lockstep before tag.
+ * The pin landed in commit `bdad57c` (W2 of v0.10.6) at 0/17/0; bumped to
+ * 0/18/0 at v0.10.6 wave wrap-up to capture the W4 UReplConfig.rate_limit_per_second
+ * field addition; bumped to 0/18/1 at v0.10.7 wave wrap-up — PATCH-only,
+ * no public surface change (audit followup wave fixes latent bugs and
+ * doc/gate drift without touching the C API).
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 18
-            && URBI_API_VERSION_PATCH == 0,
+            && URBI_API_VERSION_PATCH == 1,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */
