@@ -71,9 +71,10 @@ UTEST(isa_arity_error)
 
     UValue out;
     int rc = utest_e2e_compile_and_run(&vm, "1.isA()", &out);
-    /* Either the call returns an error code, or the eval throws and the
-     * test helper swallows it returning non-OK. */
-    UASSERT(rc != URBI_OK || (int)out.kind != (int)UVAL_BOOL);
+    /* urbi_raise_arity transitions the strand to fatal state; run_chunk
+     * surfaces it as URBI_ERR_STRAND_FATAL (not URBI_OK).  The REPL-
+     * swallows pattern from v0.10.9 applies only to urbi_repl_eval. */
+    UASSERT(rc != URBI_OK);
 
     urbi_vm_destroy(&vm);
 }

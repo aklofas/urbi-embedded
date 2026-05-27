@@ -12,9 +12,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* v0.10.11 / W3: `<<` shift-write selector.  File-scope (with
+ * URBI_STATIC_ASSERT length guard) matching the kEmitMethodName pattern
+ * in uparse.c; declared extern in uparse_internal.h for visibility. */
+const char kLShiftSelector[] = "<<";
+URBI_STATIC_ASSERT(sizeof kLShiftSelector - 1U == kLShiftSelectorLen,
+               "kLShiftSelectorLen must equal strlen(kLShiftSelector)");
+
 /* Return the left-binding precedence of an infix token, or 0 if not
    an infix operator (terminates the Pratt climb).
    Comparison operators bind looser than arithmetic:
+     2 = streaming / write (<<)
      3 = equality (==, !=)
      4 = relational (<, <=, >, >=)
      5 = additive (+, -)
@@ -800,13 +808,13 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
          *   cout << a << b  →  (cout << a) << b
          * which is the standard streaming / chaining convention. */
         if (op.type == TOK_LSHIFT) {
-            /* Selector: the two-byte string "<<" (quoted-ident style). */
-            static const char kLShiftSelector[] = "<<";
+            /* Selector: the two-byte string "<<" (quoted-ident style).
+             * kLShiftSelector is the file-scope const above. */
             UAstNode *member = make_node(p, AST_MEMBER_GET, op.line, op.col);
             if (!member) return NULL;
             member->u.member.recv       = lhs;
             member->u.member.name_start = kLShiftSelector;
-            member->u.member.name_len   = 2;
+            member->u.member.name_len   = kLShiftSelectorLen;
             member->u.member.value      = NULL;
             UAstNode **args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
             if (!args) return (UAstNode *)&uparser_oom_sentinel;

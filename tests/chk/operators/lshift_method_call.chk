@@ -14,9 +14,12 @@ class Chain {}; var ch = Chain.new(); Chain.setSlot("<<", function(x) { this });
 
 # Precedence: << binds looser than equality (prec 2 < 3), so `p << x == y`
 # parses as `p << (x == y)`.  The slot receives a bool; slot returns it back.
+# Two forms: with parens (sanity), then bare (actually exercises precedence).
 class Prec {}; Prec.setSlot("<<", function(x) { x }); var p = Prec.new(); p << (2 == 2)
 [00000002] true
+var q = Prec.new(); q << 2 == 2
+[00000003] true
 
 # Missing '<<' slot produces a type error (not a lex error).
 class NoSlot {}; var ns = NoSlot.new(); ns << 7
-[00000003] !!! TypeError: SELF: slot '<<' not found
+[00000004] !!! TypeError: SELF: slot '<<' not found

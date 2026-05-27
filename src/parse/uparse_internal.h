@@ -42,6 +42,11 @@ extern const UAstNode uparser_oom_sentinel;
 extern const char kEmitMethodName[];
 #define kEmitMethodNameLen 4  /* strlen("emit") */
 
+/* v0.10.11 / W3: selector for `a << b` desugar to `a.'<<'(b)`.
+ * Defined in uparse_expr.c at file scope. */
+extern const char kLShiftSelector[];
+#define kLShiftSelectorLen 2  /* strlen("<<") */
+
 /* --- Error-message table (defined in uparse.c residual). --- */
 extern const char * const kErrorMessages[];
 

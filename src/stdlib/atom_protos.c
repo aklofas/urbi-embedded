@@ -183,16 +183,17 @@ urbi_atom_protos_register(UVM *vm)
  * urbi_stdlib_boot and sets URBI_OBJ_FLAG_READONLY on each so that
  * urbiscript-side mutation (OP_SETSLOT) raises TypeError.
  *
- * The cohort marked here tracks the spec's 15-element list minus
- * Object — which D5 (Cat. E ratify at v0.10.11) unfroze so legacy
- * `var Object.x = ...` and `Object.x = ...` work as canonical "add
- * a global" idiom (matches tests/2.x/basic.chk:1 + fallback.chk:21
- * + same-as.chk:8 in the third-party corpus).  14 protos marked
- * here; Lobby stays frozen via the explicit branch below (the
- * `Lobby.lobbies` session-registry invariant is load-bearing for
- * the REPL session-management contract).  Global (vm->global_-
- * namespace_proto) was already excluded as the designated mutable
- * shared-state surface.
+ * The cohort excludes Object — which D5 (Cat. E ratify at v0.10.11)
+ * unfroze so legacy `var Object.x = ...` and `Object.x = ...` work
+ * as canonical "add a global" idiom (matches tests/2.x/basic.chk:1
+ * + fallback.chk:21 + same-as.chk:8 in the third-party corpus).
+ * 15 protos marked here total: 9 atom singletons in the
+ * ATOM_FAMILIES loop below + 6 runtime-type singletons (tag, event,
+ * mutex, date, duration, lobby) in the if-block after.  Lobby is
+ * the last entry in that if-block — its readonly bit is load-
+ * bearing for the `Lobby.lobbies` session-registry invariant.
+ * Global (vm->global_namespace_proto) was already excluded as the
+ * designated mutable cross-session namespace.
  *
  * Idempotent: setting the same bit on the same UObject repeatedly is a
  * no-op.  No allocation, no failure mode. */
@@ -225,7 +226,8 @@ urbi_atom_protos_mark_readonly(UVM *vm)
     /* Runtime-type protos owned by VM singletons (Tag/Event/Mutex/Date/
      * Duration/Lobby).  Lobby joins the cohort at v0.9.1 Phase 5 — spec
      * §3.6 lists it as one of the 15 readonly protos; Object was removed
-     * from this cohort at v0.10.11 (D5), leaving 14 protos total. */
+     * from this cohort at v0.10.11 (D5).  Post-D5 cohort total: 15 protos
+     * marked across the loop above (9) + this if-block (6). */
     if (vm->tag_proto      != NULL) vm->tag_proto->flags      |= URBI_OBJ_FLAG_READONLY;
     if (vm->event_proto    != NULL) vm->event_proto->flags    |= URBI_OBJ_FLAG_READONLY;
     if (vm->mutex_proto    != NULL) vm->mutex_proto->flags    |= URBI_OBJ_FLAG_READONLY;

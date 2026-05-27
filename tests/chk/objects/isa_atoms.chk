@@ -15,7 +15,9 @@ nil.isA(Nil)
 [00000005] true
 var xs = [1, 2, 3]; xs.isA(List)
 [00000006] true
+1.isA(Object)
+[00000007] true
 1.isA(Float)
-[00000007] false
-1.isA(String)
 [00000008] false
+1.isA(String)
+[00000009] false
