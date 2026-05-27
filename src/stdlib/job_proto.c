@@ -228,6 +228,49 @@ job_status_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
+/* === Job.jobs (no args; self is the Job proto or any Job instance) ======
+ *
+ * Walks vm->realms_head × realm->strands_head building a List<Job> of
+ * every live (non-DEAD) strand across all realms.  DEAD strands are
+ * excluded at source — they'd resolve to "dead" status anyway and their
+ * memory may be recycled before the caller inspects the list.
+ *
+ * GC safety: the list UObject is allocated first and stored in `out` as
+ * a UVAL_OBJECT before each urbi_job_make call; both the list and any
+ * already-appended Job items are reachable via the list during the walk.
+ * urbi_job_make itself stores only a UVAL_INT (pointer-as-integer) in the
+ * fresh Job object, which cannot trigger GC movement in v0.10.10's
+ * non-moving allocator.  The discipline costs nothing and is future-safe. */
+static int
+job_jobs_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                UValue *out)
+{
+    (void)self; (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Job.jobs", 0, nargs, out);
+
+    UObject *list_obj = urbi_stdlib_list_new_empty(vm);
+    if (list_obj == NULL) return urbi_raise_oom(vm, out);
+
+    /* Root the list in *out before any urbi_job_make allocations so the
+     * list is reachable if GC runs. */
+    urbi_zero(out, sizeof(*out));
+    out->kind = (uint8_t)UVAL_OBJECT;
+    out->v.p  = (void *)list_obj;
+
+    for (URealm *r = vm->realms_head; r != NULL; r = r->next_in_vm) {
+        for (UStrand *s = r->strands_head; s != NULL; s = s->next_in_realm) {
+            if ((s->state & (uint8_t)USTRAND_STATE_MASK) == (uint8_t)USTRAND_DEAD)
+                continue;
+            UValue jv = urbi_job_make(vm, s);
+            if (jv.kind == (uint8_t)UVAL_NIL) return urbi_raise_oom(vm, out);
+            int rc = urbi_stdlib_list_append_value(vm, list_obj, jv);
+            if (rc != URBI_OK) return urbi_raise_oom(vm, out);
+        }
+    }
+
+    return UEXEC_OK;
+}
+
 /* === Internal helper: install a C-native method on a proto ============= */
 static int
 install_native_method(UVM *vm, UObject *proto,
@@ -285,7 +328,7 @@ urbi_job_make(UVM *vm, UStrand *strand)
 /* === urbi_job_proto_register: stdlib_boot hook ==========================
  *
  * Allocates vm->job_proto if not yet present, chains it onto Object root,
- * and installs four C-native methods: current, tags, uid, status.
+ * and installs five C-native methods: current, tags, uid, status, jobs (W2).
  * Idempotent: returns URBI_OK immediately if already done. */
 int
 urbi_job_proto_register(UVM *vm)
@@ -308,6 +351,8 @@ urbi_job_proto_register(UVM *vm)
     rc = install_native_method(vm, p, "uid",     job_uid_native);
     if (rc != URBI_OK) return rc;
     rc = install_native_method(vm, p, "status",  job_status_native);
+    if (rc != URBI_OK) return rc;
+    rc = install_native_method(vm, p, "jobs",    job_jobs_native);
     if (rc != URBI_OK) return rc;
 
     /* Mark the proto readonly per the v0.9.1 atom-proto convention.

@@ -107,6 +107,28 @@ UTEST(job_current_tags_length_gte_0)
     urbi_vm_destroy(&vm);
 }
 
+/* === Test 4: Job.jobs() returns a List with length >= 1 =================
+ *
+ * The eval strand is linked into realm->strands_head while urbi_run_chunk
+ * executes (uvm_run.c lines 93-94), so Job.jobs() called from a script
+ * must return at least one Job (the current eval strand itself).
+ * Verifies kind==UVAL_INT (length), value >= 1. */
+UTEST(job_jobs_length_gte_1)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
+
+    UValue out;
+    int rc = utest_e2e_compile_and_run(&vm, "Job.jobs().length()", &out);
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT_EQ((int)out.kind, (int)UVAL_INT);
+    UASSERT(out.v.i >= 1);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite ===== */
 void test_job_proto_suite(void);
 
@@ -119,4 +141,6 @@ test_job_proto_suite(void)
               job_current_status_is_string);
     utest_run("job_current_tags_length_gte_0",
               job_current_tags_length_gte_0);
+    utest_run("job_jobs_length_gte_1",
+              job_jobs_length_gte_1);
 }

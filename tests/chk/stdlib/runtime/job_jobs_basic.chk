@@ -1,0 +1,9 @@
+# Milestone: v0.10.10-job-introspection
+# Covers: Job.jobs() returns a non-empty List<Job>; length >= 1 because
+#         the eval strand is live during the call; the current strand
+#         appears in the list (uid match).
+# matrix-row: stdlib-job-jobs
+var n = Job.jobs().length(); n >= 1
+[00000001] true
+var found_self = false; for (var j : Job.jobs()) { if (j.uid() == Job.current().uid()) { found_self = true } }; found_self
+[00000002] true
