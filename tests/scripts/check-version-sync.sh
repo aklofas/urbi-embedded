@@ -73,7 +73,8 @@ else
     WIRE_STR="v${WIRE_MAJOR}.${WIRE_MINOR}"
 
     # README cites wire as "wire vX.Y" or "bytecode vX.Y" or similar
-    README_WIRE=$(grep -oE '(wire|bytecode) v[0-9]+\.[0-9]+' README.md | \
+    # (case-insensitive — README sometimes capitalizes at sentence start).
+    README_WIRE=$(grep -oEi '(wire|bytecode) v[0-9]+\.[0-9]+' README.md | \
                   head -1 | awk '{print $2}')
 
     if [ -z "$README_WIRE" ]; then
@@ -87,8 +88,9 @@ fi
 
 # === (4) README tag reference vs latest tag ===
 
-# README "Tagged" claim — find and verify
-README_TAG=$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9-]+)?' README.md | head -1)
+# README "Tagged" claim — find and verify.  Tag suffix can contain
+# mixed case (e.g. v0.10.11-channel-and-isA), so [A-Za-z0-9-]+ not [a-z0-9-]+.
+README_TAG=$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9-]+)?' README.md | head -1)
 
 if [ -z "$README_TAG" ]; then
     fail_msg "README.md contains no tag reference (vX.Y.Z[-name])"
