@@ -9,7 +9,8 @@
  *                                    thread) is destroyed by stop; no leak.
  *   3. stop_with_flagged_session   — session already flagged for teardown
  *                                    before stop is called; stop cleans up.
- *   4. stop_clears_sessions_head   — after stop, sessions_head is NULL.
+ *   4. stop_clears_sessions_head   — stop on multiple sessions must not
+ *                                    crash (cleanup verified under ASan).
  *
  * These exercise the stop path's single-owner contract documented in
  * docs/internals/repl-teardown.md §5. */
