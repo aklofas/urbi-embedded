@@ -9,10 +9,9 @@
 # The cross-session broadcast aspect (A's wall actually reaching B/C/D
 # via per-realm writer routing) is verified end-to-end by
 # tests/unit/test_repl_multi_client.c (Task 33) over real TCP loopback.
-# The Lobby.wall closure body calls l.echo(msg, tag, "***") which now
-# works end-to-end via the v0.10.11 W4 fix (Lobby.echo uses
-# this.__builtin_lobby_send, resolving through the proto chain).
-# The bare-name auto-walk root-cause remains a v1.x emit follow-up.
+# The Lobby.wall closure body itself uses the same unqualified-name
+# resolution as Lobby.echo (which doesn't yet resolve __builtin_lobby_send
+# from inside the closure — v1.x emit follow-up).
 
 > {"id":17,"op":"eval","code":"Lobby.lobbies.length()"}
 < "id":17 | "kind":"result" | "value":"1"

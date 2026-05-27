@@ -1,11 +1,10 @@
 # v0.9.1 Phase 8 Task 32 — output routes to the session writer.
 #
 # Spec §9.1 / §14 exit-criterion 4: A's `echo "hi"` reaches A's output.
-# We invoke __builtin_lobby_send directly via Lobby.__builtin_lobby_send;
-# the direct call form continues to work and exercises the routing path
-# independently of the Lobby.echo closure wrapper.  The v0.10.11 W4 fix
-# makes Lobby.echo itself work (tested in tests/chk/lobby/lobby_echo_works.chk).
-# This routes through __builtin_lobby_send →
+# We invoke __builtin_lobby_send directly via Lobby.__builtin_lobby_send
+# (the v0.9.1 baseline doesn't yet resolve unqualified `__builtin_lobby_send`
+# from inside Lobby.echo's closure body — that's a v1.x emit-resolution
+# follow-up).  This routes through __builtin_lobby_send →
 # urbi_vm_write_in_realm → session writer → "kind":"output" envelope
 # with the eval id.
 #

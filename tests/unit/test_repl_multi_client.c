@@ -14,11 +14,14 @@
  * avoids concurrent-urbi_step races that an external driver thread
  * would introduce.
  *
- * Note on echo / wall body resolution: v0.10.11 W4 fixed Lobby.echo
- * to use this.__builtin_lobby_send (resolves through the proto chain).
- * These multi-client tests still call Lobby.__builtin_lobby_send directly
- * and implement an inline-wall manually for isolation clarity; both paths
- * work.  The bare-name auto-walk root-cause is a v1.x emit follow-up. */
+ * Note on echo / wall body resolution: at v0.9.1 baseline the
+ * Lobby.echo / Lobby.wall closure bodies reference __builtin_lobby_send
+ * unqualified, which doesn't resolve through `this` in the current
+ * emit pipeline (bare names route to the realm-global fallback).  The
+ * tests therefore call Lobby.__builtin_lobby_send directly and
+ * implement an inline-wall manually via Lobby.lobbies iteration.  The
+ * higher-level Lobby.echo / Lobby.wall surface is a v1.x emit-name-
+ * resolution follow-up. */
 #include "utest.h"
 
 #ifdef URBI_ENABLE_REPL

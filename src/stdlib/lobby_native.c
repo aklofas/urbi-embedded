@@ -120,9 +120,10 @@ val_obj_local(UObject *o)
  * Signature on the urbi side: __builtin_lobby_send(msg, tag, prefix) -> nil
  *
  * msg, tag, prefix are expected to be String values (UVAL_STR — interned
- * NUL-terminated C strings via USymbol).  The lobby.u overlay always
- * passes asString(msg) so non-string args go through the standard
- * coercion path before reaching here.
+ * NUL-terminated C strings via USymbol).  Non-string args raise TypeError
+ * at this boundary; the lobby.u overlay forwards `msg` unchanged (String
+ * has no `.asString` method at v0.10.11 — see workspace design-risks
+ * v0.10.11-A for the v1.x stdlib gap).
  *
  * Output framing (spec §9.2):
  *   "[%08llu:tag] prefix msg\n"   when tag is non-empty
