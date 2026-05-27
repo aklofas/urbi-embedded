@@ -125,6 +125,25 @@ constParameterPointer:src/stdlib/debug_namespace.c
 // refinement lands; revisit then.
 knownConditionTrueFalse:src/runtime/uunwind.c
 
+// audit:v0.10.9-W3 — src/runtime/uunwind.c urbi_tag_block / _unblock /
+// _freeze / _unfreeze use `vm` only for URBI_ASSERT_NOT_ISR and the
+// NULL-arg validity check, then walk tag->member_strands_head and forward
+// to urbi_strand_suspend / _resume (which themselves only read vm).
+// cppcheck suggests `const struct UVM *` for the parameter, but the
+// public C API surface in include/urbi/urbi.h pins `struct UVM *vm` to
+// match the broader API convention (urbi_tag_stop / urbi_strand_cancel /
+// urbi_throw etc.).  Const-qualifying would break ABI uniformity and
+// force every caller through a const-cast.
+constParameterPointer:src/runtime/uunwind.c
+
+// audit:v0.10.9-W3 — src/tag/utag_native.c tag_freeze_native /
+// tag_unfreeze_native and the new tag_frozen_native / tag_blocked_native
+// load `t` from self.v.p and only read it.  cppcheck suggests
+// `const UTag *`, but the helpers below (urbi_tag_freeze etc.) accept
+// non-const UTag*.  Cascading const into urbi_tag_* signatures would
+// break the public C API uniformity (see uunwind.c rationale above).
+constVariablePointer:src/tag/utag_native.c
+
 // audit:v094-repl-portability — src/repl/urepl_queue.c uses UREPL_MUTEX_LOCK /
 // UREPL_COND_WAIT / UREPL_COND_BROADCAST macros (from src/repl/urepl_threading.h)
 // that expand to pthread_mutex_lock / pthread_cond_wait / pthread_cond_broadcast

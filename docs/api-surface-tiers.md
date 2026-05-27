@@ -71,7 +71,9 @@ New public symbols require a PR-review-touch on this manifest.
 
 ### Tags
 
-- `urbi_tag_create`, `urbi_tag_info`, `urbi_tag_stop`
+- `urbi_tag_create`, `urbi_tag_info`, `urbi_tag_stop`,
+  `urbi_tag_block`, `urbi_tag_unblock`,
+  `urbi_tag_freeze`, `urbi_tag_unfreeze`
 
 ### Strand
 
@@ -342,6 +344,7 @@ CI gate tracks this list to prevent silent growth.
   `urbi_strand_attach_ambient_tags`, `urbi_strand_capture_ambient_chain`,
   `urbi_strand_create_for_module`, `urbi_strand_register_stack_alloc`,
   `urbi_strand_register_stack_free`, `urbi_strand_register_stack_zero`,
+  `urbi_strand_resume`, `urbi_strand_suspend`,
   `urbi_strand_scope_tag`
 
 ### Temporal stdlib internals
