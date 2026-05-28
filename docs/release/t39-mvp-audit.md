@@ -50,7 +50,7 @@ fixture activations.
 **Zero new directives.**  The two activatable fixtures (see below) need no
 new runner directives — their behavioral outcomes are testable with the
 existing single-pass `urbi -i` REPL path.  The `# tunables:` skip-gate and
-`## ` comment-pass-through already handle everything they need.
+`##`-prefixed comment-pass-through already handle everything they need.
 
 The proposed `## tunables:` (double-hash, configure-and-run) and `## host:`
 (C hook injection) directives are NOT implemented in this MVP.  The full
