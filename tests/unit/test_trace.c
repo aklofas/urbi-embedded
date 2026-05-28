@@ -122,6 +122,38 @@ UTEST(trace_threshold_and_first_n)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(trace_format_record)
+{
+    UTraceRecord r;
+    char buf[128];
+    size_t n;
+    memset(&r, 0, sizeof r);
+    r.ts_us = 1234567; r.seq = 42; r.strand_id = 3;
+    r.channel = URBI_TRACE_SCHED; r.level = URBI_LOG_INFO;
+    r.schema_id = URBI_TP_SCHED_BLOCK; r.payload.words.a = 6; r.payload.words.b = 0;
+
+    n = utrace_format(buf, sizeof buf, &r);
+    UASSERT(n > 0 && n < sizeof buf);
+    UASSERT(strstr(buf, "seq=42") != NULL);
+    UASSERT(strstr(buf, "sched/INFO") != NULL);
+    UASSERT(strstr(buf, "sched_block") != NULL);
+    UASSERT(strstr(buf, "a=6") != NULL);
+}
+
+UTEST(trace_format_marker_string)
+{
+    UTraceRecord r;
+    char buf[128];
+    memset(&r, 0, sizeof r);
+    r.channel = URBI_TRACE_USER; r.level = URBI_LOG_INFO;
+    r.schema_id = URBI_TP_USER_MARKER;
+    /* bounded 8-byte copy semantics: "phase1\0\0" */
+    r.payload.str[0]='p'; r.payload.str[1]='h'; r.payload.str[2]='a';
+    r.payload.str[3]='s'; r.payload.str[4]='e'; r.payload.str[5]='1';
+    (void)utrace_format(buf, sizeof buf, &r);
+    UASSERT(strstr(buf, "user_marker \"phase1\"") != NULL);
+}
+
 #endif /* URBI_TRACE */
 
 void test_trace_suite(void)
@@ -133,5 +165,7 @@ void test_trace_suite(void)
     utest_run("trace_ring_overflow_and_seq", trace_ring_overflow_and_seq);
     utest_run("trace_channel_and_level_gating", trace_channel_and_level_gating);
     utest_run("trace_threshold_and_first_n", trace_threshold_and_first_n);
+    utest_run("trace_format_record", trace_format_record);
+    utest_run("trace_format_marker_string", trace_format_marker_string);
 #endif
 }

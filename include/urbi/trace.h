@@ -116,6 +116,14 @@ void   urbi_trace_emit_str(struct UVM *vm, uint8_t channel, uint8_t level,
                            uint16_t schema_id, const char *s, size_t n);
 int8_t urbi_trace_channel_level(const struct UVM *vm, uint8_t channel);
 
+/* Format one record as stable, parseable text (no vsnprintf). Returns the
+ * byte length written (NUL-terminated). Defined in utrace_format.c. */
+size_t utrace_format(char *buf, size_t cap, const UTraceRecord *rec);
+
+/* Drain the ring and emit each record as text on the "trace" channel of the
+ * embedder's writer_fn. Call from the host loop. No-op if no writer set. */
+void   urbi_trace_flush_to_writer(struct UVM *vm);
+
 /* Core tracepoint: one array-load + compare when disabled, no call.
  * `vm` may be NULL (no-op). Arguments are evaluated ONLY when the channel
  * is compiled in AND enabled at/below `level`. */
