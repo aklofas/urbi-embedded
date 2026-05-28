@@ -47,7 +47,13 @@ fixture activations.
 
 ## Finalized MVP directive set
 
-**Zero new directives.**  The two activatable fixtures (see below) need no
+**Zero new directives (interim sh-only conclusion — SUPERSEDED).**  See the
+"W3b addendum" section at the end: a bounded C host-driver was ultimately
+built (using only the existing public embedding API, no new public symbol),
+shipping three `## host:` directives.  The classification below is the
+starting-point audit; the addendum is the authoritative outcome.
+
+The interim conclusion was: the two then-activatable fixtures (see below) need no
 new runner directives — their behavioral outcomes are testable with the
 existing single-pass `urbi -i` REPL path.  The `# tunables:` skip-gate and
 `##`-prefixed comment-pass-through already handle everything they need.
@@ -189,7 +195,11 @@ activate without any new directive.
 | 1 | `scheduler/safepoint_backward_branch.chk` | Loop correctness; safepoint fires on backward branch (budget-assertion is internal) |
 | 2 | `scheduler/dispatch_safepoint_pending_unwind.chk` | try/catch/throw-in-loop via OP_THROW direct path; catch absorbs exception |
 
-**Net activation: +2.  Active count: 290 → 292.**
+**Net: 2 fixtures upgraded vacuous→genuine.  Active count UNCHANGED at 290** —
+they already counted as passing (vacuously, comment-only → empty diff) before
+activation.  (W3b later upgrades 3 more the same way; see the addendum.  The
+active count stays 290 throughout — all activations are vacuous→genuine
+upgrades, not net-new fixtures.)
 
 ---
 
