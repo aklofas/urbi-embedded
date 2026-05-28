@@ -30,3 +30,13 @@ MD003: false
 
 # Ordered-list increment style — unforced.
 MD029: false
+
+# MD004 (no-list-marker-mix) — disabled for CHANGELOG.md.
+# The changelog wraps prose continuation lines starting with '+', which
+# markdownlint parses as a list marker.  Disabling per-file avoids false
+# positives while keeping the rule active elsewhere.
+overrides:
+  - files:
+      - "CHANGELOG.md"
+    rules:
+      MD004: false
