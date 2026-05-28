@@ -146,22 +146,23 @@ void urbi_trace_stats(const struct UVM *vm, UTraceStats *out)
 
 #else  /* !URBI_TRACE : control API becomes no-op stubs so callers still link */
 
-void urbi_trace_set_level(struct UVM *vm, uint8_t c, int8_t l)
-{ (void)vm; (void)c; (void)l; }
+void urbi_trace_set_level(struct UVM *vm, uint8_t channel, int8_t level)
+{ (void)vm; (void)channel; (void)level; }
 
-int8_t urbi_trace_get_level(const struct UVM *vm, uint8_t c)
-{ (void)vm; (void)c; return URBI_TRACE_OFF; }
+int8_t urbi_trace_get_level(const struct UVM *vm, uint8_t channel)
+{ (void)vm; (void)channel; return URBI_TRACE_OFF; }
 
-void urbi_trace_set_level_all(struct UVM *vm, int8_t l)
-{ (void)vm; (void)l; }
+void urbi_trace_set_level_all(struct UVM *vm, int8_t level)
+{ (void)vm; (void)level; }
 
-size_t urbi_trace_snapshot(struct UVM *vm, UTraceRecord *o, size_t c, uint32_t *d)
-{ (void)vm; (void)o; (void)c; if (d) *d = 0; return 0; }
+size_t urbi_trace_snapshot(struct UVM *vm, UTraceRecord *out, size_t cap,
+                           uint32_t *out_dropped)
+{ (void)vm; (void)out; (void)cap; if (out_dropped) *out_dropped = 0; return 0; }
 
-void urbi_trace_stats(const struct UVM *vm, UTraceStats *o)
-{ (void)vm; if (o) { o->emitted = o->dropped = o->high_water = 0; o->ring_depth = 0; } }
+void urbi_trace_stats(const struct UVM *vm, UTraceStats *out)
+{ (void)vm; if (out) { out->emitted = out->dropped = out->high_water = 0; out->ring_depth = 0; } }
 
-const char *urbi_trace_channel_name(uint8_t c)
-{ (void)c; return "?"; }
+const char *urbi_trace_channel_name(uint8_t channel)
+{ (void)channel; return "?"; }
 
 #endif /* URBI_TRACE */

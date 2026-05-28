@@ -31,31 +31,31 @@ static size_t put_u64(char *b, size_t cap, size_t at, uint64_t v)
     return at;
 }
 
-size_t utrace_format(char *buf, size_t cap, const UTraceRecord *r)
+size_t utrace_format(char *buf, size_t cap, const UTraceRecord *rec)
 {
     size_t at = 0;
-    if (!buf || cap == 0 || !r) return 0;
-    at = put(buf, cap, at, "seq=");      at = put_u64(buf, cap, at, r->seq);
-    at = put(buf, cap, at, " t=");       at = put_u64(buf, cap, at, r->ts_us);
-    at = put(buf, cap, at, " strand=");  at = put_u64(buf, cap, at, r->strand_id);
+    if (!buf || cap == 0 || !rec) return 0;
+    at = put(buf, cap, at, "seq=");      at = put_u64(buf, cap, at, rec->seq);
+    at = put(buf, cap, at, " t=");       at = put_u64(buf, cap, at, rec->ts_us);
+    at = put(buf, cap, at, " strand=");  at = put_u64(buf, cap, at, rec->strand_id);
     at = put(buf, cap, at, " ");
-    at = put(buf, cap, at, urbi_trace_channel_name(r->channel));
+    at = put(buf, cap, at, urbi_trace_channel_name(rec->channel));
     at = put(buf, cap, at, "/");
-    at = put(buf, cap, at, (r->level < 4) ? k_level_name[r->level] : "?");
+    at = put(buf, cap, at, (rec->level < 4) ? k_level_name[rec->level] : "?");
     at = put(buf, cap, at, " ");
-    at = put(buf, cap, at, (r->schema_id < K_SCHEMA_COUNT)
-                            ? k_schema_name[r->schema_id] : "?");
-    if (r->schema_id == URBI_TP_MILESTONE || r->schema_id == URBI_TP_USER_MARKER) {
+    at = put(buf, cap, at, (rec->schema_id < K_SCHEMA_COUNT)
+                            ? k_schema_name[rec->schema_id] : "?");
+    if (rec->schema_id == URBI_TP_MILESTONE || rec->schema_id == URBI_TP_USER_MARKER) {
         char s[9];
         int i;
-        for (i = 0; i < 8; i++) s[i] = r->payload.str[i];
+        for (i = 0; i < 8; i++) s[i] = rec->payload.str[i];
         s[8] = '\0';
         at = put(buf, cap, at, " \"");
         at = put(buf, cap, at, s);
         at = put(buf, cap, at, "\"");
     } else {
-        at = put(buf, cap, at, " a="); at = put_u64(buf, cap, at, r->payload.words.a);
-        at = put(buf, cap, at, " b="); at = put_u64(buf, cap, at, r->payload.words.b);
+        at = put(buf, cap, at, " a="); at = put_u64(buf, cap, at, rec->payload.words.a);
+        at = put(buf, cap, at, " b="); at = put_u64(buf, cap, at, rec->payload.words.b);
     }
     buf[at] = '\0';
     return at;
