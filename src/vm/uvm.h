@@ -391,6 +391,11 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
                                         * intra-slice allocations that prepended to
                                         * head between slices). */
     size_t   gc_total_allocated;       /* monotonically increasing allocation counter */
+    /* v0.11.1 always-on GC stats (cheap, O(GC-cycle); feed Debug.gc()). */
+    size_t   gc_cycles;                /* completed collection cycles */
+    size_t   gc_slices;                /* incremental slices run */
+    uint64_t last_gc_us;               /* duration of the most-recent cycle (0 if no clock) */
+    uint64_t total_gc_us;              /* cumulative cycle time (0 if no clock) */
     struct UCell *all_cells_head;      /* intrusive list of all GC-managed cells */
     struct UCell *gray_work_head;      /* mark-phase gray worklist */
     struct UCell *sweep_cursor;        /* incremental sweep position */

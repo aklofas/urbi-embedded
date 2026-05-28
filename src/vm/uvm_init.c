@@ -228,6 +228,13 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->gc_live_bytes       = 0U;
     vm->gc_surviving_bytes  = 0U;
     vm->gc_total_allocated  = 0U;
+    vm->gc_cycles           = 0U;
+    vm->gc_slices           = 0U;
+    vm->last_gc_us          = 0U;
+    vm->total_gc_us         = 0U;
+#if URBI_PERF_COUNTERS
+    urbi_perf_reset(vm);
+#endif
     vm->all_cells_head      = NULL;
     vm->gray_work_head      = NULL;
     vm->sweep_cursor        = NULL;

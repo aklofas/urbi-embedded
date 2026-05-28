@@ -37,7 +37,19 @@ UTEST(perf_macro_compiles_both_modes)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(perf_gc_cycles_counted)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UASSERT_EQ(vm.gc_cycles, (size_t)0);
+    (void)utest_e2e_compile_and_run(&vm, "1 + 2", NULL);   /* allocate some cells */
+    urbi_gc_force_full(&vm);                                /* one full cycle */
+    UASSERT(vm.gc_cycles >= 1);
+    urbi_vm_destroy(&vm);
+}
+
 void test_perf_counters_suite(void)
 {
     utest_run("perf_macro_compiles_both_modes", perf_macro_compiles_both_modes);
+    utest_run("perf_gc_cycles_counted", perf_gc_cycles_counted);
 }

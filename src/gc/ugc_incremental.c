@@ -494,6 +494,17 @@ gc_sweep_step(UVM *vm, size_t budget)
         /* Sweep complete: publish surviving total and trigger threshold update. */
         vm->gc_live_bytes = vm->gc_surviving_bytes;
         vm->gc_phase      = GC_PHASE_IDLE;
+        /* v0.11.1: close out the cycle (always-on). Bump the cycle count and
+         * turn the start-timestamp held in last_gc_us into a duration. */
+        vm->gc_cycles++;
+        if (vm->host_time_us && vm->last_gc_us != 0) {
+            uint64_t now = vm->host_time_us(vm->host_time_ud);
+            uint64_t dur = (now >= vm->last_gc_us) ? (now - vm->last_gc_us) : 0;
+            vm->last_gc_us = dur;        /* repurpose: now holds the DURATION */
+            vm->total_gc_us += dur;
+        } else {
+            vm->last_gc_us = 0;
+        }
         URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_DEBUG, URBI_TP_GC_PHASE, (uint32_t)vm->gc_phase, 0);
         end_of_cycle_threshold_update(vm);
     }
@@ -772,6 +783,8 @@ urbi_gc_slice(UVM *vm, size_t byte_budget)
 
     size_t consumed = 0U;
 
+    vm->gc_slices++;   /* v0.11.1: one incremental slice driver invocation */
+
     while (consumed < byte_budget) {
         switch (vm->gc_phase) {
 
@@ -782,6 +795,10 @@ urbi_gc_slice(UVM *vm, size_t byte_budget)
                  * "other white" and are treated as dead unless re-marked. */
                 vm->current_white ^= 0x01U;
                 vm->gc_phase = GC_PHASE_MARK_ROOTS;
+                /* v0.11.1: stamp cycle-start (always-on; 0 if no clock).
+                 * last_gc_us holds the START timestamp during the cycle and is
+                 * overwritten with the DURATION at cycle end (GC_PHASE_IDLE). */
+                vm->last_gc_us = vm->host_time_us ? vm->host_time_us(vm->host_time_ud) : 0;
                 URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_DEBUG, URBI_TP_GC_PHASE, (uint32_t)vm->gc_phase, 0);
             } else {
                 /* Nothing to do. */
@@ -833,6 +850,8 @@ urbi_gc_force_full(UVM *vm)
     if (vm->gc_phase == GC_PHASE_IDLE) {
         vm->current_white ^= 0x01U;
         vm->gc_phase = GC_PHASE_MARK_ROOTS;
+        /* v0.11.1: stamp cycle-start (see urbi_gc_slice for the repurpose note). */
+        vm->last_gc_us = vm->host_time_us ? vm->host_time_us(vm->host_time_ud) : 0;
         URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_DEBUG, URBI_TP_GC_PHASE, (uint32_t)vm->gc_phase, 0);
     }
 
