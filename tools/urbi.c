@@ -22,6 +22,7 @@
 #include "chunk/uchunk.h"
 #include "parse/uparse.h"
 #include "urbi/urbi.h"
+#include "urbi/trace.h"
 #include "value/uvalue.h"
 #include "vm/uvm.h"
 
@@ -53,6 +54,11 @@ static void print_usage(FILE *out) {
         "Options:\n"
         "  --version, -V        print version and exit\n"
         "  --help, -h           print this help and exit\n"
+        "  --trace=SPEC         enable trace channels (chan:level,...; e.g.\n"
+        "                       sched:debug,gc:info or all:info) — needs a\n"
+        "                       URBI_TRACE=1 build (make urbi-trace)\n"
+        "  --trace-out=FILE     write the binary trace dump to FILE (default\n"
+        "                       urbi-trace.bin); decode with tools/urbi-trace-decode.py\n"
 #if defined(URBI_ENABLE_REPL)
         "  --listen [ADDR:]PORT also serve NDJSON REPL on the given TCP\n"
         "                       socket (interactive mode only)\n"
@@ -68,6 +74,126 @@ static void print_usage(FILE *out) {
 }
 
 static int eq(const char *a, const char *b) { return strcmp(a, b) == 0; }
+
+/* --- trace capture (v0.11.2) ---
+ * --trace=SPEC enables channels and --trace-out=FILE receives a URBT binary
+ * dump at exit.  Globals exist in both build modes so the arg parser is
+ * uniform; the ring-touching code is behind URBI_TRACE so a trace-off build
+ * has no dead references and --trace fails with a friendly message. */
+static const char *trace_spec     = NULL;            /* "chan:level[,...]" or NULL */
+static const char *trace_out_path = "urbi-trace.bin";
+
+#if URBI_TRACE
+static int8_t parse_level(const char *s, size_t n) {
+    if (n == 5 && strncmp(s, "debug", 5) == 0) return (int8_t)URBI_LOG_DEBUG;
+    if (n == 4 && strncmp(s, "info",  4) == 0) return (int8_t)URBI_LOG_INFO;
+    if (n == 4 && strncmp(s, "warn",  4) == 0) return (int8_t)URBI_LOG_WARN;
+    if (n == 5 && strncmp(s, "error", 5) == 0) return (int8_t)URBI_LOG_ERROR;
+    return (int8_t)-2;  /* invalid (URBI_TRACE_OFF is -1) */
+}
+
+/* Resolve a channel name to its index via urbi_trace_channel_name(). */
+static int parse_channel(const char *s, size_t n) {
+    uint8_t ch;
+    for (ch = 0; ch < URBI_TRACE_CHANNEL_MAX; ch++) {
+        const char *nm = urbi_trace_channel_name(ch);
+        if (strlen(nm) == n && strncmp(nm, s, n) == 0) return (int)ch;
+    }
+    return -1;
+}
+
+/* Apply "chan:level[,chan:level...]" (and "all:level") to vm. 0 on success. */
+static int apply_trace_spec(UVM *vm, const char *spec) {
+    const char *p = spec;
+    while (*p) {
+        const char *colon = strchr(p, ':');
+        const char *comma;
+        size_t cn, ln;
+        int8_t lvl;
+        if (!colon) { fprintf(stderr, "urbi: --trace: expected chan:level near '%s'\n", p); return 2; }
+        cn = (size_t)(colon - p);
+        comma = strchr(colon + 1, ',');
+        ln = comma ? (size_t)(comma - colon - 1) : strlen(colon + 1);
+        lvl = parse_level(colon + 1, ln);
+        if (lvl == (int8_t)-2) { fprintf(stderr, "urbi: --trace: bad level\n"); return 2; }
+        if (cn == 3 && strncmp(p, "all", 3) == 0) {
+            urbi_trace_set_level_all(vm, lvl);
+        } else {
+            int ch = parse_channel(p, cn);
+            if (ch < 0) { fprintf(stderr, "urbi: --trace: unknown channel\n"); return 2; }
+            urbi_trace_set_level(vm, (uint8_t)ch, lvl);
+        }
+        if (!comma) break;
+        p = comma + 1;
+    }
+    return 0;
+}
+
+/* Drain the whole ring to a URBT dump file. 0 on success. */
+static int write_urbt_dump(UVM *vm, const char *path) {
+    FILE *f;
+    UTraceRecord buf[64];
+    uint32_t dropped = 0, total_dropped = 0;
+    size_t n, total = 0;
+    UTraceStats st;
+    f = fopen(path, "wb");
+    if (!f) { fprintf(stderr, "urbi: --trace-out: cannot open %s\n", path); return 1; }
+    {
+        unsigned char hdr[20] = {0};   /* placeholder; rewritten once count is known */
+        if (fwrite(hdr, 1, sizeof hdr, f) != sizeof hdr) goto werr;
+    }
+    while ((n = urbi_trace_snapshot(vm, buf, 64, &dropped)) > 0) {
+        total_dropped += dropped;
+        if (fwrite(buf, sizeof(UTraceRecord), n, f) != n) goto werr;
+        total += n;
+        if (n < 64) break;
+    }
+    {
+        unsigned char hdr[20];
+        uint32_t count = (uint32_t)total;
+        uint32_t flags = 1u;            /* bit0: little-endian payload */
+        memcpy(hdr + 0, "URBT", 4);
+        hdr[4] = 1;  hdr[5] = 0;        /* format_version = 1 (u16 LE) */
+        hdr[6] = (unsigned char)(sizeof(UTraceRecord) & 0xFF);          /* record_bytes (u16 LE) */
+        hdr[7] = (unsigned char)((sizeof(UTraceRecord) >> 8) & 0xFF);
+        memcpy(hdr + 8,  &count, 4);
+        memcpy(hdr + 12, &total_dropped, 4);
+        memcpy(hdr + 16, &flags, 4);
+        if (fseek(f, 0, SEEK_SET) != 0) goto werr;
+        if (fwrite(hdr, 1, sizeof hdr, f) != sizeof hdr) goto werr;
+    }
+    fclose(f);
+    urbi_trace_stats(vm, &st);
+    fprintf(stderr, "urbi: wrote %zu trace records to %s (emitted %u, dropped %u, high-water %u)\n",
+            total, path, st.emitted, total_dropped, st.high_water);
+    return 0;
+werr:
+    fprintf(stderr, "urbi: --trace-out: write error\n");
+    fclose(f);
+    return 1;
+}
+#endif /* URBI_TRACE */
+
+/* Apply --trace before a run. Returns 0 to proceed, or a nonzero exit code. */
+static int trace_begin(UVM *vm) {
+    if (!trace_spec) return 0;
+#if URBI_TRACE
+    return apply_trace_spec(vm, trace_spec);
+#else
+    (void)vm;
+    fprintf(stderr, "urbi: --trace requires a build with URBI_TRACE=1 (try: make urbi-trace)\n");
+    return 2;
+#endif
+}
+
+/* Drain the ring to the dump file after a run (no-op without --trace). */
+static void trace_end(UVM *vm) {
+#if URBI_TRACE
+    if (trace_spec) (void)write_urbt_dump(vm, trace_out_path);
+#else
+    (void)vm;
+#endif
+}
 
 /* Compile src (length len) into *out_module.
    Returns true on success; caller owns the module and must call
@@ -691,6 +817,18 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* Scan for --trace=SPEC / --trace-out=FILE (v0.11.2).  Both are the "="
+       form (single token), so the positional-file detector below skips them
+       (they start with '-').  They apply to the -e/-f/positional/stdin run
+       paths; ignored by dump and interactive modes. */
+    for (int i = 1; i < argc; i++) {
+        if (strncmp(argv[i], "--trace=", 8) == 0) {
+            trace_spec = argv[i] + 8;
+        } else if (strncmp(argv[i], "--trace-out=", 12) == 0) {
+            trace_out_path = argv[i] + 12;
+        }
+    }
+
     /* Positional file: first non-flag argument that isn't an -e/-f value
        nor a --listen/--token value (v0.9.1).  Skips known multi-arg flag
        values so e.g. `urbi --listen :14242` doesn't treat ":14242" as a
@@ -801,16 +939,24 @@ int main(int argc, char *argv[]) {
 
     if (expr) {
         UVM vm;
+        int tc, rc;
         urbi_vm_init(&vm, NULL, NULL);
-        int rc = run_expression(&vm, expr);
+        tc = trace_begin(&vm);
+        if (tc) { urbi_vm_destroy(&vm); return tc; }
+        rc = run_expression(&vm, expr);
+        trace_end(&vm);
         urbi_vm_destroy(&vm);
         return rc;
     }
 
     if (file_arg) {
         UVM vm;
+        int tc, rc;
         urbi_vm_init(&vm, NULL, NULL);
-        int rc = run_file(&vm, file_arg);
+        tc = trace_begin(&vm);
+        if (tc) { urbi_vm_destroy(&vm); return tc; }
+        rc = run_file(&vm, file_arg);
+        trace_end(&vm);
         urbi_vm_destroy(&vm);
         return rc;
     }
@@ -818,8 +964,12 @@ int main(int argc, char *argv[]) {
     /* No -e, no file: check stdin. */
     if (argc == 1 && !isatty(fileno(stdin))) {
         UVM vm;
+        int tc, rc;
         urbi_vm_init(&vm, NULL, NULL);
-        int rc = run_file(&vm, "-");
+        tc = trace_begin(&vm);
+        if (tc) { urbi_vm_destroy(&vm); return tc; }
+        rc = run_file(&vm, "-");
+        trace_end(&vm);
         urbi_vm_destroy(&vm);
         return rc;
     }
