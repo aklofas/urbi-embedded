@@ -208,6 +208,20 @@ hard-defines this to 0, so these symbols are absent in all shipped builds.
 - `urbi_strand_set_priority`, `urbi_strand_get_priority`,
   `urbi_strand_get_sched_class`
 
+### Trace subsystem (T3, EXPERIMENTAL — compile-gated by `URBI_TRACE`)
+
+New at v0.11.0 (`include/urbi/trace.h`). The control/drain/stats API is present
+in all builds (no-op stubs when `URBI_TRACE` is undefined) so embedder code
+links either way; the ring/emit internals exist only under `URBI_TRACE=1`.
+EXPERIMENTAL: the API may change before v1.0.
+
+- `urbi_trace_set_level`, `urbi_trace_get_level`, `urbi_trace_set_level_all`,
+  `urbi_trace_snapshot`, `urbi_trace_stats`, `urbi_trace_channel_name`
+  — present in all builds (no-op stubs when `URBI_TRACE` is off).
+- `urbi_trace_init`, `urbi_trace_emit`, `urbi_trace_emit_str`,
+  `urbi_trace_channel_level`, `urbi_trace_flush_to_writer`
+  — present only under `URBI_TRACE=1` (the `URBI_TP` macros call these).
+
 ---
 
 ## Tier 4 — Internal-leak

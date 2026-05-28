@@ -239,8 +239,8 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  19
-#define URBI_API_VERSION_PATCH  6
+#define URBI_API_VERSION_MINOR  20
+#define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -316,10 +316,19 @@ extern "C" {
  * cleanup-entry flag FLAG_TAG_USER_OWNED is internal (src/runtime/ucleanup.h),
  * not public.  Zero new public C API symbols; no new opcodes; wire unchanged
  * at v1.9 / 0x19.
+ *
+ * Bumped to 0/20/0 at v0.11.0-trace-spine — escape #24.  MINOR bump: new
+ * public (EXPERIMENTAL) header include/urbi/trace.h adds the trace
+ * control/drain/stats API (urbi_trace_set_level / _get_level / _set_level_all /
+ * _snapshot / _stats / _channel_name) plus the URBI_TP tracepoint macro family.
+ * The subsystem is compile-gated by URBI_TRACE (default off ⇒ zero code, zero
+ * UVM delta); the control API has no-op stubs in the off build so embedder code
+ * links either way.  First tag of the v0.11.x tooling arc.  Wire unchanged at
+ * v1.9 / 0x19; no new opcodes.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
-            && URBI_API_VERSION_MINOR == 19
-            && URBI_API_VERSION_PATCH == 6,
+            && URBI_API_VERSION_MINOR == 20
+            && URBI_API_VERSION_PATCH == 0,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

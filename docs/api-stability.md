@@ -1,11 +1,11 @@
 # C API stability policy
 
-> Status: ABI pin at v0.10.15-vm-decomp-2 (0/19/6) — PATCH bump from
-> v0.10.14-prerc-infra (0/19/5).  23rd use of pre-v1.0 escape clause.
-> Final tag of the pre-v1.0-rc stabilization arc — internal VM dispatch
-> extraction (uvm_tag_scope + uvm_reactive_install) plus the v0.10.9-B
-> user-tag scope binding and v0.10.7-B tag.stop()/finally fix; no new
-> public C API symbols, no new opcodes.
+> Status: ABI pin at v0.11.0-trace-spine (0/20/0) — MINOR bump from
+> v0.10.15-vm-decomp-2 (0/19/6).  24th use of pre-v1.0 escape clause.
+> First tag of the v0.11.x tooling arc — new public EXPERIMENTAL header
+> `<urbi/trace.h>` (trace control/drain/stats API + URBI_TP macros),
+> compile-gated by URBI_TRACE (default off ⇒ zero code, zero UVM delta).
+> MINOR because new public surface; no new opcodes, wire unchanged.
 > PATCH-only, not freeze-override
 > under §3 (the ledger numbers every bump; only MINOR/MAJOR bumps
 > require §3's freeze-override review).  The freeze pin is a forcing
@@ -159,3 +159,18 @@ flag `FLAG_TAG_USER_OWNED` is internal (`src/runtime/ucleanup.h`), not public.
 No new public C API symbols; no new opcodes; wire unchanged at v1.9 / 0x19.
 PATCH bump: 0/19/5 → 0/19/6.  Recorded for ledger completeness; this is NOT
 a freeze-override under §3.
+
+### Escape #24 — v0.11.0-trace-spine (MINOR)
+
+First tag of the v0.11.x tooling arc.  Adds a new public (EXPERIMENTAL)
+header `include/urbi/trace.h`: the trace control/drain/stats API
+(`urbi_trace_set_level` / `urbi_trace_get_level` / `urbi_trace_set_level_all` /
+`urbi_trace_snapshot` / `urbi_trace_stats` / `urbi_trace_channel_name`,
+`utrace_format` / `urbi_trace_flush_to_writer`) plus the `URBI_TP` tracepoint
+macro family and bring-up primitives.  The subsystem is compile-gated by
+`URBI_TRACE` (default off ⇒ zero text/`.bss`, byte-identical `struct UVM`); the
+control API is linkable in both modes via no-op stubs.  Tracepoints are
+instrumented across scheduler / GC / watcher / event / tag / REPL lifecycle;
+`Debug.trace("…")` adds a script-side USER-channel marker (REPL-gated).
+MINOR bump: 0/19/6 → 0/20/0 — new public surface.  No new opcodes; wire
+unchanged at v1.9 / 0x19.  EXPERIMENTAL: the trace API may change before v1.0.

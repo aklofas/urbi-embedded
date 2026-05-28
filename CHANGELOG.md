@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.11.0-trace-spine — 2026-05-28
+
+First tag of the v0.11.x tooling arc (a Linux-kernel-style observability
+stack landing before ROS2).  Adds a runtime trace subsystem that compiles
+out to zero bytes by default and is runtime-maskable per channel when
+enabled.  New public EXPERIMENTAL header `<urbi/trace.h>`; ABI 0/20/0
+(MINOR bump from 0/19/6, 24th use of the pre-v1.0 escape clause); wire
+format unchanged at v1.9 / 0x19.
+
+### Trace subsystem
+
+- New `<urbi/trace.h>`: master `URBI_TRACE` compile gate (default off),
+  per-channel compile mask `URBI_TRACE_CHANNELS`, per-channel runtime
+  severity threshold (reuses the 4-level `ULogLevel`; `URBI_TRACE_OFF`
+  sentinel disables a channel), and the fixed 24-byte `UTraceRecord` ABI.
+- `URBI_TP(...)` / `URBI_TP_STR(...)` tracepoint macros: one
+  predicted-not-taken branch when the channel is disabled, fully
+  preprocessor-stripped when `URBI_TRACE` is undefined.
+- Bring-up primitives `URBI_TP_MILESTONE` / `_ONCE` / `_FIRST_N` /
+  `_PERIODIC` / `_THRESHOLD` (the last stays silent until a counter
+  crosses a threshold — the highest-value embedded-bring-up pattern).
+- Per-VM binary trace ring (`URBI_TRACE_RING_DEPTH`, default 256) with
+  overflow accounting; drain/control/stats API: `urbi_trace_set_level`,
+  `urbi_trace_get_level`, `urbi_trace_set_level_all`,
+  `urbi_trace_snapshot`, `urbi_trace_stats`, `urbi_trace_channel_name`.
+- Manual (no `vsnprintf`) text formatter `utrace_format` and a default
+  `urbi_trace_flush_to_writer` backend over the `urbi_writer_fn` "trace"
+  channel.
+- Tracepoints instrumented across the scheduler (strand
+  start/block/yield/resume/exit), GC (phase transitions, heap-locked
+  alloc-denied), reactive runtime (watcher install/fire/complete, event
+  emit, tag stop/block/unblock/freeze/unfreeze), and REPL eval + session
+  lifecycle.  The ISR event-injection tracepoint is intentionally deferred
+  (needs the ISR-safe ring path).
+- `Debug.trace("label")` script marker emits a USER-channel record
+  (available in `URBI_ENABLE_REPL` builds).
+
+### Build / CI
+
+- New `make test-trace` (full suite under `URBI_TRACE=1`),
+  `make test-determinism-trace` (the trace build stays deterministic
+  across 100 runs — channels default off, so observable state is
+  unperturbed), and `make test-trace-compiled-out` (asserts the
+  `URBI_TRACE`-off archive has no ring/emit internals).
+- CI: `test-trace` + `test-trace-compiled-out` added to the host matrix;
+  a dedicated `trace` job runs a combined `URBI_TRACE=1 URBI_ENABLE_REPL=1`
+  build (exercising the session + `Debug.trace` taps) and the
+  determinism-with-trace gate.
+
+### Docs
+
+- New `docs/embedded/trace-subsystem.md`: config flags, the level model,
+  channel/schema tables, the bring-up cookbook, and the capture workflow.
+
 ## v0.10.15-vm-decomp-2 — 2026-05-28
 
 Final tag of the pre-v1.0-rc stabilization arc.  Internal VM dispatch
