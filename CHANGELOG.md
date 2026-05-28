@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.11.2-host-tooling — 2026-05-28
+
+Third tag of the v0.11.x tooling arc.  Makes the v0.11.0 binary trace ring and
+v0.11.1 perf counters usable from the host, with no on-target changes: a Python
+Perfetto/Chrome-Trace decoder, GDB pretty-printers + walkers, a trace-capture
+path on the `urbi` CLI, and a best-effort emergency dump.  ABI 0/20/2 (PATCH
+bump from 0/20/1, 26th use of the pre-v1.0 escape clause — host tooling uses
+only already-exported public symbols); wire format unchanged at v1.9 / 0x19.
+
+### Host trace tooling
+
+- New `tools/urbi-trace-decode.py`: decodes the binary `URBT` trace dump into
+  Chrome Trace Event Format JSON (loadable in Perfetto / `chrome://tracing`),
+  with async slices for strand / watcher / REPL-eval / GC spans, counter events
+  for event-emit and GC-slice, and a per-channel + dropped + sequence-gap
+  summary.  Pure Python 3 stdlib; tolerates dropped records and gaps.
+- New `make urbi-trace` target builds the `urbi` CLI with `-DURBI_TRACE=1` into
+  `build/host-trace/urbi`.  New CLI flags `--trace=chan:level[,...]` (or
+  `all:level`) and `--trace-out=FILE` enable channels, run the script, and drain
+  the ring to a `URBT` dump at exit.  On a trace-off build the flags fail with a
+  clear message instead of silently no-opping.
+- New `--dump-on-fatal`: after a fatal run the CLI prints a best-effort host dump
+  (trace stats + tail, plus `Debug.coros()` / `Debug.gc()` when a REPL is built
+  in) to stderr.  Composed from existing public APIs only.
+
+### GDB inspection
+
+- New `tools/gdb/urbi.py`: pretty-printers for `UValue`, `UStrand`, and
+  `UTraceRecord`, plus walker commands `urbi-strands`, `urbi-handles`,
+  `urbi-heap`, `urbi-trace`, and a one-shot `urbi-dump`.  The walkers read live
+  or core-dump target memory, so they work on a halted / wedged target — the
+  script-independent emergency dump.
+
+### `URBT` dump format
+
+- A self-describing host artifact (independent of the bytecode wire format): a
+  20-byte little-endian header (`"URBT"` magic, `format_version`, `record_bytes`,
+  `count`, `dropped`, `flags`) followed by raw `UTraceRecord`s.  Documented in
+  `docs/embedded/trace-subsystem.md`.
+
+### Build / CI
+
+- New host-only gates, all skip-if-missing (`python3` / `gdb`):
+  `test-trace-decode` (decoder unit test), `test-trace-capture` (capture →
+  decode end-to-end), and `test-gdb` (GDB walker smoke against a debug runner).
+  Wired into `RELEASETEST_PHASE1` and the CI `tooling` job.
+- New `unit-runner` target links the unit-test runner without running the suite
+  (used by the GDB smoke to build a readable `-O0 -g` inferior).
+
+### Docs
+
+- Filled the `docs/embedded/trace-subsystem.md` "Host tooling" section with the
+  capture → decode → Perfetto workflow, the `URBT` format, and the GDB command
+  reference.
+- Corrected the long-standing `UTraceRecord` "24-byte" comment drift to its real
+  32-byte size in `include/urbi/trace.h` and the trace doc (comment-only).
+- Trimmed the over-promising `tags` / `lobbies` introspection rows in
+  `docs/embedding-guide.md` to the fields actually emitted.
+
 ## v0.11.1-perf-counters — 2026-05-28
 
 Second tag of the v0.11.x tooling arc.  Adds VM-domain performance counters

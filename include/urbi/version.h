@@ -240,7 +240,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  20
-#define URBI_API_VERSION_PATCH  1
+#define URBI_API_VERSION_PATCH  2
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -336,10 +336,22 @@ extern "C" {
  * Counters are internal (src/runtime/uperf.h); surfaced only via Debug.*
  * script methods.  Zero new public C API symbols; wire unchanged at
  * v1.9 / 0x19; no new opcodes.
+ *
+ * Bumped to 0/20/2 at v0.11.2-host-tooling — escape #26.  PATCH-only, third
+ * tag of the v0.11.x tooling arc.  Host-side tooling only: a Python
+ * Perfetto/Chrome-Trace decoder (tools/urbi-trace-decode.py), GDB
+ * pretty-printers + walkers (tools/gdb/urbi.py), a --trace/--trace-out capture
+ * path on the urbi CLI (built via `make urbi-trace` with -DURBI_TRACE=1), and a
+ * --dump-on-fatal best-effort host dump.  The CLI flags use only already-
+ * exported public symbols (urbi_trace_set_level/_set_level_all/_snapshot/_stats/
+ * _channel_name + urbi_repl_eval/urbi_realm_global); the decoder and GDB scripts
+ * are host artifacts.  Also corrected the long-standing UTraceRecord "24-byte"
+ * comment drift to its real 32-byte size (comment-only).  Zero new public C API
+ * symbols; wire unchanged at v1.9 / 0x19; no new opcodes.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 20
-            && URBI_API_VERSION_PATCH == 1,
+            && URBI_API_VERSION_PATCH == 2,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

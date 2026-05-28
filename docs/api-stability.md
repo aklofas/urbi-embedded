@@ -1,14 +1,14 @@
 # C API stability policy
 
-> Status: ABI pin at v0.11.1-perf-counters (0/20/1) — PATCH bump from
-> v0.11.0-trace-spine (0/20/0).  25th use of pre-v1.0 escape clause.
-> Second tag of the v0.11.x tooling arc — VM-domain performance counters
-> behind the URBI_PERF_COUNTERS compile gate (default off ⇒ increments are
-> (void)0, the counter struct is absent from UVM), plus always-on GC
-> cycle/slice/timing fields and the filled Debug.profile()/Debug.gc() seam +
-> Debug.profileReset().  Counters are internal (src/runtime/uperf.h), surfaced
-> only via Debug.* script methods, and excluded from the determinism checksum;
-> zero new public C API symbols, so PATCH.  No new opcodes, wire unchanged.
+> Status: ABI pin at v0.11.2-host-tooling (0/20/2) — PATCH bump from
+> v0.11.1-perf-counters (0/20/1).  26th use of pre-v1.0 escape clause.
+> Third tag of the v0.11.x tooling arc — host-side tooling only: a Python
+> Perfetto/Chrome-Trace decoder for the binary URBT trace dump, GDB
+> pretty-printers + walkers, a --trace/--trace-out capture path on the urbi CLI
+> (built via make urbi-trace), and a --dump-on-fatal best-effort host dump.
+> The CLI flags use only already-exported public symbols; the decoder and GDB
+> scripts are host artifacts; zero new public C API symbols, so PATCH.  No new
+> opcodes, wire unchanged.
 > PATCH-only, not freeze-override
 > under §3 (the ledger numbers every bump; only MINOR/MAJOR bumps
 > require §3's freeze-override review).  The freeze pin is a forcing
@@ -195,3 +195,20 @@ GC timing are excluded from `urbi_get_determinism_checksum` (proven by the
 `src/runtime/uperf.h` and are surfaced only through `Debug.*` script methods —
 **zero new public C API symbols**, so PATCH.  No new opcodes; wire unchanged at
 v1.9 / 0x19.  PATCH-only, not a §3 freeze-override.
+
+### Escape #26 — v0.11.2-host-tooling (PATCH)
+
+Third tag of the v0.11.x tooling arc.  Host-side tooling only: a Python
+Perfetto/Chrome-Trace decoder (`tools/urbi-trace-decode.py`) for the binary
+`URBT` trace dump, GDB pretty-printers + heap/strand/handle/trace walkers
+(`tools/gdb/urbi.py`, including a one-shot `urbi-dump`), a `--trace`/`--trace-out`
+capture path on the `urbi` CLI (built via `make urbi-trace` with `-DURBI_TRACE=1`),
+and a `--dump-on-fatal` best-effort host dump.  The CLI flags use only
+already-exported public symbols (`urbi_trace_set_level` / `_set_level_all` /
+`_snapshot` / `_stats` / `_channel_name` plus `urbi_repl_eval` /
+`urbi_realm_global`); the decoder and GDB scripts are host artifacts that link
+nothing.  Also corrected the long-standing `UTraceRecord` "24-byte" comment
+drift to its real 32-byte size (comment-only — the `uint64_t ts_us` aligns the
+struct to 8 bytes, so the 28 named bytes pad to 32).  **Zero new public C API
+symbols**, so PATCH.  No new opcodes; wire unchanged at v1.9 / 0x19.  PATCH-only,
+not a §3 freeze-override.
