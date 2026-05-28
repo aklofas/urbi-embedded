@@ -786,6 +786,34 @@ test-determinism-trace:
 	done
 	@echo "=== Trace preset: 100 runs PASS (URBI_TRACE=1 stays deterministic) ==="
 
+# test-perf-counters — full suite under URBI_PERF_COUNTERS=1 (per-opcode/slot
+# counters compiled in; per-event GC counters are always-on).  Verifies the
+# perf build is green and that the counters increment + Debug.profile() seam
+# behave.  Own TARGET= so Phase 1 -j parallelism stays race-free.
+.PHONY: test-perf-counters
+test-perf-counters:
+	$(MAKE) TARGET=host-perf \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PERF_COUNTERS=1" \
+		test
+
+# test-determinism-perf — the default preset with URBI_PERF_COUNTERS=1 added.
+# Proves a perf-counter build stays deterministic across 100 runs: ALL counters
+# (and GC timing) are excluded from urbi_get_determinism_checksum, so the
+# checksummed observable state is unperturbed.  This is the same URBI_DEBUG +
+# extra-define combination that surfaced the v0.11.0 CI-only fault, so it runs
+# in CI even though UPerfCounters is small + embedded (no on-stack hazard).
+# CI-only (not in releasetest).
+test-determinism-perf:
+	$(MAKE) TARGET=host-determinism-perf \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_PERF_COUNTERS=1" \
+		test
+	@echo "=== Determinism gate: perf preset (100 runs) ==="
+	@for i in $$(seq 1 100); do \
+	    build/host-determinism-perf/tests/unit/runner > /dev/null \
+	    || { echo "FAIL on iteration $$i (perf preset)"; exit 1; }; \
+	done
+	@echo "=== Perf preset: 100 runs PASS (counters excluded from checksum) ==="
+
 # Valgrind memcheck — runs the test suite under valgrind's memcheck tool.
 # Catches uninitialized reads, heap corruption, leaks.  Complements ASan:
 # memcheck's bit-precise tracking catches uninit reads that ASan misses.
@@ -899,7 +927,7 @@ test-corpus-sanitize:
 # hard-fail.
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
-    test-trace test-trace-compiled-out \
+    test-trace test-trace-compiled-out test-perf-counters \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
@@ -1653,4 +1681,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace test-perf-counters test-determinism-perf cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins
