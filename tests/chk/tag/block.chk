@@ -1,7 +1,7 @@
 # Milestone: M3
 # Covers: t.block() pauses all strands tagged with t; t.unblock() resumes them;
 #         new strand started while tag is blocked also stays paused.
-# blocked: T39 chk-driver (parallel `,` step) AND v0.10.9-B (user-tag→scope-tag binding at OP_PUSH_TAG)
+# blocked: T39 chk-driver (parallel `,` step + mid-flight observation, v0.10.7-G residual) AND loop {} (deferred-v1.x, v0.10.5 W1) — user-tag→scope-tag binding resolved at v0.10.15 (v0.10.9-B)
 # matrix-row: tag-block
 #
 # Reason:

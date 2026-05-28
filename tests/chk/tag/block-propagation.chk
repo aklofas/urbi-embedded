@@ -1,7 +1,7 @@
 # Milestone: M3
 # Covers: tag.block() called inside a tagged scope; block propagates from
 #         the scope tag to the outer join ('&'); no deadlock.
-# blocked: v0.10.9-B (user-tag→scope-tag binding at OP_PUSH_TAG) — tag.block()/.unblock() shipped at v0.10.9 W3b but binding the strand into `a`'s member list from inside `a: { ... }` scope requires OP_PUSH_TAG to honor the tag_reg nibble
+# blocked: `&`-separator chk-driver support (M5 chk driver residual) — user-tag→scope-tag binding resolved at v0.10.15 (v0.10.9-B)
 # matrix-row: tag-block
 #
 # Reason:
