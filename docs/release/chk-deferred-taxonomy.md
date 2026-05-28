@@ -134,8 +134,9 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 | `onleave_normal_exit.chk` | T29 | deferred: v1.x | Requires onleave clause (PARSE-033, deferred-v1.x) |
 | `onleave_on_stop.chk` | T29 | deferred: v1.x | Requires onleave clause (PARSE-033, deferred-v1.x) |
 | `tag_stop_no_target.chk` | T29 | blocked | tag.stop() outside scope is silent (not fatal); expected semantics not implemented |
-| `tag_stop_skips_catch.chk` | T29 | **active** | TAG_STOP skips catch correctly; activated |
-| `tag_stop_with_finally.chk` | T29 | blocked | TAG_STOP does not run finally clause before unwind; v1.0-rc bug |
+| `tag_stop_skips_catch.chk` | T29 | **active** | TAG_STOP skips catch correctly; updated v0.10.15 for bound-scope (clean nil, no D3 fatal) |
+| `tag_stop_with_finally.chk` | T29 | **active** | Activated v0.10.15: finally runs during TAG_STOP unwind (closes v0.10.7-B, latent-fixed by v0.10.9-B binding) |
+| `scope_binds_user_tag.chk` | v0.10.9-B | **active** | New v0.10.15: `t: {}` binds the user tag; t.stop() inside is a clean in-scope stop (closes v0.10.9-B) |
 
 ### exceptions/
 
@@ -269,8 +270,8 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 |---------|-----------|------------|-------|
 | `ambient_inherit_separator.chk` | T38 | blocked | Requires `&` separator chk driver (T39) |
 | `begin-end.chk` | M4 | blocked | mytag.begin:/mytag.end: notation not implemented |
-| `block-propagation.chk` | M4 | blocked | tag.block() method not implemented |
-| `block.chk` | M4 | blocked | tag.block()/unblock() methods not implemented |
+| `block-propagation.chk` | T39 | blocked | Needs `&`-separator chk-driver (v0.10.9-B binding resolved v0.10.15; tag.block()/unblock() shipped v0.10.9) |
+| `block.chk` | T39 | blocked | Needs T39 parallel-`,` chk-driver + `loop {}` (v0.10.9-B binding resolved v0.10.15; tag.block()/unblock() shipped v0.10.9) |
 | `blocked.chk` | M4 | blocked | tag.block() + at() watcher needs tag.u child-slot (not implemented) |
 | `connection.chk` | M4 | blocked | Job.current introspection + connectionTag builtin not implemented |
 | `enter-leave.chk` | M5 | deferred: v1.x | Requires at(tag.enter?)/at(tag.leave?) events (T55, not implemented) |

@@ -519,7 +519,13 @@ src/
                       uemit_disassemble, umodule_serialize
   uvm.h               VM API: UVM, UVMError, UValue, uvm_init, uvm_run, uvm_destroy
   uvm.c               VM implementation: computed-goto / switch dispatch, arithmetic
-                      type matrix, TypeError/OOM diagnostics, syncline decoder
+                      type matrix, TypeError/OOM diagnostics, syncline decoder.
+                      Per-opcode helper bodies live in sibling src/vm/ TUs:
+                      uvm_slot.c (GETSLOT/SETSLOT/SELF, v0.10.4), uvm_tag_scope.c
+                      (PUSH_TAG/POP_TAG + the v0.10.9-B user-tag binding, v0.10.15),
+                      uvm_reactive_install.c (the 7 at/whenever/waituntil/at-event
+                      install opcodes, v0.10.15). uvm.c retains the dispatch loop,
+                      the remaining arms, and the safepoint
   uvalue.h            UValue-to-string formatter API: uvalue_format
   uvalue.c            Formatter implementation (hosted only, __STDC_HOSTED__-gated):
                       Lua-5.4-style number formatting for all 5 UValKinds

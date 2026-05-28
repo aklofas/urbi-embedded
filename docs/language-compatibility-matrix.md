@@ -95,7 +95,9 @@
 | `Tag.scope : body` (member-expr tag) | implemented | legacy F3; Wave 6 W8 — `parse_tag_prefix_from_expr` via postfix-chain COLON intercept; `tests/chk/tag/tag_member_expr.chk` |
 | `tag : body onleave handler` | deferred-v1.x | PARSE-033: AST field retained; scheduler tag-stack lifecycle design open; Wave 6 W8 ruling |
 | `Tag.new()` (script-side constructor) | implemented | v0.10.2 W4; UVAL_TAG + Tag.new(name) returns a Tag value; `tests/chk/control_transfer/tag_stop_basic.chk` |
-| `mytag.stop()` (script-side cancellation) | implemented | v0.10.2 W4; native method on Tag proto; `tests/chk/control_transfer/tag_stop_skips_catch.chk` + `tag_stop_basic.chk` |
+| `mytag.stop()` (script-side cancellation) | implemented | v0.10.2 W4; native method on Tag proto. v0.10.15 (v0.10.9-B): `t.stop()` from inside `t: { }` is now a clean in-scope tag-stop (binding wired) instead of a D3 "no active scope" fatal; `tests/chk/control_transfer/tag_stop_skips_catch.chk` + `tag_stop_basic.chk` |
+| `t: { }` user-tag scope binding | implemented (v0.10.15, v0.10.9-B) — OP_PUSH_TAG honors the `R[tag_reg]` nibble: the scope binds to the user tag (strand becomes a member); FLAG_TAG_USER_OWNED keeps the tag alive past scope exit; `tests/chk/tag/scope_binds_user_tag.chk` | tag-scope-binding |
+| `tag.stop()` inside `try`/`finally` runs finally | implemented (v0.10.15, v0.10.7-B) — the unwind walker runs the finally during the TAG_STOP unwind (latent-fixed by the v0.10.9-B binding); `tests/chk/control_transfer/tag_stop_with_finally.chk` | tag-stop |
 | `tag.block()` | implemented (v0.10.9 W3b) — sets UTAG_FLAG_BLOCKED + suspends member strands via urbi_strand_suspend(REASON_BLOCK) | tag-block |
 | `tag.unblock()` | implemented (v0.10.9 W3b) | tag-block |
 | `tag.block(value)` valued-block | partial (v0.10.9): C API urbi_tag_block accepts resume_value; script-side return-on-resume defers v1.x | tag-block-valued |
@@ -103,7 +105,7 @@
 | `tag.freeze()` real SUSPENDED | implemented (v0.10.9 W3c) — replaces flag-only stub from v0.10.2 W4 | tag-freeze |
 | `tag.unfreeze()` | implemented (v0.10.9 W3c) | tag-freeze |
 | `tag.frozen` getter | implemented as 0-arg method (v0.10.9 W3d) | tag-frozen |
-| `tag.stop(value)` valued-stop | partial (v0.10.9 W1): C API accepts value; script-side observable result defers v1.x (TAG_SCOPE absorption pending) | tag-stop-valued |
+| `tag.stop(value)` valued-stop | partial (v0.10.9 W1): C API accepts value; script-side observable result defers v1.x. User-tag binding resolved v0.10.15 (v0.10.9-B); the remaining gap is tag-stop absorption / resume-after-scope (design-risks v0.10.15-B) | tag-stop-valued |
 | `tag.stop()` outside-scope fatal | implemented (v0.10.9 W2) — `!!! tag.stop with no active scope` | tag-stop-outside-scope |
 | `Tag.begin` / `Tag.end` clone-getter notation | deferred — 5 prereq primitives needed (design-risks v0.10.9-A) | tag-begin-end |
 | `Tag.enter?` / `Tag.leave?` script-side events | partial — C-level shipped v0.10.2 W4; script-side `at(t.enter?)` rejects (HOST_FN-via-closure binding returns closure, not UVAL_EVENT) | tag-events |
