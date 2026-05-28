@@ -2,28 +2,21 @@
 # Covers: two Realms have isolated bindings; var defined in one realm is not
 #         visible in another.
 #
-# blocked: T39 chk-runner host-driver/tunables extension not implemented
-# matrix-row: chunk-lifecycle-realm
+# Driven by the chk-host-driver (## host: directives): the single-pass urbi -i
+# REPL path manages one realm internally and cannot demonstrate cross-realm
+# isolation.  The driver creates two named realms, binds x in each, and reads
+# x back from each to show the bindings do not leak.
 #
-# Reason: chk runner currently drives a single REPL session via the standalone
-# urbi binary. There is no host-driver hook to instantiate two Realms with
-# isolated bindings and verify that bindings don't leak across them.
-# Realm semantics are already verified by tests/unit/test_realm.c (landed at T14).
-# T39 will add a tunables-header syntax to the chk runner allowing custom C
-# host setup; T20 will provide the Strand C API.
-#
-# When T39 lands, implement this fixture by adding a host-driver section that
-# creates two Realms, binds x=1 in the first, x=2 in the second, and verifies
-# they remain isolated.
-#
-# Pseudo-host-driver (activate at T39):
-#   URealm *r1 = urbi_realm_new(vm);
-#   URealm *r2 = urbi_realm_new(vm);
-#   urbi_realm_set_binding(r1, "x", val_1);
-#   urbi_realm_set_binding(r2, "x", val_2);
-#   --- Urbiscript source (run against r1 and r2 separately) ---
-#   x
-#   --- expected output (r1) ---
-#   [00000001] 1
-#   --- expected output (r2) ---
-#   [00000001] 2
+# r1: bind x = 1 ; r2: bind x = 2 ; then read x under each realm.
+## host: realm r1
+## host: run var x = 1
+## host: realm r2
+## host: run var x = 2
+[00000001] 1
+[00000002] 2
+## host: realm r1
+## host: run x
+## host: realm r2
+## host: run x
+[00000003] 1
+[00000004] 2

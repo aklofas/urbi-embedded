@@ -3,17 +3,11 @@
 #         watchers, or sleeping strands remain, sched_quiescent returns true
 #         and urbi_step returns URBI_STEP_QUIESCENT.
 #
-# blocked: T39 chk-runner tunables header not implemented
-# matrix-row: scheduler-quiescent
-#
-# Reason: verifying the QUIESCENT return code from urbi_step requires the
-# ## host: mechanism to call urbi_step and inspect its return value from a
-# chk fixture.  The REPL-only chk runner at M3 does not support this.
-# The quiescence logic itself is fully wired (sched_quiescent checks all 5
-# counters; urbi_step returns QUIESCENT when the VM is idle).
-# Unit test coverage: tests/unit/test_step_driver.c verifies the QUIESCENT
-# path at the C level.
-#
-# When T39 lands, implement this fixture by:
-#   ## host: rc = urbi_step(vm, UINT64_MAX); assert rc == URBI_STEP_QUIESCENT
-#   (empty urbiscript — VM starts quiescent)
+# Driven by the chk-host-driver (## host: step): a freshly-created VM with no
+# loaded chunk, no spawned strands, no watchers, and no sleeping strands is
+# already quiescent.  urbi_step over a large budget finds no live work and
+# returns URBI_STEP_QUIESCENT.  Unit-level coverage of the same path lives in
+# tests/unit/test_step_driver.c; this fixture exercises it through the public
+# urbi_step entry point end-to-end.
+## host: step 1000000
+[00000001] step: QUIESCENT
