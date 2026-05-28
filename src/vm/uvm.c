@@ -34,6 +34,7 @@
 #include "value/uintern.h"       /* ustr_op_name (Gap #4 operator-name interning) */
 #include "vm/uvm_slot.h"         /* vm_getslot_value, vm_setslot_value, vm_self_lookup, vm_dispatch_getter/setter, vm_trace_slot_read_if_needed (W1) */
 #include "vm/uvm_tag_scope.h"    /* vm_push_tag_scope, vm_pop_tag_scope (v0.10.15 W1 stage 1) */
+#include "vm/uvm_reactive_install.h" /* vm_reactive_install — 7 install arms (v0.10.15 W1 stage 2) */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -109,125 +110,11 @@ ic_resolve_pi(UStrand *s)
     return cur_cl ? cur_cl->proto_inst : NULL;
 }
 
-/* --- vm_install_check_closure_operand (VM-003) ---
-   Reactive-install opcode operand-register kind check.  The emitter places
-   UClosure values into the cond / body / onleave registers via
-   OP_CLOSURE before the install opcode dispatches, so under correct
-   bytecode this check is a no-op.  Hand-crafted bytecode (or a future
-   emit bug) could leave a non-closure value there; without the check the
-   dispatcher casts (UClosure *)R[reg].v.p anyway and downstream watcher
-   ops dereference garbage.
-
-   Returns 1 on success.  On failure sets vm->last_error = UVM_TYPE_ERROR
-   with a diagnostic message and returns 0; caller is expected to HALT()
-   immediately.  vm_format_type_error_msg's bounded buffer is sufficient
-   for the longest opcode name + slot name combination here. */
-static int
-vm_install_check_closure_operand(UVM *vm, const UStrand *s, uint8_t reg,
-                                 const char *opcode_name, const char *slot_name)
-{
-    if (s->R[reg].kind != (uint8_t)UVAL_CLOSURE) {
-        vm->last_error = UVM_TYPE_ERROR;
-        vm_format_type_error_msg(vm,
-            "reactive install: register operand is not a closure");
-        (void)opcode_name;  /* available for future diagnostic enrichment */
-        (void)slot_name;
-        return 0;
-    }
-    return 1;
-}
-
-/* --- vm_install_check_event_operand (VM-013) ---
-   AT_EVENT install opcode operand-register kind check.  Mirrors
-   vm_install_check_closure_operand but for OP_AT_EVENT_INSTALL /
-   OP_AT_EVENT_SYNC_INSTALL: the A register must hold a UVAL_EVENT
-   (produced by OP_GETSLOT_CHANGE_EVENT or by stdlib Event.new).
-   Without this check the dispatcher casts (UEvent *)R[A].v.p directly
-   and install_at_event_runtime dereferences garbage.
-
-   Routes through uvalue_is_event() rather than a raw kind comparison
-   so the predicate location stays single-source-of-truth (T29's
-   refactor pattern). */
-static int
-vm_install_check_event_operand(UVM *vm, const UStrand *s, uint8_t reg,
-                               const char *opcode_name)
-{
-    if (!uvalue_is_event(s->R[reg])) {
-        vm->last_error = UVM_TYPE_ERROR;
-        vm_format_type_error_msg(vm,
-            "AT_EVENT install: register operand is not an event");
-        (void)opcode_name;
-        return 0;
-    }
-    return 1;
-}
-
-/* --- vm_install_result_is_fatal / vm_install_fault (VM-002, VM-012) ---
-   Translate a UWatcherInstallResult from install_watcher_runtime /
-   install_at_event_runtime into a VM fault.  Prior to v0.5.7-fixes Phase 5
-   the install opcodes ignored the return value entirely, so OOM-pool /
-   trace-fault / recursive-install errors became silent no-ops: the strand
-   sailed past a watcher that was never armed, with no observable diagnostic
-   beyond a host_log_fn warning.  This pair makes the dispatcher promote
-   those errors to UVM faults so the program halts cleanly instead of
-   continuing with broken reactive semantics.
-
-   READSET_OVER is currently treated as fatal as well: today
-   install_watcher_runtime returns it from Phase 4 (before pool_alloc) so
-   the watcher is not actually installed; treating it as recoverable would
-   diverge from the spec #2 §7.4 "fires on any slot write — conservative
-   but correct" intent without the matching install path.  When that path
-   lands (filed as backlog), demote READSET_OVER here to a non-fatal log
-   and continue to NEXT(). */
-#if defined(__GNUC__) || defined(__clang__)
-__attribute__((always_inline))
-#endif
-static inline int
-vm_install_result_is_fatal(UWatcherInstallResult r)
-{
-    return r != URBI_INSTALL_OK;
-}
-
-static void
-vm_install_fault(UVM *vm, UWatcherInstallResult r, const char *opcode_name)
-{
-    switch (r) {
-        case URBI_INSTALL_OOM_POOL:
-            vm->last_error = UVM_OOM;
-            vm_format_oom(vm, sizeof(struct UWatcher));
-            break;
-        case URBI_INSTALL_READSET_OVER:
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm,
-                "watcher install: read-set exceeds URBI_WATCHER_READSET_MAX");
-            break;
-        case URBI_INSTALL_TRACE_FAULT:
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm,
-                "watcher install: condition threw during trace");
-            break;
-        case URBI_INSTALL_RECURSIVE:
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm,
-                "watcher install attempted from within scratch-frame eval");
-            break;
-        case URBI_INSTALL_NO_OBSERVABLE_CELLS:
-            /* W0/v0.10.2: cond watcher with empty read-set is a program error.
-             * Use `whenever (e?) body` for event-driven subscriptions. */
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm,
-                "watcher install: condition observes no slots; "
-                "use 'whenever (e?) body' for event subscriptions");
-            break;
-        case URBI_INSTALL_OK:
-        default:
-            /* Caller should not invoke this on URBI_INSTALL_OK.  Defensive. */
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "watcher install: unknown result");
-            break;
-    }
-    (void)opcode_name;  /* available for future diagnostic enrichment */
-}
+/* The reactive-install operand-check / fault helpers
+ * (vm_install_check_closure_operand / vm_install_check_event_operand /
+ * vm_install_result_is_fatal / vm_install_fault) and the seven install arm
+ * bodies were extracted to src/vm/uvm_reactive_install.c (v0.10.15 W1
+ * stage 2).  See vm_reactive_install(). */
 
 /* --- dispatch_loop_until_yield ---
    The core execution engine (T6).  Runs s's bytecode until one of:
@@ -1254,186 +1141,46 @@ dispatch:
          * mode.  On return the watcher is installed and the strand continues to the
          * next instruction — at-watchers do not block the installing strand.
          * Spec #2 §6.3. */
+        /* The seven reactive-install arm bodies are extracted to
+         * vm_reactive_install (uvm_reactive_install.c, v0.10.15 W1 stage 2).
+         * Each helper cannot goto a dispatch label, so the (v1.0-unreachable)
+         * fault path returns UVM_INSTALL_HALT for HALT(); OP_WAITUNTIL_INSTALL's
+         * park path returns UVM_INSTALL_PARK_EXIT, leaving the dispatch-loop-
+         * local `steps_consumed++; goto exit_strand;` here in the arm. */
         CASE(OP_AT_INSTALL) {
-            uint8_t A = uinstr_a(*s->pc);
-            uint8_t B = uinstr_b(*s->pc);
-            uint8_t C = uinstr_c(*s->pc);
-            if (!vm_install_check_closure_operand(vm, s, A, "OP_AT_INSTALL", "cond")) HALT();
-            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_INSTALL", "body")) HALT();
-            if (C != 0xFFU
-                && !vm_install_check_closure_operand(vm, s, C, "OP_AT_INSTALL", "onleave"))
-                HALT();
-            UClosure *cond    = (UClosure *)s->R[A].v.p;
-            UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-            UWatcherInstallResult r =
-                install_watcher_runtime(vm, s, UWATCHER_AT, cond, body, onleave, NULL);
-            if (vm_install_result_is_fatal(r)) {
-                vm_install_fault(vm, r, "OP_AT_INSTALL");
-                HALT();
-            }
+            if (vm_reactive_install(vm, s, OP_AT_INSTALL) == UVM_INSTALL_HALT) HALT();
             NEXT();
         }
 
         CASE(OP_AT_SYNC_INSTALL) {
-            uint8_t A = uinstr_a(*s->pc);
-            uint8_t B = uinstr_b(*s->pc);
-            if (!vm_install_check_closure_operand(vm, s, A, "OP_AT_SYNC_INSTALL", "cond")) HALT();
-            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_SYNC_INSTALL", "body")) HALT();
-            UClosure *cond = (UClosure *)s->R[A].v.p;
-            UClosure *body = (UClosure *)s->R[B].v.p;
-            UWatcherInstallResult r =
-                install_watcher_runtime(vm, s, UWATCHER_AT_SYNC, cond, body, NULL, NULL);
-            if (vm_install_result_is_fatal(r)) {
-                vm_install_fault(vm, r, "OP_AT_SYNC_INSTALL");
-                HALT();
-            }
+            if (vm_reactive_install(vm, s, OP_AT_SYNC_INSTALL) == UVM_INSTALL_HALT) HALT();
             NEXT();
         }
 
         CASE(OP_WHENEVER_INSTALL) {
-            uint8_t A = uinstr_a(*s->pc);
-            uint8_t B = uinstr_b(*s->pc);
-            uint8_t C = uinstr_c(*s->pc);
-            if (!vm_install_check_closure_operand(vm, s, A, "OP_WHENEVER_INSTALL", "cond")) HALT();
-            if (!vm_install_check_closure_operand(vm, s, B, "OP_WHENEVER_INSTALL", "body")) HALT();
-            if (C != 0xFFU
-                && !vm_install_check_closure_operand(vm, s, C, "OP_WHENEVER_INSTALL", "onleave"))
-                HALT();
-            UClosure *cond    = (UClosure *)s->R[A].v.p;
-            UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-            UWatcherInstallResult r =
-                install_watcher_runtime(vm, s, UWATCHER_WHENEVER, cond, body, onleave, NULL);
-            if (vm_install_result_is_fatal(r)) {
-                vm_install_fault(vm, r, "OP_WHENEVER_INSTALL");
-                HALT();
-            }
+            if (vm_reactive_install(vm, s, OP_WHENEVER_INSTALL) == UVM_INSTALL_HALT) HALT();
             NEXT();
         }
 
-        /* === T42: OP_WAITUNTIL_INSTALL — strand-block or pass-through ===
-         *
-         * A-encoded: A = cond_reg.
-         *
-         * Calls install_watcher_runtime which either:
-         *   (a) fast-path: cond was truthy at install → watcher unregistered
-         *       immediately, strand state unchanged (still RUNNING) → NEXT().
-         *   (b) park path: cond was falsy → T40 set s->state = USTRAND_WAIT_WATCHER.
-         *       Here we advance pc past this instruction, decrement
-         *       strand_runnable_count (the strand leaves the runnable accounting),
-         *       and goto exit_strand so the scheduler can pick up another strand.
-         *       The eval-pass wake (T43) will resume the strand on the rising edge.
-         *
-         * Spec #2 §6.3. */
         CASE(OP_WAITUNTIL_INSTALL) {
-            uint8_t A = uinstr_a(*s->pc);
-            if (!vm_install_check_closure_operand(vm, s, A, "OP_WAITUNTIL_INSTALL", "cond"))
-                HALT();
-            UClosure *cond = (UClosure *)s->R[A].v.p;
-            UWatcherInstallResult r = install_watcher_runtime(
-                vm, s, UWATCHER_WAITUNTIL, cond, NULL, NULL, s);
-            if (vm_install_result_is_fatal(r)) {
-                vm_install_fault(vm, r, "OP_WAITUNTIL_INSTALL");
-                HALT();
-            }
-            if (r == URBI_INSTALL_OK && USTRAND_IS_WAITING(s)) {
-                /* Strand parked by T40 (cond started false).  Advance pc past
-                 * this instruction so resume lands at the correct next opcode.
-                 * Decrement strand_runnable_count: the strand was RUNNING when
-                 * this opcode dispatched; T40 set state to WAITING without
-                 * going through sched_strand_block, so we do the accounting
-                 * manually here. */
-                s->pc++;
-                if (vm->strand_runnable_count > 0)
-                    vm->strand_runnable_count--;
-                steps_consumed++;
-                goto exit_strand;
-            }
-            /* Fast path (cond was truthy): watcher unregistered; strand RUNNING.
-             * Fall through to next instruction. */
+            UVmReactiveInstallResult r = vm_reactive_install(vm, s, OP_WAITUNTIL_INSTALL);
+            if (r == UVM_INSTALL_HALT) HALT();
+            if (r == UVM_INSTALL_PARK_EXIT) { steps_consumed++; goto exit_strand; }
             NEXT();
         }
 
-        /* === T47: OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL ===
-         *
-         * ABC-encoded: A = event_reg, B = body_reg, C = onleave_reg (0xFF = absent).
-         * Routes through install_at_event_runtime — no read-set trace, no
-         * active_watchers_head linkage.  Watcher joins event->at_watchers_head
-         * (FIFO) and owning_tag's member chain.
-         * Spec #3 §6.2. */
         CASE(OP_AT_EVENT_INSTALL) {
-            uint8_t A = uinstr_a(*s->pc);
-            uint8_t B = uinstr_b(*s->pc);
-            uint8_t C = uinstr_c(*s->pc);
-            if (!vm_install_check_event_operand(vm, s, A, "OP_AT_EVENT_INSTALL"))
-                HALT();
-            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_EVENT_INSTALL", "body"))
-                HALT();
-            if (C != 0xFFU
-                && !vm_install_check_closure_operand(vm, s, C, "OP_AT_EVENT_INSTALL", "onleave"))
-                HALT();
-            UEvent   *e       = (UEvent *)s->R[A].v.p;
-            UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-            UWatcherInstallResult r =
-                install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, body, onleave);
-            if (vm_install_result_is_fatal(r)) {
-                vm_install_fault(vm, r, "OP_AT_EVENT_INSTALL");
-                HALT();
-            }
+            if (vm_reactive_install(vm, s, OP_AT_EVENT_INSTALL) == UVM_INSTALL_HALT) HALT();
             NEXT();
         }
 
         CASE(OP_AT_EVENT_SYNC_INSTALL) {
-            uint8_t A = uinstr_a(*s->pc);
-            uint8_t B = uinstr_b(*s->pc);
-            uint8_t C = uinstr_c(*s->pc);
-            if (!vm_install_check_event_operand(vm, s, A, "OP_AT_EVENT_SYNC_INSTALL"))
-                HALT();
-            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_EVENT_SYNC_INSTALL", "body"))
-                HALT();
-            if (C != 0xFFU
-                && !vm_install_check_closure_operand(vm, s, C, "OP_AT_EVENT_SYNC_INSTALL", "onleave"))
-                HALT();
-            UEvent   *e       = (UEvent *)s->R[A].v.p;
-            UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-            UWatcherInstallResult r =
-                install_at_event_runtime(vm, s, UWATCHER_AT_EVENT_SYNC, e, body, onleave);
-            if (vm_install_result_is_fatal(r)) {
-                vm_install_fault(vm, r, "OP_AT_EVENT_SYNC_INSTALL");
-                HALT();
-            }
+            if (vm_reactive_install(vm, s, OP_AT_EVENT_SYNC_INSTALL) == UVM_INSTALL_HALT) HALT();
             NEXT();
         }
 
-        /* === W0/v0.10.2: OP_WHENEVER_EVENT_INSTALL ===
-         *
-         * ABC-encoded: A = event_reg, B = body_reg, C = onleave_reg (0xFF = absent).
-         * Identical shape to OP_AT_EVENT_INSTALL but arms the watcher with
-         * UWATCHER_WHENEVER_EVENT mode.  The body re-fires on every event emission
-         * (perpetual subscriber — no one-shot teardown).  Closes reactive F1. */
         CASE(OP_WHENEVER_EVENT_INSTALL) {
-            uint8_t A = uinstr_a(*s->pc);
-            uint8_t B = uinstr_b(*s->pc);
-            uint8_t C = uinstr_c(*s->pc);
-            if (!vm_install_check_event_operand(vm, s, A, "OP_WHENEVER_EVENT_INSTALL"))
-                HALT();
-            if (!vm_install_check_closure_operand(vm, s, B, "OP_WHENEVER_EVENT_INSTALL", "body"))
-                HALT();
-            if (C != 0xFFU
-                && !vm_install_check_closure_operand(vm, s, C, "OP_WHENEVER_EVENT_INSTALL", "onleave"))
-                HALT();
-            UEvent   *ev      = (UEvent *)s->R[A].v.p;
-            UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-            UWatcherInstallResult r =
-                install_at_event_runtime(vm, s, UWATCHER_WHENEVER_EVENT, ev, body, onleave);
-            if (vm_install_result_is_fatal(r)) {
-                vm_install_fault(vm, r, "OP_WHENEVER_EVENT_INSTALL");
-                HALT();
-            }
+            if (vm_reactive_install(vm, s, OP_WHENEVER_EVENT_INSTALL) == UVM_INSTALL_HALT) HALT();
             NEXT();
         }
 

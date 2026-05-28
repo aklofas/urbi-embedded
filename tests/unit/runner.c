@@ -297,6 +297,7 @@ extern void test_vm_create_opaque_suite(void);
 extern void test_vm_first_arg_suite(void);
 extern void test_vm_slot_helpers_suite(void);
 extern void test_vm_tag_scope_suite(void);
+extern void test_vm_reactive_install_suite(void);
 extern void test_tag_state_suite(void);
 extern void test_job_proto_suite(void);
 extern void test_isa_method_suite(void);
@@ -580,6 +581,7 @@ static const struct suite_entry suites[] = {
     {"vm_first_arg",                     test_vm_first_arg_suite},
     {"vm_slot_helpers",                  test_vm_slot_helpers_suite},
     {"vm_tag_scope",                     test_vm_tag_scope_suite},
+    {"vm_reactive_install",              test_vm_reactive_install_suite},
     {"tag_state",                        test_tag_state_suite},
     {"job_proto",                        test_job_proto_suite},
     {"isa_method",                       test_isa_method_suite},
