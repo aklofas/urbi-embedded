@@ -1,0 +1,20 @@
+# Milestone: v0.10.15-vm-decomp-2
+# Covers: v0.10.9-B — OP_PUSH_TAG binds the `t:` scope to the user tag t, so the
+#         strand running inside `t: { ... }` is a member of t.  t.stop() from
+#         inside is then a clean in-scope tag-stop on t's OWN active scope (NOT
+#         the D3 "no active scope" fatal that an anonymous, unbound scope forced
+#         pre-v0.10.15): the scope block evaluates to nil and the post-stop
+#         write is skipped, so Realm.hit stays 0.
+# matrix-row: tag-scope-binding
+#
+# Minimal pin (no try/catch/finally) — depends only on user-tag→scope-tag
+# binding.  tag-stop "absorption" (resume AFTER the scope) is the separate,
+# deferred T29 concern and is not exercised here.
+var t = Tag.new()
+Realm.hit = 0
+t: { t.stop(); Realm.hit = 1 }
+Realm.hit
+[00000000] <Tag>
+[00000000] 0
+[00000000] nil
+[00000001] 0
