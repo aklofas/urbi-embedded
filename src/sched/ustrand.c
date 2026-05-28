@@ -311,6 +311,8 @@ urbi_strand_start(struct UVM *vm, UStrand *s)
      * the queue accounting.  Current callers (urbi_strand_spawn,
      * application code) all transition DORMANT → READY exactly once. */
     URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) == USTRAND_DORMANT);
+    URBI_TP(vm, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_START,
+            (uint32_t)(uintptr_t)s, 0);
     sched_strand_make_runnable(s);
 }
 
@@ -707,6 +709,8 @@ urbi_strand_resume(struct UStrand *strand, UValue resume_value)
     URBI_ASSERT_NOT_ISR(strand->vm);
 
     if (!USTRAND_IS_SUSPENDED(strand)) return;
+    URBI_TP(strand->vm, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_RESUME,
+            (uint32_t)(uintptr_t)strand, 0);
 
     /* Write resume_value to unblock_value so a future opcode-level handoff
      * (W3f, deferred at v0.10.9) can deliver it into the strand's result

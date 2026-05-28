@@ -1397,6 +1397,10 @@ exit_strand:
     if (s->state == USTRAND_STATE_DEAD && s->watcher_body_owner != NULL) {
         urbi_watcher_body_completed(vm, s);
     }
+    if (s->state == USTRAND_STATE_DEAD) {
+        URBI_TP(vm, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_EXIT,
+                (uint32_t)(uintptr_t)s, (uint32_t)s->state);
+    }
 
     /* v0.9.4 every() periodic-spawn: re-arm or unregister on body death. */
     if (s->state == USTRAND_STATE_DEAD && s->periodic_owner != NULL) {

@@ -232,6 +232,8 @@ sched_strand_yield(UStrand *s)
      * from WAITING bypass the proper unblock path and break the symmetric
      * counter contract documented at the top of this file. */
     URBI_INTERNAL_ASSERT(s->state == USTRAND_STATE_RUNNING);
+    URBI_TP(s->vm, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_YIELD,
+            (uint32_t)(uintptr_t)s, 0);
     /* RUNNING → READY tail: same path as make_runnable. */
     sched_strand_make_runnable(s);
 }
@@ -240,6 +242,8 @@ void
 sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload)
 {
     UVM *vm = s->vm;
+    URBI_TP(vm, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_BLOCK,
+            (uint32_t)reason, (uint32_t)(uintptr_t)s);
     /* SCHED-002: re-blocking an already-WAITING strand corrupts the queue
      * accounting (sleep_q_insert would re-insert and double-count
      * wakeup_pending_count; event/join paths leak prior payloads).  Entry
