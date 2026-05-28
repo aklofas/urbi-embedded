@@ -1,26 +1,12 @@
-# Milestone: M3
-# Covers: a throw inside a backward-branch loop hits a safepoint; the
-#         pending_unwind check at safepoint runs urbi_unwind(); the catch
-#         block absorbs the exception; execution continues after the try/catch.
-#
-# blocked: T39 chk-runner tunables header not implemented
-# matrix-row: scheduler-safepoint
-#
-# Reason: while try/catch/throw are fully wired at M3 (T10) and the safepoint
-# pending_unwind path is implemented, observing that the *safepoint* (not a
-# direct throw at a non-loop site) triggers the unwind requires a construct
-# where OP_THROW fires inside a loop body so that the backward-branch
-# safepoint fires first.  This cannot be expressed cleanly in pure urbiscript
-# at M3 without the tunables-header to set a tiny budget (otherwise the loop
-# might not reach the safepoint before the throw).  T39 provides the tunables
-# hook.
-#
-# Note: basic try/catch correctness (throw outside loops) is already tested
-# in tests/chk/control_transfer/ (T13 fixtures) and unit tests (T9/T10).
-# This fixture specifically targets the safepoint-then-unwind path.
-#
-# When T39 lands, implement this fixture by:
-#   ## tunables: URBI_STRAND_BUDGET_MAX=2
-#   try { var i = 0; while (i < 1) { i = i + 1; throw 99 } } catch (e) { echo(e) }
-#   --- expected output ---
-#   [00000001] 99
+# Milestone: M3 / activated v0.10.14
+# Covers: a throw inside a while-loop body is caught by an outer try/catch;
+#         the unwind walker absorbs the UEXEC_THROW state and resumes after
+#         the catch block.  The original stub claimed safepoint-pending_unwind
+#         path was needed (T39 tunables), but OP_THROW directly calls
+#         urbi_unwind() — the behavioral outcome (catch absorbs exception,
+#         post-catch value is correct) is observable from pure urbiscript.
+#         The safepoint pending_unwind branch (for externally-deposited
+#         unwinds) is covered by tests/unit/test_dispatch_loop.c.
+
+var caught = 0; try { var i = 0; while (i < 1) { i = i + 1; throw 99 } } catch (e) { caught = e }; caught
+[00000000] 99

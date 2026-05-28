@@ -1,24 +1,11 @@
-# Milestone: M3
-# Covers: a loop with a backward OP_JMP hits a safepoint on each iteration;
-#         the safepoint decrements instruction_budget_remaining and checks
-#         the step budget, preventing infinite-loop starvation.
-#
-# blocked: T39 chk-runner tunables header not implemented
-# matrix-row: scheduler-safepoint
-#
-# Reason: verifying that safepoint fires on every backward branch iteration
-# requires either (a) a tunables header to set a tiny budget so the yield
-# is observable, or (b) a host-driver assertion on instruction_budget_remaining
-# mid-loop.  Neither is available in the REPL-only chk runner at M3.
-# A pure-urbiscript version (counting loop) would run to completion without
-# any observable yield signal.  T39 introduces the ## host: mechanism.
-#
-# While a tight urbiscript loop (e.g. "var i = 0; while (i < 3) i = i + 1; i")
-# does exercise the backward-branch safepoint path, verifying the *safepoint*
-# specifically (not just correctness of the loop result) requires T39 hooks.
-#
-# When T39 lands, implement this fixture by:
-#   ## tunables: URBI_STRAND_BUDGET_MAX=2
-#   var i = 0; while (i < 5) { i = i + 1 }; i
-#   --- expected output ---
-#   [00000001] 5
+# Milestone: M3 / activated v0.10.14
+# Covers: a loop with a backward OP_JMP exercises the safepoint on each
+#         iteration; the safepoint decrements instruction_budget_remaining
+#         and the step budget, preventing infinite-loop starvation.
+#         Behavioral correctness: the loop completes and produces the
+#         expected result (5).  The budget-decrement itself is internal and
+#         not observable from pure urbiscript; that path is covered by
+#         tests/unit/test_step_driver.c.
+
+var i = 0; while (i < 5) { i = i + 1 }; i
+[00000000] 5

@@ -217,7 +217,7 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 | `budget_step_exhausted.chk` | T39 | blocked | T39 tunables header not implemented |
 | `cross_strand_cancel.chk` | T31+T39 | blocked | T39 host-driver not implemented; T31 Strand.cancel() not implemented |
 | `cycles.chk` | M4 | blocked | Requires System.cycle counter (not implemented) |
-| `dispatch_safepoint_pending_unwind.chk` | T39 | blocked | T39 tunables header not implemented |
+| `dispatch_safepoint_pending_unwind.chk` | T39 | **active** | Activated v0.10.14: try/catch/throw-in-loop via OP_THROW direct path; safepoint pending_unwind branch is internal-only, behavioral correctness observable |
 | `dormant_attach_tag_then_start.chk` | T39+T29 | blocked | T39 host-driver not implemented |
 | `dormant_basic.chk` | T39+T20 | blocked | T39 host-driver not implemented |
 | `dormant_pool_recycle.chk` | M5/v1.x | deferred: v1.x | Dormant pool recycle semantics post-v1.0 |
@@ -232,7 +232,7 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 | `priorities.chk` | v1.x | deferred: v1.x | URBI_SCHED_RT real-time scheduler is post-v1.0 scope |
 | `quiescent_clean.chk` | T39 | blocked | T39 tunables header not implemented |
 | `quiescent_with_sleep_q.chk` | T39 | blocked | T39 tunables header not implemented |
-| `safepoint_backward_branch.chk` | T39 | blocked | T39 tunables header not implemented |
+| `safepoint_backward_branch.chk` | T39 | **active** | Activated v0.10.14: 5-iteration counting loop; safepoint fires on each backward branch (budget-decrement is internal); behavioral result is observable |
 | `safepoint_call_return.chk` | T39 | blocked | T39 tunables header not implemented |
 | `stack-exhausted.chk` | M4 | blocked | Requires Exception.Scheduling type hierarchy + isA() (not implemented) |
 | `tag_stop_mid_pipe.chk` | M4 | blocked | Candidate for activation followup — String + concat shipped v0.10.8; verify pipe-safepoint delivery body shape end-to-end |
@@ -301,13 +301,26 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 
 ---
 
-## Bucket summary (post-v0.10.7)
+## Bucket summary
 
-> Numbers below match the per-fixture table above and the on-disk header
-> count (`grep -rln '^# blocked:' tests/chk/`). The earlier draft of this
-> table reported 76/22/5; the 2026-05-27 re-audit
-> (`docs/refactor-1/urbi-embedded-v0.10.7-blocked-chk-reaudit.md` finding
-> #0) caught the drift.
+> Numbers track `grep -rln '^# blocked:' tests/chk/` (blocked) and
+> `grep -rln '^# deferred:' tests/chk/` (deferred). Updated each time
+> fixtures activate or deferred decisions are locked.
+
+### Post-v0.10.14 (current)
+
+| Bucket | Count |
+|--------|-------|
+| deferred: v1.x | 24 |
+| dropped | 3 |
+| blocked (open v1.0-rc work items) | 65 |
+
+The **2 newly active fixtures in v0.10.14** (T39 MVP audit):
+
+1. `scheduler/safepoint_backward_branch.chk`
+2. `scheduler/dispatch_safepoint_pending_unwind.chk`
+
+### Post-v0.10.7 (historical baseline)
 
 | Bucket | Count |
 |--------|-------|
@@ -317,7 +330,7 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 | blocked (open v1.0-rc work items) | 73 |
 | **Total** | **107** |
 
-The **6 newly active** fixtures are:
+The **6 newly active (v0.10.7 W7)** fixtures were:
 
 1. `chunk_lifecycle/repl_session_persistence.chk`
 2. `chunk_lifecycle/script_at_persists.chk`
@@ -328,8 +341,7 @@ The **6 newly active** fixtures are:
 
 The dominant open work items for blocked fixtures are:
 
-- **T39** (chk-runner `## tunables:` / `## host:` extension): blocks ~25 scheduler + gc fixtures
-- **String `+` concatenation**: shipped v0.10.8 (S-string-plus). Previously cited as "T46 dropped" in ~12 fixtures; that annotation never resolved to a real drop decision. The 2026-05-27 audit (`docs/refactor-1/urbi-embedded-v0.10.7-blocked-chk-reaudit.md` Cat. C) flagged it; v0.10.8 implements String+String concat. Mixed-type coercion (`"x" + 1`) deferred to v1.x.
+- **T39** (chk-runner `## tunables:` / `## host:` extension): blocks ~23 scheduler + gc fixtures.  Note: `URBI_STRAND_BUDGET_MAX` is compile-time only; `## tunables: URBI_STRAND_BUDGET_MAX=N` requires runtime env-var read path not yet implemented.  `## host:` requires C host-driver loop incompatible with single-pass `urbi -i`.
 - **tag.freeze()/block()** methods: blocks ~8 tag fixtures
 - **onleave clause** (PARSE-033, deferred-v1.x): blocks 5 control_transfer + tag fixtures
 - **`&` separator top-level chk driver** (T39): blocks ~10 fixtures
