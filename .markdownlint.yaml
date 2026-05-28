@@ -22,9 +22,9 @@ MD041: true
 
 # MD024 (no duplicate headings) — allow same-name H3 headings in different
 # version sections; CHANGELOG.md uses ### Language, ### Tests etc. per release.
-# siblings_only: true was set in an earlier commit; the v0.10.13 W2 markdownlint
-# commit (990699a2) only added the MD004 override below — its title narrative
-# implied both rules changed at v0.10.13 but only MD004 did.
+# siblings_only: true was set in an earlier commit; commit 990699a2's title
+# implied this rule changed alongside MD004 but only the MD004 override below
+# was actually added there.
 MD024:
   siblings_only: true
 
