@@ -1,4 +1,4 @@
-# Milestone: M3 (updated v0.10.9-tag-state W2: D3 outside-scope fatal)
+# Milestone: M3 (updated v0.10.9-tag-state W2; v0.10.15-vm-decomp-2: bound scope)
 # Covers: TAG_STOP is not intercepted by a try/catch block; the catch clause
 #         is skipped and TAG_STOP continues propagating outward.
 #
@@ -9,13 +9,13 @@
 # does NOT absorb UEXEC_TAG_STOP; TAG_STOP propagates past catch clauses.
 # `Realm.caught` remains 0 confirming catch was not executed.
 #
-# v0.10.9-tag-state W2: TAG_STOP propagation past catch now ALSO triggers the
-# D3 outside-scope fatal because the syntactic `t:` scope creates an anonymous
-# UTag, not one bound to `t` (bare-prefix tag-label binding is deferred-v1.x).
-# So `t.stop()` is "outside any active scope for t" — escalates to fatal,
-# emitting `!!!`.  Catch is still skipped (`Realm.caught` stays 0); the test
-# now also confirms the D3 fatal path.  Workspace-root compatibility-decisions
-# ledger §S5c.
+# v0.10.15-vm-decomp-2 (v0.10.9-B): OP_PUSH_TAG now binds the `t:` scope to the
+# user tag t, so `t.stop()` from inside is a clean tag-stop on t's own active
+# scope — NOT the D3 outside-scope fatal that v0.10.9 emitted (when `t:` made an
+# anonymous UTag unbound to t).  The tag-stop scope block evaluates to `nil`;
+# catch is still skipped (TAG_STOP is not absorbed by UCLEANUP_TRY_FRAME), so
+# `Realm.caught` stays 0.  This fixture now pins the bound-scope catch-skip
+# semantic.  Workspace-root compatibility-decisions ledger §S5c.
 
 var t = Tag.new()
 var caught = 0
@@ -23,5 +23,5 @@ t: { try { t.stop() } catch (e) { Realm.caught = 1 } }
 Realm.caught
 [00000000] <Tag>
 [00000000] 0
-[00000000] !!! tag.stop with no active scope
+[00000000] nil
 [00000001] 0

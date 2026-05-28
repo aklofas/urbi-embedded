@@ -24,6 +24,12 @@ typedef enum {
 #define FLAG_HAS_CATCH    0x1U
 #define FLAG_HAS_FINALLY  0x2U
 #define FLAG_HAS_ONLEAVE  0x4U
+/* TAG_SCOPE only (v0.10.15-vm-decomp-2, v0.10.9-B): the scope is bound to a
+ * user tag (R[tag_reg] held a UVAL_TAG at OP_PUSH_TAG), so OP_POP_TAG must NOT
+ * utag_destroy it — the tag outlives the scope (still reachable via the user's
+ * variable, and may have other open member scopes).  Anonymous scopes (bit
+ * clear) own their tag and destroy it at pop. */
+#define FLAG_TAG_USER_OWNED 0x8U
 
 /* === Forward declarations for types that land in later tasks. === */
 

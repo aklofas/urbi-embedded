@@ -20,6 +20,7 @@
 #include "event/uevent_emit.h"        /* c_event_emit_sync */
 #include "value/uvalue.h"             /* UValue, UVAL_NIL */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -42,25 +43,42 @@ vm_push_tag_scope(UVM *vm, UStrand *s)
      * Walker-pop (urbi_unwind via OP_THROW etc.) will leak the UTag at M3 —
      * deferred for T31/walker integration when full tag lifecycle wires through.
      * strand_back = s for future tag.stop() walk (T31 uses). */
-    (void)vm;  /* this stage reads the VM via s->vm; vm kept for symmetry + W2 */
+    (void)vm;  /* the VM is reached via s->vm; vm kept for call-site symmetry */
     uint8_t  a          = uinstr_a(*s->pc);
     uint8_t  flags      = (uint8_t)((a >> 4) & 0xFU);
+    uint8_t  tag_reg    = (uint8_t)(a & 0x0FU);  /* v0.10.9-B: user-tag register */
     uint16_t handler_pc = uinstr_bx(*s->pc);
-    UTag *tag = utag_create(s->vm);
-    if (tag == NULL) {
-        s->fatal_status = UEXEC_THROW;
-        s->state        = USTRAND_STATE_DEAD;
-        return UVM_TAG_SCOPE_FATAL;
+    UTag *tag;
+    bool  tag_is_user_owned;
+    if (s->R[tag_reg].kind == (uint8_t)UVAL_TAG && s->R[tag_reg].v.p != NULL) {
+        /* v0.10.9-B: bind the scope to the user's tag (live in R[tag_reg], packed
+         * there by emit_tag_prefix_arm) instead of creating an anonymous one, so
+         * tag.stop() / membership / scopeTag observe this scope as part of t. */
+        tag               = (UTag *)s->R[tag_reg].v.p;
+        tag_is_user_owned = true;
+    } else {
+        /* Legacy / defensive fallback: pre-v0.10.15 bytecode, or a tag-prefix
+         * expression that did not evaluate to a UVAL_TAG — keep the anonymous
+         * per-scope tag. */
+        tag = utag_create(s->vm);
+        if (tag == NULL) {
+            s->fatal_status = UEXEC_THROW;
+            s->state        = USTRAND_STATE_DEAD;
+            return UVM_TAG_SCOPE_FATAL;
+        }
+        tag_is_user_owned = false;
     }
     UCleanupEntry *entry = strand_cleanup_push(s);
     if (entry == NULL) {
-        utag_destroy(s->vm, tag);  /* roll back the tag alloc on overflow */
+        if (!tag_is_user_owned)
+            utag_destroy(s->vm, tag);  /* roll back only an anonymous alloc */
         s->fatal_status = UEXEC_THROW;
         s->state        = USTRAND_STATE_DEAD;
         return UVM_TAG_SCOPE_FATAL;
     }
     entry->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
-    entry->flags          = flags;
+    entry->flags          = (uint8_t)(flags |
+                            (tag_is_user_owned ? FLAG_TAG_USER_OWNED : 0U));
     entry->handler_pc     = handler_pc;
     entry->register_base  = 0U;
     entry->register_count = 0U;
@@ -72,16 +90,13 @@ vm_push_tag_scope(UVM *vm, UStrand *s)
     /* VM-015: enter_event is unconditionally NULL on a fresh utag_create
      * (utag.c zero-fills enter_event/leave_event at allocation; only the
      * tag.enter native getter — invoked through a Tag.enter property
-     * read — lazy-allocates the UEvent later in tag_enter_getter).  At
-     * OP_PUSH_TAG the tag was just created on the line above and no
-     * code has had access to it; therefore tag->enter_event MUST be
-     * NULL here.  The original T55 "tier-2 enter event hook" branch
-     * (load + null-check + at_watchers_head load) was dead at every
-     * v1.0 dispatch and is removed; M6 wires Tag.enter through a
-     * different path (subscribers register on the lazy-alloc'd event
-     * after the tag escapes via a register binding, never during
-     * OP_PUSH_TAG itself).  The assertion pins the contract. */
-    URBI_INTERNAL_ASSERT(tag->enter_event == NULL);
+     * read — lazy-allocates the UEvent later in tag_enter_getter).  For an
+     * anonymous scope the tag was just created above, so enter_event MUST be
+     * NULL; assert that contract.  A USER-owned tag (v0.10.9-B) may legitimately
+     * carry an enter_event from a prior Tag.enter read, so it is exempt. */
+    if (!tag_is_user_owned) {
+        URBI_INTERNAL_ASSERT(tag->enter_event == NULL);
+    }
     return UVM_TAG_SCOPE_NEXT;
 }
 
@@ -104,8 +119,10 @@ vm_pop_tag_scope(UVM *vm, UStrand *s)
             return UVM_TAG_SCOPE_HALT;
         }
         /* T30: capture owning_tag before pop — the slot remains valid memory but
-         * is below cleanup_depth after pop and may be reused by a later push. */
+         * is below cleanup_depth after pop and may be reused by a later push.
+         * Capture flags too (v0.10.9-B FLAG_TAG_USER_OWNED) for the same reason. */
         UTag *tag = top->owning_tag;
+        uint8_t top_flags = top->flags;
         /* Unlink this entry from tag->member_strands_head (singly-linked
          * list removal via next_member). Only unlink when tag is non-NULL
          * — older bytecode emitted before T30 may have owning_tag == NULL. */
@@ -143,10 +160,14 @@ vm_pop_tag_scope(UVM *vm, UStrand *s)
             }
         }
         strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
-        /* Destroy the per-scope UTag allocated in OP_PUSH_TAG.
-         * Precondition (checked by utag_destroy assertion): member lists
-         * must be empty — we just unlinked the only member above. */
-        if (tag != NULL) {
+        /* Destroy only an anonymous per-scope UTag.  A user-owned tag
+         * (v0.10.9-B, FLAG_TAG_USER_OWNED) outlives the scope: it is still
+         * reachable via the user's variable and may have other open member
+         * scopes, so destroying it here would be a use-after-free.
+         * Precondition for the anonymous case (checked by utag_destroy's
+         * assertion): member lists must be empty — we unlinked the only
+         * member above. */
+        if (tag != NULL && (top_flags & FLAG_TAG_USER_OWNED) == 0U) {
             utag_destroy(s->vm, tag);
         }
     }

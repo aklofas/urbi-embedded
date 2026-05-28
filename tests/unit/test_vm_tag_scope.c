@@ -28,6 +28,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #define UTEST(name) static void name(void)
 
@@ -90,6 +91,44 @@ UTEST(test_tag_scope_sequential_reuse)
     urbi_vm_destroy(&vm);
 }
 
+/* === Test 4 (W2.1, v0.10.9-B): binding flip — once OP_PUSH_TAG honors the
+ * tag_reg nibble, the strand running inside `t: { ... }` is a MEMBER of user
+ * tag t, so t.stop() from inside is a clean in-scope tag-stop on t's OWN active
+ * scope.  PRE-binding the scope was anonymous and unbound to t, so t had no
+ * members and tag_stop_native took the D3 "no active scope" path, setting
+ * vm->last_errmsg = "tag.stop with no active scope".  The discriminating pin is
+ * therefore the ABSENCE of that D3 diagnostic post-binding.
+ *
+ * Note: the chunk strand still terminates via TAG_STOP here — tag-stop
+ * "absorption" (resume execution AFTER the scope) is the separate, deferred
+ * T29 concern (uunwind.c UCLEANUP_TAG_SCOPE is still the M3 stub), NOT part of
+ * v0.10.9-B — so rc is intentionally not asserted.  Realm.hit stays 0 in both
+ * regimes (the post-stop write never runs). */
+UTEST(test_tag_scope_binds_user_tag)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "hit", 3,
+                                              utest_e2e_make_int(0)));
+
+    (void)utest_e2e_compile_and_run(&vm,
+        "var t = Tag.new(); t: { t.stop(); Realm.hit = 1 }", NULL);
+
+    /* Bound scope: the D3 outside-scope diagnostic must NOT appear.
+     * (Pre-binding, vm.last_errmsg == "tag.stop with no active scope".) */
+    UASSERT(strstr(vm.last_errmsg, "no active scope") == NULL);
+
+    UValue v = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "hit", 3, &v));
+    UASSERT_EQ((int)UVAL_INT, (int)v.kind);
+    UASSERT_EQ((int64_t)0, v.v.i);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* === Suite entry. ==================================================== */
 void
 test_vm_tag_scope_suite(void)
@@ -100,4 +139,6 @@ test_vm_tag_scope_suite(void)
               test_tag_scope_nested);
     utest_run("vm_tag_scope: sequential scopes reuse the popped cleanup slot",
               test_tag_scope_sequential_reuse);
+    utest_run("vm_tag_scope: t: {...} binds the user tag; t.stop() inside unwinds",
+              test_tag_scope_binds_user_tag);
 }
