@@ -13,13 +13,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [test, test-asan, test-ubsan, test-debug, test-switch, test-abi-freeze]
+        mode: [test, test-asan, test-ubsan, test-debug, test-switch, test-abi-freeze, test-trace, test-trace-compiled-out]
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y gcc make
       - name: Build and test
         run: make ${{ matrix.mode }}
+
+  trace:
+    name: trace subsystem (REPL + determinism)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y gcc make
+      - name: trace + REPL combined build (session + Debug.trace taps)
+        run: |
+          make clean
+          make URBI_ENABLE_REPL=1 \
+            CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_TRACE=1 -DURBI_ENABLE_REPL=1" \
+            test
+      - name: determinism stays stable with URBI_TRACE=1
+        run: make test-determinism-trace
 
   repl-multi-client-stress:
     name: repl multi-client stress (ASan, 100 trials)

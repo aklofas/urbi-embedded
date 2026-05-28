@@ -704,6 +704,23 @@ test-switch:
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_VM_FORCE_SWITCH=1" \
 		test
 
+# test-trace — full suite under URBI_TRACE=1 (trace subsystem compiled in,
+# all channels default-OFF).  Verifies the trace build is green and that the
+# ring / tracepoints / bring-up primitives / Debug.trace marker behave.  Own
+# TARGET= so Phase 1 -j parallelism stays race-free.
+.PHONY: test-trace
+test-trace:
+	$(MAKE) TARGET=host-trace \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_TRACE=1" \
+		test
+
+# test-trace-compiled-out — proves the URBI_TRACE-OFF archive (default $(LIB))
+# carries no trace ring/emit internals.  The control-API stubs are present in
+# both modes by design and are excluded from the forbidden list.
+.PHONY: test-trace-compiled-out
+test-trace-compiled-out: $(LIB)
+	@sh tests/scripts/check-trace-compiled-out.sh $(LIB)
+
 # --- Determinism gate -------------------------------------------------------
 #
 # test-determinism builds and runs the full unit-test suite 100 times under
@@ -753,6 +770,21 @@ test-determinism-linux:
 
 test-determinism: test-determinism-footprint test-determinism-default test-determinism-linux
 	@echo "=== Determinism gate: all 3 presets × 100 runs PASS ==="
+
+# test-determinism-trace — the default preset with URBI_TRACE=1 added.  Proves
+# a trace-enabled build stays deterministic across 100 runs: trace channels
+# default OFF, so no records are emitted and the checksummed observable state
+# is unperturbed by compiling the subsystem in.  CI-only (not in releasetest).
+test-determinism-trace:
+	$(MAKE) TARGET=host-determinism-trace \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_TRACE=1" \
+		test
+	@echo "=== Determinism gate: trace preset (100 runs) ==="
+	@for i in $$(seq 1 100); do \
+	    build/host-determinism-trace/tests/unit/runner > /dev/null \
+	    || { echo "FAIL on iteration $$i (trace preset)"; exit 1; }; \
+	done
+	@echo "=== Trace preset: 100 runs PASS (URBI_TRACE=1 stays deterministic) ==="
 
 # Valgrind memcheck — runs the test suite under valgrind's memcheck tool.
 # Catches uninitialized reads, heap corruption, leaks.  Complements ASan:
@@ -867,6 +899,7 @@ test-corpus-sanitize:
 # hard-fail.
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
+    test-trace test-trace-compiled-out \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
@@ -1620,4 +1653,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins
