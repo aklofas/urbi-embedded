@@ -21,20 +21,33 @@ Four priorities shape every style decision:
 
 ```text
 src/
-├── ulex.h          Public lexer header (only public header for its subsystem)
-├── ulex.c          Lexer implementation
-├── urbi.h          Public top-level API header
-├── urbi.c          Top-level entry points (thin; dispatches into subsystems)
-├── u<subsys>.c     Subsystem implementations (uparse, uemit, uvm, …)
-└── u<subsys>.h     Public header, only when a subsystem exposes more than urbi.h does
+├── urbi.c            Top-level entry points (thin; dispatches into subsystems)
+├── urbi_aux.c        Hosted-only convenience wrappers (gated behind __STDC_HOSTED__)
+├── lex/              Lexer
+├── parse/            Recursive-descent + Pratt parser
+├── emit/             Bytecode emitter
+├── chunk/            Bytecode chunk + wire (de)serialization
+├── vm/               Virtual machine: dispatch, slot ops, arithmetic
+├── object/           Object model: UObject, shapes, slots, inline caches
+├── value/            UValue + atom representations
+├── gc/               Incremental mark-sweep GC
+├── sched/            Cooperative scheduler
+├── runtime/          Strands, unwind walker, cleanup stack
+├── tag/              UTag + tag lifecycle
+├── watcher/          Reactive watchers (at / whenever / waituntil)
+├── event/            Event objects + emit ring
+├── changed/          Slot-change tracking
+├── realm/            URealm, namespaces, modules
+├── stdlib/           Built-in prototypes + urbiscript overlays
+└── repl/             REPL service: listener, dispatch, transports
 ```
 
 Guidelines:
 
-- **Flat `src/`.** No nested source directories. A subsystem is one `.c` (possibly with one sibling `.h`), not a folder.
+- **Subsystem directories.** Each subsystem lives under its own `src/<subsys>/` directory. Only `src/urbi.c` and `src/urbi_aux.c` sit at the `src/` root. A large subsystem is several focused `.c` files within the directory, each covering a coherent slice of the subsystem's responsibility.
 - **Every public header maps to exactly one `.c`.** Implementation detail that ends up in two files is a sign the subsystem is poorly factored.
 - **Internal helpers stay `static` in the `.c`.** Don't publish anything that isn't part of the stable contract.
-- **Test files mirror the subsystem being tested.** `src/ulex.c` is tested by `tests/unit/test_lexer.c`. One test file per subsystem, one `test_<subsys>_suite` function per file.
+- **Test files mirror the subsystem being tested.** `src/lex/ulex.c` is tested by `tests/unit/test_lexer.c`. One test file per subsystem, one `test_<subsys>_suite` function per file.
 
 ---
 
@@ -93,26 +106,25 @@ Rules:
 - **Only C99-mandated freestanding headers are unconditional.** `<float.h>`, `<iso646.h>`, `<limits.h>`, `<stdarg.h>`, `<stdbool.h>`, `<stddef.h>`, `<stdint.h>`. These are provided by the compiler, not the libc, so they are always available.
 - **Hosted headers are guarded.** `<stdlib.h>`, `<string.h>`, `<stdio.h>`, `<time.h>`, `<assert.h>`, etc. Include them behind `#if __STDC_HOSTED__ / #endif`. GCC sets `__STDC_HOSTED__` to 0 under `-ffreestanding`.
 - **Any function that reaches a hosted-only feature is guarded the same way.** If a convenience wrapper calls `malloc`, it and its prototype in the public header both sit inside `#if __STDC_HOSTED__`. Freestanding callers are expected to use the injection-based API (custom allocator, static buffer) that the library already provides.
-- **Don't depend on libc for leaf utilities.** `memset`, `memcpy`, `strlen` are all hosted. Write small local replacements when needed (`arena_zero` in `src/uarena.c` is the pattern). Mark the buffer `volatile` to prevent the compiler from recognizing the loop and lowering it back to a libc call under `-Os`.
+- **Don't depend on libc for leaf utilities.** `memset`, `memcpy`, `strlen` are all hosted. Write small local replacements when needed (`arena_zero` in `src/value/uarena.c` is the pattern). Mark the buffer `volatile` to prevent the compiler from recognizing the loop and lowering it back to a libc call under `-Os`.
 - **Test files are exempt.** `tests/unit/*.c` link against the host toolchain and may freely use hosted headers. The library itself is what must stay freestanding.
 
 The RISC-V CI job is the acceptance test. If your change makes `make cross-riscv` fail, the change is wrong — not the test.
 
-`src/uvalue.c` uses `<stdio.h>` for `snprintf` and is therefore gated behind
-`#if __STDC_HOSTED__`. The header `src/uvalue.h` declares the API
+`src/value/uvalue.c` uses `<stdio.h>` for `snprintf` and is therefore gated
+behind `#if __STDC_HOSTED__`. The header `src/value/uvalue.h` declares the API
 unconditionally so callers can include it on any target; freestanding callers
 that attempt to link `uvalue_format` get a clear undefined-symbol error at link
 time rather than a silent miscompile. This is the same pattern as
-`src/uarena.c`'s `stdlib_alloc` gating: the header is unconditional, the
+`src/value/uarena.c`'s `stdlib_alloc` gating: the header is unconditional, the
 implementation symbols are hosted-only.
 
-The concurrency runtime (`v0.3.0-concurrency` and later) adds the following files, all of which must satisfy
-the same freestanding constraint: `usched_cooperative.c`, `ugc_incremental.c`,
-`uhandle.c`, `utype.c`, `utag.c`, `uwatcher.c`, `uwatcher_eval.c`,
-`uwatcher_drain.c`, `uwatcher_spawn.c`, `uwatcher_gc.c`, `ustrand.c`,
-`urealm.c`, `urealm_namespace.c`, `ustep.c`, `uchunk.c`, `uunwind.c`,
-`ucleanup.c`, `uevent_ring.c`, `uop_unwind.c`, `uop_fork.c`. Each must compile
-clean under `make cross-riscv` and `make cross-arm`.
+The concurrency runtime (`v0.3.0-concurrency` and later) adds files across
+several subsystem directories, all of which must satisfy the same freestanding
+constraint. Every `.c` under `src/sched/`, `src/runtime/`, `src/tag/`,
+`src/watcher/`, `src/event/`, `src/gc/`, `src/chunk/`, `src/vm/`,
+`src/realm/`, and `src/changed/` must compile clean under `make cross-riscv`
+and `make cross-arm`.
 
 ---
 
