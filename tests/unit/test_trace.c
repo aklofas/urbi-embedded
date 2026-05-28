@@ -12,6 +12,7 @@
 #include "urbi/urbi.h"
 #include "urbi/trace.h"
 #include "vm/uvm.h"
+#include "realm/urealm.h"
 
 #define UTEST(name) static void name(void)
 
@@ -250,6 +251,28 @@ UTEST(trace_tag_op)
     urbi_vm_destroy(&vm);
 }
 
+/* REPL eval tap: urbi_repl_eval is available in the full (non-bytecode-only)
+ * host build, so this needs URBI_TRACE only (not URBI_ENABLE_REPL). The
+ * SESSION taps live in the REPL-server layer (urepl_dispatch.c) and are
+ * exercised by the REPL suite under a URBI_ENABLE_REPL build. */
+UTEST(trace_repl_eval)
+{
+    UVM vm;
+    URealm *r;
+    char buf[256];
+    UTraceRecord out[32];
+    uint32_t d;
+    size_t n;
+    urbi_vm_init(&vm, NULL, NULL);
+    urbi_trace_set_level(&vm, URBI_TRACE_REPL, URBI_LOG_INFO);
+    r = urbi_realm_create_repl(&vm);
+    UASSERT(r != NULL);
+    (void)urbi_repl_eval(&vm, r, "1+2", 3, buf, sizeof buf);
+    n = urbi_trace_snapshot(&vm, out, 32, &d);
+    UASSERT(trace_saw_schema(out, n, URBI_TP_REPL_EVAL));
+    urbi_vm_destroy(&vm);
+}
+
 #endif /* URBI_TRACE */
 
 void test_trace_suite(void)
@@ -268,5 +291,6 @@ void test_trace_suite(void)
     utest_run("trace_event_emit_and_watcher_fire", trace_event_emit_and_watcher_fire);
     utest_run("trace_watcher_install", trace_watcher_install);
     utest_run("trace_tag_op", trace_tag_op);
+    utest_run("trace_repl_eval", trace_repl_eval);
 #endif
 }

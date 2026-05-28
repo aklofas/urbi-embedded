@@ -302,6 +302,8 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 {
 #if __STDC_HOSTED__
     URBI_ASSERT_NOT_ISR(vm);
+    URBI_TP(vm, URBI_TRACE_REPL, URBI_LOG_INFO, URBI_TP_REPL_EVAL, 1u,
+            (uint32_t)line_len);
 
     /* Resolve realm. */
     if (!realm) {

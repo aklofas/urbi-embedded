@@ -132,6 +132,8 @@ urepl_session_create(UReplServer *server)
     s->vm = server->vm;
     s->realm = r;
     s->server = server;
+    URBI_TP(server->vm, URBI_TRACE_REPL, URBI_LOG_INFO, URBI_TP_REPL_SESSION,
+            1u, (uint32_t)(uintptr_t)s);
 
     /* Install the session's writer so urbiscript output flows into our
      * ringbuf instead of the VM's default stderr writer. */
@@ -198,6 +200,8 @@ urepl_session_destroy(UReplServer *server, UReplSession *session)
     if (server == NULL || session == NULL) {
         return;
     }
+    URBI_TP(server->vm, URBI_TRACE_REPL, URBI_LOG_INFO, URBI_TP_REPL_SESSION,
+            0u, (uint32_t)(uintptr_t)session);
     /* Unlink from server's session list FIRST so concurrent finders
      * (`urepl_session_find` from the listener subthread) won't see a
      * session that's mid-teardown.  After this point only the caller
