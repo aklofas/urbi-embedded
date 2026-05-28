@@ -968,6 +968,7 @@ test-corpus-sanitize:
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
     test-trace test-trace-compiled-out test-perf-counters \
+    test-trace-decode test-trace-capture test-gdb \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \

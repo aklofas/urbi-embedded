@@ -22,12 +22,12 @@ jobs:
         run: make ${{ matrix.mode }}
 
   tooling:
-    name: tooling subsystem (trace + perf, REPL + determinism)
+    name: tooling subsystem (trace + perf, REPL + determinism + host tooling)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y gcc make
+        run: sudo apt-get update && sudo apt-get install -y gcc make gdb python3
       - name: trace + REPL combined build (session + Debug.trace taps)
         run: |
           make clean
@@ -44,6 +44,12 @@ jobs:
             test
       - name: determinism stays stable with URBI_PERF_COUNTERS=1
         run: make test-determinism-perf
+      - name: host trace tooling — decoder unit test
+        run: make test-trace-decode
+      - name: host trace tooling — capture end-to-end
+        run: make test-trace-capture
+      - name: host trace tooling — GDB walkers smoke
+        run: make test-gdb
 
   repl-multi-client-stress:
     name: repl multi-client stress (ASan, 100 trials)
