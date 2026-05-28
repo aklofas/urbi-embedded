@@ -176,6 +176,7 @@ typedef struct UOpOverloadIC {
  * transitively through urbi/types.h → urbi/urbi.h when urbi/urbi.h is
  * included.  We forward-include it here to keep uvm.h self-contained. */
 #include "urbi/urbi.h"  /* urbi_error_info_t (Gap P struct) */
+#include "urbi/trace.h" /* UTraceState (URBI_TRACE-gated UVM field) */
 
 #define URBI_ERROR_RING_DEPTH  4U
 #define URBI_ERROR_STRING_BUF  256U
@@ -723,6 +724,12 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * header free of an URBI_ENABLE_REPL conditional include cascade; the
      * debug_namespace TU casts back to UObject*. */
     void *debug_proto;
+
+#if URBI_TRACE
+    /* v0.11.0 trace subsystem state; present ONLY in URBI_TRACE builds so the
+     * OFF build keeps byte-identical UVM layout. Zeroed by urbi_trace_init. */
+    UTraceState trace;
+#endif
 } UVM;
 
 /* --- API --- */

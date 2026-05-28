@@ -130,6 +130,12 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * into the shade-gray path and segfault. */
     vm->debug_proto = NULL;
 
+#if URBI_TRACE
+    /* v0.11.0: zero trace state early — before any subsystem init that could
+     * fire a tracepoint (stdlib boot drives the scheduler/GC). */
+    urbi_trace_init(vm);
+#endif
+
     vm->alloc_fn = alloc_fn;
     vm->alloc_ud = alloc_ud;
 #if __STDC_HOSTED__
