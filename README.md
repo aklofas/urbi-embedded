@@ -6,11 +6,11 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** v0.10.14-prerc-infra — First tag of the pre-v1.0-rc stabilization arc. Three parallel worktrees: W1 (STYLE.md file-layout corrected to the real subsystem-directory tree) + W2 (REPL reader-thread output flush reworked to a staging buffer + POLLOUT-driven retry, replacing the EAGAIN spin — fixes a teardown-latency/liveness bug under a slow reader, not data loss) + W3 (a C `.chk` host-driver — `realm`/`run`/`step` directives — activating 5 previously-blocked scheduler/multi-realm conformance fixtures). Zero new public C API symbols. ABI 0/19/5 (PATCH bump from 0/19/4; 22nd use of pre-v1.0 escape clause). Wire v1.9 / 0x19 unchanged.
+**Status:** v0.10.15-vm-decomp-2 — Final tag of the pre-v1.0-rc stabilization arc. Internal VM dispatch extraction round 2: `OP_PUSH_TAG`/`OP_POP_TAG` and the seven reactive-install opcodes moved out of the dispatch loop into `uvm_tag_scope` / `uvm_reactive_install` (behavior-preserving, per-stage zero-delta gated; `uvm.c` 1785 → 1428 LOC). Plus two tag/unwind semantic fixes on the freshly-extracted seam: `t: { ... }` now binds the scope to the user tag so `t.stop()` from inside is a clean in-scope stop (no spurious "no active scope" fatal), and `tag.stop()` inside `try`/`finally` runs the finally during the unwind. Zero new public C API symbols. ABI 0/19/6 (PATCH bump from 0/19/5; 23rd use of pre-v1.0 escape clause). Wire v1.9 / 0x19 unchanged.
 
-Previously: **v0.10.13-hygiene** — Post-Cat. E hygiene tag + one targeted runtime bug fix (slot-change first-install double-fire). ABI 0/19/4.
+Previously: **v0.10.14-prerc-infra** — First tag of the pre-v1.0-rc stabilization arc (REPL output-flush rework + a C `.chk` host-driver activating 5 previously-blocked fixtures). ABI 0/19/5.
 
-Next milestone: **v0.11.x ROS2 (M9)** — micro-ROS / ROS2 integration; Standard Robotics API per REVIVAL §11/§12; subsystem prefix `ros:` comes online. Then **v1.0-rc**. Tagged `v0.10.14-prerc-infra`.
+Next milestone: **v0.11.x ROS2 (M9)** — micro-ROS / ROS2 integration; Standard Robotics API per REVIVAL §11/§12; subsystem prefix `ros:` comes online. Then **v1.0-rc**. Tagged `v0.10.15-vm-decomp-2`.
 
 ## Design goals
 

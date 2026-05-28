@@ -1,10 +1,11 @@
 # C API stability policy
 
-> Status: ABI pin at v0.10.14-prerc-infra (0/19/5) — PATCH bump from
-> v0.10.13-hygiene (0/19/4).  22nd use of pre-v1.0 escape clause.
-> First tag of the pre-v1.0-rc stabilization arc — STYLE.md doc
-> correction, REPL output-backpressure liveness fix, and a `.chk`
-> C host-driver; no new public C API symbols, no new opcodes.
+> Status: ABI pin at v0.10.15-vm-decomp-2 (0/19/6) — PATCH bump from
+> v0.10.14-prerc-infra (0/19/5).  23rd use of pre-v1.0 escape clause.
+> Final tag of the pre-v1.0-rc stabilization arc — internal VM dispatch
+> extraction (uvm_tag_scope + uvm_reactive_install) plus the v0.10.9-B
+> user-tag scope binding and v0.10.7-B tag.stop()/finally fix; no new
+> public C API symbols, no new opcodes.
 > PATCH-only, not freeze-override
 > under §3 (the ledger numbers every bump; only MINOR/MAJOR bumps
 > require §3's freeze-override review).  The freeze pin is a forcing
@@ -141,4 +142,20 @@ embedding API, activating 5 previously-blocked scheduler/multi-realm
 conformance fixtures.  No new public C API symbols — all changes are
 internal (REPL), test-side (host-driver), or documentation.  PATCH
 bump: 0/19/4 → 0/19/5.  Recorded for ledger completeness; this is NOT
+a freeze-override under §3.
+
+### Escape #23 — v0.10.15-vm-decomp-2 (PATCH-only)
+
+Final tag of the pre-v1.0-rc stabilization arc.  Internal VM dispatch
+extraction round 2: `OP_PUSH_TAG`/`OP_POP_TAG` moved into
+`src/vm/uvm_tag_scope.{c,h}` and the seven reactive-install opcodes into
+`src/vm/uvm_reactive_install.{c,h}`, behavior-preserving under a per-stage
+zero-delta gate (`uvm.c` 1785 → 1428 LOC).  Two tag/unwind semantic fixes
+landed on the extracted seam: `OP_PUSH_TAG` now binds the `t:` scope to the
+user tag in `R[tag_reg]` (closes design-risks v0.10.9-B), and `tag.stop()`
+inside `try`/`finally` runs the finally during the TAG_STOP unwind (closes
+design-risks v0.10.7-B, latent-fixed by the binding).  A new cleanup-entry
+flag `FLAG_TAG_USER_OWNED` is internal (`src/runtime/ucleanup.h`), not public.
+No new public C API symbols; no new opcodes; wire unchanged at v1.9 / 0x19.
+PATCH bump: 0/19/5 → 0/19/6.  Recorded for ledger completeness; this is NOT
 a freeze-override under §3.

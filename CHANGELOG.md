@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.10.15-vm-decomp-2 — 2026-05-28
+
+Final tag of the pre-v1.0-rc stabilization arc.  Internal VM dispatch
+extraction round 2 (behavior-preserving, per-stage zero-delta gated),
+plus two tag/unwind semantic fixes that land on the freshly-extracted
+seam.  Zero new public C API symbols; no new opcodes; wire format
+unchanged at v1.9 / 0x19.
+
+### VM
+
+- Extracted `OP_PUSH_TAG` / `OP_POP_TAG` from the `uvm.c` dispatch loop
+  into `src/vm/uvm_tag_scope.{c,h}` (a `UVmTagScopeResult` helper pair,
+  mirroring the v0.10.4 `uvm_slot` extraction pattern).
+- Extracted the seven reactive-install opcodes (`OP_AT_INSTALL`,
+  `OP_AT_SYNC_INSTALL`, `OP_WHENEVER_INSTALL`, `OP_WAITUNTIL_INSTALL`,
+  `OP_AT_EVENT_INSTALL`, `OP_AT_EVENT_SYNC_INSTALL`,
+  `OP_WHENEVER_EVENT_INSTALL`) and their operand-check / fault helpers
+  into `src/vm/uvm_reactive_install.{c,h}` (a `vm_reactive_install`
+  switch).  `uvm.c` 1785 → 1428 LOC.  Each extraction passed a per-stage
+  zero-delta gate (identical fixture + unit results before and after)
+  and both sanitizers.  The deeper safepoint/object-routing extractions
+  were assessed and deferred to v1.0-rc (design-risks v0.10.15-A).
+
+### Tag / unwind
+
+- `OP_PUSH_TAG` now honors the `A[3:0]` tag-register nibble the emitter
+  packs and binds the `t: { ... }` scope to the user tag in `R[tag_reg]`
+  (falling back to an anonymous per-scope tag otherwise).  A new internal
+  cleanup-entry flag `FLAG_TAG_USER_OWNED` makes `OP_POP_TAG` skip
+  `utag_destroy` for user-owned tags (the tag outlives the scope).
+  `t.stop()` from inside `t: { ... }` is now a clean in-scope tag-stop
+  instead of a spurious "tag.stop with no active scope" fatal.  Closes
+  design-risks v0.10.9-B.
+- `tag.stop()` inside `try`/`finally` runs the finally clause during the
+  TAG_STOP unwind (the unwind walker already ran finally on any pending
+  unwind kind; the binding above makes `t.stop()` reach that path).
+  Closes design-risks v0.10.7-B.
+
+### Tests
+
+- New `tests/unit/test_vm_tag_scope.c` and `test_vm_reactive_install.c`
+  characterization suites pin the extracted dispatch behavior.
+- New `tests/chk/tag/scope_binds_user_tag.chk`; activated
+  `tests/chk/control_transfer/tag_stop_with_finally.chk`; updated
+  `tag_stop_skips_catch.chk` for the bound-scope behavior; narrowed
+  `block.chk` / `block-propagation.chk` blocked-headers to their
+  remaining (post-v0.10.9-B) residuals.
+
+### ABI / build
+
+- ABI 0/19/5 → 0/19/6 (PATCH; 23rd use of the pre-v1.0 escape clause,
+  ledgered in `docs/api-stability.md` §6 — not a §3 freeze-override:
+  zero new public C API symbols).  Wire format unchanged at v1.9 / 0x19.
+
 ## v0.10.14-prerc-infra — 2026-05-27
 
 First tag of the pre-v1.0-rc stabilization arc.  Three independent,

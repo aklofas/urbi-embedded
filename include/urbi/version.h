@@ -240,7 +240,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  19
-#define URBI_API_VERSION_PATCH  5
+#define URBI_API_VERSION_PATCH  6
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -259,7 +259,7 @@ extern "C" {
  * Failing to bump the static_assert breaks the build, which is the point —
  * deliberate intent at every change, not silent ABI drift.
  *
- * Pin target: v0.10.14-prerc-infra ships at 0/19/5.
+ * Pin target: v0.10.15-vm-decomp-2 ships at 0/19/6.
  *
  * The pin landed in commit `bdad57c` (W2 of v0.10.6) at 0/17/0; bumped to
  * 0/18/0 at v0.10.6 wave wrap-up to capture the W4 UReplConfig.rate_limit_per_second
@@ -304,10 +304,22 @@ extern "C" {
  * chk_host_driver.c: realm/run/step directives) activating 5 T39-
  * blocked scheduler/multi-realm fixtures (W3).  All internal /
  * test-side / doc; zero new public C API symbols.
+ *
+ * Bumped to 0/19/6 at v0.10.15-vm-decomp-2 — escape #23.  PATCH-only, final
+ * tag of the pre-v1.0-rc stabilization arc.  Internal VM dispatch extraction
+ * round 2: OP_PUSH_TAG/OP_POP_TAG → src/vm/uvm_tag_scope; the seven reactive-
+ * install arms → src/vm/uvm_reactive_install (behavior-preserving, per-stage
+ * zero-delta gated).  Plus two tag/unwind semantic fixes on the extracted
+ * seam: OP_PUSH_TAG now binds the `t:` scope to the user tag in R[tag_reg]
+ * (closes v0.10.9-B), and tag.stop() inside try/finally runs the finally during
+ * the TAG_STOP unwind (closes v0.10.7-B, latent-fixed by the binding).  New
+ * cleanup-entry flag FLAG_TAG_USER_OWNED is internal (src/runtime/ucleanup.h),
+ * not public.  Zero new public C API symbols; no new opcodes; wire unchanged
+ * at v1.9 / 0x19.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 19
-            && URBI_API_VERSION_PATCH == 5,
+            && URBI_API_VERSION_PATCH == 6,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */
