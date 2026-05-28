@@ -11,11 +11,10 @@
 # — see at_sync_no_yield.chk).  Rewritten to keyword form + attempted
 # activation at v0.10.12.
 #
-# blocked: slot-change fires on first slot-install as well as write
-#          (double-fire bug, same as slot_change_basic.chk) — v1.0-rc
-#          investigation.  The `at sync` keyword form is correct per
-#          §S-watcher-3; the remaining blocker is the scripted slot-change
-#          subscriber wiring, not the sync-watcher syntax.
+# blocked: scripted slot-change subscribe + body dispatch require T69 globals
+#          exposure (same as slot_change_basic.chk).  The `at sync` keyword
+#          form is correct per §S-watcher-3; the double-fire bug (v0.10.7-C)
+#          was fixed at v0.10.13.
 #
 # Reason:
 #   Same blockers as slot_change_basic.chk.  The sync (AT_SYNC) vs async (AT)

@@ -257,6 +257,13 @@ vm_setslot_slow(UVM *vm,
                 UValue v,
                 const char *opname)
 {
+    /* Snapshot recv's shape before the slow path: if the shape changes after
+     * the call, the slow path installed a new slot (first-time or COW).  Per
+     * the legacy semantic, slot-change must NOT fire on install — only on
+     * writes to an already-existing slot.  Compare shape pointers post-call
+     * to suppress the emit on the install path. */
+    const UShape *shape_before = recv->shape;
+
     int rc = urbi_slot_set_slow(vm, recv, ic, v);
     if (rc != 0) {
         vm->last_error = UVM_TYPE_ERROR;
@@ -282,6 +289,11 @@ vm_setslot_slow(UVM *vm,
      * fire observer_dirty so watchers whose read-set includes recv see the write.
      * Slot index 0 is a conservative sentinel — observer_dirty ignores the key. */
     urbi_gc_slot_pre_store(vm, (UCell *)recv, 0U, v);
-    urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
+    /* Suppress the slot-change emit when the slow path installed a new slot
+     * (shape transitioned = first-time install or COW).  Install is not a
+     * change per the legacy semantic; closes v0.10.7-C. */
+    if (recv->shape == shape_before) {
+        urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
+    }
     return VM_SLOT_OK;
 }

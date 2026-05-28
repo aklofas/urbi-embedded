@@ -1,0 +1,41 @@
+# Milestone: v0.10.13-hygiene
+# Covers: slot-change watcher must NOT fire on first slot-install; only on
+#         subsequent writes to an existing slot.  Closes v0.10.7-C.
+#
+# Activation history: v0.10.13 W3 fixed the double-fire bug (urbi_object_set_local_slot
+#         Case 2 and vm_setslot_slow install path both suppressed slot-change
+#         emit on shape transition).  Activated at the same milestone.
+#
+# Uses Realm slots for the counter (Realm.fired) and the watched slot (Realm.x)
+# via the v0.10.10 W3 Realm.x = v capture pattern.  Watcher is installed
+# BEFORE the slot exists to exercise the install-does-not-fire path.
+#
+# Sequence:
+#   1. Install at-watcher on Realm.x (slot does not yet exist)
+#   2. var Realm.x = 0  — install (must NOT fire)  fired == 0
+#   3. Realm.x = 1      — write to existing slot (MUST fire)  fired == 1
+#   4. Realm.x = 2      — second write (MUST fire)            fired == 2
+
+var Realm.fired = 0
+[00000000] 0
+
+at (Realm.x.changed?) Realm.fired = Realm.fired + 1
+[00000001] nil
+
+var Realm.x = 0
+[00000002] 0
+
+Realm.fired
+[00000003] 0
+
+Realm.x = 1
+[00000004] 1
+
+Realm.fired
+[00000005] 1
+
+Realm.x = 2
+[00000006] 2
+
+Realm.fired
+[00000007] 2

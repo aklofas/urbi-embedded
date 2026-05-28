@@ -2,7 +2,7 @@
 # Covers: at (obj.x.changed?) subscriber fires on slot mutation; basic
 #         slot-change event: single subscriber, single write, single fire.
 #
-# blocked: slot-change fires on first slot-install as well as write (double-fire bug) — v1.0-rc investigation
+# blocked: scripted slot-change subscribe + body dispatch require T69 globals exposure
 # matrix-row: reactive-slot-change
 #
 # Reason:

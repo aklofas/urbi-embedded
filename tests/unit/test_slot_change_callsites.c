@@ -180,10 +180,17 @@ UTEST(slot_change_fires_via_set_local_slot_inplace)
 }
 
 /* ===================================================================
- * Test 3: urbi_object_set_local_slot case 2 (COW / new slot)
+ * Test 3: urbi_object_set_local_slot case 2 (COW / new slot — install)
+ *
+ * Install (first-time slot creation) must NOT fire the slot-change
+ * watcher per the legacy semantic.  Only subsequent writes to an
+ * existing slot fire.  This test verifies the corrected behavior:
+ *   - first call (install): no strand spawned
+ *   - second call (in-place update): strand spawned
+ * Closes v0.10.7-C.
  * =================================================================== */
 
-UTEST(slot_change_fires_via_set_local_slot_cow)
+UTEST(slot_change_no_fire_on_install_fires_on_write)
 {
     UVM vm;
     UStrand s;
@@ -205,11 +212,17 @@ UTEST(slot_change_fires_via_set_local_slot_cow)
 
     uint32_t runnable_before = vm.strand_runnable_count;
 
-    /* First call for "z": COW shape transition (case 2). */
+    /* First call for "z": COW shape transition (case 2) — install.
+     * Must NOT fire the slot-change watcher. */
     UValue v; v.kind = UVAL_INT; v.v.i = 3;
     int rc = urbi_object_set_local_slot(&vm, o, sym, v);
     UASSERT_EQ(0, rc);
+    UASSERT_EQ((int)runnable_before, (int)vm.strand_runnable_count);
 
+    /* Second call (in-place update, case 1): must fire. */
+    UValue v2; v2.kind = UVAL_INT; v2.v.i = 4;
+    rc = urbi_object_set_local_slot(&vm, o, sym, v2);
+    UASSERT_EQ(0, rc);
     UASSERT(vm.strand_runnable_count > runnable_before);
 
     cleanup_subscriber(&vm, &s, r, e);
@@ -258,8 +271,8 @@ test_slot_change_callsites_suite(void)
               slot_change_fires_via_uslothandle_write);
     utest_run("slot_change_fires_via_set_local_slot_inplace",
               slot_change_fires_via_set_local_slot_inplace);
-    utest_run("slot_change_fires_via_set_local_slot_cow",
-              slot_change_fires_via_set_local_slot_cow);
+    utest_run("slot_change_no_fire_on_install_fires_on_write",
+              slot_change_no_fire_on_install_fires_on_write);
     utest_run("slot_change_no_fire_when_no_subscriber",
               slot_change_no_fire_when_no_subscriber);
 }

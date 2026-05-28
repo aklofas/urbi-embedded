@@ -147,7 +147,10 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     if (obj->flags & URBI_OBJ_FLAG_IS_PROTOTYPE) {
         vm->topology_gen++;
     }
-    urbi_emit_slot_change_if_subscribed(vm, obj, name, value);
+    /* Install (first-time slot creation) is NOT a slot change per the legacy
+     * semantic.  Only subsequent writes to an existing slot fire the watcher.
+     * Do NOT call urbi_emit_slot_change_if_subscribed here.  The in-place
+     * update branch (Case 1 above) is the correct emit site. */
     return 0;
 }
 
