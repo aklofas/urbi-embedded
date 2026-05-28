@@ -8,8 +8,10 @@
  *      urbi_slothandle_write_value fires the slot-change event.
  *   2. slot_change_fires_via_set_local_slot_inplace:
  *      urbi_object_set_local_slot case 1 (in-place) fires on second write.
- *   3. slot_change_fires_via_set_local_slot_cow:
- *      urbi_object_set_local_slot case 2 (COW / new slot) fires on first write.
+ *   3. slot_change_no_fire_on_install_fires_on_write:
+ *      urbi_object_set_local_slot case 2 (COW / new slot) does NOT fire on
+ *      first install; a subsequent write DOES fire (v0.10.7-C corrected
+ *      semantic).
  *   4. slot_change_no_fire_when_no_subscriber:
  *      Without a subscriber, none of the callsites fires (fast-path passes).
  *
