@@ -90,6 +90,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
          * sched_strand_yield which re-enqueues and increments the count. */
         sched_dequeue_ready_head(vm);
         s->state = USTRAND_STATE_RUNNING;
+        URBI_PERF_INC(vm, ctx_switches);   /* v0.11.1: strand go-live */
         vm->cur_strand = s;   /* spec #3 §7.1: expose running strand for c_event_waituntil */
 
         uint64_t consumed = dispatch_loop_until_yield(s, vm->step_budget_remaining);

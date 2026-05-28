@@ -59,12 +59,12 @@
     * here.  CASE(op) expands to a label, also unparenthesizable. */
 #  define DISPATCH()  goto *dispatch_table[uinstr_op(*s->pc)]  /* NOLINT(bugprone-macro-parentheses) — `goto *expr` cannot be parenthesized */
 #  define CASE(op)    label_##op:
-#  define NEXT()      do { s->pc++; DISPATCH(); } while (0)
+#  define NEXT()      do { URBI_PERF_INC(s->vm, opcodes); s->pc++; DISPATCH(); } while (0)
 #  define HALT()      goto halt_error
 #else
 #  define DISPATCH()  switch (uinstr_op(*s->pc))
 #  define CASE(op)    case (op):
-#  define NEXT()      do { s->pc++; goto dispatch; } while (0)
+#  define NEXT()      do { URBI_PERF_INC(s->vm, opcodes); s->pc++; goto dispatch; } while (0)
 #  define HALT()      goto halt_error
 #endif
 
@@ -380,6 +380,7 @@ dispatch:
         }
 
         CASE(OP_RET) {
+            URBI_PERF_INC(vm, returns);
             UValue retval = s->R[uinstr_a(*s->pc)];
 
             if (s->frame_count == 0) {
@@ -602,6 +603,7 @@ dispatch:
              *                          OP_SELF); args at R[A+2..A+B-1],
              *                          nargs = B-2; self forwarded to the
              *                          callee verbatim. */
+            URBI_PERF_INC(vm, calls);
             uint8_t a = uinstr_a(*s->pc);
             uint8_t b = uinstr_b(*s->pc);
             uint8_t c = uinstr_c(*s->pc);
@@ -631,6 +633,7 @@ dispatch:
              * pushed and BEFORE proto_inst is read — the C function runs
              * inline on the caller's frame. */
             if (callee->native_fn != NULL) {
+                URBI_PERF_INC(vm, native_calls);
                 UValue *args_ptr = (nargs > 0) ? &s->R[a + arg_off] : NULL;
                 UValue native_out;
                 int rc = callee->native_fn(vm, self_value, args_ptr,
@@ -897,6 +900,7 @@ dispatch:
              * Post-W1: thin arm — decode, resolve IC + recv, call helpers.
              * All policy (IC fast-path, trace, getter, slow path + error)
              * lives in uvm_slot.c. */
+            URBI_PERF_INC(vm, slot_get);
             uint32_t i = *s->pc;
             uint8_t  dst_reg  = uinstr_a(i);
             uint8_t  recv_reg = uinstr_b(i);
@@ -939,6 +943,7 @@ dispatch:
              *
              * Post-W1: thin arm — decode, guard, call helpers.
              * All IC policy (fast-path + slow-path + error) lives in uvm_slot.c. */
+            URBI_PERF_INC(vm, slot_set);
             uint32_t i = *s->pc;
             uint8_t  src_reg  = uinstr_a(i);
             uint8_t  recv_reg = uinstr_b(i);

@@ -94,6 +94,7 @@ install_watcher_runtime(
     }
     URBI_TP(vm, URBI_TRACE_WATCHER, URBI_LOG_INFO, URBI_TP_WATCHER_INSTALL,
             (uint32_t)mode, 0);
+    URBI_PERF_INC(vm, watcher_installs);
 
     /* Safety: install must not be re-entered from the install path itself. */
     URBI_INTERNAL_ASSERT(vm->watchers->in_install == 0);

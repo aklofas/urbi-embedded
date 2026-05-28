@@ -48,8 +48,27 @@ UTEST(perf_gc_cycles_counted)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(perf_opcodes_and_events_counted)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)utest_e2e_compile_and_run(&vm,
+        "var e = Event.new(); at (e?) Realm.x = 1; e!(1)", NULL);
+    utest_e2e_run_to_no_runnable(&vm);
+#if URBI_PERF_COUNTERS
+    UASSERT(vm.perf.opcodes > 0);
+    UASSERT(vm.perf.event_emits >= 1);
+    UASSERT(vm.perf.watcher_fires >= 1);
+    UASSERT(vm.perf.ctx_switches >= 1);
+#else
+    UASSERT(1);
+#endif
+    urbi_vm_destroy(&vm);
+}
+
 void test_perf_counters_suite(void)
 {
     utest_run("perf_macro_compiles_both_modes", perf_macro_compiles_both_modes);
     utest_run("perf_gc_cycles_counted", perf_gc_cycles_counted);
+    utest_run("perf_opcodes_and_events_counted", perf_opcodes_and_events_counted);
 }

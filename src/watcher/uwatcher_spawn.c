@@ -64,6 +64,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, const void *fire_con
 
     URBI_TP(vm, URBI_TRACE_WATCHER, URBI_LOG_DEBUG, URBI_TP_WATCHER_FIRE,
             (uint32_t)(uintptr_t)w, 0);
+    URBI_PERF_INC(vm, watcher_fires);
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Step 1 (spec #1 §5.3 step 1): exhaust-policy gate.

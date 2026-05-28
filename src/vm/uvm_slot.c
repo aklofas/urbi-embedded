@@ -63,7 +63,8 @@ vm_resolve_ic(UVM *vm,
         if (ic->recv_shapes[k]  != recv->shape)   continue;
         if (ic->topology_gen[k] != vm->topology_gen) continue;
 
-        /* IC fast-path hit. */
+        /* IC fast-path hit (shape guard matched). */
+        URBI_PERF_INC(vm, ic_hit);
         if (!writing) {
             /* Get path. */
             if (ic->flags[k] & URBI_SLOT_FLAG_OGET) {
@@ -105,6 +106,7 @@ vm_resolve_ic(UVM *vm,
     }
 
     /* No matching IC entry — slow path needed. */
+    URBI_PERF_INC(vm, ic_miss);
     return VM_SLOT_MISSING;
 }
 
