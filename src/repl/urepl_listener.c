@@ -357,19 +357,21 @@ reader_main(void *arg)
             eventfd_drain(r->wake_eventfd);
         }
 
-        /* Flush pending output on any of: POLLOUT (fd writable after
-         * backpressure), POLLIN wake (new data was dispatched and
-         * written to the output ring by the VM thread), or a periodic
-         * poll() timeout (catches any missed wake signal). */
-        if (pfds[0].revents & (POLLOUT | POLLIN)
-            || pr == 0  /* timeout — periodic drain */) {
-            FlushResult fr = flush_session_output(r);
-            if (fr == FLUSH_ERROR) {
-                break;
-            }
-            /* FLUSH_WOULD_BLOCK: staging non-empty, POLLOUT armed above
-             * on next iteration.  FLUSH_DONE: nothing left to send. */
+        /* Always attempt a flush after any wake.  flush_session_output is
+         * now non-blocking (returns FLUSH_WOULD_BLOCK on EAGAIN instead of
+         * spinning), so an unconditional drain is cheap when nothing is
+         * pending (FLUSH_DONE on an empty ring) and — critically — output
+         * pushed by the VM thread wakes us via the wake_eventfd (pfds[1],
+         * urepl_listener_wake_all_readers), NOT via client-fd revents, so
+         * gating the flush on pfds[0] would delay every response to the
+         * next poll() timeout. */
+        FlushResult fr = flush_session_output(r);
+        if (fr == FLUSH_ERROR) {
+            break;
         }
+        /* FLUSH_WOULD_BLOCK: staging non-empty; POLLOUT armed next
+         * iteration so we resume on the writable event.  FLUSH_DONE:
+         * nothing left to send. */
 
         /* Inbound socket data. */
         if (pfds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
