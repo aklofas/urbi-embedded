@@ -6,11 +6,11 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** v0.10.12-cat-e-activation — **Cat. E ratification arc COMPLETE** (4 tags shipped: v0.10.9 + v0.10.10 + v0.10.11 + v0.10.12). Final tag is fixture-and-doc-only: D2 cross-spec at→event chain activation via 3-fixture Realm-capture rewrite, at.sync 4-fixture syntax normalization to canonical `at sync` keyword form per §S-watcher-3, Cat. E doc-sweep close-out. No new public C API symbols; no new opcodes; no functional changes. ABI 0/19/3 (PATCH bump from 0/19/2; 20th use of pre-v1.0 escape clause). Wire v1.9 / 0x19 unchanged.
+**Status:** v0.10.13-hygiene — Post-Cat. E hygiene tag + one targeted runtime bug fix. Two parallel worktrees: W2 (markdownlint MD004 per-file override for CHANGELOG; `make all` now includes the urbi CLI binary; `String.asString` stdlib overlay) + W3 (slot-change event no longer fires on first slot-install — install is creation, not change; closes the long-standing double-fire bug). Zero new public C API symbols. ABI 0/19/4 (PATCH bump from 0/19/3; 21st use of pre-v1.0 escape clause). Wire v1.9 / 0x19 unchanged.
 
-Previously: **v0.10.11-channel-and-isA** — D6 full Channel proto + `cout`/`cerr`/`clog` realm globals + `<<` infix operator; `isA(Proto)` universal type-test; D5: Object atom proto unfrozen. ABI 0/19/2.
+Previously: **v0.10.12-cat-e-activation** — Final tag of the 4-tag Cat. E ratification arc; fixture-and-doc-only. ABI 0/19/3.
 
-Next milestone: **v0.11.x ROS2 (M9)** — micro-ROS / ROS2 integration; Standard Robotics API per REVIVAL §11/§12; subsystem prefix `ros:` comes online. Then **v1.0-rc**. Tagged `v0.10.12-cat-e-activation`.
+Next milestone: **v0.11.x ROS2 (M9)** — micro-ROS / ROS2 integration; Standard Robotics API per REVIVAL §11/§12; subsystem prefix `ros:` comes online. Then **v1.0-rc**. Tagged `v0.10.13-hygiene`.
 
 ## Design goals
 

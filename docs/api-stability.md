@@ -108,3 +108,21 @@ keyword normalization (W2), Cat. E close-out (W3).  No new public
 C API symbols — only the ABI macro bump.  PATCH bump: 0/19/2 →
 0/19/3.  Recorded for ledger completeness; this is NOT a freeze-
 override under §3.
+
+### Escape #21 — v0.10.13-hygiene (PATCH-only)
+
+Post-Cat. E hygiene + one targeted runtime bug fix.  Two parallel
+worktrees: W2 bundled markdownlint MD004 per-file override for
+CHANGELOG, `make all` dep on the urbi CLI binary (closes the
+v0.10.7-H stale-binary trap), and a `String.asString` stdlib overlay
+(closes v0.10.11-A); W3 suppressed the slot-change emit on first
+slot-install (closes v0.10.7-C — install is creation, not change).
+The only runtime semantic change is W3's two-site suppression:
+removed the direct emit in `urbi_object_set_local_slot` Case 2 (leaf-
+shape-add path), and added a shape-snapshot gate in `vm_setslot_slow`
+that suppresses emit when `recv->shape` changes (= new local slot
+installed via the COW or miss-install path).  No new public C API
+symbols.  Two new chk fixtures (`string_asstring`,
+`slot_change_no_install_emit`), one replaced unit test.  PATCH bump:
+0/19/3 → 0/19/4.  Recorded for ledger completeness; this is NOT a
+freeze-override under §3.

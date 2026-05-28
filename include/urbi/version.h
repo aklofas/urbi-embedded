@@ -240,7 +240,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  19
-#define URBI_API_VERSION_PATCH  3
+#define URBI_API_VERSION_PATCH  4
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -285,10 +285,19 @@ extern "C" {
  * and-doc-only tag: D2 cross-spec at→event chain activate-now (W1),
  * at.sync keyword normalization (W2), Cat. E close-out (W3).  Zero new
  * public C API symbols; no functional changes.
+ *
+ * Bumped to 0/19/4 at v0.10.13-hygiene — escape #21.  PATCH-only post-
+ * Cat. E hygiene + targeted runtime bug fix: markdownlint MD004 per-file
+ * override for CHANGELOG; make all builds urbi CLI binary (closes
+ * v0.10.7-H); String.asString stdlib overlay (closes v0.10.11-A);
+ * slot-change first-install double-fire suppression (closes v0.10.7-C
+ * — the one runtime semantic change).  Zero new public C API symbols;
+ * two new chk fixtures (string_asstring, slot_change_no_install_emit);
+ * one replaced unit test.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 19
-            && URBI_API_VERSION_PATCH == 3,
+            && URBI_API_VERSION_PATCH == 4,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

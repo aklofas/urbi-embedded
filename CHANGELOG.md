@@ -1,5 +1,92 @@
 # Changelog
 
+## v0.10.13-hygiene — 2026-05-27
+
+Post-Cat. E hygiene + one targeted runtime bug fix.  Bridges between
+the just-completed 4-tag Cat. E ratification arc and the upcoming
+v0.11.x ROS2 milestone.  Two worktrees dispatched in parallel; closes
+six register entries (three backlog, three design-risks).
+
+### Build
+
+- `make all` now depends on `$(BUILDDIR)/urbi` — the urbi CLI binary
+  that `make test-chk` needs.  Partial rebuilds previously left a stale
+  binary, producing confusing failures (notably during the v0.10.7 and
+  v0.10.9 wave wrap-ups).  Closes `v0.10.7-H`.
+
+### Stdlib
+
+- New `String.asString` method on the `StringMethods` overlay class
+  (`src/stdlib/string_overlay.u`).  Idempotent — returns receiver
+  unchanged.  Mirrors the legacy `share/urbi/string.u` definition.
+  Lets generic dispatch sites (Lobby.echo et al.) coerce arguments
+  uniformly without type-checking.  Closes `v0.10.11-A`.
+
+### VM
+
+- `slot-change` event no longer fires on first slot-install.  Per the
+  legacy semantic the event signals WRITES to existing slots; install
+  is creation, not change.  Pre-fix behavior produced one extra event
+  per slot watched before existence.  Implemented as two surgical
+  callsite suppressions: removed the direct emit call in
+  `urbi_object_set_local_slot` Case 2 (leaf-shape-add path); added
+  shape-snapshot gating in `vm_setslot_slow` (snapshot `recv->shape`
+  before calling `urbi_slot_set_slow`; suppress emit if the shape
+  changed = new local slot installed via miss-install or COW).  The
+  three write-only callsites (in-place write, IC fast-path, slothandle
+  write) are untouched.  Closes `v0.10.7-C`.
+
+### Tests
+
+- New chk fixture `tests/chk/stdlib/atoms/string_asstring.chk` — 4
+  test cases covering idempotency on literals, idempotency after
+  concat, and generic dispatch consistency on Integer / Float.
+- New chk fixture `tests/chk/reactive/slot-change/slot_change_no_install_emit.chk`
+  — explicit coverage that install does NOT fire the watcher and that
+  subsequent writes DO fire.
+- Replaced `tests/unit/test_slot_change_callsites.c` Test 3.  The
+  original test was asserting the pre-fix bug behavior (fire on COW
+  install); replacement asserts the corrected semantic (install
+  silent; subsequent write fires) in the same callsite.
+- Header narrowings on `tests/chk/reactive/slot-change/slot_change_basic.chk`
+  and `tests/chk/reactive/slot-change/slot_change_sync.chk` — drop the
+  `v0.10.7-C` blocker reference; both fixtures remain blocked on T69
+  chk-runner globals-exposure (no net activation from this tag).
+
+### Docs
+
+- `.markdownlint.yaml`: per-file MD004 override for `CHANGELOG.md` —
+  avoids the `+`-at-column-1 paragraph-wrap false-positive that fired
+  multiple times during the v0.10.x arc.  MD024 `siblings_only: true`
+  was already configured from an earlier commit; the supplementary
+  comment documents that commit `990699a2`'s title overstated its
+  scope (only MD004 was added there).
+- `docs/api-stability.md` §6 ledger entry #21 — PATCH-only bump
+  notice; recorded for ledger completeness, NOT a freeze-override
+  under §3.
+- `docs/release/release-readiness.md` — ABI freeze-pin row bumped to
+  reference 0/19/4.
+
+### ABI
+
+- 0/19/3 → 0/19/4 PATCH.  No new public C API symbols.  No struct
+  layout changes.  No signature changes.  21st use of the pre-v1.0
+  escape clause (per `docs/api-stability.md` §3).  Wire format
+  UNCHANGED at v1.9 / 0x19.
+
+### Closed register entries
+
+- Backlog: `test_api_version.c` hardcoded-value drift gate (already
+  shipped at v0.10.7-audit-followup via `tests/scripts/check-abi-freeze.sh`
+  literal-extraction; backlog entry was never crossed off — closed
+  retroactively here).
+- Backlog: markdownlint MD004 paragraph-wrap trap in CHANGELOG.
+- Backlog: `siblings_only: true` for MD024 (already shipped; closed
+  retroactively).
+- Design-risks: `v0.10.7-C` (slot-change first-install double-fire).
+- Design-risks: `v0.10.7-H` (make all + urbi CLI).
+- Design-risks: `v0.10.11-A` (String.asString stdlib gap).
+
 ## v0.10.12-cat-e-activation — 2026-05-27
 
 Fourth and final tag of the Cat. E ratification arc.  Fixture-and-
