@@ -69,6 +69,22 @@ UTEST(perf_opcodes_and_events_counted)
 }
 
 #if defined(URBI_ENABLE_REPL)
+UTEST(perf_debug_profile_populated)
+{
+    UVM vm; URealm *r; char out[1024];
+    urbi_vm_init(&vm, NULL, NULL);
+    r = urbi_realm_global(&vm);
+    (void)urbi_repl_eval(&vm, r, "1 + 2 + 3", 9, out, sizeof out);
+    (void)urbi_repl_eval(&vm, r, "Debug.profile()", 15, out, sizeof out);
+    /* repl_eval returns the JSON as an escaped-quote String; match bare names.
+     * The three locked keys stay present; the v0.9.1 "deferred" note is gone. */
+    UASSERT(strstr(out, "counters") != NULL);
+    UASSERT(strstr(out, "epoch") != NULL);
+    UASSERT(strstr(out, "per_opcode") != NULL);     /* locked key still present */
+    UASSERT(strstr(out, "profiling deferred") == NULL); /* note replaced */
+    urbi_vm_destroy(&vm);
+}
+
 UTEST(perf_debug_gc_has_timing_fields)
 {
     UVM vm; URealm *r; char out[512];
@@ -91,6 +107,7 @@ void test_perf_counters_suite(void)
     utest_run("perf_gc_cycles_counted", perf_gc_cycles_counted);
     utest_run("perf_opcodes_and_events_counted", perf_opcodes_and_events_counted);
 #if defined(URBI_ENABLE_REPL)
+    utest_run("perf_debug_profile_populated", perf_debug_profile_populated);
     utest_run("perf_debug_gc_has_timing_fields", perf_debug_gc_has_timing_fields);
 #endif
 }

@@ -27,6 +27,7 @@
 #include "repl/urepl_introspect.h"
 #include "runtime/uclosure.h"
 #include "runtime/umacros.h"
+#include "runtime/uperf.h"        /* urbi_perf_reset — Debug.profileReset */
 #include "sched/ustrand.h"        /* UEXEC_* */
 #include "urbi/trace.h"           /* URBI_TP_STR — Debug.trace marker */
 #include "urbi/object.h"          /* URBI_ATOM_OBJECT */
@@ -165,6 +166,21 @@ debug_trace_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
+/* --- Debug.profileReset(): zero VM-domain perf counters, bump epoch ---- */
+
+static int
+debug_profile_reset_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                           UValue *out)
+{
+    (void)self; (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Debug.profileReset", 0, nargs, out);
+#if URBI_PERF_COUNTERS
+    urbi_perf_reset(vm);
+#endif
+    *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
 /* --- Method-table install --------------------------------------------- */
 
 typedef struct {
@@ -182,7 +198,8 @@ static const DebugMethodEntry DEBUG_METHODS[] = {
     { "lobbies",  debug_lobbies_native  },
     { "stack",    debug_stack_native    },
     { "slots",    debug_slots_native    },
-    { "trace",    debug_trace_native    }
+    { "trace",    debug_trace_native    },
+    { "profileReset", debug_profile_reset_native }
 };
 #define DEBUG_METHODS_COUNT (sizeof(DEBUG_METHODS) / sizeof(DEBUG_METHODS[0]))
 

@@ -283,8 +283,27 @@ urbi_introspect_profile(const UVM *vm, char *buf, size_t cap, size_t *out_n)
 {
     if (vm == NULL || buf == NULL || out_n == NULL) return URBI_ERR_INVALID_ARG;
     EMIT_INIT();
+    /* Additive: the three locked arrays stay present (per_function/per_opcode/
+     * per_watcher are reserved for v1.x); add counters + epoch. */
+#if URBI_PERF_COUNTERS
     EMIT_FMT("{\"per_function\":[],\"per_opcode\":[],\"per_watcher\":[],"
-             "\"note\":\"profiling deferred to v1.x\"}");
+             "\"epoch\":%u,\"counters\":{"
+             "\"opcodes\":%zu,\"calls\":%zu,\"returns\":%zu,"
+             "\"slot_get\":%zu,\"slot_set\":%zu,\"ic_hit\":%zu,\"ic_miss\":%zu,"
+             "\"native_calls\":%zu,\"ctx_switches\":%zu,\"yields\":%zu,"
+             "\"blocks\":%zu,\"watcher_installs\":%zu,\"watcher_fires\":%zu,"
+             "\"event_emits\":%zu}}",
+             (unsigned)vm->perf.epoch,
+             vm->perf.opcodes, vm->perf.calls, vm->perf.returns,
+             vm->perf.slot_get, vm->perf.slot_set, vm->perf.ic_hit, vm->perf.ic_miss,
+             vm->perf.native_calls, vm->perf.ctx_switches, vm->perf.yields,
+             vm->perf.blocks, vm->perf.watcher_installs, vm->perf.watcher_fires,
+             vm->perf.event_emits);
+#else
+    EMIT_FMT("{\"per_function\":[],\"per_opcode\":[],\"per_watcher\":[],"
+             "\"epoch\":0,\"counters\":null,"
+             "\"note\":\"built without URBI_PERF_COUNTERS\"}");
+#endif
     EMIT_DONE();
 }
 
