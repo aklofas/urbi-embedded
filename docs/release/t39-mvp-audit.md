@@ -204,3 +204,61 @@ implemented" to the specific residual:
 - multi-realm group → `blocked: T39 chk-runner multi-realm C host-driver not implemented`
 - `## expect-host-call:` group → `blocked: T39 chk-runner expect-host-call directive not implemented`
 - `&` top-level separator group → `blocked: top-level & separator requires realm-managed urbi_step path (T39 chk-runner)`
+
+---
+
+## W3b addendum — chk-host-driver shipped (v0.10.14)
+
+The MVP above concluded "zero new directives."  W3b revisits that: a bounded
+C **test host-driver** (`tests/integration/chk_host_driver.c`) was built using
+**only the existing public embedding API** — no new public symbol, ABI stays
+PATCH.  The original audit conflated "the chk *runner* (POSIX sh) cannot drive
+this" with "no host power exists."  The public API (`urbi_repl_eval`,
+`urbi_realm_create`, `urbi_step`) already exposes enough for a subset of the
+blocked fixtures; they just needed a small C binary the sh runner routes to.
+
+### Final driver directive set (implemented)
+
+| Directive | Effect | Backing public API |
+|-----------|--------|--------------------|
+| `## host: realm <name>` | create-or-select a named realm; `default` aliases the NULL/global realm | `urbi_realm_create` |
+| `## host: run <source>` | compile + run one source line under the current realm; emit the framed result | `urbi_repl_eval` |
+| `## host: step <budget>` | `urbi_step(vm, budget)`; emit `step: <STATE>` | `urbi_step` |
+
+The driver frames each observable as `[00000000] <text>` so `run_chk.sh`'s
+existing `[...]`-prefix normalization diffs it identically to the REPL path.
+`run_chk.sh` detects `## host:` directives and routes only those fixtures to
+the driver (path derived from the urbi-binary dir, so sanitizer variants pick
+up their own instrumented driver); all other fixtures keep the REPL path.
+
+`## host: advance-clock` was **not** implemented — no activation target needed
+it (the sleep/clock fixtures stay blocked, see below).
+
+### Activation outcome — net +3 genuine (was vacuous)
+
+| Fixture | Outcome | Observable |
+|---------|---------|-----------|
+| `chunk_lifecycle/realm_isolation.chk` | **ACTIVATED** | two named realms bind `x` independently; reads stay isolated |
+| `chunk_lifecycle/realm_global_default.chk` | **ACTIVATED** | two `run` chunks under the default (NULL/global) realm share bindings |
+| `scheduler/quiescent_clean.chk` | **ACTIVATED** | fresh VM with no live work → `URBI_STEP_QUIESCENT` |
+
+All three previously passed *vacuously* (comment-only → empty diff).  Each was
+confirmed to FAIL against a deliberately-wrong expectation before its correct
+expected lines were pinned (LIVE-FIXTURE rule).
+
+### Stays blocked — narrowed residual (still v0.10.7-G)
+
+| Fixture | Narrowed residual |
+|---------|-------------------|
+| `scheduler/budget_step_exhausted.chk` | mid-flight `URBI_STEP_RUNNING` not observable — `urbi_run_chunk`/`urbi_repl_eval` drive the loader to quiescence/park internally |
+| `scheduler/budget_soft_yield.chk` | per-strand soft yield needs a runtime budget knob; `URBI_STRAND_BUDGET_MAX` is compile-time only |
+| `scheduler/safepoint_call_return.chk` | `instruction_budget_remaining` has no public read path; per-call decrement unassertable |
+| `scheduler/fifo_yield_order.chk` | forked strands run to completion before yielding (compile-time budget); no observable yield boundary |
+| `chunk_lifecycle/module_load_isolation.chk` | no `import` keyword / import-table surface — module-into-realm isolation unexpressible (import-table gap, NOT the multi-realm gap, which is now closed) |
+
+The common thread for the four scheduler residuals: the public embedding API
+intentionally drives strands to a *stable* observable point (quiescence or a
+park state).  Catching a strand mid-execution to observe a budget-exhausted
+RUNNING/soft-yield state needs a runtime per-strand budget knob, which would
+be a **new public symbol** — out of scope for this PATCH tag.  `v0.10.7-G`
+therefore stays OPEN with this narrowed residual.

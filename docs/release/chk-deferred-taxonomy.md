@@ -112,9 +112,9 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 | Fixture | Old label | New bucket | Notes |
 |---------|-----------|------------|-------|
 | `lobby_alias.chk` | M6 | blocked | Lobby proto is readonly (UPROTO_READONLY); script-side mutation not available |
-| `module_load_isolation.chk` | M6 | blocked | Requires T39 host-driver for multi-realm setup |
-| `realm_global_default.chk` | T39+T20 | blocked | T39 chk-runner host-driver not implemented |
-| `realm_isolation.chk` | T39+T20 | blocked | T39 chk-runner host-driver not implemented |
+| `module_load_isolation.chk` | M6 | blocked | `import` keyword / import-table surface not shipped — module-into-realm isolation unexpressible (multi-realm gap now closed by chk-host-driver) |
+| `realm_global_default.chk` | T39+T20 | **active** | Activated v0.10.14: chk-host-driver `## host: run` under the default (NULL/global) realm; two chunks share bindings |
+| `realm_isolation.chk` | T39+T20 | **active** | Activated v0.10.14: chk-host-driver `## host: realm`+`run`; two named realms keep `x` isolated |
 | `repl_session_persistence.chk` | T20 | **active** | Feature shipped (M8/v0.9.x); REPL var persistence works |
 | `script_at_persists.chk` | M5 | **active** | at(cond) watcher shipped (M5/v0.5.x); activated with trigger-function pattern |
 
@@ -213,15 +213,15 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 
 | Fixture | Old label | New bucket | Notes |
 |---------|-----------|------------|-------|
-| `budget_soft_yield.chk` | T39 | blocked | T39 tunables header not implemented |
-| `budget_step_exhausted.chk` | T39 | blocked | T39 tunables header not implemented |
+| `budget_soft_yield.chk` | T39 | blocked | per-strand soft yield needs a runtime budget knob; URBI_STRAND_BUDGET_MAX is compile-time only (chk-host-driver controls step budget, not strand budget) |
+| `budget_step_exhausted.chk` | T39 | blocked | mid-flight URBI_STEP_RUNNING not observable; urbi_run_chunk/urbi_repl_eval drive the loader to quiescence/park internally |
 | `cross_strand_cancel.chk` | T31+T39 | blocked | T39 host-driver not implemented; T31 Strand.cancel() not implemented |
 | `cycles.chk` | M4 | blocked | Requires System.cycle counter (not implemented) |
 | `dispatch_safepoint_pending_unwind.chk` | T39 | **active** | Activated v0.10.14: try/catch/throw-in-loop via OP_THROW direct path; safepoint pending_unwind branch is internal-only, behavioral correctness observable |
 | `dormant_attach_tag_then_start.chk` | T39+T29 | blocked | T39 host-driver not implemented |
 | `dormant_basic.chk` | T39+T20 | blocked | T39 host-driver not implemented |
 | `dormant_pool_recycle.chk` | M5/v1.x | deferred: v1.x | Dormant pool recycle semantics post-v1.0 |
-| `fifo_yield_order.chk` | M5 | blocked | chk-runner urbi_step driver path not implemented (T39) |
+| `fifo_yield_order.chk` | M5 | blocked | forked strands run to completion before yielding (compile-time strand budget); no observable yield boundary to assert FIFO requeue order |
 | `firing_order_registration.chk` | M5 | blocked | chk-runner urbi_step driver path not implemented (T39) |
 | `flat_fifo_basic.chk` | T39+T20 | blocked | T39 host-driver not implemented |
 | `gc_slice_at_safepoint.chk` | M4 | **active** | GC cells allocatable from REPL; activated with while-loop |
@@ -230,10 +230,10 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 | `long_pipe_chain_yields.chk` | M5 | blocked | chk-runner urbi_step driver path not implemented (T39) |
 | `multiple-visit.chk` | M5 | blocked | Requires `&` separator runtime in chk driver (hangs on `&` at top level) |
 | `priorities.chk` | v1.x | deferred: v1.x | URBI_SCHED_RT real-time scheduler is post-v1.0 scope |
-| `quiescent_clean.chk` | T39 | blocked | T39 tunables header not implemented |
-| `quiescent_with_sleep_q.chk` | T39 | blocked | T39 tunables header not implemented |
+| `quiescent_clean.chk` | T39 | **active** | Activated v0.10.14: chk-host-driver `## host: step` on a fresh VM with no live work returns URBI_STEP_QUIESCENT |
+| `quiescent_with_sleep_q.chk` | T39 | blocked | needs `## host: advance-clock` (mock-clock directive not implemented) to observe a sleep-queue wakeup |
 | `safepoint_backward_branch.chk` | T39 | **active** | Activated v0.10.14: 5-iteration counting loop; safepoint fires on each backward branch (budget-decrement is internal); behavioral result is observable |
-| `safepoint_call_return.chk` | T39 | blocked | T39 tunables header not implemented |
+| `safepoint_call_return.chk` | T39 | blocked | instruction_budget_remaining has no public read path; per-call decrement unassertable |
 | `stack-exhausted.chk` | M4 | blocked | Requires Exception.Scheduling type hierarchy + isA() (not implemented) |
 | `tag_stop_mid_pipe.chk` | M4 | blocked | Candidate for activation followup — String + concat shipped v0.10.8; verify pipe-safepoint delivery body shape end-to-end |
 | `wait_event_basic.chk` | M5 | **active** | waituntil(e?) works; activated with Realm.fired counter replacing echo |
@@ -307,13 +307,35 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 > `grep -rln '^# deferred:' tests/chk/` (deferred). Updated each time
 > fixtures activate or deferred decisions are locked.
 
-### Post-v0.10.14 (current)
+### Post-v0.10.14 W3b (current)
+
+> Counts verified against `grep -rln '^# blocked:' tests/chk/` etc.  The prior
+> "Post-v0.10.14" entry recorded blocked=65; the true count at that point was
+> 67 (the figure was stale).  W3b drops 3 → 64.
 
 | Bucket | Count |
 |--------|-------|
 | deferred: v1.x | 24 |
 | dropped | 3 |
-| blocked (open v1.0-rc work items) | 65 |
+| blocked (open v1.0-rc work items) | 64 |
+
+The **3 newly active fixtures in v0.10.14 W3b** (chk-host-driver):
+
+1. `chunk_lifecycle/realm_isolation.chk`
+2. `chunk_lifecycle/realm_global_default.chk`
+3. `scheduler/quiescent_clean.chk`
+
+These previously passed *vacuously* (comment-only stubs, empty→empty diff).
+They now carry live `## host:` directives driven by `chk-host-driver` and
+were confirmed to FAIL against a wrong expectation before being pinned.
+
+### Post-v0.10.14 (T39 MVP audit)
+
+| Bucket | Count |
+|--------|-------|
+| deferred: v1.x | 24 |
+| dropped | 3 |
+| blocked (open v1.0-rc work items) | 67 |
 
 The **2 newly active fixtures in v0.10.14** (T39 MVP audit):
 
@@ -341,7 +363,7 @@ The **6 newly active (v0.10.7 W7)** fixtures were:
 
 The dominant open work items for blocked fixtures are:
 
-- **T39** (chk-runner `## tunables:` / `## host:` extension): blocks ~23 scheduler + gc fixtures.  Note: `URBI_STRAND_BUDGET_MAX` is compile-time only; `## tunables: URBI_STRAND_BUDGET_MAX=N` requires runtime env-var read path not yet implemented.  `## host:` requires C host-driver loop incompatible with single-pass `urbi -i`.
+- **T39** (chk-runner `## tunables:` / `## host:` extension): the `## host:` C host-driver landed in v0.10.14 W3b (`tests/integration/chk_host_driver.c`) using only the public embedding API — it implements `realm`/`run`/`step` and activated the 3 multi-realm + quiescence fixtures above.  The remaining T39 residual (`v0.10.7-G`) is the per-strand/loader **runtime budget knob**: `URBI_STRAND_BUDGET_MAX` is compile-time only, and the public API drives strands to a stable observable (quiescence/park), so mid-flight RUNNING / soft-yield / budget-decrement states stay unobservable without a new public symbol.  Also unimplemented: `## host: advance-clock` (mock clock) and `## expect-host-call:`.
 - **tag.freeze()/block()** methods: blocks ~8 tag fixtures
 - **onleave clause** (PARSE-033, deferred-v1.x): blocks 5 control_transfer + tag fixtures
 - **`&` separator top-level chk driver** (T39): blocks ~10 fixtures
