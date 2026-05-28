@@ -25,6 +25,7 @@ __aeabi_uidivmod
 __aeabi_ul2d
 __aeabi_uldivmod
 __atomic_fetch_add_4
+__gnu_thumb1_case_uhi
 __gnu_thumb1_case_uqi
 memcpy
 memset
