@@ -64,16 +64,21 @@ UTEST(introspect_events_idle_has_key)
     urbi_vm_destroy(&vm);
 }
 
-UTEST(introspect_profile_emits_stub_with_note)
+UTEST(introspect_profile_emits_counters_shape)
 {
     UVM vm;
     UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
     char buf[4096]; size_t n = 0;
     UASSERT_EQ(urbi_introspect_profile(&vm, buf, sizeof buf, &n), URBI_OK);
+    /* v0.11.1: the three locked arrays remain; the v0.9.1 "deferred" note is
+     * replaced by the always-present epoch + counters (a counters object when
+     * built with URBI_PERF_COUNTERS, null otherwise). */
     UASSERT(strstr(buf, "\"per_function\":") != NULL);
     UASSERT(strstr(buf, "\"per_opcode\":") != NULL);
     UASSERT(strstr(buf, "\"per_watcher\":") != NULL);
-    UASSERT(strstr(buf, "deferred to v1.x") != NULL);
+    UASSERT(strstr(buf, "\"epoch\":") != NULL);
+    UASSERT(strstr(buf, "\"counters\":") != NULL);
+    UASSERT(strstr(buf, "deferred to v1.x") == NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -215,8 +220,8 @@ void test_introspect_each_suite(void)
     utest_run("introspect_tags_idle_has_key",        introspect_tags_idle_has_key);
     utest_run("introspect_watchers_idle_has_key",    introspect_watchers_idle_has_key);
     utest_run("introspect_events_idle_has_key",      introspect_events_idle_has_key);
-    utest_run("introspect_profile_emits_stub_with_note",
-              introspect_profile_emits_stub_with_note);
+    utest_run("introspect_profile_emits_counters_shape",
+              introspect_profile_emits_counters_shape);
     utest_run("introspect_gc_returns_heap_stats",    introspect_gc_returns_heap_stats);
     utest_run("introspect_lobbies_idle_is_empty_list",
               introspect_lobbies_idle_is_empty_list);
