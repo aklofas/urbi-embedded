@@ -59,6 +59,8 @@ static void print_usage(FILE *out) {
         "                       URBI_TRACE=1 build (make urbi-trace)\n"
         "  --trace-out=FILE     write the binary trace dump to FILE (default\n"
         "                       urbi-trace.bin); decode with tools/urbi-trace-decode.py\n"
+        "  --dump-on-fatal      on a fatal run, print a host-side dump (trace\n"
+        "                       tail + Debug.coros/gc) to stderr\n"
 #if defined(URBI_ENABLE_REPL)
         "  --listen [ADDR:]PORT also serve NDJSON REPL on the given TCP\n"
         "                       socket (interactive mode only)\n"
@@ -82,6 +84,7 @@ static int eq(const char *a, const char *b) { return strcmp(a, b) == 0; }
  * has no dead references and --trace fails with a friendly message. */
 static const char *trace_spec     = NULL;            /* "chan:level[,...]" or NULL */
 static const char *trace_out_path = "urbi-trace.bin";
+static int          want_dump_on_fatal = 0;          /* --dump-on-fatal */
 
 #if URBI_TRACE
 static int8_t parse_level(const char *s, size_t n) {
@@ -193,6 +196,52 @@ static void trace_end(UVM *vm) {
 #else
     (void)vm;
 #endif
+}
+
+/* Best-effort host-side dump after a fatal run.  The script-independent dump
+ * is GDB's `urbi-dump` (tools/gdb/urbi.py) on a halted target / core; this is
+ * the hosted convenience path, composed from existing public surface only —
+ * no new C symbol.  When --trace is also active the full ring goes to the
+ * dump file, so here we just point at it rather than draining destructively. */
+static void emergency_dump(UVM *vm) {
+    fprintf(stderr, "=== urbi emergency dump ===\n");
+#if URBI_TRACE
+    {
+        UTraceStats st;
+        urbi_trace_stats(vm, &st);
+        fprintf(stderr, "trace: emitted %u dropped %u high-water %u depth %u\n",
+                st.emitted, st.dropped, st.high_water, st.ring_depth);
+        if (trace_spec) {
+            fprintf(stderr, "trace tail: (full dump written to %s)\n", trace_out_path);
+        } else {
+            UTraceRecord buf[16];
+            uint32_t dropped = 0;
+            size_t n, i;
+            char line[160];
+            fprintf(stderr, "trace tail:\n");
+            while ((n = urbi_trace_snapshot(vm, buf, 16, &dropped)) > 0) {
+                for (i = 0; i < n; i++) {
+                    (void)utrace_format(line, sizeof line, &buf[i]);
+                    fprintf(stderr, "  %s\n", line);
+                }
+                if (n < 16) break;
+            }
+        }
+    }
+#endif
+#if !defined(URBI_BYTECODE_ONLY)
+    {
+        char out[2048];
+        struct URealm *r = urbi_realm_global(vm);
+        if (r) {
+            if (urbi_repl_eval(vm, r, "Debug.coros()", 13, out, sizeof out) == 0)
+                fprintf(stderr, "coros: %s\n", out);
+            if (urbi_repl_eval(vm, r, "Debug.gc()", 10, out, sizeof out) == 0)
+                fprintf(stderr, "gc:    %s\n", out);
+        }
+    }
+#endif
+    fprintf(stderr, "=== end dump ===\n");
 }
 
 /* Compile src (length len) into *out_module.
@@ -826,6 +875,8 @@ int main(int argc, char *argv[]) {
             trace_spec = argv[i] + 8;
         } else if (strncmp(argv[i], "--trace-out=", 12) == 0) {
             trace_out_path = argv[i] + 12;
+        } else if (eq(argv[i], "--dump-on-fatal")) {
+            want_dump_on_fatal = 1;
         }
     }
 
@@ -944,6 +995,7 @@ int main(int argc, char *argv[]) {
         tc = trace_begin(&vm);
         if (tc) { urbi_vm_destroy(&vm); return tc; }
         rc = run_expression(&vm, expr);
+        if (want_dump_on_fatal && rc != 0) emergency_dump(&vm);
         trace_end(&vm);
         urbi_vm_destroy(&vm);
         return rc;
@@ -956,6 +1008,7 @@ int main(int argc, char *argv[]) {
         tc = trace_begin(&vm);
         if (tc) { urbi_vm_destroy(&vm); return tc; }
         rc = run_file(&vm, file_arg);
+        if (want_dump_on_fatal && rc != 0) emergency_dump(&vm);
         trace_end(&vm);
         urbi_vm_destroy(&vm);
         return rc;
@@ -969,6 +1022,7 @@ int main(int argc, char *argv[]) {
         tc = trace_begin(&vm);
         if (tc) { urbi_vm_destroy(&vm); return tc; }
         rc = run_file(&vm, "-");
+        if (want_dump_on_fatal && rc != 0) emergency_dump(&vm);
         trace_end(&vm);
         urbi_vm_destroy(&vm);
         return rc;
