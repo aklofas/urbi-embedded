@@ -177,6 +177,7 @@ typedef struct UOpOverloadIC {
  * included.  We forward-include it here to keep uvm.h self-contained. */
 #include "urbi/urbi.h"  /* urbi_error_info_t (Gap P struct) */
 #include "urbi/trace.h" /* UTraceState (URBI_TRACE-gated UVM field) */
+#include "runtime/uperf.h" /* UPerfCounters (URBI_PERF_COUNTERS-gated UVM field) */
 
 #define URBI_ERROR_RING_DEPTH  4U
 #define URBI_ERROR_STRING_BUF  256U
@@ -732,6 +733,10 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * UVMs — keeps sizeof(UVM) ~unchanged and avoids perturbing memory layout.
      * NULL until init (or if the init allocation fails ⇒ trace disabled). */
     UTraceState *trace;
+#endif
+
+#if URBI_PERF_COUNTERS
+    UPerfCounters perf;   /* v0.11.1; ~160 B, embedded (small — unlike the trace ring) */
 #endif
 } UVM;
 
