@@ -1,11 +1,11 @@
 # C API stability policy
 
-> Status: ABI pin at v0.10.12-cat-e-activation (0/19/3) — PATCH bump
-> from v0.10.11-channel-and-isA (0/19/2).  20th use of pre-v1.0
-> escape clause.  Final tag of the 4-tag Cat. E ratification arc —
-> fixture-and-doc-only tag (D2 cross-spec activation, at.sync keyword
-> normalization, Cat. E close-out); no new public C API symbols, no
-> new opcodes, no functional changes.  PATCH-only, not freeze-override
+> Status: ABI pin at v0.10.14-prerc-infra (0/19/5) — PATCH bump from
+> v0.10.13-hygiene (0/19/4).  22nd use of pre-v1.0 escape clause.
+> First tag of the pre-v1.0-rc stabilization arc — STYLE.md doc
+> correction, REPL output-backpressure liveness fix, and a `.chk`
+> C host-driver; no new public C API symbols, no new opcodes.
+> PATCH-only, not freeze-override
 > under §3 (the ledger numbers every bump; only MINOR/MAJOR bumps
 > require §3's freeze-override review).  The freeze pin is a forcing
 > function (deliberate intent at every bump), not a hard cap.  Any
@@ -126,3 +126,19 @@ symbols.  Two new chk fixtures (`string_asstring`,
 `slot_change_no_install_emit`), one replaced unit test.  PATCH bump:
 0/19/3 → 0/19/4.  Recorded for ledger completeness; this is NOT a
 freeze-override under §3.
+
+### Escape #22 — v0.10.14-prerc-infra (PATCH-only)
+
+First tag of the pre-v1.0-rc stabilization arc.  Three file-isolated
+worktrees: W1 corrected the stale flat-layout claims in `docs/STYLE.md`;
+W2 reworked the REPL reader-thread output flush from an EAGAIN
+`nanosleep` spin to a per-session staging buffer + `POLLOUT`-driven
+retry (a teardown-latency/liveness fix — the prior loop did not drop
+bytes), with a new `test_repl_backpressure.c` regression suite; W3
+added a C `.chk` host-driver (`tests/integration/chk_host_driver.c`)
+with `## host: realm`/`run`/`step` directives over the existing public
+embedding API, activating 5 previously-blocked scheduler/multi-realm
+conformance fixtures.  No new public C API symbols — all changes are
+internal (REPL), test-side (host-driver), or documentation.  PATCH
+bump: 0/19/4 → 0/19/5.  Recorded for ledger completeness; this is NOT
+a freeze-override under §3.

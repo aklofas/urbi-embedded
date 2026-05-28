@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.10.14-prerc-infra — 2026-05-27
+
+First tag of the pre-v1.0-rc stabilization arc.  Three independent,
+file-isolated worktrees: documentation hygiene, REPL output
+backpressure, and a `.chk` host-driver.  Zero new public C API symbols;
+wire format unchanged at v1.9 / 0x19.
+
+### Docs
+
+- Corrected `docs/STYLE.md`: the "File layout" section described the
+  pre-v0.5 flat `src/` tree, which has been false since the subsystem
+  decomposition.  Rewrote the layout to the real subsystem directories
+  (`lex/ parse/ emit/ chunk/ vm/ object/ value/ gc/ sched/ runtime/
+  tag/ watcher/ event/ changed/ realm/ stdlib/ repl/`), updated the
+  stale `src/uvalue.c`/`src/uarena.c` references in the freestanding
+  section, and fixed the test-mirror example.  Rationale prose
+  untouched.
+
+### REPL
+
+- Reworked the reader-thread output flush (`flush_session_output`) from
+  the EAGAIN `nanosleep`-and-retry loop to a per-session staging buffer
+  plus `POLLOUT`-driven retry, mirroring the cooperative path's
+  `coop_outbuf` staging.  The original loop did not lose bytes (the
+  local buffer was retried), but it never returned under sustained
+  backpressure, delaying reader teardown — a liveness/latency bug, now
+  fixed.  The reader arms `POLLOUT` only when output is pending and
+  flushes on every wake (including the `wake_eventfd` output-ready
+  signal), so responses are no longer gated on the poll timeout.  New
+  `tests/unit/test_repl_backpressure.c` regression suite.  The
+  cooperative (`URBI_REPL_COOPERATIVE_ONLY`) path is untouched.
+
+### Tests
+
+- Added a C `.chk` conformance host-driver
+  (`tests/integration/chk_host_driver.c`) exposing `## host: realm`,
+  `## host: run`, and `## host: step` directives via the existing
+  public embedding API (`urbi_realm_create`, `urbi_repl_eval`,
+  `urbi_step`).  `run_chk.sh` routes only fixtures carrying `## host:`
+  directives to it; all other fixtures keep the unchanged single-pass
+  REPL path.  Activates 5 previously-blocked scheduler / multi-realm
+  conformance fixtures (multi-realm isolation + step quiescence).
+  Remaining T39-blocked fixtures (mid-flight per-strand budget
+  observation) are narrowed: they need a runtime strand-budget knob —
+  a new public symbol, out of scope here — so `v0.10.7-G` stays open
+  with a narrowed residual.  Per-fixture audit recorded in
+  `docs/release/t39-mvp-audit.md`.
+
+### ABI
+
+- ABI 0/19/4 → 0/19/5 (PATCH; 22nd use of the pre-v1.0 escape clause,
+  recorded for ledger completeness — no public C surface change, so not
+  a §3 freeze override).  Wire format unchanged at v1.9 / 0x19.
+
 ## v0.10.13-hygiene — 2026-05-27
 
 Post-Cat. E hygiene + one targeted runtime bug fix.  Bridges between

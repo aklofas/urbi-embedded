@@ -240,7 +240,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  19
-#define URBI_API_VERSION_PATCH  4
+#define URBI_API_VERSION_PATCH  5
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -259,7 +259,7 @@ extern "C" {
  * Failing to bump the static_assert breaks the build, which is the point —
  * deliberate intent at every change, not silent ABI drift.
  *
- * Pin target: v0.10.12-cat-e-activation ships at 0/19/3.
+ * Pin target: v0.10.14-prerc-infra ships at 0/19/5.
  *
  * The pin landed in commit `bdad57c` (W2 of v0.10.6) at 0/17/0; bumped to
  * 0/18/0 at v0.10.6 wave wrap-up to capture the W4 UReplConfig.rate_limit_per_second
@@ -294,10 +294,20 @@ extern "C" {
  * — the one runtime semantic change).  Zero new public C API symbols;
  * two new chk fixtures (string_asstring, slot_change_no_install_emit);
  * one replaced unit test.
+ *
+ * Bumped to 0/19/5 at v0.10.14-prerc-infra — escape #22.  PATCH-only,
+ * first tag of the pre-v1.0-rc stabilization arc.  Three worktrees:
+ * STYLE.md subsystem-layout doc correction (W1); REPL reader-thread
+ * output backpressure rework — staging buffer + POLLOUT-driven flush
+ * replacing the EAGAIN spin, fixing a teardown-latency/liveness bug,
+ * NOT byte loss (W2); a C chk host-driver (tests/integration/
+ * chk_host_driver.c: realm/run/step directives) activating 5 T39-
+ * blocked scheduler/multi-realm fixtures (W3).  All internal /
+ * test-side / doc; zero new public C API symbols.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 19
-            && URBI_API_VERSION_PATCH == 4,
+            && URBI_API_VERSION_PATCH == 5,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */
