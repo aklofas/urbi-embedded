@@ -23,24 +23,49 @@ const char *urbi_trace_channel_name(uint8_t channel)
 
 void urbi_trace_init(struct UVM *vm)
 {
+    /* Lazy: no allocation here.  vm->trace stays NULL until a channel is first
+     * enabled (urbi_trace_set_level) — so a VM that never traces does ZERO
+     * trace allocation and never perturbs the host allocator's call sequence. */
+    if (vm) vm->trace = NULL;
+}
+
+/* Allocate + zero the trace state on first use.  Returns NULL on OOM / no
+ * allocator (callers treat NULL as "trace unavailable"). */
+static UTraceState *trace_ensure(struct UVM *vm)
+{
     UTraceState *t;
     int i;
-    if (!vm) return;
-    t = &vm->trace;
+    if (vm->trace != NULL) return vm->trace;
+    if (vm->alloc_fn == NULL) return NULL;
+    t = (UTraceState *)vm->alloc_fn(NULL, sizeof(UTraceState), vm->alloc_ud);
+    if (t == NULL) return NULL;
     for (i = 0; i < URBI_TRACE_CHANNEL_MAX; i++) t->level[i] = URBI_TRACE_OFF;
     t->head = t->count = t->seq = t->dropped = t->emitted = t->high_water = 0;
+    vm->trace = t;
+    return t;
+}
+
+void urbi_trace_destroy(struct UVM *vm)
+{
+    if (!vm || vm->trace == NULL || vm->alloc_fn == NULL) return;
+    vm->alloc_fn(vm->trace, 0, vm->alloc_ud);
+    vm->trace = NULL;
 }
 
 int8_t urbi_trace_channel_level(const struct UVM *vm, uint8_t channel)
 {
-    if (!vm || channel >= URBI_TRACE_CHANNEL_MAX) return URBI_TRACE_OFF;
-    return vm->trace.level[channel];
+    if (!vm || vm->trace == NULL || channel >= URBI_TRACE_CHANNEL_MAX)
+        return URBI_TRACE_OFF;
+    return vm->trace->level[channel];
 }
 
 void urbi_trace_set_level(struct UVM *vm, uint8_t channel, int8_t level)
 {
+    UTraceState *t;
     if (!vm || channel >= URBI_TRACE_CHANNEL_MAX) return;
-    vm->trace.level[channel] = level;
+    t = trace_ensure(vm);
+    if (t == NULL) return;
+    t->level[channel] = level;
 }
 
 int8_t urbi_trace_get_level(const struct UVM *vm, uint8_t channel)
@@ -50,9 +75,12 @@ int8_t urbi_trace_get_level(const struct UVM *vm, uint8_t channel)
 
 void urbi_trace_set_level_all(struct UVM *vm, int8_t level)
 {
+    UTraceState *t;
     int i;
     if (!vm) return;
-    for (i = 0; i < URBI_TRACE_CHANNEL_MAX; i++) vm->trace.level[i] = level;
+    t = trace_ensure(vm);
+    if (t == NULL) return;
+    for (i = 0; i < URBI_TRACE_CHANNEL_MAX; i++) t->level[i] = level;
 }
 
 static uint64_t trace_now_us(const struct UVM *vm)
@@ -70,7 +98,7 @@ static uint16_t trace_cur_strand_id(const struct UVM *vm)
 
 static UTraceRecord *trace_reserve(struct UVM *vm)
 {
-    UTraceState *t = &vm->trace;
+    UTraceState *t = vm->trace;
     UTraceRecord *r = &t->ring[t->head];
     t->head = (t->head + 1u) % URBI_TRACE_RING_DEPTH;
     if (t->count < URBI_TRACE_RING_DEPTH) {
@@ -90,7 +118,7 @@ void urbi_trace_emit(struct UVM *vm, uint8_t channel, uint8_t level,
                      uint16_t schema_id, uint32_t a, uint32_t b)
 {
     UTraceRecord *r;
-    if (!vm) return;
+    if (!vm || vm->trace == NULL) return;
     r = trace_reserve(vm);
     r->channel = channel; r->level = level; r->schema_id = schema_id; r->_pad = 0;
     r->payload.words.a = a; r->payload.words.b = b;
@@ -101,7 +129,7 @@ void urbi_trace_emit_str(struct UVM *vm, uint8_t channel, uint8_t level,
 {
     UTraceRecord *r;
     size_t i = 0;
-    if (!vm) return;
+    if (!vm || vm->trace == NULL) return;
     r = trace_reserve(vm);
     r->channel = channel; r->level = level; r->schema_id = schema_id; r->_pad = 0;
     /* Bounded copy into the 8-byte inline buffer. n==0 means "use strlen". */
@@ -118,8 +146,8 @@ size_t urbi_trace_snapshot(struct UVM *vm, UTraceRecord *out, size_t cap,
     UTraceState *t;
     size_t n, i;
     uint32_t tail;
-    if (!vm || !out) { if (out_dropped) *out_dropped = 0; return 0; }
-    t = &vm->trace;
+    if (!vm || vm->trace == NULL || !out) { if (out_dropped) *out_dropped = 0; return 0; }
+    t = vm->trace;
     n = (t->count < cap) ? t->count : cap;
     /* oldest-first: tail = head - count (mod depth) */
     tail = (t->head + URBI_TRACE_RING_DEPTH - t->count) % URBI_TRACE_RING_DEPTH;
@@ -133,14 +161,14 @@ size_t urbi_trace_snapshot(struct UVM *vm, UTraceRecord *out, size_t cap,
 void urbi_trace_stats(const struct UVM *vm, UTraceStats *out)
 {
     if (!out) return;
-    if (!vm) {
+    if (!vm || vm->trace == NULL) {
         out->emitted = out->dropped = out->high_water = 0;
         out->ring_depth = URBI_TRACE_RING_DEPTH;
         return;
     }
-    out->emitted    = vm->trace.emitted;
-    out->dropped    = vm->trace.dropped;
-    out->high_water = vm->trace.high_water;
+    out->emitted    = vm->trace->emitted;
+    out->dropped    = vm->trace->dropped;
+    out->high_water = vm->trace->high_water;
     out->ring_depth = URBI_TRACE_RING_DEPTH;
 }
 

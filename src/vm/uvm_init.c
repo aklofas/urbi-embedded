@@ -130,12 +130,6 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * into the shade-gray path and segfault. */
     vm->debug_proto = NULL;
 
-#if URBI_TRACE
-    /* v0.11.0: zero trace state early — before any subsystem init that could
-     * fire a tracepoint (stdlib boot drives the scheduler/GC). */
-    urbi_trace_init(vm);
-#endif
-
     vm->alloc_fn = alloc_fn;
     vm->alloc_ud = alloc_ud;
 #if __STDC_HOSTED__
@@ -143,6 +137,12 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         vm->alloc_fn = uvm_stdlib_realloc;
         vm->alloc_ud = NULL;
     }
+#endif
+#if URBI_TRACE
+    /* v0.11.0: heap-allocate trace state now that alloc_fn is finalized, and
+     * before any subsystem init that could fire a tracepoint (stdlib boot
+     * drives the scheduler/GC). NULL-on-OOM ⇒ trace simply stays disabled. */
+    urbi_trace_init(vm);
 #endif
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
@@ -506,6 +506,11 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
 void urbi_vm_destroy(UVM *vm) {
     if (vm == NULL) return;
+
+#if URBI_TRACE
+    /* v0.11.0: free heap-allocated trace state (paired with urbi_trace_init). */
+    urbi_trace_destroy(vm);
+#endif
 
     /* --- M3 teardown stubs (in reverse-init order) ---
      * Subsystem-owned teardowns are deferred to their landing tasks. */

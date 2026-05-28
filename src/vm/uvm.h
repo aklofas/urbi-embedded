@@ -727,8 +727,11 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
 
 #if URBI_TRACE
     /* v0.11.0 trace subsystem state; present ONLY in URBI_TRACE builds so the
-     * OFF build keeps byte-identical UVM layout. Zeroed by urbi_trace_init. */
-    UTraceState trace;
+     * OFF build keeps byte-identical UVM layout.  Heap-allocated (NOT embedded)
+     * by urbi_trace_init so the multi-KB ring never lands on stack-allocated
+     * UVMs — keeps sizeof(UVM) ~unchanged and avoids perturbing memory layout.
+     * NULL until init (or if the init allocation fails ⇒ trace disabled). */
+    UTraceState *trace;
 #endif
 } UVM;
 

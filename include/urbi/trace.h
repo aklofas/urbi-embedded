@@ -109,7 +109,8 @@ typedef struct {
 } UTraceState;
 
 /* Internal (defined in utrace.c). */
-void   urbi_trace_init(struct UVM *vm);   /* all channels OFF, ring empty */
+void   urbi_trace_init(struct UVM *vm);     /* heap-alloc state; all channels OFF */
+void   urbi_trace_destroy(struct UVM *vm);  /* free heap state (paired with init) */
 void   urbi_trace_emit(struct UVM *vm, uint8_t channel, uint8_t level,
                        uint16_t schema_id, uint32_t a, uint32_t b);
 void   urbi_trace_emit_str(struct UVM *vm, uint8_t channel, uint8_t level,
