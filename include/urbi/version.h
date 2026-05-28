@@ -240,7 +240,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  20
-#define URBI_API_VERSION_PATCH  0
+#define URBI_API_VERSION_PATCH  1
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -325,10 +325,21 @@ extern "C" {
  * UVM delta); the control API has no-op stubs in the off build so embedder code
  * links either way.  First tag of the v0.11.x tooling arc.  Wire unchanged at
  * v1.9 / 0x19; no new opcodes.
+ *
+ * Bumped to 0/20/1 at v0.11.1-perf-counters — escape #25.  PATCH-only, second
+ * tag of the v0.11.x tooling arc.  Adds VM-domain performance counters: a
+ * URBI_PERF_COUNTERS compile gate (default off ⇒ URBI_PERF_INC is (void)0,
+ * gated UPerfCounters field absent from UVM), always-on GC cycle/slice counts +
+ * cycle timing, and the deliberately-stubbed Debug.profile() seam filled
+ * (counters + epoch) plus Debug.gc() timing fields and a Debug.profileReset()
+ * method.  All counters are EXCLUDED from urbi_get_determinism_checksum.
+ * Counters are internal (src/runtime/uperf.h); surfaced only via Debug.*
+ * script methods.  Zero new public C API symbols; wire unchanged at
+ * v1.9 / 0x19; no new opcodes.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 20
-            && URBI_API_VERSION_PATCH == 0,
+            && URBI_API_VERSION_PATCH == 1,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

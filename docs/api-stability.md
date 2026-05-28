@@ -1,11 +1,14 @@
 # C API stability policy
 
-> Status: ABI pin at v0.11.0-trace-spine (0/20/0) — MINOR bump from
-> v0.10.15-vm-decomp-2 (0/19/6).  24th use of pre-v1.0 escape clause.
-> First tag of the v0.11.x tooling arc — new public EXPERIMENTAL header
-> `<urbi/trace.h>` (trace control/drain/stats API + URBI_TP macros),
-> compile-gated by URBI_TRACE (default off ⇒ zero code, zero UVM delta).
-> MINOR because new public surface; no new opcodes, wire unchanged.
+> Status: ABI pin at v0.11.1-perf-counters (0/20/1) — PATCH bump from
+> v0.11.0-trace-spine (0/20/0).  25th use of pre-v1.0 escape clause.
+> Second tag of the v0.11.x tooling arc — VM-domain performance counters
+> behind the URBI_PERF_COUNTERS compile gate (default off ⇒ increments are
+> (void)0, the counter struct is absent from UVM), plus always-on GC
+> cycle/slice/timing fields and the filled Debug.profile()/Debug.gc() seam +
+> Debug.profileReset().  Counters are internal (src/runtime/uperf.h), surfaced
+> only via Debug.* script methods, and excluded from the determinism checksum;
+> zero new public C API symbols, so PATCH.  No new opcodes, wire unchanged.
 > PATCH-only, not freeze-override
 > under §3 (the ledger numbers every bump; only MINOR/MAJOR bumps
 > require §3's freeze-override review).  The freeze pin is a forcing
@@ -174,3 +177,21 @@ instrumented across scheduler / GC / watcher / event / tag / REPL lifecycle;
 `Debug.trace("…")` adds a script-side USER-channel marker (REPL-gated).
 MINOR bump: 0/19/6 → 0/20/0 — new public surface.  No new opcodes; wire
 unchanged at v1.9 / 0x19.  EXPERIMENTAL: the trace API may change before v1.0.
+
+### Escape #25 — v0.11.1-perf-counters (PATCH)
+
+Second tag of the v0.11.x tooling arc.  Adds VM-domain performance counters
+behind the `URBI_PERF_COUNTERS` compile gate: opcodes retired, calls/returns,
+slot get/set, IC hit/miss, native calls, scheduler context-switches/yields/
+blocks, watcher install/fire, and event emits.  Default off ⇒ `URBI_PERF_INC`
+is `(void)0` and the gated `UPerfCounters` field is absent from `struct UVM`
+(zero hot-path cost, zero `UVM` delta).  Always-on GC cycle/slice counts plus
+cycle timing (`gc_cycles` / `gc_slices` / `last_gc_us` / `total_gc_us`) feed
+`Debug.gc()`; the deliberately-stubbed `Debug.profile()` seam is filled with the
+counters object + `epoch` (or `counters:null` when the gate is off), and a new
+`Debug.profileReset()` zeroes the counters + bumps the epoch.  ALL counters and
+GC timing are excluded from `urbi_get_determinism_checksum` (proven by the
+`test-determinism-perf` 100-run gate).  The counters live in the internal header
+`src/runtime/uperf.h` and are surfaced only through `Debug.*` script methods —
+**zero new public C API symbols**, so PATCH.  No new opcodes; wire unchanged at
+v1.9 / 0x19.  PATCH-only, not a §3 freeze-override.

@@ -1,5 +1,56 @@
 # Changelog
 
+## v0.11.1-perf-counters — 2026-05-28
+
+Second tag of the v0.11.x tooling arc.  Adds VM-domain performance counters
+that fill the deliberately-stubbed, wire-shape-locked `Debug.profile()` JSON
+seam and close the `Debug.gc()` introspection doc-drift.  Per-event counters
+are always-on; per-opcode/per-slot counters compile out to nothing unless
+`URBI_PERF_COUNTERS` is defined.  ABI 0/20/1 (PATCH bump from 0/20/0, 25th use
+of the pre-v1.0 escape clause); wire format unchanged at v1.9 / 0x19.
+
+### Performance counters
+
+- New internal header `src/runtime/uperf.h`: master `URBI_PERF_COUNTERS`
+  compile gate (default off), the `UPerfCounters` struct, and the
+  `URBI_PERF_INC` / `URBI_PERF_ADD` increment macros.  Default off ⇒ the
+  macros are `(void)0` and the gated `UPerfCounters` field is absent from
+  `struct UVM` (zero hot-path cost, zero `UVM` delta).
+- Gated counters: opcodes retired, calls, returns, slot get/set, IC hit/miss,
+  native calls, scheduler context-switches / yields / blocks, watcher installs,
+  watcher fires, and event emits — incremented beside the v0.11.0 tracepoints.
+- Always-on GC stats (cheap, O(GC-cycle)): `gc_cycles`, `gc_slices`,
+  `last_gc_us`, `total_gc_us` (the last two are 0 when no host clock is wired).
+- ALL counters and GC timing are excluded from `urbi_get_determinism_checksum`;
+  a new `make test-determinism-perf` gate proves a `URBI_DEBUG +
+  URBI_PERF_COUNTERS` build stays deterministic across 100 runs.
+
+### Debug.* introspection
+
+- `Debug.profile()` seam filled: keeps the locked `per_function` / `per_opcode`
+  / `per_watcher` arrays, replaces the v0.9.1 "deferred" note with an `epoch`
+  and a `counters` object (a `counters:null` + explanatory note when built
+  without `URBI_PERF_COUNTERS`).  The locked wire shape is preserved (additive).
+- `Debug.gc()` now also emits `cycles`, `slices`, `last_gc_us`, `total_gc_us`
+  alongside the existing `alive_bytes` / `threshold` / `total_allocated` /
+  `phase`, closing the embedding-guide introspection doc-drift.
+- New `Debug.profileReset()` zeroes the counters and bumps the snapshot epoch
+  (no-op when built without `URBI_PERF_COUNTERS`).
+
+### Build / CI
+
+- New `make test-perf-counters` (full suite under `URBI_PERF_COUNTERS=1`,
+  wired into releasetest Phase 1) and `make test-determinism-perf` (CI-only,
+  100-run determinism proof).
+- CI host matrix gains `test-perf-counters`; the trace job is renamed
+  `tooling` and gains a perf-counters + REPL combined build plus the
+  determinism-with-perf step.
+
+### Docs
+
+- `docs/embedding-guide.md` introspection table corrected: the `profile`,
+  `gc`, `coros`, and `watchers` rows now match the JSON actually emitted.
+
 ## v0.11.0-trace-spine — 2026-05-28
 
 First tag of the v0.11.x tooling arc (a Linux-kernel-style observability
