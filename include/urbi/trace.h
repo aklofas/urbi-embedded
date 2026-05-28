@@ -70,7 +70,9 @@ typedef enum {
     URBI_TP_USER_MARKER       = 18  /* payload.str: Debug.trace() text */
 } UTraceSchema;
 
-/* Fixed 24-byte binary record. No raw host pointers in exported traces. */
+/* Fixed 32-byte binary record (the uint64_t ts_us aligns the struct to 8
+ * bytes; the named fields occupy 28, padded to 32). No raw host pointers in
+ * exported traces. */
 typedef struct {
     uint64_t ts_us;        /* host_time_us(); 0 if clock unavailable */
     uint32_t seq;          /* monotonic per-VM; gaps ⇒ dropped records */
@@ -91,7 +93,7 @@ typedef struct {
 #  define URBI_TRACE_CHANNELS  0xFFFFFFFFUL   /* all channels compiled in */
 #endif
 #ifndef URBI_TRACE_RING_DEPTH
-#  define URBI_TRACE_RING_DEPTH 256           /* records; ~6 KB at 24 B */
+#  define URBI_TRACE_RING_DEPTH 256           /* records; ~8 KB at 32 B */
 #endif
 
 #define URBI_TRACE_CHANNEL_COMPILED(ch) (((URBI_TRACE_CHANNELS) >> (ch)) & 1UL)

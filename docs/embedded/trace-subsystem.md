@@ -41,9 +41,10 @@ to `URBI_TRACE_OFF` at `urbi_trace_init`.
 
 ## Record format
 
-Records are a fixed 24-byte binary `UTraceRecord` (no host pointers in exported
-traces; decode names/opcodes on the host via the firmware ELF). String markers
-copy a bounded 8-byte prefix inline.
+Records are a fixed 32-byte binary `UTraceRecord` (the `uint64_t ts_us` aligns
+the struct to 8 bytes; the named fields occupy 28 bytes, padded to 32). No host
+pointers appear in exported traces. String markers copy a bounded 8-byte prefix
+inline.
 
 ```c
 typedef struct {
@@ -128,6 +129,58 @@ embedder enables a channel.
 
 ## Host tooling
 
-A host decoder (binary ring → Chrome Trace / Perfetto JSON) and GDB
-pretty-printers / heap walkers land in a later tag of the v0.11.x arc. For now,
-`utrace_format` produces a stable, parseable one-line text form per record.
+### Capture → Perfetto workflow
+
+```sh
+# 1. Build the CLI with the trace subsystem compiled in (default CLI is off).
+make urbi-trace
+
+# 2. Run a script with channels enabled; drain the ring to a URBT dump.
+build/host-trace/urbi --trace=sched:debug,gc:info,watcher:info \
+    --trace-out=run.bin myscript.u
+
+# 3. Decode the dump to Chrome Trace / Perfetto JSON.
+python3 tools/urbi-trace-decode.py run.bin --out run.json
+
+# 4. Open run.json in https://ui.perfetto.dev or chrome://tracing.
+```
+
+`--trace=SPEC` is `chan:level[,chan:level...]` (or `all:level`); channels are
+`vm,sched,gc,watcher,event,tag,repl,user`; levels are `debug,info,warn,error`.
+On a trace-off CLI build, `--trace` fails with a message rather than silently
+no-opping.
+
+### URBT dump format
+
+A self-describing host artifact, independent of the bytecode wire format. A
+20-byte little-endian header — magic `"URBT"`, `format_version` (u16, = 1),
+`record_bytes` (u16, = `sizeof(UTraceRecord)` = 32), `count` (u32), `dropped`
+(u32), `flags` (u32; bit0 = little-endian) — followed by `count` raw 32-byte
+`UTraceRecord`s. `tools/urbi-trace-decode.py` validates the header before
+decoding and tolerates dropped records / sequence gaps (it reports them in a
+per-channel summary on stderr).
+
+### GDB inspection
+
+```sh
+gdb -x tools/gdb/urbi.py ./your-firmware.elf        # or on a core dump
+(gdb) urbi-dump vm        # strands + GC stats + trace tail in one shot
+(gdb) urbi-strands vm     # every live strand, state, run-queue membership
+(gdb) urbi-handles vm     # in-use host-handle table slots
+(gdb) urbi-heap vm        # GC live/total/threshold/debt/phase/cycles/slices/timing
+(gdb) urbi-trace vm 64    # decode the last 64 trace-ring records
+```
+
+The walkers read live or core-dump target memory, so they work on a halted or
+wedged target — the script-independent emergency dump. The hosted CLI also has
+`--dump-on-fatal` for a best-effort dump (trace tail + `Debug.coros`/`gc`) after
+a fatal run.
+
+For low-volume bring-up, `utrace_format` still produces a stable, parseable
+one-line text form per record (used by `urbi_trace_flush_to_writer`).
+
+> **Maintenance:** the channel/schema name tables exist in three places —
+> `src/runtime/utrace_format.c` (`k_schema_name[]`), `tools/urbi-trace-decode.py`,
+> and `tools/gdb/urbi.py`. A tag that adds a channel or schema must update all
+> three. The decoder and GDB tolerate unknown ids (they render `chan_<n>` /
+> `schema_<n>`) so they degrade rather than crash.

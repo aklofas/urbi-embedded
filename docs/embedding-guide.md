@@ -1273,14 +1273,14 @@ Available both as NDJSON `{op:"introspect", what:"..."}` ops and as `Debug.<op>(
 | Op | C primitive | Returns |
 |---|---|---|
 | `coros` | `urbi_introspect_coros(vm, buf, cap, &n)` | All strands: id, state, wait reason, realm (wake deadline / source location / tag stack reserved for v1.x) |
-| `tags` | `urbi_introspect_tags(...)` | All active tags: name, state, member coro_ids |
+| `tags` | `urbi_introspect_tags(...)` | Per-realm tag: realm, flags, name, member_count (per-member coro_id list reserved for v1.x) |
 | `watchers` | `urbi_introspect_watchers(...)` | All `at` / `whenever` watchers: id, mode, flags, refire (predicate / body location and fire count reserved for v1.x) |
 | `events` | `urbi_introspect_events(...)` | All registered events: name, subscriber count |
 | `stack` | `urbi_introspect_stack(vm, coro_id, ...)` | Backtrace frames (file:line:function) |
 | `slots` | `urbi_introspect_slots(vm, realm, obj_path, ...)` | An object's slot dump |
 | `profile` | `urbi_introspect_profile(...)` | VM-domain counters + `epoch` when built with `URBI_PERF_COUNTERS` (else `counters:null`); `per_function` / `per_opcode` / `per_watcher` arrays reserved for v1.x |
 | `gc` | `urbi_introspect_gc(...)` | Heap stats: alive_bytes, threshold, total_allocated, phase, cycles, slices, last_gc_us, total_gc_us |
-| `lobbies` | `urbi_introspect_lobbies(...)` | Active sessions: lobby_id, peer_addr, connect_ts, eval_count |
+| `lobbies` | `urbi_introspect_lobbies(...)` | REPL-realm sessions: lobby, realm (peer_addr / connect_ts / eval_count reserved for v1.x) |
 
 Each primitive walks VM-internal linked lists on the MAIN thread and emits a single JSON object into a caller-provided buffer. Wire JSON shape is locked at v0.9.1 and frozen forward to v1.0.
 
