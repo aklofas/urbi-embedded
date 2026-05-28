@@ -45,6 +45,42 @@ fi
 TMPDIR_LOCAL=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_LOCAL"' EXIT
 
+# Detect fixtures that carry `## host:` driver directives.  These need the
+# C host-driver (multi-realm setup, urbi_step quiescence observation) which
+# the single-pass `urbi -i` REPL path cannot express.  All other fixtures
+# keep the existing REPL path completely unchanged.
+#
+# The driver binary lives alongside the urbi binary (same build dir), so each
+# sanitizer variant picks up its own instrumented driver.
+if grep -qE '^[[:space:]]*##[[:space:]]*host:' "$CHK"; then
+    DRIVER="$(dirname "$URBI")/chk-host-driver"
+    if [ ! -x "$DRIVER" ]; then
+        printf 'error: chk-host-driver not found or not executable: %s\n' \
+               "$DRIVER" >&2
+        exit 2
+    fi
+
+    # Expected lines come from the same `[...]` frame the REPL path uses.
+    grep -E '^\[' "$CHK" > "$TMPDIR_LOCAL/expected.raw" 2>/dev/null || true
+    [ -f "$TMPDIR_LOCAL/expected.raw" ] || touch "$TMPDIR_LOCAL/expected.raw"
+    sed -E 's/^\[[^]]*\] //' \
+        < "$TMPDIR_LOCAL/expected.raw" \
+        > "$TMPDIR_LOCAL/expected.norm"
+
+    "$DRIVER" "$CHK" > "$TMPDIR_LOCAL/actual.raw" 2>&1
+    sed -E 's/^\[[^]]*\] //' \
+        < "$TMPDIR_LOCAL/actual.raw" \
+        > "$TMPDIR_LOCAL/actual.norm"
+
+    if diff -u "$TMPDIR_LOCAL/expected.norm" "$TMPDIR_LOCAL/actual.norm"; then
+        printf 'PASS: %s (host-driver)\n' "$CHK"
+        exit 0
+    else
+        printf 'FAIL: %s (host-driver)\n' "$CHK" >&2
+        exit 1
+    fi
+fi
+
 # 1. Partition fixture into inputs (to feed REPL) and expected (to diff).
 awk '
     /^\[/              { print > expected; next }

@@ -181,6 +181,28 @@ $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
 
 urbi-bin: $(BUILDDIR)/urbi
 
+# --- chk-host-driver ----------------------------------------------------
+#
+# chk-host-driver — bounded test host-driver for `.chk` fixtures whose
+# observable needs an embedding-API operation the single-pass `urbi -i`
+# REPL path cannot express (multi-realm isolation, urbi_step quiescence).
+# Built into $(BUILDDIR) alongside `urbi` so each sanitizer variant
+# (host-asan / host-ubsan) gets its own instrumented driver; run_chk.sh
+# derives the driver path from the urbi-binary path it is handed.
+# Test binary: links against liburbi.a + libm; includes private src/ headers.
+
+$(BUILDDIR)/tests/integration:
+	@mkdir -p $@
+
+$(BUILDDIR)/tests/integration/chk_host_driver.o: tests/integration/chk_host_driver.c \
+		| $(BUILDDIR)/tests/integration
+	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+
+$(BUILDDIR)/chk-host-driver: $(BUILDDIR)/tests/integration/chk_host_driver.o $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tests/integration/chk_host_driver.o $(LIB) -lm
+
+chk-host-driver: $(BUILDDIR)/chk-host-driver
+
 # --- v0.9.1 REPL CLIs (URBI_ENABLE_REPL=1 only) ------------------------
 #
 # urbi-server: headless network REPL daemon — boots a UVM, optionally
@@ -415,7 +437,7 @@ endif
 # tests/chk/repl/*.chk are NDJSON fixtures (v0.9.1 Phase 8) driven in-
 # process by tests/unit/test_repl_chk_corpus.c, not by run_chk.sh which
 # expects urbiscript input.  Excluded here.
-test-chk: $(BUILDDIR)/urbi
+test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
 	@set -e; \
 	count=0; \
 	for f in $$(find tests/chk -path tests/chk/repl -prune -o -name '*.chk' -print 2>/dev/null | sort); do \
