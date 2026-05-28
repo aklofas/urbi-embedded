@@ -117,7 +117,7 @@ RUNNER_WRAPPER ?=
 # so initial build (no .d files yet) doesn't warn.
 sinclude $(shell find build -name '*.d' 2>/dev/null)
 
-all: $(LIB) $(LIBURBI_AUX)
+all: $(LIB) $(LIBURBI_AUX) $(BUILDDIR)/urbi
 
 $(LIB): $(OBJ)
 	$(AR) rcs $@ $^
