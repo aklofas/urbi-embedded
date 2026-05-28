@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* _POSIX_C_SOURCE=200809L exposes clock_gettime, CLOCK_MONOTONIC, nanosleep. */
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
+#  undef _POSIX_C_SOURCE
+#  define _POSIX_C_SOURCE 200809L
+#endif
 /* tests/unit/test_repl_backpressure.c
  *
  * Regression tests for the flush_session_output backpressure fix.
@@ -375,11 +380,7 @@ UTEST(backpressure_full_payload_survives_eagain)
     close(h.sv[1]);
     h.sv[1] = -1;
 
-    bool ok_size  = (total_rx == BP2_PAYLOAD_SIZE);
-    bool ok_order = ok_size &&
-                    (memcmp(received, payload - BP2_PAYLOAD_SIZE /* freed! */,
-                            0) == 0);  /* placeholder check after free */
-    /* Re-check order properly by re-generating the expected pattern. */
+    /* Verify byte order by re-generating the expected pattern. */
     bool ok_bytes = true;
     for (size_t i = 0; i < total_rx && ok_bytes; ++i)
         ok_bytes = (received[i] == (char)(unsigned char)(i & 0xFFu));

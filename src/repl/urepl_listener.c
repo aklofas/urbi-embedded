@@ -78,46 +78,78 @@ eventfd_signal(int fd)
     (void)w;
 }
 
-/* Drain a session's output ringbuf to the client socket.  Returns true
- * on clean drain (or short write — caller wakes us again), false on
- * a hard send error (caller should close the connection). */
-static bool
+/* Return codes for flush_session_output. */
+typedef enum {
+    FLUSH_DONE        = 0,  /* staging + ringbuf fully drained */
+    FLUSH_WOULD_BLOCK = 1,  /* EAGAIN: bytes remain in staging; caller arms POLLOUT */
+    FLUSH_ERROR       = 2   /* hard send error; caller should close */
+} FlushResult;
+
+/* Drain a session's output ringbuf to the client socket.
+ *
+ * Uses the session's coop_outbuf staging buffer (same fields as the
+ * cooperative write sweep; the two paths are mutually exclusive because
+ * the cooperative sweep filters out pollable sessions).
+ *
+ * Returns:
+ *   FLUSH_DONE        — staging and ringbuf fully sent; nothing pending.
+ *   FLUSH_WOULD_BLOCK — write_fn returned EAGAIN; unwritten bytes remain
+ *                       in staging at [coop_outbuf_off, coop_outbuf_fill).
+ *                       Caller should arm POLLOUT and call again when the
+ *                       fd is writable.
+ *   FLUSH_ERROR       — hard send error (peer reset, broken pipe, etc.);
+ *                       caller should tear down the session. */
+static FlushResult
 flush_session_output(UReplReader *r)
 {
     UReplSession *s = r->session;
     if (s == NULL) {
-        return false;
+        return FLUSH_ERROR;
     }
-    /* Fixed-size pump buffer.  4 KB matches typical NDJSON envelope
-     * sizes; multiple iterations cover larger bursts. */
-    char buf[4096];
+
+    /* Lazily allocate the staging buffer.  4 KiB matches the
+     * cooperative path's chunk size and NDJSON envelope sizes. */
+    if (s->coop_outbuf == NULL) {
+        size_t cap = 4096U;
+        s->coop_outbuf = (char *)malloc(cap);
+        if (s->coop_outbuf == NULL) {
+            return FLUSH_DONE;   /* fail-quiet; retry next wake */
+        }
+        s->coop_outbuf_cap  = cap;
+        s->coop_outbuf_fill = 0U;
+        s->coop_outbuf_off  = 0U;
+    }
+
     for (;;) {
-        size_t n = urepl_ringbuf_read(&s->output, buf, sizeof(buf));
-        if (n == 0U) {
-            return true;
-        }
-        size_t off = 0;
-        while (off < n) {
-            int w = r->transport->write_fn(r->client_fd,
-                                           buf + off, n - off);
-            if (w > 0) {
-                off += (size_t)w;
-                continue;
+        /* Refill staging from the ringbuf when previous chunk is fully
+         * written (mirrors urepl_session_write_drain_one logic). */
+        if (s->coop_outbuf_off >= s->coop_outbuf_fill) {
+            s->coop_outbuf_fill = urepl_ringbuf_read(&s->output,
+                                                     s->coop_outbuf,
+                                                     s->coop_outbuf_cap);
+            s->coop_outbuf_off  = 0U;
+            if (s->coop_outbuf_fill == 0U) {
+                return FLUSH_DONE;   /* ringbuf empty; nothing pending */
             }
-            if (w == -1) {
-                /* EAGAIN — short-write.  We dropped these bytes from
-                 * the ringbuf; spec §3.5 already documents "oldest-byte
-                 * loss" as the overflow policy.  For an EAGAIN here we
-                 * could re-buffer, but in practice loopback TCP at
-                 * v0.9.1 line rates rarely sees this.  Sleep briefly +
-                 * retry.  TODO(v1.0-rc): proper POLLOUT-driven retry. */
-                struct timespec ts = { 0, (long)1000 * 1000 };  /* 1 ms */
-                nanosleep(&ts, NULL);
-                continue;
-            }
-            /* hard error — peer reset / pipe closed. */
-            return false;
         }
+
+        size_t pending = s->coop_outbuf_fill - s->coop_outbuf_off;
+        int w = r->transport->write_fn(r->client_fd,
+                                       s->coop_outbuf + s->coop_outbuf_off,
+                                       pending);
+        if (w > 0) {
+            s->coop_outbuf_off += (size_t)w;
+            /* Loop: try to drain more staging or refill from ring. */
+            continue;
+        }
+        if (w == -1) {
+            /* EAGAIN — bytes remain in staging at [off, fill).
+             * Return immediately; caller arms POLLOUT so we resume
+             * without busy-waiting. */
+            return FLUSH_WOULD_BLOCK;
+        }
+        /* Hard error — peer reset / broken pipe. */
+        return FLUSH_ERROR;
     }
 }
 
@@ -289,7 +321,21 @@ reader_main(void *arg)
         struct pollfd pfds[2];
         int nfds = 0;
         pfds[nfds].fd = pollable;
+        /* Arm POLLOUT when staging has unsent bytes or the output ringbuf
+         * is non-empty; this resumes flush without spinning on EAGAIN.
+         * Clear POLLOUT when nothing is pending so idle connections do
+         * not busy-wake on a permanently-writable socket. */
         pfds[nfds].events = POLLIN;
+        {
+            UReplSession *s = r->session;
+            bool has_pending = s != NULL
+                && (urepl_ringbuf_fill(&s->output) > 0U
+                    || (s->coop_outbuf != NULL
+                        && s->coop_outbuf_off < s->coop_outbuf_fill));
+            if (has_pending) {
+                pfds[nfds].events |= POLLOUT;
+            }
+        }
         nfds++;
         if (r->wake_eventfd >= 0) {
             pfds[nfds].fd = r->wake_eventfd;
@@ -306,13 +352,23 @@ reader_main(void *arg)
             break;
         }
 
-        /* Always flush any pending output (we may have been woken by
-         * the wake_eventfd OR be a periodic wake). */
+        /* Drain the wake eventfd so it doesn't spin. */
         if (r->wake_eventfd >= 0 && (pfds[1].revents & POLLIN)) {
             eventfd_drain(r->wake_eventfd);
         }
-        if (!flush_session_output(r)) {
-            break;
+
+        /* Flush pending output on any of: POLLOUT (fd writable after
+         * backpressure), POLLIN wake (new data was dispatched and
+         * written to the output ring by the VM thread), or a periodic
+         * poll() timeout (catches any missed wake signal). */
+        if (pfds[0].revents & (POLLOUT | POLLIN)
+            || pr == 0  /* timeout — periodic drain */) {
+            FlushResult fr = flush_session_output(r);
+            if (fr == FLUSH_ERROR) {
+                break;
+            }
+            /* FLUSH_WOULD_BLOCK: staging non-empty, POLLOUT armed above
+             * on next iteration.  FLUSH_DONE: nothing left to send. */
         }
 
         /* Inbound socket data. */

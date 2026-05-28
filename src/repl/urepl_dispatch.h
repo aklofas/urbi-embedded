@@ -54,14 +54,23 @@ struct UReplSession {
     char                 *coop_inbuf;
     size_t                coop_inbuf_cap;
     size_t                coop_inbuf_fill;
-    /* v0.9.4 cooperative write staging.  urepl_ringbuf_read is
-     * destructive — once bytes leave session->output the ringbuf no
-     * longer owns them.  For non-pollable transports the cooperative
-     * write sweep cannot busy-loop on EAGAIN like flush_session_output
-     * does, so it pulls a chunk into this staging buffer and advances
+    /* Write staging buffer, shared between the cooperative and the
+     * reader-pthread output paths (mutually exclusive: the cooperative
+     * write sweep filters out pollable sessions, so only one path ever
+     * uses these fields at a time).
+     *
+     * Cooperative path (v0.9.4): urepl_ringbuf_read is destructive —
+     * once bytes leave session->output the ringbuf no longer owns them.
+     * Non-pollable transports pull a chunk into this buffer and advance
      * coop_outbuf_off on each (possibly partial) write_fn call.  When
      * off == fill the staging is drained and the next sweep refills
-     * from the ringbuf. */
+     * from the ringbuf.
+     *
+     * Reader-pthread path (W2.2): flush_session_output uses the same
+     * fields to stage a destructively-read ringbuf chunk.  On EAGAIN
+     * it returns FLUSH_WOULD_BLOCK (instead of spinning) and leaves
+     * the unwritten bytes at [coop_outbuf_off, coop_outbuf_fill).
+     * reader_main arms POLLOUT and resumes on the next writable event. */
     char                 *coop_outbuf;
     size_t                coop_outbuf_cap;
     size_t                coop_outbuf_fill;
