@@ -1,23 +1,21 @@
-# Milestone: M3
-# Covers: tag.stop() inside a try/finally block runs the finally clause
-#         before unwinding the tag scope; finally body executes exactly once.
-#
-# blocked: TAG_STOP does not run finally clause before unwind completes — v1.0-rc bug
+# Milestone: M3 (activated v0.10.15-vm-decomp-2, v0.10.7-B)
+# Covers: tag.stop() inside a try/finally block runs the finally clause as the
+#         TAG_STOP unwind walks the cleanup stack; the finally body executes
+#         exactly once.  Realm.cleaned ends 1.
 # matrix-row: tag-stop
 #
-# Reason: requires UTag runtime + TAG_STOP absorption in the unwind walker
-# (T29).  Additionally, the interaction between TAG_STOP propagation and
-# TRY_FRAME finally execution is gated on T30 (OP_PUSH_TAG runtime extension)
-# since the walker must handle the combined CALL_FRAME / TRY_FRAME / TAG_SCOPE
-# stack ordering correctly.
-#
-# When T29/T30 land, implement this fixture by uncommenting the source below.
-# Expected behaviour: finally body runs ("cleanup") then tag scope exits.
-#
-# Urbiscript source (activate at T29/T30):
-#   var t = Tag.new;
-#   var cleaned = 0;
-#   t: { try { t.stop() } finally { cleaned = 1 } };
-#   cleaned
-#   --- expected output ---
-#   [00000001] 1
+# Activated at v0.10.15-vm-decomp-2: OP_PUSH_TAG user-tag binding (v0.10.9-B)
+# makes t.stop() from inside `t: { ... }` a clean in-scope tag-stop that
+# deposits TAG_STOP on this strand; the unwind walker runs FLAG_HAS_FINALLY
+# bodies on ANY pending unwind kind (src/runtime/uunwind.c, run_cleanup_with_
+# replace), so the finally fires before the TAG_SCOPE is popped.  The tag-stop
+# scope block then evaluates to nil (tag-stop "absorption" / resume-after-scope
+# is the separate, deferred T29 concern).  Closes design-risks v0.10.7-B.
+var t = Tag.new()
+Realm.cleaned = 0
+t: { try { t.stop() } finally { Realm.cleaned = 1 } }
+Realm.cleaned
+[00000000] <Tag>
+[00000000] 0
+[00000000] nil
+[00000001] 1
