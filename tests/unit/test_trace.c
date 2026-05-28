@@ -181,6 +181,24 @@ UTEST(trace_sched_records_on_fork)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(trace_gc_phase_transitions)
+{
+    UVM vm;
+    UTraceRecord out[256];
+    uint32_t d;
+    size_t n, i;
+    int phases = 0;
+    urbi_vm_init(&vm, NULL, NULL);
+    urbi_trace_set_level(&vm, URBI_TRACE_GC, URBI_LOG_DEBUG);
+    /* Allocate some cells, then force a full GC cycle to completion. */
+    utest_e2e_compile_and_run(&vm, "1 + 2", NULL);
+    urbi_gc_force_full(&vm);
+    n = urbi_trace_snapshot(&vm, out, 256, &d);
+    for (i = 0; i < n; i++) if (out[i].schema_id == URBI_TP_GC_PHASE) phases++;
+    UASSERT(phases >= 2);   /* at least MARK_ROOTS and IDLE */
+    urbi_vm_destroy(&vm);
+}
+
 #endif /* URBI_TRACE */
 
 void test_trace_suite(void)
@@ -195,5 +213,6 @@ void test_trace_suite(void)
     utest_run("trace_format_record", trace_format_record);
     utest_run("trace_format_marker_string", trace_format_marker_string);
     utest_run("trace_sched_records_on_fork", trace_sched_records_on_fork);
+    utest_run("trace_gc_phase_transitions", trace_gc_phase_transitions);
 #endif
 }

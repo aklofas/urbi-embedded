@@ -254,6 +254,7 @@ gc_mark_roots_step(UVM *vm)
     }
 
     vm->gc_phase = GC_PHASE_MARK_INCREMENTAL;
+    URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_DEBUG, URBI_TP_GC_PHASE, (uint32_t)vm->gc_phase, 0);
     return 1024U;  /* approximate work units for root scanning */
 }
 
@@ -276,6 +277,7 @@ gc_mark_incremental_step(UVM *vm, size_t budget)
 
     if (gc_gray_head(vm) == NULL) {
         vm->gc_phase = GC_PHASE_ATOMIC_FINISH;
+        URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_DEBUG, URBI_TP_GC_PHASE, (uint32_t)vm->gc_phase, 0);
     }
 
     return consumed;
@@ -315,6 +317,7 @@ gc_atomic_finish_step(UVM *vm)
      * allocations prepend to all_cells_head with current_white color and are
      * never visited by the cursor walk, so they don't contribute. */
     vm->gc_phase = GC_PHASE_SWEEP;
+    URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_DEBUG, URBI_TP_GC_PHASE, (uint32_t)vm->gc_phase, 0);
     vm->gc_surviving_bytes = 0U;
     gc_set_sweep_cursor(vm, gc_node_head(vm));
     gc_set_sweep_cursor_prev(vm, NULL);
@@ -491,6 +494,7 @@ gc_sweep_step(UVM *vm, size_t budget)
         /* Sweep complete: publish surviving total and trigger threshold update. */
         vm->gc_live_bytes = vm->gc_surviving_bytes;
         vm->gc_phase      = GC_PHASE_IDLE;
+        URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_DEBUG, URBI_TP_GC_PHASE, (uint32_t)vm->gc_phase, 0);
         end_of_cycle_threshold_update(vm);
     }
 
@@ -601,7 +605,11 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
      * decline new allocations — caller observes NULL (the standard
      * OOM-shaped failure mode the rest of the runtime already handles
      * via urbi_raise_oom on the script surface). */
-    if (UNLIKELY(vm->heap_locked)) return NULL;
+    if (UNLIKELY(vm->heap_locked)) {
+        URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_WARN, URBI_TP_GC_ALLOC_DENIED,
+                (uint32_t)size, 0);
+        return NULL;
+    }
 
     /* Allocate the cell. */
     UCell *cell = (UCell *)vm->alloc_fn(NULL, size, vm->alloc_ud);
@@ -774,6 +782,7 @@ urbi_gc_slice(UVM *vm, size_t byte_budget)
                  * "other white" and are treated as dead unless re-marked. */
                 vm->current_white ^= 0x01U;
                 vm->gc_phase = GC_PHASE_MARK_ROOTS;
+                URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_DEBUG, URBI_TP_GC_PHASE, (uint32_t)vm->gc_phase, 0);
             } else {
                 /* Nothing to do. */
                 vm->gc_pending = 0U;
@@ -824,6 +833,7 @@ urbi_gc_force_full(UVM *vm)
     if (vm->gc_phase == GC_PHASE_IDLE) {
         vm->current_white ^= 0x01U;
         vm->gc_phase = GC_PHASE_MARK_ROOTS;
+        URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_DEBUG, URBI_TP_GC_PHASE, (uint32_t)vm->gc_phase, 0);
     }
 
     /* Run slices until IDLE.  Use SIZE_MAX budget per slice to complete
