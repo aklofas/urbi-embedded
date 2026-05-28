@@ -273,6 +273,31 @@ UTEST(trace_repl_eval)
     urbi_vm_destroy(&vm);
 }
 
+#if defined(URBI_ENABLE_REPL)
+/* Debug.trace() lives in the URBI_ENABLE_REPL-gated Debug namespace; this
+ * end-to-end script test therefore needs both flags. */
+UTEST(trace_debug_marker)
+{
+    UVM vm;
+    URealm *r;
+    char out[256];
+    UTraceRecord rec[16];
+    uint32_t d;
+    size_t n, i;
+    int found = 0;
+    urbi_vm_init(&vm, NULL, NULL);
+    urbi_trace_set_level(&vm, URBI_TRACE_USER, URBI_LOG_INFO);
+    r = urbi_realm_global(&vm);
+    (void)urbi_repl_eval(&vm, r, "Debug.trace(\"phase1\")", 21, out, sizeof(out));
+    n = urbi_trace_snapshot(&vm, rec, 16, &d);
+    for (i = 0; i < n; i++)
+        if (rec[i].schema_id == URBI_TP_USER_MARKER && rec[i].payload.str[0] == 'p')
+            found = 1;
+    UASSERT(found);
+    urbi_vm_destroy(&vm);
+}
+#endif /* URBI_ENABLE_REPL */
+
 #endif /* URBI_TRACE */
 
 void test_trace_suite(void)
@@ -292,5 +317,8 @@ void test_trace_suite(void)
     utest_run("trace_watcher_install", trace_watcher_install);
     utest_run("trace_tag_op", trace_tag_op);
     utest_run("trace_repl_eval", trace_repl_eval);
+#if defined(URBI_ENABLE_REPL)
+    utest_run("trace_debug_marker", trace_debug_marker);
+#endif
 #endif
 }

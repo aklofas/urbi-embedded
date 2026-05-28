@@ -28,6 +28,7 @@
 #include "runtime/uclosure.h"
 #include "runtime/umacros.h"
 #include "sched/ustrand.h"        /* UEXEC_* */
+#include "urbi/trace.h"           /* URBI_TP_STR — Debug.trace marker */
 #include "urbi/object.h"          /* URBI_ATOM_OBJECT */
 #include "urbi/types.h"
 #include "urbi/urbi.h"
@@ -144,6 +145,26 @@ debug_slots_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
+/* --- Debug.trace(label): inject a USER-channel trace marker ------------ */
+
+static int
+debug_trace_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                   UValue *out)
+{
+    (void)self;
+    if (nargs != 1) return urbi_raise_arity(vm, "Debug.trace", 1, nargs, out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "Debug.trace: label must be String", out);
+    {
+        const char *s = (const char *)args[0].v.p;
+        if (s != NULL)
+            URBI_TP_STR(vm, URBI_TRACE_USER, URBI_LOG_INFO,
+                        URBI_TP_USER_MARKER, s, 0);
+    }
+    *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
 /* --- Method-table install --------------------------------------------- */
 
 typedef struct {
@@ -160,7 +181,8 @@ static const DebugMethodEntry DEBUG_METHODS[] = {
     { "gc",       debug_gc_native       },
     { "lobbies",  debug_lobbies_native  },
     { "stack",    debug_stack_native    },
-    { "slots",    debug_slots_native    }
+    { "slots",    debug_slots_native    },
+    { "trace",    debug_trace_native    }
 };
 #define DEBUG_METHODS_COUNT (sizeof(DEBUG_METHODS) / sizeof(DEBUG_METHODS[0]))
 
