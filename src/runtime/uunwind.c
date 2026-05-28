@@ -489,6 +489,8 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
 
     if (!vm || !tag) return URBI_ERR_INVALID_ARG;
     URBI_ASSERT_NOT_ISR(vm);
+    URBI_TP(vm, URBI_TRACE_TAG, URBI_LOG_INFO, URBI_TP_TAG_OP, 0u,
+            (uint32_t)(uintptr_t)tag);
 
     /* (1) Deposit pending TAG_STOP unwind on every member strand.
      * Snapshot next via UCleanupEntry.next_member — entries do not unlink
@@ -590,6 +592,8 @@ urbi_tag_block(struct UVM *vm, struct UTag *tag, UValue resume_value)
     if (vm == NULL || tag == NULL) return URBI_ERR_INVALID_ARG;
     URBI_ASSERT_NOT_ISR(vm);
 
+    URBI_TP(vm, URBI_TRACE_TAG, URBI_LOG_INFO, URBI_TP_TAG_OP, 1u,
+            (uint32_t)(uintptr_t)tag);
     tag->flags |= (uint8_t)UTAG_FLAG_BLOCKED;
 
     /* Snapshot-next iteration because urbi_strand_suspend does not unlink
@@ -618,6 +622,8 @@ urbi_tag_unblock(struct UVM *vm, struct UTag *tag)
     if (vm == NULL || tag == NULL) return URBI_ERR_INVALID_ARG;
     URBI_ASSERT_NOT_ISR(vm);
 
+    URBI_TP(vm, URBI_TRACE_TAG, URBI_LOG_INFO, URBI_TP_TAG_OP, 2u,
+            (uint32_t)(uintptr_t)tag);
     tag->flags &= (uint8_t)~UTAG_FLAG_BLOCKED;
 
     UCleanupEntry *e    = tag->member_strands_head;
@@ -658,6 +664,8 @@ urbi_tag_freeze(struct UVM *vm, struct UTag *tag)
     if (vm == NULL || tag == NULL) return URBI_ERR_INVALID_ARG;
     URBI_ASSERT_NOT_ISR(vm);
 
+    URBI_TP(vm, URBI_TRACE_TAG, URBI_LOG_INFO, URBI_TP_TAG_OP, 3u,
+            (uint32_t)(uintptr_t)tag);
     tag->flags |= (uint8_t)UTAG_FLAG_FROZEN;
 
     UCleanupEntry *e    = tag->member_strands_head;
@@ -679,6 +687,8 @@ urbi_tag_unfreeze(struct UVM *vm, struct UTag *tag)
     if (vm == NULL || tag == NULL) return URBI_ERR_INVALID_ARG;
     URBI_ASSERT_NOT_ISR(vm);
 
+    URBI_TP(vm, URBI_TRACE_TAG, URBI_LOG_INFO, URBI_TP_TAG_OP, 4u,
+            (uint32_t)(uintptr_t)tag);
     tag->flags &= (uint8_t)~UTAG_FLAG_FROZEN;
 
     UCleanupEntry *e    = tag->member_strands_head;

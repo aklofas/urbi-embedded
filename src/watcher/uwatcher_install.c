@@ -92,6 +92,8 @@ install_watcher_runtime(
                 "watcher install attempted from within scratch-frame eval");
         return URBI_INSTALL_RECURSIVE;
     }
+    URBI_TP(vm, URBI_TRACE_WATCHER, URBI_LOG_INFO, URBI_TP_WATCHER_INSTALL,
+            (uint32_t)mode, 0);
 
     /* Safety: install must not be re-entered from the install path itself. */
     URBI_INTERNAL_ASSERT(vm->watchers->in_install == 0);

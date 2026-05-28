@@ -83,6 +83,8 @@ void
 c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
 {
     struct UWatcher *w;
+    URBI_TP(vm, URBI_TRACE_EVENT, URBI_LOG_DEBUG, URBI_TP_EVENT_EMIT,
+            (uint32_t)(uintptr_t)e, 0);
 
     /* EMITR-012: ISR re-entry would be unsafe here because do_spawn_body_coroutine
      * allocates a fresh UStrand from the scheduler's strand pool (potentially

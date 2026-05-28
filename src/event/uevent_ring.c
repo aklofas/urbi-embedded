@@ -50,6 +50,10 @@ urbi_inject_event(struct UVM *vm, uint32_t event_id,
 
     if (!vm) return URBI_ERR_INVALID_ARG;
 
+    /* TRACE TODO (v0.11.x): the event-injection tracepoint needs the ISR-safe
+     * SPSC ring path, not the MAIN-strand urbi_trace_emit. urbi_inject_event
+     * runs in ISR context, so it is intentionally left uninstrumented in
+     * v0.11.0 (see docs/embedded/trace-subsystem.md). */
     r = vm->event_ring;
     if (!r) return URBI_ERR_INVALID_ARG;
 

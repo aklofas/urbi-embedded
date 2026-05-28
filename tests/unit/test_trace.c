@@ -29,6 +29,7 @@ UTEST(trace_disabled_is_noop)
     URBI_TP(NULL, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_YIELD,
             trace_bump(), 0);
     UASSERT_EQ(g_side_effect, 0);
+    (void)&trace_bump;  /* referenced even when URBI_TP strips the call (OFF build) */
 }
 
 UTEST(trace_enums_defined)
@@ -199,6 +200,56 @@ UTEST(trace_gc_phase_transitions)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(trace_event_emit_and_watcher_fire)
+{
+    UVM vm;
+    UTraceRecord out[128];
+    uint32_t d;
+    size_t n;
+    urbi_vm_init(&vm, NULL, NULL);
+    urbi_trace_set_level(&vm, URBI_TRACE_EVENT, URBI_LOG_DEBUG);
+    urbi_trace_set_level(&vm, URBI_TRACE_WATCHER, URBI_LOG_DEBUG);
+    utest_e2e_compile_and_run(&vm,
+        "var e = Event.new(); at (e?) Realm.x = 1; e!(1)", NULL);
+    utest_e2e_run_to_no_runnable(&vm);
+    n = urbi_trace_snapshot(&vm, out, 128, &d);
+    UASSERT(trace_saw_schema(out, n, URBI_TP_EVENT_EMIT));
+    UASSERT(trace_saw_schema(out, n, URBI_TP_WATCHER_FIRE));
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(trace_watcher_install)
+{
+    UVM vm;
+    UTraceRecord out[128];
+    uint32_t d;
+    size_t n;
+    urbi_vm_init(&vm, NULL, NULL);
+    urbi_trace_set_level(&vm, URBI_TRACE_WATCHER, URBI_LOG_INFO);
+    /* Value watcher routes through install_watcher_runtime (INSTALL tap). */
+    utest_e2e_compile_and_run(&vm, "var x = 0; at (x > 5) Realm.y = 1", NULL);
+    utest_e2e_run_to_no_runnable(&vm);
+    n = urbi_trace_snapshot(&vm, out, 128, &d);
+    UASSERT(trace_saw_schema(out, n, URBI_TP_WATCHER_INSTALL));
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(trace_tag_op)
+{
+    UVM vm;
+    UTraceRecord out[32];
+    uint32_t d;
+    size_t n;
+    urbi_vm_init(&vm, NULL, NULL);
+    urbi_trace_set_level(&vm, URBI_TRACE_TAG, URBI_LOG_INFO);
+    /* freeze on a member-less tag sets the flag and returns OK (TAG_OP tap). */
+    utest_e2e_compile_and_run(&vm, "var t = Tag.new(); t.freeze()", NULL);
+    utest_e2e_run_to_no_runnable(&vm);
+    n = urbi_trace_snapshot(&vm, out, 32, &d);
+    UASSERT(trace_saw_schema(out, n, URBI_TP_TAG_OP));
+    urbi_vm_destroy(&vm);
+}
+
 #endif /* URBI_TRACE */
 
 void test_trace_suite(void)
@@ -214,5 +265,8 @@ void test_trace_suite(void)
     utest_run("trace_format_marker_string", trace_format_marker_string);
     utest_run("trace_sched_records_on_fork", trace_sched_records_on_fork);
     utest_run("trace_gc_phase_transitions", trace_gc_phase_transitions);
+    utest_run("trace_event_emit_and_watcher_fire", trace_event_emit_and_watcher_fire);
+    utest_run("trace_watcher_install", trace_watcher_install);
+    utest_run("trace_tag_op", trace_tag_op);
 #endif
 }
