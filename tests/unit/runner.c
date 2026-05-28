@@ -308,6 +308,7 @@ extern void test_lshift_parse_suite(void);
 extern void test_object_unfrozen_suite(void);
 extern void test_lobby_echo_suite(void);
 extern void test_channel_proto_suite(void);
+extern void test_trace_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -592,6 +593,7 @@ static const struct suite_entry suites[] = {
     {"object_unfrozen",                  test_object_unfrozen_suite},
     {"lobby_echo",                       test_lobby_echo_suite},
     {"channel_proto",                    test_channel_proto_suite},
+    {"trace",                            test_trace_suite},
     /* Add new suites here as test files are added. */
 };
 
