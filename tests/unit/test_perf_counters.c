@@ -11,7 +11,9 @@
 #include "utest_e2e_helpers.h"
 #include "urbi/urbi.h"
 #include "vm/uvm.h"
+#include "realm/urealm.h"
 #include "runtime/uperf.h"
+#include <string.h>
 
 #define UTEST(name) static void name(void)
 
@@ -66,9 +68,29 @@ UTEST(perf_opcodes_and_events_counted)
     urbi_vm_destroy(&vm);
 }
 
+#if defined(URBI_ENABLE_REPL)
+UTEST(perf_debug_gc_has_timing_fields)
+{
+    UVM vm; URealm *r; char out[512];
+    urbi_vm_init(&vm, NULL, NULL);
+    r = urbi_realm_global(&vm);
+    (void)urbi_repl_eval(&vm, r, "Debug.gc()", 10, out, sizeof out);
+    /* repl_eval returns the JSON as a String whose quotes are escaped in `out`,
+     * so match bare field names (mirrors debug_gc_from_urbiscript_returns_*). */
+    UASSERT(strstr(out, "cycles") != NULL);
+    UASSERT(strstr(out, "slices") != NULL);
+    UASSERT(strstr(out, "last_gc_us") != NULL);
+    UASSERT(strstr(out, "total_gc_us") != NULL);
+    urbi_vm_destroy(&vm);
+}
+#endif
+
 void test_perf_counters_suite(void)
 {
     utest_run("perf_macro_compiles_both_modes", perf_macro_compiles_both_modes);
     utest_run("perf_gc_cycles_counted", perf_gc_cycles_counted);
     utest_run("perf_opcodes_and_events_counted", perf_opcodes_and_events_counted);
+#if defined(URBI_ENABLE_REPL)
+    utest_run("perf_debug_gc_has_timing_fields", perf_debug_gc_has_timing_fields);
+#endif
 }

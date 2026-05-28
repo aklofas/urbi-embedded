@@ -296,11 +296,15 @@ urbi_introspect_gc(const UVM *vm, char *buf, size_t cap, size_t *out_n)
     if (vm == NULL || buf == NULL || out_n == NULL) return URBI_ERR_INVALID_ARG;
     EMIT_INIT();
     EMIT_FMT("{\"alive_bytes\":%zu,\"threshold\":%zu,\"total_allocated\":%zu,"
-             "\"phase\":%u}",
+             "\"phase\":%u,\"cycles\":%zu,\"slices\":%zu,"
+             "\"last_gc_us\":%llu,\"total_gc_us\":%llu}",
              (size_t)urbi_gc_live_bytes(vm),
              (size_t)urbi_gc_threshold(vm),
              (size_t)vm->gc_total_allocated,
-             (unsigned)urbi_gc_phase(vm));
+             (unsigned)urbi_gc_phase(vm),
+             vm->gc_cycles, vm->gc_slices,
+             (unsigned long long)vm->last_gc_us,
+             (unsigned long long)vm->total_gc_us);
     EMIT_DONE();
 }
 
