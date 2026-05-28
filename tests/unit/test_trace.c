@@ -83,6 +83,45 @@ UTEST(trace_ring_overflow_and_seq)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(trace_channel_and_level_gating)
+{
+    UVM vm;
+    UTraceRecord out[8];
+    uint32_t d;
+    size_t n;
+    urbi_vm_init(&vm, NULL, NULL);
+    urbi_trace_set_level(&vm, URBI_TRACE_SCHED, URBI_LOG_INFO);  /* INFO+ only */
+
+    URBI_TP(&vm, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_YIELD, 1, 0); /* filtered */
+    URBI_TP(&vm, URBI_TRACE_SCHED, URBI_LOG_INFO,  URBI_TP_SCHED_START, 2, 0); /* kept */
+    URBI_TP(&vm, URBI_TRACE_GC,    URBI_LOG_ERROR, URBI_TP_GC_PHASE,    3, 0); /* GC OFF */
+
+    n = urbi_trace_snapshot(&vm, out, 8, &d);
+    UASSERT_EQ(n, (size_t)1);
+    UASSERT_EQ(out[0].schema_id, (uint16_t)URBI_TP_SCHED_START);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(trace_threshold_and_first_n)
+{
+    UVM vm;
+    uint32_t iter, i;
+    UTraceStats st;
+    urbi_vm_init(&vm, NULL, NULL);
+    urbi_trace_set_level(&vm, URBI_TRACE_USER, URBI_LOG_DEBUG);
+
+    for (iter = 0; iter < 10; iter++)
+        URBI_TP_THRESHOLD(&vm, URBI_TRACE_USER, URBI_LOG_DEBUG, iter, 8,
+                          URBI_TP_USER_MARKER, iter, 0);   /* fires iter>=8 ⇒ 2 */
+    for (i = 0; i < 10; i++)
+        URBI_TP_FIRST_N(&vm, URBI_TRACE_USER, URBI_LOG_DEBUG, 3,
+                        URBI_TP_USER_MARKER, i, 0);          /* fires 3 */
+
+    urbi_trace_stats(&vm, &st);
+    UASSERT_EQ(st.emitted, 5u);   /* 2 + 3 */
+    urbi_vm_destroy(&vm);
+}
+
 #endif /* URBI_TRACE */
 
 void test_trace_suite(void)
@@ -92,5 +131,7 @@ void test_trace_suite(void)
 #if URBI_TRACE
     utest_run("trace_init_all_off", trace_init_all_off);
     utest_run("trace_ring_overflow_and_seq", trace_ring_overflow_and_seq);
+    utest_run("trace_channel_and_level_gating", trace_channel_and_level_gating);
+    utest_run("trace_threshold_and_first_n", trace_threshold_and_first_n);
 #endif
 }
