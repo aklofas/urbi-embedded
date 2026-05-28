@@ -3,7 +3,12 @@
 #         a non-top-level OP_RET hits a safepoint at frame-pop; both
 #         decrement instruction_budget_remaining correctly.
 #
-# blocked: T39 chk-runner tunables header not implemented
+# blocked: per-call budget-decrement not observable via the public API — the
+#          chk-host-driver can run a function call (OP_CALL/OP_RET) and check
+#          its result, but instruction_budget_remaining is a per-strand
+#          internal counter with no public read path; observing the
+#          before/after decrement around a safepoint needs C-level strand
+#          introspection the embedding API does not expose.  v0.10.7-G residual.
 # matrix-row: scheduler-safepoint
 #
 # Reason: verifying safepoint fires at OP_CALL requires host hooks to observe

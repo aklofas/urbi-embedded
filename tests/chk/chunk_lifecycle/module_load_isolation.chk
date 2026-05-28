@@ -2,7 +2,12 @@
 # Covers: modules loaded into a Realm do not pollute other Realms; bindings
 #         from module are visible only in the Realm where it was loaded.
 #
-# blocked: T39 chk-runner host-driver extension not implemented
+# blocked: `import "name" as Alias` module-load surface not shipped — the
+#          lexer/parser have no `import` keyword and there is no import-table
+#          registration, so the chk-host-driver (which can already create
+#          isolated realms; see realm_isolation.chk) has no way to load a
+#          module into one realm and check its bindings are absent from
+#          another.  This is the import-table gap, not the multi-realm gap.
 # matrix-row: chunk-lifecycle-realm
 #
 # Reason: import-table registration and module-loading surface via

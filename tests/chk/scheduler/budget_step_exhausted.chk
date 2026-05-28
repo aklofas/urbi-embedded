@@ -3,7 +3,13 @@
 #         exits with the strand still in RUNNING state; urbi_step returns
 #         URBI_STEP_RUNNING and the host is expected to call urbi_step again.
 #
-# blocked: T39 chk-runner tunables header not implemented
+# blocked: mid-flight URBI_STEP_RUNNING not observable via the public API —
+#          urbi_run_chunk / urbi_repl_eval drive the loader strand to
+#          quiescence or park internally; the chk-host-driver (## host: step)
+#          can observe QUIESCENT but cannot interrupt a strand mid-execution
+#          to catch the budget-exhausted RUNNING state.  Needs a runtime
+#          per-strand or loader step-budget knob (URBI_STRAND_BUDGET_MAX is
+#          compile-time only).  v0.10.7-G residual.
 # matrix-row: scheduler-budget
 #
 # Reason: observing VM-wide step-budget exhaustion from a chk fixture requires

@@ -4,7 +4,13 @@
 #         across yield boundaries — row 12 §3.4 single-entry make_runnable
 #         invariant).
 #
-# blocked: chk-runner urbi_step driver path not implemented (T39)
+# blocked: cross-strand FIFO ordering across a YIELD boundary not observable
+#          via the public API — the chk-host-driver can fork two strands
+#          (`,` runs under the realm-managed run_chunk path), but with the
+#          compile-time URBI_STRAND_BUDGET_MAX each forked strand runs to
+#          completion before yielding, so there is no observable yield point
+#          at which to assert tail-of-FIFO requeue order.  Needs a runtime
+#          per-strand budget knob to force a mid-strand yield.  v0.10.7-G residual.
 # matrix-row: scheduler-fifo
 #
 # Reason: verifying cross-strand FIFO ordering requires two concurrent

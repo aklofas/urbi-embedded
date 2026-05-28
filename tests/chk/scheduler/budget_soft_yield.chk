@@ -3,7 +3,13 @@
 #         yields back to the scheduler (soft yield) and is re-enqueued READY
 #         rather than killed; it resumes on the next scheduler turn.
 #
-# blocked: T39 chk-runner tunables header (## tunables: URBI_STRAND_BUDGET_MAX=N) not implemented
+# blocked: per-strand soft-yield not observable via the public API — the
+#          per-strand instruction budget is URBI_STRAND_BUDGET_MAX, a
+#          compile-time macro (usched_cooperative.c) the runtime cannot
+#          override; the chk-host-driver controls only the urbi_step budget,
+#          not the per-strand budget, so it cannot force a mid-snippet soft
+#          yield and resume.  Needs a runtime strand-budget knob.
+#          v0.10.7-G residual.
 # matrix-row: scheduler-budget
 #
 # Reason: observing soft-yield behaviour from a chk fixture requires the
