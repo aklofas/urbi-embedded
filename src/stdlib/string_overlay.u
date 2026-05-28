@@ -20,7 +20,12 @@ class StringMethods {
     var hasPrefix = function(s) { this.startsWith(s) };
 
     // hasSuffix(s): alias for endsWith(s).
-    var hasSuffix = function(s) { this.endsWith(s) }
+    var hasSuffix = function(s) { this.endsWith(s) };
+
+    // asString(): idempotent — returns this.  Mirrors the legacy
+    // share/urbi/string.u definition; lets generic dispatch sites
+    // (Lobby.echo etc.) coerce arguments uniformly.
+    var asString = function() { this }
 } |
 
 String.addProto(StringMethods);

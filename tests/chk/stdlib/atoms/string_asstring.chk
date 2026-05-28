@@ -1,0 +1,27 @@
+# Milestone: v0.10.13-hygiene (v0.10.11-A)
+# Covers: String.asString() idempotent overlay.
+#
+# Legacy share/urbi/string.u defines String.asString as the identity
+# function.  The v0.6.1 stdlib reimplementation skipped it on the
+# rationale that String->String is a no-op.  v0.10.11 W4 surfaced
+# the gap when Lobby.echo called msg.asString() on String arguments.
+#
+# Tests: idempotency on literal; idempotency after concat; generic
+# dispatch consistency on Integer and Float (both already have
+# asString — this guards that String dispatches correctly too).
+
+# Basic idempotency on a literal string.
+"hello".asString()
+[00000000] "hello"
+
+# Idempotency on concatenated result.
+("abc" + "def").asString()
+[00000001] "abcdef"
+
+# Generic dispatch consistency: Integer.asString().
+(1).asString()
+[00000002] "1"
+
+# Generic dispatch consistency: Float.asString().
+(1.5).asString()
+[00000003] "1.5"
