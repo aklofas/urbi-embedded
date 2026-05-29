@@ -313,7 +313,7 @@ CI gate tracks this list to prevent silent growth.
 ### Error raise helpers
 
 - `urbi_raise_arity`, `urbi_raise_lookup`, `urbi_raise_oom`,
-  `urbi_raise_type`
+  `urbi_raise_type`, `urbi_raise_typed`
 
 ### Type registry
 
@@ -353,7 +353,8 @@ CI gate tracks this list to prevent silent growth.
   `urbi_stdlib_register_primitives`,
   `urbi_stdlib_register_primitives_globals`,
   `urbi_stdlib_register_runtime_globals`,
-  `urbi_stdlib_register_runtime_types`
+  `urbi_stdlib_register_runtime_types`,
+  `urbi_exception_subclass_protos_resolve`
 
 ### Strand internals
 
