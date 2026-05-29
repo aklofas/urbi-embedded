@@ -312,6 +312,7 @@ extern void test_runtime_typed_throw_suite(void);
 extern void test_trace_suite(void);
 extern void test_perf_counters_suite(void);
 extern void test_mem_debug_suite(void);
+extern void test_ros_proto_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -600,6 +601,7 @@ static const struct suite_entry suites[] = {
     {"trace",                            test_trace_suite},
     {"perf_counters",                    test_perf_counters_suite},
     {"mem_debug",                        test_mem_debug_suite},
+    {"ros_proto",                        test_ros_proto_suite},
     /* Add new suites here as test files are added. */
 };
 

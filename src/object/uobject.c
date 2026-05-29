@@ -344,6 +344,11 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
      * to UObject* for the shade. */
     if (vm->debug_proto != NULL) gc_shade_gray(vm, (UCell *)vm->debug_proto);
 
+#ifdef URBI_ENABLE_ROS2
+    /* v0.12.0: `ros` namespace proto; NULL when URBI_ENABLE_ROS2=0 (field absent). */
+    if (vm->ros_proto != NULL) gc_shade_gray(vm, (UCell *)vm->ros_proto);
+#endif
+
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
 

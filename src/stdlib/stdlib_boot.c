@@ -37,6 +37,7 @@
 #ifdef URBI_ENABLE_REPL
 #  include "stdlib/debug_namespace.h"
 #endif
+#include "urbi/ros.h"   /* urbi_ros_register — self-gated by URBI_ENABLE_ROS2 */
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "chunk/uchunk.h"          /* UModule, uchunk_deserialize, uchunk_destroy */
@@ -149,6 +150,16 @@ urbi_stdlib_boot(UVM *vm)
      * other reflective namespace. */
     rc = urbi_debug_namespace_register(vm);
     if (rc != URBI_OK) return rc;
+#endif
+
+#ifdef URBI_ENABLE_ROS2
+    /* v0.12.0: allocate + cache vm->ros_proto (the `ros` namespace proto).
+     * Runs after all other native registrations so the root Object chain is
+     * fully in place.  Gated by URBI_ENABLE_ROS2; compiles away otherwise. */
+    {
+        int rc_ros = urbi_ros_register(vm);
+        if (rc_ros != URBI_OK) return rc_ros;
+    }
 #endif
 
     /* M6 Phase 4 (Wave 2): deserialize the baked stdlib bytecode blob

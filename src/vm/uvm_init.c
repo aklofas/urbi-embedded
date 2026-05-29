@@ -129,6 +129,11 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * non-NULL.  Stack-allocated UVMs would otherwise leak stack garbage
      * into the shade-gray path and segfault. */
     vm->debug_proto = NULL;
+#ifdef URBI_ENABLE_ROS2
+    /* v0.12.0: must be NULLed before object_roots_walker runs (same reason
+     * as debug_proto above — stack-allocated UVMs have garbage here otherwise). */
+    vm->ros_proto = NULL;
+#endif
 
     vm->alloc_fn = alloc_fn;
     vm->alloc_ud = alloc_ud;

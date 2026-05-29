@@ -740,6 +740,13 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * debug_namespace TU casts back to UObject*. */
     void *debug_proto;
 
+#ifdef URBI_ENABLE_ROS2
+    /* v0.12.0: `ros` native namespace proto. void* keeps the core VM header
+     * free of an URBI_ENABLE_ROS2 include cascade; uros.c casts to UObject*.
+     * Allocated by urbi_ros_register at stdlib boot. */
+    void *ros_proto;
+#endif
+
 #if URBI_TRACE
     /* v0.11.0 trace subsystem state; present ONLY in URBI_TRACE builds so the
      * OFF build keeps byte-identical UVM layout.  Heap-allocated (NOT embedded)
