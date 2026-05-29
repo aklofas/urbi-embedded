@@ -58,6 +58,10 @@ ifeq ($(URBI_ENABLE_ROS2),1)
   CFLAGS   += -DURBI_ENABLE_ROS2=1
   CPPFLAGS += -DURBI_ENABLE_ROS2=1
   ROS2_SRCS := $(wildcard src/ros/*.c)
+  ROS2_GEN_DIR := src/ros/generated
+  ROS2_GEN_C   := $(ROS2_GEN_DIR)/ros_msgs.gen.c
+  ROS2_GEN_H   := $(ROS2_GEN_DIR)/ros_msgs.gen.h
+  ROS2_SRCS    += $(ROS2_GEN_C)
 else
   ROS2_SRCS :=
 endif
@@ -153,6 +157,17 @@ core: $(LIB)
 $(BUILDDIR)/src/%.o: src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+
+# v0.12.0: ROS2 message marshaling codegen.  Tracked, regenerated from the
+# manifest by tools/urbi-rosgen.py.  Order-only prereq guarantees the
+# generated header exists before any src/ros/*.o (incl. the generated .c)
+# compiles.
+ifeq ($(URBI_ENABLE_ROS2),1)
+$(ROS2_GEN_C) $(ROS2_GEN_H): tools/urbi-rosgen.py src/ros/msgs/manifest.json
+	@mkdir -p $(ROS2_GEN_DIR)
+	python3 tools/urbi-rosgen.py src/ros/msgs/manifest.json $(ROS2_GEN_C) $(ROS2_GEN_H)
+$(BUILDDIR)/src/ros/%.o: $(ROS2_GEN_H)
+endif
 
 $(BUILDDIR)/tests/unit/%.o: tests/unit/%.c
 	@mkdir -p $(@D)
