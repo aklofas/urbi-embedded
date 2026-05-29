@@ -314,6 +314,8 @@ extern void test_perf_counters_suite(void);
 extern void test_mem_debug_suite(void);
 extern void test_ros_proto_suite(void);
 extern void test_ros_mock_suite(void);
+extern void test_ros_marshal_suite(void);
+extern void test_ros_registry_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -604,6 +606,8 @@ static const struct suite_entry suites[] = {
     {"mem_debug",                        test_mem_debug_suite},
     {"ros_proto",                        test_ros_proto_suite},
     {"ros_mock",                         test_ros_mock_suite},
+    {"ros_marshal",                      test_ros_marshal_suite},
+    {"ros_registry",                     test_ros_registry_suite},
     /* Add new suites here as test files are added. */
 };
 
