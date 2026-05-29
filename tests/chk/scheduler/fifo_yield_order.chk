@@ -4,33 +4,14 @@
 #         across yield boundaries — row 12 §3.4 single-entry make_runnable
 #         invariant).
 #
-# blocked: cross-strand FIFO ordering across a YIELD boundary not observable
-#          via the public API — the chk-host-driver can fork two strands
-#          (`,` runs under the realm-managed run_chunk path), but with the
-#          compile-time URBI_STRAND_BUDGET_MAX each forked strand runs to
-#          completion before yielding, so there is no observable yield point
-#          at which to assert tail-of-FIFO requeue order.  Needs a runtime
-#          per-strand budget knob to force a mid-strand yield.  v0.10.7-G residual.
+# blocked: cross-strand FIFO ordering across a yield boundary is a scheduler
+#          internal, verified by C unit tests, not a chk target.  Distinguishing
+#          a-then-b from b-then-a from a golden-diff fixture would require
+#          freezing test-only host-observation hooks (an enqueue-without-drive
+#          primitive plus a per-strand yield-boundary emitter) into the v1.0
+#          embedding API — rejected on API-minimalism grounds; the final
+#          quiescent state is order-independent.  FIFO scheduling order is
+#          covered by tests/unit/test_sched_fifo.c and test_fork.c
+#          (fork_detach_basic_no_crash, fork_detach_quiescent_count_zero).
+#          Disposition: covered-by-unit-tests; not a chk target.
 # matrix-row: scheduler-fifo
-#
-# Reason: verifying cross-strand FIFO ordering requires two concurrent
-# strands.  The chk runner uses the urbi_vm_run REPL path which has no realm;
-# `,` (OP_FORK_DETACH) produces "TypeError: requires urbi_step driver"
-# in that context.  The test is substantively covered by test_fork.c
-# (fork_detach_basic_no_crash + fork_detach_quiescent_count_zero) at M3.
-# A proper chk fixture needs the ## host: driver mechanism (T39-style) to
-# create two named strands and verify their scheduling order via output.
-#
-# Urbiscript source (activate at M5 with urbi_step chk driver):
-#   # var a_ran = false | var b_ran = false
-#   # mytag: {
-#   #   var a = Tag.new | var b = Tag.new
-#   #   a: { a_ran = true | yield } ,
-#   #   b: { b_ran = true }
-#   # }
-#   # -- after quiescent --
-#   # echo(a_ran)
-#   # echo(b_ran)
-#   --- expected output (FIFO: a runs first, then b) ---
-#   [00000001] true
-#   [00000002] true

@@ -3,24 +3,13 @@
 #         exits with the strand still in RUNNING state; urbi_step returns
 #         URBI_STEP_RUNNING and the host is expected to call urbi_step again.
 #
-# blocked: mid-flight URBI_STEP_RUNNING not observable via the public API —
-#          urbi_run_chunk / urbi_repl_eval drive the loader strand to
-#          quiescence or park internally; the chk-host-driver (## host: step)
-#          can observe QUIESCENT but cannot interrupt a strand mid-execution
-#          to catch the budget-exhausted RUNNING state.  Needs a runtime
-#          per-strand or loader step-budget knob (URBI_STRAND_BUDGET_MAX is
-#          compile-time only).  v0.10.7-G residual.
+# blocked: scheduler mid-flight observation is unit-test territory, not a
+#          chk-runner gap.  Catching a strand in the budget-exhausted RUNNING
+#          state from a golden-diff fixture would require freezing test-only
+#          host-observation hooks (an enqueue-without-drive primitive) into the
+#          v1.0 embedding API purely so a .chk file can watch scheduler
+#          internals — rejected on API-minimalism grounds.  The step-budget
+#          exhaustion path is covered by C unit tests with internal access
+#          (tests/unit/test_pipe_budget_exhaust.c, test_dispatch_loop.c).
+#          Disposition: covered-by-unit-tests; not a chk target.
 # matrix-row: scheduler-budget
-#
-# Reason: observing VM-wide step-budget exhaustion from a chk fixture requires
-# the ## host: mechanism to call urbi_step with a tiny step budget (e.g. 1)
-# and assert the return code is URBI_STEP_RUNNING rather than QUIESCENT.
-# The chk runner does not support calling urbi_step with custom budgets until
-# T39.  The step-budget path is wired in dispatch_loop_until_yield
-# (vm->step_budget_remaining == 0 → exit with RUNNING state).
-#
-# When T39 lands, implement this fixture by:
-#   ## host: rc = urbi_step(vm, 1)  -- budget = 1 opcode
-#   ## host: assert rc == URBI_STEP_RUNNING
-#   ## host: rc = urbi_step(vm, UINT64_MAX)  -- run to quiescent
-#   ## host: assert rc == URBI_STEP_QUIESCENT

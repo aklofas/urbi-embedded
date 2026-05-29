@@ -3,25 +3,16 @@
 #         yields back to the scheduler (soft yield) and is re-enqueued READY
 #         rather than killed; it resumes on the next scheduler turn.
 #
-# blocked: per-strand soft-yield not observable via the public API — the
-#          per-strand instruction budget is URBI_STRAND_BUDGET_MAX, a
-#          compile-time macro (usched_cooperative.c) the runtime cannot
-#          override; the chk-host-driver controls only the urbi_step budget,
-#          not the per-strand budget, so it cannot force a mid-snippet soft
-#          yield and resume.  Needs a runtime strand-budget knob.
-#          v0.10.7-G residual.
+# blocked: per-strand soft-yield-and-resume is a scheduler internal, verified
+#          by C unit tests, not a chk target.  Surfacing the yield/resume
+#          boundary as two cross-turn observables in a golden-diff fixture
+#          would require freezing test-only host-observation hooks (an
+#          enqueue-without-drive primitive plus a mid-flight per-strand
+#          emitter) into the v1.0 embedding API — rejected on API-minimalism
+#          grounds.  The soft-yield-and-resume path is covered by
+#          tests/unit/test_dispatch_loop.c (per_strand_budget_zero_causes_soft_yield,
+#          zero_strand_budget_forces_mid_step_yield).  If runtime per-strand
+#          budget control is ever exposed, it belongs in the reserved v1.x
+#          scheduler-class abstraction (USchedClass / sched_strand_init attrs),
+#          not a one-off setter.  Disposition: covered-by-unit-tests; not a chk target.
 # matrix-row: scheduler-budget
-#
-# Reason: observing soft-yield behaviour from a chk fixture requires the
-# ## host: tunables header to override URBI_STRAND_BUDGET_MAX to a small value
-# (e.g. 2 opcodes) so that a short urbiscript snippet triggers a budget
-# exhaustion mid-run.  The chk runner does not support tunables headers until
-# T39.  The soft-yield path itself is fully wired in dispatch_loop_until_yield
-# (safepoint block; instruction_budget_remaining == 0 → sched_strand_yield).
-#
-# When T39 lands, implement this fixture by:
-#   ## tunables: URBI_STRAND_BUDGET_MAX=2
-#   ## host: step VM over multiple turns; assert strand resumes after yield
-#   --- expected output ---
-#   [00000001] 1
-#   [00000002] 2

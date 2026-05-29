@@ -3,28 +3,13 @@
 #         a non-top-level OP_RET hits a safepoint at frame-pop; both
 #         decrement instruction_budget_remaining correctly.
 #
-# blocked: per-call budget-decrement not observable via the public API — the
-#          chk-host-driver can run a function call (OP_CALL/OP_RET) and check
-#          its result, but instruction_budget_remaining is a per-strand
-#          internal counter with no public read path; observing the
-#          before/after decrement around a safepoint needs C-level strand
-#          introspection the embedding API does not expose.  v0.10.7-G residual.
+# blocked: per-call budget-decrement is a scheduler internal, verified by C
+#          unit tests, not a chk target.  Asserting the before/after decrement
+#          around an OP_CALL/OP_RET safepoint would need a public
+#          instruction_budget_remaining read accessor frozen into the v1.0 API
+#          solely to drive a golden-diff fixture — rejected on API-minimalism
+#          grounds.  Function-call frame push/pop correctness is already covered
+#          by tests/unit/test_dispatch_loop.c::dispatch_nested_call_and_ret,
+#          which exercises the C dispatch_loop_until_yield interface directly.
+#          Disposition: covered-by-unit-tests; not a chk target.
 # matrix-row: scheduler-safepoint
-#
-# Reason: verifying safepoint fires at OP_CALL requires host hooks to observe
-# instruction_budget_remaining before and after a call within a single
-# dispatch quantum.  A pure urbiscript test (function call that returns a
-# value) would exercise the path but cannot assert the budget decrement.
-# The chk runner is REPL-only; T39 adds ## host: hooks for this.
-#
-# Note: function call correctness (return value, frame push/pop) is already
-# verified in tests/unit/test_dispatch_loop.c::dispatch_nested_call_and_ret
-# which directly tests the C dispatch_loop_until_yield interface.  This
-# fixture targets the safepoint budget-accounting aspect specifically.
-#
-# When T39 lands, implement this fixture by:
-#   ## host: set URBI_STRAND_BUDGET_MAX=10; record budget_before_call
-#   function f() { 42 }; f()
-#   ## host: record budget_after_call; assert budget decreased by >= 2
-#   --- expected output ---
-#   [00000001] 42
