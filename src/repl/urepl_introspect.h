@@ -39,6 +39,7 @@ int urbi_introspect_events  (struct UVM *vm, char *buf, size_t cap, size_t *out_
 int urbi_introspect_profile (const struct UVM *vm, char *buf, size_t cap, size_t *out_n);
 int urbi_introspect_gc      (const struct UVM *vm, char *buf, size_t cap, size_t *out_n);
 int urbi_introspect_lobbies (struct UVM *vm, char *buf, size_t cap, size_t *out_n);
+int urbi_introspect_memcheck(struct UVM *vm, char *buf, size_t cap, size_t *out_n);
 
 /* Single-arg primitives. */
 int urbi_introspect_stack(const struct UVM *vm, uint32_t coro_id,

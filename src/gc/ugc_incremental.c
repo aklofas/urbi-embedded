@@ -1103,4 +1103,20 @@ urbi_gc_mem_validate(UVM *vm)
     viol += umemdbg_quarantine_verify(vm);
     return viol;
 }
+
+/* === urbi_gc_count_pinned (v0.11.3) ===
+ *
+ * Count cells flagged UGC_IS_PINNED — a never-unpinned pin is a host leak
+ * (the cell is exempt from sweep forever).  Walks the all-cells sidecar. */
+size_t
+urbi_gc_count_pinned(UVM *vm)
+{
+    size_t n = 0;
+    UAllCellsNode *node = gc_node_head(vm);
+    while (node != NULL) {
+        if ((node->cell->gc_byte & UGC_IS_PINNED) != 0u) n++;
+        node = node->next;
+    }
+    return n;
+}
 #endif /* URBI_MEM_DEBUG */

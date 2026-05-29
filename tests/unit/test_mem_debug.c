@@ -89,10 +89,32 @@ UTEST(mem_debug_quarantine_catches_write_after_free)
 #endif
 }
 
+UTEST(mem_debug_memcheck_json)
+{
+#if defined(URBI_ENABLE_REPL)
+    UVM vm; URealm *r; char out[512];
+    urbi_vm_init(&vm, NULL, NULL);
+    r = urbi_realm_global(&vm);
+    (void)urbi_repl_eval(&vm, r, "Debug.memCheck()", 16, out, sizeof out);
+#if URBI_MEM_DEBUG
+    UASSERT(strstr(out, "redzone_violations") != NULL);
+    UASSERT(strstr(out, "poison_violations") != NULL);
+    UASSERT(strstr(out, "heap_lock_violations") != NULL);
+    UASSERT(strstr(out, "alloc_seq") != NULL);
+#else
+    UASSERT(strstr(out, "URBI_MEM_DEBUG") != NULL);   /* graceful disabled note */
+#endif
+    urbi_vm_destroy(&vm);
+#else
+    UASSERT(1);
+#endif
+}
+
 void test_mem_debug_suite(void)
 {
     utest_run("mem_debug_gate_compiles_both_modes", mem_debug_gate_compiles_both_modes);
     utest_run("mem_debug_owner_tag_populated", mem_debug_owner_tag_populated);
     utest_run("mem_debug_redzone_clean_under_normal_run", mem_debug_redzone_clean_under_normal_run);
     utest_run("mem_debug_quarantine_catches_write_after_free", mem_debug_quarantine_catches_write_after_free);
+    utest_run("mem_debug_memcheck_json", mem_debug_memcheck_json);
 }

@@ -94,6 +94,7 @@ DEBUG_NATIVE_ZEROARG(events,   urbi_introspect_events  (vm, buf, sizeof(buf), &n
 DEBUG_NATIVE_ZEROARG(profile,  urbi_introspect_profile (vm, buf, sizeof(buf), &n))
 DEBUG_NATIVE_ZEROARG(gc,       urbi_introspect_gc      (vm, buf, sizeof(buf), &n))
 DEBUG_NATIVE_ZEROARG(lobbies,  urbi_introspect_lobbies (vm, buf, sizeof(buf), &n))
+DEBUG_NATIVE_ZEROARG(memCheck, urbi_introspect_memcheck(vm, buf, sizeof(buf), &n))
 
 /* --- One-arg natives: stack(coro_id), slots(path) --------------------- */
 
@@ -199,7 +200,8 @@ static const DebugMethodEntry DEBUG_METHODS[] = {
     { "stack",    debug_stack_native    },
     { "slots",    debug_slots_native    },
     { "trace",    debug_trace_native    },
-    { "profileReset", debug_profile_reset_native }
+    { "profileReset", debug_profile_reset_native },
+    { "memCheck", debug_memCheck_native }
 };
 #define DEBUG_METHODS_COUNT (sizeof(DEBUG_METHODS) / sizeof(DEBUG_METHODS[0]))
 

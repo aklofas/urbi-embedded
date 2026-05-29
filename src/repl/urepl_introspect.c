@@ -21,6 +21,7 @@
 #include "event/uevent.h"
 #include "event/uevent_registry.h"
 #include "gc/ugc.h"
+#include "gc/ugc_incremental.h"   /* urbi_gc_mem_validate / urbi_gc_count_pinned (URBI_MEM_DEBUG) */
 #include "object/uobject.h"
 #include "object/ushape.h"
 #include "realm/urealm.h"
@@ -324,6 +325,41 @@ urbi_introspect_gc(const UVM *vm, char *buf, size_t cap, size_t *out_n)
              vm->gc_cycles, vm->gc_slices,
              (unsigned long long)vm->last_gc_us,
              (unsigned long long)vm->total_gc_us);
+    EMIT_DONE();
+}
+
+/* ---- memcheck (v0.11.3) ---------------------------------------------- */
+
+/* Debug.memCheck(): validate redzones + quarantine poison, then report the
+ * leak/violation counters.  Non-const vm: urbi_gc_mem_validate mutates the
+ * memdbg stat counters.  Graceful note when built without URBI_MEM_DEBUG. */
+int
+urbi_introspect_memcheck(UVM *vm, char *buf, size_t cap, size_t *out_n)
+{
+    if (vm == NULL || buf == NULL || out_n == NULL) return URBI_ERR_INVALID_ARG;
+    EMIT_INIT();
+#if URBI_MEM_DEBUG
+    {
+        uint32_t live_handles = 0, i;
+        size_t pinned;
+        (void)urbi_gc_mem_validate(vm);   /* refresh redzone + poison violation counts */
+        pinned = urbi_gc_count_pinned(vm);
+        for (i = 0; i < vm->handle_table_cap; i++)
+            if (vm->handle_table[i].kind != UVAL_NIL) live_handles++;
+        EMIT_FMT("{\"redzone_violations\":%zu,\"poison_violations\":%zu,"
+                 "\"double_frees\":%zu,\"live_handles\":%u,\"pinned_cells\":%zu,"
+                 "\"heap_lock_violations\":%u,\"alloc_seq\":%llu}",
+                 vm->memdbg ? vm->memdbg->redzone_violations : (size_t)0,
+                 vm->memdbg ? vm->memdbg->poison_violations  : (size_t)0,
+                 vm->memdbg ? vm->memdbg->double_frees       : (size_t)0,
+                 (unsigned)live_handles, pinned,
+                 (unsigned)(vm->memdbg ? vm->memdbg->hlv_count : 0u),
+                 (unsigned long long)(vm->memdbg ? vm->memdbg->alloc_seq : 0u));
+    }
+#else
+    (void)vm;
+    EMIT_FMT("{\"note\":\"built without URBI_MEM_DEBUG\"}");
+#endif
     EMIT_DONE();
 }
 
