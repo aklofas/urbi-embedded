@@ -17,6 +17,7 @@
 #define UGC_INCREMENTAL_H
 
 #include "ugc.h"
+#include "runtime/umemdebug.h"   /* URBI_MEM_DEBUG gate (forward-decls only; no circular dep) */
 
 /* Forward declarations for pointer types used in barrier signatures.
  * Full definitions live in src/sched/ustrand.h / src/runtime/uframe.h /
@@ -357,5 +358,12 @@ urbi_gc_upvalue_pre_store(struct UVM *vm, const struct UClosure *closure,
      * by watchers in v1 (no first-class "watch this closure's upvalue" surface). */
     (void)up_idx;
 }
+
+#if URBI_MEM_DEBUG
+/* v0.11.3 memory-debug walkers (defined in ugc_incremental.c; need the private
+ * UAllCellsNode type, so they cannot live in umemdebug.c). */
+int    urbi_gc_mem_validate(struct UVM *vm);   /* redzone + quarantine poison check */
+size_t urbi_gc_count_pinned(struct UVM *vm);   /* never-unpinned cell count (Task 4) */
+#endif
 
 #endif /* UGC_INCREMENTAL_H */

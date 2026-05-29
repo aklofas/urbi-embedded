@@ -38,7 +38,36 @@ UTEST(mem_debug_gate_compiles_both_modes)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(mem_debug_owner_tag_populated)
+{
+#if URBI_MEM_DEBUG
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)utest_e2e_compile_and_run(&vm, "var a = 1; var b = 2; a + b", NULL);
+    UASSERT(vm.memdbg != NULL);
+    UASSERT(vm.memdbg->alloc_seq >= 1);   /* at least one owner-tagged alloc */
+    urbi_vm_destroy(&vm);
+#else
+    UASSERT(1);
+#endif
+}
+
+UTEST(mem_debug_redzone_clean_under_normal_run)
+{
+#if URBI_MEM_DEBUG
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)utest_e2e_compile_and_run(&vm, "var a = 1; a + 2", NULL);
+    UASSERT_EQ(urbi_gc_mem_validate(&vm), 0);   /* no overflow on a clean run */
+    urbi_vm_destroy(&vm);
+#else
+    UASSERT(1);
+#endif
+}
+
 void test_mem_debug_suite(void)
 {
     utest_run("mem_debug_gate_compiles_both_modes", mem_debug_gate_compiles_both_modes);
+    utest_run("mem_debug_owner_tag_populated", mem_debug_owner_tag_populated);
+    utest_run("mem_debug_redzone_clean_under_normal_run", mem_debug_redzone_clean_under_normal_run);
 }

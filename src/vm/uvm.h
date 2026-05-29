@@ -178,6 +178,7 @@ typedef struct UOpOverloadIC {
 #include "urbi/urbi.h"  /* urbi_error_info_t (Gap P struct) */
 #include "urbi/trace.h" /* UTraceState (URBI_TRACE-gated UVM field) */
 #include "runtime/uperf.h" /* UPerfCounters (URBI_PERF_COUNTERS-gated UVM field) */
+#include "runtime/umemdebug.h" /* UMemDebug (URBI_MEM_DEBUG-gated UVM field) */
 
 #define URBI_ERROR_RING_DEPTH  4U
 #define URBI_ERROR_STRING_BUF  256U
@@ -742,6 +743,10 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
 
 #if URBI_PERF_COUNTERS
     UPerfCounters perf;   /* v0.11.1; ~160 B, embedded (small — unlike the trace ring) */
+#endif
+
+#if URBI_MEM_DEBUG
+    struct UMemDebug *memdbg;   /* v0.11.3; lazy heap pointer, NULL until first alloc */
 #endif
 } UVM;
 

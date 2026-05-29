@@ -56,8 +56,17 @@
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
 #include "gc/ugc.h"
+#include "runtime/umemdebug.h"
+#if URBI_MEM_DEBUG
+#include "sched/ustrand.h"   /* full UStrand def: owner capture reads cur_strand->pc */
+#include "chunk/uchunk.h"    /* uinstr_op */
+#endif
 #include <stddef.h>
 #include <stdint.h>
+
+#if URBI_MEM_DEBUG && (URBI_GC != URBI_GC_INCREMENTAL)
+#  error "URBI_MEM_DEBUG requires URBI_GC_INCREMENTAL (the all-cells sidecar lives here)"
+#endif
 
 /* No stdlib.h or string.h — freestanding-strict like every other src/c file.
  * Memory operations go through vm->alloc_fn.  Zero-init uses a byte loop. */
@@ -74,9 +83,16 @@
  * cell_size lookups are available. */
 typedef struct UAllCellsNode {
     UCell              *cell;
-    size_t              size;
+    size_t              size;        /* USER size (redzone excluded under URBI_MEM_DEBUG) */
     struct UAllCellsNode *next;
     struct UAllCellsNode *next_gray;  /* T24: gray work-list link; NULL when not on gray queue */
+#if URBI_MEM_DEBUG
+    uint64_t              seq;        /* v0.11.3 owner tag: monotonic alloc sequence */
+    const uint32_t       *owner_pc;   /* vm->cur_strand->pc at alloc, or NULL */
+    void                 *owner_ret;  /* __builtin_return_address(0): the C caller */
+    uint16_t              owner_op;   /* decoded opcode at owner_pc, else 0xFFFF */
+    uint16_t              strand_id;  /* cur_strand low-16, else 0 */
+#endif
 } UAllCellsNode;
 
 /* === Sidecar accessor convention (GC-019) ===
@@ -619,14 +635,27 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     if (UNLIKELY(vm->heap_locked)) {
         URBI_TP(vm, URBI_TRACE_GC, URBI_LOG_WARN, URBI_TP_GC_ALLOC_DENIED,
                 (uint32_t)size, 0);
+#if URBI_MEM_DEBUG
+        if (vm->memdbg == NULL) umemdbg_init(vm);
+        umemdbg_note_heaplock(vm, size,
+            vm->cur_strand ? vm->cur_strand->pc : NULL,
+            (vm->cur_strand && vm->cur_strand->pc)
+                ? (uint16_t)uinstr_op(*vm->cur_strand->pc) : 0xFFFFu,
+            (uint16_t)(uintptr_t)vm->cur_strand, __builtin_return_address(0));
+#endif
         return NULL;
     }
 
-    /* Allocate the cell. */
-    UCell *cell = (UCell *)vm->alloc_fn(NULL, size, vm->alloc_ud);
+    /* Allocate the cell (+ trailing redzone in MEM_DEBUG builds). */
+#if URBI_MEM_DEBUG
+    size_t alloc_size = size + URBI_MEM_REDZONE_BYTES;
+#else
+    size_t alloc_size = size;
+#endif
+    UCell *cell = (UCell *)vm->alloc_fn(NULL, alloc_size, vm->alloc_ud);
     if (UNLIKELY(cell == NULL)) return NULL;
 
-    /* Zero-init the cell (no memset — freestanding). */
+    /* Zero-init the USER bytes (no memset — freestanding). */
     urbi_zero(cell, size);
 
     /* Allocate the sidecar node. */
@@ -664,7 +693,20 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     /* NOLINTNEXTLINE(bugprone-casting-through-void) */
     vm->all_cells_head = (UCell *)(void *)node;
 
-    /* Accounting. */
+#if URBI_MEM_DEBUG
+    /* v0.11.3 owner tag + trailing redzone. memdbg is lazy (may stay NULL on
+     * OOM — owner/seq then degrade; the redzone still works). */
+    if (vm->memdbg == NULL) umemdbg_init(vm);
+    node->seq       = (vm->memdbg != NULL) ? ++vm->memdbg->alloc_seq : 0u;
+    node->owner_pc  = (vm->cur_strand != NULL) ? vm->cur_strand->pc : NULL;
+    node->owner_op  = (node->owner_pc != NULL) ? (uint16_t)uinstr_op(*node->owner_pc) : 0xFFFFu;
+    node->owner_ret = __builtin_return_address(0);
+    node->strand_id = (uint16_t)(uintptr_t)vm->cur_strand;
+    umemdbg_write_redzone(cell, size);
+#endif
+
+    /* Accounting (USER size — redzone is debug-only overhead, kept out of
+     * gc accounting so GC pacing matches release builds). */
     vm->gc_total_allocated += size;
     vm->gc_debt += (int64_t)size;
 
@@ -1022,3 +1064,32 @@ uvalue_is_heap_white(const UVM *vm, UValue v)
     if (c == NULL) return false;
     return (c->gc_byte & UGC_COLOR_MASK) == vm->current_white;
 }
+
+#if URBI_MEM_DEBUG
+/* === urbi_gc_mem_validate (v0.11.3) ===
+ *
+ * Validate every live cell's trailing redzone + the quarantine poison.
+ * Returns the total violation count; accumulates into memdbg stats.
+ * Lives here (not in umemdebug.c) because it needs the private
+ * UAllCellsNode type and the gc_node_head accessor. */
+int
+urbi_gc_mem_validate(UVM *vm)
+{
+    int viol = 0;
+    UAllCellsNode *n = gc_node_head(vm);
+    while (n != NULL) {
+        const uint8_t *rz = (const uint8_t *)n->cell + n->size;
+        size_t i;
+        for (i = 0; i < URBI_MEM_REDZONE_BYTES; i++) {
+            if (rz[i] != (uint8_t)URBI_MEM_REDZONE_BYTE) {
+                if (vm->memdbg) vm->memdbg->redzone_violations++;
+                viol++;
+                break;
+            }
+        }
+        n = n->next;
+    }
+    viol += umemdbg_quarantine_verify(vm);
+    return viol;
+}
+#endif /* URBI_MEM_DEBUG */

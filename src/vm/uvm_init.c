@@ -235,6 +235,9 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 #if URBI_PERF_COUNTERS
     urbi_perf_reset(vm);
 #endif
+#if URBI_MEM_DEBUG
+    vm->memdbg = NULL;   /* lazily allocated on first urbi_gc_alloc */
+#endif
     vm->all_cells_head      = NULL;
     vm->gray_work_head      = NULL;
     vm->sweep_cursor        = NULL;
@@ -544,6 +547,12 @@ void urbi_vm_destroy(UVM *vm) {
      * Realm teardown (above) releases bindings; remaining infrastructure (event ring,
      * sched queues) is freed below — none of it owns GC cells. */
     urbi_gc_destroy(vm);      /* T23: free all GC-managed cells */
+#if URBI_MEM_DEBUG
+    /* v0.11.3: after GC has swept all cells into the quarantine, flush + verify
+     * the quarantine poison and free the substate.  Runs while vm->alloc_fn is
+     * still live (event ring etc. are freed below). */
+    umemdbg_destroy(vm);
+#endif
 #ifdef URBI_DEBUG
     /* v0.10.1 W4: decrement the active-VM count; fires urbi_proto_ref_assert_balanced()
      * when the last VM is destroyed.  Runs after urealm_teardown_all (all strands
