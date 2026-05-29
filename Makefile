@@ -48,6 +48,20 @@ else
   REPL_SRCS :=
 endif
 
+# v0.12.0: opt-in ROS2 bridge component (URBI_ENABLE_ROS2=1).
+# Self-contained optional component; requires a hosted build (this tag is
+# host-only — the real-DDS / embedded path lands in v0.12.1).
+ifeq ($(URBI_ENABLE_ROS2),1)
+  ifeq ($(URBI_BYTECODE_ONLY),1)
+    $(error URBI_ENABLE_ROS2=1 is incompatible with URBI_BYTECODE_ONLY=1)
+  endif
+  CFLAGS   += -DURBI_ENABLE_ROS2=1
+  CPPFLAGS += -DURBI_ENABLE_ROS2=1
+  ROS2_SRCS := $(wildcard src/ros/*.c)
+else
+  ROS2_SRCS :=
+endif
+
 SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/*.c)) \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/lex/*.c)) \
@@ -66,7 +80,8 @@ SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c) \
        $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(wildcard src/stdlib/*.c)) \
-       $(REPL_SRCS)
+       $(REPL_SRCS) \
+       $(ROS2_SRCS)
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
             tests/unit/twatcher_install_helper.c \
             tests/unit/utest_e2e_helpers.c
