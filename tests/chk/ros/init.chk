@@ -1,0 +1,13 @@
+# Milestone: v0.12.0-ros-foundation
+# Covers: ros.init(name) initialises the mock transport and ros.inited()
+#         reports the bridge state.
+#
+# tunables: ros
+#
+# This fixture requires an URBI_ENABLE_ROS2=1 build and URBI_BUILD_PRESET=ros.
+# Skipped (PASS) by the base test-chk sweep (URBI_BUILD_PRESET=default).
+
+ros.init("demo_node");
+[00000000] nil
+ros.inited()
+[00000001] true
