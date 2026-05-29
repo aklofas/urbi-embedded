@@ -1,13 +1,14 @@
 # C API stability policy
 
-> Status: ABI pin at v0.11.2-host-tooling (0/20/2) — PATCH bump from
-> v0.11.1-perf-counters (0/20/1).  26th use of pre-v1.0 escape clause.
-> Third tag of the v0.11.x tooling arc — host-side tooling only: a Python
-> Perfetto/Chrome-Trace decoder for the binary URBT trace dump, GDB
-> pretty-printers + walkers, a --trace/--trace-out capture path on the urbi CLI
-> (built via make urbi-trace), and a --dump-on-fatal best-effort host dump.
-> The CLI flags use only already-exported public symbols; the decoder and GDB
-> scripts are host artifacts; zero new public C API symbols, so PATCH.  No new
+> Status: ABI pin at v0.11.3-memory-debug (0/20/3) — PATCH bump from
+> v0.11.2-host-tooling (0/20/2).  27th use of pre-v1.0 escape clause.
+> Fourth and final tag of the v0.11.x tooling arc — on-target memory debugging
+> behind the new URBI_MEM_DEBUG compile gate (off by default, zero bytes when
+> off): allocation owner-tagging on the existing GC sidecar, trailing redzones,
+> poison-on-free + freed-cell quarantine, heap-lock violation recording, and
+> host-handle/pin leak detection.  Surfaced GDB-first (a full urbi-heap cell
+> walk plus urbi-allocs and urbi-leaks) and one Debug.memCheck() script trigger.
+> All new functions are internal; zero new public C API symbols, so PATCH.  No new
 > opcodes, wire unchanged.
 > PATCH-only, not freeze-override
 > under §3 (the ledger numbers every bump; only MINOR/MAJOR bumps
@@ -212,3 +213,24 @@ drift to its real 32-byte size (comment-only — the `uint64_t ts_us` aligns the
 struct to 8 bytes, so the 28 named bytes pad to 32).  **Zero new public C API
 symbols**, so PATCH.  No new opcodes; wire unchanged at v1.9 / 0x19.  PATCH-only,
 not a §3 freeze-override.
+
+### Escape #27 — v0.11.3-memory-debug (PATCH)
+
+Fourth and final tag of the v0.11.x tooling arc.  On-target memory debugging
+behind the new `URBI_MEM_DEBUG` compile gate (off by default, zero bytes when
+off — `UAllCellsNode` and `UVM` are byte-identical): allocation owner-tagging on
+the existing `UAllCellsNode` GC sidecar (sequence, bytecode PC + opcode, C return
+address, strand id), trailing redzones, poison-on-free + freed-cell quarantine
+(use-after-free detection where ASan/Valgrind can't run), heap-lock violation
+recording, and host-handle/pin leak + double-release detection.  Surfaced
+GDB-first (`tools/gdb/urbi.py` gains a full `urbi-heap` live-cell walk plus
+`urbi-allocs` and `urbi-leaks`, reading the owner sidecar + handle-owner array)
+plus one `Debug.memCheck()` script trigger (graceful note when built without the
+gate).  All new functions are internal (`umemdbg_*` in `src/runtime/umemdebug.c`,
+`urbi_gc_mem_validate` / `urbi_gc_count_pinned` in `src/gc/ugc_incremental.c`);
+the substate is a lazily-heap-allocated `+8 B` UVM pointer in debug builds only.
+The memdbg state is excluded from `urbi_get_determinism_checksum` (proven by the
+new `test-determinism-memdebug` 100-run gate, which also serves as the
+UVM-layout-perturbation canary).  **Zero new public C API symbols**, so PATCH.
+No new opcodes; wire unchanged at v1.9 / 0x19.  PATCH-only, not a §3
+freeze-override.

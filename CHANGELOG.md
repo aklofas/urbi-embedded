@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.11.3-memory-debug — 2026-05-28
+
+Fourth and final tag of the v0.11.x tooling arc.  On-target memory debugging
+where ASan and Valgrind cannot run, behind the new `URBI_MEM_DEBUG` compile gate
+(off by default, zero bytes when off).  ABI 0/20/3 (PATCH bump from 0/20/2, 27th
+use of the pre-v1.0 escape clause — all new functions are internal, zero new
+public C API symbols); wire format unchanged at v1.9 / 0x19.
+
+### Memory-debug runtime (`URBI_MEM_DEBUG`)
+
+- New `URBI_MEM_DEBUG` compile gate plus `URBI_MEM_QUARANTINE_DEPTH` and
+  `URBI_MEM_REDZONE_BYTES` tunables.  When the gate is off, `UAllCellsNode` and
+  `UVM` are byte-identical to a normal build and every `URBI_MEM_*` macro is a
+  no-op.  Requires `URBI_GC_INCREMENTAL`.
+- Allocation owner-tagging: the existing per-cell `UAllCellsNode` GC sidecar is
+  widened (debug builds only) with an allocation sequence number, the bytecode
+  PC + decoded opcode, the C return address of the allocating call site, and the
+  current strand id — captured at the single `urbi_gc_alloc` choke point.
+- Trailing redzones guard every allocation; poison-on-free + a freed-cell
+  quarantine ring detect use-after-free (poison is verified when a cell is
+  evicted from quarantine or at VM teardown).
+- Heap-lock violation recording: allocations attempted after `urbi_lock_heap()`
+  now capture their owner site into a small ring.
+- Host-handle leak reporting + double-release detection, and never-unpinned-cell
+  ("pinned leak") reporting.
+- All bookkeeping lives in a lazily-heap-allocated `UMemDebug` substate (one
+  `+8 B` UVM pointer in debug builds, never an embedded buffer), and is excluded
+  from `urbi_get_determinism_checksum`.
+
+### Surfacing
+
+- `Debug.memCheck()` validates redzones + quarantine poison on demand and
+  reports the violation/leak counters as JSON; it emits a graceful note when
+  built without `URBI_MEM_DEBUG`.
+- `tools/gdb/urbi.py` gains a full `urbi-heap` live-cell walk (per-type cell and
+  byte totals over the all-cells list) plus new `urbi-allocs` (top-N allocation
+  sites by bytes, symbolized) and `urbi-leaks` (live host handles + creation
+  sites, pinned cells, heap-lock violations).  `urbi-dump` folds them in.  The
+  walkers degrade gracefully on a non-`URBI_MEM_DEBUG` binary.
+
+### Build / CI
+
+- New `make test-mem-debug`, `make test-determinism-memdebug` (the
+  `URBI_DEBUG + URBI_MEM_DEBUG` 100-run determinism gate, which doubles as the
+  UVM-layout-perturbation canary), and `make test-gdb-memdebug` (skip-if-missing
+  gdb).  Wired into `RELEASETEST_PHASE1` and the CI `tooling` job.
+
 ## v0.11.2-host-tooling — 2026-05-28
 
 Third tag of the v0.11.x tooling arc.  Makes the v0.11.0 binary trace ring and

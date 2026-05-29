@@ -66,10 +66,10 @@ int umemdbg_quarantine_verify(struct UVM *vm)
 {
     UMemDebug *m = vm->memdbg;
     int viol = 0;
-    uint32_t i, idx;
+    uint32_t i;
     if (m == NULL) return 0;
     for (i = 0; i < m->q_count; i++) {
-        idx = (m->q_head + i) % URBI_MEM_QUARANTINE_DEPTH;
+        uint32_t idx = (m->q_head + i) % URBI_MEM_QUARANTINE_DEPTH;
         if (m->quarantine[idx].cell &&
             !poison_intact(m->quarantine[idx].cell, m->quarantine[idx].size)) {
             m->poison_violations++;

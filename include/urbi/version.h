@@ -240,7 +240,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  20
-#define URBI_API_VERSION_PATCH  2
+#define URBI_API_VERSION_PATCH  3
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -348,10 +348,23 @@ extern "C" {
  * are host artifacts.  Also corrected the long-standing UTraceRecord "24-byte"
  * comment drift to its real 32-byte size (comment-only).  Zero new public C API
  * symbols; wire unchanged at v1.9 / 0x19; no new opcodes.
+ *
+ * Bumped to 0/20/3 at v0.11.3-memory-debug — escape #27.  PATCH-only, fourth
+ * and final tag of the v0.11.x tooling arc.  On-target memory debugging behind
+ * the new URBI_MEM_DEBUG compile gate (default off ⇒ zero bytes, byte-identical
+ * UAllCellsNode + UVM): allocation owner-tagging on the existing UAllCellsNode
+ * sidecar, trailing redzones, poison-on-free + freed-cell quarantine (UAF
+ * detection), heap-lock violation recording, and host-handle/pin leak reporting.
+ * Surfaced GDB-first (urbi-heap full cell walk + urbi-allocs + urbi-leaks in
+ * tools/gdb/urbi.py) plus one Debug.memCheck() script trigger.  All new
+ * functions are internal (umemdbg_* / urbi_gc_mem_validate / urbi_gc_count_pinned);
+ * zero new public C API symbols.  The memdbg state is excluded from
+ * urbi_get_determinism_checksum (proven by test-determinism-memdebug).  Wire
+ * unchanged at v1.9 / 0x19; no new opcodes.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 20
-            && URBI_API_VERSION_PATCH == 2,
+            && URBI_API_VERSION_PATCH == 3,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

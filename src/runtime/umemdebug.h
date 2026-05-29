@@ -96,10 +96,12 @@ void umemdbg_note_heaplock(struct UVM *vm, size_t size,
                            const uint32_t *owner_pc, uint16_t owner_op,
                            uint16_t strand_id, void *owner_ret);
 
-/* B4: handle owner tracking. */
+/* B4: grow the parallel handle-owner array alongside the handle table. */
 void umemdbg_handle_grow(struct UVM *vm, uint32_t new_cap);
+/* B4: record a handle's creation site (owner return address + strand id). */
 void umemdbg_handle_created(struct UVM *vm, uint32_t slot, void *owner_ret,
                             uint16_t strand_id);
+/* B4: clear a released handle's owner slot; flag a double-release. */
 void umemdbg_handle_released(struct UVM *vm, uint32_t slot, int was_live);
 
 #endif /* URBI_MEM_DEBUG */
