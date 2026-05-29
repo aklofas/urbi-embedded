@@ -12,12 +12,15 @@
 #include "runtime/umacros.h"   /* urbi_zero, urbi_strlen */
 #include "runtime/uclosure.h"  /* UClosure, urbi_native_method_fn */
 #include "value/uintern.h"     /* ustr_intern */
-#include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_arity, urbi_raise_type */
+#include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_arity, urbi_raise_type, urbi_raise_oom */
 #include "ros/uros_internal.h" /* URosBridge, urbi_ros_bridge */
 #include "ros/uros_mock.h"     /* uros_mock_init */
 #include "ros/uros_msg.h"      /* urbi_ros_msg_register_all */
+#include "event/uevent.h"      /* urbi_event_create */
+#include "event/uevent_native.h" /* uvalue_from_event */
 
 #include <stddef.h> /* size_t */
+#include <stdio.h>  /* snprintf */
 
 /* === ros_register_method ===
  *
@@ -106,6 +109,53 @@ ros_msg_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     urbi_zero(buf, mt->c_size);
     if (mt->unmarshal(vm, buf, out) != 0)
         return urbi_raise_type(vm, "ros.msg: build failed", out);
+    return UEXEC_OK;
+}
+
+/* === ros.subscribe(topic, type) ===
+ *
+ * Create a subscriber endpoint on the current transport.  Allocates a fresh
+ * UEvent, records it in the bridge subs[] table, and GC-roots it by storing
+ * it as a hidden slot on vm->ros_proto keyed by handle.  Returns the UEvent
+ * value so the caller can use `at (sub?(var m)) { ... }`. */
+static int
+ros_subscribe_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                     UValue *out)
+{
+    (void)self;
+    if (nargs != 2) return urbi_raise_arity(vm, "ros.subscribe", 2, nargs, out);
+    if (!urbi_value_is_str(args[0]) || !urbi_value_is_str(args[1]))
+        return urbi_raise_type(vm, "ros.subscribe: topic and type must be Strings", out);
+    URosBridge *b = urbi_ros_bridge();
+    if (!b->inited)
+        return urbi_raise_type(vm, "ros.subscribe: call ros.init first", out);
+    if (b->sub_count >= UROS_MAX_SUBS)
+        return urbi_raise_type(vm, "ros.subscribe: too many subscriptions", out);
+    size_t topl, typl;
+    const char *topic = urbi_value_as_str(args[0], &topl);
+    const char *type  = urbi_value_as_str(args[1], &typl);
+    (void)topl;
+    const URosMsgType *mt = urbi_ros_msg_lookup(type);
+    if (mt == NULL)
+        return urbi_raise_type(vm, "ros.subscribe: unknown message type", out);
+    uint32_t h = b->tp.create_sub(b->tp.self, topic, type);
+    if (h == UROS_INVALID_HANDLE)
+        return urbi_raise_type(vm, "ros.subscribe: transport error", out);
+    UEvent *e = urbi_event_create(vm);
+    if (e == NULL) return urbi_raise_oom(vm, out);
+    b->subs[b->sub_count].handle = h;
+    b->subs[b->sub_count].event  = e;
+    b->subs[b->sub_count].type   = mt->name;
+    b->sub_count++;
+    /* GC-root the event via a hidden slot on ros_proto keyed by handle. */
+    char slot[24];
+    int sl = snprintf(slot, sizeof slot, "__sub_%u", h);
+    USymbol *sy = (USymbol *)ustr_intern(vm, slot, (size_t)sl);
+    if (sy == NULL) return urbi_raise_oom(vm, out);
+    if (urbi_object_set_local_slot(vm, (UObject *)vm->ros_proto, sy,
+                                   uvalue_from_event(e)) != 0)
+        return urbi_raise_oom(vm, out);
+    *out = uvalue_from_event(e);
     return UEXEC_OK;
 }
 
@@ -272,7 +322,8 @@ urbi_ros_register(struct UVM *vm)
     if (ros_register_method(vm, rp, "init",      ros_init_method)      != URBI_OK
      || ros_register_method(vm, rp, "inited",    ros_inited_method)    != URBI_OK
      || ros_register_method(vm, rp, "msg",       ros_msg_method)       != URBI_OK
-     || ros_register_method(vm, rp, "publisher", ros_publisher_method) != URBI_OK)
+     || ros_register_method(vm, rp, "publisher", ros_publisher_method) != URBI_OK
+     || ros_register_method(vm, rp, "subscribe", ros_subscribe_method) != URBI_OK)
         return URBI_ERR_OOM;
 
     return URBI_OK;
