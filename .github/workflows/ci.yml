@@ -50,6 +50,12 @@ jobs:
         run: make test-trace-capture
       - name: host trace tooling — GDB walkers smoke
         run: make test-gdb
+      - name: memory debug — build + unit detectors
+        run: make test-mem-debug
+      - name: determinism stays stable with URBI_MEM_DEBUG=1
+        run: make test-determinism-memdebug
+      - name: memory debug — GDB owner-tag walkers
+        run: make test-gdb-memdebug
 
   repl-multi-client-stress:
     name: repl multi-client stress (ASan, 100 trials)

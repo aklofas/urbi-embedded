@@ -860,6 +860,31 @@ test-determinism-perf:
 	done
 	@echo "=== Perf preset: 100 runs PASS (counters excluded from checksum) ==="
 
+# test-mem-debug — full suite under URBI_MEM_DEBUG=1 (owner tags, trailing
+# redzone, poison-on-free + quarantine, handle/pin leak detection).  Own
+# TARGET= so Phase 1 -j parallelism stays race-free.
+.PHONY: test-mem-debug
+test-mem-debug:
+	$(MAKE) TARGET=host-memdbg \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g -DURBI_MEM_DEBUG=1" \
+		test
+
+# test-determinism-memdebug — the URBI_DEBUG + URBI_MEM_DEBUG combo.  Proves the
+# determinism checksum is unperturbed by the memdbg substate (alloc_seq, owner
+# pointers, poison/quarantine/redzone state are all excluded) AND doubles as the
+# UVM-layout-perturbation canary (the same class that surfaced the v0.11.0
+# CI-only fault).  CI-only (not in releasetest).
+test-determinism-memdebug:
+	$(MAKE) TARGET=host-determinism-memdbg \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_MEM_DEBUG=1" \
+		test
+	@echo "=== Determinism gate: mem-debug preset (100 runs) ==="
+	@for i in $$(seq 1 100); do \
+	    build/host-determinism-memdbg/tests/unit/runner > /dev/null \
+	    || { echo "FAIL on iteration $$i (mem-debug preset)"; exit 1; }; \
+	done
+	@echo "=== mem-debug preset: 100 runs PASS (memdbg excluded from checksum) ==="
+
 # Valgrind memcheck — runs the test suite under valgrind's memcheck tool.
 # Catches uninitialized reads, heap corruption, leaks.  Complements ASan:
 # memcheck's bit-precise tracking catches uninit reads that ASan misses.
@@ -975,6 +1000,7 @@ RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
     test-trace test-trace-compiled-out test-perf-counters \
     test-trace-decode test-trace-capture test-gdb \
+    test-mem-debug test-gdb-memdebug \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
@@ -1728,4 +1754,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace test-perf-counters test-determinism-perf cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins test-trace-decode test-trace-capture test-gdb urbi-trace unit-runner
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace test-perf-counters test-determinism-perf cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-determinism-memdebug urbi-trace unit-runner
