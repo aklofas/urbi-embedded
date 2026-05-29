@@ -310,6 +310,7 @@ extern void test_lobby_echo_suite(void);
 extern void test_channel_proto_suite(void);
 extern void test_trace_suite(void);
 extern void test_perf_counters_suite(void);
+extern void test_mem_debug_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -596,6 +597,7 @@ static const struct suite_entry suites[] = {
     {"channel_proto",                    test_channel_proto_suite},
     {"trace",                            test_trace_suite},
     {"perf_counters",                    test_perf_counters_suite},
+    {"mem_debug",                        test_mem_debug_suite},
     /* Add new suites here as test files are added. */
 };
 
