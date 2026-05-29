@@ -225,6 +225,22 @@
  *      keyword form per §S-watcher-3 (W2), Cat. E doc-sweep close-out (W3).
  *      No new public C API symbols.  No new opcodes.  PATCH bump only.
  *      (0/19/2 → 0/19/3)
+ *  28. v0.11.4-cat-f — catchable structured exceptions: VM-internal error
+ *      sites that previously fatal-HALTed the strand (the native-method raise
+ *      helpers + the 6 slot-access TypeError sites) now raise catchable typed
+ *      Exception instances; cached typeerror/arityerror/lookuperror/oomerror
+ *      protos resolved-by-name after the stdlib bake + added to the GC root
+ *      set; the strand's catch_value added to the GC root walker; four new
+ *      Exception subclasses (RuntimeError, SchedulingError, SyntaxError,
+ *      OutOfMemoryError); uncaught typed throws print a "!!! <message>"
+ *      diagnostic at top level.  Two internal exported symbols
+ *      (urbi_raise_typed, urbi_exception_subclass_protos_resolve) already
+ *      manifested in Tier 4 of docs/api-surface-tiers.md — internal-leak,
+ *      not public surface.  New test-only chk host-driver directives
+ *      (## host: advance-clock / expect-host-call).  PATCH bump only —
+ *      zero new public C API symbols; no new opcodes; wire unchanged at
+ *      v1.9 / 0x19.  (0/19/3 → 0/20/4 — MINOR was already at 20 from the
+ *      v0.11.x tooling arc; PATCH increments to 4)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -240,7 +256,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  20
-#define URBI_API_VERSION_PATCH  3
+#define URBI_API_VERSION_PATCH  4
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -361,10 +377,26 @@ extern "C" {
  * zero new public C API symbols.  The memdbg state is excluded from
  * urbi_get_determinism_checksum (proven by test-determinism-memdebug).  Wire
  * unchanged at v1.9 / 0x19; no new opcodes.
+ *
+ * Bumped to 0/20/4 at v0.11.4-cat-f — escape #28.  PATCH-only.  Catchable
+ * structured exceptions: VM-internal error sites that previously fatal-HALTed
+ * the strand or printed diagnostic strings to stderr now raise catchable typed
+ * Exception instances (the urbi_raise_type/_arity/_oom/_lookup native-method
+ * helpers + the 6 slot-access TypeError sites); cached
+ * typeerror/arityerror/lookuperror/oomerror protos resolved-by-name after the
+ * stdlib bake + added to the GC root set; the strand catch_value added to the
+ * GC root walker; four new Exception subclasses (RuntimeError, SchedulingError,
+ * SyntaxError, OutOfMemoryError); uncaught typed throws print "!!! <message>"
+ * at top level.  The structured-throw work added two internal exported symbols
+ * (urbi_raise_typed, urbi_exception_subclass_protos_resolve) already manifested
+ * in Tier 4 of docs/api-surface-tiers.md — internal-leak, not public surface,
+ * so this is a PATCH bump and NOT a §3 freeze override.  Plus two test-only chk
+ * host-driver directives (## host: advance-clock / expect-host-call).  Zero new
+ * public C API symbols; no new opcodes; wire unchanged at v1.9 / 0x19.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 20
-            && URBI_API_VERSION_PATCH == 3,
+            && URBI_API_VERSION_PATCH == 4,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

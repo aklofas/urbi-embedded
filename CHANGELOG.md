@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.11.4-cat-f — 2026-05-29
+
+Catchable structured exceptions.  VM-internal error sites that previously
+fatal-HALTed the strand or printed diagnostic strings to stderr now raise
+catchable typed `Exception` instances, so script code can recover from runtime
+type errors with `try`/`catch`.  ABI 0/20/4 (PATCH bump from 0/20/3, 28th use of
+the pre-v1.0 escape clause — the structured-throw work added two internal
+exported symbols already manifested in Tier 4 of `docs/api-surface-tiers.md`;
+internal-leak, not public surface, so PATCH with zero new public C API symbols);
+wire format unchanged at v1.9 / 0x19; no new opcodes.
+
+### Catchable structured exceptions
+
+- The native-method raise helpers (`urbi_raise_type` / `_arity` / `_oom` /
+  `_lookup`) and the 6 slot-access TypeError sites (getter/setter
+  not-a-closure / raised, slot-not-found, slot-write-failed) now raise catchable
+  typed `Exception` instances instead of fatal-HALTing the strand.
+  `try { 1.noSuchSlot } catch (var e if e.isA(TypeError)) { ... }` now works.
+- New internal helper that clones a cached Exception-subclass proto and binds a
+  `message` slot.  The cached
+  `vm->{typeerror,arityerror,lookuperror,oomerror}_proto` are resolved by name
+  after the stdlib bake (mirroring the channel-proto pattern) and added to the
+  GC root set; the strand's `catch_value` is added to the strand GC root walker
+  (a freshly-cloned thrown instance was being collected between unwind-bind and
+  the catch handler).
+- Four new `Exception` subclasses: `RuntimeError`, `SchedulingError`,
+  `SyntaxError`, `OutOfMemoryError`.
+- Uncaught typed throws at top level now print a `!!! <message>` diagnostic
+  (reading the instance's `message` slot) instead of bare `nil`; string/scalar
+  throws are unchanged.
+- Activated `tests/chk/exceptions/exceptions.chk` and added
+  `vm_typeerror_catchable.chk`, `vm_typeerror_uncaught.chk`, and
+  `subclasses_complete.chk`.
+
+### Test host-driver
+
+- New test-only chk host-driver directives `## host: advance-clock <ms>` and
+  `## host: expect-host-call <n>` (in `tests/integration/chk_host_driver.c`; no
+  public API).  Activated `tests/chk/gc/expect_host_call.chk`.
+
+### Scope note
+
+- A runtime per-strand budget knob was evaluated and deliberately not shipped:
+  per-strand budget control will land in the reserved v1.x scheduler-class
+  abstraction rather than a one-off setter.  The four budget-observation
+  scheduler fixtures are covered by C unit tests.
+
 ## v0.11.3-memory-debug — 2026-05-28
 
 Fourth and final tag of the v0.11.x tooling arc.  On-target memory debugging

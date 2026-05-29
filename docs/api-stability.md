@@ -1,14 +1,19 @@
 # C API stability policy
 
-> Status: ABI pin at v0.11.3-memory-debug (0/20/3) — PATCH bump from
-> v0.11.2-host-tooling (0/20/2).  27th use of pre-v1.0 escape clause.
-> Fourth and final tag of the v0.11.x tooling arc — on-target memory debugging
-> behind the new URBI_MEM_DEBUG compile gate (off by default, zero bytes when
-> off): allocation owner-tagging on the existing GC sidecar, trailing redzones,
-> poison-on-free + freed-cell quarantine, heap-lock violation recording, and
-> host-handle/pin leak detection.  Surfaced GDB-first (a full urbi-heap cell
-> walk plus urbi-allocs and urbi-leaks) and one Debug.memCheck() script trigger.
-> All new functions are internal; zero new public C API symbols, so PATCH.  No new
+> Status: ABI pin at v0.11.4-cat-f (0/20/4) — PATCH bump from
+> v0.11.3-memory-debug (0/20/3).  28th use of pre-v1.0 escape clause.
+> Catchable structured exceptions — VM-internal error sites that previously
+> fatal-HALTed the strand or printed diagnostic strings to stderr (the
+> native-method raise helpers + the 6 slot-access TypeError sites) now raise
+> catchable typed Exception instances; cached subclass protos resolved-by-name
+> after the stdlib bake + added to the GC root set; the strand catch_value added
+> to the GC root walker; four new Exception subclasses (RuntimeError,
+> SchedulingError, SyntaxError, OutOfMemoryError); uncaught typed throws print a
+> "!!! <message>" diagnostic at top level.  The structured-throw work added two
+> internal exported symbols (urbi_raise_typed,
+> urbi_exception_subclass_protos_resolve) already manifested in Tier 4 of
+> docs/api-surface-tiers.md — internal-leak, not public surface, so PATCH.  Plus
+> two test-only chk host-driver directives.  Zero new public C API symbols.  No new
 > opcodes, wire unchanged.
 > PATCH-only, not freeze-override
 > under §3 (the ledger numbers every bump; only MINOR/MAJOR bumps
@@ -234,3 +239,28 @@ new `test-determinism-memdebug` 100-run gate, which also serves as the
 UVM-layout-perturbation canary).  **Zero new public C API symbols**, so PATCH.
 No new opcodes; wire unchanged at v1.9 / 0x19.  PATCH-only, not a §3
 freeze-override.
+
+### Escape #28 — v0.11.4-cat-f (PATCH)
+
+Catchable structured exceptions.  VM-internal error sites that previously
+fatal-HALTed the strand or printed diagnostic strings to stderr now raise
+catchable typed `Exception` instances: the native-method raise helpers
+(`urbi_raise_type` / `_arity` / `_oom` / `_lookup`) and the 6 slot-access
+TypeError sites (getter/setter not-a-closure / raised, slot-not-found,
+slot-write-failed).  A new internal helper clones a cached Exception-subclass
+proto and binds a `message` slot; the cached
+`vm->{typeerror,arityerror,lookuperror,oomerror}_proto` are resolved by name
+after the stdlib bake (mirroring the channel-proto pattern) and added to the GC
+root set, and the strand's `catch_value` is added to the strand GC root walker
+(a freshly-cloned thrown instance was being collected between unwind-bind and
+the catch handler).  Four new `Exception` subclasses: `RuntimeError`,
+`SchedulingError`, `SyntaxError`, `OutOfMemoryError`.  Uncaught typed throws at
+top level now print a `!!! <message>` diagnostic (reading the instance's
+`message` slot) instead of bare `nil`; string/scalar throws unchanged.  Plus two
+test-only chk host-driver directives (`## host: advance-clock` /
+`## host: expect-host-call`) in `tests/integration/chk_host_driver.c`.  The
+structured-throw work added two internal exported symbols (`urbi_raise_typed`,
+`urbi_exception_subclass_protos_resolve`) already manifested in Tier 4 of
+`docs/api-surface-tiers.md` — internal-leak, not public surface.  **Zero new
+public C API symbols**, so PATCH.  No new opcodes; wire unchanged at v1.9 / 0x19.
+PATCH-only, not a §3 freeze-override.
