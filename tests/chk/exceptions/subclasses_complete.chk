@@ -1,0 +1,9 @@
+# Covers: the four subclasses added in Cat. F resolve and inherit Exception.
+RuntimeError.new("r").isA(Exception);
+[00000000] true
+SchedulingError.new("s").isA(Exception);
+[00000000] true
+SyntaxError.new("y").isA(Exception);
+[00000000] true
+OutOfMemoryError.new("o").isA(Exception);
+[00000000] true

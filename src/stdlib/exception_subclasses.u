@@ -18,4 +18,8 @@ class IndexError    : public LookupError {} |
 class RangeError    : public Exception {} |
 class DivByZero     : public Exception {} |
 class IOError       : public Exception {} |
-class CapacityError : public Exception {} |
+class CapacityError    : public Exception {} |
+class RuntimeError     : public Exception {} |
+class SchedulingError  : public Exception {} |
+class SyntaxError      : public Exception {} |
+class OutOfMemoryError : public Exception {} |
