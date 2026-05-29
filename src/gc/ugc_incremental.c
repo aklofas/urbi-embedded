@@ -485,8 +485,13 @@ gc_sweep_step(UVM *vm, size_t budget)
 
             consumed += cur->size;
 
-            /* Free cell, then sidecar. */
+            /* Free cell, then sidecar.  Under MEM_DEBUG the cell is poisoned
+             * and quarantined (UAF detection); read owner off `cur` first. */
+#if URBI_MEM_DEBUG
+            umemdbg_release_cell(vm, cell, cur->size, cur->seq, cur->owner_pc, cur->owner_ret);
+#else
             vm->alloc_fn(cell, 0U, vm->alloc_ud);
+#endif
             vm->alloc_fn(cur,  0U, vm->alloc_ud);
 
             /* prev stays unchanged; cur moves to next. */
@@ -595,8 +600,14 @@ urbi_gc_destroy(UVM *vm)
             }
         }
 
-        /* Free the cell. */
+        /* Free the cell.  Under MEM_DEBUG the cell is poisoned and quarantined;
+         * umemdbg_destroy (called from urbi_vm_destroy after this) flushes +
+         * poison-verifies the whole quarantine.  Read owner off `node` first. */
+#if URBI_MEM_DEBUG
+        umemdbg_release_cell(vm, cell, node->size, node->seq, node->owner_pc, node->owner_ret);
+#else
         vm->alloc_fn(cell, 0U, vm->alloc_ud);
+#endif
 
         /* Free the sidecar node itself. */
         vm->alloc_fn(node, 0U, vm->alloc_ud);

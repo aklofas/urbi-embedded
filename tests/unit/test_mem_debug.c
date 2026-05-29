@@ -65,9 +65,34 @@ UTEST(mem_debug_redzone_clean_under_normal_run)
 #endif
 }
 
+UTEST(mem_debug_quarantine_catches_write_after_free)
+{
+#if URBI_MEM_DEBUG
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    /* Allocate then drop the only reference + collect, so cells land in
+     * quarantine (poisoned). */
+    (void)utest_e2e_compile_and_run(&vm, "var a = Object.new(); a = nil", NULL);
+    urbi_gc_force_full(&vm);          /* sweep the now-unreachable object into quarantine */
+    UASSERT(vm.memdbg != NULL);
+    if (vm.memdbg->q_count > 0) {
+        /* Simulate a use-after-free: scribble a non-poison byte over a
+         * quarantined cell, then confirm the validator catches it. */
+        uint32_t idx = vm.memdbg->q_head;
+        ((uint8_t *)vm.memdbg->quarantine[idx].cell)[0] = 0x00;
+        UASSERT(umemdbg_quarantine_verify(&vm) >= 1);
+        UASSERT(vm.memdbg->poison_violations >= 1);
+    }
+    urbi_vm_destroy(&vm);
+#else
+    UASSERT(1);
+#endif
+}
+
 void test_mem_debug_suite(void)
 {
     utest_run("mem_debug_gate_compiles_both_modes", mem_debug_gate_compiles_both_modes);
     utest_run("mem_debug_owner_tag_populated", mem_debug_owner_tag_populated);
     utest_run("mem_debug_redzone_clean_under_normal_run", mem_debug_redzone_clean_under_normal_run);
+    utest_run("mem_debug_quarantine_catches_write_after_free", mem_debug_quarantine_catches_write_after_free);
 }
