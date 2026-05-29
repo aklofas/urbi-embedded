@@ -11,6 +11,7 @@
 #include "realm/urealm.h"      /* URealm, urbi_realm_set_global */
 #include "runtime/umacros.h"   /* urbi_zero */
 #include "ros/uros_internal.h" /* URosBridge, urbi_ros_bridge */
+#include "ros/uros_msg.h"      /* urbi_ros_msg_register_all */
 
 /* Singleton bridge state (zero-initialized). */
 static URosBridge g_bridge;
@@ -39,6 +40,10 @@ urbi_ros_register(struct UVM *vm)
     urbi_object_set_protos_single(vm, proto, root);
 
     vm->ros_proto = (void *)proto;
+
+    /* Install message protos + populate the marshaling type registry. */
+    if (urbi_ros_msg_register_all(vm) != 0) return URBI_ERR_OOM;
+
     return URBI_OK;
 }
 

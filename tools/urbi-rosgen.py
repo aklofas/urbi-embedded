@@ -7,6 +7,15 @@ import json, sys
 PRIM_C = {"bool": "uint8_t", "int32": "int32_t", "int64": "int64_t",
           "float32": "float", "float64": "double"}
 
+SLOT_READ = {"bool": "urbi_value_as_bool", "int32": "urbi_value_as_int",
+             "int64": "urbi_value_as_int", "float32": "urbi_value_as_float",
+             "float64": "urbi_value_as_float"}
+CCAST = {"bool": "(uint8_t)", "int32": "(int32_t)", "int64": "(int64_t)",
+         "float32": "(float)", "float64": "(double)"}
+MAKE = {"bool": "urbi_make_bool", "int32": "urbi_make_int",
+        "int64": "urbi_make_int", "float32": "urbi_make_float",
+        "float64": "urbi_make_float"}
+
 def cident(type_name):
     return "urbi_ros__" + type_name.replace("/", "__")
 
@@ -38,13 +47,113 @@ def emit_header(msgs):
     out += ["#endif", "#endif", ""]
     return "\n".join(out)
 
+def emit_forward_decls(msgs):
+    out = []
+    for name in toposort(msgs):
+        cs, base = cident(name), name.replace("/", "__")
+        out.append("int urbi_ros_marshal__%s(struct UVM *vm, UValue obj, struct %s *out);" % (base, cs))
+        out.append("int urbi_ros_unmarshal__%s(struct UVM *vm, const struct %s *in, UValue *out);" % (base, cs))
+    return "\n".join(out)
+
+def emit_marshal(msgs):
+    out = []
+    for name in toposort(msgs):
+        cs, fn = cident(name), "urbi_ros_marshal__" + name.replace("/", "__")
+        out.append("int %s(struct UVM *vm, UValue obj, struct %s *out) {" % (fn, cs))
+        for fname, ftype in msgs[name]:
+            if ftype in PRIM_C:
+                out.append('    { UValue _v = urbi_make_nil();')
+                out.append('      if (urbi_slot_get(vm, obj, "%s", %d, &_v) != 0) return -1;' % (fname, len(fname)))
+                out.append('      out->%s = %s%s(_v); }' % (fname, CCAST[ftype], SLOT_READ[ftype]))
+            else:
+                nfn = "urbi_ros_marshal__" + ftype.replace("/", "__")
+                out.append('    { UValue _v = urbi_make_nil();')
+                out.append('      if (urbi_slot_get(vm, obj, "%s", %d, &_v) != 0) return -1;' % (fname, len(fname)))
+                out.append('      if (%s(vm, _v, &out->%s) != 0) return -1; }' % (nfn, fname))
+        out.append("    return 0;\n}")
+    return "\n".join(out)
+
+def emit_unmarshal(msgs):
+    out = []
+    for name in toposort(msgs):
+        cs, fn = cident(name), "urbi_ros_unmarshal__" + name.replace("/", "__")
+        out.append("int %s(struct UVM *vm, const struct %s *in, UValue *out) {" % (fn, cs))
+        out.append('    struct UObject *o = urbi_ros_msg_alloc(vm, "%s");' % name)
+        out.append("    if (o == NULL) return -1;")
+        out.append("    UValue obj = urbi_make_object(o);")
+        for fname, ftype in msgs[name]:
+            if ftype in PRIM_C:
+                out.append('    if (urbi_slot_set(vm, obj, "%s", %d, %s(in->%s)) != 0) return -1;' % (fname, len(fname), MAKE[ftype], fname))
+            else:
+                nfn = "urbi_ros_unmarshal__" + ftype.replace("/", "__")
+                out.append('    { UValue _nv = urbi_make_nil();')
+                out.append('      if (%s(vm, &in->%s, &_nv) != 0) return -1;' % (nfn, fname))
+                out.append('      if (urbi_slot_set(vm, obj, "%s", %d, _nv) != 0) return -1; }' % (fname, len(fname)))
+        out.append("    *out = obj; return 0;\n}")
+    return "\n".join(out)
+
+def emit_registry(msgs):
+    order = toposort(msgs); out = []
+    for name in order:
+        base = name.replace("/", "__")
+        out.append("static int _m_%s(struct UVM *vm, UValue o, void *p){return urbi_ros_marshal__%s(vm,o,(struct %s*)p);}" % (base, base, cident(name)))
+        out.append("static int _u_%s(struct UVM *vm, const void *p, UValue *o){return urbi_ros_unmarshal__%s(vm,(const struct %s*)p,o);}" % (base, base, cident(name)))
+    out.append("static const URosMsgType g_ros_types[] = {")
+    for name in order:
+        base = name.replace("/", "__")
+        out.append('  { "%s", sizeof(struct %s), _m_%s, _u_%s },' % (name, cident(name), base, base))
+    out.append("};")
+    out.append("static const int g_ros_types_n = %d;" % len(order))
+    out.append('const URosMsgType *urbi_ros_msg_lookup(const char *name){')
+    out.append('  int i; for (i=0;i<g_ros_types_n;i++) if (urbi_streq(name, g_ros_types[i].name)) return &g_ros_types[i];')
+    out.append('  return 0;\n}')
+    out.append("int urbi_ros_msg_register_all(struct UVM *vm){")
+    out.append("  if (vm == 0 || vm->ros_proto == 0) return -1;")
+    out.append("  urbi_ros_msg__reset();")
+    for name in order:
+        slot = "msg__" + name.replace("/", "__")
+        out.append('  { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;')
+        for fname, ftype in msgs[name]:
+            out.append('    if (urbi_slot_set(vm, urbi_make_object(o), "%s", %d, urbi_make_nil())!=0) return -1;' % (fname, len(fname)))
+        out.append('    urbi_ros_msg__record(vm, "%s", o);' % name)
+        out.append('    { USymbol *sy=(USymbol*)ustr_intern(vm,"%s",%d); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }' % (slot, len(slot)))
+    out.append("  return 0;\n}")
+    return "\n".join(out)
+
+def emit_c(msgs):
+    parts = [
+        "/* GENERATED by tools/urbi-rosgen.py - do not edit. */",
+        "#ifdef URBI_ENABLE_ROS2",
+        '#include "urbi/urbi.h"',
+        '#include "urbi/types.h"',
+        '#include "vm/uvm.h"',
+        '#include "object/uobject.h"',
+        '#include "value/uintern.h"',
+        '#include "ros/uros_msg.h"',
+        '#include "ros/generated/ros_msgs.gen.h"',
+        "",
+        "/* Forward declarations: nested-message marshal/unmarshal are called",
+        " * by reference before their definitions in toposort order. */",
+        emit_forward_decls(msgs),
+        "",
+        emit_marshal(msgs),
+        "",
+        emit_unmarshal(msgs),
+        "",
+        emit_registry(msgs),
+        "",
+        "#else",
+        "typedef int uros_translation_unit_not_empty;",
+        "#endif /* URBI_ENABLE_ROS2 */",
+        "",
+    ]
+    return "\n".join(parts)
+
 def main():
     manifest, out_c, out_h = sys.argv[1], sys.argv[2], sys.argv[3]
     msgs = json.load(open(manifest))["messages"]
     open(out_h, "w").write(emit_header(msgs))
-    open(out_c, "w").write(
-        '/* GENERATED - see later tasks */\n#ifdef URBI_ENABLE_ROS2\n'
-        '#include "ros/generated/ros_msgs.gen.h"\n#endif\n')
+    open(out_c, "w").write(emit_c(msgs))
 
 if __name__ == "__main__":
     main()
