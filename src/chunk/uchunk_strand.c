@@ -21,6 +21,8 @@
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
 #include "runtime/uclosure.h"  /* UClosure — full struct for closure type usage */
 #include "sched/ustrand.h"     /* UStrand, USTRAND_IS_WAITING, USTRAND_GET_STATE, USTRAND_DEAD */
+#include "object/uobject.h"    /* UObject, urbi_object_resolve_slot — uncaught-throw diag */
+#include "value/uintern.h"     /* ustr_intern — "message" slot lookup */
 #include <stddef.h>    /* size_t */
 #include <stdint.h>    /* uint32_t */
 
@@ -84,6 +86,52 @@ strand_still_alive(const URealm *realm, const UStrand *loader)
         if (s == loader) return true;
     }
     return false;
+}
+
+/* v0.11.4-cat-f (D-F2): capture a backward-compatible diagnostic for an
+ * uncaught throw whose value is an Exception-instance object.  Prior tasks
+ * made VM-internal errors (TypeError/ArityError/...) catchable as typed
+ * Exception instances; when such an instance escapes to the top level the
+ * REPL must restore the legacy "!!! <message>" line instead of bare nil.
+ *
+ * Only UVAL_OBJECT throws produce a diagnostic here — scalar/string throws
+ * (`throw 42`, `throw "x"`) keep the historical nil-recovery contract
+ * (control_transfer/throw_uncaught.chk).  Writes the instance's `message`
+ * slot (a UVAL_STR) into vm->last_errmsg; falls back to a generic label for
+ * an object with no string message slot.  Leaves last_errmsg empty for any
+ * non-object thrown value so the caller can distinguish the two cases.
+ *
+ * Reads the dead loader strand's fatal_value while it is still live (Path 1
+ * of uchunk_loader_drive — fatal strands are not eager-reaped). */
+static void
+capture_uncaught_throw_diag(UVM *vm, const UStrand *loader)
+{
+    if (vm == NULL || loader == NULL) return;
+    /* Only THROW fatals reach urbi_repl_eval's nil-recovery block (which keys
+     * off an empty last_errmsg).  For non-THROW fatals (e.g. D3 outside-scope
+     * tag.stop, which pre-sets last_errmsg via utag_native.c) leave the buffer
+     * untouched so its diagnostic survives. */
+    if (loader->fatal_status != UEXEC_THROW) return;
+    vm->last_errmsg[0] = '\0';
+    if (loader->fatal_value.kind != (uint8_t)UVAL_OBJECT) return;
+
+    UObject *e = (UObject *)loader->fatal_value.v.p;
+    if (e == NULL) return;
+
+    const char *msg = NULL;
+    USymbol *sym_message = (USymbol *)ustr_intern(vm, "message", 7);
+    if (sym_message != NULL) {
+        UObject *holder = NULL;
+        uint32_t idx    = 0U;
+        int rc = urbi_object_resolve_slot(vm, e, sym_message, &holder, &idx);
+        if (rc > 0 && holder != NULL) {
+            UValue mv = holder->slots[idx];
+            if (mv.kind == (uint8_t)UVAL_STR && mv.v.p != NULL)
+                msg = (const char *)mv.v.p;
+        }
+    }
+    urbi_strncpy_truncating(vm->last_errmsg, sizeof vm->last_errmsg,
+                            msg != NULL ? msg : "<exception>");
 }
 
 int
@@ -164,6 +212,11 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
                 urbi_zero(out_result, sizeof(*out_result));
                 out_result->kind = UVAL_NIL;
             }
+            /* v0.11.4-cat-f (D-F2): capture an uncaught Exception-instance's
+             * message into vm->last_errmsg while the loader strand is still
+             * live (fatal strands are not eager-reaped).  urbi_repl_eval reads
+             * this to restore the legacy "!!! <message>" diagnostic. */
+            capture_uncaught_throw_diag(vm, loader);
             /* v0.8.1 Phase 2: strand-bind ref is on root_proto.
              * Discharge early here via the deferred-destroy-aware helper;
              * null root_proto so ustrand_destroy (via urealm_teardown_all)
@@ -479,6 +532,19 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
          * System fatals (TypeError, OOM) have vm->last_error != UVM_OK
          * (set via HALT() in uvm.c) and reach the error-display path below. */
         if (run_rc == URBI_ERR_STRAND_FATAL && vm->last_error == UVM_OK) {
+            /* v0.11.4-cat-f (D-F2): an uncaught throw whose value is an
+             * Exception-instance object left a diagnostic in vm->last_errmsg
+             * (capture_uncaught_throw_diag, Path 1).  Restore the legacy
+             * "!!! <message>" line by surfacing the message and returning
+             * the fatal code (the REPL prints the !!! framing on non-OK).
+             * Scalar/string throws leave last_errmsg empty and keep the
+             * historical nil-recovery contract below. */
+            if (vm->last_errmsg[0] != '\0') {
+                if (out_buf && out_buf_size > 0)
+                    urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
+                uarena_destroy(&arena);
+                return URBI_ERR_STRAND_FATAL;
+            }
             if (out_buf && out_buf_size > 0)
                 uvalue_format(&result, out_buf, out_buf_size);
             /* Module is realm-owned (heap-alloc); do NOT unload here —

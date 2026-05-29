@@ -41,10 +41,7 @@ var top5 = Object.new(); top5.foo = "top.foo"; var bot5 = Object.new(); bot5.add
 #
 # NOTE (v0.11.4): slot-not-found is now a CATCHABLE typed TypeError (see
 # tests/chk/exceptions/vm_typeerror_catchable.chk) rather than a fatal HALT.
-# Uncaught at the REPL surface, urbi_repl_eval's THROW→nil recovery renders
-# the uncaught throw as `nil` instead of the old `!!! TypeError: ...` line.
-# The uncaught-diagnostic degradation is a known follow-up item (REPL should
-# surface uncaught throws); the catchable behavior itself is exercised by the
-# exceptions fixture above.
+# Uncaught at the REPL surface it surfaces the instance `message` slot as the
+# legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
 var top6 = Object.new(); top6.foo = "top.foo"; var bot6 = Object.new(); bot6.addProto(top6); bot6.foo = "bot.foo"; bot6.removeProto(top6); bot6.removeLocalSlot("foo"); bot6.foo
-[00000006] nil
+[00000006] !!! TypeError: GETSLOT: slot 'foo' not found

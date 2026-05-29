@@ -7,14 +7,11 @@
 #
 # NOTE (v0.11.4): slot-not-found is now a CATCHABLE typed TypeError rather
 # than a fatal HALT (see tests/chk/exceptions/vm_typeerror_catchable.chk).
-# Uncaught at the REPL surface, urbi_repl_eval's THROW→nil recovery renders
-# the uncaught throw as `nil` rather than the old `!!! TypeError: ...` line.
-# The uncaught-diagnostic degradation is a known follow-up (REPL should
-# surface uncaught throws); the catchable behavior is what now matters and
-# is exercised by the exceptions fixture.
+# Uncaught at the REPL surface it surfaces the instance `message` slot as the
+# legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
 
 asdfjklm
-[00000000] nil
+[00000000] !!! TypeError: GETSLOT: slot 'asdfjklm' not found
 
 aoeuhtns
-[00000001] nil
+[00000001] !!! TypeError: GETSLOT: slot 'aoeuhtns' not found

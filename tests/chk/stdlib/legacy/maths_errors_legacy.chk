@@ -29,17 +29,16 @@
 #
 # NOTE (v0.11.4): the slot-not-found TypeError is now a CATCHABLE typed
 # throw (see tests/chk/exceptions/vm_typeerror_catchable.chk) rather than a
-# fatal HALT.  Uncaught at the REPL surface, urbi_repl_eval's THROW→nil
-# recovery renders each as `nil` rather than the old `!!! TypeError: ...`
-# line.  The uncaught-diagnostic degradation is a known follow-up.
+# fatal HALT.  Uncaught at the REPL surface it surfaces the instance `message`
+# slot as the legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
 Math.sqrt(4)
-[00000001] nil
+[00000001] !!! TypeError: SELF: slot 'sqrt' not found
 
 Math.log(1)
-[00000002] nil
+[00000002] !!! TypeError: SELF: slot 'log' not found
 
 Math.sqr(2)
-[00000003] nil
+[00000003] !!! TypeError: SELF: slot 'sqr' not found
 
 # Math.nan exists; Math.nan.isNaN() routes through the Float atom-
 # proto installed at Phase 5.

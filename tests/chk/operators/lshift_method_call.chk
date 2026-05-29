@@ -24,8 +24,7 @@ var q = Prec.new(); q << 2 == 2
 #
 # NOTE (v0.11.4): the slot-not-found TypeError is now a CATCHABLE typed throw
 # (see tests/chk/exceptions/vm_typeerror_catchable.chk) rather than a fatal
-# HALT.  Uncaught at the REPL surface, urbi_repl_eval's THROW→nil recovery
-# renders it as `nil` rather than the old `!!! TypeError: ...` line.  The
-# uncaught-diagnostic degradation is a known follow-up.
+# HALT.  Uncaught at the REPL surface it surfaces the instance `message` slot
+# as the legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
 class NoSlot {}; var ns = NoSlot.new(); ns << 7
-[00000004] nil
+[00000004] !!! TypeError: SELF: slot '<<' not found

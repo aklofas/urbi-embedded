@@ -9,21 +9,15 @@
 #
 # As of v0.11.4 a native-method UEXEC_THROW is no longer a fatal HALT:
 # urbi_raise_arity builds a typed ArityError instance and the OP_CALL arm
-# deposits it as a catchable throw.  An *uncaught* throw at top level now
-# unwinds the strand and the REPL renders the (degraded) uncaught result
-# as `nil`.
-#
-# NOTE(follow-up task): the uncaught-diagnostic printer does not yet read the
-# thrown instance's `message` slot, so an uncaught arity error renders as bare
-# `nil` rather than a frame line.  This fixture is pinned to that real (still
-# degraded) output; revisit when the uncaught printer is taught to surface the
-# instance message.
+# deposits it as a catchable throw.  An *uncaught* throw at top level unwinds
+# the strand and the REPL renders the instance's `message` slot as the legacy
+# "!!! <message>" diagnostic (D-F2 backward-compat).
 
 var Foo = Object.clone(); Foo.get x(a, b) { a + b }; Foo.x
-[00000000] nil
+[00000000] !!! ArityError: get expected 0 args, got 2
 
 var Bar = Object.clone(); Bar.set y() { 42 }; Bar.y = 1
-[00000001] nil
+[00000001] !!! ArityError: set expected 1 args, got 0
 
 var Baz = Object.clone(); Baz.set z(a, b) { a + b }; Baz.z = 1
-[00000002] nil
+[00000002] !!! ArityError: set expected 1 args, got 2
