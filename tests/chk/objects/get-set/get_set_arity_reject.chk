@@ -4,21 +4,20 @@
 # Pre-fix: a wrong-arity getter / setter would compile cleanly and
 # install successfully; the dispatch-time invocation later read from
 # uninitialized register slots → SIGSEGV.  Post-fix: rejected at
-# Object.setProperty install time with an ArityError emitted to stderr
-# and a TypeError surfaced from the OP_CALL native arm.
+# Object.setProperty install time and a TypeError surfaced from the
+# OP_CALL native arm.
 #
-# stderr is merged with stdout by the chk runner; the ArityError line
-# (from urbi_raise_arity, no [N] frame) interleaves before the
-# TypeError [N] frame line.
+# As of v0.11.4 the urbi_raise_arity helper no longer prints the
+# "ArityError: ..." text to stderr on the happy path; it carries the
+# message inside a typed ArityError instance (the catchable value).
+# Only the TypeError [N] frame line from the OP_CALL native arm remains
+# on the merged stdout/stderr stream.
 
 var Foo = Object.clone(); Foo.get x(a, b) { a + b }; Foo.x
-[] ArityError: get expected 0 args, got 2
 [00000000] !!! TypeError: CALL: native method raised
 
 var Bar = Object.clone(); Bar.set y() { 42 }; Bar.y = 1
-[] ArityError: set expected 1 args, got 0
 [00000001] !!! TypeError: CALL: native method raised
 
 var Baz = Object.clone(); Baz.set z(a, b) { a + b }; Baz.z = 1
-[] ArityError: set expected 1 args, got 2
 [00000002] !!! TypeError: CALL: native method raised

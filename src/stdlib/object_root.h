@@ -68,15 +68,24 @@ int urbi_object_root_register(struct UVM *vm);
 
 /* === Native-method error helpers ===
  *
- * Phase 3 baseline: print the error to stderr and return UEXEC_THROW.
- * The strand's pending_unwind is set to UEXEC_THROW via the OP_CALL arm.
- * Wave 2 lands proper Exception class wiring; the call sites here keep
- * a stable ABI so the swap is mechanical. */
+ * Each builds a typed Exception instance (via urbi_raise_typed) into *out and
+ * returns UEXEC_THROW.  The UEXEC_THROW return is load-bearing: the OP_CALL
+ * arm and operator-overload dispatch treat the nonzero code as raise/miss.
+ * Only the *out value changed (was nil placeholder pre-v0.11.4). */
 int urbi_raise_arity(struct UVM *vm, const char *fn_name,
                      uint8_t expected, uint8_t got, UValue *out);
 int urbi_raise_type(struct UVM *vm, const char *msg, UValue *out);
 int urbi_raise_oom(struct UVM *vm, UValue *out);
 int urbi_raise_lookup(struct UVM *vm, struct USymbol *name, UValue *out);
+
+/* urbi_raise_typed — INTERNAL (not in the public ABI manifest).
+ *
+ * Clone exc_proto (a cached Exception-subclass proto), bind a `message`
+ * string slot from msg, and write the typed instance into *out.  Returns
+ * UEXEC_THROW.  Degraded fallback (vm/exc_proto NULL or clone OOM): leaves
+ * *out = nil and prints msg where hosted. */
+int urbi_raise_typed(struct UVM *vm, struct UObject *exc_proto,
+                     UValue *out, const char *msg);
 
 /* === urbi_proto_list_create ===
  *

@@ -35,7 +35,8 @@
 #include "urbi/types.h"            /* UErrCode, urbi_make_nil */
 #include "urbi/urbi.h"             /* URBI_OK, URBI_ERR_OOM */
 #include "value/uintern.h"         /* ustr_intern */
-#include "vm/uvm.h"                /* UVM, urbi_vm_destroy */
+#include "vm/uvm.h"                /* UVM, urbi_vm_destroy, vm->*error_proto, UVM_ERRMSG_CAP */
+#include "vm/uvm_internal.h"       /* UDiagWriter, diag_init, diag_write_* */
 #include "object/uic.h"            /* urbi_slot_get_slow */
 
 #include <stdint.h>
@@ -108,57 +109,82 @@ urbi_native_closure_create(UVM *vm, urbi_native_method_fn fn)
     return cl;
 }
 
-/* === Native error helpers (Phase 3 baseline) =============================== */
+/* === Native error helpers (v0.11.4 typed-throw) ============================ */
+
+/* urbi_raise_typed — INTERNAL (not part of the public ABI manifest).
+ * Clone a cached Exception-subclass proto, bind a `message` string slot, and
+ * write the typed instance into *out.  Returns UEXEC_THROW.  The caller
+ * delivers the throw (native-method callers return this code so the OP_CALL
+ * arm deposits *out; VM-internal callers urbi_throw it directly).
+ *
+ * Degraded fallback (proto unresolved or clone OOM): print where hosted and
+ * leave *out = nil — under OOM there's no memory to allocate an instance. */
+int
+urbi_raise_typed(UVM *vm, struct UObject *exc_proto, UValue *out, const char *msg)
+{
+    if (out != NULL) *out = urbi_make_nil();
+    if (vm == NULL || exc_proto == NULL) {
+#if __STDC_HOSTED__
+        fprintf(stderr, "%s\n", (msg != NULL ? msg : "<error>"));
+#endif
+        return UEXEC_THROW;
+    }
+    UObject *e = urbi_object_clone(vm, exc_proto);
+    if (e == NULL) {
+#if __STDC_HOSTED__
+        fprintf(stderr, "%s\n", (msg != NULL ? msg : "<error>"));
+#endif
+        return UEXEC_THROW;
+    }
+    USymbol *sym_message = (USymbol *)ustr_intern(vm, "message", 7);
+    size_t mlen = (msg != NULL ? urbi_strlen(msg) : 0);
+    UValue mv = urbi_make_str_interned(vm, (msg != NULL ? msg : ""), mlen);
+    if (sym_message != NULL)
+        (void)urbi_object_set_local_slot(vm, e, sym_message, mv);
+    if (out != NULL) *out = uval_obj(e);
+    return UEXEC_THROW;
+}
 
 int
 urbi_raise_arity(UVM *vm, const char *fn_name, uint8_t expected,
                  uint8_t got, UValue *out)
 {
-    (void)vm;
-    if (out != NULL) *out = urbi_make_nil();
-#if __STDC_HOSTED__
-    fprintf(stderr, "ArityError: %s expected %u args, got %u\n",
-            (fn_name != NULL ? fn_name : "<unknown>"),
-            (unsigned)expected, (unsigned)got);
-#else
-    (void)fn_name; (void)expected; (void)got;
-#endif
-    return UEXEC_THROW;
+    char buf[UVM_ERRMSG_CAP];
+    UDiagWriter w; diag_init(&w, buf, sizeof buf);
+    diag_write_cstr(&w, "ArityError: ");
+    diag_write_cstr(&w, (fn_name != NULL ? fn_name : "<unknown>"));
+    diag_write_cstr(&w, " expected ");
+    diag_write_u32(&w, (uint32_t)expected);
+    diag_write_cstr(&w, " args, got ");
+    diag_write_u32(&w, (uint32_t)got);
+    return urbi_raise_typed(vm, vm ? vm->arityerror_proto : NULL, out, buf);
 }
 
 int
 urbi_raise_type(UVM *vm, const char *msg, UValue *out)
 {
-    (void)vm;
-    if (out != NULL) *out = urbi_make_nil();
-#if __STDC_HOSTED__
-    fprintf(stderr, "TypeError: %s\n", (msg != NULL ? msg : "<unspecified>"));
-#else
-    (void)msg;
-#endif
-    return UEXEC_THROW;
+    char buf[UVM_ERRMSG_CAP];
+    UDiagWriter w; diag_init(&w, buf, sizeof buf);
+    diag_write_cstr(&w, "TypeError: ");
+    diag_write_cstr(&w, (msg != NULL ? msg : "<unspecified>"));
+    return urbi_raise_typed(vm, vm ? vm->typeerror_proto : NULL, out, buf);
 }
 
 int
 urbi_raise_oom(UVM *vm, UValue *out)
 {
-    (void)vm;
-    if (out != NULL) *out = urbi_make_nil();
-#if __STDC_HOSTED__
-    fprintf(stderr, "OutOfMemoryError\n");
-#endif
-    return UEXEC_THROW;
+    return urbi_raise_typed(vm, vm ? vm->oomerror_proto : NULL, out,
+                            "OutOfMemoryError");
 }
 
 int
 urbi_raise_lookup(UVM *vm, USymbol *name, UValue *out)
 {
-    (void)vm; (void)name;
-    if (out != NULL) *out = urbi_make_nil();
-#if __STDC_HOSTED__
-    fprintf(stderr, "LookupError: slot not found\n");
-#endif
-    return UEXEC_THROW;
+    (void)name;
+    char buf[UVM_ERRMSG_CAP];
+    UDiagWriter w; diag_init(&w, buf, sizeof buf);
+    diag_write_cstr(&w, "LookupError: slot not found");
+    return urbi_raise_typed(vm, vm ? vm->lookuperror_proto : NULL, out, buf);
 }
 
 /* === urbi_proto_list_create ================================================

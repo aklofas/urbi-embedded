@@ -10,6 +10,7 @@
 #include "utest.h"
 #include "urbi/urbi.h"
 #include "vm/uvm.h"
+#include "stdlib/object_root.h"   /* urbi_raise_type (internal) */
 
 #define UTEST(name) static void name(void)
 
@@ -36,6 +37,28 @@ UTEST(error_protos_resolved)
     urbi_vm_destroy(&vm);
 }
 
+/* ==== Test: raise_typed_builds_instance =================================
+ *
+ * urbi_raise_type (and the other three C raise helpers) must now build a
+ * catchable typed Exception instance into *out — was UVAL_NIL placeholder
+ * pre-v0.11.4 — while keeping the UEXEC_THROW return code (load-bearing:
+ * 346 call sites treat the nonzero return as raise/miss). */
+UTEST(raise_typed_builds_instance)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    (void)urbi_repl_eval(&vm, NULL, "1", 1, NULL, 0);  /* force proto resolve */
+
+    UValue out;
+    int rc = urbi_raise_type(&vm, "demo failure", &out);
+    UASSERT(rc == UEXEC_THROW);                 /* return code UNCHANGED */
+    UASSERT(out.kind == (uint8_t)UVAL_OBJECT);  /* was UVAL_NIL before */
+    UASSERT(out.v.p != NULL);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ---- suite entry point ------------------------------------------------- */
 void test_runtime_typed_throw_suite(void);
 
@@ -44,4 +67,5 @@ test_runtime_typed_throw_suite(void)
 {
     printf("test_runtime_typed_throw\n");
     utest_run("error_protos_resolved", error_protos_resolved);
+    utest_run("raise_typed_builds_instance", raise_typed_builds_instance);
 }
