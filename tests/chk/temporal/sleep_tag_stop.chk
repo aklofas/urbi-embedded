@@ -1,33 +1,29 @@
 # Milestone: v0.10.2-reactive (W6, activated post W4-merge)
 # Covers: TAG_STOP wakes a sleeping strand mid-sleep.
-# blocked: cooperative timing — sleep + tag-stop parallel dispatch requires T39 chk-runner multi-step drive
+# blocked: tag-stop resume of a sleeping strand not observable across host-driver lines
 # matrix-row: temporal-sleep
 #
-# When W4 (Tag.new + OP_TAG_STOP + script .stop()) merges into
-# integration/v0.10.2-reactive, this fixture can be un-deferred:
-#   1. Remove this comment block.
-#   2. Add expected output lines.
-#   3. Confirm PASS on the integration branch.
+# The pieces this fixture needs all exist (Tag.new + script .stop() + sleep()
+# + the v0.11.4-cat-f `## host: step`/`advance-clock` directives), but the
+# end-to-end resume is still not observable from a fixture.  Driven through
+# the host-driver line by line:
 #
-# Mechanism: TAG_STOP on a sleeping strand calls sched_strand_unblock(s)
-# via urbi_tag_stop's member_strands walk (src/runtime/uunwind.c line ~542).
-# sched_strand_unblock removes the strand from the sleep queue and makes it
-# runnable; the strand resumes in UEXEC_TAG_STOP state.
+#   ## host: run var t = Tag.new("sleeper")        -> <Tag: sleeper>
+#   ## host: run Realm.caught = false              -> false
+#   ## host: run t: { try { sleep(500ms) } catch (e) { Realm.caught = true } }
+#   ## host: step 2000                             -> step: RUNNING (parked)
+#   ## host: run t.stop()                           -> nil
+#   ## host: step 2000                             -> step: RUNNING
+#   ## host: run Realm.caught                        -> false   (NOT true!)
 #
-# Verified at v0.10.2 W6 dispatch: urbi_tag_stop DOES call
-# sched_strand_unblock for WAITING strands, which removes from sleep_q via
-# sched_strand_unbind_from_sleep_queue (src/sched/usched_cooperative.c
-# sched_strand_unblock at line ~293). No additional change needed for W6.
+# The sleeping body strand parks when its `## host: run` line returns; the
+# later t.stop() runs on a fresh loader strand and DOES walk the tag's member
+# strands, but the unblocked sleeper never re-runs its catch block to deposit
+# Realm.caught = true.  This is the same lone-strand dispatch-loop gap as
+# wait_sleep_basic.chk: a strand made runnable while ready_head is otherwise
+# empty does not get dispatched, because urbi_step's loop breaks on a NULL
+# sched_pick_next before the resumed strand can execute.
 #
-# Once W4 is merged, implement:
-#
-#   var t = Tag.new("sleeper")
-#   Realm.caught = false
-#   t: { try { sleep(500ms) } catch (e) { Realm.caught = true } }
-#   sleep(50ms)   -- give the sleeper time to enter sleep queue
-#   t.stop()
-#   sleep(50ms)   -- give the unwind time to deposit
-#   Realm.caught
-#   [00000000] nil
-#   ...
-#   [N] true
+# Activating needs the runtime change called out in wait_sleep_basic.chk.
+# The tag-stop -> sched_strand_unblock unbind path itself (sleep_q removal +
+# make_runnable + UEXEC_TAG_STOP resume) is unit-tested directly.

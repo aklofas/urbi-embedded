@@ -23,6 +23,18 @@
  *                             framed result.
  *   ## host: step <budget>    call urbi_step(vm, budget) and print a framed
  *                             observable line "step: <STATE>".
+ *   ## host: advance-clock <ms>
+ *                             advance the driver's virtual monotonic clock by
+ *                             <ms> milliseconds.  The next `## host: step`
+ *                             wakes any sleep-queue strand whose wake_us has
+ *                             now passed.  A virtual clock (vs. the default
+ *                             wall clock) makes sleep/timer wakeups
+ *                             deterministic and observable from a fixture.
+ *   ## host: expect-host-call <n>
+ *                             emit a framed line "host-calls: <count>" giving
+ *                             the number of times the pre-registered native
+ *                             probe global `__hostprobe()` has been invoked.
+ *                             The fixture pins the expected count.
  *
  * Lines that are not `## host:` directives are ignored (plain `#` comments and
  * `[...]` expected lines are the runner's concern, not the driver's).
@@ -52,6 +64,22 @@ typedef struct {
 static NamedRealm    g_realms[CHK_MAX_REALMS];
 static int           g_realm_count;
 static struct URealm *g_current;   /* NULL => global realm */
+
+/* Virtual monotonic clock backing `## host: advance-clock`.  Installed over
+ * vm->host_time_us after init so sleep-queue wakeups are deterministic. */
+static uint64_t g_now_us;
+static uint64_t chk_now(void *ud) { (void)ud; return g_now_us; }
+
+/* Counting native probe backing `## host: expect-host-call`.  Bound as the
+ * realm global `__hostprobe`; each script-side call bumps g_hostcalls. */
+static int g_hostcalls;
+static int chk_probe(UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                     UValue *out) {
+    (void)vm; (void)self; (void)args; (void)nargs;
+    g_hostcalls++;
+    if (out != NULL) *out = urbi_make_nil();
+    return 0;   /* UEXEC_OK */
+}
 
 static const char *step_name(UStepResult r) {
     switch (r) {
@@ -132,6 +160,24 @@ static int run_directive(UVM *vm, const char *verb, const char *rest) {
         return 0;
     }
 
+    if (strcmp(verb, "advance-clock") == 0) {
+        char *end = NULL;
+        unsigned long long ms = strtoull(rest, &end, 10);
+        if (end == rest) {
+            fprintf(stderr, "chk-host-driver: `advance-clock` needs ms\n");
+            return -1;
+        }
+        g_now_us += (uint64_t)ms * 1000ULL;
+        return 0;
+    }
+
+    if (strcmp(verb, "expect-host-call") == 0) {
+        char line[64];
+        snprintf(line, sizeof line, "host-calls: %d", g_hostcalls);
+        emit_framed(line);
+        return 0;
+    }
+
     if (strcmp(verb, "step") == 0) {
         char *end = NULL;
         unsigned long long budget = strtoull(rest, &end, 10);
@@ -199,6 +245,18 @@ int main(int argc, char *argv[]) {
     urbi_vm_init(&vm, NULL, NULL);
     g_realm_count = 0;
     g_current     = NULL;   /* start on the global realm */
+
+    /* Install the deterministic virtual clock and the counting native probe.
+     * The clock starts at 0; `advance-clock` bumps it so sleep wakeups fire
+     * exactly when a fixture wants.  `__hostprobe` is a const realm global the
+     * `expect-host-call` directive observes. */
+    vm.host_time_us = chk_now;
+    vm.host_time_ud = NULL;
+    g_now_us        = 0;
+    g_hostcalls     = 0;
+    if (urbi_register(&vm, NULL, "__hostprobe", chk_probe) != URBI_OK) {
+        fprintf(stderr, "chk-host-driver: failed to register __hostprobe\n");
+    }
 
     int rc = 0;
     char line[CHK_LINE_CAP];

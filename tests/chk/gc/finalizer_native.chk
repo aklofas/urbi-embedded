@@ -2,27 +2,27 @@
 # Covers: a host-registered finalizable type runs its destroy callback when
 #         the last reference is dropped and the GC collects the cell.
 #
-# blocked: T39 chk-runner host-driver (## host: / ## expect-host-call:) not implemented
+# blocked: no finalizer->host-fn bridge for a script-creatable type
 # matrix-row: gc-finalizer
 #
-# Reason: two prerequisites are both missing at M3:
-#   (1) T39 adds the ## host: / ## expect-host-call: directive support to the
-#       chk runner (tests/integration/run_chk.sh).  Without it, the runner
-#       cannot inject a host-registered type nor assert callback counts.
-#   (2) M4 delivers the host-binding API surface (urbi_register_type with
-#       TYPE_HAS_FINALIZER) and the FileHandle example binding used here.
+# The `## host: expect-host-call <n>` directive now exists (v0.11.4-cat-f) and
+# its generic host-callback-observation path is exercised by
+# tests/chk/gc/expect_host_call.chk.  This fixture stays blocked on the OTHER
+# prerequisite: there is no public type-registration API and no FileHandle
+# binding.  Concretely:
+#   - The GC finalizer hook (src/gc/ugc_incremental.c ~476/590) only calls
+#     `t->destroy` off the cell's UType entry — a per-TYPE destructor, not a
+#     host-fn a fixture can register and count.  Its own comment notes "no
+#     concrete cell types exist, so this path is unreachable in practice".
+#   - include/urbi/ exposes no urbi_register_type / UType registration symbol,
+#     so a fixture cannot create a finalizable type (the FileHandle example)
+#     nor route its destroy through a counting host fn.
 #
-# The equivalent finalizer path is unit-tested at M3 via
-# tests/unit/test_ugc_finalizer.c using urbi_register_type + urbi_gc_alloc
-# directly (no chk runner needed).
+# The equivalent finalizer path is unit-tested via
+# tests/unit/test_ugc_finalizer.c using the internal UType + urbi_gc_alloc
+# APIs directly (no chk runner, no public type-registration API needed).
 #
-# When T39 + M4 land, activate this fixture by implementing the ## host:
-# directive and uncommenting the urbiscript source below.
-# Expected behaviour: the destroy callback is invoked exactly once after
-# f = nil and a GC cycle runs.
-#
-# Fixture source (activate at T39 + M4):
-#   ## host: register-finhandle-type-and-count
-#   var f = FileHandle.new("/dev/null");
-#   f = nil;
-#   ## expect-host-call: file_handle_destroy 1
+# Activating this fixture needs a public finalizable-type registration API
+# (urbi_register_type with a host destroy callback) — out of scope for the
+# test-harness-only T39 work.  The generic expect-host-call mechanism is
+# proven separately in expect_host_call.chk.

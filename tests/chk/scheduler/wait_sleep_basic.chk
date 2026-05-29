@@ -3,17 +3,29 @@
 #         inserted into the sleep queue (sched_strand_block with
 #         USTRAND_REASON_SLEEP), and resumed after the timer fires.
 #
-# blocked: T39 chk-runner clock-tick control not implemented
+# blocked: lone-sleeper wakeup not observable via urbi_step + advance-clock
 # matrix-row: temporal-sleep
 #
-# Reason: sleep() / 100ms time literals are not wired at M3.  T43 adds
-# time-literal lex (100ms, 1s) and the sleep() built-in.  T39 adds the
-# ## host: clock-tick mechanism needed to advance the VM clock and trigger
-# the sleep-queue wakeup from a chk fixture.
+# The `## host: advance-clock <ms>` directive (v0.11.4-cat-f) installs a
+# virtual monotonic clock over vm->host_time_us, which is the prerequisite
+# the original T39 note called for.  Time-literal lex + sleep() (T43) also
+# shipped.  But the sleep-queue WAKEUP is still not observable from a fixture:
 #
-# When T43 + T39 land, implement this fixture by:
-#   ## host: set mock clock
-#   sleep(1ms); echo("awake")
-#   ## host: advance clock by 2ms, step VM
-#   --- expected output ---
-#   [00000001] "awake"
+#   sched_post_dispatch (src/sched/usched_cooperative.c, "Step 3: Sleep-queue
+#   wake") is the only code path that wakes a strand whose wake_us has passed,
+#   and it runs ONLY inside urbi_step's dispatch loop body
+#   (src/vm/ustep.c ~126).  That loop runs `while strand_runnable_count > 0`
+#   and dispatches sched_pick_next().  When the sole strand is sleeping,
+#   ready_head is NULL so sched_pick_next returns NULL and the loop breaks
+#   BEFORE sched_post_dispatch — yet strand_runnable_count stays 1 (the parked
+#   REPL loader strand), so urbi_step returns URBI_STEP_RUNNING forever and
+#   never fires the clock-driven wake.  Empirically confirmed: after
+#   `## host: run sleep(100ms)` then `advance-clock 200` then `step`, the
+#   sleeper remains on sleep_q with wake_us=100000 < now=200000 and is never
+#   resumed (ready_head stays NULL, runnable stays 1, step stays RUNNING).
+#
+# Activating this fixture needs a runtime change — a pre-dispatch-loop
+# sleep-queue wake in urbi_step, or reconciling the parked-loader-strand
+# runnable-count so a lone sleeper drives the loop — which is out of scope
+# for the test-harness-only T39 work.  The equivalent sleep block/unblock
+# path is unit-tested directly via the scheduler API.

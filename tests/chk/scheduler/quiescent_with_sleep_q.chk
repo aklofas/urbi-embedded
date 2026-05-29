@@ -4,17 +4,24 @@
 #         timer fires and strands are moved back to ready, quiescent stays false
 #         until they finish, then becomes true.
 #
-# blocked: T39 chk-runner tunables header not implemented
+# blocked: post-sleep quiescent transition not observable via urbi_step
 # matrix-row: scheduler-quiescent
 #
-# Reason: observing the quiescence state machine from a chk fixture requires
-# the ## host: mechanism to call sched_quiescent() directly and inspect VM
-# internal counter state while strands are sleeping.  The chk runner is
-# REPL-only; T39 is needed to wire host-driver assertions into chk fixtures.
-# Additionally, time-literal/sleep primitives (T43) are needed to put a strand
-# to sleep from urbiscript.
+# The `## host: step` / `advance-clock` directives (v0.11.4-cat-f) plus
+# sleep() (T43) put a strand on the sleep queue, and `step: <STATE>` already
+# exposes the quiescence verdict (QUIESCENT vs RUNNING vs WAKE_AT).  The
+# blocker is the second half of this fixture — observing the transition BACK
+# to quiescent after the sleeper completes — which depends on the lone-sleeper
+# wakeup that urbi_step cannot drive (see wait_sleep_basic.chk for the precise
+# mechanism: sched_post_dispatch's sleep-queue wake only runs inside the
+# dispatch loop, which a lone sleeper never enters because ready_head is NULL
+# while strand_runnable_count stays 1 on the parked loader strand).  So while
+# a strand is sleeping, step never advances past RUNNING and never reaches the
+# post-completion QUIESCENT state this fixture wants to assert.  Empirically,
+# `## host: run sleep(100ms)` then `step` then `advance-clock`/`step` stays at
+# step: RUNNING throughout — the QUIESCENT verdict never arrives.
 #
-# When T39 + T43 land, implement this fixture by:
-#   ## host: step VM; assert !sched_quiescent() while strand is sleeping
-#   sleep(1ms)
-#   ## host: advance clock, step; assert sched_quiescent() after completion
+# Activating needs the same runtime change called out in wait_sleep_basic.chk
+# (pre-dispatch-loop sleep-queue wake / loader runnable-count reconciliation),
+# out of scope for test-harness-only T39 work.  The quiescence counter
+# semantics are unit-tested directly via the scheduler API.

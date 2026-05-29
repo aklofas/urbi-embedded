@@ -1,0 +1,27 @@
+# Milestone: v0.11.4-cat-f (T39 residual)
+# Covers: the chk host-driver can register a native C function as a script
+#         global, have a fixture call it, and assert the observed call count
+#         via the `## host: expect-host-call <n>` directive.
+#
+# matrix-row: gc-finalizer
+#
+# This is the generic host-callback-assertion path.  The driver pre-registers
+# a counting native global `__hostprobe` (urbi_register) before reading the
+# fixture; each script-side call bumps the driver's counter; `expect-host-call`
+# emits the running count as "host-calls: <n>" for the runner to diff.
+#
+# The finalizer->host-fn variant (a GC destroy callback observable from a
+# fixture) is NOT exercised here — see finalizer_native.chk for why that path
+# stays blocked.  This fixture proves the host-callback observation mechanism
+# itself works against a directly-callable native global.
+#
+## host: expect-host-call 0
+## host: run __hostprobe()
+## host: expect-host-call 1
+## host: run __hostprobe(); __hostprobe()
+## host: expect-host-call 3
+[00000000] host-calls: 0
+[00000000] nil
+[00000000] host-calls: 1
+[00000000] nil
+[00000000] host-calls: 3
