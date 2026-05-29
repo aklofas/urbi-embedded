@@ -1,0 +1,29 @@
+# Milestone: v0.12.0-ros-foundation
+# Covers: an incoming mock message pumped from urbi_step fires the reactive
+#         watcher `at (s?(var m))` automatically (no explicit C pump).
+#
+# tunables: ros
+#
+# This fixture requires an URBI_ENABLE_ROS2=1 build and URBI_BUILD_PRESET=ros.
+# Skipped (PASS) by the base test-chk sweep (URBI_BUILD_PRESET=default).
+#
+# Automatic path: ros.__injectInt32 enqueues a std_msgs/Int32 on the
+# subscription; the pump wired into urbi_step (next step) drains it, unmarshals
+# it, and emits onto the subscription event so the watcher body runs and writes
+# Realm.got.  __injectInt32 is a mock-only test hook (absent once the real
+# transport lands).
+
+ros.init("n");
+[00000000] nil
+var s = ros.subscribe("/c", "std_msgs/Int32");
+[00000001] <event>
+var Realm.got = 0;
+[00000002] 0
+at (s?(var m)) Realm.got = m.data;
+[00000003] nil
+ros.__injectInt32(0, 33);
+[00000004] nil
+sleep(1ms);
+[00000005] nil
+Realm.got
+[00000006] 33

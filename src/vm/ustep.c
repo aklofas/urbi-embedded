@@ -10,6 +10,7 @@
 #include "event/uevent_ring.h"
 #include "stdlib/temporal.h"   /* v0.9.4: urbi_periodic_pump (pre-loop) + urbi_periodic_earliest_wake_us (quiescence) */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (CHSTR-025 wait_payload arm guard) */
+#include "urbi/ros.h"          /* urbi_ros_pump (self-gating; no-op without URBI_ENABLE_ROS2) */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -53,6 +54,12 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
     /* Drain any ISR-injected events before running bytecode. */
     if (vm->event_ring && uevent_ring_has_pending(vm->event_ring))
         uevent_ring_drain(vm);
+
+#ifdef URBI_ENABLE_ROS2
+    /* Drain incoming ROS messages once per step (same safepoint as the ISR
+     * event ring) so any `at (sub?(var m))` watcher fires this tick. */
+    urbi_ros_pump(vm);
+#endif
 
     /* v0.9.4: pump periodics before the dispatch loop so newly-due fires
      * become READY strands BEFORE we test strand_runnable_count.  Without
