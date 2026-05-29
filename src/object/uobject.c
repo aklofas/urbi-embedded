@@ -305,6 +305,11 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
 
     /* M6 Phase 7: Exception primitive proto. */
     if (vm->exception_proto != NULL) gc_shade_gray(vm, (UCell *)vm->exception_proto);
+    /* Cached Exception-subclass protos (urbi_exception_subclass_protos_resolve). */
+    if (vm->typeerror_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->typeerror_proto);
+    if (vm->arityerror_proto  != NULL) gc_shade_gray(vm, (UCell *)vm->arityerror_proto);
+    if (vm->lookuperror_proto != NULL) gc_shade_gray(vm, (UCell *)vm->lookuperror_proto);
+    if (vm->oomerror_proto    != NULL) gc_shade_gray(vm, (UCell *)vm->oomerror_proto);
 
     /* M6 Phase 8: namespace proto singletons.  T86 onwards.  platform_-
      * proto is reached transitively via System's "Platform" slot but is

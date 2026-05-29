@@ -557,6 +557,15 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
         }
     }
 
+    /* Cache Exception-subclass protos.  Must run AFTER the bake-blob run
+     * above, which defines the subclasses; idempotent across realms. */
+    {
+        int rc = urbi_exception_subclass_protos_resolve(vm, realm);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+    }
+
     return URBI_OK;
 }
 

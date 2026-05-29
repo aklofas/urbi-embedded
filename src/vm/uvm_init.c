@@ -416,6 +416,10 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->container_triplet_proto = NULL;
     vm->container_tuple_proto   = NULL;
     vm->exception_proto         = NULL;  /* M6 Phase 7 — populated by urbi_stdlib_register_runtime_types */
+    vm->typeerror_proto         = NULL;  /* populated by urbi_exception_subclass_protos_resolve */
+    vm->arityerror_proto        = NULL;
+    vm->lookuperror_proto       = NULL;
+    vm->oomerror_proto          = NULL;
     vm->math_proto              = NULL;  /* M6 Phase 8 T86 — populated by urbi_stdlib_register_namespaces */
     vm->system_proto            = NULL;  /* M6 Phase 8 T87 */
     vm->platform_proto          = NULL;  /* M6 Phase 8 T88 */

@@ -213,3 +213,32 @@ urbi_stdlib_register_runtime_globals(UVM *vm, URealm *realm)
     }
     return URBI_OK;
 }
+
+/* === urbi_exception_subclass_protos_resolve ============================
+ *
+ * The exception_subclasses.u bake run installs TypeError / ArityError /
+ * LookupError / OutOfMemoryError as realm globals.  Cache each once per VM
+ * from the first realm that completes its bake-blob run, so C raise sites
+ * can clone a typed instance without a realm handle.  Idempotent. */
+int
+urbi_exception_subclass_protos_resolve(UVM *vm, URealm *realm)
+{
+    if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
+    if (vm->typeerror_proto != NULL) return URBI_OK;   /* idempotent */
+
+    static const struct { const char *name; size_t len; size_t off; } tbl[] = {
+        { "TypeError",         9, offsetof(UVM, typeerror_proto)  },
+        { "ArityError",       10, offsetof(UVM, arityerror_proto) },
+        { "LookupError",      11, offsetof(UVM, lookuperror_proto)},
+        { "OutOfMemoryError", 16, offsetof(UVM, oomerror_proto)   },
+    };
+    for (size_t i = 0; i < sizeof tbl / sizeof tbl[0]; i++) {
+        UValue v;
+        urbi_zero(&v, sizeof(v));
+        int rc = urbi_realm_get_global(vm, realm, tbl[i].name, tbl[i].len, &v);
+        if (rc != URBI_OK) return rc;
+        if (v.kind != (uint8_t)UVAL_OBJECT) return URBI_ERR_INVALID_STATE;
+        *(UObject **)((char *)vm + tbl[i].off) = (UObject *)v.v.p;
+    }
+    return URBI_OK;
+}

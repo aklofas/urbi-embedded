@@ -51,6 +51,16 @@ int urbi_stdlib_register_runtime_types(struct UVM *vm);
  * Returns URBI_OK on success, URBI_ERR_OOM / URBI_ERR_INVALID_ARG. */
 int urbi_stdlib_register_runtime_globals(struct UVM *vm, struct URealm *realm);
 
+/* Caches the Exception-subclass protos (TypeError / ArityError /
+ * LookupError / OutOfMemoryError) on `vm` by resolving them as realm
+ * globals from `realm` after the stdlib bake-blob run has installed them.
+ * Called by urbi_populate_realm_globals after the channel resolve block;
+ * idempotent across realms (caches once on the first realm).
+ *
+ * Returns URBI_OK on success, URBI_ERR_INVALID_ARG / URBI_ERR_INVALID_STATE
+ * / the propagated urbi_realm_get_global error. */
+int urbi_exception_subclass_protos_resolve(struct UVM *vm, struct URealm *realm);
+
 #ifdef __cplusplus
 }
 #endif

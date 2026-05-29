@@ -586,6 +586,14 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * global by urbi_stdlib_register_runtime_globals after the registry
      * loop.  NULL until first VM boot. */
     struct UObject *exception_proto;
+    /* Cached Exception-subclass protos for C raise sites (object_root.c,
+     * uvm_slot.c).  Resolved by name from the global realm after the stdlib
+     * bake-blob run (urbi_exception_subclass_protos_resolve), mirroring
+     * channel_proto.  NULL until the first realm completes population. */
+    struct UObject *typeerror_proto;
+    struct UObject *arityerror_proto;
+    struct UObject *lookuperror_proto;
+    struct UObject *oomerror_proto;
     /* M6 Phase 8: namespace proto singletons.  T86 lands math_proto
      * (pi / e / nan / infinity); subsequent T87+T88+T90+T91 tasks add
      * system_proto / platform_proto / global_namespace_proto / call-
