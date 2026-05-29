@@ -1,21 +1,29 @@
-# Milestone: v0.10.11-channel-and-isA
-# Covers: Exception.new("exc") constructor; throw/catch with isA() guard; re-throw;
-#         bare throw; nested try; finally-before-throw; Exception display.
-# blocked: Exception structured-throw wiring (defer-v1.x)
-# matrix-row: exceptions-try-catch
+# Milestone: v0.11.4-cat-f
+# Covers: Exception.new("exc") constructor + .message slot; structured throw of an
+#         Exception instance caught and inspected via a side-effect var; catch with
+#         isA() guard on a typed subclass (ArityError); re-throw of the caught
+#         instance to an outer handler; bare uncaught throw -> !!! <message>.
 #
-# Reason:
-#   isA() shipped at v0.10.11 (Cluster #17 ratify).  Remaining block is
-#   Exception structured-throw wiring (defer-v1.x): `catch (var e if
-#   e.isA(exc))` requires typed Exception instances, but the runtime
-#   currently throws diagnostic strings rather than allocating Exception
-#   proto instances.  The typed exception hierarchy (Exception.Constness,
-#   Exception.BadInteger, etc.) and the struct-throw wiring that connects
-#   OP_THROW to allocate-and-populate an Exception proto are both deferred
-#   to v1.x.  isA() itself works correctly post-v0.10.11.
-#
-# Original urbiscript (activate when Exception structured-throw lands):
-# # var exc = Exception.new("exc"); [00000001] Exception `exc'
-# # throw exc; [00000002:error] !!! input.u:@.1-9: exc
-# # try { echo("before"); throw exc; echo("after") } catch(var e if e.isA(exc)) { echo("caught") };
-# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/exceptions/exceptions.chk)
+# NOTE: try/catch is NOT value-producing at the REPL (try { 42 } catch {} -> nil),
+# so caught cases assign into a side-effect var and the fixture diffs that var
+# (matching catch_guard.chk / vm_typeerror_catchable.chk).
+
+# --- Exception.new("exc") constructs an instance carrying a message slot ---
+var e = Exception.new("exc"); e.message
+[00000000] "exc"
+
+# --- a thrown Exception instance is catchable; its message survives ---
+var r = "none"; try { throw Exception.new("exc") } catch (var e) { r = e.message }; r
+[00000001] "exc"
+
+# --- catch with isA() guard on a typed subclass raised natively ---
+var g = "none"; try { Exception.new() } catch (var e if e.isA(ArityError)) { g = e.message }; g
+[00000002] "ArityError: Exception.new expected 1 args, got 0"
+
+# --- re-throw of the caught instance propagates to the outer handler ---
+var hops = ""; try { try { throw Exception.new("exc") } catch (var e) { hops = hops + "1"; throw e } } catch (var e2) { hops = hops + "2:" + e2.message }; hops
+[00000003] "12:exc"
+
+# --- a bare uncaught throw of an Exception instance prints !!! <message> ---
+throw Exception.new("boom")
+[00000004] !!! boom

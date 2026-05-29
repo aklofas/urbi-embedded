@@ -2,18 +2,25 @@
 # Covers: exception regressions: uninitialized var += in catch; asString exception
 #         in asTopLevelPrintable; 1:1 non-tag colon error; scheduler stuck on
 #         concurrent throw + freeze scenario.
-# blocked: Exception structured-throw wiring (defer-v1.x)
+# blocked: compound-assign / bare-catch / named-function-decl (defer-v1.x)
 # matrix-row: exceptions-try-catch
 #
 # Reason:
-#   isA() shipped at v0.10.11.  tag.freeze() shipped at v0.10.9 (D1).
-#   Remaining block is Exception structured-throw wiring (defer-v1.x):
-#   `catch(var e if e.isA(Float))` requires typed Exception instances;
-#   the runtime currently throws diagnostic strings, not allocating
-#   Exception proto instances.  The `class X { function asString() { 0/0 } }`
-#   pattern and the scheduler-stuck regression case (concurrent throw +
-#   freeze) depend on structured-throw plumbing connecting OP_THROW to
-#   allocate-and-populate an Exception proto.  Both deferred to v1.x.
+#   Exception structured-throw now works (v0.11.4-cat-f: catchable typed
+#   instances, isA() guards, !!! <message> uncaught diagnostic — see
+#   exceptions.chk).  These four legacy regression cases are blocked on
+#   OTHER still-unsupported surface, not structured-throw:
+#     1. `var test; try { test += 3 } catch { ... }` — needs both `+=`
+#        compound assignment AND bare `catch {` (no `(var e)`); both
+#        unsupported (parser: `+=` -> "unexpected token"; `catch {` ->
+#        "expected '('").
+#     2. `class X { function asString () { 0/0 } }` — named-function
+#        declarations are unsupported at v1.0 ("use 'var name = function...'").
+#     3. `1:1` non-tag colon — our parser emits a different diagnostic
+#        than the legacy "expected a Tag" message.
+#     4. scheduler-stuck (concurrent throw + `t.freeze`) — also needs bare
+#        `catch`.
+#   Activate when `+=` / bare-catch / named-function-decls land (v1.x).
 #
 # Original urbiscript (activate when Exception structured-throw lands):
 # # var test; try { test += 3 } catch { test = 1; test += 3 };
