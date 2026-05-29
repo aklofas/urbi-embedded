@@ -14,10 +14,12 @@
 #include "value/uintern.h"     /* ustr_intern */
 #include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_arity, urbi_raise_type, urbi_raise_oom */
 #include "ros/uros_internal.h" /* URosBridge, urbi_ros_bridge */
-#include "ros/uros_mock.h"     /* uros_mock_init */
+#include "ros/uros_mock.h"     /* uros_mock_init, uros_mock_inject */
 #include "ros/uros_msg.h"      /* urbi_ros_msg_register_all */
+#include "ros/generated/ros_msgs.gen.h" /* struct urbi_ros__std_msgs__Int32 */
 #include "event/uevent.h"      /* urbi_event_create */
 #include "event/uevent_native.h" /* uvalue_from_event */
+#include "event/uevent_emit.h" /* c_event_emit_async */
 
 #include <stddef.h> /* size_t */
 #include <stdio.h>  /* snprintf */
@@ -44,6 +46,10 @@ ros_register_method(struct UVM *vm, struct UObject *proto,
         return URBI_ERR_OOM;
     return URBI_OK;
 }
+
+/* Forward decl: mock-only test hook, defined near urbi_ros_pump below. */
+static int ros_inject_int32_method(struct UVM *vm, UValue self, UValue *args,
+                                   uint8_t nargs, UValue *out);
 
 /* === ros.init(name) ===
  *
@@ -519,7 +525,8 @@ urbi_ros_register(struct UVM *vm)
      || ros_register_method(vm, rp, "publisher", ros_publisher_method) != URBI_OK
      || ros_register_method(vm, rp, "subscribe", ros_subscribe_method) != URBI_OK
      || ros_register_method(vm, rp, "client",    ros_client_method)    != URBI_OK
-     || ros_register_method(vm, rp, "service",   ros_service_method)   != URBI_OK)
+     || ros_register_method(vm, rp, "service",   ros_service_method)   != URBI_OK
+     || ros_register_method(vm, rp, "__injectInt32", ros_inject_int32_method) != URBI_OK)
         return URBI_ERR_OOM;
 
     return URBI_OK;
@@ -546,10 +553,59 @@ urbi_ros_register_globals(struct UVM *vm, struct URealm *realm)
     return urbi_realm_set_global(vm, realm, "ros", 3, v);
 }
 
+/* urbi_ros_pump: drain the transport's incoming queue once, unmarshal each
+ * message onto the matching subscription's UEvent, and emit so any
+ * `at (sub?(var m))` watcher body fires.  Called once per urbi_step (gated)
+ * and directly by unit tests.  No-op if ros.init() was never called.
+ * Bounded at 64 messages per pump so a flooded queue can't starve the
+ * dispatch loop. */
 void
 urbi_ros_pump(struct UVM *vm)
 {
-    (void)vm;
+    URosBridge *b = urbi_ros_bridge();
+    if (vm == NULL || !b->inited) return;
+    URosIncoming in;
+    int n = 0;
+    while (b->tp.poll(b->tp.self, &in) == 1 && n++ < 64) {
+        struct UEvent *ev = NULL; const char *type = NULL;
+        for (int i = 0; i < b->sub_count; i++)
+            if (b->subs[i].handle == in.sub_handle) {
+                ev = b->subs[i].event; type = b->subs[i].type; break;
+            }
+        if (ev == NULL || type == NULL) continue;
+        const URosMsgType *mt = urbi_ros_msg_lookup(type);
+        if (mt == NULL || in.len != mt->c_size) continue;
+        UValue msg = urbi_make_nil();
+        if (mt->unmarshal(vm, in.bytes, &msg) != 0) continue;
+        c_event_emit_async(vm, ev, msg);
+    }
+}
+
+/* === ros.__injectInt32(subHandle, value) ===
+ *
+ * Mock-only test hook: synthesize a std_msgs/Int32 message and inject it into
+ * the mock transport's incoming queue for the given subscription handle so a
+ * `.chk` fixture can drive the reactive loopback path without a C harness.
+ * Absent once the real rclc/DDS transport lands (it will receive real wire
+ * traffic instead). */
+static int
+ros_inject_int32_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                        UValue *out)
+{
+    (void)self;
+    if (nargs != 2)
+        return urbi_raise_arity(vm, "ros.__injectInt32", 2, nargs, out);
+    if (!urbi_value_is_int(args[0]) || !urbi_value_is_int(args[1]))
+        return urbi_raise_type(vm, "ros.__injectInt32: args must be Ints", out);
+    URosBridge *b = urbi_ros_bridge();
+    if (!b->inited)
+        return urbi_raise_type(vm, "ros.__injectInt32: ros not initialized", out);
+    struct urbi_ros__std_msgs__Int32 s;
+    s.data = (int32_t)urbi_value_as_int(args[1]);
+    uros_mock_inject(b->tp.self, (uint32_t)urbi_value_as_int(args[0]),
+                     &s, sizeof s);
+    *out = urbi_make_nil();
+    return UEXEC_OK;
 }
 
 #else
