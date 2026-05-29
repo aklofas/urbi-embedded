@@ -1,0 +1,13 @@
+{
+  "messages": {
+    "std_msgs/Bool":     [["data", "bool"]],
+    "std_msgs/Int32":    [["data", "int32"]],
+    "std_msgs/Int64":    [["data", "int64"]],
+    "std_msgs/Float32":  [["data", "float32"]],
+    "std_msgs/Float64":  [["data", "float64"]],
+    "geometry_msgs/Vector3": [["x","float64"],["y","float64"],["z","float64"]],
+    "geometry_msgs/Twist":   [["linear","geometry_msgs/Vector3"],["angular","geometry_msgs/Vector3"]],
+    "example_interfaces/AddTwoInts_Request":  [["a","int64"],["b","int64"]],
+    "example_interfaces/AddTwoInts_Response": [["sum","int64"]]
+  }
+}
