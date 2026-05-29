@@ -56,6 +56,8 @@ jobs:
         run: make test-determinism-memdebug
       - name: memory debug — GDB owner-tag walkers
         run: make test-gdb-memdebug
+      - name: ROS2 bridge (mock) tests
+        run: make test-ros2
 
   repl-multi-client-stress:
     name: repl multi-client stress (ASan, 100 trials)

@@ -489,6 +489,20 @@ test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
 	done; \
 	echo "$$count chk fixture(s) passed"
 
+# test-chk-ros — runs all tests/chk/ros/*.chk under URBI_BUILD_PRESET=ros.
+# Every fixture must RUN and PASS; a SKIP is a gate failure (the vacuous-
+# fixture trap: preset mismatch silently empties coverage).
+.PHONY: test-chk-ros
+test-chk-ros: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
+	@set -e; count=0; \
+	for f in tests/chk/ros/*.chk; do \
+	    count=$$((count + 1)); \
+	    out=$$(URBI_BUILD_PRESET=ros tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f" 2>&1); \
+	    echo "$$out"; \
+	    case "$$out" in *SKIP*) echo "test-chk-ros: FAIL — $$f was SKIPPED under preset ros"; exit 1;; esac; \
+	done; \
+	echo "$$count ros chk fixture(s) ran + passed under preset ros"
+
 test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-urbi-server-smoke
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
@@ -702,6 +716,30 @@ test-repl-security:
 	$(MAKE) TARGET=host-repl-security \
 		URBI_ENABLE_REPL=1 \
 		test
+
+# v0.12.0: ROS2 bridge (mock) gate.  Builds the ros-enabled host binary,
+# runs the full unit suite (which includes ros bridge unit tests), then
+# runs all tests/chk/ros/*.chk under preset ros so no fixture is skipped.
+# Own TARGET= keeps Phase 1 -j parallelism race-free.
+.PHONY: test-ros2
+test-ros2:
+	$(MAKE) TARGET=host-ros2 URBI_ENABLE_ROS2=1 \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" \
+		test test-chk-ros
+
+# v0.12.0: ROS2 codegen + gate script targets.  Mirror the test-gdb pattern
+# (delegate entirely to a script; skip-if-absent logic lives in the script).
+.PHONY: check-ros-gate
+check-ros-gate:
+	@sh tests/scripts/check-ros-gate.sh
+
+.PHONY: check-rosgen
+check-rosgen:
+	@sh tests/scripts/check-rosgen.sh
+
+.PHONY: check-rosgen-determinism
+check-rosgen-determinism:
+	@sh tests/scripts/check-rosgen-determinism.sh
 
 # W2/v0.10.3: public-header self-containment gate.
 # Compiles a minimal external program with ONLY -Iinclude (no -Isrc) to
@@ -1039,7 +1077,8 @@ RELEASETEST_PHASE1 := \
     test-gc-roots-coverage test-api-manifest test-aux-symbols \
     test-embedding-guide test-external-embed-iinclude test-port-stm32f4 \
     test-abi-freeze test-wire-freeze test-repl-security \
-    test-stdlib-bytecode-fresh test-dependency-pins
+    test-stdlib-bytecode-fresh test-dependency-pins \
+    test-ros2 check-ros-gate check-rosgen check-rosgen-determinism
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -1785,4 +1824,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace test-perf-counters test-determinism-perf cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-determinism-memdebug urbi-trace unit-runner
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace test-perf-counters test-determinism-perf cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk test-chk-ros releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-determinism-memdebug urbi-trace unit-runner test-ros2 check-ros-gate check-rosgen check-rosgen-determinism
