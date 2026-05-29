@@ -69,4 +69,8 @@ urbi_ros_pump(struct UVM *vm)
     (void)vm;
 }
 
+#else
+/* Avoid ISO C "empty translation unit" (-Wpedantic) when this gated file is
+ * compiled flag-free into build/host for the stdlib bake tool (TARGET != host). */
+typedef int uros_translation_unit_not_empty;
 #endif /* URBI_ENABLE_ROS2 */

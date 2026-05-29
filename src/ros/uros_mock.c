@@ -75,4 +75,8 @@ int uros_mock_last_published(void *self, uint32_t pub, const void **ob, size_t *
     *ob=m->ep[pub].last_pub.buf; *ol=m->ep[pub].last_pub.len;
     return m->ep[pub].last_pub.len>0?1:0;
 }
+#else
+/* Avoid ISO C "empty translation unit" (-Wpedantic) when this gated file is
+ * compiled flag-free into build/host for the stdlib bake tool (TARGET != host). */
+typedef int uros_translation_unit_not_empty;
 #endif /* URBI_ENABLE_ROS2 */
