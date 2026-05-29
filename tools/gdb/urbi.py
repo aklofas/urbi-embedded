@@ -6,6 +6,7 @@
 # the walkers work on a halted/wedged target (the emergency-dump use case).
 #
 # Commands: urbi-strands [VM], urbi-handles [VM], urbi-heap [VM],
+#           urbi-allocs [VM] [N], urbi-leaks [VM] (URBI_MEM_DEBUG),
 #           urbi-trace [VM] [N], urbi-dump [VM].   VM defaults to `vm` in scope.
 #
 # The CHANNELS/SCHEMAS tables mirror src/runtime/utrace_format.c - keep in sync.
@@ -159,8 +160,43 @@ class UrbiHandles(gdb.Command):
             live, cap, int(vm["handle_table_next_id"])))
 
 
+# ---- v0.11.3 memory-debug helpers ------------------------------------------
+# Empirical layout (verified on the real -g binary, v0.11.3):
+#   sizeof(UAllCellsNode)=64, sizeof(UMemDebug)=960. The walkers read fields by
+#   name via debug info, so they tolerate layout changes as long as the names hold.
+
+def _node_head(vm):
+    """vm->all_cells_head is a UCell* laundered from UAllCellsNode*; recast."""
+    try:
+        t = gdb.lookup_type("UAllCellsNode").pointer()
+    except gdb.error:
+        return None
+    head = vm["all_cells_head"]
+    if not ptr(head):
+        return None
+    return head.cast(t)
+
+
+def _has_owner(node):
+    try:
+        node["owner_ret"]
+        return True
+    except gdb.error:
+        return False
+
+
+def _sym(addr):
+    if not addr:
+        return "-"
+    try:
+        s = gdb.execute("info symbol 0x%x" % int(addr), to_string=True).strip()
+        return s.split(" in ")[0]
+    except gdb.error:
+        return "0x%x" % int(addr)
+
+
 class UrbiHeap(gdb.Command):
-    """urbi-heap [VM] - GC stats + handle-table occupancy (no cell walk)."""
+    """urbi-heap [VM] - GC stats + full live-cell walk (URBI_GC_INCREMENTAL)."""
     def __init__(self):
         super(UrbiHeap, self).__init__("urbi-heap", gdb.COMMAND_USER)
 
@@ -174,6 +210,103 @@ class UrbiHeap(gdb.Command):
                 print("  %-20s <n/a>" % f)
         print("  %-20s %d (cap %d)" % ("handles_next_id",
               int(vm["handle_table_next_id"]), int(vm["handle_table_cap"])))
+        node = _node_head(vm)
+        if node is None:
+            print("  (no all-cells walk: UAllCellsNode type absent)")
+            return
+        by_type = {}
+        total = 0
+        n = 0
+        while ptr(node) and n < 100000:
+            cell = node["cell"]
+            tt = int(cell["type_tag"]) if ptr(cell) else -1
+            sz = int(node["size"])
+            ent = by_type.setdefault(tt, [0, 0])
+            ent[0] += 1
+            ent[1] += sz
+            total += sz
+            n += 1
+            node = node["next"]
+        print("  live cells: %d (%d bytes)" % (n, total))
+        for tt in sorted(by_type, key=lambda k: -by_type[k][1]):
+            print("    type %-3d  %6d cells  %8d bytes" % (tt, by_type[tt][0], by_type[tt][1]))
+
+
+class UrbiAllocs(gdb.Command):
+    """urbi-allocs [VM] [N] - top-N allocation sites by bytes (needs URBI_MEM_DEBUG)."""
+    def __init__(self):
+        super(UrbiAllocs, self).__init__("urbi-allocs", gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        parts = arg.split() if arg else []
+        topn = 20
+        if parts and parts[-1].isdigit():
+            topn = int(parts[-1])
+            parts = parts[:-1]
+        vm = resolve_vm(" ".join(parts))
+        node = _node_head(vm)
+        if node is None or not _has_owner(node):
+            print("urbi-allocs: no owner data (build with URBI_MEM_DEBUG=1)")
+            return
+        sites = {}
+        n = 0
+        while ptr(node) and n < 100000:
+            ret = int(node["owner_ret"]) if ptr(node["owner_ret"]) else 0
+            ent = sites.setdefault(ret, [0, 0])
+            ent[0] += 1
+            ent[1] += int(node["size"])
+            n += 1
+            node = node["next"]
+        print("%-44s %8s %10s" % ("alloc site", "cells", "bytes"))
+        for ret in sorted(sites, key=lambda k: -sites[k][1])[:topn]:
+            print("%-44s %8d %10d" % (_sym(ret), sites[ret][0], sites[ret][1]))
+
+
+class UrbiLeaks(gdb.Command):
+    """urbi-leaks [VM] - live host handles + sites, pinned cells, heap-lock violations."""
+    def __init__(self):
+        super(UrbiLeaks, self).__init__("urbi-leaks", gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        vm = resolve_vm(arg)
+        cap = int(vm["handle_table_cap"])
+        tbl = vm["handle_table"]
+        owners = None
+        ocap = 0
+        try:
+            md = vm["memdbg"]
+            if ptr(md):
+                owners = md["handle_owner"]
+                ocap = int(md["handle_owner_cap"])
+        except gdb.error:
+            pass
+        live = 0
+        for i in range(cap):
+            if ptr(tbl) and int(tbl[i]["kind"]) != 0:
+                site = "-"
+                if owners is not None and ptr(owners) and i < ocap:
+                    site = _sym(int(owners[i]["owner_ret"]))
+                print("  handle[%d] %s  created-at %s" % (
+                    i, UValuePrinter(tbl[i]).to_string(), site))
+                live += 1
+        print("  live handles: %d" % live)
+        node = _node_head(vm)
+        pinned = 0
+        while node is not None and ptr(node) and pinned < 100000:
+            cell = node["cell"]
+            if ptr(cell) and (int(cell["gc_byte"]) & 0x10):  # UGC_IS_PINNED
+                site = _sym(int(node["owner_ret"])) if _has_owner(node) else "-"
+                print("  pinned cell @0x%x type %d  owner %s" % (
+                    int(cell), int(cell["type_tag"]), site))
+                pinned += 1
+            node = node["next"]
+        print("  pinned cells: %d" % pinned)
+        try:
+            md = vm["memdbg"]
+            if ptr(md):
+                print("  heap-lock violations: %d" % int(md["hlv_count"]))
+        except gdb.error:
+            pass
 
 
 class UrbiTrace(gdb.Command):
@@ -219,6 +352,10 @@ class UrbiDump(gdb.Command):
         gdb.execute("urbi-strands " + a)
         print("=== urbi-dump: heap ===")
         gdb.execute("urbi-heap " + a)
+        print("=== urbi-dump: allocs ===")
+        gdb.execute("urbi-allocs " + a)
+        print("=== urbi-dump: leaks ===")
+        gdb.execute("urbi-leaks " + a)
         print("=== urbi-dump: trace tail ===")
         gdb.execute("urbi-trace " + a)
 
@@ -231,6 +368,9 @@ except Exception as _e:  # pragma: no cover - registration is best-effort
 UrbiStrands()
 UrbiHandles()
 UrbiHeap()
+UrbiAllocs()
+UrbiLeaks()
 UrbiTrace()
 UrbiDump()
-print("urbi-embedded GDB helpers loaded: urbi-strands, urbi-handles, urbi-heap, urbi-trace, urbi-dump")
+print("urbi-embedded GDB helpers loaded: urbi-strands, urbi-handles, urbi-heap, "
+      "urbi-allocs, urbi-leaks, urbi-trace, urbi-dump")

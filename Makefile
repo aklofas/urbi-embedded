@@ -655,6 +655,12 @@ test-trace-capture: urbi-trace
 test-gdb:
 	@sh tests/scripts/check-gdb.sh
 
+# test-gdb-memdebug — GDB owner-tag walkers against a -DURBI_MEM_DEBUG=1 runner.
+# Asserts urbi-allocs surfaces allocation sites (owner sidecar populated).
+.PHONY: test-gdb-memdebug
+test-gdb-memdebug:
+	@MEMDBG=1 sh tests/scripts/check-gdb.sh
+
 # W4/v0.10.6: REPL security gate aggregate.
 # Runs all repl_security_* and repl_oom_paths tests via the unit-test runner.
 # Wired into RELEASETEST_PHASE1; also runs standalone for CI cost budgeting.
