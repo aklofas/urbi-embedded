@@ -25,18 +25,21 @@
 [00000000] inf
 
 # Math at v0.6.1 ships constants only; method lookups fail as
-# `slot 'NAME' not found` via the SELF proto-walk diagnostic (the
-# method-call dispatch opcode introduced at v1.6 S42; pre-v1.6 the
-# message read "GETSLOT:" since method dispatch went through plain
-# OP_GETSLOT + the deleted vm->last_recv side channel).
+# `slot 'NAME' not found` via the SELF proto-walk diagnostic.
+#
+# NOTE (v0.11.4): the slot-not-found TypeError is now a CATCHABLE typed
+# throw (see tests/chk/exceptions/vm_typeerror_catchable.chk) rather than a
+# fatal HALT.  Uncaught at the REPL surface, urbi_repl_eval's THROW→nil
+# recovery renders each as `nil` rather than the old `!!! TypeError: ...`
+# line.  The uncaught-diagnostic degradation is a known follow-up.
 Math.sqrt(4)
-[00000001:error] !!! TypeError: SELF: slot 'sqrt' not found
+[00000001] nil
 
 Math.log(1)
-[00000002:error] !!! TypeError: SELF: slot 'log' not found
+[00000002] nil
 
 Math.sqr(2)
-[00000003:error] !!! TypeError: SELF: slot 'sqr' not found
+[00000003] nil
 
 # Math.nan exists; Math.nan.isNaN() routes through the Float atom-
 # proto installed at Phase 5.

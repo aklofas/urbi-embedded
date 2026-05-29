@@ -17,6 +17,33 @@
 #include "changed/uchanged_node.h"    /* urbi_emit_slot_change_if_subscribed */
 #include "urbi/gc.h"                  /* urbi_gc_slot_store, urbi_gc_slot_pre_store */
 #include "gc/ugc.h"                   /* UCell */
+#include "stdlib/object_root.h"       /* urbi_raise_typed (v0.11.4) */
+#include "urbi/urbi.h"                /* urbi_throw (v0.11.4) */
+
+/* slot_throw_or_fatal — v0.11.4: shared deposit for the 6 slot-access error
+ * sites.  `msg` is the fully-formatted diagnostic text (already including the
+ * "TypeError: " prefix).  When a strand is running (the normal dispatch case)
+ * build a typed TypeError instance, throw it on vm->cur_strand, and return
+ * VM_SLOT_THREW so the caller does `goto safepoint`.  With no active strand
+ * (should be unreachable from dispatch) keep the legacy fatal diagnostic path:
+ * copy `msg` into vm->last_errmsg and return VM_SLOT_MISSING. */
+static UVmSlotResult
+slot_throw_or_fatal(UVM *vm, const char *msg)
+{
+    if (vm->cur_strand != NULL) {
+        UValue inst;
+        urbi_raise_typed(vm, vm->typeerror_proto, &inst, msg);
+        urbi_throw(vm, vm->cur_strand, inst);
+        return VM_SLOT_THREW;
+    }
+    vm->last_error = UVM_TYPE_ERROR;
+    {
+        UDiagWriter _w;
+        diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+        diag_write_cstr(&_w, msg);
+    }
+    return VM_SLOT_MISSING;
+}
 
 /* -----------------------------------------------------------------------
  * vm_trace_slot_read_if_needed
@@ -122,23 +149,21 @@ vm_dispatch_getter(UVM *vm,
 {
     if (up == NULL || up->oget.kind != (uint8_t)UVAL_CLOSURE
                    || up->oget.v.p == NULL) {
-        vm->last_error = UVM_TYPE_ERROR;
-        {
-            UDiagWriter _w;
-            diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
-            diag_write_cstr(&_w, "TypeError: ");
-            diag_write_cstr(&_w, opname);
-            diag_write_cstr(&_w, ": getter is not a closure");
-        }
-        return VM_SLOT_MISSING;
+        /* v0.11.4: catchable typed throw (was fatal HALT). */
+        char _b[UVM_ERRMSG_CAP];
+        UDiagWriter _w; diag_init(&_w, _b, sizeof _b);
+        diag_write_cstr(&_w, "TypeError: ");
+        diag_write_cstr(&_w, opname);
+        diag_write_cstr(&_w, ": getter is not a closure");
+        return slot_throw_or_fatal(vm, _b);
     }
     UValue result; int threw = 0;
     int rc = urbi_run_closure_on_scratch(vm, (UClosure *)up->oget.v.p,
                                          &result, &threw);
     if (rc != 0 || threw) {
-        vm->last_error = UVM_TYPE_ERROR;
-        vm_format_type_error_msg(vm, "getter raised");
-        return VM_SLOT_MISSING;
+        /* v0.11.4: catchable typed throw (was fatal HALT).  Message text
+         * matches vm_format_type_error_msg(vm, "getter raised"). */
+        return slot_throw_or_fatal(vm, "TypeError: getter raised");
     }
     if (out_result) *out_result = result;
     return VM_SLOT_OK;
@@ -156,23 +181,21 @@ vm_dispatch_setter(UVM *vm,
 {
     if (up == NULL || up->oset.kind != (uint8_t)UVAL_CLOSURE
                    || up->oset.v.p == NULL) {
-        vm->last_error = UVM_TYPE_ERROR;
-        {
-            UDiagWriter _w;
-            diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
-            diag_write_cstr(&_w, "TypeError: ");
-            diag_write_cstr(&_w, opname);
-            diag_write_cstr(&_w, ": setter is not a closure");
-        }
-        return VM_SLOT_MISSING;
+        /* v0.11.4: catchable typed throw (was fatal HALT). */
+        char _b[UVM_ERRMSG_CAP];
+        UDiagWriter _w; diag_init(&_w, _b, sizeof _b);
+        diag_write_cstr(&_w, "TypeError: ");
+        diag_write_cstr(&_w, opname);
+        diag_write_cstr(&_w, ": setter is not a closure");
+        return slot_throw_or_fatal(vm, _b);
     }
     UValue result; int threw = 0;
     int rc = urbi_run_closure_on_scratch_with_payload(
                 vm, (UClosure *)up->oset.v.p, payload, &result, &threw);
     if (rc != 0 || threw) {
-        vm->last_error = UVM_TYPE_ERROR;
-        vm_format_type_error_msg(vm, "setter raised");
-        return VM_SLOT_MISSING;
+        /* v0.11.4: catchable typed throw (was fatal HALT).  Message text
+         * matches vm_format_type_error_msg(vm, "setter raised"). */
+        return slot_throw_or_fatal(vm, "TypeError: setter raised");
     }
     /* Setter return value is discarded. */
     return VM_SLOT_OK;
@@ -224,18 +247,16 @@ vm_getslot_slow(UVM *vm,
     UValue v;
     int rc = urbi_slot_get_slow(vm, recv, ic, &v);
     if (rc != 0) {
-        vm->last_error = UVM_TYPE_ERROR;
-        {
-            UDiagWriter _w;
-            diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
-            diag_write_cstr(&_w, "TypeError: ");
-            diag_write_cstr(&_w, opname);
-            diag_write_cstr(&_w, ": slot '");
-            if (ic->name != NULL)
-                diag_write_cstr(&_w, (const char *)ic->name);
-            diag_write_cstr(&_w, "' not found");
-        }
-        return VM_SLOT_MISSING;
+        /* v0.11.4: catchable typed throw (was fatal HALT). */
+        char _b[UVM_ERRMSG_CAP];
+        UDiagWriter _w; diag_init(&_w, _b, sizeof _b);
+        diag_write_cstr(&_w, "TypeError: ");
+        diag_write_cstr(&_w, opname);
+        diag_write_cstr(&_w, ": slot '");
+        if (ic->name != NULL)
+            diag_write_cstr(&_w, (const char *)ic->name);
+        diag_write_cstr(&_w, "' not found");
+        return slot_throw_or_fatal(vm, _b);
     }
     /* Inspect the freshly-filled IC entry for a pending getter. */
     uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
@@ -268,18 +289,16 @@ vm_setslot_slow(UVM *vm,
 
     int rc = urbi_slot_set_slow(vm, recv, ic, v);
     if (rc != 0) {
-        vm->last_error = UVM_TYPE_ERROR;
-        {
-            UDiagWriter _w;
-            diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
-            diag_write_cstr(&_w, "TypeError: ");
-            diag_write_cstr(&_w, opname);
-            diag_write_cstr(&_w, ": slot write failed for '");
-            if (ic->name != NULL)
-                diag_write_cstr(&_w, (const char *)ic->name);
-            diag_write_cstr(&_w, "' (constant, OOM, or resolve overflow)");
-        }
-        return VM_SLOT_MISSING;
+        /* v0.11.4: catchable typed throw (was fatal HALT). */
+        char _b[UVM_ERRMSG_CAP];
+        UDiagWriter _w; diag_init(&_w, _b, sizeof _b);
+        diag_write_cstr(&_w, "TypeError: ");
+        diag_write_cstr(&_w, opname);
+        diag_write_cstr(&_w, ": slot write failed for '");
+        if (ic->name != NULL)
+            diag_write_cstr(&_w, (const char *)ic->name);
+        diag_write_cstr(&_w, "' (constant, OOM, or resolve overflow)");
+        return slot_throw_or_fatal(vm, _b);
     }
     /* Check if the freshly-filled IC entry has a pending setter. */
     uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)

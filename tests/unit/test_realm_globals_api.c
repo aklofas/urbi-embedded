@@ -138,11 +138,19 @@ UTEST(set_global_const_blocks_script_write) {
     int rc = urbi_realm_set_global_const(&vm, realm, "Object", 6, sentinel);
     UASSERT_EQ(URBI_ERR_CONST_SLOT_WRITE, rc);
 
-    /* Script write must still fail: "Object" is still const (slot index 0). */
-    int run_rc = compile_and_run(&vm, "var Object = 42", NULL);
-    UASSERT(run_rc != URBI_OK);
-    /* Error message must mention the slot name. */
-    UASSERT(strstr(vm.last_errmsg, "Object") != NULL);
+    /* Script write must still be rejected: "Object" is still const (slot
+     * index 0).  v0.11.4: the const-write error is now a CATCHABLE TypeError
+     * (was a fatal HALT setting vm->last_errmsg); observe it via in-script
+     * try/catch recording 1 on a TypeError-typed catch. */
+    UValue run_out = {0};
+    int run_rc = compile_and_run(
+        &vm,
+        "var t = 0; try { var Object = 42 } "
+        "catch (var e if e.isA(TypeError)) { t = 1 }; t",
+        &run_out);
+    UASSERT_EQ(URBI_OK, run_rc);
+    UASSERT_EQ((int)UVAL_INT, (int)run_out.kind);
+    UASSERT_EQ((int64_t)1, run_out.v.i);
 
     urbi_vm_destroy(&vm);
 }

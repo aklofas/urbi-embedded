@@ -42,7 +42,9 @@ typedef enum {
     VM_SLOT_MISSING,
     VM_SLOT_CONST_WRITE,
     VM_SLOT_OOM,
-    VM_SLOT_NO_IC
+    VM_SLOT_NO_IC,
+    VM_SLOT_THREW   /* v0.11.4: helper deposited a catchable typed throw on
+                       vm->cur_strand; caller must `goto safepoint`. */
 } UVmSlotResult;
 
 /* vm_resolve_ic: resolve the IC entry for (recv, ic) and apply the OBJ-IC-POLY

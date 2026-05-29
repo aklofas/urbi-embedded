@@ -944,11 +944,20 @@ dispatch:
             if (sr == VM_SLOT_OK)             { s->R[dst_reg] = out_val; NEXT(); }
             if (sr == VM_SLOT_GETTER_NEEDED)  {
                 UValue gr;
-                if (vm_dispatch_getter(vm, ic->uprops[fk], "GETSLOT", &gr) != VM_SLOT_OK) HALT();
+                /* v0.11.4: VM_SLOT_THREW → catchable throw deposited on the
+                 * strand; advance pc past this OP_GETSLOT (mirrors OP_THROW)
+                 * so a catch-handler resumes after the faulting op. */
+                UVmSlotResult _r = vm_dispatch_getter(vm, ic->uprops[fk], "GETSLOT", &gr);
+                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != VM_SLOT_OK) HALT();
                 s->R[dst_reg] = gr; NEXT();
             }
             /* MISSING — slow path (error formatting + getter check inside helper). */
-            if (vm_getslot_slow(vm, ic, recv, "GETSLOT", &out_val) != VM_SLOT_OK) HALT();
+            {
+                UVmSlotResult _r = vm_getslot_slow(vm, ic, recv, "GETSLOT", &out_val);
+                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != VM_SLOT_OK) HALT();
+            }
             s->R[dst_reg] = out_val;
             NEXT();
         }
@@ -993,7 +1002,11 @@ dispatch:
             UVmSlotResult sr = vm_setslot_value(vm, ic, recv, v, &fk);
             if (sr == VM_SLOT_OK)            { NEXT(); }
             if (sr == VM_SLOT_SETTER_NEEDED) {
-                if (vm_dispatch_setter(vm, ic->uprops[fk], "SETSLOT", v) != VM_SLOT_OK) HALT();
+                /* v0.11.4: VM_SLOT_THREW → catchable throw; advance pc past
+                 * this OP_SETSLOT (mirrors OP_THROW). */
+                UVmSlotResult _r = vm_dispatch_setter(vm, ic->uprops[fk], "SETSLOT", v);
+                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != VM_SLOT_OK) HALT();
                 NEXT();
             }
             if (sr == VM_SLOT_CONST_WRITE)   {
@@ -1008,7 +1021,11 @@ dispatch:
                 HALT();
             }
             /* MISSING — slow path (error formatting + setter/barrier inside helper). */
-            if (vm_setslot_slow(vm, ic, recv, v, "SETSLOT") != VM_SLOT_OK) HALT();
+            {
+                UVmSlotResult _r = vm_setslot_slow(vm, ic, recv, v, "SETSLOT");
+                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != VM_SLOT_OK) HALT();
+            }
             NEXT();
         }
 
@@ -1345,11 +1362,19 @@ dispatch:
             }
             if (sr == VM_SLOT_GETTER_NEEDED) {
                 UValue gr;
-                if (vm_dispatch_getter(vm, ic->uprops[fk], "SELF", &gr) != VM_SLOT_OK) HALT();
+                /* v0.11.4: VM_SLOT_THREW → catchable throw; advance pc past
+                 * this OP_SELF (mirrors OP_THROW). */
+                UVmSlotResult _r = vm_dispatch_getter(vm, ic->uprops[fk], "SELF", &gr);
+                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != VM_SLOT_OK) HALT();
                 s->R[dst_reg + 1U] = self_value; s->R[dst_reg] = gr; NEXT();
             }
             /* MISSING — slow path. */
-            if (vm_getslot_slow(vm, ic, recv, "SELF", &out_slot) != VM_SLOT_OK) HALT();
+            {
+                UVmSlotResult _r = vm_getslot_slow(vm, ic, recv, "SELF", &out_slot);
+                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != VM_SLOT_OK) HALT();
+            }
             s->R[dst_reg + 1U] = self_value;
             s->R[dst_reg]      = out_slot;
             NEXT();

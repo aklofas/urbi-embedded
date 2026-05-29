@@ -13,3 +13,11 @@ var r = "none"; try { Exception.new() } catch (var e if e.isA(ArityError)) { r =
 # --- the caught instance carries the diagnostic message slot ---
 var m = "none"; try { Exception.new() } catch (var e) { m = e.message }; m
 [00000001] "ArityError: Exception.new expected 1 args, got 0"
+
+# --- a VM-internal slot-not-found TypeError (slow get path) is catchable ---
+var t = "none"; try { 1.noSuchSlotXYZ } catch (var e if e.isA(TypeError)) { t = "caught-type" }; t
+[00000002] "caught-type"
+
+# --- pc resumes after a caught slot-error: AFTER statement runs ---
+var u = "before"; try { 1.noSuchSlot } catch (var e) {}; u = "after"; u
+[00000003] "after"

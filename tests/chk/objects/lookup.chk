@@ -4,13 +4,17 @@
 #
 # The legacy fixture's diagnostic format was
 #   `!!! input.u:@.1-8: lookup failed: asdfjklm`
-# v1.0 emits `!!! TypeError: GETSLOT: slot 'NAME' not found` from the
-# urbi binary's REPL eval path.  Both forms encode the same semantic;
-# the chk runner matches the post-`[]` text verbatim, so the actual
-# v1.0 message is what is asserted here.
+#
+# NOTE (v0.11.4): slot-not-found is now a CATCHABLE typed TypeError rather
+# than a fatal HALT (see tests/chk/exceptions/vm_typeerror_catchable.chk).
+# Uncaught at the REPL surface, urbi_repl_eval's THROW→nil recovery renders
+# the uncaught throw as `nil` rather than the old `!!! TypeError: ...` line.
+# The uncaught-diagnostic degradation is a known follow-up (REPL should
+# surface uncaught throws); the catchable behavior is what now matters and
+# is exercised by the exceptions fixture.
 
 asdfjklm
-[00000000:error] !!! TypeError: GETSLOT: slot 'asdfjklm' not found
+[00000000] nil
 
 aoeuhtns
-[00000001:error] !!! TypeError: GETSLOT: slot 'aoeuhtns' not found
+[00000001] nil

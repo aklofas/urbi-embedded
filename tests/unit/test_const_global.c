@@ -2,10 +2,16 @@
 /* T74: const-slot diagnostic on global write.
  *
  * Verifies that:
- *  1. Writing to a constant built-in global slot (e.g. "Object") fails with
- *     the slot name included in vm->last_errmsg.
+ *  1. Writing to a constant built-in global slot (e.g. "Object") raises a
+ *     catchable TypeError (v0.11.4: was a fatal HALT setting vm->last_errmsg).
  *  2. Declaring a new non-const global slot succeeds.
- *  3. Reading an absent global slot fails with the slot name in vm->last_errmsg. */
+ *  3. Reading an absent global slot raises a catchable TypeError.
+ *
+ * v0.11.4: the slow-path slot-not-found / const-write sites in uvm_slot.c now
+ * deposit a catchable typed TypeError on the running strand instead of fatal-
+ * halting.  Uncaught at chunk top these unwind the strand silently (run returns
+ * URBI_OK, last_errmsg is NOT set), so these tests now observe the error via an
+ * in-script try/catch side-effect var that records the caught instance's type. */
 
 #include "utest.h"
 
@@ -24,8 +30,10 @@
 #define UTEST(name) static void name(void)
 
 /* Helper: compile src + run under the VM's global realm.
- * Returns URBI_OK on success; leaves vm->last_errmsg populated on error. */
-static int compile_and_run(UVM *vm, const char *src)
+ * Returns URBI_OK on success; writes the chunk's last result to *out_result
+ * when non-NULL.  Leaves vm->last_errmsg populated on a fatal (non-throw)
+ * error. */
+static int compile_and_run(UVM *vm, const char *src, UValue *out_result)
 {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -57,6 +65,7 @@ static int compile_and_run(UVM *vm, const char *src)
     }
     UValue out = {0};
     int rc = urbi_run_chunk(vm, NULL, &module, &out);
+    if (out_result != NULL) *out_result = out;
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
     return rc;
@@ -67,17 +76,24 @@ static int compile_and_run(UVM *vm, const char *src)
 UTEST(top_level_var_object_raises_const_slot_write) {
     /* "var Object = 42" at chunk-top tries to overwrite the built-in
      * constant "Object" slot on the global object.  The IC slow path
-     * detects URBI_SLOT_FLAG_CONSTANT and the VM halts with an error
-     * message that includes the slot name. */
+     * detects URBI_SLOT_FLAG_CONSTANT.  v0.11.4: this now raises a CATCHABLE
+     * TypeError (was a fatal HALT).  Observe it via an in-script try/catch
+     * that records 1 on a TypeError-typed catch. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    int rc = compile_and_run(&vm, "var Object = 42");
+    UValue out = {0};
+    int rc = compile_and_run(
+        &vm,
+        "var t = 0; try { var Object = 42 } "
+        "catch (var e if e.isA(TypeError)) { t = 1 }; t",
+        &out);
 
-    /* Must fail at runtime (constant write rejected). */
-    UASSERT(rc != URBI_OK);
-    /* Error message must contain the slot name "Object". */
-    UASSERT(strstr(vm.last_errmsg, "Object") != NULL);
+    /* Run completes (the throw is caught in-script). */
+    UASSERT_EQ(URBI_OK, rc);
+    /* The const-write error was raised AND caught as a TypeError. */
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ((int64_t)1, out.v.i);
 
     urbi_vm_destroy(&vm);
 }
@@ -89,7 +105,7 @@ UTEST(slot_assign_on_object_proto_works) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    int rc = compile_and_run(&vm, "var x = 42");
+    int rc = compile_and_run(&vm, "var x = 42", NULL);
 
     /* Must succeed. */
     UASSERT_EQ(URBI_OK, rc);
@@ -100,17 +116,23 @@ UTEST(slot_assign_on_object_proto_works) {
 UTEST(unresolved_identifier_raises_slot_not_found) {
     /* Bare identifier "nonexistent_global_xyz" at chunk-top compiles to
      * a GETSLOT on the global object.  The slot doesn't exist; the IC
-     * slow path returns a miss and the VM halts with an error message that
-     * includes the slot name. */
+     * slow path returns a miss.  v0.11.4: this now raises a CATCHABLE
+     * TypeError (was a fatal HALT).  Observe it via in-script try/catch. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    int rc = compile_and_run(&vm, "nonexistent_global_xyz");
+    UValue out = {0};
+    int rc = compile_and_run(
+        &vm,
+        "var t = 0; try { nonexistent_global_xyz } "
+        "catch (var e if e.isA(TypeError)) { t = 1 }; t",
+        &out);
 
-    /* Must fail at runtime (slot not found). */
-    UASSERT(rc != URBI_OK);
-    /* Error message must contain the missing slot name. */
-    UASSERT(strstr(vm.last_errmsg, "nonexistent_global_xyz") != NULL);
+    /* Run completes (the throw is caught in-script). */
+    UASSERT_EQ(URBI_OK, rc);
+    /* The slot-not-found error was raised AND caught as a TypeError. */
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ((int64_t)1, out.v.i);
 
     urbi_vm_destroy(&vm);
 }

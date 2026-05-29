@@ -1172,7 +1172,16 @@ UTEST(vm_op_getslot_binds_ic_table_at_top_level) {
      * root Object, finds no `x` slot). */
     UVM vm;
     ULexer lex;
-    const char *src = "var o = nil; o.x";
+    /* v0.11.4: the slot-not-found error from `o.x` is now a CATCHABLE typed
+     * TypeError (was a fatal HALT setting vm->last_errmsg).  The IC-binding
+     * transition is still observed: if the IC table were unbound the GETSLOT
+     * arm would HALT with "no IC table bound" (NOT a catchable throw), so a
+     * successfully-caught TypeError proves both that the IC table is bound and
+     * that the slow-path miss now throws.  An in-script try/catch records 1 on
+     * a TypeError-typed catch. */
+    const char *src =
+        "var o = nil; var t = 0; try { o.x } "
+        "catch (var e if e.isA(TypeError)) { t = 1 }; t";
     ulex_init(&lex, src, strlen(src));
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
@@ -1191,13 +1200,11 @@ UTEST(vm_op_getslot_binds_ic_table_at_top_level) {
     UValue out = {0};
     UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
     UVMError rc = urbi_vm_run(&vm, NULL, &module, &out);
-    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
-    /* Phase 2 of v0.6.0: nil routes via atom-method dispatch to root
-     * Object; lookup of `x` then fails as "slot 'x' not found" (the IC
-     * binding is still wired — just the receiver-type rejection moved
-     * to the slow-path miss). */
-    UASSERT(strstr(vm.last_errmsg, "slot 'x' not found") != NULL);
-    UASSERT(strstr(vm.last_errmsg, "no IC table bound") == NULL);
+    /* Run completes (throw caught in-script). */
+    UASSERT_EQ((int)URBI_OK, (int)rc);
+    /* The slot-not-found error was raised AND caught as a TypeError. */
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ((int64_t)1, out.v.i);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);

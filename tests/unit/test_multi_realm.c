@@ -84,9 +84,17 @@ UTEST(multi_session_class_isolation)
     int rc_a = eval_under(&vm, a, "class Foo {}", buf, sizeof(buf));
     UASSERT_EQ(URBI_OK, rc_a);
 
-    /* Realm B: Foo should NOT be visible — must return a non-OK error. */
-    int rc_b = eval_under(&vm, b, "Foo", buf, sizeof(buf));
-    UASSERT(rc_b != URBI_OK);
+    /* Realm B: Foo should NOT be visible.  v0.11.4: a slot-not-found is now a
+     * CATCHABLE TypeError (was a fatal HALT → STRAND_FATAL).  Uncaught it
+     * unwinds the strand to nil (URBI_OK), so observe isolation via in-script
+     * try/catch: the lookup must raise (catch records 1; the success branch
+     * records 0). */
+    buf[0] = '\0';
+    int rc_b = eval_under(&vm, b,
+                          "var t = 0; try { Foo; t = 0 } catch (var e) { t = 1 }; t",
+                          buf, sizeof(buf));
+    UASSERT_EQ(URBI_OK, rc_b);
+    UASSERT_EQ((int64_t)1, parse_int_result(buf));
 
     urbi_realm_destroy(&vm, a);
     urbi_realm_destroy(&vm, b);
