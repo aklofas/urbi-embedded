@@ -5,8 +5,11 @@
 #include "urbi/ros.h"
 #include "urbi/urbi.h"         /* URBI_OK, URBI_ERR_* */
 #include "urbi/object.h"       /* URBIAtomFamily, URBI_ATOM_OBJECT, urbi_object_root */
+#include "urbi/types.h"        /* UValue, UVAL_OBJECT */
 #include "vm/uvm.h"            /* UVM */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_set_protos_single */
+#include "realm/urealm.h"      /* URealm, urbi_realm_set_global */
+#include "runtime/umacros.h"   /* urbi_zero */
 
 /* urbi_ros_register: allocate vm->ros_proto as a root-Object-family UObject
  * and cache it on the VM.  Called from urbi_stdlib_boot (gated).
@@ -29,11 +32,25 @@ urbi_ros_register(struct UVM *vm)
     return URBI_OK;
 }
 
+/* urbi_ros_register_globals: bind "ros" as a realm global pointing at
+ * vm->ros_proto.  Called per-realm from urbi_populate_realm_globals
+ * (gated on URBI_ENABLE_ROS2) AFTER urbi_stdlib_boot populates ros_proto.
+ *
+ * `import ros` is not a keyword in this runtime (no import-table surface
+ * yet — see module_load_isolation.chk "blocked" annotation); the `ros`
+ * realm global is directly accessible as a bare identifier without any
+ * import statement.  No module-table registration is needed. */
 int
 urbi_ros_register_globals(struct UVM *vm, struct URealm *realm)
 {
-    (void)vm; (void)realm;
-    return 0; /* URBI_OK — stub; filled in by later tasks */
+    if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
+    if (vm->ros_proto == NULL) return URBI_ERR_INVALID_STATE;
+
+    UValue v;
+    urbi_zero(&v, sizeof(v));
+    v.kind = (uint8_t)UVAL_OBJECT;
+    v.v.p  = vm->ros_proto;
+    return urbi_realm_set_global(vm, realm, "ros", 3, v);
 }
 
 void

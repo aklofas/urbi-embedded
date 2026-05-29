@@ -1,0 +1,17 @@
+# Milestone: v0.12.0-ros-foundation
+# Covers: urbi_ros_register_globals binds `ros` as a realm global
+#         pointing at vm->ros_proto.  The identity check proves the
+#         slot is stable (same pointer returned on two successive reads).
+#
+# Note: `import` is not a keyword in this runtime (no import-table
+#       surface yet — see module_load_isolation.chk "blocked" annotation).
+#       The equivalent test is the identity check below: if `ros` resolves
+#       as a realm global, both reads return the same UObject pointer.
+#
+# tunables: ros
+#
+# This fixture requires an URBI_ENABLE_ROS2=1 build and URBI_BUILD_PRESET=ros.
+# Skipped (PASS) by the base test-chk sweep (URBI_BUILD_PRESET=default).
+
+(ros) == (ros)
+[00000000] true

@@ -32,6 +32,9 @@
 #include "stdlib/control_native.h" /* urbi_control_native_register_globals — v0.10.10 D7-C */
 #include "stdlib/tag_globals.h"    /* urbi_tag_globals_register_globals — v0.10.10 D7-D */
 #include "stdlib/channel_native.h" /* urbi_channel_proto_resolve, urbi_channel_register_globals — v0.10.11 D6 */
+#ifdef URBI_ENABLE_ROS2
+#  include "urbi/ros.h"            /* urbi_ros_register_globals — v0.12.0 Task 3 */
+#endif
 #ifdef URBI_ENABLE_REPL
 #  include "stdlib/debug_namespace.h" /* urbi_debug_namespace_register_globals — v0.9.1 */
 #endif
@@ -556,6 +559,18 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
             return (UErrCode)rc;
         }
     }
+
+    /* v0.12.0 Task 3: bind `ros` as a realm global (URBI_ENABLE_ROS2 builds).
+     *
+     * vm->ros_proto is allocated at stdlib boot (urbi_ros_register, gated).
+     * No resolve step needed — the proto is a raw UObject, not a .u class.
+     * Must run after urbi_run_chunk so the stdlib bake has completed. */
+#ifdef URBI_ENABLE_ROS2
+    {
+        int rc = urbi_ros_register_globals(vm, realm);
+        if (rc != URBI_OK) return (UErrCode)rc;
+    }
+#endif
 
     /* Cache Exception-subclass protos.  Must run AFTER the bake-blob run
      * above, which defines the subclasses; idempotent across realms. */
