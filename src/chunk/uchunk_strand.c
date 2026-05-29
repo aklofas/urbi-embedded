@@ -119,7 +119,7 @@ capture_uncaught_throw_diag(UVM *vm, const UStrand *loader)
     if (e == NULL) return;
 
     const char *msg = NULL;
-    USymbol *sym_message = (USymbol *)ustr_intern(vm, "message", 7);
+    const USymbol *sym_message = (const USymbol *)ustr_intern(vm, "message", 7);
     if (sym_message != NULL) {
         UObject *holder = NULL;
         uint32_t idx    = 0U;

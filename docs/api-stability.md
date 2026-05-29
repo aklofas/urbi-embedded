@@ -9,7 +9,7 @@
 > after the stdlib bake + added to the GC root set; the strand catch_value added
 > to the GC root walker; four new Exception subclasses (RuntimeError,
 > SchedulingError, SyntaxError, OutOfMemoryError); uncaught typed throws print a
-> "!!! <message>" diagnostic at top level.  The structured-throw work added two
+> `!!! <message>` diagnostic at top level.  The structured-throw work added two
 > internal exported symbols (urbi_raise_typed,
 > urbi_exception_subclass_protos_resolve) already manifested in Tier 4 of
 > docs/api-surface-tiers.md — internal-leak, not public surface, so PATCH.  Plus
