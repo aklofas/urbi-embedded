@@ -316,6 +316,7 @@ extern void test_ros_proto_suite(void);
 extern void test_ros_mock_suite(void);
 extern void test_ros_marshal_suite(void);
 extern void test_ros_registry_suite(void);
+extern void test_ros_publish_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -608,6 +609,7 @@ static const struct suite_entry suites[] = {
     {"ros_mock",                         test_ros_mock_suite},
     {"ros_marshal",                      test_ros_marshal_suite},
     {"ros_registry",                     test_ros_registry_suite},
+    {"ros_publish",                      test_ros_publish_suite},
     /* Add new suites here as test files are added. */
 };
 
