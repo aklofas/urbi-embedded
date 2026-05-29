@@ -10,6 +10,16 @@
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_set_protos_single */
 #include "realm/urealm.h"      /* URealm, urbi_realm_set_global */
 #include "runtime/umacros.h"   /* urbi_zero */
+#include "ros/uros_internal.h" /* URosBridge, urbi_ros_bridge */
+
+/* Singleton bridge state (zero-initialized). */
+static URosBridge g_bridge;
+
+URosBridge *
+urbi_ros_bridge(void)
+{
+    return &g_bridge;
+}
 
 /* urbi_ros_register: allocate vm->ros_proto as a root-Object-family UObject
  * and cache it on the VM.  Called from urbi_stdlib_boot (gated).
