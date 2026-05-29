@@ -20,6 +20,11 @@ typedef struct {
         const char    *type;
     } subs[UROS_MAX_SUBS];
     int           sub_count;
+    struct {
+        uint32_t    handle;
+        const char *type;
+    } services[UROS_MAX_SUBS];
+    int           service_count;
 } URosBridge;
 
 /* Returns the singleton bridge state. Defined in uros.c. */

@@ -159,6 +159,182 @@ ros_subscribe_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
+/* === Client proto (file-static, GC-rooted via hidden slot on ros_proto) ===
+ *
+ * g_client_proto is cloned by ros.client() for each new client.
+ * The proto itself is kept alive by a hidden slot installed on the ros_proto
+ * during urbi_ros_register. */
+static struct UObject *g_client_proto;
+
+/* === Client.call(req, respType) ===
+ *
+ * Read __handle and __type (the request type) from self.  Marshal req into a
+ * C buffer, call the transport, then unmarshal the response with respType. */
+static int
+client_call_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                   UValue *out)
+{
+    if (nargs != 2)
+        return urbi_raise_arity(vm, "Client.call", 2, nargs, out);
+    if (!urbi_value_is_str(args[1]))
+        return urbi_raise_type(vm, "Client.call: respType must be a String", out);
+
+    /* Read __handle. */
+    UValue hv = urbi_make_nil();
+    if (urbi_slot_get(vm, self, "__handle", 8, &hv) != URBI_OK
+     || !urbi_value_is_int(hv))
+        return urbi_raise_type(vm, "Client.call: invalid client (missing __handle)", out);
+    int64_t handle = urbi_value_as_int(hv);
+
+    /* Read __type (request message type). */
+    UValue tv = urbi_make_nil();
+    if (urbi_slot_get(vm, self, "__type", 6, &tv) != URBI_OK
+     || !urbi_value_is_str(tv))
+        return urbi_raise_type(vm, "Client.call: invalid client (missing __type)", out);
+    size_t reqtl;
+    const char *reqtype = urbi_value_as_str(tv, &reqtl);
+
+    const URosMsgType *mtreq = urbi_ros_msg_lookup(reqtype);
+    if (mtreq == NULL)
+        return urbi_raise_type(vm, "Client.call: unknown request message type", out);
+
+    /* Marshal the request object. */
+    unsigned char reqbuf[512];
+    if (mtreq->c_size > sizeof reqbuf)
+        return urbi_raise_type(vm, "Client.call: request message too large", out);
+    urbi_zero(reqbuf, mtreq->c_size);
+    if (mtreq->marshal(vm, args[0], reqbuf) != 0)
+        return urbi_raise_type(vm, "Client.call: request marshal failed", out);
+
+    /* Call the transport (mock echoes req bytes to resp). */
+    URosBridge *b = urbi_ros_bridge();
+    if (!b->inited)
+        return urbi_raise_type(vm, "Client.call: ros not initialized", out);
+    unsigned char respbuf[512];
+    size_t rlen = 0;
+    if (b->tp.call(b->tp.self, (uint32_t)handle,
+                   reqbuf, mtreq->c_size,
+                   respbuf, sizeof respbuf, &rlen) != 0)
+        return urbi_raise_type(vm, "Client.call: transport call failed", out);
+
+    /* Unmarshal the response using the caller-supplied response type. */
+    size_t resptl;
+    const char *resptype = urbi_value_as_str(args[1], &resptl);
+    const URosMsgType *mtresp = urbi_ros_msg_lookup(resptype);
+    if (mtresp == NULL)
+        return urbi_raise_type(vm, "Client.call: unknown response message type", out);
+    if (rlen < mtresp->c_size)
+        return urbi_raise_type(vm, "Client.call: response too short", out);
+    if (mtresp->unmarshal(vm, respbuf, out) != 0)
+        return urbi_raise_type(vm, "Client.call: response unmarshal failed", out);
+
+    return UEXEC_OK;
+}
+
+/* === ros.client(service, type) ===
+ *
+ * Create a client endpoint on the current transport.  Returns a Client object
+ * (clone of g_client_proto) with hidden slots __handle and __type. */
+static int
+ros_client_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                  UValue *out)
+{
+    (void)self;
+    if (nargs != 2) return urbi_raise_arity(vm, "ros.client", 2, nargs, out);
+    if (!urbi_value_is_str(args[0]))
+        return urbi_raise_type(vm, "ros.client: service must be a String", out);
+    if (!urbi_value_is_str(args[1]))
+        return urbi_raise_type(vm, "ros.client: type must be a String", out);
+
+    size_t sl, tl;
+    const char *service = urbi_value_as_str(args[0], &sl);
+    const char *type    = urbi_value_as_str(args[1], &tl);
+
+    if (urbi_ros_msg_lookup(type) == NULL)
+        return urbi_raise_type(vm, "ros.client: unknown message type", out);
+
+    URosBridge *b = urbi_ros_bridge();
+    if (!b->inited)
+        return urbi_raise_type(vm, "ros.client: ros not initialized", out);
+
+    uint32_t h = b->tp.create_client(b->tp.self, service, type);
+    if (h == UROS_INVALID_HANDLE)
+        return urbi_raise_type(vm, "ros.client: transport rejected client", out);
+
+    if (g_client_proto == NULL)
+        return urbi_raise_type(vm, "ros.client: client proto not initialized", out);
+
+    struct UObject *co = urbi_object_clone(vm, g_client_proto);
+    if (co == NULL)
+        return urbi_raise_type(vm, "ros.client: OOM cloning client proto", out);
+
+    UValue cv = urbi_make_object(co);
+
+    if (urbi_slot_set(vm, cv, "__handle", 8, urbi_make_int((int64_t)h)) != URBI_OK)
+        return urbi_raise_type(vm, "ros.client: OOM setting __handle", out);
+
+    UValue tsv = urbi_make_str_interned(vm, type, tl);
+    if (tsv.kind == (uint8_t)UVAL_NIL)
+        return urbi_raise_type(vm, "ros.client: OOM interning type string", out);
+    if (urbi_slot_set(vm, cv, "__type", 6, tsv) != URBI_OK)
+        return urbi_raise_type(vm, "ros.client: OOM setting __type", out);
+
+    *out = cv;
+    return UEXEC_OK;
+}
+
+/* === ros.service(name, type, closure) ===
+ *
+ * Register a service endpoint and GC-root the handler closure.
+ * v0.12.0: handler stored + rooted; invocation lands in v0.12.1 (mock has no
+ * inbound request path). */
+static int
+ros_service_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                   UValue *out)
+{
+    (void)self;
+    if (nargs != 3) return urbi_raise_arity(vm, "ros.service", 3, nargs, out);
+    if (!urbi_value_is_str(args[0]))
+        return urbi_raise_type(vm, "ros.service: name must be a String", out);
+    if (!urbi_value_is_str(args[1]))
+        return urbi_raise_type(vm, "ros.service: type must be a String", out);
+    if (args[2].kind != (uint8_t)UVAL_CLOSURE)
+        return urbi_raise_type(vm, "ros.service: handler must be a closure", out);
+
+    size_t nl, tl;
+    const char *name = urbi_value_as_str(args[0], &nl);
+    const char *type = urbi_value_as_str(args[1], &tl);
+
+    const URosMsgType *mt = urbi_ros_msg_lookup(type);
+    if (mt == NULL)
+        return urbi_raise_type(vm, "ros.service: unknown message type", out);
+
+    URosBridge *b = urbi_ros_bridge();
+    if (!b->inited)
+        return urbi_raise_type(vm, "ros.service: ros not initialized", out);
+    if (b->service_count >= UROS_MAX_SUBS)
+        return urbi_raise_type(vm, "ros.service: too many services", out);
+
+    uint32_t h = b->tp.create_service(b->tp.self, name, type);
+    if (h == UROS_INVALID_HANDLE)
+        return urbi_raise_type(vm, "ros.service: transport rejected service", out);
+
+    b->services[b->service_count].handle = h;
+    b->services[b->service_count].type   = mt->name;
+    b->service_count++;
+
+    /* GC-root the handler closure via a hidden slot on ros_proto keyed by handle. */
+    char slot[32];
+    int sl2 = snprintf(slot, sizeof slot, "__service_%u", h);
+    USymbol *sy = (USymbol *)ustr_intern(vm, slot, (size_t)sl2);
+    if (sy == NULL) return urbi_raise_oom(vm, out);
+    if (urbi_object_set_local_slot(vm, (UObject *)vm->ros_proto, sy, args[2]) != 0)
+        return urbi_raise_oom(vm, out);
+
+    *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
 /* === Publisher proto (file-static, GC-rooted via hidden slot on ros_proto) ===
  *
  * g_publisher_proto is cloned by ros.publisher() for each new publisher.
@@ -317,13 +493,33 @@ urbi_ros_register(struct UVM *vm)
             return URBI_ERR_OOM;
     }
 
+    /* Build the Client proto: clone root Object, install call method,
+     * root via __client_proto slot on ros_proto. */
+    g_client_proto = urbi_object_clone(vm, root);
+    if (g_client_proto == NULL) return URBI_ERR_OOM;
+    if (ros_register_method(vm, g_client_proto, "call",
+                            client_call_method) != URBI_OK)
+        return URBI_ERR_OOM;
+
+    USymbol *cli_sym = (USymbol *)ustr_intern(vm, "__client_proto", 14);
+    if (cli_sym == NULL) return URBI_ERR_OOM;
+    {
+        UValue cli_v = urbi_make_nil();
+        cli_v.kind = (uint8_t)UVAL_OBJECT;
+        cli_v.v.p  = (void *)g_client_proto;
+        if (urbi_object_set_local_slot(vm, proto, cli_sym, cli_v) != 0)
+            return URBI_ERR_OOM;
+    }
+
     /* Install native methods on the ros proto. */
     UObject *rp = (UObject *)vm->ros_proto;
     if (ros_register_method(vm, rp, "init",      ros_init_method)      != URBI_OK
      || ros_register_method(vm, rp, "inited",    ros_inited_method)    != URBI_OK
      || ros_register_method(vm, rp, "msg",       ros_msg_method)       != URBI_OK
      || ros_register_method(vm, rp, "publisher", ros_publisher_method) != URBI_OK
-     || ros_register_method(vm, rp, "subscribe", ros_subscribe_method) != URBI_OK)
+     || ros_register_method(vm, rp, "subscribe", ros_subscribe_method) != URBI_OK
+     || ros_register_method(vm, rp, "client",    ros_client_method)    != URBI_OK
+     || ros_register_method(vm, rp, "service",   ros_service_method)   != URBI_OK)
         return URBI_ERR_OOM;
 
     return URBI_OK;

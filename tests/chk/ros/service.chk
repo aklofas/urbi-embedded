@@ -1,0 +1,16 @@
+# Milestone: v0.12.0-ros-foundation
+# Covers: ros.client(service, type) + Client.call(req, respType) end-to-end
+#         round-trip via the mock transport (echo: req bytes -> resp bytes).
+#         Uses example_interfaces/AddTwoInts_Request as both req and resp type
+#         so the echo produces identical a/b fields.
+#
+# tunables: ros
+#
+# This fixture requires an URBI_ENABLE_ROS2=1 build and URBI_BUILD_PRESET=ros.
+# Skipped (PASS) by the base test-chk sweep (URBI_BUILD_PRESET=default).
+
+# Chain setup on one line so only the final scalar is output.
+ros.init("n"); var c = ros.client("/add", "example_interfaces/AddTwoInts_Request"); var req = ros.msg("example_interfaces/AddTwoInts_Request"); req.a = 2; req.b = 5; var resp = c.call(req, "example_interfaces/AddTwoInts_Request"); resp.a
+[00000000] 2
+resp.b
+[00000001] 5
