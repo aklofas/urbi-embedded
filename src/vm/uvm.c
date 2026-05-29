@@ -659,6 +659,21 @@ dispatch:
                     }
                     NEXT();
                 }
+                if (rc == UEXEC_THROW) {
+                    /* v0.11.4: native helpers (urbi_raise_*) build a typed
+                     * Exception instance into native_out.  Deposit it as a
+                     * catchable throw instead of fatal-halting; the safepoint
+                     * walks the cleanup stack to a try-handler (or terminates
+                     * the strand if none).  Mirrors OP_THROW's deposit shape. */
+                    s->R[a]           = native_out;  /* register-window rooting
+                                                         parity with the OK arm;
+                                                         the unwind reads
+                                                         unwind_value, not R[a] */
+                    s->unwind_value   = native_out;
+                    s->pending_unwind = UEXEC_THROW;
+                    s->pc++;
+                    goto safepoint;
+                }
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: native method raised");
                 HALT();

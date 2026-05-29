@@ -511,9 +511,14 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
     }
 
     /* (2) Unwind state (row 7 §4.4).
-     *     unwind_value and fatal_value are UValue fields on the strand. */
+     *     unwind_value and fatal_value are UValue fields on the strand.
+     *     v0.11.4: catch_value holds the caught throw between urbi_unwind's
+     *     bind step and the handler's OP_LOAD_CATCH_VALUE; it must be rooted
+     *     so a GC slice at the post-unwind safepoint cannot collect a
+     *     freshly-cloned typed Exception instance (urbi_raise_*). */
     cb(vm, &s->unwind_value, ctx);
     cb(vm, &s->fatal_value,  ctx);
+    cb(vm, &s->catch_value,  ctx);
 
     /* (3) Cleanup-stack entries (row 7 §4.4).
      *     owning_tag (UTag*) was GC-promoted at M5 but is reached indirectly:

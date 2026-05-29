@@ -1,0 +1,15 @@
+# Milestone: v0.11.4-cat-f
+# Covers: a VM-internal native-method raise (Exception.new wrong arity ->
+#         ArityError) is catchable as a typed instance, not a fatal HALT.
+#
+# NOTE: try/catch is observed via a side-effect var (matching catch_guard.chk):
+# the try/catch construct does not propagate its body value to the REPL result
+# register, so the catch body assigns into `r` and the fixture diffs `r`.
+
+# --- typed ArityError instance is catchable; guard sees the right subclass ---
+var r = "none"; try { Exception.new() } catch (var e if e.isA(ArityError)) { r = "caught-arity" }; r
+[00000000] "caught-arity"
+
+# --- the caught instance carries the diagnostic message slot ---
+var m = "none"; try { Exception.new() } catch (var e) { m = e.message }; m
+[00000001] "ArityError: Exception.new expected 1 args, got 0"
