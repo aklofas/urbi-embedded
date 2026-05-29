@@ -32,6 +32,10 @@ handle_table_grow(UVM *vm)
     urbi_zero(&grown[old_cap], (new_cap - old_cap) * sizeof(UValue));
     vm->handle_table     = grown;
     vm->handle_table_cap = new_cap;
+#if URBI_MEM_DEBUG
+    if (vm->memdbg == NULL) umemdbg_init(vm);
+    umemdbg_handle_grow(vm, new_cap);   /* parallel owner array tracks the table */
+#endif
     return 0;
 }
 
@@ -51,6 +55,10 @@ urbi_handle_create(UVM *vm, UValue v)
     }
     uint32_t slot = vm->handle_table_next_id++;
     vm->handle_table[slot] = v;
+#if URBI_MEM_DEBUG
+    umemdbg_handle_created(vm, slot, __builtin_return_address(0),
+                           (uint16_t)(uintptr_t)vm->cur_strand);
+#endif
     return slot + 1U;   /* 1-indexed; 0 is URBI_HANDLE_INVALID */
 }
 
@@ -74,6 +82,12 @@ urbi_handle_release(UVM *vm, UHandle h)
     if (h == URBI_HANDLE_INVALID) return;
     uint32_t slot = h - 1U;
     if (slot >= vm->handle_table_cap) return;
+#if URBI_MEM_DEBUG
+    {
+        int was_live = (vm->handle_table[slot].kind != UVAL_NIL);
+        umemdbg_handle_released(vm, slot, was_live);   /* flags double-release */
+    }
+#endif
     /* FOUND-019 + FOUND-048: zero-init UValue via canonical helper. */
     vm->handle_table[slot] = urbi_make_nil();
     /* Slot is logically free but not reused at M3 — no free-list.

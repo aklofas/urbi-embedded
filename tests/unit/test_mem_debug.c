@@ -15,6 +15,7 @@
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "runtime/umemdebug.h"
+#include "runtime/uhandle.h"   /* UHandle, urbi_handle_create/_release */
 #include <string.h>
 
 #define UTEST(name) static void name(void)
@@ -110,6 +111,38 @@ UTEST(mem_debug_memcheck_json)
 #endif
 }
 
+UTEST(mem_debug_handle_double_release_flagged)
+{
+#if URBI_MEM_DEBUG
+    UVM vm;
+    UHandle h;
+    urbi_vm_init(&vm, NULL, NULL);
+    h = urbi_handle_create(&vm, urbi_make_int(7));
+    urbi_handle_release(&vm, h);
+    urbi_handle_release(&vm, h);                 /* second release = double-free */
+    UASSERT(vm.memdbg != NULL);
+    UASSERT(vm.memdbg->double_frees >= 1);
+    urbi_vm_destroy(&vm);
+#else
+    UASSERT(1);
+#endif
+}
+
+UTEST(mem_debug_live_handle_is_reported)
+{
+#if URBI_MEM_DEBUG
+    UVM vm; uint32_t live = 0, i;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)urbi_handle_create(&vm, urbi_make_int(42));   /* never released */
+    for (i = 0; i < vm.handle_table_cap; i++)
+        if (vm.handle_table[i].kind != UVAL_NIL) live++;
+    UASSERT(live >= 1);                          /* leak visible to memCheck/urbi-leaks */
+    urbi_vm_destroy(&vm);
+#else
+    UASSERT(1);
+#endif
+}
+
 void test_mem_debug_suite(void)
 {
     utest_run("mem_debug_gate_compiles_both_modes", mem_debug_gate_compiles_both_modes);
@@ -117,4 +150,6 @@ void test_mem_debug_suite(void)
     utest_run("mem_debug_redzone_clean_under_normal_run", mem_debug_redzone_clean_under_normal_run);
     utest_run("mem_debug_quarantine_catches_write_after_free", mem_debug_quarantine_catches_write_after_free);
     utest_run("mem_debug_memcheck_json", mem_debug_memcheck_json);
+    utest_run("mem_debug_handle_double_release_flagged", mem_debug_handle_double_release_flagged);
+    utest_run("mem_debug_live_handle_is_reported", mem_debug_live_handle_is_reported);
 }
