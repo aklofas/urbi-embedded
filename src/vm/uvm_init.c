@@ -38,6 +38,9 @@
 #include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM — T23 return-code surface */
 #include "changed/uchanged_node.h"  /* urbi_deferred_slot_changes_walk_roots */
 #include "runtime/utest_hooks.h"    /* W3/v0.10.4: UTestHooks lifecycle */
+#ifdef URBI_ENABLE_ROS2
+#include "urbi/ros.h"               /* urbi_ros_shutdown — VM-scope the ros bridge */
+#endif
 #if URBI_ENABLE_REPL
 #  include "repl/urepl_state.h"     /* W3/v0.10.4: UReplState lifecycle (destroy in vm teardown) */
 #endif
@@ -525,6 +528,13 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
 void urbi_vm_destroy(UVM *vm) {
     if (vm == NULL) return;
+
+#ifdef URBI_ENABLE_ROS2
+    /* Tear down the process-global ROS bridge if this VM owns it, before the
+     * VM heap is reclaimed below — so the dangling UEvent* are dropped and the
+     * mock transport allocation is freed (not leaked) while alloc_fn is live. */
+    urbi_ros_shutdown(vm);
+#endif
 
 #if URBI_TRACE
     /* v0.11.0: free heap-allocated trace state (paired with urbi_trace_init). */

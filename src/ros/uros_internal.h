@@ -8,11 +8,16 @@
 #include "ros/uros_transport.h"
 
 struct UEvent; /* forward declaration; defined in event/uevent.h */
+struct UVM;    /* forward declaration; defined in vm/uvm.h */
 
 #define UROS_MAX_SUBS 16
 
 typedef struct {
     int           inited;
+    /* The VM that called ros.init().  The process-global bridge holds UEvent*
+     * and a mock-transport allocation that live in this VM's heap; the pump and
+     * shutdown paths gate on owner==vm so a later VM never touches freed state. */
+    struct UVM   *owner;
     URosTransport tp;
     struct {
         uint32_t       handle;

@@ -193,3 +193,12 @@ arrayIndexOutOfBoundsCond:src/runtime/umacros.h
 // above — the function-pointer signature is pinned and cannot be changed
 // without breaking the public C API.
 constParameterCallback:src/ros/uros.c
+
+// audit:v0.12.0-ros-R1 — src/ros/uros.c urbi_ros_shutdown(vm) uses `vm` only
+// for the owner-equality check (b->owner != vm); cppcheck suggests
+// `const struct UVM *`.  The public C API surface in include/urbi/ros.h pins
+// `struct UVM *vm` to match urbi_ros_pump / urbi_ros_register / urbi_ros_*
+// uniformity (same rationale as the v0.10.9-W3 urbi_tag_block suppression for
+// uunwind.c above).  Const-qualifying would break API uniformity and force
+// callers through a const-cast.
+constParameterPointer:src/ros/uros.c

@@ -71,6 +71,7 @@ ros_init_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
         (void)nlen;
         if (b->tp.init(b->tp.self, nm) != 0)
             return urbi_raise_type(vm, "ros.init: transport init failed", out);
+        b->owner  = vm;
         b->inited = 1;
     }
     *out = urbi_make_nil();
@@ -459,6 +460,25 @@ urbi_ros_bridge(void)
     return &g_bridge;
 }
 
+/* urbi_ros_shutdown: tear down the process-global bridge IFF it belongs to
+ * `vm`.  Called from urbi_vm_destroy (gated) before the VM heap is reclaimed,
+ * so a later VM never pumps this VM's freed UEvent* and the mock transport's
+ * heap allocation is freed instead of leaked.  No-op if the bridge is
+ * uninitialised or owned by a different VM. */
+void
+urbi_ros_shutdown(struct UVM *vm)
+{
+    URosBridge *b = urbi_ros_bridge();
+    if (!b->inited || b->owner != vm) return;   /* only tear down our own */
+    if (b->tp.fini) b->tp.fini(b->tp.self);
+    uros_mock_free(&b->tp);                       /* frees the mock state */
+    urbi_zero(b, sizeof *b);                      /* inited=0, owner=NULL, tables cleared */
+    /* Drop the process-global proto caches that pointed into this VM's heap. */
+    g_publisher_proto = NULL;
+    g_client_proto = NULL;
+    urbi_ros_msg__reset();                        /* clears uros_msg.c g_protos[] */
+}
+
 /* urbi_ros_register: allocate vm->ros_proto as a root-Object-family UObject
  * and cache it on the VM.  Called from urbi_stdlib_boot (gated).
  * Idempotent: subsequent calls return URBI_OK immediately.
@@ -563,7 +583,10 @@ void
 urbi_ros_pump(struct UVM *vm)
 {
     URosBridge *b = urbi_ros_bridge();
-    if (vm == NULL || !b->inited) return;
+    /* Owner-scope: only pump the bridge for the VM that called ros.init().
+     * A stale bridge left over from a freed VM (or a different live VM) must
+     * never be polled — its UEvent* point into the other VM's heap. */
+    if (vm == NULL || !b->inited || b->owner != vm) return;
     URosIncoming in;
     int n = 0;
     while (b->tp.poll(b->tp.self, &in) == 1 && n++ < 64) {

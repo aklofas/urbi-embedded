@@ -26,5 +26,11 @@ int urbi_ros_register_globals(struct UVM *vm, struct URealm *realm);
  * per urbi_step (see later task). No-op if ros.init() was never called. */
 void urbi_ros_pump(struct UVM *vm);
 
+/* Tear down the process-global bridge if it is owned by `vm`. Called from the
+ * VM-teardown path so a later VM never pumps this VM's freed events and the
+ * transport allocation is freed instead of leaked. No-op if the bridge was
+ * never initialised or is owned by a different VM. */
+void urbi_ros_shutdown(struct UVM *vm);
+
 #endif /* URBI_ENABLE_ROS2 */
 #endif /* URBI_ROS_H */
