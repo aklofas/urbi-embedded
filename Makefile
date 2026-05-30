@@ -349,8 +349,17 @@ HOST_BAKE_SRC := \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c) \
        $(wildcard src/stdlib/*.c) \
-       $(REPL_SRCS) \
-       $(ROS2_SRCS)
+       $(REPL_SRCS)
+# NOTE: $(ROS2_SRCS) is deliberately NOT in the bake-tool source list.  The
+# bake tool builds from flag-free build/host objects (the TARGET!=host rule),
+# where stdlib_boot.o's urbi_ros_register call is #ifdef'd out — so the bake
+# tool never references a ros symbol and does not need uros*.o.  Listing the
+# ros objects here forces a bake-tool RELINK whenever they change, which (in a
+# shared build/host populated by a prior URBI_ENABLE_REPL=1 TARGET=host build)
+# pulls in stale REPL-flagged objects without REPL_SRCS in the link -> undefined
+# refs (urepl_state_destroy / ujson_parse / urbi_introspect_*).  Build ros via
+# `make test-ros2` / TARGET=host-ros2, never URBI_ENABLE_ROS2=1 on TARGET=host
+# (design-risk v0.12.0-H).
 HOST_BAKE_OBJ := $(filter-out build/host/src/stdlib/urbi_stdlib_bytecode.gen.o, \
                               $(patsubst src/%.c,build/host/src/%.o,$(HOST_BAKE_SRC)))
 BAKE_STUB_O   := build/host/tools/stub_stdlib_bytecode.o
