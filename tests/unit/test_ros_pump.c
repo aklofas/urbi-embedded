@@ -8,6 +8,7 @@
 #include "utest.h"
 #include "urbi/urbi.h"
 #include "urbi/types.h"
+#include "urbi/ros.h"          /* urbi_ros_pump (avoid implicit declaration) */
 #include "ros/uros_internal.h"
 #include "ros/uros_mock.h"
 #include "ros/generated/ros_msgs.gen.h"
