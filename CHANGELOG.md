@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.12.0-ros-foundation — 2026-05-29
+
+Optional ROS2 bridge foundation.  The `ros` urbiscript namespace and build-time
+message codegen are available when the library is built with `URBI_ENABLE_ROS2`.
+The core VM has no reference to the bridge; it is a self-contained optional
+component.  ABI 0/21/0 (MINOR bump from 0/20/4, 29th use of the pre-v1.0 escape
+clause — 3 new public C API symbols in `include/urbi/ros.h`, compile-gated by
+`URBI_ENABLE_ROS2`; per the v0.11.0-trace-spine precedent, new public symbols
+behind a compile gate count as MINOR); wire format unchanged at v1.9 / 0x19; no
+new opcodes.
+
+### ROS2 bridge (`URBI_ENABLE_ROS2`)
+
+- New `ros` urbiscript namespace with the following surface:
+  `ros.init(name)`, `ros.msg(type)`, `ros.publisher(topic, type)` / `.publish(msg)`,
+  `ros.subscribe(topic, type)` (returns an `Event`; use with `at(sub?(var m))`),
+  `ros.client(svc, req_type)` / `.call(req, resp_type)`,
+  `ros.service(name, req_type, handler)`.  Messages are objects with named slots
+  (`var t = ros.msg("geometry_msgs/Twist"); t.linear.x = 1.0; pub.publish(t)`).
+- Build-time message codegen (`tools/urbi-rosgen.py`) generates C message
+  descriptors from a YAML manifest; supported subset: `std_msgs/{Bool,Int32,
+  Int64,Float32,Float64}`, `geometry_msgs/{Vector3,Twist}`,
+  `example_interfaces/AddTwoInts_{Request,Response}`.  String fields and
+  sequence fields are not yet supported (scalar + nested-scalar only).
+- Reactive pump: `urbi_ros_pump(vm)` drains the transport's incoming queue once
+  per `urbi_step` and emits `Event` instances so `at(sub?(var m))` watchers fire
+  on the correct strand.
+- Transport seam: a `URosTransport` vtable decouples the bridge from any
+  specific ROS middleware.  v0.12.0 ships only the mock transport (host-only);
+  real rclc/DDS lands in v0.12.1.
+- Three new public C API symbols (Tier 3, compile-gated by `URBI_ENABLE_ROS2`,
+  declared in `include/urbi/ros.h`): `urbi_ros_register`,
+  `urbi_ros_register_globals`, `urbi_ros_pump`.
+
+### Test strategy
+
+- `make test-ros2` builds the ROS preset (`URBI_BUILD_PRESET=ros`) and runs the
+  full unit suite plus 4 ROS chk fixtures (`import_ros`, `init`, `reactive_loopback`,
+  `service`), all mock-backed.
+- `make check-rosgen` + `make check-rosgen-determinism` gate the codegen tool.
+- `make clean && make test` (no `URBI_ENABLE_ROS2`) continues to pass: the bridge
+  is entirely absent from the default build.
+
 ## v0.11.4-cat-f — 2026-05-29
 
 Catchable structured exceptions.  VM-internal error sites that previously

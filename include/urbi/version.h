@@ -255,8 +255,8 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  20
-#define URBI_API_VERSION_PATCH  4
+#define URBI_API_VERSION_MINOR  21
+#define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -393,10 +393,19 @@ extern "C" {
  * so this is a PATCH bump and NOT a §3 freeze override.  Plus two test-only chk
  * host-driver directives (## host: advance-clock / expect-host-call).  Zero new
  * public C API symbols; no new opcodes; wire unchanged at v1.9 / 0x19.
+ *
+ * Bumped to 0/21/0 at v0.12.0-ros-foundation — escape #29.  MINOR bump for
+ * 3 new public C API symbols in the optional ROS2 bridge (include/urbi/ros.h,
+ * gated behind URBI_ENABLE_ROS2): urbi_ros_register, urbi_ros_register_globals,
+ * urbi_ros_pump.  Per the v0.11.0-trace-spine precedent (new public symbols
+ * behind a compile gate => MINOR escape).  The bridge itself is a self-
+ * contained optional component; the core VM has zero reference to it.  Wire
+ * format unchanged at v1.9 / 0x19 (no new opcodes).  29th use of pre-v1.0
+ * escape clause.  See docs/api-stability.md §3 + §6 escape ledger entry #29.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
-            && URBI_API_VERSION_MINOR == 20
-            && URBI_API_VERSION_PATCH == 4,
+            && URBI_API_VERSION_MINOR == 21
+            && URBI_API_VERSION_PATCH == 0,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

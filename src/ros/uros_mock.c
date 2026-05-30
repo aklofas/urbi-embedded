@@ -40,7 +40,7 @@ static int mock_poll(void *self, URosIncoming *out){
         int idx=(m->poll_cursor+i)%(m->n>0?m->n:1);
         MockEP *e=&m->ep[idx];
         if (e->used && e->is_sub && e->count>0){
-            MockBlob *blob=&e->fifo[e->head];
+            const MockBlob *blob=&e->fifo[e->head];
             e->head=(e->head+1)%MOCK_FIFO; e->count--;
             m->poll_cursor=(idx+1)%m->n;
             out->sub_handle=(uint32_t)idx; out->bytes=blob->buf; out->len=blob->len;
@@ -62,17 +62,17 @@ void uros_mock_init(URosTransport *tp){
     tp->publish=mock_publish; tp->poll=mock_poll; tp->call=mock_call; tp->fini=mock_fini;
 }
 void uros_mock_free(URosTransport *tp){ free(tp->self); tp->self=NULL; }
-void uros_mock_inject(void *self, uint32_t sub, const void *b, size_t len){
+void uros_mock_inject(void *self, uint32_t sub, const void *bytes, size_t len){
     MockState *m=(MockState*)self;
     if (sub>=(uint32_t)m->n || len>MOCK_BLOB_CAP) return;
     MockEP *e=&m->ep[sub]; if (e->count>=MOCK_FIFO) return;
-    memcpy(e->fifo[e->tail].buf,b,len); e->fifo[e->tail].len=len;
+    memcpy(e->fifo[e->tail].buf,bytes,len); e->fifo[e->tail].len=len;
     e->tail=(e->tail+1)%MOCK_FIFO; e->count++;
 }
-int uros_mock_last_published(void *self, uint32_t pub, const void **ob, size_t *ol){
+int uros_mock_last_published(void *self, uint32_t pub, const void **out_bytes, size_t *out_len){
     MockState *m=(MockState*)self;
     if (pub>=(uint32_t)m->n) return 0;
-    *ob=m->ep[pub].last_pub.buf; *ol=m->ep[pub].last_pub.len;
+    *out_bytes=m->ep[pub].last_pub.buf; *out_len=m->ep[pub].last_pub.len;
     return m->ep[pub].last_pub.len>0?1:0;
 }
 #else

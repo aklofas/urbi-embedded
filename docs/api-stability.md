@@ -1,23 +1,13 @@
 # C API stability policy
 
-> Status: ABI pin at v0.11.4-cat-f (0/20/4) — PATCH bump from
-> v0.11.3-memory-debug (0/20/3).  28th use of pre-v1.0 escape clause.
-> Catchable structured exceptions — VM-internal error sites that previously
-> fatal-HALTed the strand or printed diagnostic strings to stderr (the
-> native-method raise helpers + the 6 slot-access TypeError sites) now raise
-> catchable typed Exception instances; cached subclass protos resolved-by-name
-> after the stdlib bake + added to the GC root set; the strand catch_value added
-> to the GC root walker; four new Exception subclasses (RuntimeError,
-> SchedulingError, SyntaxError, OutOfMemoryError); uncaught typed throws print a
-> `!!! <message>` diagnostic at top level.  The structured-throw work added two
-> internal exported symbols (urbi_raise_typed,
-> urbi_exception_subclass_protos_resolve) already manifested in Tier 4 of
-> docs/api-surface-tiers.md — internal-leak, not public surface, so PATCH.  Plus
-> two test-only chk host-driver directives.  Zero new public C API symbols.  No new
-> opcodes, wire unchanged.
-> PATCH-only, not freeze-override
-> under §3 (the ledger numbers every bump; only MINOR/MAJOR bumps
-> require §3's freeze-override review).  The freeze pin is a forcing
+> Status: ABI pin at v0.12.0-ros-foundation (0/21/0) — MINOR bump from
+> v0.11.4-cat-f (0/20/4).  29th use of pre-v1.0 escape clause.
+> Optional ROS2 bridge foundation (URBI_ENABLE_ROS2): 3 new public C API
+> symbols in include/urbi/ros.h (urbi_ros_register, urbi_ros_register_globals,
+> urbi_ros_pump), all compile-gated.  Per the v0.11.0-trace-spine precedent,
+> new public symbols behind a compile gate count as MINOR.  Wire format
+> unchanged at v1.9 / 0x19; no new opcodes.
+> MINOR bump, freeze-override under §3.  The freeze pin is a forcing
 > function (deliberate intent at every bump), not a hard cap.  Any
 > further MINOR/MAJOR change after this tag must follow §3.
 
@@ -264,3 +254,16 @@ structured-throw work added two internal exported symbols (`urbi_raise_typed`,
 `docs/api-surface-tiers.md` — internal-leak, not public surface.  **Zero new
 public C API symbols**, so PATCH.  No new opcodes; wire unchanged at v1.9 / 0x19.
 PATCH-only, not a §3 freeze-override.
+
+### Escape #29 — v0.12.0-ros-foundation (MINOR)
+
+Optional ROS2 bridge foundation.  Three new public C API symbols declared in
+`include/urbi/ros.h`, all compile-gated behind `URBI_ENABLE_ROS2`:
+`urbi_ros_register` (allocates + installs the `ros` native namespace proto on
+the VM), `urbi_ros_register_globals` (binds `ros` as a realm global),
+`urbi_ros_pump` (drains the transport incoming queue once per `urbi_step` and
+emits events).  The bridge is a self-contained optional component; the core VM
+has zero reference to it.  Per the v0.11.0-trace-spine precedent, new public
+symbols behind a compile gate count as MINOR.  Wire format unchanged at
+v1.9 / 0x19; no new opcodes.  29th use of pre-v1.0 escape clause.
+MINOR bump: 0/20/4 to 0/21/0.  §3 freeze-override.

@@ -183,3 +183,13 @@ constParameterPointer:src/repl/urepl_dispatch.c
 // because the helper itself is unchanged; every constant-cap caller would
 // otherwise need a per-site suppression.
 arrayIndexOutOfBoundsCond:src/runtime/umacros.h
+
+// audit:v0.12.0-ros — src/ros/uros.c native-method callbacks
+// (ros_init_method, ros_msg_method, ros_subscribe_method, ros_client_method,
+// ros_service_method, ros_publisher_method, ros_inject_int32_method) expose
+// UValue *args via the urbi_native_method_fn typedef.  cppcheck flags each
+// as constParameterCallback, but const-qualifying args would cascade into
+// every native-method registration site.  Same rationale as Phase 5/6/7/9
+// above — the function-pointer signature is pinned and cannot be changed
+// without breaking the public C API.
+constParameterCallback:src/ros/uros.c

@@ -222,6 +222,17 @@ EXPERIMENTAL: the API may change before v1.0.
   `urbi_trace_channel_level`, `urbi_trace_flush_to_writer`
   — present only under `URBI_TRACE=1` (the `URBI_TP` macros call these).
 
+### ROS2 bridge (T3, EXPERIMENTAL — compile-gated by `URBI_ENABLE_ROS2`)
+
+New at v0.12.0 (`include/urbi/ros.h`). All three symbols exist only in
+`URBI_ENABLE_ROS2` builds; absent from the default `liburbi.a`. The bridge is a
+self-contained optional component; the core VM has no reference to it.
+EXPERIMENTAL: the API may change before v1.0.
+
+- `urbi_ros_register` — allocates and installs the `ros` native namespace proto on the VM.
+- `urbi_ros_register_globals` — binds `ros` as a realm global (post-bake hook).
+- `urbi_ros_pump` — drains the transport incoming queue once per `urbi_step`.
+
 ---
 
 ## Tier 4 — Internal-leak
