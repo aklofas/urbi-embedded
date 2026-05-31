@@ -111,3 +111,33 @@ if ! echo "$b67out" | grep -q "SERVICE sum=5"; then
     exit 1
 fi
 echo "ros-integration: B6+B7 service PASS"
+
+# === [B8] destroy-seam leak check under ASan/LSan ===
+# Rebuild liburbi + the churn driver with AddressSanitizer; LSan reports any
+# rcl entity / rosidl heap field not freed across create/destroy churn cycles.
+echo "=== [B8] destroy-seam leak check (ASan/LSan) ==="
+make -s clean
+python3 tools/urbi-rosgen.py --target rcl src/ros/msgs/manifest.json \
+    src/ros/generated/ros_msgs_rcl.gen.c src/ros/generated/ros_msgs_rcl.gen.h
+make -s TARGET=host-ros2-asan URBI_ENABLE_ROS2=1 URBI_ROS_BACKEND=rcl \
+    CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address -fno-omit-frame-pointer" core
+LIBA_ASAN=build/host-ros2-asan/liburbi.a
+# shellcheck disable=SC2086
+gcc -std=c99 -Wall -Wextra -Wno-unused-result -g -fsanitize=address \
+    -DURBI_ENABLE_ROS2=1 -DURBI_ROS_BACKEND_RCL=1 -Iinclude -Isrc \
+    -o /tmp/driver_churn tests/integration/ros/driver_churn.c \
+    "$LIBA_ASAN" $IFLAGS $LFLAGS -lm
+# Fast-DDS retains some process-global singletons that LSan flags as "still
+# reachable"; we only care about DIRECT leaks from our endpoints, so suppress
+# the rmw/dds layer and fail only on a non-zero direct-leak summary.
+b8out=$(ASAN_OPTIONS=detect_leaks=1 LSAN_OPTIONS=print_suppressions=0 /tmp/driver_churn 2>&1)
+echo "$b8out"
+if ! echo "$b8out" | grep -q "CHURN ok"; then
+    echo "ros-integration: B8 churn run FAIL"
+    exit 1
+fi
+if echo "$b8out" | grep -qiE "Direct leak.*uros_rcl|ros_be_|rcl_be_"; then
+    echo "ros-integration: B8 leak check FAIL (direct leak in rcl transport)"
+    exit 1
+fi
+echo "ros-integration: B8 leak check PASS"

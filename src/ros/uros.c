@@ -174,8 +174,9 @@ ros_subscribe_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     uint32_t h = b->tp.create_sub(b->tp.self, topic, type);
     if (h == UROS_INVALID_HANDLE)
         return urbi_raise_type(vm, "ros.subscribe: transport error", out);
+    /* Destroy the just-created transport endpoint on any later failure. */
     UEvent *e = urbi_event_create(vm);
-    if (e == NULL) return urbi_raise_oom(vm, out);
+    if (e == NULL) { b->tp.destroy_sub(b->tp.self, h); return urbi_raise_oom(vm, out); }
     b->subs[b->sub_count].handle = h;
     b->subs[b->sub_count].event  = e;
     b->subs[b->sub_count].type   = mt->name;
@@ -184,10 +185,12 @@ ros_subscribe_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     char slot[24];
     int sl = snprintf(slot, sizeof slot, "__sub_%u", h);
     USymbol *sy = (USymbol *)ustr_intern(vm, slot, (size_t)sl);
-    if (sy == NULL) return urbi_raise_oom(vm, out);
+    if (sy == NULL) { b->tp.destroy_sub(b->tp.self, h); return urbi_raise_oom(vm, out); }
     if (urbi_object_set_local_slot(vm, (UObject *)vm->ros_proto, sy,
-                                   uvalue_from_event(e)) != 0)
+                                   uvalue_from_event(e)) != 0) {
+        b->tp.destroy_sub(b->tp.self, h);
         return urbi_raise_oom(vm, out);
+    }
     *out = uvalue_from_event(e);
     return UEXEC_OK;
 }
@@ -261,23 +264,34 @@ ros_client_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     if (h == UROS_INVALID_HANDLE)
         return urbi_raise_type(vm, "ros.client: unknown type or transport rejected", out);
 
-    if (g_client_proto == NULL)
+    /* Destroy the just-created transport endpoint on any later failure. */
+    if (g_client_proto == NULL) {
+        b->tp.destroy_client(b->tp.self, h);
         return urbi_raise_type(vm, "ros.client: client proto not initialized", out);
+    }
 
     struct UObject *co = urbi_object_clone(vm, g_client_proto);
-    if (co == NULL)
+    if (co == NULL) {
+        b->tp.destroy_client(b->tp.self, h);
         return urbi_raise_type(vm, "ros.client: OOM cloning client proto", out);
+    }
 
     UValue cv = urbi_make_object(co);
 
-    if (urbi_slot_set(vm, cv, "__handle", 8, urbi_make_int((int64_t)h)) != URBI_OK)
+    if (urbi_slot_set(vm, cv, "__handle", 8, urbi_make_int((int64_t)h)) != URBI_OK) {
+        b->tp.destroy_client(b->tp.self, h);
         return urbi_raise_type(vm, "ros.client: OOM setting __handle", out);
+    }
 
     UValue tsv = urbi_make_str_interned(vm, type, tl);
-    if (tsv.kind == (uint8_t)UVAL_NIL)
+    if (tsv.kind == (uint8_t)UVAL_NIL) {
+        b->tp.destroy_client(b->tp.self, h);
         return urbi_raise_type(vm, "ros.client: OOM interning type string", out);
-    if (urbi_slot_set(vm, cv, "__type", 6, tsv) != URBI_OK)
+    }
+    if (urbi_slot_set(vm, cv, "__type", 6, tsv) != URBI_OK) {
+        b->tp.destroy_client(b->tp.self, h);
         return urbi_raise_type(vm, "ros.client: OOM setting __type", out);
+    }
 
     *out = cv;
     return UEXEC_OK;
@@ -370,13 +384,21 @@ ros_service_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     if (b->tp.set_service_handler)
         b->tp.set_service_handler(b->tp.self, h, bridge_serve, b);
 
-    /* GC-root the handler closure via a hidden slot on ros_proto keyed by handle. */
+    /* GC-root the handler closure via a hidden slot on ros_proto keyed by handle.
+     * On failure, roll back the bridge record + destroy the live DDS service. */
     char slot[32];
     int sl2 = snprintf(slot, sizeof slot, "__service_%u", h);
     USymbol *sy = (USymbol *)ustr_intern(vm, slot, (size_t)sl2);
-    if (sy == NULL) return urbi_raise_oom(vm, out);
-    if (urbi_object_set_local_slot(vm, (UObject *)vm->ros_proto, sy, args[2]) != 0)
+    if (sy == NULL) {
+        b->service_count--;
+        b->tp.destroy_service(b->tp.self, h);
         return urbi_raise_oom(vm, out);
+    }
+    if (urbi_object_set_local_slot(vm, (UObject *)vm->ros_proto, sy, args[2]) != 0) {
+        b->service_count--;
+        b->tp.destroy_service(b->tp.self, h);
+        return urbi_raise_oom(vm, out);
+    }
 
     *out = urbi_make_nil();
     return UEXEC_OK;
@@ -450,25 +472,37 @@ ros_publisher_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     if (h == UROS_INVALID_HANDLE)
         return urbi_raise_type(vm, "ros.publisher: transport rejected publisher", out);
 
-    if (g_publisher_proto == NULL)
+    /* From here, any failure must destroy the just-created transport endpoint
+     * (it owns a live DDS publisher) before raising — else it leaks. */
+    if (g_publisher_proto == NULL) {
+        b->tp.destroy_pub(b->tp.self, h);
         return urbi_raise_type(vm, "ros.publisher: publisher proto not initialized", out);
+    }
 
     struct UObject *po = urbi_object_clone(vm, g_publisher_proto);
-    if (po == NULL)
+    if (po == NULL) {
+        b->tp.destroy_pub(b->tp.self, h);
         return urbi_raise_type(vm, "ros.publisher: OOM cloning publisher proto", out);
+    }
 
     UValue pv = urbi_make_object(po);
 
     /* Store handle as int. */
-    if (urbi_slot_set(vm, pv, "__handle", 8, urbi_make_int((int64_t)h)) != URBI_OK)
+    if (urbi_slot_set(vm, pv, "__handle", 8, urbi_make_int((int64_t)h)) != URBI_OK) {
+        b->tp.destroy_pub(b->tp.self, h);
         return urbi_raise_type(vm, "ros.publisher: OOM setting __handle", out);
+    }
 
     /* Store type as interned string (kept for diagnostics). */
     UValue tsv = urbi_make_str_interned(vm, type, yl);
-    if (tsv.kind == (uint8_t)UVAL_NIL)
+    if (tsv.kind == (uint8_t)UVAL_NIL) {
+        b->tp.destroy_pub(b->tp.self, h);
         return urbi_raise_type(vm, "ros.publisher: OOM interning type string", out);
-    if (urbi_slot_set(vm, pv, "__type", 6, tsv) != URBI_OK)
+    }
+    if (urbi_slot_set(vm, pv, "__type", 6, tsv) != URBI_OK) {
+        b->tp.destroy_pub(b->tp.self, h);
         return urbi_raise_type(vm, "ros.publisher: OOM setting __type", out);
+    }
 
     *out = pv;
     return UEXEC_OK;

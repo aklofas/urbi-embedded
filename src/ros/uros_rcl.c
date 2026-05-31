@@ -383,6 +383,13 @@ rcl_be_destroy_pub(void *self, uint32_t h)
         s->pubs[h].used = 0;
     }
 }
+/* NOTE: destroy_sub/destroy_service fini the rcl entity + free scratch, but do
+ * NOT remove it from the rclc executor (rclc has no stable per-entry remove
+ * across versions).  Destroy is intended for error-unwind (create succeeded,
+ * a later step raised — the executor is torn down right after via fini) and for
+ * shutdown.  Destroying an endpoint and then continuing to spin the executor
+ * will log "subscription's implementation is invalid"; steady-state
+ * destroy-then-recreate is a v0.12.1 follow-up. */
 static void
 rcl_be_destroy_sub(void *self, uint32_t h)
 {
