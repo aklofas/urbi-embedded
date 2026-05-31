@@ -97,6 +97,10 @@ tests/qemu/*/dependencies.lock
 tests/qemu/*/sdkconfig
 examples/esp32/*/build/
 examples/esp32/*/dependencies.lock
+
+# ROS2 rcl-target codegen — generated in-container (needs rosidl headers), not tracked
+src/ros/generated/ros_msgs_rcl.gen.c
+src/ros/generated/ros_msgs_rcl.gen.h
 examples/esp32/*/sdkconfig
 examples/esp32/*/managed_components/
 

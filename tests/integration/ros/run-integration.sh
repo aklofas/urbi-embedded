@@ -22,7 +22,10 @@ done
 LFLAGS="-L/opt/ros/jazzy/lib -Wl,-rpath,/opt/ros/jazzy/lib"
 LFLAGS="$LFLAGS -lrcl -lrclc -lrcutils -lrmw -lrmw_implementation"
 LFLAGS="$LFLAGS -lrosidl_runtime_c -lrosidl_typesupport_c"
-LFLAGS="$LFLAGS -lstd_msgs__rosidl_typesupport_c -lstd_msgs__rosidl_generator_c"
+# Per-message-package typesupport + generator libs (matches Makefile ROS2_MSG_PKGS).
+for p in std_msgs geometry_msgs sensor_msgs builtin_interfaces example_interfaces; do
+    LFLAGS="$LFLAGS -l${p}__rosidl_typesupport_c -l${p}__rosidl_generator_c"
+done
 
 # shellcheck disable=SC2086
 gcc -std=c99 -Wall -Wextra -Wno-unused-result -o /tmp/spike_pubsub \
@@ -58,3 +61,21 @@ if ! echo "$b2out" | grep -q "ROSINIT ok"; then
     exit 1
 fi
 echo "ros-integration: B2 rcl node init PASS"
+
+# === [B3] rosidl-targeting codegen round-trip (marshal_rcl / unmarshal_rcl) ===
+echo "=== [B3] rcl marshal round-trip ==="
+# liburbi.a (built above) already contains the rcl-target generated marshaling.
+# The driver includes gated headers (ulist_build.h, ros_msgs_rcl.gen.h) so it
+# needs the same URBI_ENABLE_ROS2 + URBI_ROS_BACKEND_RCL defines as the library.
+# shellcheck disable=SC2086
+gcc -std=c99 -Wall -Wextra -Wno-unused-result \
+    -DURBI_ENABLE_ROS2=1 -DURBI_ROS_BACKEND_RCL=1 -Iinclude -Isrc \
+    -o /tmp/driver_marshal tests/integration/ros/driver_marshal.c \
+    "$LIBA" $IFLAGS $LFLAGS -lm
+b3out=$(/tmp/driver_marshal)
+echo "$b3out"
+if ! echo "$b3out" | grep -q "RCLMARSHAL ok"; then
+    echo "ros-integration: B3 rcl marshal FAIL"
+    exit 1
+fi
+echo "ros-integration: B3 rcl marshal PASS"

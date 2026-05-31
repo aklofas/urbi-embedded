@@ -3,7 +3,7 @@
 type registry for a fixed message manifest. v0.12.1: scalar + nested-scalar
 + string + sequence (mock-path, fixed-cap).
 Usage: urbi-rosgen.py <manifest.json> <out.gen.c> <out.gen.h>"""
-import json, sys
+import json, sys, re
 
 PRIM_C = {"bool": "uint8_t", "int32": "int32_t", "uint32": "uint32_t",
           "int64": "int64_t", "float32": "float", "float64": "double"}
@@ -209,11 +209,253 @@ def emit_c(msgs):
     ]
     return "\n".join(parts)
 
+# ===========================================================================
+# --target rcl : marshal/unmarshal against the real rosidl-generated structs.
+# Unlike the mock path, the C structs come from the rosidl headers (we do NOT
+# emit struct definitions); we emit marshal/unmarshal + typesupport accessors +
+# a name-keyed registry.  Generated in-container only (needs rosidl headers).
+# ===========================================================================
+
+# rosidl sequence struct names: rosidl_runtime_c__<elem>__Sequence
+RCL_SEQ_ELEM = {"float32": "float", "float64": "double", "int32": "int32",
+                "uint32": "uint32", "int64": "int64", "bool": "boolean"}
+
+def snake(name):
+    """CamelCase -> snake_case (ROS header-file convention)."""
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+def is_srv_part(typ):
+    return typ.endswith("_Request") or typ.endswith("_Response")
+
+def rcl_parts(name):
+    """(pkg, typ, interface, rcl_struct, header) for a manifest type name."""
+    pkg, typ = name.split("/")
+    if is_srv_part(typ):
+        base = typ.rsplit("_", 1)[0]            # AddTwoInts_Request -> AddTwoInts
+        return (pkg, typ, "srv", "%s__srv__%s" % (pkg, typ),
+                "%s/srv/%s.h" % (pkg, snake(base)))
+    return (pkg, typ, "msg", "%s__msg__%s" % (pkg, typ),
+            "%s/msg/%s.h" % (pkg, snake(typ)))
+
+def emit_rcl_marshal_field(fname, ftype):
+    flen = len(fname)
+    if ftype == "string":
+        return [
+          '    { UValue _v = urbi_make_nil(); size_t _sl = 0;',
+          '      if (urbi_slot_get(vm, obj, "%s", %d, &_v) != 0) return -1;' % (fname, flen),
+          '      { const char *_s = urbi_value_as_str(_v, &_sl);',
+          '        if (!rosidl_runtime_c__String__assignn(&out->%s, _s ? _s : "", _s ? _sl : 0)) return -1; } }' % fname,
+        ]
+    if is_seq(ftype):
+        elem = seq_elem(ftype); sq = RCL_SEQ_ELEM[elem]
+        return [
+          '    { UValue _lst = urbi_make_nil(); int _n, _i;',
+          '      if (urbi_slot_get(vm, obj, "%s", %d, &_lst) != 0) return -1;' % (fname, flen),
+          '      _n = urbi_list_len(vm, _lst); if (_n < 0) _n = 0;',
+          '      rosidl_runtime_c__%s__Sequence__fini(&out->%s);' % (sq, fname),
+          '      if (!rosidl_runtime_c__%s__Sequence__init(&out->%s, (size_t)_n)) return -1;' % (sq, fname),
+          '      for (_i = 0; _i < _n; _i++) {',
+          '        UValue _ev = urbi_list_get(vm, _lst, _i);',
+          '        out->%s.data[_i] = %s%s(_ev); } }' % (fname, CCAST[elem], SLOT_READ[elem]),
+        ]
+    if ftype in PRIM_C:
+        return [
+          '    { UValue _v = urbi_make_nil();',
+          '      if (urbi_slot_get(vm, obj, "%s", %d, &_v) != 0) return -1;' % (fname, flen),
+          '      out->%s = %s%s(_v); }' % (fname, CCAST[ftype], SLOT_READ[ftype]),
+        ]
+    nfn = "urbi_ros_marshal_rcl__" + ftype.replace("/", "__")
+    return [
+      '    { UValue _v = urbi_make_nil();',
+      '      if (urbi_slot_get(vm, obj, "%s", %d, &_v) != 0) return -1;' % (fname, flen),
+      '      if (%s(vm, _v, &out->%s) != 0) return -1; }' % (nfn, fname),
+    ]
+
+def emit_rcl_unmarshal_field(fname, ftype):
+    flen = len(fname)
+    if ftype == "string":
+        return [
+          '    { UValue _sv = urbi_make_str_interned(vm, in->%s.data ? in->%s.data : "", in->%s.size);' % (fname, fname, fname),
+          '      if (_sv.kind == (uint8_t)UVAL_NIL) return -1;',
+          '      if (urbi_slot_set(vm, obj, "%s", %d, _sv) != 0) return -1; }' % (fname, flen),
+        ]
+    if is_seq(ftype):
+        elem = seq_elem(ftype)
+        return [
+          '    { size_t _i; UValue _lst = urbi_list_create(vm);',
+          '      if (_lst.kind == (uint8_t)UVAL_NIL) return -1;',
+          '      for (_i = 0; _i < in->%s.size; _i++) {' % fname,
+          '        if (urbi_list_append(vm, _lst, %s(in->%s.data[_i])) != 0) return -1; }' % (MAKE[elem], fname),
+          '      if (urbi_slot_set(vm, obj, "%s", %d, _lst) != 0) return -1; }' % (fname, flen),
+        ]
+    if ftype in PRIM_C:
+        return ['    if (urbi_slot_set(vm, obj, "%s", %d, %s(in->%s)) != 0) return -1;' % (fname, flen, MAKE[ftype], fname)]
+    nfn = "urbi_ros_unmarshal_rcl__" + ftype.replace("/", "__")
+    return [
+      '    { UValue _nv = urbi_make_nil();',
+      '      if (%s(vm, &in->%s, &_nv) != 0) return -1;' % (nfn, fname),
+      '      if (urbi_slot_set(vm, obj, "%s", %d, _nv) != 0) return -1; }' % (fname, flen),
+    ]
+
+def emit_rcl_forward(msgs):
+    out = []
+    for name in toposort(msgs):
+        _, _, _, struct, _ = rcl_parts(name); base = name.replace("/", "__")
+        out.append("int urbi_ros_marshal_rcl__%s(struct UVM *vm, UValue obj, %s *out);" % (base, struct))
+        out.append("int urbi_ros_unmarshal_rcl__%s(struct UVM *vm, const %s *in, UValue *out);" % (base, struct))
+    return "\n".join(out)
+
+def emit_rcl_marshal(msgs):
+    out = []
+    for name in toposort(msgs):
+        _, _, _, struct, _ = rcl_parts(name)
+        out.append("int urbi_ros_marshal_rcl__%s(struct UVM *vm, UValue obj, %s *out) {" % (name.replace("/", "__"), struct))
+        out.append("    (void)vm; (void)obj; (void)out;")
+        for fname, ftype in msgs[name]:
+            out += emit_rcl_marshal_field(fname, ftype)
+        out.append("    return 0;\n}")
+    return "\n".join(out)
+
+def emit_rcl_unmarshal(msgs):
+    out = []
+    for name in toposort(msgs):
+        _, _, _, struct, _ = rcl_parts(name)
+        out.append("int urbi_ros_unmarshal_rcl__%s(struct UVM *vm, const %s *in, UValue *out) {" % (name.replace("/", "__"), struct))
+        out.append('    struct UObject *o = urbi_ros_msg_alloc(vm, "%s");' % name)
+        out.append("    if (o == NULL) return -1;")
+        out.append("    UValue obj = urbi_make_object(o);")
+        out.append("    (void)in;")
+        for fname, ftype in msgs[name]:
+            out += emit_rcl_unmarshal_field(fname, ftype)
+        out.append("    *out = obj; return 0;\n}")
+    return "\n".join(out)
+
+def emit_rcl_registry(msgs):
+    out = []
+    all_types = toposort(msgs)
+    msg_types = [n for n in all_types if not is_srv_part(n.split("/")[1])]
+    for name in all_types:
+        base = name.replace("/", "__"); _, _, _, struct, _ = rcl_parts(name)
+        out.append("static void _ini_%s(void *p){ %s__init((%s*)p); }" % (base, struct, struct))
+        out.append("static void _fin_%s(void *p){ %s__fini((%s*)p); }" % (base, struct, struct))
+        out.append("static int _mr_%s(struct UVM *vm, UValue o, void *p){ return urbi_ros_marshal_rcl__%s(vm,o,(%s*)p); }" % (base, base, struct))
+        out.append("static int _ur_%s(struct UVM *vm, const void *p, UValue *o){ return urbi_ros_unmarshal_rcl__%s(vm,(const %s*)p,o); }" % (base, base, struct))
+    for name in msg_types:
+        pkg, typ, _, _, _ = rcl_parts(name); base = name.replace("/", "__")
+        out.append("static const rosidl_message_type_support_t *_ts_%s(void){ return ROSIDL_GET_MSG_TYPE_SUPPORT(%s, msg, %s); }" % (base, pkg, typ))
+    out.append("static const URosRclMsgType g_rcl_msg_types[] = {")
+    for name in msg_types:
+        base = name.replace("/", "__"); _, _, _, struct, _ = rcl_parts(name)
+        out.append('  { "%s", sizeof(%s), _ini_%s, _fin_%s, _ts_%s, _mr_%s, _ur_%s },' % (name, struct, base, base, base, base, base))
+    out.append("};")
+    out.append("static const int g_rcl_msg_types_n = %d;" % len(msg_types))
+    out.append("const URosRclMsgType *urbi_ros_rcl_msg_lookup(const char *name){")
+    out.append("  int i; for (i=0;i<g_rcl_msg_types_n;i++) if (urbi_streq(name, g_rcl_msg_types[i].name)) return &g_rcl_msg_types[i];")
+    out.append("  return 0;\n}")
+    # service registry: group _Request/_Response by base service name
+    svc = {}
+    for name in all_types:
+        pkg, typ = name.split("/")
+        if not is_srv_part(typ): continue
+        svcname = "%s/%s" % (pkg, typ.rsplit("_", 1)[0])
+        d = svc.setdefault(svcname, {})
+        d["req" if typ.endswith("_Request") else "resp"] = name
+    svc_list = [s for s in svc if "req" in svc[s] and "resp" in svc[s]]
+    for svcname in svc_list:
+        pkg, base = svcname.split("/")
+        out.append("static const rosidl_service_type_support_t *_sts_%s__%s(void){ return ROSIDL_GET_SRV_TYPE_SUPPORT(%s, srv, %s); }" % (pkg, base, pkg, base))
+    out.append("static const URosRclSrvType g_rcl_srv_types[] = {")
+    for svcname in svc_list:
+        pkg, base = svcname.split("/")
+        req = svc[svcname]["req"]; resp = svc[svcname]["resp"]
+        rb = req.replace("/", "__"); sb = resp.replace("/", "__")
+        _, _, _, rstruct, _ = rcl_parts(req); _, _, _, sstruct, _ = rcl_parts(resp)
+        out.append('  { "%s", _sts_%s__%s, sizeof(%s), sizeof(%s), _ini_%s, _fin_%s, _ini_%s, _fin_%s, _mr_%s, _ur_%s, _mr_%s, _ur_%s },' % (
+            svcname, pkg, base, rstruct, sstruct, rb, rb, sb, sb, rb, rb, sb, sb))
+    out.append("};")
+    out.append("static const int g_rcl_srv_types_n = %d;" % len(svc_list))
+    out.append("const URosRclSrvType *urbi_ros_rcl_srv_lookup(const char *name){")
+    out.append("  int i; for (i=0;i<g_rcl_srv_types_n;i++) if (urbi_streq(name, g_rcl_srv_types[i].name)) return &g_rcl_srv_types[i];")
+    out.append("  return 0;\n}")
+    return "\n".join(out)
+
+def emit_rcl_header(msgs):
+    out = ["/* GENERATED by tools/urbi-rosgen.py --target rcl - do not edit. */",
+           "#ifndef UROS_MSGS_RCL_GEN_H", "#define UROS_MSGS_RCL_GEN_H",
+           "#if defined(URBI_ENABLE_ROS2) && defined(URBI_ROS_BACKEND_RCL)",
+           "#include <stddef.h>", "#include <stdint.h>",
+           '#include "urbi/types.h"',
+           "#include <rosidl_runtime_c/message_type_support_struct.h>",
+           "#include <rosidl_runtime_c/service_type_support_struct.h>",
+           "", "struct UVM;", "",
+           "typedef struct {",
+           "    const char *name; size_t c_size;",
+           "    void (*init)(void *); void (*fini)(void *);",
+           "    const rosidl_message_type_support_t *(*ts)(void);",
+           "    int (*marshal)(struct UVM *, UValue, void *);",
+           "    int (*unmarshal)(struct UVM *, const void *, UValue *);",
+           "} URosRclMsgType;",
+           "const URosRclMsgType *urbi_ros_rcl_msg_lookup(const char *name);",
+           "",
+           "typedef struct {",
+           "    const char *name;",
+           "    const rosidl_service_type_support_t *(*ts)(void);",
+           "    size_t req_size, resp_size;",
+           "    void (*req_init)(void *); void (*req_fini)(void *);",
+           "    void (*resp_init)(void *); void (*resp_fini)(void *);",
+           "    int (*marshal_req)(struct UVM *, UValue, void *);",
+           "    int (*unmarshal_req)(struct UVM *, const void *, UValue *);",
+           "    int (*marshal_resp)(struct UVM *, UValue, void *);",
+           "    int (*unmarshal_resp)(struct UVM *, const void *, UValue *);",
+           "} URosRclSrvType;",
+           "const URosRclSrvType *urbi_ros_rcl_srv_lookup(const char *name);",
+           "#endif", "#endif", ""]
+    return "\n".join(out)
+
+def emit_rcl_c(msgs):
+    headers = []
+    for name in toposort(msgs):
+        _, _, _, _, h = rcl_parts(name)
+        if h not in headers: headers.append(h)
+    parts = ["/* GENERATED by tools/urbi-rosgen.py --target rcl - do not edit. */",
+             "#if defined(URBI_ENABLE_ROS2) && defined(URBI_ROS_BACKEND_RCL)",
+             '#include "urbi/urbi.h"',
+             '#include "urbi/types.h"',
+             '#include "object/uobject.h"',
+             '#include "ros/uros_msg.h"',
+             '#include "ros/generated/ros_msgs_rcl.gen.h"',
+             '#include "value/ulist_build.h"',
+             "#include <rosidl_runtime_c/string.h>",
+             "#include <rosidl_runtime_c/string_functions.h>",
+             "#include <rosidl_runtime_c/primitives_sequence.h>",
+             "#include <rosidl_runtime_c/primitives_sequence_functions.h>"]
+    for h in headers:
+        parts.append("#include <%s>" % h)
+    parts += ["",
+              "/* Forward declarations (nested marshal/unmarshal called in toposort order). */",
+              emit_rcl_forward(msgs), "",
+              emit_rcl_marshal(msgs), "",
+              emit_rcl_unmarshal(msgs), "",
+              emit_rcl_registry(msgs), "",
+              "#else",
+              "typedef int uros_rcl_gen_translation_unit_not_empty;",
+              "#endif /* URBI_ENABLE_ROS2 && URBI_ROS_BACKEND_RCL */", ""]
+    return "\n".join(parts)
+
 def main():
-    manifest, out_c, out_h = sys.argv[1], sys.argv[2], sys.argv[3]
+    args = sys.argv[1:]
+    target = "mock"
+    if args and args[0] == "--target":
+        target = args[1]; args = args[2:]
+    manifest, out_c, out_h = args[0], args[1], args[2]
     msgs = json.load(open(manifest))["messages"]
-    open(out_h, "w").write(emit_header(msgs))
-    open(out_c, "w").write(emit_c(msgs))
+    if target == "rcl":
+        open(out_h, "w").write(emit_rcl_header(msgs))
+        open(out_c, "w").write(emit_rcl_c(msgs))
+    else:
+        open(out_h, "w").write(emit_header(msgs))
+        open(out_c, "w").write(emit_c(msgs))
 
 if __name__ == "__main__":
     main()

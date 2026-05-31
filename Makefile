@@ -77,6 +77,11 @@ ifeq ($(URBI_ENABLE_ROS2),1)
                 -lrcl -lrclc -lrcutils -lrmw -lrmw_implementation \
                 -lrosidl_runtime_c -lrosidl_typesupport_c
     LDFLAGS  += $(foreach p,$(ROS2_MSG_PKGS),-l$(p)__rosidl_typesupport_c -l$(p)__rosidl_generator_c)
+    # The rosidl-targeting codegen output: NOT tracked (needs rosidl headers,
+    # only generated in-container).  Compiled in addition to the mock gen.
+    ROS2_RCL_GEN_C := $(ROS2_GEN_DIR)/ros_msgs_rcl.gen.c
+    ROS2_RCL_GEN_H := $(ROS2_GEN_DIR)/ros_msgs_rcl.gen.h
+    ROS2_SRCS      += $(ROS2_RCL_GEN_C)
   endif
 else
   ROS2_SRCS :=
@@ -183,6 +188,12 @@ $(ROS2_GEN_C) $(ROS2_GEN_H): tools/urbi-rosgen.py src/ros/msgs/manifest.json
 	@mkdir -p $(ROS2_GEN_DIR)
 	python3 tools/urbi-rosgen.py src/ros/msgs/manifest.json $(ROS2_GEN_C) $(ROS2_GEN_H)
 $(BUILDDIR)/src/ros/%.o: $(ROS2_GEN_H)
+ifeq ($(URBI_ROS_BACKEND),rcl)
+$(ROS2_RCL_GEN_C) $(ROS2_RCL_GEN_H): tools/urbi-rosgen.py src/ros/msgs/manifest.json
+	@mkdir -p $(ROS2_GEN_DIR)
+	python3 tools/urbi-rosgen.py --target rcl src/ros/msgs/manifest.json $(ROS2_RCL_GEN_C) $(ROS2_RCL_GEN_H)
+$(BUILDDIR)/src/ros/%.o: $(ROS2_RCL_GEN_H)
+endif
 endif
 
 $(BUILDDIR)/tests/unit/%.o: tests/unit/%.c
