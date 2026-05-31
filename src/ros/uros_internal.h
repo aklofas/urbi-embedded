@@ -6,6 +6,7 @@
 #ifdef URBI_ENABLE_ROS2
 
 #include "ros/uros_transport.h"
+#include "urbi/types.h"
 
 struct UEvent; /* forward declaration; defined in event/uevent.h */
 struct UVM;    /* forward declaration; defined in vm/uvm.h */
@@ -18,6 +19,9 @@ typedef struct {
      * and a mock-transport allocation that live in this VM's heap; the pump and
      * shutdown paths gate on owner==vm so a later VM never touches freed state. */
     struct UVM   *owner;
+    /* The VM currently executing spin/deliver (set at the top of urbi_ros_pump,
+     * used by bridge_deliver and bridge_serve to emit/invoke on the right VM). */
+    struct UVM   *deliver_vm;
     URosTransport tp;
     struct {
         uint32_t       handle;
@@ -28,6 +32,8 @@ typedef struct {
     struct {
         uint32_t    handle;
         const char *type;
+        /* GC-rooted handler closure (also rooted via __service_N slot on ros_proto). */
+        UValue      handler;
     } services[UROS_MAX_SUBS];
     int           service_count;
 } URosBridge;

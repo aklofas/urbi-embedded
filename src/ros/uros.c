@@ -173,18 +173,20 @@ ros_subscribe_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
  * during urbi_ros_register. */
 static struct UObject *g_client_proto;
 
-/* === Client.call(req, respType) ===
+/* === Client.call(req[, respTypeIgnored]) ===
  *
- * Read __handle and __type (the request type) from self.  Marshal req into a
- * C buffer, call the transport, then unmarshal the response with respType. */
+ * Read __handle from self.  Pass req to the transport's call() function which
+ * owns marshaling.  The transport fills *resp (the response object).
+ * A second argument (response type name) is accepted for backward compatibility
+ * with v0.12.0 script fixtures but is ignored — the transport knows the type. */
 static int
 client_call_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                    UValue *out)
 {
-    if (nargs != 2)
-        return urbi_raise_arity(vm, "Client.call", 2, nargs, out);
-    if (!urbi_value_is_str(args[1]))
-        return urbi_raise_type(vm, "Client.call: respType must be a String", out);
+    /* Accept 1 or 2 args: (req) or (req, respType) — respType is now ignored
+     * because the transport owns marshaling and knows the service type. */
+    if (nargs < 1 || nargs > 2)
+        return urbi_raise_arity(vm, "Client.call", 1, nargs, out);
 
     /* Read __handle. */
     UValue hv = urbi_make_nil();
@@ -193,48 +195,15 @@ client_call_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
         return urbi_raise_type(vm, "Client.call: invalid client (missing __handle)", out);
     int64_t handle = urbi_value_as_int(hv);
 
-    /* Read __type (request message type). */
-    UValue tv = urbi_make_nil();
-    if (urbi_slot_get(vm, self, "__type", 6, &tv) != URBI_OK
-     || !urbi_value_is_str(tv))
-        return urbi_raise_type(vm, "Client.call: invalid client (missing __type)", out);
-    size_t reqtl;
-    const char *reqtype = urbi_value_as_str(tv, &reqtl);
-
-    const URosMsgType *mtreq = urbi_ros_msg_lookup(reqtype);
-    if (mtreq == NULL)
-        return urbi_raise_type(vm, "Client.call: unknown request message type", out);
-
-    /* Marshal the request object. */
-    unsigned char reqbuf[512];
-    if (mtreq->c_size > sizeof reqbuf)
-        return urbi_raise_type(vm, "Client.call: request message too large", out);
-    urbi_zero(reqbuf, mtreq->c_size);
-    if (mtreq->marshal(vm, args[0], reqbuf) != 0)
-        return urbi_raise_type(vm, "Client.call: request marshal failed", out);
-
-    /* Call the transport (mock echoes req bytes to resp). */
     URosBridge *b = urbi_ros_bridge();
     if (!b->inited)
         return urbi_raise_type(vm, "Client.call: ros not initialized", out);
-    unsigned char respbuf[512];
-    size_t rlen = 0;
-    if (b->tp.call(b->tp.self, (uint32_t)handle,
-                   reqbuf, mtreq->c_size,
-                   respbuf, sizeof respbuf, &rlen) != 0)
+
+    UValue resp = urbi_make_nil();
+    if (b->tp.call(b->tp.self, vm, (uint32_t)handle, args[0], &resp) != 0)
         return urbi_raise_type(vm, "Client.call: transport call failed", out);
 
-    /* Unmarshal the response using the caller-supplied response type. */
-    size_t resptl;
-    const char *resptype = urbi_value_as_str(args[1], &resptl);
-    const URosMsgType *mtresp = urbi_ros_msg_lookup(resptype);
-    if (mtresp == NULL)
-        return urbi_raise_type(vm, "Client.call: unknown response message type", out);
-    if (rlen < mtresp->c_size)
-        return urbi_raise_type(vm, "Client.call: response too short", out);
-    if (mtresp->unmarshal(vm, respbuf, out) != 0)
-        return urbi_raise_type(vm, "Client.call: response unmarshal failed", out);
-
+    *out = resp;
     return UEXEC_OK;
 }
 
@@ -290,11 +259,47 @@ ros_client_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
+/* === bridge_serve + urbi_ros_invoke_handler (Phase A stub) ===
+ *
+ * bridge_serve: called by the transport when an inbound service request arrives.
+ * It looks up the registered handler closure for the service handle and invokes
+ * urbi_ros_invoke_handler.
+ *
+ * urbi_ros_invoke_handler: Phase A stub — the mock transport never has inbound
+ * service requests so this is never called in `make test`.  The real closure-
+ * invoke implementation lands in Phase B Task B7. */
+
+/* Phase A stub: real implementation in Phase B Task B7. */
+static int
+urbi_ros_invoke_handler(struct UVM *vm, UValue handler,
+                        UValue req_obj, UValue *resp_obj)
+{
+    (void)vm; (void)handler; (void)req_obj; (void)resp_obj;
+    /* Phase A: mock transport has no inbound service requests; never reached. */
+    return -1;
+}
+
+static int
+bridge_serve(void *ud, uint32_t svc_handle, UValue req_obj, UValue *resp_obj)
+{
+    URosBridge *b = (URosBridge *)ud;
+    int i;
+    for (i = 0; i < b->service_count; i++) {
+        if (b->services[i].handle == svc_handle) {
+            UValue handler = b->services[i].handler;
+            return urbi_ros_invoke_handler(b->deliver_vm, handler,
+                                           req_obj, resp_obj);
+        }
+    }
+    return -1;
+}
+
 /* === ros.service(name, type, closure) ===
  *
  * Register a service endpoint and GC-root the handler closure.
- * v0.12.0: handler stored + rooted; invocation lands in v0.12.1 (mock has no
- * inbound request path). */
+ * The handler closure is stored in services[].handler and also rooted via a
+ * hidden slot on ros_proto.  The transport is notified via set_service_handler
+ * so it can route inbound requests to bridge_serve. */
 static int
 ros_service_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                    UValue *out)
@@ -326,9 +331,14 @@ ros_service_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     if (h == UROS_INVALID_HANDLE)
         return urbi_raise_type(vm, "ros.service: transport rejected service", out);
 
-    b->services[b->service_count].handle = h;
-    b->services[b->service_count].type   = mt->name;
+    b->services[b->service_count].handle  = h;
+    b->services[b->service_count].type    = mt->name;
+    b->services[b->service_count].handler = args[2];
     b->service_count++;
+
+    /* Notify the transport of the handler so it can route inbound requests. */
+    if (b->tp.set_service_handler)
+        b->tp.set_service_handler(b->tp.self, h, bridge_serve, b);
 
     /* GC-root the handler closure via a hidden slot on ros_proto keyed by handle. */
     char slot[32];
@@ -351,8 +361,9 @@ static struct UObject *g_publisher_proto;
 
 /* === Publisher.publish(msg) ===
  *
- * Read __handle and __type from self, marshal msg into a C struct, then
- * call the transport's publish function. */
+ * Read __handle from self, then pass msg directly to the transport's publish()
+ * function which owns marshaling.  The transport converts the UValue object
+ * to wire format internally. */
 static int
 publisher_publish_method(struct UVM *vm, UValue self, UValue *args,
                          uint8_t nargs, UValue *out)
@@ -367,30 +378,12 @@ publisher_publish_method(struct UVM *vm, UValue self, UValue *args,
         return urbi_raise_type(vm, "Publisher.publish: invalid publisher (missing __handle)", out);
     int64_t handle = urbi_value_as_int(hv);
 
-    /* Read __type from self. */
-    UValue tv = urbi_make_nil();
-    if (urbi_slot_get(vm, self, "__type", 6, &tv) != URBI_OK
-     || !urbi_value_is_str(tv))
-        return urbi_raise_type(vm, "Publisher.publish: invalid publisher (missing __type)", out);
-    size_t tl;
-    const char *type = urbi_value_as_str(tv, &tl);
-
-    const URosMsgType *mt = urbi_ros_msg_lookup(type);
-    if (mt == NULL)
-        return urbi_raise_type(vm, "Publisher.publish: unknown message type", out);
-
-    unsigned char buf[512];
-    if (mt->c_size > sizeof buf)
-        return urbi_raise_type(vm, "Publisher.publish: message too large", out);
-    urbi_zero(buf, mt->c_size);
-
-    if (mt->marshal(vm, args[0], buf) != 0)
-        return urbi_raise_type(vm, "Publisher.publish: marshal failed", out);
-
     URosBridge *b = urbi_ros_bridge();
     if (!b->inited)
         return urbi_raise_type(vm, "Publisher.publish: ros not initialized", out);
-    if (b->tp.publish(b->tp.self, (uint32_t)handle, buf, mt->c_size) != 0)
+
+    /* Transport owns marshaling from msg_obj to wire. */
+    if (b->tp.publish(b->tp.self, vm, (uint32_t)handle, args[0]) != 0)
         return urbi_raise_type(vm, "Publisher.publish: transport error", out);
 
     *out = urbi_make_nil();
@@ -440,7 +433,7 @@ ros_publisher_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     if (urbi_slot_set(vm, pv, "__handle", 8, urbi_make_int((int64_t)h)) != URBI_OK)
         return urbi_raise_type(vm, "ros.publisher: OOM setting __handle", out);
 
-    /* Store type as interned string. */
+    /* Store type as interned string (kept for diagnostics). */
     UValue tsv = urbi_make_str_interned(vm, type, yl);
     if (tsv.kind == (uint8_t)UVAL_NIL)
         return urbi_raise_type(vm, "ros.publisher: OOM interning type string", out);
@@ -573,12 +566,28 @@ urbi_ros_register_globals(struct UVM *vm, struct URealm *realm)
     return urbi_realm_set_global(vm, realm, "ros", 3, v);
 }
 
-/* urbi_ros_pump: drain the transport's incoming queue once, unmarshal each
- * message onto the matching subscription's UEvent, and emit so any
- * `at (sub?(var m))` watcher body fires.  Called once per urbi_step (gated)
- * and directly by unit tests.  No-op if ros.init() was never called.
- * Bounded at 64 messages per pump so a flooded queue can't starve the
- * dispatch loop. */
+/* === bridge_deliver callback ===
+ *
+ * Called by the transport's spin() for each incoming subscription message.
+ * Finds the matching sub entry and emits the object onto its UEvent. */
+static void
+bridge_deliver(void *ud, uint32_t sub_handle, UValue msg_obj)
+{
+    URosBridge *b = (URosBridge *)ud;
+    int i;
+    for (i = 0; i < b->sub_count; i++) {
+        if (b->subs[i].handle == sub_handle) {
+            c_event_emit_async(b->deliver_vm, b->subs[i].event, msg_obj);
+            return;
+        }
+    }
+}
+
+/* urbi_ros_pump: invoke the transport's spin() once, delivering incoming
+ * messages onto their subscription UEvents via bridge_deliver.  Called once
+ * per urbi_step (gated) and directly by unit tests.  No-op if ros.init() was
+ * never called.  The deliver_vm field is set here so bridge_deliver and
+ * bridge_serve can emit/invoke on the correct VM. */
 void
 urbi_ros_pump(struct UVM *vm)
 {
@@ -587,21 +596,8 @@ urbi_ros_pump(struct UVM *vm)
      * A stale bridge left over from a freed VM (or a different live VM) must
      * never be polled — its UEvent* point into the other VM's heap. */
     if (vm == NULL || !b->inited || b->owner != vm) return;
-    URosIncoming in;
-    int n = 0;
-    while (b->tp.poll(b->tp.self, &in) == 1 && n++ < 64) {
-        struct UEvent *ev = NULL; const char *type = NULL;
-        for (int i = 0; i < b->sub_count; i++)
-            if (b->subs[i].handle == in.sub_handle) {
-                ev = b->subs[i].event; type = b->subs[i].type; break;
-            }
-        if (ev == NULL || type == NULL) continue;
-        const URosMsgType *mt = urbi_ros_msg_lookup(type);
-        if (mt == NULL || in.len != mt->c_size) continue;
-        UValue msg = urbi_make_nil();
-        if (mt->unmarshal(vm, in.bytes, &msg) != 0) continue;
-        c_event_emit_async(vm, ev, msg);
-    }
+    b->deliver_vm = vm;   /* used by bridge_deliver and bridge_serve */
+    b->tp.spin(b->tp.self, vm, bridge_deliver, b);
 }
 
 /* === ros.__injectInt32(subHandle, value) ===
@@ -609,6 +605,9 @@ urbi_ros_pump(struct UVM *vm)
  * Mock-only test hook: synthesize a std_msgs/Int32 message and inject it into
  * the mock transport's incoming queue for the given subscription handle so a
  * `.chk` fixture can drive the reactive loopback path without a C harness.
+ * Uses the raw-bytes inject path because the generated C struct is immediately
+ * available here; the bridge_deliver+spin path will unmarshal it via the
+ * registered URosMsgType.
  * Absent once the real rclc/DDS transport lands (it will receive real wire
  * traffic instead). */
 static int
