@@ -62,6 +62,22 @@ ifeq ($(URBI_ENABLE_ROS2),1)
   ROS2_GEN_C   := $(ROS2_GEN_DIR)/ros_msgs.gen.c
   ROS2_GEN_H   := $(ROS2_GEN_DIR)/ros_msgs.gen.h
   ROS2_SRCS    += $(ROS2_GEN_C)
+
+  # v0.12.1: real rcl/rclc/Fast-DDS backend (container-only).  Selected with
+  # URBI_ROS_BACKEND=rcl on top of URBI_ENABLE_ROS2=1; adds the validated
+  # ROS2 Jazzy include/link flags.  src/ros/uros_rcl.c is already in ROS2_SRCS
+  # via the wildcard and is an empty TU unless URBI_ROS_BACKEND_RCL is defined.
+  # Include/define flags go in CPPFLAGS (not CFLAGS) so an embedder's
+  # command-line CFLAGS= override does not drop the rcl include path.
+  ifeq ($(URBI_ROS_BACKEND),rcl)
+    ROS2_MSG_PKGS := std_msgs geometry_msgs sensor_msgs builtin_interfaces example_interfaces
+    CPPFLAGS += -DURBI_ROS_BACKEND_RCL=1 -I/opt/ros/jazzy/include
+    CPPFLAGS += $(foreach d,$(wildcard /opt/ros/jazzy/include/*/),-I$(d))
+    LDFLAGS  += -L/opt/ros/jazzy/lib -Wl,-rpath,/opt/ros/jazzy/lib \
+                -lrcl -lrclc -lrcutils -lrmw -lrmw_implementation \
+                -lrosidl_runtime_c -lrosidl_typesupport_c
+    LDFLAGS  += $(foreach p,$(ROS2_MSG_PKGS),-l$(p)__rosidl_typesupport_c -l$(p)__rosidl_generator_c)
+  endif
 else
   ROS2_SRCS :=
 endif

@@ -31,10 +31,30 @@ gcc -std=c99 -Wall -Wextra -Wno-unused-result -o /tmp/spike_pubsub \
 
 output=$(/tmp/spike_pubsub)
 echo "$output"
-if echo "$output" | grep -q "PUBSUB got=42"; then
-    echo "ros-integration: grounding gate PASS"
-    exit 0
-else
+if ! echo "$output" | grep -q "PUBSUB got=42"; then
     echo "ros-integration: grounding gate FAIL"
     exit 1
 fi
+echo "ros-integration: grounding gate PASS"
+
+# === [B2] liburbi with the rcl backend: ros.init brings up a real node ===
+# The repo was copied in (may include stale host objects); rebuild from clean
+# so the archive contains rcl-backend objects.
+echo "=== [B2] rcl backend node init ==="
+# TARGET=host-ros2 keeps the bake tool's build/host objects ros-free
+# (design-risk v0.12.0-H); the rcl flags apply globally via URBI_ROS_BACKEND.
+make -s clean
+make -s TARGET=host-ros2 URBI_ENABLE_ROS2=1 URBI_ROS_BACKEND=rcl \
+    CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" core
+LIBA=build/host-ros2/liburbi.a
+# shellcheck disable=SC2086
+gcc -std=c99 -Wall -Wextra -Wno-unused-result -Iinclude -Isrc \
+    -o /tmp/driver_init tests/integration/ros/driver_init.c \
+    "$LIBA" $IFLAGS $LFLAGS -lm
+b2out=$(/tmp/driver_init)
+echo "$b2out"
+if ! echo "$b2out" | grep -q "ROSINIT ok"; then
+    echo "ros-integration: B2 rcl node init FAIL"
+    exit 1
+fi
+echo "ros-integration: B2 rcl node init PASS"

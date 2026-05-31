@@ -15,6 +15,7 @@
 #include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_arity, urbi_raise_type, urbi_raise_oom */
 #include "ros/uros_internal.h" /* URosBridge, urbi_ros_bridge */
 #include "ros/uros_mock.h"     /* uros_mock_init, uros_mock_inject */
+#include "ros/uros_rcl.h"      /* uros_rcl_init/_free (container build only) */
 #include "ros/uros_msg.h"      /* urbi_ros_msg_register_all */
 #include "ros/generated/ros_msgs.gen.h" /* struct urbi_ros__std_msgs__Int32 */
 #include "event/uevent.h"      /* urbi_event_create */
@@ -51,9 +52,33 @@ ros_register_method(struct UVM *vm, struct UObject *proto,
 static int ros_inject_int32_method(struct UVM *vm, UValue self, UValue *args,
                                    uint8_t nargs, UValue *out);
 
+/* Backend factory — selects the transport implementation at compile time.
+ * The container build (URBI_ROS_BACKEND_RCL) uses the real rcl/DDS transport;
+ * the host build uses the in-memory mock. */
+static void
+ros_make_transport(URosTransport *tp)
+{
+#ifdef URBI_ROS_BACKEND_RCL
+    uros_rcl_init(tp);
+#else
+    uros_mock_init(tp);
+#endif
+}
+
+/* Free the transport state allocated by ros_make_transport. */
+static void
+ros_free_transport(URosTransport *tp)
+{
+#ifdef URBI_ROS_BACKEND_RCL
+    uros_rcl_free(tp);
+#else
+    uros_mock_free(tp);
+#endif
+}
+
 /* === ros.init(name) ===
  *
- * Initialise the mock transport with the given node name string.
+ * Initialise the transport (mock or rcl per build) with the given node name.
  * Idempotent: subsequent calls after the first are silently ignored. */
 static int
 ros_init_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
@@ -65,7 +90,7 @@ ros_init_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
         return urbi_raise_type(vm, "ros.init: node name must be a String", out);
     URosBridge *b = urbi_ros_bridge();
     if (!b->inited) {
-        uros_mock_init(&b->tp);
+        ros_make_transport(&b->tp);
         size_t nlen;
         const char *nm = urbi_value_as_str(args[0], &nlen);
         (void)nlen;
@@ -464,7 +489,7 @@ urbi_ros_shutdown(struct UVM *vm)
     URosBridge *b = urbi_ros_bridge();
     if (!b->inited || b->owner != vm) return;   /* only tear down our own */
     if (b->tp.fini) b->tp.fini(b->tp.self);
-    uros_mock_free(&b->tp);                       /* frees the mock state */
+    ros_free_transport(&b->tp);                   /* frees the transport state */
     urbi_zero(b, sizeof *b);                      /* inited=0, owner=NULL, tables cleared */
     /* Drop the process-global proto caches that pointed into this VM's heap. */
     g_publisher_proto = NULL;
