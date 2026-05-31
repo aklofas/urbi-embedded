@@ -3,6 +3,7 @@
 #define UROS_MSGS_GEN_H
 #ifdef URBI_ENABLE_ROS2
 #include <stdint.h>
+#include <string.h>  /* memcpy / strncpy */
 
 struct urbi_ros__std_msgs__Bool {
     uint8_t data;
@@ -24,6 +25,10 @@ struct urbi_ros__std_msgs__Float64 {
     double data;
 };
 
+struct urbi_ros__std_msgs__String {
+    char data[256]; /* mock-only fixed cap */
+};
+
 struct urbi_ros__geometry_msgs__Vector3 {
     double x;
     double y;
@@ -42,6 +47,29 @@ struct urbi_ros__example_interfaces__AddTwoInts_Request {
 
 struct urbi_ros__example_interfaces__AddTwoInts_Response {
     int64_t sum;
+};
+
+struct urbi_ros__builtin_interfaces__Time {
+    int32_t sec;
+    uint32_t nanosec;
+};
+
+struct urbi_ros__std_msgs__Header {
+    struct urbi_ros__builtin_interfaces__Time stamp;
+    char frame_id[256]; /* mock-only fixed cap */
+};
+
+struct urbi_ros__sensor_msgs__LaserScan {
+    struct urbi_ros__std_msgs__Header header;
+    float angle_min;
+    float angle_max;
+    float angle_increment;
+    float time_increment;
+    float scan_time;
+    float range_min;
+    float range_max;
+    struct { float data[64]; uint32_t size; } ranges; /* mock-only fixed cap */
+    struct { float data[64]; uint32_t size; } intensities; /* mock-only fixed cap */
 };
 
 #endif

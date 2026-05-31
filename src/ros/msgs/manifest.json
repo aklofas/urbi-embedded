@@ -5,9 +5,13 @@
     "std_msgs/Int64":    [["data", "int64"]],
     "std_msgs/Float32":  [["data", "float32"]],
     "std_msgs/Float64":  [["data", "float64"]],
+    "std_msgs/String":   [["data", "string"]],
     "geometry_msgs/Vector3": [["x","float64"],["y","float64"],["z","float64"]],
     "geometry_msgs/Twist":   [["linear","geometry_msgs/Vector3"],["angular","geometry_msgs/Vector3"]],
     "example_interfaces/AddTwoInts_Request":  [["a","int64"],["b","int64"]],
-    "example_interfaces/AddTwoInts_Response": [["sum","int64"]]
+    "example_interfaces/AddTwoInts_Response": [["sum","int64"]],
+    "builtin_interfaces/Time": [["sec","int32"],["nanosec","uint32"]],
+    "std_msgs/Header":   [["stamp","builtin_interfaces/Time"],["frame_id","string"]],
+    "sensor_msgs/LaserScan": [["header","std_msgs/Header"],["angle_min","float32"],["angle_max","float32"],["angle_increment","float32"],["time_increment","float32"],["scan_time","float32"],["range_min","float32"],["range_max","float32"],["ranges","float32[]"],["intensities","float32[]"]]
   }
 }
