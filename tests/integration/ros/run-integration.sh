@@ -47,6 +47,9 @@ echo "=== [B2] rcl backend node init ==="
 # TARGET=host-ros2 keeps the bake tool's build/host objects ros-free
 # (design-risk v0.12.0-H); the rcl flags apply globally via URBI_ROS_BACKEND.
 make -s clean
+# Pre-generate the rcl-target marshaling (needs rosidl headers, container-only).
+python3 tools/urbi-rosgen.py --target rcl src/ros/msgs/manifest.json \
+    src/ros/generated/ros_msgs_rcl.gen.c src/ros/generated/ros_msgs_rcl.gen.h
 make -s TARGET=host-ros2 URBI_ENABLE_ROS2=1 URBI_ROS_BACKEND=rcl \
     CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" core
 LIBA=build/host-ros2/liburbi.a
@@ -79,3 +82,18 @@ if ! echo "$b3out" | grep -q "RCLMARSHAL ok"; then
     exit 1
 fi
 echo "ros-integration: B3 rcl marshal PASS"
+
+# === [B4+B5] rcl publisher + subscriber loopback through live DDS ===
+echo "=== [B4+B5] rcl pub/sub loopback ==="
+# shellcheck disable=SC2086
+gcc -std=c99 -Wall -Wextra -Wno-unused-result \
+    -DURBI_ENABLE_ROS2=1 -DURBI_ROS_BACKEND_RCL=1 -Iinclude -Isrc \
+    -o /tmp/driver_pubsub tests/integration/ros/driver_pubsub.c \
+    "$LIBA" $IFLAGS $LFLAGS -lm
+b45out=$(/tmp/driver_pubsub)
+echo "$b45out"
+if ! echo "$b45out" | grep -q "PUBSUB42 ok"; then
+    echo "ros-integration: B4+B5 pub/sub FAIL"
+    exit 1
+fi
+echo "ros-integration: B4+B5 pub/sub PASS"

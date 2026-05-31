@@ -188,12 +188,13 @@ $(ROS2_GEN_C) $(ROS2_GEN_H): tools/urbi-rosgen.py src/ros/msgs/manifest.json
 	@mkdir -p $(ROS2_GEN_DIR)
 	python3 tools/urbi-rosgen.py src/ros/msgs/manifest.json $(ROS2_GEN_C) $(ROS2_GEN_H)
 $(BUILDDIR)/src/ros/%.o: $(ROS2_GEN_H)
+endif
+
 ifeq ($(URBI_ROS_BACKEND),rcl)
 $(ROS2_RCL_GEN_C) $(ROS2_RCL_GEN_H): tools/urbi-rosgen.py src/ros/msgs/manifest.json
 	@mkdir -p $(ROS2_GEN_DIR)
 	python3 tools/urbi-rosgen.py --target rcl src/ros/msgs/manifest.json $(ROS2_RCL_GEN_C) $(ROS2_RCL_GEN_H)
 $(BUILDDIR)/src/ros/%.o: $(ROS2_RCL_GEN_H)
-endif
 endif
 
 $(BUILDDIR)/tests/unit/%.o: tests/unit/%.c
