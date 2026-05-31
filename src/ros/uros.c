@@ -11,6 +11,7 @@
 #include "realm/urealm.h"      /* URealm, urbi_realm_set_global */
 #include "runtime/umacros.h"   /* urbi_zero, urbi_strlen */
 #include "runtime/uclosure.h"  /* UClosure, urbi_native_method_fn */
+#include "watcher/uwatcher.h"  /* urbi_run_closure_on_scratch_with_payload */
 #include "value/uintern.h"     /* ustr_intern */
 #include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_arity, urbi_raise_type, urbi_raise_oom */
 #include "ros/uros_internal.h" /* URosBridge, urbi_ros_bridge */
@@ -251,16 +252,14 @@ ros_client_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     const char *service = urbi_value_as_str(args[0], &sl);
     const char *type    = urbi_value_as_str(args[1], &tl);
 
-    if (urbi_ros_msg_lookup(type) == NULL)
-        return urbi_raise_type(vm, "ros.client: unknown message type", out);
-
     URosBridge *b = urbi_ros_bridge();
     if (!b->inited)
         return urbi_raise_type(vm, "ros.client: ros not initialized", out);
 
+    /* The transport owns type resolution and rejects unknown types. */
     uint32_t h = b->tp.create_client(b->tp.self, service, type);
     if (h == UROS_INVALID_HANDLE)
-        return urbi_raise_type(vm, "ros.client: transport rejected client", out);
+        return urbi_raise_type(vm, "ros.client: unknown type or transport rejected", out);
 
     if (g_client_proto == NULL)
         return urbi_raise_type(vm, "ros.client: client proto not initialized", out);
@@ -284,24 +283,29 @@ ros_client_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
-/* === bridge_serve + urbi_ros_invoke_handler (Phase A stub) ===
+/* === bridge_serve + urbi_ros_invoke_handler ===
  *
  * bridge_serve: called by the transport when an inbound service request arrives.
  * It looks up the registered handler closure for the service handle and invokes
  * urbi_ros_invoke_handler.
  *
- * urbi_ros_invoke_handler: Phase A stub — the mock transport never has inbound
- * service requests so this is never called in `make test`.  The real closure-
- * invoke implementation lands in Phase B Task B7. */
-
-/* Phase A stub: real implementation in Phase B Task B7. */
+ * urbi_ros_invoke_handler (B7): synchronously run the stored urbiscript handler
+ * closure with the request object as its first argument (R[0]) on a transient
+ * scratch frame, and take its return value as the response object.  Returns 0
+ * on a clean return, -1 if the handler is not a closure, threw, or the VM is
+ * unavailable. */
 static int
 urbi_ros_invoke_handler(struct UVM *vm, UValue handler,
                         UValue req_obj, UValue *resp_obj)
 {
-    (void)vm; (void)handler; (void)req_obj; (void)resp_obj;
-    /* Phase A: mock transport has no inbound service requests; never reached. */
-    return -1;
+    if (vm == NULL || handler.kind != (uint8_t)UVAL_CLOSURE) return -1;
+    UValue result = urbi_make_nil();
+    int    threw  = 0;
+    int rc = urbi_run_closure_on_scratch_with_payload(
+                 vm, (UClosure *)handler.v.p, req_obj, &result, &threw);
+    if (rc != 0 || threw) return -1;
+    *resp_obj = result;
+    return 0;
 }
 
 static int
@@ -342,22 +346,23 @@ ros_service_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     const char *name = urbi_value_as_str(args[0], &nl);
     const char *type = urbi_value_as_str(args[1], &tl);
 
-    const URosMsgType *mt = urbi_ros_msg_lookup(type);
-    if (mt == NULL)
-        return urbi_raise_type(vm, "ros.service: unknown message type", out);
-
     URosBridge *b = urbi_ros_bridge();
     if (!b->inited)
         return urbi_raise_type(vm, "ros.service: ros not initialized", out);
     if (b->service_count >= UROS_MAX_SUBS)
         return urbi_raise_type(vm, "ros.service: too many services", out);
 
+    /* The transport owns type resolution (message registry for the mock, srv
+     * registry for rcl) and rejects unknown types via UROS_INVALID_HANDLE. */
+    (void)tl;
     uint32_t h = b->tp.create_service(b->tp.self, name, type);
     if (h == UROS_INVALID_HANDLE)
-        return urbi_raise_type(vm, "ros.service: transport rejected service", out);
+        return urbi_raise_type(vm, "ros.service: unknown type or transport rejected", out);
 
+    /* The transport tracks its own per-endpoint type; the bridge no longer
+     * needs the type for marshaling (post object-seam). */
     b->services[b->service_count].handle  = h;
-    b->services[b->service_count].type    = mt->name;
+    b->services[b->service_count].type    = "";
     b->services[b->service_count].handler = args[2];
     b->service_count++;
 

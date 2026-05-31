@@ -97,3 +97,17 @@ if ! echo "$b45out" | grep -q "PUBSUB42 ok"; then
     exit 1
 fi
 echo "ros-integration: B4+B5 pub/sub PASS"
+
+# === [B6+B7] rcl service client + server with urbiscript handler ===
+echo "=== [B6+B7] rcl service round-trip ==="
+# shellcheck disable=SC2086
+gcc -std=c99 -Wall -Wextra -Wno-unused-result -Iinclude -Isrc \
+    -o /tmp/driver_service tests/integration/ros/driver_service.c \
+    "$LIBA" $IFLAGS $LFLAGS -lm
+b67out=$(/tmp/driver_service)
+echo "$b67out"
+if ! echo "$b67out" | grep -q "SERVICE sum=5"; then
+    echo "ros-integration: B6+B7 service FAIL"
+    exit 1
+fi
+echo "ros-integration: B6+B7 service PASS"

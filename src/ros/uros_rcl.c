@@ -8,6 +8,9 @@
  * spin.  B6/B7 (client/service) land next. */
 #if defined(URBI_ENABLE_ROS2) && defined(URBI_ROS_BACKEND_RCL)
 
+#define _POSIX_C_SOURCE 199309L   /* nanosleep / struct timespec under -std=c99 */
+#include <time.h>
+
 #include "ros/uros_rcl.h"
 #include "ros/generated/ros_msgs_rcl.gen.h"
 #include <stdlib.h>
@@ -17,8 +20,10 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 
-#define RCL_MAX_PUBS  16
-#define RCL_MAX_SUBS  16
+#define RCL_MAX_PUBS     16
+#define RCL_MAX_SUBS     16
+#define RCL_MAX_CLIENTS   8
+#define RCL_MAX_SVCS      8
 
 typedef struct {
     int                 used;
@@ -34,6 +39,23 @@ typedef struct {
     uint32_t             handle;    /* this sub's bridge-facing handle (== index) */
 } RclSub;
 
+typedef struct {
+    int                  used;
+    rcl_client_t         client;
+    const URosRclSrvType *st;
+} RclClient;
+
+typedef struct {
+    int                  used;
+    rcl_service_t        svc;
+    const URosRclSrvType *st;
+    void                *req_scratch;   /* executor-owned request buffer */
+    void                *resp_scratch;  /* executor-owned response buffer */
+    uint32_t             handle;
+    URosServeFn          serve;
+    void                *serve_ud;
+} RclSvc;
+
 typedef struct URosRclState {
     rcl_allocator_t allocator;
     rclc_support_t  support;
@@ -42,12 +64,17 @@ typedef struct URosRclState {
     int             executor_inited;
     int             inited;
 
-    RclPub pubs[RCL_MAX_PUBS];
-    int    pub_count;
-    RclSub subs[RCL_MAX_SUBS];
-    int    sub_count;
+    RclPub    pubs[RCL_MAX_PUBS];
+    int       pub_count;
+    RclSub    subs[RCL_MAX_SUBS];
+    int       sub_count;
+    RclClient clients[RCL_MAX_CLIENTS];
+    int       client_count;
+    RclSvc    svcs[RCL_MAX_SVCS];
+    int       svc_count;
 
-    /* Spin context — set on each spin() so the per-sub trampoline can deliver. */
+    /* Spin context — set on each spin()/call() so the per-sub deliver
+     * trampoline and the per-svc serve trampoline have a VM + callbacks. */
     struct UVM    *spin_vm;
     URosDeliverFn  spin_deliver;
     void          *spin_ud;
@@ -80,7 +107,7 @@ rcl_be_init(void *self, const char *node_name)
 
     /* One executor sized for all subs + services. */
     if (rclc_executor_init(&s->executor, &s->support.context,
-                           RCL_MAX_SUBS, &s->allocator) != RCL_RET_OK)
+                           RCL_MAX_SUBS + RCL_MAX_SVCS, &s->allocator) != RCL_RET_OK)
         return -1;
     s->executor_inited = 1;
 
@@ -103,9 +130,27 @@ rcl_be_fini(void *self)
     for (i = 0; i < s->sub_count; i++)
         if (s->subs[i].used) {
             (void)rcl_subscription_fini(&s->subs[i].sub, &s->node);
+            if (s->subs[i].mt && s->subs[i].scratch) s->subs[i].mt->fini(s->subs[i].scratch);
             free(s->subs[i].scratch);
             s->subs[i].scratch = NULL;
             s->subs[i].used = 0;
+        }
+    for (i = 0; i < s->client_count; i++)
+        if (s->clients[i].used) {
+            (void)rcl_client_fini(&s->clients[i].client, &s->node);
+            s->clients[i].used = 0;
+        }
+    for (i = 0; i < s->svc_count; i++)
+        if (s->svcs[i].used) {
+            (void)rcl_service_fini(&s->svcs[i].svc, &s->node);
+            if (s->svcs[i].st) {
+                if (s->svcs[i].req_scratch)  s->svcs[i].st->req_fini(s->svcs[i].req_scratch);
+                if (s->svcs[i].resp_scratch) s->svcs[i].st->resp_fini(s->svcs[i].resp_scratch);
+            }
+            free(s->svcs[i].req_scratch);
+            free(s->svcs[i].resp_scratch);
+            s->svcs[i].req_scratch = s->svcs[i].resp_scratch = NULL;
+            s->svcs[i].used = 0;
         }
     if (s->executor_inited) {
         (void)rclc_executor_fini(&s->executor);
@@ -213,16 +258,121 @@ rcl_be_spin(void *self, struct UVM *vm, URosDeliverFn deliver, void *ud)
     return 0;
 }
 
-/* --- client/service: B6/B7 stubs --- */
-static uint32_t rcl_be_create_client(void *self, const char *sv, const char *ty)
-{ (void)self; (void)sv; (void)ty; return UROS_INVALID_HANDLE; }
-static uint32_t rcl_be_create_service(void *self, const char *sv, const char *ty)
-{ (void)self; (void)sv; (void)ty; return UROS_INVALID_HANDLE; }
-static int rcl_be_call(void *self, struct UVM *vm, uint32_t cli, UValue req, UValue *resp)
-{ (void)self; (void)vm; (void)cli; (void)req; (void)resp; return -1; }
-static void rcl_be_set_service_handler(void *self, uint32_t svc,
-                                       URosServeFn serve, void *ud)
-{ (void)self; (void)svc; (void)serve; (void)ud; }
+/* --- Service client + call (B6) --- */
+static uint32_t
+rcl_be_create_client(void *self, const char *service, const char *type)
+{
+    URosRclState *s = (URosRclState *)self;
+    if (s->client_count >= RCL_MAX_CLIENTS) return UROS_INVALID_HANDLE;
+    const URosRclSrvType *st = urbi_ros_rcl_srv_lookup(type);
+    if (st == NULL) return UROS_INVALID_HANDLE;
+    RclClient *c = &s->clients[s->client_count];
+    c->client = rcl_get_zero_initialized_client();
+    if (rclc_client_init_default(&c->client, &s->node, st->ts(), service) != RCL_RET_OK)
+        return UROS_INVALID_HANDLE;
+    c->st   = st;
+    c->used = 1;
+    return (uint32_t)s->client_count++;
+}
+
+static int
+rcl_be_call(void *self, struct UVM *vm, uint32_t cli, UValue req, UValue *resp)
+{
+    URosRclState *s = (URosRclState *)self;
+    int rc = -1, tries;
+    if (cli >= (uint32_t)s->client_count || !s->clients[cli].used) return -1;
+    RclClient *c = &s->clients[cli];
+    void *reqs  = calloc(1, c->st->req_size);
+    void *resps = calloc(1, c->st->resp_size);
+    if (reqs == NULL || resps == NULL) { free(reqs); free(resps); return -1; }
+    c->st->req_init(reqs);
+    c->st->resp_init(resps);
+    /* The service may live in this same process (single-threaded); spin the
+     * executor between send and take so its trampoline can run. */
+    s->spin_vm = vm;
+    g_active_state = s;
+    int64_t seq = 0;
+    if (c->st->marshal_req(vm, req, reqs) == 0 &&
+        rcl_send_request(&c->client, reqs, &seq) == RCL_RET_OK) {
+        for (tries = 0; tries < 400; tries++) {
+            rmw_request_id_t hdr;
+            (void)rclc_executor_spin_some(&s->executor, 0);
+            if (rcl_take_response(&c->client, &hdr, resps) == RCL_RET_OK) {
+                if (c->st->unmarshal_resp(vm, resps, resp) == 0) rc = 0;
+                break;
+            }
+            { struct timespec ts; ts.tv_sec = 0; ts.tv_nsec = 5 * 1000 * 1000;
+              nanosleep(&ts, NULL); }
+        }
+    }
+    c->st->req_fini(reqs);  free(reqs);
+    c->st->resp_fini(resps); free(resps);
+    return rc;
+}
+
+/* --- Service server + handler invocation (B7) --- */
+static void
+rcl_svc_trampoline(const void *req, void *resp)
+{
+    URosRclState *s = g_active_state;
+    int i;
+    if (s == NULL) return;
+    for (i = 0; i < s->svc_count; i++) {
+        if (s->svcs[i].used && s->svcs[i].req_scratch == req && s->svcs[i].serve) {
+            UValue req_obj  = urbi_make_nil();
+            UValue resp_obj = urbi_make_nil();
+            if (s->svcs[i].st->unmarshal_req(s->spin_vm, req, &req_obj) == 0 &&
+                s->svcs[i].serve(s->svcs[i].serve_ud, s->svcs[i].handle,
+                                 req_obj, &resp_obj) == 0)
+                (void)s->svcs[i].st->marshal_resp(s->spin_vm, resp_obj, resp);
+            return;
+        }
+    }
+}
+
+static uint32_t
+rcl_be_create_service(void *self, const char *service, const char *type)
+{
+    URosRclState *s = (URosRclState *)self;
+    if (s->svc_count >= RCL_MAX_SVCS) return UROS_INVALID_HANDLE;
+    const URosRclSrvType *st = urbi_ros_rcl_srv_lookup(type);
+    if (st == NULL) return UROS_INVALID_HANDLE;
+    RclSvc *sv = &s->svcs[s->svc_count];
+    sv->svc = rcl_get_zero_initialized_service();
+    if (rclc_service_init_default(&sv->svc, &s->node, st->ts(), service) != RCL_RET_OK)
+        return UROS_INVALID_HANDLE;
+    sv->req_scratch  = calloc(1, st->req_size);
+    sv->resp_scratch = calloc(1, st->resp_size);
+    if (sv->req_scratch == NULL || sv->resp_scratch == NULL) {
+        free(sv->req_scratch); free(sv->resp_scratch);
+        (void)rcl_service_fini(&sv->svc, &s->node);
+        return UROS_INVALID_HANDLE;
+    }
+    st->req_init(sv->req_scratch);
+    st->resp_init(sv->resp_scratch);
+    if (rclc_executor_add_service(&s->executor, &sv->svc, sv->req_scratch,
+                                  sv->resp_scratch, &rcl_svc_trampoline) != RCL_RET_OK) {
+        st->req_fini(sv->req_scratch);  free(sv->req_scratch);
+        st->resp_fini(sv->resp_scratch); free(sv->resp_scratch);
+        (void)rcl_service_fini(&sv->svc, &s->node);
+        return UROS_INVALID_HANDLE;
+    }
+    sv->st     = st;
+    sv->handle = (uint32_t)s->svc_count;
+    sv->used   = 1;
+    return (uint32_t)s->svc_count++;
+}
+
+static void
+rcl_be_set_service_handler(void *self, uint32_t svc,
+                           URosServeFn serve, void *ud)
+{
+    URosRclState *s = (URosRclState *)self;
+    if (svc < (uint32_t)s->svc_count && s->svcs[svc].used) {
+        s->svcs[svc].serve    = serve;
+        s->svcs[svc].serve_ud = ud;
+    }
+}
 
 static void
 rcl_be_destroy_pub(void *self, uint32_t h)
@@ -245,8 +395,31 @@ rcl_be_destroy_sub(void *self, uint32_t h)
         s->subs[h].used = 0;
     }
 }
-static void rcl_be_destroy_client(void *self, uint32_t h) { (void)self; (void)h; }
-static void rcl_be_destroy_service(void *self, uint32_t h) { (void)self; (void)h; }
+static void
+rcl_be_destroy_client(void *self, uint32_t h)
+{
+    URosRclState *s = (URosRclState *)self;
+    if (h < (uint32_t)s->client_count && s->clients[h].used) {
+        (void)rcl_client_fini(&s->clients[h].client, &s->node);
+        s->clients[h].used = 0;
+    }
+}
+static void
+rcl_be_destroy_service(void *self, uint32_t h)
+{
+    URosRclState *s = (URosRclState *)self;
+    if (h < (uint32_t)s->svc_count && s->svcs[h].used) {
+        (void)rcl_service_fini(&s->svcs[h].svc, &s->node);
+        if (s->svcs[h].st) {
+            if (s->svcs[h].req_scratch)  s->svcs[h].st->req_fini(s->svcs[h].req_scratch);
+            if (s->svcs[h].resp_scratch) s->svcs[h].st->resp_fini(s->svcs[h].resp_scratch);
+        }
+        free(s->svcs[h].req_scratch);
+        free(s->svcs[h].resp_scratch);
+        s->svcs[h].req_scratch = s->svcs[h].resp_scratch = NULL;
+        s->svcs[h].used = 0;
+    }
+}
 
 void
 uros_rcl_init(URosTransport *tp)
