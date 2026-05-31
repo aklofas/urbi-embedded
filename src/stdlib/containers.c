@@ -36,6 +36,9 @@
 
 #include "stdlib/containers.h"
 #include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
+#ifdef URBI_ENABLE_ROS2
+#include "value/ulist_build.h"         /* declaration cross-check for the C-builder wrappers */
+#endif
 
 #include "chunk/uchunk.h"            /* UValue / UVAL_* */
 #include "object/uobject.h"            /* urbi_object_alloc / atom / clone / set_local_slot */
@@ -1026,3 +1029,63 @@ urbi_stdlib_list_new_empty(UVM *vm)
     if (attach_storage(vm, o, l) != 0) return NULL;
     return o;
 }
+
+#ifdef URBI_ENABLE_ROS2
+/* === Internal List C-builder (src/value/ulist_build.h) ===================
+ *
+ * Thin wrappers over the file-static helpers above, exposed so the ROS2
+ * bridge can build List objects from incoming sequence fields without
+ * duplicating storage logic.  Bodies live here (not in a separate .c)
+ * because list_storage / list_grow / urbi_object_atom / urbi_object_clone
+ * / attach_storage are all file-static.  Declarations: src/value/ulist_build.h.
+ *
+ * All three are INTERNAL; they are NOT part of the public ABI surface. */
+
+/* Create a new empty List object backed by a fresh UList.
+ * Returns a UVAL_OBJECT UValue, or urbi_make_nil() on OOM. */
+UValue
+urbi_list_create(UVM *vm)
+{
+    if (vm == NULL) return urbi_make_nil();
+    UObject *o = urbi_stdlib_list_new_empty(vm);
+    if (o == NULL) return urbi_make_nil();
+    return val_obj(o);
+}
+
+/* Append value `v` to List object `lst`.
+ * Returns 0 on success, -1 on allocation failure or invalid argument. */
+int
+urbi_list_append(UVM *vm, UValue lst, UValue v)
+{
+    if (vm == NULL) return -1;
+    UList *l = list_storage(vm, lst);
+    if (l == NULL) return -1;
+    if (l->len == l->cap) {
+        if (list_grow(vm, l, l->len + 1U) != 0) return -1;
+    }
+    l->items[l->len++] = v;
+    return 0;
+}
+
+/* Return the number of elements in List object `lst`, or -1 if invalid. */
+int
+urbi_list_len(UVM *vm, UValue lst)
+{
+    if (vm == NULL) return -1;
+    UList *l = list_storage(vm, lst);
+    if (l == NULL) return -1;
+    return (int)l->len;
+}
+
+/* Return the element at index `i` (0-based) from List object `lst`.
+ * Returns urbi_make_nil() if `i` is out of range or `lst` is invalid. */
+UValue
+urbi_list_get(UVM *vm, UValue lst, int i)
+{
+    if (vm == NULL || i < 0) return urbi_make_nil();
+    UList *l = list_storage(vm, lst);
+    if (l == NULL) return urbi_make_nil();
+    if ((size_t)i >= l->len) return urbi_make_nil();
+    return l->items[(size_t)i];
+}
+#endif /* URBI_ENABLE_ROS2 */

@@ -321,6 +321,7 @@ extern void test_ros_subscribe_suite(void);
 extern void test_ros_service_suite(void);
 extern void test_ros_pump_suite(void);
 extern void test_ros_bridge_lifetime_suite(void);
+extern void test_ulist_build_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -618,6 +619,7 @@ static const struct suite_entry suites[] = {
     {"ros_service",                      test_ros_service_suite},
     {"ros_pump",                         test_ros_pump_suite},
     {"ros_bridge_lifetime",              test_ros_bridge_lifetime_suite},
+    {"ulist_build",                      test_ulist_build_suite},
     /* Add new suites here as test files are added. */
 };
 
