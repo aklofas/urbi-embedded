@@ -35,6 +35,9 @@
 #ifdef URBI_ENABLE_ROS2
 #  include "urbi/ros.h"            /* urbi_ros_register_globals — v0.12.0 Task 3 */
 #endif
+#ifdef URBI_ENABLE_UROBOTICS
+#  include "urbi/urobotics.h"   /* urbi_urobotics_run — v0.12.2 */
+#endif
 #ifdef URBI_ENABLE_REPL
 #  include "stdlib/debug_namespace.h" /* urbi_debug_namespace_register_globals — v0.9.1 */
 #endif
@@ -568,6 +571,16 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
 #ifdef URBI_ENABLE_ROS2
     {
         int rc = urbi_ros_register_globals(vm, realm);
+        if (rc != URBI_OK) return (UErrCode)rc;
+    }
+#endif
+
+#ifdef URBI_ENABLE_UROBOTICS
+    /* v0.12.2: run the Robotics overlay root chunk so its top-level `var
+     * Robotics = ...` + slot assignments install the `Robotics` realm global.
+     * Must run AFTER the main stdlib chunk above so Object/clone exist. */
+    {
+        int rc = urbi_urobotics_run(vm, realm);
         if (rc != URBI_OK) return (UErrCode)rc;
     }
 #endif

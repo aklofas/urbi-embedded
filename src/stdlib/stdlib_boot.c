@@ -38,6 +38,7 @@
 #  include "stdlib/debug_namespace.h"
 #endif
 #include "urbi/ros.h"   /* urbi_ros_register — self-gated by URBI_ENABLE_ROS2 */
+#include "urbi/urobotics.h"   /* urbi_urobotics_register — self-gated by URBI_ENABLE_UROBOTICS */
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "chunk/uchunk.h"          /* UModule, uchunk_deserialize, uchunk_destroy */
@@ -190,6 +191,16 @@ urbi_stdlib_boot(UVM *vm)
          * 10 will arrange the run via a deferred-execution hook once
          * the global Realm is fully populated. */
     }
+
+#ifdef URBI_ENABLE_UROBOTICS
+    /* v0.12.2: deserialize + cache the Robotics facet overlay module.
+     * Runs after the main stdlib blob loads; its root chunk is run later
+     * during realm-globals population (urbi_urobotics_run). */
+    {
+        int rc_uro = urbi_urobotics_register(vm);
+        if (rc_uro != URBI_OK) return rc_uro;
+    }
+#endif
 
     /* v0.9.1 Task 4: mark every builtin atom + runtime-type proto readonly
      * AFTER all population phases (1-9) so the method-install passes are not

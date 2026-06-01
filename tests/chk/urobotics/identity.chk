@@ -1,0 +1,12 @@
+# Milestone: v0.12.2-urobotics
+# Covers: Robotics namespace exists; Identity facet present + isA Object.
+#
+# tunables: urobotics
+#
+# Requires an URBI_ENABLE_UROBOTICS=1 build + URBI_BUILD_PRESET=urobotics.
+# Skipped (PASS) by the base test-chk sweep (URBI_BUILD_PRESET=default).
+
+Robotics.Identity.isA(Object)
+[00000000] true
+Robotics.Identity.type
+[00000014] "Identity"
