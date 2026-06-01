@@ -1,0 +1,64 @@
+// === Assembled-robot demo — Robotics facet library (no hardware) ===
+//
+// Demonstrates structure-tree assembly, dict-backed localization,
+// facet clone + slot command, and the standard frame of reference.
+//
+// Facets are inert slots; binding values to real actuators or sensors
+// is a separate concern (a transport layer or the embedder wires them in).
+//
+// Run with:
+//   URBI_BUILD_PRESET=urobotics build/host-urobotics/urbi -i < robot_demo.u
+
+var robot = Object.clone();
+
+// ---- Body structure tree -----------------------------------------------
+robot.body = Object.clone();
+robot.body.head = Object.clone();
+robot.body.torso = Object.clone();
+
+// ---- Localized group: two eyes addressed by qualifier ------------------
+//
+// Robotics.group(d) returns a Dict usable with [] by qualifier string.
+// Dict literals must fit on a single line (no multiline dict syntax).
+robot.body.head.eyes = Robotics.group(["left" => Robotics.RGBLed.clone(), "right" => Robotics.RGBLed.clone()]);
+
+// Command the left eye: set red channel to full, leave green + blue at 0.
+robot.body.head.eyes["left"].r = 1;
+
+// ---- Pan motor on the head ----------------------------------------------
+robot.body.head.pan = Robotics.RotationalMotor.clone();
+robot.body.head.pan.angle = 0.5;
+
+// ---- Tilt motor on the head ---------------------------------------------
+robot.body.head.tilt = Robotics.RotationalMotor.clone();
+robot.body.head.tilt.angle = 0;
+
+// ---- Distance sensor on the torso ---------------------------------------
+robot.body.torso.sonar = Robotics.DistanceSensor.clone();
+robot.body.torso.sonar.distance = 0;
+
+// ---- Identity facet on the robot root -----------------------------------
+robot.identity = Robotics.Identity.clone();
+robot.identity.name  = "demo_bot";
+robot.identity.model = "urbi-demo-v1";
+
+cout << "robot assembled";
+
+// ---- Read back slot values ----------------------------------------------
+//
+// Bare expressions at the REPL echo their value with a [timestamp] prefix.
+robot.body.head.eyes["left"].r;      // echoes 1
+robot.body.head.pan.angle;           // echoes 0.5
+
+// ---- Frame of reference (read-only constants) ---------------------------
+//
+// Robotics.Frame documents the standard body-frame convention used by the
+// facet library: X forward, Z up, Y right (right-handed).
+Robotics.Frame.forward;              // echoes "X"
+Robotics.Frame.up;                   // echoes "Z"
+
+// ---- Axes and qualifier lists -------------------------------------------
+Robotics.axes[0];                    // echoes "x"
+Robotics.qualifiers[0];             // echoes "left"
+
+cout << "demo complete";
