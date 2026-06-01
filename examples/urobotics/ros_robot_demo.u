@@ -1,0 +1,77 @@
+// === Assembled-robot ROS2 demo — facet<->ROS2 binding (no hardware) ===
+//
+// Demonstrates wiring a DistanceSensor and a Motor to ROS2 topics using the
+// Robotics facet library and the ros bridge, both running against the mock
+// transport.  No ROS installation is required; the mock transport handles
+// pub/sub in-process.
+//
+// Requires both URBI_ENABLE_ROS2=1 and URBI_ENABLE_UROBOTICS=1.
+//
+// Run with:
+//   URBI_BUILD_PRESET=ros-urobotics build/host-ros-urobotics/urbi -i < examples/urobotics/ros_robot_demo.u
+
+// ---- ROS2 node setup -----------------------------------------------------
+ros.init("demo_bot");
+cout << "ros node initialized";
+
+// ---- Assemble the robot --------------------------------------------------
+//
+// A minimal single-sensor + single-motor robot.  Both facets are plain
+// prototype clones; no hardware is involved.
+var sensor = Robotics.DistanceSensor.clone();
+sensor.distance = 1.0;
+
+var motor = Robotics.Motor.clone();
+motor.val = 1.0;
+
+cout << "facets assembled";
+
+// ---- Wire sensor input: /range -> sensor.distance -----------------------
+//
+// bindInput(facet, slot, topic, msgType, field)
+//   Returns the underlying subscription Event.
+//
+// sensor_msgs/Range.range is float32.  The slot receives the float value
+// on each incoming message.
+var insub = Robotics.bindInput(sensor, "distance", "/range", "sensor_msgs/Range", "range");
+cout << "sensor bound to /range";
+
+// ---- Wire motor output: motor.val -> /cmd --------------------------------
+//
+// bindOutput(facet, slot, topic, msgType, field, rate)
+//   Returns a handle with a publishNow() method.
+//   rate = 100ms: installs every(100ms) publishNow() automatically.
+//   rate = 0ms:   on-demand only — call publishNow() explicitly.
+//
+// motor.val is a Float64-backed slot.  Assign FLOAT literals (1.0, 0.0) so
+// the value marshals correctly; an integer literal in a Float64 field will
+// produce an incorrect wire value.
+var out = Robotics.bindOutput(motor, "val", "/cmd", "std_msgs/Float64", "data", 100ms);
+cout << "motor bound to /cmd (100ms periodic)";
+
+// ---- Reactive safety behavior --------------------------------------------
+//
+// When the sensor reads closer than 0.5 m the motor stops immediately.
+// The at-watcher fires each time sensor.distance crosses below 0.5; the
+// motor slot update is picked up by the next periodic publish cycle.
+at (sensor.distance < 0.5) motor.val = 0.0;
+cout << "safety behavior installed";
+
+cout << "demo running";
+motor.val;
+sensor.distance;
+
+// ---- Expected behavior ---------------------------------------------------
+//
+// With a real ROS2 DDS transport:
+//   - /cmd receives std_msgs/Float64 { data: 1.0 } every 100 ms.
+//   - When a sensor_msgs/Range message arrives on /range with range < 0.5,
+//     sensor.distance updates, the at-watcher sets motor.val = 0.0, and the
+//     next /cmd publish carries { data: 0.0 }.
+//
+// With the mock transport (this demo):
+//   - bindOutput installs the periodic publisher; publishNow() is available
+//     for on-demand testing.
+//   - Inject a message via ros.__injectMsg to exercise the full pipeline.
+
+cout << "demo complete";
