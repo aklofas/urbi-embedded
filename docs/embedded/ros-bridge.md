@@ -47,8 +47,9 @@ t.linear.x = 1.0;
 t.angular.z = 0.5;
 ```
 
-Nested message types are supported for the scalar+nested-scalar subset.
-String fields and sequence (array) fields are not yet supported in v0.12.0.
+Nested message types, string fields, and sequence (array) fields are all
+supported (e.g. `sensor_msgs/LaserScan` with a `float[]` `ranges` field and a
+nested `std_msgs/Header`).
 
 ### Publishers
 

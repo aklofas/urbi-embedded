@@ -267,3 +267,14 @@ has zero reference to it.  Per the v0.11.0-trace-spine precedent, new public
 symbols behind a compile gate count as MINOR.  Wire format unchanged at
 v1.9 / 0x19; no new opcodes.  29th use of pre-v1.0 escape clause.
 MINOR bump: 0/20/4 to 0/21/0.  §3 freeze-override.
+
+### Escape #30 — v0.12.1-ros-dds (PATCH)
+
+Real rcl/rclc/Fast-DDS ROS2 transport behind `URBI_ROS_BACKEND=rcl`.  NO new
+public C API symbols: the rcl backend (`src/ros/uros_rcl.c`), the
+rosidl-targeting codegen mode (`tools/urbi-rosgen.py --target rcl`), the
+internal List C-builder (`src/value/ulist_build.h`), and the object-based
+`URosTransport` seam revision are all internal — `include/urbi/ros.h` is
+unchanged.  Wire format unchanged at v1.9 / 0x19; no new opcodes.  30th use of
+pre-v1.0 escape clause.  PATCH bump: 0/21/0 to 0/21/1.  PATCH-only, not a §3
+freeze-override.

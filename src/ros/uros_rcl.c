@@ -279,7 +279,7 @@ static int
 rcl_be_call(void *self, struct UVM *vm, uint32_t cli, UValue req, UValue *resp)
 {
     URosRclState *s = (URosRclState *)self;
-    int rc = -1, tries;
+    int rc = -1;
     if (cli >= (uint32_t)s->client_count || !s->clients[cli].used) return -1;
     RclClient *c = &s->clients[cli];
     void *reqs  = calloc(1, c->st->req_size);
@@ -294,6 +294,7 @@ rcl_be_call(void *self, struct UVM *vm, uint32_t cli, UValue req, UValue *resp)
     int64_t seq = 0;
     if (c->st->marshal_req(vm, req, reqs) == 0 &&
         rcl_send_request(&c->client, reqs, &seq) == RCL_RET_OK) {
+        int tries;
         for (tries = 0; tries < 400; tries++) {
             rmw_request_id_t hdr;
             (void)rclc_executor_spin_some(&s->executor, 0);

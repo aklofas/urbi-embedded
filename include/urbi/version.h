@@ -256,7 +256,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  21
-#define URBI_API_VERSION_PATCH  0
+#define URBI_API_VERSION_PATCH  1
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -402,10 +402,18 @@ extern "C" {
  * contained optional component; the core VM has zero reference to it.  Wire
  * format unchanged at v1.9 / 0x19 (no new opcodes).  29th use of pre-v1.0
  * escape clause.  See docs/api-stability.md §3 + §6 escape ledger entry #29.
+ *
+ * Bumped to 0/21/1 at v0.12.1-ros-dds — escape #30.  PATCH-only: NO new public
+ * C API symbols.  The real rcl/rclc/Fast-DDS transport backend (behind
+ * URBI_ROS_BACKEND=rcl), the rosidl-targeting codegen, the internal List
+ * C-builder (src/value/ulist_build.h), and the object-based URosTransport seam
+ * are all INTERNAL — no change to include/urbi/ros.h or any other public
+ * header.  Wire format unchanged at v1.9 / 0x19.  30th use of the pre-v1.0
+ * escape clause.  See docs/api-stability.md §6 escape ledger entry #30.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 21
-            && URBI_API_VERSION_PATCH == 0,
+            && URBI_API_VERSION_PATCH == 1,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */
