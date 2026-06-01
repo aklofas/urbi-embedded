@@ -141,3 +141,35 @@ if echo "$b8out" | grep -qiE "Direct leak.*uros_rcl|ros_be_|rcl_be_"; then
     exit 1
 fi
 echo "ros-integration: B8 leak check PASS"
+
+# === [B9] live-DDS facet<->ROS2 binding (urobotics overlay + rcl backend) ===
+# Proves Robotics.bindInput / Robotics.bindOutput over real DDS: a companion
+# rclc node publishes /range (sensor_msgs/Range) and subscribes /cmd
+# (std_msgs/Float64); the urbiscript robot binds them and stops the motor when
+# range drops below threshold.  Robotics.* needs the urobotics overlay
+# (URBI_ENABLE_UROBOTICS=1), which adds the urbi_urobotics_bytecode blob to the
+# archive; the existing host-ros2 lib above is built ROS2-only, so build a
+# dedicated lib with BOTH gates.
+echo "=== [B9] live-DDS facet<->ROS2 binding ==="
+make -s clean
+python3 tools/urbi-rosgen.py --target rcl src/ros/msgs/manifest.json \
+    src/ros/generated/ros_msgs_rcl.gen.c src/ros/generated/ros_msgs_rcl.gen.h
+# TARGET=host-ros-urobotics keeps these objects out of the bake/host build
+# (design-risk v0.12.0-H); the gates apply globally for this target.
+make -s TARGET=host-ros-urobotics URBI_ENABLE_ROS2=1 URBI_ROS_BACKEND=rcl \
+    URBI_ENABLE_UROBOTICS=1 \
+    CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" core
+LIBA_URO=build/host-ros-urobotics/liburbi.a
+# shellcheck disable=SC2086
+gcc -std=c99 -Wall -Wextra -Wno-unused-result \
+    -DURBI_ENABLE_ROS2=1 -DURBI_ROS_BACKEND_RCL=1 -DURBI_ENABLE_UROBOTICS=1 \
+    -Iinclude -Isrc \
+    -o /tmp/driver_binding tests/integration/ros/driver_binding.c \
+    "$LIBA_URO" $IFLAGS $LFLAGS -lm
+b9out=$(/tmp/driver_binding)
+echo "$b9out"
+if ! echo "$b9out" | grep -q "BINDING ok"; then
+    echo "ros-integration: B9 binding FAIL"
+    exit 1
+fi
+echo "ros-integration: B9 binding PASS"
