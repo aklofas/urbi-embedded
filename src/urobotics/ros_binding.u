@@ -1,0 +1,37 @@
+// === Facet<->ROS2 binding helpers (URBI_ENABLE_UROBOTICS + URBI_ENABLE_ROS2) ===
+// Pure-urbiscript bridge between the Robotics facet hierarchy (facets.u) and
+// the `ros.*` namespace.  `ros` is resolved lazily inside the function bodies
+// only, never at the root chunk, so this file bakes harmlessly into the
+// urobotics blob even when the ROS2 bridge is compiled out — the helpers are
+// inert until called, and calling them in a ROS2-off build is the only thing
+// that touches `ros`.
+//
+// bindInput installs the reactive observe path
+//   at (sub?(var m)) facet.<slot> = m.<field>
+// using string-keyed reflective slot access (Object.setSlot / Object.getSlot),
+// so the same helper covers every facet/message-field pair.  It returns the
+// subscription object (the caller may retain it to manage the input topic).
+//
+// bindOutput returns a handle whose publishNow() marshals the current facet
+// slot value into a fresh message and publishes it; a positive rate also
+// installs an every(rate) periodic publish stream, while rate == 0ms means
+// on-demand only (publishNow() with no recurring stream).
+
+Robotics.bindInput = function(facet, slot, topic, msgType, field) {
+    var sub = ros.subscribe(topic, msgType);
+    at (sub?(var m)) facet.setSlot(slot, m.getSlot(field));
+    sub
+};
+
+Robotics.bindOutput = function(facet, slot, topic, msgType, field, rate) {
+    var pub = ros.publisher(topic, msgType);
+    var h = Object.clone();
+    h.type = "RosOutputBinding";
+    h.publishNow = function() {
+        var m = ros.msg(msgType);
+        m.setSlot(field, facet.getSlot(slot));
+        pub.publish(m)
+    };
+    if (rate > 0ms) { every (rate) h.publishNow() };
+    h
+};
