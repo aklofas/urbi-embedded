@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.12.2-urobotics — 2026-05-31
+
+Optional Standard Robotics API facet library.  When built with
+`URBI_ENABLE_UROBOTICS` (off by default), a single `Robotics` global is
+installed in every realm, holding a hierarchy of prototype facets — `Identity`,
+`Network`, `Motor` (+ `LinearMotor`, `RotationalMotor`), `Sensor` (+ `DistanceSensor`,
+`TouchSensor`, `AccelerationSensor`, `GyroSensor`, `TemperatureSensor`), `Mobile`,
+`Tracker`, `Led` (+ `RGBLed`) — plus a standard frame of reference (`Robotics.Frame`)
+and dict-backed localization conventions (`Robotics.qualifiers`, `Robotics.axes`,
+`Robotics.group`).  The facets are pure urbiscript baked into a separate bytecode
+blob; the core VM is unchanged and the base (gate-off) build is byte-identical.
+ABI 0/22/0 (MINOR bump from 0/21/1, 31st use of the pre-v1.0 escape clause — 2
+new public C API symbols `urbi_urobotics_register`/`urbi_urobotics_run` in the
+gated header `include/urbi/urobotics.h`, compile-gated by `URBI_ENABLE_UROBOTICS`
+and absent from the default build; per the v0.11.0-trace-spine precedent, new
+public symbols behind a compile gate count as MINOR); wire format unchanged at
+v1.9 / 0x19; no new opcodes.  Deferred: media facets (camera/audio/TTS/blob/
+speech) and three runtime features (trajectory generators, variable blend modes,
+sensor/effector read-write duality).
+
+## v0.12.1-ros-dds — 2026-05-31
+
+Real rcl/rclc/Fast-DDS ROS2 transport behind `URBI_ROS_BACKEND=rcl` (on top of
+`URBI_ENABLE_ROS2`).  The `ros` namespace now drives a live DDS graph: publish/
+subscribe, service client calls, and service servers whose handler is an
+urbiscript closure; messages support strings, sequences, and nested types.  The
+transport seam is object-based — the default host build keeps the in-memory mock
+(`make test-ros2`, deterministic, zero ROS2 dependency); the container build
+links rcl and runs the live integration harness (`make ros-integration`).  ABI
+0/21/1 (PATCH bump from 0/21/0, 30th use of the pre-v1.0 escape clause — no new
+public C API symbols; the rcl backend, codegen, List builder, and seam revision
+are all internal); wire format unchanged at v1.9 / 0x19; no new opcodes.
+
 ## v0.12.0-ros-foundation — 2026-05-29
 
 Optional ROS2 bridge foundation.  The `ros` urbiscript namespace and build-time

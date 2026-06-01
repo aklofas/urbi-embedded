@@ -1,14 +1,14 @@
 # C API stability policy
 
-> Status: ABI pin at v0.12.0-ros-foundation (0/21/0) — MINOR bump from
-> v0.11.4-cat-f (0/20/4).  29th use of pre-v1.0 escape clause.
-> Optional ROS2 bridge foundation (URBI_ENABLE_ROS2): 3 new public C API
-> symbols in include/urbi/ros.h (urbi_ros_register, urbi_ros_register_globals,
-> urbi_ros_pump), all compile-gated.  Per the v0.11.0-trace-spine precedent,
-> new public symbols behind a compile gate count as MINOR.  Wire format
-> unchanged at v1.9 / 0x19; no new opcodes.
-> MINOR bump, freeze-override under §3.  The freeze pin is a forcing
-> function (deliberate intent at every bump), not a hard cap.  Any
+> Status: ABI pin at v0.12.2-urobotics (0/22/0) — MINOR bump from
+> v0.12.1-ros-dds (0/21/1).  31st use of pre-v1.0 escape clause.  Optional
+> Standard Robotics API facet overlay (URBI_ENABLE_UROBOTICS): 2 new public C
+> API symbols (urbi_urobotics_register, urbi_urobotics_run) in the gated header
+> include/urbi/urobotics.h — per the v0.11.0-trace-spine precedent, new public
+> symbols behind a compile gate count as MINOR.  Wire format unchanged at
+> v1.9 / 0x19.  See §6 escape ledger (#30 v0.12.1-ros-dds PATCH, #31
+> v0.12.2-urobotics MINOR).  The freeze pin is a
+> forcing function (deliberate intent at every bump), not a hard cap.  Any
 > further MINOR/MAJOR change after this tag must follow §3.
 
 ## 1. The freeze pin
@@ -278,3 +278,18 @@ internal List C-builder (`src/value/ulist_build.h`), and the object-based
 unchanged.  Wire format unchanged at v1.9 / 0x19; no new opcodes.  30th use of
 pre-v1.0 escape clause.  PATCH bump: 0/21/0 to 0/21/1.  PATCH-only, not a §3
 freeze-override.
+
+### Escape #31 — v0.12.2-urobotics (MINOR)
+
+Optional Standard Robotics API facet overlay (`URBI_ENABLE_UROBOTICS`).  Two new
+public C API symbols in the new gated header `include/urbi/urobotics.h`:
+`urbi_urobotics_register` and `urbi_urobotics_run`.  Both exist only in
+`URBI_ENABLE_UROBOTICS` builds (absent from the default gate-off `liburbi.a`) and
+are called only from stdlib boot + realm-globals population, never by an
+embedder — but per the v0.11.0-trace-spine / v0.12.0-ros-foundation precedent
+(escape #24 / #29), new public symbols behind a compile gate count as MINOR.
+The `Robotics` facet namespace itself is pure urbiscript baked into a separate
+bytecode blob (`urbi_urobotics_bytecode`); the core VM has zero reference to it.
+Wire format unchanged at v1.9 / 0x19; no new opcodes.  31st use of pre-v1.0
+escape clause.  MINOR bump: 0/21/1 to 0/22/0.  §3 freeze-override (consistent
+with escape #29's gated-public-symbol MINOR ruling).

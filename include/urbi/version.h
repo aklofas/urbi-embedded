@@ -255,8 +255,8 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  21
-#define URBI_API_VERSION_PATCH  1
+#define URBI_API_VERSION_MINOR  22
+#define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -410,10 +410,22 @@ extern "C" {
  * are all INTERNAL — no change to include/urbi/ros.h or any other public
  * header.  Wire format unchanged at v1.9 / 0x19.  30th use of the pre-v1.0
  * escape clause.  See docs/api-stability.md §6 escape ledger entry #30.
+ *
+ * Bumped to 0/22/0 at v0.12.2-urobotics — escape #31 (MINOR).  Two new public
+ * C API symbols in the new gated header include/urbi/urobotics.h:
+ * urbi_urobotics_register + urbi_urobotics_run.  Both exist only in
+ * URBI_ENABLE_UROBOTICS builds (absent from the default gate-off liburbi.a) and
+ * are called only from stdlib boot + realm-globals population — but per the
+ * v0.11.0-trace-spine / v0.12.0-ros-foundation precedent, new public symbols
+ * behind a compile gate count as MINOR.  The Standard Robotics API facet
+ * overlay itself is pure urbiscript baked into a separate bytecode blob
+ * (urbi_urobotics_bytecode); the core VM has zero reference to it.  Wire format
+ * unchanged at v1.9 / 0x19; no new opcodes.  31st use of the pre-v1.0 escape
+ * clause.  See docs/api-stability.md §6 escape ledger entry #31.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
-            && URBI_API_VERSION_MINOR == 21
-            && URBI_API_VERSION_PATCH == 1,
+            && URBI_API_VERSION_MINOR == 22
+            && URBI_API_VERSION_PATCH == 0,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

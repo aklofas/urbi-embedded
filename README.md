@@ -6,11 +6,11 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** v0.12.1-ros-dds — Real **rcl/rclc/Fast-DDS** ROS2 transport behind `URBI_ROS_BACKEND=rcl` (on top of `URBI_ENABLE_ROS2`). The `ros` urbiscript namespace (`ros.init`, `ros.msg`, `ros.publisher`/`.publish`, `ros.subscribe` → `Event` for `at(sub?(var m))`, `ros.client`/`.call`, `ros.service`) now drives a live DDS graph: publish/subscribe, service client calls, and service servers whose handler is an urbiscript closure. Messages support strings + sequences + nested types (e.g. `sensor_msgs/LaserScan`). The transport seam is object-based — the default host build keeps the in-memory mock (`make test-ros2`, deterministic, zero ROS2 dependency); the container build links rcl and runs the live integration harness (`make ros-integration`, ros:jazzy, copy-in only). ABI 0/21/1 (PATCH bump from 0/21/0; 30th use of pre-v1.0 escape clause — no new public C API symbols, the rcl backend + codegen + List builder + seam are all internal). Wire v1.9 / 0x19 unchanged.
+**Status:** v0.12.2-urobotics — Standard Robotics API facet library: a `Robotics.*` namespace of prototype facets (Identity, Network, Motor/Sensor families, Mobile, Tracker, Led/RGBLed) + dict-backed localization + standard frame of reference, as an optional pure-urbiscript overlay gated by `URBI_ENABLE_UROBOTICS` (off by default; zero core-VM change; base build byte-identical). ABI 0/22/0 (MINOR bump from 0/21/1; 31st use of pre-v1.0 escape clause — 2 new public C API symbols `urbi_urobotics_register`/`urbi_urobotics_run` in the gated header `include/urbi/urobotics.h`; per the v0.11.0-trace-spine / v0.12.0-ros-foundation precedent, new public symbols behind a compile gate count as MINOR). Wire v1.9 / 0x19 unchanged.
 
-Previously: **v0.12.0-ros-foundation** — Optional ROS2 bridge foundation: the `ros` namespace + build-time message codegen, mock transport only (host-only). ABI 0/21/0 (MINOR bump from 0/20/4; 3 new public C API symbols in `include/urbi/ros.h`, gated by `URBI_ENABLE_ROS2`).
+Previously: **v0.12.1-ros-dds** — real rcl/rclc/Fast-DDS ROS2 transport behind `URBI_ROS_BACKEND=rcl` (on top of `URBI_ENABLE_ROS2`); live DDS pub/sub + service client/server with urbiscript handlers. ABI 0/21/1.
 
-Next milestone: **v0.12.2-urobotics** — Standard Robotics API. Then **v1.0-rc**.
+Next milestone: **v1.0-rc**.
 
 ## Design goals
 

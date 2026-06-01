@@ -233,6 +233,17 @@ EXPERIMENTAL: the API may change before v1.0.
 - `urbi_ros_register_globals` — binds `ros` as a realm global (post-bake hook).
 - `urbi_ros_pump` — drains the transport incoming queue once per `urbi_step`.
 
+### Standard Robotics API facet overlay (T3, EXPERIMENTAL — compile-gated by `URBI_ENABLE_UROBOTICS`)
+
+New at v0.12.2 (`include/urbi/urobotics.h`). Both symbols exist only in
+`URBI_ENABLE_UROBOTICS` builds; absent from the default `liburbi.a`. The overlay
+is a self-contained optional component (pure-urbiscript facets baked into a
+separate bytecode blob); the core VM has no reference to it. EXPERIMENTAL: the
+API may change before v1.0.
+
+- `urbi_urobotics_register` — deserializes the baked Robotics overlay blob and caches the module on the VM (stdlib-boot hook).
+- `urbi_urobotics_run` — runs the overlay root chunk so it installs the `Robotics` realm global (post-bake hook).
+
 ---
 
 ## Tier 4 — Internal-leak
