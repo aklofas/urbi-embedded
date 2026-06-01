@@ -33,7 +33,9 @@
 
 #define UTEST(name) static void name(void)
 
-/* Count user modules in realm->loaded_protos_head (excludes vm->stdlib_module).
+/* Count user modules in realm->loaded_protos_head (excludes vm->stdlib_module
+ * and vm->urobotics_module when built with URBI_ENABLE_UROBOTICS — both are
+ * VM-owned overlays, not REPL chunks).
  * v0.9.0-repl: each urbi_repl_eval call leaves one heap-alloc UProto in the
  * realm list; this replaces the old vm->rescued_protos count. */
 static size_t
@@ -42,7 +44,11 @@ count_user_modules(const UVM *vm, const URealm *realm)
     size_t count = 0;
     const UProto *m = realm->loaded_protos_head;
     while (m != NULL) {
-        if (m != vm->stdlib_module) count++;
+        if (m != vm->stdlib_module
+#ifdef URBI_ENABLE_UROBOTICS
+            && m != vm->urobotics_module
+#endif
+        ) count++;
         m = m->next_in_realm;
     }
     return count;

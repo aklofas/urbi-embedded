@@ -176,10 +176,16 @@ UTEST(repl_eval_no_alias_across_lines)
         UASSERT_EQ(URBI_OK, rc);
     }
 
-    /* Walk registry — count user modules (skip vm->stdlib_module). */
+    /* Walk registry — count user modules (skip vm->stdlib_module and, when
+     * built with URBI_ENABLE_UROBOTICS, vm->urobotics_module — both are
+     * VM-owned overlays, not REPL chunks). */
     int user_count = 0;
     for (UProto *m = r->loaded_protos_head; m != NULL; m = m->next_in_realm) {
-        if (m != vm.stdlib_module) user_count++;
+        if (m != vm.stdlib_module
+#ifdef URBI_ENABLE_UROBOTICS
+            && m != vm.urobotics_module
+#endif
+        ) user_count++;
     }
     /* Expect 50 distinct heap-allocated modules, one per REPL line. */
     UASSERT_EQ(50, user_count);

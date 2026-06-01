@@ -58,6 +58,10 @@ jobs:
         run: make test-gdb-memdebug
       - name: ROS2 bridge (mock) tests
         run: make test-ros2
+      - name: Robotics facet overlay tests
+        run: make test-urobotics
+      - name: Robotics overlay blob determinism
+        run: make check-urobotics-determinism
 
   repl-multi-client-stress:
     name: repl multi-client stress (ASan, 100 trials)
