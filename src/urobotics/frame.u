@@ -1,4 +1,4 @@
-// Standard frame of reference (REVIVAL §10.5): X forward, Z up, Y right
+// Standard frame of reference (§10.5): X forward, Z up, Y right
 // (right-handed). Rotations: yaw about Z, pitch about Y, roll about X.
 Robotics.Frame = Object.clone();
 Robotics.Frame.type      = "Frame";

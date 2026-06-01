@@ -1,5 +1,5 @@
 // === Robotics facet library (URBI_ENABLE_UROBOTICS) ===
-// Standard Robotics API facets, per REVIVAL §10.5.  Hardware-agnostic:
+// Standard Robotics API facets (§10.5).  Hardware-agnostic:
 // a facet's slots are plain slots; binding values is a separate concern.
 
 var Robotics = Object.clone();

@@ -1,4 +1,4 @@
-// Localization (REVIVAL §10.5): localized groups are Dicts keyed by qualifier
+// Localization (§10.5): localized groups are Dicts keyed by qualifier
 // strings. These constants are documented conventions, not an enforced enum.
 Robotics.qualifiers = ["left", "right", "front", "back", "up", "down",
                        "frontleft", "frontright", "backleft", "backright"];
