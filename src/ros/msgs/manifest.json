@@ -12,6 +12,7 @@
     "example_interfaces/AddTwoInts_Response": [["sum","int64"]],
     "builtin_interfaces/Time": [["sec","int32"],["nanosec","uint32"]],
     "std_msgs/Header":   [["stamp","builtin_interfaces/Time"],["frame_id","string"]],
-    "sensor_msgs/LaserScan": [["header","std_msgs/Header"],["angle_min","float32"],["angle_max","float32"],["angle_increment","float32"],["time_increment","float32"],["scan_time","float32"],["range_min","float32"],["range_max","float32"],["ranges","float32[]"],["intensities","float32[]"]]
+    "sensor_msgs/LaserScan": [["header","std_msgs/Header"],["angle_min","float32"],["angle_max","float32"],["angle_increment","float32"],["time_increment","float32"],["scan_time","float32"],["range_min","float32"],["range_max","float32"],["ranges","float32[]"],["intensities","float32[]"]],
+    "sensor_msgs/Range": [["header","std_msgs/Header"],["radiation_type","uint8"],["field_of_view","float32"],["min_range","float32"],["max_range","float32"],["range","float32"]]
   }
 }

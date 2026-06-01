@@ -72,5 +72,14 @@ struct urbi_ros__sensor_msgs__LaserScan {
     struct { float data[64]; uint32_t size; } intensities; /* mock-only fixed cap */
 };
 
+struct urbi_ros__sensor_msgs__Range {
+    struct urbi_ros__std_msgs__Header header;
+    uint8_t radiation_type;
+    float field_of_view;
+    float min_range;
+    float max_range;
+    float range;
+};
+
 #endif
 #endif

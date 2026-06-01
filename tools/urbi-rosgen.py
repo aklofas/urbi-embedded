@@ -5,16 +5,20 @@ type registry for a fixed message manifest. v0.12.1: scalar + nested-scalar
 Usage: urbi-rosgen.py <manifest.json> <out.gen.c> <out.gen.h>"""
 import json, sys, re
 
-PRIM_C = {"bool": "uint8_t", "int32": "int32_t", "uint32": "uint32_t",
-          "int64": "int64_t", "float32": "float", "float64": "double"}
+PRIM_C = {"bool": "uint8_t", "uint8": "uint8_t", "int32": "int32_t",
+          "uint32": "uint32_t", "int64": "int64_t",
+          "float32": "float", "float64": "double"}
 
-SLOT_READ = {"bool": "urbi_value_as_bool", "int32": "urbi_value_as_int",
-             "uint32": "urbi_value_as_int", "int64": "urbi_value_as_int",
+SLOT_READ = {"bool": "urbi_value_as_bool", "uint8": "urbi_value_as_int",
+             "int32": "urbi_value_as_int", "uint32": "urbi_value_as_int",
+             "int64": "urbi_value_as_int",
              "float32": "urbi_value_as_float", "float64": "urbi_value_as_float"}
-CCAST = {"bool": "(uint8_t)", "int32": "(int32_t)", "uint32": "(uint32_t)",
-         "int64": "(int64_t)", "float32": "(float)", "float64": "(double)"}
-MAKE = {"bool": "urbi_make_bool", "int32": "urbi_make_int",
-        "uint32": "urbi_make_int", "int64": "urbi_make_int",
+CCAST = {"bool": "(uint8_t)", "uint8": "(uint8_t)", "int32": "(int32_t)",
+         "uint32": "(uint32_t)", "int64": "(int64_t)",
+         "float32": "(float)", "float64": "(double)"}
+MAKE = {"bool": "urbi_make_bool", "uint8": "urbi_make_int",
+        "int32": "urbi_make_int", "uint32": "urbi_make_int",
+        "int64": "urbi_make_int",
         "float32": "urbi_make_float", "float64": "urbi_make_float"}
 
 # Fixed capacities for the mock-only self-contained struct representation.
@@ -217,8 +221,9 @@ def emit_c(msgs):
 # ===========================================================================
 
 # rosidl sequence struct names: rosidl_runtime_c__<elem>__Sequence
-RCL_SEQ_ELEM = {"float32": "float", "float64": "double", "int32": "int32",
-                "uint32": "uint32", "int64": "int64", "bool": "boolean"}
+RCL_SEQ_ELEM = {"float32": "float", "float64": "double", "uint8": "uint8",
+                "int32": "int32", "uint32": "uint32",
+                "int64": "int64", "bool": "boolean"}
 
 def snake(name):
     """CamelCase -> snake_case (ROS header-file convention)."""

@@ -30,6 +30,11 @@ int urbi_ros_unmarshal__sensor_msgs__LaserScan(struct UVM *,
                                                 UValue *);
 int urbi_ros_marshal__sensor_msgs__LaserScan(struct UVM *, UValue,
                                               struct urbi_ros__sensor_msgs__LaserScan *);
+int urbi_ros_unmarshal__sensor_msgs__Range(struct UVM *,
+                                            const struct urbi_ros__sensor_msgs__Range *,
+                                            UValue *);
+int urbi_ros_marshal__sensor_msgs__Range(struct UVM *, UValue,
+                                          struct urbi_ros__sensor_msgs__Range *);
 
 static void *
 ros_marshal_alloc(void *ptr, size_t nbytes, void *ud)
@@ -202,6 +207,67 @@ ros_marshal_laserscan_roundtrip(void)
     urbi_vm_free(vm);
 }
 
+/* sensor_msgs/Range round-trip: nested Header.frame_id string + scalar fields
+ * (including uint8 radiation_type).  Build the C struct, unmarshal to object,
+ * verify radiation_type + range value, then marshal back. */
+static void
+ros_marshal_range_roundtrip(void)
+{
+    struct UVM *vm = urbi_vm_create(ros_marshal_alloc, NULL);
+    UASSERT_NE((long long)vm, 0LL);
+    if (vm == NULL) return;
+    struct URealm *realm = urbi_realm_create(vm);
+    UASSERT_NE((long long)realm, 0LL);
+
+    /* Build a Range C struct */
+    struct urbi_ros__sensor_msgs__Range rng0;
+    memset(&rng0, 0, sizeof(rng0));
+    strncpy(rng0.header.frame_id, "sonar_frame", 255);
+    rng0.header.stamp.sec      = 10;
+    rng0.header.stamp.nanosec  = 0U;
+    rng0.radiation_type        = 1U;   /* ULTRASOUND = 1 */
+    rng0.field_of_view         = 0.5f;
+    rng0.min_range             = 0.02f;
+    rng0.max_range             = 4.0f;
+    rng0.range                 = 1.5f;
+
+    /* Unmarshal C struct -> object */
+    UValue obj = urbi_make_nil();
+    UASSERT_EQ(urbi_ros_unmarshal__sensor_msgs__Range(vm, &rng0, &obj), 0);
+
+    /* Verify header.frame_id */
+    UValue hdr_v = urbi_make_nil();
+    UASSERT_EQ(urbi_slot_get(vm, obj, "header", 6, &hdr_v), 0);
+    UValue fid_v = urbi_make_nil();
+    UASSERT_EQ(urbi_slot_get(vm, hdr_v, "frame_id", 8, &fid_v), 0);
+    UASSERT(urbi_value_is_str(fid_v));
+    { size_t slen = 0;
+      const char *s = urbi_value_as_str(fid_v, &slen);
+      UASSERT_EQ(strcmp(s, "sonar_frame"), 0);
+      (void)slen; }
+
+    /* Verify radiation_type and range scalar fields */
+    UValue rt_v = urbi_make_nil();
+    UASSERT_EQ(urbi_slot_get(vm, obj, "radiation_type", 14, &rt_v), 0);
+    UASSERT_EQ(urbi_value_as_int(rt_v), 1LL);
+
+    UValue range_v = urbi_make_nil();
+    UASSERT_EQ(urbi_slot_get(vm, obj, "range", 5, &range_v), 0);
+    UASSERT(urbi_value_as_float(range_v) == 1.5);
+
+    /* Marshal object back -> C struct and check round-trip */
+    struct urbi_ros__sensor_msgs__Range rng1;
+    memset(&rng1, 0, sizeof(rng1));
+    UASSERT_EQ(urbi_ros_marshal__sensor_msgs__Range(vm, obj, &rng1), 0);
+    UASSERT_EQ(strcmp(rng1.header.frame_id, "sonar_frame"), 0);
+    UASSERT_EQ((int)rng1.radiation_type, 1);
+    UASSERT(rng1.range == 1.5f);
+    UASSERT(rng1.min_range == 0.02f);
+    UASSERT(rng1.max_range == 4.0f);
+
+    urbi_vm_free(vm);
+}
+
 void
 test_ros_marshal_suite(void)
 {
@@ -209,6 +275,7 @@ test_ros_marshal_suite(void)
     utest_run("ros_marshal.twist_roundtrip",      ros_marshal_twist_roundtrip);
     utest_run("ros_marshal.string_roundtrip",     ros_marshal_string_roundtrip);
     utest_run("ros_marshal.laserscan_roundtrip",  ros_marshal_laserscan_roundtrip);
+    utest_run("ros_marshal.range_roundtrip",      ros_marshal_range_roundtrip);
 }
 
 #else  /* !URBI_ENABLE_ROS2 */

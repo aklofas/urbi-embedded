@@ -38,6 +38,8 @@ int urbi_ros_marshal__std_msgs__Header(struct UVM *vm, UValue obj, struct urbi_r
 int urbi_ros_unmarshal__std_msgs__Header(struct UVM *vm, const struct urbi_ros__std_msgs__Header *in, UValue *out);
 int urbi_ros_marshal__sensor_msgs__LaserScan(struct UVM *vm, UValue obj, struct urbi_ros__sensor_msgs__LaserScan *out);
 int urbi_ros_unmarshal__sensor_msgs__LaserScan(struct UVM *vm, const struct urbi_ros__sensor_msgs__LaserScan *in, UValue *out);
+int urbi_ros_marshal__sensor_msgs__Range(struct UVM *vm, UValue obj, struct urbi_ros__sensor_msgs__Range *out);
+int urbi_ros_unmarshal__sensor_msgs__Range(struct UVM *vm, const struct urbi_ros__sensor_msgs__Range *in, UValue *out);
 
 int urbi_ros_marshal__std_msgs__Bool(struct UVM *vm, UValue obj, struct urbi_ros__std_msgs__Bool *out) {
     { UValue _v = urbi_make_nil();
@@ -178,6 +180,27 @@ int urbi_ros_marshal__sensor_msgs__LaserScan(struct UVM *vm, UValue obj, struct 
         out->intensities.data[_i] = (float)urbi_value_as_float(_ev); } }
     return 0;
 }
+int urbi_ros_marshal__sensor_msgs__Range(struct UVM *vm, UValue obj, struct urbi_ros__sensor_msgs__Range *out) {
+    { UValue _v = urbi_make_nil();
+      if (urbi_slot_get(vm, obj, "header", 6, &_v) != 0) return -1;
+      if (urbi_ros_marshal__std_msgs__Header(vm, _v, &out->header) != 0) return -1; }
+    { UValue _v = urbi_make_nil();
+      if (urbi_slot_get(vm, obj, "radiation_type", 14, &_v) != 0) return -1;
+      out->radiation_type = (uint8_t)urbi_value_as_int(_v); }
+    { UValue _v = urbi_make_nil();
+      if (urbi_slot_get(vm, obj, "field_of_view", 13, &_v) != 0) return -1;
+      out->field_of_view = (float)urbi_value_as_float(_v); }
+    { UValue _v = urbi_make_nil();
+      if (urbi_slot_get(vm, obj, "min_range", 9, &_v) != 0) return -1;
+      out->min_range = (float)urbi_value_as_float(_v); }
+    { UValue _v = urbi_make_nil();
+      if (urbi_slot_get(vm, obj, "max_range", 9, &_v) != 0) return -1;
+      out->max_range = (float)urbi_value_as_float(_v); }
+    { UValue _v = urbi_make_nil();
+      if (urbi_slot_get(vm, obj, "range", 5, &_v) != 0) return -1;
+      out->range = (float)urbi_value_as_float(_v); }
+    return 0;
+}
 
 int urbi_ros_unmarshal__std_msgs__Bool(struct UVM *vm, const struct urbi_ros__std_msgs__Bool *in, UValue *out) {
     struct UObject *o = urbi_ros_msg_alloc(vm, "std_msgs/Bool");
@@ -307,6 +330,20 @@ int urbi_ros_unmarshal__sensor_msgs__LaserScan(struct UVM *vm, const struct urbi
       if (urbi_slot_set(vm, obj, "intensities", 11, _lst) != 0) return -1; }
     *out = obj; return 0;
 }
+int urbi_ros_unmarshal__sensor_msgs__Range(struct UVM *vm, const struct urbi_ros__sensor_msgs__Range *in, UValue *out) {
+    struct UObject *o = urbi_ros_msg_alloc(vm, "sensor_msgs/Range");
+    if (o == NULL) return -1;
+    UValue obj = urbi_make_object(o);
+    { UValue _nv = urbi_make_nil();
+      if (urbi_ros_unmarshal__std_msgs__Header(vm, &in->header, &_nv) != 0) return -1;
+      if (urbi_slot_set(vm, obj, "header", 6, _nv) != 0) return -1; }
+    if (urbi_slot_set(vm, obj, "radiation_type", 14, urbi_make_int(in->radiation_type)) != 0) return -1;
+    if (urbi_slot_set(vm, obj, "field_of_view", 13, urbi_make_float(in->field_of_view)) != 0) return -1;
+    if (urbi_slot_set(vm, obj, "min_range", 9, urbi_make_float(in->min_range)) != 0) return -1;
+    if (urbi_slot_set(vm, obj, "max_range", 9, urbi_make_float(in->max_range)) != 0) return -1;
+    if (urbi_slot_set(vm, obj, "range", 5, urbi_make_float(in->range)) != 0) return -1;
+    *out = obj; return 0;
+}
 
 static int _m_std_msgs__Bool(struct UVM *vm, UValue o, void *p){return urbi_ros_marshal__std_msgs__Bool(vm,o,(struct urbi_ros__std_msgs__Bool*)p);}
 static int _u_std_msgs__Bool(struct UVM *vm, const void *p, UValue *o){return urbi_ros_unmarshal__std_msgs__Bool(vm,(const struct urbi_ros__std_msgs__Bool*)p,o);}
@@ -334,6 +371,8 @@ static int _m_std_msgs__Header(struct UVM *vm, UValue o, void *p){return urbi_ro
 static int _u_std_msgs__Header(struct UVM *vm, const void *p, UValue *o){return urbi_ros_unmarshal__std_msgs__Header(vm,(const struct urbi_ros__std_msgs__Header*)p,o);}
 static int _m_sensor_msgs__LaserScan(struct UVM *vm, UValue o, void *p){return urbi_ros_marshal__sensor_msgs__LaserScan(vm,o,(struct urbi_ros__sensor_msgs__LaserScan*)p);}
 static int _u_sensor_msgs__LaserScan(struct UVM *vm, const void *p, UValue *o){return urbi_ros_unmarshal__sensor_msgs__LaserScan(vm,(const struct urbi_ros__sensor_msgs__LaserScan*)p,o);}
+static int _m_sensor_msgs__Range(struct UVM *vm, UValue o, void *p){return urbi_ros_marshal__sensor_msgs__Range(vm,o,(struct urbi_ros__sensor_msgs__Range*)p);}
+static int _u_sensor_msgs__Range(struct UVM *vm, const void *p, UValue *o){return urbi_ros_unmarshal__sensor_msgs__Range(vm,(const struct urbi_ros__sensor_msgs__Range*)p,o);}
 static const URosMsgType g_ros_types[] = {
   { "std_msgs/Bool", sizeof(struct urbi_ros__std_msgs__Bool), _m_std_msgs__Bool, _u_std_msgs__Bool },
   { "std_msgs/Int32", sizeof(struct urbi_ros__std_msgs__Int32), _m_std_msgs__Int32, _u_std_msgs__Int32 },
@@ -348,8 +387,9 @@ static const URosMsgType g_ros_types[] = {
   { "builtin_interfaces/Time", sizeof(struct urbi_ros__builtin_interfaces__Time), _m_builtin_interfaces__Time, _u_builtin_interfaces__Time },
   { "std_msgs/Header", sizeof(struct urbi_ros__std_msgs__Header), _m_std_msgs__Header, _u_std_msgs__Header },
   { "sensor_msgs/LaserScan", sizeof(struct urbi_ros__sensor_msgs__LaserScan), _m_sensor_msgs__LaserScan, _u_sensor_msgs__LaserScan },
+  { "sensor_msgs/Range", sizeof(struct urbi_ros__sensor_msgs__Range), _m_sensor_msgs__Range, _u_sensor_msgs__Range },
 };
-static const int g_ros_types_n = 13;
+static const int g_ros_types_n = 14;
 const URosMsgType *urbi_ros_msg_lookup(const char *name){
   int i; for (i=0;i<g_ros_types_n;i++) if (urbi_streq(name, g_ros_types[i].name)) return &g_ros_types[i];
   return 0;
@@ -424,6 +464,15 @@ int urbi_ros_msg_register_all(struct UVM *vm){
     if (urbi_slot_set(vm, urbi_make_object(o), "intensities", 11, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "sensor_msgs/LaserScan", o);
     { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__sensor_msgs__LaserScan",27); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+  { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
+    if (urbi_slot_set(vm, urbi_make_object(o), "header", 6, urbi_make_nil())!=0) return -1;
+    if (urbi_slot_set(vm, urbi_make_object(o), "radiation_type", 14, urbi_make_nil())!=0) return -1;
+    if (urbi_slot_set(vm, urbi_make_object(o), "field_of_view", 13, urbi_make_nil())!=0) return -1;
+    if (urbi_slot_set(vm, urbi_make_object(o), "min_range", 9, urbi_make_nil())!=0) return -1;
+    if (urbi_slot_set(vm, urbi_make_object(o), "max_range", 9, urbi_make_nil())!=0) return -1;
+    if (urbi_slot_set(vm, urbi_make_object(o), "range", 5, urbi_make_nil())!=0) return -1;
+    urbi_ros_msg__record(vm, "sensor_msgs/Range", o);
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__sensor_msgs__Range",23); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
   return 0;
 }
 
