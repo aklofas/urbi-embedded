@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.12.3-ros-demo-and-contract — 2026-05-31
+
+Facet↔ROS2 binding contract.  A pure-urbiscript layer — `Robotics.bindInput` and
+`Robotics.bindOutput` — connects Standard Robotics API facet slots to ROS2
+message fields via a slot↔field mapping table, so an assembled robot can drive
+and observe its facets over a live DDS graph.  The binding is gated on both
+`URBI_ENABLE_UROBOTICS` and `URBI_ENABLE_ROS2` and lives entirely in the
+urobotics overlay blob; the core VM is unchanged.  Ships an assembled-robot
+demo, adds `sensor_msgs/Range` to the message manifest, introduces mock-only
+test hooks (`ros.__injectMsg` / `ros.__lastPublished`) for deterministic
+loopback, and wires a combined host gate (`make test-ros-urobotics`) plus a
+live-DDS integration driver for the rcl backend.  ABI 0/22/1 (PATCH bump from
+0/22/0, 32nd use of the pre-v1.0 escape clause — no new public C API symbols;
+the binding is pure overlay, and the two mock hooks are gated test-only natives
+inside the ROS2 component, absent from `include/urbi/` and the public manifest);
+wire format unchanged at v1.9 / 0x19; no new opcodes.
+
 ## v0.12.2-urobotics — 2026-05-31
 
 Optional Standard Robotics API facet library.  When built with

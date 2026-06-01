@@ -1216,7 +1216,7 @@ RELEASETEST_PHASE1 := \
     test-abi-freeze test-wire-freeze test-repl-security \
     test-stdlib-bytecode-fresh test-dependency-pins \
     test-ros2 check-ros-gate check-rosgen check-rosgen-determinism \
-    test-urobotics check-urobotics-determinism
+    test-urobotics check-urobotics-determinism test-ros-urobotics
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # ros-integration is excluded from releasetest (container-only; needs docker).
 # Empirically valgrind throughput collapses by 10-20× when sharing memory

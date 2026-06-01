@@ -1,13 +1,14 @@
 # C API stability policy
 
-> Status: ABI pin at v0.12.2-urobotics (0/22/0) — MINOR bump from
-> v0.12.1-ros-dds (0/21/1).  31st use of pre-v1.0 escape clause.  Optional
-> Standard Robotics API facet overlay (URBI_ENABLE_UROBOTICS): 2 new public C
-> API symbols (urbi_urobotics_register, urbi_urobotics_run) in the gated header
-> include/urbi/urobotics.h — per the v0.11.0-trace-spine precedent, new public
-> symbols behind a compile gate count as MINOR.  Wire format unchanged at
+> Status: ABI pin at v0.12.3-ros-demo-and-contract (0/22/1) — PATCH bump from
+> v0.12.2-urobotics (0/22/0).  32nd use of pre-v1.0 escape clause.  Facet↔ROS2
+> binding contract: NO new public C API symbols — the binding
+> (Robotics.bindInput / bindOutput) is pure urbiscript in the urobotics overlay
+> blob, and the two new natives (`ros.__injectMsg` / `ros.__lastPublished`) are
+> mock-only gated test hooks inside the ROS2 component, absent from
+> include/urbi/ and the public manifest.  Wire format unchanged at
 > v1.9 / 0x19.  See §6 escape ledger (#30 v0.12.1-ros-dds PATCH, #31
-> v0.12.2-urobotics MINOR).  The freeze pin is a
+> v0.12.2-urobotics MINOR, #32 v0.12.3-ros-demo-and-contract PATCH).  The freeze pin is a
 > forcing function (deliberate intent at every bump), not a hard cap.  Any
 > further MINOR/MAJOR change after this tag must follow §3.
 
@@ -293,3 +294,15 @@ bytecode blob (`urbi_urobotics_bytecode`); the core VM has zero reference to it.
 Wire format unchanged at v1.9 / 0x19; no new opcodes.  31st use of pre-v1.0
 escape clause.  MINOR bump: 0/21/1 to 0/22/0.  §3 freeze-override (consistent
 with escape #29's gated-public-symbol MINOR ruling).
+
+### Escape #32 — v0.12.3-ros-demo-and-contract (PATCH)
+
+Facet↔ROS2 binding contract.  NO new public C API symbols: the binding
+(`Robotics.bindInput` / `bindOutput`) is pure urbiscript baked into the urobotics
+overlay blob, gated on both `URBI_ENABLE_UROBOTICS` and `URBI_ENABLE_ROS2`.  The
+two new natives (`ros.__injectMsg` / `ros.__lastPublished`) are mock-only gated
+test hooks living inside the ROS2 component, not in `include/urbi/` — they are
+absent from the default gate-off build and from the public manifest
+(`docs/api-surface-tiers.md`).  Wire format unchanged at v1.9 / 0x19; no new
+opcodes.  32nd use of pre-v1.0 escape clause.  PATCH bump: 0/22/0 to 0/22/1.
+PATCH-only, not a §3 freeze-override.

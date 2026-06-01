@@ -62,6 +62,8 @@ jobs:
         run: make test-urobotics
       - name: Robotics overlay blob determinism
         run: make check-urobotics-determinism
+      - name: facet<->ROS2 binding tests
+        run: make test-ros-urobotics
 
   repl-multi-client-stress:
     name: repl multi-client stress (ASan, 100 trials)

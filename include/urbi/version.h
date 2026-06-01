@@ -256,7 +256,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  22
-#define URBI_API_VERSION_PATCH  0
+#define URBI_API_VERSION_PATCH  1
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -422,10 +422,19 @@ extern "C" {
  * (urbi_urobotics_bytecode); the core VM has zero reference to it.  Wire format
  * unchanged at v1.9 / 0x19; no new opcodes.  31st use of the pre-v1.0 escape
  * clause.  See docs/api-stability.md §6 escape ledger entry #31.
+ *
+ * Bumped to 0/22/1 at v0.12.3-ros-demo-and-contract — escape #32.  PATCH-only:
+ * NO new public C API symbols.  The facet<->ROS2 binding contract
+ * (Robotics.bindInput / bindOutput) is pure urbiscript in the urobotics overlay
+ * blob; the two new natives (ros.__injectMsg / __lastPublished) are mock-only,
+ * gated test hooks inside the ROS2 component — not in include/urbi/, absent from
+ * the default gate-off build + the public manifest.  Wire format unchanged at
+ * v1.9 / 0x19; no new opcodes.  32nd use of the pre-v1.0 escape clause.  See
+ * docs/api-stability.md §6 escape ledger entry #32.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 22
-            && URBI_API_VERSION_PATCH == 0,
+            && URBI_API_VERSION_PATCH == 1,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */
