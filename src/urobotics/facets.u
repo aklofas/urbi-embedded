@@ -1,0 +1,12 @@
+// === Robotics facet library (URBI_ENABLE_UROBOTICS) ===
+// Standard Robotics API facets, per REVIVAL §10.5.  Hardware-agnostic:
+// a facet's slots are plain slots; binding values is a separate concern.
+
+var Robotics = Object.clone();
+
+// Identity — type, name, model, serial.
+Robotics.Identity = Object.clone();
+Robotics.Identity.type   = "Identity";
+Robotics.Identity.name   = "";
+Robotics.Identity.model  = "";
+Robotics.Identity.serial = "";
