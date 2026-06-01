@@ -1,0 +1,10 @@
+// Localization (REVIVAL §10.5): localized groups are Dicts keyed by qualifier
+// strings. These constants are documented conventions, not an enforced enum.
+Robotics.qualifiers = ["left", "right", "front", "back", "up", "down",
+                       "frontleft", "frontright", "backleft", "backright"];
+Robotics.axes = ["x", "y", "z"];
+
+// Robotics.group(d) — identity helper returning a Dict usable with [] by
+// qualifier. Authors build e.g. eyes = Robotics.group(["left" => leftEye,
+// "right" => rightEye]); then eyes["left"].
+Robotics.group = function(d) { d };

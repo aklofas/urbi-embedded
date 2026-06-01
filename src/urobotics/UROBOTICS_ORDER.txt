@@ -2,3 +2,5 @@
 # Each non-blank, non-comment line names a basename of a .u file under
 # src/urobotics/, walked in dependency order (bases before subclasses).
 facets.u
+frame.u
+localization.u

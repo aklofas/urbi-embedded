@@ -10,3 +10,75 @@ Robotics.Identity.type   = "Identity";
 Robotics.Identity.name   = "";
 Robotics.Identity.model  = "";
 Robotics.Identity.serial = "";
+
+// Network
+Robotics.Network = Object.clone();
+Robotics.Network.type = "Network";
+Robotics.Network.IP   = "";
+
+// Motor + subclasses (val proxy + PID gains as plain slots).
+Robotics.Motor = Object.clone();
+Robotics.Motor.type  = "Motor";
+Robotics.Motor.val   = 0;
+Robotics.Motor.PGain = 0;
+Robotics.Motor.IGain = 0;
+Robotics.Motor.DGain = 0;
+
+Robotics.LinearMotor = Robotics.Motor.clone();
+Robotics.LinearMotor.type     = "LinearMotor";
+Robotics.LinearMotor.position = 0;
+Robotics.LinearMotor.force    = 0;
+
+Robotics.RotationalMotor = Robotics.Motor.clone();
+Robotics.RotationalMotor.type   = "RotationalMotor";
+Robotics.RotationalMotor.angle  = 0;
+Robotics.RotationalMotor.turn   = 0;
+Robotics.RotationalMotor.torque = 0;
+
+// Sensor + subclasses
+Robotics.Sensor = Object.clone();
+Robotics.Sensor.type = "Sensor";
+Robotics.Sensor.val  = 0;
+
+Robotics.DistanceSensor = Robotics.Sensor.clone();
+Robotics.DistanceSensor.type     = "DistanceSensor";
+Robotics.DistanceSensor.distance = 0;
+
+Robotics.TouchSensor = Robotics.Sensor.clone();
+Robotics.TouchSensor.type     = "TouchSensor";
+Robotics.TouchSensor.pressure = 0;
+
+Robotics.AccelerationSensor = Robotics.Sensor.clone();
+Robotics.AccelerationSensor.type         = "AccelerationSensor";
+Robotics.AccelerationSensor.acceleration = 0;
+
+Robotics.GyroSensor = Robotics.Sensor.clone();
+Robotics.GyroSensor.type  = "GyroSensor";
+Robotics.GyroSensor.speed = 0;
+
+Robotics.TemperatureSensor = Robotics.Sensor.clone();
+Robotics.TemperatureSensor.type        = "TemperatureSensor";
+Robotics.TemperatureSensor.temperature = 0;
+
+// Mobile — go/turn present as overridable identity functions.
+Robotics.Mobile = Object.clone();
+Robotics.Mobile.type = "Mobile";
+Robotics.Mobile.go   = function(meters)  { meters };
+Robotics.Mobile.turn = function(radians) { radians };
+
+// Tracker
+Robotics.Tracker = Object.clone();
+Robotics.Tracker.type  = "Tracker";
+Robotics.Tracker.yaw   = 0;
+Robotics.Tracker.pitch = 0;
+
+// Led + RGBLed
+Robotics.Led = Object.clone();
+Robotics.Led.type = "Led";
+Robotics.Led.val  = 0;
+
+Robotics.RGBLed = Robotics.Led.clone();
+Robotics.RGBLed.type = "RGBLed";
+Robotics.RGBLed.r = 0;
+Robotics.RGBLed.g = 0;
+Robotics.RGBLed.b = 0;

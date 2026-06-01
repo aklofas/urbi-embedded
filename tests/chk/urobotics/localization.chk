@@ -1,0 +1,11 @@
+# Milestone: v0.12.2-urobotics
+# Covers: dict-backed localization [] + frame constants + axes list.
+#
+# tunables: urobotics
+
+var eyes = ["left" => Robotics.Led.clone(), "right" => Robotics.Led.clone()]; eyes["left"].val = 1; eyes["left"].val
+[00000000] 1
+Robotics.Frame.forward
+[00000001] "X"
+Robotics.axes[0]
+[00000002] "x"

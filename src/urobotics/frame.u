@@ -1,0 +1,10 @@
+// Standard frame of reference (REVIVAL §10.5): X forward, Z up, Y right
+// (right-handed). Rotations: yaw about Z, pitch about Y, roll about X.
+Robotics.Frame = Object.clone();
+Robotics.Frame.type      = "Frame";
+Robotics.Frame.forward   = "X";
+Robotics.Frame.up        = "Z";
+Robotics.Frame.right     = "Y";
+Robotics.Frame.yawAxis   = "Z";
+Robotics.Frame.pitchAxis = "Y";
+Robotics.Frame.rollAxis  = "X";

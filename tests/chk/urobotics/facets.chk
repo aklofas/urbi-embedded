@@ -1,0 +1,17 @@
+# Milestone: v0.12.2-urobotics
+# Covers: facet inheritance chains + standard slots.
+#
+# tunables: urobotics
+
+Robotics.RGBLed.isA(Robotics.Led)
+[00000000] true
+Robotics.Led.isA(Object)
+[00000001] true
+Robotics.RotationalMotor.isA(Robotics.Motor)
+[00000002] true
+Robotics.DistanceSensor.isA(Robotics.Sensor)
+[00000003] true
+Robotics.RGBLed.clone().r
+[00000004] 0
+Robotics.RotationalMotor.clone().angle
+[00000005] 0
