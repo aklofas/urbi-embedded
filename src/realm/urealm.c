@@ -256,7 +256,11 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
         UProto *p = realm->loaded_protos_head;
         while (p != NULL) {
             UProto *next = p->next_in_realm;
-            if (p != vm->stdlib_module) {
+            if (p != vm->stdlib_module
+#ifdef URBI_ENABLE_UROBOTICS
+                && p != vm->urobotics_module  /* v0.12.2: VM-owned, freed at VM teardown */
+#endif
+               ) {
                 urbi_unload(vm, p);
             }
             p = next;
@@ -267,6 +271,15 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
             vm->stdlib_module->owning_realm  = NULL;
             vm->stdlib_module->next_in_realm = NULL;
         }
+#ifdef URBI_ENABLE_UROBOTICS
+        /* v0.12.2: urobotics_module is VM-owned like stdlib_module; clear its
+         * back-pointer to this about-to-be-freed realm. */
+        if (vm->urobotics_module != NULL &&
+            vm->urobotics_module->owning_realm == realm) {
+            vm->urobotics_module->owning_realm  = NULL;
+            vm->urobotics_module->next_in_realm = NULL;
+        }
+#endif
         realm->loaded_protos_head = NULL;
     }
 

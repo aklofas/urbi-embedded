@@ -568,6 +568,9 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * the sole deferred-destroy mechanism. */
     struct UProto      *rescued_protos;
     struct UProto  *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above; v0.9.2: was UModule* */
+#ifdef URBI_ENABLE_UROBOTICS
+    struct UProto  *urobotics_module;   /* v0.12.2: VM-owned Robotics overlay module (gated); freed at teardown like stdlib_module */
+#endif
     /* M6 Phase 6 (containers): VM-lifetime backing buffers for List/Dict
      * instances allocated via urbi_stdlib_register_containers.  Each
      * buffer begins with a (void *next) header that threads onto this

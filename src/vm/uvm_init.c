@@ -419,6 +419,9 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* stdlib_protos + stdlib_nested_arrays deleted at Task 11 (v0.8.1-uproto-root). */
     vm->rescued_protos         = NULL;   /* Phase 2 Task 9 (v0.8.1): whole-root_proto rescue list */
     vm->stdlib_module          = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
+#ifdef URBI_ENABLE_UROBOTICS
+    vm->urobotics_module       = NULL;   /* v0.12.2: lazy-allocated by urbi_urobotics_register */
+#endif
     vm->stdlib_containers      = NULL;   /* M6 Phase 6: backing-buffer head; populated by container .new() bodies */
     vm->container_pair_proto    = NULL;  /* M6 Phase 6 — populated by urbi_stdlib_register_containers */
     vm->container_triplet_proto = NULL;
@@ -665,6 +668,15 @@ void urbi_vm_destroy(UVM *vm) {
             /* uchunk_destroy freed the struct (heap_allocated=true); clear ptr. */
             vm->stdlib_module = NULL;
         }
+#ifdef URBI_ENABLE_UROBOTICS
+        /* v0.12.2: VM-owned Robotics overlay module — freed exactly like
+         * stdlib_module, before the rescued_protos sweep below so any rescued
+         * protos land correctly. */
+        if (vm->urobotics_module != NULL) {
+            uchunk_destroy(vm->urobotics_module, vm);
+            vm->urobotics_module = NULL;
+        }
+#endif
 
         /* Task 11 (v0.8.1-uproto-root): stdlib_protos and stdlib_nested_arrays
          * deleted.  The rescued_protos sweep below handles all deferred protos. */
