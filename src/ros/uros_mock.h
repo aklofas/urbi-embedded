@@ -29,5 +29,15 @@ void uros_mock_inject(void *self, uint32_t sub, const void *bytes, size_t len);
 int  uros_mock_last_published(void *self, uint32_t pub,
                               const void **out_bytes, size_t *out_len);
 
+/* Return the ROS type name registered for publisher handle pub (e.g.
+ * "std_msgs/Float64").  Returns NULL if the handle is out of range.
+ * The pointer is owned by the mock state and valid for the mock's lifetime. */
+const char *uros_mock_pub_type(void *self, uint32_t pub);
+
+/* Return the ROS type name registered for subscription handle sub.
+ * Returns NULL if the handle is out of range.
+ * The pointer is owned by the mock state and valid for the mock's lifetime. */
+const char *uros_mock_sub_type(void *self, uint32_t sub);
+
 #endif /* URBI_ENABLE_ROS2 */
 #endif /* UROS_MOCK_H */

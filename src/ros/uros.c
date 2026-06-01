@@ -49,9 +49,13 @@ ros_register_method(struct UVM *vm, struct UObject *proto,
     return URBI_OK;
 }
 
-/* Forward decl: mock-only test hook, defined near urbi_ros_pump below. */
+/* Forward decls: mock-only test hooks, defined near urbi_ros_pump below. */
 static int ros_inject_int32_method(struct UVM *vm, UValue self, UValue *args,
                                    uint8_t nargs, UValue *out);
+static int ros_inject_msg_method(struct UVM *vm, UValue self, UValue *args,
+                                 uint8_t nargs, UValue *out);
+static int ros_last_published_method(struct UVM *vm, UValue self, UValue *args,
+                                     uint8_t nargs, UValue *out);
 
 /* Backend factory — selects the transport implementation at compile time.
  * The container build (URBI_ROS_BACKEND_RCL) uses the real rcl/DDS transport;
@@ -603,7 +607,9 @@ urbi_ros_register(struct UVM *vm)
      || ros_register_method(vm, rp, "subscribe", ros_subscribe_method) != URBI_OK
      || ros_register_method(vm, rp, "client",    ros_client_method)    != URBI_OK
      || ros_register_method(vm, rp, "service",   ros_service_method)   != URBI_OK
-     || ros_register_method(vm, rp, "__injectInt32", ros_inject_int32_method) != URBI_OK)
+     || ros_register_method(vm, rp, "__injectInt32",    ros_inject_int32_method)    != URBI_OK
+     || ros_register_method(vm, rp, "__injectMsg",      ros_inject_msg_method)      != URBI_OK
+     || ros_register_method(vm, rp, "__lastPublished",  ros_last_published_method)  != URBI_OK)
         return URBI_ERR_OOM;
 
     return URBI_OK;
@@ -691,6 +697,93 @@ ros_inject_int32_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs
     uros_mock_inject(b->tp.self, (uint32_t)urbi_value_as_int(args[0]),
                      &s, sizeof s);
     *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+/* === ros.__injectMsg(subHandle, msgObj) ===
+ *
+ * Mock-only test hook: enqueue a pre-built message object on the mock
+ * transport's incoming FIFO for subscription handle subHandle.  The object
+ * is marshaled via the codegen registry using the type recorded at subscribe
+ * time and enqueued; it will be delivered during the next urbi_step call.
+ * Args: subHandle (Int), msgObj (Object). */
+static int
+ros_inject_msg_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                      UValue *out)
+{
+    (void)self;
+    if (nargs != 2)
+        return urbi_raise_arity(vm, "ros.__injectMsg", 2, nargs, out);
+    if (!urbi_value_is_int(args[0]))
+        return urbi_raise_type(vm, "ros.__injectMsg: first arg must be Int (sub handle)", out);
+    if (args[1].kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "ros.__injectMsg: second arg must be a message Object", out);
+    URosBridge *b = urbi_ros_bridge();
+    if (!b->inited)
+        return urbi_raise_type(vm, "ros.__injectMsg: ros not initialized", out);
+
+    uint32_t sub = (uint32_t)urbi_value_as_int(args[0]);
+
+    /* Resolve the message type from the subscription endpoint's registered type
+     * (recorded at ros.subscribe time).  Message objects returned by ros.msg()
+     * do not carry a __type slot; the transport endpoint is the authoritative
+     * source of the type for a given handle. */
+    const char *type = uros_mock_sub_type(b->tp.self, sub);
+    if (type == NULL || type[0] == '\0')
+        return urbi_raise_type(vm, "ros.__injectMsg: unknown sub handle", out);
+
+    uros_mock_inject_obj(b->tp.self, vm, sub, type, args[1]);
+    *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+/* === ros.__lastPublished(pubHandle) ===
+ *
+ * Mock-only test hook: return the last message object published on publisher
+ * pubHandle, unmarshaled into a fresh message object via the codegen registry.
+ * Returns nil if nothing has been published on that handle yet.
+ * Args: pubHandle (Int). */
+static int
+ros_last_published_method(struct UVM *vm, UValue self, UValue *args,
+                          uint8_t nargs, UValue *out)
+{
+    (void)self;
+    if (nargs != 1)
+        return urbi_raise_arity(vm, "ros.__lastPublished", 1, nargs, out);
+    if (!urbi_value_is_int(args[0]))
+        return urbi_raise_type(vm, "ros.__lastPublished: arg must be Int (pub handle)", out);
+    URosBridge *b = urbi_ros_bridge();
+    if (!b->inited)
+        return urbi_raise_type(vm, "ros.__lastPublished: ros not initialized", out);
+
+    uint32_t pub = (uint32_t)urbi_value_as_int(args[0]);
+    const void *bytes = NULL;
+    size_t len = 0;
+    if (!uros_mock_last_published(b->tp.self, pub, &bytes, &len)) {
+        *out = urbi_make_nil();
+        return UEXEC_OK;
+    }
+
+    /* Resolve the type from the mock's per-endpoint record (set at create_pub
+     * time) and unmarshal the stored blob into a fresh message object. */
+    const char *type = uros_mock_pub_type(b->tp.self, pub);
+    if (type == NULL || type[0] == '\0') {
+        *out = urbi_make_nil();
+        return UEXEC_OK;
+    }
+    const URosMsgType *mt = urbi_ros_msg_lookup(type);
+    if (mt == NULL || len != mt->c_size) {
+        *out = urbi_make_nil();
+        return UEXEC_OK;
+    }
+
+    UValue msg_obj;
+    urbi_zero(&msg_obj, sizeof msg_obj);
+    if (mt->unmarshal(vm, bytes, &msg_obj) != 0) {
+        *out = urbi_make_nil();
+        return UEXEC_OK;
+    }
+    *out = msg_obj;
     return UEXEC_OK;
 }
 

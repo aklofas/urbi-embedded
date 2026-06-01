@@ -1,0 +1,26 @@
+# Milestone: v0.12.3-ros-demo-and-contract
+# Covers: general mock-only test hooks — ros.__injectMsg enqueues a built
+#         message object on a subscription; ros.__lastPublished returns the
+#         last object published on a publisher. Mock-backend only.
+#
+# tunables: ros
+#
+# Chain setup statements so only scalars and known tokens are echoed.
+# Subscribe handle is 0 (first endpoint); publisher handle is 1 (second).
+
+ros.init("n"); var s = ros.subscribe("/in", "std_msgs/Float64");
+[00000000] <event>
+var Realm.got = 0;
+[00000001] 0
+at (s?(var m)) Realm.got = m.data;
+[00000002] nil
+var im = ros.msg("std_msgs/Float64"); im.data = 2.5; ros.__injectMsg(0, im);
+[00000003] nil
+sleep(1ms);
+[00000004] nil
+Realm.got
+[00000005] 2.5
+var p = ros.publisher("/out", "std_msgs/Float64"); var om = ros.msg("std_msgs/Float64"); om.data = 7.0; p.publish(om);
+[00000006] nil
+ros.__lastPublished(1).data
+[00000007] 7.0

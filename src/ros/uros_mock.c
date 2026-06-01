@@ -244,6 +244,22 @@ uros_mock_last_published(void *self, uint32_t pub,
     return m->ep[pub].last_pub.len > 0 ? 1 : 0;
 }
 
+const char *
+uros_mock_pub_type(void *self, uint32_t pub)
+{
+    MockState *m = (MockState *)self;
+    if (pub >= (uint32_t)m->n) return NULL;
+    return m->ep[pub].type;
+}
+
+const char *
+uros_mock_sub_type(void *self, uint32_t sub)
+{
+    MockState *m = (MockState *)self;
+    if (sub >= (uint32_t)m->n) return NULL;
+    return m->ep[sub].type;
+}
+
 #else
 /* Avoid ISO C "empty translation unit" (-Wpedantic) when this gated file is
  * compiled flag-free into build/host for the stdlib bake tool (TARGET != host). */
