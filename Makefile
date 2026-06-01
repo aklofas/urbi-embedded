@@ -87,6 +87,21 @@ else
   ROS2_SRCS :=
 endif
 
+# v0.12.2: opt-in Standard Robotics API facet overlay (URBI_ENABLE_UROBOTICS=1).
+# Pure-urbiscript facets baked into a SEPARATE bytecode blob; off by default
+# => zero bytes in the base build, base stdlib blob byte-identical.  Host-only
+# this tag (mirrors the ROS2 component); no cross/flavor handling.
+ifeq ($(URBI_ENABLE_UROBOTICS),1)
+  ifeq ($(URBI_BYTECODE_ONLY),1)
+    $(error URBI_ENABLE_UROBOTICS=1 is incompatible with URBI_BYTECODE_ONLY=1)
+  endif
+  CFLAGS   += -DURBI_ENABLE_UROBOTICS=1
+  CPPFLAGS += -DURBI_ENABLE_UROBOTICS=1
+  UROBOTICS_SRCS := $(wildcard src/urobotics/*.c)
+else
+  UROBOTICS_SRCS :=
+endif
+
 SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/*.c)) \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/lex/*.c)) \
@@ -106,7 +121,8 @@ SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/object/*.c) \
        $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(wildcard src/stdlib/*.c)) \
        $(REPL_SRCS) \
-       $(ROS2_SRCS)
+       $(ROS2_SRCS) \
+       $(UROBOTICS_SRCS)
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
             tests/unit/twatcher_install_helper.c \
             tests/unit/utest_e2e_helpers.c
@@ -460,6 +476,7 @@ endif  # URBI_BYTECODE_ONLY != 1
 # Shared with the per-target rebake rule below (must live outside the
 # URBI_BYTECODE_ONLY guard so the rule body can expand it).
 STDLIB_U_FILES := $(wildcard src/stdlib/*.u)
+UROBOTICS_U_FILES := $(wildcard src/urobotics/*.u)
 
 # Per-target stdlib rebake — fires only when URBI_STDLIB_FLAVOR is set
 # (see commentary near the SRC/OBJ block).  Pattern rule
@@ -480,6 +497,22 @@ $(STDLIB_BYTECODE_GEN_C): tools/urbi-compile-stdlib-f$(URBI_STDLIB_FLAVOR) \
 $(STDLIB_BYTECODE_GEN_O): $(STDLIB_BYTECODE_GEN_C)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+endif
+
+# v0.12.2: bake the gated urobotics overlay into urbi_urobotics_bytecode.
+# Host-only (default flavor); the tracked .gen.c is rebaked in place exactly
+# like src/stdlib/urbi_stdlib_bytecode.gen.c.  Gated so the rule only exists
+# when the overlay is enabled; the tracked 0-length placeholder covers the
+# gate-off build.
+ifeq ($(URBI_ENABLE_UROBOTICS),1)
+src/urobotics/urobotics_bytecode.gen.c: tools/urbi-compile-stdlib \
+                                        src/urobotics/UROBOTICS_ORDER.txt \
+                                        $(UROBOTICS_U_FILES)
+	./tools/urbi-compile-stdlib \
+	    src/urobotics/UROBOTICS_ORDER.txt \
+	    src/urobotics \
+	    $@ \
+	    urbi_urobotics_bytecode
 endif
 
 # --- Integration tests --------------------------------------------------
