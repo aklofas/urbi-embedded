@@ -1,14 +1,14 @@
 # Milestone: M6 Wave 2 — Phase 10 (.u overlay).
-# Covers: Mixin marker classes (Comparable / Orderable / RangeIterable)
-#         declared in src/stdlib/mixins.u and baked into the stdlib
-#         bytecode blob.  At v1.0 these are empty-body markers — methods
-#         require closure upvalue capture and multi-slot class bodies
-#         which are deferred to v1.x.  User code attaches behavior
-#         externally if needed.
+# Covers: Mixin classes (Comparable / Orderable / RangeIterable) declared in
+#         src/stdlib/mixins.u.  v1.0-rc: RangeIterable carries real each/all/any
+#         derivations (built on a type's own length/get, attached via addProto).
+#         Comparable / Orderable remain empty-body markers — their operator
+#         derivations are VM-blocked (comparison operators don't dispatch to
+#         object slots; quoted-operator-named slot calls hit "GETSLOT: no IC
+#         table bound") and are deferred to v1.x (design-risks compat2-F).
 #
-# Each mixin is a realm global UObject that addProto accepts, allowing
-# user classes to inherit from the marker and (later) have methods
-# bolted onto the marker that propagate via the proto chain.
+# Each mixin is a realm global UObject that addProto accepts, allowing user
+# classes to inherit it and gain the propagated methods via the proto chain.
 
 # Realm globals are reachable and are UObjects.
 Comparable.protos().size > 0
@@ -31,3 +31,17 @@ class Money {}; Money.addProto(Comparable); Money.protos().size
 # by checking only proto count, not call dispatch.
 class Mixed {}; var v = 42; Mixed.addProto(Comparable); Mixed.protos().size
 [00000004] 2
+
+# RangeIterable propagation: a type defining length/get gains each/all/any.
+class Box { var length = function() { 3 }; var get = function(i) { i * 10 } } | Box.addProto(RangeIterable) | Box.hasLocalSlot("length")
+[00000005] true
+var bx = Box.clone(); var sink = List.new(); bx.each(function(x) { sink.add(x) }); sink.length()
+[00000006] 3
+var s2 = List.new(); Box.clone().each(function(x) { s2.add(x) }); s2.get(2)
+[00000007] 20
+Box.clone().all(function(x) { x < 100 })
+[00000008] true
+Box.clone().any(function(x) { x == 20 })
+[00000009] true
+Box.clone().any(function(x) { x == 999 })
+[0000000a] false

@@ -1,20 +1,22 @@
-// Mixin marker classes — Wave-2 v1.0 minimum.
+// Mixin classes — v1.0-rc.
 //
-// Comparable / Orderable / RangeIterable are exposed as realm globals so
-// user code can `addProto(Comparable)` (etc.) on its own classes for
-// vocabulary alignment with the legacy stdlib.  The methods that the
-// legacy share/urbi/{comparable,orderable,range-iterable}.u define
-// (`!=` from `==`, `>` `<=` `>=` from `<`, map/filter/find from each)
-// require closure upvalue capture and multi-slot class bodies, neither
-// of which is in v1.0 scope.  Until those land, the mixins ship as
-// empty-body markers — embedders attach methods externally if needed.
+// RangeIterable carries real derivations: `each` / `all` / `any` built on a
+// type's own `length` / `get` (works via addProto on any such type; bodies use
+// only same-scope local mutation, no enclosing-function upvalue writes).
 //
-// Orderable extends Comparable in legacy.  We declare it without an
-// explicit `: public Comparable` proto to keep the v1.0 chain shallow
-// (deep multi-level chains with fragile method-resolution semantics
-// are deferred to v1.x).  User code that wants the inheritance still
-// gets it via `Bar.addProto(Comparable); Bar.addProto(Orderable)`.
+// Comparable / Orderable remain MARKERS at v1.0.  Their legacy derivations
+// (`!=` from `==`; `<=` / `>` / `>=` from `==` / `<`) cannot be wired yet:
+//   (a) the comparison OPERATORS (==, <, <=, ...) are inline VM opcodes that do
+//       not dispatch to object method slots; and
+//   (b) invoking a quoted-operator-named slot explicitly (obj.'<='(x)) raises
+//       "GETSLOT: no IC table bound".
+// Both are VM/IC concerns deferred to v1.x (design-risks compat2-F).  The two
+// ship as markers for vocabulary alignment / addProto attachment until then.
 
-class Comparable    {} |
-class Orderable     {} |
-class RangeIterable {} |
+class Comparable {} |
+class Orderable  {} |
+class RangeIterable {
+    var each = function(f) { var i = 0; var n = this.length(); while (i < n) { f(this.get(i)); i = i + 1 }; nil };
+    var all  = function(pred) { var i = 0; var n = this.length(); var r = true;  while (i < n) { if (pred(this.get(i)) == false) { r = false }; i = i + 1 }; r };
+    var any  = function(pred) { var i = 0; var n = this.length(); var r = false; while (i < n) { if (pred(this.get(i))) { r = true }; i = i + 1 }; r }
+} |
