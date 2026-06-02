@@ -3,7 +3,7 @@
  *
  * Embedders include this header from their main.c and pass the wrappers below
  * into the corresponding urbi register / init hooks (urbi_vm_init,
- * urbi_set_writer, urbi_set_time_us, urbi_set_diag_fn, ...).
+ * urbi_set_writer, urbi_set_clock_fn, urbi_set_diag_fn, ...).
  *
  * Each wrapper has a signature compatible with the urbi public hook typedef
  * it satisfies (UVMAllocFn, urbi_writer_fn, urbi_native_method_fn, ...).
@@ -39,7 +39,7 @@ extern "C" {
 void *port_alloc(void *ptr, size_t nbytes, void *ud);
 
 /* Monotonic-microseconds time source.  Signature matches urbi_time_us_fn
- * (include/urbi/urbi.h) — pass to urbi_set_time_us.  Backed by the DWT
+ * (include/urbi/urbi.h) — pass to urbi_set_clock_fn.  Backed by the DWT
  * cycle counter at 180 MHz; resolution is 1 cycle (~5.5 ns), wraps at
  * uint64_t (~73 years). */
 uint64_t port_time_us(void *ud);

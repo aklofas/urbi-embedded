@@ -146,7 +146,7 @@ New public symbols require a PR-review-touch on this manifest.
 
 ### Setters
 
-- `urbi_set_writer`, `urbi_set_diag_fn`, `urbi_set_time_us`,
+- `urbi_set_writer`, `urbi_set_diag_fn`, `urbi_set_clock_fn`,
   `urbi_set_wake_fn`, `urbi_set_watcher_body_done_fn`,
   `urbi_set_isr_check_fn`, `urbi_set_callback_watchdog_mode`
 

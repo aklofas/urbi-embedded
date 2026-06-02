@@ -4,7 +4,7 @@
  * Three public setters + urbi_vm_write:
  *   urbi_set_writer   — install / uninstall the channel writer callback (Gap E)
  *   urbi_vm_write     — emit one write through the active writer (Gap E)
- *   urbi_set_time_us  — install / uninstall the monotonic time source (Gap F)
+ *   urbi_set_clock_fn  — install / uninstall the monotonic time source (Gap F)
  *   urbi_set_wake_fn  — install / uninstall the ISR wake callback (Gap S)
  *
  * All functions are NULL-safe on a NULL vm (no-op).
@@ -177,7 +177,7 @@ urbi_vm_write_in_realm(struct UVM *vm, struct URealm *realm,
  * Gap F: Pluggable time source
  * =========================================================================
  *
- * urbi_set_time_us installs fn as the monotonic-microseconds source.  Pass
+ * urbi_set_clock_fn installs fn as the monotonic-microseconds source.  Pass
  * NULL to restore the built-in default (clock_gettime on hosted, returns-0
  * on freestanding).  The default is already installed by urbi_vm_init via
  * the uvm_init.c default_host_time_us_stub; this setter lets embedders swap
@@ -195,7 +195,7 @@ urbi_vm_write_in_realm(struct UVM *vm, struct URealm *realm,
 extern uint64_t urbi_default_host_time_us(void *ud);  /* declared in uvm_init.c */
 
 void
-urbi_set_time_us(struct UVM *vm, urbi_time_us_fn fn, void *ud)
+urbi_set_clock_fn(struct UVM *vm, urbi_time_us_fn fn, void *ud)
 {
     if (!vm) return;
     if (fn != NULL) {

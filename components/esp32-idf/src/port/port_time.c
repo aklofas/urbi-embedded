@@ -2,7 +2,7 @@
 /* ESP-IDF time source wrapper.
  *
  * Satisfies urbi_time_us_fn (include/urbi/urbi.h): returns monotonic
- * microseconds.  Install via urbi_set_time_us(vm, port_time_us).
+ * microseconds.  Install via urbi_set_clock_fn(vm, port_time_us).
  *
  * esp_timer_get_time() returns int64_t microseconds since boot; the cast
  * to uint64_t is safe (values are always non-negative for the lifetime of

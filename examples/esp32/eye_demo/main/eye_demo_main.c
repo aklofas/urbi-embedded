@@ -462,7 +462,7 @@ void app_main(void)
      * (body throws, spawn OOM, watchdog) through ESP_LOG; without it
      * these would drop on the floor since host_log_fn defaults NULL. */
     urbi_set_diag_fn(&vm, port_diag_to_esp, NULL);
-    urbi_set_time_us(&vm, port_time_us, NULL);
+    urbi_set_clock_fn(&vm, port_time_us, NULL);
     urbi_set_writer (&vm, port_writer, NULL);
     urbi_set_wake_fn(&vm, port_wake_from_inject, &urbi_task_handle);
 #ifdef URBI_DEBUG

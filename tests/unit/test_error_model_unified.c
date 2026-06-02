@@ -13,7 +13,7 @@
  *      URBI_CB_THROW; URBI_CB_OK == 0, URBI_CB_UNREGISTER != 0.
  *   4. URBI_ERR_WATCHER_UNREGISTER legacy alias equals URBI_CB_UNREGISTER.
  *   5. All 5 ud-bearing setters accept a trailing void* argument:
- *      urbi_set_diag_fn, urbi_set_time_us, urbi_set_watcher_body_done_fn,
+ *      urbi_set_diag_fn, urbi_set_clock_fn, urbi_set_watcher_body_done_fn,
  *      urbi_set_isr_check_fn, urbi_register_event_drain.
  *   6. NULL-return API calls (urbi_vm_create with bad alloc) do not crash. */
 
@@ -120,7 +120,7 @@ UTEST(setter_ud_signatures_present)
 
     /* Each call must compile with the trailing void* argument. */
     urbi_set_diag_fn(&vm, stub_diag, NULL);
-    urbi_set_time_us(&vm, stub_time_us, NULL);
+    urbi_set_clock_fn(&vm, stub_time_us, NULL);
     urbi_set_watcher_body_done_fn(&vm, stub_watcher_body_done, NULL);
     urbi_set_isr_check_fn(&vm, stub_isr_check, NULL);
     urbi_register_event_drain(&vm, stub_event_drain, NULL);
@@ -134,7 +134,7 @@ UTEST(setter_ud_signatures_present)
 
     /* Verify NULL uninstall path (no crash). */
     urbi_set_diag_fn(&vm, NULL, NULL);
-    urbi_set_time_us(&vm, NULL, NULL);
+    urbi_set_clock_fn(&vm, NULL, NULL);
     urbi_set_watcher_body_done_fn(&vm, NULL, NULL);
     urbi_set_isr_check_fn(&vm, NULL, NULL);
     urbi_register_event_drain(&vm, NULL, NULL);

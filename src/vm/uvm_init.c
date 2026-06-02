@@ -64,9 +64,9 @@ static void *uvm_stdlib_realloc(void *ptr, size_t nbytes, void *ud) {
 /* --- Default host time source ---
    Returns monotonic microseconds on POSIX hosts (Linux/macOS/BSD); returns 0
    on freestanding targets and non-POSIX hosted targets.
-   Embedded callers MUST override via urbi_set_time_us() after urbi_vm_init().
+   Embedded callers MUST override via urbi_set_clock_fn() after urbi_vm_init().
    urbi_default_host_time_us is the non-static alias used by uvm_writer.c so
-   that urbi_set_time_us(vm, NULL) can restore the built-in default without
+   that urbi_set_clock_fn(vm, NULL) can restore the built-in default without
    duplicating the #ifdef logic. */
 /* v0.10.3 (W3): signature gains void *ud (urbi_time_us_fn convention). */
 static uint64_t default_host_time_us_stub(void *ud) {

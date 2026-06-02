@@ -219,7 +219,7 @@ void setup_diag(struct UVM *vm, struct MyContext *ctx)
 }
 ```
 
-The same pattern applies to `urbi_set_time_us`, `urbi_set_watcher_body_done_fn`, `urbi_set_isr_check_fn`, and `urbi_register_event_drain`. Pass `NULL` when no context is needed.
+The same pattern applies to `urbi_set_clock_fn`, `urbi_set_watcher_body_done_fn`, `urbi_set_isr_check_fn`, and `urbi_register_event_drain`. Pass `NULL` when no context is needed.
 
 For full watcher and strand callback unbind/lifecycle semantics, see §9 Lifecycle Contracts.
 

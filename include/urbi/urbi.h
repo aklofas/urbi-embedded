@@ -825,17 +825,17 @@ void urbi_vm_write(struct UVM *vm,
  * Default: clock_gettime(CLOCK_MONOTONIC) on hosted builds.
  *   Freestanding: default returns 0 (sleep/every are effectively disabled).
  *
- * Pass NULL to urbi_set_time_us to restore the default.
+ * Pass NULL to urbi_set_clock_fn to restore the default.
  *
  * Thread safety: MAIN. */
 /* v0.10.3 (W3): urbi_time_us_fn gains a void *ud parameter (api-ergonomics F7).
  * Embedders that maintain per-VM time state no longer need globals. */
 typedef uint64_t (*urbi_time_us_fn)(void *ud);
 
-/* urbi_set_time_us: install the monotonic time source.
+/* urbi_set_clock_fn: install the monotonic time source.
  * fn is the callback (NULL restores the default).  ud is forwarded to every call.
  * NULL vm is a no-op. */
-void urbi_set_time_us(struct UVM *vm, urbi_time_us_fn fn, void *ud);
+void urbi_set_clock_fn(struct UVM *vm, urbi_time_us_fn fn, void *ud);
 
 /* === Gap S — Wake notification hook (v0.7.1) ===
  *
