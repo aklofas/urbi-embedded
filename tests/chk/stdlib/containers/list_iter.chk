@@ -1,0 +1,61 @@
+# Milestone: v1.0-rc stdlib-completeness
+# Covers: List each / sort / reverse / join.
+#
+# Lists print as opaque <object 0x...>, so list-returning methods are
+# verified by inspecting .length() / .get(i) (the list_concat.chk
+# convention).  each() returns nil, so it is verified by appending each
+# visited element into a captured sink List (a method call on an upvalue
+# — closure upvalue *assignment* does not compile at v1.0, so the sink
+# pattern is used instead of an accumulator var).
+
+# each: visits every element in order.  Sink length proves completeness.
+var sink = List.new(); var l = List.new(1, 2, 3); l.each(function(x) { sink.add(x) }); sink.length()
+[00000000] 3
+
+var sink = List.new(); var l = List.new(1, 2, 3); l.each(function(x) { sink.add(x) }); sink.get(0)
+[00000001] 1
+
+var sink = List.new(); var l = List.new(1, 2, 3); l.each(function(x) { sink.add(x) }); sink.get(2)
+[00000002] 3
+
+# each returns nil.
+var l = List.new(1, 2, 3); l.each(function(x) { x })
+[00000003] nil
+
+# sort: ascending; returns a fresh List.
+var s = List.new(3, 1, 2).sort(); s.get(0)
+[00000004] 1
+
+var s = List.new(3, 1, 2).sort(); s.get(2)
+[00000005] 3
+
+# sort over strings (lexicographic).
+var s = List.new("b", "a", "c").sort(); s.get(0)
+[00000006] "a"
+
+# sort does not mutate the receiver.
+var orig = List.new(3, 1, 2); var s = orig.sort(); orig.get(0)
+[00000007] 3
+
+# reverse: returns a fresh List in reverse order.
+var r = List.new(1, 2, 3).reverse(); r.get(0)
+[00000008] 3
+
+var r = List.new(1, 2, 3).reverse(); r.get(2)
+[00000009] 1
+
+# join: concatenate String elements with a separator.
+List.new("a", "b", "c").join(",")
+[00000010] "a,b,c"
+
+# join with single element has no separator.
+List.new("x").join("-")
+[00000011] "x"
+
+# join on empty list yields empty string.
+List.new().join(",")
+[00000012] ""
+
+# join requires String elements.
+List.new(1, 2).join(",")
+[00000013] !!! TypeError: join: all elements must be String

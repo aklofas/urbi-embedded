@@ -570,6 +570,132 @@ list_diff(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* reverse(): return a fresh List with the elements in reverse order. */
+static int
+list_reverse(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "reverse", 0, nargs, out);
+    UList *a = list_storage(vm, self);
+    if (a == NULL) return urbi_raise_type(vm, "reverse: missing _storage", out);
+    UList *o = list_alloc(vm, a->len > 0U ? a->len : 1U);
+    if (o == NULL) return urbi_raise_oom(vm, out);
+    size_t i;
+    for (i = 0U; i < a->len; i++) o->items[i] = a->items[a->len - 1U - i];
+    o->len = a->len;
+    UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (ret == NULL) return urbi_raise_oom(vm, out);
+    if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
+    *out = val_obj(ret);
+    return UEXEC_OK;
+}
+
+/* Lexicographic byte compare of two NUL-terminated interned strings.
+ * Returns <0, 0, >0 like strcmp (no <string.h> dependency). */
+static int
+str_lex_cmp(const char *x, const char *y)
+{
+    size_t i = 0U;
+    while (x[i] != '\0' && x[i] == y[i]) i++;
+    return (int)(unsigned char)x[i] - (int)(unsigned char)y[i];
+}
+
+/* Three-way compare of two UValues for sort.  Supports Integer, Float
+ * (mixed numeric), and String.  Sets *ok = 0 when incomparable. */
+static int
+uval_cmp(const UValue *x, const UValue *y, int *ok)
+{
+    *ok = 1;
+    if (x->kind == (uint8_t)UVAL_INT && y->kind == (uint8_t)UVAL_INT)
+        return (x->v.i < y->v.i) ? -1 : (x->v.i > y->v.i) ? 1 : 0;
+    if ((x->kind == (uint8_t)UVAL_INT || x->kind == (uint8_t)UVAL_FLOAT) &&
+        (y->kind == (uint8_t)UVAL_INT || y->kind == (uint8_t)UVAL_FLOAT)) {
+        double xd = (x->kind == (uint8_t)UVAL_FLOAT) ? x->v.f : (double)x->v.i;
+        double yd = (y->kind == (uint8_t)UVAL_FLOAT) ? y->v.f : (double)y->v.i;
+        return (xd < yd) ? -1 : (xd > yd) ? 1 : 0;
+    }
+    if (x->kind == (uint8_t)UVAL_STR && y->kind == (uint8_t)UVAL_STR)
+        return str_lex_cmp((const char *)x->v.p, (const char *)y->v.p);
+    *ok = 0;
+    return 0;
+}
+
+/* sort(): return a fresh List sorted ascending (insertion sort).  All
+ * elements must be mutually comparable (numeric or all String). */
+static int
+list_sort(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "sort", 0, nargs, out);
+    UList *a = list_storage(vm, self);
+    if (a == NULL) return urbi_raise_type(vm, "sort: missing _storage", out);
+    UList *o = list_alloc(vm, a->len > 0U ? a->len : 1U);
+    if (o == NULL) return urbi_raise_oom(vm, out);
+    size_t i, j;
+    for (i = 0U; i < a->len; i++) o->items[i] = a->items[i];
+    o->len = a->len;
+    for (i = 1U; i < o->len; i++) {
+        UValue key = o->items[i];
+        j = i;
+        while (j > 0U) {
+            int ok;
+            int c = uval_cmp(&o->items[j - 1U], &key, &ok);
+            if (!ok) return urbi_raise_type(vm, "sort: elements not comparable", out);
+            if (c <= 0) break;
+            o->items[j] = o->items[j - 1U];
+            j--;
+        }
+        o->items[j] = key;
+    }
+    UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (ret == NULL) return urbi_raise_oom(vm, out);
+    if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
+    *out = val_obj(ret);
+    return UEXEC_OK;
+}
+
+/* join(sep): concatenate String elements separated by the String sep.
+ * Raises TypeError if any element is not a String. */
+static int
+list_join(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "join", 1, nargs, out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "join: separator must be String", out);
+    UList *a = list_storage(vm, self);
+    if (a == NULL) return urbi_raise_type(vm, "join: missing _storage", out);
+    const char *sep = (const char *)args[0].v.p;
+    size_t seplen = urbi_strlen(sep);
+    size_t i, total = 0U;
+    for (i = 0U; i < a->len; i++) {
+        if (a->items[i].kind != (uint8_t)UVAL_STR)
+            return urbi_raise_type(vm, "join: all elements must be String", out);
+        total += urbi_strlen((const char *)a->items[i].v.p);
+        if (i + 1U < a->len) total += seplen;
+    }
+    char *buf = (char *)vm->alloc_fn(NULL, total > 0U ? total : 1U, vm->alloc_ud);
+    if (buf == NULL) return urbi_raise_oom(vm, out);
+    size_t off = 0U;
+    for (i = 0U; i < a->len; i++) {
+        const char *s = (const char *)a->items[i].v.p;
+        size_t k, sl = urbi_strlen(s);
+        for (k = 0U; k < sl; k++) buf[off + k] = s[k];
+        off += sl;
+        if (i + 1U < a->len) {
+            for (k = 0U; k < seplen; k++) buf[off + k] = sep[k];
+            off += seplen;
+        }
+    }
+    const char *interned = ustr_intern(vm, buf, total);
+    vm->alloc_fn(buf, 0, vm->alloc_ud);
+    if (interned == NULL) return urbi_raise_oom(vm, out);
+    UValue v = urbi_make_nil();
+    v.kind = (uint8_t)UVAL_STR;
+    v.v.p = (void *)interned;
+    *out = v;
+    return UEXEC_OK;
+}
+
 /* === Dict ================================================================
  *
  * Mutable, string-keyed open-address hash table.  Methods: new, length,
@@ -812,6 +938,48 @@ dict_remove(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* keys(): return a fresh List of the dict's keys.  Order is unspecified
+ * (matches the v1.0 Dict iteration-order contract). */
+static int
+dict_keys(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "keys", 0, nargs, out);
+    UDict *d = dict_storage(vm, self);
+    if (d == NULL) return urbi_raise_type(vm, "keys: missing _storage", out);
+    UObject *lst = urbi_stdlib_list_new_empty(vm);
+    if (lst == NULL) return urbi_raise_oom(vm, out);
+    size_t i;
+    for (i = 0U; i < d->cap; i++) {
+        if (d->entries[i].state != UDICT_USED) continue;
+        if (urbi_stdlib_list_append_value(vm, lst, d->entries[i].key) != 0)
+            return urbi_raise_oom(vm, out);
+    }
+    *out = val_obj(lst);
+    return UEXEC_OK;
+}
+
+/* values(): return a fresh List of the dict's values.  Order is
+ * unspecified and parallels keys() for a given dict instance. */
+static int
+dict_values(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "values", 0, nargs, out);
+    UDict *d = dict_storage(vm, self);
+    if (d == NULL) return urbi_raise_type(vm, "values: missing _storage", out);
+    UObject *lst = urbi_stdlib_list_new_empty(vm);
+    if (lst == NULL) return urbi_raise_oom(vm, out);
+    size_t i;
+    for (i = 0U; i < d->cap; i++) {
+        if (d->entries[i].state != UDICT_USED) continue;
+        if (urbi_stdlib_list_append_value(vm, lst, d->entries[i].val) != 0)
+            return urbi_raise_oom(vm, out);
+    }
+    *out = val_obj(lst);
+    return UEXEC_OK;
+}
+
 /* === Method tables ======================================================= */
 
 static const ContainerMethodEntry PAIR_METHODS[] = {
@@ -837,7 +1005,10 @@ static const ContainerMethodEntry LIST_METHODS[] = {
     { "set",      list_set             },
     { "contains", list_contains        },
     { "concat",   list_concat          },
-    { "diff",     list_diff            }
+    { "diff",     list_diff            },
+    { "sort",     list_sort            },
+    { "reverse",  list_reverse         },
+    { "join",     list_join            }
 };
 
 static const ContainerMethodEntry DICT_METHODS[] = {
@@ -847,7 +1018,9 @@ static const ContainerMethodEntry DICT_METHODS[] = {
     { "set",     dict_set     },
     { "get",     dict_get     },
     { "has",     dict_has     },
-    { "remove",  dict_remove  }
+    { "remove",  dict_remove  },
+    { "keys",    dict_keys    },
+    { "values",  dict_values  }
 };
 
 #define PAIR_METHODS_COUNT    (sizeof(PAIR_METHODS)    / sizeof(PAIR_METHODS[0]))
