@@ -892,6 +892,15 @@ ros-integration:
 test-external-embed-iinclude: $(LIB) $(LIBURBI_AUX)
 	@./tests/integration/test_external_embed_iinclude.sh $(BUILDDIR)
 
+# v1.0 (M10 / B1): fresh-clone build of every shipped-port example.  Proves a
+# pristine tree (no stale build/) builds the Linux REPL + each cross firmware.
+# ESP32-S3 skips cleanly when IDF_PATH is unset.  Advisory (not in releasetest's
+# core gate set) because it depends on cross toolchains; see
+# docs/release/clone-build-demo.md.
+.PHONY: clone-build-demo-check
+clone-build-demo-check: ## Fresh-clone build of all shipped-port examples
+	bash tests/scripts/clone-build-demo.sh
+
 # Phase 3 (v0.6.1-stdlib Wave 2) bake-tool determinism smoke gate.
 # Runs tools/urbi-compile-stdlib three times against
 # src/stdlib/STDLIB_ORDER.txt + src/stdlib/*.u and asserts that the
