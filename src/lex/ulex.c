@@ -63,6 +63,9 @@ static const char * const TOKEN_NAMES[] = {
     /* === W3/v0.10.11: shift-write operator === */
     "TOK_LSHIFT",
     /* === end W3/v0.10.11 === */
+    /* === v1.0-rc stdlib-completeness: % && || === */
+    "TOK_PERCENT", "TOK_AMPAMP", "TOK_PIPEPIPE",
+    /* === end v1.0-rc stdlib-completeness === */
     "TOK_ERROR"
 };
 /* LEX-014: positional alignment with UTokenType — guard against silent
@@ -1219,11 +1222,14 @@ static UTriviaResult skip_trivia(ULexer *l) {
 static const UTokenType kPunctTable[256] = {
     ['*'] = TOK_STAR,    ['/'] = TOK_SLASH,
     ['('] = TOK_LPAREN, [')'] = TOK_RPAREN,
-    ['|'] = TOK_PIPE,   [';'] = TOK_SEMI,    [','] = TOK_COMMA,
-    ['&'] = TOK_AMP,    ['{'] = TOK_LBRACE,  ['}'] = TOK_RBRACE,
+    [';'] = TOK_SEMI,    [','] = TOK_COMMA,
+    ['{'] = TOK_LBRACE,  ['}'] = TOK_RBRACE,
     [':'] = TOK_COLON,  ['.'] = TOK_DOT,     ['?'] = TOK_QUESTION,
     /* === W10/v0.10.5: subscript brackets === */
     ['['] = TOK_LBRACKET, [']'] = TOK_RBRACKET,
+    /* '&' / '|' are NOT here: they double as &&/|| and are scanned in the
+     * multi-char switch below (v1.0-rc stdlib-completeness).  '%' is a fresh
+     * single-char token, also handled in the switch. */
 };
 
 UToken ulex_next(ULexer *lex) {
@@ -1321,6 +1327,29 @@ UToken ulex_next(ULexer *lex) {
         }
         lex->cur++;
         return make_tok(lex, TOK_LT, start, 1);
+    /* === v1.0-rc stdlib-completeness: && / || / % ===
+     * '&' and '|' double as the single-char statement separators
+     * (TOK_AMP / TOK_PIPE) and the two-char logical operators
+     * (TOK_AMPAMP / TOK_PIPEPIPE).  Peek the next byte to disambiguate;
+     * a lone '&' / '|' keeps its legacy separator meaning. */
+    case '&':
+        if (lex->cur + 1 < lex->end && lex->cur[1] == '&') {
+            lex->cur += 2;
+            return make_tok(lex, TOK_AMPAMP, start, 2);
+        }
+        lex->cur++;
+        return make_tok(lex, TOK_AMP, start, 1);
+    case '|':
+        if (lex->cur + 1 < lex->end && lex->cur[1] == '|') {
+            lex->cur += 2;
+            return make_tok(lex, TOK_PIPEPIPE, start, 2);
+        }
+        lex->cur++;
+        return make_tok(lex, TOK_PIPE, start, 1);
+    case '%':
+        lex->cur++;
+        return make_tok(lex, TOK_PERCENT, start, 1);
+    /* === end v1.0-rc stdlib-completeness === */
     case '>':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;
