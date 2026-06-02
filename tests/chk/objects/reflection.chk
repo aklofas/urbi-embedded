@@ -1,0 +1,25 @@
+# Milestone: v1.0-rc stdlib-completeness
+# Covers: Object localSlotNames / slotNames / hasLocalSlot / getProperty / properties.
+#
+# localSlotNames walks obj->shape parent-ward (most-recently-added first), so
+# after setSlot("foo") then setSlot("bar") the lineage order is bar, foo.
+# Asserted via length()/get()/contains() (List.sort lands in a sibling task).
+var o = Object.clone(); o.setSlot("foo", 1); o.setSlot("bar", 2); o.localSlotNames().length()
+[00000000] 2
+var o = Object.clone(); o.setSlot("foo", 1); o.setSlot("bar", 2); o.localSlotNames().get(0)
+[00000001] "bar"
+var o = Object.clone(); o.setSlot("foo", 1); o.setSlot("bar", 2); o.localSlotNames().contains("foo")
+[00000002] true
+var o2 = Object.clone(); o2.setSlot("x", 1); o2.hasLocalSlot("x")
+[00000003] true
+var o3 = Object.clone(); o3.hasLocalSlot("missing")
+[00000004] false
+# A clone has no local slots of its own; slotNames still reaches the proto's.
+var o4 = Object.clone(); o4.localSlotNames().length()
+[00000005] 0
+# getProperty on a slot with no installed property returns nil.
+var o5 = Object.clone(); o5.setSlot("v", 1); o5.getProperty("v", "constant")
+[00000006] false
+# properties of a property-free slot is an empty List.
+var o6 = Object.clone(); o6.setSlot("v", 1); o6.properties("v").length()
+[00000007] 0
