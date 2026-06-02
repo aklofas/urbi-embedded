@@ -219,18 +219,15 @@ int main(void) {
      * 50 ms tick rate no longer drains the heap. */
     tim2_init_50ms();
 
-    /* Load baked bytecode (freestanding pattern: static UProto + uchunk_deserialize).
-     * urbi_chunk_from_bytes is __STDC_HOSTED__-gated and returns NULL on bare-metal.
-     *
-     * IMPORTANT: caller MUST set module->alloc_fn / alloc_ud before deserialize.
-     * module_allocator() in freestanding mode returns c->alloc_fn directly (no
-     * malloc fallback); NULL there → immediate UCHUNK_LOAD_OOM at umodule.c:1118. */
-    static UProto mod = {0};
-    mod.alloc_fn = port_alloc;
-    mod.alloc_ud = NULL;
+    /* Load baked bytecode (freestanding pattern: uchunk_deserialize allocates
+     * and returns the root UProto via out_root).  urbi_chunk_from_bytes is
+     * __STDC_HOSTED__-gated and returns NULL on bare-metal, so freestanding
+     * targets call the loader directly and pass the allocator explicitly. */
+    static UProto *mod = NULL;
     char errbuf[128] = {0};
     UChunkLoadError lerr = uchunk_deserialize(&mod, mandelbrot_bytecode,
                                                  mandelbrot_bytecode_size,
+                                                 port_alloc, NULL,
                                                  errbuf, sizeof errbuf);
     if (lerr != UCHUNK_LOAD_OK) {
         static const char prefix[] = "uchunk_deserialize FAILED: ";
@@ -274,7 +271,7 @@ int main(void) {
     }
 
     {
-        int rcc = urbi_run_chunk(&vm, realm, &mod, NULL);
+        int rcc = urbi_run_chunk(&vm, realm, mod, NULL);
         if (rcc != 0) {
             urbi_error_info_t einfo = {0};
             (void)urbi_last_error(&vm, &einfo);
