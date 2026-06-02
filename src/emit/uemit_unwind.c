@@ -208,7 +208,7 @@ static void emit_catch_handler_section(UEmitter *e, UAstNode *n) {
 /* v0.11.4-D: emit an inline copy of the finally body for the NORMAL
  * (non-unwind) completion path.  The unwind path reaches the finally via the
  * TRY_BEGIN handler_pc + run_cleanup_with_replace (uunwind.c); the normal
- * fall-through path must ALSO run the body — REVIVAL.md S5a: "finally runs on
+ * fall-through path must ALSO run the body — REVIVAL §S5a: "finally runs on
  * every exit kind (return / throw / tag.stop / cancel) regardless."  Mirrors
  * the unwind-copy register/block setup but omits OP_RESUME: on the normal path
  * control simply falls through to the JMP-past-finally that skips the unwind
@@ -402,7 +402,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         if (e->error != EMIT_OK) return 0U;
 
         /* v0.11.4-D: normal-path finally — run the body on fall-through before
-         * jumping past the unwind copy (REVIVAL.md S5a). */
+         * jumping past the unwind copy (REVIVAL §S5a). */
         if (!emit_finally_inline(e, n, rd)) return 0U;
 
         /* JMP past finally (normal exit path) */

@@ -1,6 +1,6 @@
 # Milestone: M10 (design-risks v0.11.4-D)
 # Covers: finally runs on the NORMAL (non-unwind) completion path, per
-#         REVIVAL.md S5a ("finally runs on every exit kind regardless").
+#         REVIVAL §S5a ("finally runs on every exit kind regardless").
 #         Three exit paths, all of which must run the finally body exactly once:
 #           1. finally-only, no exception  -> "tf"
 #           2. catch+finally, no exception (catch not taken) -> "tf"

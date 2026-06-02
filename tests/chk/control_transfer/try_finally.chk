@@ -1,6 +1,6 @@
 # Milestone: M3 (semantics corrected at v1.0 / M10, design-risks v0.11.4-D)
 # Covers: try/finally with no exception; finally ALWAYS runs, including on the
-#         normal fall-through path — REVIVAL.md S5a: "finally runs on every exit
+#         normal fall-through path — REVIVAL §S5a: "finally runs on every exit
 #         kind (return / throw / tag.stop / cancel) regardless."  The side
 #         variable therefore reflects the finally body's assignment (99), not
 #         the try body's (1).

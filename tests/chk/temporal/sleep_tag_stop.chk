@@ -2,7 +2,7 @@
 #            design-risks v0.11.4-A)
 # Covers: tag.stop() wakes a sleeping strand mid-sleep and terminates its tagged
 #         block.  The TAG_STOP unwind runs the `finally` clause (Realm.fin=true)
-#         but is NOT absorbed by `catch` — per REVIVAL.md S5a, catch absorbs only
+#         but is NOT absorbed by `catch` — per REVIVAL §S5a, catch absorbs only
 #         THROW, never TAG_STOP/CANCEL — so Realm.caught stays false.
 # matrix-row: temporal-sleep
 #

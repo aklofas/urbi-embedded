@@ -259,7 +259,7 @@ UTEST(at_handler_body_with_call_drains_dirty)
  * via normal flow (post-catch), popping TRY_END without running finally.
  *
  * Fixed at v1.0 / M10 (design-risks v0.11.4-D): finally runs on EVERY exit
- * kind per REVIVAL.md S5a — the normal-completion and post-catch paths now
+ * kind per REVIVAL §S5a — the normal-completion and post-catch paths now
  * emit an inline copy of the finally body (uemit_unwind.c, emit_finally_inline).
  * So a caught throw runs catch once AND finally once. */
 UTEST(try_catch_finally_runs_finally_on_caught_throw)
