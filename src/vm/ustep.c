@@ -70,6 +70,15 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      * fire happens lazily). */
     (void)urbi_periodic_pump(vm);
 
+    /* v0.11.4-A: wake any sleeper whose timer has elapsed BEFORE the dispatch
+     * loop tests strand_runnable_count.  Without this, a lone expired sleeper is
+     * never woken — the post-dispatch sleep wake (sched_post_dispatch step 3)
+     * only runs after a dispatch, but a VM whose sole live strand is sleeping
+     * never dispatches (ready_head is NULL while the loop breaks on a NULL
+     * sched_pick_next), so urbi_step would spin on RUNNING/WAKE_AT forever.
+     * Mirrors the periodic pre-pump rationale above. */
+    sched_wake_due_sleepers(vm);
+
     vm->step_budget_remaining = budget_instructions;
 
     /* Round-robin through all READY strands until the budget is exhausted

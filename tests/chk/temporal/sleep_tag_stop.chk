@@ -1,29 +1,33 @@
-# Milestone: v0.10.2-reactive (W6, activated post W4-merge)
-# Covers: TAG_STOP wakes a sleeping strand mid-sleep.
-# blocked: tag-stop resume of a sleeping strand not observable across host-driver lines
+# Milestone: v0.10.2-reactive (activated + semantics corrected at v1.0 / M10,
+#            design-risks v0.11.4-A)
+# Covers: tag.stop() wakes a sleeping strand mid-sleep and terminates its tagged
+#         block.  The TAG_STOP unwind runs the `finally` clause (Realm.fin=true)
+#         but is NOT absorbed by `catch` — per REVIVAL.md S5a, catch absorbs only
+#         THROW, never TAG_STOP/CANCEL — so Realm.caught stays false.
 # matrix-row: temporal-sleep
 #
-# The pieces this fixture needs all exist (Tag.new + script .stop() + sleep()
-# + the v0.11.4-cat-f `## host: step`/`advance-clock` directives), but the
-# end-to-end resume is still not observable from a fixture.  Driven through
-# the host-driver line by line:
+# History: the original fixture expected `catch` to fire (Realm.caught=true) on
+# tag.stop(); that contradicted the locked S5a semantics and so could not be
+# activated.  The real behaviour — sleeper woken, block terminated, finally run,
+# catch skipped — is asserted here.  The sleeper is woken via tag.stop()'s
+# sched_strand_unblock (it becomes runnable, so the next step dispatches it).
 #
-#   ## host: run var t = Tag.new("sleeper")        -> <Tag: sleeper>
-#   ## host: run Realm.caught = false              -> false
-#   ## host: run t: { try { sleep(500ms) } catch (e) { Realm.caught = true } }
-#   ## host: step 2000                             -> step: RUNNING (parked)
-#   ## host: run t.stop()                           -> nil
-#   ## host: step 2000                             -> step: RUNNING
-#   ## host: run Realm.caught                        -> false   (NOT true!)
-#
-# The sleeping body strand parks when its `## host: run` line returns; the
-# later t.stop() runs on a fresh loader strand and DOES walk the tag's member
-# strands, but the unblocked sleeper never re-runs its catch block to deposit
-# Realm.caught = true.  This is the same lone-strand dispatch-loop gap as
-# wait_sleep_basic.chk: a strand made runnable while ready_head is otherwise
-# empty does not get dispatched, because urbi_step's loop breaks on a NULL
-# sched_pick_next before the resumed strand can execute.
-#
-# Activating needs the runtime change called out in wait_sleep_basic.chk.
-# The tag-stop -> sched_strand_unblock unbind path itself (sleep_q removal +
-# make_runnable + UEXEC_TAG_STOP resume) is unit-tested directly.
+## host: realm st
+## host: run var t = Tag.new("sleeper")
+## host: run Realm.fin = false
+## host: run Realm.caught = false
+## host: run t: { try { sleep(500ms) } catch (e) { Realm.caught = true } finally { Realm.fin = true } }
+## host: step 2000
+## host: run t.stop()
+## host: step 2000
+## host: run Realm.fin
+## host: run Realm.caught
+[00000000] <Tag: sleeper>
+[00000000] false
+[00000000] false
+[00000000] nil
+[00000000] step: RUNNING
+[00000000] nil
+[00000000] step: RUNNING
+[00000000] true
+[00000000] false

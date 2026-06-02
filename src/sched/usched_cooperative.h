@@ -76,6 +76,14 @@ void sched_strand_unblock(UStrand *s);
 uint64_t sched_earliest_wake_us(UVM *vm);
 bool     sched_quiescent(const UVM *vm);
 
+/* Wake every sleep-queue strand whose wake_us <= now (vm->host_time_us).
+ * Each woken strand is unblocked (removed from sleep_q, made runnable).
+ * No-op if there is no sleep queue or no host clock installed.  Shared by
+ * sched_post_dispatch (step 3) and urbi_step's pre-dispatch pump so a lone
+ * expired sleeper is woken even when no other strand drives the dispatch loop
+ * (design-risks v0.11.4-A). */
+void sched_wake_due_sleepers(UVM *vm);
+
 /* Consume n opcodes from a strand's instruction budget, flooring at 0. */
 static inline void
 sched_consume_budget(UStrand *s, uint16_t n) {

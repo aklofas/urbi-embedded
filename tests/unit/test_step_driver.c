@@ -12,6 +12,10 @@
 
 #define UTEST(name) static void name(void)
 
+/* Mock monotonic clock for the v0.11.4-A lone-sleeper wake test. */
+static uint64_t g_mock_now_us = 0;
+static uint64_t mock_clock(void *ud) { (void)ud; return g_mock_now_us; }
+
 /* Case 1: strand_runnable_count increments on make_runnable and
    decrements symmetrically on block; multi-strand coverage. */
 UTEST(counter_strand_runnable_increments_on_make_runnable)
@@ -272,6 +276,13 @@ UTEST(step_wake_at_with_wakeup_pending)
     urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
+    /* Install a controlled clock at t=0 so the wake at 999999 stays in the
+       future.  v0.11.4-A added a pre-dispatch sleep-queue pump to urbi_step;
+       without a mocked clock the default real wall-clock would read far past
+       999999, spuriously waking (and dispatching) this bytecode-less stub. */
+    vm.host_time_us = mock_clock;
+    g_mock_now_us   = 0;
+
     UStrand a;
     ustrand_init(&a, &vm);
 
@@ -345,9 +356,49 @@ UTEST(dequeue_ready_head_advances_queue)
     urbi_vm_destroy(&vm);
 }
 
+/* Case 12 (v0.11.4-A): a lone expired sleeper is woken by urbi_step's
+   pre-dispatch sleep-queue pump, even when no other strand drives the loop.
+   Before the fix, the sleep wake lived only inside the post-dispatch fix-up,
+   which a VM with no runnable strand never reached — urbi_step would spin on
+   WAKE_AT forever and the sleeper never resumed.  Budget 0 isolates the
+   pre-loop wake from dispatch (the hand-built strand carries no bytecode). */
+UTEST(step_pre_loop_wakes_lone_sleeper)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+    vm.host_time_us = mock_clock;
+    g_mock_now_us   = 0;
+
+    UStrand a;
+    ustrand_init(&a, &vm);
+    a.state = USTRAND_STATE_RUNNING;
+    sched_strand_block(&a, USTRAND_REASON_SLEEP, 100000U);  /* wake at 100 ms */
+    UASSERT_EQ(vm.wakeup_pending_count,  1U);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
+
+    /* Step before the timer elapses (now=0 < 100000): sleeper stays parked. */
+    (void)urbi_step(&vm, 0, NULL);
+    UASSERT_EQ(vm.wakeup_pending_count,  1U);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
+
+    /* Advance past the wake.  The pre-loop pump must move the sleeper from the
+       sleep queue to the ready queue with no other strand to drive dispatch. */
+    g_mock_now_us = 200000;
+    (void)urbi_step(&vm, 0, NULL);
+    UASSERT_EQ(vm.wakeup_pending_count,  0U);   /* woken: off the sleep queue */
+    UASSERT_EQ(vm.strand_runnable_count, 1U);   /* moved to ready */
+
+    sched_dequeue_ready_head(&vm);
+    ustrand_destroy(&a, &vm);
+    urbi_vm_destroy(&vm);
+}
+
 void test_step_driver_suite(void) {
     utest_run("counter_strand_runnable_increments_on_make_runnable",
               counter_strand_runnable_increments_on_make_runnable);
+    utest_run("step_pre_loop_wakes_lone_sleeper",
+              step_pre_loop_wakes_lone_sleeper);
     utest_run("counter_wakeup_pending_tracks_sleep_q",
               counter_wakeup_pending_tracks_sleep_q);
     utest_run("quiescent_when_all_counters_zero",

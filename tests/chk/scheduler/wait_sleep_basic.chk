@@ -1,31 +1,25 @@
-# Milestone: M3
-# Covers: a strand calls sleep(1ms); it is removed from the ready queue,
-#         inserted into the sleep queue (sched_strand_block with
-#         USTRAND_REASON_SLEEP), and resumed after the timer fires.
-#
-# blocked: lone-sleeper wakeup not observable via urbi_step + advance-clock
+# Milestone: M3 (lone-sleeper wake activated at v1.0 / M10, design-risks v0.11.4-A)
+# Covers: a strand calls sleep(100ms); it parks on the sleep queue.  After the
+#         host advances the virtual clock past the deadline, urbi_step's
+#         pre-dispatch sleep-queue pump wakes it and it resumes, running the
+#         statement after the sleep (Realm.woke = 1).
 # matrix-row: temporal-sleep
 #
-# The `## host: advance-clock <ms>` directive (v0.11.4-cat-f) installs a
-# virtual monotonic clock over vm->host_time_us, which is the prerequisite
-# the original T39 note called for.  Time-literal lex + sleep() (T43) also
-# shipped.  But the sleep-queue WAKEUP is still not observable from a fixture:
+# Pre-v1.0 the lone sleeper was never woken: the sleep wake ran only inside the
+# post-dispatch fix-up (sched_post_dispatch step 3), which a VM whose sole live
+# strand is sleeping never reached (no dispatch -> the loop breaks before the
+# wake).  v0.11.4-A added sched_wake_due_sleepers as a pre-dispatch pump in
+# urbi_step (mirroring the periodic pre-pump), so a lone expired sleeper resumes.
 #
-#   sched_post_dispatch (src/sched/usched_cooperative.c, "Step 3: Sleep-queue
-#   wake") is the only code path that wakes a strand whose wake_us has passed,
-#   and it runs ONLY inside urbi_step's dispatch loop body
-#   (src/vm/ustep.c ~126).  That loop runs `while strand_runnable_count > 0`
-#   and dispatches sched_pick_next().  When the sole strand is sleeping,
-#   ready_head is NULL so sched_pick_next returns NULL and the loop breaks
-#   BEFORE sched_post_dispatch — yet strand_runnable_count stays 1 (the parked
-#   REPL loader strand), so urbi_step returns URBI_STEP_RUNNING forever and
-#   never fires the clock-driven wake.  Empirically confirmed: after
-#   `## host: run sleep(100ms)` then `advance-clock 200` then `step`, the
-#   sleeper remains on sleep_q with wake_us=100000 < now=200000 and is never
-#   resumed (ready_head stays NULL, runnable stays 1, step stays RUNNING).
-#
-# Activating this fixture needs a runtime change — a pre-dispatch-loop
-# sleep-queue wake in urbi_step, or reconciling the parked-loader-strand
-# runnable-count so a lone sleeper drives the loop — which is out of scope
-# for the test-harness-only T39 work.  The equivalent sleep block/unblock
-# path is unit-tested directly via the scheduler API.
+## host: realm sleeper
+## host: run Realm.woke = 0
+## host: run sleep(100ms); Realm.woke = 1
+## host: run Realm.woke
+## host: advance-clock 200
+## host: step 5000
+## host: run Realm.woke
+[00000000] 0
+[00000000] nil
+[00000000] 0
+[00000000] step: RUNNING
+[00000000] 1

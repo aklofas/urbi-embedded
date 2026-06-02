@@ -621,6 +621,31 @@ sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
     }
 }
 
+/* === sched_wake_due_sleepers: wake every sleeper whose timer has elapsed ===
+ *
+ * Extracted from sched_post_dispatch step 3 so urbi_step can also call it
+ * BEFORE the dispatch loop.  Without the pre-loop call, a lone expired sleeper
+ * is never woken: the post-dispatch wake only runs after a dispatch, but a VM
+ * whose sole live strand is sleeping never dispatches (ready_head is NULL), so
+ * the loop breaks before reaching the wake — urbi_step then spins on RUNNING /
+ * WAKE_AT forever (design-risks v0.11.4-A).  CHSTR-025: every node on sleep_q
+ * is REASON_SLEEP, so wake_us is the active union arm. */
+void
+sched_wake_due_sleepers(UVM *vm)
+{
+    if (vm->sleep_q_head != NULL && vm->host_time_us != NULL) {
+        uint64_t now = vm->host_time_us(vm->host_time_ud);
+        while (vm->sleep_q_head != NULL) {
+            URBI_INTERNAL_ASSERT(
+                USTRAND_GET_REASON(vm->sleep_q_head) == USTRAND_REASON_SLEEP);
+            if (vm->sleep_q_head->wait_payload.wake_us > now) break;
+            /* sched_strand_unblock removes from sleep_q (decrementing
+             * wakeup_pending_count) and calls sched_strand_make_runnable. */
+            sched_strand_unblock(vm->sleep_q_head);
+        }
+    }
+}
+
 /* === sched_post_dispatch: consolidated post-dispatch fix-up helper ===
  *
  * Scheduler audit F3: previously all four fix-up steps lived exclusively in
@@ -692,24 +717,9 @@ sched_post_dispatch(UVM *vm, UStrand *s)
         /* Steps 3 and 4 below only use vm, so they are safe to run after free. */
     }
 
-    /* Step 3: Sleep-queue wake.
-     *
-     * Walk vm->sleep_q_head and wake every strand whose wake_us <= now.
-     * CHSTR-025: every node on sleep_q is REASON_SLEEP, so wake_us is the
-     * active union arm; assert at the loop head to surface a queue-invariant
-     * break in -DURBI_DEBUG builds. */
-    if (vm->sleep_q_head != NULL && vm->host_time_us != NULL) {
-        uint64_t now = vm->host_time_us(vm->host_time_ud);
-        while (vm->sleep_q_head != NULL) {
-            URBI_INTERNAL_ASSERT(
-                USTRAND_GET_REASON(vm->sleep_q_head) == USTRAND_REASON_SLEEP);
-            if (vm->sleep_q_head->wait_payload.wake_us > now) break;
-            UStrand *waker = vm->sleep_q_head;
-            /* sched_strand_unblock removes from sleep_q (decrementing
-             * wakeup_pending_count) and calls sched_strand_make_runnable. */
-            sched_strand_unblock(waker);
-        }
-    }
+    /* Step 3: Sleep-queue wake (shared helper, also called pre-loop in
+     * urbi_step so a lone expired sleeper is woken — v0.11.4-A). */
+    sched_wake_due_sleepers(vm);
 
     /* Step 4: Periodic pump.
      *

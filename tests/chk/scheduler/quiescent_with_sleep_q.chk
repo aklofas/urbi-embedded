@@ -4,24 +4,20 @@
 #         timer fires and strands are moved back to ready, quiescent stays false
 #         until they finish, then becomes true.
 #
-# blocked: post-sleep quiescent transition not observable via urbi_step
+# blocked: post-completion QUIESCENT transition not observable via the host driver
 # matrix-row: scheduler-quiescent
 #
-# The `## host: step` / `advance-clock` directives (v0.11.4-cat-f) plus
-# sleep() (T43) put a strand on the sleep queue, and `step: <STATE>` already
-# exposes the quiescence verdict (QUIESCENT vs RUNNING vs WAKE_AT).  The
-# blocker is the second half of this fixture — observing the transition BACK
-# to quiescent after the sleeper completes — which depends on the lone-sleeper
-# wakeup that urbi_step cannot drive (see wait_sleep_basic.chk for the precise
-# mechanism: sched_post_dispatch's sleep-queue wake only runs inside the
-# dispatch loop, which a lone sleeper never enters because ready_head is NULL
-# while strand_runnable_count stays 1 on the parked loader strand).  So while
-# a strand is sleeping, step never advances past RUNNING and never reaches the
-# post-completion QUIESCENT state this fixture wants to assert.  Empirically,
-# `## host: run sleep(100ms)` then `step` then `advance-clock`/`step` stays at
-# step: RUNNING throughout — the QUIESCENT verdict never arrives.
-#
-# Activating needs the same runtime change called out in wait_sleep_basic.chk
-# (pre-dispatch-loop sleep-queue wake / loader runnable-count reconciliation),
-# out of scope for test-harness-only T39 work.  The quiescence counter
-# semantics are unit-tested directly via the scheduler API.
+# UPDATE (v1.0 / M10): the lone-sleeper WAKE is now fixed (design-risks
+# v0.11.4-A) — sched_wake_due_sleepers runs as a pre-dispatch pump in urbi_step,
+# so an expired sleeper resumes (see the now-active wait_sleep_basic.chk and
+# temporal/sleep_tag_stop.chk).  This fixture stays blocked on a DIFFERENT,
+# pre-existing concern: observing the transition BACK to QUIESCENT after the
+# sleeper completes.  Under the persistent-loader-strand model a WAITING strand
+# is intentionally counted in strand_runnable_count (sched_post_dispatch step 1,
+# "so the scheduler does not lose track of a waiting strand"), so urbi_step
+# returns RUNNING (not WAKE_AT/QUIESCENT) while any strand is parked, and the
+# multi-line host driver accumulates loader strands across `## host: run` lines.
+# Asserting the precise QUIESCENT edge therefore needs loader-count-quiescence
+# reconciliation in the host driver, tracked as a v1.x design-risk (not the wake
+# gap).  The quiescence counter semantics themselves are unit-tested directly via
+# the scheduler API (test_step_driver.c, test_scheduler_invariant.c).
