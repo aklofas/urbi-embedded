@@ -169,6 +169,14 @@
 | `isA(Proto)` universal type-test | implemented | v0.10.11 (Cluster #17 ratify) — C-native on Object root; walks transitive proto chain; atom receivers route through per-VM atom-proto registry; 64-depth cycle guard; see `tests/chk/objects/isa_basic.chk`; matrix-row: stdlib-isa |
 | `obj.isA(Atom)` for built-in atom protos | implemented | v0.10.11 — atom receivers (UVAL_INT, UVAL_STR, UVAL_FLOAT, etc.) resolve proto via per-VM atom-proto registry and walk from there; see `tests/chk/objects/isa_atoms.chk`; matrix-row: stdlib-isa-atoms |
 | `Lobby.echo(msg)` method | implemented | v0.10.11 W4 — body uses `this.__builtin_lobby_send(...)` (explicit `this.` qualifier; closure bare-name resolution gap stays open v1.x; see design-risks v0.10.11-A); see `tests/chk/chunk_lifecycle/repl_session_persistence.chk`; matrix-row: lobby-echo |
+| `Integer` bitwise `and`/`or`/`xor`/`inv`/`shl`/`shr`/`ushr` | implemented | v1.0-rc stdlib-completeness — Kotlin-style names (renamed bitand/bitor/bitxor/bitnot → and/or/xor/inv; shl/shr unchanged; ushr added); methods-not-symbolic per §14 S14 (the `&` / `\|` glyphs stay separators); see `tests/chk/stdlib/atoms/bitwise_kotlin.chk` |
+| `List` `each`/`sort`/`reverse`/`join` | implemented | v1.0-rc stdlib-completeness — `each` overlay loop; `sort` ascending (Int/Float/String, fresh list); `reverse`/`join` native; see `tests/chk/stdlib/containers/list_iter.chk` |
+| `Dict` `keys`/`values`/`each` | implemented | v1.0-rc stdlib-completeness — `keys()`/`values()` native (the missing iteration primitive); `each` over keys() (overlay); see `tests/chk/stdlib/containers/dict_iter.chk` |
+| `String` `split`/`join`/`format` | implemented | v1.0-rc stdlib-completeness — `split`→List; `join` (self=separator); `format` %s/%d/%f/%% (minimal formatter); see `tests/chk/stdlib/atoms/string_text.chk` |
+| Object reflection `slotNames`/`localSlotNames`/`hasLocalSlot`/`getProperty`/`properties` | implemented | v1.0-rc stdlib-completeness — shape-lineage walk (local) + proto-chain (slotNames); props_table for properties; see `tests/chk/objects/reflection.chk` |
+| `RangeIterable` mixin (`each`/`all`/`any` from `length`/`get`) | implemented | v1.0-rc stdlib-completeness — propagates via `addProto` on user types; Comparable/Orderable operator-derivation deferred-v1.x (VM comparison-operator dispatch + quoted-operator-slot IC; design-risks compat2-F); see `tests/chk/stdlib/overlays/mixins.chk` |
+| `Integer.times`/`Integer.upto`; `Float.random()` | implemented | v1.0-rc stdlib-completeness — times/upto overlay loops; random xorshift64 in [0,1); see `tests/chk/stdlib/atoms/numeric_helpers.chk` |
+| `RegExp` (`new(pat)`/`test`/`match`) | implemented | v1.0-rc stdlib-completeness — compact freestanding backtracking matcher (literals, `.` `*` `+` `?` `^` `$`, `[classes]`); no capture groups at v1.0 (v1.x); new atom-backed type (`vm->regexp_proto`, GC-rooted); see `tests/chk/stdlib/runtime/regexp.chk` |
 
 ### Operators
 
@@ -179,6 +187,8 @@
 | `String + Int` / `String + Float` / mixed-type `+` | deferred-v1.x | v1.0 caller must use explicit `.asString()`; coercion taxonomy (which side coerces, `nil + ""`, `[] + ""`) is a deliberate v1.x design pass |
 | Operator overload via slot dispatch (9 ops) | implemented | REVIVAL §S30; v0.6.2 |
 | `<<` infix operator (left-shift / stream-insert sugar) | implemented | v0.10.11 W3 — new `TOK_LSHIFT`; parser sugar desugars `a << b` to `a.'<<'(b)` method call on quoted-ident slot; precedence 2 (below equality at 3); no new opcode; routes through OP_GETSLOT + OP_CALL; see `tests/chk/operators/lshift_method_call.chk`; matrix-row: operators-lshift |
+| `&&` / `\|\|` logical operators (short-circuit) | implemented | v1.0-rc stdlib-completeness — new `AST_LOGICAL` node; emit via existing `OP_TESTSET`+`OP_JMP` (no new opcode, no wire bump); legacy-faithful (ugrammar.y had `&&` / `\|\|` as distinct tokens, separate from the `&` / `\|` separators); precedence `\|\|`=1 / `&&`=2 (below `<<`); see `tests/chk/operators/logical.chk`; matrix-row: operators-logical |
+| `%` modulo operator | implemented | v1.0-rc stdlib-completeness — parser desugars `a % b` to `a.'%'(b)` (like `<<`); native `'%'` methods on Integer (i64 mod; div-by-zero → TypeError) and Float (fmod); no new opcode; see `tests/chk/operators/modulo.chk`; matrix-row: operators-modulo |
 
 ## Per-fixture status (from tests/chk/stdlib/legacy/)
 

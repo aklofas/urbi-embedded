@@ -67,7 +67,7 @@ urbi_stdlib_boot(UVM *vm)
     /* Phase 5 (atom-proto Tier 1 methods).  Installs C-native methods on
      * Boolean / Integer / Float / String atom protos.  Symbolic operators
      * (`+`, `==`, …) remain inline VM opcodes; only named methods (asString,
-     * bitand, sqrt, length, …) land here.  See src/stdlib/atoms.c banner. */
+     * and, sqrt, length, …) land here.  See src/stdlib/atoms.c banner. */
     rc = urbi_stdlib_register_atom_methods(vm);
     if (rc != URBI_OK) return rc;
 

@@ -5,8 +5,8 @@
  * Wave 1 (Phase 4) registered the Boolean / String stubs (toString /
  * length) on the atom protos.  Phase 5 fills out the Tier 1 method set:
  *   Boolean: negate
- *   Integer: asString / asFloat / asBoolean / bitand / bitor / bitxor /
- *            bitnot / shl / shr
+ *   Integer: asString / asFloat / asBoolean / and / or / xor /
+ *            inv / shl / shr / ushr  (Kotlin-style bitwise names)
  *   Float:   asString / asInteger / asBoolean / sqrt / sin / cos / tan /
  *            asin / acos / atan / atan2 / log / log10 / exp / pow / floor /
  *            ceil / abs / round / isNaN / isInfinite

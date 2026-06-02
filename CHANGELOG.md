@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — stdlib completeness + operators
+
+Closes the 2026-06-01 compat-2 audit's language/stdlib gaps (`compat2-A`, `compat2-G`,
+and `compat2-F` in part), lifting usage-weighted stdlib coverage from ~50% toward ~80%.
+No new opcode, no wire-format change (stays v1.9 / 0x19), no new public C symbol.
+
+- Operators: `&&` / `||` short-circuit logical operators (new `AST_LOGICAL` node,
+  emitted via the existing `OP_TESTSET` / `OP_JMP` primitives); `%` modulo (parser
+  desugars `a % b` to a `'%'` method call, native on Integer and Float).  Both are
+  legacy-faithful; symbolic bitwise stays method-form per §14 S14.
+- Integer bitwise methods renamed to Kotlin style: `bitand` / `bitor` / `bitxor` /
+  `bitnot` → `and` / `or` / `xor` / `inv` (`shl` / `shr` unchanged), plus new `ushr`
+  (unsigned/logical shift right).
+- String: `split` / `join` / `format` (minimal `%s` / `%d` / `%f` / `%%` formatter).
+- List: `each` / `sort` / `reverse` / `join`.  Dict: `keys` / `values` / `each`
+  (a dictionary can now be iterated).
+- Object reflection: `slotNames` / `localSlotNames` / `hasLocalSlot` / `getProperty` /
+  `properties`.
+- `RangeIterable` mixin: `each` / `all` / `any` derived from a type's `length` / `get`.
+  Comparable / Orderable operator-derivation deferred to v1.x (VM comparison-operator
+  dispatch + quoted-operator-slot IC — see compat2-F).
+- Integer `times` / `upto`; `Float.random()` (xorshift64, [0,1)).
+- New `RegExp` type: `new(pattern)` / `test` / `match` with a compact freestanding
+  backtracking matcher (literals, `.` `*` `+` `?` `^` `$`, character classes); no
+  capture groups at v1.0.
+
 ## v0.12.3-ros-demo-and-contract — 2026-05-31
 
 Facet↔ROS2 binding contract.  A pure-urbiscript layer — `Robotics.bindInput` and
