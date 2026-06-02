@@ -5,7 +5,7 @@
  *   T35 — file shell + per-proto registration helper
  *   T36 — Boolean.negate
  *   T39 — Integer.asString / asFloat / asBoolean
- *   T40 — Integer.bitand / bitor / bitxor / bitnot / shl / shr
+ *   T40 — Integer.and / or / xor / inv / shl / shr / ushr (Kotlin-named)
  *   T42 — Float.sqrt / sin / cos / tan / asin / acos / atan / atan2 /
  *         log / log10 / exp / pow / floor / ceil / abs / round
  *   T43 — Float.isNaN / isInfinite
@@ -25,6 +25,7 @@
  */
 
 #include "stdlib/atoms.h"
+#include "stdlib/containers.h"         /* urbi_stdlib_list_new_empty/append/len/get */
 #include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
 
 #include "chunk/uchunk.h"            /* UValue / UVAL_* */
@@ -111,6 +112,15 @@ val_bool(int b)
 }
 
 static UValue
+val_obj(UObject *p)
+{
+    UValue v = urbi_make_nil();
+    v.kind = (uint8_t)UVAL_OBJECT;
+    v.v.p = p;
+    return v;
+}
+
+static UValue
 val_str_intern(UVM *vm, const char *s, size_t n, int *oom)
 {
     UValue v = urbi_make_nil();
@@ -122,6 +132,44 @@ val_str_intern(UVM *vm, const char *s, size_t n, int *oom)
     v.kind = (uint8_t)UVAL_STR;
     v.v.p = sym;
     return v;
+}
+
+/* === Numeric helpers (freestanding-safe) ================================== */
+
+/* fmod_portable — floating modulo.  Hosted builds defer to libm fmod;
+ * freestanding builds open-code a truncating remainder.  The int path
+ * guards against a zero divisor before calling this; the float path passes
+ * any divisor through (matching libm fmod, which returns NaN on b==0). */
+#if __STDC_HOSTED__
+static double fmod_portable(double a, double b) { return fmod(a, b); }
+#else
+static double fmod_portable(double a, double b)
+{
+    if (b == 0.0) return 0.0;
+    double q = a / b;
+    /* Truncate q toward zero without libm trunc(). */
+    double t = (q < 0.0) ? -(double)(uint64_t)(-q) : (double)(uint64_t)q;
+    return a - t * b;
+}
+#endif
+
+/* xorshift64 PRNG — file-static, seeded with a fixed nonzero constant.
+ * Float.random() returns a value in [0, 1).  Deterministic by default
+ * (fixed seed): the determinism checksum gate runs the unit suite, not
+ * random scripts, so a fixed seed keeps test reproducibility while still
+ * providing variation within a run.  Non-deterministic across-run seeding
+ * is a v1.x follow-up (no host time source is wired here). */
+static uint64_t s_prng_state = 0x9E3779B97F4A7C15ULL;
+
+static uint64_t
+prng_next(void)
+{
+    uint64_t x = s_prng_state;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    s_prng_state = x;
+    return x;
 }
 
 /* === Boolean.negate — return the unary inverse ============================
@@ -234,19 +282,19 @@ int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         return UEXEC_OK;                                                     \
     }
 
-DEF_INT_BINOP(bitand, &)
-DEF_INT_BINOP(bitor,  |)
-DEF_INT_BINOP(bitxor, ^)
+DEF_INT_BINOP(and, &)
+DEF_INT_BINOP(or,  |)
+DEF_INT_BINOP(xor, ^)
 
 #undef DEF_INT_BINOP
 
 static int
-int_bitnot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+int_inv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Integer.bitnot", 0, nargs, out);
+    if (nargs != 0) return urbi_raise_arity(vm, "Integer.inv", 0, nargs, out);
     if (self.kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "Integer.bitnot: self must be Integer", out);
+        return urbi_raise_type(vm, "Integer.inv: self must be Integer", out);
 
     *out = val_int(~self.v.i);
     return UEXEC_OK;
@@ -289,6 +337,73 @@ int_shr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         /* Logical shift right (uint64_t cast). */
         *out = val_int((int64_t)((uint64_t)a >> (uint64_t)s));
     }
+    return UEXEC_OK;
+}
+
+/* ushr — unsigned (logical) right shift on the i64 bit pattern.  Zero-fills
+ * from the left regardless of sign; the Kotlin `ushr` semantic.  Shift amount
+ * is masked to [0, 63] (Kotlin masks; differs from shl/shr's out-of-range 0). */
+static int
+int_ushr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "Integer.ushr", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.ushr: self must be Integer", out);
+    if (args[0].kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.ushr: argument must be Integer", out);
+
+    int64_t n = args[0].v.i & 63;
+    *out = val_int((int64_t)((uint64_t)self.v.i >> (uint64_t)n));
+    return UEXEC_OK;
+}
+
+/* === Integer / Float `%` modulo ===========================================
+ *
+ * `a % b` desugars (in the parser) to `a.'%'(b)`.  Integer%Integer yields an
+ * Integer (zero divisor raises TypeError; INT64_MIN % -1 returns 0 to avoid
+ * signed-division overflow UB); any Float operand promotes to fmod. */
+
+static int
+int_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "Integer.%", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "%: self must be Integer", out);
+    if (args[0].kind == (uint8_t)UVAL_FLOAT) {
+        *out = val_float(fmod_portable((double)self.v.i, (double)args[0].v.f));
+        return UEXEC_OK;
+    }
+    if (args[0].kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "%: argument must be Integer or Float", out);
+    if (args[0].v.i == 0) return urbi_raise_type(vm, "%: division by zero", out);
+    if (self.v.i == INT64_MIN && args[0].v.i == -1) { *out = val_int(0); return UEXEC_OK; }
+    *out = val_int(self.v.i % args[0].v.i);
+    return UEXEC_OK;
+}
+
+static int
+flt_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "Float.%", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "%: self must be Float", out);
+    double b;
+    if (args[0].kind == (uint8_t)UVAL_FLOAT) b = (double)args[0].v.f;
+    else if (args[0].kind == (uint8_t)UVAL_INT) b = (double)args[0].v.i;
+    else return urbi_raise_type(vm, "%: argument must be Integer or Float", out);
+    *out = val_float(fmod_portable((double)self.v.f, b));
+    return UEXEC_OK;
+}
+
+/* Float.random() — pseudo-random Float in [0, 1).  Receiver is ignored
+ * (called as `Float.random()` or on any Float).  53-bit mantissa draw. */
+static int
+flt_random(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Float.random", 0, nargs, out);
+    uint64_t bits = prng_next() >> 11;          /* top 53 bits */
+    *out = val_float((double)bits * (1.0 / 9007199254740992.0)); /* / 2^53 */
     return UEXEC_OK;
 }
 
@@ -946,6 +1061,192 @@ str_asciiAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === String split / join / format =========================================
+ *
+ * split(sep) -> List of String pieces (empty sep yields one piece: self).
+ * join(list) -> String, with `self` as the separator between elements.
+ * format(list) -> printf-style %s / %d / %f / %% substitution (minimal).
+ *
+ * All build results via the allocate-fill-intern-free pattern (str_caseop
+ * template) using byte loops (no <string.h> memcpy/memcmp dependency). */
+
+/* byte-equality at s[0..n) vs t[0..n) */
+static int
+bytes_eq(const char *a, const char *b, size_t n)
+{
+    size_t i;
+    for (i = 0; i < n; i++) if (a[i] != b[i]) return 0;
+    return 1;
+}
+
+static int
+str_split(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "String.split", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR || args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "split: self and separator must be String", out);
+
+    const char *s = (const char *)self.v.p;
+    const char *sep = (const char *)args[0].v.p;
+    if (s == NULL || sep == NULL)
+        return urbi_raise_type(vm, "split: NULL string", out);
+    size_t n = urbi_strlen(s), seplen = urbi_strlen(sep);
+
+    UObject *lst = urbi_stdlib_list_new_empty(vm);
+    if (lst == NULL) return urbi_raise_oom(vm, out);
+
+    if (seplen == 0U) {                 /* empty sep -> whole string, one piece */
+        if (urbi_stdlib_list_append_value(vm, lst, self) != 0)
+            return urbi_raise_oom(vm, out);
+        *out = val_obj(lst);
+        return UEXEC_OK;
+    }
+
+    size_t start = 0U, i = 0U;
+    while (i + seplen <= n) {
+        if (bytes_eq(s + i, sep, seplen)) {
+            UValue piece = urbi_make_str_interned(vm, s + start, i - start);
+            if (piece.kind == (uint8_t)UVAL_NIL) return urbi_raise_oom(vm, out);
+            if (urbi_stdlib_list_append_value(vm, lst, piece) != 0)
+                return urbi_raise_oom(vm, out);
+            i += seplen;
+            start = i;
+        } else {
+            i++;
+        }
+    }
+    {
+        UValue last = urbi_make_str_interned(vm, s + start, n - start);
+        if (last.kind == (uint8_t)UVAL_NIL) return urbi_raise_oom(vm, out);
+        if (urbi_stdlib_list_append_value(vm, lst, last) != 0)
+            return urbi_raise_oom(vm, out);
+    }
+    *out = val_obj(lst);
+    return UEXEC_OK;
+}
+
+static int
+str_join(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "String.join", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "join: self (separator) must be String", out);
+    if (args[0].kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "join: argument must be a List", out);
+
+    UObject *list_obj = (UObject *)args[0].v.p;
+    const char *sep = (const char *)self.v.p;
+    size_t seplen = urbi_strlen(sep);
+    size_t count = urbi_stdlib_list_len(vm, list_obj);
+
+    size_t i, total = 0U;
+    for (i = 0U; i < count; i++) {
+        UValue e = urbi_stdlib_list_get(vm, list_obj, i);
+        if (e.kind != (uint8_t)UVAL_STR)
+            return urbi_raise_type(vm, "join: all elements must be String", out);
+        total += urbi_strlen((const char *)e.v.p);
+        if (i + 1U < count) total += seplen;
+    }
+
+    if (vm->alloc_fn == NULL) return urbi_raise_oom(vm, out);
+    char *buf = (char *)vm->alloc_fn(NULL, total + 1U, vm->alloc_ud);
+    if (buf == NULL) return urbi_raise_oom(vm, out);
+
+    size_t off = 0U;
+    for (i = 0U; i < count; i++) {
+        UValue e = urbi_stdlib_list_get(vm, list_obj, i);
+        const char *es = (const char *)e.v.p;
+        size_t el = urbi_strlen(es), k;
+        for (k = 0; k < el; k++) buf[off++] = es[k];
+        if (i + 1U < count) for (k = 0; k < seplen; k++) buf[off++] = sep[k];
+    }
+    buf[off] = '\0';
+
+    int oom = 0;
+    UValue v = val_str_intern(vm, buf, off, &oom);
+    vm->alloc_fn(buf, 0U, vm->alloc_ud);
+    if (oom) return urbi_raise_oom(vm, out);
+    *out = v;
+    return UEXEC_OK;
+}
+
+/* format — minimal printf substitution.  Numeric specs (%d/%f) require the
+ * hosted snprintf, mirroring Integer.asString; freestanding builds raise.
+ * Output capped at 1024 bytes (raise on overflow). */
+static int
+str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "String.format", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "format: self must be String", out);
+    if (args[0].kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "format: argument must be a List", out);
+
+    const char *fmt = (const char *)self.v.p;
+    if (fmt == NULL) return urbi_raise_type(vm, "format: NULL string", out);
+    size_t n = urbi_strlen(fmt);
+    UObject *list_obj = (UObject *)args[0].v.p;
+    size_t argc = urbi_stdlib_list_len(vm, list_obj);
+
+    char buf[1024];
+    size_t off = 0U, i = 0U, ai = 0U;
+    while (i < n) {
+        char c = fmt[i];
+        if (c == '%' && i + 1U < n) {
+            char k = fmt[i + 1U];
+            if (k == '%') {
+                if (off + 1U >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
+                buf[off++] = '%'; i += 2U; continue;
+            }
+            UValue a = (ai < argc) ? urbi_stdlib_list_get(vm, list_obj, ai) : urbi_make_nil();
+            ai++;
+            if (k == 's') {
+                const char *sv = (a.kind == (uint8_t)UVAL_STR) ? (const char *)a.v.p : "";
+                size_t sl = urbi_strlen(sv), j;
+                if (off + sl >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
+                for (j = 0; j < sl; j++) buf[off++] = sv[j];
+                i += 2U; continue;
+            }
+#if __STDC_HOSTED__
+            if (k == 'd') {
+                char tmp[32];
+                int tn = snprintf(tmp, sizeof tmp, "%lld",
+                                  (long long)((a.kind == (uint8_t)UVAL_INT) ? a.v.i : 0));
+                if (tn <= 0) return urbi_raise_type(vm, "format: int conversion failed", out);
+                if (off + (size_t)tn >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
+                { int j; for (j = 0; j < tn; j++) buf[off++] = tmp[j]; }
+                i += 2U; continue;
+            }
+            if (k == 'f') {
+                char tmp[64];
+                double dv = (a.kind == (uint8_t)UVAL_FLOAT) ? (double)a.v.f :
+                            (a.kind == (uint8_t)UVAL_INT)   ? (double)a.v.i : 0.0;
+                int tn = snprintf(tmp, sizeof tmp, "%g", dv);
+                if (tn <= 0) return urbi_raise_type(vm, "format: float conversion failed", out);
+                if (off + (size_t)tn >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
+                { int j; for (j = 0; j < tn; j++) buf[off++] = tmp[j]; }
+                i += 2U; continue;
+            }
+#else
+            if (k == 'd' || k == 'f')
+                return urbi_raise_type(vm, "format: numeric specs need a hosted build", out);
+#endif
+            /* unknown spec: emit the '%' literally, rewind the arg consumed */
+            ai--;
+            if (off + 1U >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
+            buf[off++] = c; i++; continue;
+        }
+        if (off + 1U >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
+        buf[off++] = c; i++;
+    }
+
+    int oom = 0;
+    UValue v = val_str_intern(vm, buf, off, &oom);
+    if (oom) return urbi_raise_oom(vm, out);
+    *out = v;
+    return UEXEC_OK;
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
 static const AtomMethodEntry BOOL_METHODS[] = {
@@ -956,12 +1257,14 @@ static const AtomMethodEntry INT_METHODS[] = {
     { "asFloat",   int_asFloat   },
     { "asBoolean", int_asBoolean },
     { "asInteger", int_asInteger },
-    { "bitand",    int_bitand    },
-    { "bitor",     int_bitor     },
-    { "bitxor",    int_bitxor    },
-    { "bitnot",    int_bitnot    },
+    { "and",       int_and       },
+    { "or",        int_or        },
+    { "xor",       int_xor       },
+    { "inv",       int_inv       },
     { "shl",       int_shl       },
-    { "shr",       int_shr       }
+    { "shr",       int_shr       },
+    { "ushr",      int_ushr      },
+    { "%",         int_mod       }
 };
 static const AtomMethodEntry FLOAT_METHODS[] = {
     { "sqrt",  flt_sqrt  },
@@ -984,7 +1287,9 @@ static const AtomMethodEntry FLOAT_METHODS[] = {
     { "isInfinite", flt_isInfinite },
     { "asString",   flt_asString   },
     { "asInteger",  flt_asInteger  },
-    { "asBoolean",  flt_asBoolean  }
+    { "asBoolean",  flt_asBoolean  },
+    { "%",          flt_mod        },
+    { "random",     flt_random     }
 };
 static const AtomMethodEntry STR_METHODS[] = {
     { "size",    str_size    },
@@ -999,7 +1304,10 @@ static const AtomMethodEntry STR_METHODS[] = {
     { "asInteger",  str_asInteger  },
     { "asFloat",    str_asFloat    },
     { "asBoolean",  str_asBoolean  },
-    { "asciiAt",    str_asciiAt    }
+    { "asciiAt",    str_asciiAt    },
+    { "split",      str_split      },
+    { "join",       str_join       },
+    { "format",     str_format     }
 };
 
 /* Empty tables retain a `{NULL, NULL}` sentinel so the array has at

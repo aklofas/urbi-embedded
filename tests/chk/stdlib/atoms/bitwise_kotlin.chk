@@ -1,0 +1,20 @@
+# Milestone: v1.0-rc stdlib-completeness
+# Covers: Kotlin-named Integer bitwise methods (and/or/xor/inv/shl/shr/ushr).
+#
+# Bitwise ops are NAMED methods (the `&` / `|` glyphs are concurrency
+# separators).  Renamed from the M6 bit* set to the Kotlin set; ushr is
+# the new unsigned (logical, shift masked to [0,63]) right shift.
+6.and(3)
+[00000000] 2
+6.or(1)
+[00000001] 7
+6.xor(3)
+[00000002] 5
+0.inv()
+[00000003] -1
+1.shl(4)
+[00000004] 16
+16.shr(2)
+[00000005] 4
+-1.ushr(60)
+[00000006] 15

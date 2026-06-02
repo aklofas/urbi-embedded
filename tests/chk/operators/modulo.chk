@@ -1,0 +1,13 @@
+# Milestone: v1.0-rc stdlib-completeness
+# Covers: % modulo operator (Integer and Float), zero-divisor error.
+#
+# The `a % b` source form desugars to a.'%'(b) in the parser (front's work).
+# The '%' native methods on Integer/Float live in src/stdlib/atoms.c.
+7 % 3
+[00000000] 1
+10 % 2
+[00000001] 0
+7.5 % 2.0
+[00000002] 1.5
+5 % 0
+[00000003] !!! line 1: TypeError: %: division by zero

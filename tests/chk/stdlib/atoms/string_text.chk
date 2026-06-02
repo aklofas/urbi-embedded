@@ -1,0 +1,26 @@
+# Milestone: v1.0-rc stdlib-completeness
+# Covers: String split / join / format.
+#
+# split returns a List (which prints as <object ...> in the REPL — same as
+# List.new(...)); its contents are verified via length()/get(i), matching
+# the list_core.chk idiom.  join (self = separator) and format return Strings.
+var p = "a,b,c".split(","); p.length()
+[00000000] 3
+var p = "a,b,c".split(","); p.get(0)
+[00000001] "a"
+var p = "a,b,c".split(","); p.get(2)
+[00000002] "c"
+var p = "a..b".split("."); p.length()
+[00000003] 3
+var p = "a..b".split("."); p.get(1)
+[00000004] ""
+var p = "xyz".split(","); p.length()
+[00000005] 1
+",".join(List.new("a","b","c"))
+[00000006] "a,b,c"
+"x=%s n=%d".format(List.new("hi", 7))
+[00000007] "x=hi n=7"
+"100%%".format(List.new())
+[00000008] "100%"
+"pi=%f".format(List.new(3.5))
+[00000009] "pi=3.5"
