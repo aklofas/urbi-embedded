@@ -1,0 +1,11 @@
+# Milestone: v1.0-rc stdlib-completeness
+# Covers: Integer times / upto. (random covered by unit test — non-deterministic value.)
+#
+# The callback accumulates through a Realm slot rather than an outer local:
+# closures in this VM can READ enclosing locals but cannot WRITE them
+# (upvalue-write capture is a compile error), so the Realm.x capture
+# pattern is the idiom for mutation-from-callback.
+Realm.acc = 0; 3.times(function(){ Realm.acc = Realm.acc + 1 }); Realm.acc
+[00000000] 3
+Realm.sum = 0; 1.upto(4, function(i){ Realm.sum = Realm.sum + i }); Realm.sum
+[00000001] 10
