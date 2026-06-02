@@ -6,15 +6,17 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** v0.12.4-stdlib-completeness — stdlib completeness + operators: `&&` / `||` short-circuit logical operators and `%` modulo (parser desugar / `OP_TESTSET` — no new opcode, wire unchanged); Kotlin-style bitwise method names (`and` / `or` / `xor` / `inv` / `shl` / `shr` / `ushr`); String `split` / `join` / `format`; Dict `keys` / `values` / `each`; List `each` / `sort` / `reverse` / `join`; Object reflection (`slotNames` / `hasLocalSlot` / `properties` / …); `Integer.times` / `upto` + `Float.random`; a new `RegExp` type; and `RangeIterable` mixin propagation. Usage-weighted stdlib coverage ~50% → ~80%. ABI 0/22/2 (PATCH bump from 0/22/1 — no new public C API symbols, no wire change; not an escape). Wire v1.9 / 0x19 unchanged.
+**Status:** first stable release. The language is complete — separators-encode-concurrency (`;` `|` `,` `&`), the reactive trio (`at` / `whenever` / `waituntil`), first-class tags with `stop` / `block` / `freeze`, prototype OOP, and `try` / `catch` / `finally` — backed by a tracing-free bytecode VM, incremental tri-color GC, and a cooperative scheduler with a 4-state `urbi_step` driver. ROS2 integration ships via a host rcl/Fast-DDS backend (with a documented micro-ROS-on-MCU path). Conformance: ~75–80% of the in-scope legacy urbiscript 2.x surface, 100% pass-rate on the implemented surface — see [`docs/release/conformance-report.md`](docs/release/conformance-report.md) for the coverage breakdown and the intentional divergences. ABI 0/23/0, freezing to 1/0/0 at the `v1.0.0` tag; wire format v1.9 / 0x19.
 
-Previously: **v0.12.3-ros-demo-and-contract** — facet↔ROS2 binding contract: a pure-urbiscript `Robotics.bindInput` / `Robotics.bindOutput` layer mapping Standard Robotics API facet slots to ROS2 message fields, plus an assembled-robot demo and `sensor_msgs/Range`. ABI 0/22/1.
+## 30-second quickstart
 
-Previously: **v0.12.2-urobotics** — Standard Robotics API facet library: a `Robotics.*` namespace of prototype facets (Identity, Network, Motor/Sensor families, Mobile, Tracker, Led/RGBLed) + dict-backed localization + standard frame of reference, as an optional pure-urbiscript overlay gated by `URBI_ENABLE_UROBOTICS`. ABI 0/22/0.
+```sh
+make                                     # build liburbi.a + the urbi binary
+echo "1 + 2" | ./build/host/urbi -i      # -> [..........] 3
+./build/host/urbi -i                     # interactive REPL
+```
 
-Previously: **v0.12.1-ros-dds** — real rcl/rclc/Fast-DDS ROS2 transport behind `URBI_ROS_BACKEND=rcl` (on top of `URBI_ENABLE_ROS2`); live DDS pub/sub + service client/server with urbiscript handlers. ABI 0/21/1.
-
-Next milestone: **v1.0-rc**.
+Embedding a VM in your own C program is one header and a handful of calls — see the [embedding guide](docs/embedding-guide.md). Porting to a new MCU is covered by the [ports guide](docs/internals/ports.md) and the worked ports under `examples/` (Pico, ESP32-S3, STM32F4); a fresh clone builds all three via `make clone-build-demo-check` (see [`docs/release/clone-build-demo.md`](docs/release/clone-build-demo.md)).
 
 ## Design goals
 
