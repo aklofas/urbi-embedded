@@ -219,6 +219,65 @@ uint8_t emit_compare_arm(UEmitter *e, UAstNode *n) {
     return rb;
 }
 
+/* --- AST_LOGICAL — short-circuit && / || ---
+ *
+ * Lowers to the Lua-style OP_TESTSET + OP_JMP short-circuit idiom; no new
+ * opcode.  The result lives in rd (the register the LHS landed in); when the
+ * LHS settles the result the RHS is skipped entirely.
+ *
+ * OP_TESTSET semantics (uvm.c): `if truthy(R[B]) == C then pc++ else R[A]:=R[B]`.
+ * We emit `TESTSET rd, rd, C` followed by an OP_JMP that skips the RHS:
+ *
+ *   for &&:  short-circuit (skip RHS, keep falsy LHS) when LHS is FALSY.
+ *            We want to FALL THROUGH to RHS when LHS is truthy, i.e. pc++ on
+ *            truthy → C = 1.  On falsy: R[rd]:=rd (no-op) then JMP skips RHS.
+ *   for ||:  short-circuit (skip RHS, keep truthy LHS) when LHS is TRUTHY.
+ *            Fall through to RHS when LHS is falsy → pc++ on falsy → C = 0.
+ *
+ * Register protocol mirrors emit_compare_arm: rd is a TEMP holding the
+ * expression value; reset next_reg to rd+1 and bump max_reg_seen so callers
+ * can allocate above the result. */
+uint8_t emit_logical_arm(UEmitter *e, UAstNode *n) {
+    /* Evaluate LHS into rd (the result register). */
+    uint8_t rd = e->next_reg;
+    uint8_t lhs_reg = emit_expr(e, n->u.logical.lhs);
+    if (e->error != EMIT_OK) return 0U;
+    (void)lhs_reg;  /* rd == lhs_reg */
+
+    /* TESTSET rd, rd, c — see polarity reasoning above. */
+    const uint8_t c = n->u.logical.is_or ? 0U : 1U;
+    emit_instr(e, uinstr_enc_abc(OP_TESTSET, rd, rd, c), (uint32_t)n->line);
+
+    /* JMP placeholder — when taken, skips the RHS evaluation (short-circuit). */
+    int jmp_skip = (int)emit_instr_count(e);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+
+    /* RHS path: evaluate RHS starting at rd (reset cursor so RHS reuses the
+     * temp zone above rd), then move the value into rd if it landed elsewhere. */
+    e->next_reg = rd;
+    uint8_t rhs_reg = emit_expr(e, n->u.logical.rhs);
+    if (e->error != EMIT_OK) return 0U;
+    if (rhs_reg != rd) {
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, rhs_reg, 0U), (uint32_t)n->line);
+    }
+
+    /* Patch the short-circuit JMP to land just past the RHS path. */
+    {
+        int after = (int)emit_instr_count(e);
+        emit_patch_instr(e, jmp_skip,
+            uinstr_enc_abx(OP_JMP, 0U, uemit_jmp_offset(jmp_skip, after)));
+    }
+
+    /* Result is in rd; free the RHS temps. */
+    e->next_reg = rd + 1U;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->current_fs != NULL) {
+        if (e->next_reg > e->current_fs->max_reg_seen)
+            e->current_fs->max_reg_seen = e->next_reg;
+    }
+    return rd;
+}
+
 /* --- AST_IDENT --- */
 
 uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n) {

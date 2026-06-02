@@ -384,6 +384,9 @@ bool cond_has_direct_side_effect(UAstNode *n) {
         case AST_COMPARE:
             return cond_has_direct_side_effect(n->u.cmp.lhs)
                 || cond_has_direct_side_effect(n->u.cmp.rhs);
+        case AST_LOGICAL:
+            return cond_has_direct_side_effect(n->u.logical.lhs)
+                || cond_has_direct_side_effect(n->u.logical.rhs);
         case AST_BLOCK: {
             int i;
             for (i = 0; i < n->u.block.count; i++)
@@ -427,6 +430,7 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_UNARY:      return emit_unary_arm(e, n);
     case AST_BINARY:     return emit_binary_arm(e, n);
     case AST_COMPARE:    return emit_compare_arm(e, n);
+    case AST_LOGICAL:    return emit_logical_arm(e, n);
     case AST_IDENT:      return emit_ident_arm(e, n);
     case AST_VAR_DECL:   return emit_var_decl_arm(e, n);
     case AST_ASSIGN:     return emit_assign_arm(e, n);

@@ -184,6 +184,13 @@ typedef enum {
                          * Lowers to OP_MOVE (or no-op when target == source).
                          * Not serialised; not visible to the parser. */
     /* === end W2/v0.10.7 === */
+    ,
+    /* === v1.0-rc stdlib-completeness: short-circuit logical operators === */
+    AST_LOGICAL  = 48   /* a && b / a || b — short-circuit.  Distinct from
+                         * AST_BINARY (eager both operands).  Lowers to
+                         * OP_TESTSET + OP_JMP; RHS skipped when LHS settles
+                         * the result.  is_or selects && vs ||. No new opcode. */
+    /* === end v1.0-rc stdlib-completeness === */
 } UAstKind;
 
 /* Method/property-decl kind discriminator (T41 — M6 Wave 2). */
@@ -309,6 +316,7 @@ typedef enum {
  *   u.ident       — AST_IDENT:      zero-copy lexeme view
  *   u.unary       — AST_UNARY:      prefix operator + operand pointer
  *   u.binary      — AST_BINARY:     infix operator + two operand pointers
+ *   u.logical     — AST_LOGICAL:    short-circuit && / || (lhs, rhs, is_or)
  *   u.err         — AST_ERROR:      UParseError + static message string
  *   u.b           — AST_BOOL:       boolean value
  *   [none]        — AST_NIL:        no payload (sentinel type)
@@ -379,6 +387,11 @@ struct UAstNode {
             UAstNode *lhs;
             UAstNode *rhs;
         } binary;
+        struct {                                            /* AST_LOGICAL */
+            UAstNode *lhs;
+            UAstNode *rhs;
+            int       is_or;   /* 1 = ||, 0 = && */
+        } logical;
         struct {                                            /* AST_ERROR */
             int code;
             const char *message;

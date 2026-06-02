@@ -19,32 +19,49 @@ const char kLShiftSelector[] = "<<";
 URBI_STATIC_ASSERT(sizeof kLShiftSelector - 1U == kLShiftSelectorLen,
                "kLShiftSelectorLen must equal strlen(kLShiftSelector)");
 
+/* v1.0-rc stdlib-completeness: `%` modulo selector.  Like `<<`, `%`
+ * desugars to a method call `lhs.'%'(rhs)` rather than a dedicated opcode;
+ * the `'%'` slot lives on Integer/Float (added by the atoms stdlib). */
+static const char kModSelector[] = "%";
+#define kModSelectorLen 1  /* strlen("%") */
+URBI_STATIC_ASSERT(sizeof kModSelector - 1U == (size_t)kModSelectorLen,
+               "kModSelectorLen must equal strlen(kModSelector)");
+
 /* Return the left-binding precedence of an infix token, or 0 if not
    an infix operator (terminates the Pratt climb).
-   Comparison operators bind looser than arithmetic:
-     2 = streaming / write (<<)
-     3 = equality (==, !=)
-     4 = relational (<, <=, >, >=)
-     5 = additive (+, -)
-     6 = multiplicative (*, /)
-     7 = postfix (call, member, `!`, `?`) — see PARSE_PREC_POSTFIX
+   Logical operators bind loosest; comparison binds looser than arithmetic:
+     1 = logical OR  (||)
+     2 = logical AND (&&)
+     3 = streaming / write (<<)
+     4 = equality (==, !=)
+     5 = relational (<, <=, >, >=)
+     6 = additive (+, -)
+     7 = multiplicative (*, /, %)
+     9 = postfix (call, member, `!`, `?`) — see PARSE_PREC_POSTFIX
          in uparse_internal.h; not produced by this function (handled
          directly in parse_expression_cont). */
 int infix_prec(UTokenType t) {
     switch (t) {
-    /* === W3/v0.10.11: << method-call desugar — prec 2 (below equality) === */
-    case TOK_LSHIFT: return 2;
+    /* === v1.0-rc stdlib-completeness: short-circuit logical operators === */
+    case TOK_PIPEPIPE: return 1;
+    case TOK_AMPAMP:   return 2;
+    /* === end v1.0-rc stdlib-completeness === */
+    /* === W3/v0.10.11: << method-call desugar (below equality) === */
+    case TOK_LSHIFT: return 3;
     /* === end W3/v0.10.11 === */
     case TOK_EQEQ:
-    case TOK_NEQ:   return 3;
+    case TOK_NEQ:   return 4;
     case TOK_LT:
     case TOK_LE:
     case TOK_GT:
-    case TOK_GE:    return 4;
+    case TOK_GE:    return 5;
     case TOK_PLUS:
-    case TOK_MINUS: return 5;
+    case TOK_MINUS: return 6;
     case TOK_STAR:
-    case TOK_SLASH: return 6;
+    case TOK_SLASH:
+    /* === v1.0-rc stdlib-completeness: % at multiplicative level === */
+    case TOK_PERCENT: return 7;
+    /* === end v1.0-rc stdlib-completeness === */
     default:        return 0;
     }
 }
@@ -828,6 +845,48 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             continue;
         }
         /* === end W3/v0.10.11 === */
+
+        /* === v1.0-rc stdlib-completeness: % desugars to lhs.'%'(rhs) ===
+         *
+         * Mirrors the `<<` desugar above: builds
+         *   AST_CALL { callee = AST_MEMBER_GET(lhs, "%"), args=[rhs] }
+         * The `'%'` slot lives on Integer/Float (atoms stdlib).  Multiplicative
+         * precedence (7), left-associative (prec+1 on right). */
+        if (op.type == TOK_PERCENT) {
+            UAstNode *member = make_node(p, AST_MEMBER_GET, op.line, op.col);
+            if (!member) return NULL;
+            member->u.member.recv       = lhs;
+            member->u.member.name_start = kModSelector;
+            member->u.member.name_len   = kModSelectorLen;
+            member->u.member.value      = NULL;
+            UAstNode **args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+            if (!args) return (UAstNode *)&uparser_oom_sentinel;
+            args[0] = right;
+            UAstNode *call = make_node(p, AST_CALL, op.line, op.col);
+            if (!call) return NULL;
+            call->u.call.callee    = member;
+            call->u.call.args      = args;
+            call->u.call.arg_count = 1;
+            lhs = call;
+            continue;
+        }
+
+        /* === v1.0-rc stdlib-completeness: && / || short-circuit logical ===
+         *
+         * Builds AST_LOGICAL { lhs, rhs, is_or }; emit lowers it to an
+         * OP_TESTSET + OP_JMP short-circuit (RHS skipped when LHS settles
+         * the result).  Distinct from AST_BINARY (which evaluates both
+         * operands eagerly).  Left-associative via prec+1 on `right`. */
+        if (op.type == TOK_AMPAMP || op.type == TOK_PIPEPIPE) {
+            UAstNode *node = make_node(p, AST_LOGICAL, op.line, op.col);
+            if (!node) return NULL;
+            node->u.logical.lhs   = lhs;
+            node->u.logical.rhs   = right;
+            node->u.logical.is_or = (op.type == TOK_PIPEPIPE) ? 1 : 0;
+            lhs = node;
+            continue;
+        }
+        /* === end v1.0-rc stdlib-completeness === */
 
         if (is_compare_token(op.type)) {
             lhs = make_compare(p, compare_op(op.type), lhs, right,

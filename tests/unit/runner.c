@@ -324,6 +324,7 @@ extern void test_ros_bridge_lifetime_suite(void);
 extern void test_ulist_build_suite(void);
 extern void test_regexp_suite(void);
 extern void test_object_reflection_suite(void);
+extern void test_lex_operators_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -624,6 +625,7 @@ static const struct suite_entry suites[] = {
     {"ulist_build",                      test_ulist_build_suite},
     {"regexp",                           test_regexp_suite},
     {"object_reflection",                test_object_reflection_suite},
+    {"lex_operators",                    test_lex_operators_suite},
     /* Add new suites here as test files are added. */
 };
 

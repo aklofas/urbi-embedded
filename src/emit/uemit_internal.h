@@ -337,6 +337,7 @@ uint8_t emit_noop_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_unary_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_binary_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_compare_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_logical_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_assign_arm(UEmitter *e, UAstNode *n);

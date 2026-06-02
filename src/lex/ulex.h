@@ -135,6 +135,12 @@ typedef enum {
     TOK_LSHIFT,       /* << — desugars to method-call .'<<'(rhs) */
     /* === end W3/v0.10.11 === */
 
+    /* === v1.0-rc stdlib-completeness: arithmetic + logical operators === */
+    TOK_PERCENT,      /* %  — modulo; desugars to method-call .'%'(rhs) */
+    TOK_AMPAMP,       /* && — short-circuit logical AND */
+    TOK_PIPEPIPE,     /* || — short-circuit logical OR */
+    /* === end v1.0-rc stdlib-completeness === */
+
     TOK_ERROR,        /* malformed input */
 
     TOK__LAST          /* sentinel; not a real token type — used to size
