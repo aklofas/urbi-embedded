@@ -38,6 +38,7 @@
 #include "vm/uvm.h"                /* UVM, urbi_vm_destroy, vm->*error_proto, UVM_ERRMSG_CAP */
 #include "vm/uvm_internal.h"       /* UDiagWriter, diag_init, diag_write_* */
 #include "object/uic.h"            /* urbi_slot_get_slow */
+#include "stdlib/containers.h"     /* urbi_stdlib_list_new_empty/_append_value */
 
 #include <stdint.h>
 #include <stddef.h>
@@ -64,6 +65,11 @@ static int obj_protos            (UVM *vm, UValue self, UValue *args, uint8_t na
 static int obj_setProtos         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_setProperty       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_slotNames         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_localSlotNames    (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_hasLocalSlot      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_getProperty       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_properties        (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 
 /* === UValue helpers (zero-fill _pad bytes for bit-stable layout) =========== */
 
@@ -700,6 +706,167 @@ obj_setProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === Reflection: localSlotNames / slotNames / hasLocalSlot ================= *
+ *
+ * The receiver's own slots are the parent-ward lineage of obj->shape: each
+ * UShape node adds exactly one slot named by its `name` field (root node has
+ * name == NULL).  Walking the lineage collecting `s->name` enumerates the
+ * local slots most-recently-added first; the script side may .sort() for a
+ * stable order.  USymbol* aliases the interned NUL-terminated const char*
+ * (see uslot_api.c), so it serves directly as a UVAL_STR payload. */
+
+static int
+collect_local_slot_names(UVM *vm, UObject *o, UObject *lst)
+{
+    const UShape *s = o->shape;
+    while (s != NULL && s->name != NULL) {
+        UValue nm = urbi_make_nil();
+        nm.kind = (uint8_t)UVAL_STR;
+        nm.v.p = (void *)s->name;
+        if (urbi_stdlib_list_append_value(vm, lst, nm) != 0) return -1;
+        s = s->parent;
+    }
+    return 0;
+}
+
+static int
+obj_localSlotNames(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "localSlotNames", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "localSlotNames: self must be a UObject", out);
+    UObject *o = (UObject *)self.v.p;
+    UObject *lst = urbi_stdlib_list_new_empty(vm);
+    if (lst == NULL) return urbi_raise_oom(vm, out);
+    if (collect_local_slot_names(vm, o, lst) != 0) return urbi_raise_oom(vm, out);
+    *out = uval_obj(lst);
+    return UEXEC_OK;
+}
+
+/* slotNames = local names of self, then the local names of each prototype.
+ * v1.0 does not de-dup names that shadow across the chain; a name appearing
+ * on both self and a proto appears twice (acceptable for v1.0 reflection). */
+static int
+obj_slotNames(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "slotNames", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "slotNames: self must be a UObject", out);
+    UObject *o = (UObject *)self.v.p;
+    UObject *lst = urbi_stdlib_list_new_empty(vm);
+    if (lst == NULL) return urbi_raise_oom(vm, out);
+    if (collect_local_slot_names(vm, o, lst) != 0) return urbi_raise_oom(vm, out);
+    uint32_t np = urbi_object_proto_count(o);
+    uint32_t i;
+    for (i = 0U; i < np; i++) {
+        UObject *p = urbi_object_proto_at(o, i);
+        if (p == NULL) continue;
+        if (collect_local_slot_names(vm, p, lst) != 0) return urbi_raise_oom(vm, out);
+    }
+    *out = uval_obj(lst);
+    return UEXEC_OK;
+}
+
+static int
+obj_hasLocalSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "hasLocalSlot", 1, nargs, out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "hasLocalSlot: name must be a String", out);
+    if (self.kind != (uint8_t)UVAL_OBJECT) { *out = uval_bool(0); return UEXEC_OK; }
+    UObject *o = (UObject *)self.v.p;
+    const USymbol *name = (const USymbol *)args[0].v.p;
+    *out = uval_bool(urbi_shape_find_slot(o->shape, name) >= 0);
+    return UEXEC_OK;
+}
+
+/* === Reflection: getProperty / properties ================================= *
+ *
+ * Slot properties (oget / oset / constant) live in the per-slot UProps* of
+ * the holder shape's props_table (NULL until any property is installed in
+ * the lineage); the per-slot flag nibble lives in shape->flags (4 bits per
+ * slot for the first 8 slots — uic.c:52).  getProperty(name, prop) returns
+ * the named property value (the oget/oset closure, or the constant bool),
+ * or nil when absent.  properties(name) returns a List of the installed
+ * property-name strings for that slot.  Both return nil/empty when the slot
+ * has no UProps (the common case). */
+
+static int
+obj_getProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 2) return urbi_raise_arity(vm, "getProperty", 2, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "getProperty: self must be a UObject", out);
+    if (args[0].kind != (uint8_t)UVAL_STR || args[1].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "getProperty: name and prop must be Strings", out);
+
+    UObject *o = (UObject *)self.v.p;
+    const USymbol *name = (const USymbol *)args[0].v.p;
+    const USymbol *prop = (const USymbol *)args[1].v.p;
+
+    int32_t idx = urbi_shape_find_slot(o->shape, name);
+    if (idx < 0) { *out = urbi_make_nil(); return UEXEC_OK; }
+
+    const USymbol *sym_oget     = (const USymbol *)ustr_intern(vm, "oget", 4);
+    const USymbol *sym_oset     = (const USymbol *)ustr_intern(vm, "oset", 4);
+    const USymbol *sym_constant = (const USymbol *)ustr_intern(vm, "constant", 8);
+    if (sym_oget == NULL || sym_oset == NULL || sym_constant == NULL)
+        return urbi_raise_oom(vm, out);
+
+    if (prop == sym_constant) {
+        uint8_t flags = ((uint32_t)idx < 8U)
+            ? (uint8_t)((o->shape->flags >> ((uint32_t)idx * 4U)) & 0x0FU) : 0U;
+        *out = uval_bool((flags & URBI_SLOT_FLAG_CONSTANT) != 0U);
+        return UEXEC_OK;
+    }
+    if (prop == sym_oget || prop == sym_oset) {
+        UProps *pr = (o->shape->props_table != NULL)
+            ? o->shape->props_table[idx] : NULL;
+        if (pr == NULL) { *out = urbi_make_nil(); return UEXEC_OK; }
+        *out = (prop == sym_oget) ? pr->oget : pr->oset;
+        return UEXEC_OK;
+    }
+    *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+static int
+obj_properties(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "properties", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "properties: self must be a UObject", out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "properties: name must be a String", out);
+
+    UObject *o = (UObject *)self.v.p;
+    const USymbol *name = (const USymbol *)args[0].v.p;
+    UObject *lst = urbi_stdlib_list_new_empty(vm);
+    if (lst == NULL) return urbi_raise_oom(vm, out);
+
+    int32_t idx = urbi_shape_find_slot(o->shape, name);
+    if (idx < 0 || (uint32_t)idx >= 8U) { *out = uval_obj(lst); return UEXEC_OK; }
+    uint8_t flags = (uint8_t)((o->shape->flags >> ((uint32_t)idx * 4U)) & 0x0FU);
+
+    static const struct { uint8_t bit; const char *nm; size_t len; } kProps[] = {
+        { URBI_SLOT_FLAG_OGET,     "oget",     4U },
+        { URBI_SLOT_FLAG_OSET,     "oset",     4U },
+        { URBI_SLOT_FLAG_CONSTANT, "constant", 8U },
+    };
+    size_t i;
+    for (i = 0U; i < sizeof kProps / sizeof kProps[0]; i++) {
+        if ((flags & kProps[i].bit) == 0U) continue;
+        UValue nm = urbi_make_str_interned(vm, kProps[i].nm, kProps[i].len);
+        if (nm.kind == (uint8_t)UVAL_NIL) return urbi_raise_oom(vm, out);
+        if (urbi_stdlib_list_append_value(vm, lst, nm) != 0)
+            return urbi_raise_oom(vm, out);
+    }
+    *out = uval_obj(lst);
+    return UEXEC_OK;
+}
+
 /* === urbi_object_root_register ============================================= */
 
 typedef struct {
@@ -720,7 +887,12 @@ static const ObjectMethodEntry OBJECT_METHODS[] = {
     { "removeProto",     obj_removeProto     },
     { "protos",          obj_protos          },
     { "setProtos",       obj_setProtos       },
-    { "setProperty",     obj_setProperty     }    /* T41: backs get/set sugar */
+    { "setProperty",     obj_setProperty     },   /* T41: backs get/set sugar */
+    { "slotNames",       obj_slotNames       },
+    { "localSlotNames",  obj_localSlotNames  },
+    { "hasLocalSlot",    obj_hasLocalSlot    },
+    { "getProperty",     obj_getProperty     },
+    { "properties",      obj_properties      }
 };
 
 #define OBJECT_METHODS_COUNT (sizeof(OBJECT_METHODS) / sizeof(OBJECT_METHODS[0]))
