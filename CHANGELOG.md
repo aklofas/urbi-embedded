@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — stdlib completeness + operators
+## v0.12.4-stdlib-completeness — 2026-06-02
 
 Closes the 2026-06-01 compat-2 audit's language/stdlib gaps (`compat2-A`, `compat2-G`,
 and `compat2-F` in part), lifting usage-weighted stdlib coverage from ~50% toward ~80%.
