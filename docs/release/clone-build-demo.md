@@ -35,9 +35,13 @@ echo "1 + 2" | ./build/host/urbi -i      # -> [..........] 3
 ## 2. Raspberry Pi Pico — `examples/pico/repl_demo`
 
 ```sh
-make cross-pico-repl
+export PICO_SDK_PATH=/path/to/pico-sdk    # or place it at ../tools/pico-sdk
+make test-cross-pico-repl-elf
 # -> examples/pico/repl_demo/build/repl_demo.uf2
 ```
+
+(`make cross-pico-repl` alone builds only the cross `liburbi.a`; the flashable
+`.uf2` comes from the pico-sdk CMake flow that `test-cross-pico-repl-elf` drives.)
 
 Flash: hold **BOOTSEL**, plug USB, drag `repl_demo.uf2` onto the `RPI-RP2`
 volume. Open the USB-CDC serial port (`minicom -D /dev/ttyACM0 -b 115200`);
