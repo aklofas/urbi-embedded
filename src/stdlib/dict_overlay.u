@@ -5,9 +5,9 @@
 // v0.6.2 blob-scope constraint (see number.u for details).
 //
 // Legacy reference: share/urbi/dict.u (Gostai 2008-2012).
-// Note: methods requiring key iteration (map, filter, each) are deferred
-// to v1.x when a keys() / iteration protocol lands on Dict.  v1.0 Dict
-// has: new, length, isEmpty, set, get, has, remove.
+// Note: v1.0 Dict has native: new, length, isEmpty, set, get, has,
+// remove, keys, values.  each() is provided here over the native keys()
+// primitive.
 //
 // Note: `this` resolution inside class body methods works correctly at
 // v0.6.2 (Gap #3 closed).
@@ -21,6 +21,19 @@ class DictMethods {
     // setIfAbsent(key, value): set key only if not already present.
     var setIfAbsent = function(key, val) {
         if (this.has(key)) { this.get(key) } else { this.set(key, val); val }
+    };
+
+    // each(f): apply f(key, value) to each entry for side effects; nil.
+    var each = function(f) {
+        var ks = this.keys();
+        var i = 0;
+        var n = ks.length();
+        while (i < n) {
+            var k = ks.get(i);
+            f(k, this.get(k));
+            i = i + 1
+        };
+        nil
     }
 } |
 

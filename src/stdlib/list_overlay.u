@@ -75,6 +75,17 @@ class ListMethods {
             if (pred(this.get(i))) { i = i + 1 } else { ok = false; i = n }
         };
         ok
+    };
+
+    // each(f): apply f to each element in order for side effects; returns nil.
+    var each = function(f) {
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            f(this.get(i));
+            i = i + 1
+        };
+        nil
     }
 } |
 
