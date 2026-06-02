@@ -72,3 +72,52 @@ fi
 EXPORTED_COUNT=$(echo "$EXPORTED" | wc -l)
 MANIFESTED_COUNT=$(echo "$MANIFESTED" | wc -l)
 echo "PASS: all $EXPORTED_COUNT exported urbi_ symbols are documented in $MANIFEST ($MANIFESTED_COUNT total manifest entries)"
+
+# === Bidirectional check (v1.0 / B6a) ===
+# The forward check above catches a symbol exported-but-undocumented.  The
+# reverse direction matters once the public surface is FROZEN at v1.0: a
+# documented Tier-1/Tier-2 symbol that silently STOPS being exported (deleted
+# or accidentally hidden) must also fail.  Restricted to Tier 1 + Tier 2 (the
+# stable/frozen tiers) and skips conditional subsections the build may legally
+# omit — `### ...inline...` (never T symbols) and `### ...URBI_ENABLE_REPL...`
+# / `### ...URBI_DEBUG...` (conditional builds).  Tier 3 (experimental) and
+# Tier 4 (internal-leak, now -fvisibility=hidden) are intentionally excluded.
+FROZEN=$(awk '
+    /^## Tier 1/ { intier=1; skip=0; next }
+    /^## Tier 2/ { intier=1; skip=0; next }
+    /^## Tier 3/ { intier=0 }
+    /^## Tier 4/ { intier=0 }
+    /^### / {
+        skip = ( $0 ~ /inline/ || $0 ~ /URBI_ENABLE_REPL/ || $0 ~ /URBI_DEBUG/ ) ? 1 : 0
+        next
+    }
+    intier && !skip {
+        while (match($0, /`urbi_[A-Za-z0-9_]+`/)) {
+            s = substr($0, RSTART+1, RLENGTH-2)
+            # Skip the documented URBI_DEBUG-only trio (declared in public
+            # headers but compiled out of the default build — see the manifest
+            # "Note:" paragraph).  These are not T symbols in any default build.
+            if (s != "urbi_in_isr" && s != "urbi_get_determinism_checksum" \
+                && s != "urbi_call_host_with_watchdog") {
+                print s
+            }
+            $0 = substr($0, RSTART+RLENGTH)
+        }
+    }
+' "$MANIFEST" | sort -u)
+
+# Frozen symbols documented but not exported (the surface silently shrank).
+MISSING=$(comm -23 <(echo "$FROZEN") <(echo "$EXPORTED"))
+if [ -n "$MISSING" ]; then
+    echo "FAIL: frozen Tier-1/Tier-2 symbols documented in $MANIFEST but NOT exported from the library:" >&2
+    echo "$MISSING" | sed 's/^/  - /' >&2
+    echo "" >&2
+    echo "  The v1.0 public ABI surface must not shrink.  Either the symbol was" >&2
+    echo "  removed (a MAJOR ABI break — revert or bump MAJOR) or it was moved out" >&2
+    echo "  of a public include/urbi/*.h header (restore its declaration), or it" >&2
+    echo "  is genuinely conditional and belongs under a skipped subsection." >&2
+    exit 1
+fi
+
+FROZEN_COUNT=$(echo "$FROZEN" | wc -l)
+echo "PASS: all $FROZEN_COUNT frozen Tier-1/Tier-2 symbols are still exported (surface did not shrink)"

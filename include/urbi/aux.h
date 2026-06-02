@@ -22,6 +22,10 @@
 #ifndef URBI_AUX_H
 #define URBI_AUX_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #include "urbi/urbi.h"    /* full public API — types, vm, realm, events, fns */
 
 #include <stddef.h>       /* size_t */
@@ -221,4 +225,8 @@ int urbi_aux_value_to_tag    (UValue v, struct UTag     **out);
 }
 #endif
 
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif /* URBI_AUX_H */

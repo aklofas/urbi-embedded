@@ -306,3 +306,37 @@ absent from the default gate-off build and from the public manifest
 (`docs/api-surface-tiers.md`).  Wire format unchanged at v1.9 / 0x19; no new
 opcodes.  32nd use of pre-v1.0 escape clause.  PATCH bump: 0/22/0 to 0/22/1.
 PATCH-only, not a §3 freeze-override.
+
+(v0.12.4-stdlib-completeness bumped 0/22/1 → 0/22/2 PATCH — NOT an escape: no
+public C symbol change, stdlib-only.  No ledger entry by design.)
+
+### Escape #33 — v1.0.0 / M10 (B6a) (MINOR) — FINAL escape before the freeze
+
+Two freeze-window ABI changes, deliberately landed under the escape clause
+immediately before the 1/0/0 freeze (after the freeze, each would need a
+deprecation cycle):
+
+1. **Rename `urbi_set_time_us` → `urbi_set_clock_fn`.**  It installs a
+   `urbi_time_us_fn` clock-source callback, but the `_us` suffix read like an
+   integer setter, violating the `_fn` convention of `urbi_set_wake_fn` /
+   `urbi_set_isr_check_fn`.  A remove+add at the public surface.  The callback
+   typedef `urbi_time_us_fn` is unchanged.
+
+2. **Export-surface narrowing via `-fvisibility=hidden`.**  The library is now
+   compiled with `-fvisibility=hidden`; the `include/urbi/*.h` public headers are
+   wrapped in `#pragma GCC visibility push(default)` (and `URBI_PUBLIC` is
+   defined for explicit re-export).  Result: the ~423 internal cross-TU symbols
+   (Tier 4 in `docs/api-surface-tiers.md` — `dispatch_loop_until_yield`,
+   `consume`, the stdlib/parse/vm helpers, etc.) no longer escape when an
+   embedder links `liburbi.a` into a shared object; only the ~105 documented
+   public `urbi_*` symbols (Tier 1/2/3) carry default visibility.  Static linking
+   into an executable (the dominant embedded case) is unaffected — hidden symbols
+   still resolve at static-link time.  NOTE: `liburbi.a` is not built `-fPIC`, so
+   producing a `.so` from it as-shipped still requires an embedder rebuild; the
+   narrowing takes effect at that rebuild.  `nm` still lists internal symbols
+   (visibility ≠ binding), so the `test-api-manifest` forward gate is unchanged;
+   that gate also gained a bidirectional check (Tier-1/2 surface must not shrink).
+
+Wire format unchanged at v1.9 / 0x19; no new opcodes.  33rd and FINAL use of the
+pre-v1.0 escape clause.  MINOR bump: 0/22/2 → 0/23/0.  The next bump is the
+1/0/0 freeze, after which §3 (no break without MAJOR + deprecation) governs.

@@ -164,6 +164,12 @@ LIBURBI_AUX := $(BUILDDIR)/liburbi_aux.a
 RUNNER := $(BUILDDIR)/tests/unit/runner
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
+# v1.0 (B6a): hide internal cross-TU symbols from the export surface.  Public
+# API is re-exported via `#pragma GCC visibility push(default)` in the
+# include/urbi/*.h headers, so only documented urbi_* symbols escape when an
+# embedder links liburbi.a into a shared object.  Harmless for static linking
+# into executables (the dominant embedded case) and for non-GNU toolchains.
+CFLAGS += -fvisibility=hidden
 CPPFLAGS += -Iinclude -Isrc -Itests/unit
 RUNNER_WRAPPER ?=
 

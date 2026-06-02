@@ -27,6 +27,10 @@
 #ifndef URBI_REQUIRE_H
 #define URBI_REQUIRE_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -69,4 +73,8 @@ void urbi_set_require_fail_hook(urbi_require_fail_hook_fn hook);
 }
 #endif
 
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif /* URBI_REQUIRE_H */

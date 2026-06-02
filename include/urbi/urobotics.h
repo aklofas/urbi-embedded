@@ -5,6 +5,10 @@
 #ifndef URBI_UROBOTICS_H
 #define URBI_UROBOTICS_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #ifdef URBI_ENABLE_UROBOTICS
 
 #include <stddef.h>
@@ -26,4 +30,8 @@ int urbi_urobotics_register(struct UVM *vm);
 int urbi_urobotics_run(struct UVM *vm, struct URealm *realm);
 
 #endif /* URBI_ENABLE_UROBOTICS */
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif /* URBI_UROBOTICS_H */

@@ -10,6 +10,10 @@
 #ifndef URBI_H
 #define URBI_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #include <stdbool.h>
 #include <stddef.h>   /* size_t */
 #include <stdint.h>   /* uint64_t */
@@ -1413,4 +1417,8 @@ static const int *urbi_abi_full_parser_guard_ref __attribute__((unused)) =
 #  endif
 #endif /* !URBI_INTERNAL_GUARD_REF */
 
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif

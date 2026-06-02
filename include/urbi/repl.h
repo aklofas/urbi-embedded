@@ -13,6 +13,10 @@
 #ifndef URBI_REPL_H
 #define URBI_REPL_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #ifdef URBI_BYTECODE_ONLY
 #  error "URBI_ENABLE_REPL requires the compiler frontend; cannot use with URBI_BYTECODE_ONLY"
 #endif
@@ -154,4 +158,8 @@ static const int *urbi_abi_repl_guard_ref __attribute__((unused)) =
 #  endif
 #endif /* !URBI_INTERNAL_GUARD_REF */
 
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif /* URBI_REPL_H */

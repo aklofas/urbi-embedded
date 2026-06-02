@@ -268,6 +268,12 @@ CI gate tracks this list to prevent silent growth.
 
 - `urbi_encode_utf8`
 
+### Stdlib internals (v0.12.4 stdlib-completeness)
+
+- `urbi_regexp_search`, `urbi_stdlib_register_regexp`,
+  `urbi_stdlib_register_regexp_globals`, `urbi_stdlib_list_get`,
+  `urbi_stdlib_list_len`
+
 ### Event internals
 
 - `urbi_event_create`

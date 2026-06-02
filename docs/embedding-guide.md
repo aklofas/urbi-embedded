@@ -221,6 +221,8 @@ void setup_diag(struct UVM *vm, struct MyContext *ctx)
 
 The same pattern applies to `urbi_set_clock_fn`, `urbi_set_watcher_body_done_fn`, `urbi_set_isr_check_fn`, and `urbi_register_event_drain`. Pass `NULL` when no context is needed.
 
+> **Migration (v1.0):** `urbi_set_clock_fn` was named `urbi_set_time_us` before v1.0. The behaviour and signature are unchanged (it installs a `urbi_time_us_fn` monotonic-microseconds callback); only the name changed, to follow the `_fn` convention of the other callback setters. Update call sites with a plain rename.
+
 For full watcher and strand callback unbind/lifecycle semantics, see §9 Lifecycle Contracts.
 
 ---

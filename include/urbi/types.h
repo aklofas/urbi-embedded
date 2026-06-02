@@ -25,12 +25,30 @@
 #ifndef URBI_TYPES_H
 #define URBI_TYPES_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+/* === URBI_PUBLIC — explicit shared-object export marker (v1.0) ===
+ * The library is compiled with -fvisibility=hidden, and every public header is
+ * wrapped in `#pragma GCC visibility push(default)`, so all declared public API
+ * already carries default visibility (exported) while the ~300 internal
+ * cross-TU helpers stay hidden — an embedder who builds a .so around liburbi.a
+ * gets only the documented urbi_* surface.  URBI_PUBLIC is provided for any
+ * symbol an embedder chooses to re-export explicitly; it expands to nothing on
+ * compilers without visibility support. */
+#if defined(__GNUC__) || defined(__clang__)
+#  define URBI_PUBLIC __attribute__((visibility("default")))
+#else
+#  define URBI_PUBLIC
 #endif
 
 /* === URBI_STATIC_ASSERT — C11 _Static_assert wrapper ===
@@ -696,4 +714,8 @@ static const int *urbi_abi_float_guard_ref __attribute__((unused)) =
 #  endif
 #endif /* !URBI_INTERNAL_GUARD_REF */
 
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif /* URBI_TYPES_H */

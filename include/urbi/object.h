@@ -13,6 +13,10 @@
 #ifndef URBI_OBJECT_H
 #define URBI_OBJECT_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #include "urbi/urbi.h"   /* struct UVM forward decl + URBI_OK / UErrCode */
 #include <stdint.h>
 
@@ -79,4 +83,8 @@ int urbi_object_set_protos   (struct UVM *vm, UObject *obj, UObject **list, uint
 }
 #endif
 
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif /* URBI_OBJECT_H */

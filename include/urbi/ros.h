@@ -6,6 +6,10 @@
 #ifndef URBI_ROS_H
 #define URBI_ROS_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #ifdef URBI_ENABLE_ROS2
 
 #include <stddef.h>
@@ -33,4 +37,8 @@ void urbi_ros_pump(struct UVM *vm);
 void urbi_ros_shutdown(struct UVM *vm);
 
 #endif /* URBI_ENABLE_ROS2 */
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif /* URBI_ROS_H */

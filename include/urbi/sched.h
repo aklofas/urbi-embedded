@@ -20,6 +20,10 @@
 #ifndef URBI_SCHED_H
 #define URBI_SCHED_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #include <stdint.h>
 
 #include "urbi/version.h"  /* URBI_EXPERIMENTAL */
@@ -96,4 +100,8 @@ URBI_EXPERIMENTAL USchedClass urbi_strand_get_sched_class(struct UVM *vm, struct
 }
 #endif
 
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif /* URBI_SCHED_H */

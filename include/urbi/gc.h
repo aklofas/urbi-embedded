@@ -26,6 +26,10 @@
 #ifndef URBI_GC_H
 #define URBI_GC_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -233,4 +237,8 @@ URBI_ADVANCED size_t urbi_gc_bytes_allocated_inline(const struct UVM *vm);
 }
 #endif
 
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif /* URBI_GC_H */

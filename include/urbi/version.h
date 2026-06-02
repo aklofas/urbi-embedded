@@ -250,13 +250,17 @@
 #ifndef URBI_VERSION_H
 #define URBI_VERSION_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  22
-#define URBI_API_VERSION_PATCH  2
+#define URBI_API_VERSION_MINOR  23
+#define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -431,10 +435,21 @@ extern "C" {
  * the default gate-off build + the public manifest.  Wire format unchanged at
  * v1.9 / 0x19; no new opcodes.  32nd use of the pre-v1.0 escape clause.  See
  * docs/api-stability.md §6 escape ledger entry #32.
+ *
+ * Bumped to 0/23/0 at v1.0.0 / M10 (B6a) — escape #33 (MINOR), the FINAL use of
+ * the pre-v1.0 escape clause before the 1/0/0 freeze.  Two freeze-window ABI
+ * changes: (1) renamed urbi_set_time_us -> urbi_set_clock_fn (the _fn convention;
+ * it installs a urbi_time_us_fn callback), a remove+add; (2) the library is now
+ * compiled -fvisibility=hidden with the public headers wrapped in
+ * `#pragma GCC visibility push(default)`, so the ~423 internal cross-TU symbols
+ * (Tier 4) no longer escape when liburbi.a is linked into a shared object — only
+ * the documented urbi_* surface exports.  No wire change (v1.9 / 0x19).  The
+ * NEXT bump is the 1/0/0 freeze (B6), after which the escape clause is retired.
+ * See docs/api-stability.md §6 escape ledger entry #33.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
-            && URBI_API_VERSION_MINOR == 22
-            && URBI_API_VERSION_PATCH == 2,
+            && URBI_API_VERSION_MINOR == 23
+            && URBI_API_VERSION_PATCH == 0,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */
@@ -474,4 +489,8 @@ void urbi_api_version(int *out_major, int *out_minor, int *out_patch);
 }
 #endif
 
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
+#endif
 #endif /* URBI_VERSION_H */

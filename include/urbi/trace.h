@@ -19,6 +19,10 @@
 #ifndef URBI_TRACE_H
 #define URBI_TRACE_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include "urbi/urbi.h"   /* ULogLevel, struct UVM (fwd) */
@@ -214,5 +218,9 @@ const char *urbi_trace_channel_name(uint8_t channel);
 
 #ifdef __cplusplus
 }
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+#  pragma GCC visibility pop
 #endif
 #endif /* URBI_TRACE_H */
