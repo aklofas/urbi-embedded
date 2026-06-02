@@ -1,0 +1,14 @@
+# Milestone: v1.0-rc stdlib-completeness
+# Covers: RegExp new/test (literal, ., *, +, ?, ^, $, char classes). No captures at v1.0.
+RegExp.new("^a.c$").test("abc")
+[00000000] true
+RegExp.new("^a.c$").test("axc")
+[00000001] true
+RegExp.new("^a.c$").test("abbc")
+[00000002] false
+RegExp.new("ab*c").test("ac")
+[00000003] true
+RegExp.new("[0-9]+").test("x42y")
+[00000004] true
+RegExp.new("[0-9]+").test("xyz")
+[00000005] false

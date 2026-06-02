@@ -439,6 +439,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->mutex_proto             = NULL;  /* M6 Phase 9 T94 — populated by urbi_stdlib_register_primitives */
     vm->date_proto              = NULL;  /* M6 Phase 9 T95 */
     vm->duration_proto          = NULL;  /* M6 Phase 9 T96 */
+    vm->regexp_proto            = NULL;  /* v1.0 stdlib-completeness — populated by urbi_stdlib_register_regexp */
     vm->lobby_proto             = NULL;  /* v0.9.1 Phase 5 — populated by urbi_lobby_native_register */
     vm->job_proto               = NULL;  /* v0.10.10 D7-A — populated by urbi_job_proto_register */
     vm->channel_proto           = NULL;  /* v0.10.11 D6 — populated by urbi_channel_proto_resolve */

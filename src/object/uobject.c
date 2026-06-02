@@ -324,6 +324,8 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->mutex_proto    != NULL) gc_shade_gray(vm, (UCell *)vm->mutex_proto);
     if (vm->date_proto     != NULL) gc_shade_gray(vm, (UCell *)vm->date_proto);
     if (vm->duration_proto != NULL) gc_shade_gray(vm, (UCell *)vm->duration_proto);
+    /* v1.0 stdlib-completeness: RegExp proto singleton. */
+    if (vm->regexp_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->regexp_proto);
 
     /* v0.9.1 Phase 5: Lobby proto singleton.  Carries the
      * `__builtin_lobby_send` native method + the `lobbies` List slot

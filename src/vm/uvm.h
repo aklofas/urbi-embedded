@@ -619,6 +619,11 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *mutex_proto;
     struct UObject *date_proto;
     struct UObject *duration_proto;
+    /* v1.0 stdlib-completeness: RegExp proto singleton.  Allocated by
+     * urbi_stdlib_register_regexp; bound to realm globals by
+     * urbi_stdlib_register_regexp_globals after the registry loop.  NULL
+     * until first VM boot.  GC reachability via object_roots_walker. */
+    struct UObject *regexp_proto;
     /* v0.9.1 Phase 5: Lobby proto singleton.  Allocated by
      * urbi_lobby_native_register (called from urbi_stdlib_boot AFTER
      * primitives so the proto exists before mark_readonly runs).  Bound

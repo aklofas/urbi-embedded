@@ -30,6 +30,7 @@
 #include "stdlib/runtime_types.h"
 #include "stdlib/namespaces.h"
 #include "stdlib/primitives.h"
+#include "stdlib/regexp.h"
 #include "stdlib/isa_method.h"
 #include "stdlib/job_proto.h"
 #include "stdlib/lobby_native.h"
@@ -105,6 +106,14 @@ urbi_stdlib_boot(UVM *vm)
      * register_primitives_globals, again preserving the registry's
      * slot 0..7 layout.  See src/stdlib/primitives.c. */
     rc = urbi_stdlib_register_primitives(vm);
+    if (rc != URBI_OK) return rc;
+
+    /* v1.0 stdlib-completeness: RegExp proto.  Allocates vm->regexp_proto
+     * with its native methods (new / test / match) and the compact
+     * backtracking matcher.  Realm-global binding for "RegExp" is deferred
+     * to urbi_stdlib_register_regexp_globals (post-registry loop), same
+     * pattern as the primitive protos.  See src/stdlib/regexp.c. */
+    rc = urbi_stdlib_register_regexp(vm);
     if (rc != URBI_OK) return rc;
 
     /* v0.9.1 Phase 5: Lobby proto + __builtin_lobby_send native primitive.

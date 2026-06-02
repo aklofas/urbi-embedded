@@ -26,6 +26,7 @@
 #include "stdlib/runtime_types.h"  /* urbi_stdlib_register_runtime_globals — M6 Phase 7 */
 #include "stdlib/namespaces.h"     /* urbi_stdlib_register_namespace_globals — M6 Phase 8 */
 #include "stdlib/primitives.h"     /* urbi_stdlib_register_primitives_globals — M6 Phase 9 */
+#include "stdlib/regexp.h"         /* urbi_stdlib_register_regexp_globals — v1.0 stdlib-completeness */
 #include "stdlib/job_proto.h"      /* urbi_job_proto_register_globals — v0.10.10 D7-A */
 #include "stdlib/lobby_native.h"   /* urbi_lobby_native_register_globals — v0.9.1 Phase 5 */
 #include "stdlib/temporal.h"       /* urbi_temporal_native_register_globals — v0.9.4 Phase 5 */
@@ -450,6 +451,15 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * Duration).  Same post-loop pattern. */
     {
         int rc = urbi_stdlib_register_primitives_globals(vm, realm);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+    }
+
+    /* v1.0 stdlib-completeness: post-registry RegExp global.  Same
+     * post-loop pattern as the primitive globals. */
+    {
+        int rc = urbi_stdlib_register_regexp_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }
