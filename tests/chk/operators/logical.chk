@@ -1,0 +1,18 @@
+# Milestone: v1.0-rc stdlib-completeness
+# Covers: && / || short-circuit logical operators (legacy-faithful).
+true && true
+[00000000] true
+true && false
+[00000001] false
+false && true
+[00000002] false
+false || true
+[00000003] true
+true || false
+[00000004] true
+1 < 2 && 3 < 4
+[00000005] true
+1 < 2 || 5 < 4
+[00000006] true
+false || false
+[00000007] false
