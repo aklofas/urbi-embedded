@@ -1,0 +1,49 @@
+# Milestone: v1.0-rc stdlib-completeness
+# Covers: Dict keys / values / each.
+#
+# keys() / values() return a fresh List (verified via .length() / .get(i),
+# the list_concat.chk convention; Lists print opaque).  Dict iteration
+# order is unspecified at v1.0, so multi-entry results are sorted before
+# inspection.  each() returns nil and is verified by appending visited
+# values into a captured sink List (closure upvalue assignment does not
+# compile at v1.0).
+
+# keys(): one entry.
+var d = Dict.new(); d.set("a", 1); d.keys().length()
+[00000000] 1
+
+var d = Dict.new(); d.set("a", 1); d.keys().get(0)
+[00000001] "a"
+
+# keys(): two entries, sorted for determinism.
+var d = Dict.new(); d.set("a", 1); d.set("b", 2); var k = d.keys().sort(); k.get(0)
+[00000002] "a"
+
+var d = Dict.new(); d.set("a", 1); d.set("b", 2); var k = d.keys().sort(); k.get(1)
+[00000003] "b"
+
+# keys() on empty Dict is empty.
+var d = Dict.new(); d.keys().length()
+[00000004] 0
+
+# values(): single entry.
+var d = Dict.new(); d.set("x", 10); d.values().length()
+[00000005] 1
+
+var d = Dict.new(); d.set("x", 10); d.values().get(0)
+[00000006] 10
+
+# values(): sorted for determinism.
+var d = Dict.new(); d.set("a", 5); d.set("b", 7); var v = d.values().sort(); v.get(0)
+[00000007] 5
+
+var d = Dict.new(); d.set("a", 5); d.set("b", 7); var v = d.values().sort(); v.get(1)
+[00000008] 7
+
+# each(): visits every entry; sink collects values.  Length proves count.
+var sink = List.new(); var d = Dict.new(); d.set("a", 3); d.set("b", 4); d.each(function(k, v) { sink.add(v) }); sink.length()
+[00000009] 2
+
+# each() returns nil.
+var d = Dict.new(); d.set("k", 5); d.each(function(k, v) { v })
+[00000010] nil
