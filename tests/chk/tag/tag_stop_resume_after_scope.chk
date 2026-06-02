@@ -1,0 +1,15 @@
+# Milestone: M10 (design-risks v0.10.15-B, the old T29 TODO)
+# Covers: tag.stop() from inside `t: { ... }` ABSORBS at the matching tag scope
+#         and resumes execution AFTER the scope — legacy urbi semantics: tag.stop
+#         terminates the tagged block, enclosing code continues.  Pre-v1.0 the
+#         unwind walker popped TAG_SCOPE without absorbing -> strand went fatal.
+# matrix-row: tag-stop
+#
+# Case 1: t.stop() truncates the remaining body ("-unreached" never runs) and
+#         the statement continues after the scope ("-after" runs).
+var t = Tag.new(); Realm.log = "start"; t: { Realm.log = Realm.log + "-in"; t.stop(); Realm.log = Realm.log + "-unreached" }; Realm.log = Realm.log + "-after"; Realm.log
+[00000000] "start-in-after"
+# Case 2: nested scopes — inner b.stop() resumes after the INNER scope while the
+#         OUTER scope a continues to completion.
+var a = Tag.new(); var b = Tag.new(); Realm.s = ""; a: { Realm.s = Realm.s + "A"; b: { Realm.s = Realm.s + "B"; b.stop(); Realm.s = Realm.s + "Bx" }; Realm.s = Realm.s + "A2" }; Realm.s = Realm.s + "end"; Realm.s
+[00000000] "ABA2end"

@@ -48,4 +48,12 @@ UVmTagScopeResult vm_push_tag_scope(UVM *vm, UStrand *s);
  * (v1.0-dead) FLAG_HAS_ONLEAVE defensive branch. */
 UVmTagScopeResult vm_pop_tag_scope(UVM *vm, UStrand *s);
 
+/* vm_tag_scope_teardown: run the OP_POP_TAG teardown for the top
+ * UCLEANUP_TAG_SCOPE entry `top` (unlink member, fire leave event, cascade
+ * watchers, pop the cleanup entry, destroy an anonymous tag).  Shared by
+ * vm_pop_tag_scope (normal exit) and the unwind walker's tag.stop() absorption
+ * (v0.10.15-B) so the two paths cannot drift. */
+struct UCleanupEntry;
+void vm_tag_scope_teardown(UStrand *s, struct UCleanupEntry *top);
+
 #endif /* UVM_TAG_SCOPE_H */

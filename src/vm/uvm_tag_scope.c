@@ -100,6 +100,71 @@ vm_push_tag_scope(UVM *vm, UStrand *s)
     return UVM_TAG_SCOPE_NEXT;
 }
 
+/* vm_tag_scope_teardown: the OP_POP_TAG teardown body, shared with the unwind
+ * walker's tag.stop() absorption path (v0.10.15-B).  `top` MUST be the top
+ * UCLEANUP_TAG_SCOPE entry.  Unlinks the entry from the tag's member list,
+ * fires the tier-2 leave event, cascades member watchers to the pending-onleave
+ * queue, pops the cleanup entry, and destroys an anonymous per-scope UTag (a
+ * user-owned tag outlives the scope and is left alive).  Behaviour is identical
+ * whether reached via the OP_POP_TAG opcode (normal exit) or the walker
+ * (tag.stop() absorption) — a single implementation prevents drift. */
+void
+vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
+{
+    /* T30: capture owning_tag before pop — the slot remains valid memory but
+     * is below cleanup_depth after pop and may be reused by a later push.
+     * Capture flags too (v0.10.9-B FLAG_TAG_USER_OWNED) for the same reason. */
+    UTag *tag = top->owning_tag;
+    uint8_t top_flags = top->flags;
+    /* Unlink this entry from tag->member_strands_head (singly-linked
+     * list removal via next_member). Only unlink when tag is non-NULL
+     * — older bytecode emitted before T30 may have owning_tag == NULL. */
+    if (tag != NULL) {
+        UCleanupEntry **pp = &tag->member_strands_head;
+        while (*pp != NULL && *pp != top) {
+            pp = &(*pp)->next_member;
+        }
+        if (*pp == top) {
+            *pp = top->next_member;
+        }
+    }
+    /* T55: tier-2 leave event hook (spec #3 §8.3).
+     * Fires BEFORE the tier-1 watcher cascade so subscribers see the
+     * tag still ambient (spec ordering rationale: tier-1 onleave runs last). */
+    if (tag != NULL && tag->leave_event != NULL &&
+        tag->leave_event->at_watchers_head != NULL) {
+        UValue nil_val = {0};
+        nil_val.kind = (uint8_t)UVAL_NIL;
+        c_event_emit_sync(s->vm, tag->leave_event, nil_val);
+    }
+    /* Watcher cascade: push each watcher registered on this tag to
+     * the pending-onleave queue before cleanup_pop + utag_destroy.
+     * Snapshot-next iteration since push mutates member_watchers_head
+     * (unlinks the watcher from the tag's member list).
+     * Ordering: cascade BEFORE utag_destroy, which asserts the member
+     * list is empty — push empties it. */
+    if (tag != NULL) {
+        UWatcher *ww = tag->member_watchers_head;
+        UWatcher *ww_next;
+        while (ww != NULL) {
+            ww_next = ww->next_in_tag;
+            pending_onleave_queue_push(s->vm, ww);
+            ww = ww_next;
+        }
+    }
+    strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+    /* Destroy only an anonymous per-scope UTag.  A user-owned tag
+     * (v0.10.9-B, FLAG_TAG_USER_OWNED) outlives the scope: it is still
+     * reachable via the user's variable and may have other open member
+     * scopes, so destroying it here would be a use-after-free.
+     * Precondition for the anonymous case (checked by utag_destroy's
+     * assertion): member lists must be empty — we unlinked the only
+     * member above. */
+    if (tag != NULL && (top_flags & FLAG_TAG_USER_OWNED) == 0U) {
+        utag_destroy(s->vm, tag);
+    }
+}
+
 UVmTagScopeResult
 vm_pop_tag_scope(UVM *vm, UStrand *s)
 {
@@ -118,58 +183,7 @@ vm_pop_tag_scope(UVM *vm, UStrand *s)
             vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired at M3");
             return UVM_TAG_SCOPE_HALT;
         }
-        /* T30: capture owning_tag before pop — the slot remains valid memory but
-         * is below cleanup_depth after pop and may be reused by a later push.
-         * Capture flags too (v0.10.9-B FLAG_TAG_USER_OWNED) for the same reason. */
-        UTag *tag = top->owning_tag;
-        uint8_t top_flags = top->flags;
-        /* Unlink this entry from tag->member_strands_head (singly-linked
-         * list removal via next_member). Only unlink when tag is non-NULL
-         * — older bytecode emitted before T30 may have owning_tag == NULL. */
-        if (tag != NULL) {
-            UCleanupEntry **pp = &tag->member_strands_head;
-            while (*pp != NULL && *pp != top) {
-                pp = &(*pp)->next_member;
-            }
-            if (*pp == top) {
-                *pp = top->next_member;
-            }
-        }
-        /* T55: tier-2 leave event hook (spec #3 §8.3).
-         * Fires BEFORE the tier-1 watcher cascade so subscribers see the
-         * tag still ambient (spec ordering rationale: tier-1 onleave runs last). */
-        if (tag != NULL && tag->leave_event != NULL &&
-            tag->leave_event->at_watchers_head != NULL) {
-            UValue nil_val = {0};
-            nil_val.kind = (uint8_t)UVAL_NIL;
-            c_event_emit_sync(s->vm, tag->leave_event, nil_val);
-        }
-        /* Watcher cascade: push each watcher registered on this tag to
-         * the pending-onleave queue before cleanup_pop + utag_destroy.
-         * Snapshot-next iteration since push mutates member_watchers_head
-         * (unlinks the watcher from the tag's member list).
-         * Ordering: cascade BEFORE utag_destroy, which asserts the member
-         * list is empty — push empties it. */
-        if (tag != NULL) {
-            UWatcher *ww = tag->member_watchers_head;
-            UWatcher *ww_next;
-            while (ww != NULL) {
-                ww_next = ww->next_in_tag;
-                pending_onleave_queue_push(s->vm, ww);
-                ww = ww_next;
-            }
-        }
-        strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
-        /* Destroy only an anonymous per-scope UTag.  A user-owned tag
-         * (v0.10.9-B, FLAG_TAG_USER_OWNED) outlives the scope: it is still
-         * reachable via the user's variable and may have other open member
-         * scopes, so destroying it here would be a use-after-free.
-         * Precondition for the anonymous case (checked by utag_destroy's
-         * assertion): member lists must be empty — we unlinked the only
-         * member above. */
-        if (tag != NULL && (top_flags & FLAG_TAG_USER_OWNED) == 0U) {
-            utag_destroy(s->vm, tag);
-        }
+        vm_tag_scope_teardown(s, top);
     }
     return UVM_TAG_SCOPE_NEXT;
 }

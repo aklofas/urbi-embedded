@@ -29,6 +29,7 @@
 #include "runtime/uframe.h"       /* UCallFrame */
 #include "runtime/ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
 #include "vm/uvm.h"          /* dispatch_loop_until_yield */
+#include "vm/uvm_tag_scope.h"     /* vm_tag_scope_teardown (v0.10.15-B absorption) */
 #include "urbi/urbi.h"         /* UErrCode, public API declarations */
 #include "sched/usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
 #include "runtime/umacros.h"      /* URBI_INTERNAL_ASSERT */
@@ -410,11 +411,35 @@ urbi_unwind(UStrand *s)
         }
 
         case UCLEANUP_TAG_SCOPE: {
-            /* TAG_SCOPE: M3 stub — T29 owns absorption (lands UTag).
-             * Walker pops TAG_SCOPE entries and continues unwinding.
-             * UEXEC_TAG_STOP will reach fatal escalation below, which is
-             * correct at T9 since UTag doesn't exist as a real type yet.
-             * TODO T29: implement tag-stop absorption per row 7 §6.1. */
+            /* v0.10.15-B (T29): tag.stop() absorption / resume-after-scope.
+             * If the pending unwind is a TAG_STOP targeting THIS scope's tag,
+             * terminate the tagged block and resume execution AFTER it — legacy
+             * urbi semantics: tag.stop ends the tagged block; enclosing code
+             * continues.  The scope's handler_pc is the post-scope continuation
+             * PC (OP_PUSH_TAG Bx == the empty-onleave/past-scope target, which
+             * is where normal OP_POP_TAG completion lands), so jumping there
+             * resumes exactly as a normal scope exit would.  Run the same
+             * teardown OP_POP_TAG runs (leave event, watcher cascade, anonymous-
+             * tag destroy) via the shared helper so the two paths can't drift.
+             * A user-owned tag (FLAG_TAG_USER_OWNED) is left alive by the helper.
+             * Capture resume_pc before teardown — it pops the entry, after which
+             * e->handler_pc may be overwritten by a later push. */
+            if (s->pending_unwind == UEXEC_TAG_STOP &&
+                e->owning_tag != NULL &&
+                e->owning_tag == s->unwind_target) {
+                uint16_t resume_pc = e->handler_pc;
+                vm_tag_scope_teardown(s, e);
+                s->pc             = s->pc_base + resume_pc;
+                s->pending_unwind = UEXEC_OK;
+                s->unwind_value   = nil;
+                s->unwind_target  = NULL;
+                return;  /* absorbed — strand resumes after the tagged block */
+            }
+
+            /* TAG_SCOPE pass-through (non-matching tag, or non-TAG_STOP unwind).
+             * Walker pops TAG_SCOPE entries and continues unwinding outward.
+             * (Anonymous-tag leak on this pass-through path is a separate,
+             * pre-existing concern tracked outside v0.10.15-B.) */
 
             if (e->flags & FLAG_HAS_ONLEAVE) {
                 /* onleave handler: run under C-1 replace-on-raise.
