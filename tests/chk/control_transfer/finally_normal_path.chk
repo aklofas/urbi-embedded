@@ -1,0 +1,15 @@
+# Milestone: M10 (design-risks v0.11.4-D)
+# Covers: finally runs on the NORMAL (non-unwind) completion path, per
+#         REVIVAL.md S5a ("finally runs on every exit kind regardless").
+#         Three exit paths, all of which must run the finally body exactly once:
+#           1. finally-only, no exception  -> "tf"
+#           2. catch+finally, no exception (catch not taken) -> "tf"
+#           3. catch+finally, body throws and is caught -> "tcf"
+# matrix-row: exceptions
+
+var a = ""; try { a = a + "t" } finally { a = a + "f" }; a
+[00000001] "tf"
+var b = ""; try { b = b + "t" } catch (e) { b = b + "c" } finally { b = b + "f" }; b
+[00000001] "tf"
+var c = ""; try { c = c + "t"; throw 1 } catch (e) { c = c + "c" } finally { c = c + "f" }; c
+[00000001] "tcf"

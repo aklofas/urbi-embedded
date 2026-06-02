@@ -1,6 +1,14 @@
-# Milestone: M3
-# Covers: try/finally with no exception; finally block runs only during unwind,
-#         not on normal exit; side-effect variable reflects try-body assignment.
+# Milestone: M3 (semantics corrected at v1.0 / M10, design-risks v0.11.4-D)
+# Covers: try/finally with no exception; finally ALWAYS runs, including on the
+#         normal fall-through path — REVIVAL.md S5a: "finally runs on every exit
+#         kind (return / throw / tag.stop / cancel) regardless."  The side
+#         variable therefore reflects the finally body's assignment (99), not
+#         the try body's (1).
+# matrix-row: exceptions
+#
+# History: M3 emitted finally only on the unwind path; this fixture originally
+# asserted `side == 1` (the pre-v1.0 bug).  v0.11.4-D fix (uemit_unwind.c,
+# emit_finally_inline) runs the finally body on normal completion too.
 
 var side = 0; try { side = 1 } finally { side = 99 }; side
-[00000001] 1
+[00000001] 99

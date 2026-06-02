@@ -204,6 +204,28 @@ static void emit_catch_handler_section(UEmitter *e, UAstNode *n) {
  * Wave 6 W5: else_body is emitted inline on the normal-exit path (after
  * TRY_END, before JMP past_handler) so finally still wraps it correctly
  * in the catch+finally case.  Guard logic lives in emit_catch_handler_section. */
+
+/* v0.11.4-D: emit an inline copy of the finally body for the NORMAL
+ * (non-unwind) completion path.  The unwind path reaches the finally via the
+ * TRY_BEGIN handler_pc + run_cleanup_with_replace (uunwind.c); the normal
+ * fall-through path must ALSO run the body — REVIVAL.md S5a: "finally runs on
+ * every exit kind (return / throw / tag.stop / cancel) regardless."  Mirrors
+ * the unwind-copy register/block setup but omits OP_RESUME: on the normal path
+ * control simply falls through to the JMP-past-finally that skips the unwind
+ * copy.  Runs exactly once per exit (the body either completes normally and
+ * reaches this inline copy, or unwinds and reaches the handler copy — never
+ * both).  Returns 1 on success, 0 on error (e->error set). */
+static int emit_finally_inline(UEmitter *e, UAstNode *n, uint8_t rd) {
+    e->next_reg = rd;
+    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+    if (!uemit_open_block(e, false)) return 0;
+    emit_expr(e, n->u.try_stmt.finally_body);
+    if (e->error != EMIT_OK) { uemit_close_block(e); return 0; }
+    if (!uemit_close_block(e)) return 0;
+    return 1;
+}
+
 static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
     const int has_catch   = (n->u.try_stmt.catch_body   != NULL);
     const int has_finally = (n->u.try_stmt.finally_body != NULL);
@@ -271,6 +293,11 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* OP_TRY_END (outer) */
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+
+        /* v0.11.4-D: normal-path finally.  Both the normal-completion path and
+         * the post-catch path converge here (after the outer TRY_END), so this
+         * single inline copy runs the finally body on every non-unwind exit. */
+        if (!emit_finally_inline(e, n, rd)) return 0U;
 
         /* JMP past finally */
         int jmp_past_finally_pc = (int)emit_instr_count(e);
@@ -373,6 +400,10 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+
+        /* v0.11.4-D: normal-path finally — run the body on fall-through before
+         * jumping past the unwind copy (REVIVAL.md S5a). */
+        if (!emit_finally_inline(e, n, rd)) return 0U;
 
         /* JMP past finally (normal exit path) */
         int jmp_past_finally_pc = (int)emit_instr_count(e);

@@ -251,22 +251,18 @@ UTEST(at_handler_body_with_call_drains_dirty)
     urbi_vm_destroy(&vm);
 }
 
-/* === Test 4: try/catch/finally semantic probe ==========================
+/* === Test 4: try/catch/finally runs finally on a caught throw ===========
  *
- * Discovered 2026-05-16 on eye_demo: `try { throw } catch (e) {} finally {}`
- * does NOT run the finally arm when the catch absorbs the throw.  Per
- * tests/chk/control_transfer/try_finally.chk ("finally runs only during
- * unwind, not on normal exit") + the emit_try_frame structure
- * (src/emit/uemit_unwind.c around line 140 — outer FLAG_HAS_FINALLY
- * wraps inner FLAG_HAS_CATCH; catch absorbs in inner; outer is reached
- * via normal flow, popping TRY_END without running finally).
+ * Originally discovered 2026-05-16 on eye_demo as a footgun: `try { throw }
+ * catch (e) {} finally {}` did NOT run the finally arm when the catch absorbed
+ * the throw, because emit_try_frame reached the outer FLAG_HAS_FINALLY frame
+ * via normal flow (post-catch), popping TRY_END without running finally.
  *
- * Result: in `try { ... } catch (e) { ... } finally { ... }`, finally
- * NEVER runs because catch always absorbs (M3 match-all pattern).
- * This is a footgun for users coming from Java/Python/C# where finally
- * runs unconditionally.  Documents the current behavior so a future
- * spec discussion can decide whether to keep or change it. */
-UTEST(try_catch_finally_does_not_run_finally_on_caught_throw)
+ * Fixed at v1.0 / M10 (design-risks v0.11.4-D): finally runs on EVERY exit
+ * kind per REVIVAL.md S5a — the normal-completion and post-catch paths now
+ * emit an inline copy of the finally body (uemit_unwind.c, emit_finally_inline).
+ * So a caught throw runs catch once AND finally once. */
+UTEST(try_catch_finally_runs_finally_on_caught_throw)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
@@ -304,7 +300,7 @@ UTEST(try_catch_finally_does_not_run_finally_on_caught_throw)
     UValue fn = utest_e2e_make_nil();
     UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "finally_n", 9, &fn));
     UASSERT_EQ((int)UVAL_INT, (int)fn.kind);
-    UASSERT_EQ(0LL, fn.v.i);   /* finally did NOT run — caught throws bypass it */
+    UASSERT_EQ(1LL, fn.v.i);   /* finally runs exactly once, even on a caught throw (S5a) */
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
@@ -373,8 +369,8 @@ test_whenever_double_fire_suite(void)
               at_handler_body_without_call_does_not_drain_dirty);
     utest_run("whenever_double_fire: at-body with call DOES drain dirty (workaround)",
               at_handler_body_with_call_drains_dirty);
-    utest_run("whenever_double_fire: try/catch/finally with caught throw — finally does NOT run (urbi semantic)",
-              try_catch_finally_does_not_run_finally_on_caught_throw);
+    utest_run("whenever_double_fire: try/catch/finally with caught throw — finally runs exactly once (S5a)",
+              try_catch_finally_runs_finally_on_caught_throw);
     utest_run("whenever_double_fire: nested try/finally in try/catch — finally DOES run",
               nested_try_finally_in_try_catch_runs_finally);
 }
