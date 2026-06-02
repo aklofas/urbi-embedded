@@ -93,6 +93,12 @@ int urbi_stdlib_list_remove_first_equal(struct UVM *vm,
  * OOM. */
 struct UObject *urbi_stdlib_list_new_empty(struct UVM *vm);
 
+/* Ungated List-read accessors (UObject* form) for stdlib code outside the
+ * ROS2 component.  len returns 0 and get returns nil for NULL/invalid/out-of-
+ * range, never failing. */
+size_t urbi_stdlib_list_len(struct UVM *vm, struct UObject *list_obj);
+UValue urbi_stdlib_list_get(struct UVM *vm, struct UObject *list_obj, size_t i);
+
 #ifdef __cplusplus
 }
 #endif

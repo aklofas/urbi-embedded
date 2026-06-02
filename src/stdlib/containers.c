@@ -994,6 +994,28 @@ urbi_stdlib_list_append_value(UVM *vm, UObject *list_obj, UValue item)
     return URBI_OK;
 }
 
+/* Ungated list-read accessors mirroring the ROS2-gated urbi_list_len/get,
+ * but taking a UObject* (like urbi_stdlib_list_append_value) so stdlib code
+ * outside the ROS2 component (e.g. String.join/format) can read List backing
+ * without the URBI_ENABLE_ROS2 gate.  Internal; not public ABI. */
+size_t
+urbi_stdlib_list_len(UVM *vm, UObject *list_obj)
+{
+    if (vm == NULL || list_obj == NULL) return 0U;
+    UList *l = (UList *)fetch_storage_ptr(vm, list_obj);
+    if (l == NULL) return 0U;
+    return l->len;
+}
+
+UValue
+urbi_stdlib_list_get(UVM *vm, UObject *list_obj, size_t i)
+{
+    if (vm == NULL || list_obj == NULL) return urbi_make_nil();
+    UList *l = (UList *)fetch_storage_ptr(vm, list_obj);
+    if (l == NULL || i >= l->len) return urbi_make_nil();
+    return l->items[i];
+}
+
 int
 urbi_stdlib_list_remove_first_equal(UVM *vm, UObject *list_obj, UValue item)
 {
