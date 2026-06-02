@@ -1,0 +1,10 @@
+# Milestone: M6 (verified at v1.0 / M10, design-risks compat2-E)
+# Covers: adjacent string-literal concatenation ("a" "b" -> "ab"), the
+#         C/legacy-urbi lexer feature where two or more string literals
+#         separated only by whitespace fuse into one at lex time.
+# matrix-row: adjacent-string-concat
+
+"foo" "bar"
+[00000000] "foobar"
+"a" "b" "c"
+[00000000] "abc"

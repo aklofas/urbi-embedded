@@ -123,9 +123,9 @@
 | Time literals (ms/us/ns/s/m/h/d) | implemented | — |
 | Angle literals (`180deg`, `1rad`, `200grad`) | implemented | legacy F8; Wave 6 W4 — `deg`/`rad`/`grad` suffixes produce `TOK_FLOAT` in radians; `Math.pi` is a named constant (not a lexer literal); see `tests/chk/lex/angle-literals.chk` |
 | Physical literals | deferred-v1.x | legacy F8; no legacy corpus footprint; `docs/urbi-embedded-design-risks.md` Wave 6 deferral |
-| String literals | implemented | — |
+| String literals | implemented | incl. adjacent-literal concatenation (`"a" "b"` → `"ab"`), proven by `tests/chk/lex/adjacent_string_concat.chk` (compat2-E verified, v1.0) |
 | Block comments | dropped (locked non-nesting) | legacy F7; Wave 6 W6 — scanner uses C-style non-nesting; see [LANG-CONVENTIONS.md §7](LANG-CONVENTIONS.md#7-block-comments--divergence-from-legacy) and [migration recipe](migration/block-comments-migration.md) |
-| Synclines (`//#line`, `//#push`, `//#pop`) | implemented | needs compat fixture per legacy F16 |
+| Synclines (`//#line`, `//#push`, `//#pop`) | implemented | proven by `tests/unit/test_lexer_syncline.c` (transient lexer line-tracking state; not a `.chk`-value-observable feature). compat2-E verified, v1.0 |
 
 ### Object model
 
