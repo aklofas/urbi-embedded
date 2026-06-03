@@ -291,11 +291,40 @@ walk_uevent(struct UVM *vm, void *payload,
 
     /* Walk the at_watchers_head intrusive list.  UWatcher embeds UCell as
      * its first member (type_tag at offset 0), so the cast to UCell* is
-     * well-defined (same as the UObject/UShape walkers above). */
+     * well-defined (same as the UObject/UShape walkers above).
+     *
+     * GC-008 (v1.0 — design-risks v1.0-stm32f4-hang): UWatcher is
+     * POOL-allocated, not enrolled on all_cells_head, so gc_shade_gray on the
+     * watcher cell is a silent no-op (find_sidecar_for_cell returns NULL) and
+     * does NOT trace the watcher's GC-managed children.  Active (cond)
+     * watchers have their condition/body/onleave marked explicitly by
+     * watcher_table_walk_roots, but AT_EVENT / WHENEVER_EVENT watchers live
+     * only on this at_watchers_head chain — they are never reached by that
+     * root walker.  Without marking them here, an `at (event?) body` handler's
+     * body closure is collected on the next GC cycle; w->body then dangles and
+     * the next event spawn runs whatever proto now occupies that freed cell.
+     * Mark the closures directly here, mirroring watcher_table_walk_roots. */
     {
         UWatcher *w = ev->at_watchers_head;
         while (w != NULL) {
-            gc_shade_gray(vm, (UCell *)w);
+            UValue tmp;
+            gc_shade_gray(vm, (UCell *)w);  /* harmless no-op for pool cells */
+            if (w->condition != NULL) {
+                tmp.kind = UVAL_CLOSURE;
+                tmp.v.p  = (void *)w->condition;
+                cb(vm, &tmp, ctx);
+            }
+            if (w->body != NULL) {
+                tmp.kind = UVAL_CLOSURE;
+                tmp.v.p  = (void *)w->body;
+                cb(vm, &tmp, ctx);
+            }
+            if (w->onleave != NULL) {
+                tmp.kind = UVAL_CLOSURE;
+                tmp.v.p  = (void *)w->onleave;
+                cb(vm, &tmp, ctx);
+            }
+            cb(vm, &w->last_value_cache, ctx);
             w = w->next_in_event;
         }
     }

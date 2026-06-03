@@ -75,17 +75,6 @@ cell_is_alive(UVM *vm, UCell *target)
     return 0;
 }
 
-static void
-make_trivial_closure(UClosure *cl, UProto *proto, uint32_t *instr_buf)
-{
-    instr_buf[0] = (uint32_t)OP_RET;
-    memset(proto, 0, sizeof(*proto));
-    proto->instructions = instr_buf;
-    proto->instr_count  = 1;
-    memset(cl, 0, sizeof(*cl));
-    cl->proto = proto;
-}
-
 /* === File-static root cell for test root provider === */
 static UCell *g_ev_test_root = NULL;
 
@@ -111,12 +100,22 @@ ev_test_root_provider(struct UVM *vm, UGcRootCallback cb, void *ctx)
  * Complementary: unrooted UEvent → collected after GC.
  * =================================================================== */
 
+/* Dummy native body for the at-event watcher.  v1.0 (design-risks
+ * v1.0-stm32f4-hang / GC-008): walk_uevent now marks w->body, so the body must
+ * be a real GC-managed cell — a stack UClosure would be GC-traced into garbage
+ * children.  A native closure has no proto to walk, so it is the minimal
+ * GC-managed body for this rooting test. */
+static int
+ev_gc_dummy_body(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    if (out) *out = urbi_make_nil();
+    return 0;
+}
+
 UTEST(uevent_walker_shades_at_watchers_chain_not_waiters)
 {
     UVM vm;
-    uint32_t instr_buf[1];
-    UProto   body_proto;
-    UClosure body_cl;
 
     urbi_vm_init(&vm, NULL, NULL);
     g_ev_test_root = NULL;
@@ -134,10 +133,11 @@ UTEST(uevent_walker_shades_at_watchers_chain_not_waiters)
     ustrand_init(&s, &vm);
     s.realm = r;
 
-    make_trivial_closure(&body_cl, &body_proto, instr_buf);
+    UClosure *body_cl = urbi_make_native_closure(&vm, ev_gc_dummy_body);
+    UASSERT(body_cl != NULL);
 
     UWatcherInstallResult ri =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, ev, &body_cl, NULL);
+        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, ev, body_cl, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)ri);
     UASSERT(ev->at_watchers_head != NULL);
 
