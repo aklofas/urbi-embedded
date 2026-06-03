@@ -657,6 +657,41 @@ dispatch:
                         steps_consumed++;
                         goto exit_strand;
                     }
+                    /* v1.0 (design-risks v1.0-stm32f4-hang): run the reactive
+                     * eval pass after a successful native call.
+                     *
+                     * watcher_eval_dirty normally runs only at the dispatcher
+                     * `safepoint:` label, reached by a bytecode call, a backward
+                     * branch, or a non-top OP_RET — NOT by a native call, which
+                     * returns via NEXT().  An event/watcher body whose state
+                     * mutation is followed only by a native call therefore never
+                     * triggers the eval: e.g. the STM32F4 mandelbrot handler
+                     * `at (gyro_tick?) { ...; Realm.redraw_requested = true;
+                     * lcd_fill_rect(...) }`.  Its observer_dirty bumps then
+                     * accumulate and the rising edge is never seen, so the
+                     * demo's loader-strand `while (true) { ...;
+                     * waituntil (Realm.redraw_requested) }` never wakes
+                     * (test_whenever_double_fire.c documents the same "body
+                     * needs a call to drain dirty" contract — but only bytecode
+                     * calls qualified; native calls did not).
+                     *
+                     * We run only the drain + eval here, NOT the full safepoint
+                     * (no GC slice, no per-strand budget yield), to keep native
+                     * calls cheap and to avoid shifting GC color/timing.  This
+                     * is bounded: the eval runs mid-body while the running body
+                     * is still its watcher's body_strand, so
+                     * do_spawn_body_coroutine's gate prevents the unbounded
+                     * level-trigger re-spawn that a *post-dispatch* drain caused
+                     * (the reverted S46 attempt — see test_whenever_double_fire).
+                     * Skip when already inside an eval/scratch/install context
+                     * (mirrors urbi_emit_slot_change_slow's re-entry guard); the
+                     * enclosing pass will drain on return. */
+                    if (!vm->watchers->in_eval && !vm->watchers->in_install
+                        && !vm->watchers->in_scratch) {
+                        urbi_drain_deferred_slot_changes(vm);
+                        if (vm->watchers->dirty_count > 0)
+                            watcher_eval_dirty(vm);
+                    }
                     NEXT();
                 }
                 if (rc == UEXEC_THROW) {
