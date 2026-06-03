@@ -32,6 +32,14 @@ Realm.redraw_requested = false;
 Realm.pan_dx = 0.0;
 Realm.pan_dy = 0.0;
 
+// Gyro deadzone (mdeg/s): the L3GD20 reports a small nonzero rate at rest
+// (bias + noise).  Without a deadzone that bias integrates into pan_dx/pan_dy
+// every 50 ms tick until it crosses the pan threshold, so the view drifts and
+// the progressive render restarts coarse before it can refine.  Only integrate
+// rotation whose magnitude exceeds this threshold = intentional tilt.  Tune to
+// the board's resting bias if drift persists.
+Realm.GYRO_DEADZONE = 3000.0;
+
 // === Mandelbrot iteration ==================================================
 //
 // Returns iteration count in [0, MAX_ITER].  Uses local float variables for
@@ -187,8 +195,22 @@ at (gyro_tick?) {
     // the LCD's 90° CCW rotation: physical-X gyro drives horizontal pan,
     // physical-Y gyro drives vertical pan.  Empirically tuned 2026-05-17
     // for the landscape view.
-    Realm.pan_dx = Realm.pan_dx + gx * 0.000002 * Realm.span;
-    Realm.pan_dy = Realm.pan_dy + gy * 0.000002 * Realm.span;
+    //
+    // Deadzone: only integrate rotation above GYRO_DEADZONE so at-rest bias
+    // does not accumulate into a drifting pan.  v1.0 urbiscript has no ||/abs,
+    // so test each sign with a separate if (0.0 - D is the negative bound).
+    if (gx > Realm.GYRO_DEADZONE) {
+        Realm.pan_dx = Realm.pan_dx + gx * 0.000002 * Realm.span
+    };
+    if (gx < 0.0 - Realm.GYRO_DEADZONE) {
+        Realm.pan_dx = Realm.pan_dx + gx * 0.000002 * Realm.span
+    };
+    if (gy > Realm.GYRO_DEADZONE) {
+        Realm.pan_dy = Realm.pan_dy + gy * 0.000002 * Realm.span
+    };
+    if (gy < 0.0 - Realm.GYRO_DEADZONE) {
+        Realm.pan_dy = Realm.pan_dy + gy * 0.000002 * Realm.span
+    };
     if (Realm.pan_dx > 0.01 * Realm.span) {
         Realm.cx = Realm.cx + Realm.pan_dx;
         Realm.pan_dx = 0.0;
