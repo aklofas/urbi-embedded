@@ -53,70 +53,44 @@ UTEST(uvm_init_returns_ok_on_success) {
     urbi_vm_destroy(&vm);
 }
 
-UTEST(uvm_init_returns_oom_when_alloc_fails_early) {
-    /* Some early allocation index in [0, 30) MUST trigger URBI_ERR_OOM.
-     * If none does, either no allocations happen in urbi_vm_init (regression:
-     * the OOM guard has nothing to guard) or all early allocs are optional
-     * (no guard fires).  Either case violates the VM-010 contract. */
+/* Single [0,30) bisect pass that proves all three OOM contracts at once.
+ * Previously three separate tests each walked the same range calling
+ * urbi_vm_init+destroy 30 times (~90 cycles total); they only differed in
+ * the post-condition asserted, so one pass records all three signals.
+ *
+ *   1. found_oom            — VM-010: at least one early allocation surfaces
+ *                             URBI_ERR_OOM (the OOM guards are reachable).
+ *   2. oom_index_count >= 2 — VM-024 coverage: at least two distinct
+ *                             call-indices surface OOM, proving multiple
+ *                             use-site guards fire (documented paths:
+ *                             event_ring / deferred_slot_changes /
+ *                             op_overload_ic, plus watcher_pool, intern
+ *                             table, and other early allocs).
+ *   3. destroy-safety       — urbi_vm_destroy MUST be callable on every
+ *                             partial-init state without crashing; it runs
+ *                             on each iteration below, so reaching the final
+ *                             assertion proves no destroy aborted. */
+UTEST(uvm_init_oom_bisect) {
     int found_oom = 0;
+    int oom_index_count = 0;
     for (int fail_at = 0; fail_at < 30; fail_at++) {
         UVM vm;
         FailingAllocCtx c = {.fail_at = fail_at, .call_count = 0};
         memset(&vm, 0, sizeof(vm));
         int rc = urbi_vm_init(&vm, failing_alloc, &c);
-        urbi_vm_destroy(&vm);
+        urbi_vm_destroy(&vm);  /* MUST NOT crash on any partial-init state */
         if (rc == URBI_ERR_OOM) {
             found_oom = 1;
+            oom_index_count++;
         }
     }
-    UASSERT(found_oom);
-}
-
-UTEST(uvm_init_returns_oom_for_multiple_paths) {
-    /* Cover at least 2 distinct OOM call-indices in [0, 30).  Each return
-     * URBI_ERR_OOM proves a use-site guard fires.  The three documented
-     * paths (event_ring / deferred_slot_changes / op_overload_ic) plus
-     * watcher_pool, intern table, and other early allocs all qualify. */
-    int distinct_oom_indices = 0;
-    for (int fail_at = 0; fail_at < 30; fail_at++) {
-        UVM vm;
-        FailingAllocCtx c = {.fail_at = fail_at, .call_count = 0};
-        memset(&vm, 0, sizeof(vm));
-        int rc = urbi_vm_init(&vm, failing_alloc, &c);
-        urbi_vm_destroy(&vm);
-        if (rc == URBI_ERR_OOM) {
-            distinct_oom_indices++;
-        }
-    }
-    /* Expect at least 2 distinct paths to surface OOM.  Empirically the
-     * documented three (event_ring, deferred_slot_changes, op_overload_ic)
-     * land at distinct call-indices; bisecting the [0,30) range catches
-     * them all. */
-    UASSERT(distinct_oom_indices >= 2);
-}
-
-UTEST(uvm_init_destroy_safe_after_oom) {
-    /* The partial-init safety contract: urbi_vm_destroy MUST be callable
-     * after urbi_vm_init returns URBI_ERR_OOM, without crashing.  Walk
-     * every alloc-index in [0, 30) and confirm destroy never aborts. */
-    for (int fail_at = 0; fail_at < 30; fail_at++) {
-        UVM vm;
-        FailingAllocCtx c = {.fail_at = fail_at, .call_count = 0};
-        memset(&vm, 0, sizeof(vm));
-        int rc = urbi_vm_init(&vm, failing_alloc, &c);
-        (void)rc;
-        urbi_vm_destroy(&vm);  /* MUST NOT crash on any partial-init state */
-    }
-    UASSERT(1);  /* reached this line: all destroys completed without crash */
+    UASSERT(found_oom);            /* VM-010: guards reachable */
+    UASSERT(oom_index_count >= 2); /* VM-024: multiple use-site guards fire */
 }
 
 void test_vm_init_oom_suite(void) {
     utest_run("uvm_init_returns_ok_on_success",
               uvm_init_returns_ok_on_success);
-    utest_run("uvm_init_returns_oom_when_alloc_fails_early",
-              uvm_init_returns_oom_when_alloc_fails_early);
-    utest_run("uvm_init_returns_oom_for_multiple_paths",
-              uvm_init_returns_oom_for_multiple_paths);
-    utest_run("uvm_init_destroy_safe_after_oom",
-              uvm_init_destroy_safe_after_oom);
+    utest_run("uvm_init_oom_bisect (found_oom + multi-path + destroy-safe)",
+              uvm_init_oom_bisect);
 }
