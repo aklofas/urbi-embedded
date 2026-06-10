@@ -1,7 +1,9 @@
 __aeabi_d2f
 __aeabi_d2lz
+__aeabi_d2ulz
 __aeabi_dadd
 __aeabi_dcmpeq
+__aeabi_dcmpgt
 __aeabi_dcmplt
 __aeabi_ddiv
 __aeabi_dmul
