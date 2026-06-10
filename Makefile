@@ -200,6 +200,9 @@ RUNNER_WRAPPER ?=
 # Each .d file lists header dependencies for one .o file (+ phony entries
 # per header so a deleted header doesn't break the build).  Use sinclude
 # so initial build (no .d files yet) doesn't warn.
+# The .d files precede `all:`, so without an explicit default goal a bare
+# `make` in an already-built tree picks up the first .d rule instead.
+.DEFAULT_GOAL := all
 sinclude $(shell find build -name '*.d' 2>/dev/null)
 
 all: $(LIB) $(LIBURBI_AUX) $(BUILDDIR)/urbi
