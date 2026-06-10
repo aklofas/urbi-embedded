@@ -27,7 +27,13 @@ case "$ARCHIVE" in
     *esp32s3*)     NM_CMD=xtensa-esp-elf-nm ;;
     *stm32f4*)     NM_CMD=arm-none-eabi-nm ;;
     *cross-arm*)   NM_CMD=arm-none-eabi-nm ;;
-    *cross-riscv*) NM_CMD=riscv64-unknown-elf-nm ;;
+    *cross-riscv*) if command -v riscv64-unknown-elf-nm >/dev/null 2>&1; then
+                       NM_CMD=riscv64-unknown-elf-nm
+                   else
+                       # xpack ships gcc/ar under both prefixes but binutils
+                       # extras (nm) only as riscv-none-elf-*.
+                       NM_CMD=riscv-none-elf-nm
+                   fi ;;
     *)             NM_CMD=nm ;;
 esac
 
