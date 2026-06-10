@@ -146,7 +146,7 @@ re_match_here(const char *re, size_t relen, const char *s, const char *s_end)
     }
 
     size_t alen = re_atom_len(re, relen);
-    char quant = (relen > alen) ? re[alen] : '\0';
+    char quant = (char)((relen > alen) ? re[alen] : '\0');
 
     if (quant == '*' || quant == '+') {
         const char *rest = re + alen + 1U;
