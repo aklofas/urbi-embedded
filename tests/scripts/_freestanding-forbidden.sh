@@ -10,4 +10,8 @@
 # only after documenting an accepted exception or guarding the
 # offending source under #if !defined(URBI_BYTECODE_ONLY).
 
-FORBIDDEN_LIBC_REGEX='^(printf|fprintf|sprintf|snprintf|malloc|calloc|realloc|free|fopen|fclose|fread|fwrite|strtod|strtol|strtoul|abort|exit)$'
+# refactor-3 GATE-06: puts/putchar/fputs/fputc added because gcc rewrites
+# printf("...\n") → puts() at any -O level — the old list missed the
+# compiler's own substitution; vsnprintf/vprintf/strdup close the remaining
+# stdio/alloc family gaps.
+FORBIDDEN_LIBC_REGEX='^(printf|fprintf|sprintf|snprintf|vsnprintf|vprintf|puts|putchar|fputs|fputc|strdup|malloc|calloc|realloc|free|fopen|fclose|fread|fwrite|strtod|strtol|strtoul|abort|exit)$'
