@@ -206,17 +206,24 @@ $(BUILDDIR)/src/%.o: src/%.c
 # generated header exists before any src/ros/*.o (incl. the generated .c)
 # compiles.
 ifeq ($(URBI_ENABLE_ROS2),1)
-$(ROS2_GEN_C) $(ROS2_GEN_H): tools/urbi-rosgen.py src/ros/msgs/manifest.json
+# refactor-3 BLD-01: grouped target (&:) — one codegen run produces both
+# files; a plain two-target rule would run the recipe once PER target
+# under -j and race against itself.
+$(ROS2_GEN_C) $(ROS2_GEN_H) &: tools/urbi-rosgen.py src/ros/msgs/manifest.json
 	@mkdir -p $(ROS2_GEN_DIR)
 	python3 tools/urbi-rosgen.py src/ros/msgs/manifest.json $(ROS2_GEN_C) $(ROS2_GEN_H)
-$(BUILDDIR)/src/ros/%.o: $(ROS2_GEN_H)
+# refactor-3 BLD-01: explicit per-object prerequisites.  (A recipe-less
+# PATTERN rule here would CANCEL the %.o pattern, not add a prereq —
+# that was the original bug.)
+ROS2_OBJS := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(ROS2_SRCS))
+$(ROS2_OBJS): $(ROS2_GEN_H)
 endif
 
 ifeq ($(URBI_ROS_BACKEND),rcl)
-$(ROS2_RCL_GEN_C) $(ROS2_RCL_GEN_H): tools/urbi-rosgen.py src/ros/msgs/manifest.json
+$(ROS2_RCL_GEN_C) $(ROS2_RCL_GEN_H) &: tools/urbi-rosgen.py src/ros/msgs/manifest.json
 	@mkdir -p $(ROS2_GEN_DIR)
 	python3 tools/urbi-rosgen.py --target rcl src/ros/msgs/manifest.json $(ROS2_RCL_GEN_C) $(ROS2_RCL_GEN_H)
-$(BUILDDIR)/src/ros/%.o: $(ROS2_RCL_GEN_H)
+$(ROS2_OBJS): $(ROS2_RCL_GEN_H)
 endif
 
 $(BUILDDIR)/tests/unit/%.o: tests/unit/%.c
@@ -793,7 +800,12 @@ test-trace-decode:
 # captures a tiny run to a URBT dump, decodes it, and asserts valid Chrome
 # Trace JSON.  Skips cleanly if python3 is missing.
 .PHONY: test-trace-capture
-test-trace-capture: urbi-trace
+# refactor-3 BLD-02a: depend on test-trace (same build/host-trace tree, same
+# CFLAGS string) instead of urbi-trace, so releasetest Phase 1's -j fanout
+# cannot run two recursive makes into build/host-trace concurrently.
+# test-trace's recursive `make test` builds build/host-trace/urbi as a side
+# effect (test-chk prerequisite), which is the binary the capture script uses.
+test-trace-capture: test-trace
 	@sh tests/scripts/check-trace-capture.sh
 
 # v0.11.2: GDB walker smoke gate.  Loads tools/gdb/urbi.py against a debug
@@ -874,7 +886,7 @@ test-urobotics:
 		test test-chk-urobotics
 
 .PHONY: check-urobotics-determinism
-check-urobotics-determinism:
+check-urobotics-determinism: tools/urbi-compile-stdlib
 	@sh tests/scripts/check-urobotics-determinism.sh
 
 # test-chk-ros-urobotics — runs all tests/chk/ros-urobotics/*.chk under
@@ -1340,6 +1352,10 @@ releasetest:
 	     phase0_end=$$(date +%s); \
 	     echo "=== releasetest: Phase 0 passed ($$((phase0_end - phase0_start)) s) ==="; \
 	 fi
+	@echo "=== releasetest: pre-fanout regeneration (serialized; refactor-3 BLD-02c) ==="
+	@$(MAKE) --no-print-directory tools/urbi-compile-stdlib src/stdlib/urbi_stdlib_bytecode.gen.c
+	@$(MAKE) --no-print-directory URBI_ENABLE_UROBOTICS=1 TARGET=host-urobotics src/urobotics/urobotics_bytecode.gen.c
+	@$(MAKE) --no-print-directory URBI_ENABLE_ROS2=1 TARGET=host-ros2 src/ros/generated/ros_msgs.gen.c src/ros/generated/ros_msgs.gen.h
 	@echo "=== releasetest: 2-phase sweep ==="
 	@echo "Phase 1 ($(words $(RELEASETEST_PHASE1)) gates, -j$(RELEASETEST_JOBS) -O$(RELEASETEST_OUTPUT)): $(RELEASETEST_PHASE1)"
 	@echo "Phase 2 ($(words $(RELEASETEST_PHASE2)) gate, sequential): $(RELEASETEST_PHASE2)"

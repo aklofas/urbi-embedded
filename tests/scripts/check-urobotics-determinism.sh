@@ -5,7 +5,13 @@
 # tool (no URBI_ENABLE_UROBOTICS — the tool just compiles .u -> bytecode; the
 # gate is irrelevant to baking and would trip the v0.12.0-H link trap).
 set -e
-make tools/urbi-compile-stdlib >/dev/null
+# refactor-3 BLD-02b: no nested make — the bake tool is a Makefile
+# prerequisite of the check-urobotics-determinism target.  A nested make
+# raced the top-level graph's own bake-tool builds under releasetest -j.
+[ -x ./tools/urbi-compile-stdlib ] || {
+    echo "check-urobotics-determinism: tools/urbi-compile-stdlib missing — invoke via 'make check-urobotics-determinism'"
+    exit 1
+}
 A=$(mktemp); B=$(mktemp)
 ./tools/urbi-compile-stdlib src/urobotics/UROBOTICS_ORDER.txt src/urobotics "$A" urbi_urobotics_bytecode >/dev/null
 ./tools/urbi-compile-stdlib src/urobotics/UROBOTICS_ORDER.txt src/urobotics "$B" urbi_urobotics_bytecode >/dev/null
