@@ -2,6 +2,10 @@
 # Covers: destroying a Realm cancels all periodics/watchers registered in
 #         that Realm; pending bodies do not fire after destruction.
 #
+# blocked: <v1.0-rc> — needs a chk-host-driver realm-destroy directive
+#   (`## host: realm-destroy <name>`) to drive urbi_realm_destroy out-of-band;
+#   vacuous placeholder annotated at v0.13.0 (refactor-3 CHK-01)
+#
 # Status at v0.9.4: SKIPPED — no urbiscript surface for the action.
 #
 # urbi_realm_destroy is a C-API entry only.  A urbiscript chunk running
