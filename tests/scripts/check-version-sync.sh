@@ -97,22 +97,21 @@ fi
 # === (4) README tag references vs latest tag — ALL urbi-tag mentions ===
 #
 # Tag suffix can contain mixed case (e.g. v0.10.11-channel-and-isA).
-# Lines mentioning ESP-IDF carry the toolchain pin (e.g. "ESP-IDF v6.0.1")
-# — those are not urbi release tags and are excluded.
+# "ESP-IDF vX.Y.Z" mentions carry the toolchain pin — those are not urbi
+# release tags.  The exclusion is mention-granular (the ESP-IDF substring
+# is stripped from each line BEFORE tag extraction), not line-granular: a
+# urbi tag sharing a line with an ESP-IDF pin must still be checked.
 
 README_TAG_FOUND=0
 while IFS=: read -r lineno tagmention; do
     [ -n "$tagmention" ] || continue
-    line=$(sed -n "${lineno}p" README.md)
-    case "$line" in
-        *ESP-IDF*) continue ;;
-    esac
     README_TAG_FOUND=1
     if [ "$tagmention" != "$LATEST_TAG" ]; then
         fail_msg "README tag drift at line $lineno: $tagmention"
         echo "    latest git tag:   $LATEST_TAG" >&2
     fi
-done < <(grep -noE 'v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9-]+)?' README.md || true)
+done < <(sed -E 's/ESP-IDF v[0-9.]+//g' README.md \
+         | grep -noE 'v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9-]+)?' || true)
 
 if [ "$README_TAG_FOUND" -eq 0 ]; then
     fail_msg "README.md contains no tag reference (vX.Y.Z[-name])"

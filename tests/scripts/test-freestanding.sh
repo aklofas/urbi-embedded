@@ -31,6 +31,15 @@ case "$ARCHIVE" in
     *)             NM_CMD=nm ;;
 esac
 
+# A missing cross-nm must fail loudly, not pass vacuously (the nm stderr
+# redirect below would otherwise swallow command-not-found into an empty
+# symbol list — same trap as the strict-tidy gate, refactor-3 GATE-01).
+command -v "$NM_CMD" >/dev/null 2>&1 || {
+    echo "FAIL: $NM_CMD not found in PATH — the freestanding gate cannot run." >&2
+    echo "      install the matching cross toolchain (or fix PATH) and re-run." >&2
+    exit 1
+}
+
 . "$(dirname "$0")/_freestanding-forbidden.sh"
 LIBC_SYMS=$($NM_CMD "$ARCHIVE" 2>/dev/null \
             | awk -v re="$FORBIDDEN_LIBC_REGEX" '$1 == "U" && $2 ~ re {print $2}' \

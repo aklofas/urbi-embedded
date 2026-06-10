@@ -33,6 +33,14 @@ CPPFLAGS_BASE="-Iinclude -Isrc -Itests/unit"
 CC=${CC:-cc}
 NM=${NM:-nm}
 
+# A missing nm must fail loudly, not pass vacuously (the nm stderr redirect
+# below would otherwise swallow command-not-found into an empty leak list —
+# same trap as the strict-tidy gate, refactor-3 GATE-01).
+command -v "$NM" >/dev/null 2>&1 || {
+    echo "FAIL: $NM not found in PATH — the host freestanding gate cannot run." >&2
+    exit 1
+}
+
 fail_count=0
 fail_report=""
 

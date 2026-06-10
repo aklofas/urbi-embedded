@@ -1,6 +1,6 @@
 # api-manifest-symbol-allowlist.txt — TEMPORARY ratchet (refactor-3 GATE-04).
 #
-# Every entry is an exported [TDRB] symbol in liburbi.a/liburbi_aux.a that
+# Every entry is an exported [TDRBWVCu] symbol in liburbi.a/liburbi_aux.a that
 # violates the urbi_/URBI_ namespace rule (STYLE.md).  -fvisibility=hidden
 # protects shared-object embedders, but static-archive links see all of
 # these (duplicate-symbol landmines — refactor-3 XC-01, ~330 symbols).
@@ -13,6 +13,10 @@
 # utrace_format is listed manually: it only exports under URBI_TRACE=1
 # builds (refactor-3 API-12 renames it at v0.13.7).
 utrace_format
+# urepl_dispatch_drain_if_active exports as a WEAK (W) symbol; the nm class
+# filter covers weak/common symbols since the v0.13.0 review fix, so it is
+# enumerated here like every other unprefixed export.
+urepl_dispatch_drain_if_active
 add_const_float
 add_const_int
 add_const_str

@@ -6,7 +6,7 @@
 #include "vm/uvm.h"
 #include <string.h>
 #define UROS_MSG_MAX 32
-static struct { const char *name; struct UObject *proto; } g_protos[UROS_MSG_MAX];
+static struct { const char *name; struct UObject *proto; } g_protos[UROS_MSG_MAX];  /* audit-globals-allow: process-global msg-proto cache; per-VM relocation is v0.13.4-ros-hardening scope (refactor-3 ROS-05/XC-19) */
 static int g_protos_n;  /* audit-globals-allow: cross-VM proto cache — moves onto UVM at v0.13.4 (refactor-3 ROS-05/GC-11/XC-19) */
 int urbi_streq(const char *a, const char *b){ return strcmp(a,b)==0; }
 void urbi_ros_msg__reset(void){ g_protos_n = 0; }

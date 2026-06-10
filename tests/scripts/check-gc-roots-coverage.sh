@@ -36,12 +36,16 @@ fi
 
 # refactor-3 GATE-02: a token satisfies the gate ONLY if it is
 #   (a) heap-bearing: appears inside uvalue_is_heap()'s function body in
-#       src/gc/ugc_incremental.h, or
+#       src/gc/ugc_incremental.h as a STRUCTURAL comparison — a
+#       `kind == UVAL_X` / `UVAL_X == kind` operand or a `case UVAL_X`
+#       label (uvalue_is_heap is a `v.kind == ...` OR-chain today); a
+#       comment inside the body does not count, or
 #   (b) explicitly waived: appears next to a structured `gc-no-shade:`
 #       marker somewhere under src/gc/.
 # A free-text comment mention no longer passes.
 HEAP_TOKENS=$(awk '/^uvalue_is_heap\(/ {infn=1} infn {print} infn && /^}/ {infn=0}' \
               "$GC_DIR/ugc_incremental.h" \
+              | grep -oE '(case[[:space:]]+UVAL_[A-Z0-9_]+|kind[[:space:]]*==[[:space:]]*UVAL_[A-Z0-9_]+|UVAL_[A-Z0-9_]+[[:space:]]*==)' \
               | grep -oE 'UVAL_[A-Z0-9_]+' | LC_ALL=C sort -u)
 NOSHADE_TOKENS=$(grep -hoE 'gc-no-shade:[[:space:]]*UVAL_[A-Z0-9_]+' \
                  "$GC_DIR"/*.c "$GC_DIR"/*.h 2>/dev/null \

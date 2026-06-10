@@ -34,13 +34,15 @@ fi
 # Exported symbols from both libraries.  refactor-3 GATE-04: widened from
 # ' T urbi_' to all [TDRB] (text, data, read-only data, BSS) symbols so
 # exported DATA (urbi_stdlib_bytecode, URBI_DEFAULT_REPL_BUDGET, ...) is
-# tracked too.
+# tracked too.  Review fix (v0.13.0): also [WVCu] — weak, weak-object,
+# common, and unique symbols are exported and linkable just the same
+# (urepl_dispatch_drain_if_active is exported W and bypassed the gate).
 LIBS=("$LIB")
 if [ -f "$LIBAUX" ]; then
     LIBS+=("$LIBAUX")
 fi
 ALL_EXPORTED=$(nm "${LIBS[@]}" \
-    | grep -E ' [TDRB] ' \
+    | grep -E ' [TDRBWVCu] ' \
     | awk '{print $NF}' \
     | sort -u \
     || true)
