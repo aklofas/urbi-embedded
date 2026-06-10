@@ -1,21 +1,20 @@
 # C API stability policy
 
-> Status: ABI pin at v0.12.3-ros-demo-and-contract (0/22/1) — PATCH bump from
-> v0.12.2-urobotics (0/22/0).  32nd use of pre-v1.0 escape clause.  Facet↔ROS2
-> binding contract: NO new public C API symbols — the binding
-> (Robotics.bindInput / bindOutput) is pure urbiscript in the urobotics overlay
-> blob, and the two new natives (`ros.__injectMsg` / `ros.__lastPublished`) are
-> mock-only gated test hooks inside the ROS2 component, absent from
-> include/urbi/ and the public manifest.  Wire format unchanged at
-> v1.9 / 0x19.  See §6 escape ledger (#30 v0.12.1-ros-dds PATCH, #31
-> v0.12.2-urobotics MINOR, #32 v0.12.3-ros-demo-and-contract PATCH).  The freeze pin is a
-> forcing function (deliberate intent at every bump), not a hard cap.  Any
+> Status: ABI pin at 0/23/0 (escape #33, the M10 B6a API-freeze sweep:
+> `urbi_set_time_us` renamed to `urbi_set_clock_fn`, internal symbols hidden
+> via `-fvisibility=hidden`, bidirectional manifest gate).  MINOR bump from
+> v0.12.4-stdlib-completeness (0/22/2).  Wire format unchanged at v1.9 / 0x19.
+> Shipped on `main` at v0.12.5-m10-prep ahead of the v0.13.x pre-release
+> hardening arc; the 1/0/0 freeze lands at the end of that arc.  See §6
+> escape ledger (#33).  The freeze pin is a forcing function (deliberate
+> intent at every bump), not a hard cap.  Any
 > further MINOR/MAJOR change after this tag must follow §3.
 
 ## 1. The freeze pin
 
 `include/urbi/version.h` contains a `_Static_assert` pinning the public
-ABI to `0/19/3`.  Any change to the public C API after v0.10.6-stabilization
+ABI to the current `URBI_API_VERSION_*` triple in include/urbi/version.h.
+Any change to the public C API after v0.10.6-stabilization
 either bumps the macros AND the assert in lockstep (deliberate intent), or
 fails to compile.
 
