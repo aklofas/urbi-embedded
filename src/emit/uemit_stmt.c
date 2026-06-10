@@ -1251,7 +1251,7 @@ uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n) {
     uint8_t i_reg = (uint8_t)i_slot;   /* alias for clarity */
     uint8_t n_reg = (uint8_t)n_slot;
     {
-        uint8_t k0 = (uint8_t)add_const_int(e, 0LL);
+        uint16_t k0 = add_const_int(e, 0LL);
         if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
         emit_instr(e, uinstr_enc_abx(OP_LOADK, i_reg, k0), line);
     }
@@ -1335,7 +1335,7 @@ uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n) {
 
     /* 9. _i = _i + 1. */
     {
-        uint8_t k1 = (uint8_t)add_const_int(e, 1LL);
+        uint16_t k1 = add_const_int(e, 1LL);
         if (e->error != EMIT_OK) { uemit_loop_pop(e); uemit_close_block(e); return 0U; }
         uint8_t tmp = e->next_reg;
         emit_instr(e, uinstr_enc_abx(OP_LOADK, tmp, k1), line);
