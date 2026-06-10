@@ -31,26 +31,53 @@ if [ ! -f "$MANIFEST" ]; then
     exit 1
 fi
 
-# Exported urbi_ symbols from both libraries (T symbols only).
+# Exported symbols from both libraries.  refactor-3 GATE-04: widened from
+# ' T urbi_' to all [TDRB] (text, data, read-only data, BSS) symbols so
+# exported DATA (urbi_stdlib_bytecode, URBI_DEFAULT_REPL_BUDGET, ...) is
+# tracked too.
 LIBS=("$LIB")
 if [ -f "$LIBAUX" ]; then
     LIBS+=("$LIBAUX")
 fi
-EXPORTED=$(nm "${LIBS[@]}" \
-    | grep ' T urbi_' \
+ALL_EXPORTED=$(nm "${LIBS[@]}" \
+    | grep -E ' [TDRB] ' \
     | awk '{print $NF}' \
     | sort -u \
     || true)
+EXPORTED=$(echo "$ALL_EXPORTED" | grep -E '^(urbi|URBI)_' || true)
+FOREIGN=$(echo "$ALL_EXPORTED" | grep -vE '^(urbi|URBI)_' || true)
 
 if [ -z "$EXPORTED" ]; then
     echo "FAIL: nm returned no urbi_ symbols from ${LIBS[*]} — nm may have failed or the archive is empty" >&2
     exit 1
 fi
 
-# Symbols listed in the manifest (backtick-quoted `urbi_*` patterns).
-# Pattern allows mixed-case and digits (e.g. urbi_encode_utf8,
-# urbi_lobby_invoke_handleDisconnect).
-MANIFESTED=$(grep -oE '`urbi_[A-Za-z0-9_]+`' "$MANIFEST" \
+# refactor-3 GATE-04: every global NOT in the urbi_/URBI_ namespace must be
+# enumerated in the temporary allowlist.  The allowlist is a RATCHET: it
+# freezes today's unprefixed-global set (the refactor-3 XC-01 inventory) so
+# any NEW unprefixed global fails immediately.  v0.13.6 (namespace day)
+# renames/statics these; v0.13.7 (API-23) deletes the allowlist.
+ALLOWLIST="tests/scripts/api-manifest-symbol-allowlist.txt"
+if [ ! -f "$ALLOWLIST" ]; then
+    echo "FAIL: $ALLOWLIST not found" >&2
+    exit 1
+fi
+ALLOWED=$(grep -vE '^[[:space:]]*(#|$)' "$ALLOWLIST" | sort -u)
+NEW_FOREIGN=$(comm -23 <(echo "$FOREIGN") <(echo "$ALLOWED"))
+if [ -n "$NEW_FOREIGN" ]; then
+    echo "FAIL: NEW exported symbols outside the urbi_/URBI_ namespace (not in $ALLOWLIST):" >&2
+    echo "$NEW_FOREIGN" | sed 's/^/  - /' >&2
+    echo "" >&2
+    echo "  Internal symbols must be static or carry a u*/urbi_ prefix (STYLE.md)." >&2
+    echo "  Do NOT extend the allowlist — it is a shrinking ratchet scheduled for" >&2
+    echo "  deletion at v0.13.7 (refactor-3 XC-01 / API-23)." >&2
+    exit 1
+fi
+
+# Symbols listed in the manifest (backtick-quoted `urbi_*` / `URBI_*`
+# patterns).  Pattern allows mixed-case and digits (e.g. urbi_encode_utf8,
+# urbi_lobby_invoke_handleDisconnect, URBI_DEFAULT_REPL_BUDGET).
+MANIFESTED=$(grep -oE '`(urbi|URBI)_[A-Za-z0-9_]+`' "$MANIFEST" \
     | tr -d '`' \
     | sort -u)
 

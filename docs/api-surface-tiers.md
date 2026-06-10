@@ -417,6 +417,23 @@ CI gate tracks this list to prevent silent growth.
 
 - `urbi_watcher_body_completed`, `urbi_watcher_unregister_internal`
 
+### Exported data symbols (refactor-3 GATE-04 inventory)
+
+Exported `[DRB]` data objects.  `urbi_stdlib_bytecode` / `urbi_stdlib_bytecode_len`
+are the baked stdlib blob (consumed by `urbi_stdlib_boot`; embedders replacing the
+blob link their own definitions).  The rest are internal tables that leak through
+the archive surface; they are Tier-4 internal-leak entries, not API.
+
+- `urbi_stdlib_bytecode` — baked stdlib bytecode blob (T2-adjacent: replaceable at link time)
+- `urbi_stdlib_bytecode_len` — blob length
+- `urbi_builtin_registry` — builtin native registration table (internal)
+- `urbi_builtin_registry_count` — table length (internal)
+- `urbi_opcode_shapes` — verifier opcode-shape table (internal)
+- `urbi_abi_requires_float_type_8` — link-time ABI guard symbol (internal)
+- `urbi_abi_requires_full_parser` — link-time ABI guard symbol (internal)
+- `urbi_abi_requires_repl_pthread` — link-time ABI guard symbol (internal)
+- `URBI_DEFAULT_REPL_BUDGET` — REPL default budget constant (REPL builds only)
+
 ---
 
 ## CI gate
