@@ -144,16 +144,23 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 #define UEMIT_REG_LIMIT       UFS_MAX_REGS       /* alias for clarity at exhaustion-guard sites (EMIT-025) */
 
 /* EMIT-019 fix (Wave 5, v0.5.7): centralize OP_JMP Bx encoding in a
- * pc-based helper.  The VM dispatches OP_JMP as `pc += signed(Bx) -
- * UEMIT_JMP_BIAS` AFTER the dispatch's pc++, so an OP_JMP at
- * from_pc landing at target_pc requires Bx = (target_pc - from_pc - 1)
- * + UEMIT_JMP_BIAS.  Wave 3 named UEMIT_JMP_BIAS / FALLTHROUGH_BIAS but
- * left the arithmetic inline at every site; this helper centralizes
- * the encoding contract so future peephole / extra-instr insertions
- * cannot silently miscompute fall-through.  Returns the biased Bx value
- * ready for uinstr_enc_abx.  Bytecode-byte-identical with the pre-
- * extract inline form. */
+ * pc-based helper.  For FORWARD jumps the VM dispatches OP_JMP as
+ * `pc += signed(Bx) - UEMIT_JMP_BIAS` AFTER the dispatch's pc++, so an
+ * OP_JMP at from_pc landing at target_pc requires Bx = (target_pc -
+ * from_pc - 1) + UEMIT_JMP_BIAS.  Back-edges do NOT get that pc++ —
+ * they dispatch via the safepoint path; use uemit_jmp_offset_backward
+ * for those (refactor-3 FE-01/B3).  Wave 3 named UEMIT_JMP_BIAS /
+ * FALLTHROUGH_BIAS but left the arithmetic inline at every site; this
+ * helper centralizes the encoding contract so future peephole /
+ * extra-instr insertions cannot silently miscompute fall-through.
+ * Returns the biased Bx value ready for uinstr_enc_abx.  Bytecode-
+ * byte-identical with the pre-extract inline form.
+ *
+ * Direction assert: strict > — target == from_pc + 1 encodes offset 0,
+ * which the forward/NEXT path handles correctly; target <= from_pc
+ * must go through the backward encoder. */
 static inline uint16_t uemit_jmp_offset(int from_pc, int target_pc) {
+    URBI_INTERNAL_ASSERT(target_pc > from_pc);
     int offset = target_pc - from_pc - 1;
     return (uint16_t)((int)UEMIT_JMP_BIAS + offset);
 }
@@ -163,8 +170,13 @@ static inline uint16_t uemit_jmp_offset(int from_pc, int target_pc) {
  * directly — WITHOUT the implicit pc++ that NEXT() applies after forward
  * jumps.  The encoded offset must therefore be exactly (target - from),
  * not (target - from - 1).  Use this for every back-edge; uemit_jmp_offset
- * stays correct for forward jumps and forward patch sites. */
+ * stays correct for forward jumps and forward patch sites.
+ *
+ * Direction assert: strict < — target == from_pc would encode offset 0,
+ * which the VM's sign check sends down the forward/NEXT path, landing
+ * at from_pc + 1 (silently wrong). */
 static inline uint16_t uemit_jmp_offset_backward(int from_pc, int target_pc) {
+    URBI_INTERNAL_ASSERT(target_pc < from_pc);
     int offset = target_pc - from_pc;
     return (uint16_t)((int)UEMIT_JMP_BIAS + offset);
 }

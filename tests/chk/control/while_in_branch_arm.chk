@@ -33,3 +33,9 @@ var s = 0; if (true) { for (var x : [1, 2, 3]) { s = s + x } }; s
 # --- continue inside while inside if-arm (continue patches are forward jumps; pin)
 var c2 = 0; var seen = 0; if (true) { while (c2 < 5) { c2 = c2 + 1; if (c2 == 2) { continue }; seen = seen + 1 } }; seen
 [00000006] 4
+
+# --- while at the very start of the chunk: `|` (atomic, no YIELD) before the
+#     loop, so loop_start sits right after the var-decl instructions; the
+#     pre-fix back-edge would land on `w = 0`, re-arming the loop each pass
+var w = 0 | while (w < 3) { w = w + 1 }; w
+[00000007] 3
