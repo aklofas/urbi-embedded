@@ -565,6 +565,12 @@ test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
 	done; \
 	echo "$$count chk fixture(s) passed"
 
+# refactor-3 CHK meta-gate: pins run_chk.sh's exit-code contract with stub
+# binaries (no VM involved).  Must stay green across any future runner edit.
+.PHONY: test-chk-runner
+test-chk-runner:
+	@bash tests/integration/test_run_chk_runner.sh
+
 # test-chk-ros — runs all tests/chk/ros/*.chk under URBI_BUILD_PRESET=ros.
 # Every fixture must RUN and PASS; a SKIP is a gate failure (the vacuous-
 # fixture trap: preset mismatch silently empties coverage).
