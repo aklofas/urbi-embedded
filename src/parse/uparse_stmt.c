@@ -1223,10 +1223,14 @@ UAstNode *parse_switch(UParser *p) {
         body->u.block.stmts = stmts;
         body->u.block.count = stmt_count;
 
-        /* Grow parallel arrays if needed. */
+        /* Grow parallel arrays if needed.  arena_grow_node_array doubles
+         * *cap on every call, so the two arrays must track independent
+         * capacities — sharing one cap left case_vals at half the claimed
+         * capacity and overran it into case_bodies (refactor-3 FE-02). */
         if (case_count == cap) {
+            int bodies_cap = cap; /* before grow */
             if (!arena_grow_node_array(p, &case_vals,   &cap, case_count) ||
-                !arena_grow_node_array(p, &case_bodies, &cap, case_count)) {
+                !arena_grow_node_array(p, &case_bodies, &bodies_cap, case_count)) {
                 p->switch_depth--;
                 return (UAstNode *)&uparser_oom_sentinel;
             }

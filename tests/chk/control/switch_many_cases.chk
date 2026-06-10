@@ -1,0 +1,17 @@
+# Milestone: v0.13.1
+# Covers: switch with >8 cases — parallel case_vals/case_bodies arrays grow
+#         with independent capacities (refactor-3 FE-02/B6: a shared cap
+#         left case_vals at half its claimed capacity; early case bodies
+#         were silently corrupted/skipped at 11 cases).
+
+# --- 11 cases, dispatch to an early case
+var r = 0; switch (2) { case 1: { r = 1 }; case 2: { r = 2 }; case 3: { r = 3 }; case 4: { r = 4 }; case 5: { r = 5 }; case 6: { r = 6 }; case 7: { r = 7 }; case 8: { r = 8 }; case 9: { r = 9 }; case 10: { r = 10 }; case 11: { r = 11 } }; r
+[00000000] 2
+
+# --- 11 cases, dispatch to case 1 (the audit's silently-skipped body)
+var q = 0; switch (1) { case 1: { q = 100 }; case 2: { q = 2 }; case 3: { q = 3 }; case 4: { q = 4 }; case 5: { q = 5 }; case 6: { q = 6 }; case 7: { q = 7 }; case 8: { q = 8 }; case 9: { q = 9 }; case 10: { q = 10 }; case 11: { q = 11 } }; q
+[00000001] 100
+
+# --- 11 cases, last case
+var z = 0; switch (11) { case 1: { z = 1 }; case 2: { z = 2 }; case 3: { z = 3 }; case 4: { z = 4 }; case 5: { z = 5 }; case 6: { z = 6 }; case 7: { z = 7 }; case 8: { z = 8 }; case 9: { z = 9 }; case 10: { z = 10 }; case 11: { z = 110 } }; z
+[00000002] 110
