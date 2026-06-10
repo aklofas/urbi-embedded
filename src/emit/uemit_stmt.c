@@ -481,6 +481,7 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
         uemit_loop_pop(e);
         return 0U;
     }
+    int exit_target;
     {
         UAstNode *body = n->u.while_stmt.body;
         if (!uemit_open_block(e, /*is_loop=*/true)) { uemit_loop_pop(e); return 0U; }
@@ -498,14 +499,18 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
             e->next_reg = e->current_fs->freereg;
         }
 
-        /* 5. OP_CLOSE-on-back-edge if any local in the loop block was captured. */
-        uemit_emit_loop_back_close(e);
-
-        /* W1/v0.10.5: continue PCs land here (before the back-edge JMP). */
+        /* W1/v0.10.5: continue PCs land here — BEFORE the back-edge
+         * OP_CLOSE, so `continue` closes the iteration's captured cells
+         * instead of jumping straight to the back-edge JMP and reusing
+         * the still-open cell next iteration (refactor-3 FE-04
+         * follow-on). */
         {
             int cont_target = (int)emit_instr_count(e);
             uemit_loop_patch_continues(e, cont_target);
         }
+
+        /* 5. OP_CLOSE-on-back-edge if any local in the loop block was captured. */
+        uemit_emit_loop_back_close(e);
 
         /* 6. Back-edge JMP to loop_start. */
         {
@@ -515,14 +520,25 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
                        (uint32_t)n->line);
         }
 
-        /* 7. Close the loop block (emits OP_CLOSE if has_captured, then pops
-              actvars back). */
+        /* 7. Close the loop block.  exit_target is captured FIRST so the
+              cond-false exit JMP and every break land ON the block-exit
+              OP_CLOSE that uemit_close_block emits here (after the
+              back-edge JMP) — previously they landed past it, leaving the
+              instruction dead and the breaking iteration's cells open into
+              recycled registers (refactor-3 FE-04 follow-on).  On the
+              cond-false path the close is a no-op (the back-edge close
+              already ran).  With no captured local no OP_CLOSE is emitted
+              and exit_target degenerates to the position after the
+              back-edge JMP, exactly as before.  The compile-time
+              actvar/freereg pop inside uemit_close_block still happens
+              exactly once; patching below uses instruction positions
+              only. */
+        exit_target = (int)emit_instr_count(e);
         if (!uemit_close_block(e)) { uemit_loop_pop(e); return 0U; }
     }
 
-    /* 8. Patch the exit JMP to current pc. */
+    /* 8. Patch the exit JMP and break PCs to exit_target. */
     {
-        int exit_target = (int)emit_instr_count(e);
         emit_patch_instr(e, jmp_to_exit,
             uinstr_enc_abx(OP_JMP, 0U,
                            uemit_jmp_offset(jmp_to_exit, exit_target)));
@@ -1316,16 +1332,36 @@ uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n) {
         e->next_reg = e->current_fs->freereg;
     }
 
-    /* 7. OP_CLOSE on back-edge (if inner body captured any vars). */
-    uemit_emit_loop_back_close(e);
-
-    /* continue PCs land here (before _i++). */
+    /* continue PCs land here — BEFORE the back-edge OP_CLOSE, so
+     * `continue` closes the iteration's captured cells and then falls
+     * through the inner block close into the _i++ increment
+     * (refactor-3 FE-04 follow-on; previously cont_target sat between
+     * steps 7 and 8 and only worked because step 8's OP_CLOSE happened
+     * to be emitted exactly there). */
     {
         int cont_target = (int)emit_instr_count(e);
         uemit_loop_patch_continues(e, cont_target);
     }
 
-    /* 8. Close inner body block before _i++. */
+    /* 7. OP_CLOSE on back-edge (if inner body captured any vars). */
+    uemit_emit_loop_back_close(e);
+
+    /* 8. Close inner body block before _i++.  Capture the block's close
+     * threshold first: breaks jump straight to the exit patch point
+     * (step 11), past this close and the increment, so the exit path
+     * needs its own OP_CLOSE for the breaking iteration's still-open
+     * cells (refactor-3 FE-04 follow-on; same guard rationale as
+     * uemit_close_block). */
+    bool body_captured = false;
+    uint8_t body_first_slot = 0U;
+    {
+        UFuncState *cfs = e->current_fs;
+        const UBlockCtx *iblk = &cfs->blocks[cfs->nblocks - 1];
+        if (iblk->has_captured && iblk->first_local_idx < cfs->nactvar) {
+            body_captured = true;
+            body_first_slot = cfs->actvars[iblk->first_local_idx].slot;
+        }
+    }
     if (!uemit_close_block(e)) {
         uemit_loop_pop(e); uemit_close_block(e);
         return 0U;
@@ -1356,9 +1392,17 @@ uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n) {
                                      uemit_jmp_offset_backward(from_pc, loop_start)), line);
     }
 
-    /* 11. Patch exit JMP and break PCs. */
+    /* 11. Patch exit JMP and break PCs.  When the body captured, the
+     * exit target lands ON an exit-path OP_CLOSE: a no-op on normal
+     * exit (the per-iteration close at step 8 already ran) but required
+     * on break paths, which jump here past steps 7-10
+     * (refactor-3 FE-04 follow-on). */
     {
         int exit_target = (int)emit_instr_count(e);
+        if (body_captured) {
+            emit_instr(e, uinstr_enc_abc(OP_CLOSE, body_first_slot, 0U, 0U),
+                       line);
+        }
         emit_patch_instr(e, jmp_to_exit,
             uinstr_enc_abx(OP_JMP, 0U, uemit_jmp_offset(jmp_to_exit, exit_target)));
         uemit_loop_patch_breaks(e, exit_target);

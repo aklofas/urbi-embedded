@@ -1,0 +1,46 @@
+# Milestone: v0.13.1
+# Covers: loop-exit and continue paths must execute the loop block's
+#         OP_CLOSE (refactor-3 FE-04 follow-on).  Two reachability gaps in
+#         emit_while_arm: (a) cont_target was recorded AFTER the back-edge
+#         OP_CLOSE, so `continue` skipped it and the next iteration reused
+#         the still-open cell; (b) the block-exit OP_CLOSE sat between the
+#         back-edge JMP and the exit-patch target, so the cond-false exit
+#         and every `break` landed past it — dead code, and the breaking
+#         iteration's cells stayed open into recycled registers.  The
+#         for-each emitter shared gap (b) on break paths only (its inner
+#         block close runs mid-loop before the increment, so fall-through
+#         and continue already closed; breaks jumped past everything).
+#
+# Pre-fix behavior (verified empirically 2026-06-10):
+#   scenario 1 raised "TypeError: OP_MUL operands must be Integer or Float"
+#     (both closures read live registers clobbered by call temps);
+#   scenario 2 printed 70 (z's register recycled by pad1);
+#   scenario 3 printed 2 (correct — back-edge close on fall-through);
+#   scenario 4 printed 10 (correct — for-each continue landed on the inner
+#     block-exit OP_CLOSE, accidentally but soundly);
+#   scenario 5 printed nil (open cell read a dead temp register);
+#   scenario 6 printed 2 (correct — per-iteration inner block close).
+
+# --- while + continue: per-iteration cells must close on the continue path
+var tA = function() { var f1 = nil; var f2 = nil; var i = 0; while (i < 2) { var z = i; if (i == 0) { f1 = function() { return z } }; if (i == 1) { f2 = function() { return z } }; i = i + 1; continue }; return f1() + f2() * 10 }; tA()
+[00000000] 10
+
+# --- while + break: the breaking iteration's cells must close on exit
+var tB = function() { var g = nil; var i = 0; while (i < 5) { var z = 7; g = function() { return z }; break }; var pad1 = 70; return g() }; tB()
+[00000001] 7
+
+# --- while normal exit with capture (regression pin)
+var tC = function() { var g = nil; var i = 0; while (i < 3) { var z = i; g = function() { return z }; i = i + 1 }; var pad2 = 99; return g() }; tC()
+[00000002] 2
+
+# --- for-each + continue: close still runs, then the increment (pin)
+var tD = function() { var f1 = nil; var f2 = nil; for (var x : [0, 1]) { var z = x; if (x == 0) { f1 = function() { return z } }; if (x == 1) { f2 = function() { return z } }; continue }; return f1() + f2() * 10 }; tD()
+[00000003] 10
+
+# --- for-each + break: the breaking iteration's cells must close on exit
+var tE = function() { var g = nil; for (var x : [7, 8, 9]) { var z = x; g = function() { return z }; break }; var pad3 = 70; return g() }; tE()
+[00000004] 7
+
+# --- for-each normal exit with capture (regression pin)
+var tF = function() { var g = nil; for (var x : [0, 1, 2]) { var z = x; g = function() { return z } }; var pad4 = 99; return g() }; tF()
+[00000005] 2
