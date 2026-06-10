@@ -1,0 +1,24 @@
+# Milestone: v0.13.1
+# Covers: closure capture of a shadowed local and of a catch variable
+#         (refactor-3 FE-04/FE-05/B8: the capture-marking loop scanned
+#         outermost-first while the slot lookup scanned innermost-first —
+#         the inner slot was captured but the OUTER actvar got the
+#         is_captured flag, so no OP_CLOSE fired and the upvalue stayed
+#         open into a recycled register).
+#
+# Pre-fix behavior (verified empirically 2026-06-10):
+#   scenario 1 printed 777 (the recycled register's new occupant);
+#   scenario 2 printed 7 (correct — regression guard, no shadowing);
+#   scenario 3 printed <?> (garbage from the recycled catch-var register).
+
+# --- audit repro: capture the inner (shadowing) local
+var t = function() { var g = nil; var x = 1; { var x = 42; g = function() { return x } }; var y = 777; return g() }; t()
+[00000000] 42
+
+# --- outer local still captured correctly when no shadowing
+var u = function() { var a = 7; var h = function() { return a }; var b = 888; return h() }; u()
+[00000001] 7
+
+# --- catch variable captured by a closure in the catch body
+var gc = nil; try { throw(13) } catch (var e) { gc = function() { return e } }; var pad = 555; gc()
+[00000002] 13

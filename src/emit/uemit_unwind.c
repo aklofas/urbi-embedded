@@ -188,9 +188,18 @@ static void emit_catch_handler_section(UEmitter *e, UAstNode *n) {
     }
 
     if (cv_name != NULL && e->current_fs->nactvar > 0) {
-        e->current_fs->nactvar--;
-        e->current_fs->freereg = fs_temp_floor(e->current_fs);
-        e->next_reg = e->current_fs->freereg;
+        /* refactor-3 FE-05: the catch body may have captured the catch
+         * variable; close the upvalue before recycling the register.
+         * Mirrors uemit_close_block's has_captured handling. */
+        UFuncState *fs = e->current_fs;
+        if (fs->actvars[fs->nactvar - 1].is_captured) {
+            emit_instr(e, uinstr_enc_abc(OP_CLOSE,
+                       (uint8_t)fs->actvars[fs->nactvar - 1].slot, 0U, 0U),
+                       (uint32_t)n->line);
+        }
+        fs->nactvar--;
+        fs->freereg = fs_temp_floor(fs);
+        e->next_reg = fs->freereg;
     }
 }
 

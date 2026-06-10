@@ -65,8 +65,11 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
     /* Check immediate parent's locals. */
     int parent_local = local_lookup_for_upvalue(fs->parent, name);
     if (parent_local >= 0) {
-        /* Mark the parent actvar as captured and flag the enclosing block. */
-        for (int i = 0; i < fs->parent->nactvar; i++) {
+        /* Mark the parent actvar as captured and flag the enclosing block.
+         * Scan INNERMOST-first to match local_lookup_for_upvalue — with
+         * shadowing, the innermost declaration is the one captured
+         * (refactor-3 FE-04). */
+        for (int i = fs->parent->nactvar - 1; i >= 0; i--) {
             if (fs->parent->actvars[i].name == name) {
                 fs->parent->actvars[i].is_captured = true;
                 /* Find the innermost block in parent that contains this local. */
