@@ -22,8 +22,11 @@ TYPES_H="$ROOT/include/urbi/types.h"
 GC_DIR="$ROOT/src/gc"
 
 # Extract UVAL_* enum member names from include/urbi/types.h.
-ENUM_VALUES=$(grep -E "^[[:space:]]+UVAL_[A-Z_]+[[:space:]]*=" "$TYPES_H" \
-              | sed -E 's/.*(UVAL_[A-Z_]+).*/\1/' \
+# refactor-3 GATE-02: match ALL identifiers in the enum body — including
+# unvalued members (`UVAL_FOO,` / trailing `UVAL_FOO`) which the previous
+# `= N`-only regex could not see.
+ENUM_VALUES=$(grep -E '^[[:space:]]+UVAL_[A-Z0-9_]+[[:space:]]*(=|,|/|$)' "$TYPES_H" \
+              | sed -E 's/^[[:space:]]+(UVAL_[A-Z0-9_]+).*/\1/' \
               | LC_ALL=C sort -u)
 
 if [ -z "$ENUM_VALUES" ]; then
@@ -31,13 +34,23 @@ if [ -z "$ENUM_VALUES" ]; then
     exit 1
 fi
 
-# Collect every UVAL_* token referenced anywhere in src/gc/*.{c,h}.
-GC_TOKENS=$(grep -hoE "UVAL_[A-Z_]+" "$GC_DIR"/*.c "$GC_DIR"/*.h 2>/dev/null \
-            | LC_ALL=C sort -u)
+# refactor-3 GATE-02: a token satisfies the gate ONLY if it is
+#   (a) heap-bearing: appears inside uvalue_is_heap()'s function body in
+#       src/gc/ugc_incremental.h, or
+#   (b) explicitly waived: appears next to a structured `gc-no-shade:`
+#       marker somewhere under src/gc/.
+# A free-text comment mention no longer passes.
+HEAP_TOKENS=$(awk '/^uvalue_is_heap\(/ {infn=1} infn {print} infn && /^}/ {infn=0}' \
+              "$GC_DIR/ugc_incremental.h" \
+              | grep -oE 'UVAL_[A-Z0-9_]+' | LC_ALL=C sort -u)
+NOSHADE_TOKENS=$(grep -hoE 'gc-no-shade:[[:space:]]*UVAL_[A-Z0-9_]+' \
+                 "$GC_DIR"/*.c "$GC_DIR"/*.h 2>/dev/null \
+                 | grep -oE 'UVAL_[A-Z0-9_]+' | LC_ALL=C sort -u)
 
 MISSING=""
 for val in $ENUM_VALUES; do
-    if ! echo "$GC_TOKENS" | grep -qx "$val"; then
+    if ! echo "$HEAP_TOKENS" | grep -qx "$val" \
+       && ! echo "$NOSHADE_TOKENS" | grep -qx "$val"; then
         MISSING="$MISSING $val"
     fi
 done
@@ -45,16 +58,14 @@ done
 if [ -n "$MISSING" ]; then
     echo "FAIL: src/gc/ has no reference to:$MISSING" >&2
     echo "" >&2
-    echo "Each UVAL_* kind declared in include/urbi/types.h must appear" >&2
-    echo "at least once under src/gc/ — either in uvalue_is_heap()'s" >&2
-    echo "heap-bearing list (src/gc/ugc_incremental.h) or in a comment" >&2
-    echo "explaining why no shade arm is needed.  The M4-era" >&2
-    echo "UVAL_OBJECT / UVAL_EVENT shading gap closed at v0.6.2" >&2
-    echo "Phase 6 was exactly this bug class — a heap-bearing kind" >&2
-    echo "landed without updating uvalue_is_heap." >&2
+    echo "Each UVAL_* kind declared in include/urbi/types.h must either" >&2
+    echo "appear inside uvalue_is_heap()'s body (src/gc/ugc_incremental.h," >&2
+    echo "heap-bearing kinds) or carry a structured 'gc-no-shade: UVAL_X'" >&2
+    echo "marker under src/gc/ (explicit non-heap waiver).  Free-text" >&2
+    echo "mentions no longer satisfy this gate (refactor-3 GATE-02)." >&2
     exit 1
 fi
 
 count=$(echo "$ENUM_VALUES" | wc -l)
-echo "PASS: GC roots coverage — all $count UVAL_* kinds referenced under src/gc/"
+echo "PASS: GC roots coverage — all $count UVAL_* kinds are heap-bearing or gc-no-shade-waived"
 exit 0

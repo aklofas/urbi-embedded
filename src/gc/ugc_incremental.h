@@ -173,18 +173,20 @@ void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
  * v.v.p and embed UCell as the first struct member, so the cast in
  * uvalue_as_cell is well-defined.
  *
- * Non-heap-bearing UValKinds (deliberately NOT shaded by mark_root_callback;
- * each documented here so the T34 test-gc-roots-coverage gate sees them):
- *   - UVAL_NIL      — inline scalar (zero payload).
- *   - UVAL_INT      — inline int64_t payload.
- *   - UVAL_FLOAT    — inline f32/f64 payload.
- *   - UVAL_BOOL     — inline 0/1 stored in i payload.
- *   - UVAL_STR      — interned char* in v.v.p; intern table is a
+ * Non-heap-bearing UValKinds (deliberately NOT shaded by mark_root_callback).
+ * Each line below carries a structured `gc-no-shade:` marker that the T34
+ * test-gc-roots-coverage gate requires — a free-text mention no longer
+ * satisfies the gate (refactor-3 GATE-02):
+ *   gc-no-shade: UVAL_NIL      — inline scalar (zero payload).
+ *   gc-no-shade: UVAL_INT      — inline int64_t payload.
+ *   gc-no-shade: UVAL_FLOAT    — inline f32/f64 payload.
+ *   gc-no-shade: UVAL_BOOL     — inline 0/1 stored in i payload.
+ *   gc-no-shade: UVAL_STR      — interned char* in v.v.p; intern table is a
  *                     non-GC root (separate provider walks it).
- *   - UVAL_VOID     — inline scalar (no payload).
- *   - UVAL_STRAND   — sched-managed UStrand*; strand walker provider
+ *   gc-no-shade: UVAL_VOID     — inline scalar (no payload).
+ *   gc-no-shade: UVAL_STRAND   — sched-managed UStrand*; strand walker provider
  *                     visits these as roots, not the mark callback.
- *   - UVAL_HOST_FN  — non-GC C function pointer; never reaches the heap.
+ *   gc-no-shade: UVAL_HOST_FN  — non-GC C function pointer; never reaches the heap.
  *
  * Future heap-bearing UVAL_* additions MUST extend uvalue_is_heap and
  * the heap-bearing list above.  The T34 gate
