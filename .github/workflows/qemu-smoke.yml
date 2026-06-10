@@ -1,7 +1,7 @@
 name: qemu-smoke
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
   pull_request:
 jobs:
   reactive-smoke:
