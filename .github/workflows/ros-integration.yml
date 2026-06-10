@@ -1,0 +1,16 @@
+name: ros-integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * *"   # nightly; the rcl backend is container-only and too heavy for per-push
+
+jobs:
+  ros-integration:
+    name: ros2 jazzy integration (docker, copy-in)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run containerized ROS2 integration harness
+        run: make ros-integration

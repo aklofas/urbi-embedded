@@ -10,6 +10,7 @@ jobs:
   host:
     name: host (${{ matrix.mode }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +25,7 @@ jobs:
   tooling:
     name: tooling subsystem (trace + perf, REPL + determinism + host tooling)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
@@ -68,11 +70,13 @@ jobs:
   repl-multi-client-stress:
     name: repl multi-client stress (ASan, 100 trials)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y gcc make
       - name: Build and run stress (100 teardown trials)
+        shell: bash
         run: |
           make clean
           make URBI_ENABLE_REPL=1 test-asan 2>&1 | tee /tmp/stress.log
@@ -83,16 +87,19 @@ jobs:
   repl-security:
     name: repl security gates (W4)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y gcc make
       - name: Run REPL security gates (default build)
+        shell: bash
         run: |
           make clean
           make test-repl-security 2>&1 | tee /tmp/sec.log
           grep -qE "repl_security_bind_auth|repl_security_rate_limit|repl_security_compile_budget|repl_security_malformed|repl_security_output_isolation|repl_oom_paths" /tmp/sec.log
       - name: Run REPL security gates under ASan
+        shell: bash
         run: |
           make clean
           make test-asan 2>&1 | tee /tmp/sec-asan.log
@@ -102,6 +109,7 @@ jobs:
   stdlib-bytecode-fresh:
     name: stdlib bytecode freshness (W5)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
@@ -112,6 +120,7 @@ jobs:
   dependency-pins:
     name: dependency pin static check (W5)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - name: Check CI/docs dependency-pin sync
@@ -120,6 +129,7 @@ jobs:
   cross-arm:
     name: cross-compile (ARM Cortex-M7)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - name: Install cross toolchain
@@ -132,6 +142,7 @@ jobs:
   cross-stm32f4:
     name: cross-compile (STM32F4 / Cortex-M4F)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - name: Install cross toolchain
@@ -146,6 +157,7 @@ jobs:
   cross-pico:
     name: cross-compile (RP2040 / Cortex-M0+)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Install cross toolchain
@@ -162,6 +174,7 @@ jobs:
   cross-pico-repl:
     name: cross-compile (RP2040 / cooperative REPL + example .elf)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Install cross toolchain
@@ -183,6 +196,7 @@ jobs:
   cross-riscv:
     name: cross-compile (RISC-V rv32imc)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - name: Install cross toolchain (xpack riscv-none-elf-gcc)
@@ -212,6 +226,7 @@ jobs:
   cross-esp32s3:
     name: cross-compile (ESP32-S3, Xtensa LX7)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # espressif/idf:v6.0.1 ships ESP-IDF + xtensa-esp-elf toolchain
     # pre-installed at /opt/esp/idf/. Version matches the pin in
     # components/esp32-idf/idf_component.yml.
@@ -239,6 +254,7 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
@@ -255,6 +271,7 @@ jobs:
   coverage:
     name: coverage (advisory)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     continue-on-error: true  # advisory until noise floor is known
     steps:
       - uses: actions/checkout@v5
@@ -297,6 +314,7 @@ jobs:
   determinism-gate:
     name: determinism gate (3 presets × 100 runs)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
@@ -307,6 +325,7 @@ jobs:
   gc-pause-gate:
     name: gc pause gate (<1 ms per slice)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
@@ -317,6 +336,7 @@ jobs:
   docs-check:
     name: docs-check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install Node.js
@@ -331,6 +351,7 @@ jobs:
   version-sync:
     name: Version sync (manifest + README)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
         with:
@@ -341,7 +362,27 @@ jobs:
   wire-freeze:
     name: wire-format freeze pin sync
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - name: Check wire-format freeze pin
         run: make test-wire-freeze
+
+  releasetest:
+    name: releasetest (full local-parity sweep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make clang clang-tools-18 clang-tidy-18 \
+              cppcheck valgrind gcovr gdb python3 libclang-rt-18-dev
+          npm install -g markdownlint-cli2@0.13 markdown-link-check@3.12
+      - name: Run releasetest
+        run: make releasetest
