@@ -17,10 +17,10 @@
 
 | Bar | Threshold | Current | Evidence | Last measured | Owner / blocker |
 |---|---|---|---|---|---|
-| .chk pass rate (active fixtures) | ≥95% | 100% (288/288) | `make test-chk` — 288 fixtures, 0 failures | 2026-05-27 | **passing-evidence** |
-| .chk total fixture count | n/a | 304 total (288 non-repl active, 16 REPL-gated) | `find tests/chk -name '*.chk' \| wc -l` | 2026-05-27 | **passing-evidence** (informational) — bumped from 284 baseline as Cat. E ratification arc activates new fixtures (v0.10.9 +6, v0.10.10 +6, v0.10.11 +8, v0.10.12 +3 activated in-place via fixture rewrite — total count unchanged) |
+| .chk pass rate (active fixtures) | ≥95% | 100% (218/218 active + 9/9 preset-gated under their dedicated gates) | `make test-chk` tally line — `218 passed, 9 skipped (preset-gated), 88 placeholders (blocked/deferred/dropped), 0 vacuous-unannotated, 0 failed` | 2026-06-10 | **passing-evidence** |
+| .chk total fixture count | n/a | 331 total (218 active, 9 preset-gated, 88 annotated placeholders, 16 REPL NDJSON) | `make test-chk` tally line + 16 REPL NDJSON fixtures driven in-process | 2026-06-10 | **passing-evidence** (informational) — bumped from 284 baseline as Cat. E ratification arc activates new fixtures (v0.10.9 +6, v0.10.10 +6, v0.10.11 +8, v0.10.12 +3 activated in-place via fixture rewrite — total count unchanged) |
 | .chk taxonomy | normalized | v0.10.7 W7: all defer-to: labels retired; 163 active with real content, 22 deferred-v1.x, 76 blocked, 3 dropped | `rg -n 'defer-to:' tests/chk/` returns empty | 2026-05-26 | **passing-evidence** — see docs/release/chk-deferred-taxonomy.md |
-| Conformance manifest | yes/no | v0.10.7: 163/163 real-content fixtures pass (100%); denominator computable | `docs/language-compatibility-matrix.md` §v1.0 conformance denominator | 2026-05-26 | **passing-evidence** — 163 real-content fixtures / 269 total (106 placeholders vacuous-pass) |
+| Conformance manifest | yes/no | v0.10.7: 163/163 real-content fixtures pass (100%); denominator computable | `docs/language-compatibility-matrix.md` §v1.0 conformance denominator | 2026-05-26 | **passing-evidence** — 163 real-content fixtures / 269 total (88 tallied placeholders — runner outcome 4 since v0.13.0; vacuous-pass retired) |
 
 ## Coverage
 

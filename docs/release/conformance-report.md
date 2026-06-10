@@ -21,10 +21,13 @@ summarized here.
   `Dict.keys`/`values`/`each`, `String.split`/`join`/`format`, `Object.slotNames`/
   reflection, `Integer.times`, `%` modulo, `&&`/`||` — all shipped in v0.12.4.
 - **Pass-rate on the implemented surface: 100%.** All active `.chk` conformance
-  fixtures pass (331 total fixtures, 63 are intentionally-blocked placeholders
-  for deferred/v1.x features, ≈ 268 active — all green), plus 2077 unit cases /
-  14925 checks. Blocked-placeholder taxonomy:
-  [`chk-deferred-taxonomy.md`](chk-deferred-taxonomy.md).
+  fixtures pass (331 total fixtures: 218 active script-driven + 9 preset-gated
+  ros/urobotics + 16 REPL NDJSON + 88 annotated placeholders for
+  blocked/deferred/dropped features), plus 2076 unit cases / 15293 checks.
+  Since v0.13.0 the runner is honest about this denominator: placeholders and
+  vacuous fixtures are distinct tallied outcomes, fixture exit status is
+  checked, and every fixture runs under a timeout (refactor-3 CHK-01..04).
+  Placeholder taxonomy: [`chk-deferred-taxonomy.md`](chk-deferred-taxonomy.md).
 
 The two numbers answer different questions: *"can I run an arbitrary legacy
 program unmodified?"* → no, ≈ 75–80% of the surface plus the legacy idioms

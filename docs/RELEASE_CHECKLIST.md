@@ -14,7 +14,9 @@ do not tag until every box is checked. The v1.0.0 release used this list (see
 - [ ] `make test-asan` — AddressSanitizer clean
 - [ ] `make test-ubsan` — UBSan clean
 - [ ] `make test-stdlib-bytecode-fresh` — baked stdlib blob is byte-fresh
-- [ ] `make test-chk` — every `.chk` fixture runs + passes (no silent SKIP)
+- [ ] `make test-chk` — tally line shows `0 vacuous-unannotated, 0 failed`; SKIPs are preset-gated
+      fixtures only (covered by `test-chk-ros` / `test-chk-urobotics` / `test-chk-ros-urobotics`,
+      where any SKIP is a failure); placeholder count matches `docs/release/conformance-report.md`
 - [ ] `make test-api-manifest` — exported `urbi_*` documented + frozen surface intact
 - [ ] `make test-abi-freeze` — `_Static_assert` ABI pin matches version.h
 - [ ] `make test-wire-freeze` — wire-format pin matches `uchunk.h`
