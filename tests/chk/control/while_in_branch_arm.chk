@@ -1,0 +1,35 @@
+# Milestone: v0.13.1
+# Covers: while loop as the FIRST statement of an if-arm / else-arm /
+#         case-body / nested loop body (refactor-3 FE-01/B3: the back-edge
+#         JMP encoded the forward-jump offset, landing one instruction
+#         short; only a YIELD-preceded loop_start masked it, so any loop
+#         not preceded by a `;` separator exited after one iteration).
+
+# --- audit repro: while first in if-arm
+var i = 0; if (true) { while (i < 3) { i = i + 1 } }; i
+[00000000] 3
+
+# --- while first in else-arm
+var j = 0; if (false) { j = 99 } else { while (j < 4) { j = j + 1 } }; j
+[00000001] 4
+
+# --- while first in a case body
+var k = 0; switch (1) { case 1: { while (k < 5) { k = k + 1 } }; case 2: { k = 99 } }; k
+[00000002] 5
+
+# --- while as the FIRST statement of a nested loop body (inner back-edge
+#     would land on the outer loop's exit JMP and bail out after one pass)
+var total = 0; var outer = 0; while (outer < 2) { while (total < (outer * 3) + 3) { total = total + 1 }; outer = outer + 1 }; total
+[00000003] 6
+
+# --- while first inside a called function body
+var f = function() { var c = 0; while (c < 3) { c = c + 1 }; return c }; f()
+[00000004] 3
+
+# --- for-each in if-arm regression pin (the +1 hack previously covered this)
+var s = 0; if (true) { for (var x : [1, 2, 3]) { s = s + x } }; s
+[00000005] 6
+
+# --- continue inside while inside if-arm (continue patches are forward jumps; pin)
+var c2 = 0; var seen = 0; if (true) { while (c2 < 5) { c2 = c2 + 1; if (c2 == 2) { continue }; seen = seen + 1 } }; seen
+[00000006] 4

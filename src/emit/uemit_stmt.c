@@ -511,7 +511,7 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
         {
             int from_pc = (int)emit_instr_count(e);
             emit_instr(e, uinstr_enc_abx(OP_JMP, 0U,
-                                         uemit_jmp_offset(from_pc, loop_start)),
+                                         uemit_jmp_offset_backward(from_pc, loop_start)),
                        (uint32_t)n->line);
         }
 
@@ -1348,24 +1348,12 @@ uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n) {
         e->next_reg = e->current_fs->freereg;
     }
 
-    /* 10. Back-edge JMP to loop_start.
-     *
-     * Backward JMPs use the safepoint path (no NEXT()): the VM dispatcher
-     * executes the instruction at s->pc directly without incrementing first.
-     * uemit_jmp_offset(from, target) = target - from - 1 + BIAS, which is
-     * correct for forward JMPs (NEXT() adds the +1), but lands at
-     * loop_start - 1 for backward JMPs.
-     *
-     * While loops are immune because their loop_start - 1 is always a YIELD
-     * instruction (from the ';' separator) that harmlessly advances pc+1.
-     * For-each has no such YIELD before the condition LT, so we compensate
-     * by targeting loop_start + 1: the formula then gives offset =
-     * (loop_start + 1) - from - 1 = loop_start - from, and the backward
-     * safepoint dispatches at from + (loop_start - from) = loop_start. */
+    /* 10. Back-edge JMP to loop_start (backward encoder — refactor-3 FE-01;
+     *      replaces the local `loop_start + 1` compensation hack). */
     {
         int from_pc = (int)emit_instr_count(e);
         emit_instr(e, uinstr_enc_abx(OP_JMP, 0U,
-                                     uemit_jmp_offset(from_pc, loop_start + 1)), line);
+                                     uemit_jmp_offset_backward(from_pc, loop_start)), line);
     }
 
     /* 11. Patch exit JMP and break PCs. */

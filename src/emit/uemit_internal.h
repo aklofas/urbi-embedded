@@ -158,6 +158,17 @@ static inline uint16_t uemit_jmp_offset(int from_pc, int target_pc) {
     return (uint16_t)((int)UEMIT_JMP_BIAS + offset);
 }
 
+/* Backward-jump encoder (refactor-3 FE-01/B3).  Backward OP_JMPs dispatch
+ * via the VM's safepoint path, which executes the instruction at s->pc
+ * directly — WITHOUT the implicit pc++ that NEXT() applies after forward
+ * jumps.  The encoded offset must therefore be exactly (target - from),
+ * not (target - from - 1).  Use this for every back-edge; uemit_jmp_offset
+ * stays correct for forward jumps and forward patch sites. */
+static inline uint16_t uemit_jmp_offset_backward(int from_pc, int target_pc) {
+    int offset = target_pc - from_pc;
+    return (uint16_t)((int)UEMIT_JMP_BIAS + offset);
+}
+
 /* --- Register-allocator micro-helpers (inline for zero overhead) ---
  * Promoted from static in uemit.c so that extracted TUs (uemit_react.c, etc.)
  * can use them without implicit-declaration warnings. */

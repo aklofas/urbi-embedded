@@ -20,6 +20,14 @@
 # steps -- and the v1.0 .chk runner has no clean equivalent.  Driving
 # the cond off the compute's own writes is the closest pure-urbi
 # analogue and exercises the same dispatch path.
+#
+# v0.13.1 (refactor-3 FE-01/B3): counter expectation moved 4 -> 5.  The
+# pre-fix back-edge JMP landed one instruction short of loop_start, on
+# the YIELD emitted for the `;` before the while -- re-executing it every
+# iteration gave the watcher body an extra (unspecified) scheduling point
+# per iteration.  With the back-edge corrected, each iteration has exactly
+# the one yield its body's `;` specifies: the cond-eval and the body run
+# on consecutive yields, so the flag flip is visible one poll later.
 
 var counter = 0
 var abort_flag = false
@@ -37,9 +45,9 @@ Realm.counter
 [00000000] nil
 [00000000] <?>
 [00000000] nil
-[00000000] 4
+[00000000] 5
 [00000000] true
 [00000000] 0
 [00000000] false
 [00000000] nil
-[00000000] 4
+[00000000] 5

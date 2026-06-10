@@ -160,8 +160,14 @@ UTEST(per_strand_budget_zero_causes_soft_yield)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
+    /* Loop bound 50 (refactor-3 FE-01): with the corrected back-edge JMP
+     * each iteration costs exactly ONE safepoint slice (the pre-fix
+     * encoding landed on the YIELD before loop_start, burning two slices
+     * per iteration), so a 5-iteration loop now completes inside the
+     * 10-step VM budget below.  50 iterations keeps the first step
+     * returning URBI_STEP_RUNNING, which is what this case asserts. */
     UProto module;
-    UASSERT(budget_compile(&vm, "var i = 0; while (i < 5) { i = i + 1 }", &module));
+    UASSERT(budget_compile(&vm, "var i = 0; while (i < 50) { i = i + 1 }", &module));
 
     UStrand *s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s != NULL);
