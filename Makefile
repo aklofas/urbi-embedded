@@ -1051,6 +1051,15 @@ test-switch:
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_VM_FORCE_SWITCH=1" \
 		test
 
+# refactor-3 TEST-GAP-03: -O2 build variant.  The matrix was -Os/-O0/-O1
+# only; the v0.10.11 channel_proto bug was -Os-specific, proving the suite
+# is optimization-level sensitive.  Runs the full unit+integration+chk
+# aggregate at the optimization level desktop embedders actually use.
+test-o2:
+	$(MAKE) TARGET=host-o2 \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O2 -g" \
+		test
+
 # test-trace — full suite under URBI_TRACE=1 (trace subsystem compiled in,
 # all channels default-OFF).  Verifies the trace build is green and that the
 # ring / tracepoints / bring-up primitives / Debug.trace marker behave.  Own
@@ -1311,7 +1320,8 @@ RELEASETEST_PHASE1 := \
     test-abi-freeze test-wire-freeze test-repl-security \
     test-stdlib-bytecode-fresh test-dependency-pins \
     test-ros2 check-ros-gate check-rosgen check-rosgen-determinism \
-    test-urobotics check-urobotics-determinism test-ros-urobotics
+    test-urobotics check-urobotics-determinism test-ros-urobotics \
+    test-chk-runner test-fuzz-smoke test-o2
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # ros-integration is excluded from releasetest (container-only; needs docker).
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
@@ -1511,14 +1521,25 @@ FUZZ_CFLAGS   := -std=c99 -Wall -Wextra -Wpedantic -O1 -g \
 $(FUZZ_BUILDDIR):
 	@mkdir -p $@
 
-$(FUZZ_BUILDDIR)/fuzz_lex: tests/fuzz/fuzz_lex.c $(SRC) | $(FUZZ_BUILDDIR)
-	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_lex.c -lm
+# refactor-3 TEST-GAP-02 fix: $(SRC) filters out the stdlib bytecode .gen.c
+# (the OBJ list adds its object separately), so passing bare $(SRC) here had
+# bit-rotted the fuzz link ("undefined reference to urbi_stdlib_bytecode_len").
+FUZZ_SRC := $(SRC) src/stdlib/urbi_stdlib_bytecode.gen.c
 
-$(FUZZ_BUILDDIR)/fuzz_parse: tests/fuzz/fuzz_parse.c $(SRC) | $(FUZZ_BUILDDIR)
-	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_parse.c -lm
+$(FUZZ_BUILDDIR)/fuzz_lex: tests/fuzz/fuzz_lex.c $(FUZZ_SRC) | $(FUZZ_BUILDDIR)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(FUZZ_SRC) tests/fuzz/fuzz_lex.c -lm
 
-$(FUZZ_BUILDDIR)/fuzz_vm: tests/fuzz/fuzz_vm.c $(SRC) | $(FUZZ_BUILDDIR)
-	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_vm.c -lm
+$(FUZZ_BUILDDIR)/fuzz_parse: tests/fuzz/fuzz_parse.c $(FUZZ_SRC) | $(FUZZ_BUILDDIR)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(FUZZ_SRC) tests/fuzz/fuzz_parse.c -lm
+
+$(FUZZ_BUILDDIR)/fuzz_vm: tests/fuzz/fuzz_vm.c $(FUZZ_SRC) | $(FUZZ_BUILDDIR)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(FUZZ_SRC) tests/fuzz/fuzz_vm.c -lm
+
+# refactor-3 TEST-GAP-02: the network-facing JSON parsers.  Both TUs are
+# libc-self-contained, so the harness links exactly those two sources.
+$(FUZZ_BUILDDIR)/fuzz_json: tests/fuzz/fuzz_json.c src/repl/ujson.c src/repl/urepl_ndjson.c | $(FUZZ_BUILDDIR)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ \
+	    tests/fuzz/fuzz_json.c src/repl/ujson.c src/repl/urepl_ndjson.c
 
 fuzz-lex: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex
 	@echo "running fuzz_lex (Ctrl-C to stop; use -runs=N for bounded)"
@@ -1532,7 +1553,31 @@ fuzz-vm: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_vm
 	@echo "running fuzz_vm (Ctrl-C to stop; use -runs=N for bounded)"
 	$(FUZZ_BUILDDIR)/fuzz_vm
 
-fuzz-build: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm
+fuzz-json: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_json
+	@echo "running fuzz_json (Ctrl-C to stop; use -runs=N for bounded)"
+	$(FUZZ_BUILDDIR)/fuzz_json
+
+fuzz-build: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm $(FUZZ_BUILDDIR)/fuzz_json
+
+# refactor-3 TEST-GAP-02: bounded fuzz smoke for releasetest Phase 1.
+# -runs=20000 per harness (sub-second each; -max_total_time bounds pathology).
+# Loud SKIP when clang/libFuzzer is unavailable — the CI releasetest job
+# installs clang, so the gate is real there.
+.PHONY: test-fuzz-smoke
+test-fuzz-smoke:
+	@if ! command -v $(FUZZ_CC) >/dev/null 2>&1; then \
+	    echo "================================================================"; \
+	    echo "test-fuzz-smoke: SKIP — $(FUZZ_CC) not found in PATH."; \
+	    echo "Install clang + libclang-rt-<ver>-dev to run the fuzz smoke."; \
+	    echo "================================================================"; \
+	    exit 0; \
+	fi
+	@$(MAKE) --no-print-directory $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm $(FUZZ_BUILDDIR)/fuzz_json
+	$(FUZZ_BUILDDIR)/fuzz_lex   -runs=20000 -max_total_time=120
+	$(FUZZ_BUILDDIR)/fuzz_parse -runs=20000 -max_total_time=120
+	$(FUZZ_BUILDDIR)/fuzz_vm    -runs=20000 -max_total_time=120
+	$(FUZZ_BUILDDIR)/fuzz_json  -runs=20000 -max_total_time=120
+	@echo "test-fuzz-smoke: 4 harnesses x 20000 bounded runs clean"
 
 fuzz-tools:
 	@command -v $(FUZZ_CC) >/dev/null 2>&1 || { \
@@ -2072,4 +2117,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace test-perf-counters test-determinism-perf cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk test-chk-ros releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-determinism-memdebug urbi-trace unit-runner test-ros2 check-ros-gate check-rosgen check-rosgen-determinism ros-integration test-urobotics test-chk-urobotics check-urobotics-determinism test-ros-urobotics test-chk-ros-urobotics
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace test-perf-counters test-determinism-perf cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk test-chk-ros releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-determinism-memdebug urbi-trace unit-runner test-ros2 check-ros-gate check-rosgen check-rosgen-determinism ros-integration test-urobotics test-chk-urobotics check-urobotics-determinism test-ros-urobotics test-chk-ros-urobotics test-chk-runner test-fuzz-smoke test-o2 fuzz-json force-flagstamp
