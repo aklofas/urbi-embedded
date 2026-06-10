@@ -631,12 +631,12 @@ list_sort(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (a == NULL) return urbi_raise_type(vm, "sort: missing _storage", out);
     UList *o = list_alloc(vm, a->len > 0U ? a->len : 1U);
     if (o == NULL) return urbi_raise_oom(vm, out);
-    size_t i, j;
+    size_t i;
     for (i = 0U; i < a->len; i++) o->items[i] = a->items[i];
     o->len = a->len;
     for (i = 1U; i < o->len; i++) {
         UValue key = o->items[i];
-        j = i;
+        size_t j = i;
         while (j > 0U) {
             int ok;
             int c = uval_cmp(&o->items[j - 1U], &key, &ok);

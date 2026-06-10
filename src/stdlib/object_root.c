@@ -716,7 +716,7 @@ obj_setProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  * (see uslot_api.c), so it serves directly as a UVAL_STR payload. */
 
 static int
-collect_local_slot_names(UVM *vm, UObject *o, UObject *lst)
+collect_local_slot_names(UVM *vm, const UObject *o, UObject *lst)
 {
     const UShape *s = o->shape;
     while (s != NULL && s->name != NULL) {
@@ -736,7 +736,7 @@ obj_localSlotNames(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *ou
     if (nargs != 0) return urbi_raise_arity(vm, "localSlotNames", 0, nargs, out);
     if (self.kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "localSlotNames: self must be a UObject", out);
-    UObject *o = (UObject *)self.v.p;
+    const UObject *o = (const UObject *)self.v.p;
     UObject *lst = urbi_stdlib_list_new_empty(vm);
     if (lst == NULL) return urbi_raise_oom(vm, out);
     if (collect_local_slot_names(vm, o, lst) != 0) return urbi_raise_oom(vm, out);
@@ -754,14 +754,14 @@ obj_slotNames(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (nargs != 0) return urbi_raise_arity(vm, "slotNames", 0, nargs, out);
     if (self.kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "slotNames: self must be a UObject", out);
-    UObject *o = (UObject *)self.v.p;
+    const UObject *o = (const UObject *)self.v.p;
     UObject *lst = urbi_stdlib_list_new_empty(vm);
     if (lst == NULL) return urbi_raise_oom(vm, out);
     if (collect_local_slot_names(vm, o, lst) != 0) return urbi_raise_oom(vm, out);
     uint32_t np = urbi_object_proto_count(o);
     uint32_t i;
     for (i = 0U; i < np; i++) {
-        UObject *p = urbi_object_proto_at(o, i);
+        const UObject *p = urbi_object_proto_at(o, i);
         if (p == NULL) continue;
         if (collect_local_slot_names(vm, p, lst) != 0) return urbi_raise_oom(vm, out);
     }
@@ -776,7 +776,7 @@ obj_hasLocalSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "hasLocalSlot: name must be a String", out);
     if (self.kind != (uint8_t)UVAL_OBJECT) { *out = uval_bool(0); return UEXEC_OK; }
-    UObject *o = (UObject *)self.v.p;
+    const UObject *o = (const UObject *)self.v.p;
     const USymbol *name = (const USymbol *)args[0].v.p;
     *out = uval_bool(urbi_shape_find_slot(o->shape, name) >= 0);
     return UEXEC_OK;

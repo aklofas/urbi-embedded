@@ -90,7 +90,7 @@ re_atom_matches(const char *re, size_t alen, char ch)
     if (re[0] == '[') {
         size_t i = 1U;
         int neg = 0, hit = 0;
-        size_t end = (alen > 0U && re[alen - 1U] == ']') ? alen - 1U : alen;
+        size_t end = (re[alen - 1U] == ']') ? alen - 1U : alen;
         if (i < end && re[i] == '^') { neg = 1; i++; }
         while (i < end) {
             if (i + 2U < end && re[i + 1U] == '-') {

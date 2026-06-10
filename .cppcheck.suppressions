@@ -184,6 +184,13 @@ constParameterPointer:src/repl/urepl_dispatch.c
 // otherwise need a per-site suppression.
 arrayIndexOutOfBoundsCond:src/runtime/umacros.h
 
+// audit:v0.12.5-m10-prep — src/stdlib/regexp.c native-method callbacks
+// (regexp_new / regexp_match / etc.) expose UValue *args via the
+// urbi_native_method_fn typedef.  Same rationale as Phase 5/6/7/9 above —
+// the function-pointer signature is pinned and cannot be const-qualified
+// without breaking every native-method registration site.
+constParameterPointer:src/stdlib/regexp.c
+
 // audit:v0.12.0-ros — src/ros/uros.c native-method callbacks
 // (ros_init_method, ros_msg_method, ros_subscribe_method, ros_client_method,
 // ros_service_method, ros_publisher_method, ros_inject_int32_method) expose
