@@ -640,15 +640,36 @@ bool uemit_close_block(UEmitter *e) {
      * indices by the reserved r_global_slot register, so the bare index
      * lands one register too low and prematurely heapifies the enclosing
      * function's last-declared local (refactor-3 FE-04 follow-on).
-     * Guard first_local_idx < nactvar: a block whose only local was a
-     * catch variable has it popped — and its cell closed — by
-     * emit_catch_handler_section before block close, leaving has_captured
-     * set with no live locals and nothing left to close. */
-    if (blk->has_captured && blk->first_local_idx < fs->nactvar) {
-        uint32_t i = uinstr_enc_abc(OP_CLOSE,
-                                    fs->actvars[blk->first_local_idx].slot,
-                                    0U, 0U);
+     * When the block has no live own locals — its only local was a catch
+     * variable popped (and closed) early by emit_catch_handler_section,
+     * or has_captured arrived by propagation from a child block (below) —
+     * fall back to freereg_on_enter: every register allocated during this
+     * block's lifetime, including any child block's locals, sits at or
+     * above that floor, so OP_CLOSE there covers them all; if every such
+     * cell is already closed the instruction is a runtime no-op. */
+    if (blk->has_captured) {
+        uint8_t close_base = (blk->first_local_idx < fs->nactvar)
+                           ? fs->actvars[blk->first_local_idx].slot
+                           : blk->freereg_on_enter;
+        uint32_t i = uinstr_enc_abc(OP_CLOSE, close_base, 0U, 0U);
         emit_instr(e, i, e->prev_line);
+    }
+
+    /* Propagate has_captured to the enclosing block before this ctx dies
+     * (refactor-3 FE-04 follow-on).  find_or_install_upvalue marks only
+     * the INNERMOST block containing the captured local; without
+     * propagation the flag dies with this ctx and the enclosing
+     * construct's conditional closes (while/for-each back-edge + loop-exit
+     * closes gate on blk->has_captured) never see captures made inside a
+     * nested `{}` — break/continue then jump past this block's inline
+     * OP_CLOSE leaving the cell open into a recycled register.
+     * Propagation is UNCONDITIONAL (any captured child marks the parent):
+     * OP_CLOSE thresholds are register-address-based, so a parent's close
+     * at its own base register safely covers (re-)closing the child range
+     * — over-approximation costs at most a no-op OP_CLOSE.  blocks[] is
+     * per-UFuncState, so this cannot leak across function boundaries. */
+    if (blk->has_captured && fs->nblocks >= 2) {
+        fs->blocks[fs->nblocks - 2].has_captured = true;
     }
 
     /* Pop actvars back to entry snapshot; restore freereg.
@@ -664,12 +685,16 @@ void uemit_emit_loop_back_close(UEmitter *e) {
     UFuncState *fs = e->current_fs;
     if (fs == NULL || fs->nblocks == 0) return;
     const UBlockCtx *blk = &fs->blocks[fs->nblocks - 1];
-    /* Same operand + guard rationale as uemit_close_block above: OP_CLOSE A
-     * is a register slot, not an actvar index (refactor-3 FE-04 follow-on). */
-    if (blk->is_loop && blk->has_captured && blk->first_local_idx < fs->nactvar) {
-        uint32_t i = uinstr_enc_abc(OP_CLOSE,
-                                    fs->actvars[blk->first_local_idx].slot,
-                                    0U, 0U);
+    /* Same operand + fallback rationale as uemit_close_block above: OP_CLOSE
+     * A is a register slot, not an actvar index, and a loop block whose
+     * has_captured arrived by child-block propagation may have no own
+     * locals — close at freereg_on_enter to cover the (already-popped)
+     * child range (refactor-3 FE-04 follow-on). */
+    if (blk->is_loop && blk->has_captured) {
+        uint8_t close_base = (blk->first_local_idx < fs->nactvar)
+                           ? fs->actvars[blk->first_local_idx].slot
+                           : blk->freereg_on_enter;
+        uint32_t i = uinstr_enc_abc(OP_CLOSE, close_base, 0U, 0U);
         emit_instr(e, i, e->prev_line);
     }
 }

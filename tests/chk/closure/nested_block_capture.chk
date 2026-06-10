@@ -1,0 +1,46 @@
+# Milestone: v0.13.1
+# Covers: uemit_close_block must propagate has_captured to the enclosing
+#         block ctx when popping (refactor-3 FE-04 follow-on).
+#         find_or_install_upvalue marks only the INNERMOST block containing
+#         a captured local; pre-fix the flag died with that block's ctx, so
+#         the enclosing construct's conditional closes (while back-edge +
+#         loop-exit closes gate on blk->has_captured) never saw captures
+#         made inside a nested `{}` — break/continue jumped past the nested
+#         block's inline OP_CLOSE leaving the cell open into a recycled
+#         register.  Fix: unconditional child-to-parent propagation on pop
+#         (over-approximation costs at most a no-op OP_CLOSE — thresholds
+#         are register-address-based), plus a freereg_on_enter fallback
+#         threshold for blocks whose has_captured arrived by propagation
+#         but own no live locals.
+#
+# Pre-fix behavior (verified empirically 2026-06-10):
+#   scenario 1 printed 99 (z's register recycled by pad);
+#   scenario 2 raised "TypeError: OP_MUL operands must be Integer or Float
+#     (got unknown, Integer)" (open cell read a dead temp register);
+#   scenario 3 printed 0 (cell stayed open across `continue`, then the
+#     switch's no-match exit close in iteration 2 captured the case-value
+#     temp recycled into z's register);
+#   scenario 4 printed 99 (propagation must cascade through TWO pops);
+#   scenario 5 printed 2 (correct — the nested block's inline OP_CLOSE runs
+#     on fall-through; regression pin).
+
+# --- 1. while + nested {} capture + break: exit close must cover the cell
+var t1 = function() { var g = nil; var i = 0; while (i < 5) { { var z = 77; g = function() { return z }; break } }; var pad1 = 99; return g() }; t1()
+[00000000] 77
+
+# --- 2. while + nested {} capture + continue: back-edge close must cover it
+var t2 = function() { var f1 = nil; var f2 = nil; var i = 0; while (i < 2) { { var z = i; if (i == 0) { f1 = function() { return z } }; if (i == 1) { f2 = function() { return z } }; i = i + 1; continue } }; return f1() + f2() * 10 }; t2()
+[00000001] 10
+
+# --- 3. switch-in-while: continue from a case body skips the switch's exit
+# ---    close; the while back-edge close must cover the case-body cell
+var t3 = function() { var g = nil; var i = 0; while (i < 2) { switch (i) { case 0: { var z = 10; g = function() { return z }; i = i + 1; continue } }; i = i + 1 }; return g() }; t3()
+[00000002] 10
+
+# --- 4. doubly-nested {} capture + break: propagation cascades two pops
+var t4 = function() { var g = nil; var i = 0; while (i < 5) { { { var z = 42; g = function() { return z }; break } } }; var pad2 = 99; return g() }; t4()
+[00000003] 42
+
+# --- 5. nested {} capture, while exits normally (regression pin)
+var t5 = function() { var g = nil; var i = 0; while (i < 3) { { var z = i; g = function() { return z } }; i = i + 1 }; var pad3 = 99; return g() }; t5()
+[00000004] 2
