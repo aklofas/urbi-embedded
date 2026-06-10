@@ -13,7 +13,6 @@ AUX_SRCS := src/urbi_aux.c
 # M7 Wave 1.  T17 will follow up to clean any libc-leak unresolved
 # symbols surfaced by the real strip.
 ifeq ($(URBI_BYTECODE_ONLY),1)
-  CFLAGS += -DURBI_BYTECODE_ONLY=1
   CPPFLAGS += -DURBI_BYTECODE_ONLY=1
   COMPILER_FRONTEND_DIRS_EXCLUDED := 1
 endif
@@ -27,7 +26,6 @@ ifeq ($(URBI_ENABLE_REPL),1)
   ifeq ($(URBI_BYTECODE_ONLY),1)
     $(error URBI_ENABLE_REPL=1 is incompatible with URBI_BYTECODE_ONLY=1)
   endif
-  CFLAGS   += -DURBI_ENABLE_REPL=1
   CPPFLAGS += -DURBI_ENABLE_REPL=1
   REPL_SRCS := $(wildcard src/repl/*.c)
   # v0.9.4-followup: cooperative-only filter (Pico, bare-metal STM32, etc.)
@@ -35,7 +33,6 @@ ifeq ($(URBI_ENABLE_REPL),1)
   # listener (pthread + eventfd + sockets) and socket transports. Embedder
   # drives serve_step from main loop; no listener thread needed.
   ifeq ($(URBI_REPL_COOPERATIVE_ONLY),1)
-    CFLAGS   += -DURBI_REPL_COOPERATIVE_ONLY=1
     CPPFLAGS += -DURBI_REPL_COOPERATIVE_ONLY=1
     REPL_SRCS := $(filter-out \
         src/repl/urepl_transport_tcp.c \
@@ -55,7 +52,6 @@ ifeq ($(URBI_ENABLE_ROS2),1)
   ifeq ($(URBI_BYTECODE_ONLY),1)
     $(error URBI_ENABLE_ROS2=1 is incompatible with URBI_BYTECODE_ONLY=1)
   endif
-  CFLAGS   += -DURBI_ENABLE_ROS2=1
   CPPFLAGS += -DURBI_ENABLE_ROS2=1
   ROS2_SRCS := $(wildcard src/ros/*.c)
   ROS2_GEN_DIR := src/ros/generated
@@ -95,7 +91,6 @@ ifeq ($(URBI_ENABLE_UROBOTICS),1)
   ifeq ($(URBI_BYTECODE_ONLY),1)
     $(error URBI_ENABLE_UROBOTICS=1 is incompatible with URBI_BYTECODE_ONLY=1)
   endif
-  CFLAGS   += -DURBI_ENABLE_UROBOTICS=1
   CPPFLAGS += -DURBI_ENABLE_UROBOTICS=1
   UROBOTICS_SRCS := $(wildcard src/urobotics/*.c)
 else
@@ -129,6 +124,20 @@ TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
 
 TARGET ?= host
 BUILDDIR := build/$(TARGET)
+
+# refactor-3 BLD-03: the optional-component flags must never be combined with
+# the bare default build tree.  build/host/ is shared by the bake tool, the
+# lint compile database, and every "default build" gate; compiling flag-on
+# objects into it leaves stale-flag objects behind (the v0.12.0-H trap —
+# previously comment-only convention, now enforced).
+ifeq ($(TARGET),host)
+  ifeq ($(URBI_ENABLE_ROS2),1)
+    $(error URBI_ENABLE_ROS2=1 on bare TARGET=host is forbidden (stale-object trap v0.12.0-H). Use the dedicated targets: `make test-ros2` / `make test-ros-urobotics`, or pass an explicit TARGET=host-ros2)
+  endif
+  ifeq ($(URBI_ENABLE_UROBOTICS),1)
+    $(error URBI_ENABLE_UROBOTICS=1 on bare TARGET=host is forbidden (stale-object trap v0.12.0-H). Use the dedicated targets: `make test-urobotics` / `make test-ros-urobotics`, or pass an explicit TARGET=host-urobotics)
+  endif
+endif
 
 # Stdlib bytecode flavor selection.  The tracked
 # src/stdlib/urbi_stdlib_bytecode.gen.c is host-baked at f64
@@ -164,12 +173,15 @@ LIBURBI_AUX := $(BUILDDIR)/liburbi_aux.a
 RUNNER := $(BUILDDIR)/tests/unit/runner
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
-# v1.0 (B6a): hide internal cross-TU symbols from the export surface.  Public
-# API is re-exported via `#pragma GCC visibility push(default)` in the
-# include/urbi/*.h headers, so only documented urbi_* symbols escape when an
-# embedder links liburbi.a into a shared object.  Harmless for static linking
-# into executables (the dominant embedded case) and for non-GNU toolchains.
-CFLAGS += -fvisibility=hidden
+# v1.0 (B6a) / refactor-3 BLD-05: hide internal cross-TU symbols from the
+# export surface.  Lives in a dedicated always-applied variable — NOT a
+# `CFLAGS +=` — because every recursive `make CFLAGS="..."` invocation
+# (sanitizers, -O variants, trace/perf/memdbg presets, cross builds)
+# overrides CFLAGS from the command line, which silently dropped the append:
+# only the default host build was actually built hidden.  Public API is
+# re-exported via `#pragma GCC visibility push(default)` in the
+# include/urbi/*.h headers.
+URBI_VIS_FLAGS := -fvisibility=hidden
 CPPFLAGS += -Iinclude -Isrc -Itests/unit
 RUNNER_WRAPPER ?=
 
@@ -199,7 +211,7 @@ core: $(LIB)
 
 $(BUILDDIR)/src/%.o: src/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
 
 # v0.12.0: ROS2 message marshaling codegen.  Tracked, regenerated from the
 # manifest by tools/urbi-rosgen.py.  Order-only prereq guarantees the
@@ -228,7 +240,7 @@ endif
 
 $(BUILDDIR)/tests/unit/%.o: tests/unit/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
 
 # tests/unit/test_detect_blob.c includes detect_blob.h from the eye_demo
 # example's main/ directory.  Per-target CPPFLAGS append picks up the
@@ -261,7 +273,7 @@ $(BUILDDIR)/tools/linenoise.o: tools/linenoise.c | $(BUILDDIR)/tools
 	    -w -Itools -MMD -MP -c -o $@ $<
 
 $(BUILDDIR)/tools/urbi.o: tools/urbi.c | $(BUILDDIR)/tools
-	$(CC) $(CFLAGS) $(CPPFLAGS) -Itools -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -Itools -MMD -MP -c -o $@ $<
 
 $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
 	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB) -lm
@@ -295,7 +307,7 @@ $(BUILDDIR)/tests/integration:
 
 $(BUILDDIR)/tests/integration/chk_host_driver.o: tests/integration/chk_host_driver.c \
 		| $(BUILDDIR)/tests/integration
-	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
 
 $(BUILDDIR)/chk-host-driver: $(BUILDDIR)/tests/integration/chk_host_driver.o $(LIB)
 	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tests/integration/chk_host_driver.o $(LIB) -lm
@@ -317,7 +329,7 @@ URBI_SERVER := $(BUILDDIR)/urbi-server
 URBI_SEND   := $(BUILDDIR)/urbi-send
 
 $(BUILDDIR)/tools/urbi-server.o: tools/urbi-server.c | $(BUILDDIR)/tools
-	$(CC) $(CFLAGS) $(CPPFLAGS) -Itools -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -Itools -MMD -MP -c -o $@ $<
 
 $(URBI_SERVER): $(BUILDDIR)/tools/urbi-server.o $(LIB)
 	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi-server.o $(LIB) -lm
@@ -375,7 +387,7 @@ endif
 ifneq ($(TARGET),host)
 build/host/src/%.o: src/%.c
 	@mkdir -p $(@D)
-	cc -std=c99 -Wall -Wextra -Wpedantic -Os -Iinclude -Isrc -MMD -MP -c -o $@ $<
+	cc -std=c99 -Wall -Wextra -Wpedantic -Os -fvisibility=hidden -Iinclude -Isrc -MMD -MP -c -o $@ $<
 endif
 
 build/host/tools/stub_stdlib_bytecode.o: tools/stub_stdlib_bytecode.c
@@ -509,7 +521,7 @@ $(STDLIB_BYTECODE_GEN_C): tools/urbi-compile-stdlib-f$(URBI_STDLIB_FLAVOR) \
 
 $(STDLIB_BYTECODE_GEN_O): $(STDLIB_BYTECODE_GEN_C)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
 endif
 
 # v0.12.2: bake the gated urobotics overlay into urbi_urobotics_bytecode.
