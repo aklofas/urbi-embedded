@@ -24,3 +24,17 @@
 
 var done = false; var n = 0; while (!done) { n = n + 1; if (n >= 3) { done = true } }; n
 [00000006] 3
+
+# Local-non-clobber regression pin: `!a` must not overwrite the local `a`
+# in place (guards the rd = src_reg choice against a future emit_ident_arm
+# copy-elision).
+var a = 5; var b = !a; a
+[00000007] 5
+
+# String truthiness: interned string refs are truthy per uvalue_truthy.
+!"str"
+[00000008] false
+
+# Composed form: `!` over a comparison result.
+var p = 1; var q = 2; !(p == q)
+[00000009] true
