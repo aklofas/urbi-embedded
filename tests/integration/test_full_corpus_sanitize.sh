@@ -50,22 +50,33 @@ mapfile -t fixtures < <(find tests/chk -path tests/chk/repl -prune -o \
 echo "Discovered ${#fixtures[@]} fixtures (tests/chk/repl excluded)."
 
 failed=0
+ran=0
+skipped=0
+placeholders=0
+
+run_one() { # <label> <binary> <fixture>
+    local label="$1" bin="$2" chk="$3" out rc
+    out=$("$RUNNER" "$bin" "$chk" 2>&1); rc=$?
+    case "$rc" in
+        0) ran=$((ran + 1)) ;;
+        3) skipped=$((skipped + 1)) ;;
+        4) placeholders=$((placeholders + 1)) ;;
+        *) echo "$label FAIL (rc=$rc): $chk"
+           echo "$out" | sed 's/^/    /'
+           failed=$((failed + 1)) ;;
+    esac
+}
 
 for chk in "${fixtures[@]}"; do
-    # ASan
-    if ! "$RUNNER" "$ASAN_URBI" "$chk" >/dev/null 2>&1; then
-        echo "ASan FAIL: $chk"
-        failed=$((failed + 1))
-    fi
-    # UBSan
-    if ! "$RUNNER" "$UBSAN_URBI" "$chk" >/dev/null 2>&1; then
-        echo "UBSan FAIL: $chk"
-        failed=$((failed + 1))
-    fi
+    run_one "ASan"  "$ASAN_URBI"  "$chk"
+    run_one "UBSan" "$UBSAN_URBI" "$chk"
 done
 
+echo "corpus-sanitize summary: $ran sanitized runs, $skipped SKIPped (preset-gated" \
+     "— these fixtures get ZERO sanitizer coverage from this gate; refactor-3 CHK-04)," \
+     "$placeholders placeholder runs, $failed failures"
 if [[ "$failed" -gt 0 ]]; then
     echo "FAIL: $failed corpus-sanitize failures across ${#fixtures[@]} fixtures × 2 sanitizers"
     exit 1
 fi
-echo "OK: ${#fixtures[@]} fixtures × 2 sanitizers = $((${#fixtures[@]} * 2)) runs all clean"
+echo "OK: ${#fixtures[@]} fixtures × 2 sanitizers — $ran runs clean ($skipped skipped, $placeholders placeholders)"
