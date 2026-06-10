@@ -1,0 +1,56 @@
+# Milestone: v0.13.1
+# Covers: case-body locals must survive temp resets and close correctly
+#         (found during v0.13.1 review, FE-02 follow-on).  emit_switch_arm
+#         held the switch subject in a raw temp register (sw_reg) below any
+#         case-body `var` declarations, but fs_temp_floor is COUNT-based
+#         (nactvar + global_slot_reserved) and assumes locals occupy a
+#         contiguous register range from the floor.  A case-body local was
+#         allocated ABOVE the held sw_reg, so the floor landed BELOW the
+#         local's actual slot and every later temp reset let temps clobber
+#         it; captured case-body locals additionally never got an OP_CLOSE
+#         on break paths (break jumps past every pending block close).
+#         Fix: the subject is a hidden declared local in an outer block
+#         (for-each's machinery pattern), each case body opens its own
+#         block, and the switch exit lands on an exit-path OP_CLOSE at the
+#         case-zone base register.  The exit close is unconditional (not
+#         gated on the case block's has_captured) because a braced case
+#         body emits through emit_block_arm — its captures mark that
+#         deeper block, invisible at case close — while the close's
+#         register-address threshold covers cells from any nesting depth.
+#
+# Pre-fix behavior (verified empirically 2026-06-10):
+#   scenario 1 printed 6 (dummy + dummy: z's register recycled by temps);
+#   scenario 2 printed 4 (b + b), scenario 3 printed 10 (d + d);
+#   scenario 4 printed <?> (closure read a clobbered register);
+#   scenario 5 printed <?> (break skipped every close; cell stayed open);
+#   scenario 6 printed 4 (y + y: x's register recycled by y's initializer);
+#   scenario 7 printed <?> (capture in a nested {} block, break inside it:
+#     cell pointed at a register recycled by the caller/callee overlap).
+
+# --- plain var arithmetic in a case body
+var tA = function() { var r = 0; switch (1) { case 1: { var z = 9; var dummy = 1 + 2; r = z + dummy }; }; return r }; tA()
+[00000000] 12
+
+# --- vars in multiple cases of one switch: dispatch first case
+var tB = function(k) { var r = 0; switch (k) { case 1: { var a = 10; var b = 1 + 1; r = a + b }; case 2: { var c = 20; var d = 2 + 3; r = c + d } }; return r }; tB(1)
+[00000001] 12
+
+# --- vars in multiple cases of one switch: dispatch second case
+var tB2 = function(k) { var r = 0; switch (k) { case 1: { var a = 10; var b = 1 + 1; r = a + b }; case 2: { var c = 20; var d = 2 + 3; r = c + d } }; return r }; tB2(2)
+[00000002] 25
+
+# --- closure capturing a case-body local, read after the switch
+var tC = function() { var g = nil; switch (1) { case 1: { var z = 42; g = function() { return z } }; }; var pad = 99; return g() }; tC()
+[00000003] 42
+
+# --- break with a captured case-body var, switch inside a while loop
+var tD = function() { var g = nil; var i = 0; while (i < 3) { i = i + 1; switch (i) { case 1: { var z = 7; g = function() { return z }; break } } }; var pad2 = 99; return g() }; tD()
+[00000004] 7
+
+# --- nested {} block inside a case + break from inside the nested block
+var tE = function() { var r = 0; switch (1) { case 1: { var x = 1; { var y = 2; r = x + y; break }; r = 99 } }; return r }; tE()
+[00000005] 3
+
+# --- capture in a nested {} block inside a case, break inside that block
+var tG = function() { var g = nil; switch (1) { case 1: { var pad = 0; { var z = 5; g = function() { return z }; break } } }; var pad4 = 99; return g() }; tG()
+[00000006] 5
