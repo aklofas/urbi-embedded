@@ -49,6 +49,11 @@ mapfile -t fixtures < <(find tests/chk -path tests/chk/repl -prune -o \
                              -type f -name '*.chk' -print | sort)
 echo "Discovered ${#fixtures[@]} fixtures (tests/chk/repl excluded)."
 
+if [[ "${#fixtures[@]}" -eq 0 ]]; then
+    echo "FAIL: zero fixtures discovered — corpus missing or find pattern broken" >&2
+    exit 1
+fi
+
 failed=0
 ran=0
 skipped=0
@@ -77,6 +82,10 @@ echo "corpus-sanitize summary: $ran sanitized runs, $skipped SKIPped (preset-gat
      "$placeholders placeholder runs, $failed failures"
 if [[ "$failed" -gt 0 ]]; then
     echo "FAIL: $failed corpus-sanitize failures across ${#fixtures[@]} fixtures × 2 sanitizers"
+    exit 1
+fi
+if [[ "$ran" -eq 0 ]]; then
+    echo "FAIL: zero sanitized runs actually executed (all SKIP/placeholder) — gate provides no coverage" >&2
     exit 1
 fi
 echo "OK: ${#fixtures[@]} fixtures × 2 sanitizers — $ran runs clean ($skipped skipped, $placeholders placeholders)"

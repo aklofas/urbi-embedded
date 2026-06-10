@@ -64,7 +64,8 @@ fi
 # A placeholder fixture is a specification record, not a test — it never
 # executes.  Exit 4 lets the suite tally placeholders separately from real
 # passes (refactor-3 CHK-01).
-placeholder=$(grep -E '^# (blocked|deferred|dropped):' "$CHK" | head -1)
+placeholder=$(awk '/^#/ { print; next } { exit }' "$CHK" | \
+              grep -E '^# (blocked|deferred|dropped):' | head -1)
 if [ -n "$placeholder" ]; then
     printf 'PLACEHOLDER: %s (%s)\n' "$CHK" "$placeholder"
     exit 4
@@ -76,6 +77,12 @@ expected_exit=$(grep -E '^[[:space:]]*##[[:space:]]*exit:[[:space:]]*' "$CHK" | 
                  head -1 | \
                  sed -E 's/^[[:space:]]*##[[:space:]]*exit:[[:space:]]*//; s/[[:space:]]*$//')
 [ -n "$expected_exit" ] || expected_exit=0
+case "$expected_exit" in
+    ''|*[!0-9]*)
+        echo "run_chk: invalid '## exit:' value in $CHK" >&2
+        exit 2
+        ;;
+esac
 
 # Per-fixture timeout (refactor-3 CHK-03).  coreutils `timeout` reports
 # expiry as exit 124.
@@ -83,6 +90,12 @@ timeout_s=$(grep -E '^[[:space:]]*##[[:space:]]*timeout:[[:space:]]*' "$CHK" | \
              head -1 | \
              sed -E 's/^[[:space:]]*##[[:space:]]*timeout:[[:space:]]*//; s/[[:space:]]*$//')
 [ -n "$timeout_s" ] || timeout_s=30
+case "$timeout_s" in
+    ''|*[!0-9]*)
+        echo "run_chk: invalid '## timeout:' value in $CHK" >&2
+        exit 2
+        ;;
+esac
 
 TMPDIR_LOCAL=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_LOCAL"' EXIT
@@ -105,6 +118,16 @@ if grep -qE '^[[:space:]]*##[[:space:]]*host:' "$CHK"; then
     # Expected lines come from the same `[...]` frame the REPL path uses.
     grep -E '^\[' "$CHK" > "$TMPDIR_LOCAL/expected.raw" 2>/dev/null || true
     [ -f "$TMPDIR_LOCAL/expected.raw" ] || touch "$TMPDIR_LOCAL/expected.raw"
+
+    # refactor-3 CHK-01 (host path): a host-driver fixture with no expected
+    # lines diffs against an empty file — it can never fail and proves
+    # nothing.  Same vacuous contract as the script path below.
+    if [ ! -s "$TMPDIR_LOCAL/expected.raw" ]; then
+        printf 'VACUOUS: %s (host-driver; empty expected output, no placeholder annotation — annotate per docs/release/chk-deferred-taxonomy.md or activate; refactor-3 CHK-01)\n' \
+               "$CHK" >&2
+        exit 5
+    fi
+
     sed -E 's/^\[[^]]*\] //' \
         < "$TMPDIR_LOCAL/expected.raw" \
         > "$TMPDIR_LOCAL/expected.norm"

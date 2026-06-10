@@ -577,6 +577,10 @@ test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
 	if [ $$fail -gt 0 ] || [ $$vacuous -gt 0 ]; then \
 	    echo "test-chk: FAIL —$$bad"; \
 	    exit 1; \
+	fi; \
+	if [ $$pass -eq 0 ]; then \
+	    echo "test-chk: zero fixtures passed — corpus missing or runner broken"; \
+	    exit 1; \
 	fi
 
 # refactor-3 CHK meta-gate: pins run_chk.sh's exit-code contract with stub

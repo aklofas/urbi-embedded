@@ -41,7 +41,14 @@ cat > /dev/null
 printf '[00000000] 3\n'
 sleep 1000
 EOF
-chmod +x "$TMP/urbi-ok" "$TMP/urbi-crash" "$TMP/urbi-hang"
+# Stub: wrong output, clean exit — the plain diff-mismatch FAIL case.
+cat > "$TMP/urbi-wrong" <<'EOF'
+#!/bin/sh
+cat > /dev/null
+printf '[00000000] 4\n'
+exit 0
+EOF
+chmod +x "$TMP/urbi-ok" "$TMP/urbi-crash" "$TMP/urbi-hang" "$TMP/urbi-wrong"
 
 cat > "$TMP/basic.chk" <<'EOF'
 1 + 2;
@@ -74,6 +81,12 @@ cat > "$TMP/gated.chk" <<'EOF'
 [00000000] 3
 EOF
 
+cat > "$TMP/bad-exit-directive.chk" <<'EOF'
+## exit: banana
+1 + 2;
+[00000000] 3
+EOF
+
 "$RUNNER" "$TMP/urbi-ok" "$TMP/basic.chk" >/dev/null 2>&1
 expect_rc "matching output + exit 0 PASSes"      0 $?
 "$RUNNER" "$TMP/urbi-crash" "$TMP/basic.chk" >/dev/null 2>&1
@@ -88,9 +101,15 @@ expect_rc "unannotated vacuous fixture is VACUOUS (CHK-01)" 5 $?
 expect_rc "annotated placeholder exits 4 (CHK-01)" 4 $?
 URBI_BUILD_PRESET=default "$RUNNER" "$TMP/urbi-ok" "$TMP/gated.chk" >/dev/null 2>&1
 expect_rc "preset mismatch SKIPs with rc=3 (CHK-04)" 3 $?
+"$RUNNER" "$TMP/urbi-wrong" "$TMP/basic.chk" >/dev/null 2>&1
+expect_rc "wrong output FAILs (diff mismatch)"   1 $?
+"$RUNNER" "$TMP/no-such-urbi" "$TMP/basic.chk" >/dev/null 2>&1
+expect_rc "missing binary is a runner error"     2 $?
+"$RUNNER" "$TMP/urbi-ok" "$TMP/bad-exit-directive.chk" >/dev/null 2>&1
+expect_rc "non-integer '## exit:' is a runner error" 2 $?
 
 if [ "$fails" -gt 0 ]; then
     echo "test_run_chk_runner: $fails contract check(s) FAILED"
     exit 1
 fi
-echo "test_run_chk_runner: all 7 runner-contract checks PASS"
+echo "test_run_chk_runner: all 10 runner-contract checks PASS"
