@@ -1767,18 +1767,21 @@ cross-esp32s3-full:
 # CI invokes this from the cross-compile workflow (see T13).
 .PHONY: test-cross-esp32s3-freestanding-golden
 test-cross-esp32s3-freestanding-golden: cross-esp32s3-bytecode-only
-	@xtensa-esp-elf-nm build/cross-esp32s3-bytecode-only/liburbi.a 2>/dev/null \
+	@actual=$$(mktemp); \
+	 xtensa-esp-elf-nm build/cross-esp32s3-bytecode-only/liburbi.a 2>/dev/null \
 	  | awk 'NF >= 3 && $$3 !~ /:$$/ && $$1 != "U" {defined[$$3]=1} \
 	         NF >= 2 && $$1 == "U" {undefined[$$2]=1} \
 	         END {for (s in undefined) if (!(s in defined)) print s}' \
-	  | sort -u > /tmp/v0.7.2-esp32-nm-bytecode-only.actual.txt
-	@diff -u tests/golden/v0.7.2-esp32-nm-bytecode-only.txt \
-	         /tmp/v0.7.2-esp32-nm-bytecode-only.actual.txt \
-	  && echo "PASS: cross-esp32s3-bytecode-only freestanding signature matches golden" \
-	  || { echo "FAIL: cross-esp32s3-bytecode-only freestanding signature drifted from golden." ; \
-	       echo "      Either fix the leak or update the golden after verifying intent:" ; \
-	       echo "        cp /tmp/v0.7.2-esp32-nm-bytecode-only.actual.txt tests/golden/v0.7.2-esp32-nm-bytecode-only.txt" ; \
-	       exit 1 ; }
+	  | sort -u > "$$actual"; \
+	 if diff -u tests/golden/v0.7.2-esp32-nm-bytecode-only.txt "$$actual"; then \
+	     echo "PASS: cross-esp32s3-bytecode-only freestanding signature matches golden"; \
+	     rm -f "$$actual"; \
+	 else \
+	     echo "FAIL: cross-esp32s3-bytecode-only freestanding signature drifted from golden."; \
+	     echo "      Either fix the leak or update the golden after verifying intent:"; \
+	     echo "        cp $$actual tests/golden/v0.7.2-esp32-nm-bytecode-only.txt"; \
+	     exit 1; \
+	 fi
 
 # v0.9.4: cross-pico freestanding signature golden — mirror of the
 # esp32s3 gate above.  Locks the symbol surface of the cortex-m0plus
@@ -1788,18 +1791,21 @@ test-cross-esp32s3-freestanding-golden: cross-esp32s3-bytecode-only
 # the regeneration command.
 .PHONY: test-cross-pico-freestanding-golden
 test-cross-pico-freestanding-golden: cross-pico-bytecode-only
-	@arm-none-eabi-nm build/cross-pico-bytecode-only/liburbi.a 2>/dev/null \
+	@actual=$$(mktemp); \
+	 arm-none-eabi-nm build/cross-pico-bytecode-only/liburbi.a 2>/dev/null \
 	  | awk 'NF >= 3 && $$3 !~ /:$$/ && $$1 != "U" {defined[$$3]=1} \
 	         NF >= 2 && $$1 == "U" {undefined[$$2]=1} \
 	         END {for (s in undefined) if (!(s in defined)) print s}' \
-	  | sort -u > /tmp/v0.9.4-pico-nm-bytecode-only.actual.txt
-	@diff -u tests/golden/v0.9.4-pico-nm-bytecode-only.txt \
-	         /tmp/v0.9.4-pico-nm-bytecode-only.actual.txt \
-	  && echo "PASS: cross-pico-bytecode-only freestanding signature matches golden" \
-	  || { echo "FAIL: cross-pico-bytecode-only freestanding signature drifted from golden." ; \
-	       echo "      Either fix the leak or update the golden after verifying intent:" ; \
-	       echo "        cp /tmp/v0.9.4-pico-nm-bytecode-only.actual.txt tests/golden/v0.9.4-pico-nm-bytecode-only.txt" ; \
-	       exit 1 ; }
+	  | sort -u > "$$actual"; \
+	 if diff -u tests/golden/v0.9.4-pico-nm-bytecode-only.txt "$$actual"; then \
+	     echo "PASS: cross-pico-bytecode-only freestanding signature matches golden"; \
+	     rm -f "$$actual"; \
+	 else \
+	     echo "FAIL: cross-pico-bytecode-only freestanding signature drifted from golden."; \
+	     echo "      Either fix the leak or update the golden after verifying intent:"; \
+	     echo "        cp $$actual tests/golden/v0.9.4-pico-nm-bytecode-only.txt"; \
+	     exit 1; \
+	 fi
 
 # v0.9.4-followup: example .elf link gate. Builds liburbi.a (cooperative
 # REPL) + the repl_demo Pico example to verify the embedding API surface
@@ -1816,15 +1822,17 @@ test-cross-pico-repl-elf: cross-pico-repl tools/urbi-compile-stdlib-pico
 	    exit 0; \
 	fi
 	@PSP="$${PICO_SDK_PATH:-$$PWD/../tools/pico-sdk}"; \
+	 cmlog=$$(mktemp); mklog=$$(mktemp); \
 	 cd examples/pico/repl_demo && \
 	 mkdir -p build && cd build && \
 	 cmake -DPICO_SDK_PATH="$$PSP" \
 	       -DLIBURBI_BUILD_SUBDIR=arm-cortex-m0plus-repl \
-	       .. > /tmp/repl_demo_cmake.log 2>&1 || \
-	     { cat /tmp/repl_demo_cmake.log; exit 1; }; \
-	 $(MAKE) repl_demo > /tmp/repl_demo_make.log 2>&1 || \
-	     { echo "--- CMake output ---"; cat /tmp/repl_demo_cmake.log; \
-	       echo "--- make output ---"; cat /tmp/repl_demo_make.log; exit 1; }
+	       .. > "$$cmlog" 2>&1 || \
+	     { cat "$$cmlog"; exit 1; }; \
+	 $(MAKE) repl_demo > "$$mklog" 2>&1 || \
+	     { echo "--- CMake output ---"; cat "$$cmlog"; \
+	       echo "--- make output ---"; cat "$$mklog"; exit 1; }; \
+	 rm -f "$$cmlog" "$$mklog"
 	@arm-none-eabi-size build/arm-cortex-m0plus-repl/liburbi.a \
 	                    examples/pico/repl_demo/build/repl_demo.elf \
 	                    | tail -2
@@ -1988,6 +1996,8 @@ audit-globals:
 
 clean:
 	rm -rf build compile_commands.json
+	rm -f tools/urbi-compile-stdlib tools/urbi-compile-stdlib-pico \
+	      tools/urbi-compile-stdlib-f[0-9]*
 
 # bake-clean — force the bake tool to regenerate
 # src/stdlib/urbi_stdlib_bytecode.gen.c from STDLIB_ORDER.txt + .u files.

@@ -646,8 +646,12 @@ int main(void) {
     if (shard_index < 0 || shard_index >= shard_total) shard_index = 0;
 
     if (shard_total > 1) {
-        printf("Running test suites (shard %d/%d)\n",
-            shard_index, shard_total);
+        printf("================================================================\n"
+               "== SHARDED RUN (%d/%d) — URBI_SHARD_TOTAL/URBI_SHARD_INDEX set.\n"
+               "== Only suites with (suite_index %% %d == %d) execute below.\n"
+               "== This is NOT a full pass; do not cite it as one.\n"
+               "================================================================\n",
+            shard_index, shard_total, shard_total, shard_index);
     } else {
         printf("Running test suites\n");
     }

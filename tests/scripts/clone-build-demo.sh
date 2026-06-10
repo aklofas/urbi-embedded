@@ -6,10 +6,25 @@
 # Exits non-zero on any build failure.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$ROOT"
+
+# refactor-3 BLD-07: build from a REAL `git clone`, not a cleaned tree.
+if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
+    echo "WARNING: working tree has uncommitted changes — the clone builds the committed state only"
+fi
+CLONE_TMP=$(mktemp -d)
+trap 'rm -rf "$CLONE_TMP"' EXIT
+BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)
+echo "== fresh clone =="
+if [ "$BRANCH" = "HEAD" ]; then
+    git -C "$ROOT" clone --quiet . "$CLONE_TMP/clone"
+    git -C "$CLONE_TMP/clone" checkout --quiet "$(git -C "$ROOT" rev-parse HEAD)"
+else
+    git -C "$ROOT" clone --quiet --branch "$BRANCH" . "$CLONE_TMP/clone"
+fi
+cd "$CLONE_TMP/clone"
+echo "  ok: pristine tree at $(git rev-parse --short HEAD) ($BRANCH)"
 
 echo "== linux host REPL =="
-make clean >/dev/null 2>&1 || true
 make all >/dev/null
 test -x build/host/urbi || { echo "FAIL: urbi REPL not built"; exit 1; }
 echo "1 + 2" | build/host/urbi -i | grep -q '\] 3' || { echo "FAIL: REPL smoke"; exit 1; }
@@ -20,7 +35,8 @@ echo "== pico firmware =="
 # The flashable .uf2 is built by the pico-sdk CMake flow (test-cross-pico-repl-elf),
 # gated behind PICO_SDK_PATH (or ../tools/pico-sdk) like the ESP32 IDF gate.
 make cross-pico-repl >/dev/null
-PSP="${PICO_SDK_PATH:-$PWD/../tools/pico-sdk}"
+PSP="${PICO_SDK_PATH:-$ROOT/../tools/pico-sdk}"
+export PICO_SDK_PATH="$PSP"
 if [ -d "$PSP" ]; then
   rm -f examples/pico/repl_demo/build/repl_demo.uf2   # avoid a stale-artifact false pass
   make test-cross-pico-repl-elf >/dev/null 2>&1
@@ -31,9 +47,19 @@ else
 fi
 
 echo "== stm32f4 firmware =="
-( cd examples/stm32f4/mandelbrot && rm -rf build && make >/dev/null )
-test -f examples/stm32f4/mandelbrot/build/mandelbrot.bin || { echo "FAIL: stm32f4 bin"; exit 1; }
-echo "  ok: stm32f4"
+# refactor-3 BLD-07 followup: the HAL tree lives OUTSIDE the repo (workspace
+# tools/ next to the original checkout); the clone's ../tools is an empty
+# tmpdir, so resolve it against $ROOT like the pico SDK above, and SKIP
+# loudly when absent (same convention as the pico/esp32 sections).
+HAL="$ROOT/../tools/stm32cube-f4"
+if [ -d "$HAL" ]; then
+  ( cd examples/stm32f4/mandelbrot && rm -rf build && \
+    make HAL_ROOT="$HAL" >/dev/null )
+  test -f examples/stm32f4/mandelbrot/build/mandelbrot.bin || { echo "FAIL: stm32f4 bin"; exit 1; }
+  echo "  ok: stm32f4"
+else
+  echo "  SKIP: stm32f4 (no ../tools/stm32cube-f4 next to the checkout)"
+fi
 
 echo "== esp32-s3 firmware =="
 # ESP-IDF build is environment-heavy; gate behind IDF_PATH so CI without IDF skips cleanly.
