@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.12.5-m10-prep — 2026-06-09
+
+M10 release-preparation work merged to main WITHOUT the 1/0/0 freeze: a
+fresh pre-v1.0 deep audit surfaced hardening work, which lands as the
+v0.13.x arc before the stable tag.  No new opcode, wire format unchanged
+(v1.9 / 0x19).  ABI 0/22/2 -> 0/23/0 (MINOR, escape #33 = B6a).
+
+- Bug fixes (rc-blocker triage): finally-on-normal-path, tag-stop
+  absorption / resume-after-scope, lone-sleeper wake.
+- Reactive fixes found on STM32F4 hardware: a successful native call now
+  drains deferred slot-changes and evaluates dirty watchers; at-event
+  watcher bodies are GC-marked (`walk_uevent`).
+- B6a API sweep: `urbi_set_time_us` renamed `urbi_set_clock_fn`; internal
+  symbols hidden (`-fvisibility=hidden`); bidirectional API-manifest gate.
+- Packaging: clone-build-demo harness for all 3 shipped boards (caught and
+  fixed a `uchunk_deserialize` allocator regression), conformance report,
+  RELEASE_CHECKLIST, release notes, design-risks closure triage.
+- `urbi_version()` caught up (was stale at "0.5.7-fixes"); ABI status docs
+  synced to 0/23/0; CI workflows now also trigger on `release/**` branches.
+
 ## v0.12.4-stdlib-completeness — 2026-06-02
 
 Closes the 2026-06-01 compat-2 audit's language/stdlib gaps (`compat2-A`, `compat2-G`,
