@@ -1,0 +1,26 @@
+# Milestone: v0.13.1
+# Covers: unary `!` — logical negation via the OP_TEST/OP_LOADBOOL idiom
+#         (refactor-3 FE-03/B7: previously lowered to arithmetic OP_NEG;
+#         `!5` evaluated to -5). Truthiness follows uvalue_truthy: numerics
+#         are always truthy (zero included), so `!0` is false; nil is falsy.
+
+!true
+[00000000] false
+
+!false
+[00000001] true
+
+!5
+[00000002] false
+
+!0
+[00000003] false
+
+!nil
+[00000004] true
+
+!!5
+[00000005] true
+
+var done = false; var n = 0; while (!done) { n = n + 1; if (n >= 3) { done = true } }; n
+[00000006] 3

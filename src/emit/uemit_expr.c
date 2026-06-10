@@ -140,10 +140,29 @@ uint8_t emit_noop_arm(UEmitter *e, const UAstNode *n) {
 /* --- AST_UNARY --- */
 
 uint8_t emit_unary_arm(UEmitter *e, UAstNode *n) {
-    /* M1: parser strips UOP_PLUS at parse time, so AST_UNARY is always
-       negation.  Emit the operand into src_reg, then NEG in-place. */
     const uint8_t src_reg = emit_expr(e, n->u.unary.operand);
     if (e->error != EMIT_OK) return 0U;
+
+    if (n->u.unary.op == UOP_NOT) {
+        /* Logical NOT — the 4-instruction OP_TEST/OP_LOADBOOL branch idiom
+         * (mirrors emit_compare_arm; no new opcode, refactor-3 FE-03):
+         *   TEST src, 0, 0     ; skip next when src is falsy
+         *   JMP +1             ; truthy -> false arm
+         *   LOADBOOL rd, 1, 1  ; rd = true; pc++ (skip false arm)
+         *   LOADBOOL rd, 0, 0  ; rd = false */
+        const uint8_t rd = src_reg;  /* in-place, same as NEG */
+        emit_instr(e, uinstr_enc_abc(OP_TEST, src_reg, 0U, 0U),
+                   (uint32_t)n->line);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U,
+                   (uint16_t)UEMIT_JMP_FALLTHROUGH_BIAS), (uint32_t)n->line);
+        emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rd, 1U, 1U),
+                   (uint32_t)n->line);
+        emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rd, 0U, 0U),
+                   (uint32_t)n->line);
+        return rd;
+    }
+
+    /* UOP_NEG: arithmetic negation (parser strips unary '+' at parse time). */
     emit_instr(e, uinstr_enc_abc(OP_NEG, src_reg, src_reg, 0U),
                (uint32_t)n->line);
     return src_reg;   /* dest reuses src; no free_reg */

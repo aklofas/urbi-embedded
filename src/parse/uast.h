@@ -202,7 +202,7 @@ typedef enum {
 
 typedef enum {
     UOP_NEG = 0,
-    UOP_NOT = 1            /* logical not — reserved at M2; not yet emitted */
+    UOP_NOT = 1            /* logical not — lowered via OP_TEST/OP_LOADBOOL (FE-03) */
 } UAstUnaryOp;
 
 typedef enum {
