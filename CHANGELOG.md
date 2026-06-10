@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.13.0-test-honesty — 2026-06-10
+
+Tag 1 of the v0.13.x pre-release hardening arc: the test/build/CI
+infrastructure stops lying.  No runtime behavior change, no new opcode, wire
+format unchanged (v1.9 / 0x19).  ABI 0/23/0 -> 0/23/1 (PATCH; zero public
+surface change — not an escape).
+
+- chk runner honesty: fixture exit status is checked (`## exit:` directive
+  for expected-nonzero), every fixture runs under a timeout (default 30 s,
+  `## timeout:` override), vacuous fixtures (empty input + empty expected)
+  are a distinct failing outcome unless annotated, SKIP gets a distinct exit
+  code; `test-chk` prints a per-outcome tally (pass / skip / placeholder /
+  vacuous / fail); runner contract pinned by a stub-binary meta-test.
+- Gate hardening: strict tidy/cppcheck fail loudly when the tool is missing;
+  gc-roots gate requires `uvalue_is_heap()` membership or a structured
+  `gc-no-shade:` marker; version-sync checks every README mention plus the
+  `urbi_version()` literal (pre-tag `URBI_RELEASE_TAG_TO_BE` escape);
+  API-manifest gate covers exported data symbols and ratchets unprefixed
+  globals against an allowlist; audit-globals scans src/ recursively;
+  freestanding forbidden-libc regex covers puts/putchar/fputs/fputc/
+  vsnprintf/vprintf/strdup.
+- Build-system races and traps: grouped-target ROS codegen with explicit
+  object deps (the recipe-less pattern rule was a no-op), serialized
+  releasetest pre-fanout regeneration, trace-capture serialized behind
+  test-trace, `$(error)` guard for component flags on bare TARGET=host,
+  per-BUILDDIR compiler-flag stamp invalidates objects on flag changes,
+  gate defines moved to CPPFLAGS-only, `-fvisibility=hidden` now survives
+  command-line CFLAGS overrides, `clean` removes the bake tools,
+  clone-build-demo builds from a real `git clone`, golden gates use mktemp.
+- CI: full `releasetest` parity job, bash pipefail on tee'd steps,
+  `timeout-minutes` on every job, nightly containerized ros-integration
+  workflow.
+- New suites: `fuzz_json` (ujson + NDJSON request parser harness), bounded
+  fuzz smoke (4 harnesses, fixed a bit-rotted fuzz link), `test-o2` -O2
+  variant — all wired into releasetest Phase 1.
+- Docs: release checklist matches the honest runner semantics; conformance
+  counts recomputed (331 fixtures: 218 active + 9 preset-gated + 16 REPL +
+  88 annotated placeholders).
+
 ## v0.12.5-m10-prep — 2026-06-09
 
 M10 release-preparation work merged to main WITHOUT the 1/0/0 freeze: a

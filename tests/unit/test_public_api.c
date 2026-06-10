@@ -301,7 +301,7 @@ UTEST(urbi_version_matches_release_tag)
 {
     const char *v = urbi_version();
     UASSERT(v != NULL);
-    UASSERT(strcmp(v, "0.12.5-m10-prep") == 0);
+    UASSERT(strcmp(v, "0.13.0-test-honesty") == 0);
 }
 
 /* ===================================================================
