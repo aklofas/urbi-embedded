@@ -556,14 +556,28 @@ endif
 # tests/chk/repl/*.chk are NDJSON fixtures (v0.9.1 Phase 8) driven in-
 # process by tests/unit/test_repl_chk_corpus.c, not by run_chk.sh which
 # expects urbiscript input.  Excluded here.
+# refactor-3 CHK-01/04: per-outcome tally.  PASS(0) / SKIP(3, preset-gated;
+# covered by test-chk-ros + test-chk-urobotics + test-chk-ros-urobotics) /
+# PLACEHOLDER(4, annotated blocked:/deferred:/dropped: specification records)
+# are healthy; VACUOUS(5, unannotated empty fixture) and FAIL(everything
+# else) fail the suite.
 test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
-	@set -e; \
-	count=0; \
+	@pass=0; fail=0; skip=0; placeholder=0; vacuous=0; bad=""; \
 	for f in $$(find tests/chk -path tests/chk/repl -prune -o -name '*.chk' -print 2>/dev/null | sort); do \
-	    count=$$((count + 1)); \
-	    URBI_BUILD_PRESET=default tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f"; \
+	    URBI_BUILD_PRESET=default tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f"; rc=$$?; \
+	    case $$rc in \
+	        0) pass=$$((pass + 1));; \
+	        3) skip=$$((skip + 1));; \
+	        4) placeholder=$$((placeholder + 1));; \
+	        5) vacuous=$$((vacuous + 1)); bad="$$bad $$f";; \
+	        *) fail=$$((fail + 1)); bad="$$bad $$f";; \
+	    esac; \
 	done; \
-	echo "$$count chk fixture(s) passed"
+	echo "test-chk: $$pass passed, $$skip skipped (preset-gated), $$placeholder placeholders (blocked/deferred/dropped), $$vacuous vacuous-unannotated, $$fail failed"; \
+	if [ $$fail -gt 0 ] || [ $$vacuous -gt 0 ]; then \
+	    echo "test-chk: FAIL —$$bad"; \
+	    exit 1; \
+	fi
 
 # refactor-3 CHK meta-gate: pins run_chk.sh's exit-code contract with stub
 # binaries (no VM involved).  Must stay green across any future runner edit.
@@ -576,12 +590,15 @@ test-chk-runner:
 # fixture trap: preset mismatch silently empties coverage).
 .PHONY: test-chk-ros
 test-chk-ros: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
-	@set -e; count=0; \
+	@count=0; \
 	for f in tests/chk/ros/*.chk; do \
 	    count=$$((count + 1)); \
-	    out=$$(URBI_BUILD_PRESET=ros tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f" 2>&1); \
+	    out=$$(URBI_BUILD_PRESET=ros tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f" 2>&1); rc=$$?; \
 	    echo "$$out"; \
-	    case "$$out" in *SKIP*) echo "test-chk-ros: FAIL — $$f was SKIPPED under preset ros"; exit 1;; esac; \
+	    if [ $$rc -ne 0 ]; then \
+	        echo "test-chk-ros: FAIL — $$f rc=$$rc under preset ros (SKIP/placeholder counts as failure here)"; \
+	        exit 1; \
+	    fi; \
 	done; \
 	echo "$$count ros chk fixture(s) ran + passed under preset ros"
 
@@ -829,12 +846,15 @@ check-rosgen-determinism:
 # coverage).
 .PHONY: test-chk-urobotics
 test-chk-urobotics: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
-	@set -e; count=0; \
+	@count=0; \
 	for f in tests/chk/urobotics/*.chk; do \
 	    count=$$((count + 1)); \
-	    out=$$(URBI_BUILD_PRESET=urobotics tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f" 2>&1); \
+	    out=$$(URBI_BUILD_PRESET=urobotics tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f" 2>&1); rc=$$?; \
 	    echo "$$out"; \
-	    case "$$out" in *SKIP*) echo "test-chk-urobotics: FAIL — $$f was SKIPPED under preset urobotics"; exit 1;; esac; \
+	    if [ $$rc -ne 0 ]; then \
+	        echo "test-chk-urobotics: FAIL — $$f rc=$$rc under preset urobotics (SKIP/placeholder counts as failure here)"; \
+	        exit 1; \
+	    fi; \
 	done; \
 	echo "$$count urobotics chk fixture(s) ran + passed under preset urobotics"
 
@@ -859,12 +879,15 @@ check-urobotics-determinism:
 # coverage).
 .PHONY: test-chk-ros-urobotics
 test-chk-ros-urobotics: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
-	@set -e; count=0; \
+	@count=0; \
 	for f in tests/chk/ros-urobotics/*.chk; do \
 	    count=$$((count + 1)); \
-	    out=$$(URBI_BUILD_PRESET=ros-urobotics tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f" 2>&1); \
+	    out=$$(URBI_BUILD_PRESET=ros-urobotics tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f" 2>&1); rc=$$?; \
 	    echo "$$out"; \
-	    case "$$out" in *SKIP*) echo "test-chk-ros-urobotics: FAIL — $$f was SKIPPED under preset ros-urobotics"; exit 1;; esac; \
+	    if [ $$rc -ne 0 ]; then \
+	        echo "test-chk-ros-urobotics: FAIL — $$f rc=$$rc under preset ros-urobotics (SKIP/placeholder counts as failure here)"; \
+	        exit 1; \
+	    fi; \
 	done; \
 	echo "$$count ros-urobotics chk fixture(s) ran + passed under preset ros-urobotics"
 
