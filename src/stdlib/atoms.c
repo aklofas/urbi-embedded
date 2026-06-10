@@ -159,7 +159,7 @@ static double fmod_portable(double a, double b)
  * random scripts, so a fixed seed keeps test reproducibility while still
  * providing variation within a run.  Non-deterministic across-run seeding
  * is a v1.x follow-up (no host time source is wired here). */
-static uint64_t s_prng_state = 0x9E3779B97F4A7C15ULL;  /* NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — deliberate fixed-seed process-global (doc above); per-VM relocation is filed for the v0.13.x hardening arc */
+static uint64_t s_prng_state = 0x9E3779B97F4A7C15ULL;  /* NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — deliberate fixed-seed process-global (doc above); per-VM relocation is filed for the v0.13.x hardening arc; audit-globals-allow: deliberate fixed-seed PRNG */
 
 static uint64_t
 prng_next(void)

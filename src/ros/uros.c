@@ -513,7 +513,7 @@ ros_publisher_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
 }
 
 /* Singleton bridge state (zero-initialized). */
-static URosBridge g_bridge;
+static URosBridge g_bridge;  /* audit-globals-allow: process-global bridge state — moves onto UVM at v0.13.4 (refactor-3 ROS-05/GC-11/XC-19) */
 
 URosBridge *
 urbi_ros_bridge(void)

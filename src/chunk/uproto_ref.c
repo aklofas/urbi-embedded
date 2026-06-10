@@ -64,9 +64,9 @@ static void proto_saturation_warn(const UProto *p, urbi_proto_ref_owner_t owner)
  * so that multi-VM test scenarios do not produce false positives from
  * closures still alive in peer VMs. */
 #ifdef URBI_DEBUG
-static int g_closure_ref_total = 0;
-static int g_strand_ref_total  = 0;
-static int g_active_vm_count   = 0;
+static int g_closure_ref_total = 0;  /* audit-globals-allow: URBI_DEBUG-only leak-balance counter (doc above) */
+static int g_strand_ref_total  = 0;  /* audit-globals-allow: URBI_DEBUG-only leak-balance counter (doc above) */
+static int g_active_vm_count   = 0;  /* audit-globals-allow: URBI_DEBUG-only leak-balance counter (doc above) */
 #endif
 
 /* === Closure-bind acquire/release ========================================= */

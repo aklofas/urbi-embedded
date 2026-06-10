@@ -28,7 +28,7 @@
 #  include <stdlib.h>
 #endif
 
-static urbi_require_fail_hook_fn g_require_hook = NULL;  /* NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — intentionally mutable; set once at embedder init */
+static urbi_require_fail_hook_fn g_require_hook = NULL;  /* NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — intentionally mutable; set once at embedder init; audit-globals-allow: set-once embedder hook */
 
 void urbi_set_require_fail_hook(urbi_require_fail_hook_fn hook)
 {
