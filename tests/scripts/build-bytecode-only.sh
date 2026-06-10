@@ -67,7 +67,7 @@ NEEDED=(urbi_stdlib_boot urbi_vm_init urbi_vm_destroy urbi_lock_heap)
 NM=${NM:-nm}
 SYMS=$("$NM" -g "$LIB" 2>/dev/null || true)
 for sym in "${NEEDED[@]}"; do
-    if ! echo "$SYMS" | grep -Eq "^[0-9a-f]+ T $sym$"; then
+    if ! grep -Eq "^[0-9a-f]+ T $sym$" <<<"$SYMS"; then
         echo "FAIL: symbol $sym missing from stripped archive" >&2
         echo "      (URBI_BYTECODE_ONLY-bound API not exported)" >&2
         exit 1
@@ -82,7 +82,7 @@ done
 # becomes a stub, urbi_repl_eval calls error out).
 ABSENT=(uparse_next_statement uemit_statement ulex_init urbi_compile_source)
 for sym in "${ABSENT[@]}"; do
-    if echo "$SYMS" | grep -Eq "^[0-9a-f]+ T $sym$"; then
+    if grep -Eq "^[0-9a-f]+ T $sym$" <<<"$SYMS"; then
         echo "FAIL: symbol $sym defined in stripped archive" >&2
         echo "      (URBI_BYTECODE_ONLY exclusion list leak)" >&2
         exit 1
