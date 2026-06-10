@@ -4,6 +4,13 @@ CPPCHECK="${CPPCHECK:-cppcheck}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+# refactor-3 GATE-01: a missing tool must fail loudly, not "OK: 0 violations".
+command -v "$CPPCHECK" >/dev/null 2>&1 || {
+    echo "FAIL: $CPPCHECK not found in PATH — the strict-cppcheck gate cannot run." >&2
+    echo "      install: sudo apt-get install -y cppcheck  (or set CPPCHECK=)" >&2
+    exit 1
+}
+
 OUT="${1:-build/cppcheck-out.txt}"
 mkdir -p "$(dirname "$OUT")"
 
