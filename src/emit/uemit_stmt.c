@@ -1192,32 +1192,10 @@ uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n) {
     UFuncState *fs = e->current_fs;
 
     /* Pre-reserve the global object slot before declaring any synthetic
-     * loop-state locals.  Without this, the lazy global-slot claim (in
-     * emit_ident_arm / emit_var_decl_arm) fires INSIDE emit_expr for the
-     * iter expression, at which point freereg may already be above our
-     * declared local slots, causing the LOAD_REALM_GLOBAL prologue to land
-     * at a register that aliases an existing local.
-     *
-     * By pre-reserving here (same logic as emit_var_decl_arm's lazy path),
-     * r_global_slot is pinned at the current freereg (e.g. R0 at chunk-top)
-     * BEFORE we declare _iter/_n/_i at freereg+1/+2/+3.
-     * If no global is actually referenced during the loop, references_global
-     * stays false and the prologue is never emitted — the slot is harmlessly
-     * "wasted" (but still protected by fs_temp_floor). */
-    if (fs->parent == NULL && !fs->global_slot_reserved) {
-        if (fs->freereg >= (uint8_t)(UFS_MAX_REGS - 1)) {
-            e->error = EMIT_REG_EXHAUSTED;
-            return 0U;
-        }
-        fs->r_global_slot = fs->freereg;
-        fs->global_slot_reserved = true;
-        fs->freereg++;
-        if (fs->freereg > fs->max_reg_seen) fs->max_reg_seen = fs->freereg;
-        if (e->next_reg < fs->freereg) {
-            e->next_reg = fs->freereg;
-            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-        }
-    }
+     * loop-state locals, so r_global_slot is pinned at the current freereg
+     * (e.g. R0 at chunk-top) BEFORE we declare _iter/_n/_i at
+     * freereg+1/+2/+3 (see uemit_reserve_global_slot). */
+    if (fs->parent == NULL && !uemit_reserve_global_slot(e)) return 0U;
 
     /* Open outer block scope: _iter, _n, _i live here as proper locals.
      * This ensures fs_temp_floor = nactvar + 3 throughout the loop body,
@@ -1448,24 +1426,9 @@ uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
     UFuncState *fs = e->current_fs;
 
     /* Pre-reserve the global object slot before declaring the hidden
-     * subject local — same rationale as emit_for_each_arm: without this
-     * the lazy global-slot claim could fire INSIDE emit_expr for the
-     * subject, landing the LOAD_REALM_GLOBAL register above our declared
-     * local and aliasing it. */
-    if (fs->parent == NULL && !fs->global_slot_reserved) {
-        if (fs->freereg >= (uint8_t)(UFS_MAX_REGS - 1)) {
-            e->error = EMIT_REG_EXHAUSTED;
-            return 0U;
-        }
-        fs->r_global_slot = fs->freereg;
-        fs->global_slot_reserved = true;
-        fs->freereg++;
-        if (fs->freereg > fs->max_reg_seen) fs->max_reg_seen = fs->freereg;
-        if (e->next_reg < fs->freereg) {
-            e->next_reg = fs->freereg;
-            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-        }
-    }
+     * subject local — same rationale as emit_for_each_arm (see
+     * uemit_reserve_global_slot). */
+    if (fs->parent == NULL && !uemit_reserve_global_slot(e)) return 0U;
 
     /* Open outer block scope: \x01sw lives here as a proper local, so
      * fs_temp_floor stays above it across case-body temp resets. */

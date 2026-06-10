@@ -125,6 +125,7 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent);
 UFuncState *uemit_close_function(UEmitter *e);
 int uemit_assign_ic_index(UEmitter *e, USymbol *name);
 int uemit_declare_local(UEmitter *e, const char *name, int name_len);
+bool uemit_reserve_global_slot(UEmitter *e);
 bool uemit_open_block(UEmitter *e, bool is_loop);
 bool uemit_close_block(UEmitter *e);
 void uemit_emit_loop_back_close(UEmitter *e);

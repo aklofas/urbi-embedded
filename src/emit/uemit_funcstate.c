@@ -553,6 +553,46 @@ UFuncState *uemit_close_function(UEmitter *e) {
     return fs;
 }
 
+/* Claim the realm-global object register (r_global_slot) at the current
+ * freereg, if not already reserved.  Constructs that declare synthetic
+ * locals (for-each's \x01iter/\x01n/\x01i, switch's \x01sw, tag-prefix's
+ * \x01tag) must call this BEFORE the first uemit_declare_local: without
+ * it the lazy global-slot claim (emit_ident_arm / emit_var_decl_arm)
+ * could fire INSIDE a nested emit_expr, landing the OP_LOAD_REALM_GLOBAL
+ * register ABOVE the declared local and aliasing it.  If no global is
+ * actually referenced afterward, references_global stays false and the
+ * prologue is never emitted — the slot is harmlessly "wasted" (but still
+ * protected by fs_temp_floor).
+ *
+ * Already-reserved is a no-op success (nested function bodies pre-reserve
+ * in emit_function_body_impl; chunk-top pre-reserves in
+ * uemit_open_function).  Returns false + EMIT_REG_EXHAUSTED when the
+ * register frame is full.
+ *
+ * NOTE: the three lazy-claim sites fused into the EMIT-021
+ * references_global state machine (emit_ident_arm's global fallback,
+ * emit_var_decl_arm's chunk-top path, emit_class_decl_arm) keep their
+ * inline copies: they additionally flip references_global, and two of
+ * them sync e->next_reg UNCONDITIONALLY (no `<` guard), which is not
+ * provably equivalent to the guarded sync below at every call point. */
+bool uemit_reserve_global_slot(UEmitter *e) {
+    UFuncState *fs = e->current_fs;
+    if (fs->global_slot_reserved) return true;
+    if (fs->freereg >= (uint8_t)(UFS_MAX_REGS - 1)) {
+        e->error = EMIT_REG_EXHAUSTED;
+        return false;
+    }
+    fs->r_global_slot = fs->freereg;
+    fs->global_slot_reserved = true;
+    fs->freereg++;
+    if (fs->freereg > fs->max_reg_seen) fs->max_reg_seen = fs->freereg;
+    if (e->next_reg < fs->freereg) {
+        e->next_reg = fs->freereg;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    }
+    return true;
+}
+
 int uemit_declare_local(UEmitter *e, const char *name, int name_len) {
     UFuncState *fs = e->current_fs;
     if (fs == NULL) {
