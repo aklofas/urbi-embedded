@@ -10,6 +10,19 @@
 #   scenario 1 printed 777 (the recycled register's new occupant);
 #   scenario 2 printed 7 (correct — regression guard, no shadowing);
 #   scenario 3 printed <?> (garbage from the recycled catch-var register).
+#
+# Scenarios 4-6 pin the FE-04 follow-on: uemit_close_block and
+# uemit_emit_loop_back_close passed blk->first_local_idx (an ACTVAR INDEX)
+# as the OP_CLOSE A operand, but OP_CLOSE A is a REGISTER SLOT — offset
+# from the actvar index by the reserved r_global_slot register.  The
+# threshold landed one register too low, prematurely heapifying the
+# enclosing function's LAST-declared local if it had an open upvalue.
+# Only bites inside a function body (top-level vars are realm-global
+# slots, not registers).  Pre-fix (verified empirically 2026-06-10):
+#   scenario 4 printed 1 (stale block-exit close snapshot of x);
+#   scenario 5 printed 1 (stale loop-back-edge close snapshot of x);
+#   scenario 6 printed 9 (correct — pins the degenerate catch-var-only
+#   block where first_local_idx == nactvar at block-close time).
 
 # --- audit repro: capture the inner (shadowing) local
 var t = function() { var g = nil; var x = 1; { var x = 42; g = function() { return x } }; var y = 777; return g() }; t()
@@ -22,3 +35,17 @@ var u = function() { var a = 7; var h = function() { return a }; var b = 888; re
 # --- catch variable captured by a closure in the catch body
 var gc = nil; try { throw(13) } catch (var e) { gc = function() { return e } }; var pad = 555; gc()
 [00000002] 13
+
+# --- block-exit OP_CLOSE must not prematurely close the enclosing
+#     function's last-declared local (actvar-index/register-slot skew)
+var t4 = function() { var f2 = nil; var x = 1; f2 = function() { return x }; { var z = 42; var f1 = function() { return z } }; x = 5; return f2() }; t4()
+[00000003] 5
+
+# --- same skew on the loop back-edge OP_CLOSE
+var t5 = function() { var f2 = nil; var i = 0; var x = 1; f2 = function() { return x }; while (i < 2) { var z = i; var f1 = function() { return z }; i = i + 1 }; x = 5; return f2() }; t5()
+[00000004] 5
+
+# --- degenerate: block whose only local is a catch variable (popped by
+#     the handler before block close) — has_captured with no live locals
+var t6 = function() { var out = nil; { try { throw(9) } catch (var e) { out = function() { return e } } }; var pad = 111; return out() }; t6()
+[00000005] 9

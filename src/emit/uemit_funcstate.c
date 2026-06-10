@@ -635,9 +635,19 @@ bool uemit_close_block(UEmitter *e) {
     const UBlockCtx *blk = &fs->blocks[fs->nblocks - 1];
 
     /* Per allocator spec: emit OP_CLOSE if any local in this block was
-     * captured. base = first slot to close = first_local_idx. */
-    if (blk->has_captured) {
-        uint32_t i = uinstr_enc_abc(OP_CLOSE, (uint8_t)blk->first_local_idx, 0U, 0U);
+     * captured.  A = the first REGISTER SLOT of the block's locals — NOT
+     * first_local_idx, which is an actvar INDEX; slots are offset from
+     * indices by the reserved r_global_slot register, so the bare index
+     * lands one register too low and prematurely heapifies the enclosing
+     * function's last-declared local (refactor-3 FE-04 follow-on).
+     * Guard first_local_idx < nactvar: a block whose only local was a
+     * catch variable has it popped — and its cell closed — by
+     * emit_catch_handler_section before block close, leaving has_captured
+     * set with no live locals and nothing left to close. */
+    if (blk->has_captured && blk->first_local_idx < fs->nactvar) {
+        uint32_t i = uinstr_enc_abc(OP_CLOSE,
+                                    fs->actvars[blk->first_local_idx].slot,
+                                    0U, 0U);
         emit_instr(e, i, e->prev_line);
     }
 
@@ -654,8 +664,12 @@ void uemit_emit_loop_back_close(UEmitter *e) {
     UFuncState *fs = e->current_fs;
     if (fs == NULL || fs->nblocks == 0) return;
     const UBlockCtx *blk = &fs->blocks[fs->nblocks - 1];
-    if (blk->is_loop && blk->has_captured) {
-        uint32_t i = uinstr_enc_abc(OP_CLOSE, (uint8_t)blk->first_local_idx, 0U, 0U);
+    /* Same operand + guard rationale as uemit_close_block above: OP_CLOSE A
+     * is a register slot, not an actvar index (refactor-3 FE-04 follow-on). */
+    if (blk->is_loop && blk->has_captured && blk->first_local_idx < fs->nactvar) {
+        uint32_t i = uinstr_enc_abc(OP_CLOSE,
+                                    fs->actvars[blk->first_local_idx].slot,
+                                    0U, 0U);
         emit_instr(e, i, e->prev_line);
     }
 }
