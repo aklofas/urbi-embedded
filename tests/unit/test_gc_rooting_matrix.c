@@ -294,8 +294,12 @@ UTEST(matrix_cleanup_owning_tag_is_rooted)
     UASSERT(entry != NULL);
     entry->kind        = (uint8_t)UCLEANUP_TAG_SCOPE;
     entry->strand_back = &s;   /* mirrors vm_push_tag_scope; the remaining
-                                  fields keep their zero/NULL init values,
-                                  matching the anonymous-scope arm */
+                                  fields keep their zero/NULL init values.
+                                  The real anonymous arm also threads
+                                  tag->member_strands_head = entry — omitted
+                                  here deliberately so teardown needs no
+                                  unlink (walk_utag never traverses that
+                                  chain; GC reachability is unaffected). */
 
     UTag *tag = utag_create(&vm);
     UASSERT(tag != NULL);
@@ -683,14 +687,17 @@ UTEST(matrix_atomic_finish_rescans_mutated_registers)
     rc = urbi_object_set_local_slot(&vm, holder, sym, urbi_make_nil());
     UASSERT_EQ(rc, 0);
 
-    /* Finish the cycle.  Capped so a wedge regression (phase never
-     * reaching IDLE) fails the case instead of hanging CI. */
+    /* Finish the cycle.  Capped: UASSERT records the failure but does NOT
+     * abort the case (utest.h), so the explicit break is what actually
+     * bounds a wedge regression (phase never reaching IDLE) instead of
+     * hanging CI. */
     {
         int spins = 0;
         while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
             urbi_gc_slice(&vm, 4096U);
             spins++;
             UASSERT(spins < 64);
+            if (spins >= 64) break;
         }
     }
 

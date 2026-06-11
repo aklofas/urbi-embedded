@@ -530,8 +530,15 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
      *     ONLY here (the "future audit" the old comment hedged on found it:
      *     deep-audit GC-03/SCHED-07).  UTag embeds the cell header at offset
      *     0; shade directly so the walk_utag type walker traces enter/leave
-     *     events, members, and name.  catch_pattern (UPattern*) remains
-     *     host-allocated (not GC-managed) at v1.0 — no callback needed. */
+     *     events, member watchers, and name (it deliberately skips
+     *     member_strands_head per TAGCH-017).  catch_pattern (UPattern*)
+     *     remains host-allocated (not GC-managed) at v1.0 — no callback
+     *     needed.  The shade is deliberately unconditional w.r.t.
+     *     FLAG_TAG_USER_OWNED: a USER_OWNED tag is usually also
+     *     register-reachable (a redundant shade is idempotent), but this
+     *     yield is load-bearing when the emitter recycles R[tag_reg]
+     *     mid-scope or a C-API urbi_tag_block suspends on a tag with no
+     *     script reference. */
     {
         uint16_t ci;
         for (ci = 0U; ci < s->cleanup_depth; ci++) {
