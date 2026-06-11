@@ -37,11 +37,17 @@ watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
      * active-list + pending-onleave walks and — critically — covers
      * AT_EVENT/WHENEVER_EVENT watchers whose owning event has itself
      * become unreachable (previously their closures were rooted only via
-     * walk_uevent, i.e. only while the event was independently alive).
-     * Legacy semantics restored: an event is immortal while subscribed
-     * (w->event shaded below).  PENDING_UNREGISTER slots keep ACTIVE set
-     * until pool_free, so drained-but-not-yet-freed watchers (whose
-     * onleave may still run via drain_pending_onleave_queue) stay rooted.
+     * walk_uevent, i.e. only while the event was independently alive —
+     * GC-008 / v1.0-stm32f4-hang; this walk is now the load-bearing single
+     * source of truth for that fix).  Legacy semantics restored: an event
+     * is immortal while subscribed (w->event shaded below).
+     * PENDING_UNREGISTER slots keep ACTIVE set until pool_free, so
+     * drained-but-not-yet-freed watchers (whose onleave may still run via
+     * drain_pending_onleave_queue) stay rooted.
+     *
+     * The walk must visit ALL URBI_WATCHER_POOL_SIZE slots — no tighter
+     * bound exists: in-use slots are non-contiguous under freelist
+     * recycling, and pool_high_water is a count, not a max index.
      *
      * Freelist aliasing: free slots reuse next_active as the freelist
      * link, but this walk keys on the ACTIVE flag and never touches
@@ -54,9 +60,7 @@ watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
      * realm->strands_head (sched walker yields each strand's frame
      * window).  Realms are host-allocated, not GC-managed at v1.0.
      *
-     * v1.x: read-set cells[] callback once concrete cell types embed
-     * UCell + a UVAL_CELL kind exists.  Today the cells are reached
-     * indirectly via the closures and slot-tables that own them. */
+     * read-set cells[]: v1.x deferral — see the file header. */
     if (vm->watchers == NULL || vm->watchers->pool_base == NULL) return;
     for (uint16_t i = 0U; i < (uint16_t)URBI_WATCHER_POOL_SIZE; i++) {
         struct UWatcher *w = &vm->watchers->pool_base[i];

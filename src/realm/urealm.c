@@ -402,7 +402,8 @@ urealm_teardown_all(struct UVM *vm)
  *   2. realm->global_object — GC-managed UObject; shade so slot walker runs.
  *   3. realm->tag — GC-managed since M5 via urbi_gc_alloc / UTYPE_TAG.
  *      Shaded via gc_shade_gray so the UTYPE_TAG walker runs and yields
- *      name + enter_event + leave_event + member_watchers_head chain.
+ *      name + enter_event + leave_event + parent (member watchers are
+ *      rooted by the pool-wide provider in uwatcher_gc.c, GC-05).
  *
  * REALM-008: the (UCell *)r->tag cast below depends on UTag laying out a
  * UCell-compatible header (type_tag at byte 0, gc_byte at byte 1) as its

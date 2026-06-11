@@ -849,11 +849,13 @@ static int matrix_native_nop(struct UVM *vm, UValue self,
     return 0;
 }
 
-/* Return a pool slot through the production free path.  Install paths
- * (install_watcher_runtime / install_at_event_runtime) increment
- * vm->watchers->active_count after pool_alloc; mirror that bookkeeping so
- * urbi_watcher_unregister_internal's unguarded decrement balances to the
- * pre-case value instead of underflowing. */
+/* Return a pool slot through the production free path.  The cond-install
+ * path (install_watcher_runtime) increments vm->watchers->active_count
+ * after pool_alloc — install_at_event_runtime deliberately does NOT (the
+ * count tracks cond-watcher pressure on the dirty-eval loop) — but
+ * urbi_watcher_unregister_internal decrements unconditionally.  Mirror the
+ * bump so the decrement balances to the pre-case value instead of
+ * underflowing. */
 static void matrix_watcher_free(UVM *vm, UWatcher *w)
 {
     vm->watchers->active_count++;

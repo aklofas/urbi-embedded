@@ -57,6 +57,12 @@ uwatcher_pool_alloc(struct UVM *vm)
     w->condition       = NULL;
     w->body            = NULL;
     w->onleave         = NULL;
+    /* Clear the event-mode fields too: the pool-wide GC root walker shades
+     * w->event on every ACTIVE slot (refactor-3 GC-05), so a recycled slot
+     * must never resurface a stale event pointer even if a future teardown
+     * path forgets to NULL it before pool_free. */
+    w->next_in_event   = NULL;
+    w->event           = NULL;
     /* Re-init last_value_cache kind+value; UValue._pad bytes are zero on
      * first use (slab-zeroed at pool_init) and irrelevant on recycle since
      * they have no semantic meaning. */
@@ -79,8 +85,9 @@ uwatcher_pool_alloc(struct UVM *vm)
 /* pool_free: push one entry back onto the freelist.
  * Decrements in_use counter; does NOT touch high_water.
  * v0.8.4 Step C-3: URBI_WATCHER_OWNS_* flags deleted; UClosure lifetime is
- * GC-managed since Step C-2.  Condition/body/onleave pointers are cleared for
- * slot hygiene, not for ownership-based free. */
+ * GC-managed since Step C-2.  Condition/body/onleave pointers are NOT
+ * cleared here — uwatcher_pool_alloc re-initializes every payload field on
+ * recycle, and the GC root walker skips freed slots (ACTIVE cleared below). */
 static void
 pool_free(struct UVM *vm, UWatcher *w)
 {
@@ -88,8 +95,8 @@ pool_free(struct UVM *vm, UWatcher *w)
     URBI_INTERNAL_ASSERT(vm->watchers->pool_in_use > 0);
 
     /* v0.8.4 Step C-3: URBI_WATCHER_OWNS_* flags and their free arms deleted.
-     * UClosure lifetime is GC-managed since Step C-2; watcher condition/body/
-     * onleave fields are cleared below for correctness, not for free-then-null. */
+     * UClosure lifetime is GC-managed since Step C-2; no closure free (or
+     * pointer clearing) happens here — see the function header. */
 
     /* Clear URBI_WATCHER_ACTIVE so a slab walk (uwatcher_pool_destroy,
      * WATCH-002 v0.5.7) can distinguish allocated-but-orphaned slots from

@@ -205,20 +205,24 @@ because sync emit can fire from contexts that have not entered eval.
 
 Watcher closures (`condition`, `body`, `onleave`) are GC-managed
 `UClosure*` pointers. The GC root provider `watcher_table_walk_roots`
-(`src/watcher/uwatcher_gc.c`) walks `vm->active_watchers_head` and
-`vm->pending_onleave_head`, yielding each non-NULL closure pointer to the
-mark callback as a `UVAL_CLOSURE` value. `last_value_cache` is also
-yielded.
+(`src/watcher/uwatcher_gc.c`) walks the whole pool slab: every in-use
+slot (`URBI_WATCHER_ACTIVE` set — set by `uwatcher_pool_alloc`, cleared
+only by `pool_free`) yields each non-NULL closure pointer to the mark
+callback as a `UVAL_CLOSURE` value, plus `last_value_cache`, and shades
+`owning_tag` and `event` directly. Rooting is a property of "slot is in
+use", not of list topology, so AT_EVENT / WHENEVER_EVENT watchers stay
+rooted even when their owning event is otherwise unreachable, and the
+subscribed event itself is immortal while subscribed (refactor-3
+GC-05/GC-03).
 
-Two fields are intentionally NOT walked by `watcher_table_walk_roots`:
+Fields intentionally NOT walked by `watcher_table_walk_roots`:
 
-- `body_strand` — reached via `realm->strands_head` by the scheduler's
-  root walker.
+- `body_strand` / `waiter_strand` — reached via `realm->strands_head` by
+  the scheduler's root walker.
 - `realm` — host-allocated; not GC-managed at v1.0.
 
-The read-set `cells[]` and `owning_tag` are v1.x deferrals: concrete cell
-types are reached indirectly through closures and slot-tables, and
-`UVAL_TAG` promotion is pending.
+The read-set `cells[]` remains a v1.x deferral: concrete cell types are
+reached indirectly through closures and slot-tables.
 
 ## UEvent lifecycle
 
@@ -226,7 +230,8 @@ types are reached indirectly through closures and slot-tables, and
 (`UTYPE_EVENT`) with two intrusive subscriber lists:
 
 - `at_watchers_head` — persistent AT_EVENT / AT_EVENT_SYNC watcher chain
-  (linked via `UWatcher.next_in_event`). Walked by the GC walker.
+  (linked via `UWatcher.next_in_event`). Subscribed watchers are rooted
+  by the pool-wide provider in `uwatcher_gc.c`, not by the event's walker.
 - `waiters_head` — one-shot `UStrand` chain (linked via
   `UStrand.next_event_waiter`); strands self-walk via the realm hierarchy.
 
