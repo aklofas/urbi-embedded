@@ -4,7 +4,7 @@
 #         timer fires and strands are moved back to ready, quiescent stays false
 #         until they finish, then becomes true.
 #
-# blocked: post-completion QUIESCENT transition not observable via the host driver
+# blocked: pending SCHED-13 vm_liveness QUIESCENT formalization (activate-or-fold decision)
 # matrix-row: scheduler-quiescent
 #
 # UPDATE (v1.0 / M10): the lone-sleeper WAKE is now fixed (design-risks

@@ -149,8 +149,9 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
          *
          * sched_post_dispatch runs the four bookkeeping steps after each
          * dispatch-loop iteration.  For the transient strand (is_transient_strand=1):
-         *   - Step 1 (runnable-count re-increment): skipped — transient manages
-         *     its own READY-cycle increments at the dequeue site below.
+         *   - Step 1 (runnable-count DEAD decrement, SCHED-01): skipped —
+         *     transient strands never participate in strand_runnable_count
+         *     (sched_runnable_inc/dec both skip them).
          *   - Step 2 (eager DEAD-strand reap): skipped — the strand is stack-local;
          *     lifetime bounded by this function; freed by ustrand_destroy at exit.
          *   - Step 3 (sleep-queue wake): runs — keeps sleep-blocked strands on the
@@ -172,9 +173,11 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
                Remove from ready queue (sched_strand_yield enqueued it),
                reset to RUNNING, and re-enter dispatch.
                T24 / VM-011: route through sched_dequeue_ready_head so the
-               runnable-count post-condition (and ready-queue link cleanup)
-               lives at the sched boundary, not at the driver site.  Future
-               drivers that pop the ready head get the invariant for free. */
+               ready-queue link cleanup lives at the sched boundary, not at
+               the driver site.  SCHED-01: the dequeue is count-neutral
+               (and transients never participate in the count anyway), so
+               this is purely queue-link hygiene.  Future drivers that pop
+               the ready head get the link invariant for free. */
             if (vm->ready_head == &strand) {
                 sched_dequeue_ready_head(vm);
             }

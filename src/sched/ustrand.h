@@ -415,8 +415,13 @@ void ustrand_destroy(UStrand *s, struct UVM *vm);
  * Both functions handle the run-queue side-effects required to keep the
  * cooperative scheduler's bookkeeping correct:
  *   - Suspending a READY strand splices it out of vm->ready_head and
- *     decrements vm->strand_runnable_count.
- *   - Resuming a SUSPENDED strand routes through sched_strand_make_runnable. */
+ *     decrements vm->strand_runnable_count (via the unbind helper).
+ *   - Suspending a RUNNING strand decrements vm->strand_runnable_count via
+ *     sched_runnable_dec (refactor-3 SCHED-01: a RUNNING strand is in the
+ *     counted set — count == |READY| + |RUNNING non-transient| — and
+ *     RUNNING -> SUSPENDED leaves it).
+ *   - Resuming a SUSPENDED strand routes through sched_strand_make_runnable
+ *     (re-enters the counted set as READY). */
 void urbi_strand_suspend(struct UStrand *strand, uint8_t reason,
                          struct UTag    *tag);
 void urbi_strand_resume(struct UStrand *strand, UValue resume_value);

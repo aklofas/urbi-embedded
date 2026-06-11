@@ -383,7 +383,10 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Quiescence is defined as all five counters being zero simultaneously.
      * strand_suspended_count is excluded from the quiescence check at M3
      * (always 0; included here for completeness per row 9 §2.6). */
-    uint32_t strand_runnable_count;    /* row 8 §3 + row 9 §2.6 */
+    uint32_t strand_runnable_count;    /* row 8 §3 + row 9 §2.6.
+                                          == |READY| + |RUNNING non-transient|;
+                                          single-writer via sched_runnable_inc/dec
+                                          — see usched_cooperative.h (SCHED-01) */
     uint32_t strand_suspended_count;   /* row 9 §2.6; always 0 at M3 */
     /* watcher_active_count moved to vm->watchers->active_count (W2/v0.10.4) */
     uint32_t event_queue_count;        /* row 8 §3; M5+ shape */

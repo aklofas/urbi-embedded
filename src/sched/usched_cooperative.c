@@ -725,20 +725,20 @@ sched_wake_due_sleepers(UVM *vm)
 }
 
 #if defined(URBI_DEBUG)
-/* SCHED-01 recount oracle: walk the ready queue, add the RUNNING strand
- * (vm->cur_strand) and the in-flight strand the driver just dispatched
- * (cur_strand is already NULL at sched_post_dispatch time, so the caller
- * passes the in-flight contribution explicitly: 1 while the dispatched
- * strand is still RUNNING, or DEAD-but-not-yet-decremented), and compare
- * against vm->strand_runnable_count.  Debug-only: O(|READY|) per call. */
+/* SCHED-01 recount oracle: walk the ready queue, add the in-flight strand
+ * the driver just dispatched (passed explicitly by the caller: 1 while the
+ * dispatched strand is still RUNNING, or DEAD-but-not-yet-decremented),
+ * and compare against vm->strand_runnable_count.  sched_post_dispatch's
+ * precondition guarantees vm->cur_strand is NULL here — pinned by the
+ * assert below so the explicit parameter stays the single in-flight
+ * mechanism.  Debug-only: O(|READY|) per call. */
 static void
 sched_assert_runnable_count(const UVM *vm, uint32_t in_flight_extra)
 {
     uint32_t n = in_flight_extra;
     const UStrand *s = vm->ready_head;
     while (s != NULL) { if (!s->is_transient_strand) n++; s = s->ready_next; }
-    if (vm->cur_strand != NULL && !vm->cur_strand->is_transient_strand &&
-        vm->cur_strand->state == USTRAND_STATE_RUNNING) n++;
+    URBI_INTERNAL_ASSERT(vm->cur_strand == NULL);
     URBI_INTERNAL_ASSERT(n == vm->strand_runnable_count);
 }
 #endif

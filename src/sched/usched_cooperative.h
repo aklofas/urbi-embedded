@@ -73,9 +73,17 @@ sched_pick_next(const UVM *vm) {
  * are NOT counted; transient strands (is_transient_strand) never
  * participate.  These two helpers are the ONLY writers (init/destroy
  * zeroing aside).  Exposed for the scheduler-adjacent transition sites
- * that change a strand's RUNNING membership outside this TU
- * (urbi_strand_suspend's RUNNING arm in ustrand.c); everything else must
- * route through the sched_strand_* transition functions. */
+ * that change a strand's counted-set membership outside this TU:
+ *   - src/sched/ustrand.c — urbi_strand_suspend's RUNNING arm (dec:
+ *     RUNNING -> SUSPENDED leaves the counted set);
+ *   - src/vm/ustep.c — urbi_step's fatal-exit arm (dec: a fatal-DEAD
+ *     strand never reaches sched_post_dispatch's step-1 decrement);
+ *   - src/runtime/uunwind.c — run_cleanup_with_replace's blocked/yielded
+ *     cleanup-body rebalance (inc: the unparked strand re-enters the
+ *     counted set as RUNNING before the fatal stamp; slated to be
+ *     replaced by sched_strand_unpark in the SCHED-05 task).
+ * Everything else must route through the sched_strand_* transition
+ * functions. */
 void sched_runnable_inc(UVM *vm, const UStrand *s);
 void sched_runnable_dec(UVM *vm, const UStrand *s);
 
