@@ -657,6 +657,23 @@ dispatch:
                         steps_consumed++;
                         goto exit_strand;
                     }
+                    /* refactor-3 VM-03/B12: a native may also SUSPEND the
+                     * running strand (t.block()/t.freeze() from inside the
+                     * tag's own scope via urbi_strand_suspend's RUNNING arm).
+                     * Mirror the WAITING exit: advance pc past the OP_CALL
+                     * so resume() continues at the next instruction, then
+                     * leave dispatch.  The ustep driver skips SUSPENDED
+                     * strands at dequeue; urbi_strand_resume re-enqueues.
+                     * No strand_runnable_count adjustment: the driver's
+                     * dequeue already uncounted the strand and
+                     * sched_post_dispatch only re-increments for WAITING,
+                     * so a SUSPENDED strand nets 0 — same as the READY-arm
+                     * convention where unbind_from_ready_queue decrements. */
+                    if (USTRAND_IS_SUSPENDED(s)) {
+                        s->pc++;
+                        steps_consumed++;
+                        goto exit_strand;
+                    }
                     /* v1.0 (design-risks v1.0-stm32f4-hang): run the reactive
                      * eval pass after a successful native call.
                      *

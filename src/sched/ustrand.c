@@ -677,14 +677,14 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
      *   ready_queue idempotently decrements strand_runnable_count when the
      *   strand was actually on the queue.
      *
-     * RUNNING: the strand is currently dispatching (called urbi_strand_suspend
-     *   indirectly from within a host callback, or set up for valued-block).
-     *   Not on the queue; just stamp the state.  The dispatch loop's run-step
-     *   sees the SUSPENDED state byte on the next NEXT() and exits at the
-     *   appropriate yield boundary.  At v0.10.9 the only callers are
-     *   urbi_tag_block / urbi_tag_freeze, both invoked from outside dispatch
-     *   (from a host callback) so the strand here is typically READY; the
-     *   RUNNING arm is forward-defensive for in-dispatch use.
+     * RUNNING: the strand is currently dispatching (t.block()/t.freeze()
+     *   from inside the tag's own scope reaches here through the native
+     *   call).  Not on the queue; just stamp the state.  The OP_CALL
+     *   post-native arm checks USTRAND_IS_SUSPENDED and exits dispatch
+     *   (refactor-3 VM-03).  No strand_runnable_count change: the driver's
+     *   dequeue already uncounted the strand, and sched_post_dispatch does
+     *   not re-increment for SUSPENDED, so the strand nets 0 — matching the
+     *   READY arm where unbind_from_ready_queue decrements.
      *
      * Any other state (DORMANT, WAITING, SUSPENDED, DEAD): silent no-op.
      * Suspending a WAITING strand would corrupt sleep/event waiter chains;

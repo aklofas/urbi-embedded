@@ -679,7 +679,15 @@ sched_post_dispatch(UVM *vm, UStrand *s)
      * sched_strand_make_runnable and sched_dequeue_ready_head; they manage their
      * own READY-cycle increments at the dequeue site inside the vm_run loop.
      * There is no double-decrement issue for transients; incrementing here would
-     * spuriously inflate strand_runnable_count. */
+     * spuriously inflate strand_runnable_count.
+     *
+     * SUSPENDED (refactor-3 VM-03) is deliberately NOT re-incremented: the
+     * RUNNING arm of urbi_strand_suspend does not decrement (unlike
+     * sched_strand_block), so the dequeue's single decrement already leaves a
+     * SUSPENDED strand contributing 0 — consistent with the READY arm, where
+     * sched_strand_unbind_from_ready_queue decrements.  A SUSPENDED strand is
+     * excluded from liveness; urbi_strand_resume's sched_strand_make_runnable
+     * re-increments on resume. */
     if (USTRAND_IS_WAITING(s) && !s->is_transient_strand) {
         vm->strand_runnable_count++;
     }
