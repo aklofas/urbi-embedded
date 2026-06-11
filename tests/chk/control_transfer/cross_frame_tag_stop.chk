@@ -1,0 +1,15 @@
+# Milestone: v0.13.1
+# Covers: tag.stop() deposited from inside a CALLEE terminates the tagged
+#         block in the CALLER and resumes after it (refactor-3 VM-01/B1
+#         cross-frame TAG_SCOPE absorption; v0.10.15-B semantics).
+## timeout: 30
+
+# --- stop deposited one call frame below the tagged scope: the rest of the
+#     scope body (r = 99) must not run (pre-fix: exit 139)
+var t = Tag.new(); var helper = function() { t.stop() }; var r = 0; t: { helper(); r = 99 }; r
+[00000000] 0
+
+# --- and the enclosing code continues normally after the stopped scope
+#     (pre-fix: exit 139)
+var t2 = Tag.new(); var helper2 = function() { t2.stop() }; var after = 0; t2: { helper2(); after = 99 }; after = after + 1; after
+[00000001] 1

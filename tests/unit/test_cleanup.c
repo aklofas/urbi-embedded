@@ -8,13 +8,14 @@
 
 #define UTEST(name) static void name(void)
 
-/* Case 1: sizeof(UCleanupEntry) is 40 bytes on a 64-bit host.
-   Layout: 8 B fixed header (kind:1 + flags:1 + register_base:2 +
-           register_count:2 + handler_pc:2) + 4 pointers × 8 B = 40 B.
-   On 32-bit MCU (Cortex-M, rv32): 8 B fixed + 4 × 4 B = 24 B.
-   Tests run host-side only, so 40 B is the operative assertion. */
-UTEST(cleanup_size_40_bytes) {
-    UASSERT_EQ(sizeof(UCleanupEntry), 40U);
+/* Case 1: sizeof(UCleanupEntry) is 48 bytes on a 64-bit host.
+   Layout: 10 B fixed header (kind:1 + flags:1 + register_base:2 +
+           register_count:2 + handler_pc:2 + frame_depth:2) + 6 B padding
+           + 4 pointers × 8 B = 48 B (refactor-3 VM-01 added frame_depth).
+   On 32-bit MCU (Cortex-M, rv32): 10 B fixed + 2 B pad + 4 × 4 B = 28 B.
+   Tests run host-side only, so 48 B is the operative assertion. */
+UTEST(cleanup_size_48_bytes) {
+    UASSERT_EQ(sizeof(UCleanupEntry), 48U);
 }
 
 /* Case 2: push two entries, verify LIFO ordering and depth tracking, pop both. */
@@ -73,7 +74,7 @@ UTEST(cleanup_overflow_returns_null) {
 }
 
 void test_cleanup_suite(void) {
-    utest_run("cleanup_size_40_bytes",      cleanup_size_40_bytes);
+    utest_run("cleanup_size_48_bytes",      cleanup_size_48_bytes);
     utest_run("cleanup_push_pop_basic",     cleanup_push_pop_basic);
     utest_run("cleanup_overflow_returns_null", cleanup_overflow_returns_null);
 }

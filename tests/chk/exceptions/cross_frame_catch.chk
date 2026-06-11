@@ -1,0 +1,28 @@
+# Milestone: v0.13.1
+# Covers: try/catch/finally where the unwind crosses one or more bytecode
+#         call frames (refactor-3 VM-01/B1: the walker absorbed at the
+#         handler without popping s->frames[] / restoring R / pc_base —
+#         every cross-frame throw, finally, or tag-stop SIGSEGV'd).
+## timeout: 30
+
+# --- audit repro: throw in callee, caught in caller (pre-fix: exit 139)
+var f = function() { throw(7) }; var r = 0; try { f() } catch (var e) { r = e }; r
+[00000000] 7
+
+# --- two frames deep (pre-fix: exit 139)
+var inner = function() { throw(21) }; var outer = function() { inner() }; var r2 = 0; try { outer() } catch (var e) { r2 = e }; r2
+[00000001] 21
+
+# --- native raise in a callee, caught in the caller (pre-fix: exit 139)
+var h = function() { [1, 2].get(99) }; var r3 = "no"; try { h() } catch (var e) { r3 = "caught" }; r3
+[00000002] "caught"
+
+# --- finally in the caller runs when the callee throws (then catch absorbs)
+#     (pre-fix: exit 139)
+var g2 = function() { throw(3) }; var fin = 0; var r4 = 0; try { try { g2() } finally { fin = 1 } } catch (var e) { r4 = e }; fin + r4
+[00000003] 4
+
+# --- return from callee through the caller's try (regression pin: the
+#     RETURN direct-pop path must be unchanged; passed pre-fix)
+var f5 = function() { return 5 }; var r5 = 0; try { r5 = f5() } catch (var e) { r5 = -1 }; r5
+[00000004] 5

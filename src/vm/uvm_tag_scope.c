@@ -80,6 +80,7 @@ vm_push_tag_scope(UVM *vm, UStrand *s)
     entry->flags          = (uint8_t)(flags |
                             (tag_is_user_owned ? FLAG_TAG_USER_OWNED : 0U));
     entry->handler_pc     = handler_pc;
+    entry->frame_depth    = (uint16_t)s->frame_count;  /* VM-01 */
     entry->register_base  = 0U;
     entry->register_count = 0U;
     entry->owning_tag     = tag;

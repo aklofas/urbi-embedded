@@ -311,6 +311,20 @@ urbi_unwind(UStrand *s)
         UCleanupEntry *e = &s->cleanup_base[s->cleanup_depth - 1];
         UCleanupKind kind = (UCleanupKind)e->kind;
 
+        /* refactor-3 VM-01 (B1): the unwind may have crossed call frames
+         * entered after this entry was pushed.  Tear them down FIRST:
+         * handler_pc is relative to the proto that pushed the entry,
+         * register_base/count index that frame's window, and
+         * run_cleanup_with_replace resolves handler PCs via s->pc_base.
+         * pop_call_frame restores R / pc / pc_base / cur_consts and closes
+         * upvalues — exactly what the RETURN path does.  CALL_FRAME entries
+         * (OP_PUSH_FRAME_GUARD, currently never emitted) manage their own
+         * frame teardown in their absorb arm; skip them here. */
+        if (kind != UCLEANUP_CALL_FRAME) {
+            while (s->frame_count > e->frame_depth)
+                pop_call_frame(s);
+        }
+
         /* Inv-5 (row 7 §7.1): zero the frame's register range before running
          * any cleanup body or popping the entry.  Ensures dangling register
          * references from closed upvalues see null values after scope exit. */

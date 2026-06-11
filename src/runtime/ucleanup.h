@@ -46,13 +46,15 @@ struct UVM;      /* uvm.h */
      Pointers (64-bit): owning_tag(8) + catch_pattern(8) = 16 B.
      Total row 7: 24 B.
    Row 11 amendment adds next_member(8) + strand_back(8) = 16 B → 40 B on 64-bit.
+   refactor-3 VM-01 (v0.13.1) adds frame_depth(2) → fixed header 10 B
+   + 6 B padding before the 8-byte-aligned pointers → 48 B on 64-bit.
 
    On 32-bit targets (Cortex-M, RISC-V rv32), pointers shrink to 4 B each:
-     8 B fixed + 4 × 4 B = 24 B.  Unit tests run host-side only (64-bit),
-     so the 40 B assertion in test_cleanup.c is correct there.
+     10 B fixed + 2 B padding + 4 × 4 B = 28 B.  Unit tests run host-side
+     only (64-bit), so the 48 B assertion in test_cleanup.c is correct there.
 
    kind is stored as uint8_t (not int-sized enum) to keep the fixed header
-   at exactly 8 B and hit the 40 B target on 64-bit. */
+   compact and hit the 48 B target on 64-bit. */
 
 typedef struct UCleanupEntry {
     uint8_t       kind;            /* 1 byte — UCleanupKind value */
@@ -60,6 +62,10 @@ typedef struct UCleanupEntry {
     uint16_t      register_base;   /* 2 bytes — first reg to clear on teardown */
     uint16_t      register_count;  /* 2 bytes — number of regs in scope */
     uint16_t      handler_pc;      /* 2 bytes — finally/catch/onleave entry */
+    uint16_t      frame_depth;     /* 2 bytes — s->frame_count at push time;
+                                      the walker pops call frames back to this
+                                      depth before running or absorbing the
+                                      entry (refactor-3 VM-01/B1) */
     struct UTag         *owning_tag;    /* ptr — TAG_SCOPE only */
     struct UPattern     *catch_pattern; /* ptr — TRY_FRAME with catch */
     /* Row 11 §3.3 additions for tag membership tracking */
@@ -67,12 +73,13 @@ typedef struct UCleanupEntry {
     struct UStrand       *strand_back;  /* ptr — TAG_SCOPE: back-link for tag.stop() walk */
 } UCleanupEntry;
 
-/* FOUND-036, v0.5.5: pin the row 11 §3.3 layout target on 64-bit targets.
- * 32-bit targets fall through (8 B fixed + 4 × 4 B pointers = 24 B); the
+/* FOUND-036, v0.5.5: pin the row 11 §3.3 layout target on 64-bit targets
+ * (amended by refactor-3 VM-01: +frame_depth, 40 → 48).
+ * 32-bit targets fall through (10 B fixed + 2 B pad + 4 × 4 B = 28 B); the
  * pointer-width guard mirrors the UObject / UIC pattern in src/object/. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(UCleanupEntry) == 40,
-               "UCleanupEntry must be 40 bytes on 64-bit per row 7 §4.2 + row 11 §3.3");
+URBI_STATIC_ASSERT(sizeof(UCleanupEntry) == 48,
+               "UCleanupEntry must be 48 bytes on 64-bit per row 7 §4.2 + row 11 §3.3 + VM-01");
 #endif
 
 /* === URBI_CLEANUP_MAX: pre-allocated slots per strand (row 7 §4.3) ===

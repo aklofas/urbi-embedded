@@ -1093,6 +1093,7 @@ dispatch:
             entry->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
             entry->flags          = flags;
             entry->handler_pc     = handler_pc;
+            entry->frame_depth    = (uint16_t)s->frame_count;  /* VM-01 */
             entry->register_base  = 0U;
             entry->register_count = 0U;
             entry->owning_tag     = NULL;
@@ -1165,6 +1166,9 @@ dispatch:
             entry->kind           = (uint8_t)UCLEANUP_CALL_FRAME;
             entry->flags          = 0U;
             entry->handler_pc     = 0U;
+            entry->frame_depth    = (uint16_t)s->frame_count;  /* VM-01: walker
+                                       skips frame-pop for CALL_FRAME (absorb
+                                       arm manages its own frame teardown) */
             entry->register_base  = register_base;
             entry->register_count = register_count;
             entry->owning_tag     = NULL;

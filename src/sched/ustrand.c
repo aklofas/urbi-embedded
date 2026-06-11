@@ -487,6 +487,7 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
          * inside the pre-zeroed cleanup_base, but slots are reused across
          * push/pop cycles so a fresh zero per push is the safe contract. */
         urbi_zero(e, sizeof(*e));
+        /* frame_depth: 0 via urbi_zero — fresh strand (VM-01) */
         e->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
         e->owning_tag     = chain[i];
         e->strand_back    = new_s;
