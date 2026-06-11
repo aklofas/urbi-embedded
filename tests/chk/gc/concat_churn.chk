@@ -1,0 +1,24 @@
+# Milestone: v0.13.2
+# Covers: refactor-3 TEST-GAP-01 — string-concat + container churn.
+#         A string-build loop creates a fresh interned string per
+#         iteration (OP_ADD atom fast path, v0.10.8) and stores a second
+#         computed string into a List, so every iteration churns both the
+#         intern table and the container backing store.  On the normal
+#         build this passes trivially; under test-gc-stress every
+#         allocation runs a full collection, so an un-GC-rooted container
+#         element (refactor-3 B2) or a swept intermediate concat result
+#         turns the final length / element reads into a UAF or wrong
+#         values.
+#
+# Note: the loop and its vars stay on one line (REPL cross-line
+# closure-body bare-name resolution gap; see workspace design-risks
+# v0.9.1).
+
+var parts = List.new(); var s = ""; var i = 0; while (i < 12) { s = s + "ab"; parts.add(s + "!"); i = i + 1 }; s.length()
+[00000000] 24
+
+var parts2 = List.new(); var s2 = ""; var j = 0; while (j < 12) { s2 = s2 + "ab"; parts2.add(s2 + "!"); j = j + 1 }; parts2.length()
+[00000001] 12
+
+var parts3 = List.new(); var s3 = ""; var k = 0; while (k < 12) { s3 = s3 + "ab"; parts3.add(s3 + "!"); k = k + 1 }; parts3.get(2)
+[00000002] "ababab!"

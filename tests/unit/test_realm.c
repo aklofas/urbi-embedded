@@ -28,6 +28,7 @@
 #include "value/uintern.h"
 #include "sched/ustrand.h"   /* T69: UStrand layout + ready_next/ready_prev fields */
 #include "urbi/urbi.h"       /* T69: urbi_strand_create / urbi_strand_start (public API) */
+#include "urbi/gc.h"         /* v0.13.2: urbi_gc_force_full (stress bootstrap pin) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -569,6 +570,44 @@ UTEST(realm_destroy_unloads_non_vm_owned_proto)
     urbi_vm_destroy(&vm);
 }
 
+/* v0.13.2 (refactor-3 TEST-GAP-01 discovery chain): realm bootstrap must
+ * survive a collection at EVERY allocation.  Pre-v0.13.2,
+ * urbi_realm_create allocated tag/global_object BEFORE linking the realm
+ * onto vm->realms_head (an un-rooted window), urbi_object_alloc allocated
+ * the object cell before lazily creating the root shape, and
+ * urbi_chunk_instance_create linked its cells late — under URBI_GC_STRESS
+ * every script run died at boot (gc_shade_gray on a swept cell).  On a
+ * stress build vm.gc_stress_armed is 1 here, so both creates below run
+ * the full bootstrap with collect-on-every-alloc; on a normal build this
+ * is a smoke (the link-first ordering is still exercised, just without
+ * forced collections). */
+UTEST(stress_realm_create_survives_collect_per_alloc)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *r1 = urbi_realm_create(&vm);
+    UASSERT(r1 != NULL);
+
+    /* Second realm: bootstraps against a populated heap, so the forced
+     * mark/sweep passes walk every cell the first bootstrap created. */
+    URealm *r2 = urbi_realm_create(&vm);
+    UASSERT(r2 != NULL);
+
+    /* Both realms' globals resolve after a further full collection. */
+    urbi_gc_force_full(&vm);
+    UValue out1; out1.kind = UVAL_NIL;
+    UValue out2; out2.kind = UVAL_NIL;
+    UASSERT_EQ(urbi_realm_get_global(&vm, r1, "Object", 6, &out1), URBI_OK);
+    UASSERT_EQ(urbi_realm_get_global(&vm, r2, "Object", 6, &out2), URBI_OK);
+    UASSERT_EQ((int)out1.kind, (int)UVAL_OBJECT);
+    UASSERT_EQ((int)out2.kind, (int)UVAL_OBJECT);
+
+    urbi_realm_destroy(&vm, r2);
+    urbi_realm_destroy(&vm, r1);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -599,4 +638,6 @@ test_realm_suite(void)
               realm_destroy_skips_vm_owned_proto);
     utest_run("realm_destroy_unloads_non_vm_owned_proto (GC-18)",
               realm_destroy_unloads_non_vm_owned_proto);
+    utest_run("stress_realm_create_survives_collect_per_alloc (v0.13.2)",
+              stress_realm_create_survives_collect_per_alloc);
 }

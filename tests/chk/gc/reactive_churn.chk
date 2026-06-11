@@ -1,0 +1,22 @@
+# Milestone: v0.13.2
+# Covers: refactor-3 TEST-GAP-01 — reactive-runtime allocation churn.
+#         Install / fire / stop an at-event watcher per loop iteration,
+#         tag-scoped so each iteration churns the watcher pool (install →
+#         member-link → tag.stop teardown → slot reuse) while the body
+#         allocates (string method dispatch).  On the normal build this
+#         passes trivially; under test-gc-stress every allocation runs a
+#         full collection, so any unrooted window in watcher install,
+#         body-strand spawn, tag-scope teardown, or the changed/event
+#         machinery turns the final counter read into a UAF or a wrong
+#         count.
+#
+# Note: tag.stop() must run INSIDE the tag's active scope (v0.10.9 D3 —
+# fatal outside scope), hence the self-stop form `o.t: { ...; o.t.stop() }`.
+# The loop and its vars stay on one line (REPL cross-line closure-body
+# bare-name resolution gap; see workspace design-risks v0.9.1).
+
+var Realm.hits = 0
+[00000000] 0
+
+var e = Event.new(); var o = Object.new(); var i = 0; while (i < 6) { o.t = Tag.new(); o.t: { at (e?) { Realm.hits = Realm.hits + "ab".length() }; e.emit(); o.t.stop() }; i = i + 1 }; Realm.hits
+[00000001] 12
