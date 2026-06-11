@@ -334,6 +334,7 @@ extern void test_atoms_random_suite(void);
 extern void test_cleanup_yield_suite(void);
 extern void test_tag_self_block_suite(void);
 extern void test_strand_cancel_wake_suite(void);
+extern void test_scratch_cur_strand_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -644,6 +645,7 @@ static const struct suite_entry suites[] = {
     {"cleanup_yield",                    test_cleanup_yield_suite},
     {"tag_self_block",                   test_tag_self_block_suite},
     {"strand_cancel_wake",               test_strand_cancel_wake_suite},
+    {"scratch_cur_strand",               test_scratch_cur_strand_suite},
     /* Add new suites here as test files are added. */
 };
 

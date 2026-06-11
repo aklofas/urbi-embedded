@@ -192,14 +192,37 @@ run_on_scratch_core(struct UVM       *vm,
         *out_threw = 1;
     } else {
         /* Run with bounded budget.  Cond closures must not yield (spec §6.4),
-         * but we cap dispatch ops as a defensive measure. */
+         * but we cap dispatch ops as a defensive measure.
+         *
+         * refactor-3 VM-10 + SCHED-10: the nested dispatch must identify the
+         * scratch strand as current (slot faults / natives throw on
+         * vm->cur_strand — pre-fix the throw landed on the OUTER strand, e.g.
+         * the loader strand executing OP_AT_INSTALL, or was lost) and must
+         * not clobber the embedder's urbi_step budget
+         * (dispatch_loop_until_yield overwrites vm->step_budget_remaining at
+         * entry).  Save both, point cur_strand at the scratch strand for the
+         * duration of the dispatch, restore after. */
+        UStrand *saved_cur    = vm->cur_strand;
+        uint64_t saved_budget = vm->step_budget_remaining;
+        vm->cur_strand = &strand;
         (void)dispatch_loop_until_yield(&strand, URBI_SCRATCH_BUDGET_OPS);
+        vm->cur_strand = saved_cur;
+        vm->step_budget_remaining = saved_budget;
 
         /* Detect unhandled throw / abnormal exit. */
         if (vm->last_error != UVM_OK) {
             *out_threw = 1;
             vm->last_error = UVM_OK;
             vm->last_errmsg[0] = '\0';
+        } else if (strand.fatal_status != UEXEC_OK) {
+            /* refactor-3 VM-10: with cur_strand pointing at the scratch
+             * strand, typed throws (slot faults via slot_throw_or_fatal,
+             * urbi_raise_typed natives) now land here and unwind to a DEAD
+             * strand with fatal_status latched — vm->last_error stays UVM_OK
+             * on that path.  Report a throw so install/eval fail-soft
+             * instead of misreading the death as a clean OP_RET (which
+             * would deliver nil as the cond/body result). */
+            *out_threw = 1;
         } else if (strand.state == USTRAND_STATE_DEAD) {
             /* Clean OP_RET — capture the return value. */
             *out_result = out_local;
