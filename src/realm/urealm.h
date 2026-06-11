@@ -108,7 +108,9 @@ typedef struct URealm {
     /* [runtime-only, NOT serialized] Singly-linked list of root UProtos
      * loaded under this realm via urbi_run_chunk / urbi_repl_eval /
      * urbi_load_chunk.  Threaded via UProto.next_in_realm; head-insertion.
-     * Walked at urbi_realm_destroy time to unload each module (Task 12).
+     * Walked at urbi_realm_destroy time to unload each non-vm_owned module
+     * (Task 12); vm_owned overlays (refactor-3 GC-18) only get their
+     * back-pointers cleared there and are freed by urbi_vm_destroy.
      * v0.9.2 Task 4.1: was UModule*; now UProto* (UModule deleted). */
     struct UProto  *loaded_protos_head;
 } URealm;

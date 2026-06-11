@@ -261,10 +261,14 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * registration, refactor-3 GC-18) are freed by urbi_vm_destroy, never
      * here.  Their back-pointers to this (about-to-be-freed) realm are
      * cleared in the same pass.  In-list-only clearing is sufficient:
-     * urealm_register_module is the sole writer of owning_realm and sets the
+     * urealm_register_module is the sole setter of owning_realm and sets the
      * back-pointer and the list link together (skipping entirely when
-     * owning_realm != NULL — Task 5), and urbi_unload clears both together —
-     * so owning_realm == realm holds exactly for the protos on this realm's
+     * owning_realm != NULL — Task 5); the only writers that clear the pair
+     * — urbi_unload plus the three uchunk_destroy clear sites in
+     * uchunk_io.c (the rescue-path and no-vm-path unlinks in uchunk_destroy
+     * and the one in uchunk_destroy_internal) — unlink from
+     * loaded_protos_head and clear both fields together.  So
+     * owning_realm == realm holds exactly for the protos on this realm's
      * loaded_protos_head, and a vm_owned module registered into a different
      * realm has nothing pointing at this one. */
     {

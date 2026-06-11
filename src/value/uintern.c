@@ -126,9 +126,11 @@ static int table_grow(UVM *vm, UInternTable *t) {
     size_t old_cap = t->cap;
     UInternStr **old_entries = t->entries;
     size_t new_cap = old_cap * 2;
+    size_t new_bytes = new_cap * sizeof(UInternStr *);   /* GC-08: alloc and byte
+                                                          * metric must agree */
 
     /* TIDY-005: explicit cast on void * → UInternStr ** decay. */
-    UInternStr **new_arr = (UInternStr **)vm_alloc(vm, NULL, new_cap * sizeof(UInternStr *));
+    UInternStr **new_arr = (UInternStr **)vm_alloc(vm, NULL, new_bytes);
     if (new_arr == NULL) return 0;
     for (size_t i = 0; i < new_cap; i++) new_arr[i] = NULL;
 
@@ -148,7 +150,7 @@ static int table_grow(UVM *vm, UInternTable *t) {
     /* GC-08: swap the old entries[] array out of the byte metric, swap the
      * new one in (mirrors the alloc/free pair above). */
     t->bytes -= old_cap * sizeof(UInternStr *);
-    t->bytes += new_cap * sizeof(UInternStr *);
+    t->bytes += new_bytes;
     return 1;
 }
 

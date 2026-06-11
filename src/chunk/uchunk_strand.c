@@ -47,7 +47,9 @@
  * Shared modules (e.g. vm->stdlib_module) may be run into multiple realms;
  * they keep owning_realm pointing at the FIRST realm they were registered
  * in and are NOT re-registered for subsequent realms.  The unload path
- * (Task 12 / 13) handles per-realm teardown independently.  v0.9.0-repl. */
+ * (Task 12 / 13) handles per-realm teardown independently — except for
+ * vm_owned overlays (refactor-3 GC-18): realm teardown only clears their
+ * back-pointers; urbi_vm_destroy frees them.  v0.9.0-repl. */
 static void
 urealm_register_module(URealm *realm, UProto *p)
 {
