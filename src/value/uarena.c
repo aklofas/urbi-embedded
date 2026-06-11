@@ -151,23 +151,39 @@ void *uarena_alloc(UArena *a, size_t nbytes) {
     /* Grab or create a chunk with enough room. */
     UArenaChunk *c = a->head;
     if (!c || c->used + need > c->capacity) {
-        if (a->is_static) {
-            /* No dynamic allocation in static mode. */
-            a->oom = true;
-            return NULL;
-        }
-        c = new_chunk(a, need);
-        if (!c) {
-            a->oom = true;
-            return NULL;
-        }
-        /* Link at tail to preserve "first" for reset ordering. */
-        if (a->head) {
-            a->head->next = c;
+        /* refactor-3 FE-07: after uarena_reset the chunks allocated by a
+         * previous statement are still linked behind head — reuse the next
+         * one when it fits rather than appending (the old unconditional
+         * `head->next = new` overwrote the link, orphaning — leaking —
+         * every chunk after the reset point, unreachable even by
+         * uarena_destroy; LSan-verified ~32 KB per 3-statement session). */
+        UArenaChunk *succ = (c != NULL) ? c->next : NULL;
+        if (succ != NULL && succ->used + need <= succ->capacity) {
+            c = succ;
+            a->head = c;
         } else {
-            a->first = c;
+            if (a->is_static) {
+                /* No dynamic allocation in static mode. */
+                a->oom = true;
+                return NULL;
+            }
+            c = new_chunk(a, need);
+            if (!c) {
+                a->oom = true;
+                return NULL;
+            }
+            /* Insert after head, PRESERVING the rest of the chain (succ
+             * stays reachable and is reused by a later alloc that fits).
+             * new_chunk returns c->next == NULL, so this is the single
+             * linking site. */
+            if (a->head) {
+                c->next = a->head->next;
+                a->head->next = c;
+            } else {
+                a->first = c;
+            }
+            a->head = c;
         }
-        a->head = c;
     }
 
     unsigned char *p = chunk_payload(c) + c->used;
