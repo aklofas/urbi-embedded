@@ -93,10 +93,9 @@ uint64_t urbi_default_host_time_us(void *ud) {
  * yields vm->last_return_closure (the result of the most-recent urbi_vm_run
  * call, preserved across calls for host inspection).
  *
- * Today this yield is dormant: UClosure cells are not on all_cells_head, so
- * gc_shade_gray sets the color byte and returns early (NULL sidecar path, per
- * the GC-009 contract in ugc_incremental.c).  Step C-2 lights this up when
- * UClosure is promoted to urbi_gc_alloc. */
+ * UClosure is GC-managed (enrolled via urbi_gc_alloc since v0.8.4 Step C-2),
+ * so this yield is load-bearing: it is what keeps the preserved closure
+ * alive across collections until the next urbi_vm_run replaces it. */
 static void
 vm_misc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {

@@ -41,26 +41,22 @@ static int count_all_cells(UVM *vm) {
 }
 
 /* ===================================================================
- * T36 / GC-009 — gc_shade_gray NULL-sidecar contract
+ * T36 / GC-009 → refactor-3 GC-15 — gc_shade_gray NULL-sidecar contract
  *
- * Test 1 (regime 1 — tracked cell): gc_shade_gray on an urbi_gc_alloc'd
- *   cell pushes it onto the gray work-list normally.  Positive regression.
+ * Test 1 (tracked cell): gc_shade_gray on an urbi_gc_alloc'd cell pushes
+ *   it onto the gray work-list normally.  Positive regression.
  *
- * Test 2 (regime 2 — FIXED pool cell): gc_shade_gray on a hand-built
- *   FIXED cell (no sidecar in vm->all_cells_head) silently no-ops the
- *   work-list push without aborting or crashing.  This mirrors the
- *   walk_uevent / walk_utag chain-shade path against UWatcher pool slots.
+ * Test 2 (FIXED pool cell): gc_shade_gray on a hand-built FIXED cell (no
+ *   sidecar in vm->all_cells_head) silently no-ops the work-list push
+ *   without aborting or crashing.  Mirrors the UWatcher pool slots —
+ *   the ONLY cells legitimately absent from all_cells_head.
  *
- * Test 3 (regime 3 — UClosure cell): gc_shade_gray on a non-FIXED
- *   non-PINNED cell whose backing struct lives outside all_cells_head
- *   (mirrors UClosure: header-only UCell, allocated via vm->alloc_fn
- *   directly rather than urbi_gc_alloc) silently no-ops without
- *   aborting.  This is the at_onleave.chk pattern: closures created by
- *   OP_CLOSURE land in this regime until v1.x promotes them to
- *   urbi_gc_alloc-tracked cells.
- *
- * Together these three pin the GC-009 contract documented at
- * gc_shade_gray's NULL-return guard.
+ * The former Test 3 ("regime 3" — a non-FIXED non-enrolled UClosure-like
+ * cell silently no-ops) was retired by refactor-3 GC-15: UClosure /
+ * UUpvalCell are enrolled via urbi_gc_alloc since v0.8.4 Step C-2, so a
+ * NULL sidecar on a non-FIXED cell is an enrollment bug and gc_shade_gray
+ * now asserts on it.  The inverted pin (debug-build abort) lives in
+ * test_ugc_state_machine.c.
  * =================================================================== */
 
 UTEST(gc_shade_gray_walks_alloced_cell)
@@ -88,8 +84,8 @@ UTEST(gc_shade_gray_walks_alloced_cell)
 UTEST(gc_shade_gray_silent_on_fixed_cell_without_sidecar)
 {
     /* Build a FIXED cell on the stack — no sidecar, never inserted into
-     * vm->all_cells_head.  Mirrors the UWatcher pool-slot pattern that
-     * walk_uevent / walk_utag exercise via gc_shade_gray. */
+     * vm->all_cells_head.  Mirrors the UWatcher pool-slot pattern (the
+     * pool slab is alloc_fn-managed; slots carry UGC_IS_FIXED). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
@@ -97,7 +93,7 @@ UTEST(gc_shade_gray_silent_on_fixed_cell_without_sidecar)
     standalone.type_tag = UTYPE_OBJECT;
     standalone.gc_byte  = (uint8_t)(vm.current_white | UGC_IS_FIXED);
 
-    /* Per the GC-009 contract documented in gc_shade_gray, the NULL-return
+    /* Per the GC-15 contract documented in gc_shade_gray, the NULL-return
      * from find_sidecar_for_cell is an expected path for FIXED cells: the
      * function silently no-ops the work-list push and just leaves the
      * color flag set as an idempotency marker. */
@@ -112,32 +108,9 @@ UTEST(gc_shade_gray_silent_on_fixed_cell_without_sidecar)
     urbi_vm_destroy(&vm);
 }
 
-UTEST(gc_shade_gray_silent_on_uclosure_regime_cell)
-{
-    /* Build a non-FIXED non-PINNED stack cell — mirrors the pre-v0.8.4
-     * UClosure regime where vm_alloc_closure stamped a UCell header for
-     * write-barrier safety but didn't enroll the closure on all_cells_head.
-     * UClosure is now GC-managed (v0.8.4 Step C-2); the strand closure_list
-     * legacy free-list was deleted at Step C-3.
-     *
-     * This is the path that fires from at_onleave.chk in M5 reactive
-     * fixtures: a UClosure passed through the upvalue write barrier or
-     * shaded as a slot child reaches gc_shade_gray and must NOT crash. */
-    UVM vm;
-    urbi_vm_init(&vm, NULL, NULL);
-
-    UCell uclosure_like;
-    uclosure_like.type_tag = UTYPE_CLOSURE;
-    uclosure_like.gc_byte  = vm.current_white;  /* no FIXED, no PINNED */
-
-    /* Per the GC-009 contract: silent no-op for the work-list push. */
-    gc_shade_gray(&vm, &uclosure_like);
-
-    UASSERT_EQ((uclosure_like.gc_byte & UGC_COLOR_MASK), (uint8_t)UGC_COLOR_GRAY);
-    UASSERT_EQ(count_all_cells(&vm), 0);
-
-    urbi_vm_destroy(&vm);
-}
+/* gc_shade_gray_silent_on_uclosure_regime_cell retired (refactor-3 GC-15):
+ * the "regime 3" silent no-op it pinned is now an assert-failure path —
+ * see the banner above and test_ugc_state_machine.c. */
 
 /* ===================================================================
  * T37 / GC-015 — sweep surviving-bytes excludes intra-slice allocations
@@ -256,8 +229,6 @@ void test_gc_sweep_accounting_suite(void)
               gc_shade_gray_walks_alloced_cell);
     utest_run("gc_shade_gray_silent_on_fixed_cell_without_sidecar",
               gc_shade_gray_silent_on_fixed_cell_without_sidecar);
-    utest_run("gc_shade_gray_silent_on_uclosure_regime_cell",
-              gc_shade_gray_silent_on_uclosure_regime_cell);
     utest_run("sweep_surviving_bytes_excludes_intra_slice_allocations",
               sweep_surviving_bytes_excludes_intra_slice_allocations);
     utest_run("sweep_surviving_bytes_resets_between_cycles",

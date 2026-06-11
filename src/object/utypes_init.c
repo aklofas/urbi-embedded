@@ -388,10 +388,18 @@ walk_utag(struct UVM *vm, void *payload,
 /* === walk_uclosure (v0.8.4 — Option B Step B) ===
  *
  * Closure tracer.  Shades each captured upvalue cell directly (UUpvalCell is
- * a GC cell, not boxed in a UValue), plus the bound proto_inst (also a GC
- * cell).  cl->proto is NOT shaded — UProto is refcount-managed per v0.8.1
- * Variant B fusion, not GC-managed.  The finalizer (uclosure_destroy below)
- * decrements proto refcount on sweep.
+ * a GC cell, not boxed in a UValue).  cl->proto is NOT shaded — UProto is
+ * refcount-managed per v0.8.1 Variant B fusion, not GC-managed.  The
+ * finalizer (uclosure_destroy below) decrements proto refcount on sweep.
+ *
+ * cl->proto_inst is NOT shaded either (refactor-3 GC-15 fix): it is an
+ * INTERIOR pointer (&arr->entries[k]) into the UProtoInstanceArr bulk, not
+ * a UCell — UProtoInstance has no cell header (uchunk_instance.h).  The
+ * pre-GC-15 shade here read/WROTE color bits into byte 1 of entries[k].proto
+ * (silent pointer corruption; the sidecar lookup then failed and the
+ * work-list push was a no-op, so it never contributed reachability).  The
+ * Arr's real liveness path is object_roots_walker → module_instances_head →
+ * walk_umoduleinstance, which shades the Arr base cell.
  *
  * payload = cell + 1 (two bytes past the UCell header); recover UClosure* by
  * stepping back one UCell-size to get the closure base. */
@@ -410,11 +418,6 @@ walk_uclosure(struct UVM *vm, void *payload,
         if (cl->upvals[i] != NULL) {
             gc_shade_gray(vm, &cl->upvals[i]->cell);
         }
-    }
-
-    /* Shade proto_inst if bound (M4 follow-up wired this end-to-end). */
-    if (cl->proto_inst != NULL) {
-        gc_shade_gray(vm, (UCell *)cl->proto_inst);
     }
 }
 
@@ -574,9 +577,10 @@ static const UType type_umodule_instance = {
  * IC entries are kept alive via walk_ushape from the receiver-side
  * UObject; UProps cells are kept alive via walk_ushape's props_table
  * walk).  recv_protos[e] (T8b) needs no shading either — it is an
- * opaque key word compared but never dereferenced.  The previous walk_uprotoinstance function was an explicit
- * no-op stub with a stale TODO; retired in v0.5.7-fixes Phase 13
- * (OBJ-028) — substituted by walk_noop. */
+ * opaque key word compared but never dereferenced.  The previous
+ * walk_uprotoinstance function was an explicit no-op stub with a stale
+ * TODO; retired in v0.5.7-fixes Phase 13 (OBJ-028) — substituted by
+ * walk_noop. */
 static const UType type_uproto_instance = {
     .type_tag      = UTYPE_PROTO_INSTANCE,
     .flags         = 0U,

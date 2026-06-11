@@ -587,12 +587,10 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
 
     /* (6) Strand entry closure (v0.8.4 Option B Step C-1).
      *     s->entry_closure is a raw UClosure* set at strand creation.
-     *     Once Step C-2 promotes UClosure to urbi_gc_alloc, this pointer must
-     *     keep the closure alive — without this yield, GC would sweep it.
-     *     UClosure embeds UCell at offset 0; shade directly via gc_shade_gray.
-     *     Today this yield is dormant: UClosure cells are not on all_cells_head,
-     *     so gc_shade_gray sets the color byte and returns early (NULL sidecar
-     *     path, per the GC-009 contract in ugc_incremental.c). */
+     *     UClosure is GC-managed (enrolled via urbi_gc_alloc since Step C-2),
+     *     so this yield is load-bearing: without it, GC would sweep the
+     *     closure out from under the strand.  UClosure embeds UCell at
+     *     offset 0; shade directly via gc_shade_gray. */
     if (s->entry_closure != NULL) {
         gc_shade_gray(vm, (UCell *)&s->entry_closure->cell);
     }
@@ -601,7 +599,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
      *     Each active call frame holds a raw UClosure* (frames[i].closure).
      *     frame_count is the count of populated frames.  Frame 0 may have
      *     closure == NULL (top-level call into the strand entry); guard each.
-     *     Same dormant-harmless property as (6). */
+     *     Load-bearing for the same reason as (6). */
     {
         int i;
         for (i = 0; i < s->frame_count; i++) {
@@ -613,12 +611,11 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
 
     /* (8) Open upvalue cells (v0.8.4 Option B Step C-1).
      *     s->open_upvals is a chain of UUpvalCell* with on_heap == false
-     *     (cells still pointing into the strand's register window).  Once
-     *     Step C-2 promotes UUpvalCell to urbi_gc_alloc, the chain itself is
-     *     the only persistent reference to these cells until OP_CLOSE
-     *     transfers ownership into a closure's upvals[].  Walk + shade each.
-     *     Each cell embeds UCell at offset 0.  Same dormant-harmless property
-     *     as (6): cells not on all_cells_head, gc_shade_gray is a safe no-op. */
+     *     (cells still pointing into the strand's register window).
+     *     UUpvalCell is GC-managed (Step C-2); the chain is the only
+     *     persistent reference to these cells until OP_CLOSE transfers
+     *     ownership into a closure's upvals[].  Walk + shade each.
+     *     Each cell embeds UCell at offset 0. */
     {
         UUpvalCell *uc = s->open_upvals;
         while (uc != NULL) {

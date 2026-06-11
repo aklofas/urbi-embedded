@@ -283,6 +283,59 @@ UTEST(watcher_closure_survives_multi_gc_then_collected)
 }
 
 /* ===================================================================
+ * Scenario 4 — closure trace must not touch proto_inst (refactor-3 GC-15)
+ *
+ * cl->proto_inst is an INTERIOR pointer into the UProtoInstanceArr bulk
+ * (&arr->entries[k]); UProtoInstance has no UCell header.  Pre-GC-15,
+ * walk_uclosure cast it to UCell* and gc_shade_gray'd it — writing color
+ * bits into byte 1 of entries[k].proto (silent pointer corruption) while
+ * contributing nothing to reachability (interior pointers have no sidecar,
+ * so the gray-list push was always a no-op).  The Arr's real liveness path
+ * is object_roots_walker → module_instances_head → walk_umoduleinstance.
+ *
+ * Pin: trace a rooted closure whose proto_inst->proto has a deliberately
+ * white-looking byte 1 (bits [9:8] == 00) — the worst case for the old
+ * shade — and assert the stored pointer is bit-identical afterwards.
+ * =================================================================== */
+UTEST(closure_trace_leaves_proto_inst_entry_intact)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    struct URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
+
+    UClosure *cl = urbi_make_native_closure(&vm, test_noop_fn);
+    UASSERT(cl != NULL);
+
+    /* Synthetic arr entry on the C stack (never dereferenced by the GC).
+     * 0x4000: byte 1 == 0x40 → color bits 00 (white-looking), so the
+     * pre-fix shade would deterministically rewrite it to 0x42 (GRAY),
+     * silently turning the stored pointer into 0x4200. */
+    UProtoInstance pi;
+    pi.proto    = (UProto *)(uintptr_t)0x4000U;
+    pi.ic_table = NULL;
+    cl->proto_inst = &pi;
+
+    /* Root the closure so the mark phase traces it via walk_uclosure. */
+    UValue cl_val = urbi_make_closure(cl);
+    int rc = urbi_realm_set_global(&vm, realm, "gc15_anchor",
+                                   sizeof("gc15_anchor") - 1U, cl_val);
+    UASSERT_EQ(rc, URBI_OK);
+
+    urbi_gc_force_full(&vm);
+    urbi_gc_force_full(&vm);
+
+    UASSERT(cell_is_alive(&vm, (UCell *)cl));
+    UASSERT(pi.proto == (UProto *)(uintptr_t)0x4000U);   /* bit-identical */
+    UASSERT(pi.ic_table == NULL);
+
+    /* Unbind the stack-local entry before teardown. */
+    cl->proto_inst = NULL;
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite entry
  * =================================================================== */
 
@@ -296,4 +349,6 @@ test_closure_gc_suite(void)
               heapified_upval_survives_gc);
     utest_run("watcher_closure_survives_multi_gc_then_collected",
               watcher_closure_survives_multi_gc_then_collected);
+    utest_run("closure_trace_leaves_proto_inst_entry_intact",
+              closure_trace_leaves_proto_inst_entry_intact);
 }

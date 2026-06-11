@@ -16,7 +16,37 @@
 #include "urbi/gc.h"
 #include "gc/ugc_incremental.h"
 #include "vm/uvm.h"
+#include "watcher/uwatcher.h"
 #include <stdlib.h>
+
+#ifdef URBI_DEBUG
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+/* EXPECT_ABORT: assert that expr causes abort (via assert() failure).
+ * Uses fork+waitpid: child executes expr; parent verifies abnormal exit.
+ * Only meaningful in URBI_DEBUG builds where URBI_INTERNAL_ASSERT is assert(). */
+#define EXPECT_ABORT(expr)                                                   \
+    do {                                                                     \
+        utest_checks++;                                                      \
+        pid_t _pid = fork();                                                 \
+        if (_pid == 0) {                                                     \
+            (expr);                                                          \
+            _exit(0); /* should not reach — abort expected */                \
+        }                                                                    \
+        int _st = 0;                                                         \
+        waitpid(_pid, &_st, 0);                                              \
+        int _aborted = WIFSIGNALED(_st) ||                                   \
+                       (WIFEXITED(_st) && WEXITSTATUS(_st) != 0);            \
+        if (!_aborted) {                                                     \
+            utest_failures++;                                                \
+            printf("  FAIL: %s:%d: " #expr " did not abort\n",               \
+                   __FILE__, __LINE__);                                      \
+            fflush(stdout);                                                  \
+        }                                                                    \
+    } while (0)
+#endif /* URBI_DEBUG */
 
 #define UTEST(name) static void name(void)
 
@@ -300,6 +330,103 @@ UTEST(ugc_collect_frees_dead_cells)
     urbi_vm_destroy(&vm);
 }
 
+/* ===== Test 11 (refactor-3 GC-15): gc_shade_gray sidecar contract =====
+ *
+ * NULL-sidecar contract: the ONLY cells legitimately absent from
+ * all_cells_head are FIXED pool cells (UWatcher slots).  Everything else
+ * — including UClosure / UUpvalCell, GC-managed since v0.8.4 Step C-2 —
+ * is enrolled by urbi_gc_alloc, so gc_shade_gray must always find a
+ * sidecar and push it onto the gray work-list. */
+
+/* Is `cell` enrolled on the all-cells sidecar list? */
+static int cell_enrolled(UVM *vm, const void *cell)
+{
+    const MirrorNode *n = (const MirrorNode *)(void *)vm->all_cells_head;
+    while (n != NULL) {
+        if (n->cell == cell) return 1;
+        n = n->next;
+    }
+    return 0;
+}
+
+UTEST(ugc_shade_gray_graylists_every_enrolled_cell_type)
+{
+    /* One tag per GC-managed allocation path that historically had its own
+     * "regime": ordinary objects, the v0.8.4-promoted closure/upval pair
+     * (vm_alloc_closure / vm_open_upvalue → urbi_gc_alloc), tags, events.
+     * 256 B over-allocates every payload so the zero-init walkers stay in
+     * bounds if a forced stress collection drains the gray list. */
+    static const uint8_t tags[] = {
+        UTYPE_OBJECT, UTYPE_CLOSURE, UTYPE_UPVAL_CELL, UTYPE_TAG, UTYPE_EVENT,
+    };
+
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    size_t i;
+    for (i = 0; i < sizeof tags / sizeof tags[0]; i++) {
+        UCell *c = urbi_gc_alloc(&vm, 256U, tags[i]);
+        UASSERT(c != NULL);
+        UASSERT(cell_enrolled(&vm, c));
+        UASSERT((c->gc_byte & UGC_COLOR_MASK) <= UGC_COLOR_WHITE1);
+
+        gc_shade_gray(&vm, c);
+
+        UASSERT_EQ((int)(c->gc_byte & UGC_COLOR_MASK), (int)UGC_COLOR_GRAY);
+        /* Sidecar found: the gray work-list head is this cell's sidecar. */
+        const MirrorNode *gray = (const MirrorNode *)(void *)vm.gray_work_head;
+        UASSERT(gray != NULL);
+        UASSERT(gray->cell == (void *)c);
+    }
+
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(ugc_shade_gray_fixed_pool_cell_colors_without_sidecar)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* Real pool watcher: UGC_IS_FIXED, never enrolled on all_cells_head.
+     * UWatcher's leading fields match the UCell header layout by design. */
+    UWatcher *w = uwatcher_pool_alloc(&vm);
+    UASSERT(w != NULL);
+    UCell *cell = (UCell *)(void *)w;
+    UASSERT((cell->gc_byte & UGC_IS_FIXED) != 0U);
+    UASSERT(!cell_enrolled(&vm, cell));
+    UASSERT(vm.gray_work_head == NULL);
+
+    gc_shade_gray(&vm, cell);   /* must NOT abort: FIXED is the exemption */
+
+    /* Color set; work-list push correctly skipped (no sidecar to push). */
+    UASSERT_EQ((int)(cell->gc_byte & UGC_COLOR_MASK), (int)UGC_COLOR_GRAY);
+    UASSERT(vm.gray_work_head == NULL);
+
+    urbi_vm_destroy(&vm);
+}
+
+#ifdef URBI_DEBUG
+/* Helper invoked inside the forked child of EXPECT_ABORT below.  Shades a
+ * stack cell that is neither enrolled (no urbi_gc_alloc sidecar) nor FIXED
+ * — a rooting/enrollment bug by the GC-15 contract; the NULL-sidecar
+ * assert in gc_shade_gray must abort the child. */
+static void shade_unenrolled_nonfixed_cell(void)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UCell orphan;
+    orphan.type_tag = UTYPE_OBJECT;
+    orphan.gc_byte  = vm.current_white;   /* white; not FIXED; not enrolled */
+    gc_shade_gray(&vm, &orphan);
+}
+
+UTEST(ugc_shade_gray_unenrolled_nonfixed_aborts_in_debug)
+{
+    EXPECT_ABORT(shade_unenrolled_nonfixed_cell());
+}
+#endif
+
 /* ===== Suite entry point ===== */
 
 void test_ugc_state_machine_suite(void)
@@ -324,4 +451,12 @@ void test_ugc_state_machine_suite(void)
               ugc_threshold_exceeds_initial_with_large_live_set);
     utest_run("ugc_collect_frees_dead_cells",
               ugc_collect_frees_dead_cells);
+    utest_run("ugc_shade_gray_graylists_every_enrolled_cell_type",
+              ugc_shade_gray_graylists_every_enrolled_cell_type);
+    utest_run("ugc_shade_gray_fixed_pool_cell_colors_without_sidecar",
+              ugc_shade_gray_fixed_pool_cell_colors_without_sidecar);
+#ifdef URBI_DEBUG
+    utest_run("ugc_shade_gray_unenrolled_nonfixed_aborts_in_debug",
+              ugc_shade_gray_unenrolled_nonfixed_aborts_in_debug);
+#endif
 }
