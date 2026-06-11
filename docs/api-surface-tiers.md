@@ -383,6 +383,7 @@ CI gate tracks this list to prevent silent growth.
   `urbi_isa_method_register`,
   `urbi_job_make`, `urbi_job_proto_register`, `urbi_job_proto_register_globals`,
   `urbi_stdlib_boot`, `urbi_stdlib_containers_destroy`,
+  `urbi_stdlib_containers_walk_roots`,
   `urbi_stdlib_list_append_value`, `urbi_stdlib_list_new_empty`,
   `urbi_stdlib_list_remove_first_equal`,
   `urbi_stdlib_register_atom_methods`,
