@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.13.2-gc-soundness — 2026-06-11
+
+Tag 3 of the v0.13.x pre-release hardening arc: the incremental GC stops
+losing live objects.  Closes the refactor-3 deep-audit blockers B2/B5 plus
+the GC findings below, and ships the collect-before-alloc stress machinery
+that then found a further layer of pre-existing rooting and barrier bugs.
+No new opcode, wire format unchanged (v1.9 / 0x19).  ABI 0/23/2 -> 0/23/3
+(PATCH; zero public C API symbol changes — not an escape; one Tier-4
+internal accessor `urbi_intern_bytes` and one Tier-4 root-provider symbol
+`urbi_stdlib_containers_walk_roots` are documented in the manifest).
+
+- Container element roots (B2 / GC-01 + STD-01): List/Dict backing stores
+  are walked by a dedicated root provider and element insertion fires the
+  write barrier — container elements were collectable while reachable.
+- ATOMIC_FINISH re-scan (B5 / GC-02): finishing a GC cycle re-runs ALL
+  registered root providers, not just the always-scanned core set, so a
+  value that moved into a provider-covered root mid-cycle is not swept.
+- Strand rooting cluster (GC-03 / GC-04 / SCHED-07): the strand walker
+  roots `unblock_value`, cleanup-entry `owning_tag`, and `suspend_tag`.
+- C-stack root chain (VM-06a): new `UCRootFrame` chain (UStrand
+  `c_roots_head`) lets runtime C code pin values across allocating calls;
+  the cleanup executor's saved value rides it (closes v0.13.1-L).
+- Watcher/event rooting (GC-05): pool-wide watcher root provider replaces
+  per-install hooks; watcher and periodic `owning_tag` plus event roots
+  are walked.
+- Inline-cache re-key (GC-06 / VM-06c): the op-overload IC caches
+  (holder, slot) and re-reads the slot on hit, keyed on receiver
+  shape+protos; the slot UIC adds receiver-protos identity keying — both
+  wrong-dispatched on polymorphic sites.
+- Upvalue-close barrier (GC-07): `vm_close_upvalues` fires the Dijkstra
+  barrier for the closed-over value; `OP_SETUPVAL` barriers the shared
+  upvalue cell, not the closure that happened to store through it.
+- ros.subscribe OOM rollback (GC-10 / ROS-08): an allocation failure
+  mid-subscribe rolls the `subs[]` commit back instead of leaving a
+  half-registered subscription.
+- Asserts + contracts: NULL GC sidecar implies a FIXED cell (GC-15);
+  `urbi_lock_heap` documented as gating GC cells only (GC-16); intern
+  table gets byte accounting surfaced via `Debug.gc()` and its no-evict
+  contract documented (GC-08); a `vm_owned` flag on UProto replaces the
+  realm-teardown proto exclusion stack (GC-18).
+- Stress machinery (TEST-GAP-01 / GC-17): `URBI_GC_STRESS`
+  collect-before-alloc build mode + a `test-gc-stress` releasetest gate,
+  and an executable rooting-matrix harness (25+ allocation-window cases)
+  replacing the documentation-only matrix.
+- Pre-existing bugs found by the tag's own machinery (stress mode, matrix
+  harness, per-task review): `walk_uobject` shades the heap-form UProtos
+  wrapper cell; `walk_uclosure` stops shading an interior pointer that
+  corrupted `proto_inst` byte 1; the barrier white-predicate covers BOTH
+  white generations — it covered only `current_white`, leaving every
+  Dijkstra barrier inert mid-cycle; realm bootstrap and 8 more
+  boot/native-constructor windows (incl. the remove_property /
+  install_property / set_property_value paths) root their allocations
+  under collect-per-alloc; plus drain-loop and test-robustness fixes.
+- Embedded footprint notes: UStrand 3912 -> 3920 B (+`c_roots_head`); UIC
+  152 -> 184 B per site (receiver-protos keying — about +1.8 KB on a
+  stdlib-sized load under the footprint preset; trim with
+  `URBI_IC_ENTRIES_PER_SITE=1`); op-overload IC table 4160 -> 7232 B
+  (heap-allocated).
+
 ## v0.13.1-unwind-and-frontend — 2026-06-11
 
 Tag 2 of the v0.13.x pre-release hardening arc: the unwind machinery and the
