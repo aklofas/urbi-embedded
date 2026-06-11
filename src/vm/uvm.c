@@ -1116,7 +1116,10 @@ dispatch:
              * Exits dispatch_loop_until_yield so run_cleanup_with_replace()
              * can check pending_unwind and restore the saved unwind state.
              * State stays RUNNING; caller (run_cleanup_with_replace) handles
-             * the transition. */
+             * the transition.  cleanup_body_done is the completion marker
+             * distinguishing this exit from a yield/budget exit
+             * (refactor-3 VM-02). */
+            s->cleanup_body_done = 1U;
             s->pc++;
             goto exit_strand;
         }

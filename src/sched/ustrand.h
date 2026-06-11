@@ -184,7 +184,11 @@ struct UStrand {
                                                            urbi_strand_create-managed strands
                                                            (heap-allocated).  See pre-M4 GC
                                                            strand-walker §5.1. */
-    uint8_t                 state_pad[1];               /* was [3], then [2] — shrunk by 1 again */
+    uint8_t                 cleanup_body_done;          /* refactor-3 VM-02: set by OP_RESUME —
+                                                           run_cleanup_with_replace's completion
+                                                           marker (yield/budget exits leave it 0).
+                                                           Absorbs the former state_pad[1] byte so
+                                                           the CHSTR-041 size pin holds. */
     uint16_t                instruction_budget_remaining;
     uint16_t                budget_pad;
 

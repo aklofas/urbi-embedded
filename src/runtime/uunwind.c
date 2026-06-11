@@ -222,8 +222,76 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
     /* Run the cleanup body until it completes, yields, or raises a new unwind.
      * dispatch_loop_until_yield exits via the safepoint path if pending_unwind
      * becomes non-OK; urbi_unwind is called recursively from that safepoint.
-     * Recursion depth is bounded by URBI_CLEANUP_MAX. */
-    (void)dispatch_loop_until_yield(s, /*step_budget*/ 4096);
+     * Recursion depth is bounded by URBI_CLEANUP_MAX.
+     *
+     * refactor-3 VM-02 + SCHED-10: the nested dispatch must not disturb the
+     * embedder's urbi_step budget (dispatch_loop_until_yield overwrites
+     * vm->step_budget_remaining at entry), and a mature strand's depleted
+     * per-strand safepoint budget must not park the cleanup body mid-run.
+     * Save both, arm fresh values, restore after.  URBI_SCRATCH_BUDGET_OPS
+     * (watcher/uwatcher.h) replaces the former bare 4096 literal (XC-13). */
+    {
+        UVM *vm = s->vm;
+        uint64_t saved_step_budget   = (vm != NULL) ? vm->step_budget_remaining : 0;
+        uint16_t saved_strand_budget = s->instruction_budget_remaining;
+        s->instruction_budget_remaining = (uint16_t)URBI_SCRATCH_BUDGET_OPS;
+        s->cleanup_body_done = 0U;
+
+        (void)dispatch_loop_until_yield(s, /*step_budget*/ URBI_SCRATCH_BUDGET_OPS);
+
+        if (vm != NULL) vm->step_budget_remaining = saved_step_budget;
+        s->instruction_budget_remaining = saved_strand_budget;
+
+        if (!s->cleanup_body_done && s->pending_unwind == UEXEC_OK) {
+            if (USTRAND_GET_STATE(s) == USTRAND_DEAD) {
+                /* C-1 absorbed-and-terminated: the body raised a replacement
+                 * unwind, the recursive walker absorbed it at an OUTER handler
+                 * (e.g. a catch above this finally), and the nested dispatch
+                 * then ran the strand to completion.  All control flow was
+                 * handled inside the nested dispatch; the original unwind is
+                 * suppressed per C-1 and there is nothing left to restore.
+                 * Pre-VM-02 this path restored the saved unwind onto the
+                 * already-completed strand, marking it fatal and poisoning
+                 * the session (vm->fatal_strand latched on the next
+                 * urbi_step).  Callers check USTRAND_GET_STATE == DEAD after
+                 * this helper returns and stop walking. */
+                if (s->vm != NULL && s->vm->host_log_fn != NULL) {
+                    s->vm->host_log_fn(s->vm, s->vm->host_log_ud, URBI_LOG_WARN,
+                                       "URBI_WARN_SUPPRESSED_UNWIND: cleanup body "
+                                       "raised; original unwind dropped");
+                }
+                s->cleanup_run_depth--;
+                return 0;
+            }
+            /* The body exited dispatch without reaching its OP_RESUME
+             * terminator and without raising: it yielded, blocked, or
+             * exhausted the budget.  Cleanup bodies are atomic (REVIVAL
+             * §14, 2026-06-10); a silent mid-body truncation enqueues or
+             * parks the strand while the walker keeps unwinding it.
+             * Unpark defensively, then escalate via the overflow path
+             * (walker marks the strand fatal).  A JOIN-parked cleanup body
+             * (fork-join inside finally) still leaves a stale joiner link —
+             * out of scope here (SCHED-05, arc wave 3). */
+            if (USTRAND_IS_WAITING(s)) {
+                if (is_event_parked_strand(s))
+                    uevent_waiter_unregister(s);
+                if (USTRAND_GET_REASON(s) == USTRAND_REASON_SLEEP) {
+                    sched_strand_unblock(s);                  /* off sleep_q (enqueues) */
+                    sched_strand_unbind_from_ready_queue(s);  /* ...and back off */
+                }
+            } else if ((s->state & USTRAND_STATE_MASK) == USTRAND_READY) {
+                sched_strand_unbind_from_ready_queue(s);
+            }
+            if (s->vm != NULL && s->vm->host_log_fn != NULL) {
+                s->vm->host_log_fn(s->vm, s->vm->host_log_ud, URBI_LOG_ERROR,
+                    "URBI_ERR_CLEANUP_OVERFLOW: cleanup body yielded or blocked; "
+                    "finally/onleave bodies execute atomically (refactor-3 VM-02)");
+            }
+            s->cleanup_run_depth--;
+            return URBI_ERR_CLEANUP_OVERFLOW;
+        }
+        s->cleanup_body_done = 0U;
+    }
 
     if (s->pending_unwind == UEXEC_OK) {
         /* Cleanup body completed normally: restore the original unwind state. */
@@ -413,6 +481,13 @@ urbi_unwind(UStrand *s)
                     s->state        = USTRAND_STATE_DEAD;
                     return;
                 }
+                /* refactor-3 VM-02: the body's replacement unwind may have
+                 * been fully handled inside the nested dispatch (absorbed at
+                 * an outer handler, strand ran to completion) or escalated to
+                 * a fatal there.  Either way the strand has terminated; stop
+                 * walking (fatal_status, if any, is already latched). */
+                if (USTRAND_GET_STATE(s) == USTRAND_DEAD)
+                    return;
                 /* After run_cleanup_with_replace, s->pending_unwind is either
                  * the original (body OK) or a new one (C-1 replace).
                  * Either way, continue the walker loop. */
@@ -471,6 +546,10 @@ urbi_unwind(UStrand *s)
                     s->state        = USTRAND_STATE_DEAD;
                     return;
                 }
+                /* refactor-3 VM-02: see the TRY_FRAME finally arm — strand
+                 * terminated inside the nested dispatch; stop walking. */
+                if (USTRAND_GET_STATE(s) == USTRAND_DEAD)
+                    return;
                 continue;
             }
 

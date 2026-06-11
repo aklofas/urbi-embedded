@@ -40,11 +40,14 @@ static UProto s_dummy_module;
 static void
 setup_module(void)
 {
-    /* OP_RET R[0] at index 0. */
+    /* OP_RET R[0] at index 0.  instr[3] is OP_RESUME: the canonical
+     * cleanup-body terminator (refactor-3 VM-02) — finally/onleave fixture
+     * bodies must end with OP_RESUME, not OP_RET, or run_cleanup_with_replace
+     * reads the exit as "strand terminated inside the cleanup body". */
     s_dummy_instr[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
     s_dummy_instr[1] = uinstr_enc_abc(OP_RET, 0, 0, 0);
     s_dummy_instr[2] = uinstr_enc_abc(OP_RET, 0, 0, 0);
-    s_dummy_instr[3] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    s_dummy_instr[3] = uinstr_enc_abc(OP_RESUME, 0, 0, 0);
 
     memset(&s_dummy_module, 0, sizeof(s_dummy_module));
     s_dummy_module.instructions = s_dummy_instr;
@@ -633,9 +636,10 @@ UTEST(unwind_cancel_propagates_through_call_frame)
 /* Case 11: THROW propagates past TRY_FRAME with only FINALLY (no catch).
    A TRY_FRAME with FLAG_HAS_FINALLY but not FLAG_HAS_CATCH should run the
    finally body and then continue propagating the THROW.
-   We exercise this via a pure-finally TRY_FRAME with handler_pc=0 (dummy
-   instr is OP_RET — dispatch_loop_until_yield sees no THROW from the body
-   and returns; run_cleanup_with_replace restores the original THROW).
+   We exercise this via a pure-finally TRY_FRAME with handler_pc=3 (dummy
+   instr is OP_RESUME, the cleanup-body terminator — dispatch_loop_until_yield
+   sees no THROW from the body and returns with cleanup_body_done set;
+   run_cleanup_with_replace restores the original THROW).
    After the finally frame: no further handler → fatal escalation. */
 UTEST(unwind_throw_propagates_past_try_with_only_finally)
 {
@@ -653,7 +657,7 @@ UTEST(unwind_throw_propagates_past_try_with_only_finally)
     e->flags          = FLAG_HAS_FINALLY;  /* only finally, no catch */
     e->register_base  = 0;
     e->register_count = 0;
-    e->handler_pc     = 0;    /* dummy OP_RET at instr[0]: finally body is trivial */
+    e->handler_pc     = 3;    /* OP_RESUME at instr[3]: trivial finally body */
     e->owning_tag     = NULL;
     e->catch_pattern  = NULL;
 

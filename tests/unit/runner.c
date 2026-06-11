@@ -331,6 +331,7 @@ extern void test_regexp_suite(void);
 extern void test_object_reflection_suite(void);
 extern void test_lex_operators_suite(void);
 extern void test_atoms_random_suite(void);
+extern void test_cleanup_yield_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -638,6 +639,7 @@ static const struct suite_entry suites[] = {
     {"object_reflection",                test_object_reflection_suite},
     {"lex_operators",                    test_lex_operators_suite},
     {"atoms_random",                     test_atoms_random_suite},
+    {"cleanup_yield",                    test_cleanup_yield_suite},
     /* Add new suites here as test files are added. */
 };
 
