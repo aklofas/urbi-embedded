@@ -348,7 +348,17 @@ urbi_unwind(UStrand *s)
      *       surfaced 2026-05-16 when an at-body invoked a scripted method).
      *
      * RETURN crosses exactly one call-frame boundary; intervening tag /
-     * try scopes belong to the CALLER and must stay intact. */
+     * try scopes belonging to the CALLER must stay intact.
+     *
+     * T24 (refactor-3 VM-01 follow-on): cleanup entries belonging to the
+     * RETURNING frame (frame_depth >= frame_count — VM-01's push-time
+     * stamps make this exact) must be processed BEFORE the frame pops.
+     * Pre-T24 the direct pop skipped them entirely: a finally inside the
+     * returning function was silently SKIPPED (REVIVAL §S5a violation),
+     * and TAG_SCOPE entries leaked one per call — at URBI_CLEANUP_MAX
+     * accumulated leaks the next OP_PUSH_TAG killed the strand silently,
+     * and a later tag.stop() could absorb at a stale entry (time-travel
+     * resume at a dead handler_pc). */
     if (s->pending_unwind == UEXEC_RETURN && s->frame_count > 0) {
         int has_call_frame = 0;
         for (uint16_t i = 0; i < s->cleanup_depth; i++) {
@@ -358,13 +368,65 @@ urbi_unwind(UStrand *s)
             }
         }
         if (!has_call_frame) {
-            UValue retval = s->unwind_value;
-            int result_reg = s->frames[s->frame_count - 1].result_dest_reg;
-            pop_call_frame(s);
-            deliver_return_value(s, retval, result_reg);
-            s->pending_unwind = UEXEC_OK;
-            s->unwind_value   = nil;
-            return;
+            int replaced = 0;
+            while (s->cleanup_depth > 0) {
+                UCleanupEntry *e = &s->cleanup_base[s->cleanup_depth - 1];
+                if (e->frame_depth < s->frame_count)
+                    break;  /* caller's entry — leave intact */
+                /* Inv-5: same register-zeroing contract as the walker. */
+                if (e->register_count > 0)
+                    zero_registers(s, e->register_base, e->register_count);
+                if ((UCleanupKind)e->kind == UCLEANUP_TRY_FRAME &&
+                    (e->flags & FLAG_HAS_FINALLY)) {
+                    /* Finally runs on the return path too (REVIVAL §S5a).
+                     * C-1 replace-on-raise applies: a clean body restores
+                     * the saved RETURN+value; a raising body wins and the
+                     * RETURN is suppressed — hand the new unwind to the
+                     * general walker below. */
+                    uint16_t handler_pc = e->handler_pc;
+                    int      rc;
+                    strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
+                    rc = run_cleanup_with_replace(s, handler_pc);
+                    if (rc == URBI_ERR_CLEANUP_OVERFLOW) {
+                        UValue overflow_marker;
+                        overflow_marker.kind = (uint8_t)UVAL_INT;
+                        overflow_marker.v.i  = (int64_t)URBI_ERR_CLEANUP_OVERFLOW;
+                        s->fatal_status = UEXEC_CANCEL;
+                        s->fatal_value  = overflow_marker;
+                        s->state        = USTRAND_STATE_DEAD;
+                        return;
+                    }
+                    /* refactor-3 VM-02: strand may have terminated inside
+                     * the nested dispatch; stop immediately. */
+                    if (USTRAND_GET_STATE(s) == USTRAND_DEAD)
+                        return;
+                    if (s->pending_unwind != UEXEC_RETURN) {
+                        replaced = 1;
+                        break;
+                    }
+                } else if ((UCleanupKind)e->kind == UCLEANUP_TAG_SCOPE) {
+                    /* Plain teardown — exactly what OP_POP_TAG runs (leave
+                     * event, watcher cascade, member unlink, anonymous-tag
+                     * destroy).  NOT the stop-absorb arm: the RETURN exits
+                     * the scope; nothing resumes inside it. */
+                    vm_tag_scope_teardown(s, e);
+                } else {
+                    /* TRY_FRAME without finally (a catch never matches a
+                     * RETURN): pop and continue. */
+                    strand_cleanup_pop(s, (UCleanupKind)e->kind);
+                }
+            }
+            if (!replaced) {
+                UValue retval = s->unwind_value;
+                int result_reg = s->frames[s->frame_count - 1].result_dest_reg;
+                pop_call_frame(s);
+                deliver_return_value(s, retval, result_reg);
+                s->pending_unwind = UEXEC_OK;
+                s->unwind_value   = nil;
+                return;
+            }
+            /* C-1 replaced the RETURN: fall through to the general walker
+             * with the new pending unwind. */
         }
         /* else fall through to walker — T11-forward absorbs at CALL_FRAME. */
     }

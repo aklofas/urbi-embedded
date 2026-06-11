@@ -22,6 +22,7 @@
 #include "runtime/ucleanup.h"
 #include "vm/uvm.h"
 #include "chunk/uchunk.h"
+#include "tag/utag.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -858,6 +859,119 @@ UTEST(unwind_cleanup_run_depth_decrements_after_normal_return)
     urbi_vm_destroy(&vm);
 }
 
+/* Case 16 (T24, refactor-3 VM-01 follow-on): the RETURN direct-pop path
+   processes cleanup entries belonging to the RETURNING frame (frame_depth
+   >= frame_count) before popping the call frame, and STOPS at the first
+   entry belonging to a caller (frame_depth < frame_count).
+
+   Stack layout (bottom → top):
+     [0] TAG_SCOPE  frame_depth=0  (caller's — must survive untouched)
+     [1] TRY_FRAME  frame_depth=1  HAS_FINALLY handler_pc=3 (OP_RESUME —
+                                    trivial finally; must RUN, then the
+                                    saved RETURN is restored per C-1)
+     [2] TAG_SCOPE  frame_depth=1  (callee's — must be TORN DOWN: popped
+                                    AND unlinked from its tag's member list,
+                                    the pre-T24 leak)
+
+   Pre-T24 the direct pop ignored all three: the finally was skipped and
+   entries [1]+[2] leaked (one per call; strand death at URBI_CLEANUP_MAX,
+   stale-entry time-travel on a later tag.stop()). */
+UTEST(unwind_return_processes_same_frame_cleanups)
+{
+    UVM vm;
+    UStrand s;
+
+    urbi_vm_init(&vm, NULL, NULL);
+    UValue *reg_stack = strand_setup_minimal(&s, &vm);
+    UASSERT(reg_stack != NULL);
+
+    /* Call frame: callee returns to caller's R[2]. */
+    s.frame_count = 1;
+    UCallFrame *cf = &s.frames[0];
+    cf->closure         = NULL;
+    cf->proto           = NULL;
+    cf->pc              = s_dummy_instr + 0;
+    cf->base            = s.stack;
+    cf->result_dest_reg = 2;
+    s.R = s.stack + 3;   /* callee's register window */
+
+    /* User-owned tags so vm_tag_scope_teardown leaves them alive for the
+     * post-walk assertions (anonymous scopes destroy theirs at teardown). */
+    UTag *tag_caller = utag_create(&vm);
+    UTag *tag_callee = utag_create(&vm);
+    UASSERT(tag_caller != NULL);
+    UASSERT(tag_callee != NULL);
+
+    /* [0] caller's TAG_SCOPE (frame_depth 0). */
+    UCleanupEntry *e0 = strand_cleanup_push(&s);
+    UASSERT(e0 != NULL);
+    e0->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
+    e0->flags          = FLAG_TAG_USER_OWNED;
+    e0->register_base  = 0;
+    e0->register_count = 0;
+    e0->handler_pc     = 0;
+    e0->frame_depth    = 0;
+    e0->owning_tag     = tag_caller;
+    e0->catch_pattern  = NULL;
+    e0->next_member    = NULL;
+    e0->strand_back    = &s;
+    tag_caller->member_strands_head = e0;
+
+    /* [1] callee's finally TRY_FRAME (frame_depth 1). */
+    UCleanupEntry *e1 = strand_cleanup_push(&s);
+    UASSERT(e1 != NULL);
+    e1->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
+    e1->flags          = FLAG_HAS_FINALLY;
+    e1->register_base  = 0;
+    e1->register_count = 0;
+    e1->handler_pc     = 3;   /* OP_RESUME at instr[3]: trivial finally body */
+    e1->frame_depth    = 1;
+    e1->owning_tag     = NULL;
+    e1->catch_pattern  = NULL;
+
+    /* [2] callee's TAG_SCOPE (frame_depth 1). */
+    UCleanupEntry *e2 = strand_cleanup_push(&s);
+    UASSERT(e2 != NULL);
+    e2->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
+    e2->flags          = FLAG_TAG_USER_OWNED;
+    e2->register_base  = 0;
+    e2->register_count = 0;
+    e2->handler_pc     = 0;
+    e2->frame_depth    = 1;
+    e2->owning_tag     = tag_callee;
+    e2->catch_pattern  = NULL;
+    e2->next_member    = NULL;
+    e2->strand_back    = &s;
+    tag_callee->member_strands_head = e2;
+
+    UValue retval;
+    retval.kind = (uint8_t)UVAL_INT;
+    retval.v.i  = 55;
+    s.unwind_value   = retval;
+    s.pending_unwind = UEXEC_RETURN;
+
+    urbi_unwind(&s);
+
+    /* Absorbed: value delivered, frame popped, strand still running. */
+    UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
+    UASSERT_EQ((int)s.state, (int)USTRAND_STATE_RUNNING);
+    UASSERT_EQ((int)s.frame_count, 0);
+    UASSERT_EQ((int)s.stack[2].v.i, 55);
+    UASSERT_EQ((int)s.stack[2].kind, (int)UVAL_INT);
+
+    /* Callee's entries processed (finally ran via run_cleanup_with_replace;
+     * TAG_SCOPE torn down + unlinked); caller's entry survives. */
+    UASSERT_EQ((unsigned)s.cleanup_depth, 1U);
+    UASSERT(s.cleanup_base[0].owning_tag == tag_caller);
+    UASSERT(tag_callee->member_strands_head == NULL);     /* unlinked */
+    UASSERT(tag_caller->member_strands_head == e0);       /* intact */
+
+    strand_teardown_minimal(&s, &vm);   /* unlinks e0 from tag_caller */
+    utag_destroy(&vm, tag_caller);
+    utag_destroy(&vm, tag_callee);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite registration ===== */
 
 void test_unwind_suite(void) {
@@ -892,4 +1006,6 @@ void test_unwind_suite(void) {
               unwind_cleanup_run_depth_overflow_marks_fatal);
     utest_run("unwind: cleanup_run_depth decrements after normal walk (T29 / FOUND-009)",
               unwind_cleanup_run_depth_decrements_after_normal_return);
+    utest_run("unwind: RETURN processes same-frame cleanups, stops at caller's (T24)",
+              unwind_return_processes_same_frame_cleanups);
 }
