@@ -24,9 +24,10 @@
 
 #include "utest.h"
 #include "urbi/urbi.h"
-#include "urbi/gc.h"          /* urbi_gc_alloc, urbi_gc_force_full */
+#include "urbi/gc.h"          /* urbi_gc_alloc, urbi_gc_force_full, urbi_gc_slice */
 #include "urbi/object.h"      /* URBI_ATOM_DICT (container cases) */
-#include "gc/ugc.h"           /* UTYPE_OBJECT */
+#include "gc/ugc.h"           /* UTYPE_OBJECT, urbi_gc_phase */
+#include "gc/ugc_incremental.h" /* GC_PHASE_* (ATOMIC_FINISH re-scan case) */
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 #include "realm/urealm.h"
@@ -506,6 +507,100 @@ UTEST(matrix_dict_key_is_rooted)
     urbi_vm_destroy(&vm);
 }
 
+/* === ATOMIC_FINISH root re-scan case (Task 4 / refactor-3 B5/GC-02) ===
+ *
+ * The classic incremental-marking lost-object window: the mutator loads
+ * the LAST reference to a white cell into a root that the cycle already
+ * scanned (a strand register — urbi_gc_register_write is deliberately
+ * barrier-free), then clears the original heap reference before its
+ * holder is traced.  Without a stop-the-world root re-scan at
+ * ATOMIC_FINISH, the cycle finishes with the cell unmarked and SWEEP
+ * frees it while it is still reachable.
+ *
+ * Construction (drives the slice machine by hand, same idiom as
+ * test_ugc_state_machine.c):
+ *   1. Plant BEFORE the cycle: holder P (slot-capable object, rooted
+ *      only via s.stack[0]) holds sentinel C via local slot "c" — C's
+ *      ONLY reference.  Planting pre-cycle keeps the set_local_slot
+ *      install barrier from shading C inside the cycle.
+ *   2. One tiny-budget slice: IDLE -> MARK_ROOTS runs ALL providers in
+ *      a single step (gc_mark_roots_step is one-shot; it returns 1024
+ *      work units, exhausting the budget), leaving the machine in
+ *      MARK_INCREMENTAL with the register window already scanned and P
+ *      gray-but-untraced on the worklist.
+ *   3. Mutator move: s.stack[1] = C (no barrier — register write) and
+ *      P.c = nil (in-place slot update; storing nil shades nothing,
+ *      and the forward Dijkstra barrier protects only the NEW value).
+ *   4. Drain the cycle to IDLE.  P is traced after the clear, so the
+ *      trace never reaches C; C's only ref sits in an already-scanned
+ *      register.  Pre-fix: C is swept (this assert fails).  Post-fix:
+ *      the ATOMIC_FINISH full provider re-scan re-discovers stack[1].
+ *
+ * Stress-build safety: every allocation in the plant happens with both
+ * cells rooted in register slots (collect-before-alloc cannot sweep
+ * them), and the in-cycle mutator section performs no allocation at
+ * all (register store + in-place nil store), so no stress collection
+ * can fire mid-cycle and run the staged scenario to completion. */
+
+UTEST(matrix_atomic_finish_rescans_mutated_registers)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    /* Intern the slot symbol up front (interning may allocate). */
+    USymbol *sym = (USymbol *)ustr_intern(&vm, "c", 1);
+    UASSERT(sym != NULL);
+
+    /* P: a real slot-capable object (urbi_object_alloc wires the root
+     * shape, which set_local_slot's shape transition requires; a zeroed
+     * sentinel has shape == NULL and cannot hold slots).  Rooted in
+     * stack[0] — its ONLY root. */
+    UObject *holder = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(holder != NULL);
+    s.stack[0] = obj_value_for((UCell *)(void *)holder);
+
+    /* C: the sentinel.  Temp-rooted in stack[1] while the slot install
+     * below allocates (child shape + USlotArray wrapper). */
+    UCell *sentinel = sentinel_alloc(&vm);
+    UASSERT(sentinel != NULL);
+    s.stack[1] = obj_value_for(sentinel);
+
+    int rc = urbi_object_set_local_slot(&vm, holder, sym,
+                                        obj_value_for(sentinel));
+    UASSERT_EQ(rc, 0);
+
+    /* Drop the temp root: P.c is now C's only reference anywhere. */
+    memset(&s.stack[1], 0, sizeof s.stack[1]);
+
+    /* Drive ONE slice: completes MARK_ROOTS (all providers run; the
+     * register window is scanned, P is shaded gray) and stops in
+     * MARK_INCREMENTAL before P is traced. */
+    vm.gc_debt    = 1;   /* the IDLE arm starts a cycle only when debt > 0 */
+    vm.gc_pending = 1U;
+    urbi_gc_slice(&vm, 1U);
+    UASSERT_EQ((uint8_t)GC_PHASE_MARK_INCREMENTAL, urbi_gc_phase(&vm));
+
+    /* Mutator move: C's only ref migrates into the ALREADY-SCANNED
+     * register window; the original slot is cleared before P is traced. */
+    s.stack[1] = obj_value_for(sentinel);
+    rc = urbi_object_set_local_slot(&vm, holder, sym, urbi_make_nil());
+    UASSERT_EQ(rc, 0);
+
+    /* Finish the cycle. */
+    while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
+        urbi_gc_slice(&vm, 4096U);
+    }
+
+    UASSERT(cell_live(&vm, sentinel));
+
+    memset(&s.stack[0], 0, sizeof s.stack[0]);
+    memset(&s.stack[1], 0, sizeof s.stack[1]);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void test_gc_rooting_matrix_suite(void)
@@ -529,4 +624,6 @@ void test_gc_rooting_matrix_suite(void)
               matrix_dict_value_is_rooted);
     utest_run("matrix_dict_key_is_rooted",
               matrix_dict_key_is_rooted);
+    utest_run("matrix_atomic_finish_rescans_mutated_registers",
+              matrix_atomic_finish_rescans_mutated_registers);
 }

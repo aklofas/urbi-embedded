@@ -272,8 +272,9 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  * urbi_gc_register_write(vm, s, reg_idx, child):
  *   Called when the dispatch loop writes a UValue into a strand register
  *   (OP_MOVE, arithmetic results, OP_LOADK, etc.).
- *   Registers are roots walked at every mark phase via gc_walk_roots → strand
- *   walker, so no barrier is needed: conceptually registers are "always gray".
+ *   Registers are roots walked at MARK_ROOTS and re-walked at ATOMIC_FINISH
+ *   with the mutator stopped (refactor-3 GC-02), so no per-write barrier is
+ *   needed — the re-scan is the soundness mechanism.
  *   s       — the strand whose register file is being updated.
  *   reg_idx — register index within s->R[].
  *   child   — the value being stored.
@@ -336,9 +337,11 @@ urbi_gc_slot_store(struct UVM *vm, UCell *parent, uint32_t key,
 static inline void
 urbi_gc_register_write(struct UVM *vm, struct UStrand *s, uint16_t reg_idx, UValue child)
 {
-    /* No GC barrier on register writes — registers are roots, walked at every
-     * mark phase via gc_walk_roots → strand walker.  The mark phase sees
-     * current register state; no parent-color check needed. */
+    /* No GC barrier on register writes — deliberately.  Registers are roots:
+     * they are walked at MARK_ROOTS *and re-walked at ATOMIC_FINISH with the
+     * mutator stopped* (refactor-3 GC-02), so a white value stored into an
+     * already-scanned register is re-discovered before SWEEP.  Do not add a
+     * per-write barrier here; the re-scan is the soundness mechanism. */
 
     /* No watcher dirty-set: registers are not watched directly (watchers read
      * slots/Realm bindings, not VM-internal registers). */

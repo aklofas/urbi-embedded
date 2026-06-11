@@ -135,7 +135,9 @@ unamespace_set(struct UVM *vm, struct UNamespace *ns,
 
     /* Append new entry. */
     ns->entries[ns->count].name  = name;
-    /* TODO(M4): wire urbi_gc_slot_store here once UNamespace embeds UCell as first member. */
+    /* No barrier: namespace bindings are roots, re-walked at ATOMIC_FINISH
+     * with the mutator stopped (refactor-3 GC-02) — the soundness mechanism
+     * for this unbarriered store. */
     ns->entries[ns->count].value = value;
     ns->count++;
     return 0;

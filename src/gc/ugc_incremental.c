@@ -301,27 +301,38 @@ gc_mark_incremental_step(UVM *vm, size_t budget)
 
 /* === gc_atomic_finish_step ===
  *
- * ATOMIC_FINISH phase: stop-the-world re-scan of mutator-touched roots, then
- * drain any residual gray work-list.  At completion, all live cells are black
- * and everything else is dead.  Transitions to SWEEP.
- *
- * Per-strand re-scan is deferred: vm->cur_strand does not exist on UVM per
- * T19 design choice (adding it would create a new invariant hazard).
- * TODO(T26): when the scheduler tracks the actively-dispatching strand,
- * re-scan its registers here.  M3 baseline has no cur_strand pointer per
- * T19 design choice.
+ * ATOMIC_FINISH phase: stop-the-world re-scan of ALL roots, then drain the
+ * gray work-list to empty.  At completion, all live cells are black and
+ * everything else is dead.  Transitions to SWEEP.
  *
  * Returns bytes of work consumed (accumulated from gray-list drain). */
 static size_t
 gc_atomic_finish_step(UVM *vm)
 {
-    /* TODO(T26): re-scan currently-running strand's register window here
-     * once vm->cur_strand (or equivalent) is available.  M3 baseline
-     * skips per-strand re-scan — see T19 design notes. */
+    /* refactor-3 GC-02/B5: stop-the-world root re-scan.  The mutator ran
+     * between MARK_ROOTS and here; any store of a white value into an
+     * already-scanned ROOT slot (strand registers — urbi_gc_register_write
+     * is deliberately barrier-free; un-barriered root tables: namespace
+     * bindings, lazy vm->*_proto assigns, watcher last_value_cache;
+     * container elements) is a lost object unless we look again.  Re-run
+     * EVERY root provider with the mutator stopped, then drain to empty.
+     * Cost: one extra bounded root scan per GC cycle — the price of making
+     * root stores sound-by-construction instead of per-site audited.  Root
+     * enumeration is not counted against the slice budget (same shape as
+     * gc_mark_roots_step's flat 1024); the step is all-in-one-slice by
+     * design — the drain below was already unbounded.
+     * (Replaces the M3-era TODO(T26), whose "cur_strand doesn't exist"
+     * justification went stale years ago.) */
+    {
+        uint8_t i;
+        for (i = 0U; i < vm->root_provider_count; i++) {
+            vm->root_providers[i](vm, mark_root_callback, vm);
+        }
+    }
 
-    /* Drain residual gray work-list (fully in-slice — bounded by remaining
-     * gray set after MARK_INCREMENTAL, which converges because no mutator
-     * runs during ATOMIC_FINISH). */
+    /* Drain residual gray work-list — including everything the root
+     * re-scan above just re-shaded (fully in-slice — converges because no
+     * mutator runs during ATOMIC_FINISH). */
     size_t consumed = drain_gray(vm, (size_t)-1U);
 
     /* Gray work-list should be fully drained before SWEEP. */
