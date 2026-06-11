@@ -44,7 +44,7 @@ documented in the manifest).
   realm-teardown proto exclusion stack (GC-18).
 - Stress machinery (TEST-GAP-01 / GC-17): `URBI_GC_STRESS`
   collect-before-alloc build mode + a `test-gc-stress` releasetest gate,
-  and an executable rooting-matrix harness (25+ allocation-window cases)
+  and an executable rooting-matrix harness (24 allocation-window cases)
   replacing the documentation-only matrix.
 - Pre-existing bugs found by the tag's own machinery (stress mode, matrix
   harness, per-task review): `walk_uobject` shades the heap-form UProtos
