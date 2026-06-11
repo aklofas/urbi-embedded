@@ -1,5 +1,69 @@
 # Changelog
 
+## v0.13.1-unwind-and-frontend — 2026-06-11
+
+Tag 2 of the v0.13.x pre-release hardening arc: the unwind machinery and the
+frontend (lexer/parser/emitter) stop miscompiling.  Closes the refactor-3
+deep-audit blockers B1/B3/B4/B6/B7/B8/B12 plus the FE/VM findings below.  No
+new opcode, wire format unchanged (v1.9 / 0x19).  ABI 0/23/1 -> 0/23/2
+(PATCH; no public surface change — not an escape).
+
+- Cross-frame unwind (B1 / VM-01): a throw, finally, or tag-stop crossing
+  call-frame boundaries (handler installed in frame N, raise in frame N+k)
+  segfaulted; unwind entries now stamp the owning frame depth and the walker
+  pops call frames to the entry's stamped depth.  The RETURN unwind path also
+  processes the returning frame's remaining cleanups (T24 follow-on).
+- Atomic cleanup bodies (B4 / VM-02 + SCHED-10): finally and tag-onleave
+  bodies execute atomically — the emitter no longer plants `OP_YIELD` inside
+  them (`;` does not yield there), and the cleanup executor detects
+  non-completion: a cleanup body that blocks or yields on the unwind path is
+  a loud `URBI_ERR_CLEANUP_OVERFLOW` fatal, never silent truncation (on the
+  normal path a native block such as `sleep` still parks).  Owner-ratified
+  2026-06-10.
+- Scope-crossing exits (T24): `return` / `break` / `continue` now run
+  intervening finally bodies and tear down crossed tag scopes — closes both
+  the silent-finally-skip and the cleanup-entry leak.  New compile-time cap:
+  more than 16 simultaneously open unwind scopes per function (catch+finally
+  counts 2) is a compile error.
+- SUSPENDED handling (B12 / VM-03): a native that suspends its own strand
+  (self-`block`/`freeze`) exits the dispatch loop instead of running on; the
+  loader strand and `urbi_vm_run` consumers handle the SUSPENDED exit.
+- Strand cancel (VM-08): `urbi_strand_cancel` wakes parked strands through
+  the scheduler instead of leaving them parked with a pending cancel.
+- Scratch strand (VM-10 / SCHED-10): scratch execution sets `cur_strand` and
+  saves/restores the step budget.
+- Operator-overload throws (VM-07): a throw from an overload body propagates
+  instead of being swallowed — including the silent `==` drop.
+- VM create/teardown + tools (VM-09, VM-11 / FE-13): `urbi_vm_create`
+  destroys the partially-initialized VM on OOM instead of leaking;
+  `urbi -e`/`-f` runs and `urbi-server` heap-allocate the boot proto instead
+  of leaving a stack-rooted proto reachable past its frame (CHSTR-027).
+- Emitter back-edges (B3 / FE-01): loops appearing first in a branch arm
+  (`if (c) { while ... }`) miscompiled their back-edge; back-edges now use a
+  dedicated backward-jump encoder with direction asserts.
+- Switch (B6 / FE-02 + follow-ons): case arrays grow with independent
+  capacities (>8 cases corrupted memory); the subject is evaluated once into
+  a hidden local and case bodies get real scopes; >64 cases is a latched
+  compile error (FE-06, patch-list overflow latches `EMIT_PATCH_LIST_FULL`).
+- Logical not (B7 / FE-03): `!x` lowers via `OP_TEST`/`OP_LOADBOOL` — it was
+  miscompiled to `OP_NEG` (arithmetic negation).
+- Captures (B8 / FE-04/05 + follow-ons): capture marking matches the
+  innermost-first lookup (shadowed locals captured the wrong slot); catch-var
+  pop closes upvalues; `OP_CLOSE` operands use register slots, not actvar
+  indices; loop-exit and continue paths execute the block-close;
+  `has_captured` propagates from closed blocks to the parent.
+- Tag prefix (review-discovered): the tag value is a hidden local and tag
+  scopes get real blocks — fixes the held-temp clobber class shared with
+  switch.
+- Frontend resource + bounds fixes: `UFuncState` moves to a session-lifetime
+  emitter arena and `uarena_alloc` reuses linked chunks after reset, fixing
+  the per-compile leak (FE-07); fractional duration literals (`0.5s`) lex on
+  the float path and convert to integer microseconds, round-half-up (FE-08);
+  constant-pool indices keep 16 bits in for-each loops instead of truncating
+  through uint8 (FE-09); `assert()` whitespace trim is EOF-bounded (FE-10);
+  `at_event_cond` parser state is saved/restored across nested parses
+  (FE-22).
+
 ## v0.13.0-test-honesty — 2026-06-10
 
 Tag 1 of the v0.13.x pre-release hardening arc: the test/build/CI

@@ -44,12 +44,12 @@
 | Construct | Status | Reason / fix milestone |
 |---|---|---|
 | `if / else` | implemented | — |
-| `while` | implemented | — |
+| `while` | implemented | v0.13.1 (refactor-3 FE-01): back-edge encoding fixed — a `while` appearing first in a branch arm (`if (c) { while ... }`) previously miscompiled its back-edge; back-edges now use a dedicated backward-jump encoder |
 | `for (var x : iter)` | implemented | Wave 6 W1; lowered to index loop via `.length()` + `.get(i)`; `in` alias supported |
 | `for (init; cond; step)` | deferred (v1.x) | C-style three-part form; use `while` instead; see `docs/migration/control-flow-migration.md` |
 | `break` | implemented | Wave 6 W1; exits innermost loop or switch |
 | `continue` | implemented | Wave 6 W1; skips to next iteration of for-each or while |
-| `switch` | implemented | Wave 6 W1; equality-dispatch only; no fall-through; break exits switch |
+| `switch` | implemented | Wave 6 W1; equality-dispatch only; no fall-through; break exits switch. v0.13.1: case bodies get real scopes and the subject is evaluated once into a hidden local (FE-02 follow-on); more than 64 cases is a latched compile error (FE-06) |
 | `do (receiver) { ... }` | deferred (v1.x) | receiver-bound block form; uncommon in practice |
 | `loop` | deferred (v1.x) | infinite loop sugar; use `while (true)` instead |
 | `return` | implemented | — |
@@ -58,11 +58,11 @@
 
 | Construct | Status | Reason / fix milestone |
 |---|---|---|
-| `try { } catch (e) { }` | implemented | bare-ident catch only |
+| `try { } catch (e) { }` | implemented | bare-ident catch only. v0.13.1 (refactor-3 VM-01): cross-frame unwind fixed — a throw caught in a caller's frame (catch installed in frame N, throw in frame N+k) previously segfaulted; the unwind walker now pops call frames to the entry's stamped depth |
 | `catch (var e) { }` | implemented | Wave 6 W5; `var` is optional sugar — closes legacy F6 |
 | `catch (var e if cond) { }` (guarded) | implemented | Wave 6 W5; guard re-throws on false — closes legacy F6 |
 | `try { } catch { } else { }` | implemented | Wave 6 W5; else runs on normal exit — closes legacy F6 |
-| `try { } finally { }` | implemented | — |
+| `try { } finally { }` | implemented | v0.13.1: cross-frame unwind fixed (refactor-3 VM-01). **Finally bodies execute atomically** — `;` does not yield inside them (owner decision 2026-06-10, refactor-3 B4); on the normal path a native block (e.g. `sleep`) still parks, while on the unwind path it is a loud fatal (`URBI_ERR_CLEANUP_OVERFLOW`) — asymmetry is deliberate, never silent truncation. Finally now also runs on `return`/`break`/`continue` exits (T24, §S5a) — previously silently skipped. Deep static nesting cap: more than 16 simultaneously open unwind scopes per function (catch+finally counts 2, so 9-deep try/catch/finally) is a compile error as of v0.13.1 |
 | `throw` | implemented | — |
 | `assert (expr)` / `assert { }` | implemented | closes legacy F9; Wave 6 W3 |
 
@@ -90,8 +90,8 @@
 
 | Construct | Status | Reason / fix milestone |
 |---|---|---|
-| `mytag : { body }` (brace-block prefix) | implemented | — |
-| `mytag : stmt` (bare-statement prefix) | implemented | legacy F3; Wave 3 W5 closed |
+| `mytag : { body }` (brace-block prefix) | implemented | v0.13.1 (FE-02 follow-on): the tag value is evaluated once into a hidden local and tag scopes get real blocks |
+| `mytag : stmt` (bare-statement prefix) | implemented | legacy F3; Wave 3 W5 closed; v0.13.1 hidden-local note applies (see brace-block row) |
 | `Tag.scope : body` (member-expr tag) | implemented | legacy F3; Wave 6 W8 — `parse_tag_prefix_from_expr` via postfix-chain COLON intercept; `tests/chk/tag/tag_member_expr.chk` |
 | `tag : body onleave handler` | deferred-v1.x | PARSE-033: AST field retained; scheduler tag-stack lifecycle design open; Wave 6 W8 ruling |
 | `Tag.new()` (script-side constructor) | implemented | v0.10.2 W4; UVAL_TAG + Tag.new(name) returns a Tag value; `tests/chk/control_transfer/tag_stop_basic.chk` |
@@ -121,6 +121,7 @@
 | ASCII identifiers | implemented | — |
 | Quoted identifiers (`'+'`, `'()'`, etc.) | implemented | legacy F5; Wave 6 W2 — single-quote-delimited; any char except newline in body; no escape sequences; emits TOK_IDENT; keyword-escaping works (`var 'if'`); operator-slot access via `obj.'+'(arg)`; see `tests/chk/lex/quoted_ident_basic.chk` + `tests/chk/objects/quoted_slot_assign.chk` |
 | Time literals (ms/us/ns/s/m/h/d) | implemented | — |
+| Fractional duration literals (`0.5s`, `1.5ms`) | implemented | v0.13.1 (refactor-3 FE-08) — fractional durations lex on the float path and convert to integer microseconds, round-half-up; previously rejected |
 | Angle literals (`180deg`, `1rad`, `200grad`) | implemented | legacy F8; Wave 6 W4 — `deg`/`rad`/`grad` suffixes produce `TOK_FLOAT` in radians; `Math.pi` is a named constant (not a lexer literal); see `tests/chk/lex/angle-literals.chk` |
 | Physical literals | deferred-v1.x | legacy F8; no legacy corpus footprint; `docs/urbi-embedded-design-risks.md` Wave 6 deferral |
 | String literals | implemented | incl. adjacent-literal concatenation (`"a" "b"` → `"ab"`), proven by `tests/chk/lex/adjacent_string_concat.chk` (compat2-E verified, v1.0) |
@@ -189,6 +190,7 @@
 | `<<` infix operator (left-shift / stream-insert sugar) | implemented | v0.10.11 W3 — new `TOK_LSHIFT`; parser sugar desugars `a << b` to `a.'<<'(b)` method call on quoted-ident slot; precedence 2 (below equality at 3); no new opcode; routes through OP_GETSLOT + OP_CALL; see `tests/chk/operators/lshift_method_call.chk`; matrix-row: operators-lshift |
 | `&&` / `\|\|` logical operators (short-circuit) | implemented | v1.0-rc stdlib-completeness — new `AST_LOGICAL` node; emit via existing `OP_TESTSET`+`OP_JMP` (no new opcode, no wire bump); legacy-faithful (ugrammar.y had `&&` / `\|\|` as distinct tokens, separate from the `&` / `\|` separators); precedence `\|\|`=1 / `&&`=2 (below `<<`); see `tests/chk/operators/logical.chk`; matrix-row: operators-logical |
 | `%` modulo operator | implemented | v1.0-rc stdlib-completeness — parser desugars `a % b` to `a.'%'(b)` (like `<<`); native `'%'` methods on Integer (i64 mod; div-by-zero → TypeError) and Float (fmod); no new opcode; see `tests/chk/operators/modulo.chk`; matrix-row: operators-modulo |
+| `!x` logical not | implemented | v0.13.1 (refactor-3 FE-03) — lowered via `OP_TEST`/`OP_LOADBOOL` (was miscompiled to `OP_NEG`, i.e. arithmetic negation); see `tests/chk/operators/logical_not.chk`. **Divergence note:** prefix `!` binds tighter than postfix — `!o.b` parses as `(!o).b` (same precedence shape as unary `-`); tracked in workspace-root design-risks (v0.13.1-A) |
 
 ## Per-fixture status (from tests/chk/stdlib/legacy/)
 
