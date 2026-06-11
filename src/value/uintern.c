@@ -44,6 +44,7 @@ typedef struct UInternTable {
     UInternStr **entries;             /* cap pointers; NULL = empty */
     size_t       cap;                 /* power of two */
     size_t       count;               /* live entries */
+    size_t       bytes;               /* refactor-3 GC-08: live UInternStr blocks + entries[] array, in bytes */
 } UInternTable;
 
 /* --- helpers --- */
@@ -108,6 +109,7 @@ static int table_init(UVM *vm, UInternTable *t, size_t cap) {
     t->entries = arr;
     t->cap = cap;
     t->count = 0;
+    t->bytes = bytes;                 /* GC-08: entries[] array is part of the metric */
     return 1;
 }
 
@@ -143,6 +145,10 @@ static int table_grow(UVM *vm, UInternTable *t) {
     }
     /* TIDY-005: explicit (void *) cast on UInternStr ** → void * inout decay. */
     vm_alloc(vm, (void *)old_entries, 0);     /* free old array */
+    /* GC-08: swap the old entries[] array out of the byte metric, swap the
+     * new one in (mirrors the alloc/free pair above). */
+    t->bytes -= old_cap * sizeof(UInternStr *);
+    t->bytes += new_cap * sizeof(UInternStr *);
     return 1;
 }
 
@@ -194,6 +200,7 @@ const char *ustr_intern(UVM *vm, const char *bytes, size_t nbytes) {
 
     t->entries[empty_idx] = e;
     t->count++;
+    t->bytes += alloc_bytes;          /* GC-08: mirrors the vm_alloc size above */
     return e->bytes;
 }
 
@@ -215,10 +222,33 @@ void uintern_destroy(UVM *vm) {
     vm->intern_table = NULL;
 }
 
-size_t uintern_count(UVM *vm) {
+size_t uintern_count(const UVM *vm) {
     if (vm == NULL || vm->intern_table == NULL) return 0;
     URBI_ASSERT_NOT_ISR(vm);   /* T30 / FOUND-011: intern table is single-threaded */
-    return ((UInternTable *)vm->intern_table)->count;
+    return ((const UInternTable *)vm->intern_table)->count;
+}
+
+/* === urbi_intern_bytes ===
+ *
+ * (refactor-3 GC-08) Total bytes currently allocated by the intern
+ * subsystem: every live UInternStr block (header + payload + NUL, exactly
+ * the size handed to vm_alloc on the miss path) plus the current entries[]
+ * pointer array (cap * sizeof(UInternStr *), re-accounted across grows).
+ * The fixed-size UInternTable struct itself is excluded — one constant
+ * ~32 B block per VM, not workload-dependent.
+ *
+ * No eviction exists at v1.0, so this only grows for the life of the VM;
+ * Debug.gc() exposes it as "intern_bytes" so embedders can watch
+ * string-churn workloads (e.g. String + String concat loops) before they
+ * exhaust a small MCU heap.  See "Interned strings never evict" in
+ * docs/internals/gc.md. */
+size_t
+urbi_intern_bytes(const UVM *vm)
+{
+    if (vm == NULL) return 0;
+    URBI_ASSERT_NOT_ISR(vm);   /* T30 / FOUND-011: intern table is single-threaded */
+    const UInternTable *t = (const UInternTable *)vm->intern_table;
+    return (t != NULL) ? t->bytes : (size_t)0;
 }
 
 /* === ustr_op_name ===

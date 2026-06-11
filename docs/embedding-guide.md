@@ -340,6 +340,10 @@ On dual-memory targets such as the ESP32-S3:
 
 Do not call `urbi_lock_heap` in v1.0 use-cases unless you specifically need the hard-RT allocation-free guarantee — the embedder lifecycle works without it.
 
+### Interned strings never evict (v1.0)
+
+> **Warning.** Every distinct runtime string — including every result of `String + String` concatenation — is interned for the life of the VM; there is no eviction at v1.0. A string-building loop grows RAM monotonically; on a 192 KB-class MCU an always-on workload can OOM in hours. Monitor growth via `Debug.gc()`'s `intern_bytes` / `intern_count` fields; bound string churn or precompute strings. Heap-allocated (collectable) string cells are a v1.x milestone (design-risks: GC-08).
+
 ---
 
 ## 5. Event Flow
@@ -1281,7 +1285,7 @@ Available both as NDJSON `{op:"introspect", what:"..."}` ops and as `Debug.<op>(
 | `stack` | `urbi_introspect_stack(vm, coro_id, ...)` | Backtrace frames (file:line:function) |
 | `slots` | `urbi_introspect_slots(vm, realm, obj_path, ...)` | An object's slot dump |
 | `profile` | `urbi_introspect_profile(...)` | VM-domain counters + `epoch` when built with `URBI_PERF_COUNTERS` (else `counters:null`); `per_function` / `per_opcode` / `per_watcher` arrays reserved for v1.x |
-| `gc` | `urbi_introspect_gc(...)` | Heap stats: alive_bytes, threshold, total_allocated, phase, cycles, slices, last_gc_us, total_gc_us |
+| `gc` | `urbi_introspect_gc(...)` | Heap stats: alive_bytes, threshold, total_allocated, phase, cycles, slices, last_gc_us, total_gc_us, intern_bytes, intern_count (intern table never evicts at v1.0 — see §4) |
 | `lobbies` | `urbi_introspect_lobbies(...)` | REPL-realm sessions: lobby, realm (peer_addr / connect_ts / eval_count reserved for v1.x) |
 
 Each primitive walks VM-internal linked lists on the MAIN thread and emits a single JSON object into a caller-provided buffer. Wire JSON shape is locked at v0.9.1 and frozen forward to v1.0.

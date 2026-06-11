@@ -201,6 +201,28 @@ slot-change pipeline; see `reactive-runtime.md`.
 Type tags 21–63 are reserved for future runtime cells; host types start at
 `UTYPE_HOST_BASE = 64` and are registered through `urbi_register_type`.
 
+## Interned strings never evict (v1.0)
+
+Strings are not GC cells at v1.0. Every distinct string — identifiers, string
+literals, and every result of runtime `String + String` concatenation (the
+`OP_ADD` atom fast path interns each result) — lands in the per-VM intern
+table (`src/value/uintern.c`) as a raw `vm->alloc_fn` allocation that is freed
+only at `urbi_vm_destroy`. There is no unintern and the collector never scans
+the table for dead entries (`intern_table_walk_roots` is a no-op by design);
+a string-building loop therefore grows RAM monotonically for the life of the
+VM. Because the table allocates via the raw allocator rather than
+`urbi_gc_alloc`, intern growth also never triggers a collection (and
+`URBI_GC_STRESS` does not fire on the intern path).
+
+The v1.0 mitigation is observability: `urbi_intern_bytes(vm)` (internal,
+`src/value/uintern.h`) reports total intern-subsystem bytes — every live
+string block plus the current entries array — and `Debug.gc()` exposes it as
+`intern_bytes` alongside `intern_count`. Embedders with string-churn
+workloads should monitor it and bound churn (precompute strings, avoid
+unbounded concat loops). Heap-allocated, collectable string cells are the
+v1.x fix (design-risks: GC-08); the no-op root walker above is the seam where
+that migration lands.
+
 ## Configurable knobs
 
 | Macro | Default | Effect |

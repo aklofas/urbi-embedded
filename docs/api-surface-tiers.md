@@ -297,6 +297,12 @@ CI gate tracks this list to prevent silent growth.
 
 - `urbi_handle_create`, `urbi_handle_get`, `urbi_handle_release`
 
+### Intern-table internals
+
+- `urbi_intern_bytes` — total intern-subsystem bytes (live string blocks
+  plus the entries array); source of the `Debug.gc()` `intern_bytes` field.
+  Interned strings never evict at v1.0 (refactor-3 GC-08).
+
 ### Lobby / session management
 
 - `urbi_lobby_invoke_handleDisconnect`, `urbi_lobby_native_register`,

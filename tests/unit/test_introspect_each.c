@@ -90,6 +90,10 @@ UTEST(introspect_gc_returns_heap_stats)
     UASSERT_EQ(urbi_introspect_gc(&vm, buf, sizeof buf, &n), URBI_OK);
     UASSERT(strstr(buf, "alive_bytes") != NULL);
     UASSERT(strstr(buf, "threshold") != NULL);
+    /* refactor-3 GC-08: intern-table stats ride the always-on gc emitter so
+     * embedders can monitor the no-evict intern growth. */
+    UASSERT(strstr(buf, "intern_bytes") != NULL);
+    UASSERT(strstr(buf, "intern_count") != NULL);
     urbi_vm_destroy(&vm);
 }
 

@@ -53,7 +53,20 @@ void uintern_destroy(struct UVM *vm);
 
 /* Debug helper. Returns the count of unique strings interned in vm.
  * Returns 0 if intern_table is NULL. */
-size_t uintern_count(struct UVM *vm);
+size_t uintern_count(const struct UVM *vm);
+
+/* Stats accessor (refactor-3 GC-08). Total bytes currently allocated by
+ * the intern subsystem on behalf of vm: every live UInternStr block
+ * (header + payload, NUL included in the header's bytes[1]) PLUS the
+ * current entries[] pointer array.  The fixed-size UInternTable struct
+ * itself (one ~32 B block per VM) is not counted.  Grows on every miss;
+ * on rehash the old entries[] array is subtracted and the new (larger)
+ * one added.  Because interned strings are NEVER evicted at v1.0 (no
+ * unintern), this counter only grows for the life of the VM — see
+ * "Interned strings never evict" in docs/internals/gc.md.  Returns 0 on
+ * NULL vm or before the first intern (the table is created lazily).
+ * Surfaced to urbiscript via Debug.gc()'s "intern_bytes" field. */
+size_t urbi_intern_bytes(const struct UVM *vm);
 
 /* Operator-name interning helpers (Gap #4 — operator overload via method
  * dispatch, M6 Wave 3).
