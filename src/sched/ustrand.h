@@ -119,9 +119,12 @@ struct UPeriodic;        /* stdlib/temporal.h — v0.9.4 every() back-pointer */
  * must hold a UValue live across a nested dispatch (which can run GC
  * slices) pushes one of these stack-allocated frames onto
  * s->c_roots_head; strand_walk_roots yields every chained slot.  LIFO
- * discipline is mandatory (assert-checked in pop).  Sound because the
- * holders (cleanup executor et al.) cannot yield mid-body — the C frame
- * outlives every GC slice that can observe the chain. */
+ * discipline is mandatory (assert-checked in pop) and every push must be
+ * popped on every exit path: a frame leaked past its holding function
+ * leaves the chain pointing at a dead C stack frame, and the next mark
+ * phase reads it — silent corruption, not a crash.  Sound because the
+ * holder (currently only run_cleanup_with_replace) cannot yield mid-body
+ * — the C frame outlives every GC slice that can observe the chain. */
 typedef struct UCRootFrame {
     UValue              *slot;
     struct UCRootFrame  *next;
@@ -352,6 +355,8 @@ URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3920,
 static inline void
 ustrand_c_root_push(struct UStrand *s, UCRootFrame *f, UValue *slot)
 {
+    URBI_INTERNAL_ASSERT(slot != NULL);
+    URBI_INTERNAL_ASSERT(s->c_roots_head != f);   /* double-push cycle guard */
     f->slot = slot;
     f->next = s->c_roots_head;
     s->c_roots_head = f;

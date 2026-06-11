@@ -1635,6 +1635,13 @@ exit_strand:
      *     keeping the decrement co-located with the dequeue logic.
      *   - sched_strand_block handles RUNNING → WAITING decrements inline.
      * No decrement here; see T16 for the scheduler-driven DEAD-path decrement. */
+
+    /* refactor-3 VM-06a canary: at outermost dispatch exit (not nested under
+     * a cleanup body — cleanup_run_depth == 0), the C-stack root chain must
+     * be empty.  A frame leaked past its push/pop pair would leave
+     * strand_walk_roots reading a dead C stack frame on the next mark phase
+     * (silent corruption, not a crash); catch it loudly in debug builds. */
+    URBI_INTERNAL_ASSERT(s->cleanup_run_depth != 0U || s->c_roots_head == NULL);
 #if UVM_USE_COMPUTED_GOTO
 #  pragma GCC diagnostic pop
 #endif
