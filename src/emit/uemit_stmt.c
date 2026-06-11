@@ -1008,6 +1008,14 @@ uint8_t emit_break_arm(UEmitter *e, const UAstNode *n) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     }
+    /* T24: the exit JMP must not cross open try/tag scopes without tearing
+     * them down — emit OP_POP_TAG / OP_TRY_END (+ inline finally) for every
+     * scope opened since the target frame, innermost-first, BEFORE the JMP.
+     * break targets the innermost loop/switch frame (top of loop_stack). */
+    if (!uemit_emit_scope_crossings(
+            e, e->loop_stack[e->loop_depth - 1].unwind_scope_depth_on_enter,
+            (uint32_t)n->line))
+        return 0U;
     /* Emit placeholder JMP and record the PC for patching. */
     int jmp_pc = (int)emit_instr_count(e);
     emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
@@ -1028,6 +1036,23 @@ uint8_t emit_continue_arm(UEmitter *e, const UAstNode *n) {
     if (e->loop_depth == 0) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
+    }
+    /* T24: same scope-crossing teardown as emit_break_arm, but the target
+     * is the nearest LOOP frame (switch frames are transparent to
+     * `continue` — mirror uemit_loop_record_continue's walk).  If no LOOP
+     * frame exists the parser already rejected this; defensive no-op. */
+    {
+        int d;
+        for (d = e->loop_depth; d > 0; d--) {
+            if (e->loop_stack[d - 1].kind == ULOOP_FRAME_LOOP) {
+                if (!uemit_emit_scope_crossings(
+                        e,
+                        e->loop_stack[d - 1].unwind_scope_depth_on_enter,
+                        (uint32_t)n->line))
+                    return 0U;
+                break;
+            }
+        }
     }
     int jmp_pc = (int)emit_instr_count(e);
     emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);

@@ -121,8 +121,50 @@ typedef struct {
     int continue_pcs[UEMIT_LOOP_PATCH_MAX];   /* OP_JMP PCs to patch to cond */
     int continue_count;
     ULoopFrameKind kind;                       /* LOOP or SWITCH */
+    int unwind_scope_depth_on_enter;           /* T24: e->unwind_scope_depth
+                                                  snapshot at loop entry; a
+                                                  break/continue targeting this
+                                                  frame must close every unwind
+                                                  scope opened above it before
+                                                  its JMP. */
 } ULoopCtx;
 /* === end W1/v0.10.5 === */
+
+/* === T24 (refactor-3 VM-01 follow-on): emitter-side unwind-scope stack ===
+ *
+ * A break/continue JMP that crosses an open `try`/`finally` or tag scope
+ * (`mytag: { ... }`) would leave the runtime's cleanup-stack entry behind:
+ * the OP_TRY_END / OP_POP_TAG (and the inline finally copy) sit on the
+ * normal fall-through path that the JMP skips.  The leaked entry eats one
+ * of URBI_CLEANUP_MAX slots and — for tag scopes — leaves a stale member
+ * link that a later tag.stop() absorbs at (time-travel resume).
+ *
+ * The emitter therefore tracks every unwind scope it currently has open
+ * (pushed by emit_try_frame / emit_tag_prefix_arm around body emission)
+ * and, at each break/continue site, emits the crossed scopes' teardown
+ * innermost-first BEFORE the JMP: OP_POP_TAG for tag scopes; OP_TRY_END
+ * plus an inline copy of the finally body (REVIVAL §S5a: finally runs on
+ * every exit kind) for try scopes.  ULoopCtx.unwind_scope_depth_on_enter
+ * bounds the walk to scopes opened inside the target loop frame.
+ *
+ * `return` needs no emit-side handling — the runtime walker processes the
+ * returning frame's cleanup entries (uunwind.c T24 pre-walk). */
+
+#define UEMIT_UNWIND_SCOPE_MAX  16   /* max nested try/tag scopes; a
+                                        catch+finally try consumes 2 */
+
+typedef enum {
+    UEMIT_SCOPE_TRY = 0,   /* OP_TRY_BEGIN..OP_TRY_END frame */
+    UEMIT_SCOPE_TAG = 1,   /* OP_PUSH_TAG..OP_POP_TAG frame */
+} UUnwindScopeKind;
+
+typedef struct {
+    uint8_t          kind;         /* UUnwindScopeKind */
+    uint8_t          tag_reg;      /* TAG only: register for OP_POP_TAG */
+    struct UAstNode *finally_body; /* TRY with finally: body to inline at
+                                      each crossing site; NULL otherwise */
+} UUnwindScope;
+/* === end T24 === */
 
 /* --- UEmitter state (caller stack-allocates, emitter fills) --- */
 
@@ -171,6 +213,14 @@ typedef struct UEmitter {
     ULoopCtx     loop_stack[UEMIT_LOOP_CTX_MAX];
     int          loop_depth;  /* current nesting depth (0 = not in a loop) */
     /* === end W1/v0.10.5 === */
+
+    /* === T24: open unwind scopes (try / tag) — see UUnwindScope above ===
+     * Pushed by emit_try_frame / emit_tag_prefix_arm around body emission;
+     * read by emit_break_arm / emit_continue_arm to emit scope-crossing
+     * teardown before the loop-exit JMP.  Zeroed by uemit_init. */
+    UUnwindScope unwind_scopes[UEMIT_UNWIND_SCOPE_MAX];
+    int          unwind_scope_depth;
+    /* === end T24 === */
 } UEmitter;
 
 /* --- API --- */

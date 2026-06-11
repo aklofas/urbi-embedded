@@ -1,0 +1,84 @@
+# Milestone: v0.13.1
+# Covers: emitted control transfers (return / break / continue) crossing
+#         open cleanup scopes (try/finally, tag scope) process the crossed
+#         scopes instead of leaking them (refactor-3 VM-01 follow-on / T24).
+#         Runtime half: the unwind walker's RETURN path processes cleanup
+#         entries belonging to the returning frame (finally runs per
+#         REVIVAL §S5a; TAG_SCOPE entries torn down, not leaked).
+#         Emit half: break/continue sites emit OP_POP_TAG / OP_TRY_END
+#         (+ inline finally copy) for every scope crossed by the JMP.
+## timeout: 30
+
+# --- 1. return-through-finally: the finally body runs on the return path
+#     (pre-fix: returned 5 but fin1 stayed 0 — finally silently skipped)
+var f = function() { try { return 5 } finally { Realm.fin1 = 1 } }; Realm.fin1 = 0; var r = f(); r
+[00000000] 5
+Realm.fin1
+[00000001] 1
+
+# --- 2. return-through-tag-scope: value delivered, and no TAG_SCOPE entry
+#     leaks per call.  70 calls would pre-fix accumulate 64 leaked entries
+#     and silently kill the strand at the 65th OP_PUSH_TAG (whole chunk
+#     printed nil); the same-chunk try/catch pins that the strand is alive.
+#     (pre-fix: nil; post-fix: 70*7 + 3 = 493)
+var t = Tag.new("x"); var g = function() { t: { return 7 } }; var i = 0; var acc = 0; while (i < 70) { acc = acc + g(); i = i + 1 }; var ok = 0; try { throw(3) } catch (var e) { ok = e }; acc + ok
+[00000002] 493
+
+# --- 3. return through BOTH (tag scope inside try/finally)
+#     (pre-fix: returned 9 but fin3 stayed 0)
+var t3 = Tag.new("b"); Realm.fin3 = 0; var h = function() { try { t3: { return 9 } } finally { Realm.fin3 = 1 } }; var r3 = h(); r3
+[00000003] 9
+Realm.fin3
+[00000004] 1
+
+# --- 4. break crossing a tag scope inside a while: the scope is torn down
+#     at the break site, so a later t4.stop() on the same strand sees no
+#     stale entry.  t4.stop() outside any active scope is the ratified D3
+#     fatal (§S5c), which ends the chunk — post4 must be exactly 1.
+#     (pre-fix: the stale entry absorbed the stop and time-travel-resumed
+#     into the loop tail; the post-loop code ran TWICE — post4 was 2 —
+#     before the second stop hit the D3 fatal)
+Realm.post4 = 0
+[00000005] 0
+var t4 = Tag.new("c"); var n = 0; while (n < 5) { t4: { n = n + 1; if (n == 3) { break } } }; Realm.post4 = Realm.post4 + 1; t4.stop(); Realm.post4 = Realm.post4 + 1; n
+[00000006] !!! tag.stop with no active scope
+Realm.post4
+[00000007] 1
+
+# --- 5. break crossing try/finally inside a while: finally runs exactly
+#     once for the break iteration; loop exits at n == 3
+#     (pre-fix: fin5 was 2 — the break iteration's finally was skipped)
+Realm.fin5 = 0; var n5 = 0; while (n5 < 5) { try { n5 = n5 + 1; if (n5 == 3) { break } } finally { Realm.fin5 = Realm.fin5 + 1 } }; n5
+[00000008] 3
+Realm.fin5
+[00000009] 3
+
+# --- 6. continue variant of 5: finally runs on every iteration including
+#     the continue one (pre-fix: fin6 was 3 — continue iteration skipped)
+Realm.fin6 = 0; var m = 0; var sum = 0; while (m < 4) { try { m = m + 1; if (m == 2) { continue }; sum = sum + m } finally { Realm.fin6 = Realm.fin6 + 1 } }; sum
+[00000010] 8
+Realm.fin6
+[00000011] 4
+
+# --- 6b. break crossing BOTH (tag scope inside try/finally inside while):
+#     innermost-first teardown — OP_POP_TAG, then OP_TRY_END + finally
+#     (pre-fix: fin7 was 0)
+Realm.fin7 = 0; var t7 = Tag.new("g"); var k = 0; while (k < 3) { try { t7: { k = k + 1; break } } finally { Realm.fin7 = Realm.fin7 + 1 } }; k
+[00000012] 1
+Realm.fin7
+[00000013] 1
+
+# --- 6c. continue crossing a tag scope: loop completes normally
+#     (pre-fix: same value — the leaked entry was just invisible here;
+#     pinned so the crossing OP_POP_TAG keeps the observable unchanged)
+var tx = Tag.new("h"); var w = 0; var p = 0; while (w < 6) { tx: { w = w + 1; if (w == 2) { continue }; p = p + 1 } }; w * 10 + p
+[00000014] 65
+
+# --- 7. regression pins: plain return / plain break / tag.stop absorption
+#     (all unchanged pre/post)
+var f2 = function() { return 42 }; f2()
+[00000015] 42
+var n3 = 0; while (true) { n3 = n3 + 1; if (n3 == 3) { break } }; n3
+[00000016] 3
+var t10 = Tag.new("s"); var r10 = 0; t10: { t10.stop(); r10 = 99 }; r10
+[00000017] 0

@@ -271,6 +271,10 @@ static inline bool uemit_loop_push(UEmitter *e, ULoopFrameKind kind) {
     ctx->break_count    = 0;
     ctx->continue_count = 0;
     ctx->kind           = kind;
+    /* T24: snapshot the open-unwind-scope depth so break/continue sites
+     * know which try/tag scopes were opened INSIDE this frame and must be
+     * closed before their JMP. */
+    ctx->unwind_scope_depth_on_enter = e->unwind_scope_depth;
     e->loop_depth++;
     return true;
 }
@@ -334,6 +338,40 @@ static inline void uemit_loop_patch_continues(UEmitter *e, int cont_target) {
     }
 }
 /* === end W1/v0.10.5: loop-context helpers === */
+
+/* === T24: emitter unwind-scope stack helpers ===
+ *
+ * uemit_unwind_scope_push / _pop bracket body emission in emit_try_frame
+ * and emit_tag_prefix_arm.  Push failure latches EMIT_NESTING_TOO_DEEP.
+ * Error-path returns inside the bracketed emitters intentionally skip the
+ * pop — e->error latches and no further code is emitted, so a stale depth
+ * is unobservable (same rationale as the loop-ctx discipline).
+ *
+ * uemit_emit_scope_crossings (uemit_unwind.c) emits the teardown for every
+ * scope above down_to_depth, innermost-first: OP_POP_TAG for tag scopes;
+ * OP_TRY_END + inline finally copy for try scopes.  Returns 0 on error
+ * (e->error set), 1 on success. */
+
+static inline bool uemit_unwind_scope_push(UEmitter *e, UUnwindScopeKind kind,
+                                           uint8_t tag_reg,
+                                           UAstNode *finally_body) {
+    if (e->unwind_scope_depth >= UEMIT_UNWIND_SCOPE_MAX) {
+        e->error = EMIT_NESTING_TOO_DEEP;
+        return false;
+    }
+    UUnwindScope *sc = &e->unwind_scopes[e->unwind_scope_depth++];
+    sc->kind         = (uint8_t)kind;
+    sc->tag_reg      = tag_reg;
+    sc->finally_body = finally_body;
+    return true;
+}
+
+static inline void uemit_unwind_scope_pop(UEmitter *e) {
+    if (e->unwind_scope_depth > 0) e->unwind_scope_depth--;
+}
+
+int uemit_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line);
+/* === end T24 === */
 
 /* Statement / control-flow AST arm helpers (defined in uemit_stmt.c).
  * Called from emit_expr via forwarding stubs; bodies live in uemit_stmt.c. */

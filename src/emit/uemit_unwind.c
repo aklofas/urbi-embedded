@@ -224,23 +224,60 @@ static void emit_catch_handler_section(UEmitter *e, UAstNode *n) {
  * copy.  Runs exactly once per exit (the body either completes normally and
  * reaches this inline copy, or unwinds and reaches the handler copy — never
  * both).  Returns 1 on success, 0 on error (e->error set). */
-static int emit_finally_inline(UEmitter *e, UAstNode *n, uint8_t rd) {
-    e->next_reg = rd;
+static int emit_finally_body_at(UEmitter *e, UAstNode *finally_body,
+                                uint8_t reg_floor) {
+    e->next_reg = reg_floor;
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
-    if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+    if (e->current_fs->freereg < reg_floor) e->current_fs->freereg = reg_floor;
     if (!uemit_open_block(e, false)) return 0;
     /* refactor-3 VM-02/B4: cleanup bodies are atomic (`|` semantics) — the
      * `;` separator emits no OP_YIELD inside a finally body.  Applies to
-     * this normal-path inline copy too, for consistency with the unwind
-     * copy.  Save/restore handles nested try/finally inside a finally. */
+     * every inline copy (normal-path, break/continue-crossing) for
+     * consistency with the unwind copy.  Save/restore handles nested
+     * try/finally inside a finally. */
     {
         uint8_t saved_icb = e->in_cleanup_body;
         e->in_cleanup_body = 1U;
-        emit_expr(e, n->u.try_stmt.finally_body);
+        emit_expr(e, finally_body);
         e->in_cleanup_body = saved_icb;
     }
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0; }
     if (!uemit_close_block(e)) return 0;
+    return 1;
+}
+
+static int emit_finally_inline(UEmitter *e, UAstNode *n, uint8_t rd) {
+    return emit_finally_body_at(e, n->u.try_stmt.finally_body, rd);
+}
+
+/* T24: emit the teardown for every unwind scope above down_to_depth,
+ * innermost-first, at a break/continue site whose JMP crosses them.
+ * Tag scope → OP_POP_TAG (runtime pops + tears down the top TAG_SCOPE
+ * entry; the A operand is disasm-fidelity only).  Try scope → OP_TRY_END,
+ * then — when the scope carries a finally — an inline copy of the finally
+ * body (REVIVAL §S5a: finally runs on every exit kind; same mechanism as
+ * the v0.11.4-D normal-path copy).  Code-size cost is one copy per
+ * crossing site, mirroring the normal-path/unwind-copy duplication.
+ * Does NOT modify e->unwind_scope_depth: the scopes stay open for the
+ * (unreachable-after-JMP, but still emitted) fall-through path and for
+ * sibling break sites. */
+int uemit_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line) {
+    int d;
+    for (d = e->unwind_scope_depth; d > down_to_depth; d--) {
+        UUnwindScope *sc = &e->unwind_scopes[d - 1];
+        if (sc->kind == (uint8_t)UEMIT_SCOPE_TAG) {
+            uemit_pop_tag(e, sc->tag_reg, line);
+            if (e->error != EMIT_OK) return 0;
+        } else {
+            uemit_try_end(e, line);
+            if (e->error != EMIT_OK) return 0;
+            if (sc->finally_body != NULL) {
+                if (!emit_finally_body_at(e, sc->finally_body,
+                                          fs_temp_floor(e->current_fs)))
+                    return 0;
+            }
+        }
+    }
     return 1;
 }
 
@@ -254,11 +291,21 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         int outer_try_begin_pc = (int)emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_FINALLY, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+        /* T24: outer scope is open until the outer OP_TRY_END below;
+         * break/continue inside body / else / catch handler cross it. */
+        if (!uemit_unwind_scope_push(e, UEMIT_SCOPE_TRY, 0U,
+                                     n->u.try_stmt.finally_body))
+            return 0U;
 
         /* === INNER TRY_FRAME: catch wrapper === */
         int inner_try_begin_pc = (int)emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_CATCH, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+        /* T24: inner (catch) scope covers only the body — the runtime pops
+         * it at the inner OP_TRY_END on the normal path and at catch
+         * absorption on the unwind path. */
+        if (!uemit_unwind_scope_push(e, UEMIT_SCOPE_TRY, 0U, NULL))
+            return 0U;
 
         /* Body */
         e->next_reg = rd;
@@ -270,6 +317,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* OP_TRY_END (inner) */
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+        uemit_unwind_scope_pop(e);   /* T24: inner catch scope closed */
 
         /* Optional else body: runs on normal exit, still inside outer finally frame */
         if (has_else) {
@@ -311,6 +359,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* OP_TRY_END (outer) */
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+        uemit_unwind_scope_pop(e);   /* T24: outer finally scope closed */
 
         /* v0.11.4-D: normal-path finally.  Both the normal-completion path and
          * the post-catch path converge here (after the outer TRY_END), so this
@@ -362,6 +411,10 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         int try_begin_pc = (int)emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_CATCH, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+        /* T24: catch scope covers only the body (popped at runtime on the
+         * normal path by OP_TRY_END, on the unwind path at absorption). */
+        if (!uemit_unwind_scope_push(e, UEMIT_SCOPE_TRY, 0U, NULL))
+            return 0U;
 
         /* Body */
         e->next_reg = rd;
@@ -372,6 +425,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+        uemit_unwind_scope_pop(e);   /* T24 */
 
         /* Optional else body: runs on normal exit (after TRY_END, before JMP past handler) */
         if (has_else) {
@@ -415,6 +469,11 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         int try_begin_pc = (int)emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_FINALLY, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+        /* T24: a break/continue inside the body crosses this scope — the
+         * crossing site emits OP_TRY_END + an inline finally copy. */
+        if (!uemit_unwind_scope_push(e, UEMIT_SCOPE_TRY, 0U,
+                                     n->u.try_stmt.finally_body))
+            return 0U;
 
         /* Body */
         e->next_reg = rd;
@@ -425,6 +484,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
+        uemit_unwind_scope_pop(e);   /* T24 */
 
         /* v0.11.4-D: normal-path finally — run the body on fall-through before
          * jumping past the unwind copy (REVIVAL §S5a). */
@@ -611,6 +671,13 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     int push_tag_pc = (int)emit_instr_count(e);
     uemit_push_tag(e, tag_reg, flags_m3, 0U /* placeholder */, line);
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+    /* T24: a break/continue inside the body crosses this tag scope — the
+     * crossing site emits an OP_POP_TAG so the runtime TAG_SCOPE entry
+     * (and its tag-member link) is torn down before the JMP. */
+    if (!uemit_unwind_scope_push(e, UEMIT_SCOPE_TAG, tag_reg, NULL)) {
+        uemit_close_block(e);
+        return 0U;
+    }
 
     /* Body — its own block so body-declared locals pop at scope end and
      * captured ones get an OP_CLOSE on the fall-through path.  The tag
@@ -630,6 +697,7 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     if (!uemit_close_block(e)) { uemit_close_block(e); return 0U; }
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
     e->next_reg = e->current_fs->freereg;
+    uemit_unwind_scope_pop(e);   /* T24: body done — normal OP_POP_TAG next */
 
     /* Emit OP_POP_TAG. */
     uemit_pop_tag(e, tag_reg, line);
