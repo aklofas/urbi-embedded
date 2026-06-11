@@ -8,6 +8,7 @@
 #include "runtime/umacros.h"   /* urbi_zero */
 #include "sched/ustrand.h"     /* UStrand */
 #include "gc/ugc.h"            /* UTYPE_CLOSURE */
+#include "gc/ugc_incremental.h" /* gc_shade_gray, uvalue_is_heap, IS_WHITE (close barrier) */
 #include "value/uvalue.h"      /* UValue */
 #include "chunk/uchunk.h"
 #include "runtime/uframe.h"
@@ -83,6 +84,25 @@ void vm_close_upvalues(UStrand *s, const UValue *threshold) {
     while (*link != NULL) {
         UUpvalCell *cell = *link;
         if (cell->u.stack_ptr >= threshold) {
+            /* refactor-3 GC-07: Dijkstra forward barrier.  The UUpvalCell
+             * may already be BLACK mid-cycle while the captured value is
+             * still WHITE; without a shade the value's only surviving
+             * reference can end up inside an already-scanned cell and the
+             * sweep frees it while reachable.  OP_SETUPVAL fires the same
+             * barrier (urbi_gc_upvalue_pre_store); the close path was the
+             * one missing store site.  Inlined because the barrier parent
+             * here is the UUpvalCell ITSELF (not a UClosure), and because
+             * the at-risk color is EITHER white: current_white flips at
+             * cycle start (urbi_gc_slice IDLE arm), so a pre-cycle cell
+             * awaiting sweep carries OTHER_WHITE — uvalue_is_heap_white's
+             * current_white-only test would miss exactly the cells the
+             * sweep frees (IS_DEAD checks OTHER_WHITE). */
+            if (UNLIKELY((cell->cell.gc_byte & UGC_COLOR_MASK) == UGC_COLOR_BLACK
+                         && uvalue_is_heap(*cell->u.stack_ptr)
+                         && cell->u.stack_ptr->v.p != NULL
+                         && IS_WHITE(uvalue_as_cell(*cell->u.stack_ptr)))) {
+                gc_shade_gray(s->vm, uvalue_as_cell(*cell->u.stack_ptr));
+            }
             cell->u.value = *cell->u.stack_ptr;
             cell->on_heap  = true;
             *link = cell->next;

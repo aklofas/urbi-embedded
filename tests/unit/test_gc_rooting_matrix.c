@@ -29,6 +29,7 @@
 #include "gc/ugc.h"           /* UTYPE_OBJECT, urbi_gc_phase */
 #include "gc/ugc_incremental.h" /* GC_PHASE_* (ATOMIC_FINISH re-scan case) */
 #include "vm/uvm.h"
+#include "vm/uvm_internal.h"  /* vm_open_upvalue (upvalue-close barrier case) */
 #include "sched/ustrand.h"
 #include "realm/urealm.h"
 #include "object/uobject.h"   /* struct UObject (sentinel payload size) */
@@ -981,6 +982,143 @@ UTEST(matrix_periodic_owning_tag_is_rooted)
     urbi_vm_destroy(&vm);
 }
 
+/* === Upvalue-close write barrier case (Task 9 / refactor-3 GC-07) ===
+ *
+ * vm_close_upvalues copies *cell->u.stack_ptr into the UUpvalCell — a store
+ * of a possibly-WHITE value into a possibly-BLACK cell.  OP_SETUPVAL fires
+ * urbi_gc_upvalue_pre_store before its store; the close path had no barrier,
+ * so a value whose ONLY reference migrates into a black closed cell mid-mark
+ * is never re-scanned and gets swept while reachable.
+ *
+ * Construction (extends the T4 slice-machine idiom):
+ *   1. Plant pre-cycle: parker object in stack[0] (registers are shaded in
+ *      ascending order by strand_walk_roots section (1) and the gray list
+ *      is LIFO, so the FIRST-shaded root is traced LAST — the parker keeps
+ *      the worklist non-empty while the carrier closure + upvalue cell
+ *      blacken); carrier closure in stack[1] with nupvals=1 wired to an
+ *      open upvalue over stack[2] (the way OP_CLOSURE publishes upvals[]);
+ *      sentinel C2 held ONLY in a C local — invisible to every provider, so
+ *      MARK_ROOTS leaves it white.  C2 is allocated PRE-cycle: the cycle
+ *      flip (urbi_gc_slice IDLE arm) turns its birth color into the
+ *      sweepable OTHER_WHITE; a mid-cycle newborn would carry current_white
+ *      and survive the sweep regardless of the barrier (no red).
+ *   2. Start a cycle (gc_debt poke + one slice → MARK_INCREMENTAL), then
+ *      drain budget-1 slices (one gray pop each) until closure AND cell are
+ *      BLACK with the parker still gray (phase stays MARK_INCREMENTAL).
+ *   3. Mutator move: stack[2] = C2 (register write — deliberately
+ *      barrier-free), then vm_close_upvalues copies C2 into the BLACK cell
+ *      and unlinks it from open_upvals.  Pre-fix: no shade.
+ *   4. Nil stack[2]: the closed cell's u.value is now C2's ONLY reference,
+ *      and the ATOMIC_FINISH root re-scan (T4) sees neither the register
+ *      (nil) nor the cell (unlinked from the section-(8) chain; the black
+ *      carrier closure is skipped by mark_root_callback's idempotency
+ *      check, so it is never re-traced).
+ *   5. Finish the cycle.  Pre-fix: C2 is OTHER_WHITE at SWEEP → IS_DEAD →
+ *      freed while reachable via closure → upvals[0] → u.value (assert
+ *      fails).  Post-fix: the close-path barrier shades C2 gray.
+ *
+ * Stress-build safety: every pre-cycle allocation is rooted before the next
+ * allocation (C2, the last birth, needs no root: nothing allocates between
+ * its birth and the case's hand-driven cycle, and the in-cycle mutator
+ * section performs no allocation at all). */
+
+UTEST(matrix_upvalue_close_fires_barrier)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    /* Parker: first-shaded root → traced last (see header). */
+    UCell *parker = sentinel_alloc(&vm);
+    UASSERT(parker != NULL);
+    s.stack[0] = obj_value_for(parker);
+
+    /* Carrier closure: a real GC-managed UClosure (native variant — proto
+     * NULL, so uclosure_destroy is a no-op).  sizeof(UClosure) already
+     * includes the upvals[1] trailing slot, so wiring one upval into a
+     * native closure stays in-bounds. */
+    UClosure *cl = urbi_native_closure_create(&vm, matrix_native_nop);
+    UASSERT(cl != NULL);
+    {
+        UValue clv;
+        memset(&clv, 0, sizeof clv);
+        clv.kind = (uint8_t)UVAL_CLOSURE;
+        clv.v.p  = (void *)cl;
+        s.stack[1] = clv;
+    }
+
+    /* Open upvalue over R[2] via the production path (links s.open_upvals,
+     * rooted via strand_walk_roots section (8)); publish it in upvals[]
+     * the way OP_CLOSURE does. */
+    UUpvalCell *uc = vm_open_upvalue(&vm, &s, &s.stack[2]);
+    UASSERT(uc != NULL);
+    cl->nupvals   = 1U;
+    cl->upvals[0] = uc;
+
+    /* C2: the lost-object candidate (see header for why pre-cycle). */
+    UCell *c2 = sentinel_alloc(&vm);
+    UASSERT(c2 != NULL);
+
+    /* Start the cycle: flip + MARK_ROOTS in one slice (T4 idiom). */
+    vm.gc_debt = 1;
+    urbi_gc_slice(&vm, 1U);
+    UASSERT_EQ((uint8_t)GC_PHASE_MARK_INCREMENTAL, urbi_gc_phase(&vm));
+    UASSERT(IS_WHITE(c2));   /* unreferenced by any root → stayed white */
+
+    /* Drain one gray pop per slice until carrier + cell are black.  The
+     * parker (traced last) keeps the worklist non-empty, so the phase
+     * cannot advance past MARK_INCREMENTAL before we stop. */
+    {
+        int spins = 0;
+        while (!(IS_BLACK(&cl->cell) && IS_BLACK(&uc->cell))
+               && urbi_gc_phase(&vm) == (uint8_t)GC_PHASE_MARK_INCREMENTAL
+               && spins < 100000) {
+            urbi_gc_slice(&vm, 1U);
+            spins++;
+        }
+        UASSERT(spins < 100000);
+    }
+    UASSERT(IS_BLACK(&cl->cell));
+    UASSERT(IS_BLACK(&uc->cell));
+    UASSERT_EQ((uint8_t)GC_PHASE_MARK_INCREMENTAL, urbi_gc_phase(&vm));
+    UASSERT(vm.gray_work_head != NULL);   /* parker still parked */
+    UASSERT(IS_WHITE(c2));                /* still untouched by the mark */
+
+    /* Mutator move: load C2 into the captured register (barrier-free by
+     * design), then close — the close copies *stack_ptr into the BLACK
+     * cell.  Pre-fix: no shade fires here. */
+    s.stack[2] = obj_value_for(c2);
+    vm_close_upvalues(&s, &s.stack[2]);
+    UASSERT(uc->on_heap);
+    UASSERT(s.open_upvals == NULL);   /* unlinked — section (8) re-scan
+                                         cannot rescue it */
+
+    /* Nil the register BEFORE the ATOMIC_FINISH root re-scan runs: the
+     * closed cell's u.value is now C2's ONLY reference. */
+    memset(&s.stack[2], 0, sizeof s.stack[2]);
+
+    /* Finish the cycle (T4 idiom: capped drain). */
+    {
+        int spins = 0;
+        while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
+            urbi_gc_slice(&vm, 4096U);
+            spins++;
+            UASSERT(spins < 64);
+            if (spins >= 64) break;
+        }
+    }
+
+    /* Pre-fix: C2 swept while reachable (black cell never re-scanned).
+     * Post-fix: the close-path Dijkstra barrier shaded it gray. */
+    UASSERT(cell_live(&vm, c2));
+
+    memset(&s.stack[0], 0, sizeof s.stack[0]);
+    memset(&s.stack[1], 0, sizeof s.stack[1]);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void test_gc_rooting_matrix_suite(void)
@@ -1024,4 +1162,6 @@ void test_gc_rooting_matrix_suite(void)
               matrix_pending_unregister_watcher_still_rooted);
     utest_run("matrix_periodic_owning_tag_is_rooted",
               matrix_periodic_owning_tag_is_rooted);
+    utest_run("matrix_upvalue_close_fires_barrier",
+              matrix_upvalue_close_fires_barrier);
 }
