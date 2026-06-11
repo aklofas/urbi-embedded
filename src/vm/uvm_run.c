@@ -187,6 +187,17 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
             vm_format_type_error_msg(vm, "strand blocked unexpectedly in urbi_vm_run");
             break;
         }
+        if (USTRAND_IS_SUSPENDED(&strand)) {
+            /* refactor-3 VM-03: a native suspended the transient strand
+             * (t.block()/t.freeze() from inside the tag's own scope).
+             * urbi_vm_run is the synchronous one-shot path — no later
+             * urbi_step loop exists to resume the strand, so parking
+             * would silently truncate the body at the blocking call.
+             * Error loudly, mirroring the WAITING arm. */
+            vm->last_error = UVM_TYPE_ERROR;
+            vm_format_type_error_msg(vm, "strand suspended unexpectedly in urbi_vm_run");
+            break;
+        }
         /* RUNNING with step_budget exhausted (UINT64_MAX → shouldn't happen). */
         break;
     }

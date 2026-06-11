@@ -255,8 +255,17 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
         /* Path 3: check for parked states (strand still alive — safe to read).
          * USTRAND_IS_WAITING checks that the upper nibble equals
          * USTRAND_WAITING (0x30), covering all WAITING sub-states:
-         * WAITING_SLEEP, WAIT_WATCHER, WAIT_EVENT, WAITING_JOIN, WAITING_HOST. */
-        if (USTRAND_IS_WAITING(loader)) {
+         * WAITING_SLEEP, WAIT_WATCHER, WAIT_EVENT, WAITING_JOIN, WAITING_HOST.
+         *
+         * refactor-3 VM-03: SUSPENDED (0x50) is parked too — a chunk-top
+         * t.block()/t.freeze() self-suspend now exits dispatch SUSPENDED
+         * (OP_CALL post-native arm).  Without this arm the drive loop
+         * classified SUSPENDED as "keep driving", spun the outer cap on a
+         * quiescent VM, and returned URBI_ERR_LOADER_BUDGET WITHOUT clearing
+         * out_slot — a later urbi_tag_unblock + urbi_step resumed the strand
+         * and OP_RET wrote 16 bytes through the dangling pointer into
+         * urbi_repl_eval's dead frame (ASan stack-use-after-return). */
+        if (USTRAND_IS_WAITING(loader) || USTRAND_IS_SUSPENDED(loader)) {
             /* Parked.  Strand persists in realm; caller continues with
              * their own urbi_step loop.  out_result stays nil.
              *

@@ -23,7 +23,10 @@
  *      eager-reaped off realm->strands_head, the VM is quiescent.
  *
  * Resume-value delivery into the result register (v0.10.9-C / W3f) is
- * deferred and NOT asserted here — resume just continues execution. */
+ * deferred and NOT asserted here — resume just continues execution.
+ *
+ * NOTE: the QUIESCENT assertions pin CURRENT behavior — the quiescence
+ * policy for SUSPENDED strands is wave-3 work (VM-12/SCHED-13). */
 
 #include "utest.h"
 
@@ -254,6 +257,117 @@ UTEST(self_freeze_suspends_then_resumes)
 }
 
 /* ===================================================================
+ * Case 3: the PUBLIC loader path (urbi_run_chunk — same drive loop
+ * urbi_repl_eval uses) must PARK on a chunk-top self-block: return
+ * URBI_OK with loader->out_slot cleared, NOT spin the outer cap and
+ * return URBI_ERR_LOADER_BUDGET (-20) with out_slot still pointing
+ * into the caller's dead frame.  Pre-fix, the later unblock + step
+ * resumed the strand and OP_RET wrote 16 bytes through the dangling
+ * out_slot (ASan: stack-use-after-return WRITE of size 16).  The
+ * `result` local lives in run_chunk_in_dead_frame's frame, which has
+ * returned by the time the strand resumes — reproducing the
+ * urbi_repl_eval shape.
+ * =================================================================== */
+static int
+run_chunk_in_dead_frame(UVM *vm, UProto *module)
+{
+    UValue result = urbi_make_nil();  /* dies with this frame */
+    return urbi_run_chunk(vm, NULL, module, &result);
+}
+
+/* Walk realm->strands_head for the first SUSPENDED strand (the loader
+ * is created inside urbi_run_chunk, so its address is not returned). */
+static UStrand *
+find_suspended_strand(UVM *vm)
+{
+    URealm *realm = urbi_realm_global(vm);
+    for (UStrand *p = realm->strands_head; p != NULL; p = p->next_in_realm)
+        if (USTRAND_IS_SUSPENDED(p)) return p;
+    return NULL;
+}
+
+UTEST(run_chunk_parks_on_self_block)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    URealm *gr = urbi_realm_global(&vm);
+    UASSERT(gr != NULL);
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, gr, "hit9", 4,
+                                              urbi_make_int(0)));
+
+    UProto *module = compile_heap_chunk(&vm,
+        "var t = Tag.new(); t: { t.block(); Realm.hit9 = 1 }");
+    UASSERT(module != NULL);
+
+    /* 1. Clean park: URBI_OK, not URBI_ERR_LOADER_BUDGET (-20). */
+    int rc = run_chunk_in_dead_frame(&vm, module);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int64_t)0, read_hit9(&vm));
+
+    /* 2. The loader is parked SUSPENDED with out_slot CLEARED (mirrors
+     * the WAITING park contract, W6/v0.10.2) so OP_RET on resume does
+     * not write through the caller's dead frame. */
+    UStrand *s = find_suspended_strand(&vm);
+    UASSERT(s != NULL);
+    if (s != NULL) {
+        UASSERT_EQ((unsigned)USTRAND_REASON_BLOCK,
+                   (unsigned)USTRAND_GET_REASON(s));
+        UASSERT(s->out_slot == NULL);
+        UASSERT(s->wait_payload.suspend_tag != NULL);
+
+        /* 3. Unblock + step: the strand resumes after t.block() and
+         * completes.  Pre-fix this is where OP_RET wrote through the
+         * dangling out_slot (stack-use-after-return under ASan). */
+        UASSERT_EQ(URBI_OK,
+                   urbi_tag_unblock(&vm, s->wait_payload.suspend_tag));
+        UStepResult step_rc = pump_steps(&vm, 100);
+
+        UASSERT_EQ((int)URBI_STEP_QUIESCENT, (int)step_rc);
+        UASSERT(vm.fatal_strand == NULL);
+        UASSERT_EQ((int64_t)1, read_hit9(&vm));
+        UASSERT(find_strand_in_realm(&vm, s) == NULL);
+    }
+
+    uchunk_destroy(module, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
+ * Case 4: urbi_vm_run (synchronous one-shot path — no later urbi_step
+ * loop exists to resume the strand) must error LOUDLY on a self-block,
+ * mirroring its WAITING arm.  Pre-fix: SUSPENDED fell through to the
+ * silent final break — rc == UVM_OK with the body silently truncated
+ * at t.block().
+ * =================================================================== */
+UTEST(vm_run_self_block_is_loud_error)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    URealm *gr = urbi_realm_global(&vm);
+    UASSERT(gr != NULL);
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, gr, "hit9", 4,
+                                              urbi_make_int(0)));
+
+    UProto *module = compile_heap_chunk(&vm,
+        "var t = Tag.new(); t: { t.block(); Realm.hit9 = 1 }");
+    UASSERT(module != NULL);
+
+    UValue out = urbi_make_nil();
+    int rc = urbi_vm_run(&vm, NULL, module, &out);
+
+    /* Loud error naming suspension — NOT a silent UVM_OK truncation. */
+    UASSERT_EQ((int)UVM_TYPE_ERROR, rc);
+    UASSERT(strstr(vm.last_errmsg, "suspend") != NULL);
+    /* Body truncated at t.block() either way. */
+    UASSERT_EQ((int64_t)0, read_hit9(&vm));
+
+    uchunk_destroy(module, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite entry point.
  * =================================================================== */
 
@@ -268,4 +382,10 @@ test_tag_self_block_suite(void)
     utest_run("tag_self_block: t.freeze() inside own scope suspends, "
               "unfreeze resumes after the call",
               self_freeze_suspends_then_resumes);
+    utest_run("tag_self_block: urbi_run_chunk parks cleanly on chunk-top "
+              "self-block (no -20, out_slot cleared)",
+              run_chunk_parks_on_self_block);
+    utest_run("tag_self_block: urbi_vm_run errors loudly on self-block "
+              "(no silent truncation)",
+              vm_run_self_block_is_loud_error);
 }
