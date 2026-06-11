@@ -694,14 +694,19 @@ UTEST(matrix_atomic_finish_rescans_mutated_registers)
     rc = urbi_object_set_local_slot(&vm, holder, sym, urbi_make_nil());
     UASSERT_EQ(rc, 0);
 
-    /* Finish the cycle.  Capped: UASSERT records the failure but does NOT
-     * abort the case (utest.h), so the explicit break is what actually
-     * bounds a wedge regression (phase never reaching IDLE) instead of
-     * hanging CI. */
+    /* Finish the cycle.  Unbounded budget per slice (the urbi_gc_force_full
+     * idiom) so each spin completes whole phases regardless of heap size:
+     * gated builds boot a larger urbi_vm_init heap, and a fixed 4096-byte
+     * budget needed >64 slices just to mark+sweep it (the gate-off build
+     * finished at 60 of 64 — no headroom).  The spin cap stays purely as a
+     * wedge detector: UASSERT records the failure but does NOT abort the
+     * case (utest.h), so the explicit break is what actually bounds a
+     * wedge regression (phase never reaching IDLE) instead of hanging
+     * CI. */
     {
         int spins = 0;
         while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
-            urbi_gc_slice(&vm, 4096U);
+            urbi_gc_slice(&vm, (size_t)-1U);
             spins++;
             UASSERT(spins < 64);
             if (spins >= 64) break;
@@ -1099,11 +1104,13 @@ UTEST(matrix_upvalue_close_fires_barrier)
      * closed cell's u.value is now C2's ONLY reference. */
     memset(&s.stack[2], 0, sizeof s.stack[2]);
 
-    /* Finish the cycle (T4 idiom: capped drain). */
+    /* Finish the cycle (T4 idiom: wedge-capped unbounded drain). */
     {
         int spins = 0;
         while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
-            urbi_gc_slice(&vm, 4096U);
+            /* Unbounded budget (urbi_gc_force_full idiom): heap size must
+             * not dictate the spin count (see T4 drain-loop comment). */
+            urbi_gc_slice(&vm, (size_t)-1U);
             spins++;
             UASSERT(spins < 64);
             if (spins >= 64) break;
@@ -1202,11 +1209,13 @@ UTEST(matrix_slot_store_barrier_shades_other_white)
     UASSERT_EQ(0, urbi_object_set_local_slot(&vm, holder, sym,
                                              obj_value_for(c2)));
 
-    /* Finish the cycle (capped drain). */
+    /* Finish the cycle (wedge-capped unbounded drain). */
     {
         int spins = 0;
         while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
-            urbi_gc_slice(&vm, 4096U);
+            /* Unbounded budget (urbi_gc_force_full idiom): heap size must
+             * not dictate the spin count (see T4 drain-loop comment). */
+            urbi_gc_slice(&vm, (size_t)-1U);
             spins++;
             UASSERT(spins < 64);
             if (spins >= 64) break;
@@ -1345,7 +1354,9 @@ UTEST(matrix_setupval_barrier_targets_shared_cell)
     {
         int spins = 0;
         while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
-            urbi_gc_slice(&vm, 4096U);
+            /* Unbounded budget (urbi_gc_force_full idiom): heap size must
+             * not dictate the spin count (see T4 drain-loop comment). */
+            urbi_gc_slice(&vm, (size_t)-1U);
             spins++;
             UASSERT(spins < 64);
             if (spins >= 64) break;
