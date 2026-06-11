@@ -11,6 +11,13 @@
 # wake).  v0.11.4-A added sched_wake_due_sleepers as a pre-dispatch pump in
 # urbi_step (mirroring the periodic pre-pump), so a lone expired sleeper resumes.
 #
+# v0.13.3 (refactor-3 SCHED-01/B10): the step now reports QUIESCENT, not
+# RUNNING.  The woken strand completes and dies inside this step; under the
+# single-writer runnable count (WAITING strands are no longer counted, and the
+# park/wake cycle no longer leaves a phantom +1 behind) nothing live remains
+# afterwards.  The pre-fix RUNNING was the leaked count — a host busy-spin
+# signal.
+#
 ## host: realm sleeper
 ## host: run Realm.woke = 0
 ## host: run sleep(100ms); Realm.woke = 1
@@ -21,5 +28,5 @@
 [00000000] 0
 [00000000] nil
 [00000000] 0
-[00000000] step: RUNNING
+[00000000] step: QUIESCENT
 [00000000] 1

@@ -6,8 +6,10 @@
 
 #include "utest.h"
 #include "sched/usched_cooperative.h"
+#include "sched/usched_post_dispatch.h"
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
+#include "utest_e2e_helpers.h"
 #include <stdint.h>
 
 #define UTEST(name) static void name(void)
@@ -36,12 +38,17 @@ UTEST(counter_strand_runnable_increments_on_make_runnable)
     sched_strand_make_runnable(&b);
     UASSERT_EQ(vm.strand_runnable_count, 2U);
 
-    /* Simulate dispatch: strand becomes RUNNING, then blocks. */
+    /* Simulate dispatch: dequeue (count-neutral under SCHED-01 — the strand
+     * moves READY -> RUNNING inside the counted set), then block (-1). */
+    sched_dequeue_ready_head(&vm);   /* a */
     a.state = USTRAND_STATE_RUNNING;
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
     sched_strand_block(&a, USTRAND_REASON_EVENT, 0);
     UASSERT_EQ(vm.strand_runnable_count, 1U);
 
+    sched_dequeue_ready_head(&vm);   /* b */
     b.state = USTRAND_STATE_RUNNING;
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
     sched_strand_block(&b, USTRAND_REASON_EVENT, 0);
     UASSERT_EQ(vm.strand_runnable_count, 0U);
 
@@ -64,16 +71,18 @@ UTEST(counter_wakeup_pending_tracks_sleep_q)
 
     UASSERT_EQ(vm.wakeup_pending_count, 0U);
 
-    /* Block via SLEEP: sleep_q_insert called internally by sched_strand_block. */
-    a.state = USTRAND_STATE_RUNNING;
+    /* Block via SLEEP: sleep_q_insert called internally by sched_strand_block.
+     * SCHED-01: a RUNNING strand is in the counted set, so seed the count
+     * before each hand-built RUNNING -> block transition. */
+    a.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
     sched_strand_block(&a, USTRAND_REASON_SLEEP, 1000U);
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
-    b.state = USTRAND_STATE_RUNNING;
+    b.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
     sched_strand_block(&b, USTRAND_REASON_SLEEP, 2000U);
     UASSERT_EQ(vm.wakeup_pending_count, 2U);
 
-    c.state = USTRAND_STATE_RUNNING;
+    c.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
     sched_strand_block(&c, USTRAND_REASON_SLEEP, 500U);
     UASSERT_EQ(vm.wakeup_pending_count, 3U);
 
@@ -169,8 +178,9 @@ UTEST(wakeup_pending_no_underflow_on_strand_not_on_queue)
     ustrand_init(&a, &vm);
     ustrand_init(&b, &vm);
 
-    /* Put only a on the sleep queue. */
-    a.state = USTRAND_STATE_RUNNING;
+    /* Put only a on the sleep queue.  SCHED-01: seed the count for the
+     * hand-built RUNNING strand so block's decrement balances. */
+    a.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
     sched_strand_block(&a, USTRAND_REASON_SLEEP, 1000U);
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
@@ -188,7 +198,12 @@ UTEST(wakeup_pending_no_underflow_on_strand_not_on_queue)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 6: runnable_count correctly tracks sched_strand_yield (yield re-enqueues). */
+/* Case 6: runnable_count is stable across a full yield cycle.
+ *
+ * SCHED-01 (v0.13.3) semantics: count == |READY| + |RUNNING|.  The dispatch
+ * dequeue is count-NEUTRAL (READY -> RUNNING stays inside the counted set)
+ * and yield is count-NEUTRAL too (RUNNING -> READY re-enqueue: dec + inc).
+ * Pre-refactor this test pinned the old rule (dequeue -1, yield +1). */
 UTEST(runnable_count_stable_across_yield_cycle)
 {
     UVM vm;
@@ -201,22 +216,20 @@ UTEST(runnable_count_stable_across_yield_cycle)
     sched_strand_make_runnable(&a);
     UASSERT_EQ(vm.strand_runnable_count, 1U);
 
-    /* Simulate dispatch: dequeue (T16 pattern: decrement + set RUNNING). */
-    vm.ready_head = a.ready_next;
-    if (vm.ready_head != NULL)
-        vm.ready_head->ready_prev = NULL;
-    else
-        vm.ready_tail = NULL;
-    a.ready_next = NULL;
-    a.ready_prev = NULL;
-    if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;
+    /* Simulate dispatch: dequeue + set RUNNING — count unchanged. */
+    sched_dequeue_ready_head(&vm);
     a.state = USTRAND_STATE_RUNNING;
-    UASSERT_EQ(vm.strand_runnable_count, 0U);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
 
-    /* Strand yields: increments back to 1. */
+    /* Strand yields: re-enqueued at the tail — count still unchanged. */
     sched_strand_yield(&a);
     UASSERT_EQ(vm.strand_runnable_count, 1U);
     UASSERT_EQ(a.state, USTRAND_STATE_READY);
+    UASSERT(vm.ready_head == &a);
+
+    /* Cleanup: unbind decrements (READY strand leaves the counted set). */
+    sched_strand_unbind_from_ready_queue(&a);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
 
     ustrand_destroy(&a, &vm);
     urbi_vm_destroy(&vm);
@@ -286,8 +299,9 @@ UTEST(step_wake_at_with_wakeup_pending)
     UStrand a;
     ustrand_init(&a, &vm);
 
-    /* Block strand on a sleep wake in the future. */
-    a.state = USTRAND_STATE_RUNNING;
+    /* Block strand on a sleep wake in the future.  SCHED-01: seed the
+     * count for the hand-built RUNNING strand; block decrements it. */
+    a.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
     sched_strand_block(&a, USTRAND_REASON_SLEEP, 999999U);
 
     UASSERT_EQ(vm.strand_runnable_count, 0U);
@@ -324,7 +338,10 @@ UTEST(dequeue_ready_head_noop_on_empty_queue)
 }
 
 /* Case 11: sched_dequeue_ready_head from a two-strand queue leaves the
-   second strand as the new head. */
+   second strand as the new head.  SCHED-01 (v0.13.3): the dequeue is
+   count-NEUTRAL — the dequeued strand is about to become RUNNING and the
+   count covers |READY| + |RUNNING| (pre-refactor this test pinned the old
+   decrement-at-dequeue rule). */
 UTEST(dequeue_ready_head_advances_queue)
 {
     UVM vm;
@@ -341,12 +358,20 @@ UTEST(dequeue_ready_head_advances_queue)
     UASSERT(vm.ready_head == &a);
 
     sched_dequeue_ready_head(&vm);
-    UASSERT_EQ(vm.strand_runnable_count, 1U);
+    a.state = USTRAND_STATE_RUNNING;
+    UASSERT_EQ(vm.strand_runnable_count, 2U);   /* count-neutral */
     UASSERT(vm.ready_head == &b);
     UASSERT(a.ready_next == NULL);
     UASSERT(a.ready_prev == NULL);
 
+    /* a parks: the RUNNING -> WAITING transition is the decrement site. */
+    sched_strand_block(&a, USTRAND_REASON_EVENT, 0);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
+
     sched_dequeue_ready_head(&vm);
+    b.state = USTRAND_STATE_RUNNING;
+    UASSERT_EQ(vm.strand_runnable_count, 1U);   /* count-neutral */
+    sched_strand_block(&b, USTRAND_REASON_EVENT, 0);
     UASSERT_EQ(vm.strand_runnable_count, 0U);
     UASSERT(vm.ready_head == NULL);
     UASSERT(vm.ready_tail == NULL);
@@ -372,7 +397,8 @@ UTEST(step_pre_loop_wakes_lone_sleeper)
 
     UStrand a;
     ustrand_init(&a, &vm);
-    a.state = USTRAND_STATE_RUNNING;
+    /* SCHED-01: seed the count for the hand-built RUNNING strand. */
+    a.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
     sched_strand_block(&a, USTRAND_REASON_SLEEP, 100000U);  /* wake at 100 ms */
     UASSERT_EQ(vm.wakeup_pending_count,  1U);
     UASSERT_EQ(vm.strand_runnable_count, 0U);
@@ -391,6 +417,70 @@ UTEST(step_pre_loop_wakes_lone_sleeper)
 
     sched_dequeue_ready_head(&vm);
     ustrand_destroy(&a, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* Case 13 (refactor-3 SCHED-01/B10): the runnable count reaches 0 when the
+   last runnable strand parks itself.  Pre-fix leak shape: dequeue takes the
+   last runnable strand (count -> 0), the strand parks (sched_strand_block's
+   guarded decrement no-ops at 0), sched_post_dispatch step 1 re-increments
+   -> permanent +1 after the strand dies (urbi_step returns RUNNING forever,
+   host busy-spin).  Invariant under the single-writer scheme:
+   count == |READY| + |RUNNING| at every observation point; WAITING strands
+   are NOT counted. */
+UTEST(runnable_count_zero_after_last_strand_parks)
+{
+    UVM vm;
+    UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
+    vm.host_time_us = mock_clock;
+    g_mock_now_us   = 0;
+
+    /* Run a strand that parks itself on the sleep queue.  The persistent
+       loader strand (urbi_run_chunk) drives until the strand parks, then
+       returns: READY is empty, nothing is RUNNING — only a parked sleeper
+       remains. */
+    UASSERT_EQ(utest_e2e_compile_and_run(&vm, "sleep(10s)", NULL), URBI_OK);
+
+    UASSERT_EQ(vm.wakeup_pending_count, 1U);           /* parked sleeper */
+    UASSERT_EQ(vm.strand_runnable_count, 0u);          /* pre-fix: 1 */
+
+    urbi_vm_destroy(&vm);
+}
+
+/* Case 14 (refactor-3 SCHED-01/B10): full dequeue -> RUNNING -> block ->
+   post_dispatch cycle on a stub strand, with the count asserted at every
+   edge.  Single-writer invariant: count == |READY| + |RUNNING|, so the
+   dequeue (READY -> about-to-RUN) is count-neutral and the block
+   (RUNNING -> WAITING) is the single decrement; post_dispatch makes no
+   further adjustment for a WAITING strand. */
+UTEST(counter_full_dequeue_block_post_dispatch_cycle)
+{
+    UVM vm;
+    UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
+    sched_init(&vm, NULL);
+    vm.host_time_us = mock_clock;
+    g_mock_now_us   = 0;
+
+    UStrand s;
+    ustrand_init(&s, &vm);
+
+    sched_strand_make_runnable(&s);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);          /* enqueued */
+
+    sched_dequeue_ready_head(&vm);
+    s.state = USTRAND_STATE_RUNNING;
+    UASSERT_EQ(vm.strand_runnable_count, 1U);          /* READY -> RUNNING: neutral */
+
+    sched_strand_block(&s, USTRAND_REASON_SLEEP, 999999U);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);          /* RUNNING -> WAITING: -1 */
+
+    sched_post_dispatch(&vm, &s);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);          /* no re-increment */
+
+    /* Cleanup: pull the stub off the sleep queue before destroy. */
+    sched_strand_unbind_from_sleep_queue(&s);
+    s.state = USTRAND_STATE_DORMANT;
+    ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -420,6 +510,11 @@ void test_step_driver_suite(void) {
               dequeue_ready_head_noop_on_empty_queue);
     utest_run("dequeue_ready_head_advances_queue",
               dequeue_ready_head_advances_queue);
+    /* refactor-3 SCHED-01/B10 single-writer runnable-count tests */
+    utest_run("runnable_count_zero_after_last_strand_parks",
+              runnable_count_zero_after_last_strand_parks);
+    utest_run("counter_full_dequeue_block_post_dispatch_cycle",
+              counter_full_dequeue_block_post_dispatch_cycle);
     /* step_wake_at_with_sleeping_strand_only: deferred to T21.
        Requires urbi_strand_spawn_sleeping which does not exist at T16. */
 }

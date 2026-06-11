@@ -66,6 +66,19 @@ sched_pick_next(const UVM *vm) {
     return vm->ready_head;
 }
 
+/* === Single-writer runnable-count ownership (refactor-3 SCHED-01/B10) ===
+ *
+ * Invariant: vm->strand_runnable_count == |ready queue| + (1 if a
+ * non-transient strand is RUNNING else 0).  WAITING and SUSPENDED strands
+ * are NOT counted; transient strands (is_transient_strand) never
+ * participate.  These two helpers are the ONLY writers (init/destroy
+ * zeroing aside).  Exposed for the scheduler-adjacent transition sites
+ * that change a strand's RUNNING membership outside this TU
+ * (urbi_strand_suspend's RUNNING arm in ustrand.c); everything else must
+ * route through the sched_strand_* transition functions. */
+void sched_runnable_inc(UVM *vm, const UStrand *s);
+void sched_runnable_dec(UVM *vm, const UStrand *s);
+
 /* State transitions */
 void sched_strand_make_runnable(UStrand *s);
 void sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload);
@@ -101,11 +114,12 @@ sched_consume_budget(UStrand *s, uint16_t n) {
  * realm-hierarchy invariant the scheduler maintains. */
 void sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx);
 
-/* Dequeue the ready-queue head and decrement strand_runnable_count.
- * Must only be called when ready_head is non-NULL.  Sets the strand's
- * ready_next/ready_prev to NULL.  Caller is responsible for setting the
- * strand's state to USTRAND_STATE_RUNNING before dispatching.
- * T16 urbi_step driver calls this before each dispatch_loop_until_yield. */
+/* Dequeue the ready-queue head.  Count-NEUTRAL (refactor-3 SCHED-01): the
+ * dequeued strand is about to become the RUNNING strand, and the runnable
+ * count covers |READY| + |RUNNING|.  Sets the strand's ready_next/ready_prev
+ * to NULL.  Caller is responsible for setting the strand's state to
+ * USTRAND_STATE_RUNNING before dispatching.  T16 urbi_step driver calls
+ * this before each dispatch_loop_until_yield. */
 void sched_dequeue_ready_head(UVM *vm);
 
 /* CHSTR-031: decrement host_call_pending_count if s had a cross-strand stop
@@ -130,7 +144,8 @@ void sched_strand_unbind_from_sleep_queue(UStrand *s);
 /* REALM-011 / T69: splice a strand out of the cooperative ready queue if
  * it is on it.  Idempotent (the strand's own ready_next/ready_prev guard
  * the work).  Decrements vm->strand_runnable_count exactly once if the
- * strand was actually present.  Safe to call whether the strand is on the
+ * strand was actually present (via sched_runnable_dec, so transient
+ * strands are skipped).  Safe to call whether the strand is on the
  * queue (state == READY) or not (DORMANT/RUNNING/WAITING/DEAD).
  *
  * Called from urbi_realm_destroy before each strand free so that the

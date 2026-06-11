@@ -8,16 +8,15 @@
  * (strand_suspended_count is excluded — always 0 at M3). Each subsystem
  * owns one counter and maintains it at the relevant push/pop sites:
  *
- *   strand_runnable_count   — owned by sched_strand_make_runnable (++) /
- *                             sched_strand_block (--) /
- *                             T16 urbi_step driver (-- when dequeuing READY
- *                             strands; -- when dispatch returns DEAD).
- *                             Invariant: number of strands in READY or
- *                             RUNNING state (i.e. consuming or eligible to
- *                             consume CPU on this VM). The urbi_vm_run transient
- *                             strand is intentionally excluded: it bypasses
- *                             sched_strand_make_runnable and balances its own
- *                             READY-cycle increments at dequeue.
+ *   strand_runnable_count   — single-writer ownership (refactor-3
+ *                             SCHED-01/B10): sched_runnable_inc /
+ *                             sched_runnable_dec are the ONLY writers
+ *                             (init/destroy zeroing aside).
+ *                             Invariant: count == |ready queue| + (1 if a
+ *                             non-transient strand is RUNNING else 0).
+ *                             WAITING and SUSPENDED strands are NOT counted.
+ *                             Transient strands (urbi_vm_run) never
+ *                             participate: both helpers skip them.
  *
  *   wakeup_pending_count    — owned by sleep_q_insert (++) /
  *                             sleep_q_remove (--).
@@ -105,6 +104,36 @@ sleep_q_remove(UVM *vm, UStrand *s)
         if (vm->wakeup_pending_count > 0) vm->wakeup_pending_count--;
     }
     /* If cur is NULL, s was not on the queue; do not decrement (no underflow). */
+}
+
+/* === Single-writer runnable-count ownership (refactor-3 SCHED-01/B10) ===
+ *
+ * Invariant: vm->strand_runnable_count == |ready queue| + |RUNNING strand|,
+ * where transient strands (is_transient_strand) never participate.  These
+ * two helpers are the ONLY writers (init/destroy zeroing aside).  WAITING
+ * and SUSPENDED strands are NOT counted — they are "armed" work, reported
+ * via vm_liveness() (SCHED-13, next task), not runnable work.  This deletes
+ * the persistent-loader rule that closed over v1.0-loader-count-quiescence
+ * (sched_post_dispatch's step-1 "WAITING counts as runnable" re-increment).
+ *
+ * No saturation on dec: an underflow is a counting bug and masking it with
+ * a `> 0` guard is exactly what let SCHED-01/B10 hide for nine milestones.
+ * URBI_INTERNAL_ASSERT fail-fasts wherever assert() is live (hosted,
+ * non-NDEBUG builds); freestanding targets compile it out. */
+
+void
+sched_runnable_inc(UVM *vm, const UStrand *s)
+{
+    if (s->is_transient_strand) return;
+    vm->strand_runnable_count++;
+}
+
+void
+sched_runnable_dec(UVM *vm, const UStrand *s)
+{
+    if (s->is_transient_strand) return;
+    URBI_INTERNAL_ASSERT(vm->strand_runnable_count > 0);
+    vm->strand_runnable_count--;
 }
 
 /* === Scheduler lifecycle === */
@@ -195,7 +224,7 @@ sched_strand_make_runnable(UStrand *s)
        (and double-count strand_runnable_count, blocking quiescence).  In
        -DURBI_DEBUG the assert below trips at the call site.  In production
        the early return prevents the corruption silently — the strand
-       simply stays DEAD and the caller's ++count is skipped.  No legitimate
+       simply stays DEAD and the count increment is skipped.  No legitimate
        caller drives a DEAD → READY transition; the path is purely defensive
        against future refactors that lose track of strand state.
 
@@ -220,7 +249,7 @@ sched_strand_make_runnable(UStrand *s)
     else
         vm->ready_head = s;
     vm->ready_tail = s;
-    vm->strand_runnable_count++;
+    sched_runnable_inc(vm, s);
 }
 
 void
@@ -237,7 +266,11 @@ sched_strand_yield(UStrand *s)
     URBI_TP(s->vm, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_YIELD,
             (uint32_t)(uintptr_t)s, 0);
     URBI_PERF_INC(s->vm, yields);
-    /* RUNNING → READY tail: same path as make_runnable. */
+    /* RUNNING → READY tail: same path as make_runnable.  Count-neutral
+     * under the single-writer invariant (SCHED-01): the RUNNING strand
+     * leaves the counted set (dec) and immediately re-enters it as READY
+     * (make_runnable's inc) — |READY| + |RUNNING| is unchanged. */
+    sched_runnable_dec(s->vm, s);
     sched_strand_make_runnable(s);
 }
 
@@ -258,17 +291,28 @@ sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload)
      * route through an explicit sched_strand_rebind helper that handles
      * queue-removal-then-re-insert correctly. */
     URBI_INTERNAL_ASSERT(s->state == USTRAND_STATE_RUNNING ||
-                         s->state == USTRAND_STATE_READY);
-    /* RUNNING strands are not on the ready queue; decrement the counter. */
-    if (s->state == USTRAND_STATE_RUNNING) {
-        if (vm->strand_runnable_count > 0)
-            vm->strand_runnable_count--;
+                         USTRAND_GET_STATE(s) == USTRAND_READY);
+    if (USTRAND_GET_STATE(s) == USTRAND_READY) {
+        /* SCHED-17: a READY strand must leave the ready queue before
+         * parking, or the dual-queue links corrupt (a strand WAITING on
+         * the sleep queue while still spliced into ready_next/ready_prev).
+         * sched_strand_unbind_from_ready_queue decrements the count. */
+        sched_strand_unbind_from_ready_queue(s);
+    } else {
+        /* RUNNING strands are not on the ready queue; the strand leaves
+         * the counted set here (SCHED-01 single-writer scheme — no
+         * post-dispatch re-increment exists any more). */
+        sched_runnable_dec(vm, s);
     }
     s->state = (uint8_t)(USTRAND_WAITING | (reason & USTRAND_REASON_MASK));
     switch (reason) {
         case USTRAND_REASON_SLEEP:
             s->wait_payload.wake_us = payload;
             sleep_q_insert(vm, s);
+            break;
+        case USTRAND_REASON_WATCHER:
+            /* waituntil(): the watcher holds the back-pointer
+             * (w->waiter_strand); no scheduler queue involved. */
             break;
         case USTRAND_REASON_EVENT:
             /* payload is a uint64_t carrying a UEvent* (REASON_EVENT calling
@@ -431,9 +475,7 @@ sched_strand_unbind_from_ready_queue(UStrand *s)
 
     s->ready_next = NULL;
     s->ready_prev = NULL;
-    if (vm->strand_runnable_count > 0) {
-        vm->strand_runnable_count--;
-    }
+    sched_runnable_dec(vm, s);
 }
 
 /* === T16 step-driver helper === */
@@ -442,7 +484,7 @@ void
 sched_dequeue_ready_head(UVM *vm)
 {
     UStrand *s = vm->ready_head;
-    if (!s) return;  /* underflow guard */
+    if (!s) return;  /* empty-queue guard */
     vm->ready_head = s->ready_next;
     if (vm->ready_head != NULL)
         vm->ready_head->ready_prev = NULL;
@@ -450,8 +492,11 @@ sched_dequeue_ready_head(UVM *vm)
         vm->ready_tail = NULL;
     s->ready_next = NULL;
     s->ready_prev = NULL;
-    if (vm->strand_runnable_count > 0)
-        vm->strand_runnable_count--;
+    /* SCHED-01: NO count change.  The dequeued strand is about to become
+     * the RUNNING strand, and count == |READY| + |RUNNING| — a READY →
+     * RUNNING transition is count-neutral.  The pre-refactor decrement
+     * here (paired with sched_post_dispatch's WAITING re-increment) is
+     * what produced the B10 phantom-count leak. */
 }
 
 /* === strand_walk_roots (internal helper) ===
@@ -679,6 +724,25 @@ sched_wake_due_sleepers(UVM *vm)
     }
 }
 
+#if defined(URBI_DEBUG)
+/* SCHED-01 recount oracle: walk the ready queue, add the RUNNING strand
+ * (vm->cur_strand) and the in-flight strand the driver just dispatched
+ * (cur_strand is already NULL at sched_post_dispatch time, so the caller
+ * passes the in-flight contribution explicitly: 1 while the dispatched
+ * strand is still RUNNING, or DEAD-but-not-yet-decremented), and compare
+ * against vm->strand_runnable_count.  Debug-only: O(|READY|) per call. */
+static void
+sched_assert_runnable_count(const UVM *vm, uint32_t in_flight_extra)
+{
+    uint32_t n = in_flight_extra;
+    const UStrand *s = vm->ready_head;
+    while (s != NULL) { if (!s->is_transient_strand) n++; s = s->ready_next; }
+    if (vm->cur_strand != NULL && !vm->cur_strand->is_transient_strand &&
+        vm->cur_strand->state == USTRAND_STATE_RUNNING) n++;
+    URBI_INTERNAL_ASSERT(n == vm->strand_runnable_count);
+}
+#endif
+
 /* === sched_post_dispatch: consolidated post-dispatch fix-up helper ===
  *
  * Scheduler audit F3: previously all four fix-up steps lived exclusively in
@@ -687,7 +751,8 @@ sched_wake_due_sleepers(UVM *vm)
  * centralises them.
  *
  * The four steps (see usched_post_dispatch.h for full documentation):
- *   1. Runnable-count re-increment if strand is WAITING (double-decrement fix).
+ *   1. Runnable-count DEAD decrement (refactor-3 SCHED-01 single-writer
+ *      scheme; replaces the pre-refactor WAITING re-increment).
  *   2. Eager DEAD-strand reap via urbi_strand_destroy.
  *   3. Sleep-queue wake for any strand whose wake_us <= now.
  *   4. Periodic pump to re-arm any every()-body that just completed.
@@ -698,32 +763,34 @@ sched_wake_due_sleepers(UVM *vm)
 void
 sched_post_dispatch(UVM *vm, UStrand *s)
 {
-    /* Step 1: Runnable-count re-increment (non-transient strands only).
-     *
-     * sched_dequeue_ready_head decremented strand_runnable_count when the strand
-     * was picked.  If the strand then transitioned to WAITING inside dispatch
-     * (via sched_strand_block, which also decrements for state==RUNNING), the
-     * counter was double-decremented.  Re-increment to restore symmetry so the
-     * scheduler does not lose track of the fact that the strand is waiting rather
-     * than gone entirely.  Any future blocking opcode that calls sched_strand_block
-     * from inside the dispatch loop must rely on this re-increment.
-     *
-     * is_transient_strand guard: urbi_vm_run transient strands bypass
-     * sched_strand_make_runnable and sched_dequeue_ready_head; they manage their
-     * own READY-cycle increments at the dequeue site inside the vm_run loop.
-     * There is no double-decrement issue for transients; incrementing here would
-     * spuriously inflate strand_runnable_count.
-     *
-     * SUSPENDED (refactor-3 VM-03) is deliberately NOT re-incremented: the
-     * RUNNING arm of urbi_strand_suspend does not decrement (unlike
-     * sched_strand_block), so the dequeue's single decrement already leaves a
-     * SUSPENDED strand contributing 0 — consistent with the READY arm, where
-     * sched_strand_unbind_from_ready_queue decrements.  A SUSPENDED strand is
-     * excluded from liveness; urbi_strand_resume's sched_strand_make_runnable
-     * re-increments on resume. */
-    if (USTRAND_IS_WAITING(s) && !s->is_transient_strand) {
-        vm->strand_runnable_count++;
+#if defined(URBI_DEBUG)
+    /* Entry oracle: the dispatched strand still counts while RUNNING
+     * (driver budget exhaustion) or DEAD (decremented in step 1 below);
+     * READY (yielded — already back on the queue), WAITING and SUSPENDED
+     * contribute 0. */
+    sched_assert_runnable_count(vm,
+        (!s->is_transient_strand &&
+         (s->state == USTRAND_STATE_RUNNING ||
+          s->state == USTRAND_STATE_DEAD)) ? 1U : 0U);
+#endif
+
+    /* Step 1 (SCHED-01): a strand that left dispatch DEAD was RUNNING
+     * (counted); it leaves the counted set here.  WAITING strands were
+     * decremented by sched_strand_block; READY (yield) strands were
+     * re-enqueued count-neutrally by sched_strand_yield and stay counted;
+     * SUSPENDED strands were decremented by urbi_strand_suspend. */
+    if (s->state == USTRAND_STATE_DEAD) {
+        sched_runnable_dec(vm, s);
     }
+
+#if defined(URBI_DEBUG)
+    /* Captured before step 2 frees a DEAD strand: only a still-RUNNING
+     * in-flight strand (driver budget exhaustion) remains counted but
+     * invisible to the queue walk at exit. */
+    uint32_t exit_in_flight_extra =
+        (!s->is_transient_strand && s->state == USTRAND_STATE_RUNNING)
+            ? 1U : 0U;
+#endif
 
     /* Step 2: Eager DEAD-strand reap (heap-allocated strands only).
      *
@@ -769,4 +836,11 @@ sched_post_dispatch(UVM *vm, UStrand *s)
      * body strand that just completed to re-arm and become a READY strand within
      * the same urbi_step call without waiting for the next host-level step. */
     (void)urbi_periodic_pump(vm);
+
+#if defined(URBI_DEBUG)
+    /* Exit oracle: steps 3/4 only move strands through the single-writer
+     * helpers (sched_strand_unblock / make_runnable), so the invariant must
+     * still hold. */
+    sched_assert_runnable_count(vm, exit_in_flight_extra);
+#endif
 }

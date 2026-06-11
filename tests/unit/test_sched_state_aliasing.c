@@ -216,7 +216,9 @@ UTEST(yield_from_running_makes_ready)
     UStrand s;
     ustrand_init(&s, &vm);
 
+    /* SCHED-01: a RUNNING strand is counted; yield is count-neutral. */
     s.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;
     sched_strand_yield(&s);
 
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_READY);
@@ -239,8 +241,9 @@ yield_already_ready(void)
     UStrand s;
     ustrand_init(&s, &vm);
 
-    /* First yield: legitimate RUNNING → READY. */
+    /* First yield: legitimate RUNNING → READY (counted; SCHED-01). */
     s.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;
     sched_strand_yield(&s);
     /* state now READY, on ready queue. */
 

@@ -290,12 +290,23 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
             if (USTRAND_IS_WAITING(s)) {
                 if (is_event_parked_strand(s))
                     uevent_waiter_unregister(s);
-                if (USTRAND_GET_REASON(s) == USTRAND_REASON_SLEEP) {
-                    sched_strand_unblock(s);                  /* off sleep_q (enqueues) */
-                    sched_strand_unbind_from_ready_queue(s);  /* ...and back off */
-                }
+                if (USTRAND_GET_REASON(s) == USTRAND_REASON_SLEEP)
+                    sched_strand_unbind_from_sleep_queue(s);  /* off sleep_q */
+                /* SCHED-01: the parking transition decremented the runnable
+                 * count; the strand now resumes as the walker's running
+                 * context (about to be stamped fatal-DEAD by the overflow
+                 * arm, which exits dispatch through the driver's fatal path
+                 * — the path that owns the DEAD decrement).  Re-enter the
+                 * counted set so that exit decrement balances. */
+                s->state = USTRAND_STATE_RUNNING;
+                sched_runnable_inc(s->vm, s);
             } else if ((s->state & USTRAND_STATE_MASK) == USTRAND_READY) {
+                /* Yielded: still counted; splice off the queue (unbind
+                 * decrements) and re-enter the counted set as RUNNING —
+                 * net zero, queue links clean. */
                 sched_strand_unbind_from_ready_queue(s);
+                s->state = USTRAND_STATE_RUNNING;
+                sched_runnable_inc(s->vm, s);
             }
             if (s->vm != NULL && s->vm->host_log_fn != NULL) {
                 s->vm->host_log_fn(s->vm, s->vm->host_log_ud, URBI_LOG_ERROR,

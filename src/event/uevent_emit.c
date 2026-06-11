@@ -247,8 +247,9 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
 
 /* === c_event_waituntil (spec #3 §7.1) ===
  *
- * Tail-appends the calling strand to e->waiters_head, transitions to
- * USTRAND_WAIT_EVENT (0x33), and decrements strand_runnable_count.
+ * Tail-appends the calling strand to e->waiters_head and parks it via
+ * sched_strand_block(USTRAND_REASON_EVENT) — block owns the WAIT_EVENT
+ * (0x33) transition and the runnable-count decrement (SCHED-01).
  *
  * Callers that dispatch via the bytecode loop (T53 opcode binding) MUST
  * goto exit_strand after this call returns — the strand is now WAITING
@@ -301,24 +302,21 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
         t->next_event_waiter = s;
     }
 
-    /* Transition to WAIT_EVENT and decrement runnable count.
-     * USTRAND_WAIT_EVENT (0x33) is now equivalent to USTRAND_STATE_WAITING_EVENT
-     * after the v0.5.5 CHSTR-016 renumbering (USTRAND_REASON_EVENT = 0x03);
-     * earlier baselines distinguished the two because REASON_EVENT collided
-     * with REASON_WATCHER on 0x02.  Setting via the named macro is fine.
-     * Decrement count only when the strand is RUNNING (normal dispatch path)
-     * to avoid underflow.  The urbi_step loop re-increments when it sees
-     * USTRAND_IS_WAITING(s) on return from dispatch_loop_until_yield,
-     * restoring balance. */
-    if (s->state == USTRAND_STATE_RUNNING && vm->strand_runnable_count > 0)
-        vm->strand_runnable_count--;
     /* SCHED-004: defence-in-depth — if a strand somehow has stale sleep-queue
      * links at re-stamp time (would happen only if a buggy caller bypassed
      * the dispatch loop's unblock contract), splice it out before changing
      * the state byte so wait_next does not point into the sleep queue with
      * the wrong reason.  Idempotent for the normal path (RUNNING strand). */
     sched_strand_unbind_from_sleep_queue(s);
-    s->state = USTRAND_WAIT_EVENT;
+
+    /* Transition to WAIT_EVENT via sched_strand_block (refactor-3 SCHED-01:
+     * block owns the runnable-count decrement under the single-writer
+     * scheme; the pre-refactor manual `state = USTRAND_WAIT_EVENT` +
+     * guarded decrement pair is gone).  block's REASON_EVENT arm also
+     * records the event in wait_payload.event — the documented active
+     * union arm for this reason (ustrand.h) — alongside the
+     * wait_event_target back-pointer wired above. */
+    sched_strand_block(s, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
 
     /* EMITR-002: this return value is *always* NIL.  c_event_waituntil parks
      * the strand and returns to the caller (the T53 opcode dispatcher); it

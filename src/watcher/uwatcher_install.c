@@ -17,6 +17,7 @@
 #include "watcher/uwatcher.h"   /* UWATCHER_AT, UWatcher, uwatcher_pool_alloc */
 #include "vm/uvm.h"                /* UVM, URBI_LOG_WARN */
 #include "sched/ustrand.h"            /* UStrand, USTRAND_WAIT_WATCHER */
+#include "sched/usched_cooperative.h" /* sched_strand_block (WAITUNTIL park) */
 #include "runtime/uclosure.h"           /* UClosure full definition — function parameter types */
 #include "value/uvalue.h"             /* uvalue_truthy (WAITUNTIL fast-path test) */
 #include "runtime/ucleanup.h"           /* UCleanupEntry, UCLEANUP_TAG_SCOPE */
@@ -241,10 +242,13 @@ install_watcher_runtime(
      * instruction (fast path / immediate wake).
      *
      * Otherwise, park the waiter strand by transitioning it to WAITING with
-     * USTRAND_WAIT_WATCHER reason (0x32).  The OP_WAITUNTIL_INSTALL dispatcher
-     * observes the WAITING state and yields to the scheduler; the watcher
-     * eval pass (watcher_eval_dirty) wakes the strand by calling
-     * sched_strand_make_runnable when the rising edge fires. */
+     * USTRAND_WAIT_WATCHER reason (0x32) via sched_strand_block (refactor-3
+     * SCHED-01: block owns the runnable-count decrement; the pre-refactor
+     * direct state stamp left the accounting to a manual decrement in the
+     * OP_WAITUNTIL_INSTALL arm).  The dispatcher observes the WAITING state
+     * and yields to the scheduler; the watcher eval pass (watcher_eval_dirty)
+     * wakes the strand by calling sched_strand_make_runnable when the rising
+     * edge fires. */
     if (mode == UWATCHER_WAITUNTIL) {
         if (uvalue_truthy(&cond_value)) {
             /* Immediate wake: unregister the just-installed watcher and let
@@ -261,8 +265,9 @@ install_watcher_runtime(
             return URBI_INSTALL_OK;
         }
         /* Park waiter strand until the rising edge fires; watcher_eval_dirty
-         * wakes it via sched_strand_make_runnable. */
-        s->state = USTRAND_WAIT_WATCHER;
+         * wakes it via sched_strand_make_runnable.  The watcher holds the
+         * back-pointer (w->waiter_strand, wired above), so no payload. */
+        sched_strand_block(s, USTRAND_REASON_WATCHER, 0);
     }
 
     return URBI_INSTALL_OK;

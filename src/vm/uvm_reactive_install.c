@@ -218,11 +218,12 @@ vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
      * Calls install_watcher_runtime which either:
      *   (a) fast-path: cond was truthy at install → watcher unregistered
      *       immediately, strand state unchanged (still RUNNING) → NEXT().
-     *   (b) park path: cond was falsy → T40 set s->state = USTRAND_WAIT_WATCHER.
-     *       Here we advance pc past this instruction, decrement
-     *       strand_runnable_count (the strand leaves the runnable accounting),
-     *       and goto exit_strand so the scheduler can pick up another strand.
-     *       The eval-pass wake (T43) will resume the strand on the rising edge.
+     *   (b) park path: cond was falsy → install parked the strand via
+     *       sched_strand_block(USTRAND_REASON_WATCHER) (refactor-3 SCHED-01:
+     *       block owns the runnable-count decrement).  Here we advance pc
+     *       past this instruction and goto exit_strand so the scheduler can
+     *       pick up another strand.  The eval-pass wake (T43) will resume
+     *       the strand on the rising edge.
      *
      * Spec #2 §6.3. */
     case OP_WAITUNTIL_INSTALL: {
@@ -237,16 +238,13 @@ vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
             return UVM_INSTALL_HALT;
         }
         if (r == URBI_INSTALL_OK && USTRAND_IS_WAITING(s)) {
-            /* Strand parked by T40 (cond started false).  Advance pc past
-             * this instruction so resume lands at the correct next opcode.
-             * Decrement strand_runnable_count: the strand was RUNNING when
-             * this opcode dispatched; T40 set state to WAITING without
-             * going through sched_strand_block, so we do the accounting
-             * manually here.  The arm completes the exit with
+            /* Strand parked (cond started false).  Advance pc past this
+             * instruction so resume lands at the correct next opcode.
+             * Runnable-count accounting is owned by sched_strand_block
+             * inside install_watcher_runtime (SCHED-01) — no manual
+             * adjustment here.  The arm completes the exit with
              * `steps_consumed++; goto exit_strand;`. */
             s->pc++;
-            if (vm->strand_runnable_count > 0)
-                vm->strand_runnable_count--;
             return UVM_INSTALL_PARK_EXIT;
         }
         /* Fast path (cond was truthy): watcher unregistered; strand RUNNING.

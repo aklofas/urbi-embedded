@@ -758,10 +758,9 @@ dispatch:
                      * so resume() continues at the next instruction, then
                      * leave dispatch.  The ustep driver skips SUSPENDED
                      * strands at dequeue; urbi_strand_resume re-enqueues.
-                     * No strand_runnable_count adjustment: the driver's
-                     * dequeue already uncounted the strand and
-                     * sched_post_dispatch only re-increments for WAITING,
-                     * so a SUSPENDED strand nets 0 — same as the READY-arm
+                     * No accounting here: urbi_strand_suspend's RUNNING arm
+                     * already decremented strand_runnable_count (SCHED-01
+                     * single-writer scheme), same as the READY-arm
                      * convention where unbind_from_ready_queue decrements. */
                     if (USTRAND_IS_SUSPENDED(s)) {
                         s->pc++;
@@ -1657,17 +1656,17 @@ exit_strand:
         fork_wake_joiners(s, vm);
     }
 
-    /* strand_runnable_count ownership at exit:
-     *   - urbi_vm_run transient strands are not tracked in strand_runnable_count
-     *     (they bypass sched_strand_make_runnable). The READY-cycle increment
-     *     via sched_strand_yield is balanced by the dequeue decrement in the
-     *     urbi_vm_run loop (src/uvm.c, the strand_runnable_count-- block).
-     *   - T16 urbi_step driver: strands dequeued from the ready queue before
-     *     entering dispatch_loop_until_yield. T16 decrements strand_runnable_count
-     *     in the driver after dispatch returns with state == USTRAND_STATE_DEAD,
-     *     keeping the decrement co-located with the dequeue logic.
-     *   - sched_strand_block handles RUNNING → WAITING decrements inline.
-     * No decrement here; see T16 for the scheduler-driven DEAD-path decrement. */
+    /* strand_runnable_count ownership at exit (refactor-3 SCHED-01
+     * single-writer scheme — sched_runnable_inc/dec are the only writers):
+     *   - Transient strands (urbi_vm_run) never participate in the count;
+     *     both helpers skip them.
+     *   - DEAD: the strand was RUNNING (counted); sched_post_dispatch step 1
+     *     decrements after the driver clears vm->cur_strand.
+     *   - WAITING: sched_strand_block decremented at the parking site.
+     *   - SUSPENDED: urbi_strand_suspend decremented (RUNNING arm) or
+     *     unbind_from_ready_queue did (READY arm).
+     *   - READY (yield): sched_strand_yield re-enqueued count-neutrally.
+     * No count mutation in the dispatch loop or its drivers. */
 
     /* refactor-3 VM-06a canary: at outermost dispatch exit (not nested under
      * a cleanup body — cleanup_run_depth == 0), the C-stack root chain must

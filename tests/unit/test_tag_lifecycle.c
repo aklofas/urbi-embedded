@@ -241,6 +241,10 @@ strand_setup_t30(UStrand *s, UVM *vm,
 
     s->vm         = vm;
     s->state      = USTRAND_STATE_RUNNING;
+    /* SCHED-01 (v0.13.3): a RUNNING non-transient strand is in the counted
+     * set; seed the count so in-dispatch transitions (yield's dec/inc)
+     * balance.  One strand at a time in this harness. */
+    vm->strand_runnable_count = 1;
     s->stack      = reg_stack;
     s->R          = reg_stack;
     s->pc         = instructions;

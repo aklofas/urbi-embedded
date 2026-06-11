@@ -25,9 +25,11 @@
  * NEXT      — arm continues with NEXT().
  * HALT      — arm does HALT() (helper already set vm->last_error + a diagnostic).
  * PARK_EXIT — OP_WAITUNTIL_INSTALL parked the strand: the helper already did
- *             s->pc++ and decremented vm->strand_runnable_count; the arm does
- *             `steps_consumed++; goto exit_strand;` (steps_consumed is a
- *             dispatch-loop local the helper cannot touch). */
+ *             s->pc++ (the runnable-count decrement is owned by
+ *             sched_strand_block inside install_watcher_runtime — SCHED-01);
+ *             the arm does `steps_consumed++; goto exit_strand;`
+ *             (steps_consumed is a dispatch-loop local the helper cannot
+ *             touch). */
 typedef enum {
     UVM_INSTALL_NEXT = 0,
     UVM_INSTALL_HALT,

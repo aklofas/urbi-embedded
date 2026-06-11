@@ -122,8 +122,12 @@ UTEST(sched_strand_block_sleep_moves_to_sleep_q)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 7: sched_dequeue_ready_head dequeues the head and decrements
-   strand_runnable_count; after dequeue, the second strand is the new head. */
+/* Case 7: sched_dequeue_ready_head dequeues the head; after dequeue, the
+   second strand is the new head.  SCHED-01 (v0.13.3): the dequeue is
+   count-NEUTRAL — the dequeued strand transitions READY -> RUNNING inside
+   the counted set (count == |READY| + |RUNNING|); the decrement happens at
+   the park/death transition, not at dequeue (pre-refactor this test pinned
+   the old decrement-at-dequeue rule). */
 UTEST(sched_dequeue_ready_head_advances_queue)
 {
     UVM vm;
@@ -139,8 +143,9 @@ UTEST(sched_dequeue_ready_head_advances_queue)
     UASSERT_EQ(vm.strand_runnable_count, 2U);
 
     sched_dequeue_ready_head(&vm);
+    a.state = USTRAND_STATE_RUNNING;
 
-    UASSERT_EQ(vm.strand_runnable_count, 1U);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
     UASSERT(vm.ready_head == &b);
     UASSERT(vm.ready_tail == &b);
     /* a is no longer on a list */
@@ -505,12 +510,8 @@ UTEST(sched_sleep_q_remove_mid_element)
     /* mid is now READY. */
     UASSERT_EQ((int)mid.state, (int)USTRAND_STATE_READY);
 
-    /* Clean up ready queue. */
-    if (vm.ready_head == &mid) {
-        vm.ready_head = mid.ready_next;
-        if (vm.ready_head == NULL) vm.ready_tail = NULL;
-        if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;
-    }
+    /* Clean up ready queue (SCHED-01: unbind owns the count decrement). */
+    sched_strand_unbind_from_ready_queue(&mid);
 
     ustrand_destroy(&early, &vm);
     ustrand_destroy(&mid,   &vm);
@@ -591,12 +592,9 @@ UTEST(sched_sleep_q_remove_while_advance)
     UASSERT(vm.sleep_q_head->wait_next == &b);
     UASSERT(b.wait_next == NULL);
 
-    /* Clean up ready queue (c is now READY). */
-    if (vm.ready_head == &c) {
-        vm.ready_head = c.ready_next;
-        if (vm.ready_head == NULL) vm.ready_tail = NULL;
-        if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;
-    }
+    /* Clean up ready queue (c is now READY; SCHED-01: unbind owns the
+     * count decrement). */
+    sched_strand_unbind_from_ready_queue(&c);
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);

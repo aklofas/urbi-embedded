@@ -9,11 +9,15 @@
  *
  * The four fix-up steps (see F3 for the full analysis):
  *
- *   1. Runnable-count re-increment.  sched_dequeue_ready_head decremented
- *      strand_runnable_count when the strand was picked.  If the strand then
- *      transitioned to WAITING inside dispatch (via sched_strand_block, which
- *      also decrements for state==RUNNING), the counter is double-decremented.
- *      Re-increment restores symmetry.
+ *   1. Runnable-count DEAD decrement (refactor-3 SCHED-01/B10 single-writer
+ *      scheme).  A strand that left dispatch DEAD was RUNNING and therefore
+ *      counted; it leaves the counted set here.  WAITING strands were
+ *      decremented by sched_strand_block, READY (yield) strands were
+ *      re-enqueued count-neutrally, SUSPENDED strands were decremented by
+ *      urbi_strand_suspend — none of them is touched here.  (The
+ *      pre-refactor step 1 was a WAITING *re-increment* pairing with a
+ *      decrement in sched_dequeue_ready_head; that pair produced the B10
+ *      phantom-count leak and is gone.)
  *
  *   2. Eager DEAD-strand reap.  Heap-allocated strands accumulate on
  *      realm->strands_head until urbi_realm_destroy unless reaped eagerly
@@ -73,10 +77,11 @@ extern "C" {
  *     (step 3); this is guaranteed for any VM that registered a time hook.
  *
  * Post-conditions:
- *   - If s was WAITING and !s->is_transient_strand, vm->strand_runnable_count is
- *     restored (step 1).  Transient strands manage their own READY-cycle
- *     increments and do not use sched_dequeue_ready_head, so step 1 is skipped
- *     for them to avoid spurious inflation of the runnable count.
+ *   - If s was DEAD and !s->is_transient_strand, vm->strand_runnable_count is
+ *     decremented (step 1, SCHED-01): the strand was RUNNING (counted) and is
+ *     no longer runnable.  WAITING/SUSPENDED strands were already uncounted
+ *     by their parking transition; transient strands never participate in
+ *     the count.
  *   - If s was DEAD and !s->is_transient_strand on entry, s is freed via
  *     urbi_strand_destroy (step 2); the caller MUST NOT dereference s after this
  *     call returns.  Transient strands (urbi_vm_run stack-local strands) are

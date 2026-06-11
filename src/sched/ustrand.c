@@ -679,15 +679,16 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
      *
      * RUNNING: the strand is currently dispatching (t.block()/t.freeze()
      *   from inside the tag's own scope reaches here through the native
-     *   call).  Not on the queue; just stamp the state.  The OP_CALL
+     *   call).  Not on the queue; stamp the state and uncount.  The OP_CALL
      *   post-native arm checks USTRAND_IS_SUSPENDED and exits dispatch
-     *   (refactor-3 VM-03).  No strand_runnable_count change: the driver's
-     *   dequeue already uncounted the strand, and sched_post_dispatch does
-     *   not re-increment for SUSPENDED, so the strand nets 0 — matching the
+     *   (refactor-3 VM-03).  SCHED-01 single-writer scheme: a RUNNING
+     *   strand is in the counted set (the driver's dequeue is count-
+     *   neutral), so RUNNING → SUSPENDED decrements here — matching the
      *   READY arm where unbind_from_ready_queue decrements.
      *
      * Any other state (DORMANT, WAITING, SUSPENDED, DEAD): silent no-op.
-     * Suspending a WAITING strand would corrupt sleep/event waiter chains;
+     * Suspending a WAITING strand would corrupt sleep/event waiter chains
+     * (and is count-neutral anyway — WAITING is not counted);
      * suspending a DEAD strand would un-reap it.  Callers that legitimately
      * want to cancel a wait must transition through READY first via the
      * appropriate unblock path. */
@@ -696,6 +697,8 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
 
     if (cur_state == USTRAND_READY) {
         sched_strand_unbind_from_ready_queue(strand);
+    } else {
+        sched_runnable_dec(strand->vm, strand);
     }
 
     strand->state = (uint8_t)(USTRAND_SUSPENDED |

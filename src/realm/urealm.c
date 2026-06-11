@@ -348,7 +348,12 @@ urbi_realm_global(struct UVM *vm)
  * Per-realm partitioning is a v1.x deferral (urbi-embedded-design-risks.md).
  *
  * Returns true if any of the three VM-wide counters is positive.
- * out_strands, out_watchers, out_wakes may be NULL. */
+ * out_strands, out_watchers, out_wakes may be NULL.
+ *
+ * v0.13.3 (refactor-3 SCHED-01): strand_runnable_count now means
+ * |READY| + |RUNNING| only — WAITING/SUSPENDED strands are no longer
+ * counted.  Sleepers still surface through out_wakes; event-parked
+ * strands are invisible here until vm_liveness() (SCHED-13) lands. */
 
 bool
 urbi_vm_has_live_work(const struct UVM *vm,

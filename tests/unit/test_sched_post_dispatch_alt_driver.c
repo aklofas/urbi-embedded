@@ -4,7 +4,8 @@
  * Unit tests for sched_post_dispatch (scheduler audit F3).
  *
  * Previously the four post-dispatch fix-up steps lived exclusively in urbi_step:
- *   1. Runnable-count re-increment when strand transitions to WAITING.
+ *   1. Runnable-count DEAD decrement (refactor-3 SCHED-01 single-writer
+ *      scheme; the pre-refactor step 1 was a WAITING re-increment).
  *   2. Eager DEAD-strand reap via urbi_strand_destroy (heap strands only).
  *   3. Sleep-queue wake for strands whose wake_us <= now.
  *   4. Periodic pump (every()-body re-spawn).
@@ -68,15 +69,16 @@ static uint64_t s_mock_time_us = 0;
 static uint64_t mock_time_fn(void) { return s_mock_time_us; }
 
 /* =========================================================================
- * Step 1: Runnable-count re-increment when strand is WAITING.
+ * Step 1 (SCHED-01, v0.13.3): a WAITING strand gets NO count adjustment.
  *
- * Scenario: the dispatch loop ran sched_dequeue_ready_head (decrement -1) and
- * then the strand called sched_strand_block from RUNNING state (another -1).
- * Simulate this by setting state=WAITING and checking that sched_post_dispatch
- * performs the re-increment to restore symmetry.
+ * Under the single-writer scheme the parking transition (sched_strand_block)
+ * already decremented the count; sched_post_dispatch must leave a WAITING
+ * strand alone.  (The pre-refactor step 1 re-incremented here, pairing with
+ * a decrement in sched_dequeue_ready_head — that pair produced the B10
+ * phantom-count leak.)
  * ========================================================================= */
 
-UTEST(post_dispatch_step1_waiting_strand_re_increments_runnable_count)
+UTEST(post_dispatch_step1_waiting_strand_count_unchanged)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
@@ -86,40 +88,35 @@ UTEST(post_dispatch_step1_waiting_strand_re_increments_runnable_count)
     ustrand_init(&strand, &vm);
     strand.is_transient_strand = 0U;
 
-    /* Simulate the double-decrement situation:
-     * - sched_dequeue_ready_head decremented strand_runnable_count by 1.
-     * - sched_strand_block (from RUNNING) decremented again.
-     * After double-decrement, strand_runnable_count is 0 even though the
-     * strand is still logically WAITING (needs to be restored).
-     * Set count to 0 and state to WAITING to represent this. */
+    /* The dispatch cycle that leads here: make_runnable (+1), dequeue
+     * (count-neutral), RUNNING, sched_strand_block (-1) -> count 0 with the
+     * strand WAITING.  Represent the post-block state directly. */
     vm.strand_runnable_count = 0U;
     strand.state = USTRAND_STATE_WAITING_SLEEP;  /* any WAITING substate */
 
-    /* Pre-condition: strand IS WAITING; count is 0 (double-decremented). */
     UASSERT(USTRAND_IS_WAITING(&strand));
     UASSERT_EQ(vm.strand_runnable_count, 0U);
 
-    /* sched_post_dispatch step 1: should re-increment. */
+    /* sched_post_dispatch: no adjustment for WAITING. */
     sched_post_dispatch(&vm, &strand);
 
-    /* Post-condition: count restored to 1. */
-    UASSERT_EQ(vm.strand_runnable_count, 1U);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
 
     /* Cleanup: strand was not reaped (it's WAITING, not DEAD). */
     strand.state = USTRAND_STATE_DORMANT;  /* quiet teardown */
-    vm.strand_runnable_count = 0U;
     ustrand_destroy(&strand, &vm);
     urbi_vm_destroy(&vm);
 }
 
 /* =========================================================================
- * Step 1 transient guard: transient strands do NOT get the re-increment.
+ * Step 1 (SCHED-01): a DEAD transient strand gets NO decrement.
  *
- * urbi_vm_run transient strands bypass sched_dequeue_ready_head so there is
- * no double-decrement; incrementing would spuriously inflate the count.
+ * Transient strands (urbi_vm_run) never participate in the runnable count
+ * (sched_runnable_inc/dec both skip them); a decrement here would underflow
+ * the counter the transient never incremented.
  * ========================================================================= */
 
-UTEST(post_dispatch_step1_transient_strand_no_reincrement)
+UTEST(post_dispatch_step1_dead_transient_strand_no_decrement)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
@@ -130,12 +127,12 @@ UTEST(post_dispatch_step1_transient_strand_no_reincrement)
     strand.is_transient_strand = 1U;  /* urbi_vm_run marker */
 
     vm.strand_runnable_count = 0U;
-    strand.state = USTRAND_STATE_WAITING_SLEEP;
+    strand.state = USTRAND_STATE_DEAD;
 
-    /* sched_post_dispatch must NOT re-increment for transient strands. */
+    /* DEAD + transient: step 1 dec skipped (and step 2 reap skipped). */
     sched_post_dispatch(&vm, &strand);
 
-    UASSERT_EQ(vm.strand_runnable_count, 0U);  /* unchanged */
+    UASSERT_EQ(vm.strand_runnable_count, 0U);  /* unchanged: no underflow */
 
     strand.state = USTRAND_STATE_DORMANT;
     ustrand_destroy(&strand, &vm);
@@ -175,15 +172,19 @@ UTEST(post_dispatch_step2_dead_heap_strand_is_reaped)
     }
     UASSERT(found_before);
 
-    /* Mark DEAD to trigger step 2.  The strand is not a transient. */
+    /* Mark DEAD to trigger step 2.  The strand is not a transient.
+     * SCHED-01: a DEAD strand arriving at post_dispatch was RUNNING and
+     * therefore counted — seed the count; step 1 decrements it. */
     UASSERT_EQ(s->is_transient_strand, 0U);
     s->state = USTRAND_STATE_DEAD;
 
-    vm.strand_runnable_count = 0U;
+    vm.strand_runnable_count = 1U;
 
-    /* sched_post_dispatch step 2: must reap the dead heap strand. */
+    /* sched_post_dispatch: step 1 decrements (DEAD), step 2 reaps. */
     sched_post_dispatch(&vm, s);
     /* s is freed now — do NOT dereference. */
+
+    UASSERT_EQ(vm.strand_runnable_count, 0U);  /* step 1 DEAD decrement */
 
     /* Verify the strand is no longer on realm->strands_head. */
     bool found_after = false;
@@ -252,6 +253,7 @@ UTEST(post_dispatch_step3_sleep_queue_strand_is_woken)
     UStrand sleeper;
     ustrand_init(&sleeper, &vm);
     sleeper.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
 
     /* Put it on the sleep queue with wake_us = 500. */
     sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 500U);
@@ -304,6 +306,7 @@ UTEST(post_dispatch_step3_sleep_queue_strand_not_woken_early)
     UStrand sleeper;
     ustrand_init(&sleeper, &vm);
     sleeper.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
     sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 1000U);
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
@@ -345,6 +348,7 @@ UTEST(post_dispatch_step3_skipped_without_time_fn)
     UStrand sleeper;
     ustrand_init(&sleeper, &vm);
     sleeper.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
     sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 0U);  /* wake_us=0: overdue */
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
@@ -401,12 +405,13 @@ UTEST(post_dispatch_all_steps_integrated)
     UStrand sleeper;
     ustrand_init(&sleeper, &vm);
     sleeper.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
     sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 1000U);
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
-    /* strand_runnable_count: reflect the dequeue-then-WAITING double-decrement
-     * that step 1 should NOT correct here (dead_s was DEAD, not WAITING). */
-    vm.strand_runnable_count = 0U;
+    /* strand_runnable_count: dead_s was RUNNING when it died, so it is
+     * still in the counted set on entry (SCHED-01); step 1 decrements. */
+    vm.strand_runnable_count = 1U;
 
     /* Call the helper with dead_s as the "just dispatched" strand. */
     sched_post_dispatch(&vm, dead_s);
@@ -442,10 +447,10 @@ UTEST(post_dispatch_all_steps_integrated)
 void
 test_sched_post_dispatch_alt_driver_suite(void)
 {
-    utest_run("post_dispatch step1: WAITING strand re-increments runnable count",
-              post_dispatch_step1_waiting_strand_re_increments_runnable_count);
-    utest_run("post_dispatch step1: transient strand does not re-increment",
-              post_dispatch_step1_transient_strand_no_reincrement);
+    utest_run("post_dispatch step1: WAITING strand count unchanged (SCHED-01)",
+              post_dispatch_step1_waiting_strand_count_unchanged);
+    utest_run("post_dispatch step1: DEAD transient strand not decremented",
+              post_dispatch_step1_dead_transient_strand_no_decrement);
     utest_run("post_dispatch step2: DEAD heap strand is eagerly reaped",
               post_dispatch_step2_dead_heap_strand_is_reaped);
     utest_run("post_dispatch step2: DEAD transient strand is NOT reaped",

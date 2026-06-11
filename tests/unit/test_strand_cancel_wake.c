@@ -28,13 +28,13 @@
  *   - both queues are consistent (sleep queue empty,
  *     wakeup_pending_count 0).
  *
- * NOTE on strand_runnable_count: a parked WAITING strand contributes 1
- * (sched_post_dispatch step-1 re-increment convention), so waking it via
+ * NOTE on strand_runnable_count (updated v0.13.3, refactor-3 SCHED-01): a
+ * parked WAITING strand contributes 0 under the single-writer scheme
+ * (count == |READY| + |RUNNING|), so the bounded pump now reports WAKE_AT
+ * (sleeper parked) / QUIESCENT (event-parked) instead of the pre-refactor
+ * RUNNING (which was the phantom count), and waking via
  * sched_strand_unblock / sched_strand_make_runnable leaves the counter at
- * 2 until the dequeue.  This pins CURRENT behavior — identical to the
- * production urbi_tag_stop / sched_wake_due_sleepers wake paths (verified
- * against the unmodified tree with an expiring sleep) — and the counter
- * policy itself is wave-3 scheduler-liveness work, not VM-08's. */
+ * exactly 1 (the READY strand). */
 
 #include "utest.h"
 
@@ -169,11 +169,11 @@ UTEST(cancel_sleeping_strand_unparks)
     UStrand *loader = NULL;
     UStepResult rc = drive_chunk(&vm, module, &loader, 20);
 
-    /* Parked on the sleep queue.  A WAITING strand counts toward
-     * strand_runnable_count (post-dispatch step-1 convention), so the
-     * bounded pump caps out at RUNNING; the 10s timer never expires
-     * within the pump, so the only wake source is the cancel below. */
-    UASSERT_EQ((int)URBI_STEP_RUNNING, (int)rc);
+    /* Parked on the sleep queue.  SCHED-01: a WAITING strand is NOT
+     * counted, so the pump reports WAKE_AT (only a not-yet-due sleeper
+     * remains); the 10s timer never expires within the pump, so the only
+     * wake source is the cancel below. */
+    UASSERT_EQ((int)URBI_STEP_WAKE_AT, (int)rc);
     UStrand *s = find_strand_in_realm(&vm, loader);
     UASSERT(s != NULL);
     if (s != NULL) {
@@ -182,7 +182,7 @@ UTEST(cancel_sleeping_strand_unparks)
                    (unsigned)USTRAND_GET_REASON(s));
         UASSERT(sleep_q_contains(&vm, s));
         UASSERT_EQ(1U, vm.wakeup_pending_count);
-        UASSERT_EQ(1U, vm.strand_runnable_count);
+        UASSERT_EQ(0U, vm.strand_runnable_count);  /* WAITING: not counted */
 
         /* Cancel.  Post-fix: the strand comes OFF the sleep queue and
          * onto the ready queue.  Pre-fix: READY stamped in place — still
@@ -193,7 +193,7 @@ UTEST(cancel_sleeping_strand_unparks)
         UASSERT_EQ(0U, vm.wakeup_pending_count);
         UASSERT_EQ((unsigned)USTRAND_READY, (unsigned)USTRAND_GET_STATE(s));
         UASSERT(vm.ready_head == s);
-        UASSERT_EQ(2U, vm.strand_runnable_count);  /* see header NOTE */
+        UASSERT_EQ(1U, vm.strand_runnable_count);  /* see header NOTE */
 
         /* Drive: the strand dispatches, the CANCEL unwind runs at the
          * first safepoint and escalates to fatal (empty cleanup stack). */
@@ -231,9 +231,11 @@ UTEST(cancel_event_parked_strand_unparks)
     UStrand *loader = NULL;
     UStepResult rc = drive_chunk(&vm, module, &loader, 20);
 
-    /* Parked on the event waiter chain.  Same WAITING-counts-as-runnable
-     * convention as case 1, so the bounded pump caps out at RUNNING. */
-    UASSERT_EQ((int)URBI_STEP_RUNNING, (int)rc);
+    /* Parked on the event waiter chain.  SCHED-01: a WAITING strand is NOT
+     * counted, and an event-parked strand has no timer either, so the
+     * bounded pump reports QUIESCENT (liveness for "armed" event waits is
+     * the SCHED-13 vm_liveness work, next task in this arc). */
+    UASSERT_EQ((int)URBI_STEP_QUIESCENT, (int)rc);
     UStrand *s = find_strand_in_realm(&vm, loader);
     UASSERT(s != NULL);
     if (s != NULL) {
@@ -243,7 +245,7 @@ UTEST(cancel_event_parked_strand_unparks)
         UEvent *ev = s->wait_event_target;
         UASSERT(ev != NULL);
         UASSERT(ev->waiters_head == s);
-        UASSERT_EQ(1U, vm.strand_runnable_count);
+        UASSERT_EQ(0U, vm.strand_runnable_count);  /* WAITING: not counted */
 
         /* Cancel.  Both pre- and post-fix unregister from the waiter
          * chain; only post-fix also makes the strand runnable. */
@@ -252,7 +254,7 @@ UTEST(cancel_event_parked_strand_unparks)
         UASSERT(s->wait_event_target == NULL);
         UASSERT_EQ((unsigned)USTRAND_READY, (unsigned)USTRAND_GET_STATE(s));
         UASSERT(vm.ready_head == s);
-        UASSERT_EQ(2U, vm.strand_runnable_count);  /* see header NOTE */
+        UASSERT_EQ(1U, vm.strand_runnable_count);  /* see header NOTE */
 
         rc = pump_steps(&vm, 100);
         UASSERT_EQ((int)URBI_STEP_FATAL, (int)rc);

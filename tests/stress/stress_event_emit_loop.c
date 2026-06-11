@@ -20,6 +20,7 @@
 #include "watcher/uwatcher_install.h"
 #include "runtime/uclosure.h"
 #include "sched/ustrand.h"
+#include "sched/usched_cooperative.h"
 #include "realm/urealm.h"
 #include "chunk/uchunk.h"
 #include "vm/uvm.h"
@@ -124,10 +125,12 @@ int main(void)
             UWatcher *w = e->at_watchers_head;
             while (w != NULL) {
                 if (w->body_strand != NULL) {
+                    /* SCHED-01: unbind owns the runnable-count decrement
+                     * (the body strand is READY on the queue); also fixes
+                     * up the queue neighbours before the destroy. */
+                    sched_strand_unbind_from_ready_queue(w->body_strand);
                     ustrand_destroy(w->body_strand, &vm);
                     w->body_strand = NULL;
-                    if (vm.strand_runnable_count > 0)
-                        vm.strand_runnable_count--;
                 }
                 w = w->next_in_event;
             }

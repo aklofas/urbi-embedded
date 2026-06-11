@@ -113,12 +113,13 @@ UTEST(fifo_transition3_yield_appends_tail)
     UASSERT(vm.ready_head == &a);
     UASSERT(vm.ready_tail == &b);
 
-    /* Simulate dispatch: dequeue a, set RUNNING. */
+    /* Simulate dispatch: dequeue a, set RUNNING.  SCHED-01: count-neutral
+     * (READY -> RUNNING stays inside the counted set). */
     sched_dequeue_ready_head(&vm);
     a.state = USTRAND_STATE_RUNNING;
-    UASSERT_EQ(vm.strand_runnable_count, 1U);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
 
-    /* a yields: re-enqueues at tail behind b. */
+    /* a yields: re-enqueues at tail behind b — count-neutral too. */
     sched_strand_yield(&a);
     UASSERT(vm.ready_head == &b);
     UASSERT(vm.ready_tail == &a);
@@ -150,25 +151,20 @@ UTEST(fifo_transition4_unblock_appends_tail)
     UASSERT_EQ(vm.strand_runnable_count, 2U);
     UASSERT(vm.ready_head == &a);
 
-    /* Simulate dispatch: dequeue a, set RUNNING.
-     * sched_dequeue_ready_head decrements count (2 → 1). */
+    /* Simulate dispatch: dequeue a, set RUNNING.  SCHED-01: count-neutral
+     * (READY -> RUNNING stays inside the counted set). */
     sched_dequeue_ready_head(&vm);
     a.state = USTRAND_STATE_RUNNING;
-    UASSERT_EQ(vm.strand_runnable_count, 1U);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
     UASSERT(vm.ready_head == &b);
 
-    /* a blocks on sleep (RUNNING → WAITING).  sched_strand_block decrements
-     * count again because it sees state==RUNNING: count goes 1 → 0. */
+    /* a blocks on sleep (RUNNING → WAITING): the single decrement site.
+     * WAITING strands are NOT counted under SCHED-01 (the pre-refactor
+     * ustep.c WAITING re-increment is gone). */
     sched_strand_block(&a, USTRAND_REASON_SLEEP, 999999U);
     UASSERT(USTRAND_GET_STATE(&a) == USTRAND_WAITING);
-    UASSERT_EQ(vm.strand_runnable_count, 0U);
-    UASSERT_EQ(vm.wakeup_pending_count, 1U);
-
-    /* ustep.c re-increments for WAITING transitions during dispatch; simulate
-     * that here to restore the invariant (count should account for a being
-     * live-but-waiting). */
-    vm.strand_runnable_count++;  /* mirrors ustep.c re-increment after WAITING */
     UASSERT_EQ(vm.strand_runnable_count, 1U);
+    UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
     /* Unblock a: sleep_q_remove (wakeup_pending 1→0) + make_runnable (count 1→2).
      * a must go to the tail behind b. */
@@ -202,19 +198,21 @@ UTEST(fifo_transition5_watcher_body_spawn_appends_tail)
     ustrand_init(&parent, &vm);
     ustrand_init(&watcher_body, &vm);
 
-    /* Parent is running. */
+    /* Parent is running.  SCHED-01: dequeue is count-neutral (the RUNNING
+     * parent stays in the counted set). */
     sched_strand_make_runnable(&parent);
     sched_dequeue_ready_head(&vm);
     parent.state = USTRAND_STATE_RUNNING;
-    UASSERT_EQ(vm.strand_runnable_count, 0U);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
 
     /* Watcher body spawned while parent is running: goes to tail. */
     sched_strand_make_runnable(&watcher_body);
     UASSERT(vm.ready_head == &watcher_body);
     UASSERT(vm.ready_tail == &watcher_body);
-    UASSERT_EQ(vm.strand_runnable_count, 1U);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
 
-    /* Re-make parent runnable (yield): appends after watcher body. */
+    /* Re-make parent runnable (yield): appends after watcher body.
+     * Count-neutral (RUNNING -> READY). */
     sched_strand_yield(&parent);
     UASSERT(vm.ready_head == &watcher_body);
     UASSERT(vm.ready_tail == &parent);

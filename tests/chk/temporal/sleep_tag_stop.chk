@@ -12,6 +12,14 @@
 # catch skipped — is asserted here.  The sleeper is woken via tag.stop()'s
 # sched_strand_unblock (it becomes runnable, so the next step dispatches it).
 #
+# v0.13.3 (refactor-3 SCHED-01/B10): step results updated under the
+# single-writer runnable count.  First step: only a not-yet-due sleeper is
+# parked — WAKE_AT, not RUNNING (a WAITING strand is no longer counted as
+# runnable).  Second step: the t.stop() run line already woke the strand and
+# the REPL drain loop drove it to completion (finally runs, strand dies), so
+# nothing live remains — QUIESCENT.  The pre-fix RUNNING results were the
+# phantom count left by the park/wake cycle (host busy-spin signal).
+#
 ## host: realm st
 ## host: run var t = Tag.new("sleeper")
 ## host: run Realm.fin = false
@@ -26,8 +34,8 @@
 [00000000] false
 [00000000] false
 [00000000] nil
-[00000000] step: RUNNING
+[00000000] step: WAKE_AT
 [00000000] nil
-[00000000] step: RUNNING
+[00000000] step: QUIESCENT
 [00000000] true
 [00000000] false

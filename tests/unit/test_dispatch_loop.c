@@ -114,6 +114,12 @@ static int strand_setup(UStrand *s, UVM *vm,
 
     s->vm         = vm;
     s->state      = USTRAND_STATE_RUNNING;
+    /* SCHED-01 (v0.13.3): a RUNNING non-transient strand is in the counted
+     * set (count == |READY| + |RUNNING|).  Seed the count so in-dispatch
+     * transitions (sched_strand_yield's dec/inc, sched_strand_block's dec)
+     * operate on a consistent counter; these harness tests drive exactly
+     * one strand at a time. */
+    vm->strand_runnable_count = 1;
     s->stack      = reg_stack;
     s->R          = reg_stack;
     s->pc         = instructions;
@@ -161,12 +167,9 @@ UTEST(dispatch_loop_yields_on_op_yield) {
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
     UASSERT(consumed >= 1);
 
-    /* Drain the ready queue so sched state is clean. */
-    if (vm.ready_head == &s) {
-        vm.ready_head = s.ready_next;
-        if (vm.ready_head == NULL) vm.ready_tail = NULL;
-        if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;
-    }
+    /* Drain the ready queue so sched state is clean (SCHED-01: unbind
+       owns the count decrement). */
+    sched_strand_unbind_from_ready_queue(&s);
 
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
@@ -287,12 +290,8 @@ UTEST(dispatch_loop_instruction_budget_decrements) {
     UASSERT(consumed >= 3U);
     UASSERT_EQ(s.instruction_budget_remaining, 0U);
 
-    /* Drain ready queue. */
-    if (vm.ready_head == &s) {
-        vm.ready_head = s.ready_next;
-        if (vm.ready_head == NULL) vm.ready_tail = NULL;
-        if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;
-    }
+    /* Drain ready queue (SCHED-01: unbind owns the count decrement). */
+    sched_strand_unbind_from_ready_queue(&s);
 
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
@@ -370,26 +369,19 @@ UTEST(dispatch_loop_multiple_yields) {
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
     UASSERT(c1 >= 1U);
 
-    /* Simulate scheduler dequeuing and re-dispatching. */
+    /* Simulate scheduler dequeuing and re-dispatching (SCHED-01: the
+       dequeue is count-neutral — READY -> RUNNING stays counted). */
+    if (vm.ready_head == &s) sched_dequeue_ready_head(&vm);
     s.state = USTRAND_STATE_RUNNING;
-    if (vm.ready_head == &s) {
-        vm.ready_head = s.ready_next;
-        if (vm.ready_head == NULL) vm.ready_tail = NULL;
-        if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;
-    }
 
     /* Second dispatch: should yield again. */
     uint64_t c2 = dispatch_loop_until_yield(&s, 10000U);
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
     UASSERT(c2 >= 1U);
 
-    /* Drain ready queue again. */
+    /* Drain ready queue again (count-neutral dequeue; see above). */
+    if (vm.ready_head == &s) sched_dequeue_ready_head(&vm);
     s.state = USTRAND_STATE_RUNNING;
-    if (vm.ready_head == &s) {
-        vm.ready_head = s.ready_next;
-        if (vm.ready_head == NULL) vm.ready_tail = NULL;
-        if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;
-    }
 
     /* Third dispatch: RET → DEAD. */
     UValue retval = {0};
