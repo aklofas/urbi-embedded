@@ -158,7 +158,7 @@ vm_arith_method_fallback(UVM *vm,
      * passed directly as native_fn's `self` arg (v1.6 S42 — vm->last_recv
      * is gone).  Args: rhs as args[0].
      *
-     * Bytecode path: urbi_run_closure_on_scratch_with_payload writes rhs into
+     * Bytecode path: urbi_run_closure_on_scratch_ex writes rhs into
      * R[0] of the scratch strand.  The function's nparams is typically 1 for
      * binary ops (function(other){...}); the scratch runner does not enforce
      * nparams, so a 0-param body also runs (and ignores the payload). */

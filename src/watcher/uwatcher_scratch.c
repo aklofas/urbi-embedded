@@ -237,10 +237,11 @@ run_on_scratch_core(struct UVM       *vm,
                 /* refactor-3 VM-07: surface the thrown value so operator-
                  * overload callers can re-deposit the user's exception at
                  * the call site instead of replacing it with a numeric
-                 * TypeError.  Copy HERE, before the realm-unlink teardown
-                 * below — once the strand is DEAD and unlinked it is no
-                 * longer walked as a GC root, so fatal_value would be
-                 * unrooted.  Between this copy and the caller's re-deposit
+                 * TypeError.  The unrooted window opened at strand DEATH,
+                 * not at the realm-unlink below: strand_walk_roots skips
+                 * DEAD strands, so fatal_value is already unrooted by the
+                 * time this branch runs.  Between this copy and the caller's
+                 * re-deposit
                  * into a rooted location only frees happen (register-stack
                  * free, scratch_arr free, ustrand_destroy — no allocation,
                  * hence no GC slice), so the value stays live.

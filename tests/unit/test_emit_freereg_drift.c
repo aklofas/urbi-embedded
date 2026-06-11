@@ -475,19 +475,20 @@ UTEST(emit_call_too_many_args_returns_error) {
 }
 
 /* -----------------------------------------------------------------------
- * T14 — EMIT-015: AST_TAG_PREFIX spill register can be >= 16
+ * T14 — EMIT-015: AST_TAG_PREFIX tag register can be >= 16
  *
  * OP_PUSH_TAG packs flags + reg-nibble into A: A = (flags<<4) | (reg & 0xF).
- * Pre-fix, when emit_ident_arm of the tag name returned tag_reg > 15, the
- * "defensive" spill branch allocated spill = next_reg++ but did not reject
- * spill >= 16 — the OP_PUSH_TAG encoding then masked spill with 0xF,
- * silently emitting bytecode that referenced the wrong register.
+ * Since the v0.13.1 hidden-local rework (refactor-3 FE-02 follow-on) the
+ * tag value is a DECLARED hidden local (`\x01tag`) in an outer block —
+ * the old "defensive" spill branch (spill = next_reg++, which silently
+ * truncated through the 0xF mask when spill >= 16) is gone.  When the
+ * hidden local's slot exceeds 15 every lower register is local-occupied,
+ * so there is no safe target and emit_tag_prefix_arm rejects outright.
  *
- * Trigger: function with 17+ local temps so that next_reg (where ident
- * MOVE lands, and where the spill alloc draws from) is >= 16 by the time
- * the tag-prefix executes.
+ * Trigger: function with 17+ locals declared before the tag-prefix, so
+ * `\x01tag` is declared at slot >= 16.
  *
- * Post-fix: emit returns EMIT_TAG_SPILL_OUT_OF_RANGE; widening the
+ * Expected: emit returns EMIT_TAG_SPILL_OUT_OF_RANGE; widening the
  * encoding to a full byte is a v1.x bytecode change (filed as backlog
  * under T129/Phase 22). */
 
@@ -497,9 +498,9 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
     UProto module; memset(&module, 0, sizeof(module));
 
     /* Declare a tag identifier "t" plus 16 unrelated locals so the chain
-     * `var t = 0; var l1 = 1; ...; var l16 = 16; t: { 1 };` leaves
-     * next_reg high enough that emit_ident_arm("t") returns dst >= 16,
-     * forcing the > 15 spill branch in emit_tag_prefix_arm. */
+     * `var t = 0; var l1 = 1; ...; var l16 = 16; t: { 1 };` pushes the
+     * hidden `\x01tag` local's declared slot >= 16, tripping the > 15
+     * nibble check in emit_tag_prefix_arm. */
     UEmitError rc = compile_src(&vm, &arena, &module,
         "var f = function() {"
         " var t = 0;"

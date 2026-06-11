@@ -382,7 +382,11 @@ urbi_unwind(UStrand *s)
                      * C-1 replace-on-raise applies: a clean body restores
                      * the saved RETURN+value; a raising body wins and the
                      * RETURN is suppressed — hand the new unwind to the
-                     * general walker below. */
+                     * general walker below.  A RETURN→RETURN replacement is
+                     * also correct: C-1's value swap inside
+                     * run_cleanup_with_replace precedes the
+                     * pending != RETURN test below, so the loop continues
+                     * with the replacement value already in unwind_value. */
                     uint16_t handler_pc = e->handler_pc;
                     int      rc;
                     strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);

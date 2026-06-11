@@ -29,12 +29,11 @@ vm_push_tag_scope(UVM *vm, UStrand *s)
 {
     /* OP_PUSH_TAG ABx:
      *   A[7:4] = flags nibble (0 at M3 — no FLAG_HAS_ONLEAVE)
-     *   A[3:0] = reserved (currently unused at runtime; the emitter
-     *            packs a tag_reg here per uemit_push_tag, but the
-     *            dispatch path creates an anonymous UTag from the
-     *            cleanup stack and never reads this nibble — the
-     *            register binding is reserved for a future feature
-     *            where the tag is exposed to a register slot)
+     *   A[3:0] = tag_reg nibble (v0.10.9-B: READ at runtime — the code
+     *            below checks R[tag_reg] and, when it holds a UVAL_TAG,
+     *            binds the scope to the user's tag instead of creating
+     *            an anonymous one; the anonymous UTag is the fallback
+     *            for non-UVAL_TAG values and pre-v0.10.15 bytecode)
      *   Bx     = onleave_pc (handler PC; 0 at M3 since no onleave body)
      *
      * T30: allocate a per-scope UTag (no UVAL_TAG / register binding at M3).
