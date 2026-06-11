@@ -1,0 +1,24 @@
+# Milestone: v0.13.1
+# Covers: multi-statement finally bodies execute atomically and to
+#         completion on the unwind path (refactor-3 VM-02/B4: a `;` inside
+#         the unwind-copy finally emitted OP_YIELD; run_cleanup_with_replace
+#         treated the yield as completion — the rest of the body was
+#         silently skipped and the strand was enqueued while the walker
+#         kept unwinding it: scheduler assert / corruption).
+## timeout: 30
+
+# --- audit repro shape: tag.stop unwind through a 2-statement finally
+#     (pre-fix: sched_strand_yield assert, exit 134)
+var t = Tag.new(); var a = 0; var b = 0; t: { try { t.stop() } finally { a = 1; b = 2 } }; a + b
+[00000000] 3
+
+# --- throw unwind through a 3-statement finally, then caught
+#     (pre-fix: sched_strand_yield assert, exit 134 — same as case 0 even
+#     post-T10; the unwind-copy finally yields mid-walk)
+var c = 0; var d = 0; var f = 0; var r = 0; try { try { throw(9) } finally { c = 1; d = 2; f = 3 } } catch (var e) { r = e }; c + d + f + r
+[00000001] 15
+
+# --- normal-path (inline) finally with `;` still runs everything
+#     (pre-fix: already passed — yield on the normal path is survivable)
+var x = 0; var y = 0; try { x = 5 } finally { x = x + 1; y = 2 }; x + y
+[00000002] 8

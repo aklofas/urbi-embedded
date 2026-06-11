@@ -229,7 +229,16 @@ static int emit_finally_inline(UEmitter *e, UAstNode *n, uint8_t rd) {
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
     if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
     if (!uemit_open_block(e, false)) return 0;
-    emit_expr(e, n->u.try_stmt.finally_body);
+    /* refactor-3 VM-02/B4: cleanup bodies are atomic (`|` semantics) — the
+     * `;` separator emits no OP_YIELD inside a finally body.  Applies to
+     * this normal-path inline copy too, for consistency with the unwind
+     * copy.  Save/restore handles nested try/finally inside a finally. */
+    {
+        uint8_t saved_icb = e->in_cleanup_body;
+        e->in_cleanup_body = 1U;
+        emit_expr(e, n->u.try_stmt.finally_body);
+        e->in_cleanup_body = saved_icb;
+    }
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0; }
     if (!uemit_close_block(e)) return 0;
     return 1;
@@ -321,12 +330,19 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
                                (uint16_t)finally_target));
         }
 
-        /* Finally body */
+        /* Finally body (unwind copy — atomic per refactor-3 VM-02/B4: a
+         * mid-walk OP_YIELD would enqueue the strand while the unwind
+         * walker still owns it) */
         e->next_reg = rd;
         e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
         if (!uemit_open_block(e, false)) return 0U;
-        emit_expr(e, n->u.try_stmt.finally_body);
+        {
+            uint8_t saved_icb = e->in_cleanup_body;
+            e->in_cleanup_body = 1U;
+            emit_expr(e, n->u.try_stmt.finally_body);
+            e->in_cleanup_body = saved_icb;
+        }
         if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
         if (!uemit_close_block(e)) return 0U;
         uemit_resume(e, 0U, (uint32_t)n->line);
@@ -427,12 +443,18 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
                                (uint16_t)finally_target));
         }
 
-        /* Finally body */
+        /* Finally body (unwind copy — atomic per refactor-3 VM-02/B4, see
+         * the catch+finally arm above) */
         e->next_reg = rd;
         e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
         if (!uemit_open_block(e, false)) return 0U;
-        emit_expr(e, n->u.try_stmt.finally_body);
+        {
+            uint8_t saved_icb = e->in_cleanup_body;
+            e->in_cleanup_body = 1U;
+            emit_expr(e, n->u.try_stmt.finally_body);
+            e->in_cleanup_body = saved_icb;
+        }
         if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
         if (!uemit_close_block(e)) return 0U;
         uemit_resume(e, 0U, (uint32_t)n->line);

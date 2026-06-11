@@ -758,9 +758,16 @@ uint8_t emit_nary_arm(UEmitter *e, UAstNode *n) {
              * previous child was. */
             e->current_fs->freereg = fs_temp_floor(e->current_fs);
             e->next_reg = e->current_fs->freereg;
-            emit_instr(e, uinstr_enc_abc(OP_YIELD, 0U, 0U, 0U),
-                       e->prev_line);
-            if (e->error != EMIT_OK) return 0U;
+            /* refactor-3 VM-02/B4: cleanup bodies (finally / onleave) are
+             * atomic — `;` separates statements but yields nothing there.
+             * An OP_YIELD inside the unwind-copy finally would enqueue the
+             * strand mid-walk (run_cleanup_with_replace treats the yield as
+             * body completion): scheduler assert / corruption. */
+            if (!e->in_cleanup_body) {
+                emit_instr(e, uinstr_enc_abc(OP_YIELD, 0U, 0U, 0U),
+                           e->prev_line);
+                if (e->error != EMIT_OK) return 0U;
+            }
         }
         r = emit_expr(e, n->u.nary.children[i]);
         if (e->error != EMIT_OK) return 0U;

@@ -234,8 +234,17 @@ uint8_t emit_function_literal(UEmitter *e,
      * inside the function body are allocated above all param slots. */
     e->next_reg = child_fs->freereg;
 
-    /* 4. Compile body (AST_BLOCK); emit_instr routes to child_proto. */
+    /* 4. Compile body (AST_BLOCK); emit_instr routes to child_proto.
+     *
+     * refactor-3 VM-02/B4: clear in_cleanup_body across the nested body —
+     * a function literal (or lazy thunk / watcher closure) defined inside a
+     * finally body runs LATER as ordinary code, not as part of the cleanup,
+     * so its `;` separators keep normal OP_YIELD semantics.  Mirrors the
+     * lazy_arg_context save/clear/restore in emit_lazy_thunk. */
+    uint8_t saved_icb = e->in_cleanup_body;
+    e->in_cleanup_body = 0U;
     uint8_t body_reg = emit_expr(e, body);
+    e->in_cleanup_body = saved_icb;
     if (e->error != EMIT_OK) {
         uemit_close_function(e);
         return 0U;
