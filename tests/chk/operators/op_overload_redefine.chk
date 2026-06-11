@@ -1,0 +1,24 @@
+# Milestone: v0.13.2
+# Covers: refactor-3 GC-06/VM-06c — in-place overwrite of an operator slot
+#         must not dispatch the STALE cached closure.  In-place value
+#         writes deliberately do not bump topology_gen (topology spec §4.2
+#         row 2), so an IC that caches the closure VALUE keeps serving the
+#         old method; caching (holder, slot_idx) re-reads the live slot.
+# Note:   the operator is routed through f so the SAME compiled call site
+#         (same pc_offset inside f's proto) runs before and after the
+#         overwrite — per-line REPL chunks would otherwise compile the
+#         second `c + c` at a fresh site that misses and re-resolves,
+#         masking the staleness.
+
+# --- fill the IC: first call through f dispatches the original "+" ---
+class C {}; C.setSlot("+", function(other) { 1 }); var c = C.new(); var f = function(x) { x + x }; f(c)
+[00000000] 1
+
+# --- in-place overwrite (same holder, existing slot — no topology bump);
+#     the same call site must now dispatch the NEW closure ---
+C.setSlot("+", function(other) { 2 }); f(c)
+[00000001] 2
+
+# --- quoted-ident assignment form of the same in-place overwrite ---
+C.'+' = function(other) { 3 }; f(c)
+[00000002] 3

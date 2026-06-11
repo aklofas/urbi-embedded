@@ -21,7 +21,10 @@
 #include <string.h>
 
 #include "urbi/urbi.h"
+#include "urbi/gc.h"          /* urbi_gc_force_full (GC-06 UAF-shape case) */
 #include "vm/uvm.h"
+#include "object/uobject.h"   /* urbi_object_set_local_slot (GC-06 staleness) */
+#include "value/uintern.h"    /* ustr_intern */
 
 #define UTEST(name) static void name(void)
 
@@ -328,6 +331,171 @@ UTEST(vm_op_add_overload_ic_cached)
     urbi_vm_destroy(&vm);
 }
 
+/* ===================================================================
+ * refactor-3 GC-06/VM-06c: the IC caches (holder, slot_idx), never the
+ * closure VALUE — in-place overwrite of an operator slot (which
+ * deliberately does NOT bump topology_gen, topology spec §4.2 row 2)
+ * must dispatch the NEW closure at an already-filled call site.
+ *
+ * All three tests route the operator through a function so the SAME
+ * compiled call site (same pc_offset inside f's proto) runs before and
+ * after the overwrite.  Globals are pre-declared and written by plain
+ * assignment so no realm slot-add lands between IC fill and re-call
+ * (a slot add on a prototype bumps topology_gen and would mask the
+ * staleness by forcing a re-resolve).
+ * =================================================================== */
+
+UTEST(vm_op_overload_ic_stale_after_inplace_redefine)
+{
+    /* Script-level staleness: setSlot overwrite of an existing "+" slot
+     * is an in-place value write (no gen bump); the second f(c) at the
+     * same site must dispatch the new closure.  Pre-GC-06 this returned
+     * 11 (stale closure cached by value); expected is 12. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UValue out = urbi_make_nil();
+    int rc = utest_e2e_compile_and_run(&vm,
+        "class VecRedef { var v = 0 };\n"
+        "VecRedef.setSlot(\"+\", function(other) { 1 });\n"
+        "var c = VecRedef.new();\n"
+        "var f = function(x) { x + x };\n"
+        "var r1 = 0;\n"
+        "var r2 = 0;\n"
+        "r1 = f(c);\n"
+        "VecRedef.setSlot(\"+\", function(other) { 2 });\n"
+        "r2 = f(c);\n"
+        "r1 * 10 + r2",
+        &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ(12, (int)out.v.i);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(vm_op_overload_ic_stale_after_c_api_set_local_slot)
+{
+    /* C-API staleness: overwrite the holder's "+" slot directly via
+     * urbi_object_set_local_slot (the canonical in-place path — asserts
+     * pin that topology_gen does NOT change, so a pre-GC-06 IC entry
+     * stays "valid" and would keep serving the old closure). */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    struct URealm *gr = urbi_realm_global(&vm);
+    UASSERT(gr != NULL);
+    if (gr == NULL) { urbi_vm_destroy(&vm); return; }
+
+    /* Eval 1 (caller-owned arena+module so fc/g protos outlive the call):
+     * define the class + original "+", the call-site function fc, and the
+     * replacement closure g; fill the IC via fc(c1). */
+    UArena  arena1;
+    UProto  module1 = {0};
+    uarena_init(&arena1, 4096);
+    UValue out = urbi_make_nil();
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena1, &module1,
+        "class VecCapi { var v = 0 };\n"
+        "VecCapi.setSlot(\"+\", function(other) { 1 });\n"
+        "var c1 = VecCapi.new();\n"
+        "var fc = function(x) { x + x };\n"
+        "var g = function(other) { 2 };\n"
+        "fc(c1)",
+        &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ(1, (int)out.v.i);
+
+    /* In-place overwrite from C: holder is the class object itself. */
+    USymbol *plus = (USymbol *)ustr_intern(&vm, "+", 1);
+    UASSERT(plus != NULL);
+    UValue holder_val = urbi_make_nil();
+    UValue g_val      = urbi_make_nil();
+    rc = urbi_realm_get_global(&vm, gr, "VecCapi", 7, &holder_val);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_OBJECT, (int)holder_val.kind);
+    rc = urbi_realm_get_global(&vm, gr, "g", 1, &g_val);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_CLOSURE, (int)g_val.kind);
+
+    uint64_t gen_before = vm.topology_gen;
+    rc = urbi_object_set_local_slot(&vm, (UObject *)holder_val.v.p,
+                                    plus, g_val);
+    UASSERT_EQ(0, rc);
+    /* Pin the precondition: in-place value write — no topology bump.
+     * If this ever starts bumping, the staleness scenario is vacuous. */
+    UASSERT(vm.topology_gen == gen_before);
+
+    /* Eval 2: same compiled call site (inside fc's proto) must now
+     * dispatch g.  Pre-GC-06: stale 1. */
+    UArena  arena2;
+    UProto  module2 = {0};
+    uarena_init(&arena2, 4096);
+    rc = utest_e2e_compile_and_run_with_module(&vm, &arena2, &module2,
+        "fc(c1)", &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ(2, (int)out.v.i);
+
+    uchunk_destroy(&module2, NULL);
+    uarena_destroy(&arena2);
+    uchunk_destroy(&module1, NULL);
+    uarena_destroy(&arena1);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(vm_op_overload_ic_no_uaf_after_gc_sweeps_old_closure)
+{
+    /* UAF shape: overwrite the slot, force a full GC so the OLD closure
+     * cell is swept, then re-run the filled call site.  Pre-GC-06 the IC
+     * returned the freed closure (dangling dispatch — ASan UAF); the
+     * (holder, slot_idx) re-read picks up the live replacement. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UArena  arena1;
+    UProto  module1 = {0};
+    uarena_init(&arena1, 4096);
+    UValue out = urbi_make_nil();
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena1, &module1,
+        "class VecUaf { var v = 0 };\n"
+        "VecUaf.setSlot(\"+\", function(other) { 1 });\n"
+        "var cu = VecUaf.new();\n"
+        "var fu = function(x) { x + x };\n"
+        "fu(cu)",
+        &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ(1, (int)out.v.i);
+
+    /* Eval 2: in-place overwrite from script; the original "+" closure
+     * is now unreferenced (the slot was its only reference). */
+    UArena  arena2;
+    UProto  module2 = {0};
+    uarena_init(&arena2, 4096);
+    rc = utest_e2e_compile_and_run_with_module(&vm, &arena2, &module2,
+        "VecUaf.setSlot(\"+\", function(other) { 2 }); 0", &out);
+    UASSERT_EQ(URBI_OK, rc);
+
+    /* Sweep the old closure. */
+    urbi_gc_force_full(&vm);
+
+    /* Eval 3: the same call site must dispatch the live replacement. */
+    UArena  arena3;
+    UProto  module3 = {0};
+    uarena_init(&arena3, 4096);
+    rc = utest_e2e_compile_and_run_with_module(&vm, &arena3, &module3,
+        "fu(cu)", &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ(2, (int)out.v.i);
+
+    uchunk_destroy(&module3, NULL);
+    uarena_destroy(&arena3);
+    uchunk_destroy(&module2, NULL);
+    uarena_destroy(&arena2);
+    uchunk_destroy(&module1, NULL);
+    uarena_destroy(&arena1);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -352,4 +520,10 @@ test_vm_operator_overload_suite(void)
                                                       vm_op_overload_missing_falls_to_type_error);
     utest_run("vm_op_lt_missing_falls_to_type_error", vm_op_lt_missing_falls_to_type_error);
     utest_run("vm_op_add_overload_ic_cached",         vm_op_add_overload_ic_cached);
+    utest_run("vm_op_overload_ic_stale_after_inplace_redefine",
+                                                      vm_op_overload_ic_stale_after_inplace_redefine);
+    utest_run("vm_op_overload_ic_stale_after_c_api_set_local_slot",
+                                                      vm_op_overload_ic_stale_after_c_api_set_local_slot);
+    utest_run("vm_op_overload_ic_no_uaf_after_gc_sweeps_old_closure",
+                                                      vm_op_overload_ic_no_uaf_after_gc_sweeps_old_closure);
 }

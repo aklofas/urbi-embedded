@@ -142,7 +142,19 @@ typedef struct UOpOverloadICEntry {
     uint32_t         pc_offset;    /* call-site identifier (offset from proto base) */
     uint64_t         topology_gen; /* vm->topology_gen at fill time; stale on mismatch */
     struct USymbol  *op_name;      /* interned operator-name symbol */
-    struct UClosure *cached;       /* cached method closure; NULL = miss */
+    struct UObject  *holder;       /* proto-chain object owning the operator slot
+                                      (refactor-3 GC-06: cache WHERE, not WHAT —
+                                      the hit path re-reads holder->slots[slot_idx],
+                                      so in-place overwrites and GC replacement of
+                                      the closure are picked up without a gen bump;
+                                      mirrors the slot UIC, see object/uic.h).
+                                      Lifetime parity with UIC's recv_shapes/slots:
+                                      proto-chain holders are realm-rooted for the
+                                      life of the type — deliberate, see design-risks. */
+    struct UShape   *holder_shape; /* holder->shape at fill; staleness key */
+    uint16_t         slot_idx;     /* index into holder->slots[] */
+    uint16_t         pad0;
+    uint32_t         pad1;
 } UOpOverloadICEntry;
 
 typedef struct UOpOverloadIC {

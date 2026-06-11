@@ -13,9 +13,14 @@
  * gate for those opcodes is: the lhs is a UVAL_OBJECT (user type).
  *
  * IC: the UOpOverloadIC table in the UVM struct caches the (pc_offset,
- * topology_gen) → UClosure* mapping per call site so the proto-chain walk
- * is elided on subsequent calls at the same site.  IC invalidation follows
- * the same topology_gen bump points as the existing OP_GETSLOT IC. */
+ * topology_gen) → (holder, holder_shape, slot_idx) slot LOCATION per call
+ * site so the proto-chain walk is elided on subsequent calls at the same
+ * site.  The hit path re-reads holder->slots[slot_idx] — the IC never
+ * holds a closure pointer (refactor-3 GC-06/VM-06c: a cached closure
+ * VALUE went stale on in-place slot overwrite, which deliberately does
+ * not bump topology_gen, and dangled once GC swept the replaced closure).
+ * IC invalidation follows the same topology_gen bump points as the
+ * existing OP_GETSLOT IC, plus the holder-shape match. */
 
 #include "vm/uvm_op_overload.h"
 
@@ -43,8 +48,11 @@ static uint32_t site_index(uint32_t pc_off)
 }
 
 /* Look up the IC for (pc_offset, op_name).  Returns a UClosure* on hit,
- * NULL on miss.  A hit requires both pc_offset match AND topology_gen match
- * AND op_name pointer equality (interned, so pointer == content). */
+ * NULL on miss.  A hit requires pc_offset match AND topology_gen match
+ * AND op_name pointer equality (interned, so pointer == content) AND the
+ * holder's shape still matching the fill-time shape.  The entry caches
+ * WHERE the slot lives (holder, slot_idx), never the closure value
+ * (refactor-3 GC-06/VM-06c): the hit path re-reads the live slot below. */
 static struct UClosure *
 ic_lookup(UVM *vm, uint32_t pc_off, const USymbol *op_name)
 {
@@ -57,16 +65,37 @@ ic_lookup(UVM *vm, uint32_t pc_off, const USymbol *op_name)
         if (e->pc_offset    == pc_off
          && e->op_name      == op_name
          && e->topology_gen == vm->topology_gen
-         && e->cached       != NULL) {
-            return e->cached;
+         && e->holder       != NULL
+         && e->holder->shape == e->holder_shape) {
+            /* Re-read the live slot: in-place overwrites (no gen bump by
+             * design, topology spec §4.2 row 2) and GC-replaced closures
+             * are both picked up.  Bounds safety: the shape match above
+             * guarantees slot_idx is valid for holder->slots[] — the index
+             * was resolved against this exact shape at fill time, and any
+             * slot add/remove transitions holder to a different UShape.
+             * Slot no longer a closure → slow path. */
+            UValue v = e->holder->slots[e->slot_idx];
+            if (v.kind == (uint8_t)UVAL_CLOSURE && v.v.p != NULL) {
+                return (struct UClosure *)v.v.p;
+            }
+            return NULL;
         }
     }
     return NULL;
 }
 
-/* Fill one IC entry at the round-robin cursor for (pc_offset, op_name, cl). */
+/* Fill one IC entry at the round-robin cursor for (pc_offset, op_name)
+ * with the slot LOCATION (holder, holder->shape, slot_idx) the slow path
+ * resolved — not the closure value (refactor-3 GC-06).
+ *
+ * Holder lifetime: e->holder / e->holder_shape are raw pointers with the
+ * same lifetime assumption the slot UIC makes (object/uic.h caches
+ * recv_shapes/slots identically) — proto-chain holders are realm-rooted
+ * for the life of the type.  This parity is deliberate; see the
+ * design-risks register. */
 static void
-ic_fill(UVM *vm, uint32_t pc_off, USymbol *op_name, struct UClosure *cl)
+ic_fill(UVM *vm, uint32_t pc_off, USymbol *op_name,
+        UObject *holder, uint16_t slot_idx)
 {
     if (vm->op_overload_ic == NULL) return;   /* IC not allocated; skip fill */
     uint32_t si = site_index(pc_off);
@@ -76,7 +105,9 @@ ic_fill(UVM *vm, uint32_t pc_off, USymbol *op_name, struct UClosure *cl)
     e->pc_offset    = pc_off;
     e->topology_gen = vm->topology_gen;
     e->op_name      = op_name;
-    e->cached       = cl;
+    e->holder       = holder;
+    e->holder_shape = holder->shape;
+    e->slot_idx     = slot_idx;
     /* Advance cursor (round-robin eviction). */
     ic->cursor[si] = (uint8_t)((cur + 1U) % URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE);
     if (ic->n[si] < (uint8_t)URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE) {
@@ -91,7 +122,8 @@ ic_fill(UVM *vm, uint32_t pc_off, USymbol *op_name, struct UClosure *cl)
 /* Resolve the operator-named slot on `recv_obj`'s proto chain.
  * Returns a UClosure* if found and it is a bytecode or native closure.
  * Returns NULL if not found, not a closure, or OOM during lookup.
- * Caches the result in the IC table keyed by pc_off. */
+ * Caches the slot LOCATION (holder, slot_idx) in the IC table keyed by
+ * pc_off (refactor-3 GC-06: cache WHERE, not WHAT). */
 static struct UClosure *
 resolve_op_closure(UVM *vm, UObject *recv_obj,
                    USymbol *op_name, uint32_t pc_off)
@@ -102,19 +134,36 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
         return cached;
     }
 
-    /* Slow path: proto-chain walk. */
-    UValue v;
-    int rc = urbi_object_lookup(vm, recv_obj, op_name, &v);
-    if (rc != 0) {
-        return NULL;   /* miss or error */
+    /* Slow path: proto-chain walk capturing (holder, idx) so the IC can
+     * cache the slot location.  On full-tree miss, retry once with the
+     * "fallback" slot — mirrors urbi_object_lookup's T40 GET_FALLBACK
+     * retry, which this path used before the GC-06 re-key. */
+    UObject *holder = NULL;
+    uint32_t idx    = 0U;
+    int rc = urbi_object_resolve_slot(vm, recv_obj, op_name, &holder, &idx);
+    if (rc == 0) {
+        USymbol *fb = (USymbol *)ustr_intern(vm, "fallback", 8);
+        if (op_name == fb) {
+            return NULL;   /* don't recurse fallback-on-fallback */
+        }
+        rc = urbi_object_resolve_slot(vm, recv_obj, fb, &holder, &idx);
     }
+    if (rc != 1) {
+        return NULL;   /* miss or resolve error */
+    }
+
+    UValue v = holder->slots[idx];
     if (v.kind != (uint8_t)UVAL_CLOSURE || v.v.p == NULL) {
         return NULL;   /* found but not a closure */
     }
 
-    struct UClosure *cl = (struct UClosure *)v.v.p;
-    ic_fill(vm, pc_off, op_name, cl);
-    return cl;
+    /* slot_idx is uint16_t in the entry; indices beyond 65534 are not
+     * cacheable (mirrors uic.c's OBJ-IC-POLY saturation) — return the
+     * closure uncached so dispatch stays correct. */
+    if (idx < 0xFFFFU) {
+        ic_fill(vm, pc_off, op_name, holder, (uint16_t)idx);
+    }
+    return (struct UClosure *)v.v.p;
 }
 
 /* -----------------------------------------------------------------------
