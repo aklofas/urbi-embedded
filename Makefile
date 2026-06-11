@@ -1184,7 +1184,8 @@ test-mem-debug:
 # highest-leverage detector for the rooting-gap bug class: catch_value
 # v0.11.4, walk_uevent v1.0 hang, container elements B2).  -O1 keeps
 # wall-clock tolerable.  Own TARGET= so Phase 1 -j parallelism stays
-# race-free.
+# race-free.  In RELEASETEST_PHASE1 since v0.13.2 (corpus green; ~2 min
+# wall-clock solo, comparable to test-mem-debug).
 .PHONY: test-gc-stress
 test-gc-stress:
 	$(MAKE) TARGET=host-gc-stress \
@@ -1322,7 +1323,7 @@ RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
     test-trace test-trace-compiled-out test-perf-counters \
     test-trace-decode test-trace-capture test-gdb \
-    test-mem-debug test-gdb-memdebug \
+    test-mem-debug test-gdb-memdebug test-gc-stress \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
