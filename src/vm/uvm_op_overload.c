@@ -13,14 +13,17 @@
  * gate for those opcodes is: the lhs is a UVAL_OBJECT (user type).
  *
  * IC: the UOpOverloadIC table in the UVM struct caches the (pc_offset,
- * topology_gen) → (holder, holder_shape, slot_idx) slot LOCATION per call
- * site so the proto-chain walk is elided on subsequent calls at the same
- * site.  The hit path re-reads holder->slots[slot_idx] — the IC never
- * holds a closure pointer (refactor-3 GC-06/VM-06c: a cached closure
- * VALUE went stale on in-place slot overwrite, which deliberately does
- * not bump topology_gen, and dangled once GC swept the replaced closure).
+ * topology_gen, recv_shape, recv_protos) → (holder, slot_idx) slot
+ * LOCATION per call site so the proto-chain walk is elided on subsequent
+ * calls at the same site.  The hit path re-reads the live slot — the IC
+ * never holds a closure pointer (refactor-3 GC-06/VM-06c: a cached
+ * closure VALUE went stale on in-place slot overwrite, which deliberately
+ * does not bump topology_gen, and dangled once GC swept the replaced
+ * closure).  The receiver dimension (recv_shape + recv_protos word) keys
+ * polymorphic sites: without it, a second receiver of a different class
+ * at the same pc silently dispatched the first class's operator.
  * IC invalidation follows the same topology_gen bump points as the
- * existing OP_GETSLOT IC, plus the holder-shape match. */
+ * existing OP_GETSLOT IC, plus the receiver and holder-shape matches. */
 
 #include "vm/uvm_op_overload.h"
 
@@ -47,14 +50,21 @@ static uint32_t site_index(uint32_t pc_off)
     return pc_off % (uint32_t)URBI_OP_OVERLOAD_IC_SITES;
 }
 
-/* Look up the IC for (pc_offset, op_name).  Returns a UClosure* on hit,
- * NULL on miss.  A hit requires pc_offset match AND topology_gen match
- * AND op_name pointer equality (interned, so pointer == content) AND the
- * holder's shape still matching the fill-time shape.  The entry caches
- * WHERE the slot lives (holder, slot_idx), never the closure value
- * (refactor-3 GC-06/VM-06c): the hit path re-reads the live slot below. */
+/* Look up the IC for (recv_obj, pc_offset, op_name).  Returns a UClosure*
+ * on hit, NULL on miss.  A hit requires pc_offset match AND topology_gen
+ * match AND op_name pointer equality (interned, so pointer == content)
+ * AND the receiver dimension: recv_shape pins the receiver's local-slot
+ * layout, recv_protos (opaque word compare, never dereferenced) pins the
+ * proto-list identity — shape alone cannot discriminate the receiver's
+ * class because fresh instances of slot-less classes all share the root
+ * shape.  Same-shape + same-protos different-identity receivers sharing
+ * one entry is CORRECT (identical resolution; slot UIC semantics).
+ * The entry caches WHERE the slot lives (holder or live receiver,
+ * slot_idx), never the closure value (refactor-3 GC-06/VM-06c): the hit
+ * path re-reads the live slot below. */
 static struct UClosure *
-ic_lookup(UVM *vm, uint32_t pc_off, const USymbol *op_name)
+ic_lookup(UVM *vm, const UObject *recv_obj,
+          uint32_t pc_off, const USymbol *op_name)
 {
     if (vm->op_overload_ic == NULL) return NULL;   /* IC not allocated (OOM at init) */
     uint32_t si = site_index(pc_off);
@@ -65,16 +75,29 @@ ic_lookup(UVM *vm, uint32_t pc_off, const USymbol *op_name)
         if (e->pc_offset    == pc_off
          && e->op_name      == op_name
          && e->topology_gen == vm->topology_gen
-         && e->holder       != NULL
-         && e->holder->shape == e->holder_shape) {
+         && e->recv_shape   == recv_obj->shape
+         && e->recv_protos  == recv_obj->protos) {
             /* Re-read the live slot: in-place overwrites (no gen bump by
              * design, topology spec §4.2 row 2) and GC-replaced closures
-             * are both picked up.  Bounds safety: the shape match above
-             * guarantees slot_idx is valid for holder->slots[] — the index
-             * was resolved against this exact shape at fill time, and any
-             * slot add/remove transitions holder to a different UShape.
-             * Slot no longer a closure → slow path. */
-            UValue v = e->holder->slots[e->slot_idx];
+             * are both picked up.  Bounds safety: the recv/holder shape
+             * match guarantees slot_idx is valid for the slot array read
+             * below — the index was resolved against that exact shape at
+             * fill time, and any slot add/remove transitions the owner to
+             * a different UShape.  Slot no longer a closure → slow path. */
+            UValue v;
+            if ((e->flags & UOPIC_FLAG_LOCAL) != 0U) {
+                /* OBJ-IC-POLY mirror: a local slot is receiver-specific —
+                 * re-resolve via the LIVE receiver (recv_shape matched, so
+                 * slot_idx is valid for recv_obj->slots[]); the fill-time
+                 * receiver may be a different same-shape instance. */
+                v = recv_obj->slots[e->slot_idx];
+            } else {
+                if (e->holder == NULL
+                 || e->holder->shape != e->holder_shape) {
+                    return NULL;   /* stale holder layout → slow path */
+                }
+                v = e->holder->slots[e->slot_idx];
+            }
             if (v.kind == (uint8_t)UVAL_CLOSURE && v.v.p != NULL) {
                 return (struct UClosure *)v.v.p;
             }
@@ -84,18 +107,21 @@ ic_lookup(UVM *vm, uint32_t pc_off, const USymbol *op_name)
     return NULL;
 }
 
-/* Fill one IC entry at the round-robin cursor for (pc_offset, op_name)
- * with the slot LOCATION (holder, holder->shape, slot_idx) the slow path
- * resolved — not the closure value (refactor-3 GC-06).
+/* Fill one IC entry at the round-robin cursor for (recv_obj, pc_offset,
+ * op_name) with the slot LOCATION the slow path resolved — not the
+ * closure value (refactor-3 GC-06).  A slot local to the receiver
+ * (holder == recv_obj) is stored as UOPIC_FLAG_LOCAL + slot_idx only;
+ * the hit path re-resolves through the live receiver (OBJ-IC-POLY
+ * mirror) so no per-instance pointer is retained.
  *
- * Holder lifetime: e->holder / e->holder_shape are raw pointers with the
- * same lifetime assumption the slot UIC makes (object/uic.h caches
- * recv_shapes/slots identically) — proto-chain holders are realm-rooted
- * for the life of the type.  This parity is deliberate; see the
- * design-risks register. */
+ * Holder lifetime (inherited case): e->holder / e->holder_shape are raw
+ * pointers with the same lifetime assumption the slot UIC makes
+ * (object/uic.h caches recv_shapes/slots identically) — proto-chain
+ * holders are realm-rooted for the life of the type.  This parity is
+ * deliberate; see the design-risks register. */
 static void
-ic_fill(UVM *vm, uint32_t pc_off, USymbol *op_name,
-        UObject *holder, uint16_t slot_idx)
+ic_fill(UVM *vm, const UObject *recv_obj, uint32_t pc_off,
+        USymbol *op_name, UObject *holder, uint16_t slot_idx)
 {
     if (vm->op_overload_ic == NULL) return;   /* IC not allocated; skip fill */
     uint32_t si = site_index(pc_off);
@@ -105,8 +131,17 @@ ic_fill(UVM *vm, uint32_t pc_off, USymbol *op_name,
     e->pc_offset    = pc_off;
     e->topology_gen = vm->topology_gen;
     e->op_name      = op_name;
-    e->holder       = holder;
-    e->holder_shape = holder->shape;
+    e->recv_shape   = recv_obj->shape;
+    e->recv_protos  = recv_obj->protos;
+    if (holder == recv_obj) {
+        e->flags        = UOPIC_FLAG_LOCAL;
+        e->holder       = NULL;
+        e->holder_shape = NULL;
+    } else {
+        e->flags        = 0U;
+        e->holder       = holder;
+        e->holder_shape = holder->shape;
+    }
     e->slot_idx     = slot_idx;
     /* Advance cursor (round-robin eviction). */
     ic->cursor[si] = (uint8_t)((cur + 1U) % URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE);
@@ -129,7 +164,7 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
                    USymbol *op_name, uint32_t pc_off)
 {
     /* IC fast path. */
-    struct UClosure *cached = ic_lookup(vm, pc_off, op_name);
+    struct UClosure *cached = ic_lookup(vm, recv_obj, pc_off, op_name);
     if (cached != NULL) {
         return cached;
     }
@@ -137,7 +172,10 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
     /* Slow path: proto-chain walk capturing (holder, idx) so the IC can
      * cache the slot location.  On full-tree miss, retry once with the
      * "fallback" slot — mirrors urbi_object_lookup's T40 GET_FALLBACK
-     * retry, which this path used before the GC-06 re-key. */
+     * retry, which this path used before the GC-06 re-key.  Parity note:
+     * urbi_object_resolve_slot bounds the walk at a 64-deep iterative DFS
+     * (URBI_RESOLVE_STACK_CAP) where the old urbi_object_lookup recursion
+     * was unbounded — same bound the slot-UIC slow path already has. */
     UObject *holder = NULL;
     uint32_t idx    = 0U;
     int rc = urbi_object_resolve_slot(vm, recv_obj, op_name, &holder, &idx);
@@ -148,6 +186,8 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
         }
         rc = urbi_object_resolve_slot(vm, recv_obj, fb, &holder, &idx);
     }
+    /* rc == -1 (resolve-stack overflow) deliberately skips the fallback
+     * retry above and lands here: treated as a hard miss. */
     if (rc != 1) {
         return NULL;   /* miss or resolve error */
     }
@@ -161,7 +201,7 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
      * cacheable (mirrors uic.c's OBJ-IC-POLY saturation) — return the
      * closure uncached so dispatch stays correct. */
     if (idx < 0xFFFFU) {
-        ic_fill(vm, pc_off, op_name, holder, (uint16_t)idx);
+        ic_fill(vm, recv_obj, pc_off, op_name, holder, (uint16_t)idx);
     }
     return (struct UClosure *)v.v.p;
 }

@@ -372,6 +372,47 @@ UTEST(vm_op_overload_ic_stale_after_inplace_redefine)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(vm_op_overload_ic_polymorphic_site_dispatches_per_receiver)
+{
+    /* Polymorphic-site wrong-dispatch: the IC entry keyed only on
+     * (pc_offset, op_name, topology_gen) served the FIRST receiver's
+     * operator to every later receiver at the same site.  Every receiver
+     * is created before the first call (Class.new() bumps topology_gen
+     * and would otherwise mask the bug by invalidating the entry), and
+     * results are pre-declared + assigned (no realm slot-add between fill
+     * and re-call).  Pre-fix: 1,1,1,1 -> 1111.  Expected:
+     *   f(c)=1 (fills C entry), f(d)=2 (different class, same site),
+     *   f(i)=9 (instance-local shadow), f(c)=1 (C entry still hits)
+     * -> 1*1000 + 2*100 + 9*10 + 1 = 1291. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UValue out = urbi_make_nil();
+    int rc = utest_e2e_compile_and_run(&vm,
+        "class PolyC {};\n"
+        "PolyC.setSlot(\"+\", function(other) { 1 });\n"
+        "class PolyD {};\n"
+        "PolyD.setSlot(\"+\", function(other) { 2 });\n"
+        "var c = PolyC.new();\n"
+        "var d = PolyD.new();\n"
+        "var i = PolyC.new();\n"
+        "i.setSlot(\"+\", function(other) { 9 });\n"
+        "var f = function(x) { x + x };\n"
+        "var r1 = 0;\n"
+        "var r2 = 0;\n"
+        "var r3 = 0;\n"
+        "var r4 = 0;\n"
+        "r1 = f(c);\n"
+        "r2 = f(d);\n"
+        "r3 = f(i);\n"
+        "r4 = f(c);\n"
+        "r1 * 1000 + r2 * 100 + r3 * 10 + r4",
+        &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ(1291, (int)out.v.i);
+    urbi_vm_destroy(&vm);
+}
+
 UTEST(vm_op_overload_ic_stale_after_c_api_set_local_slot)
 {
     /* C-API staleness: overwrite the holder's "+" slot directly via
@@ -522,6 +563,8 @@ test_vm_operator_overload_suite(void)
     utest_run("vm_op_add_overload_ic_cached",         vm_op_add_overload_ic_cached);
     utest_run("vm_op_overload_ic_stale_after_inplace_redefine",
                                                       vm_op_overload_ic_stale_after_inplace_redefine);
+    utest_run("vm_op_overload_ic_polymorphic_site_dispatches_per_receiver",
+                                                      vm_op_overload_ic_polymorphic_site_dispatches_per_receiver);
     utest_run("vm_op_overload_ic_stale_after_c_api_set_local_slot",
                                                       vm_op_overload_ic_stale_after_c_api_set_local_slot);
     utest_run("vm_op_overload_ic_no_uaf_after_gc_sweeps_old_closure",

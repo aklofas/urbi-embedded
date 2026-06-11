@@ -1,0 +1,37 @@
+# Milestone: v0.13.2
+# Covers: refactor-3 GC-06/VM-06c follow-up — a polymorphic operator call
+#         site must dispatch per receiver.  The IC entry was keyed only on
+#         (pc_offset, op_name, topology_gen); a second receiver of a
+#         DIFFERENT class at the same compiled site silently dispatched
+#         the first class's operator, and an instance-local "+" was
+#         shadowed by the class entry.  Receiver shape alone cannot
+#         discriminate the class case (fresh instances of slot-less
+#         classes all share the root shape; protos are not part of the
+#         shape), so the entry also keys the receiver's protos word.
+# Note:   the operator is routed through f so the SAME compiled call site
+#         runs for every receiver, and every receiver is created BEFORE
+#         the first call — Class.new() bumps topology_gen, which would
+#         otherwise invalidate the entry and mask the bug.
+
+# --- create everything up front, then fill the IC with class C's "+" ---
+class C {}; C.setSlot("+", function(other) { 1 }); class D {}; D.setSlot("+", function(other) { 2 }); var c = C.new(); var d = D.new(); var c2 = C.new(); var i = C.new(); i.setSlot("+", function(other) { 9 }); var f = function(x) { x + x }; f(c)
+[00000000] 1
+
+# --- different class at the same site must dispatch D's "+" (pre-fix: 1) ---
+f(d)
+[00000001] 2
+
+# --- back to C: the C entry still hits ---
+f(c)
+[00000002] 1
+
+# --- same-class different-identity receiver SHARES the entry (correct:
+#     same shape + same protos word implies the same resolution) ---
+f(c2)
+[00000003] 1
+
+# --- instance-local shadow: i's own "+" must win over the class slot at
+#     the same site (pre-fix: 1 — the class entry hit because the
+#     receiver was not part of the key) ---
+f(i)
+[00000004] 9

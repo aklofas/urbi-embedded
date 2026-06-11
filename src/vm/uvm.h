@@ -138,11 +138,42 @@ typedef struct UDeferredSlotChange {
 #define URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE 4U
 #endif
 
+/* UOpOverloadICEntry.flags bit: the operator slot is LOCAL to the receiver
+ * (holder == receiver at fill).  Mirrors the slot UIC's URBI_SLOT_FLAG_LOCAL
+ * handling (OBJ-IC-POLY): a local slot is receiver-specific, so the hit
+ * path re-resolves via the LIVE receiver's slots[] instead of a cached
+ * holder pointer — a different same-shape instance (or a swept fill-time
+ * instance) would otherwise serve the wrong object's slot. */
+#define UOPIC_FLAG_LOCAL 0x01U
+
 typedef struct UOpOverloadICEntry {
     uint32_t         pc_offset;    /* call-site identifier (offset from proto base) */
+    uint16_t         slot_idx;     /* index into the slot array of holder (or of
+                                      the live receiver when UOPIC_FLAG_LOCAL) */
+    uint8_t          flags;        /* UOPIC_FLAG_LOCAL */
+    uint8_t          pad0;
     uint64_t         topology_gen; /* vm->topology_gen at fill time; stale on mismatch */
     struct USymbol  *op_name;      /* interned operator-name symbol */
-    struct UObject  *holder;       /* proto-chain object owning the operator slot
+    struct UShape   *recv_shape;   /* receiver shape at fill (polymorphic-site key:
+                                      pins the receiver's LOCAL slot layout — an
+                                      instance-local operator shadowing the class
+                                      slot transitions the instance shape).
+                                      Receivers are always UVAL_OBJECT here
+                                      (vm_arith_method_fallback short-circuits
+                                      non-objects), so recv->shape is valid. */
+    uintptr_t        recv_protos;  /* receiver protos word at fill (polymorphic-site
+                                      key: pins the proto-list identity.  Shape alone
+                                      CANNOT discriminate the receiver's class —
+                                      fresh instances of slot-less classes all share
+                                      the root shape; protos are not part of the
+                                      shape).  Compared as an opaque word, never
+                                      dereferenced.  Same-shape + same-protos
+                                      different-identity receivers sharing one entry
+                                      is CORRECT: identical local layout + identical
+                                      proto list imply identical resolution (slot
+                                      UIC semantics). */
+    struct UObject  *holder;       /* proto-chain object owning the operator slot;
+                                      NULL when UOPIC_FLAG_LOCAL
                                       (refactor-3 GC-06: cache WHERE, not WHAT —
                                       the hit path re-reads holder->slots[slot_idx],
                                       so in-place overwrites and GC replacement of
@@ -151,10 +182,8 @@ typedef struct UOpOverloadICEntry {
                                       Lifetime parity with UIC's recv_shapes/slots:
                                       proto-chain holders are realm-rooted for the
                                       life of the type — deliberate, see design-risks. */
-    struct UShape   *holder_shape; /* holder->shape at fill; staleness key */
-    uint16_t         slot_idx;     /* index into holder->slots[] */
-    uint16_t         pad0;
-    uint32_t         pad1;
+    struct UShape   *holder_shape; /* holder->shape at fill; staleness key;
+                                      NULL when UOPIC_FLAG_LOCAL */
 } UOpOverloadICEntry;
 
 typedef struct UOpOverloadIC {
