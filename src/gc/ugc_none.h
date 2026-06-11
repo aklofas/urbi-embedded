@@ -56,10 +56,10 @@
 #  define UNLIKELY(x) (x)
 #endif
 
-/* Forward declarations for pointer types used in barrier signatures. */
+/* Forward declarations for pointer types used in barrier signatures.
+ * (struct UClosure dropped at Task 9c — mirrors ugc_incremental.h.) */
 struct UVM;
 struct UStrand;
-struct UClosure;
 
 /* === Barrier surfaces — all no-op static inlines under URBI_GC_NONE ===
  *

@@ -74,21 +74,29 @@ black parent is about to point at a white child, the child is shaded gray so
 the mark phase will visit it before sweep.
 
 There are three barrier surfaces, all defined as `static inline` in
-`src/gc/ugc_incremental.h` (and as no-ops in `src/gc/ugc_none.h`). They are
-hooks only — the caller is responsible for performing the actual store
-**immediately** after the call:
+`src/gc/ugc_incremental.h` (and as no-ops in `src/gc/ugc_none.h`):
 
-- `urbi_gc_slot_write(vm, parent, key, child)` — object slot or realm
-  namespace store. Combines the GC barrier with the watcher dirty-set hook
-  (`observer_dirty`) when `UGC_HAS_WATCHER_OBSERVER` is set on the parent.
-  The post-store deferred slot-change emit is also wired here when bit 7 is
-  set.
+- `urbi_gc_slot_store(vm, parent, key, dst, child)` — object slot or realm
+  namespace store; performs the barrier and the store. The barrier-only
+  variant `urbi_gc_slot_pre_store(vm, parent, key, child)` exists for
+  callers whose store target is not a `UValue *` or whose store already
+  happened; those callers perform the actual store themselves. Both combine
+  the GC barrier with the watcher dirty-set hook (`observer_dirty`) when
+  `UGC_HAS_WATCHER_OBSERVER` is set on the parent. The post-store deferred
+  slot-change emit is also wired here when bit 7 is set.
 - `urbi_gc_register_write(vm, strand, reg_idx, child)` — strand register
-  store. **Intentionally a no-op:** registers are roots walked at every mark
-  phase, so the parent-color check is unnecessary.
-- `urbi_gc_upvalue_write(vm, closure, up_idx, child)` — `OP_SETUPVAL`
-  through a closure's upvalue chain. Same Dijkstra logic as `slot_write`,
-  with no watcher hook (closures are not directly watchable in v1.0).
+  store. **Intentionally a no-op:** registers are roots, walked at
+  `MARK_ROOTS` *and re-walked at `ATOMIC_FINISH` with the mutator stopped*
+  (refactor-3 GC-02). The atomic-phase full root-provider re-scan — not a
+  per-write barrier — is the soundness mechanism: a white value stored into
+  an already-scanned register is re-discovered before `SWEEP`.
+- `urbi_gc_upvalue_pre_store(vm, cell, child)` — barrier-only hook for
+  heapified-upvalue stores (`OP_SETUPVAL`'s on-heap arm and
+  `vm_close_upvalues`); the caller performs the store. The Dijkstra parent
+  is the `UUpvalCell`'s embedded `UCell` header — not the executing closure,
+  because sibling closures share the cell and its color diverges from any
+  one closure's (refactor-3 GC-07). No watcher hook (closures are not
+  directly watchable in v1.0).
 
 `UClosure` and `UObject` both embed `UCell` at offset 0, which is what makes
 the cast `(UCell *)closure` and `(UCell *)object` safe inside the inline

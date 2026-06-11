@@ -27,11 +27,11 @@
 #endif
 
 /* Forward declarations for pointer types used in barrier signatures.
- * Full definitions live in src/sched/ustrand.h / src/runtime/uframe.h /
- * src/chunk/uchunk.h. */
+ * Full definitions live in src/vm/uvm.h / src/sched/ustrand.h.
+ * (struct UClosure dropped at Task 9c: urbi_gc_upvalue_pre_store now takes
+ * the UUpvalCell's UCell header, not the executing closure.) */
 struct UVM;
 struct UStrand;
-struct UClosure;
 
 /* === gc_byte bit layout (row 10 §3.1) ===
  *
@@ -306,9 +306,10 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  *   vm_close_upvalues (src/vm/uvm_closure.c): same helper, same parent
  *   shape, before the heapifying copy.
  *
- *   unamespace_set (src/realm/urealm_namespace.c): UNamespace still lacks a
- *   UCell header at this commit.  Wire urbi_gc_slot_store when UNamespace
- *   migrates to a UCell-headed cell (later M4 task).
+ *   unamespace_set (src/realm/urealm_namespace.c): deliberately unwired.
+ *   Namespace bindings are roots, re-walked at ATOMIC_FINISH with the
+ *   mutator stopped (refactor-3 GC-02) — the re-scan, not a per-write
+ *   barrier, is the soundness mechanism (see the store-site comment).
  *
  *   OP_SETSLOT (v0.10.1): fast-path LOCAL arm uses urbi_gc_slot_store;
  *   slow-path watcher notification uses urbi_gc_slot_pre_store (post-store). */
