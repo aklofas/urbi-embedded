@@ -55,8 +55,18 @@ urbi_object_get_or_create_change_event(UVM *vm, UObject *obj, USymbol *name)
     }
     UChangedNode *node = (UChangedNode *)nc;
 
-    /* Allocate the associated UEvent. */
+    /* Allocate the associated UEvent.
+     *
+     * GC soundness (v0.13.2): pin the node across the event allocation —
+     * the node is referenced only by this C local until the wire step
+     * below, and a collection triggered by urbi_event_create
+     * (URBI_GC_STRESS collects on every alloc) swept it, after which the
+     * wire step corrupted recycled memory and published a dangling
+     * changed_events_head entry.  The node is zero-filled (no children),
+     * so the no-trace caveat of pins is moot here. */
+    nc->gc_byte |= UGC_IS_PINNED;
     UEvent *event = urbi_event_create(vm);
+    nc->gc_byte = (uint8_t)(nc->gc_byte & ~(uint8_t)UGC_IS_PINNED);
     if (UNLIKELY(event == NULL)) {
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN, "slot-change OOM (event alloc)");

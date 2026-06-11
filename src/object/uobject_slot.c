@@ -11,10 +11,11 @@
 #include "vm/uvm.h"
 #include "urbi/types.h"         /* URBI_OK / URBI_ERR_* — OBJ-007 distinct codes */
 #include "urbi/gc.h"            /* urbi_gc_alloc + urbi_gc_slot_store barrier */
-#include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_store */
+#include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_store + uvm_c_root_push/_pop */
 #include "gc/ugc.h"             /* UTYPE_SLOT_ARRAY / UTYPE_PROPS / UTYPE_PROPS_TABLE */
 #include "changed/uchanged_node.h" /* urbi_emit_slot_change_if_subscribed */
 #include "chunk/uchunk.h"
+#include "sched/ustrand.h"      /* UCRootFrame (v0.13.2 set_local_slot rooting) */
 
 /* uprops_alloc — allocate a fresh UProps cell with all flags clear and
  * oget/oset = UVAL_VOID.  Returns NULL on OOM. */
@@ -63,13 +64,9 @@ uprops_alloc(UVM *vm)
  *      (IC shape-mismatch check covers this).
  *
  * Returns 0 on success, -1 on OOM. */
-int
-urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
+static int
+set_local_slot_impl(UVM *vm, UObject *obj, USymbol *name, UValue value)
 {
-    if (vm == NULL || obj == NULL || name == NULL) {
-        return -1;
-    }
-
     /* Case 1: slot already in this lineage — in-place value update.
      * Route through the combined barrier + store (urbi_gc_slot_store): if the
      * receiver UObject cell is BLACK and the new value is a white
@@ -152,6 +149,38 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
      * Do NOT call urbi_emit_slot_change_if_subscribed here.  The in-place
      * update branch (Case 1 above) is the correct emit site. */
     return 0;
+}
+
+int
+urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
+{
+    if (vm == NULL || obj == NULL || name == NULL) {
+        return -1;
+    }
+
+    /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery chain): pin
+     * the receiver and the incoming value on the VM-level C-root chain for
+     * the duration of the install.  Case 2 of the impl allocates (shape
+     * transition + USlotArray) BEFORE the value lands in slots[]; a
+     * collection triggered by those allocations (URBI_GC_STRESS collects
+     * on every alloc) would sweep a fresh `obj` or `value` that the caller
+     * holds only in C locals — the canonical native-constructor pattern
+     * "alloc cell, set slots on it / store fresh cell into it".  Rooting
+     * here closes that window for EVERY caller centrally; the chain works
+     * with or without a current strand (host bootstrap vs native method). */
+    UCRootFrame f_obj, f_val;
+    UValue obj_v;
+    obj_v.kind = (uint8_t)UVAL_OBJECT;
+    for (int i = 0; i < 7; i++) obj_v._pad[i] = 0;
+    obj_v.v.p = obj;
+    uvm_c_root_push(vm, &f_obj, &obj_v);
+    uvm_c_root_push(vm, &f_val, &value);
+
+    int rc = set_local_slot_impl(vm, obj, name, value);
+
+    uvm_c_root_pop(vm, &f_val);
+    uvm_c_root_pop(vm, &f_obj);
+    return rc;
 }
 
 /* === T27: urbi_object_remove_slot ===
@@ -250,9 +279,9 @@ uvalue_eq(UValue a, UValue b)
     return a.kind == b.kind && a.v.i == b.v.i;
 }
 
-int
-urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
-                             uint8_t flag_bit, UValue value)
+static int
+install_property_impl(UVM *vm, UObject *obj, const USymbol *name,
+                      uint8_t flag_bit, UValue value)
 {
     /* OBJ-007: distinguish OOM from invalid-arg / slot-not-found.
      * Returns:
@@ -260,9 +289,6 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
      *   URBI_ERR_INVALID_ARG       NULL args or unsupported flag_bit
      *   URBI_ERR_SLOT_NOT_FOUND    slot does not exist on obj's lineage
      *   URBI_ERR_OOM               shape transition / UProps allocation OOM */
-    if (vm == NULL || obj == NULL || name == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
     int32_t idx = urbi_shape_find_slot(obj->shape, name);
     if (idx < 0) {
         return URBI_ERR_SLOT_NOT_FOUND;   /* slot must exist before installing */
@@ -322,6 +348,29 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
         return URBI_ERR_OOM;
     }
 
+    /* GC soundness (v0.13.2): a genuine sibling is referenced ONLY by this
+     * C local until the publish step below, and uprops_alloc allocates in
+     * between — pin it (sweep-exemption) until publish.  CRITICAL: pins do
+     * not trace children (the mark phase never walks a pinned-but-
+     * unreachable cell), so the sibling's props-table WRAPPER must be
+     * pinned too — pinning only the shape left the wrapper sweepable, and
+     * the published shape then carried a dangling props_table (found by
+     * URBI_GC_STRESS on the class-getter fixtures).  The idempotent case
+     * returns obj->shape itself (live, reachable) — no pin needed.  The
+     * clone + clone_pt intermediates below get the same treatment.
+     * Every return path past this point must drop the pins it set. */
+    int new_shape_pinned = 0;
+    UCell *new_pt_cell = NULL;
+    if (new_shape != obj->shape) {
+        ((UCell *)new_shape)->gc_byte |= UGC_IS_PINNED;
+        if (new_shape->props_table != NULL) {
+            new_pt_cell = (UCell *)
+                ((char *)new_shape->props_table - offsetof(UPropsTable, entries));
+            new_pt_cell->gc_byte |= UGC_IS_PINNED;
+        }
+        new_shape_pinned = 1;
+    }
+
     UPropsTable *clone_pt = NULL;
     UShape *clone = NULL;
     if (new_shape == obj->shape) {
@@ -344,6 +393,9 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
         clone->parent      = obj->shape->parent;
         clone->transitions = NULL;
         clone->props_table = NULL;
+        /* v0.13.2: pin across the clone_pt + uprops allocations below
+         * (C-local-only until publish; see new_shape pin note above). */
+        sc->gc_byte |= UGC_IS_PINNED;
 
         UCell *pc = urbi_gc_alloc(vm,
                                   sizeof(UPropsTable)
@@ -351,11 +403,15 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
                                     * sizeof(UProps *),
                                   UTYPE_PROPS_TABLE);
         if (pc == NULL) {
+            sc->gc_byte = (uint8_t)(sc->gc_byte & ~(uint8_t)UGC_IS_PINNED);
             return URBI_ERR_OOM;
         }
         clone_pt = (UPropsTable *)pc;
         clone_pt->n    = obj->shape->count;
         clone_pt->_pad = 0U;
+        /* v0.13.2: same pin — referenced only by this C local until the
+         * publish step wires clone->props_table. */
+        pc->gc_byte |= UGC_IS_PINNED;
         for (uint32_t i = 0U; i < clone_pt->n; i++) {
             clone_pt->entries[i] = (obj->shape->props_table != NULL)
                                  ? obj->shape->props_table[i]
@@ -371,6 +427,20 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
                        : NULL;
     UProps *fresh = uprops_alloc(vm);
     if (fresh == NULL) {
+        if (new_shape_pinned) {
+            ((UCell *)new_shape)->gc_byte =
+                (uint8_t)(((UCell *)new_shape)->gc_byte & ~(uint8_t)UGC_IS_PINNED);
+            if (new_pt_cell != NULL) {
+                new_pt_cell->gc_byte =
+                    (uint8_t)(new_pt_cell->gc_byte & ~(uint8_t)UGC_IS_PINNED);
+            }
+        }
+        if (clone != NULL) {
+            ((UCell *)clone)->gc_byte =
+                (uint8_t)(((UCell *)clone)->gc_byte & ~(uint8_t)UGC_IS_PINNED);
+            ((UCell *)clone_pt)->gc_byte =
+                (uint8_t)(((UCell *)clone_pt)->gc_byte & ~(uint8_t)UGC_IS_PINNED);
+        }
         return URBI_ERR_OOM;
     }
     if (existing != NULL) {
@@ -388,20 +458,62 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
     }
 
     /* Publish: write the new UProps into the destination shape's
-     * props_table[idx]. */
+     * props_table[idx].  Drop the construction pins — everything is now
+     * reachable through obj->shape. */
     if (clone != NULL) {
         clone_pt->entries[idx] = fresh;
         clone->props_table     = clone_pt->entries;
         obj->shape             = clone;
+        ((UCell *)clone)->gc_byte =
+            (uint8_t)(((UCell *)clone)->gc_byte & ~(uint8_t)UGC_IS_PINNED);
+        ((UCell *)clone_pt)->gc_byte =
+            (uint8_t)(((UCell *)clone_pt)->gc_byte & ~(uint8_t)UGC_IS_PINNED);
     } else {
         /* Genuine sibling.  transition_property already allocated its
          * props_table; write the new UProps into the slot's index. */
         new_shape->props_table[idx] = fresh;
         obj->shape = new_shape;
+        if (new_shape_pinned) {
+            ((UCell *)new_shape)->gc_byte =
+                (uint8_t)(((UCell *)new_shape)->gc_byte & ~(uint8_t)UGC_IS_PINNED);
+            if (new_pt_cell != NULL) {
+                new_pt_cell->gc_byte =
+                    (uint8_t)(new_pt_cell->gc_byte & ~(uint8_t)UGC_IS_PINNED);
+            }
+        }
     }
 
     vm->topology_gen++;
     return 0;
+}
+
+int
+urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
+                             uint8_t flag_bit, UValue value)
+{
+    if (vm == NULL || obj == NULL || name == NULL) {
+        return URBI_ERR_INVALID_ARG;
+    }
+
+    /* GC soundness (v0.13.2): pin receiver + property value on the VM-level
+     * C-root chain for the duration — the impl allocates (shape sibling /
+     * clone / props table / UProps) before the value is published, and the
+     * caller typically holds both only in C locals (e.g. OP_INSTALL_OGET
+     * with a freshly created getter closure).  Same rationale as the
+     * urbi_object_set_local_slot wrapper above. */
+    UCRootFrame f_obj, f_val;
+    UValue obj_v;
+    obj_v.kind = (uint8_t)UVAL_OBJECT;
+    for (int i = 0; i < 7; i++) obj_v._pad[i] = 0;
+    obj_v.v.p = obj;
+    uvm_c_root_push(vm, &f_obj, &obj_v);
+    uvm_c_root_push(vm, &f_val, &value);
+
+    int rc = install_property_impl(vm, obj, name, flag_bit, value);
+
+    uvm_c_root_pop(vm, &f_val);
+    uvm_c_root_pop(vm, &f_obj);
+    return rc;
 }
 
 int

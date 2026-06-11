@@ -301,11 +301,15 @@ urbi_job_make(UVM *vm, UStrand *strand)
     URBI_INTERNAL_ASSERT(strand != NULL);
     URBI_INTERNAL_ASSERT(vm->job_proto != NULL);
 
-    UObject *j = urbi_object_clone(vm, vm->job_proto);
-    if (j == NULL) return urbi_make_nil();
-
+    /* GC soundness (v0.13.2): intern BEFORE the clone — the first runtime
+     * intern of "__strand" allocates, and a collection there would sweep
+     * the fresh clone held only in this C local (careful-ordering
+     * pattern; see urbi_proto_list_create). */
     USymbol *sym = (USymbol *)ustr_intern(vm, "__strand", 8);
     if (sym == NULL) return urbi_make_nil();
+
+    UObject *j = urbi_object_clone(vm, vm->job_proto);
+    if (j == NULL) return urbi_make_nil();
 
     UValue uid_v;
     urbi_zero(&uid_v, sizeof(uid_v));

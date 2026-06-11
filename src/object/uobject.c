@@ -59,35 +59,35 @@ next_id(UVM *vm)
 UObject *
 urbi_object_alloc(UVM *vm, URBIAtomFamily family)
 {
+    /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery chain):
+     * resolve the root shape BEFORE allocating the object cell.  The
+     * pre-v0.13.2 order (object cell first, then lazy urbi_shape_root)
+     * left the fresh UObject reachable only through the C local `o`
+     * while urbi_shape_root performed its own GC allocation — a window
+     * in which a collection (URBI_GC_STRESS collects on every alloc)
+     * swept the object, and the subsequent field writes corrupted
+     * whatever cell recycled the address.  urbi_shape_root stores
+     * vm->root_shape before returning, so the shape itself is rooted
+     * by object_roots_walker the moment it exists.  This ordering also
+     * subsumes OBJ-004 (shape-root OOM after object alloc can no longer
+     * leave a half-initialised object in the all-cells list). */
+    UShape *root_shape = urbi_shape_root(vm);
+    if (root_shape == NULL) {
+        return NULL;
+    }
+
     UCell *c = urbi_gc_alloc(vm, sizeof(UObject), UTYPE_OBJECT);
     if (c == NULL) {
         return NULL;
     }
     UObject *o = (UObject *)c;
 
-    /* OBJ-004: zero all GC-visible fields BEFORE the urbi_shape_root call
-     * that may itself OOM.  If shape-root fails after we return NULL, the
-     * UObject stays in the all-cells list until the next sweep reclaims
-     * it; until then walk_uobject may visit it.  With zeroed fields the
-     * walker sees shape=NULL, slots=NULL, protos=empty, changed_events=
-     * NULL — observably nil-shaped and safe to walk. */
-    o->shape               = NULL;
+    o->shape               = root_shape;
     o->slots               = NULL;
     o->protos              = 0U;   /* empty form per spec §4.1 */
-    o->object_id           = 0U;
     o->lookup_stamp        = 0U;
-    o->flags               = 0U;
     o->reserved            = 0U;
     o->changed_events_head = NULL;
-
-    /* shape: lazy-allocate the per-VM root if it hasn't been touched.
-     * urbi_shape_root may itself OOM; if so, the UObject we just allocated
-     * is left zero-initialised so a GC walker visiting before the next
-     * sweep reclaims it sees a well-defined nil-shaped cell. */
-    o->shape = urbi_shape_root(vm);
-    if (o->shape == NULL) {
-        return NULL;
-    }
     o->object_id           = next_id(vm);
     o->flags               = (uint32_t)((uint32_t)family & URBI_OBJ_ATOM_MASK);
     return o;

@@ -462,6 +462,17 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     UGcRootProviderFn root_providers[URBI_MAX_ROOT_PROVIDERS];
     uint8_t           root_provider_count;
 
+    /* v0.13.2 (refactor-3 TEST-GAP-01 discovery chain): VM-level C-stack
+     * root frame chain — the strandless counterpart of UStrand.c_roots_head
+     * (refactor-3 VM-06a).  Runtime C code that must hold a fresh GC cell
+     * live across further allocations — and that may run WITHOUT a current
+     * strand (realm bootstrap, host API, native helpers reached from both
+     * paths) — pushes stack-allocated UCRootFrame entries here via
+     * uvm_c_root_push / uvm_c_root_pop (gc/ugc_incremental.h).  Walked by
+     * vm_misc_walk_roots.  Strict LIFO; same discipline as the strand
+     * chain. */
+    struct UCRootFrame *c_roots_head;
+
     /* --- Row 10 type table --- */
     struct UType *type_table[256];     /* indexed by type_tag byte; T22/T27 populate */
     uint8_t       host_type_count;     /* host-registered types since UTYPE_HOST_BASE */

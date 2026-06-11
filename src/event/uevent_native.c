@@ -224,22 +224,31 @@ event_native_register(struct UVM *vm)
      * path (urbi_object_atom would chain to root Object) — but since we
      * commandeer vm->atom_event below, do the same set_protos_single hookup
      * here so atom-dispatch sees a live root chain. */
-    UObject *proto = urbi_object_alloc(vm, URBI_ATOM_EVENT);
-    if (proto == NULL) {
-        return UVM_OOM;
-    }
-
-    /* Chain the new proto onto root Object so OP_GETSLOT can walk past
-     * Event.* into Object.* (clone, getSlot, setSlot, etc).  Mirrors the
-     * urbi_object_atom path for non-root atoms. */
+    /* GC soundness (v0.13.2): resolve root Object BEFORE allocating the
+     * proto, and publish the proto into the rooted vm fields IMMEDIATELY
+     * after allocation.  The pre-v0.13.2 order (proto alloc → lazy
+     * urbi_object_root → late vm->event_proto store) held the fresh proto
+     * only in this C local while urbi_object_root allocated — a collection
+     * there (URBI_GC_STRESS collects on every alloc) swept it.  The boot
+     * path is also guarded by the urbi_native_protos_init GC pause, but
+     * this function must stay sound when called directly (unit suites). */
     UObject *root = urbi_object_root(vm);
     if (root == NULL) {
         return UVM_OOM;
     }
-    urbi_object_set_protos_single(vm, proto, root);
 
+    UObject *proto = urbi_object_alloc(vm, URBI_ATOM_EVENT);
+    if (proto == NULL) {
+        return UVM_OOM;
+    }
     vm->event_proto = proto;
     vm->atom_event  = proto;  /* Phase 7: unify with atom-dispatch lookup. */
+
+    /* Chain the new proto onto root Object so OP_GETSLOT can walk past
+     * Event.* into Object.* (clone, getSlot, setSlot, etc).  Mirrors the
+     * urbi_object_atom path for non-root atoms.  No allocation between the
+     * proto alloc and this call. */
+    urbi_object_set_protos_single(vm, proto, root);
 
     /* EVENT-005: propagate slot-install failures.  An OOM during slot
      * intern/install would otherwise leave a partially populated event_proto

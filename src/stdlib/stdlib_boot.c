@@ -47,12 +47,9 @@
 #include "runtime/umacros.h"         /* urbi_zero */
 #include "vm/uvm.h"
 
-int
-urbi_stdlib_boot(UVM *vm)
+static int
+stdlib_boot_impl(UVM *vm)
 {
-    if (vm == NULL) return URBI_ERR_INVALID_ARG;
-    if (vm->stdlib_booted) return URBI_OK;
-
     int rc = urbi_object_root_register(vm);
     if (rc != URBI_OK) return rc;
 
@@ -234,4 +231,27 @@ urbi_stdlib_boot(UVM *vm)
 
     vm->stdlib_booted = 1U;
     return URBI_OK;
+}
+
+int
+urbi_stdlib_boot(UVM *vm)
+{
+    int     rc;
+    uint8_t saved_pause;
+
+    if (vm == NULL) return URBI_ERR_INVALID_ARG;
+    if (vm->stdlib_booted) return URBI_OK;
+
+    /* Bootstrap GC pause (v0.13.2): every registration phase below holds
+     * fresh cells (protos, native closures) in C locals across further
+     * allocations.  Host code, no strand — see the rationale banner above
+     * populate_realm_globals_impl in realm/urealm_globals.c.  Guarded at
+     * this entry point as well as in the populate wrapper because unit
+     * tests call urbi_stdlib_boot directly on armed stress builds.
+     * Save/restore so a host-held urbi_gc_pause latch survives. */
+    saved_pause   = vm->gc_paused;
+    vm->gc_paused = 1U;
+    rc = stdlib_boot_impl(vm);
+    vm->gc_paused = saved_pause;
+    return rc;
 }

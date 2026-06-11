@@ -29,13 +29,29 @@
 
 /* === urbi_realm_create ===
  *
- * Allocates a fresh URealm, assigns a unique ID, creates an empty namespace,
- * links to vm->realms_head, and returns it.
+ * Allocates a fresh URealm, assigns a unique ID, links to vm->realms_head,
+ * creates an empty namespace, and returns it.
  *
  * Returns NULL on OOM.
  *
- * Cleanup ladder (REALM-009, REALM-021): each goto label undoes exactly the
- * allocations that succeeded before it, in reverse order. */
+ * GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery chain): the realm
+ * is linked onto vm->realms_head BEFORE the first GC allocation, not after.
+ * Pre-v0.13.2 the link happened after r->tag / r->bindings / r->global_object
+ * were created — an un-rooted window in which a collection triggered by a
+ * later allocation (e.g. the global_object alloc collecting while r->tag is
+ * reachable only through the not-yet-linked realm) swept the earlier cells.
+ * Normal builds never collect inside this window today (GC slices run at
+ * strand safepoints / urbi_step, and realm bootstrap is host C code with no
+ * strand), so the bug was latent — but URBI_GC_STRESS's collect-on-every-
+ * alloc hook made every script run die at boot (gc_shade_gray on a swept
+ * r->tag).  Link-first ROOTS the window by construction: each pointer is
+ * reachable via realm_list_walk_roots the instant it is stored, and the
+ * walkers (realm_list_walk_roots, unamespace_walk_roots, sched_walk_roots)
+ * all NULL-guard the not-yet-populated fields of a fresh zeroed realm.
+ *
+ * Cleanup (REALM-009, REALM-021, reshaped at v0.13.2): once linked, every
+ * failure path funnels through urbi_realm_destroy, which unlinks and is
+ * NULL-safe on each partially-initialized field. */
 
 URealm *
 urbi_realm_create(struct UVM *vm)
@@ -53,24 +69,9 @@ urbi_realm_create(struct UVM *vm)
     r->id    = ++vm->realm_id_seq;  /* per-VM counter; 0 means uninitialized */
     r->flags = 0;
 
-    /* tag: root cleanup boundary for all strands in this realm. */
-    r->tag = utag_create(vm);
-    if (r->tag == NULL) goto fail_tag;
-
-    /* Namespace. */
-    r->bindings = unamespace_create(vm);
-    if (r->bindings == NULL) goto fail_bindings;
-
-    /* Global object: fresh empty UObject to hold the realm's named slots.
-     * Pre-M5 spec #5 §4.1 step 2.  Allocated as root-atom family
-     * (URBI_ATOM_OBJECT) so it inherits nothing by default. */
-    r->global_object = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-    if (r->global_object == NULL) goto fail_global_object;
-
-    /* user_data: stays NULL (caller may set after create). */
-
-    /* Link at head of VM's realm list BEFORE populate so that
-     * urbi_realm_destroy can safely unlink on populate failure. */
+    /* Link at head of VM's realm list FIRST (see GC-soundness note above):
+     * everything stored into r->tag / r->bindings / r->global_object below
+     * becomes a GC root the moment the pointer lands in the struct. */
     r->prev_in_vm = NULL;
     r->next_in_vm = vm->realms_head;
     if (vm->realms_head != NULL) {
@@ -78,23 +79,33 @@ urbi_realm_create(struct UVM *vm)
     }
     vm->realms_head = r;
 
+    /* tag: root cleanup boundary for all strands in this realm. */
+    r->tag = utag_create(vm);
+    if (r->tag == NULL) goto fail;
+
+    /* Namespace (host-allocated, not GC-managed). */
+    r->bindings = unamespace_create(vm);
+    if (r->bindings == NULL) goto fail;
+
+    /* Global object: fresh empty UObject to hold the realm's named slots.
+     * Pre-M5 spec #5 §4.1 step 2.  Allocated as root-atom family
+     * (URBI_ATOM_OBJECT) so it inherits nothing by default. */
+    r->global_object = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+    if (r->global_object == NULL) goto fail;
+
+    /* user_data: stays NULL (caller may set after create). */
+
     /* Populate the global object with the 15 built-in globals.
-     * On failure, destroy (which unlinks + cleans up) and return NULL.
      * Partial population is acceptable per spec #5 §4.7 — the realm is
      * destroyed by the caller-side NULL check. */
-    if (urbi_populate_realm_globals(vm, r) != URBI_OK) {
-        urbi_realm_destroy(vm, r);
-        return NULL;
-    }
+    if (urbi_populate_realm_globals(vm, r) != URBI_OK) goto fail;
 
     return r;
 
-fail_global_object:
-    unamespace_destroy(vm, r->bindings);
-fail_bindings:
-    utag_destroy(vm, r->tag);
-fail_tag:
-    vm->alloc_fn(r, 0, vm->alloc_ud);
+fail:
+    /* Unlinks from vm->realms_head + tears down whichever of tag/bindings/
+     * global_object exist; NULL-safe on the rest. */
+    urbi_realm_destroy(vm, r);
     return NULL;
 }
 

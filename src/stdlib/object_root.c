@@ -206,30 +206,50 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
 {
     if (vm == NULL || recv == NULL) return NULL;
 
+    /* GC soundness (v0.13.2): intern every symbol BEFORE allocating GC
+     * cells (intern can allocate, and a collection at that point would
+     * sweep a fresh unrooted cell — careful-ordering pattern), and pin
+     * the fresh list on the VM-level C-root chain across the closure
+     * allocation below (the only remaining alloc while `list` is held
+     * solely in this C local). */
+    USymbol *sym_size = (USymbol *)ustr_intern(vm, "size", 4);
+    if (sym_size == NULL) return NULL;
+    USymbol *sym_owner = (USymbol *)ustr_intern(vm, "_owner", 6);
+    if (sym_owner == NULL) return NULL;
+    USymbol *sym_iF = (USymbol *)ustr_intern(vm, "insertFront", 11);
+    if (sym_iF == NULL) return NULL;
+
     UObject *list = urbi_object_alloc(vm, URBI_ATOM_LIST);
     if (list == NULL) return NULL;
 
-    /* Install size = count(recv->protos). */
-    USymbol *sym_size = (USymbol *)ustr_intern(vm, "size", 4);
-    if (sym_size == NULL) return NULL;
+    UCRootFrame f_list;
+    UValue list_v = urbi_make_nil();
+    list_v.kind = (uint8_t)UVAL_OBJECT;
+    list_v.v.p = list;
+    uvm_c_root_push(vm, &f_list, &list_v);
 
+    /* Install size = count(recv->protos). */
     UValue n = urbi_make_nil();
     n.kind = (uint8_t)UVAL_INT;
     n.v.i = (int64_t)urbi_object_proto_count(recv);
-    if (urbi_object_set_local_slot(vm, list, sym_size, n) != 0) return NULL;
+    if (urbi_object_set_local_slot(vm, list, sym_size, n) != 0) {
+        uvm_c_root_pop(vm, &f_list);
+        return NULL;
+    }
 
     /* T63: thread the owner reference through so insertFront can mutate
      * the original receiver's prototype list.  Wave 2's List atom replaces
      * this synthetic with a proper list value; for Wave 1 an underscore-
      * prefixed hidden slot is sufficient. */
-    USymbol *sym_owner = (USymbol *)ustr_intern(vm, "_owner", 6);
-    if (sym_owner == NULL) return NULL;
     UValue owner = urbi_make_nil();
     owner.kind = (uint8_t)UVAL_OBJECT;
     /* Owner is a live UObject; insertFront on the synthetic list mutates
      * its proto chain in place via urbi_object_set_protos. */
     owner.v.p = recv;
-    if (urbi_object_set_local_slot(vm, list, sym_owner, owner) != 0) return NULL;
+    if (urbi_object_set_local_slot(vm, list, sym_owner, owner) != 0) {
+        uvm_c_root_pop(vm, &f_list);
+        return NULL;
+    }
 
     /* T63: install insertFront on this synthetic list.  Each protos call
      * allocates a fresh list; this attaches a per-list closure so the
@@ -237,14 +257,19 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
      * the per-list allocation cost is acceptable; Wave 2's List atom
      * installs insertFront once on the List atom proto. */
     UClosure *cl = urbi_native_closure_create(vm, obj_protos_insertFront);
-    if (cl == NULL) return NULL;
-    USymbol *sym_iF = (USymbol *)ustr_intern(vm, "insertFront", 11);
-    if (sym_iF == NULL) return NULL;
+    if (cl == NULL) {
+        uvm_c_root_pop(vm, &f_list);
+        return NULL;
+    }
     UValue clv = urbi_make_nil();
     clv.kind = (uint8_t)UVAL_CLOSURE;
     clv.v.p = cl;
-    if (urbi_object_set_local_slot(vm, list, sym_iF, clv) != 0) return NULL;
+    if (urbi_object_set_local_slot(vm, list, sym_iF, clv) != 0) {
+        uvm_c_root_pop(vm, &f_list);
+        return NULL;
+    }
 
+    uvm_c_root_pop(vm, &f_list);
     return list;
 }
 

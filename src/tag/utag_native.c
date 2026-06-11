@@ -510,21 +510,27 @@ tag_native_register(struct UVM *vm)
     /* TAGCH-016: drives urbi_object_alloc + slot installs, neither of which
      * is ISR-safe.  Mirror src/changed/uchanged.c:32. */
     URBI_ASSERT_NOT_ISR(vm);
-    UObject *proto = urbi_object_alloc(vm, URBI_ATOM_TAG);
-    if (proto == NULL) {
-        return UVM_OOM;   /* OOM: leave tag_proto NULL */
-    }
 
-    /* Chain the tag proto onto root Object so OP_GETSLOT can walk past
-     * Tag.* into Object.* (clone, getSlot, setSlot, etc.).  Mirrors the
-     * same hookup done by event_native_register for Event. */
+    /* GC soundness (v0.13.2): resolve root Object BEFORE allocating the
+     * proto and publish vm->tag_proto IMMEDIATELY after allocation — same
+     * unrooted-C-local window as event_native_register (see the comment
+     * there). */
     UObject *root = urbi_object_root(vm);
     if (root == NULL) {
         return UVM_OOM;
     }
-    urbi_object_set_protos_single(vm, proto, root);
 
+    UObject *proto = urbi_object_alloc(vm, URBI_ATOM_TAG);
+    if (proto == NULL) {
+        return UVM_OOM;   /* OOM: leave tag_proto NULL */
+    }
     vm->tag_proto = proto;
+
+    /* Chain the tag proto onto root Object so OP_GETSLOT can walk past
+     * Tag.* into Object.* (clone, getSlot, setSlot, etc.).  Mirrors the
+     * same hookup done by event_native_register for Event.  No allocation
+     * between the proto alloc and this call. */
+    urbi_object_set_protos_single(vm, proto, root);
 
     /* W4/v0.10.2: unify vm->atom_tag with vm->tag_proto so
      * urbi_atom_proto_for_value(UVAL_TAG) finds the native method slots via

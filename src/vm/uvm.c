@@ -606,6 +606,23 @@ dispatch:
             cl->proto_inst =
                 &omi->proto_instances->entries[child_proto->ic_index];
 
+            /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery
+             * chain): publish the closure into its destination register
+             * BEFORE the upvalue-capture loop, not after.  vm_open_upvalue
+             * below allocates UUpvalCells; a collection triggered there
+             * (URBI_GC_STRESS collects on every alloc) swept `cl` while it
+             * was reachable only through this C local, leaving R[A] dangling
+             * after the late store (caught by the GC-15 no-sidecar assert
+             * during the next strand-register root walk).  Registers are
+             * roots, so the early store pins cl by construction.  Safe to
+             * reorder: walk_uclosure skips NULL upvals[] entries (partially-
+             * populated arrays are anticipated), in-stack captures take the
+             * ADDRESS of R[src_idx] (no value read, so a src_idx == A alias
+             * sees identical behaviour), and the re-capture arm reads the
+             * parent closure's upvals, not registers. */
+            s->R[a].kind  = (uint8_t)UVAL_CLOSURE;
+            s->R[a].v.p   = cl;
+
             /* Read nupvals pseudo-instructions. */
             {
                 int i;
@@ -641,8 +658,8 @@ dispatch:
                     }
                 }
             }
-            s->R[a].kind  = (uint8_t)UVAL_CLOSURE;
-            s->R[a].v.p   = cl;
+            /* R[A] store moved BEFORE the capture loop (v0.13.2; see the
+             * GC-soundness comment above). */
             NEXT();
         }
 
@@ -697,8 +714,24 @@ dispatch:
                 URBI_PERF_INC(vm, native_calls);
                 UValue *args_ptr = (nargs > 0) ? &s->R[a + arg_off] : NULL;
                 UValue native_out;
+                /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery
+                 * chain): root the native's out-slot (and the self copy)
+                 * for the duration of the call.  native_out is a C stack
+                 * local, NOT a register — natives that build a result
+                 * incrementally (e.g. Job.jobs storing its fresh List in
+                 * *out before appending) relied on *out being rooted,
+                 * which was false: a collection triggered by a later
+                 * allocation inside the native swept the half-built
+                 * result.  Rooting here makes the documented "*out is
+                 * reachable" contract true for every native centrally. */
+                UCRootFrame nf_out, nf_self;
+                urbi_zero(&native_out, sizeof native_out);
+                ustrand_c_root_push(s, &nf_out, &native_out);
+                ustrand_c_root_push(s, &nf_self, &self_value);
                 int rc = callee->native_fn(vm, self_value, args_ptr,
                                            (uint8_t)nargs, &native_out);
+                ustrand_c_root_pop(s, &nf_self);
+                ustrand_c_root_pop(s, &nf_out);
                 if (rc == UEXEC_OK) {
                     s->R[a] = native_out;
                     if (s->pending_unwind != UEXEC_OK) {

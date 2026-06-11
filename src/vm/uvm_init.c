@@ -95,14 +95,19 @@ uint64_t urbi_default_host_time_us(void *ud) {
  *
  * UClosure is GC-managed (enrolled via urbi_gc_alloc since v0.8.4 Step C-2),
  * so this yield is load-bearing: it is what keeps the preserved closure
- * alive across collections until the next urbi_vm_run replaces it. */
+ * alive across collections until the next urbi_vm_run replaces it.
+ *
+ * v0.13.2: also walks vm->c_roots_head — the VM-level C-stack root frame
+ * chain (strandless counterpart of UStrand.c_roots_head; see uvm.h field
+ * comment and uvm_c_root_push in gc/ugc_incremental.c). */
 static void
 vm_misc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
-    (void)cb;
-    (void)ctx;
     if (vm->last_return_closure != NULL) {
         gc_shade_gray(vm, (UCell *)&vm->last_return_closure->cell);
+    }
+    for (const UCRootFrame *f = vm->c_roots_head; f != NULL; f = f->next) {
+        cb(vm, f->slot, ctx);
     }
 }
 
@@ -250,6 +255,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->gray_work_head      = NULL;
     vm->sweep_cursor        = NULL;
     vm->sweep_cursor_prev   = NULL;
+    vm->c_roots_head        = NULL;   /* v0.13.2: VM-level C-stack root chain */
 
     /* T19 ISR-check + debug watchdog hooks: initialize before any subsystem
      * calls URBI_ASSERT_NOT_ISR (T23 onwards). */
@@ -764,20 +770,32 @@ void urbi_vm_destroy(UVM *vm) {
 void
 urbi_native_protos_init(UVM *vm)
 {
+    /* Bootstrap GC pause (v0.13.2): the register functions hold fresh
+     * cells in C locals across further allocations (closure across
+     * intern + slot install).  Host code, no strand — see the rationale
+     * banner above populate_realm_globals_impl in realm/urealm_globals.c.
+     * Guarded here as well (not just in the populate wrapper) because
+     * unit tests call this entry point directly on armed stress builds.
+     * Save/restore so a host-held urbi_gc_pause latch survives. */
+    uint8_t saved_pause = vm->gc_paused;
+    UVMError err;
+    vm->gc_paused = 1U;
+
     /* Propagate UVM_OOM via vm->last_error so callers can detect failure.
      * Both event_native_register and tag_native_register (TAGCH-004) now
      * return UVMError so partial-init OOM is surfaced rather than silently
      * leaving NULL protos behind. */
-    UVMError err = event_native_register(vm);
+    err = event_native_register(vm);
     if (err != UVM_OK) {
         vm->last_error = err;
+        vm->gc_paused = saved_pause;
         return;
     }
     err = tag_native_register(vm);
     if (err != UVM_OK) {
         vm->last_error = err;
-        return;
     }
+    vm->gc_paused = saved_pause;
 }
 
 /* === urbi_register_event_drain (T57 — spec #3 §9) ===

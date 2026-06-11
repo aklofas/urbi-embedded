@@ -151,6 +151,23 @@ static inline void urbi_gc_set_color(UCell *c, uint8_t color) {
  * T23/T24: defined in ugc_incremental.c */
 void gc_shade_gray(struct UVM *vm, UCell *cell);
 
+/* === uvm_c_root_push / uvm_c_root_pop — VM-level C-stack root chain ===
+ *
+ * v0.13.2 (refactor-3 TEST-GAP-01 discovery chain): strandless counterpart
+ * of ustrand_c_root_push/_pop (refactor-3 VM-06a).  Runtime C code that
+ * holds a fresh GC cell in a C local across further allocations — and may
+ * run with vm->cur_strand == NULL (realm bootstrap, host API, native
+ * helpers reachable from both paths) — pins the value by pushing a
+ * stack-allocated UCRootFrame onto vm->c_roots_head.  Walked by
+ * vm_misc_walk_roots; strict LIFO (assert-checked in pop); every push
+ * must be popped on every exit path of the holding function.  The frame
+ * and the rooted UValue must both be C-stack locals that outlive every
+ * collection the holder can trigger.  UCRootFrame: sched/ustrand.h.
+ * Defined in ugc_incremental.c. */
+struct UCRootFrame;
+void uvm_c_root_push(struct UVM *vm, struct UCRootFrame *f, UValue *slot);
+void uvm_c_root_pop(struct UVM *vm, struct UCRootFrame *f);
+
 /* === urbi_gc_walk_all_cells — generic all-cells iterator (T12) ===
  *
  * Calls cb(vm, cell, ctx) once for every live GC cell on vm->all_cells_head.

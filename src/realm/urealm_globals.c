@@ -334,16 +334,32 @@ realm_install_const(UVM *vm, URealm *realm, USymbol *sym, UValue value,
  *
  * Calls urbi_native_protos_init(vm) on first call (guarded by vm->event_proto
  * being NULL) so that resolve_tag_proto / resolve_event_proto see live
- * pointers.  This is the wiring described in uvm.c §T59 comment. */
+ * pointers.  This is the wiring described in uvm.c §T59 comment.
+ *
+ * GC-pause bootstrap window (v0.13.2, refactor-3 TEST-GAP-01 discovery
+ * chain): the host-C sections of populate run with vm->gc_paused held.
+ * Rationale: realm population is a long chain of "allocate cell, hold it
+ * in a C local across further allocations, then store it" sequences
+ * (~70 native-slot installs across 16 stdlib registration files).  Host
+ * bootstrap code has no strand, so the T6 UCRootFrame chain (strand-based
+ * C-stack roots) is inapplicable, and rooting each hop individually would
+ * mean handle-scope discipline at every intermediate value.  Pausing is
+ * the same shape Lua uses during lua_newstate bootstrap (g->gcstp held
+ * until f_luaopen completes).  On NORMAL builds this changes nothing
+ * observable: GC slices only run at strand safepoints / urbi_step, and
+ * no strand executes inside the paused sections — the windows are
+ * stress-only today but latently unsound (e.g. if an inline emergency
+ * collection were ever added to urbi_gc_alloc), which the pause closes.
+ * The stdlib bake chunk run (urbi_run_chunk below) and the urobotics
+ * overlay run are explicitly EXCLUDED from the pause: they execute
+ * strand-rooted script, which is exactly where mid-boot collection
+ * legitimately runs on normal builds (embedded heaps rely on it).
+ * Tracked in docs/urbi-embedded-design-risks.md (v0.13.2 entry). */
 
-UErrCode
-urbi_populate_realm_globals(UVM *vm, URealm *realm)
+static UErrCode
+populate_realm_globals_impl(UVM *vm, URealm *realm)
 {
     size_t i;
-
-    if (vm == NULL || realm == NULL || realm->global_object == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
 
     /* Ensure event_proto + tag_proto are allocated.  Idempotent: guarded by
      * the NULL check inside event_native_register / tag_native_register.
@@ -549,7 +565,15 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * needed here. */
     if (vm->stdlib_module != NULL) {
         UValue out;
-        int rc = urbi_run_chunk(vm, realm, vm->stdlib_module, &out);
+        int rc;
+        /* Drop the bootstrap GC pause across the bake run: the chunk
+         * executes on a strand (registers + UCRootFrame chain root its
+         * values), and mid-boot collection during the bake is the normal-
+         * build behaviour embedded heaps rely on (see banner comment). */
+        uint8_t saved_pause = vm->gc_paused;
+        vm->gc_paused = 0U;
+        rc = urbi_run_chunk(vm, realm, vm->stdlib_module, &out);
+        vm->gc_paused = saved_pause;
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }
@@ -588,9 +612,15 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
 #ifdef URBI_ENABLE_UROBOTICS
     /* v0.12.2: run the Robotics overlay root chunk so its top-level `var
      * Robotics = ...` + slot assignments install the `Robotics` realm global.
-     * Must run AFTER the main stdlib chunk above so Object/clone exist. */
+     * Must run AFTER the main stdlib chunk above so Object/clone exist.
+     * Strand-rooted script — runs outside the bootstrap GC pause, same as
+     * the stdlib bake above. */
     {
-        int rc = urbi_urobotics_run(vm, realm);
+        uint8_t saved_pause = vm->gc_paused;
+        int rc;
+        vm->gc_paused = 0U;
+        rc = urbi_urobotics_run(vm, realm);
+        vm->gc_paused = saved_pause;
         if (rc != URBI_OK) return (UErrCode)rc;
     }
 #endif
@@ -605,6 +635,28 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
     }
 
     return URBI_OK;
+}
+
+UErrCode
+urbi_populate_realm_globals(UVM *vm, URealm *realm)
+{
+    UErrCode rc;
+    uint8_t  saved_pause;
+
+    if (vm == NULL || realm == NULL || realm->global_object == NULL) {
+        return URBI_ERR_INVALID_ARG;
+    }
+
+    /* Bootstrap GC pause — see the banner comment above
+     * populate_realm_globals_impl.  Save/restore (not set/clear) so a
+     * host-held urbi_gc_pause latch survives re-entrant realm creation
+     * (e.g. REPL session realms created while the embedder has GC
+     * paused). */
+    saved_pause   = vm->gc_paused;
+    vm->gc_paused = 1U;
+    rc = populate_realm_globals_impl(vm, realm);
+    vm->gc_paused = saved_pause;
+    return rc;
 }
 
 /* === M5 public C API: realm global slot install / read (spec #5 §7) ===

@@ -266,9 +266,21 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
 
     /* Allocate sibling's props_table, seeding entries from parent's table
      * when present (copy-on-write).  Caller writes the per-slot UProps*
-     * for slot_index post-transition. */
+     * for slot_index post-transition.
+     *
+     * GC soundness (v0.13.2): pin the sibling across the props-table
+     * allocation.  Unlike add-slot children (cached in parent->transitions,
+     * hence reachable), a property sibling is referenced ONLY by this C
+     * local until the caller publishes it into obj->shape — a collection
+     * triggered by alloc_props_table (URBI_GC_STRESS collects on every
+     * alloc) would sweep it and the store below would corrupt recycled
+     * memory.  The pin is sweep-exemption only; sibling's children
+     * (parent->parent lineage, seeded UProps) stay reachable through the
+     * caller's live shape. */
+    sc->gc_byte |= UGC_IS_PINNED;
     UPropsTable *pt = alloc_props_table(vm, parent->count,
                                         parent->props_table);
+    sc->gc_byte = (uint8_t)(sc->gc_byte & ~(uint8_t)UGC_IS_PINNED);
     if (pt == NULL) {
         /* OOM on the props_table cell.  sibling is GC-managed; sweep
          * reaps it.  No partial state to undo. */

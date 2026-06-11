@@ -181,6 +181,25 @@ static bool init_ic_slices_recursive(struct UVM *vm,
     return true;
 }
 
+/* chunk_instance_unlink — remove mi from vm->module_instances_head.
+ * Used by the OOM failure paths in urbi_chunk_instance_create now that the
+ * instance is linked BEFORE its second cell is allocated (v0.13.2 link-first;
+ * see the comment at the link site).  Creation is non-reentrant so mi is in
+ * practice the list head, but a scan keeps the helper assumption-free. */
+static void
+chunk_instance_unlink(struct UVM *vm, UChunkInstance *mi)
+{
+    UChunkInstance **pp = &vm->module_instances_head;
+    while (*pp != NULL) {
+        if (*pp == mi) {
+            *pp = mi->next_in_vm;
+            mi->next_in_vm = NULL;
+            return;
+        }
+        pp = &(*pp)->next_in_vm;
+    }
+}
+
 UChunkInstance *
 urbi_chunk_instance_create(struct UVM *vm, UProto *root)
 {
@@ -200,8 +219,24 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *root)
     UChunkInstance *mi = (UChunkInstance *)mi_cell;
     mi->module          = root;
     mi->vm              = vm;
-    mi->proto_instances = NULL;   /* publish only after the second cell is wired */
-    mi->next_in_vm      = NULL;   /* T30: thread onto vm->module_instances_head below */
+    mi->proto_instances = NULL;   /* wired after the second cell exists */
+
+    /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery chain): link
+     * onto vm->module_instances_head BEFORE the second GC allocation, not
+     * after (pre-v0.13.2 T30 linked at the end).  The Cell-2 alloc below —
+     * and the interning inside init_ic_slices_recursive — can trigger a
+     * collection while `mi` is reachable only through this C local; the
+     * sweep then freed it and the late link published a dangling pointer
+     * (caught by the GC-15 no-sidecar assert under URBI_GC_STRESS).
+     * object_roots_walker shades every listed instance and
+     * walk_umoduleinstance NULL-guards proto_instances, so a partially-
+     * wired mi is safe to walk.  Failure paths below unlink before
+     * returning so a dead half-instance is never matched by
+     * urbi_get_or_create_chunk_instance on retry.  Insertion order at
+     * head is unchanged (one link per create, same relative order), so
+     * the determinism-checksum walk order is preserved. */
+    mi->next_in_vm = vm->module_instances_head;
+    vm->module_instances_head = mi;
 
     /* Chunk-top fields needed by the no-rp fallback path below.  Other
      * root_proto fields (ic_name_strs, alloc_fn, alloc_ud, nested[]) are
@@ -241,7 +276,9 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *root)
 
     UCell *arr_cell = urbi_gc_alloc(vm, arr_size, UTYPE_PROTO_INSTANCE);
     if (arr_cell == NULL) {
-        /* mi is GC-managed; sweep will reap it.  No partial state to undo. */
+        /* Unlink the half-instance (see link-first note above); mi is
+         * GC-managed and unreachable once delisted — sweep reaps it. */
+        chunk_instance_unlink(vm, mi);
         return NULL;
     }
     UProtoInstanceArr *arr = (UProtoInstanceArr *)arr_cell;
@@ -249,6 +286,15 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *root)
     arr->_pad[0]  = 0U;
     arr->_pad[1]  = 0U;
     arr->_pad[2]  = 0U;
+
+    /* Publish the bulk pointer BEFORE init_ic_slices_recursive: the lazy
+     * interning inside it allocates, and `arr` must be reachable (via the
+     * linked mi) across those collections.  Publishing a header-initialised
+     * arr is safe: UTYPE_PROTO_INSTANCE has a no-op walker and the entries
+     * region is zero-filled by urbi_gc_alloc.  (Pre-v0.13.2 this published
+     * after init as "publish last" — sound only while no collection could
+     * run mid-create.) */
+    mi->proto_instances = arr;
 
     /* IC tables live immediately after entries[].  Compute base by
      * pointer-arithmetic past the FAM.
@@ -268,26 +314,16 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *root)
      * single-entry init using the root_ic_* variables captured above. */
     if (rp != NULL) {
         if (!init_ic_slices_recursive(vm, rp, arr, &ic_cursor)) {
-            /* OOM during string-to-symbol intern.  Both GC cells are
-             * reachable only via this return path; sweep reclaims them. */
+            /* OOM during string-to-symbol intern.  Unlink the half-instance
+             * (see link-first note above); both GC cells then become
+             * unreachable and sweep reclaims them. */
+            chunk_instance_unlink(vm, mi);
             return NULL;
         }
     } else {
         init_ic_slice(&arr->entries[0], NULL,
                       root_ic_count, root_ic_names, &ic_cursor);
     }
-
-    /* Publish the bulk pointer last so a partial-init mi never hands a
-     * half-formed UProtoInstanceArr to the walker. */
-    mi->proto_instances = arr;
-
-    /* T30: register on the per-VM linked list AFTER both cells are wired.
-     * Insertion order at head — the determinism checksum walks every
-     * instance and folds in IC state, so order is observable.  Caller's
-     * create-order is itself deterministic in the test harness; therefore
-     * the iteration order is stable across runs. */
-    mi->next_in_vm = vm->module_instances_head;
-    vm->module_instances_head = mi;
 
     /* v0.9.0-repl Task 2: stamp every UProto in the tree with its owning
      * UChunkInstance.  DFS pre-order matches ic_index assignment order.
