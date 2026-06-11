@@ -130,6 +130,9 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
  * Returns VM_OP_OVERLOAD_OK if the call succeeded (dst is populated).
  * Returns VM_OP_OVERLOAD_MISS if no usable slot was found (caller should
  * emit the original type error and HALT).
+ * Returns VM_OP_OVERLOAD_THREW when the (bytecode) body raised a user
+ * exception; *dst holds the thrown value for the caller to re-deposit
+ * (refactor-3 VM-07).
  * Returns VM_OP_OVERLOAD_OOM on allocation failure during lookup/call. */
 int
 vm_arith_method_fallback(UVM *vm,
@@ -168,9 +171,27 @@ vm_arith_method_fallback(UVM *vm,
         }
     } else {
         int threw = 0;
-        int src = urbi_run_closure_on_scratch_with_payload(vm, cl, *rhs,
-                                                           &result, &threw);
-        if (src != 0 || threw) {
+        UExecStatus fatal = UEXEC_OK;
+        int src = urbi_run_closure_on_scratch_ex(vm, cl, rhs,
+                                                 &result, &threw, &fatal);
+        if (src != 0) {
+            return VM_OP_OVERLOAD_MISS;
+        }
+        if (threw) {
+            if (fatal == UEXEC_THROW) {
+                /* refactor-3 VM-07: the body raised a user exception.  The
+                 * scratch runner surfaced the thrown value in `result`;
+                 * park it in *dst (the call site's dst register — a GC root
+                 * once written) and tell the caller to re-deposit it as a
+                 * strand THROW.  No allocation happens between the scratch
+                 * runner's copy and this write, so no GC slice can run. */
+                *dst = result;
+                return VM_OP_OVERLOAD_THREW;
+            }
+            /* TAG_STOP / CANCEL / budget-exhaustion / yield from an operator
+             * body: not a user exception — keep the legacy MISS path
+             * (original type error) rather than inventing a cancel-to-throw
+             * conversion (refactor-3 VM-07 decision). */
             return VM_OP_OVERLOAD_MISS;
         }
     }
@@ -208,9 +229,20 @@ vm_arith_method_fallback_unary(UVM *vm,
         }
     } else {
         int threw = 0;
-        int src = urbi_run_closure_on_scratch(vm, cl, &result, &threw);
-        if (src != 0 || threw) {
+        UExecStatus fatal = UEXEC_OK;
+        int src = urbi_run_closure_on_scratch_ex(vm, cl, NULL,
+                                                 &result, &threw, &fatal);
+        if (src != 0) {
             return VM_OP_OVERLOAD_MISS;
+        }
+        if (threw) {
+            if (fatal == UEXEC_THROW) {
+                /* refactor-3 VM-07: see vm_arith_method_fallback — same
+                 * thrown-value hand-off through *dst. */
+                *dst = result;
+                return VM_OP_OVERLOAD_THREW;
+            }
+            return VM_OP_OVERLOAD_MISS;   /* TAG_STOP/CANCEL/budget: legacy path */
         }
     }
 
@@ -226,10 +258,13 @@ vm_arith_method_fallback_unary(UVM *vm,
  * truthy (non-zero int, non-nil) → true, nil/void/0 → false.
  *
  * Returns VM_OP_OVERLOAD_OK and writes result bool to *out_bool on success.
- * Returns VM_OP_OVERLOAD_MISS if no slot found (caller uses uvalue_equal). */
+ * Returns VM_OP_OVERLOAD_MISS if no slot found (caller uses uvalue_equal).
+ * Returns VM_OP_OVERLOAD_THREW when the (bytecode) body raised a user
+ * exception; *out_thrown holds the thrown value (refactor-3 VM-07). */
 int
 vm_cmp_method_fallback(UVM *vm,
                        bool *out_bool,
+                       UValue *out_thrown,
                        const UValue *lhs,
                        const UValue *rhs,
                        USymbol *op_name,
@@ -254,10 +289,23 @@ vm_cmp_method_fallback(UVM *vm,
         }
     } else {
         int threw = 0;
-        int src = urbi_run_closure_on_scratch_with_payload(vm, cl, *rhs,
-                                                           &result, &threw);
-        if (src != 0 || threw) {
+        UExecStatus fatal = UEXEC_OK;
+        int src = urbi_run_closure_on_scratch_ex(vm, cl, rhs,
+                                                 &result, &threw, &fatal);
+        if (src != 0) {
             return VM_OP_OVERLOAD_MISS;
+        }
+        if (threw) {
+            if (fatal == UEXEC_THROW) {
+                /* refactor-3 VM-07: comparisons have no dst register, so the
+                 * thrown value is handed off via *out_thrown.  The caller
+                 * must re-deposit it into s->unwind_value (a rooted strand
+                 * field) before any allocation can run a GC slice; the
+                 * dispatch arms do this immediately on THREW. */
+                *out_thrown = result;
+                return VM_OP_OVERLOAD_THREW;
+            }
+            return VM_OP_OVERLOAD_MISS;   /* TAG_STOP/CANCEL/budget: legacy path */
         }
     }
 

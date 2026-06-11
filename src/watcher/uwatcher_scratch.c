@@ -42,13 +42,21 @@
  * Shared implementation for both no-payload and payload variants.
  * If `initial_r0` is non-NULL, writes `*initial_r0` to strand.R[0] after
  * arm but before dispatch.  All other behaviour is identical to the
- * documented contract on urbi_run_closure_on_scratch. */
+ * documented contract on urbi_run_closure_on_scratch.
+ *
+ * `out_fatal` (optional, may be NULL): when the body dies with a latched
+ * fatal_status, receives that status (UEXEC_THROW / UEXEC_TAG_STOP /
+ * UEXEC_CANCEL); UEXEC_OK for every other outcome (clean return, budget
+ * exhaustion, yield, vm->last_error halt, setup OOM).  refactor-3 VM-07:
+ * lets operator-overload fallbacks distinguish a genuine user throw from
+ * the other abnormal exits that *out_threw conflates. */
 static int
 run_on_scratch_core(struct UVM       *vm,
                     struct UClosure  *closure,
                     const UValue     *initial_r0,
                     UValue           *out_result,
-                    int              *out_threw)
+                    int              *out_threw,
+                    UExecStatus      *out_fatal)
 {
     UValue nil = {0};   /* kind = UVAL_NIL, payload zeroed */
     UProtoInstanceArr *scratch_arr = NULL; /* heap buf for synthetic module_instance */
@@ -59,6 +67,7 @@ run_on_scratch_core(struct UVM       *vm,
 
     *out_result = nil;
     *out_threw  = 0;
+    if (out_fatal != NULL) *out_fatal = UEXEC_OK;
 
     /* Reset last_error at entry so a stale error from a prior VM operation
      * doesn't get misread as a cond throw.  Mirrors urbi_vm_run's entry pattern. */
@@ -223,6 +232,23 @@ run_on_scratch_core(struct UVM       *vm,
              * instead of misreading the death as a clean OP_RET (which
              * would deliver nil as the cond/body result). */
             *out_threw = 1;
+            if (out_fatal != NULL) *out_fatal = strand.fatal_status;
+            if (strand.fatal_status == UEXEC_THROW) {
+                /* refactor-3 VM-07: surface the thrown value so operator-
+                 * overload callers can re-deposit the user's exception at
+                 * the call site instead of replacing it with a numeric
+                 * TypeError.  Copy HERE, before the realm-unlink teardown
+                 * below — once the strand is DEAD and unlinked it is no
+                 * longer walked as a GC root, so fatal_value would be
+                 * unrooted.  Between this copy and the caller's re-deposit
+                 * into a rooted location only frees happen (register-stack
+                 * free, scratch_arr free, ustrand_destroy — no allocation,
+                 * hence no GC slice), so the value stays live.
+                 * For TAG_STOP / CANCEL *out_result stays nil: those are
+                 * control transfers, not user exceptions, and callers keep
+                 * their legacy fail-soft handling for them. */
+                *out_result = strand.fatal_value;
+            }
         } else if (strand.state == USTRAND_STATE_DEAD) {
             /* Clean OP_RET — capture the return value. */
             *out_result = out_local;
@@ -299,7 +325,7 @@ urbi_run_closure_on_scratch(struct UVM      *vm,
                             UValue          *out_result,
                             int             *out_threw)
 {
-    return run_on_scratch_core(vm, closure, NULL, out_result, out_threw);
+    return run_on_scratch_core(vm, closure, NULL, out_result, out_threw, NULL);
 }
 
 int
@@ -309,5 +335,18 @@ urbi_run_closure_on_scratch_with_payload(struct UVM      *vm,
                                          UValue          *out_result,
                                          int             *out_threw)
 {
-    return run_on_scratch_core(vm, closure, &payload, out_result, out_threw);
+    return run_on_scratch_core(vm, closure, &payload, out_result, out_threw,
+                               NULL);
+}
+
+int
+urbi_run_closure_on_scratch_ex(struct UVM      *vm,
+                               struct UClosure *closure,
+                               const UValue    *initial_r0,
+                               UValue          *out_result,
+                               int             *out_threw,
+                               UExecStatus     *out_fatal)
+{
+    return run_on_scratch_core(vm, closure, initial_r0, out_result, out_threw,
+                               out_fatal);
 }

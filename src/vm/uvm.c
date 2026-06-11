@@ -282,9 +282,22 @@ dispatch:
             if (rc != UVM_OK) {
                 /* Gap #4: type-error fallback to operator-method dispatch. */
                 USymbol *op = ustr_op_name(vm, "+", 1);
-                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
-                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
-                    NEXT();
+                if (op != NULL) {
+                    int frc = vm_arith_method_fallback(vm, a, b, cc, op,
+                            (uint32_t)(s->pc - s->pc_base));
+                    if (frc == VM_OP_OVERLOAD_OK) {
+                        NEXT();
+                    }
+                    if (frc == VM_OP_OVERLOAD_THREW) {
+                        /* refactor-3 VM-07: re-deposit the overload body's
+                         * exception on this strand — mirrors OP_THROW's
+                         * deposit shape (advance pc past this opcode so a
+                         * catch handler resumes after the faulting op). */
+                        s->unwind_value   = *a;   /* thrown value, in dst reg */
+                        s->pending_unwind = UEXEC_THROW;
+                        s->pc++;
+                        goto safepoint;
+                    }
                 }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->root_proto,
@@ -303,9 +316,19 @@ dispatch:
             if (rc != UVM_OK) {
                 /* Gap #4: type-error fallback to operator-method dispatch. */
                 USymbol *op = ustr_op_name(vm, "-", 1);
-                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
-                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
-                    NEXT();
+                if (op != NULL) {
+                    int frc = vm_arith_method_fallback(vm, a, b, cc, op,
+                            (uint32_t)(s->pc - s->pc_base));
+                    if (frc == VM_OP_OVERLOAD_OK) {
+                        NEXT();
+                    }
+                    if (frc == VM_OP_OVERLOAD_THREW) {
+                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_ADD). */
+                        s->unwind_value   = *a;   /* thrown value, in dst reg */
+                        s->pending_unwind = UEXEC_THROW;
+                        s->pc++;
+                        goto safepoint;
+                    }
                 }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->root_proto,
@@ -324,9 +347,19 @@ dispatch:
             if (rc != UVM_OK) {
                 /* Gap #4: type-error fallback to operator-method dispatch. */
                 USymbol *op = ustr_op_name(vm, "*", 1);
-                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
-                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
-                    NEXT();
+                if (op != NULL) {
+                    int frc = vm_arith_method_fallback(vm, a, b, cc, op,
+                            (uint32_t)(s->pc - s->pc_base));
+                    if (frc == VM_OP_OVERLOAD_OK) {
+                        NEXT();
+                    }
+                    if (frc == VM_OP_OVERLOAD_THREW) {
+                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_ADD). */
+                        s->unwind_value   = *a;   /* thrown value, in dst reg */
+                        s->pending_unwind = UEXEC_THROW;
+                        s->pc++;
+                        goto safepoint;
+                    }
                 }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->root_proto,
@@ -345,9 +378,19 @@ dispatch:
             if (rc != UVM_OK) {
                 /* Gap #4: type-error fallback to operator-method dispatch. */
                 USymbol *op = ustr_op_name(vm, "/", 1);
-                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
-                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
-                    NEXT();
+                if (op != NULL) {
+                    int frc = vm_arith_method_fallback(vm, a, b, cc, op,
+                            (uint32_t)(s->pc - s->pc_base));
+                    if (frc == VM_OP_OVERLOAD_OK) {
+                        NEXT();
+                    }
+                    if (frc == VM_OP_OVERLOAD_THREW) {
+                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_ADD). */
+                        s->unwind_value   = *a;   /* thrown value, in dst reg */
+                        s->pending_unwind = UEXEC_THROW;
+                        s->pc++;
+                        goto safepoint;
+                    }
                 }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->root_proto,
@@ -366,9 +409,19 @@ dispatch:
                 /* Gap #4: type-error fallback to operator-method dispatch.
                  * Unary neg uses "-" slot name (same as binary minus; contextual). */
                 USymbol *op = ustr_op_name(vm, "-", 1);
-                if (op != NULL && vm_arith_method_fallback_unary(vm, a, b, op,
-                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
-                    NEXT();
+                if (op != NULL) {
+                    int frc = vm_arith_method_fallback_unary(vm, a, b, op,
+                            (uint32_t)(s->pc - s->pc_base));
+                    if (frc == VM_OP_OVERLOAD_OK) {
+                        NEXT();
+                    }
+                    if (frc == VM_OP_OVERLOAD_THREW) {
+                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_ADD). */
+                        s->unwind_value   = *a;   /* thrown value, in dst reg */
+                        s->pending_unwind = UEXEC_THROW;
+                        s->pc++;
+                        goto safepoint;
+                    }
                 }
                 vm->last_error = rc;
                 vm_format_type_error_unary(vm, s->root_proto,
@@ -827,10 +880,24 @@ dispatch:
             bool eq;
             if (b->kind == (uint8_t)UVAL_OBJECT) {
                 USymbol *op = ustr_op_name(vm, "==", 2);
-                if (op != NULL && vm_cmp_method_fallback(vm, &eq, b, c, op,
-                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
-                    if ((int)eq != (int)uinstr_a(*s->pc)) { s->pc++; }
-                    NEXT();
+                if (op != NULL) {
+                    UValue thrown = {0};
+                    int frc = vm_cmp_method_fallback(vm, &eq, &thrown, b, c,
+                            op, (uint32_t)(s->pc - s->pc_base));
+                    if (frc == VM_OP_OVERLOAD_OK) {
+                        if ((int)eq != (int)uinstr_a(*s->pc)) { s->pc++; }
+                        NEXT();
+                    }
+                    if (frc == VM_OP_OVERLOAD_THREW) {
+                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_ADD).
+                         * unwind_value is a rooted strand field; nothing
+                         * allocates between the fallback's hand-off and
+                         * this deposit. */
+                        s->unwind_value   = thrown;
+                        s->pending_unwind = UEXEC_THROW;
+                        s->pc++;
+                        goto safepoint;
+                    }
                 }
             }
             eq = uvalue_equal(b, c);
@@ -846,10 +913,21 @@ dispatch:
             bool neq;
             if (b->kind == (uint8_t)UVAL_OBJECT) {
                 USymbol *op = ustr_op_name(vm, "!=", 2);
-                if (op != NULL && vm_cmp_method_fallback(vm, &neq, b, c, op,
-                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
-                    if ((int)neq != (int)uinstr_a(*s->pc)) { s->pc++; }
-                    NEXT();
+                if (op != NULL) {
+                    UValue thrown = {0};
+                    int frc = vm_cmp_method_fallback(vm, &neq, &thrown, b, c,
+                            op, (uint32_t)(s->pc - s->pc_base));
+                    if (frc == VM_OP_OVERLOAD_OK) {
+                        if ((int)neq != (int)uinstr_a(*s->pc)) { s->pc++; }
+                        NEXT();
+                    }
+                    if (frc == VM_OP_OVERLOAD_THREW) {
+                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_EQ). */
+                        s->unwind_value   = thrown;
+                        s->pending_unwind = UEXEC_THROW;
+                        s->pc++;
+                        goto safepoint;
+                    }
                 }
             }
             neq = !uvalue_equal(b, c);
@@ -865,10 +943,21 @@ dispatch:
             if (uvalue_lt(b, c, &lt) != UVAL_CMP_OK) {
                 /* Gap #4: type-error fallback to "<" slot on lhs. */
                 USymbol *op = ustr_op_name(vm, "<", 1);
-                if (op != NULL && vm_cmp_method_fallback(vm, &lt, b, c, op,
-                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
-                    if ((int)lt != (int)uinstr_a(*s->pc)) { s->pc++; }
-                    NEXT();
+                if (op != NULL) {
+                    UValue thrown = {0};
+                    int frc = vm_cmp_method_fallback(vm, &lt, &thrown, b, c,
+                            op, (uint32_t)(s->pc - s->pc_base));
+                    if (frc == VM_OP_OVERLOAD_OK) {
+                        if ((int)lt != (int)uinstr_a(*s->pc)) { s->pc++; }
+                        NEXT();
+                    }
+                    if (frc == VM_OP_OVERLOAD_THREW) {
+                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_EQ). */
+                        s->unwind_value   = thrown;
+                        s->pending_unwind = UEXEC_THROW;
+                        s->pc++;
+                        goto safepoint;
+                    }
                 }
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_binary(vm, s->root_proto,
@@ -887,10 +976,21 @@ dispatch:
             if (uvalue_le(b, c, &le) != UVAL_CMP_OK) {
                 /* Gap #4: type-error fallback to "<=" slot on lhs. */
                 USymbol *op = ustr_op_name(vm, "<=", 2);
-                if (op != NULL && vm_cmp_method_fallback(vm, &le, b, c, op,
-                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
-                    if ((int)le != (int)uinstr_a(*s->pc)) { s->pc++; }
-                    NEXT();
+                if (op != NULL) {
+                    UValue thrown = {0};
+                    int frc = vm_cmp_method_fallback(vm, &le, &thrown, b, c,
+                            op, (uint32_t)(s->pc - s->pc_base));
+                    if (frc == VM_OP_OVERLOAD_OK) {
+                        if ((int)le != (int)uinstr_a(*s->pc)) { s->pc++; }
+                        NEXT();
+                    }
+                    if (frc == VM_OP_OVERLOAD_THREW) {
+                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_EQ). */
+                        s->unwind_value   = thrown;
+                        s->pending_unwind = UEXEC_THROW;
+                        s->pc++;
+                        goto safepoint;
+                    }
                 }
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_binary(vm, s->root_proto,

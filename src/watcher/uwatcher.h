@@ -361,6 +361,28 @@ int urbi_run_closure_on_scratch_with_payload(struct UVM      *vm,
                                              UValue          *out_result,
                                              int             *out_threw);
 
+/* === urbi_run_closure_on_scratch_ex (refactor-3 VM-07) ===
+ *
+ * Superset of the two variants above: `initial_r0` is optional (NULL → no
+ * payload; non-NULL → written to R[0] before dispatch) and `out_fatal`
+ * (optional, may be NULL) reports the body's latched fatal_status when
+ * *out_threw is set — UEXEC_THROW for a genuine user throw, UEXEC_TAG_STOP /
+ * UEXEC_CANCEL for control transfers, UEXEC_OK for the other abnormal exits
+ * (budget exhaustion, yield, vm->last_error halt, setup OOM).
+ *
+ * On UEXEC_THROW, *out_result additionally carries the thrown value (nil
+ * for every other *out_threw case).  The value is NOT GC-rooted on return:
+ * the caller must move it into a rooted location (e.g. a strand register or
+ * s->unwind_value) before any allocation can run a GC slice.  Used by the
+ * operator-overload fallbacks (src/vm/uvm_op_overload.c) to propagate user
+ * exceptions out of overload bodies instead of swallowing them into MISS. */
+int urbi_run_closure_on_scratch_ex(struct UVM      *vm,
+                                   struct UClosure *closure,
+                                   const UValue    *initial_r0,
+                                   UValue          *out_result,
+                                   int             *out_threw,
+                                   UExecStatus     *out_fatal);
+
 #ifdef __cplusplus
 }
 #endif

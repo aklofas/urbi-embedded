@@ -1,0 +1,34 @@
+# Milestone: v0.13.1
+# Covers: a throw inside an operator-overload body surfaces as the user's
+#         exception at the operator call site (refactor-3 VM-07: it was
+#         swallowed into OVERLOAD_MISS and replaced by a numeric TypeError;
+#         on the == path it was silently dropped into identity equality).
+## timeout: 30
+
+# --- binary arith path: "+" body throws; value reaches the catch ---
+# pre-fix: [00000000] !!! line 1: TypeError: OP_ADD operands must be Integer or Float (got unknown, Integer)
+class Vec {}; Vec.setSlot("+", function(other) { throw("boom-value") }); var a = Vec.new(); var r = "none"; try { a + 1 } catch (var e) { r = e }; r
+[00000000] "boom-value"
+
+# --- comparison path: "<" body throws (vm_cmp_method_fallback) ---
+# pre-fix: [00000001] !!! line 1: TypeError: OP_LT operands must be Integer or Float (got unknown, Integer)
+class V2 {}; V2.setSlot("<", function(other) { throw("lt-boom") }); var a2 = V2.new(); var r2 = "none"; try { if (a2 < 1) { "x" } } catch (var e) { r2 = e }; r2
+[00000001] "lt-boom"
+
+# --- equality path: "==" body throws (pre-fix it silently fell through
+#     to identity equality and printed "none") ---
+class V4 {}; V4.setSlot("==", function(other) { throw("eq-boom") }); var a4 = V4.new(); var r4 = "none"; try { if (a4 == 1) { "x" } } catch (var e) { r4 = e }; r4
+[00000002] "eq-boom"
+
+# --- unary path: "-" body throws (vm_arith_method_fallback_unary) ---
+# pre-fix: [00000003] !!! line 1: TypeError: OP_NEG operand must be Integer or Float (got unknown)
+class V3 {}; V3.setSlot("-", function() { throw("neg-boom") }); var a3 = V3.new(); var r3 = "none"; try { -a3 } catch (var e) { r3 = e }; r3
+[00000003] "neg-boom"
+
+# --- regression pin: non-throwing overload still returns its value ---
+class Vok {}; Vok.setSlot("+", function(other) { 99 }); var ok = Vok.new(); ok + 1
+[00000004] 99
+
+# --- regression pin: missing slot still produces the original TypeError ---
+class NoAdd {}; var n = NoAdd.new(); n + n
+[00000005] !!! line 1: TypeError: OP_ADD operands must be Integer or Float (got unknown, unknown)
