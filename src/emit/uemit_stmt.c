@@ -1223,7 +1223,7 @@ uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n) {
     }
 
     uint32_t line = (uint32_t)n->line;
-    UFuncState *fs = e->current_fs;
+    const UFuncState *fs = e->current_fs;
 
     /* Pre-reserve the global object slot before declaring any synthetic
      * loop-state locals, so r_global_slot is pinned at the current freereg
@@ -1457,7 +1457,7 @@ uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
     }
 
     uint32_t line = (uint32_t)n->line;
-    UFuncState *fs = e->current_fs;
+    const UFuncState *fs = e->current_fs;
 
     /* Pre-reserve the global object slot before declaring the hidden
      * subject local — same rationale as emit_for_each_arm (see
