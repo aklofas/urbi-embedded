@@ -876,16 +876,17 @@ UTEST(watcher_root_walker_skips_null_closures)
 }
 
 /* 24. watcher_root_provider_count_is_10_after_init:
- *     Verify 10 root providers are registered at urbi_vm_init time
+ *     Verify 11 root providers are registered at urbi_vm_init time
  *     (sched, realm, intern, host_handle, vm_misc, watcher_table, periodic
  *     (v0.9.4), T36 m4_object, ref_table — Gap Q v0.7.1; vm_misc added Step
  *     C-1 v0.8.4; periodic added v0.9.4 every() Phase 5;
- *     urbi_deferred_slot_changes_walk_roots added W3/v0.10.2). */
+ *     urbi_deferred_slot_changes_walk_roots added W3/v0.10.2;
+ *     urbi_stdlib_containers_walk_roots added refactor-3 B2/GC-01). */
 UTEST(watcher_root_provider_count_is_6_after_init)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UASSERT_EQ(10U, vm.root_provider_count);
+    UASSERT_EQ(11U, vm.root_provider_count);
     urbi_vm_destroy(&vm);
 }
 

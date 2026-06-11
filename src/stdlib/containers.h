@@ -31,6 +31,7 @@
 #define URBI_STDLIB_CONTAINERS_H
 
 #include "urbi/types.h"   /* UValue (needed by v0.9.1 host-side List mutators) */
+#include "urbi/gc.h"      /* UGcRootCallback (container root provider) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,6 +68,14 @@ int urbi_stdlib_register_container_globals(struct UVM *vm, struct URealm *realm)
 /* Free every backing buffer threaded onto vm->stdlib_containers.
  * Called by urbi_vm_destroy. */
 void urbi_stdlib_containers_destroy(struct UVM *vm);
+
+/* refactor-3 B2/GC-01/STD-01: GC root provider — yield every element slot
+ * of every registered UList / UDict backing buffer.  Elements are
+ * invisible to the object walker because the `_storage` slot is a
+ * UVAL_INT leaf, so this provider is their only mark-phase entry point.
+ * Registered in urbi_vm_init alongside the other providers. */
+void urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb,
+                                       void *ctx);
 
 /* === v0.9.1 Phase 5: host-side List mutators for Lobby.lobbies ==========
  *

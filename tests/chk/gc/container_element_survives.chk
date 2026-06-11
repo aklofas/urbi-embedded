@@ -1,0 +1,19 @@
+# Milestone: v0.13.2
+# Covers: refactor-3 B2/GC-01/STD-01 — an object whose ONLY reference is a
+#         container element must survive collection.  Container backing
+#         stores are raw buffers (not GC cells) and the _storage slot is a
+#         UVAL_INT leaf, so elements are reachable only through the
+#         container root provider.  On the normal build this passes
+#         trivially (GC pressure is low); under test-gc-stress every
+#         allocation collects, so a missing provider turns the read-back
+#         into a UAF caught by ASan/poisoning.
+
+# List element: 20 Pair allocations churn the heap; each Pair's only
+# reference is the UList backing's items[i].
+var l = List.new(); var i = 0; while (i < 20) { l.add(Pair.new(i, i + 1)); i = i + 1 }; l.get(7).first
+[00000000] 7
+
+# Dict value: the inner List is reachable only through the UDict entry's
+# val slot; the string concat allocates between set and get.
+var d = Dict.new(); d.set("k", List.new(1, 2, 3)); var s = "x" + "y"; d.get("k").get(2)
+[00000001] 3

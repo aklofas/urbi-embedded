@@ -292,6 +292,14 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * No-op on empty ring; under the cooperative scheduler this is
      * correctness-preserving.  Becomes load-bearing at v1.x preemption. */
     urbi_gc_register_root_provider(vm, urbi_deferred_slot_changes_walk_roots);
+    /* refactor-3 B2/GC-01/STD-01: stdlib container backing-buffer elements
+     * (UList items[] / UDict entries[]) — invisible to the object walker
+     * because the script-visible `_storage` slot is a UVAL_INT leaf. */
+    urbi_gc_register_root_provider(vm, urbi_stdlib_containers_walk_roots);
+    /* Provider headroom: 11 of URBI_MAX_ROOT_PROVIDERS (12) slots used —
+     * the 9 above + ref_table_walk_roots (below) + object_roots_walker
+     * (urbi_object_register_gc_roots).  v0.13.2 rewrites the watcher
+     * provider IN PLACE (count stays 11). */
 
     /* Type table + host-handle table. */
     {

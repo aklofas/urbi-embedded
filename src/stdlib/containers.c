@@ -41,6 +41,7 @@
 #endif
 
 #include "chunk/uchunk.h"            /* UValue / UVAL_* */
+#include "gc/ugc_incremental.h"        /* GC_PHASE_*, uvalue_is_heap_white, gc_shade_gray */
 #include "object/uobject.h"            /* urbi_object_alloc / atom / clone / set_local_slot */
 #include "realm/urealm.h"              /* URealm + global_object */
 #include "runtime/uclosure.h"          /* urbi_native_method_fn */
@@ -139,6 +140,63 @@ urbi_stdlib_containers_destroy(UVM *vm)
         h = next;
     }
     vm->stdlib_containers = NULL;
+}
+
+/* refactor-3 B2/GC-01/STD-01: container elements are GC roots.
+ *
+ * UList/UDict backing stores are raw vm->alloc_fn buffers (not GC cells)
+ * threaded onto vm->stdlib_containers by container_register; the script-
+ * visible object's `_storage` slot is deliberately UVAL_INT so the object
+ * walker treats it as a leaf.  Elements therefore need a dedicated root
+ * provider: walk every registered container and yield every element slot.
+ * Tuple backing buffers are UCONTAINER_LIST too (tuple_new builds via
+ * list_alloc), so the LIST arm covers Tuples.  NULL backing is only
+ * possible with len == 0 / cap == 0, so the loop bounds already guard
+ * the dereferences.  Cost: O(total elements) per root scan — bounded,
+ * and paid only at MARK_ROOTS (plus the ATOMIC_FINISH re-scan once GC-02
+ * lands in this same tag).  The proper v1.x fix is UTYPE_LIST promotion
+ * (deferred; see design-risks). */
+void
+urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
+{
+    UContainerHdr *h = (UContainerHdr *)vm->stdlib_containers;
+    while (h != NULL) {
+        if (h->kind == (uint8_t)UCONTAINER_LIST) {
+            UList *l = (UList *)h;
+            size_t i;
+            for (i = 0U; i < l->len; i++) {
+                cb(vm, &l->items[i], ctx);
+            }
+        } else if (h->kind == (uint8_t)UCONTAINER_DICT) {
+            UDict *d = (UDict *)h;
+            size_t i;
+            for (i = 0U; i < d->cap; i++) {
+                if (d->entries[i].state == UDICT_USED) {
+                    cb(vm, &d->entries[i].key, ctx);
+                    cb(vm, &d->entries[i].val, ctx);
+                }
+            }
+        }
+        h = h->next;
+    }
+}
+
+/* refactor-3 B2: incremental-marking insertion barrier for container
+ * element stores.  Containers have no parent gc_byte (raw buffers), so the
+ * Dijkstra parent-is-BLACK check is unavailable; instead shade the stored
+ * child whenever a mark phase is in flight.  Stores while the GC is IDLE
+ * or SWEEPing need no barrier (IDLE: next cycle's root scan sees the
+ * element; SWEEP: marking is complete and mid-sweep allocations are
+ * current_white by construction).  Soundness backstop either way is the
+ * GC-02 full root re-scan at ATOMIC_FINISH (landing in this same tag). */
+static void
+container_element_pre_store(UVM *vm, UValue child)
+{
+    if ((vm->gc_phase == GC_PHASE_MARK_ROOTS
+         || vm->gc_phase == GC_PHASE_MARK_INCREMENTAL)
+        && uvalue_is_heap_white(vm, child)) {
+        gc_shade_gray(vm, uvalue_as_cell(child));
+    }
 }
 
 /* === UList / UDict alloc helpers ========================================= */
@@ -388,7 +446,10 @@ tuple_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (l == NULL) return urbi_raise_oom(vm, out);
 
     uint8_t i;
-    for (i = 0U; i < nargs; i++) l->items[i] = args[i];
+    for (i = 0U; i < nargs; i++) {
+        container_element_pre_store(vm, args[i]);
+        l->items[i] = args[i];
+    }
     l->len = (size_t)nargs;
 
     UObject *t = urbi_object_clone(vm, (UObject *)self.v.p);
@@ -442,7 +503,10 @@ list_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (l == NULL) return urbi_raise_oom(vm, out);
 
     uint8_t i;
-    for (i = 0U; i < nargs; i++) l->items[i] = args[i];
+    for (i = 0U; i < nargs; i++) {
+        container_element_pre_store(vm, args[i]);
+        l->items[i] = args[i];
+    }
     l->len = (size_t)nargs;
 
     UObject *o = urbi_object_clone(vm, (UObject *)self.v.p);
@@ -474,6 +538,7 @@ list_add(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         if (list_grow(vm, l, l->len + 1U) != 0)
             return urbi_raise_oom(vm, out);
     }
+    container_element_pre_store(vm, args[0]);
     l->items[l->len++] = args[0];
     *out = self;   /* allow chaining */
     return UEXEC_OK;
@@ -490,6 +555,7 @@ list_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     int64_t i = args[0].v.i;
     if (i < 0 || (size_t)i >= l->len)
         return urbi_raise_type(vm, "set: index out of range", out);
+    container_element_pre_store(vm, args[1]);
     l->items[(size_t)i] = args[1];
     *out = self;
     return UEXEC_OK;
@@ -526,6 +592,9 @@ list_concat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     /* Allocate a fresh List proto-clone backed by a new UList. */
     UList *o = list_alloc(vm, a->len + b->len > 0U ? a->len + b->len : 1U);
     if (o == NULL) return urbi_raise_oom(vm, out);
+    /* No element barrier on these copy loops (same for diff / reverse /
+     * sort below): every value copied is already reachable from a
+     * registered source container, which the root provider re-yields. */
     size_t i;
     for (i = 0U; i < a->len; i++) o->items[o->len++] = a->items[i];
     for (i = 0U; i < b->len; i++) o->items[o->len++] = b->items[i];
@@ -864,11 +933,13 @@ dict_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (e == NULL) return urbi_raise_oom(vm, out);
 
     if (e->state != UDICT_USED) {
+        container_element_pre_store(vm, args[0]);
         e->key   = args[0];
         e->hash  = h;
         e->state = UDICT_USED;
         d->len++;
     }
+    container_element_pre_store(vm, args[1]);
     e->val = args[1];
     *out = self;
     return UEXEC_OK;
@@ -929,6 +1000,8 @@ dict_remove(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     size_t kn = urbi_strlen(ks);
     UDictEntry *e = dict_lookup(d, ks, kn, dict_hash_bytes(ks, kn));
     if (e != NULL && e->state == UDICT_USED) {
+        /* No element barrier: deletion stores nil — an insertion barrier
+         * only guards new black→white edges. */
         e->state = UDICT_TOMB;
         e->key   = urbi_make_nil();
         e->val   = urbi_make_nil();
@@ -1163,6 +1236,7 @@ urbi_stdlib_list_append_value(UVM *vm, UObject *list_obj, UValue item)
     if (l->len == l->cap) {
         if (list_grow(vm, l, l->len + 1U) != 0) return URBI_ERR_OOM;
     }
+    container_element_pre_store(vm, item);
     l->items[l->len++] = item;
     return URBI_OK;
 }
@@ -1258,6 +1332,7 @@ urbi_list_append(UVM *vm, UValue lst, UValue v)
     if (l->len == l->cap) {
         if (list_grow(vm, l, l->len + 1U) != 0) return -1;
     }
+    container_element_pre_store(vm, v);
     l->items[l->len++] = v;
     return 0;
 }

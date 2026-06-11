@@ -25,11 +25,16 @@
 #include "utest.h"
 #include "urbi/urbi.h"
 #include "urbi/gc.h"          /* urbi_gc_alloc, urbi_gc_force_full */
+#include "urbi/object.h"      /* URBI_ATOM_DICT (container cases) */
 #include "gc/ugc.h"           /* UTYPE_OBJECT */
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 #include "realm/urealm.h"
 #include "object/uobject.h"   /* struct UObject (sentinel payload size) */
+#include "object/uobject_internal.h" /* urbi_protos_alloc (UProtos wrapper case) */
+#include "runtime/uclosure.h" /* UClosure.native_fn (dict container cases) */
+#include "stdlib/containers.h" /* urbi_stdlib_list_new_empty / _append_value */
+#include "value/uintern.h"    /* ustr_intern (dict keys + native-fn lookup) */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -272,14 +277,13 @@ UTEST(matrix_uprotos_wrapper_survives_when_owner_live)
     s.stack[2] = obj_value_for(proto_b);      /* transient root */
 
     /* Heap-form UProtos block (n == 2), caller-filled per the
-     * urbi_object_set_protos_heap contract (uobject.h).  No allocation
-     * happens between this alloc and the publish below, so the unrooted
-     * window is stress-safe. */
-    UCell *wrapper_cell = urbi_gc_alloc(
-        &vm, sizeof(UProtos) + 2U * sizeof(UObject *), UTYPE_PROTOS);
-    UASSERT(wrapper_cell != NULL);
-    UProtos *up = (UProtos *)(void *)wrapper_cell;
-    up->n        = 2U;
+     * urbi_object_set_protos_heap contract (uobject.h).
+     * urbi_protos_alloc makes exactly one allocation, so nothing
+     * allocates between it and the publish below — the unrooted window
+     * is stress-safe. */
+    UProtos *up = urbi_protos_alloc(&vm, 2U);
+    UASSERT(up != NULL);
+    UCell *wrapper_cell = (UCell *)(void *)up;
     up->items[0] = (UObject *)(void *)proto_a;
     up->items[1] = (UObject *)(void *)proto_b;
 
@@ -305,7 +309,7 @@ UTEST(matrix_uprotos_wrapper_survives_when_owner_live)
     UASSERT(cell_live(&vm, proto_b));
     /* Owner's protos must still be the published heap form, intact. */
     UASSERT(owner->protos == (uintptr_t)up);
-    UASSERT_EQ(2U, up->n);
+    UASSERT_EQ(up->n, 2U);
     UASSERT(up->items[0] == (UObject *)(void *)proto_a);
     UASSERT(up->items[1] == (UObject *)(void *)proto_b);
 
@@ -333,6 +337,175 @@ UTEST(matrix_register_window_is_rooted)
     urbi_vm_destroy(&vm);
 }
 
+/* === Container element cases (Task 3 / refactor-3 B2/GC-01/STD-01) ===
+ *
+ * UList / UDict backing stores are raw vm->alloc_fn buffers threaded onto
+ * vm->stdlib_containers; the script-visible object's _storage slot is
+ * deliberately UVAL_INT, so the object walker treats it as a leaf and the
+ * elements need a dedicated root provider
+ * (urbi_stdlib_containers_walk_roots). */
+
+/* Dict has no host-side C constructor/mutator (the v0.9.1 host helpers in
+ * containers.h cover List only), so the dict cases drive the Dict atom
+ * proto's native methods directly — same resolve-the-native_fn idiom as
+ * fetch_native_fn in test_event_native.c. */
+static urbi_native_method_fn
+container_native_fn(UVM *vm, UObject *proto, const char *name, size_t len)
+{
+    USymbol *sym = (USymbol *)ustr_intern(vm, name, len);
+    if (sym == NULL) return NULL;
+    UValue slot;
+    memset(&slot, 0, sizeof slot);
+    if (urbi_object_lookup(vm, proto, sym, &slot) != 0) return NULL;
+    if (slot.kind != (uint8_t)UVAL_CLOSURE || slot.v.p == NULL) return NULL;
+    return ((UClosure *)slot.v.p)->native_fn;
+}
+
+/* Build an empty Dict via its native `new` and root the Dict OBJECT in
+ * s->stack[0] (the object must stay live across the case's forced
+ * collections so the set call below isn't a UAF; its elements are still
+ * invisible to the object walker).  Construction runs with stress
+ * disarmed: the clone+attach ctor path shares the mid-construction
+ * stress-hazard class noted in matrix_strand_setup; the armed window each
+ * case cares about is sentinel alloc → element store → collections. */
+static UValue
+matrix_dict_new_rooted(UVM *vm, UStrand *s)
+{
+    UObject *dict_proto = urbi_object_atom(vm, URBI_ATOM_DICT);
+    UASSERT(dict_proto != NULL);
+    urbi_native_method_fn new_fn = container_native_fn(vm, dict_proto, "new", 3);
+    UASSERT(new_fn != NULL);
+
+    uint8_t stress_saved = vm->gc_stress_armed;
+    vm->gc_stress_armed = 0U;
+    UValue d = urbi_make_nil();
+    int rc = new_fn(vm, obj_value_for((UCell *)(void *)dict_proto),
+                    NULL, 0, &d);
+    vm->gc_stress_armed = stress_saved;
+    UASSERT_EQ(rc, UEXEC_OK);
+    UASSERT_EQ((int)d.kind, (int)UVAL_OBJECT);
+    s->stack[0] = d;
+    return d;
+}
+
+UTEST(matrix_list_element_is_rooted)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    /* List construction with stress disarmed (see matrix_dict_new_rooted);
+     * the List OBJECT is rooted in s.stack[0] so the append call below
+     * stays valid across stress collections. */
+    uint8_t stress_saved = vm.gc_stress_armed;
+    vm.gc_stress_armed = 0U;
+    UObject *lst = urbi_stdlib_list_new_empty(&vm);
+    vm.gc_stress_armed = stress_saved;
+    UASSERT(lst != NULL);
+    s.stack[0] = obj_value_for((UCell *)(void *)lst);
+
+    /* Sentinel's ONLY reference becomes the UList backing's items[0].
+     * Stress-safe unrooted window: append performs no urbi_gc_alloc
+     * (the _storage lookup is a pure intern hit; the fresh list's cap is
+     * 4 > len 0, so no grow). */
+    UCell *sentinel = sentinel_alloc(&vm);
+    UASSERT(sentinel != NULL);
+    int rc = urbi_stdlib_list_append_value(&vm, lst, obj_value_for(sentinel));
+    UASSERT_EQ(rc, URBI_OK);
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, sentinel));
+
+    memset(&s.stack[0], 0, sizeof s.stack[0]);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(matrix_dict_value_is_rooted)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    UValue d = matrix_dict_new_rooted(&vm, &s);
+    UObject *dict_proto = urbi_object_atom(&vm, URBI_ATOM_DICT);
+    urbi_native_method_fn set_fn = container_native_fn(&vm, dict_proto, "set", 3);
+    UASSERT(set_fn != NULL);
+
+    /* Intern the key BEFORE the sentinel is born — interning a new string
+     * may allocate, and nothing may allocate while the sentinel is
+     * unrooted. */
+    UValue key;
+    memset(&key, 0, sizeof key);
+    key.kind = UVAL_STR;
+    key.v.p  = (void *)ustr_intern(&vm, "k", 1);
+    UASSERT(key.v.p != NULL);
+
+    /* Sentinel's ONLY reference becomes the UDict backing's e->val.
+     * Stress-safe unrooted window: dict_set performs no urbi_gc_alloc
+     * (storage lookup is a pure intern hit; table growth uses the raw
+     * allocator). */
+    UCell *sentinel = sentinel_alloc(&vm);
+    UASSERT(sentinel != NULL);
+    UValue args[2];
+    args[0] = key;
+    args[1] = obj_value_for(sentinel);
+    UValue out = urbi_make_nil();
+    int rc = set_fn(&vm, d, args, 2, &out);
+    UASSERT_EQ(rc, UEXEC_OK);
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, sentinel));
+
+    memset(&s.stack[0], 0, sizeof s.stack[0]);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(matrix_dict_key_is_rooted)
+{
+    /* Dict keys are UVAL_STR-only at v1.0 (dict_key_check raises on
+     * anything else), and interned strings live in the intern table —
+     * raw vm->alloc_fn memory that is never on all_cells_head, so a key
+     * can never be a swept GC cell today.  This case future-proofs the
+     * provider's e->key yield: walking a USED entry's key must not crash
+     * (mark_root_callback ignores UVAL_STR as a non-heap leaf), and the
+     * value planted alongside it must survive. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    UValue d = matrix_dict_new_rooted(&vm, &s);
+    UObject *dict_proto = urbi_object_atom(&vm, URBI_ATOM_DICT);
+    urbi_native_method_fn set_fn = container_native_fn(&vm, dict_proto, "set", 3);
+    UASSERT(set_fn != NULL);
+
+    UValue key;
+    memset(&key, 0, sizeof key);
+    key.kind = UVAL_STR;
+    key.v.p  = (void *)ustr_intern(&vm, "key2", 4);
+    UASSERT(key.v.p != NULL);
+
+    UCell *sentinel = sentinel_alloc(&vm);
+    UASSERT(sentinel != NULL);
+    UValue args[2];
+    args[0] = key;
+    args[1] = obj_value_for(sentinel);
+    UValue out = urbi_make_nil();
+    int rc = set_fn(&vm, d, args, 2, &out);
+    UASSERT_EQ(rc, UEXEC_OK);
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, sentinel));
+
+    memset(&s.stack[0], 0, sizeof s.stack[0]);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void test_gc_rooting_matrix_suite(void)
@@ -350,4 +523,10 @@ void test_gc_rooting_matrix_suite(void)
               matrix_uprotos_wrapper_survives_when_owner_live);
     utest_run("matrix_register_window_is_rooted",
               matrix_register_window_is_rooted);
+    utest_run("matrix_list_element_is_rooted",
+              matrix_list_element_is_rooted);
+    utest_run("matrix_dict_value_is_rooted",
+              matrix_dict_value_is_rooted);
+    utest_run("matrix_dict_key_is_rooted",
+              matrix_dict_key_is_rooted);
 }

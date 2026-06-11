@@ -990,14 +990,15 @@ UTEST(vm_create_zero_init_m3_fields) {
     UASSERT_EQ(0U, vm.flag_preemption);
     /* ISR ring: T18 allocates it at urbi_vm_init time. */
     UASSERT(vm.event_ring != NULL);
-    /* GC root provider registry — 10 providers registered at urbi_vm_init:
+    /* GC root provider registry — 11 providers registered at urbi_vm_init:
      * sched_walk_roots, realm_list_walk_roots, intern_table_walk_roots,
      * host_handle_walk_roots, vm_misc_walk_roots (Step C-1 v0.8.4),
      * watcher_table_walk_roots, urbi_periodic_table_walk_roots (v0.9.4),
      * T36's object_roots_walker (atom singletons + root_shape + module_-
-     * instances), ref_table_walk_roots (Gap Q v0.7.1), plus
-     * urbi_deferred_slot_changes_walk_roots (W3/v0.10.2 reactive F6). */
-    UASSERT_EQ(10U, vm.root_provider_count);
+     * instances), ref_table_walk_roots (Gap Q v0.7.1),
+     * urbi_deferred_slot_changes_walk_roots (W3/v0.10.2 reactive F6), plus
+     * urbi_stdlib_containers_walk_roots (refactor-3 B2/GC-01/STD-01). */
+    UASSERT_EQ(11U, vm.root_provider_count);
     /* Realm / fatal-strand pointers. */
     UASSERT(vm.realms_head  == NULL);
     UASSERT(vm.global_realm == NULL);
