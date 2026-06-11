@@ -416,8 +416,10 @@ urbi_unwind(UStrand *s)
                     vm_tag_scope_teardown(s, e);
                 } else {
                     /* TRY_FRAME without finally (a catch never matches a
-                     * RETURN): pop and continue. */
-                    strand_cleanup_pop(s, (UCleanupKind)e->kind);
+                     * RETURN): pop and continue.  The explicit kind keeps
+                     * strand_cleanup_pop's kind assert meaningful — TRY_FRAME
+                     * is the only kind left after the arms above. */
+                    strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
                 }
             }
             if (!replaced) {
