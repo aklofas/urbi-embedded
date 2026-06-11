@@ -8,7 +8,7 @@
 #include "runtime/umacros.h"   /* urbi_zero */
 #include "sched/ustrand.h"     /* UStrand */
 #include "gc/ugc.h"            /* UTYPE_CLOSURE */
-#include "gc/ugc_incremental.h" /* gc_shade_gray, uvalue_is_heap_white (close barrier) */
+#include "gc/ugc_incremental.h" /* urbi_gc_upvalue_pre_store (close barrier) */
 #include "value/uvalue.h"      /* UValue */
 #include "chunk/uchunk.h"
 #include "runtime/uframe.h"
@@ -84,20 +84,17 @@ void vm_close_upvalues(UStrand *s, const UValue *threshold) {
     while (*link != NULL) {
         UUpvalCell *cell = *link;
         if (cell->u.stack_ptr >= threshold) {
-            /* refactor-3 GC-07: Dijkstra forward barrier.  The UUpvalCell
+            /* refactor-3 GC-07: Dijkstra forward barrier on the CELL.  It
              * may already be BLACK mid-cycle while the captured value is
              * still WHITE (either white — see uvalue_is_heap_white, Task
              * 9b); without a shade the value's only surviving reference can
              * end up inside an already-scanned cell and the sweep frees it
-             * while reachable.  OP_SETUPVAL fires the same barrier
-             * (urbi_gc_upvalue_pre_store); the close path was the one
-             * missing store site.  Inlined rather than routed through
-             * urbi_gc_upvalue_pre_store because the barrier parent here is
-             * the UUpvalCell ITSELF, not a UClosure. */
-            if (UNLIKELY((cell->cell.gc_byte & UGC_COLOR_MASK) == UGC_COLOR_BLACK
-                         && uvalue_is_heap_white(s->vm, *cell->u.stack_ptr))) {
-                gc_shade_gray(s->vm, uvalue_as_cell(*cell->u.stack_ptr));
-            }
+             * while reachable.  Same helper + same cell-parent shape as
+             * OP_SETUPVAL's on_heap arm (Task 9c: the cell — shared between
+             * sibling closures — is the barrier parent at both heapified
+             * store sites; a closure's color is never the right check). */
+            urbi_gc_upvalue_pre_store(s->vm, &cell->cell,
+                                      *cell->u.stack_ptr);
             cell->u.value = *cell->u.stack_ptr;
             cell->on_heap  = true;
             *link = cell->next;

@@ -985,10 +985,11 @@ UTEST(matrix_periodic_owning_tag_is_rooted)
 /* === Upvalue-close write barrier case (Task 9 / refactor-3 GC-07) ===
  *
  * vm_close_upvalues copies *cell->u.stack_ptr into the UUpvalCell — a store
- * of a possibly-WHITE value into a possibly-BLACK cell.  OP_SETUPVAL fires
- * urbi_gc_upvalue_pre_store before its store; the close path had no barrier,
- * so a value whose ONLY reference migrates into a black closed cell mid-mark
- * is never re-scanned and gets swept while reachable.
+ * of a possibly-WHITE value into a possibly-BLACK cell.  The close path had
+ * no barrier at all, so a value whose ONLY reference migrates into a black
+ * closed cell mid-mark is never re-scanned and gets swept while reachable.
+ * (OP_SETUPVAL had a barrier here but on the WRONG parent — the executing
+ * closure instead of the shared cell; that half is Task 9c's case below.)
  *
  * Construction (extends the T4 slice-machine idiom):
  *   1. Plant pre-cycle: parker object in stack[0] (registers are shaded in
@@ -1226,6 +1227,142 @@ UTEST(matrix_slot_store_barrier_shades_other_white)
     urbi_vm_destroy(&vm);
 }
 
+/* === OP_SETUPVAL shared-cell barrier case (Task 9c / refactor-3 GC-07) ===
+ *
+ * OP_SETUPVAL's barrier (urbi_gc_upvalue_pre_store) checked the EXECUTING
+ * CLOSURE's color — but for the on_heap arm the store target is
+ * uvc->u.value, i.e. the UUpvalCell, which is SHARED between sibling
+ * closures (OP_CLOSURE re-capture arm copies the parent's cell pointer).
+ * The cell's color diverges from any one closure's: sibling A traced →
+ * shared cell BLACK; sibling B still GRAY executes the store → barrier
+ * sees a gray closure parent → no shade; when B is traced later,
+ * walk_uclosure's gc_shade_gray on the BLACK cell idempotency-skips →
+ * the stored value is swept while reachable via the cell.  (The stack
+ * arm needs nothing: it stores into a register, which the ATOMIC_FINISH
+ * root re-scan covers.)
+ *
+ * Construction (parker + drain idiom from the T9 cases): closures B then
+ * A rooted in stack[1]/stack[2] — registers shade ascending and the gray
+ * list is LIFO, so A is traced BEFORE B; tracing A shades the shared cell
+ * (closed pre-cycle, holding nil), which blackens on the next pop while B
+ * is still gray and the parker keeps the cycle in MARK_INCREMENTAL.  Then
+ * the mutator performs the exact CASE(OP_SETUPVAL) on_heap sequence with
+ * cur_cl = B: barrier, store of the OTHER_WHITE sentinel into the black
+ * cell, register cleared.  KEEP THE MIRRORED SEQUENCE IN LOCKSTEP WITH
+ * CASE(OP_SETUPVAL) in src/vm/uvm.c.  Red pre-fix (closure-parent check
+ * never fires), green once the barrier targets the cell. */
+
+UTEST(matrix_setupval_barrier_targets_shared_cell)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    /* Parker: first-shaded root → traced last. */
+    UCell *parker = sentinel_alloc(&vm);
+    UASSERT(parker != NULL);
+    s.stack[0] = obj_value_for(parker);
+
+    /* Sibling closures: B in stack[1] (traced AFTER A), A in stack[2]
+     * (traced first → blackens the shared cell). */
+    UClosure *cl_b = urbi_native_closure_create(&vm, matrix_native_nop);
+    UASSERT(cl_b != NULL);
+    {
+        UValue v;
+        memset(&v, 0, sizeof v);
+        v.kind = (uint8_t)UVAL_CLOSURE;
+        v.v.p  = (void *)cl_b;
+        s.stack[1] = v;
+    }
+    UClosure *cl_a = urbi_native_closure_create(&vm, matrix_native_nop);
+    UASSERT(cl_a != NULL);
+    {
+        UValue v;
+        memset(&v, 0, sizeof v);
+        v.kind = (uint8_t)UVAL_CLOSURE;
+        v.v.p  = (void *)cl_a;
+        s.stack[2] = v;
+    }
+
+    /* Shared upvalue cell over R[3], published into A the way OP_CLOSURE's
+     * in_stack arm does, then into B the way the re-capture arm does
+     * (cl->upvals[i] = par_cl->upvals[src_idx] — same pointer). */
+    UUpvalCell *uc = vm_open_upvalue(&vm, &s, &s.stack[3]);
+    UASSERT(uc != NULL);
+    cl_a->nupvals   = 1U;
+    cl_a->upvals[0] = uc;
+    cl_b->nupvals   = 1U;
+    cl_b->upvals[0] = uc;
+
+    /* Close pre-cycle (scope exit): u.value = nil, on_heap = true; the
+     * cell is now reachable only via the two siblings' upvals[]. */
+    vm_close_upvalues(&s, &s.stack[3]);
+    UASSERT(uc->on_heap);
+
+    /* C2: pre-cycle birth → OTHER_WHITE once the cycle flips; only
+     * reference is this C local. */
+    UCell *c2 = sentinel_alloc(&vm);
+    UASSERT(c2 != NULL);
+
+    /* Start the cycle: flip + MARK_ROOTS in one slice. */
+    vm.gc_debt = 1;
+    urbi_gc_slice(&vm, 1U);
+    UASSERT_EQ((uint8_t)GC_PHASE_MARK_INCREMENTAL, urbi_gc_phase(&vm));
+    UASSERT(IS_WHITE(c2));
+
+    /* Drain until A AND the shared cell are BLACK; B must still be GRAY
+     * (rooted, so shaded at MARK_ROOTS, but popped only after A). */
+    {
+        int spins = 0;
+        while (!(IS_BLACK(&cl_a->cell) && IS_BLACK(&uc->cell))
+               && urbi_gc_phase(&vm) == (uint8_t)GC_PHASE_MARK_INCREMENTAL
+               && spins < 100000) {
+            urbi_gc_slice(&vm, 1U);
+            spins++;
+        }
+        UASSERT(spins < 100000);
+    }
+    UASSERT(IS_BLACK(&cl_a->cell));
+    UASSERT(IS_BLACK(&uc->cell));
+    UASSERT(IS_GRAY(&cl_b->cell));        /* executing closure NOT black */
+    UASSERT_EQ((uint8_t)GC_PHASE_MARK_INCREMENTAL, urbi_gc_phase(&vm));
+    UASSERT(vm.gray_work_head != NULL);   /* parker still parked */
+    UASSERT(IS_WHITE(c2));
+
+    /* Mutator: the exact CASE(OP_SETUPVAL) on_heap sequence with
+     * cur_cl = cl_b (gray), uvc = uc (black shared cell), R[a] = R[3].
+     * Pre-fix (closure-parent barrier: urbi_gc_upvalue_pre_store(vm, cl_b,
+     * 0, R[a])) the gray closure never fired the shade; post-fix the
+     * barrier targets the CELL. */
+    s.stack[3] = obj_value_for(c2);       /* R[a] := sentinel */
+    urbi_gc_upvalue_pre_store(&vm, &uc->cell, s.stack[3]);
+    uc->u.value = s.stack[3];             /* on_heap arm store */
+    memset(&s.stack[3], 0, sizeof s.stack[3]);
+
+    /* Finish the cycle.  B's eventual trace shades the BLACK cell —
+     * idempotency-skipped, so it cannot rescue C2. */
+    {
+        int spins = 0;
+        while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
+            urbi_gc_slice(&vm, 4096U);
+            spins++;
+            UASSERT(spins < 64);
+            if (spins >= 64) break;
+        }
+    }
+
+    /* Pre-fix: C2 swept while reachable via the shared cell's u.value.
+     * Post-fix: the cell-parent barrier shaded C2 gray at the store. */
+    UASSERT(cell_live(&vm, c2));
+
+    memset(&s.stack[0], 0, sizeof s.stack[0]);
+    memset(&s.stack[1], 0, sizeof s.stack[1]);
+    memset(&s.stack[2], 0, sizeof s.stack[2]);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
 /* NOTE (Task 9b): no container sibling case.  The container element
  * barrier (container_element_pre_store, src/stdlib/containers.c) is
  * PACING-ONLY: container backing stores are walked as ROOTS every cycle
@@ -1284,4 +1421,6 @@ void test_gc_rooting_matrix_suite(void)
               matrix_upvalue_close_fires_barrier);
     utest_run("matrix_slot_store_barrier_shades_other_white",
               matrix_slot_store_barrier_shades_other_white);
+    utest_run("matrix_setupval_barrier_targets_shared_cell",
+              matrix_setupval_barrier_targets_shared_cell);
 }

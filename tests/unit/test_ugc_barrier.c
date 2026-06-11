@@ -13,8 +13,8 @@
 /* === Test helper: construct a UValue from a UCell* (test-only) ===
  *
  * Tags the value as UVAL_CLOSURE and stores the cell pointer in v.v.p.
- * At M4 UClosure embeds UCell at offset 0, so urbi_gc_upvalue_pre_store may
- * be called with real closure pointers in production code; these unit
+ * At M4 UClosure embeds UCell at offset 0, so uvalue_as_cell is
+ * well-defined for real closure values in production code; these unit
  * tests still use synthetic UCell objects allocated via urbi_gc_alloc to
  * isolate barrier behavior from closure construction.
  *
@@ -165,21 +165,23 @@ UTEST(barrier_observer_bit_calls_stub)
 /* ===== Test 6: upvalue_write black parent + white child → child shaded ===== */
 
 /* urbi_gc_upvalue_pre_store applies the same forward Dijkstra barrier as
- * slot_write.  Uses a synthetic UCell cast as UClosure* — the cast is now
- * well-defined because UClosure embeds UCell at offset 0 (M4). */
+ * slot_write.  Task 9c: the barrier parent is the UUpvalCell's UCell
+ * header (the cell is shared between sibling closures, so a closure's
+ * color is the wrong check); a synthetic UCell stands in for it. */
 UTEST(barrier_upvalue_black_stores_white_shades)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    /* parent_cell stands in for a UClosure (T25 synthetic). */
+    /* parent_cell stands in for a heapified UUpvalCell's header (T25
+     * synthetic; Task 9c cell-parent signature). */
     UCell *parent_cell = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UCell *child       = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
 
     parent_cell->gc_byte = (uint8_t)((parent_cell->gc_byte & ~UGC_COLOR_MASK) | UGC_COLOR_BLACK);
     child->gc_byte       = (uint8_t)((child->gc_byte       & ~UGC_COLOR_MASK) | vm.current_white);
 
-    urbi_gc_upvalue_pre_store(&vm, (struct UClosure *)parent_cell, 0U,
+    urbi_gc_upvalue_pre_store(&vm, parent_cell,
                           uvalue_from_test_cell(child));
 
     /* Child must be gray — forward barrier fired. */
@@ -192,8 +194,12 @@ UTEST(barrier_upvalue_black_stores_white_shades)
 /* ===== Test 7: UClosure embeds UCell at offset 0 ===== */
 
 /* M4 closes the M3 deferral: UClosure embeds UCell as its first member, so
- * urbi_gc_upvalue_pre_store may safely cast UClosure* → UCell* for the barrier
- * color check.  Verifies the structural invariant the cast relies on. */
+ * the UClosure* → UCell* casts in uvalue_as_cell (UVAL_CLOSURE mark-path
+ * values) and the walker/root shading sites (walk_uclosure,
+ * strand_walk_roots) are well-defined.  Verifies the structural invariant
+ * those casts rely on.  (Task 9c: urbi_gc_upvalue_pre_store no longer
+ * performs this cast — its parent is the UUpvalCell header — but the
+ * value-tagging casts above keep the pin load-bearing.) */
 UTEST(barrier_upvalue_uclosure_embeds_ucell_at_offset_zero)
 {
     /* The cast UClosure* → UCell* is well-defined only when UCell sits at

@@ -511,15 +511,23 @@ dispatch:
                 uint8_t a = uinstr_a(*s->pc);
                 uint8_t b = uinstr_b(*s->pc);
                 UUpvalCell *uvc = cur_cl->upvals[b];
-                /* GC barrier (M4): UClosure now embeds UCell at offset 0,
-                 * so urbi_gc_upvalue_pre_store may safely cast UClosure* → UCell*
-                 * for the color check.  Hook fires before the actual store
-                 * (which differs by on_heap vs stack-resident upvalue — caller
-                 * does the store explicitly, so this is the barrier-only path). */
-                urbi_gc_upvalue_pre_store(vm, cur_cl, b, s->R[a]);
                 if (uvc->on_heap) {
+                    /* Task 9c (refactor-3 GC-07): Dijkstra barrier on the
+                     * CELL, not the executing closure.  The UUpvalCell is
+                     * shared between sibling closures (OP_CLOSURE re-capture
+                     * arm), so its color diverges from cur_cl's: a BLACK
+                     * shared cell + GRAY executing closure stored a white
+                     * value with no shade, and the gray sibling's later
+                     * trace idempotency-skips the black cell — lost object.
+                     * This store mutates the cell, not the closure, so the
+                     * closure's color is irrelevant here. */
+                    urbi_gc_upvalue_pre_store(vm, &uvc->cell, s->R[a]);
                     uvc->u.value = s->R[a];
                 } else {
+                    /* Stack-resident upvalue: the store target is a strand
+                     * register — a ROOT, re-walked at ATOMIC_FINISH
+                     * (refactor-3 GC-02) — so no barrier is needed (same
+                     * rationale as urbi_gc_register_write). */
                     *uvc->u.stack_ptr = s->R[a];
                 }
             }

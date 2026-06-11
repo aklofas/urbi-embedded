@@ -284,17 +284,27 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  *   reg_idx — register index within s->R[].
  *   child   — the value being stored.
  *
- * urbi_gc_upvalue_pre_store(vm, closure, up_idx, child):
- *   Barrier-only for upvalue stores (OP_SETUPVAL).  The upvalue cell layout
- *   has two conditional store targets (on_heap path writes uvc->u.value;
- *   stack path writes *uvc->u.stack_ptr), so the combined form is not
- *   applicable.  Caller performs the store after this call.
- *   Renamed from urbi_gc_upvalue_write (runtime-invariants F12).
+ * urbi_gc_upvalue_pre_store(vm, cell, child):
+ *   Barrier-only for HEAPIFIED upvalue stores (OP_SETUPVAL's on_heap arm +
+ *   vm_close_upvalues).  The barrier parent is the UUpvalCell's embedded
+ *   UCell header — NOT the executing closure (Task 9c / refactor-3 GC-07:
+ *   the cell is SHARED between sibling closures via OP_CLOSURE's
+ *   re-capture arm, so its color diverges from any one closure's; the old
+ *   closure-parent check let a gray sibling store a white value into an
+ *   already-BLACK shared cell with no shade — lost object, since the gray
+ *   sibling's later trace idempotency-skips the black cell).  Caller
+ *   performs the store after this call.  The stack arm (on_heap == false)
+ *   needs NO barrier: it stores into a strand register, which the
+ *   ATOMIC_FINISH root re-scan covers (same rationale as
+ *   urbi_gc_register_write).
+ *   Renamed from urbi_gc_upvalue_write (runtime-invariants F12); parent
+ *   retargeted closure → cell at Task 9c.
  *
- * Callsite status (M4 / v0.10.1):
- *   OP_SETUPVAL handler (src/uvm.c): UClosure embeds UCell as first member at
- *   offset 0 (see uclosure.h); urbi_gc_upvalue_pre_store is wired before the
- *   conditional store.  The barrier may safely cast UClosure* → UCell*.
+ * Callsite status (M4 / v0.10.1 / Task 9c):
+ *   OP_SETUPVAL handler (src/vm/uvm.c): wired inside the on_heap arm with
+ *   &uvc->cell as the parent; the stack arm stores barrier-free.
+ *   vm_close_upvalues (src/vm/uvm_closure.c): same helper, same parent
+ *   shape, before the heapifying copy.
  *
  *   unamespace_set (src/realm/urealm_namespace.c): UNamespace still lacks a
  *   UCell header at this commit.  Wire urbi_gc_slot_store when UNamespace
@@ -354,26 +364,24 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s, uint16_t reg_idx, UVal
     (void)vm; (void)s; (void)reg_idx; (void)child;
 }
 
-/* urbi_gc_upvalue_pre_store — barrier-only for OP_SETUPVAL.
+/* urbi_gc_upvalue_pre_store — barrier-only for heapified-upvalue stores
+ * (OP_SETUPVAL on_heap arm + vm_close_upvalues).  `cell` is the
+ * UUpvalCell's embedded UCell header (offset 0) — the cell, not the
+ * executing closure, is the Dijkstra parent because sibling closures
+ * share it (see the surfaces banner above, Task 9c).
  * Use urbi_gc_slot_store for ordinary UValue* slot writes. */
 static inline void
-urbi_gc_upvalue_pre_store(struct UVM *vm, const struct UClosure *closure,
-                          uint8_t up_idx, UValue child)
+urbi_gc_upvalue_pre_store(struct UVM *vm, const UCell *cell, UValue child)
 {
-    const UCell *parent = (const UCell *)closure;
-    uint8_t parent_gc = parent->gc_byte;
-
-    /* GC barrier: forward Dijkstra — same logic as slot_pre_store.
-     * UClosure embeds UCell at offset 0 (M4 — see uclosure.h), so the
-     * cast above yields a valid header pointer. */
-    if (UNLIKELY((parent_gc & UGC_COLOR_MASK) == UGC_COLOR_BLACK
+    /* GC barrier: forward Dijkstra — same logic as slot_pre_store. */
+    if (UNLIKELY((cell->gc_byte & UGC_COLOR_MASK) == UGC_COLOR_BLACK
                  && uvalue_is_heap_white(vm, child))) {
         gc_shade_gray(vm, uvalue_as_cell(child));
     }
 
-    /* No watcher hook on upvalue writes: closures are not directly observable
-     * by watchers in v1 (no first-class "watch this closure's upvalue" surface). */
-    (void)up_idx;
+    /* No watcher hook on upvalue writes: upvalue cells are not directly
+     * observable by watchers in v1 (no first-class "watch this closure's
+     * upvalue" surface). */
 }
 
 #if URBI_MEM_DEBUG

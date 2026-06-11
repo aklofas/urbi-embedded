@@ -3,7 +3,12 @@
  *
  * UClosure embeds UCell as its first member at offset 0 (M4 — closes the
  * M3 baseline TODO at gc/ugc_incremental.h).  This makes the
- * UClosure* → UCell* cast performed by urbi_gc_upvalue_pre_store well-defined.
+ * UClosure* → UCell* casts performed by uvalue_as_cell (UVAL_CLOSURE
+ * values in mark_root_callback) and the walker/root shading sites
+ * (walk_uclosure, strand_walk_roots) well-defined.  (Task 9c:
+ * urbi_gc_upvalue_pre_store no longer takes a closure — its Dijkstra
+ * parent is the UUpvalCell header — but the offset-0 embed stays
+ * load-bearing for the value-tagging casts above.)
  *
  * Lives outside umodule.h because the struct definition needs both UValue
  * (from umodule.h) and UCell (from gc/ugc.h), and gc/ugc.h itself includes

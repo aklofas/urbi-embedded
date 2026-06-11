@@ -91,12 +91,13 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s,
     (void)vm; (void)s; (void)reg_idx; (void)child;
 }
 
-/* urbi_gc_upvalue_pre_store — barrier-only stub (no-op under NONE). */
+/* urbi_gc_upvalue_pre_store — barrier-only stub (no-op under NONE).
+ * Task 9c: parent retargeted closure → UUpvalCell header (matches the
+ * incremental strategy's signature). */
 static inline void
-urbi_gc_upvalue_pre_store(struct UVM *vm, const struct UClosure *closure,
-                          uint8_t up_idx, UValue child)
+urbi_gc_upvalue_pre_store(struct UVM *vm, const UCell *cell, UValue child)
 {
-    (void)vm; (void)closure; (void)up_idx; (void)child;
+    (void)vm; (void)cell; (void)child;
 }
 
 #endif /* UGC_NONE_H */
