@@ -8,6 +8,9 @@
 #include "ros/uros_internal.h"
 #include "ros/uros_mock.h"
 #include "vm/uvm.h"
+#include "object/uobject.h"     /* urbi_object_lookup */
+#include "value/uintern.h"      /* ustr_intern */
+#include "runtime/uclosure.h"   /* UClosure->native_fn direct dispatch */
 #include <stdlib.h>
 #include <string.h>
 
@@ -107,6 +110,138 @@ UTEST(ros_subscribe_two_distinct_entries)
     urbi_vm_free(vm);
 }
 
+/* ===================================================================
+ * GC-10/ROS-08: a post-commit OOM inside ros.subscribe (the "__sub_<h>"
+ * intern or the set_local_slot that GC-roots the event) must roll back
+ * the subs[] commit, mirroring the ros.service rollback.  Pre-fix the
+ * two post-commit OOM exits leaked a committed subs[] entry pointing at
+ * a destroyed transport endpoint + un-GC-rooted event.
+ * =================================================================== */
+
+typedef struct {
+    int alloc_calls;
+    int fail_at;  /* -1 means never fail; trigger NULL when alloc_calls > fail_at */
+} SubAllocSpy;
+
+static void *
+sub_spy_alloc(void *ptr, size_t n, void *ud)
+{
+    SubAllocSpy *spy = (SubAllocSpy *)ud;
+    if (n == 0) {
+        free(ptr);
+        return NULL;
+    }
+    if (ptr == NULL) {
+        spy->alloc_calls++;
+        if (spy->fail_at >= 0 && spy->alloc_calls > spy->fail_at)
+            return NULL;
+    }
+    return realloc(ptr, n);
+}
+
+/* Build a fresh VM + realm on the spy allocator and run ros.init.  Both
+ * phases of the OOM test call this with identical inputs so the per-call
+ * allocation trace of the subsequent subscribe is identical. */
+static struct UVM *
+sub_oom_setup(SubAllocSpy *spy)
+{
+    reset_bridge();
+    struct UVM *vm = urbi_vm_create(sub_spy_alloc, spy);
+    if (vm == NULL) return NULL;
+    struct URealm *realm = urbi_realm_create(vm);
+    if (realm == NULL) { urbi_vm_free(vm); return NULL; }
+    char errbuf[256];
+    const char *src = "ros.init(\"n\")";
+    if (urbi_repl_eval(vm, realm, src, strlen(src),
+                       errbuf, sizeof errbuf) != URBI_OK) {
+        urbi_vm_free(vm);
+        return NULL;
+    }
+    drain_vm_sub(vm);
+    return vm;
+}
+
+/* Fetch the registered ros.subscribe native closure off vm->ros_proto so the
+ * test can invoke it directly (no per-call compile noise in the alloc trace;
+ * same direct-dispatch pattern as test_event_runtime.c). */
+static UClosure *
+sub_lookup_subscribe(struct UVM *vm)
+{
+    if (vm->ros_proto == NULL) return NULL;
+    USymbol *sym = (USymbol *)ustr_intern(vm, "subscribe", 9);
+    if (sym == NULL) return NULL;
+    UValue slot = urbi_make_nil();
+    if (urbi_object_lookup(vm, (UObject *)vm->ros_proto, sym, &slot) != 0)
+        return NULL;
+    if (slot.kind != (uint8_t)UVAL_CLOSURE) return NULL;
+    return (UClosure *)slot.v.p;
+}
+
+UTEST(ros_subscribe_oom_rolls_back_commit)
+{
+    /* Phase A: count the fresh allocations of one clean subscribe call on a
+     * fresh VM.  The LAST fresh allocation of the call is always post-commit:
+     * the "__sub_<h>" symbol is novel on a fresh VM, so its intern (or a
+     * later set_local_slot allocation) is the final fresh alloc. */
+    SubAllocSpy probe = { 0, -1 };
+    struct UVM *vm = sub_oom_setup(&probe);
+    UASSERT_NE((long long)vm, 0LL);
+    if (vm == NULL) return;
+
+    UClosure *cl = sub_lookup_subscribe(vm);
+    UASSERT_NE((long long)cl, 0LL);
+    if (cl == NULL || cl->native_fn == NULL) { urbi_vm_free(vm); return; }
+
+    UValue self = urbi_make_nil();
+    UValue args[2];
+    args[0] = urbi_make_str_interned(vm, "/scan", 5);
+    args[1] = urbi_make_str_interned(vm, "std_msgs/Int32", 14);
+    UValue out = urbi_make_nil();
+
+    int before = probe.alloc_calls;
+    int rc = cl->native_fn(vm, self, args, 2, &out);
+    UASSERT_EQ(rc, UEXEC_OK);
+    int delta = probe.alloc_calls - before;
+    UASSERT(delta >= 2);  /* event create + "__sub_0" intern at minimum */
+    URosBridge *b = urbi_ros_bridge();
+    UASSERT_EQ(b->sub_count, 1);
+    urbi_vm_free(vm);
+
+    /* Phase B: identical setup; arm the spy so the last fresh allocation of
+     * the clean trace fails — an OOM after the subs[] commit. */
+    SubAllocSpy spy = { 0, -1 };
+    vm = sub_oom_setup(&spy);
+    UASSERT_NE((long long)vm, 0LL);
+    if (vm == NULL) return;
+
+    cl = sub_lookup_subscribe(vm);
+    UASSERT_NE((long long)cl, 0LL);
+    if (cl == NULL || cl->native_fn == NULL) { urbi_vm_free(vm); return; }
+
+    args[0] = urbi_make_str_interned(vm, "/scan", 5);
+    args[1] = urbi_make_str_interned(vm, "std_msgs/Int32", 14);
+    out = urbi_make_nil();
+    b = urbi_ros_bridge();
+    UASSERT_EQ(b->sub_count, 0);
+
+    spy.fail_at = spy.alloc_calls + delta - 1;  /* allocs 1..fail_at succeed */
+    rc = cl->native_fn(vm, self, args, 2, &out);
+    UASSERT_EQ(rc, UEXEC_THROW);  /* (a) the call raised */
+    UASSERT_EQ(b->sub_count, 0);  /* (b) commit rolled back (pre-fix: leaks 1) */
+
+    /* (c) recovery: disarm the spy; the next subscribe must land at the index
+     * the failed call would have used (sub_count must go 0 -> 1, not 1 -> 2). */
+    spy.fail_at = -1;
+    out = urbi_make_nil();
+    rc = cl->native_fn(vm, self, args, 2, &out);
+    UASSERT_EQ(rc, UEXEC_OK);
+    UASSERT_EQ(b->sub_count, 1);
+    UASSERT_NE((long long)b->subs[0].event, 0LL);
+
+    urbi_vm_free(vm);  /* (d) no crash / UAF on teardown */
+    reset_bridge();
+}
+
 void
 test_ros_subscribe_suite(void)
 {
@@ -114,6 +249,8 @@ test_ros_subscribe_suite(void)
               ros_subscribe_records_in_bridge);
     utest_run("ros_subscribe.two_distinct_entries",
               ros_subscribe_two_distinct_entries);
+    utest_run("ros_subscribe.oom_rolls_back_commit",
+              ros_subscribe_oom_rolls_back_commit);
 }
 
 #else  /* !URBI_ENABLE_ROS2 */

@@ -185,13 +185,22 @@ ros_subscribe_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     b->subs[b->sub_count].event  = e;
     b->subs[b->sub_count].type   = mt->name;
     b->sub_count++;
-    /* GC-root the event via a hidden slot on ros_proto keyed by handle. */
+    /* GC-root the event via a hidden slot on ros_proto keyed by handle.
+     * On failure, roll back the subs[] commit above + destroy the endpoint
+     * (mirrors the ros_service_method rollback).  No entry scrub is needed:
+     * the only subs[] reader (bridge_deliver) iterates [0, sub_count), and
+     * the next subscribe overwrites index sub_count. */
     char slot[24];
     int sl = snprintf(slot, sizeof slot, "__sub_%u", h);
     USymbol *sy = (USymbol *)ustr_intern(vm, slot, (size_t)sl);
-    if (sy == NULL) { b->tp.destroy_sub(b->tp.self, h); return urbi_raise_oom(vm, out); }
+    if (sy == NULL) {
+        b->sub_count--;                              /* GC-10: roll back the commit */
+        b->tp.destroy_sub(b->tp.self, h);
+        return urbi_raise_oom(vm, out);
+    }
     if (urbi_object_set_local_slot(vm, (UObject *)vm->ros_proto, sy,
                                    uvalue_from_event(e)) != 0) {
+        b->sub_count--;                              /* GC-10: roll back the commit */
         b->tp.destroy_sub(b->tp.self, h);
         return urbi_raise_oom(vm, out);
     }
