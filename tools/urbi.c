@@ -299,7 +299,8 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
    Returns 0 on success, 1 on compile error. */
 static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) {
     UArena arena;
-    UProto module;
+    UProto module;  /* stack is safe: compile-only, never executed — no closure
+                       can capture a proto pointer past this frame (VM-11). */
     char err[256] = {0};
     if (!compile_source(src, len, src_name, vm, &module, &arena, err, sizeof err)) {
         fprintf(stderr, "urbi: %s\n", err);
@@ -325,7 +326,7 @@ static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) 
 static int run_dump_wire_format(UVM *vm, const char *src, size_t len,
                                 const char *src_name) {
     UArena arena;
-    UProto module;
+    UProto module;  /* stack is safe: compile-only, never executed (VM-11). */
     char err[256] = {0};
     if (!compile_source(src, len, src_name, vm, &module, &arena, err, sizeof err)) {
         fprintf(stderr, "urbi: %s\n", err);
@@ -421,12 +422,23 @@ static int run_file(UVM *vm, const char *path) {
     if (!src) return 2;
 
     UArena arena;
-    UProto module;
     int rc = 1;
     char err[256] = {0};
-    if (compile_source(src, len, path, vm, &module, &arena, err, sizeof err)) {
+    /* CHSTR-027 pattern (refactor-3 VM-11/FE-13): heap-allocate the root
+     * proto — same rationale as run_expression above. */
+    UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
+    if (module == NULL) {
+        fprintf(stderr, "urbi: out of memory\n");
+        free(src);
+        return 1;
+    }
+    if (compile_source(src, len, path, vm, module, &arena, err, sizeof err)) {
+        /* Ownership fields AFTER compile_source — it zero-fills *module. */
+        module->alloc_fn       = vm->alloc_fn;
+        module->alloc_ud       = vm->alloc_ud;
+        module->heap_allocated = true;
         UValue out;
-        UVMError vrc = urbi_vm_run(vm, NULL, &module, &out);
+        UVMError vrc = urbi_vm_run(vm, NULL, module, &out);
         if (vrc == UVM_OK) {
             rc = 0;
         } else {
@@ -434,10 +446,13 @@ static int run_file(UVM *vm, const char *path) {
                     vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
             rc = 1;
         }
-        uchunk_destroy(&module, vm);
+        uchunk_destroy(module, vm);
         uarena_destroy(&arena);
     } else {
         fprintf(stderr, "urbi: %s\n", err);
+        /* Compile failed: struct already zeroed by compile_source's own
+         * uchunk_destroy; free the raw storage. */
+        vm->alloc_fn(module, 0, vm->alloc_ud);
     }
     free(src);
     return rc;
@@ -474,12 +489,26 @@ static int run_expression(UVM *vm, const char *expr) {
     }
 
     UArena arena;
-    UProto module;
     int rc = 1;
     char err[256] = {0};
-    if (compile_source(buf, final_len, "<expr>", vm, &module, &arena, err, sizeof err)) {
+    /* CHSTR-027 pattern (refactor-3 VM-11/FE-13): the root proto must be
+     * heap-allocated — closures created during the run keep proto pointers
+     * alive past this frame; uchunk_destroy defers the actual free to the
+     * refcount-rescue machinery (vm->rescued_protos) when references remain,
+     * and frees immediately when none do. */
+    UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
+    if (module == NULL) {
+        fprintf(stderr, "urbi: out of memory\n");
+        free(buf);
+        return 1;
+    }
+    if (compile_source(buf, final_len, "<expr>", vm, module, &arena, err, sizeof err)) {
+        /* Ownership fields AFTER compile_source — it zero-fills *module. */
+        module->alloc_fn       = vm->alloc_fn;
+        module->alloc_ud       = vm->alloc_ud;
+        module->heap_allocated = true;
         UValue out;
-        UVMError vrc = urbi_vm_run(vm, NULL, &module, &out);
+        UVMError vrc = urbi_vm_run(vm, NULL, module, &out);
         if (vrc == UVM_OK) {
             /* 64 bytes fits Int (max 21 chars) and Float (~24 chars).
                M2 string literals may truncate silently — promote to
@@ -493,10 +522,14 @@ static int run_expression(UVM *vm, const char *expr) {
                     vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
             rc = 1;
         }
-        uchunk_destroy(&module, vm);
+        uchunk_destroy(module, vm);
         uarena_destroy(&arena);
     } else {
         fprintf(stderr, "urbi: %s\n", err);
+        /* Compile failed: compile_source already ran uchunk_destroy on the
+         * zero-refcount, heap_allocated=false struct (buffers freed, struct
+         * zeroed in place) — only the raw storage remains to free. */
+        vm->alloc_fn(module, 0, vm->alloc_ud);
     }
     free(buf);
     return rc;

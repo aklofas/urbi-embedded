@@ -707,7 +707,16 @@ void urbi_vm_destroy(UVM *vm) {
                     rp_alloc = vm->alloc_fn;
                     rp_ud    = vm->alloc_ud;
                 }
-                /* Step 2: free all buffers (nested[] freed recursively inside). */
+                /* Step 2: free all buffers (nested[] freed recursively inside).
+                 * source_name first — uproto_destroy_buffers does not own it
+                 * (uchunk_destroy_internal frees it separately; mirror that
+                 * here).  Rescued roots from the REPL path have NULL
+                 * source_name; tool-driver roots (refactor-3 VM-11) carry
+                 * "<expr>" / the script path. */
+                if (rp->source_name != NULL) {
+                    rp_alloc(rp->source_name, 0, rp_ud);
+                    rp->source_name = NULL;
+                }
                 uproto_destroy_buffers(rp, rp_alloc, rp_ud);
                 /* Step 3: free the root_proto struct. */
                 rp_alloc(rp, 0, rp_ud);
