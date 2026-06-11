@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* tests/unit/test_closure_gc.c — v0.8.4 Option B Step D (T18)
  *
  * GC reachability regression tests for UClosure + UUpvalCell promotion.
@@ -94,6 +102,7 @@ UTEST(realm_global_closure_survives_gc)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     struct URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -152,6 +161,7 @@ UTEST(heapified_upval_survives_gc)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     struct URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -242,6 +252,7 @@ UTEST(watcher_closure_survives_multi_gc_then_collected)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Allocate a GC-managed native closure for use as the watcher condition. */
     UClosure *cl = urbi_make_native_closure(&vm, test_noop_fn);
@@ -301,6 +312,7 @@ UTEST(closure_trace_leaves_proto_inst_entry_intact)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     struct URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);

@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* test_slot_get.c — TDD tests for urbi_slot_get (Gap K, v0.7.1).
  *
  * Five sub-tests:
@@ -56,6 +64,7 @@ UTEST(slot_get_existing_local_slot)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *obj = make_object(&vm);
     UASSERT(obj != NULL);
@@ -79,6 +88,7 @@ UTEST(slot_get_via_proto_chain)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* parent holds slot "y" */
     UObject *parent = make_object(&vm);
@@ -109,6 +119,7 @@ UTEST(slot_get_missing_returns_not_found)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *obj = make_object(&vm);
     UASSERT(obj != NULL);
@@ -126,6 +137,7 @@ UTEST(slot_get_routes_atom_through_atom_proto)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Install a marker slot on the Integer atom-proto. */
     UObject *int_proto = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
@@ -154,6 +166,7 @@ UTEST(slot_get_null_out_returns_invalid_arg)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *obj = make_object(&vm);
     UASSERT(obj != NULL);

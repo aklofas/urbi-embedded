@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* Integration tests: deferred slot-change ring drain + reentrancy degrade
  * (T66, spec #4 §5.3 + §5.4).
  *
@@ -82,6 +90,7 @@ UTEST(deferred_ring_drains_at_safepoint)
     uint32_t instr[1]; UProto proto; UClosure cl;
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     if (!r) { urbi_vm_destroy(&vm); return; }
@@ -134,6 +143,7 @@ UTEST(deferred_ring_overflow_drops_with_warn)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -179,6 +189,7 @@ UTEST(deferred_ring_drain_fifo_order)
     UClosure cl1, cl2;
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     if (!r) { urbi_vm_destroy(&vm); return; }

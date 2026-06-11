@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* Unit tests: urbi_object_get_or_create_change_event (T60, spec #4 §6.3).
  *
  * Cases:
@@ -53,6 +61,7 @@ UTEST(get_or_create_returns_same_event_for_same_name)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -90,6 +99,7 @@ UTEST(get_or_create_distinct_events_per_name)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -131,6 +141,7 @@ UTEST(get_or_create_oom_returns_null_failsoft)
 
     UVM vm;
     urbi_vm_init(&vm, spy_alloc60, &spy);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Disable fail_at while we set up the test objects. */
     spy.fail_at = -1;

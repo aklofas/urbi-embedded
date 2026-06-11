@@ -112,6 +112,12 @@ UTEST(ugc_alloc_triggers_pending_at_threshold)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    /* URBI_GC_STRESS disarm (v0.13.2): this test asserts the debt->pending
+     * deferral mechanics, which collect-on-every-alloc structurally
+     * bypasses (the forced full collection retires the debt before the
+     * pending flag is observable).  By design, not a rooting bug
+     * (refactor-3 TEST-GAP-01 stress-exempt list). */
+    vm.gc_stress_armed = 0;
 
     /* Force debt to -1: one byte of credit remaining. */
     vm.gc_debt = -1;

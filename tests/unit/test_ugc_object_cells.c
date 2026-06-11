@@ -1,6 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: GC integration for the M4 object-model cell types.
  *
+ * URBI_GC_STRESS disarm (v0.13.2): the suite hand-builds raw unrooted
+ * cells of each UTYPE_* (truncated payloads for the no-op-walker types)
+ * and drives collection manually — collect-on-every-alloc sweeps them
+ * between the paired allocations and walks the truncated payloads.
+ * Structural-by-design (refactor-3 TEST-GAP-01 stress-exempt list).
+ *
  * Verifies that allocations of UObject / UProtos / UShape / UProps /
  * USlotHandle / UChunkInstance / UProtoInstance via urbi_gc_alloc are
  * fully integrated with the incremental mark + sweep cycle:
@@ -53,6 +59,7 @@ static int count_all_cells(UVM *vm) {
 UTEST(ugc_object_cells_types_registered) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UASSERT(vm.type_table[UTYPE_OBJECT]           != NULL);
     UASSERT(vm.type_table[UTYPE_PROTOS]           != NULL);
@@ -81,6 +88,7 @@ UTEST(ugc_object_cells_types_registered) {
 UTEST(ugc_object_cells_alloc_each_type) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *o   = urbi_gc_alloc(&vm, sizeof(UObject), UTYPE_OBJECT);
     UCell *up  = urbi_gc_alloc(&vm, sizeof(UProtos) + 4U * sizeof(UObject *),
@@ -111,6 +119,7 @@ UTEST(ugc_object_cells_alloc_each_type) {
 UTEST(ugc_object_cells_full_cycle_reclaims_unreferenced) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     (void)urbi_gc_alloc(&vm, sizeof(UObject), UTYPE_OBJECT);
     (void)urbi_gc_alloc(&vm, sizeof(UProtos) + 2U * sizeof(UObject *),
@@ -171,6 +180,7 @@ static int cell_is_alive(UVM *vm, UCell *target) {
 UTEST(ugc_object_cells_ushape_walker_traces_children) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     urbi_gc_register_root_provider(&vm, test_root_provider);
 
     /* Allocate child cells first so they live earlier on all_cells_head
@@ -232,6 +242,7 @@ UTEST(ugc_object_cells_ushape_walker_traces_children) {
 UTEST(ugc_object_cells_uprotos_walker_traces_items) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     urbi_gc_register_root_provider(&vm, test_root_provider);
 
     UObject *child0 = (UObject *)urbi_gc_alloc(&vm, sizeof(UObject),

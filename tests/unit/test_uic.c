@@ -7,6 +7,12 @@
  * and additionally re-pin the URBI_SLOT_FLAG_* attribute bits for the
  * IC.flags summary defined alongside in uobject.h.
  *
+ * URBI_GC_STRESS disarm (v0.13.2): primitive-semantics suite holding
+ * cells in bare C locals (no urbi_handle) across paired allocations —
+ * structurally swept under collect-on-every-alloc; fine on normal builds.
+ * Each test sets vm.gc_stress_armed = 0 after init (refactor-3
+ * TEST-GAP-01 stress-exempt list).
+ *
  * T16 also covers UChunkInstance / UProtoInstance (the per-VM IC RAM
  * tier) — multi-instance independence is the load-bearing invariant. */
 
@@ -77,6 +83,7 @@ UTEST(uic_flag_bits_distinct) {
 UTEST(module_instance_basic_create) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UProto m = {0};
     
@@ -141,6 +148,7 @@ UTEST(module_instance_basic_create) {
 UTEST(module_instance_two_instances_independent) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UProto m = {0};
     
@@ -198,6 +206,7 @@ UTEST(module_instance_zero_nested_protos) {
      * zero IC bytes trailing the entries[] array. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UProto m = {0};
 
@@ -219,6 +228,7 @@ UTEST(module_instance_proto_with_zero_ic_count) {
      * from this proto. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UProto m = {0};
     
@@ -242,6 +252,7 @@ UTEST(module_instance_proto_with_zero_ic_count) {
 UTEST(module_instance_invalid_args_return_null) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     UProto m = {0};
     UASSERT(urbi_chunk_instance_create(NULL, &m) == NULL);
     UASSERT(urbi_chunk_instance_create(&vm, NULL) == NULL);
@@ -263,6 +274,7 @@ UTEST(get_slow_resolves_via_proto_walk_and_fills_ic) {
      * shape (not parent's) and clear FLAG_LOCAL (slot lives on parent). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *child  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -296,6 +308,7 @@ UTEST(get_slow_local_hit_sets_flag_local) {
     /* Receiver owns the slot directly — IC fill must record FLAG_LOCAL. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -323,6 +336,7 @@ UTEST(get_slow_miss_returns_minus_one) {
      * -1 and does NOT fill the IC. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *missing = (USymbol *)ustr_intern(&vm, "missing", 7);
 
@@ -341,6 +355,7 @@ UTEST(set_slow_does_cow_when_resolution_via_proto_chain) {
      * is unchanged at 0. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *child  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -380,6 +395,7 @@ UTEST(set_slow_local_hit_writes_in_place_and_fills_ic) {
     /* Receiver already owns the slot — write is in-place and the IC fills. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -416,6 +432,7 @@ UTEST(set_slow_miss_installs_local_slot_on_receiver) {
      * add.  No IC fill (subsequent miss-by-shape will re-resolve). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *fresh = (USymbol *)ustr_intern(&vm, "fresh", 5);
@@ -439,6 +456,7 @@ UTEST(set_slow_miss_installs_local_slot_on_receiver) {
 UTEST(slot_helpers_reject_invalid_args) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *n = (USymbol *)ustr_intern(&vm, "n", 1);
     UIC ic = {0};
@@ -469,6 +487,7 @@ UTEST(resolve_slot_finds_via_protos) {
      * the slow paths and (later) USlotHandle. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *gp = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *p  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -507,6 +526,7 @@ UTEST(resolve_slot_finds_via_protos) {
 UTEST(module_instance_populates_root_chunk_ic_table) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UProto m = {0};
 
@@ -630,6 +650,7 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
 UTEST(get_or_create_module_instance_caches_per_module) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UProto m1 = {0};
     UProto m2 = {0};
@@ -679,6 +700,7 @@ UTEST(determinism_checksum_includes_ic_state) {
      * urbi_get_determinism_checksum. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UProto m = {0};
     
@@ -714,6 +736,7 @@ UTEST(determinism_checksum_stable_with_no_module_instances) {
      * agree (the per-IC fold is a no-op when the registry head is NULL). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     uint64_t h1 = urbi_get_determinism_checksum(&vm);
     uint64_t h2 = urbi_get_determinism_checksum(&vm);
     UASSERT(h1 == h2);
@@ -729,6 +752,7 @@ UTEST(determinism_checksum_stable_with_no_module_instances) {
 UTEST(urbi_run_chunk_creates_module_instance_on_first_run) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Compile a trivial source ("var x = 1;") into a fresh module. */
     UProto m = {0};

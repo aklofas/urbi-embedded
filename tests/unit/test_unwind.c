@@ -882,6 +882,14 @@ UTEST(unwind_return_processes_same_frame_cleanups)
     UStrand s;
 
     urbi_vm_init(&vm, NULL, NULL);
+    /* URBI_GC_STRESS disarm (v0.13.2): this test hand-wires a synthetic
+     * strand OUTSIDE the realm graph (strand_setup_minimal) whose tags are
+     * reachable only through C locals — by design, to drive urbi_unwind in
+     * isolation.  The finally body it runs allocates, and collect-on-
+     * every-alloc sweeps the deliberately-unrooted tags mid-walk.  By
+     * design, not a rooting bug (refactor-3 TEST-GAP-01 stress-exempt
+     * list). */
+    vm.gc_stress_armed = 0;
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 

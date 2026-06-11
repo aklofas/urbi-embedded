@@ -1,4 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): asserts exact live-byte/sweep
+ * accounting over hand-built unrooted cells — collect-on-every-alloc
+ * changes both the cell population and the accounting checkpoints.
+ * Structural-by-design (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* Phase 7 regression tests for v0.5.7-fixes:
  *   T36 / GC-009 — gc_shade_gray's silent NULL-sidecar return is now
  *                  documented (DOCUMENT-only resolution): three legitimate
@@ -64,6 +68,7 @@ UTEST(gc_shade_gray_walks_alloced_cell)
     /* Positive regression: normal alloc + shade + force_full path. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *c = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
     UASSERT(c != NULL);
@@ -88,6 +93,7 @@ UTEST(gc_shade_gray_silent_on_fixed_cell_without_sidecar)
      * pool slab is alloc_fn-managed; slots carry UGC_IS_FIXED). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell standalone;
     standalone.type_tag = UTYPE_OBJECT;
@@ -131,6 +137,7 @@ UTEST(sweep_surviving_bytes_excludes_intra_slice_allocations)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Allocate five 64 B cells; pin all so the sweep keeps them. */
     UCell *cells[5];
@@ -204,6 +211,7 @@ UTEST(sweep_surviving_bytes_resets_between_cycles)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *a = urbi_gc_alloc(&vm, 128U, UTYPE_OBJECT);
     UASSERT(a != NULL);

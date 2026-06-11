@@ -62,10 +62,15 @@ static void uevent_gc_byte_preserves_alloc_color(void)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    uint8_t expected_white = vm.current_white;
-
     UEvent *ev = urbi_event_create(&vm);
     UASSERT(ev != NULL);
+
+    /* v0.13.2: read current_white AFTER the alloc, not before — under
+     * URBI_GC_STRESS the collect-on-every-alloc hook completes a cycle
+     * (and flips current_white) inside urbi_event_create.  The regression
+     * this pins is unchanged: if urbi_event_create clobbered gc_byte to 0
+     * after the alloc, any current_white == 1 run still fails. */
+    uint8_t expected_white = vm.current_white;
 
     if (ev != NULL) {
         /* Compare the color bits only.  urbi_gc_alloc writes

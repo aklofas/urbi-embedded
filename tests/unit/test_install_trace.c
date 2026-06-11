@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): drives dispatch on hand-built synthetic
+ * strands OUTSIDE the realm graph (their registers are not GC roots) with
+ * receivers in bare C locals — collect-on-every-alloc sweeps them when the
+ * slow path allocates.  Structural-by-design (refactor-3 TEST-GAP-01
+ * stress-exempt list). */
 /* Unit tests: OP_GETSLOT trace probe for watcher install (T36, spec #2 §7.3).
  *
  * T36 cases:
@@ -170,6 +175,7 @@ UTEST(trace_records_slot_reads_during_install)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     sched_init(&vm, NULL);
 
     UObject *obj = make_object_with_x_slot(&vm);
@@ -198,6 +204,7 @@ UTEST(trace_deduplicates_same_receiver)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     sched_init(&vm, NULL);
 
     UObject *obj = make_object_with_x_slot(&vm);
@@ -229,6 +236,7 @@ UTEST(trace_overflow_sets_flag_and_caps)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     sched_init(&vm, NULL);
 
     /* Allocate MAX+2 distinct objects. */
@@ -265,6 +273,7 @@ UTEST(trace_disabled_when_flag_clear)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     sched_init(&vm, NULL);
 
     UObject *obj = make_object_with_x_slot(&vm);
@@ -313,6 +322,7 @@ UTEST(install_arms_and_resets_trace_fields)
     UStrand s;
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     ustrand_init(&s, &vm);
 
     /* Pre-condition: dirty values to verify the phase-2 reset. */
@@ -406,6 +416,7 @@ UTEST(install_returns_readset_over_when_overflow)
     UStrand s;
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     ustrand_init(&s, &vm);
 
     g_t37_warn_count = 0;
@@ -438,6 +449,7 @@ UTEST(install_returns_trace_fault_on_cond_throw)
     UStrand s;
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     ustrand_init(&s, &vm);
 
     g_t37_warn_count = 0;

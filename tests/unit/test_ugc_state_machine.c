@@ -2,6 +2,14 @@
 /* Unit tests: GC 5-phase state machine + slice work + threshold tuning.
  * Row 10 §6.1–§6.5.  T24 baseline.
  *
+ * URBI_GC_STRESS disarm (v0.13.2): every test in this suite deliberately
+ * allocates UNROOTED cells and asserts on their counts/colors across
+ * manually-driven collection steps — the suite tests the GC machinery
+ * itself, not rooted-program behaviour.  Collect-on-every-alloc sweeps
+ * the deliberately-unrooted cells mid-setup, so each test sets
+ * vm.gc_stress_armed = 0 right after init.  Structural-by-design, not a
+ * rooting bug (refactor-3 TEST-GAP-01 stress-exempt list).
+ *
  * All tests use the urbi_vm_init/urbi_vm_destroy pattern.  No concrete cell types
  * are registered (type_table[] is empty at T24), so walk_payload is never
  * called.  Tests exercise:
@@ -91,6 +99,7 @@ UTEST(ugc_phase_getter_returns_idle_initially)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UASSERT_EQ(urbi_gc_phase(&vm), (uint8_t)GC_PHASE_IDLE);
 
@@ -103,6 +112,7 @@ UTEST(ugc_phase_transitions_idle_to_mark)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Force debt positive so the trigger fires. */
     vm.gc_debt = 1;
@@ -121,6 +131,7 @@ UTEST(ugc_force_full_reaches_idle)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Allocate a few cells to give the sweep something to walk. */
     int i;
@@ -143,6 +154,7 @@ UTEST(ugc_force_full_collects_all_unreachable)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Allocate 20 cells; none are roots (no root providers registered,
      * no UVAL_CLOSURE values in any slot). */
@@ -170,6 +182,7 @@ UTEST(ugc_sweep_survives_pinned_cell)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Allocate one pinned cell and one unpinned cell. */
     UCell *pinned = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
@@ -196,6 +209,7 @@ UTEST(ugc_sweep_survives_fixed_cell)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *fixed = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
     UCell *dead  = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
@@ -220,6 +234,7 @@ UTEST(ugc_pause_suppresses_cycle)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     urbi_gc_pause(&vm, true);
 
@@ -246,6 +261,7 @@ UTEST(ugc_threshold_updates_at_cycle_end)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     size_t initial_threshold = vm.gc_threshold;
 
@@ -286,6 +302,7 @@ UTEST(ugc_threshold_exceeds_initial_with_large_live_set)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Allocate enough pinned cells so that live_bytes * PAUSE_RATIO / 100
      * exceeds URBI_GC_INITIAL_THRESHOLD (16384).
@@ -314,6 +331,7 @@ UTEST(ugc_collect_frees_dead_cells)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     int i;
     for (i = 0; i < 8; i++) {
@@ -362,6 +380,7 @@ UTEST(ugc_shade_gray_graylists_every_enrolled_cell_type)
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     size_t i;
     for (i = 0; i < sizeof tags / sizeof tags[0]; i++) {
@@ -386,6 +405,7 @@ UTEST(ugc_shade_gray_fixed_pool_cell_colors_without_sidecar)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Real pool watcher: UGC_IS_FIXED, never enrolled on all_cells_head.
      * UWatcher's leading fields match the UCell header layout by design. */
@@ -414,6 +434,7 @@ static void shade_unenrolled_nonfixed_cell(void)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell orphan;
     orphan.type_tag = UTYPE_OBJECT;

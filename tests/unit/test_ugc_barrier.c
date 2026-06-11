@@ -1,6 +1,14 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: three GC write-barrier surfaces — forward Dijkstra barrier
- * and observer_dirty hook.  Row 10 §4.  T25. */
+ * and observer_dirty hook.  Row 10 §4.  T25.
+ *
+ * URBI_GC_STRESS disarm (v0.13.2): these tests allocate UNROOTED cells and
+ * hand-paint their colors to exercise the barrier state table — the suite
+ * tests barrier mechanics, not rooted-program behaviour.  Collect-on-
+ * every-alloc sweeps the deliberately-unrooted cells between the paired
+ * allocations, so each test sets vm.gc_stress_armed = 0 right after init.
+ * Structural-by-design, not a rooting bug (refactor-3 TEST-GAP-01
+ * stress-exempt list). */
 
 #include "utest.h"
 #include "urbi/gc.h"
@@ -39,6 +47,7 @@ UTEST(barrier_black_stores_white_shades)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *parent = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UCell *child  = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
@@ -66,6 +75,7 @@ UTEST(barrier_gray_stores_white_no_shade)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *parent = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UCell *child  = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
@@ -89,6 +99,7 @@ UTEST(barrier_white_stores_white_no_shade)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *parent = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UCell *child  = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
@@ -113,6 +124,7 @@ UTEST(barrier_register_write_no_op)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *child = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
 
@@ -139,6 +151,7 @@ UTEST(barrier_observer_bit_calls_stub)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *parent = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UCell *child  = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
@@ -172,6 +185,7 @@ UTEST(barrier_upvalue_black_stores_white_shades)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* parent_cell stands in for a heapified UUpvalCell's header (T25
      * synthetic; Task 9c cell-parent signature). */

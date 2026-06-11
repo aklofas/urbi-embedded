@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* Unit tests: tag enter/leave + GC barrier fixes from v0.5.7-fixes Phase 12
  * (T53-T56).
  *
@@ -62,6 +70,7 @@ UTEST(tag_enter_event_creation_triggers_dijkstra_barrier)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UTag *t = utag_create(&vm);
     UASSERT(t != NULL);
@@ -96,6 +105,7 @@ UTEST(tag_leave_event_creation_triggers_dijkstra_barrier)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UTag *t = utag_create(&vm);
     UASSERT(t != NULL);
@@ -135,6 +145,7 @@ UTEST(tag_proto_has_enter_leave_native_slots)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     urbi_native_protos_init(&vm);
 
     UASSERT(vm.tag_proto != NULL);
@@ -216,6 +227,7 @@ UTEST(tag_native_register_propagates_failures)
     TagAllocSpy spy = { 0, total_clean_calls - 2 };
     UVM vm;
     urbi_vm_init(&vm, tag_spy_alloc, &spy);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UVMError err = tag_native_register(&vm);
     UASSERT_EQ((int)err, (int)UVM_OOM);
@@ -238,6 +250,7 @@ UTEST(tag_native_calls_assert_not_isr)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* tag_native_register: must complete without tripping the macro
      * because no ISR check function is registered (urbi_in_isr returns

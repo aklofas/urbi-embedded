@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* Unit tests: object-model fixes from v0.5.7-fixes Phase 13 (T57-T66).
  *
  * T57 OBJ-003 + OBJ-036:
@@ -82,6 +90,7 @@ UTEST(set_local_slot_writes_through_barrier)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Allocate the receiver and a starter slot, then a fresh value cell. */
     UObject *recv = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -169,6 +178,7 @@ UTEST(object_alloc_clean_on_shape_root_oom)
     ObjAllocSpy probe = { 0, -1 };
     UVM vm_probe;
     urbi_vm_init(&vm_probe, obj_spy_alloc, &probe);
+    vm_probe.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     int before = probe.alloc_calls;
     UObject *o = urbi_object_alloc(&vm_probe, URBI_ATOM_OBJECT);
@@ -182,6 +192,7 @@ UTEST(object_alloc_clean_on_shape_root_oom)
     ObjAllocSpy spy = { 0, 0 };
     UVM vm;
     urbi_vm_init(&vm, obj_spy_alloc, &spy);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Aim the failure at the second alloc inside urbi_object_alloc.
      * Reset the counter so spy.alloc_calls == 1 means UObject cell,
@@ -211,6 +222,7 @@ UTEST(install_property_does_not_mutate_aliased_shape)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     USymbol *xname = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(xname != NULL);
@@ -278,6 +290,7 @@ UTEST(install_property_no_uprops_leak_on_transition_failure)
     ObjAllocSpy probe = { 0, -1 };
     UVM vm_probe;
     urbi_vm_init(&vm_probe, obj_spy_alloc, &probe);
+    vm_probe.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     USymbol *name_p = (USymbol *)ustr_intern(&vm_probe, "x", 1);
     UASSERT(name_p != NULL);
     UObject *o_p = urbi_object_alloc(&vm_probe, URBI_ATOM_OBJECT);
@@ -299,6 +312,7 @@ UTEST(install_property_no_uprops_leak_on_transition_failure)
     ObjAllocSpy spy = { 0, -1 };
     UVM vm;
     urbi_vm_init(&vm, obj_spy_alloc, &spy);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     USymbol *name = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(name != NULL);
     if (name == NULL) { urbi_vm_destroy(&vm); return; }
@@ -336,6 +350,7 @@ UTEST(add_proto_returns_oom_not_invalid_arg_on_alloc_failure)
      * protos, third call must allocate a UProtos heap form). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o   = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *p1  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -355,6 +370,7 @@ UTEST(add_proto_returns_oom_not_invalid_arg_on_alloc_failure)
     ObjAllocSpy spy = { 0, -1 };
     UVM vm2;
     urbi_vm_init(&vm2, obj_spy_alloc, &spy);
+    vm2.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o2  = urbi_object_alloc(&vm2, URBI_ATOM_OBJECT);
     UObject *p1b = urbi_object_alloc(&vm2, URBI_ATOM_OBJECT);
@@ -389,6 +405,7 @@ UTEST(lookup_second_pass_force_wrap_correct)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *root = urbi_object_root(&vm);
     UObject *o    = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -457,6 +474,7 @@ UTEST(set_property_value_isolates_sibling_shape)
      * the seed-from-parent pattern is fundamental to the alias. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     USymbol *xname = (USymbol *)ustr_intern(&vm, "x", 1);
     USymbol *yname = (USymbol *)ustr_intern(&vm, "y", 1);
@@ -539,6 +557,7 @@ UTEST(transition_remove_slot_depth_cap_includes_dropped_name)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Build a 5-slot lineage — well under the 256 cap, just exercising
      * the surviving / dropped path correctly. */
@@ -594,6 +613,7 @@ UTEST(install_property_no_op_does_not_bump_topology_gen)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *name = (USymbol *)ustr_intern(&vm, "x", 1);
@@ -645,6 +665,7 @@ UTEST(get_or_create_change_event_shades_gray_under_black_parent)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -716,6 +737,7 @@ UTEST(get_or_create_change_event_oom_logs_warning)
     ChangeEventOomSpy spy = { 0, -1 };
     UVM vm;
     urbi_vm_init(&vm, change_event_oom_alloc, &spy);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     vm.host_log_fn = change_event_oom_log;
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);

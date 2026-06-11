@@ -1,7 +1,15 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: host-handle table (urbi_handle_create/get/release),
  * host_handle_walk_roots, urbi_pin/unpin, and UGC_IS_FIXED survival.
- * Row 10 §5.6 + §8.  T27. */
+ * Row 10 §5.6 + §8.  T27.
+ *
+ * URBI_GC_STRESS disarm (v0.13.2): these tests allocate truncated raw
+ * cells (sizeof(UCell) + 8) type-tagged UTYPE_OBJECT — structurally
+ * invalid for walk_uobject, which is fine on a normal build because the
+ * cells are never reachable at a mark.  Collect-on-every-alloc marks the
+ * handle table while the malformed cells are reachable and the walker
+ * reads past the truncated payload.  By design, not a rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 
 #include "utest.h"
 #include "urbi/gc.h"
@@ -39,6 +47,7 @@ UTEST(handle_create_get_release)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
@@ -64,6 +73,7 @@ UTEST(handle_invalid_returns_nil)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UValue v1 = urbi_handle_get(&vm, URBI_HANDLE_INVALID);
     UASSERT_EQ(v1.kind, UVAL_NIL);
@@ -83,6 +93,7 @@ UTEST(handle_grow_beyond_initial_cap)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Allocate 20 handles to force at least one growth. */
 #define N_HANDLES 20
@@ -119,6 +130,7 @@ UTEST(handle_walk_roots_active_only)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *c1 = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, UTYPE_OBJECT);
     UCell *c2 = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, UTYPE_OBJECT);
@@ -153,6 +165,7 @@ UTEST(pin_sets_bit_unpin_clears)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
@@ -176,6 +189,7 @@ UTEST(pin_skips_sweep)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
@@ -201,6 +215,7 @@ UTEST(pin_unpin_nop_for_non_heap)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UValue nil_val = {0};
     nil_val.kind = UVAL_NIL;
@@ -223,6 +238,7 @@ UTEST(fixed_cell_survives_sweep)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
@@ -255,6 +271,7 @@ UTEST(fixed_cell_color_tracks_current_white_after_sweep)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);

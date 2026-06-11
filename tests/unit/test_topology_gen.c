@@ -3,6 +3,12 @@
  *
  * Design references: pre-M4 topology-generation design §4.1/§4.2.
  *
+ * URBI_GC_STRESS disarm (v0.13.2): primitive-semantics suite holding
+ * cells in bare C locals (no urbi_handle) across paired allocations —
+ * structurally swept under collect-on-every-alloc; fine on normal builds.
+ * Each test sets vm.gc_stress_armed = 0 after init (refactor-3
+ * TEST-GAP-01 stress-exempt list).
+ *
  * §4.1 enumerates the 12 surfaces that MUST bump vm->topology_gen so cached
  * IC entries observe the change.  §4.2 enumerates surfaces that MUST NOT
  * bump (the IC's per-site shape-mismatch check is sufficient).  These tests
@@ -50,6 +56,7 @@ UTEST(topology_gen_row_1_remove_slot_bumps) {
      * elsewhere or not at all). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -83,6 +90,7 @@ UTEST(topology_gen_row_3_setslot_on_proto_shadowing_bumps) {
      * case is already covered by row_4 below. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *child  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -113,6 +121,7 @@ UTEST(topology_gen_row_4_install_slot_on_prototype_bumps) {
      * Pin via: parent.foo = X, where parent has been wired as a prototype. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *child  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -147,6 +156,7 @@ UTEST(topology_gen_row_5_install_oget_bumps) {
      * read/write). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -178,6 +188,7 @@ UTEST(topology_gen_row_6_remove_oget_bumps) {
      * cached flags need to drop the OGET bit. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -214,6 +225,7 @@ UTEST(topology_gen_row_7_in_place_oget_mutation_bumps) {
      * re-fetches and observes the new pointer. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -254,6 +266,7 @@ UTEST(topology_gen_row_4_2_1_local_slot_value_write_does_not_bump) {
      * slot's storage location and shape are unchanged. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -275,6 +288,7 @@ UTEST(topology_gen_row_4_2_2_leaf_shape_add_does_not_bump_when_not_prototype) {
      * naturally on the next access. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT_EQ((int)(o->flags & URBI_OBJ_FLAG_IS_PROTOTYPE), 0);
@@ -302,6 +316,7 @@ UTEST(uic_after_topology_bump_invalidates_entries) {
      * topology invalidation gate per §3.1. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -338,6 +353,7 @@ UTEST(uic_stays_hot_after_local_slot_value_write) {
      * Fast-path stays warm. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);

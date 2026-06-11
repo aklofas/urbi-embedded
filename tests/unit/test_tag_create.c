@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* test_tag_create.c — TDD tests for urbi_tag_create (Gap M, v0.7.1).
  *
  * Four sub-tests:
@@ -28,6 +36,7 @@ UTEST(tag_create_returns_nonnull_in_running_state)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
@@ -51,6 +60,7 @@ UTEST(tag_create_has_parent_under_realm)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
@@ -76,6 +86,7 @@ UTEST(tag_create_null_on_oom)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
@@ -98,6 +109,7 @@ UTEST(tag_create_name_is_interned)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 

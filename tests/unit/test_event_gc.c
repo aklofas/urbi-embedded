@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* Unit tests: GC walker amendments for UEvent, UTag enter/leave, and
  * UStrand last_event_payload (spec #3 §11, T56).
  *
@@ -118,6 +126,7 @@ UTEST(uevent_walker_shades_at_watchers_chain_not_waiters)
     UVM vm;
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     g_ev_test_root = NULL;
     urbi_gc_register_root_provider(&vm, ev_test_root_provider);
 
@@ -175,6 +184,7 @@ UTEST(utag_walker_shades_enter_leave_events)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     g_ev_test_root = NULL;
     urbi_gc_register_root_provider(&vm, ev_test_root_provider);
 
@@ -238,6 +248,7 @@ UTEST(strand_walker_roots_last_event_payload)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -306,6 +317,7 @@ UTEST(unrooted_event_collected_by_gc)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UEvent *ev = urbi_event_create(&vm);
     UASSERT(ev != NULL);

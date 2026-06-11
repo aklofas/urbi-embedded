@@ -46,6 +46,12 @@ UTEST(utag_create_basic)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    /* URBI_GC_STRESS disarm (v0.13.2): asserts gc_byte == 0 (born WHITE0),
+     * which holds only while no collection has flipped current_white.
+     * Collect-on-every-alloc flips it during realm bootstrap.  Color-
+     * assumption test, by design — not a rooting bug (refactor-3
+     * TEST-GAP-01 stress-exempt list). */
+    vm.gc_stress_armed = 0;
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);

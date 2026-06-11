@@ -3,7 +3,16 @@
  *
  * The header itself carries _Static_assert pins on UObject and USlot widths;
  * if those trip, this file won't compile.  These runtime tests give a second,
- * test-runner-visible signal that the layout is what the spec says it is. */
+ * test-runner-visible signal that the layout is what the spec says it is.
+ *
+ * URBI_GC_STRESS disarm (v0.13.2): every test in this suite exercises the
+ * C object primitives with cells held in bare C locals (no urbi_handle) —
+ * fine on a normal build, where no collection can interleave host-C call
+ * sequences, but collect-on-every-alloc sweeps the locals between paired
+ * allocations.  The suite targets primitive semantics/layout, not rooting;
+ * GC interplay is covered by the rooting-matrix harness + the chk corpus.
+ * Each test sets vm.gc_stress_armed = 0 right after init.  Structural-by-
+ * design (refactor-3 TEST-GAP-01 stress-exempt list). */
 
 #include "utest.h"
 
@@ -107,6 +116,7 @@ UTEST(uobject_public_atom_tag_values_match_internal) {
 UTEST(uobject_root_object_singleton_has_atom_family_object) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Pre-condition: vm->atom_object zero-initialised by urbi_vm_init. */
     UASSERT(vm.atom_object == NULL);
@@ -148,6 +158,7 @@ UTEST(uobject_root_object_singleton_has_atom_family_object) {
 UTEST(uobject_atom_integer_singleton_links_to_root) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
     UASSERT(integer != NULL);
@@ -180,6 +191,7 @@ UTEST(uobject_atom_integer_singleton_links_to_root) {
 UTEST(uobject_atom_singletons_are_independent) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *flt = urbi_object_atom(&vm, URBI_ATOM_FLOAT);
     UObject *str = urbi_object_atom(&vm, URBI_ATOM_STRING);
@@ -215,6 +227,7 @@ UTEST(uobject_atom_singletons_are_independent) {
 UTEST(uobject_atom_via_object_f_returns_root) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *via_atom = urbi_object_atom(&vm, URBI_ATOM_OBJECT);
     UObject *via_root = urbi_object_root(&vm);
@@ -230,6 +243,7 @@ UTEST(uobject_atom_via_object_f_returns_root) {
 UTEST(uobject_atom_invalid_family_returns_null) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* M6 Phase 4 occupies families 9..11 (Boolean / Nil / Void); 12..15
      * remain reserved per uobject.h.  Probe 12 — anything past the table
@@ -248,6 +262,7 @@ UTEST(uobject_atom_invalid_family_returns_null) {
 UTEST(uobject_proto_mutators_reject_null_args) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_root(&vm);
     UASSERT(o != NULL);
@@ -281,6 +296,7 @@ UTEST(uobject_proto_mutators_reject_null_args) {
 UTEST(uobject_protos_foreach_empty_form_yields_nothing) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_root(&vm);   /* root has empty-form protos (0) */
     UASSERT(o != NULL);
@@ -304,6 +320,7 @@ UTEST(uobject_protos_foreach_empty_form_yields_nothing) {
 UTEST(uobject_protos_foreach_single_form_yields_one) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Integer atom uses the single-tag form ((root << 1) | 1). */
     UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
@@ -333,6 +350,7 @@ UTEST(uobject_protos_foreach_single_form_yields_one) {
 UTEST(uobject_protos_foreach_heap_form_yields_all) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *root = urbi_object_root(&vm);
     UObject *a    = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
@@ -414,6 +432,7 @@ make_uprotos(UVM *vm, UObject **src, uint32_t n) {
 UTEST(uobject_set_protos_empty_to_single_bumps_topology) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *p = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -436,6 +455,7 @@ UTEST(uobject_set_protos_empty_to_single_bumps_topology) {
 UTEST(uobject_set_protos_single_to_heap_bumps_topology) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -470,6 +490,7 @@ UTEST(uobject_set_protos_single_to_heap_bumps_topology) {
 UTEST(uobject_set_protos_heap_to_fresh_heap_bumps_topology) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -509,6 +530,7 @@ UTEST(uobject_set_protos_heap_to_fresh_heap_bumps_topology) {
 UTEST(uobject_set_protos_heap_to_single_collapse_bumps_topology) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -537,6 +559,7 @@ UTEST(uobject_set_protos_heap_to_single_collapse_bumps_topology) {
 UTEST(uobject_set_protos_single_to_empty_collapse_bumps_topology) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *p = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -568,6 +591,7 @@ UTEST(uobject_set_protos_single_to_empty_collapse_bumps_topology) {
 UTEST(uobject_add_proto_prepends_position_zero) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -590,6 +614,7 @@ UTEST(uobject_add_proto_prepends_position_zero) {
 UTEST(uobject_remove_absent_proto_is_silent_noop) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o       = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *present = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -611,6 +636,7 @@ UTEST(uobject_remove_absent_proto_is_silent_noop) {
 UTEST(uobject_set_protos_dedups_first_occurrence_wins) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -631,6 +657,7 @@ UTEST(uobject_set_protos_dedups_first_occurrence_wins) {
 UTEST(uobject_valid_proto_rejects_cross_atom_family) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
     UObject *str     = urbi_object_atom(&vm, URBI_ATOM_STRING);
@@ -651,6 +678,7 @@ UTEST(uobject_valid_proto_rejects_cross_atom_family) {
 UTEST(uobject_set_protos_aborts_on_invalid_proto_no_partial_state) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *root    = urbi_object_root(&vm);
     UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
@@ -695,6 +723,7 @@ UTEST(uobject_set_protos_aborts_on_invalid_proto_no_partial_state) {
 UTEST(uobject_lookup_safe_under_cycle) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Build a→b→a cycle in the proto graph.  Atom OBJECT permits any
      * inheritance (valid_proto accepts root-Object on either side), so
@@ -737,6 +766,7 @@ UTEST(uobject_lookup_pre_bumps_lookup_id_each_call) {
      * vm->lookup_id == initial + 4. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     UASSERT_EQ((int)vm.lookup_id, 1);   /* urbi_vm_init invariant per pre-M4 spec */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -775,6 +805,7 @@ UTEST(uobject_lookup_id_rollover_clears_stamps) {
      * a call (rather than mid-call), keeping the assertion shape simple. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o1 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *o2 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -810,6 +841,7 @@ UTEST(uobject_lookup_id_force_wrap_clears_all_object_stamps) {
      * lookup_stamp returns to 0, lookup_id resets to 1. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o1 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *o2 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -843,6 +875,7 @@ UTEST(uobject_lookup_id_force_wrap_clears_all_object_stamps) {
 UTEST(uobject_set_local_slot_grows_slots_array_and_transitions_shape) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -891,6 +924,7 @@ UTEST(uobject_set_local_slot_replaces_existing_value_when_present) {
      * stays put (count unchanged); no fresh USlotArray allocation. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -936,6 +970,7 @@ UTEST(uobject_set_local_slot_replaces_existing_value_when_present) {
 UTEST(uobject_fallback_retry_on_miss) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -968,6 +1003,7 @@ UTEST(uobject_fallback_lookup_of_fallback_itself_does_not_recurse) {
      * trigger the retry (would recurse forever).  Returns -1 cleanly. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -986,6 +1022,7 @@ UTEST(uobject_fallback_no_fallback_slot_returns_miss) {
      * the retry also misses — overall result is -1. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *bogus = (USymbol *)ustr_intern(&vm, "doesNotExist", 12);
@@ -1007,6 +1044,7 @@ UTEST(uobject_fallback_no_fallback_slot_returns_miss) {
 UTEST(uobject_clone_preserves_atom_family_and_protos_single) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
     UASSERT(integer != NULL);
@@ -1045,6 +1083,7 @@ UTEST(uobject_clone_root_returns_object_atom_chained) {
      * the root itself.  Atom family stays URBI_ATOM_OBJECT. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *root = urbi_object_root(&vm);
     UObject *c    = urbi_object_clone(&vm, root);
@@ -1059,6 +1098,7 @@ UTEST(uobject_clone_root_returns_object_atom_chained) {
 UTEST(uobject_clone_null_returns_null) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UASSERT(urbi_object_clone(&vm, NULL) == NULL);
     UASSERT(urbi_object_clone(NULL, NULL) == NULL);

@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* T75: public C API — urbi_realm_set_global / set_global_const / get_global.
  *
  * Verifies:
@@ -100,6 +108,7 @@ UTEST(set_global_then_script_reads) {
      * (realm argument is reserved for future multi-realm scheduling). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Auto-create the global realm so we can install on it. */
     URealm *realm = urbi_realm_global(&vm);
@@ -129,6 +138,7 @@ UTEST(set_global_const_blocks_script_write) {
      * indices 0-7, so CONSTANT enforcement is guaranteed here. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -169,6 +179,7 @@ UTEST(set_global_const_rejects_existing_const_overwrite) {
      * indices >= 8 lands then. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -217,6 +228,7 @@ UTEST(get_global_distinguishes_overflow_from_oom) {
      * first child (sp=64 OK), push the second — `if (sp >= 64) return -1`. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -263,6 +275,7 @@ UTEST(get_global_returns_slot_not_found_when_absent) {
      * URBI_ERR_SLOT_NOT_FOUND (not a crash, not URBI_OK). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -284,6 +297,7 @@ UTEST(set_global_distinguishes_const_reject_from_oom) {
      * (non-const variant) must NOT bypass the CONSTANT bit. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -322,6 +336,7 @@ UTEST(populate_and_set_global_const_share_reject_logic) {
      * surfaces here. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -381,6 +396,7 @@ UTEST(populate_and_set_global_const_share_reject_logic) {
 UTEST(set_global_const_past_slot_7_installs_without_const_enforcement) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -427,6 +443,7 @@ UTEST(set_global_overwrites_non_const) {
      * new value. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);

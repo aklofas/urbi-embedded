@@ -2,6 +2,12 @@
 /* Unit tests for src/object/uslothandle.h — USlotHandle creation +
  * validate-or-refresh on read/write (M4 / T37).
  *
+ * URBI_GC_STRESS disarm (v0.13.2): primitive-semantics suite holding
+ * cells in bare C locals (no urbi_handle) across interning/slot allocs —
+ * structurally swept under collect-on-every-alloc; fine on normal builds.
+ * Each test sets vm.gc_stress_armed = 0 after init (refactor-3
+ * TEST-GAP-01 stress-exempt list).
+ *
  * Three behavioural tests:
  *   1. get_slot_returns_handle_pointing_at_owner — basic creation;
  *      handle's owner / shape_at_create / slot_index match the resolved
@@ -33,6 +39,7 @@
 UTEST(uslothandle_get_slot_returns_handle_pointing_at_owner) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -65,6 +72,7 @@ UTEST(uslothandle_get_slot_returns_handle_pointing_at_owner) {
 UTEST(uslothandle_refresh_after_shape_transition) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -101,6 +109,7 @@ UTEST(uslothandle_refresh_after_shape_transition) {
 UTEST(uslothandle_becomes_invalid_after_slot_removal) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -126,6 +135,7 @@ UTEST(uslothandle_becomes_invalid_after_slot_removal) {
 UTEST(uslothandle_write_value_updates_owner_slot) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -153,6 +163,7 @@ UTEST(uslothandle_write_value_updates_owner_slot) {
 UTEST(uslothandle_get_slot_miss_returns_null) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *bogus = (USymbol *)ustr_intern(&vm, "doesNotExist", 12);
@@ -169,6 +180,7 @@ UTEST(uslothandle_get_slot_miss_returns_null) {
 UTEST(uslothandle_get_slot_resolves_via_proto_chain) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* parent has the slot; child inherits via prototype. */
     UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);

@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* W2/v0.10.2: AT_EVENT watcher fully unlinks from event chain on tag-stop.
  *
  * Closes reactive audit F2.
@@ -113,6 +121,7 @@ UTEST(at_event_unlink_from_event_chain_on_tag_stop)
     UValue   nil = {0};
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -156,6 +165,7 @@ UTEST(at_event_emit_after_tag_stop_no_spawn)
     UValue   nil = {0};
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -203,6 +213,7 @@ UTEST(at_event_tag_stop_emit_stress)
     UValue   nil = {0};
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     make_ret_closure(&body_cl, &proto, instr);
 
     UEvent *e = urbi_event_create(&vm);
@@ -250,6 +261,7 @@ UTEST(at_event_sync_unlink_from_event_chain_on_tag_stop)
     UValue   nil = {0};
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -288,6 +300,7 @@ UTEST(whenever_event_unlink_from_event_chain_on_tag_stop)
     UValue   nil = {0};
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 

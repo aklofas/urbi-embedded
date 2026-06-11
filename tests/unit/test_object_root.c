@@ -1,4 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): C-API scaffolding suite — GC cells
+ * (tags/events/objects/closures) held in bare C locals and/or synthetic
+ * strands outside the realm graph, by design, to drive one primitive in
+ * isolation.  Collect-on-every-alloc sweeps them between paired
+ * allocations; fine on normal builds where host-C call sequences cannot
+ * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
+ * after init.  Structural-by-design, not a runtime rooting bug
+ * (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* test_object_root.c — M6 Phase 3: Object root C-native methods.
  *
  * Covers T30-T37 of the v0.6.0-stdlib-scaffold plan:
@@ -89,6 +97,7 @@ test_native_returns_42(UVM *vm, UValue self, UValue *args, uint8_t nargs,
 UTEST(native_fn_dispatched_via_op_call) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Touch the global realm so stdlib boot runs (Object proto exists). */
     (void)urbi_realm_global(&vm);
@@ -123,6 +132,7 @@ UTEST(native_fn_dispatched_via_op_call) {
 UTEST(object_set_slot_then_read_back) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -145,6 +155,7 @@ UTEST(object_set_slot_then_read_back) {
 UTEST(object_has_slot_present_and_absent) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -169,6 +180,7 @@ UTEST(object_has_slot_present_and_absent) {
 UTEST(object_remove_slot_removes) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -191,6 +203,7 @@ UTEST(object_remove_slot_removes) {
 UTEST(object_add_proto_inherits_slot) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -212,6 +225,7 @@ UTEST(object_add_proto_inherits_slot) {
 UTEST(object_remove_proto_drops_inheritance) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -236,6 +250,7 @@ UTEST(object_remove_proto_drops_inheritance) {
 UTEST(clone_int_returns_int) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     UASSERT_EQ(compile_and_run(&vm, "var v = 1.clone()"), URBI_OK);
@@ -251,6 +266,7 @@ UTEST(clone_int_returns_int) {
 UTEST(clone_object_allocates_fresh) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -281,6 +297,7 @@ UTEST(clone_object_allocates_fresh) {
 UTEST(atom_clone_zero_allocations) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     /* Warm up: ensure stdlib boot + globals install + first compile-run
@@ -317,6 +334,7 @@ UTEST(atom_clone_zero_allocations) {
 UTEST(object_new_returns_clone) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -356,6 +374,7 @@ UTEST(object_new_returns_clone) {
 UTEST(clone_can_overwrite_const_inherited_slot) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     UObject *p = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -414,6 +433,7 @@ UTEST(clone_can_overwrite_const_inherited_slot) {
 UTEST(new_then_local_write_does_not_modify_proto) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -445,6 +465,7 @@ UTEST(new_then_local_write_does_not_modify_proto) {
 UTEST(protos_insert_front_prepends_proto) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     /* a has slot foo=1; b has slot foo=2.  c clones b (so c.foo == 2);
@@ -481,6 +502,7 @@ UTEST(protos_insert_front_prepends_proto) {
 UTEST(object_remove_local_slot_alias) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -507,6 +529,7 @@ UTEST(object_remove_local_slot_alias) {
 UTEST(object_get_slot_value_alias) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -533,6 +556,7 @@ UTEST(object_get_slot_value_alias) {
 UTEST(clone_chain_three_levels) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -562,6 +586,7 @@ UTEST(clone_chain_three_levels) {
 UTEST(atom_new_returns_self) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     UASSERT_EQ(compile_and_run(&vm, "var v = 7.new()"), URBI_OK);
@@ -584,6 +609,7 @@ UTEST(atom_new_returns_self) {
 UTEST(new_and_clone_are_equivalent) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =
@@ -610,6 +636,7 @@ UTEST(new_and_clone_are_equivalent) {
 UTEST(object_set_protos_single) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     (void)urbi_realm_global(&vm);
 
     const char *src =

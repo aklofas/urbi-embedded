@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* URBI_GC_STRESS disarm (v0.13.2): hand-wires synthetic strands + tags in
+ * bare C locals outside the realm graph to drive resolve_owning_tag in
+ * isolation — collect-on-every-alloc sweeps the deliberately-unrooted
+ * tags mid-test.  Structural-by-design (refactor-3 TEST-GAP-01
+ * stress-exempt list). */
 /* Unit tests: resolve_owning_tag cleanup-stack walk (T35, spec #2 §7.2).
  *
  * resolve_owning_tag is non-static in uwatcher_install.c (exposed for test
@@ -62,6 +67,7 @@ UTEST(resolve_owning_tag_returns_innermost)
     UStrand s;
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -103,6 +109,7 @@ UTEST(resolve_owning_tag_skips_non_tag_scope)
     UStrand s;
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -139,6 +146,7 @@ UTEST(resolve_owning_tag_empty_stack_returns_realm_tag)
     UStrand s;
 
     urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
