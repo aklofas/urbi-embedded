@@ -93,8 +93,19 @@ walk_uobject(struct UVM *vm, void *payload,
 
     /* Walk the prototype chain.  UPROTOS_FOREACH captures o->protos once
      * at iteration start and dispatches across empty/single/heap forms.
-     * Entries are direct UObject* (embed UCell at offset 0). */
+     * Entries are direct UObject* (embed UCell at offset 0).
+     *
+     * Heap form: also shade the UProtos wrapper cell itself (same owner-
+     * shades-wrapper duty as the USlotArray shade above).  Without this,
+     * nothing re-marks the wrapper after the install-time barrier's gray
+     * fades (one cycle): the wrapper is swept while its owner is live, and
+     * the next mark walks freed memory through o->protos.  Found by the
+     * v0.13.2 rooting-matrix harness under URBI_GC_STRESS (3rd full
+     * collection over a realm with a multi-proto object → UAF). */
     {
+        if (o->protos != 0U && (o->protos & 1U) == 0U) {
+            gc_shade_gray(vm, (UCell *)o->protos);  /* NOLINT(performance-no-int-to-ptr) — UProtos pointer-encoding (TIDY-003 design pin) */
+        }
         UObject *p;
         UPROTOS_FOREACH(o, p) {
             if (p != NULL) {
