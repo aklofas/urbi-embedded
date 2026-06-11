@@ -192,6 +192,9 @@ urbi_stdlib_boot(UVM *vm)
             uchunk_destroy(m, vm);
             return URBI_ERR_OOM;
         }
+        m->vm_owned = true;   /* GC-18: freed by urbi_vm_destroy, never by
+                                 realm teardown (urbi_realm_destroy Step 2b
+                                 keys on this flag). */
         vm->stdlib_module = m;
         /* Note: running the root chunk of the stdlib module is deferred
          * to a later phase — urbi_stdlib_boot is invoked from inside

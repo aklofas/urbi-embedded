@@ -227,6 +227,14 @@ typedef struct UProto {
     struct UProto  *next_in_realm;          /* realm-lifecycle linkage — root only */
     struct URealm  *owning_realm;           /* root only */
     bool            heap_allocated;         /* renamed from shell_heap_allocated — root only */
+    bool            vm_owned;               /* refactor-3 GC-18: lifetime owned by
+                                               urbi_vm_destroy, NEVER by realm teardown.
+                                               Set by the stdlib boot and by every overlay
+                                               register path (urobotics, future overlays).
+                                               Replaces the pointer-compare + #ifdef
+                                               exclusion stack in urbi_realm_destroy.
+                                               Root only; zero-init (false) everywhere
+                                               else. */
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).

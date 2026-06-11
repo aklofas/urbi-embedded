@@ -17,11 +17,14 @@
  * 14.  realm_walk_roots_invokes_callback_per_namespace_entry: walker visits each entry.
  * 15.  realm_create_oom_returns_null: allocator returning NULL yields NULL from create.
  * 16.  realm_destroy_does_not_free_strand_on_ready_queue: REALM-011 ready_queue splice.
- * 17.  vm_has_live_work_null_out_params: NULL out-params accepted (REALM-034 / REALM-017). */
+ * 17.  vm_has_live_work_null_out_params: NULL out-params accepted (REALM-034 / REALM-017).
+ * 18.  realm_destroy_skips_vm_owned_proto: vm_owned proto survives realm destroy (GC-18).
+ * 19.  realm_destroy_unloads_non_vm_owned_proto: default proto still unloaded (GC-18). */
 
 #include "utest.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
+#include "chunk/uchunk.h"    /* GC-18: UProto.vm_owned + uchunk_destroy */
 #include "value/uintern.h"
 #include "sched/ustrand.h"   /* T69: UStrand layout + ready_next/ready_prev fields */
 #include "urbi/urbi.h"       /* T69: urbi_strand_create / urbi_strand_start (public API) */
@@ -463,6 +466,109 @@ UTEST(vm_has_live_work_null_out_params)
     urbi_vm_destroy(&vm);
 }
 
+/* 18. realm_destroy_skips_vm_owned_proto (refactor-3 GC-18)
+ *
+ * A proto flagged vm_owned = true (the stdlib / overlay-register contract)
+ * must NOT be unloaded by urbi_realm_destroy — its lifetime belongs to
+ * urbi_vm_destroy.  The realm teardown only clears the proto's
+ * back-pointers (owning_realm / next_in_realm) to the about-to-be-freed
+ * realm.
+ *
+ * Observation: after the destroy, the proto struct is still valid (fields
+ * intact, no free) — confirmed by reading its fields and then freeing it
+ * manually via uchunk_destroy.  Under the pre-GC-18 pointer-compare
+ * teardown the proto was unloaded (freed), so the manual uchunk_destroy
+ * double-frees — caught by the allocator / ASan. */
+UTEST(realm_destroy_skips_vm_owned_proto)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    /* First realm absorbs the stdlib registration (urealm_register_module
+     * pins stdlib_module->owning_realm to the FIRST realm); the second
+     * realm's loaded_protos_head then holds only what this test loads. */
+    URealm *a = urbi_realm_create(&vm);
+    URealm *b = urbi_realm_create(&vm);
+    UASSERT(a != NULL);
+    UASSERT(b != NULL);
+
+    /* Load a proto into realm b via the eval path (urbi_run_chunk
+     * registers the root onto b->loaded_protos_head). */
+    char buf[64];
+    UASSERT_EQ(URBI_OK, urbi_repl_eval(&vm, b, "1 + 1", 5, buf, sizeof(buf)));
+    UProto *p = b->loaded_protos_head;
+    UASSERT(p != NULL);
+    UASSERT(p->owning_realm == b);
+    UASSERT(p->heap_allocated);
+
+    /* Flag it VM-owned, exactly like the stdlib boot / overlay register
+     * paths do. */
+    p->vm_owned = true;
+
+    urbi_realm_destroy(&vm, b);
+
+    /* NOT unloaded: struct still valid, back-pointers to b cleared. */
+    UASSERT(p->owning_realm == NULL);
+    UASSERT(p->next_in_realm == NULL);
+    UASSERT(p->heap_allocated);
+    UASSERT(p->instr_count > 0);
+
+    /* The test stands in for urbi_vm_destroy's ownership: free it now.
+     * Realm b's strands are gone, so refcount is 0 and this frees
+     * immediately (a pre-fix unload would make this a double-free). */
+    uchunk_destroy(p, &vm);
+
+    urbi_realm_destroy(&vm, a);
+    urbi_vm_destroy(&vm);
+}
+
+/* 19. realm_destroy_unloads_non_vm_owned_proto (refactor-3 GC-18 control)
+ *
+ * The default (vm_owned == false) path must keep unloading realm-owned
+ * protos at realm destroy.  Observation mirrors the rescue mechanism:
+ * hold a closure-bind ref on the root proto so uchunk_destroy (reached
+ * via urbi_unload) rescues it onto vm->rescued_protos instead of freeing
+ * — proving urbi_unload actually ran.  The vm_destroy sweep then frees
+ * the rescued proto. */
+UTEST(realm_destroy_unloads_non_vm_owned_proto)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    URealm *a = urbi_realm_create(&vm);
+    URealm *b = urbi_realm_create(&vm);
+    UASSERT(a != NULL);
+    UASSERT(b != NULL);
+
+    char buf[64];
+    UASSERT_EQ(URBI_OK, urbi_repl_eval(&vm, b, "1 + 1", 5, buf, sizeof(buf)));
+    UProto *p = b->loaded_protos_head;
+    UASSERT(p != NULL);
+    UASSERT(!p->vm_owned);  /* zero-init default */
+
+    /* Hold a ref so the unload rescues rather than frees. */
+    urbi_proto_ref_acquire(p, URBI_PROTO_REF_OWNER_CLOSURE);
+
+    urbi_realm_destroy(&vm, b);
+
+    /* Unloaded: urbi_unload cleared the back-pointers and uchunk_destroy
+     * rescued the root onto vm->rescued_protos (refcount > 0). */
+    UASSERT(p->owning_realm == NULL);
+    UASSERT(p->next_in_realm == NULL);
+    bool rescued = false;
+    for (UProto *rp = vm.rescued_protos; rp != NULL; rp = rp->next_alloc) {
+        if (rp == p) { rescued = true; break; }
+    }
+    UASSERT(rescued);
+
+    /* Drop the ref (debug-build balance) and let the vm_destroy sweep
+     * free the rescued proto. */
+    urbi_proto_ref_release(p, URBI_PROTO_REF_OWNER_CLOSURE);
+
+    urbi_realm_destroy(&vm, a);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -489,4 +595,8 @@ test_realm_suite(void)
               realm_destroy_does_not_free_strand_on_ready_queue);
     utest_run("vm_has_live_work_null_out_params",
               vm_has_live_work_null_out_params);
+    utest_run("realm_destroy_skips_vm_owned_proto (GC-18)",
+              realm_destroy_skips_vm_owned_proto);
+    utest_run("realm_destroy_unloads_non_vm_owned_proto (GC-18)",
+              realm_destroy_unloads_non_vm_owned_proto);
 }

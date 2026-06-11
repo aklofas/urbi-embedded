@@ -26,6 +26,9 @@ urbi_urobotics_register(struct UVM *vm)
         uchunk_destroy(m, vm);
         return URBI_ERR_OOM;
     }
+    m->vm_owned = true;   /* GC-18: freed by urbi_vm_destroy, never by realm
+                             teardown (urbi_realm_destroy Step 2b keys on
+                             this flag). */
     vm->urobotics_module = m;
     return URBI_OK;
 }

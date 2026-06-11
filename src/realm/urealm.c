@@ -240,46 +240,36 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
         realm->tag = NULL;
     }
 
-    /* Step 2b (v0.9.0-repl Task 12): walk loaded_protos_head and unload each
-     * non-stdlib module.  Strands were stopped in step 1, so strand-bind
+    /* Step 2b (v0.9.0-repl Task 12): walk loaded_protos_head and unload
+     * realm-owned modules.  Strands were stopped in step 1, so strand-bind
      * refcounts have dropped; closures from other realms that reference these
      * modules' protos survive via the root_proto-refcount rescue mechanism
      * (uchunk_destroy stashes them onto vm->rescued_protos).
      *
-     * Stdlib exclusion: vm->stdlib_module is VM-owned (freed by
-     * urbi_vm_destroy) and must NEVER be unloaded here.  It only appears in
-     * the FIRST realm's list (urealm_register_module silently skips when
-     * owning_realm != NULL — Task 5).  Skip it explicitly and clear its
-     * back-pointer to avoid a dangling reference to this (about-to-be-freed)
-     * realm. */
+     * VM-owned overlays (stdlib, urobotics, future — flagged vm_owned at
+     * registration, refactor-3 GC-18) are freed by urbi_vm_destroy, never
+     * here.  Their back-pointers to this (about-to-be-freed) realm are
+     * cleared in the same pass.  In-list-only clearing is sufficient:
+     * urealm_register_module is the sole writer of owning_realm and sets the
+     * back-pointer and the list link together (skipping entirely when
+     * owning_realm != NULL — Task 5), and urbi_unload clears both together —
+     * so owning_realm == realm holds exactly for the protos on this realm's
+     * loaded_protos_head, and a vm_owned module registered into a different
+     * realm has nothing pointing at this one. */
     {
         UProto *p = realm->loaded_protos_head;
         while (p != NULL) {
             UProto *next = p->next_in_realm;
-            if (p != vm->stdlib_module
-#ifdef URBI_ENABLE_UROBOTICS
-                && p != vm->urobotics_module  /* v0.12.2: VM-owned, freed at VM teardown */
-#endif
-               ) {
+            if (p->vm_owned) {
+                if (p->owning_realm == realm) {
+                    p->owning_realm  = NULL;
+                    p->next_in_realm = NULL;
+                }
+            } else {
                 urbi_unload(vm, p);
             }
             p = next;
         }
-        /* If stdlib was in the list, clear its back-pointer. */
-        if (vm->stdlib_module != NULL &&
-            vm->stdlib_module->owning_realm == realm) {
-            vm->stdlib_module->owning_realm  = NULL;
-            vm->stdlib_module->next_in_realm = NULL;
-        }
-#ifdef URBI_ENABLE_UROBOTICS
-        /* v0.12.2: urobotics_module is VM-owned like stdlib_module; clear its
-         * back-pointer to this about-to-be-freed realm. */
-        if (vm->urobotics_module != NULL &&
-            vm->urobotics_module->owning_realm == realm) {
-            vm->urobotics_module->owning_realm  = NULL;
-            vm->urobotics_module->next_in_realm = NULL;
-        }
-#endif
         realm->loaded_protos_head = NULL;
     }
 
