@@ -233,6 +233,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->current_white       = 0U;
     vm->gc_paused           = 0U;
     vm->in_destroy_callback = 0U;
+    vm->gc_stress_armed     = 0U;   /* armed at the end of init (success path only) */
     vm->gc_live_bytes       = 0U;
     vm->gc_surviving_bytes  = 0U;
     vm->gc_total_allocated  = 0U;
@@ -520,6 +521,15 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
              * uvm_op_overload.c guard against NULL so dispatch survives. */
             oom_seen = 1;
         }
+    }
+
+    /* refactor-3 TEST-GAP-01: arm GC stress mode only now — every root
+     * provider is registered, so anything allocated after this point
+     * (native protos, stdlib boot, user code — all of which run after
+     * urbi_vm_init returns) must survive via a registered root.  Success
+     * path only: partial-init (OOM) VMs stay un-armed. */
+    if (!oom_seen) {
+        vm->gc_stress_armed = 1U;
     }
 
     /* T23 (VM-010 + VM-024): single return point for the success/OOM

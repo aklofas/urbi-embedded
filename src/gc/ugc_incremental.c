@@ -639,6 +639,25 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
+#if URBI_GC_STRESS
+    /* refactor-3 TEST-GAP-01: collect-on-every-alloc stress mode.  Collect
+     * BEFORE allocating (never after — the caller has not rooted the new
+     * cell yet; collect-after would sweep it by design).  Armed only once
+     * urbi_vm_init has registered all root providers; init-window allocs
+     * are rooted field-by-field and are exempt.  gc_paused honors the
+     * embedder's atomic sections; heap_locked declines below anyway.
+     * in_destroy_callback excludes allocating finalizers: re-entering
+     * urbi_gc_force_full mid-sweep would walk a stale vm->sweep_cursor
+     * (the outer gc_sweep_step's progress lives in C locals) — UAF /
+     * double-free.  Non-stress builds tolerate allocating finalizers
+     * (GC-015 prepend-to-head design); stress mode must not silently
+     * forbid them. */
+    if (vm->gc_stress_armed && !vm->gc_paused && !vm->heap_locked &&
+        !vm->in_destroy_callback) {
+        urbi_gc_force_full(vm);
+    }
+#endif
+
     /* Phase 13 / T145: urbi_lock_heap one-way latch.  Once locked,
      * decline new allocations — caller observes NULL (the standard
      * OOM-shaped failure mode the rest of the runtime already handles

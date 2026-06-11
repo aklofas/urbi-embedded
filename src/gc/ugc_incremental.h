@@ -19,6 +19,13 @@
 #include "ugc.h"
 #include "runtime/umemdebug.h"   /* URBI_MEM_DEBUG gate (forward-decls only; no circular dep) */
 
+/* refactor-3 TEST-GAP-01: URBI_GC_STRESS — collect-before-every-alloc stress
+ * mode (see urbi_gc_alloc in ugc_incremental.c).  Undefined => 0 => zero
+ * behavior change (same default-0 idiom as URBI_MEM_DEBUG above). */
+#ifndef URBI_GC_STRESS
+#  define URBI_GC_STRESS 0
+#endif
+
 /* Forward declarations for pointer types used in barrier signatures.
  * Full definitions live in src/sched/ustrand.h / src/runtime/uframe.h /
  * src/chunk/uchunk.h. */

@@ -380,6 +380,12 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint8_t  current_white;            /* current white color for tri-color marking */
     uint8_t  gc_paused;                /* non-zero → GC slices suppressed */
     uint8_t  in_destroy_callback;      /* debug-build assertion guard (T22/T27 use) */
+    uint8_t  gc_stress_armed;          /* URBI_GC_STRESS: 1 after urbi_vm_init completes;
+                                        * urbi_gc_alloc force-collects BEFORE every
+                                        * allocation while set (refactor-3 TEST-GAP-01).
+                                        * Always present (1 B) so layout is identical
+                                        * across stress/non-stress builds; only read
+                                        * under #if URBI_GC_STRESS. */
     int64_t  gc_debt;                  /* negative = credit; positive = GC work owed */
     size_t   gc_threshold;             /* debt threshold; default URBI_GC_INITIAL_THRESHOLD */
     size_t   gc_live_bytes;            /* live bytes after last sweep cycle */
