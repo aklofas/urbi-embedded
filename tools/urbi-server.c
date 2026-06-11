@@ -156,7 +156,7 @@ static int run_boot_script(UVM *vm, const char *path) {
     if (rc != 0) {
         /* Parse-error path skipped uemit_finish; release emitter-owned
          * funcstate storage (no-op when finish already ran — FE-07). */
-        uemit_abandon(&e);
+        urbi_emit_abandon(&e);
     }
     if (rc == 0) {
         UValue out;

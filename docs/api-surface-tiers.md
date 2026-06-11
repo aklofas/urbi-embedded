@@ -264,6 +264,11 @@ CI gate tracks this list to prevent silent growth.
 - `urbi_defer_slot_change`, `urbi_deferred_slot_changes_walk_roots`,
   `urbi_drain_deferred_slot_changes`, `urbi_emit_slot_change_slow`
 
+### Emitter internals (v0.13.1 unwind-and-frontend)
+
+- `urbi_emit_abandon`, `urbi_emit_reserve_global_slot`,
+  `urbi_emit_scope_crossings`
+
 ### Encoding
 
 - `urbi_encode_utf8`
@@ -301,6 +306,7 @@ CI gate tracks this list to prevent silent growth.
 ### Closure internals
 
 - `urbi_native_closure_create`, `urbi_run_closure_on_scratch`,
+  `urbi_run_closure_on_scratch_ex`,
   `urbi_run_closure_on_scratch_with_payload`
 
 ### Object internals

@@ -125,7 +125,7 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent);
 UFuncState *uemit_close_function(UEmitter *e);
 int uemit_assign_ic_index(UEmitter *e, USymbol *name);
 int uemit_declare_local(UEmitter *e, const char *name, int name_len);
-bool uemit_reserve_global_slot(UEmitter *e);
+bool urbi_emit_reserve_global_slot(UEmitter *e);
 bool uemit_open_block(UEmitter *e, bool is_loop);
 bool uemit_close_block(UEmitter *e);
 void uemit_emit_loop_back_close(UEmitter *e);
@@ -347,7 +347,7 @@ static inline void uemit_loop_patch_continues(UEmitter *e, int cont_target) {
  * pop — e->error latches and no further code is emitted, so a stale depth
  * is unobservable (same rationale as the loop-ctx discipline).
  *
- * uemit_emit_scope_crossings (uemit_unwind.c) emits the teardown for every
+ * urbi_emit_scope_crossings (uemit_unwind.c) emits the teardown for every
  * scope above down_to_depth, innermost-first: OP_POP_TAG for tag scopes;
  * OP_TRY_END + inline finally copy for try scopes.  Returns 0 on error
  * (e->error set), 1 on success. */
@@ -370,7 +370,7 @@ static inline void uemit_unwind_scope_pop(UEmitter *e) {
     if (e->unwind_scope_depth > 0) e->unwind_scope_depth--;
 }
 
-int uemit_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line);
+int urbi_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line);
 /* === end T24 === */
 
 /* Statement / control-flow AST arm helpers (defined in uemit_stmt.c).

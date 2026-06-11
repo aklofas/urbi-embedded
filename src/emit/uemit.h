@@ -178,7 +178,7 @@ typedef struct UEmitter {
                                       it (inheriting `arena`'s backing
                                       allocator pair); uemit_finish destroys
                                       it; driver error paths that bail before
-                                      finish must call uemit_abandon. */
+                                      finish must call urbi_emit_abandon. */
     struct UVM   *vm;              /* non-owning; set by uemit_init (M2) for intern access */
     uint8_t      next_reg;        /* register allocator cursor */
     uint8_t      max_reg_seen;    /* highest slot ever used */
@@ -245,12 +245,12 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt);
    uemit_open_function / uemit_close_function is invalid afterwards. */
 UEmitError uemit_finish(UEmitter *e);
 
-/* uemit_abandon — driver error-path teardown: free emitter-owned storage
+/* urbi_emit_abandon — driver error-path teardown: free emitter-owned storage
    (fs_arena) without finishing the module.  For callers that bail between
    uemit_init and uemit_finish (e.g. on a parse error).  Idempotent, and
    safe to call after uemit_finish (which performs the same teardown on
    the success path).  refactor-3 FE-07. */
-void uemit_abandon(UEmitter *e);
+void urbi_emit_abandon(UEmitter *e);
 
 /* Open a new compilation function. At top-level, parent==NULL. Returns
    NULL on OOM (sets EMIT_OOM). The opened FuncState becomes

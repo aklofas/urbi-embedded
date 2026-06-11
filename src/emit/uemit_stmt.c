@@ -1012,7 +1012,7 @@ uint8_t emit_break_arm(UEmitter *e, const UAstNode *n) {
      * them down — emit OP_POP_TAG / OP_TRY_END (+ inline finally) for every
      * scope opened since the target frame, innermost-first, BEFORE the JMP.
      * break targets the innermost loop/switch frame (top of loop_stack). */
-    if (!uemit_emit_scope_crossings(
+    if (!urbi_emit_scope_crossings(
             e, e->loop_stack[e->loop_depth - 1].unwind_scope_depth_on_enter,
             (uint32_t)n->line))
         return 0U;
@@ -1045,7 +1045,7 @@ uint8_t emit_continue_arm(UEmitter *e, const UAstNode *n) {
         int d;
         for (d = e->loop_depth; d > 0; d--) {
             if (e->loop_stack[d - 1].kind == ULOOP_FRAME_LOOP) {
-                if (!uemit_emit_scope_crossings(
+                if (!urbi_emit_scope_crossings(
                         e,
                         e->loop_stack[d - 1].unwind_scope_depth_on_enter,
                         (uint32_t)n->line))
@@ -1228,8 +1228,8 @@ uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n) {
     /* Pre-reserve the global object slot before declaring any synthetic
      * loop-state locals, so r_global_slot is pinned at the current freereg
      * (e.g. R0 at chunk-top) BEFORE we declare _iter/_n/_i at
-     * freereg+1/+2/+3 (see uemit_reserve_global_slot). */
-    if (fs->parent == NULL && !uemit_reserve_global_slot(e)) return 0U;
+     * freereg+1/+2/+3 (see urbi_emit_reserve_global_slot). */
+    if (fs->parent == NULL && !urbi_emit_reserve_global_slot(e)) return 0U;
 
     /* Open outer block scope: _iter, _n, _i live here as proper locals.
      * This ensures fs_temp_floor = nactvar + 3 throughout the loop body,
@@ -1461,8 +1461,8 @@ uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
 
     /* Pre-reserve the global object slot before declaring the hidden
      * subject local — same rationale as emit_for_each_arm (see
-     * uemit_reserve_global_slot). */
-    if (fs->parent == NULL && !uemit_reserve_global_slot(e)) return 0U;
+     * urbi_emit_reserve_global_slot). */
+    if (fs->parent == NULL && !urbi_emit_reserve_global_slot(e)) return 0U;
 
     /* Open outer block scope: \x01sw lives here as a proper local, so
      * fs_temp_floor stays above it across case-body temp resets. */

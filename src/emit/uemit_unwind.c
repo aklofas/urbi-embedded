@@ -261,7 +261,7 @@ static int emit_finally_inline(UEmitter *e, UAstNode *n, uint8_t rd) {
  * Does NOT modify e->unwind_scope_depth: the scopes stay open for the
  * (unreachable-after-JMP, but still emitted) fall-through path and for
  * sibling break sites. */
-int uemit_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line) {
+int urbi_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line) {
     int d;
     for (d = e->unwind_scope_depth; d > down_to_depth; d--) {
         UUnwindScope *sc = &e->unwind_scopes[d - 1];
@@ -635,8 +635,8 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
 
     /* Pre-reserve the global object slot before declaring the hidden tag
      * local — same rationale as emit_for_each_arm / emit_switch_arm (see
-     * uemit_reserve_global_slot). */
-    if (fs->parent == NULL && !uemit_reserve_global_slot(e)) return 0U;
+     * urbi_emit_reserve_global_slot). */
+    if (fs->parent == NULL && !urbi_emit_reserve_global_slot(e)) return 0U;
 
     /* Open outer block scope: \x01tag lives here as a proper local, so
      * fs_temp_floor stays above it across body temp resets. */

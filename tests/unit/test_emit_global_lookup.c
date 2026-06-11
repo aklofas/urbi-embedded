@@ -55,7 +55,7 @@ static UEmitError gl_ctx_run(GlCtx *c)
 
 static void gl_ctx_destroy(GlCtx *c)
 {
-    uemit_abandon(&c->e);   /* no-op after finish; frees fs_arena when
+    urbi_emit_abandon(&c->e);   /* no-op after finish; frees fs_arena when
                                gl_ctx_run bailed early (FE-07) */
     uarena_destroy(&c->arena);
     uchunk_destroy(&c->module, NULL);

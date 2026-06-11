@@ -580,7 +580,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
  * inline copies: they additionally flip references_global, and two of
  * them sync e->next_reg UNCONDITIONALLY (no `<` guard), which is not
  * provably equivalent to the guarded sync below at every call point. */
-bool uemit_reserve_global_slot(UEmitter *e) {
+bool urbi_emit_reserve_global_slot(UEmitter *e) {
     UFuncState *fs = e->current_fs;
     if (fs->global_slot_reserved) return true;
     if (fs->freereg >= (uint8_t)(UFS_MAX_REGS - 1)) {

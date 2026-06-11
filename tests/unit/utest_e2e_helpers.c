@@ -57,7 +57,7 @@ utest_e2e_compile_and_run_with_module(UVM *vm,
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR ||
             uemit_statement(&e, node) != EMIT_OK) {
-            uemit_abandon(&e);   /* finish never runs on this path (FE-07) */
+            urbi_emit_abandon(&e);   /* finish never runs on this path (FE-07) */
             return URBI_ERR_COMPILE;
         }
         uarena_reset(arena);

@@ -622,7 +622,7 @@ UEmitError uemit_finish(UEmitter *e) {
     return e->error;
 }
 
-void uemit_abandon(UEmitter *e) {
+void urbi_emit_abandon(UEmitter *e) {
     /* refactor-3 FE-07: driver error-path teardown — free emitter-owned
      * storage without finishing the module.  uarena_destroy on an
      * already-destroyed (or never-grown) arena is a no-op, so this is
