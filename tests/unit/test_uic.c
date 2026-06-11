@@ -35,19 +35,22 @@
 #define UTEST(name) static void name(void)
 
 UTEST(uic_layout_at_default_4_entries) {
-    /* This test pins the v1.0 default (URBI_IC_ENTRIES_PER_SITE=4 → UIC=152 B
+    /* This test pins the v1.0 default (URBI_IC_ENTRIES_PER_SITE=4 → UIC=184 B
      * on 64-bit hosts; 144 → 152 at OBJ-IC-POLY when uint16_t slot_idx[N]
-     * was added to fix the polymorphic-same-shape-recv stale-pointer bug).
-     * Cross-builds at the footprint preset (=2 per T44) or the extreme
-     * footprint (=1) intentionally select a smaller layout; skip the
-     * assertion in those builds rather than re-targeting it.  The compile-
-     * time sizeof_static asserts in src/object/uic.h cover the non-default
-     * sizes — this runtime test gates only the canonical default the
-     * determinism-default + cross-arm + cross-riscv targets compile against. */
+     * was added to fix the polymorphic-same-shape-recv stale-pointer bug;
+     * 152 → 184 at T8b when uintptr_t recv_protos[N] was added to key the
+     * receiver's proto-list identity, fixing the polymorphic cross-class
+     * wrong-dispatch).  Cross-builds at the footprint preset (=2 per T44)
+     * or the extreme footprint (=1) intentionally select a smaller layout;
+     * skip the assertion in those builds rather than re-targeting it.  The
+     * compile-time sizeof_static asserts in src/object/uic.h cover the
+     * non-default sizes — this runtime test gates only the canonical
+     * default the determinism-default + cross-arm + cross-riscv targets
+     * compile against. */
 #if URBI_IC_ENTRIES_PER_SITE == 4
     UASSERT_EQ(URBI_IC_ENTRIES_PER_SITE, 4);
 #  if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-    UASSERT_EQ((int)sizeof(UIC), 152);
+    UASSERT_EQ((int)sizeof(UIC), 184);
 #  endif
 #endif
 }

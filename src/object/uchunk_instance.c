@@ -39,6 +39,7 @@ init_ic_slice(UProtoInstance *pi, UProto *proto,
         ic->replace_cursor = 0U;
         for (int e = 0; e < URBI_IC_ENTRIES_PER_SITE; e++) {
             ic->recv_shapes[e]  = NULL;
+            ic->recv_protos[e]  = 0U;
             ic->topology_gen[e] = 0U;
             ic->slots[e]        = NULL;
             ic->uprops[e]       = NULL;

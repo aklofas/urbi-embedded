@@ -5,11 +5,11 @@
  *
  * One UIC is reserved per GETSLOT/SETSLOT bytecode site (allocated alongside
  * the function's IC table per pre-M4 §4.1).  Each entry caches a (recv_shape,
- * topology_gen) -> (slot, uprops, flags) mapping; lookups linear-scan the
- * first `n` entries (n <= URBI_IC_ENTRIES_PER_SITE) and miss falls through
- * to the megamorphic GET/SET fallback path (T40).  `replace_cursor` advances
- * round-robin on miss-with-full-cache to give a fair eviction order without
- * an LRU bookkeeping field.
+ * recv_protos, topology_gen) -> (slot, uprops, flags) mapping; lookups
+ * linear-scan the first `n` entries (n <= URBI_IC_ENTRIES_PER_SITE) and miss
+ * falls through to the megamorphic GET/SET fallback path (T40).
+ * `replace_cursor` advances round-robin on miss-with-full-cache to give a
+ * fair eviction order without an LRU bookkeeping field.
  *
  * URBI_IC_ENTRIES_PER_SITE is a compile-time tunable bound to {1, 2, 4}.
  * Default is 4 (host build); the footprint preset binds 2 (later task);
@@ -35,6 +35,23 @@ URBI_STATIC_ASSERT(URBI_IC_ENTRIES_PER_SITE == 1
 typedef struct UIC {
     USymbol  *name;                                       /* slot name (interned) */
     UShape   *recv_shapes[URBI_IC_ENTRIES_PER_SITE];      /* receiver shape key */
+    uintptr_t recv_protos[URBI_IC_ENTRIES_PER_SITE];      /* receiver protos word at fill
+                                                             (T8b polymorphic-site key).
+                                                             Shape alone CANNOT discriminate
+                                                             the receiver's class — fresh
+                                                             instances of slot-less classes
+                                                             all share the root shape (protos
+                                                             are not part of the shape), so a
+                                                             same-shape receiver of a DIFFERENT
+                                                             class wrong-hit the cached
+                                                             inherited slots[k]/uprops[k].
+                                                             Compared as an opaque word, never
+                                                             dereferenced.  Same-shape + same-
+                                                             protos different-identity receivers
+                                                             sharing one entry is CORRECT:
+                                                             identical local layout + identical
+                                                             proto list imply identical
+                                                             resolution. */
     uint64_t  topology_gen[URBI_IC_ENTRIES_PER_SITE];     /* per-VM topology stamp at fill */
     USlot    *slots[URBI_IC_ENTRIES_PER_SITE];            /* cached slot pointer
                                                              (valid only when
@@ -62,13 +79,14 @@ typedef struct UIC {
 
 /* Layout pin.  At default 4-entry / 64-bit-pointer build the natural layout
  * grew to 152 bytes when OBJ-IC-POLY added uint16_t slot_idx[N] (8 bytes at
- * N=4, padded to 8-byte alignment).  Empirical sizeof on gcc x86_64 confirms
- * 152.  Cross-target builds (32-bit pointers) shrink the pointer arrays and
- * skip this assert. */
+ * N=4, padded to 8-byte alignment), then to 184 when T8b added the
+ * uintptr_t recv_protos[N] polymorphic-site key (32 bytes at N=4).
+ * Empirical sizeof on gcc x86_64 confirms 184.  Cross-target builds
+ * (32-bit pointers) shrink the pointer arrays and skip this assert. */
 #if URBI_IC_ENTRIES_PER_SITE == 4 \
         && defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(struct UIC) == 152,
-    "UIC must be 152 B at default 4-entry, 64-bit pointers");
+URBI_STATIC_ASSERT(sizeof(struct UIC) == 184,
+    "UIC must be 184 B at default 4-entry, 64-bit pointers");
 #endif
 
 /* === T25: slow-path helpers ===

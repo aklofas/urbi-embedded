@@ -88,6 +88,15 @@ vm_resolve_ic(UVM *vm,
 {
     for (uint8_t k = 0; k < ic->n; k++) {
         if (ic->recv_shapes[k]  != recv->shape)   continue;
+        /* T8b polymorphic-site key: shape alone cannot discriminate the
+         * receiver's class (fresh instances of slot-less classes share the
+         * root shape; protos are not part of the shape) — without this
+         * compare, a same-shape receiver of a DIFFERENT class wrong-hit
+         * the first class's cached inherited slots[k]/uprops[k]/flags[k].
+         * Opaque word compare, never dereferenced.  Same-shape + same-
+         * protos receivers sharing the entry is correct (identical
+         * resolution), so the monomorphic case still hits. */
+        if (ic->recv_protos[k]  != recv->protos)  continue;
         if (ic->topology_gen[k] != vm->topology_gen) continue;
 
         /* IC fast-path hit (shape guard matched). */

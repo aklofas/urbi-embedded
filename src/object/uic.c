@@ -81,6 +81,11 @@ ic_fill_at_cursor(UIC *ic, const UVM *vm, const UObject *recv,
 {
     uint8_t k = ic->replace_cursor;
     ic->recv_shapes[k]  = recv->shape;
+    /* T8b: receiver protos word — polymorphic-site key alongside the shape
+     * (opaque comparison only; see uic.h recv_protos).  Without it a
+     * same-shape receiver of a different class wrong-hit this entry's
+     * holder-resident slots[k]/uprops[k]. */
+    ic->recv_protos[k]  = recv->protos;
     ic->topology_gen[k] = vm->topology_gen;
     ic->slots[k]        = &holder->slots[idx];
     ic->uprops[k]       = up;

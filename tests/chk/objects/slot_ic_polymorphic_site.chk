@@ -1,0 +1,43 @@
+# Milestone: v0.13.2
+# Covers: slot UIC polymorphic-site wrong-dispatch — the IC entry was keyed
+#         on (recv_shape, topology_gen) only.  Receiver shape cannot
+#         discriminate the receiver's CLASS (fresh instances of slot-less
+#         classes all share the root shape; protos are not part of the
+#         shape), so a second receiver of a different class at the same
+#         compiled GETSLOT site wrong-hit the first class's cached
+#         inherited USlot* (and OGET entries dispatched the first class's
+#         getter).  The entry now also keys the receiver's protos word.
+# Note:   accessors are routed through a function so the SAME compiled
+#         site runs for every receiver; all receivers are created BEFORE
+#         the first call (Class.new() bumps topology_gen, which would
+#         otherwise invalidate the entry and mask the bug).
+
+# --- inherited data slot: fill the site with CV, then read through DV ---
+class CV {}; CV.setSlot("val", 100); class DV {}; DV.setSlot("val", 200); var cv = CV.new(); var dv = DV.new(); var cv2 = CV.new(); var h = function(x) { x.val }; h(cv)
+[00000000] 100
+
+# --- different class at the same site (pre-fix: 100) ---
+h(dv)
+[00000001] 200
+
+# --- back to the first class: the CV entry still hits ---
+h(cv)
+[00000002] 100
+
+# --- same-class different-identity receiver SHARES the entry (correct:
+#     same shape + same protos word implies the same resolution) ---
+h(cv2)
+[00000003] 100
+
+# --- inherited method call through a shared site (pre-fix: 10) ---
+class CM {}; CM.setSlot("foo", function() { 10 }); class DM {}; DM.setSlot("foo", function() { 20 }); var cm = CM.new(); var dm = DM.new(); var g = function(x) { x.foo() }; g(cm)
+[00000004] 10
+g(dm)
+[00000005] 20
+
+# --- inherited getter (OGET entry caches the holder's UProps): the
+#     second class must dispatch ITS getter (pre-fix: 1) ---
+class GA { get v() { 1 } }; class GB { get v() { 2 } }; var ga = GA.new(); var gb = GB.new(); var gv = function(x) { x.v }; gv(ga)
+[00000006] 1
+gv(gb)
+[00000007] 2

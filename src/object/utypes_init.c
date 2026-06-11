@@ -573,7 +573,8 @@ static const UType type_umodule_instance = {
  * paths (UChunkInstance owns the UProtoInstanceArr; UShapes used by
  * IC entries are kept alive via walk_ushape from the receiver-side
  * UObject; UProps cells are kept alive via walk_ushape's props_table
- * walk).  The previous walk_uprotoinstance function was an explicit
+ * walk).  recv_protos[e] (T8b) needs no shading either — it is an
+ * opaque key word compared but never dereferenced.  The previous walk_uprotoinstance function was an explicit
  * no-op stub with a stale TODO; retired in v0.5.7-fixes Phase 13
  * (OBJ-028) — substituted by walk_noop. */
 static const UType type_uproto_instance = {

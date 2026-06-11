@@ -394,8 +394,9 @@ urbi_get_determinism_checksum(struct UVM *vm)
      *      - per entry e in [0, n): topology_gen[e] (cached generation;
      *        ordering of fills observable in the run)
      *
-     *    Pointer fields (recv_shapes / slots / uprops) are NOT folded —
-     *    they are heap addresses and not stable across process invocations.
+     *    Pointer fields (recv_shapes / recv_protos / slots / uprops) are
+     *    NOT folded — they are heap addresses (recv_protos is a tagged
+     *    pointer word) and not stable across process invocations.
      *    The (n, replace_cursor, topology_gen[]) triple is sufficient to
      *    detect ordering divergences across runs because IC fill ordering
      *    is itself driven by topology_gen ticks. */

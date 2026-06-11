@@ -280,6 +280,79 @@ UTEST(ic_poly_inherited_slot_still_fast_path)
     urbi_vm_destroy(&vm);
 }
 
+/* === Test 5: cross-CLASS inherited slot at one site (T8b follow-up to
+ * OBJ-IC-POLY).  Test 4 pinned that inherited slots of ONE class keep
+ * hitting the cached absolute USlot* — but the entry was keyed on
+ * (recv_shape, topology_gen) only, and receiver shape cannot
+ * discriminate the receiver's CLASS: fresh instances of slot-less
+ * classes all share the root shape (protos are not part of the shape).
+ * A second receiver of a DIFFERENT class at the same site wrong-hit
+ * the first class's cached slot.  The entry now also keys the
+ * receiver's protos word.  Receivers are created before the first
+ * call (Class.new() bumps topology_gen and would otherwise mask the
+ * bug); results are pre-declared + assigned so no realm slot-add lands
+ * between fill and re-call.  Pre-fix: 100,100,100 -> 11100; expected
+ * 100,200,100 -> 12100. ============================================= */
+UTEST(ic_poly_cross_class_inherited_slot)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    UValue out = utest_e2e_make_nil();
+    int rc = utest_e2e_compile_and_run(&vm,
+        "class IcC {};\n"
+        "IcC.setSlot(\"val\", 100);\n"
+        "class IcD {};\n"
+        "IcD.setSlot(\"val\", 200);\n"
+        "var c = IcC.new();\n"
+        "var d = IcD.new();\n"
+        "var h = function(x) { x.val };\n"
+        "var r1 = 0;\n"
+        "var r2 = 0;\n"
+        "var r3 = 0;\n"
+        "r1 = h(c);\n"
+        "r2 = h(d);\n"
+        "r3 = h(c);\n"
+        "r1 + r2 * 10 + r3 * 100",
+        &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ(12100, (int)out.v.i);
+    urbi_vm_destroy(&vm);
+}
+
+/* === Test 6 (URBI_PERF_COUNTERS builds only): the receiver-protos key
+ * must NOT cost the monomorphic common case its IC hits — repeated
+ * same-class receivers at one site share one entry (same shape + same
+ * protos word), so re-calls hit.  Asserts ic_hit increases across two
+ * post-warmup calls through the same site. ========================== */
+#if URBI_PERF_COUNTERS
+UTEST(ic_poly_monomorphic_still_hits)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    int rc = utest_e2e_compile_and_run(&vm,
+        "class MonoC {};\n"
+        "MonoC.setSlot(\"val\", 7);\n"
+        "var m1 = MonoC.new();\n"
+        "var m2 = MonoC.new();\n"
+        "var h = function(x) { x.val };\n"
+        "h(m1)",   /* fills the site's entry; no var-add after the fill */
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    size_t hits_before = vm.perf.ic_hit;
+    UValue out = utest_e2e_make_nil();
+    /* Same compiled site (h's body) — same-class receivers, including a
+     * different same-class identity, must HIT the warm entry. */
+    rc = utest_e2e_compile_and_run(&vm, "h(m1) + h(m2)", &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ(14, (int)out.v.i);
+    UASSERT(vm.perf.ic_hit >= hits_before + 2U);
+    urbi_vm_destroy(&vm);
+}
+#endif /* URBI_PERF_COUNTERS */
+
 /* === Suite entry. ==================================================== */
 void
 test_ic_polymorphic_suite(void)
@@ -292,4 +365,10 @@ test_ic_polymorphic_suite(void)
               ic_poly_self_three_instances);
     utest_run("ic_poly: inherited slot still hits the fast path correctly",
               ic_poly_inherited_slot_still_fast_path);
+    utest_run("ic_poly: cross-class inherited slot dispatches per receiver",
+              ic_poly_cross_class_inherited_slot);
+#if URBI_PERF_COUNTERS
+    utest_run("ic_poly: monomorphic site still hits the IC (perf build)",
+              ic_poly_monomorphic_still_hits);
+#endif
 }
