@@ -452,6 +452,32 @@ static int apply_duration_suffix(ULexer *lex, int64_t *value) {
     return 0;
 }
 
+/* Float-path duration suffix (refactor-3 FE-08).  Mirrors
+ * apply_duration_suffix but scales a double and rounds half-up to the
+ * nearest microsecond.  Returns 1 if a suffix was consumed (*out_us
+ * written), 2 on int64 overflow, 0 if no duration suffix present. */
+static int apply_duration_suffix_float(ULexer *lex, double value, int64_t *out_us) {
+    for (const UDurationSuffix *e = kDurationSuffixes; e->suffix != NULL; e++) {
+        if (lex->cur + e->sufflen > lex->end) continue;
+        if (!urbi_memeq(lex->cur, e->suffix, e->sufflen)) continue;
+        /* Boundary: next char must not be ident-cont. */
+        if (lex->cur + e->sufflen < lex->end &&
+            is_ident_cont(lex->cur[e->sufflen])) continue;
+        lex->cur += e->sufflen;
+        {
+            const double scaled = (e->mul >= 0)
+                ? value * (double)e->mul
+                : value / (double)(-e->mul);
+            /* INT64_MAX as a double rounds up to 2^63; compare strictly
+             * below so the cast back to int64_t never overflows. */
+            if (!(scaled < 9223372036854775808.0)) return 2;
+            *out_us = (int64_t)(scaled + 0.5);
+        }
+        return 1;
+    }
+    return 0;
+}
+
 /* scan_float_body — called when a float literal is confirmed.  lex->cur
    points at the first character AFTER the part already scanned (either the
    decimal point that we just confirmed is followed by a digit, or the 'e'/'E'
@@ -523,6 +549,24 @@ static UToken scan_float_body(ULexer *lex, const char *start,
     if (val != 0.0 && val - val != 0.0) {
         return make_error(LEX_FLOAT_OVERFLOW, start_line, start_col, span);
     }
+
+    /* === refactor-3 FE-08: fractional duration literals — float path ===
+     * Checked BEFORE angle suffixes, mirroring the integer path's order. */
+    {
+        int64_t us_val;
+        const int drc = apply_duration_suffix_float(lex, val, &us_val);
+        if (drc == 2) {
+            return make_error(LEX_INT_OVERFLOW, start_line, start_col,
+                              (int)(lex->cur - start));
+        }
+        if (drc == 1) {
+            UToken td = make_tok_base(TOK_INT, start_line, start_col);
+            td.len = (int)(lex->cur - start);
+            td.u.i = us_val;
+            return td;
+        }
+    }
+    /* === end refactor-3 FE-08: fractional duration literals === */
 
     /* === W4/v0.10.5: angle literals — float path ===
      * After the strtod conversion, check for an angle suffix.  If present,

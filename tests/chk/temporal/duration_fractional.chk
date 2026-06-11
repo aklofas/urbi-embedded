@@ -1,0 +1,42 @@
+# Milestone: v0.13.1
+# Covers: fractional duration literals — 0.5s, 1.5ms, etc. lex to TOK_INT
+#         microseconds with round-half-up (refactor-3 FE-08; previously the
+#         float path only checked angle suffixes, so `0.5s` lexed as the
+#         bare float 0.5 with a dangling identifier `s` and every case below
+#         printed `urbi: <expr>:1:N: unexpected token`).
+
+0.5s
+[00000000] 500000
+
+1.5ms
+[00000001] 1500
+
+# Round-half-up: 2.5us rounds to 3, not 2.
+2.5us
+[00000002] 3
+
+0.25m
+[00000003] 15000000
+
+1.5h
+[00000004] 5400000000
+
+# Exponent form reaches the suffix too: 1.5e3 ms = 1500 ms.
+1.5e3ms
+[00000005] 1500000
+
+# Leading-dot float with a duration suffix.
+.5s
+[00000006] 500000
+
+# Sub-microsecond rounds down to 0 (0.5ns = 0.0005us).
+0.5ns
+[00000007] 0
+
+# --- integer durations regression pin (unchanged path)
+100ms
+[00000008] 100000
+
+# --- angle suffix on a float still works (ordering: duration checked first)
+1.5rad
+[00000009] 1.5

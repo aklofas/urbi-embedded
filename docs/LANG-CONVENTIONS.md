@@ -52,7 +52,7 @@ Float is per-ABI flavor because FPU capability is the axis that actually varies 
 
 Scientific notation is always Float, even when the mathematical value is integral. `1e3` is Float 1000.0, not Integer 1000. This matches Lua 5.3's rule and removes an ambiguity at the lexer level.
 
-Time literals compile to Integer nanoseconds — see §2. Angle literals (`180deg`, `90deg`, `1rad`, `200grad`) compile to Float in radians — see §2.4. `Math.pi` is a named constant (not a lexer literal) that evaluates to the same Float value as `180deg`.
+Time literals compile to Integer microseconds — see §2. Angle literals (`180deg`, `90deg`, `1rad`, `200grad`) compile to Float in radians — see §2.4. `Math.pi` is a named constant (not a lexer literal) that evaluates to the same Float value as `180deg`.
 
 ### 1.3 Arithmetic semantics
 
@@ -141,34 +141,34 @@ Legacy urbi 2.x was Lua-5.0-shaped — one Float type. Tests in the legacy 2.x c
 
 ## 2. Time-literal precision and representation
 
-Time literals in urbiscript compile to **Integer nanoseconds**. The lexer recognizes the suffix and produces a constant-pool entry of type Integer with value expressed in ns.
+Time literals in urbiscript compile to **Integer microseconds**. The lexer recognizes the suffix and produces a constant-pool entry of type Integer with value expressed in µs.
 
 ### 2.1 Conversion table
 
 | Literal | Integer value | Notes |
 |---|---|---|
-| `1ns` | 1 | |
-| `1us` | 1_000 | |
-| `1ms` | 1_000_000 | |
-| `100ms` | 100_000_000 | |
-| `1s` | 1_000_000_000 | |
-| `1min` | 60_000_000_000 | |
-| `1h` | 3_600_000_000_000 | |
-| `1day` | 86_400_000_000_000 | Integer fits |
+| `1ns` | 0 | integer division by 1000; `1000ns` is 1 |
+| `1us` | 1 | |
+| `1ms` | 1_000 | |
+| `100ms` | 100_000 | |
+| `1s` | 1_000_000 | |
+| `1m` | 60_000_000 | |
+| `1h` | 3_600_000_000 | |
+| `1d` | 86_400_000_000 | Integer fits |
 
-Fractional time literals (`1.5s`) compile to Integer ns using round-half-to-even at the lexer — `1.5s` is `1_500_000_000` exactly. Programs wanting sub-ns precision should not be writing fractional time literals; sub-ns is not a domain urbi-embedded targets.
+Fractional duration literals (`0.5s`, `1.5ms`) lex to integer microseconds with round-half-up; values overflowing int64 are a lex error (`LEX_INT_OVERFLOW`). Programs wanting sub-µs precision should not be writing fractional time literals; sub-µs is not a domain urbi-embedded targets.
 
 ### 2.2 Exact range
 
-At i64 precision, ns-encoded durations cover approximately ±292 years. The maximum representable positive duration is `INT64_MAX` ns ≈ 9.223e18 ns ≈ 292.47 years. This ceiling is far beyond any realistic duration an embedded urbi program will hold as a single literal; duration arithmetic (accumulators, countdowns) sits comfortably inside the range with room to spare.
+At i64 precision, µs-encoded durations cover approximately ±292,000 years. The maximum representable positive duration is `INT64_MAX` µs ≈ 9.223e18 µs ≈ 292,471 years. This ceiling is far beyond any realistic duration an embedded urbi program will hold as a single literal; duration arithmetic (accumulators, countdowns) sits comfortably inside the range with room to spare.
 
-### 2.3 Why nanoseconds
+### 2.3 Why microseconds
 
-- **Finest common resolution.** Every supported target's timer subsystem can resolve microseconds; many can resolve hundreds of nanoseconds. Picking ns as the internal unit means the language representation is never the limiting factor — precision loss is at the timer hardware, not at urbi.
-- **Exact arithmetic at i64.** Sum of 1000 `100ms` intervals is exactly `100_000_000_000` ns, no FP drift. An f64 encoding would already accumulate ~1 ULP of error on a seconds-to-years accumulator; Integer ns doesn't.
+- **Common resolution.** Every supported target's timer subsystem can resolve microseconds. Picking µs as the internal unit means the language representation matches what the timer hardware can actually deliver — no false precision.
+- **Exact arithmetic at i64.** Sum of 1000 `100ms` intervals is exactly `100_000_000` µs, no FP drift. An f64 encoding would already accumulate ~1 ULP of error on a seconds-to-years accumulator; Integer µs doesn't.
 - **One representation for both literals and Duration results.** `Clock.now() - start` and `100ms` are the same type. No implicit conversion, no ambiguity about which unit a variable is in.
 
-Sub-ns precision is out of scope. Domains that need it (e.g. RF signal processing) aren't the urbi target; if they ever become relevant, a separate `Duration` type (backlog) would carry its own representation choice.
+Sub-µs precision is out of scope. Domains that need it (e.g. RF signal processing) aren't the urbi target; if they ever become relevant, a separate `Duration` type (backlog) would carry its own representation choice.
 
 ### 2.4 Angles are different
 
