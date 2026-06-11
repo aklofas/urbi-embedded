@@ -513,6 +513,7 @@ uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
  * mytag: { body }
  *
  * Bytecode layout:
+ *   <tag_expr → \x01tag local>
  *   [push_tag_pc]:
  *     OP_PUSH_TAG packed_A, onleave_pc_placeholder  ; onleave_pc=0 at M3
  *     <body opcodes>
@@ -523,68 +524,99 @@ uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
  *   [past_handler_pc]:
  *     <continuation>
  *
- * tag_reg is limited to [0,15] by the 4-bit nibble encoding of
- * OP_PUSH_TAG.A[3:0].
+ * Register discipline (refactor-3 FE-02 follow-on): the tag value is held
+ * for the whole scope, BELOW any body-declared `var`s.  A raw temp there
+ * breaks fs_temp_floor's count-based math (nactvar + global_slot_reserved
+ * assumes locals are contiguous from the floor): a body local landed one
+ * slot ABOVE its counted position and every later temp reset clobbered it.
+ * So the tag value is a DECLARED hidden local (`\x01tag`, the for-each
+ * `\x01iter` / switch `\x01sw` machinery pattern) in an outer block, and
+ * the body keeps its own block so body locals pop at scope end.
+ *
+ * 4-bit constraint: OP_PUSH_TAG packs tag_reg into A[3:0], so `\x01tag`'s
+ * slot must be <= 15.  OP_PUSH_TAG is the ONLY reader of R[tag_reg] (it
+ * binds the scope's UTag at push time, v0.10.9-B); OP_POP_TAG ignores its
+ * A operand and pops the top cleanup entry — holding the value in the
+ * local across the body is for liveness/GC-rooting, not for the pop.
+ * When the slot exceeds 15 every lower register is local-occupied, so
+ * there is no safe spill target; the EMIT-015 rejection stays:
+ * EMIT_TAG_SPILL_OUT_OF_RANGE (widening the encoding to a full byte is a
+ * v1.x bytecode change, filed as backlog under T129/Phase 22).
  * -------------------------------------------------------------------------- */
 uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     }
+    uint32_t line = (uint32_t)n->line;
+    UFuncState *fs = e->current_fs;
 
-    /* Evaluate tag_expr to get a register (will be nil at M3). */
-    uint8_t tag_reg = emit_expr(e, n->u.tag_prefix.tag_expr);
-    if (e->error != EMIT_OK) return 0U;
+    /* Pre-reserve the global object slot before declaring the hidden tag
+     * local — same rationale as emit_for_each_arm / emit_switch_arm (see
+     * uemit_reserve_global_slot). */
+    if (fs->parent == NULL && !uemit_reserve_global_slot(e)) return 0U;
 
-    /* tag_reg must fit in 4 bits for OP_PUSH_TAG encoding.
-     *
-     * EMIT-015 fix (Wave 5, v0.5.7): pre-fix the spill branch allocated
-     * spill = next_reg++ without verifying spill fit in 4 bits — if
-     * next_reg was already >= 16 (e.g., function with 16+ locals), the
-     * OP_PUSH_TAG packing `((flags<<4) | (reg & 0xF))` silently masked
-     * the high bits, producing bytecode that referenced the wrong
-     * register at runtime.  Now we reject explicitly; widening the
-     * encoding to a full byte is a v1.x bytecode change (filed as
-     * backlog under T129/Phase 22). */
-    if (tag_reg > 15U) {
-        if (e->next_reg > 15U) {
-            e->error = EMIT_TAG_SPILL_OUT_OF_RANGE;
-            return 0U;
-        }
-        uint8_t spill = e->next_reg++;
-        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-        if (e->current_fs->freereg < e->next_reg)
-            e->current_fs->freereg = e->next_reg;
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, spill, tag_reg, 0U),
-                   (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0U;
-        tag_reg = spill;
+    /* Open outer block scope: \x01tag lives here as a proper local, so
+     * fs_temp_floor stays above it across body temp resets. */
+    if (!uemit_open_block(e, /*is_loop=*/false)) return 0U;
+
+    const char *tag_name = ustr_intern(e->vm, "\x01tag", 4);
+    if (tag_name == NULL) { uemit_close_block(e); e->error = EMIT_OOM; return 0U; }
+    int tag_slot = uemit_declare_local(e, tag_name, 4);
+    if (tag_slot < 0) { uemit_close_block(e); return 0U; }
+
+    /* Evaluate tag_expr (will be nil at M3); MOVE the result into \x01tag. */
+    uint8_t tag_tmp = emit_expr(e, n->u.tag_prefix.tag_expr);
+    if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+    if (tag_tmp != (uint8_t)tag_slot) {
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)tag_slot, tag_tmp, 0U),
+                   line);
+        if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
     }
+    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->next_reg = e->current_fs->freereg;
+
+    /* 4-bit nibble check (EMIT-015, see header comment). */
+    if (tag_slot > 15) {
+        uemit_close_block(e);
+        e->error = EMIT_TAG_SPILL_OUT_OF_RANGE;
+        return 0U;
+    }
+    uint8_t tag_reg = (uint8_t)tag_slot;
 
     /* Emit OP_PUSH_TAG with placeholder onleave_pc (will be patched). */
     uint8_t flags_m3 = 0U;  /* no FLAG_HAS_ONLEAVE at M3 */
     int push_tag_pc = (int)emit_instr_count(e);
-    uemit_push_tag(e, tag_reg, flags_m3, 0U /* placeholder */, (uint32_t)n->line);
-    if (e->error != EMIT_OK) return 0U;
-
-    /* Emit body. */
-    uint8_t rd = e->next_reg;
-    e->current_fs->freereg = fs_temp_floor(e->current_fs);
-    if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
-    if (!uemit_open_block(e, false)) return 0U;
-    uint8_t body_result = emit_expr(e, n->u.tag_prefix.body);
+    uemit_push_tag(e, tag_reg, flags_m3, 0U /* placeholder */, line);
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+
+    /* Body — its own block so body-declared locals pop at scope end and
+     * captured ones get an OP_CLOSE on the fall-through path.  The tag
+     * scope has NO emitted abnormal exits of its own: tag.stop() and
+     * throw unwind via the runtime walker (not emitted JMPs), so only
+     * this normal close matters at emit level; break/continue against an
+     * enclosing loop are covered by that loop's exit-path closes via
+     * has_captured propagation (uemit_close_block). */
+    if (!uemit_open_block(e, false)) { uemit_close_block(e); return 0U; }
+    uint8_t body_result = emit_expr(e, n->u.tag_prefix.body);
+    if (e->error != EMIT_OK) {
+        uemit_close_block(e);
+        uemit_close_block(e);
+        return 0U;
+    }
     (void)body_result;
-    if (!uemit_close_block(e)) return 0U;
+    if (!uemit_close_block(e)) { uemit_close_block(e); return 0U; }
+    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->next_reg = e->current_fs->freereg;
 
     /* Emit OP_POP_TAG. */
-    uemit_pop_tag(e, tag_reg, (uint32_t)n->line);
-    if (e->error != EMIT_OK) return 0U;
+    uemit_pop_tag(e, tag_reg, line);
+    if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
 
     /* Emit OP_JMP past the (empty) onleave handler block. */
     int jmp_past_handler_pc = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
-    if (e->error != EMIT_OK) return 0U;
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
+    if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
 
     /* Onleave handler block starts here.
      * At M3, onleave is always NULL — emit nothing; just record the PC. */
@@ -605,13 +637,22 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
                                             past_handler_target)));
     }
 
-    /* Return a nil register as the tag-prefix's value. */
-    e->next_reg = rd;
+    /* Close outer block (removes \x01tag from scope).  If the body block
+     * propagated has_captured up here (uemit_close_block), this emits an
+     * OP_CLOSE at \x01tag's slot AFTER the past-handler PC — a no-op on
+     * the normal path (the body block already closed its cells) but live
+     * on the tag.stop() walker-resume path, which lands at the handler PC
+     * past the body block's inline close. */
+    if (!uemit_close_block(e)) return 0U;
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
-    if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
-    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
-    e->next_reg = rd + 1U;
+    e->next_reg = e->current_fs->freereg;
+
+    /* Return a nil register as the tag-prefix's value. */
+    uint8_t rd = e->next_reg;
+    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), line);
+    e->next_reg++;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-    e->current_fs->freereg = e->next_reg;
+    if (e->current_fs->freereg < e->next_reg)
+        e->current_fs->freereg = e->next_reg;
     return rd;
 }

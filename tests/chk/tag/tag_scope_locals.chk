@@ -1,0 +1,51 @@
+# Milestone: v0.13.1
+# Covers: tag-scope body locals must survive temp resets and close correctly
+#         (found during v0.13.1 review, FE-02 follow-on — same bug family as
+#         the switch case-body fix).  emit_tag_prefix_arm held the evaluated
+#         tag expression in a raw temp register (tag_reg) for the whole
+#         tagged-scope body, below any body-declared `var`s, but
+#         fs_temp_floor is COUNT-based (nactvar + global_slot_reserved) and
+#         assumes locals occupy a contiguous register range from the floor.
+#         A body local was allocated ABOVE the held tag_reg, so the floor
+#         landed BELOW the local's actual slot and every later temp reset
+#         let temps clobber it (plain reads returned sibling values;
+#         closures over body locals read recycled registers).
+#         Fix: the tag value is a declared hidden local (\x01tag, the
+#         for-each/switch machinery pattern) in an outer block, restoring
+#         the count-to-slot bijection; the body keeps its own block so its
+#         locals pop at scope end.  OP_PUSH_TAG's 4-bit A[3:0] nibble means
+#         the hidden local's slot must stay <= 15 — functions with 16+
+#         counted locals at the tag prefix still reject with
+#         EMIT_TAG_SPILL_OUT_OF_RANGE (EMIT-015; encoding widening stays a
+#         v1.x bytecode change).
+# matrix-row: tag-scope-binding
+#
+# Pre-fix behavior (verified empirically 2026-06-10):
+#   scenario 1 printed 6 (dummy + dummy: z's register recycled by temps);
+#   scenario 2 printed <?> (closure read a clobbered register);
+#   scenario 3 printed 8 (z clobbered by d in both iterations: 4 + 4);
+#   scenario 4 threw "TypeError: OP_ADD operands must be Integer or Float"
+#     (inner scope's held tag temp aliased x; x read back as a Tag);
+#   scenario 5 printed 7 (z clobbered by d: 3 + 3, then + 1 after resume).
+
+# --- plain var arithmetic in a tagged-scope body
+var mytag = Tag.new("t"); var tA = function() { var r = 0; mytag: { var z = 9; var dummy = 1 + 2; r = z + dummy }; return r }; tA()
+[00000000] 12
+
+# --- closure capturing a tagged-scope body local, read after the scope
+var tg = Tag.new("g"); var tB = function() { var g = nil; tg: { var z = 42; g = function() { return z } }; var pad = 99; return g() }; tB()
+[00000001] 42
+
+# --- tag scope inside a while, break after the scope (cross-construct)
+var tw = Tag.new("w"); var tC = function() { var acc = 0; var i = 0; while (i < 3) { i = i + 1; tw: { var z = 5; var d = 1 + 1; acc = acc + z + d }; if (i == 2) { break } }; return acc }; tC()
+[00000002] 14
+
+# --- nested tag scopes, each with body locals
+var ta = Tag.new("a"); var tb = Tag.new("b"); var tD = function() { var r = 0; ta: { var x = 1; tb: { var y = 2; var d = 3 + 4; r = x + y + d } }; return r }; tD()
+[00000003] 10
+
+# --- t.stop() inside the scope with body locals: stop truncates the body
+#     (r = 99 never runs), execution resumes AFTER the scope, and the
+#     locals computed before the stop kept their values
+var ts = Tag.new("s"); var tE = function() { var r = 0; ts: { var z = 10; var d = 1 + 2; r = z + d; ts.stop(); r = 99 }; return r + 1 }; tE()
+[00000004] 14
