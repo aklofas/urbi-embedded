@@ -1545,6 +1545,16 @@ uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
         if (n_exit_jmps < 64) {
             exit_jmps[n_exit_jmps] = (int)emit_instr_count(e);
             n_exit_jmps++;
+        } else {
+            /* refactor-3 FE-06: a 65th exit JMP would keep its placeholder
+             * offset and fall into the next case's dispatch.  Latch and
+             * unwind: the per-case block is already closed here; the loop
+             * ctx and the outer \x01sw block are still pending (same
+             * cleanup shape as the case-value emit_expr failure above). */
+            e->error = EMIT_PATCH_LIST_FULL;
+            uemit_loop_pop(e);
+            uemit_close_block(e);
+            return 0U;
         }
         emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
 

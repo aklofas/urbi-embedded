@@ -66,9 +66,15 @@ typedef enum {
                                        T129/Phase 22). */
 
     /* v0.6.2 Phase 2 — Gap #3 (this keyword) */
-    EMIT_NO_THIS_OUTSIDE_METHOD     /* `this` used at top-level (fs->parent ==
+    EMIT_NO_THIS_OUTSIDE_METHOD,    /* `this` used at top-level (fs->parent ==
                                        NULL).  Top-level `this` resolves to the
                                        lobby object — deferred to v1.x. */
+
+    /* v0.13.1 refactor-3 FE-06 */
+    EMIT_PATCH_LIST_FULL            /* > UEMIT_LOOP_PATCH_MAX break/continue
+                                       sites in one loop, or > 64 cases' exit
+                                       JMPs in one switch — latched instead of
+                                       silently dropping the jump. */
 } UEmitError;
 
 /* Forward declaration for M2 FuncState lifecycle. */
@@ -90,11 +96,11 @@ struct UFuncState;
  *               opens a loop-context too (to allow `break`), it shares the
  *               same infrastructure.
  *
- * Maximum break/continue sites per loop nesting level: 64.  Any excess
- * silently saturates (the PC list fills; excess sites retain the placeholder
- * JMP offset until the loop emitter patches them — safe, just wrong on
- * overflow).  64 is far beyond any realistic loop body; a full-program limit
- * would require dynamic allocation which we avoid for freestanding targets.
+ * Maximum break/continue sites per loop nesting level: UEMIT_LOOP_PATCH_MAX
+ * (16).  Overflow latches EMIT_PATCH_LIST_FULL (refactor-3 FE-06) — the
+ * excess site's placeholder JMP would otherwise never be patched and
+ * silently no-op.  A larger / dynamic limit would require allocation,
+ * which we avoid for freestanding targets.
  *
  * loop_depth tracks nesting so emit_break_arm / emit_continue_arm always
  * target the INNERMOST enclosing loop (top of loop_stack[]). */

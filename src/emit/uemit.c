@@ -625,6 +625,7 @@ const char *uemit_error_name(UEmitError code) {
     case EMIT_TOO_MANY_ARGS:               return "EMIT_TOO_MANY_ARGS";
     case EMIT_TAG_SPILL_OUT_OF_RANGE:      return "EMIT_TAG_SPILL_OUT_OF_RANGE";
     case EMIT_NO_THIS_OUTSIDE_METHOD:      return "EMIT_NO_THIS_OUTSIDE_METHOD";
+    case EMIT_PATCH_LIST_FULL:             return "EMIT_PATCH_LIST_FULL";
     }
     return "EMIT_UNKNOWN";
 }

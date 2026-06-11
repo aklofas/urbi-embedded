@@ -282,8 +282,13 @@ static inline void uemit_loop_pop(UEmitter *e) {
 static inline void uemit_loop_record_break(UEmitter *e, int pc) {
     if (e->loop_depth == 0) return;
     ULoopCtx *ctx = &e->loop_stack[e->loop_depth - 1];
-    if (ctx->break_count < UEMIT_LOOP_PATCH_MAX)
+    if (ctx->break_count < UEMIT_LOOP_PATCH_MAX) {
         ctx->break_pcs[ctx->break_count++] = pc;
+    } else {
+        e->error = EMIT_PATCH_LIST_FULL;  /* refactor-3 FE-06: the excess
+                                             site's placeholder JMP would
+                                             never be patched — silent no-op */
+    }
 }
 
 static inline void uemit_loop_record_continue(UEmitter *e, int pc) {
@@ -295,8 +300,11 @@ static inline void uemit_loop_record_continue(UEmitter *e, int pc) {
     for (d = e->loop_depth; d > 0; d--) {
         ULoopCtx *ctx = &e->loop_stack[d - 1];
         if (ctx->kind == ULOOP_FRAME_LOOP) {
-            if (ctx->continue_count < UEMIT_LOOP_PATCH_MAX)
+            if (ctx->continue_count < UEMIT_LOOP_PATCH_MAX) {
                 ctx->continue_pcs[ctx->continue_count++] = pc;
+            } else {
+                e->error = EMIT_PATCH_LIST_FULL;  /* refactor-3 FE-06 */
+            }
             return;
         }
     }
