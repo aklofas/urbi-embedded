@@ -1203,6 +1203,13 @@ int      urbi_vm_run    (struct UVM *vm, struct URealm *realm,
  * surface).  Existing GC-tracked objects continue to operate; collection
  * still runs (sweep / mark slices do not allocate).
  *
+ * Scope (v1.0, GC cells ONLY): the latch gates urbi_gc_alloc.  Non-GC
+ * allocations through the embedder's alloc_fn are NOT gated and continue
+ * after lock: strand register stacks, container backing buffers
+ * (List/Dict/Tuple growth), string-intern table entries and rehash, REPL
+ * buffers.  A hard-RT embedder needing a total allocation freeze must
+ * also size those pools up front; see docs/embedding-guide.md.
+ *
  * Intended use: v2.0 hard-RT mode where post-init allocation is
  * forbidden by policy.  The API surface lands at v1.0; the policy
  * enforcement is opt-in — embedders that want allocation throughout
