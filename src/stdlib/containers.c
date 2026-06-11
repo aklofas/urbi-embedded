@@ -197,6 +197,14 @@ urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
  * sound because the GC-02 full root re-scan runs at the START of the next
  * ATOMIC_FINISH slice, after the store, and re-discovers the element.
  *
+ * Task 9b note: container backing stores are walked as ROOTS every cycle
+ * (urbi_stdlib_containers_walk_roots), and the GC-02 ATOMIC_FINISH re-scan
+ * re-runs every provider — so a mid-mark store into any reachable
+ * container is re-discovered before SWEEP even without this shade.  This
+ * barrier is therefore PACING-only (do the shade at store time instead of
+ * piling the work into the atomic phase), unlike the slot/upvalue
+ * barriers, which are load-bearing for soundness.
+ *
  * Usage contract: call immediately before the store; no allocation may
  * intervene between barrier and store. */
 static void

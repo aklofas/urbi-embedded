@@ -233,7 +233,12 @@ uvalue_as_cell(UValue v)
 /* === uvalue_is_heap_white ===
  *
  * Two-step check: (a) UValue tag indicates heap-bearing kind (via uvalue_is_heap);
- * (b) cell color matches current_white.  When (a) fails, (b) short-circuits.
+ * (b) cell color is white — EITHER white, IS_WHITE semantics (Task 9b /
+ * refactor-3 GC-07: current_white flips at cycle START, so the cells the
+ * sweep frees are the OTHER_WHITE pre-cycle ones; the previous
+ * current_white-only test matched mid-cycle newborns exclusively — which
+ * survive the sweep regardless — making every barrier site a no-op for
+ * exactly the at-risk values).  When (a) fails, (b) short-circuits.
  *
  * Declared here as a non-inline extern so that the barrier static-inline bodies
  * above can call it using only the forward-declared struct UVM *.

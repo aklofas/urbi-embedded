@@ -1119,6 +1119,124 @@ UTEST(matrix_upvalue_close_fires_barrier)
     urbi_vm_destroy(&vm);
 }
 
+/* === Slot-store barrier OTHER_WHITE case (Task 9b / refactor-3 GC-07) ===
+ *
+ * The Dijkstra barrier predicate (uvalue_is_heap_white) tested
+ * `color == current_white` only.  current_white flips at cycle START, so
+ * mid-cycle the cells actually at risk of the sweep (IS_DEAD checks
+ * OTHER_WHITE — i.e. everything allocated before the cycle and not yet
+ * marked) read as "not white" and NO barrier site ever shaded them; the
+ * sites only shaded mid-cycle newborns, which survive the sweep
+ * regardless.  This case drives the canonical lost-object store through
+ * urbi_gc_slot_store (the slot in-place-update path): BLACK parent object,
+ * OTHER_WHITE child whose only other reference is a C local.
+ *
+ * Construction mirrors matrix_upvalue_close_fires_barrier: parker in
+ * stack[0] pins the cycle in MARK_INCREMENTAL; holder P in stack[1] with
+ * slot "x" pre-installed as nil (the mid-cycle store is then a pure
+ * in-place update — no shape transition, no allocation); sentinel C2 born
+ * pre-cycle, held only in a C local.  Drain until P is BLACK, store C2
+ * into P.x via urbi_object_set_local_slot (Case 1 → urbi_gc_slot_store),
+ * finish the cycle.  P is black and never re-traced; the ATOMIC_FINISH
+ * re-scan covers ROOTS only (stack[1] holds the already-black P, which
+ * mark_root_callback's idempotency check skips) — so the barrier is the
+ * only thing standing between C2 and the sweep.  Red pre-fix, green once
+ * the predicate covers both whites. */
+
+UTEST(matrix_slot_store_barrier_shades_other_white)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    /* Intern the slot symbol up front (interning may allocate). */
+    USymbol *sym = (USymbol *)ustr_intern(&vm, "x", 1);
+    UASSERT(sym != NULL);
+
+    /* Parker: first-shaded root → traced last (see upvalue-close case). */
+    UCell *parker = sentinel_alloc(&vm);
+    UASSERT(parker != NULL);
+    s.stack[0] = obj_value_for(parker);
+
+    /* P: slot-capable holder rooted in stack[1]; pre-install "x" = nil. */
+    UObject *holder = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(holder != NULL);
+    s.stack[1] = obj_value_for((UCell *)(void *)holder);
+    UASSERT_EQ(0, urbi_object_set_local_slot(&vm, holder, sym,
+                                             urbi_make_nil()));
+
+    /* C2: pre-cycle birth → OTHER_WHITE once the cycle flips; only
+     * reference is this C local (invisible to every root provider). */
+    UCell *c2 = sentinel_alloc(&vm);
+    UASSERT(c2 != NULL);
+
+    /* Start the cycle: flip + MARK_ROOTS in one slice (T4 idiom). */
+    vm.gc_debt = 1;
+    urbi_gc_slice(&vm, 1U);
+    UASSERT_EQ((uint8_t)GC_PHASE_MARK_INCREMENTAL, urbi_gc_phase(&vm));
+    UASSERT(IS_WHITE(c2));
+
+    /* Drain one gray pop per slice until P is BLACK (traced with "x"
+     * still nil); the parker keeps the worklist non-empty. */
+    {
+        int spins = 0;
+        while (!IS_BLACK((UCell *)(void *)holder)
+               && urbi_gc_phase(&vm) == (uint8_t)GC_PHASE_MARK_INCREMENTAL
+               && spins < 100000) {
+            urbi_gc_slice(&vm, 1U);
+            spins++;
+        }
+        UASSERT(spins < 100000);
+    }
+    UASSERT(IS_BLACK((UCell *)(void *)holder));
+    UASSERT_EQ((uint8_t)GC_PHASE_MARK_INCREMENTAL, urbi_gc_phase(&vm));
+    UASSERT(vm.gray_work_head != NULL);   /* parker still parked */
+    UASSERT(IS_WHITE(c2));                /* still untouched by the mark */
+
+    /* Mutator: in-place store of the OTHER_WHITE sentinel into the BLACK
+     * parent's slot through the barriered path (no allocation — the slot
+     * exists, so Case 1 / urbi_gc_slot_store).  Pre-fix the predicate
+     * rejects C2 (not current_white) and no shade fires. */
+    UASSERT_EQ(0, urbi_object_set_local_slot(&vm, holder, sym,
+                                             obj_value_for(c2)));
+
+    /* Finish the cycle (capped drain). */
+    {
+        int spins = 0;
+        while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
+            urbi_gc_slice(&vm, 4096U);
+            spins++;
+            UASSERT(spins < 64);
+            if (spins >= 64) break;
+        }
+    }
+
+    /* Pre-fix: C2 swept while reachable via P.x (black parent never
+     * re-scanned, root re-scan skips black P).  Post-fix: the barrier
+     * shaded C2 gray at the store. */
+    UASSERT(cell_live(&vm, c2));
+
+    /* Teardown: drop the C2 ref + register roots; GC reclaims later. */
+    UASSERT_EQ(0, urbi_object_set_local_slot(&vm, holder, sym,
+                                             urbi_make_nil()));
+    memset(&s.stack[0], 0, sizeof s.stack[0]);
+    memset(&s.stack[1], 0, sizeof s.stack[1]);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
+/* NOTE (Task 9b): no container sibling case.  The container element
+ * barrier (container_element_pre_store, src/stdlib/containers.c) is
+ * PACING-ONLY: container backing stores are walked as ROOTS every cycle
+ * (urbi_stdlib_containers_walk_roots), and the GC-02 ATOMIC_FINISH
+ * stop-the-world re-scan re-runs every provider — so an element stored
+ * mid-cycle into any reachable container is re-discovered before SWEEP
+ * regardless of the barrier.  A lost-object red is therefore not
+ * constructible through the container path; the predicate fix still
+ * applies there for pacing (shade at store time instead of deferring the
+ * work to the atomic phase). */
+
 /* === Suite entry point === */
 
 void test_gc_rooting_matrix_suite(void)
@@ -1164,4 +1282,6 @@ void test_gc_rooting_matrix_suite(void)
               matrix_periodic_owning_tag_is_rooted);
     utest_run("matrix_upvalue_close_fires_barrier",
               matrix_upvalue_close_fires_barrier);
+    utest_run("matrix_slot_store_barrier_shades_other_white",
+              matrix_slot_store_barrier_shades_other_white);
 }

@@ -1096,14 +1096,26 @@ urbi_unpin(UVM *vm, UValue v)
  * the linker resolves the call to this TU where UVM is fully defined.
  *
  * uvalue_is_heap and uvalue_as_cell are static inline in ugc_incremental.h;
- * this function uses them directly. */
+ * this function uses them directly.
+ *
+ * Task 9b (refactor-3 GC-07): "white" means EITHER white (IS_WHITE), not
+ * `== current_white`.  current_white flips at cycle START, so mid-cycle the
+ * cells the sweep will actually free (IS_DEAD checks OTHER_WHITE — every
+ * pre-cycle cell not yet marked) carried the other white; the old
+ * current_white-only test matched mid-cycle NEWBORNS exclusively, which
+ * survive the sweep regardless — i.e. every barrier site routed through
+ * this predicate never fired for the at-risk values it exists to protect.
+ * The vm parameter is retained: the predicate is conceptually per-VM (the
+ * whites are vm state) and the signature is pinned by the forward decl in
+ * ugc_incremental.h + the api-manifest allowlist. */
 bool
 uvalue_is_heap_white(const UVM *vm, UValue v)
 {
+    (void)vm;
     if (!uvalue_is_heap(v)) return false;
     const UCell *c = uvalue_as_cell(v);
     if (c == NULL) return false;
-    return (c->gc_byte & UGC_COLOR_MASK) == vm->current_white;
+    return IS_WHITE(c);
 }
 
 #if URBI_MEM_DEBUG
