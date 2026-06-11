@@ -11,7 +11,7 @@
 #include "vm/uvm.h"
 #include "urbi/types.h"         /* URBI_OK / URBI_ERR_* — OBJ-007 distinct codes */
 #include "urbi/gc.h"            /* urbi_gc_alloc + urbi_gc_slot_store barrier */
-#include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_store + uvm_c_root_push/_pop */
+#include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_store + urbi_c_root_push/_pop */
 #include "gc/ugc.h"             /* UTYPE_SLOT_ARRAY / UTYPE_PROPS / UTYPE_PROPS_TABLE */
 #include "changed/uchanged_node.h" /* urbi_emit_slot_change_if_subscribed */
 #include "chunk/uchunk.h"
@@ -191,13 +191,13 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     obj_v.kind = (uint8_t)UVAL_OBJECT;
     for (int i = 0; i < 7; i++) obj_v._pad[i] = 0;
     obj_v.v.p = obj;
-    uvm_c_root_push(vm, &f_obj, &obj_v);
-    uvm_c_root_push(vm, &f_val, &value);
+    urbi_c_root_push(vm, &f_obj, &obj_v);
+    urbi_c_root_push(vm, &f_val, &value);
 
     int rc = set_local_slot_impl(vm, obj, name, value);
 
-    uvm_c_root_pop(vm, &f_val);
-    uvm_c_root_pop(vm, &f_obj);
+    urbi_c_root_pop(vm, &f_val);
+    urbi_c_root_pop(vm, &f_obj);
     return rc;
 }
 
@@ -380,12 +380,13 @@ install_property_impl(UVM *vm, UObject *obj, const USymbol *name,
     int new_shape_pinned = 0;
     UCell *new_pt_cell = NULL;
     if (new_shape != obj->shape) {
+        /* Genuine sibling: transition_property guarantees a non-NULL
+         * props_table (it returns NULL on OOM before handing the sibling
+         * out), so the wrapper cell always exists — pin both. */
         pin_cell((UCell *)new_shape);
-        if (new_shape->props_table != NULL) {
-            new_pt_cell = (UCell *)
-                ((char *)new_shape->props_table - offsetof(UPropsTable, entries));
-            pin_cell(new_pt_cell);
-        }
+        new_pt_cell = (UCell *)
+            ((char *)new_shape->props_table - offsetof(UPropsTable, entries));
+        pin_cell(new_pt_cell);
         new_shape_pinned = 1;
     }
 
@@ -447,7 +448,7 @@ install_property_impl(UVM *vm, UObject *obj, const USymbol *name,
     if (fresh == NULL) {
         if (new_shape_pinned) {
             unpin_cell((UCell *)new_shape);
-            if (new_pt_cell != NULL) unpin_cell(new_pt_cell);
+            unpin_cell(new_pt_cell);
         }
         if (clone != NULL) {
             unpin_cell((UCell *)clone);
@@ -485,7 +486,7 @@ install_property_impl(UVM *vm, UObject *obj, const USymbol *name,
         obj->shape = new_shape;
         if (new_shape_pinned) {
             unpin_cell((UCell *)new_shape);
-            if (new_pt_cell != NULL) unpin_cell(new_pt_cell);
+            unpin_cell(new_pt_cell);
         }
     }
 
@@ -512,13 +513,13 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
     obj_v.kind = (uint8_t)UVAL_OBJECT;
     for (int i = 0; i < 7; i++) obj_v._pad[i] = 0;
     obj_v.v.p = obj;
-    uvm_c_root_push(vm, &f_obj, &obj_v);
-    uvm_c_root_push(vm, &f_val, &value);
+    urbi_c_root_push(vm, &f_obj, &obj_v);
+    urbi_c_root_push(vm, &f_val, &value);
 
     int rc = install_property_impl(vm, obj, name, flag_bit, value);
 
-    uvm_c_root_pop(vm, &f_val);
-    uvm_c_root_pop(vm, &f_obj);
+    urbi_c_root_pop(vm, &f_val);
+    urbi_c_root_pop(vm, &f_obj);
     return rc;
 }
 
@@ -560,12 +561,13 @@ urbi_object_remove_property(UVM *vm, UObject *obj, const USymbol *name,
     int new_shape_pinned = 0;
     UCell *new_pt_cell = NULL;
     if (new_shape != obj->shape) {
+        /* Genuine sibling: transition_property guarantees a non-NULL
+         * props_table (it returns NULL on OOM before handing the sibling
+         * out), so the wrapper cell always exists — pin both. */
         pin_cell((UCell *)new_shape);
-        if (new_shape->props_table != NULL) {
-            new_pt_cell = (UCell *)
-                ((char *)new_shape->props_table - offsetof(UPropsTable, entries));
-            pin_cell(new_pt_cell);
-        }
+        new_pt_cell = (UCell *)
+            ((char *)new_shape->props_table - offsetof(UPropsTable, entries));
+        pin_cell(new_pt_cell);
         new_shape_pinned = 1;
     }
 
@@ -575,7 +577,7 @@ urbi_object_remove_property(UVM *vm, UObject *obj, const USymbol *name,
     if (fresh == NULL) {
         if (new_shape_pinned) {
             unpin_cell((UCell *)new_shape);
-            if (new_pt_cell != NULL) unpin_cell(new_pt_cell);
+            unpin_cell(new_pt_cell);
         }
         return -1;
     }
@@ -594,7 +596,7 @@ urbi_object_remove_property(UVM *vm, UObject *obj, const USymbol *name,
     } else {
         if (new_shape_pinned) {
             unpin_cell((UCell *)new_shape);
-            if (new_pt_cell != NULL) unpin_cell(new_pt_cell);
+            unpin_cell(new_pt_cell);
         }
         return -1;
     }
@@ -614,7 +616,7 @@ urbi_object_remove_property(UVM *vm, UObject *obj, const USymbol *name,
         obj->shape = new_shape;
         /* Reachable via obj->shape from here on — drop the pins. */
         unpin_cell((UCell *)new_shape);
-        if (new_pt_cell != NULL) unpin_cell(new_pt_cell);
+        unpin_cell(new_pt_cell);
     }
 
     vm->topology_gen++;
@@ -686,13 +688,13 @@ urbi_object_set_property_value(UVM *vm, UObject *obj, const USymbol *name,
     obj_v.kind = (uint8_t)UVAL_OBJECT;
     for (int i = 0; i < 7; i++) obj_v._pad[i] = 0;
     obj_v.v.p = obj;
-    uvm_c_root_push(vm, &f_obj, &obj_v);
-    uvm_c_root_push(vm, &f_val, &value);
+    urbi_c_root_push(vm, &f_obj, &obj_v);
+    urbi_c_root_push(vm, &f_val, &value);
 
     int rc = set_property_value_impl(vm, obj, name, flag_bit, value);
 
-    uvm_c_root_pop(vm, &f_val);
-    uvm_c_root_pop(vm, &f_obj);
+    urbi_c_root_pop(vm, &f_val);
+    urbi_c_root_pop(vm, &f_obj);
     return rc;
 }
 

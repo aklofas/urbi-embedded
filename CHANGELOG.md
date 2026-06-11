@@ -7,9 +7,11 @@ losing live objects.  Closes the refactor-3 deep-audit blockers B2/B5 plus
 the GC findings below, and ships the collect-before-alloc stress machinery
 that then found a further layer of pre-existing rooting and barrier bugs.
 No new opcode, wire format unchanged (v1.9 / 0x19).  ABI 0/23/2 -> 0/23/3
-(PATCH; zero public C API symbol changes — not an escape; one Tier-4
-internal accessor `urbi_intern_bytes` and one Tier-4 root-provider symbol
-`urbi_stdlib_containers_walk_roots` are documented in the manifest).
+(PATCH; zero public C API symbol changes — not an escape; the tag's new
+internal cross-TU symbols — the `urbi_intern_bytes` accessor, the
+`urbi_stdlib_containers_walk_roots` root provider, and the
+`urbi_c_root_push`/`urbi_c_root_pop` C-stack root chain — are Tier-4 and
+documented in the manifest).
 
 - Container element roots (B2 / GC-01 + STD-01): List/Dict backing stores
   are walked by a dedicated root provider and element insertion fires the

@@ -468,7 +468,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * live across further allocations — and that may run WITHOUT a current
      * strand (realm bootstrap, host API, native helpers reached from both
      * paths) — pushes stack-allocated UCRootFrame entries here via
-     * uvm_c_root_push / uvm_c_root_pop (gc/ugc_incremental.h).  Walked by
+     * urbi_c_root_push / urbi_c_root_pop (gc/ugc_incremental.h).  Walked by
      * vm_misc_walk_roots.  Strict LIFO; same discipline as the strand
      * chain. */
     struct UCRootFrame *c_roots_head;

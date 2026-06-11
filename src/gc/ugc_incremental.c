@@ -57,7 +57,7 @@
 #include "runtime/umacros.h"
 #include "gc/ugc.h"
 #include "runtime/umemdebug.h"
-#include "sched/ustrand.h"   /* UCRootFrame (uvm_c_root_push/_pop, v0.13.2);
+#include "sched/ustrand.h"   /* UCRootFrame (urbi_c_root_push/_pop, v0.13.2);
                               * under URBI_MEM_DEBUG also the full UStrand def
                               * (owner capture reads cur_strand->pc) */
 #if URBI_MEM_DEBUG
@@ -812,14 +812,14 @@ gc_shade_gray(UVM *vm, UCell *cell)
     gc_set_gray_head(vm, node);
 }
 
-/* === uvm_c_root_push / uvm_c_root_pop ===
+/* === urbi_c_root_push / urbi_c_root_pop ===
  *
  * VM-level C-stack root chain (v0.13.2; see the declaration comment in
  * ugc_incremental.h and the vm->c_roots_head field comment in uvm.h).
  * Out-of-line (not static inline) because no single header sees both the
  * complete UVM and UCRootFrame definitions without an include cycle. */
 void
-uvm_c_root_push(struct UVM *vm, struct UCRootFrame *f, UValue *slot)
+urbi_c_root_push(struct UVM *vm, struct UCRootFrame *f, UValue *slot)
 {
     URBI_INTERNAL_ASSERT(slot != NULL);
     URBI_INTERNAL_ASSERT(vm->c_roots_head != f);   /* double-push cycle guard */
@@ -829,7 +829,7 @@ uvm_c_root_push(struct UVM *vm, struct UCRootFrame *f, UValue *slot)
 }
 
 void
-uvm_c_root_pop(struct UVM *vm, struct UCRootFrame *f)
+urbi_c_root_pop(struct UVM *vm, struct UCRootFrame *f)
 {
     URBI_INTERNAL_ASSERT(vm->c_roots_head == f);
     vm->c_roots_head = f->next;

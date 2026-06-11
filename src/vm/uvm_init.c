@@ -99,7 +99,7 @@ uint64_t urbi_default_host_time_us(void *ud) {
  *
  * v0.13.2: also walks vm->c_roots_head — the VM-level C-stack root frame
  * chain (strandless counterpart of UStrand.c_roots_head; see uvm.h field
- * comment and uvm_c_root_push in gc/ugc_incremental.c). */
+ * comment and urbi_c_root_push in gc/ugc_incremental.c). */
 static void
 vm_misc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {

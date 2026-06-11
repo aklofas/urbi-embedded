@@ -226,14 +226,14 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
     UValue list_v = urbi_make_nil();
     list_v.kind = (uint8_t)UVAL_OBJECT;
     list_v.v.p = list;
-    uvm_c_root_push(vm, &f_list, &list_v);
+    urbi_c_root_push(vm, &f_list, &list_v);
 
     /* Install size = count(recv->protos). */
     UValue n = urbi_make_nil();
     n.kind = (uint8_t)UVAL_INT;
     n.v.i = (int64_t)urbi_object_proto_count(recv);
     if (urbi_object_set_local_slot(vm, list, sym_size, n) != 0) {
-        uvm_c_root_pop(vm, &f_list);
+        urbi_c_root_pop(vm, &f_list);
         return NULL;
     }
 
@@ -247,7 +247,7 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
      * its proto chain in place via urbi_object_set_protos. */
     owner.v.p = recv;
     if (urbi_object_set_local_slot(vm, list, sym_owner, owner) != 0) {
-        uvm_c_root_pop(vm, &f_list);
+        urbi_c_root_pop(vm, &f_list);
         return NULL;
     }
 
@@ -258,18 +258,18 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
      * installs insertFront once on the List atom proto. */
     UClosure *cl = urbi_native_closure_create(vm, obj_protos_insertFront);
     if (cl == NULL) {
-        uvm_c_root_pop(vm, &f_list);
+        urbi_c_root_pop(vm, &f_list);
         return NULL;
     }
     UValue clv = urbi_make_nil();
     clv.kind = (uint8_t)UVAL_CLOSURE;
     clv.v.p = cl;
     if (urbi_object_set_local_slot(vm, list, sym_iF, clv) != 0) {
-        uvm_c_root_pop(vm, &f_list);
+        urbi_c_root_pop(vm, &f_list);
         return NULL;
     }
 
-    uvm_c_root_pop(vm, &f_list);
+    urbi_c_root_pop(vm, &f_list);
     return list;
 }
 

@@ -36,7 +36,7 @@
 #include "runtime/uclosure.h"
 #include "value/uintern.h"
 #include "sched/ustrand.h"
-#include "gc/ugc_incremental.h"  /* uvm_c_root_push/_pop (v0.13.2 native out-slot rooting) */
+#include "gc/ugc_incremental.h"  /* urbi_c_root_push/_pop (v0.13.2 native out-slot rooting) */
 #include "runtime/umacros.h"     /* urbi_zero */
 #include "watcher/uwatcher.h"   /* urbi_run_closure_on_scratch[_with_payload] */
 
@@ -182,7 +182,7 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
     uint32_t idx    = 0U;
     int rc = urbi_object_resolve_slot(vm, recv_obj, op_name, &holder, &idx);
     if (rc == 0) {
-        USymbol *fb = (USymbol *)ustr_intern(vm, "fallback", 8);
+        const USymbol *fb = (const USymbol *)ustr_intern(vm, "fallback", 8);
         if (op_name == fb) {
             return NULL;   /* don't recurse fallback-on-fallback */
         }
@@ -266,9 +266,9 @@ vm_arith_method_fallback(UVM *vm,
          * copy's referent stays alive through them. */
         UCRootFrame f_res;
         UValue arg = *rhs;
-        uvm_c_root_push(vm, &f_res, &result);
+        urbi_c_root_push(vm, &f_res, &result);
         int nrc = cl->native_fn(vm, *lhs, &arg, 1, &result);
-        uvm_c_root_pop(vm, &f_res);
+        urbi_c_root_pop(vm, &f_res);
         if (nrc != 0) {
             return VM_OP_OVERLOAD_MISS;
         }
@@ -330,9 +330,9 @@ vm_arith_method_fallback_unary(UVM *vm,
         /* GC soundness (v0.13.2 T14 follow-up): same out-slot rooting as
          * the binary arms above. */
         UCRootFrame f_res;
-        uvm_c_root_push(vm, &f_res, &result);
+        urbi_c_root_push(vm, &f_res, &result);
         int nrc = cl->native_fn(vm, *operand, NULL, 0, &result);
-        uvm_c_root_pop(vm, &f_res);
+        urbi_c_root_pop(vm, &f_res);
         if (nrc != 0) {
             return VM_OP_OVERLOAD_MISS;
         }
@@ -402,9 +402,9 @@ vm_cmp_method_fallback(UVM *vm,
          * copy's referent stays alive through them. */
         UCRootFrame f_res;
         UValue arg = *rhs;
-        uvm_c_root_push(vm, &f_res, &result);
+        urbi_c_root_push(vm, &f_res, &result);
         int nrc = cl->native_fn(vm, *lhs, &arg, 1, &result);
-        uvm_c_root_pop(vm, &f_res);
+        urbi_c_root_pop(vm, &f_res);
         if (nrc != 0) {
             return VM_OP_OVERLOAD_MISS;
         }

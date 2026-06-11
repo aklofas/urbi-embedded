@@ -288,6 +288,9 @@ CI gate tracks this list to prevent silent growth.
 - `urbi_gc_bytes_allocated`, `urbi_gc_collect`, `urbi_gc_live_bytes`,
   `urbi_gc_pause`, `urbi_gc_phase`, `urbi_gc_threshold`,
   `urbi_gc_walk_all_cells`
+- `urbi_c_root_push`, `urbi_c_root_pop` — VM-level C-stack root chain
+  (refactor-3 VM-06a): runtime C code pins a UValue slot across allocating
+  calls; frames live on the C stack and chain through the current strand.
 
 ### Chunk instance internals
 

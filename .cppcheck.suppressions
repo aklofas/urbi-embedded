@@ -50,7 +50,7 @@ unusedLabelConfiguration:src/vm/uvm.c
 // Verified 2026-05-08 against src/vm/uvm.h:128 (uint64_t lookup_id field).
 knownConditionTrueFalse:src/object/uobject_lookup.c:86
 knownConditionTrueFalse:src/object/uobject_lookup.c:124
-knownConditionTrueFalse:src/object/uobject_slot.c:553
+knownConditionTrueFalse:src/object/uobject_slot.c:728
 
 // audit:CPPCHK-011 (Phase 19) — pattern_matches() is an M3 catch-everything
 // stub that always returns 1 (src/runtime/uunwind.c:65 docstring); cppcheck
