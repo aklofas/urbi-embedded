@@ -37,17 +37,19 @@
  *
  * Reachability:
  *   The UChunkInstance walker shades the UProtoInstanceArr.  The arr
- *   walker is a no-op at T16 because every UIC entry is zero-initialised
- *   (recv_shapes / slots / uprops all NULL); IC fill lands at T22+, at
- *   which point that walker grows to shade each UIC.recv_shapes[e],
- *   slots[e], and uprops[e].
+ *   walker is a deliberate no-op (walk_noop, OBJ-028): every UIC entry's
+ *   children (recv_shapes[e], slots[e], uprops[e]) are reachable through
+ *   stronger paths — see the type_uproto_instance banner in
+ *   src/object/utypes_init.c.  recv_protos[e] (T8b) is exempt outright:
+ *   an opaque identity key word, compared but never dereferenced, so it
+ *   needs no shading.
  *
  * Lifecycle:
  *   urbi_chunk_instance_create allocates both cells and zero-fills every
- *   IC entry (recv_shapes=NULL, topology_gen=0, slots=NULL, uprops=NULL,
- *   flags=0, n=0, replace_cursor=0).  topology_gen=0 is the unfilled
- *   sentinel per pre-M4 topology-generation spec §3.1 (vm->topology_gen
- *   init=1 — no live shape ever has gen 0).
+ *   IC entry (recv_shapes=NULL, recv_protos=0, topology_gen=0, slots=NULL,
+ *   uprops=NULL, flags=0, n=0, replace_cursor=0).  topology_gen=0 is the
+ *   unfilled sentinel per pre-M4 topology-generation spec §3.1
+ *   (vm->topology_gen init=1 — no live shape ever has gen 0).
  *
  *   urbi_chunk_instance_destroy is a no-op; both cells are GC-managed
  *   and reaped by sweep when no roots reach the UChunkInstance. */

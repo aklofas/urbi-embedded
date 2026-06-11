@@ -99,7 +99,7 @@ vm_resolve_ic(UVM *vm,
         if (ic->recv_protos[k]  != recv->protos)  continue;
         if (ic->topology_gen[k] != vm->topology_gen) continue;
 
-        /* IC fast-path hit (shape guard matched). */
+        /* IC fast-path hit (shape + protos + topology-gen guards matched). */
         URBI_PERF_INC(vm, ic_hit);
         if (!writing) {
             /* Get path. */

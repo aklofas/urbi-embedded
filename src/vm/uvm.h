@@ -127,10 +127,11 @@ typedef struct UDeferredSlotChange {
  * same pc_offset skip the proto-chain walk.
  *
  * Sizing: URBI_OP_OVERLOAD_IC_SITES × URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE.
- * Defaults: 64 sites × 4 entries = 256 IC slots.  Embedded footprint preset
+ * Defaults: 32 sites × 4 entries = 128 IC slots.  Embedded footprint preset
  * may halve these; they are independently tunable compile-time constants.
- * Allocated inline in the UVM struct (not heap-allocated) so the IC is always
- * available after urbi_vm_init without a separate alloc. */
+ * Heap-allocated at urbi_vm_init and freed at urbi_vm_destroy — UVM holds
+ * only the UOpOverloadIC pointer (see the note below the struct); a NULL
+ * pointer (OOM at init) just disables the cache. */
 #ifndef URBI_OP_OVERLOAD_IC_SITES
 #define URBI_OP_OVERLOAD_IC_SITES          32U
 #endif
@@ -144,13 +145,13 @@ typedef struct UDeferredSlotChange {
  * path re-resolves via the LIVE receiver's slots[] instead of a cached
  * holder pointer — a different same-shape instance (or a swept fill-time
  * instance) would otherwise serve the wrong object's slot. */
-#define UOPIC_FLAG_LOCAL 0x01U
+#define URBI_OPIC_FLAG_LOCAL 0x01U
 
 typedef struct UOpOverloadICEntry {
     uint32_t         pc_offset;    /* call-site identifier (offset from proto base) */
     uint16_t         slot_idx;     /* index into the slot array of holder (or of
-                                      the live receiver when UOPIC_FLAG_LOCAL) */
-    uint8_t          flags;        /* UOPIC_FLAG_LOCAL */
+                                      the live receiver when URBI_OPIC_FLAG_LOCAL) */
+    uint8_t          flags;        /* URBI_OPIC_FLAG_LOCAL */
     uint8_t          pad0;
     uint64_t         topology_gen; /* vm->topology_gen at fill time; stale on mismatch */
     struct USymbol  *op_name;      /* interned operator-name symbol */
@@ -173,7 +174,7 @@ typedef struct UOpOverloadICEntry {
                                       proto list imply identical resolution (slot
                                       UIC semantics). */
     struct UObject  *holder;       /* proto-chain object owning the operator slot;
-                                      NULL when UOPIC_FLAG_LOCAL
+                                      NULL when URBI_OPIC_FLAG_LOCAL
                                       (refactor-3 GC-06: cache WHERE, not WHAT —
                                       the hit path re-reads holder->slots[slot_idx],
                                       so in-place overwrites and GC replacement of
@@ -183,7 +184,15 @@ typedef struct UOpOverloadICEntry {
                                       proto-chain holders are realm-rooted for the
                                       life of the type — deliberate, see design-risks. */
     struct UShape   *holder_shape; /* holder->shape at fill; staleness key;
-                                      NULL when UOPIC_FLAG_LOCAL */
+                                      NULL when URBI_OPIC_FLAG_LOCAL.
+                                      Asymmetry vs the slot UIC: the slot UIC
+                                      caches an absolute USlot* for proto-chain
+                                      hits and needs no holder-shape key, while
+                                      this IC re-reads holder->slots[slot_idx]
+                                      on every hit — the shape match here IS
+                                      the bounds-validity argument for slot_idx
+                                      (any slot add/remove transitions the
+                                      holder to a different UShape). */
 } UOpOverloadICEntry;
 
 typedef struct UOpOverloadIC {

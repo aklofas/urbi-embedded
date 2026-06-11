@@ -85,7 +85,7 @@ ic_lookup(UVM *vm, const UObject *recv_obj,
              * fill time, and any slot add/remove transitions the owner to
              * a different UShape.  Slot no longer a closure → slow path. */
             UValue v;
-            if ((e->flags & UOPIC_FLAG_LOCAL) != 0U) {
+            if ((e->flags & URBI_OPIC_FLAG_LOCAL) != 0U) {
                 /* OBJ-IC-POLY mirror: a local slot is receiver-specific —
                  * re-resolve via the LIVE receiver (recv_shape matched, so
                  * slot_idx is valid for recv_obj->slots[]); the fill-time
@@ -110,7 +110,7 @@ ic_lookup(UVM *vm, const UObject *recv_obj,
 /* Fill one IC entry at the round-robin cursor for (recv_obj, pc_offset,
  * op_name) with the slot LOCATION the slow path resolved — not the
  * closure value (refactor-3 GC-06).  A slot local to the receiver
- * (holder == recv_obj) is stored as UOPIC_FLAG_LOCAL + slot_idx only;
+ * (holder == recv_obj) is stored as URBI_OPIC_FLAG_LOCAL + slot_idx only;
  * the hit path re-resolves through the live receiver (OBJ-IC-POLY
  * mirror) so no per-instance pointer is retained.
  *
@@ -134,7 +134,7 @@ ic_fill(UVM *vm, const UObject *recv_obj, uint32_t pc_off,
     e->recv_shape   = recv_obj->shape;
     e->recv_protos  = recv_obj->protos;
     if (holder == recv_obj) {
-        e->flags        = UOPIC_FLAG_LOCAL;
+        e->flags        = URBI_OPIC_FLAG_LOCAL;
         e->holder       = NULL;
         e->holder_shape = NULL;
     } else {
