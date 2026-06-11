@@ -2,12 +2,12 @@
 /* Watcher table GC root walker.
  * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
- * Per spec §6.6: walks vm->active_watchers_head + vm->pending_onleave_head
- * yielding closure + last_value_cache UValues to the GC mark callback.
+ * Per spec §6.6 as amended by refactor-3 GC-05: walks the whole watcher
+ * POOL SLAB (every in-use slot), yielding closure + last_value_cache
+ * UValues to the GC mark callback and shading owning_tag + event cells
+ * directly.
  *
- * v1.x deferrals:
- *  - owning_tag callback: UTag is host-managed via vm->alloc_fn (not GC-managed);
- *    UVAL_TAG kind not yet promoted.
+ * v1.x deferral:
  *  - read_set cells[] callback: cells[] wrapping into UValue requires the
  *    concrete cell types to embed UCell (UClosure/UNamespace/UString do
  *    today; promotion to GC-yielded roots tracked in v1.x backlog). */
@@ -15,7 +15,9 @@
 #include "uwatcher.h"
 #include "vm/uvm.h"
 #include "gc/ugc.h"
+#include "gc/ugc_incremental.h"   /* gc_shade_gray (owning_tag + event roots) */
 #include <stddef.h>
+#include <stdint.h>
 #ifdef URBI_DEBUG
 #include "sched/ustrand.h"
 #include "realm/urealm.h"
@@ -29,14 +31,38 @@ watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
      * which itself ISR-asserts at its entry points.  (See sched_walk_roots
      * for precedent — also no per-walker ISR assert.) */
 
-    /* Note (spec #1 §7.1): body_strand and realm are NOT yielded here.
-     * Body strands are reached via realm->strands_head (sched walker yields
-     * each strand's frame window).  Realms are host-allocated, not GC-managed
-     * at v1.0. */
-
-    /* Active watchers */
-    for (struct UWatcher *w = vm->active_watchers_head; w != NULL; w = w->next_active) {
+    /* refactor-3 GC-05: POOL-WIDE walk.  Rooting is a property of "slot is
+     * in use" (URBI_WATCHER_ACTIVE — set by uwatcher_pool_alloc, cleared
+     * only by pool_free), NOT of list topology.  This subsumes the old
+     * active-list + pending-onleave walks and — critically — covers
+     * AT_EVENT/WHENEVER_EVENT watchers whose owning event has itself
+     * become unreachable (previously their closures were rooted only via
+     * walk_uevent, i.e. only while the event was independently alive).
+     * Legacy semantics restored: an event is immortal while subscribed
+     * (w->event shaded below).  PENDING_UNREGISTER slots keep ACTIVE set
+     * until pool_free, so drained-but-not-yet-freed watchers (whose
+     * onleave may still run via drain_pending_onleave_queue) stay rooted.
+     *
+     * Freelist aliasing: free slots reuse next_active as the freelist
+     * link, but this walk keys on the ACTIVE flag and never touches
+     * next_active, so freelist threading is invisible here.  Never-
+     * allocated slots have flags == 0 (slab is urbi_zero'd at
+     * uwatcher_pool_init).
+     *
+     * Note (spec #1 §7.1): body_strand / realm / waiter_strand are NOT
+     * yielded here.  Body and waiter strands are reached via
+     * realm->strands_head (sched walker yields each strand's frame
+     * window).  Realms are host-allocated, not GC-managed at v1.0.
+     *
+     * v1.x: read-set cells[] callback once concrete cell types embed
+     * UCell + a UVAL_CELL kind exists.  Today the cells are reached
+     * indirectly via the closures and slot-tables that own them. */
+    if (vm->watchers == NULL || vm->watchers->pool_base == NULL) return;
+    for (uint16_t i = 0U; i < (uint16_t)URBI_WATCHER_POOL_SIZE; i++) {
+        struct UWatcher *w = &vm->watchers->pool_base[i];
         UValue tmp;
+
+        if ((w->flags & URBI_WATCHER_ACTIVE) == 0U) continue;
 
         if (w->condition != NULL) {
             tmp.kind = UVAL_CLOSURE;
@@ -53,29 +79,19 @@ watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
             tmp.v.p  = (void *)w->onleave;
             cb(vm, &tmp, ctx);
         }
-        /* v1.x: owning_tag callback once UVAL_TAG kind is promoted.
-         * UTag is host-managed today (not GC-yielded as a UValue root). */
-
         cb(vm, &w->last_value_cache, ctx);
 
-        /* v1.x: read-set cells[] callback once concrete cell types embed
-         * UCell + a UVAL_CELL kind exists.  Today the cells are reached
-         * indirectly via the closures and slot-tables that own them. */
-    }
-
-    /* Pending-onleave queue (watchers being torn down still need their
-     * fields walked until the cleanup completes; their onleave closure
-     * may still run via drain_pending_onleave_queue). */
-    for (struct UWatcher *w = vm->pending_onleave_head; w != NULL; w = w->next_active) {
-        UValue tmp;
-
-        if (w->onleave != NULL) {
-            tmp.kind = UVAL_CLOSURE;
-            tmp.v.p  = (void *)w->onleave;
-            cb(vm, &tmp, ctx);
+        /* refactor-3 GC-03: owning_tag IS a root — UTag has been
+         * GC-managed (UTYPE_TAG via urbi_gc_alloc) since M5; the old
+         * "host-managed" deferral note was stale. */
+        if (w->owning_tag != NULL) {
+            gc_shade_gray(vm, (UCell *)w->owning_tag);
         }
-        /* v1.x: owning_tag + read-set cells (same deferrals as above). */
-        cb(vm, &w->last_value_cache, ctx);
+        /* refactor-3 GC-05: the subscribed event must outlive the watcher
+         * (w->event is dereferenced at unregister/teardown). */
+        if (w->event != NULL) {
+            gc_shade_gray(vm, (UCell *)w->event);
+        }
     }
 }
 

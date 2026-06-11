@@ -288,10 +288,11 @@ void urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s);
 /* === GC root provider (uwatcher_gc.c) === */
 
 /* watcher_table_walk_roots: registered via urbi_gc_register_root_provider at
- * urbi_vm_init.  Walks vm->active_watchers_head + vm->pending_onleave_head, yielding
- * closure + last_value_cache UValues to the GC mark callback.  Per spec §6.6.
- * M3 deferrals: owning_tag (UVAL_TAG kind doesn't exist until M5/M6) and
- * read-set cells[] (concrete cell types land at M4).
+ * urbi_vm_init.  Pool-wide walk (refactor-3 GC-05): every in-use slab slot
+ * (URBI_WATCHER_ACTIVE set) yields closure + last_value_cache UValues to the
+ * GC mark callback and shades owning_tag + event cells directly, regardless
+ * of which list (if any) threads the slot.  Per spec §6.6 as amended.
+ * Remaining deferral: read-set cells[] (v1.x backlog).
  * Note (spec #1 §7.1): body_strand and realm are NOT yielded — body strands
  * are reached via realm->strands_head; realms are host-allocated. */
 void   watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);

@@ -48,7 +48,6 @@
 #include "tag/utag.h"                 /* UTag, UTYPE_TAG (T18 GC promotion) */
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
-#include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent/utag chains */
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"     /* UClosure, UUpvalCell (v0.8.4 Step B) */
 #include "chunk/uchunk.h"       /* uproto_root_of, urbi_proto_ref_release */
@@ -282,9 +281,7 @@ walk_umoduleinstance(struct UVM *vm, void *payload,
 
 /* === walk_uevent (spec #3 §3.1) ===
  *
- * Yields name (UValue payload via cb) and shades each UWatcher in the
- * at_watchers_head chain (direct UCell* walk — same pattern as walk_ushape
- * shading UProps* entries).
+ * Yields name (UValue payload via cb).
  *
  * waiters_head (UStrand chain) is intentionally NOT walked here: UStrands
  * are root-walked separately via the realm hierarchy (per M3 row 10 / GC
@@ -300,45 +297,12 @@ walk_uevent(struct UVM *vm, void *payload,
      * applies the heap-bearing check and shades the underlying cell if any. */
     cb(vm, &ev->name, ctx);
 
-    /* Walk the at_watchers_head intrusive list.  UWatcher embeds UCell as
-     * its first member (type_tag at offset 0), so the cast to UCell* is
-     * well-defined (same as the UObject/UShape walkers above).
-     *
-     * GC-008 (v1.0 — design-risks v1.0-stm32f4-hang): UWatcher is
-     * POOL-allocated, not enrolled on all_cells_head, so gc_shade_gray on the
-     * watcher cell is a silent no-op (find_sidecar_for_cell returns NULL) and
-     * does NOT trace the watcher's GC-managed children.  Active (cond)
-     * watchers have their condition/body/onleave marked explicitly by
-     * watcher_table_walk_roots, but AT_EVENT / WHENEVER_EVENT watchers live
-     * only on this at_watchers_head chain — they are never reached by that
-     * root walker.  Without marking them here, an `at (event?) body` handler's
-     * body closure is collected on the next GC cycle; w->body then dangles and
-     * the next event spawn runs whatever proto now occupies that freed cell.
-     * Mark the closures directly here, mirroring watcher_table_walk_roots. */
-    {
-        UWatcher *w = ev->at_watchers_head;
-        while (w != NULL) {
-            UValue tmp;
-            gc_shade_gray(vm, (UCell *)w);  /* harmless no-op for pool cells */
-            if (w->condition != NULL) {
-                tmp.kind = UVAL_CLOSURE;
-                tmp.v.p  = (void *)w->condition;
-                cb(vm, &tmp, ctx);
-            }
-            if (w->body != NULL) {
-                tmp.kind = UVAL_CLOSURE;
-                tmp.v.p  = (void *)w->body;
-                cb(vm, &tmp, ctx);
-            }
-            if (w->onleave != NULL) {
-                tmp.kind = UVAL_CLOSURE;
-                tmp.v.p  = (void *)w->onleave;
-                cb(vm, &tmp, ctx);
-            }
-            cb(vm, &w->last_value_cache, ctx);
-            w = w->next_in_event;
-        }
-    }
+    /* at_watchers_head chain: NOT walked here since refactor-3 GC-05 — the
+     * pool-wide watcher_table_walk_roots roots every in-use watcher slot's
+     * children regardless of which list (if any) threads it.  Single source
+     * of truth; see uwatcher_gc.c.  (Supersedes the GC-008 / v1.0-stm32f4-hang
+     * fix that marked the chain's closures here — that rooting only held
+     * while the event itself was reachable.) */
 }
 
 /* === walk_uchanged_node (spec #4 §3.1) ===
@@ -368,10 +332,8 @@ walk_uchanged_node(struct UVM *vm, void *payload,
 
 /* === walk_utag (T18 — spec #3 §3.4) ===
  *
- * Yields name (UValue payload via cb) and shades each UWatcher in the
- * member_watchers_head chain (direct UCell* walk — same pattern as
- * walk_uevent above).  Also shades enter_event and leave_event when
- * non-NULL (lazy-allocated by getter on first `at(tag.enter?)`).
+ * Yields name (UValue payload via cb) and shades enter_event and leave_event
+ * when non-NULL (lazy-allocated by getter on first `at(tag.enter?)`).
  *
  * member_strands_head (UCleanupEntry chain) is intentionally NOT walked.
  * TAGCH-017 — this is correctness, not just a perf optimization:
@@ -415,16 +377,12 @@ walk_utag(struct UVM *vm, void *payload,
         gc_shade_gray(vm, (UCell *)t->parent);
     }
 
-    /* Walk the member_watchers_head intrusive list.  UWatcher embeds UCell
-     * as its first member (type_tag at offset 0), so the cast is well-defined
-     * (same as the UObject/UShape walkers above). */
-    {
-        UWatcher *w = t->member_watchers_head;
-        while (w != NULL) {
-            gc_shade_gray(vm, (UCell *)w);
-            w = w->next_in_tag;
-        }
-    }
+    /* member_watchers_head chain: NOT walked here since refactor-3 GC-05 —
+     * the pool-wide watcher_table_walk_roots roots every in-use watcher
+     * slot's children regardless of which list (if any) threads it.  Single
+     * source of truth; see uwatcher_gc.c.  (The old shade of each pool-cell
+     * UWatcher was a silent no-op anyway — pool slots are never on
+     * all_cells_head.) */
 }
 
 /* === walk_uclosure (v0.8.4 — Option B Step B) ===

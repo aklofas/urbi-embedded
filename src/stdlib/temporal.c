@@ -35,6 +35,7 @@
 #include "stdlib/object_root.h"       /* urbi_native_closure_create + raise helpers */
 
 #include "chunk/uchunk.h"             /* UValue / UVAL_* */
+#include "gc/ugc_incremental.h"       /* gc_shade_gray (owning_tag root, GC-03) */
 #include "object/uchunk_instance.h"   /* UChunkInstance / UProtoInstanceArr */
 #include "realm/urealm.h"             /* URealm */
 #include "runtime/uclosure.h"         /* UClosure full definition */
@@ -328,8 +329,10 @@ urbi_periodic_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
             tmp.v.p  = (void *)p->body;
             cb(vm, &tmp, ctx);
         }
-        /* current_strand reachable via realm->strands_head (sched walker).
-         * owning_tag is host-managed (UTag not yet UVAL_TAG-promoted). */
+        /* current_strand reachable via realm->strands_head (sched walker). */
+        if (p->owning_tag != NULL) {   /* GC-03: UTag is GC-managed since M5 */
+            gc_shade_gray(vm, (UCell *)p->owning_tag);
+        }
     }
     /* vm->every_native_closure is reached separately via vm_misc_walk_roots
      * extension below.  Allocated as a GC cell, but the only live pointer

@@ -39,6 +39,11 @@
 #include "runtime/ucleanup.h" /* strand_cleanup_* (cleanup owning_tag case) */
 #include "tag/utag.h"         /* utag_create (owning_tag + suspend_tag cases) */
 #include "utest_e2e_helpers.h" /* utest_e2e_compile_and_run (cleanup saved-value case) */
+#include "watcher/uwatcher.h" /* uwatcher_pool_alloc + UWatcher (watcher root cases) */
+#include "event/uevent.h"     /* urbi_event_create (event-watcher case) */
+#include "event/uevent_subscribe.h" /* uevent_at_watchers_append (event-watcher case) */
+#include "stdlib/temporal.h"  /* UPeriodic (periodic owning_tag case) */
+#include "stdlib/object_root.h" /* urbi_native_closure_create (watcher closure cases) */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -819,6 +824,161 @@ UTEST(matrix_cleanup_saved_value_survives_gc_in_cleanup_body)
     urbi_vm_destroy(&vm);
 }
 
+/* === Watcher pool + periodic cases (Task 7 / refactor-3 GC-05/GC-03) ===
+ *
+ * Pool-wide rooting contract: a watcher slot is a root while it is IN USE
+ * (URBI_WATCHER_ACTIVE — set by uwatcher_pool_alloc, cleared only by
+ * pool_free), regardless of which list (if any) threads it.  These cases
+ * therefore construct bare pool slots WITHOUT any list linking: pre-fix,
+ * the provider walked vm->active_watchers_head + vm->pending_onleave_head
+ * only, so every case below was unrooted.
+ *
+ * Stress ordering: uwatcher_pool_alloc pops from the pre-allocated slab
+ * freelist (no urbi_gc_alloc), so it never triggers a stress collection;
+ * each GC-cell birth (utag_create / urbi_event_create /
+ * urbi_native_closure_create) is immediately followed by its field store
+ * with no allocation in between. */
+
+/* Never invoked — the watcher cases only need a real GC-managed UClosure
+ * cell (urbi_native_closure_create rejects a NULL fn). */
+static int matrix_native_nop(struct UVM *vm, UValue self,
+                             UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    *out = urbi_make_nil();
+    return 0;
+}
+
+/* Return a pool slot through the production free path.  Install paths
+ * (install_watcher_runtime / install_at_event_runtime) increment
+ * vm->watchers->active_count after pool_alloc; mirror that bookkeeping so
+ * urbi_watcher_unregister_internal's unguarded decrement balances to the
+ * pre-case value instead of underflowing. */
+static void matrix_watcher_free(UVM *vm, UWatcher *w)
+{
+    vm->watchers->active_count++;
+    urbi_watcher_unregister_internal(vm, w);
+}
+
+UTEST(matrix_watcher_owning_tag_is_rooted)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UWatcher *w = uwatcher_pool_alloc(&vm);
+    UASSERT(w != NULL);
+
+    UTag *tag = utag_create(&vm);
+    UASSERT(tag != NULL);
+    w->owning_tag = tag;   /* tag's ONLY reference */
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, (UCell *)tag));
+
+    w->owning_tag = NULL;
+    matrix_watcher_free(&vm, w);
+    urbi_vm_destroy(&vm);
+}
+
+/* THE GC-05 case: an AT_EVENT watcher's closures were previously rooted
+ * only via walk_uevent — i.e. only while the EVENT was independently
+ * reachable.  Here the event's only reference is w->event and the
+ * closure's only reference is w->body: pre-fix, walk_uevent never runs on
+ * the unreachable event, so BOTH are swept (and w->event dangles at
+ * unregister). */
+UTEST(matrix_event_watcher_closures_rooted_without_reachable_event)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UWatcher *w = uwatcher_pool_alloc(&vm);
+    UASSERT(w != NULL);
+    w->mode = UWATCHER_AT_EVENT;
+
+    UEvent *ev = urbi_event_create(&vm);
+    UASSERT(ev != NULL);
+    w->event = ev;                       /* event's ONLY reference */
+    uevent_at_watchers_append(ev, w);    /* real subscriber threading */
+
+    UClosure *cl = urbi_native_closure_create(&vm, matrix_native_nop);
+    UASSERT(cl != NULL);
+    w->body = cl;                        /* closure's ONLY reference */
+
+    collect_twice(&vm);
+    int ev_live = cell_live(&vm, (UCell *)ev);
+    int cl_live = cell_live(&vm, (UCell *)cl);
+    UASSERT(ev_live);
+    UASSERT(cl_live);
+
+    if (ev_live) {
+        /* Production unregister: unlinks from ev->at_watchers_head and
+         * returns the slot. */
+        matrix_watcher_free(&vm, w);
+    } else {
+        /* Pre-fix red: ev was swept — drop the dangling pointers WITHOUT
+         * dereferencing them so the red stays a clean assert (not a UAF),
+         * and leave the slot ACTIVE: uwatcher_pool_destroy's slab walk
+         * skips the event-unlink when w->event is NULL and pool_frees the
+         * slot before the slab is released. */
+        w->event = NULL;
+        w->body  = NULL;
+    }
+    urbi_vm_destroy(&vm);
+}
+
+/* Pins the in-use predicate covering PENDING_UNREGISTER slots: a watcher
+ * between stop-request and drain still needs its onleave closure alive
+ * (drain_pending_onleave_queue will run it). */
+UTEST(matrix_pending_unregister_watcher_still_rooted)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UWatcher *w = uwatcher_pool_alloc(&vm);
+    UASSERT(w != NULL);
+    w->flags |= URBI_WATCHER_PENDING_UNREGISTER;
+
+    UClosure *cl = urbi_native_closure_create(&vm, matrix_native_nop);
+    UASSERT(cl != NULL);
+    w->onleave = cl;                     /* closure's ONLY reference */
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, (UCell *)cl));
+
+    w->onleave = NULL;
+    matrix_watcher_free(&vm, w);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(matrix_periodic_owning_tag_is_rooted)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* Mirror periodic_alloc (temporal.c): raw vm->alloc_fn record, zeroed,
+     * head-inserted on vm->periodics_head.  Raw allocation — never a GC
+     * cell, so no stress hazard. */
+    UPeriodic *p = (UPeriodic *)vm.alloc_fn(NULL, sizeof(UPeriodic),
+                                            vm.alloc_ud);
+    UASSERT(p != NULL);
+    memset(p, 0, sizeof *p);
+    p->next = vm.periodics_head;
+    vm.periodics_head = p;
+
+    UTag *tag = utag_create(&vm);
+    UASSERT(tag != NULL);
+    p->owning_tag = tag;   /* tag's ONLY reference */
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, (UCell *)tag));
+
+    /* Unthread + free before teardown (urbi_periodic_destroy_all must not
+     * see a test-owned record). */
+    vm.periodics_head = p->next;
+    vm.alloc_fn(p, 0, vm.alloc_ud);
+    urbi_vm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void test_gc_rooting_matrix_suite(void)
@@ -854,4 +1014,12 @@ void test_gc_rooting_matrix_suite(void)
               matrix_c_root_frame_roots_value);
     utest_run("matrix_cleanup_saved_value_survives_gc_in_cleanup_body",
               matrix_cleanup_saved_value_survives_gc_in_cleanup_body);
+    utest_run("matrix_watcher_owning_tag_is_rooted",
+              matrix_watcher_owning_tag_is_rooted);
+    utest_run("matrix_event_watcher_closures_rooted_without_reachable_event",
+              matrix_event_watcher_closures_rooted_without_reachable_event);
+    utest_run("matrix_pending_unregister_watcher_still_rooted",
+              matrix_pending_unregister_watcher_still_rooted);
+    utest_run("matrix_periodic_owning_tag_is_rooted",
+              matrix_periodic_owning_tag_is_rooted);
 }

@@ -111,7 +111,8 @@ int urbi_temporal_native_register_globals(struct UVM *vm, struct URealm *realm);
 
 /* GC root walker (registered with urbi_gc_register_root_provider at
  * urbi_vm_init).  Yields each periodic's body closure to the GC mark
- * callback.  Signature matches UGcRootProviderFn in gc/ugc.h. */
+ * callback and shades owning_tag (GC-managed UTag, refactor-3 GC-03).
+ * Signature matches UGcRootProviderFn in gc/ugc.h. */
 void urbi_periodic_table_walk_roots(struct UVM *vm,
                                     UGcRootCallback cb,
                                     void *ctx);
