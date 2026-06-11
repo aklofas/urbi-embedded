@@ -32,6 +32,7 @@
 #include "object/uobject.h"   /* struct UObject (sentinel payload size) */
 
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #define UTEST(name) static void name(void)
@@ -244,6 +245,75 @@ UTEST(matrix_strand_last_event_payload_is_rooted)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(matrix_uprotos_wrapper_survives_when_owner_live)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    /* Pin the walk_uobject heap-form UProtos wrapper shade (the rooting
+     * hole this harness surfaced under URBI_GC_STRESS): a live owner
+     * object whose UProtos wrapper cell is reachable ONLY through
+     * owner->protos.
+     *
+     * Stress ordering: every cell is rooted in a register slot before the
+     * next allocation, so the collect-before-alloc cannot sweep it. */
+    UCell *owner_cell = sentinel_alloc(&vm);
+    UASSERT(owner_cell != NULL);
+    s.stack[0] = obj_value_for(owner_cell);   /* owner's ONLY root */
+
+    UCell *proto_a = sentinel_alloc(&vm);
+    UASSERT(proto_a != NULL);
+    s.stack[1] = obj_value_for(proto_a);      /* transient root */
+
+    UCell *proto_b = sentinel_alloc(&vm);
+    UASSERT(proto_b != NULL);
+    s.stack[2] = obj_value_for(proto_b);      /* transient root */
+
+    /* Heap-form UProtos block (n == 2), caller-filled per the
+     * urbi_object_set_protos_heap contract (uobject.h).  No allocation
+     * happens between this alloc and the publish below, so the unrooted
+     * window is stress-safe. */
+    UCell *wrapper_cell = urbi_gc_alloc(
+        &vm, sizeof(UProtos) + 2U * sizeof(UObject *), UTYPE_PROTOS);
+    UASSERT(wrapper_cell != NULL);
+    UProtos *up = (UProtos *)(void *)wrapper_cell;
+    up->n        = 2U;
+    up->items[0] = (UObject *)(void *)proto_a;
+    up->items[1] = (UObject *)(void *)proto_b;
+
+    UObject *owner = (UObject *)(void *)owner_cell;
+    urbi_object_set_protos_heap(&vm, owner, up);
+
+    /* Drop the transient proto roots: wrapper AND protos are now
+     * reachable only via owner->protos. */
+    memset(&s.stack[1], 0, sizeof s.stack[1]);
+    memset(&s.stack[2], 0, sizeof s.stack[2]);
+
+    /* THREE full collections — the observed pre-fix failure cadence:
+     * set_protos_heap's install barrier shades the wrapper gray, so it
+     * drained black in cycle 1; after the color flip nothing re-shaded
+     * it, so cycle 2's sweep freed it while the owner was live, and
+     * cycle 3's mark walked freed memory through owner->protos (UAF). */
+    collect_twice(&vm);
+    urbi_gc_force_full(&vm);
+
+    UASSERT(cell_live(&vm, owner_cell));
+    UASSERT(cell_live(&vm, wrapper_cell));
+    UASSERT(cell_live(&vm, proto_a));
+    UASSERT(cell_live(&vm, proto_b));
+    /* Owner's protos must still be the published heap form, intact. */
+    UASSERT(owner->protos == (uintptr_t)up);
+    UASSERT_EQ(2U, up->n);
+    UASSERT(up->items[0] == (UObject *)(void *)proto_a);
+    UASSERT(up->items[1] == (UObject *)(void *)proto_b);
+
+    memset(&s.stack[0], 0, sizeof s.stack[0]);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
 UTEST(matrix_register_window_is_rooted)
 {
     UVM vm;
@@ -276,6 +346,8 @@ void test_gc_rooting_matrix_suite(void)
               matrix_strand_fatal_value_is_rooted);
     utest_run("matrix_strand_last_event_payload_is_rooted",
               matrix_strand_last_event_payload_is_rooted);
+    utest_run("matrix_uprotos_wrapper_survives_when_owner_live",
+              matrix_uprotos_wrapper_survives_when_owner_live);
     utest_run("matrix_register_window_is_rooted",
               matrix_register_window_is_rooted);
 }
