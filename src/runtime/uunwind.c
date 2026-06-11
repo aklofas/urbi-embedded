@@ -844,7 +844,14 @@ urbi_strand_cancel(struct UVM *vm, struct UStrand *strand, UValue cancel_reason)
     if (USTRAND_IS_WAITING(strand)) {
         if (is_event_parked_strand(strand))
             uevent_waiter_unregister(strand);
-        strand->state = USTRAND_STATE_READY;
+        /* refactor-3 VM-08/SCHED-04: route through the scheduler helpers —
+         * stamping READY in place left a sleeping strand linked on the
+         * sleep queue and never enqueued it (zombie strand; sleep-queue
+         * invariant violation).  Mirrors the urbi_tag_stop wake block. */
+        if (USTRAND_GET_REASON(strand) == USTRAND_REASON_SLEEP)
+            sched_strand_unblock(strand);   /* removes from sleep_q + makes runnable */
+        else
+            sched_strand_make_runnable(strand);  /* EVENT / JOIN / other reason */
     }
     return URBI_OK;
 }
