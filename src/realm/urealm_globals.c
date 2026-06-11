@@ -356,8 +356,13 @@ realm_install_const(UVM *vm, URealm *realm, USymbol *sym, UValue value,
  * legitimately runs on normal builds (embedded heaps rely on it).
  * Tracked in docs/urbi-embedded-design-risks.md (v0.13.2 entry). */
 
+/* host_pause: the embedder's gc_paused value as it was BEFORE the
+ * urbi_populate_realm_globals wrapper raised the bootstrap pause.  The
+ * strand-rooted inner sections (stdlib bake, urobotics overlay) restore
+ * THIS value — not an unconditional 0 — so a host urbi_gc_pause latch
+ * held across realm creation stays honoured inside them. */
 static UErrCode
-populate_realm_globals_impl(UVM *vm, URealm *realm)
+populate_realm_globals_impl(UVM *vm, URealm *realm, uint8_t host_pause)
 {
     size_t i;
 
@@ -566,12 +571,14 @@ populate_realm_globals_impl(UVM *vm, URealm *realm)
     if (vm->stdlib_module != NULL) {
         UValue out;
         int rc;
-        /* Drop the bootstrap GC pause across the bake run: the chunk
-         * executes on a strand (registers + UCRootFrame chain root its
-         * values), and mid-boot collection during the bake is the normal-
-         * build behaviour embedded heaps rely on (see banner comment). */
+        /* Drop the bootstrap GC pause across the bake run — restoring the
+         * HOST's pre-wrapper value, not 0, so an embedder's urbi_gc_pause
+         * latch stays honoured: the chunk executes on a strand (registers
+         * + UCRootFrame chain root its values), and mid-boot collection
+         * during the bake is the normal-build behaviour embedded heaps
+         * rely on (see banner comment). */
         uint8_t saved_pause = vm->gc_paused;
-        vm->gc_paused = 0U;
+        vm->gc_paused = host_pause;
         rc = urbi_run_chunk(vm, realm, vm->stdlib_module, &out);
         vm->gc_paused = saved_pause;
         if (rc != URBI_OK) {
@@ -613,12 +620,12 @@ populate_realm_globals_impl(UVM *vm, URealm *realm)
     /* v0.12.2: run the Robotics overlay root chunk so its top-level `var
      * Robotics = ...` + slot assignments install the `Robotics` realm global.
      * Must run AFTER the main stdlib chunk above so Object/clone exist.
-     * Strand-rooted script — runs outside the bootstrap GC pause, same as
-     * the stdlib bake above. */
+     * Strand-rooted script — runs at the HOST's pre-wrapper pause value,
+     * outside the bootstrap GC pause, same as the stdlib bake above. */
     {
         uint8_t saved_pause = vm->gc_paused;
         int rc;
-        vm->gc_paused = 0U;
+        vm->gc_paused = host_pause;
         rc = urbi_urobotics_run(vm, realm);
         vm->gc_paused = saved_pause;
         if (rc != URBI_OK) return (UErrCode)rc;
@@ -654,7 +661,7 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * paused). */
     saved_pause   = vm->gc_paused;
     vm->gc_paused = 1U;
-    rc = populate_realm_globals_impl(vm, realm);
+    rc = populate_realm_globals_impl(vm, realm, saved_pause);
     vm->gc_paused = saved_pause;
     return rc;
 }
