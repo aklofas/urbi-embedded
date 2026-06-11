@@ -165,6 +165,7 @@ urbi_compile_source(struct UVM *vm,
     }
 
     if (had_error) {
+        uemit_abandon(&e);   /* parse error — finish never runs (FE-07) */
         uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;

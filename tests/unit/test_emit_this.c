@@ -47,12 +47,14 @@ static UEmitError compile_only(UVM *vm, const char *src)
     UAstNode *node;
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
+            uemit_abandon(&e);   /* finish never runs on this path (FE-07) */
             uarena_destroy(&arena);
             uchunk_destroy(&module, NULL);
             return EMIT_AST_ERROR;
         }
         UEmitError err = uemit_statement(&e, node);
         if (err != EMIT_OK) {
+            uemit_abandon(&e);   /* finish never runs on this path (FE-07) */
             uarena_destroy(&arena);
             uchunk_destroy(&module, NULL);
             return err;

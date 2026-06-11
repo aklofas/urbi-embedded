@@ -279,6 +279,7 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
     }
 
     if (had_error) {
+        uemit_abandon(&e);   /* parse error — finish never runs (FE-07) */
         uchunk_destroy(out_module, vm);
         uarena_destroy(arena);
         return false;

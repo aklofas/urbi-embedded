@@ -486,6 +486,10 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
                 urbi_strncpy_truncating(out_buf, out_buf_size, msg);
             }
         }
+        /* Parse / statement-emit errors skipped uemit_finish; release
+         * emitter-owned funcstate storage (no-op when has_error came from
+         * uemit_finish itself, which already tore it down — FE-07). */
+        uemit_abandon(&e);
         /* Compile-error path: module was never registered in the realm
          * (urbi_run_chunk was not reached), so it is not realm-owned.
          * uchunk_destroy frees struct internals and, since heap_allocated=true,

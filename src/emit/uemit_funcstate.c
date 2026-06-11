@@ -99,7 +99,12 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
     if (e->error != EMIT_OK) return NULL;
 
-    UFuncState *fs = uarena_alloc(e->arena, sizeof(UFuncState));
+    /* refactor-3 FE-07: allocate from the emitter-owned fs_arena, NOT the
+     * shared statement arena — drivers uarena_reset the latter after every
+     * statement, and the funcstate must persist across the whole compile
+     * session.  (Pre-fix it only survived by accident: the reset arena's
+     * chunk-append bug orphaned the chunk holding it.) */
+    UFuncState *fs = uarena_alloc(&e->fs_arena, sizeof(UFuncState));
     if (fs == NULL) {
         e->error = EMIT_OOM;
         return NULL;

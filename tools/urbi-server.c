@@ -135,6 +135,11 @@ static int run_boot_script(UVM *vm, const char *path) {
                 path, uemit_error_name(e.error));
         rc = 1;
     }
+    if (rc != 0) {
+        /* Parse-error path skipped uemit_finish; release emitter-owned
+         * funcstate storage (no-op when finish already ran — FE-07). */
+        uemit_abandon(&e);
+    }
     if (rc == 0) {
         UValue out;
         UVMError vrc = urbi_vm_run(vm, NULL, &module, &out);

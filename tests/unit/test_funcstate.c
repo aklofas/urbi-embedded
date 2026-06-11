@@ -23,7 +23,8 @@ static void setup(UEmitter *e, UProto *m, UArena *a, UVM *v) {
     urbi_vm_init(v, NULL, NULL);
     uemit_init(e, m, a, v, "test");
 }
-static void teardown(UProto *m, UArena *a, UVM *v) {
+static void teardown(UEmitter *e, UProto *m, UArena *a, UVM *v) {
+    uemit_abandon(e);   /* these tests never uemit_finish (FE-07) */
     uarena_destroy(a);
     uchunk_destroy(m, NULL);
     urbi_vm_destroy(v);
@@ -43,7 +44,7 @@ UTEST(funcstate_open_zeroes_freereg_and_nactvar) {
     UASSERT(fs->parent == NULL);
 
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(funcstate_declare_local_pushes_actvar_and_advances_freereg) {
@@ -62,7 +63,7 @@ UTEST(funcstate_declare_local_pushes_actvar_and_advances_freereg) {
     UASSERT_EQ((uint8_t)2, fs->max_reg_seen);
 
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(funcstate_declare_three_locals) {
@@ -81,7 +82,7 @@ UTEST(funcstate_declare_three_locals) {
     UASSERT_EQ((uint8_t)4, fs->freereg);
 
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(funcstate_redeclare_in_same_scope_errors) {
@@ -95,7 +96,7 @@ UTEST(funcstate_redeclare_in_same_scope_errors) {
     UASSERT_EQ((int)EMIT_LOCAL_REDECLARE, (int)e.error);
 
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(funcstate_max_locals_exhausts_with_proper_error) {
@@ -116,7 +117,7 @@ UTEST(funcstate_max_locals_exhausts_with_proper_error) {
     UASSERT_EQ((int)EMIT_REG_EXHAUSTED, (int)e.error);
 
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(funcstate_close_function_pops_to_parent) {
@@ -129,7 +130,7 @@ UTEST(funcstate_close_function_pops_to_parent) {
 
     uemit_close_function(&e);                /* close inner */
     uemit_close_function(&e);                /* close outer */
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(block_open_pushes_ctx_with_snapshot) {
@@ -148,7 +149,7 @@ UTEST(block_open_pushes_ctx_with_snapshot) {
 
     uemit_close_block(&e);
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(block_close_restores_nactvar_and_freereg) {
@@ -169,7 +170,7 @@ UTEST(block_close_restores_nactvar_and_freereg) {
     UASSERT_EQ(0, fs->nblocks);
 
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(block_nested_three_levels) {
@@ -186,7 +187,7 @@ UTEST(block_nested_three_levels) {
     uemit_close_block(&e);
     UASSERT_EQ(0, fs->nblocks);
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(block_exhaust_with_proper_error) {
@@ -204,7 +205,7 @@ UTEST(block_exhaust_with_proper_error) {
     e.error = EMIT_OK;
     for (int i = 0; i < UFS_MAX_BLOCKS; i++) uemit_close_block(&e);
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(block_close_with_captured_emits_op_close) {
@@ -226,7 +227,7 @@ UTEST(block_close_with_captured_emits_op_close) {
     UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFU));
 
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(block_close_on_empty_stack_sets_error) {
@@ -240,7 +241,7 @@ UTEST(block_close_on_empty_stack_sets_error) {
     /* clear error so close_function can run */
     e.error = EMIT_OK;
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(upvalue_capture_immediate_parent_marks_in_stack) {
@@ -261,7 +262,7 @@ UTEST(upvalue_capture_immediate_parent_marks_in_stack) {
 
     uemit_close_function(&e);
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(upvalue_two_level_cascade_intermediate_in_stack_false) {
@@ -288,7 +289,7 @@ UTEST(upvalue_two_level_cascade_intermediate_in_stack_false) {
     uemit_close_function(&e);
     uemit_close_function(&e);
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(upvalue_repeated_lookup_returns_same_idx) {
@@ -307,7 +308,7 @@ UTEST(upvalue_repeated_lookup_returns_same_idx) {
 
     uemit_close_function(&e);
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(upvalue_unresolved_returns_negative) {
@@ -323,7 +324,7 @@ UTEST(upvalue_unresolved_returns_negative) {
 
     uemit_close_function(&e);
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(upvalue_exhaustion_errors) {
@@ -355,7 +356,7 @@ UTEST(upvalue_exhaustion_errors) {
 
     uemit_close_function(&e);
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(loop_back_emit_close_when_captured) {
@@ -376,7 +377,7 @@ UTEST(loop_back_emit_close_when_captured) {
 
     uemit_close_block(&e);
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(loop_back_emit_close_no_op_when_not_captured) {
@@ -392,7 +393,7 @@ UTEST(loop_back_emit_close_no_op_when_not_captured) {
 
     uemit_close_block(&e);
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 /* --- M4 T15: per-function IC counter + ic_names side table --- */
@@ -423,7 +424,7 @@ UTEST(funcstate_ic_counter_increments_per_emitted_getslot) {
     UASSERT_EQ((int)EMIT_OK, (int)e.error);
 
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(funcstate_ic_counter_caps_at_256_with_emit_too_many_ic_sites) {
@@ -445,7 +446,7 @@ UTEST(funcstate_ic_counter_caps_at_256_with_emit_too_many_ic_sites) {
     /* Clear error so close path runs cleanly. */
     e.error = EMIT_OK;
     uemit_close_function(&e);
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 UTEST(funcstate_ic_close_copies_into_target_proto) {
@@ -479,7 +480,7 @@ UTEST(funcstate_ic_close_copies_into_target_proto) {
     UASSERT_EQ((uint16_t)0, child->ic_names_cap);
 
     uemit_close_function(&e);                   /* close parent */
-    teardown(&m, &a, &v);                       /* uchunk_destroy frees child_proto->ic_names */
+    teardown(&e, &m, &a, &v);                       /* uchunk_destroy frees child_proto->ic_names */
 }
 
 UTEST(funcstate_ic_close_with_zero_sites_leaves_proto_null) {
@@ -500,7 +501,7 @@ UTEST(funcstate_ic_close_with_zero_sites_leaves_proto_null) {
     UASSERT(child_proto->ic_names == NULL);
 
     uemit_close_function(&e);                   /* close parent */
-    teardown(&m, &a, &v);
+    teardown(&e, &m, &a, &v);
 }
 
 void test_funcstate_suite(void) {

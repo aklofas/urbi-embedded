@@ -88,7 +88,10 @@ static UEmitError emit_single_statement(UProto *module, UArena *arena, UVM *vm, 
     UEmitError rc;
     uemit_init(&e, module, arena, vm, "test");
     rc = uemit_statement(&e, ast);
-    if (rc != EMIT_OK) return rc;
+    if (rc != EMIT_OK) {
+        uemit_abandon(&e);   /* finish never runs on this path (FE-07) */
+        return rc;
+    }
     return uemit_finish(&e);
 }
 
@@ -888,6 +891,8 @@ static UEmitError emit_ctx_run(EmitCtx *c) {
 }
 
 static void emit_ctx_destroy(EmitCtx *c) {
+    uemit_abandon(&c->e);   /* no-op after finish; frees fs_arena when
+                               emit_ctx_run bailed early (FE-07) */
     uarena_destroy(&c->arena);
     uchunk_destroy(&c->module, NULL);
     urbi_vm_destroy(&c->vm);
@@ -1476,6 +1481,7 @@ UTEST(emit_t10_throw_emits_op_throw) {
      * T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1. */
     UASSERT_EQ((uint8_t)1, uinstr_a(w));
 
+    uemit_abandon(&e);   /* this test never finishes the module (FE-07) */
     uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 

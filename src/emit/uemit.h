@@ -129,6 +129,14 @@ typedef struct {
 typedef struct UEmitter {
     UProto        *module;           /* non-owning root UProto; caller supplies (was UModule*; v0.9.2) */
     UArena       *arena;           /* non-owning; currently unused at M1 but reserved */
+    UArena        fs_arena;        /* refactor-3 FE-07: UFuncState storage —
+                                      compile-session lifetime; NOT reset per
+                                      statement (the shared `arena` is).
+                                      Owned by the emitter: uemit_init creates
+                                      it (inheriting `arena`'s backing
+                                      allocator pair); uemit_finish destroys
+                                      it; driver error paths that bail before
+                                      finish must call uemit_abandon. */
     struct UVM   *vm;              /* non-owning; set by uemit_init (M2) for intern access */
     uint8_t      next_reg;        /* register allocator cursor */
     uint8_t      max_reg_seen;    /* highest slot ever used */
@@ -177,8 +185,17 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt);
 
 /* Finalize: emit OP_RET (if any statement was emitted) and record max_reg.
    Further uemit_statement calls return EMIT_FINISHED.  Returns the first
-   accumulated error, or EMIT_OK. */
+   accumulated error, or EMIT_OK.  Also tears down the emitter-owned
+   fs_arena (refactor-3 FE-07) — every UFuncState pointer obtained from
+   uemit_open_function / uemit_close_function is invalid afterwards. */
 UEmitError uemit_finish(UEmitter *e);
+
+/* uemit_abandon — driver error-path teardown: free emitter-owned storage
+   (fs_arena) without finishing the module.  For callers that bail between
+   uemit_init and uemit_finish (e.g. on a parse error).  Idempotent, and
+   safe to call after uemit_finish (which performs the same teardown on
+   the success path).  refactor-3 FE-07. */
+void uemit_abandon(UEmitter *e);
 
 /* Open a new compilation function. At top-level, parent==NULL. Returns
    NULL on OOM (sets EMIT_OOM). The opened FuncState becomes

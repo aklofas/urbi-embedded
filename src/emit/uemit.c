@@ -516,6 +516,16 @@ void uemit_init(UEmitter *e, UProto *root, UArena *arena,
     urbi_zero(e, sizeof(*e));
     e->module = root;
     e->arena = arena;
+    /* refactor-3 FE-07: UFuncState storage lives in an emitter-owned arena
+     * with compile-session lifetime — the shared `arena` is reset by the
+     * driver after every statement, which (with correct chunk reuse) would
+     * let statement N+1's AST overwrite the live funcstate.  Inherit the
+     * caller arena's backing allocator pair so the choice of allocator
+     * (stdlib / custom) stays the embedder's; this also avoids the
+     * hosted-only uarena_init in freestanding full builds.  Lazy: no
+     * allocation happens until the first uemit_open_function. */
+    uarena_init_ex(&e->fs_arena, 1024,
+                   arena->alloc_fn, arena->free_fn, arena->alloc_ud);
     e->vm = vm;
     if (vm != NULL) {
         root->origin_vm = vm;
@@ -599,7 +609,26 @@ UEmitError uemit_finish(UEmitter *e) {
         e->module->total_proto_count = (uint16_t)(e->module->next_proto_serial + 1U);
     }
 
+    /* refactor-3 FE-07: the module is sealed; release all UFuncState
+     * storage.  current_fs (and any pointer a caller kept from
+     * uemit_open_function / uemit_close_function) dangles after this —
+     * NULL it so a stale dereference faults loudly instead of reading
+     * freed memory.  The early `finished` return above is safe: the first
+     * finish already tore the arena down and uarena_destroy left it
+     * walkable-empty (first == head == NULL). */
+    uarena_destroy(&e->fs_arena);
+    e->current_fs = NULL;
+
     return e->error;
+}
+
+void uemit_abandon(UEmitter *e) {
+    /* refactor-3 FE-07: driver error-path teardown — free emitter-owned
+     * storage without finishing the module.  uarena_destroy on an
+     * already-destroyed (or never-grown) arena is a no-op, so this is
+     * idempotent and safe after uemit_finish too. */
+    uarena_destroy(&e->fs_arena);
+    e->current_fs = NULL;
 }
 
 const char *uemit_error_name(UEmitError code) {
