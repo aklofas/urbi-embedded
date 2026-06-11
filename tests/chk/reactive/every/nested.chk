@@ -1,6 +1,13 @@
 # Milestone: v0.10.2-reactive (W1)
 # Covers: nested `every (P1) { every (P2) X }` — outer periodic whose body
 #         installs an inner periodic each fire.
+## timeout: 180
+# Timeout rationale: each 1us outer fire spawns a FRESH inner UPeriodic,
+# so the periodics list grows per pump; under URBI_GC_STRESS
+# (collect-per-alloc with O(N) sidecar scans) the workload is
+# quadratic-plus and blew the default 30s on a contended 4-vCPU CI
+# runner while staying <1s locally.  The accumulation semantic itself
+# is the documented v1.x question below.
 #
 # Activated 2026-05-25 (W1): OP_CLOSURE in body strands fixed (reactive F4).
 # Prior to the fix: body strand had root_proto == NULL so OP_CLOSURE at

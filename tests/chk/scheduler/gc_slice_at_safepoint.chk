@@ -3,6 +3,11 @@
 #         urbi_gc_slice is invoked at the next dispatch-loop safepoint of any
 #         strand; GC slice runs and clears the pending flag (row 12 §4.4 —
 #         gc_pending safepoint hook in dispatch_loop_until_yield).
+## timeout: 180
+# Timeout rationale: 5000 Object.new() allocations are the slowest chk
+# workload under URBI_GC_STRESS (collect-per-alloc with O(N) sidecar
+# scans; ~3s local) — headroom for contended CI runners, where the
+# stress build runs in releasetest phase 1 alongside ~12 parallel jobs.
 #
 # Activated: v0.10.7 W7 — GC-managed cell types (UObject) allocatable from
 # REPL since M4/M6.  Object.new() loops 5000 iterations without OOM;
