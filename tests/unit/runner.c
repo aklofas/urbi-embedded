@@ -74,6 +74,7 @@ extern void test_callback_watchdog_suite(void);
 extern void test_ugc_color_invariants_suite(void);
 extern void test_ugc_state_machine_suite(void);
 extern void test_gc_stress_mode_suite(void);
+extern void test_gc_rooting_matrix_suite(void);
 extern void test_ugc_barrier_suite(void);
 extern void test_ugc_walk_roots_suite(void);
 extern void test_ugc_handle_suite(void);
@@ -357,6 +358,10 @@ static const struct suite_entry suites[] = {
      * stress arm executes under test-gc-stress before the known baseline
      * boot crash kills the runner (refactor-3 TEST-GAP-01). */
     {"gc_stress_mode",             test_gc_stress_mode_suite},
+    /* Same early ordering as gc_stress_mode: the rooting-matrix cases must
+     * execute under test-gc-stress before the known baseline boot crash in
+     * string_literal_e2e kills the runner (refactor-3 GC-17). */
+    {"gc_rooting_matrix",          test_gc_rooting_matrix_suite},
     {"string_literal_e2e",         test_string_literal_e2e_suite},
     {"api_version",                test_api_version_suite},
     {"port_allocator_mock",        test_port_allocator_mock_suite},
