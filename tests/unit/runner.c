@@ -122,6 +122,7 @@ extern void test_cond_side_effect_suite(void);
 extern void test_emit_diag_suite(void);
 extern void test_emit_const_index_suite(void);
 extern void test_emit_patch_limit_suite(void);
+extern void test_parse_bounds_suite(void);
 extern void test_emit_watcher_suite(void);
 extern void test_install_skeleton_suite(void);
 extern void test_resolve_owning_tag_suite(void);
@@ -427,6 +428,7 @@ static const struct suite_entry suites[] = {
     {"emit_diag",                  test_emit_diag_suite},
     {"emit_const_index",           test_emit_const_index_suite},
     {"emit_patch_limit",           test_emit_patch_limit_suite},
+    {"parse_bounds",               test_parse_bounds_suite},
     {"emit_watcher",               test_emit_watcher_suite},
     {"install_skeleton",           test_install_skeleton_suite},
     {"resolve_owning_tag",         test_resolve_owning_tag_suite},

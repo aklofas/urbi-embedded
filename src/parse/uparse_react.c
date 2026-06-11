@@ -368,10 +368,13 @@ UAstNode *parse_at(UParser *p) {
 
     /* Enable the at_event_cond context so that `?` in the inner expression
      * is not immediately flagged as an error — parse_at checks for it after
-     * the expression parse returns. */
+     * the expression parse returns.  Save/restore rather than write false:
+     * a nested event form (waituntil is an expression primary) would
+     * otherwise clobber an enclosing condition's flag (refactor-3 FE-22). */
+    bool saved_at_event_cond = p->at_event_cond;
     p->at_event_cond = true;
     UAstNode *cond = parse_inner_tier(p);
-    p->at_event_cond = false;
+    p->at_event_cond = saved_at_event_cond;
     if (!cond) return (UAstNode *)&uparser_oom_sentinel;
     if (cond->kind == AST_ERROR) return cond;
 
@@ -405,10 +408,12 @@ UAstNode *parse_whenever(UParser *p) {
 
     /* Enable the at_event_cond context so that `?` in the inner expression
      * is not immediately flagged as an error — parse_whenever checks for it
-     * after the expression parse returns.  Mirrors parse_at's pattern. */
+     * after the expression parse returns.  Mirrors parse_at's pattern,
+     * including the FE-22 save/restore (no absolute clear). */
+    bool saved_at_event_cond = p->at_event_cond;
     p->at_event_cond = true;
     UAstNode *cond = parse_inner_tier(p);
-    p->at_event_cond = false;
+    p->at_event_cond = saved_at_event_cond;
     if (!cond) return (UAstNode *)&uparser_oom_sentinel;
     if (cond->kind == AST_ERROR) return cond;
 
@@ -591,10 +596,13 @@ UAstNode *parse_waituntil(UParser *p) {
     }
     consume(p);
 
-    /* Enable at_event_cond so `?` in the inner expression isn't flagged. */
+    /* Enable at_event_cond so `?` in the inner expression isn't flagged.
+     * Save/restore: waituntil is an expression primary, so this very parse
+     * can sit inside another condition's flag scope (refactor-3 FE-22). */
+    bool saved_at_event_cond = p->at_event_cond;
     p->at_event_cond = true;
     UAstNode *cond = parse_inner_tier(p);
-    p->at_event_cond = false;
+    p->at_event_cond = saved_at_event_cond;
     if (!cond) return (UAstNode *)&uparser_oom_sentinel;
     if (cond->kind == AST_ERROR) return cond;
 

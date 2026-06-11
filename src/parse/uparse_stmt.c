@@ -829,10 +829,14 @@ UAstNode *parse_assert(UParser *p) {
 
     /* Capture source text start: p->lex->cur is now right after '('.
      * Trim leading whitespace so the diagnostic text starts at the expression.
-     * The source buffer is guaranteed to outlive the AST node. */
+     * The source buffer is guaranteed to outlive the AST node.
+     * refactor-3 FE-10: bound the walk at p->lex->end — `assert(` at the very
+     * end of a non-NUL-terminated buffer put cur one past the end, and the
+     * unbounded loop read past the allocation. */
     const char *src_start = p->lex->cur;
-    while (*src_start == ' ' || *src_start == '\t'
-           || *src_start == '\r' || *src_start == '\n') {
+    while (src_start < p->lex->end &&
+           (*src_start == ' ' || *src_start == '\t'
+            || *src_start == '\r' || *src_start == '\n')) {
         src_start++;
     }
 
