@@ -152,10 +152,14 @@ urbi_stdlib_containers_destroy(UVM *vm)
  * Tuple backing buffers are UCONTAINER_LIST too (tuple_new builds via
  * list_alloc), so the LIST arm covers Tuples.  NULL backing is only
  * possible with len == 0 / cap == 0, so the loop bounds already guard
- * the dereferences.  Cost: O(total elements) per root scan — bounded,
- * and paid only at MARK_ROOTS (plus the ATOMIC_FINISH re-scan once GC-02
- * lands in this same tag).  The proper v1.x fix is UTYPE_LIST promotion
- * (deferred; see design-risks). */
+ * the dereferences.  Cost: lists are O(len); the dict arm is O(cap), not
+ * O(len) — bounded <= 4x len by the load factor.  Paid at MARK_ROOTS plus
+ * the GC-02 ATOMIC_FINISH re-scan (twice per cycle).  Container backings
+ * are vm-lifetime (container_register has no inverse), so root-scan cost
+ * grows monotonically with container churn and elements of unreachable
+ * containers stay pinned until VM destroy — a soundness-over-precision
+ * tradeoff; the full fix is the v1.x UTYPE_LIST promotion (deferred; see
+ * design-risks). */
 void
 urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
 {
@@ -187,14 +191,20 @@ urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
  * child whenever a mark phase is in flight.  Stores while the GC is IDLE
  * or SWEEPing need no barrier (IDLE: next cycle's root scan sees the
  * element; SWEEP: marking is complete and mid-sweep allocations are
- * current_white by construction).  Soundness backstop either way is the
- * GC-02 full root re-scan at ATOMIC_FINISH (landing in this same tag). */
+ * current_white by construction).  A slice can also end with phase ==
+ * ATOMIC_FINISH (gray list drained exactly at budget exhaustion), so the
+ * mutator may store in that phase too and this barrier no-ops — that is
+ * sound because the GC-02 full root re-scan runs at the START of the next
+ * ATOMIC_FINISH slice, after the store, and re-discovers the element.
+ *
+ * Usage contract: call immediately before the store; no allocation may
+ * intervene between barrier and store. */
 static void
 container_element_pre_store(UVM *vm, UValue child)
 {
-    if ((vm->gc_phase == GC_PHASE_MARK_ROOTS
-         || vm->gc_phase == GC_PHASE_MARK_INCREMENTAL)
-        && uvalue_is_heap_white(vm, child)) {
+    if (UNLIKELY((vm->gc_phase == GC_PHASE_MARK_ROOTS
+                  || vm->gc_phase == GC_PHASE_MARK_INCREMENTAL)
+                 && uvalue_is_heap_white(vm, child))) {
         gc_shade_gray(vm, uvalue_as_cell(child));
     }
 }
