@@ -51,6 +51,8 @@
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"  /* gc_shade_gray (Step C-1 closure/upval roots) */
 #include "runtime/uclosure.h"   /* UClosure + UUpvalCell full defs (Step C-1) */
+#include "runtime/ucleanup.h"   /* UCleanupEntry + UCLEANUP_TAG_SCOPE (GC-03 owning_tag roots) */
+#include "tag/utag.h"           /* UTag full def — (UCell *) casts in strand_walk_roots (GC-03) */
 #include "runtime/uframe.h"
 #include <stddef.h>
 
@@ -460,20 +462,18 @@ sched_dequeue_ready_head(UVM *vm)
  * Root sources at v0.5.x baseline (M5 shipped):
  *   (1) Register window — conservative full-stack scan (see below).
  *   (2) Unwind state — unwind_value + fatal_value are UValue fields.
- *   (3) Cleanup stack — owning_tag (UTag*) and catch_pattern (UPattern*)
- *       are NOT yielded as direct UValue roots here.  Reachability is
- *       provided indirectly: UTag was GC-promoted at M5 and is reached via
- *       the realm strand walker plus the closure references that captured
- *       it; member_strands_head's back-pointer to the cleanup entry sits
- *       on the strand stack which (1) walks.  See SCHED-012 v1.x carry-
- *       forward note below.
+ *   (3) Cleanup stack — TAG_SCOPE entries' owning_tag (UTag*) is shaded
+ *       directly since v0.13.2 (refactor-3 GC-03): the anonymous per-scope
+ *       tag vm_push_tag_scope creates has no other reference.
+ *       catch_pattern (UPattern*) is host-allocated, not GC-managed.
  *   (4) Wait payload — wait_payload.event / wait_payload.join_parent are
  *       NOT yielded here.  UEvent became a GC cell at M5, but every UEvent
  *       a strand can be waiting on is reachable through another path (realm
  *       globals for stdlib events; object's changed_events_head for
  *       slot-change events; tag's enter_event/leave_event fields for tag-
  *       scoped events).  join_parent points at another live strand reached
- *       via realm.strands_head.
+ *       via realm.strands_head.  wait_payload.suspend_tag IS shaded since
+ *       v0.13.2 (refactor-3 GC-03), guarded on the BLOCK/FREEZE reason.
  *
  * Register window strategy (row 10 §5.2 guidance):
  *   s->stack is a heap-allocated UVM_STACK_CAP-slot array.  The active
@@ -519,19 +519,28 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
     cb(vm, &s->unwind_value, ctx);
     cb(vm, &s->fatal_value,  ctx);
     cb(vm, &s->catch_value,  ctx);
+    /* GC-04 (refactor-3): unblock_value carries the resume value between
+     * urbi_tag_block/urbi_strand_resume and opcode-level delivery (v0.10.9
+     * W3a) — same lifetime shape as catch_value, same rooting requirement. */
+    cb(vm, &s->unblock_value, ctx);
 
     /* (3) Cleanup-stack entries (row 7 §4.4).
-     *     owning_tag (UTag*) was GC-promoted at M5 but is reached indirectly:
-     *     a tag visible to user code is captured in the lexical closures the
-     *     watcher table walker visits and / or pinned via the strand register
-     *     window walked at (1).  catch_pattern (UPattern*) remains host-
-     *     allocated at v1.0 (UPattern is not GC-managed).  No direct callback
-     *     is needed here.
-     *     TODO(v1.x — cleanup-stack walker): if a future audit identifies a
-     *     UTag reachable only via cleanup_base[i].owning_tag, this loop must
-     *     yield those UTag pointers as UVAL_TAG roots.  Today no such audit
-     *     exists; the M5+ test corpus has not surfaced a reachability gap
-     *     (see test_gc_strand_walker.c + test_gc_scratch_rooting.c). */
+     *     GC-03 (refactor-3): TAG_SCOPE entries' owning_tag IS a root — an
+     *     anonymous per-scope UTag created by vm_push_tag_scope is referenced
+     *     ONLY here (the "future audit" the old comment hedged on found it:
+     *     deep-audit GC-03/SCHED-07).  UTag embeds the cell header at offset
+     *     0; shade directly so the walk_utag type walker traces enter/leave
+     *     events, members, and name.  catch_pattern (UPattern*) remains
+     *     host-allocated (not GC-managed) at v1.0 — no callback needed. */
+    {
+        uint16_t ci;
+        for (ci = 0U; ci < s->cleanup_depth; ci++) {
+            UCleanupEntry *e = &s->cleanup_base[ci];
+            if (e->kind == (uint8_t)UCLEANUP_TAG_SCOPE && e->owning_tag != NULL) {
+                gc_shade_gray(vm, (UCell *)e->owning_tag);
+            }
+        }
+    }
 
     /* (4) Wait payload (row 9 §4.3).
      *     wait_payload.event (struct UEvent*) and wait_payload.join_parent
@@ -541,6 +550,15 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
      *     owning tag's enter_event/leave_event fields.  join_parent is
      *     another live strand reached via realm.strands_head.  No direct
      *     callback is needed here at v1.0. */
+    /*     GC-03 (refactor-3): the suspend_tag union arm is live ONLY while
+     *     the strand is SUSPENDED for BLOCK/FREEZE — guard on the reason
+     *     before touching the union. */
+    if (USTRAND_IS_SUSPENDED(s)
+     && (USTRAND_GET_REASON(s) == USTRAND_REASON_BLOCK
+      || USTRAND_GET_REASON(s) == USTRAND_REASON_FREEZE)
+     && s->wait_payload.suspend_tag != NULL) {
+        gc_shade_gray(vm, (UCell *)s->wait_payload.suspend_tag);
+    }
 
     /* (5) last_event_payload (spec #3 §7.1, T56).
      *     Written by c_event_emit_* before unblocking a waituntil strand.

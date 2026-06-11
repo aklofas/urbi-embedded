@@ -36,6 +36,8 @@
 #include "runtime/uclosure.h" /* UClosure.native_fn (dict container cases) */
 #include "stdlib/containers.h" /* urbi_stdlib_list_new_empty / _append_value */
 #include "value/uintern.h"    /* ustr_intern (dict keys + native-fn lookup) */
+#include "runtime/ucleanup.h" /* strand_cleanup_* (cleanup owning_tag case) */
+#include "tag/utag.h"         /* utag_create (owning_tag + suspend_tag cases) */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -247,6 +249,98 @@ UTEST(matrix_strand_last_event_payload_is_rooted)
     UASSERT(cell_live(&vm, sentinel));
 
     memset(&s.last_event_payload, 0, sizeof s.last_event_payload);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
+/* === Strand tag/value root cases (Task 5 / refactor-3 GC-03/GC-04/SCHED-07) === */
+
+UTEST(matrix_strand_unblock_value_is_rooted)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    UCell *sentinel = sentinel_alloc(&vm);
+    UASSERT(sentinel != NULL);
+    s.unblock_value = obj_value_for(sentinel);
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, sentinel));
+
+    memset(&s.unblock_value, 0, sizeof s.unblock_value);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(matrix_cleanup_owning_tag_is_rooted)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    /* Real cleanup stack via the runtime's own init (raw vm->alloc_fn —
+     * never a GC allocation, so no stress hazard); entries arrive zeroed. */
+    int rc = strand_cleanup_stack_init(&s, &vm, (uint16_t)URBI_CLEANUP_MAX);
+    UASSERT_EQ(rc, 0);
+
+    /* Push FIRST (pure index bump, no allocation), THEN create the tag,
+     * THEN store: under URBI_GC_STRESS utag_create force-collects before
+     * allocating, and nothing may allocate between utag_create returning
+     * and the owning_tag store while the tag is unrooted. */
+    UCleanupEntry *entry = strand_cleanup_push(&s);
+    UASSERT(entry != NULL);
+    entry->kind        = (uint8_t)UCLEANUP_TAG_SCOPE;
+    entry->strand_back = &s;   /* mirrors vm_push_tag_scope; the remaining
+                                  fields keep their zero/NULL init values,
+                                  matching the anonymous-scope arm */
+
+    UTag *tag = utag_create(&vm);
+    UASSERT(tag != NULL);
+    entry->owning_tag = tag;   /* tag's ONLY reference (the anonymous
+                                  per-scope shape vm_push_tag_scope builds) */
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, (UCell *)tag));
+
+    /* Clear + pop before teardown so nothing later treats the slot as a
+     * live tag scope; the now-unreferenced tag is reclaimed by a later
+     * cycle (GC owns it — no utag_destroy here). */
+    entry->owning_tag = NULL;
+    strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
+    strand_cleanup_stack_destroy(&s, &vm);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(matrix_suspend_tag_is_rooted)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    /* Stamp the SUSPENDED|BLOCK composite directly — the exact state byte
+     * urbi_strand_suspend writes (the queue splice it also performs does
+     * not apply: this hand-built strand was never enqueued).  Stamp BEFORE
+     * the tag is born so the union arm is already discriminated live when
+     * a stress collection fires inside utag_create. */
+    uint8_t state_saved = s.state;
+    s.state = (uint8_t)USTRAND_STATE_SUSPENDED_BLOCK;
+
+    UTag *tag = utag_create(&vm);
+    UASSERT(tag != NULL);
+    s.wait_payload.suspend_tag = tag;   /* tag's ONLY reference */
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, (UCell *)tag));
+
+    /* Restore the pre-suspend state + clear the payload so teardown and
+     * urbi_vm_destroy never see a fake-suspended strand. */
+    s.wait_payload.suspend_tag = NULL;
+    s.state = state_saved;
     matrix_strand_teardown(&vm, &s);
     urbi_vm_destroy(&vm);
 }
@@ -577,8 +671,9 @@ UTEST(matrix_atomic_finish_rescans_mutated_registers)
     /* Drive ONE slice: completes MARK_ROOTS (all providers run; the
      * register window is scanned, P is shaded gray) and stops in
      * MARK_INCREMENTAL before P is traced. */
-    vm.gc_debt    = 1;   /* the IDLE arm starts a cycle only when debt > 0 */
-    vm.gc_pending = 1U;
+    vm.gc_debt = 1;   /* the IDLE arm starts a cycle only when debt > 0
+                       * (gc_pending is a dispatcher-side request flag the
+                       * slice machine clears but never gates on) */
     urbi_gc_slice(&vm, 1U);
     UASSERT_EQ((uint8_t)GC_PHASE_MARK_INCREMENTAL, urbi_gc_phase(&vm));
 
@@ -588,9 +683,15 @@ UTEST(matrix_atomic_finish_rescans_mutated_registers)
     rc = urbi_object_set_local_slot(&vm, holder, sym, urbi_make_nil());
     UASSERT_EQ(rc, 0);
 
-    /* Finish the cycle. */
-    while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
-        urbi_gc_slice(&vm, 4096U);
+    /* Finish the cycle.  Capped so a wedge regression (phase never
+     * reaching IDLE) fails the case instead of hanging CI. */
+    {
+        int spins = 0;
+        while (urbi_gc_phase(&vm) != (uint8_t)GC_PHASE_IDLE) {
+            urbi_gc_slice(&vm, 4096U);
+            spins++;
+            UASSERT(spins < 64);
+        }
     }
 
     UASSERT(cell_live(&vm, sentinel));
@@ -614,6 +715,12 @@ void test_gc_rooting_matrix_suite(void)
               matrix_strand_fatal_value_is_rooted);
     utest_run("matrix_strand_last_event_payload_is_rooted",
               matrix_strand_last_event_payload_is_rooted);
+    utest_run("matrix_strand_unblock_value_is_rooted",
+              matrix_strand_unblock_value_is_rooted);
+    utest_run("matrix_cleanup_owning_tag_is_rooted",
+              matrix_cleanup_owning_tag_is_rooted);
+    utest_run("matrix_suspend_tag_is_rooted",
+              matrix_suspend_tag_is_rooted);
     utest_run("matrix_uprotos_wrapper_survives_when_owner_live",
               matrix_uprotos_wrapper_survives_when_owner_live);
     utest_run("matrix_register_window_is_rooted",
