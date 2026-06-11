@@ -22,6 +22,12 @@ struct UVM *urbi_vm_create(UVMAllocFn alloc_fn, void *alloc_ud)
     struct UVM *vm = (struct UVM *)storage;
     int rc = urbi_vm_init(vm, alloc_fn, alloc_ud);
     if (rc != URBI_OK) {
+        /* refactor-3 VM-09: init may fail with subsystems already live
+         * (event ring, watcher pool, ...) — urbi_vm_init latches OOM and
+         * keeps initializing, so every field is set and some allocations
+         * succeeded.  urbi_vm_destroy is partial-init-safe (NULL-guards
+         * every teardown arm); run it before releasing the storage. */
+        urbi_vm_destroy(vm);
         alloc_fn(storage, 0, alloc_ud);
         return NULL;
     }
