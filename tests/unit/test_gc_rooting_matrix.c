@@ -38,6 +38,7 @@
 #include "value/uintern.h"    /* ustr_intern (dict keys + native-fn lookup) */
 #include "runtime/ucleanup.h" /* strand_cleanup_* (cleanup owning_tag case) */
 #include "tag/utag.h"         /* utag_create (owning_tag + suspend_tag cases) */
+#include "utest_e2e_helpers.h" /* utest_e2e_compile_and_run (cleanup saved-value case) */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -709,6 +710,115 @@ UTEST(matrix_atomic_finish_rescans_mutated_registers)
     urbi_vm_destroy(&vm);
 }
 
+/* === C-stack root frame case (Task 6 / refactor-3 VM-06a) ===
+ *
+ * Full push/pop lifecycle contract of the UCRootFrame chain
+ * (src/sched/ustrand.h): while a frame is pushed, the chained slot is a
+ * root (the sentinel's ONLY reference is the C-stack UValue local);
+ * after the pop, the slot is invisible again and the sentinel is swept. */
+
+UTEST(matrix_c_root_frame_roots_value)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    UCell *sentinel = sentinel_alloc(&vm);
+    UASSERT(sentinel != NULL);
+    UValue held = obj_value_for(sentinel);   /* sentinel's ONLY reference */
+    UCRootFrame frame;
+    ustrand_c_root_push(&s, &frame, &held);
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, sentinel));
+
+    ustrand_c_root_pop(&s, &frame);
+    urbi_gc_force_full(&vm);
+    UASSERT(!cell_live(&vm, sentinel));
+
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
+/* === Cleanup-executor saved-value case (Task 6 / refactor-3 VM-06a) ===
+ *
+ * run_cleanup_with_replace (src/runtime/uunwind.c) stashes the suppressed
+ * unwind value in a C local (`UValue saved_value`) while the finally body
+ * runs via a nested dispatch — and a GC inside that dispatch cannot see C
+ * locals (no conservative C-stack scan in this GC).  With the try scope's
+ * registers already zeroed (Inv-5), the saved RETURN value's ONLY
+ * reference is that C local: a collection mid-finally sweeps it, and the
+ * walker then delivers a dangling pointer to the caller.
+ *
+ * GC pressure is applied surgically via a registered host fn (`gcNow`)
+ * that force-collects twice from inside the finally body — deterministic
+ * red on EVERY build, not just under URBI_GC_STRESS.  Full-stress script
+ * runs are not usable here: realm population under URBI_GC_STRESS hits
+ * the known pre-existing baseline boot crash (urbi_populate_realm_globals
+ * → walk_ushape on a mid-construction cell — the same class that kills
+ * string_literal_e2e), so the case runs with stress disarmed and the
+ * forced double-collection in the finally provides strictly more pressure
+ * at exactly the VM-06a window than stress mode would. */
+
+static int host_gc_now(struct UVM *vm, UValue self,
+                       UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)args; (void)nargs;
+    urbi_gc_force_full(vm);
+    urbi_gc_force_full(vm);
+    *out = urbi_make_nil();
+    return 0;
+}
+
+UTEST(matrix_cleanup_saved_value_survives_gc_in_cleanup_body)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* Disarm stress for the whole case (see header comment): the realm
+     * bootstrap inside the e2e run crashes under URBI_GC_STRESS (known
+     * baseline), and gcNow() supplies the collection pressure at the one
+     * point this case is about. */
+    vm.gc_stress_armed = 0U;
+
+    UASSERT_EQ(URBI_OK, urbi_register(&vm, NULL, "gcNow", host_gc_now));
+
+    /* try { return Pair.new(1, 2) } finally { gcNow() }:
+     * the RETURN deposits the pair into s->unwind_value; the unwind
+     * walker zeroes the try scope's registers (Inv-5) and hands the value
+     * to run_cleanup_with_replace's C local; gcNow() collects while it
+     * sits there. */
+    UValue result = urbi_make_nil();
+    int rc = utest_e2e_compile_and_run(
+        &vm,
+        "var f = function() { try { return Pair.new(1, 2) } "
+        "finally { gcNow() } }; f()",
+        &result);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_OBJECT, (int)result.kind);
+
+    /* Liveness oracle: pre-fix the pair was swept mid-finally (off the
+     * all-cells sidecar list); the walker then delivered a dangling
+     * pointer.  Membership is checked WITHOUT dereferencing the cell so
+     * the pre-fix red is a clean assert, not a UAF crash. */
+    UASSERT(cell_live(&vm, result.v.p));
+
+    /* Value integrity (guarded so the pre-fix red never dereferences the
+     * swept cell): the survivor must still be the pair we returned. */
+    if (cell_live(&vm, result.v.p)) {
+        USymbol *sym_first = (USymbol *)ustr_intern(&vm, "first", 5);
+        UASSERT(sym_first != NULL);
+        UValue first = urbi_make_nil();
+        UASSERT_EQ(0, urbi_object_lookup(&vm, (UObject *)result.v.p,
+                                         sym_first, &first));
+        UASSERT_EQ((int)UVAL_INT, (int)first.kind);
+        UASSERT_EQ(1LL, (long long)first.v.i);
+    }
+
+    urbi_vm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void test_gc_rooting_matrix_suite(void)
@@ -740,4 +850,8 @@ void test_gc_rooting_matrix_suite(void)
               matrix_dict_key_is_rooted);
     utest_run("matrix_atomic_finish_rescans_mutated_registers",
               matrix_atomic_finish_rescans_mutated_registers);
+    utest_run("matrix_c_root_frame_roots_value",
+              matrix_c_root_frame_roots_value);
+    utest_run("matrix_cleanup_saved_value_survives_gc_in_cleanup_body",
+              matrix_cleanup_saved_value_survives_gc_in_cleanup_body);
 }

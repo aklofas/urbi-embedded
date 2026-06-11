@@ -189,6 +189,13 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
 {
     UExecStatus saved_unwind = s->pending_unwind;
     UValue       saved_value = s->unwind_value;
+    /* refactor-3 VM-06a / v0.13.1-L: the nested dispatch below can run GC
+     * slices, and this C local is otherwise invisible to the GC (no
+     * conservative C-stack scan) — with the try scope's registers already
+     * zeroed (Inv-5), saved_value may be the suppressed RETURN value's
+     * ONLY reference.  Pin it on the strand's C-stack root chain for the
+     * duration; popped on every exit below the push. */
+    UCRootFrame  saved_value_root;
     UValue       nil;
 
     nil.kind = 0;
@@ -207,6 +214,13 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
         return URBI_ERR_CLEANUP_OVERFLOW;
     }
     s->cleanup_run_depth++;
+
+    /* Pushed AFTER the early-exit guard above so every push has a matching
+     * pop (VM-06a).  saved_value and the frame both live on this C frame,
+     * which provably outlives the nested dispatch: cleanup bodies are
+     * atomic (REVIVAL §14 S-cleanup-atomic, v0.13.1) — they cannot yield
+     * out from under us. */
+    ustrand_c_root_push(s, &saved_value_root, &saved_value);
 
     /* Clear unwind state so the cleanup body executes as normal code.
      * Task #24 / S44 (2026-05-16): use `s->pc_base` rather than
@@ -260,6 +274,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
                                        "URBI_WARN_SUPPRESSED_UNWIND: cleanup body "
                                        "raised; original unwind dropped");
                 }
+                ustrand_c_root_pop(s, &saved_value_root);
                 s->cleanup_run_depth--;
                 return 0;
             }
@@ -287,6 +302,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
                     "URBI_ERR_CLEANUP_OVERFLOW: cleanup body yielded or blocked; "
                     "finally/onleave bodies execute atomically (refactor-3 VM-02)");
             }
+            ustrand_c_root_pop(s, &saved_value_root);
             s->cleanup_run_depth--;
             return URBI_ERR_CLEANUP_OVERFLOW;
         }
@@ -294,7 +310,10 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
     }
 
     if (s->pending_unwind == UEXEC_OK) {
-        /* Cleanup body completed normally: restore the original unwind state. */
+        /* Cleanup body completed normally: restore the original unwind state.
+         * The restore happens while saved_value is still pinned on the root
+         * chain; from here the value lives in s->unwind_value, which the
+         * strand walker roots directly. */
         s->pending_unwind = saved_unwind;
         s->unwind_value   = saved_value;
     } else {
@@ -309,6 +328,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
         }
     }
 
+    ustrand_c_root_pop(s, &saved_value_root);
     s->cleanup_run_depth--;
     return 0;
 }

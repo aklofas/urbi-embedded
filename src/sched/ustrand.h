@@ -22,6 +22,7 @@
 #include <stddef.h>   /* size_t */
 #include "value/uvalue.h"   /* pulls in umodule.h which defines UValue — must come before uframe.h */
 #include "runtime/uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
+#include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT (ustrand_c_root_pop LIFO check) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -114,6 +115,18 @@ struct UChunkInstance;  /* object/uchunk_instance.h — M4 follow-up: per-(vm,mo
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
 struct UPeriodic;        /* stdlib/temporal.h — v0.9.4 every() back-pointer */
 
+/* refactor-3 VM-06a / v0.13.1-L: C-stack root frame.  Runtime C code that
+ * must hold a UValue live across a nested dispatch (which can run GC
+ * slices) pushes one of these stack-allocated frames onto
+ * s->c_roots_head; strand_walk_roots yields every chained slot.  LIFO
+ * discipline is mandatory (assert-checked in pop).  Sound because the
+ * holders (cleanup executor et al.) cannot yield mid-body — the C frame
+ * outlives every GC slice that can observe the chain. */
+typedef struct UCRootFrame {
+    UValue              *slot;
+    struct UCRootFrame  *next;
+} UCRootFrame;
+
 /* === UStrand struct ===
    The strand is the unit of cooperative concurrency.  Each instance owns
    its own register stack, frame array, cleanup stack, and scheduler-list
@@ -162,6 +175,13 @@ struct UStrand {
     uint16_t                cleanup_run_depth;
     uint16_t                cleanup_run_pad;
     struct UCleanupEntry   *cleanup_base;
+    /* refactor-3 VM-06a / v0.13.1-L: head of the C-stack root frame chain
+     * (UCRootFrame above).  NULL when no runtime C code is pinning a value
+     * across a nested dispatch; all strand constructions zero-init the
+     * struct (ustrand_init via urbi_zero; the urbi_vm_run / scratch
+     * transients via urbi_zero on the stack-local), so the chain starts
+     * empty by construction. */
+    struct UCRootFrame     *c_roots_head;
     UExecStatus             fatal_status;
     uint8_t                 fatal_pad[3];
     UValue                  fatal_value;
@@ -313,13 +333,36 @@ struct UStrand {
  * Guarded on pointer width to avoid a hard failure on 32-bit cross
  * targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3912,
+URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3920,
                "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change"
                /* v0.9.2 Task 4.1: -8 B from deleting s->module pointer (3896 → 3888).
                 * v0.9.4: +8 B for periodic_owner back-pointer (3888 → 3896).
                 * v0.10.9 W3a: +16 B for unblock_value (UValue) supporting
-                *              SUSPENDED↔READY tag.block/unblock plumbing (3896 → 3912). */);
+                *              SUSPENDED↔READY tag.block/unblock plumbing (3896 → 3912).
+                * v0.13.2 (refactor-3 VM-06a): +8 B for c_roots_head — the
+                *              C-stack root frame chain (3912 → 3920). */);
 #endif
+
+/* === C-stack root frame push/pop (refactor-3 VM-06a) ===
+ *
+ * Strict LIFO: every push must be matched by a pop of the SAME frame on
+ * every exit path of the holding function.  The frame and the rooted
+ * UValue must both be C-stack locals that outlive the nested dispatch. */
+
+static inline void
+ustrand_c_root_push(struct UStrand *s, UCRootFrame *f, UValue *slot)
+{
+    f->slot = slot;
+    f->next = s->c_roots_head;
+    s->c_roots_head = f;
+}
+
+static inline void
+ustrand_c_root_pop(struct UStrand *s, UCRootFrame *f)
+{
+    URBI_INTERNAL_ASSERT(s->c_roots_head == f);
+    s->c_roots_head = f->next;
+}
 
 /* === Lifecycle functions ===
 

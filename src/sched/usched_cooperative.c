@@ -524,6 +524,17 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
      * W3a) — same lifetime shape as catch_value, same rooting requirement. */
     cb(vm, &s->unblock_value, ctx);
 
+    /* (2b) C-stack root frames (refactor-3 VM-06a): values runtime C code
+     *      pinned across nested dispatch.  Chain lives on the C stack of
+     *      the strand's active dispatch; entries are pushed/popped LIFO by
+     *      run_cleanup_with_replace et al. */
+    {
+        UCRootFrame *f;
+        for (f = s->c_roots_head; f != NULL; f = f->next) {
+            cb(vm, f->slot, ctx);
+        }
+    }
+
     /* (3) Cleanup-stack entries (row 7 §4.4).
      *     GC-03 (refactor-3): TAG_SCOPE entries' owning_tag IS a root — an
      *     anonymous per-scope UTag created by vm_push_tag_scope is referenced
