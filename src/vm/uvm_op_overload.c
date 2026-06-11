@@ -36,6 +36,8 @@
 #include "runtime/uclosure.h"
 #include "value/uintern.h"
 #include "sched/ustrand.h"
+#include "gc/ugc_incremental.h"  /* uvm_c_root_push/_pop (v0.13.2 native out-slot rooting) */
+#include "runtime/umacros.h"     /* urbi_zero */
 #include "watcher/uwatcher.h"   /* urbi_run_closure_on_scratch[_with_payload] */
 
 /* -----------------------------------------------------------------------
@@ -252,9 +254,21 @@ vm_arith_method_fallback(UVM *vm,
      * binary ops (function(other){...}); the scratch runner does not enforce
      * nparams, so a 0-param body also runs (and ignores the payload). */
     UValue result;
+    urbi_zero(&result, sizeof result);
     if (cl->native_fn != NULL) {
+        /* GC soundness (v0.13.2 T14 follow-up): root the out-slot for the
+         * call's duration, mirroring the main OP_CALL native arm — result
+         * is a C stack local, and a native that builds its result
+         * incrementally would otherwise hand back a swept cell under
+         * collect-on-every-alloc.  The VM-level chain is used (not the
+         * strand chain) so the helper stays sound on any future
+         * strandless caller.  lhs/rhs point at rooted registers; the arg
+         * copy's referent stays alive through them. */
+        UCRootFrame f_res;
         UValue arg = *rhs;
+        uvm_c_root_push(vm, &f_res, &result);
         int nrc = cl->native_fn(vm, *lhs, &arg, 1, &result);
+        uvm_c_root_pop(vm, &f_res);
         if (nrc != 0) {
             return VM_OP_OVERLOAD_MISS;
         }
@@ -311,8 +325,14 @@ vm_arith_method_fallback_unary(UVM *vm,
     }
 
     UValue result;
+    urbi_zero(&result, sizeof result);
     if (cl->native_fn != NULL) {
+        /* GC soundness (v0.13.2 T14 follow-up): same out-slot rooting as
+         * the binary arms above. */
+        UCRootFrame f_res;
+        uvm_c_root_push(vm, &f_res, &result);
         int nrc = cl->native_fn(vm, *operand, NULL, 0, &result);
+        uvm_c_root_pop(vm, &f_res);
         if (nrc != 0) {
             return VM_OP_OVERLOAD_MISS;
         }
@@ -370,9 +390,21 @@ vm_cmp_method_fallback(UVM *vm,
     }
 
     UValue result;
+    urbi_zero(&result, sizeof result);
     if (cl->native_fn != NULL) {
+        /* GC soundness (v0.13.2 T14 follow-up): root the out-slot for the
+         * call's duration, mirroring the main OP_CALL native arm — result
+         * is a C stack local, and a native that builds its result
+         * incrementally would otherwise hand back a swept cell under
+         * collect-on-every-alloc.  The VM-level chain is used (not the
+         * strand chain) so the helper stays sound on any future
+         * strandless caller.  lhs/rhs point at rooted registers; the arg
+         * copy's referent stays alive through them. */
+        UCRootFrame f_res;
         UValue arg = *rhs;
+        uvm_c_root_push(vm, &f_res, &result);
         int nrc = cl->native_fn(vm, *lhs, &arg, 1, &result);
+        uvm_c_root_pop(vm, &f_res);
         if (nrc != 0) {
             return VM_OP_OVERLOAD_MISS;
         }

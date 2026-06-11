@@ -34,6 +34,7 @@
 #include "realm/urealm.h"
 #include "object/uobject.h"   /* struct UObject (sentinel payload size) */
 #include "object/uobject_internal.h" /* urbi_protos_alloc (UProtos wrapper case) */
+#include "object/ushape.h"   /* urbi_shape_find_slot (property-path cases) */
 #include "runtime/uclosure.h" /* UClosure.native_fn (dict container cases) */
 #include "stdlib/containers.h" /* urbi_stdlib_list_new_empty / _append_value */
 #include "value/uintern.h"    /* ustr_intern (dict keys + native-fn lookup) */
@@ -124,14 +125,14 @@ static UValue obj_value_for(UCell *cell)
  * Teardown unlinks symmetrically and frees the register stack. */
 static void matrix_strand_setup(UVM *vm, UStrand *s)
 {
-    /* Disarm stress mode for the lazy realm bootstrap only.  Under
-     * URBI_GC_STRESS the realm-population path (urbi_realm_create →
-     * urbi_populate_realm_globals) hits the known pre-existing baseline
-     * boot crash — a stress collection fires mid-population and sweeps a
-     * mid-construction cell (same class that kills string_literal_e2e in
-     * the stress build).  That crash is a baseline finding outside this
-     * matrix's scope; the matrix cases themselves (sentinel alloc +
-     * forced collections) run fully armed. */
+    /* Disarm stress mode for the lazy realm bootstrap only.  Historical:
+     * before the v0.13.2 T14 fixes (link-first realm create + bootstrap
+     * GC pause) the realm-population path crashed under URBI_GC_STRESS;
+     * that is fixed and pinned by test_realm.c's
+     * stress_realm_create_survives_collect_per_alloc.  The disarm is kept
+     * so the matrix's own setup cost stays low (armed bootstrap runs a
+     * full collection per allocation); the matrix cases themselves
+     * (sentinel alloc + forced collections) run fully armed. */
     uint8_t stress_saved = vm->gc_stress_armed;
     vm->gc_stress_armed = 0U;
     URealm *gr = urbi_realm_global(vm);
@@ -1387,6 +1388,114 @@ UTEST(matrix_setupval_barrier_targets_shared_cell)
 
 /* === Suite entry point === */
 
+/* === v0.13.2 T14 follow-up: property-path construction windows ===
+ *
+ * urbi_object_install_property / urbi_object_remove_property materialise
+ * a sibling shape + props-table wrapper that are held ONLY in C locals
+ * while uprops_alloc runs.  Property siblings are not cached in
+ * parent->transitions (unlike add-slot children), so nothing else
+ * reaches them mid-construction: under URBI_GC_STRESS the unpinned
+ * sibling was swept and a dangling shape published into obj->shape
+ * (review repro on remove: normal build prints shape count=1 flags=0,
+ * stress build printed count=0 flags=6 and survived silently).  Both
+ * cases run FULLY ARMED with the receiver rooted in a strand register,
+ * so on a stress build every allocation inside the call collects with
+ * the construction cells at peak exposure; on a normal build they are
+ * semantic smokes. */
+UTEST(matrix_install_property_pins_construction)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    UObject *o = (UObject *)(void *)sentinel_alloc(&vm);
+    UASSERT(o != NULL);
+    s.stack[0] = obj_value_for((UCell *)(void *)o);
+    o->shape = urbi_shape_root(&vm);
+    UASSERT(o->shape != NULL);
+
+    USymbol *x = (USymbol *)ustr_intern(&vm, "x", 1);
+    UASSERT(x != NULL);
+    UValue v42;
+    memset(&v42, 0, sizeof v42);
+    v42.kind = UVAL_INT;
+    v42.v.i  = 42;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, x, v42), 0);
+
+    /* The call under test: armed install of CONSTANT on slot 0. */
+    UASSERT_EQ(urbi_object_install_property(&vm, o, x,
+                                            URBI_SLOT_FLAG_CONSTANT, v42),
+               URBI_OK);
+
+    /* Published shape is sane and its construction cells survived. */
+    UASSERT_EQ((int)o->shape->count, 1);
+    UASSERT_EQ((int)urbi_shape_find_slot(o->shape, x), 0);
+    UASSERT((o->shape->flags & 0xFU) & URBI_SLOT_FLAG_CONSTANT);
+    UASSERT(o->shape->props_table != NULL);
+    UASSERT(o->shape->props_table[0] != NULL);
+    UASSERT_EQ((unsigned)o->shape->props_table[0]->constant, 1U);
+    UASSERT(cell_live(&vm, o->shape));
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, o->shape));
+    UASSERT_EQ((int)o->shape->count, 1);
+    UASSERT_EQ((unsigned)o->shape->props_table[0]->constant, 1U);
+
+    memset(&s.stack[0], 0, sizeof s.stack[0]);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(matrix_remove_property_pins_sibling_shape)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UStrand s;
+    matrix_strand_setup(&vm, &s);
+
+    UObject *o = (UObject *)(void *)sentinel_alloc(&vm);
+    UASSERT(o != NULL);
+    s.stack[0] = obj_value_for((UCell *)(void *)o);
+    o->shape = urbi_shape_root(&vm);
+    UASSERT(o->shape != NULL);
+
+    USymbol *x = (USymbol *)ustr_intern(&vm, "x", 1);
+    UASSERT(x != NULL);
+    UValue v42;
+    memset(&v42, 0, sizeof v42);
+    v42.kind = UVAL_INT;
+    v42.v.i  = 42;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, x, v42), 0);
+    UASSERT_EQ(urbi_object_install_property(&vm, o, x,
+                                            URBI_SLOT_FLAG_CONSTANT, v42),
+               URBI_OK);
+
+    /* The call under test: armed removal — the transition sibling +
+     * wrapper must be pinned across the internal uprops_alloc. */
+    UASSERT_EQ(urbi_object_remove_property(&vm, o, x,
+                                           URBI_SLOT_FLAG_CONSTANT), 0);
+
+    /* Published shape is sane: one slot, CONSTANT nibble cleared, the
+     * all-clear UProps dropped to NULL. */
+    UASSERT_EQ((int)o->shape->count, 1);
+    UASSERT_EQ((int)urbi_shape_find_slot(o->shape, x), 0);
+    UASSERT_EQ((unsigned)((o->shape->flags & 0xFU)
+                          & URBI_SLOT_FLAG_CONSTANT), 0U);
+    UASSERT(o->shape->props_table != NULL);
+    UASSERT(o->shape->props_table[0] == NULL);
+    UASSERT(cell_live(&vm, o->shape));
+
+    collect_twice(&vm);
+    UASSERT(cell_live(&vm, o->shape));
+    UASSERT_EQ((int)o->shape->count, 1);
+    UASSERT_EQ((int)urbi_shape_find_slot(o->shape, x), 0);
+
+    memset(&s.stack[0], 0, sizeof s.stack[0]);
+    matrix_strand_teardown(&vm, &s);
+    urbi_vm_destroy(&vm);
+}
+
 void test_gc_rooting_matrix_suite(void)
 {
     printf("  [gc_rooting_matrix]\n");
@@ -1434,4 +1543,8 @@ void test_gc_rooting_matrix_suite(void)
               matrix_slot_store_barrier_shades_other_white);
     utest_run("matrix_setupval_barrier_targets_shared_cell",
               matrix_setupval_barrier_targets_shared_cell);
+    utest_run("matrix_install_property_pins_construction",
+              matrix_install_property_pins_construction);
+    utest_run("matrix_remove_property_pins_sibling_shape",
+              matrix_remove_property_pins_sibling_shape);
 }
