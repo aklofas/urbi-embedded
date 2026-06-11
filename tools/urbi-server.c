@@ -111,9 +111,27 @@ static int run_boot_script(UVM *vm, const char *path) {
     UArena arena;
     uarena_init(&arena, 4096);
 
-    UProto module = (UProto){0};
+    /* CHSTR-027 pattern (refactor-3 VM-11): the root proto must be
+     * heap-allocated — closures created by the boot script keep proto
+     * pointers alive past this frame; uchunk_destroy defers the actual
+     * free to the refcount-rescue machinery (vm->rescued_protos) when
+     * references remain, and frees immediately when none do.  Ownership
+     * fields go in BEFORE uemit_init per its documented contract, so the
+     * single uchunk_destroy below also covers the compile-failure path
+     * (refcount 0 + heap_allocated → buffers and struct freed in place). */
+    UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
+    if (module == NULL) {
+        fprintf(stderr, "urbi-server: out of memory\n");
+        uarena_destroy(&arena);
+        free(src);
+        return 1;
+    }
+    memset(module, 0, sizeof *module);
+    module->alloc_fn       = vm->alloc_fn;
+    module->alloc_ud       = vm->alloc_ud;
+    module->heap_allocated = true;
     UEmitter e;
-    uemit_init(&e, &module, &arena, vm, path);
+    uemit_init(&e, module, &arena, vm, path);
 
     UParser p;
     uparse_init(&p, &lex, &arena);
@@ -142,14 +160,14 @@ static int run_boot_script(UVM *vm, const char *path) {
     }
     if (rc == 0) {
         UValue out;
-        UVMError vrc = urbi_vm_run(vm, NULL, &module, &out);
+        UVMError vrc = urbi_vm_run(vm, NULL, module, &out);
         if (vrc != UVM_OK) {
             fprintf(stderr, "urbi-server: %s: %s\n",
                     path, vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
             rc = 1;
         }
     }
-    uchunk_destroy(&module, vm);
+    uchunk_destroy(module, vm);
     uarena_destroy(&arena);
     free(src);
     return rc;
