@@ -103,11 +103,16 @@ UTEST(strand_walker_visits_waiting_join_strand)
         for (i = 0; i < stack_bytes; i++) p[i] = 0;
     }
 
-    /* Park parent in WAITING_JOIN, hand-wired (no scheduler dispatch). */
-    parent->state                    = USTRAND_STATE_WAITING_JOIN;
-    parent->wait_payload.join_parent = child;
-    parent->wait_next                = child->joiners_head;
-    child->joiners_head              = parent;
+    /* Park parent in WAITING_JOIN through the real transition.  v0.13.3
+     * (SCHED-13): a raw WAITING state stamp would bypass the
+     * strand_waiting_count increment, so the joiner wake at child teardown
+     * (realm destroy below) would trip the no-saturation decrement.
+     * Mirror uop_fork.c: wire joiners chain, then block. */
+    urbi_strand_start(&vm, parent);            /* DORMANT -> READY */
+    parent->wait_next   = child->joiners_head;
+    child->joiners_head = parent;
+    sched_strand_block(parent, USTRAND_REASON_JOIN,
+                       (uint64_t)(uintptr_t)child);
 
     /* Probe: count total visits across the walker run. */
     VisitProbe probe = {0};

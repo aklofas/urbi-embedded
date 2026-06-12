@@ -31,6 +31,7 @@
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
 #include "sched/ustrand.h"
+#include "sched/usched_cooperative.h"  /* sched_strand_block (waiter park) */
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "chunk/uchunk.h"
@@ -176,10 +177,15 @@ UTEST(sync_emit_degrades_when_in_watcher_eval)
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
 
-    /* Park a waiter to verify async path fired. */
+    /* Park a waiter to verify async path fired — through the real
+     * transition (v0.13.3 / SCHED-13: a raw WAIT_EVENT stamp would bypass
+     * the strand_waiting_count increment and trip the wake's
+     * no-saturation decrement). */
     UStrand waiter;
     ustrand_init(&waiter, &vm);
-    waiter.state              = USTRAND_WAIT_EVENT;
+    waiter.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count++;     /* satisfy block's RUNNING-decrement */
+    sched_strand_block(&waiter, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
     waiter.wait_event_target  = e;
     waiter.next_event_waiter  = NULL;
     waiter.last_event_payload.kind = UVAL_NIL;

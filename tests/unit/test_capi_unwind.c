@@ -16,6 +16,7 @@
 #include "utest.h"
 #include "urbi/urbi.h"
 #include "sched/ustrand.h"
+#include "sched/usched_cooperative.h"  /* sched_strand_block (case 9 park) */
 #include "runtime/ucleanup.h"
 #include "runtime/uunwind.h"  /* urbi_unwind — internal walker, used by W2 D3 test */
 #include "vm/uvm.h"
@@ -282,8 +283,15 @@ UTEST(capi_strand_cancel_unblocks_waiting_strand)
 
     UValue *reg = strand_minimal(&s, &vm);
 
-    /* Place the strand in a WAITING state (e.g. sleeping). */
-    s.state = USTRAND_STATE_WAITING_SLEEP;
+    /* Place the strand in a WAITING state (sleeping) through the real
+     * parking transition.  v0.13.3 (SCHED-13): a raw WAITING state stamp
+     * would bypass sched_strand_block's strand_waiting_count increment, so
+     * the cancel wake path's decrement would trip the no-saturation
+     * assert.  Park properly: RUNNING -> block (the RUNNING-decrement is
+     * satisfied by seeding the runnable count). */
+    s.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;
+    sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000U);
 
     int rc = urbi_strand_cancel(&vm, &s, make_nil());
     UASSERT_EQ(rc, URBI_OK);

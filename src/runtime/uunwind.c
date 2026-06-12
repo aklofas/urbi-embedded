@@ -297,7 +297,11 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
                  * context (about to be stamped fatal-DEAD by the overflow
                  * arm, which exits dispatch through the driver's fatal path
                  * — the path that owns the DEAD decrement).  Re-enter the
-                 * counted set so that exit decrement balances. */
+                 * counted set so that exit decrement balances.
+                 * SCHED-13: this WAITING -> RUNNING direct stamp is the one
+                 * wake path that bypasses sched_strand_make_runnable, so the
+                 * waiting counter exits here (see vm/uvm.h counter docs). */
+                sched_waiting_dec(s->vm, s);
                 s->state = USTRAND_STATE_RUNNING;
                 sched_runnable_inc(s->vm, s);
             } else if ((s->state & USTRAND_STATE_MASK) == USTRAND_READY) {

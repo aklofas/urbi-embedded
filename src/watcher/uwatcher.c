@@ -118,8 +118,12 @@ drain_watcher_list(struct UVM *vm, UWatcher **head)
     while (*head != NULL) {
         UWatcher *w = *head;
         *head = w->next_active;
-        vm->watchers->active_count = vm->watchers->active_count > 0
-                                   ? vm->watchers->active_count - 1U : 0U;
+        /* SCHED-06: no saturation — every armed watcher was counted at
+         * install (cond AND event modes), so an underflow here is a
+         * counting bug; masking it is what hid the install/unregister
+         * asymmetry for nine milestones. */
+        URBI_INTERNAL_ASSERT(vm->watchers->active_count > 0);
+        vm->watchers->active_count--;
         pool_free(vm, w);
     }
 }
@@ -217,8 +221,9 @@ uwatcher_pool_destroy(struct UVM *vm)
                 uevent_at_watchers_remove(w->event, w);
                 w->event = NULL;
             }
-            vm->watchers->active_count = vm->watchers->active_count > 0
-                                       ? vm->watchers->active_count - 1U : 0U;
+            /* SCHED-06: assert instead of saturate — see drain_watcher_list. */
+            URBI_INTERNAL_ASSERT(vm->watchers->active_count > 0);
+            vm->watchers->active_count--;
             pool_free(vm, w);
         }
     }
@@ -302,6 +307,10 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
         }
     }
 
+    /* SCHED-06: the count covers ALL armed watchers (cond + event modes,
+     * since install_at_event_runtime bumps it too).  Assert > 0 so an
+     * install/unregister asymmetry fail-fasts instead of wrapping. */
+    URBI_INTERNAL_ASSERT(vm->watchers->active_count > 0);
     vm->watchers->active_count--;
     pool_free(vm, w);
 }

@@ -187,9 +187,16 @@ struct URealm *urbi_realm_global(struct UVM *vm);
  * Thread safety: MAIN. */
 struct URealm *urbi_realm_create_repl(struct UVM *vm);
 
-/* Liveness query: reads VM-wide runnable / active-watcher / pending-wakeup
- * counters.  Populates out_strands / out_watchers / out_wakes (any may be
- * NULL).  Returns true if any counter is positive.
+/* Liveness query — INCLUSIVE "is anything at all alive?".  Returns true
+ * when ANY live work exists: runnable strands, pending internal work
+ * (injected events, host calls, reactive drains), timers (sleepers /
+ * periodics), or ARMED work (armed watchers of any mode plus SUSPENDED /
+ * WAITING strands).  Armed work counts here even though it does not block
+ * urbi_step's QUIESCENT verdict — use this query to distinguish a
+ * fully-dead VM from an armed-but-idle one that host input would re-arm.
+ *
+ * Populates out_strands (runnable strands) / out_watchers (armed watchers)
+ * / out_wakes (sleeping strands); any may be NULL.
  *
  * The function is VM-wide despite the per-realm spec wording: the counters
  * themselves are not partitioned per realm.  Per-realm partitioning is a
@@ -230,6 +237,13 @@ int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
  * urbi_step: drive the VM for up to budget_instructions opcodes, returning
  * a 4-state result describing what the caller should do next.
  *
+ * QUIESCENT means no internal work remains: no runnable strand, no pending
+ * event/host-call/reactive drain, no timer.  Armed watchers and SUSPENDED
+ * (blocked/frozen) strands do NOT prevent QUIESCENT — they are re-armed by
+ * host slot writes, injected events, or tag unblock/unfreeze; call
+ * urbi_step again after providing input.  Use urbi_vm_has_live_work to
+ * distinguish a fully-dead VM from an armed-but-idle one.
+ *
  * urbi_run_chunk: run a module's root chunk under the given Realm.  realm == NULL
  * uses the VM's global Realm (auto-created on first call).
  *
@@ -249,7 +263,8 @@ struct UProto;        /* forward decl — v0.9.2: UModule deleted; a module IS i
 
 typedef enum {
     URBI_STEP_RUNNING   = 0,  /* budget exhausted or yield; call again */
-    URBI_STEP_QUIESCENT = 1,  /* no live work; host may sleep or exit */
+    URBI_STEP_QUIESCENT = 1,  /* no internal work; the reactive surface may
+                                 stay armed — see QUIESCENT paragraph above */
     URBI_STEP_FATAL     = 2,  /* a strand entered fatal state; inspect via urbi_strand_is_fatal */
     URBI_STEP_WAKE_AT   = 3   /* no runnable strand now; *out_next_wake_us set */
 } UStepResult;

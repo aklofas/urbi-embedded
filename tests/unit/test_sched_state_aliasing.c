@@ -129,6 +129,13 @@ UTEST(is_event_parked_predicate_distinguishes_reason_byte)
     s.state = USTRAND_WAIT_EVENT;
     UASSERT(is_event_parked_local(&s));
 
+    /* v0.13.3 (SCHED-13): restore DORMANT before teardown — the raw stamps
+     * above bypass sched_strand_block, so the strand was never counted in
+     * strand_waiting_count; destroying it in a WAITING state would trip
+     * the no-saturation decrement.  This test only exercises the
+     * state-byte predicate. */
+    s.state = USTRAND_STATE_DORMANT;
+
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }

@@ -574,11 +574,11 @@ urbi_periodic_destroy_all(UVM *vm)
 /* === urbi_periodic_earliest_wake_us ==================================== */
 
 uint64_t
-urbi_periodic_earliest_wake_us(UVM *vm)
+urbi_periodic_earliest_wake_us(const UVM *vm)
 {
     if (vm == NULL) return UINT64_MAX;
     uint64_t earliest = UINT64_MAX;
-    UPeriodic *p;
+    const UPeriodic *p;
     for (p = vm->periodics_head; p != NULL; p = p->next) {
         if (p->unregister_pending) continue;
         if (p->current_strand != NULL) continue;

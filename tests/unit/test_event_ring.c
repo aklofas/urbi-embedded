@@ -163,11 +163,9 @@ UTEST(event_ring_drain_empty_noop)
     UASSERT(vm.event_ring != NULL);
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
-    uint32_t eq_before = vm.event_queue_count;
     uevent_ring_drain(&vm);
 
-    /* No events drained from an empty ring: event_queue_count unchanged. */
-    UASSERT_EQ((long long)vm.event_queue_count, (long long)eq_before);
+    /* No events drained from an empty ring; still no pending entries. */
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
     urbi_vm_destroy(&vm);
@@ -211,7 +209,9 @@ UTEST(event_ring_zero_payload_null_ptr_accepted)
 }
 
 /* ---- Case 10 (T26 / EVENT-017): drain without handler advances read_idx
- *      but no longer bumps event_queue_count (M3-compat fallback removed). */
+ *      only — entries are silently discarded (M3-compat event_queue_count
+ *      fallback removed at T26; the vestigial counter itself was deleted
+ *      at v0.13.3 / SCHED-13). */
 UTEST(event_ring_drain_without_handler_advances_read_idx_only)
 {
     UVM vm;
@@ -219,18 +219,13 @@ UTEST(event_ring_drain_without_handler_advances_read_idx_only)
 
     UASSERT(vm.event_ring != NULL);
 
-    uint32_t before = vm.event_queue_count;
-
     urbi_inject_event(&vm, 1U, NULL, 0U);
     urbi_inject_event(&vm, 2U, NULL, 0U);
     urbi_inject_event(&vm, 3U, NULL, 0U);
 
     uevent_ring_drain(&vm);
 
-    /* T26: no drain handler registered → entries silently discarded;
-     * event_queue_count is owned by M5+ UEvent emit paths, not by the
-     * ISR-ring drain. */
-    UASSERT_EQ((long long)vm.event_queue_count, (long long)before);
+    /* T26: no drain handler registered → entries silently discarded. */
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
     urbi_vm_destroy(&vm);

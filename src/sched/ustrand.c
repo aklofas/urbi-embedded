@@ -173,6 +173,17 @@ strand_cleanup_observers(UStrand *s)
 
 void
 ustrand_destroy(UStrand *s, struct UVM *vm) {
+    /* SCHED-13 / VM-12: death-from-parked exits the parked-strand counters
+     * here — the one teardown choke point every path funnels through
+     * (urbi_strand_destroy, realm-destroy sweep, transient teardown in
+     * urbi_vm_run / watcher scratch — transients are skipped inside the
+     * helpers).  Strands that die from RUNNING/READY were already handled
+     * by the runnable-count owners (SCHED-01). */
+    if (vm != NULL) {
+        if (USTRAND_IS_WAITING(s))        sched_waiting_dec(vm, s);
+        else if (USTRAND_IS_SUSPENDED(s)) sched_suspended_dec(vm, s);
+    }
+
     /* Scheduler F1: unregister from event-waiter chains and wake any
      * join-blocked parents BEFORE tearing down the strand's own resources.
      * This ensures every teardown path (urbi_strand_destroy, realm-destroy
@@ -703,6 +714,11 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
 
     strand->state = (uint8_t)(USTRAND_SUSPENDED |
                               (reason & USTRAND_REASON_MASK));
+    /* VM-12: single SUSPENDED entry point — the suspended counter enters
+     * here.  Exits: sched_strand_make_runnable (urbi_strand_resume funnels
+     * there) and ustrand_destroy.  No WAITING -> SUSPENDED arm exists (the
+     * guard above no-ops on WAITING strands), so no waiting_dec here. */
+    sched_suspended_inc(strand->vm, strand);
     strand->wait_payload.suspend_tag = tag;
 }
 

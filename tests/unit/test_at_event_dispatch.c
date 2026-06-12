@@ -116,9 +116,14 @@ UTEST(at_event_install_pool_exhausted)
     urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
-    /* Drain the pool. */
-    for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++)
+    /* Drain the pool.  v0.13.3 (SCHED-06): uwatcher_pool_alloc is the raw
+     * slot allocator — bump active_count per held slot (the installer's
+     * job) so the cleanup unregisters, which now assert > 0 instead of
+     * saturating, stay symmetric. */
+    for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {
         held[i] = uwatcher_pool_alloc(&vm);
+        if (held[i] != NULL) vm.watchers->active_count++;
+    }
 
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);

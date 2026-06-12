@@ -973,11 +973,12 @@ UTEST(vm_nil_literal) {
 UTEST(vm_create_zero_init_m3_fields) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    /* 5-flag liveness counters (Rule X). */
+    /* Liveness counters (refactor-3 SCHED-13: integrated by vm_liveness;
+     * event_queue_count deleted at v0.13.3, strand_waiting_count added). */
     UASSERT_EQ(0U, vm.strand_runnable_count);
     UASSERT_EQ(0U, vm.strand_suspended_count);
+    UASSERT_EQ(0U, vm.strand_waiting_count);
     UASSERT_EQ(0U, vm.watchers->active_count);
-    UASSERT_EQ(0U, vm.event_queue_count);
     UASSERT_EQ(0U, vm.wakeup_pending_count);
     UASSERT_EQ(0U, vm.host_call_pending_count);
     /* Scheduler queues. */

@@ -21,6 +21,7 @@
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
 #include "sched/ustrand.h"
+#include "sched/usched_cooperative.h"  /* sched_strand_block (case 2 park) */
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "chunk/uchunk.h"
@@ -156,10 +157,15 @@ UTEST(emit_async_wakes_waiters)
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
 
-    /* Park a stack-local strand as a waiter. */
+    /* Park a stack-local strand as a waiter — through the real transition.
+     * v0.13.3 (SCHED-13): a raw WAIT_EVENT state stamp would bypass the
+     * strand_waiting_count increment, so the emit's wake (make_runnable)
+     * would trip the no-saturation decrement. */
     UStrand waiter;
     ustrand_init(&waiter, &vm);
-    waiter.state              = USTRAND_WAIT_EVENT;
+    waiter.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;   /* satisfy block's RUNNING-decrement */
+    sched_strand_block(&waiter, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
     waiter.wait_event_target  = e;
     waiter.next_event_waiter  = NULL;
     waiter.last_event_payload.kind = UVAL_NIL;

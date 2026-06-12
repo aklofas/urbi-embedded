@@ -174,10 +174,13 @@ void    urbi_realm_destroy(struct UVM *vm, URealm *realm);
 URealm *urbi_realm_global(struct UVM *vm);
 URealm *urbi_realm_create_repl(struct UVM *vm);
 
-/* VM-wide liveness inspection.
- * Reads vm->strand_runnable_count / vm->watchers->active_count /
- * vm->wakeup_pending_count.  out_strands, out_watchers, out_wakes may be
- * NULL.  Returns true if any liveness counter is positive.
+/* VM-wide liveness inspection — INCLUSIVE "anything at all alive?" query,
+ * computed via vm_liveness() (refactor-3 SCHED-13).  Returns true when any
+ * of runnable/pending/timed/armed work exists — armed (watchers +
+ * SUSPENDED/WAITING strands) counts here even though it does not block
+ * urbi_step's QUIESCENT verdict.  out_strands (runnable), out_watchers
+ * (armed watchers, all modes), out_wakes (sleep-queue population) may be
+ * NULL.
  *
  * Per-realm partitioning is a v1.x deferral (see urbi-embedded-design-risks.md).
  * The realm-tagged predecessor `urbi_realm_has_live_work` was renamed at

@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: ISR drain handler (T57 / spec #3 §9).
-   Covers registration, per-entry dispatch, fallback to event_queue_count,
-   and NULL-handler removal. */
+   Covers registration, per-entry dispatch, ring consumption without a
+   handler, and NULL-handler removal.  (The M3-compat event_queue_count
+   fallback was removed at T26; the vestigial counter itself was deleted
+   at v0.13.3 / SCHED-13 — ring pendingness is queried live via
+   uevent_ring_has_pending.) */
 
 #include "utest.h"
 #include "vm/uvm.h"
@@ -87,17 +90,13 @@ UTEST(no_handler_silently_discards_entries)
     urbi_vm_init(&vm, NULL, NULL);
 
     /* No drain handler registered (default NULL from urbi_vm_init). */
-    uint32_t before = vm.event_queue_count;
-
     urbi_inject_event(&vm, 1U, NULL, 0U);
     urbi_inject_event(&vm, 2U, NULL, 0U);
     uevent_ring_drain(&vm);
 
-    /* T26: M3-compat fallback removed; event_queue_count is no longer
-     * bumped by uevent_ring_drain when no handler is registered.  Entries
-     * are still consumed from the ring (read_idx advances), but they
-     * don't surface as UEvents in the scheduler's queue. */
-    UASSERT_EQ((long long)vm.event_queue_count, (long long)before);
+    /* T26: M3-compat fallback removed; entries are consumed from the ring
+     * (read_idx advances) but don't surface as UEvents in the scheduler.
+     * (The vestigial event_queue_count counter was deleted at v0.13.3.) */
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
     urbi_vm_destroy(&vm);
@@ -115,13 +114,12 @@ UTEST(null_handler_removes_drain_callback)
     urbi_register_event_drain(&vm, NULL, NULL);
 
     urbi_inject_event(&vm, 7U, NULL, 0U);
-    uint32_t before = vm.event_queue_count;
     uevent_ring_drain(&vm);
 
-    /* Handler must NOT have been called. */
+    /* Handler must NOT have been called; the entry is consumed anyway
+     * (T26: discarded, no M3-compat counter fallback). */
     UASSERT_EQ((long long)g_capture.call_count, 0LL);
-    /* T26: M3-compat fallback removed; event_queue_count stays put. */
-    UASSERT_EQ((long long)vm.event_queue_count, (long long)before);
+    UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
     urbi_vm_destroy(&vm);
 }

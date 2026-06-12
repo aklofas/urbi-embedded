@@ -181,15 +181,16 @@ UTEST(destroy_wakes_joiner)
     UStrand *parent = urbi_strand_create(&vm, realm, NULL);
     UASSERT(parent != NULL);
 
-    /* Put the parent in WAITING_JOIN state (mirrors what OP_JOIN_WAIT does).
-     * sched_strand_block would decrement strand_runnable_count; simulate by
-     * pre-setting state and bumping the counter so runnable_count stays
-     * non-negative after the wake-driven increment. */
-    parent->state = USTRAND_STATE_WAITING_JOIN;
-    /* strand_runnable_count starts at 0 (after create).  fork_wake_joiners
-     * calls sched_strand_make_runnable which increments it by 1.  We leave
-     * it at 0 here to confirm the increment happens in the wake call. */
-    vm.strand_runnable_count = 0;
+    /* Put the parent in WAITING_JOIN through the real transition (mirrors
+     * OP_JOIN_WAIT).  v0.13.3 (SCHED-13): a raw state stamp would bypass
+     * the strand_waiting_count increment, so the wake at child-destroy
+     * would trip the no-saturation decrement.  RUNNING + seeded count ->
+     * block leaves runnable_count at 0, preserving the original "the wake
+     * call performs the increment" assertion below. */
+    parent->state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;   /* satisfy block's RUNNING-decrement */
+    sched_strand_block(parent, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
+    UASSERT_EQ(vm.strand_runnable_count, 0);
 
     /* Thread parent onto child's joiners_head (mirrors op_join_wait internals). */
     parent->wait_next   = NULL;

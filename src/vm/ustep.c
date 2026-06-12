@@ -152,34 +152,26 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
         sched_post_dispatch(vm, s);
     }
 
-    /* If any strand is still READY or RUNNING, the budget ran out. */
-    if (vm->strand_runnable_count > 0) return URBI_STEP_RUNNING;
-
-    /* No runnable strands.  Check other liveness sources per row 8 §3 Rule X. */
-    if (vm->watchers->active_count   > 0 ||
-        vm->event_queue_count      > 0 ||
-        vm->host_call_pending_count > 0) {
-        /* Watchers or pending events can make strands runnable on the next tick. */
-        return URBI_STEP_RUNNING;
-    }
-
-    /* v0.9.4: live periodics keep the VM non-quiescent.  Pump again here
-     * because a body strand may have died during this step and re-armed
-     * the periodic; the next fire becomes the earliest_wake gate. */
-    uint64_t periodic_next = urbi_periodic_earliest_wake_us(vm);
-
-    /* Only sleeping strands remain — nothing can run until the earliest wake. */
-    if (vm->wakeup_pending_count > 0 || periodic_next != UINT64_MAX) {
-        if (out_next_wake_us) {
-            uint64_t earliest = (vm->wakeup_pending_count > 0)
-                              ? sched_earliest_wake_us(vm)
-                              : UINT64_MAX;
-            if (periodic_next < earliest) earliest = periodic_next;
-            *out_next_wake_us = earliest;
-        }
+    /* Post-loop verdict ladder (refactor-3 SCHED-13): one liveness formula.
+     *
+     * RUNNING   — runnable strands remain (budget ran out) OR pending
+     *             internal work exists (ISR-ring events, host-injected
+     *             cross-strand stops, dirty watcher evals, queued onleave
+     *             drains) that the next call will perform.
+     * WAKE_AT   — nothing runnable/pending now; a sleeper or live periodic
+     *             has a future deadline (*out_next_wake_us).
+     * QUIESCENT — no internal work at all.  lv.armed may be > 0: armed
+     *             watchers and SUSPENDED/WAITING strands do NOT prevent
+     *             QUIESCENT (owner decision 2026-06-11) — host slot writes,
+     *             injected events, or tag unblock/unfreeze re-arm the VM.
+     *             Use urbi_vm_has_live_work to distinguish a fully-dead VM
+     *             from an armed-but-idle one. */
+    UVmLiveness lv;
+    vm_liveness(vm, &lv);
+    if (lv.runnable > 0 || lv.pending > 0) return URBI_STEP_RUNNING;
+    if (lv.timed) {
+        if (out_next_wake_us) *out_next_wake_us = lv.next_wake_us;
         return URBI_STEP_WAKE_AT;
     }
-
-    /* All five counters are zero (or irrelevant): fully quiescent. */
-    return URBI_STEP_QUIESCENT;
+    return URBI_STEP_QUIESCENT;   /* lv.armed may be > 0 — documented contract */
 }

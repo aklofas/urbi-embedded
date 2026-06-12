@@ -2,11 +2,11 @@
 /* Cooperative scheduler implementation — row 9 §2 contract.
    Freestanding-safe: only <stdbool.h> and <stdint.h> (both C99 freestanding). */
 
-/* === 5-counter liveness ownership (row 8 §3 Rule X) ===
+/* === Liveness-counter ownership (refactor-3 SCHED-13: one formula) ===
  *
- * VM quiescence (sched_quiescent) AND's all five counters; M3 maintains 4
- * (strand_suspended_count is excluded — always 0 at M3). Each subsystem
- * owns one counter and maintains it at the relevant push/pop sites:
+ * All liveness queries integrate through vm_liveness() (usched_liveness.c);
+ * sched_quiescent / urbi_step / urbi_vm_has_live_work are thin views of it.
+ * Each counter has single-writer ownership at its transition sites:
  *
  *   strand_runnable_count   — single-writer ownership (refactor-3
  *                             SCHED-01/B10): sched_runnable_inc /
@@ -18,6 +18,19 @@
  *                             Transient strands (urbi_vm_run) never
  *                             participate: both helpers skip them.
  *
+ *   strand_waiting_count    — sched_waiting_inc/dec (SCHED-13).  Invariant:
+ *                             |WAITING non-transient strands|.  inc at
+ *                             sched_strand_block (the single WAITING entry);
+ *                             dec at sched_strand_make_runnable (WAITING
+ *                             entry state), the uunwind.c cleanup-executor
+ *                             unpark, and ustrand_destroy.
+ *
+ *   strand_suspended_count  — sched_suspended_inc/dec (VM-12).  Invariant:
+ *                             |SUSPENDED non-transient strands|.  inc at
+ *                             urbi_strand_suspend (the single SUSPENDED
+ *                             entry); dec at sched_strand_make_runnable
+ *                             (SUSPENDED entry state) and ustrand_destroy.
+ *
  *   wakeup_pending_count    — owned by sleep_q_insert (++) /
  *                             sleep_q_remove (--).
  *                             Invariant: number of strands on the sleep queue.
@@ -26,16 +39,18 @@
  *
  *   host_call_pending_count — owned by urbi_tag_stop cross-strand path (T31).
  *                             Invariant: number of pending host-injected
- *                             unwind events. M3 stub: always 0 until T31.
+ *                             unwind events.
  *
  *   vm->watchers->active_count
- *                           — owned by M5 (active watcher list).
- *                             Invariant: number of live watchers; M3 stub: 0.
+ *                           — owned by the watcher install/unregister pair.
+ *                             Invariant: number of armed watchers, ALL modes
+ *                             (cond watchers on active_watchers_head AND
+ *                             event watchers on event->at_watchers_head —
+ *                             SCHED-06 made event installs count too).
  *                             (Pre-W2 name: vm->watcher_active_count.)
  *
- *   event_queue_count       — owned by M5+ (event scheduler).
- *                             Invariant: number of pending events; M3 stub: 0.
- */
+ * (event_queue_count deleted at v0.13.3 — vestigial M3 stub with no writer;
+ * ISR-ring pendingness is queried live via uevent_ring_has_pending.) */
 
 #include "usched_cooperative.h"
 #include "sched/usched_post_dispatch.h"  /* sched_post_dispatch declaration */
@@ -136,6 +151,42 @@ sched_runnable_dec(UVM *vm, const UStrand *s)
     vm->strand_runnable_count--;
 }
 
+/* === Parked-strand counters (refactor-3 SCHED-13 / VM-12) ===
+ *
+ * Same discipline as the runnable pair: transient strands never participate,
+ * decrements assert > 0 (no saturation — masking forbidden).  Writer map at
+ * the header declaration + vm/uvm.h field docs. */
+
+void
+sched_waiting_inc(UVM *vm, const UStrand *s)
+{
+    if (s->is_transient_strand) return;
+    vm->strand_waiting_count++;
+}
+
+void
+sched_waiting_dec(UVM *vm, const UStrand *s)
+{
+    if (s->is_transient_strand) return;
+    URBI_INTERNAL_ASSERT(vm->strand_waiting_count > 0);
+    vm->strand_waiting_count--;
+}
+
+void
+sched_suspended_inc(UVM *vm, const UStrand *s)
+{
+    if (s->is_transient_strand) return;
+    vm->strand_suspended_count++;
+}
+
+void
+sched_suspended_dec(UVM *vm, const UStrand *s)
+{
+    if (s->is_transient_strand) return;
+    URBI_INTERNAL_ASSERT(vm->strand_suspended_count > 0);
+    vm->strand_suspended_count--;
+}
+
 /* === Scheduler lifecycle === */
 
 void
@@ -146,6 +197,8 @@ sched_init(UVM *vm, void *config)
     vm->ready_tail             = NULL;
     vm->sleep_q_head           = NULL;
     vm->strand_runnable_count  = 0;
+    vm->strand_waiting_count   = 0;
+    vm->strand_suspended_count = 0;
 }
 
 void
@@ -156,12 +209,15 @@ sched_destroy(UVM *vm)
      * SCHED-009: zero strand_runnable_count for symmetry with sched_init.
      * Pre-fix this counter survived destroy, so a destroy + stale-query
      * path would observe a non-zero value despite the queues being NULL.
-     * The four scheduler-owned fields (ready_head, ready_tail, sleep_q_head,
-     * strand_runnable_count) are now mirror-zeroed across init/destroy. */
-    vm->ready_head            = NULL;
-    vm->ready_tail            = NULL;
-    vm->sleep_q_head          = NULL;
-    vm->strand_runnable_count = 0;
+     * The scheduler-owned fields (ready_head, ready_tail, sleep_q_head,
+     * and the three strand-state counters) are mirror-zeroed across
+     * init/destroy. */
+    vm->ready_head             = NULL;
+    vm->ready_tail             = NULL;
+    vm->sleep_q_head           = NULL;
+    vm->strand_runnable_count  = 0;
+    vm->strand_waiting_count   = 0;
+    vm->strand_suspended_count = 0;
 }
 
 /* === Per-strand lifecycle === */
@@ -241,6 +297,18 @@ sched_strand_make_runnable(UStrand *s)
     URBI_INTERNAL_ASSERT(s->state != USTRAND_STATE_READY);
     if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return;
     UVM *vm = s->vm;
+    /* SCHED-13 / VM-12: this is the single wake funnel — every WAITING ->
+     * READY path (sched_strand_unblock, event/watcher/join wakers, tag-stop
+     * + cancel wakes, joiner wakes at strand teardown) and the SUSPENDED ->
+     * READY path (urbi_strand_resume) land here, so the parked-strand
+     * counters exit here.  The only off-funnel exits are the cleanup-
+     * executor unpark in uunwind.c (WAITING -> RUNNING direct stamp) and
+     * death-from-parked in ustrand_destroy — both decrement at site. */
+    if (USTRAND_IS_WAITING(s)) {
+        sched_waiting_dec(vm, s);
+    } else if (USTRAND_IS_SUSPENDED(s)) {
+        sched_suspended_dec(vm, s);
+    }
     s->state      = USTRAND_STATE_READY;
     s->ready_next = NULL;
     s->ready_prev = vm->ready_tail;
@@ -305,6 +373,10 @@ sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload)
         sched_runnable_dec(vm, s);
     }
     s->state = (uint8_t)(USTRAND_WAITING | (reason & USTRAND_REASON_MASK));
+    /* SCHED-13: single WAITING entry point — the waiting counter enters
+     * here.  Exits: sched_strand_make_runnable / uunwind.c unpark /
+     * ustrand_destroy (see counter docs at vm/uvm.h). */
+    sched_waiting_inc(vm, s);
     switch (reason) {
         case USTRAND_REASON_SLEEP:
             s->wait_payload.wake_us = payload;
@@ -356,7 +428,7 @@ sched_strand_unblock(UStrand *s)
 /* === Timer / quiescence queries === */
 
 uint64_t
-sched_earliest_wake_us(UVM *vm)
+sched_earliest_wake_us(const UVM *vm)
 {
     if (!vm->sleep_q_head) return UINT64_MAX;
     /* CHSTR-025: sleep_q_head is by construction in REASON_SLEEP. */
@@ -368,13 +440,16 @@ sched_earliest_wake_us(UVM *vm)
 bool
 sched_quiescent(const UVM *vm)
 {
-    /* Per row 8 §3 Rule X: 5 counters AND'd zero.
-       strand_suspended_count is excluded (always 0 at M3). */
-    return vm->strand_runnable_count  == 0
-        && vm->watchers->active_count   == 0
-        && vm->event_queue_count      == 0
-        && vm->wakeup_pending_count   == 0
-        && vm->host_call_pending_count == 0;
+    /* refactor-3 SCHED-13: one formula — vm_liveness().  Quiescent means no
+     * internal work: nothing runnable, nothing pending, no timer.  `armed`
+     * (watchers + SUSPENDED + WAITING strands) is deliberately EXCLUDED —
+     * armed work only progresses on external input (host slot write,
+     * injected event, tag unblock/unfreeze), so it must not keep the host
+     * spinning (owner decision 2026-06-11; pre-fix active_count > 0 blocked
+     * quiescence forever on any idle-but-armed VM). */
+    UVmLiveness lv;
+    vm_liveness(vm, &lv);
+    return lv.runnable == 0 && lv.pending == 0 && lv.timed == 0;
 }
 
 /* === CHSTR-031: sched_strand_account_destroy ===
@@ -731,7 +806,13 @@ sched_wake_due_sleepers(UVM *vm)
  * and compare against vm->strand_runnable_count.  sched_post_dispatch's
  * precondition guarantees vm->cur_strand is NULL here — pinned by the
  * assert below so the explicit parameter stays the single in-flight
- * mechanism.  Debug-only: O(|READY|) per call. */
+ * mechanism.
+ *
+ * SCHED-13 / VM-12 extension: also recount the parked-strand counters by
+ * walking the realm hierarchy (vm->realms_head -> realm->strands_head — the
+ * §6.1 invariant guarantees every live strand is reachable there) and
+ * tallying WAITING / SUSPENDED non-transient strands.  Debug-only:
+ * O(|READY| + |strands|) per call. */
 static void
 sched_assert_runnable_count(const UVM *vm, uint32_t in_flight_extra)
 {
@@ -740,6 +821,21 @@ sched_assert_runnable_count(const UVM *vm, uint32_t in_flight_extra)
     while (s != NULL) { if (!s->is_transient_strand) n++; s = s->ready_next; }
     URBI_INTERNAL_ASSERT(vm->cur_strand == NULL);
     URBI_INTERNAL_ASSERT(n == vm->strand_runnable_count);
+
+    {
+        uint32_t waiting = 0, suspended = 0;
+        const URealm *r;
+        for (r = vm->realms_head; r != NULL; r = r->next_in_vm) {
+            const UStrand *t;
+            for (t = r->strands_head; t != NULL; t = t->next_in_realm) {
+                if (t->is_transient_strand) continue;
+                if (USTRAND_IS_WAITING(t))        waiting++;
+                else if (USTRAND_IS_SUSPENDED(t)) suspended++;
+            }
+        }
+        URBI_INTERNAL_ASSERT(waiting   == vm->strand_waiting_count);
+        URBI_INTERNAL_ASSERT(suspended == vm->strand_suspended_count);
+    }
 }
 #endif
 

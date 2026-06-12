@@ -96,9 +96,20 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
     UASSERT_EQ((int)USTRAND_GET_REASON(s), (int)USTRAND_REASON_JOIN);
     UASSERT(strand_on_realm_list(r, s));    /* KEY: WAITING_JOIN still on list */
 
-    /* RUNNING → DEAD (top-level OP_RET path).  M3 does not auto-unlink DEAD
-     * strands; they remain on realm.strands_head until urbi_realm_destroy
-     * reclaims them, per pre-M4 spec §5.2 (Option a). */
+    /* WAITING_JOIN → READY → RUNNING → DEAD (top-level OP_RET path).
+     * v0.13.3 (SCHED-13): wake through the real funnel first — a strand
+     * dies from RUNNING, and a raw DEAD stamp on a WAITING strand would
+     * strand the strand_waiting_count increment from the block above.
+     * M3 does not auto-unlink DEAD strands; they remain on
+     * realm.strands_head until urbi_realm_destroy reclaims them, per
+     * pre-M4 spec §5.2 (Option a). */
+    s->wait_next        = NULL;
+    child->joiners_head = NULL;
+    sched_strand_make_runnable(s);          /* WAITING → READY (waiting--) */
+    UASSERT(strand_on_realm_list(r, s));
+    sched_dequeue_ready_head(&vm);
+    s->state = USTRAND_STATE_RUNNING;
+    if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;  /* dies below */
     s->state = USTRAND_STATE_DEAD;
     UASSERT(strand_on_realm_list(r, s));    /* KEY: DEAD still on list */
     UASSERT(strand_on_realm_list(r, child));

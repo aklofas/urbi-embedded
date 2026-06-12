@@ -156,9 +156,9 @@ void urbi_periodic_destroy_all(struct UVM *vm);
 /* urbi_periodic_earliest_wake_us
  *
  * Returns the smallest next_fire_us across all live periodics, or
- * UINT64_MAX when no live periodic exists.  Used by urbi_step to compute
- * URBI_STEP_WAKE_AT. */
-uint64_t urbi_periodic_earliest_wake_us(struct UVM *vm);
+ * UINT64_MAX when no live periodic exists.  Read-only (const vm — callable
+ * from vm_liveness).  Used by urbi_step to compute URBI_STEP_WAKE_AT. */
+uint64_t urbi_periodic_earliest_wake_us(const struct UVM *vm);
 
 #ifdef __cplusplus
 }

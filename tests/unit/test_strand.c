@@ -43,6 +43,13 @@ UTEST(strand_state_waiting_macros_round_trip) {
     UASSERT(USTRAND_IS_WAITING(&s));
     UASSERT_EQ(USTRAND_GET_REASON(&s), USTRAND_REASON_JOIN);
 
+    /* v0.13.3 (SCHED-13): restore DORMANT before teardown.  The raw state
+     * stamps above bypass sched_strand_block, so the strand was never
+     * counted in strand_waiting_count; destroying it in a WAITING state
+     * would trip the no-saturation decrement (deliberately — masking
+     * forbidden).  This test only exercises the state-byte macros. */
+    s.state = USTRAND_STATE_DORMANT;
+
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }

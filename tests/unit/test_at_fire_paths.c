@@ -324,9 +324,14 @@ UTEST(waituntil_rising_edge_wakes_waiter)
 
     g_cond_truthy = 0;   /* seed false so watcher stays installed */
 
-    /* Manually set waiter state to WAIT_WATCHER (mirrors what
-     * install_watcher_runtime does via OP_WAITUNTIL_INSTALL). */
-    waiter.state = USTRAND_WAIT_WATCHER;
+    /* Park the waiter in WAIT_WATCHER through the real transition (mirrors
+     * install_watcher_runtime's sched_strand_block park).  v0.13.3
+     * (SCHED-13): a raw state stamp would bypass the strand_waiting_count
+     * increment, so the rising-edge wake below would trip the
+     * no-saturation decrement in sched_strand_make_runnable. */
+    waiter.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;   /* satisfy block's RUNNING-decrement */
+    sched_strand_block(&waiter, USTRAND_REASON_WATCHER, 0);
 
     vm.test_hooks->watcher_condition = hook_cond_toggle;
 

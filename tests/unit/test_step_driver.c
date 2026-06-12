@@ -9,6 +9,7 @@
 #include "sched/usched_post_dispatch.h"
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
+#include "realm/urealm.h"   /* URealm (case 14 realm-registered stub) */
 #include "utest_e2e_helpers.h"
 #include <stdint.h>
 
@@ -136,9 +137,10 @@ UTEST(quiescent_when_all_counters_zero)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 4: strand_suspended_count is excluded from quiescence (always 0 at M3).
-   Confirmed by sched_quiescent not referencing it; this test documents the
-   row 9 §3.2 contract — adding a strand to DORMANT doesn't block quiescence. */
+/* Case 4: armed work is excluded from quiescence (refactor-3 SCHED-13,
+   owner decision 2026-06-11).  DORMANT strands never count anywhere, and
+   SUSPENDED/WAITING strands are `armed` — counted (vm_liveness) and
+   reported (urbi_vm_has_live_work) but not quiescence-blocking. */
 UTEST(suspended_count_excluded_from_quiescence)
 {
     UVM vm;
@@ -159,7 +161,19 @@ UTEST(suspended_count_excluded_from_quiescence)
     UASSERT_EQ(vm.wakeup_pending_count,  0U);
     UASSERT_EQ(vm.host_call_pending_count, 0U);
     UASSERT_EQ(vm.watchers->active_count,  0U);
-    UASSERT_EQ(vm.event_queue_count,     0U);
+
+    /* SCHED-13: an armed (WAITING) strand still does not block quiescence —
+     * it is external-input work.  Park a, confirm counted-but-quiescent,
+     * then wake it back out (count-symmetric). */
+    a.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;       /* satisfy block's RUNNING-decrement */
+    sched_strand_block(&a, USTRAND_REASON_EVENT, 0);
+    UASSERT_EQ(vm.strand_waiting_count, 1U);
+    UASSERT(sched_quiescent(&vm));      /* armed-only: still quiescent */
+    sched_strand_make_runnable(&a);
+    UASSERT_EQ(vm.strand_waiting_count, 0U);
+    UASSERT(!sched_quiescent(&vm));     /* runnable again: not quiescent */
+    sched_strand_unbind_from_ready_queue(&a);
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
@@ -457,30 +471,39 @@ UTEST(counter_full_dequeue_block_post_dispatch_cycle)
 {
     UVM vm;
     UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
-    sched_init(&vm, NULL);
     vm.host_time_us = mock_clock;
     g_mock_now_us   = 0;
 
-    UStrand s;
-    ustrand_init(&s, &vm);
+    /* v0.13.3 (SCHED-13): the strand must be realm-registered — the debug
+     * recount oracle in sched_post_dispatch walks realms_head ->
+     * strands_head to verify strand_waiting_count, so an off-realm stub
+     * (which violates the §6.1 reachability invariant anyway) would count
+     * in the counter but not in the walk. */
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
+    UASSERT(s != NULL);
 
-    sched_strand_make_runnable(&s);
+    sched_strand_make_runnable(s);
     UASSERT_EQ(vm.strand_runnable_count, 1U);          /* enqueued */
 
     sched_dequeue_ready_head(&vm);
-    s.state = USTRAND_STATE_RUNNING;
+    s->state = USTRAND_STATE_RUNNING;
     UASSERT_EQ(vm.strand_runnable_count, 1U);          /* READY -> RUNNING: neutral */
 
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 999999U);
+    sched_strand_block(s, USTRAND_REASON_SLEEP, 999999U);
     UASSERT_EQ(vm.strand_runnable_count, 0U);          /* RUNNING -> WAITING: -1 */
+    UASSERT_EQ(vm.strand_waiting_count,  1U);          /* parked: armed work */
 
-    sched_post_dispatch(&vm, &s);
+    sched_post_dispatch(&vm, s);
     UASSERT_EQ(vm.strand_runnable_count, 0U);          /* no re-increment */
 
-    /* Cleanup: pull the stub off the sleep queue before destroy. */
-    sched_strand_unbind_from_sleep_queue(&s);
-    s.state = USTRAND_STATE_DORMANT;
-    ustrand_destroy(&s, &vm);
+    /* Cleanup: wake the stub through the real funnel (waiting counter
+     * exits in sched_strand_make_runnable), then realm-destroy reaps it
+     * off the ready queue. */
+    sched_strand_unblock(s);
+    UASSERT_EQ(vm.strand_waiting_count, 0U);
+    urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
 

@@ -87,6 +87,27 @@ sched_pick_next(const UVM *vm) {
 void sched_runnable_inc(UVM *vm, const UStrand *s);
 void sched_runnable_dec(UVM *vm, const UStrand *s);
 
+/* === Parked-strand counters (refactor-3 SCHED-13 / VM-12) ===
+ *
+ * vm->strand_waiting_count   == |WAITING non-transient strands|
+ * vm->strand_suspended_count == |SUSPENDED non-transient strands|
+ *
+ * Same single-writer scheme and no-saturation discipline as the runnable
+ * pair above (dec asserts > 0; transient strands are skipped).  Writers —
+ * see the field declarations in vm/uvm.h for the full transition map:
+ *   waiting:   inc in sched_strand_block; dec in sched_strand_make_runnable
+ *              (WAITING entry state), the cleanup-executor unpark in
+ *              src/runtime/uunwind.c, and ustrand_destroy.
+ *   suspended: inc in urbi_strand_suspend (src/sched/ustrand.c); dec in
+ *              sched_strand_make_runnable (SUSPENDED entry state) and
+ *              ustrand_destroy.
+ * Both feed vm_liveness()'s `armed` term — reported to the host but
+ * excluded from QUIESCENT (owner decision 2026-06-11). */
+void sched_waiting_inc(UVM *vm, const UStrand *s);
+void sched_waiting_dec(UVM *vm, const UStrand *s);
+void sched_suspended_inc(UVM *vm, const UStrand *s);
+void sched_suspended_dec(UVM *vm, const UStrand *s);
+
 /* State transitions */
 void sched_strand_make_runnable(UStrand *s);
 void sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload);
@@ -94,8 +115,39 @@ void sched_strand_yield(UStrand *s);
 void sched_strand_unblock(UStrand *s);
 
 /* Timer / quiescence queries */
-uint64_t sched_earliest_wake_us(UVM *vm);
+uint64_t sched_earliest_wake_us(const UVM *vm);
 bool     sched_quiescent(const UVM *vm);
+
+/* === vm_liveness — the ONE quiescence/liveness formula (refactor-3 SCHED-13) ===
+ *
+ * Callers: sched_quiescent, urbi_step's post-loop verdict ladder, and
+ * urbi_vm_has_live_work.  Pre-fix those three each computed a different
+ * formula (the audit's "three divergent quiescence definitions").
+ *
+ * Field semantics (owner decision 2026-06-11, option a):
+ *   runnable     — strands the dispatcher can run right now (READY/RUNNING).
+ *   pending      — internal work the next step will perform without any
+ *                  external input: ISR-ring events, host-injected cross-
+ *                  strand stops, dirty watcher evals, queued onleave drains.
+ *   armed        — external-input work: armed watchers (all modes) +
+ *                  SUSPENDED (blocked/frozen) + WAITING (event/join/watcher-
+ *                  parked) strands.  Reported, but does NOT block QUIESCENT —
+ *                  host slot writes, injected events, or tag unblock/unfreeze
+ *                  re-arm the VM.
+ *   timed        — 1 iff a sleeper or live periodic has a future deadline;
+ *                  next_wake_us then holds the earliest deadline (else
+ *                  UINT64_MAX).
+ *
+ * QUIESCENT == (runnable + pending + timed == 0), armed notwithstanding. */
+typedef struct UVmLiveness {
+    uint32_t runnable;
+    uint32_t pending;
+    uint32_t armed;
+    uint32_t timed;
+    uint64_t next_wake_us;
+} UVmLiveness;
+
+void vm_liveness(const UVM *vm, UVmLiveness *out);
 
 /* Wake every sleep-queue strand whose wake_us <= now (vm->host_time_us).
  * Each woken strand is unblocked (removed from sleep_q, made runnable).

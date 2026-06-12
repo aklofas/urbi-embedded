@@ -151,13 +151,20 @@ UTEST(install_returns_ok_normally)
 
 /* test_drain_watcher_pool: alloc all pool slots, leaving pool exhausted.
  * Stores each pointer in `out[0..URBI_WATCHER_POOL_SIZE-1]` so the caller
- * can clean up via urbi_watcher_unregister_internal. */
+ * can clean up via urbi_watcher_unregister_internal.
+ *
+ * v0.13.3 (SCHED-06): uwatcher_pool_alloc is the raw slot allocator — the
+ * active_count bump is the installer's responsibility.  Mirror it here
+ * (one bump per held slot) so the cleanup unregisters, which now assert
+ * active_count > 0 instead of saturating, stay symmetric.  Pre-fix this
+ * helper silently wrapped the counter below zero on cleanup. */
 static void
 test_drain_watcher_pool(UVM *vm, UWatcher **out)
 {
     int i;
     for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {
         out[i] = uwatcher_pool_alloc(vm);
+        if (out[i] != NULL) vm->watchers->active_count++;
     }
 }
 

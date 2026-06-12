@@ -68,6 +68,36 @@ init_trivial_closure(void)
 static uint64_t s_mock_time_us = 0;
 static uint64_t mock_time_fn(void) { return s_mock_time_us; }
 
+/* v0.13.3 (SCHED-13): thread a stack-local strand onto the global realm's
+ * strands_head for the duration of a test (mirrors urbi_vm_run's transient
+ * setup).  sched_post_dispatch's debug recount oracle walks realms_head ->
+ * strands_head to verify strand_waiting_count, so a WAITING stub the
+ * scheduler can see MUST be realm-reachable (the §6.1 invariant).  Callers
+ * MUST unthread before ustrand_destroy/urbi_vm_destroy or realm teardown
+ * would urbi_strand_destroy a stack address. */
+static void
+thread_on_global_realm(UVM *vm, UStrand *s)
+{
+    URealm *r = urbi_realm_global(vm);
+    s->realm           = r;
+    s->next_in_realm   = r->strands_head;
+    r->strands_head    = s;
+}
+
+static void
+unthread_from_realm(UStrand *s)
+{
+    UStrand **pp;
+    if (s->realm == NULL) return;
+    pp = &s->realm->strands_head;
+    while (*pp != NULL) {
+        if (*pp == s) { *pp = s->next_in_realm; break; }
+        pp = &(*pp)->next_in_realm;
+    }
+    s->next_in_realm = NULL;
+    s->realm         = NULL;
+}
+
 /* =========================================================================
  * Step 1 (SCHED-01, v0.13.3): a WAITING strand gets NO count adjustment.
  *
@@ -249,9 +279,11 @@ UTEST(post_dispatch_step3_sleep_queue_strand_is_woken)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
     vm.host_time_us = mock_time_fn;
 
-    /* Sleeper strand. */
+    /* Sleeper strand — realm-threaded so the debug recount oracle's
+     * waiting walk sees it (SCHED-13). */
     UStrand sleeper;
     ustrand_init(&sleeper, &vm);
+    thread_on_global_realm(&vm, &sleeper);
     sleeper.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
 
@@ -285,6 +317,7 @@ UTEST(post_dispatch_step3_sleep_queue_strand_is_woken)
     /* Cleanup. */
     sched_dequeue_ready_head(&vm);  /* remove sleeper from ready queue */
     sleeper.state = USTRAND_STATE_DORMANT;
+    unthread_from_realm(&sleeper);
     ustrand_destroy(&sleeper, &vm);
     ustrand_destroy(&driver, &vm);
     urbi_vm_destroy(&vm);
@@ -305,6 +338,7 @@ UTEST(post_dispatch_step3_sleep_queue_strand_not_woken_early)
 
     UStrand sleeper;
     ustrand_init(&sleeper, &vm);
+    thread_on_global_realm(&vm, &sleeper);   /* SCHED-13 oracle visibility */
     sleeper.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
     sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 1000U);
@@ -327,6 +361,7 @@ UTEST(post_dispatch_step3_sleep_queue_strand_not_woken_early)
     /* Cleanup via unblock (removes from sleep queue). */
     sched_strand_unblock(&sleeper);
     sleeper.state = USTRAND_STATE_DORMANT;
+    unthread_from_realm(&sleeper);
     ustrand_destroy(&sleeper, &vm);
     ustrand_destroy(&driver, &vm);
     urbi_vm_destroy(&vm);
@@ -347,6 +382,7 @@ UTEST(post_dispatch_step3_skipped_without_time_fn)
 
     UStrand sleeper;
     ustrand_init(&sleeper, &vm);
+    thread_on_global_realm(&vm, &sleeper);   /* SCHED-13 oracle visibility */
     sleeper.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
     sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 0U);  /* wake_us=0: overdue */
@@ -367,6 +403,7 @@ UTEST(post_dispatch_step3_skipped_without_time_fn)
     /* Cleanup. */
     sched_strand_unblock(&sleeper);
     sleeper.state = USTRAND_STATE_DORMANT;
+    unthread_from_realm(&sleeper);
     ustrand_destroy(&sleeper, &vm);
     ustrand_destroy(&driver, &vm);
     urbi_vm_destroy(&vm);
@@ -404,6 +441,7 @@ UTEST(post_dispatch_all_steps_integrated)
     /* Sleeper overdue at wake_us=1000 (now=5000). */
     UStrand sleeper;
     ustrand_init(&sleeper, &vm);
+    thread_on_global_realm(&vm, &sleeper);   /* SCHED-13 oracle visibility */
     sleeper.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
     sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 1000U);
@@ -436,6 +474,7 @@ UTEST(post_dispatch_all_steps_integrated)
     /* Cleanup. */
     sched_dequeue_ready_head(&vm);
     sleeper.state = USTRAND_STATE_DORMANT;
+    unthread_from_realm(&sleeper);
     ustrand_destroy(&sleeper, &vm);
     urbi_vm_destroy(&vm);
 }

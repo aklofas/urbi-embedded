@@ -34,6 +34,7 @@
 #include "object/uobject.h"
 #include "value/uintern.h"
 #include "sched/ustrand.h"
+#include "sched/usched_cooperative.h"  /* sched_strand_block (waiter park) */
 #include "chunk/uchunk.h"
 #include "runtime/uclosure.h"
 #include "urbi/urbi.h"
@@ -134,9 +135,14 @@ UTEST(event_emit_method_dispatches_to_async)
     UASSERT(e != NULL);
     if (e == NULL) { urbi_vm_destroy(&vm); return; }
 
+    /* Park through the real transition (v0.13.3 / SCHED-13: a raw
+     * WAIT_EVENT stamp would bypass the strand_waiting_count increment
+     * and trip the wake's no-saturation decrement). */
     UStrand waiter;
     ustrand_init(&waiter, &vm);
-    waiter.state               = USTRAND_WAIT_EVENT;
+    waiter.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count++;     /* satisfy block's RUNNING-decrement */
+    sched_strand_block(&waiter, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
     waiter.wait_event_target   = e;
     waiter.next_event_waiter   = NULL;
     waiter.last_event_payload.kind = (uint8_t)UVAL_NIL;

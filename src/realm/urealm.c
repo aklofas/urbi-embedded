@@ -342,18 +342,21 @@ urbi_realm_global(struct UVM *vm)
 
 /* === urbi_vm_has_live_work ===
  *
- * Reads VM-wide liveness counters.  Renamed from urbi_realm_has_live_work
- * at v0.6.0 (REALM-017): the function never read per-realm state — only
- * vm->{strand_runnable_count, watcher_active_count, wakeup_pending_count}.
- * Per-realm partitioning is a v1.x deferral (urbi-embedded-design-risks.md).
+ * Inclusive host-facing liveness query: "is anything at all alive?".
+ * Renamed from urbi_realm_has_live_work at v0.6.0 (REALM-017): the function
+ * never read per-realm state.  Per-realm partitioning is a v1.x deferral
+ * (urbi-embedded-design-risks.md).
  *
- * Returns true if any of the three VM-wide counters is positive.
- * out_strands, out_watchers, out_wakes may be NULL.
+ * v0.13.3 (refactor-3 SCHED-13): computed via vm_liveness(), the one
+ * quiescence/liveness formula.  Unlike urbi_step's QUIESCENT verdict —
+ * which excludes `armed` (watchers + SUSPENDED/WAITING strands, owner
+ * decision 2026-06-11) — this query stays INCLUSIVE: an armed-but-idle VM
+ * reports true so the host can distinguish it from a fully-dead one.
  *
- * v0.13.3 (refactor-3 SCHED-01): strand_runnable_count now means
- * |READY| + |RUNNING| only — WAITING/SUSPENDED strands are no longer
- * counted.  Sleepers still surface through out_wakes; event-parked
- * strands are invisible here until vm_liveness() (SCHED-13) lands. */
+ * Out-params keep their historical meaning (any may be NULL):
+ *   out_strands  — runnable strands (|READY| + |RUNNING non-transient|).
+ *   out_watchers — armed watchers, all modes (vm->watchers->active_count).
+ *   out_wakes    — sleep-queue population (wakeup_pending_count). */
 
 bool
 urbi_vm_has_live_work(const struct UVM *vm,
@@ -361,7 +364,7 @@ urbi_vm_has_live_work(const struct UVM *vm,
                       uint32_t *out_watchers,
                       uint32_t *out_wakes)
 {
-    uint32_t strands, watchers, wakes;
+    UVmLiveness lv;
 
     if (vm == NULL) {
         if (out_strands)  *out_strands  = 0;
@@ -370,15 +373,13 @@ urbi_vm_has_live_work(const struct UVM *vm,
         return false;
     }
 
-    strands  = vm->strand_runnable_count;
-    watchers = vm->watchers->active_count;
-    wakes    = vm->wakeup_pending_count;
+    vm_liveness(vm, &lv);
 
-    if (out_strands)  *out_strands  = strands;
-    if (out_watchers) *out_watchers = watchers;
-    if (out_wakes)    *out_wakes    = wakes;
+    if (out_strands)  *out_strands  = lv.runnable;
+    if (out_watchers) *out_watchers = vm->watchers->active_count;
+    if (out_wakes)    *out_wakes    = vm->wakeup_pending_count;
 
-    return (strands > 0 || watchers > 0 || wakes > 0);
+    return (lv.runnable > 0 || lv.pending > 0 || lv.timed > 0 || lv.armed > 0);
 }
 
 /* === urealm_teardown_all ===

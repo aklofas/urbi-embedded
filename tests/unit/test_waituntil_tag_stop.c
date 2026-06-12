@@ -21,6 +21,7 @@
 #include "event/uevent.h"
 #include "event/uevent_emit.h"
 #include "sched/ustrand.h"
+#include "sched/usched_cooperative.h"  /* sched_strand_block (waiter park) */
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "tag/utag.h"
@@ -46,11 +47,17 @@ make_nil(void)
 }
 
 /* Park a stack-local strand as an event waiter (tail-append to e->waiters_head).
- * Mirrors the setup in c_event_waituntil without going through the scratch guard. */
+ * Mirrors the setup in c_event_waituntil without going through the scratch
+ * guard.  v0.13.3 (SCHED-13): the WAIT_EVENT transition goes through
+ * sched_strand_block (as c_event_waituntil does) so strand_waiting_count is
+ * maintained — a raw state stamp would trip the wake paths' no-saturation
+ * decrement. */
 static void
 park_strand_on_event(UStrand *s, UEvent *e, struct UVM *vm)
 {
-    s->state               = USTRAND_WAIT_EVENT;
+    s->state = USTRAND_STATE_RUNNING;
+    vm->strand_runnable_count++;    /* satisfy block's RUNNING-decrement */
+    sched_strand_block(s, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
     s->wait_event_target   = e;
     s->next_event_waiter   = NULL;
     s->last_event_payload  = make_nil();
@@ -63,8 +70,6 @@ park_strand_on_event(UStrand *s, UEvent *e, struct UVM *vm)
         while (t->next_event_waiter) t = t->next_event_waiter;
         t->next_event_waiter = s;
     }
-
-    (void)vm;
 }
 
 /* ===================================================================

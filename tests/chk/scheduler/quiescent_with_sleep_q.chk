@@ -1,26 +1,34 @@
-# Milestone: M3
+# Milestone: M3 (activated at v0.13.3, refactor-3 SCHED-13)
 # Covers: when all strands are on the sleep queue (none on the ready queue),
-#         sched_quiescent returns false (wakeup_pending_count > 0); after the
-#         timer fires and strands are moved back to ready, quiescent stays false
-#         until they finish, then becomes true.
-#
-# blocked: pending SCHED-13 vm_liveness QUIESCENT formalization (activate-or-fold decision)
+#         the VM is NOT quiescent — urbi_step reports WAKE_AT (timed work)
+#         while the sleeper is parked; after the clock advances past the
+#         deadline the sleeper resumes and finishes, and the step reports
+#         QUIESCENT.  A further step stays QUIESCENT (idempotent verdict).
 # matrix-row: scheduler-quiescent
 #
-# UPDATE (v1.0 / M10): the lone-sleeper WAKE is now fixed (design-risks
-# v0.11.4-A) — sched_wake_due_sleepers runs as a pre-dispatch pump in urbi_step,
-# so an expired sleeper resumes (see the now-active wait_sleep_basic.chk and
-# temporal/sleep_tag_stop.chk).
+# History: originally blocked on "a WAITING strand is intentionally counted
+# in strand_runnable_count, so urbi_step returns RUNNING while any strand is
+# parked" — gone under the single-writer runnable count (SCHED-01/B10, this
+# arc's Task 1).  The lone-sleeper wake itself was fixed at v1.0/M10
+# (design-risks v0.11.4-A: sched_wake_due_sleepers pre-dispatch pump).
+# Activation closes the v1.0-loader-count-quiescence design-risk: vm_liveness
+# (SCHED-13) is the one quiescence formula — sleepers are `timed` work
+# (WAKE_AT), and a finished VM is QUIESCENT, with no phantom runnable count
+# left behind by the park/wake cycle.
 #
-# UPDATE (v0.13.3, refactor-3 SCHED-01/B10): the original blocker — "a WAITING
-# strand is intentionally counted in strand_runnable_count, so urbi_step
-# returns RUNNING while any strand is parked" — is GONE.  Under the
-# single-writer runnable count, WAITING strands are not counted: urbi_step now
-# reports WAKE_AT while a sleeper is parked and QUIESCENT after it completes,
-# and both edges are already asserted end-to-end by wait_sleep_basic.chk
-# (QUIESCENT after completion) and temporal/sleep_tag_stop.chk (WAKE_AT while
-# parked).  This fixture stays a placeholder pending the QUIESCENT-semantics
-# formalization (vm_liveness, SCHED-13) in the same v0.13.3 arc tag, which
-# owns the decision on whether to activate it or fold it into the two fixtures
-# above.  The quiescence counter semantics themselves are unit-tested directly
-# via the scheduler API (test_step_driver.c, test_scheduler_invariant.c).
+## host: realm sleeper
+## host: run Realm.done = 0
+## host: run sleep(100ms); Realm.done = 1
+## host: run Realm.done
+## host: step 5000
+## host: advance-clock 200
+## host: step 5000
+## host: run Realm.done
+## host: step 5000
+[00000000] 0
+[00000000] nil
+[00000000] 0
+[00000000] step: WAKE_AT
+[00000000] step: QUIESCENT
+[00000000] 1
+[00000000] step: QUIESCENT

@@ -379,17 +379,40 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Non-zero defaults set explicitly in urbi_vm_init().
      * ================================================================ */
 
-    /* --- Row 8 + Rule X: 5-flag liveness counters ---
-     * Quiescence is defined as all five counters being zero simultaneously.
-     * strand_suspended_count is excluded from the quiescence check at M3
-     * (always 0; included here for completeness per row 9 §2.6). */
-    uint32_t strand_runnable_count;    /* row 8 §3 + row 9 §2.6.
-                                          == |READY| + |RUNNING non-transient|;
+    /* --- Liveness counters (refactor-3 SCHED-13: one formula, vm_liveness) ---
+     * Integrated exclusively by vm_liveness() (src/sched/usched_liveness.c):
+     *   runnable = strand_runnable_count
+     *   pending  = ISR ring + host_call_pending_count + watcher dirty/onleave
+     *   armed    = watchers->active_count + suspended + waiting
+     *   timed    = wakeup_pending_count + live periodics
+     * QUIESCENT == runnable + pending + timed all zero; `armed` is reported
+     * (urbi_vm_has_live_work) but does NOT block QUIESCENT (owner decision
+     * 2026-06-11).  Transient strands (urbi_vm_run / watcher scratch) never
+     * participate in any of the three strand counters.
+     *
+     * Writer discipline for the strand-state counters (single-writer per
+     * transition, mirroring SCHED-01; helpers in usched_cooperative.c):
+     *   strand_runnable_count  — sched_runnable_inc/dec ONLY.
+     *   strand_waiting_count   — inc: sched_strand_block (the single WAITING
+     *                            entry point).  dec (asserted > 0):
+     *                            sched_strand_make_runnable on a WAITING
+     *                            strand (every wake path funnels there), the
+     *                            cleanup-executor unpark in uunwind.c
+     *                            (WAITING -> RUNNING direct stamp), and
+     *                            ustrand_destroy for death-from-WAITING.
+     *   strand_suspended_count — inc: urbi_strand_suspend (the single
+     *                            SUSPENDED entry point).  dec (asserted > 0):
+     *                            sched_strand_make_runnable on a SUSPENDED
+     *                            strand (urbi_strand_resume funnels there)
+     *                            and ustrand_destroy for death-from-SUSPENDED.
+     * (event_queue_count deleted this task — vestigial M3 stub with no
+     * writer; ISR-ring pendingness is queried live via uevent_ring_has_pending.) */
+    uint32_t strand_runnable_count;    /* == |READY| + |RUNNING non-transient|;
                                           single-writer via sched_runnable_inc/dec
                                           — see usched_cooperative.h (SCHED-01) */
-    uint32_t strand_suspended_count;   /* row 9 §2.6; always 0 at M3 */
+    uint32_t strand_suspended_count;   /* |SUSPENDED non-transient| (VM-12) */
+    uint32_t strand_waiting_count;     /* |WAITING non-transient| (SCHED-13) */
     /* watcher_active_count moved to vm->watchers->active_count (W2/v0.10.4) */
-    uint32_t event_queue_count;        /* row 8 §3; M5+ shape */
     uint32_t wakeup_pending_count;     /* row 8 §3; scheduler timer heap */
     uint32_t host_call_pending_count;  /* row 8 §3 + row 9; cross-strand stop injection */
 

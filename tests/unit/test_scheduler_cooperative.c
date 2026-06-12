@@ -6,6 +6,7 @@
 #include "sched/usched_cooperative.h"
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
+#include "urbi/urbi.h"   /* urbi_vm_has_live_work (case 23) */
 
 #define UTEST(name) static void name(void)
 
@@ -253,7 +254,7 @@ UTEST(sched_earliest_wake_us_picks_minimum)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 12: sched_quiescent returns true only when all 5 counters are zero;
+/* Case 12: sched_quiescent (vm_liveness: runnable + pending + timed == 0)
    returns false when strand_runnable_count is non-zero. */
 UTEST(sched_quiescent_false_when_runnable_nonzero)
 {
@@ -272,20 +273,32 @@ UTEST(sched_quiescent_false_when_runnable_nonzero)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 13: sched_quiescent returns false when wakeup_pending_count is non-zero
-   (strands sleeping — VM still has live work). */
+/* Case 13: sched_quiescent returns false while a sleeper is parked (timed
+   work — VM still has live work).  v0.13.3 (SCHED-13): uses a real sleeper
+   instead of hand-poking wakeup_pending_count — vm_liveness derives `timed`
+   from the actual earliest deadline, so a non-zero counter with an empty
+   sleep queue is an inconsistent (oracle-rejected) state, not a formula
+   input. */
 UTEST(sched_quiescent_false_when_sleep_q_nonempty)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
-    vm.wakeup_pending_count = 1;
-    UASSERT(!sched_quiescent(&vm));
+    UStrand a;
+    ustrand_init(&a, &vm);
+    a.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;   /* satisfy block's RUNNING-decrement */
+    sched_strand_block(&a, USTRAND_REASON_SLEEP, 1000U);
 
-    vm.wakeup_pending_count = 0;
+    UASSERT(!sched_quiescent(&vm));   /* timed: sleeper with a deadline */
+
+    sched_strand_unblock(&a);          /* off sleep_q; READY (+1 runnable) */
+    UASSERT(!sched_quiescent(&vm));   /* now runnable */
+    sched_strand_unbind_from_ready_queue(&a);
     UASSERT(sched_quiescent(&vm));
 
+    ustrand_destroy(&a, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -602,8 +615,11 @@ UTEST(sched_sleep_q_remove_while_advance)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 23: sched_quiescent returns false when watcher_active_count is non-zero. */
-UTEST(sched_quiescent_false_when_watcher_active_nonzero)
+/* Case 23: armed watchers do NOT block sched_quiescent (refactor-3 SCHED-13,
+ * owner decision 2026-06-11: `armed` is external-input work — reported via
+ * urbi_vm_has_live_work, excluded from quiescence).  Pre-fix this case
+ * pinned the inverse formula, which made any idle-but-armed VM busy-spin. */
+UTEST(sched_quiescent_true_when_watcher_active_nonzero)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -612,16 +628,21 @@ UTEST(sched_quiescent_false_when_watcher_active_nonzero)
     UASSERT(sched_quiescent(&vm));
 
     vm.watchers->active_count = 1;
-    UASSERT(!sched_quiescent(&vm));
+    UASSERT(sched_quiescent(&vm));                       /* armed-only: quiescent */
+    UASSERT(urbi_vm_has_live_work(&vm, NULL, NULL, NULL)); /* but reported */
 
     vm.watchers->active_count = 0;
     UASSERT(sched_quiescent(&vm));
+    UASSERT(!urbi_vm_has_live_work(&vm, NULL, NULL, NULL));
 
     urbi_vm_destroy(&vm);
 }
 
-/* Case 24: sched_quiescent returns false when event_queue_count is non-zero. */
-UTEST(sched_quiescent_false_when_event_queue_nonzero)
+/* Case 24: sched_quiescent returns false on pending reactive work
+ * (watchers->dirty_count — vm_liveness `pending`).  Replaces the deleted
+ * event_queue_count pin (vestigial M3 stub removed at v0.13.3/SCHED-13;
+ * ISR-ring pendingness is queried live via uevent_ring_has_pending). */
+UTEST(sched_quiescent_false_when_watcher_dirty_nonzero)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -629,10 +650,10 @@ UTEST(sched_quiescent_false_when_event_queue_nonzero)
 
     UASSERT(sched_quiescent(&vm));
 
-    vm.event_queue_count = 1;
+    vm.watchers->dirty_count = 1;
     UASSERT(!sched_quiescent(&vm));
 
-    vm.event_queue_count = 0;
+    vm.watchers->dirty_count = 0;
     UASSERT(sched_quiescent(&vm));
 
     urbi_vm_destroy(&vm);
@@ -736,8 +757,8 @@ void test_scheduler_cooperative_suite(void) {
     utest_run("sched_sleep_q_remove_mid_element",         sched_sleep_q_remove_mid_element);
     utest_run("sched_sleep_q_insert_while_advance",       sched_sleep_q_insert_while_advance);
     utest_run("sched_sleep_q_remove_while_advance",       sched_sleep_q_remove_while_advance);
-    utest_run("sched_quiescent_false_when_watcher_active_nonzero", sched_quiescent_false_when_watcher_active_nonzero);
-    utest_run("sched_quiescent_false_when_event_queue_nonzero", sched_quiescent_false_when_event_queue_nonzero);
+    utest_run("sched_quiescent_true_when_watcher_active_nonzero", sched_quiescent_true_when_watcher_active_nonzero);
+    utest_run("sched_quiescent_false_when_watcher_dirty_nonzero", sched_quiescent_false_when_watcher_dirty_nonzero);
     utest_run("sched_quiescent_false_when_host_call_pending_nonzero", sched_quiescent_false_when_host_call_pending_nonzero);
     utest_run("sched_walk_roots_noop",                    sched_walk_roots_noop);
     utest_run("sched_wait_payload_reason_discriminates_arms",

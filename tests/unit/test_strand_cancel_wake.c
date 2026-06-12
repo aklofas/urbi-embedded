@@ -231,10 +231,11 @@ UTEST(cancel_event_parked_strand_unparks)
     UStrand *loader = NULL;
     UStepResult rc = drive_chunk(&vm, module, &loader, 20);
 
-    /* Parked on the event waiter chain.  SCHED-01: a WAITING strand is NOT
-     * counted, and an event-parked strand has no timer either, so the
-     * bounded pump reports QUIESCENT (liveness for "armed" event waits is
-     * the SCHED-13 vm_liveness work, next task in this arc). */
+    /* Parked on the event waiter chain.  Settled contract (SCHED-13,
+     * owner decision 2026-06-11): an event-parked strand is `armed` work
+     * (waiting, counted in strand_waiting_count, reported via
+     * urbi_vm_has_live_work) — not runnable, not pending, not timed — so
+     * urbi_step reports QUIESCENT; host input (emit / cancel) re-arms. */
     UASSERT_EQ((int)URBI_STEP_QUIESCENT, (int)rc);
     UStrand *s = find_strand_in_realm(&vm, loader);
     UASSERT(s != NULL);

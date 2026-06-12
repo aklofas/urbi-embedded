@@ -190,11 +190,11 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->last_return_closure  = NULL;
 
     /* --- M3 field zero-init (rows 8, 9, 10, 11) --- */
-    /* 5-flag liveness counters (Rule X). */
+    /* Liveness counters (refactor-3 SCHED-13: integrated by vm_liveness). */
     vm->strand_runnable_count   = 0U;
     vm->strand_suspended_count  = 0U;
+    vm->strand_waiting_count    = 0U;
     /* watcher_active_count moved to vm->watchers->active_count (W2/v0.10.4) */
-    vm->event_queue_count       = 0U;
     vm->wakeup_pending_count    = 0U;
     vm->host_call_pending_count = 0U;
 
