@@ -307,6 +307,7 @@ extern void test_vm_slot_helpers_suite(void);
 extern void test_vm_tag_scope_suite(void);
 extern void test_vm_reactive_install_suite(void);
 extern void test_tag_state_suite(void);
+extern void test_tag_gate_matrix_suite(void);
 extern void test_job_proto_suite(void);
 extern void test_isa_method_suite(void);
 extern void test_detach_disown_suite(void);
@@ -629,6 +630,7 @@ static const struct suite_entry suites[] = {
     {"vm_tag_scope",                     test_vm_tag_scope_suite},
     {"vm_reactive_install",              test_vm_reactive_install_suite},
     {"tag_state",                        test_tag_state_suite},
+    {"tag_gate_matrix",                  test_tag_gate_matrix_suite},
     {"job_proto",                        test_job_proto_suite},
     {"isa_method",                       test_isa_method_suite},
     {"detach_disown",                    test_detach_disown_suite},

@@ -759,7 +759,9 @@ fatal:
  * WAITING strands are woken via sched_strand_unpark (refactor-3 SCHED-05:
  * unlink the reason-specific third-party links, then the make_runnable
  * funnel) so they run and process the unwind before the scheduler reaches
- * quiescence.
+ * quiescence.  SUSPENDED strands are resumed with their block/freeze gates
+ * cleared (refactor-3 SCHED-08: stop overrides suspension) for the same
+ * reason — pre-fix the deposit landed but the member never ran it.
  *
  * Watcher cascade deferred to T34/T35 (UWatcher type not yet defined).
  * At M3 tag->member_watchers_head is always NULL.
@@ -820,9 +822,22 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
          * chain / child->joiners_head / waituntil waiter_strand) BEFORE
          * routing through the make_runnable wake funnel, so no later waker
          * (fork_wake_joiners at child death, watcher_eval_dirty on a rising
-         * edge) can touch a strand that already moved on or was freed. */
-        if (USTRAND_IS_WAITING(s))
+         * edge) can touch a strand that already moved on or was freed.
+         *
+         * SCHED-08: stop overrides suspension — the deposit must be
+         * consumable.  Clear the gates first (the tag is stopping; leaving
+         * a gate set would strand the unwind forever): on a WAITING member
+         * a pending gate would route the unpark wake into SUSPENDED; on a
+         * SUSPENDED member the gates would block the resume outright
+         * (pre-fix: deposit without resume — the member never ran its
+         * unwind/onleave and leaked, pinning strand_suspended_count). */
+        if (USTRAND_IS_WAITING(s)) {
+            s->suspend_gates = 0U;
             sched_strand_unpark(s, /*enqueue=*/1);
+        } else if (USTRAND_IS_SUSPENDED(s)) {
+            s->suspend_gates = 0U;
+            sched_strand_make_runnable(s);
+        }
     }
 
     /* (1b) Mark the tag as stopped so urbi_tag_info can report URBI_TAG_STOPPED.
@@ -858,10 +873,14 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
  * urbi_tag_block sets UTAG_FLAG_BLOCKED and calls urbi_strand_suspend
  * with REASON_BLOCK on every member strand.  resume_value is stashed
  * on each strand's unblock_value so a future result-register handoff
- * (W3f, deferred) can deliver it on resume.
+ * (W3f, deferred) can deliver it on resume.  SCHED-08 (v0.13.3): each
+ * member's USTRAND_GATE_BLOCK bit is set — WAITING members stay parked
+ * with the gate armed (the make_runnable funnel routes their eventual
+ * wake to SUSPENDED); already-SUSPENDED members stack the gate.
  *
- * urbi_tag_unblock clears UTAG_FLAG_BLOCKED and resumes every
- * BLOCK-suspended member.  FREEZE-suspended members stay suspended.
+ * urbi_tag_unblock clears UTAG_FLAG_BLOCKED and clears each member's
+ * BLOCK gate; a member resumes only when its FREEZE gate is also clear
+ * (strand_resume_if_ungated).  FREEZE-gated members stay suspended.
  *
  * Not ISR-safe.  Returns URBI_ERR_INVALID_ARG on NULL vm or tag. */
 int
@@ -909,12 +928,15 @@ urbi_tag_unblock(struct UVM *vm, struct UTag *tag)
     while (e != NULL) {
         next = e->next_member;
         UStrand *s = e->strand_back;
-        if (s != NULL
-         && USTRAND_IS_SUSPENDED(s)
-         && USTRAND_GET_REASON(s) == USTRAND_REASON_BLOCK) {
-            /* Re-deliver the value stashed by urbi_tag_block (or by a
-             * subsequent tag.block(value) call). */
-            urbi_strand_resume(s, s->unblock_value);
+        if (s != NULL && (s->suspend_gates & USTRAND_GATE_BLOCK) != 0U) {
+            /* SCHED-08: clear this mode's gate wherever the member is —
+             * SUSPENDED (resume below iff the FREEZE gate is clear too,
+             * delivering the unblock_value stashed by urbi_tag_block) or
+             * still parked WAITING (the pending wake just loses its gate;
+             * the strand stays on its sleep/event/join/watcher park and
+             * strand_resume_if_ungated no-ops). */
+            s->suspend_gates &= (uint8_t)~USTRAND_GATE_BLOCK;
+            strand_resume_if_ungated(s);
         }
         e = next;
     }
@@ -931,9 +953,10 @@ urbi_tag_unblock(struct UVM *vm, struct UTag *tag)
  * tag_unfreeze_native at v0.10.2 W4.  Those native methods now forward
  * through this C API so the strand-suspension semantic actually fires.
  *
- * unfreeze resumes only FREEZE-suspended strands.  BLOCK-suspended
- * strands (W3b) stay suspended.  Block and freeze are independent gates
- * per workspace ledger §S6.
+ * SCHED-08 (v0.13.3): unfreeze clears each member's FREEZE gate; a member
+ * resumes only when its BLOCK gate is also clear (strand_resume_if_ungated).
+ * BLOCK-gated strands (W3b) stay suspended.  Block and freeze are
+ * independent gates per workspace ledger §S6.
  *
  * Not ISR-safe.  Returns URBI_ERR_INVALID_ARG for NULL vm/tag. */
 int
@@ -974,13 +997,14 @@ urbi_tag_unfreeze(struct UVM *vm, struct UTag *tag)
     while (e != NULL) {
         next = e->next_member;
         UStrand *s = e->strand_back;
-        if (s != NULL
-         && USTRAND_IS_SUSPENDED(s)
-         && USTRAND_GET_REASON(s) == USTRAND_REASON_FREEZE) {
-            /* freeze has no resume-value semantic; pass nil. */
-            UValue nil = {0};
-            nil.kind = (uint8_t)UVAL_NIL;
-            urbi_strand_resume(s, nil);
+        if (s != NULL && (s->suspend_gates & USTRAND_GATE_FREEZE) != 0U) {
+            /* SCHED-08: mirror of the unblock walk — clear the FREEZE gate
+             * wherever the member is; resume only if ungated.  freeze has
+             * no resume-value semantic of its own: the staged
+             * unblock_value (stamped by a still-pending block, nil
+             * otherwise) is what a resume here delivers. */
+            s->suspend_gates &= (uint8_t)~USTRAND_GATE_FREEZE;
+            strand_resume_if_ungated(s);
         }
         e = next;
     }
@@ -1004,9 +1028,20 @@ urbi_strand_cancel(struct UVM *vm, struct UStrand *strand, UValue cancel_reason)
      * SCHED-05: sched_strand_unpark additionally removes the reason-
      * specific third-party links (event waiter chain / child->joiners_head
      * / waituntil waiter_strand) before the wake.  Mirrors the
-     * urbi_tag_stop wake block. */
-    if (USTRAND_IS_WAITING(strand))
+     * urbi_tag_stop wake block.
+     *
+     * SCHED-08: cancel overrides suspension exactly like tag-stop — clear
+     * the gates (a pending gate would route the unpark wake into SUSPENDED;
+     * a set gate on a SUSPENDED target would block the resume) and wake a
+     * SUSPENDED target so the CANCEL deposit is consumable (pre-fix: same
+     * deposit-without-resume leak shape as SCHED-08's tag-stop arm). */
+    if (USTRAND_IS_WAITING(strand)) {
+        strand->suspend_gates = 0U;
         sched_strand_unpark(strand, /*enqueue=*/1);
+    } else if (USTRAND_IS_SUSPENDED(strand)) {
+        strand->suspend_gates = 0U;
+        sched_strand_make_runnable(strand);
+    }
     return URBI_OK;
 }
 
@@ -1104,6 +1139,7 @@ urbi_strand_reset(struct UVM *vm, struct UStrand *strand)
     strand->cleanup_run_depth = 0;        /* T29 / FOUND-009: clear recursion counter */
     strand->cleanup_absorbed  = 0;        /* v0.13.1-B: no stale absorption flag */
     strand->cleanup_top       = NULL;
+    strand->suspend_gates     = 0U;       /* SCHED-08: no stale block/freeze gate */
     strand->state             = USTRAND_STATE_DORMANT;
     return URBI_OK;
 }

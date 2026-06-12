@@ -755,9 +755,10 @@ dispatch:
                      * running strand (t.block()/t.freeze() from inside the
                      * tag's own scope via urbi_strand_suspend's RUNNING arm).
                      * Mirror the WAITING exit: advance pc past the OP_CALL
-                     * so resume() continues at the next instruction, then
+                     * so resume continues at the next instruction, then
                      * leave dispatch.  The ustep driver skips SUSPENDED
-                     * strands at dequeue; urbi_strand_resume re-enqueues.
+                     * strands at dequeue; the unblock/unfreeze ungated
+                     * resume (strand_resume_if_ungated) re-enqueues.
                      * No accounting here: urbi_strand_suspend's RUNNING arm
                      * already decremented strand_runnable_count (SCHED-01
                      * single-writer scheme), same as the READY-arm

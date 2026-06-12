@@ -22,14 +22,19 @@
  *                             |WAITING non-transient strands|.  inc at
  *                             sched_strand_block (the single WAITING entry);
  *                             dec at sched_strand_make_runnable (WAITING
- *                             entry state), sched_strand_unpark(s, 0)
+ *                             entry state — including the SCHED-08 gated
+ *                             wake, which hands off into the suspended
+ *                             count), sched_strand_unpark(s, 0)
  *                             (cleanup-executor + urbi_strand_panic), and
  *                             ustrand_destroy.
  *
  *   strand_suspended_count  — sched_suspended_inc/dec (VM-12).  Invariant:
  *                             |SUSPENDED non-transient strands|.  inc at
- *                             urbi_strand_suspend (the single SUSPENDED
- *                             entry); dec at sched_strand_make_runnable
+ *                             urbi_strand_suspend (READY/RUNNING arms) and
+ *                             sched_strand_make_runnable's gated-wake arm
+ *                             (SCHED-08: WAITING strand wakes with a
+ *                             block/freeze gate set); dec at
+ *                             sched_strand_make_runnable
  *                             (SUSPENDED entry state), urbi_strand_panic's
  *                             SUSPENDED arm, and ustrand_destroy.
  *
@@ -302,7 +307,8 @@ sched_strand_make_runnable(UStrand *s)
     /* SCHED-13 / VM-12: this is the single wake funnel — every WAITING ->
      * READY path (sched_strand_unblock, event/watcher/join wakers, the
      * sched_strand_unpark(s, 1) tag-stop + cancel wakes, joiner wakes at
-     * strand teardown) and the SUSPENDED -> READY path (urbi_strand_resume)
+     * strand teardown) and the SUSPENDED -> READY path
+     * (strand_resume_if_ungated, the tag-stop/cancel suspension override)
      * land here, so the parked-strand counters exit here.  The only
      * off-funnel exits are sched_strand_unpark(s, 0) (cleanup-executor
      * WAITING -> RUNNING direct stamp; urbi_strand_panic WAITING -> DEAD),
@@ -310,7 +316,30 @@ sched_strand_make_runnable(UStrand *s)
      * ustrand_destroy — each decrements at site. */
     if (USTRAND_IS_WAITING(s)) {
         sched_waiting_dec(vm, s);
+        if (s->suspend_gates != 0U) {
+            /* SCHED-08 gated wake: a tag blocked/froze this strand while it
+             * was parked (urbi_strand_suspend's gate-and-leave-parked arm);
+             * the waker (timer / event emit / join / watcher) has already
+             * unlinked the park, so the wake lands in SUSPENDED, not READY.
+             * Counter handoff: waiting-- above, suspended++ here.  The
+             * gating tag is not known at this choke point, so the (now
+             * dead) wait_payload union arm becomes a NULL suspend_tag — the
+             * GC strand walker null-guards it, and the tag stays reachable
+             * via the member TAG_SCOPE entry on the strand's cleanup
+             * stack. */
+            s->state = (uint8_t)(USTRAND_SUSPENDED |
+                                 ustrand_gates_reason(s->suspend_gates));
+            s->wait_payload.suspend_tag = NULL;
+            sched_suspended_inc(vm, s);
+            return;
+        }
     } else if (USTRAND_IS_SUSPENDED(s)) {
+        /* SCHED-08: callers must clear the gates before waking a SUSPENDED
+         * strand — strand_resume_if_ungated only calls with gates == 0;
+         * the tag-stop / cancel override clears both bits first. */
+        URBI_INTERNAL_ASSERT(s->suspend_gates == 0U);
+        /* The suspend_tag union arm dies with the state. */
+        s->wait_payload.suspend_tag = NULL;
         sched_suspended_dec(vm, s);
     }
     s->state      = USTRAND_STATE_READY;
@@ -644,8 +673,9 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
     cb(vm, &s->fatal_value,  ctx);
     cb(vm, &s->catch_value,  ctx);
     /* GC-04 (refactor-3): unblock_value carries the resume value between
-     * urbi_tag_block/urbi_strand_resume and opcode-level delivery (v0.10.9
-     * W3a) — same lifetime shape as catch_value, same rooting requirement. */
+     * urbi_tag_block / strand_resume_if_ungated and opcode-level delivery
+     * (v0.10.9 W3a) — same lifetime shape as catch_value, same rooting
+     * requirement. */
     cb(vm, &s->unblock_value, ctx);
 
     /* (2b) C-stack root frames (refactor-3 VM-06a): values runtime C code

@@ -98,12 +98,16 @@ void sched_runnable_dec(UVM *vm, const UStrand *s);
  * see the field declarations in vm/uvm.h for the full transition map:
  *   waiting:   inc in sched_strand_block; dec in sched_strand_make_runnable
  *              (WAITING entry state — sched_strand_unpark(s, 1) funnels
- *              there), sched_strand_unpark(s, 0) (off-funnel exits: the
- *              cleanup-executor in src/runtime/uunwind.c and
- *              urbi_strand_panic), and ustrand_destroy.
- *   suspended: inc in urbi_strand_suspend (src/sched/ustrand.c); dec in
- *              sched_strand_make_runnable (SUSPENDED entry state),
- *              urbi_strand_panic's SUSPENDED arm, and ustrand_destroy.
+ *              there; a SCHED-08 gated wake also exits here, handing off
+ *              into the suspended count), sched_strand_unpark(s, 0)
+ *              (off-funnel exits: the cleanup-executor in
+ *              src/runtime/uunwind.c and urbi_strand_panic), and
+ *              ustrand_destroy.
+ *   suspended: inc in urbi_strand_suspend (src/sched/ustrand.c,
+ *              READY/RUNNING arms) and in sched_strand_make_runnable's
+ *              gated-wake arm (SCHED-08); dec in sched_strand_make_runnable
+ *              (SUSPENDED entry state), urbi_strand_panic's SUSPENDED arm,
+ *              and ustrand_destroy.
  * Both feed vm_liveness()'s `armed` term — reported to the host but
  * excluded from QUIESCENT (owner decision 2026-06-11). */
 void sched_waiting_inc(UVM *vm, const UStrand *s);

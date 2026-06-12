@@ -406,7 +406,7 @@ CI gate tracks this list to prevent silent growth.
   `urbi_strand_attach_ambient_tags`, `urbi_strand_capture_ambient_chain`,
   `urbi_strand_create_for_module`, `urbi_strand_register_stack_alloc`,
   `urbi_strand_register_stack_free`, `urbi_strand_register_stack_zero`,
-  `urbi_strand_resume`, `urbi_strand_suspend`,
+  `urbi_strand_suspend`, `strand_resume_if_ungated`,
   `urbi_strand_scope_tag`
 
 ### Control stdlib internals

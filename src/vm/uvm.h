@@ -397,16 +397,22 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *                            entry point).  dec (asserted > 0):
      *                            sched_strand_make_runnable on a WAITING
      *                            strand (every wake path funnels there —
-     *                            sched_strand_unpark(s, 1) included), the
+     *                            sched_strand_unpark(s, 1) included; a
+     *                            SCHED-08 gated wake also exits here, handing
+     *                            off into strand_suspended_count), the
      *                            off-funnel sched_strand_unpark(s, 0) exits
      *                            (cleanup-executor WAITING -> RUNNING direct
      *                            stamp in uunwind.c; urbi_strand_panic
      *                            WAITING -> DEAD), and ustrand_destroy for
      *                            death-from-WAITING.
-     *   strand_suspended_count — inc: urbi_strand_suspend (the single
-     *                            SUSPENDED entry point).  dec (asserted > 0):
+     *   strand_suspended_count — inc: urbi_strand_suspend (READY/RUNNING
+     *                            arms) and sched_strand_make_runnable's
+     *                            gated-wake arm (SCHED-08: a WAITING strand
+     *                            with a block/freeze gate set wakes into
+     *                            SUSPENDED).  dec (asserted > 0):
      *                            sched_strand_make_runnable on a SUSPENDED
-     *                            strand (urbi_strand_resume funnels there),
+     *                            strand (strand_resume_if_ungated and the
+     *                            tag-stop/cancel override funnel there),
      *                            urbi_strand_panic's SUSPENDED arm, and
      *                            ustrand_destroy for death-from-SUSPENDED.
      * (event_queue_count deleted this task — vestigial M3 stub with no

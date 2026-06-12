@@ -34,6 +34,24 @@ URBI_STATIC_ASSERT(UTAG_FLAG_FROZEN  == 0x01U,
                "urbi_tag_state_t assumes UTAG_FLAG_FROZEN == 0x01");
 URBI_STATIC_ASSERT(UTAG_FLAG_STOPPED == 0x02U,
                "urbi_tag_state_t assumes UTAG_FLAG_STOPPED == 0x02");
+URBI_STATIC_ASSERT(UTAG_FLAG_BLOCKED == 0x04U,
+               "urbi_tag_state_t assumes UTAG_FLAG_BLOCKED == 0x04");
+
+/* SCHED-15 (v0.13.3): pin the public urbi_tag_state_t enum values and the
+ * full UTAG_FLAG_* decode space against each other so the two surfaces
+ * cannot drift apart silently.  urbi_tag_info's flag→state decode below
+ * covers exactly the three flag bits asserted here (priority STOPPED >
+ * FROZEN > RUNNING; BLOCKED reporting itself stays DEFERRED to v0.13.7 /
+ * API-02, so the decode deliberately never returns URBI_TAG_BLOCKED).
+ * Anyone adding a UTAG_FLAG_* bit must extend BOTH the mask assert below
+ * AND the urbi_tag_info decode (and, if the new flag is host-observable,
+ * the public enum) — the mask assert failing the build is the tripwire. */
+URBI_STATIC_ASSERT((UTAG_FLAG_FROZEN | UTAG_FLAG_STOPPED | UTAG_FLAG_BLOCKED)
+                   == 0x07U,
+               "UTAG_FLAG_* decode space changed — update urbi_tag_info and this assert (SCHED-15)");
+URBI_STATIC_ASSERT(URBI_TAG_RUNNING == 0 && URBI_TAG_STOPPED == 1 &&
+                   URBI_TAG_FROZEN  == 2 && URBI_TAG_BLOCKED == 3,
+               "urbi_tag_state_t enum values drifted — update urbi_tag_info's decode (SCHED-15)");
 
 /* === urbi_tag_create ===
  *

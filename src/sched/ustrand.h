@@ -63,6 +63,29 @@ extern "C" {
 #define USTRAND_REASON_BLOCK   0x06U  /* SUSPENDED via tag.block / urbi_tag_block (W3a) */
 #define USTRAND_REASON_FREEZE  0x07U  /* SUSPENDED via tag.freeze / urbi_tag_freeze (W3a) */
 
+/* === SCHED-08 (v0.13.3): per-strand suspension gates ===
+ *
+ * block and freeze are INDEPENDENT gates (workspace ledger §S6): each sets
+ * its own bit at suspend time and clears it at unblock/unfreeze; the strand
+ * resumes only when BOTH bits are clear (strand_resume_if_ungated).  The
+ * reason sub-code on a SUSPENDED strand is the gate-priority decode
+ * (ustrand_gates_reason below) — pre-fix, the single shared reason nibble
+ * let unblock-order games resume a still-gated strand (block -> freeze ->
+ * unblock RAN; the symmetric order too). */
+#define USTRAND_GATE_BLOCK   0x01U   /* set by urbi_tag_block,  cleared by unblock */
+#define USTRAND_GATE_FREEZE  0x02U   /* set by urbi_tag_freeze, cleared by unfreeze */
+
+/* Reason-nibble decode for a NON-ZERO gate set: BLOCK outranks FREEZE.
+ * Single source of truth for every SUSPENDED state stamp (urbi_strand_suspend,
+ * strand_resume_if_ungated's still-gated re-stamp, and the gated-wake arm in
+ * sched_strand_make_runnable). */
+static inline uint8_t
+ustrand_gates_reason(uint8_t gates)
+{
+    return (gates & USTRAND_GATE_BLOCK) ? USTRAND_REASON_BLOCK
+                                        : USTRAND_REASON_FREEZE;
+}
+
 /* Composite values stored in strand->state. */
 #define USTRAND_STATE_DORMANT         (USTRAND_DORMANT)
 #define USTRAND_STATE_READY           (USTRAND_READY)
@@ -235,7 +258,23 @@ struct UStrand {
                                                            Absorbs the former state_pad[1] byte so
                                                            the CHSTR-041 size pin holds. */
     uint16_t                instruction_budget_remaining;
-    uint16_t                budget_pad;
+    /* SCHED-08 (v0.13.3): independent block/freeze suspension gates —
+     * USTRAND_GATE_BLOCK / USTRAND_GATE_FREEZE bits (see the macro block
+     * above for the resume contract).  Set by urbi_strand_suspend (any
+     * live state, including gate-and-leave-parked on WAITING); cleared by
+     * urbi_tag_unblock / urbi_tag_unfreeze (per-mode) and by the tag-stop /
+     * cancel override (both bits — stop wins over suspension).
+     *
+     * KNOWN LIMITATION: two different tags blocking/freezing the SAME
+     * strand share these per-strand bits (no per-tag refcount) — one tag's
+     * unblock can resume a strand another tag still wants blocked.  Filed
+     * as a design-risk at the v0.13.3 close-out (v1.x candidate: per-tag
+     * gate refcount).
+     *
+     * Carved from the former uint16_t budget_pad — no UStrand size/offset
+     * change (CHSTR-041 pin holds). */
+    uint8_t                 suspend_gates;
+    uint8_t                 budget_pad;
 
     /* --- Cooperative scheduler intrusive list (T5 wires) ---
        Included unconditionally at T2; T5 will revisit whether to gate
@@ -417,25 +456,39 @@ ustrand_c_root_pop(struct UStrand *s, UCRootFrame *f)
 int  ustrand_init(UStrand *s, struct UVM *vm);
 void ustrand_destroy(UStrand *s, struct UVM *vm);
 
-/* === W3a (v0.10.9): SUSPENDED ↔ READY transitions ===
+/* === W3a (v0.10.9) / SCHED-08 (v0.13.3): SUSPENDED ↔ READY transitions ===
  *
- * urbi_strand_suspend: transition a READY or RUNNING strand to SUSPENDED with
- *   the supplied reason sub-code (USTRAND_REASON_BLOCK or USTRAND_REASON_FREEZE)
- *   and back-pointer to the owning UTag.  No-op if the strand is already
- *   SUSPENDED, WAITING, DEAD, or DORMANT.  Not ISR-safe.
+ * urbi_strand_suspend: set the suspension gate matching the supplied reason
+ *   sub-code (USTRAND_REASON_BLOCK or USTRAND_REASON_FREEZE) and record the
+ *   owning UTag.  Per entry state:
+ *     READY/RUNNING — suspend in place (queue splice / runnable_dec per the
+ *       SCHED-01 single-writer scheme), stamp SUSPENDED with the gate-
+ *       priority reason decode.
+ *     WAITING — gate-and-leave-parked (SCHED-08): the gate bit is set but
+ *       the strand stays on its sleep/event/join/watcher park and stays in
+ *       strand_waiting_count; the make_runnable wake funnel routes the
+ *       eventual wake to SUSPENDED instead of READY.
+ *     SUSPENDED — stack the new gate; re-stamp reason; refresh the tag
+ *       back-pointer.
+ *     DORMANT/DEAD — silent no-op.
+ *   Not ISR-safe.
  *
  *   Internal contract — not part of the public C API.  The public surface is
  *   urbi_tag_block / urbi_tag_unblock / urbi_tag_freeze / urbi_tag_unfreeze
- *   in include/urbi/urbi.h which walk tag->member_strands_head and call this
- *   helper for each member strand.
+ *   in include/urbi/urbi.h which walk tag->member_strands_head, manage the
+ *   gate bits, and call this helper / strand_resume_if_ungated per member.
  *
- * urbi_strand_resume: transition a SUSPENDED strand back to READY.  Writes
- *   resume_value to strand->unblock_value so a future opcode-level handoff
- *   (W3f, deferred at v0.10.9) can deliver it.  No-op if the strand is not
- *   SUSPENDED.  Not ISR-safe.
+ * strand_resume_if_ungated: resume a SUSPENDED strand iff BOTH gates are
+ *   clear (the caller — unblock/unfreeze — clears its own gate bit first).
+ *   While still gated, re-stamps the reason nibble to the remaining-gate
+ *   decode and stays SUSPENDED.  The resume value is strand->unblock_value
+ *   (stamped by urbi_tag_block; nil otherwise) and stays staged there for
+ *   the deferred opcode-level handoff (W3f, v0.10.9-C).  No-op if the strand
+ *   is not SUSPENDED (e.g. a gate cleared while the strand is still parked
+ *   WAITING).  Not ISR-safe.  Replaces the pre-SCHED-08 urbi_strand_resume
+ *   (which resumed unconditionally off the shared reason nibble).
  *
- * Both functions handle the run-queue side-effects required to keep the
- * cooperative scheduler's bookkeeping correct:
+ * Both functions keep the cooperative scheduler's bookkeeping correct:
  *   - Suspending a READY strand splices it out of vm->ready_head and
  *     decrements vm->strand_runnable_count (via the unbind helper).
  *   - Suspending a RUNNING strand decrements vm->strand_runnable_count via
@@ -443,10 +496,10 @@ void ustrand_destroy(UStrand *s, struct UVM *vm);
  *     counted set — count == |READY| + |RUNNING non-transient| — and
  *     RUNNING -> SUSPENDED leaves it).
  *   - Resuming a SUSPENDED strand routes through sched_strand_make_runnable
- *     (re-enters the counted set as READY). */
+ *     (re-enters the counted set as READY; the funnel owns suspended--). */
 void urbi_strand_suspend(struct UStrand *strand, uint8_t reason,
                          struct UTag    *tag);
-void urbi_strand_resume(struct UStrand *strand, UValue resume_value);
+void strand_resume_if_ungated(struct UStrand *strand);
 
 /* === T29: ambient-tag inheritance helpers ===
  *

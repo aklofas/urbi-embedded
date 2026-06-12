@@ -802,66 +802,107 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
 {
     if (strand == NULL || tag == NULL) return;
     URBI_ASSERT_NOT_ISR(strand->vm);
+    URBI_INTERNAL_ASSERT(reason == USTRAND_REASON_BLOCK ||
+                         reason == USTRAND_REASON_FREEZE);
 
-    /* Only READY and RUNNING strands transition cleanly into SUSPENDED.
-     *
-     * READY: splice out of the cooperative scheduler's ready queue so the
-     *   dispatch loop doesn't pick the strand up.  sched_strand_unbind_from_
-     *   ready_queue idempotently decrements strand_runnable_count when the
-     *   strand was actually on the queue.
-     *
-     * RUNNING: the strand is currently dispatching (t.block()/t.freeze()
-     *   from inside the tag's own scope reaches here through the native
-     *   call).  Not on the queue; stamp the state and uncount.  The OP_CALL
-     *   post-native arm checks USTRAND_IS_SUSPENDED and exits dispatch
-     *   (refactor-3 VM-03).  SCHED-01 single-writer scheme: a RUNNING
-     *   strand is in the counted set (the driver's dequeue is count-
-     *   neutral), so RUNNING → SUSPENDED decrements here — matching the
-     *   READY arm where unbind_from_ready_queue decrements.
-     *
-     * Any other state (DORMANT, WAITING, SUSPENDED, DEAD): silent no-op.
-     * Suspending a WAITING strand would corrupt sleep/event waiter chains
-     * (and is count-neutral anyway — WAITING is not counted);
-     * suspending a DEAD strand would un-reap it.  Callers that legitimately
-     * want to cancel a wait must transition through READY first via the
-     * appropriate unblock path. */
+    /* SCHED-08 (v0.13.3): the gate bit, not the reason nibble, is the
+     * authoritative "why is this strand suspended" record — block and
+     * freeze are independent gates and may stack. */
+    const uint8_t gate = (reason == USTRAND_REASON_FREEZE)
+                       ? (uint8_t)USTRAND_GATE_FREEZE
+                       : (uint8_t)USTRAND_GATE_BLOCK;
     const uint8_t cur_state = strand->state & USTRAND_STATE_MASK;
-    if (cur_state != USTRAND_READY && cur_state != USTRAND_RUNNING) return;
 
-    if (cur_state == USTRAND_READY) {
+    switch (cur_state) {
+    case USTRAND_READY:
+        /* Splice out of the cooperative scheduler's ready queue so the
+         * dispatch loop doesn't pick the strand up.  sched_strand_unbind_
+         * from_ready_queue idempotently decrements strand_runnable_count
+         * when the strand was actually on the queue (T1 discipline:
+         * unbind first, then stamp). */
         sched_strand_unbind_from_ready_queue(strand);
-    } else {
+        break;
+    case USTRAND_RUNNING:
+        /* The strand is currently dispatching (t.block()/t.freeze() from
+         * inside the tag's own scope reaches here through the native
+         * call).  Not on the queue; stamp the state and uncount.  The
+         * OP_CALL post-native arm checks USTRAND_IS_SUSPENDED and exits
+         * dispatch (refactor-3 VM-03).  SCHED-01 single-writer scheme: a
+         * RUNNING strand is in the counted set (the driver's dequeue is
+         * count-neutral), so RUNNING → SUSPENDED decrements here —
+         * matching the READY arm where unbind_from_ready_queue does. */
         sched_runnable_dec(strand->vm, strand);
+        break;
+    case USTRAND_WAITING:
+        /* SCHED-08: gate-and-leave-parked.  The strand stays on its
+         * sleep/event/join/watcher park (and stays in strand_waiting_
+         * count); the gate does the work at wake time — the make_runnable
+         * funnel routes a gated wake to SUSPENDED instead of READY.
+         * Unparking here would corrupt the third-party wait chains for no
+         * benefit.  Pre-fix this arm was a silent no-op: a sleeping member
+         * of a frozen tag woke and ran. */
+        strand->suspend_gates |= gate;
+        return;
+    case USTRAND_SUSPENDED:
+        /* SCHED-08: a second suspension mode stacks its gate on an
+         * already-SUSPENDED strand (block → freeze and the symmetric
+         * order).  Counters untouched (already in the suspended set);
+         * re-stamp the reason nibble to the gate-priority decode and
+         * refresh the tag back-pointer (last-writer-wins — see the
+         * suspend_gates docstring for the multi-tag limitation). */
+        strand->suspend_gates |= gate;
+        strand->state = (uint8_t)(USTRAND_SUSPENDED |
+                                  ustrand_gates_reason(strand->suspend_gates));
+        strand->wait_payload.suspend_tag = tag;
+        return;
+    default:
+        /* DORMANT / DEAD: silent no-op.  Suspending a strand that never
+         * started is meaningless; suspending a DEAD strand would un-reap
+         * it. */
+        return;
     }
 
+    strand->suspend_gates |= gate;
     strand->state = (uint8_t)(USTRAND_SUSPENDED |
-                              (reason & USTRAND_REASON_MASK));
-    /* VM-12: single SUSPENDED entry point — the suspended counter enters
-     * here.  Exits: sched_strand_make_runnable (urbi_strand_resume funnels
-     * there) and ustrand_destroy.  No WAITING -> SUSPENDED arm exists (the
-     * guard above no-ops on WAITING strands), so no waiting_dec here. */
+                              ustrand_gates_reason(strand->suspend_gates));
+    /* VM-12: single SUSPENDED entry point apart from the gated-wake arm in
+     * sched_strand_make_runnable (SCHED-08) — the suspended counter enters
+     * here.  Exits: sched_strand_make_runnable (strand_resume_if_ungated
+     * and the tag-stop/cancel override funnel there), urbi_strand_panic's
+     * SUSPENDED arm, and ustrand_destroy.  The WAITING arm above returns
+     * before this point (the strand stays parked and counted WAITING), so
+     * no waiting_dec here. */
     sched_suspended_inc(strand->vm, strand);
     strand->wait_payload.suspend_tag = tag;
 }
 
 void
-urbi_strand_resume(struct UStrand *strand, UValue resume_value)
+strand_resume_if_ungated(struct UStrand *strand)
 {
     if (strand == NULL) return;
     URBI_ASSERT_NOT_ISR(strand->vm);
 
     if (!USTRAND_IS_SUSPENDED(strand)) return;
+
+    if (strand->suspend_gates != 0U) {
+        /* Still gated by the other mode (SCHED-08: block → freeze →
+         * unblock stays suspended; symmetric order too).  Re-stamp the
+         * reason nibble to the remaining-gate decode so unblock/unfreeze
+         * targeting and the GC suspend_tag guard track the live gate set. */
+        strand->state = (uint8_t)(USTRAND_SUSPENDED |
+                                  ustrand_gates_reason(strand->suspend_gates));
+        return;
+    }
+
     URBI_TP(strand->vm, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_RESUME,
             (uint32_t)(uintptr_t)strand, 0);
 
-    /* Write resume_value to unblock_value so a future opcode-level handoff
-     * (W3f, deferred at v0.10.9) can deliver it into the strand's result
-     * register.  At v0.10.9 the value is stored but not delivered. */
-    strand->unblock_value = resume_value;
-    strand->wait_payload.suspend_tag = NULL;
-
-    /* SUSPENDED → READY via sched_strand_make_runnable so queue accounting
-     * (ready_head/tail + strand_runnable_count) stays consistent.  The
-     * helper sets state = USTRAND_STATE_READY itself. */
+    /* Resume-value contract: strand->unblock_value was stamped by
+     * urbi_tag_block (nil otherwise) and stays in place across the resume
+     * for the deferred opcode-level handoff (W3f, v0.10.9-C) — it is the
+     * delivery slot, not a transient.  SUSPENDED → READY routes through
+     * sched_strand_make_runnable so queue accounting stays consistent; the
+     * funnel's SUSPENDED arm owns the suspended-- handoff and clears the
+     * dead suspend_tag union arm. */
     sched_strand_make_runnable(strand);
 }

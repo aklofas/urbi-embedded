@@ -65,15 +65,18 @@ int urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value);
 
 /* W3b/v0.10.9: urbi_tag_block / urbi_tag_unblock — cross-strand suspend.
  *
- * urbi_tag_block walks tag->member_strands_head and transitions every
- * member READY/RUNNING strand to SUSPENDED with the block-reason sub-code.
- * Each strand's unblock_value is set to resume_value so a future resume
- * can deliver it.  Sets UTAG_FLAG_BLOCKED on the tag.
+ * urbi_tag_block walks tag->member_strands_head and arms each member's
+ * BLOCK suspension gate: READY/RUNNING members suspend in place; a member
+ * parked in a wait (sleep / event / join / waituntil) stays parked with
+ * the gate armed, and its eventual wake lands in SUSPENDED instead of
+ * READY (v0.13.3 / SCHED-08).  Each strand's unblock_value is set to
+ * resume_value so a future resume can deliver it.  Sets UTAG_FLAG_BLOCKED
+ * on the tag.
  *
- * urbi_tag_unblock clears UTAG_FLAG_BLOCKED and resumes only the
- * BLOCK-suspended member strands; FREEZE-suspended members stay
- * suspended.  Block and freeze are independent gates per workspace
- * ledger §S6.
+ * urbi_tag_unblock clears UTAG_FLAG_BLOCKED and clears each member's
+ * BLOCK gate; a member resumes only once its FREEZE gate is also clear.
+ * Block and freeze are independent gates per workspace ledger §S6 —
+ * block -> freeze -> unblock leaves the member suspended until unfreeze.
  *
  * Not ISR-safe.  Returns URBI_OK on success or URBI_ERR_INVALID_ARG
  * on NULL vm/tag. */
@@ -82,9 +85,12 @@ int urbi_tag_unblock(struct UVM *vm, struct UTag *tag);
 
 /* W3c/v0.10.9: urbi_tag_freeze / urbi_tag_unfreeze — cross-strand suspend.
  *
- * Same shape as urbi_tag_block / _unblock but with REASON_FREEZE.  Sets and
- * clears UTAG_FLAG_FROZEN.  unfreeze resumes only FREEZE-suspended members;
- * BLOCK-suspended members are independent and stay suspended.
+ * Same shape as urbi_tag_block / _unblock but arming the FREEZE gate (no
+ * resume-value semantic).  Sets and clears UTAG_FLAG_FROZEN.  A parked
+ * (sleeping/waiting) member of a frozen tag keeps its park; its wake is
+ * gated into SUSPENDED until unfreeze (v0.13.3 / SCHED-08).  unfreeze
+ * clears the FREEZE gate; BLOCK-gated members are independent and stay
+ * suspended until unblock.
  *
  * Not ISR-safe.  Returns URBI_OK on success or URBI_ERR_INVALID_ARG
  * on NULL vm/tag. */
