@@ -196,7 +196,10 @@ struct URealm *urbi_realm_create_repl(struct UVM *vm);
  * fully-dead VM from an armed-but-idle one that host input would re-arm.
  *
  * Populates out_strands (runnable strands) / out_watchers (armed watchers)
- * / out_wakes (sleeping strands); any may be NULL.
+ * / out_wakes (sleeping strands); any may be NULL.  The out-params do not
+ * cover every truth source the return value integrates: the function may
+ * return true with all three zero (pending internal work such as injected
+ * events or host calls, or SUSPENDED/WAITING strands).
  *
  * The function is VM-wide despite the per-realm spec wording: the counters
  * themselves are not partitioned per realm.  Per-realm partitioning is a

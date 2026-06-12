@@ -108,8 +108,13 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
     sched_strand_make_runnable(s);          /* WAITING → READY (waiting--) */
     UASSERT(strand_on_realm_list(r, s));
     sched_dequeue_ready_head(&vm);
+    /* The RUNNING store is immediately overwritten by the DEAD stamp below;
+     * kept so the manual transition mirrors the driver's dequeue->RUNNING->
+     * death sequence.  The count is provably 1 here (make_runnable just
+     * re-counted s), so decrement unconditionally — a guard would mask a
+     * counting bug (SCHED-01 no-saturation discipline). */
     s->state = USTRAND_STATE_RUNNING;
-    if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;  /* dies below */
+    vm.strand_runnable_count--;  /* dies below */
     s->state = USTRAND_STATE_DEAD;
     UASSERT(strand_on_realm_list(r, s));    /* KEY: DEAD still on list */
     UASSERT(strand_on_realm_list(r, child));

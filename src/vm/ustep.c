@@ -157,7 +157,9 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      * RUNNING   — runnable strands remain (budget ran out) OR pending
      *             internal work exists (ISR-ring events, host-injected
      *             cross-strand stops, dirty watcher evals, queued onleave
-     *             drains) that the next call will perform.
+     *             drains) that the next call will perform (dirty/onleave
+     *             drains run at dispatch safepoints until Task 5's idle
+     *             pump — see usched_liveness.c).
      * WAKE_AT   — nothing runnable/pending now; a sleeper or live periodic
      *             has a future deadline (*out_next_wake_us).
      * QUIESCENT — no internal work at all.  lv.armed may be > 0: armed

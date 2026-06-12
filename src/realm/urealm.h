@@ -180,7 +180,10 @@ URealm *urbi_realm_create_repl(struct UVM *vm);
  * SUSPENDED/WAITING strands) counts here even though it does not block
  * urbi_step's QUIESCENT verdict.  out_strands (runnable), out_watchers
  * (armed watchers, all modes), out_wakes (sleep-queue population) may be
- * NULL.
+ * NULL.  The out-params do not cover every truth source the return value
+ * integrates: the function may return true with all three zero (pending
+ * internal work such as injected events or host calls, or
+ * SUSPENDED/WAITING strands).
  *
  * Per-realm partitioning is a v1.x deferral (see urbi-embedded-design-risks.md).
  * The realm-tagged predecessor `urbi_realm_has_live_work` was renamed at
