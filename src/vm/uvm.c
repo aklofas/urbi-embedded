@@ -1604,6 +1604,14 @@ safepoint:
     if (s->pending_unwind != UEXEC_OK) {
         urbi_unwind(s);
         if (s->state == USTRAND_STATE_DEAD) goto exit_strand;
+        /* v0.13.1-B: a cleanup body's replacement unwind absorbed at an
+         * outer handler may leave the strand parked (WAITING — e.g. a sleep
+         * in the absorbing catch handler) or yielded (READY) when the
+         * nested dispatch exits — the walker returns with pending == OK and
+         * the strand no longer RUNNING.  Exit dispatch; the scheduler
+         * resumes it (its pc already points at the post-park instruction).
+         * Resuming the dispatch loop here would execute a parked strand. */
+        if (USTRAND_GET_STATE(s) != USTRAND_RUNNING) goto exit_strand;
     }
     if (s->instruction_budget_remaining == 0) {
         /* sched_strand_yield asserts entry state == RUNNING (SCHED-003)

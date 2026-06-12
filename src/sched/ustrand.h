@@ -176,7 +176,20 @@ struct UStrand {
      * the two cleanup_* uint16_t fields and the cleanup_base pointer,
      * keeping UStrand size stable (CHSTR-041 layout pin holds). */
     uint16_t                cleanup_run_depth;
-    uint16_t                cleanup_run_pad;
+    /* v0.13.3 (design-risks v0.13.1-B): set by the unwind walker when a
+     * cleanup body's replacement unwind is ABSORBED at an OUTER handler
+     * while cleanup_run_depth > 0 (catch / tag-stop absorption arms).
+     * run_cleanup_with_replace consumes it to recognise a post-absorption
+     * yield/park as legitimate control flow rather than a mid-cleanup
+     * truncation (pre-fix: spurious CLEANUP_OVERFLOW fatal).  Cleared at
+     * consume and at urbi_strand_reset.  Known limitation: with NESTED
+     * cleanup runs (cleanup_run_depth > 1) the innermost consumer clears
+     * the flag, so an enclosing run still misreads the park and escalates
+     * — same behaviour as pre-fix; single-level absorption (the v0.13.1-B
+     * repro) is fully handled.  Carved from the former uint16_t
+     * cleanup_run_pad — no UStrand size/offset change (CHSTR-041 holds). */
+    uint8_t                 cleanup_absorbed;
+    uint8_t                 cleanup_run_pad;
     struct UCleanupEntry   *cleanup_base;
     /* refactor-3 VM-06a / v0.13.1-L: head of the C-stack root frame chain
      * (UCRootFrame above).  NULL when no runtime C code is pinning a value

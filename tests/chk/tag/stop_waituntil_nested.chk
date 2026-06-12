@@ -1,0 +1,32 @@
+# Milestone: v0.13.3 (refactor-3 SCHED-05)
+# Covers: outer tag.stop() of a strand parked in waituntil(cond) under an
+#         INNER tag scope must scrub the watcher's waiter_strand back-pointer
+#         (sched_strand_unpark WATCHER arm) and tear the inner scope down on
+#         the unwind pass-through (v0.13.1-M), so a later rising edge of the
+#         condition cannot wake a dead/freed strand.
+#         Pre-fix: the woken strand absorbed at t, completed, and was
+#         eager-reaped while w->waiter_strand still pointed at it; the
+#         trig() rising edge had watcher_eval_dirty call
+#         sched_strand_make_runnable on freed memory (ASan heap-UAF).
+# matrix-row: tag-stop
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run var u = Tag.new()
+## host: run Realm.flag = 0
+## host: run Realm.log = ""
+## host: run var f = function() { 0 }
+## host: run t: { u: { waituntil(Realm.flag == 1); Realm.f(); Realm.log = Realm.log + "W" } }; Realm.log = Realm.log + "A"
+## host: run t.stop()
+## host: run Realm.log
+## host: run var trig = function() { Realm.flag = 1 }; Realm.trig()
+## host: run Realm.log
+[00000000] <Tag>
+[00000000] <Tag>
+[00000000] 0
+[00000000] ""
+[00000000] <?>
+[00000000] nil
+[00000000] nil
+[00000000] "A"
+[00000000] 1
+[00000000] "A"

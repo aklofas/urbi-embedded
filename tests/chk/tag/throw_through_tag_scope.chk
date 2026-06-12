@@ -1,0 +1,32 @@
+# Milestone: v0.13.3 (design-risks v0.13.1-M)
+# Covers: a throw crossing a tag scope (unwind pass-through: non-matching
+#         unwind over a TAG_SCOPE entry) must run the same teardown
+#         OP_POP_TAG runs — leave event fires, member watchers cascade to
+#         the pending-onleave queue (and unregister), member entry unlinks.
+#         Pre-fix: the walker bare-popped the entry — the leave event never
+#         fired ("L" missing) and the scope's member watcher LEAKED past
+#         the scope (trig() fired it: hits == 1).
+#         Post-fix: log is "cL" (catch handler runs in the throwing strand
+#         first; the leave-event at-watcher body is an async-spawned strand
+#         that runs at the next dispatch) and hits stays 0.
+## timeout: 30
+## host: run var u = Tag.new()
+## host: run var lv = Realm.u.leave()
+## host: run Realm.log = ""
+## host: run Realm.hits = 0
+## host: run Realm.never = 0
+## host: run at (Realm.lv?) Realm.log = Realm.log + "L"
+## host: run try { Realm.u: { at (Realm.never == 1) Realm.hits = Realm.hits + 1; throw(7) } } catch (var e) { Realm.log = Realm.log + "c" }
+## host: run Realm.log
+## host: run var trig = function() { Realm.never = 1 }; Realm.trig()
+## host: run Realm.hits
+[00000000] <Tag>
+[00000000] <event>
+[00000000] ""
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] nil
+[00000000] "cL"
+[00000000] 1
+[00000000] 0

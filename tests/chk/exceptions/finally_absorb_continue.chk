@@ -1,0 +1,26 @@
+# Milestone: v0.13.3 (design-risks v0.13.1-B)
+# Covers: a finally body's replacement unwind absorbed at an OUTER handler
+#         (catch in the caller) lets the strand continue as NORMAL code —
+#         a subsequent park (sleep in the catch handler) is legitimate
+#         control flow, not a mid-cleanup truncation.
+#         Pre-fix: run_cleanup_with_replace misread the post-absorption
+#         park as a truncated cleanup body and escalated to a spurious
+#         CLEANUP_OVERFLOW fatal — the strand died, the sleep never
+#         resumed, and Realm.r stayed 0.
+#         Post-fix (s->cleanup_absorbed): the strand parks normally and
+#         resumes after the clock advances; Realm.r == 9 (the finally's
+#         throw replaced the suppressed `return 5` per C-1).
+## timeout: 30
+## host: run Realm.r = 0
+## host: run var g = function() { try { return 5 } finally { throw(9) } }
+## host: run try { Realm.x = Realm.g() } catch (var e) { sleep(10ms); Realm.r = e }
+## host: run Realm.r
+## host: advance-clock 20
+## host: step 100000
+## host: run Realm.r
+[00000000] 0
+[00000000] <?>
+[00000000] nil
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] 9

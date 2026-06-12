@@ -1,0 +1,27 @@
+# Milestone: v0.13.3 (refactor-3 SCHED-05 / design-risks v0.13.1-G)
+# Covers: finish-then-drop pin (owner-ratified at plan approval): a
+#         cross-strand tag.stop() deposit that lands after the target's
+#         last safepoint is DROPPED when the body completes normally.
+#         Deposits are consumed at safepoints only — cooperative semantics;
+#         OP_RET at the top frame does not re-check pending_unwind.  Here
+#         the woken waituntil strand's remaining body is straight-line
+#         (slot write, scope pop, slot write, top OP_RET): the FULL body
+#         side-effect is present ("W" AND "A") and the VM reaches
+#         quiescence — no host_call_pending leak, because
+#         cross_strand_stop_pending clears at strand destroy.
+# matrix-row: tag-stop
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run Realm.flag = 0
+## host: run Realm.log = ""
+## host: run t: { waituntil(Realm.flag == 1); Realm.log = Realm.log + "W" }; Realm.log = Realm.log + "A"
+## host: run t.stop()
+## host: run Realm.log
+## host: step 1000
+[00000000] <Tag>
+[00000000] 0
+[00000000] ""
+[00000000] nil
+[00000000] nil
+[00000000] "WA"
+[00000000] step: QUIESCENT

@@ -30,6 +30,15 @@ typedef enum {
  * variable, and may have other open member scopes).  Anonymous scopes (bit
  * clear) own their tag and destroy it at pop. */
 #define FLAG_TAG_USER_OWNED 0x8U
+/* TAG_SCOPE only (v0.13.3 / refactor-3 SCHED-05 + v0.13.1-M): synthetic
+ * ambient-inheritance entry pushed by urbi_strand_attach_ambient_tags (realm
+ * tag at strand create; parent chain at fork).  These entries reference a
+ * SHARED tag (the realm's, or an outer scope's) and were never opened by an
+ * OP_PUSH_TAG: the unwind walker's pass-through must NOT run the scope
+ * teardown on them (no leave event, no watcher cascade, no utag_destroy —
+ * other strands may still be members).  Member unlink happens at
+ * ustrand_destroy via strand_unlink_from_tags, as before. */
+#define FLAG_TAG_AMBIENT    0x10U
 
 /* === Forward declarations for types that land in later tasks. === */
 

@@ -183,6 +183,7 @@ UTEST(panic_during_waituntil_unlinks_waiter)
 
     park_strand_on_event(&s, e, &vm);
     UASSERT(e->waiters_head == &s);
+    UASSERT_EQ(1U, vm.strand_waiting_count);
 
     int rc = urbi_strand_panic(&vm, &s, "test panic");
     UASSERT_EQ(rc, URBI_OK);
@@ -194,6 +195,12 @@ UTEST(panic_during_waituntil_unlinks_waiter)
 
     /* Strand must be DEAD. */
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
+
+    /* v0.13.3 (SCHED-05 carried finding): panic on a WAITING strand must
+     * exit the parked-strand counter — the DEAD stamp bypasses both the
+     * make_runnable wake funnel and ustrand_destroy's death-from-WAITING
+     * arm (the state is no longer WAITING by then). */
+    UASSERT_EQ(0U, vm.strand_waiting_count);
 
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);

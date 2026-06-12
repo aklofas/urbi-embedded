@@ -22,14 +22,16 @@
  *                             |WAITING non-transient strands|.  inc at
  *                             sched_strand_block (the single WAITING entry);
  *                             dec at sched_strand_make_runnable (WAITING
- *                             entry state), the uunwind.c cleanup-executor
- *                             unpark, and ustrand_destroy.
+ *                             entry state), sched_strand_unpark(s, 0)
+ *                             (cleanup-executor + urbi_strand_panic), and
+ *                             ustrand_destroy.
  *
  *   strand_suspended_count  — sched_suspended_inc/dec (VM-12).  Invariant:
  *                             |SUSPENDED non-transient strands|.  inc at
  *                             urbi_strand_suspend (the single SUSPENDED
  *                             entry); dec at sched_strand_make_runnable
- *                             (SUSPENDED entry state) and ustrand_destroy.
+ *                             (SUSPENDED entry state), urbi_strand_panic's
+ *                             SUSPENDED arm, and ustrand_destroy.
  *
  *   wakeup_pending_count    — owned by sleep_q_insert (++) /
  *                             sleep_q_remove (--).
@@ -298,12 +300,14 @@ sched_strand_make_runnable(UStrand *s)
     if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return;
     UVM *vm = s->vm;
     /* SCHED-13 / VM-12: this is the single wake funnel — every WAITING ->
-     * READY path (sched_strand_unblock, event/watcher/join wakers, tag-stop
-     * + cancel wakes, joiner wakes at strand teardown) and the SUSPENDED ->
-     * READY path (urbi_strand_resume) land here, so the parked-strand
-     * counters exit here.  The only off-funnel exits are the cleanup-
-     * executor unpark in uunwind.c (WAITING -> RUNNING direct stamp) and
-     * death-from-parked in ustrand_destroy — both decrement at site. */
+     * READY path (sched_strand_unblock, event/watcher/join wakers, the
+     * sched_strand_unpark(s, 1) tag-stop + cancel wakes, joiner wakes at
+     * strand teardown) and the SUSPENDED -> READY path (urbi_strand_resume)
+     * land here, so the parked-strand counters exit here.  The only
+     * off-funnel exits are sched_strand_unpark(s, 0) (cleanup-executor
+     * WAITING -> RUNNING direct stamp; urbi_strand_panic WAITING -> DEAD),
+     * urbi_strand_panic's SUSPENDED arm, and death-from-parked in
+     * ustrand_destroy — each decrements at site. */
     if (USTRAND_IS_WAITING(s)) {
         sched_waiting_dec(vm, s);
     } else if (USTRAND_IS_SUSPENDED(s)) {

@@ -1,0 +1,27 @@
+# Milestone: v0.13.3 (refactor-3 SCHED-05)
+# Covers: tag.stop() landing on a JOIN-parked parent (`0 & sleep(1h)` parks
+#         the loader on the child's joiners chain) must unlink the parent
+#         from child->joiners_head before waking it (sched_strand_unpark
+#         JOIN arm).  The woken child completes (OP_RET at top frame; the
+#         deposit is dropped per the v0.13.1-G finish-then-drop contract)
+#         and its death-path fork_wake_joiners must find an empty chain.
+#         Pre-fix: the parent stayed linked; the child's death re-woke the
+#         already-READY parent — READY -> READY make_runnable (SCHED-005
+#         assert abort in checked builds; circular ready-queue corruption
+#         in release builds).
+# matrix-row: tag-stop
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run Realm.log = ""
+## host: run t: { 0 & sleep(1h) }; Realm.log = Realm.log + "A"
+## host: run Realm.log
+## host: run t.stop()
+## host: run Realm.log
+## host: step 1000
+[00000000] <Tag>
+[00000000] ""
+[00000000] nil
+[00000000] ""
+[00000000] nil
+[00000000] "A"
+[00000000] step: QUIESCENT

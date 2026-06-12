@@ -320,7 +320,10 @@ UTEST(spawned_strand_inherits_ambient_chain)
     UASSERT(s->cleanup_base[0].kind == (uint8_t)UCLEANUP_TAG_SCOPE);
     UASSERT(s->cleanup_base[0].owning_tag  == r->tag);
     UASSERT(s->cleanup_base[0].strand_back == s);
-    UASSERT(s->cleanup_base[0].flags == 0);      /* no onleave on synthetic */
+    /* v0.13.3 (SCHED-05/v0.13.1-M): synthetic entries carry exactly
+     * FLAG_TAG_AMBIENT — no onleave, and the walker pass-through keeps the
+     * bare pop for them (the referenced tag is shared). */
+    UASSERT(s->cleanup_base[0].flags == FLAG_TAG_AMBIENT);
 
     /* Strand must appear in realm->tag's member list. */
     UASSERT(r->tag->member_strands_head == &s->cleanup_base[0]);
@@ -340,8 +343,9 @@ UTEST(spawned_strand_inherits_ambient_chain)
 /* 7. synthetic_entries_no_onleave
  *
  * Verify that synthetic TAG_SCOPE entries created by urbi_strand_create /
- * urbi_strand_attach_ambient_tags have flags == 0 (no FLAG_HAS_ONLEAVE)
- * and handler_pc == 0. */
+ * urbi_strand_attach_ambient_tags have flags == FLAG_TAG_AMBIENT only
+ * (no FLAG_HAS_ONLEAVE; the ambient bit is the v0.13.3 pass-through
+ * bare-pop marker) and handler_pc == 0. */
 UTEST(synthetic_entries_no_onleave)
 {
     UVM vm;
@@ -360,8 +364,8 @@ UTEST(synthetic_entries_no_onleave)
     for (i = 0; i < s->cleanup_depth; i++) {
         UCleanupEntry *e = &s->cleanup_base[i];
         if (e->kind != (uint8_t)UCLEANUP_TAG_SCOPE) continue;
-        /* Synthetic entries must have no onleave flag and no handler_pc. */
-        UASSERT_EQ((unsigned)e->flags,          0U);
+        /* Synthetic entries: ambient marker only (no onleave), no handler_pc. */
+        UASSERT_EQ((unsigned)e->flags,          (unsigned)FLAG_TAG_AMBIENT);
         UASSERT_EQ((unsigned)e->handler_pc,     0U);
         /* Register range fields must be zero. */
         UASSERT_EQ((unsigned)e->register_base,  0U);

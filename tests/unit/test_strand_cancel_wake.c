@@ -47,6 +47,8 @@
 #include "value/uarena.h"
 #include "runtime/umacros.h"
 #include "event/uevent.h"
+#include "watcher/uwatcher.h"
+#include "watcher/uwatcher_state.h"
 #include "lex/ulex.h"
 #include "parse/uast.h"
 #include "parse/uparse.h"
@@ -271,6 +273,129 @@ UTEST(cancel_event_parked_strand_unparks)
 }
 
 /* ===================================================================
+ * Case 3 (refactor-3 SCHED-05): cancel of a JOIN-parked strand unlinks it
+ * from child->joiners_head before waking it.  Pre-fix the woken parent
+ * stayed threaded on the chain; when the child later died,
+ * fork_wake_joiners re-woke a strand that had already left WAITING
+ * (READY -> READY corruption, or a walk over freed memory once the
+ * parent was reaped).
+ * =================================================================== */
+UTEST(cancel_join_parked_strand_unlinks_joiner)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    /* `0 & sleep(10s)`: RHS becomes the child (SLEEP-parked forever — no
+     * host clock in this test), LHS runs inline, then OP_JOIN_WAIT parks
+     * the loader JOIN-blocked on the child.  The trailing while loop gives
+     * the woken loader a backward-branch safepoint so the deposited CANCEL
+     * is consumed (a straight-line tail would complete and drop it —
+     * finish-then-drop, design-risks v0.13.1-G). */
+    UProto *module = compile_heap_chunk(&vm,
+        "0 & sleep(10s); while (true) { Realm.hit9 = 1 }");
+    UASSERT(module != NULL);
+
+    UStrand *loader = NULL;
+    UStepResult rc = drive_chunk(&vm, module, &loader, 20);
+
+    /* Loader JOIN-parked; child SLEEP-parked (only a timer remains). */
+    UASSERT_EQ((int)URBI_STEP_WAKE_AT, (int)rc);
+    UStrand *s = find_strand_in_realm(&vm, loader);
+    UASSERT(s != NULL);
+    if (s != NULL) {
+        UASSERT_EQ((unsigned)USTRAND_WAITING, (unsigned)USTRAND_GET_STATE(s));
+        UASSERT_EQ((unsigned)USTRAND_REASON_JOIN,
+                   (unsigned)USTRAND_GET_REASON(s));
+        UStrand *child = s->wait_payload.join_parent;
+        UASSERT(child != NULL);
+        UASSERT(child->joiners_head == s);
+
+        /* Cancel the JOIN-parked parent.  Post-fix: spliced off the
+         * joiners chain before the wake. */
+        UASSERT_EQ(URBI_OK, urbi_strand_cancel(&vm, s, urbi_make_nil()));
+        UASSERT(child->joiners_head == NULL);
+        UASSERT(s->wait_next == NULL);
+        UASSERT_EQ((unsigned)USTRAND_READY, (unsigned)USTRAND_GET_STATE(s));
+
+        rc = pump_steps(&vm, 100);
+        UASSERT_EQ((int)URBI_STEP_FATAL, (int)rc);
+        UASSERT(vm.fatal_strand == s);
+        UASSERT_EQ((unsigned)UEXEC_CANCEL, (unsigned)s->fatal_status);
+
+        /* Drive the would-be waker: cancel the sleeping child too so it
+         * runs to DEAD; its exit-path fork_wake_joiners must find an
+         * empty joiners chain (pre-fix: it walked the stale parent link).
+         * The child's thunk tail is straight-line (resume -> top OP_RET),
+         * so the CANCEL is dropped (v0.13.1-G) and the child dies CLEANLY
+         * — eager-reaped, so only the realm walk may be consulted after. */
+        vm.fatal_strand = NULL;   /* clear the host-inspect latch */
+        UASSERT_EQ(URBI_OK, urbi_strand_cancel(&vm, child, urbi_make_nil()));
+        rc = pump_steps(&vm, 100);
+        UASSERT_EQ((int)URBI_STEP_QUIESCENT, (int)rc);
+        UASSERT(find_strand_in_realm(&vm, child) == NULL);  /* reaped */
+    }
+
+    uchunk_destroy(module, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
+ * Case 4 (refactor-3 SCHED-05): cancel of a WATCHER-parked strand
+ * (waituntil(cond)) scrubs w->waiter_strand and retires the watcher.
+ * Pre-fix the watcher stayed armed with a stale back-pointer; the next
+ * rising edge had watcher_eval_dirty wake the DEAD strand.
+ * =================================================================== */
+UTEST(cancel_watcher_parked_strand_scrubs_waiter)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    /* The trailing while loop gives the woken strand a backward-branch
+     * safepoint so the CANCEL is consumed (finish-then-drop otherwise —
+     * design-risks v0.13.1-G). */
+    UProto *module = compile_heap_chunk(&vm,
+        "Realm.flag = 0; waituntil(Realm.flag == 1); "
+        "while (true) { Realm.hit9 = 1 }");
+    UASSERT(module != NULL);
+
+    UStrand *loader = NULL;
+    UStepResult rc = drive_chunk(&vm, module, &loader, 20);
+
+    /* Parked on the waituntil watcher: armed work only -> QUIESCENT. */
+    UASSERT_EQ((int)URBI_STEP_QUIESCENT, (int)rc);
+    UStrand *s = find_strand_in_realm(&vm, loader);
+    UASSERT(s != NULL);
+    if (s != NULL) {
+        UASSERT_EQ((unsigned)USTRAND_WAITING, (unsigned)USTRAND_GET_STATE(s));
+        UASSERT_EQ((unsigned)USTRAND_REASON_WATCHER,
+                   (unsigned)USTRAND_GET_REASON(s));
+        UASSERT(vm.active_watchers_head != NULL);
+        UASSERT(vm.active_watchers_head->waiter_strand == s);
+
+        /* Cancel.  Post-fix: waiter scrubbed and the now-waiterless
+         * waituntil watcher retired before the wake. */
+        UASSERT_EQ(URBI_OK, urbi_strand_cancel(&vm, s, urbi_make_nil()));
+        UASSERT(vm.active_watchers_head == NULL);
+        UASSERT_EQ(0U, vm.watchers->active_count);
+        UASSERT_EQ((unsigned)USTRAND_READY, (unsigned)USTRAND_GET_STATE(s));
+
+        rc = pump_steps(&vm, 100);
+        UASSERT_EQ((int)URBI_STEP_FATAL, (int)rc);
+        UASSERT(vm.fatal_strand == s);
+        UASSERT_EQ((unsigned)UEXEC_CANCEL, (unsigned)s->fatal_status);
+
+        /* Drive the would-be waker: force a dirty pass; with the watcher
+         * retired this is a no-op (pre-fix: make_runnable on the DEAD
+         * strand). */
+        vm.watchers->dirty_count = 1;
+        watcher_eval_dirty(&vm);
+    }
+
+    uchunk_destroy(module, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite entry point.
  * =================================================================== */
 
@@ -285,4 +410,10 @@ test_strand_cancel_wake_suite(void)
     utest_run("strand_cancel_wake: cancel of an EVENT-parked strand "
               "unregisters the waiter and runs the CANCEL unwind",
               cancel_event_parked_strand_unparks);
+    utest_run("strand_cancel_wake: cancel of a JOIN-parked strand unlinks "
+              "it from the child's joiners chain (SCHED-05)",
+              cancel_join_parked_strand_unlinks_joiner);
+    utest_run("strand_cancel_wake: cancel of a WATCHER-parked strand scrubs "
+              "the waituntil back-pointer (SCHED-05)",
+              cancel_watcher_parked_strand_scrubs_waiter);
 }

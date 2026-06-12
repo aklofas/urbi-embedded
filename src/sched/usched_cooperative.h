@@ -79,9 +79,10 @@ sched_pick_next(const UVM *vm) {
  *   - src/vm/ustep.c — urbi_step's fatal-exit arm (dec: a fatal-DEAD
  *     strand never reaches sched_post_dispatch's step-1 decrement);
  *   - src/runtime/uunwind.c — run_cleanup_with_replace's blocked/yielded
- *     cleanup-body rebalance (inc: the unparked strand re-enters the
- *     counted set as RUNNING before the fatal stamp; slated to be
- *     replaced by sched_strand_unpark in the SCHED-05 task).
+ *     cleanup-body rebalance (inc: after sched_strand_unpark(s, 0) the
+ *     strand re-enters the counted set as RUNNING before the fatal stamp
+ *     — correct by construction under the single-writer scheme; closes
+ *     design-risks v0.13.1-C).
  * Everything else must route through the sched_strand_* transition
  * functions. */
 void sched_runnable_inc(UVM *vm, const UStrand *s);
@@ -96,11 +97,13 @@ void sched_runnable_dec(UVM *vm, const UStrand *s);
  * pair above (dec asserts > 0; transient strands are skipped).  Writers —
  * see the field declarations in vm/uvm.h for the full transition map:
  *   waiting:   inc in sched_strand_block; dec in sched_strand_make_runnable
- *              (WAITING entry state), the cleanup-executor unpark in
- *              src/runtime/uunwind.c, and ustrand_destroy.
+ *              (WAITING entry state — sched_strand_unpark(s, 1) funnels
+ *              there), sched_strand_unpark(s, 0) (off-funnel exits: the
+ *              cleanup-executor in src/runtime/uunwind.c and
+ *              urbi_strand_panic), and ustrand_destroy.
  *   suspended: inc in urbi_strand_suspend (src/sched/ustrand.c); dec in
- *              sched_strand_make_runnable (SUSPENDED entry state) and
- *              ustrand_destroy.
+ *              sched_strand_make_runnable (SUSPENDED entry state),
+ *              urbi_strand_panic's SUSPENDED arm, and ustrand_destroy.
  * Both feed vm_liveness()'s `armed` term — reported to the host but
  * excluded from QUIESCENT (owner decision 2026-06-11). */
 void sched_waiting_inc(UVM *vm, const UStrand *s);
@@ -113,6 +116,25 @@ void sched_strand_make_runnable(UStrand *s);
 void sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload);
 void sched_strand_yield(UStrand *s);
 void sched_strand_unblock(UStrand *s);
+
+/* sched_strand_unpark — reason-dispatched third-party-link removal for a
+ * WAITING strand (refactor-3 SCHED-05): the wake-side mirror of the
+ * death-side scrub in strand_cleanup_observers.  Unlinks the strand from
+ * its reason-specific external structure (SLEEP: sleep queue; EVENT:
+ * waiter chain; JOIN: child->joiners_head; WATCHER: waituntil
+ * waiter_strand scrub + watcher retire) BEFORE it leaves WAITING, so no
+ * later waker can touch a strand that already moved on (or was freed).
+ *
+ * enqueue == 1: route through sched_strand_make_runnable (tag-stop /
+ *   cancel wake; the funnel owns the strand_waiting_count exit).
+ * enqueue == 0: leave the strand unqueued with its state byte untouched —
+ *   the caller stamps the next state (cleanup-executor fail-soft stamps
+ *   RUNNING; urbi_strand_panic stamps DEAD); the waiting-count exit
+ *   happens inside this call (off-funnel writer; see the map above).
+ *
+ * Precondition: USTRAND_IS_WAITING(s).  Implemented in ustrand.c next to
+ * strand_cleanup_observers so both sides share strand_unlink_park. */
+void sched_strand_unpark(UStrand *s, int enqueue);
 
 /* Timer / quiescence queries */
 uint64_t sched_earliest_wake_us(const UVM *vm);
@@ -129,6 +151,8 @@ bool     sched_quiescent(const UVM *vm);
  *   pending      — internal work the next step will perform without any
  *                  external input: ISR-ring events, host-injected cross-
  *                  strand stops, dirty watcher evals, queued onleave drains.
+ *                  The magnitude is NOT meaningful (it mixes 0/1 presence
+ *                  flags with real counts) — compare against 0 only.
  *   armed        — external-input work: armed watchers (all modes) +
  *                  SUSPENDED (blocked/frozen) + WAITING (event/join/watcher-
  *                  parked) strands.  Reported, but does NOT block QUIESCENT —

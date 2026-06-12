@@ -31,11 +31,10 @@
 #include "vm/uvm.h"          /* dispatch_loop_until_yield */
 #include "vm/uvm_tag_scope.h"     /* vm_tag_scope_teardown (v0.10.15-B absorption) */
 #include "urbi/urbi.h"         /* UErrCode, public API declarations */
-#include "sched/usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
+#include "sched/usched_cooperative.h" /* sched_strand_unpark, sched_runnable_inc */
 #include "runtime/umacros.h"      /* URBI_INTERNAL_ASSERT */
 #include "tag/utag.h"               /* UTag, member_strands_head */
 #include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
-#include "event/uevent_emit.h"        /* uevent_waiter_unregister (spec #3 §6.4) */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -93,22 +92,9 @@ bind_catch_value(UStrand *s, struct UPattern *pat, UValue val)
     s->catch_value = val;
 }
 
-/* SCHED-001: discriminate "is parked on Event waiter chain?" by class+reason
- * rather than by full state-byte equality.  Pre-v0.5.5 the JOIN reason byte
- * collided with EVENT (both 0x03), making `s->state == USTRAND_WAIT_EVENT`
- * ambiguous; v0.5.5 (CHSTR-016) renumbered JOIN to 0x04 so the literal
- * composite is now distinct, but the architectural pattern of comparing
- * full-state bytes is fragile against any future reason renumbering.  This
- * helper isolates the predicate so additions to the WAITING reason space
- * cannot re-introduce an alias.
- *
- * Closes SCHED-001 (and the architectural follow-up to EMITR-001). */
-static inline int
-is_event_parked_strand(const UStrand *s)
-{
-    return ((s->state & USTRAND_STATE_MASK) == USTRAND_WAITING) &&
-           ((s->state & USTRAND_REASON_MASK) == USTRAND_REASON_EVENT);
-}
+/* (v0.13.3: the SCHED-001 is_event_parked_strand discriminator was deleted —
+ * every former caller now routes through sched_strand_unpark, whose EVENT
+ * arm dispatches on USTRAND_GET_REASON inside strand_unlink_park.) */
 
 /* ===== pop_call_frame: restore caller's execution context =====
    Called from CALL_FRAME branch and the backward-compat direct-pop path.
@@ -278,30 +264,39 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
                 s->cleanup_run_depth--;
                 return 0;
             }
+            /* v0.13.1-B: the body's replacement unwind was absorbed at an
+             * OUTER handler (catch / tag-stop absorption with
+             * cleanup_run_depth > 0 sets s->cleanup_absorbed) and the
+             * strand continued as normal code — a subsequent yield/park is
+             * legitimate control flow, not a mid-cleanup truncation.
+             * Leave the strand exactly as dispatch left it; the original
+             * unwind was suppressed per C-1.  The walker's call sites see
+             * pending_unwind == UEXEC_OK and stop walking. */
+            if (s->cleanup_absorbed) {
+                s->cleanup_absorbed = 0U;
+                ustrand_c_root_pop(s, &saved_value_root);
+                s->cleanup_run_depth--;
+                return 0;
+            }
             /* The body exited dispatch without reaching its OP_RESUME
              * terminator and without raising: it yielded, blocked, or
              * exhausted the budget.  Cleanup bodies are atomic (REVIVAL
              * §14, 2026-06-10); a silent mid-body truncation enqueues or
              * parks the strand while the walker keeps unwinding it.
              * Unpark defensively, then escalate via the overflow path
-             * (walker marks the strand fatal).  A JOIN-parked cleanup body
-             * (fork-join inside finally) still leaves a stale joiner link —
-             * out of scope here (SCHED-05, arc wave 3). */
+             * (walker marks the strand fatal). */
             if (USTRAND_IS_WAITING(s)) {
-                if (is_event_parked_strand(s))
-                    uevent_waiter_unregister(s);
-                if (USTRAND_GET_REASON(s) == USTRAND_REASON_SLEEP)
-                    sched_strand_unbind_from_sleep_queue(s);  /* off sleep_q */
-                /* SCHED-01: the parking transition decremented the runnable
-                 * count; the strand now resumes as the walker's running
-                 * context (about to be stamped fatal-DEAD by the overflow
-                 * arm, which exits dispatch through the driver's fatal path
-                 * — the path that owns the DEAD decrement).  Re-enter the
-                 * counted set so that exit decrement balances.
-                 * SCHED-13: this WAITING -> RUNNING direct stamp is the one
-                 * wake path that bypasses sched_strand_make_runnable, so the
-                 * waiting counter exits here (see vm/uvm.h counter docs). */
-                sched_waiting_dec(s->vm, s);
+                /* refactor-3 SCHED-05 (closes v0.13.1-D): unpark covers ALL
+                 * WAITING reasons — sleep queue, event waiter chain, JOIN
+                 * (child->joiners_head), WATCHER (waituntil back-pointer) —
+                 * not just the SLEEP/EVENT pair the pre-fix code handled.
+                 * SCHED-01 (closes v0.13.1-C): unpark(s, 0) owns the
+                 * waiting-count exit; the strand then re-enters the counted
+                 * set as RUNNING (about to be stamped fatal-DEAD by the
+                 * overflow arm, whose driver fatal path owns the DEAD
+                 * decrement) — correct by construction under the
+                 * single-writer scheme. */
+                sched_strand_unpark(s, /*enqueue=*/0);
                 s->state = USTRAND_STATE_RUNNING;
                 sched_runnable_inc(s->vm, s);
             } else if ((s->state & USTRAND_STATE_MASK) == USTRAND_READY) {
@@ -439,6 +434,15 @@ urbi_unwind(UStrand *s)
                      * the nested dispatch; stop immediately. */
                     if (USTRAND_GET_STATE(s) == USTRAND_DEAD)
                         return;
+                    /* v0.13.1-B: pending == OK after a 0-rc return means the
+                     * body's replacement unwind was absorbed at an OUTER
+                     * handler and the strand continues as normal code (the
+                     * RETURN was suppressed per C-1) — stop walking; the
+                     * strand is parked/yielded/running at the handler.
+                     * (A normally-completed body restores the saved
+                     * non-OK unwind, so OK is unambiguous here.) */
+                    if (s->pending_unwind == UEXEC_OK)
+                        return;
                     if (s->pending_unwind != UEXEC_RETURN) {
                         replaced = 1;
                         break;
@@ -563,6 +567,13 @@ urbi_unwind(UStrand *s)
                 s->pc = s->pc_base + handler_pc;
                 s->pending_unwind = UEXEC_OK;
                 s->unwind_value   = nil;
+                /* v0.13.1-B: absorbed while a cleanup body is on the C
+                 * stack (this walker was entered from the nested dispatch
+                 * inside run_cleanup_with_replace) — the strand continues
+                 * as normal code at the handler; flag it so a subsequent
+                 * yield/park is not misread as a cleanup truncation. */
+                if (s->cleanup_run_depth > 0U)
+                    s->cleanup_absorbed = 1U;
                 return;  /* absorbed */
             }
 
@@ -590,6 +601,10 @@ urbi_unwind(UStrand *s)
                  * a fatal there.  Either way the strand has terminated; stop
                  * walking (fatal_status, if any, is already latched). */
                 if (USTRAND_GET_STATE(s) == USTRAND_DEAD)
+                    return;
+                /* v0.13.1-B: absorbed-and-continued — see the RETURN
+                 * direct-pop arm.  Stop walking; the strand owns control. */
+                if (s->pending_unwind == UEXEC_OK)
                     return;
                 /* After run_cleanup_with_replace, s->pending_unwind is either
                  * the original (body OK) or a new one (C-1 replace).
@@ -625,20 +640,44 @@ urbi_unwind(UStrand *s)
                 s->pending_unwind = UEXEC_OK;
                 s->unwind_value   = nil;
                 s->unwind_target  = NULL;
+                /* v0.13.1-B: same post-absorption-continuation flag as the
+                 * catch arm — a tag-stop raised inside a cleanup body and
+                 * absorbed at an outer scope continues as normal code. */
+                if (s->cleanup_run_depth > 0U)
+                    s->cleanup_absorbed = 1U;
                 return;  /* absorbed — strand resumes after the tagged block */
             }
 
             /* TAG_SCOPE pass-through (non-matching tag, or non-TAG_STOP unwind).
-             * Walker pops TAG_SCOPE entries and continues unwinding outward.
-             * (Anonymous-tag leak on this pass-through path is a separate,
-             * pre-existing concern tracked outside v0.10.15-B.) */
+             *
+             * v0.13.3 (design-risks v0.13.1-M): a real scope (opened by
+             * OP_PUSH_TAG) gets the SAME teardown OP_POP_TAG runs —
+             * vm_tag_scope_teardown fires the tier-2 leave event, cascades
+             * member watchers to the pending-onleave queue, unlinks the
+             * member entry, pops, and destroys an anonymous per-scope tag
+             * (user-owned tags survive).  Pre-fix the bare pop skipped all
+             * of that: the leave event never fired and the scope's member
+             * watchers LEAKED past the scope.
+             *
+             * Synthetic ambient entries (FLAG_TAG_AMBIENT — realm tag /
+             * inherited fork chain) keep the bare pop: their tag is SHARED
+             * across strands, so a per-strand scope teardown (leave event,
+             * cascade, utag_destroy with other members still linked) would
+             * be wrong; ustrand_destroy's strand_unlink_from_tags owns
+             * their member unlink, as before. */
 
             if (e->flags & FLAG_HAS_ONLEAVE) {
-                /* onleave handler: run under C-1 replace-on-raise.
-                 * T29 / FOUND-009: handle URBI_ERR_CLEANUP_OVERFLOW from helper. */
+                /* onleave handler: run under C-1 replace-on-raise AFTER the
+                 * scope teardown, mirroring OP_POP_TAG's order (teardown at
+                 * pop; the OP_POP_TAG onleave arm itself is emit-dead at
+                 * v1.0 — emit_tag_prefix_arm never sets FLAG_HAS_ONLEAVE).
+                 * T29 / FOUND-009: handle URBI_ERR_CLEANUP_OVERFLOW. */
                 uint16_t handler_pc = e->handler_pc;
                 int      rc;
-                strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+                if (e->flags & FLAG_TAG_AMBIENT)
+                    strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+                else
+                    vm_tag_scope_teardown(s, e);
                 rc = run_cleanup_with_replace(s, handler_pc);
                 if (rc == URBI_ERR_CLEANUP_OVERFLOW) {
                     UValue overflow_marker;
@@ -653,10 +692,16 @@ urbi_unwind(UStrand *s)
                  * terminated inside the nested dispatch; stop walking. */
                 if (USTRAND_GET_STATE(s) == USTRAND_DEAD)
                     return;
+                /* v0.13.1-B: absorbed-and-continued — stop walking. */
+                if (s->pending_unwind == UEXEC_OK)
+                    return;
                 continue;
             }
 
-            strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+            if (e->flags & FLAG_TAG_AMBIENT)
+                strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+            else
+                vm_tag_scope_teardown(s, e);
             continue;
         }
 
@@ -694,9 +739,10 @@ fatal:
  * sets s->cross_strand_stop_pending = 1 (idempotent flag; decremented at
  * ustrand_destroy so sched_quiescent eventually converges).
  *
- * WAITING strands are woken via sched_strand_unblock (SLEEP) or
- * sched_strand_make_runnable (other reasons) so they run and process the
- * unwind before the scheduler reaches quiescence.
+ * WAITING strands are woken via sched_strand_unpark (refactor-3 SCHED-05:
+ * unlink the reason-specific third-party links, then the make_runnable
+ * funnel) so they run and process the unwind before the scheduler reaches
+ * quiescence.
  *
  * Watcher cascade deferred to T34/T35 (UWatcher type not yet defined).
  * At M3 tag->member_watchers_head is always NULL.
@@ -751,21 +797,15 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
             vm->host_call_pending_count++;
         }
 
-        /* Unlink from event waiter chain before waking (spec #3 §6.4).
-         * Must happen before state transition so the waiter list is consistent
-         * when the strand next runs.  Idempotent if not on an event chain.
-         * Use the class+reason discriminator (SCHED-001) rather than full-
-         * state byte equality so future reason-byte additions cannot alias. */
-        if (is_event_parked_strand(s))
-            uevent_waiter_unregister(s);
-
-        /* Wake any blocked strand so it can consume the unwind. */
-        if (USTRAND_IS_WAITING(s)) {
-            if (USTRAND_GET_REASON(s) == USTRAND_REASON_SLEEP)
-                sched_strand_unblock(s);   /* removes from sleep_q + makes runnable */
-            else
-                sched_strand_make_runnable(s);  /* EVENT / JOIN / other reason */
-        }
+        /* Wake any blocked strand so it can consume the unwind.
+         * refactor-3 SCHED-05: sched_strand_unpark removes the strand's
+         * reason-specific third-party links (sleep queue / event waiter
+         * chain / child->joiners_head / waituntil waiter_strand) BEFORE
+         * routing through the make_runnable wake funnel, so no later waker
+         * (fork_wake_joiners at child death, watcher_eval_dirty on a rising
+         * edge) can touch a strand that already moved on or was freed. */
+        if (USTRAND_IS_WAITING(s))
+            sched_strand_unpark(s, /*enqueue=*/1);
     }
 
     /* (1b) Mark the tag as stopped so urbi_tag_info can report URBI_TAG_STOPPED.
@@ -941,21 +981,15 @@ urbi_strand_cancel(struct UVM *vm, struct UStrand *strand, UValue cancel_reason)
     strand->pending_unwind = UEXEC_CANCEL;
     strand->unwind_value   = cancel_reason;
     /* If the strand is sleeping/waiting, unblock it so it can process the
-     * unwind.  USTRAND_IS_WAITING checks the upper nibble of strand->state.
-     * Unlink from event waiter chain first (spec #3 §6.4).  Use the class+
-     * reason discriminator (SCHED-001) rather than full-state byte equality. */
-    if (USTRAND_IS_WAITING(strand)) {
-        if (is_event_parked_strand(strand))
-            uevent_waiter_unregister(strand);
-        /* refactor-3 VM-08/SCHED-04: route through the scheduler helpers —
-         * stamping READY in place left a sleeping strand linked on the
-         * sleep queue and never enqueued it (zombie strand; sleep-queue
-         * invariant violation).  Mirrors the urbi_tag_stop wake block. */
-        if (USTRAND_GET_REASON(strand) == USTRAND_REASON_SLEEP)
-            sched_strand_unblock(strand);   /* removes from sleep_q + makes runnable */
-        else
-            sched_strand_make_runnable(strand);  /* EVENT / JOIN / other reason */
-    }
+     * unwind.  refactor-3 VM-08/SCHED-04: route through the scheduler
+     * helpers — stamping READY in place left a sleeping strand linked on
+     * the sleep queue and never enqueued it (zombie strand).  refactor-3
+     * SCHED-05: sched_strand_unpark additionally removes the reason-
+     * specific third-party links (event waiter chain / child->joiners_head
+     * / waituntil waiter_strand) before the wake.  Mirrors the
+     * urbi_tag_stop wake block. */
+    if (USTRAND_IS_WAITING(strand))
+        sched_strand_unpark(strand, /*enqueue=*/1);
     return URBI_OK;
 }
 
@@ -981,12 +1015,19 @@ urbi_strand_panic(struct UVM *vm, struct UStrand *strand, const char *msg)
     if (msg != NULL && strand->vm != NULL && strand->vm->host_log_fn != NULL) {
         strand->vm->host_log_fn(strand->vm, strand->vm->host_log_ud, (int)URBI_LOG_ERROR, "%s", msg);
     }
-    /* Unlink from event waiter chain before marking dead (spec #3 §6.4).
-     * Prevents stale pointers in e->waiters_head if the strand is freed
-     * without ever being woken by an emit.  Use the class+reason
-     * discriminator (SCHED-001) rather than full-state byte equality. */
-    if (is_event_parked_strand(strand))
-        uevent_waiter_unregister(strand);
+    /* v0.13.3 (SCHED-05 carried finding): the DEAD stamp below bypasses
+     * both the make_runnable wake funnel and ustrand_destroy's
+     * death-from-parked arm (the state is no longer WAITING/SUSPENDED by
+     * then), so the parked-strand counter exit and the third-party link
+     * scrub (sleep queue / event waiter chain / child->joiners_head /
+     * waituntil waiter_strand) must happen HERE.  Pre-fix only the event
+     * waiter chain was unlinked, and the waiting/suspended counters leaked
+     * (no-saturation decrement asserts would fire on a later transition). */
+    if (USTRAND_IS_WAITING(strand)) {
+        sched_strand_unpark(strand, /*enqueue=*/0);
+    } else if (USTRAND_IS_SUSPENDED(strand)) {
+        sched_suspended_dec(strand->vm, strand);
+    }
     strand->fatal_status = UEXEC_CANCEL;
     strand->fatal_value  = nil;
     strand->state        = USTRAND_STATE_DEAD;
@@ -1044,6 +1085,7 @@ urbi_strand_reset(struct UVM *vm, struct UStrand *strand)
     strand->fatal_value       = nil;
     strand->cleanup_depth     = 0;
     strand->cleanup_run_depth = 0;        /* T29 / FOUND-009: clear recursion counter */
+    strand->cleanup_absorbed  = 0;        /* v0.13.1-B: no stale absorption flag */
     strand->cleanup_top       = NULL;
     strand->state             = USTRAND_STATE_DORMANT;
     return URBI_OK;

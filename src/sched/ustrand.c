@@ -17,6 +17,7 @@
 #include "object/uchunk_instance.h"
 #include "runtime/uframe.h"
 #include "event/uevent_emit.h"  /* uevent_waiter_unregister (scheduler F1) */
+#include "watcher/uwatcher.h"   /* UWatcher + urbi_watcher_unregister_internal (SCHED-05) */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -117,6 +118,89 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
     s->open_upvals = NULL;
 }
 
+/* strand_unlink_park — reason-dispatched removal of a WAITING strand's
+ * third-party links (refactor-3 SCHED-05).  Shared by sched_strand_unpark
+ * (the wake-side scrub) and strand_cleanup_observers (the death-side scrub,
+ * for a strand dying while still parked).  Counter-neutral: callers own the
+ * strand_waiting_count transition.
+ *
+ *   SLEEP   — splice off vm->sleep_q_head (sched_strand_unbind_from_sleep_
+ *             queue also maintains wakeup_pending_count; idempotent).
+ *   EVENT   — splice off the UEvent waiter chain (idempotent).
+ *   JOIN    — splice off wait_payload.join_parent->joiners_head (threaded
+ *             via wait_next, exactly as OP_JOIN_WAIT linked it).  Without
+ *             this, fork_wake_joiners at the child's death walks a strand
+ *             that already left WAITING (READY -> READY make_runnable
+ *             corruption) or was already freed (eager reap; ASan UAF).
+ *   WATCHER — scrub the waituntil watcher's waiter_strand back-pointer and
+ *             retire the watcher: a waituntil with no waiter has nothing
+ *             left to wake, and leaving it armed means the next rising
+ *             edge has watcher_eval_dirty make_runnable a DEAD/freed
+ *             strand.  Direct unregister mirrors the normal WAITUNTIL fire
+ *             path (waituntil watchers carry no body/onleave).  The active
+ *             list walk is bounded by URBI_WATCHER_POOL_SIZE. */
+static void
+strand_unlink_park(UStrand *s)
+{
+    switch (USTRAND_GET_REASON(s)) {
+    case USTRAND_REASON_SLEEP:
+        sched_strand_unbind_from_sleep_queue(s);
+        break;
+    case USTRAND_REASON_EVENT:
+        uevent_waiter_unregister(s);
+        break;
+    case USTRAND_REASON_JOIN: {
+        UStrand *child = s->wait_payload.join_parent;
+        if (child != NULL) {
+            UStrand **pp = &child->joiners_head;
+            while (*pp != NULL && *pp != s) pp = &(*pp)->wait_next;
+            if (*pp == s) *pp = s->wait_next;
+        }
+        s->wait_next = NULL;
+        break;
+    }
+    case USTRAND_REASON_WATCHER: {
+        UWatcher *w = s->vm->active_watchers_head;
+        for (; w != NULL; w = w->next_active) {
+            if (w->waiter_strand == s) {
+                w->waiter_strand = NULL;
+                urbi_watcher_unregister_internal(s->vm, w);
+                break;
+            }
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+/* sched_strand_unpark — reason-dispatched third-party-link removal for a
+ * WAITING strand (refactor-3 SCHED-05): the wake-side mirror of
+ * strand_cleanup_observers.  `enqueue` 0 leaves the strand's state byte
+ * untouched and uncounted (cleanup-executor fail-soft, urbi_strand_panic —
+ * the caller stamps the next state); 1 routes through
+ * sched_strand_make_runnable (tag-stop / cancel wake).
+ *
+ * Counter contract (SCHED-13 single-writer scheme): with enqueue == 1 the
+ * make_runnable wake funnel performs the strand_waiting_count exit; with
+ * enqueue == 0 the strand leaves WAITING without passing the funnel, so the
+ * decrement happens HERE — the caller must not decrement again (and
+ * ustrand_destroy won't: by the time it runs, the caller has stamped a
+ * non-WAITING state).  See the writer maps at usched_cooperative.h and
+ * vm/uvm.h. */
+void
+sched_strand_unpark(UStrand *s, int enqueue)
+{
+    URBI_INTERNAL_ASSERT(USTRAND_IS_WAITING(s));
+    strand_unlink_park(s);
+    if (enqueue) {
+        sched_strand_make_runnable(s);
+    } else {
+        sched_waiting_dec(s->vm, s);
+    }
+}
+
 /* strand_cleanup_observers
  *
  * Scheduler F1: single point of truth for "this strand will never run again —
@@ -147,6 +231,15 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
 static void
 strand_cleanup_observers(UStrand *s)
 {
+    /* SCHED-05 (v0.13.3): a strand dying while still parked must clear its
+     * reason-specific third-party links — JOIN (off the child's joiners
+     * chain) and WATCHER (waituntil back-pointer scrub + retire) were the
+     * missing arms; SLEEP/EVENT re-run idempotently below / in
+     * urbi_strand_destroy.  Counter-neutral: ustrand_destroy already ran
+     * the death-from-WAITING decrement before calling here. */
+    if (USTRAND_IS_WAITING(s))
+        strand_unlink_park(s);
+
     /* Splice out of event waiter chain if parked on waituntil(). */
     uevent_waiter_unregister(s);
 
@@ -459,7 +552,8 @@ urbi_strand_capture_ambient_chain(struct UStrand *parent,
  *
  * Each synthetic entry has:
  *   kind            = UCLEANUP_TAG_SCOPE
- *   flags           = 0 (no onleave — synthetic entries never own cleanup logic)
+ *   flags           = FLAG_TAG_AMBIENT (no onleave — synthetic entries never
+ *                     own cleanup logic; the walker pass-through bare-pops them)
  *   register_base   = 0, register_count = 0
  *   handler_pc      = 0
  *   owning_tag      = chain[i]
@@ -500,6 +594,11 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
         urbi_zero(e, sizeof(*e));
         /* frame_depth: 0 via urbi_zero — fresh strand (VM-01) */
         e->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
+        /* v0.13.3 (v0.13.1-M): mark synthetic ambient entries so the unwind
+         * walker's pass-through keeps the bare pop for them — the referenced
+         * tag is SHARED (realm tag / outer scope) and must not get a scope
+         * teardown (leave event, watcher cascade, utag_destroy) per strand. */
+        e->flags          = (uint8_t)FLAG_TAG_AMBIENT;
         e->owning_tag     = chain[i];
         e->strand_back    = new_s;
         e->next_member    = chain[i]->member_strands_head;

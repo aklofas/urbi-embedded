@@ -278,6 +278,18 @@ deposits `PENDING_UNWIND=UEXEC_TAG_STOP` on member strands, walks
 `UTAG_FLAG_STOPPED`. It is documented as NOT ISR-safe and is only callable
 from host C code.
 
+**Deposit consumption is safepoint-only — finish-then-drop (v0.13.3,
+design-risks v0.13.1-G, owner-ratified).** A cross-strand stop/cancel
+deposit (`urbi_tag_stop`, `urbi_strand_cancel`) is consumed at the target
+strand's next dispatch safepoint (backward branch, call, non-top `OP_RET`).
+A deposit that lands after the target's last safepoint is DROPPED when the
+body completes normally: top-frame `OP_RET` transitions the strand to DEAD
+without re-checking `pending_unwind`. This is cooperative semantics, not a
+leak — the strand's full remaining side-effects are intentionally visible,
+and the bookkeeping (`cross_strand_stop_pending` /
+`host_call_pending_count`) clears at strand destroy so the VM still reaches
+quiescence. Pinned by `tests/chk/tag/stop_straightline_ret.chk`.
+
 **CLOSED W3/v0.10.2 (Finding 3)** — Tag manipulation is fully
 script-accessible.  `UVAL_TAG = 12` is a first-class `UValKind` variant;
 `Tag.new()` creates tags; `OP_TAG_STOP` (opcode 30) calls `urbi_tag_stop`;
