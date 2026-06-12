@@ -182,12 +182,21 @@ struct UStrand {
      * run_cleanup_with_replace consumes it to recognise a post-absorption
      * yield/park as legitimate control flow rather than a mid-cleanup
      * truncation (pre-fix: spurious CLEANUP_OVERFLOW fatal).  Cleared at
-     * consume and at urbi_strand_reset.  Known limitation: with NESTED
-     * cleanup runs (cleanup_run_depth > 1) the innermost consumer clears
-     * the flag, so an enclosing run still misreads the park and escalates
-     * — same behaviour as pre-fix; single-level absorption (the v0.13.1-B
-     * repro) is fully handled.  Carved from the former uint16_t
-     * cleanup_run_pad — no UStrand size/offset change (CHSTR-041 holds). */
+     * every run_cleanup_with_replace ENTRY (each cleanup run starts
+     * un-absorbed — a stale flag from a body that absorbed internally and
+     * then completed normally must not mask a later genuine truncation;
+     * spec-review hazard 2, pinned by
+     * tests/chk/exceptions/finally_truncation_after_absorb.chk), at
+     * consume, and at urbi_strand_reset.  Known limitations (both degrade
+     * to a CLEANUP_OVERFLOW fatal, never to a masked truncation): with
+     * NESTED cleanup runs (cleanup_run_depth > 1) the innermost consumer
+     * clears the flag, so an enclosing run still misreads the park and
+     * escalates — same behaviour as pre-fix; and an absorbed handler that
+     * runs a COMPLETE nested cleanup and only then parks escalates too
+     * (the nested run's entry-clear consumed the flag).  Single-level
+     * absorption (the v0.13.1-B repro) is fully handled.  Carved from the
+     * former uint16_t cleanup_run_pad — no UStrand size/offset change
+     * (CHSTR-041 holds). */
     uint8_t                 cleanup_absorbed;
     uint8_t                 cleanup_run_pad;
     struct UCleanupEntry   *cleanup_base;

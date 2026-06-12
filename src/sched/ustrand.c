@@ -18,6 +18,7 @@
 #include "runtime/uframe.h"
 #include "event/uevent_emit.h"  /* uevent_waiter_unregister (scheduler F1) */
 #include "watcher/uwatcher.h"   /* UWatcher + urbi_watcher_unregister_internal (SCHED-05) */
+#include "watcher/uwatcher_state.h"  /* UWatcherState — in_eval mid-eval defer guard (SCHED-05) */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -138,7 +139,22 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
  *             edge has watcher_eval_dirty make_runnable a DEAD/freed
  *             strand.  Direct unregister mirrors the normal WAITUNTIL fire
  *             path (waituntil watchers carry no body/onleave).  The active
- *             list walk is bounded by URBI_WATCHER_POOL_SIZE. */
+ *             list walk is bounded by URBI_WATCHER_POOL_SIZE.
+ *
+ *             Mid-eval guard (v0.13.3 spec-review hazard 1): when
+ *             vm->watchers->in_eval is set we are inside
+ *             watcher_eval_dirty's active-list walk or the pending-onleave
+ *             drain (which reuses the flag) — e.g. an AT_SYNC inline body
+ *             or a drain onleave handler called tag.stop()/cancel.  A
+ *             pool_free here invalidates the walk's captured `next`
+ *             snapshot (the freed slot's next_active is repurposed as the
+ *             pool freelist link, sending the walk into mode-0 freelist
+ *             slots).  Defer via pending_onleave_queue_push instead — the
+ *             same unlink-without-free transfer the member-watcher cascade
+ *             uses: PENDING_UNREGISTER keeps the snapshot skippable-but-
+ *             valid and the pool_free happens at the next safepoint drain.
+ *             in_install / in_scratch contexts hold no active-list walk,
+ *             so the direct unregister stays correct there. */
 static void
 strand_unlink_park(UStrand *s)
 {
@@ -164,7 +180,14 @@ strand_unlink_park(UStrand *s)
         for (; w != NULL; w = w->next_active) {
             if (w->waiter_strand == s) {
                 w->waiter_strand = NULL;
-                urbi_watcher_unregister_internal(s->vm, w);
+                if (s->vm->watchers->in_eval) {
+                    /* Mid-eval/drain: defer — see the WATCHER paragraph in
+                     * the docstring above (the eval walk's `next` snapshot
+                     * must stay valid; pool_free happens at the drain). */
+                    pending_onleave_queue_push(s->vm, w);
+                } else {
+                    urbi_watcher_unregister_internal(s->vm, w);
+                }
                 break;
             }
         }

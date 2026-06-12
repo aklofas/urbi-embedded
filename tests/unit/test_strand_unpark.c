@@ -148,6 +148,65 @@ UTEST(tag_stop_watcher_parked_scrubs_waiter)
 }
 
 /* ===================================================================
+ * Case 3 (spec-review hazard 1): unparking a WATCHER-parked strand while
+ * vm->watchers->in_eval is set (a tag-stop/cancel fired from an AT_SYNC
+ * inline body or a drain onleave handler) must NOT pool_free the watcher
+ * inline — watcher_eval_dirty's walk holds a `next` snapshot, and a freed
+ * slot's next_active is repurposed as the pool freelist link (the walk
+ * would wander into mode-0 freelist slots).  Mid-eval the retire is
+ * deferred via pending_onleave_queue_push (PENDING_UNREGISTER keeps the
+ * snapshot skippable-but-valid); the pool_free happens at the next
+ * safepoint drain.  End-to-end shape pinned by
+ * tests/chk/tag/stop_waituntil_mid_eval.chk.
+ * =================================================================== */
+UTEST(unpark_watcher_mid_eval_defers_retire)
+{
+    UVM vm;
+
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    UStrand *s = urbi_strand_create(&vm, r, NULL);
+    UASSERT(s != NULL);
+
+    UWatcher *w = urbi_watcher_install_for_test(
+        &vm, UWATCHER_WAITUNTIL, NULL, NULL, NULL, NULL, NULL, 0);
+    UASSERT(w != NULL);
+    w->waiter_strand = s;
+
+    s->state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count++;     /* satisfy block's RUNNING-decrement */
+    sched_strand_block(s, USTRAND_REASON_WATCHER, 0);
+
+    uint16_t in_use_before = vm.watchers->pool_in_use;
+    vm.watchers->in_eval = 1;       /* simulate a mid-eval wake */
+    sched_strand_unpark(s, /*enqueue=*/1);
+    vm.watchers->in_eval = 0;
+
+    /* Deferred: scrubbed + PENDING_UNREGISTER + on the pending FIFO with
+     * the slot still allocated; off the active list. */
+    UASSERT(w->waiter_strand == NULL);
+    UASSERT((w->flags & URBI_WATCHER_PENDING_UNREGISTER) != 0U);
+    UASSERT(vm.pending_onleave_head == w);
+    UASSERT(vm.active_watchers_head == NULL);
+    UASSERT_EQ((unsigned)in_use_before, (unsigned)vm.watchers->pool_in_use);
+    UASSERT_EQ((unsigned)USTRAND_READY, (unsigned)USTRAND_GET_STATE(s));
+
+    /* The deferred drain performs the actual retire + pool_free. */
+    drain_pending_onleave_queue(&vm);
+    UASSERT(vm.pending_onleave_head == NULL);
+    UASSERT_EQ((unsigned)(in_use_before - 1U),
+               (unsigned)vm.watchers->pool_in_use);
+    UASSERT_EQ(0U, vm.watchers->active_count);
+
+    urbi_strand_destroy(&vm, s);
+    urbi_realm_destroy(&vm, r);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite entry
  * =================================================================== */
 
@@ -161,4 +220,6 @@ test_strand_unpark_suite(void)
               tag_stop_join_parked_unlinks_joiner);
     utest_run("tag_stop_watcher_parked_scrubs_waiter",
               tag_stop_watcher_parked_scrubs_waiter);
+    utest_run("unpark_watcher_mid_eval_defers_retire",
+              unpark_watcher_mid_eval_defers_retire);
 }

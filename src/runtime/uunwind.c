@@ -200,6 +200,16 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
         return URBI_ERR_CLEANUP_OVERFLOW;
     }
     s->cleanup_run_depth++;
+    /* v0.13.1-B (spec-review hazard 2): every cleanup run starts
+     * un-absorbed.  Without this entry-clear, a flag left set by an earlier
+     * run (absorption at a handler INSIDE the body, body then completed
+     * normally — the !done consume branch never ran) would mask a later
+     * GENUINE truncation in a different cleanup body as
+     * "absorbed-and-continued", silently parking the strand instead of
+     * escalating CLEANUP_OVERFLOW.  Absorption during THIS run's nested
+     * dispatch re-sets the flag; the post-dispatch consumer below is
+     * unchanged. */
+    s->cleanup_absorbed = 0U;
 
     /* Pushed AFTER the early-exit guard above so every push has a matching
      * pop (VM-06a).  saved_value and the frame both live on this C frame,

@@ -1,0 +1,42 @@
+# Milestone: v0.13.3 (refactor-3 SCHED-05 spec-review hazard 1)
+# Covers: tag.stop() fired from an AT_SYNC inline body — i.e. from INSIDE
+#         watcher_eval_dirty's active-list walk — retiring a waituntil
+#         member's watcher must NOT pool_free it mid-walk: the walk's
+#         captured `next` pointer is the waituntil watcher (installed
+#         immediately after the at-sync watcher, so it IS the snapshot —
+#         ordering assumption this fixture depends on), and a freed slot's
+#         next_active is repurposed as the pool freelist link.
+#         Pre-fix: the walk continued into the freed slot and then into the
+#         freelist (mode 0 slots) — "unknown watcher mode" assert abort in
+#         checked builds; silent freelist-slot writes in release builds.
+#         Post-fix: mid-eval the unpark WATCHER arm scrubs waiter_strand and
+#         defers the retire via pending_onleave_queue_push (PENDING_UNREGISTER
+#         keeps the snapshot valid; the pool_free happens at the next
+#         safepoint drain).  The woken strand's tail is straight-line, so the
+#         deposit drops (v0.13.1-G) and the full body runs: log == "WA".
+#         The trailing Realm.nop() call provides the dispatch safepoint that
+#         drains the deferred entry (the pending-onleave drain runs at
+#         safepoints only until Task 5's idle pump), so the final step
+#         reports QUIESCENT.
+# matrix-row: tag-stop
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run Realm.flag = 0
+## host: run Realm.go = 0
+## host: run Realm.log = ""
+## host: run at sync (Realm.go == 1) { Realm.t.stop() }
+## host: run t: { waituntil(Realm.flag == 1); Realm.log = Realm.log + "W" }; Realm.log = Realm.log + "A"
+## host: run var trig = function() { Realm.go = 1 }; Realm.trig()
+## host: run Realm.log
+## host: run var nop = function() { 0 }; Realm.nop()
+## host: step 1000
+[00000000] <Tag>
+[00000000] 0
+[00000000] 0
+[00000000] ""
+[00000000] nil
+[00000000] nil
+[00000000] 1
+[00000000] "WA"
+[00000000] 0
+[00000000] step: QUIESCENT

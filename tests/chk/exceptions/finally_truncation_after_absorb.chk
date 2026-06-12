@@ -1,0 +1,36 @@
+# Milestone: v0.13.3 (v0.13.1-B spec-review hazard 2)
+# Covers: a STALE cleanup_absorbed flag must not mask a later genuine
+#         CLEANUP_OVERFLOW escalation on the same strand.
+#         f1 leaves the flag set: its finally body raises a throw that is
+#         absorbed at a catch INSIDE the same body (cleanup_run_depth > 0
+#         at absorption sets the flag), then the body completes normally —
+#         the !done consume branch never runs, so pre-fix the flag survived
+#         f1.  f2's finally then genuinely truncates (sleep — finally
+#         bodies are atomic per REVIVAL §14): pre-fix the stale flag
+#         consumed the park as "absorbed-and-continued" and the strand was
+#         left PARKED inside f2's finally with the RETURN silently dropped
+#         (step: WAKE_AT — the masked escalation).
+#         Post-fix: run_cleanup_with_replace clears the flag at ENTRY (each
+#         cleanup run starts un-absorbed), so f2's park escalates to the
+#         CLEANUP_OVERFLOW fatal (REPL nil-recovery shows nil; nothing is
+#         left parked: step: QUIESCENT).  f1 itself stays well-behaved
+#         (r1 == 1, the absorbed-in-body catch ran: a == 5).
+## timeout: 30
+## host: run Realm.a = 0
+## host: run Realm.r1 = 0
+## host: run Realm.done = 0
+## host: run var f1 = function() { try { return 1 } finally { try { throw(5) } catch (var e) { Realm.a = e } } }
+## host: run var f2 = function() { try { return 2 } finally { sleep(10ms) } }
+## host: run Realm.r1 = Realm.f1(); Realm.r2 = Realm.f2(); Realm.done = 1
+## host: run Realm.r1
+## host: run Realm.a
+## host: step 1000
+[00000000] 0
+[00000000] 0
+[00000000] 0
+[00000000] <?>
+[00000000] <?>
+[00000000] nil
+[00000000] 1
+[00000000] 5
+[00000000] step: QUIESCENT
