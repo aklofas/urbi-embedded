@@ -14,7 +14,9 @@
 #         cleanup run starts un-absorbed), so f2's park escalates to the
 #         CLEANUP_OVERFLOW fatal (REPL nil-recovery shows nil; nothing is
 #         left parked: step: QUIESCENT).  f1 itself stays well-behaved
-#         (r1 == 1, the absorbed-in-body catch ran: a == 5).
+#         (r1 == 1, the absorbed-in-body catch ran: a == 5).  done stays 0:
+#         the CLEANUP_OVERFLOW fatal truncates the line before
+#         `Realm.done = 1` runs.
 ## timeout: 30
 ## host: run Realm.a = 0
 ## host: run Realm.r1 = 0
@@ -24,6 +26,7 @@
 ## host: run Realm.r1 = Realm.f1(); Realm.r2 = Realm.f2(); Realm.done = 1
 ## host: run Realm.r1
 ## host: run Realm.a
+## host: run Realm.done
 ## host: step 1000
 [00000000] 0
 [00000000] 0
@@ -33,4 +36,5 @@
 [00000000] nil
 [00000000] 1
 [00000000] 5
+[00000000] 0
 [00000000] step: QUIESCENT

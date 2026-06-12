@@ -56,8 +56,10 @@
  * fix is to discriminate by class+reason, not by full-state equality.
  * This test pins both invariants:
  *   (a) the literal byte is distinct (ensures the renumbering holds);
- *   (b) the class+reason discriminator agrees with what uunwind.c's
- *       is_event_parked_strand helper computes. */
+ *   (b) the class+reason discriminator agrees with the production
+ *       counterpart: strand_unlink_park (src/sched/ustrand.c) dispatches
+ *       on USTRAND_GET_REASON, never on full-state equality (v0.13.3:
+ *       it replaced uunwind.c's is_event_parked_strand helper). */
 UTEST(join_blocked_strand_state_distinct_from_wait_event)
 {
     UVM vm;
@@ -88,15 +90,18 @@ UTEST(join_blocked_strand_state_distinct_from_wait_event)
 }
 
 /* The audit's runtime concern: uunwind.c used `s->state == USTRAND_WAIT_EVENT`
- * to gate uevent_waiter_unregister.  After T38, all three sites use the
- * shape (class == WAITING && reason == EVENT).  is_event_parked_strand is
- * file-static in uunwind.c; we replicate the predicate locally and cross-
- * check that it reports the right answer for every interesting state.
+ * to gate uevent_waiter_unregister.  The production counterpart is now
+ * strand_unlink_park (src/sched/ustrand.c, v0.13.3 / SCHED-05), which
+ * dispatches on USTRAND_GET_REASON — the shape (class == WAITING &&
+ * reason == EVENT) for the event arm.  We replicate the predicate locally
+ * and cross-check that it reports the right answer for every interesting
+ * state.
  *
- * If uunwind.c regresses to full-state equality and a future renumbering
- * re-introduces an alias (e.g., reason 0x05 + WAITING = 0x35 colliding with
- * some new state) the (a) check above would also break.  Together the two
- * tests cover both the literal-byte and the structural pattern. */
+ * If the production dispatch regresses to full-state equality and a future
+ * renumbering re-introduces an alias (e.g., reason 0x05 + WAITING = 0x35
+ * colliding with some new state) the (a) check above would also break.
+ * Together the two tests cover both the literal-byte and the structural
+ * pattern. */
 static inline int is_event_parked_local(const UStrand *s) {
     return ((s->state & USTRAND_STATE_MASK) == USTRAND_WAITING &&
             (s->state & USTRAND_REASON_MASK) == USTRAND_REASON_EVENT);

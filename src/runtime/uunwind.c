@@ -674,7 +674,14 @@ urbi_unwind(UStrand *s)
              * across strands, so a per-strand scope teardown (leave event,
              * cascade, utag_destroy with other members still linked) would
              * be wrong; ustrand_destroy's strand_unlink_from_tags owns
-             * their member unlink, as before. */
+             * their member unlink, as before.
+             *
+             * Re-entrancy: the leave-event sync bodies run on the transient
+             * scratch strand (run_event_body_on_scratch), never on s, so
+             * this walker cannot be re-entered for s; a leave handler that
+             * deposits a new cross-strand unwind on s mid-walk overwrites
+             * pending_unwind under C-1 priority and the loop continues with
+             * the replacement. */
 
             if (e->flags & FLAG_HAS_ONLEAVE) {
                 /* onleave handler: run under C-1 replace-on-raise AFTER the

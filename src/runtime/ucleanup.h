@@ -37,7 +37,8 @@ typedef enum {
  * OP_PUSH_TAG: the unwind walker's pass-through must NOT run the scope
  * teardown on them (no leave event, no watcher cascade, no utag_destroy —
  * other strands may still be members).  Member unlink happens at
- * ustrand_destroy via strand_unlink_from_tags, as before. */
+ * ustrand_destroy via strand_unlink_from_tags, as before.  0x10 sits above
+ * OP_PUSH_TAG's 4-bit flags nibble A[7:4], so bytecode can never set it. */
 #define FLAG_TAG_AMBIENT    0x10U
 
 /* === Forward declarations for types that land in later tasks. === */
