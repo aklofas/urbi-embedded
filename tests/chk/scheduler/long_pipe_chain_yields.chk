@@ -1,6 +1,6 @@
 # Milestone: M3
 # Covers: a long `|`-chain (many sequential statements) triggers a soft yield
-#         when the per-strand instruction_budget_remaining reaches zero; the
+#         when the per-strand safepoint_budget_remaining reaches zero; the
 #         VM yields the strand back to the tail of the FIFO ready queue so
 #         other strands can run, then resumes at the next instruction on the
 #         next dispatch turn (row 12 §3.2 budget-exhaustion safepoint).

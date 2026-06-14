@@ -161,6 +161,13 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
              * sched_strand_yield which re-enqueues count-neutrally. */
             sched_dequeue_ready_head(vm);
             s->state = USTRAND_STATE_RUNNING;
+            /* refactor-3 VM-04/SCHED-11 (v0.13.1-E): re-arm per-slice safepoint budget.
+             * Without this, a strand that exhausted its per-lifetime budget
+             * (safepoint_budget_remaining==0 after URBI_STRAND_BUDGET_MAX safepoints)
+             * yields at every subsequent safepoint before the GC-slice/drain section,
+             * causing GC starvation in long-lived loops.  Re-arm here gives every
+             * fresh dispatch slice a full URBI_STRAND_BUDGET_MAX window. */
+            s->safepoint_budget_remaining = (uint16_t)URBI_STRAND_BUDGET_MAX;
             URBI_PERF_INC(vm, ctx_switches);   /* v0.11.1: strand go-live */
             vm->cur_strand = s;   /* spec #3 §7.1: expose running strand for c_event_waituntil */
 
@@ -172,6 +179,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
             } else {
                 vm->step_budget_remaining -= consumed;
             }
+
 
             /* Check for strand-level fatal (unwind the host-visible fatal pointer). */
             if (s->fatal_status != UEXEC_OK) {

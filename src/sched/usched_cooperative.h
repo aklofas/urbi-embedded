@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Cooperative scheduler interface — row 9 §2.2 contract.
-   All 12 ops declared here; sched_pick_next and sched_consume_budget are
-   static inline (zero overhead, no symbol generated).  The remaining 10
-   are non-inline and implemented in usched_cooperative.c. */
+   All 11 ops declared here; sched_pick_next is static inline (zero overhead,
+   no symbol generated).  The remaining 10 are non-inline and implemented in
+   usched_cooperative.c. */
 
 #ifndef USCHED_COOPERATIVE_H
 #define USCHED_COOPERATIVE_H
@@ -37,10 +37,18 @@ extern "C" {
 void sched_init(UVM *vm, void *config);
 void sched_destroy(UVM *vm);
 
+/* Maximum safepoint budget assigned to a strand per dispatch slice.
+ * Overridable at compile time (e.g. -DURBI_STRAND_BUDGET_MAX=500).
+ * Exposed here so ustep.c and the urbi_vm_run adapter can re-arm without
+ * reaching into usched_cooperative.c internals. */
+#ifndef URBI_STRAND_BUDGET_MAX
+#  define URBI_STRAND_BUDGET_MAX  1000
+#endif
+
 /* Per-strand lifecycle.
  *
  * sched_strand_init: zero the scheduler intrusive list links
- *   (ready_next/prev, wait_next) and seed instruction_budget_remaining to
+ *   (ready_next/prev, wait_next) and seed safepoint_budget_remaining to
  *   URBI_STRAND_BUDGET_MAX.  Called by ustrand_init for every strand on
  *   create.  The strand is left in DORMANT state (sched_strand_init does
  *   not touch the state byte).  `attrs` is reserved for the v1.x scheduler-
@@ -184,15 +192,6 @@ void urbi_vm_liveness(const UVM *vm, UVmLiveness *out);
  * expired sleeper is woken even when no other strand drives the dispatch loop
  * (design-risks v0.11.4-A). */
 void sched_wake_due_sleepers(UVM *vm);
-
-/* Consume n opcodes from a strand's instruction budget, flooring at 0. */
-static inline void
-sched_consume_budget(UStrand *s, uint16_t n) {
-    if (s->instruction_budget_remaining > n)
-        s->instruction_budget_remaining -= n;
-    else
-        s->instruction_budget_remaining = 0;
-}
 
 /* GC root walker — registered with the GC root-provider registry at
  * urbi_vm_create.  Iterates the realm hierarchy (vm->realms_head →

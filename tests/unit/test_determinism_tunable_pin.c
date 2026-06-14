@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: per-strand instruction_budget_remaining mutation changes
+/* Unit tests: per-strand safepoint_budget_remaining mutation changes
  * per-step instruction consumption (row 12 §3.2 "tunable pin" determinism
  * test — different budget produces different execution interleaving).
  *
  * URBI_STRAND_BUDGET_MAX is a compile-time constant.  The single-binary
- * approach mutates s->instruction_budget_remaining at runtime to observe
+ * approach mutates s->safepoint_budget_remaining at runtime to observe
  * that different budget settings produce different per-step pc progression.
  *
  * Observable: with a tight budget (1), each urbi_step call runs fewer
@@ -12,7 +12,7 @@
  * With a loose budget (URBI_STRAND_BUDGET_MAX), fewer urbi_step calls
  * suffice for the same program.
  *
- * These tests do NOT require URBI_DEBUG: the instruction_budget_remaining
+ * These tests do NOT require URBI_DEBUG: the safepoint_budget_remaining
  * field is part of UStrand (defined in ustrand.h) and is writable. */
 
 #include "utest.h"
@@ -173,7 +173,7 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
     UASSERT(tight_count > loose_count);
 }
 
-/* Case 2: directly mutating instruction_budget_remaining to 0 at runtime
+/* Case 2: directly mutating safepoint_budget_remaining to 0 at runtime
  * causes the strand to soft-yield on the first safepoint, observable as
  * URBI_STEP_RUNNING even on a program that otherwise completes in a single step.
  *
@@ -199,7 +199,7 @@ UTEST(zero_strand_budget_forces_mid_step_yield)
     UASSERT(tunable_arm_strand(&vm, &module, s, &result));
 
     /* Zero the per-strand budget: forces soft yield at first safepoint. */
-    s->instruction_budget_remaining = 0;
+    s->safepoint_budget_remaining = 0;
 
     urbi_strand_start(&vm, s);
 

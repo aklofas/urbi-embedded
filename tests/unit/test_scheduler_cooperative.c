@@ -61,17 +61,6 @@ UTEST(sched_earliest_wake_uintmax_on_empty)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 4: sched_consume_budget decrements correctly and floors at zero. */
-UTEST(sched_consume_budget_floors_at_zero)
-{
-    UStrand s;
-    s.instruction_budget_remaining = 5;
-    sched_consume_budget(&s, 3);
-    UASSERT_EQ(s.instruction_budget_remaining, 2U);
-    sched_consume_budget(&s, 10);   /* would underflow without the floor */
-    UASSERT_EQ(s.instruction_budget_remaining, 0U);
-}
-
 /* Case 5: sched_strand_make_runnable is idempotent in that calling it a second
    time on an already-READY strand simply tail-inserts again (re-enqueueing is
    the caller's responsibility to avoid; the scheduler itself does not guard
@@ -300,15 +289,6 @@ UTEST(sched_quiescent_false_when_sleep_q_nonempty)
 
     ustrand_destroy(&a, &vm);
     urbi_vm_destroy(&vm);
-}
-
-/* Case 14: sched_consume_budget(s, 0) is a no-op (budget unchanged). */
-UTEST(sched_consume_budget_zero_noop)
-{
-    UStrand s;
-    s.instruction_budget_remaining = 100;
-    sched_consume_budget(&s, 0);
-    UASSERT_EQ(s.instruction_budget_remaining, 100U);
 }
 
 /* Case 15: sched_strand_unblock transitions a SLEEPING strand back to READY
@@ -736,7 +716,6 @@ void test_scheduler_cooperative_suite(void) {
     utest_run("sched_init_empties_ready_queue",           sched_init_empties_ready_queue);
     utest_run("sched_make_runnable_appends_tail",         sched_make_runnable_appends_tail);
     utest_run("sched_earliest_wake_uintmax_on_empty",     sched_earliest_wake_uintmax_on_empty);
-    utest_run("sched_consume_budget_floors_at_zero",      sched_consume_budget_floors_at_zero);
     utest_run("sched_make_runnable_sets_state_ready",     sched_make_runnable_sets_state_ready);
     utest_run("sched_strand_block_sleep_moves_to_sleep_q", sched_strand_block_sleep_moves_to_sleep_q);
     utest_run("sched_dequeue_ready_head_advances_queue",  sched_dequeue_ready_head_advances_queue);
@@ -746,7 +725,6 @@ void test_scheduler_cooperative_suite(void) {
     utest_run("sched_earliest_wake_us_picks_minimum",     sched_earliest_wake_us_picks_minimum);
     utest_run("sched_quiescent_false_when_runnable_nonzero", sched_quiescent_false_when_runnable_nonzero);
     utest_run("sched_quiescent_false_when_sleep_q_nonempty", sched_quiescent_false_when_sleep_q_nonempty);
-    utest_run("sched_consume_budget_zero_noop",           sched_consume_budget_zero_noop);
     utest_run("sched_strand_unblock_from_sleep",          sched_strand_unblock_from_sleep);
     utest_run("sched_destroy_nulls_queues",               sched_destroy_nulls_queues);
     utest_run("sched_destroy_zeros_strand_runnable_count",

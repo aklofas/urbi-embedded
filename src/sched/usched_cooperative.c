@@ -77,11 +77,10 @@
 #include "runtime/uframe.h"
 #include <stddef.h>
 
-/* Maximum instruction budget assigned to a strand on sched_strand_init.
-   Can be overridden at compile time (e.g. -DURBI_STRAND_BUDGET_MAX=500). */
-#ifndef URBI_STRAND_BUDGET_MAX
-#  define URBI_STRAND_BUDGET_MAX  1000
-#endif
+/* Truncation guard (refactor-3 VM-04/SCHED-11; v0.13.1-E): safepoint_budget_remaining
+ * is uint16_t; URBI_STRAND_BUDGET_MAX (from usched_cooperative.h) must fit. */
+URBI_STATIC_ASSERT(URBI_STRAND_BUDGET_MAX > 0 && URBI_STRAND_BUDGET_MAX <= 65535,
+                   "URBI_STRAND_BUDGET_MAX must fit uint16_t (v0.13.1-E)");
 
 /* === Private helpers: sleep queue (sorted singly-linked list by wake_us) === */
 
@@ -261,7 +260,7 @@ sched_strand_init(UStrand *s, void *attrs)
     s->ready_next                   = NULL;
     s->ready_prev                   = NULL;
     s->wait_next                    = NULL;
-    s->instruction_budget_remaining = (uint16_t)URBI_STRAND_BUDGET_MAX;
+    s->safepoint_budget_remaining = (uint16_t)URBI_STRAND_BUDGET_MAX;
 }
 
 void

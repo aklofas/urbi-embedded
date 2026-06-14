@@ -38,6 +38,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Truncation guard (refactor-3 VM-04/SCHED-11; v0.13.1-E): safepoint_budget_remaining
+ * is uint16_t; URBI_SCRATCH_BUDGET_OPS must fit without silent truncation. */
+URBI_STATIC_ASSERT(URBI_SCRATCH_BUDGET_OPS > 0 && URBI_SCRATCH_BUDGET_OPS <= 65535,
+                   "URBI_SCRATCH_BUDGET_OPS must fit uint16_t (v0.13.1-E)");
+
 /* ===== Freestanding-safe zero loop =====
    No memset; mirrors the volatile-byte pattern from uarena.c and ucleanup.c. */
 static void
@@ -243,14 +248,14 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
     {
         UVM *vm = s->vm;
         uint64_t saved_step_budget   = (vm != NULL) ? vm->step_budget_remaining : 0;
-        uint16_t saved_strand_budget = s->instruction_budget_remaining;
-        s->instruction_budget_remaining = (uint16_t)URBI_SCRATCH_BUDGET_OPS;
+        uint16_t saved_strand_budget = s->safepoint_budget_remaining;
+        s->safepoint_budget_remaining = (uint16_t)URBI_SCRATCH_BUDGET_OPS;
         s->cleanup_body_done = 0U;
 
         (void)dispatch_loop_until_yield(s, /*step_budget*/ URBI_SCRATCH_BUDGET_OPS);
 
         if (vm != NULL) vm->step_budget_remaining = saved_step_budget;
-        s->instruction_budget_remaining = saved_strand_budget;
+        s->safepoint_budget_remaining = saved_strand_budget;
 
         if (!s->cleanup_body_done && s->pending_unwind == UEXEC_OK) {
             if (USTRAND_GET_STATE(s) == USTRAND_DEAD) {

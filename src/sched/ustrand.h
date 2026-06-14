@@ -259,7 +259,7 @@ struct UStrand {
                                                            marker (yield/budget exits leave it 0).
                                                            Absorbs the former state_pad[1] byte so
                                                            the CHSTR-041 size pin holds. */
-    uint16_t                instruction_budget_remaining;
+    uint16_t                safepoint_budget_remaining;
     /* SCHED-08 (v0.13.3): independent block/freeze suspension gates —
      * USTRAND_GATE_BLOCK / USTRAND_GATE_FREEZE bits (see the macro block
      * above for the resume contract).  Set by urbi_strand_suspend (any

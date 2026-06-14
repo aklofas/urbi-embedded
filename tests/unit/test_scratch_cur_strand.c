@@ -21,7 +21,7 @@
  * Pre-fix behavior recorded empirically at HEAD (7d72cd12):
  *   - case 1: outer.pending_unwind == UEXEC_THROW — the cross-strand
  *     deposit, confirmed.  *out_threw was already 1, but only by ACCIDENT:
- *     the zeroed scratch strand's instruction_budget_remaining == 0 made
+ *     the zeroed scratch strand's safepoint_budget_remaining == 0 made
  *     the first safepoint after the fault yield the strand
  *     (sched_strand_yield even enqueued the stack-local transient on the
  *     VM ready queue), and the "yielded/blocked" fail-soft arm fired.

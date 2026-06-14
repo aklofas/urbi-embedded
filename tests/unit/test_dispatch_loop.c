@@ -243,9 +243,9 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
 
-    /* Give a large per-strand budget so instruction_budget_remaining doesn't
+    /* Give a large per-strand budget so safepoint_budget_remaining doesn't
        cause a yield; use a tiny VM-wide step budget = 1. */
-    s.instruction_budget_remaining = 1000U;
+    s.safepoint_budget_remaining = 1000U;
 
     uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 1U);
 
@@ -258,12 +258,12 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
 }
 
 /* ============================================================
- * Test 4: instruction_budget_remaining decrements at safepoint
+ * Test 4: safepoint_budget_remaining decrements at safepoint
  * ============================================================ */
 
 UTEST(dispatch_loop_instruction_budget_decrements) {
     /* Program: JMP -1 (backward) → JMP -1 → ...
-       Each backward branch hits a safepoint and decrements instruction_budget_remaining.
+       Each backward branch hits a safepoint and decrements safepoint_budget_remaining.
        With initial budget = 3, after 3 safepoints the strand soft-yields. */
     static uint32_t instrs[2];
     instrs[0] = enc_loadnil(0);
@@ -280,7 +280,7 @@ UTEST(dispatch_loop_instruction_budget_decrements) {
 
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
-    s.instruction_budget_remaining = 3U;  /* will soft-yield after 3 safepoints */
+    s.safepoint_budget_remaining = 3U;  /* will soft-yield after 3 safepoints */
 
     /* Give a very large VM step budget so that never triggers. */
     uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 100000U);
@@ -288,7 +288,7 @@ UTEST(dispatch_loop_instruction_budget_decrements) {
     /* Strand should be READY (soft-yield due to budget exhaustion). */
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
     UASSERT(consumed >= 3U);
-    UASSERT_EQ(s.instruction_budget_remaining, 0U);
+    UASSERT_EQ(s.safepoint_budget_remaining, 0U);
 
     /* Drain ready queue (SCHED-01: unbind owns the count decrement). */
     sched_strand_unbind_from_ready_queue(&s);
@@ -322,7 +322,7 @@ UTEST(dispatch_loop_forward_jump_no_safepoint) {
 
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
-    s.instruction_budget_remaining = 2U;  /* only 2 budget; forward jump uses 0 */
+    s.safepoint_budget_remaining = 2U;  /* only 2 budget; forward jump uses 0 */
 
     UValue retval = {0};
     s.out_slot = &retval;
@@ -482,7 +482,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     /* Give sufficient budget so the safepoint after THROW doesn't soft-yield
        before the catch handler can run; OP_THROW → safepoint → urbi_unwind
        → catch absorbed → dispatch continues from handler. */
-    s.instruction_budget_remaining = 100U;
+    s.safepoint_budget_remaining = 100U;
 
     /* Pre-set R[0] to an integer value (42) that will be thrown. */
     reg_stack[0].kind  = (uint8_t)UVAL_INT;
@@ -700,7 +700,7 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     s.root_proto = &fake_caller_rp;
     uproto_refcount_inc(s.root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     /* Need non-zero budget so safepoints at CALL and non-top RET don't soft-yield. */
-    s.instruction_budget_remaining = 100U;
+    s.safepoint_budget_remaining = 100U;
 
     UValue retval = {0};
     s.out_slot = &retval;
@@ -788,7 +788,7 @@ UTEST(dispatch_loop_gc_pending_flag_triggers_gc_slice_at_safepoint) {
 
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
-    s.instruction_budget_remaining = 100U;
+    s.safepoint_budget_remaining = 100U;
 
     /* Set gc_pending flag; it will be tested at the backward-branch safepoint. */
     vm.gc_pending = 1;
@@ -830,7 +830,7 @@ UTEST(dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint) {
 
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
-    s.instruction_budget_remaining = 100U;
+    s.safepoint_budget_remaining = 100U;
 
     /* Set watcher_dirty_count; it will be tested at the backward-branch safepoint. */
     vm.watchers->dirty_count = 1;

@@ -1,6 +1,6 @@
 # Milestone: M3 / activated v0.10.14
 # Covers: a loop with a backward OP_JMP exercises the safepoint on each
-#         iteration; the safepoint decrements instruction_budget_remaining
+#         iteration; the safepoint decrements safepoint_budget_remaining
 #         and the step budget, preventing infinite-loop starvation.
 #         Behavioral correctness: the loop completes and produces the
 #         expected result (5).  The budget-decrement itself is internal and

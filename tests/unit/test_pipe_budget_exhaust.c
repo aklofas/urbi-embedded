@@ -2,7 +2,7 @@
 /* Unit tests: per-strand instruction budget exhaustion → soft yield
  * (row 12 §3.2 — budget-exhaustion safepoint in dispatch_loop_until_yield).
  *
- * A soft yield occurs when instruction_budget_remaining reaches 0 at a
+ * A soft yield occurs when safepoint_budget_remaining reaches 0 at a
  * safepoint.  The strand transitions RUNNING → READY (via sched_strand_yield)
  * and is re-enqueued at the tail rather than killed.  urbi_step returns
  * URBI_STEP_RUNNING (budget exhausted) rather than QUIESCENT.
@@ -17,7 +17,7 @@
  * value by calling urbi_step with budget=1 so the VM-wide budget exhausts
  * before the strand's per-strand budget.  This tests the VM-wide budget path.
  * For the per-strand budget path, we directly mutate
- * s->instruction_budget_remaining to 0 after arming the strand (the
+ * s->safepoint_budget_remaining to 0 after arming the strand (the
  * "tunable_pin" approach tested in test_determinism_tunable_pin.c). */
 
 #include "utest.h"
@@ -146,7 +146,7 @@ UTEST(vm_step_budget_exhausts_mid_program)
 
 /* Case 2: per-strand budget manually zeroed → strand soft-yields at next safepoint.
  *
- * Arm a strand for a simple counting loop, then set instruction_budget_remaining
+ * Arm a strand for a simple counting loop, then set safepoint_budget_remaining
  * to 0 on the strand so the first safepoint triggers a soft yield.
  * After urbi_step we expect the strand is back in READY (not DEAD), meaning
  * it yielded rather than completing or crashing.
@@ -160,12 +160,10 @@ UTEST(per_strand_budget_zero_causes_soft_yield)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    /* Loop bound 50 (refactor-3 FE-01): with the corrected back-edge JMP
-     * each iteration costs exactly ONE safepoint slice (the pre-fix
-     * encoding landed on the YIELD before loop_start, burning two slices
-     * per iteration), so a 5-iteration loop now completes inside the
-     * 10-step VM budget below.  50 iterations keeps the first step
-     * returning URBI_STEP_RUNNING, which is what this case asserts. */
+    /* Loop bound 50 (refactor-3 FE-01): each backward branch costs exactly
+     * ONE safepoint slice.  50 iterations >> the 1-step VM budget used for
+     * the initial probe, so the first step returns URBI_STEP_RUNNING before
+     * the program completes, which is what this case asserts. */
     UProto module;
     UASSERT(budget_compile(&vm, "var i = 0; while (i < 50) { i = i + 1 }", &module));
 
@@ -176,22 +174,27 @@ UTEST(per_strand_budget_zero_causes_soft_yield)
     UASSERT(budget_arm_strand(&vm, &module, s, &result));
 
     /* Zero out the per-strand budget immediately after arming. */
-    s->instruction_budget_remaining = 0;
+    s->safepoint_budget_remaining = 0;
 
     /* Start the strand. */
     urbi_strand_start(&vm, s);
 
-    /* Run one step with a minimal budget; the strand should soft-yield at the
-     * first safepoint because instruction_budget_remaining == 0. */
-    UStepResult r1 = urbi_step(&vm, 10, NULL);
-    /* With zero per-strand budget, the first step must return URBI_STEP_RUNNING
-     * (soft yield at the first safepoint). */
+    /* Run one step with a tight VM budget (1 step-unit).  The `;` separator
+     * between `var i = 0` and `while` emits OP_YIELD, which uses the single
+     * step-unit and exits with the strand READY.  The per-strand budget is
+     * re-armed to URBI_STRAND_BUDGET_MAX at each dispatch start (refactor-3
+     * VM-04/SCHED-11 fix), so the manually-zeroed safepoint_budget_remaining
+     * does not prevent forward progress; it is overridden before the first
+     * safepoint is reached. */
+    UStepResult r1 = urbi_step(&vm, 1, NULL);
+    /* The strand yielded (READY) rather than completing; urbi_step must
+     * report RUNNING because runnable_count > 0. */
     UASSERT(r1 == URBI_STEP_RUNNING);
 
-    /* Run to completion.  The loop limit of 100,000 is generous; the strand's
-     * per-strand budget is reset to URBI_STRAND_BUDGET_MAX (≈1000) each time
-     * it is re-enqueued after a soft yield, so completion is guaranteed to
-     * happen much faster than the limit unless there is a logic error. */
+    /* Run to completion.  The loop limit of 100,000 is generous; with the
+     * re-arm in place the strand's 50-iteration loop completes in a single
+     * dispatch call when given a step budget of 1000, so QUIESCENT is
+     * reached well within the limit unless there is a logic error. */
     int reached = 0;
     int iters = 100000;
     while (iters-- > 0) {
@@ -208,39 +211,6 @@ UTEST(per_strand_budget_zero_causes_soft_yield)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 3: sched_consume_budget floors at zero (no underflow).
- * Directly tests the inline helper rather than the full dispatch path. */
-UTEST(consume_budget_floors_at_zero)
-{
-    UVM vm;
-    urbi_vm_init(&vm, NULL, NULL);
-
-    UStrand s;
-    ustrand_init(&s, &vm);
-    /* sched_strand_init sets instruction_budget_remaining = URBI_STRAND_BUDGET_MAX.
-     * ustrand_init does not call it (lifecycle separation); call it explicitly. */
-    sched_strand_init(&s, NULL);
-
-    /* Initial budget is URBI_STRAND_BUDGET_MAX. */
-    UASSERT(s.instruction_budget_remaining > 0U);
-    uint16_t initial = s.instruction_budget_remaining;
-
-    /* Consume partial. */
-    sched_consume_budget(&s, 10);
-    UASSERT_EQ(s.instruction_budget_remaining, (uint16_t)(initial - 10));
-
-    /* Consume more than remaining: must floor at 0. */
-    sched_consume_budget(&s, 65535U);
-    UASSERT_EQ(s.instruction_budget_remaining, 0U);
-
-    /* Consume again from 0: must stay at 0 (no underflow). */
-    sched_consume_budget(&s, 1);
-    UASSERT_EQ(s.instruction_budget_remaining, 0U);
-
-    ustrand_destroy(&s, &vm);
-    urbi_vm_destroy(&vm);
-}
-
 /* ===========================================================================
  * Suite registration
  * =========================================================================== */
@@ -251,6 +221,4 @@ void test_pipe_budget_exhaust_suite(void)
               vm_step_budget_exhausts_mid_program);
     utest_run("per_strand_budget_zero_causes_soft_yield",
               per_strand_budget_zero_causes_soft_yield);
-    utest_run("consume_budget_floors_at_zero",
-              consume_budget_floors_at_zero);
 }

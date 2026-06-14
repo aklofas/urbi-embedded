@@ -121,9 +121,9 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     strand.open_upvals = NULL;
     strand.out_slot   = out;  /* OP_RET at top-frame writes *out_slot */
     strand.state      = USTRAND_STATE_RUNNING;
-    /* Arm the per-strand instruction budget via sched_strand_init so the
+    /* Arm the per-strand safepoint budget via sched_strand_init so the
      * safepoint budget check does not immediately yield.  The transient
-     * strand is zero-initialised above, leaving instruction_budget_remaining=0;
+     * strand is zero-initialised above, leaving safepoint_budget_remaining=0;
      * without this the first safepoint (OP_CALL, backward JMP, or non-top
      * OP_RET) exits before reaching watcher_eval_dirty.  urbi_vm_run re-enters on
      * yield so forward-progress is correct, but watcher_eval_dirty never fires
@@ -182,6 +182,10 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
                 sched_dequeue_ready_head(vm);
             }
             strand.state = USTRAND_STATE_RUNNING;
+            /* refactor-3 VM-04/SCHED-11 (v0.13.1-E): re-arm per-slice safepoint
+             * budget so a budget-exhausted transient strand can reach the GC
+             * check on the next dispatch iteration (mirrors ustep.c). */
+            strand.safepoint_budget_remaining = (uint16_t)URBI_STRAND_BUDGET_MAX;
             continue;
         }
         if (USTRAND_IS_WAITING(&strand)) {

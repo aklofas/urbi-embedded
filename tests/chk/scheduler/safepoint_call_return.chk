@@ -1,12 +1,12 @@
 # Milestone: M3
 # Covers: a function call (OP_CALL) hits a safepoint at call-frame-push;
 #         a non-top-level OP_RET hits a safepoint at frame-pop; both
-#         decrement instruction_budget_remaining correctly.
+#         decrement safepoint_budget_remaining correctly.
 #
 # blocked: per-call budget-decrement is a scheduler internal, verified by C
 #          unit tests, not a chk target.  Asserting the before/after decrement
 #          around an OP_CALL/OP_RET safepoint would need a public
-#          instruction_budget_remaining read accessor frozen into the v1.0 API
+#          safepoint_budget_remaining read accessor frozen into the v1.0 API
 #          solely to drive a golden-diff fixture — rejected on API-minimalism
 #          grounds.  Function-call frame push/pop correctness is already covered
 #          by tests/unit/test_dispatch_loop.c::dispatch_nested_call_and_ret,

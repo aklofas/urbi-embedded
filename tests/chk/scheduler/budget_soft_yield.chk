@@ -1,5 +1,5 @@
 # Milestone: M3
-# Covers: a strand whose per-strand instruction_budget_remaining reaches 0
+# Covers: a strand whose per-strand safepoint_budget_remaining reaches 0
 #         yields back to the scheduler (soft yield) and is re-enqueued READY
 #         rather than killed; it resumes on the next scheduler turn.
 #

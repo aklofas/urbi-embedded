@@ -1610,13 +1610,13 @@ safepoint:
          * Resuming the dispatch loop here would execute a parked strand. */
         if (USTRAND_GET_STATE(s) != USTRAND_RUNNING) goto exit_strand;
     }
-    if (s->instruction_budget_remaining == 0) {
+    if (s->safepoint_budget_remaining == 0) {
         /* sched_strand_yield asserts entry state == RUNNING (SCHED-003)
          * and overwrites with READY on enqueue, so no pre-set here. */
         sched_strand_yield(s);
         goto exit_strand;
     }
-    s->instruction_budget_remaining--;
+    s->safepoint_budget_remaining--;
     if (vm->step_budget_remaining == 0) {
         /* Budget exhausted from caller's perspective; state stays RUNNING.
            The urbi_vm_run adapter treats RUNNING-but-exit as "continue". */
