@@ -44,16 +44,20 @@
  * drains the shared dirty count, firing the whenever.  In isolation
  * (single watcher, single trivial at-handler), the eval never runs.
  *
- * Attempted fix at S46 (post-dispatch drain in urbi_step) caused
- * unbounded re-eval of level-triggered watchers whose bodies write
- * subscribed slots — broke whenever_level.chk.  Reverted.  The
- * safepoint gating is load-bearing for bounded level-trigger semantics.
+ * Attempted fix at S46 (post-dispatch drain in urbi_step — drain on EVERY step)
+ * caused unbounded re-eval of level-triggered watchers whose bodies write
+ * subscribed slots — broke whenever_level.chk.  Reverted.
  *
- * Workaround for the isolation case: ensure the at-body has a function
- * call (which hits safepoint), or compose with another concurrent
- * strand whose dispatch hits safepoints.  Hardware code naturally hits
- * this through method calls; pure event-loop scripts may need to
- * explicitly call a noop to trigger the safepoint.
+ * SCHED-02 fix (v0.13.3-scheduler-liveness, Task 5): a targeted idle-VM
+ * pre-loop drain fires in urbi_step when strand_runnable_count == 0 (VM
+ * idle between host steps).  This drains dirty marks from at-handler bodies
+ * that exited without a safepoint, waking parked waituntil/whenever strands.
+ * The guard prevents re-firing during active strand execution (safepoints
+ * continue to handle that path), keeping whenever_level.chk correct (3 fires).
+ *
+ * Workaround for scripts that need a single-fire rising-edge semantic:
+ * use `at` instead of `whenever`.  Hardware code naturally hits safepoints
+ * through method calls; pure event-loop scripts can use `at` for edge-trigger.
  *
  * Documentation candidate: `docs/internals/reactive-runtime.md` should
  * call out this contract explicitly.  Filed as design-risk
@@ -126,23 +130,28 @@ UTEST(whenever_chunktop_write_fires_cond_baseline)
     urbi_vm_destroy(&vm);
 }
 
-/* === Test 2: at-handler body without nested call does NOT fire watcher.
+/* === Test 2: at-handler body without nested call NOW wakes watcher
+ *             via the idle-VM pre-loop reactive drain (SCHED-02 fix).
  *
- * Documents the safepoint-visit requirement.  This test asserts the
- * CURRENT (broken-from-script-user-perspective) behavior: an at-handler
- * body that increments a Realm slot does not trigger cond watchers
- * subscribed to that slot, because the body never hits a safepoint.
+ * Previously this test documented the safepoint-visit LIMITATION: an at-handler
+ * body that increments a Realm slot could not trigger a `whenever` watcher
+ * subscribed to that slot, because the body is a flat sequence (no OP_CALL,
+ * no backward OP_JMP), exits via top-frame OP_RET (bypasses the safepoint label
+ * in dispatch_loop_until_yield), and dirty_count therefore never reached
+ * watcher_eval_dirty.  The fix was filed as a future item.
  *
- * `vm.watchers->dirty_count` will accumulate (the write barrier IS firing
- * observer_dirty correctly).  But watcher_eval_dirty is never invoked
- * to drain it.  fire_count remains 0 even though cond's underlying
- * value crosses the threshold.
+ * SCHED-02 fix (v0.13.3-scheduler-liveness, Task 5): vm_reactive_drain is now
+ * called in urbi_step's pre-loop pump when strand_runnable_count == 0.  After
+ * the at-handler body exits (dead strand, no remaining runnable strands), the
+ * next urbi_step call sees strand_runnable_count == 0 AND dirty_count > 0 and
+ * drains: watcher_eval_dirty runs, the whenever fires, the body spawns.
  *
- * If this test starts FAILING (fire_count > 0), someone fixed the
- * underlying issue — either by adding a post-strand-exit drain to
- * urbi_step (must coexist with bounded level-trigger semantics), or by
- * making top-frame OP_RET fall through safepoint somehow.  Update the
- * test to assert the new contract. */
+ * Note: the whenever body itself writes Realm.fired which re-dirties Realm,
+ * so watcher_eval_dirty fires on every subsequent idle step (level-triggered
+ * per spec §6.5).  fired_count >= 1 is the correct post-fix contract;
+ * a specific count is not asserted because it depends on the number of
+ * drain_to_quiescent iterations.  Use `at` instead of `whenever` for a
+ * single-fire rising-edge semantic. */
 UTEST(at_handler_body_without_call_does_not_drain_dirty)
 {
     UVM vm;
@@ -178,14 +187,18 @@ UTEST(at_handler_body_without_call_does_not_drain_dirty)
     UASSERT_EQ((int)UVAL_INT, (int)x.kind);
     UASSERT_EQ(5LL, x.v.i);
 
-    /* The dirty count accumulates: 5 writes, no eval, count = 5. */
-    UASSERT(vm.watchers->dirty_count >= 5);
+    /* dirty_count is 0: the idle-VM pre-loop drain (SCHED-02 fix) drains dirty
+     * marks between urbi_step calls.  The previous assertion
+     * "dirty_count >= 5" documented the pre-fix limitation and is removed. */
 
-    /* But the watcher never fires — eval never ran. */
+    /* The watcher fires: the idle-VM drain wakes the whenever after each tick's
+     * at-handler body exits.  fired >= 1 is the post-fix contract; a specific
+     * count is not pinned (level-trigger + re-dirty from the body write causes
+     * multiple fires per drain_to_quiescent iteration). */
     UValue fired = utest_e2e_make_nil();
     UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "fired", 5, &fired));
     UASSERT_EQ((int)UVAL_INT, (int)fired.kind);
-    UASSERT_EQ(0LL, fired.v.i);
+    UASSERT(fired.v.i >= 1);
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
@@ -365,7 +378,7 @@ test_whenever_double_fire_suite(void)
 {
     utest_run("whenever_double_fire: chunk-top write fires cond (baseline)",
               whenever_chunktop_write_fires_cond_baseline);
-    utest_run("whenever_double_fire: at-body without call does NOT drain dirty (limitation)",
+    utest_run("whenever_double_fire: at-body without call wakes watcher via idle-VM drain (SCHED-02)",
               at_handler_body_without_call_does_not_drain_dirty);
     utest_run("whenever_double_fire: at-body with call DOES drain dirty (workaround)",
               at_handler_body_with_call_drains_dirty);

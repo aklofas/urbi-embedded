@@ -185,6 +185,11 @@ watcher_eval_dirty(struct UVM *vm)
 
     vm->watchers->dirty_count = 0;
 
+    /* Save/restore in_eval (SCHED-12): in normal flow vm_reactive_drain's
+     * guard ensures in_eval=0 on entry; the ASSERT pins that contract.
+     * Restore on exit rather than hard-set-to-0 for defensive symmetry with
+     * drain_pending_onleave_queue's save/restore. */
+    uint8_t saved_eval = vm->watchers->in_eval;
     URBI_INTERNAL_ASSERT(!vm->watchers->in_eval);
     vm->watchers->in_eval = 1;
 
@@ -314,7 +319,7 @@ watcher_eval_dirty(struct UVM *vm)
         w = next;
     }
 
-    vm->watchers->in_eval = 0;
+    vm->watchers->in_eval = saved_eval;
 }
 
 /* spawn_body_coroutine lives in uwatcher_spawn.c.

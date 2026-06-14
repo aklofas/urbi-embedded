@@ -11,6 +11,7 @@
 #include "stdlib/temporal.h"   /* v0.9.4: urbi_periodic_pump (pre-loop) + urbi_periodic_earliest_wake_us (quiescence) */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (CHSTR-025 wait_payload arm guard) */
 #include "urbi/ros.h"          /* urbi_ros_pump (self-gating; no-op without URBI_ENABLE_ROS2) */
+#include "vm/uvm_reactive_drain.h"  /* vm_reactive_drain — idle-VM pump (SCHED-02) */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -78,6 +79,27 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      * sched_pick_next), so urbi_step would spin on RUNNING/WAKE_AT forever.
      * Mirrors the periodic pre-pump rationale above. */
     sched_wake_due_sleepers(vm);
+
+    /* Idle-VM reactive pump (SCHED-02 / B10): drain slot-change dirty marks
+     * and fire watcher-eval BEFORE the dispatch loop tests runnable count,
+     * but ONLY when no strands are currently runnable.
+     *
+     * Rationale for the runnable guard: when strands ARE runnable (normal
+     * execution), the dispatch-loop safepoints already call vm_reactive_drain
+     * at every instruction boundary.  Adding a pre-loop drain too would run the
+     * reactive pipeline an extra time per step, causing level-triggered `whenever`
+     * watchers whose bodies write observed slots to fire more often than expected
+     * (S46 shape — see tests/chk/reactive/at/whenever_level.chk and
+     * tests/chk/reactive/whenever_else.chk).
+     *
+     * SCHED-02 case: when the sole live strand is parked in waituntil(cond),
+     * strand_runnable_count == 0.  A host-C slot write between urbi_step calls
+     * bumps dirty_count, but the dispatch loop never runs (no READY strand) so
+     * no safepoint drain fires.  The guard allows the drain here, waking the
+     * WAITUNTIL strand (making it READY) before the dispatch loop test below. */
+    if (vm->strand_runnable_count == 0) {
+        vm_reactive_drain(vm);
+    }
 
     vm->step_budget_remaining = budget_instructions;
 

@@ -1,0 +1,35 @@
+# Covers: SCHED-02 / B10 — host-C slot write between urbi_step calls
+#         reaches a strand parked in waituntil(cond).
+#
+# Pre-fix: the pre-loop pump in urbi_step ran ISR-ring, ROS, periodics,
+# and sleepers but NOT the reactive pipeline (slot-change drain +
+# watcher-eval-dirty).  A host-C write that set the watched slot truthy
+# bumped dirty_count, but with no strands runnable, the dispatch loop
+# never executed and no safepoint ever drained it.  The parked waituntil
+# strand was never woken.
+#
+# Fix (v0.13.3-scheduler-liveness, Task 5 — vm_reactive_drain):
+# urbi_step now calls vm_reactive_drain when strand_runnable_count == 0
+# BEFORE the dispatch loop.  The drain flushes the dirty mark, fires
+# watcher_eval_dirty, which sees the waituntil condition truthy and wakes
+# the strand.  The subsequent dispatch loop runs the now-READY strand.
+#
+# Host-driver protocol:
+#   1. run: install waituntil(Realm.go); on wake, set Realm.done = 42
+#   2. step: drive to quiescent (strand parked in waituntil)
+#   3. set-global go 1: simulate host-C write that sets go = 1
+#   4. step: the idle-VM drain fires → waituntil wakes → strand runs
+#   5. run: read Realm.done — must be 42
+
+## host: run var Realm.go = false
+## host: run waituntil(Realm.go); Realm.done = 42
+## host: step 10000
+## host: set-global go 1
+## host: step 10000
+## host: run Realm.done
+[00000000] false
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] set-global: ok
+[00000000] step: QUIESCENT
+[00000000] 42

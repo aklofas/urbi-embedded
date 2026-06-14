@@ -341,6 +341,7 @@ extern void test_strand_cancel_wake_suite(void);
 extern void test_strand_unpark_suite(void);
 extern void test_scratch_cur_strand_suite(void);
 extern void test_vm_liveness_suite(void);
+extern void test_idle_vm_pump_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -664,6 +665,7 @@ static const struct suite_entry suites[] = {
     {"strand_unpark",                    test_strand_unpark_suite},
     {"scratch_cur_strand",               test_scratch_cur_strand_suite},
     {"urbi_vm_liveness",                      test_vm_liveness_suite},
+    {"idle_vm_pump",                          test_idle_vm_pump_suite},
     /* Add new suites here as test files are added. */
 };
 

@@ -158,8 +158,10 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
  *
  * Drain the entire pending-onleave FIFO in FIFO order.  For each watcher:
  *   1. Pop from queue head.
- *   2. If w->onleave != NULL: run_watcher_onleave.
- *   3. urbi_watcher_unregister_internal: clears bit-6 on read-set cells
+ *   2. Update pending_onleave_tail inline if the popped entry was the tail
+ *      (onleave-orphan fix — BEFORE invoking the handler).
+ *   3. If w->onleave != NULL: run_watcher_onleave.
+ *   4. urbi_watcher_unregister_internal: clears bit-6 on read-set cells
  *      (scan-on-unregister skips w because it was already removed from
  *      active_watchers_head by pending_onleave_queue_push — the (o == w)
  *      guard in unregister is a no-op), then pool_frees the slot and
@@ -167,13 +169,18 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
  *
  * Called from the dispatcher safepoint BEFORE watcher_eval_dirty per spec §6.5.
  * Reuses vm->watchers->in_eval as a reentrancy guard (same scratch-frame contract
- * as watcher_eval_dirty — drain and eval are always sequential, never nested). */
+ * as watcher_eval_dirty — drain and eval are always sequential, never nested).
+ *
+ * SCHED-12: save/restore in_eval so a nested call from vm_reactive_drain
+ * inside watcher_eval_dirty preserves the outer eval's in_eval=1.  The
+ * previous URBI_INTERNAL_ASSERT(!in_eval) is removed — save/restore makes
+ * nested calls safe; vm_reactive_drain's guard prevents unbounded nesting. */
 void
 drain_pending_onleave_queue(UVM *vm)
 {
     URBI_ASSERT_NOT_ISR(vm);
-    URBI_INTERNAL_ASSERT(!vm->watchers->in_eval);
 
+    uint8_t saved_eval = vm->watchers->in_eval;
     vm->watchers->in_eval = 1;
 
     /* Spec #1 §6.3: iterate with a pointer-to-pointer walk so we can skip
@@ -181,11 +188,9 @@ drain_pending_onleave_queue(UVM *vm)
      * the FIFO order.  Deferred entries remain on the queue and are retried
      * at the next safepoint (bounded by URBI_CLEANUP_MAX latency).
      *
-     * tail pointer invariant: after the loop, pending_onleave_tail must point
-     * to the last remaining entry, or NULL if the queue is empty.
-     * We recompute tail in a single forward scan after the main loop rather
-     * than trying to maintain it inline during removal — the queue is short
-     * (bounded by URBI_WATCHER_POOL_SIZE) and this drain runs at safepoints. */
+     * Tail invariant: updated inline (before invoking each handler) when the
+     * popped entry was the tail, so a mid-drain push by the onleave handler
+     * can correctly append via pending_onleave_tail (onleave-orphan fix). */
     UWatcher **pp = &vm->pending_onleave_head;
     while (*pp != NULL) {
         UWatcher *w = *pp;
@@ -200,6 +205,21 @@ drain_pending_onleave_queue(UVM *vm)
         *pp = w->next_active;
         w->next_active = NULL;
 
+        /* Inline tail update (onleave-orphan fix): if w was the tail, rescan
+         * from head BEFORE invoking the handler.  An onleave that pushes a new
+         * entry appends to pending_onleave_tail; with the stale pre-pop tail
+         * the append would orphan the new entry.  After the pop, head already
+         * reflects the removal, so the scan finds the correct new tail. */
+        if (w == vm->pending_onleave_tail) {
+            if (vm->pending_onleave_head == NULL) {
+                vm->pending_onleave_tail = NULL;
+            } else {
+                UWatcher *t = vm->pending_onleave_head;
+                while (t->next_active != NULL) t = t->next_active;
+                vm->pending_onleave_tail = t;
+            }
+        }
+
         /* Run onleave handler if present. */
         if (w->onleave != NULL) {
             run_watcher_onleave(vm, w);
@@ -213,15 +233,5 @@ drain_pending_onleave_queue(UVM *vm)
          * the next entry (already advanced by the *pp = w->next_active above). */
     }
 
-    /* Recompute tail: scan from head to find the last entry (O(n), but n is
-     * small and this only runs when at least one entry was present). */
-    if (vm->pending_onleave_head == NULL) {
-        vm->pending_onleave_tail = NULL;
-    } else {
-        UWatcher *t = vm->pending_onleave_head;
-        while (t->next_active != NULL) t = t->next_active;
-        vm->pending_onleave_tail = t;
-    }
-
-    vm->watchers->in_eval = 0;
+    vm->watchers->in_eval = saved_eval;
 }

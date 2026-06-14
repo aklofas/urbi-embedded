@@ -35,6 +35,7 @@
 #include "vm/uvm_slot.h"         /* vm_getslot_value, vm_setslot_value, vm_self_lookup, vm_dispatch_getter/setter, vm_trace_slot_read_if_needed (W1) */
 #include "vm/uvm_tag_scope.h"    /* vm_push_tag_scope, vm_pop_tag_scope (v0.10.15 W1 stage 1) */
 #include "vm/uvm_reactive_install.h" /* vm_reactive_install — 7 install arms (v0.10.15 W1 stage 2) */
+#include "vm/uvm_reactive_drain.h"   /* vm_reactive_drain — centralised reactive pump (SCHED-02/SCHED-12) */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -797,12 +798,7 @@ dispatch:
                      * Skip when already inside an eval/scratch/install context
                      * (mirrors urbi_emit_slot_change_slow's re-entry guard); the
                      * enclosing pass will drain on return. */
-                    if (!vm->watchers->in_eval && !vm->watchers->in_install
-                        && !vm->watchers->in_scratch) {
-                        urbi_drain_deferred_slot_changes(vm);
-                        if (vm->watchers->dirty_count > 0)
-                            watcher_eval_dirty(vm);
-                    }
+                    vm_reactive_drain(vm);
                     NEXT();
                 }
                 if (rc == UEXEC_THROW) {
@@ -1628,10 +1624,7 @@ safepoint:
     }
     vm->step_budget_remaining--;
     if (vm->gc_pending)           urbi_gc_slice(vm, URBI_GC_SLICE_BUDGET);
-    if (vm->pending_onleave_head) drain_pending_onleave_queue(vm);
-    urbi_drain_deferred_slot_changes(vm);   /* spec #4 §5.4: before watcher_eval_dirty */
-    /* Pre: urbi_vm_init succeeded, so vm->watchers is non-NULL. */
-    if (vm->watchers->dirty_count > 0) watcher_eval_dirty(vm);
+    vm_reactive_drain(vm);   /* onleave FIFO + slot-change ring + watcher-eval (SCHED-02/VM-05) */
     /* Preemption flag reserved for v2; not checked at M3. */
     /* Resume dispatch. */
 #if UVM_USE_COMPUTED_GOTO

@@ -39,6 +39,7 @@
 #include "gc/ugc_incremental.h"  /* urbi_c_root_push/_pop (v0.13.2 native out-slot rooting) */
 #include "runtime/umacros.h"     /* urbi_zero */
 #include "watcher/uwatcher.h"   /* urbi_run_closure_on_scratch[_with_payload] */
+#include "vm/uvm_reactive_drain.h"  /* vm_reactive_drain (VM-20: drain after operator call) */
 
 /* -----------------------------------------------------------------------
  * IC helpers
@@ -300,6 +301,7 @@ vm_arith_method_fallback(UVM *vm,
     }
 
     *dst = result;
+    vm_reactive_drain(vm);   /* VM-20: drain after operator method call */
     return VM_OP_OVERLOAD_OK;
 }
 
@@ -356,6 +358,7 @@ vm_arith_method_fallback_unary(UVM *vm,
     }
 
     *dst = result;
+    vm_reactive_drain(vm);   /* VM-20: drain after operator method call */
     return VM_OP_OVERLOAD_OK;
 }
 
@@ -445,5 +448,6 @@ vm_cmp_method_fallback(UVM *vm,
         *out_bool = true;
     }
 
+    vm_reactive_drain(vm);   /* VM-20: drain after operator method call */
     return VM_OP_OVERLOAD_OK;
 }

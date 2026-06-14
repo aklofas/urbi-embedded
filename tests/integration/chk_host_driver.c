@@ -35,6 +35,12 @@
  *                             the number of times the pre-registered native
  *                             probe global `__hostprobe()` has been invoked.
  *                             The fixture pins the expected count.
+ *   ## host: set-global <name> <int>
+ *                             call urbi_realm_set_global on the current realm
+ *                             with a UVAL_INT value.  Simulates a host-C slot
+ *                             write between urbi_step calls — the canonical
+ *                             SCHED-02 scenario for the idle-VM reactive drain.
+ *                             Emits "[00000000] set-global: ok" on success.
  *
  * Lines that are not `## host:` directives are ignored (plain `#` comments and
  * `[...]` expected lines are the runner's concern, not the driver's).
@@ -175,6 +181,45 @@ static int run_directive(UVM *vm, const char *verb, const char *rest) {
         char line[64];
         snprintf(line, sizeof line, "host-calls: %d", g_hostcalls);
         emit_framed(line);
+        return 0;
+    }
+
+    if (strcmp(verb, "set-global") == 0) {
+        /* Syntax: set-global <name> <integer_value>
+         * Sets slot <name> on the current realm to a UVAL_INT value.
+         * Useful for simulating host-C slot writes between step calls —
+         * the canonical SCHED-02 scenario where a host write must reach
+         * a parked waituntil strand via the idle-VM reactive drain. */
+        char name[64];
+        size_t ni = 0;
+        const char *p = rest;
+        while (*p && *p != ' ' && *p != '\t' && ni + 1 < sizeof name) {
+            name[ni++] = *p++;
+        }
+        name[ni] = '\0';
+        while (*p == ' ' || *p == '\t') p++;
+        const char *vp = p;
+        char *endptr = NULL;
+        long long ival = strtoll(vp, &endptr, 10);
+        if (endptr == vp) {
+            fprintf(stderr,
+                    "chk-host-driver: `set-global` needs a numeric value\n");
+            return -1;
+        }
+        UValue uval;
+        uval.kind = UVAL_INT;
+        uval.v.i  = ival;
+        struct URealm *realm = (g_current != NULL)
+                             ? g_current
+                             : urbi_realm_global(vm);
+        int src = urbi_realm_set_global(vm, realm, name, ni, uval);
+        if (src != URBI_OK) {
+            fprintf(stderr,
+                    "chk-host-driver: set-global '%s' failed (rc=%d)\n",
+                    name, src);
+            return -1;
+        }
+        emit_framed("set-global: ok");
         return 0;
     }
 
