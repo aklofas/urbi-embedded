@@ -22,7 +22,7 @@ inline with their shipping milestone.
 | `at sync (e?) body` | emits `OP_AT_EVENT_SYNC_INSTALL` | working with sync-degradation caveat (Finding 7) |
 | `whenever (e?) body` | emits `OP_WHENEVER_EVENT_INSTALL` (W0/v0.10.2) | working; perpetual event subscriber — re-fires on every emission (not one-shot like `at (e?)`) |
 | `every (period) body` | desugars to `every(period_us, fn)` C-native call | working; re-spawn cadence via `UPeriodic` |
-| `tag.stop()` from script | routes via `tag_stop_native` → `urbi_tag_stop` C API (does NOT emit `OP_TAG_STOP`) | working — **CLOSED W3/v0.10.2**: `Tag.new()` + script-level `.stop()`, `.freeze()`, `.unfreeze()`, `.block()`, `.unblock()` all shipped. Bare-prefix `mytag: stmt` and member-expr `Tag.scope: body` (W6/v0.10.5) also working. C-level `urbi_tag_stop` remains the ISR-safe path. `OP_TAG_STOP` (opcode 30) exists in the VM dispatch table but has no compiler emit path; see VM-13 note below. |
+| `tag.stop()` from script | routes via `tag_stop_native` → `urbi_tag_stop` C API (does NOT emit `OP_TAG_STOP`) | working — **CLOSED W3/v0.10.2**: `Tag.new()` + script-level `.stop()`, `.freeze()`, `.unfreeze()`, `.block()`, `.unblock()` all shipped. Bare-prefix `mytag: stmt` and member-expr `Tag.scope: body` (W6/v0.10.5) also working. C-level `urbi_tag_stop` remains the ISR-safe path. `OP_TAG_STOP` (opcode 30) exists in the VM dispatch table but has no compiler emit path; see the OP_TAG_STOP note below. |
 
 ## Reactive vocabulary at the lexer
 
@@ -185,7 +185,7 @@ so the GC walker visits its register window, dispatches up to
 tears down. Cond closures must not yield — yield/block/budget exhaustion
 all degrade to "throw" and are reported via `*out_threw`.
 
-**At-sync and onleave bodies run atomically (v0.13.3, B11/SCHED-03).** Transient
+**At-sync and onleave bodies run atomically (v0.13.3).** Transient
 strands (scratch and `urbi_vm_run`) have `is_transient_strand = 1`. When such a
 strand executes `OP_YIELD` (the `;` sequential separator), the opcode is a
 no-op-continue: the PC advances past the yield and dispatch resumes immediately
@@ -224,8 +224,7 @@ callback as a `UVAL_CLOSURE` value, plus `last_value_cache`, and shades
 `owning_tag` and `event` directly. Rooting is a property of "slot is in
 use", not of list topology, so AT_EVENT / WHENEVER_EVENT watchers stay
 rooted even when their owning event is otherwise unreachable, and the
-subscribed event itself is immortal while subscribed (refactor-3
-GC-05/GC-03).
+subscribed event itself is immortal while subscribed.
 
 Fields intentionally NOT walked by `watcher_table_walk_roots`:
 
@@ -291,7 +290,7 @@ deposits `PENDING_UNWIND=UEXEC_TAG_STOP` on member strands, walks
 from host C code.
 
 **Deposit consumption is safepoint-only — finish-then-drop (v0.13.3,
-design-risks v0.13.1-G, owner-ratified).** A cross-strand stop/cancel
+design-risks v0.13.1-G).** A cross-strand stop/cancel
 deposit (`urbi_tag_stop`, `urbi_strand_cancel`) is consumed at the target
 strand's next dispatch safepoint (backward branch, call, non-top `OP_RET`).
 A deposit that lands after the target's last safepoint is DROPPED when the
@@ -311,7 +310,7 @@ and member-expression `Tag.scope: body` (v0.10.5-W8) are parser-accepted.
 `urbi_tag_stop` remains the ISR-safe C path; script-level `.stop()` routes
 through it.
 
-**VM-13 note (refactor-3)** — `OP_TAG_STOP` (opcode 30) has a full VM
+**OP_TAG_STOP note** — `OP_TAG_STOP` (opcode 30) has a full VM
 dispatch arm (`label_op_tag_stop` in `uvm.c`) since v0.10.2.  The compiler
 (`uemit.c`) never emits it: scripted `tag.stop()` lowers to a method call
 resolved at runtime through `tag_stop_native` → `urbi_tag_stop`; the
@@ -343,7 +342,7 @@ drain. It walks the list: frees any with `unregister_pending` set; for
 any whose `current_strand == NULL` and `next_fire_us <= now`, spawns a
 fresh body strand via `spawn_periodic_body` and arms the next fire time.
 
-**Period units (SCHED-14, v0.13.3).** The `period_us` field is always microseconds
+**Period units (v0.13.3).** The `period_us` field is always microseconds
 internally. `every_native` accepts the period argument as:
 
 - `UVAL_INT` — microseconds. Duration literals from the lexer (`100ms`, `1s`) arrive
@@ -351,7 +350,7 @@ internally. `every_native` accepts the period argument as:
 - `UVAL_FLOAT` — **seconds**, matching `sleep()`'s float convention. A bare float
   literal like `every(0.5)` means every 500 ms.
 
-**Cadence is FIXED (SCHED-14).** `urbi_periodic_body_completed` advances the
+**Cadence is FIXED.** `urbi_periodic_body_completed` advances the
 deadline by adding one period to the *previous* deadline (`next_fire_us +=
 period_us`), not to the body-completion time. The firing interval therefore does
 not drift with body duration.
@@ -365,7 +364,7 @@ duration meets or exceeds its period perpetually-due, causing the pump to re-fir
 every step and the VM to never return `QUIESCENT` or `WAKE_AT` — a 100% CPU hang
 in a cooperative embedded runtime. Resuming at `now + period_us` lets the VM
 quiesce between overrun fires, which is required for correct host-loop behaviour
-and avoids double-actuation on hardware. Pending owner ratification at tag close-out.
+and avoids double-actuation on hardware.
 
 Body completion is notified via `urbi_periodic_body_completed` from the
 `exit_strand` path in `uvm.c`, which mirrors `urbi_watcher_body_completed`

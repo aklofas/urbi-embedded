@@ -41,7 +41,7 @@ The contract is verified by the unit suite in
 strands, filters DEAD strands, reaches strands that sit on no scheduler
 queue, and round-trips the `uvm_run` transient through the global realm.
 
-## Runnable-count ownership (v0.13.3, SCHED-01)
+## Runnable-count ownership (v0.13.3)
 
 `vm->strand_runnable_count` is a **single-writer counter**: its only legitimate
 mutators are `urbi_sched_runnable_inc` and `urbi_sched_runnable_dec`, both in
@@ -55,7 +55,7 @@ external-input-dependent work (parked on sleep, event, join, or tag
 gate). Transient strands (`is_transient_strand = 1`, e.g. scratch and
 `urbi_vm_run`) never participate in the count even while RUNNING.
 
-## Liveness formula and QUIESCENT (v0.13.3, SCHED-13)
+## Liveness formula and QUIESCENT (v0.13.3)
 
 A single function `urbi_vm_liveness` (`src/sched/usched_liveness.c`)
 computes all liveness state. Three subordinate views read from it:
@@ -85,7 +85,7 @@ that no internal progress is possible without external input.
 a fully-dead VM (all zero) from an armed-but-idle one that is waiting for
 external input.
 
-## Block/freeze suspension gates (v0.13.3, SCHED-08)
+## Block/freeze suspension gates (v0.13.3)
 
 Each strand carries two independent gate bits in `suspend_gates`:
 
@@ -107,7 +107,7 @@ the gate bits in `suspend_gates` are authoritative for resume eligibility.
 **Known limitation (v1.x):** block and freeze gates are per-strand bits,
 not per-tag refcounts. If two different tags block/freeze the same strand,
 one tag's unblock can resume a strand the other tag still wants blocked.
-Filed as a design-risk at the v0.13.3 close-out.
+Filed as a design-risk for a future release (per-tag gate refcount).
 
 See `src/sched/ustrand.h` (`USTRAND_GATE_*` macros + `urbi_strand_suspend` /
 `urbi_strand_resume_if_ungated`) and `src/sched/usched_cooperative.h` for
