@@ -208,6 +208,56 @@ UTEST(verifier_accepts_fork_join_then_join_wait)
     uchunk_destroy(p, NULL);
 }
 
+/* ── VM-14 follow-up: bare OP_FORK_JOIN B-operand bounds ─────────────────
+ *
+ * OP_FORK_JOIN's dispatch WRITES R[B] (the child strand handle), but B was
+ * marked UOPK_UNUSED in the shape table, so verify_byte_operand never
+ * bounds-checked it.  The VM-14 adjacency rule transitively pins B for the
+ * normal emit pattern (FORK_JOIN followed by JOIN_WAIT, B == JOIN_WAIT.A <=
+ * max_reg) — but a BARE OP_FORK_JOIN (no following JOIN_WAIT) with B >
+ * max_reg slips through and dispatch writes a register OUTSIDE the declared
+ * window: an OOB write from an untrusted chunk.  Closed by marking
+ * OP_FORK_JOIN.B as UOPK_REG. */
+
+/* Bare OP_FORK_JOIN (no following JOIN_WAIT) with B > max_reg must reject. */
+UTEST(verifier_rejects_bare_fork_join_b_oob)
+{
+    uint8_t buf[512];
+    /* max_reg=0: only R[0] exists.  FORK_JOIN A=0 (closure) B=5 (handle dst).
+     * R[5] is outside the window — dispatch would OOB-write.  No JOIN_WAIT
+     * follows, so the VM-14 adjacency rule does not catch it. */
+    const uint32_t instrs[] = {
+        uinstr_enc_abc(OP_FORK_JOIN, 0, 5, 0),
+        uinstr_enc_abc(OP_RET,       0, 0, 0)
+    };
+    size_t total = xb_build(buf, /*max_reg=*/0, instrs, 2);
+    UProto *p = NULL;
+    char errmsg[256];
+    UChunkLoadError rc = uchunk_deserialize(&p, buf, total,
+                                            NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
+    uchunk_destroy(p, NULL);
+}
+
+/* Bare OP_FORK_JOIN with B <= max_reg (in-window) must still accept — the
+ * B-operand check must not over-reject valid bare forks. */
+UTEST(verifier_accepts_bare_fork_join_b_in_window)
+{
+    uint8_t buf[512];
+    /* max_reg=1: R[0], R[1] exist.  FORK_JOIN A=0 B=1: handle → R[1], in window. */
+    const uint32_t instrs[] = {
+        uinstr_enc_abc(OP_FORK_JOIN, 0, 1, 0),
+        uinstr_enc_abc(OP_RET,       0, 0, 0)
+    };
+    size_t total = xb_build(buf, /*max_reg=*/1, instrs, 2);
+    UProto *p = NULL;
+    char errmsg[256];
+    UChunkLoadError rc = uchunk_deserialize(&p, buf, total,
+                                            NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    uchunk_destroy(p, NULL);
+}
+
 /* ── VM-19: OP_SELF cross-byte ───────────────────────────────────────── */
 
 /* OP_SELF writes R[A] (the looked-up slot value) and R[A+1] (self / receiver
@@ -267,6 +317,10 @@ test_verifier_cross_byte_suite(void)
               verifier_rejects_join_wait_with_mismatched_child_reg);
     utest_run("VM-14: verifier accepts FORK_JOIN then JOIN_WAIT",
               verifier_accepts_fork_join_then_join_wait);
+    utest_run("VM-14: verifier rejects bare FORK_JOIN with B > max_reg",
+              verifier_rejects_bare_fork_join_b_oob);
+    utest_run("VM-14: verifier accepts bare FORK_JOIN with B in window",
+              verifier_accepts_bare_fork_join_b_in_window);
     utest_run("VM-19: verifier rejects OP_SELF A==max_reg",
               verifier_rejects_op_self_a_eq_max_reg);
     utest_run("VM-19: verifier accepts OP_SELF A==max_reg-1",

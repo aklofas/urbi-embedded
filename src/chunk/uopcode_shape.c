@@ -41,9 +41,15 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     [OP_LE]       = { UOPF_ABC, UOPK_IMM_BOOL,   UOPK_REG,       UOPK_REG,    UBXK_UNUSED },
     [OP_YIELD]    = { UOPF_ABC, UOPK_UNUSED,     UOPK_UNUSED,    UOPK_UNUSED, UBXK_UNUSED },
 
-    /* M3 row 7 separator opcodes 24-26 */
+    /* M3 row 7 separator opcodes 24-26.
+     * FORK_DETACH: A=closure_reg; dispatch reads only A (B/C unused).
+     * FORK_JOIN:   A=closure_reg, B=child-handle dst reg — dispatch WRITES
+     *              R[B] (uop_fork.c op_fork_join), so B must be bounds-checked
+     *              (refactor-3 VM-14 follow-up; was UOPK_UNUSED = unverified
+     *              OOB-write hole for a bare FORK_JOIN with B > max_reg).
+     * JOIN_WAIT:   A=child-handle reg; dispatch reads only A. */
     [OP_FORK_DETACH] = { UOPF_ABC, UOPK_REG,    UOPK_UNUSED, UOPK_UNUSED, UBXK_UNUSED },
-    [OP_FORK_JOIN]   = { UOPF_ABC, UOPK_REG,    UOPK_UNUSED, UOPK_UNUSED, UBXK_UNUSED },
+    [OP_FORK_JOIN]   = { UOPF_ABC, UOPK_REG,    UOPK_REG,    UOPK_UNUSED, UBXK_UNUSED },
     [OP_JOIN_WAIT]   = { UOPF_ABC, UOPK_REG,    UOPK_UNUSED, UOPK_UNUSED, UBXK_UNUSED },
 
     /* M4 GETSLOT/SETSLOT 27-28 — A=dst/value reg, B=recv reg, C=ic-site index (uint8) */
