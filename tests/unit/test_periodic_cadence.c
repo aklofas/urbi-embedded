@@ -12,8 +12,17 @@
  *     by one period from the PREVIOUS deadline (fixed/legacy every| cadence),
  *     not from now (after-completion cadence).
  *     Pre-fix: next_fire_us = now + period (after-completion: 130000).
- *     Post-fix: next_fire_us += period; slide to now + period if past (100000).
- *     Slide advances by a full period to prevent same-step pump re-fire.
+ *     Post-fix on overrun: next_fire_us resumes at now + period (NOT the
+ *     literal SCHED-14 slide-to-now).  This pins the controller-ratified
+ *     skip-missed-periods deviation — see every_overrun_resumes_and_quiesces
+ *     and the temporal.c re-arm comment for why slide-to-now hangs.
+ *
+ *   every_overrun_resumes_and_quiesces:
+ *     ANTI-HANG regression.  A periodic whose body consistently overruns its
+ *     period (advances the mock clock past the deadline each fire) must still
+ *     let urbi_step reach WAKE_AT/QUIESCENT between fires — exactly one fire
+ *     per deadline crossing, no perpetual-RUNNING burst.  FAILS (caps out,
+ *     does not hang) if the re-arm slide target is reverted to literal `now`.
  *
  *   every_and_sleep_reject_nonfinite:
  *     INFINITY and too-large values must be rejected before the cast
@@ -43,6 +52,24 @@
 
 static uint64_t g_cadence_now_us;
 static uint64_t cadence_mock_clock(void *ud) { (void)ud; return g_cadence_now_us; }
+
+/* ---- overrun body for every_overrun_resumes_and_quiesces ---- */
+
+/* Each fire advances the mock clock past the deadline (body "runs" for >= one
+ * period) and counts the fire.  Installed via urbi_register and called as the
+ * bare global tick() from the every() body — mirrors the reviewer's overrun
+ * shape (body duration >= period). */
+static uint64_t g_overrun_fires;
+static uint64_t g_overrun_bump_us;
+static int
+overrun_tick(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    g_overrun_fires++;
+    g_cadence_now_us += g_overrun_bump_us;
+    *out = urbi_make_nil();
+    return 0;
+}
 
 /* =========================================================================
  * Test 1: every(0.05) → period_us = 50000 (float = SECONDS)
@@ -97,11 +124,17 @@ UTEST(every_float_arg_is_seconds)
  *     p->next_fire_us += period_us = 0 + 100000 = 100000.
  *     100000 > 30000 (now), so no slide.
  *
- * A second call with clock advanced to 250000 tests the slide path:
- *   overrun by 2 full periods (250000 > 100000 + 100000 = 200000);
- *   slide to now + period → next_fire_us = 250000 + 100000 = 350000.
- *   Advancing by period prevents the pump from re-firing within the same
- *   urbi_step (sched_post_dispatch pump: next_fire_us > now). */
+ * A second call with clock advanced to 250000 tests the OVERRUN slide path:
+ *   the deadline is already in the past (250000 > 100000 + 100000 = 200000).
+ *
+ *   This assertion pins the CONTROLLER-RATIFIED skip-missed-periods deviation,
+ *   NOT the literal SCHED-14 "slide-to-now / single late fire": on overrun the
+ *   deadline resumes at now + period (250000 + 100000 = 350000), so the missed
+ *   periods are skipped and the periodic pump (which re-reads the clock) does
+ *   not find the just-slid deadline still due and re-fire within the same
+ *   urbi_step.  Resuming at the literal `now` (250000) instead would make the
+ *   periodic perpetually-due and hang the VM — see the temporal.c re-arm
+ *   comment and the every_overrun_resumes_and_quiesces regression below. */
 UTEST(every_cadence_is_fixed_with_slide)
 {
     UVM vm;
@@ -155,10 +188,13 @@ UTEST(every_cadence_is_fixed_with_slide)
 
     urbi_periodic_body_completed(&vm, &s);
 
-    /* Post-fix: 100000 + 100000 = 200000 <= 250000 → slide to now + period
-     *           = 250000 + 100000 = 350000.  Slide advances by a full period so
-     *           the pump does not re-fire within the same urbi_step call.
-     * Pre-fix (after-completion): 250000 + 100000 = 350000 (no slide logic). */
+    /* Overrun: 100000 + 100000 = 200000 <= 250000 → resume at now + period
+     *          = 250000 + 100000 = 350000 (controller-ratified skip-missed-
+     *          periods; NOT the literal slide-to-now = 250000, which hangs).
+     * Pre-fix (after-completion): 250000 + 100000 = 350000 (no slide logic);
+     *          this case does not distinguish pre/post — the non-slide case 1
+     *          assertion (100000 vs pre-fix 130000) is what pins the re-arm
+     *          base.  This assertion pins the overrun RESUME TARGET. */
     UASSERT_EQ(350000ULL, (unsigned long long)p->next_fire_us);
 
     /* Cleanup: free the UPeriodic directly (not on periodics_head). */
@@ -247,6 +283,81 @@ UTEST(every_and_sleep_reject_nonfinite)
 }
 
 /* =========================================================================
+ * Test 4: overrunning periodic still lets the VM quiesce between fires
+ * =========================================================================
+ *
+ * ANTI-HANG regression for the re-arm slide target.  An every(P) whose body
+ * consistently overruns its period (here: each fire advances the mock clock
+ * by P + 1, so body-duration > period) must NOT spin urbi_step in perpetual
+ * RUNNING: the deadline resumes at now + period, so after a body fire the
+ * post-dispatch periodic pump (which re-reads the clock) finds the deadline
+ * in the FUTURE and the VM reaches WAKE_AT/QUIESCENT — exactly one fire per
+ * deadline crossing, no catch-up burst.
+ *
+ * If the re-arm slide target is reverted to literal `now`, the just-slid
+ * deadline equals the completion clock and the pump re-fires the body within
+ * the same urbi_step forever; urbi_step then only ever returns RUNNING, the
+ * bounded inner loop below caps out, and the WAKE_AT/QUIESCENT + one-fire
+ * assertions FAIL.  The loop is bounded by step_calls so a revert FAILS the
+ * test rather than hanging the suite. */
+UTEST(every_overrun_resumes_and_quiesces)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    vm.host_time_us = cadence_mock_clock;
+    vm.host_time_ud = NULL;
+    g_cadence_now_us = 0;
+    g_overrun_fires  = 0;
+    g_overrun_bump_us = 101U;   /* > period (100us): every fire overruns */
+
+    /* Register the body's tick() — advances the clock past the deadline each
+     * fire and counts.  Bare global, resolvable from an every() body (same as
+     * the inner every() in nested.chk). */
+    UASSERT_EQ(URBI_OK, urbi_register(&vm, NULL, "tick", overrun_tick));
+
+    /* Install every(100us) { tick() }.  next_fire_us = now(0) + 100 = 100. */
+    int rc = utest_e2e_compile_and_run(&vm, "every(100us) { tick() }", NULL);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT(vm.periodics_head != NULL);
+    UASSERT_EQ(0ULL, (unsigned long long)g_overrun_fires);  /* not due at t=0 */
+
+    /* Drive several deadline crossings.  Each round advances the clock to the
+     * current deadline, then steps; the periodic must fire once and the VM
+     * must quiesce. */
+    const int ROUNDS = 4;
+    int round;
+    for (round = 1; round <= ROUNDS; round++) {
+        uint64_t prev_fires = g_overrun_fires;
+
+        UASSERT(vm.periodics_head != NULL);
+        g_cadence_now_us = vm.periodics_head->next_fire_us;  /* fire is now due */
+
+        UStepResult res  = URBI_STEP_RUNNING;
+        uint64_t    wake = 0U;
+        int         step_calls = 0;
+        /* Bounded: terminates regardless of correctness.  Correct now+period
+         * quiesces in a single call (one tiny tick() body << 4096 opcodes);
+         * literal `now` re-fires the body every pump pass so urbi_step only
+         * ever returns RUNNING, the cap (8) breaks the loop, and the
+         * assertions below — not a hang — report the regression.  The small
+         * budget keeps a reverted build's spin to ~8*4096 fires/round so it
+         * FAILS in well under a second rather than grinding. */
+        const int STEP_CAP = 8;
+        while (res == URBI_STEP_RUNNING && step_calls < STEP_CAP) {
+            res = urbi_step(&vm, 4096ULL, &wake);
+            step_calls++;
+        }
+
+        /* Anti-hang: reached a quiescent verdict, NOT perpetual RUNNING. */
+        UASSERT(res == URBI_STEP_WAKE_AT || res == URBI_STEP_QUIESCENT);
+        /* Exactly one fire per deadline crossing — no catch-up burst. */
+        UASSERT_EQ(1ULL, (unsigned long long)(g_overrun_fires - prev_fires));
+    }
+
+    urbi_vm_destroy(&vm);
+}
+
+/* =========================================================================
  * Suite entry point
  * ========================================================================= */
 
@@ -256,6 +367,8 @@ void test_periodic_cadence_suite(void)
               every_float_arg_is_seconds);
     utest_run("periodic_cadence: fixed cadence + slide-to-now (SCHED-14 legacy every|)",
               every_cadence_is_fixed_with_slide);
+    utest_run("periodic_cadence: overrun resumes at now+period and quiesces (SCHED-14 anti-hang)",
+              every_overrun_resumes_and_quiesces);
     utest_run("periodic_cadence: every/sleep reject INFINITY and overflow (SCHED-14 guards)",
               every_and_sleep_reject_nonfinite);
 }

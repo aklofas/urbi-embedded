@@ -535,9 +535,24 @@ urbi_periodic_body_completed(UVM *vm, UStrand *s)
          * semantics).  The deadline advances by one period from the PREVIOUS
          * deadline so the firing interval does not drift with body duration.
          *
-         * When the body overran one or more full periods (next_fire_us is
-         * already in the past), slide to now rather than firing a burst of
-         * catch-up iterations: a single late fire is the correct behaviour. */
+         * On overrun (body duration >= period, next_fire_us already in the
+         * past), the deadline resumes at now + period_us: the missed periods
+         * are SKIPPED with no burst of catch-up iterations and NO immediate
+         * catch-up fire.
+         *
+         * CONTROLLER-RATIFIED DEVIATION (pending owner confirmation at tag
+         * close-out) from the literal SCHED-14 "slide-to-now / single late
+         * fire": resuming at `now` (rather than `now + period_us`) makes the
+         * periodic perpetually-due whenever body-duration >= period.  The
+         * deadline is read from the completion clock here, but the periodic
+         * pump re-reads the (later) clock; on an advancing clock that deadline
+         * is then always <= the pump's read, so the body re-fires every pump
+         * pass within the same urbi_step and the scheduler never returns
+         * anything but RUNNING -- a 100% CPU non-quiescence hang (empirically:
+         * basic.chk 30s timeout, nested.chk 180s timeout).  Resuming at
+         * now + period_us lets the VM reach WAKE_AT/QUIESCENT between overrun
+         * fires -- which a cooperative embedded runtime requires -- and avoids
+         * double-actuation on robotics hardware. */
         uint64_t now = 0U;
         if (vm->host_time_us != NULL) now = vm->host_time_us(vm->host_time_ud);
         p->next_fire_us += p->period_us;
