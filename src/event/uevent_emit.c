@@ -82,7 +82,6 @@ wake_event_waiters(struct UVM *vm, struct UEvent *e, UValue payload)
 void
 c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
 {
-    struct UWatcher *w;
     URBI_TP(vm, URBI_TRACE_EVENT, URBI_LOG_DEBUG, URBI_TP_EVENT_EMIT,
             (uint32_t)(uintptr_t)e, 0);
     URBI_PERF_INC(vm, event_emits);
@@ -107,7 +106,7 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
         if (last) while (last->next_in_event) last = last->next_in_event;
 
         /* Walk at_watchers_head FIFO up to (and including) last. */
-        w = e->at_watchers_head;
+        struct UWatcher *w = e->at_watchers_head;
         while (w) {
             struct UWatcher *next = (w == last) ? NULL : w->next_in_event;
             /* W2/v0.10.2 defence in depth: skip watchers whose tag-stop cascade
@@ -208,8 +207,6 @@ run_event_body_on_scratch(struct UVM *vm, struct UWatcher *w, UValue payload)
 void
 c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
 {
-    struct UWatcher *w;
-
     /* EMITR-012: ISR re-entry would be unsafe here because the sync path
      * may run subscriber bodies inline on the watcher scratch frame
      * (run_event_body_on_scratch), which dispatches arbitrary bytecode
@@ -248,7 +245,7 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
         struct UWatcher *last = e->at_watchers_head;
         if (last) while (last->next_in_event) last = last->next_in_event;
 
-        w = e->at_watchers_head;
+        struct UWatcher *w = e->at_watchers_head;
         while (w) {
             struct UWatcher *next = (w == last) ? NULL : w->next_in_event;
             /* W2/v0.10.2 defence in depth: skip watchers pending tag-stop drain.

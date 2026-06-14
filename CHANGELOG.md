@@ -1,5 +1,77 @@
 # Changelog
 
+## v0.13.3-scheduler-liveness — 2026-06-14
+
+Tag 4 of the v0.13.x pre-release hardening arc: the cooperative scheduler
+acquires sound liveness guarantees and the reactive subsystem becomes
+provably quiescent under idle-system conditions.  Closes the refactor-3
+deep-audit blockers B4/B10/B11 plus the scheduler and reactive findings
+below.  No new opcode, wire format unchanged (v1.9 / 0x19).
+ABI 0/23/3 -> 0/23/4 (PATCH; zero public C API symbol changes — not an
+escape; the tag's 9 liveness-helper symbols that carry the `urbi_` prefix
+are Tier-4 internal and documented in the manifest).
+
+**BEHAVIOR CHANGE — `every()` timer semantics:**
+A bare float argument to `every()` is now interpreted as **seconds**,
+matching `sleep()`.  Integer and duration-literal arguments (e.g.
+`every(100ms)`) are unchanged (microseconds).  Timer cadence is now
+fixed: on overrun the next deadline slides to `now + period`; missed
+periods are skipped rather than fired back-to-back.  Finite-value guards
+are added to both `every()` and `sleep()` (infinite/NaN arguments are
+rejected).  This removes a non-quiescence (100% CPU) condition that
+occurred when a float period was misinterpreted as microseconds.
+
+- Scheduler liveness (B10 / SCHED-01 / SCHED-17): `strand_runnable_count`
+  is a single-writer atomic; WAITING and SUSPENDED strands are excluded
+  from the count so the count correctly reflects runnable work.
+- Quiescence formula (B10 / SCHED-13 / SCHED-06 / VM-12): one
+  `vm_liveness()` helper with a single authoritative formula; QUIESCENT
+  excludes armed reactive work (active watchers, suspended strands, and
+  strands parked in `waituntil`), so the host's `urbi_step` QUIESCENT
+  result is meaningful under idle-system conditions.  Note: the companion
+  query `urbi_vm_has_live_work()` is INCLUSIVE — it now reports armed
+  reactive work (active watchers, suspended/waiting strands) as live, so
+  it returns true for an armed-but-idle VM where `urbi_step` returns
+  QUIESCENT.  Host run-loops should branch on `urbi_step`'s result;
+  `urbi_vm_has_live_work` is for distinguishing a fully-dead VM (safe to
+  destroy) from an armed-but-idle one (awaiting host input).
+- Centralized unpark (SCHED-05): one `sched_strand_unpark()` path;
+  `waituntil` retires mid-eval deferral and cleanup-executor entry-clear.
+- Block/freeze gates (SCHED-08 / SCHED-15): independent bit fields for
+  block and freeze; `tag_stop` resumes a SUSPENDED member.
+- Reactive drain (VM-05 / VM-20 / SCHED-02 / SCHED-12): one
+  `vm_reactive_drain()` helper covers the idle-VM pump (a host slot-write
+  now wakes a strand parked in `waituntil`) and the post-loop drain.
+- Idle `whenever` bounded to rising edge (SCHED-02 storm fix): a watcher
+  that remains true no longer fires unboundedly; re-fire is bounded to
+  the condition's next rising edge, preventing a non-quiescence condition
+  under an always-true `whenever` guard.
+- Per-slice safepoint budget re-arm (VM-04 / SCHED-11): the safepoint
+  budget is re-armed on each dispatch slice so a long-lived loop continues
+  to take GC slices.
+- Step-budget re-enqueue (VM-04 / SCHED-11): a strand that exhausts the
+  host `urbi_step` budget mid-loop is re-enqueued as READY instead of
+  being left stranded; fixes a hang where a tight `while` loop inside
+  `urbi_step(vm, n)` never completed.
+- Scratch strands (B11 / SCHED-03): scratch strands receive budgets and
+  never enter the scheduler queues, closing a queue-invariant violation
+  from v0.13.1-F.
+- `at sync` atomic bodies (B11 / SCHED-03 / B4 / §S5a): a `;`-separated
+  body inside an `at sync` block runs to completion atomically; the `;`
+  separator no longer truncates or faults inside an atomic body,
+  consistent with the `finally`/`onleave` atomic-body contract.
+- `every()` float = seconds + fixed cadence (SCHED-14): see BEHAVIOR
+  CHANGE note above.  Finite-value guards also added to `sleep()`.
+- Watcher unregister UAF (SCHED-16): mode predicates gate access; an
+  event `whenever` watcher that is unregistered directly no longer
+  dereferences freed memory.
+- Emit subscriber snapshot (SCHED-18): event emissions deliver only to
+  subscribers registered before the emission began; subscribers added
+  during delivery are not visited.
+- Verifier bounds checks (VM-13 / VM-14 / VM-19): load-time
+  bounds/adjacency checks added for JOIN, SELF, and FORK_JOIN operands;
+  OP_TAG_STOP now round-trips through the verifier.
+
 ## v0.13.2-gc-soundness — 2026-06-11
 
 Tag 3 of the v0.13.x pre-release hardening arc: the incremental GC stops

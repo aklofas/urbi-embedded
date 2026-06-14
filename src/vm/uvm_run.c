@@ -210,7 +210,6 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
          * so no dequeue is needed.  Re-arm the safepoint budget and continue,
          * mirroring the READY re-arm above. */
         strand.safepoint_budget_remaining = (uint16_t)URBI_STRAND_BUDGET_MAX;
-        continue;
     }
 
     /* v0.8.4 Step C-3: closure_list / closed_cells fields deleted.

@@ -260,7 +260,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  23
-#define URBI_API_VERSION_PATCH  3
+#define URBI_API_VERSION_PATCH  4
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -449,7 +449,7 @@ extern "C" {
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 23
-            && URBI_API_VERSION_PATCH == 3,
+            && URBI_API_VERSION_PATCH == 4,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

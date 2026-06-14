@@ -301,7 +301,7 @@ UTEST(urbi_version_matches_release_tag)
 {
     const char *v = urbi_version();
     UASSERT(v != NULL);
-    UASSERT(strcmp(v, "0.13.2-gc-soundness") == 0);
+    UASSERT(strcmp(v, "0.13.3-scheduler-liveness") == 0);
 }
 
 /* ===================================================================

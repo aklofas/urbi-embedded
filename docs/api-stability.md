@@ -1,6 +1,6 @@
 # C API stability policy
 
-> Status: ABI pin at 0/23/3 (v0.13.2-gc-soundness PATCH — internal GC-soundness wave, zero public-surface change, NOT an escape; 0/23/2 = v0.13.1-unwind-and-frontend PATCH — unwind + frontend correctness wave, zero public-surface change, NOT an escape; 0/23/1 = v0.13.0-test-honesty PATCH — test/build/CI honesty wave, zero public-surface change, NOT an escape; previous pin 0/23/0 = escape #33, the M10 B6a API-freeze sweep:
+> Status: ABI pin at 0/23/4 (v0.13.3-scheduler-liveness PATCH — scheduler liveness + reactive correctness wave, zero public-surface change, NOT an escape; behavior-change note: `urbi_step` QUIESCENT now excludes armed/suspended/waiting work; `every()` bare-float argument = seconds + fixed/overrun cadence; `at sync` atomic-body `;`-sequence runs to completion; 0/23/3 = v0.13.2-gc-soundness PATCH — internal GC-soundness wave, zero public-surface change, NOT an escape; 0/23/2 = v0.13.1-unwind-and-frontend PATCH — unwind + frontend correctness wave, zero public-surface change, NOT an escape; 0/23/1 = v0.13.0-test-honesty PATCH — test/build/CI honesty wave, zero public-surface change, NOT an escape; previous pin 0/23/0 = escape #33, the M10 B6a API-freeze sweep:
 > `urbi_set_time_us` renamed to `urbi_set_clock_fn`, internal symbols hidden
 > via `-fvisibility=hidden`, bidirectional manifest gate).  MINOR bump from
 > v0.12.4-stdlib-completeness (0/22/2).  Wire format unchanged at v1.9 / 0x19.
