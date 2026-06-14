@@ -24,6 +24,7 @@
 struct UVM;
 struct UWatcher;
 struct UClosure;
+struct UEvent;
 
 typedef struct UTestHooks {
     /* test_watcher_condition_hook: replaces invoke_condition_closure when
@@ -48,6 +49,12 @@ typedef struct UTestHooks {
      * NULL → real urbi_run_closure_on_scratch. */
     void   (*install_cond)(struct UVM *vm, struct UClosure *cond,
                            UValue *out_result, int *out_threw);
+
+    /* after_sync_body: called by run_event_body_on_scratch after a sync event
+     * body finishes (in_scratch already cleared).  Tests use this to install
+     * new watchers mid-emit to exercise the SCHED-18 tail-pin invariant.
+     * NULL → no-op.  w->event carries the event being emitted. */
+    void   (*after_sync_body)(struct UVM *vm, struct UWatcher *w);
 } UTestHooks;
 
 /* utest_hooks_create: allocate a zeroed UTestHooks for vm.  All function

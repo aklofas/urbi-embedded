@@ -345,6 +345,7 @@ extern void test_idle_vm_pump_suite(void);
 extern void test_budget_rearm_suite(void);
 extern void test_scratch_strand_safety_suite(void);
 extern void test_periodic_cadence_suite(void);
+extern void test_watcher_mode_predicates_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -672,6 +673,7 @@ static const struct suite_entry suites[] = {
     {"budget_rearm",                          test_budget_rearm_suite},
     {"scratch_strand_safety",                 test_scratch_strand_safety_suite},
     {"periodic_cadence",                      test_periodic_cadence_suite},
+    {"watcher_mode_predicates",               test_watcher_mode_predicates_suite},
     /* Add new suites here as test files are added. */
 };
 

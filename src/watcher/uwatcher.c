@@ -198,25 +198,26 @@ uwatcher_pool_destroy(struct UVM *vm)
     drain_watcher_list(vm, &vm->pending_onleave_head);
     vm->pending_onleave_tail = NULL;
 
-    /* WATCH-002 + WATCH-006 (v0.5.7): walk the slab for tag-less
-     * AT_EVENT / AT_EVENT_SYNC watchers that are still allocated.  Tagged
-     * AT_EVENT watchers are torn down via the tag-stop cascade before this
-     * function runs; tag-less ones (install_at_event_runtime called with
+    /* WATCH-002 + WATCH-006 (v0.5.7): walk the slab for tag-less event-mode
+     * watchers (AT_EVENT / AT_EVENT_SYNC / WHENEVER_EVENT) still allocated.
+     * Tagged AT_EVENT watchers are torn down via the tag-stop cascade before
+     * this function runs; tag-less ones (install_at_event_runtime called with
      * resolve_owning_tag returning NULL) are not on active_watchers_head
      * (only cond watchers walk there), not on pending_onleave_head, and
      * not on any tag's member chain.  Without this slab walk they remain
      * linked to event->at_watchers_head pointing at slab memory we are
-     * about to free below.  Walk every slot, identify active AT_EVENT
-     * mode watchers, unlink from event->at_watchers_head, and release the
-     * slot.  Slots on the freelist have URBI_WATCHER_ACTIVE cleared by
-     * pool_free; slots never allocated have flags == 0 (slab pre-zeroed). */
+     * about to free below.  Walk every slot, identify active event-mode
+     * watchers, unlink from event->at_watchers_head, and release the slot.
+     * Slots on the freelist have URBI_WATCHER_ACTIVE cleared by pool_free;
+     * slots never allocated have flags == 0 (slab pre-zeroed).
+     * SCHED-16 (refactor-3): use UWATCHER_IS_EVENT_MODE predicate so that
+     * WHENEVER_EVENT is not silently omitted. */
     {
         uint16_t i;
         for (i = 0; i < (uint16_t)URBI_WATCHER_POOL_SIZE; i++) {
             UWatcher *w = &vm->watchers->pool_base[i];
             if ((w->flags & URBI_WATCHER_ACTIVE) == 0U) continue;
-            if (w->mode != UWATCHER_AT_EVENT &&
-                w->mode != UWATCHER_AT_EVENT_SYNC) continue;
+            if (!UWATCHER_IS_EVENT_MODE(w->mode)) continue;
             if (w->event != NULL) {
                 uevent_at_watchers_remove(w->event, w);
                 w->event = NULL;
@@ -288,9 +289,11 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
     }
 
     /* Unlink from the appropriate watcher list depending on mode.
-     * AT_EVENT / AT_EVENT_SYNC watchers live on event->at_watchers_head,
-     * not on vm->active_watchers_head (spec #3 §6.3). */
-    if (w->mode == UWATCHER_AT_EVENT || w->mode == UWATCHER_AT_EVENT_SYNC) {
+     * Event-mode watchers (AT_EVENT / AT_EVENT_SYNC / WHENEVER_EVENT) live
+     * on event->at_watchers_head, not on vm->active_watchers_head (spec #3
+     * §6.3).  SCHED-16 (refactor-3): use predicate so WHENEVER_EVENT is not
+     * silently omitted. */
+    if (UWATCHER_IS_EVENT_MODE(w->mode)) {
         if (w->event) {
             uevent_at_watchers_remove(w->event, w);
             w->event = NULL;

@@ -131,10 +131,7 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
      * depth; the synchronous unlink here is the primary fix.
      *
      * Closes reactive audit F2. */
-    if ((w->mode == UWATCHER_AT_EVENT
-         || w->mode == UWATCHER_AT_EVENT_SYNC
-         || w->mode == UWATCHER_WHENEVER_EVENT)
-        && w->event != NULL) {
+    if (UWATCHER_IS_EVENT_MODE(w->mode) && w->event != NULL) {
         uevent_at_watchers_remove(w->event, w);
         w->event = NULL;
     }

@@ -96,24 +96,33 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
      * allocator and corrupt the runnable queue. */
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* Walk at_watchers_head FIFO: snapshot next before potential modification. */
-    w = e->at_watchers_head;
-    while (w) {
-        struct UWatcher *next = w->next_in_event;   /* snapshot before any modification */
-        /* W2/v0.10.2 defence in depth: skip watchers whose tag-stop cascade
-         * pushed them to the pending-onleave queue (URBI_WATCHER_PENDING_UNREGISTER
-         * set in pending_onleave_queue_push Step 1).  The synchronous unlink in
-         * Step 3b normally removes them from at_watchers_head before any emit
-         * fires; this guard protects against future code paths that bypass the
-         * synchronous unlink.  Closes reactive audit F2. */
-        if (w->flags & URBI_WATCHER_PENDING_UNREGISTER) {
-            w = next;
-            continue;
-        }
-        if (w->mode == UWATCHER_AT_EVENT
-            || w->mode == UWATCHER_AT_EVENT_SYNC
-            || w->mode == UWATCHER_WHENEVER_EVENT) {
-            /* W9/v0.10.5: pass &payload so do_spawn_body_coroutine writes it
+    /* SCHED-18 (refactor-3): pre-registered-subscribers-only pin.  Capture
+     * the tail of at_watchers_head before the walk.  Any watcher appended
+     * mid-emit (e.g. from a C callback or a sync-body hook) lands after this
+     * tail and must NOT receive the in-flight emission.  The next pointer for
+     * w==last is forced to NULL instead of reading w->next_in_event, which
+     * could race with a concurrent append. */
+    {
+        struct UWatcher *last = e->at_watchers_head;
+        if (last) while (last->next_in_event) last = last->next_in_event;
+
+        /* Walk at_watchers_head FIFO up to (and including) last. */
+        w = e->at_watchers_head;
+        while (w) {
+            struct UWatcher *next = (w == last) ? NULL : w->next_in_event;
+            /* W2/v0.10.2 defence in depth: skip watchers whose tag-stop cascade
+             * pushed them to the pending-onleave queue (URBI_WATCHER_PENDING_UNREGISTER
+             * set in pending_onleave_queue_push Step 1).  The synchronous unlink in
+             * Step 3b normally removes them from at_watchers_head before any emit
+             * fires; this guard protects against future code paths that bypass the
+             * synchronous unlink.  Closes reactive audit F2. */
+            if (w->flags & URBI_WATCHER_PENDING_UNREGISTER) {
+                w = next;
+                continue;
+            }
+            /* SCHED-16 (refactor-3): use predicate so WHENEVER_EVENT is not
+             * silently omitted from the dispatch check.
+             * W9/v0.10.5: pass &payload so do_spawn_body_coroutine writes it
              * into body->R[0] before enqueue.  The body closure was compiled
              * with a 1-param function literal (param name == user's `var x` or
              * `__payload` default); R[0] is the payload parameter slot.
@@ -121,9 +130,10 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
              * AT_EVENT — body spawned as a coroutine.  The "re-fires on every
              * emission" semantic is automatic because WHENEVER_EVENT watchers
              * are never removed from at_watchers_head (no one-shot teardown). */
-            do_spawn_body_coroutine(vm, w, (void *)&payload);
+            if (UWATCHER_IS_EVENT_MODE(w->mode))
+                do_spawn_body_coroutine(vm, w, (void *)&payload);
+            w = next;
         }
-        w = next;
     }
 
     /* Wake all waiters_head FIFO: deposit payload + transition to RUNNABLE. */
@@ -179,6 +189,12 @@ run_event_body_on_scratch(struct UVM *vm, struct UWatcher *w, UValue payload)
     }
 
     vm->watchers->in_scratch = 0;
+
+    /* SCHED-18 test seam: fires after in_scratch is cleared so the hook can
+     * call install_at_event_runtime without triggering the in_scratch guard.
+     * NULL in production builds (UTestHooks fields zero-initialised). */
+    if (vm->test_hooks && vm->test_hooks->after_sync_body)
+        vm->test_hooks->after_sync_body(vm, w);
 }
 
 /* === c_event_emit_sync (spec #3 §5.3 + §5.4) ===
@@ -221,24 +237,36 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
      * UWATCHER_WHENEVER_EVENT (W0/v0.10.2) follows the AT_EVENT async path:
      * spawn a body coroutine.  It is never sync (parse_whenever disallows
      * the sync modifier).  Re-fire on every emission is automatic because
-     * WHENEVER_EVENT watchers are never removed from at_watchers_head. */
-    w = e->at_watchers_head;
-    while (w) {
-        struct UWatcher *next = w->next_in_event;
-        /* W2/v0.10.2 defence in depth: skip watchers pending tag-stop drain.
-         * Mirrors the same guard in c_event_emit_async.  Closes reactive F2. */
-        if (w->flags & URBI_WATCHER_PENDING_UNREGISTER) {
+     * WHENEVER_EVENT watchers are never removed from at_watchers_head.
+     *
+     * SCHED-18 (refactor-3): pre-registered-subscribers-only pin.  Capture
+     * the tail of at_watchers_head before the walk so that any watcher
+     * installed mid-emit (from a sync body via run_event_body_on_scratch →
+     * after_sync_body hook, or from an AT_EVENT_SYNC subscriber body) does
+     * NOT receive the in-flight emission. */
+    {
+        struct UWatcher *last = e->at_watchers_head;
+        if (last) while (last->next_in_event) last = last->next_in_event;
+
+        w = e->at_watchers_head;
+        while (w) {
+            struct UWatcher *next = (w == last) ? NULL : w->next_in_event;
+            /* W2/v0.10.2 defence in depth: skip watchers pending tag-stop drain.
+             * Mirrors the same guard in c_event_emit_async.  Closes reactive F2. */
+            if (w->flags & URBI_WATCHER_PENDING_UNREGISTER) {
+                w = next;
+                continue;
+            }
+            /* SCHED-16 (refactor-3): use IS_EVENT_MODE predicate.
+             * AT_EVENT_SYNC runs inline; AT_EVENT and WHENEVER_EVENT spawn.
+             * W9/v0.10.5: pass &payload for body R[0] delivery. */
+            if (w->mode == UWATCHER_AT_EVENT_SYNC) {
+                run_event_body_on_scratch(vm, w, payload);
+            } else if (UWATCHER_IS_EVENT_MODE(w->mode)) {
+                do_spawn_body_coroutine(vm, w, (void *)&payload);
+            }
             w = next;
-            continue;
         }
-        if (w->mode == UWATCHER_AT_EVENT_SYNC) {
-            run_event_body_on_scratch(vm, w, payload);
-        } else if (w->mode == UWATCHER_AT_EVENT
-                   || w->mode == UWATCHER_WHENEVER_EVENT) {
-            /* W9/v0.10.5: pass &payload for body R[0] delivery (same as async path). */
-            do_spawn_body_coroutine(vm, w, (void *)&payload);
-        }
-        w = next;
     }
 
     /* Wake waiters — identical to async path. */

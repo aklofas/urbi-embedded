@@ -50,6 +50,28 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
                                          * body re-fires on every emission, no one-shot
                                          * teardown.  W0/v0.10.2.  Closes reactive F1. */
 
+/* === Mode predicates (refactor-3 SCHED-16) ===
+ *
+ * The mode lists for "is this an event watcher?" were duplicated 5+ times
+ * and drifted: UWATCHER_WHENEVER_EVENT was missing from the
+ * urbi_watcher_unregister_internal unlink branch and from the
+ * uwatcher_pool_destroy slab walk.  All mode-class tests MUST go through
+ * these two predicates.
+ *
+ * UWATCHER_IS_EVENT_MODE: true for the three event modes (5, 6, 7).
+ *   These watchers thread on event->at_watchers_head via next_in_event
+ *   and do NOT join vm->active_watchers_head.
+ *
+ * UWATCHER_IS_COND_MODE: true for the four condition modes (1, 2, 3, 4).
+ *   These watchers thread on vm->active_watchers_head via next_active and
+ *   carry a read-set.  IS_COND_MODE is the negation of IS_EVENT_MODE because
+ *   the full mode space is exactly {1…7} — modes 1-4 cond, modes 5-7 event;
+ *   there are no "neither" modes. */
+#define UWATCHER_IS_EVENT_MODE(m)  ((m) == UWATCHER_AT_EVENT \
+                                 || (m) == UWATCHER_AT_EVENT_SYNC \
+                                 || (m) == UWATCHER_WHENEVER_EVENT)
+#define UWATCHER_IS_COND_MODE(m)   (!UWATCHER_IS_EVENT_MODE(m))
+
 /* === Watcher flag bits (stored in UWatcher.flags) === */
 
 #define URBI_WATCHER_ACTIVE                    0x01U  /* installed and live */
