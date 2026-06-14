@@ -10,7 +10,6 @@ __aeabi_dmul
 __aeabi_dsub
 __aeabi_f2d
 __aeabi_f2lz
-__aeabi_f2ulz
 __aeabi_fcmpeq
 __aeabi_fcmpge
 __aeabi_fcmpgt
