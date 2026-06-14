@@ -1,0 +1,30 @@
+# Milestone: v0.13.3
+# Covers: bare float argument to every() means SECONDS (refactor-3 SCHED-14).
+#
+# Pre-fix: the float period was coerced to microseconds via (uint64_t)f, so
+#   every(0.05) produced period_us = 0, causing the body to fire on every
+#   scheduler pump pass instead of every 50ms.
+# Post-fix: float period is treated as SECONDS (matching sleep()), so
+#   every(0.05) = every(50ms) = period_us = 50000.
+#
+# Script installs every(0.05) { ... }, then drives the virtual clock forward
+# in two 50ms increments.  The body must fire exactly once per increment
+# (fixed cadence, no burst), so Realm.fired reaches 2 after two periods.
+#
+## timeout: 30
+## host: run Realm.fired = 0
+## host: run every (0.05) { Realm.fired = Realm.fired + 1 }
+## host: run Realm.fired
+## host: advance-clock 50
+## host: step 100000
+## host: run Realm.fired
+## host: advance-clock 50
+## host: step 100000
+## host: run Realm.fired
+[00000000] 0
+[00000000] nil
+[00000000] 0
+[00000000] step: WAKE_AT
+[00000000] 1
+[00000000] step: WAKE_AT
+[00000000] 2

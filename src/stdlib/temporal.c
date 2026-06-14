@@ -144,15 +144,26 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         }
         period_us = (uint64_t)v;
     } else if (args[0].kind == (uint8_t)UVAL_FLOAT) {
-        /* Float period in microseconds — accept but coerce.  Reject NaN /
-         * negative.  args[0].v.f is double on f64 builds, float on f32;
-         * promotion to double for the comparison is automatic. */
+        /* SCHED-14 (owner-decided 2026-06-11): bare float = SECONDS,
+         * matching sleep().  Duration literals (100ms) reach here as
+         * UVAL_INT microseconds via the lexer and are unaffected.
+         *
+         * !(f >= 0.0) rejects NaN and negatives in one test; the upper
+         * bound rejects +inf and values whose µs conversion would overflow
+         * int64 — (uint64_t)(int64_t)(f * 1e6) is UB for out-of-range f.
+         *
+         * args[0].v.f is double on f64 builds, float on f32; promotion to
+         * double for the comparison is automatic. */
         double f = (double)args[0].v.f;
-        if (f < 0.0 || f != f) {  /* f != f catches NaN */
+        if (!(f >= 0.0) || f > 9.2e12) {
             return urbi_raise_type(vm,
-                "every: period must be non-negative", out);
+                "every: period must be a finite non-negative duration", out);
         }
-        period_us = (uint64_t)f;
+        /* Cast via int64_t to reuse __fixdfdi rather than __fixunsdfdi.
+         * Guard above guarantees f >= 0 and f * 1e6 <= 9.2e18 < INT64_MAX,
+         * so the int64_t cast is defined and the subsequent uint64_t cast is
+         * safe. */
+        period_us = (uint64_t)(int64_t)(f * 1e6);
     } else {
         return urbi_raise_type(vm,
             "every: period must be a Duration (Integer microseconds)", out);
@@ -239,13 +250,17 @@ sleep_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         duration_us = (uint64_t)i;
     } else if (args[0].kind == (uint8_t)UVAL_FLOAT) {
         double f = (double)args[0].v.f;
-        if (f < 0.0 || f != f) {    /* f != f catches NaN */
+        /* SCHED-14: align guard with every() — reject NaN, negatives, +inf,
+         * and too-large values (UB on µs conversion) in one expression.
+         * !(f >= 0.0) catches NaN and negatives; f > 9.2e12 catches +inf
+         * and overflow-on-µs-conversion values. */
+        if (!(f >= 0.0) || f > 9.2e12) {
             return urbi_raise_type(vm, "sleep: negative duration", out);
         }
         /* Cast via int64_t to reuse __fixdfdi (double→int64, already in the
          * freestanding-golden symbol list) rather than pulling in the
          * distinct __fixunsdfdi (double→uint64) libgcc helper.  The f >= 0
-         * check above guarantees non-negative, so int64_t cast is safe. */
+         * and f <= 9.2e12 checks above guarantee the int64_t cast is safe. */
         duration_us = (uint64_t)(int64_t)(f * 1e6);
     } else {
         return urbi_raise_type(vm,
@@ -516,10 +531,17 @@ urbi_periodic_body_completed(UVM *vm, UStrand *s)
     p->current_strand   = NULL;
 
     if (s->fatal_status == UEXEC_OK || s->fatal_status == UEXEC_RETURN) {
-        /* Re-arm: set next_fire_us = now + period_us. */
+        /* SCHED-14 (owner-decided 2026-06-11): FIXED cadence (legacy every|
+         * semantics).  The deadline advances by one period from the PREVIOUS
+         * deadline so the firing interval does not drift with body duration.
+         *
+         * When the body overran one or more full periods (next_fire_us is
+         * already in the past), slide to now rather than firing a burst of
+         * catch-up iterations: a single late fire is the correct behaviour. */
         uint64_t now = 0U;
         if (vm->host_time_us != NULL) now = vm->host_time_us(vm->host_time_ud);
-        p->next_fire_us = now + p->period_us;
+        p->next_fire_us += p->period_us;
+        if (p->next_fire_us <= now) p->next_fire_us = now + p->period_us;
     } else {
         /* UEXEC_THROW / UEXEC_CANCEL / UEXEC_TAG_STOP: stop firing. */
         p->unregister_pending = 1U;
