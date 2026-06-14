@@ -4,13 +4,13 @@
 
 /* === Liveness-counter ownership (refactor-3 SCHED-13: one formula) ===
  *
- * All liveness queries integrate through vm_liveness() (usched_liveness.c);
+ * All liveness queries integrate through urbi_vm_liveness() (usched_liveness.c);
  * sched_quiescent / urbi_step / urbi_vm_has_live_work are thin views of it.
  * Each counter has single-writer ownership at its transition sites:
  *
  *   strand_runnable_count   — single-writer ownership (refactor-3
- *                             SCHED-01/B10): sched_runnable_inc /
- *                             sched_runnable_dec are the ONLY writers
+ *                             SCHED-01/B10): urbi_sched_runnable_inc /
+ *                             urbi_sched_runnable_dec are the ONLY writers
  *                             (init/destroy zeroing aside).
  *                             Invariant: count == |ready queue| + (1 if a
  *                             non-transient strand is RUNNING else 0).
@@ -18,17 +18,17 @@
  *                             Transient strands (urbi_vm_run) never
  *                             participate: both helpers skip them.
  *
- *   strand_waiting_count    — sched_waiting_inc/dec (SCHED-13).  Invariant:
+ *   strand_waiting_count    — urbi_sched_waiting_inc/dec (SCHED-13).  Invariant:
  *                             |WAITING non-transient strands|.  inc at
  *                             sched_strand_block (the single WAITING entry);
  *                             dec at sched_strand_make_runnable (WAITING
  *                             entry state — including the SCHED-08 gated
  *                             wake, which hands off into the suspended
- *                             count), sched_strand_unpark(s, 0)
+ *                             count), urbi_sched_strand_unpark(s, 0)
  *                             (cleanup-executor + urbi_strand_panic), and
  *                             ustrand_destroy.
  *
- *   strand_suspended_count  — sched_suspended_inc/dec (VM-12).  Invariant:
+ *   strand_suspended_count  — urbi_sched_suspended_inc/dec (VM-12).  Invariant:
  *                             |SUSPENDED non-transient strands|.  inc at
  *                             urbi_strand_suspend (READY/RUNNING arms) and
  *                             sched_strand_make_runnable's gated-wake arm
@@ -134,7 +134,7 @@ sleep_q_remove(UVM *vm, UStrand *s)
  * where transient strands (is_transient_strand) never participate.  These
  * two helpers are the ONLY writers (init/destroy zeroing aside).  WAITING
  * and SUSPENDED strands are NOT counted — they are "armed" work, reported
- * via vm_liveness() (SCHED-13, next task), not runnable work.  This deletes
+ * via urbi_vm_liveness() (SCHED-13, next task), not runnable work.  This deletes
  * the persistent-loader rule that closed over v1.0-loader-count-quiescence
  * (sched_post_dispatch's step-1 "WAITING counts as runnable" re-increment).
  *
@@ -144,14 +144,14 @@ sleep_q_remove(UVM *vm, UStrand *s)
  * non-NDEBUG builds); freestanding targets compile it out. */
 
 void
-sched_runnable_inc(UVM *vm, const UStrand *s)
+urbi_sched_runnable_inc(UVM *vm, const UStrand *s)
 {
     if (s->is_transient_strand) return;
     vm->strand_runnable_count++;
 }
 
 void
-sched_runnable_dec(UVM *vm, const UStrand *s)
+urbi_sched_runnable_dec(UVM *vm, const UStrand *s)
 {
     if (s->is_transient_strand) return;
     URBI_INTERNAL_ASSERT(vm->strand_runnable_count > 0);
@@ -165,14 +165,14 @@ sched_runnable_dec(UVM *vm, const UStrand *s)
  * the header declaration + vm/uvm.h field docs. */
 
 void
-sched_waiting_inc(UVM *vm, const UStrand *s)
+urbi_sched_waiting_inc(UVM *vm, const UStrand *s)
 {
     if (s->is_transient_strand) return;
     vm->strand_waiting_count++;
 }
 
 void
-sched_waiting_dec(UVM *vm, const UStrand *s)
+urbi_sched_waiting_dec(UVM *vm, const UStrand *s)
 {
     if (s->is_transient_strand) return;
     URBI_INTERNAL_ASSERT(vm->strand_waiting_count > 0);
@@ -180,14 +180,14 @@ sched_waiting_dec(UVM *vm, const UStrand *s)
 }
 
 void
-sched_suspended_inc(UVM *vm, const UStrand *s)
+urbi_sched_suspended_inc(UVM *vm, const UStrand *s)
 {
     if (s->is_transient_strand) return;
     vm->strand_suspended_count++;
 }
 
 void
-sched_suspended_dec(UVM *vm, const UStrand *s)
+urbi_sched_suspended_dec(UVM *vm, const UStrand *s)
 {
     if (s->is_transient_strand) return;
     URBI_INTERNAL_ASSERT(vm->strand_suspended_count > 0);
@@ -306,16 +306,16 @@ sched_strand_make_runnable(UStrand *s)
     UVM *vm = s->vm;
     /* SCHED-13 / VM-12: this is the single wake funnel — every WAITING ->
      * READY path (sched_strand_unblock, event/watcher/join wakers, the
-     * sched_strand_unpark(s, 1) tag-stop + cancel wakes, joiner wakes at
+     * urbi_sched_strand_unpark(s, 1) tag-stop + cancel wakes, joiner wakes at
      * strand teardown) and the SUSPENDED -> READY path
-     * (strand_resume_if_ungated, the tag-stop/cancel suspension override)
+     * (urbi_strand_resume_if_ungated, the tag-stop/cancel suspension override)
      * land here, so the parked-strand counters exit here.  The only
-     * off-funnel exits are sched_strand_unpark(s, 0) (cleanup-executor
+     * off-funnel exits are urbi_sched_strand_unpark(s, 0) (cleanup-executor
      * WAITING -> RUNNING direct stamp; urbi_strand_panic WAITING -> DEAD),
      * urbi_strand_panic's SUSPENDED arm, and death-from-parked in
      * ustrand_destroy — each decrements at site. */
     if (USTRAND_IS_WAITING(s)) {
-        sched_waiting_dec(vm, s);
+        urbi_sched_waiting_dec(vm, s);
         if (s->suspend_gates != 0U) {
             /* SCHED-08 gated wake: a tag blocked/froze this strand while it
              * was parked (urbi_strand_suspend's gate-and-leave-parked arm);
@@ -330,17 +330,17 @@ sched_strand_make_runnable(UStrand *s)
             s->state = (uint8_t)(USTRAND_SUSPENDED |
                                  ustrand_gates_reason(s->suspend_gates));
             s->wait_payload.suspend_tag = NULL;
-            sched_suspended_inc(vm, s);
+            urbi_sched_suspended_inc(vm, s);
             return;
         }
     } else if (USTRAND_IS_SUSPENDED(s)) {
         /* SCHED-08: callers must clear the gates before waking a SUSPENDED
-         * strand — strand_resume_if_ungated only calls with gates == 0;
+         * strand — urbi_strand_resume_if_ungated only calls with gates == 0;
          * the tag-stop / cancel override clears both bits first. */
         URBI_INTERNAL_ASSERT(s->suspend_gates == 0U);
         /* The suspend_tag union arm dies with the state. */
         s->wait_payload.suspend_tag = NULL;
-        sched_suspended_dec(vm, s);
+        urbi_sched_suspended_dec(vm, s);
     }
     s->state      = USTRAND_STATE_READY;
     s->ready_next = NULL;
@@ -350,7 +350,7 @@ sched_strand_make_runnable(UStrand *s)
     else
         vm->ready_head = s;
     vm->ready_tail = s;
-    sched_runnable_inc(vm, s);
+    urbi_sched_runnable_inc(vm, s);
 }
 
 void
@@ -371,7 +371,7 @@ sched_strand_yield(UStrand *s)
      * under the single-writer invariant (SCHED-01): the RUNNING strand
      * leaves the counted set (dec) and immediately re-enters it as READY
      * (make_runnable's inc) — |READY| + |RUNNING| is unchanged. */
-    sched_runnable_dec(s->vm, s);
+    urbi_sched_runnable_dec(s->vm, s);
     sched_strand_make_runnable(s);
 }
 
@@ -403,13 +403,13 @@ sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload)
         /* RUNNING strands are not on the ready queue; the strand leaves
          * the counted set here (SCHED-01 single-writer scheme — no
          * post-dispatch re-increment exists any more). */
-        sched_runnable_dec(vm, s);
+        urbi_sched_runnable_dec(vm, s);
     }
     s->state = (uint8_t)(USTRAND_WAITING | (reason & USTRAND_REASON_MASK));
     /* SCHED-13: single WAITING entry point — the waiting counter enters
      * here.  Exits: sched_strand_make_runnable / uunwind.c unpark /
      * ustrand_destroy (see counter docs at vm/uvm.h). */
-    sched_waiting_inc(vm, s);
+    urbi_sched_waiting_inc(vm, s);
     switch (reason) {
         case USTRAND_REASON_SLEEP:
             s->wait_payload.wake_us = payload;
@@ -473,7 +473,7 @@ sched_earliest_wake_us(const UVM *vm)
 bool
 sched_quiescent(const UVM *vm)
 {
-    /* refactor-3 SCHED-13: one formula — vm_liveness().  Quiescent means no
+    /* refactor-3 SCHED-13: one formula — urbi_vm_liveness().  Quiescent means no
      * internal work: nothing runnable, nothing pending, no timer.  `armed`
      * (watchers + SUSPENDED + WAITING strands) is deliberately EXCLUDED —
      * armed work only progresses on external input (host slot write,
@@ -481,7 +481,7 @@ sched_quiescent(const UVM *vm)
      * spinning (owner decision 2026-06-11; pre-fix active_count > 0 blocked
      * quiescence forever on any idle-but-armed VM). */
     UVmLiveness lv;
-    vm_liveness(vm, &lv);
+    urbi_vm_liveness(vm, &lv);
     return lv.runnable == 0 && lv.pending == 0 && lv.timed == 0;
 }
 
@@ -583,7 +583,7 @@ sched_strand_unbind_from_ready_queue(UStrand *s)
 
     s->ready_next = NULL;
     s->ready_prev = NULL;
-    sched_runnable_dec(vm, s);
+    urbi_sched_runnable_dec(vm, s);
 }
 
 /* === T16 step-driver helper === */
@@ -673,7 +673,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
     cb(vm, &s->fatal_value,  ctx);
     cb(vm, &s->catch_value,  ctx);
     /* GC-04 (refactor-3): unblock_value carries the resume value between
-     * urbi_tag_block / strand_resume_if_ungated and opcode-level delivery
+     * urbi_tag_block / urbi_strand_resume_if_ungated and opcode-level delivery
      * (v0.10.9 W3a) — same lifetime shape as catch_value, same rooting
      * requirement. */
     cb(vm, &s->unblock_value, ctx);
@@ -910,7 +910,7 @@ sched_post_dispatch(UVM *vm, UStrand *s)
      * re-enqueued count-neutrally by sched_strand_yield and stay counted;
      * SUSPENDED strands were decremented by urbi_strand_suspend. */
     if (s->state == USTRAND_STATE_DEAD) {
-        sched_runnable_dec(vm, s);
+        urbi_sched_runnable_dec(vm, s);
     }
 
 #if defined(URBI_DEBUG)

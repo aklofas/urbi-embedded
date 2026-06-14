@@ -67,7 +67,7 @@ extern "C" {
  *
  * block and freeze are INDEPENDENT gates (workspace ledger §S6): each sets
  * its own bit at suspend time and clears it at unblock/unfreeze; the strand
- * resumes only when BOTH bits are clear (strand_resume_if_ungated).  The
+ * resumes only when BOTH bits are clear (urbi_strand_resume_if_ungated).  The
  * reason sub-code on a SUSPENDED strand is the gate-priority decode
  * (ustrand_gates_reason below) — pre-fix, the single shared reason nibble
  * let unblock-order games resume a still-gated strand (block -> freeze ->
@@ -75,9 +75,11 @@ extern "C" {
 #define USTRAND_GATE_BLOCK   0x01U   /* set by urbi_tag_block,  cleared by unblock */
 #define USTRAND_GATE_FREEZE  0x02U   /* set by urbi_tag_freeze, cleared by unfreeze */
 
-/* Reason-nibble decode for a NON-ZERO gate set: BLOCK outranks FREEZE.
+/* Reason-nibble decode for a NON-ZERO gate set: BLOCK outranks FREEZE
+ * (arbitrary but deterministic — the nibble is diagnostic / GC-guard only;
+ * the gate bits in suspend_gates are authoritative for resume eligibility).
  * Single source of truth for every SUSPENDED state stamp (urbi_strand_suspend,
- * strand_resume_if_ungated's still-gated re-stamp, and the gated-wake arm in
+ * urbi_strand_resume_if_ungated's still-gated re-stamp, and the gated-wake arm in
  * sched_strand_make_runnable). */
 static inline uint8_t
 ustrand_gates_reason(uint8_t gates)
@@ -269,7 +271,10 @@ struct UStrand {
      * strand share these per-strand bits (no per-tag refcount) — one tag's
      * unblock can resume a strand another tag still wants blocked.  Filed
      * as a design-risk at the v0.13.3 close-out (v1.x candidate: per-tag
-     * gate refcount).
+     * gate refcount).  The stop/cancel override (suspend_gates = 0) makes
+     * this worse: stopping tag A silently discards tag B's block or freeze
+     * gate on a shared member strand, so tag B's unblock/unfreeze becomes
+     * a no-op (strand was already made runnable by the stop).
      *
      * Carved from the former uint16_t budget_pad — no UStrand size/offset
      * change (CHSTR-041 pin holds). */
@@ -476,9 +481,9 @@ void ustrand_destroy(UStrand *s, struct UVM *vm);
  *   Internal contract — not part of the public C API.  The public surface is
  *   urbi_tag_block / urbi_tag_unblock / urbi_tag_freeze / urbi_tag_unfreeze
  *   in include/urbi/urbi.h which walk tag->member_strands_head, manage the
- *   gate bits, and call this helper / strand_resume_if_ungated per member.
+ *   gate bits, and call this helper / urbi_strand_resume_if_ungated per member.
  *
- * strand_resume_if_ungated: resume a SUSPENDED strand iff BOTH gates are
+ * urbi_strand_resume_if_ungated: resume a SUSPENDED strand iff BOTH gates are
  *   clear (the caller — unblock/unfreeze — clears its own gate bit first).
  *   While still gated, re-stamps the reason nibble to the remaining-gate
  *   decode and stays SUSPENDED.  The resume value is strand->unblock_value
@@ -492,14 +497,14 @@ void ustrand_destroy(UStrand *s, struct UVM *vm);
  *   - Suspending a READY strand splices it out of vm->ready_head and
  *     decrements vm->strand_runnable_count (via the unbind helper).
  *   - Suspending a RUNNING strand decrements vm->strand_runnable_count via
- *     sched_runnable_dec (refactor-3 SCHED-01: a RUNNING strand is in the
+ *     urbi_sched_runnable_dec (refactor-3 SCHED-01: a RUNNING strand is in the
  *     counted set — count == |READY| + |RUNNING non-transient| — and
  *     RUNNING -> SUSPENDED leaves it).
  *   - Resuming a SUSPENDED strand routes through sched_strand_make_runnable
  *     (re-enters the counted set as READY; the funnel owns suspended--). */
 void urbi_strand_suspend(struct UStrand *strand, uint8_t reason,
                          struct UTag    *tag);
-void strand_resume_if_ungated(struct UStrand *strand);
+void urbi_strand_resume_if_ungated(struct UStrand *strand);
 
 /* === T29: ambient-tag inheritance helpers ===
  *

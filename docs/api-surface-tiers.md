@@ -336,6 +336,16 @@ CI gate tracks this list to prevent silent growth.
   `urbi_periodic_destroy_for_realm`, `urbi_periodic_earliest_wake_us`,
   `urbi_periodic_pump`, `urbi_periodic_table_walk_roots`
 
+### Scheduler liveness internals (v0.13.3 scheduler-liveness)
+
+Liveness counter mutators and the quiescence formula.  All are internal to
+the scheduler; embedders use `urbi_vm_has_live_work` via the public API only.
+
+- `urbi_sched_runnable_inc`, `urbi_sched_runnable_dec`,
+  `urbi_sched_waiting_inc`, `urbi_sched_waiting_dec`,
+  `urbi_sched_suspended_inc`, `urbi_sched_suspended_dec`,
+  `urbi_sched_strand_unpark`, `urbi_vm_liveness`
+
 ### Realm internals
 
 - `urbi_populate_realm_globals`
@@ -406,7 +416,7 @@ CI gate tracks this list to prevent silent growth.
   `urbi_strand_attach_ambient_tags`, `urbi_strand_capture_ambient_chain`,
   `urbi_strand_create_for_module`, `urbi_strand_register_stack_alloc`,
   `urbi_strand_register_stack_free`, `urbi_strand_register_stack_zero`,
-  `urbi_strand_suspend`, `strand_resume_if_ungated`,
+  `urbi_strand_suspend`, `urbi_strand_resume_if_ungated`,
   `urbi_strand_scope_tag`
 
 ### Control stdlib internals

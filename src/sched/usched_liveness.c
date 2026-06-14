@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* vm_liveness — the ONE quiescence/liveness formula (refactor-3 SCHED-13).
+/* urbi_vm_liveness — the ONE quiescence/liveness formula (refactor-3 SCHED-13).
  *
  * Pre-fix the runtime carried three divergent quiescence definitions:
  * sched_quiescent AND'd five counters (including the armed watcher count and
@@ -23,7 +23,7 @@
 #include <stdint.h>
 
 void
-vm_liveness(const UVM *vm, UVmLiveness *out)
+urbi_vm_liveness(const UVM *vm, UVmLiveness *out)
 {
     out->runnable = vm->strand_runnable_count;
 

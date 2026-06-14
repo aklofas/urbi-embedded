@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: vm_liveness() + QUIESCENT semantics (refactor-3 SCHED-13,
+/* Unit tests: urbi_vm_liveness() + QUIESCENT semantics (refactor-3 SCHED-13,
  * SCHED-06, VM-12; v0.13.3-scheduler-liveness Task 2).
  *
  * Owner decision (2026-06-11, option a): armed watchers (all modes) and
@@ -15,7 +15,7 @@
  *              (uint32 underflow -> quiescent-never).
  *   SCHED-13 — three divergent quiescence formulas (sched_quiescent,
  *              urbi_step's post-loop returns, urbi_vm_has_live_work) folded
- *              into one vm_liveness().
+ *              into one urbi_vm_liveness().
  *   VM-12   — SUSPENDED strands were invisible to every liveness query.
  */
 
@@ -189,13 +189,13 @@ void test_vm_liveness_suite(void);
 void
 test_vm_liveness_suite(void)
 {
-    utest_run("vm_liveness: event-watcher install/unregister keeps "
+    utest_run("urbi_vm_liveness: event-watcher install/unregister keeps "
               "active_count symmetric (SCHED-06)",
               active_count_event_watcher_symmetric);
-    utest_run("vm_liveness: armed cond watcher does not block QUIESCENT "
+    utest_run("urbi_vm_liveness: armed cond watcher does not block QUIESCENT "
               "(SCHED-13, owner decision a)",
               quiescent_with_armed_cond_watcher);
-    utest_run("vm_liveness: SUSPENDED strand counted + reported but "
+    utest_run("urbi_vm_liveness: SUSPENDED strand counted + reported but "
               "QUIESCENT (VM-12)",
               suspended_strand_counted_and_quiescent);
 }

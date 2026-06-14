@@ -333,7 +333,7 @@ install_at_event_runtime(
     /* AT_EVENT watchers do NOT join active_watchers_head — only cond
      * watchers walk there (the dirty-eval loop).  But the count covers ALL
      * armed watchers (refactor-3 SCHED-06): it is liveness/reporting
-     * bookkeeping (vm_liveness `armed`, urbi_vm_has_live_work), NOT the
+     * bookkeeping (urbi_vm_liveness `armed`, urbi_vm_has_live_work), NOT the
      * eval-list length.  Pre-fix the bump was skipped here while
      * urbi_watcher_unregister_internal decrements unconditionally — uint32
      * underflow, so a VM that ever hosted an event watcher never reported

@@ -6,7 +6,7 @@
  *  W3a:
  *    1. urbi_strand_suspend(REASON_BLOCK) transitions READY → SUSPENDED_BLOCK
  *       and removes the strand from the cooperative ready queue.
- *    2. gate-clear + strand_resume_if_ungated returns SUSPENDED → READY
+ *    2. gate-clear + urbi_strand_resume_if_ungated returns SUSPENDED → READY
  *       and re-enqueues (SCHED-08 reshaped the resume path at v0.13.3).
  *    3. urbi_strand_suspend is a no-op for DEAD/DORMANT/WAITING strands.
  *    4. urbi_strand_suspend(REASON_FREEZE) is independent of REASON_BLOCK.
@@ -110,7 +110,7 @@ UTEST(suspend_ready_to_suspended_block)
     urbi_vm_destroy(&vm);
 }
 
-/* W3a / SCHED-08: clearing the gate + strand_resume_if_ungated restores
+/* W3a / SCHED-08: clearing the gate + urbi_strand_resume_if_ungated restores
  * SUSPENDED → READY and re-enqueues; the staged unblock_value (stamped at
  * block time, mirroring urbi_tag_block) survives to the resume. */
 UTEST(resume_suspended_to_ready)
@@ -131,12 +131,12 @@ UTEST(resume_suspended_to_ready)
     UASSERT_EQ(vm.strand_runnable_count, 0u);
 
     /* While gated, resume_if_ungated must NOT resume. */
-    strand_resume_if_ungated(&s);
+    urbi_strand_resume_if_ungated(&s);
     UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_SUSPENDED);
 
     /* Gate cleared (as urbi_tag_unblock does) → resume. */
     s.suspend_gates &= (uint8_t)~USTRAND_GATE_BLOCK;
-    strand_resume_if_ungated(&s);
+    urbi_strand_resume_if_ungated(&s);
 
     UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_READY);
     UASSERT_EQ(vm.strand_runnable_count, 1u);
@@ -196,7 +196,7 @@ UTEST(suspend_freeze_distinct_from_block)
     urbi_vm_destroy(&vm);
 }
 
-/* W3a: urbi_strand_suspend / strand_resume_if_ungated tolerate NULL strand
+/* W3a: urbi_strand_suspend / urbi_strand_resume_if_ungated tolerate NULL strand
  * (no crash). */
 UTEST(suspend_resume_null_strand)
 {
@@ -206,7 +206,7 @@ UTEST(suspend_resume_null_strand)
 
     /* Should not crash; behaviour is silent no-op. */
     urbi_strand_suspend(NULL, USTRAND_REASON_BLOCK, &tag);
-    strand_resume_if_ungated(NULL);
+    urbi_strand_resume_if_ungated(NULL);
 
     /* Tag pointer NULL is also tolerated (silent no-op). */
     UVM vm;

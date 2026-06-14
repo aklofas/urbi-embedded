@@ -129,7 +129,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
              * counted-set exit happens here via the owning helper.
              * urbi_strand_reset (DEAD -> DORMANT) + urbi_strand_start
              * (make_runnable, +1) re-balance if the host revives it. */
-            sched_runnable_dec(vm, s);
+            urbi_sched_runnable_dec(vm, s);
             vm->fatal_strand = s;
             return URBI_STEP_FATAL;
         }
@@ -169,7 +169,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      *             Use urbi_vm_has_live_work to distinguish a fully-dead VM
      *             from an armed-but-idle one. */
     UVmLiveness lv;
-    vm_liveness(vm, &lv);
+    urbi_vm_liveness(vm, &lv);
     if (lv.runnable > 0 || lv.pending > 0) return URBI_STEP_RUNNING;
     if (lv.timed) {
         if (out_next_wake_us) *out_next_wake_us = lv.next_wake_us;

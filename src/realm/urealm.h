@@ -175,7 +175,7 @@ URealm *urbi_realm_global(struct UVM *vm);
 URealm *urbi_realm_create_repl(struct UVM *vm);
 
 /* VM-wide liveness inspection — INCLUSIVE "anything at all alive?" query,
- * computed via vm_liveness() (refactor-3 SCHED-13).  Returns true when any
+ * computed via urbi_vm_liveness() (refactor-3 SCHED-13).  Returns true when any
  * of runnable/pending/timed/armed work exists — armed (watchers +
  * SUSPENDED/WAITING strands) counts here even though it does not block
  * urbi_step's QUIESCENT verdict.  out_strands (runnable), out_watchers

@@ -347,7 +347,7 @@ urbi_realm_global(struct UVM *vm)
  * never read per-realm state.  Per-realm partitioning is a v1.x deferral
  * (urbi-embedded-design-risks.md).
  *
- * v0.13.3 (refactor-3 SCHED-13): computed via vm_liveness(), the one
+ * v0.13.3 (refactor-3 SCHED-13): computed via urbi_vm_liveness(), the one
  * quiescence/liveness formula.  Unlike urbi_step's QUIESCENT verdict —
  * which excludes `armed` (watchers + SUSPENDED/WAITING strands, owner
  * decision 2026-06-11) — this query stays INCLUSIVE: an armed-but-idle VM
@@ -373,7 +373,7 @@ urbi_vm_has_live_work(const struct UVM *vm,
         return false;
     }
 
-    vm_liveness(vm, &lv);
+    urbi_vm_liveness(vm, &lv);
 
     if (out_strands)  *out_strands  = lv.runnable;
     if (out_watchers) *out_watchers = vm->watchers->active_count;

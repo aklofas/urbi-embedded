@@ -254,8 +254,9 @@ run_on_scratch_core(struct UVM       *vm,
             /* Clean OP_RET — capture the return value. */
             *out_result = out_local;
         } else {
-            /* RUNNING with budget exhausted, READY (yield), or WAITING (block).
-             * The latter two violate the §6.4 no-yield contract; treat as
+            /* RUNNING with budget exhausted, READY (yield), WAITING (block), or
+             * SUSPENDED (gate-suspended member strand, v0.13.3 SCHED-08).
+             * The latter three violate the §6.4 no-yield contract; treat as
              * cond-throw so install/eval can fail-soft.  Diagnostic neutralized
              * because the same core also handles AT_SYNC bodies, onleave handlers,
              * and event sync-emit bodies — not just cond closures. */

@@ -151,7 +151,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
          * dispatch-loop iteration.  For the transient strand (is_transient_strand=1):
          *   - Step 1 (runnable-count DEAD decrement, SCHED-01): skipped —
          *     transient strands never participate in strand_runnable_count
-         *     (sched_runnable_inc/dec both skip them).
+         *     (urbi_sched_runnable_inc/dec both skip them).
          *   - Step 2 (eager DEAD-strand reap): skipped — the strand is stack-local;
          *     lifetime bounded by this function; freed by ustrand_destroy at exit.
          *   - Step 3 (sleep-queue wake): runs — keeps sleep-blocked strands on the

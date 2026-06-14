@@ -120,7 +120,7 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
 }
 
 /* strand_unlink_park — reason-dispatched removal of a WAITING strand's
- * third-party links (refactor-3 SCHED-05).  Shared by sched_strand_unpark
+ * third-party links (refactor-3 SCHED-05).  Shared by urbi_sched_strand_unpark
  * (the wake-side scrub) and strand_cleanup_observers (the death-side scrub,
  * for a strand dying while still parked).  Counter-neutral: callers own the
  * strand_waiting_count transition.
@@ -198,7 +198,7 @@ strand_unlink_park(UStrand *s)
     }
 }
 
-/* sched_strand_unpark — reason-dispatched third-party-link removal for a
+/* urbi_sched_strand_unpark — reason-dispatched third-party-link removal for a
  * WAITING strand (refactor-3 SCHED-05): the wake-side mirror of
  * strand_cleanup_observers.  `enqueue` 0 leaves the strand's state byte
  * untouched and uncounted (cleanup-executor fail-soft, urbi_strand_panic —
@@ -213,14 +213,14 @@ strand_unlink_park(UStrand *s)
  * non-WAITING state).  See the writer maps at usched_cooperative.h and
  * vm/uvm.h. */
 void
-sched_strand_unpark(UStrand *s, int enqueue)
+urbi_sched_strand_unpark(UStrand *s, int enqueue)
 {
     URBI_INTERNAL_ASSERT(USTRAND_IS_WAITING(s));
     strand_unlink_park(s);
     if (enqueue) {
         sched_strand_make_runnable(s);
     } else {
-        sched_waiting_dec(s->vm, s);
+        urbi_sched_waiting_dec(s->vm, s);
     }
 }
 
@@ -296,8 +296,8 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
      * helpers).  Strands that die from RUNNING/READY were already handled
      * by the runnable-count owners (SCHED-01). */
     if (vm != NULL) {
-        if (USTRAND_IS_WAITING(s))        sched_waiting_dec(vm, s);
-        else if (USTRAND_IS_SUSPENDED(s)) sched_suspended_dec(vm, s);
+        if (USTRAND_IS_WAITING(s))        urbi_sched_waiting_dec(vm, s);
+        else if (USTRAND_IS_SUSPENDED(s)) urbi_sched_suspended_dec(vm, s);
     }
 
     /* Scheduler F1: unregister from event-waiter chains and wake any
@@ -831,7 +831,7 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
          * RUNNING strand is in the counted set (the driver's dequeue is
          * count-neutral), so RUNNING → SUSPENDED decrements here —
          * matching the READY arm where unbind_from_ready_queue does. */
-        sched_runnable_dec(strand->vm, strand);
+        urbi_sched_runnable_dec(strand->vm, strand);
         break;
     case USTRAND_WAITING:
         /* SCHED-08: gate-and-leave-parked.  The strand stays on its
@@ -867,17 +867,17 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
                               ustrand_gates_reason(strand->suspend_gates));
     /* VM-12: single SUSPENDED entry point apart from the gated-wake arm in
      * sched_strand_make_runnable (SCHED-08) — the suspended counter enters
-     * here.  Exits: sched_strand_make_runnable (strand_resume_if_ungated
+     * here.  Exits: sched_strand_make_runnable (urbi_strand_resume_if_ungated
      * and the tag-stop/cancel override funnel there), urbi_strand_panic's
      * SUSPENDED arm, and ustrand_destroy.  The WAITING arm above returns
      * before this point (the strand stays parked and counted WAITING), so
      * no waiting_dec here. */
-    sched_suspended_inc(strand->vm, strand);
+    urbi_sched_suspended_inc(strand->vm, strand);
     strand->wait_payload.suspend_tag = tag;
 }
 
 void
-strand_resume_if_ungated(struct UStrand *strand)
+urbi_strand_resume_if_ungated(struct UStrand *strand)
 {
     if (strand == NULL) return;
     URBI_ASSERT_NOT_ISR(strand->vm);
@@ -903,6 +903,11 @@ strand_resume_if_ungated(struct UStrand *strand)
      * delivery slot, not a transient.  SUSPENDED → READY routes through
      * sched_strand_make_runnable so queue accounting stays consistent; the
      * funnel's SUSPENDED arm owns the suspended-- handoff and clears the
-     * dead suspend_tag union arm. */
+     * dead suspend_tag union arm.
+     *
+     * STALENESS NOTE: unblock_value is NEVER cleared here on resume.  Any
+     * future W3f valued-block delivery must either consume-and-clear it at
+     * handoff time, or gate delivery specifically on a BLOCK-resume (not a
+     * FREEZE-resume), to avoid delivering a stale value from a prior cycle. */
     sched_strand_make_runnable(strand);
 }

@@ -379,8 +379,8 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Non-zero defaults set explicitly in urbi_vm_init().
      * ================================================================ */
 
-    /* --- Liveness counters (refactor-3 SCHED-13: one formula, vm_liveness) ---
-     * Integrated exclusively by vm_liveness() (src/sched/usched_liveness.c):
+    /* --- Liveness counters (refactor-3 SCHED-13: one formula, urbi_vm_liveness) ---
+     * Integrated exclusively by urbi_vm_liveness() (src/sched/usched_liveness.c):
      *   runnable = strand_runnable_count
      *   pending  = ISR ring + host_call_pending_count + watcher dirty/onleave
      *   armed    = watchers->active_count + suspended + waiting
@@ -392,15 +392,15 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *
      * Writer discipline for the strand-state counters (single-writer per
      * transition, mirroring SCHED-01; helpers in usched_cooperative.c):
-     *   strand_runnable_count  — sched_runnable_inc/dec ONLY.
+     *   strand_runnable_count  — urbi_sched_runnable_inc/dec ONLY.
      *   strand_waiting_count   — inc: sched_strand_block (the single WAITING
      *                            entry point).  dec (asserted > 0):
      *                            sched_strand_make_runnable on a WAITING
      *                            strand (every wake path funnels there —
-     *                            sched_strand_unpark(s, 1) included; a
+     *                            urbi_sched_strand_unpark(s, 1) included; a
      *                            SCHED-08 gated wake also exits here, handing
      *                            off into strand_suspended_count), the
-     *                            off-funnel sched_strand_unpark(s, 0) exits
+     *                            off-funnel urbi_sched_strand_unpark(s, 0) exits
      *                            (cleanup-executor WAITING -> RUNNING direct
      *                            stamp in uunwind.c; urbi_strand_panic
      *                            WAITING -> DEAD), and ustrand_destroy for
@@ -411,14 +411,14 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *                            with a block/freeze gate set wakes into
      *                            SUSPENDED).  dec (asserted > 0):
      *                            sched_strand_make_runnable on a SUSPENDED
-     *                            strand (strand_resume_if_ungated and the
+     *                            strand (urbi_strand_resume_if_ungated and the
      *                            tag-stop/cancel override funnel there),
      *                            urbi_strand_panic's SUSPENDED arm, and
      *                            ustrand_destroy for death-from-SUSPENDED.
      * (event_queue_count deleted this task — vestigial M3 stub with no
      * writer; ISR-ring pendingness is queried live via uevent_ring_has_pending.) */
     uint32_t strand_runnable_count;    /* == |READY| + |RUNNING non-transient|;
-                                          single-writer via sched_runnable_inc/dec
+                                          single-writer via urbi_sched_runnable_inc/dec
                                           — see usched_cooperative.h (SCHED-01) */
     uint32_t strand_suspended_count;   /* |SUSPENDED non-transient| (VM-12) */
     uint32_t strand_waiting_count;     /* |WAITING non-transient| (SCHED-13) */

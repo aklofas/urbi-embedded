@@ -973,7 +973,7 @@ UTEST(vm_nil_literal) {
 UTEST(vm_create_zero_init_m3_fields) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    /* Liveness counters (refactor-3 SCHED-13: integrated by vm_liveness;
+    /* Liveness counters (refactor-3 SCHED-13: integrated by urbi_vm_liveness;
      * event_queue_count deleted at v0.13.3, strand_waiting_count added). */
     UASSERT_EQ(0U, vm.strand_runnable_count);
     UASSERT_EQ(0U, vm.strand_suspended_count);

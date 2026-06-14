@@ -254,7 +254,7 @@ UTEST(sched_earliest_wake_us_picks_minimum)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 12: sched_quiescent (vm_liveness: runnable + pending + timed == 0)
+/* Case 12: sched_quiescent (urbi_vm_liveness: runnable + pending + timed == 0)
    returns false when strand_runnable_count is non-zero. */
 UTEST(sched_quiescent_false_when_runnable_nonzero)
 {
@@ -275,7 +275,7 @@ UTEST(sched_quiescent_false_when_runnable_nonzero)
 
 /* Case 13: sched_quiescent returns false while a sleeper is parked (timed
    work — VM still has live work).  v0.13.3 (SCHED-13): uses a real sleeper
-   instead of hand-poking wakeup_pending_count — vm_liveness derives `timed`
+   instead of hand-poking wakeup_pending_count — urbi_vm_liveness derives `timed`
    from the actual earliest deadline, so a non-zero counter with an empty
    sleep queue is an inconsistent (oracle-rejected) state, not a formula
    input. */
@@ -639,7 +639,7 @@ UTEST(sched_quiescent_true_when_watcher_active_nonzero)
 }
 
 /* Case 24: sched_quiescent returns false on pending reactive work
- * (watchers->dirty_count — vm_liveness `pending`).  Replaces the deleted
+ * (watchers->dirty_count — urbi_vm_liveness `pending`).  Replaces the deleted
  * event_queue_count pin (vestigial M3 stub removed at v0.13.3/SCHED-13;
  * ISR-ring pendingness is queried live via uevent_ring_has_pending). */
 UTEST(sched_quiescent_false_when_watcher_dirty_nonzero)

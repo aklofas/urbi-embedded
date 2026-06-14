@@ -231,7 +231,10 @@ UTEST(freeze_waiting_member_gates_wake)
 }
 
 /* freeze-of-WAITING + unfreeze-before-timer: the strand stays parked the
- * whole time and the timer later fires normally (ungated wake -> READY). */
+ * whole time and the timer later fires normally (ungated wake -> READY).
+ * NON-REGRESSION PIN: passes because the WAITING/gate-clear path happens to
+ * leave the strand ungated before the timer fires; not an explicit design
+ * guarantee — retain as a guard against regression. */
 UTEST(freeze_waiting_unfreeze_before_timer_stays_parked)
 {
     UVM vm;
@@ -329,7 +332,11 @@ UTEST(tag_stop_wakes_doubly_gated_member)
 }
 
 /* Freeze of a WAITING member followed by tag-stop: the stop wake must NOT
- * be gated into SUSPENDED — stop overrides the pending gate too. */
+ * be gated into SUSPENDED — stop overrides the pending gate too.
+ * NON-REGRESSION PIN: passes because urbi_sched_strand_unpark routes through
+ * the WAITING arm (pre-suspend) before the gate can redirect to SUSPENDED;
+ * the interaction is correct but incidental to the WAITING/SUSPEND ordering
+ * in sched_strand_make_runnable — retain as a guard against regression. */
 UTEST(tag_stop_overrides_gate_on_waiting_member)
 {
     UVM vm;

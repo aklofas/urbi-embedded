@@ -139,7 +139,7 @@ UTEST(quiescent_when_all_counters_zero)
 
 /* Case 4: armed work is excluded from quiescence (refactor-3 SCHED-13,
    owner decision 2026-06-11).  DORMANT strands never count anywhere, and
-   SUSPENDED/WAITING strands are `armed` — counted (vm_liveness) and
+   SUSPENDED/WAITING strands are `armed` — counted (urbi_vm_liveness) and
    reported (urbi_vm_has_live_work) but not quiescence-blocking. */
 UTEST(suspended_count_excluded_from_quiescence)
 {

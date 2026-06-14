@@ -142,7 +142,7 @@ UTEST(post_dispatch_step1_waiting_strand_count_unchanged)
  * Step 1 (SCHED-01): a DEAD transient strand gets NO decrement.
  *
  * Transient strands (urbi_vm_run) never participate in the runnable count
- * (sched_runnable_inc/dec both skip them); a decrement here would underflow
+ * (urbi_sched_runnable_inc/dec both skip them); a decrement here would underflow
  * the counter the transient never incremented.
  * ========================================================================= */
 

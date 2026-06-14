@@ -79,14 +79,14 @@ sched_pick_next(const UVM *vm) {
  *   - src/vm/ustep.c — urbi_step's fatal-exit arm (dec: a fatal-DEAD
  *     strand never reaches sched_post_dispatch's step-1 decrement);
  *   - src/runtime/uunwind.c — run_cleanup_with_replace's blocked/yielded
- *     cleanup-body rebalance (inc: after sched_strand_unpark(s, 0) the
+ *     cleanup-body rebalance (inc: after urbi_sched_strand_unpark(s, 0) the
  *     strand re-enters the counted set as RUNNING before the fatal stamp
  *     — correct by construction under the single-writer scheme; closes
  *     design-risks v0.13.1-C).
  * Everything else must route through the sched_strand_* transition
  * functions. */
-void sched_runnable_inc(UVM *vm, const UStrand *s);
-void sched_runnable_dec(UVM *vm, const UStrand *s);
+void urbi_sched_runnable_inc(UVM *vm, const UStrand *s);
+void urbi_sched_runnable_dec(UVM *vm, const UStrand *s);
 
 /* === Parked-strand counters (refactor-3 SCHED-13 / VM-12) ===
  *
@@ -97,9 +97,9 @@ void sched_runnable_dec(UVM *vm, const UStrand *s);
  * pair above (dec asserts > 0; transient strands are skipped).  Writers —
  * see the field declarations in vm/uvm.h for the full transition map:
  *   waiting:   inc in sched_strand_block; dec in sched_strand_make_runnable
- *              (WAITING entry state — sched_strand_unpark(s, 1) funnels
+ *              (WAITING entry state — urbi_sched_strand_unpark(s, 1) funnels
  *              there; a SCHED-08 gated wake also exits here, handing off
- *              into the suspended count), sched_strand_unpark(s, 0)
+ *              into the suspended count), urbi_sched_strand_unpark(s, 0)
  *              (off-funnel exits: the cleanup-executor in
  *              src/runtime/uunwind.c and urbi_strand_panic), and
  *              ustrand_destroy.
@@ -108,12 +108,12 @@ void sched_runnable_dec(UVM *vm, const UStrand *s);
  *              gated-wake arm (SCHED-08); dec in sched_strand_make_runnable
  *              (SUSPENDED entry state), urbi_strand_panic's SUSPENDED arm,
  *              and ustrand_destroy.
- * Both feed vm_liveness()'s `armed` term — reported to the host but
+ * Both feed urbi_vm_liveness()'s `armed` term — reported to the host but
  * excluded from QUIESCENT (owner decision 2026-06-11). */
-void sched_waiting_inc(UVM *vm, const UStrand *s);
-void sched_waiting_dec(UVM *vm, const UStrand *s);
-void sched_suspended_inc(UVM *vm, const UStrand *s);
-void sched_suspended_dec(UVM *vm, const UStrand *s);
+void urbi_sched_waiting_inc(UVM *vm, const UStrand *s);
+void urbi_sched_waiting_dec(UVM *vm, const UStrand *s);
+void urbi_sched_suspended_inc(UVM *vm, const UStrand *s);
+void urbi_sched_suspended_dec(UVM *vm, const UStrand *s);
 
 /* State transitions */
 void sched_strand_make_runnable(UStrand *s);
@@ -121,7 +121,7 @@ void sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload);
 void sched_strand_yield(UStrand *s);
 void sched_strand_unblock(UStrand *s);
 
-/* sched_strand_unpark — reason-dispatched third-party-link removal for a
+/* urbi_sched_strand_unpark — reason-dispatched third-party-link removal for a
  * WAITING strand (refactor-3 SCHED-05): the wake-side mirror of the
  * death-side scrub in strand_cleanup_observers.  Unlinks the strand from
  * its reason-specific external structure (SLEEP: sleep queue; EVENT:
@@ -138,13 +138,13 @@ void sched_strand_unblock(UStrand *s);
  *
  * Precondition: USTRAND_IS_WAITING(s).  Implemented in ustrand.c next to
  * strand_cleanup_observers so both sides share strand_unlink_park. */
-void sched_strand_unpark(UStrand *s, int enqueue);
+void urbi_sched_strand_unpark(UStrand *s, int enqueue);
 
 /* Timer / quiescence queries */
 uint64_t sched_earliest_wake_us(const UVM *vm);
 bool     sched_quiescent(const UVM *vm);
 
-/* === vm_liveness — the ONE quiescence/liveness formula (refactor-3 SCHED-13) ===
+/* === urbi_vm_liveness — the ONE quiescence/liveness formula (refactor-3 SCHED-13) ===
  *
  * Callers: sched_quiescent, urbi_step's post-loop verdict ladder, and
  * urbi_vm_has_live_work.  Pre-fix those three each computed a different
@@ -175,7 +175,7 @@ typedef struct UVmLiveness {
     uint64_t next_wake_us;
 } UVmLiveness;
 
-void vm_liveness(const UVM *vm, UVmLiveness *out);
+void urbi_vm_liveness(const UVM *vm, UVmLiveness *out);
 
 /* Wake every sleep-queue strand whose wake_us <= now (vm->host_time_us).
  * Each woken strand is unblocked (removed from sleep_q, made runnable).
@@ -232,7 +232,7 @@ void sched_strand_unbind_from_sleep_queue(UStrand *s);
 /* REALM-011 / T69: splice a strand out of the cooperative ready queue if
  * it is on it.  Idempotent (the strand's own ready_next/ready_prev guard
  * the work).  Decrements vm->strand_runnable_count exactly once if the
- * strand was actually present (via sched_runnable_dec, so transient
+ * strand was actually present (via urbi_sched_runnable_dec, so transient
  * strands are skipped).  Safe to call whether the strand is on the
  * queue (state == READY) or not (DORMANT/RUNNING/WAITING/DEAD).
  *

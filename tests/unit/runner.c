@@ -663,7 +663,7 @@ static const struct suite_entry suites[] = {
     {"strand_cancel_wake",               test_strand_cancel_wake_suite},
     {"strand_unpark",                    test_strand_unpark_suite},
     {"scratch_cur_strand",               test_scratch_cur_strand_suite},
-    {"vm_liveness",                      test_vm_liveness_suite},
+    {"urbi_vm_liveness",                      test_vm_liveness_suite},
     /* Add new suites here as test files are added. */
 };
 

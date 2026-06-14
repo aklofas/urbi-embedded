@@ -16,7 +16,7 @@
  *     strand (ASan UAF; pinned end-to-end by
  *     tests/chk/tag/stop_waituntil_nested.chk).
  *
- * Post-fix contract: sched_strand_unpark(s, enqueue) performs the
+ * Post-fix contract: urbi_sched_strand_unpark(s, enqueue) performs the
  * reason-dispatched unlink (SLEEP: sleep queue; EVENT: waiter chain; JOIN:
  * child->joiners_head; WATCHER: w->waiter_strand scrub + watcher
  * unregister) before the strand leaves WAITING. */
@@ -182,7 +182,7 @@ UTEST(unpark_watcher_mid_eval_defers_retire)
 
     uint16_t in_use_before = vm.watchers->pool_in_use;
     vm.watchers->in_eval = 1;       /* simulate a mid-eval wake */
-    sched_strand_unpark(s, /*enqueue=*/1);
+    urbi_sched_strand_unpark(s, /*enqueue=*/1);
     vm.watchers->in_eval = 0;
 
     /* Deferred: scrubbed + PENDING_UNREGISTER + on the pending FIFO with

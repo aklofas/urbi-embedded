@@ -758,7 +758,7 @@ dispatch:
                      * so resume continues at the next instruction, then
                      * leave dispatch.  The ustep driver skips SUSPENDED
                      * strands at dequeue; the unblock/unfreeze ungated
-                     * resume (strand_resume_if_ungated) re-enqueues.
+                     * resume (urbi_strand_resume_if_ungated) re-enqueues.
                      * No accounting here: urbi_strand_suspend's RUNNING arm
                      * already decremented strand_runnable_count (SCHED-01
                      * single-writer scheme), same as the READY-arm
@@ -1666,7 +1666,7 @@ exit_strand:
     }
 
     /* strand_runnable_count ownership at exit (refactor-3 SCHED-01
-     * single-writer scheme — sched_runnable_inc/dec are the only writers):
+     * single-writer scheme — urbi_sched_runnable_inc/dec are the only writers):
      *   - Transient strands (urbi_vm_run) never participate in the count;
      *     both helpers skip them.
      *   - DEAD: the strand was RUNNING (counted); sched_post_dispatch step 1

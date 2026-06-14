@@ -45,7 +45,9 @@ URBI_STATIC_ASSERT(UTAG_FLAG_BLOCKED == 0x04U,
  * API-02, so the decode deliberately never returns URBI_TAG_BLOCKED).
  * Anyone adding a UTAG_FLAG_* bit must extend BOTH the mask assert below
  * AND the urbi_tag_info decode (and, if the new flag is host-observable,
- * the public enum) — the mask assert failing the build is the tripwire. */
+ * the public enum) — the assert validates correctness when updated, but is
+ * not a self-tripping guard: omitting the extension passes the build silently.
+ * This comment is the drift-detection checklist. */
 URBI_STATIC_ASSERT((UTAG_FLAG_FROZEN | UTAG_FLAG_STOPPED | UTAG_FLAG_BLOCKED)
                    == 0x07U,
                "UTAG_FLAG_* decode space changed — update urbi_tag_info and this assert (SCHED-15)");
