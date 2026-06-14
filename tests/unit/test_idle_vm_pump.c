@@ -154,6 +154,19 @@ UTEST(sched12_drain_preserves_in_eval_when_nested)
  * Onleave-orphan: mid-drain push must not be lost
  * --------------------------------------------------------------------- */
 
+/* No-op native fn used only to back the dummy onleave closures below.  The
+ * drain's run_watcher_onleave short-circuits to the watcher_onleave test hook
+ * before ever calling native_fn, so this body never actually runs — it exists
+ * solely so urbi_make_native_closure has a non-NULL fn to wrap. */
+static int
+onleave_noop_native(struct UVM *vm, UValue self, UValue *args,
+                    uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    if (out != NULL) *out = urbi_make_nil();
+    return 0;   /* UEXEC_OK */
+}
+
 /* Static state for the cascade hook (sequentially-run test; no concurrency). */
 static int      g_orphan_count;
 static bool     g_orphan_pushed;
@@ -214,11 +227,19 @@ UTEST(onleave_orphan_mid_drain_push_not_lost)
     UASSERT(w1 != NULL);
     UASSERT(w2 != NULL);
 
-    /* Sentinel onleave pointer: non-NULL so drain calls run_watcher_onleave,
-     * which then dispatches to our test hook (the hook short-circuits before
-     * the real closure is dereferenced). */
-    w1->onleave = (UClosure *)1;
-    w2->onleave = (UClosure *)1;
+    /* onleave must be non-NULL so drain calls run_watcher_onleave (which then
+     * dispatches to our test hook).  Use REAL GC-managed closures rather than
+     * the deprecated integer-cast sentinel ((UClosure *)1) — the latter would
+     * crash uwatcher_gc.c's walker if a GC slice ran during the drain
+     * (twatcher_install_helper.h documents the deprecation).  No GC runs in this
+     * test (the drain and the cascade hook allocate nothing), but real closures
+     * keep the watcher GC-walkable regardless.  These closures are unrooted but
+     * survive the test since nothing triggers a collection; urbi_vm_destroy
+     * reclaims them at teardown. */
+    w1->onleave = urbi_make_native_closure(&vm, onleave_noop_native);
+    w2->onleave = urbi_make_native_closure(&vm, onleave_noop_native);
+    UASSERT(w1->onleave != NULL);
+    UASSERT(w2->onleave != NULL);
 
     /* Build a single-entry pending queue: head = w1 = tail. */
     w1->next_active          = NULL;

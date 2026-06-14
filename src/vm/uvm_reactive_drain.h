@@ -19,8 +19,8 @@
  * own open-coded guard; centralising removes the risk of a new call site
  * forgetting the guard. */
 
-#ifndef URBI_VM_REACTIVE_DRAIN_H
-#define URBI_VM_REACTIVE_DRAIN_H
+#ifndef UVM_REACTIVE_DRAIN_H
+#define UVM_REACTIVE_DRAIN_H
 
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"       /* drain_pending_onleave_queue, watcher_eval_dirty */
@@ -64,4 +64,4 @@ vm_reactive_drain(struct UVM *vm, int bounded_whenever)
     }
 }
 
-#endif /* URBI_VM_REACTIVE_DRAIN_H */
+#endif /* UVM_REACTIVE_DRAIN_H */

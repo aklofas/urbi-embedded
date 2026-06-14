@@ -137,74 +137,74 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      * unbounded level-whenever re-spawn (see test_whenever_double_fire.c). */
     uint32_t runnable_before_drain;
     do {
-    while (vm->step_budget_remaining > 0 && vm->strand_runnable_count > 0) {
-        UStrand *s = sched_pick_next(vm);
-        if (!s) break;
+        while (vm->step_budget_remaining > 0 && vm->strand_runnable_count > 0) {
+            UStrand *s = sched_pick_next(vm);
+            if (!s) break;
 
-        /* W3a (v0.10.9): defence-in-depth skip for SUSPENDED strands.
-         * urbi_strand_suspend always splices SUSPENDED strands out of the
-         * ready queue via sched_strand_unbind_from_ready_queue, so this
-         * branch should be unreachable today.  Guard kept so a future caller
-         * that transitions a strand to SUSPENDED without unbinding cannot
-         * crash the dispatcher by dispatching into a suspended strand.
-         * SCHED-01: route through unbind (which decrements) rather than the
-         * now count-neutral dequeue — a SUSPENDED strand leaves the counted
-         * set; resume() puts it back via sched_strand_make_runnable. */
-        if (USTRAND_IS_SUSPENDED(s)) {
-            sched_strand_unbind_from_ready_queue(s);
-            continue;
+            /* W3a (v0.10.9): defence-in-depth skip for SUSPENDED strands.
+             * urbi_strand_suspend always splices SUSPENDED strands out of the
+             * ready queue via sched_strand_unbind_from_ready_queue, so this
+             * branch should be unreachable today.  Guard kept so a future caller
+             * that transitions a strand to SUSPENDED without unbinding cannot
+             * crash the dispatcher by dispatching into a suspended strand.
+             * SCHED-01: route through unbind (which decrements) rather than the
+             * now count-neutral dequeue — a SUSPENDED strand leaves the counted
+             * set; resume() puts it back via sched_strand_make_runnable. */
+            if (USTRAND_IS_SUSPENDED(s)) {
+                sched_strand_unbind_from_ready_queue(s);
+                continue;
+            }
+
+            /* Remove the strand from the ready queue.  Count-neutral
+             * (SCHED-01): READY → RUNNING keeps the strand in the counted set.
+             * If the strand yields mid-run, dispatch_loop_until_yield calls
+             * sched_strand_yield which re-enqueues count-neutrally. */
+            sched_dequeue_ready_head(vm);
+            s->state = USTRAND_STATE_RUNNING;
+            URBI_PERF_INC(vm, ctx_switches);   /* v0.11.1: strand go-live */
+            vm->cur_strand = s;   /* spec #3 §7.1: expose running strand for c_event_waituntil */
+
+            uint64_t consumed = dispatch_loop_until_yield(s, vm->step_budget_remaining);
+            vm->cur_strand = NULL;
+            /* Clamp subtraction to avoid unsigned underflow on floating rounding. */
+            if (consumed >= vm->step_budget_remaining) {
+                vm->step_budget_remaining = 0;
+            } else {
+                vm->step_budget_remaining -= consumed;
+            }
+
+            /* Check for strand-level fatal (unwind the host-visible fatal pointer). */
+            if (s->fatal_status != UEXEC_OK) {
+                /* SCHED-01: a fatal strand is DEAD (every fatal_status writer
+                 * pairs it with state = DEAD) and was RUNNING (counted) when it
+                 * died.  sched_post_dispatch — which owns the clean-death
+                 * decrement — is deliberately NOT called on this path (it would
+                 * eager-reap the strand the host wants to inspect), so the
+                 * counted-set exit happens here via the owning helper.
+                 * urbi_strand_reset (DEAD -> DORMANT) + urbi_strand_start
+                 * (make_runnable, +1) re-balance if the host revives it. */
+                urbi_sched_runnable_dec(vm, s);
+                vm->fatal_strand = s;
+                return URBI_STEP_FATAL;
+            }
+
+            /* Post-dispatch fix-ups — scheduler F3.
+             *
+             * sched_post_dispatch runs four bookkeeping steps that must execute after
+             * every dispatch-loop iteration:
+             *   1. Decrement strand_runnable_count if the strand died (SCHED-01:
+             *      a DEAD strand was RUNNING and counted; parking transitions
+             *      already decremented for WAITING/SUSPENDED).
+             *   2. Eager DEAD-strand reap via urbi_strand_destroy (prevents the
+             *      register-stack accumulation wedge first seen at ~200 eye_demo body
+             *      completions on ESP32, v0.7.x).
+             *   3. Sleep-queue wake for any strand whose wake_us <= now.
+             *   4. Periodic pump so a just-completed every()-body can re-arm within
+             *      this urbi_step call.
+             *
+             * After step 2, s may be freed.  Do NOT dereference s after this call. */
+            sched_post_dispatch(vm, s);
         }
-
-        /* Remove the strand from the ready queue.  Count-neutral
-         * (SCHED-01): READY → RUNNING keeps the strand in the counted set.
-         * If the strand yields mid-run, dispatch_loop_until_yield calls
-         * sched_strand_yield which re-enqueues count-neutrally. */
-        sched_dequeue_ready_head(vm);
-        s->state = USTRAND_STATE_RUNNING;
-        URBI_PERF_INC(vm, ctx_switches);   /* v0.11.1: strand go-live */
-        vm->cur_strand = s;   /* spec #3 §7.1: expose running strand for c_event_waituntil */
-
-        uint64_t consumed = dispatch_loop_until_yield(s, vm->step_budget_remaining);
-        vm->cur_strand = NULL;
-        /* Clamp subtraction to avoid unsigned underflow on floating rounding. */
-        if (consumed >= vm->step_budget_remaining) {
-            vm->step_budget_remaining = 0;
-        } else {
-            vm->step_budget_remaining -= consumed;
-        }
-
-        /* Check for strand-level fatal (unwind the host-visible fatal pointer). */
-        if (s->fatal_status != UEXEC_OK) {
-            /* SCHED-01: a fatal strand is DEAD (every fatal_status writer
-             * pairs it with state = DEAD) and was RUNNING (counted) when it
-             * died.  sched_post_dispatch — which owns the clean-death
-             * decrement — is deliberately NOT called on this path (it would
-             * eager-reap the strand the host wants to inspect), so the
-             * counted-set exit happens here via the owning helper.
-             * urbi_strand_reset (DEAD -> DORMANT) + urbi_strand_start
-             * (make_runnable, +1) re-balance if the host revives it. */
-            urbi_sched_runnable_dec(vm, s);
-            vm->fatal_strand = s;
-            return URBI_STEP_FATAL;
-        }
-
-        /* Post-dispatch fix-ups — scheduler F3.
-         *
-         * sched_post_dispatch runs four bookkeeping steps that must execute after
-         * every dispatch-loop iteration:
-         *   1. Decrement strand_runnable_count if the strand died (SCHED-01:
-         *      a DEAD strand was RUNNING and counted; parking transitions
-         *      already decremented for WAITING/SUSPENDED).
-         *   2. Eager DEAD-strand reap via urbi_strand_destroy (prevents the
-         *      register-stack accumulation wedge first seen at ~200 eye_demo body
-         *      completions on ESP32, v0.7.x).
-         *   3. Sleep-queue wake for any strand whose wake_us <= now.
-         *   4. Periodic pump so a just-completed every()-body can re-arm within
-         *      this urbi_step call.
-         *
-         * After step 2, s may be freed.  Do NOT dereference s after this call. */
-        sched_post_dispatch(vm, s);
-    }
 
         /* Step 4b: post-loop reactive drain (bounded/edge whenever).  Absorbs
          * dirty marks from flat strands that completed without a safepoint, so

@@ -206,7 +206,7 @@ static int run_directive(UVM *vm, const char *verb, const char *rest) {
                     "chk-host-driver: `set-global` needs a numeric value\n");
             return -1;
         }
-        UValue uval;
+        UValue uval = {0};
         uval.kind = UVAL_INT;
         uval.v.i  = ival;
         struct URealm *realm = (g_current != NULL)

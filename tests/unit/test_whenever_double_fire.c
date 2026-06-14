@@ -161,8 +161,12 @@ UTEST(whenever_chunktop_write_fires_cond_baseline)
  *      a capped RUNNING — i.e. no spin (termination).
  *   2. `fired` is BOUNDED and small: the cond `Realm.x > 3` has exactly one
  *      false->true edge across the 5 ticks (x crosses 3 at tick 3), so the
- *      edge-gated idle drain fires once.  We assert 1 <= fired <= 2 — a tight,
- *      meaningful bound that the 998-fire storm would blow through.
+ *      edge-gated idle drain fires once.  We assert 1 <= fired <= 2: the upper
+ *      bound is 2 rather than 1 as a single-fire margin — the rising edge can be
+ *      observed by either the pre-loop idle drain or the post-loop Step-4b drain
+ *      of the crossing step, so at most one extra rising-edge evaluation is
+ *      tolerated against drain-ordering nuance.  A storm (hundreds of fires)
+ *      blows through it; the empirical value with the current scheduler is 1.
  *   3. dirty_count is fully drained to 0 (the VM is genuinely idle). */
 UTEST(at_handler_body_without_call_wakes_whenever_bounded)
 {
@@ -438,8 +442,11 @@ UTEST(self_redirtying_whenever_terminates)
     UASSERT_EQ((int)UVAL_INT, (int)go.kind);
     UASSERT_EQ(1LL, go.v.i);
 
-    /* Bounded fire: exactly one false->true edge → fires once (storm would be
-     * hundreds).  1 <= fired <= 2. */
+    /* Bounded fire: the single host-driven false->true edge fires the whenever
+     * once; the body re-affirms `go` truthy, so no further rising edge occurs.
+     * Upper bound 2 (not 1) is the single-fire margin — the edge may be observed
+     * by the pre-loop or the post-loop Step-4b drain — while a storm (hundreds of
+     * fires) still fails it.  Empirical value with the current scheduler is 1. */
     UValue fired = utest_e2e_make_nil();
     UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "fired", 5, &fired));
     UASSERT_EQ((int)UVAL_INT, (int)fired.kind);
