@@ -120,13 +120,13 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      * it woke a parked waituntil/at or spawned a whenever body, both of which
      * tail-insert a READY strand (sched_strand_make_runnable), so sched_pick_next
      * is guaranteed to return dispatchable work that consumes budget.  Gating on
-     * an increase rather than on `runnable > 0` is load-bearing: a strand that
-     * soft-yields on VM-budget exhaustion stays RUNNING-but-off-the-ready-queue,
-     * leaving strand_runnable_count > 0 while sched_pick_next == NULL; a plain
-     * `runnable > 0` re-entry would then spin (inner while breaks on the NULL
-     * pick without consuming budget, drain is a no-op, repeat).  When no new
-     * work is produced the loop exits and the host re-pumps on the next
-     * urbi_step, exactly as before this task.
+     * an INCREASE rather than on `runnable > 0` keeps re-entry tied to NEW work:
+     * a leftover READY strand from this slice (e.g. one re-enqueued at VM-budget
+     * exhaustion — refactor-3 VM-04/SCHED-11) must not trigger another drain
+     * pass; the `&& step_budget_remaining > 0` clause already blocks that case,
+     * and gating on the increase keeps the loop from re-running on a drain that
+     * produced nothing.  When no new work is produced the loop exits and the
+     * host re-pumps on the next urbi_step, exactly as before this task.
      *
      * bounded_whenever = 1 (edge-only) keeps even the legitimate re-entry finite:
      * a self-re-dirtying level-whenever fires at most once per rising edge (full
@@ -179,7 +179,6 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
             } else {
                 vm->step_budget_remaining -= consumed;
             }
-
 
             /* Check for strand-level fatal (unwind the host-visible fatal pointer). */
             if (s->fatal_status != UEXEC_OK) {

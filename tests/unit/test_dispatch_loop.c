@@ -208,9 +208,12 @@ UTEST(dispatch_loop_dies_on_top_level_ret) {
 }
 
 /* ============================================================
- * Test 3: VM-wide step budget exhaustion — strand stays RUNNING
- * dispatch_loop_until_yield exits with state RUNNING when the
- * VM-wide step_budget_remaining reaches 0 before the strand finishes.
+ * Test 3: VM-wide step budget exhaustion — strand re-enqueues READY
+ * dispatch_loop_until_yield exits with state READY (count-neutral
+ * RUNNING -> READY via sched_strand_yield) when the VM-wide
+ * step_budget_remaining reaches 0 before the strand finishes, so the
+ * next urbi_step re-dispatches it (refactor-3 VM-04/SCHED-11 — leaving
+ * it RUNNING-off-queue wedged urbi_step at URBI_STEP_RUNNING forever).
  * ============================================================ */
 
 UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
@@ -224,8 +227,9 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
        so the first safepoint decrements vm->step_budget_remaining to 0. */
 
     /* Program: LOADNIL R0; JMP -1 (backward, hits safepoint); RET.
-       With step_budget=1: on first backward-branch safepoint, budget → 0,
-       strand exits with state still RUNNING (not DEAD). */
+       With step_budget=1: on first backward-branch safepoint, the VM-wide
+       budget → 0 and the strand is re-enqueued READY (not DEAD, not left
+       RUNNING-off-queue) so a later dispatch can resume it. */
     static uint32_t instrs[3];
     instrs[0] = enc_loadnil(0);
     instrs[1] = enc_jmp(-1);   /* backward: hits safepoint */
@@ -249,9 +253,16 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
 
     uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 1U);
 
-    /* strand stays RUNNING (budget exhausted from VM's perspective) */
-    UASSERT_EQ((int)USTRAND_STATE_RUNNING, (int)s.state);
+    /* strand re-enqueued READY (budget exhausted from VM's perspective);
+       sched_strand_yield put it on the ready queue so the scheduler resumes
+       it on the next dispatch. */
+    UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
     UASSERT(consumed >= 1U);
+    UASSERT(vm.ready_head == &s);
+
+    /* Drain the ready queue so sched state is clean (SCHED-01: unbind
+       owns the count decrement). */
+    sched_strand_unbind_from_ready_queue(&s);
 
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);

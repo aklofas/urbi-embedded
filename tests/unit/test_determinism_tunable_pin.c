@@ -112,7 +112,13 @@ run_to_quiescent(UVM *vm, uint64_t step_budget)
 /* Case 1: tight VM-wide step budget (1 opcode) requires more iterations than
  * a loose budget (10000 opcodes) for the same program.
  *
- * This validates that the budget-tuning knob changes execution scheduling. */
+ * This validates that the budget-tuning knob changes execution scheduling.
+ * It also guards the scheduler-liveness wedge (refactor-3 VM-04/SCHED-11): a
+ * tight budget far below the per-strand budget must still COMPLETE in a bounded
+ * number of urbi_step calls.  Pre-fix the budget-exhausted strand exited
+ * RUNNING-off-queue and run_to_quiescent capped out at its limit; the
+ * `tight_count < limit` assertion below turns that wedge into a failure rather
+ * than an accidental pass. */
 UTEST(tight_budget_requires_more_step_calls_than_loose)
 {
     /* Run with tight budget. */
@@ -136,6 +142,10 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
 
         tight_count = run_to_quiescent(&vm, 1);
         UASSERT(tight_count > 0);
+        /* Wedge guard: must actually reach QUIESCENT, not cap out at
+         * run_to_quiescent's 1000000 iteration limit (refactor-3
+         * VM-04/SCHED-11). */
+        UASSERT(tight_count < 1000000);
 
         uchunk_destroy(&module, NULL);
         urbi_realm_destroy(&vm, realm);
@@ -173,14 +183,15 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
     UASSERT(tight_count > loose_count);
 }
 
-/* Case 2: directly mutating safepoint_budget_remaining to 0 at runtime
- * causes the strand to soft-yield on the first safepoint, observable as
- * URBI_STEP_RUNNING even on a program that otherwise completes in a single step.
+/* Case 2: directly mutating safepoint_budget_remaining to 0 at runtime does
+ * NOT block completion — the per-slice re-arm (refactor-3 VM-04/SCHED-11)
+ * overwrites the zero at each dispatch start, so the program still reaches
+ * QUIESCENT.  (Pre-re-arm this zero soft-yielded at the first safepoint; the
+ * test now pins that the zeroing is harmless rather than that it stalls.)
  *
- * We use a trivially short program (1 + 1) and zero the budget immediately after
- * arming the strand.  Even with a large VM step budget, the first safepoint
- * hit triggers a soft yield, returning RUNNING or requiring a second call. */
-UTEST(zero_strand_budget_forces_mid_step_yield)
+ * We use a trivially short program (1 + 1) and zero the budget immediately
+ * after arming the strand, then drive to completion. */
+UTEST(zeroed_strand_budget_does_not_block_completion)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -203,8 +214,8 @@ UTEST(zero_strand_budget_forces_mid_step_yield)
 
     urbi_strand_start(&vm, s);
 
-    /* With budget_remaining=0, the strand must not complete in a single VM
-     * step call regardless of the VM-wide budget.  Eventually it completes. */
+    /* With the per-slice re-arm in place, the zeroed budget is overwritten at
+     * dispatch start, so the strand completes normally.  Drive to QUIESCENT. */
     int reached = 0;
     int iters = 10000;
     while (iters-- > 0) {
@@ -229,6 +240,6 @@ void test_determinism_tunable_pin_suite(void)
 {
     utest_run("tight_budget_requires_more_step_calls_than_loose",
               tight_budget_requires_more_step_calls_than_loose);
-    utest_run("zero_strand_budget_forces_mid_step_yield",
-              zero_strand_budget_forces_mid_step_yield);
+    utest_run("zeroed_strand_budget_does_not_block_completion",
+              zeroed_strand_budget_does_not_block_completion);
 }

@@ -1618,8 +1618,19 @@ safepoint:
     }
     s->safepoint_budget_remaining--;
     if (vm->step_budget_remaining == 0) {
-        /* Budget exhausted from caller's perspective; state stays RUNNING.
-           The urbi_vm_run adapter treats RUNNING-but-exit as "continue". */
+        /* refactor-3 VM-04/SCHED-11 (scheduler-liveness wedge): the caller's
+           urbi_step budget is exhausted mid-slice.  Re-enqueue the still-RUNNING
+           strand as READY (count-neutral RUNNING -> READY) so the NEXT urbi_step
+           re-dispatches it via sched_pick_next.  Leaving it RUNNING-but-off the
+           ready queue would wedge urbi_step at URBI_STEP_RUNNING forever:
+           sched_pick_next only returns vm->ready_head, so no later call could
+           ever pick the strand back up (an embedder `while (urbi_step(vm, N) ==
+           RUNNING)` loop would spin without progress).  The state == RUNNING
+           assert inside sched_strand_yield is guaranteed here — the unwind and
+           safepoint-budget arms above already diverted every non-RUNNING case.
+           The urbi_vm_run adapter passes UINT64_MAX and never reaches this arm;
+           were it to, its READY arm re-runs the strand identically. */
+        sched_strand_yield(s);
         goto exit_strand;
     }
     vm->step_budget_remaining--;

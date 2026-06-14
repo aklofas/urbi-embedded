@@ -144,15 +144,16 @@ UTEST(vm_step_budget_exhausts_mid_program)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 2: per-strand budget manually zeroed → strand soft-yields at next safepoint.
+/* Case 2: manually zeroing the per-strand budget does NOT stall the strand —
+ * the per-slice re-arm overrides it and the strand still completes.
  *
- * Arm a strand for a simple counting loop, then set safepoint_budget_remaining
- * to 0 on the strand so the first safepoint triggers a soft yield.
- * After urbi_step we expect the strand is back in READY (not DEAD), meaning
- * it yielded rather than completing or crashing.
- *
- * We then run with a large budget to completion and verify the result. */
-UTEST(per_strand_budget_zero_causes_soft_yield)
+ * Arm a strand for a counting loop and zero safepoint_budget_remaining before
+ * starting.  Pre-fix (per-lifetime seed) that zero would soft-yield at the
+ * first safepoint; post-fix (refactor-3 VM-04/SCHED-11) ustep.c re-arms the
+ * budget to URBI_STRAND_BUDGET_MAX at each dispatch slice, so the zero is
+ * overwritten before the first safepoint and forward progress is unaffected.
+ * We drive to completion with a normal budget and verify QUIESCENT. */
+UTEST(zeroed_strand_budget_is_rearmed_and_completes)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -219,6 +220,6 @@ void test_pipe_budget_exhaust_suite(void)
 {
     utest_run("vm_step_budget_exhausts_mid_program",
               vm_step_budget_exhausts_mid_program);
-    utest_run("per_strand_budget_zero_causes_soft_yield",
-              per_strand_budget_zero_causes_soft_yield);
+    utest_run("zeroed_strand_budget_is_rearmed_and_completes",
+              zeroed_strand_budget_is_rearmed_and_completes);
 }
