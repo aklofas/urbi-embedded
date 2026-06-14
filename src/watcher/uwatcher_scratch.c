@@ -95,6 +95,16 @@ run_on_scratch_core(struct UVM       *vm,
         return -1;
     }
 
+    /* B11/SCHED-03: seed per-strand safepoint budget.  urbi_zero above leaves
+     * safepoint_budget_remaining == 0; the first backward branch or bytecode
+     * call inside the body hits the safepoint budget == 0 arm in uvm.c and
+     * would call sched_strand_yield, enqueuing this stack-local UStrand onto
+     * vm->ready_head — a dead-stack UAF on the next urbi_step call.
+     * The transient guard in uvm.c (is_transient_strand check added by T7)
+     * is a belt-and-suspenders second layer that prevents the enqueue even if
+     * the budget somehow reaches 0 (e.g. for very long scratch scripts). */
+    strand.safepoint_budget_remaining = (uint16_t)URBI_SCRATCH_BUDGET_OPS;
+
     /* Payload init: write to R[0] after the register stack exists but before
      * dispatch.  AT_EVENT_SYNC subscribers receive the emit payload as their
      * first argument here.  strand.R is guaranteed non-NULL by a successful

@@ -1043,8 +1043,18 @@ dispatch:
                and return to the scheduler.  The urbi_vm_run adapter re-enters
                dispatch_loop_until_yield until strand is DEAD.
                sched_strand_yield asserts entry state == RUNNING (SCHED-003)
-               and overwrites with READY on enqueue, so no pre-set here. */
+               and overwrites with READY on enqueue, so no pre-set here.
+               B11/SCHED-03: transient strands (scratch, urbi_vm_run) must NOT
+               be enqueued via sched_strand_yield — the UStrand lives on the C
+               stack; a later urbi_step traversal via vm->ready_head would be a
+               dead-stack UAF.  Exit with state RUNNING instead:
+               - urbi_vm_run's for-loop RUNNING arm re-arms budget and
+                 re-dispatches (PC already advanced here), equivalent to the
+                 READY arm without the enqueue/dequeue round-trip.
+               - run_on_scratch_core treats RUNNING-on-return as a yield
+                 violation and sets *out_threw = 1 (§6.4 no-yield contract). */
             s->pc++;
+            if (s->is_transient_strand) goto exit_strand;
             sched_strand_yield(s);
             steps_consumed++;
             goto exit_strand;
@@ -1611,6 +1621,13 @@ safepoint:
         if (USTRAND_GET_STATE(s) != USTRAND_RUNNING) goto exit_strand;
     }
     if (s->safepoint_budget_remaining == 0) {
+        /* B11/SCHED-03: transient strands (scratch, urbi_vm_run) must not
+         * be enqueued via sched_strand_yield — the UStrand lives on the C
+         * stack and a later urbi_step traversal via vm->ready_head would be
+         * a dead-stack UAF.  Exit dispatch with state == RUNNING; the callers
+         * (run_on_scratch_core, urbi_vm_run) handle the RUNNING-on-return
+         * case by re-arming the budget and continuing. */
+        if (s->is_transient_strand) goto exit_strand;
         /* sched_strand_yield asserts entry state == RUNNING (SCHED-003)
          * and overwrites with READY on enqueue, so no pre-set here. */
         sched_strand_yield(s);
@@ -1629,7 +1646,10 @@ safepoint:
            assert inside sched_strand_yield is guaranteed here — the unwind and
            safepoint-budget arms above already diverted every non-RUNNING case.
            The urbi_vm_run adapter passes UINT64_MAX and never reaches this arm;
-           were it to, its READY arm re-runs the strand identically. */
+           were it to, its READY arm re-runs the strand identically.
+           B11/SCHED-03: same transient guard as the safepoint-budget arm above —
+           do not enqueue stack-local strands onto the scheduler queues. */
+        if (s->is_transient_strand) goto exit_strand;
         sched_strand_yield(s);
         goto exit_strand;
     }

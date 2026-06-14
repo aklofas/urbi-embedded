@@ -205,8 +205,12 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
             vm_format_type_error_msg(vm, "strand suspended unexpectedly in urbi_vm_run");
             break;
         }
-        /* RUNNING with step_budget exhausted (UINT64_MAX → shouldn't happen). */
-        break;
+        /* RUNNING: safepoint-budget arm in uvm.c (B11/SCHED-03 transient guard)
+         * exited without calling sched_strand_yield — the strand was not enqueued
+         * so no dequeue is needed.  Re-arm the safepoint budget and continue,
+         * mirroring the READY re-arm above. */
+        strand.safepoint_budget_remaining = (uint16_t)URBI_STRAND_BUDGET_MAX;
+        continue;
     }
 
     /* v0.8.4 Step C-3: closure_list / closed_cells fields deleted.
