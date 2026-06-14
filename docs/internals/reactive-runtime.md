@@ -22,7 +22,7 @@ inline with their shipping milestone.
 | `at sync (e?) body` | emits `OP_AT_EVENT_SYNC_INSTALL` | working with sync-degradation caveat (Finding 7) |
 | `whenever (e?) body` | emits `OP_WHENEVER_EVENT_INSTALL` (W0/v0.10.2) | working; perpetual event subscriber — re-fires on every emission (not one-shot like `at (e?)`) |
 | `every (period) body` | desugars to `every(period_us, fn)` C-native call | working; re-spawn cadence via `UPeriodic` |
-| `tag.stop()` from script | emits `OP_TAG_STOP` (opcode 30) | working — **CLOSED W3/v0.10.2**: `Tag.new()` + `OP_TAG_STOP` + script-level `.stop()`, `.freeze()`, `.unfreeze()`, `.block()`, `.unblock()` all shipped. Bare-prefix `mytag: stmt` and member-expr `Tag.scope: body` (W6/v0.10.5) also working. C-level `urbi_tag_stop` remains the ISR-safe path. |
+| `tag.stop()` from script | routes via `tag_stop_native` → `urbi_tag_stop` C API (does NOT emit `OP_TAG_STOP`) | working — **CLOSED W3/v0.10.2**: `Tag.new()` + script-level `.stop()`, `.freeze()`, `.unfreeze()`, `.block()`, `.unblock()` all shipped. Bare-prefix `mytag: stmt` and member-expr `Tag.scope: body` (W6/v0.10.5) also working. C-level `urbi_tag_stop` remains the ISR-safe path. `OP_TAG_STOP` (opcode 30) exists in the VM dispatch table but has no compiler emit path; see VM-13 note below. |
 
 ## Reactive vocabulary at the lexer
 
@@ -298,6 +298,16 @@ are registered on `vm->tag_proto`.  Bare-prefix `mytag: stmt` (v0.10.2-W4)
 and member-expression `Tag.scope: body` (v0.10.5-W8) are parser-accepted.
 `urbi_tag_stop` remains the ISR-safe C path; script-level `.stop()` routes
 through it.
+
+**VM-13 note (refactor-3)** — `OP_TAG_STOP` (opcode 30) has a full VM
+dispatch arm (`label_op_tag_stop` in `uvm.c`) since v0.10.2.  The compiler
+(`uemit.c`) never emits it: scripted `tag.stop()` lowers to a method call
+resolved at runtime through `tag_stop_native` → `urbi_tag_stop`; the
+`uemit_tag_stop` function exists but has zero call sites.  Hand-built or
+foreign-assembled bytecode may legitimately contain `OP_TAG_STOP`, so the
+load-time "reserved opcode" reject (which predated the v0.10.2 dispatch
+wiring) is removed in v0.13.3.  The round-trip acceptance is pinned by
+`tests/unit/test_verifier_cross_byte.c`.
 
 ## UPeriodic lifecycle (`every`)
 

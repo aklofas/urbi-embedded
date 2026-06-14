@@ -1020,6 +1020,40 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                     return UCHUNK_LOAD_CORRUPT;
                 }
             }
+            /* refactor-3 VM-14: OP_JOIN_WAIT's dead-child fast path reads a
+             * strand handle that eager DEAD-reap may have freed; the adjacency
+             * invariant (OP_FORK_JOIN immediately before, FORK_JOIN.B ==
+             * JOIN_WAIT.A) is the only pin.  Enforce at load time so corrupt or
+             * hand-built chunks cannot exploit the UAF. */
+            if (op == (uint8_t)OP_JOIN_WAIT) {
+                if (vi == 0U) {
+                    set_errmsg(d->errmsg, d->errcap,
+                               "OP_JOIN_WAIT at pc 0: no preceding OP_FORK_JOIN");
+                    return UCHUNK_LOAD_CORRUPT;
+                }
+                uint32_t prev = instructions[vi - 1U];
+                uint8_t  pop  = (uint8_t)uinstr_op(prev);
+                if (pop != (uint8_t)OP_FORK_JOIN || uinstr_b(prev) != a) {
+                    set_errmsg(d->errmsg, d->errcap,
+                               "OP_JOIN_WAIT at pc %zu not adjacent to its"
+                               " OP_FORK_JOIN (prev op=%u, prev B=%u,"
+                               " JOIN_WAIT A=%u)",
+                               vi, (unsigned)pop,
+                               (unsigned)uinstr_b(prev), (unsigned)a);
+                    return UCHUNK_LOAD_CORRUPT;
+                }
+            }
+            /* refactor-3 VM-19: OP_SELF writes R[A] (looked-up slot value) and
+             * R[A+1] (self/receiver copy for OP_CALL).  The shape table only
+             * verifies A <= max_reg; the cross-byte check also requires A+1. */
+            if (op == (uint8_t)OP_SELF) {
+                if ((unsigned)a + 1U > (unsigned)max_reg) {
+                    set_errmsg(d->errmsg, d->errcap,
+                               "OP_SELF A+1=%u exceeds max_reg=%u at pc %zu",
+                               (unsigned)a + 1U, (unsigned)max_reg, vi);
+                    return UCHUNK_LOAD_CORRUPT;
+                }
+            }
         } else {
             /* UOPF_ABX — Bx range check per shape table. */
             uint16_t bx = uinstr_bx(ins);
@@ -1261,16 +1295,14 @@ static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
                 return UCHUNK_LOAD_CALL_NRESULTS_ZERO;
             }
 
-        } else if (op == (uint8_t)OP_TAG_STOP) {
-            /* OP_TAG_STOP has no emit path and the VM raises a runtime fatal at
-             * dispatch.  Reject at load time so embedders receive a clear error
-             * rather than a mid-execution fault. */
-            set_errmsg(d->errmsg, d->errcap,
-                       "OP_TAG_STOP at pc %zu: opcode is reserved (no emit path"
-                       " at wire v1.8; planned for v1.x tag-stop syntax)",
-                       vi);
-            return UCHUNK_LOAD_RESERVED_OPCODE;
         }
+        /* refactor-3 VM-13: OP_TAG_STOP (opcode 30) has full VM dispatch since
+         * v0.10.2 (label_op_tag_stop in uvm.c).  The compiler never emits it —
+         * scripted tag.stop() routes through tag_stop_native → urbi_tag_stop
+         * C API — but hand-built or future chunks may include it.  The stale
+         * "reserved" reject (from wire v1.8 when the dispatch arm was absent)
+         * is removed here; OP_TAG_STOP is accepted at load time.
+         * Pinned by tests/unit/test_verifier_cross_byte.c. */
 
         vi++;
     }

@@ -200,9 +200,9 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_GETSLOT]    = &&label_OP_GETSLOT,
         [OP_SETSLOT]    = &&label_OP_SETSLOT,
         /* M3 row 7 control-transfer — T10 wires THROW/TRY_BEGIN/TRY_END/RESUME/LOAD_CATCH_VALUE
-         * T11 wires PUSH_TAG/POP_TAG/PUSH_FRAME_GUARD; TAG_STOP stays stub until T31. */
+         * T11 wires PUSH_TAG/POP_TAG/PUSH_FRAME_GUARD; TAG_STOP wired at v0.10.2. */
         [OP_THROW]            = &&label_OP_THROW,
-        [OP_TAG_STOP]         = &&label_row7_stub,
+        [OP_TAG_STOP]         = &&label_op_tag_stop,
         [OP_TRY_BEGIN]        = &&label_OP_TRY_BEGIN,
         [OP_TRY_END]          = &&label_OP_TRY_END,
         [OP_PUSH_TAG]         = &&label_OP_PUSH_TAG,
@@ -1376,7 +1376,7 @@ dispatch:
          * through Tag.new() which always returns UVAL_TAG, so a TYPE_ERROR
          * here indicates a VM bug, not a user error. */
 #if UVM_USE_COMPUTED_GOTO
-        label_row7_stub:
+        label_op_tag_stop:
 #else
         case OP_TAG_STOP:
 #endif

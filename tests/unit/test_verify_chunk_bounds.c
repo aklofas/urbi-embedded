@@ -252,24 +252,30 @@ UTEST(call_nresults_one_loads_ok)
 }
 
 /* =========================================================================
- * Test 8: OP_TAG_STOP rejected as reserved opcode
+ * Test 8: OP_TAG_STOP round-trips at load time (refactor-3 VM-13)
+ *
+ * OP_TAG_STOP (opcode 30) has full VM dispatch since v0.10.2.  The stale
+ * "reserved" reject (from wire v1.8 when the dispatch arm was absent) is
+ * removed; the loader must now accept it.  The compiler still never emits
+ * it — tag.stop() routes through the C API — but hand-built chunks may
+ * contain it.  Pinned here alongside test_verifier_cross_byte.c.
  * ========================================================================= */
 
-UTEST(tag_stop_reserved_opcode_rejected)
+UTEST(tag_stop_roundtrips_ok)
 {
     uint8_t buf[512];
     vcb_build_good_header(buf);
     size_t off = 24;
     off = vcb_put_varint(buf, off, 0);
 
-    /* OP_TAG_STOP A=0 B=0: requires max_reg >= 0 (always true). */
+    /* OP_TAG_STOP A=0 B=0 C=0: not IC-bearing, ic_count=0 is valid. */
     uint32_t tag_stop = (uint32_t)OP_TAG_STOP;
     uint32_t instrs[] = { tag_stop, (uint32_t)OP_RET };
     off = vcb_emit_root_header(buf, off, 0, 0, 0, instrs, 2, 0);
 
     UProto *m = NULL;
     UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, NULL, NULL, 0);
-    UASSERT_EQ((int)UCHUNK_LOAD_RESERVED_OPCODE, (int)rc);
+    UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)rc);
     uchunk_destroy(m, NULL);
 }
 
@@ -601,8 +607,8 @@ void test_verify_chunk_bounds_suite(void) {
               call_method_flag_nresults_zero_rejected);
     utest_run("call_nresults_one_loads_ok",
               call_nresults_one_loads_ok);
-    utest_run("tag_stop_reserved_opcode_rejected",
-              tag_stop_reserved_opcode_rejected);
+    utest_run("tag_stop_roundtrips_ok (refactor-3 VM-13)",
+              tag_stop_roundtrips_ok);
     utest_run("closure_upvalue_prelude_truncated",
               closure_upvalue_prelude_truncated);
     utest_run("closure_upvalue_in_stack_invalid",

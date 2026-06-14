@@ -649,6 +649,18 @@ urbi_unwind(UStrand *s)
             if (s->pending_unwind == UEXEC_TAG_STOP &&
                 e->owning_tag != NULL &&
                 e->owning_tag == s->unwind_target) {
+                /* refactor-3 (carried from T3 pass-through fix): synthetic
+                 * ambient entries (FLAG_TAG_AMBIENT — realm tag / inherited
+                 * fork-chain tag) must NOT absorb the TAG_STOP: their
+                 * handler_pc == 0 (would restart the thunk at pc_base) and
+                 * vm_tag_scope_teardown would fire leave events and destroy
+                 * the shared tag per-strand.  Bare-pop and continue walking
+                 * so the unwind propagates and eventually terminates the
+                 * strand via USTRAND_STATE_DEAD. */
+                if (e->flags & FLAG_TAG_AMBIENT) {
+                    strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+                    continue;
+                }
                 uint16_t resume_pc = e->handler_pc;
                 vm_tag_scope_teardown(s, e);
                 s->pc             = s->pc_base + resume_pc;

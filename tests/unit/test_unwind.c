@@ -14,7 +14,9 @@
  * 10. UEXEC_CANCEL propagates through CALL_FRAME without absorption (T13).
  * 11. UEXEC_THROW propagates past TRY_FRAME with only FINALLY (T13).
  * 12. Nested TRY_FRAMEs: innermost catch absorbs (T13).
- * 13. THROW propagates through TAG_SCOPE (M3 stub passthrough) (T13). */
+ * 13. THROW propagates through TAG_SCOPE (M3 stub passthrough) (T13).
+ * 14. TAG_STOP on a strand with a synthetic ambient TAG_SCOPE entry must
+ *     NOT absorb-and-restart (carried fix from refactor-3 T10). */
 
 #include "utest.h"
 #include "runtime/uunwind.h"
@@ -980,6 +982,75 @@ UTEST(unwind_return_processes_same_frame_cleanups)
     urbi_vm_destroy(&vm);
 }
 
+/* Case 14 (refactor-3 T10 carried fix): TAG_STOP must not absorb-and-restart
+ * at a synthetic ambient TAG_SCOPE entry (FLAG_TAG_AMBIENT).
+ *
+ * Synthetic ambient entries (pushed by urbi_strand_attach_ambient_tags for
+ * realm->tag / outer fork-chain tags) have handler_pc=0.  Without the fix,
+ * the TAG_SCOPE absorb arm would call vm_tag_scope_teardown (triggering
+ * shared-tag leave events and utag_destroy on the still-live shared tag) and
+ * then set pc = pc_base + 0 (thunk restart), "absorbing" the stop.
+ *
+ * With the fix: FLAG_TAG_AMBIENT causes a bare-pop (no teardown, no pc jump);
+ * the TAG_STOP continues walking and falls through to fatal → strand DEAD. */
+UTEST(unwind_tag_stop_ambient_entry_no_thunk_restart)
+{
+    UVM vm;
+    UStrand s;
+
+    urbi_vm_init(&vm, NULL, NULL);
+    UValue *reg_stack = strand_setup_minimal(&s, &vm);
+    UASSERT(reg_stack != NULL);
+
+    /* Create a shared UTag (simulates realm->tag or outer-scope tag). */
+    UTag *shared_tag = utag_create(&vm);
+    UASSERT(shared_tag != NULL);
+
+    /* Push a synthetic ambient TAG_SCOPE entry — mirrors what
+     * urbi_strand_attach_ambient_tags produces:
+     *   flags       = FLAG_TAG_AMBIENT
+     *   handler_pc  = 0  (from urbi_zero; a real scope's handler_pc is non-zero)
+     *   owning_tag  = shared_tag */
+    UCleanupEntry *e = strand_cleanup_push(&s);
+    UASSERT(e != NULL);
+    e->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
+    e->flags          = (uint8_t)FLAG_TAG_AMBIENT;
+    e->handler_pc     = 0;
+    e->owning_tag     = shared_tag;
+    e->strand_back    = &s;
+    e->next_member    = shared_tag->member_strands_head;
+    shared_tag->member_strands_head = e;
+
+    /* Advance pc past pc_base so a thunk-restart (pc → pc_base+0) is
+     * distinguishable from the correct path (pc unchanged). */
+    s.pc = s.pc_base + 1;
+
+    /* Deposit TAG_STOP targeting the shared tag. */
+    UValue nil_val;
+    nil_val.kind = (uint8_t)UVAL_NIL;
+    nil_val.v.i  = 0;
+    s.pending_unwind = UEXEC_TAG_STOP;
+    s.unwind_value   = nil_val;
+    s.unwind_target  = shared_tag;
+
+    urbi_unwind(&s);
+
+    /* With the fix: ambient entry bare-popped; TAG_STOP not absorbed;
+     * walker exhausts the cleanup stack → fatal → strand DEAD. */
+    UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
+    UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
+    UASSERT_EQ((int)s.fatal_status, (int)UEXEC_TAG_STOP);
+    /* pc was NOT reset to pc_base (no thunk restart). */
+    UASSERT(s.pc != s.pc_base);
+
+    /* Cleanup: strand_teardown_minimal → strand_unlink_from_tags scans the
+     * full cleanup_cap (CHSTR-051) and unlinks cleanup_base[0] from shared_tag
+     * even though cleanup_depth==0 after the bare-pop. */
+    strand_teardown_minimal(&s, &vm);
+    utag_destroy(&vm, shared_tag);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite registration ===== */
 
 void test_unwind_suite(void) {
@@ -1016,4 +1087,6 @@ void test_unwind_suite(void) {
               unwind_cleanup_run_depth_decrements_after_normal_return);
     utest_run("unwind: RETURN processes same-frame cleanups, stops at caller's (T24)",
               unwind_return_processes_same_frame_cleanups);
+    utest_run("unwind: TAG_STOP on ambient entry must not absorb-and-restart (refactor-3 T10)",
+              unwind_tag_stop_ambient_entry_no_thunk_restart);
 }
