@@ -301,7 +301,7 @@ vm_arith_method_fallback(UVM *vm,
     }
 
     *dst = result;
-    vm_reactive_drain(vm);   /* VM-20: drain after operator method call */
+    vm_reactive_drain(vm, /*bounded_whenever=*/0);   /* VM-20: drain after operator method call (active level) */
     return VM_OP_OVERLOAD_OK;
 }
 
@@ -358,7 +358,7 @@ vm_arith_method_fallback_unary(UVM *vm,
     }
 
     *dst = result;
-    vm_reactive_drain(vm);   /* VM-20: drain after operator method call */
+    vm_reactive_drain(vm, /*bounded_whenever=*/0);   /* VM-20: drain after operator method call (active level) */
     return VM_OP_OVERLOAD_OK;
 }
 
@@ -448,6 +448,6 @@ vm_cmp_method_fallback(UVM *vm,
         *out_bool = true;
     }
 
-    vm_reactive_drain(vm);   /* VM-20: drain after operator method call */
+    vm_reactive_drain(vm, /*bounded_whenever=*/0);   /* VM-20: drain after operator method call (active level) */
     return VM_OP_OVERLOAD_OK;
 }

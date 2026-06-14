@@ -26,6 +26,15 @@ typedef struct UWatcherState {
     uint8_t  in_eval;            /* was vm->in_watcher_eval */
     uint8_t  in_scratch;         /* was vm->in_watcher_scratch */
     uint8_t  in_install;         /* was vm->in_watcher_install */
+
+    /* SCHED-02 storm guard: when 1, watcher_eval_dirty fires a WHENEVER only on
+     * the rising edge (false->true) instead of level-triggered (every truthy
+     * pass).  Set transiently by vm_reactive_drain's idle/boundary path
+     * (bounded=1) so a self-re-dirtying level-whenever cannot spin while the VM
+     * is otherwise quiescent; the active-dispatch drains leave it 0 so the
+     * documented level-trigger semantics (and the existing whenever fixtures)
+     * are preserved on the safepoint path.  Save/restore around the eval. */
+    uint8_t  whenever_edge_only;
 } UWatcherState;
 
 /* uwatcher_state_create: allocate and zero-initialize a UWatcherState.

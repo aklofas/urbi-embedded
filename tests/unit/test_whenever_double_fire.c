@@ -44,20 +44,27 @@
  * drains the shared dirty count, firing the whenever.  In isolation
  * (single watcher, single trivial at-handler), the eval never runs.
  *
- * Attempted fix at S46 (post-dispatch drain in urbi_step — drain on EVERY step)
- * caused unbounded re-eval of level-triggered watchers whose bodies write
- * subscribed slots — broke whenever_level.chk.  Reverted.
+ * Attempted fix at S46 (post-dispatch drain in urbi_step — drain on EVERY step
+ * with LEVEL whenever semantics) caused unbounded re-eval of level-triggered
+ * watchers whose bodies re-dirty their own observed object — the storm.
+ * Reverted.
  *
- * SCHED-02 fix (v0.13.3-scheduler-liveness, Task 5): a targeted idle-VM
- * pre-loop drain fires in urbi_step when strand_runnable_count == 0 (VM
- * idle between host steps).  This drains dirty marks from at-handler bodies
- * that exited without a safepoint, waking parked waituntil/whenever strands.
- * The guard prevents re-firing during active strand execution (safepoints
- * continue to handle that path), keeping whenever_level.chk correct (3 fires).
+ * SCHED-02 fix (v0.13.3-scheduler-liveness, Task 5):
+ *   (a) urbi_step gains an idle pre-loop drain (when strand_runnable_count == 0)
+ *       and a post-loop Step-4b drain, so dirty marks left by flat at-handler
+ *       bodies are drained, waking parked waituntil/at and firing whenevers.
+ *   (b) Those two drains use EDGE-gated whenever firing (uwatcher_eval.c,
+ *       whenever_edge_only): a whenever fires only on its cond's rising edge,
+ *       so a body that re-dirties its own observed object (cell-agnostic
+ *       observer_dirty) cannot self-feed an unbounded re-fire — this is what
+ *       bounds the storm and lets the VM quiesce.  The ACTIVE-dispatch drains
+ *       (dispatcher safepoint / post-native / operator-fallback) keep LEVEL
+ *       firing, so whenever_level.chk's 3 active-dispatch fires are unchanged.
  *
- * Workaround for scripts that need a single-fire rising-edge semantic:
- * use `at` instead of `whenever`.  Hardware code naturally hits safepoints
- * through method calls; pure event-loop scripts can use `at` for edge-trigger.
+ * For scripts that want a single-fire rising-edge semantic outside an active
+ * dispatch loop, `at` and the idle whenever path now coincide; a whenever that
+ * should fire repeatedly while true needs active work (a periodic / event loop)
+ * to supply the safepoints that drive its LEVEL re-fires.
  *
  * Documentation candidate: `docs/internals/reactive-runtime.md` should
  * call out this contract explicitly.  Filed as design-risk
@@ -130,29 +137,34 @@ UTEST(whenever_chunktop_write_fires_cond_baseline)
     urbi_vm_destroy(&vm);
 }
 
-/* === Test 2: at-handler body without nested call NOW wakes watcher
- *             via the idle-VM pre-loop reactive drain (SCHED-02 fix).
+/* === Test 2: at-handler body without nested call wakes a whenever via the
+ *             idle/boundary reactive drain — BOUNDED, and the VM QUIESCES.
  *
- * Previously this test documented the safepoint-visit LIMITATION: an at-handler
- * body that increments a Realm slot could not trigger a `whenever` watcher
- * subscribed to that slot, because the body is a flat sequence (no OP_CALL,
- * no backward OP_JMP), exits via top-frame OP_RET (bypasses the safepoint label
- * in dispatch_loop_until_yield), and dirty_count therefore never reached
- * watcher_eval_dirty.  The fix was filed as a future item.
+ * Background.  An at-handler body that increments a Realm slot is a flat
+ * statement sequence (no OP_CALL, no backward OP_JMP); it exits via top-frame
+ * OP_RET, bypassing the dispatcher `safepoint:` label, so its observer_dirty
+ * marks were never drained during active dispatch.  The SCHED-02 idle/boundary
+ * drain (ustep.c pre-loop + post-loop Step 4b) now drains them, so the whenever
+ * subscribed to Realm.x fires.
  *
- * SCHED-02 fix (v0.13.3-scheduler-liveness, Task 5): vm_reactive_drain is now
- * called in urbi_step's pre-loop pump when strand_runnable_count == 0.  After
- * the at-handler body exits (dead strand, no remaining runnable strands), the
- * next urbi_step call sees strand_runnable_count == 0 AND dirty_count > 0 and
- * drains: watcher_eval_dirty runs, the whenever fires, the body spawns.
+ * The hazard this test pins.  observer_dirty (uwatcher.c) is cell-agnostic: the
+ * whenever's body writes Realm.fired, which re-dirties the SAME Realm object
+ * whose cell carries the OBSERVER bit (the cond reads Realm.x).  A level-trigger
+ * idle drain would re-fire the still-truthy whenever on every step forever — the
+ * reverted-S46 storm (an adversarial -O0 rebuild of the first cut measured
+ * FIRED=998 with the VM stuck RUNNING).  The fix gates the idle/boundary drain
+ * to the rising edge (uwatcher_eval.c, whenever_edge_only), so the whenever
+ * fires at most once per false->true transition of its cond and the VM quiesces.
  *
- * Note: the whenever body itself writes Realm.fired which re-dirties Realm,
- * so watcher_eval_dirty fires on every subsequent idle step (level-triggered
- * per spec §6.5).  fired_count >= 1 is the correct post-fix contract;
- * a specific count is not asserted because it depends on the number of
- * drain_to_quiescent iterations.  Use `at` instead of `whenever` for a
- * single-fire rising-edge semantic. */
-UTEST(at_handler_body_without_call_does_not_drain_dirty)
+ * Contract asserted here:
+ *   1. Every tick's drain RETURNS a settled verdict (QUIESCENT / WAKE_AT), never
+ *      a capped RUNNING — i.e. no spin (termination).
+ *   2. `fired` is BOUNDED and small: the cond `Realm.x > 3` has exactly one
+ *      false->true edge across the 5 ticks (x crosses 3 at tick 3), so the
+ *      edge-gated idle drain fires once.  We assert 1 <= fired <= 2 — a tight,
+ *      meaningful bound that the 998-fire storm would blow through.
+ *   3. dirty_count is fully drained to 0 (the VM is genuinely idle). */
+UTEST(at_handler_body_without_call_wakes_whenever_bounded)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
@@ -179,6 +191,11 @@ UTEST(at_handler_body_without_call_does_not_drain_dirty)
         urbi_inject_event(&vm, (uint32_t)tick, NULL, 0U);
         UStepResult step = drain_to_quiescent(&vm);
         UASSERT(step != URBI_STEP_FATAL);
+        /* Termination: the VM SETTLES every tick — a self-re-dirtying level
+         * whenever would leave drain_to_quiescent returning RUNNING (the 500-
+         * iteration cap), which is the storm signature.  Must be QUIESCENT or
+         * WAKE_AT, never RUNNING. */
+        UASSERT(step == URBI_STEP_QUIESCENT || step == URBI_STEP_WAKE_AT);
     }
 
     /* The at-handler DOES run — x reaches 5.  Write barriers fire. */
@@ -187,18 +204,16 @@ UTEST(at_handler_body_without_call_does_not_drain_dirty)
     UASSERT_EQ((int)UVAL_INT, (int)x.kind);
     UASSERT_EQ(5LL, x.v.i);
 
-    /* dirty_count is 0: the idle-VM pre-loop drain (SCHED-02 fix) drains dirty
-     * marks between urbi_step calls.  The previous assertion
-     * "dirty_count >= 5" documented the pre-fix limitation and is removed. */
+    /* Genuinely idle: all dirty marks drained. */
+    UASSERT_EQ(0U, vm.watchers->dirty_count);
 
-    /* The watcher fires: the idle-VM drain wakes the whenever after each tick's
-     * at-handler body exits.  fired >= 1 is the post-fix contract; a specific
-     * count is not pinned (level-trigger + re-dirty from the body write causes
-     * multiple fires per drain_to_quiescent iteration). */
+    /* Bounded fire: cond has one false->true edge → edge-gated idle drain fires
+     * once.  1 <= fired <= 2 (the 998-fire storm would fail this). */
     UValue fired = utest_e2e_make_nil();
     UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "fired", 5, &fired));
     UASSERT_EQ((int)UVAL_INT, (int)fired.kind);
     UASSERT(fired.v.i >= 1);
+    UASSERT(fired.v.i <= 2);
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
@@ -373,17 +388,82 @@ UTEST(nested_try_finally_in_try_catch_runs_finally)
     urbi_vm_destroy(&vm);
 }
 
+/* === Test 6: SELF-RE-DIRTYING whenever terminates (storm regression) ====
+ *
+ * The worst case for the SCHED-02 idle/boundary drain: a whenever whose body
+ * keeps its OWN condition true.  cond `Realm.go` is flipped true by a host
+ * slot-write; the body re-affirms `Realm.go = 1` on every fire, so under the
+ * old LEVEL idle drain the still-truthy whenever re-fired on every step and the
+ * VM never quiesced (the 998-fire storm).
+ *
+ * With the edge-gated idle/boundary drain, the whenever fires once on the
+ * false->true edge; thereafter `go` stays truthy, so there is no further rising
+ * edge and the VM QUIESCES.  This test fails (hangs at the drain cap → RUNNING)
+ * if the bound is ever removed. */
+UTEST(self_redirtying_whenever_terminates)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UArena  arena;
+    UProto module = {0};
+    uarena_init(&arena, 4096);
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "var Realm.go = false;"
+        "var Realm.fired = 0;"
+        "whenever (Realm.go) { Realm.fired = Realm.fired + 1; Realm.go = 1 }",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    /* Settle the install (cond false → no fire, VM idle). */
+    UStepResult s0 = drain_to_quiescent(&vm);
+    UASSERT(s0 == URBI_STEP_QUIESCENT || s0 == URBI_STEP_WAKE_AT);
+
+    /* Host slot-write flips the cond true (the SCHED-02 external stimulus). */
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "go", 2,
+                                              utest_e2e_make_int(1)));
+
+    /* Drive to quiescence.  Termination: must SETTLE, not spin at the cap. */
+    UStepResult s1 = drain_to_quiescent(&vm);
+    UASSERT(s1 != URBI_STEP_FATAL);
+    UASSERT(s1 == URBI_STEP_QUIESCENT || s1 == URBI_STEP_WAKE_AT);
+    UASSERT_EQ(0U, vm.watchers->dirty_count);
+
+    /* The body ran (cascade resolved): go is re-affirmed truthy, fired bumped. */
+    UValue go = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "go", 2, &go));
+    UASSERT_EQ((int)UVAL_INT, (int)go.kind);
+    UASSERT_EQ(1LL, go.v.i);
+
+    /* Bounded fire: exactly one false->true edge → fires once (storm would be
+     * hundreds).  1 <= fired <= 2. */
+    UValue fired = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "fired", 5, &fired));
+    UASSERT_EQ((int)UVAL_INT, (int)fired.kind);
+    UASSERT(fired.v.i >= 1);
+    UASSERT(fired.v.i <= 2);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&module, NULL);
+    urbi_vm_destroy(&vm);
+}
+
 void
 test_whenever_double_fire_suite(void)
 {
     utest_run("whenever_double_fire: chunk-top write fires cond (baseline)",
               whenever_chunktop_write_fires_cond_baseline);
-    utest_run("whenever_double_fire: at-body without call wakes watcher via idle-VM drain (SCHED-02)",
-              at_handler_body_without_call_does_not_drain_dirty);
+    utest_run("whenever_double_fire: at-body without call wakes whenever, bounded + quiesces (SCHED-02)",
+              at_handler_body_without_call_wakes_whenever_bounded);
     utest_run("whenever_double_fire: at-body with call DOES drain dirty (workaround)",
               at_handler_body_with_call_drains_dirty);
     utest_run("whenever_double_fire: try/catch/finally with caught throw — finally runs exactly once (S5a)",
               try_catch_finally_runs_finally_on_caught_throw);
     utest_run("whenever_double_fire: nested try/finally in try/catch — finally DOES run",
               nested_try_finally_in_try_catch_runs_finally);
+    utest_run("whenever_double_fire: self-re-dirtying whenever terminates (storm regression)",
+              self_redirtying_whenever_terminates);
 }

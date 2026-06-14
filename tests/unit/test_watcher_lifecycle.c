@@ -202,30 +202,23 @@ UTEST(unregister_while_body_alive_defers_drain)
     /* PENDING_UNREGISTER must be set (set by push, not cleared by defer). */
     UASSERT((w->flags & URBI_WATCHER_PENDING_UNREGISTER) != 0);
 
-    /* Dispatch until quiescent: body strand executes OP_RET.
-     * exit_strand calls urbi_watcher_body_completed which:
-     *   - Sees PENDING_UNREGISTER → clears PENDING_REFIRE, returns.
-     *   - Clears body_strand and watcher_body_owner.
-     * drain is NOT automatically invoked by the dispatcher after exit_strand
-     * (safepoints run before exit_strand, not after), so w remains on the
-     * queue until the next explicit drain call. */
+    /* Dispatch until quiescent: the body strand executes OP_RET and exits via
+     * exit_strand, which calls urbi_watcher_body_completed (clears body_strand
+     * + watcher_body_owner, sees PENDING_UNREGISTER → clears PENDING_REFIRE).
+     *
+     * v0.13.3 (SCHED-02 post-loop drain): urbi_step's Step-4b post-loop
+     * vm_reactive_drain now runs drain_pending_onleave_queue at the step
+     * boundary.  By then body_strand is NULL, so the previously-deferred entry
+     * is processed within the SAME run_until_no_runnable call —
+     * urbi_watcher_unregister_internal frees w back to the watcher pool.
+     * (Pre-fix the onleave drain ran only at safepoints, BEFORE exit_strand,
+     * so w lingered on the queue until an explicit drain call.)
+     * Do NOT dereference w past this point: it is back in the pool. */
     int rc = run_until_no_runnable(&vm);
     UASSERT_EQ(rc, 1);
 
-    /* Body is done; body_strand must be NULL. */
-    UASSERT(w->body_strand == NULL);
-
-    /* Queue must still have w on it (auto-safepoint drain at step boundaries
-     * ran before body completed; no drain ran after body_strand was cleared
-     * within the same step call). */
-    UASSERT(pending_queue_contains(&vm, w));
-
-    /* Explicit drain: w->body_strand == NULL now, so drain processes it.
-     * urbi_watcher_unregister_internal frees w back to the pool.
-     * Do NOT access w after this call. */
-    drain_pending_onleave_queue(&vm);
-
-    /* Queue must be empty. */
+    /* The post-loop drain processed the deferred entry (body had completed):
+     * the queue is empty and w has been unregistered. */
     UASSERT(vm.pending_onleave_head == NULL);
     UASSERT(vm.pending_onleave_tail == NULL);
 

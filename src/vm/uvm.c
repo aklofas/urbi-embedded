@@ -798,7 +798,7 @@ dispatch:
                      * Skip when already inside an eval/scratch/install context
                      * (mirrors urbi_emit_slot_change_slow's re-entry guard); the
                      * enclosing pass will drain on return. */
-                    vm_reactive_drain(vm);
+                    vm_reactive_drain(vm, /*bounded_whenever=*/0);  /* active level */
                     NEXT();
                 }
                 if (rc == UEXEC_THROW) {
@@ -1624,7 +1624,7 @@ safepoint:
     }
     vm->step_budget_remaining--;
     if (vm->gc_pending)           urbi_gc_slice(vm, URBI_GC_SLICE_BUDGET);
-    vm_reactive_drain(vm);   /* onleave FIFO + slot-change ring + watcher-eval (SCHED-02/VM-05) */
+    vm_reactive_drain(vm, /*bounded_whenever=*/0);   /* dispatcher safepoint: active level-trigger (SCHED-02/VM-05) */
     /* Preemption flag reserved for v2; not checked at M3. */
     /* Resume dispatch. */
 #if UVM_USE_COMPUTED_GOTO

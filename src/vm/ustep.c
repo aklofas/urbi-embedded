@@ -86,25 +86,57 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      *
      * Rationale for the runnable guard: when strands ARE runnable (normal
      * execution), the dispatch-loop safepoints already call vm_reactive_drain
-     * at every instruction boundary.  Adding a pre-loop drain too would run the
-     * reactive pipeline an extra time per step, causing level-triggered `whenever`
-     * watchers whose bodies write observed slots to fire more often than expected
-     * (S46 shape — see tests/chk/reactive/at/whenever_level.chk and
-     * tests/chk/reactive/whenever_else.chk).
+     * at every instruction boundary.  A pre-loop drain is only needed when the
+     * VM is otherwise idle.
      *
      * SCHED-02 case: when the sole live strand is parked in waituntil(cond),
      * strand_runnable_count == 0.  A host-C slot write between urbi_step calls
      * bumps dirty_count, but the dispatch loop never runs (no READY strand) so
-     * no safepoint drain fires.  The guard allows the drain here, waking the
-     * WAITUNTIL strand (making it READY) before the dispatch loop test below. */
+     * no safepoint drain fires.  The drain here wakes the parked strand (makes
+     * it READY) before the dispatch loop test below.
+     *
+     * bounded_whenever = 1 (edge-only): a level-whenever whose body re-dirties
+     * its own observed object would otherwise self-feed an unbounded re-fire on
+     * each idle step (observer_dirty is cell-agnostic — see uwatcher_eval.c).
+     * Firing the whenever only on its rising edge here breaks that loop while
+     * still letting a parked waituntil/at (both rising-edge) wake. */
     if (vm->strand_runnable_count == 0) {
-        vm_reactive_drain(vm);
+        vm_reactive_drain(vm, /*bounded_whenever=*/1);
     }
 
     vm->step_budget_remaining = budget_instructions;
 
-    /* Round-robin through all READY strands until the budget is exhausted
-     * or the run-queue empties. */
+    /* Dispatch loop + post-loop reactive drain (Step 4b).
+     *
+     * The inner while round-robins READY strands until the budget is exhausted
+     * or the run-queue empties.  After it drains, the post-loop drain absorbs
+     * dirty marks left by FLAT strands that completed without ever hitting a
+     * safepoint (a one-statement at-handler body never reaches the dispatcher
+     * `safepoint:` label), so a parked waituntil/at wakes and cascades resolve
+     * within THIS step rather than one step late.
+     *
+     * Re-entry condition (runnable_before_drain): the outer do/while re-enters
+     * the dispatch loop ONLY if the drain INCREASED strand_runnable_count — i.e.
+     * it woke a parked waituntil/at or spawned a whenever body, both of which
+     * tail-insert a READY strand (sched_strand_make_runnable), so sched_pick_next
+     * is guaranteed to return dispatchable work that consumes budget.  Gating on
+     * an increase rather than on `runnable > 0` is load-bearing: a strand that
+     * soft-yields on VM-budget exhaustion stays RUNNING-but-off-the-ready-queue,
+     * leaving strand_runnable_count > 0 while sched_pick_next == NULL; a plain
+     * `runnable > 0` re-entry would then spin (inner while breaks on the NULL
+     * pick without consuming budget, drain is a no-op, repeat).  When no new
+     * work is produced the loop exits and the host re-pumps on the next
+     * urbi_step, exactly as before this task.
+     *
+     * bounded_whenever = 1 (edge-only) keeps even the legitimate re-entry finite:
+     * a self-re-dirtying level-whenever fires at most once per rising edge (full
+     * termination argument in uwatcher_eval.c's WHENEVER branch).
+     *
+     * FORBIDDEN: draining right after sched_post_dispatch *inside* the inner
+     * loop — a per-iteration drain there reintroduces the reverted-S46
+     * unbounded level-whenever re-spawn (see test_whenever_double_fire.c). */
+    uint32_t runnable_before_drain;
+    do {
     while (vm->step_budget_remaining > 0 && vm->strand_runnable_count > 0) {
         UStrand *s = sched_pick_next(vm);
         if (!s) break;
@@ -173,6 +205,14 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
          * After step 2, s may be freed.  Do NOT dereference s after this call. */
         sched_post_dispatch(vm, s);
     }
+
+        /* Step 4b: post-loop reactive drain (bounded/edge whenever).  Absorbs
+         * dirty marks from flat strands that completed without a safepoint, so
+         * a parked waituntil/at wakes and cascades resolve within this step. */
+        runnable_before_drain = vm->strand_runnable_count;
+        vm_reactive_drain(vm, /*bounded_whenever=*/1);
+    } while (vm->strand_runnable_count > runnable_before_drain
+             && vm->step_budget_remaining > 0);
 
     /* Post-loop verdict ladder (refactor-3 SCHED-13): one liveness formula.
      *

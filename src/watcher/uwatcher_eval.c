@@ -254,9 +254,36 @@ watcher_eval_dirty(struct UVM *vm)
                 break;
 
             case UWATCHER_WHENEVER:
-                /* Level-triggered: fires every dirty pass while condition truthy.
-                 * W9: track whether body has fired (for falling-edge else guard). */
-                if (uvalue_truthy(&new_val)) {
+                /* Level vs edge gate (SCHED-02 storm fix).
+                 *
+                 * Active-dispatch path (whenever_edge_only == 0, the default —
+                 * dispatcher safepoint / post-native / operator-fallback drains):
+                 * level-triggered, fires every dirty pass while truthy.  The
+                 * number of fires is bounded by the number of safepoints during
+                 * active execution, which is finite.
+                 *
+                 * Idle / boundary path (whenever_edge_only == 1 — urbi_step's
+                 * pre-loop idle drain and post-loop Step-4b drain): fire only on
+                 * the rising edge (false->true).  observer_dirty is cell-agnostic
+                 * (uwatcher.c), so a whenever body that writes ANY slot on an
+                 * object whose cell carries the OBSERVER bit re-dirties the global
+                 * dirty_count — including the body's write to its OWN observed
+                 * object.  Under the idle/boundary drain (which re-runs whenever
+                 * the VM is otherwise quiescent), level-firing would let such a
+                 * self-re-dirty spin unboundedly (the reverted-S46 storm; see
+                 * tests/unit/test_whenever_double_fire.c).  Gating on the rising
+                 * edge breaks the loop: once the whenever fires, last_value_cache
+                 * becomes truthy, so no subsequent idle pass sees an edge.
+                 *
+                 * Termination argument: watcher_eval_dirty resets dirty_count to 0
+                 * on entry.  In the idle/boundary drain a whenever fires at most
+                 * once per rising edge; after firing, old==truthy so `rising` is
+                 * false on every later pass.  With no fire, no body spawns, so
+                 * nothing re-dirties; dirty_count stays 0 and the VM quiesces.
+                 * Total idle fires are bounded by the number of genuine
+                 * false->true cond transitions, which is finite for any script. */
+                if (vm->watchers->whenever_edge_only ? rising
+                                                     : uvalue_truthy(&new_val)) {
                     if (w->body != NULL) {
                         spawn_body_coroutine(vm, w);
                     } else if (vm->test_hooks != NULL
