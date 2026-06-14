@@ -1,0 +1,32 @@
+# Milestone: v0.13.3 (scheduler-liveness)
+# Covers: GC pressure inside an open anonymous tag scope — 500 Object.new()
+#         allocations inside a tag-scope body force GC collections while
+#         the scope's cleanup entry and the anonymous UTag (created by
+#         OP_PUSH_TAG) are live on the cleanup stack.
+#         Under URBI_GC_STRESS (collect-on-every-alloc) each Object.new()
+#         triggers a full collection; if the cleanup entry or UTag are not
+#         reachable via the GC root scan they are freed mid-loop and
+#         OP_POP_TAG at scope exit accesses freed memory (UAF).
+#
+#         The at-watcher installed inside the scope fires once (trig() sets
+#         the condition from inside the body, providing the OP_RET safepoint
+#         watcher_eval_dirty requires).  After the scope closes, Realm.fired
+#         must be 1, confirming:
+#           (a) no crash during GC pressure with the scope and UTag live,
+#           (b) the watcher was properly installed and fired exactly once,
+#           (c) the scope closed cleanly (OP_POP_TAG completed without UAF).
+#         If the UTag or cleanup entry were freed during the allocation loop,
+#         OP_POP_TAG would access freed memory (caught by ASan in
+#         make test-asan); without ASan, Realm.fired would be 0 (watcher
+#         never reached its install point) or the run would crash silently.
+# matrix-row: gc-pressure-anon-scope
+## host: run var t = Tag.new()
+## host: run Realm.cond = 0
+## host: run Realm.fired = 0
+## host: run t: { at (Realm.cond == 1) Realm.fired = Realm.fired + 1; var i = 0; while (i < 500) { var s = Object.new(); s = nil; i = i + 1 }; var trig = function() { Realm.cond = 1 }; trig() }
+## host: run Realm.fired
+[00000000] <Tag>
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] 1
