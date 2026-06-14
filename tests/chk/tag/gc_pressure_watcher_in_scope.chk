@@ -1,0 +1,46 @@
+# Milestone: v0.13.3 (scheduler-liveness)
+# Covers: a condition watcher installed inside an OPEN tag scope must survive
+#         heavy allocation churn and then fire correctly, and the scope must
+#         tear down without touching freed memory.
+#
+#         `t: { at (cond) body; <500 Object.new()>; trig() }` — the watcher is
+#         installed as the scope's first statement; 500 Object.new()
+#         allocations then churn the heap while the named tag, the scope's
+#         cleanup entry, AND the watcher's pool slot are all live; trig()
+#         (last statement, inside the scope) flips the condition, firing the
+#         watcher exactly once (Realm.fired -> 1) before the scope closes.
+#
+#         Under stress mode (a full collection on every allocation) any
+#         unrooted window in the watcher pool, the cleanup-stack scope entry,
+#         or the live tag turns the run into a use-after-free at scope
+#         teardown (caught by ASan) or drops the watcher so trig() finds
+#         nothing to fire.  On a normal build GC pressure is low and this
+#         passes trivially; the stress build is where it earns its keep.
+#
+# Non-vacuous: Realm.fired == 1 holds only if the watcher pool slot stays
+#         rooted across all 500 collections and the scope tears down without
+#         touching freed memory.  Perturb the watcher rooting and the final
+#         read drops to 0; corrupt the tag/cleanup rooting and ASan trips at
+#         OP_POP_TAG.  (Perturbation-confirmed: forcing the expected last
+#         line to 0 makes the fixture FAIL.)
+#
+# Scope shape: a NAMED user tag (var t = Tag.new()) is used deliberately.
+#         The only script form that produces an UNNAMED per-scope tag is a
+#         tag-prefix whose expression is not a tag value — a defensive
+#         fallback, not a stable surface (and brittle: an at-watcher fired
+#         inside such a scope currently aborts at teardown).  GC survival of
+#         the unnamed per-scope tag — the case where its SOLE reference is the
+#         cleanup-stack scope entry, collected under pressure — is pinned
+#         directly as a focused unit test in
+#         tests/unit/test_gc_rooting_matrix.c (matrix_cleanup_owning_tag_is_rooted).
+# matrix-row: gc-pressure-tag-scope
+## host: run var t = Tag.new()
+## host: run Realm.cond = 0
+## host: run Realm.fired = 0
+## host: run t: { at (Realm.cond == 1) Realm.fired = Realm.fired + 1; var i = 0; while (i < 500) { var s = Object.new(); s = nil; i = i + 1 }; var trig = function() { Realm.cond = 1 }; trig() }
+## host: run Realm.fired
+[00000000] <Tag>
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] 1
