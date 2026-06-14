@@ -301,6 +301,13 @@ sched_strand_make_runnable(UStrand *s)
        circular-chain corruption surfaces as a quiescence-stall bug). */
     URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) != USTRAND_DEAD);
     URBI_INTERNAL_ASSERT(s->state != USTRAND_STATE_READY);
+    /* B11/SCHED-03: transient strands (scratch at-sync/onleave bodies,
+       urbi_vm_run) live on the C stack and must never enter the ready queue —
+       a later dispatch via vm->ready_head would be a dead-stack UAF.  The
+       OP_YIELD / safepoint-budget / step-budget arms in uvm.c divert every
+       transient before it can reach this funnel; this assert fail-fasts in
+       URBI_DEBUG if a future path loses that invariant. */
+    URBI_INTERNAL_ASSERT(!s->is_transient_strand);
     if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return;
     UVM *vm = s->vm;
     /* SCHED-13 / VM-12: this is the single wake funnel — every WAITING ->
@@ -363,6 +370,11 @@ sched_strand_yield(UStrand *s)
      * from WAITING bypass the proper unblock path and break the symmetric
      * counter contract documented at the top of this file. */
     URBI_INTERNAL_ASSERT(s->state == USTRAND_STATE_RUNNING);
+    /* B11/SCHED-03: a transient (stack-local) strand must never be enqueued.
+       The OP_YIELD / safepoint-budget / step-budget arms in uvm.c divert every
+       transient before reaching sched_strand_yield; this fail-fasts in
+       URBI_DEBUG if that invariant is ever lost. */
+    URBI_INTERNAL_ASSERT(!s->is_transient_strand);
     URBI_TP(s->vm, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_YIELD,
             (uint32_t)(uintptr_t)s, 0);
     URBI_PERF_INC(s->vm, yields);

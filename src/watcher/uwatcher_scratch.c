@@ -28,6 +28,7 @@
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"   /* UClosure full definition (M4: embeds UCell) */
 #include "sched/ustrand.h"
+#include "sched/usched_cooperative.h" /* urbi_sched_strand_unpark (B11 fail-soft) */
 #include "runtime/ucleanup.h"
 #include "realm/urealm.h"
 #include "urbi/urbi.h"
@@ -264,12 +265,32 @@ run_on_scratch_core(struct UVM       *vm,
             /* Clean OP_RET — capture the return value. */
             *out_result = out_local;
         } else {
-            /* RUNNING with budget exhausted, READY (yield), WAITING (block), or
-             * SUSPENDED (gate-suspended member strand, v0.13.3 SCHED-08).
-             * The latter three violate the §6.4 no-yield contract; treat as
+            /* RUNNING with budget exhausted, WAITING (a sleep/waituntil/block
+             * inside the body), or SUSPENDED (gate-suspended member strand,
+             * v0.13.3 SCHED-08).  (READY is unreachable for a transient: the
+             * B11/SCHED-03 guards in uvm.c divert OP_YIELD and both budget arms
+             * before sched_strand_yield, so a scratch strand is never enqueued.)
+             * All of these violate the §6.4 no-yield contract; treat as
              * cond-throw so install/eval can fail-soft.  Diagnostic neutralized
              * because the same core also handles AT_SYNC bodies, onleave handlers,
-             * and event sync-emit bodies — not just cond closures. */
+             * and event sync-emit bodies — not just cond closures.
+             *
+             * B11/SCHED-03 (Step 4): a body that parked WAITING (e.g. a stray
+             * sleep) holds reason-specific third-party links (sleep queue /
+             * event-waiter chain / joiners).  Explicitly unpark it here —
+             * enqueue == 0 unlinks those structures.  For a transient strand
+             * the waiting-count helpers are no-ops (run_on_scratch_core only
+             * ever runs transients), so there is no count to adjust; stamp
+             * DEAD (rather than leaving the state byte WAITING, which
+             * urbi_sched_strand_unpark does by contract) so that (a) the
+             * !WAITING teardown assert below holds and (b) ustrand_destroy →
+             * strand_cleanup_observers does not call strand_unlink_park a
+             * second time on the already-removed links.  Pre-fix this relied
+             * solely on the ustrand_destroy → strand_cleanup_observers backstop. */
+            if (USTRAND_IS_WAITING(&strand)) {
+                urbi_sched_strand_unpark(&strand, /*enqueue=*/0);
+                strand.state = USTRAND_STATE_DEAD;
+            }
             *out_threw = 1;
             if (vm->host_log_fn) {
                 vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
@@ -313,6 +334,17 @@ run_on_scratch_core(struct UVM       *vm,
         vm->alloc_fn(scratch_arr, 0, vm->alloc_ud);
         scratch_arr = NULL;
     }
+
+    /* B11/SCHED-03 (Step 4) teardown invariants: the stack-local strand must
+     * leave dispatch fully detached from every scheduler structure before its
+     * storage goes out of scope.  ready_next/ready_prev stay NULL because the
+     * transient guards in uvm.c keep it off the ready queue (a non-NULL link
+     * would mean sched_strand_make_runnable enqueued a dead-stack pointer);
+     * !WAITING holds because the clean-exit / fatal arms reach DEAD and the
+     * fail-soft arm above explicitly unparks + stamps DEAD.  Both fail-fast in
+     * URBI_DEBUG; production builds elide them. */
+    URBI_INTERNAL_ASSERT(strand.ready_next == NULL && strand.ready_prev == NULL);
+    URBI_INTERNAL_ASSERT(!USTRAND_IS_WAITING(&strand));
 
     ustrand_destroy(&strand, vm);
     return 0;

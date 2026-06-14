@@ -1043,18 +1043,35 @@ dispatch:
                and return to the scheduler.  The urbi_vm_run adapter re-enters
                dispatch_loop_until_yield until strand is DEAD.
                sched_strand_yield asserts entry state == RUNNING (SCHED-003)
-               and overwrites with READY on enqueue, so no pre-set here.
-               B11/SCHED-03: transient strands (scratch, urbi_vm_run) must NOT
-               be enqueued via sched_strand_yield — the UStrand lives on the C
-               stack; a later urbi_step traversal via vm->ready_head would be a
-               dead-stack UAF.  Exit with state RUNNING instead:
-               - urbi_vm_run's for-loop RUNNING arm re-arms budget and
-                 re-dispatches (PC already advanced here), equivalent to the
-                 READY arm without the enqueue/dequeue round-trip.
-               - run_on_scratch_core treats RUNNING-on-return as a yield
-                 violation and sets *out_threw = 1 (§6.4 no-yield contract). */
+               and overwrites with READY on enqueue, so no pre-set here. */
             s->pc++;
-            if (s->is_transient_strand) goto exit_strand;
+            if (s->is_transient_strand) {
+                /* B11/SCHED-03 + B4/REVIVAL §S5a: transient strands (scratch
+                 * at-sync/onleave bodies, urbi_vm_run) run their body
+                 * ATOMICALLY — `;` is non-yielding there and the body runs to
+                 * completion, "never silent truncation" (§S5a; AT_SYNC bodies
+                 * are "synchronous scratch frame; no yield" per
+                 * docs/internals/reactive-runtime.md).  Two reasons NOT to
+                 * enqueue + exit here:
+                 *   (1) the UStrand lives on the C stack — sched_strand_yield
+                 *       would put a dead-stack pointer on vm->ready_head (UAF);
+                 *   (2) exiting at the first `;` would drop every statement
+                 *       after it (the bug this replaces).
+                 * PC is already advanced past OP_YIELD; continue dispatch into
+                 * the next statement.  Over-budget bodies still fail-soft via
+                 * the safepoint-budget arm reached on the body's own backward
+                 * branches / bytecode calls — same bound as finally/onleave.
+                 * ASYNC at/event/whenever bodies run on REAL (non-transient)
+                 * strands via do_spawn_body_coroutine → urbi_strand_create
+                 * (is_transient_strand stays 0), so they fall through to
+                 * sched_strand_yield below and still yield on `;` as before. */
+                URBI_PERF_INC(s->vm, opcodes);
+#if UVM_USE_COMPUTED_GOTO
+                DISPATCH();
+#else
+                goto dispatch;
+#endif
+            }
             sched_strand_yield(s);
             steps_consumed++;
             goto exit_strand;

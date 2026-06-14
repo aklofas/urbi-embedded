@@ -69,20 +69,88 @@ scratch_compile(UVM *vm, const char *src, UProto *mod_out)
 }
 
 /* ===================================================================
- * Test 1: scratch_budget_seeded_loop_completes
+ * Test 1: scratch_at_sync_body_runs_to_completion
  *
- * A scratch body with a while loop triggers a backward branch at the
- * `safepoint:` label in dispatch_loop_until_yield.  Pre-fix (budget == 0
- * + no transient guard), the first backward branch immediately called
- * sched_strand_yield, enqueuing the stack-allocated UStrand onto
- * vm->ready_head — a dead-stack UAF on the next urbi_step call.
+ * The plan's Step-1 integration repro (refactor-3 B11/SCHED-03 + B4/§S5a).
+ * Drives a REAL at-sync body through the loader strand: the body
+ *   { var i = 0; while (i < 10) { i = i + 1 }; Realm.n = i }
+ * is `;`-separated, so it contains OP_YIELD between statements, and it runs
+ * on a TRANSIENT scratch strand (invoke_body_inline → run_on_scratch_core).
  *
- * Post-fix (T7): budget seeded to URBI_SCRATCH_BUDGET_OPS after arm +
- * transient guard in uvm.c prevents sched_strand_yield for transient
- * strands.  The 5-iteration loop runs to completion (DEAD);
- * vm->ready_head stays NULL and *out_threw == 0.
+ * Pre-fix (two layered bugs):
+ *   (a) budget == 0: the while loop's first backward branch sees safepoint
+ *       budget 0 and sched_strand_yield enqueues the stack-local UStrand
+ *       onto vm->ready_head — a dead-stack UAF; AND
+ *   (b) OP_YIELD-on-transient did `goto exit_strand` (the first T7 attempt),
+ *       truncating the body at the first `;` — Realm.n never assigned, the
+ *       watcher fail-soft swallows the body (REVIVAL §S5a: this is exactly
+ *       the "silent truncation" that atomic bodies must NEVER do).
  *
- * Red assertion (pre-fix): vm.ready_head != NULL.
+ * Post-fix: budget seeded; OP_YIELD-on-transient is a no-op-continue so the
+ * atomic body runs straight through every `;` to completion.  The loop ends
+ * with i == 10 and the body writes Realm.n = 10.  Because the body completed
+ * cleanly (no fail-soft, no truncation), threw was 0 inside the watcher —
+ * observable here as Realm.n == 10 (a thrown/truncated body leaves it 0).
+ *
+ * Red assertions (pre-fix): Realm.n == 0 (truncated) and/or
+ *                           vm.ready_head != NULL (dead-stack enqueue).
+ * =================================================================== */
+UTEST(scratch_at_sync_body_runs_to_completion)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    URealm *gr = urbi_realm_global(&vm);
+    UASSERT(gr != NULL);
+    if (gr == NULL) { urbi_vm_destroy(&vm); return; }
+
+    /* Install the at-sync watcher (cond false at install → no fire), then
+     * drive the rising edge with Realm.t = true in the same chunk.  The body
+     * fires synchronously during the loader strand's reactive drain. */
+    int rc = utest_e2e_compile_and_run(&vm,
+        "var Realm.n = 0; var Realm.t = false;"
+        "at sync (Realm.t) { var i = 0; while (i < 10) { i = i + 1 }; Realm.n = i };"
+        "Realm.t = true;",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+    if (rc != URBI_OK) { urbi_vm_destroy(&vm); return; }
+
+    /* Drain any residual scheduler work (the loader strand reaps here). */
+    (void)urbi_step(&vm, 100000, NULL);
+
+    /* No transient strand was ever enqueued: the dead-stack pointer the bug
+     * left on vm->ready_head is gone. */
+    UASSERT(vm.ready_head == NULL);
+
+    /* The `;`-separated atomic body ran to completion: i looped 0→10 and the
+     * trailing `Realm.n = i` executed.  Pre-fix this stayed 0 (truncated at
+     * the first `;`), which also means threw was 1 inside the watcher. */
+    UValue n = {0};
+    rc = urbi_realm_get_global(&vm, gr, "n", 1, &n);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)n.kind);
+    UASSERT_EQ(10, (int)n.v.i);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
+ * Test 2: scratch_budget_seeded_loop_completes
+ *
+ * The pure budget-seed path (B11/SCHED-03), exercised via a direct
+ * urbi_run_closure_on_scratch call so *out_threw is observable.  Uses `|`
+ * (atomic sequential, emits no OP_YIELD) between the two statements so the
+ * only safepoint trigger is the while loop's backward OP_JMP — isolating the
+ * budget-seed fix from the OP_YIELD-no-op fix that Test 1 covers.
+ *
+ * A function literal keeps "var i" in a local register (no OP_SETSLOT on the
+ * frozen realm global) and returns a UClosure with proto_inst set (required
+ * for ic_resolve_pi during the scratch dispatch).
+ *
+ * Pre-fix (budget == 0): the first backward branch enqueues the stack-local
+ * UStrand onto vm->ready_head (dead-stack UAF) and the body fail-softs
+ * (threw == 1).  Post-fix: 5-iteration loop runs to DEAD; ready_head stays
+ * NULL and threw == 0.
  * =================================================================== */
 UTEST(scratch_budget_seeded_loop_completes)
 {
@@ -93,17 +161,6 @@ UTEST(scratch_budget_seeded_loop_completes)
     uarena_init(&arena, 4096);
     memset(&module, 0, sizeof(module));
 
-    /* Use a function literal so "var i" is a local register (no OP_SETSLOT
-     * on the frozen realm global_object) and the UClosure is returned with
-     * proto_inst set — required for ic_resolve_pi to find the IC table
-     * during the scratch dispatch.
-     *
-     * Use `|` (atomic sequential) instead of `;` between statements: `;`
-     * generates OP_YIELD which is a cooperative yield point; `|` does not.
-     * The while loop's backward OP_JMP fires the safepoint on every iteration
-     * (5 iterations = 5 safepoint triggers), pinning the B11/SCHED-03 budget
-     * seed fix.  With the budget seeded and the transient guard in place the
-     * body runs to DEAD without touching the scheduler queues. */
     UValue fn = {0};
     int rc = utest_e2e_compile_and_run_with_module(
         &vm, &arena, &module,
@@ -142,17 +199,20 @@ static uint64_t g_mock_t_safety;
 static uint64_t mock_clock_safety(void *ud) { (void)ud; return g_mock_t_safety; }
 
 /* ===================================================================
- * Test 2: scratch_body_sleep_failsoft_unparks
+ * Test 3: scratch_body_sleep_failsoft_unparks
  *
  * A scratch body that calls sleep() blocks the strand on the sleep queue
  * (USTRAND_REASON_SLEEP).  At teardown the strand must NOT be reachable
  * via vm->sleep_q_head — a dead-stack UAF would occur at the next
  * sched_wake_due_sleepers call.
  *
- * T3 (SCHED-05) shipped strand_cleanup_observers in ustrand_destroy which
- * calls strand_unlink_park for WAITING strands.  T7 adds an EXPLICIT unpark
- * before ustrand_destroy (belt-and-suspenders, mirrors cleanup executor at
- * uunwind.c:314).  This test pins both layers: vm->sleep_q_head == NULL
+ * v0.13.1 T3 (SCHED-05) shipped strand_cleanup_observers in ustrand_destroy
+ * which calls strand_unlink_park for WAITING strands.  T7's FIX 3 adds an
+ * EXPLICIT unpark (urbi_sched_strand_unpark(&strand, 0) + stamp DEAD) in the
+ * fail-soft arm of run_on_scratch_core, before *out_threw = 1 and before the
+ * ustrand_destroy teardown — so the strand leaves the sleep queue while still
+ * named, not via the death-side backstop.  The teardown then asserts
+ * !USTRAND_IS_WAITING.  This test pins both layers: vm->sleep_q_head == NULL
  * after run_on_scratch_core returns.
  * =================================================================== */
 UTEST(scratch_body_sleep_failsoft_unparks)
@@ -183,9 +243,10 @@ UTEST(scratch_body_sleep_failsoft_unparks)
     UASSERT_EQ(1, threw);
 
     /* Sleep queue must be empty after run_on_scratch_core returns.
-     * Pre-T3: sleep queue retained a dead-stack pointer (UAF).
-     * Post-T3/T7: either the explicit unpark or ustrand_destroy's
-     * strand_cleanup_observers removes the strand from the sleep queue. */
+     * Pre-v0.13.1-T3: sleep queue retained a dead-stack pointer (UAF).
+     * Post-T3/T7: the explicit unpark in the fail-soft arm removes the strand
+     * from the sleep queue (with ustrand_destroy's strand_cleanup_observers
+     * as a redundant backstop). */
     UASSERT(vm.sleep_q_head == NULL);
 
     uchunk_destroy(&mod, NULL);
@@ -193,7 +254,7 @@ UTEST(scratch_body_sleep_failsoft_unparks)
 }
 
 /* ===================================================================
- * Test 3: v0.13.1-F re-verify — urbi_vm_run transient teardown
+ * Test 4: v0.13.1-F re-verify — urbi_vm_run transient teardown
  *
  * Install an at-watcher via urbi_vm_run, then write the watched slot
  * (making the watcher condition dirty) WITHOUT running any urbi_step steps.
@@ -250,6 +311,8 @@ void
 test_scratch_strand_safety_suite(void)
 {
     printf("test_scratch_strand_safety\n");
+    utest_run("scratch_at_sync_body_runs_to_completion",
+              scratch_at_sync_body_runs_to_completion);
     utest_run("scratch_budget_seeded_loop_completes",
               scratch_budget_seeded_loop_completes);
     utest_run("scratch_body_sleep_failsoft_unparks",
