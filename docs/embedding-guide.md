@@ -175,6 +175,48 @@ void urbi_task(struct UVM *vm)
 }
 ```
 
+### QUIESCENT: idle VM and the host-write-then-step wake pattern
+
+`URBI_STEP_QUIESCENT` means the VM has **no internal work** — no runnable strand,
+no pending event or host-call drain, no timer due. The reactive surface (installed
+`at`/`whenever` watchers and parked `sleep`/`waituntil` strands) remains armed but
+does not count as internal work; it waits for external input.
+
+**QUIESCENT ≠ dead.** Use `urbi_vm_has_live_work(vm, NULL, NULL, NULL)` to
+distinguish the two cases:
+
+| Scenario | `urbi_step` returns | `urbi_vm_has_live_work` |
+|---|---|---|
+| Active strands running | `RUNNING` | `true` |
+| All strands sleeping (timer pending) | `WAKE_AT` | `true` |
+| Watchers armed, waiting for input | `QUIESCENT` | `true` — armed surface is live |
+| No script loaded, nothing installed | `QUIESCENT` | `false` — VM is fully dead |
+
+**Host-write-then-step wake pattern.** When the host writes a slot or injects an
+event, the reactive surface re-arms without any explicit wake call:
+
+```c
+/* FRAGMENT — wake an idle VM by writing a host slot */
+void host_update_and_step(struct UVM *vm, struct URealm *realm, UValue state_obj)
+{
+    /* Write the slot — this sets the slot-change dirty bit internally. */
+    urbi_slot_set(vm, state_obj, "value", 5, urbi_make_float(3.14));
+
+    /* Call urbi_step again; the pre-loop idle drain picks up the slot-change
+     * and fires any armed at(obj.value.changed?) watcher. */
+    uint64_t wake_us = 0;
+    UStepResult r = urbi_step(vm, 10000, &wake_us);
+    (void)r;  /* handle result as in the main step loop */
+}
+```
+
+The same pattern applies to injected events (`urbi_inject_event` deposits to
+the ISR ring; the pre-loop drain reads it on the next `urbi_step` call).
+
+After providing input, call `urbi_step` again — the pre-loop idle drain runs
+`vm_reactive_drain` before any strand dispatch, guaranteeing that a host write
+or injected event is visible to all armed watchers in the same step.
+
 ### Teardown
 
 `urbi_vm_free(vm)` releases all GC-managed memory and unregisters event handlers. For VMs created with `urbi_vm_init` (static/BSS allocation), use `urbi_vm_destroy(vm)` instead; both perform the same teardown but `urbi_vm_free` also frees the opaque allocation returned by `urbi_vm_create`.
@@ -421,15 +463,41 @@ at (sensor?(x, y, z)) {
 
 ### `every (period) body`
 
-Periodic-spawn construct (v0.9.4). `every (100) X` is sugar for spawning a strand that runs `X` every 100 milliseconds until tag-cancelled. The period is a millisecond float; the body is any statement, wrapped automatically by the parser into a zero-argument function literal.
+Periodic-spawn construct (v0.9.4). `every (100ms) X` spawns a strand that runs
+`X` on a fixed cadence until tag-cancelled. The body is any statement, wrapped
+automatically by the parser into a zero-argument function literal.
+
+**Period units.** The period argument is interpreted as follows:
+
+| Argument kind | Unit | Example |
+|---|---|---|
+| Integer / duration literal | Microseconds | `every (500ms)` — `500ms` lexes to UVAL_INT(500000 µs) |
+| Bare float | Seconds | `every (0.5)` — 500 ms, same as `every (500ms)` |
+
+Duration literals (`100ms`, `1s`, `250us`) are always converted to UVAL_INT
+microseconds by the lexer; a bare float is treated as **seconds**, matching
+`sleep()`'s convention.
+
+**Cadence is fixed.** The fire deadline advances by one period from the previous
+deadline, not from body-completion time. Body duration does not drift the
+interval — fire times are `t₀`, `t₀+P`, `t₀+2P`, … regardless of how long the
+body takes.
+
+**Overrun handling.** When a body takes longer than one period, the next deadline
+is `now + period` (missed periods are **skipped**, with no burst of catch-up fires
+and no immediate catch-up fire). This keeps the VM able to reach `QUIESCENT` or
+`WAKE_AT` between overrun fires — an always-due periodic would hold the scheduler
+in a RUNNING loop indefinitely.
 
 ```urbiscript
-heartbeat: { every (500) led_toggle() };
+heartbeat: { every (500ms) led_toggle() };
 // ...later...
 heartbeat.stop();
 ```
 
-The strand inherits the caller's ambient tag scope; `tag.stop()` cancels via the existing cleanup cascade. Body execution time delays subsequent fires (body+sleep model — the period is the minimum interval between fires, not a guaranteed cadence). The scheduler's sleep-queue drives re-arming directly from C. The `sleep(duration)` built-in is available from v0.10.2 onwards.
+The strand inherits the caller's ambient tag scope; `tag.stop()` cancels via the
+existing cleanup cascade. The `sleep(duration)` built-in is available from
+v0.10.2 onwards.
 
 See `tests/chk/reactive/every/*.chk` for canonical behaviour.
 

@@ -185,6 +185,18 @@ so the GC walker visits its register window, dispatches up to
 tears down. Cond closures must not yield — yield/block/budget exhaustion
 all degrade to "throw" and are reported via `*out_threw`.
 
+**At-sync and onleave bodies run atomically (v0.13.3, B11/SCHED-03).** Transient
+strands (scratch and `urbi_vm_run`) have `is_transient_strand = 1`. When such a
+strand executes `OP_YIELD` (the `;` sequential separator), the opcode is a
+no-op-continue: the PC advances past the yield and dispatch resumes immediately
+into the next statement. The strand never enqueues itself on the ready queue and
+never returns to the scheduler mid-body. This is "never silent truncation" — the
+entire body runs to completion. Budget-violation on backward branches or nested
+calls degrades to throw (the same bound as `finally`/`onleave`), not mid-body
+exit. Async `at` / event / `whenever` bodies run on real (non-transient) strands
+allocated by `urbi_strand_create` (`is_transient_strand` = 0); they still yield
+on `;` and reschedule as before.
+
 The five sync sites in the reactive runtime that route through this
 primitive:
 
@@ -331,6 +343,30 @@ drain. It walks the list: frees any with `unregister_pending` set; for
 any whose `current_strand == NULL` and `next_fire_us <= now`, spawns a
 fresh body strand via `spawn_periodic_body` and arms the next fire time.
 
+**Period units (SCHED-14, v0.13.3).** The `period_us` field is always microseconds
+internally. `every_native` accepts the period argument as:
+
+- `UVAL_INT` — microseconds. Duration literals from the lexer (`100ms`, `1s`) arrive
+  here already scaled (e.g. `100ms` → UVAL_INT(100000)). This is the common path.
+- `UVAL_FLOAT` — **seconds**, matching `sleep()`'s float convention. A bare float
+  literal like `every(0.5)` means every 500 ms.
+
+**Cadence is FIXED (SCHED-14).** `urbi_periodic_body_completed` advances the
+deadline by adding one period to the *previous* deadline (`next_fire_us +=
+period_us`), not to the body-completion time. The firing interval therefore does
+not drift with body duration.
+
+**Overrun handling.** When `next_fire_us` is still in the past after the
+advance (body duration ≥ period), the deadline resets to `now + period_us`.
+Missed periods are skipped with no burst of catch-up fires and no immediate
+catch-up fire. This is a deliberate deviation from a "slide-to-now" policy:
+resuming at `now` (rather than `now + period_us`) makes a periodic whose body
+duration meets or exceeds its period perpetually-due, causing the pump to re-fire
+every step and the VM to never return `QUIESCENT` or `WAKE_AT` — a 100% CPU hang
+in a cooperative embedded runtime. Resuming at `now + period_us` lets the VM
+quiesce between overrun fires, which is required for correct host-loop behaviour
+and avoids double-actuation on hardware. Pending owner ratification at tag close-out.
+
 Body completion is notified via `urbi_periodic_body_completed` from the
 `exit_strand` path in `uvm.c`, which mirrors `urbi_watcher_body_completed`
 in structure.
@@ -399,6 +435,27 @@ condition through `emit_function_literal` symmetrically. Future
 reactive-emit work that introduces a new install opcode MUST audit
 this invariant. See [emit-correctness-notes.md](./emit-correctness-notes.md)
 for the full register-allocation rubric.
+
+## Canonical reactive pump
+
+`vm_reactive_drain` (`src/vm/uvm_reactive_drain.h`) is the central pump
+that runs the three-step reactive pipeline (pending-onleave → deferred
+slot-change ring → dirty watcher eval) in one pass. `urbi_step`'s
+pre-loop idle drain and post-loop Step-4b drain are the **canonical pump
+sites**: a host slot write or injected event that re-arms an idle watcher
+is always visible before the next strand dispatches, even if no strand
+ran a safepoint. The dispatcher safepoint and post-native-call drain sites
+are **latency optimisations** — correctness never depends on a body
+reaching a safepoint; the pre-loop and post-loop drains are the guarantors.
+
+The two idle-boundary drains use `bounded_whenever = 1` (edge semantics)
+to prevent a level-triggered `whenever` whose body re-dirties its own
+observed cell from spinning unboundedly when the VM is otherwise quiescent.
+Dispatcher and post-native sites use `bounded_whenever = 0` (level
+semantics — fire every truthy pass), bounded by the finite number of
+safepoints during active execution. All sites are no-ops when any
+`in_eval` / `in_install` / `in_scratch` context flag is set; the
+enclosing pass drains on return.
 
 ## Cooperative dispatch ordering
 
