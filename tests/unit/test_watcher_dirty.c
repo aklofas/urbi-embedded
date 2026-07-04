@@ -308,6 +308,40 @@ fire_hook_count(struct UVM *vm, struct UWatcher *w)
     g_fire_count++;
 }
 
+/* === Globals for eval-pass stamp pin test (case 27) === */
+
+/* Watcher identity pointers set before each call to watcher_eval_dirty. */
+static UWatcher *g_stamp_pin_w_ptr;
+static UWatcher *g_stamp_pin_a_ptr;
+static UWatcher *g_stamp_pin_b_ptr;
+static UWatcher *g_stamp_pin_c_ptr;
+static int       g_stamp_pin_w_fires;
+static int       g_stamp_pin_c_fires;
+static int       g_stamp_pin_cascade_done;
+
+/* fire_hook_stamp_pin: dispatch by watcher identity.
+ *   W → increment w_fires counter.
+ *   A → first call only: push B to pending-onleave queue (cascade).
+ *   C → increment c_fires counter.
+ * The cascade_done gate prevents a double-push of B if A is re-visited on
+ * a dc20bfb3 rescan (no stamp): without it pending_onleave_queue_push would
+ * walk the already-empty active list and re-thread B on itself (tail → B →
+ * B cycle). */
+static void
+fire_hook_stamp_pin(struct UVM *vm, struct UWatcher *w)
+{
+    if (w == g_stamp_pin_w_ptr) {
+        g_stamp_pin_w_fires++;
+    } else if (w == g_stamp_pin_a_ptr) {
+        if (!g_stamp_pin_cascade_done) {
+            g_stamp_pin_cascade_done = 1;
+            pending_onleave_queue_push(vm, g_stamp_pin_b_ptr);
+        }
+    } else if (w == g_stamp_pin_c_ptr) {
+        g_stamp_pin_c_fires++;
+    }
+}
+
 /* 8. watcher_eval_dirty_skips_when_count_zero:
  *    Eval with no dirty count set — must not crash, must leave in_watcher_eval 0. */
 UTEST(watcher_eval_dirty_skips_when_count_zero)
@@ -977,6 +1011,84 @@ UTEST(eval_pass_walks_all_watchers)
     urbi_vm_destroy(&vm);
 }
 
+/* 27. eval_pass_stamp_pins_whenever_double_fire:
+ *     Topology [W(whenever), A(whenever/cascade), B(victim), C(tail)] in
+ *     level mode (whenever_edge_only == 0).  A's fire hook calls
+ *     pending_onleave_queue_push on its pre-captured successor B, which sets
+ *     URBI_WATCHER_PENDING_UNREGISTER on B and unlinks B from the active list.
+ *     The eval loop detects next == B has PENDING_UNREGISTER and restarts the
+ *     walk from head (the cascade rescan).
+ *
+ *     With the eval-pass stamp (2fa22cd5): W and A both carry
+ *     eval_pass_gen == cur_pass_gen by the time the rescan arrives; the stamp
+ *     check skips them.  W fires exactly once; C fires (list not truncated).
+ *
+ *     Red-verified against dc20bfb3 (rescan present, stamp absent): W fires
+ *     twice on the rescan, failing UASSERT_EQ(g_stamp_pin_w_fires, 1). */
+UTEST(eval_pass_stamp_pins_whenever_double_fire)
+{
+    UVM       vm;
+    UWatcher *wW, *wA, *wB, *wC;
+
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* Level mode is the zero-initialised default; assert it explicitly. */
+    UASSERT_EQ((int)vm.watchers->whenever_edge_only, 0);
+
+    /* Install in order so the active list is wW → wA → wB → wC (tail-push). */
+    vm.test_hooks->watcher_condition = condition_hook_fixed_true;
+    vm.test_hooks->watcher_fire      = fire_hook_stamp_pin;
+
+    wW = urbi_watcher_install_for_test(
+        &vm, UWATCHER_WHENEVER, NULL, make_dummy_closure(&vm),
+        NULL, NULL, NULL, 0U);
+    wA = urbi_watcher_install_for_test(
+        &vm, UWATCHER_WHENEVER, NULL, make_dummy_closure(&vm),
+        NULL, NULL, NULL, 0U);
+    wB = urbi_watcher_install_for_test(
+        &vm, UWATCHER_WHENEVER, NULL, make_dummy_closure(&vm),
+        NULL, NULL, NULL, 0U);
+    wC = urbi_watcher_install_for_test(
+        &vm, UWATCHER_WHENEVER, NULL, make_dummy_closure(&vm),
+        NULL, NULL, NULL, 0U);
+    UASSERT(wW != NULL && wA != NULL && wB != NULL && wC != NULL);
+
+    /* Confirm tail-insertion order: wW → wA → wB → wC.
+     * A's pre-captured next IS wB — the cascade pushes exactly this successor. */
+    UASSERT(vm.active_watchers_head == wW);
+    UASSERT(wW->next_active == wA);
+    UASSERT(wA->next_active == wB);
+    UASSERT(wB->next_active == wC);
+    UASSERT(wC->next_active == NULL);
+
+    /* Wire dispatch pointers and zero counters. */
+    g_stamp_pin_w_ptr        = wW;
+    g_stamp_pin_a_ptr        = wA;
+    g_stamp_pin_b_ptr        = wB;
+    g_stamp_pin_c_ptr        = wC;
+    g_stamp_pin_w_fires      = 0;
+    g_stamp_pin_c_fires      = 0;
+    g_stamp_pin_cascade_done = 0;
+
+    /* One dirty pass — the whole test rides on this single call. */
+    vm.watchers->dirty_count = 1U;
+    watcher_eval_dirty(&vm);
+
+    /* Upper-bound pin: W fires exactly once (stamp blocks the rescan re-visit). */
+    UASSERT_EQ(g_stamp_pin_w_fires, 1);
+    /* Truncation pin: C still fires (rescan reaches the tail after skipping W and A). */
+    UASSERT(g_stamp_pin_c_fires > 0);
+
+    /* Cleanup: drain B from the pending queue (onleave=NULL → no hook called),
+     * then unregister the remaining active watchers. */
+    drain_pending_onleave_queue(&vm);
+    urbi_watcher_unregister_internal(&vm, wW);
+    urbi_watcher_unregister_internal(&vm, wA);
+    urbi_watcher_unregister_internal(&vm, wC);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void
@@ -1040,4 +1152,7 @@ test_watcher_dirty_suite(void)
     /* §9.2 gap-fill: all-watchers walk in one eval pass */
     utest_run("eval_pass_walks_all_watchers",
               eval_pass_walks_all_watchers);
+    /* eval-pass stamp pin: level-whenever must not double-fire on cascade rescan */
+    utest_run("eval_pass_stamp_pins_whenever_double_fire",
+              eval_pass_stamp_pins_whenever_double_fire);
 }
