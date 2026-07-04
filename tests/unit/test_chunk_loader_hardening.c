@@ -193,6 +193,34 @@ UTEST(stdlib_blob_depth_within_cap)
     }
 }
 
+/* ── Test 5: chain of exactly 64 levels is accepted ──────────────────────── */
+
+UTEST(loader_accepts_depth_at_cap)
+{
+    /* A chain of exactly UCHUNK_MAX_PROTO_DEPTH (64) nested protos must load
+     * cleanly: the cap is an inclusive ceiling (depth <= 64 is OK). */
+    uint8_t buf[8192];
+    size_t sz = clh_build_nested_chain(buf, 64);
+    UProto *m = NULL;
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, sz, NULL, NULL, NULL, 0);
+    UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)rc);
+    uchunk_destroy(m, NULL);
+}
+
+/* ── Test 6: chain of 65 levels is rejected ──────────────────────────────── */
+
+UTEST(loader_rejects_depth_just_over_cap)
+{
+    /* A chain of UCHUNK_MAX_PROTO_DEPTH+1 (65) nested protos must be rejected:
+     * the 65th child would push depth to 65 > 64 before any allocation. */
+    uint8_t buf[8192];
+    size_t sz = clh_build_nested_chain(buf, 65);
+    UProto *m = NULL;
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, sz, NULL, NULL, NULL, 0);
+    UASSERT_EQ((int)UCHUNK_LOAD_CORRUPT, (int)rc);
+    uchunk_destroy(m, NULL);
+}
+
 /* ── Suite registration ───────────────────────────────────────────────────── */
 
 void test_chunk_loader_hardening_suite(void) {
@@ -204,4 +232,8 @@ void test_chunk_loader_hardening_suite(void) {
               verifier_rejects_op_call_window_overflow);
     utest_run("stdlib_blob_depth_within_cap",
               stdlib_blob_depth_within_cap);
+    utest_run("loader_accepts_depth_at_cap",
+              loader_accepts_depth_at_cap);
+    utest_run("loader_rejects_depth_just_over_cap",
+              loader_rejects_depth_just_over_cap);
 }

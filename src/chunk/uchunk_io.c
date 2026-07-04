@@ -786,20 +786,31 @@ static UChunkLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
         return UCHUNK_LOAD_CORRUPT;
     }
     for (uint64_t i = 0; i < n_nested; i++) {
+        /* B3/REPL-01: cap recursion depth before allocating so hostile input
+         * allocates nothing at the rejected level.  A crafted chain of
+         * >UCHUNK_MAX_PROTO_DEPTH levels overflows a 64 KB MCU stack via the
+         * public urbi_chunk_from_bytes entry; reject here. */
+        if (++d->depth > UCHUNK_MAX_PROTO_DEPTH) {
+            set_errmsg(d->errmsg, d->errcap,
+                       "nested proto depth exceeds cap (%d) at child %llu",
+                       UCHUNK_MAX_PROTO_DEPTH, (unsigned long long)i);
+            --d->depth;
+            return UCHUNK_LOAD_CORRUPT;
+        }
         /* Allocate child proto under parent's module ownership. */
         UChunkAllocFn alloc = module_allocator(d->root_proto);
-        if (alloc == NULL) return UCHUNK_LOAD_OOM;
+        if (alloc == NULL) { --d->depth; return UCHUNK_LOAD_OOM; }
         /* Grow parent->nested[] array. */
         if (parent->nested_count >= parent->nested_cap) {
             size_t new_cap = parent->nested_cap == 0 ? 4 : parent->nested_cap * 2;
             void *fresh = alloc((void *)parent->nested, new_cap * sizeof(UProto *),
                                 d->root_proto->alloc_ud);
-            if (fresh == NULL) return UCHUNK_LOAD_OOM;
+            if (fresh == NULL) { --d->depth; return UCHUNK_LOAD_OOM; }
             parent->nested     = (UProto **)fresh;
             parent->nested_cap = new_cap;
         }
         UProto *child = (UProto *)alloc(NULL, sizeof(UProto), d->root_proto->alloc_ud);
-        if (child == NULL) return UCHUNK_LOAD_OOM;
+        if (child == NULL) { --d->depth; return UCHUNK_LOAD_OOM; }
         urbi_zero(child, sizeof(*child));
         child->alloc_fn = d->root_proto->alloc_fn;
         child->alloc_ud = d->root_proto->alloc_ud;
@@ -809,16 +820,6 @@ static UChunkLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
          * moving to the next sibling. */
         child->ic_index = ++d->root_proto->next_proto_serial;
         parent->nested[parent->nested_count++] = child;
-        /* B3/REPL-01: cap recursion depth to bound the C call-stack.  A crafted
-         * chain of >UCHUNK_MAX_PROTO_DEPTH levels overflows a 64 KB MCU stack
-         * via the public urbi_chunk_from_bytes entry; reject early instead. */
-        if (++d->depth > UCHUNK_MAX_PROTO_DEPTH) {
-            set_errmsg(d->errmsg, d->errcap,
-                       "nested proto depth exceeds cap (%d) at child %llu",
-                       UCHUNK_MAX_PROTO_DEPTH, (unsigned long long)i);
-            --d->depth;
-            return UCHUNK_LOAD_CORRUPT;
-        }
         rc = decode_proto(d, child);
         --d->depth;
         if (rc != UCHUNK_LOAD_OK) return rc;
