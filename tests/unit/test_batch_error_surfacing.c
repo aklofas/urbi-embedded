@@ -259,8 +259,11 @@ UTEST(sleep_positive_transient_is_graceful_error)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
-    /* sleep(1s) parks the strand (host_time_us=NULL → wake_us=1000000 > 0=now);
-     * Half-2 skip leaves it parked; WAITING arm returns URBI_ERR_STRAND_FATAL. */
+    /* sleep(1s) parks the transient strand with wake_us = real_now + 1e6.
+     * urbi_vm_init installs default_host_time_us_stub (uvm_init.c:416), so
+     * "now" is a real clock reading, not zero; the strand is not due and
+     * sched_wake_due_sleepers leaves it parked on the sleep queue.
+     * urbi_vm_run's WAITING arm at uvm_run.c returns URBI_ERR_STRAND_FATAL. */
     UASSERT_EQ(URBI_ERR_STRAND_FATAL,
                utest_compile_and_vm_run(&vm, "sleep(1s)", NULL));
     urbi_vm_destroy(&vm);

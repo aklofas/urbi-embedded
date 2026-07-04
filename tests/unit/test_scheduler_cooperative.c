@@ -10,6 +10,10 @@
 
 #define UTEST(name) static void name(void)
 
+/* Mock clock for tests that need a controllable "now". */
+static uint64_t g_sched_now_us;
+static uint64_t sched_mock_clock(void *ud) { (void)ud; return g_sched_now_us; }
+
 /* Case 1: sched_init empties the ready queue and reports quiescent. */
 UTEST(sched_init_empties_ready_queue)
 {
@@ -712,6 +716,86 @@ UTEST(sched_wait_payload_reason_discriminates_arms)
     urbi_vm_destroy(&vm);
 }
 
+/* Case 27: sched_wake_due_sleepers skips a due transient and wakes the real
+ * strand immediately behind it via the predecessor-pointer re-read (f84ccb59).
+ *
+ * Queue at entry: A(500µs, transient, due) → B(700µs, real, due)
+ *                 → C(2000µs, real, not-due).  now = 1000µs.
+ *
+ * Walk:
+ *   A is due but transient → pp = &A->wait_next; continue.
+ *   *pp = B; B is due and real → sched_strand_unblock(B).
+ *     sleep_q_remove walks from head, finds A as B's predecessor,
+ *     sets A->wait_next = C (B's old successor).  *pp = A->wait_next = C.
+ *   *pp = C; C->wake_us (2000) > now (1000) → break.
+ *
+ * Post-conditions: B READY, A still WAITING at head with A->wait_next = C,
+ * C WAITING, wakeup_pending_count = 2 (A and C). */
+UTEST(sched_wake_due_sleepers_skips_transient_wakes_real)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    /* Install mock clock; "now" = 1000 µs. */
+    g_sched_now_us   = 1000U;
+    vm.host_time_us  = sched_mock_clock;
+
+    UStrand a, b, c;
+    ustrand_init(&a, &vm);
+    ustrand_init(&b, &vm);
+    ustrand_init(&c, &vm);
+
+    /* A: transient, due (500 < 1000).  Transient strands bypass runnable
+     * counting, so strand_runnable_count is not bumped before blocking. */
+    a.is_transient_strand = 1;
+    a.state = USTRAND_STATE_RUNNING;
+    sched_strand_block(&a, USTRAND_REASON_SLEEP, 500U);
+
+    /* B: real, due (700 < 1000). */
+    b.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
+    sched_strand_block(&b, USTRAND_REASON_SLEEP, 700U);
+
+    /* C: real, not due (2000 > 1000). */
+    c.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
+    sched_strand_block(&c, USTRAND_REASON_SLEEP, 2000U);
+
+    /* Verify sorted queue before the wake walk. */
+    UASSERT(vm.sleep_q_head == &a);
+    UASSERT(a.wait_next     == &b);
+    UASSERT(b.wait_next     == &c);
+    UASSERT(c.wait_next     == NULL);
+    UASSERT_EQ(vm.wakeup_pending_count, 3U);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
+
+    sched_wake_due_sleepers(&vm);
+
+    /* A: still parked at head (transient skip); wait_next spliced to C after
+     * sleep_q_remove evicted B. */
+    UASSERT(vm.sleep_q_head == &a);
+    UASSERT(USTRAND_IS_WAITING(&a));
+    UASSERT(a.wait_next     == &c);
+
+    /* B: woken across the parked transient. */
+    UASSERT_EQ((int)b.state, (int)USTRAND_STATE_READY);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
+
+    /* C: not due; loop terminated at the break; still on sleep queue. */
+    UASSERT(USTRAND_IS_WAITING(&c));
+    UASSERT(c.wait_next == NULL);
+
+    /* Counter: B removed, A (transient, not counted) and C remain. */
+    UASSERT_EQ(vm.wakeup_pending_count, 2U);
+
+    /* Teardown: B is on the ready queue; unbind before destroy. */
+    sched_strand_unbind_from_ready_queue(&b);
+
+    ustrand_destroy(&a, &vm);
+    ustrand_destroy(&b, &vm);
+    ustrand_destroy(&c, &vm);
+    urbi_vm_destroy(&vm);
+}
+
 void test_scheduler_cooperative_suite(void) {
     utest_run("sched_init_empties_ready_queue",           sched_init_empties_ready_queue);
     utest_run("sched_make_runnable_appends_tail",         sched_make_runnable_appends_tail);
@@ -741,4 +825,6 @@ void test_scheduler_cooperative_suite(void) {
     utest_run("sched_walk_roots_noop",                    sched_walk_roots_noop);
     utest_run("sched_wait_payload_reason_discriminates_arms",
               sched_wait_payload_reason_discriminates_arms);
+    utest_run("sched_wake_due_sleepers_skips_transient_wakes_real",
+              sched_wake_due_sleepers_skips_transient_wakes_real);
 }
