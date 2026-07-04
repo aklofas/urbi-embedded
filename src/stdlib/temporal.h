@@ -179,7 +179,7 @@ void urbi_periodics_stop_owned_by(struct UVM *vm, struct UTag *tag);
  * the D3 "no active scope" fatal escalation: a tag that owns a live periodic
  * is a valid stop target even when member_strands_head is empty (the body
  * strand may have completed its last fire before .stop() was called). */
-bool urbi_tag_owns_periodic(struct UVM *vm, const struct UTag *tag);
+bool urbi_tag_owns_periodic(const struct UVM *vm, const struct UTag *tag);
 
 #ifdef __cplusplus
 }

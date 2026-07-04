@@ -303,7 +303,10 @@ tag_stop_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
      * urbi_periodics_stop_owned_by which sets unregister_pending=1, so a
      * post-stop call to urbi_tag_owns_periodic would return false even for a tag
      * that DID own a live periodic.  Snapshotting here preserves the pre-stop
-     * "this tag has a reason to exist" verdict for the D3 guard below. */
+     * "this tag has a reason to exist" verdict for the D3 guard below.
+     * A second stop on the same tag — after the first cancelled its periodic —
+     * intentionally falls through to the no-active-scope fatal, same as
+     * stopping a never-armed tag. */
     bool had_periodic = urbi_tag_owns_periodic(vm, t);
 
     /* Cross-strand deposit on member strands (existing path). */

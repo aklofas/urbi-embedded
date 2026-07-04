@@ -149,7 +149,7 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
          * matching sleep().  Duration literals (100ms) reach here as
          * UVAL_INT microseconds via the lexer and are unaffected.
          *
-         * !(f >= 0.0) rejects NaN and negatives in one test; the upper
+         * !(f > 0.0) rejects NaN, negatives, and zero in one test; the upper
          * bound rejects +inf and values whose µs conversion would overflow
          * int64 — (uint64_t)(int64_t)(f * 1e6) is UB for out-of-range f.
          *
@@ -161,7 +161,7 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
                 "every: period must be positive", out);
         }
         /* Cast via int64_t to reuse __fixdfdi rather than __fixunsdfdi.
-         * Guard above guarantees f >= 0 and f * 1e6 <= 9.2e18 < INT64_MAX,
+         * Guard above guarantees f > 0 and f * 1e6 <= 9.2e18 < INT64_MAX,
          * so the int64_t cast is defined and the subsequent uint64_t cast is
          * safe. */
         period_us = (uint64_t)(int64_t)(f * 1e6);
@@ -654,7 +654,7 @@ urbi_periodics_stop_owned_by(UVM *vm, struct UTag *tag)
 }
 
 bool
-urbi_tag_owns_periodic(UVM *vm, const struct UTag *tag)
+urbi_tag_owns_periodic(const struct UVM *vm, const struct UTag *tag)
 {
     const UPeriodic *p = vm->periodics_head;
     while (p != NULL) {
