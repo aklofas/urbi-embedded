@@ -347,6 +347,7 @@ extern void test_scratch_strand_safety_suite(void);
 extern void test_periodic_cadence_suite(void);
 extern void test_watcher_mode_predicates_suite(void);
 extern void test_verifier_cross_byte_suite(void);
+extern void test_batch_error_surfacing_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -676,6 +677,7 @@ static const struct suite_entry suites[] = {
     {"periodic_cadence",                      test_periodic_cadence_suite},
     {"watcher_mode_predicates",               test_watcher_mode_predicates_suite},
     {"verifier_cross_byte",                   test_verifier_cross_byte_suite},
+    {"batch_error_surfacing",                 test_batch_error_surfacing_suite},
     /* Add new suites here as test files are added. */
 };
 

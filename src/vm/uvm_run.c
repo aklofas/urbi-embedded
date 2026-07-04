@@ -14,8 +14,12 @@
 #include "chunk/uchunk.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uframe.h"
+#include "value/uvalue.h"     /* uvalue_format: uncaught-throw errmsg */
 #include <stddef.h>
 #include <stdint.h>
+#if __STDC_HOSTED__
+#  include <stdio.h>   /* snprintf: uncaught-throw errmsg formatting */
+#endif
 
 /* --- urbi_vm_run: thin adapter that wraps dispatch_loop_until_yield.
    Preserves the M2 public API contract:
@@ -250,6 +254,30 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     }
 
     int rc = vm->last_error;
+    if (rc == UVM_OK) {
+        /* Check whether the strand died with an uncaught script throw.
+         * HALT-path fatals (type errors, OOM) set vm->last_error != UVM_OK
+         * and skip this arm; script-level throw leaves last_error == UVM_OK
+         * but marks strand->fatal_status = UEXEC_THROW. */
+        UStrandUnwind fstat;
+        UValue fval;
+        if (urbi_strand_is_fatal(vm, &strand, &fstat, &fval)) {
+            rc = (fstat == UEXEC_THROW) ? URBI_ERR_UNCAUGHT_THROW
+                                        : URBI_ERR_STRAND_FATAL;
+            if (vm->last_errmsg[0] == '\0') {
+#if __STDC_HOSTED__
+                char fmt[64];
+                uvalue_format(&fval, fmt, sizeof fmt);
+                (void)snprintf(vm->last_errmsg, UVM_ERRMSG_CAP,
+                               "uncaught throw: %s", fmt);
+#else
+                urbi_strncpy_truncating(vm->last_errmsg, UVM_ERRMSG_CAP,
+                                        "uncaught throw");
+#endif
+            }
+            if (out != NULL) *out = fval;
+        }
+    }
     ustrand_destroy(&strand, vm);
     return rc;
 }

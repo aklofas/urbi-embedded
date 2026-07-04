@@ -524,6 +524,9 @@ typedef enum {
     /* URBI_ERR_EVENT_NAME_TAKEN: returned by urbi_event_register (Gap B)
      * when name is already registered in the event registry for this VM. */
     URBI_ERR_EVENT_NAME_TAKEN           = -17,
+    /* v0.13.4: root strand died with an uncaught script throw; the thrown
+     * value is delivered via the out-param when non-NULL. */
+    URBI_ERR_UNCAUGHT_THROW             = -18,
     /* URBI_ERR_HEAP_LOCKED: returned by operations that require a live heap
      * (allocation or registry mutation) when urbi_lock_heap has been called.
      * Covers urbi_event_unregister and future Gap-B unregister paths. */

@@ -254,7 +254,10 @@ int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
  * distinguish a fully-dead VM from an armed-but-idle one.
  *
  * urbi_run_chunk: run a module's root chunk under the given Realm.  realm == NULL
- * uses the VM's global Realm (auto-created on first call).
+ * uses the VM's global Realm (auto-created on first call).  Returns URBI_OK on
+ * clean completion, URBI_ERR_UNCAUGHT_THROW (-18) if the root chunk dies with
+ * an uncaught script throw (thrown value in *out_result when non-NULL), or
+ * URBI_ERR_STRAND_FATAL for non-throw fatal halts (type errors, etc.).
  *
  * urbi_repl_eval: compile a source line and run it; format the result into
  * out_buf.  Suitable for a read-eval-print loop.
@@ -1212,7 +1215,11 @@ URBI_ADVANCED void     urbi_vm_destroy(struct UVM *vm);
  * v0.10.3 (W3): return type changed from UVMError to int.
  *   URBI_OK (0) on success; *out receives the final value.
  *   URBI_ERR_OOM if allocation fails during execution.
- *   URBI_ERR_STRAND_FATAL if an unhandled throw or type error halts the strand.
+ *   URBI_ERR_UNCAUGHT_THROW (-18) if the root strand died with an uncaught
+ *     script throw; the thrown value is delivered via *out when non-NULL,
+ *     and vm->last_errmsg is set (value-formatted for scalars, message slot
+ *     for Exception-typed throws).
+ *   URBI_ERR_STRAND_FATAL for non-throw fatal halts (type errors, etc.).
  * Callers that stored the result in `UVMError rc` still compile (UVMError
  * is now a typedef for int) but should migrate to plain `int rc`. */
 int      urbi_vm_run    (struct UVM *vm, struct URealm *realm,

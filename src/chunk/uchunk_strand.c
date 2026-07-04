@@ -229,7 +229,10 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
                 loader->root_proto = NULL;
             }
             vm->fatal_strand = NULL;
-            return URBI_ERR_STRAND_FATAL;
+            /* Split uncaught script throws from non-throw fatals so batch/
+             * embedding callers can distinguish the two cases. */
+            return (loader->fatal_status == UEXEC_THROW) ? URBI_ERR_UNCAUGHT_THROW
+                                                          : URBI_ERR_STRAND_FATAL;
         }
 
         /* Path 2: clean death — loader was reaped.  Detected by realm-walk
@@ -546,7 +549,8 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
          *
          * System fatals (TypeError, OOM) have vm->last_error != UVM_OK
          * (set via HALT() in uvm.c) and reach the error-display path below. */
-        if (run_rc == URBI_ERR_STRAND_FATAL && vm->last_error == UVM_OK) {
+        if ((run_rc == URBI_ERR_UNCAUGHT_THROW || run_rc == URBI_ERR_STRAND_FATAL)
+                && vm->last_error == UVM_OK) {
             /* v0.11.4-cat-f (D-F2): an uncaught throw whose value is an
              * Exception-instance object left a diagnostic in vm->last_errmsg
              * (capture_uncaught_throw_diag, Path 1).  Restore the legacy

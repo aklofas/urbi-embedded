@@ -574,6 +574,13 @@ endif
 test-integration: $(BUILDDIR)/urbi
 	tests/integration/repl_smoke.sh $(BUILDDIR)/urbi
 
+# v0.13.4: batch/embedding error-surfacing gate (B1/LANG4-14).  Exercises the
+# -e / file entry points for uncaught-throw exit status (the chk suite only
+# exercises the REPL path).
+.PHONY: test-batch-errors
+test-batch-errors: $(BUILDDIR)/urbi
+	@URBI=$(BUILDDIR)/urbi bash tests/scripts/test-batch-errors.sh
+
 # v0.9.1: urbi-server end-to-end smoke (URBI_ENABLE_REPL=1 only).  Spins
 # up the daemon on a high port, runs `1+2` via NDJSON, expects the
 # `"value":"3"` envelope back, then SIGTERMs the daemon.  Uses python3
@@ -648,7 +655,7 @@ test-chk-ros: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
 	done; \
 	echo "$$count ros chk fixture(s) ran + passed under preset ros"
 
-test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-urbi-server-smoke
+test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-urbi-server-smoke test-batch-errors
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
 
