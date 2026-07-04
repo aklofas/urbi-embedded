@@ -19,6 +19,24 @@ bool at_statement_end(UParser *p) {
         || t == TOK_PIPE;
 }
 
+/* parse_sep_operand: parse one & / | operand.
+ * Accepts a block (`TOK_LBRACE`), `if`/`while` statement forms, or falls
+ * back to parse_expression.
+ *
+ * This enables the signature parallel-composition idiom `{a} & {b}` at
+ * the inner tier.  Parallel var-declare (`var a = 1 & var b = 2`) stays
+ * rejected — `var` is absent from this dispatch (T14/deferred-v1.x).
+ *
+ * Note: the caller (pipe_amp_fold) is a loop, so chaining is handled
+ * there; this helper returns a single self-contained node per call. */
+static UAstNode *parse_sep_operand(UParser *p) {
+    UToken t = peek(p);
+    if (t.type == TOK_LBRACE)   return parse_block(p);
+    if (t.type == TOK_KW_IF)    return parse_if(p);
+    if (t.type == TOK_KW_WHILE) return parse_while(p);
+    return parse_expression(p, 0);
+}
+
 /* pipe_amp_fold: left-fold `|` and `&` binops starting from an already-parsed
    lhs.  Shared by parse_inner_tier, parse_inner_tier_from_lhs, and
    parse_assign_or_expr (W8/v0.10.5 member-expr tag form). */
@@ -43,7 +61,7 @@ UAstNode *pipe_amp_fold(UParser *p, UAstNode *lhs) {
                               sep.line, sep.col);
         }
 
-        UAstNode *rhs = parse_expression(p, 0);
+        UAstNode *rhs = parse_sep_operand(p);
         if (!rhs) return NULL;
         if (rhs->kind == AST_ERROR) return rhs;
 

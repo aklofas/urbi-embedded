@@ -343,8 +343,20 @@ UAstNode *parse_statement_or_expr(UParser *p) {
     UToken t = peek(p);
 
     switch (t.type) {
-    case TOK_KW_WHILE:    return parse_while(p);
-    case TOK_KW_IF:       return parse_if(p);
+    /* H13/LANG-S01: after parsing a block or block-like statement form,
+     * fold any following `|` / `&` separator so that `{a} & {b}` and
+     * `if (c) {b} & {e}` parse as AST_BIN_SEP nodes.  Parallel var-declare
+     * (`var a = 1 & var b = 2`) stays rejected — var is not in this set. */
+    case TOK_KW_WHILE: {
+        UAstNode *node = parse_while(p);
+        if (!node || node->kind == AST_ERROR) return node;
+        return pipe_amp_fold(p, node);
+    }
+    case TOK_KW_IF: {
+        UAstNode *node = parse_if(p);
+        if (!node || node->kind == AST_ERROR) return node;
+        return pipe_amp_fold(p, node);
+    }
     case TOK_KW_VAR:      return parse_var_decl(p);
     case TOK_KW_RETURN:   return parse_return(p);
     case TOK_KW_TRY:      return parse_try(p);
@@ -372,7 +384,11 @@ UAstNode *parse_statement_or_expr(UParser *p) {
      * prefix, producing "expected expression" at the first statement
      * inside the block.  Surfaced 2026-05-16 by eye_demo's attempt
      * to use a multi-statement at-body. */
-    case TOK_LBRACE:      return parse_block(p);
+    case TOK_LBRACE: {
+        UAstNode *block = parse_block(p);
+        if (!block || block->kind == AST_ERROR) return block;
+        return pipe_amp_fold(p, block);
+    }
     case TOK_IDENT: {
         /* x = expr — detect by consuming IDENT then peeking for TOK_EQ.
            mytag: { body } — detect by consuming IDENT then peeking for TOK_COLON.

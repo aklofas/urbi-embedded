@@ -4,15 +4,15 @@
 #         the parallel strand (row 11 §4.3 + T38 separator runtime).
 #
 # blocked: compile error — `,` fork-detach separator inside tag-scope body not supported
-#   (T39 reason stale; OP_FORK_DETACH guard removed by LANG-S06)
 # matrix-row: tag-ambient
 #
-# Reason (updated v0.13.4 probe):
-#   OP_FORK_DETACH transient-strand guard removed (LANG-S06); tag.stop() has
-#   been available since M4.  Current blocker: the emitter raises a compile
-#   error when `,` appears inside a `t: { expr , expr }` tag-scope body — the
-#   `,` fork-detach path in the emitter does not handle the tag-scope nesting
-#   context.  Activatable once the emitter supports `,` inside tag scopes.
+# Reason (updated v0.13.5 probe, H13/LANG-S01):
+#   v0.13.5 H13 fixed `&`/`|` block operands in the PARSER.  That fix is
+#   irrelevant here: the blocker is the EMITTER refusing `,` inside a
+#   `t: { ... }` tag-scope body with a compile error.  OP_FORK_DETACH guard
+#   was removed by LANG-S06; the remaining gap is that the emitter's
+#   fork-detach emit path does not track the tag-scope nesting context, so
+#   `t: { expr , expr }` fails to compile.  Unchanged since v0.13.4.
 #
 # Urbiscript source (re-activate when , inside tag-scope emitter path works):
 #   var t = Tag.new;

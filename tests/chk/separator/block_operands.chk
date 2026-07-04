@@ -1,0 +1,15 @@
+# Milestone: v0.13.5 (H13/LANG-S01)
+# Covers: blocks as & / | operands — the signature parallel-composition
+# syntax accepts statement forms, not only expressions.
+#
+# Note: & RHS is compiled as a closure thunk, so the RHS block must not
+# capture local vars (design-risks shared-frame-spawn).  Realm slots work
+# because they are accessed by name at runtime, not captured at compile
+# time.  The | operands are emitted inline so local vars work there.
+
+Realm.ta = 0; Realm.tb = 0; { Realm.ta = 1 } & { Realm.tb = 2 }; Realm.ta + Realm.tb
+var s = ""; { s = s + "x" } | { s = s + "y" }; s
+Realm.fn = 0; if (true) { Realm.fn = 1 } & { Realm.fn = Realm.fn + 10 }; Realm.fn
+[00000000] 3
+[00000001] "xy"
+[00000002] 11

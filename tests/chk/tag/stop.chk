@@ -1,19 +1,20 @@
 # Milestone: M3
 # Covers: tag.stop() stops a sleeping strand tagged with that tag;
 #         concurrent variants: stop before vs after strand starts sleeping.
-# blocked: parse error — `&` separator inside tag-scope block body not supported:
-#   `tag: { {expr} & stmt }` → "<stdin>:1:N: expected '}'" (T39 reason stale)
+# blocked: runtime — sleep(100ms) suspends indefinitely in REPL context; echo undefined at top level
 # matrix-row: tag-stop
 #
-# Reason (updated v0.13.4 probe):
-#   OP_FORK_JOIN transient-strand guard removed (LANG-S06); tag.stop() method
-#   dispatch has been available since M4.  The current blocker is a parse
-#   error: the parser sees `{sleep(100ms); echo("No")} & tag.stop()` inside
-#   the outer tag-scope body block and rejects `&` at the separator position
-#   ("expected '}'").  The `&` statement-separator is not currently recognized
-#   inside a `tag: { ... }` scope body at this parse level.
+# Reason (updated v0.13.5 probe, H13/LANG-S01):
+#   Parse error FIXED by v0.13.5: `{expr} & stmt` now parses inside tag-scope
+#   bodies.  New runtime blockers:
+#     1. sleep(100ms) — in REPL mode the single loader strand suspends
+#        indefinitely (no other strand to keep the scheduler alive); the
+#        statement never resumes and produces nil.
+#     2. echo("No") — `echo` is not defined at top level (use Lobby.echo or
+#        rewrite without echo).
+#   Redesign requires the ## host: driver or a test that avoids blocking sleep.
 #
-# Original urbiscript (re-activate when & inside tag-scope body parses):
+# Original urbiscript (blocked on runtime; redesign before re-activating):
 # # var tag = Tag.new() | {};
 # # tag: { {sleep(100ms); echo("No")} & tag.stop() };
 # # tag: { tag.stop() & {sleep(100ms); echo("No")} };
