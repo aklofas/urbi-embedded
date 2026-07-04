@@ -256,7 +256,8 @@ int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
  * urbi_run_chunk: run a module's root chunk under the given Realm.  realm == NULL
  * uses the VM's global Realm (auto-created on first call).  Returns URBI_OK on
  * clean completion, URBI_ERR_UNCAUGHT_THROW (-18) if the root chunk dies with
- * an uncaught script throw (thrown value in *out_result when non-NULL), or
+ * an uncaught script throw (*out_result is set to nil; vm->last_errmsg carries a
+ * diagnostic for Exception-typed throws and is empty for scalar throws), or
  * URBI_ERR_STRAND_FATAL for non-throw fatal halts (type errors, etc.).
  *
  * urbi_repl_eval: compile a source line and run it; format the result into

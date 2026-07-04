@@ -188,6 +188,27 @@ UTEST(repl_eval_keeps_nil_recovery)
 }
 
 /* =========================================================================
+ * Test 6: urbi_vm_run delivers the thrown object via *out on UNCAUGHT_THROW
+ * =========================================================================
+ *
+ * urbi_vm_run (transient-strand path) delivers the thrown value via *out
+ * when non-NULL.  Exception.new("boom") is UVAL_OBJECT; pin the kind so
+ * the delivery contract cannot silently regress.  out.kind is read from
+ * the stack-allocated UValue — no heap dereference, ASan-clean. */
+UTEST(vm_run_exception_object_delivered_via_out)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    UValue out;
+    urbi_zero(&out, sizeof(out));
+    out.kind = UVAL_NIL;
+    int rc = utest_compile_and_vm_run(&vm, "throw Exception.new(\"boom\")", &out);
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, rc);
+    UASSERT_EQ(UVAL_OBJECT, out.kind);
+    urbi_vm_destroy(&vm);
+}
+
+/* =========================================================================
  * Suite entry point
  * ========================================================================= */
 
@@ -206,4 +227,6 @@ test_batch_error_surfacing_suite(void)
               run_chunk_uncaught_throw_returns_error);
     utest_run("batch_error_surfacing: repl_eval nil-recovery unchanged (LANG4-01)",
               repl_eval_keeps_nil_recovery);
+    utest_run("batch_error_surfacing: vm_run delivers exception object via *out",
+              vm_run_exception_object_delivered_via_out);
 }
