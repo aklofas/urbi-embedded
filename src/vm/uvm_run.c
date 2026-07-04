@@ -277,8 +277,8 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
         UStrandUnwind fstat;
         UValue fval;
         if (urbi_strand_is_fatal(vm, &strand, &fstat, &fval)) {
-            rc = (fstat == UEXEC_THROW) ? URBI_ERR_UNCAUGHT_THROW
-                                        : URBI_ERR_STRAND_FATAL;
+            rc = (fstat == URBI_UNWIND_THROW) ? URBI_ERR_UNCAUGHT_THROW
+                                              : URBI_ERR_STRAND_FATAL;
             if (vm->last_errmsg[0] == '\0') {
 #if __STDC_HOSTED__
                 char fmt[64];
