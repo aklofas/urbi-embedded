@@ -1,0 +1,4 @@
+# Covers: a tag-prefixed block is an expression yielding its body value.
+
+var t = Tag.new(); t: { 42 }
+[00000001] 42

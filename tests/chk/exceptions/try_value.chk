@@ -1,0 +1,11 @@
+# Covers: try/catch is an expression — the body's (or catch body's)
+# value is the try's value; finally does not override it.
+
+var r1 = try { 5 } catch (var e) { 6 }; r1
+[00000001] 5
+var r2 = try { throw(7) } catch (var e) { e }; r2
+[00000002] 7
+var r3 = try { 5 } finally { 9 }; r3
+[00000003] 5
+var r4 = try { throw(1) } catch (var e) { 6 } finally { 9 }; r4
+[00000004] 6
