@@ -343,6 +343,19 @@ watcher_eval_dirty(struct UVM *vm)
                 break;
         }
 
+        /* SCH4-04: if the body just cascaded our pre-captured successor
+         * (e.g. an AT_SYNC body called tag.stop() on the tag that owns
+         * the next watcher), that successor got PENDING_UNREGISTER set
+         * and its next_active cleared.  Following the stale pointer would
+         * silently truncate the pass — every watcher after it misses a
+         * same-tick fire.  Restart from the head instead; re-visits are
+         * edge-idempotent because last_value_cache was already updated on
+         * the first visit, so no watcher double-fires. */
+        if (next != NULL &&
+                (next->flags & URBI_WATCHER_PENDING_UNREGISTER) != 0U) {
+            next = vm->active_watchers_head;
+        }
+
         w = next;
     }
 

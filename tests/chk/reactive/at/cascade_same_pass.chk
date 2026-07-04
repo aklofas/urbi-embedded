@@ -1,0 +1,51 @@
+# Covers: a watcher body that unregisters the next watcher in the
+# active list must not truncate the rest of the evaluation pass.
+# (refactor-4 SCH4-04)
+#
+# Three watchers observe Realm.go: A (at sync), B (at, t2-owned), C (at).
+# Registration order is FIFO tail-append so active_watchers_head = A→B→C
+# (with a WAITUNTIL_FALSE entry between B and C; see below).
+#
+# B must be live in active_watchers_head at eval time.  A bare
+# `t2: at (Realm.go) { ... }` would cascade B immediately when the t2:
+# lexical scope exits (OP_POP_TAG → vm_tag_scope_teardown).  Instead,
+# keep the scope open: `t2: { at (...) B; waituntil(false) }` installs B
+# inside a still-open scope whose strand blocks on waituntil(false).
+# The scope stays alive until t2.stop() is called.  With the scope open,
+# t2->member_strands_head is non-empty, so the D3 "no-active-scope" guard
+# in tag_stop_native does not fire.
+#
+# When Realm.go rises, A's inline body calls t2.stop().  urbi_tag_stop
+# calls pending_onleave_queue_push for every watcher in
+# t2->member_watchers_head (B and WAITUNTIL_FALSE): PENDING_UNREGISTER
+# set, both unlinked from active list, next_active cleared.
+# The pre-captured `next = B` in watcher_eval_dirty now has
+# next_active = NULL, so without the fix the loop terminates before
+# evaluating C — a silent same-tick truncation.
+# The fix: when the pre-captured successor is PENDING, restart from
+# active_watchers_head so C still fires this pass.
+#
+# B never fires: its watcher is unregistered before it is evaluated.
+# C must fire (Realm.hits == "C", post-fix expected output).
+# A's body writes nothing to Realm.hits; only C writes "C".
+# Pre-fix expected: Realm.hits == "" (C missed entirely).
+#
+## timeout: 30
+## host: run Realm.hits = ""
+## host: run Realm.go = false
+## host: run var t2 = Tag.new()
+## host: run at sync (Realm.go) { t2.stop() }
+## host: run t2: { at (Realm.go) { Realm.hits = Realm.hits + "B" }; waituntil(false) }
+## host: run at (Realm.go) { Realm.hits = Realm.hits + "C" }
+## host: run Realm.go = true
+## host: step 100000
+## host: run Realm.hits
+[00000000] ""
+[00000000] false
+[00000000] <Tag>
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] true
+[00000000] step: QUIESCENT
+[00000000] "C"
