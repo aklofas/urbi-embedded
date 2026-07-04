@@ -710,6 +710,37 @@ static UAstNode *reject_bare_function_forms(UParser *p) {
     return NULL;
 }
 
+/* parse_optional_param_default — v0.13.5 (legacy LANG4-12): after a formal
+ * parameter IDENT, accept an optional `= expr` default value and store it
+ * on the param node.  The legacy grammar production is
+ *   formal: var.opt "identifier" "=" exp   (ugrammar.y :1533)
+ * with NO ordering constraint — non-trailing defaults parse (they are
+ * simply dead at call time because a missing earlier argument already
+ * raises; matches the legacy runtime, where formals desugar to in-order
+ * LocalDeclarations and a missing non-defaulted formal errors).
+ *
+ * Rejected on lazy params: the lazy convention wraps caller-side thunks,
+ * which has no legacy default-value semantics.
+ *
+ * Returns NULL on success (default stored or absent); an AST_ERROR or
+ * OOM-sentinel node on failure — mirror of the make_error contract. */
+static UAstNode *parse_optional_param_default(UParser *p, UAstNode *pn,
+                                              bool is_lazy) {
+    pn->u.param.default_expr = NULL;
+    if (peek(p).type != TOK_EQ) return NULL;
+    UToken eq = consume(p);
+    if (is_lazy) {
+        return make_error(p, PARSE_UNEXPECTED_TOKEN,
+                          "default value not supported on a lazy parameter",
+                          eq.line, eq.col);
+    }
+    UAstNode *def = parse_expression(p, 0);
+    if (!def) return (UAstNode *)&uparser_oom_sentinel;
+    if (def->kind == AST_ERROR) return def;
+    pn->u.param.default_expr = def;
+    return NULL;
+}
+
 /* --- parse_function: `function` [`name`] `(` params `)` `{` body `}` --- */
 
 UAstNode *parse_function(UParser *p) {
@@ -752,6 +783,10 @@ UAstNode *parse_function(UParser *p) {
         if (!pn) return (UAstNode *)&uparser_oom_sentinel;
         pn->u.param.name_start = name.u.str.start;
         pn->u.param.name_len   = name.u.str.len;
+
+        /* v0.13.5: optional `= expr` default value. */
+        UAstNode *derr = parse_optional_param_default(p, pn, is_lazy);
+        if (derr) return derr;
 
         if (count == cap) {
             if (!arena_grow_node_array(p, &params, &cap, count))
@@ -832,6 +867,11 @@ UAstNode *parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
         if (!pn) return (UAstNode *)&uparser_oom_sentinel;
         pn->u.param.name_start = pname.u.str.start;
         pn->u.param.name_len   = pname.u.str.len;
+
+        /* v0.13.5: optional `= expr` default value (same rule as
+         * parse_function — getters take no args, setters one). */
+        UAstNode *derr = parse_optional_param_default(p, pn, is_lazy);
+        if (derr) return derr;
 
         if (count == cap) {
             if (!arena_grow_node_array(p, &params, &cap, count))

@@ -1,0 +1,44 @@
+# Milestone: v0.13.5-conformance-and-stdlib
+# Covers: trailing default parameter values, evaluated at call time in the
+#         callee scope; defaults may reference earlier parameters; arity
+#         relaxes to min..max with below-min/above-max still a catchable
+#         error; Lobby.echo works with one argument.
+# Source: legacy/repos/aldebaran-urbi/src/parser/ugrammar.y (formal:
+#         var.opt "identifier" "=" exp) + share/urbi/lobby.u echo signature.
+
+# --- omitted trailing argument evaluates the default ---
+var f = function (a, b = 5) { a + b }; f(1)
+[00000001] 6
+
+# --- provided argument wins over the default ---
+f(1, 2)
+[00000002] 3
+
+# --- all-defaulted function callable with zero args; default is a full expression ---
+var g = function (x = 1 + 1) { x }; g()
+[00000003] 2
+
+# --- default may reference an earlier parameter (call-time, in-order) ---
+var h = function (a, b = a + 1) { a + b }; h(10)
+[00000004] 21
+
+# --- default expression is evaluated at call time, not definition time ---
+var base = 100; var k = function (x = base) { x }; base = 200; k()
+[00000005] 200
+
+# --- below min arity still raises, catchable ---
+var caught = 0; try { f() } catch (e) { caught = 1 }; caught
+[00000006] 1
+
+# --- above max arity still raises, catchable ---
+var caught2 = 0; try { f(1, 2, 3) } catch (e) { caught2 = 1 }; caught2
+[00000007] 1
+
+# --- explicit nil is a provided argument, not an omission ---
+var n = function (a, b = 5) { b }; n(1, nil)
+[00000008] nil
+
+# --- Lobby.echo with one argument (legacy default tag/prefix) ---
+Lobby.echo("hi")
+[00000009] *** hi
+[00000010] nil

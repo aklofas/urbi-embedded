@@ -40,7 +40,7 @@ spawn_child_from_closure(UVM *vm, UClosure *cl)
     if (child == NULL) return NULL;
 
     /* Arm execution state (pc, pc_base, cur_consts, register stack). */
-    if (urbi_strand_arm_from_closure(child, cl) != 0) {
+    if (urbi_strand_arm_from_closure(child, cl, /*nargs=*/0) != 0) {
         urbi_strand_destroy(vm, child);
         return NULL;
     }

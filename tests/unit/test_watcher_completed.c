@@ -77,7 +77,7 @@ test_make_dummy_body_strand(struct UVM *vm, struct URealm *realm,
     struct UStrand *s = urbi_strand_create(vm, realm, body_cl);
     if (!s)
         return NULL;
-    if (urbi_strand_arm_from_closure(s, body_cl) != 0) {
+    if (urbi_strand_arm_from_closure(s, body_cl, /*nargs=*/0) != 0) {
         urbi_strand_destroy(vm, s);
         return NULL;
     }

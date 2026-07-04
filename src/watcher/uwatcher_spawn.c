@@ -118,8 +118,18 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, const void *fire_con
         }
     }
 
-    /* Step 4: arm — allocates register stack and wires pc/R/frame_count. */
-    if (urbi_strand_arm_from_closure(body, w->body) != 0) {
+    /* Step 4: arm — allocates register stack and wires pc/R/frame_count.
+     * nargs (v0.13.5 arity-self-check seed): watcher-body spawns are
+     * exact-arity by construction — the machinery always populates the
+     * body's full parameter list (Step 5a writes the payload into R[0]
+     * when fire_context is non-NULL; otherwise the pre-zeroed register
+     * delivers nil, the documented refire/eval-pass payload).  Passing
+     * the deposit count instead would turn the long-standing
+     * nil-payload refire paths (spawn_body_coroutine /
+     * respawn_body_coroutine, fire_context == NULL) into spurious
+     * min-arity throws on 1-param event bodies. */
+    if (urbi_strand_arm_from_closure(body, w->body,
+                                     (int)w->body->proto->nparams) != 0) {
         urbi_strand_destroy(vm, body);
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,

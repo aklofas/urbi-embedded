@@ -884,7 +884,15 @@ dispatch:
                 HALT();
             }
 
-            if (nargs != (int)callee->proto->nparams) {
+            /* Arity check.  v0.13.5: protos compiled under the arity
+             * self-check discipline (module header flag bit 0 →
+             * proto->arity_prologue) enforce their own minimum in a
+             * bytecode prologue, so the VM only rejects too-many here
+             * (`nargs <= nparams`); pre-v0.13.5 blobs keep the historic
+             * exact-match check — no semantic shift for old bytecode. */
+            if (callee->proto->arity_prologue != 0U
+                    ? (nargs > (int)callee->proto->nparams)
+                    : (nargs != (int)callee->proto->nparams)) {
                 vm_format_type_error_msg(vm, "CALL: wrong argument count");
                 VM_CALL_TYPEERROR();
             }
@@ -930,6 +938,17 @@ dispatch:
                     UValue z = {0};
                     s->R[si] = z;
                 }
+            }
+
+            /* v0.13.5: seed the actual passed-arg count into the synthetic
+             * \x01nargs local at R[nparams] for arity-self-check protos.
+             * The prologue reads it to enforce min arity and fill omitted
+             * defaulted params.  Gated on the flag: unflagged protos may
+             * have max_reg == nparams - 1 exactly (no slot to write);
+             * flagged >=1-param protos always reserved the slot. */
+            if (callee->proto->arity_prologue != 0U
+                    && callee->proto->nparams > 0U) {
+                s->R[callee->proto->nparams] = urbi_make_int((int64_t)nargs);
             }
 
             /* Safepoint at call-frame-push. */

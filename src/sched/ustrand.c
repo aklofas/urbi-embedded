@@ -773,7 +773,7 @@ urbi_strand_arm_init(UStrand *s)
  * Callers that need s->root_proto set (e.g. fork_spawn_child) must do so
  * explicitly after this call returns 0. */
 int
-urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
+urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry, int nargs)
 {
     if (urbi_strand_arm_init(s) != 0) return -1;
 
@@ -789,6 +789,15 @@ urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
     s->frame_count  = 0;
     s->open_upvals  = NULL;
     s->out_slot     = NULL;
+
+    /* v0.13.5: seed the actual arg count into the synthetic \x01nargs local
+     * at R[nparams] for arity-self-check protos (mirrors OP_CALL's seed).
+     * The register stack was just zeroed by urbi_strand_arm_init, so the
+     * slot holds nil until this write; callers deposit the argument values
+     * themselves (R[0..nargs-1]) after arming. */
+    if (entry->proto->arity_prologue != 0U && entry->proto->nparams > 0U) {
+        s->R[entry->proto->nparams] = urbi_make_int((int64_t)nargs);
+    }
     return 0;
 }
 

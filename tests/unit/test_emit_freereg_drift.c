@@ -196,8 +196,10 @@ UTEST(emit_watcher_install_freereg_balanced_at_event) {
     UASSERT_EQ((int)EMIT_OK, (int)rc);
     /* Pre-fix: each at-event leaks 1-2 slots; two installs push max_reg
      * past the post-fix ceiling.  Post-fix: max_reg stays at the inner
-     * body-closure compilation high water (= 4). */
-    UASSERT(module.max_reg <= 4U);
+     * body-closure compilation high water (was 4; 5 since v0.13.5 —
+     * the 1-param payload body reserves the synthetic \x01nargs local
+     * for the arity self-check prologue). */
+    UASSERT(module.max_reg <= 5U);
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);

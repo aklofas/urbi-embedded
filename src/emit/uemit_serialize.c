@@ -208,7 +208,15 @@ ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap) {
     /* --- 24-byte header --- */
     buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';
     buf[4] = (uint8_t)URBI_BYTECODE_VERSION_BYTE;  /* wire-format version byte (see include/urbi/version.h) */
-    buf[5] = 0x00U;              /* flags: none defined */
+    /* flags byte — spec-sanctioned compatible-extension point ("loader
+     * ignores for forward-compat"; docs/internals/bytecode-format.md).
+     * bit 0 (v0.13.5): arity self-check discipline — every >=1-param
+     * proto in this chunk carries a min-arity prologue; the loader
+     * propagates the bit to every decoded proto (UProto.arity_prologue)
+     * and OP_CALL relaxes its check to `nargs <= nparams` for flagged
+     * protos.  Unflagged (pre-v0.13.5) chunks keep the exact-match
+     * check.  bits 1-7: none defined. */
+    buf[5] = (root->arity_prologue != 0U) ? 0x01U : 0x00U;
     emit_memcpy(buf + 6, URBI_BYTECODE_CANARY, URBI_BYTECODE_CANARY_LEN);
     buf[12] = (uint8_t)URBI_INT_WIDTH;
     buf[13] = (uint8_t)URBI_FLOAT_TYPE;

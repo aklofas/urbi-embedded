@@ -106,7 +106,7 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
      * GETUPVAL/SETUPVAL at frame_count == 0 fall back to
      * s->entry_closure (already set by urbi_strand_create) — see uvm.c
      * OP_GETUPVAL dispatch. */
-    if (urbi_strand_arm_from_closure(child, child_closure) != 0) {
+    if (urbi_strand_arm_from_closure(child, child_closure, /*nargs=*/0) != 0) {
         /* OOM allocating register stack — tear down child. */
         urbi_strand_destroy(s->vm, child);
         s->fatal_status     = UEXEC_CANCEL;

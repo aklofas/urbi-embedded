@@ -592,8 +592,17 @@ int urbi_strand_arm_init(struct UStrand *s);
  *     to find the closure's owning UChunkInstance;
  *   - the scratch-frame path synthesizes a one-entry UProtoInstanceArr shell.
  * Without a post-arm assignment, OP_GETSLOT / OP_SETSLOT at frame_count == 0
- * would dereference NULL via s->module_instance->proto_instances. */
-int urbi_strand_arm_from_closure(struct UStrand *s, struct UClosure *entry);
+ * would dereference NULL via s->module_instance->proto_instances.
+ *
+ * nargs (v0.13.5): the number of argument registers (R[0..nargs-1]) the
+ * caller will deposit before dispatch — 0 for plain body/fork/every spawns,
+ * 1 for payload-carrying paths (watcher/event bodies, scratch payload).
+ * For arity-self-check protos (entry->proto->arity_prologue) with
+ * nparams > 0, the count is seeded into the synthetic \x01nargs local at
+ * R[nparams] so the callee's min-arity prologue and default-parameter
+ * fills see the real count.  Ignored for unflagged or 0-param protos. */
+int urbi_strand_arm_from_closure(struct UStrand *s, struct UClosure *entry,
+                                 int nargs);
 
 /* === v0.8.0: urbi_strand_create_for_module ===
  *

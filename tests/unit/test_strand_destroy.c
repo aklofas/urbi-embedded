@@ -80,7 +80,7 @@ ustrand_destroy_idempotent_on_freed_stack(void)
     UASSERT(s != NULL);
 
     /* Arm so a register stack is actually allocated. */
-    int rc = urbi_strand_arm_from_closure(s, &cl);
+    int rc = urbi_strand_arm_from_closure(s, &cl, /*nargs=*/0);
     UASSERT_EQ(0, rc);
     UASSERT(s->stack != NULL);
 

@@ -413,7 +413,7 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
     }
 
     /* Step 3: arm — allocates register stack, wires pc / R / frame_count. */
-    if (urbi_strand_arm_from_closure(body, p->body) != 0) {
+    if (urbi_strand_arm_from_closure(body, p->body, /*nargs=*/0) != 0) {
         urbi_strand_destroy(vm, body);
         if (vm->host_log_fn != NULL) {
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,

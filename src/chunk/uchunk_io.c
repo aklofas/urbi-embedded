@@ -309,6 +309,10 @@ typedef struct {
     char           *errmsg;
     size_t          errcap;
     int             depth;       /* current nesting depth inside decode_proto recursion */
+    uint8_t         arity_flag;  /* v0.13.5: header flag byte bit 0 — arity
+                                    self-check discipline; propagated to
+                                    UProto.arity_prologue on every decoded
+                                    proto (see uproto.h field comment) */
 } MDecCtx;
 
 /* --- Per-section decode helpers (each <40 LOC) --- */
@@ -339,7 +343,15 @@ static UChunkLoadError decode_header(MDecCtx *d) {
                    (unsigned)URBI_BYTECODE_VERSION_MAJOR, (unsigned)URBI_BYTECODE_VERSION_MINOR);
         return UCHUNK_LOAD_UNSUPPORTED_VERSION;
     }
-    /* buf[5] = flags; no flag bits defined at v1.0, ignored for forward-compat */
+    /* buf[5] = flags; ignored for forward-compat except the bits defined
+     * below — unknown bits are still ignored.
+     * bit 0 (v0.13.5): arity self-check discipline.  Every >=1-param proto
+     * in the chunk carries a min-arity prologue; propagate to
+     * UProto.arity_prologue in decode_proto so OP_CALL uses the relaxed
+     * `nargs <= nparams` check.  Chunks with bit 0 clear (all pre-v0.13.5
+     * blobs) keep the exact-match check — no semantic shift for old
+     * bytecode on a new VM. */
+    d->arity_flag = (uint8_t)(d->buf[5] & 0x01U);
     /* canary bytes at offsets 6-11 */
     if (!urbi_memeq(d->buf + 6, URBI_BYTECODE_CANARY, URBI_BYTECODE_CANARY_LEN)) {
         set_errmsg(d->errmsg, d->errcap,
@@ -846,6 +858,8 @@ static UChunkLoadError decode_proto(MDecCtx *d, UProto *p) {
     p->max_reg = d->buf[d->off++];
     p->nupvals = d->buf[d->off++];
     p->nparams = d->buf[d->off++];
+    /* v0.13.5: module-granular arity discipline (header flag bit 0). */
+    p->arity_prologue = d->arity_flag;
     /* W4 / T79: nupvals + nparams cross-check.  Each occupies one byte
      * (capped at 255 by the wire format) but the sum must fit in the
      * register frame so the runtime can address every captured upvalue
@@ -1458,6 +1472,7 @@ UChunkLoadError uchunk_deserialize(UProto **out_root, const uint8_t *buf, size_t
     d.errmsg = errmsg;
     d.errcap = errcap;
     d.depth  = 0;
+    d.arity_flag = 0U;   /* set by decode_header from header flag bit 0 */
 
     UChunkLoadError rc;
     if ((rc = decode_header(&d))         != UCHUNK_LOAD_OK) goto fail;

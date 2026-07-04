@@ -350,6 +350,7 @@ extern void test_watcher_mode_predicates_suite(void);
 extern void test_verifier_cross_byte_suite(void);
 extern void test_batch_error_surfacing_suite(void);
 extern void test_chunk_loader_hardening_suite(void);
+extern void test_default_params_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -682,6 +683,7 @@ static const struct suite_entry suites[] = {
     {"verifier_cross_byte",                   test_verifier_cross_byte_suite},
     {"batch_error_surfacing",                 test_batch_error_surfacing_suite},
     {"chunk_loader_hardening",                test_chunk_loader_hardening_suite},
+    {"default_params",                        test_default_params_suite},
     /* Add new suites here as test files are added. */
 };
 

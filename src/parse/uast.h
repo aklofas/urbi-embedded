@@ -458,6 +458,11 @@ struct UAstNode {
         struct {                                            /* AST_PARAM, AST_LAZY_PARAM */
             const char *name_start;
             int         name_len;
+            UAstNode   *default_expr;      /* `= expr` default value or NULL
+                                              (v0.13.5 legacy formal defaults;
+                                              evaluated at call time in the
+                                              callee scope when the caller
+                                              omits the argument) */
         } param;
         struct {                                            /* AST_ASSIGN */
             const char *name_start;        /* zero-copy lexeme view */

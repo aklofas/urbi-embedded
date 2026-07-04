@@ -76,7 +76,7 @@ strand_arm_sets_exec_fields(void)
     UASSERT(s != NULL);
 
     /* Arm it. */
-    int rc = urbi_strand_arm_from_closure(s, &cl);
+    int rc = urbi_strand_arm_from_closure(s, &cl, /*nargs=*/0);
     UASSERT_EQ(0, rc);
 
     /* pc and pc_base must point at the proto's instruction array. */
@@ -130,7 +130,7 @@ strand_arm_null_constants(void)
     UStrand *s = urbi_strand_create(&vm, realm, &cl);
     UASSERT(s != NULL);
 
-    int rc = urbi_strand_arm_from_closure(s, &cl);
+    int rc = urbi_strand_arm_from_closure(s, &cl, /*nargs=*/0);
     UASSERT_EQ(0, rc);
 
     /* cur_consts stays as-is (NULL for a fresh strand). */
@@ -181,7 +181,7 @@ strand_arm_from_closure_initializes_module_instance(void)
     /* Arm: stack is allocated, but module_instance is NOT touched (the spawn
      * site is responsible for wiring it post-arm).  Confirms the helper is
      * ABI-stable for the call sites that handle module_instance themselves. */
-    int rc = urbi_strand_arm_from_closure(s, &cl);
+    int rc = urbi_strand_arm_from_closure(s, &cl, /*nargs=*/0);
     UASSERT_EQ(0, rc);
     UASSERT(s->module_instance == NULL);
 
@@ -223,7 +223,7 @@ strand_arm_from_closure_asserts_stack_null(void)
     UASSERT(s->stack == NULL);
     UASSERT(s->R == NULL);
 
-    int rc = urbi_strand_arm_from_closure(s, &cl);
+    int rc = urbi_strand_arm_from_closure(s, &cl, /*nargs=*/0);
     UASSERT_EQ(0, rc);
 
     /* After arm, stack is allocated and R points at it. */
@@ -262,7 +262,7 @@ strand_arm_from_closure_resets_cur_consts_on_rearm(void)
     UASSERT(s != NULL);
 
     /* First arm — cur_consts picks up consts1. */
-    int rc = urbi_strand_arm_from_closure(s, &cl1);
+    int rc = urbi_strand_arm_from_closure(s, &cl1, /*nargs=*/0);
     UASSERT_EQ(0, rc);
     UASSERT(s->cur_consts == proto1.constants);
 
@@ -286,7 +286,7 @@ strand_arm_from_closure_resets_cur_consts_on_rearm(void)
     cl2.nupvals = 0;
 
     /* Re-arm with the second closure. */
-    rc = urbi_strand_arm_from_closure(s, &cl2);
+    rc = urbi_strand_arm_from_closure(s, &cl2, /*nargs=*/0);
     UASSERT_EQ(0, rc);
 
     /* CHSTR-019: cur_consts must be unconditionally reset to the new proto's

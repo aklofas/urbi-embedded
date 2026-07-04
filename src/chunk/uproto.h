@@ -122,6 +122,21 @@ typedef struct UProto {
     uint8_t    max_reg;
     uint8_t    nupvals;          /* count of upvalues captured by this proto */
     uint8_t    nparams;          /* count of formal parameters */
+    uint8_t    arity_prologue;   /* [wire: module-header flag bit 0, NOT a
+                                    proto-record byte] v0.13.5 arity self-check
+                                    discipline.  1 = every >=1-param proto in
+                                    this module carries a bytecode prologue
+                                    that throws a catchable error below its
+                                    min arity and fills omitted defaulted
+                                    params, reading the passed-arg count from
+                                    R[nparams] (seeded by OP_CALL / the
+                                    strand-arm paths).  OP_CALL's arity check
+                                    relaxes to `nargs <= nparams` for flagged
+                                    protos; unflagged (pre-v0.13.5) blobs keep
+                                    the exact-match check.  Set by the emitter
+                                    on every proto it produces; propagated by
+                                    the deserializer from the header flag byte
+                                    to every proto in the chunk. */
 
     /* === M4 v1.3 additions (encoding spec §5.1) === */
     /* Number of GETSLOT/SETSLOT IC sites in this function.  Populated by the

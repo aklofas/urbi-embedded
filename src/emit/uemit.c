@@ -594,6 +594,14 @@ UEmitError uemit_finish(UEmitter *e) {
     if (e->module != NULL) {
         UProto *rp = e->module;
         rp->max_reg = e->max_reg_seen;
+        /* v0.13.5: the emitter always produces the arity self-check
+         * discipline (every >=1-param proto carries a min-arity prologue;
+         * see emit_function_literal step 3b).  Flag the root so the
+         * serializer sets header flag bit 0 and OP_CALL uses the relaxed
+         * `nargs <= nparams` check for every proto of this module.  The
+         * root chunk itself has nparams == 0, where relaxed and exact
+         * checks coincide. */
+        rp->arity_prologue = 1U;
         /* Back-pointer walk: every nested proto's root field points at rp.
          * v0.8.5 made this recursive (was flat-only): walks the full tree
          * DFS so grandchildren also get root set correctly when the

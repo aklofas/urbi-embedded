@@ -56,7 +56,11 @@ class LobbyMethods {
     // The original msg.asString() coercion is dropped: String.asString
     // is not yet in the stdlib, and __builtin_lobby_send raises TypeError
     // for non-String args directly.
-    var echo = function(msg, tag, prefix) {
+    // v0.13.5: tag/prefix defaults restored to the reference signature
+    // (share/urbi/lobby.u: `function echo(var msg, var tag = "",
+    // var prefix = "***")`) -- the canonical one-argument echo("hi")
+    // call was an uncatchable arity error without them.
+    var echo = function(msg, tag = "", prefix = "***") {
         this.__builtin_lobby_send(msg, tag, prefix)
     };
 

@@ -1332,7 +1332,10 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
     UASSERT_EQ((uint8_t)'B', buf[2]);
     UASSERT_EQ((uint8_t)'I', buf[3]);
     UASSERT_EQ((uint8_t)URBI_BYTECODE_VERSION_BYTE, buf[4]); /* version */
-    UASSERT_EQ((uint8_t)0x00, buf[5]);               /* flags */
+    /* v0.13.5: emitter-produced chunks set flag bit 0 (arity self-check
+     * discipline) — uemit_finish stamps root->arity_prologue and the
+     * serializer mirrors it into the header flags byte. */
+    UASSERT_EQ((uint8_t)0x01, buf[5]);               /* flags */
     UASSERT_EQ((uint8_t)0x19, buf[6]);               /* canary[0] */
     UASSERT_EQ((uint8_t)0x93, buf[7]);               /* canary[1] */
     UASSERT_EQ((uint8_t)'\r', buf[8]);               /* canary[2] */

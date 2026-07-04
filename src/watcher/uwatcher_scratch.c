@@ -87,8 +87,11 @@ run_on_scratch_core(struct UVM       *vm,
     strand.is_transient_strand = 1U;  /* guards reject OP_FORK_DETACH/JOIN */
 
     /* Arm from the closure: allocates register stack, wires pc / pc_base /
-     * cur_consts / frame_count from closure->proto.  Returns -1 on OOM. */
-    if (urbi_strand_arm_from_closure(&strand, closure) != 0) {
+     * cur_consts / frame_count from closure->proto.  Returns -1 on OOM.
+     * nargs mirrors the initial_r0 deposit below: 1 when a payload will be
+     * written to R[0], else 0 (v0.13.5 arity-self-check seed). */
+    if (urbi_strand_arm_from_closure(&strand, closure,
+                                     (initial_r0 != NULL) ? 1 : 0) != 0) {
         if (vm->host_log_fn) {
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "scratch-frame arm: register-stack OOM");

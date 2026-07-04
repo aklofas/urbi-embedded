@@ -172,6 +172,29 @@ uint8_t emit_function_literal(UEmitter *e,
      * failure leaves child_proto in parent_proto->nested[] but at least
      * it is consistently a fully-allocated empty proto (uchunk_destroy
      * walks NULL slots cleanly). */
+    /* Save the parent's flat-register cursor BEFORE opening the child
+     * FuncState.  After the child compile, the parent's `next_reg` is
+     * indispensable for finding a closure-destination slot that does not
+     * alias any still-live temp in the parent — e.g. the `Realm` GETSLOT
+     * result returned by emit_ident_arm's realm-global fallback when
+     * compiling `Realm.fn = function () {...}`.  freereg tracks only the
+     * local-zone floor (locals + params + r_global_slot); live temps live
+     * ABOVE the floor and are tracked by next_reg, so freereg alone is
+     * the wrong source.  Task #22, surfaced 2026-05-16.
+     *
+     * v0.13.5: capture moved from AFTER the child param declarations to
+     * here.  uemit_declare_local's tail sync (`if (e->next_reg <
+     * fs->freereg) e->next_reg = fs->freereg`) raises the FLAT cursor to
+     * the CHILD's local floor while declaring child params — so when the
+     * child's param+synthetic-local count exceeded the parent's floor
+     * (e.g. any 1-param literal inside a 0-param watcher body once
+     * \x01nargs exists, or a 2-param literal there before it), the old
+     * capture point read the child-contaminated cursor and OP_CLOSURE's
+     * dst landed one-plus slots above the var-decl's expected register
+     * (emit_var_decl_arm's init_reg != reg_before check → spurious
+     * EMIT_UNSUPPORTED_AST). */
+    uint8_t parent_next_reg_before = e->next_reg;
+
     UProto *parent_proto = parent_fs->target_proto;
     if (parent_proto == NULL) parent_proto = e->module;  /* v0.9.2: e->module IS root */
     UProto *child_proto = uproto_alloc_nested(e->module, parent_proto);
@@ -200,6 +223,35 @@ uint8_t emit_function_literal(UEmitter *e,
     }
     child_proto->nparams = (uint8_t)nparams;
 
+    /* v0.13.5 arity self-check discipline (legacy LANG4-12 default params):
+     * every >=1-param function reserves a synthetic local right above the
+     * params — slot index == nparams — that the VM (OP_CALL) and the
+     * strand-arm paths seed with the ACTUAL passed argument count as a
+     * UVAL_INT.  The prologue emitted below (step 3b) reads it to enforce
+     * the minimum arity and to fill omitted defaulted params at call time.
+     * Synthetic-name pattern per for-each's \x01iter / switch's \x01sw;
+     * \x01 is unlexable so user code can never collide.  Declared as a
+     * real local so fs_temp_floor's count-based formula keeps protecting
+     * it from if/while temp resets.  ("nargs", not "argc": a name starting
+     * with a hex digit would be munched into the \x01 escape.) */
+    int argc_slot = -1;
+    if (nparams > 0) {
+        const char *argc_name = ustr_intern(e->vm, "\x01nargs", 6);
+        if (argc_name == NULL) {
+            e->error = EMIT_OOM;
+            uemit_close_function(e);
+            return 0U;
+        }
+        argc_slot = uemit_declare_local(e, argc_name, 6);
+        if (argc_slot < 0) { uemit_close_function(e); return 0U; }
+    }
+    /* Flag the proto: its module is serialized with header flag bit 0 set
+     * and OP_CALL relaxes the arity check to `nargs <= nparams` (the
+     * prologue owns the lower bound).  Set on every proto — including
+     * 0-param ones, where relaxed and exact checks coincide — so the
+     * module-granular wire flag describes every proto uniformly. */
+    child_proto->arity_prologue = 1U;
+
     /* Pre-reserve the realm-global slot register at the current freereg
      * (right above the last param).  This must happen BEFORE body compilation
      * so that if/while temp-resets (which use fs_temp_floor) never clobber
@@ -219,30 +271,189 @@ uint8_t emit_function_literal(UEmitter *e,
             child_fs->max_reg_seen = child_fs->freereg;
     }
 
-    /* Save the parent's flat-register cursor before clobbering it with
-     * the child's.  After the child compile, the parent's `next_reg` is
-     * indispensable for finding a closure-destination slot that does not
-     * alias any still-live temp in the parent — e.g. the `Realm` GETSLOT
-     * result returned by emit_ident_arm's realm-global fallback when
-     * compiling `Realm.fn = function () {...}`.  freereg tracks only the
-     * local-zone floor (locals + params + r_global_slot); live temps live
-     * ABOVE the floor and are tracked by next_reg, so freereg alone is
-     * the wrong source.  Task #22, surfaced 2026-05-16. */
-    uint8_t parent_next_reg_before = e->next_reg;
-
     /* Sync the flat register cursor to the child's freereg so temps
-     * inside the function body are allocated above all param slots. */
+     * inside the function body are allocated above all param slots.
+     * (parent_next_reg_before was captured before uemit_open_function —
+     * see the v0.13.5 note there.) */
     e->next_reg = child_fs->freereg;
 
-    /* 4. Compile body (AST_BLOCK); emit_instr routes to child_proto.
+    /* 3b + 4. Compile the arity prologue, then the body (AST_BLOCK);
+     * emit_instr routes to child_proto.
      *
      * refactor-3 VM-02/B4: clear in_cleanup_body across the nested body —
      * a function literal (or lazy thunk / watcher closure) defined inside a
      * finally body runs LATER as ordinary code, not as part of the cleanup,
      * so its `;` separators keep normal OP_YIELD semantics.  Mirrors the
-     * lazy_arg_context save/clear/restore in emit_lazy_thunk. */
+     * lazy_arg_context save/clear/restore in emit_lazy_thunk.  The arity
+     * prologue (and its default expressions) get the same treatment: they
+     * run at call time as ordinary function code. */
     uint8_t saved_icb = e->in_cleanup_body;
     e->in_cleanup_body = 0U;
+
+    /* === 3b: v0.13.5 arity self-check prologue ===
+     * Emitted BEFORE the body, using only existing wire-v1.9 opcodes
+     * (LOADK / LT / LE / JMP / MOVE / THROW — no wire change).  The
+     * synthetic \x01nargs local at argc_slot carries the actual passed
+     * count (seeded by OP_CALL / the strand-arm paths).
+     *
+     *   min_arity = 1 + highest param index WITHOUT a default (0 when all
+     *   params carry defaults).  Matches the legacy runtime: formals
+     *   desugar to in-order LocalDeclarations (factory.cc formals_to_decs),
+     *   so a missing non-defaulted formal raises regardless of defaults on
+     *   earlier params — non-trailing defaults are legal but dead.
+     *
+     *   too-few check (min_arity > 0):
+     *     LOADK tmp, K(min)
+     *     LT    0, nargs, tmp      ; nargs < min → skip JMP → throw
+     *     JMP   ok
+     *     LOADK tmp, K("CALL: wrong argument count ...")
+     *     THROW tmp                ; catchable, same as assert's lowering
+     *   ok:
+     *
+     *   default fill, for each param i in [min_arity, nparams):
+     *     LOADK tmp, K(i)
+     *     LE    0, nargs, tmp      ; nargs <= i (omitted) → skip JMP → fill
+     *     JMP   skip_i
+     *     <default expr → r>       ; call-time, callee scope; params 0..i-1
+     *     MOVE  R[i], r            ;   already bound, so `b = a + 1` works
+     *   skip_i:
+     */
+    if (nparams > 0) {
+        int min_arity = 0;
+        {
+            int pi;
+            for (pi = 0; pi < nparams; pi++) {
+                if (params[pi]->u.param.default_expr == NULL) min_arity = pi + 1;
+            }
+        }
+        uint32_t pline = (uint32_t)params[0]->line;
+
+        if (min_arity > 0) {
+            uint16_t kmin = add_const_int(e, (int64_t)min_arity);
+            if (e->error != EMIT_OK) {
+                e->in_cleanup_body = saved_icb;
+                uemit_close_function(e);
+                return 0U;
+            }
+
+            /* Static diagnostic text: today's VM message + the static
+             * expected-count ("at least" when defaults make it a range).
+             * The dynamic got-count cannot ride a LOADK constant. */
+            char msgbuf[64];
+            int  mlen = 0;
+            {
+                static const char kPrefix[] = "CALL: wrong argument count (expected ";
+                const char *cp;
+                for (cp = kPrefix; *cp != '\0'; cp++) msgbuf[mlen++] = *cp;
+                if (min_arity < nparams) {
+                    static const char kAtLeast[] = "at least ";
+                    for (cp = kAtLeast; *cp != '\0'; cp++) msgbuf[mlen++] = *cp;
+                }
+                /* Decimal render of min_arity (<= UFS_MAX_LOCALS = 200). */
+                {
+                    char dig[4];
+                    int  nd = 0, v = min_arity;
+                    do { dig[nd++] = (char)('0' + (v % 10)); v /= 10; } while (v > 0);
+                    while (nd > 0) msgbuf[mlen++] = dig[--nd];
+                }
+                msgbuf[mlen++] = ')';
+            }
+            const char *msg_interned = ustr_intern(e->vm, msgbuf, (size_t)mlen);
+            if (msg_interned == NULL) {
+                e->error = EMIT_OOM;
+                e->in_cleanup_body = saved_icb;
+                uemit_close_function(e);
+                return 0U;
+            }
+            uint16_t kmsg = add_const_str(e, msg_interned);
+            if (e->error != EMIT_OK) {
+                e->in_cleanup_body = saved_icb;
+                uemit_close_function(e);
+                return 0U;
+            }
+
+            uint8_t tmp = alloc_reg(e);
+            if (e->error != EMIT_OK) {
+                e->in_cleanup_body = saved_icb;
+                uemit_close_function(e);
+                return 0U;
+            }
+            emit_instr(e, uinstr_enc_abx(OP_LOADK, tmp, kmin), pline);
+            emit_instr(e, uinstr_enc_abc(OP_LT, 0U, (uint8_t)argc_slot, tmp),
+                       pline);
+            int jmp_ok = (int)emit_instr_count(e);
+            emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), pline);
+            emit_instr(e, uinstr_enc_abx(OP_LOADK, tmp, kmsg), pline);
+            uemit_throw(e, tmp, pline);
+            /* Bail BEFORE the patch on any emit failure above: a failed
+             * emit_instr doesn't append, so emit_instr_count could equal
+             * jmp_ok and uemit_jmp_offset's forward-jump precondition
+             * (target > from) would trip (OOM-injection suites sweep
+             * every allocation point through this path). */
+            if (e->error != EMIT_OK) {
+                e->in_cleanup_body = saved_icb;
+                uemit_close_function(e);
+                return 0U;
+            }
+            emit_patch_instr(e, jmp_ok,
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_ok,
+                                                (int)emit_instr_count(e))));
+            e->next_reg = child_fs->freereg;  /* release tmp */
+        }
+
+        {
+            int pi;
+            for (pi = min_arity; pi < nparams; pi++) {
+                UAstNode *def = params[pi]->u.param.default_expr;
+                /* Every param at index >= min_arity carries a default by
+                 * construction of min_arity. */
+                uint32_t dline = (uint32_t)params[pi]->line;
+                uint16_t ki = add_const_int(e, (int64_t)pi);
+                if (e->error != EMIT_OK) {
+                    e->in_cleanup_body = saved_icb;
+                    uemit_close_function(e);
+                    return 0U;
+                }
+                uint8_t tmp = alloc_reg(e);
+                if (e->error != EMIT_OK) {
+                    e->in_cleanup_body = saved_icb;
+                    uemit_close_function(e);
+                    return 0U;
+                }
+                emit_instr(e, uinstr_enc_abx(OP_LOADK, tmp, ki), dline);
+                emit_instr(e, uinstr_enc_abc(OP_LE, 0U, (uint8_t)argc_slot, tmp),
+                           dline);
+                int jmp_skip = (int)emit_instr_count(e);
+                emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), dline);
+                uint8_t r = emit_expr(e, def);
+                if (e->error != EMIT_OK) {
+                    e->in_cleanup_body = saved_icb;
+                    uemit_close_function(e);
+                    return 0U;
+                }
+                if (r != (uint8_t)pi) {
+                    emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)pi, r, 0U),
+                               dline);
+                }
+                /* Same bail-before-patch rule as the too-few block. */
+                if (e->error != EMIT_OK) {
+                    e->in_cleanup_body = saved_icb;
+                    uemit_close_function(e);
+                    return 0U;
+                }
+                emit_patch_instr(e, jmp_skip,
+                    uinstr_enc_abx(OP_JMP, 0U,
+                                   uemit_jmp_offset(jmp_skip,
+                                                    (int)emit_instr_count(e))));
+                /* Reset the temp cursor to the local-zone top for the next
+                 * fill / the body (mirrors the if-arm temp-reset idiom). */
+                e->next_reg = child_fs->freereg;
+            }
+        }
+    }
+    /* === end 3b === */
+
     uint8_t body_reg = emit_expr(e, body);
     e->in_cleanup_body = saved_icb;
     if (e->error != EMIT_OK) {

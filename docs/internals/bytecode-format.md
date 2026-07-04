@@ -40,7 +40,9 @@ Offset  Size  Field         Value at v1.9
 ------  ----  ----------    -----------------------------------------------
      0     4  magic         0x55 0x52 0x42 0x49  ("URBI")
      4     1  version       16·major + minor;  v1.9 = 0x19
-     5     1  flags         0x00 at v1.9; loader ignores for forward-compat
+     5     1  flags         bit 0 = arity self-check discipline (below);
+                            bits 1-7 undefined (0 at write); loader
+                            ignores unknown bits for forward-compat
      6     6  canary        0x19 0x93 0x0D 0x0A 0x1A 0x0A
     12     1  int_width     8  (i64 on every v1 target)
     13     1  float_type    4 (f32) or 8 (f64); per-target pin
@@ -57,6 +59,28 @@ FTP text-mode transfer and Windows clipboard paste corruption. Defined as
 The flavor descriptor fields (offsets 12–15) are checked one at a time. On any
 mismatch the loader returns `UCHUNK_LOAD_FLAVOR_MISMATCH` and writes a diagnostic
 that names the field (e.g. `"flavor mismatch: float_type expected 8, got 4"`).
+
+### Flags bit 0 — arity self-check discipline
+
+Chunks produced by the emitter carry flag bit 0 set. It declares that every
+proto with `nparams >= 1` in the chunk plants a bytecode prologue that (a)
+throws a catchable error when fewer than its minimum arity of arguments were
+passed and (b) fills omitted defaulted parameters at call time (default
+parameter values, `function (a, b = expr)`). Such protos reserve one
+synthetic local at register index `nparams`; the VM's `OP_CALL` (and the
+internal strand-arm paths) seed it with the actual passed count as an
+integer, and relax the VM-side arity check to `nargs <= nparams` (too-many
+stays a VM-side typed TypeError).
+
+The loader propagates the bit to every decoded proto
+(`UProto.arity_prologue`, a runtime-only field — the per-proto record is
+unchanged). Chunks with bit 0 clear (all pre-v0.13.5 blobs) keep the
+historic exact-match `OP_CALL` arity check, so old bytecode running on a
+new VM sees no semantic shift. The reverse direction — a flagged chunk on
+a loader that predates the flag — loads (the flags byte was always
+reader-ignored) but its >=1-param functions fail at call time because
+nothing seeds the count register; pre-v1.0 there is no cross-version
+bytecode stability promise (see the reserved-bytes note above).
 
 ### Wire version history
 
