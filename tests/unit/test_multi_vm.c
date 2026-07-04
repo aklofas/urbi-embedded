@@ -128,10 +128,12 @@ UTEST(two_vms_have_independent_last_error) {
 
     UValue out_a, out_b;
 
-    /* Run something that triggers TYPE_ERROR on vm_a: 1 + nil */
+    /* Run something that triggers TYPE_ERROR on vm_a: 1 + nil.
+     * After B2 fix: arith errors are catchable typed throws; urbi_vm_run
+     * returns URBI_ERR_UNCAUGHT_THROW and vm.last_error stays UVM_OK. */
     UVMError rc_a = eval_on_vm(&vm_a, "1 + nil", &out_a);
-    UASSERT_EQ(UVM_TYPE_ERROR, rc_a);
-    UASSERT_EQ(UVM_TYPE_ERROR, vm_a.last_error);
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, rc_a);
+    UASSERT_EQ(UVM_OK, vm_a.last_error);
 
     /* vm_b's last_error should still be OK (init state). */
     UASSERT_EQ(UVM_OK, vm_b.last_error);

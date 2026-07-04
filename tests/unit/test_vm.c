@@ -323,8 +323,9 @@ UTEST(vm_add_bool_int_is_type_error) {
     UProto c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
-    UASSERT_EQ(UVAL_NIL, out.kind);
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
+    /* out now holds the thrown TypeError exception object (not nil). */
+    UASSERT_EQ(UVAL_OBJECT, out.kind);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
@@ -332,8 +333,9 @@ UTEST(vm_add_int_nil_is_type_error) {
     UProto c; fab_module_add_mixed(&c, UVAL_INT, 5, 0, UVAL_NIL, 0, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
-    UASSERT_EQ(UVAL_NIL, out.kind);
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
+    /* out now holds the thrown TypeError exception object (not nil). */
+    UASSERT_EQ(UVAL_OBJECT, out.kind);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
@@ -382,7 +384,7 @@ UTEST(vm_sub_bool_operand_is_type_error) {
     c.instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
@@ -598,7 +600,7 @@ UTEST(vm_neg_nil_is_type_error) {
     c.constants[0].kind = UVAL_NIL;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
@@ -608,7 +610,7 @@ UTEST(vm_type_error_diagnostic_binary_op) {
     UProto c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     /* Without source_name, prefix is "line N:". line_deltas is [1, 0, 0, 0]
        (set by fab_module_int_add_int which fab_module_add_mixed uses as base),
        so ADD at pc=2 reports line 1. */
@@ -629,7 +631,7 @@ UTEST(vm_type_error_diagnostic_with_source_name) {
     memcpy(c.source_name, src, sizeof(src));
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "foo.u:1:") != NULL);
     free(c.source_name);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -640,7 +642,7 @@ UTEST(vm_type_error_diagnostic_unary_op) {
     c.constants[0].kind = UVAL_NIL;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "OP_NEG") != NULL);
     UASSERT(strstr(vm.last_errmsg, "Nil") != NULL);
     UASSERT(strstr(vm.last_errmsg, "operand") != NULL);
@@ -656,7 +658,7 @@ UTEST(vm_type_error_diagnostic_no_synclines_uses_instr_prefix) {
     c.line_deltas = NULL;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "instr 2:") != NULL);
     free_fab_module(&c);
     urbi_vm_destroy(&vm);
@@ -732,7 +734,7 @@ UTEST(vm_mul_bool_int_is_type_error) {
     c.instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "OP_MUL") != NULL);
     UASSERT(strstr(vm.last_errmsg, "Bool") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -744,7 +746,7 @@ UTEST(vm_div_bool_int_is_type_error) {
     c.instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "OP_DIV") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -755,7 +757,7 @@ UTEST(vm_add_float_bool_diagnostic_shows_float_kind) {
     UProto c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 1.0, UVAL_BOOL, 1, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "Float") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -767,7 +769,7 @@ UTEST(vm_add_string_int_diagnostic_shows_string_kind) {
     c.constants[0].kind = UVAL_STR;  /* override to String */
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "String") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -779,7 +781,7 @@ UTEST(vm_add_unknown_kind_diagnostic_shows_unknown) {
     c.constants[0].kind = 99;  /* out-of-range — unreachable in normal use */
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "unknown") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -800,7 +802,7 @@ UTEST(vm_type_error_at_pc_zero_writes_instr_zero) {
     /* No line_deltas (NULL) → prefix falls back to "instr 0:". */
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "instr 0:") != NULL);
     free_fab_module(&c);
     urbi_vm_destroy(&vm);
@@ -820,7 +822,7 @@ UTEST(vm_type_error_diagnostic_truncates_to_ellipsis) {
     memcpy(c.source_name, long_name, name_len);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     size_t msg_len = strlen(vm.last_errmsg);
     UASSERT(msg_len > 0);
     UASSERT(msg_len < UVM_ERRMSG_CAP);
@@ -854,7 +856,7 @@ UTEST(vm_line_for_pc_abs_checkpoint_used_in_diagnostic) {
     c.abs_lines[3].pc = 3; c.abs_lines[3].line = 13;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
     /* ADD is at pc=2; abs_lines[2].line == 12 → prefix "line 12:". */
     UASSERT(strstr(vm.last_errmsg, "line 12:") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -870,8 +872,9 @@ UTEST(vm_run_resets_last_error_on_successful_run) {
     /* Run 1 — force TypeError. */
     UProto c1; fab_module_add_mixed(&c1, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c1, &out));
-    UASSERT_EQ(UVM_TYPE_ERROR, vm.last_error);
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c1, &out));
+    /* After an uncaught typed throw, vm.last_error was consumed (UVM_OK). */
+    UASSERT_EQ(UVM_OK, vm.last_error);
     UASSERT(vm.last_errmsg[0] != '\0');
     free_fab_module(&c1);
 
@@ -942,10 +945,10 @@ UTEST(vm_gt_swapped_lt_true) {
 }
 
 UTEST(vm_lt_non_numeric_type_error) {
-    /* nil < 1: OP_LT with non-numeric operand → UVM_TYPE_ERROR */
+    /* nil < 1: OP_LT with non-numeric operand → catchable typed throw */
     UValue out;
     UVMError rc = vm_pipeline_eval("nil < 1", &out);
-    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
+    UASSERT_EQ((int)URBI_ERR_UNCAUGHT_THROW, (int)rc);
 }
 
 UTEST(vm_true_literal) {

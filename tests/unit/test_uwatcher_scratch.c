@@ -150,7 +150,8 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 
     UASSERT_EQ(0, rc);
     UASSERT_EQ(1, threw);
-    UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
+    /* nil() raises a typed TypeError throw; out holds the exception object. */
+    UASSERT_EQ((int)UVAL_OBJECT, (int)out.kind);
 
     /* Helper must reset vm->last_error so the caller's next VM operation
      * does not see the cond's stale error state. */

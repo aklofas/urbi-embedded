@@ -36,6 +36,7 @@
 #include "vm/uvm_tag_scope.h"    /* vm_push_tag_scope, vm_pop_tag_scope (v0.10.15 W1 stage 1) */
 #include "vm/uvm_reactive_install.h" /* vm_reactive_install — 7 install arms (v0.10.15 W1 stage 2) */
 #include "vm/uvm_reactive_drain.h"   /* vm_reactive_drain — centralised reactive pump (SCHED-02/SCHED-12) */
+#include "stdlib/object_root.h"      /* urbi_raise_typed — typed Exception instance builder */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -116,6 +117,85 @@ ic_resolve_pi(UStrand *s)
  * vm_install_result_is_fatal / vm_install_fault) and the seven install arm
  * bodies were extracted to src/vm/uvm_reactive_install.c (v0.10.15 W1
  * stage 2).  See vm_reactive_install(). */
+
+/* ---------------------------------------------------------------------------
+ * Cold helpers for typed throws at arith/compare/call error sites.
+ *
+ * Nine dispatch-loop HALT sites previously killed the strand directly,
+ * bypassing try/catch, finally, and tag-leave cleanup.  These helpers route
+ * each site through the same catchable typed-throw machinery that slot errors
+ * already use (uvm_slot.c slot_throw_or_fatal pattern).
+ *
+ * Out-of-line on purpose: keeps ~9 cold stanzas out of the hot dispatch body
+ * (refactor-5 C7/VM-SIMPLIFY-01 icache win).
+ *
+ * Proto resolution: vm->typeerror_proto — exactly as slot_throw_or_fatal
+ * (uvm_slot.c:30-46) uses; no new lookup path invented.
+ *
+ * Safepoint consumption: callers `goto safepoint` on VM_BINOP_THREW, which
+ * reaches the same `if (s->pending_unwind != UEXEC_OK) urbi_unwind(s)` arm
+ * that slot throws use.
+ * --------------------------------------------------------------------------- */
+
+typedef enum { VM_BINOP_THREW, VM_BINOP_FATAL } VMBinopDirective;
+
+/* Core: format is done; message is in vm->last_errmsg. */
+static VMBinopDirective
+vm_dispatch_typeerror_core(UVM *vm, UStrand *s)
+{
+    UValue inst;
+    urbi_raise_typed(vm, vm->typeerror_proto, &inst, vm->last_errmsg);
+    s->unwind_value   = inst;
+    s->pending_unwind = UEXEC_THROW;
+    s->pc++;
+    vm->last_error = UVM_OK;  /* consumed into the throw */
+    return VM_BINOP_THREW;
+}
+
+/* Binary arith / compare ops (OP_ADD/SUB/MUL/DIV/LT/LE). */
+static VMBinopDirective
+vm_binop_typeerror(UVM *vm, UStrand *s, uint8_t opcode,
+                   uint8_t bk, uint8_t ck)
+{
+    vm_format_type_error_binary(vm, s->root_proto,
+        (size_t)(s->pc - s->pc_base), opcode, bk, ck);
+    return vm_dispatch_typeerror_core(vm, s);
+}
+
+/* Unary op (OP_NEG). */
+static VMBinopDirective
+vm_unop_typeerror(UVM *vm, UStrand *s, uint8_t opcode, uint8_t bk)
+{
+    vm_format_type_error_unary(vm, s->root_proto,
+        (size_t)(s->pc - s->pc_base), opcode, bk);
+    return vm_dispatch_typeerror_core(vm, s);
+}
+
+/* Call-shape sites (OP_CALL callee-not-closure / arity): message already
+ * formatted via vm_format_type_error_msg() at the call site. */
+static VMBinopDirective
+vm_call_typeerror(UVM *vm, UStrand *s)
+{
+    return vm_dispatch_typeerror_core(vm, s);
+}
+
+/* Dispatch macros — same goto-safepoint / HALT() pattern for all 9 sites. */
+#define VM_BINOP_TYPEERROR(opc, bk, ck) do {                              \
+    if (vm_binop_typeerror(vm, s, (opc), (bk), (ck)) ==                   \
+        VM_BINOP_THREW) goto safepoint;                                    \
+    HALT();                                                                \
+} while (0)
+
+#define VM_UNOP_TYPEERROR(opc, bk) do {                                    \
+    if (vm_unop_typeerror(vm, s, (opc), (bk)) ==                           \
+        VM_BINOP_THREW) goto safepoint;                                    \
+    HALT();                                                                \
+} while (0)
+
+#define VM_CALL_TYPEERROR() do {                                           \
+    if (vm_call_typeerror(vm, s) == VM_BINOP_THREW) goto safepoint;       \
+    HALT();                                                                \
+} while (0)
 
 /* --- dispatch_loop_until_yield ---
    The core execution engine (T6).  Runs s's bytecode until one of:
@@ -300,11 +380,7 @@ dispatch:
                         goto safepoint;
                     }
                 }
-                vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->root_proto,
-                    (size_t)(s->pc - s->pc_base),
-                    OP_ADD, b->kind, cc->kind);
-                HALT();
+                VM_BINOP_TYPEERROR(OP_ADD, b->kind, cc->kind);
             }
             NEXT();
         }
@@ -331,11 +407,7 @@ dispatch:
                         goto safepoint;
                     }
                 }
-                vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->root_proto,
-                    (size_t)(s->pc - s->pc_base),
-                    OP_SUB, b->kind, cc->kind);
-                HALT();
+                VM_BINOP_TYPEERROR(OP_SUB, b->kind, cc->kind);
             }
             NEXT();
         }
@@ -362,11 +434,7 @@ dispatch:
                         goto safepoint;
                     }
                 }
-                vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->root_proto,
-                    (size_t)(s->pc - s->pc_base),
-                    OP_MUL, b->kind, cc->kind);
-                HALT();
+                VM_BINOP_TYPEERROR(OP_MUL, b->kind, cc->kind);
             }
             NEXT();
         }
@@ -393,11 +461,7 @@ dispatch:
                         goto safepoint;
                     }
                 }
-                vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->root_proto,
-                    (size_t)(s->pc - s->pc_base),
-                    OP_DIV, b->kind, cc->kind);
-                HALT();
+                VM_BINOP_TYPEERROR(OP_DIV, b->kind, cc->kind);
             }
             NEXT();
         }
@@ -424,11 +488,7 @@ dispatch:
                         goto safepoint;
                     }
                 }
-                vm->last_error = rc;
-                vm_format_type_error_unary(vm, s->root_proto,
-                    (size_t)(s->pc - s->pc_base),
-                    OP_NEG, b->kind);
-                HALT();
+                VM_UNOP_TYPEERROR(OP_NEG, b->kind);
             }
             NEXT();
         }
@@ -693,7 +753,7 @@ dispatch:
             if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: callee is not a closure");
-                HALT();
+                VM_CALL_TYPEERROR();
             }
             UClosure *callee = (UClosure *)s->R[a].v.p;
             UValue    self_value = is_method ? s->R[a + 1U] : urbi_make_nil();
@@ -824,7 +884,7 @@ dispatch:
             if (nargs != (int)callee->proto->nparams) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: wrong argument count");
-                HALT();
+                VM_CALL_TYPEERROR();
             }
             if (s->frame_count >= UVM_MAX_FRAMES) {
                 vm->last_error = UVM_TYPE_ERROR;
@@ -996,10 +1056,7 @@ dispatch:
                         goto safepoint;
                     }
                 }
-                vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_binary(vm, s->root_proto,
-                    (size_t)(s->pc - s->pc_base), OP_LT, b->kind, c->kind);
-                HALT();
+                VM_BINOP_TYPEERROR(OP_LT, b->kind, c->kind);
             }
             if ((int)lt != (int)uinstr_a(*s->pc)) { s->pc++; }
             NEXT();
@@ -1029,10 +1086,7 @@ dispatch:
                         goto safepoint;
                     }
                 }
-                vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_binary(vm, s->root_proto,
-                    (size_t)(s->pc - s->pc_base), OP_LE, b->kind, c->kind);
-                HALT();
+                VM_BINOP_TYPEERROR(OP_LE, b->kind, c->kind);
             }
             if ((int)le != (int)uinstr_a(*s->pc)) { s->pc++; }
             NEXT();

@@ -209,6 +209,24 @@ UTEST(vm_run_exception_object_delivered_via_out)
 }
 
 /* =========================================================================
+ * Test 7: urbi_vm_run on "nil + 1" returns URBI_ERR_UNCAUGHT_THROW (B2)
+ * =========================================================================
+ *
+ * Arith type errors are now catchable typed throws (task 4, B2).
+ * An uncaught arith error surfaces as URBI_ERR_UNCAUGHT_THROW, not
+ * URBI_ERR_STRAND_FATAL.
+ *   Pre-fix: rc = URBI_ERR_STRAND_FATAL (-2) — HALT path killed the strand.
+ *   Post-fix: rc = URBI_ERR_UNCAUGHT_THROW (-18). */
+UTEST(vm_run_uncaught_arith_error_is_uncaught_throw)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW,
+               utest_compile_and_vm_run(&vm, "nil + 1", NULL));
+    urbi_vm_destroy(&vm);
+}
+
+/* =========================================================================
  * Suite entry point
  * ========================================================================= */
 
@@ -229,4 +247,6 @@ test_batch_error_surfacing_suite(void)
               repl_eval_keeps_nil_recovery);
     utest_run("batch_error_surfacing: vm_run delivers exception object via *out",
               vm_run_exception_object_delivered_via_out);
+    utest_run("batch_error_surfacing: vm_run uncaught arith error returns -18 (B2)",
+              vm_run_uncaught_arith_error_is_uncaught_throw);
 }

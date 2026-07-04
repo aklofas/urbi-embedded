@@ -413,17 +413,17 @@ UTEST(call_two_args) {
 }
 
 UTEST(call_wrong_arity_errors) {
-    /* var f = function(x) { x }; f(1, 2) → UVM_TYPE_ERROR */
+    /* var f = function(x) { x }; f(1, 2) → catchable typed throw */
     UValue out;
     UVMError rc = fn_eval("var f = function(x) { x }; f(1, 2)", &out);
-    UASSERT_EQ(UVM_TYPE_ERROR, rc);
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, rc);
 }
 
 UTEST(call_non_callable_errors) {
-    /* var x = 5; x() → UVM_TYPE_ERROR */
+    /* var x = 5; x() → catchable typed throw */
     UValue out;
     UVMError rc = fn_eval("var x = 5; x()", &out);
-    UASSERT_EQ(UVM_TYPE_ERROR, rc);
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, rc);
 }
 
 UTEST(closure_captures_local) {
