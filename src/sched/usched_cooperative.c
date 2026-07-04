@@ -833,13 +833,35 @@ sched_wake_due_sleepers(UVM *vm)
 {
     if (vm->sleep_q_head != NULL && vm->host_time_us != NULL) {
         uint64_t now = vm->host_time_us(vm->host_time_ud);
-        while (vm->sleep_q_head != NULL) {
-            URBI_INTERNAL_ASSERT(
-                USTRAND_GET_REASON(vm->sleep_q_head) == USTRAND_REASON_SLEEP);
-            if (vm->sleep_q_head->wait_payload.wake_us > now) break;
-            /* sched_strand_unblock removes from sleep_q (decrementing
-             * wakeup_pending_count) and calls sched_strand_make_runnable. */
-            sched_strand_unblock(vm->sleep_q_head);
+        /* refactor-4 B10/SCH4-01: walk with a predecessor pointer so due
+         * TRANSIENT entries are skipped (left parked) without stopping the
+         * walk for real strands that follow them.
+         *
+         * Unlink analysis: sched_strand_unblock calls sleep_q_remove(vm, s),
+         * which handles arbitrary-position removal — it searches from
+         * sleep_q_head for the predecessor and splices s out.  After the call,
+         * *pp (either &vm->sleep_q_head or &prev->wait_next) already holds s's
+         * former successor, so the loop does NOT advance pp after an unblock;
+         * it just re-reads *pp.  The sorted-queue invariant and
+         * wakeup_pending_count are maintained inside sleep_q_remove.
+         *
+         * For skipped transients: pp advances to &s->wait_next.  If a real
+         * strand behind the transient is then unblocked, sleep_q_remove finds
+         * the transient as the predecessor and sets transient->wait_next
+         * (== *pp) to the real strand's successor — correct. */
+        UStrand **pp = &vm->sleep_q_head;
+        while (*pp != NULL) {
+            UStrand *s = *pp;
+            URBI_INTERNAL_ASSERT(USTRAND_GET_REASON(s) == USTRAND_REASON_SLEEP);
+            if (s->wait_payload.wake_us > now) break;
+            if (s->is_transient_strand) {
+                /* Transient strands cannot be re-made runnable; leave parked.
+                 * urbi_vm_run's WAITING arm reports the block gracefully. */
+                pp = &s->wait_next;
+                continue;
+            }
+            sched_strand_unblock(s);
+            /* sleep_q_remove spliced s out; *pp now holds s's old successor. */
         }
     }
 }

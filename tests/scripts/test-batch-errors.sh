@@ -14,6 +14,7 @@ chk() { # chk <expected-rc> <desc> <args...>
     fi
 }
 chk 0 "clean expr"            -e '1 + 1'
+chk 0 "sleep(0) no-op"        -e 'sleep(0)'
 chk 1 "uncaught scalar throw" -e 'throw 99'
 chk 1 "uncaught exception"    -e 'throw Exception.new("boom")'
 tmp=$(mktemp); echo 'throw 42' > "$tmp"

@@ -271,6 +271,13 @@ sleep_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     UStrand *cur = vm->cur_strand;
     URBI_INTERNAL_ASSERT(cur != NULL);
+    /* refactor-4 B10/SCH4-01: run-to-completion (transient) entry cannot park.
+     * A zero sleep is a no-op — return nil immediately.  Real strands keep
+     * their yield-shaped zero sleep (it lets watchers fire between statements). */
+    if (cur->is_transient_strand && duration_us == 0U) {
+        *out = urbi_make_nil();
+        return UEXEC_OK;
+    }
     uint64_t now_us = (vm->host_time_us != NULL) ? vm->host_time_us(vm->host_time_ud) : 0U;
     sched_strand_block(cur, USTRAND_REASON_SLEEP, now_us + duration_us);
     /* sched_strand_block puts the strand on the sleep queue; the scheduler

@@ -227,6 +227,46 @@ UTEST(vm_run_uncaught_arith_error_is_uncaught_throw)
 }
 
 /* =========================================================================
+ * Test 8: sleep(0) and sleep(0ms) on the transient path are no-ops (B10)
+ * =========================================================================
+ *
+ * Pre-fix: sleep(0) parks the stack-local transient strand on the sleep queue;
+ * the post-dispatch wake immediately re-makes it runnable, tripping
+ * URBI_INTERNAL_ASSERT(!s->is_transient_strand) at usched_cooperative.c:310
+ * (SIGABRT with a real time function; URBI_ERR_STRAND_FATAL via the WAITING
+ * arm with a NULL time function as used here).
+ * Post-fix: the transient zero-sleep guard in sleep_native returns nil early
+ * without ever calling sched_strand_block, so urbi_vm_run returns URBI_OK. */
+UTEST(sleep_zero_on_batch_path_is_noop)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    UASSERT_EQ(URBI_OK, utest_compile_and_vm_run(&vm, "sleep(0)", NULL));
+    UASSERT_EQ(URBI_OK, utest_compile_and_vm_run(&vm, "sleep(0ms)", NULL));
+    urbi_vm_destroy(&vm);
+}
+
+/* =========================================================================
+ * Test 9: sleep(positive) on the transient path reaches WAITING arm
+ *         gracefully — returns URBI_ERR_STRAND_FATAL, does NOT abort (B10)
+ * =========================================================================
+ *
+ * The sched_wake_due_sleepers Half-2 fix skips transient due-entries
+ * (leaving them parked).  urbi_vm_run's WAITING arm at uvm_run.c:195-199
+ * fires and returns UVM_TYPE_ERROR (== URBI_ERR_STRAND_FATAL == -2).
+ * The run loop exits without spinning or aborting. */
+UTEST(sleep_positive_transient_is_graceful_error)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    /* sleep(1s) parks the strand (host_time_us=NULL → wake_us=1000000 > 0=now);
+     * Half-2 skip leaves it parked; WAITING arm returns URBI_ERR_STRAND_FATAL. */
+    UASSERT_EQ(URBI_ERR_STRAND_FATAL,
+               utest_compile_and_vm_run(&vm, "sleep(1s)", NULL));
+    urbi_vm_destroy(&vm);
+}
+
+/* =========================================================================
  * Suite entry point
  * ========================================================================= */
 
@@ -249,4 +289,8 @@ test_batch_error_surfacing_suite(void)
               vm_run_exception_object_delivered_via_out);
     utest_run("batch_error_surfacing: vm_run uncaught arith error returns -18 (B2)",
               vm_run_uncaught_arith_error_is_uncaught_throw);
+    utest_run("batch_error_surfacing: sleep(0) on transient path is no-op (B10)",
+              sleep_zero_on_batch_path_is_noop);
+    utest_run("batch_error_surfacing: sleep(positive) transient is graceful error (B10)",
+              sleep_positive_transient_is_graceful_error);
 }
