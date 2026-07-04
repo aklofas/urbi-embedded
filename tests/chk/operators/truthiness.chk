@@ -11,22 +11,38 @@
 ## timeout: 30
 
 !0
-[00000000] true
+[00000001] true
 
 !1
-[00000000] false
+[00000002] false
 
 !0.0
-[00000000] true
+[00000003] true
 
 # if-else: 0 takes the else branch
 var r1 = "?"; if (0) { r1 = "T" } else { r1 = "F" }; r1
-[00000000] "F"
+[00000004] "F"
 
 # while: loop body must not execute when condition is 0
 var c = 0; while (c) { c = c + 1 }; c
-[00000000] 0
+[00000005] 0
 
 # short-circuit &&: 0 on left short-circuits to false
 var r2 = "?"; if (0 && true) { r2 = "T" } else { r2 = "F" }; r2
-[00000000] "F"
+[00000006] "F"
+
+# Empty string stays truthy
+var e1 = "?"; if ("") { e1 = "T" } else { e1 = "F" }; e1
+[00000007] "T"
+
+# Empty list stays truthy
+var e2 = "?"; if ([]) { e2 = "T" } else { e2 = "F" }; e2
+[00000008] "T"
+
+# Negative zero is falsy
+!(-0.0)
+[00000009] true
+
+# User == overload returning float zero coerces falsy
+class FZ {}; FZ.setSlot("==", function (o) { 0.0 }); var f = FZ.new(); var r = "?"; if (f == f) { r = "T" } else { r = "F" }; r
+[00000010] "F"
