@@ -156,7 +156,10 @@ jobs:
           git clone --depth 1 --filter=blob:none --sparse --branch v1.28.2 \
               https://github.com/STMicroelectronics/STM32CubeF4.git \
               ../tools/stm32cube-f4
-          git -C ../tools/stm32cube-f4 sparse-checkout set \
+          # --skip-checks: on a blob-filtered sparse clone the nested
+          # directories are not materialized yet, and git >= 2.54 rejects
+          # them as cone paths without it.
+          git -C ../tools/stm32cube-f4 sparse-checkout set --skip-checks \
               Drivers/STM32F4xx_HAL_Driver \
               Drivers/BSP/STM32F429I-Discovery \
               Drivers/BSP/Components/ili9341 \
