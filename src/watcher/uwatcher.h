@@ -118,11 +118,10 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
  * Exact layout per pre-M3 tag-lifecycle-and-watcher-dirty-set-design.md §5.1.
  *
  * Size at default build (URBI_WATCHER_READSET_MAX=16):
- *   Header fields  : 8 B  (type_tag + gc_byte + mode + exhaust_policy +
- *                          flags + read_set_count + pending_refire_count +
- *                          max_refire_queue) — the trailing two bytes
- *                          formerly held pad0 alignment padding; layout
- *                          pin unchanged at 240 B.
+ *   Header fields  : 16 B  (type_tag + gc_byte + mode + exhaust_policy +
+ *                           flags + read_set_count + pending_refire_count +
+ *                           max_refire_queue + eval_pass_gen [1 B] +
+ *                           7 B implicit alignment padding)
  *   next_active    : 8 B
  *   next_in_tag    : 8 B
  *   owning_tag     : 8 B
@@ -136,10 +135,10 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
  *   event          : 8 B  (spec #3 §3.2)
  *   last_value_cache : 16 B  (UValue = kind(4)+pad(4)+union(8))
  *   cells[]        : 16 × 8 B = 128 B
- *   Fixed portion  : 112 B
- *   Total          : 112 + 128 = 240 B
+ *   Fixed portion  : 120 B
+ *   Total          : 120 + 128 = 248 B
  *
- * At footprint preset (URBI_WATCHER_READSET_MAX=4): 112 + 32 = 144 B.
+ * At footprint preset (URBI_WATCHER_READSET_MAX=4): 120 + 32 = 152 B.
  * The fixed array (not flexible member) means sizeof(UWatcher) depends
  * on the macro — intended, per §5.1 size-budget table. */
 
@@ -155,6 +154,11 @@ typedef struct UWatcher {
     uint8_t   read_set_count;              /* 1 B  number of valid entries in cells[] */
     uint8_t   pending_refire_count;        /* 1 B  events queued while body in flight (0..max_refire_queue); see URBI_WATCHER_REFIRE_QUEUE_DEFAULT */
     uint8_t   max_refire_queue;            /* 1 B  cap for pending_refire_count; init to URBI_WATCHER_REFIRE_QUEUE_DEFAULT */
+    uint8_t   eval_pass_gen;               /* 1 B  eval-pass generation stamp; matched against
+                                             * vm->watchers->eval_pass_gen to skip re-visits on
+                                             * rescan after a PENDING cascade.  Zero-init = never
+                                             * evaluated.  7 B implicit alignment padding follow
+                                             * before next_active on 64-bit. */
 
     /* === Linked-list threading === */
     /* next_active doubles as the threading link for two mutually exclusive
@@ -201,8 +205,8 @@ typedef struct UWatcher {
  * deliberately.  Guarded on pointer width to avoid a hard failure on
  * 32-bit cross targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(UWatcher) == 240,
-               "UWatcher size pin on 64-bit (URBI_WATCHER_READSET_MAX=16)");
+URBI_STATIC_ASSERT(sizeof(UWatcher) == 248,
+               "UWatcher size pin on 64-bit (URBI_WATCHER_READSET_MAX=16; +8 B for eval_pass_gen + alignment padding)");
 #endif
 
 /* === Pool lifecycle === */

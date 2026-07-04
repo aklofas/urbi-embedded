@@ -2,9 +2,18 @@
 # active list must not truncate the rest of the evaluation pass.
 # (refactor-4 SCH4-04)
 #
-# Three watchers observe Realm.go: A (at sync), B (at, t2-owned), C (at).
-# Registration order is FIFO tail-append so active_watchers_head = A→B→C
-# (with a WAITUNTIL_FALSE entry between B and C; see below).
+# Five watchers observe Realm.go in registration order:
+#   P (at)        — idempotency probe, appends "P"
+#   W (whenever)  — idempotency probe, appends "W"
+#   A (at sync)   — cascade trigger, calls t2.stop()
+#   B (at, t2-owned) — gets cascaded (PENDING_UNREGISTER) by A's inline body
+#   C (at)        — must still fire after the cascade rescan
+#
+# P and W are installed first so they precede the cascade watcher in
+# active_watchers_head.  They pin that each fires exactly once (no double-fire
+# on the rescan).  A truthy WHENEVER is level-triggered under active dispatch
+# (whenever_edge_only == 0) and would re-fire on a naive rescan re-visit;
+# the eval-pass stamp (eval_pass_gen) prevents this.
 #
 # B must be live in active_watchers_head at eval time.  A bare
 # `t2: at (Realm.go) { ... }` would cascade B immediately when the t2:
@@ -26,14 +35,17 @@
 # active_watchers_head so C still fires this pass.
 #
 # B never fires: its watcher is unregistered before it is evaluated.
-# C must fire (Realm.hits == "C", post-fix expected output).
-# A's body writes nothing to Realm.hits; only C writes "C".
-# Pre-fix expected: Realm.hits == "" (C missed entirely).
+# C must fire.  P and W each fire exactly once.
+# Post-fix expected: Realm.hits == "PWC".
+# Pre-fix expected:  Realm.hits == "" (C missed entirely; P, W also missed
+#                    because the truncation swallows the whole tail).
 #
 ## timeout: 30
 ## host: run Realm.hits = ""
 ## host: run Realm.go = false
 ## host: run var t2 = Tag.new()
+## host: run at (Realm.go) { Realm.hits = Realm.hits + "P" }
+## host: run whenever (Realm.go) { Realm.hits = Realm.hits + "W" }
 ## host: run at sync (Realm.go) { t2.stop() }
 ## host: run t2: { at (Realm.go) { Realm.hits = Realm.hits + "B" }; waituntil(false) }
 ## host: run at (Realm.go) { Realm.hits = Realm.hits + "C" }
@@ -46,6 +58,8 @@
 [00000000] nil
 [00000000] nil
 [00000000] nil
+[00000000] nil
+[00000000] nil
 [00000000] true
 [00000000] step: QUIESCENT
-[00000000] "C"
+[00000000] "PWC"

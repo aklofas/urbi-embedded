@@ -184,6 +184,10 @@ watcher_eval_dirty(struct UVM *vm)
 #endif
 
     vm->watchers->dirty_count = 0;
+    /* Advance pass generation for rescan-idempotency stamp (wrap-around safe:
+     * comparison uses ==; one increment per watcher_eval_dirty call). */
+    vm->watchers->eval_pass_gen = (uint8_t)(vm->watchers->eval_pass_gen + 1u);
+    uint8_t cur_pass_gen = vm->watchers->eval_pass_gen;
 
     /* Save/restore in_eval (SCHED-12): in normal flow vm_reactive_drain's
      * guard ensures in_eval=0 on entry; the ASSERT pins that contract.
@@ -207,6 +211,17 @@ watcher_eval_dirty(struct UVM *vm)
             w = next;
             continue;
         }
+
+        /* Idempotency guard (rescan after cascade): skip watchers already
+         * evaluated in this pass.  The rescan at the bottom of the loop
+         * restarts from the head when a pre-captured successor carries
+         * PENDING_UNREGISTER; without the stamp a level-triggered WHENEVER
+         * fires a second body on the re-visit. */
+        if (w->eval_pass_gen == cur_pass_gen) {
+            w = next;
+            continue;
+        }
+        w->eval_pass_gen = cur_pass_gen;
 
         new_val = invoke_condition_closure(vm, w);
         old_val = w->last_value_cache;
@@ -348,9 +363,16 @@ watcher_eval_dirty(struct UVM *vm)
          * the next watcher), that successor got PENDING_UNREGISTER set
          * and its next_active cleared.  Following the stale pointer would
          * silently truncate the pass — every watcher after it misses a
-         * same-tick fire.  Restart from the head instead; re-visits are
-         * edge-idempotent because last_value_cache was already updated on
-         * the first visit, so no watcher double-fires. */
+         * same-tick fire.  Restart from the head instead.
+         *
+         * Safety: the next->flags read is safe because
+         * drain_pending_onleave_queue runs at the dispatcher safepoint
+         * BEFORE watcher_eval_dirty (uwatcher_drain.c:33-36) — nothing
+         * pushed during a body is freed until after the eval loop exits.
+         *
+         * Termination: PENDING is a one-way transition, so rescans are
+         * bounded by the watcher count; the eval-pass stamp prevents
+         * double-fire on re-visited watchers. */
         if (next != NULL &&
                 (next->flags & URBI_WATCHER_PENDING_UNREGISTER) != 0U) {
             next = vm->active_watchers_head;

@@ -35,6 +35,13 @@ typedef struct UWatcherState {
      * documented level-trigger semantics (and the existing whenever fixtures)
      * are preserved on the safepoint path.  Save/restore around the eval. */
     uint8_t  whenever_edge_only;
+
+    /* Pass-generation counter for rescan idempotency (PENDING-cascade fix).
+     * Incremented once at the top of watcher_eval_dirty (wrap-around safe:
+     * comparison uses ==).  Each UWatcher carries a matching eval_pass_gen
+     * stamp; watchers already evaluated in the current pass are skipped on
+     * rescan to prevent level-triggered WHENEVER double-fire. */
+    uint8_t  eval_pass_gen;
 } UWatcherState;
 
 /* uwatcher_state_create: allocate and zero-initialize a UWatcherState.
