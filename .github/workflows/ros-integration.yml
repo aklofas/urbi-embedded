@@ -14,3 +14,29 @@ jobs:
       - uses: actions/checkout@v5
       - name: Run containerized ROS2 integration harness
         run: make ros-integration
+
+  esp32-eye-demo:
+    name: ESP32-S3 eye_demo app (idf.py build)
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.1
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Pre-bake host tool
+        # eye_demo/main/CMakeLists.txt calls tools/urbi-compile-stdlib at build
+        # time to bake eye_demo.u into a C header; pre-build the host binary
+        # before idf.py runs (same pattern as qemu-smoke.yml).
+        run: make tools/urbi-compile-stdlib
+      - name: Build eye_demo
+        working-directory: examples/esp32/eye_demo
+        run: |
+          . /opt/esp/idf/export.sh
+          idf.py build
+      - name: Report binary size
+        if: success()
+        working-directory: examples/esp32/eye_demo
+        run: |
+          . /opt/esp/idf/export.sh
+          python3 $IDF_PATH/tools/idf_size.py build/eye_demo.map 2>/dev/null || \
+              ls -lh build/eye_demo.bin
+          echo "esp32 eye_demo app: OK"

@@ -142,13 +142,31 @@ jobs:
   cross-stm32f4:
     name: cross-compile (STM32F4 / Cortex-M4F)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Install cross toolchain
         run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: Fetch STM32CubeF4 HAL (Drivers only, sparse)
+        run: |
+          # Sparse-clone only the Drivers/ subtree (~40 MB vs 181 MB full).
+          # Cloned to ../tools/stm32cube-f4 so the mandelbrot Makefile's
+          # relative path (../../../../tools/stm32cube-f4) resolves correctly
+          # from examples/stm32f4/mandelbrot/ inside the checked-out repo.
+          git clone --depth 1 --filter=blob:none --sparse --branch v1.28.2 \
+              https://github.com/STMicroelectronics/STM32CubeF4.git \
+              ../tools/stm32cube-f4
+          git -C ../tools/stm32cube-f4 sparse-checkout set \
+              Drivers/STM32F4xx_HAL_Driver \
+              Drivers/BSP/STM32F429I-Discovery \
+              Drivers/BSP/Components/ili9341 \
+              Drivers/BSP/Components/l3gd20 \
+              Drivers/CMSIS/Device/ST/STM32F4xx \
+              Drivers/CMSIS/Include
       - name: Cross-compile (full)
         run: make cross-stm32f4
+      - name: Build stm32f4 example app
+        run: make test-cross-stm32f4-app
       - name: Cross-compile (bytecode-only + freestanding gate)
         run: make cross-stm32f4-bytecode-only
       - name: Inspect archive
