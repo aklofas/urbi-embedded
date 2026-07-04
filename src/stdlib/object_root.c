@@ -70,6 +70,7 @@ static int obj_localSlotNames    (UVM *vm, UValue self, UValue *args, uint8_t na
 static int obj_hasLocalSlot      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_getProperty       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_properties        (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_asString          (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 
 /* === UValue helpers (zero-fill _pad bytes for bit-stable layout) =========== */
 
@@ -892,6 +893,37 @@ obj_properties(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === Object.asString =======================================================
+ *
+ * Universal fallback: returns the uvalue_format rendering as a String.
+ * Legacy object.u:90-93 delegates to '$id'() which returns a type/address
+ * form; this implementation uses the same <object 0x...> format already
+ * produced by the REPL's uvalue_format() for UVAL_OBJECT values.
+ *
+ * Atoms (Integer, Float, String) have their own asString slots installed
+ * via atoms.c and are found before the Object root slot — this method
+ * is reached only for UVAL_OBJECT receivers. */
+static int
+obj_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Object.asString", 0, nargs, out);
+#if __STDC_HOSTED__
+    char buf[64];
+    void *ptr = (self.kind == (uint8_t)UVAL_OBJECT) ? self.v.p : NULL;
+    int n = snprintf(buf, sizeof buf, "<object %p>", ptr);
+    if (n < 0) n = 0;
+    if ((size_t)n >= sizeof buf) n = (int)sizeof buf - 1;
+    UValue v = urbi_make_str_interned(vm, buf, (size_t)n);
+    if (v.kind == (uint8_t)UVAL_NIL) return urbi_raise_oom(vm, out);
+    *out = v;
+    return UEXEC_OK;
+#else
+    (void)self;
+    return urbi_raise_type(vm, "Object.asString: hosted snprintf required", out);
+#endif
+}
+
 /* === urbi_object_root_register ============================================= */
 
 typedef struct {
@@ -917,7 +949,8 @@ static const ObjectMethodEntry OBJECT_METHODS[] = {
     { "localSlotNames",  obj_localSlotNames  },
     { "hasLocalSlot",    obj_hasLocalSlot    },
     { "getProperty",     obj_getProperty     },
-    { "properties",      obj_properties      }
+    { "properties",      obj_properties      },
+    { "asString",        obj_asString        }   /* universal fallback */
 };
 
 #define OBJECT_METHODS_COUNT (sizeof(OBJECT_METHODS) / sizeof(OBJECT_METHODS[0]))

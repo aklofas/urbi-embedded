@@ -24,3 +24,33 @@ var p = "xyz".split(","); p.length()
 [00000008] "100%"
 "pi=%f".format(List.new(3.5))
 [00000009] "pi=3.5"
+
+# String % — infix format sugar.
+# "fmt % arg" wraps a non-list arg in a one-element list before delegating
+# to String.format.  A list arg is passed through unchanged.
+"x=%s" % "hello"
+[00000010] "x=hello"
+
+"n=%d" % 42
+[00000011] "n=42"
+
+"x=%s, y=%s" % List.new("a", "b")
+[00000012] "x=a, y=b"
+
+"100%%" % List.new()
+[00000013] "100%"
+
+# split("") — per-byte split (legacy string.cc:385-391).
+# Empty separator splits into individual characters, not one whole-string piece.
+"abc".split("").length()
+[00000014] 3
+
+"abc".split("").get(0)
+[00000015] "a"
+
+"abc".split("").get(2)
+[00000016] "c"
+
+# Empty string split on "" yields an empty list (no chars to iterate).
+"".split("").length()
+[00000017] 0

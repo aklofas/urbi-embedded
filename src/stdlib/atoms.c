@@ -1095,9 +1095,15 @@ str_split(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UObject *lst = urbi_stdlib_list_new_empty(vm);
     if (lst == NULL) return urbi_raise_oom(vm, out);
 
-    if (seplen == 0U) {                 /* empty sep -> whole string, one piece */
-        if (urbi_stdlib_list_append_value(vm, lst, self) != 0)
-            return urbi_raise_oom(vm, out);
+    if (seplen == 0U) {   /* empty sep -> per-byte split (legacy string.cc:385-391) */
+        size_t j;
+        for (j = 0U; j < n; j++) {
+            int oom = 0;
+            UValue ch = val_str_intern(vm, s + j, 1U, &oom);
+            if (oom) return urbi_raise_oom(vm, out);
+            if (urbi_stdlib_list_append_value(vm, lst, ch) != 0)
+                return urbi_raise_oom(vm, out);
+        }
         *out = val_obj(lst);
         return UEXEC_OK;
     }
@@ -1247,6 +1253,31 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === String % — format operator ============================================
+ *
+ * `fmt % arg` — if arg is a List, delegate directly to str_format; otherwise
+ * wrap arg in a one-element list first.  Matches legacy urbiscript where `%`
+ * is the infix sugar for String.format with auto-wrapping of scalar operands.
+ *
+ * Constraint: do NOT rewrite str_format — the separate error-behavior task
+ * touches it independently. */
+static int
+str_percent(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "String.%", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.%: self must be String", out);
+    if (args[0].kind == (uint8_t)UVAL_OBJECT)
+        return str_format(vm, self, args, 1U, out);
+    /* Non-list scalar: wrap in a one-element list then delegate. */
+    UObject *lst = urbi_stdlib_list_new_empty(vm);
+    if (lst == NULL) return urbi_raise_oom(vm, out);
+    if (urbi_stdlib_list_append_value(vm, lst, args[0]) != 0)
+        return urbi_raise_oom(vm, out);
+    UValue list_val = val_obj(lst);
+    return str_format(vm, self, &list_val, 1U, out);
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
 static const AtomMethodEntry BOOL_METHODS[] = {
@@ -1307,7 +1338,8 @@ static const AtomMethodEntry STR_METHODS[] = {
     { "asciiAt",    str_asciiAt    },
     { "split",      str_split      },
     { "join",       str_join       },
-    { "format",     str_format     }
+    { "format",     str_format     },
+    { "%",          str_percent    }   /* infix format sugar */
 };
 
 /* Empty tables retain a `{NULL, NULL}` sentinel so the array has at

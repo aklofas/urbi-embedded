@@ -17,7 +17,7 @@ class IntegerMath {
     var sign = function() { if (this < 0) { -1 } else { if (this > 0) { 1 } else { 0 } } };
     var even = function() { this.and(1) == 0 };
     var odd  = function() { this.and(1) != 0 };
-    var times = function(f) { var i = 0; while (i < this) { f(); i = i + 1 }; nil };
+    var times = function(f) { var i = 0; while (i < this) { f(i); i = i + 1 }; nil };
     var upto  = function(hi, f) { var i = this; while (i <= hi) { f(i); i = i + 1 }; nil }
 } |
 

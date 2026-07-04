@@ -5,7 +5,16 @@
 # closures in this VM can READ enclosing locals but cannot WRITE them
 # (upvalue-write capture is a compile error), so the Realm.x capture
 # pattern is the idiom for mutation-from-callback.
-Realm.acc = 0; 3.times(function(){ Realm.acc = Realm.acc + 1 }); Realm.acc
+Realm.acc = 0; 3.times(function(i){ Realm.acc = Realm.acc + 1 }); Realm.acc
 [00000000] 3
 Realm.sum = 0; 1.upto(4, function(i){ Realm.sum = Realm.sum + i }); Realm.sum
 [00000001] 10
+
+# times passes the 0-based index to f (legacy semantics).
+# f(0), f(1), f(2): last call sets Realm.last to 2.
+Realm.last = nil; 3.times(function(i){ Realm.last = i }); Realm.last
+[00000002] 2
+
+# 0.times: callback never fires; Realm.z stays at its initial value.
+Realm.z = 99; 0.times(function(i){ Realm.z = i }); Realm.z
+[00000003] 99

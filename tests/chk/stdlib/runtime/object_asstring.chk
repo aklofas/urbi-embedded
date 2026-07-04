@@ -1,0 +1,23 @@
+# Object.asString() — universal fallback on Object root.
+# Legacy object.u:90-93: `asString` delegates to '$id'() which returns a
+# type/address form.  This implementation produces <object 0x...> via
+# uvalue_format, matching the REPL's rendering of UVAL_OBJECT values.
+#
+# Atoms (Integer, Float, String) have their own asString slots installed
+# via atoms.c and shadow the Object root slot — those are NOT tested here.
+# This fixture targets UVAL_OBJECT receivers only.
+#
+# Because the address is nondeterministic, tests check stable properties:
+# non-empty, correct type (String), and a fixed prefix.
+
+# Plain object: returns a non-empty String.
+Object.new().asString().isEmpty()
+[00000000] false
+
+# Prefix is "<object " (matches uvalue_format rendering).
+Object.new().asString().startsWith("<object ")
+[00000001] true
+
+# List (also UVAL_OBJECT) gets the default object form, not pretty-printing.
+var lst = List.new(1,2,3); lst.asString().startsWith("<object ")
+[00000002] true
