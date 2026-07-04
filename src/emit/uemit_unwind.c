@@ -808,7 +808,6 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
      * past the body block's inline close. */
     if (!uemit_close_block(e)) return 0U;
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
-    e->next_reg = e->current_fs->freereg;
 
     /* rd holds the body's value (or nil if the body didn't complete).
      * Restore next_reg/freereg so the caller sees rd as allocated. */

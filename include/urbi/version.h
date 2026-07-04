@@ -260,7 +260,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  23
-#define URBI_API_VERSION_PATCH  4
+#define URBI_API_VERSION_PATCH  5
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -447,9 +447,18 @@ extern "C" {
  * NEXT bump is the 1/0/0 freeze (B6), after which the escape clause is retired.
  * See docs/api-stability.md §6 escape ledger entry #33.
  */
+/*
+ * v0.13.4-error-surfacing — PATCH bump 0/23/4 → 0/23/5 (NOT an escape).
+ * New URBI_ERR_UNCAUGHT_THROW = -18 enumerator: `urbi_vm_run`,
+ * `urbi_run_chunk`, and the CLI `-e`/file entry points now return this
+ * code when a script throw is uncaught; the interactive REPL's
+ * nil-recovery path is unchanged.  Tag 5 of the v0.13.x pre-release
+ * hardening arc.  Wire format unchanged at v1.9 / 0x19.  No new public
+ * C functions.  See docs/api-stability.md post-escape note.
+ */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 23
-            && URBI_API_VERSION_PATCH == 4,
+            && URBI_API_VERSION_PATCH == 5,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

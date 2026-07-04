@@ -1,5 +1,54 @@
 # Changelog
 
+## v0.13.4-error-surfacing — 2026-07-04
+
+Tag 5 of the v0.13.x pre-release hardening arc: batch and embedding entry
+points surface errors from uncaught script throws; runtime type errors are
+catchable; the loader gains structural guards; the scheduler and REPL
+close the remaining correctness gaps from the deep audit.  No new opcode,
+wire format unchanged (v1.9 / 0x19).
+ABI 0/23/4 -> 0/23/5 (PATCH; one new `URBI_ERR_UNCAUGHT_THROW = -18`
+enumerator filling the previously-reserved slot — pre-freeze owner-sanctioned
+addition; no new public C functions).
+
+- Uncaught-throw error surfacing: `urbi_vm_run`, `urbi_run_chunk`, and the
+  CLI `-e`/file entry points now return `URBI_ERR_UNCAUGHT_THROW` (-18) when
+  a script throw reaches the top level unhandled.  The interactive REPL's
+  nil-recovery path is unchanged and is now documented in
+  `docs/internals/repl-service.md`.
+- Catchable runtime type errors: arithmetic, comparison, and call-dispatch
+  type mismatches are raised as catchable typed `Exception` instances (the
+  same hierarchy as `v0.11.4-cat-f`) rather than silent nils.  `finally`
+  clauses and tag `onleave` bodies execute on them.
+- Comparison-overload mirroring: `>` and `>=` now dispatch on the
+  left-hand operand's `>>`/`>>=` method when the right-hand method is
+  absent, matching the `<`/`<=` mirror already in place.
+- `try`/`catch` and tag-scope expressions yield their body value: a
+  `try { expr } catch { ... }` block and a `tag: expr` body propagate
+  the body's result to the enclosing expression, closing an exceptions-as-
+  values gap.
+- Prefix `-`/`!` parse fix: unary minus and logical-not now bind after
+  the full postfix chain, so `-o.f` parses as `-(o.f)` rather than
+  `(-o).f`.
+- Bytecode loader hardening: nested-proto decode is capped at 64 levels
+  of recursion; `OP_CALL` register-window operands are verified on load.
+  A fuzz harness (`fuzz_chunk`) covers the loader path.
+- `every()` positive-period guard: a zero or negative period argument is
+  rejected with a type error rather than spinning.  `tag.stop()` now
+  cancels `every()` loops that carry the tag in scope — the canonical
+  idiom `mytag: every(100ms) sense(); mytag.stop()` works end-to-end.
+- `sleep(0)` batch-path fix: a zero sleep in batch mode no longer aborts
+  the run; it yields once and continues.
+- Watcher mid-pass cascade: the watcher list survives a body cascade that
+  adds or removes entries during the same drain pass — no truncation and
+  no double-fires.
+- REPL output-ring overflow: overflow in the per-frame output ring is
+  signalled via a one-shot error envelope (headroom-guarded to prevent
+  re-overflow); OOM-path teardown is cleaned up.
+- CLI loader-strand routing: `-e` expressions and file arguments now run
+  on the loader strand, so chunk-top `&`/`,` fork expressions and real
+  `sleep()` calls work correctly in batch mode.
+
 ## v0.13.3-scheduler-liveness — 2026-06-14
 
 Tag 4 of the v0.13.x pre-release hardening arc: the cooperative scheduler

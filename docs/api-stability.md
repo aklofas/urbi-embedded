@@ -339,3 +339,16 @@ deprecation cycle):
 Wire format unchanged at v1.9 / 0x19; no new opcodes.  33rd and FINAL use of the
 pre-v1.0 escape clause.  MINOR bump: 0/22/2 → 0/23/0.  The next bump is the
 1/0/0 freeze, after which §3 (no break without MAJOR + deprecation) governs.
+
+(v0.13.0-test-honesty through v0.13.3-scheduler-liveness bumped 0/23/0 → 0/23/4
+in four PATCH steps — NOT escapes: all changes were internal-only or script-side,
+zero new public C API symbols in any of the four tags.  No ledger entries by
+design.)
+
+(v0.13.4-error-surfacing bumped 0/23/4 → 0/23/5 PATCH — NOT an escape.
+One new `UErrCode` enumerator: `URBI_ERR_UNCAUGHT_THROW = -18`.  This fills the
+previously-reserved slot -18 in the enum.  The addition is a pre-freeze
+sanction: `urbi_vm_run`, `urbi_run_chunk`, and the CLI `-e`/file entry points
+now return this code when a script throw is uncaught; the interactive REPL's
+nil-recovery path is unchanged.  No new public C functions; wire format unchanged
+at v1.9 / 0x19.  ABI triple after this tag: 0/23/5.)

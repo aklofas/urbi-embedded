@@ -344,7 +344,8 @@ the scheduler; embedders use `urbi_vm_has_live_work` via the public API only.
 - `urbi_sched_runnable_inc`, `urbi_sched_runnable_dec`,
   `urbi_sched_waiting_inc`, `urbi_sched_waiting_dec`,
   `urbi_sched_suspended_inc`, `urbi_sched_suspended_dec`,
-  `urbi_sched_strand_unpark`, `urbi_vm_liveness`
+  `urbi_sched_strand_unpark`, `urbi_vm_liveness`,
+  `urbi_tag_owns_periodic`, `urbi_periodics_stop_owned_by`
 
 ### Realm internals
 

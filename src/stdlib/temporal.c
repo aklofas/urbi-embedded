@@ -651,7 +651,7 @@ urbi_periodic_earliest_wake_us(const UVM *vm)
  * by the D3 fatal-escalation check. */
 
 void
-urbi_periodics_stop_owned_by(UVM *vm, struct UTag *tag)
+urbi_periodics_stop_owned_by(UVM *vm, const struct UTag *tag)
 {
     UPeriodic *p = vm->periodics_head;
     while (p != NULL) {

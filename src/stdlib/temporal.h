@@ -170,7 +170,7 @@ uint64_t urbi_periodic_earliest_wake_us(const struct UVM *vm);
  * Called from urbi_tag_stop (uunwind.c) after the member-watcher cascade.
  * Kept in temporal.c so uunwind.c/utag_native.c never touch UPeriodic
  * internals directly. */
-void urbi_periodics_stop_owned_by(struct UVM *vm, struct UTag *tag);
+void urbi_periodics_stop_owned_by(struct UVM *vm, const struct UTag *tag);
 
 /* urbi_tag_owns_periodic (B5/SCHED-N2, 2026-07-04)
  *
