@@ -656,14 +656,18 @@ uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
  *   [past_handler_pc]:
  *     <continuation>
  *
- * Register discipline (refactor-3 FE-02 follow-on): the tag value is held
- * for the whole scope, BELOW any body-declared `var`s.  A raw temp there
- * breaks fs_temp_floor's count-based math (nactvar + global_slot_reserved
- * assumes locals are contiguous from the floor): a body local landed one
- * slot ABOVE its counted position and every later temp reset clobbered it.
- * So the tag value is a DECLARED hidden local (`\x01tag`, the for-each
- * `\x01iter` / switch `\x01sw` machinery pattern) in an outer block, and
- * the body keeps its own block so body locals pop at scope end.
+ * Register discipline (refactor-3 FE-02 follow-on, v0.13.4 fix): the
+ * result register (rd) and the tag value (\x01tag) must both sit BELOW any
+ * body-declared `var`s and below fs_temp_floor.  A raw temp for rd breaks
+ * fs_temp_floor's count-based math (nactvar + global_slot_reserved assumes
+ * declared locals are contiguous from the floor): \x01tag landed AT the
+ * floor rather than below it, so the body's first temp reset clobbered it.
+ * Both rd and the tag value are therefore DECLARED hidden locals (`\x01rd`
+ * and `\x01tag`, the for-each `\x01iter` / switch `\x01sw` machinery
+ * pattern) in an outer block, so nactvar counts both and the temp floor
+ * lands one above \x01tag:
+ *   ... [outer locals] | \x01rd | \x01tag | <-- fs_temp_floor / body temps
+ * The body keeps its own block so body-declared vars pop at scope end.
  *
  * 4-bit constraint: OP_PUSH_TAG packs tag_reg into A[3:0], so `\x01tag`'s
  * slot must be <= 15.  OP_PUSH_TAG is the ONLY reader of R[tag_reg] (it
@@ -683,25 +687,27 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     uint32_t line = (uint32_t)n->line;
     const UFuncState *fs = e->current_fs;
 
-    /* Reserve rd at entry and default it to nil — same pattern as
-     * emit_try_frame.  The body result is MOVEd into rd after the inner
-     * block closes, BEFORE OP_POP_TAG teardown. */
-    uint8_t rd = e->next_reg;
-    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), line);
-    if (e->error != EMIT_OK) return 0U;
-    e->next_reg = rd + 1U;
-    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-    if (e->current_fs->freereg < e->next_reg)
-        e->current_fs->freereg = e->next_reg;
-
-    /* Pre-reserve the global object slot before declaring the hidden tag
-     * local — same rationale as emit_for_each_arm / emit_switch_arm (see
-     * urbi_emit_reserve_global_slot). */
+    /* Pre-reserve the global object slot before declaring the hidden
+     * locals (\x01rd, \x01tag) — same rationale as emit_for_each_arm /
+     * emit_switch_arm (see urbi_emit_reserve_global_slot). */
     if (fs->parent == NULL && !urbi_emit_reserve_global_slot(e)) return 0U;
 
-    /* Open outer block scope: \x01tag lives here as a proper local, so
-     * fs_temp_floor stays above it across body temp resets. */
+    /* Open outer block scope: \x01rd and \x01tag live here as proper
+     * locals so fs_temp_floor counts both and body temps start above them.
+     * Both are popped when this block closes. */
     if (!uemit_open_block(e, /*is_loop=*/false)) return 0U;
+
+    /* Declare \x01rd as a hidden local to anchor rd in nactvar.  This is
+     * the fix for the floor-aliasing bug: without it \x01tag lands AT
+     * fs_temp_floor and the body's first temp write clobbers it.  Emit
+     * LOADNIL so rd is nil-initialised (same semantic as emit_try_frame). */
+    const char *rd_name = ustr_intern(e->vm, "\x01rd", 3);
+    if (rd_name == NULL) { uemit_close_block(e); e->error = EMIT_OOM; return 0U; }
+    int rd_slot = uemit_declare_local(e, rd_name, 3);
+    if (rd_slot < 0) { uemit_close_block(e); return 0U; }
+    uint8_t rd = (uint8_t)rd_slot;
+    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), line);
+    if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
 
     const char *tag_name = ustr_intern(e->vm, "\x01tag", 4);
     if (tag_name == NULL) { uemit_close_block(e); e->error = EMIT_OOM; return 0U; }
@@ -794,9 +800,9 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
                                             past_handler_target)));
     }
 
-    /* Close outer block (removes \x01tag from scope).  If the body block
-     * propagated has_captured up here (uemit_close_block), this emits an
-     * OP_CLOSE at \x01tag's slot AFTER the past-handler PC — a no-op on
+    /* Close outer block (removes \x01rd and \x01tag from scope).  If the
+     * body block propagated has_captured up here (uemit_close_block), this
+     * emits an OP_CLOSE at \x01rd's slot AFTER the past-handler PC — a no-op on
      * the normal path (the body block already closed its cells) but live
      * on the tag.stop() walker-resume path, which lands at the handler PC
      * past the body block's inline close. */
