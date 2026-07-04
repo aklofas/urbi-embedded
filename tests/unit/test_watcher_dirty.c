@@ -1089,6 +1089,76 @@ UTEST(eval_pass_stamp_pins_whenever_double_fire)
     urbi_vm_destroy(&vm);
 }
 
+/* 28. watcher_pool_recycle_resets_eval_stamp:
+ *     Recycle scenario: install W1, run a dirty pass (stamps W1 with gen=1,
+ *     W1 fires — fire_count=1).  Unregister W1 (slot back on freelist, stamp=1
+ *     retained under OLD code).  Force vm->watchers->eval_pass_gen = 0 so the
+ *     next increment lands at 1 again, matching W1's stale stamp.  Install W2
+ *     from the recycled slot.  Run dirty pass.
+ *
+ *     OLD (broken): W2 inherits stamp=1 == cur_pass_gen=1 → silently skipped;
+ *                   fire_count stays 1.
+ *     NEW (fixed):  uwatcher_pool_alloc resets eval_pass_gen to 0; the
+ *                   skip-zero guard keeps cur_pass_gen >= 1; W2 stamp=0 ≠ 1
+ *                   → fires; fire_count == 2.
+ *
+ *     Red-proof: disable the w->eval_pass_gen=0 reset in uwatcher_pool_alloc
+ *     and the skip-zero guard in watcher_eval_dirty; this UASSERT_EQ(2) fails
+ *     with fire_count=1.  Re-enable to green. */
+UTEST(watcher_pool_recycle_resets_eval_stamp)
+{
+    UVM      vm;
+    UWatcher *w1, *w2;
+
+    urbi_vm_init(&vm, NULL, NULL);
+    g_fire_count = 0;
+
+    /* Phase 1: install W1 without a condition hook so the install-time seed
+     * is NIL (falsy); then set the hook so the first dirty pass fires. */
+    w1 = urbi_watcher_install_for_test(
+        &vm, UWATCHER_AT, NULL, make_dummy_closure(&vm),
+        NULL, NULL, NULL, 0U);
+    UASSERT(w1 != NULL);
+    UASSERT_EQ((int)w1->last_value_cache.kind, (int)UVAL_NIL);
+
+    vm.test_hooks->watcher_condition = condition_hook_fixed_true;
+    vm.test_hooks->watcher_fire      = fire_hook_count;
+
+    vm.watchers->dirty_count = 1U;
+    watcher_eval_dirty(&vm);
+    UASSERT_EQ(g_fire_count, 1);
+    /* VM gen is now 1; W1's stamp is 1. */
+    UASSERT_EQ((int)vm.watchers->eval_pass_gen, 1);
+    UASSERT_EQ((int)w1->eval_pass_gen, 1);
+
+    /* Phase 2: free W1 back to the pool; reset VM gen to 0 so the next
+     * increment yields 1 — the same value as W1's stale stamp. */
+    urbi_watcher_unregister_internal(&vm, w1);
+    vm.watchers->eval_pass_gen = 0;
+
+    /* Phase 3: install W2 from the recycled slot.  Clear the condition hook
+     * first so the install-time seed is NIL (falsy), giving a rising edge on
+     * the next pass.  After fix, eval_pass_gen must be 0 on the slot. */
+    vm.test_hooks->watcher_condition = NULL;
+    w2 = urbi_watcher_install_for_test(
+        &vm, UWATCHER_AT, NULL, make_dummy_closure(&vm),
+        NULL, NULL, NULL, 0U);
+    UASSERT(w2 != NULL);
+    UASSERT_EQ((int)w2->last_value_cache.kind, (int)UVAL_NIL);
+    /* Key assertion: recycled slot stamp must be 0. */
+    UASSERT_EQ((int)w2->eval_pass_gen, 0);
+
+    /* Phase 4: dirty pass with VM gen 0 → 1 (skip-zero guard keeps ≥ 1).
+     * NEW: W2 stamp=0 ≠ cur=1 → fires (fire_count=2). */
+    vm.test_hooks->watcher_condition = condition_hook_fixed_true;
+    vm.watchers->dirty_count = 1U;
+    watcher_eval_dirty(&vm);
+    UASSERT_EQ(g_fire_count, 2);
+
+    urbi_watcher_unregister_internal(&vm, w2);
+    urbi_vm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void
@@ -1155,4 +1225,7 @@ test_watcher_dirty_suite(void)
     /* eval-pass stamp pin: level-whenever must not double-fire on cascade rescan */
     utest_run("eval_pass_stamp_pins_whenever_double_fire",
               eval_pass_stamp_pins_whenever_double_fire);
+    /* pool-recycle stamp reset: recycled slot must not be skipped on first pass */
+    utest_run("watcher_pool_recycle_resets_eval_stamp",
+              watcher_pool_recycle_resets_eval_stamp);
 }

@@ -184,9 +184,13 @@ watcher_eval_dirty(struct UVM *vm)
 #endif
 
     vm->watchers->dirty_count = 0;
-    /* Advance pass generation for rescan-idempotency stamp (wrap-around safe:
-     * comparison uses ==; one increment per watcher_eval_dirty call). */
+    /* Advance pass generation for rescan-idempotency stamp.  Skip zero so
+     * that freshly allocated (or recycled) watchers — whose eval_pass_gen
+     * is reset to 0 by uwatcher_pool_alloc — are never falsely considered
+     * already-visited on their first pass.  Wrap-around safe: comparison
+     * uses ==; one increment per watcher_eval_dirty call. */
     vm->watchers->eval_pass_gen = (uint8_t)(vm->watchers->eval_pass_gen + 1u);
+    if (vm->watchers->eval_pass_gen == 0) vm->watchers->eval_pass_gen = 1;
     uint8_t cur_pass_gen = vm->watchers->eval_pass_gen;
 
     /* Save/restore in_eval (SCHED-12): in normal flow vm_reactive_drain's

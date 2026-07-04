@@ -68,6 +68,15 @@ uwatcher_pool_alloc(struct UVM *vm)
      * they have no semantic meaning. */
     w->last_value_cache.kind  = UVAL_NIL;
     w->last_value_cache.v.i   = 0;
+    /* Reset eval-pass generation stamp.  A recycled slot retains the stamp
+     * from its previous life; if the VM gen counter has since cycled back to
+     * that value the new watcher would be skipped on its very first pass.
+     * 0 is the sentinel "never stamped" value — watcher_eval_dirty skips
+     * zero when incrementing vm->watchers->eval_pass_gen, so cur_pass_gen
+     * is always >= 1 and a freshly allocated slot (stamp=0) is never equal
+     * to it.  (slab-zeroed slots on first use are already safe; this clears
+     * stale stamps on freelist reuse.) */
+    w->eval_pass_gen          = 0;
     /* Clear read-set entries. */
     for (i = 0; i < (uint16_t)URBI_WATCHER_READSET_MAX; i++) {
         w->cells[i] = NULL;

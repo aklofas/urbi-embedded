@@ -1850,7 +1850,7 @@ test-cross-esp32s3-freestanding-golden: cross-esp32s3-bytecode-only
 	  | awk 'NF >= 3 && $$3 !~ /:$$/ && $$1 != "U" {defined[$$3]=1} \
 	         NF >= 2 && $$1 == "U" {undefined[$$2]=1} \
 	         END {for (s in undefined) if (!(s in defined)) print s}' \
-	  | sort -u > "$$actual"; \
+	  | LC_ALL=C sort -u > "$$actual"; \
 	 if diff -u tests/golden/v0.7.2-esp32-nm-bytecode-only.txt "$$actual"; then \
 	     echo "PASS: cross-esp32s3-bytecode-only freestanding signature matches golden"; \
 	     rm -f "$$actual"; \
@@ -1874,7 +1874,7 @@ test-cross-pico-freestanding-golden: cross-pico-bytecode-only
 	  | awk 'NF >= 3 && $$3 !~ /:$$/ && $$1 != "U" {defined[$$3]=1} \
 	         NF >= 2 && $$1 == "U" {undefined[$$2]=1} \
 	         END {for (s in undefined) if (!(s in defined)) print s}' \
-	  | sort -u > "$$actual"; \
+	  | LC_ALL=C sort -u > "$$actual"; \
 	 if diff -u tests/golden/v0.9.4-pico-nm-bytecode-only.txt "$$actual"; then \
 	     echo "PASS: cross-pico-bytecode-only freestanding signature matches golden"; \
 	     rm -f "$$actual"; \

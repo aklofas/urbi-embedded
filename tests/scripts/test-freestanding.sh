@@ -49,7 +49,7 @@ command -v "$NM_CMD" >/dev/null 2>&1 || {
 . "$(dirname "$0")/_freestanding-forbidden.sh"
 LIBC_SYMS=$($NM_CMD "$ARCHIVE" 2>/dev/null \
             | awk -v re="$FORBIDDEN_LIBC_REGEX" '$1 == "U" && $2 ~ re {print $2}' \
-            | sort -u)
+            | LC_ALL=C sort -u)
 
 if [ -n "$LIBC_SYMS" ]; then
     echo "FAIL: $ARCHIVE has unresolved libc symbols:"

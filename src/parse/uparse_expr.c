@@ -287,7 +287,9 @@ UAstNode *parse_prefix(UParser *p) {
     }
     if (t.type == TOK_BANG) {
         /* Prefix `!x` — logical NOT.  Recognized here (primary position) so
-         * postfix `e!` (in the post-primary loop) does not steal it. */
+         * postfix `e!` (in the post-primary loop) does not steal it.
+         * The operand is parsed through PARSE_PREC_POSTFIX, so a postfix `!`
+         * on the operand binds first: `!e!` parses as `!(e!)`. */
         consume(p);
         UAstNode *operand = parse_prefix(p);
         if (!operand) return NULL;

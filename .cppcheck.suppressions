@@ -209,3 +209,12 @@ constParameterCallback:src/ros/uros.c
 // uunwind.c above).  Const-qualifying would break API uniformity and force
 // callers through a const-cast.
 constParameterPointer:src/ros/uros.c
+
+// audit:v0.13.4-F2 — src/watcher/uwatcher_eval.c skip-zero guard on the
+// eval-pass generation counter.  After `eval_pass_gen = (uint8_t)(... + 1u)`
+// cppcheck concludes the assigned value is > 0 and flags the following
+// `eval_pass_gen == 0` check as always-false.  The false positive arises
+// because cppcheck does not model uint8_t wrap-around: when the field holds
+// 255 the cast truncates 256 to 0, making the check live.  The guard is the
+// two-fix for the pool-recycle stamp-collision bug (F2 in v0.13.4 review).
+knownConditionTrueFalse:src/watcher/uwatcher_eval.c:193
