@@ -4,15 +4,18 @@
 #         first order through nested scopes, executing each onleave body before
 #         continuing outward.
 #
-# blocked: top-level & separator hangs chk driver — T39 chk-runner urbi_step driver path (audit Cat. A)
+# blocked: `onleave` keyword not yet supported — parse error (deferred-v1.x)
+#   (T39 chk-driver reason stale; the chk driver uses urbi -i / urbi_repl_eval
+#   which has always handled fork separators; the real blocker is `onleave`)
 # matrix-row: tag-stop
 #
-# Reason: requires onleave clause parse/emit (M5 reactive runtime).  At M3,
-# the row 7 unwind walker handles TAG_SCOPE absorption (pop-and-continue for
-# normal exit) but there is no parse support for the `onleave` keyword so
-# no onleave body can be installed.  The nested try/finally ordering is
-# already tested by tests/chk/control_transfer/nested_finally.chk; the
-# full tag-scope + try/finally combination must wait for M5.
+# Reason (updated v0.13.4 probe):
+#   The `onleave { ... }` clause is not yet parsed (deferred to v1.x per
+#   language-compatibility-matrix).  Probing the source yields multiple
+#   "expected expression" parse errors on the `onleave` keyword lines.
+#   The nested try/finally ordering is already tested by
+#   tests/chk/control_transfer/nested_finally.chk; this fixture must wait
+#   for onleave parse/emit support.
 #
 # When M5 lands, implement this fixture by uncommenting the source below.
 # Expected behaviour: log records cleanup in innermost-first order "ioIO".

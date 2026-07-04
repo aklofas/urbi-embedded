@@ -20,5 +20,35 @@ chk 1 "uncaught exception"    -e 'throw Exception.new("boom")'
 tmp=$(mktemp); echo 'throw 42' > "$tmp"
 chk 1 "uncaught throw in file" "$tmp"
 rm -f "$tmp"
+
+# LANG-S06: chunk-top & and , forks must work on the -e path (routes through
+# the persistent loader strand rather than the run-to-completion transient).
+out=$("$URBI" -e 'cout << "x", cout << "y"' 2>/dev/null)
+case "$out" in *x*y*|*y*x*) : ;; *) echo "FAIL: chunk-top comma fork (out='$out')"; fail=1 ;; esac
+
+out=$("$URBI" -e '{ cout << "a" } | { cout << "b" }; 1' 2>/dev/null)
+case "$out" in *a*b*) : ;; *) echo "FAIL: sequential pipe (out='$out')"; fail=1 ;; esac
+
+out=$("$URBI" -e '1 + 1' 2>/dev/null)
+[ "$out" = "2" ] || { echo "FAIL: -e result print (out='$out')"; fail=1; }
+
+chk 1 "throw still rc 1 after reroute" -e 'throw 99'
+
+# sleep(1s) on the batch path must actually sleep ~1 second and exit 0
+# (the loader strand parks at the sleep opcode and WAKE_AT drives the real wait).
+t0=$(date +%s%N 2>/dev/null || echo 0)
+"$URBI" -e 'sleep(1s)' >/dev/null 2>&1; rc_sleep=$?
+t1=$(date +%s%N 2>/dev/null || echo 0)
+if [ "$t0" != "0" ] && [ "$t1" != "0" ]; then
+    elapsed_ms=$(( (t1 - t0) / 1000000 ))
+    if [ "$rc_sleep" -ne 0 ]; then
+        echo "FAIL: sleep(1s) exit rc=$rc_sleep (want 0)"; fail=1
+    elif [ "$elapsed_ms" -lt 900 ]; then
+        echo "FAIL: sleep(1s) elapsed ${elapsed_ms}ms (want >=900ms)"; fail=1
+    fi
+else
+    chk 0 "sleep(1s) exit 0" -e 'sleep(1s)'
+fi
+
 [ "$fail" -eq 0 ] && echo "test-batch-errors: OK"
 exit "$fail"

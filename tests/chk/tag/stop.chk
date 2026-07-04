@@ -1,16 +1,19 @@
 # Milestone: M3
 # Covers: tag.stop() stops a sleeping strand tagged with that tag;
 #         concurrent variants: stop before vs after strand starts sleeping.
-# blocked: top-level & separator hangs chk driver (T39)
+# blocked: parse error — `&` separator inside tag-scope block body not supported:
+#   `tag: { {expr} & stmt }` → "<stdin>:1:N: expected '}'" (T39 reason stale)
 # matrix-row: tag-stop
 #
-# Reason:
-#   tag.stop() is called as an object method on a UTag value (e.g., tag.stop()).
-#   Method dispatch on prototype values is a M4 object-model feature.  At M3
-#   we have urbi_tag_stop() as a C API but no urbiscript-level dispatch.  The
-#   fixture also uses '&' for concurrent stop vs sleep — requires M5 chk driver.
+# Reason (updated v0.13.4 probe):
+#   OP_FORK_JOIN transient-strand guard removed (LANG-S06); tag.stop() method
+#   dispatch has been available since M4.  The current blocker is a parse
+#   error: the parser sees `{sleep(100ms); echo("No")} & tag.stop()` inside
+#   the outer tag-scope body block and rejects `&` at the separator position
+#   ("expected '}'").  The `&` statement-separator is not currently recognized
+#   inside a `tag: { ... }` scope body at this parse level.
 #
-# Original urbiscript (activate at M4 with tag method dispatch):
+# Original urbiscript (re-activate when & inside tag-scope body parses):
 # # var tag = Tag.new() | {};
 # # tag: { {sleep(100ms); echo("No")} & tag.stop() };
 # # tag: { tag.stop() & {sleep(100ms); echo("No")} };

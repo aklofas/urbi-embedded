@@ -414,6 +414,24 @@ fail:
     return NULL;
 }
 
+/* cli_sleep_until_us — sleep until the monotonic deadline wake_us (µs).
+ * Uses the same CLOCK_MONOTONIC source as the VM's host_time_us default.
+ * Capped at 2 s so a misbehaving WAKE_AT cannot hang the CLI indefinitely. */
+static void cli_sleep_until_us(uint64_t wake_us) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ULL
+                    + (uint64_t)ts.tv_nsec / 1000ULL;
+    if (wake_us <= now_us) return;
+    uint64_t delta = wake_us - now_us;
+    if (delta > 2000000ULL) delta = 2000000ULL;  /* 2 s cap */
+    struct timespec req = {
+        .tv_sec  = (time_t)(delta / 1000000ULL),
+        .tv_nsec = (long)((delta % 1000000ULL) * 1000ULL)
+    };
+    nanosleep(&req, NULL);
+}
+
 /* Run a source file: compile, execute, discard result (scripts produce
    output via side effects, which do not exist at M1). */
 static int run_file(UVM *vm, const char *path) {
@@ -438,8 +456,22 @@ static int run_file(UVM *vm, const char *path) {
         module->alloc_ud       = vm->alloc_ud;
         module->heap_allocated = true;
         UValue out;
-        UVMError vrc = urbi_vm_run(vm, NULL, module, &out);
-        if (vrc == UVM_OK) {
+        /* LANG-S06: route through the persistent loader strand so chunk-top
+         * & and , forks are legal; urbi_vm_run used a transient strand that
+         * rejected OP_FORK_DETACH/OP_FORK_JOIN.  Drive urbi_step until
+         * quiescent, honoring WAKE_AT for sleep/timer workloads. */
+        int vrc = urbi_run_chunk(vm, NULL, module, &out);
+        if (vrc == URBI_OK) {
+            uint64_t wake_us = 0;
+            for (;;) {
+                int sr = urbi_step(vm, 65536ULL, &wake_us);
+                if (sr == URBI_STEP_RUNNING)  continue;
+                if (sr == URBI_STEP_WAKE_AT)  { cli_sleep_until_us(wake_us); continue; }
+                if (sr == URBI_STEP_FATAL)    { vrc = URBI_ERR_STRAND_FATAL; }
+                break;   /* QUIESCENT or FATAL */
+            }
+        }
+        if (vrc == URBI_OK) {
             rc = 0;
         } else {
             fprintf(stderr, "urbi: %s\n",
@@ -508,8 +540,20 @@ static int run_expression(UVM *vm, const char *expr) {
         module->alloc_ud       = vm->alloc_ud;
         module->heap_allocated = true;
         UValue out;
-        UVMError vrc = urbi_vm_run(vm, NULL, module, &out);
-        if (vrc == UVM_OK) {
+        /* LANG-S06: route through the persistent loader strand; same
+         * rationale as run_file above (urbi_vm_run transient → fork errors). */
+        int vrc = urbi_run_chunk(vm, NULL, module, &out);
+        if (vrc == URBI_OK) {
+            uint64_t wake_us = 0;
+            for (;;) {
+                int sr = urbi_step(vm, 65536ULL, &wake_us);
+                if (sr == URBI_STEP_RUNNING)  continue;
+                if (sr == URBI_STEP_WAKE_AT)  { cli_sleep_until_us(wake_us); continue; }
+                if (sr == URBI_STEP_FATAL)    { vrc = URBI_ERR_STRAND_FATAL; }
+                break;   /* QUIESCENT or FATAL */
+            }
+        }
+        if (vrc == URBI_OK) {
             /* 64 bytes fits Int (max 21 chars) and Float (~24 chars).
                M2 string literals may truncate silently — promote to
                UVALUE_FORMAT_MAX or heap when strings land. */

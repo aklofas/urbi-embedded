@@ -1,15 +1,12 @@
 # Milestone: M3
 # Covers: tag.stop() on a ready-to-start join branch does not incorrectly
 #         cancel it; f & 1 completes normally; result is 42.
-# blocked: top-level & separator hangs chk driver (T39)
 # matrix-row: tag-stop
 #
-# Reason:
-#   The fixture uses '&' (OP_FORK_JOIN) which requires the M5 chk driver.
-#   tag.stop() is also used implicitly via the |{}| pipe pattern.  At M3 the
-#   join opcode produces TypeError in the urbi_vm_run REPL path.
-#
-# Original urbiscript (activate at M5 with urbi_step chk driver):
-# # function f() { return 1 } | {};
-# # f & 1; 42;
-# # [00000001] 42
+# Activated at v0.13.4: loader-strand reroute (LANG-S06) removes the
+# OP_FORK_JOIN transient-strand guard; named-function syntax updated to
+# the v1.0 form (anonymous-function assignment).
+var f = function() { return 1 };
+f & 1; 42;
+[00000000] <?>
+[00000001] 42
