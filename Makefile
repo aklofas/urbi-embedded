@@ -1899,7 +1899,7 @@ test-cross-pico-repl-elf: cross-pico-repl tools/urbi-compile-stdlib-pico
 	                    | tail -2
 	@echo "PASS: cross-pico-repl example .elf links cleanly"
 
-# BLD-CI-3: STM32F4 mandelbrot app compile gate.  Builds the full application
+# STM32F4 mandelbrot app compile gate.  Builds the full application
 # ELF (HAL + BSP + urbi port shims + liburbi.a) with arm-none-eabi-gcc.
 # Catches app-level breakage invisible to the library-only cross-stm32f4 job:
 # public header regressions, internal header changes used by main.c (vm/uvm.h,
