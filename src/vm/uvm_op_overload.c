@@ -433,20 +433,9 @@ vm_cmp_method_fallback(UVM *vm,
         }
     }
 
-    /* Coerce result to bool.
-     *   int/bool non-zero → true; nil/void → false; anything else → truthy.
-     * UVAL_INT and UVAL_BOOL share the same .v.i union member, so they are
-     * combined into a single arm to avoid a duplicate-branch clang-tidy warning. */
-    if (result.kind == (uint8_t)UVAL_INT
-     || result.kind == (uint8_t)UVAL_BOOL) {
-        *out_bool = (result.v.i != 0);
-    } else if (result.kind == (uint8_t)UVAL_NIL
-            || result.kind == (uint8_t)UVAL_VOID) {
-        *out_bool = false;
-    } else {
-        /* Non-nil non-int → truthy. */
-        *out_bool = true;
-    }
+    /* Coerce result to bool using the single canonical truthiness predicate.
+     * Delegates to uvalue_truthy — one truth source (refactor-4 H1). */
+    *out_bool = uvalue_truthy(&result);
 
     vm_reactive_drain(vm, /*bounded_whenever=*/0);   /* VM-20: drain after operator method call (active level) */
     return VM_OP_OVERLOAD_OK;

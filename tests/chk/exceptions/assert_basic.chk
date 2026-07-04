@@ -3,7 +3,7 @@
 #         assert { block } pass, assert { block } fail,
 #         assert failure caught by try/catch.
 # Ruling: implemented — lowers to if(!cond) throw "assertion failed[: <src>]"
-# Note: numerics (including 0) are truthy in urbiscript; only false/nil fail.
+# Note: numeric zero is falsy (v0.13.5); assert(0) throws. assert(1) passes.
 # Source: legacy F9; urbiscript SDK 2.0 §17.x assert semantics
 
 # --- paren form: passing asserts yield nil ---

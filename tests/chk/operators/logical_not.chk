@@ -1,8 +1,8 @@
-# Milestone: v0.13.1
+# Milestone: v0.13.1 (rebaselined v0.13.5: numeric zero now falsy)
 # Covers: unary `!` — logical negation via the OP_TEST/OP_LOADBOOL idiom
 #         (refactor-3 FE-03/B7: previously lowered to arithmetic OP_NEG;
-#         `!5` evaluated to -5). Truthiness follows uvalue_truthy: numerics
-#         are always truthy (zero included), so `!0` is false; nil is falsy.
+#         `!5` evaluated to -5). Truthiness follows uvalue_truthy: numeric
+#         zero is falsy (legacy-conformant), so `!0` is true; nil is falsy.
 
 !true
 [00000000] false
@@ -14,7 +14,7 @@
 [00000002] false
 
 !0
-[00000003] false
+[00000003] true
 
 !nil
 [00000004] true

@@ -281,10 +281,10 @@ UTEST(uvalue_truthy_void_is_false) {
     UASSERT(!uvalue_truthy(&v));
 }
 
-UTEST(uvalue_truthy_int_zero_is_true) {
-    /* Per urbiscript: int 0 is truthy — only nil/false/void are falsy. */
+UTEST(uvalue_truthy_int_zero_is_false) {
+    /* Numeric zero is falsy — matching the reference language (legacy boolean.chk:65). */
     UValue v = { .kind = UVAL_INT }; v.v.i = 0;
-    UASSERT(uvalue_truthy(&v));
+    UASSERT(!uvalue_truthy(&v));
 }
 
 UTEST(uvalue_truthy_int_nonzero_is_true) {
@@ -292,10 +292,10 @@ UTEST(uvalue_truthy_int_nonzero_is_true) {
     UASSERT(uvalue_truthy(&v));
 }
 
-UTEST(uvalue_truthy_float_zero_is_true) {
-    /* Float 0.0 is truthy in urbiscript. */
+UTEST(uvalue_truthy_float_zero_is_false) {
+    /* Float 0.0 is falsy — matching the reference language. */
     UValue v = { .kind = UVAL_FLOAT }; v.v.f = 0.0;
-    UASSERT(uvalue_truthy(&v));
+    UASSERT(!uvalue_truthy(&v));
 }
 
 /* --- uvalue_equal --- */
@@ -425,9 +425,9 @@ void test_uvalue_suite(void) {
     utest_run("uvalue_truthy: bool false → false",  uvalue_truthy_bool_false_is_false);
     utest_run("uvalue_truthy: bool true → true",    uvalue_truthy_bool_true_is_true);
     utest_run("uvalue_truthy: void → false",        uvalue_truthy_void_is_false);
-    utest_run("uvalue_truthy: int 0 → true (urbiscript semantics)", uvalue_truthy_int_zero_is_true);
+    utest_run("uvalue_truthy: int 0 → false (numeric zero falsy)",  uvalue_truthy_int_zero_is_false);
     utest_run("uvalue_truthy: int 42 → true",       uvalue_truthy_int_nonzero_is_true);
-    utest_run("uvalue_truthy: float 0.0 → true",    uvalue_truthy_float_zero_is_true);
+    utest_run("uvalue_truthy: float 0.0 → false",   uvalue_truthy_float_zero_is_false);
     /* equal */
     utest_run("uvalue_equal: nil == nil → true",    uvalue_equal_nil_eq_nil);
     utest_run("uvalue_equal: 7 == 7 → true",        uvalue_equal_int_eq_int_same);

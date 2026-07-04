@@ -1,0 +1,32 @@
+# Milestone: v0.13.5
+# Covers: numeric zero is falsy in conditions and logical not,
+#         matching the reference language (legacy boolean.chk:65-68,
+#         if.chk:15 — !0 → true; if (0) → false branch).
+# Legacy evidence: boolean.chk:65 !0; → [00000019] true
+#                  boolean.chk:68 !1; → [00000020] false
+#                  if.chk:15 if (0) ... else ... → [00000005] "0: false"
+# Truth table: INT 0 → false; INT non-zero → true; FLOAT 0.0 → false;
+#              FLOAT non-zero → true; nil/void/false → false; everything else → true.
+# Empty string/list/dict: no legacy pin → truthy (kept truthy).
+## timeout: 30
+
+!0
+[00000000] true
+
+!1
+[00000000] false
+
+!0.0
+[00000000] true
+
+# if-else: 0 takes the else branch
+var r1 = "?"; if (0) { r1 = "T" } else { r1 = "F" }; r1
+[00000000] "F"
+
+# while: loop body must not execute when condition is 0
+var c = 0; while (c) { c = c + 1 }; c
+[00000000] 0
+
+# short-circuit &&: 0 on left short-circuits to false
+var r2 = "?"; if (0 && true) { r2 = "T" } else { r2 = "F" }; r2
+[00000000] "F"

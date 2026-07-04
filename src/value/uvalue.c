@@ -17,15 +17,15 @@ bool uvalue_truthy(const UValue *v) {
         case UVAL_NIL:    return false;
         case UVAL_BOOL:   return v->v.i != 0;
         case UVAL_VOID:   return false;
+        case UVAL_INT:    return v->v.i != 0;   /* numeric zero is falsy, matching the reference language */ /* NOLINT(bugprone-branch-clone) */
+        case UVAL_FLOAT:  return v->v.f != 0.0; /* numeric zero is falsy, matching the reference language */
         /* Per-kind arms document distinct semantic invariants (each kind's
          * truthiness is decided independently per spec) even though the C
          * expression collapses to `return true`. Keeping arms expanded with
          * per-kind comments documents this contract; collapsing would lose
          * the per-kind audit trail. */
         case UVAL_STRAND:  /* strand handle is truthy (matches closure pattern) */ /* NOLINT(bugprone-branch-clone) */
-        case UVAL_OBJECT:  /* object reference is truthy (matches closure pattern) */
-        case UVAL_INT:     /* numeric is always truthy (zero included; matches Lua/Python) */
-        case UVAL_FLOAT:   /* numeric is always truthy */
+        case UVAL_OBJECT:  /* object reference is truthy */
         case UVAL_STR:     /* interned string ref is truthy */
         case UVAL_CLOSURE: /* closure ref is truthy */
         case UVAL_EVENT:   /* event ref is truthy */
