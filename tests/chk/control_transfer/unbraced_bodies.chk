@@ -35,13 +35,21 @@ Realm.fa = 0; Realm.z1 = 0; if (false) Realm.fa = 1 & { Realm.z1 = 99 }; Realm.z
 # not call pipe_amp_fold; pinned here as a regression guard):
 var s1 = 0; Realm.z2 = 0; if (false) s1 = 1 & { Realm.z2 = 99 }; Realm.z2
 [00000006] 99
+# literal-start arm (fix round 2 — the default parse_arm_stmt path went
+# through parse_inner_tier, which calls pipe_amp_fold, so `&` still folded
+# inside the arm for literal / prefix-op / parenthesized arms):
+Realm.z3 = 0; if (false) 42 & { Realm.z3 = 99 }; Realm.z3
+[00000007] 99
+# prefix-op-start arm (same default path):
+Realm.b = 0; Realm.z4 = 0; if (false) !Realm.b & { Realm.z4 = 99 }; Realm.z4
+[00000008] 99
 
 # --- dangling else: `if (a) if (b) stmt else stmt` — else binds to the
 # NEAREST if (standard C-style).  With a=true, b=false the inner else fires.
 var a = 1; var b = 0; Realm.de = 0; if (a) if (b) Realm.de = 1 else Realm.de = 2; Realm.de
-[00000007] 2
+[00000009] 2
 
 # --- expression-if rejection: `var r = if (true) 1 else 2` is a parse error.
 # if/while are statement forms, not expressions (REVIVAL.md §14).
 var r = if (true) 1 else 2
-[00000008] !!! <stdin>:1:9: expected expression
+[00000010] !!! <stdin>:1:9: expected expression

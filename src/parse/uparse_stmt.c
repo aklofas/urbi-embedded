@@ -349,7 +349,11 @@ UAstNode *parse_class_declaration(UParser *p) {
 /* --- parse_statement_or_expr: var-decl, assign, or inner-tier expression.
    Returns an inner-tier result (arithmetic expression, possibly with
    | / & separators). Used as the child-entry point for both
-   uparse_next_statement and the outer-tier loop. --- */
+   uparse_next_statement and the outer-tier loop.
+
+   NOTE: parse_arm_stmt (below) mirrors this keyword dispatch for unbraced
+   if/while/else arms, minus the pipe_amp_fold calls.  A new statement
+   keyword added here must be added there too. --- */
 
 UAstNode *parse_statement_or_expr(UParser *p) {
     UToken t = peek(p);
@@ -518,7 +522,11 @@ static UAstNode *parse_arm_stmt(UParser *p) {
     case TOK_KW_BREAK:    return parse_break(p);
     case TOK_KW_CONTINUE: return parse_continue(p);
     case TOK_KW_SWITCH:   return parse_switch(p);
-    /* Braced block: return without pipe_amp_fold (same as TOK_KW_IF above). */
+    /* Braced block: return without pipe_amp_fold (same as TOK_KW_IF above).
+     * Defensive only — every callsite (parse_if then/else arms, parse_while
+     * body) routes TOK_LBRACE to parse_block directly and never enters
+     * parse_single_stmt_as_block; kept so parse_arm_stmt's contract does
+     * not silently depend on that callsite peek check. */
     case TOK_LBRACE:   return parse_block(p);
     case TOK_IDENT: {
         UToken name = consume(p);
@@ -526,8 +534,12 @@ static UAstNode *parse_arm_stmt(UParser *p) {
         return parse_assign_or_expr_impl(p, name, /*fold=*/false);
     }
     default:
-        /* Literal, prefix op, etc.: parse_inner_tier is already fold-free. */
-        return parse_inner_tier(p);
+        /* Literal, prefix op, parenthesized expression, etc.
+         * NOT parse_inner_tier — that one calls pipe_amp_fold and would
+         * absorb `&`/`|` into the arm (`if (false) 42 & { b }` folded
+         * inside pre-fix).  parse_expression is the fold-free Pratt tier,
+         * matching the fold=false IDENT path above. */
+        return parse_expression(p, 0);
     }
 }
 
@@ -541,10 +553,12 @@ static UAstNode *parse_arm_stmt(UParser *p) {
  * assignment, expression, or nested control-flow construct.
  *
  * Separator binding: trailing `|`/`&` after the arm are left unconsumed by
- * parse_arm_stmt.  The caller's pipe_amp_fold (wrapping the whole if/while
- * node in parse_statement_or_expr) folds them OUTSIDE the arm, matching the
- * reference grammar's stmt-vs-cstmt tiering (ugrammar.y :374-378).  This
- * applies to ALL arm kinds — simple-assign, member-assign, call, expression.
+ * parse_arm_stmt (every dispatch path in it is fold-free).  The caller's
+ * pipe_amp_fold (wrapping the whole if/while node in parse_statement_or_expr)
+ * folds them OUTSIDE the arm, matching the reference grammar's stmt-vs-cstmt
+ * tiering (ugrammar.y :374-378).  This applies to ALL arm kinds —
+ * simple-assign, member-assign, call, literal, prefix-op, parenthesized,
+ * and nested control-flow.
  *
  * Dangling else: always binds to the nearest if (standard C-style) because
  * the recursive parse_if inside parse_arm_stmt consumes the else before
