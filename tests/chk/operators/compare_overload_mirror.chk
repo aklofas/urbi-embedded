@@ -1,0 +1,28 @@
+# Milestone: v0.13.4 (H12 mirror-operand retry)
+# Covers: an object on the syntactic LEFT of > / >= dispatches its own
+# quoted-operator overload.  The emitter compiles a>b as swapped OP_LT(b,a)
+# so the VM fallback must try the mirror operand on lookup miss.
+
+# ">" overload on syntactic left operand; slot returns truthy.
+class Gt1 {}; Gt1.setSlot(">", function(other) { 1 }); var ag = Gt1.new(); if (ag > 5) { "gt" } else { "ngt" }
+[00000000] "gt"
+
+# ">" overload returning falsy → not greater-than.
+class Gt2 {}; Gt2.setSlot(">", function(other) { 0 }); var bg = Gt2.new(); if (bg > 5) { "gt" } else { "ngt" }
+[00000001] "ngt"
+
+# ">=" overload on syntactic left operand; slot returns truthy.
+class Ge1 {}; Ge1.setSlot(">=", function(other) { 1 }); var cg = Ge1.new(); if (cg >= 5) { "ge" } else { "nge" }
+[00000002] "ge"
+
+# ">=" overload returning falsy → not greater-or-equal.
+class Ge2 {}; Ge2.setSlot(">=", function(other) { 0 }); var dg = Ge2.new(); if (dg >= 5) { "ge" } else { "nge" }
+[00000003] "nge"
+
+# Throw inside ">" overload body propagates (not swallowed by mirror path).
+class GtThrow {}; GtThrow.setSlot(">", function(other) { throw("gt-boom") }); var eg = GtThrow.new(); var rg = "none"; try { if (eg > 5) { "x" } } catch (var ex) { rg = ex }; rg
+[00000004] "gt-boom"
+
+# No overload on either operand → original TypeError.
+class NoGt {}; var fg = NoGt.new(); fg > 5
+[00000005] !!! line 1: TypeError: OP_LT operands must be Integer or Float (got Integer, unknown)

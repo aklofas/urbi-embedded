@@ -1058,6 +1058,30 @@ dispatch:
                         goto safepoint;
                     }
                 }
+                /* Mirror retry (H12): a > b compiles to swapped OP_LT(b,a),
+                 * so c is the syntactic left operand.  On lookup miss for
+                 * "<" on b, try ">" on c with operands swapped.
+                 * A THREW from a found ">" method must propagate; only a
+                 * true miss falls through to the TypeError below. */
+                {
+                    USymbol *mirror = ustr_op_name(vm, ">", 1);
+                    if (mirror != NULL) {
+                        UValue mthrown = {0};
+                        int mfrc = vm_cmp_method_fallback(vm, &lt, &mthrown,
+                                c, b, mirror,
+                                (uint32_t)(s->pc - s->pc_base));
+                        if (mfrc == VM_OP_OVERLOAD_OK) {
+                            if ((int)lt != (int)uinstr_a(*s->pc)) { s->pc++; }
+                            NEXT();
+                        }
+                        if (mfrc == VM_OP_OVERLOAD_THREW) {
+                            s->unwind_value   = mthrown;
+                            s->pending_unwind = UEXEC_THROW;
+                            s->pc++;
+                            goto safepoint;
+                        }
+                    }
+                }
                 VM_BINOP_TYPEERROR(OP_LT, b->kind, c->kind);
             }
             if ((int)lt != (int)uinstr_a(*s->pc)) { s->pc++; }
@@ -1086,6 +1110,29 @@ dispatch:
                         s->pending_unwind = UEXEC_THROW;
                         s->pc++;
                         goto safepoint;
+                    }
+                }
+                /* Mirror retry (H12): a >= b compiles to swapped OP_LE(b,a),
+                 * so c is the syntactic left operand.  On lookup miss for
+                 * "<=" on b, try ">=" on c with operands swapped.
+                 * A THREW from a found ">=" method must propagate. */
+                {
+                    USymbol *mirror = ustr_op_name(vm, ">=", 2);
+                    if (mirror != NULL) {
+                        UValue mthrown = {0};
+                        int mfrc = vm_cmp_method_fallback(vm, &le, &mthrown,
+                                c, b, mirror,
+                                (uint32_t)(s->pc - s->pc_base));
+                        if (mfrc == VM_OP_OVERLOAD_OK) {
+                            if ((int)le != (int)uinstr_a(*s->pc)) { s->pc++; }
+                            NEXT();
+                        }
+                        if (mfrc == VM_OP_OVERLOAD_THREW) {
+                            s->unwind_value   = mthrown;
+                            s->pending_unwind = UEXEC_THROW;
+                            s->pc++;
+                            goto safepoint;
+                        }
                     }
                 }
                 VM_BINOP_TYPEERROR(OP_LE, b->kind, c->kind);
