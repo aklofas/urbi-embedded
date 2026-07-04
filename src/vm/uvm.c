@@ -179,6 +179,10 @@ vm_call_typeerror(UVM *vm, UStrand *s)
     return vm_dispatch_typeerror_core(vm, s);
 }
 
+/* The FATAL arm is unreachable by construction today: urbi_raise_typed degrades
+ * to throw-nil on OOM, matching slot_throw_or_fatal.  It is kept as the
+ * documented defensive contract. */
+
 /* Dispatch macros — same goto-safepoint / HALT() pattern for all 9 sites. */
 #define VM_BINOP_TYPEERROR(opc, bk, ck) do {                              \
     if (vm_binop_typeerror(vm, s, (opc), (bk), (ck)) ==                   \
@@ -751,7 +755,6 @@ dispatch:
             uint8_t arg_off   = is_method ? 2U : 1U;
 
             if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
-                vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: callee is not a closure");
                 VM_CALL_TYPEERROR();
             }
@@ -882,7 +885,6 @@ dispatch:
             }
 
             if (nargs != (int)callee->proto->nparams) {
-                vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: wrong argument count");
                 VM_CALL_TYPEERROR();
             }

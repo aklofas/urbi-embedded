@@ -1,6 +1,5 @@
 # Covers: arith/compare/call type errors are catchable and run finally,
 # matching the legacy error model (typed throws, not process fatals).
-# (refactor-4 B2/VM-CORE-01/LANG4-05; refactor-5 C7/VM-SIMPLIFY-01)
 
 var r1 = "no"; try { nil + 1 } catch (var e) { r1 = "caught" }; r1
 [00000001] "caught"
@@ -12,3 +11,5 @@ var r3 = "no"; var g = function (x) { x }; try { g(1, 2, 3) } catch (var e) { r3
 [00000004] "caught"
 var r4 = "no"; try { (5)() } catch (var e) { r4 = "caught" }; r4
 [00000005] "caught"
+var q = "no"; try { try { 1 } finally { nil + 1 } } catch (var e) { q = "caught" }; q
+[00000006] "caught"
