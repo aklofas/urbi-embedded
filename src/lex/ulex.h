@@ -122,6 +122,7 @@ typedef enum {
     TOK_KW_CONTINUE, /* continue — skip to next iteration */
     TOK_KW_SWITCH,   /* switch — equality-dispatch statement */
     TOK_KW_CASE,     /* case — label inside switch body */
+    TOK_KW_DEFAULT,  /* default — catch-all arm inside switch body */
     /* === end W1/v0.10.5: control flow === */
 
     /* === W10/v0.10.5: list/dict literals + subscript + compound assign === */

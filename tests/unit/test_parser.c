@@ -604,14 +604,15 @@ UTEST(parse_var_decl_basic) {
     ctx_destroy(&c);
 }
 
-UTEST(parse_var_decl_requires_init) {
-    /* "var x" (no '=') -> AST_ERROR PARSE_EXPECTED_EQ */
+UTEST(parse_var_decl_no_init_yields_nil) {
+    /* "var x" (no '=') -> AST_VAR_DECL with AST_NIL init (LANG4-10) */
     ParseCtx c;
     ctx_init(&c, "var x");
     UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
-    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
-    UASSERT_EQ((int)PARSE_EXPECTED_EQ, n->u.err.code);
+    UASSERT_EQ((int)AST_VAR_DECL, (int)n->kind);
+    UASSERT(n->u.var_decl.init != NULL);
+    UASSERT_EQ((int)AST_NIL, (int)n->u.var_decl.init->kind);
     ctx_destroy(&c);
 }
 
@@ -1151,7 +1152,7 @@ void test_parser_suite(void) {
     utest_run("parse_syncline_unary_points_at_sign",      parse_syncline_unary_points_at_sign);
     utest_run("parse_syncline_error_at_detection_point",  parse_syncline_error_at_detection_point);
     utest_run("parse var decl: basic 'var x = 7'",        parse_var_decl_basic);
-    utest_run("parse var decl: requires initializer",      parse_var_decl_requires_init);
+    utest_run("parse var decl: no init yields nil",        parse_var_decl_no_init_yields_nil);
     utest_run("parse var decl: requires identifier name",  parse_var_decl_requires_ident);
     utest_run("parse assign: basic 'x = 42'",             parse_assign_basic);
     utest_run("parse ident-not-assign: 'x + 1' is binary", parse_ident_not_followed_by_eq_is_expression);

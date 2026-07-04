@@ -1,0 +1,27 @@
+# Milestone: v0.13.5 (LANG-S07)
+# Covers: switch default arm — catch-all when no case matches.
+# Lowered onto the existing patch-list jump machinery; no new opcode.
+
+# --- default runs when no case matches
+var r = "none"; switch (99) { case 1: { r = "one" }; case 2: { r = "two" }; default: { r = "other" } }; r
+[00000000] "other"
+
+# --- default does NOT run when a case matches
+var r2 = "none"; switch (2) { case 1: { r2 = "one" }; case 2: { r2 = "two" }; default: { r2 = "other" } }; r2
+[00000001] "two"
+
+# --- default as the only arm
+var r3 = "none"; switch (42) { default: { r3 = "hit" } }; r3
+[00000002] "hit"
+
+# --- default first (still catch-all — source order does not affect dispatch)
+var r4 = "none"; switch (99) { default: { r4 = "other" }; case 1: { r4 = "one" }; case 2: { r4 = "two" } }; r4
+[00000003] "other"
+
+# --- default not reached when first case matches (default first in source)
+var r5 = "none"; switch (1) { default: { r5 = "other" }; case 1: { r5 = "one" }; case 2: { r5 = "two" } }; r5
+[00000004] "one"
+
+# --- break inside default exits switch
+var r6 = "none"; switch (99) { case 1: { r6 = "one" }; default: { r6 = "hit"; break; r6 = "never" } }; r6
+[00000005] "hit"

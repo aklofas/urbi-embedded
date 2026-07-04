@@ -104,22 +104,24 @@ UAstNode *parse_var_decl(UParser *p) {
     /* === end W10/v0.10.5: var obj.slot form === */
 
     UToken eq = peek(p);
+    UAstNode *init;
     if (eq.type != TOK_EQ) {
-        return make_error(p, PARSE_EXPECTED_EQ,
-                          kErrorMessages[PARSE_EXPECTED_EQ],
-                          eq.line, eq.col);
+        /* No initializer — `var x;` declares to nil (LANG4-10).
+         * The reference initializes to void; we have no void model. */
+        init = make_nil_node(p, name.line, name.col);
+        if (!init) return NULL;
+    } else {
+        consume(p);
+        /* S48-followup (2026-05-16): parse RHS as a Pratt expression, NOT
+         * parse_inner_tier — same root cause as the S48 fix to MEMBER_SET.
+         * `var x = 1 | y = 2` should parse as `(var x = 1) | (y = 2)` per
+         * legacy spec (see legacy/repos/aldebaran-urbi/tests/2.x/atomic.chk
+         * `var n = 0 | {};` pattern).  Pre-fix, parse_inner_tier absorbed
+         * the `|` into the init expression, producing nested wrong-AST. */
+        init = parse_expression(p, 0);
+        if (!init) return NULL;
+        if (init->kind == AST_ERROR) return init;
     }
-    consume(p);
-
-    /* S48-followup (2026-05-16): parse RHS as a Pratt expression, NOT
-     * parse_inner_tier — same root cause as the S48 fix to MEMBER_SET.
-     * `var x = 1 | y = 2` should parse as `(var x = 1) | (y = 2)` per
-     * legacy spec (see legacy/repos/aldebaran-urbi/tests/2.x/atomic.chk
-     * `var n = 0 | {};` pattern).  Pre-fix, parse_inner_tier absorbed
-     * the `|` into the init expression, producing nested wrong-AST. */
-    UAstNode *init = parse_expression(p, 0);
-    if (!init) return NULL;
-    if (init->kind == AST_ERROR) return init;
 
     UAstNode *node = make_node(p, AST_VAR_DECL, kw.line, kw.col);
     if (!node) return NULL;
@@ -1286,7 +1288,7 @@ UAstNode *parse_switch(UParser *p) {
     }
     consume(p);
 
-    /* Parse case list. */
+    /* Parse case list (and optional default arm). */
     int cap = 4;
     UAstNode **case_vals   = (UAstNode **)uarena_alloc(p->arena,
                                                         (size_t)cap * sizeof(UAstNode *));
@@ -1294,6 +1296,8 @@ UAstNode *parse_switch(UParser *p) {
                                                         (size_t)cap * sizeof(UAstNode *));
     if (!case_vals || !case_bodies) return (UAstNode *)&uparser_oom_sentinel;
     int case_count = 0;
+    UAstNode *default_body = NULL;
+    int has_default = 0;
 
     /* switch body: break inside a case must exit the switch.
      * Use switch_depth (not loop_depth) so `continue` inside a switch
@@ -1308,12 +1312,70 @@ UAstNode *parse_switch(UParser *p) {
         if (peek(p).type == TOK_RBRACE || peek(p).type == TOK_EOF) break;
 
         UToken case_tok = peek(p);
-        if (case_tok.type != TOK_KW_CASE) {
+        if (case_tok.type != TOK_KW_CASE && case_tok.type != TOK_KW_DEFAULT) {
             p->switch_depth--;
             return make_error(p, PARSE_SWITCH_EXPECTED_CASE,
                               kErrorMessages[PARSE_SWITCH_EXPECTED_CASE],
                               case_tok.line, case_tok.col);
         }
+
+        if (case_tok.type == TOK_KW_DEFAULT) {
+            /* default arm — at most one; no value expression. */
+            if (has_default) {
+                p->switch_depth--;
+                return make_error(p, PARSE_SWITCH_DUPLICATE_DEFAULT,
+                                  kErrorMessages[PARSE_SWITCH_DUPLICATE_DEFAULT],
+                                  case_tok.line, case_tok.col);
+            }
+            has_default = 1;
+            consume(p);  /* consume 'default' */
+
+            UToken dcolon = peek(p);
+            if (dcolon.type != TOK_COLON) {
+                p->switch_depth--;
+                return make_error(p, PARSE_SWITCH_EXPECTED_COLON,
+                                  kErrorMessages[PARSE_SWITCH_EXPECTED_COLON],
+                                  dcolon.line, dcolon.col);
+            }
+            consume(p);  /* consume ':' */
+
+            /* Collect default body stmts. */
+            int dstmt_cap = 4;
+            UAstNode **dstmts = (UAstNode **)uarena_alloc(p->arena,
+                                                           (size_t)dstmt_cap * sizeof(UAstNode *));
+            if (!dstmts) { p->switch_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+            int dstmt_count = 0;
+
+            while (peek(p).type != TOK_KW_CASE &&
+                   peek(p).type != TOK_KW_DEFAULT &&
+                   peek(p).type != TOK_RBRACE &&
+                   peek(p).type != TOK_EOF) {
+                UAstNode *s = parse_statement_or_expr(p);
+                if (!s) { p->switch_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+                if (s->kind == AST_ERROR) { p->switch_depth--; return s; }
+
+                if (dstmt_count == dstmt_cap) {
+                    if (!arena_grow_node_array(p, &dstmts, &dstmt_cap, dstmt_count)) {
+                        p->switch_depth--;
+                        return (UAstNode *)&uparser_oom_sentinel;
+                    }
+                }
+                dstmts[dstmt_count++] = s;
+
+                if (peek(p).type == TOK_SEMI || peek(p).type == TOK_PIPE) {
+                    consume(p);
+                }
+            }
+
+            UAstNode *dbody = make_node(p, AST_BLOCK, case_tok.line, case_tok.col);
+            if (!dbody) { p->switch_depth--; return (UAstNode *)&uparser_oom_sentinel; }
+            dbody->u.block.stmts = dstmts;
+            dbody->u.block.count = dstmt_count;
+            default_body = dbody;
+            continue;
+        }
+
+        /* case arm */
         consume(p);  /* consume 'case' */
 
         /* Case value expression (not a separator tier — parse as atom/prefix). */
@@ -1330,7 +1392,7 @@ UAstNode *parse_switch(UParser *p) {
         }
         consume(p);  /* consume ':' */
 
-        /* Collect statements until the next `case`, `}`, or EOF.
+        /* Collect statements until the next `case`, `default`, `}`, or EOF.
          * Build them into an implicit AST_BLOCK. */
         int stmt_cap = 4;
         UAstNode **stmts = (UAstNode **)uarena_alloc(p->arena,
@@ -1339,6 +1401,7 @@ UAstNode *parse_switch(UParser *p) {
         int stmt_count = 0;
 
         while (peek(p).type != TOK_KW_CASE &&
+               peek(p).type != TOK_KW_DEFAULT &&
                peek(p).type != TOK_RBRACE &&
                peek(p).type != TOK_EOF) {
             /* Use parse_statement_or_expr (not parse_outer_tier) so that ';'
@@ -1397,10 +1460,11 @@ UAstNode *parse_switch(UParser *p) {
 
     UAstNode *node = make_node(p, AST_SWITCH, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.switch_stmt.expr        = expr;
-    node->u.switch_stmt.case_vals   = case_vals;
-    node->u.switch_stmt.case_bodies = case_bodies;
-    node->u.switch_stmt.case_count  = case_count;
+    node->u.switch_stmt.expr         = expr;
+    node->u.switch_stmt.case_vals    = case_vals;
+    node->u.switch_stmt.case_bodies  = case_bodies;
+    node->u.switch_stmt.case_count   = case_count;
+    node->u.switch_stmt.default_body = default_body;
     return node;
 }
 /* === end W1/v0.10.5: control flow === */

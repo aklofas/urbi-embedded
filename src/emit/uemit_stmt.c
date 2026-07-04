@@ -1601,20 +1601,77 @@ uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
         }
     }
 
+    /* default arm — emitted in the no-match fall-through position so the
+     * last case's jmp_to_next lands here when no case matched.  Treated
+     * like a regular case body: ends with an implicit JMP to exit. */
+    if (n->u.switch_stmt.default_body != NULL) {
+        if (!uemit_open_block(e, /*is_loop=*/false)) {
+            uemit_loop_pop(e);
+            uemit_close_block(e);
+            return 0U;
+        }
+
+        UAstNode *dbody = n->u.switch_stmt.default_body;
+        if (dbody->kind == AST_BLOCK) {
+            int j;
+            for (j = 0; j < dbody->u.block.count; j++) {
+                emit_expr(e, dbody->u.block.stmts[j]);
+                if (e->error != EMIT_OK) {
+                    uemit_close_block(e);
+                    uemit_loop_pop(e);
+                    uemit_close_block(e);
+                    return 0U;
+                }
+                e->current_fs->freereg = fs_temp_floor(e->current_fs);
+                e->next_reg = e->current_fs->freereg;
+            }
+        } else {
+            emit_expr(e, dbody);
+            if (e->error != EMIT_OK) {
+                uemit_close_block(e);
+                uemit_loop_pop(e);
+                uemit_close_block(e);
+                return 0U;
+            }
+            e->current_fs->freereg = fs_temp_floor(e->current_fs);
+            e->next_reg = e->current_fs->freereg;
+        }
+
+        if (!uemit_close_block(e)) {
+            uemit_loop_pop(e);
+            uemit_close_block(e);
+            return 0U;
+        }
+        e->current_fs->freereg = fs_temp_floor(e->current_fs);
+        e->next_reg = e->current_fs->freereg;
+
+        if (n_exit_jmps < 64) {
+            exit_jmps[n_exit_jmps] = (int)emit_instr_count(e);
+            n_exit_jmps++;
+        } else {
+            e->error = EMIT_PATCH_LIST_FULL;
+            uemit_loop_pop(e);
+            uemit_close_block(e);
+            return 0U;
+        }
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
+    }
+
     /* exit: patch all exit JMPs and break PCs.  The exit target lands ON
      * an exit-path OP_CLOSE at case_base: a no-op for normal completion
      * and the no-match path (every block close already ran; closed cells
      * leave the open-upval list) but required on break paths, which jump
      * here past every pending block close (same exit-path-close shape as
      * emit_for_each_arm step 11 / emit_while_arm step 7).  It is emitted
-     * UNCONDITIONALLY (when any case exists) rather than gated on the
-     * case block's has_captured: the common `case v: { ... }` body emits
-     * through emit_block_arm, so its captures mark that DEEPER block —
-     * invisible here once it closes — while OP_CLOSE's register-address
-     * threshold at case_base covers cells from any nesting depth. */
+     * UNCONDITIONALLY (when any case or default arm exists) rather than
+     * gated on the case block's has_captured: the common `case v: { ... }`
+     * body emits through emit_block_arm, so its captures mark that DEEPER
+     * block — invisible here once it closes — while OP_CLOSE's register-
+     * address threshold at case_base covers cells from any nesting depth. */
     {
         int exit_target = (int)emit_instr_count(e);
-        if (n->u.switch_stmt.case_count > 0) {
+        if (n->u.switch_stmt.case_count > 0 ||
+                n->u.switch_stmt.default_body != NULL) {
             emit_instr(e, uinstr_enc_abc(OP_CLOSE, case_base, 0U, 0U),
                        line);
         }

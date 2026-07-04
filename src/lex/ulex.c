@@ -56,6 +56,7 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_KW_ASSERT",
     /* === W1/v0.10.5: control flow === */
     "TOK_KW_FOR", "TOK_KW_BREAK", "TOK_KW_CONTINUE", "TOK_KW_SWITCH", "TOK_KW_CASE",
+    "TOK_KW_DEFAULT",
     /* === end W1/v0.10.5: control flow === */
     /* === W10/v0.10.5: list/dict literals + subscript + compound assign === */
     "TOK_LBRACKET", "TOK_RBRACKET", "TOK_FAT_ARROW", "TOK_PLUS_EQ",
@@ -707,6 +708,7 @@ static const UKeyword KEYWORDS[] = {
     KW_ENTRY("class",     TOK_KW_CLASS),
     KW_ENTRY("closure",   TOK_KW_CLOSURE),
     KW_ENTRY("continue",  TOK_KW_CONTINUE), /* W1/v0.10.5 */
+    KW_ENTRY("default",   TOK_KW_DEFAULT),  /* v0.13.5 */
     KW_ENTRY("else",      TOK_KW_ELSE),
     KW_ENTRY("every",     TOK_KW_EVERY),
     KW_ENTRY("false",     TOK_KW_FALSE),

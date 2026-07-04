@@ -65,6 +65,9 @@ const char * const kErrorMessages[] = {
     "'continue' is only valid inside a 'for' or 'while' loop",
     "switch body must contain only 'case' labels (non-case statement found)",
     "case label must be followed by ':' (e.g. case \"foo\":)",
+    /* === v0.13.5: switch default arm === */
+    "switch body may only have one 'default:' arm",
+    /* === end v0.13.5: switch default arm === */
     /* === end W1/v0.10.5: control flow errors === */
 
     /* === W9/v0.10.5: event payload binding errors === */
@@ -115,6 +118,9 @@ static const char * const kErrorNames[] = {
     "PARSE_CONTINUE_OUTSIDE_LOOP",
     "PARSE_SWITCH_EXPECTED_CASE",
     "PARSE_SWITCH_EXPECTED_COLON",
+    /* === v0.13.5: switch default arm === */
+    "PARSE_SWITCH_DUPLICATE_DEFAULT",
+    /* === end v0.13.5: switch default arm === */
     /* === end W1/v0.10.5: control flow === */
     /* === W9/v0.10.5: event payload binding === */
     "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR",

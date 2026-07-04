@@ -294,6 +294,9 @@ typedef enum {
     PARSE_CONTINUE_OUTSIDE_LOOP,       /* `continue` not inside a for/while loop */
     PARSE_SWITCH_EXPECTED_CASE,        /* switch body contains non-case statement */
     PARSE_SWITCH_EXPECTED_COLON,       /* case label missing trailing `:` */
+    /* === v0.13.5: switch default arm === */
+    PARSE_SWITCH_DUPLICATE_DEFAULT,    /* switch body has more than one default: arm */
+    /* === end v0.13.5: switch default arm === */
     /* === end W1/v0.10.5: control flow === */
 
     /* === W9/v0.10.5: event payload binding === */
@@ -586,6 +589,7 @@ struct UAstNode {
             UAstNode  **case_vals;       /* arena array of case value expressions */
             UAstNode  **case_bodies;     /* arena array of case body blocks */
             int         case_count;
+            UAstNode   *default_body;    /* catch-all arm body; NULL if absent */
         } switch_stmt;
         /* === end W1/v0.10.5: control flow === */
 
