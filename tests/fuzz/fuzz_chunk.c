@@ -18,8 +18,8 @@
  *   make fuzz-chunk
  *
  * Run:
- *   ./build/host-fuzz/fuzz_chunk tests/fuzz/corpus/chunk/   # Ctrl-C to stop
- *   ./build/host-fuzz/fuzz_chunk tests/fuzz/corpus/chunk/ -runs=20000
+ *   ./build/host-fuzz/fuzz_chunk tests/fuzz/seeds/chunk/   # Ctrl-C to stop
+ *   ./build/host-fuzz/fuzz_chunk tests/fuzz/seeds/chunk/ -runs=20000
  */
 
 #include <stddef.h>
