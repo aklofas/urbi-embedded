@@ -1,0 +1,11 @@
+# Covers: prefix - and ! bind looser than the postfix chain
+# (member access, call, subscript).
+
+var o = Object.new(); o.f = 5; -o.f
+[00000001] -5
+var f = function () { 5 }; -f()
+[00000002] -5
+var a = [3, 4]; -a[0]
+[00000003] -3
+var o2 = Object.new(); o2.b = false; !o2.b
+[00000004] true

@@ -280,6 +280,9 @@ UAstNode *parse_prefix(UParser *p) {
         UAstNode *operand = parse_prefix(p); /* right-assoc: --3 -> -(-3) */
         if (!operand) return NULL;
         if (operand->kind == AST_ERROR) return operand;
+        operand = parse_expression_cont(p, operand, PARSE_PREC_POSTFIX);
+        if (!operand) return NULL;
+        if (operand->kind == AST_ERROR) return operand;
         return make_unary(p, UOP_NEG, operand, t.line, t.col);
     }
     if (t.type == TOK_BANG) {
@@ -287,6 +290,9 @@ UAstNode *parse_prefix(UParser *p) {
          * postfix `e!` (in the post-primary loop) does not steal it. */
         consume(p);
         UAstNode *operand = parse_prefix(p);
+        if (!operand) return NULL;
+        if (operand->kind == AST_ERROR) return operand;
+        operand = parse_expression_cont(p, operand, PARSE_PREC_POSTFIX);
         if (!operand) return NULL;
         if (operand->kind == AST_ERROR) return operand;
         return make_unary(p, UOP_NOT, operand, t.line, t.col);
