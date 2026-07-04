@@ -18,11 +18,11 @@ addition; no new public C functions).
   `docs/internals/repl-service.md`.
 - Catchable runtime type errors: arithmetic, comparison, and call-dispatch
   type mismatches are raised as catchable typed `Exception` instances (the
-  same hierarchy as `v0.11.4-cat-f`) rather than silent nils.  `finally`
-  clauses and tag `onleave` bodies execute on them.
+  same hierarchy as `v0.11.4-cat-f`) rather than uncatchable strand fatals.
+  `finally` clauses and tag `onleave` bodies execute on them.
 - Comparison-overload mirroring: `>` and `>=` now dispatch on the
-  left-hand operand's `>>`/`>>=` method when the right-hand method is
-  absent, matching the `<`/`<=` mirror already in place.
+  left-hand operand's `>`/`>=` method when the right-hand method is
+  absent; the matching `<`/`<=` mirror ships in this same tag.
 - `try`/`catch` and tag-scope expressions yield their body value: a
   `try { expr } catch { ... }` block and a `tag: expr` body propagate
   the body's result to the enclosing expression, closing an exceptions-as-
@@ -38,7 +38,8 @@ addition; no new public C functions).
   cancels `every()` loops that carry the tag in scope — the canonical
   idiom `mytag: every(100ms) sense(); mytag.stop()` works end-to-end.
 - `sleep(0)` batch-path fix: a zero sleep in batch mode no longer aborts
-  the run; it yields once and continues.
+  the run; on the batch (run-to-completion) path it is a no-op, while
+  real strands still yield.
 - Watcher mid-pass cascade: the watcher list survives a body cascade that
   adds or removes entries during the same drain pass — no truncation and
   no double-fires.
