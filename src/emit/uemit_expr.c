@@ -697,8 +697,14 @@ uint8_t emit_nary_arm(UEmitter *e, UAstNode *n) {
          * cascade) and spawned as detached strands via OP_FORK_DETACH.
          * The last child runs inline as the parent's continuation.
          *
-         * TODO(M5+/design-risks-7): replace closure-spawn with shared-frame
-         * spawn to satisfy spec §7.1 (comma-environment.chk semantics). */
+         * Known limitation: fork-thunks cannot write to chunk-top variables
+         * (they fail with EMIT_UNRESOLVED_NAME). Chunk-top declarations live
+         * in global_var_names of the parent scope, while the thunk's assign
+         * path searches only its own actvars. The global-assign fallback in
+         * emit_assign_arm is gated on parent == NULL, preventing thunks from
+         * reaching it. Reads of chunk-top vars work via the realm-slot
+         * fallback. The fix would be teaching emit_assign_arm to emit
+         * OP_SETSLOT when the thunk assigns to a chunk-top name. */
         if (e->current_fs == NULL) {
             e->error = EMIT_UNSUPPORTED_AST;
             return 0U;
@@ -791,7 +797,14 @@ uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
          *   4. OP_JOIN_WAIT  A=child_reg                 → block until child DEAD.
          *   5. OP_LOADVOID   A=result_reg                → result is void (spec §7.2).
          *
-         * TODO(M5+/design-risks-7): shared-frame spawn for spec §7.1 compliance. */
+         * Known limitation: fork-thunks cannot write to chunk-top variables
+         * (they fail with EMIT_UNRESOLVED_NAME). Chunk-top declarations live
+         * in global_var_names of the parent scope, while the thunk's assign
+         * path searches only its own actvars. The global-assign fallback in
+         * emit_assign_arm is gated on parent == NULL, preventing thunks from
+         * reaching it. Reads of chunk-top vars work via the realm-slot
+         * fallback. The fix would be teaching emit_assign_arm to emit
+         * OP_SETSLOT when the thunk assigns to a chunk-top name. */
         if (e->current_fs == NULL) {
             e->error = EMIT_UNSUPPORTED_AST;
             return 0U;

@@ -10,8 +10,9 @@
 #     1. sleep(100ms) — in REPL mode the single loader strand suspends
 #        indefinitely (no other strand to keep the scheduler alive); the
 #        statement never resumes and produces nil.
-#     2. echo("No") — `echo` is not defined at top level (use Lobby.echo or
-#        rewrite without echo).
+#     2. echo("No") — `echo` is not defined at top level. Bare `echo` is
+#        not a global alias; unqualified names inside closure bodies do not
+#        resolve to Lobby methods (use Lobby.echo explicitly).
 #   Redesign requires the ## host: driver or a test that avoids blocking sleep.
 #
 # Original urbiscript (blocked on runtime; redesign before re-activating):
