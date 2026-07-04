@@ -161,7 +161,7 @@ UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
     return node;
 }
 
-/* parse_assign_or_expr: IDENT already consumed as `name`.
+/* parse_assign_or_expr_impl: IDENT already consumed as `name`.
    Handles assignment (`x = expr`), tag-prefix (`mytag: { body }` and
    `expr: { body }`), and expression statements that start with an
    identifier (call chains, member accesses, arithmetic).
@@ -174,8 +174,13 @@ UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
    the tag-expr of an AST_TAG_PREFIX.  This enables `Tag.scope: body`
    and similar forms.  The check is inserted between parse_expression_cont
    (which builds the chain) and pipe_amp_fold (which folds `|`/`&`) —
-   exactly the split that parse_inner_tier_from_lhs performs internally. */
-static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
+   exactly the split that parse_inner_tier_from_lhs performs internally.
+
+   fold: when false, skip the trailing pipe_amp_fold so that any `|`/`&`
+   after the expression is left for the enclosing statement-level fold.
+   Used from parse_arm_stmt (H14/LANG-S02: arm context — `&` must bind
+   OUTSIDE the unbraced arm per ugrammar.y :374-378 cstmt tier). */
+static UAstNode *parse_assign_or_expr_impl(UParser *p, UToken name, bool fold) {
     /* T41 statement-start getter/setter sugar: `get IDENT (...)` or
      * `set IDENT (...)` produces an AST_PROPERTY_DECL.  Recognized only
      * in the strict 3-token shape `get|set IDENT (`; outside that
@@ -230,8 +235,15 @@ static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
         return parse_tag_prefix_from_expr(p, lhs);
     }
     /* === end W8/v0.10.5 === */
-    /* Normal expression statement: fold `|` and `&` separators. */
-    return pipe_amp_fold(p, lhs);
+    /* Normal expression statement: fold `|` and `&` separators (unless
+     * called from an arm context, where the enclosing fold handles them). */
+    if (fold) return pipe_amp_fold(p, lhs);
+    return lhs;
+}
+
+/* Public wrapper — always folds (statement-level behaviour). */
+static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
+    return parse_assign_or_expr_impl(p, name, /*fold=*/true);
 }
 
 /* --- parse_class_declaration: `class Name [: public P1, P2, ...] { body }`.
@@ -467,35 +479,79 @@ UAstNode *parse_block(UParser *p) {
     return node;
 }
 
+/* parse_arm_stmt: parse exactly ONE statement in an unbraced if/while/else
+ * arm context WITHOUT folding any trailing `|`/`&` separators.
+ *
+ * In the reference grammar (aldebaran-urbi/src/parser/ugrammar.y), the body
+ * of if/while/else is a `stmt` (:771/:968/:848), while `|`/`&` compose only
+ * at the looser `cstmt` tier (:374-378).  Both assignment forms and
+ * expression statements are `exp` → `stmt`, so `&`/`|` always bind OUTSIDE
+ * the arm regardless of LHS kind.  For example:
+ *
+ *   `if (c) o.x = 1 & b`  ≡  `(if (c) o.x = 1) & b`
+ *   `if (c) x = 1 & b`    ≡  `(if (c) x = 1) & b`
+ *
+ * parse_statement_or_expr cannot be used directly here because it calls
+ * pipe_amp_fold on if/while/block results and parse_assign_or_expr calls it
+ * on the expression path — both would absorb `&`/`|` into the arm.
+ * parse_arm_stmt skips those folds so the enclosing parse_statement_or_expr
+ * call (which wraps the whole if/while node) performs the fold instead. */
+static UAstNode *parse_arm_stmt(UParser *p) {
+    UToken t = peek(p);
+    switch (t.type) {
+    /* Nested control-flow: return the node directly without pipe_amp_fold.
+     * The enclosing statement-level fold handles any trailing `|`/`&`. */
+    case TOK_KW_WHILE: return parse_while(p);
+    case TOK_KW_IF:    return parse_if(p);
+    /* var / return / throw / try: never call pipe_amp_fold — no change needed. */
+    case TOK_KW_VAR:      return parse_var_decl(p);
+    case TOK_KW_RETURN:   return parse_return(p);
+    case TOK_KW_TRY:      return parse_try(p);
+    case TOK_KW_THROW:    return parse_throw(p);
+    case TOK_KW_AT:       return parse_at(p);
+    case TOK_KW_WHENEVER: return parse_whenever(p);
+    case TOK_KW_WAITUNTIL: return parse_waituntil(p);
+    case TOK_KW_EVERY:    return parse_every(p);
+    case TOK_KW_CLASS:    return parse_class_declaration(p);
+    case TOK_KW_ASSERT:   return parse_assert(p);
+    case TOK_KW_FOR:      return parse_for(p);
+    case TOK_KW_BREAK:    return parse_break(p);
+    case TOK_KW_CONTINUE: return parse_continue(p);
+    case TOK_KW_SWITCH:   return parse_switch(p);
+    /* Braced block: return without pipe_amp_fold (same as TOK_KW_IF above). */
+    case TOK_LBRACE:   return parse_block(p);
+    case TOK_IDENT: {
+        UToken name = consume(p);
+        /* fold=false: leave `|`/`&` for the enclosing statement fold. */
+        return parse_assign_or_expr_impl(p, name, /*fold=*/false);
+    }
+    default:
+        /* Literal, prefix op, etc.: parse_inner_tier is already fold-free. */
+        return parse_inner_tier(p);
+    }
+}
+
 /* parse_single_stmt_as_block: parse ONE statement and wrap it in a synthetic
  * single-element AST_BLOCK.  Used for unbraced if/while/else arms (H14/LANG-S02):
  *   `if (c) stmt`        →  `if (c) { stmt }`  (same AST downstream)
  *   `while (c) stmt`     →  `while (c) { stmt }`
  *   `else stmt`          →  `else { stmt }`
  *
- * "One statement" means whatever parse_statement_or_expr returns — a single
- * assignment, expression, or nested control-flow construct.  A ';' at the
- * outer tier ends the arm before we get here.
+ * "One statement" means exactly what parse_arm_stmt returns — a single
+ * assignment, expression, or nested control-flow construct.
  *
- * Fold interaction (H14 + T2 — dangling-& binding):
- *   Whether a trailing `& rhs` / `| rhs` falls inside or outside the arm
- *   depends on which parse path the arm takes:
+ * Separator binding: trailing `|`/`&` after the arm are left unconsumed by
+ * parse_arm_stmt.  The caller's pipe_amp_fold (wrapping the whole if/while
+ * node in parse_statement_or_expr) folds them OUTSIDE the arm, matching the
+ * reference grammar's stmt-vs-cstmt tiering (ugrammar.y :374-378).  This
+ * applies to ALL arm kinds — simple-assign, member-assign, call, expression.
  *
- *   a) Simple-assign arm (`x = 1`): parse_assign_after_eq_peek does NOT call
- *      pipe_amp_fold.  The `& rhs` is left unconsumed and is folded by the
- *      caller's pipe_amp_fold that wraps the whole if/while node.  So
- *      `if (c) x = 1 & { y }` parses as `(if (c) { x = 1 }) & { y }`.
- *
- *   b) Literal / call / member-assign arm: parse_inner_tier or parse_assign_or_expr
- *      both call pipe_amp_fold internally.  The `& rhs` IS consumed into the
- *      arm.  So `if (c) Realm.x = 1 & { y }` parses as
- *      `if (c) { (Realm.x = 1) & { y } }`.
- *
- *   Both are deterministic.  Dangling else always binds nearest if (standard
- *   C-style — the innermost if consumes the else before returning). */
+ * Dangling else: always binds to the nearest if (standard C-style) because
+ * the recursive parse_if inside parse_arm_stmt consumes the else before
+ * returning. */
 static UAstNode *parse_single_stmt_as_block(UParser *p) {
     UToken pos = peek(p);
-    UAstNode *stmt = parse_statement_or_expr(p);
+    UAstNode *stmt = parse_arm_stmt(p);
     if (!stmt) return (UAstNode *)&uparser_oom_sentinel;
     if (stmt->kind == AST_ERROR) return stmt;
 

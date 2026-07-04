@@ -20,8 +20,28 @@ var c = 3; var n = 0; while (c > 0) { c = c - 1; n = n + 1 }; n
 var d = 2; while (d > 0) d = d - 1; d
 [00000004] 0
 
-# --- fold interaction (H14 + T2): member-assign arm goes through
-# parse_expression_cont + pipe_amp_fold, so `& { body }` is folded INSIDE
-# the arm.  Both sides of & run when the condition is true.
-Realm.fa = 0; if (true) Realm.fa = 1 & { Realm.fa = Realm.fa + 10 }; Realm.fa
-[00000005] 11
+# --- separator binding (H14 + T2): `&` after an unbraced arm always binds
+# OUTSIDE the arm for ALL LHS kinds, matching the reference grammar's
+# stmt-vs-cstmt tiering (ugrammar.y :771/:968/:848 arm = stmt; :374-378
+# `&`/`|` at the cstmt tier only).
+# Discriminate via a false condition: if `&` binds INSIDE the arm (bug), the
+# block { Realm.z1 = 99 } runs only when the condition is true; with false it
+# would not run and z1 stays 0.  With `&` OUTSIDE (conformant), the block
+# always runs regardless of the condition.
+# member-assign LHS (was buggy — pipe_amp_fold was called inside the arm):
+Realm.fa = 0; Realm.z1 = 0; if (false) Realm.fa = 1 & { Realm.z1 = 99 }; Realm.z1
+[00000005] 99
+# simple-assign LHS (was already correct — parse_assign_after_eq_peek does
+# not call pipe_amp_fold; pinned here as a regression guard):
+var s1 = 0; Realm.z2 = 0; if (false) s1 = 1 & { Realm.z2 = 99 }; Realm.z2
+[00000006] 99
+
+# --- dangling else: `if (a) if (b) stmt else stmt` — else binds to the
+# NEAREST if (standard C-style).  With a=true, b=false the inner else fires.
+var a = 1; var b = 0; Realm.de = 0; if (a) if (b) Realm.de = 1 else Realm.de = 2; Realm.de
+[00000007] 2
+
+# --- expression-if rejection: `var r = if (true) 1 else 2` is a parse error.
+# if/while are statement forms, not expressions (REVIVAL.md §14).
+var r = if (true) 1 else 2
+[00000008] !!! <stdin>:1:9: expected expression
