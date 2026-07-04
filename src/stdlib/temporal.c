@@ -46,6 +46,7 @@
 #include "urbi/urbi.h"                /* URBI_OK / URBI_ERR_* / urbi_realm_set_global / URBI_ASSERT_NOT_ISR / URBI_LOG_WARN */
 #include "vm/uvm.h"                   /* UVM */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -138,9 +139,9 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     uint64_t period_us;
     if (args[0].kind == (uint8_t)UVAL_INT) {
         int64_t v = args[0].v.i;
-        if (v < 0) {
+        if (v <= 0) {
             return urbi_raise_type(vm,
-                "every: period must be non-negative", out);
+                "every: period must be positive", out);
         }
         period_us = (uint64_t)v;
     } else if (args[0].kind == (uint8_t)UVAL_FLOAT) {
@@ -155,9 +156,9 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
          * args[0].v.f is double on f64 builds, float on f32; promotion to
          * double for the comparison is automatic. */
         double f = (double)args[0].v.f;
-        if (!(f >= 0.0) || f > 9.2e12) {
+        if (!(f > 0.0) || f > 9.2e12) {
             return urbi_raise_type(vm,
-                "every: period must be a finite non-negative duration", out);
+                "every: period must be positive", out);
         }
         /* Cast via int64_t to reuse __fixdfdi rather than __fixunsdfdi.
          * Guard above guarantees f >= 0 and f * 1e6 <= 9.2e18 < INT64_MAX,
@@ -624,4 +625,41 @@ urbi_periodic_earliest_wake_us(const UVM *vm)
         }
     }
     return earliest;
+}
+
+/* === urbi_periodics_stop_owned_by / urbi_tag_owns_periodic =============
+ *
+ * B5 / SCHED-N2 (refactor-4, 2026-07-04): tag.stop() must cascade to the
+ * periodic list so the flagship `t: every(P) body(); t.stop()` idiom works.
+ *
+ * urbi_periodics_stop_owned_by: walk vm->periodics_head; for every periodic
+ * whose owning_tag matches, set unregister_pending.  The next
+ * urbi_periodic_pump pass (Phase 2) then frees any such periodic whose
+ * current_strand is NULL.  Called from urbi_tag_stop (uunwind.c) after the
+ * member-watcher cascade.
+ *
+ * urbi_tag_owns_periodic: returns true if at least one non-unregistered
+ * periodic has owning_tag == tag.  Called from tag_stop_native (utag_native.c)
+ * so a tag that owns a live periodic is never treated as "no active scope"
+ * by the D3 fatal-escalation check. */
+
+void
+urbi_periodics_stop_owned_by(UVM *vm, struct UTag *tag)
+{
+    UPeriodic *p = vm->periodics_head;
+    while (p != NULL) {
+        if (p->owning_tag == tag) p->unregister_pending = 1U;
+        p = p->next;
+    }
+}
+
+bool
+urbi_tag_owns_periodic(UVM *vm, const struct UTag *tag)
+{
+    const UPeriodic *p = vm->periodics_head;
+    while (p != NULL) {
+        if (p->owning_tag == tag && !p->unregister_pending) return true;
+        p = p->next;
+    }
+    return false;
 }

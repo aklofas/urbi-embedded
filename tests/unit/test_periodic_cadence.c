@@ -358,6 +358,142 @@ UTEST(every_overrun_resumes_and_quiesces)
 }
 
 /* =========================================================================
+ * Test 5: every(0) and every(0.0) are rejected (B4/SCHED-N1)
+ * =========================================================================
+ *
+ * Pre-fix: int-arm guard is v < 0, so zero passes → period_us = 0 → a
+ * perpetually-due periodic is installed (urbi_step spins RUNNING forever).
+ * Float-arm guard is !(f >= 0.0) which also passes 0.0 → same result.
+ *
+ * Post-fix: int arm v <= 0 rejects zero; float arm !(f > 0.0) rejects 0.0.
+ * Both raise TypeError → loader strand fatal → no periodic installed.
+ *
+ * IMPORTANT: do NOT use urbi_repl_eval here.  Pre-fix, every(0) installs a
+ * periodically-due periodic that would hang urbi_repl_eval's internal drain
+ * loop.  utest_e2e_compile_and_run drives urbi_run_chunk which exits as soon
+ * as the loader strand dies (no drain) — safe against the pre-fix hang. */
+UTEST(every_zero_period_raises)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    vm.host_time_us = cadence_mock_clock;
+    vm.host_time_ud = NULL;
+    g_cadence_now_us = 0;
+
+    /* every(0) { 1 } — integer zero.
+     * Pre-fix: passes v < 0 guard → period_us = 0 → periodic installed.
+     * Post-fix: v <= 0 → TypeError → no periodic.  Red: non-NULL head. */
+    UASSERT(vm.periodics_head == NULL);
+    (void)utest_e2e_compile_and_run(&vm, "every(0) { 1 }", NULL);
+    UASSERT(vm.periodics_head == NULL);   /* red pre-fix: non-NULL */
+
+    /* every(0.0) { 1 } — float zero.
+     * Pre-fix: !(0.0 >= 0.0) = false → passes guard → period_us = 0 → installed.
+     * Post-fix: !(0.0 > 0.0) = true → TypeError → no periodic. */
+    (void)utest_e2e_compile_and_run(&vm, "every(0.0) { 1 }", NULL);
+    UASSERT(vm.periodics_head == NULL);   /* red pre-fix: non-NULL */
+
+    urbi_vm_destroy(&vm);
+}
+
+/* =========================================================================
+ * Test 6: tag.stop() cancels a tag-owned every() periodic (B5/SCHED-N2)
+ * =========================================================================
+ *
+ * The flagship urbiscript cancel idiom:
+ *   Realm.mytag: every(P) body(); Realm.mytag.stop()
+ *
+ * Pre-fix bugs:
+ *   (a) urbi_tag_stop does not walk vm->periodics_head so the periodic keeps
+ *       firing after .stop() returns (body re-arms with UEXEC_OK).
+ *   (b) tag_stop_native's D3 "no active scope" check fires spuriously when
+ *       member_strands_head == NULL (body strand died after its last fire)
+ *       even though the tag legitimately owns a live periodic.  This deposits
+ *       a fatal on the calling strand, making .stop() return STRAND_FATAL.
+ *
+ * Post-fix:
+ *   urbi_tag_stop cascades via urbi_periodics_stop_owned_by → sets
+ *   unregister_pending on all owned periodics.  tag_stop_native adds
+ *   !urbi_tag_owns_periodic(vm, t) to the D3 condition so a periodic-owning
+ *   tag is never treated as "no active scope". */
+UTEST(tag_stop_cancels_owned_periodic)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    vm.host_time_us = cadence_mock_clock;
+    vm.host_time_ud = NULL;
+    g_cadence_now_us = 0;
+    g_overrun_fires   = 0;
+    g_overrun_bump_us = 0;   /* body just counts; does NOT advance the clock */
+
+    /* Register tick() so the every() body can call it. */
+    UASSERT_EQ(URBI_OK, urbi_register(&vm, NULL, "tick", overrun_tick));
+
+    /* Boot stdlib so typeerror_proto is resolved (cleaner error paths). */
+    char out[256];
+    UASSERT_EQ(URBI_OK, urbi_repl_eval(&vm, NULL, "1", 1, out, sizeof out));
+
+    /* Install the periodic under Realm.mytag so the tag handle persists across
+     * urbi_repl_eval calls.  The `Realm.mytag:` tag-scope ensures that
+     * innermost_user_tag returns Realm.mytag and sets p->owning_tag.
+     * The urbi_repl_eval drain quiesces at WAKE_AT(100) — clock is at 0 and
+     * next_fire_us = 100us, so the periodic does not fire during the drain. */
+    const char *install_src =
+        "Realm.mytag = Tag.new(); Realm.mytag: every (100us) { tick() }";
+    int rc = urbi_repl_eval(&vm, NULL, install_src, strlen(install_src),
+                            out, sizeof out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT(vm.periodics_head != NULL);
+    UASSERT(vm.periodics_head->owning_tag != NULL);   /* tag was captured */
+    UASSERT_EQ(0ULL, (unsigned long long)g_overrun_fires);  /* not due yet */
+
+    /* Advance clock to the first deadline; one urbi_step → exactly one fire. */
+    g_cadence_now_us = vm.periodics_head->next_fire_us;   /* 100us */
+    {
+        UStepResult res = URBI_STEP_RUNNING;
+        uint64_t    wake = 0U;
+        int         n = 0;
+        while (res == URBI_STEP_RUNNING && n++ < 16) {
+            res = urbi_step(&vm, 4096ULL, &wake);
+        }
+        UASSERT(res == URBI_STEP_WAKE_AT || res == URBI_STEP_QUIESCENT);
+    }
+    UASSERT_EQ(1ULL, (unsigned long long)g_overrun_fires);
+    UASSERT(vm.periodics_head != NULL);   /* still alive, re-armed at 200us */
+
+    /* Call Realm.mytag.stop() from script.
+     * Pre-fix: member_strands_head == NULL (body died) → D3 fires →
+     *          vm.last_errmsg = "tag.stop with no active scope" →
+     *          URBI_ERR_STRAND_FATAL.
+     * Post-fix: urbi_tag_owns_periodic returns true → D3 bypassed;
+     *           urbi_periodics_stop_owned_by sets unregister_pending;
+     *           URBI_OK + empty last_errmsg. */
+    const char *stop_src = "Realm.mytag.stop()";
+    rc = urbi_repl_eval(&vm, NULL, stop_src, strlen(stop_src), out, sizeof out);
+    UASSERT_EQ(URBI_OK, rc);                                      /* red pre-fix */
+    UASSERT(strstr(vm.last_errmsg, "no active scope") == NULL);   /* red pre-fix */
+
+    /* The drain inside urbi_repl_eval calls urbi_step which calls
+     * urbi_periodic_pump.  Phase 2 frees the periodic (unregister_pending &&
+     * current_strand == NULL).  vm.periodics_head is now NULL. */
+
+    /* Advance 3 more periods; the periodic must NOT fire. */
+    g_cadence_now_us += 300;   /* 3 × 100us */
+    {
+        UStepResult res = URBI_STEP_RUNNING;
+        uint64_t    wake = 0U;
+        int         n = 0;
+        while (res == URBI_STEP_RUNNING && n++ < 16) {
+            res = urbi_step(&vm, 4096ULL, &wake);
+        }
+    }
+    UASSERT_EQ(1ULL, (unsigned long long)g_overrun_fires);   /* unchanged */
+    UASSERT(vm.periodics_head == NULL);   /* freed by pump sweep */
+
+    urbi_vm_destroy(&vm);
+}
+
+/* =========================================================================
  * Suite entry point
  * ========================================================================= */
 
@@ -371,4 +507,8 @@ void test_periodic_cadence_suite(void)
               every_overrun_resumes_and_quiesces);
     utest_run("periodic_cadence: every/sleep reject INFINITY and overflow (SCHED-14 guards)",
               every_and_sleep_reject_nonfinite);
+    utest_run("periodic_cadence: every(0) and every(0.0) are rejected (B4/SCHED-N1)",
+              every_zero_period_raises);
+    utest_run("periodic_cadence: tag.stop() cancels tag-owned periodic (B5/SCHED-N2/LANG-S03)",
+              tag_stop_cancels_owned_periodic);
 }

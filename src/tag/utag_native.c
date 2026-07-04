@@ -52,6 +52,7 @@
  * pulled in by vm/uvm.h above. */
 #include "sched/ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
 #include "runtime/ucleanup.h"        /* UCleanupEntry, UCLEANUP_TAG_SCOPE (W2 v0.10.9) */
+#include "stdlib/temporal.h"         /* urbi_tag_owns_periodic (B5/SCHED-N2) */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -297,6 +298,14 @@ tag_stop_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
 
     UValue stop_value = (nargs == 1) ? args[0] : urbi_make_nil();
 
+    /* B5/SCHED-N2 (2026-07-04): snapshot whether the tag owns a live periodic
+     * BEFORE calling urbi_tag_stop.  urbi_tag_stop now calls
+     * urbi_periodics_stop_owned_by which sets unregister_pending=1, so a
+     * post-stop call to urbi_tag_owns_periodic would return false even for a tag
+     * that DID own a live periodic.  Snapshotting here preserves the pre-stop
+     * "this tag has a reason to exist" verdict for the D3 guard below. */
+    bool had_periodic = urbi_tag_owns_periodic(vm, t);
+
     /* Cross-strand deposit on member strands (existing path). */
     urbi_tag_stop(vm, t, stop_value);
 
@@ -313,9 +322,14 @@ tag_stop_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
      * (urbi_repl_eval at src/chunk/uchunk_strand.c) doesn't silently
      * convert the fatal-escalated strand to nil — script-level unhandled
      * `throw` keeps that recovery contract; D3 outside-scope tag.stop()
-     * surfaces as a visible runtime error per the ratified semantics. */
+     * surfaces as a visible runtime error per the ratified semantics.
+     *
+     * B5/SCHED-N2: !had_periodic guards the case where the tag owns a live
+     * periodic (e.g. `t: every(P) body()`) — a legitimate stop target even when
+     * member_strands_head is empty (body strand completed its last fire). */
     if (t->member_strands_head == NULL &&
-        !strand_has_tag_in_scope(vm->cur_strand, t)) {
+        !strand_has_tag_in_scope(vm->cur_strand, t) &&
+        !had_periodic) {
         vm->last_error = UVM_TYPE_ERROR;
         urbi_strncpy_truncating(vm->last_errmsg, UVM_ERRMSG_CAP,
             "tag.stop with no active scope");

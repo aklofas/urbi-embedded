@@ -1,0 +1,33 @@
+# Covers: tag.stop() cancels an every() periodic created under that tag
+# — the flagship urbiscript cancellation idiom (refactor-4 B5/SCHED-N2).
+#
+# Setup: Realm.mytag is created and used as the tag scope for an every()
+# periodic.  The tag handle is stored in Realm.mytag so it persists across
+# separate urbi_repl_eval calls in the host driver.
+#
+# After one period fires (advance-clock 100ms, step), Realm.fired = 1.
+# Calling Realm.mytag.stop() must:
+#   (a) NOT raise "tag.stop with no active scope" fatal (the tag owns a
+#       live periodic even though member_strands_head is empty post-fire);
+#   (b) set unregister_pending on the periodic so no further fires occur.
+# After a further advance-clock 300ms and step, Realm.fired must still be 1.
+#
+## timeout: 30
+## host: run Realm.fired = 0
+## host: run Realm.mytag = Tag.new()
+## host: run Realm.mytag: every (0.0001) { Realm.fired = Realm.fired + 1 }
+## host: advance-clock 100
+## host: step 100000
+## host: run Realm.fired
+## host: run Realm.mytag.stop()
+## host: advance-clock 300
+## host: step 100000
+## host: run Realm.fired
+[00000000] 0
+[00000000] <Tag>
+[00000000] nil
+[00000000] step: WAKE_AT
+[00000000] 1
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] 1

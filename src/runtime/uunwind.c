@@ -34,6 +34,7 @@
 #include "sched/usched_cooperative.h" /* urbi_sched_strand_unpark, urbi_sched_runnable_inc */
 #include "runtime/umacros.h"      /* URBI_INTERNAL_ASSERT */
 #include "tag/utag.h"               /* UTag, member_strands_head */
+#include "stdlib/temporal.h"        /* urbi_periodics_stop_owned_by (B5/SCHED-N2) */
 #include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
 #include <stddef.h>
 #include <stdint.h>
@@ -880,7 +881,15 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
         }
     }
 
-    /* (3) Return synchronously — all deposits are complete. */
+    /* (3) Periodic cascade (B5/SCHED-N2): mark every periodic owned by this tag
+     * for unregistration.  The next urbi_periodic_pump Phase 2 pass frees them
+     * once their current_strand reaches NULL.
+     *
+     * Kept in temporal.c (urbi_periodics_stop_owned_by) so this TU never touches
+     * UPeriodic internals. */
+    urbi_periodics_stop_owned_by(vm, tag);
+
+    /* (4) Return synchronously — all deposits are complete. */
     return URBI_OK;
 }
 

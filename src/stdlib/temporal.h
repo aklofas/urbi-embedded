@@ -31,6 +31,7 @@
 #ifndef URBI_STDLIB_TEMPORAL_H
 #define URBI_STDLIB_TEMPORAL_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "urbi/types.h"   /* UValue (needed for UGcRootCallback signature) */
@@ -159,6 +160,26 @@ void urbi_periodic_destroy_all(struct UVM *vm);
  * UINT64_MAX when no live periodic exists.  Read-only (const vm — callable
  * from urbi_vm_liveness).  Used by urbi_step to compute URBI_STEP_WAKE_AT. */
 uint64_t urbi_periodic_earliest_wake_us(const struct UVM *vm);
+
+/* urbi_periodics_stop_owned_by (B5/SCHED-N2, 2026-07-04)
+ *
+ * Walk vm->periodics_head and set unregister_pending on every periodic whose
+ * owning_tag == tag.  The next urbi_periodic_pump Phase 2 pass frees those
+ * periodics once their current_strand is NULL.
+ *
+ * Called from urbi_tag_stop (uunwind.c) after the member-watcher cascade.
+ * Kept in temporal.c so uunwind.c/utag_native.c never touch UPeriodic
+ * internals directly. */
+void urbi_periodics_stop_owned_by(struct UVM *vm, struct UTag *tag);
+
+/* urbi_tag_owns_periodic (B5/SCHED-N2, 2026-07-04)
+ *
+ * Returns true if at least one live (non-unregistered) periodic has
+ * owning_tag == tag.  Called from tag_stop_native (utag_native.c) to guard
+ * the D3 "no active scope" fatal escalation: a tag that owns a live periodic
+ * is a valid stop target even when member_strands_head is empty (the body
+ * strand may have completed its last fire before .stop() was called). */
+bool urbi_tag_owns_periodic(struct UVM *vm, const struct UTag *tag);
 
 #ifdef __cplusplus
 }
