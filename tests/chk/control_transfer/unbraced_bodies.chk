@@ -2,7 +2,7 @@
 # Covers: unbraced single-statement bodies for if/while/else — the reference
 # stdlib itself uses these forms (legacy object.u:15: `if (this) false else true`).
 # NOTE: if/while are statement forms, not expressions — `var x = if (c) e` is a
-# parse error (non-expression, ledgered; see REVIVAL.md §14).
+# parse error (non-expression — a deliberate design decision).
 
 # --- unbraced if/else: true branch (mirror of `if (this) false else true`)
 if (true) 42 else 7
@@ -50,6 +50,6 @@ var a = 1; var b = 0; Realm.de = 0; if (a) if (b) Realm.de = 1 else Realm.de = 2
 [00000009] 2
 
 # --- expression-if rejection: `var r = if (true) 1 else 2` is a parse error.
-# if/while are statement forms, not expressions (REVIVAL.md §14).
+# if/while are statement forms, not expressions (deliberate design decision).
 var r = if (true) 1 else 2
 [00000010] !!! <stdin>:1:9: expected expression
