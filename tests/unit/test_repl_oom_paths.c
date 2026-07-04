@@ -34,6 +34,31 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ---- AllocSpy for N3 two-phase OOM test ---------------------------------- */
+
+typedef struct {
+    int alloc_calls;   /* total calls so far */
+    int fail_at;       /* -1 = never fail; fail when alloc_calls > fail_at */
+    int outstanding;   /* net live blocks (new alloc = +1, free = -1) */
+} ReplAllocSpy;
+
+static void *
+repl_spy_alloc(void *ptr, size_t n, void *ud)
+{
+    ReplAllocSpy *spy = (ReplAllocSpy *)ud;
+    if (n == 0) {
+        if (ptr != NULL) { free(ptr); spy->outstanding--; }
+        return NULL;
+    }
+    spy->alloc_calls++;
+    if (spy->fail_at >= 0 && spy->alloc_calls > spy->fail_at) {
+        return NULL;  /* OOM injection */
+    }
+    void *p = realloc(ptr, n);
+    if (p != NULL && ptr == NULL) spy->outstanding++;
+    return p;
+}
+
 #define UTEST(name) static void name(void)
 
 /* ---- Helpers ------------------------------------------------------------- */
@@ -271,6 +296,55 @@ UTEST(repl_oom_server_survives_failed_session_create)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(repl_oom_state_create_fail_full_teardown)
+{
+    /* Two-phase AllocSpy test for the final OOM arm in urbi_repl_serve.
+     *
+     * urepl_state_create is the only vm->alloc_fn call inside urbi_repl_serve.
+     * Phase A: run urbi_vm_create with a never-fail spy to count how many
+     *          vm->alloc_fn calls VM initialisation uses (the baseline).
+     * Phase B: create a fresh VM with the same spy, arm it to fail on the
+     *          very next alloc after the baseline (= urepl_state_create),
+     *          and verify urbi_repl_serve returns NULL.  Under ASan/LSAN,
+     *          this also verifies the three mutexes + job queue + auth
+     *          limiter that were already allocated are properly freed. */
+
+    /* Phase A: measure alloc baseline for urbi_vm_create. */
+    ReplAllocSpy spy = { 0, -1, 0 };
+    struct UVM *vm = urbi_vm_create(repl_spy_alloc, &spy);
+    UASSERT_NE(vm, NULL);
+    int baseline = spy.alloc_calls;
+    urbi_vm_free(vm);
+    UASSERT_EQ(spy.outstanding, 0);
+
+    /* Phase B: arm spy to fail on call #(baseline+1) = urepl_state_create. */
+    spy.alloc_calls = 0;
+    spy.fail_at     = baseline;
+    spy.outstanding = 0;
+
+    vm = urbi_vm_create(repl_spy_alloc, &spy);
+    UASSERT_NE(vm, NULL);
+    /* VM init must have used exactly the same number of allocs as Phase A. */
+    UASSERT_EQ(spy.alloc_calls, baseline);
+
+    UReplConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.bind_addr = "127.0.0.1";
+    cfg.tcp_port  = -1;
+
+    int err = URBI_OK;
+    UReplServer *server = urbi_repl_serve(vm, &cfg, &err);
+    /* urepl_state_create must have returned NULL → serve returns NULL. */
+    UASSERT_EQ(server, NULL);
+    UASSERT_NE(err, URBI_OK);
+
+    urbi_vm_free(vm);
+    /* spy.outstanding tracks only vm->alloc_fn allocations; should be 0. */
+    UASSERT_EQ(spy.outstanding, 0);
+    /* ASan/LSAN verifies that the mutexes/job_queue/auth_limiter allocated via
+     * calloc were also freed by the fixed teardown arm. */
+}
+
 #endif /* URBI_ENABLE_REPL */
 
 void
@@ -288,6 +362,8 @@ test_repl_oom_paths_suite(void)
               repl_oom_output_ringbuf_not_inited_session_null);
     utest_run("repl_oom_server_survives_failed_session_create",
               repl_oom_server_survives_failed_session_create);
+    utest_run("repl_oom_state_create_fail_full_teardown",
+              repl_oom_state_create_fail_full_teardown);
 #else
     printf("test_repl_oom_paths (URBI_ENABLE_REPL=0, skipped)\n");
 #endif

@@ -596,6 +596,30 @@ Two known issues filed in `docs/urbi-embedded-design-risks.md`:
   documented in `docs/internals/repl-teardown.md`.  TSAN coverage
   deferred to v1.x (image lacks runtime).
 
+## Uncaught-throw contract
+
+The interactive `urbi_repl_eval` entry point and the batch/embedding entry
+points (`urbi_vm_run`, `urbi_run_chunk`) behave differently when an urbiscript
+`throw` reaches the top of the evaluation frame with no matching `catch`.
+
+**Interactive REPL (`urbi_repl_eval`):** a scalar throw (string, number, or
+other non-Exception value) is silently recovered to `nil`, and the function
+returns `URBI_OK`. The `!!!` diagnostic prefix is printed to the session's
+output channel when an Exception-instance throw carries a message in
+`vm->last_errmsg`. Scalar throws leave `vm->last_errmsg` empty — the recovery
+path keys on the empty field to distinguish a scalar throw (nil-recover) from a
+system fatal (OOM, type error) where `last_errmsg` is populated. This behavior
+is pinned by `tests/chk/control_transfer/throw_uncaught.chk`.
+
+**Batch and embedding paths (`urbi_vm_run`, `urbi_run_chunk`):** an uncaught
+throw returns `URBI_ERR_UNCAUGHT_THROW` (-18). These entry points do not
+silently recover; an unhandled throw is treated as a fatal error the embedder
+must handle. `vm->last_errmsg` is populated with a diagnostic string for all
+uncaught throws on this path.
+
+In summary: the REPL treats uncaught scalar throws as a user-level event and
+keeps the session alive; the batch paths treat them as errors.
+
 ## See also
 
 - `docs/embedding-guide.md` §12 — public-facing how-to for embedders.

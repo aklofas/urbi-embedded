@@ -184,6 +184,20 @@ ringbuf_write_locked(UReplRingbuf *rb, const char *data, size_t n)
         rb->read_pos = (rb->read_pos + drop) % rb->cap;
         rb->fill -= drop;
         rb->overflow = true;
+        /* Extend the drop through the next '\n' so read_pos always starts a
+         * complete NDJSON frame.  Without this, the raw-byte drop may land
+         * mid-frame, desyncing the client's line parser.  We consume bytes
+         * one at a time until we find '\n' (which we also consume, so
+         * read_pos lands on the first byte of the following frame) or we
+         * exhaust all remaining data (fill → 0, new data written fresh). */
+        while (rb->fill > 0) {
+            char c = rb->buf[rb->read_pos];
+            rb->read_pos = (rb->read_pos + 1) % rb->cap;
+            rb->fill -= 1;
+            if (c == '\n') {
+                break;
+            }
+        }
     }
     /* Write at (read_pos + fill) wrap. */
     size_t write_pos = (rb->read_pos + rb->fill) % rb->cap;
@@ -255,6 +269,23 @@ urepl_ringbuf_overflow(UReplRingbuf *rb)
     }
     UREPL_MUTEX_LOCK(&rb->mutex);
     bool o = rb->overflow;
+    UREPL_MUTEX_UNLOCK(&rb->mutex);
+    return o;
+}
+
+/* Read-and-clear the overflow flag.  Returns true once after an overflow,
+ * then false until the next overflow event.  Lock discipline: acquires
+ * rb->mutex alone (same lock as ringbuf_write_locked); no new lock-order
+ * edge is introduced. */
+bool
+urepl_ringbuf_overflow_consume(UReplRingbuf *rb)
+{
+    if (rb == NULL || !rb->inited) {
+        return false;
+    }
+    UREPL_MUTEX_LOCK(&rb->mutex);
+    bool o = rb->overflow;
+    rb->overflow = false;
     UREPL_MUTEX_UNLOCK(&rb->mutex);
     return o;
 }

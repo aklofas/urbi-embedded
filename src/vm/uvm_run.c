@@ -121,6 +121,21 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
      * urbi_vm_run; that cached instance is shadowed by this fresh one (prepended to
      * vm->module_instances_head) but both are functionally correct. */
     strand.module_instance = urbi_chunk_instance_create(vm, (UProto *)root);
+    if (strand.module_instance == NULL) {
+        vm->last_error = UVM_OOM;
+        /* T33: unlink stack-local transient from realm before ustrand_destroy,
+         * mirroring src/sched/ustrand.c:699-700 and the normal-exit path below. */
+        if (strand.realm != NULL && strand.realm->strands_head != NULL) {
+            UStrand **pp = &strand.realm->strands_head;
+            while (*pp != NULL) {
+                if (*pp == &strand) { *pp = strand.next_in_realm; break; }
+                pp = &(*pp)->next_in_realm;
+            }
+            strand.realm = NULL;
+        }
+        ustrand_destroy(&strand, vm);
+        return UVM_OOM;
+    }
     strand.frame_count = 0;
     strand.open_upvals = NULL;
     strand.out_slot   = out;  /* OP_RET at top-frame writes *out_slot */

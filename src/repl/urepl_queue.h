@@ -107,4 +107,9 @@ size_t urepl_ringbuf_fill (UReplRingbuf *rb);
 /* Sticky overflow flag; cleared by reset. */
 bool   urepl_ringbuf_overflow(UReplRingbuf *rb);
 
+/* Read-and-clear the overflow flag.  Returns true once after an overflow,
+ * then false until the next overflow event.  Intended for the dispatch path
+ * to emit exactly one overflow error envelope per overflow event. */
+bool   urepl_ringbuf_overflow_consume(UReplRingbuf *rb);
+
 #endif /* SRC_REPL_UREPL_QUEUE_H */

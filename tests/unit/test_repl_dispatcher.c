@@ -227,14 +227,17 @@ UTEST(ringbuf_overflow_drops_oldest)
     UReplRingbuf rb;
     UASSERT_EQ(urepl_ringbuf_init(&rb, 8), URBI_OK);
     urepl_ringbuf_write(&rb, "AAAAAAAA", 8);
-    /* Now overflow by 4 bytes -- should drop the first 4 of the original. */
+    /* Overflow by 4 bytes.  REPL-02 frame-boundary fix: after the raw drop of 4
+     * bytes, the scan continues consuming bytes until it finds '\n' or exhausts
+     * the ring.  "AAAAAAAA" has no '\n', so the scan empties the ring; then "BBBB"
+     * is written fresh.  Result: fill=4, content="BBBB". */
     urepl_ringbuf_write(&rb, "BBBB", 4);
     UASSERT(urepl_ringbuf_overflow(&rb) == true);
-    UASSERT_EQ(urepl_ringbuf_fill(&rb), 8);
+    UASSERT_EQ(urepl_ringbuf_fill(&rb), (size_t)4U);
     char out[16];
     size_t n = urepl_ringbuf_read(&rb, out, 16);
-    UASSERT_EQ(n, 8);
-    UASSERT(memcmp(out, "AAAABBBB", 8) == 0);
+    UASSERT_EQ(n, (size_t)4U);
+    UASSERT(memcmp(out, "BBBB", 4) == 0);
     urepl_ringbuf_destroy(&rb);
 }
 

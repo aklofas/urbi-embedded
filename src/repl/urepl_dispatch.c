@@ -652,6 +652,23 @@ urepl_dispatch_job(UReplServer *server, UReplJob *job)
         return;
     }
 
+    /* REPL-02: consume the output-ring overflow flag once per overflow event.
+     * The output ring drops oldest bytes (and with the frame-boundary fix,
+     * extends through the next '\n') when the writer outruns the reader.
+     * Emit one error envelope per event so the client knows output was lost,
+     * then clear the flag so subsequent jobs do not re-emit it.
+     * id=0 → lobby-scoped (not tied to a specific eval request). */
+    if (urepl_ringbuf_overflow_consume(&s->output)) {
+        char ofenv[256];
+        size_t ofn = 0;
+        if (urepl_ndjson_emit_error(ofenv, sizeof(ofenv), 0,
+                                    "overflow",
+                                    "output overflow: frames dropped",
+                                    &ofn) == 0) {
+            push_env(s, ofenv, ofn);
+        }
+    }
+
     /* === W4: per-source job rate limit ===
      * Enforce rate_limit_per_second when configured.  Uses wall-clock seconds
      * to define the window.  On the first job of each new second the counter

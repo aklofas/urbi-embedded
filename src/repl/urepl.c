@@ -147,9 +147,20 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
      * W3/v0.10.4: vm->repl is a UReplState wrapper; allocate on first use. */
     vm->repl = urepl_state_create(vm);
     if (vm->repl == NULL) {
-        /* OOM: server allocation succeeded but state wrapper failed.
-         * Destroy the server and signal failure to the caller. */
+        /* OOM: state wrapper failed — mirror the earlier error arms and free
+         * the mutexes, job queue, and auth limiter that were already allocated. */
+        if (server->auth_limiter != NULL) {
+            free(server->auth_limiter);
+        }
+        urepl_queue_destroy(server->job_queue);
+        free(server->job_queue);
+        UREPL_MUTEX_DESTROY(&server->accept_queue_mutex);
+        UREPL_MUTEX_DESTROY(&server->auth_limiter_mutex);
+        UREPL_MUTEX_DESTROY(&server->sessions_mutex);
         free(server);
+        if (out_err != NULL) {
+            *out_err = URBI_ERR_OOM;
+        }
         return NULL;
     }
     vm->repl->server = server;

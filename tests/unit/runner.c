@@ -289,6 +289,7 @@ extern void test_repl_security_output_isolation_suite(void);
 extern void test_repl_oom_paths_suite(void);
 extern void test_repl_stop_path_suite(void);
 extern void test_repl_backpressure_suite(void);
+extern void test_repl_queue_suite(void);
 extern void test_introspect_each_suite(void);
 extern void test_json_parse_suite(void);
 extern void test_require_suite(void);
@@ -620,6 +621,7 @@ static const struct suite_entry suites[] = {
     {"repl_oom_paths",                   test_repl_oom_paths_suite},
     {"repl_stop_path",                   test_repl_stop_path_suite},
     {"repl_backpressure",                test_repl_backpressure_suite},
+    {"repl_queue",                       test_repl_queue_suite},
     {"introspect_each",                  test_introspect_each_suite},
     {"json_parse",                       test_json_parse_suite},
     {"require",                          test_require_suite},
