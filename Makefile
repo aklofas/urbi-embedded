@@ -1561,6 +1561,11 @@ $(FUZZ_BUILDDIR)/fuzz_json: tests/fuzz/fuzz_json.c src/repl/ujson.c src/repl/ure
 	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ \
 	    tests/fuzz/fuzz_json.c src/repl/ujson.c src/repl/urepl_ndjson.c
 
+# refactor-4 REPL-N1: the bytecode chunk loader — the surface with the actual
+# stack-overflow finding (B3).  Links the full runtime like fuzz_vm/lex/parse.
+$(FUZZ_BUILDDIR)/fuzz_chunk: tests/fuzz/fuzz_chunk.c $(FUZZ_SRC) | $(FUZZ_BUILDDIR)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(FUZZ_SRC) tests/fuzz/fuzz_chunk.c -lm
+
 fuzz-lex: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex
 	@echo "running fuzz_lex (Ctrl-C to stop; use -runs=N for bounded)"
 	$(FUZZ_BUILDDIR)/fuzz_lex
@@ -1577,7 +1582,11 @@ fuzz-json: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_json
 	@echo "running fuzz_json (Ctrl-C to stop; use -runs=N for bounded)"
 	$(FUZZ_BUILDDIR)/fuzz_json
 
-fuzz-build: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm $(FUZZ_BUILDDIR)/fuzz_json
+fuzz-chunk: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_chunk
+	@echo "running fuzz_chunk (Ctrl-C to stop; use -runs=N for bounded)"
+	$(FUZZ_BUILDDIR)/fuzz_chunk tests/fuzz/seeds/chunk/
+
+fuzz-build: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm $(FUZZ_BUILDDIR)/fuzz_json $(FUZZ_BUILDDIR)/fuzz_chunk
 
 # refactor-3 TEST-GAP-02: bounded fuzz smoke for releasetest Phase 1.
 # -runs=20000 per harness (sub-second each; -max_total_time bounds pathology).
@@ -1592,12 +1601,13 @@ test-fuzz-smoke:
 	    echo "================================================================"; \
 	    exit 0; \
 	fi
-	@$(MAKE) --no-print-directory $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm $(FUZZ_BUILDDIR)/fuzz_json
+	@$(MAKE) --no-print-directory $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm $(FUZZ_BUILDDIR)/fuzz_json $(FUZZ_BUILDDIR)/fuzz_chunk
 	$(FUZZ_BUILDDIR)/fuzz_lex   -runs=20000 -max_total_time=120
 	$(FUZZ_BUILDDIR)/fuzz_parse -runs=20000 -max_total_time=120
 	$(FUZZ_BUILDDIR)/fuzz_vm    -runs=20000 -max_total_time=120
 	$(FUZZ_BUILDDIR)/fuzz_json  -runs=20000 -max_total_time=120
-	@echo "test-fuzz-smoke: 4 harnesses x 20000 bounded runs clean"
+	$(FUZZ_BUILDDIR)/fuzz_chunk -runs=20000 -max_total_time=120 tests/fuzz/seeds/chunk/
+	@echo "test-fuzz-smoke: 5 harnesses x 20000 bounded runs clean"
 
 fuzz-tools:
 	@command -v $(FUZZ_CC) >/dev/null 2>&1 || { \

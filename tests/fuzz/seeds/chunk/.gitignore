@@ -1,0 +1,5 @@
+# Ignore libFuzzer-generated corpus entries (hash-named files written at
+# runtime).  Hand-crafted seeds are named seed*.bin and tracked explicitly.
+*
+!.gitignore
+!seed*.bin
