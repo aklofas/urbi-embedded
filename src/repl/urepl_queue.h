@@ -112,4 +112,11 @@ bool   urepl_ringbuf_overflow(UReplRingbuf *rb);
  * to emit exactly one overflow error envelope per overflow event. */
 bool   urepl_ringbuf_overflow_consume(UReplRingbuf *rb);
 
+/* Return true when at least n free bytes are available in the ring without
+ * displacing any existing content.  Conservative: a concurrent reader may
+ * free additional space between this call and a subsequent write, but the
+ * sole writer (VM thread) cannot reduce headroom between the check and the
+ * write.  Lock discipline: acquires rb->mutex alone. */
+bool   urepl_ringbuf_headroom(UReplRingbuf *rb, size_t n);
+
 #endif /* SRC_REPL_UREPL_QUEUE_H */

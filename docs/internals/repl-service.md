@@ -602,23 +602,44 @@ The interactive `urbi_repl_eval` entry point and the batch/embedding entry
 points (`urbi_vm_run`, `urbi_run_chunk`) behave differently when an urbiscript
 `throw` reaches the top of the evaluation frame with no matching `catch`.
 
-**Interactive REPL (`urbi_repl_eval`):** a scalar throw (string, number, or
-other non-Exception value) is silently recovered to `nil`, and the function
-returns `URBI_OK`. The `!!!` diagnostic prefix is printed to the session's
-output channel when an Exception-instance throw carries a message in
-`vm->last_errmsg`. Scalar throws leave `vm->last_errmsg` empty — the recovery
-path keys on the empty field to distinguish a scalar throw (nil-recover) from a
-system fatal (OOM, type error) where `last_errmsg` is populated. This behavior
-is pinned by `tests/chk/control_transfer/throw_uncaught.chk`.
+**Interactive REPL (`urbi_repl_eval`):** behavior depends on the thrown type,
+as pinned by `tests/chk/control_transfer/throw_uncaught.chk` and the
+interactive binary:
 
-**Batch and embedding paths (`urbi_vm_run`, `urbi_run_chunk`):** an uncaught
-throw returns `URBI_ERR_UNCAUGHT_THROW` (-18). These entry points do not
-silently recover; an unhandled throw is treated as a fatal error the embedder
-must handle. `vm->last_errmsg` is populated with a diagnostic string for all
-uncaught throws on this path.
+- *Scalar throw* (`throw 99`): `urbi_repl_eval` returns `URBI_OK` with
+  `out_buf` set to `"nil"`. `vm->last_errmsg` is left empty. Interactive
+  output: `[00000000] nil`.  The session stays alive.
+- *Exception-instance throw* (`throw Exception.new("boom")`):
+  `capture_uncaught_throw_diag` extracts the instance's `message` slot into
+  `vm->last_errmsg`, copies it to `out_buf`, and `urbi_repl_eval` returns
+  `URBI_ERR_STRAND_FATAL`.  Interactive output: `[00000000] !!! boom`
+  (the `!!!` framing is added by `tools/urbi.c`'s print loop, not written to
+  the NDJSON output channel).  Via the NDJSON dispatcher, `dispatch_eval`
+  receives `URBI_ERR_STRAND_FATAL` and emits
+  `{"kind":"error","code":"runtime","msg":"boom"}`.  The session stays alive.
 
-In summary: the REPL treats uncaught scalar throws as a user-level event and
-keeps the session alive; the batch paths treat them as errors.
+The recovery path keys on whether `vm->last_errmsg` is empty to distinguish a
+scalar throw (nil-recover, `URBI_OK`) from an Exception-typed throw (diagnostic
+surface, `URBI_ERR_STRAND_FATAL`) and from a system fatal (OOM, type error)
+where `last_errmsg` is also populated but `vm->last_error != UVM_OK`.
+
+**Batch path (`urbi_run_chunk`):** an uncaught throw returns
+`URBI_ERR_UNCAUGHT_THROW` (-18). `*out_result` is set to nil (not the thrown
+value).  `vm->last_errmsg` carries a diagnostic for Exception-typed throws and
+is empty for scalar throws — the same distinction as the REPL path above.
+
+**Low-level path (`urbi_vm_run`):** an uncaught throw returns
+`URBI_ERR_UNCAUGHT_THROW` (-18).  `vm->last_errmsg` is populated for both
+scalar and Exception-typed throws: when `last_errmsg` is empty on entry to the
+fatal-detection arm, `uvalue_format` formats the thrown value into it (see
+`src/vm/uvm_run.c`).  When `out` is non-NULL, `urbi_vm_run` delivers the thrown
+value in `*out` (mirroring `include/urbi/urbi.h`'s contract for
+`URBI_ERR_UNCAUGHT_THROW`); `urbi_run_chunk` sets `*out_result` to nil instead.
+
+In summary: the REPL treats scalar throws as a user-level no-op (nil result,
+session alive) and Exception throws as a surfaced diagnostic (error envelope,
+session alive); the batch paths treat both as errors, with `last_errmsg` and
+`*out` semantics that differ between entry points.
 
 ## See also
 

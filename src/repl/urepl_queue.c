@@ -289,3 +289,15 @@ urepl_ringbuf_overflow_consume(UReplRingbuf *rb)
     UREPL_MUTEX_UNLOCK(&rb->mutex);
     return o;
 }
+
+bool
+urepl_ringbuf_headroom(UReplRingbuf *rb, size_t n)
+{
+    if (rb == NULL || !rb->inited) {
+        return false;
+    }
+    UREPL_MUTEX_LOCK(&rb->mutex);
+    bool ok = (rb->cap - rb->fill) >= n;
+    UREPL_MUTEX_UNLOCK(&rb->mutex);
+    return ok;
+}

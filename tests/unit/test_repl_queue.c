@@ -187,6 +187,74 @@ UTEST(ring_overflow_dispatch_emits_one_error_envelope)
     urbi_vm_destroy(&vm);
 }
 
+/* ---- Test 3: no headroom → flag consumed, NO envelope, flag not re-armed -- */
+
+UTEST(ring_overflow_no_headroom_skips_envelope)
+{
+    /* Determine the actual overflow-envelope byte count so the test remains
+     * correct if the envelope template ever changes. */
+    char env_probe[256];
+    size_t env_len = 0;
+    UASSERT_EQ(urepl_ndjson_emit_error(env_probe, sizeof(env_probe), 0,
+                                       "overflow",
+                                       "output overflow: frames dropped",
+                                       &env_len), 0);
+    UASSERT(env_len > 0);
+
+    /* Ring cap = env_len - 1: the envelope never fits, even into an empty ring. */
+    size_t small_cap = env_len - 1;
+
+    UVM vm;
+    UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
+    UReplServer *server = mk_server_small_ring(&vm, small_cap);
+    UASSERT_NE(server, NULL);
+    UReplSession *s = urepl_session_create(server);
+    UASSERT_NE(s, NULL);
+    s->authed = true;
+
+    /* Fill ring to trigger overflow. */
+    const char fill[] = "x\n";
+    for (size_t i = 0; i < small_cap + 2; i++) {
+        urepl_ringbuf_write(&s->output, fill, strlen(fill));
+    }
+    UASSERT(urepl_ringbuf_overflow(&s->output));
+
+    /* Drain so the ring is empty; overflow flag persists across the drain. */
+    {
+        char sink[512];
+        while (urepl_ringbuf_fill(&s->output) > 0)
+            urepl_ringbuf_read(&s->output, sink, sizeof(sink));
+    }
+    UASSERT(urepl_ringbuf_overflow(&s->output));
+
+    /* Dispatch one eval job.  The ring has no headroom for the envelope
+     * (cap < env_len); dispatch must consume the flag without writing it. */
+    char *code = (char *)malloc(2);
+    UASSERT_NE(code, NULL);
+    memcpy(code, "0", 1);
+    code[1] = '\0';
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    UASSERT_NE(job, NULL);
+    job->session_id   = s->session_id;
+    job->req.id       = 1;
+    job->req.op       = UREPL_OP_EVAL;
+    job->req.code     = code;
+    job->req.code_len = 1;
+    urepl_dispatch_job(server, job);
+
+    /* Flag must be consumed (not re-armed by the skipped envelope write). */
+    UASSERT(!urepl_ringbuf_overflow(&s->output));
+
+    /* Ring must NOT contain the overflow envelope. */
+    char out[512];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(strstr(out, "\"code\":\"overflow\"") == NULL);
+
+    urbi_repl_stop(server);
+    urbi_vm_destroy(&vm);
+}
+
 #endif /* URBI_ENABLE_REPL */
 
 void
@@ -198,6 +266,8 @@ test_repl_queue_suite(void)
               ring_overflow_frame_boundary_aligned);
     utest_run("ring_overflow_dispatch_emits_one_error_envelope",
               ring_overflow_dispatch_emits_one_error_envelope);
+    utest_run("ring_overflow_no_headroom_skips_envelope",
+              ring_overflow_no_headroom_skips_envelope);
 #else
     printf("test_repl_queue (URBI_ENABLE_REPL=0, skipped)\n");
 #endif

@@ -657,14 +657,22 @@ urepl_dispatch_job(UReplServer *server, UReplJob *job)
      * extends through the next '\n') when the writer outruns the reader.
      * Emit one error envelope per event so the client knows output was lost,
      * then clear the flag so subsequent jobs do not re-emit it.
-     * id=0 → lobby-scoped (not tied to a specific eval request). */
+     * id=0 → lobby-scoped (not tied to a specific eval request).
+     *
+     * Headroom guard: if the ring cannot absorb the envelope without itself
+     * overflowing, skip the write.  The flag is already consumed at this
+     * point, so the skip does NOT re-arm it — the ping-pong loop (saturated
+     * ring → envelope write → re-overflow → flag re-set → repeat) is broken.
+     * The client infers drops from missing eval results rather than seeing
+     * an infinite stream of junk overflow envelopes. */
     if (urepl_ringbuf_overflow_consume(&s->output)) {
         char ofenv[256];
         size_t ofn = 0;
         if (urepl_ndjson_emit_error(ofenv, sizeof(ofenv), 0,
                                     "overflow",
                                     "output overflow: frames dropped",
-                                    &ofn) == 0) {
+                                    &ofn) == 0
+            && urepl_ringbuf_headroom(&s->output, ofn)) {
             push_env(s, ofenv, ofn);
         }
     }
