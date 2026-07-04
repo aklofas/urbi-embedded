@@ -36,9 +36,14 @@ set +e
    $(find src -name '*.c' | sort) \
    -- -Iinclude -Isrc -std=c99 \
    2>&1 | tee "$OUT"
+TOOL_RC=${PIPESTATUS[0]}
 set -e
 
 WARN_COUNT=$(grep -c 'warning:\|error:' "$OUT" || true)
+if [ "$TOOL_RC" -ne 0 ] && [ "$WARN_COUNT" -eq 0 ]; then
+    echo "run_strict_tidy: tool exited $TOOL_RC with no findings (crash?)" >&2
+    exit "$TOOL_RC"
+fi
 if [[ "$WARN_COUNT" -gt 0 ]]; then
     echo "FAIL: $WARN_COUNT strict-tidy violations" >&2
     exit 1

@@ -26,10 +26,15 @@ set +e
    --quiet \
    -Iinclude -Isrc \
    src/ 2>&1 | tee "$OUT"
+TOOL_RC=${PIPESTATUS[0]}
 set -e
 
 # cppcheck format: <file>:<line>:<col>: <category>: <text> [<id>]
 ERR_COUNT=$(grep -cE '^[^ ].*: (error|warning|style|performance|portability):' "$OUT" || true)
+if [ "$TOOL_RC" -ne 0 ] && [ "$ERR_COUNT" -eq 0 ]; then
+    echo "run_cppcheck: tool exited $TOOL_RC with no findings (crash?)" >&2
+    exit "$TOOL_RC"
+fi
 if [[ "$ERR_COUNT" -gt 0 ]]; then
     echo "FAIL: $ERR_COUNT cppcheck violations" >&2
     exit 1
