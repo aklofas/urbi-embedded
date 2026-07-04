@@ -17,6 +17,7 @@ chk 0 "clean expr"            -e '1 + 1'
 chk 0 "sleep(0) no-op"        -e 'sleep(0)'
 chk 1 "uncaught scalar throw" -e 'throw 99'
 chk 1 "uncaught exception"    -e 'throw Exception.new("boom")'
+chk 1 "fork strand throw after root ok" -e 'cout << "x", { throw 1 }'
 tmp=$(mktemp); echo 'throw 42' > "$tmp"
 chk 1 "uncaught throw in file" "$tmp"
 rm -f "$tmp"
