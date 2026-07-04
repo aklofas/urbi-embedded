@@ -467,6 +467,49 @@ UAstNode *parse_block(UParser *p) {
     return node;
 }
 
+/* parse_single_stmt_as_block: parse ONE statement and wrap it in a synthetic
+ * single-element AST_BLOCK.  Used for unbraced if/while/else arms (H14/LANG-S02):
+ *   `if (c) stmt`        →  `if (c) { stmt }`  (same AST downstream)
+ *   `while (c) stmt`     →  `while (c) { stmt }`
+ *   `else stmt`          →  `else { stmt }`
+ *
+ * "One statement" means whatever parse_statement_or_expr returns — a single
+ * assignment, expression, or nested control-flow construct.  A ';' at the
+ * outer tier ends the arm before we get here.
+ *
+ * Fold interaction (H14 + T2 — dangling-& binding):
+ *   Whether a trailing `& rhs` / `| rhs` falls inside or outside the arm
+ *   depends on which parse path the arm takes:
+ *
+ *   a) Simple-assign arm (`x = 1`): parse_assign_after_eq_peek does NOT call
+ *      pipe_amp_fold.  The `& rhs` is left unconsumed and is folded by the
+ *      caller's pipe_amp_fold that wraps the whole if/while node.  So
+ *      `if (c) x = 1 & { y }` parses as `(if (c) { x = 1 }) & { y }`.
+ *
+ *   b) Literal / call / member-assign arm: parse_inner_tier or parse_assign_or_expr
+ *      both call pipe_amp_fold internally.  The `& rhs` IS consumed into the
+ *      arm.  So `if (c) Realm.x = 1 & { y }` parses as
+ *      `if (c) { (Realm.x = 1) & { y } }`.
+ *
+ *   Both are deterministic.  Dangling else always binds nearest if (standard
+ *   C-style — the innermost if consumes the else before returning). */
+static UAstNode *parse_single_stmt_as_block(UParser *p) {
+    UToken pos = peek(p);
+    UAstNode *stmt = parse_statement_or_expr(p);
+    if (!stmt) return (UAstNode *)&uparser_oom_sentinel;
+    if (stmt->kind == AST_ERROR) return stmt;
+
+    UAstNode **stmts = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+    if (!stmts) return (UAstNode *)&uparser_oom_sentinel;
+    stmts[0] = stmt;
+
+    UAstNode *block = make_node(p, AST_BLOCK, pos.line, pos.col);
+    if (!block) return (UAstNode *)&uparser_oom_sentinel;
+    block->u.block.stmts = stmts;
+    block->u.block.count = 1;
+    return block;
+}
+
 /* --- parse_while: `while` `(` cond `)` body-block --- */
 UAstNode *parse_while(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_WHILE */
@@ -491,9 +534,12 @@ UAstNode *parse_while(UParser *p) {
     }
     consume(p);
 
-    /* W1/v0.10.5: bump loop_depth so break/continue are legal in body. */
+    /* W1/v0.10.5: bump loop_depth so break/continue are legal in body.
+     * H14/LANG-S02: accept an unbraced single-statement body as well. */
     p->loop_depth++;
-    UAstNode *body = parse_block(p);
+    UAstNode *body = (peek(p).type == TOK_LBRACE)
+        ? parse_block(p)
+        : parse_single_stmt_as_block(p);
     p->loop_depth--;
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
@@ -529,14 +575,23 @@ UAstNode *parse_if(UParser *p) {
     }
     consume(p);
 
-    UAstNode *then_block = parse_block(p);
+    /* H14/LANG-S02: accept braced or unbraced single-statement then-arm.
+     * Dangling else binds nearest if: the recursive parse_if call inside
+     * parse_single_stmt_as_block will consume the else before returning,
+     * so the outer if sees no else (standard C-precedence). */
+    UAstNode *then_block = (peek(p).type == TOK_LBRACE)
+        ? parse_block(p)
+        : parse_single_stmt_as_block(p);
     if (!then_block) return (UAstNode *)&uparser_oom_sentinel;
     if (then_block->kind == AST_ERROR) return then_block;
 
     UAstNode *else_block = NULL;
     if (peek(p).type == TOK_KW_ELSE) {
         consume(p);
-        else_block = parse_block(p);
+        /* H14/LANG-S02: else arm may also be unbraced. */
+        else_block = (peek(p).type == TOK_LBRACE)
+            ? parse_block(p)
+            : parse_single_stmt_as_block(p);
         if (!else_block) return (UAstNode *)&uparser_oom_sentinel;
         if (else_block->kind == AST_ERROR) return else_block;
     }

@@ -1,0 +1,27 @@
+# Milestone: v0.13.5 (H14/LANG-S02)
+# Covers: unbraced single-statement bodies for if/while/else — the reference
+# stdlib itself uses these forms (legacy object.u:15: `if (this) false else true`).
+# NOTE: if/while are statement forms, not expressions — `var x = if (c) e` is a
+# parse error (non-expression, ledgered; see REVIVAL.md §14).
+
+# --- unbraced if/else: true branch (mirror of `if (this) false else true`)
+if (true) 42 else 7
+[00000001] 42
+
+# --- unbraced if/else: false branch
+if (false) 1 else 2
+[00000002] 2
+
+# --- braced while unchanged (regression guard)
+var c = 3; var n = 0; while (c > 0) { c = c - 1; n = n + 1 }; n
+[00000003] 3
+
+# --- unbraced while: single-statement arm
+var d = 2; while (d > 0) d = d - 1; d
+[00000004] 0
+
+# --- fold interaction (H14 + T2): member-assign arm goes through
+# parse_expression_cont + pipe_amp_fold, so `& { body }` is folded INSIDE
+# the arm.  Both sides of & run when the condition is true.
+Realm.fa = 0; if (true) Realm.fa = 1 & { Realm.fa = Realm.fa + 10 }; Realm.fa
+[00000005] 11
