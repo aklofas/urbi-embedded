@@ -293,6 +293,13 @@ UProto *uproto_alloc_nested(UProto *root, UProto *parent_proto) {
 
 /* --- Per-section decoder context (file-private) --- */
 
+/* Maximum nested-proto depth accepted by the decoder.  Real programs nest
+ * ~10 levels deep (stdlib measured at 1).  Capping at 64 bounds the C call
+ * stack consumed by decode_proto ↔ decode_nested_protos_into mutual recursion
+ * to well under the smallest embedded stack budget (64 KB MCU stacks).
+ * Exceeding the cap returns UCHUNK_LOAD_CORRUPT without crashing. */
+#define UCHUNK_MAX_PROTO_DEPTH 64
+
 typedef struct {
     UProto         *root_proto;  /* root UProto; v0.9.2: UModule deleted, root IS the decode target */
     UProto         *rp;          /* same as root_proto (root); kept for decode_verify compatibility */
@@ -301,6 +308,7 @@ typedef struct {
     size_t          off;
     char           *errmsg;
     size_t          errcap;
+    int             depth;       /* current nesting depth inside decode_proto recursion */
 } MDecCtx;
 
 /* --- Per-section decode helpers (each <40 LOC) --- */
@@ -801,7 +809,18 @@ static UChunkLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
          * moving to the next sibling. */
         child->ic_index = ++d->root_proto->next_proto_serial;
         parent->nested[parent->nested_count++] = child;
+        /* B3/REPL-01: cap recursion depth to bound the C call-stack.  A crafted
+         * chain of >UCHUNK_MAX_PROTO_DEPTH levels overflows a 64 KB MCU stack
+         * via the public urbi_chunk_from_bytes entry; reject early instead. */
+        if (++d->depth > UCHUNK_MAX_PROTO_DEPTH) {
+            set_errmsg(d->errmsg, d->errcap,
+                       "nested proto depth exceeds cap (%d) at child %llu",
+                       UCHUNK_MAX_PROTO_DEPTH, (unsigned long long)i);
+            --d->depth;
+            return UCHUNK_LOAD_CORRUPT;
+        }
         rc = decode_proto(d, child);
+        --d->depth;
         if (rc != UCHUNK_LOAD_OK) return rc;
     }
     return UCHUNK_LOAD_OK;
@@ -1054,6 +1073,22 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                     return UCHUNK_LOAD_CORRUPT;
                 }
             }
+            /* VM-CORE-02: OP_CALL reads R[A..A+B-1] at dispatch (plain call:
+             * R[A]=callee, R[A+1..A+B-1]=args; method: R[A+1]=self too).
+             * The shape table validates A and B independently (each <= max_reg)
+             * but not their sum; a chunk with A+B > max_reg+1 would read beyond
+             * the allocated register frame.  Mirrors the OP_PUSH_FRAME_GUARD
+             * check above (same pattern: base+count <= max_reg+1). */
+            if (op == (uint8_t)OP_CALL) {
+                if ((unsigned)a + (unsigned)b > (unsigned)max_reg + 1U) {
+                    set_errmsg(d->errmsg, d->errcap,
+                               "OP_CALL A+B=%u exceeds max_reg+1=%u at pc %zu"
+                               " (register window overflow)",
+                               (unsigned)a + (unsigned)b,
+                               (unsigned)max_reg + 1U, vi);
+                    return UCHUNK_LOAD_CORRUPT;
+                }
+            }
         } else {
             /* UOPF_ABX — Bx range check per shape table. */
             uint16_t bx = uinstr_bx(ins);
@@ -1175,10 +1210,11 @@ static UChunkLoadError decode_verify(MDecCtx *d) {
  *   OP_CALL C low-7 — encodes nresults+1; must be >= 1 (0 means 0 results
  *     which is legal at runtime but the emitter never produces it; a
  *     hand-crafted module with C & 0x7F == 0 is malformed per the wire spec).
- *   OP_TAG_STOP — declared in the opcode table but has no emit path and the VM
- *     raises a fatal error at dispatch.  Reject at load time so embedders
- *     receive a clear UCHUNK_LOAD_RESERVED_OPCODE rather than a mid-execution
- *     URBI_ERR_RUNTIME_FATAL.
+ *   OP_TAG_STOP — has full VM dispatch since v0.10.2 (label_op_tag_stop in
+ *     uvm.c).  The compiler never emits it (scripted tag.stop() routes through
+ *     the C API), but hand-built chunks may contain it.  Accepted at load time;
+ *     see the REPL-N4 note in the code below and pinned by
+ *     test_verify_chunk_bounds.c (tag_stop_roundtrips_ok).
  *
  * Design note for W8: add ic_index DFS pre-order check here.  The function
  * receives the proto tree already decoded; W8 can walk the tree and verify
@@ -1420,6 +1456,7 @@ UChunkLoadError uchunk_deserialize(UProto **out_root, const uint8_t *buf, size_t
     d.off    = 0;
     d.errmsg = errmsg;
     d.errcap = errcap;
+    d.depth  = 0;
 
     UChunkLoadError rc;
     if ((rc = decode_header(&d))         != UCHUNK_LOAD_OK) goto fail;
