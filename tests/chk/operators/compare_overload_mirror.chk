@@ -26,3 +26,7 @@ class GtThrow {}; GtThrow.setSlot(">", function(other) { throw("gt-boom") }); va
 # No overload on either operand → original TypeError.
 class NoGt {}; var fg = NoGt.new(); fg > 5
 [00000005] !!! line 1: TypeError: OP_LT operands must be Integer or Float (got Integer, unknown)
+
+# Throw inside "<" overload on mirror operand (right side) propagates.
+class LtThrow {}; LtThrow.setSlot("<", function(other) { throw("lt-boom") }); var ltt = LtThrow.new(); var lfoo = Object.new(); var rlt = "none"; try { if (lfoo > ltt) { "x" } } catch (var ex) { rlt = ex }; rlt
+[00000006] "lt-boom"
