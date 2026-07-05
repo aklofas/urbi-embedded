@@ -1,0 +1,91 @@
+# Legacy compat aliases — STDLIB-DRIFT-11..15 second-pass set.
+# Milestone: v0.13.5-conformance-and-stdlib
+# Evidence per alias in commit body.
+#
+# Naming convention: legacy name works as ALIAS; modern canonical name still works.
+#
+# Set:
+#   String.length   → str_size          (string.u:72 copySlot("size","length"))
+#   List.size       → list_or_tuple_length  (list.cc:98 BINDG(size))
+#   List.insertBack → list_add          (list.cc:92 BIND(insertBack))
+#   List.<<         → list_add          (list.u:35 copySlot("insertBack","<<"))
+#   List.+          → list_concat       (list.cc:88 BIND(PLUS, operator+))
+#   List.head       → get(0) overlay    (list.u:106 copySlot("front","head"))
+#   Dict.size       → dict_length       (legacy container idiom .size on Dict)
+#   Exception.Lookup → LookupError      (exception.u:379 Exception.Lookup class)
+
+# ── String.length (legacy alias for size) ─────────────────────────────────────
+"hello".length()
+[00000000] 5
+
+"".length()
+[00000001] 0
+
+# Modern name still works.
+"hello".size()
+[00000002] 5
+
+# ── List.size (legacy primary name) ───────────────────────────────────────────
+var ls3 = [1, 2, 3]; ls3.size()
+[00000003] 3
+
+var ls0 = []; ls0.size()
+[00000004] 0
+
+# Modern name still works.
+var ls3m = [1, 2, 3]; ls3m.length()
+[00000005] 3
+
+# ── List.insertBack (legacy primary name) ─────────────────────────────────────
+var ib = List.new(); ib.insertBack(10); ib.insertBack(20); ib.length()
+[00000006] 2
+
+var ib2 = List.new(); ib2.insertBack(10); ib2.get(0)
+[00000007] 10
+
+# Modern name still works.
+var ia = List.new(); ia.add(7); ia.length()
+[00000008] 1
+
+# ── List.<< (legacy alias for insertBack) ─────────────────────────────────────
+var lshift = List.new(); lshift << 1; lshift << 2; lshift.length()
+[00000009] 2
+
+var lshift2 = List.new(); lshift2 << 42; lshift2.get(0)
+[00000010] 42
+
+# ── List.+ (legacy concat) ────────────────────────────────────────────────────
+([1, 2] + [3, 4]).length()
+[00000011] 4
+
+var cat = [10, 20] + [30]; cat.get(2)
+[00000012] 30
+
+# ── List.head (legacy alias for front — first element) ────────────────────────
+var lh3 = [10, 20, 30]; lh3.head()
+[00000013] 10
+
+var lh1 = [42]; lh1.head()
+[00000014] 42
+
+# ── Dict.size (legacy primary name) ───────────────────────────────────────────
+var d = Dict.new(); d.set("a", 1); d.set("b", 2); d.size()
+[00000015] 2
+
+Dict.new().size()
+[00000016] 0
+
+# Modern name still works.
+var d2 = Dict.new(); d2.set("x", 9); d2.length()
+[00000017] 1
+
+# ── Exception.Lookup alias (exception.u:379 nested naming) ───────────────────
+Exception.Lookup == LookupError
+[00000018] true
+
+Exception.Lookup.isA(Exception)
+[00000019] true
+
+# Channel.<< is unaffected — still routes through Channel.echo, not list_add.
+var co = Channel.new("test_ch"); co.hasSlot("<<")
+[00000020] true

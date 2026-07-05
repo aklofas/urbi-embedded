@@ -178,6 +178,19 @@ urbi_stdlib_register_runtime_types(UVM *vm)
                              EXCEPTION_METHODS, EXCEPTION_METHODS_COUNT);
     if (rc != URBI_OK) return rc;
 
+    /* Wire exception_proto into the Object proto chain so that Exception
+     * inherits Object methods (addProto, setSlot, hasSlot, clone, isA,
+     * etc.).  Required for the legacy Exception.Lookup alias installed by
+     * the stdlib blob via Exception.addProto(ExceptionLookupAlias). */
+    {
+        UObject *obj_root = urbi_object_root(vm);
+        if (obj_root != NULL) {
+            int rc_proto = urbi_object_add_proto(vm, vm->exception_proto,
+                                                 obj_root);
+            if (rc_proto != URBI_OK) return rc_proto;
+        }
+    }
+
     /* Also install a default `message` slot on the proto itself so
      * `Exception.message` (without a clone) reads as nil rather than
      * raising a missing-slot error.  Per-instance .new() overwrites

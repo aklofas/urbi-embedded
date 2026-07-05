@@ -86,7 +86,12 @@ class ListMethods {
             i = i + 1
         };
         nil
-    }
+    };
+
+    // head(): first element — legacy alias for front().
+    // Legacy: list.u:106 copySlot("front","head"); list.cc:84 BIND(front).
+    // Delegates to the C-native get(0); raises (bounds check) on empty list.
+    var head = function() { this.get(0) }
 } |
 
 List.addProto(ListMethods);

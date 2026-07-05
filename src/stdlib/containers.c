@@ -1099,7 +1099,16 @@ static const ContainerMethodEntry LIST_METHODS[] = {
     { "diff",     list_diff            },
     { "sort",     list_sort            },
     { "reverse",  list_reverse         },
-    { "join",     list_join            }
+    { "join",     list_join            },
+    /* Legacy compat aliases (DRIFT-03 / v0.13.5):
+     * size    — legacy primary: list.cc:167 BINDG(size)
+     * insertBack — legacy primary: list.cc:92 BIND(insertBack)
+     * <<      — legacy alias:   list.u:35 copySlot("insertBack","<<")
+     * +       — legacy primary: list.cc:88 BIND(PLUS, operator+) */
+    { "size",       list_or_tuple_length },
+    { "insertBack", list_add             },
+    { "<<",         list_add             },
+    { "+",          list_concat          }
 };
 
 static const ContainerMethodEntry DICT_METHODS[] = {
@@ -1111,7 +1120,10 @@ static const ContainerMethodEntry DICT_METHODS[] = {
     { "has",     dict_has     },
     { "remove",  dict_remove  },
     { "keys",    dict_keys    },
-    { "values",  dict_values  }
+    { "values",  dict_values  },
+    /* Legacy compat alias (DRIFT-03 / v0.13.5):
+     * size — legacy idiom; dict is also a Container with .size() */
+    { "size",    dict_length  }
 };
 
 #define PAIR_METHODS_COUNT    (sizeof(PAIR_METHODS)    / sizeof(PAIR_METHODS[0]))
