@@ -78,6 +78,13 @@ class ListMethods {
     };
 
     // each(f): apply f to each element in order for side effects; returns nil.
+    //
+    // Mutation contract: `n` is captured from this.length() at call entry;
+    // adding elements to the list during iteration does NOT extend the loop
+    // (n is fixed).  Removing or replacing elements mid-iteration shifts
+    // indices and visits the wrong elements — mutation during each() is
+    // undefined behaviour at v1.0.  For mutation-safe iteration, use sort()
+    // which snapshots the backing store before invoking the comparator.
     var each = function(f) {
         var i = 0;
         var n = this.length();

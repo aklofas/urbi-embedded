@@ -27,6 +27,7 @@
 #include "stdlib/atoms.h"
 #include "stdlib/containers.h"         /* urbi_stdlib_list_new_empty/append/len/get */
 #include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
+#include "stdlib/stdlib_join_core.h"   /* join_core: shared String/List join logic */
 
 #include "chunk/uchunk.h"            /* UValue / UVAL_* */
 #include "object/uobject.h"            /* urbi_object_atom, set_local_slot */
@@ -266,8 +267,11 @@ int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 /* === Integer bitops (T40) =================================================
  *
  * Bitwise ops are NAMED methods (no symbolic-operator lex tokens reserve
- * `&` / `|` for bitwise — `&` is the parallel-join concurrency separator).  Shift amount out of [0, 64) returns 0 (well-
- * defined; avoids signed shift UB on x86 + cross-arm-cortex-m). */
+ * `&` / `|` for bitwise — `&` is the parallel-join concurrency separator).
+ *
+ * Shift count semantics (Kotlin Long): all three ops mask the count to
+ * [0, 63] via effective = raw_count & 63.  ushr had this from the start;
+ * shl and shr now match. */
 
 #define DEF_INT_BINOP(name, op)                                              \
     static int                                                               \
@@ -309,14 +313,9 @@ int_shl(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "Integer.shl: argument must be Integer", out);
 
-    int64_t a = self.v.i;
-    int64_t s = args[0].v.i;
-    if (s < 0 || s >= 64) {
-        *out = val_int(0);
-    } else {
-        /* Cast through uint64_t to avoid signed-shift UB. */
-        *out = val_int((int64_t)((uint64_t)a << (uint64_t)s));
-    }
+    /* Kotlin Long.shl mask: effective = raw & 63, always in [0, 63]. */
+    int64_t n = args[0].v.i & (int64_t)63;
+    *out = val_int((int64_t)((uint64_t)self.v.i << (uint64_t)n));
     return UEXEC_OK;
 }
 
@@ -329,14 +328,11 @@ int_shr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "Integer.shr: argument must be Integer", out);
 
-    int64_t a = self.v.i;
-    int64_t s = args[0].v.i;
-    if (s < 0 || s >= 64) {
-        *out = val_int(0);
-    } else {
-        /* Logical shift right (uint64_t cast). */
-        *out = val_int((int64_t)((uint64_t)a >> (uint64_t)s));
-    }
+    /* Kotlin Long.shr mask: effective = raw & 63, always in [0, 63].
+     * Implementation uses uint64_t cast (logical right shift on the raw
+     * i64 bit pattern) matching the pre-existing shr semantic. */
+    int64_t n = args[0].v.i & (int64_t)63;
+    *out = val_int((int64_t)((uint64_t)self.v.i >> (uint64_t)n));
     return UEXEC_OK;
 }
 
@@ -1150,46 +1146,39 @@ str_join(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         return urbi_raise_type(vm, "join: self (separator) must be String", out);
     if (args[0].kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "join: argument must be a List", out);
-
-    UObject *list_obj = (UObject *)args[0].v.p;
     const char *sep = (const char *)self.v.p;
     size_t seplen = urbi_strlen(sep);
-    size_t count = urbi_stdlib_list_len(vm, list_obj);
-
-    size_t i, total = 0U;
-    for (i = 0U; i < count; i++) {
-        UValue e = urbi_stdlib_list_get(vm, list_obj, i);
-        if (e.kind != (uint8_t)UVAL_STR)
-            return urbi_raise_type(vm, "join: all elements must be String", out);
-        total += urbi_strlen((const char *)e.v.p);
-        if (i + 1U < count) total += seplen;
-    }
-
-    if (vm->alloc_fn == NULL) return urbi_raise_oom(vm, out);
-    char *buf = (char *)vm->alloc_fn(NULL, total + 1U, vm->alloc_ud);
-    if (buf == NULL) return urbi_raise_oom(vm, out);
-
-    size_t off = 0U;
-    for (i = 0U; i < count; i++) {
-        UValue e = urbi_stdlib_list_get(vm, list_obj, i);
-        const char *es = (const char *)e.v.p;
-        size_t el = urbi_strlen(es), k;
-        for (k = 0; k < el; k++) buf[off++] = es[k];
-        if (i + 1U < count) for (k = 0; k < seplen; k++) buf[off++] = sep[k];
-    }
-    buf[off] = '\0';
-
-    int oom = 0;
-    UValue v = val_str_intern(vm, buf, off, &oom);
-    vm->alloc_fn(buf, 0U, vm->alloc_ud);
-    if (oom) return urbi_raise_oom(vm, out);
-    *out = v;
-    return UEXEC_OK;
+    return join_core(vm, sep, seplen, (UObject *)args[0].v.p, out);
 }
 
 /* format — minimal printf substitution.  Numeric specs (%d/%f) require the
  * hosted snprintf, mirroring Integer.asString; freestanding builds raise.
- * Output capped at 1024 bytes (raise on overflow). */
+ * Output capped at 1024 bytes (raise on overflow).
+ *
+ * Arg-count contract (legacy share/urbi/string.u): spec count must equal
+ * the list length; mismatch raises ArityError.  This matches legacy
+ * `throw "invalid format: wrong number of arguments"`.
+ *
+ * Kind-mismatch coercion: mismatched argument kinds are silently coerced —
+ * %s on a non-String produces "", %d on a non-Integer produces 0, %f on a
+ * non-numeric produces 0.0.  This matches the legacy `%` operator which
+ * uses `res += list.removeFront()` (implicit asString) without any kind
+ * guard.  No TypeError is raised on kind mismatch. */
+static size_t
+count_format_specs(const char *fmt, size_t n)
+{
+    size_t count = 0U, i;
+    for (i = 0U; i < n; i++) {
+        if (fmt[i] == '%' && i + 1U < n) {
+            char k = fmt[i + 1U];
+            if (k == '%') { i++; continue; }
+            if (k == 's' || k == 'd' || k == 'f') { count++; i++; continue; }
+            /* unknown spec: the % is emitted literally and no arg consumed */
+        }
+    }
+    return count;
+}
+
 static int
 str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
@@ -1204,6 +1193,15 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     size_t n = urbi_strlen(fmt);
     UObject *list_obj = (UObject *)args[0].v.p;
     size_t argc = urbi_stdlib_list_len(vm, list_obj);
+
+    /* Arg-count pre-check: raise before any substitution. */
+    size_t spec_count = count_format_specs(fmt, n);
+    if (spec_count != argc) {
+        return urbi_raise_arity(vm, "String.format",
+                                (uint8_t)(spec_count < 255U ? spec_count : 255U),
+                                (uint8_t)(argc < 255U ? argc : 255U),
+                                out);
+    }
 
     char buf[1024];
     size_t off = 0U, i = 0U, ai = 0U;

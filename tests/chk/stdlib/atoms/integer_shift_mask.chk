@@ -1,0 +1,66 @@
+# Milestone: v0.13.5-conformance-and-stdlib
+# Covers: Integer shl/shr/ushr shift-count masking (Kotlin semantics).
+#         ushr already masked to [0, 63]; shl/shr previously returned 0
+#         for any count outside [0, 63) — now all three mask count &63.
+#
+# After the fix all three ops use: effective_count = raw_count & 63.
+# Edge cases tested: count 63 (unchanged), count 64 (was 0 → identity
+# shift), count 65 (was 0 → shift by 1), negative count (was 0 → mask
+# wraps to [0, 63]).  Self value edge cases include positive and negative
+# self with the boundary counts.
+#
+# ushr cases are included here to verify the Kotlin semantics hold at
+# all three edge counts (these were already correct; they are coverage
+# checks, not behavior changes).
+
+# --- shl: count 63 (unchanged) ---
+1.shl(63)
+[00000000] -9223372036854775808
+
+# --- shl: count 64 — was 0, now masks to 0 → identity shift ---
+1.shl(64)
+[00000001] 1
+
+# --- shl: count 65 — was 0, now masks to 1 ---
+1.shl(65)
+[00000002] 2
+
+# --- shl: negative count — was 0, now masks (-1 & 63 = 63) ---
+1.shl(-1)
+[00000003] -9223372036854775808
+
+# --- shl: negative count, smaller wrap (-63 & 63 = 1) ---
+1.shl(-63)
+[00000004] 2
+
+# --- shl: negative self with count 64 (identity) ---
+(-8).shl(64)
+[00000005] -8
+
+# --- shr: count 63 (unchanged; logical right shift) ---
+16.shr(63)
+[00000006] 0
+
+# --- shr: count 64 — was 0, now masks to 0 → identity shift ---
+1.shr(64)
+[00000007] 1
+
+# --- shr: count 64 on non-trivial value ---
+16.shr(64)
+[00000008] 16
+
+# --- shr: negative self with count 64 ---
+(-8).shr(64)
+[00000009] -8
+
+# --- ushr: count 64 — already Kotlin-masked (64 & 63 = 0 → identity) ---
+(-1).ushr(64)
+[00000010] -1
+
+# --- ushr: count 65 — already masked (65 & 63 = 1) ---
+(-1).ushr(65)
+[00000011] 9223372036854775807
+
+# --- ushr: negative count — already masked ((-1) & 63 = 63) ---
+(-1).ushr(-1)
+[00000012] 1

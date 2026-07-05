@@ -1,0 +1,37 @@
+# Milestone: v0.13.5-conformance-and-stdlib
+# Covers: String.format arg-count contract.
+#
+# Legacy (share/urbi/string.u % operator): raises "invalid format: wrong
+# number of arguments" when spec count != arg list length.
+# Our implementation maps this to ArityError.
+#
+# Kind-mismatch coercion (%d with a String arg → 0, %s with non-String →
+# empty string) is SILENT — matches legacy coercion via +=.  See the doc
+# comment in str_format for details; no raise on kind mismatch.
+#
+# These cases are RED before the arg-count check is added to str_format,
+# because the old code silently coerces on mismatched arg counts.
+
+# --- too few args raises ArityError ---
+"x=%s".format(List.new())
+[00000000] !!! ArityError: String.format expected 1 args, got 0
+
+"x=%s %s".format(List.new("a"))
+[00000001] !!! ArityError: String.format expected 2 args, got 1
+
+# --- too many args raises ArityError ---
+"x=%s".format(List.new("a", "b"))
+[00000002] !!! ArityError: String.format expected 1 args, got 2
+
+"100%%".format(List.new("extra"))
+[00000003] !!! ArityError: String.format expected 0 args, got 1
+
+# --- correct arg count: no raise (regression guard) ---
+"x=%s".format(List.new("ok"))
+[00000004] "x=ok"
+
+"100%%".format(List.new())
+[00000005] "100%"
+
+"x=%s n=%d".format(List.new("v", 3))
+[00000006] "x=v n=3"

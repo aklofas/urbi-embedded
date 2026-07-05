@@ -24,6 +24,12 @@ class DictMethods {
     };
 
     // each(f): apply f(key, value) to each entry for side effects; nil.
+    //
+    // Mutation contract: keys() is called once at entry and iteration
+    // proceeds over that snapshot List.  Entries added to the dict after
+    // each() begins are NOT visited.  Entries removed before their key is
+    // visited will cause get(k) to return nil — not an error (see the
+    // nil-return contract on dict_get in containers.c).
     var each = function(f) {
         var ks = this.keys();
         var i = 0;

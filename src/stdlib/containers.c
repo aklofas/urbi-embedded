@@ -36,6 +36,7 @@
 
 #include "stdlib/containers.h"
 #include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
+#include "stdlib/stdlib_join_core.h"   /* join_core: shared String/List join logic */
 #ifdef URBI_ENABLE_ROS2
 #include "value/ulist_build.h"         /* declaration cross-check for the C-builder wrappers */
 #endif
@@ -838,45 +839,23 @@ list_sort(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 }
 
 /* join(sep): concatenate String elements separated by the String sep.
- * Raises TypeError if any element is not a String. */
+ * Raises TypeError if any element is not a String.
+ *
+ * Delegates to join_core (stdlib_join_core.h), the shared implementation
+ * used by String.join (atoms.c) as well.  Both call sites use the same
+ * urbi_stdlib_list_len / urbi_stdlib_list_get accessors and produce
+ * identical results for any well-formed List. */
 static int
 list_join(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     if (nargs != 1) return urbi_raise_arity(vm, "join", 1, nargs, out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "join: separator must be String", out);
-    UList *a = list_storage(vm, self);
-    if (a == NULL) return urbi_raise_type(vm, "join: missing _storage", out);
+    if (self.kind != (uint8_t)UVAL_OBJECT || self.v.p == NULL)
+        return urbi_raise_type(vm, "join: self must be a List", out);
     const char *sep = (const char *)args[0].v.p;
     size_t seplen = urbi_strlen(sep);
-    size_t i, total = 0U;
-    for (i = 0U; i < a->len; i++) {
-        if (a->items[i].kind != (uint8_t)UVAL_STR)
-            return urbi_raise_type(vm, "join: all elements must be String", out);
-        total += urbi_strlen((const char *)a->items[i].v.p);
-        if (i + 1U < a->len) total += seplen;
-    }
-    char *buf = (char *)vm->alloc_fn(NULL, total > 0U ? total : 1U, vm->alloc_ud);
-    if (buf == NULL) return urbi_raise_oom(vm, out);
-    size_t off = 0U;
-    for (i = 0U; i < a->len; i++) {
-        const char *s = (const char *)a->items[i].v.p;
-        size_t k, sl = urbi_strlen(s);
-        for (k = 0U; k < sl; k++) buf[off + k] = s[k];
-        off += sl;
-        if (i + 1U < a->len) {
-            for (k = 0U; k < seplen; k++) buf[off + k] = sep[k];
-            off += seplen;
-        }
-    }
-    const char *interned = ustr_intern(vm, buf, total);
-    vm->alloc_fn(buf, 0, vm->alloc_ud);
-    if (interned == NULL) return urbi_raise_oom(vm, out);
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_STR;
-    v.v.p = (void *)interned;
-    *out = v;
-    return UEXEC_OK;
+    return join_core(vm, sep, seplen, (UObject *)self.v.p, out);
 }
 
 /* === Dict ================================================================
@@ -1059,6 +1038,12 @@ dict_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* get(key): return the value stored under key, or nil if the key is absent.
+ *
+ * Nil-return contract: a missing key returns nil without raising an
+ * exception.  This matches the legacy Dict.u behaviour (no KeyError).
+ * To distinguish a nil-valued entry from an absent key, call has(key)
+ * first, or use the scripted getWithDefault(key, default) overlay. */
 static int
 dict_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
@@ -1126,7 +1111,15 @@ dict_remove(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 }
 
 /* keys(): return a fresh List of the dict's keys.  Order is unspecified
- * (matches the v1.0 Dict iteration-order contract). */
+ * (matches the v1.0 Dict iteration-order contract).
+ *
+ *
+ * Mutation-during-iteration contract: the scripted Dict.each() overlay
+ * (dict_overlay.u) calls keys() BEFORE beginning iteration and iterates
+ * over that snapshot List.  Entries added to the dict after each() begins
+ * are NOT visited; entries removed before their key is reached will cause
+ * get() to return nil for that key — not an error.  This mirrors the
+ * list_sort snapshot contract (see list_sort above). */
 static int
 dict_keys(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
