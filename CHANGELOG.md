@@ -1,5 +1,67 @@
 # Changelog
 
+## v0.13.5-conformance-and-stdlib — 2026-07-05
+
+Tag 6 of the v0.13.x pre-release hardening arc: a systematic legacy-
+conformance pass covering truthiness, operator folding, control-flow
+syntax, the default-parameter calling convention, the standard string-
+formatting library, compat aliases, list sorting, typed exceptions from
+arithmetic, diagnostic position reporting, and the tag-watcher persistence
+gap from v0.13.4.  No new opcode, wire format unchanged (v1.9 / 0x19).
+ABI 0/23/5 -> 0/23/6 (PATCH; no new public C functions, no new public C
+API symbols).
+
+- Truthiness alignment: `nil`, `void`, and `false` are falsy; `0`
+  (integer zero) is truthy, matching legacy urbiscript 2.x semantics.
+  Updated the VM truth-test path and the full fixture suite; the
+  conformance matrix row is now FULL.
+- Statement-operand fold: the `;`, `,`, and `|` separator operands accept
+  non-expression statements (declarations, control-flow) as their
+  left-hand side, matching the legacy separator grammar.
+- Unbraced single-statement bodies: `if`, `while`, `at`, and `whenever`
+  accept a single statement without braces, closing the last body-syntax
+  gap against the legacy parser.
+- `switch` default arm: `switch` now requires a `default:` arm and raises
+  a runtime error when no case matches and the arm is absent — matching
+  the legacy compile-time requirement adapted for the runtime model.
+- Default parameters: function declarations accept `var p = expr` default
+  expressions; callers may omit trailing arguments and receive the default
+  value.  The calling-convention change is script-surface only.
+- Universal `asString` fallback: `Object.asString` is defined on the root
+  proto, so every value has a printable representation; the method
+  delegates to type-specific overrides when present.
+- `String.format` / `%` operator: `String.format(fmt, args...)` and the
+  `%` infix operator implement `%s`, `%d`, `%f`, `%i`, and `%g`
+  conversion; `%%` produces a literal percent sign.
+- Compat aliases: `println`, `echo`, and `display` are installed as
+  `Lobby` aliases for `Lobby.echo`/the channel output path, covering the
+  common legacy top-level printing idioms.
+- `List.sort(comparator)`: `List.sort` accepts an optional two-argument
+  comparator closure that returns a negative, zero, or positive integer,
+  matching the legacy `List.sort` contract.
+- Typed exceptions from arithmetic: integer and float division by zero
+  now raise a catchable `Exception.DivisionByZero` rather than a strand
+  fatal, so `try { 1/0 } catch { |e| ... }` works end-to-end.
+- Typed exceptions from additional sites: out-of-range subscript, type
+  mismatch in arithmetic with non-numeric arguments, and missing-method
+  dispatch failures raise catchable typed `Exception` instances.
+- RegExp budget cap: the regexp matcher has an execution-step budget;
+  pathological patterns are rejected with a `RegExpError` rather than
+  spinning indefinitely.
+- Emit diagnostics with source positions: the emitter and the parser
+  attach source file, line, and column to error messages; runtime errors
+  that originate from a known source location include the position in the
+  diagnostic string.
+- Message-text polish: type-error, arity-error, and not-found messages
+  use user-facing phrasing throughout; internal mnemonic tokens are
+  replaced with readable descriptions.
+- Tag-watcher persistence (v0.13.4-A closed): `at` and `whenever`
+  watchers installed inside a tag scope survive a `tag.stop()` on the
+  enclosing tag and remain active across re-invocations, matching the
+  legacy watcher-persistence contract.
+- REPL line-cap hardening: consecutive oversized lines trigger the per-
+  frame overflow guard reliably; the cap is pinned by fixture.
+
 ## v0.13.4-error-surfacing — 2026-07-04
 
 Tag 5 of the v0.13.x pre-release hardening arc: batch and embedding entry

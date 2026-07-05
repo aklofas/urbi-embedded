@@ -260,7 +260,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  23
-#define URBI_API_VERSION_PATCH  5
+#define URBI_API_VERSION_PATCH  6
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -455,10 +455,24 @@ extern "C" {
  * nil-recovery path is unchanged.  Tag 5 of the v0.13.x pre-release
  * hardening arc.  Wire format unchanged at v1.9 / 0x19.  No new public
  * C functions.  See docs/api-stability.md post-escape note.
+ *
+ * v0.13.5-conformance-and-stdlib — PATCH bump 0/23/5 → 0/23/6 (NOT an
+ * escape).  Tag 6 of the v0.13.x pre-release hardening arc.  Legacy-
+ * conformance pass: truthiness table aligned to legacy (nil/void/false
+ * falsy; zero truthy); statement-operand fold for `;` / `,` / `|`;
+ * unbraced single-statement bodies accepted; `switch` gains a mandatory
+ * `default:` arm; default parameters; universal `asString` fallback;
+ * `String.format` `%s`/`%d`/`%f`/`%i`/`%g` formatting; compat aliases
+ * (`println`/`echo`/`display`); `List.sort(comparator)`; typed
+ * exceptions from div-by-zero; RegExp budget cap; emit diagnostics with
+ * source positions; message-text polish; tag-watcher persistence
+ * (v0.13.4-A closed); REPL line-cap hardening.  No new public C API
+ * symbols; no new opcodes; wire format unchanged at v1.9 / 0x19.  Not a
+ * pre-v1.0 escape.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 23
-            && URBI_API_VERSION_PATCH == 5,
+            && URBI_API_VERSION_PATCH == 6,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */

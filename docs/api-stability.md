@@ -352,3 +352,12 @@ sanction: `urbi_vm_run`, `urbi_run_chunk`, and the CLI `-e`/file entry points
 now return this code when a script throw is uncaught; the interactive REPL's
 nil-recovery path is unchanged.  No new public C functions; wire format unchanged
 at v1.9 / 0x19.  ABI triple after this tag: 0/23/5.)
+
+(v0.13.5-conformance-and-stdlib bumped 0/23/5 → 0/23/6 PATCH — NOT an escape.
+No new public C API symbols, no new opcodes, wire format unchanged at v1.9 /
+0x19.  Tag 6 of the v0.13.x pre-release hardening arc: legacy-conformance pass
+(truthiness, statement-operand fold, unbraced bodies, switch default, default
+parameters, universal asString, String %, compat aliases, List.sort(comparator),
+typed exceptions from div-by-zero, RegExp budget, emit diagnostics with
+positions, message polish, tag-watcher persistence, REPL line-cap).  ABI triple
+after this tag: 0/23/6.)
