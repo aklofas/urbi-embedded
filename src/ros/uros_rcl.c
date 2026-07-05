@@ -429,25 +429,30 @@ rcl_be_destroy_service(void *self, uint32_t h)
     }
 }
 
+/* rcl backend vtable — all function-pointer fields; self is set at runtime. */
+static const URosTransport RCL_VTABLE = {
+    .init               = rcl_be_init,
+    .fini               = rcl_be_fini,
+    .create_pub         = rcl_be_create_pub,
+    .create_sub         = rcl_be_create_sub,
+    .create_client      = rcl_be_create_client,
+    .create_service     = rcl_be_create_service,
+    .destroy_pub        = rcl_be_destroy_pub,
+    .destroy_sub        = rcl_be_destroy_sub,
+    .destroy_client     = rcl_be_destroy_client,
+    .destroy_service    = rcl_be_destroy_service,
+    .publish            = rcl_be_publish,
+    .spin               = rcl_be_spin,
+    .call               = rcl_be_call,
+    .set_service_handler = rcl_be_set_service_handler,
+};
+
 void
 uros_rcl_init(URosTransport *tp)
 {
     URosRclState *s = (URosRclState *)calloc(1, sizeof *s);
-    tp->self                = s;
-    tp->init                = rcl_be_init;
-    tp->fini                = rcl_be_fini;
-    tp->create_pub          = rcl_be_create_pub;
-    tp->create_sub          = rcl_be_create_sub;
-    tp->create_client       = rcl_be_create_client;
-    tp->create_service      = rcl_be_create_service;
-    tp->destroy_pub         = rcl_be_destroy_pub;
-    tp->destroy_sub         = rcl_be_destroy_sub;
-    tp->destroy_client      = rcl_be_destroy_client;
-    tp->destroy_service     = rcl_be_destroy_service;
-    tp->publish             = rcl_be_publish;
-    tp->spin                = rcl_be_spin;
-    tp->call                = rcl_be_call;
-    tp->set_service_handler = rcl_be_set_service_handler;
+    *tp      = RCL_VTABLE;
+    tp->self = s;
 }
 
 void

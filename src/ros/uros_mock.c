@@ -169,25 +169,30 @@ mock_fini(void *self)
     (void)self;
 }
 
+/* Mock vtable — all function-pointer fields; self is set at runtime. */
+static const URosTransport MOCK_VTABLE = {
+    .init               = mock_init,
+    .fini               = mock_fini,
+    .create_pub         = mock_pub,
+    .create_sub         = mock_sub,
+    .create_client      = mock_cli,
+    .create_service     = mock_srv,
+    .destroy_pub        = mock_destroy_pub,
+    .destroy_sub        = mock_destroy_sub,
+    .destroy_client     = mock_destroy_client,
+    .destroy_service    = mock_destroy_service,
+    .publish            = mock_publish,
+    .spin               = mock_spin,
+    .call               = mock_call,
+    .set_service_handler = mock_set_service_handler,
+};
+
 void
 uros_mock_init(URosTransport *tp)
 {
     MockState *m = (MockState *)calloc(1, sizeof(MockState));
-    tp->self               = m;
-    tp->init               = mock_init;
-    tp->fini               = mock_fini;
-    tp->create_pub         = mock_pub;
-    tp->create_sub         = mock_sub;
-    tp->create_client      = mock_cli;
-    tp->create_service     = mock_srv;
-    tp->destroy_pub        = mock_destroy_pub;
-    tp->destroy_sub        = mock_destroy_sub;
-    tp->destroy_client     = mock_destroy_client;
-    tp->destroy_service    = mock_destroy_service;
-    tp->publish            = mock_publish;
-    tp->spin               = mock_spin;
-    tp->call               = mock_call;
-    tp->set_service_handler = mock_set_service_handler;
+    *tp       = MOCK_VTABLE;
+    tp->self  = m;
 }
 
 void
