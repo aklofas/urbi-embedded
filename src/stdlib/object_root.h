@@ -149,7 +149,7 @@ urbi_val_str_intern(struct UVM *vm, const char *s, size_t n, int *oom)
     return v;
 }
 
-/* === STDLIB-03: per-method prologue opt-in macros ===
+/* === Per-method prologue opt-in macros ===
  *
  * Fold the two-line arity/self-kind prologues that appear ~150 times across
  * the four stdlib files into concise, verifiable call sites.  Both macros

@@ -15,8 +15,8 @@
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"   /* UVM_STACK_CAP */
 #include "urbi/urbi.h" /* urbi_strand_create, urbi_strand_destroy, urbi_realm_create */
-#include "stdlib/object_root.h"  /* urbi_native_closure_create (v0.13.5-D) */
-#include "watcher/uwatcher.h"    /* urbi_run_closure_on_scratch (v0.13.5-D) */
+#include "stdlib/object_root.h"  /* urbi_native_closure_create */
+#include "watcher/uwatcher.h"    /* urbi_run_closure_on_scratch */
 
 #include <stdint.h>
 #include <string.h>
@@ -301,7 +301,7 @@ strand_arm_from_closure_resets_cur_consts_on_rearm(void)
 }
 
 /* ===================================================================
- * Case 6 — v0.13.5-D: native (proto-less) closure must not crash the
+ * Case 6 — native (proto-less) closure must not crash the
  * scratch runner.  Pre-fix: urbi_strand_arm_from_closure dereferences
  * entry->proto->instructions unconditionally, causing SEGV when
  * entry->proto == NULL (native closures set proto = NULL in
@@ -338,6 +338,8 @@ strand_arm_rejects_native_proto_less_closure(void)
     int    threw = 0;
     int    rc    = urbi_run_closure_on_scratch(&vm, cl, &out, &threw);
     UASSERT_EQ(-1, rc);
+    /* Arm failure is a setup error, not a scripted exception. */
+    UASSERT_EQ(0, threw);
 
     urbi_vm_destroy(&vm);
 }

@@ -92,14 +92,16 @@ run_on_scratch_core(struct UVM       *vm,
     strand.is_transient_strand = 1U;  /* guards reject OP_FORK_DETACH/JOIN */
 
     /* Arm from the closure: allocates register stack, wires pc / pc_base /
-     * cur_consts / frame_count from closure->proto.  Returns -1 on OOM.
+     * cur_consts / frame_count from closure->proto.  Returns -1 on
+     * register-stack OOM or a proto-less (native) closure.
      * nargs mirrors the initial_regs deposit below (n_regs: 0 for no payload,
      * 1 for a single payload, 2 for List.sort's comparator) — feeds the
      * v0.13.5 arity-self-check seed at R[nparams]. */
     if (urbi_strand_arm_from_closure(&strand, closure, (int)n_regs) != 0) {
         if (vm->host_log_fn) {
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
-                "scratch-frame arm: register-stack OOM");
+                "scratch-frame arm failed "
+                "(register-stack OOM or proto-less native closure)");
         }
         return -1;
     }
