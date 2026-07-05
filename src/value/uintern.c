@@ -21,6 +21,7 @@
  *   without functional benefit (FOUND-021, v0.5.5). */
 
 #include "value/uintern.h"
+#include "runtime/umacros.h"   /* urbi_memcpy */
 
 #include <stdint.h>
 #include <stddef.h>
@@ -197,7 +198,7 @@ const char *ustr_intern(UVM *vm, const char *bytes, size_t nbytes) {
     if (e == NULL) return NULL;
     e->hash = hash;
     e->len = (uint32_t)nbytes;
-    for (size_t i = 0; i < nbytes; i++) e->bytes[i] = bytes[i];
+    urbi_memcpy(e->bytes, bytes, nbytes);
     e->bytes[nbytes] = '\0';
 
     t->entries[empty_idx] = e;

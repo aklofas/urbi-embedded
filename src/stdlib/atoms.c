@@ -1099,9 +1099,9 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
             ai++;
             if (k == 's') {
                 const char *sv = (a.kind == (uint8_t)UVAL_STR) ? (const char *)a.v.p : "";
-                size_t sl = urbi_strlen(sv), j;
+                size_t sl = urbi_strlen(sv);
                 if (off + sl >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
-                for (j = 0; j < sl; j++) buf[off++] = sv[j];
+                urbi_memcpy(buf + off, sv, sl); off += sl;
                 i += 2U; continue;
             }
 #if __STDC_HOSTED__

@@ -9,6 +9,7 @@
 #include "lex/ulex_internal.h"
 #include "parse/uast.h"
 #include "value/uarena.h"
+#include "runtime/umacros.h"   /* urbi_memcpy */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -254,7 +255,7 @@ static UAstNode *parse_string_literal(UParser *p) {
             int new_cap = cap + cur.u.str.len;
             char *new_buf = (char *)uarena_alloc(p->arena, (size_t)new_cap);
             if (new_buf == NULL) return NULL;
-            for (int i = 0; i < len; i++) new_buf[i] = buf[i];
+            urbi_memcpy(new_buf, buf, (size_t)len);
             buf = new_buf;
             cap = new_cap;
         }

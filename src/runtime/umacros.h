@@ -67,6 +67,21 @@ static inline void urbi_strncpy_truncating(char *dst, size_t cap, const char *sr
     dst[n] = '\0';
 }
 
+/* urbi_memcpy — plain byte-copy loop, no <string.h> dependency.
+ *
+ * Unlike urbi_zero, no volatile qualifier is needed: dead-store elimination
+ * is not a risk for copies (the compiler can see the source is live).
+ *
+ * Contract: copies exactly `n` bytes from `src` to `dst`.  Regions must not
+ * overlap (same contract as standard memcpy).  Caller must ensure both
+ * pointers are valid for `n` bytes. */
+static inline void urbi_memcpy(void *dst, const void *src, size_t n) {
+    unsigned char *d = (unsigned char *)dst;
+    const unsigned char *s = (const unsigned char *)src;
+    size_t i;
+    for (i = 0; i < n; i++) d[i] = s[i];
+}
+
 /* urbi_memeq: byte-equality for two memory regions of equal length.
  *
  * Equivalent to `memcmp(a, b, n) == 0` but with no <string.h> dependency.

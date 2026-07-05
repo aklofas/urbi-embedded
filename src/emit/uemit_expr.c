@@ -946,12 +946,7 @@ static UAstNode *synth_ident(UEmitter *e, const char *name, int line) {
     n->col  = 0;
     n->u.ident.start = name;  /* static / interned lifetime; safe */
     n->u.ident.len   = 0;
-    /* Compute length by scanning (name is a short compile-time literal). */
-    {
-        int l = 0;
-        while (name[l] != '\0') l++;
-        n->u.ident.len = l;
-    }
+    n->u.ident.len = (int)urbi_strlen(name);
     return n;
 }
 
@@ -966,11 +961,7 @@ static UAstNode *synth_member_get(UEmitter *e, UAstNode *recv,
     n->col  = 0;
     n->u.member.recv       = recv;
     n->u.member.name_start = method_name;
-    {
-        int l = 0;
-        while (method_name[l] != '\0') l++;
-        n->u.member.name_len = l;
-    }
+    n->u.member.name_len = (int)urbi_strlen(method_name);
     n->u.member.value = NULL;
     return n;
 }

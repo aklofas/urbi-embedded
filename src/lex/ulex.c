@@ -10,7 +10,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>   /* memcmp, memcpy */
 
 /* strtod (for float literal parsing): from stdlib.h on hosted; declared
  * explicitly for freestanding builds (newlib / picolibc supply it at link
@@ -1091,7 +1090,7 @@ try_parse_syncline(ULexer *l)
     while (l->cur < l->end && (*l->cur == ' ' || *l->cur == '\t')) l->cur++;
 
     /* --- //#pop --- */
-    if (name_len == 3 && memcmp(name_start, "pop", 3) == 0) {
+    if (name_len == 3 && urbi_memeq(name_start, "pop", 3)) {
         /* No arguments.  Remaining characters to '\n' must be whitespace. */
         const char *p = l->cur;
         while (p < l->end && *p != '\n') {
@@ -1109,8 +1108,8 @@ try_parse_syncline(ULexer *l)
     }
 
     /* --- //#line and //#push both take N "FILE" --- */
-    bool is_push = (name_len == 4 && memcmp(name_start, "push", 4) == 0);
-    bool is_line = (name_len == 4 && memcmp(name_start, "line", 4) == 0);
+    bool is_push = (name_len == 4 && urbi_memeq(name_start, "push", 4));
+    bool is_line = (name_len == 4 && urbi_memeq(name_start, "line", 4));
     if (!is_push && !is_line) goto fail;
 
     /* Parse decimal line number (required, at least one digit). */
@@ -1147,7 +1146,7 @@ try_parse_syncline(ULexer *l)
         (uint8_t)((slot + 1U) % (uint8_t)(URBI_SYNCLINE_STACK_MAX + 1));
     size_t copy_len = file_len < (URBI_SYNCLINE_NAME_MAX - 1U)
                       ? file_len : (URBI_SYNCLINE_NAME_MAX - 1U);
-    memcpy(l->syncline_name_pool[slot], file_start, copy_len);
+    urbi_memcpy(l->syncline_name_pool[slot], file_start, (size_t)copy_len);
     l->syncline_name_pool[slot][copy_len] = '\0';
     const char *stored_file = l->syncline_name_pool[slot];
 
