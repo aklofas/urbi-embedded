@@ -100,7 +100,7 @@ var lch = List.new(); lch << 10 << 20 << 30; lch.length()
 # Legacy raises "cannot be applied onto empty list" (list.cc:115-117); ours
 # raises via get(0)'s bounds check with a different message text.  Same
 # raise-on-empty semantics, divergent message — recorded decision; we pin
-# OUR message here.  v0.13.5 (STD-02): the out-of-range raise is now a typed
+# OUR message here.  v0.13.5: the out-of-range raise is now a typed
 # IndexError (was a generic TypeError).
 try { List.new().head() } catch (var e) { e.message }
 [00000022] "IndexError: get: index out of range"

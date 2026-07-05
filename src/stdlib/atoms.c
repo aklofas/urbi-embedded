@@ -371,7 +371,7 @@ int_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "%: self must be Integer", out);
     if (args[0].kind == (uint8_t)UVAL_FLOAT) {
-        /* v0.13.5 (STD-02): legacy-conformant modulo-by-zero (float.cc
+        /* v0.13.5: legacy-conformant modulo-by-zero (float.cc
          * operator%: `if (rhs) fmod(...) else RAISE("modulo by 0")`). */
         if ((double)args[0].v.f == 0.0)
             return urbi_raise_divzero(vm, "modulo by 0", out);
@@ -396,7 +396,7 @@ flt_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (args[0].kind == (uint8_t)UVAL_FLOAT) b = (double)args[0].v.f;
     else if (args[0].kind == (uint8_t)UVAL_INT) b = (double)args[0].v.i;
     else return urbi_raise_type(vm, "%: argument must be Integer or Float", out);
-    /* v0.13.5 (STD-02): legacy-conformant modulo-by-zero (float.cc
+    /* v0.13.5: legacy-conformant modulo-by-zero (float.cc
      * operator%: `if (rhs) fmod(...) else RAISE("modulo by 0")`). */
     if (b == 0.0) return urbi_raise_divzero(vm, "modulo by 0", out);
     *out = val_float(fmod_portable((double)self.v.f, b));

@@ -78,7 +78,7 @@ int urbi_raise_type(struct UVM *vm, const char *msg, UValue *out);
 int urbi_raise_oom(struct UVM *vm, UValue *out);
 int urbi_raise_lookup(struct UVM *vm, struct USymbol *name, UValue *out);
 
-/* v0.13.5 (STD-02): typed subclass raise helpers.  Same convention as
+/* v0.13.5: typed subclass raise helpers.  Same convention as
  * urbi_raise_type — build "<Subclass>: <msg>" and clone the cached proto.
  * INTERNAL (Tier-4 internal-leak), not public ABI surface. */
 int urbi_raise_index(struct UVM *vm, const char *msg, UValue *out);

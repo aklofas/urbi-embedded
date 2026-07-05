@@ -1,10 +1,10 @@
-# Milestone: v1.0-rc stdlib-completeness (zero-divisor rebaselined v0.13.5 STD-02)
+# Milestone: v1.0-rc stdlib-completeness (zero-divisor rebaselined v0.13.5)
 # Covers: % modulo operator (Integer and Float), zero-divisor error.
 #
 # The `a % b` source form desugars to a.'%'(b) in the parser (front's work).
 # The '%' native methods on Integer/Float live in src/stdlib/atoms.c.
 #
-# v0.13.5 (STD-02): modulo-by-zero now raises a catchable DivByZero (legacy
+# v0.13.5: modulo-by-zero now raises a catchable DivByZero (legacy
 # "modulo by 0") instead of a TypeError — legacy-conformant with float.cc
 # operator% (`if (rhs) fmod(...) else RAISE("modulo by 0")`).
 7 % 3

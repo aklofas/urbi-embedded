@@ -257,9 +257,10 @@ urbi_exception_subclass_protos_resolve(UVM *vm, URealm *realm)
         { "ArityError",       10, offsetof(UVM, arityerror_proto) },
         { "LookupError",      11, offsetof(UVM, lookuperror_proto)},
         { "OutOfMemoryError", 16, offsetof(UVM, oomerror_proto)   },
-        /* v0.13.5 (STD-02): subclasses raised from C sites.  KeyError is
+        /* v0.13.5: subclasses raised from C sites.  KeyError is
          * intentionally omitted — the sole dict-miss accessor (Dict.get)
-         * keeps returning nil (STD-06 documented divergence), so no C site
+         * keeps returning nil (documented divergence; see the language-
+         * compatibility-matrix stdlib-dict-get-nil row), so no C site
          * raises it. */
         { "IndexError",       10, offsetof(UVM, indexerror_proto) },
         { "RangeError",       10, offsetof(UVM, rangeerror_proto) },

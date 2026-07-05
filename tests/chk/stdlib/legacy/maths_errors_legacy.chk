@@ -2,7 +2,7 @@
 # Milestone: M6 Wave 2 (Phase 11 partial port)
 #
 # Legacy fixture asserts:
-#   - `1 / 0` raises `/: division by 0` — v0.13.5 (STD-02) now CONFORMS:
+#   - `1 / 0` raises `/: division by 0` — v0.13.5 now CONFORMS:
 #     the zero divisor raises a catchable DivByZero.  The earlier v1.0
 #     IEEE-754 `inf` divergence is closed (legacy urbi is all-Float and
 #     float.cc checks `if (!rhs) RAISE("division by 0")`).
@@ -19,7 +19,7 @@
 # Wave-2 deferred (full port): all Math.{sqrt,log,acos,asin,sqr}
 # methods + their domain-error diagnostics.  See PORT_NOTES.md.
 
-# `1 / 0` raises DivByZero at v0.13.5 (STD-02), matching legacy
+# `1 / 0` raises DivByZero at v0.13.5, matching legacy
 # `/: division by 0`.  Conformance closed.
 1 / 0
 [00000000] !!! line 1: DivByZero: division by 0

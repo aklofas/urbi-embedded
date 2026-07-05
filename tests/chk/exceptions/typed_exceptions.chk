@@ -1,4 +1,4 @@
-# Milestone: v0.13.5-conformance-and-stdlib (STD-02 / DRIFT-04)
+# Milestone: v0.13.5-conformance-and-stdlib
 # Covers: typed exception routing from C raise sites, discriminated in a
 #         catch guard via isA.  Integer AND float division/modulo by zero
 #         now RAISE a catchable DivByZero (legacy-conformant: legacy urbi is
@@ -63,10 +63,11 @@ var r12 = "no"; try { 1/0 } catch (var e) { } finally { r12 = "ran" }; r12
 var r13 = false; try { throw "boom" } catch (var e) { r13 = (e == "boom") }; r13
 [00000012] true
 
-# --- STD-06 documented divergence: Dict.get on a missing key returns nil and
+# --- Documented divergence: Dict.get on a missing key returns nil and
 #     does NOT raise (legacy Dictionary::get raised KeyError — see the
-#     language-compatibility-matrix STD-06 row).  The REPL suppresses a bare
-#     nil result, so pin the contract via a no-throw comparison. ---
+#     language-compatibility-matrix stdlib-dict-get-nil row).  The REPL
+#     suppresses a bare nil result, so pin the contract via a no-throw
+#     comparison. ---
 var dg = "threw"; try { dg = (["a" => 1].get("missing") == nil) } catch (var e) {}; dg
 [00000013] true
 

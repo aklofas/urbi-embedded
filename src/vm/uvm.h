@@ -700,12 +700,13 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *arityerror_proto;
     struct UObject *lookuperror_proto;
     struct UObject *oomerror_proto;
-    /* v0.13.5 (STD-02): typed subclasses raised from C sites — IndexError
-     * (List index out of range), RangeError (String char-position out of
-     * range), DivByZero (integer AND float `/` and `%` by zero, legacy-
-     * conformant).  KeyError is intentionally NOT cached: the sole dict-miss
-     * accessor (Dict.get) follows the STD-06 nil-return divergence, so no C
-     * site raises it. */
+    /* v0.13.5: typed subclasses raised from C sites — IndexError (List
+     * index out of range), RangeError (String char-position out of range),
+     * DivByZero (integer AND float `/` and `%` by zero, legacy-conformant).
+     * KeyError is intentionally NOT cached: the sole dict-miss accessor
+     * (Dict.get) follows the documented nil-return divergence (see the
+     * language-compatibility-matrix stdlib-dict-get-nil row), so no C site
+     * raises it. */
     struct UObject *indexerror_proto;
     struct UObject *rangeerror_proto;
     struct UObject *divbyzero_proto;

@@ -194,7 +194,7 @@ urbi_raise_lookup(UVM *vm, USymbol *name, UValue *out)
     return urbi_raise_typed(vm, vm ? vm->lookuperror_proto : NULL, out, buf);
 }
 
-/* v0.13.5 (STD-02): typed subclass raise helpers for native-method sites.
+/* v0.13.5: typed subclass raise helpers for native-method sites.
  * Each mirrors urbi_raise_type — prepend the subclass name, then clone the
  * cached proto via urbi_raise_typed.  INTERNAL (Tier-4 internal-leak, not
  * public ABI surface). */

@@ -443,7 +443,7 @@ UTEST(vm_div_int_int_exact_still_float) {
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
-/* v0.13.5 (STD-02): a zero divisor now RAISES a catchable DivByZero
+/* v0.13.5: a zero divisor now RAISES a catchable DivByZero
    (legacy-conformant — legacy urbi is all-Float and float.cc checks
    `if (!rhs) RAISE("division by 0")`, so 5/0, -5/0 and 0/0 all raise;
    no IEEE inf/NaN leaks out).  These bare modules run with no realm, so
