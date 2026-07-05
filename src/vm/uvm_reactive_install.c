@@ -149,63 +149,81 @@ vm_install_fault(UVM *vm, UWatcherInstallResult r, const char *opcode_name)
     (void)opcode_name;  /* available for future diagnostic enrichment */
 }
 
+/* Per-opcode install descriptor — data-tables the per-opcode facts that were
+ * duplicated across the 7 ABC-parallel arms.
+ *
+ * is_event  — true: A-operand is a UEvent (checked with vm_install_check_event_operand);
+ *             false: A-operand is a UClosure "cond" (vm_install_check_closure_operand).
+ * has_onleave — true: C-operand carries an onleave closure or 0xFF sentinel;
+ *               false: C is ignored (AT_SYNC has no onleave by spec).
+ * mode      — UWATCHER_* constant passed to the install function.
+ */
+typedef struct {
+    uint8_t mode;
+    uint8_t is_event;    /* 1 = event install; 0 = cond install */
+    uint8_t has_onleave; /* 1 = check/pass C; 0 = always NULL   */
+} UInstallSpec;
+
+/* Indexed by opcode value.  Only the six standard ABC install opcodes are
+ * populated; WAITUNTIL is handled separately (park logic). */
+static const UInstallSpec install_specs[] = {
+    [OP_AT_INSTALL]            = { UWATCHER_AT,             0, 1 },
+    [OP_AT_SYNC_INSTALL]       = { UWATCHER_AT_SYNC,        0, 0 },
+    [OP_WHENEVER_INSTALL]      = { UWATCHER_WHENEVER,       0, 1 },
+    [OP_AT_EVENT_INSTALL]      = { UWATCHER_AT_EVENT,       1, 1 },
+    [OP_AT_EVENT_SYNC_INSTALL] = { UWATCHER_AT_EVENT_SYNC,  1, 1 },
+    [OP_WHENEVER_EVENT_INSTALL]= { UWATCHER_WHENEVER_EVENT, 1, 1 },
+};
+
 UVmReactiveInstallResult
 vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
 {
     switch (op) {
-    case OP_AT_INSTALL: {
+    /* === Standard ABC install opcodes (6 arms collapsed to one body) ===
+     *
+     * Cond installs: A=cond(closure), B=body(closure), C=onleave|0xFF.
+     *   Calls install_watcher_runtime(vm, s, mode, cond, body, onleave, NULL).
+     *   AT_SYNC has no onleave (has_onleave=0; C ignored).
+     * Event installs: A=event(UEvent), B=body(closure), C=onleave|0xFF.
+     *   Calls install_at_event_runtime(vm, s, mode, event, body, onleave).
+     *
+     * Per-opcode facts live in install_specs[] above. */
+    case OP_AT_INSTALL:
+    case OP_AT_SYNC_INSTALL:
+    case OP_WHENEVER_INSTALL:
+    case OP_AT_EVENT_INSTALL:
+    case OP_AT_EVENT_SYNC_INSTALL:
+    case OP_WHENEVER_EVENT_INSTALL: {
+        const UInstallSpec *spec = &install_specs[op];
+        const char *opn = op_name(op);
         uint8_t A = uinstr_a(*s->pc);
         uint8_t B = uinstr_b(*s->pc);
         uint8_t C = uinstr_c(*s->pc);
-        if (!vm_install_check_closure_operand(vm, s, A, "OP_AT_INSTALL", "cond")) return UVM_INSTALL_HALT;
-        if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_INSTALL", "body")) return UVM_INSTALL_HALT;
-        if (C != 0xFFU
-            && !vm_install_check_closure_operand(vm, s, C, "OP_AT_INSTALL", "onleave"))
-            return UVM_INSTALL_HALT;
-        UClosure *cond    = (UClosure *)s->R[A].v.p;
-        UClosure *body    = (UClosure *)s->R[B].v.p;
-        UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-        UWatcherInstallResult r =
-            install_watcher_runtime(vm, s, UWATCHER_AT, cond, body, onleave, NULL);
-        if (vm_install_result_is_fatal(r)) {
-            vm_install_fault(vm, r, "OP_AT_INSTALL");
-            return UVM_INSTALL_HALT;
+        if (spec->is_event) {
+            if (!vm_install_check_event_operand(vm, s, A, opn))
+                return UVM_INSTALL_HALT;
+        } else {
+            if (!vm_install_check_closure_operand(vm, s, A, opn, "cond"))
+                return UVM_INSTALL_HALT;
         }
-        return UVM_INSTALL_NEXT;
-    }
-
-    case OP_AT_SYNC_INSTALL: {
-        uint8_t A = uinstr_a(*s->pc);
-        uint8_t B = uinstr_b(*s->pc);
-        if (!vm_install_check_closure_operand(vm, s, A, "OP_AT_SYNC_INSTALL", "cond")) return UVM_INSTALL_HALT;
-        if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_SYNC_INSTALL", "body")) return UVM_INSTALL_HALT;
-        UClosure *cond = (UClosure *)s->R[A].v.p;
-        UClosure *body = (UClosure *)s->R[B].v.p;
-        UWatcherInstallResult r =
-            install_watcher_runtime(vm, s, UWATCHER_AT_SYNC, cond, body, NULL, NULL);
-        if (vm_install_result_is_fatal(r)) {
-            vm_install_fault(vm, r, "OP_AT_SYNC_INSTALL");
+        if (!vm_install_check_closure_operand(vm, s, B, opn, "body"))
             return UVM_INSTALL_HALT;
-        }
-        return UVM_INSTALL_NEXT;
-    }
-
-    case OP_WHENEVER_INSTALL: {
-        uint8_t A = uinstr_a(*s->pc);
-        uint8_t B = uinstr_b(*s->pc);
-        uint8_t C = uinstr_c(*s->pc);
-        if (!vm_install_check_closure_operand(vm, s, A, "OP_WHENEVER_INSTALL", "cond")) return UVM_INSTALL_HALT;
-        if (!vm_install_check_closure_operand(vm, s, B, "OP_WHENEVER_INSTALL", "body")) return UVM_INSTALL_HALT;
-        if (C != 0xFFU
-            && !vm_install_check_closure_operand(vm, s, C, "OP_WHENEVER_INSTALL", "onleave"))
+        if (spec->has_onleave && C != 0xFFU
+            && !vm_install_check_closure_operand(vm, s, C, opn, "onleave"))
             return UVM_INSTALL_HALT;
-        UClosure *cond    = (UClosure *)s->R[A].v.p;
         UClosure *body    = (UClosure *)s->R[B].v.p;
-        UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-        UWatcherInstallResult r =
-            install_watcher_runtime(vm, s, UWATCHER_WHENEVER, cond, body, onleave, NULL);
+        UClosure *onleave = (spec->has_onleave && C != 0xFFU)
+                            ? (UClosure *)s->R[C].v.p : NULL;
+        UWatcherInstallResult r;
+        if (spec->is_event) {
+            UEvent *e = (UEvent *)s->R[A].v.p;
+            r = install_at_event_runtime(vm, s, spec->mode, e, body, onleave);
+        } else {
+            UClosure *cond = (UClosure *)s->R[A].v.p;
+            r = install_watcher_runtime(vm, s, spec->mode, cond, body, onleave, NULL);
+        }
         if (vm_install_result_is_fatal(r)) {
-            vm_install_fault(vm, r, "OP_WHENEVER_INSTALL");
+            vm_install_fault(vm, r, opn);
             return UVM_INSTALL_HALT;
         }
         return UVM_INSTALL_NEXT;
@@ -249,88 +267,6 @@ vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
         }
         /* Fast path (cond was truthy): watcher unregistered; strand RUNNING.
          * Fall through to next instruction. */
-        return UVM_INSTALL_NEXT;
-    }
-
-    /* === T47: OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL ===
-     *
-     * ABC-encoded: A = event_reg, B = body_reg, C = onleave_reg (0xFF = absent).
-     * Routes through install_at_event_runtime — no read-set trace, no
-     * active_watchers_head linkage.  Watcher joins event->at_watchers_head
-     * (FIFO) and owning_tag's member chain.
-     * Spec #3 §6.2. */
-    case OP_AT_EVENT_INSTALL: {
-        uint8_t A = uinstr_a(*s->pc);
-        uint8_t B = uinstr_b(*s->pc);
-        uint8_t C = uinstr_c(*s->pc);
-        if (!vm_install_check_event_operand(vm, s, A, "OP_AT_EVENT_INSTALL"))
-            return UVM_INSTALL_HALT;
-        if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_EVENT_INSTALL", "body"))
-            return UVM_INSTALL_HALT;
-        if (C != 0xFFU
-            && !vm_install_check_closure_operand(vm, s, C, "OP_AT_EVENT_INSTALL", "onleave"))
-            return UVM_INSTALL_HALT;
-        UEvent   *e       = (UEvent *)s->R[A].v.p;
-        UClosure *body    = (UClosure *)s->R[B].v.p;
-        UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-        UWatcherInstallResult r =
-            install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, body, onleave);
-        if (vm_install_result_is_fatal(r)) {
-            vm_install_fault(vm, r, "OP_AT_EVENT_INSTALL");
-            return UVM_INSTALL_HALT;
-        }
-        return UVM_INSTALL_NEXT;
-    }
-
-    case OP_AT_EVENT_SYNC_INSTALL: {
-        uint8_t A = uinstr_a(*s->pc);
-        uint8_t B = uinstr_b(*s->pc);
-        uint8_t C = uinstr_c(*s->pc);
-        if (!vm_install_check_event_operand(vm, s, A, "OP_AT_EVENT_SYNC_INSTALL"))
-            return UVM_INSTALL_HALT;
-        if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_EVENT_SYNC_INSTALL", "body"))
-            return UVM_INSTALL_HALT;
-        if (C != 0xFFU
-            && !vm_install_check_closure_operand(vm, s, C, "OP_AT_EVENT_SYNC_INSTALL", "onleave"))
-            return UVM_INSTALL_HALT;
-        UEvent   *e       = (UEvent *)s->R[A].v.p;
-        UClosure *body    = (UClosure *)s->R[B].v.p;
-        UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-        UWatcherInstallResult r =
-            install_at_event_runtime(vm, s, UWATCHER_AT_EVENT_SYNC, e, body, onleave);
-        if (vm_install_result_is_fatal(r)) {
-            vm_install_fault(vm, r, "OP_AT_EVENT_SYNC_INSTALL");
-            return UVM_INSTALL_HALT;
-        }
-        return UVM_INSTALL_NEXT;
-    }
-
-    /* === W0/v0.10.2: OP_WHENEVER_EVENT_INSTALL ===
-     *
-     * ABC-encoded: A = event_reg, B = body_reg, C = onleave_reg (0xFF = absent).
-     * Identical shape to OP_AT_EVENT_INSTALL but arms the watcher with
-     * UWATCHER_WHENEVER_EVENT mode.  The body re-fires on every event emission
-     * (perpetual subscriber — no one-shot teardown).  Closes reactive F1. */
-    case OP_WHENEVER_EVENT_INSTALL: {
-        uint8_t A = uinstr_a(*s->pc);
-        uint8_t B = uinstr_b(*s->pc);
-        uint8_t C = uinstr_c(*s->pc);
-        if (!vm_install_check_event_operand(vm, s, A, "OP_WHENEVER_EVENT_INSTALL"))
-            return UVM_INSTALL_HALT;
-        if (!vm_install_check_closure_operand(vm, s, B, "OP_WHENEVER_EVENT_INSTALL", "body"))
-            return UVM_INSTALL_HALT;
-        if (C != 0xFFU
-            && !vm_install_check_closure_operand(vm, s, C, "OP_WHENEVER_EVENT_INSTALL", "onleave"))
-            return UVM_INSTALL_HALT;
-        UEvent   *ev      = (UEvent *)s->R[A].v.p;
-        UClosure *body    = (UClosure *)s->R[B].v.p;
-        UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-        UWatcherInstallResult r =
-            install_at_event_runtime(vm, s, UWATCHER_WHENEVER_EVENT, ev, body, onleave);
-        if (vm_install_result_is_fatal(r)) {
-            vm_install_fault(vm, r, "OP_WHENEVER_EVENT_INSTALL");
-            return UVM_INSTALL_HALT;
-        }
         return UVM_INSTALL_NEXT;
     }
 
