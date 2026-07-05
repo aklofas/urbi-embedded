@@ -85,47 +85,15 @@ string_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-/* === Method-table install helper ======================================== */
+/* Per-family method tables (UNativeMethodDef from stdlib/object_root.h). */
 
-typedef struct {
-    const char           *name;
-    urbi_native_method_fn fn;
-} AtomMethodEntry;
-
-static int
-register_methods_on_proto(UVM *vm, UObject *proto,
-                          const AtomMethodEntry *table, size_t count)
-{
-    size_t i;
-    for (i = 0; i < count; i++) {
-        UClosure *cl = urbi_native_closure_create(vm, table[i].fn);
-        if (cl == NULL) return URBI_ERR_OOM;
-
-        USymbol *sym = (USymbol *)ustr_intern(
-            vm, table[i].name, urbi_strlen(table[i].name));
-        if (sym == NULL) return URBI_ERR_OOM;
-
-        UValue v = urbi_make_nil();
-        v.kind = (uint8_t)UVAL_CLOSURE;
-        v.v.p = cl;
-        int rc = urbi_object_set_local_slot(vm, proto, sym, v);
-        if (rc != 0) return URBI_ERR_OOM;
-    }
-    return URBI_OK;
-}
-
-/* Per-family method tables. */
-
-static const AtomMethodEntry BOOL_METHODS[] = {
+static const UNativeMethodDef BOOL_METHODS[] = {
     { "toString", bool_toString }
 };
 
-static const AtomMethodEntry STRING_METHODS[] = {
+static const UNativeMethodDef STRING_METHODS[] = {
     { "length",   string_length }
 };
-
-#define BOOL_METHODS_COUNT   (sizeof(BOOL_METHODS)   / sizeof(BOOL_METHODS[0]))
-#define STRING_METHODS_COUNT (sizeof(STRING_METHODS) / sizeof(STRING_METHODS[0]))
 
 /* === urbi_atom_protos_register ========================================== */
 
@@ -166,12 +134,10 @@ urbi_atom_protos_register(UVM *vm)
     (void)void_proto;
 
     int rc;
-    rc = register_methods_on_proto(vm, bool_proto,
-                                   BOOL_METHODS, BOOL_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, bool_proto, BOOL_METHODS);
     if (rc != URBI_OK) return rc;
 
-    rc = register_methods_on_proto(vm, str_proto,
-                                   STRING_METHODS, STRING_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, str_proto, STRING_METHODS);
     if (rc != URBI_OK) return rc;
 
     return URBI_OK;

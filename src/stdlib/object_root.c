@@ -990,12 +990,7 @@ urbi_install_native_methods(UVM *vm, UObject *proto,
 
 /* === urbi_object_root_register ============================================= */
 
-typedef struct {
-    const char           *name;
-    urbi_native_method_fn fn;
-} ObjectMethodEntry;
-
-static const ObjectMethodEntry OBJECT_METHODS[] = {
+static const UNativeMethodDef OBJECT_METHODS[] = {
     { "setSlot",         obj_setSlot         },
     { "getSlot",         obj_getSlot         },
     { "getSlotValue",    obj_getSlotValue    },   /* T61: legacy alias for getSlot */
@@ -1017,30 +1012,11 @@ static const ObjectMethodEntry OBJECT_METHODS[] = {
     { "asString",        obj_asString        }   /* universal fallback */
 };
 
-#define OBJECT_METHODS_COUNT (sizeof(OBJECT_METHODS) / sizeof(OBJECT_METHODS[0]))
-
 int
 urbi_object_root_register(UVM *vm)
 {
     if (vm == NULL) return URBI_ERR_INVALID_ARG;
     UObject *root = urbi_object_root(vm);
     if (root == NULL) return URBI_ERR_OOM;
-
-    size_t i;
-    for (i = 0; i < OBJECT_METHODS_COUNT; i++) {
-        UClosure *cl = urbi_native_closure_create(vm, OBJECT_METHODS[i].fn);
-        if (cl == NULL) return URBI_ERR_OOM;
-
-        USymbol *sym = (USymbol *)ustr_intern(
-            vm, OBJECT_METHODS[i].name,
-            urbi_strlen(OBJECT_METHODS[i].name));
-        if (sym == NULL) return URBI_ERR_OOM;
-
-        UValue v = urbi_make_nil();
-        v.kind = (uint8_t)UVAL_CLOSURE;
-        v.v.p = cl;
-        int rc = urbi_object_set_local_slot(vm, root, sym, v);
-        if (rc != 0) return URBI_ERR_OOM;
-    }
-    return URBI_OK;
+    return URBI_REGISTER_METHODS(vm, root, OBJECT_METHODS);
 }

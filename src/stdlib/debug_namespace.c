@@ -182,14 +182,9 @@ debug_profile_reset_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
-/* --- Method-table install --------------------------------------------- */
+/* --- Method table --------------------------------------------------------- */
 
-typedef struct {
-    const char           *name;
-    urbi_native_method_fn fn;
-} DebugMethodEntry;
-
-static const DebugMethodEntry DEBUG_METHODS[] = {
+static const UNativeMethodDef DEBUG_METHODS[] = {
     { "coros",    debug_coros_native    },
     { "tags",     debug_tags_native     },
     { "watchers", debug_watchers_native },
@@ -203,27 +198,6 @@ static const DebugMethodEntry DEBUG_METHODS[] = {
     { "profileReset", debug_profile_reset_native },
     { "memCheck", debug_memCheck_native }
 };
-#define DEBUG_METHODS_COUNT (sizeof(DEBUG_METHODS) / sizeof(DEBUG_METHODS[0]))
-
-static int
-install_methods(UVM *vm, UObject *proto)
-{
-    size_t i;
-    for (i = 0; i < DEBUG_METHODS_COUNT; i++) {
-        UClosure *cl = urbi_native_closure_create(vm, DEBUG_METHODS[i].fn);
-        if (cl == NULL) return URBI_ERR_OOM;
-        USymbol *sym = (USymbol *)ustr_intern(vm, DEBUG_METHODS[i].name,
-                                              urbi_strlen(DEBUG_METHODS[i].name));
-        if (sym == NULL) return URBI_ERR_OOM;
-        UValue v = urbi_make_nil();
-        v.kind = (uint8_t)UVAL_CLOSURE;
-        v.v.p = cl;
-        if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
-            return URBI_ERR_OOM;
-    }
-    return URBI_OK;
-}
-
 int
 urbi_debug_namespace_register(UVM *vm)
 {
@@ -234,7 +208,7 @@ urbi_debug_namespace_register(UVM *vm)
     /* Bind via VM pointer BEFORE install so the GC walker sees the cell
      * if install triggers a collection. */
     vm->debug_proto = proto;
-    int rc = install_methods(vm, proto);
+    int rc = URBI_REGISTER_METHODS(vm, proto, DEBUG_METHODS);
     if (rc != URBI_OK) {
         /* Leave the (partially-populated) proto attached; GC will reap it
          * when subsequent VM destroy walks the chain.  Surfacing OOM via
