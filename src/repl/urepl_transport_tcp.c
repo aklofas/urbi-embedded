@@ -19,6 +19,7 @@
  *
  * Only compiled when URBI_ENABLE_REPL=1. */
 #include "repl/urepl_transport_tcp.h"
+#include "repl/urepl_transport_posix.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -39,12 +40,8 @@ tcp_accept(void *listener_state, int *out_client_fd)
         return URBI_ERR_INVALID_ARG;
     }
     int fd = accept(l->listen_fd, NULL, NULL);
-    if (fd < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            return -1;  /* "no client waiting" — listener thread loops */
-        }
-        return -errno;
-    }
+    if (fd < 0)
+        return urepl_posix_errno_rc(errno);
     int fl = fcntl(fd, F_GETFL, 0);
     if (fl >= 0) {
         (void)fcntl(fd, F_SETFL, fl | O_NONBLOCK);
@@ -61,12 +58,8 @@ static int
 tcp_read(int client_fd, void *buf, size_t n)
 {
     ssize_t r = recv(client_fd, buf, n, 0);
-    if (r < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            return -1;
-        }
-        return -errno;
-    }
+    if (r < 0)
+        return urepl_posix_errno_rc(errno);
     return (int)r;  /* 0 = EOF (peer closed) */
 }
 
@@ -74,12 +67,8 @@ static int
 tcp_write(int client_fd, const void *buf, size_t n)
 {
     ssize_t w = send(client_fd, buf, n, MSG_NOSIGNAL);
-    if (w < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            return -1;
-        }
-        return -errno;
-    }
+    if (w < 0)
+        return urepl_posix_errno_rc(errno);
     return (int)w;
 }
 

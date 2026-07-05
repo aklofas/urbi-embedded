@@ -23,6 +23,8 @@
  *
  * Only compiled when URBI_ENABLE_REPL=1. */
 #include "repl/urepl_transport_pty.h"
+#include "repl/urepl_transport_common.h"
+#include "repl/urepl_transport_posix.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -98,15 +100,7 @@ static int
 pty_accept(void *listener_state, int *out_client_fd)
 {
     UPtyState *st = (UPtyState *)listener_state;
-    if (st == NULL || out_client_fd == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
-    if (st->accepted) {
-        return -1;  /* single-client — no more peers */
-    }
-    st->accepted = true;
-    *out_client_fd = st->slave_fd;
-    return 0;
+    UREPL_ACCEPT_ONCE(st, out_client_fd, st->slave_fd);
 }
 
 static int
@@ -114,16 +108,12 @@ pty_read(int client_fd, void *buf, size_t n)
 {
     ssize_t r = read(client_fd, buf, n);
     if (r < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            return -1;
-        }
         /* When the master side is closed, the slave read can return
          * EIO on Linux (rather than 0 / EOF).  Treat as clean EOF so
          * the reader thread tears down without spinning. */
-        if (errno == EIO) {
+        if (errno == EIO)
             return 0;
-        }
-        return -errno;
+        return urepl_posix_errno_rc(errno);
     }
     return (int)r;  /* 0 = EOF */
 }
@@ -133,13 +123,9 @@ pty_write(int client_fd, const void *buf, size_t n)
 {
     ssize_t w = write(client_fd, buf, n);
     if (w < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            return -1;
-        }
-        if (errno == EIO) {
+        if (errno == EIO)
             return 0;
-        }
-        return -errno;
+        return urepl_posix_errno_rc(errno);
     }
     return (int)w;
 }

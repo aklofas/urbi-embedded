@@ -22,6 +22,8 @@
 
 #if defined(URBI_ENABLE_REPL) && defined(ESP_PLATFORM)
 
+#include "repl/urepl_transport_common.h"
+
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -58,15 +60,7 @@ static int
 uart_esp_idf_accept(void *listener_state, int *out_client_fd)
 {
     UUartEspIdfState *st = (UUartEspIdfState *)listener_state;
-    if (st == NULL || out_client_fd == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
-    if (st->accepted) {
-        return -1;
-    }
-    st->accepted = true;
-    *out_client_fd = (int)st->port;
-    return 0;
+    UREPL_ACCEPT_ONCE(st, out_client_fd, (int)st->port);
 }
 
 static int

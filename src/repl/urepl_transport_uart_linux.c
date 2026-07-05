@@ -19,6 +19,9 @@
 
 #if defined(__linux__) && defined(URBI_ENABLE_REPL)
 
+#include "repl/urepl_transport_common.h"
+#include "repl/urepl_transport_posix.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -116,27 +119,15 @@ static int
 uart_linux_accept(void *listener_state, int *out_client_fd)
 {
     UUartLinuxState *st = (UUartLinuxState *)listener_state;
-    if (st == NULL || out_client_fd == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
-    if (st->accepted) {
-        return -1;  /* single-client */
-    }
-    st->accepted = true;
-    *out_client_fd = st->fd;
-    return 0;
+    UREPL_ACCEPT_ONCE(st, out_client_fd, st->fd);
 }
 
 static int
 uart_linux_read(int client_fd, void *buf, size_t n)
 {
     ssize_t r = read(client_fd, buf, n);
-    if (r < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            return -1;
-        }
-        return -errno;
-    }
+    if (r < 0)
+        return urepl_posix_errno_rc(errno);
     return (int)r;
 }
 
@@ -144,12 +135,8 @@ static int
 uart_linux_write(int client_fd, const void *buf, size_t n)
 {
     ssize_t w = write(client_fd, buf, n);
-    if (w < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            return -1;
-        }
-        return -errno;
-    }
+    if (w < 0)
+        return urepl_posix_errno_rc(errno);
     return (int)w;
 }
 
