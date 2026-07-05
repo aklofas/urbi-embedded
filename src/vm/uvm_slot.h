@@ -32,8 +32,8 @@
  * SETTER_NEEDED — IC entry has FLAG_OSET; caller must invoke setter closure.
  * MISSING       — slow-path slot_get returned "not found".
  * CONST_WRITE   — attempted write to a FLAG_CONSTANT slot.
- * OOM           — atom proto allocation failed.
- * NO_IC         — ic_resolve_pi returned NULL (no IC table bound to strand).
+ * THREW         — helper deposited a catchable typed throw on vm->cur_strand;
+ *                 caller must `goto safepoint`.
  */
 typedef enum {
     VM_SLOT_OK           = 0,
@@ -41,10 +41,7 @@ typedef enum {
     VM_SLOT_SETTER_NEEDED,
     VM_SLOT_MISSING,
     VM_SLOT_CONST_WRITE,
-    VM_SLOT_OOM,
-    VM_SLOT_NO_IC,
-    VM_SLOT_THREW   /* v0.11.4: helper deposited a catchable typed throw on
-                       vm->cur_strand; caller must `goto safepoint`. */
+    VM_SLOT_THREW
 } UVmSlotResult;
 
 /* vm_resolve_ic: resolve the IC entry for (recv, ic) and apply the OBJ-IC-POLY
@@ -175,7 +172,8 @@ UVmSlotResult vm_getslot_slow(UVM *vm,
  *
  * Returns VM_SLOT_OK on success.
  * Returns VM_SLOT_MISSING on failure (vm->last_error set).
- * Returns VM_SLOT_OOM on setter error (vm->last_error set).
+ * Returns VM_SLOT_THREW when the setter raised a typed error
+ *   (vm->last_error set; caller must `goto safepoint`).
  *
  * `opname` is used in error messages ("slot write"). */
 UVmSlotResult vm_setslot_slow(UVM *vm,
