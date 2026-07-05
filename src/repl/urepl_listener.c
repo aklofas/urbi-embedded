@@ -452,8 +452,9 @@ reader_main(void *arg)
                 }
 
                 if (!rbuf_discarding) {
+                    UReplSession *rs = r->session;
                     size_t consumed = parse_lines_to_jobs(server,
-                                                          r->session->session_id,
+                                                          rs->session_id,
                                                           rbuf, fill);
                     if (consumed > 0U) {
                         if (consumed < fill) {
@@ -467,18 +468,15 @@ reader_main(void *arg)
                      * Headroom guard: skip the write if the ring is
                      * saturated to prevent a ping-pong. */
                     if (fill >= sizeof(rbuf)) {
-                        UReplSession *rs = r->session;
-                        if (rs != NULL) {
-                            char ltenv[256];
-                            size_t ltn = 0;
-                            if (urepl_ndjson_emit_error(
-                                        ltenv, sizeof(ltenv), 0U,
-                                        "line_too_long",
-                                        "inbound line exceeds 8 KiB cap; frame dropped",
-                                        &ltn) == 0
-                                && urepl_ringbuf_headroom(&rs->output, ltn)) {
-                                urepl_ringbuf_write(&rs->output, ltenv, ltn);
-                            }
+                        char ltenv[256];
+                        size_t ltn = 0;
+                        if (urepl_ndjson_emit_error(
+                                    ltenv, sizeof(ltenv), 0U,
+                                    "line_too_long",
+                                    "inbound line exceeds 8 KiB cap; frame dropped",
+                                    &ltn) == 0
+                            && urepl_ringbuf_headroom(&rs->output, ltn)) {
+                            urepl_ringbuf_write(&rs->output, ltenv, ltn);
                         }
                         fill = 0;
                         rbuf_discarding = true;

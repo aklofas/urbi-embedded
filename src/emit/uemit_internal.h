@@ -81,7 +81,7 @@ bool proto_grow(UProto *root, UProto *proto,
 uint8_t emit_expr(UEmitter *e, UAstNode *n);
 
 /* Diag-emit funnel (defined in uemit_diag.c). */
-void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...);
+void emit_diag_warn(UEmitter *e, const UAstNode *n, const char *fmt, ...);
 void emit_diag_free_all(UEmitter *e);
 
 /* Unwind AST arm helpers (defined in uemit_unwind.c).

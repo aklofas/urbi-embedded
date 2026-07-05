@@ -307,7 +307,7 @@ void urbi_emit_diag_error(UEmitter *e, const UAstNode *n, const char *fmt, ...);
  * fills buf when an error-level diagnostic is present; returns false when no
  * error diagnostic has been recorded (buf is untouched).
  * No-op / returns false on freestanding builds. */
-bool urbi_emit_diag_format_first_error(UEmitter *e, char *buf, size_t cap);
+bool urbi_emit_diag_format_first_error(const UEmitter *e, char *buf, size_t cap);
 
 /* T32: Free all diagnostic message strings and the diag_buf array itself.
  * Resets diag_count/diag_cap to 0.  Must be called before the emitter's
