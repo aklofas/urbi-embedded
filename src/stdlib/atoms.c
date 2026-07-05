@@ -1063,7 +1063,7 @@ str_asciiAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === String split / join / format =========================================
  *
- * split(sep) -> List of String pieces (empty sep yields one piece: self).
+ * split(sep) -> List of String pieces (empty sep splits per byte).
  * join(list) -> String, with `self` as the separator between elements.
  * format(list) -> printf-style %s / %d / %f / %% substitution (minimal).
  *
@@ -1095,7 +1095,10 @@ str_split(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UObject *lst = urbi_stdlib_list_new_empty(vm);
     if (lst == NULL) return urbi_raise_oom(vm, out);
 
-    if (seplen == 0U) {   /* empty sep -> per-byte split (legacy string.cc:385-391) */
+    if (seplen == 0U) {   /* empty sep -> per-byte split (legacy string.cc:385-391).
+                           * Per-BYTE, not per-character: multi-byte UTF-8
+                           * characters split into byte fragments — matches
+                           * the reference implementation (foreach char c). */
         size_t j;
         for (j = 0U; j < n; j++) {
             int oom = 0;

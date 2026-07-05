@@ -1,14 +1,16 @@
-# Object.asString() — universal fallback on Object root.
+# Object.asString() — fallback on Object root for UVAL_OBJECT receivers.
 # Legacy object.u:90-93: `asString` delegates to '$id'() which returns a
 # type/address form.  This implementation produces <object 0x...> via
 # uvalue_format, matching the REPL's rendering of UVAL_OBJECT values.
 #
-# Atoms (Integer, Float, String) have their own asString slots installed
-# via atoms.c and shadow the Object root slot — those are NOT tested here.
-# This fixture targets UVAL_OBJECT receivers only.
+# Shadowing: Integer and Float have C-native asString slots (atoms.c);
+# String's asString comes from the string_overlay.u scripted overlay
+# (returns self).  All other atom kinds (nil, Boolean, ...) inherit the
+# Object root directly and reach this fallback, which rejects them with
+# a TypeError rather than formatting a garbage NULL pointer.
 #
-# Because the address is nondeterministic, tests check stable properties:
-# non-empty, correct type (String), and a fixed prefix.
+# Because the address is nondeterministic, object tests check stable
+# properties: non-empty, correct type (String), and a fixed prefix.
 
 # Plain object: returns a non-empty String.
 Object.new().asString().isEmpty()
@@ -21,3 +23,16 @@ Object.new().asString().startsWith("<object ")
 # List (also UVAL_OBJECT) gets the default object form, not pretty-printing.
 var lst = List.new(1,2,3); lst.asString().startsWith("<object ")
 [00000002] true
+
+# String receiver never reaches the Object-root fallback: the overlay
+# slot (string_overlay.u) shadows it and returns self.
+"x".asString()
+[00000003] "x"
+
+# Non-object atom kinds lacking their own asString are rejected with a
+# TypeError (pre-asString dispatch raised TypeError for these too).
+nil.asString()
+[00000004] !!! TypeError: asString: self must be a UObject
+
+true.asString()
+[00000005] !!! TypeError: asString: self must be a UObject

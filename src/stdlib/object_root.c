@@ -895,23 +895,29 @@ obj_properties(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === Object.asString =======================================================
  *
- * Universal fallback: returns the uvalue_format rendering as a String.
- * Legacy object.u:90-93 delegates to '$id'() which returns a type/address
- * form; this implementation uses the same <object 0x...> format already
- * produced by the REPL's uvalue_format() for UVAL_OBJECT values.
+ * Fallback for UVAL_OBJECT receivers: returns the <object 0x...> rendering
+ * (same format as the REPL's uvalue_format() for UVAL_OBJECT values) as a
+ * String.  Legacy object.u:90-93 delegates to '$id'() which returns a
+ * type/address form.
  *
- * Atoms (Integer, Float, String) have their own asString slots installed
- * via atoms.c and are found before the Object root slot — this method
- * is reached only for UVAL_OBJECT receivers. */
+ * Shadowing: Integer and Float carry C-native asString slots (atoms.c);
+ * String's asString comes from the string_overlay.u scripted overlay
+ * (returns self).  Those are found before this Object-root slot.  Every
+ * other atom kind (nil, Boolean, void, closures, tags, ...) inherits the
+ * Object root directly and lands here — non-UVAL_OBJECT receivers are
+ * rejected with a TypeError (pre-asString dispatch also raised a
+ * TypeError for these kinds; formatting them as "<object %p>" would
+ * print a garbage NULL pointer). */
 static int
 obj_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "Object.asString", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "asString: self must be a UObject", out);
 #if __STDC_HOSTED__
     char buf[64];
-    void *ptr = (self.kind == (uint8_t)UVAL_OBJECT) ? self.v.p : NULL;
-    int n = snprintf(buf, sizeof buf, "<object %p>", ptr);
+    int n = snprintf(buf, sizeof buf, "<object %p>", self.v.p);
     if (n < 0) n = 0;
     if ((size_t)n >= sizeof buf) n = (int)sizeof buf - 1;
     UValue v = urbi_make_str_interned(vm, buf, (size_t)n);
@@ -919,7 +925,6 @@ obj_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     *out = v;
     return UEXEC_OK;
 #else
-    (void)self;
     return urbi_raise_type(vm, "Object.asString: hosted snprintf required", out);
 #endif
 }
