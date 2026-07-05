@@ -84,3 +84,46 @@ List.new(1, 2).sort(5)
 # --- too many arguments raises ArityError ---
 List.new(1, 2).sort(function(a, b) { a < b }, 3)
 [00000018] !!! ArityError: sort expected 1 args, got 2
+
+# --- a comparator that declares fewer than 2 params raises TypeError up
+#     front (a 1-param body would otherwise read a clobbered arg window and
+#     silently mis-sort) ---
+List.new(3, 1, 2).sort(function(a) { a })
+[00000019] !!! TypeError: sort: comparator must accept 2 arguments
+
+List.new(3, 1, 2).sort(function() { true })
+[00000020] !!! TypeError: sort: comparator must accept 2 arguments
+
+# --- the under-2-params guard is catchable ---
+var r = false; try { List.new(3, 1, 2).sort(function(a) { a }) } catch (var e) { r = e.isA(TypeError) }; r
+[00000021] true
+
+# --- a comparator with MORE than 2 params keeps the existing behavior: its
+#     own arity prologue rejects the 2-arg call (plain-String throw) ---
+var m = "none"; try { List.new(3, 1, 2).sort(function(a, b, c) { a < b }) } catch (var e) { m = e }; m
+[00000022] "CALL: wrong argument count (expected 3)"
+
+# --- a defaulted trailing param still counts as 2 declared params ---
+var s = List.new(3, 1, 2).sort(function(a, b = nil) { a < b }); s.get(0)
+[00000023] 1
+
+# --- a native (C-builtin) closure cannot serve as a comparator: TypeError,
+#     not a crash (it has no bytecode body to run per comparison) ---
+List.new(3, 1, 2).sort(Object.getSlot("clone"))
+[00000024] !!! TypeError: sort: comparator must accept 2 arguments
+
+# --- raw String `<` inside a comparator is the numeric-only OP_LT TypeError,
+#     catchable out of sort (use a derived numeric key instead, above) ---
+var r = false; try { List.new("bb", "a").sort(function(a, b) { a < b }) } catch (var e) { r = e.isA(TypeError) }; r
+[00000025] true
+
+List.new("bb", "a").sort(function(a, b) { a < b })
+[00000026] !!! instr 7: TypeError: OP_LT operands must be Integer or Float (got String, String)
+
+# --- receiver is unchanged after a comparator THROW (snapshot guarantee
+#     holds on the throw path, not just on success) ---
+var orig = List.new(3, 1, 2); try { orig.sort(function(a, b) { throw "cmp" }) } catch (var e) { }; orig.get(0)
+[00000027] 3
+
+var orig = List.new(3, 1, 2); try { orig.sort(function(a, b) { throw "cmp" }) } catch (var e) { }; orig.length()
+[00000028] 3

@@ -751,6 +751,19 @@ list_sort(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         if (args[0].kind != (uint8_t)UVAL_CLOSURE)
             return urbi_raise_type(vm, "sort: comparator must be a function", out);
         cmp = (struct UClosure *)args[0].v.p;
+        /* The comparator must declare at least 2 params.  Under-2 protos are
+         * exactly the broken class on the scratch frame: the 2-arg deposit
+         * into R[0..1] reaches or passes the R[nparams] arity-seed slot, so a
+         * 0-/1-param body would read a clobbered window and silently
+         * mis-sort instead of erroring the way a direct OP_CALL would.
+         * More-than-2 protos are left to their own arity prologue, which
+         * rejects the 2-arg call correctly; defaulted trailing params count
+         * toward nparams and keep working.  Native closures (proto == NULL)
+         * have no bytecode body to run on the scratch frame — same guard
+         * (pre-guard they crashed the runner's proto deref). */
+        if (cmp->proto == NULL || cmp->proto->nparams < 2U)
+            return urbi_raise_type(vm,
+                "sort: comparator must accept 2 arguments", out);
     }
 
     /* Snapshot the backing store first (re-entrancy guard); once copied and
