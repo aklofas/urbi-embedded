@@ -2,9 +2,10 @@
 # Milestone: M6 Wave 2 (Phase 11 partial port)
 #
 # Legacy fixture asserts:
-#   - `1 / 0` raises `/: division by 0` — v1.0 returns IEEE-754 `inf`
-#     (intentional v1.0 divergence: arithmetic is float-IEEE-754, no
-#     domain-error wrapping at the bytecode level).
+#   - `1 / 0` raises `/: division by 0` — v0.13.5 (STD-02) now CONFORMS:
+#     the zero divisor raises a catchable DivByZero.  The earlier v1.0
+#     IEEE-754 `inf` divergence is closed (legacy urbi is all-Float and
+#     float.cc checks `if (!rhs) RAISE("division by 0")`).
 #   - `Math.sqrt(-10.0) / log(-10.0) / acos(-100.0) / asin(-100.0)`
 #     raise domain-specific diagnostics — v0.6.1 has no Math.sqrt /
 #     log / acos / asin (Math has only constants pi/e/nan/infinity).
@@ -13,16 +14,15 @@
 #
 # This port keeps the legacy file's "lookup failure on missing Math
 # slot" assertion (the only one that remains semantically sharp at
-# v1.0) and documents the IEEE-754 inf divergence.
+# v1.0) and the now-conformant div-by-zero raise.
 #
 # Wave-2 deferred (full port): all Math.{sqrt,log,acos,asin,sqr}
-# methods + their domain-error diagnostics; `1 % 0` parsing (legacy
-# ran modulo-by-0 as an integer-only operation).  See PORT_NOTES.md.
+# methods + their domain-error diagnostics.  See PORT_NOTES.md.
 
-# `1 / 0` returns inf at v1.0 (IEEE-754).  Legacy raised
-# `/: division by 0`.  Documented divergence; not a bug.
+# `1 / 0` raises DivByZero at v0.13.5 (STD-02), matching legacy
+# `/: division by 0`.  Conformance closed.
 1 / 0
-[00000000] inf
+[00000000] !!! line 1: DivByZero: division by 0
 
 # Math at v0.6.1 ships constants only; method lookups fail as
 # `slot 'NAME' not found` via the SELF proto-walk diagnostic.

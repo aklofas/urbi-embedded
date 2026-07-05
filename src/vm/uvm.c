@@ -139,17 +139,38 @@ ic_resolve_pi(UStrand *s)
 
 typedef enum { VM_BINOP_THREW, VM_BINOP_FATAL } VMBinopDirective;
 
-/* Core: format is done; message is in vm->last_errmsg. */
+/* Core: format is done; clone `proto`, bind `msg`, deposit as the strand's
+ * pending throw so `goto safepoint` reaches the unwind walker. */
 static VMBinopDirective
-vm_dispatch_typeerror_core(UVM *vm, UStrand *s)
+vm_dispatch_throw_core(UVM *vm, UStrand *s, struct UObject *proto, const char *msg)
 {
     UValue inst;
-    urbi_raise_typed(vm, vm->typeerror_proto, &inst, vm->last_errmsg);
+    urbi_raise_typed(vm, proto, &inst, msg);
     s->unwind_value   = inst;
     s->pending_unwind = UEXEC_THROW;
     s->pc++;
     vm->last_error = UVM_OK;  /* consumed into the throw */
     return VM_BINOP_THREW;
+}
+
+/* Core: format is done; message is in vm->last_errmsg. */
+static VMBinopDirective
+vm_dispatch_typeerror_core(UVM *vm, UStrand *s)
+{
+    return vm_dispatch_throw_core(vm, s, vm->typeerror_proto, vm->last_errmsg);
+}
+
+/* v0.13.5 (STD-02): OP_DIV zero divisor → catchable DivByZero (legacy-
+ * conformant; see arith_div).  Message mirrors legacy float.cc "division
+ * by 0" with the same source-location prefix the arith TypeErrors carry. */
+static VMBinopDirective
+vm_divzero_error(UVM *vm, UStrand *s)
+{
+    UDiagWriter w;
+    diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
+    diag_write_prefix(&w, s->root_proto, (size_t)(s->pc - s->pc_base));
+    diag_write_cstr(&w, "DivByZero: division by 0");
+    return vm_dispatch_throw_core(vm, s, vm->divbyzero_proto, vm->last_errmsg);
 }
 
 /* Binary arith / compare ops (OP_ADD/SUB/MUL/DIV/LT/LE). */
@@ -198,6 +219,11 @@ vm_call_typeerror(UVM *vm, UStrand *s)
 
 #define VM_CALL_TYPEERROR() do {                                           \
     if (vm_call_typeerror(vm, s) == VM_BINOP_THREW) goto safepoint;       \
+    HALT();                                                                \
+} while (0)
+
+#define VM_DIVZERO() do {                                                  \
+    if (vm_divzero_error(vm, s) == VM_BINOP_THREW) goto safepoint;         \
     HALT();                                                                \
 } while (0)
 
@@ -449,6 +475,12 @@ dispatch:
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
             UVMError rc = arith_div(a, b, cc);
             if (rc != UVM_OK) {
+                /* v0.13.5 (STD-02): a numeric zero divisor is a DivByZero,
+                 * not a TypeError — both operands are numbers, so skip the
+                 * operator-method fallback and raise the catchable subclass. */
+                if (rc == UVM_DIV_ZERO) {
+                    VM_DIVZERO();
+                }
                 /* Gap #4: type-error fallback to operator-method dispatch. */
                 USymbol *op = ustr_op_name(vm, "/", 1);
                 if (op != NULL) {

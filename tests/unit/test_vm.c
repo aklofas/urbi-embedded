@@ -443,35 +443,37 @@ UTEST(vm_div_int_int_exact_still_float) {
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
-UTEST(vm_div_by_zero_positive_is_inf) {
+/* v0.13.5 (STD-02): a zero divisor now RAISES a catchable DivByZero
+   (legacy-conformant — legacy urbi is all-Float and float.cc checks
+   `if (!rhs) RAISE("division by 0")`, so 5/0, -5/0 and 0/0 all raise;
+   no IEEE inf/NaN leaks out).  These bare modules run with no realm, so
+   divbyzero_proto is NULL and urbi_raise_typed degrades to throw-nil —
+   the strand becomes fatal and urbi_vm_run reports the uncaught throw. */
+UTEST(vm_div_by_zero_positive_raises) {
     UProto c; fab_module_binop_int(&c, OP_DIV, 5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
-    UASSERT_EQ(UVAL_FLOAT, out.kind);
-    /* +Inf is greater than any finite float. */
-    UASSERT(out.v.f > 1e30);
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "division by 0") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
-UTEST(vm_div_by_zero_negative_is_neg_inf) {
+UTEST(vm_div_by_zero_negative_raises) {
     UProto c; fab_module_binop_int(&c, OP_DIV, -5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
-    UASSERT_EQ(UVAL_FLOAT, out.kind);
-    UASSERT(out.v.f < -1e30);
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "division by 0") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
-UTEST(vm_div_zero_by_zero_is_nan) {
+UTEST(vm_div_zero_by_zero_raises) {
     UProto c; fab_module_binop_int(&c, OP_DIV, 0, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
-    UASSERT_EQ(UVAL_FLOAT, out.kind);
-    /* NaN is the only float that compares unequal to itself. */
-    UASSERT(out.v.f != out.v.f);
+    /* 0/0 raises too (legacy `!0.0` is true) — not IEEE NaN. */
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "division by 0") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
@@ -1296,11 +1298,11 @@ void test_vm_suite(void) {
               vm_div_int_int_always_float);
     utest_run("uvm OP_DIV Int/Int exact still returns Float",
               vm_div_int_int_exact_still_float);
-    utest_run("uvm OP_DIV positive/0 is +Inf",
-              vm_div_by_zero_positive_is_inf);
-    utest_run("uvm OP_DIV negative/0 is -Inf",
-              vm_div_by_zero_negative_is_neg_inf);
-    utest_run("uvm OP_DIV 0/0 is NaN", vm_div_zero_by_zero_is_nan);
+    utest_run("uvm OP_DIV positive/0 raises DivByZero",
+              vm_div_by_zero_positive_raises);
+    utest_run("uvm OP_DIV negative/0 raises DivByZero",
+              vm_div_by_zero_negative_raises);
+    utest_run("uvm OP_DIV 0/0 raises DivByZero", vm_div_zero_by_zero_raises);
     utest_run("uvm OP_DIV Float/Float", vm_div_float_float);
     utest_run("uvm OP_NEG Int normal", vm_neg_int_normal);
     utest_run("uvm OP_NEG INT64_MIN wraps to INT64_MIN (no UB)",

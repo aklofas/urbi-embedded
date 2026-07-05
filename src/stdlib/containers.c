@@ -499,7 +499,7 @@ list_or_tuple_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out
     if (l == NULL) return urbi_raise_type(vm, "get: missing _storage", out);
     int64_t i = args[0].v.i;
     if (i < 0 || (size_t)i >= l->len)
-        return urbi_raise_type(vm, "get: index out of range", out);
+        return urbi_raise_index(vm, "get: index out of range", out);
     *out = l->items[(size_t)i];
     return UEXEC_OK;
 }
@@ -572,7 +572,7 @@ list_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (l == NULL) return urbi_raise_type(vm, "set: missing _storage", out);
     int64_t i = args[0].v.i;
     if (i < 0 || (size_t)i >= l->len)
-        return urbi_raise_type(vm, "set: index out of range", out);
+        return urbi_raise_index(vm, "set: index out of range", out);
     container_element_pre_store(vm, args[1]);
     l->items[(size_t)i] = args[1];
     *out = self;

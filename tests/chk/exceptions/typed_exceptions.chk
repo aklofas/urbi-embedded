@@ -1,0 +1,79 @@
+# Milestone: v0.13.5-conformance-and-stdlib (STD-02 / DRIFT-04)
+# Covers: typed exception routing from C raise sites, discriminated in a
+#         catch guard via isA.  Integer AND float division/modulo by zero
+#         now RAISE a catchable DivByZero (legacy-conformant: legacy urbi is
+#         all-Float and float.cc checks `if (!rhs) RAISE("division by 0")`,
+#         so 1/0, 1.0/0.0 and 0.0/0.0 all raise — no IEEE inf/NaN leaks out).
+#         List index-out-of-range raises IndexError; String char-position
+#         out-of-range raises RangeError.
+#
+# NOTE: try/catch does not propagate its body value to the REPL result
+# register (matching vm_typeerror_catchable.chk); the catch body assigns
+# into a side-effect var and the fixture diffs that var.
+
+# --- integer `/` by zero raises a catchable DivByZero ---
+var r = false; try { 1/0 } catch (var e) { r = e.isA(DivByZero) }; r
+[00000000] true
+
+# --- float `/` by zero raises DivByZero too (legacy `if (!rhs)`) ---
+var r2 = false; try { 1.0/0.0 } catch (var e) { r2 = e.isA(DivByZero) }; r2
+[00000001] true
+
+# --- 0.0/0.0 raises DivByZero (legacy: no NaN result — `!0.0` is true) ---
+var r3 = false; try { 0.0/0.0 } catch (var e) { r3 = e.isA(DivByZero) }; r3
+[00000002] true
+
+# --- integer `%` by zero raises DivByZero ---
+var r4 = false; try { 5%0 } catch (var e) { r4 = e.isA(DivByZero) }; r4
+[00000003] true
+
+# --- float `%` by zero raises DivByZero ---
+var r5 = false; try { 7.5%0.0 } catch (var e) { r5 = e.isA(DivByZero) }; r5
+[00000004] true
+
+# --- List index out of range raises IndexError ---
+var r6 = false; try { [10, 20].get(5) } catch (var e) { r6 = e.isA(IndexError) }; r6
+[00000005] true
+
+# --- IndexError is a LookupError (two-level hierarchy) ---
+var r7 = false; try { [10, 20].get(5) } catch (var e) { r7 = e.isA(LookupError) }; r7
+[00000006] true
+
+# --- List set out of range raises IndexError ---
+var r8 = false; try { var l = [1]; l.set(9, 0) } catch (var e) { r8 = e.isA(IndexError) }; r8
+[00000007] true
+
+# --- subscript get lowers to .get, so `l[i]` out of range is IndexError too ---
+var r9 = false; try { var l = [1]; l[9] } catch (var e) { r9 = e.isA(IndexError) }; r9
+[00000008] true
+
+# --- String.charAt out of range raises RangeError ---
+var r10 = false; try { "ab".charAt(9) } catch (var e) { r10 = e.isA(RangeError) }; r10
+[00000009] true
+
+# --- String.asciiAt out of range raises RangeError ---
+var r11 = false; try { "ab".asciiAt(9) } catch (var e) { r11 = e.isA(RangeError) }; r11
+[00000010] true
+
+# --- every typed subclass is an Exception (finally still runs on the way out) ---
+var r12 = "no"; try { 1/0 } catch (var e) { } finally { r12 = "ran" }; r12
+[00000011] "ran"
+
+# --- generic (non-typed) throws still catch: a bare string value ---
+var r13 = false; try { throw "boom" } catch (var e) { r13 = (e == "boom") }; r13
+[00000012] true
+
+# --- STD-06 documented divergence: Dict.get on a missing key returns nil and
+#     does NOT raise (legacy Dictionary::get raised KeyError — see the
+#     language-compatibility-matrix STD-06 row).  The REPL suppresses a bare
+#     nil result, so pin the contract via a no-throw comparison. ---
+var dg = "threw"; try { dg = (["a" => 1].get("missing") == nil) } catch (var e) {}; dg
+[00000013] true
+
+# --- uncaught integer div-by-zero surfaces the DivByZero diagnostic ---
+1/0
+[00000014] !!! line 1: DivByZero: division by 0
+
+# --- uncaught integer modulo-by-zero surfaces the DivByZero diagnostic ---
+5 % 0
+[00000015] !!! DivByZero: modulo by 0

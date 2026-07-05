@@ -360,8 +360,9 @@ int_ushr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 /* === Integer / Float `%` modulo ===========================================
  *
  * `a % b` desugars (in the parser) to `a.'%'(b)`.  Integer%Integer yields an
- * Integer (zero divisor raises TypeError; INT64_MIN % -1 returns 0 to avoid
- * signed-division overflow UB); any Float operand promotes to fmod. */
+ * Integer (zero divisor raises DivByZero — legacy "modulo by 0"; INT64_MIN %
+ * -1 returns 0 to avoid signed-division overflow UB); any Float operand
+ * promotes to fmod (zero divisor also raises DivByZero, per legacy). */
 
 static int
 int_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
@@ -370,12 +371,16 @@ int_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "%: self must be Integer", out);
     if (args[0].kind == (uint8_t)UVAL_FLOAT) {
+        /* v0.13.5 (STD-02): legacy-conformant modulo-by-zero (float.cc
+         * operator%: `if (rhs) fmod(...) else RAISE("modulo by 0")`). */
+        if ((double)args[0].v.f == 0.0)
+            return urbi_raise_divzero(vm, "modulo by 0", out);
         *out = val_float(fmod_portable((double)self.v.i, (double)args[0].v.f));
         return UEXEC_OK;
     }
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "%: argument must be Integer or Float", out);
-    if (args[0].v.i == 0) return urbi_raise_type(vm, "%: division by zero", out);
+    if (args[0].v.i == 0) return urbi_raise_divzero(vm, "modulo by 0", out);
     if (self.v.i == INT64_MIN && args[0].v.i == -1) { *out = val_int(0); return UEXEC_OK; }
     *out = val_int(self.v.i % args[0].v.i);
     return UEXEC_OK;
@@ -391,6 +396,9 @@ flt_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (args[0].kind == (uint8_t)UVAL_FLOAT) b = (double)args[0].v.f;
     else if (args[0].kind == (uint8_t)UVAL_INT) b = (double)args[0].v.i;
     else return urbi_raise_type(vm, "%: argument must be Integer or Float", out);
+    /* v0.13.5 (STD-02): legacy-conformant modulo-by-zero (float.cc
+     * operator%: `if (rhs) fmod(...) else RAISE("modulo by 0")`). */
+    if (b == 0.0) return urbi_raise_divzero(vm, "modulo by 0", out);
     *out = val_float(fmod_portable((double)self.v.f, b));
     return UEXEC_OK;
 }
@@ -755,7 +763,7 @@ str_charAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     size_t n = urbi_strlen(s);
     int64_t i = args[0].v.i;
     if (i < 0 || (size_t)i >= n)
-        return urbi_raise_type(vm, "String.charAt: index out of range", out);
+        return urbi_raise_range(vm, "String.charAt: index out of range", out);
 
     /* Single-byte slice — interns into a 1-byte string. */
     char tmp[2];
@@ -1055,7 +1063,7 @@ str_asciiAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     size_t n = urbi_strlen(s);
     int64_t i = args[0].v.i;
     if (i < 0 || (size_t)i >= n)
-        return urbi_raise_type(vm, "String.asciiAt: index out of range", out);
+        return urbi_raise_range(vm, "String.asciiAt: index out of range", out);
 
     *out = val_int((int64_t)(unsigned char)s[i]);
     return UEXEC_OK;

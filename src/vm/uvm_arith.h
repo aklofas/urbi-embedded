@@ -68,12 +68,23 @@ static inline UVMError arith_mul(UValue *a, const UValue *b, const UValue *c) {
     return UVM_OK;
 }
 
+/* Signalled by arith_div when the divisor is zero, so OP_DIV raises a
+   catchable DivByZero (legacy-conformant) instead of leaking an IEEE
+   inf/NaN.  Positive so it stays distinct from UVM_OK (0) and the negative
+   URBI_ERR_* codes; arith_div is only consumed at OP_DIV, which already
+   branches on `rc != UVM_OK`. */
+#define UVM_DIV_ZERO 1
+
 static inline UVMError arith_div(UValue *a, const UValue *b, const UValue *c) {
     if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
-    /* DIV always produces Float per LANG-CONVENTIONS §1.3. IEEE 754
-       handles div-by-zero and 0/0 naturally — +Inf for positive/0,
-       -Inf for negative/0, NaN for 0/0. */
-    uvalue_set_float(a, uvalue_to_double(b) / uvalue_to_double(c));
+    /* DIV always produces Float per LANG-CONVENTIONS §1.3.  Legacy
+       conformance (float.cc BOUNCE_OP `/`: `if (!rhs) RAISE("division by
+       0")`): legacy urbi is all-Float, so a zero divisor raises for BOTH
+       integer and float operands — and `!0.0` is true, so 0.0/0.0 raises
+       too (no NaN result).  Follow that: any zero divisor → DivByZero. */
+    double cd = uvalue_to_double(c);
+    if (cd == 0.0) return UVM_DIV_ZERO;
+    uvalue_set_float(a, uvalue_to_double(b) / cd);
     return UVM_OK;
 }
 

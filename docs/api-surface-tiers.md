@@ -368,6 +368,8 @@ the scheduler; embedders use `urbi_vm_has_live_work` via the public API only.
 
 - `urbi_raise_arity`, `urbi_raise_lookup`, `urbi_raise_oom`,
   `urbi_raise_type`, `urbi_raise_typed`
+- `urbi_raise_index`, `urbi_raise_range`, `urbi_raise_divzero` (v0.13.5
+  STD-02 typed-subclass sites — IndexError / RangeError / DivByZero)
 
 ### Type registry
 

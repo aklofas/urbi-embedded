@@ -194,6 +194,40 @@ urbi_raise_lookup(UVM *vm, USymbol *name, UValue *out)
     return urbi_raise_typed(vm, vm ? vm->lookuperror_proto : NULL, out, buf);
 }
 
+/* v0.13.5 (STD-02): typed subclass raise helpers for native-method sites.
+ * Each mirrors urbi_raise_type — prepend the subclass name, then clone the
+ * cached proto via urbi_raise_typed.  INTERNAL (Tier-4 internal-leak, not
+ * public ABI surface). */
+int
+urbi_raise_index(UVM *vm, const char *msg, UValue *out)
+{
+    char buf[UVM_ERRMSG_CAP];
+    UDiagWriter w; diag_init(&w, buf, sizeof buf);
+    diag_write_cstr(&w, "IndexError: ");
+    diag_write_cstr(&w, (msg != NULL ? msg : "index out of range"));
+    return urbi_raise_typed(vm, vm ? vm->indexerror_proto : NULL, out, buf);
+}
+
+int
+urbi_raise_range(UVM *vm, const char *msg, UValue *out)
+{
+    char buf[UVM_ERRMSG_CAP];
+    UDiagWriter w; diag_init(&w, buf, sizeof buf);
+    diag_write_cstr(&w, "RangeError: ");
+    diag_write_cstr(&w, (msg != NULL ? msg : "value out of range"));
+    return urbi_raise_typed(vm, vm ? vm->rangeerror_proto : NULL, out, buf);
+}
+
+int
+urbi_raise_divzero(UVM *vm, const char *msg, UValue *out)
+{
+    char buf[UVM_ERRMSG_CAP];
+    UDiagWriter w; diag_init(&w, buf, sizeof buf);
+    diag_write_cstr(&w, "DivByZero: ");
+    diag_write_cstr(&w, (msg != NULL ? msg : "division by 0"));
+    return urbi_raise_typed(vm, vm ? vm->divbyzero_proto : NULL, out, buf);
+}
+
 /* === urbi_proto_list_create ================================================
  *
  * Phase 3 synthetic proto-list helper: returns a fresh UObject carrying a

@@ -257,6 +257,13 @@ urbi_exception_subclass_protos_resolve(UVM *vm, URealm *realm)
         { "ArityError",       10, offsetof(UVM, arityerror_proto) },
         { "LookupError",      11, offsetof(UVM, lookuperror_proto)},
         { "OutOfMemoryError", 16, offsetof(UVM, oomerror_proto)   },
+        /* v0.13.5 (STD-02): subclasses raised from C sites.  KeyError is
+         * intentionally omitted — the sole dict-miss accessor (Dict.get)
+         * keeps returning nil (STD-06 documented divergence), so no C site
+         * raises it. */
+        { "IndexError",       10, offsetof(UVM, indexerror_proto) },
+        { "RangeError",       10, offsetof(UVM, rangeerror_proto) },
+        { "DivByZero",         9, offsetof(UVM, divbyzero_proto)  },
     };
     for (size_t i = 0; i < sizeof tbl / sizeof tbl[0]; i++) {
         UValue v;

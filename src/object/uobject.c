@@ -310,6 +310,9 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->arityerror_proto  != NULL) gc_shade_gray(vm, (UCell *)vm->arityerror_proto);
     if (vm->lookuperror_proto != NULL) gc_shade_gray(vm, (UCell *)vm->lookuperror_proto);
     if (vm->oomerror_proto    != NULL) gc_shade_gray(vm, (UCell *)vm->oomerror_proto);
+    if (vm->indexerror_proto  != NULL) gc_shade_gray(vm, (UCell *)vm->indexerror_proto);
+    if (vm->rangeerror_proto  != NULL) gc_shade_gray(vm, (UCell *)vm->rangeerror_proto);
+    if (vm->divbyzero_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->divbyzero_proto);
 
     /* M6 Phase 8: namespace proto singletons.  T86 onwards.  platform_-
      * proto is reached transitively via System's "Platform" slot but is
