@@ -40,6 +40,7 @@
 #include "realm/urealm.h"             /* URealm */
 #include "runtime/uclosure.h"         /* UClosure full definition */
 #include "runtime/umacros.h"          /* URBI_INTERNAL_ASSERT, urbi_zero */
+#include "runtime/ulist.h"            /* URBI_SLIST_PUSH, URBI_SLIST_UNLINK, URBI_SLIST_FOREACH_SAFE */
 #include "sched/ustrand.h"            /* UEXEC_*, UStrand */
 #include "sched/usched_cooperative.h" /* sched_strand_make_runnable (via urbi_strand_start) */
 #include "urbi/types.h"               /* urbi_make_nil */
@@ -202,9 +203,7 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (vm->host_time_us != NULL) now = vm->host_time_us(vm->host_time_ud);
     p->next_fire_us = now + period_us;
 
-    /* Head-insert on vm->periodics_head — O(1). */
-    p->next = vm->periodics_head;
-    vm->periodics_head = p;
+    URBI_SLIST_PUSH(vm->periodics_head, p, next);
 
     *out = urbi_make_nil();
     return UEXEC_OK;
@@ -450,17 +449,11 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
 static void
 periodic_unlink_and_free(UVM *vm, UPeriodic *p)
 {
-    UPeriodic **pp = &vm->periodics_head;
-    while (*pp != NULL) {
-        if (*pp == p) {
-            *pp = p->next;
-            p->next = NULL;
-            vm->alloc_fn(p, 0, vm->alloc_ud);
-            return;
-        }
-        pp = &(*pp)->next;
-    }
-    URBI_INTERNAL_ASSERT(0 && "periodic_unlink_and_free: p not on vm->periodics_head");
+    /* Caller contract: p is on vm->periodics_head (called only from the Phase 2
+     * teardown sweep where unregister_pending is confirmed). */
+    URBI_SLIST_UNLINK(vm->periodics_head, p, next, UPeriodic);
+    p->next = NULL;
+    vm->alloc_fn(p, 0, vm->alloc_ud);
 }
 
 /* === urbi_periodic_pump ================================================
@@ -496,13 +489,13 @@ urbi_periodic_pump(UVM *vm)
      * set AND no in-flight body strand.  An unregister with current_strand
      * still alive defers the free until the strand reaches DEAD and
      * urbi_periodic_body_completed clears the back-pointer. */
-    p = vm->periodics_head;
-    while (p != NULL) {
-        UPeriodic *next = p->next;
-        if (p->unregister_pending && p->current_strand == NULL) {
-            periodic_unlink_and_free(vm, p);
+    {
+        UPeriodic *p2, *next;
+        URBI_SLIST_FOREACH_SAFE(p2, next, vm->periodics_head, next) {
+            if (p2->unregister_pending && p2->current_strand == NULL) {
+                periodic_unlink_and_free(vm, p2);
+            }
         }
-        p = next;
     }
 
     return vm->periodics_head != NULL ? 1 : 0;
