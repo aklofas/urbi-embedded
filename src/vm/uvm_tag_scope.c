@@ -14,6 +14,7 @@
 #include "sched/ustrand.h"            /* UStrand, UEXEC_THROW, USTRAND_STATE_DEAD */
 #include "runtime/ucleanup.h"         /* UCleanupEntry, UCLEANUP_TAG_SCOPE, FLAG_HAS_ONLEAVE, strand_cleanup_push/pop */
 #include "runtime/umacros.h"          /* URBI_INTERNAL_ASSERT */
+#include "runtime/ulist.h"            /* URBI_SLIST_FOREACH_SAFE */
 #include "tag/utag.h"                 /* UTag, utag_create/destroy */
 #include "watcher/uwatcher.h"         /* UWatcher, pending_onleave_queue_push */
 #include "event/uevent.h"             /* UEvent */
@@ -147,12 +148,10 @@ vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
      * this cascade — their watchers persist until t.stop() or VM-destroy.
      * Mirrors the utag_destroy guard below (:163) exactly. */
     if (tag != NULL && (top_flags & FLAG_TAG_USER_OWNED) == 0U) {
-        UWatcher *ww = tag->member_watchers_head;
-        UWatcher *ww_next;
-        while (ww != NULL) {
-            ww_next = ww->next_in_tag;
+        UWatcher *ww, *ww_next;
+        URBI_SLIST_FOREACH_SAFE(ww, ww_next, tag->member_watchers_head,
+                                next_in_tag) {
             pending_onleave_queue_push(s->vm, ww);
-            ww = ww_next;
         }
     }
     strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);

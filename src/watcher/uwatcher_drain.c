@@ -41,6 +41,7 @@
 #include "event/uevent_subscribe.h"  /* uevent_at_watchers_remove (W2/v0.10.2) */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
+#include "runtime/ulist.h"    /* URBI_SLIST_UNLINK */
 #include <stddef.h>
 
 /* === run_watcher_onleave — file-scope static ===
@@ -110,9 +111,8 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
      * This satisfies utag_destroy's precondition that member_watchers_head
      * is empty — the push removes the watcher before the tag is destroyed. */
     if (w->owning_tag != NULL) {
-        UWatcher **prev = &w->owning_tag->member_watchers_head;
-        while (*prev != NULL && *prev != w) prev = &(*prev)->next_in_tag;
-        if (*prev == w) *prev = w->next_in_tag;
+        URBI_SLIST_UNLINK(w->owning_tag->member_watchers_head,
+                          w, next_in_tag, UWatcher);
     }
 
     /* Step 3b (W2/v0.10.2): AT_EVENT, AT_EVENT_SYNC, and WHENEVER_EVENT

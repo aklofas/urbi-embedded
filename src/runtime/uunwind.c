@@ -33,6 +33,7 @@
 #include "urbi/urbi.h"         /* UErrCode, public API declarations */
 #include "sched/usched_cooperative.h" /* urbi_sched_strand_unpark, urbi_sched_runnable_inc */
 #include "runtime/umacros.h"      /* URBI_INTERNAL_ASSERT */
+#include "runtime/ulist.h"        /* URBI_SLIST_FOREACH_SAFE */
 #include "tag/utag.h"               /* UTag, member_strands_head */
 #include "stdlib/temporal.h"        /* urbi_periodics_stop_owned_by (B5/SCHED-N2) */
 #include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
@@ -869,15 +870,13 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
     tag->flags |= UTAG_FLAG_STOPPED;
 
     /* (2) Watcher cascade: push each watcher registered on this tag to the
-     * pending-onleave queue.  Snapshot-next iteration since push unlinks each
-     * watcher from tag->member_watchers_head as it goes. */
+     * pending-onleave queue.  FOREACH_SAFE captures next_in_tag before each
+     * push, which unlinks the watcher from member_watchers_head as it goes. */
     {
-        UWatcher *ww      = tag->member_watchers_head;
-        UWatcher *ww_next;
-        while (ww != NULL) {
-            ww_next = ww->next_in_tag;
+        UWatcher *ww, *ww_next;
+        URBI_SLIST_FOREACH_SAFE(ww, ww_next, tag->member_watchers_head,
+                                next_in_tag) {
             pending_onleave_queue_push(vm, ww);
-            ww = ww_next;
         }
     }
 

@@ -291,11 +291,10 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
         }
     }
 
-    /* Unlink from owning tag's member list (pointer-to-pointer). */
+    /* Unlink from owning tag's member list. */
     if (w->owning_tag != NULL) {
-        UWatcher **prev = &w->owning_tag->member_watchers_head;
-        while (*prev != NULL && *prev != w) prev = &(*prev)->next_in_tag;
-        if (*prev != NULL) *prev = w->next_in_tag;
+        URBI_SLIST_UNLINK(w->owning_tag->member_watchers_head,
+                          w, next_in_tag, UWatcher);
     }
 
     /* Unlink from the appropriate watcher list depending on mode.
