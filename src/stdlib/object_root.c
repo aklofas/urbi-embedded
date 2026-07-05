@@ -72,26 +72,6 @@ static int obj_getProperty       (UVM *vm, UValue self, UValue *args, uint8_t na
 static int obj_properties        (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_asString          (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 
-/* === UValue helpers (zero-fill _pad bytes for bit-stable layout) =========== */
-
-static UValue
-uval_obj(UObject *o)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_OBJECT;
-    v.v.p = o;
-    return v;
-}
-
-static UValue
-uval_bool(int b)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_BOOL;
-    v.v.i = b ? 1 : 0;
-    return v;
-}
-
 /* === urbi_native_closure_create ============================================ */
 
 UClosure *
@@ -148,7 +128,7 @@ urbi_raise_typed(UVM *vm, struct UObject *exc_proto, UValue *out, const char *ms
     UValue mv = urbi_make_str_interned(vm, (msg != NULL ? msg : ""), mlen);
     if (sym_message != NULL)
         (void)urbi_object_set_local_slot(vm, e, sym_message, mv);
-    if (out != NULL) *out = uval_obj(e);
+    if (out != NULL) *out = urbi_make_object(e);
     return UEXEC_THROW;
 }
 
@@ -394,7 +374,7 @@ obj_hasSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UObject *holder = NULL;
     uint32_t slot_idx = 0;
     int rc = urbi_object_resolve_slot(vm, recv, name, &holder, &slot_idx);
-    *out = uval_bool(rc == 1);
+    *out = urbi_make_bool(rc == 1);
     return UEXEC_OK;
 }
 
@@ -457,7 +437,7 @@ obj_clone(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UObject *recv = (UObject *)self.v.p;
     UObject *clone = urbi_object_clone(vm, recv);
     if (clone == NULL) return urbi_raise_oom(vm, out);
-    *out = uval_obj(clone);
+    *out = urbi_make_object(clone);
     return UEXEC_OK;
 }
 
@@ -543,7 +523,7 @@ obj_protos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UObject *recv = (UObject *)self.v.p;
     UObject *list = urbi_proto_list_create(vm, recv);
     if (list == NULL) return urbi_raise_oom(vm, out);
-    *out = uval_obj(list);
+    *out = urbi_make_object(list);
     return UEXEC_OK;
 }
 
@@ -800,7 +780,7 @@ obj_localSlotNames(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *ou
     UObject *lst = urbi_stdlib_list_new_empty(vm);
     if (lst == NULL) return urbi_raise_oom(vm, out);
     if (collect_local_slot_names(vm, o, lst) != 0) return urbi_raise_oom(vm, out);
-    *out = uval_obj(lst);
+    *out = urbi_make_object(lst);
     return UEXEC_OK;
 }
 
@@ -825,7 +805,7 @@ obj_slotNames(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         if (p == NULL) continue;
         if (collect_local_slot_names(vm, p, lst) != 0) return urbi_raise_oom(vm, out);
     }
-    *out = uval_obj(lst);
+    *out = urbi_make_object(lst);
     return UEXEC_OK;
 }
 
@@ -835,10 +815,10 @@ obj_hasLocalSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (nargs != 1) return urbi_raise_arity(vm, "hasLocalSlot", 1, nargs, out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "hasLocalSlot: name must be a String", out);
-    if (self.kind != (uint8_t)UVAL_OBJECT) { *out = uval_bool(0); return UEXEC_OK; }
+    if (self.kind != (uint8_t)UVAL_OBJECT) { *out = urbi_make_bool(0); return UEXEC_OK; }
     const UObject *o = (const UObject *)self.v.p;
     const USymbol *name = (const USymbol *)args[0].v.p;
-    *out = uval_bool(urbi_shape_find_slot(o->shape, name) >= 0);
+    *out = urbi_make_bool(urbi_shape_find_slot(o->shape, name) >= 0);
     return UEXEC_OK;
 }
 
@@ -878,7 +858,7 @@ obj_getProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (prop == sym_constant) {
         uint8_t flags = ((uint32_t)idx < 8U)
             ? (uint8_t)((o->shape->flags >> ((uint32_t)idx * 4U)) & 0x0FU) : 0U;
-        *out = uval_bool((flags & URBI_SLOT_FLAG_CONSTANT) != 0U);
+        *out = urbi_make_bool((flags & URBI_SLOT_FLAG_CONSTANT) != 0U);
         return UEXEC_OK;
     }
     if (prop == sym_oget || prop == sym_oset) {
@@ -907,7 +887,7 @@ obj_properties(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (lst == NULL) return urbi_raise_oom(vm, out);
 
     int32_t idx = urbi_shape_find_slot(o->shape, name);
-    if (idx < 0 || (uint32_t)idx >= 8U) { *out = uval_obj(lst); return UEXEC_OK; }
+    if (idx < 0 || (uint32_t)idx >= 8U) { *out = urbi_make_object(lst); return UEXEC_OK; }
     uint8_t flags = (uint8_t)((o->shape->flags >> ((uint32_t)idx * 4U)) & 0x0FU);
 
     static const struct { uint8_t bit; const char *nm; size_t len; } kProps[] = {
@@ -923,7 +903,7 @@ obj_properties(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         if (urbi_stdlib_list_append_value(vm, lst, nm) != 0)
             return urbi_raise_oom(vm, out);
     }
-    *out = uval_obj(lst);
+    *out = urbi_make_object(lst);
     return UEXEC_OK;
 }
 

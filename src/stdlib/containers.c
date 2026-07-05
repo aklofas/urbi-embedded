@@ -286,22 +286,13 @@ dict_alloc(UVM *vm, size_t initial_cap)
  * uintptr_t.  GC sees a UVAL_INT and treats it as a scalar leaf — the
  * backing buffer's lifetime is owned by vm->stdlib_containers, not by GC. */
 
-static UValue
-val_from_ptr(void *p)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_INT;
-    v.v.i = (int64_t)(intptr_t)p;
-    return v;
-}
-
 static void *
 ptr_from_val(UValue v)
 {
     if (v.kind != (uint8_t)UVAL_INT) return NULL;
     /* NOLINT(performance-no-int-to-ptr) — UList/UDict backing pointer
-     * stashed as int64 in a hidden _storage slot.  See file banner; the
-     * cast is the inverse of val_from_ptr above. */
+     * stashed as int64 via urbi_make_int((int64_t)(intptr_t)p) in
+     * attach_storage; this reverses that encoding.  See file banner. */
     return (void *)(intptr_t)v.v.i;  /* NOLINT(performance-no-int-to-ptr) */
 }
 
@@ -310,7 +301,8 @@ attach_storage(UVM *vm, UObject *o, void *storage)
 {
     USymbol *sym = (USymbol *)ustr_intern(vm, "_storage", 8);
     if (sym == NULL) return -1;
-    return urbi_object_set_local_slot(vm, o, sym, val_from_ptr(storage));
+    return urbi_object_set_local_slot(vm, o, sym,
+                                      urbi_make_int((int64_t)(intptr_t)storage));
 }
 
 static void *
@@ -340,35 +332,6 @@ dict_storage(UVM *vm, UValue self)
     return (UDict *)fetch_storage_ptr(vm, (UObject *)self.v.p);
 }
 
-/* === UValue construction helpers ========================================= */
-
-static UValue
-val_int(int64_t i)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_INT;
-    v.v.i  = i;
-    return v;
-}
-
-static UValue
-val_bool(int b)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_BOOL;
-    v.v.i  = b ? 1 : 0;
-    return v;
-}
-
-static UValue
-val_obj(UObject *o)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_OBJECT;
-    v.v.p  = o;
-    return v;
-}
-
 /* Method tables use UNativeMethodDef from stdlib/object_root.h;
  * URBI_REGISTER_METHODS does the install loop. */
 
@@ -395,7 +358,7 @@ pair_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (urbi_object_set_local_slot(vm, p, sym_second, args[1]) != 0)
         return urbi_raise_oom(vm, out);
 
-    *out = val_obj(p);
+    *out = urbi_make_object(p);
     return UEXEC_OK;
 }
 
@@ -419,7 +382,7 @@ triplet_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (urbi_object_set_local_slot(vm, t, ss, args[1]) != 0) return urbi_raise_oom(vm, out);
     if (urbi_object_set_local_slot(vm, t, st, args[2]) != 0) return urbi_raise_oom(vm, out);
 
-    *out = val_obj(t);
+    *out = urbi_make_object(t);
     return UEXEC_OK;
 }
 
@@ -448,7 +411,7 @@ tuple_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (t == NULL) return urbi_raise_oom(vm, out);
     if (attach_storage(vm, t, l) != 0) return urbi_raise_oom(vm, out);
 
-    *out = val_obj(t);
+    *out = urbi_make_object(t);
     return UEXEC_OK;
 }
 
@@ -459,7 +422,7 @@ list_or_tuple_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *
     if (nargs != 0) return urbi_raise_arity(vm, "length", 0, nargs, out);
     UList *l = list_storage(vm, self);
     if (l == NULL) return urbi_raise_type(vm, "length: missing _storage", out);
-    *out = val_int((int64_t)l->len);
+    *out = urbi_make_int((int64_t)l->len);
     return UEXEC_OK;
 }
 
@@ -505,7 +468,7 @@ list_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (o == NULL) return urbi_raise_oom(vm, out);
     if (attach_storage(vm, o, l) != 0) return urbi_raise_oom(vm, out);
 
-    *out = val_obj(o);
+    *out = urbi_make_object(o);
     return UEXEC_OK;
 }
 
@@ -516,7 +479,7 @@ list_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (nargs != 0) return urbi_raise_arity(vm, "isEmpty", 0, nargs, out);
     UList *l = list_storage(vm, self);
     if (l == NULL) return urbi_raise_type(vm, "isEmpty: missing _storage", out);
-    *out = val_bool(l->len == 0U);
+    *out = urbi_make_bool(l->len == 0U);
     return UEXEC_OK;
 }
 
@@ -562,11 +525,11 @@ list_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     size_t i;
     for (i = 0U; i < l->len; i++) {
         if (uvalue_equal(&l->items[i], &args[0])) {
-            *out = val_bool(1);
+            *out = urbi_make_bool(1);
             return UEXEC_OK;
         }
     }
-    *out = val_bool(0);
+    *out = urbi_make_bool(0);
     return UEXEC_OK;
 }
 
@@ -595,7 +558,7 @@ list_concat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (ret == NULL) return urbi_raise_oom(vm, out);
     if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
 
-    *out = val_obj(ret);
+    *out = urbi_make_object(ret);
     return UEXEC_OK;
 }
 
@@ -627,7 +590,7 @@ list_diff(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (ret == NULL) return urbi_raise_oom(vm, out);
     if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
 
-    *out = val_obj(ret);
+    *out = urbi_make_object(ret);
     return UEXEC_OK;
 }
 
@@ -647,7 +610,7 @@ list_reverse(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
     if (ret == NULL) return urbi_raise_oom(vm, out);
     if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
-    *out = val_obj(ret);
+    *out = urbi_make_object(ret);
     return UEXEC_OK;
 }
 
@@ -806,7 +769,7 @@ list_sort(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
     if (ret == NULL) return urbi_raise_oom(vm, out);
     if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
-    *out = val_obj(ret);
+    *out = urbi_make_object(ret);
     return UEXEC_OK;
 }
 
@@ -950,7 +913,7 @@ dict_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (o == NULL) return urbi_raise_oom(vm, out);
     if (attach_storage(vm, o, d) != 0) return urbi_raise_oom(vm, out);
 
-    *out = val_obj(o);
+    *out = urbi_make_object(o);
     return UEXEC_OK;
 }
 
@@ -961,7 +924,7 @@ dict_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (nargs != 0) return urbi_raise_arity(vm, "length", 0, nargs, out);
     UDict *d = dict_storage(vm, self);
     if (d == NULL) return urbi_raise_type(vm, "length: missing _storage", out);
-    *out = val_int((int64_t)d->len);
+    *out = urbi_make_int((int64_t)d->len);
     return UEXEC_OK;
 }
 
@@ -972,7 +935,7 @@ dict_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (nargs != 0) return urbi_raise_arity(vm, "isEmpty", 0, nargs, out);
     UDict *d = dict_storage(vm, self);
     if (d == NULL) return urbi_raise_type(vm, "isEmpty: missing _storage", out);
-    *out = val_bool(d->len == 0U);
+    *out = urbi_make_bool(d->len == 0U);
     return UEXEC_OK;
 }
 
@@ -1047,12 +1010,12 @@ dict_has(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     UDict *d = dict_storage(vm, self);
     if (d == NULL) return urbi_raise_type(vm, "has: missing _storage", out);
-    if (d->cap == 0U) { *out = val_bool(0); return UEXEC_OK; }
+    if (d->cap == 0U) { *out = urbi_make_bool(0); return UEXEC_OK; }
 
     const char *ks = (const char *)args[0].v.p;
     size_t kn = urbi_strlen(ks);
     UDictEntry *e = dict_lookup(d, ks, kn, dict_hash_bytes(ks, kn));
-    *out = val_bool(e != NULL && e->state == UDICT_USED);
+    *out = urbi_make_bool(e != NULL && e->state == UDICT_USED);
     return UEXEC_OK;
 }
 
@@ -1106,7 +1069,7 @@ dict_keys(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         if (urbi_stdlib_list_append_value(vm, lst, d->entries[i].key) != 0)
             return urbi_raise_oom(vm, out);
     }
-    *out = val_obj(lst);
+    *out = urbi_make_object(lst);
     return UEXEC_OK;
 }
 
@@ -1127,7 +1090,7 @@ dict_values(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         if (urbi_stdlib_list_append_value(vm, lst, d->entries[i].val) != 0)
             return urbi_raise_oom(vm, out);
     }
-    *out = val_obj(lst);
+    *out = urbi_make_object(lst);
     return UEXEC_OK;
 }
 
@@ -1272,17 +1235,17 @@ urbi_stdlib_register_container_globals(UVM *vm, URealm *realm)
     int rc;
     if (vm->container_pair_proto != NULL) {
         rc = urbi_realm_set_global(vm, realm, "Pair", 4,
-                                   val_obj(vm->container_pair_proto));
+                                   urbi_make_object(vm->container_pair_proto));
         if (rc != URBI_OK) return rc;
     }
     if (vm->container_triplet_proto != NULL) {
         rc = urbi_realm_set_global(vm, realm, "Triplet", 7,
-                                   val_obj(vm->container_triplet_proto));
+                                   urbi_make_object(vm->container_triplet_proto));
         if (rc != URBI_OK) return rc;
     }
     if (vm->container_tuple_proto != NULL) {
         rc = urbi_realm_set_global(vm, realm, "Tuple", 5,
-                                   val_obj(vm->container_tuple_proto));
+                                   urbi_make_object(vm->container_tuple_proto));
         if (rc != URBI_OK) return rc;
     }
     return URBI_OK;
@@ -1406,7 +1369,7 @@ urbi_list_create(UVM *vm)
     if (vm == NULL) return urbi_make_nil();
     UObject *o = urbi_stdlib_list_new_empty(vm);
     if (o == NULL) return urbi_make_nil();
-    return val_obj(o);
+    return urbi_make_object(o);
 }
 
 /* Append value `v` to List object `lst`.

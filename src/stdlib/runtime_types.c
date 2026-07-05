@@ -38,17 +38,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* === UValue construction helpers ========================================= */
-
-static UValue
-val_obj(UObject *o)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_OBJECT;
-    v.v.p  = o;
-    return v;
-}
-
 /* === Exception.new(message) =============================================
  *
  * Clone the Exception proto and install args[0] as the local `message`
@@ -77,7 +66,7 @@ exc_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (urbi_object_set_local_slot(vm, e, sym_message, args[0]) != 0)
         return urbi_raise_oom(vm, out);
 
-    *out = val_obj(e);
+    *out = urbi_make_object(e);
     return UEXEC_OK;
 }
 
@@ -204,7 +193,7 @@ urbi_stdlib_register_runtime_globals(UVM *vm, URealm *realm)
 
     if (vm->exception_proto != NULL) {
         int rc = urbi_realm_set_global(vm, realm, "Exception", 9,
-                                       val_obj(vm->exception_proto));
+                                       urbi_make_object(vm->exception_proto));
         if (rc != URBI_OK) return rc;
     }
     return URBI_OK;

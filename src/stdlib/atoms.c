@@ -52,62 +52,6 @@
 /* Method tables use UNativeMethodDef from stdlib/object_root.h;
  * urbi_install_native_methods / URBI_REGISTER_METHODS do the install loop. */
 
-/* === UValue construction helpers (file-private; zero pad bytes) =========== */
-
-static UValue
-val_int(int64_t i)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_INT;
-    v.v.i = i;
-    return v;
-}
-
-static UValue
-val_float(double f)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_FLOAT;
-#if URBI_FLOAT_TYPE == 8
-    v.v.f = f;
-#else
-    v.v.f = (float)f;
-#endif
-    return v;
-}
-
-static UValue
-val_bool(int b)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_BOOL;
-    v.v.i = b ? 1 : 0;
-    return v;
-}
-
-static UValue
-val_obj(UObject *p)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_OBJECT;
-    v.v.p = p;
-    return v;
-}
-
-static UValue
-val_str_intern(UVM *vm, const char *s, size_t n, int *oom)
-{
-    UValue v = urbi_make_nil();
-    USymbol *sym = (USymbol *)ustr_intern(vm, s, n);
-    if (sym == NULL) {
-        if (oom != NULL) *oom = 1;
-        return v;
-    }
-    v.kind = (uint8_t)UVAL_STR;
-    v.v.p = sym;
-    return v;
-}
-
 /* === Numeric helpers (freestanding-safe) ================================== */
 
 /* fmod_portable — floating modulo.  Hosted builds defer to libm fmod;
@@ -162,7 +106,7 @@ bool_negate(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_BOOL)
         return urbi_raise_type(vm, "Boolean.negate: self must be Boolean", out);
 
-    *out = val_bool(self.v.i == 0);
+    *out = urbi_make_bool(self.v.i == 0);
     return UEXEC_OK;
 }
 
@@ -190,7 +134,7 @@ int_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (n <= 0 || (size_t)n >= sizeof(buf))
         return urbi_raise_type(vm, "Integer.asString: format failure", out);
     int oom = 0;
-    UValue v = val_str_intern(vm, buf, (size_t)n, &oom);
+    UValue v = urbi_val_str_intern(vm, buf, (size_t)n, &oom);
     if (oom) return urbi_raise_oom(vm, out);
     *out = v;
     return UEXEC_OK;
@@ -209,7 +153,7 @@ int_asFloat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "Integer.asFloat: self must be Integer", out);
 
-    *out = val_float((double)self.v.i);
+    *out = urbi_make_float((double)self.v.i);
     return UEXEC_OK;
 }
 
@@ -221,7 +165,7 @@ int_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "Integer.asBoolean: self must be Integer", out);
 
-    *out = val_bool(self.v.i != 0);
+    *out = urbi_make_bool(self.v.i != 0);
     return UEXEC_OK;
 }
 
@@ -255,7 +199,7 @@ int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
             return urbi_raise_type(vm, "Integer." #name ": self must be Integer", out); \
         if (args[0].kind != (uint8_t)UVAL_INT)                               \
             return urbi_raise_type(vm, "Integer." #name ": argument must be Integer", out); \
-        *out = val_int(self.v.i op args[0].v.i);                             \
+        *out = urbi_make_int(self.v.i op args[0].v.i);                             \
         return UEXEC_OK;                                                     \
     }
 
@@ -273,7 +217,7 @@ int_inv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "Integer.inv: self must be Integer", out);
 
-    *out = val_int(~self.v.i);
+    *out = urbi_make_int(~self.v.i);
     return UEXEC_OK;
 }
 
@@ -288,7 +232,7 @@ int_shl(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     /* Kotlin Long.shl mask: effective = raw & 63, always in [0, 63]. */
     int64_t n = args[0].v.i & (int64_t)63;
-    *out = val_int((int64_t)((uint64_t)self.v.i << (uint64_t)n));
+    *out = urbi_make_int((int64_t)((uint64_t)self.v.i << (uint64_t)n));
     return UEXEC_OK;
 }
 
@@ -305,7 +249,7 @@ int_shr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
      * Implementation uses uint64_t cast (logical right shift on the raw
      * i64 bit pattern) matching the pre-existing shr semantic. */
     int64_t n = args[0].v.i & (int64_t)63;
-    *out = val_int((int64_t)((uint64_t)self.v.i >> (uint64_t)n));
+    *out = urbi_make_int((int64_t)((uint64_t)self.v.i >> (uint64_t)n));
     return UEXEC_OK;
 }
 
@@ -322,7 +266,7 @@ int_ushr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         return urbi_raise_type(vm, "Integer.ushr: argument must be Integer", out);
 
     int64_t n = args[0].v.i & 63;
-    *out = val_int((int64_t)((uint64_t)self.v.i >> (uint64_t)n));
+    *out = urbi_make_int((int64_t)((uint64_t)self.v.i >> (uint64_t)n));
     return UEXEC_OK;
 }
 
@@ -344,14 +288,14 @@ int_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
          * operator%: `if (rhs) fmod(...) else RAISE("modulo by 0")`). */
         if ((double)args[0].v.f == 0.0)
             return urbi_raise_divzero(vm, "modulo by 0", out);
-        *out = val_float(fmod_portable((double)self.v.i, (double)args[0].v.f));
+        *out = urbi_make_float(fmod_portable((double)self.v.i, (double)args[0].v.f));
         return UEXEC_OK;
     }
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "%: argument must be Integer or Float", out);
     if (args[0].v.i == 0) return urbi_raise_divzero(vm, "modulo by 0", out);
-    if (self.v.i == INT64_MIN && args[0].v.i == -1) { *out = val_int(0); return UEXEC_OK; }
-    *out = val_int(self.v.i % args[0].v.i);
+    if (self.v.i == INT64_MIN && args[0].v.i == -1) { *out = urbi_make_int(0); return UEXEC_OK; }
+    *out = urbi_make_int(self.v.i % args[0].v.i);
     return UEXEC_OK;
 }
 
@@ -368,7 +312,7 @@ flt_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     /* v0.13.5: legacy-conformant modulo-by-zero (float.cc
      * operator%: `if (rhs) fmod(...) else RAISE("modulo by 0")`). */
     if (b == 0.0) return urbi_raise_divzero(vm, "modulo by 0", out);
-    *out = val_float(fmod_portable((double)self.v.f, b));
+    *out = urbi_make_float(fmod_portable((double)self.v.f, b));
     return UEXEC_OK;
 }
 
@@ -380,7 +324,7 @@ flt_random(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "Float.random", 0, nargs, out);
     uint64_t bits = prng_next() >> 11;          /* top 53 bits */
-    *out = val_float((double)bits * (1.0 / 9007199254740992.0)); /* / 2^53 */
+    *out = urbi_make_float((double)bits * (1.0 / 9007199254740992.0)); /* / 2^53 */
     return UEXEC_OK;
 }
 
@@ -408,7 +352,7 @@ flt_random(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         if (nargs != 0) return urbi_raise_arity(vm, "Float." #name, 0, nargs, out); \
         if (self.kind != (uint8_t)UVAL_FLOAT)                                \
             return urbi_raise_type(vm, "Float." #name ": self must be Float", out); \
-        *out = val_float(libm_call((double)self.v.f));                       \
+        *out = urbi_make_float(libm_call((double)self.v.f));                       \
         return UEXEC_OK;                                                     \
     }
 
@@ -444,7 +388,7 @@ flt_abs(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_FLOAT)
         return urbi_raise_type(vm, "Float.abs: self must be Float", out);
     double x = (double)self.v.f;
-    *out = val_float(x < 0.0 ? -x : x);
+    *out = urbi_make_float(x < 0.0 ? -x : x);
     return UEXEC_OK;
 }
 
@@ -462,7 +406,7 @@ flt_floor(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
      * needs to round DOWN, so subtract 1.  Edge case: huge values that
      * overflow int64_t fall through unchanged — acceptable for v0.8.2. */
     if (x < 0.0 && tf != x) tf -= 1.0;
-    *out = val_float(tf);
+    *out = urbi_make_float(tf);
     return UEXEC_OK;
 }
 
@@ -477,7 +421,7 @@ flt_ceil(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     int64_t t = (int64_t)x;
     double tf = (double)t;
     if (x > 0.0 && tf != x) tf += 1.0;
-    *out = val_float(tf);
+    *out = urbi_make_float(tf);
     return UEXEC_OK;
 }
 
@@ -491,7 +435,7 @@ flt_round(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     double x = (double)self.v.f;
     /* Round half-away-from-zero (matches glibc round()). */
     double biased = x < 0.0 ? x - 0.5 : x + 0.5;
-    *out = val_float((double)(int64_t)biased);
+    *out = urbi_make_float((double)(int64_t)biased);
     return UEXEC_OK;
 }
 
@@ -528,7 +472,7 @@ flt_atan2(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     double x = FLOAT_OF_VALUE(args[0]);
 #if __STDC_HOSTED__
-    *out = val_float(atan2((double)self.v.f, x));
+    *out = urbi_make_float(atan2((double)self.v.f, x));
     return UEXEC_OK;
 #else
     (void)x;
@@ -578,7 +522,7 @@ flt_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     }
 
     int oom = 0;
-    UValue v = val_str_intern(vm, buf, (size_t)n, &oom);
+    UValue v = urbi_val_str_intern(vm, buf, (size_t)n, &oom);
     if (oom) return urbi_raise_oom(vm, out);
     *out = v;
     return UEXEC_OK;
@@ -603,9 +547,9 @@ flt_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (f != 0.0 && (f - f) != 0.0) return urbi_raise_type(vm, "Float.asInteger: infinite", out);
     /* Out-of-range conversion is also implementation-defined; clamp at
      * INT64_MIN / INT64_MAX for safety. */
-    if (f >= (double)INT64_MAX) { *out = val_int(INT64_MAX); return UEXEC_OK; }
-    if (f <= (double)INT64_MIN) { *out = val_int(INT64_MIN); return UEXEC_OK; }
-    *out = val_int((int64_t)f);
+    if (f >= (double)INT64_MAX) { *out = urbi_make_int(INT64_MAX); return UEXEC_OK; }
+    if (f <= (double)INT64_MIN) { *out = urbi_make_int(INT64_MIN); return UEXEC_OK; }
+    *out = urbi_make_int((int64_t)f);
     return UEXEC_OK;
 }
 
@@ -620,7 +564,7 @@ flt_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     double f = (double)self.v.f;
     /* Legacy semantics: NaN is truthy (non-comparable but not zero).
      * Inf is also truthy.  Only +/- zero is falsy. */
-    *out = val_bool(f != 0.0);
+    *out = urbi_make_bool(f != 0.0);
     return UEXEC_OK;
 }
 
@@ -637,7 +581,7 @@ flt_isNaN(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     /* IEEE-754 NaN-detection: x != x is true iff x is NaN.  Avoids the
      * isnan() macro dependency on freestanding builds. */
     double f = (double)self.v.f;
-    *out = val_bool(f != f);
+    *out = urbi_make_bool(f != f);
     return UEXEC_OK;
 }
 
@@ -657,7 +601,7 @@ flt_isInfinite(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
      *
      * Equivalent to isinf() under POSIX; we open-code to keep the
      * freestanding path identical. */
-    *out = val_bool(f != 0.0 && (f - f) != 0.0 && f == f);
+    *out = urbi_make_bool(f != 0.0 && (f - f) != 0.0 && f == f);
     return UEXEC_OK;
 }
 
@@ -671,7 +615,7 @@ flt_pow(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     double e = FLOAT_OF_VALUE(args[0]);
 #if __STDC_HOSTED__
-    *out = val_float(pow((double)self.v.f, e));
+    *out = urbi_make_float(pow((double)self.v.f, e));
     return UEXEC_OK;
 #else
     (void)e;
@@ -701,7 +645,7 @@ str_size(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     const char *s = (const char *)self.v.p;
     if (s == NULL) return urbi_raise_type(vm, "String.size: NULL string", out);
-    *out = val_int((int64_t)urbi_strlen(s));
+    *out = urbi_make_int((int64_t)urbi_strlen(s));
     return UEXEC_OK;
 }
 
@@ -714,7 +658,7 @@ str_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         return urbi_raise_type(vm, "String.isEmpty: self must be String", out);
 
     const char *s = (const char *)self.v.p;
-    *out = val_bool(s == NULL || s[0] == '\0');
+    *out = urbi_make_bool(s == NULL || s[0] == '\0');
     return UEXEC_OK;
 }
 
@@ -739,7 +683,7 @@ str_charAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     tmp[0] = s[i];
     tmp[1] = '\0';
     int oom = 0;
-    UValue v = val_str_intern(vm, tmp, 1U, &oom);
+    UValue v = urbi_val_str_intern(vm, tmp, 1U, &oom);
     if (oom) return urbi_raise_oom(vm, out);
     *out = v;
     return UEXEC_OK;
@@ -771,7 +715,7 @@ str_caseop(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out,
 
     if (n == 0) {
         int oom = 0;
-        UValue v = val_str_intern(vm, "", 0U, &oom);
+        UValue v = urbi_val_str_intern(vm, "", 0U, &oom);
         if (oom) return urbi_raise_oom(vm, out);
         *out = v;
         return UEXEC_OK;
@@ -797,7 +741,7 @@ str_caseop(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out,
     buf[n] = '\0';
 
     int oom = 0;
-    UValue v = val_str_intern(vm, buf, n, &oom);
+    UValue v = urbi_val_str_intern(vm, buf, n, &oom);
     vm->alloc_fn(buf, 0U, vm->alloc_ud);
     if (oom) return urbi_raise_oom(vm, out);
     *out = v;
@@ -857,7 +801,7 @@ str_indexOf(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     int64_t idx;
     (void)strs_find(h, urbi_strlen(h), n, urbi_strlen(n), &idx);
-    *out = val_int(idx);
+    *out = urbi_make_int(idx);
     return UEXEC_OK;
 }
 
@@ -877,7 +821,7 @@ str_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     int64_t idx;
     int found = strs_find(h, urbi_strlen(h), n, urbi_strlen(n), &idx);
-    *out = val_bool(found);
+    *out = urbi_make_bool(found);
     return UEXEC_OK;
 }
 
@@ -898,15 +842,15 @@ str_starts_or_ends(UVM *vm, UValue self, UValue *args, uint8_t nargs,
 
     size_t hlen = urbi_strlen(h);
     size_t nlen = urbi_strlen(n);
-    if (nlen == 0) { *out = val_bool(1); return UEXEC_OK; }
-    if (nlen > hlen) { *out = val_bool(0); return UEXEC_OK; }
+    if (nlen == 0) { *out = urbi_make_bool(1); return UEXEC_OK; }
+    if (nlen > hlen) { *out = urbi_make_bool(0); return UEXEC_OK; }
 
     const char *base = starts ? h : (h + (hlen - nlen));
     size_t k;
     for (k = 0; k < nlen; k++) {
-        if (base[k] != n[k]) { *out = val_bool(0); return UEXEC_OK; }
+        if (base[k] != n[k]) { *out = urbi_make_bool(0); return UEXEC_OK; }
     }
-    *out = val_bool(1);
+    *out = urbi_make_bool(1);
     return UEXEC_OK;
 }
 
@@ -951,7 +895,7 @@ str_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     while (*endptr == ' ' || *endptr == '\t') endptr++;
     if (*endptr != '\0')
         return urbi_raise_type(vm, "String.asInteger: trailing garbage", out);
-    *out = val_int((int64_t)v);
+    *out = urbi_make_int((int64_t)v);
     return UEXEC_OK;
 #else
     return urbi_raise_type(vm,
@@ -979,7 +923,7 @@ str_asFloat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     while (*endptr == ' ' || *endptr == '\t') endptr++;
     if (*endptr != '\0')
         return urbi_raise_type(vm, "String.asFloat: trailing garbage", out);
-    *out = val_float(v);
+    *out = urbi_make_float(v);
     return UEXEC_OK;
 #else
     return urbi_raise_type(vm,
@@ -1000,11 +944,11 @@ str_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     /* Case-sensitive byte compare against "true" / "false". */
     if (s[0] == 't' && s[1] == 'r' && s[2] == 'u' && s[3] == 'e' && s[4] == '\0') {
-        *out = val_bool(1);
+        *out = urbi_make_bool(1);
         return UEXEC_OK;
     }
     if (s[0] == 'f' && s[1] == 'a' && s[2] == 'l' && s[3] == 's' && s[4] == 'e' && s[5] == '\0') {
-        *out = val_bool(0);
+        *out = urbi_make_bool(0);
         return UEXEC_OK;
     }
     return urbi_raise_type(vm,
@@ -1034,7 +978,7 @@ str_asciiAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (i < 0 || (size_t)i >= n)
         return urbi_raise_range(vm, "String.asciiAt: index out of range", out);
 
-    *out = val_int((int64_t)(unsigned char)s[i]);
+    *out = urbi_make_int((int64_t)(unsigned char)s[i]);
     return UEXEC_OK;
 }
 
@@ -1079,12 +1023,12 @@ str_split(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         size_t j;
         for (j = 0U; j < n; j++) {
             int oom = 0;
-            UValue ch = val_str_intern(vm, s + j, 1U, &oom);
+            UValue ch = urbi_val_str_intern(vm, s + j, 1U, &oom);
             if (oom) return urbi_raise_oom(vm, out);
             if (urbi_stdlib_list_append_value(vm, lst, ch) != 0)
                 return urbi_raise_oom(vm, out);
         }
-        *out = val_obj(lst);
+        *out = urbi_make_object(lst);
         return UEXEC_OK;
     }
 
@@ -1107,7 +1051,7 @@ str_split(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         if (urbi_stdlib_list_append_value(vm, lst, last) != 0)
             return urbi_raise_oom(vm, out);
     }
-    *out = val_obj(lst);
+    *out = urbi_make_object(lst);
     return UEXEC_OK;
 }
 
@@ -1229,7 +1173,7 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     }
 
     int oom = 0;
-    UValue v = val_str_intern(vm, buf, off, &oom);
+    UValue v = urbi_val_str_intern(vm, buf, off, &oom);
     if (oom) return urbi_raise_oom(vm, out);
     *out = v;
     return UEXEC_OK;
@@ -1256,7 +1200,7 @@ str_percent(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (lst == NULL) return urbi_raise_oom(vm, out);
     if (urbi_stdlib_list_append_value(vm, lst, args[0]) != 0)
         return urbi_raise_oom(vm, out);
-    UValue list_val = val_obj(lst);
+    UValue list_val = urbi_make_object(lst);
     return str_format(vm, self, &list_val, 1U, out);
 }
 

@@ -32,8 +32,11 @@
 #define URBI_STDLIB_OBJECT_ROOT_H
 
 #include <stdint.h>
+#include <stddef.h>             /* size_t */
 
 #include "runtime/uclosure.h"   /* urbi_native_method_fn typedef */
+#include "value/uintern.h"      /* ustr_intern */
+#include "urbi/types.h"         /* UValue, urbi_make_nil, UVAL_STR */
 
 #ifdef __cplusplus
 extern "C" {
@@ -123,6 +126,28 @@ int urbi_raise_typed(struct UVM *vm, struct UObject *exc_proto,
  * proto chain as accessible-via-.size.  Wave 2 replaces this with a
  * proper List atom.  Returns NULL on OOM. */
 struct UObject *urbi_proto_list_create(struct UVM *vm, struct UObject *recv);
+
+/* === Shared VM-dependent string constructor ===
+ *
+ * urbi_val_str_intern: intern s[0..n) into the VM's string table and return
+ * a UVAL_STR UValue.  Needs a live vm (unlike the pure urbi_make_* inlines
+ * in urbi/types.h).  On OOM sets *oom (when non-NULL) and returns nil.
+ *
+ * Three stdlib files (atoms.c, namespaces.c, primitives.c) had identical
+ * private copies of this body; this shared inline replaces them all (C2/GV-01). */
+static inline UValue
+urbi_val_str_intern(struct UVM *vm, const char *s, size_t n, int *oom)
+{
+    UValue v = urbi_make_nil();
+    USymbol *sym = (USymbol *)ustr_intern(vm, s, n);
+    if (sym == NULL) {
+        if (oom != NULL) *oom = 1;
+        return v;
+    }
+    v.kind = (uint8_t)UVAL_STR;
+    v.v.p  = sym;
+    return v;
+}
 
 #ifdef __cplusplus
 }

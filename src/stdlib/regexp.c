@@ -81,26 +81,6 @@ struct re_budget {
     uint16_t depth;   /* remaining depth; exhausted when 0 */
 };
 
-/* === UValue construction helpers ========================================= */
-
-static UValue
-val_bool(int b)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_BOOL;
-    v.v.i  = b ? 1 : 0;
-    return v;
-}
-
-static UValue
-val_obj(UObject *o)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_OBJECT;
-    v.v.p  = o;
-    return v;
-}
-
 /* === Compact backtracking matcher ========================================
  *
  * An "atom" is one match unit in the pattern: a char class `[..]`, a `.`,
@@ -312,7 +292,7 @@ regexp_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (write_local_slot(vm, r, "_pattern", args[0]) != 0)
         return urbi_raise_oom(vm, out);
 
-    *out = val_obj(r);
+    *out = urbi_make_object(r);
     return UEXEC_OK;
 }
 
@@ -345,7 +325,7 @@ regexp_do_test(UVM *vm, UValue self, UValue *args, uint8_t nargs,
          * recursive matcher before the throw is delivered. */
         return urbi_raise_range(vm, "regexp budget exceeded", out);
     }
-    *out = val_bool(result);
+    *out = urbi_make_bool(result);
     return UEXEC_OK;
 }
 
@@ -404,7 +384,7 @@ urbi_stdlib_register_regexp_globals(UVM *vm, URealm *realm)
     if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
     if (vm->regexp_proto != NULL) {
         int rc = urbi_realm_set_global(vm, realm, "RegExp", 6,
-                                       val_obj(vm->regexp_proto));
+                                       urbi_make_object(vm->regexp_proto));
         if (rc != URBI_OK) return rc;
     }
     return URBI_OK;

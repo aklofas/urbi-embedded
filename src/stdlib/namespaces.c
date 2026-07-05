@@ -37,49 +37,6 @@
 #  include <stdlib.h>                  /* getenv */
 #endif
 
-/* === UValue construction helpers ========================================= */
-
-static UValue
-val_int(int64_t i)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_INT;
-    v.v.i  = i;
-    return v;
-}
-
-static UValue
-val_float(double d)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_FLOAT;
-    v.v.f  = d;
-    return v;
-}
-
-static UValue
-val_obj(UObject *o)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_OBJECT;
-    v.v.p  = o;
-    return v;
-}
-
-static UValue
-val_str_intern(UVM *vm, const char *s, size_t n, int *oom)
-{
-    UValue v = urbi_make_nil();
-    USymbol *sym = (USymbol *)ustr_intern(vm, s, n);
-    if (sym == NULL) {
-        if (oom != NULL) *oom = 1;
-        return v;
-    }
-    v.kind = (uint8_t)UVAL_STR;
-    v.v.p  = sym;
-    return v;
-}
-
 /* Install a constant slot (UValue) on proto, looking up the symbol via
  * ustr_intern.  Returns URBI_OK / URBI_ERR_OOM. */
 static int
@@ -135,7 +92,7 @@ sys_time(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "System.time", 0, nargs, out);
     uint64_t us = (vm->host_time_us != NULL) ? vm->host_time_us(vm->host_time_ud) : 0U;
-    *out = val_float((double)us / 1000000.0);
+    *out = urbi_make_float((double)us / 1000000.0);
     return UEXEC_OK;
 }
 
@@ -155,7 +112,7 @@ sys_time_us(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "System.time_us", 0, nargs, out);
     uint64_t us = (vm->host_time_us != NULL) ? vm->host_time_us(vm->host_time_ud) : 0U;
-    *out = val_int((int64_t)us);
+    *out = urbi_make_int((int64_t)us);
     return UEXEC_OK;
 }
 
@@ -172,7 +129,7 @@ sys_cycle(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "System.cycle", 0, nargs, out);
-    *out = val_int((int64_t)vm->lookup_id);
+    *out = urbi_make_int((int64_t)vm->lookup_id);
     return UEXEC_OK;
 }
 
@@ -204,7 +161,7 @@ sys_getenv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         return UEXEC_OK;
     }
     int oom = 0;
-    *out = val_str_intern(vm, v, urbi_strlen(v), &oom);
+    *out = urbi_val_str_intern(vm, v, urbi_strlen(v), &oom);
     if (oom) return urbi_raise_oom(vm, out);
     return UEXEC_OK;
 #else
@@ -257,7 +214,7 @@ global_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
             n = (int64_t)r->global_object->shape->count;
         }
     }
-    *out = val_int(n);
+    *out = urbi_make_int(n);
     return UEXEC_OK;
 }
 
@@ -286,17 +243,17 @@ urbi_stdlib_register_namespaces(UVM *vm)
         if (m == NULL) return URBI_ERR_OOM;
         vm->math_proto = m;
     }
-    rc = install_const_slot(vm, vm->math_proto, "pi",       val_float(3.141592653589793));
+    rc = install_const_slot(vm, vm->math_proto, "pi",       urbi_make_float(3.141592653589793));
     if (rc != URBI_OK) return rc;
-    rc = install_const_slot(vm, vm->math_proto, "e",        val_float(2.718281828459045));
+    rc = install_const_slot(vm, vm->math_proto, "e",        urbi_make_float(2.718281828459045));
     if (rc != URBI_OK) return rc;
     /* IEEE-754 NaN / +Inf via <math.h> macros on hosted; freestanding
      * targets omit the constants (no libm contract — embedded code that
      * needs IEEE-754 sentinels constructs them via bit-pattern). */
 #if __STDC_HOSTED__
-    rc = install_const_slot(vm, vm->math_proto, "nan",      val_float((double)NAN));
+    rc = install_const_slot(vm, vm->math_proto, "nan",      urbi_make_float((double)NAN));
     if (rc != URBI_OK) return rc;
-    rc = install_const_slot(vm, vm->math_proto, "infinity", val_float((double)INFINITY));
+    rc = install_const_slot(vm, vm->math_proto, "infinity", urbi_make_float((double)INFINITY));
     if (rc != URBI_OK) return rc;
 #endif
 
@@ -322,14 +279,14 @@ urbi_stdlib_register_namespaces(UVM *vm)
     }
     {
         int oom = 0;
-        UValue kind = val_str_intern(vm, URBI_PLATFORM_KIND,
+        UValue kind = urbi_val_str_intern(vm, URBI_PLATFORM_KIND,
                                      urbi_strlen(URBI_PLATFORM_KIND), &oom);
         if (oom) return URBI_ERR_OOM;
         rc = install_const_slot(vm, vm->platform_proto, "kind", kind);
         if (rc != URBI_OK) return rc;
     }
     rc = install_const_slot(vm, vm->system_proto, "Platform",
-                            val_obj(vm->platform_proto));
+                            urbi_make_object(vm->platform_proto));
     if (rc != URBI_OK) return rc;
 
     /* --- T90 Global: length --- */
@@ -355,7 +312,7 @@ urbi_stdlib_register_namespaces(UVM *vm)
     }
     {
         int oom = 0;
-        UValue k = val_str_intern(vm, "callmessage", 11, &oom);
+        UValue k = urbi_val_str_intern(vm, "callmessage", 11, &oom);
         if (oom) return URBI_ERR_OOM;
         rc = install_const_slot(vm, vm->callmessage_proto, "kind", k);
         if (rc != URBI_OK) return rc;
@@ -377,21 +334,21 @@ urbi_stdlib_register_namespace_globals(UVM *vm, URealm *realm)
 
     int rc;
     if (vm->math_proto != NULL) {
-        rc = urbi_realm_set_global(vm, realm, "Math", 4, val_obj(vm->math_proto));
+        rc = urbi_realm_set_global(vm, realm, "Math", 4, urbi_make_object(vm->math_proto));
         if (rc != URBI_OK) return rc;
     }
     if (vm->system_proto != NULL) {
-        rc = urbi_realm_set_global(vm, realm, "System", 6, val_obj(vm->system_proto));
+        rc = urbi_realm_set_global(vm, realm, "System", 6, urbi_make_object(vm->system_proto));
         if (rc != URBI_OK) return rc;
     }
     if (vm->global_namespace_proto != NULL) {
         rc = urbi_realm_set_global(vm, realm, "Global", 6,
-                                   val_obj(vm->global_namespace_proto));
+                                   urbi_make_object(vm->global_namespace_proto));
         if (rc != URBI_OK) return rc;
     }
     if (vm->callmessage_proto != NULL) {
         rc = urbi_realm_set_global(vm, realm, "CallMessage", 11,
-                                   val_obj(vm->callmessage_proto));
+                                   urbi_make_object(vm->callmessage_proto));
         if (rc != URBI_OK) return rc;
     }
     return URBI_OK;

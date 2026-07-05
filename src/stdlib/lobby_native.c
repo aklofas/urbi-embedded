@@ -104,17 +104,6 @@ append_u64_pad8(char *buf, size_t cap, size_t *off, uint64_t v)
     }
 }
 
-/* === UValue construction helpers (private; mirror primitives.c) ========= */
-
-static UValue
-val_obj_local(UObject *o)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_OBJECT;
-    v.v.p  = o;
-    return v;
-}
-
 /* === __builtin_lobby_send native method =================================
  *
  * Signature on the urbi side: __builtin_lobby_send(msg, tag, prefix) -> nil
@@ -337,7 +326,7 @@ urbi_lobby_native_register_globals(UVM *vm, URealm *realm)
     if (vm->lobby_proto == NULL) return URBI_OK;  /* no proto -> nothing to bind */
 
     int rc = urbi_realm_set_global(vm, realm, "Lobby", 5,
-                                   val_obj_local(vm->lobby_proto));
+                                   urbi_make_object(vm->lobby_proto));
     if (rc != URBI_OK) return rc;
 
     /* v0.10.10 / D7-E: install connectionTag slot on vm->lobby_proto
@@ -404,7 +393,7 @@ urbi_lobby_register_session(UVM *vm, URealm *session_realm)
      * (the .u overlay runs at the end of urbi_populate_realm_globals);
      * urbi_stdlib_list_append_value treats NULL as a silent no-op. */
     return urbi_stdlib_list_append_value(vm, lobbies,
-                                         val_obj_local(session_realm->global_object));
+                                         urbi_make_object(session_realm->global_object));
 }
 
 int
@@ -415,7 +404,7 @@ urbi_lobby_unregister_session(UVM *vm, URealm *session_realm)
 
     UObject *lobbies = fetch_lobbies_list(vm);
     return urbi_stdlib_list_remove_first_equal(
-        vm, lobbies, val_obj_local(session_realm->global_object));
+        vm, lobbies, urbi_make_object(session_realm->global_object));
 }
 
 /* === handleDisconnect dispatch ==========================================

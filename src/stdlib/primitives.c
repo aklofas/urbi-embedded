@@ -43,49 +43,6 @@
 #  include <time.h>                    /* time_t, time(), gmtime_r, strftime */
 #endif
 
-/* === UValue construction helpers ========================================= */
-
-static UValue
-val_bool(int b)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_BOOL;
-    v.v.i  = b ? 1 : 0;
-    return v;
-}
-
-static UValue
-val_int(int64_t i)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_INT;
-    v.v.i  = i;
-    return v;
-}
-
-static UValue
-val_obj(UObject *o)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_OBJECT;
-    v.v.p  = o;
-    return v;
-}
-
-static UValue
-val_str_intern(UVM *vm, const char *s, size_t n, int *oom)
-{
-    UValue v = urbi_make_nil();
-    USymbol *sym = (USymbol *)ustr_intern(vm, s, n);
-    if (sym == NULL) {
-        if (oom != NULL) *oom = 1;
-        return v;
-    }
-    v.kind = (uint8_t)UVAL_STR;
-    v.v.p  = sym;
-    return v;
-}
-
 /* === Method-table install helper ========================================= */
 
 /* Method tables use UNativeMethodDef from stdlib/object_root.h;
@@ -151,10 +108,10 @@ mutex_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UObject *m = urbi_object_clone(vm, (UObject *)self.v.p);
     if (m == NULL) return urbi_raise_oom(vm, out);
 
-    if (write_local_slot(vm, m, "_locked", val_bool(0)) != 0)
+    if (write_local_slot(vm, m, "_locked", urbi_make_bool(0)) != 0)
         return urbi_raise_oom(vm, out);
 
-    *out = val_obj(m);
+    *out = urbi_make_object(m);
     return UEXEC_OK;
 }
 
@@ -173,7 +130,7 @@ mutex_locked(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (v.kind == (uint8_t)UVAL_BOOL) {
         *out = v;
     } else {
-        *out = val_bool(0);
+        *out = urbi_make_bool(0);
     }
     return UEXEC_OK;
 }
@@ -186,7 +143,7 @@ mutex_lock(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "Mutex.lock: receiver must be a Mutex", out);
 
-    if (write_local_slot(vm, (UObject *)self.v.p, "_locked", val_bool(1)) != 0)
+    if (write_local_slot(vm, (UObject *)self.v.p, "_locked", urbi_make_bool(1)) != 0)
         return urbi_raise_oom(vm, out);
 
     *out = urbi_make_nil();
@@ -201,7 +158,7 @@ mutex_unlock(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "Mutex.unlock: receiver must be a Mutex", out);
 
-    if (write_local_slot(vm, (UObject *)self.v.p, "_locked", val_bool(0)) != 0)
+    if (write_local_slot(vm, (UObject *)self.v.p, "_locked", urbi_make_bool(0)) != 0)
         return urbi_raise_oom(vm, out);
 
     *out = urbi_make_nil();
@@ -223,14 +180,14 @@ mutex_trylock(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     int already = (v.kind == (uint8_t)UVAL_BOOL && v.v.i != 0);
     if (already) {
-        *out = val_bool(0);
+        *out = urbi_make_bool(0);
         return UEXEC_OK;
     }
 
-    if (write_local_slot(vm, m, "_locked", val_bool(1)) != 0)
+    if (write_local_slot(vm, m, "_locked", urbi_make_bool(1)) != 0)
         return urbi_raise_oom(vm, out);
 
-    *out = val_bool(1);
+    *out = urbi_make_bool(1);
     return UEXEC_OK;
 }
 
@@ -276,10 +233,10 @@ date_now(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UObject *d = urbi_object_clone(vm, (UObject *)self.v.p);
     if (d == NULL) return urbi_raise_oom(vm, out);
 
-    if (write_local_slot(vm, d, "_seconds", val_int(host_time_seconds())) != 0)
+    if (write_local_slot(vm, d, "_seconds", urbi_make_int(host_time_seconds())) != 0)
         return urbi_raise_oom(vm, out);
 
-    *out = val_obj(d);
+    *out = urbi_make_object(d);
     return UEXEC_OK;
 }
 
@@ -298,7 +255,7 @@ date_from_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out
     if (write_local_slot(vm, d, "_seconds", args[0]) != 0)
         return urbi_raise_oom(vm, out);
 
-    *out = val_obj(d);
+    *out = urbi_make_object(d);
     return UEXEC_OK;
 }
 
@@ -314,7 +271,7 @@ date_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (read_local_slot(vm, (UObject *)self.v.p, "_seconds", &v) != 0)
         return urbi_raise_oom(vm, out);
     if (v.kind != (uint8_t)UVAL_INT) {
-        *out = val_int(0);
+        *out = urbi_make_int(0);
     } else {
         *out = v;
     }
@@ -342,7 +299,7 @@ date_as_string(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
      * branch and Linux/macOS hosts have gmtime_r). */
     if (gmtime_r(&t, &tmv) == NULL) {
         int oom = 0;
-        UValue sv = val_str_intern(vm, "", 0U, &oom);
+        UValue sv = urbi_val_str_intern(vm, "", 0U, &oom);
         if (oom) return urbi_raise_oom(vm, out);
         *out = sv;
         return UEXEC_OK;
@@ -350,14 +307,14 @@ date_as_string(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     char buf[32];
     size_t n = strftime(buf, sizeof buf, "%Y-%m-%d %H:%M:%S", &tmv);
     int oom = 0;
-    UValue sv = val_str_intern(vm, buf, n, &oom);
+    UValue sv = urbi_val_str_intern(vm, buf, n, &oom);
     if (oom) return urbi_raise_oom(vm, out);
     *out = sv;
     return UEXEC_OK;
 #else
     (void)s;
     int oom = 0;
-    UValue sv = val_str_intern(vm, "", 0U, &oom);
+    UValue sv = urbi_val_str_intern(vm, "", 0U, &oom);
     if (oom) return urbi_raise_oom(vm, out);
     *out = sv;
     return UEXEC_OK;
@@ -406,10 +363,10 @@ date_plus(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     UObject *d = urbi_object_clone(vm, vm->date_proto);
     if (d == NULL) return urbi_raise_oom(vm, out);
-    if (write_local_slot(vm, d, "_seconds", val_int(base_s + dur_s)) != 0)
+    if (write_local_slot(vm, d, "_seconds", urbi_make_int(base_s + dur_s)) != 0)
         return urbi_raise_oom(vm, out);
 
-    *out = val_obj(d);
+    *out = urbi_make_object(d);
     return UEXEC_OK;
 }
 
@@ -453,7 +410,7 @@ duration_from_micros(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *
     if (write_local_slot(vm, d, "_microseconds", args[0]) != 0)
         return urbi_raise_oom(vm, out);
 
-    *out = val_obj(d);
+    *out = urbi_make_object(d);
     return UEXEC_OK;
 }
 
@@ -470,7 +427,7 @@ duration_micros(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UValue v;
     if (read_local_slot(vm, (UObject *)self.v.p, "_microseconds", &v) != 0)
         return urbi_raise_oom(vm, out);
-    *out = (v.kind == (uint8_t)UVAL_INT) ? v : val_int(0);
+    *out = (v.kind == (uint8_t)UVAL_INT) ? v : urbi_make_int(0);
     return UEXEC_OK;
 }
 
@@ -488,7 +445,7 @@ duration_millis(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (read_local_slot(vm, (UObject *)self.v.p, "_microseconds", &v) != 0)
         return urbi_raise_oom(vm, out);
     int64_t us = (v.kind == (uint8_t)UVAL_INT) ? v.v.i : 0;
-    *out = val_int(us / 1000);
+    *out = urbi_make_int(us / 1000);
     return UEXEC_OK;
 }
 
@@ -506,7 +463,7 @@ duration_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (read_local_slot(vm, (UObject *)self.v.p, "_microseconds", &v) != 0)
         return urbi_raise_oom(vm, out);
     int64_t us = (v.kind == (uint8_t)UVAL_INT) ? v.v.i : 0;
-    *out = val_int(us / 1000000);
+    *out = urbi_make_int(us / 1000000);
     return UEXEC_OK;
 }
 
@@ -539,7 +496,7 @@ urbi_stdlib_register_primitives(UVM *vm)
     if (rc != URBI_OK) return rc;
     /* Default the proto's `_locked` slot to false so an un-cloned Mutex
      * also reads as unlocked. */
-    rc = install_default_slot(vm, vm->mutex_proto, "_locked", val_bool(0));
+    rc = install_default_slot(vm, vm->mutex_proto, "_locked", urbi_make_bool(0));
     if (rc != URBI_OK) return rc;
 
     /* --- T95 Date --- */
@@ -552,7 +509,7 @@ urbi_stdlib_register_primitives(UVM *vm)
     if (rc != URBI_OK) return rc;
     /* Default `seconds` slot to 0 so an un-cloned Date proto reads as
      * the Unix epoch. */
-    rc = install_default_slot(vm, vm->date_proto, "_seconds", val_int(0));
+    rc = install_default_slot(vm, vm->date_proto, "_seconds", urbi_make_int(0));
     if (rc != URBI_OK) return rc;
 
     /* --- T96 Duration --- */
@@ -563,7 +520,7 @@ urbi_stdlib_register_primitives(UVM *vm)
     }
     rc = URBI_REGISTER_METHODS(vm, vm->duration_proto, DURATION_METHODS);
     if (rc != URBI_OK) return rc;
-    rc = install_default_slot(vm, vm->duration_proto, "_microseconds", val_int(0));
+    rc = install_default_slot(vm, vm->duration_proto, "_microseconds", urbi_make_int(0));
     if (rc != URBI_OK) return rc;
 
     return URBI_OK;
@@ -583,17 +540,17 @@ urbi_stdlib_register_primitives_globals(UVM *vm, URealm *realm)
     int rc;
     if (vm->mutex_proto != NULL) {
         rc = urbi_realm_set_global(vm, realm, "Mutex", 5,
-                                   val_obj(vm->mutex_proto));
+                                   urbi_make_object(vm->mutex_proto));
         if (rc != URBI_OK) return rc;
     }
     if (vm->date_proto != NULL) {
         rc = urbi_realm_set_global(vm, realm, "Date", 4,
-                                   val_obj(vm->date_proto));
+                                   urbi_make_object(vm->date_proto));
         if (rc != URBI_OK) return rc;
     }
     if (vm->duration_proto != NULL) {
         rc = urbi_realm_set_global(vm, realm, "Duration", 8,
-                                   val_obj(vm->duration_proto));
+                                   urbi_make_object(vm->duration_proto));
         if (rc != URBI_OK) return rc;
     }
     return URBI_OK;
