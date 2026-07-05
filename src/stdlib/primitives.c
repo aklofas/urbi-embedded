@@ -7,7 +7,7 @@
  *
  * Allocation pattern mirrors namespaces.c / runtime_types.c: a vanilla
  * URBI_ATOM_OBJECT-family UObject per primitive proto, methods installed
- * via a per-primitive method table walked by install_methods.  GC
+ * via UNativeMethodDef tables with URBI_REGISTER_METHODS.  GC
  * reachability comes from object_roots_walker (uobject.c) which shades
  * each vm->*_proto field during MARK_ROOTS. */
 
@@ -88,33 +88,8 @@ val_str_intern(UVM *vm, const char *s, size_t n, int *oom)
 
 /* === Method-table install helper ========================================= */
 
-typedef struct {
-    const char           *name;
-    urbi_native_method_fn fn;
-} PMethodEntry;
-
-static int
-install_methods(UVM *vm, UObject *proto,
-                const PMethodEntry *table, size_t count)
-{
-    if (proto == NULL) return URBI_ERR_OOM;
-    size_t i;
-    for (i = 0U; i < count; i++) {
-        UClosure *cl = urbi_native_closure_create(vm, table[i].fn);
-        if (cl == NULL) return URBI_ERR_OOM;
-
-        USymbol *sym = (USymbol *)ustr_intern(vm, table[i].name,
-                                              urbi_strlen(table[i].name));
-        if (sym == NULL) return URBI_ERR_OOM;
-
-        UValue v = urbi_make_nil();
-        v.kind = (uint8_t)UVAL_CLOSURE;
-        v.v.p  = cl;
-        if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
-            return URBI_ERR_OOM;
-    }
-    return URBI_OK;
-}
+/* Method tables use UNativeMethodDef from stdlib/object_root.h;
+ * URBI_REGISTER_METHODS does the install loop. */
 
 /* Install a default slot (UValue) on proto.  Returns URBI_OK / URBI_ERR_OOM. */
 static int
@@ -259,7 +234,7 @@ mutex_trylock(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-static const PMethodEntry MUTEX_METHODS[] = {
+static const UNativeMethodDef MUTEX_METHODS[] = {
     { "new",     mutex_new     },
     { "locked",  mutex_locked  },
     { "lock",    mutex_lock    },
@@ -267,7 +242,7 @@ static const PMethodEntry MUTEX_METHODS[] = {
     { "tryLock", mutex_trylock }
 };
 
-#define MUTEX_METHODS_COUNT (sizeof(MUTEX_METHODS) / sizeof(MUTEX_METHODS[0]))
+
 
 /* === Date (T95) ==========================================================
  *
@@ -438,7 +413,7 @@ date_plus(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-static const PMethodEntry DATE_METHODS[] = {
+static const UNativeMethodDef DATE_METHODS[] = {
     { "now",         date_now           },
     { "fromSeconds", date_from_seconds  },
     { "seconds",     date_seconds       },
@@ -446,7 +421,7 @@ static const PMethodEntry DATE_METHODS[] = {
     { "plus",        date_plus          }
 };
 
-#define DATE_METHODS_COUNT (sizeof(DATE_METHODS) / sizeof(DATE_METHODS[0]))
+
 
 /* === Duration (T96) ======================================================
  *
@@ -535,14 +510,14 @@ duration_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-static const PMethodEntry DURATION_METHODS[] = {
+static const UNativeMethodDef DURATION_METHODS[] = {
     { "fromMicroseconds", duration_from_micros },
     { "asMicroseconds",   duration_micros      },
     { "asMilliseconds",   duration_millis      },
     { "asSeconds",        duration_seconds     }
 };
 
-#define DURATION_METHODS_COUNT (sizeof(DURATION_METHODS) / sizeof(DURATION_METHODS[0]))
+
 
 /* === urbi_stdlib_register_primitives ====================================
  *
@@ -560,7 +535,7 @@ urbi_stdlib_register_primitives(UVM *vm)
         if (p == NULL) return URBI_ERR_OOM;
         vm->mutex_proto = p;
     }
-    rc = install_methods(vm, vm->mutex_proto, MUTEX_METHODS, MUTEX_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, vm->mutex_proto, MUTEX_METHODS);
     if (rc != URBI_OK) return rc;
     /* Default the proto's `_locked` slot to false so an un-cloned Mutex
      * also reads as unlocked. */
@@ -573,7 +548,7 @@ urbi_stdlib_register_primitives(UVM *vm)
         if (p == NULL) return URBI_ERR_OOM;
         vm->date_proto = p;
     }
-    rc = install_methods(vm, vm->date_proto, DATE_METHODS, DATE_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, vm->date_proto, DATE_METHODS);
     if (rc != URBI_OK) return rc;
     /* Default `seconds` slot to 0 so an un-cloned Date proto reads as
      * the Unix epoch. */
@@ -586,8 +561,7 @@ urbi_stdlib_register_primitives(UVM *vm)
         if (p == NULL) return URBI_ERR_OOM;
         vm->duration_proto = p;
     }
-    rc = install_methods(vm, vm->duration_proto,
-                         DURATION_METHODS, DURATION_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, vm->duration_proto, DURATION_METHODS);
     if (rc != URBI_OK) return rc;
     rc = install_default_slot(vm, vm->duration_proto, "_microseconds", val_int(0));
     if (rc != URBI_OK) return rc;

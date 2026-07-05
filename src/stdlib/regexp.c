@@ -362,42 +362,13 @@ regexp_match(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return regexp_do_test(vm, self, args, nargs, out, "RegExp.match");
 }
 
-/* === Method-table install helper ========================================= */
+/* Method table uses UNativeMethodDef from stdlib/object_root.h. */
 
-typedef struct {
-    const char           *name;
-    urbi_native_method_fn fn;
-} RMethodEntry;
-
-static const RMethodEntry REGEXP_METHODS[] = {
+static const UNativeMethodDef REGEXP_METHODS[] = {
     { "new",   regexp_new   },
     { "test",  regexp_test  },
     { "match", regexp_match }
 };
-
-#define REGEXP_METHODS_COUNT (sizeof(REGEXP_METHODS) / sizeof(REGEXP_METHODS[0]))
-
-static int
-install_methods(UVM *vm, UObject *proto, const RMethodEntry *table, size_t count)
-{
-    if (proto == NULL) return URBI_ERR_OOM;
-    size_t i;
-    for (i = 0U; i < count; i++) {
-        UClosure *cl = urbi_native_closure_create(vm, table[i].fn);
-        if (cl == NULL) return URBI_ERR_OOM;
-
-        USymbol *sym = (USymbol *)ustr_intern(vm, table[i].name,
-                                              urbi_strlen(table[i].name));
-        if (sym == NULL) return URBI_ERR_OOM;
-
-        UValue v = urbi_make_nil();
-        v.kind = (uint8_t)UVAL_CLOSURE;
-        v.v.p  = cl;
-        if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
-            return URBI_ERR_OOM;
-    }
-    return URBI_OK;
-}
 
 /* === Registration ======================================================== */
 
@@ -411,8 +382,7 @@ urbi_stdlib_register_regexp(UVM *vm)
         if (p == NULL) return URBI_ERR_OOM;
         vm->regexp_proto = p;
     }
-    int rc = install_methods(vm, vm->regexp_proto,
-                             REGEXP_METHODS, REGEXP_METHODS_COUNT);
+    int rc = URBI_REGISTER_METHODS(vm, vm->regexp_proto, REGEXP_METHODS);
     if (rc != URBI_OK) return rc;
 
     /* Default the proto's `_pattern` slot to the empty string so an

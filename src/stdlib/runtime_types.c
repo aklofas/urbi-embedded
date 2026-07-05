@@ -114,44 +114,15 @@ exc_raise(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-/* === Method-table install helper ========================================= */
-
-typedef struct {
-    const char           *name;
-    urbi_native_method_fn fn;
-} RtMethodEntry;
-
-static int
-install_methods(UVM *vm, UObject *proto,
-                const RtMethodEntry *table, size_t count)
-{
-    if (proto == NULL) return URBI_ERR_OOM;
-    size_t i;
-    for (i = 0U; i < count; i++) {
-        UClosure *cl = urbi_native_closure_create(vm, table[i].fn);
-        if (cl == NULL) return URBI_ERR_OOM;
-
-        USymbol *sym = (USymbol *)ustr_intern(vm, table[i].name,
-                                              urbi_strlen(table[i].name));
-        if (sym == NULL) return URBI_ERR_OOM;
-
-        UValue v = urbi_make_nil();
-        v.kind = (uint8_t)UVAL_CLOSURE;
-        v.v.p  = cl;
-        if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
-            return URBI_ERR_OOM;
-    }
-    return URBI_OK;
-}
-
 /* === Method tables ======================================================= */
 
-static const RtMethodEntry EXCEPTION_METHODS[] = {
+/* Method tables use UNativeMethodDef from stdlib/object_root.h;
+ * URBI_REGISTER_METHODS does the install loop. */
+
+static const UNativeMethodDef EXCEPTION_METHODS[] = {
     { "new",   exc_new   },
     { "raise", exc_raise }
 };
-
-#define EXCEPTION_METHODS_COUNT (sizeof(EXCEPTION_METHODS) / sizeof(EXCEPTION_METHODS[0]))
 
 /* === urbi_stdlib_register_runtime_types =================================
  *
@@ -174,8 +145,7 @@ urbi_stdlib_register_runtime_types(UVM *vm)
         vm->exception_proto = p;
     }
 
-    int rc = install_methods(vm, vm->exception_proto,
-                             EXCEPTION_METHODS, EXCEPTION_METHODS_COUNT);
+    int rc = URBI_REGISTER_METHODS(vm, vm->exception_proto, EXCEPTION_METHODS);
     if (rc != URBI_OK) return rc;
 
     /* Wire exception_proto into the Object proto chain so that Exception
