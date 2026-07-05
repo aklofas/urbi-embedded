@@ -16,7 +16,8 @@ summarized here.
   first-class tags with stop/block/freeze, prototype OOP, `try`/`catch`/`finally` —
   are done. After the v0.13.5 conformance pass, truthiness, statement-operand
   folding, unbraced bodies, switch default, default parameters, universal
-  asString, and tag-watcher persistence are also fully aligned with legacy.
+  asString, block-scoped chunk-top vars, and tag-watcher persistence are also
+  fully aligned with legacy.
 - **Stdlib data layer (String / List / Dict / Object-reflection / Integer / Float):**
   ≈ **85% usage-weighted** after the v0.13.5 conformance-and-stdlib arc. The
   v0.12.4 stdlib arc closed the high-traffic gaps; v0.13.5 adds `String.format`
@@ -24,8 +25,8 @@ summarized here.
   `Exception.Lookup`), `List.sort(comparator)`, typed exceptions from
   div-by-zero and out-of-range subscript, and a RegExp execution budget.
 - **Pass-rate on the implemented surface: 100%.** All active `.chk` conformance
-  fixtures pass (384 total fixtures: 271 active script-driven + 9 preset-gated
-  ros/urobotics + 16 REPL NDJSON + 88 annotated placeholders for
+  fixtures pass (384 total fixtures: 273 active script-driven + 9 preset-gated
+  ros/urobotics + 16 REPL NDJSON + 86 annotated placeholders for
   blocked/deferred/dropped features), plus 2232 unit cases / 16735 checks.
   Since v0.13.0 the runner is honest about this denominator: placeholders and
   vacuous fixtures are distinct tallied outcomes, fixture exit status is

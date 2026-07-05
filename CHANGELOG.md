@@ -78,6 +78,20 @@ API symbols).
   answered with a one-shot `line_too_long` error envelope and discarded
   to the next frame boundary; consecutive oversized lines each get an
   envelope and the session recovers on the next valid frame.
+- Try-body register seam fixed: the try result register is now anchored
+  as a declared hidden local (the tag-scope pattern), so locals declared
+  inside a `try` body keep their registers.  Before this fix a `switch`
+  inside `try` silently ran the first case arm regardless of subject
+  (the subject and the case temp collided on one register), a for-each
+  inside `try` raised a spurious `TypeError`, and a frame-local loop
+  counter inside `try` was clobbered by the loop condition's result —
+  masking a thrown value with a `TypeError` in the catch.  Pre-existing
+  (not a v0.13.5 regression); no new opcode, wire format unchanged.
+- Block-scoped chunk-top `var`: a `var` declared inside a block at chunk
+  top is scoped to that block and no longer clobbers an outer chunk-top
+  binding of the same name (SDK 2.0 ch. 17 semantics); bare chunk-top
+  vars keep realm-slot install and REPL persistence, and plain
+  assignment inside a block still writes through to the outer binding.
 
 ## v0.13.4-error-surfacing — 2026-07-04
 
