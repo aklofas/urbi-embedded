@@ -18,7 +18,7 @@ Three priorities shape every convention in this doc:
 
 ## 1. Numeric type system
 
-urbiscript has two numeric types: **Integer** and **Float**. Both descend from a shared `Number` supertype prototype that carries common methods; type-specific methods live on the respective subtype.
+urbiscript has two numeric types: **Integer** and **Float**. Each type has its own atom prototype with type-specific methods; there is no shared `Number` supertype.
 
 ### 1.1 Representation
 
@@ -62,13 +62,11 @@ Following Lua 5.3's evolution model:
 |---|---|---|---|
 | `+` `-` `*` | Integer (wrap on overflow) | Float | Float (Integer promoted) |
 | `/` | **Float** (always) | Float | Float |
-| `//` | Integer (floor-division) | Float | Float |
 | `%` | Integer | Float | Float |
 
 Key rules:
 
-- **`/` always returns Float.** `3 / 2 == 1.5`, never `1`. Integer division must use `//`.
-- **`//` is floor-division**, not truncating division. `-3 // 2 == -2`. The result is Integer when both operands are Integer, Float otherwise.
+- **`/` always returns Float.** `3 / 2 == 1.5`, never `1`. Floor-division (`//`) is not implemented at v1.0.
 - **Integer overflow wraps, two's-complement.** `INT64_MAX + 1 == INT64_MIN`. This is the Lua 5.3 default. Overflow detection is a v1.x deferred decision; v1 commits to wrap and lets programs cope.
 - **Bitwise operations are methods on Integer, not symbolic operators** — see §1.4 below.  `|` and `&` in urbiscript are concurrency-composition operators at the statement level and are never overloaded for bit manipulation.
 
@@ -103,7 +101,7 @@ Shift semantics: `bitshr` is arithmetic (sign-extending).  A logical-shift-right
 
 Shift counts that are negative or >= 64 are defined behavior: the result is 0 for `bitshl`, and `-1` or `0` for `bitshr` depending on the sign of the receiver.  This mirrors Lua 5.3's documented rule and differs from C's undefined behavior on out-of-range shifts.
 
-Boolean operators (`and`, `or`, `not`, plus their synonyms `&&`, `||`, `!`) are separate from bitwise.  They operate on truthiness, short-circuit, and return one of the operands (Python-style) rather than a Boolean.  Do not mix the two sets — if you want bitwise, call a method; if you want short-circuit, use the keyword.
+Boolean operators (`&&`, `||`, `!`) are separate from bitwise.  They operate on truthiness, short-circuit, and return one of the operands (Python-style) rather than a Boolean.  `and`, `or`, and `not` are not keywords in urbi-embedded; the only boolean operators are `&&`, `||`, and `!`.  Do not mix the two sets — if you want bitwise, call a method; if you want boolean, use `&&`, `||`, or `!`.
 
 ### 1.5 Cross-type comparison
 
@@ -117,21 +115,23 @@ type(3.0)     // "Float"
 type(3) == type(3.0)   // false — the runtime tags differ even when values compare equal
 ```
 
-Equality compares numerical value, not runtime tag. `isA(Number)` is true for both; `isA(Integer)` and `isA(Float)` distinguish them.
+Equality compares numerical value, not runtime tag. `isA(Integer)` returns true for integers and `isA(Float)` for floats; there is no shared `Number` supertype to test against.
 
 ### 1.6 Prototype structure
 
+`Integer` and `Float` are independent atom prototypes — there is no shared `Number` supertype.
+
 ```text
-Number (abstract supertype prototype)
-├── Integer
-│   └── methods: bitand, bitor, bitxor, shl, shr, bnot, toFloat, ...
-└── Float
-    └── methods: sqrt, sin, cos, toInt, isNaN, isInf, ...
+Integer  (atom proto)
+└── methods: bitand, bitor, bitxor, bitnot, bitshl, bitshr, toFloat,
+             abs, round, floor, ceil, times, ...
+
+Float  (atom proto)
+└── methods: sqrt, sin, cos, toInt, isNaN, isInf, abs, round,
+             floor, ceil, ...
 ```
 
-`Number` carries `.round()`, `.abs()`, `.times()`, comparison, arithmetic — anything meaningful for both types. `Integer` carries bitwise ops and `.toFloat()`. `Float` carries transcendentals and FP-specific queries.
-
-`.round()`, `.floor()`, `.ceil()` return Integer by v1.0 (recommended direction — §5 of the spec flags this as deferred, but Integer is the useful answer for array-index and counter use cases). Legacy urbi returned Float; this is a deliberate post-2.x evolution.
+Common arithmetic methods (`abs`, `round`, `floor`, `ceil`) are present on both prototypes independently. `.round()`, `.floor()`, `.ceil()` return Integer by v1.0 (the useful answer for array-index and counter use cases). Legacy urbi returned Float; this is a deliberate post-2.x evolution.
 
 ### 1.7 Consequence for the `.chk` corpus
 
