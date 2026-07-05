@@ -458,17 +458,21 @@ extern "C" {
  *
  * v0.13.5-conformance-and-stdlib — PATCH bump 0/23/5 → 0/23/6 (NOT an
  * escape).  Tag 6 of the v0.13.x pre-release hardening arc.  Legacy-
- * conformance pass: truthiness table aligned to legacy (nil/void/false
- * falsy; zero truthy); statement-operand fold for `;` / `,` / `|`;
- * unbraced single-statement bodies accepted; `switch` gains a mandatory
- * `default:` arm; default parameters; universal `asString` fallback;
- * `String.format` `%s`/`%d`/`%f`/`%i`/`%g` formatting; compat aliases
- * (`println`/`echo`/`display`); `List.sort(comparator)`; typed
- * exceptions from div-by-zero; RegExp budget cap; emit diagnostics with
- * source positions; message-text polish; tag-watcher persistence
- * (v0.13.4-A closed); REPL line-cap hardening.  No new public C API
- * symbols; no new opcodes; wire format unchanged at v1.9 / 0x19.  Not a
- * pre-v1.0 escape.
+ * conformance pass: truthiness aligned to legacy (0 / 0.0 / nil / false
+ * falsy; empties truthy); blocks + if/while statement forms as `&`/`|`
+ * fork operands; unbraced if/else/while arms; `switch` `default:`
+ * catch-all arm; default parameter values (call-time eval, trailing
+ * omission); universal Object.asString; `String %` format operator
+ * (%s/%d/%f/%%) + format arity errors; legacy compat aliases
+ * (String.length, List.size/insertBack/'<<'/'+'/head, Dict.size,
+ * Exception.Lookup); List.sort(comparator) strict-less-than predicate;
+ * DivByZero / IndexError / RangeError typed raises; RegExp backtracking
+ * budget (catchable RangeError); emit diagnostics with file:line:col;
+ * runtime message polish (operator glyphs, no opcode mnemonics);
+ * tag-watcher persistence (user-tag watchers live until tag.stop();
+ * closes design-risks v0.13.4-A); REPL 8 KiB inbound line cap.  No new
+ * public C API symbols; no new opcodes; wire format unchanged at v1.9 /
+ * 0x19.  Not a pre-v1.0 escape.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 23

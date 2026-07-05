@@ -3,64 +3,81 @@
 ## v0.13.5-conformance-and-stdlib — 2026-07-05
 
 Tag 6 of the v0.13.x pre-release hardening arc: a systematic legacy-
-conformance pass covering truthiness, operator folding, control-flow
-syntax, the default-parameter calling convention, the standard string-
-formatting library, compat aliases, list sorting, typed exceptions from
-arithmetic, diagnostic position reporting, and the tag-watcher persistence
-gap from v0.13.4.  No new opcode, wire format unchanged (v1.9 / 0x19).
+conformance pass covering truthiness, separator fork operands, control-flow
+syntax, default parameter values, string formatting, compat aliases, list
+sorting, typed exceptions from arithmetic and lookup, diagnostic position
+reporting, and the tag-watcher persistence gap from v0.13.4.  No new
+opcode, wire format unchanged (v1.9 / 0x19).
 ABI 0/23/5 -> 0/23/6 (PATCH; no new public C functions, no new public C
 API symbols).
 
-- Truthiness alignment: `nil`, `void`, and `false` are falsy; `0`
-  (integer zero) is truthy, matching legacy urbiscript 2.x semantics.
-  Updated the VM truth-test path and the full fixture suite; the
-  conformance matrix row is now FULL.
-- Statement-operand fold: the `;`, `,`, and `|` separator operands accept
-  non-expression statements (declarations, control-flow) as their
-  left-hand side, matching the legacy separator grammar.
-- Unbraced single-statement bodies: `if`, `while`, `at`, and `whenever`
-  accept a single statement without braces, closing the last body-syntax
-  gap against the legacy parser.
-- `switch` default arm: `switch` now requires a `default:` arm and raises
-  a runtime error when no case matches and the arm is absent — matching
-  the legacy compile-time requirement adapted for the runtime model.
-- Default parameters: function declarations accept `var p = expr` default
-  expressions; callers may omit trailing arguments and receive the default
-  value.  The calling-convention change is script-surface only.
-- Universal `asString` fallback: `Object.asString` is defined on the root
-  proto, so every value has a printable representation; the method
-  delegates to type-specific overrides when present.
-- `String.format` / `%` operator: `String.format(fmt, args...)` and the
-  `%` infix operator implement `%s`, `%d`, `%f`, `%i`, and `%g`
-  conversion; `%%` produces a literal percent sign.
-- Compat aliases: `println`, `echo`, and `display` are installed as
-  `Lobby` aliases for `Lobby.echo`/the channel output path, covering the
-  common legacy top-level printing idioms.
-- `List.sort(comparator)`: `List.sort` accepts an optional two-argument
-  comparator closure that returns a negative, zero, or positive integer,
-  matching the legacy `List.sort` contract.
-- Typed exceptions from arithmetic: integer and float division by zero
-  now raise a catchable `Exception.DivisionByZero` rather than a strand
-  fatal, so `try { 1/0 } catch { |e| ... }` works end-to-end.
-- Typed exceptions from additional sites: out-of-range subscript, type
-  mismatch in arithmetic with non-numeric arguments, and missing-method
-  dispatch failures raise catchable typed `Exception` instances.
-- RegExp budget cap: the regexp matcher has an execution-step budget;
-  pathological patterns are rejected with a `RegExpError` rather than
+- Truthiness alignment: integer `0`, float `0.0`/`-0.0`, `nil`, and
+  `false` are falsy; everything else — including empty strings, lists,
+  and dicts — is truthy.  Matches the legacy reference (`!0` is true;
+  `if (0)` takes the else branch); one truth source now feeds
+  conditions, logical not, and the short-circuit operators.
+- Statement forms as fork operands: blocks and `if`/`while` statement
+  forms are accepted as `&` and `|` operands (`{ a } & { b }`), matching
+  the legacy grammar's statement-tier composition.  Known boundaries:
+  `var` declarations are rejected as operands; a `&`-forked thunk can
+  read chunk-top vars but writes fail to compile (use `Realm.*` slots).
+- Unbraced single-statement bodies: `if`/`else` and `while` arms accept
+  a single statement without braces (`if (this) false else true` — the
+  form the legacy stdlib itself uses).  Separators after an unbraced arm
+  bind outside the arm for all arm kinds, matching the reference
+  grammar's statement tiering; `for` keeps required braces.
+- `switch` default arm: `switch` supports a `default:` catch-all arm
+  that runs when no case matches; dispatch is source-position-independent
+  (a `default` listed first still loses to a matching case), and a
+  second `default` arm is a compile error.
+- Default parameter values: `function (a, b = expr)` — trailing
+  arguments may be omitted; defaults evaluate at call time in the callee
+  scope and may reference earlier parameters; below-minimum and
+  above-maximum argument counts remain catchable errors.  Compiled as an
+  arity prologue in the chunk; wire format unchanged.
+- Universal `asString` fallback: `Object.asString` on the root proto
+  gives every object a printable representation; atom types keep their
+  own `asString`.
+- `String` formatting: the `%` operator formats a string against an
+  argument list (`"x=%d" % [1]`; a non-list argument is auto-wrapped),
+  delegating to `String.format`; conversions are `%s`/`%d`/`%f`/`%%`; a
+  format-spec/argument count mismatch raises a catchable arity error in
+  both directions.  `split("")` now splits per byte, and
+  `Integer.times(f)` passes the iteration index to the closure.
+- Legacy compat aliases: `String.length`, `List.size`/`insertBack`/
+  `'<<'`/`'+'`/`head`, `Dict.size`, and `Exception.Lookup` (identical to
+  `LookupError`) work alongside the canonical names.
+- `List.sort(comparator)`: `sort` accepts a strict less-than predicate
+  (`function (a, b) { a < b }`; truthy means `a` sorts before `b`),
+  matching the legacy convention.  The sort runs on a snapshot, so a
+  comparator that mutates the list cannot corrupt the in-progress sort;
+  a comparator that does not accept two arguments raises a catchable
+  type error.
+- Typed exceptions from arithmetic and lookup: division by zero — `/`
+  and `%`, Integer and Float alike (including `0.0/0.0`, which no longer
+  yields NaN) — raises a catchable `DivByZero`; a list index
+  out-of-range raises `IndexError`; a string char-position out-of-range
+  raises `RangeError`.  `Dict.get(missing)` deliberately keeps returning
+  `nil` (documented divergence), so `KeyError` is declared but has no
+  raise site.
+- RegExp execution budget: the backtracking matcher is capped per match;
+  a pathological pattern raises a catchable `RangeError` instead of
   spinning indefinitely.
-- Emit diagnostics with source positions: the emitter and the parser
-  attach source file, line, and column to error messages; runtime errors
-  that originate from a known source location include the position in the
-  diagnostic string.
-- Message-text polish: type-error, arity-error, and not-found messages
-  use user-facing phrasing throughout; internal mnemonic tokens are
-  replaced with readable descriptions.
-- Tag-watcher persistence (v0.13.4-A closed): `at` and `whenever`
-  watchers installed inside a tag scope survive a `tag.stop()` on the
-  enclosing tag and remain active across re-invocations, matching the
-  legacy watcher-persistence contract.
-- REPL line-cap hardening: consecutive oversized lines trigger the per-
-  frame overflow guard reliably; the cap is pinned by fixture.
+- Emit diagnostics with source positions: compile errors carry
+  file:line:col; the REPL and the batch loader render the first emit
+  error with its position instead of a bare "compile error".
+- Message-text polish: runtime type/arity errors name operators by their
+  glyph (`'+'`, `'<'`) and describe operations in user-facing phrases
+  ("slot access", "method call") instead of internal opcode mnemonics;
+  the CLI prints "urbi: uncaught throw" for uncaught scalar throws.
+- Tag-watcher persistence (v0.13.4-A closed): a watcher installed under
+  a user tag (`t: at (cond) body`) now persists past the lexical scope
+  close and stays armed until `t.stop()`; anonymous scope-tag watchers
+  still tear down at scope exit.
+- REPL inbound line cap: a single NDJSON line exceeding 8 KiB is
+  answered with a one-shot `line_too_long` error envelope and discarded
+  to the next frame boundary; consecutive oversized lines each get an
+  envelope and the session recovers on the next valid frame.
 
 ## v0.13.4-error-surfacing — 2026-07-04
 

@@ -20,9 +20,9 @@ summarized here.
 - **Stdlib data layer (String / List / Dict / Object-reflection / Integer / Float):**
   ≈ **85% usage-weighted** after the v0.13.5 conformance-and-stdlib arc. The
   v0.12.4 stdlib arc closed the high-traffic gaps; v0.13.5 adds `String.format`
-  / `%`, compat aliases (`println`/`echo`/`display`), `List.sort(comparator)`,
-  typed exceptions from div-by-zero and out-of-range subscript, and a RegExp
-  execution budget.
+  / `%`, compat aliases (`String.length`, `List.size`/`head`, `Dict.size`,
+  `Exception.Lookup`), `List.sort(comparator)`, typed exceptions from
+  div-by-zero and out-of-range subscript, and a RegExp execution budget.
 - **Pass-rate on the implemented surface: 100%.** All active `.chk` conformance
   fixtures pass (384 total fixtures: 271 active script-driven + 9 preset-gated
   ros/urobotics + 16 REPL NDJSON + 88 annotated placeholders for
