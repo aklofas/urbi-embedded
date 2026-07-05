@@ -28,3 +28,9 @@ var side = 0; try { 1 } catch (var e) { side = 99 } else { side = 1 }; side
 # --- else with catch (e) (no var keyword) also works ---
 var r = 0; try { r = 7 } catch (e) { r = 0 } else { r = r + 1 }; r
 [00000006] 8
+
+# --- try-catch-else expression value is the try body value (else is side-effect only) ---
+# When no exception: the whole expression evaluates to the try body value (1),
+# not the else body value (2). else runs for side effects only.
+var r = try { 1 } catch (var e) { 9 } else { 2 }; r
+[00000007] 1

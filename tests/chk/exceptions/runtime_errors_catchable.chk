@@ -13,3 +13,17 @@ var r4 = "no"; try { (5)() } catch (var e) { r4 = "caught" }; r4
 [00000005] "caught"
 var q = "no"; try { try { 1 } finally { nil + 1 } } catch (var e) { q = "caught" }; q
 [00000006] "caught"
+
+# --- string-operand arithmetic/comparison are TypeError, not fatal ---
+# Each expression type-errors (glyph-style message from T14); all are catchable.
+var r7 = "no"; try { "a" - 1 } catch (var e) { r7 = e.isA(TypeError) }; r7
+[00000007] true
+var r8 = "no"; try { nil * 2 } catch (var e) { r8 = e.isA(TypeError) }; r8
+[00000008] true
+# "x" / 2 type-errors on the string operand before any div-zero check
+var r9 = "no"; try { "x" / 2 } catch (var e) { r9 = e.isA(TypeError) }; r9
+[00000009] true
+var r10 = "no"; try { 5 <= "z" } catch (var e) { r10 = e.isA(TypeError) }; r10
+[00000010] true
+var r11 = "no"; try { -"nope" } catch (var e) { r11 = e.isA(TypeError) }; r11
+[00000011] true
