@@ -64,7 +64,7 @@ UTEST(loop_17_breaks_latches_patch_list_full)
                                  &bc, &bc_len, err, sizeof err);
     UASSERT(rc != URBI_OK);
     UASSERT(bc == NULL);
-    UASSERT(strstr(err, "too many") != NULL);
+    UASSERT(strstr(err, "too many break") != NULL);
 
     urbi_vm_destroy(&vm);
 }
@@ -122,7 +122,7 @@ UTEST(loop_17_continues_latches_patch_list_full)
                                  &bc, &bc_len, err, sizeof err);
     UASSERT(rc != URBI_OK);
     UASSERT(bc == NULL);
-    UASSERT(strstr(err, "too many") != NULL);
+    UASSERT(strstr(err, "too many continue") != NULL);
 
     urbi_vm_destroy(&vm);
 }
@@ -157,7 +157,7 @@ UTEST(switch_65_cases_latches_patch_list_full)
                                  &bc, &bc_len, err, sizeof err);
     UASSERT(rc != URBI_OK);
     UASSERT(bc == NULL);
-    UASSERT(strstr(err, "too many") != NULL);
+    UASSERT(strstr(err, "too many cases") != NULL);
 
     urbi_vm_destroy(&vm);
 }

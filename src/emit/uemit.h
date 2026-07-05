@@ -301,7 +301,9 @@ void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...);
 void urbi_emit_diag_error(UEmitter *e, const UAstNode *n, const char *fmt, ...);
 
 /* T13: Format the first ERROR-level diagnostic as "<source>:<line>:<col>: <msg>"
- * (or "<source>: <msg>" when line is 0) into buf[0..cap-1].  Returns true and
+ * (or "<source>: <msg>" when line is 0) into buf[0..cap-1].  When the module
+ * carries no source name, "<stdin>" is used — matching ulex_current_source's
+ * default so REPL parse and emit errors share one prefix.  Returns true and
  * fills buf when an error-level diagnostic is present; returns false when no
  * error diagnostic has been recorded (buf is untouched).
  * No-op / returns false on freestanding builds. */

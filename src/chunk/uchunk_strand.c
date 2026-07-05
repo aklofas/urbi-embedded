@@ -423,6 +423,11 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     module->heap_allocated = true;
 
     UEmitter e;
+    /* Deliberately NULL: a non-NULL module source_name changes RUNTIME
+     * error rendering (diag_write_prefix: "line N:" → "<name>:N:"), a
+     * fixture-pinned surface.  Compile diagnostics still unify on
+     * "<stdin>" via the formatter/warning-loop fallbacks below, matching
+     * ulex_current_source's default for the parse-error path. */
     uemit_init(&e, module, &arena, vm, NULL);
 
     UParser p;
@@ -487,12 +492,16 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
                          ulex_current_source(&lex),
                          parse_err_line, parse_err_col, parse_errmsg);
             } else
-            if (finish_rc != EMIT_OK) {
-                /* Use the diag buffer for a positioned emit error when available. */
+            if (finish_rc != EMIT_OK || e.error != EMIT_OK) {
+                /* Use the diag buffer for a positioned emit error when
+                 * available.  e.error is the emitter's sticky first error —
+                 * statement-level failures break the loop before
+                 * uemit_finish runs, so finish_rc alone misses them. */
                 char diag_msg[256];
                 if (!urbi_emit_diag_format_first_error(&e, diag_msg, sizeof diag_msg)) {
                     snprintf(diag_msg, sizeof diag_msg, "emit error: %s",
-                             uemit_error_name(finish_rc));
+                             uemit_error_name(e.error != EMIT_OK ? e.error
+                                                                 : finish_rc));
                 }
                 snprintf(out_buf, out_buf_size, "%s", diag_msg);
             } else
@@ -527,10 +536,12 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     /* Display any accumulated compile warnings, then free the diag buffer. */
 #if __STDC_HOSTED__
     {
+        const char *warn_src = uproto_source_name(e.module);
         int di;
+        if (warn_src == NULL) warn_src = "<stdin>";
         for (di = 0; di < e.diag_count; di++) {
             if (e.diag_buf[di].level == UEMIT_DIAG_WARN)
-                fprintf(stderr, "<repl>:%d:%d: warning: %s\n",
+                fprintf(stderr, "%s:%d:%d: warning: %s\n", warn_src,
                         e.diag_buf[di].line, e.diag_buf[di].col,
                         e.diag_buf[di].message);
         }
