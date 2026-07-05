@@ -36,6 +36,7 @@
  * they automatically pick up the broader heap-bearing set when it lands. */
 
 #include <stddef.h>           /* offsetof */
+#include "runtime/umacros.h"         /* URBI_INTERNAL_ASSERT */
 #include <stdint.h>
 
 #include "object/uobject.h"
@@ -637,23 +638,46 @@ static const UType type_upvalcell = {
  * Writes the M4 cell-type descriptors directly into vm->type_table[].
  * Built-in tags can't go through urbi_register_type (which guards against
  * tags < UTYPE_HOST_BASE per src/utype.c).  Called from urbi_vm_init after
- * vm->type_table[] has been zeroed. */
+ * vm->type_table[] has been zeroed.
+ *
+ * Dense lookup table indexed by type_tag.  NULL = tag is registered
+ * elsewhere (UTYPE_STRING/ARRAY/WATCHER/COROUTINE/NAMESPACE) or unused. */
+static const UType *const k_builtin_types[UTYPE_UPVAL_CELL + 1] = {
+    NULL,                        /* 0 — invalid / untyped */
+    (const UType *)&type_uobject,          /* 1  UTYPE_OBJECT */
+    (const UType *)&type_uclosure,         /* 2  UTYPE_CLOSURE */
+    NULL,                        /* 3  UTYPE_STRING — registered elsewhere */
+    NULL,                        /* 4  UTYPE_ARRAY — registered elsewhere */
+    (const UType *)&type_utag,             /* 5  UTYPE_TAG */
+    NULL,                        /* 6  UTYPE_WATCHER — registered elsewhere */
+    NULL,                        /* 7  UTYPE_COROUTINE — registered elsewhere */
+    NULL,                        /* 8  UTYPE_NAMESPACE — registered elsewhere */
+    (const UType *)&type_uprotos,          /* 9  UTYPE_PROTOS */
+    (const UType *)&type_ushape,           /* 10 UTYPE_SHAPE */
+    (const UType *)&type_uprops,           /* 11 UTYPE_PROPS */
+    (const UType *)&type_uslothandle,      /* 12 UTYPE_SLOTHANDLE */
+    (const UType *)&type_umodule_instance, /* 13 UTYPE_MODULE_INSTANCE */
+    (const UType *)&type_uproto_instance,  /* 14 UTYPE_PROTO_INSTANCE */
+    (const UType *)&type_ushapemap,        /* 15 UTYPE_SHAPE_MAP */
+    (const UType *)&type_upropstable,      /* 16 UTYPE_PROPS_TABLE */
+    (const UType *)&type_uslot_array,      /* 17 UTYPE_SLOT_ARRAY */
+    (const UType *)&type_uevent,           /* 18 UTYPE_EVENT */
+    (const UType *)&type_uchanged_node,    /* 19 UTYPE_CHANGED_NODE */
+    (const UType *)&type_upvalcell,        /* 20 UTYPE_UPVAL_CELL */
+};
+
 void
 urbi_object_builtin_types_init(struct UVM *vm)
 {
-    vm->type_table[UTYPE_CLOSURE]         = (UType *)&type_uclosure;
-    vm->type_table[UTYPE_OBJECT]          = (UType *)&type_uobject;
-    vm->type_table[UTYPE_PROTOS]          = (UType *)&type_uprotos;
-    vm->type_table[UTYPE_SHAPE]           = (UType *)&type_ushape;
-    vm->type_table[UTYPE_SHAPE_MAP]       = (UType *)&type_ushapemap;
-    vm->type_table[UTYPE_PROPS]           = (UType *)&type_uprops;
-    vm->type_table[UTYPE_PROPS_TABLE]     = (UType *)&type_upropstable;
-    vm->type_table[UTYPE_SLOT_ARRAY]      = (UType *)&type_uslot_array;
-    vm->type_table[UTYPE_SLOTHANDLE]      = (UType *)&type_uslothandle;
-    vm->type_table[UTYPE_MODULE_INSTANCE] = (UType *)&type_umodule_instance;
-    vm->type_table[UTYPE_PROTO_INSTANCE]  = (UType *)&type_uproto_instance;
-    vm->type_table[UTYPE_EVENT]           = (UType *)&type_uevent;
-    vm->type_table[UTYPE_CHANGED_NODE]    = (UType *)&type_uchanged_node;
-    vm->type_table[UTYPE_TAG]             = (UType *)&type_utag;
-    vm->type_table[UTYPE_UPVAL_CELL]      = (UType *)&type_upvalcell;
+    uint8_t tag;
+    for (tag = 1U; tag <= (uint8_t)UTYPE_UPVAL_CELL; tag++) {
+        if (k_builtin_types[tag] != NULL)
+            vm->type_table[tag] = (UType *)k_builtin_types[tag];
+    }
+    /* Completeness check: every tag registered in k_builtin_types is installed.
+     * NULL entries are intentionally deferred (other subsystems register them). */
+    for (tag = 1U; tag <= (uint8_t)UTYPE_UPVAL_CELL; tag++) {
+        URBI_INTERNAL_ASSERT(k_builtin_types[tag] == NULL ||
+                             vm->type_table[tag] != NULL);
+    }
 }
