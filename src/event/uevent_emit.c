@@ -8,6 +8,7 @@
 #include "watcher/uwatcher.h"  /* do_spawn_body_coroutine, UWATCHER_AT_EVENT* */
 #include "sched/usched_cooperative.h"  /* sched_strand_make_runnable, sched_strand_block */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (URBI_DEBUG-gated) */
+#include "runtime/ulist.h"     /* URBI_SLIST_UNLINK, URBI_SLIST_FOREACH_SAFE */
 #include "urbi/urbi.h"         /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include <stddef.h>
 
@@ -24,23 +25,15 @@
 void
 uevent_waiter_unregister(struct UStrand *s)
 {
-    struct UEvent  *e;
-    struct UStrand **prev;
-    struct UStrand  *cur;
+    struct UEvent *e;
 
     if (!s->wait_event_target) return;
 
-    e    = s->wait_event_target;
-    prev = &e->waiters_head;
-    cur  = e->waiters_head;
-
-    while (cur && cur != s) {
-        prev = &cur->next_event_waiter;
-        cur  = cur->next_event_waiter;
-    }
-    /* cur == s (found) or cur == NULL (s was already removed — shouldn't
-     * happen under single-threaded cooperative scheduler, but be safe). */
-    if (cur) *prev = cur->next_event_waiter;
+    e = s->wait_event_target;
+    /* s is guaranteed on the list when wait_event_target is set (cooperative
+     * single-threaded invariant); URBI_SLIST_UNLINK is a no-op if somehow not
+     * found, which is safe. */
+    URBI_SLIST_UNLINK(e->waiters_head, s, next_event_waiter, struct UStrand);
 
     s->wait_event_target = NULL;
     s->next_event_waiter = NULL;
@@ -55,16 +48,13 @@ uevent_waiter_unregister(struct UStrand *s)
 static void
 wake_event_waiters(struct UVM *vm, struct UEvent *e, UValue payload)
 {
-    struct UStrand *s  = e->waiters_head;
-    struct UStrand *ns;
+    struct UStrand *s, *ns;
     (void)vm;  /* reserved: preemptive-scheduler upgrade will use vm */
-    while (s) {
-        ns = s->next_event_waiter;
+    URBI_SLIST_FOREACH_SAFE(s, ns, e->waiters_head, next_event_waiter) {
         s->last_event_payload = payload;
         s->wait_event_target  = NULL;
         s->next_event_waiter  = NULL;
         sched_strand_make_runnable(s);
-        s = ns;
     }
     e->waiters_head = NULL;
 }
