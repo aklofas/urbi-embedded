@@ -278,6 +278,7 @@ CI gate tracks this list to prevent silent growth.
 - `urbi_regexp_search`, `urbi_stdlib_register_regexp`,
   `urbi_stdlib_register_regexp_globals`, `urbi_stdlib_list_get`,
   `urbi_stdlib_list_len`
+- `urbi_stdlib_list_storage_present` (v0.13.5 join consolidation)
 
 ### Event internals
 
