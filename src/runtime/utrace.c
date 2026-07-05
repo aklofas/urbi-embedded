@@ -15,6 +15,9 @@
 static const char *const k_channel_names[URBI_TRACE_CHANNEL_MAX] = {
     "vm", "sched", "gc", "watcher", "event", "tag", "repl", "user"
 };
+URBI_STATIC_ASSERT(sizeof(k_channel_names) / sizeof(k_channel_names[0])
+                   == URBI_TRACE_CHANNEL_MAX,
+                   "trace channel name table out of sync with URBI_TRACE_CHANNEL_MAX");
 
 const char *urbi_trace_channel_name(uint8_t channel)
 {

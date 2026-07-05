@@ -68,6 +68,18 @@
 
 #if URBI_MEM_DEBUG && (URBI_GC != URBI_GC_INCREMENTAL)
 #  error "URBI_MEM_DEBUG requires URBI_GC_INCREMENTAL (the all-cells sidecar lives here)"
+
+/* Enforce the 2-byte UCell header invariant (spec §2.5). */
+URBI_STATIC_ASSERT(sizeof(UCell) == 2, "UCell must be exactly 2 bytes (type_tag + gc_byte)");
+
+/* Enforce complete gc_byte bit coverage: every bit in [7:2] is claimed by a named
+ * flag, and bits [1:0] are the color field.  This fires if a new bit is added
+ * without updating one of the coverage sets. */
+URBI_STATIC_ASSERT(
+    ((UGC_HAS_FINALIZER | UGC_IS_WEAK | UGC_IS_PINNED | UGC_IS_FIXED |
+      UGC_HAS_WATCHER_OBSERVER | UGC_HAS_SLOT_CHANGE_EVENT) == 0xFCu) &&
+    (UGC_COLOR_MASK == 0x03u),
+    "gc_byte fully claimed: bits 7..2 = flags, bits 1..0 = color");
 #endif
 
 /* No stdlib.h or string.h — freestanding-strict like every other src/c file.
