@@ -16,6 +16,10 @@ chk() { # chk <expected-rc> <desc> <args...>
 chk 0 "clean expr"            -e '1 + 1'
 chk 0 "sleep(0) no-op"        -e 'sleep(0)'
 chk 1 "uncaught scalar throw" -e 'throw 99'
+# v0.13.4-B: scalar throw must say "uncaught throw", not "(vm error)".
+stderr=$("$URBI" -e 'throw 99' 2>&1 >/dev/null)
+case "$stderr" in *"uncaught throw"*) : ;; *) echo "FAIL: scalar throw stderr='$stderr' (want 'uncaught throw')"; fail=1 ;; esac
+case "$stderr" in *"(vm error)"*) echo "FAIL: scalar throw stderr still says '(vm error)'"; fail=1 ;; *) : ;; esac
 chk 1 "uncaught exception"    -e 'throw Exception.new("boom")'
 chk 1 "fork strand throw after root ok" -e 'cout << "x", { throw 1 }'
 tmp=$(mktemp); echo 'throw 42' > "$tmp"

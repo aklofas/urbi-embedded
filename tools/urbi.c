@@ -499,8 +499,9 @@ static int run_file(UVM *vm, const char *path) {
         if (vrc == URBI_OK) {
             rc = 0;
         } else {
-            fprintf(stderr, "urbi: %s\n",
-                    vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
+            const char *msg = vm->last_errmsg[0] ? vm->last_errmsg
+                            : (vrc == URBI_ERR_UNCAUGHT_THROW ? "uncaught throw" : "(vm error)");
+            fprintf(stderr, "urbi: %s\n", msg);
             rc = 1;
         }
         uchunk_destroy(module, vm);
@@ -578,8 +579,9 @@ static int run_expression(UVM *vm, const char *expr) {
             puts(fmt);
             rc = 0;
         } else {
-            fprintf(stderr, "urbi: %s\n",
-                    vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
+            const char *msg = vm->last_errmsg[0] ? vm->last_errmsg
+                            : (vrc == URBI_ERR_UNCAUGHT_THROW ? "uncaught throw" : "(vm error)");
+            fprintf(stderr, "urbi: %s\n", msg);
             rc = 1;
         }
         uchunk_destroy(module, vm);
