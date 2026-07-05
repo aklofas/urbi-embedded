@@ -261,8 +261,23 @@ urepl_session_read_and_dispatch_one(UReplServer *server,
 
     size_t space = s->coop_inbuf_cap - s->coop_inbuf_fill;
     if (space == 0U) {
-        /* Pathological: a single line longer than the buffer.  Drop the
-         * partial and reset, matching reader_main's overflow policy. */
+        /* Line exceeds the inbound buffer cap.  Emit a line_too_long
+         * error envelope so the client receives a structured signal, then
+         * enter discard mode: incoming bytes are dropped until the '\n'
+         * that ends the overlong frame (i.e. the next frame boundary).
+         * Headroom guard mirrors the REPL-02 overflow-envelope idiom:
+         * skip the write if the output ring cannot absorb it without
+         * itself overflowing, preventing a saturated-ring ping-pong. */
+        char ltenv[256];
+        size_t ltn = 0;
+        if (urepl_ndjson_emit_error(ltenv, sizeof(ltenv), 0U,
+                                    "line_too_long",
+                                    "inbound line exceeds 8 KiB cap; frame dropped",
+                                    &ltn) == 0
+            && urepl_ringbuf_headroom(&s->output, ltn)) {
+            urepl_ringbuf_write(&s->output, ltenv, ltn);
+        }
+        s->inbound_discard = true;
         s->coop_inbuf_fill = 0U;
         space = s->coop_inbuf_cap;
     }
@@ -281,6 +296,31 @@ urepl_session_read_and_dispatch_one(UReplServer *server,
     }
     /* rc > 0: feed the parser. */
     s->coop_inbuf_fill += (size_t)rc;
+
+    /* REPL-05 discard mode: scan forward for the frame boundary ('\n')
+     * that ends the overlong line.  Once found, clear discard mode and
+     * fall through to parse any remaining bytes normally.  If no '\n'
+     * is found yet, drop all buffered bytes and return without parsing. */
+    if (s->inbound_discard) {
+        size_t j = 0;
+        while (j < s->coop_inbuf_fill && s->coop_inbuf[j] != '\n') { j++; }
+        if (j < s->coop_inbuf_fill) {
+            /* Found the frame boundary — consume up to and including '\n'. */
+            j++;
+            if (j < s->coop_inbuf_fill) {
+                memmove(s->coop_inbuf, s->coop_inbuf + j,
+                        s->coop_inbuf_fill - j);
+            }
+            s->coop_inbuf_fill -= j;
+            s->inbound_discard = false;
+            /* Fall through: parse any bytes that follow the boundary. */
+        } else {
+            /* No frame boundary yet — discard all and keep scanning. */
+            s->coop_inbuf_fill = 0U;
+            return rc;
+        }
+    }
+
     size_t consumed = parse_lines_to_jobs(server, s->session_id,
                                           s->coop_inbuf,
                                           s->coop_inbuf_fill);
@@ -304,6 +344,8 @@ reader_main(void *arg)
     UReplServer *server = r->server;
     char rbuf[8192];      /* inbound NDJSON parse buffer */
     size_t fill = 0;
+    /* REPL-05: true while discarding bytes belonging to an overlong line. */
+    bool rbuf_discarding = false;
 
     int pollable = r->transport->pollable_fd_fn != NULL
                    ? r->transport->pollable_fd_fn(r->client_fd)
@@ -388,20 +430,59 @@ reader_main(void *arg)
             }
             if (rc > 0) {
                 fill += (size_t)rc;
-                size_t consumed = parse_lines_to_jobs(server,
-                                                      r->session->session_id,
-                                                      rbuf, fill);
-                if (consumed > 0U) {
-                    if (consumed < fill) {
-                        memmove(rbuf, rbuf + consumed, fill - consumed);
+
+                /* REPL-05 discard mode: scan for the frame boundary ('\n')
+                 * ending the overlong line.  Once found, clear discard mode
+                 * and parse the remainder normally. */
+                if (rbuf_discarding) {
+                    size_t j = 0;
+                    while (j < fill && rbuf[j] != '\n') { j++; }
+                    if (j < fill) {
+                        j++;   /* include the '\n' */
+                        if (j < fill) {
+                            memmove(rbuf, rbuf + j, fill - j);
+                        }
+                        fill -= j;
+                        rbuf_discarding = false;
+                        /* Fall through to normal parse below. */
+                    } else {
+                        /* No boundary yet — discard all. */
+                        fill = 0;
                     }
-                    fill -= consumed;
                 }
-                /* Overflow guard: if a single line exceeds buffer, drop
-                 * the partial.  Spec §6 line cap is 1 MiB but the v0.9.1
-                 * 8 KiB cap matches typical urbiscript expressions. */
-                if (fill >= sizeof(rbuf)) {
-                    fill = 0;
+
+                if (!rbuf_discarding) {
+                    size_t consumed = parse_lines_to_jobs(server,
+                                                          r->session->session_id,
+                                                          rbuf, fill);
+                    if (consumed > 0U) {
+                        if (consumed < fill) {
+                            memmove(rbuf, rbuf + consumed, fill - consumed);
+                        }
+                        fill -= consumed;
+                    }
+                    /* Overflow: a single line exceeded the 8 KiB buffer.
+                     * Emit a line_too_long envelope and enter discard mode
+                     * so subsequent reads scan for the frame boundary.
+                     * Headroom guard mirrors the REPL-02 overflow-envelope
+                     * idiom to prevent a ping-pong on a saturated ring. */
+                    if (fill >= sizeof(rbuf)) {
+                        UReplSession *rs = r->session;
+                        if (rs != NULL) {
+                            char ltenv[256];
+                            size_t ltn = 0;
+                            if (urepl_ndjson_emit_error(
+                                        ltenv, sizeof(ltenv), 0U,
+                                        "line_too_long",
+                                        "inbound line exceeds 8 KiB cap; frame dropped",
+                                        &ltn) == 0
+                                && urepl_ringbuf_headroom(&rs->output, ltn)) {
+                                urepl_ringbuf_write(&rs->output, ltenv, ltn);
+                            }
+                        }
+                        fill = 0;
+                        rbuf_discarding = true;
+                    }
                 }
             }
         }

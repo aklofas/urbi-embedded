@@ -14,6 +14,8 @@
 #include "repl/urepl_queue.h"
 #include "repl/urepl_dispatch.h"
 #include "repl/urepl.h"
+#include "repl/urepl_listener.h"
+#include "repl/urepl_buffer_transport.h"
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -721,6 +723,133 @@ UTEST(dispatcher_multiple_sessions_grow_and_shrink_lobby_lobbies)
     free_server(server, vm);
 }
 
+/* Helper: create a mk_server + register one buffer transport + accept the
+ * single cooperative session.  Caller owns server, vm, and bt_state. */
+static UReplServer *
+mk_server_with_buffer_transport(UVM **out_vm,
+                                UBufferTransportState **out_bt)
+{
+    UVM *vm = (UVM *)calloc(1, sizeof(UVM));
+    if (vm == NULL) return NULL;
+    if (urbi_vm_init(vm, NULL, NULL) != URBI_OK) { free(vm); return NULL; }
+
+    UReplConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.bind_addr = "127.0.0.1";
+    cfg.tcp_port  = -1;
+
+    int err = 0;
+    UReplServer *server = urbi_repl_serve(vm, &cfg, &err);
+    if (server == NULL) { urbi_vm_destroy(vm); free(vm); return NULL; }
+
+    UBufferTransportState *bt = urepl_buffer_transport_create();
+    if (bt == NULL) { urbi_repl_stop(server); urbi_vm_destroy(vm); free(vm); return NULL; }
+    if (urbi_repl_register_transport(server, &UREPL_BUFFER_TRANSPORT, bt) != URBI_OK) {
+        urepl_buffer_transport_destroy(bt);
+        urbi_repl_stop(server); urbi_vm_destroy(vm); free(vm); return NULL;
+    }
+
+    /* Accept the session on the VM thread (buffer transport is non-pollable). */
+    urepl_accept_sweep_nonpollable(server);
+
+    *out_vm = vm;
+    *out_bt = bt;
+    return server;
+}
+
+/* REPL-07: a frame that parses successfully but has no `op` field
+ * (op stays at UREPL_OP_NONE) must emit an `unknown_op` error envelope
+ * correlated with the request id. */
+UTEST(dispatcher_no_op_frame_emits_unknown_op_correlated)
+{
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UASSERT(server != NULL);
+
+    UReplSession *s = urepl_session_create(server);
+    UASSERT(s != NULL);
+    s->authed = true;
+
+    /* Build a job with op=UREPL_OP_NONE (no op field parsed) and id=5. */
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    UASSERT(job != NULL);
+    job->session_id = s->session_id;
+    job->req.id = 5;
+    job->req.op = UREPL_OP_NONE;  /* simulates {"id":5} with no op key */
+
+    urepl_dispatch_job(server, job);
+
+    char out[512];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(n > 0);
+    /* Must contain unknown_op code correlated with id 5. */
+    UASSERT(strstr(out, "\"code\":\"unknown_op\"") != NULL);
+    UASSERT(strstr(out, "\"id\":5") != NULL);
+
+    free_server(server, vm);
+}
+
+/* REPL-05: an inbound line that exceeds the 8 KiB parse-buffer cap must
+ * emit a `line_too_long` error envelope and then recover — the next valid
+ * frame after the overlong one is parsed and dispatched normally. */
+UTEST(dispatcher_inbound_line_too_long_emits_error_then_recovers)
+{
+    UVM *vm = NULL;
+    UBufferTransportState *bt = NULL;
+    UReplServer *server = mk_server_with_buffer_transport(&vm, &bt);
+    UASSERT(server != NULL);
+
+    /* Find the accepted session.  It is the head of sessions_head after
+     * the accept sweep; authed since no token is configured. */
+    UReplSession *s = server->sessions_head;
+    UASSERT(s != NULL);
+
+    /* Write 8200 bytes of non-newline data to the c2s ring.
+     * First sweep reads 8192 bytes (fills the inbound buffer).
+     * Second sweep: space==0 → overflow → line_too_long emitted, discard
+     * mode set, remaining 8 bytes read and discarded. */
+    char *junk = (char *)malloc(8200U);
+    UASSERT(junk != NULL);
+    memset(junk, 'x', 8200U);  /* no '\n' */
+    urepl_buffer_client_write(bt, junk, 8200U);
+    free(junk);
+
+    /* First sweep: reads 8192 bytes, no error yet. */
+    urepl_read_sweep_nonpollable(server);
+    /* Second sweep: overflow detected — emits error, reads remaining 8 bytes,
+     * discards (no newline found). */
+    urepl_read_sweep_nonpollable(server);
+
+    /* Drain the hello envelope + line_too_long envelope from the output. */
+    char out[2048];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    /* The line_too_long envelope must be present. */
+    UASSERT(strstr(out, "\"code\":\"line_too_long\"") != NULL);
+
+    /* Now write the '\n' that ends the overlong line. */
+    urepl_buffer_client_write(bt, "\n", 1U);
+    urepl_read_sweep_nonpollable(server);  /* finds '\n', exits discard mode */
+
+    /* Write a valid eval frame and verify it is processed correctly. */
+    static const char eval_frame[] = "{\"id\":99,\"op\":\"eval\",\"code\":\"7+1\"}\n";
+    urepl_buffer_client_write(bt, eval_frame, sizeof(eval_frame) - 1U);
+    urepl_read_sweep_nonpollable(server);  /* parses + enqueues the eval job */
+    urepl_dispatch_drain(server);          /* dispatches + writes result */
+
+    /* Drain the output: must contain the eval result. */
+    n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(strstr(out, "\"value\":\"8\"") != NULL);
+    UASSERT(strstr(out, "\"id\":99") != NULL);
+
+    urepl_buffer_transport_destroy(bt);
+    urbi_repl_stop(server);
+    urbi_vm_destroy(vm);
+    free(vm);
+}
+
 void
 test_repl_dispatcher_suite(void)
 {
@@ -768,6 +897,10 @@ test_repl_dispatcher_suite(void)
               dispatcher_multiple_sessions_grow_and_shrink_lobby_lobbies);
     utest_run("dispatcher_handleDisconnect_invoked_on_destroy",
               dispatcher_handleDisconnect_invoked_on_destroy);
+    utest_run("dispatcher_no_op_frame_emits_unknown_op_correlated",
+              dispatcher_no_op_frame_emits_unknown_op_correlated);
+    utest_run("dispatcher_inbound_line_too_long_emits_error_then_recovers",
+              dispatcher_inbound_line_too_long_emits_error_then_recovers);
 }
 
 #else  /* !URBI_ENABLE_REPL */

@@ -83,6 +83,10 @@ struct UReplSession {
      * rate_window_sec advances.  Only checked when server->cfg.rate_limit_per_second > 0. */
     int                   rate_jobs_this_sec;
     int64_t               rate_window_sec;   /* seconds since epoch of current window */
+    /* REPL-05: set when an inbound line exceeded the 8 KiB parse-buffer cap.
+     * Cleared once a '\n' is found (the frame boundary ending the overlong
+     * line).  While set, incoming bytes are discarded without parsing. */
+    bool                  inbound_discard;
     struct UReplSession  *next;
 };
 
