@@ -86,11 +86,13 @@ utest_compile_and_vm_run(UVM *vm, const char *src, UValue *out_result)
         has_error = true;
 
     if (has_error) {
+        emit_diag_free_all(&e);
         urbi_emit_abandon(&e);
         uchunk_destroy(module, vm);
         uarena_destroy(&arena);
         return URBI_ERR_COMPILE;
     }
+    emit_diag_free_all(&e);
 
     UValue local_out;
     urbi_zero(&local_out, sizeof(local_out));

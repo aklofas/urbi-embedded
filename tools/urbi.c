@@ -279,6 +279,7 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
     }
 
     if (had_error) {
+        emit_diag_free_all(&e);
         urbi_emit_abandon(&e);   /* parse error — finish never runs (FE-07) */
         uchunk_destroy(out_module, vm);
         uarena_destroy(arena);
@@ -286,12 +287,29 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
     }
 
     if (uemit_finish(&e) != EMIT_OK) {
-        snprintf(err_buf, err_cap, "%s: emit error: %s", src_name, uemit_error_name(e.error));
+        char diag_msg[256];
+        if (!urbi_emit_diag_format_first_error(&e, diag_msg, sizeof diag_msg)) {
+            snprintf(diag_msg, sizeof diag_msg, "%s: emit error: %s",
+                     src_name, uemit_error_name(e.error));
+        }
+        snprintf(err_buf, err_cap, "%s", diag_msg);
+        emit_diag_free_all(&e);
         uchunk_destroy(out_module, vm);
         uarena_destroy(arena);
         return false;
     }
 
+    /* Display any accumulated warnings. */
+    {
+        int di;
+        for (di = 0; di < e.diag_count; di++) {
+            if (e.diag_buf[di].level == UEMIT_DIAG_WARN)
+                fprintf(stderr, "%s:%d:%d: warning: %s\n", src_name,
+                        e.diag_buf[di].line, e.diag_buf[di].col,
+                        e.diag_buf[di].message);
+        }
+    }
+    emit_diag_free_all(&e);
     return true;
 }
 

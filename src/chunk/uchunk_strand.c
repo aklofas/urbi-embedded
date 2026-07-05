@@ -487,6 +487,15 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
                          ulex_current_source(&lex),
                          parse_err_line, parse_err_col, parse_errmsg);
             } else
+            if (finish_rc != EMIT_OK) {
+                /* Use the diag buffer for a positioned emit error when available. */
+                char diag_msg[256];
+                if (!urbi_emit_diag_format_first_error(&e, diag_msg, sizeof diag_msg)) {
+                    snprintf(diag_msg, sizeof diag_msg, "emit error: %s",
+                             uemit_error_name(finish_rc));
+                }
+                snprintf(out_buf, out_buf_size, "%s", diag_msg);
+            } else
 #endif
             {
                 /* CPPCHK-005: surface uemit_finish's diagnostic when the parser
@@ -503,6 +512,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         /* Parse / statement-emit errors skipped uemit_finish; release
          * emitter-owned funcstate storage (no-op when has_error came from
          * uemit_finish itself, which already tore it down — FE-07). */
+        emit_diag_free_all(&e);
         urbi_emit_abandon(&e);
         /* Compile-error path: module was never registered in the realm
          * (urbi_run_chunk was not reached), so it is not realm-owned.
@@ -513,6 +523,20 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (budget_err != URBI_OK) return budget_err;
         return (finish_rc == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
     }
+
+    /* Display any accumulated compile warnings, then free the diag buffer. */
+#if __STDC_HOSTED__
+    {
+        int di;
+        for (di = 0; di < e.diag_count; di++) {
+            if (e.diag_buf[di].level == UEMIT_DIAG_WARN)
+                fprintf(stderr, "<repl>:%d:%d: warning: %s\n",
+                        e.diag_buf[di].line, e.diag_buf[di].col,
+                        e.diag_buf[di].message);
+        }
+    }
+#endif
+    emit_diag_free_all(&e);
 
     /* Run the module's root chunk via the persistent loader strand path. */
     UValue result = {0};

@@ -65,6 +65,7 @@ uint8_t emit_this_arm(UEmitter *e, const UAstNode *n) {
     const UFuncState *fs = e->current_fs;
     if (fs == NULL || fs->parent == NULL) {
         e->error = EMIT_NO_THIS_OUTSIDE_METHOD;
+        urbi_emit_diag_error(e, n, "this used outside a method or nested closure");
         return 0U;
     }
     const uint8_t dst = alloc_reg(e);
@@ -524,11 +525,15 @@ uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n) {
     for (int i = search_from; i < fs->nactvar; i++) {
         if (fs->actvars[i].name == canonical) {
             e->error = EMIT_LOCAL_REDECLARE;
+            urbi_emit_diag_error(e, n, "variable '%.*s' already declared in this scope",
+                            n->u.var_decl.name_len, n->u.var_decl.name_start);
             return 0U;
         }
     }
     if (fs->nactvar >= UFS_MAX_LOCALS) {
         e->error = EMIT_REG_EXHAUSTED;
+        urbi_emit_diag_error(e, n, "too many local variables in function (max %d)",
+                        UFS_MAX_LOCALS);
         return 0U;
     }
 
@@ -604,6 +609,8 @@ uint8_t emit_assign_arm(UEmitter *e, UAstNode *n) {
             /* T16: reject assignment to lazy parameter (spec §4.5). */
             if (fs->actvars[i].is_lazy) {
                 e->error = EMIT_LAZY_PARAM_ASSIGN;
+                urbi_emit_diag_error(e, n, "cannot assign to lazy parameter '%.*s'",
+                                n->u.assign.name_len, n->u.assign.name_start);
                 return 0U;
             }
             local_slot = (int)fs->actvars[i].slot;
@@ -631,6 +638,8 @@ uint8_t emit_assign_arm(UEmitter *e, UAstNode *n) {
             }
             if (!is_global_assign) {
                 e->error = EMIT_UNRESOLVED_NAME;
+                urbi_emit_diag_error(e, n, "undefined name '%.*s'",
+                                n->u.assign.name_len, n->u.assign.name_start);
                 return 0U;
             }
         }

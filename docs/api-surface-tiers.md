@@ -269,6 +269,11 @@ CI gate tracks this list to prevent silent growth.
 - `urbi_emit_abandon`, `urbi_emit_reserve_global_slot`,
   `urbi_emit_scope_crossings`
 
+### Emitter diagnostic helpers (v0.13.5 conformance-and-stdlib)
+
+- `urbi_emit_diag_error` — record an ERROR-level diagnostic with source position
+- `urbi_emit_diag_format_first_error` — format the first error as `<file>:<line>:<col>: <msg>`
+
 ### Encoding
 
 - `urbi_encode_utf8`

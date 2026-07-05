@@ -165,6 +165,7 @@ urbi_compile_source(struct UVM *vm,
     }
 
     if (had_error) {
+        emit_diag_free_all(&e);
         urbi_emit_abandon(&e);   /* parse error — finish never runs (FE-07) */
         uchunk_destroy(root, vm);
         uarena_destroy(&arena);
@@ -173,13 +174,30 @@ urbi_compile_source(struct UVM *vm,
 
     if (uemit_finish(&e) != EMIT_OK) {
         if (err_buf && err_cap) {
-            snprintf(err_buf, err_cap, "%s: emit error: %s",
-                     name, uemit_error_name(e.error));
+            char diag_msg[512];
+            if (!urbi_emit_diag_format_first_error(&e, diag_msg, sizeof diag_msg)) {
+                snprintf(diag_msg, sizeof diag_msg, "%s: emit error: %s",
+                         name, uemit_error_name(e.error));
+            }
+            snprintf(err_buf, err_cap, "%s", diag_msg);
         }
+        emit_diag_free_all(&e);
         uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
+
+    /* Display any accumulated warnings. */
+    {
+        int di;
+        for (di = 0; di < e.diag_count; di++) {
+            if (e.diag_buf[di].level == UEMIT_DIAG_WARN)
+                fprintf(stderr, "%s:%d:%d: warning: %s\n", name,
+                        e.diag_buf[di].line, e.diag_buf[di].col,
+                        e.diag_buf[di].message);
+        }
+    }
+    emit_diag_free_all(&e);
 
     /* First pass: query required size. */
     ptrdiff_t need = uchunk_serialize(root, NULL, 0);

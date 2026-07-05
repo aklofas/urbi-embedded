@@ -292,6 +292,21 @@ const char *uemit_error_name(UEmitError code);
  * If the buffer cannot grow (OOM), the diagnostic is silently dropped. */
 void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...);
 
+/* T13: Append an error-level diagnostic to the emitter's diag buffer.
+ * n may be NULL (position will be 0,0).  fmt is a printf-style format
+ * string.  Callers MUST still set e->error before returning — this only
+ * enriches the record with source position and a human message; it does
+ * not itself latch the error.
+ * If the buffer cannot grow (OOM), the diagnostic is silently dropped. */
+void urbi_emit_diag_error(UEmitter *e, const UAstNode *n, const char *fmt, ...);
+
+/* T13: Format the first ERROR-level diagnostic as "<source>:<line>:<col>: <msg>"
+ * (or "<source>: <msg>" when line is 0) into buf[0..cap-1].  Returns true and
+ * fills buf when an error-level diagnostic is present; returns false when no
+ * error diagnostic has been recorded (buf is untouched).
+ * No-op / returns false on freestanding builds. */
+bool urbi_emit_diag_format_first_error(UEmitter *e, char *buf, size_t cap);
+
 /* T32: Free all diagnostic message strings and the diag_buf array itself.
  * Resets diag_count/diag_cap to 0.  Must be called before the emitter's
  * associated module is destroyed.  No-op on freestanding builds. */

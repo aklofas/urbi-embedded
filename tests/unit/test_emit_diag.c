@@ -174,6 +174,75 @@ UTEST(emit_diag_warn_null_node_uses_zero_position) {
 }
 
 /* -----------------------------------------------------------------------
+ * T13 test cases — error-level diagnostics + formatter
+ * ----------------------------------------------------------------------- */
+
+/* T13: an undeclared-name assignment must record an error-level diagnostic
+ * with the source position in the diag buffer. */
+UTEST(emit_diag_error_records_position) {
+    UVM vm;
+    UProto module = {0};
+    UArena arena;
+    UEmitter e;
+
+    /* "x = 5" — x is never declared; triggers EMIT_UNRESOLVED_NAME at line 1. */
+    UEmitError rc = diag_emit("x = 5", &e, &module, &arena, &vm);
+
+    UASSERT_EQ(EMIT_UNRESOLVED_NAME, rc);
+    /* Must have recorded an error-level diagnostic. */
+    UASSERT(e.diag_count >= 1);
+    if (e.diag_count >= 1) {
+        UASSERT_EQ((int)UEMIT_DIAG_ERROR, (int)e.diag_buf[0].level);
+        /* Error must carry the source line (1) and a non-NULL message. */
+        UASSERT_EQ(1, e.diag_buf[0].line);
+        UASSERT(e.diag_buf[0].message != NULL);
+    }
+
+    emit_diag_free_all(&e);
+    diag_cleanup(&module, &arena, &vm);
+}
+
+/* T13: emit_diag_format_first_error formats the first error diagnostic as
+ * "<source>:<line>:<col>: <message>" and returns true. */
+UTEST(emit_diag_format_first_error_includes_location) {
+    UVM vm;
+    UProto module = {0};
+    UArena arena;
+    UEmitter e;
+
+    UEmitError rc = diag_emit("x = 5", &e, &module, &arena, &vm);
+    UASSERT_EQ(EMIT_UNRESOLVED_NAME, rc);
+
+    char buf[256] = {0};
+    bool found = urbi_emit_diag_format_first_error(&e, buf, sizeof(buf));
+    UASSERT(found);
+    /* Message must contain ":1:" (line 1). */
+    UASSERT(strstr(buf, ":1:") != NULL);
+
+    emit_diag_free_all(&e);
+    diag_cleanup(&module, &arena, &vm);
+}
+
+/* T13: emit_diag_format_first_error returns false when no error was recorded. */
+UTEST(emit_diag_format_first_error_no_error_returns_false) {
+    UVM vm;
+    UProto module = {0};
+    UArena arena;
+    UEmitter e;
+
+    /* Valid source — no errors. */
+    UEmitError rc = diag_emit("42", &e, &module, &arena, &vm);
+    UASSERT_EQ(EMIT_OK, rc);
+
+    char buf[256] = {0};
+    bool found = urbi_emit_diag_format_first_error(&e, buf, sizeof(buf));
+    UASSERT(!found);
+
+    emit_diag_free_all(&e);
+    diag_cleanup(&module, &arena, &vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
 
@@ -186,4 +255,10 @@ void test_emit_diag_suite(void) {
               emit_diag_warn_accumulates_multiple);
     utest_run("emit_diag_warn_null_node_uses_zero_position",
               emit_diag_warn_null_node_uses_zero_position);
+    utest_run("emit_diag_error_records_position",
+              emit_diag_error_records_position);
+    utest_run("emit_diag_format_first_error_includes_location",
+              emit_diag_format_first_error_includes_location);
+    utest_run("emit_diag_format_first_error_no_error_returns_false",
+              emit_diag_format_first_error_no_error_returns_false);
 }

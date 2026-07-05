@@ -89,9 +89,11 @@ static UEmitError emit_single_statement(UProto *module, UArena *arena, UVM *vm, 
     uemit_init(&e, module, arena, vm, "test");
     rc = uemit_statement(&e, ast);
     if (rc != EMIT_OK) {
+        emit_diag_free_all(&e);
         urbi_emit_abandon(&e);   /* finish never runs on this path (FE-07) */
         return rc;
     }
+    emit_diag_free_all(&e);
     return uemit_finish(&e);
 }
 
@@ -891,6 +893,7 @@ static UEmitError emit_ctx_run(EmitCtx *c) {
 }
 
 static void emit_ctx_destroy(EmitCtx *c) {
+    emit_diag_free_all(&c->e);
     urbi_emit_abandon(&c->e);   /* no-op after finish; frees fs_arena when
                                emit_ctx_run bailed early (FE-07) */
     uarena_destroy(&c->arena);

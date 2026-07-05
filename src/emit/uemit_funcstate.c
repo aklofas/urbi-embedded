@@ -41,6 +41,8 @@ static int upvalue_install(UEmitter *e, UFuncState *fs,
                            uint8_t parent_idx, bool in_stack) {
     if (fs->nupvalues >= UFS_MAX_UPVALUES) {
         e->error = EMIT_UPVAL_EXHAUSTED;
+        urbi_emit_diag_error(e, NULL, "too many captured variables in function (max %d)",
+                        UFS_MAX_UPVALUES);
         return -1;
     }
     int idx = fs->nupvalues++;
@@ -181,6 +183,7 @@ int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
     UFuncState *fs = e->current_fs;
     if (fs->ic_next >= 256U) {
         e->error = EMIT_TOO_MANY_IC_SITES;
+        urbi_emit_diag_error(e, NULL, "too many slot-access sites in function (max 256)");
         return -1;
     }
     if (fs->ic_next >= fs->ic_names_cap) {
@@ -585,6 +588,7 @@ bool urbi_emit_reserve_global_slot(UEmitter *e) {
     if (fs->global_slot_reserved) return true;
     if (fs->freereg >= (uint8_t)(UFS_MAX_REGS - 1)) {
         e->error = EMIT_REG_EXHAUSTED;
+        urbi_emit_diag_error(e, NULL, "register exhausted reserving global slot");
         return false;
     }
     fs->r_global_slot = fs->freereg;
@@ -613,11 +617,15 @@ int uemit_declare_local(UEmitter *e, const char *name, int name_len) {
     for (int i = search_from; i < fs->nactvar; i++) {
         if (fs->actvars[i].name == name) {
             e->error = EMIT_LOCAL_REDECLARE;
+            urbi_emit_diag_error(e, NULL, "variable '%.*s' already declared in this scope",
+                            name_len, name);
             return -1;
         }
     }
     if (fs->nactvar >= UFS_MAX_LOCALS) {
         e->error = EMIT_REG_EXHAUSTED;
+        urbi_emit_diag_error(e, NULL, "too many local variables in function (max %d)",
+                        UFS_MAX_LOCALS);
         return -1;
     }
     ULocalVar *lv = &fs->actvars[fs->nactvar];

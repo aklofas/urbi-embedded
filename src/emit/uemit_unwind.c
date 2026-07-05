@@ -729,6 +729,7 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     if (tag_slot > 15) {
         uemit_close_block(e);
         e->error = EMIT_TAG_SPILL_OUT_OF_RANGE;
+        urbi_emit_diag_error(e, n, "tag scope register spills beyond nibble (16-tag limit)");
         return 0U;
     }
     uint8_t tag_reg = (uint8_t)tag_slot;

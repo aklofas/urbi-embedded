@@ -142,6 +142,7 @@ uint8_t emit_function_literal(UEmitter *e,
     const char *param_names[UFS_MAX_LOCALS];
     if (nparams > UFS_MAX_LOCALS) {
         e->error = EMIT_REG_EXHAUSTED;
+        urbi_emit_diag_error(e, body, "too many parameters (%d; max %d)", nparams, UFS_MAX_LOCALS);
         return 0U;
     }
     for (int pi = 0; pi < nparams; pi++) {
@@ -811,6 +812,7 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
      * paths. */
     if (n->u.call.arg_count >= 253) {
         e->error = EMIT_TOO_MANY_ARGS;
+        urbi_emit_diag_error(e, n, "too many arguments (%d; max 252)", n->u.call.arg_count);
         return 0U;
     }
 
@@ -1797,6 +1799,7 @@ uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
              * ctx and the outer \x01sw block are still pending (same
              * cleanup shape as the case-value emit_expr failure above). */
             e->error = EMIT_PATCH_LIST_FULL;
+            urbi_emit_diag_error(e, n, "switch has too many cases (max 64)");
             uemit_loop_pop(e);
             uemit_close_block(e);
             return 0U;
@@ -1861,6 +1864,7 @@ uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
             n_exit_jmps++;
         } else {
             e->error = EMIT_PATCH_LIST_FULL;
+            urbi_emit_diag_error(e, n, "switch has too many cases (max 64)");
             uemit_loop_pop(e);
             uemit_close_block(e);
             return 0U;

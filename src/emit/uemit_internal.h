@@ -265,6 +265,7 @@ static inline void free_reg_freereg_synced(UEmitter *e) {
 static inline bool uemit_loop_push(UEmitter *e, ULoopFrameKind kind) {
     if (e->loop_depth >= UEMIT_LOOP_CTX_MAX) {
         e->error = EMIT_NESTING_TOO_DEEP;
+        urbi_emit_diag_error(e, NULL, "loop nesting too deep (max %d)", UEMIT_LOOP_CTX_MAX);
         return false;
     }
     ULoopCtx *ctx = &e->loop_stack[e->loop_depth];
@@ -292,6 +293,8 @@ static inline void uemit_loop_record_break(UEmitter *e, int pc) {
         e->error = EMIT_PATCH_LIST_FULL;  /* refactor-3 FE-06: the excess
                                              site's placeholder JMP would
                                              never be patched — silent no-op */
+        urbi_emit_diag_error(e, NULL, "too many break sites in loop (max %d)",
+                        UEMIT_LOOP_PATCH_MAX);
     }
 }
 
@@ -308,6 +311,8 @@ static inline void uemit_loop_record_continue(UEmitter *e, int pc) {
                 ctx->continue_pcs[ctx->continue_count++] = pc;
             } else {
                 e->error = EMIT_PATCH_LIST_FULL;  /* refactor-3 FE-06 */
+                urbi_emit_diag_error(e, NULL, "too many continue sites in loop (max %d)",
+                                UEMIT_LOOP_PATCH_MAX);
             }
             return;
         }
@@ -357,6 +362,8 @@ static inline bool uemit_unwind_scope_push(UEmitter *e, UUnwindScopeKind kind,
                                            UAstNode *finally_body) {
     if (e->unwind_scope_depth >= UEMIT_UNWIND_SCOPE_MAX) {
         e->error = EMIT_NESTING_TOO_DEEP;
+        urbi_emit_diag_error(e, NULL, "try/tag nesting too deep (max %d)",
+                        UEMIT_UNWIND_SCOPE_MAX);
         return false;
     }
     UUnwindScope *sc = &e->unwind_scopes[e->unwind_scope_depth++];

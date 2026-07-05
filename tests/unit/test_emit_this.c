@@ -47,6 +47,7 @@ static UEmitError compile_only(UVM *vm, const char *src)
     UAstNode *node;
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
+            emit_diag_free_all(&e);
             urbi_emit_abandon(&e);   /* finish never runs on this path (FE-07) */
             uarena_destroy(&arena);
             uchunk_destroy(&module, NULL);
@@ -54,6 +55,7 @@ static UEmitError compile_only(UVM *vm, const char *src)
         }
         UEmitError err = uemit_statement(&e, node);
         if (err != EMIT_OK) {
+            emit_diag_free_all(&e);
             urbi_emit_abandon(&e);   /* finish never runs on this path (FE-07) */
             uarena_destroy(&arena);
             uchunk_destroy(&module, NULL);
@@ -62,6 +64,7 @@ static UEmitError compile_only(UVM *vm, const char *src)
         uarena_reset(&arena);
     }
     UEmitError final_err = uemit_finish(&e);
+    emit_diag_free_all(&e);
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
     return final_err;

@@ -57,12 +57,17 @@ utest_e2e_compile_and_run_with_module(UVM *vm,
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR ||
             uemit_statement(&e, node) != EMIT_OK) {
+            emit_diag_free_all(&e);
             urbi_emit_abandon(&e);   /* finish never runs on this path (FE-07) */
             return URBI_ERR_COMPILE;
         }
         uarena_reset(arena);
     }
-    if (uemit_finish(&e) != EMIT_OK) return URBI_ERR_COMPILE;
+    if (uemit_finish(&e) != EMIT_OK) {
+        emit_diag_free_all(&e);
+        return URBI_ERR_COMPILE;
+    }
+    emit_diag_free_all(&e);
 
     UValue result = {0};
     int rc = urbi_run_chunk(vm, realm, module, &result);

@@ -106,6 +106,7 @@ static UEmitError lazy_emit_error(const char *src) {
     }
 
     UEmitError rc = uemit_finish(&e);
+    emit_diag_free_all(&e);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);

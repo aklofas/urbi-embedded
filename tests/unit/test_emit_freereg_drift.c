@@ -45,7 +45,9 @@ static UEmitError compile_src(UVM *vm, UArena *arena, UProto *module,
         (void)uemit_statement(&e, node);
         uarena_reset(arena);
     }
-    return uemit_finish(&e);
+    UEmitError finish_rc = uemit_finish(&e);
+    emit_diag_free_all(&e);
+    return finish_rc;
 }
 
 /* Find the first instruction in `instrs[0..count-1]` whose opcode is
