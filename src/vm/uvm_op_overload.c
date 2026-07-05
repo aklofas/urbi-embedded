@@ -434,7 +434,7 @@ vm_cmp_method_fallback(UVM *vm,
     }
 
     /* Coerce result to bool using the single canonical truthiness predicate.
-     * Delegates to uvalue_truthy — one truth source (refactor-4 H1). */
+     * Delegates to uvalue_truthy — one truth source. */
     *out_bool = uvalue_truthy(&result);
 
     vm_reactive_drain(vm, /*bounded_whenever=*/0);   /* VM-20: drain after operator method call (active level) */

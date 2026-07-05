@@ -1,4 +1,4 @@
-# Milestone: v0.13.5 (LANG-S07)
+# Milestone: v0.13.5
 # Covers: switch default arm — catch-all when no case matches.
 # Lowered onto the existing patch-list jump machinery; no new opcode.
 

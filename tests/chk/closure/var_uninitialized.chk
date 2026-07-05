@@ -1,4 +1,4 @@
-# Milestone: v0.13.5 (LANG4-10)
+# Milestone: v0.13.5
 # Covers: var x; — declaration without initializer; initializes to nil.
 # Note: the reference initializes to void; we deliberately have no void
 # model — nil-init is the recorded design decision.

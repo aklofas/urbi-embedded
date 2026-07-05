@@ -17,7 +17,7 @@
 #   - P's onleave fires inline (invoke_onleave_inline) → calls t2.stop()
 #   - t2.stop() cascades Q: PENDING_UNREGISTER set, Q unlinked from active
 #     list; active list becomes P → R.
-#   - next(=Q) has PENDING_UNREGISTER → SCH4-04 cascade rescan restarts
+#   - next(=Q) has PENDING_UNREGISTER → cascade rescan restarts
 #     from head; P is stamp-visited (no re-fire); R is updated correctly.
 # Without the rescan, the stale next=Q pointer (Q.next_active=NULL after
 # pending-queue threading) truncates the pass and R is never cache-updated,

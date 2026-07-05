@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* tests/unit/test_message_polish.c — LANG-S11 mnemonic-leak removal tests.
+/* tests/unit/test_message_polish.c — mnemonic-leak removal tests.
  *
  * RED before the vm: commit, GREEN after:
  *   vm_format_binop_arith_no_op_mnemonic

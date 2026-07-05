@@ -106,7 +106,7 @@ UAstNode *parse_var_decl(UParser *p) {
     UToken eq = peek(p);
     UAstNode *init;
     if (eq.type != TOK_EQ) {
-        /* No initializer — `var x;` declares to nil (LANG4-10).
+        /* No initializer — `var x;` declares to nil.
          * The reference initializes to void; we have no void model. */
         init = make_nil_node(p, name.line, name.col);
         if (!init) return NULL;
@@ -180,7 +180,7 @@ UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
 
    fold: when false, skip the trailing pipe_amp_fold so that any `|`/`&`
    after the expression is left for the enclosing statement-level fold.
-   Used from parse_arm_stmt (H14/LANG-S02: arm context — `&` must bind
+   Used from parse_arm_stmt (arm context — `&` must bind
    OUTSIDE the unbraced arm per ugrammar.y :374-378 cstmt tier). */
 static UAstNode *parse_assign_or_expr_impl(UParser *p, UToken name, bool fold) {
     /* T41 statement-start getter/setter sugar: `get IDENT (...)` or
@@ -361,10 +361,10 @@ UAstNode *parse_statement_or_expr(UParser *p) {
     UToken t = peek(p);
 
     switch (t.type) {
-    /* H13/LANG-S01: after parsing a block or block-like statement form,
-     * fold any following `|` / `&` separator so that `{a} & {b}` and
-     * `if (c) {b} & {e}` parse as AST_BIN_SEP nodes.  Parallel var-declare
-     * (`var a = 1 & var b = 2`) stays rejected — var is not in this set. */
+    /* After parsing a block or block-like statement form, fold any following
+     * `|` / `&` separator so that `{a} & {b}` and `if (c) {b} & {e}` parse
+     * as AST_BIN_SEP nodes.  Parallel var-declare (`var a = 1 & var b = 2`)
+     * stays rejected — var is not in this set. */
     case TOK_KW_WHILE: {
         UAstNode *node = parse_while(p);
         if (!node || node->kind == AST_ERROR) return node;
@@ -546,7 +546,7 @@ static UAstNode *parse_arm_stmt(UParser *p) {
 }
 
 /* parse_single_stmt_as_block: parse ONE statement and wrap it in a synthetic
- * single-element AST_BLOCK.  Used for unbraced if/while/else arms (H14/LANG-S02):
+ * single-element AST_BLOCK.  Used for unbraced if/while/else arms:
  *   `if (c) stmt`        →  `if (c) { stmt }`  (same AST downstream)
  *   `while (c) stmt`     →  `while (c) { stmt }`
  *   `else stmt`          →  `else { stmt }`
@@ -607,7 +607,7 @@ UAstNode *parse_while(UParser *p) {
     consume(p);
 
     /* W1/v0.10.5: bump loop_depth so break/continue are legal in body.
-     * H14/LANG-S02: accept an unbraced single-statement body as well. */
+     * Accept an unbraced single-statement body as well. */
     p->loop_depth++;
     UAstNode *body = (peek(p).type == TOK_LBRACE)
         ? parse_block(p)
@@ -647,7 +647,7 @@ UAstNode *parse_if(UParser *p) {
     }
     consume(p);
 
-    /* H14/LANG-S02: accept braced or unbraced single-statement then-arm.
+    /* Accept braced or unbraced single-statement then-arm.
      * Dangling else binds nearest if: the recursive parse_if call inside
      * parse_single_stmt_as_block will consume the else before returning,
      * so the outer if sees no else (standard C-precedence). */
@@ -660,7 +660,7 @@ UAstNode *parse_if(UParser *p) {
     UAstNode *else_block = NULL;
     if (peek(p).type == TOK_KW_ELSE) {
         consume(p);
-        /* H14/LANG-S02: else arm may also be unbraced. */
+        /* Else arm may also be unbraced. */
         else_block = (peek(p).type == TOK_LBRACE)
             ? parse_block(p)
             : parse_single_stmt_as_block(p);
@@ -710,7 +710,7 @@ static UAstNode *reject_bare_function_forms(UParser *p) {
     return NULL;
 }
 
-/* parse_optional_param_default — v0.13.5 (legacy LANG4-12): after a formal
+/* parse_optional_param_default — v0.13.5: after a formal
  * parameter IDENT, accept an optional `= expr` default value and store it
  * on the param node.  The legacy grammar production is
  *   formal: var.opt "identifier" "=" exp   (ugrammar.y :1533)

@@ -1,4 +1,4 @@
-# Milestone: v0.13.5 (LANG4-06)
+# Milestone: v0.13.5
 # Covers: a `var` declared inside a block at chunk top should be scoped to
 #         that block and must not clobber an outer chunk-top (realm-global)
 #         binding of the same name; bare chunk-top vars keep realm-slot

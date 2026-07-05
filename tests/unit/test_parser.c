@@ -605,7 +605,7 @@ UTEST(parse_var_decl_basic) {
 }
 
 UTEST(parse_var_decl_no_init_yields_nil) {
-    /* "var x" (no '=') -> AST_VAR_DECL with AST_NIL init (LANG4-10) */
+    /* "var x" (no '=') -> AST_VAR_DECL with AST_NIL init */
     ParseCtx c;
     ctx_init(&c, "var x");
     UAstNode *n = uparse_next_statement(&c.p);

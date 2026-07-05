@@ -1,4 +1,4 @@
-# Milestone: v0.13.5 (H14/LANG-S02)
+# Milestone: v0.13.5
 # Covers: unbraced single-statement bodies for if/while/else — the reference
 # stdlib itself uses these forms (legacy object.u:15: `if (this) false else true`).
 # NOTE: if/while are statement forms, not expressions — `var x = if (c) e` is a
@@ -20,7 +20,7 @@ var c = 3; var n = 0; while (c > 0) { c = c - 1; n = n + 1 }; n
 var d = 2; while (d > 0) d = d - 1; d
 [00000004] 0
 
-# --- separator binding (H14 + T2): `&` after an unbraced arm always binds
+# --- separator binding: `&` after an unbraced arm always binds
 # OUTSIDE the arm for ALL LHS kinds, matching the reference grammar's
 # stmt-vs-cstmt tiering (ugrammar.y :771/:968/:848 arm = stmt; :374-378
 # `&`/`|` at the cstmt tier only).

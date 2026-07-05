@@ -224,7 +224,7 @@ uint8_t emit_function_literal(UEmitter *e,
     }
     child_proto->nparams = (uint8_t)nparams;
 
-    /* v0.13.5 arity self-check discipline (legacy LANG4-12 default params):
+    /* v0.13.5 arity self-check discipline (default params):
      * every >=1-param function reserves a synthetic local right above the
      * params — slot index == nparams — that the VM (OP_CALL) and the
      * strand-arm paths seed with the ACTUAL passed argument count as a

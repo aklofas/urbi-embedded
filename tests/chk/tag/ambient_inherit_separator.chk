@@ -6,8 +6,8 @@
 # blocked: compile error — `,` fork-detach separator inside tag-scope body not supported
 # matrix-row: tag-ambient
 #
-# Reason (updated v0.13.5 probe, H13/LANG-S01):
-#   v0.13.5 H13 fixed `&`/`|` block operands in the PARSER.  That fix is
+# Reason (updated v0.13.5 probe):
+#   v0.13.5 fixed `&`/`|` block operands in the PARSER.  That fix is
 #   irrelevant here: the blocker is the EMITTER refusing `,` inside a
 #   `t: { ... }` tag-scope body with a compile error.  OP_FORK_DETACH guard
 #   was removed by LANG-S06; the remaining gap is that the emitter's

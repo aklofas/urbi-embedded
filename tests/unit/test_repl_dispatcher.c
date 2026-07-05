@@ -757,7 +757,7 @@ mk_server_with_buffer_transport(UVM **out_vm,
     return server;
 }
 
-/* REPL-07: a frame that parses successfully but has no `op` field
+/* A frame that parses successfully but has no `op` field
  * (op stays at UREPL_OP_NONE) must emit an `unknown_op` error envelope
  * correlated with the request id. */
 UTEST(dispatcher_no_op_frame_emits_unknown_op_correlated)
@@ -790,9 +790,9 @@ UTEST(dispatcher_no_op_frame_emits_unknown_op_correlated)
     free_server(server, vm);
 }
 
-/* REPL-05: an inbound line that exceeds the 8 KiB parse-buffer cap must
- * emit a `line_too_long` error envelope and then recover — the next valid
- * frame after the overlong one is parsed and dispatched normally. */
+/* An inbound line that exceeds the 8 KiB parse-buffer cap must emit a
+ * `line_too_long` error envelope and then recover — the next valid frame
+ * after the overlong one is parsed and dispatched normally. */
 UTEST(dispatcher_inbound_line_too_long_emits_error_then_recovers)
 {
     UVM *vm = NULL;
@@ -850,12 +850,12 @@ UTEST(dispatcher_inbound_line_too_long_emits_error_then_recovers)
     free(vm);
 }
 
-/* REPL-05: TWO back-to-back oversize lines must each produce their own
- * line_too_long envelope (the discard flag cycles true->false->true->false),
- * and the valid frame that follows must still parse and dispatch.  Locks
- * the per-line envelope invariant: one envelope per oversize line, never
- * more (in discard mode the fill resets each sweep, so a single overlong
- * line cannot re-trigger the overflow arm). */
+/* TWO back-to-back oversize lines must each produce their own line_too_long
+ * envelope (the discard flag cycles true->false->true->false), and the valid
+ * frame that follows must still parse and dispatch.  Locks the per-line
+ * envelope invariant: one envelope per oversize line, never more (in discard
+ * mode the fill resets each sweep, so a single overlong line cannot
+ * re-trigger the overflow arm). */
 UTEST(dispatcher_inbound_consecutive_oversize_lines_two_envelopes)
 {
     UVM *vm = NULL;

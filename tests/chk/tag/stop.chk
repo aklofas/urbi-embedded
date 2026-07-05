@@ -4,7 +4,7 @@
 # blocked: runtime — sleep(100ms) suspends indefinitely in REPL context; echo undefined at top level
 # matrix-row: tag-stop
 #
-# Reason (updated v0.13.5 probe, H13/LANG-S01):
+# Reason (updated v0.13.5 probe):
 #   Parse error FIXED by v0.13.5: `{expr} & stmt` now parses inside tag-scope
 #   bodies.  New runtime blockers:
 #     1. sleep(100ms) — in REPL mode the single loader strand suspends

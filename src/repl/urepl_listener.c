@@ -265,9 +265,9 @@ urepl_session_read_and_dispatch_one(UReplServer *server,
          * error envelope so the client receives a structured signal, then
          * enter discard mode: incoming bytes are dropped until the '\n'
          * that ends the overlong frame (i.e. the next frame boundary).
-         * Headroom guard mirrors the REPL-02 overflow-envelope idiom:
-         * skip the write if the output ring cannot absorb it without
-         * itself overflowing, preventing a saturated-ring ping-pong. */
+         * Headroom guard: skip the write if the output ring cannot absorb
+         * it without itself overflowing, preventing a saturated-ring
+         * ping-pong. */
         char ltenv[256];
         size_t ltn = 0;
         if (urepl_ndjson_emit_error(ltenv, sizeof(ltenv), 0U,
@@ -297,10 +297,10 @@ urepl_session_read_and_dispatch_one(UReplServer *server,
     /* rc > 0: feed the parser. */
     s->coop_inbuf_fill += (size_t)rc;
 
-    /* REPL-05 discard mode: scan forward for the frame boundary ('\n')
-     * that ends the overlong line.  Once found, clear discard mode and
-     * fall through to parse any remaining bytes normally.  If no '\n'
-     * is found yet, drop all buffered bytes and return without parsing. */
+    /* Discard mode: scan forward for the frame boundary ('\n') that ends
+     * the overlong line.  Once found, clear discard mode and fall through
+     * to parse any remaining bytes normally.  If no '\n' is found yet,
+     * drop all buffered bytes and return without parsing. */
     if (s->inbound_discard) {
         size_t j = 0;
         while (j < s->coop_inbuf_fill && s->coop_inbuf[j] != '\n') { j++; }
@@ -344,7 +344,7 @@ reader_main(void *arg)
     UReplServer *server = r->server;
     char rbuf[8192];      /* inbound NDJSON parse buffer */
     size_t fill = 0;
-    /* REPL-05: true while discarding bytes belonging to an overlong line. */
+    /* True while discarding bytes belonging to an overlong line. */
     bool rbuf_discarding = false;
 
     int pollable = r->transport->pollable_fd_fn != NULL
@@ -431,9 +431,9 @@ reader_main(void *arg)
             if (rc > 0) {
                 fill += (size_t)rc;
 
-                /* REPL-05 discard mode: scan for the frame boundary ('\n')
-                 * ending the overlong line.  Once found, clear discard mode
-                 * and parse the remainder normally. */
+                /* Discard mode: scan for the frame boundary ('\n') ending
+                 * the overlong line.  Once found, clear discard mode and
+                 * parse the remainder normally. */
                 if (rbuf_discarding) {
                     size_t j = 0;
                     while (j < fill && rbuf[j] != '\n') { j++; }
@@ -464,8 +464,8 @@ reader_main(void *arg)
                     /* Overflow: a single line exceeded the 8 KiB buffer.
                      * Emit a line_too_long envelope and enter discard mode
                      * so subsequent reads scan for the frame boundary.
-                     * Headroom guard mirrors the REPL-02 overflow-envelope
-                     * idiom to prevent a ping-pong on a saturated ring. */
+                     * Headroom guard: skip the write if the ring is
+                     * saturated to prevent a ping-pong. */
                     if (fill >= sizeof(rbuf)) {
                         UReplSession *rs = r->session;
                         if (rs != NULL) {
