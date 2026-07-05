@@ -108,6 +108,16 @@ struct UObject *urbi_stdlib_list_new_empty(struct UVM *vm);
 size_t urbi_stdlib_list_len(struct UVM *vm, struct UObject *list_obj);
 UValue urbi_stdlib_list_get(struct UVM *vm, struct UObject *list_obj, size_t i);
 
+/* Storage-presence probe: nonzero when list_obj resolves a `_storage`
+ * backing pointer (the same walk every List method uses).  Lets callers
+ * that only have the len/get accessors — which cannot distinguish a
+ * missing backing from an empty list — raise the house-style
+ * "missing _storage" TypeError instead of silently treating a
+ * storage-less object (e.g. a bare clone of the List proto) as empty.
+ * Used by the shared join_core (stdlib_join_core.h).  INTERNAL, not
+ * public ABI. */
+int urbi_stdlib_list_storage_present(struct UVM *vm, struct UObject *list_obj);
+
 #ifdef __cplusplus
 }
 #endif

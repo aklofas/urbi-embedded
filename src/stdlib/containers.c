@@ -1113,7 +1113,6 @@ dict_remove(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 /* keys(): return a fresh List of the dict's keys.  Order is unspecified
  * (matches the v1.0 Dict iteration-order contract).
  *
- *
  * Mutation-during-iteration contract: the scripted Dict.each() overlay
  * (dict_overlay.u) calls keys() BEFORE beginning iteration and iterates
  * over that snapshot List.  Entries added to the dict after each() begins
@@ -1380,6 +1379,13 @@ urbi_stdlib_list_get(UVM *vm, UObject *list_obj, size_t i)
     UList *l = (UList *)fetch_storage_ptr(vm, list_obj);
     if (l == NULL || i >= l->len) return urbi_make_nil();
     return l->items[i];
+}
+
+int
+urbi_stdlib_list_storage_present(UVM *vm, UObject *list_obj)
+{
+    if (vm == NULL || list_obj == NULL) return 0;
+    return fetch_storage_ptr(vm, list_obj) != NULL;
 }
 
 int

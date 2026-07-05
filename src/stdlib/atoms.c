@@ -338,7 +338,7 @@ int_shr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* ushr — unsigned (logical) right shift on the i64 bit pattern.  Zero-fills
  * from the left regardless of sign; the Kotlin `ushr` semantic.  Shift amount
- * is masked to [0, 63] (Kotlin masks; differs from shl/shr's out-of-range 0). */
+ * is masked to [0, 63] (Kotlin masks). */
 static int
 int_ushr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {

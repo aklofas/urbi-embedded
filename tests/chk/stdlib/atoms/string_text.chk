@@ -54,3 +54,9 @@ var p = "xyz".split(","); p.length()
 # Empty string split on "" yields an empty list (no chars to iterate).
 "".split("").length()
 [00000017] 0
+
+# join on a storage-less List object (bare clone of the proto carries no
+# _storage backing) raises the same TypeError as List.join — one shared
+# implementation, one contract.
+",".join(List.clone())
+[00000018] !!! TypeError: join: missing _storage

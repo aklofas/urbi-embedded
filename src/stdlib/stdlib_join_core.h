@@ -10,10 +10,10 @@
  *   - sep must be a non-NULL, NUL-terminated C string of `seplen` bytes.
  *   - list_obj must be a non-NULL UObject pointing to a List instance.
  *
- * If list_obj carries no _storage (e.g. a bare Object clone with no
- * backing UList), urbi_stdlib_list_len returns 0 and join_core produces
- * an empty string — a benign fallback for a condition that normal usage
- * never reaches.
+ * If list_obj carries no _storage backing (e.g. a bare clone of the List
+ * proto), join_core raises the house-style catchable TypeError
+ * "join: missing _storage" — the same contract every other List/Dict
+ * method in containers.c follows.
  *
  * Mutation contract: join_core performs two linear scans over the
  * backing store (measure pass, then fill pass) within a single
@@ -29,7 +29,7 @@
 
 /* All included headers already appear in atoms.c and containers.c;
  * the guards below prevent double-inclusion. */
-#include "stdlib/containers.h"   /* urbi_stdlib_list_len / _get */
+#include "stdlib/containers.h"   /* urbi_stdlib_list_len / _get / _storage_present */
 #include "stdlib/object_root.h"  /* urbi_raise_type / urbi_raise_oom */
 #include "runtime/umacros.h"     /* urbi_strlen */
 #include "sched/ustrand.h"       /* UEXEC_OK / UEXEC_THROW */
@@ -40,12 +40,18 @@
 /* join_core: concatenate String elements of list_obj with sep as separator.
  *
  * Returns UEXEC_OK with *out = interned result String, or UEXEC_THROW
- * when any element is not a String (TypeError) or allocation fails (OOM).
+ * when the receiver has no _storage backing or any element is not a
+ * String (TypeError), or allocation fails (OOM).
  */
 static int
 join_core(UVM *vm, const char *sep, size_t seplen,
           struct UObject *list_obj, UValue *out)
 {
+    /* House-style storage guard: len/get alone cannot distinguish a
+     * storage-less object from an empty list, so probe explicitly. */
+    if (!urbi_stdlib_list_storage_present(vm, list_obj))
+        return urbi_raise_type(vm, "join: missing _storage", out);
+
     size_t count = urbi_stdlib_list_len(vm, list_obj);
     size_t i, total = 0U;
 
