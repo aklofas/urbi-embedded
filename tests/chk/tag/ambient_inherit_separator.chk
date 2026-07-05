@@ -10,7 +10,7 @@
 #   v0.13.5 fixed `&`/`|` block operands in the PARSER.  That fix is
 #   irrelevant here: the blocker is the EMITTER refusing `,` inside a
 #   `t: { ... }` tag-scope body with a compile error.  OP_FORK_DETACH guard
-#   was removed by LANG-S06; the remaining gap is that the emitter's
+#   was removed by the v0.13.4 loader-strand work; the remaining gap is that the emitter's
 #   fork-detach emit path does not track the tag-scope nesting context, so
 #   `t: { expr , expr }` fails to compile.  Unchanged since v0.13.4.
 #
