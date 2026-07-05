@@ -101,7 +101,7 @@ var r = false; try { List.new(3, 1, 2).sort(function(a) { a }) } catch (var e) {
 # --- a comparator with MORE than 2 params keeps the existing behavior: its
 #     own arity prologue rejects the 2-arg call (plain-String throw) ---
 var m = "none"; try { List.new(3, 1, 2).sort(function(a, b, c) { a < b }) } catch (var e) { m = e }; m
-[00000022] "CALL: wrong argument count (expected 3)"
+[00000022] "function call: wrong argument count (expected 3)"
 
 # --- a defaulted trailing param still counts as 2 declared params ---
 var s = List.new(3, 1, 2).sort(function(a, b = nil) { a < b }); s.get(0)

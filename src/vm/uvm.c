@@ -787,7 +787,7 @@ dispatch:
             uint8_t arg_off   = is_method ? 2U : 1U;
 
             if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
-                vm_format_type_error_msg(vm, "CALL: callee is not a closure");
+                vm_format_type_error_msg(vm, "function call: callee is not a closure");
                 VM_CALL_TYPEERROR();
             }
             UClosure *callee = (UClosure *)s->R[a].v.p;
@@ -912,7 +912,7 @@ dispatch:
                     goto safepoint;
                 }
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "CALL: native method raised");
+                vm_format_type_error_msg(vm, "function call: native method raised");
                 HALT();
             }
 
@@ -925,12 +925,12 @@ dispatch:
             if (callee->proto->arity_prologue != 0U
                     ? (nargs > (int)callee->proto->nparams)
                     : (nargs != (int)callee->proto->nparams)) {
-                vm_format_type_error_msg(vm, "CALL: wrong argument count");
+                vm_format_type_error_msg(vm, "function call: wrong argument count");
                 VM_CALL_TYPEERROR();
             }
             if (s->frame_count >= UVM_MAX_FRAMES) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "CALL: call stack overflow");
+                vm_format_type_error_msg(vm, "function call: call stack overflow");
                 HALT();
             }
 

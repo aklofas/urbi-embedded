@@ -307,7 +307,7 @@ uint8_t emit_function_literal(UEmitter *e,
      *     LOADK tmp, K(min)
      *     LT    0, nargs, tmp      ; nargs < min → skip JMP → throw
      *     JMP   ok
-     *     LOADK tmp, K("CALL: wrong argument count ...")
+     *     LOADK tmp, K("function call: wrong argument count ...")
      *     THROW tmp                ; catchable, same as assert's lowering
      *   ok:
      *
@@ -343,7 +343,7 @@ uint8_t emit_function_literal(UEmitter *e,
             char msgbuf[64];
             int  mlen = 0;
             {
-                static const char kPrefix[] = "CALL: wrong argument count (expected ";
+                static const char kPrefix[] = "function call: wrong argument count (expected ";
                 const char *cp;
                 for (cp = kPrefix; *cp != '\0'; cp++) msgbuf[mlen++] = *cp;
                 if (min_arity < nparams) {

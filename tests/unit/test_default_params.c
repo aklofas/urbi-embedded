@@ -116,7 +116,7 @@ UTEST(below_min_message_carries_expected_count)
     UASSERT_EQ((int)UVAL_STR, (int)out.kind);
     UASSERT(out.v.p != NULL);
     UASSERT_EQ(0, strcmp((const char *)out.v.p,
-                         "CALL: wrong argument count (expected at least 1)"));
+                         "function call: wrong argument count (expected at least 1)"));
     urbi_vm_destroy(&vm);
 }
 
