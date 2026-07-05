@@ -213,23 +213,10 @@ builtin_lobby_send(UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
-/* === Method-table install (single-entry; mirrors atom_protos.c shape) === */
-
-static int
-install_native_method(UVM *vm, UObject *proto, const char *name,
-                      urbi_native_method_fn fn)
-{
-    UClosure *cl = urbi_native_closure_create(vm, fn);
-    if (cl == NULL) return URBI_ERR_OOM;
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
-    if (sym == NULL) return URBI_ERR_OOM;
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_CLOSURE;
-    v.v.p  = cl;
-    if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
-        return URBI_ERR_OOM;
-    return URBI_OK;
-}
+/* Method table (UNativeMethodDef from stdlib/object_root.h). */
+static const UNativeMethodDef LOBBY_METHODS[] = {
+    { "__builtin_lobby_send", builtin_lobby_send }
+};
 
 /* === urbi_lobby_native_register =========================================
  *
@@ -284,8 +271,7 @@ urbi_lobby_native_register(UVM *vm)
      * collection during install. */
     vm->lobby_proto = proto;
 
-    int rc = install_native_method(vm, proto, "__builtin_lobby_send",
-                                   builtin_lobby_send);
+    int rc = URBI_REGISTER_METHODS(vm, proto, LOBBY_METHODS);
     if (rc != URBI_OK) return rc;
 
     /* Install `lobbies` (empty List) — the VM-singleton collection of

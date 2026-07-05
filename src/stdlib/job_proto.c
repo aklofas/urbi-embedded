@@ -271,23 +271,14 @@ job_jobs_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
-/* === Internal helper: install a C-native method on a proto ============= */
-static int
-install_native_method(UVM *vm, UObject *proto,
-                      const char *name, urbi_native_method_fn fn)
-{
-    UClosure *cl = urbi_native_closure_create(vm, fn);
-    if (cl == NULL) return URBI_ERR_OOM;
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
-    if (sym == NULL) return URBI_ERR_OOM;
-    UValue v;
-    urbi_zero(&v, sizeof(v));
-    v.kind = (uint8_t)UVAL_CLOSURE;
-    v.v.p  = (void *)cl;
-    if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
-        return URBI_ERR_OOM;
-    return URBI_OK;
-}
+/* Method table for Job proto (UNativeMethodDef from stdlib/object_root.h). */
+static const UNativeMethodDef JOB_METHODS[] = {
+    { "current", job_current_native },
+    { "tags",    job_tags_native    },
+    { "uid",     job_uid_native     },
+    { "status",  job_status_native  },
+    { "jobs",    job_jobs_native    }
+};
 
 /* === urbi_job_make: public ctor =========================================
  *
@@ -348,15 +339,7 @@ urbi_job_proto_register(UVM *vm)
     int rc = urbi_object_add_proto(vm, p, urbi_object_root(vm));
     if (rc != URBI_OK) return rc;
 
-    rc = install_native_method(vm, p, "current", job_current_native);
-    if (rc != URBI_OK) return rc;
-    rc = install_native_method(vm, p, "tags",    job_tags_native);
-    if (rc != URBI_OK) return rc;
-    rc = install_native_method(vm, p, "uid",     job_uid_native);
-    if (rc != URBI_OK) return rc;
-    rc = install_native_method(vm, p, "status",  job_status_native);
-    if (rc != URBI_OK) return rc;
-    rc = install_native_method(vm, p, "jobs",    job_jobs_native);
+    rc = URBI_REGISTER_METHODS(vm, p, JOB_METHODS);
     if (rc != URBI_OK) return rc;
 
     /* Mark the proto readonly per the v0.9.1 atom-proto convention.
