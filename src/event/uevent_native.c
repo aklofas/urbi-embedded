@@ -74,41 +74,6 @@ event_optional_payload(uint8_t nargs, UValue *args)
     return urbi_make_nil();
 }
 
-/* === register_native_method ===
- *
- * Install a UVAL_CLOSURE slot named `name` on `proto`, where the closure's
- * `native_fn` field holds `fn`.  OP_CALL dispatches to fn directly when this
- * slot is the callee.
- *
- * Returns URBI_OK on success, URBI_ERR_OOM on alloc/intern failure, and
- * URBI_ERR_INVALID_ARG on NULL inputs.
- *
- * Phase 7 (M6 stdlib): replaces the legacy urbi_register_fn UVAL_HOST_FN
- * installer.  This preserves the local-helper-not-shared-header pattern
- * (see EVENT-013 audit row) while routing to the Phase-3 ABI. */
-static int
-register_native_method(struct UVM *vm, struct UObject *proto,
-                       const char *name, urbi_native_method_fn fn)
-{
-    if (vm == NULL || proto == NULL || fn == NULL || name == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
-
-    UClosure *cl = urbi_native_closure_create(vm, fn);
-    if (cl == NULL) return URBI_ERR_OOM;
-
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
-    if (sym == NULL) return URBI_ERR_OOM;
-
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_CLOSURE;
-    v.v.p = (void *)cl;
-    if (urbi_object_set_local_slot(vm, proto, sym, v) != 0) {
-        return URBI_ERR_OOM;
-    }
-    return URBI_OK;
-}
-
 /* === Native method implementations (Phase-3 ABI) ===
  *
  * Signature: int fn(UVM *vm, UValue self, UValue *args, uint8_t nargs,
@@ -199,6 +164,14 @@ event_waituntil_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
+/* Method table (UNativeMethodDef from stdlib/object_root.h). */
+static const UNativeMethodDef EVENT_METHODS[] = {
+    { "new",       event_new_method       },
+    { "emit",      event_emit_method      },
+    { "syncEmit",  event_sync_emit_method },
+    { "waituntil", event_waituntil_method }
+};
+
 /* === event_native_register ===
  *
  * Allocate vm->event_proto as a UObject in the URBI_ATOM_EVENT family,
@@ -254,15 +227,8 @@ event_native_register(struct UVM *vm)
      * intern/install would otherwise leave a partially populated event_proto
      * on the VM.  On any failure, reset event_proto to NULL (the proto cell
      * itself is GC-managed and will be collected at the next sweep) and
-     * surface UVM_OOM to the caller.
-     *
-     * Phase 7 (M6 stdlib): slots are now UVAL_CLOSURE values with a
-     * native_fn pointer (Phase-3 ABI), so OP_CALL can dispatch them directly
-     * from script. */
-    if (register_native_method(vm, proto, "new",       event_new_method)        != URBI_OK
-     || register_native_method(vm, proto, "emit",      event_emit_method)       != URBI_OK
-     || register_native_method(vm, proto, "syncEmit",  event_sync_emit_method)  != URBI_OK
-     || register_native_method(vm, proto, "waituntil", event_waituntil_method)  != URBI_OK) {
+     * surface UVM_OOM to the caller. */
+    if (URBI_REGISTER_METHODS(vm, proto, EVENT_METHODS) != URBI_OK) {
         vm->event_proto = NULL;
         return UVM_OOM;
     }

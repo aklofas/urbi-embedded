@@ -26,29 +26,6 @@
 #include <stddef.h> /* size_t */
 #include <stdio.h>  /* snprintf */
 
-/* === ros_register_method ===
- *
- * Install a UVAL_CLOSURE slot named `name` on `proto`, where the closure's
- * native_fn pointer holds `fn`.  Mirrors the same pattern used in
- * src/event/uevent_native.c (register_native_method). */
-static int
-ros_register_method(struct UVM *vm, struct UObject *proto,
-                    const char *name, urbi_native_method_fn fn)
-{
-    UClosure *cl = urbi_native_closure_create(vm, fn);
-    if (cl == NULL) return URBI_ERR_OOM;
-
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
-    if (sym == NULL) return URBI_ERR_OOM;
-
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_CLOSURE;
-    v.v.p = (void *)cl;
-    if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
-        return URBI_ERR_OOM;
-    return URBI_OK;
-}
-
 /* Forward decls: mock-only test hooks, defined near urbi_ros_pump below. */
 static int ros_inject_int32_method(struct UVM *vm, UValue self, UValue *args,
                                    uint8_t nargs, UValue *out);
@@ -549,6 +526,31 @@ urbi_ros_shutdown(struct UVM *vm)
     urbi_ros_msg__reset();                        /* clears uros_msg.c g_protos[] */
 }
 
+/* Method tables (UNativeMethodDef from stdlib/object_root.h;
+ * URBI_REGISTER_METHODS does the install loop).  Placed after all method
+ * definitions so C99 static function references resolve without forward
+ * declarations. */
+static const UNativeMethodDef ROS_PUBLISHER_METHODS[] = {
+    { "publish", publisher_publish_method }
+};
+
+static const UNativeMethodDef ROS_CLIENT_METHODS[] = {
+    { "call", client_call_method }
+};
+
+static const UNativeMethodDef ROS_PROTO_METHODS[] = {
+    { "init",             ros_init_method             },
+    { "inited",           ros_inited_method           },
+    { "msg",              ros_msg_method              },
+    { "publisher",        ros_publisher_method        },
+    { "subscribe",        ros_subscribe_method        },
+    { "client",           ros_client_method           },
+    { "service",          ros_service_method          },
+    { "__injectInt32",    ros_inject_int32_method     },
+    { "__injectMsg",      ros_inject_msg_method       },
+    { "__lastPublished",  ros_last_published_method   }
+};
+
 /* urbi_ros_register: allocate vm->ros_proto as a root-Object-family UObject
  * and cache it on the VM.  Called from urbi_stdlib_boot (gated).
  * Idempotent: subsequent calls return URBI_OK immediately.
@@ -575,8 +577,7 @@ urbi_ros_register(struct UVM *vm)
      * then root it via a hidden slot on the ros proto so GC won't collect it. */
     g_publisher_proto = urbi_object_clone(vm, root);
     if (g_publisher_proto == NULL) return URBI_ERR_OOM;
-    if (ros_register_method(vm, g_publisher_proto, "publish",
-                            publisher_publish_method) != URBI_OK)
+    if (URBI_REGISTER_METHODS(vm, g_publisher_proto, ROS_PUBLISHER_METHODS) != URBI_OK)
         return URBI_ERR_OOM;
 
     USymbol *pub_sym = (USymbol *)ustr_intern(vm, "__publisher_proto", 17);
@@ -593,8 +594,7 @@ urbi_ros_register(struct UVM *vm)
      * root via __client_proto slot on ros_proto. */
     g_client_proto = urbi_object_clone(vm, root);
     if (g_client_proto == NULL) return URBI_ERR_OOM;
-    if (ros_register_method(vm, g_client_proto, "call",
-                            client_call_method) != URBI_OK)
+    if (URBI_REGISTER_METHODS(vm, g_client_proto, ROS_CLIENT_METHODS) != URBI_OK)
         return URBI_ERR_OOM;
 
     USymbol *cli_sym = (USymbol *)ustr_intern(vm, "__client_proto", 14);
@@ -609,16 +609,7 @@ urbi_ros_register(struct UVM *vm)
 
     /* Install native methods on the ros proto. */
     UObject *rp = (UObject *)vm->ros_proto;
-    if (ros_register_method(vm, rp, "init",      ros_init_method)      != URBI_OK
-     || ros_register_method(vm, rp, "inited",    ros_inited_method)    != URBI_OK
-     || ros_register_method(vm, rp, "msg",       ros_msg_method)       != URBI_OK
-     || ros_register_method(vm, rp, "publisher", ros_publisher_method) != URBI_OK
-     || ros_register_method(vm, rp, "subscribe", ros_subscribe_method) != URBI_OK
-     || ros_register_method(vm, rp, "client",    ros_client_method)    != URBI_OK
-     || ros_register_method(vm, rp, "service",   ros_service_method)   != URBI_OK
-     || ros_register_method(vm, rp, "__injectInt32",    ros_inject_int32_method)    != URBI_OK
-     || ros_register_method(vm, rp, "__injectMsg",      ros_inject_msg_method)      != URBI_OK
-     || ros_register_method(vm, rp, "__lastPublished",  ros_last_published_method)  != URBI_OK)
+    if (URBI_REGISTER_METHODS(vm, rp, ROS_PROTO_METHODS) != URBI_OK)
         return URBI_ERR_OOM;
 
     return URBI_OK;

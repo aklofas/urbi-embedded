@@ -175,34 +175,6 @@ register_host_fn(struct UVM *vm, struct UObject *proto,
     return urbi_object_set_local_slot(vm, proto, sym, v);
 }
 
-/* === register_native_method (W4) ===
- *
- * Install a UVAL_CLOSURE slot named `name` on `proto` with native_fn = fn.
- * OP_CALL dispatches through native_fn directly (Phase-3 ABI).
- * Returns URBI_OK on success, URBI_ERR_OOM on alloc/intern failure. */
-static int
-register_native_method_tag(struct UVM *vm, struct UObject *proto,
-                           const char *name, urbi_native_method_fn fn)
-{
-    if (vm == NULL || proto == NULL || fn == NULL || name == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
-    UClosure *cl = urbi_native_closure_create(vm, fn);
-    if (cl == NULL) return URBI_ERR_OOM;
-
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
-    if (sym == NULL) return URBI_ERR_OOM;
-
-    UValue v;
-    urbi_zero(&v, sizeof(v));
-    v.kind = (uint8_t)UVAL_CLOSURE;
-    v.v.p  = (void *)cl;
-    if (urbi_object_set_local_slot(vm, proto, sym, v) != 0) {
-        return URBI_ERR_OOM;
-    }
-    return URBI_OK;
-}
-
 /* === W4/v0.10.2 native method implementations (Phase-3 ABI) ===
  *
  * All methods: int fn(UVM *vm, UValue self, UValue *args, uint8_t nargs,
@@ -526,6 +498,22 @@ tag_leave_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
+/* Method table for closure-path slots (UNativeMethodDef from stdlib/object_root.h).
+ * The _enter_set/_leave_set host-fn stubs use register_host_fn and are NOT
+ * in this table — they go through UVAL_HOST_FN, not the closure installer. */
+static const UNativeMethodDef TAG_METHODS[] = {
+    { "new",      tag_new_native      },
+    { "stop",     tag_stop_native     },
+    { "freeze",   tag_freeze_native   },
+    { "unfreeze", tag_unfreeze_native },
+    { "block",    tag_block_native    },
+    { "unblock",  tag_unblock_native  },
+    { "frozen",   tag_frozen_native   },
+    { "blocked",  tag_blocked_native  },
+    { "enter",    tag_enter_native    },
+    { "leave",    tag_leave_native    }
+};
+
 /* === tag_native_register === */
 
 UVMError
@@ -572,16 +560,7 @@ tag_native_register(struct UVM *vm)
      * compatibility until tag-property UProps dispatch lands (v1.x). */
     if (register_host_fn(vm, proto, "_enter_set", tag_enter_leave_setter_protected) != 0
      || register_host_fn(vm, proto, "_leave_set", tag_enter_leave_setter_protected) != 0
-     || register_native_method_tag(vm, proto, "new",      tag_new_native)      != URBI_OK
-     || register_native_method_tag(vm, proto, "stop",     tag_stop_native)     != URBI_OK
-     || register_native_method_tag(vm, proto, "freeze",   tag_freeze_native)   != URBI_OK
-     || register_native_method_tag(vm, proto, "unfreeze", tag_unfreeze_native) != URBI_OK
-     || register_native_method_tag(vm, proto, "block",    tag_block_native)    != URBI_OK
-     || register_native_method_tag(vm, proto, "unblock",  tag_unblock_native)  != URBI_OK
-     || register_native_method_tag(vm, proto, "frozen",   tag_frozen_native)   != URBI_OK
-     || register_native_method_tag(vm, proto, "blocked",  tag_blocked_native)  != URBI_OK
-     || register_native_method_tag(vm, proto, "enter",    tag_enter_native)    != URBI_OK
-     || register_native_method_tag(vm, proto, "leave",    tag_leave_native)    != URBI_OK) {
+     || URBI_REGISTER_METHODS(vm, proto, TAG_METHODS)                               != URBI_OK) {
         vm->tag_proto = NULL;
         vm->atom_tag  = NULL;
         return UVM_OOM;
