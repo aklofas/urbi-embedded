@@ -524,6 +524,26 @@ reader_main(void *arg)
     return NULL;
 }
 
+/* ---- Shared: emit the hello envelope into a session's output ringbuf --- */
+
+/* Emit the spec §6 hello envelope into session->output.  Called from both
+ * the POSIX and cooperative spawn_reader paths; the body is byte-identical
+ * between the two so it lives here as a single static helper. */
+static void
+session_emit_hello(UReplServer *server, UReplSession *session)
+{
+    char env[256];
+    size_t n = 0;
+    bool auth_required = (server->cfg.auth_token != NULL
+                          && server->cfg.auth_token[0] != '\0');
+    if (urepl_ndjson_emit_hello(env, sizeof(env),
+                                session->lobby_id_hex,
+                                /* synclines */ true,
+                                auth_required, &n) == 0) {
+        urepl_ringbuf_write(&session->output, env, n);
+    }
+}
+
 /* ---- Listener thread ------------------------------------------------- */
 
 /* Allocate + spawn a reader subthread for an accepted client. */
@@ -575,17 +595,7 @@ spawn_reader(UReplServer *server, const UTransport *transport,
      * reader thread will flush it on its first iteration.  Spec §6
      * defines the hello shape; auth_required is true iff a token was
      * configured. */
-    char hello_env[256];
-    size_t hello_n = 0;
-    bool auth_required = (server->cfg.auth_token != NULL
-                          && server->cfg.auth_token[0] != '\0');
-    if (urepl_ndjson_emit_hello(hello_env, sizeof(hello_env),
-                                session->lobby_id_hex,
-                                /* synclines */ true,
-                                auth_required,
-                                &hello_n) == 0) {
-        urepl_ringbuf_write(&session->output, hello_env, hello_n);
-    }
+    session_emit_hello(server, session);
 
     if (r->cooperative) {
         /* v0.9.4: non-pollable transports (Pi Pico USB CDC + UART,
@@ -1030,17 +1040,7 @@ spawn_reader(UReplServer *server, const UTransport *transport,
     server->readers_head = r;
     UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
 
-    char hello_env[256];
-    size_t hello_n = 0;
-    bool auth_required = (server->cfg.auth_token != NULL
-                          && server->cfg.auth_token[0] != '\0');
-    if (urepl_ndjson_emit_hello(hello_env, sizeof(hello_env),
-                                session->lobby_id_hex,
-                                /* synclines */ true,
-                                auth_required,
-                                &hello_n) == 0) {
-        urepl_ringbuf_write(&session->output, hello_env, hello_n);
-    }
+    session_emit_hello(server, session);
     return URBI_OK;
 }
 

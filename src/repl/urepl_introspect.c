@@ -17,6 +17,7 @@
  * truncation cost).  Callers should retry with at least 2x the estimate. */
 
 #include "repl/urepl_introspect.h"
+#include "repl/urepl_ndjson.h"   /* urepl_json_escape */
 
 #include "event/uevent.h"
 #include "event/uevent_registry.h"
@@ -82,49 +83,6 @@ strand_wait_reason_name(uint8_t state)
     case USTRAND_REASON_HOST:    return "host";
     default:                     return NULL;
     }
-}
-
-/* JSON-escape and write a string slice into buf (no surrounding quotes).
- * Returns 0 on success, -1 on overflow; *n_inout updated either way. */
-static int
-emit_json_escape(char *buf, size_t cap, size_t *n_inout,
-                 const char *src, size_t src_len)
-{
-    size_t n = *n_inout;
-    size_t i;
-    for (i = 0; i < src_len; i++) {
-        unsigned char c = (unsigned char)src[i];
-        const char *esc = NULL;
-        char hex[8];
-        switch (c) {
-        case '"':  esc = "\\\""; break;
-        case '\\': esc = "\\\\"; break;
-        case '\b': esc = "\\b";  break;
-        case '\f': esc = "\\f";  break;
-        case '\n': esc = "\\n";  break;
-        case '\r': esc = "\\r";  break;
-        case '\t': esc = "\\t";  break;
-        default:
-            if (c < 0x20) {
-                snprintf(hex, sizeof hex, "\\u%04x", (unsigned)c);
-                esc = hex;
-            }
-            break;
-        }
-        if (esc != NULL) {
-            size_t need = strlen(esc);
-            if (n + need >= cap) { *n_inout = n + need + 64; return -1; }
-            /* Appends raw bytes — caller manages NUL-termination at end of buffer.
-             * NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
-            memcpy(buf + n, esc, need);
-            n += need;
-        } else {
-            if (n + 1 >= cap) { *n_inout = n + src_len - i + 64; return -1; }
-            buf[n++] = (char)c;
-        }
-    }
-    *n_inout = n;
-    return 0;
 }
 
 /* ---- coros ----------------------------------------------------------- */
@@ -199,9 +157,11 @@ urbi_introspect_tags(UVM *vm, char *buf, size_t cap, size_t *out_n)
                  (unsigned)r->id, (unsigned)t->flags);
         if (name_str != NULL) {
             EMIT_FMT(",\"name\":\"");
-            if (emit_json_escape(buf, cap, &n, name_str, name_len) != 0) {
-                *out_n = n;
-                return -1;
+            {
+                int _w = urepl_json_escape(name_str, name_len,
+                                           buf + n, (cap > n) ? cap - n : 0);
+                if (_w < 0) { *out_n = n; return -1; }
+                n += (size_t)_w;
             }
             EMIT_FMT("\"");
         }
@@ -264,9 +224,11 @@ urbi_introspect_events(UVM *vm, char *buf, size_t cap, size_t *out_n)
                  (unsigned)e->id, (unsigned)sub_count);
         if (e->name != NULL && e->name_len > 0) {
             EMIT_FMT(",\"name\":\"");
-            if (emit_json_escape(buf, cap, &n, e->name, e->name_len) != 0) {
-                *out_n = n;
-                return -1;
+            {
+                int _w = urepl_json_escape(e->name, e->name_len,
+                                           buf + n, (cap > n) ? cap - n : 0);
+                if (_w < 0) { *out_n = n; return -1; }
+                n += (size_t)_w;
             }
             EMIT_FMT("\"");
         }
@@ -453,8 +415,11 @@ emit_object_slots(UObject *obj, char *buf, size_t cap, size_t *n_inout)
                 *n_inout = n + 64; return -1;
             }
             n += (size_t)w;
-            if (emit_json_escape(buf, cap, &n, name, name_len) != 0) {
-                *n_inout = n; return -1;
+            {
+                int _w = urepl_json_escape(name, name_len,
+                                           buf + n, (cap > n) ? cap - n : 0);
+                if (_w < 0) { *n_inout = n; return -1; }
+                n += (size_t)_w;
             }
             uint32_t idx = sh->index;
             const char *kind_name = "nil";

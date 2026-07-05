@@ -387,6 +387,31 @@ push_env(UReplSession *s, const char *env, size_t n)
     urepl_ringbuf_write(&s->output, env, n);
 }
 
+/* Emit a standard error envelope into s->output.  Covers the common
+ * emit_error + push_env pattern shared by multiple dispatch paths.
+ * Uses a 256-byte local buffer; adequate for all standard error codes
+ * and short messages. */
+static void
+push_error(UReplSession *s, uint64_t id, const char *code, const char *msg)
+{
+    char env[256];
+    size_t n = 0;
+    if (urepl_ndjson_emit_error(env, sizeof(env), id, code, msg, &n) == 0)
+        push_env(s, env, n);
+}
+
+/* Emit a standard result envelope into s->output.  Uses a 256-byte local
+ * buffer; adequate for short value_json strings (lobby ids, booleans,
+ * small JSON objects). */
+static void
+push_result(UReplSession *s, uint64_t id, const char *value_json)
+{
+    char env[256];
+    size_t n = 0;
+    if (urepl_ndjson_emit_result(env, sizeof(env), id, value_json, 0, &n) == 0)
+        push_env(s, env, n);
+}
+
 static void
 dispatch_eval(UReplServer *server, UReplSession *s, UReplJob *job)
 {
@@ -512,10 +537,7 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
          * error (not just EOF), then schedule teardown so the VM thread
          * closes the session on the next reap pass.  This prevents a
          * brute-force loop from keeping the session open indefinitely. */
-        if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
-                                    "auth_failed", NULL, &n) == 0) {
-            push_env(s, env, n);
-        }
+        push_error(s, job->req.id, "auth_failed", NULL);
         urepl_request_teardown(s);
     }
 #else
@@ -557,22 +579,12 @@ dispatch_introspect(UReplServer *server, UReplSession *s, UReplJob *job)
                                    obj, strlen(obj),
                                    inner, sizeof(inner), &inner_n);
     } else {
-        char env[256];
-        size_t n = 0;
-        if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
-                                    "unknown_introspect", what, &n) == 0) {
-            push_env(s, env, n);
-        }
+        push_error(s, job->req.id, "unknown_introspect", what);
         return;
     }
 
     if (rc != URBI_OK) {
-        char env[256];
-        size_t n = 0;
-        if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
-                                    "introspect_failed", what, &n) == 0) {
-            push_env(s, env, n);
-        }
+        push_error(s, job->req.id, "introspect_failed", what);
         return;
     }
 
@@ -594,12 +606,7 @@ dispatch_cancel_stub(UReplServer *server, UReplSession *s, const UReplJob *job)
     /* Task 26 wires real tag.stop() lookup.  Stub: emit cancelled:0
      * (spec §6.6 "unknown tag is a benign no-op"). */
     (void)server;
-    char env[256];
-    size_t n = 0;
-    if (urepl_ndjson_emit_result(env, sizeof(env), job->req.id,
-                                 "{\"cancelled\":0}", 0, &n) == 0) {
-        push_env(s, env, n);
-    }
+    push_result(s, job->req.id, "{\"cancelled\":0}");
 }
 
 static void
@@ -610,14 +617,9 @@ dispatch_lobby_new(UReplServer *server, UReplSession *s, const UReplJob *job)
      * the implicit lobby).  Caller gets a result envelope with the lobby
      * field as a JSON string. */
     (void)server;
-    char env[256];
-    size_t n = 0;
     char value_json[32];
     snprintf(value_json, sizeof(value_json), "\"%s\"", s->lobby_id_hex);
-    if (urepl_ndjson_emit_result(env, sizeof(env), job->req.id,
-                                 value_json, 0, &n) == 0) {
-        push_env(s, env, n);
-    }
+    push_result(s, job->req.id, value_json);
 }
 
 static void
@@ -628,12 +630,7 @@ dispatch_lobby_close(UReplServer *server, UReplSession *s, const UReplJob *job)
      * Return result:true so clients can sequence shutdown. */
     (void)server;
     (void)s;
-    char env[256];
-    size_t n = 0;
-    if (urepl_ndjson_emit_result(env, sizeof(env), job->req.id,
-                                 "true", 0, &n) == 0) {
-        push_env(s, env, n);
-    }
+    push_result(s, job->req.id, "true");
 }
 
 /* ---- Job entry point ------------------------------------------------- */
@@ -693,13 +690,8 @@ urepl_dispatch_job(UReplServer *server, UReplJob *job)
         }
         s->rate_jobs_this_sec++;
         if (s->rate_jobs_this_sec > server->cfg.rate_limit_per_second) {
-            char env[256];
-            size_t n = 0;
-            if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
-                                        "rate_limit_exceeded",
-                                        "too many requests per second", &n) == 0) {
-                push_env(s, env, n);
-            }
+            push_error(s, job->req.id, "rate_limit_exceeded",
+                       "too many requests per second");
             urepl_request_teardown(s);
             urepl_ndjson_free_req(&job->req);
             free(job);
@@ -713,14 +705,8 @@ urepl_dispatch_job(UReplServer *server, UReplJob *job)
         && server->cfg.auth_token != NULL
         && server->cfg.auth_token[0] != '\0'
         && job->req.op != UREPL_OP_AUTH) {
-        char env[256];
-        size_t n = 0;
-        if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
-                                    "auth_required",
-                                    "send {\"op\":\"auth\",\"token\":...} first",
-                                    &n) == 0) {
-            push_env(s, env, n);
-        }
+        push_error(s, job->req.id, "auth_required",
+                   "send {\"op\":\"auth\",\"token\":...} first");
         urepl_ndjson_free_req(&job->req);
         free(job);
         return;
@@ -734,15 +720,9 @@ urepl_dispatch_job(UReplServer *server, UReplJob *job)
     case UREPL_OP_LOBBY_NEW:   dispatch_lobby_new(server, s, job); break;
     case UREPL_OP_LOBBY_CLOSE: dispatch_lobby_close(server, s, job); break;
     case UREPL_OP_NONE:
-    default: {
-        char env[128];
-        size_t n = 0;
-        if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
-                                    "unknown_op", NULL, &n) == 0) {
-            push_env(s, env, n);
-        }
+    default:
+        push_error(s, job->req.id, "unknown_op", NULL);
         break;
-    }
     }
 
     urepl_ndjson_free_req(&job->req);
