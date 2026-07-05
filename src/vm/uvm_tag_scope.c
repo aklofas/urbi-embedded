@@ -85,9 +85,8 @@ vm_push_tag_scope(UVM *vm, UStrand *s)
     entry->register_count = 0U;
     entry->owning_tag     = tag;
     entry->catch_pattern  = NULL;
-    entry->next_member    = tag->member_strands_head;  /* head-insert */
     entry->strand_back    = s;
-    tag->member_strands_head = entry;
+    URBI_SLIST_PUSH(tag->member_strands_head, entry, next_member);
     /* VM-015: enter_event is unconditionally NULL on a fresh utag_create
      * (utag.c zero-fills enter_event/leave_event at allocation; only the
      * tag.enter native getter — invoked through a Tag.enter property
@@ -121,13 +120,8 @@ vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
      * list removal via next_member). Only unlink when tag is non-NULL
      * — older bytecode emitted before T30 may have owning_tag == NULL. */
     if (tag != NULL) {
-        UCleanupEntry **pp = &tag->member_strands_head;
-        while (*pp != NULL && *pp != top) {
-            pp = &(*pp)->next_member;
-        }
-        if (*pp == top) {
-            *pp = top->next_member;
-        }
+        URBI_SLIST_UNLINK(tag->member_strands_head, top, next_member,
+                          UCleanupEntry);
     }
     /* T55: tier-2 leave event hook (spec #3 §8.3).
      * Fires BEFORE the tier-1 watcher cascade so subscribers see the

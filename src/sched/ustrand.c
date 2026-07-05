@@ -7,6 +7,7 @@
 #include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uclosure.h"
+#include "runtime/ulist.h"      /* URBI_SLIST_PUSH, URBI_SLIST_UNLINK */
 #include "tag/utag.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
@@ -75,21 +76,14 @@ void
 strand_unlink_member_entry(UCleanupEntry *e)
 {
     UTag *tag;
-    UCleanupEntry **cur;
 
     if (e == NULL || e->kind != UCLEANUP_TAG_SCOPE) return;
     tag = e->owning_tag;
     if (tag == NULL) return;
 
-    cur = &tag->member_strands_head;
-    while (*cur != NULL) {
-        if (*cur == e) {
-            *cur = e->next_member;
-            e->next_member = NULL;
-            return;
-        }
-        cur = &(*cur)->next_member;
-    }
+    URBI_SLIST_UNLINK(tag->member_strands_head, e, next_member,
+                      UCleanupEntry);
+    e->next_member = NULL;
 }
 
 static void
@@ -624,10 +618,7 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
         e->flags          = (uint8_t)FLAG_TAG_AMBIENT;
         e->owning_tag     = chain[i];
         e->strand_back    = new_s;
-        e->next_member    = chain[i]->member_strands_head;
-
-        /* Head-insert this entry into the tag's member_strands_head list. */
-        chain[i]->member_strands_head = e;
+        URBI_SLIST_PUSH(chain[i]->member_strands_head, e, next_member);
     }
 }
 
