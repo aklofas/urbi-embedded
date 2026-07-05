@@ -352,6 +352,7 @@ extern void test_batch_error_surfacing_suite(void);
 extern void test_chunk_loader_hardening_suite(void);
 extern void test_default_params_suite(void);
 extern void test_message_polish_suite(void);
+extern void test_stdlib_install_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -686,6 +687,7 @@ static const struct suite_entry suites[] = {
     {"chunk_loader_hardening",                test_chunk_loader_hardening_suite},
     {"default_params",                        test_default_params_suite},
     {"message_polish",                        test_message_polish_suite},
+    {"stdlib_install",                        test_stdlib_install_suite},
     /* Add new suites here as test files are added. */
 };
 

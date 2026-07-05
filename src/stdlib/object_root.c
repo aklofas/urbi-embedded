@@ -963,6 +963,31 @@ obj_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 #endif
 }
 
+/* === urbi_install_native_methods =========================================== */
+
+int
+urbi_install_native_methods(UVM *vm, UObject *proto,
+                            const UNativeMethodDef *table, size_t count)
+{
+    size_t i;
+    if (proto == NULL) return URBI_ERR_OOM;
+    for (i = 0; i < count; i++) {
+        UClosure *cl = urbi_native_closure_create(vm, table[i].fn);
+        if (cl == NULL) return URBI_ERR_OOM;
+
+        USymbol *sym = (USymbol *)ustr_intern(
+            vm, table[i].name, urbi_strlen(table[i].name));
+        if (sym == NULL) return URBI_ERR_OOM;
+
+        UValue v = urbi_make_nil();
+        v.kind = (uint8_t)UVAL_CLOSURE;
+        v.v.p = cl;
+        int rc = urbi_object_set_local_slot(vm, proto, sym, v);
+        if (rc != 0) return URBI_ERR_OOM;
+    }
+    return URBI_OK;
+}
+
 /* === urbi_object_root_register ============================================= */
 
 typedef struct {

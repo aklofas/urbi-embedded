@@ -55,6 +55,29 @@ struct USymbol;
 struct UClosure *urbi_native_closure_create(struct UVM *vm,
                                             urbi_native_method_fn fn);
 
+/* === Shared native-method installer ======================================
+ *
+ * UNativeMethodDef: one {name, fn} entry for a method table.
+ *
+ * urbi_install_native_methods: installs table[0..count) as UVAL_CLOSURE
+ * slots on proto.  Returns URBI_OK on success, URBI_ERR_OOM on any
+ * allocation or intern failure (stops at the failing entry; earlier entries
+ * stay installed — matches every caller's existing behavior).
+ *
+ * URBI_REGISTER_METHODS: convenience macro that infers count via sizeof. */
+
+typedef struct {
+    const char           *name;
+    urbi_native_method_fn fn;
+} UNativeMethodDef;
+
+int urbi_install_native_methods(struct UVM *vm, struct UObject *proto,
+                                const UNativeMethodDef *table, size_t count);
+
+#define URBI_REGISTER_METHODS(vm, proto, tbl) \
+    urbi_install_native_methods((vm), (proto), (tbl), \
+                                sizeof(tbl) / sizeof((tbl)[0]))
+
 /* === urbi_object_root_register ===
  *
  * Install the nine Object root C-native methods on vm->atom_object.
