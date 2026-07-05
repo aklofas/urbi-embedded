@@ -21,6 +21,7 @@
 #include "tag/utag.h"           /* UTag, member_watchers_head */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
+#include "runtime/ulist.h"    /* URBI_SLIST_UNLINK */
 #include "event/uevent_subscribe.h"   /* uevent_at_watchers_remove */
 #include <stddef.h>
 #include <stdint.h>
@@ -308,15 +309,7 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
             w->event = NULL;
         }
     } else {
-        /* Unlink from active_watchers_head via pointer-to-pointer walk. */
-        struct UWatcher **pp = &vm->active_watchers_head;
-        while (*pp != NULL) {
-            if (*pp == w) {
-                *pp = w->next_active;
-                break;
-            }
-            pp = &(*pp)->next_active;
-        }
+        URBI_SLIST_UNLINK(vm->active_watchers_head, w, next_active, UWatcher);
     }
 
     /* SCHED-06: the count covers ALL armed watchers (cond + event modes,
