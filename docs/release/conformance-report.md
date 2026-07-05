@@ -11,19 +11,22 @@ summarized here.
 ## Headline
 
 - **Language core (control / reactive / tags / concurrency / OOP / exceptions):**
-  ≈ **75–79%** of the in-scope legacy surface implemented. The differentiating
+  ≈ **80–84%** of the in-scope legacy surface implemented. The differentiating
   parts of urbiscript — separators-encode-concurrency, `at`/`whenever`/`waituntil`,
   first-class tags with stop/block/freeze, prototype OOP, `try`/`catch`/`finally` —
-  are done.
+  are done. After the v0.13.5 conformance pass, truthiness, statement-operand
+  folding, unbraced bodies, switch default, default parameters, universal
+  asString, and tag-watcher persistence are also fully aligned with legacy.
 - **Stdlib data layer (String / List / Dict / Object-reflection / Integer / Float):**
-  ≈ **80% usage-weighted** after the v0.12.4 stdlib-completeness arc (was ≈ 50% at
-  the 2026-06-01 compat-2 audit). The audit's biggest gaps — `List.each`/`sort`,
-  `Dict.keys`/`values`/`each`, `String.split`/`join`/`format`, `Object.slotNames`/
-  reflection, `Integer.times`, `%` modulo, `&&`/`||` — all shipped in v0.12.4.
+  ≈ **85% usage-weighted** after the v0.13.5 conformance-and-stdlib arc. The
+  v0.12.4 stdlib arc closed the high-traffic gaps; v0.13.5 adds `String.format`
+  / `%`, compat aliases (`println`/`echo`/`display`), `List.sort(comparator)`,
+  typed exceptions from div-by-zero and out-of-range subscript, and a RegExp
+  execution budget.
 - **Pass-rate on the implemented surface: 100%.** All active `.chk` conformance
-  fixtures pass (331 total fixtures: 218 active script-driven + 9 preset-gated
+  fixtures pass (384 total fixtures: 271 active script-driven + 9 preset-gated
   ros/urobotics + 16 REPL NDJSON + 88 annotated placeholders for
-  blocked/deferred/dropped features), plus 2076 unit cases / 15293 checks.
+  blocked/deferred/dropped features), plus 2232 unit cases / 16735 checks.
   Since v0.13.0 the runner is honest about this denominator: placeholders and
   vacuous fixtures are distinct tallied outcomes, fixture exit status is
   checked, and every fixture runs under a timeout (refactor-3 CHK-01..04).
