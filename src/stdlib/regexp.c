@@ -20,7 +20,7 @@
  * No capture groups at v1.0 — RegExp.match is an alias of RegExp.test.
  * Captures are tracked as a v1.x follow-up.
  *
- * Backtracking budget (STD-04):
+ * Backtracking budget:
  *   RE_BUDGET_STEPS — maximum re_match_here_b calls per urbi_regexp_search
  *     invocation.  Bounds worst-case run-time; 1 000 000 steps at an
  *     embedded Cortex-M7 rate (~10 ns/step) ≈ 10 ms.  Real patterns

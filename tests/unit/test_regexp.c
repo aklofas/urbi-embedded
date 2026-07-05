@@ -5,7 +5,7 @@
  * across literals, `.`, `*`, `+`, `?`, `^`, `$`, and char classes, plus the
  * end-to-end RegExp.new / .test / .match surface.
  *
- * Budget tests (STD-04): catastrophic backtracking pattern returns -1 (budget
+ * Budget tests: catastrophic backtracking pattern returns -1 (budget
  * exceeded) rather than spinning; depth-bomb pattern hits depth cap rather
  * than overflowing the C stack on embedded targets; the script-visible surface
  * raises a catchable RangeError when the budget is exhausted. */
