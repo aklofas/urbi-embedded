@@ -182,6 +182,27 @@ static inline uint16_t uemit_jmp_offset_backward(int from_pc, int target_pc) {
     return (uint16_t)((int)UEMIT_JMP_BIAS + offset);
 }
 
+/* Forward-jump placeholder helpers.
+ *
+ * emit_fwd_jmp — emit an OP_JMP with UEMIT_JMP_BIAS (the placeholder offset)
+ * and return the PC of that instruction for later patching.  May set e->error
+ * via emit_instr; callers that check e->error immediately after the old
+ * emit_instr call must check it immediately after emit_fwd_jmp instead.
+ *
+ * patch_fwd_jmp_here — patch the placeholder at jmp_pc so it jumps to the
+ * current instruction count (i.e., the instruction emitted next).  Pair with
+ * emit_fwd_jmp; do NOT use for back-edges (use uemit_jmp_offset_backward) or
+ * for non-JMP opcodes (TRY_BEGIN / PUSH_TAG handler-pc patches stay open-coded). */
+static inline int emit_fwd_jmp(UEmitter *e, uint32_t line) {
+    int pc = (int)emit_instr_count(e);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
+    return pc;
+}
+static inline void patch_fwd_jmp_here(UEmitter *e, int jmp_pc) {
+    emit_patch_instr(e, jmp_pc, uinstr_enc_abx(OP_JMP, 0U,
+        uemit_jmp_offset(jmp_pc, (int)emit_instr_count(e))));
+}
+
 /* --- Register-allocator micro-helpers (inline for zero overhead) ---
  * Promoted from static in uemit.c so that extracted TUs (uemit_react.c, etc.)
  * can use them without implicit-declaration warnings. */

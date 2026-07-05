@@ -269,8 +269,7 @@ uint8_t emit_logical_arm(UEmitter *e, UAstNode *n) {
     emit_instr(e, uinstr_enc_abc(OP_TESTSET, rd, rd, c), (uint32_t)n->line);
 
     /* JMP placeholder — when taken, skips the RHS evaluation (short-circuit). */
-    int jmp_skip = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+    int jmp_skip = emit_fwd_jmp(e, (uint32_t)n->line);
 
     /* RHS path: evaluate RHS starting at rd (reset cursor so RHS reuses the
      * temp zone above rd), then move the value into rd if it landed elsewhere. */
@@ -282,11 +281,7 @@ uint8_t emit_logical_arm(UEmitter *e, UAstNode *n) {
     }
 
     /* Patch the short-circuit JMP to land just past the RHS path. */
-    {
-        int after = (int)emit_instr_count(e);
-        emit_patch_instr(e, jmp_skip,
-            uinstr_enc_abx(OP_JMP, 0U, uemit_jmp_offset(jmp_skip, after)));
-    }
+    patch_fwd_jmp_here(e, jmp_skip);
 
     /* Result is in rd; free the RHS temps. */
     e->next_reg = rd + 1U;

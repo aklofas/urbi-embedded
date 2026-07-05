@@ -382,8 +382,7 @@ uint8_t emit_function_literal(UEmitter *e,
             emit_instr(e, uinstr_enc_abx(OP_LOADK, tmp, kmin), pline);
             emit_instr(e, uinstr_enc_abc(OP_LT, 0U, (uint8_t)argc_slot, tmp),
                        pline);
-            int jmp_ok = (int)emit_instr_count(e);
-            emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), pline);
+            int jmp_ok = emit_fwd_jmp(e, pline);
             emit_instr(e, uinstr_enc_abx(OP_LOADK, tmp, kmsg), pline);
             uemit_throw(e, tmp, pline);
             /* Bail BEFORE the patch on any emit failure above: a failed
@@ -396,10 +395,7 @@ uint8_t emit_function_literal(UEmitter *e,
                 uemit_close_function(e);
                 return 0U;
             }
-            emit_patch_instr(e, jmp_ok,
-                uinstr_enc_abx(OP_JMP, 0U,
-                               uemit_jmp_offset(jmp_ok,
-                                                (int)emit_instr_count(e))));
+            patch_fwd_jmp_here(e, jmp_ok);
             e->next_reg = child_fs->freereg;  /* release tmp */
         }
 
@@ -425,8 +421,7 @@ uint8_t emit_function_literal(UEmitter *e,
                 emit_instr(e, uinstr_enc_abx(OP_LOADK, tmp, ki), dline);
                 emit_instr(e, uinstr_enc_abc(OP_LE, 0U, (uint8_t)argc_slot, tmp),
                            dline);
-                int jmp_skip = (int)emit_instr_count(e);
-                emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), dline);
+                int jmp_skip = emit_fwd_jmp(e, dline);
                 uint8_t r = emit_expr(e, def);
                 if (e->error != EMIT_OK) {
                     e->in_cleanup_body = saved_icb;
@@ -443,10 +438,7 @@ uint8_t emit_function_literal(UEmitter *e,
                     uemit_close_function(e);
                     return 0U;
                 }
-                emit_patch_instr(e, jmp_skip,
-                    uinstr_enc_abx(OP_JMP, 0U,
-                                   uemit_jmp_offset(jmp_skip,
-                                                    (int)emit_instr_count(e))));
+                patch_fwd_jmp_here(e, jmp_skip);
                 /* Reset the temp cursor to the local-zone top for the next
                  * fill / the body (mirrors the if-arm temp-reset idiom). */
                 e->next_reg = child_fs->freereg;
@@ -571,8 +563,7 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
     emit_instr(e, uinstr_enc_abc(OP_TEST, rx, 0U, 1U), (uint32_t)n->line);
 
     /* 3. JMP placeholder to else/nil target (patched later). */
-    int jmp_to_else = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+    int jmp_to_else = emit_fwd_jmp(e, (uint32_t)n->line);
 
     /* 4. Reset cursor to rd so then-block allocates starting at rd. */
     e->next_reg = rd;
@@ -588,16 +579,10 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
     }
 
     /* 6. JMP past else/nil-load to end (patched later). */
-    int jmp_to_end = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+    int jmp_to_end = emit_fwd_jmp(e, (uint32_t)n->line);
 
     /* 7. Patch jmp_to_else → current pc (start of else/nil arm). */
-    {
-        int alt_target = (int)emit_instr_count(e);
-        emit_patch_instr(e, jmp_to_else,
-            uinstr_enc_abx(OP_JMP, 0U,
-                           uemit_jmp_offset(jmp_to_else, alt_target)));
-    }
+    patch_fwd_jmp_here(e, jmp_to_else);
 
     /* 8. Reset cursor to rd for else/nil arm. */
     e->next_reg = rd;
@@ -618,12 +603,7 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
     }
 
     /* 10. Patch jmp_to_end → current pc. */
-    {
-        int end_target = (int)emit_instr_count(e);
-        emit_patch_instr(e, jmp_to_end,
-            uinstr_enc_abx(OP_JMP, 0U,
-                           uemit_jmp_offset(jmp_to_end, end_target)));
-    }
+    patch_fwd_jmp_here(e, jmp_to_end);
 
     /* Advance next_reg past rd so callers can allocate above the result
      * via alloc_reg.  Match emit_compare_arm's protocol: rd is a TEMP
@@ -1122,8 +1102,7 @@ uint8_t emit_assert_arm(UEmitter *e, UAstNode *n) {
     emit_instr(e, uinstr_enc_abc(OP_TEST, cond_reg, 0U, 1U), (uint32_t)n->line);
 
     /* 6. JMP placeholder to throw_site (patched below). */
-    int jmp_to_throw = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+    int jmp_to_throw = emit_fwd_jmp(e, (uint32_t)n->line);
 
     /* 7. Truthy path: reset cursor to rd, emit LOADNIL. */
     e->next_reg = rd;
@@ -1136,16 +1115,10 @@ uint8_t emit_assert_arm(UEmitter *e, UAstNode *n) {
     emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
 
     /* 8. JMP placeholder to end (patched below — skip throw site). */
-    int jmp_to_end = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+    int jmp_to_end = emit_fwd_jmp(e, (uint32_t)n->line);
 
     /* 9. Patch jmp_to_throw → here (start of throw_site). */
-    {
-        int throw_target = (int)emit_instr_count(e);
-        emit_patch_instr(e, jmp_to_throw,
-            uinstr_enc_abx(OP_JMP, 0U,
-                           uemit_jmp_offset(jmp_to_throw, throw_target)));
-    }
+    patch_fwd_jmp_here(e, jmp_to_throw);
 
     /* 10. Throw site: allocate msg_reg fresh, load message string, throw. */
     {
@@ -1159,12 +1132,7 @@ uint8_t emit_assert_arm(UEmitter *e, UAstNode *n) {
     }
 
     /* 11. Patch jmp_to_end → here (past throw site). */
-    {
-        int end_target = (int)emit_instr_count(e);
-        emit_patch_instr(e, jmp_to_end,
-            uinstr_enc_abx(OP_JMP, 0U,
-                           uemit_jmp_offset(jmp_to_end, end_target)));
-    }
+    patch_fwd_jmp_here(e, jmp_to_end);
 
     /* 12. Advance next_reg past rd.  Match emit_if_arm protocol. */
     e->next_reg = rd + 1U;
@@ -1742,8 +1710,7 @@ uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
          * equal; fall through to the JMP when NOT equal. */
         emit_instr(e, uinstr_enc_abc(OP_EQ, 0U, sw_reg, val_reg), line);
 
-        int jmp_to_next = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
+        int jmp_to_next = emit_fwd_jmp(e, line);
 
         /* Body — in its own block scope so case-body `var` declarations
          * are counted locals (floor math stays consistent) and pop when
@@ -1807,12 +1774,7 @@ uint8_t emit_switch_arm(UEmitter *e, UAstNode *n) {
         emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
 
         /* Patch jmp_to_next → here (next case). */
-        {
-            int next_case = (int)emit_instr_count(e);
-            emit_patch_instr(e, jmp_to_next,
-                uinstr_enc_abx(OP_JMP, 0U,
-                               uemit_jmp_offset(jmp_to_next, next_case)));
-        }
+        patch_fwd_jmp_here(e, jmp_to_next);
     }
 
     /* default arm — emitted in the no-match fall-through position so the

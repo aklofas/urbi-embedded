@@ -152,8 +152,7 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
         if (e->error != EMIT_OK) return 0U;
 
         /* JMP to re-throw when guard is falsy (patched after catch body) */
-        jmp_past_throw_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+        jmp_past_throw_pc = emit_fwd_jmp(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
     }
 
@@ -164,31 +163,18 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
 
     if (n->u.try_stmt.catch_guard != NULL) {
         /* JMP past the re-throw (catch body has finished, guard passed) */
-        int jmp_past_rethrow_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+        int jmp_past_rethrow_pc = emit_fwd_jmp(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch jmp_past_throw → here: guard failed, re-throw */
-        {
-            int rethrow_target = (int)emit_instr_count(e);
-            emit_patch_instr(e, jmp_past_throw_pc,
-                uinstr_enc_abx(OP_JMP, 0U,
-                               uemit_jmp_offset(jmp_past_throw_pc,
-                                                rethrow_target)));
-        }
+        patch_fwd_jmp_here(e, jmp_past_throw_pc);
 
         /* OP_THROW e_reg — re-throw the original exception value */
         uemit_throw(e, e_reg, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch jmp_past_rethrow → here */
-        {
-            int past_rethrow_target = (int)emit_instr_count(e);
-            emit_patch_instr(e, jmp_past_rethrow_pc,
-                uinstr_enc_abx(OP_JMP, 0U,
-                               uemit_jmp_offset(jmp_past_rethrow_pc,
-                                                past_rethrow_target)));
-        }
+        patch_fwd_jmp_here(e, jmp_past_rethrow_pc);
     }
 
     if (cv_name != NULL && e->current_fs->nactvar > 0) {
@@ -354,8 +340,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         }
 
         /* JMP past catch */
-        int jmp_past_catch_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+        int jmp_past_catch_pc = emit_fwd_jmp(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch inner_try_begin handler_pc → catch handler */
@@ -377,13 +362,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         }
 
         /* Patch jmp_past_catch → here (past_catch_pc) */
-        {
-            int past_catch_target = (int)emit_instr_count(e);
-            emit_patch_instr(e, jmp_past_catch_pc,
-                uinstr_enc_abx(OP_JMP, 0U,
-                               uemit_jmp_offset(jmp_past_catch_pc,
-                                                past_catch_target)));
-        }
+        patch_fwd_jmp_here(e, jmp_past_catch_pc);
 
         /* OP_TRY_END (outer) */
         uemit_try_end(e, (uint32_t)n->line);
@@ -396,8 +375,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         if (!emit_finally_inline(e, n, (uint8_t)(rd + 1U))) return 0U;
 
         /* JMP past finally */
-        int jmp_past_finally_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+        int jmp_past_finally_pc = emit_fwd_jmp(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch outer_try_begin handler_pc → finally handler */
@@ -428,13 +406,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch jmp_past_finally → here */
-        {
-            int past_finally_target = (int)emit_instr_count(e);
-            emit_patch_instr(e, jmp_past_finally_pc,
-                uinstr_enc_abx(OP_JMP, 0U,
-                               uemit_jmp_offset(jmp_past_finally_pc,
-                                                past_finally_target)));
-        }
+        patch_fwd_jmp_here(e, jmp_past_finally_pc);
 
     } else if (has_catch) {
         /* === Catch-only TRY_FRAME === */
@@ -477,8 +449,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         }
 
         /* JMP past handler */
-        int jmp_past_handler_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+        int jmp_past_handler_pc = emit_fwd_jmp(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch try_begin handler_pc → catch handler */
@@ -500,13 +471,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         }
 
         /* Patch jmp_past_handler → here */
-        {
-            int past_target = (int)emit_instr_count(e);
-            emit_patch_instr(e, jmp_past_handler_pc,
-                uinstr_enc_abx(OP_JMP, 0U,
-                               uemit_jmp_offset(jmp_past_handler_pc,
-                                                past_target)));
-        }
+        patch_fwd_jmp_here(e, jmp_past_handler_pc);
 
     } else {
         /* === Finally-only TRY_FRAME === */
@@ -542,8 +507,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         if (!emit_finally_inline(e, n, (uint8_t)(rd + 1U))) return 0U;
 
         /* JMP past finally (normal exit path) */
-        int jmp_past_finally_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
+        int jmp_past_finally_pc = emit_fwd_jmp(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch try_begin handler_pc → finally handler */
@@ -573,13 +537,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch jmp_past_finally → here */
-        {
-            int past_target = (int)emit_instr_count(e);
-            emit_patch_instr(e, jmp_past_finally_pc,
-                uinstr_enc_abx(OP_JMP, 0U,
-                               uemit_jmp_offset(jmp_past_finally_pc,
-                                                past_target)));
-        }
+        patch_fwd_jmp_here(e, jmp_past_finally_pc);
     }
 
     /* rd holds the try expression's value (body result or catch result,
@@ -813,8 +771,7 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
 
     /* Emit OP_JMP past the (empty) onleave handler block. */
-    int jmp_past_handler_pc = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
+    int jmp_past_handler_pc = emit_fwd_jmp(e, line);
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
 
     /* Onleave handler block starts here.
@@ -828,13 +785,7 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
                        (uint16_t)onleave_target));
 
     /* Past-handler: JMP lands here. */
-    {
-        int past_handler_target = (int)emit_instr_count(e);
-        emit_patch_instr(e, jmp_past_handler_pc,
-            uinstr_enc_abx(OP_JMP, 0U,
-                           uemit_jmp_offset(jmp_past_handler_pc,
-                                            past_handler_target)));
-    }
+    patch_fwd_jmp_here(e, jmp_past_handler_pc);
 
     /* Close outer block (removes \x01rd and \x01tag from scope).  If the
      * body block propagated has_captured up here (uemit_close_block), this
