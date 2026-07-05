@@ -117,30 +117,28 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * partial init.  urbi_vm_destroy stays safe on any partial-init state
      * reached before the bailout. */
     int oom_seen = 0;
+    /* Backstop zero-fill: every UVM field is 0/NULL before sub-system inits
+     * run.  The volatile loop (urbi_zero, not memset) is required for
+     * freestanding builds — it defeats dead-store elimination on caller-
+     * provided memory (e.g. UVM stack-allocated in tests).
+     *
+     * Fields that need a non-zero initial value are assigned explicitly
+     * below.  The ordering comments that follow describe WHICH fields the
+     * subsystem depends on; the actual zeroing is done here once. */
+    urbi_zero(vm, sizeof(*vm));
+
 #ifdef URBI_DEBUG
     /* v0.10.1 W4: notify the refcount accounting layer that a new VM is alive.
      * Paired with urbi_proto_ref_vm_gone() in urbi_vm_destroy. */
     urbi_proto_ref_vm_born();
 #endif
 
-    /* v0.9.1 / W3-v0.10.4 — must be NULLed BEFORE any subsystem init that
-     * drives bytecode (urbi_run_chunk → urbi_step → urepl_dispatch_drain_if_active
-     * reads this field).  Initialized first so partial-init bailout paths
-     * never leave it as stack garbage.  vm->repl is allocated by
-     * urepl_state_create (src/repl/urepl.c) only when a REPL server is
-     * started; it stays NULL until then. */
-    vm->repl = NULL;
-    /* v0.9.1 Task 22 — must be NULLed BEFORE object_roots_walker runs.
-     * Tests that don't call urbi_stdlib_boot still trigger GC slices via
-     * realm creation, and the walker dereferences vm->debug_proto if
-     * non-NULL.  Stack-allocated UVMs would otherwise leak stack garbage
-     * into the shade-gray path and segfault. */
-    vm->debug_proto = NULL;
-#ifdef URBI_ENABLE_ROS2
-    /* v0.12.0: must be NULLed before object_roots_walker runs (same reason
-     * as debug_proto above — stack-allocated UVMs have garbage here otherwise). */
-    vm->ros_proto = NULL;
-#endif
+    /* v0.9.1 / W3-v0.10.4 — vm->repl must be NULL before any subsystem init
+     * that drives bytecode (urbi_run_chunk → urbi_step →
+     * urepl_dispatch_drain_if_active reads this field).  vm->debug_proto must
+     * be NULL before object_roots_walker runs (walker dereferences it if
+     * non-NULL).  Both are covered by the urbi_zero backstop above; this
+     * comment is the preserved ordering exemplar for stack-allocated UVMs. */
 
     vm->alloc_fn = alloc_fn;
     vm->alloc_ud = alloc_ud;
@@ -156,68 +154,10 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * drives the scheduler/GC). NULL-on-OOM ⇒ trace simply stays disabled. */
     urbi_trace_init(vm);
 #endif
-    vm->last_error = UVM_OK;
-    vm->last_errmsg[0] = '\0';
-    vm->intern_table = NULL;
     vm->topology_gen   = 1ULL;   /* pre-M4 topology spec §3.1: init=1, 0 reserved */
     vm->lookup_id      = 1ULL;   /* pre-M4 prototype-chain spec §7.1 */
-    vm->next_object_id = 0U;     /* pre-M4 prototype-chain spec §8.1 (first alloc → 1) */
-    vm->root_shape     = NULL;   /* lazy-allocated by urbi_shape_root */
-
-    /* M4 atom-family singletons (T8) + M6 Phase 4 (Boolean/Nil/Void): all
-     * NULL until first lazy-create. */
-    vm->atom_object  = NULL;
-    vm->atom_integer = NULL;
-    vm->atom_float   = NULL;
-    vm->atom_string  = NULL;
-    vm->atom_list    = NULL;
-    vm->atom_dict    = NULL;
-    vm->atom_tag     = NULL;
-    vm->atom_event   = NULL;
-    vm->atom_symbol  = NULL;
-    vm->atom_boolean = NULL;
-    vm->atom_nil     = NULL;
-    vm->atom_void    = NULL;
-
-    /* M5 T53/T54 native proto objects: NULL until event/tag_native_register. */
-    vm->event_proto = NULL;
-    vm->tag_proto   = NULL;
-
-    /* M4 T30 — UChunkInstance registry head: empty until first
-     * urbi_chunk_instance_create. */
-    vm->module_instances_head = NULL;
-
-    vm->last_return_closure  = NULL;
-
-    /* --- M3 field zero-init (rows 8, 9, 10, 11) --- */
-    /* Liveness counters (refactor-3 SCHED-13: integrated by urbi_vm_liveness). */
-    vm->strand_runnable_count   = 0U;
-    vm->strand_suspended_count  = 0U;
-    vm->strand_waiting_count    = 0U;
-    /* watcher_active_count moved to vm->watchers->active_count (W2/v0.10.4) */
-    vm->wakeup_pending_count    = 0U;
-    vm->host_call_pending_count = 0U;
-
-    /* Realm / fatal-strand pointers. */
-    vm->realms_head  = NULL;
-    vm->global_realm = NULL;
-    vm->fatal_strand = NULL;
-    vm->realm_id_seq = 0U;
-
-    /* Scheduler queues and step-driver state. */
-    vm->ready_head             = NULL;
-    vm->ready_tail             = NULL;
-    vm->sleep_q_head           = NULL;
-    vm->step_budget_remaining  = 0U;
-    vm->gc_pending             = 0U;
-    /* watcher_dirty_count moved to vm->watchers->dirty_count (W2/v0.10.4) */
-    vm->flag_preemption        = 0U;
-    vm->flag_reserved[0]       = 0U;
-    vm->flag_reserved[1]       = 0U;
-    vm->flag_reserved[2]       = 0U;
 
     /* ISR ring: allocate and initialise the SPSC event ring. */
-    vm->event_ring = NULL;
     if (vm->alloc_fn) {
         vm->event_ring = (struct UEventRing *)vm->alloc_fn(
                 NULL, sizeof(UEventRing), vm->alloc_ud);
@@ -232,54 +172,19 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     }
 
     /* GC state machine.
-     * gc_phase = 0 = IDLE per row 10 §6.2; named constant lands at T22. */
-    vm->gc_phase            = 0U;
-    vm->current_white       = 0U;
-    vm->gc_paused           = 0U;
-    vm->in_destroy_callback = 0U;
-    vm->gc_stress_armed     = 0U;   /* armed at the end of init (success path only) */
-    vm->gc_live_bytes       = 0U;
-    vm->gc_surviving_bytes  = 0U;
-    vm->gc_total_allocated  = 0U;
-    vm->gc_cycles           = 0U;
-    vm->gc_slices           = 0U;
-    vm->last_gc_us          = 0U;
-    vm->total_gc_us         = 0U;
+     * gc_phase = 0 = IDLE per row 10 §6.2; named constant lands at T22.
+     * (GC fields zeroed by urbi_zero backstop above.) */
 #if URBI_PERF_COUNTERS
     urbi_perf_reset(vm);
 #endif
-#if URBI_MEM_DEBUG
-    vm->memdbg = NULL;   /* lazily allocated on first urbi_gc_alloc */
-#endif
-    vm->all_cells_head      = NULL;
-    vm->gray_work_head      = NULL;
-    vm->sweep_cursor        = NULL;
-    vm->sweep_cursor_prev   = NULL;
-    vm->c_roots_head        = NULL;   /* v0.13.2: VM-level C-stack root chain */
 
     /* T19 ISR-check + debug watchdog hooks: initialize before any subsystem
      * calls URBI_ASSERT_NOT_ISR (T23 onwards). */
-    vm->isr_check_fn           = NULL;
-    vm->isr_check_ud           = NULL;  /* v0.10.3 W3 */
-    vm->host_log_fn            = NULL;
-    vm->host_log_ud            = NULL;  /* v0.10.3 W3 */
     vm->callback_warn_us       = URBI_CALLBACK_WARN_US;
     vm->callback_watchdog_mode = URBI_WATCHDOG_WARN;
-    vm->pad_watchdog[0]        = 0U;
-    vm->pad_watchdog[1]        = 0U;
-    vm->pad_watchdog[2]        = 0U;
 
     /* Delegate threshold + debt init to the GC strategy (T23). */
     urbi_gc_init(vm);
-
-    /* GC root provider registry: zero before registering providers. */
-    {
-        uint8_t i;
-        for (i = 0U; i < (uint8_t)URBI_MAX_ROOT_PROVIDERS; i++) {
-            vm->root_providers[i] = NULL;
-        }
-    }
-    vm->root_provider_count = 0U;
 
     /* Register default root providers.
      * Order: scheduler, realm, intern, host-handle, vm-misc, watcher table. */
@@ -306,14 +211,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * (urbi_object_register_gc_roots).  v0.13.2 rewrites the watcher
      * provider IN PLACE (count stays 11). */
 
-    /* Type table + host-handle table. */
-    {
-        int i;
-        for (i = 0; i < 256; i++) {
-            vm->type_table[i] = NULL;
-        }
-    }
-    vm->host_type_count      = 0U;
+    /* Type table + host-handle table.
+     * (type_table[] and host_type_count zeroed by urbi_zero backstop.) */
 
     /* Register built-in M4 object-model UType descriptors directly into
      * vm->type_table[].  Built-in tags can't go through urbi_register_type
@@ -339,9 +238,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * task (T59) makes Event/Tag resolvable by name, at which point the cell
      * counts in the affected unit tests will be updated in the same commit. */
 
-    vm->handle_table         = NULL;
-    vm->handle_table_cap     = 0U;
-    vm->handle_table_next_id = 0U;
+    /* (handle_table, watchers, trace, cur_strand zeroed by urbi_zero backstop.) */
 
     /* W2+W3/v0.10.4 substate allocations.
      *
@@ -351,15 +248,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      *
      * Test-seam substate (W3/v0.10.4): UTestHooks struct, allocated below
      * after the allocator is wired so alloc_fn is available. */
-    vm->watchers = NULL;
-    vm->active_watchers_head = NULL;
-    vm->trace_overflow       = 0U;
-    vm->_pad_trace[0]        = 0U;
-    vm->_pad_trace[1]        = 0U;
-    vm->_pad_trace[2]        = 0U;
-    vm->trace_read_set_count = 0U;
-    /* trace_read_set[] is uninitialized: only read when watchers->in_install is
-     * set, and entries are written before they are read. */
+    /* trace_read_set[] is only read when watchers->in_install is set;
+     * entries are written before they are read (covered by urbi_zero). */
     {
         UWatcherState *ws = uwatcher_state_create(vm);
         if (ws == NULL) {
@@ -367,15 +257,11 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         }
         vm->watchers = ws;
     }
-    vm->test_hooks = NULL;
-    vm->pending_onleave_head   = NULL;
-    vm->pending_onleave_tail   = NULL;
 
-    /* spec #3 §7.1: cur_strand is set by urbi_step around dispatch and
-     * cleared after.  Must be NULL on a fresh VM so callers (e.g. the
+    /* spec #3 §7.1: cur_strand must be NULL so callers (e.g. the
      * EVENT-022 step-quiescent assert in urbi_register_event_drain) can
-     * trust it as the canonical "step in progress" signal. */
-    vm->cur_strand             = NULL;
+     * trust it as the canonical "step in progress" signal.
+     * (Covered by urbi_zero backstop.) */
 
     /* Watcher pool: allocate after field zero-init and after GC init
      * so pool_alloc can use vm->current_white and vm->alloc_fn is set.
@@ -387,14 +273,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         oom_seen = 1;
     }
 
-    /* Deferred slot-change ring (spec #4 §3.5): one allocation per VM. */
-    vm->slot_change_reentrancy_warned = 0U;
-    vm->slot_change_ring_full_warned  = 0U;
-    vm->event_sync_degradation_warned = 0U;  /* EMITR-005 one-shot flag */
-    vm->deferred_slot_changes_head    = 0U;
-    vm->deferred_slot_changes_tail    = 0U;
-    vm->deferred_slot_changes_cap     = 0U;
-    vm->deferred_slot_changes         = NULL;
+    /* Deferred slot-change ring (spec #4 §3.5): one allocation per VM.
+     * (Head/tail/cap/warnings zeroed by urbi_zero backstop.) */
     if (vm->alloc_fn) {
         size_t ring_bytes = (size_t)URBI_DEFERRED_SLOT_CHANGE_RING_SIZE
                             * sizeof(UDeferredSlotChange);
@@ -414,101 +294,34 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;
-    vm->host_time_ud = NULL;  /* v0.10.3 W3 */
-
-    /* Gap E (v0.7.1): pluggable I/O writer; NULL selects the built-in default. */
-    vm->writer_fn = NULL;
-    vm->writer_ud = NULL;
-
-    /* Gap S (v0.7.1): wake notification hook; NULL = embedder polls urbi_step. */
-    vm->wake_fn = NULL;
-    vm->wake_ud = NULL;
-
-    /* T57: ISR drain handler (spec #3 §9): NULL until host registers one. */
-    vm->event_drain_handler = NULL;
-    vm->event_drain_ud      = NULL;  /* v0.10.3 W3 */
+    /* (host_time_ud, writer_fn/ud, wake_fn/ud, event_drain_handler/ud,
+     * stdlib protos, atomic_active, error_ring, ref_table scalars — all
+     * zeroed by urbi_zero backstop above.) */
 
     /* M6 Phase 3: stdlib state. */
-    /* stdlib_closures + stdlib_upvalues deleted at v0.8.4 Step C-3 (GC-managed). */
-    /* stdlib_protos + stdlib_nested_arrays deleted at Task 11 (v0.8.1-uproto-root). */
-    vm->rescued_protos         = NULL;   /* Phase 2 Task 9 (v0.8.1): whole-root_proto rescue list */
-    vm->stdlib_module          = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
-#ifdef URBI_ENABLE_UROBOTICS
-    vm->urobotics_module       = NULL;   /* v0.12.2: lazy-allocated by urbi_urobotics_register */
-#endif
-    vm->stdlib_containers      = NULL;   /* M6 Phase 6: backing-buffer head; populated by container .new() bodies */
-    vm->container_pair_proto    = NULL;  /* M6 Phase 6 — populated by urbi_stdlib_register_containers */
-    vm->container_triplet_proto = NULL;
-    vm->container_tuple_proto   = NULL;
-    vm->exception_proto         = NULL;  /* M6 Phase 7 — populated by urbi_stdlib_register_runtime_types */
-    vm->typeerror_proto         = NULL;  /* populated by urbi_exception_subclass_protos_resolve */
-    vm->arityerror_proto        = NULL;
-    vm->lookuperror_proto       = NULL;
-    vm->oomerror_proto          = NULL;
-    vm->indexerror_proto        = NULL;  /* v0.13.5 — populated by urbi_exception_subclass_protos_resolve */
-    vm->rangeerror_proto        = NULL;
-    vm->divbyzero_proto         = NULL;
-    vm->math_proto              = NULL;  /* M6 Phase 8 T86 — populated by urbi_stdlib_register_namespaces */
-    vm->system_proto            = NULL;  /* M6 Phase 8 T87 */
-    vm->platform_proto          = NULL;  /* M6 Phase 8 T88 */
-    vm->global_namespace_proto  = NULL;  /* M6 Phase 8 T90 */
-    vm->callmessage_proto       = NULL;  /* M6 Phase 8 T91 */
-    vm->mutex_proto             = NULL;  /* M6 Phase 9 T94 — populated by urbi_stdlib_register_primitives */
-    vm->date_proto              = NULL;  /* M6 Phase 9 T95 */
-    vm->duration_proto          = NULL;  /* M6 Phase 9 T96 */
-    vm->regexp_proto            = NULL;  /* v1.0 stdlib-completeness — populated by urbi_stdlib_register_regexp */
-    vm->lobby_proto             = NULL;  /* v0.9.1 Phase 5 — populated by urbi_lobby_native_register */
-    vm->job_proto               = NULL;  /* v0.10.10 D7-A — populated by urbi_job_proto_register */
-    vm->channel_proto           = NULL;  /* v0.10.11 D6 — populated by urbi_channel_proto_resolve */
-    vm->every_native_closure    = NULL;  /* v0.9.4 Phase 5 — populated by urbi_temporal_native_register */
-    vm->periodics_head          = NULL;  /* v0.9.4 Phase 5 — every() periodic registry head */
-    vm->stdlib_booted          = 0U;
-    vm->heap_locked            = 0U;  /* Phase 13 / T145: one-way urbi_lock_heap latch */
-    {
-        int i;
-        for (i = 0; i < 6; i++) vm->pad_stdlib[i] = 0U;
-    }
+    /* (All stdlib proto pointers zeroed by urbi_zero backstop above.
+     * stdlib_closures + stdlib_upvalues deleted at v0.8.4 Step C-3.
+     * stdlib_protos + stdlib_nested_arrays deleted at Task 11.) */
 
-    /* T33 (v0.7.0 Wave 1): watcher-body-completion host callback.
-     * NULL default; embedders opt in via urbi_set_watcher_body_done_fn. */
-    vm->watcher_body_done_fn = NULL;
-    vm->watcher_body_done_ud = NULL;  /* v0.10.3 W3 */
-
-    /* Gap R (v0.7.1): atomic event section state.
-     * atomic_active must be zero so that uevent_ring_drain is NOT gated on
-     * entry.  Forgetting this init would make every test that puts `UVM vm;`
-     * on the C stack see garbage in atomic_active, silently blocking drains. */
-    vm->atomic_active   = 0U;
-    vm->atomic_begin_us = 0U;
-    {
-        int i;
-        for (i = 0; i < 7; i++) vm->pad_atomic[i] = 0U;
-    }
+    /* Gap R (v0.7.1): atomic_active must be zero so uevent_ring_drain is
+     * NOT gated on entry.  Covered by urbi_zero backstop above. */
 
     /* Gap B (v0.7.1): named-event registry.
-     * Zero-initialize so uevent_registry_add knows entries == NULL on first use. */
+     * uevent_registry_init zeroes entries/count/capacity/next_id. */
     uevent_registry_init(&vm->event_registry);
 
     /* Gap J (v0.7.1): host-side watcher table.
-     * Zero-initialize so uhost_watcher_table_add knows entries == NULL on first use. */
+     * next_handle must start at 1 (0 = URBI_WATCHER_HANDLE_INVALID). */
     uhost_watcher_table_init(&vm->host_watcher_table);
 
-    /* Gap P (v0.7.1): error ring buffer — inline storage, no heap.
-     * Only head and count need zeroing (bufs are uninitialized until written). */
-    vm->error_ring.head  = 0U;
-    vm->error_ring.count = 0U;
-
     /* Gap Q (v0.7.1): reference table — heap-allocated lazily on first urbi_ref.
+     * free_list_head sentinel is non-zero (SIZE_MAX); other fields are zero.
      * Register the GC root walker so pinned values survive collection. */
-    vm->ref_table.slots          = NULL;
-    vm->ref_table.capacity       = 0U;
-    vm->ref_table.used           = 0U;
     vm->ref_table.free_list_head = (size_t)-1;  /* SIZE_MAX: no free slots */
     urbi_gc_register_root_provider(vm, ref_table_walk_roots);
 
-    /* vm->repl already NULLed at the top of urbi_vm_init (the step-driver
-     * hook reads it on every urbi_step call, including those issued by
-     * partial-init paths).  REPL state is allocated by urepl_state_create
+    /* vm->repl is zeroed by urbi_zero backstop (the step-driver hook reads it
+     * on every urbi_step call).  REPL state is allocated by urepl_state_create
      * only when a server is started (W3/v0.10.4). */
 
     /* W3/v0.10.4: allocate the UTestHooks wrapper so tests can install
@@ -525,7 +338,6 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
      * stack would overflow with a 4 KB inline IC). */
-    vm->op_overload_ic = NULL;
     if (vm->alloc_fn != NULL) {
         UOpOverloadIC *ic = (UOpOverloadIC *)vm->alloc_fn(
                 NULL, sizeof(UOpOverloadIC), vm->alloc_ud);
