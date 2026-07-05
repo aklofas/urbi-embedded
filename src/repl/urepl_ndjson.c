@@ -729,6 +729,8 @@ urepl_ndjson_emit_error(char *buf, size_t cap, uint64_t id_or_zero,
     return finish(buf, cap, off, out_len);
 }
 
+/* Reserved wire shape — not yet emitted by the server (spec §6 defines
+ * the envelope; the server-side push path lands in a future release). */
 int
 urepl_ndjson_emit_event(char *buf, size_t cap,
                         const char *lobby, const char *name,
@@ -755,6 +757,8 @@ urepl_ndjson_emit_event(char *buf, size_t cap,
     return finish(buf, cap, off, out_len);
 }
 
+/* Reserved wire shape — not yet emitted by the server (spec §6 defines
+ * the envelope; teardown wiring lands in a future release). */
 int
 urepl_ndjson_emit_goodbye(char *buf, size_t cap, const char *reason, size_t *out_len)
 {
