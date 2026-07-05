@@ -180,8 +180,21 @@ urbi_stdlib_register_runtime_types(UVM *vm)
 
     /* Wire exception_proto into the Object proto chain so that Exception
      * inherits Object methods (addProto, setSlot, hasSlot, clone, isA,
-     * etc.).  Required for the legacy Exception.Lookup alias installed by
-     * the stdlib blob via Exception.addProto(ExceptionLookupAlias). */
+     * etc.).
+     *
+     * Why: exception_proto is allocated with an empty proto list, so
+     * without this call `Exception.addProto(...)` is unreachable — and the
+     * stdlib blob's Exception.addProto(ExceptionLookupAlias) (the legacy
+     * Exception.Lookup alias, exception_subclasses.u) needs it.
+     *
+     * Legacy-conformant: upstream Exception inherits Object via Traceable
+     * (exception.u:16), so legacy Exception always had the full Object
+     * surface.
+     *
+     * Side-effect (intentional): exception_proto itself now answers the
+     * whole Object surface — asString/clone/etc. work on the proto, not
+     * just on instances.  Tasks wiring typed exceptions should rely on
+     * this chain rather than re-adding Object per subclass proto. */
     {
         UObject *obj_root = urbi_object_root(vm);
         if (obj_root != NULL) {

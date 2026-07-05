@@ -11,7 +11,7 @@
 #   List.<<         → list_add          (list.u:35 copySlot("insertBack","<<"))
 #   List.+          → list_concat       (list.cc:88 BIND(PLUS, operator+))
 #   List.head       → get(0) overlay    (list.u:106 copySlot("front","head"))
-#   Dict.size       → dict_length       (legacy container idiom .size on Dict)
+#   Dict.size       → dict_length       (dictionary.cc:91 BINDG(size))
 #   Exception.Lookup → LookupError      (exception.u:379 Exception.Lookup class)
 
 # ── String.length (legacy alias for size) ─────────────────────────────────────
@@ -89,3 +89,17 @@ Exception.Lookup.isA(Exception)
 # Channel.<< is unaffected — still routes through Channel.echo, not list_add.
 var co = Channel.new("test_ch"); co.hasSlot("<<")
 [00000020] true
+
+# ── List.<< chained (corpus flagship shape) ───────────────────────────────────
+# Legacy corpus uses the chained idiom l << a << b << c, which requires <<
+# (list_add) to return the receiver so the next << applies to the same list.
+var lch = List.new(); lch << 10 << 20 << 30; lch.length()
+[00000021] 3
+
+# ── List.head on the empty list raises ────────────────────────────────────────
+# Legacy raises "cannot be applied onto empty list" (list.cc:115-117); ours
+# raises via get(0)'s bounds check with a different message text.  Same
+# raise-on-empty semantics, divergent message — recorded decision; we pin
+# OUR message here.
+try { List.new().head() } catch (var e) { e.message }
+[00000022] "TypeError: get: index out of range"
