@@ -798,14 +798,13 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
             (uint32_t)(uintptr_t)tag);
 
     /* (1) Deposit pending TAG_STOP unwind on every member strand.
-     * Snapshot next via UCleanupEntry.next_member — entries do not unlink
-     * themselves during this walk; they unlink when the owning OP_POP_TAG /
-     * row 7 walker pop fires. */
-    for (e = tag->member_strands_head; e != NULL; e = next) {
+     * FOREACH_SAFE snapshots next_member before each body so entries may
+     * unlink themselves during the walk (they do not today, but being safe
+     * costs nothing). */
+    URBI_SLIST_FOREACH_SAFE(e, next, tag->member_strands_head, next_member) {
         UStrand *s;
         bool fresh_deposit;
 
-        next = e->next_member;
         s    = e->strand_back;
         URBI_INTERNAL_ASSERT(s != NULL);
 
@@ -923,13 +922,10 @@ urbi_tag_block(struct UVM *vm, struct UTag *tag, UValue resume_value)
             (uint32_t)(uintptr_t)tag);
     tag->flags |= (uint8_t)UTAG_FLAG_BLOCKED;
 
-    /* Snapshot-next iteration because urbi_strand_suspend does not unlink
-     * the cleanup entry from tag->member_strands_head — but a hypothetical
-     * future variant might, so be defensive. */
-    UCleanupEntry *e    = tag->member_strands_head;
-    UCleanupEntry *next;
-    while (e != NULL) {
-        next = e->next_member;
+    /* FOREACH_SAFE snapshots next_member before each body — urbi_strand_suspend
+     * does not unlink the entry today, but being safe costs nothing. */
+    UCleanupEntry *e, *next;
+    URBI_SLIST_FOREACH_SAFE(e, next, tag->member_strands_head, next_member) {
         UStrand *s = e->strand_back;
         if (s != NULL) {
             /* Stash the value first so a races-against-resume can deliver
@@ -938,7 +934,6 @@ urbi_tag_block(struct UVM *vm, struct UTag *tag, UValue resume_value)
             s->unblock_value = resume_value;
             urbi_strand_suspend(s, USTRAND_REASON_BLOCK, tag);
         }
-        e = next;
     }
     return URBI_OK;
 }
@@ -953,10 +948,8 @@ urbi_tag_unblock(struct UVM *vm, struct UTag *tag)
             (uint32_t)(uintptr_t)tag);
     tag->flags &= (uint8_t)~UTAG_FLAG_BLOCKED;
 
-    UCleanupEntry *e    = tag->member_strands_head;
-    UCleanupEntry *next;
-    while (e != NULL) {
-        next = e->next_member;
+    UCleanupEntry *e, *next;
+    URBI_SLIST_FOREACH_SAFE(e, next, tag->member_strands_head, next_member) {
         UStrand *s = e->strand_back;
         if (s != NULL && (s->suspend_gates & USTRAND_GATE_BLOCK) != 0U) {
             /* SCHED-08: clear this mode's gate wherever the member is —
@@ -968,7 +961,6 @@ urbi_tag_unblock(struct UVM *vm, struct UTag *tag)
             s->suspend_gates &= (uint8_t)~USTRAND_GATE_BLOCK;
             urbi_strand_resume_if_ungated(s);
         }
-        e = next;
     }
     return URBI_OK;
 }
@@ -999,15 +991,12 @@ urbi_tag_freeze(struct UVM *vm, struct UTag *tag)
             (uint32_t)(uintptr_t)tag);
     tag->flags |= (uint8_t)UTAG_FLAG_FROZEN;
 
-    UCleanupEntry *e    = tag->member_strands_head;
-    UCleanupEntry *next;
-    while (e != NULL) {
-        next = e->next_member;
+    UCleanupEntry *e, *next;
+    URBI_SLIST_FOREACH_SAFE(e, next, tag->member_strands_head, next_member) {
         UStrand *s = e->strand_back;
         if (s != NULL) {
             urbi_strand_suspend(s, USTRAND_REASON_FREEZE, tag);
         }
-        e = next;
     }
     return URBI_OK;
 }
@@ -1022,10 +1011,8 @@ urbi_tag_unfreeze(struct UVM *vm, struct UTag *tag)
             (uint32_t)(uintptr_t)tag);
     tag->flags &= (uint8_t)~UTAG_FLAG_FROZEN;
 
-    UCleanupEntry *e    = tag->member_strands_head;
-    UCleanupEntry *next;
-    while (e != NULL) {
-        next = e->next_member;
+    UCleanupEntry *e, *next;
+    URBI_SLIST_FOREACH_SAFE(e, next, tag->member_strands_head, next_member) {
         UStrand *s = e->strand_back;
         if (s != NULL && (s->suspend_gates & USTRAND_GATE_FREEZE) != 0U) {
             /* SCHED-08: mirror of the unblock walk — clear the FREEZE gate
@@ -1038,7 +1025,6 @@ urbi_tag_unfreeze(struct UVM *vm, struct UTag *tag)
             s->suspend_gates &= (uint8_t)~USTRAND_GATE_FREEZE;
             urbi_strand_resume_if_ungated(s);
         }
-        e = next;
     }
     return URBI_OK;
 }
