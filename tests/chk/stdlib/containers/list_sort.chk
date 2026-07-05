@@ -118,7 +118,7 @@ var r = false; try { List.new("bb", "a").sort(function(a, b) { a < b }) } catch 
 [00000025] true
 
 List.new("bb", "a").sort(function(a, b) { a < b })
-[00000026] !!! instr 7: TypeError: OP_LT operands must be Integer or Float (got String, String)
+[00000026] !!! instr 7: TypeError: '<' operands must be Integer or Float (got String, String)
 
 # --- receiver is unchanged after a comparator THROW (snapshot guarantee
 #     holds on the throw path, not just on success) ---

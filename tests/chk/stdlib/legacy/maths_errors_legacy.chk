@@ -32,13 +32,13 @@
 # fatal HALT.  Uncaught at the REPL surface it surfaces the instance `message`
 # slot as the legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
 Math.sqrt(4)
-[00000001] !!! TypeError: SELF: slot 'sqrt' not found
+[00000001] !!! TypeError: method call: slot 'sqrt' not found
 
 Math.log(1)
-[00000002] !!! TypeError: SELF: slot 'log' not found
+[00000002] !!! TypeError: method call: slot 'log' not found
 
 Math.sqr(2)
-[00000003] !!! TypeError: SELF: slot 'sqr' not found
+[00000003] !!! TypeError: method call: slot 'sqr' not found
 
 # Math.nan exists; Math.nan.isNaN() routes through the Float atom-
 # proto installed at Phase 5.

@@ -1243,7 +1243,7 @@ dispatch:
              * is_transient_strand does. */
             if (s->is_transient_strand) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (urbi_vm_run transient strand)");
+                vm_format_type_error_msg(vm, "',' (parallel-detach) requires an event-loop strand");
                 HALT();
             }
             int rc = op_fork_detach(s, vm, *s->pc);
@@ -1257,7 +1257,7 @@ dispatch:
              * Same urbi_vm_run-transient guard as OP_FORK_DETACH; see note above. */
             if (s->is_transient_strand) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (urbi_vm_run transient strand)");
+                vm_format_type_error_msg(vm, "'&' (parallel-join) requires an event-loop strand");
                 HALT();
             }
             int rc = op_fork_join(s, vm, *s->pc);
@@ -1294,7 +1294,7 @@ dispatch:
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "GETSLOT: no IC table bound");
+                vm_format_type_error_msg(vm, "slot access: no IC table bound");
                 HALT();
             }
             UIC *ic = &pi->ic_table[ic_index];
@@ -1305,7 +1305,7 @@ dispatch:
                 recv = urbi_atom_proto_for_value(vm, s->R[recv_reg]);
                 if (recv == NULL) {
                     vm->last_error = UVM_OOM;
-                    vm_format_type_error_msg(vm, "GETSLOT: atom proto allocation failed");
+                    vm_format_type_error_msg(vm, "slot access: atom proto allocation failed");
                     HALT();
                 }
             }
@@ -1317,14 +1317,14 @@ dispatch:
                 /* v0.11.4: VM_SLOT_THREW → catchable throw deposited on the
                  * strand; advance pc past this OP_GETSLOT (mirrors OP_THROW)
                  * so a catch-handler resumes after the faulting op. */
-                UVmSlotResult _r = vm_dispatch_getter(vm, ic->uprops[fk], "GETSLOT", &gr);
+                UVmSlotResult _r = vm_dispatch_getter(vm, ic->uprops[fk], "slot access", &gr);
                 if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
                 if (_r != VM_SLOT_OK) HALT();
                 s->R[dst_reg] = gr; NEXT();
             }
             /* MISSING — slow path (error formatting + getter check inside helper). */
             {
-                UVmSlotResult _r = vm_getslot_slow(vm, ic, recv, "GETSLOT", &out_val);
+                UVmSlotResult _r = vm_getslot_slow(vm, ic, recv, "slot access", &out_val);
                 if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
                 if (_r != VM_SLOT_OK) HALT();
             }
@@ -1346,25 +1346,25 @@ dispatch:
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "SETSLOT: no IC table bound");
+                vm_format_type_error_msg(vm, "slot write: no IC table bound");
                 HALT();
             }
             UIC *ic = &pi->ic_table[ic_index];
             if (s->R[recv_reg].kind != (uint8_t)UVAL_OBJECT) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "SETSLOT: receiver is not an Object");
+                vm_format_type_error_msg(vm, "slot write: receiver is not an Object");
                 HALT();
             }
             UObject *recv = (UObject *)s->R[recv_reg].v.p;
             if (recv == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "SETSLOT: receiver is NULL");
+                vm_format_type_error_msg(vm, "slot write: receiver is NULL");
                 HALT();
             }
             if ((recv->flags & URBI_OBJ_FLAG_READONLY) != 0U) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm,
-                    "SETSLOT: cannot mutate frozen prototype (UPROTO_READONLY)");
+                    "slot write: cannot mutate a frozen object");
                 HALT();
             }
             UValue v = s->R[src_reg];
@@ -1374,7 +1374,7 @@ dispatch:
             if (sr == VM_SLOT_SETTER_NEEDED) {
                 /* v0.11.4: VM_SLOT_THREW → catchable throw; advance pc past
                  * this OP_SETSLOT (mirrors OP_THROW). */
-                UVmSlotResult _r = vm_dispatch_setter(vm, ic->uprops[fk], "SETSLOT", v);
+                UVmSlotResult _r = vm_dispatch_setter(vm, ic->uprops[fk], "slot write", v);
                 if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
                 if (_r != VM_SLOT_OK) HALT();
                 NEXT();
@@ -1384,7 +1384,7 @@ dispatch:
                 {
                     UDiagWriter _w;
                     diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
-                    diag_write_cstr(&_w, "TypeError: SETSLOT: cannot write to constant slot '");
+                    diag_write_cstr(&_w, "TypeError: slot write: cannot write to constant slot '");
                     if (ic->name != NULL) diag_write_cstr(&_w, (const char *)ic->name);
                     diag_write_cstr(&_w, "'");
                 }
@@ -1392,7 +1392,7 @@ dispatch:
             }
             /* MISSING — slow path (error formatting + setter/barrier inside helper). */
             {
-                UVmSlotResult _r = vm_setslot_slow(vm, ic, recv, v, "SETSLOT");
+                UVmSlotResult _r = vm_setslot_slow(vm, ic, recv, v, "slot write");
                 if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
                 if (_r != VM_SLOT_OK) HALT();
             }
@@ -1539,7 +1539,7 @@ dispatch:
             if (s->R[A].kind != (uint8_t)UVAL_TAG) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm,
-                    "OP_TAG_STOP: R[A] must be UVAL_TAG");
+                    "tag.stop(): argument must be a Tag");
                 HALT();
             }
             UTag *_stop_tag = (UTag *)s->R[A].v.p;
@@ -1628,7 +1628,7 @@ dispatch:
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "GETSLOT_CHANGE_EVENT: no IC table bound");
+                vm_format_type_error_msg(vm, "slot-change event: no IC table bound");
                 HALT();
             }
 
@@ -1656,7 +1656,7 @@ dispatch:
             if (r == NULL || r->global_object == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm,
-                    "OP_LOAD_REALM_GLOBAL: strand has no realm");
+                    "global access: strand has no realm");
                 HALT();
             }
             s->R[A].kind = (uint8_t)UVAL_OBJECT;
@@ -1714,7 +1714,7 @@ dispatch:
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "SELF: no IC table bound");
+                vm_format_type_error_msg(vm, "method call: no IC table bound");
                 HALT();
             }
             UIC *ic = &pi->ic_table[ic_index];
@@ -1727,7 +1727,7 @@ dispatch:
                 recv = urbi_atom_proto_for_value(vm, self_value);
                 if (recv == NULL) {
                     vm->last_error = UVM_OOM;
-                    vm_format_type_error_msg(vm, "SELF: atom proto allocation failed");
+                    vm_format_type_error_msg(vm, "method call: atom proto allocation failed");
                     HALT();
                 }
             }
@@ -1741,14 +1741,14 @@ dispatch:
                 UValue gr;
                 /* v0.11.4: VM_SLOT_THREW → catchable throw; advance pc past
                  * this OP_SELF (mirrors OP_THROW). */
-                UVmSlotResult _r = vm_dispatch_getter(vm, ic->uprops[fk], "SELF", &gr);
+                UVmSlotResult _r = vm_dispatch_getter(vm, ic->uprops[fk], "method call", &gr);
                 if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
                 if (_r != VM_SLOT_OK) HALT();
                 s->R[dst_reg + 1U] = self_value; s->R[dst_reg] = gr; NEXT();
             }
             /* MISSING — slow path. */
             {
-                UVmSlotResult _r = vm_getslot_slow(vm, ic, recv, "SELF", &out_slot);
+                UVmSlotResult _r = vm_getslot_slow(vm, ic, recv, "method call", &out_slot);
                 if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
                 if (_r != VM_SLOT_OK) HALT();
             }

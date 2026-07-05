@@ -2,4 +2,4 @@
 # Covers: an uncaught VM-internal TypeError prints a !!! diagnostic carrying the
 #         instance message (D-F2 backward-compat), not bare nil.
 1.noSuchSlotXYZ;
-[00000000] !!! TypeError: GETSLOT: slot 'noSuchSlotXYZ' not found
+[00000000] !!! TypeError: slot access: slot 'noSuchSlotXYZ' not found

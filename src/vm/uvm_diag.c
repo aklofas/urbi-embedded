@@ -197,15 +197,33 @@ void diag_write_prefix(UDiagWriter *w, const UProto *module, size_t pc) {
     diag_write_cstr(w, ": ");
 }
 
+/* Map UOpcode to a user-facing glyph or description for error messages.
+ * op_name() is for the disassembler; this is for the user.
+ * Consolidate via X-macro in v0.13.6. */
+static const char *op_user_name(uint8_t op) {
+    switch (op) {
+        case OP_ADD: return "'+'";
+        case OP_SUB: return "'-'";
+        case OP_MUL: return "'*'";
+        case OP_DIV: return "'/'";
+        case OP_NEG: return "unary '-'";
+        case OP_LT:  return "'<'";
+        case OP_LE:  return "'<='";
+        case OP_EQ:  return "'=='";
+        case OP_NEQ: return "'!='";
+    }
+    return "(operator)";
+}
+
 /* Binary-op TypeError: two operand kinds reported.
-   Format: "<prefix>TypeError: <OP_NAME> operands must be Integer or Float (got <Kind>, <Kind>)" */
+   Format: "<prefix>TypeError: <glyph> operands must be Integer or Float (got <Kind>, <Kind>)" */
 void vm_format_type_error_binary(UVM *vm, const UProto *module, size_t pc,
                                  uint8_t op, uint8_t b_kind, uint8_t c_kind) {
     UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_prefix(&w, module, pc);
     diag_write_cstr(&w, "TypeError: ");
-    diag_write_cstr(&w, op_name(op));
+    diag_write_cstr(&w, op_user_name(op));
     diag_write_cstr(&w, " operands must be Integer or Float (got ");
     diag_write_kind_name(&w, b_kind);
     diag_write_cstr(&w, ", ");
@@ -220,7 +238,7 @@ void vm_format_type_error_unary(UVM *vm, const UProto *module, size_t pc,
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_prefix(&w, module, pc);
     diag_write_cstr(&w, "TypeError: ");
-    diag_write_cstr(&w, op_name(op));
+    diag_write_cstr(&w, op_user_name(op));
     diag_write_cstr(&w, " operand must be Integer or Float (got ");
     diag_write_kind_name(&w, b_kind);
     diag_write_cstr(&w, ")");

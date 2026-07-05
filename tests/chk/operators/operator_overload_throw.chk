@@ -31,4 +31,4 @@ class Vok {}; Vok.setSlot("+", function(other) { 99 }); var ok = Vok.new(); ok +
 
 # --- regression pin: missing slot still produces the original TypeError ---
 class NoAdd {}; var n = NoAdd.new(); n + n
-[00000005] !!! line 1: TypeError: OP_ADD operands must be Integer or Float (got unknown, unknown)
+[00000005] !!! line 1: TypeError: '+' operands must be Integer or Float (got unknown, unknown)

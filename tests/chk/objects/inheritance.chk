@@ -44,4 +44,4 @@ var top5 = Object.new(); top5.foo = "top.foo"; var bot5 = Object.new(); bot5.add
 # Uncaught at the REPL surface it surfaces the instance `message` slot as the
 # legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
 var top6 = Object.new(); top6.foo = "top.foo"; var bot6 = Object.new(); bot6.addProto(top6); bot6.foo = "bot.foo"; bot6.removeProto(top6); bot6.removeLocalSlot("foo"); bot6.foo
-[00000006] !!! TypeError: GETSLOT: slot 'foo' not found
+[00000006] !!! TypeError: slot access: slot 'foo' not found

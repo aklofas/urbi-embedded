@@ -618,7 +618,7 @@ UTEST(vm_type_error_diagnostic_binary_op) {
        so ADD at pc=2 reports line 1. */
     UASSERT(strstr(vm.last_errmsg, "line 1:") != NULL);
     UASSERT(strstr(vm.last_errmsg, "TypeError") != NULL);
-    UASSERT(strstr(vm.last_errmsg, "OP_ADD") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "'+'"  ) != NULL);
     UASSERT(strstr(vm.last_errmsg, "Bool") != NULL);
     UASSERT(strstr(vm.last_errmsg, "Integer") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -645,7 +645,7 @@ UTEST(vm_type_error_diagnostic_unary_op) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
-    UASSERT(strstr(vm.last_errmsg, "OP_NEG") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "unary '-'") != NULL);
     UASSERT(strstr(vm.last_errmsg, "Nil") != NULL);
     UASSERT(strstr(vm.last_errmsg, "operand") != NULL);
     /* Singular "operand", not plural "operands" */
@@ -737,7 +737,7 @@ UTEST(vm_mul_bool_int_is_type_error) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
-    UASSERT(strstr(vm.last_errmsg, "OP_MUL") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "'*'"  ) != NULL);
     UASSERT(strstr(vm.last_errmsg, "Bool") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -749,7 +749,7 @@ UTEST(vm_div_bool_int_is_type_error) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, urbi_vm_run(&vm, NULL, &c, &out));
-    UASSERT(strstr(vm.last_errmsg, "OP_DIV") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "'/'") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 

@@ -19,4 +19,4 @@ class Vec2 {}; Vec2.setSlot("<=", function(other) { 0 }); var a2 = Vec2.new(); v
 
 # Missing slot falls through to original type error.
 class NoLe {}; var n = NoLe.new(); var m = NoLe.new(); n <= m
-[00000004] !!! line 1: TypeError: OP_LE operands must be Integer or Float (got unknown, unknown)
+[00000004] !!! line 1: TypeError: '<=' operands must be Integer or Float (got unknown, unknown)

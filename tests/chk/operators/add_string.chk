@@ -41,11 +41,11 @@
 # error (per sub-decision: String+String only at v1.0). Operator-overload
 # fallback does not fire because lhs is an atom, not UVAL_OBJECT.
 "a" + 1
-[00000007] !!! line 1: TypeError: OP_ADD operands must be Integer or Float (got String, Integer)
+[00000007] !!! line 1: TypeError: '+' operands must be Integer or Float (got String, Integer)
 
 # Mixed-type the other way.
 1 + "a"
-[00000008] !!! line 1: TypeError: OP_ADD operands must be Integer or Float (got Integer, String)
+[00000008] !!! line 1: TypeError: '+' operands must be Integer or Float (got Integer, String)
 
 # Integer + integer still uses the atom-numeric fast path (regression
 # guard — String fast path must not perturb numeric dispatch).

@@ -12,4 +12,4 @@ class Vec {}; Vec.setSlot("-", function() { 55 }); var a = Vec.new(); -a
 
 # Missing slot falls through to original type error.
 class NoNeg {}; var n = NoNeg.new(); -n
-[00000002] !!! line 1: TypeError: OP_NEG operand must be Integer or Float (got unknown)
+[00000002] !!! line 1: TypeError: unary '-' operand must be Integer or Float (got unknown)

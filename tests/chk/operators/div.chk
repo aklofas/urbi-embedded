@@ -11,4 +11,4 @@ class Vec {}; Vec.setSlot("/", function(other) { 66 }); var a = Vec.new(); a / a
 
 # Missing slot falls through to original type error.
 class NoDiv {}; var n = NoDiv.new(); n / n
-[00000002] !!! line 1: TypeError: OP_DIV operands must be Integer or Float (got unknown, unknown)
+[00000002] !!! line 1: TypeError: '/' operands must be Integer or Float (got unknown, unknown)

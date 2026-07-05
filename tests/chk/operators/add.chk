@@ -11,4 +11,4 @@ class Vec {}; Vec.setSlot("+", function(other) { 99 }); var a = Vec.new(); a + a
 
 # Missing slot falls through to original type error.
 class NoAdd {}; var n = NoAdd.new(); n + n
-[00000002] !!! line 1: TypeError: OP_ADD operands must be Integer or Float (got unknown, unknown)
+[00000002] !!! line 1: TypeError: '+' operands must be Integer or Float (got unknown, unknown)

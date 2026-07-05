@@ -11,4 +11,4 @@ class Vec {}; Vec.setSlot("-", function(other) { 88 }); var a = Vec.new(); a - a
 
 # Missing slot falls through to original type error.
 class NoSub {}; var n = NoSub.new(); n - n
-[00000002] !!! line 1: TypeError: OP_SUB operands must be Integer or Float (got unknown, unknown)
+[00000002] !!! line 1: TypeError: '-' operands must be Integer or Float (got unknown, unknown)

@@ -11,4 +11,4 @@ class Vec {}; Vec.setSlot("*", function(other) { 77 }); var a = Vec.new(); a * a
 
 # Missing slot falls through to original type error.
 class NoMul {}; var n = NoMul.new(); n * n
-[00000002] !!! line 1: TypeError: OP_MUL operands must be Integer or Float (got unknown, unknown)
+[00000002] !!! line 1: TypeError: '*' operands must be Integer or Float (got unknown, unknown)

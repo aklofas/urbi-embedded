@@ -11,7 +11,7 @@
 # legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
 
 asdfjklm
-[00000000] !!! TypeError: GETSLOT: slot 'asdfjklm' not found
+[00000000] !!! TypeError: slot access: slot 'asdfjklm' not found
 
 aoeuhtns
-[00000001] !!! TypeError: GETSLOT: slot 'aoeuhtns' not found
+[00000001] !!! TypeError: slot access: slot 'aoeuhtns' not found

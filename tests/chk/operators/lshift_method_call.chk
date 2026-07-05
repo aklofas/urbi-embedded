@@ -27,4 +27,4 @@ var q = Prec.new(); q << 2 == 2
 # HALT.  Uncaught at the REPL surface it surfaces the instance `message` slot
 # as the legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
 class NoSlot {}; var ns = NoSlot.new(); ns << 7
-[00000004] !!! TypeError: SELF: slot '<<' not found
+[00000004] !!! TypeError: method call: slot '<<' not found
