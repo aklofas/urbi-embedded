@@ -1,40 +1,31 @@
 # Milestone: v0.13.5
-# Covers: spec record — hidden-local register collision inside try bodies.
-# blocked: design-risks v0.13.5-E (try-body hidden-local register collision);
-#          activate when the emit fix lands (v0.13.6 target).
-#
-# Pre-existing bug: reproduced identically on the branch base a1f50f58 before
-# any v0.13.5 changes.  Named vars, catch bodies, tag scopes, plain blocks,
-# and closures are unaffected.
-#
-# Root cause: inside a try body, synthetic hidden locals collide on one
-# register.  Disassembly shows \x01sw (switch subject) and the case-value
-# temp both landing in R2 → EQ R2,R2 always true → first arm always runs
-# regardless of subject.  For for-each, \x01iter is clobbered by \x01len →
-# runtime TypeError on the .get() call.  Both share the try-body hidden-local
-# floor math seam (see also v0.13.5-B, which is a related try-body unwind
-# bug; handle together at v0.13.6).
-#
-# --- CASE 1: switch inside try — silent wrong behavior ---
-# Repro: switch subject 2 should select case 2, but first arm (case 1) fires.
-#
-# ## host: run Realm.r = "none"
-# ## host: run try { switch (2) { case 1: { Realm.r = "one" }; case 2: { Realm.r = "two" } } } catch (var e) { Realm.r = "err" }
-# ## host: run Realm.r
-# [00000000] "none"
-# [00000001] nil
-# [00000002] "one"       <- actual (WRONG): first arm runs regardless of subject
-# expected-correct: [00000002] "two"   <- case 2 should match subject 2
-#
-# --- CASE 2: for-each over expression-valued iterable inside try ---
-# Repro: iteration over an inline List.new() throws slot 'get' not found;
-# the same loop works identically outside try.
-#
-# ## host: run Realm.r2 = "none"
-# ## host: run try { for (var x : List.new(1, 2, 3)) { Realm.r2 = x }; Realm.r2 = "done" } catch (var e) { Realm.r2 = e.message }
-# ## host: run Realm.r2
-# [00000003] "none"
-# [00000004] nil
-# [00000005] "TypeError: method call: slot 'get' not found"
-#                   <- actual (WRONG): \x01iter clobbered by \x01len
-# expected-correct: [00000005] "done"  <- iteration should complete normally
+# Covers: frame-locals declared inside a try body keep their registers —
+#         the try result register is anchored in nactvar (hidden local,
+#         emit_tag_prefix_arm pattern) so fs_temp_floor's count-based math
+#         stays contiguous and statement-boundary temp resets cannot hand
+#         a body-declared local's register out as a temp.  Closes
+#         design-risks v0.13.5-E (switch-in-try first-arm / for-each-in-try
+#         collision) and v0.13.5-B (while-in-try loop-var clobber masking
+#         the thrown value with a TypeError).
+
+# --- switch inside try selects the matching arm (was: first arm always ran)
+var s1 = "none"; try { switch (2) { case 1: { s1 = "one" }; case 2: { s1 = "two" } } } catch (var e) { s1 = "err" }; s1
+[00000000] "two"
+
+# --- switch inside try falls to default when no case matches
+var s2 = "none"; try { switch (99) { case 1: { s2 = "one" }; default: { s2 = "def" } } } catch (var e) { s2 = "err" }; s2
+[00000001] "def"
+
+# --- for-each inside try completes (was: TypeError slot 'get' not found)
+var s3 = "none"; try { for (var x : List.new(1, 2, 3)) { s3 = x }; s3 = "done" } catch (var e) { s3 = e.message }; s3
+[00000002] "done"
+
+# --- frame-local var + while + throw inside try: catch binds the thrown value
+#     (was: the while condition's result temp clobbered `i`, so `i + 1`
+#     raised a TypeError whose exception object reached the catch instead)
+(function () { var c = 0; try { var i = 0; while (i < 1) { i = i + 1; throw 99 } } catch (e) { c = e }; return c })()
+[00000003] 99
+
+# --- frame-local loop var inside try survives the loop
+(function () { var n = 0; try { var i = 0; while (i < 3) { i = i + 1 }; n = i } catch (e) { n = -1 }; return n })()
+[00000004] 3

@@ -635,8 +635,43 @@ uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     }
-    uint8_t rd = e->next_reg;
-    return emit_try_frame(e, n, rd);
+
+    /* Pre-reserve the global object slot before declaring the hidden
+     * local (\x01rd) — same rationale as emit_for_each_arm /
+     * emit_switch_arm (see urbi_emit_reserve_global_slot). */
+    if (e->current_fs->parent == NULL && !urbi_emit_reserve_global_slot(e))
+        return 0U;
+
+    /* v0.13.5-B/-E: anchor the try result register in nactvar as a
+     * declared hidden local (the emit_tag_prefix_arm pattern) instead of
+     * a raw temp.  A raw rd breaks fs_temp_floor's count-based math
+     * (nactvar + global_slot_reserved assumes declared locals are
+     * contiguous from the frame base): every local declared inside the
+     * try body landed one register ABOVE the computed floor, so each
+     * statement-boundary temp reset handed that local's register out as
+     * a temp — switch's \x01sw collided with the case-value temp (EQ
+     * Rn,Rn: first arm always ran), for-each's hidden locals collided
+     * with body temps (runtime TypeError), and a while loop's var was
+     * clobbered by the condition's result temp (raising a TypeError that
+     * masked the body's thrown value in the catch). */
+    if (!uemit_open_block(e, /*is_loop=*/false)) return 0U;
+    const char *rd_name = ustr_intern(e->vm, "\x01rd", 3);
+    if (rd_name == NULL) { uemit_close_block(e); e->error = EMIT_OOM; return 0U; }
+    int rd_slot = uemit_declare_local(e, rd_name, 3);
+    if (rd_slot < 0) { uemit_close_block(e); return 0U; }
+
+    uint8_t rd = emit_try_frame(e, n, (uint8_t)rd_slot);
+    if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+
+    /* Close the anchor block (pops \x01rd from scope) and keep rd
+     * allocated for the caller — same epilogue as emit_tag_prefix_arm. */
+    if (!uemit_close_block(e)) return 0U;
+    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->next_reg = rd + 1U;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->current_fs->freereg < e->next_reg)
+        e->current_fs->freereg = e->next_reg;
+    return rd;
 }
 
 /* ---------------------------------------------------------------------------
