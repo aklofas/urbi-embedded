@@ -15,6 +15,8 @@
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"   /* UVM_STACK_CAP */
 #include "urbi/urbi.h" /* urbi_strand_create, urbi_strand_destroy, urbi_realm_create */
+#include "stdlib/object_root.h"  /* urbi_native_closure_create (v0.13.5-D) */
+#include "watcher/uwatcher.h"    /* urbi_run_closure_on_scratch (v0.13.5-D) */
 
 #include <stdint.h>
 #include <string.h>
@@ -299,6 +301,48 @@ strand_arm_from_closure_resets_cur_consts_on_rearm(void)
 }
 
 /* ===================================================================
+ * Case 6 — v0.13.5-D: native (proto-less) closure must not crash the
+ * scratch runner.  Pre-fix: urbi_strand_arm_from_closure dereferences
+ * entry->proto->instructions unconditionally, causing SEGV when
+ * entry->proto == NULL (native closures set proto = NULL in
+ * urbi_native_closure_create).  Post-fix: arm returns -1 immediately and
+ * urbi_run_closure_on_scratch propagates the -1 to the caller.
+ * =================================================================== */
+
+/* Minimal no-op native function; never actually called in this test. */
+static int
+dummy_native_fn(UVM *vm, UValue self, UValue *args,
+                uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+static void
+strand_arm_rejects_native_proto_less_closure(void)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    vm.gc_stress_armed = 0;  /* closure held in a bare C local — stress exempt */
+
+    /* Create a native closure: proto == NULL, native_fn points to dummy. */
+    UClosure *cl = urbi_native_closure_create(&vm, dummy_native_fn);
+    UASSERT(cl != NULL);
+    UASSERT(cl->proto == NULL);
+
+    /* Pass to scratch runner.  Pre-fix: SEGV in urbi_strand_arm_from_closure
+     * at the unconditional entry->proto->instructions deref.
+     * Post-fix: arm sees proto == NULL, returns -1; scratch runner returns -1. */
+    UValue out   = urbi_make_nil();
+    int    threw = 0;
+    int    rc    = urbi_run_closure_on_scratch(&vm, cl, &out, &threw);
+    UASSERT_EQ(-1, rc);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite entry
  * =================================================================== */
 
@@ -314,4 +358,6 @@ test_strand_arm_suite(void)
               strand_arm_from_closure_initializes_module_instance);
     utest_run("strand_arm_from_closure_resets_cur_consts_on_rearm",
               strand_arm_from_closure_resets_cur_consts_on_rearm);
+    utest_run("strand_arm_rejects_native_proto_less_closure",
+              strand_arm_rejects_native_proto_less_closure);
 }

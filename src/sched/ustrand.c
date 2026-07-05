@@ -775,6 +775,10 @@ urbi_strand_arm_init(UStrand *s)
 int
 urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry, int nargs)
 {
+    /* v0.13.5-D: native closures carry proto == NULL; arming them would
+     * crash at the instructions deref below.  Reject before register-stack
+     * allocation to avoid a GC-managed alloc with no paired free. */
+    if (entry->proto == NULL) return -1;
     if (urbi_strand_arm_init(s) != 0) return -1;
 
     s->pc         = entry->proto->instructions;
