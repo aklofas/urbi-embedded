@@ -158,7 +158,7 @@ op_fork_detach(UStrand *s, UVM *vm, uint32_t instr)
     if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
         vm->last_error = UVM_TYPE_ERROR;
         vm_format_type_error_msg(vm,
-            "OP_FORK_DETACH: register operand is not a closure");
+            "',' (parallel-detach): operand is not a closure");
         s->fatal_status     = UEXEC_CANCEL;
         s->fatal_value.kind = (uint8_t)UVAL_NIL;
         s->fatal_value.v.i  = 0;
@@ -197,7 +197,7 @@ op_fork_join(UStrand *s, UVM *vm, uint32_t instr)
     if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
         vm->last_error = UVM_TYPE_ERROR;
         vm_format_type_error_msg(vm,
-            "OP_FORK_JOIN: register operand is not a closure");
+            "'&' (parallel-join): operand is not a closure");
         s->fatal_status     = UEXEC_CANCEL;
         s->fatal_value.kind = (uint8_t)UVAL_NIL;
         s->fatal_value.v.i  = 0;
@@ -235,7 +235,7 @@ op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
     if (s->R[a].kind != (uint8_t)UVAL_STRAND) {
         vm->last_error = UVM_TYPE_ERROR;
         vm_format_type_error_msg(vm,
-            "OP_JOIN_WAIT: register operand is not a strand handle");
+            "'&' (parallel-join) wait: operand is not a strand handle");
         s->fatal_status     = UEXEC_CANCEL;
         s->fatal_value.kind = (uint8_t)UVAL_NIL;
         s->fatal_value.v.i  = 0;

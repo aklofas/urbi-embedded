@@ -9,7 +9,7 @@
 //   (a) the comparison OPERATORS (==, <, <=, ...) are inline VM opcodes that do
 //       not dispatch to object method slots; and
 //   (b) invoking a quoted-operator-named slot explicitly (obj.'<='(x)) raises
-//       "GETSLOT: no IC table bound".
+//       "slot access: no IC table bound".
 // Both are VM/IC concerns deferred to v1.x (design-risks compat2-F).  The two
 // ship as markers for vocabulary alignment / addProto attachment until then.
 

@@ -384,6 +384,15 @@ pipeline. It drives the pipeline in a loop and supports five modes:
   (incompatible with `-i`).
 - `--version` / `--help` — print version or usage and exit.
 
+Uncaught-throw rendering on the batch paths (`-e` and file): when the root
+chunk dies with an uncaught throw, the CLI prints the VM's fatal message when
+one exists (typed exceptions carry a `message` slot) and the fixed string
+`urbi: uncaught throw` when none does (scalar throws such as `throw 99` carry
+no message). Printing the thrown *value* itself is deliberately deferred:
+`urbi_run_chunk` reports the failure as a return code and does not hand the
+thrown value back to the caller, so a value-carrying print would require a
+contract change to the chunk-run API rather than a CLI-side fix.
+
 In all evaluation modes the pipeline is: `ulex_init` → `uparse_next_statement`
 loop → `uemit_statement` loop → `uemit_finish` → VM dispatch → result print.
 The `UVM` is persistent across interactive lines. A fresh `UModule` and

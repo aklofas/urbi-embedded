@@ -160,7 +160,7 @@ UVmSlotResult vm_self_lookup(UVM *vm,
  * Returns VM_SLOT_MISSING on error (slot not found or getter raised;
  * vm->last_error set in both cases).
  *
- * `opname` is used in error messages ("GETSLOT" or "SELF"). */
+ * `opname` is used in error messages ("slot access" or "method call"). */
 UVmSlotResult vm_getslot_slow(UVM *vm,
                                UIC *ic,
                                UObject *recv,
@@ -177,7 +177,7 @@ UVmSlotResult vm_getslot_slow(UVM *vm,
  * Returns VM_SLOT_MISSING on failure (vm->last_error set).
  * Returns VM_SLOT_OOM on setter error (vm->last_error set).
  *
- * `opname` is used in error messages ("SETSLOT"). */
+ * `opname` is used in error messages ("slot write"). */
 UVmSlotResult vm_setslot_slow(UVM *vm,
                                UIC *ic,
                                UObject *recv,

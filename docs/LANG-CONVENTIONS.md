@@ -135,7 +135,7 @@ Common arithmetic methods (`abs`, `round`, `floor`, `ceil`) are present on both 
 
 ### 1.7 Consequence for the `.chk` corpus
 
-Legacy urbi 2.x was Lua-5.0-shaped — one Float type. Tests in the legacy 2.x conformance corpus that assert `.isA(Float)` on integer literals (`3`, `100`) will fail against v1.0. Expected porting work is 1–2 days when the standard library lands (`v0.6.0-stdlib`): type-assertion sites get updated to `.isA(Integer)` or `.isA(Number)` as appropriate. Value-level assertions (`assert(1 + 2 == 3)`) pass unchanged — the number system changes what things *are*, not what they *equal*.
+Legacy urbi 2.x was Lua-5.0-shaped — one Float type. Tests in the legacy 2.x conformance corpus that assert `.isA(Float)` on integer literals (`3`, `100`) will fail against v1.0. Expected porting work is 1–2 days when the standard library lands (`v0.6.0-stdlib`): type-assertion sites get updated to `.isA(Integer)` or `.isA(Float)` as appropriate. Value-level assertions (`assert(1 + 2 == 3)`) pass unchanged — the number system changes what things *are*, not what they *equal*.
 
 ---
 
