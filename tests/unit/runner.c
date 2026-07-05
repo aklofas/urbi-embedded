@@ -331,6 +331,7 @@ extern void test_ros_subscribe_suite(void);
 extern void test_ros_service_suite(void);
 extern void test_ros_pump_suite(void);
 extern void test_ros_bridge_lifetime_suite(void);
+extern void test_ulist_suite(void);
 extern void test_ulist_build_suite(void);
 extern void test_regexp_suite(void);
 extern void test_object_reflection_suite(void);
@@ -666,6 +667,7 @@ static const struct suite_entry suites[] = {
     {"ros_service",                      test_ros_service_suite},
     {"ros_pump",                         test_ros_pump_suite},
     {"ros_bridge_lifetime",              test_ros_bridge_lifetime_suite},
+    {"ulist",                            test_ulist_suite},
     {"ulist_build",                      test_ulist_build_suite},
     {"regexp",                           test_regexp_suite},
     {"object_reflection",                test_object_reflection_suite},
