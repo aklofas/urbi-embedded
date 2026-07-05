@@ -1,4 +1,7 @@
 # Milestone: v0.13.3 (design-risks v0.13.1-M) + updated v0.13.5 (v0.13.4-A)
+# Provenance: no legacy fixture pins unwind-watcher lifetime directly;
+#   behavior follows from normal-close persistence (legacy at-control.chk:3-13)
+#   plus the tag-cancellation contract (a throw does not stop user-owned tags).
 # Covers: a throw crossing a tag scope (unwind pass-through: non-matching
 #         unwind over a TAG_SCOPE entry) must run the same teardown
 #         OP_POP_TAG runs — leave event fires, member entry unlinks.

@@ -5,11 +5,15 @@
 #   (T39 chk-driver reason stale; the chk driver handles fork separators fine)
 # matrix-row: separator-and
 #
-# Reason (updated v0.13.4 probe):
-#   `var a & var b` — the parser expects `= <expr>` after a `var` declaration
-#   and rejects `&` with "expected '='".  The §7.1 shared-frame unscoping
-#   semantic (variables declared in fork branches visible in the parent scope)
-#   is not yet implemented (deferred-v1.x per language-compatibility-matrix).
+# Reason (updated v0.13.5 probe):
+#   `var a & var b` — the parser rejects `&` immediately after the var name
+#   with "unexpected token" (the `&` is not `=` and is not a separator the
+#   var-decl arm expects).  `var a , var b` parses as two separate statements
+#   separated by `,` (fork-detach noop) — no error, but both vars install
+#   into the same scope as ordinary chunk-top bindings; no unscoping occurs.
+#   The §7.1 shared-frame unscoping semantic (variables declared in fork
+#   branches visible in the parent scope) is not yet implemented
+#   (deferred-v1.x per language-compatibility-matrix).
 #   Activatable when parallel-var-declare and unscoping semantics land.
 #
 # Original urbiscript (activate at M5 with unscoping semantics):

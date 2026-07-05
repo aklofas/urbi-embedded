@@ -1,0 +1,40 @@
+# Milestone: v0.13.5
+# Covers: spec record — hidden-local register collision inside try bodies.
+# blocked: design-risks v0.13.5-E (try-body hidden-local register collision);
+#          activate when the emit fix lands (v0.13.6 target).
+#
+# Pre-existing bug: reproduced identically on the branch base a1f50f58 before
+# any v0.13.5 changes.  Named vars, catch bodies, tag scopes, plain blocks,
+# and closures are unaffected.
+#
+# Root cause: inside a try body, synthetic hidden locals collide on one
+# register.  Disassembly shows \x01sw (switch subject) and the case-value
+# temp both landing in R2 → EQ R2,R2 always true → first arm always runs
+# regardless of subject.  For for-each, \x01iter is clobbered by \x01len →
+# runtime TypeError on the .get() call.  Both share the try-body hidden-local
+# floor math seam (see also v0.13.5-B, which is a related try-body unwind
+# bug; handle together at v0.13.6).
+#
+# --- CASE 1: switch inside try — silent wrong behavior ---
+# Repro: switch subject 2 should select case 2, but first arm (case 1) fires.
+#
+# ## host: run Realm.r = "none"
+# ## host: run try { switch (2) { case 1: { Realm.r = "one" }; case 2: { Realm.r = "two" } } } catch (var e) { Realm.r = "err" }
+# ## host: run Realm.r
+# [00000000] "none"
+# [00000001] nil
+# [00000002] "one"       <- actual (WRONG): first arm runs regardless of subject
+# expected-correct: [00000002] "two"   <- case 2 should match subject 2
+#
+# --- CASE 2: for-each over expression-valued iterable inside try ---
+# Repro: iteration over an inline List.new() throws slot 'get' not found;
+# the same loop works identically outside try.
+#
+# ## host: run Realm.r2 = "none"
+# ## host: run try { for (var x : List.new(1, 2, 3)) { Realm.r2 = x }; Realm.r2 = "done" } catch (var e) { Realm.r2 = e.message }
+# ## host: run Realm.r2
+# [00000003] "none"
+# [00000004] nil
+# [00000005] "TypeError: method call: slot 'get' not found"
+#                   <- actual (WRONG): \x01iter clobbered by \x01len
+# expected-correct: [00000005] "done"  <- iteration should complete normally
