@@ -45,8 +45,12 @@ int urbi_stdlib_register_regexp(struct UVM *vm);
  * Returns URBI_OK / URBI_ERR_OOM / URBI_ERR_INVALID_ARG. */
 int urbi_stdlib_register_regexp_globals(struct UVM *vm, struct URealm *realm);
 
-/* Exposed for direct unit testing of the matcher.  Returns 1 if the
- * pattern [re, re+relen) matches anywhere in [s, s_end), else 0. */
+/* Exposed for direct unit testing of the matcher.
+ * Returns:
+ *   1   pattern matches somewhere in [s, s_end)
+ *   0   no match
+ *  -1   budget exhausted (step limit or depth cap hit); the caller
+ *       (regexp_do_test) converts this into a catchable RangeError. */
 int urbi_regexp_search(const char *re, size_t relen,
                        const char *s, const char *s_end);
 

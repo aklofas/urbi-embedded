@@ -12,3 +12,6 @@ RegExp.new("[0-9]+").test("x42y")
 [00000004] true
 RegExp.new("[0-9]+").test("xyz")
 [00000005] false
+# Catastrophic backtracking exhausts the step budget → catchable RangeError.
+var _rbex = false; try { RegExp.new("a*a*a*a*a*a*b").test("aaaaaaaaaaaaaaaaaaaaaaaaa") } catch (var e) { _rbex = e.isA(RangeError) }; _rbex
+[00000006] true
