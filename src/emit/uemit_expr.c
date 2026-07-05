@@ -446,8 +446,14 @@ uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n) {
      * the correct slot on the global object.
      *
      * NOTE: `var` inside a function body (fs->parent != NULL) still
-     * allocates a frame local — the else-branch below handles that. */
-    if (fs->parent == NULL) {
+     * allocates a frame local — the else-branch below handles that.
+     * v0.13.5 (LANG4-06): only a BARE chunk-top var (nblocks == 0)
+     * installs a realm global; a block-nested chunk-top var falls
+     * through to the frame-local branch so it is scoped to its block
+     * and cannot clobber an outer binding of the same name (SDK 2.0
+     * ch. 17 block-scoped var semantics).  Bare-var REPL persistence
+     * is unaffected. */
+    if (fs->parent == NULL && fs->nblocks == 0) {
         /* Reserve r_global_slot on first global use (same as T71).
          * Uses the same global_slot_reserved / references_global two-flag
          * protocol as the AST_IDENT global fallback. */

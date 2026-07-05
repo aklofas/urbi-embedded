@@ -74,18 +74,21 @@ static int compile_and_run(UVM *vm, const char *src, UValue *out_result)
 /* === Tests === */
 
 UTEST(top_level_var_object_raises_const_slot_write) {
-    /* "var Object = 42" at chunk-top tries to overwrite the built-in
-     * constant "Object" slot on the global object.  The IC slow path
-     * detects URBI_SLOT_FLAG_CONSTANT.  v0.11.4: this now raises a CATCHABLE
-     * TypeError (was a fatal HALT).  Observe it via an in-script try/catch
-     * that records 1 on a TypeError-typed catch. */
+    /* Writing the built-in constant "Object" slot on the global object
+     * trips the IC slow path's URBI_SLOT_FLAG_CONSTANT check.  v0.11.4:
+     * this now raises a CATCHABLE TypeError (was a fatal HALT).  Observe
+     * it via an in-script try/catch that records 1 on a TypeError-typed
+     * catch.  The write goes through `Realm.Object` (member assign on the
+     * per-realm global object): since LANG4-06 a block-nested chunk-top
+     * `var Object` is block-scoped — it shadows rather than writes the
+     * global slot, so it can no longer serve as the trigger. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue out = {0};
     int rc = compile_and_run(
         &vm,
-        "var t = 0; try { var Object = 42 } "
+        "var t = 0; try { Realm.Object = 42 } "
         "catch (var e if e.isA(TypeError)) { t = 1 }; t",
         &out);
 

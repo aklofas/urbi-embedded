@@ -151,11 +151,13 @@ UTEST(set_global_const_blocks_script_write) {
     /* Script write must still be rejected: "Object" is still const (slot
      * index 0).  v0.11.4: the const-write error is now a CATCHABLE TypeError
      * (was a fatal HALT setting vm->last_errmsg); observe it via in-script
-     * try/catch recording 1 on a TypeError-typed catch. */
+     * try/catch recording 1 on a TypeError-typed catch.  Written via
+     * `Realm.Object` — since LANG4-06 a block-nested chunk-top
+     * `var Object` is block-scoped (shadows, does not write the slot). */
     UValue run_out = {0};
     int run_rc = compile_and_run(
         &vm,
-        "var t = 0; try { var Object = 42 } "
+        "var t = 0; try { Realm.Object = 42 } "
         "catch (var e if e.isA(TypeError)) { t = 1 }; t",
         &run_out);
     UASSERT_EQ(URBI_OK, run_rc);
