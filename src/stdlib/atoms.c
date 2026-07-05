@@ -49,35 +49,8 @@
 #  include <stdlib.h>                  /* strtoll, strtod for parse methods */
 #endif
 
-/* === Method-table entry + per-proto installer ============================= */
-
-typedef struct {
-    const char           *name;
-    urbi_native_method_fn fn;
-} AtomMethodEntry;
-
-static int
-install_methods(UVM *vm, UObject *proto,
-                const AtomMethodEntry *table, size_t count)
-{
-    size_t i;
-    if (proto == NULL) return URBI_ERR_OOM;
-    for (i = 0; i < count; i++) {
-        UClosure *cl = urbi_native_closure_create(vm, table[i].fn);
-        if (cl == NULL) return URBI_ERR_OOM;
-
-        USymbol *sym = (USymbol *)ustr_intern(
-            vm, table[i].name, urbi_strlen(table[i].name));
-        if (sym == NULL) return URBI_ERR_OOM;
-
-        UValue v = urbi_make_nil();
-        v.kind = (uint8_t)UVAL_CLOSURE;
-        v.v.p = cl;
-        int rc = urbi_object_set_local_slot(vm, proto, sym, v);
-        if (rc != 0) return URBI_ERR_OOM;
-    }
-    return URBI_OK;
-}
+/* Method tables use UNativeMethodDef from stdlib/object_root.h;
+ * urbi_install_native_methods / URBI_REGISTER_METHODS do the install loop. */
 
 /* === UValue construction helpers (file-private; zero pad bytes) =========== */
 
@@ -1289,10 +1262,10 @@ str_percent(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
-static const AtomMethodEntry BOOL_METHODS[] = {
+static const UNativeMethodDef BOOL_METHODS[] = {
     { "negate", bool_negate }
 };
-static const AtomMethodEntry INT_METHODS[] = {
+static const UNativeMethodDef INT_METHODS[] = {
     { "asString",  int_asString  },
     { "asFloat",   int_asFloat   },
     { "asBoolean", int_asBoolean },
@@ -1306,7 +1279,7 @@ static const AtomMethodEntry INT_METHODS[] = {
     { "ushr",      int_ushr      },
     { "%",         int_mod       }
 };
-static const AtomMethodEntry FLOAT_METHODS[] = {
+static const UNativeMethodDef FLOAT_METHODS[] = {
     { "sqrt",  flt_sqrt  },
     { "sin",   flt_sin   },
     { "cos",   flt_cos   },
@@ -1331,7 +1304,7 @@ static const AtomMethodEntry FLOAT_METHODS[] = {
     { "%",          flt_mod        },
     { "random",     flt_random     }
 };
-static const AtomMethodEntry STR_METHODS[] = {
+static const UNativeMethodDef STR_METHODS[] = {
     { "size",    str_size    },
     { "isEmpty", str_isEmpty },
     { "charAt",  str_charAt  },
@@ -1353,19 +1326,14 @@ static const AtomMethodEntry STR_METHODS[] = {
 
 /* Empty tables retain a `{NULL, NULL}` sentinel so the array has at
  * least one element (C99 forbids zero-size arrays).  Tables with real
- * entries omit the sentinel.  COUNT macros use the sentinel form when
- * needed; populated tables use straight sizeof. */
-#define BOOL_METHODS_COUNT    (sizeof(BOOL_METHODS)  / sizeof(BOOL_METHODS[0]))
-#define INT_METHODS_COUNT     (sizeof(INT_METHODS)   / sizeof(INT_METHODS[0]))
-#define FLOAT_METHODS_COUNT   (sizeof(FLOAT_METHODS) / sizeof(FLOAT_METHODS[0]))
-#define STR_METHODS_COUNT     (sizeof(STR_METHODS)   / sizeof(STR_METHODS[0]))
+ * entries omit the sentinel. */
 
 /* === urbi_stdlib_register_atom_methods (T35 entry) ========================
  *
  * T35 lands the helper + boot wiring; the per-family method tables fill
  * in across T36-T54.  At T35 baseline all four tables are sentinel-only
- * (count == 0); install_methods is a no-op for those but the call sites
- * are wired so subsequent tasks only edit the table arrays. */
+ * (count == 0); URBI_REGISTER_METHODS is a no-op for those but the call
+ * sites are wired so subsequent tasks only edit the table arrays. */
 
 int
 urbi_stdlib_register_atom_methods(UVM *vm)
@@ -1373,20 +1341,20 @@ urbi_stdlib_register_atom_methods(UVM *vm)
     if (vm == NULL) return URBI_ERR_INVALID_ARG;
 
     int rc;
-    rc = install_methods(vm, urbi_object_atom(vm, URBI_ATOM_BOOLEAN),
-                         BOOL_METHODS, BOOL_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, urbi_object_atom(vm, URBI_ATOM_BOOLEAN),
+                               BOOL_METHODS);
     if (rc != URBI_OK) return rc;
 
-    rc = install_methods(vm, urbi_object_atom(vm, URBI_ATOM_INTEGER),
-                         INT_METHODS, INT_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, urbi_object_atom(vm, URBI_ATOM_INTEGER),
+                               INT_METHODS);
     if (rc != URBI_OK) return rc;
 
-    rc = install_methods(vm, urbi_object_atom(vm, URBI_ATOM_FLOAT),
-                         FLOAT_METHODS, FLOAT_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, urbi_object_atom(vm, URBI_ATOM_FLOAT),
+                               FLOAT_METHODS);
     if (rc != URBI_OK) return rc;
 
-    rc = install_methods(vm, urbi_object_atom(vm, URBI_ATOM_STRING),
-                         STR_METHODS, STR_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, urbi_object_atom(vm, URBI_ATOM_STRING),
+                               STR_METHODS);
     if (rc != URBI_OK) return rc;
 
     return URBI_OK;

@@ -21,9 +21,8 @@
  * vm-lifetime"); proper UTYPE_LIST / UTYPE_DICT GC types land at v1.x
  * when the cross-cutting walker plumbing arrives.
  *
- * Method registration mirrors atom_protos.c / atoms.c: each method
- * tabulates {name, fn} pairs, install_methods walks the table and
- * binds via urbi_native_closure_create + urbi_object_set_local_slot.
+ * Method registration uses UNativeMethodDef tables with URBI_REGISTER_METHODS
+ * (shared installer from stdlib/object_root.h).
  *
  * Pair / Triplet / Tuple are exposed as fresh UObjects via
  * urbi_realm_set_global (the realm-populate registry has no row for
@@ -370,35 +369,8 @@ val_obj(UObject *o)
     return v;
 }
 
-/* === Method-table install helper ========================================= */
-
-typedef struct {
-    const char           *name;
-    urbi_native_method_fn fn;
-} ContainerMethodEntry;
-
-static int
-install_methods(UVM *vm, UObject *proto,
-                const ContainerMethodEntry *table, size_t count)
-{
-    if (proto == NULL) return URBI_ERR_OOM;
-    size_t i;
-    for (i = 0U; i < count; i++) {
-        UClosure *cl = urbi_native_closure_create(vm, table[i].fn);
-        if (cl == NULL) return URBI_ERR_OOM;
-
-        USymbol *sym = (USymbol *)ustr_intern(vm, table[i].name,
-                                              urbi_strlen(table[i].name));
-        if (sym == NULL) return URBI_ERR_OOM;
-
-        UValue v = urbi_make_nil();
-        v.kind = (uint8_t)UVAL_CLOSURE;
-        v.v.p  = cl;
-        int rc = urbi_object_set_local_slot(vm, proto, sym, v);
-        if (rc != 0) return URBI_ERR_OOM;
-    }
-    return URBI_OK;
-}
+/* Method tables use UNativeMethodDef from stdlib/object_root.h;
+ * URBI_REGISTER_METHODS does the install loop. */
 
 /* === Pair (immutable 2-tuple) ============================================
  *
@@ -1161,21 +1133,21 @@ dict_values(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === Method tables ======================================================= */
 
-static const ContainerMethodEntry PAIR_METHODS[] = {
+static const UNativeMethodDef PAIR_METHODS[] = {
     { "new", pair_new }
 };
 
-static const ContainerMethodEntry TRIPLET_METHODS[] = {
+static const UNativeMethodDef TRIPLET_METHODS[] = {
     { "new", triplet_new }
 };
 
-static const ContainerMethodEntry TUPLE_METHODS[] = {
+static const UNativeMethodDef TUPLE_METHODS[] = {
     { "new",    tuple_new            },
     { "length", list_or_tuple_length },
     { "get",    list_or_tuple_get     }
 };
 
-static const ContainerMethodEntry LIST_METHODS[] = {
+static const UNativeMethodDef LIST_METHODS[] = {
     { "new",      list_new             },
     { "length",   list_or_tuple_length },
     { "isEmpty",  list_isEmpty         },
@@ -1199,7 +1171,7 @@ static const ContainerMethodEntry LIST_METHODS[] = {
     { "+",          list_concat          }
 };
 
-static const ContainerMethodEntry DICT_METHODS[] = {
+static const UNativeMethodDef DICT_METHODS[] = {
     { "new",     dict_new     },
     { "length",  dict_length  },
     { "isEmpty", dict_isEmpty },
@@ -1213,12 +1185,6 @@ static const ContainerMethodEntry DICT_METHODS[] = {
      * size — legacy primary: dictionary.cc:91 BINDG(size) */
     { "size",    dict_length  }
 };
-
-#define PAIR_METHODS_COUNT    (sizeof(PAIR_METHODS)    / sizeof(PAIR_METHODS[0]))
-#define TRIPLET_METHODS_COUNT (sizeof(TRIPLET_METHODS) / sizeof(TRIPLET_METHODS[0]))
-#define TUPLE_METHODS_COUNT   (sizeof(TUPLE_METHODS)   / sizeof(TUPLE_METHODS[0]))
-#define LIST_METHODS_COUNT    (sizeof(LIST_METHODS)    / sizeof(LIST_METHODS[0]))
-#define DICT_METHODS_COUNT    (sizeof(DICT_METHODS)    / sizeof(DICT_METHODS[0]))
 
 /* === urbi_stdlib_register_containers ====================================
  *
@@ -1248,12 +1214,12 @@ urbi_stdlib_register_containers(UVM *vm)
      *    registry already binds the names). */
     UObject *list_proto = urbi_object_atom(vm, URBI_ATOM_LIST);
     if (list_proto == NULL) return URBI_ERR_OOM;
-    rc = install_methods(vm, list_proto, LIST_METHODS, LIST_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, list_proto, LIST_METHODS);
     if (rc != URBI_OK) return rc;
 
     UObject *dict_proto = urbi_object_atom(vm, URBI_ATOM_DICT);
     if (dict_proto == NULL) return URBI_ERR_OOM;
-    rc = install_methods(vm, dict_proto, DICT_METHODS, DICT_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, dict_proto, DICT_METHODS);
     if (rc != URBI_OK) return rc;
 
     /* 2. Pair / Triplet / Tuple fresh protos.  Each is a vanilla
@@ -1265,8 +1231,7 @@ urbi_stdlib_register_containers(UVM *vm)
         if (p == NULL) return URBI_ERR_OOM;
         vm->container_pair_proto = p;
     }
-    rc = install_methods(vm, vm->container_pair_proto,
-                         PAIR_METHODS, PAIR_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, vm->container_pair_proto, PAIR_METHODS);
     if (rc != URBI_OK) return rc;
 
     if (vm->container_triplet_proto == NULL) {
@@ -1274,8 +1239,7 @@ urbi_stdlib_register_containers(UVM *vm)
         if (t == NULL) return URBI_ERR_OOM;
         vm->container_triplet_proto = t;
     }
-    rc = install_methods(vm, vm->container_triplet_proto,
-                         TRIPLET_METHODS, TRIPLET_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, vm->container_triplet_proto, TRIPLET_METHODS);
     if (rc != URBI_OK) return rc;
 
     if (vm->container_tuple_proto == NULL) {
@@ -1283,8 +1247,7 @@ urbi_stdlib_register_containers(UVM *vm)
         if (t == NULL) return URBI_ERR_OOM;
         vm->container_tuple_proto = t;
     }
-    rc = install_methods(vm, vm->container_tuple_proto,
-                         TUPLE_METHODS, TUPLE_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, vm->container_tuple_proto, TUPLE_METHODS);
     if (rc != URBI_OK) return rc;
 
     return URBI_OK;

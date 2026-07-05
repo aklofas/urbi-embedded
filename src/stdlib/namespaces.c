@@ -8,7 +8,7 @@
  *
  * Allocation pattern mirrors runtime_types.c (Exception primitive proto):
  * a vanilla URBI_ATOM_OBJECT-family UObject per namespace, methods
- * installed via a per-namespace method table walked by install_methods.
+ * installed via UNativeMethodDef tables with URBI_REGISTER_METHODS.
  * GC reachability comes from object_roots_walker (uobject.c) which
  * shades each vm->*_proto field during MARK_ROOTS. */
 
@@ -111,35 +111,8 @@ install_const_slot(UVM *vm, UObject *proto, const char *name, UValue value)
 #  define URBI_PLATFORM_KIND "unknown"
 #endif
 
-/* === Method-table install helper ========================================= */
-
-typedef struct {
-    const char           *name;
-    urbi_native_method_fn fn;
-} NsMethodEntry;
-
-static int
-install_methods(UVM *vm, UObject *proto,
-                const NsMethodEntry *table, size_t count)
-{
-    if (proto == NULL) return URBI_ERR_OOM;
-    size_t i;
-    for (i = 0U; i < count; i++) {
-        UClosure *cl = urbi_native_closure_create(vm, table[i].fn);
-        if (cl == NULL) return URBI_ERR_OOM;
-
-        USymbol *sym = (USymbol *)ustr_intern(vm, table[i].name,
-                                              urbi_strlen(table[i].name));
-        if (sym == NULL) return URBI_ERR_OOM;
-
-        UValue v = urbi_make_nil();
-        v.kind = (uint8_t)UVAL_CLOSURE;
-        v.v.p  = cl;
-        if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
-            return URBI_ERR_OOM;
-    }
-    return URBI_OK;
-}
+/* Method tables use UNativeMethodDef from stdlib/object_root.h;
+ * URBI_REGISTER_METHODS does the install loop. */
 
 /* === System.time =========================================================
  *
@@ -255,7 +228,7 @@ sys_gc(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-static const NsMethodEntry SYSTEM_METHODS[] = {
+static const UNativeMethodDef SYSTEM_METHODS[] = {
     { "time",    sys_time    },
     { "time_us", sys_time_us },
     { "cycle",   sys_cycle   },
@@ -263,7 +236,6 @@ static const NsMethodEntry SYSTEM_METHODS[] = {
     { "gc",      sys_gc      }
 };
 
-#define SYSTEM_METHODS_COUNT (sizeof(SYSTEM_METHODS) / sizeof(SYSTEM_METHODS[0]))
 
 /* === Global.length =======================================================
  *
@@ -289,11 +261,10 @@ global_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-static const NsMethodEntry GLOBAL_METHODS[] = {
+static const UNativeMethodDef GLOBAL_METHODS[] = {
     { "length", global_length }
 };
 
-#define GLOBAL_METHODS_COUNT (sizeof(GLOBAL_METHODS) / sizeof(GLOBAL_METHODS[0]))
 
 /* === urbi_stdlib_register_namespaces ====================================
  *
@@ -335,7 +306,7 @@ urbi_stdlib_register_namespaces(UVM *vm)
         if (s == NULL) return URBI_ERR_OOM;
         vm->system_proto = s;
     }
-    rc = install_methods(vm, vm->system_proto, SYSTEM_METHODS, SYSTEM_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, vm->system_proto, SYSTEM_METHODS);
     if (rc != URBI_OK) return rc;
 
     /* --- T88 System.Platform: kind constant ---
@@ -367,8 +338,7 @@ urbi_stdlib_register_namespaces(UVM *vm)
         if (g == NULL) return URBI_ERR_OOM;
         vm->global_namespace_proto = g;
     }
-    rc = install_methods(vm, vm->global_namespace_proto,
-                         GLOBAL_METHODS, GLOBAL_METHODS_COUNT);
+    rc = URBI_REGISTER_METHODS(vm, vm->global_namespace_proto, GLOBAL_METHODS);
     if (rc != URBI_OK) return rc;
 
     /* --- T91 CallMessage: stub proto ---
