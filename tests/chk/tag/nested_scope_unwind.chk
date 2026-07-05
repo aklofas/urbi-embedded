@@ -4,18 +4,19 @@
 #         first order through nested scopes, executing each onleave body before
 #         continuing outward.
 #
-# blocked: `onleave` keyword not yet supported — parse error (deferred-v1.x)
+# blocked: `onleave` keyword not yet supported on tag-scope — parse error (deferred-v1.x)
 #   (T39 chk-driver reason stale; the chk driver uses urbi -i / urbi_repl_eval
 #   which has always handled fork separators; the real blocker is `onleave`)
 # matrix-row: tag-stop
 #
-# Reason (updated v0.13.4 probe):
-#   The `onleave { ... }` clause is not yet parsed (deferred to v1.x per
-#   language-compatibility-matrix).  Probing the source yields multiple
-#   "expected expression" parse errors on the `onleave` keyword lines.
-#   The nested try/finally ordering is already tested by
-#   tests/chk/control_transfer/nested_finally.chk; this fixture must wait
-#   for onleave parse/emit support.
+# Reason (updated v0.13.5 probe):
+#   This fixture uses the TAG_SCOPE onleave syntax (`tag: { body } onleave handler`)
+#   which is v1.x deferred (PARSE-033 closure; tag_prefix.onleave is always NULL
+#   at v1.0).  The AT_WATCHER form (`at (cond) body onleave handler`) IS
+#   supported and is tested in tests/chk/reactive/at/at_onleave.chk and
+#   tests/chk/reactive/at/onleave_cascade.chk.  This fixture must wait for
+#   tag-scope onleave parse/emit support.  Probing yields:
+#     "expected '}'" on the `onleave` lines (confirmed v0.13.5).
 #
 # When M5 lands, implement this fixture by uncommenting the source below.
 # Expected behaviour: log records cleanup in innermost-first order "ioIO".

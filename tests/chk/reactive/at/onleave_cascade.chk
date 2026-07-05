@@ -1,0 +1,56 @@
+# Milestone: v0.13.5 (v0.13.4-A)
+# Covers: falling-edge cascade path — `at (c) body onleave { t2.stop() }`:
+#         when the onleave fires inline inside watcher_eval_dirty (falling
+#         edge) and calls t2.stop(), the t2-owned watcher (Q) is cascaded
+#         mid-pass via pending_onleave_queue_push; a later watcher (R) must
+#         survive the cascade and fire on the next rising edge.
+#
+# Three watchers observe Realm.c in registration order:
+#   P (at)       — body fires on each rise, onleave calls t2.stop()
+#   Q (at, t2)   — t2-owned (persists past scope close — v0.13.4-A fix);
+#                  cascaded by P's onleave on the first falling edge
+#   R (at)       — must survive the cascade and fire on all rises
+#
+# Registration order in active_watchers_head: P → Q → R.
+# On the falling edge, watcher_eval_dirty processes P first:
+#   - next = Q (pre-captured)
+#   - P's onleave fires inline (invoke_onleave_inline) → calls t2.stop()
+#   - t2.stop() cascades Q: PENDING_UNREGISTER set, Q unlinked from active
+#     list; active list becomes P → R.
+#   - next(=Q) has PENDING_UNREGISTER → SCH4-04 cascade rescan restarts
+#     from head; P is stamp-visited (no re-fire); R is updated correctly.
+# Without the rescan, the stale next=Q pointer (Q.next_active=NULL after
+# pending-queue threading) truncates the pass and R is never cache-updated,
+# breaking the rise-detection on the next trigger.
+#
+# Expected: first rise hits = "PQR"; after fall + second rise hits = "PQRPR"
+# (P and R survive; Q was cascaded and is gone).
+## timeout: 30
+## host: run Realm.hits = ""
+## host: run Realm.c = false
+## host: run var t2 = Tag.new()
+## host: run at (Realm.c) { Realm.hits = Realm.hits + "P" } onleave { Realm.t2.stop() }
+## host: run t2: at (Realm.c) { Realm.hits = Realm.hits + "Q" }
+## host: run at (Realm.c) { Realm.hits = Realm.hits + "R" }
+## host: run var trig_up = function() { Realm.c = true }; trig_up()
+## host: step 100000
+## host: run Realm.hits
+## host: run var trig_down = function() { Realm.c = false }; trig_down()
+## host: step 100000
+## host: run var trig_up2 = function() { Realm.c = true }; trig_up2()
+## host: step 100000
+## host: run Realm.hits
+[00000000] ""
+[00000000] false
+[00000000] <Tag>
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] true
+[00000000] step: QUIESCENT
+[00000000] "PQR"
+[00000000] false
+[00000000] step: QUIESCENT
+[00000000] true
+[00000000] step: QUIESCENT
+[00000000] "PQRPR"

@@ -1,0 +1,52 @@
+# Milestone: v0.13.5 (v0.13.4-A)
+# Covers: `t: at (cond) body` — the watcher must persist until t.stop(), not
+#         until the lexical `t:` scope closes.
+#
+# Legacy smoking gun: legacy/repos/aldebaran-urbi/tests/2.x/at/at-control.chk:3-13
+#   var t = Tag.new()|
+#   var e = Event.new()|;
+#   t: at(e?) wall("coin");
+#   e!;           // fires once — watcher alive past scope close
+#   sleep(100ms);
+#   t.stop();
+#   e!;           // silent — t.stop() cancelled the watcher
+#
+# Pre-fix (v0.13.4-A): OP_POP_TAG's vm_tag_scope_teardown cascades ALL
+# watchers unconditionally at scope close, even for user-owned tags
+# (FLAG_TAG_USER_OWNED).  The watcher dies with the lexical scope, so
+# the first post-scope fire is already silent and t.stop() sees no active
+# scope (D3 fatal: "tag.stop with no active scope").
+#
+# Post-fix: the cascade guard mirrors the utag_destroy guard at
+# uvm_tag_scope.c:163 — only anonymous per-scope tags cascade their
+# watchers at scope close; user-owned tags let watchers persist until
+# tag.stop() (or VM destroy).  The D3 guard in tag_stop_native also
+# accounts for live watchers so t.stop() on a watcher-only tag does not
+# false-alarm.
+#
+# matrix-row: tagged-watcher-persists
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run Realm.go = false
+## host: run Realm.fired = 0
+## host: run t: at (Realm.go) Realm.fired = Realm.fired + 1
+## host: run var trig = function() { Realm.go = true }; trig()
+## host: step 100000
+## host: run Realm.fired
+## host: run t.stop()
+## host: run var reset = function() { Realm.go = false }; reset()
+## host: run var trig2 = function() { Realm.go = true }; trig2()
+## host: step 100000
+## host: run Realm.fired
+[00000000] <Tag>
+[00000000] false
+[00000000] 0
+[00000000] nil
+[00000000] true
+[00000000] step: QUIESCENT
+[00000000] 1
+[00000000] nil
+[00000000] false
+[00000000] true
+[00000000] step: QUIESCENT
+[00000000] 1

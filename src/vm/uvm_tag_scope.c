@@ -142,8 +142,11 @@ vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
      * Snapshot-next iteration since push mutates member_watchers_head
      * (unlinks the watcher from the tag's member list).
      * Ordering: cascade BEFORE utag_destroy, which asserts the member
-     * list is empty — push empties it. */
-    if (tag != NULL) {
+     * list is empty — push empties it.
+     * v0.13.5 (v0.13.4-A): user-owned tags (FLAG_TAG_USER_OWNED) skip
+     * this cascade — their watchers persist until t.stop() or VM-destroy.
+     * Mirrors the utag_destroy guard below (:163) exactly. */
+    if (tag != NULL && (top_flags & FLAG_TAG_USER_OWNED) == 0U) {
         UWatcher *ww = tag->member_watchers_head;
         UWatcher *ww_next;
         while (ww != NULL) {

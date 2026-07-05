@@ -15,19 +15,20 @@
 # (whenever_edge_only == 0) and would re-fire on a naive rescan re-visit;
 # the eval-pass stamp (eval_pass_gen) prevents this.
 #
-# B must be live in active_watchers_head at eval time.  A bare
-# `t2: at (Realm.go) { ... }` would cascade B immediately when the t2:
-# lexical scope exits (OP_POP_TAG → vm_tag_scope_teardown).  Instead,
-# keep the scope open: `t2: { at (...) B; waituntil(false) }` installs B
-# inside a still-open scope whose strand blocks on waituntil(false).
-# The scope stays alive until t2.stop() is called.  With the scope open,
-# t2->member_strands_head is non-empty, so the D3 "no-active-scope" guard
-# in tag_stop_native does not fire.
+# B must be live in active_watchers_head at eval time.  Prior to v0.13.5
+# a bare `t2: at (Realm.go) { ... }` would cascade B immediately when the
+# t2: lexical scope exited (OP_POP_TAG → vm_tag_scope_teardown), so the
+# old fixture used `t2: { at (...) B; waituntil(false) }` to keep the
+# scope open.  v0.13.5 (v0.13.4-A fix) guards the cascade with
+# FLAG_TAG_USER_OWNED so user-owned tags keep their watchers alive past
+# scope close; the bare form is now correct.  The D3 "no-active-scope"
+# guard in tag_stop_native also snapshots had_watcher before urbi_tag_stop
+# so stopping a watcher-only tag does not false-alarm.
 #
 # When Realm.go rises, A's inline body calls t2.stop().  urbi_tag_stop
 # calls pending_onleave_queue_push for every watcher in
-# t2->member_watchers_head (B and WAITUNTIL_FALSE): PENDING_UNREGISTER
-# set, both unlinked from active list, next_active cleared.
+# t2->member_watchers_head (B): PENDING_UNREGISTER set, unlinked from
+# active list, next_active cleared.
 # The pre-captured `next = B` in watcher_eval_dirty now has
 # next_active = NULL, so without the fix the loop terminates before
 # evaluating C — a silent same-tick truncation.
@@ -47,7 +48,7 @@
 ## host: run at (Realm.go) { Realm.hits = Realm.hits + "P" }
 ## host: run whenever (Realm.go) { Realm.hits = Realm.hits + "W" }
 ## host: run at sync (Realm.go) { t2.stop() }
-## host: run t2: { at (Realm.go) { Realm.hits = Realm.hits + "B" }; waituntil(false) }
+## host: run t2: at (Realm.go) { Realm.hits = Realm.hits + "B" }
 ## host: run at (Realm.go) { Realm.hits = Realm.hits + "C" }
 ## host: run Realm.go = true
 ## host: step 100000

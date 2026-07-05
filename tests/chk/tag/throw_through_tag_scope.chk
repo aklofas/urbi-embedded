@@ -1,14 +1,22 @@
-# Milestone: v0.13.3 (design-risks v0.13.1-M)
+# Milestone: v0.13.3 (design-risks v0.13.1-M) + updated v0.13.5 (v0.13.4-A)
 # Covers: a throw crossing a tag scope (unwind pass-through: non-matching
 #         unwind over a TAG_SCOPE entry) must run the same teardown
-#         OP_POP_TAG runs — leave event fires, member watchers cascade to
-#         the pending-onleave queue (and unregister), member entry unlinks.
-#         Pre-fix: the walker bare-popped the entry — the leave event never
-#         fired ("L" missing) and the scope's member watcher LEAKED past
+#         OP_POP_TAG runs — leave event fires, member entry unlinks.
+#         Pre-v0.13.3 fix: the walker bare-popped the entry — the leave event
+#         never fired ("L" missing) and the scope's member watcher LEAKED past
 #         the scope (trig() fired it: hits == 1).
-#         Post-fix: log is "cL" (catch handler runs in the throwing strand
-#         first; the leave-event at-watcher body is an async-spawned strand
-#         that runs at the next dispatch) and hits stays 0.
+#         v0.13.3 post-fix: log is "cL" and hits stays 0 (watcher cascaded
+#         at scope teardown — the "leak" is treated as a bug).
+#
+#         v0.13.5 (v0.13.4-A) BEHAVIORAL UPDATE: user-owned tags (var u = Tag.new())
+#         no longer cascade their watchers at scope teardown — the watcher persists
+#         until u.stop() (mirroring the utag_destroy guard).  This is the correct
+#         semantic: the throw does not cancel the tag u; u is still accessible
+#         and the user can call u.stop() to cancel the watcher.
+#         Updated post-fix: log is "cL" (leave event still fires — unaffected by
+#         the cascade guard) and hits == 1 (watcher survived the throw, fires when
+#         trig() sets never=1).  The "L" confirms leave-event teardown runs; the
+#         "hits==1" confirms the watcher persists for user-owned tags.
 ## timeout: 30
 ## host: run var u = Tag.new()
 ## host: run var lv = Realm.u.leave()
@@ -29,4 +37,4 @@
 [00000000] "c"
 [00000000] "cL"
 [00000000] 1
-[00000000] 0
+[00000000] 1

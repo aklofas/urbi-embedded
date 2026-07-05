@@ -306,8 +306,11 @@ tag_stop_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
      * "this tag has a reason to exist" verdict for the D3 guard below.
      * A second stop on the same tag — after the first cancelled its periodic —
      * intentionally falls through to the no-active-scope fatal, same as
-     * stopping a never-armed tag. */
+     * stopping a never-armed tag.
+     * v0.13.5 (v0.13.4-A): similarly snapshot had_watcher BEFORE urbi_tag_stop
+     * because urbi_tag_stop cascades watchers out of member_watchers_head. */
     bool had_periodic = urbi_tag_owns_periodic(vm, t);
+    bool had_watcher  = (t->member_watchers_head != NULL);
 
     /* Cross-strand deposit on member strands (existing path). */
     urbi_tag_stop(vm, t, stop_value);
@@ -329,10 +332,14 @@ tag_stop_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
      *
      * B5/SCHED-N2: !had_periodic guards the case where the tag owns a live
      * periodic (e.g. `t: every(P) body()`) — a legitimate stop target even when
-     * member_strands_head is empty (body strand completed its last fire). */
+     * member_strands_head is empty (body strand completed its last fire).
+     * v0.13.5 (v0.13.4-A): !had_watcher guards `t: at (cond) body` — the
+     * user-owned tag's scope closes immediately but the watcher persists until
+     * t.stop(); stopping it is legitimate (it IS the stop target). */
     if (t->member_strands_head == NULL &&
         !strand_has_tag_in_scope(vm->cur_strand, t) &&
-        !had_periodic) {
+        !had_periodic &&
+        !had_watcher) {
         vm->last_error = UVM_TYPE_ERROR;
         urbi_strncpy_truncating(vm->last_errmsg, UVM_ERRMSG_CAP,
             "tag.stop with no active scope");
