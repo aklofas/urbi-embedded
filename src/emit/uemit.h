@@ -290,7 +290,7 @@ const char *uemit_error_name(UEmitError code);
  * n may be NULL (position will be 0,0).  fmt is a printf-style format
  * string.  Does not set e->error; emit continues normally.
  * If the buffer cannot grow (OOM), the diagnostic is silently dropped. */
-void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...);
+void emit_diag_warn(UEmitter *e, const UAstNode *n, const char *fmt, ...);
 
 /* T13: Append an error-level diagnostic to the emitter's diag buffer.
  * n may be NULL (position will be 0,0).  fmt is a printf-style format
