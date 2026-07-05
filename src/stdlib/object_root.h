@@ -149,6 +149,35 @@ urbi_val_str_intern(struct UVM *vm, const char *s, size_t n, int *oom)
     return v;
 }
 
+/* === STDLIB-03: per-method prologue opt-in macros ===
+ *
+ * Fold the two-line arity/self-kind prologues that appear ~150 times across
+ * the four stdlib files into concise, verifiable call sites.  Both macros
+ * expand to EXACTLY the existing per-site idiom — same raise helper, same
+ * error type, same message bytes — so converting a site is behavior-neutral.
+ *
+ * URBI_CHECK_ARITY(vm, fname, want, nargs, out)
+ *   Equivalent to:
+ *     if ((nargs) != (want)) return urbi_raise_arity((vm),(fname),(uint8_t)(want),(nargs),(out));
+ *   Only converts sites using the simple != comparison; sites with >, <,
+ *   or compound checks (like String.format's spec-count != argc) stay inline.
+ *
+ * URBI_CHECK_SELF(vm, self, kindconst, msg, out)
+ *   Equivalent to:
+ *     if ((self).kind != (uint8_t)(kindconst)) return urbi_raise_type((vm),(msg),(out));
+ *   Only converts single-value kind checks; combined || checks stay inline. */
+#define URBI_CHECK_ARITY(vm, fname, want, nargs, out) \
+    do { \
+        if ((nargs) != (uint8_t)(want)) \
+            return urbi_raise_arity((vm), (fname), (uint8_t)(want), (nargs), (out)); \
+    } while (0)
+
+#define URBI_CHECK_SELF(vm, self, kindconst, msg, out) \
+    do { \
+        if ((self).kind != (uint8_t)(kindconst)) \
+            return urbi_raise_type((vm), (msg), (out)); \
+    } while (0)
+
 #ifdef __cplusplus
 }
 #endif

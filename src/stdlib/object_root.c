@@ -293,9 +293,8 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
 static int
 obj_setSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 2) return urbi_raise_arity(vm, "setSlot", 2, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "setSlot: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "setSlot", 2, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "setSlot: self must be a UObject", out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "setSlot: name must be a String", out);
 
@@ -313,11 +312,10 @@ obj_setSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 obj_getSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "getSlot", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "getSlot", 1, nargs, out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "getSlot: name must be a String", out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "getSlot: self must be a UObject", out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "getSlot: self must be a UObject", out);
 
     UObject *recv = (UObject *)self.v.p;
     USymbol *name = (USymbol *)args[0].v.p;
@@ -357,7 +355,7 @@ obj_getSlotValue(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 obj_hasSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "hasSlot", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "hasSlot", 1, nargs, out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "hasSlot: name must be a String", out);
     UObject *recv;
@@ -383,9 +381,8 @@ obj_hasSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 obj_removeSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "removeSlot", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "removeSlot: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "removeSlot", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "removeSlot: self must be a UObject", out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "removeSlot: name must be a String", out);
 
@@ -426,7 +423,7 @@ static int
 obj_clone(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "clone", 0, nargs, out);
+    URBI_CHECK_ARITY(vm, "clone", 0, nargs, out);
 
     /* Atom short-circuit. */
     if (self.kind != (uint8_t)UVAL_OBJECT) {
@@ -455,7 +452,7 @@ obj_clone(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 obj_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 0) return urbi_raise_arity(vm, "new", 0, nargs, out);
+    URBI_CHECK_ARITY(vm, "new", 0, nargs, out);
     /* Delegate to obj_clone so the atom short-circuit + UObject path stay
      * in one place.  When the language gains init hooks, this delegation
      * becomes the call site for the post-clone init dispatch. */
@@ -467,9 +464,8 @@ obj_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 obj_addProto(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "addProto", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "addProto: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "addProto", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "addProto: self must be a UObject", out);
     if (args[0].kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "addProto: argument must be a UObject", out);
 
@@ -494,9 +490,8 @@ obj_addProto(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 obj_removeProto(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "removeProto", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "removeProto: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "removeProto", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "removeProto: self must be a UObject", out);
     if (args[0].kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "removeProto: argument must be a UObject", out);
 
@@ -516,9 +511,8 @@ static int
 obj_protos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "protos", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "protos: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "protos", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "protos: self must be a UObject", out);
 
     UObject *recv = (UObject *)self.v.p;
     UObject *list = urbi_proto_list_create(vm, recv);
@@ -532,9 +526,8 @@ obj_protos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 obj_setProtos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "setProtos", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "setProtos: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "setProtos", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "setProtos: self must be a UObject", out);
     /* Wave 1 limited: List literal lex defers to Wave 2.  Accept a single
      * UObject and treat as a one-element list.  A future setProtos that
      * accepts a List value will branch on args[0].kind == UVAL_LIST. */
@@ -583,10 +576,9 @@ static int
 obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t nargs,
                        UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "insertFront", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm,
-            "insertFront: self must be the synthetic protos UObject", out);
+    URBI_CHECK_ARITY(vm, "insertFront", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT,
+                    "insertFront: self must be the synthetic protos UObject", out);
     if (args[0].kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm,
             "insertFront: argument must be a UObject", out);
@@ -658,9 +650,8 @@ obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t nargs,
 static int
 obj_setProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 3) return urbi_raise_arity(vm, "setProperty", 3, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "setProperty: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "setProperty", 3, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "setProperty: self must be a UObject", out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm,
             "setProperty: name must be a String", out);
@@ -773,9 +764,8 @@ static int
 obj_localSlotNames(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "localSlotNames", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "localSlotNames: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "localSlotNames", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "localSlotNames: self must be a UObject", out);
     const UObject *o = (const UObject *)self.v.p;
     UObject *lst = urbi_stdlib_list_new_empty(vm);
     if (lst == NULL) return urbi_raise_oom(vm, out);
@@ -791,9 +781,8 @@ static int
 obj_slotNames(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "slotNames", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "slotNames: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "slotNames", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "slotNames: self must be a UObject", out);
     const UObject *o = (const UObject *)self.v.p;
     UObject *lst = urbi_stdlib_list_new_empty(vm);
     if (lst == NULL) return urbi_raise_oom(vm, out);
@@ -812,7 +801,7 @@ obj_slotNames(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 obj_hasLocalSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "hasLocalSlot", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "hasLocalSlot", 1, nargs, out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "hasLocalSlot: name must be a String", out);
     if (self.kind != (uint8_t)UVAL_OBJECT) { *out = urbi_make_bool(0); return UEXEC_OK; }
@@ -836,9 +825,8 @@ obj_hasLocalSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 obj_getProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 2) return urbi_raise_arity(vm, "getProperty", 2, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "getProperty: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "getProperty", 2, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "getProperty: self must be a UObject", out);
     if (args[0].kind != (uint8_t)UVAL_STR || args[1].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "getProperty: name and prop must be Strings", out);
 
@@ -875,9 +863,8 @@ obj_getProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 obj_properties(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "properties", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "properties: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "properties", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "properties: self must be a UObject", out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "properties: name must be a String", out);
 
@@ -926,9 +913,8 @@ static int
 obj_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Object.asString", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "asString: self must be a UObject", out);
+    URBI_CHECK_ARITY(vm, "Object.asString", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "asString: self must be a UObject", out);
 #if __STDC_HOSTED__
     char buf[64];
     int n = snprintf(buf, sizeof buf, "<object %p>", self.v.p);

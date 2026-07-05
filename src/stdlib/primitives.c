@@ -101,9 +101,8 @@ static int
 mutex_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Mutex.new", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Mutex.new: receiver must be an Object", out);
+    URBI_CHECK_ARITY(vm, "Mutex.new", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Mutex.new: receiver must be an Object", out);
 
     UObject *m = urbi_object_clone(vm, (UObject *)self.v.p);
     if (m == NULL) return urbi_raise_oom(vm, out);
@@ -119,9 +118,8 @@ static int
 mutex_locked(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Mutex.locked", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Mutex.locked: receiver must be a Mutex", out);
+    URBI_CHECK_ARITY(vm, "Mutex.locked", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Mutex.locked: receiver must be a Mutex", out);
 
     UValue v;
     if (read_local_slot(vm, (UObject *)self.v.p, "_locked", &v) != 0)
@@ -139,9 +137,8 @@ static int
 mutex_lock(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Mutex.lock", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Mutex.lock: receiver must be a Mutex", out);
+    URBI_CHECK_ARITY(vm, "Mutex.lock", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Mutex.lock: receiver must be a Mutex", out);
 
     if (write_local_slot(vm, (UObject *)self.v.p, "_locked", urbi_make_bool(1)) != 0)
         return urbi_raise_oom(vm, out);
@@ -154,9 +151,8 @@ static int
 mutex_unlock(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Mutex.unlock", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Mutex.unlock: receiver must be a Mutex", out);
+    URBI_CHECK_ARITY(vm, "Mutex.unlock", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Mutex.unlock: receiver must be a Mutex", out);
 
     if (write_local_slot(vm, (UObject *)self.v.p, "_locked", urbi_make_bool(0)) != 0)
         return urbi_raise_oom(vm, out);
@@ -169,9 +165,8 @@ static int
 mutex_trylock(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Mutex.tryLock", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Mutex.tryLock: receiver must be a Mutex", out);
+    URBI_CHECK_ARITY(vm, "Mutex.tryLock", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Mutex.tryLock: receiver must be a Mutex", out);
 
     UObject *m = (UObject *)self.v.p;
     UValue v;
@@ -226,9 +221,8 @@ static int
 date_now(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Date.now", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Date.now: receiver must be an Object", out);
+    URBI_CHECK_ARITY(vm, "Date.now", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Date.now: receiver must be an Object", out);
 
     UObject *d = urbi_object_clone(vm, (UObject *)self.v.p);
     if (d == NULL) return urbi_raise_oom(vm, out);
@@ -243,9 +237,8 @@ date_now(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 date_from_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "Date.fromSeconds", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Date.fromSeconds: receiver must be an Object", out);
+    URBI_CHECK_ARITY(vm, "Date.fromSeconds", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Date.fromSeconds: receiver must be an Object", out);
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "Date.fromSeconds: seconds must be Integer", out);
 
@@ -263,9 +256,8 @@ static int
 date_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Date.seconds", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Date.seconds: receiver must be a Date", out);
+    URBI_CHECK_ARITY(vm, "Date.seconds", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Date.seconds: receiver must be a Date", out);
 
     UValue v;
     if (read_local_slot(vm, (UObject *)self.v.p, "_seconds", &v) != 0)
@@ -282,9 +274,8 @@ static int
 date_as_string(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Date.asString", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Date.asString: receiver must be a Date", out);
+    URBI_CHECK_ARITY(vm, "Date.asString", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Date.asString: receiver must be a Date", out);
 
     UValue v;
     if (read_local_slot(vm, (UObject *)self.v.p, "_seconds", &v) != 0)
@@ -342,9 +333,8 @@ date_as_string(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 date_plus(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "Date.plus", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Date.plus: receiver must be a Date", out);
+    URBI_CHECK_ARITY(vm, "Date.plus", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Date.plus: receiver must be a Date", out);
     if (args[0].kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "Date.plus: argument must be a Duration", out);
     if (vm->date_proto == NULL)
@@ -395,11 +385,9 @@ static const UNativeMethodDef DATE_METHODS[] = {
 static int
 duration_from_micros(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1)
-        return urbi_raise_arity(vm, "Duration.fromMicroseconds", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm,
-            "Duration.fromMicroseconds: receiver must be an Object", out);
+    URBI_CHECK_ARITY(vm, "Duration.fromMicroseconds", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT,
+                    "Duration.fromMicroseconds: receiver must be an Object", out);
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm,
             "Duration.fromMicroseconds: argument must be Integer", out);
@@ -418,11 +406,9 @@ static int
 duration_micros(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0)
-        return urbi_raise_arity(vm, "Duration.asMicroseconds", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm,
-            "Duration.asMicroseconds: receiver must be a Duration", out);
+    URBI_CHECK_ARITY(vm, "Duration.asMicroseconds", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT,
+                    "Duration.asMicroseconds: receiver must be a Duration", out);
 
     UValue v;
     if (read_local_slot(vm, (UObject *)self.v.p, "_microseconds", &v) != 0)
@@ -435,11 +421,9 @@ static int
 duration_millis(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0)
-        return urbi_raise_arity(vm, "Duration.asMilliseconds", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm,
-            "Duration.asMilliseconds: receiver must be a Duration", out);
+    URBI_CHECK_ARITY(vm, "Duration.asMilliseconds", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT,
+                    "Duration.asMilliseconds: receiver must be a Duration", out);
 
     UValue v;
     if (read_local_slot(vm, (UObject *)self.v.p, "_microseconds", &v) != 0)
@@ -453,11 +437,9 @@ static int
 duration_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0)
-        return urbi_raise_arity(vm, "Duration.asSeconds", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm,
-            "Duration.asSeconds: receiver must be a Duration", out);
+    URBI_CHECK_ARITY(vm, "Duration.asSeconds", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT,
+                    "Duration.asSeconds: receiver must be a Duration", out);
 
     UValue v;
     if (read_local_slot(vm, (UObject *)self.v.p, "_microseconds", &v) != 0)

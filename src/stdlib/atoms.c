@@ -102,9 +102,8 @@ static int
 bool_negate(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Boolean.negate", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_BOOL)
-        return urbi_raise_type(vm, "Boolean.negate: self must be Boolean", out);
+    URBI_CHECK_ARITY(vm, "Boolean.negate", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_BOOL, "Boolean.negate: self must be Boolean", out);
 
     *out = urbi_make_bool(self.v.i == 0);
     return UEXEC_OK;
@@ -124,9 +123,8 @@ static int
 int_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Integer.asString", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "Integer.asString: self must be Integer", out);
+    URBI_CHECK_ARITY(vm, "Integer.asString", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.asString: self must be Integer", out);
 
 #if __STDC_HOSTED__
     char buf[24];
@@ -149,9 +147,8 @@ static int
 int_asFloat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Integer.asFloat", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "Integer.asFloat: self must be Integer", out);
+    URBI_CHECK_ARITY(vm, "Integer.asFloat", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.asFloat: self must be Integer", out);
 
     *out = urbi_make_float((double)self.v.i);
     return UEXEC_OK;
@@ -161,9 +158,8 @@ static int
 int_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Integer.asBoolean", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "Integer.asBoolean: self must be Integer", out);
+    URBI_CHECK_ARITY(vm, "Integer.asBoolean", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.asBoolean: self must be Integer", out);
 
     *out = urbi_make_bool(self.v.i != 0);
     return UEXEC_OK;
@@ -173,9 +169,8 @@ static int
 int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Integer.asInteger", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "Integer.asInteger: self must be Integer", out);
+    URBI_CHECK_ARITY(vm, "Integer.asInteger", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.asInteger: self must be Integer", out);
 
     *out = self;
     return UEXEC_OK;
@@ -213,9 +208,8 @@ static int
 int_inv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Integer.inv", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "Integer.inv: self must be Integer", out);
+    URBI_CHECK_ARITY(vm, "Integer.inv", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.inv: self must be Integer", out);
 
     *out = urbi_make_int(~self.v.i);
     return UEXEC_OK;
@@ -224,9 +218,8 @@ int_inv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 int_shl(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "Integer.shl", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "Integer.shl: self must be Integer", out);
+    URBI_CHECK_ARITY(vm, "Integer.shl", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.shl: self must be Integer", out);
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "Integer.shl: argument must be Integer", out);
 
@@ -239,9 +232,8 @@ int_shl(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 int_shr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "Integer.shr", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "Integer.shr: self must be Integer", out);
+    URBI_CHECK_ARITY(vm, "Integer.shr", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.shr: self must be Integer", out);
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "Integer.shr: argument must be Integer", out);
 
@@ -259,9 +251,8 @@ int_shr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 int_ushr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "Integer.ushr", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "Integer.ushr: self must be Integer", out);
+    URBI_CHECK_ARITY(vm, "Integer.ushr", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.ushr: self must be Integer", out);
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "Integer.ushr: argument must be Integer", out);
 
@@ -280,9 +271,8 @@ int_ushr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 int_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "Integer.%", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "%: self must be Integer", out);
+    URBI_CHECK_ARITY(vm, "Integer.%", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_INT, "%: self must be Integer", out);
     if (args[0].kind == (uint8_t)UVAL_FLOAT) {
         /* v0.13.5: legacy-conformant modulo-by-zero (float.cc
          * operator%: `if (rhs) fmod(...) else RAISE("modulo by 0")`). */
@@ -302,9 +292,8 @@ int_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 flt_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "Float.%", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "%: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.%", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "%: self must be Float", out);
     double b;
     if (args[0].kind == (uint8_t)UVAL_FLOAT) b = (double)args[0].v.f;
     else if (args[0].kind == (uint8_t)UVAL_INT) b = (double)args[0].v.i;
@@ -322,7 +311,7 @@ static int
 flt_random(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)self; (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Float.random", 0, nargs, out);
+    URBI_CHECK_ARITY(vm, "Float.random", 0, nargs, out);
     uint64_t bits = prng_next() >> 11;          /* top 53 bits */
     *out = urbi_make_float((double)bits * (1.0 / 9007199254740992.0)); /* / 2^53 */
     return UEXEC_OK;
@@ -384,9 +373,8 @@ static int
 flt_abs(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Float.abs", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.abs: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.abs", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.abs: self must be Float", out);
     double x = (double)self.v.f;
     *out = urbi_make_float(x < 0.0 ? -x : x);
     return UEXEC_OK;
@@ -396,9 +384,8 @@ static int
 flt_floor(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Float.floor", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.floor: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.floor", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.floor: self must be Float", out);
     double x = (double)self.v.f;
     int64_t t = (int64_t)x;
     double tf = (double)t;
@@ -414,9 +401,8 @@ static int
 flt_ceil(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Float.ceil", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.ceil: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.ceil", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.ceil: self must be Float", out);
     double x = (double)self.v.f;
     int64_t t = (int64_t)x;
     double tf = (double)t;
@@ -429,9 +415,8 @@ static int
 flt_round(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Float.round", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.round: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.round", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.round: self must be Float", out);
     double x = (double)self.v.f;
     /* Round half-away-from-zero (matches glibc round()). */
     double biased = x < 0.0 ? x - 0.5 : x + 0.5;
@@ -466,9 +451,8 @@ DEF_FLOAT_UNARY_FREESTANDING(exp)
 static int
 flt_atan2(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "Float.atan2", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.atan2: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.atan2", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.atan2: self must be Float", out);
 
     double x = FLOAT_OF_VALUE(args[0]);
 #if __STDC_HOSTED__
@@ -494,9 +478,8 @@ static int
 flt_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Float.asString", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.asString: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.asString", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.asString: self must be Float", out);
 
 #if __STDC_HOSTED__
     char buf[40];
@@ -536,9 +519,8 @@ static int
 flt_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Float.asInteger", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.asInteger: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.asInteger", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.asInteger: self must be Float", out);
 
     double f = (double)self.v.f;
     /* Reject NaN / Inf — C99 conversion is implementation-defined; we
@@ -557,9 +539,8 @@ static int
 flt_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Float.asBoolean", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.asBoolean: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.asBoolean", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.asBoolean: self must be Float", out);
 
     double f = (double)self.v.f;
     /* Legacy semantics: NaN is truthy (non-comparable but not zero).
@@ -574,9 +555,8 @@ static int
 flt_isNaN(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Float.isNaN", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.isNaN: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.isNaN", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.isNaN: self must be Float", out);
 
     /* IEEE-754 NaN-detection: x != x is true iff x is NaN.  Avoids the
      * isnan() macro dependency on freestanding builds. */
@@ -589,9 +569,8 @@ static int
 flt_isInfinite(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Float.isInfinite", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.isInfinite: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.isInfinite", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.isInfinite: self must be Float", out);
 
     double f = (double)self.v.f;
     /* +/- inf detection: NaN compares unordered, so subtraction yields
@@ -609,9 +588,8 @@ flt_isInfinite(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 flt_pow(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "Float.pow", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_FLOAT)
-        return urbi_raise_type(vm, "Float.pow: self must be Float", out);
+    URBI_CHECK_ARITY(vm, "Float.pow", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.pow: self must be Float", out);
 
     double e = FLOAT_OF_VALUE(args[0]);
 #if __STDC_HOSTED__
@@ -639,9 +617,8 @@ static int
 str_size(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "String.size", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String.size: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.size", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.size: self must be String", out);
 
     const char *s = (const char *)self.v.p;
     if (s == NULL) return urbi_raise_type(vm, "String.size: NULL string", out);
@@ -653,9 +630,8 @@ static int
 str_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "String.isEmpty", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String.isEmpty: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.isEmpty", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.isEmpty: self must be String", out);
 
     const char *s = (const char *)self.v.p;
     *out = urbi_make_bool(s == NULL || s[0] == '\0');
@@ -665,9 +641,8 @@ str_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_charAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "String.charAt", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String.charAt: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.charAt", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.charAt: self must be String", out);
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "String.charAt: index must be Integer", out);
 
@@ -705,9 +680,8 @@ str_caseop(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out,
            int to_upper, const char *fn_name)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, fn_name, 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String case op: self must be String", out);
+    URBI_CHECK_ARITY(vm, fn_name, 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String case op: self must be String", out);
 
     const char *s = (const char *)self.v.p;
     if (s == NULL) return urbi_raise_type(vm, "String case op: NULL string", out);
@@ -788,9 +762,8 @@ strs_find(const char *hay, size_t hlen, const char *ndl, size_t nlen,
 static int
 str_indexOf(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "String.indexOf", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String.indexOf: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.indexOf", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.indexOf: self must be String", out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "String.indexOf: argument must be String", out);
 
@@ -808,9 +781,8 @@ str_indexOf(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "String.contains", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String.contains: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.contains", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.contains: self must be String", out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "String.contains: argument must be String", out);
 
@@ -829,9 +801,8 @@ static int
 str_starts_or_ends(UVM *vm, UValue self, UValue *args, uint8_t nargs,
                    UValue *out, int starts, const char *fn_name)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, fn_name, 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String prefix/suffix op: self must be String", out);
+    URBI_CHECK_ARITY(vm, fn_name, 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String prefix/suffix op: self must be String", out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "String prefix/suffix op: argument must be String", out);
 
@@ -878,9 +849,8 @@ static int
 str_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "String.asInteger", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String.asInteger: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.asInteger", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.asInteger: self must be String", out);
 
     const char *s = (const char *)self.v.p;
     if (s == NULL || s[0] == '\0')
@@ -907,9 +877,8 @@ static int
 str_asFloat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "String.asFloat", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String.asFloat: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.asFloat", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.asFloat: self must be String", out);
 
     const char *s = (const char *)self.v.p;
     if (s == NULL || s[0] == '\0')
@@ -935,9 +904,8 @@ static int
 str_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "String.asBoolean", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String.asBoolean: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.asBoolean", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.asBoolean: self must be String", out);
 
     const char *s = (const char *)self.v.p;
     if (s == NULL) return urbi_raise_type(vm, "String.asBoolean: NULL string", out);
@@ -965,9 +933,8 @@ str_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_asciiAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "String.asciiAt", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String.asciiAt: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.asciiAt", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.asciiAt: self must be String", out);
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "String.asciiAt: index must be Integer", out);
 
@@ -1003,7 +970,7 @@ bytes_eq(const char *a, const char *b, size_t n)
 static int
 str_split(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "String.split", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "String.split", 1, nargs, out);
     if (self.kind != (uint8_t)UVAL_STR || args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "split: self and separator must be String", out);
 
@@ -1058,9 +1025,8 @@ str_split(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_join(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "String.join", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "join: self (separator) must be String", out);
+    URBI_CHECK_ARITY(vm, "String.join", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "join: self (separator) must be String", out);
     if (args[0].kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "join: argument must be a List", out);
     const char *sep = (const char *)self.v.p;
@@ -1099,9 +1065,8 @@ count_format_specs(const char *fmt, size_t n)
 static int
 str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "String.format", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "format: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.format", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "format: self must be String", out);
     if (args[0].kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "format: argument must be a List", out);
 
@@ -1190,9 +1155,8 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_percent(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "String.%", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "String.%: self must be String", out);
+    URBI_CHECK_ARITY(vm, "String.%", 1, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.%: self must be String", out);
     if (args[0].kind == (uint8_t)UVAL_OBJECT)
         return str_format(vm, self, args, 1U, out);
     /* Non-list scalar: wrap in a one-element list then delegate. */

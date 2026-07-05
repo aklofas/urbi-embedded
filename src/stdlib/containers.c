@@ -343,9 +343,8 @@ dict_storage(UVM *vm, UValue self)
 static int
 pair_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 2) return urbi_raise_arity(vm, "Pair.new", 2, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Pair.new: self must be Pair proto", out);
+    URBI_CHECK_ARITY(vm, "Pair.new", 2, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Pair.new: self must be Pair proto", out);
 
     UObject *p = urbi_object_clone(vm, (UObject *)self.v.p);
     if (p == NULL) return urbi_raise_oom(vm, out);
@@ -367,9 +366,8 @@ pair_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 triplet_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 3) return urbi_raise_arity(vm, "Triplet.new", 3, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Triplet.new: self must be Triplet proto", out);
+    URBI_CHECK_ARITY(vm, "Triplet.new", 3, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Triplet.new: self must be Triplet proto", out);
 
     UObject *t = urbi_object_clone(vm, (UObject *)self.v.p);
     if (t == NULL) return urbi_raise_oom(vm, out);
@@ -394,8 +392,7 @@ triplet_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 tuple_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Tuple.new: self must be Tuple proto", out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Tuple.new: self must be Tuple proto", out);
 
     UList *l = list_alloc(vm, (size_t)nargs > 0U ? (size_t)nargs : 1U);
     if (l == NULL) return urbi_raise_oom(vm, out);
@@ -419,7 +416,7 @@ static int
 list_or_tuple_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "length", 0, nargs, out);
+    URBI_CHECK_ARITY(vm, "length", 0, nargs, out);
     UList *l = list_storage(vm, self);
     if (l == NULL) return urbi_raise_type(vm, "length: missing _storage", out);
     *out = urbi_make_int((int64_t)l->len);
@@ -429,7 +426,7 @@ list_or_tuple_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *
 static int
 list_or_tuple_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "get", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "get", 1, nargs, out);
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "get: index must be Integer", out);
     UList *l = list_storage(vm, self);
@@ -450,8 +447,7 @@ list_or_tuple_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out
 static int
 list_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "List.new: self must be List proto", out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "List.new: self must be List proto", out);
 
     size_t cap = (size_t)nargs > 0U ? (size_t)nargs : 4U;
     UList *l = list_alloc(vm, cap);
@@ -476,7 +472,7 @@ static int
 list_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "isEmpty", 0, nargs, out);
+    URBI_CHECK_ARITY(vm, "isEmpty", 0, nargs, out);
     UList *l = list_storage(vm, self);
     if (l == NULL) return urbi_raise_type(vm, "isEmpty: missing _storage", out);
     *out = urbi_make_bool(l->len == 0U);
@@ -486,7 +482,7 @@ list_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 list_add(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "add", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "add", 1, nargs, out);
     UList *l = list_storage(vm, self);
     if (l == NULL) return urbi_raise_type(vm, "add: missing _storage", out);
     if (l->len == l->cap) {
@@ -502,7 +498,7 @@ list_add(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 list_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 2) return urbi_raise_arity(vm, "set", 2, nargs, out);
+    URBI_CHECK_ARITY(vm, "set", 2, nargs, out);
     if (args[0].kind != (uint8_t)UVAL_INT)
         return urbi_raise_type(vm, "set: index must be Integer", out);
     UList *l = list_storage(vm, self);
@@ -519,7 +515,7 @@ list_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 list_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "contains", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "contains", 1, nargs, out);
     UList *l = list_storage(vm, self);
     if (l == NULL) return urbi_raise_type(vm, "contains: missing _storage", out);
     size_t i;
@@ -536,7 +532,7 @@ list_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 list_concat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "concat", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "concat", 1, nargs, out);
     if (args[0].kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "concat: argument must be a List", out);
     UList *a = list_storage(vm, self);
@@ -565,7 +561,7 @@ list_concat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 list_diff(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "diff", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "diff", 1, nargs, out);
     if (args[0].kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "diff: argument must be a List", out);
     UList *a = list_storage(vm, self);
@@ -599,7 +595,7 @@ static int
 list_reverse(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "reverse", 0, nargs, out);
+    URBI_CHECK_ARITY(vm, "reverse", 0, nargs, out);
     UList *a = list_storage(vm, self);
     if (a == NULL) return urbi_raise_type(vm, "reverse: missing _storage", out);
     UList *o = list_alloc(vm, a->len > 0U ? a->len : 1U);
@@ -783,7 +779,7 @@ list_sort(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 list_join(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "join", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "join", 1, nargs, out);
     if (args[0].kind != (uint8_t)UVAL_STR)
         return urbi_raise_type(vm, "join: separator must be String", out);
     if (self.kind != (uint8_t)UVAL_OBJECT || self.v.p == NULL)
@@ -902,9 +898,8 @@ static int
 dict_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Dict.new", 0, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "Dict.new: self must be Dict proto", out);
+    URBI_CHECK_ARITY(vm, "Dict.new", 0, nargs, out);
+    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Dict.new: self must be Dict proto", out);
 
     UDict *d = dict_alloc(vm, 8U);
     if (d == NULL) return urbi_raise_oom(vm, out);
@@ -921,7 +916,7 @@ static int
 dict_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "length", 0, nargs, out);
+    URBI_CHECK_ARITY(vm, "length", 0, nargs, out);
     UDict *d = dict_storage(vm, self);
     if (d == NULL) return urbi_raise_type(vm, "length: missing _storage", out);
     *out = urbi_make_int((int64_t)d->len);
@@ -932,7 +927,7 @@ static int
 dict_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "isEmpty", 0, nargs, out);
+    URBI_CHECK_ARITY(vm, "isEmpty", 0, nargs, out);
     UDict *d = dict_storage(vm, self);
     if (d == NULL) return urbi_raise_type(vm, "isEmpty: missing _storage", out);
     *out = urbi_make_bool(d->len == 0U);
@@ -942,7 +937,7 @@ dict_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 dict_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 2) return urbi_raise_arity(vm, "set", 2, nargs, out);
+    URBI_CHECK_ARITY(vm, "set", 2, nargs, out);
     int rc = dict_key_check(vm, args[0], out, "set");
     if (rc != UEXEC_OK) return rc;
 
@@ -982,7 +977,7 @@ dict_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 dict_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "get", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "get", 1, nargs, out);
     int rc = dict_key_check(vm, args[0], out, "get");
     if (rc != UEXEC_OK) return rc;
 
@@ -1004,7 +999,7 @@ dict_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 dict_has(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "has", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "has", 1, nargs, out);
     int rc = dict_key_check(vm, args[0], out, "has");
     if (rc != UEXEC_OK) return rc;
 
@@ -1022,7 +1017,7 @@ dict_has(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 dict_remove(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "remove", 1, nargs, out);
+    URBI_CHECK_ARITY(vm, "remove", 1, nargs, out);
     int rc = dict_key_check(vm, args[0], out, "remove");
     if (rc != UEXEC_OK) return rc;
 
@@ -1058,7 +1053,7 @@ static int
 dict_keys(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "keys", 0, nargs, out);
+    URBI_CHECK_ARITY(vm, "keys", 0, nargs, out);
     UDict *d = dict_storage(vm, self);
     if (d == NULL) return urbi_raise_type(vm, "keys: missing _storage", out);
     UObject *lst = urbi_stdlib_list_new_empty(vm);
@@ -1079,7 +1074,7 @@ static int
 dict_values(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "values", 0, nargs, out);
+    URBI_CHECK_ARITY(vm, "values", 0, nargs, out);
     UDict *d = dict_storage(vm, self);
     if (d == NULL) return urbi_raise_type(vm, "values: missing _storage", out);
     UObject *lst = urbi_stdlib_list_new_empty(vm);
