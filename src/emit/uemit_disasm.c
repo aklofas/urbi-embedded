@@ -6,6 +6,7 @@
 #include "uemit_internal.h"
 #include "chunk/uchunk.h"
 #include <stdint.h>
+#include <string.h>
 
 #if __STDC_HOSTED__
 #  include <inttypes.h>
@@ -353,63 +354,18 @@ static bool fmt_self(char *buf, size_t cap, size_t *off,
                       (unsigned)uinstr_b(ins));
 }
 
-/* --- opname helper (used by the generic fallback in uemit_disassemble) --- */
+/* --- opname helper (used by the generic fallback in uemit_disassemble) ---
+ * Generated from uopcodes.def; covers all 49 opcodes. */
+
+static const char * const opname_table[OP_MAX] = {
+#define URBI_OP(n, u, s) #n,
+#include "chunk/uopcodes.def"
+#undef URBI_OP
+};
 
 static const char *opname(const UOpcode op) {
-    switch (op) {
-    case OP_LOADK:        return "LOADK";
-    case OP_MOVE:         return "MOVE";
-    case OP_ADD:          return "ADD";
-    case OP_SUB:          return "SUB";
-    case OP_MUL:          return "MUL";
-    case OP_DIV:          return "DIV";
-    case OP_NEG:          return "NEG";
-    case OP_RET:          return "RET";
-    case OP_LOADNIL:      return "LOADNIL";
-    case OP_LOADBOOL:     return "LOADBOOL";
-    case OP_LOADVOID:     return "LOADVOID";
-    case OP_GETUPVAL:     return "GETUPVAL";
-    case OP_SETUPVAL:     return "SETUPVAL";
-    case OP_CLOSURE:      return "CLOSURE";
-    case OP_CLOSE:        return "CLOSE";
-    case OP_CALL:         return "CALL";
-    case OP_JMP:          return "JMP";
-    case OP_TEST:         return "TEST";
-    case OP_TESTSET:      return "TESTSET";
-    case OP_EQ:           return "EQ";
-    case OP_NEQ:          return "NEQ";
-    case OP_LT:           return "LT";
-    case OP_LE:           return "LE";
-    case OP_YIELD:        return "YIELD";
-    case OP_FORK_DETACH:  return "FORK_DETACH";
-    case OP_FORK_JOIN:    return "FORK_JOIN";
-    case OP_JOIN_WAIT:    return "JOIN_WAIT";
-    case OP_GETSLOT:      return "GETSLOT";
-    case OP_SETSLOT:      return "SETSLOT";
-    case OP_THROW:        return "THROW";
-    case OP_TAG_STOP:     return "TAG_STOP";
-    case OP_TRY_BEGIN:    return "TRY_BEGIN";
-    case OP_TRY_END:      return "TRY_END";
-    case OP_PUSH_TAG:     return "PUSH_TAG";
-    case OP_POP_TAG:      return "POP_TAG";
-    case OP_PUSH_FRAME_GUARD:     return "PUSH_FRAME_GUARD";
-    case OP_RESUME:               return "RESUME";
-    case OP_LOAD_CATCH_VALUE:     return "LOAD_CATCH_VALUE";
-    /* M5 reactive runtime stubs */
-    case OP_AT_INSTALL:           return "AT_INSTALL";
-    case OP_AT_SYNC_INSTALL:      return "AT_SYNC_INSTALL";
-    case OP_WHENEVER_INSTALL:     return "WHENEVER_INSTALL";
-    case OP_WAITUNTIL_INSTALL:    return "WAITUNTIL_INSTALL";
-    case OP_AT_EVENT_INSTALL:     return "AT_EVENT_INSTALL";
-    case OP_AT_EVENT_SYNC_INSTALL:return "AT_EVENT_SYNC_INSTALL";
-    case OP_GETSLOT_CHANGE_EVENT: return "GETSLOT_CHANGE_EVENT";
-    case OP_LOAD_REALM_GLOBAL:    return "LOAD_REALM_GLOBAL";
-    case OP_LOAD_RECV:            return "LOAD_RECV";
-    case OP_SELF:                 return "SELF";
-    case OP_WHENEVER_EVENT_INSTALL: return "WHENEVER_EVENT_INSTALL";
-    case OP_MAX:                  break;
-    }
-    return "OP?";
+    if ((unsigned)op >= (unsigned)OP_MAX) return "OP?";
+    return opname_table[(unsigned)op];
 }
 
 /* --- Dispatch table (indexed by UOpcode value 0..OP_MAX-1) ---
@@ -468,6 +424,7 @@ static const UDisFormatFn op_disasm[OP_MAX] = {
     /* 45 OP_LOAD_REALM_GLOBAL  */ fmt_load_realm_global,
     /* 46 OP_LOAD_RECV          */ fmt_load_recv,
     /* 47 OP_SELF               */ fmt_self,
+    /* 48 OP_WHENEVER_EVENT_INSTALL */ NULL,  /* generic ABC format */
 };
 
 size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
@@ -509,6 +466,17 @@ size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
     return off;
 }
 
+/* completeness check: returns 1 if opname() returns a non-fallback string
+ * for every opcode in [0, OP_MAX).  Called from the disasm completeness
+ * unit test. */
+int uemit_disasm_opnames_complete(void) {
+    for (int op = 0; op < (int)OP_MAX; op++) {
+        if (strcmp(opname((UOpcode)op), "OP?") == 0)
+            return 0;
+    }
+    return 1;
+}
+
 #else  /* freestanding */
 
 size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
@@ -516,5 +484,7 @@ size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
     if (cap > 0 && buf != NULL) buf[0] = '\0';
     return 0;
 }
+
+int uemit_disasm_opnames_complete(void) { return 1; }
 
 #endif  /* __STDC_HOSTED__ */

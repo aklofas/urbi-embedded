@@ -8,6 +8,7 @@
 #include "value/uvalue.h"      /* UValKind, UVAL_* */
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 /* Map UValKind to a human-readable name for diagnostic messages. */
 const char *kind_name(uint8_t kind) {
@@ -21,60 +22,16 @@ const char *kind_name(uint8_t kind) {
     return "unknown";
 }
 
-/* Map UOpcode to its mnemonic name for diagnostic messages. */
+/* Map UOpcode to its mnemonic name for diagnostic messages.
+ * Generated from uopcodes.def; covers all 49 opcodes. */
+static const char * const op_name_table[OP_MAX] = {
+#define URBI_OP(n, u, s) "OP_" #n,
+#include "chunk/uopcodes.def"
+#undef URBI_OP
+};
 const char *op_name(uint8_t op) {
-    switch (op) {
-        case OP_LOADK:          return "OP_LOADK";
-        case OP_MOVE:           return "OP_MOVE";
-        case OP_ADD:            return "OP_ADD";
-        case OP_SUB:            return "OP_SUB";
-        case OP_MUL:            return "OP_MUL";
-        case OP_DIV:            return "OP_DIV";
-        case OP_NEG:            return "OP_NEG";
-        case OP_RET:            return "OP_RET";
-        case OP_LOADNIL:        return "OP_LOADNIL";
-        case OP_LOADBOOL:       return "OP_LOADBOOL";
-        case OP_LOADVOID:       return "OP_LOADVOID";
-        case OP_GETUPVAL:       return "OP_GETUPVAL";
-        case OP_SETUPVAL:       return "OP_SETUPVAL";
-        case OP_CLOSURE:        return "OP_CLOSURE";
-        case OP_CLOSE:          return "OP_CLOSE";
-        case OP_CALL:           return "OP_CALL";
-        case OP_JMP:            return "OP_JMP";
-        case OP_TEST:           return "OP_TEST";
-        case OP_TESTSET:        return "OP_TESTSET";
-        case OP_EQ:             return "OP_EQ";
-        case OP_NEQ:            return "OP_NEQ";
-        case OP_LT:             return "OP_LT";
-        case OP_LE:             return "OP_LE";
-        case OP_YIELD:          return "OP_YIELD";
-        case OP_FORK_DETACH:    return "OP_FORK_DETACH";
-        case OP_FORK_JOIN:      return "OP_FORK_JOIN";
-        case OP_JOIN_WAIT:      return "OP_JOIN_WAIT";
-        case OP_GETSLOT:        return "OP_GETSLOT";
-        case OP_SETSLOT:        return "OP_SETSLOT";
-        /* M3 row 7 control-transfer opcodes */
-        case OP_THROW:          return "OP_THROW";
-        case OP_TAG_STOP:       return "OP_TAG_STOP";
-        case OP_TRY_BEGIN:      return "OP_TRY_BEGIN";
-        case OP_TRY_END:        return "OP_TRY_END";
-        case OP_PUSH_TAG:       return "OP_PUSH_TAG";
-        case OP_POP_TAG:        return "OP_POP_TAG";
-        case OP_PUSH_FRAME_GUARD:     return "OP_PUSH_FRAME_GUARD";
-        case OP_RESUME:               return "OP_RESUME";
-        case OP_LOAD_CATCH_VALUE:     return "OP_LOAD_CATCH_VALUE";
-        /* M5 reactive runtime stubs */
-        case OP_AT_INSTALL:           return "OP_AT_INSTALL";
-        case OP_AT_SYNC_INSTALL:      return "OP_AT_SYNC_INSTALL";
-        case OP_WHENEVER_INSTALL:     return "OP_WHENEVER_INSTALL";
-        case OP_WAITUNTIL_INSTALL:    return "OP_WAITUNTIL_INSTALL";
-        case OP_AT_EVENT_INSTALL:     return "OP_AT_EVENT_INSTALL";
-        case OP_AT_EVENT_SYNC_INSTALL:return "OP_AT_EVENT_SYNC_INSTALL";
-        case OP_GETSLOT_CHANGE_EVENT: return "OP_GETSLOT_CHANGE_EVENT";
-        case OP_LOAD_REALM_GLOBAL:    return "OP_LOAD_REALM_GLOBAL";
-        case OP_LOAD_RECV:            return "OP_LOAD_RECV";
-    }
-    return "unknown";
+    if (op >= (uint8_t)OP_MAX) return "unknown";
+    return op_name_table[op];
 }
 
 void diag_init(UDiagWriter *w, char *buf, size_t cap) {
@@ -197,22 +154,16 @@ void diag_write_prefix(UDiagWriter *w, const UProto *module, size_t pc) {
     diag_write_cstr(w, ": ");
 }
 
-/* Map UOpcode to a user-facing glyph or description for error messages.
- * op_name() is for the disassembler; this is for the user.
- * Consolidate via X-macro in v0.13.6. */
+/* Map UOpcode to a user-facing phrase for error messages.
+ * Generated from uopcodes.def; covers all 49 opcodes. */
+static const char * const op_user_name_table[OP_MAX] = {
+#define URBI_OP(n, u, s) u,
+#include "chunk/uopcodes.def"
+#undef URBI_OP
+};
 static const char *op_user_name(uint8_t op) {
-    switch (op) {
-        case OP_ADD: return "'+'";
-        case OP_SUB: return "'-'";
-        case OP_MUL: return "'*'";
-        case OP_DIV: return "'/'";
-        case OP_NEG: return "unary '-'";
-        case OP_LT:  return "'<'";
-        case OP_LE:  return "'<='";
-        case OP_EQ:  return "'=='";
-        case OP_NEQ: return "'!='";
-    }
-    return "(operator)";
+    if (op >= (uint8_t)OP_MAX) return "(operator)";
+    return op_user_name_table[op];
 }
 
 /* Binary-op TypeError: two operand kinds reported.
@@ -251,6 +202,19 @@ void vm_format_oom(UVM *vm, size_t nbytes) {
     diag_write_cstr(&w, "out of memory allocating register frame (");
     diag_write_size(&w, nbytes);
     diag_write_cstr(&w, " bytes requested)");
+}
+
+/* completeness check: returns 1 if every opcode in [0, OP_MAX) has a
+ * non-fallback op_name() and op_user_name().  Called from the opcode
+ * completeness unit test. */
+int vm_diag_opnames_complete(void) {
+    for (int op = 0; op < (int)OP_MAX; op++) {
+        if (strcmp(op_name((uint8_t)op), "unknown") == 0)
+            return 0;
+        if (strcmp(op_user_name((uint8_t)op), "(operator)") == 0)
+            return 0;
+    }
+    return 1;
 }
 
 /* Generic unsupported-opcode error message.  Used by placeholder arms

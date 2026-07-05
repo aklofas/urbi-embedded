@@ -1,0 +1,77 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* uopcodes.def — single source of truth for the 49-opcode set (v1.9/OP_MAX=49).
+ *
+ * URBI_OP(enum_suffix, user_phrase, form)
+ *   enum_suffix  OP_##suffix is the UOpcode enumerator; value = row position.
+ *   user_phrase  user-facing error-message phrase (lowercase, no mnemonic).
+ *   form         instruction encoding: ABC or ABX (informational; Phase 2 use).
+ *
+ * ROW ORDER IS WIRE-FORMAT FROZEN (v1.9).  Do NOT reorder or insert rows.
+ * Adding an opcode requires a wire-format version bump and ABI MINOR bump. */
+
+/* M1 (v1.0) opcodes 0-7 */
+URBI_OP(LOADK,               "load constant",              ABX)
+URBI_OP(MOVE,                "register copy",              ABC)
+URBI_OP(ADD,                 "'+'",                        ABC)
+URBI_OP(SUB,                 "'-'",                        ABC)
+URBI_OP(MUL,                 "'*'",                        ABC)
+URBI_OP(DIV,                 "'/'",                        ABC)
+URBI_OP(NEG,                 "unary '-'",                  ABC)
+URBI_OP(RET,                 "return",                     ABC)
+
+/* M2 (v1.1) opcodes 8-23 */
+URBI_OP(LOADNIL,             "nil literal",                ABC)
+URBI_OP(LOADBOOL,            "bool literal",               ABC)
+URBI_OP(LOADVOID,            "void literal",               ABC)
+URBI_OP(GETUPVAL,            "upvalue read",               ABC)
+URBI_OP(SETUPVAL,            "upvalue write",              ABC)
+URBI_OP(CLOSURE,             "closure creation",           ABX)
+URBI_OP(CLOSE,               "upvalue close",              ABC)
+URBI_OP(CALL,                "function call",              ABC)
+URBI_OP(JMP,                 "jump",                       ABX)
+URBI_OP(TEST,                "conditional test",           ABC)
+URBI_OP(TESTSET,             "conditional test-set",       ABC)
+URBI_OP(EQ,                  "'=='",                       ABC)
+URBI_OP(NEQ,                 "'!='",                       ABC)
+URBI_OP(LT,                  "'<'",                        ABC)
+URBI_OP(LE,                  "'<='",                       ABC)
+URBI_OP(YIELD,               "yield",                      ABC)
+
+/* M3 separator opcodes 24-26 */
+URBI_OP(FORK_DETACH,         "parallel fork",              ABC)
+URBI_OP(FORK_JOIN,           "join fork",                  ABC)
+URBI_OP(JOIN_WAIT,           "join wait",                  ABC)
+
+/* M4 slot opcodes 27-28 */
+URBI_OP(GETSLOT,             "slot access",                ABC)
+URBI_OP(SETSLOT,             "slot write",                 ABC)
+
+/* M3 row 7 control-transfer opcodes 29-37 */
+URBI_OP(THROW,               "throw",                      ABC)
+URBI_OP(TAG_STOP,            "tag stop",                   ABC)
+URBI_OP(TRY_BEGIN,           "try begin",                  ABX)
+URBI_OP(TRY_END,             "try end",                    ABC)
+URBI_OP(PUSH_TAG,            "tag push",                   ABX)
+URBI_OP(POP_TAG,             "tag pop",                    ABC)
+URBI_OP(PUSH_FRAME_GUARD,    "frame guard install",        ABC)
+URBI_OP(RESUME,              "unwind resume",              ABC)
+URBI_OP(LOAD_CATCH_VALUE,    "catch value load",           ABC)
+
+/* M5 reactive opcodes 38-45 */
+URBI_OP(AT_INSTALL,              "at watcher install",         ABC)
+URBI_OP(AT_SYNC_INSTALL,         "at sync watcher install",    ABC)
+URBI_OP(WHENEVER_INSTALL,        "whenever watcher install",   ABC)
+URBI_OP(WAITUNTIL_INSTALL,       "waituntil install",          ABC)
+URBI_OP(AT_EVENT_INSTALL,        "at-event watcher install",   ABC)
+URBI_OP(AT_EVENT_SYNC_INSTALL,   "at-event sync install",      ABC)
+URBI_OP(GETSLOT_CHANGE_EVENT,    "slot-change event",          ABC)
+URBI_OP(LOAD_REALM_GLOBAL,       "realm global load",          ABC)
+
+/* v0.6.2 Phase 2 — `this` keyword (46) */
+URBI_OP(LOAD_RECV,           "receiver load",              ABC)
+
+/* v0.7.2 S42 — method-call ABI (47) */
+URBI_OP(SELF,                "method call",                ABC)
+
+/* v0.10.2-reactive W0 — whenever (e?) install (48, wire v1.9) */
+URBI_OP(WHENEVER_EVENT_INSTALL, "whenever-event install",  ABC)

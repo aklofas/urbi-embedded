@@ -2,6 +2,11 @@
 /* uopcode_shape.c — opcode-shape table data.  See uopcode_shape.h. */
 
 #include "uopcode_shape.h"
+#include "urbi/types.h"   /* URBI_STATIC_ASSERT */
+
+/* Pin the row count against the .def so a new opcode in the enum without a
+ * matching shape entry causes a compile-time error. */
+URBI_STATIC_ASSERT(OP_MAX == 49, "uopcodes.def row count diverged from shape table");
 
 const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     /* M1 (v1.0) opcodes 0-7 */

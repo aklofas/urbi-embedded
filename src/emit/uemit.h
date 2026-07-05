@@ -362,6 +362,10 @@ void uemit_load_catch_value(UEmitter *e, uint8_t reg, uint32_t line);
    constant-pool dump. */
 size_t uemit_disassemble(const UProto *root, char *buf, size_t cap);
 
+/* completeness check: returns 1 if opname() has a non-"OP?" entry for every
+ * opcode in [0, OP_MAX).  Used by the disasm completeness unit test. */
+int uemit_disasm_opnames_complete(void);
+
 /* Serialize a root UProto to the .urb byte format.
    Returns bytes written on success (including the case where buf == NULL
    and cap == 0 — first-pass size query).

@@ -3,6 +3,7 @@
 #include "utest.h"
 
 #include "vm/uvm.h"
+#include "vm/uvm_internal.h"    /* vm_diag_opnames_complete */
 #include "chunk/uchunk.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
@@ -1250,6 +1251,31 @@ UTEST(vm_op_setslot_binds_ic_table_at_top_level) {
     urbi_vm_destroy(&vm);
 }
 
+/* --- opcode name completeness --- */
+
+UTEST(opcode_op_name_covers_all) {
+    /* op_name() must return a non-"unknown" string for every valid opcode. */
+    int pass = 1;
+    for (int op = 0; op < (int)OP_MAX; op++) {
+        const char *name = op_name((uint8_t)op);
+        if (strcmp(name, "unknown") == 0) {
+            pass = 0;
+        }
+    }
+    UASSERT(pass);
+}
+
+UTEST(opcode_user_phrase_covers_all) {
+    /* op_user_name() must return a non-"(operator)" string for every opcode
+     * (all opcodes get a user phrase in the X-macro .def). */
+    UASSERT(vm_diag_opnames_complete());
+}
+
+UTEST(opcode_disasm_opname_covers_all) {
+    /* disasm opname() must return a non-"OP?" string for every opcode. */
+    UASSERT(uemit_disasm_opnames_complete());
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("urbi_vm_init hosted NULL alloc falls back to stdlib shim",
@@ -1368,4 +1394,10 @@ void test_vm_suite(void) {
               vm_op_setslot_binds_ic_table_at_top_level);
     utest_run("vm: OP_RET in nested call routes through urbi_unwind walker",
               vm_op_ret_nested_call_routes_through_walker);
+    utest_run("opcode op_name() covers all OP_MAX opcodes",
+              opcode_op_name_covers_all);
+    utest_run("opcode op_user_name() covers all OP_MAX opcodes",
+              opcode_user_phrase_covers_all);
+    utest_run("opcode disasm opname() covers all OP_MAX opcodes",
+              opcode_disasm_opname_covers_all);
 }

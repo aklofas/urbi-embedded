@@ -45,6 +45,10 @@ void vm_format_type_error_unary(UVM *vm, const UProto *module, size_t pc,
 void vm_format_type_error_msg(UVM *vm, const char *msg);
 void vm_format_oom(UVM *vm, size_t nbytes);
 
+/* completeness check: returns 1 if op_name() and op_user_name() return
+ * non-fallback strings for every valid opcode. */
+int vm_diag_opnames_complete(void);
+
 /* --- From uvm_closure.c --- */
 
 UClosure   *vm_alloc_closure(UVM *vm, UProto *proto);

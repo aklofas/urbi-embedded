@@ -92,146 +92,16 @@ static const uint8_t URBI_BYTECODE_CANARY[URBI_BYTECODE_CANARY_LEN] = {
 #define URBI_ENDIANNESS 0         /* 0 = little, 1 = big; v1 ships little-only */
 #endif
 
-/* --- opcode set (M1 reserves slots 0-7; 8-255 reserved for M2+) --- */
+/* --- opcode set — generated from src/chunk/uopcodes.def (49 opcodes, v1.9) ---
+ *
+ * Row order is wire-format frozen; do NOT reorder.  Operand encoding notes
+ * live in docs/internals/opcodes.md and individual comments in uopcodes.def.
+ * The computed-goto dispatch in uvm.c is NOT generated (hottest path). */
 
 typedef enum {
-    OP_LOADK = 0,                 /* ABx:  R[A] := K[Bx]                 */
-    OP_MOVE  = 1,                 /* ABC:  R[A] := R[B]                  */
-    OP_ADD   = 2,                 /* ABC:  R[A] := R[B] + R[C]           */
-    OP_SUB   = 3,                 /* ABC:  R[A] := R[B] - R[C]           */
-    OP_MUL   = 4,                 /* ABC:  R[A] := R[B] * R[C]           */
-    OP_DIV   = 5,                 /* ABC:  R[A] := R[B] / R[C]           */
-    OP_NEG   = 6,                 /* ABC:  R[A] := -R[B]    (C=0)        */
-    OP_RET   = 7,                 /* ABC:  return R[A]      (B=C=0)      */
-
-    /* --- M2 additions (v1.1 bytecode) --- */
-    OP_LOADNIL  = 8,              /* ABC:  R[A] := nil                       */
-    OP_LOADBOOL = 9,              /* ABC:  R[A] := (B != 0); if C, pc++      */
-    OP_LOADVOID = 10,             /* ABC:  R[A] := void   (& separator)      */
-    OP_GETUPVAL = 11,             /* ABC:  R[A] := upvalue[B]                */
-    OP_SETUPVAL = 12,             /* ABC:  upvalue[B] := R[A]                */
-    OP_CLOSURE  = 13,             /* ABx:  R[A] := closure(proto[Bx]) +
-                                     reads NUP "pseudo-instructions" of
-                                     upvalue descriptors immediately
-                                     following (Lua-5.5 prelude pattern) */
-    OP_CLOSE    = 14,             /* ABC:  close upvalues for R >= R[A]      */
-    OP_CALL     = 15,             /* ABC:  R[A], ..., R[A+(C&0x7F)-2] :=
-                                     R[A](R[A+1], ..., R[A+B-1]).
-                                     B = nargs + 1 (plain) or
-                                         nargs + 2 (method: callee + self + args).
-                                     C low 7 bits = nresults + 1.
-                                     C bit 7 (0x80) = method-call flag.  When
-                                         set, R[A+1] holds the receiver (placed
-                                         by a preceding OP_SELF) and explicit
-                                         args start at R[A+2]; the receiver is
-                                         passed as `self` to native_fn and
-                                         saved into the new bytecode frame's
-                                         .recv field.  When clear, args start
-                                         at R[A+1] and self is nil. */
-    OP_JMP      = 16,             /* ABx:  pc += signed(Bx) - 32768          */
-    OP_TEST     = 17,             /* ABC:  if (truthy(R[A]) == C) pc++       */
-    OP_TESTSET  = 18,             /* ABC:  if (truthy(R[B]) == C) pc++
-                                     else R[A] := R[B]                       */
-    OP_EQ       = 19,             /* ABC:  if ((R[B]==R[C]) != A) pc++       */
-    OP_NEQ      = 20,             /* ABC:  if ((R[B]!=R[C]) != A) pc++       */
-    OP_LT       = 21,             /* ABC:  if ((R[B]<R[C])  != A) pc++       */
-    OP_LE       = 22,             /* ABC:  if ((R[B]<=R[C]) != A) pc++       */
-    OP_YIELD    = 23,             /* ABC:  yield to scheduler (no-op M2)     */
-
-    /* --- Reserved (emit-time error EMIT_UNSUPPORTED_AST at M2) --- */
-    OP_FORK_DETACH = 24,          /* M3 — `,` separator runtime              */
-    OP_FORK_JOIN   = 25,          /* M3 — `&` separator runtime              */
-    OP_JOIN_WAIT   = 26,          /* M3 — `&` join-point                     */
-    OP_GETSLOT     = 27,          /* M4 — slot read with IC                  */
-    OP_SETSLOT     = 28,          /* M4 — slot write with IC                 */
-
-    /* === M3 row 7 control-transfer opcodes (v1.2 hard break per T1) ===
-     *
-     * Encoding layout:
-     *   OP_THROW          ABx:  A = reg_value  (Bx unused / 0)
-     *   OP_TAG_STOP       ABC:  A = reg_tag, B = reg_value, C = 0
-     *   OP_TRY_BEGIN      ABx:  A = flags byte, Bx = handler PC (0-65535)
-     *   OP_TRY_END        ABC:  A = B = C = 0 (no operands)
-     *   OP_PUSH_TAG       ABx:  A[7:4]=flags nibble, A[3:0]=tag_reg nibble,
-     *                           Bx = onleave PC (0-65535).
-     *                           tag_reg is limited to [0,15]; flags to [0,15].
-     *                           T30 revisits if wider range needed.
-     *   OP_POP_TAG        ABC:  A = reg_tag, B = C = 0
-     *   OP_PUSH_FRAME_GUARD ABC: A = register_base, B = register_count, C = 0
-     *   OP_RESUME         ABC:  A = reg_state, B = C = 0
-     */
-    OP_THROW            = 29,   /* A:    R[A] is the throw value             */
-    OP_TAG_STOP         = 30,   /* A B:  R[A] tag, R[B] value               */
-    OP_TRY_BEGIN        = 31,   /* A Bx: A=flags, Bx=handler PC             */
-    OP_TRY_END          = 32,   /* —:    pop top cleanup entry               */
-    OP_PUSH_TAG         = 33,   /* A Bx: A[7:4]=flags, A[3:0]=tag_reg;
-                                          Bx=onleave PC                      */
-    OP_POP_TAG          = 34,   /* A:    A=tag_reg                           */
-    OP_PUSH_FRAME_GUARD = 35,   /* A B:  register_base, register_count       */
-    OP_RESUME           = 36,   /* A:    restore unwind state from R[A]      */
-
-    /* === M3 T10 empirical addition — needed for catch-binding ===
-     * OP_LOAD_CATCH_VALUE ABC: A = destination register, B = C = 0.
-     * Copies s->catch_value (written by the unwind walker on catch absorption)
-     * into R[A].  Emitted as the first instruction of every catch handler body
-     * so that the catch variable `e` receives the thrown value. */
-    OP_LOAD_CATCH_VALUE = 37,   /* A:    R[A] := s->catch_value             */
-
-    /* Slot 38 was OP_INVOKE (M4 reserve for collapsed GETSLOT+CALL).
-     * Retired at v0.5.6 T16; the gap was collapsed at v0.5.6 T17 by
-     * renumbering M5 reactive opcodes 39-46 down to 38-45.  Opcode space
-     * was contiguous 0-45 (OP_MAX = 46) before v0.6.2 Phase 2 added
-     * OP_LOAD_RECV at slot 46 (OP_MAX = 47). */
-
-    /* M5 reactive runtime — pre-M5 spec #2 (at/whenever/waituntil) */
-    OP_AT_INSTALL              = 38,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
-    OP_AT_SYNC_INSTALL         = 39,  /* ABC: same shape as OP_AT_INSTALL        */
-    OP_WHENEVER_INSTALL        = 40,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
-    OP_WAITUNTIL_INSTALL       = 41,  /* ABC: cond_reg, 0, 0                     */
-
-    /* M5 reactive runtime — pre-M5 spec #3 (event syncEmit + tag.enter/leave) */
-    OP_AT_EVENT_INSTALL        = 42,  /* ABC: event_reg, body_reg, onleave_or_FF */
-    OP_AT_EVENT_SYNC_INSTALL   = 43,  /* ABC: same shape as OP_AT_EVENT_INSTALL  */
-
-    /* M5 reactive runtime — pre-M5 spec #4 (slot-change events) */
-    OP_GETSLOT_CHANGE_EVENT    = 44,  /* ABC: dst_reg, recv_reg, name_sym_id     */
-
-    /* M5 reactive runtime — pre-M5 spec #5 (globals exposure) */
-    OP_LOAD_REALM_GLOBAL       = 45,  /* A: dst_reg; B,C reserved (sym_id wire
-                                         extension deferred — needs concrete
-                                         realm symbol-table layout, see
-                                         backlog) */
-
-    /* v0.6.2 Phase 2 — `this` keyword (Gap #3) */
-    OP_LOAD_RECV               = 46,  /* A: dst_reg; loads the receiver stored
-                                         in the current call frame's .recv field
-                                         (set at OP_CALL dispatch from R[A+1]
-                                         when OP_CALL's C carries the method
-                                         flag).  Emitted for AST_THIS inside a
-                                         method body. */
-
-    /* v0.7.2 S42 — method-call ABI cleanup (wire v1.6) */
-    OP_SELF                    = 47,  /* ABC: A=dst_reg, B=recv_reg, C=ic_index.
-                                         R[A+1] := R[B]; R[A] := lookup_slot(
-                                         R[B], K[ic_index]).  Atom receivers
-                                         (UVAL_INT/FLOAT/STR/BOOL) routed via
-                                         urbi_atom_proto_for_value identically
-                                         to OP_GETSLOT.  Emitted as the prelude
-                                         to a method-flagged OP_CALL so the VM
-                                         can read self from R[A+1] without
-                                         relying on the deprecated
-                                         vm->last_recv side channel. */
-
-    /* v0.10.2-reactive W0 — whenever (e?) install (wire v1.9) */
-    OP_WHENEVER_EVENT_INSTALL  = 48,  /* ABC: A=event_reg, B=body_reg,
-                                         C=onleave_reg (0xFF = absent).
-                                         Same shape as OP_AT_EVENT_INSTALL
-                                         but arms the watcher with
-                                         UWATCHER_WHENEVER_EVENT mode so
-                                         the body re-fires on every event
-                                         emission instead of one-shot
-                                         teardown.  Closes reactive F1. */
-
+#define URBI_OP(n, u, s) OP_##n,
+#include "chunk/uopcodes.def"
+#undef URBI_OP
     OP_MAX
 } UOpcode;
 
