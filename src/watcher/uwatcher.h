@@ -410,6 +410,26 @@ int urbi_run_closure_on_scratch_ex(struct UVM      *vm,
                                    int             *out_threw,
                                    UExecStatus     *out_fatal);
 
+/* === urbi_run_closure_on_scratch_args (v0.13.5) ===
+ *
+ * Multi-argument superset of _ex: deposits `args[0..nargs-1]` into the
+ * closure's R[0..nargs-1] before dispatch, so a comparator `function(a, b)`
+ * receives both parameters.  Introduced for List.sort(comparator), which
+ * calls a user closure once per comparison on the shared scratch frame.
+ * `args` may be NULL when nargs == 0.  nargs must not exceed the closure's
+ * usable register window (the fixed UVM_STACK_CAP guarantees R[0..1] for the
+ * 2-arg comparator case).  Same *out_result / *out_threw / *out_fatal
+ * semantics as _ex, including the "thrown value is not GC-rooted on return"
+ * contract — the caller must move it into a rooted slot before the next
+ * allocation.  INTERNAL (Tier-4 internal-leak); not public ABI surface. */
+int urbi_run_closure_on_scratch_args(struct UVM      *vm,
+                                     struct UClosure *closure,
+                                     const UValue    *args,
+                                     uint8_t          nargs,
+                                     UValue          *out_result,
+                                     int             *out_threw,
+                                     UExecStatus     *out_fatal);
+
 #ifdef __cplusplus
 }
 #endif

@@ -51,8 +51,9 @@
 #include "urbi/types.h"                /* urbi_make_nil */
 #include "urbi/urbi.h"                 /* URBI_OK / URBI_ERR_* / urbi_realm_set_global */
 #include "value/uintern.h"             /* ustr_intern + USymbol */
-#include "value/uvalue.h"              /* uvalue_equal */
+#include "value/uvalue.h"              /* uvalue_equal + uvalue_truthy */
 #include "vm/uvm.h"                    /* UVM */
+#include "watcher/uwatcher.h"          /* urbi_run_closure_on_scratch_args (List.sort comparator) */
 
 #include <stdint.h>
 #include <stddef.h>
@@ -707,33 +708,115 @@ uval_cmp(const UValue *x, const UValue *y, int *ok)
     return 0;
 }
 
-/* sort(): return a fresh List sorted ascending (insertion sort).  All
- * elements must be mutually comparable (numeric or all String). */
+/* sort() / sort(comparator): return a fresh List sorted ascending
+ * (insertion sort).
+ *
+ *   sort()  — order by uval_cmp (Integer / Float / String); all elements must
+ *             be mutually comparable.
+ *   sort(f) — order by a user comparator closure.  Legacy convention
+ *             (aldebaran-urbi src/object/list.cc compareListItems / share/urbi
+ *             argMin/max/min default `function (a, b) { a < b }`): the
+ *             comparator is a strict LESS-THAN predicate — f(a, b) truthy means
+ *             a sorts before b.  Ascending by that predicate; a descending sort
+ *             is expressed with `function(a, b) { a > b }`.
+ *
+ * Re-entrancy / snapshot contract: the elements are copied into a
+ * private backing store `o` BEFORE any comparator runs, and each comparison is
+ * evaluated against `o`'s own elements — never the script-visible receiver or
+ * any list a comparator can reach.  A comparator that mutates the source list
+ * (e.g. `src.add(x)`) under sort therefore cannot corrupt the in-progress
+ * sort; the returned list reflects the pre-sort membership.  This mirrors
+ * legacy's `value_type s(content_)` copy-then-sort.
+ *
+ * GC discipline: `o` is threaded onto vm->stdlib_containers by list_alloc, so
+ * urbi_stdlib_containers_walk_roots pins every element of o->items[0..len-1]
+ * across every comparator call (a comparator can allocate and trigger a
+ * collection).  The single value lifted out of the array during an insertion
+ * pass — `key` — is rooted explicitly with a VM-level C-root frame for the
+ * duration of that pass.
+ *
+ * Comparator outcomes: a throw re-propagates the thrown value catchably
+ * (typed, e.g. DivByZero); a comparator that blocks, yields, exhausts the
+ * scratch budget, or is cancelled is reported as a catchable TypeError (a
+ * comparator is required to return synchronously). */
 static int
 list_sort(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "sort", 0, nargs, out);
+    if (nargs > 1) return urbi_raise_arity(vm, "sort", 1, nargs, out);
     UList *a = list_storage(vm, self);
     if (a == NULL) return urbi_raise_type(vm, "sort: missing _storage", out);
+
+    struct UClosure *cmp = NULL;
+    if (nargs == 1) {
+        if (args[0].kind != (uint8_t)UVAL_CLOSURE)
+            return urbi_raise_type(vm, "sort: comparator must be a function", out);
+        cmp = (struct UClosure *)args[0].v.p;
+    }
+
+    /* Snapshot the backing store first (re-entrancy guard); once copied and
+     * o->len is set, every element is a GC root via the container provider. */
     UList *o = list_alloc(vm, a->len > 0U ? a->len : 1U);
     if (o == NULL) return urbi_raise_oom(vm, out);
     size_t i;
     for (i = 0U; i < a->len; i++) o->items[i] = a->items[i];
     o->len = a->len;
+
     for (i = 1U; i < o->len; i++) {
         UValue key = o->items[i];
         size_t j = i;
-        while (j > 0U) {
-            int ok;
-            int c = uval_cmp(&o->items[j - 1U], &key, &ok);
-            if (!ok) return urbi_raise_type(vm, "sort: elements not comparable", out);
-            if (c <= 0) break;
-            o->items[j] = o->items[j - 1U];
-            j--;
+        if (cmp == NULL) {
+            /* Default order: uval_cmp (unchanged from the no-arg path). */
+            while (j > 0U) {
+                int ok;
+                int c = uval_cmp(&o->items[j - 1U], &key, &ok);
+                if (!ok) return urbi_raise_type(vm, "sort: elements not comparable", out);
+                if (c <= 0) break;
+                o->items[j] = o->items[j - 1U];
+                j--;
+            }
+        } else {
+            /* Comparator order: shift the earlier element right while the
+             * comparator reports key < earlier (less(key, earlier)). */
+            UCRootFrame keyframe;
+            urbi_c_root_push(vm, &keyframe, &key);  /* key is lifted out of o->items */
+            while (j > 0U) {
+                UValue cargs[2];
+                cargs[0] = key;                 /* rooted via keyframe */
+                cargs[1] = o->items[j - 1U];     /* rooted via container provider */
+                UValue      cres  = urbi_make_nil();
+                int         threw = 0;
+                UExecStatus fatal = UEXEC_OK;
+                int src = urbi_run_closure_on_scratch_args(vm, cmp, cargs, 2U,
+                                                           &cres, &threw, &fatal);
+                if (src != 0) {
+                    /* Register-stack OOM during scratch arm (threw stays 0). */
+                    urbi_c_root_pop(vm, &keyframe);
+                    return urbi_raise_oom(vm, out);
+                }
+                if (threw) {
+                    /* Re-deposit the comparator's exception (catchable, typed)
+                     * before any allocation can run a GC slice; *out is rooted
+                     * by the OP_CALL native arm.  TAG_STOP / CANCEL / parking /
+                     * budget exhaustion (fatal != UEXEC_THROW) become a
+                     * catchable TypeError. */
+                    if (fatal == UEXEC_THROW) {
+                        *out = cres;
+                        urbi_c_root_pop(vm, &keyframe);
+                        return UEXEC_THROW;
+                    }
+                    urbi_c_root_pop(vm, &keyframe);
+                    return urbi_raise_type(vm,
+                        "sort: comparator did not return a value", out);
+                }
+                if (!uvalue_truthy(&cres)) break;
+                o->items[j] = o->items[j - 1U];
+                j--;
+            }
+            urbi_c_root_pop(vm, &keyframe);
         }
         o->items[j] = key;
     }
+
     UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
     if (ret == NULL) return urbi_raise_oom(vm, out);
     if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);

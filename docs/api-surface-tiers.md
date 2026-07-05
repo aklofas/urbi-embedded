@@ -315,6 +315,7 @@ CI gate tracks this list to prevent silent growth.
 ### Closure internals
 
 - `urbi_native_closure_create`, `urbi_run_closure_on_scratch`,
+  `urbi_run_closure_on_scratch_args`,
   `urbi_run_closure_on_scratch_ex`,
   `urbi_run_closure_on_scratch_with_payload`
 

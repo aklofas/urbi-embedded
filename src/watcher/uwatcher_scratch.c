@@ -40,10 +40,14 @@
 
 /* === run_on_scratch_core (file-static) ===
  *
- * Shared implementation for both no-payload and payload variants.
- * If `initial_r0` is non-NULL, writes `*initial_r0` to strand.R[0] after
- * arm but before dispatch.  All other behaviour is identical to the
- * documented contract on urbi_run_closure_on_scratch.
+ * Shared implementation for the no-payload, single-payload, and multi-arg
+ * variants.  If `initial_regs` is non-NULL, writes `initial_regs[0..n_regs-1]`
+ * to strand.R[0..n_regs-1] after arm but before dispatch (so the closure's
+ * first n_regs parameters receive them).  All other behaviour is identical to
+ * the documented contract on urbi_run_closure_on_scratch.  n_regs is bounded
+ * by the fixed UVM_STACK_CAP register window (urbi_strand_register_stack_alloc),
+ * so the deposits are always in-bounds; callers pass the closure's expected
+ * parameter count (List.sort passes 2 for its comparator).
  *
  * `out_fatal` (optional, may be NULL): when the body dies with a latched
  * fatal_status, receives that status (UEXEC_THROW / UEXEC_TAG_STOP /
@@ -54,7 +58,8 @@
 static int
 run_on_scratch_core(struct UVM       *vm,
                     struct UClosure  *closure,
-                    const UValue     *initial_r0,
+                    const UValue     *initial_regs,
+                    uint8_t           n_regs,
                     UValue           *out_result,
                     int              *out_threw,
                     UExecStatus      *out_fatal)
@@ -88,10 +93,10 @@ run_on_scratch_core(struct UVM       *vm,
 
     /* Arm from the closure: allocates register stack, wires pc / pc_base /
      * cur_consts / frame_count from closure->proto.  Returns -1 on OOM.
-     * nargs mirrors the initial_r0 deposit below: 1 when a payload will be
-     * written to R[0], else 0 (v0.13.5 arity-self-check seed). */
-    if (urbi_strand_arm_from_closure(&strand, closure,
-                                     (initial_r0 != NULL) ? 1 : 0) != 0) {
+     * nargs mirrors the initial_regs deposit below (n_regs: 0 for no payload,
+     * 1 for a single payload, 2 for List.sort's comparator) — feeds the
+     * v0.13.5 arity-self-check seed at R[nparams]. */
+    if (urbi_strand_arm_from_closure(&strand, closure, (int)n_regs) != 0) {
         if (vm->host_log_fn) {
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "scratch-frame arm: register-stack OOM");
@@ -109,12 +114,14 @@ run_on_scratch_core(struct UVM       *vm,
      * the budget somehow reaches 0 (e.g. for very long scratch scripts). */
     strand.safepoint_budget_remaining = (uint16_t)URBI_SCRATCH_BUDGET_OPS;
 
-    /* Payload init: write to R[0] after the register stack exists but before
-     * dispatch.  AT_EVENT_SYNC subscribers receive the emit payload as their
-     * first argument here.  strand.R is guaranteed non-NULL by a successful
+    /* Payload init: write args to R[0..n_regs-1] after the register stack
+     * exists but before dispatch.  AT_EVENT_SYNC subscribers receive the emit
+     * payload as their first argument here; List.sort deposits (a, b) as R[0]
+     * and R[1].  strand.R is guaranteed non-NULL by a successful
      * urbi_strand_arm_from_closure return, so no defensive NULL check needed. */
-    if (initial_r0 != NULL) {
-        strand.R[0] = *initial_r0;
+    if (initial_regs != NULL) {
+        uint8_t k;
+        for (k = 0U; k < n_regs; k++) strand.R[k] = initial_regs[k];
     }
 
     /* strand.module is intentionally left NULL — see the function docstring
@@ -372,7 +379,8 @@ urbi_run_closure_on_scratch(struct UVM      *vm,
                             UValue          *out_result,
                             int             *out_threw)
 {
-    return run_on_scratch_core(vm, closure, NULL, out_result, out_threw, NULL);
+    return run_on_scratch_core(vm, closure, NULL, 0U, out_result, out_threw,
+                               NULL);
 }
 
 int
@@ -382,8 +390,8 @@ urbi_run_closure_on_scratch_with_payload(struct UVM      *vm,
                                          UValue          *out_result,
                                          int             *out_threw)
 {
-    return run_on_scratch_core(vm, closure, &payload, out_result, out_threw,
-                               NULL);
+    return run_on_scratch_core(vm, closure, &payload, 1U, out_result,
+                               out_threw, NULL);
 }
 
 int
@@ -394,6 +402,20 @@ urbi_run_closure_on_scratch_ex(struct UVM      *vm,
                                int             *out_threw,
                                UExecStatus     *out_fatal)
 {
-    return run_on_scratch_core(vm, closure, initial_r0, out_result, out_threw,
-                               out_fatal);
+    return run_on_scratch_core(vm, closure, initial_r0,
+                               (uint8_t)((initial_r0 != NULL) ? 1U : 0U),
+                               out_result, out_threw, out_fatal);
+}
+
+int
+urbi_run_closure_on_scratch_args(struct UVM      *vm,
+                                 struct UClosure *closure,
+                                 const UValue    *args,
+                                 uint8_t          nargs,
+                                 UValue          *out_result,
+                                 int             *out_threw,
+                                 UExecStatus     *out_fatal)
+{
+    return run_on_scratch_core(vm, closure, args, nargs, out_result,
+                               out_threw, out_fatal);
 }

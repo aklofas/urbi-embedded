@@ -1,0 +1,86 @@
+# Milestone: v0.13.5-conformance-and-stdlib
+# Covers: List.sort(comparator) — a 1-arg sort ordered by a user closure.
+#
+# Legacy convention (aldebaran-urbi src/object/list.cc + share/urbi/*.u):
+# the comparator is a strict less-than predicate `function(a, b) { a < b }`;
+# f(a, b) truthy means a sorts before b.  The no-argument sort() is the
+# uval_cmp default (ascending) and is covered by list_iter.chk.  sort(f)
+# operates on a private snapshot of the backing store, so a comparator that
+# mutates the source list under sort cannot corrupt the in-progress sort.
+# Comparator throws propagate catchably (typed, per typed_exceptions.chk).
+#
+# Lists print opaque, so results are inspected via .get(i) / .length()
+# (the list_iter.chk convention).
+
+# --- ascending order via a less-than comparator ---
+var s = List.new(3, 1, 2).sort(function(a, b) { a < b }); s.get(0)
+[00000000] 1
+
+var s = List.new(3, 1, 2).sort(function(a, b) { a < b }); s.get(2)
+[00000001] 3
+
+# --- descending order via a greater-than comparator ---
+var s = List.new(3, 1, 2).sort(function(a, b) { a > b }); s.get(0)
+[00000002] 3
+
+var s = List.new(3, 1, 2).sort(function(a, b) { a > b }); s.get(2)
+[00000003] 1
+
+# --- string elements ordered by a derived key (comparator computes it;
+#     `<` is numeric-only in this runtime, so order strings by length) ---
+var s = List.new("ccc", "a", "bb").sort(function(a, b) { a.length() < b.length() }); s.get(0)
+[00000004] "a"
+
+var s = List.new("ccc", "a", "bb").sort(function(a, b) { a.length() < b.length() }); s.get(2)
+[00000005] "ccc"
+
+# --- duplicate keys: length preserved, order correct ---
+var s = List.new(2, 1, 2, 1).sort(function(a, b) { a < b }); s.get(0)
+[00000006] 1
+
+var s = List.new(2, 1, 2, 1).sort(function(a, b) { a < b }); s.get(3)
+[00000007] 2
+
+# --- sort(f) does not mutate the receiver ---
+var orig = List.new(3, 1, 2); var s = orig.sort(function(a, b) { a < b }); orig.get(0)
+[00000008] 3
+
+# --- empty list with a comparator ---
+List.new().sort(function(a, b) { a < b }).length()
+[00000009] 0
+
+# --- single element with a comparator ---
+List.new(5).sort(function(a, b) { a < b }).get(0)
+[00000010] 5
+
+# --- already-sorted input stays sorted ---
+var s = List.new(1, 2, 3).sort(function(a, b) { a < b }); s.get(0)
+[00000011] 1
+
+# --- comparator throw propagates as a catchable typed exception (DivByZero) ---
+var r = false; try { List.new(3, 1, 2).sort(function(a, b) { 1/0 }) } catch (var e) { r = e.isA(DivByZero) }; r
+[00000012] true
+
+# --- after a caught comparator throw, execution continues normally ---
+var caught = 0; try { List.new(3, 1, 2).sort(function(a, b) { throw "cmp" }) } catch (var e) { caught = 1 }; caught
+[00000013] 1
+
+# --- snapshot contract: a comparator that mutates the source list cannot
+#     corrupt the sort; the returned snapshot has the pre-sort membership ---
+var src = List.new(3, 1, 2); var s = src.sort(function(a, b) { src.add(99); a < b }); s.length()
+[00000014] 3
+
+var src = List.new(3, 1, 2); var s = src.sort(function(a, b) { src.add(99); a < b }); s.get(0)
+[00000015] 1
+
+# --- the source mutation still took effect (proves the comparator ran) ---
+var src = List.new(3, 1, 2); var s = src.sort(function(a, b) { src.add(99); a < b }); src.contains(99)
+[00000016] true
+
+# --- non-closure comparator raises TypeError ---
+List.new(1, 2).sort(5)
+[00000017] !!! TypeError: sort: comparator must be a function
+
+# --- too many arguments raises ArityError ---
+List.new(1, 2).sort(function(a, b) { a < b }, 3)
+[00000018] !!! ArityError: sort expected 1 args, got 2
