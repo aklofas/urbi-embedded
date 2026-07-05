@@ -27,3 +27,11 @@ var r10 = "no"; try { 5 <= "z" } catch (var e) { r10 = e.isA(TypeError) }; r10
 [00000010] true
 var r11 = "no"; try { -"nope" } catch (var e) { r11 = e.isA(TypeError) }; r11
 [00000011] true
+
+# --- message-text pins for the T14 glyph style (regression guard) ---
+# Binary '-' message carries the '-' glyph, not an opcode mnemonic.
+var m1 = ""; try { "a" - 1 } catch (var e) { m1 = e.message }; m1.indexOf("TypeError: '-' operands must be Integer or Float") >= 0
+[00000012] true
+# Unary '-' message carries the unary '-' glyph phrase.
+var m2 = ""; try { -"nope" } catch (var e) { m2 = e.message }; m2.indexOf("TypeError: unary '-' operand must be Integer or Float") >= 0
+[00000013] true

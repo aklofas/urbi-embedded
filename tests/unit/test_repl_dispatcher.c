@@ -850,6 +850,65 @@ UTEST(dispatcher_inbound_line_too_long_emits_error_then_recovers)
     free(vm);
 }
 
+/* REPL-05: TWO back-to-back oversize lines must each produce their own
+ * line_too_long envelope (the discard flag cycles true->false->true->false),
+ * and the valid frame that follows must still parse and dispatch.  Locks
+ * the per-line envelope invariant: one envelope per oversize line, never
+ * more (in discard mode the fill resets each sweep, so a single overlong
+ * line cannot re-trigger the overflow arm). */
+UTEST(dispatcher_inbound_consecutive_oversize_lines_two_envelopes)
+{
+    UVM *vm = NULL;
+    UBufferTransportState *bt = NULL;
+    UReplServer *server = mk_server_with_buffer_transport(&vm, &bt);
+    UASSERT(server != NULL);
+
+    UReplSession *s = server->sessions_head;
+    UASSERT(s != NULL);
+
+    /* One contiguous stream: 8200 junk + '\n' + 8200 junk + '\n' + frame.
+     * The 64 KiB c2s ring absorbs it whole. */
+    static const char eval_frame[] = "{\"id\":77,\"op\":\"eval\",\"code\":\"7+1\"}\n";
+    size_t stream_len = 8200U + 1U + 8200U + 1U + (sizeof(eval_frame) - 1U);
+    char *stream = (char *)malloc(stream_len);
+    UASSERT(stream != NULL);
+    memset(stream, 'x', 8200U);
+    stream[8200] = '\n';
+    memset(stream + 8201, 'y', 8200U);
+    stream[16401] = '\n';
+    memcpy(stream + 16402, eval_frame, sizeof(eval_frame) - 1U);
+    urepl_buffer_client_write(bt, stream, stream_len);
+    free(stream);
+
+    /* Byte accounting needs 4 sweeps (fill, overflow #1 + boundary #1,
+     * refill, overflow #2 + boundary #2 + frame); extra sweeps see an
+     * empty ring (would-block) and are harmless. */
+    for (int i = 0; i < 6; i++) {
+        urepl_read_sweep_nonpollable(server);
+    }
+    urepl_dispatch_drain(server);
+
+    char out[4096];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+
+    /* Exactly TWO line_too_long envelopes. */
+    const char *p1 = strstr(out, "\"code\":\"line_too_long\"");
+    UASSERT(p1 != NULL);
+    const char *p2 = strstr(p1 + 1, "\"code\":\"line_too_long\"");
+    UASSERT(p2 != NULL);
+    UASSERT(strstr(p2 + 1, "\"code\":\"line_too_long\"") == NULL);
+
+    /* And the valid frame after the second oversize line still processed. */
+    UASSERT(strstr(out, "\"value\":\"8\"") != NULL);
+    UASSERT(strstr(out, "\"id\":77") != NULL);
+
+    urepl_buffer_transport_destroy(bt);
+    urbi_repl_stop(server);
+    urbi_vm_destroy(vm);
+    free(vm);
+}
+
 void
 test_repl_dispatcher_suite(void)
 {
@@ -901,6 +960,8 @@ test_repl_dispatcher_suite(void)
               dispatcher_no_op_frame_emits_unknown_op_correlated);
     utest_run("dispatcher_inbound_line_too_long_emits_error_then_recovers",
               dispatcher_inbound_line_too_long_emits_error_then_recovers);
+    utest_run("dispatcher_inbound_consecutive_oversize_lines_two_envelopes",
+              dispatcher_inbound_consecutive_oversize_lines_two_envelopes);
 }
 
 #else  /* !URBI_ENABLE_REPL */
