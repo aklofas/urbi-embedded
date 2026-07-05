@@ -41,14 +41,17 @@ uevent_at_watchers_append(UEvent *e, UWatcher *w)
 void
 uevent_at_watchers_remove(UEvent *e, const UWatcher *target)
 {
-    UWatcher **prev = &e->at_watchers_head;
-    UWatcher  *cur  = e->at_watchers_head;
+    /* Pointer-to-pointer walk: clears next_in_event only when target is found.
+     * URBI_SLIST_UNLINK is not used here because it cannot conditionally clear
+     * the link field (absent-node callers must see next_in_event unchanged). */
+    UWatcher **pp = &e->at_watchers_head;
+    UWatcher  *cur = e->at_watchers_head;
     while (cur && cur != target) {
-        prev = &cur->next_in_event;
-        cur  = cur->next_in_event;
+        pp  = &cur->next_in_event;
+        cur = cur->next_in_event;
     }
     if (cur) {
-        *prev = cur->next_in_event;
+        *pp = cur->next_in_event;
         cur->next_in_event = NULL;
     }
 }
