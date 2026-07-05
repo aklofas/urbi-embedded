@@ -362,12 +362,7 @@ UAstNode *parse_bracket_literal(UParser *p) {
 
         if (is_dict) {
             /* Dict mode: `key => value`. */
-            if (peek(p).type != TOK_FAT_ARROW) {
-                return make_error(p, PARSE_DICT_EXPECTED_FAT_ARROW,
-                                  kErrorMessages[PARSE_DICT_EXPECTED_FAT_ARROW],
-                                  peek(p).line, peek(p).col);
-            }
-            consume(p);  /* consume '=>' */
+            { UAstNode *err = NULL; if (!expect(p, TOK_FAT_ARROW, PARSE_DICT_EXPECTED_FAT_ARROW, &err)) return err; }  /* consume '=>' */
             UAstNode *val = parse_expression(p, 0);
             if (!val) return (UAstNode *)&uparser_oom_sentinel;
             if (val->kind == AST_ERROR) return val;
@@ -398,13 +393,7 @@ UAstNode *parse_bracket_literal(UParser *p) {
         }
     }
 
-    UToken rb = peek(p);
-    if (rb.type != TOK_RBRACKET) {
-        return make_error(p, PARSE_EXPECTED_RBRACKET,
-                          kErrorMessages[PARSE_EXPECTED_RBRACKET],
-                          rb.line, rb.col);
-    }
-    consume(p);  /* consume ']' */
+    { UAstNode *err = NULL; if (!expect(p, TOK_RBRACKET, PARSE_EXPECTED_RBRACKET, &err)) return err; }  /* consume ']' */
 
     if (is_dict) {
         UAstNode *n = make_node(p, AST_DICT_LIT, lbr.line, lbr.col);
@@ -471,13 +460,7 @@ UAstNode *parse_atom(UParser *p) {
         UAstNode *inner = parse_expression(p, 0);
         if (!inner) return NULL;
         if (inner->kind == AST_ERROR) return inner;
-        UToken r = peek(p);
-        if (r.type != TOK_RPAREN) {
-            return make_error(p, PARSE_EXPECTED_RPAREN,
-                              kErrorMessages[PARSE_EXPECTED_RPAREN],
-                              r.line, r.col);
-        }
-        consume(p);
+        { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
         return inner;
     }
     case TOK_KW_FUNCTION:
@@ -564,12 +547,7 @@ UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
         }
     }
 
-    if (peek(p).type != TOK_RPAREN) {
-        return make_error(p, PARSE_EXPECTED_RPAREN,
-                          kErrorMessages[PARSE_EXPECTED_RPAREN],
-                          peek(p).line, peek(p).col);
-    }
-    consume(p);  /* consume ')' */
+    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }  /* consume ')' */
 
     UAstNode *node = make_node(p, AST_CALL, lparen.line, lparen.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
@@ -603,12 +581,7 @@ UAstNode *parse_member_access(UParser *p, UAstNode *recv,
     *out_is_assign = false;
 
     UToken name = peek(p);
-    if (name.type != TOK_IDENT) {
-        return make_error(p, PARSE_EXPECTED_IDENT,
-                          kErrorMessages[PARSE_EXPECTED_IDENT],
-                          name.line, name.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
     const bool is_arrow = (op.type == TOK_ARROW);
 
@@ -751,13 +724,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             UAstNode *index = parse_expression(p, 0);
             if (!index) return NULL;
             if (index->kind == AST_ERROR) return index;
-            UToken rb = peek(p);
-            if (rb.type != TOK_RBRACKET) {
-                return make_error(p, PARSE_SUBSCRIPT_EXPECTED_RBRACKET,
-                                  kErrorMessages[PARSE_SUBSCRIPT_EXPECTED_RBRACKET],
-                                  rb.line, rb.col);
-            }
-            consume(p);  /* consume ']' */
+            { UAstNode *err = NULL; if (!expect(p, TOK_RBRACKET, PARSE_SUBSCRIPT_EXPECTED_RBRACKET, &err)) return err; }  /* consume ']' */
             /* Peek for assignment or compound-assign. */
             UToken nxt = peek(p);
             if (nxt.type == TOK_EQ) {

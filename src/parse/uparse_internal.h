@@ -71,6 +71,11 @@ UAstNode *make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
                       int line, int col);
 UAstNode *make_error(UParser *p, UParseError code, const char *msg,
                      int line, int col);
+/* expect: peek next token; if it matches type, consume and return true.
+ * On mismatch, write *err = make_error(p, code, kErrorMessages[code], ...)
+ * and return false.  On OOM make_error returns NULL; callers propagate via
+ * `return *err` which yields NULL (OOM sentinel path). */
+bool expect(UParser *p, UTokenType type, UParseError code, UAstNode **err);
 
 /* --- Arena-array growth helper + expression parser (defined in uparse_expr.c). --- */
 bool arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count);

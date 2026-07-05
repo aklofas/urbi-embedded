@@ -31,12 +31,7 @@ UAstNode *parse_var_decl(UParser *p) {
                           name.line, name.col);
     }
 
-    if (name.type != TOK_IDENT) {
-        return make_error(p, PARSE_EXPECTED_IDENT,
-                          kErrorMessages[PARSE_EXPECTED_IDENT],
-                          name.line, name.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
     /* === W10/v0.10.5: `var obj.slot = value` slot-install form.
      *
@@ -62,12 +57,7 @@ UAstNode *parse_var_decl(UParser *p) {
         for (;;) {
             consume(p);  /* consume TOK_DOT */
             UToken slot_name = peek(p);
-            if (slot_name.type != TOK_IDENT) {
-                return make_error(p, PARSE_EXPECTED_IDENT,
-                                  kErrorMessages[PARSE_EXPECTED_IDENT],
-                                  slot_name.line, slot_name.col);
-            }
-            consume(p);
+            { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
             if (peek(p).type == TOK_DOT) {
                 /* Intermediate: build MEMBER_GET and continue. */
                 UAstNode *mg = make_node(p, AST_MEMBER_GET,
@@ -81,13 +71,7 @@ UAstNode *parse_var_decl(UParser *p) {
                 continue;
             }
             /* Final slot: consume `=` and parse RHS, produce MEMBER_SET. */
-            UToken eq2 = peek(p);
-            if (eq2.type != TOK_EQ) {
-                return make_error(p, PARSE_VAR_OBJ_SLOT_NO_INIT,
-                                  kErrorMessages[PARSE_VAR_OBJ_SLOT_NO_INIT],
-                                  eq2.line, eq2.col);
-            }
-            consume(p);
+            { UAstNode *err = NULL; if (!expect(p, TOK_EQ, PARSE_VAR_OBJ_SLOT_NO_INIT, &err)) return err; }
             UAstNode *val = parse_expression(p, 0);
             if (!val) return NULL;
             if (val->kind == AST_ERROR) return val;
@@ -274,12 +258,7 @@ UAstNode *parse_class_declaration(UParser *p) {
 
     /* Class name. */
     UToken name = peek(p);
-    if (name.type != TOK_IDENT) {
-        return make_error(p, PARSE_EXPECTED_IDENT,
-                          kErrorMessages[PARSE_EXPECTED_IDENT],
-                          name.line, name.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
     /* Optional `: public P1[, P2, ...]`. */
     UAstNode **protos = NULL;
@@ -425,12 +404,7 @@ UAstNode *parse_statement_or_expr(UParser *p) {
    Used by if/else; T13 (while) and T14 (function) will reuse this. --- */
 UAstNode *parse_block(UParser *p) {
     UToken lbrace = peek(p);
-    if (lbrace.type != TOK_LBRACE) {
-        return make_error(p, PARSE_EXPECTED_LBRACE,
-                          kErrorMessages[PARSE_EXPECTED_LBRACE],
-                          lbrace.line, lbrace.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_LBRACE, PARSE_EXPECTED_LBRACE, &err)) return err; }
 
     int cap = 4;
     UAstNode **stmts = (UAstNode **)uarena_alloc(p->arena,
@@ -470,13 +444,7 @@ UAstNode *parse_block(UParser *p) {
         }
     }
 
-    UToken rbrace = peek(p);
-    if (rbrace.type != TOK_RBRACE) {
-        return make_error(p, PARSE_EXPECTED_RBRACE,
-                          kErrorMessages[PARSE_EXPECTED_RBRACE],
-                          rbrace.line, rbrace.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_RBRACE, PARSE_EXPECTED_RBRACE, &err)) return err; }
 
     UAstNode *node = make_node(p, AST_BLOCK, lbrace.line, lbrace.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
@@ -586,25 +554,13 @@ static UAstNode *parse_single_stmt_as_block(UParser *p) {
 UAstNode *parse_while(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_WHILE */
 
-    UToken lp = peek(p);
-    if (lp.type != TOK_LPAREN) {
-        return make_error(p, PARSE_EXPECTED_LPAREN,
-                          kErrorMessages[PARSE_EXPECTED_LPAREN],
-                          lp.line, lp.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }
 
     UAstNode *cond = parse_inner_tier(p);
     if (!cond) return (UAstNode *)&uparser_oom_sentinel;
     if (cond->kind == AST_ERROR) return cond;
 
-    UToken rp = peek(p);
-    if (rp.type != TOK_RPAREN) {
-        return make_error(p, PARSE_EXPECTED_RPAREN,
-                          kErrorMessages[PARSE_EXPECTED_RPAREN],
-                          rp.line, rp.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
     /* W1/v0.10.5: bump loop_depth so break/continue are legal in body.
      * Accept an unbraced single-statement body as well. */
@@ -627,25 +583,13 @@ UAstNode *parse_while(UParser *p) {
 UAstNode *parse_if(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_IF */
 
-    UToken lp = peek(p);
-    if (lp.type != TOK_LPAREN) {
-        return make_error(p, PARSE_EXPECTED_LPAREN,
-                          kErrorMessages[PARSE_EXPECTED_LPAREN],
-                          lp.line, lp.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }
 
     UAstNode *cond = parse_inner_tier(p);
     if (!cond) return (UAstNode *)&uparser_oom_sentinel;
     if (cond->kind == AST_ERROR) return cond;
 
-    UToken rp = peek(p);
-    if (rp.type != TOK_RPAREN) {
-        return make_error(p, PARSE_EXPECTED_RPAREN,
-                          kErrorMessages[PARSE_EXPECTED_RPAREN],
-                          rp.line, rp.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
     /* Accept braced or unbraced single-statement then-arm.
      * Dangling else binds nearest if: the recursive parse_if call inside
@@ -749,12 +693,7 @@ UAstNode *parse_function(UParser *p) {
     UAstNode *err = reject_bare_function_forms(p);
     if (err) return err;
 
-    if (peek(p).type != TOK_LPAREN) {
-        return make_error(p, PARSE_EXPECTED_LPAREN,
-                          kErrorMessages[PARSE_EXPECTED_LPAREN],
-                          peek(p).line, peek(p).col);
-    }
-    consume(p);  /* consume '(' */
+    { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }  /* consume '(' */
 
     /* Parameter list. */
     int cap = 4;
@@ -771,12 +710,7 @@ UAstNode *parse_function(UParser *p) {
         }
 
         UToken name = peek(p);
-        if (name.type != TOK_IDENT) {
-            return make_error(p, PARSE_EXPECTED_IDENT,
-                              kErrorMessages[PARSE_EXPECTED_IDENT],
-                              name.line, name.col);
-        }
-        consume(p);
+        { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
         UAstNode *pn = make_node(p, is_lazy ? AST_LAZY_PARAM : AST_PARAM,
                                  name.line, name.col);
@@ -801,12 +735,7 @@ UAstNode *parse_function(UParser *p) {
         }
     }
 
-    if (peek(p).type != TOK_RPAREN) {
-        return make_error(p, PARSE_EXPECTED_RPAREN,
-                          kErrorMessages[PARSE_EXPECTED_RPAREN],
-                          peek(p).line, peek(p).col);
-    }
-    consume(p);  /* consume ')' */
+    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }  /* consume ')' */
 
     UAstNode *body = parse_block(p);
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
@@ -833,12 +762,7 @@ UAstNode *parse_function(UParser *p) {
  * `parse_function`. --- */
 UAstNode *parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
                               UAstMethodKind kind, int line, int col) {
-    if (peek(p).type != TOK_LPAREN) {
-        return make_error(p, PARSE_EXPECTED_LPAREN,
-                          kErrorMessages[PARSE_EXPECTED_LPAREN],
-                          peek(p).line, peek(p).col);
-    }
-    consume(p);  /* consume '(' */
+    { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }  /* consume '(' */
 
     /* Parameter list — identical shape to parse_function. */
     int cap = 4;
@@ -855,12 +779,7 @@ UAstNode *parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
         }
 
         UToken pname = peek(p);
-        if (pname.type != TOK_IDENT) {
-            return make_error(p, PARSE_EXPECTED_IDENT,
-                              kErrorMessages[PARSE_EXPECTED_IDENT],
-                              pname.line, pname.col);
-        }
-        consume(p);
+        { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
         UAstNode *pn = make_node(p, is_lazy ? AST_LAZY_PARAM : AST_PARAM,
                                  pname.line, pname.col);
@@ -886,12 +805,7 @@ UAstNode *parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
         }
     }
 
-    if (peek(p).type != TOK_RPAREN) {
-        return make_error(p, PARSE_EXPECTED_RPAREN,
-                          kErrorMessages[PARSE_EXPECTED_RPAREN],
-                          peek(p).line, peek(p).col);
-    }
-    consume(p);  /* consume ')' */
+    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }  /* consume ')' */
 
     UAstNode *body = parse_block(p);
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
@@ -1003,12 +917,7 @@ UAstNode *parse_assert(UParser *p) {
         return node;
     }
 
-    if (next.type != TOK_LPAREN) {
-        return make_error(p, PARSE_EXPECTED_LPAREN,
-                          kErrorMessages[PARSE_EXPECTED_LPAREN],
-                          next.line, next.col);
-    }
-    consume(p);  /* consume '(' */
+    { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }  /* consume '(' */
 
     /* Capture source text start: p->lex->cur is now right after '('.
      * Trim leading whitespace so the diagnostic text starts at the expression.
@@ -1039,13 +948,7 @@ UAstNode *parse_assert(UParser *p) {
         src_end--;
     }
 
-    UToken rp = peek(p);
-    if (rp.type != TOK_RPAREN) {
-        return make_error(p, PARSE_EXPECTED_RPAREN,
-                          kErrorMessages[PARSE_EXPECTED_RPAREN],
-                          rp.line, rp.col);
-    }
-    consume(p);  /* consume ')' */
+    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }  /* consume ')' */
 
     UAstNode *node = make_node(p, AST_ASSERT, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
@@ -1083,13 +986,7 @@ UAstNode *parse_try(UParser *p) {
     if (peek(p).type == TOK_KW_CATCH) {
         consume(p);  /* consume 'catch' */
 
-        UToken lp = peek(p);
-        if (lp.type != TOK_LPAREN) {
-            return make_error(p, PARSE_EXPECTED_LPAREN,
-                              kErrorMessages[PARSE_EXPECTED_LPAREN],
-                              lp.line, lp.col);
-        }
-        consume(p);
+        { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }
 
         /* Accept optional `var` keyword before the catch variable name. */
         if (peek(p).type == TOK_KW_VAR) {
@@ -1097,12 +994,7 @@ UAstNode *parse_try(UParser *p) {
         }
 
         UToken var_tok = peek(p);
-        if (var_tok.type != TOK_IDENT) {
-            return make_error(p, PARSE_EXPECTED_IDENT,
-                              kErrorMessages[PARSE_EXPECTED_IDENT],
-                              var_tok.line, var_tok.col);
-        }
-        consume(p);
+        { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
         catch_var_start = var_tok.u.str.start;
         catch_var_len   = var_tok.u.str.len;
 
@@ -1114,13 +1006,7 @@ UAstNode *parse_try(UParser *p) {
             if (catch_guard->kind == AST_ERROR) return catch_guard;
         }
 
-        UToken rp = peek(p);
-        if (rp.type != TOK_RPAREN) {
-            return make_error(p, PARSE_EXPECTED_RPAREN,
-                              kErrorMessages[PARSE_EXPECTED_RPAREN],
-                              rp.line, rp.col);
-        }
-        consume(p);
+        { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
         catch_body = parse_block(p);
         if (!catch_body) return (UAstNode *)&uparser_oom_sentinel;
@@ -1189,30 +1075,13 @@ UAstNode *parse_try(UParser *p) {
 UAstNode *parse_for(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_FOR */
 
-    UToken lp = peek(p);
-    if (lp.type != TOK_LPAREN) {
-        return make_error(p, PARSE_EXPECTED_LPAREN,
-                          kErrorMessages[PARSE_EXPECTED_LPAREN],
-                          lp.line, lp.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }
 
     /* Require `var` before the loop variable. */
-    UToken var_tok = peek(p);
-    if (var_tok.type != TOK_KW_VAR) {
-        return make_error(p, PARSE_FOR_EXPECTED_VAR,
-                          kErrorMessages[PARSE_FOR_EXPECTED_VAR],
-                          var_tok.line, var_tok.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_KW_VAR, PARSE_FOR_EXPECTED_VAR, &err)) return err; }
 
     UToken name_tok = peek(p);
-    if (name_tok.type != TOK_IDENT) {
-        return make_error(p, PARSE_EXPECTED_IDENT,
-                          kErrorMessages[PARSE_EXPECTED_IDENT],
-                          name_tok.line, name_tok.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
     /* Separator: `:` or `in`. */
     UToken sep_tok = peek(p);
@@ -1231,13 +1100,7 @@ UAstNode *parse_for(UParser *p) {
     if (!iter) return (UAstNode *)&uparser_oom_sentinel;
     if (iter->kind == AST_ERROR) return iter;
 
-    UToken rp = peek(p);
-    if (rp.type != TOK_RPAREN) {
-        return make_error(p, PARSE_EXPECTED_RPAREN,
-                          kErrorMessages[PARSE_EXPECTED_RPAREN],
-                          rp.line, rp.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
     /* Body block.  Bump loop_depth so break/continue are valid inside. */
     p->loop_depth++;
@@ -1300,33 +1163,15 @@ UAstNode *parse_continue(UParser *p) {
 UAstNode *parse_switch(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_SWITCH */
 
-    UToken lp = peek(p);
-    if (lp.type != TOK_LPAREN) {
-        return make_error(p, PARSE_EXPECTED_LPAREN,
-                          kErrorMessages[PARSE_EXPECTED_LPAREN],
-                          lp.line, lp.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }
 
     UAstNode *expr = parse_inner_tier(p);
     if (!expr) return (UAstNode *)&uparser_oom_sentinel;
     if (expr->kind == AST_ERROR) return expr;
 
-    UToken rp = peek(p);
-    if (rp.type != TOK_RPAREN) {
-        return make_error(p, PARSE_EXPECTED_RPAREN,
-                          kErrorMessages[PARSE_EXPECTED_RPAREN],
-                          rp.line, rp.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
-    UToken lb = peek(p);
-    if (lb.type != TOK_LBRACE) {
-        return make_error(p, PARSE_EXPECTED_LBRACE,
-                          kErrorMessages[PARSE_EXPECTED_LBRACE],
-                          lb.line, lb.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_LBRACE, PARSE_EXPECTED_LBRACE, &err)) return err; }
 
     /* Parse case list (and optional default arm). */
     int cap = 4;
@@ -1490,13 +1335,7 @@ UAstNode *parse_switch(UParser *p) {
 
     p->switch_depth--;
 
-    UToken rb = peek(p);
-    if (rb.type != TOK_RBRACE) {
-        return make_error(p, PARSE_EXPECTED_RBRACE,
-                          kErrorMessages[PARSE_EXPECTED_RBRACE],
-                          rb.line, rb.col);
-    }
-    consume(p);
+    { UAstNode *err = NULL; if (!expect(p, TOK_RBRACE, PARSE_EXPECTED_RBRACE, &err)) return err; }
 
     UAstNode *node = make_node(p, AST_SWITCH, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;

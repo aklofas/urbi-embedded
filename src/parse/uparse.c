@@ -288,6 +288,16 @@ UAstNode *make_error(UParser *p, UParseError code, const char *msg,
     return n;
 }
 
+bool expect(UParser *p, UTokenType type, UParseError code, UAstNode **err) {
+    UToken tok = peek(p);
+    if (tok.type != type) {
+        *err = make_error(p, code, kErrorMessages[code], tok.line, tok.col);
+        return false;
+    }
+    consume(p);
+    return true;
+}
+
 /* infix_prec / infix_binop / is_compare_token / compare_op /
    make_compare / make_bool_node / make_nil_node /
    parse_prefix / parse_atom / arena_grow_node_array /
