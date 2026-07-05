@@ -24,7 +24,7 @@ class SchedulingError  : public Exception {} |
 class SyntaxError      : public Exception {} |
 class OutOfMemoryError : public Exception {} |
 
-// Legacy compat alias (DRIFT-09 / v0.13.5):
+// Legacy compat alias:
 // exception.u:379: package lang.Exception.Lookup: 'package'.lang.Exception
 // Legacy code accesses LookupError as Exception.Lookup (nested naming).
 // Use addProto so the alias persists past the blob run (blob-scope constraint:

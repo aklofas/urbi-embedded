@@ -1100,7 +1100,7 @@ static const ContainerMethodEntry LIST_METHODS[] = {
     { "sort",     list_sort            },
     { "reverse",  list_reverse         },
     { "join",     list_join            },
-    /* Legacy compat aliases (DRIFT-03 / v0.13.5):
+    /* Legacy compat aliases:
      * size    — legacy primary: list.cc:167 BINDG(size)
      * insertBack — legacy primary: list.cc:92 BIND(insertBack)
      * <<      — legacy alias:   list.u:35 copySlot("insertBack","<<")
@@ -1121,8 +1121,8 @@ static const ContainerMethodEntry DICT_METHODS[] = {
     { "remove",  dict_remove  },
     { "keys",    dict_keys    },
     { "values",  dict_values  },
-    /* Legacy compat alias (DRIFT-03 / v0.13.5):
-     * size — legacy idiom; dict is also a Container with .size() */
+    /* Legacy compat alias:
+     * size — legacy primary: dictionary.cc:91 BINDG(size) */
     { "size",    dict_length  }
 };
 
