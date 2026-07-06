@@ -3,6 +3,7 @@
 #define UROS_MSG_H
 #ifdef URBI_ENABLE_ROS2
 #include <stddef.h>
+#include <string.h>
 #include "urbi/types.h"
 struct UVM; struct UObject;
 typedef int (*urbi_ros_marshal_fn)(struct UVM *, UValue, void *);
@@ -22,7 +23,7 @@ const URosMsgType *urbi_ros_msg_lookup(const char *name);
 struct UObject *urbi_ros_msg_alloc(struct UVM *vm, const char *name);
 
 /* String equality helper used across the generated message descriptors. */
-int urbi_streq(const char *a, const char *b);
+static inline int urbi_streq(const char *a, const char *b) { return strcmp(a, b) == 0; }
 
 /* Internal: record a message object keyed by name in the codegen cache. */
 void urbi_ros_msg__record(struct UVM *vm, const char *name, struct UObject *o);
