@@ -7,8 +7,8 @@
  *
  * Allocation: parsed string fields are strdup-style owned by the
  * request struct; caller MUST call urepl_ndjson_free_req on success. */
-#ifndef SRC_REPL_UREPL_NDJSON_H
-#define SRC_REPL_UREPL_NDJSON_H
+#ifndef UREPL_NDJSON_H
+#define UREPL_NDJSON_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -102,4 +102,4 @@ int urepl_ndjson_emit_goodbye (char *buf, size_t cap, const char *reason,
 int urepl_json_escape(const char *src, size_t src_len,
                       char *dst, size_t dst_cap);
 
-#endif /* SRC_REPL_UREPL_NDJSON_H */
+#endif /* UREPL_NDJSON_H */

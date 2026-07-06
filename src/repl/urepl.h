@@ -4,8 +4,8 @@
  * Only compiled when URBI_ENABLE_REPL=1.  Public REPL types live in
  * <urbi/repl.h>; this header pulls those in and extends with internal-
  * only types (sessions, transport list, etc.). */
-#ifndef SRC_REPL_UREPL_H
-#define SRC_REPL_UREPL_H
+#ifndef UREPL_H
+#define UREPL_H
 
 #include "urbi/repl.h"
 #include "urbi/urbi.h"
@@ -138,4 +138,4 @@ typedef struct UReplReader {
     struct UReplReader *next;              /* server->readers_head chain */
 } UReplReader;
 
-#endif /* SRC_REPL_UREPL_H */
+#endif /* UREPL_H */

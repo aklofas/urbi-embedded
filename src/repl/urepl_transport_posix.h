@@ -3,8 +3,8 @@
  *
  * Included by POSIX transport TUs (pty, uart-linux, tcp) to translate a
  * POSIX errno value to the UTransport read_fn / write_fn return convention. */
-#ifndef SRC_REPL_UREPL_TRANSPORT_POSIX_H
-#define SRC_REPL_UREPL_TRANSPORT_POSIX_H
+#ifndef UREPL_TRANSPORT_POSIX_H
+#define UREPL_TRANSPORT_POSIX_H
 
 #include <errno.h>
 
@@ -19,4 +19,4 @@ urepl_posix_errno_rc(int err)
     return -err;
 }
 
-#endif /* SRC_REPL_UREPL_TRANSPORT_POSIX_H */
+#endif /* UREPL_TRANSPORT_POSIX_H */

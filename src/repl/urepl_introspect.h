@@ -17,8 +17,8 @@
  * returns -1 and writes *out_n with a best-effort estimate of the required
  * size; the caller may retry with a larger buffer.  Output is always valid
  * JSON when URBI_OK is returned. */
-#ifndef SRC_REPL_UREPL_INTROSPECT_H
-#define SRC_REPL_UREPL_INTROSPECT_H
+#ifndef UREPL_INTROSPECT_H
+#define UREPL_INTROSPECT_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -52,4 +52,4 @@ int urbi_introspect_slots(struct UVM *vm, struct URealm *realm,
 }
 #endif
 
-#endif /* SRC_REPL_UREPL_INTROSPECT_H */
+#endif /* UREPL_INTROSPECT_H */

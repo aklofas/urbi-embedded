@@ -10,8 +10,8 @@
  * at session creation; streaming output inside an eval frame is id-
  * correlated to the eval's id (current_eval_id), and post-done output
  * (e.g. from watchers spawned by the eval) is lobby-scoped (no id). */
-#ifndef SRC_REPL_UREPL_DISPATCH_H
-#define SRC_REPL_UREPL_DISPATCH_H
+#ifndef UREPL_DISPATCH_H
+#define UREPL_DISPATCH_H
 
 #include "repl/urepl.h"
 #include "repl/urepl_queue.h"
@@ -139,4 +139,4 @@ void urepl_dispatch_drain(UReplServer *server);
  * archives are present.  The weak fallback is a no-op. */
 void urepl_dispatch_drain_if_active(struct UVM *vm);
 
-#endif /* SRC_REPL_UREPL_DISPATCH_H */
+#endif /* UREPL_DISPATCH_H */

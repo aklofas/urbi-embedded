@@ -9,8 +9,8 @@
  * library was built with — struct layouts (UReplServer, UReplReader,
  * UReplQueue, UReplRingbuf) differ between modes. Same trap class as
  * URBI_FLOAT_TYPE. */
-#ifndef SRC_REPL_UREPL_THREADING_H
-#define SRC_REPL_UREPL_THREADING_H
+#ifndef UREPL_THREADING_H
+#define UREPL_THREADING_H
 
 #ifdef URBI_REPL_COOPERATIVE_ONLY
   /* Single-thread, embedder-driven serve_step. No pthread, no eventfd,
@@ -59,4 +59,4 @@
   #define UREPL_THREAD_JOIN(t)            pthread_join((t), NULL)
 #endif
 
-#endif /* SRC_REPL_UREPL_THREADING_H */
+#endif /* UREPL_THREADING_H */

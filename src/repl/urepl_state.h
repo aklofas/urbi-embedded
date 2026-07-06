@@ -11,8 +11,8 @@
  *   urepl_state_create — allocation happens only when the REPL server starts.
  * === */
 
-#ifndef URBI_REPL_STATE_H
-#define URBI_REPL_STATE_H
+#ifndef UREPL_STATE_H
+#define UREPL_STATE_H
 
 struct UVM;
 
@@ -28,4 +28,4 @@ typedef struct UReplState {
 UReplState *urepl_state_create(struct UVM *vm);
 void        urepl_state_destroy(struct UVM *vm, UReplState *rs);
 
-#endif /* URBI_REPL_STATE_H */
+#endif /* UREPL_STATE_H */

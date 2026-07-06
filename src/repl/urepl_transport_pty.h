@@ -16,8 +16,8 @@
  *
  * Only compiled when URBI_ENABLE_REPL=1.  Linux-only (depends on glibc
  * <pty.h>); real-hardware UART drivers are in urepl_transport_uart_*.c. */
-#ifndef SRC_REPL_UREPL_TRANSPORT_PTY_H
-#define SRC_REPL_UREPL_TRANSPORT_PTY_H
+#ifndef UREPL_TRANSPORT_PTY_H
+#define UREPL_TRANSPORT_PTY_H
 
 #include "urbi/repl.h"
 
@@ -55,4 +55,4 @@ extern const UTransport UREPL_PTY_TRANSPORT;
 }
 #endif
 
-#endif /* SRC_REPL_UREPL_TRANSPORT_PTY_H */
+#endif /* UREPL_TRANSPORT_PTY_H */

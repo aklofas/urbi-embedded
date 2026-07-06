@@ -18,8 +18,8 @@
  *     until the new write fits (oldest-output-loss matches the spec
  *     §6 expectation that long-running urbiscript tracing may exceed
  *     a slow client's drain rate). */
-#ifndef SRC_REPL_UREPL_QUEUE_H
-#define SRC_REPL_UREPL_QUEUE_H
+#ifndef UREPL_QUEUE_H
+#define UREPL_QUEUE_H
 
 #include "repl/urepl_ndjson.h"
 
@@ -119,4 +119,4 @@ bool   urepl_ringbuf_overflow_consume(UReplRingbuf *rb);
  * write.  Lock discipline: acquires rb->mutex alone. */
 bool   urepl_ringbuf_headroom(UReplRingbuf *rb, size_t n);
 
-#endif /* SRC_REPL_UREPL_QUEUE_H */
+#endif /* UREPL_QUEUE_H */

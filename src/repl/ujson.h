@@ -17,8 +17,8 @@
  * NDJSON request-parser (Task 21 future work).  Putting it under src/repl/
  * keeps the URBI_ENABLE_REPL=1 build gating natural — non-REPL builds
  * never link this TU. */
-#ifndef SRC_REPL_UJSON_H
-#define SRC_REPL_UJSON_H
+#ifndef UJSON_H
+#define UJSON_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -91,4 +91,4 @@ void ujson_free_node(UJsonNode *node);
 }
 #endif
 
-#endif /* SRC_REPL_UJSON_H */
+#endif /* UJSON_H */

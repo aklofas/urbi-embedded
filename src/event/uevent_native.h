@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Event prototype native methods (spec #3 §7.3). */
 
-#ifndef EVENT_NATIVE_H
-#define EVENT_NATIVE_H
+#ifndef UEVENT_NATIVE_H
+#define UEVENT_NATIVE_H
 
 #include "chunk/uchunk.h"        /* UValue, UVAL_EVENT */
 #include "runtime/umacros.h"       /* urbi_zero (used by uvalue_from_event) */
@@ -57,4 +57,4 @@ UVMError urbi_event_native_register(struct UVM *vm);
 }
 #endif
 
-#endif /* EVENT_NATIVE_H */
+#endif /* UEVENT_NATIVE_H */

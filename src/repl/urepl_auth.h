@@ -6,8 +6,8 @@
  * caller (server) wraps them in pthread_mutex_t auth_limiter_mutex.
  *
  * Only compiled when URBI_ENABLE_REPL=1. */
-#ifndef SRC_REPL_UREPL_AUTH_H
-#define SRC_REPL_UREPL_AUTH_H
+#ifndef UREPL_AUTH_H
+#define UREPL_AUTH_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -81,4 +81,4 @@ void urepl_auth_limiter_record_success(UReplAuthLimiter *lim, uint32_t ip);
 }
 #endif
 
-#endif /* SRC_REPL_UREPL_AUTH_H */
+#endif /* UREPL_AUTH_H */

@@ -23,8 +23,8 @@
  *     the reader on readers_head until urbi_repl_stop reaps it).
  *
  * Only compiled when URBI_ENABLE_REPL=1. */
-#ifndef SRC_REPL_UREPL_LISTENER_H
-#define SRC_REPL_UREPL_LISTENER_H
+#ifndef UREPL_LISTENER_H
+#define UREPL_LISTENER_H
 
 #include "repl/urepl.h"
 
@@ -116,4 +116,4 @@ int  urepl_disconnect_sweep(UReplServer *server);
 }
 #endif
 
-#endif /* SRC_REPL_UREPL_LISTENER_H */
+#endif /* UREPL_LISTENER_H */

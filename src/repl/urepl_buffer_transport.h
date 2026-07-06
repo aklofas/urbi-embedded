@@ -7,8 +7,8 @@
  *
  * Single-client per state object.  accept_fn returns once with a sentinel
  * fd (always 0) and then signals "would block" on subsequent calls. */
-#ifndef SRC_REPL_UREPL_BUFFER_TRANSPORT_H
-#define SRC_REPL_UREPL_BUFFER_TRANSPORT_H
+#ifndef UREPL_BUFFER_TRANSPORT_H
+#define UREPL_BUFFER_TRANSPORT_H
 
 #include "urbi/repl.h"
 
@@ -44,4 +44,4 @@ size_t urepl_buffer_client_read(UBufferTransportState *st,
  * time.  Useful when tests want to drive multiple accept cycles. */
 void urepl_buffer_transport_reset_accept(UBufferTransportState *st);
 
-#endif /* SRC_REPL_UREPL_BUFFER_TRANSPORT_H */
+#endif /* UREPL_BUFFER_TRANSPORT_H */

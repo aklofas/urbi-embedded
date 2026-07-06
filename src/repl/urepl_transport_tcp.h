@@ -12,8 +12,8 @@
  * returned by accept_fn (round-trips through read_fn/write_fn/close_fn).
  *
  * Only compiled when URBI_ENABLE_REPL=1. */
-#ifndef SRC_REPL_UREPL_TRANSPORT_TCP_H
-#define SRC_REPL_UREPL_TRANSPORT_TCP_H
+#ifndef UREPL_TRANSPORT_TCP_H
+#define UREPL_TRANSPORT_TCP_H
 
 #include "urbi/repl.h"
 
@@ -45,4 +45,4 @@ extern const UTransport UREPL_TCP_TRANSPORT;
 }
 #endif
 
-#endif /* SRC_REPL_UREPL_TRANSPORT_TCP_H */
+#endif /* UREPL_TRANSPORT_TCP_H */

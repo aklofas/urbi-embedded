@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Tag.enter / Tag.leave native getters with lazy alloc (spec #3 §8.2). */
 
-#ifndef TAG_NATIVE_H
-#define TAG_NATIVE_H
+#ifndef UTAG_NATIVE_H
+#define UTAG_NATIVE_H
 
 #include "chunk/uchunk.h"    /* UValue */
 #include "vm/uvm.h"            /* UVMError */
@@ -36,4 +36,4 @@ UVMError urbi_tag_native_register(struct UVM *vm);
 }
 #endif
 
-#endif /* TAG_NATIVE_H */
+#endif /* UTAG_NATIVE_H */

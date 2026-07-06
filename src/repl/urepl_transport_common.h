@@ -5,8 +5,8 @@
  * exactly once, then -1 forever" accept pattern.  The macro expands a
  * return statement into the enclosing function, so it must appear as the
  * final statement in each accept_fn. */
-#ifndef SRC_REPL_UREPL_TRANSPORT_COMMON_H
-#define SRC_REPL_UREPL_TRANSPORT_COMMON_H
+#ifndef UREPL_TRANSPORT_COMMON_H
+#define UREPL_TRANSPORT_COMMON_H
 
 #include "urbi/types.h"   /* URBI_ERR_INVALID_ARG */
 #include <stdbool.h>
@@ -31,4 +31,4 @@
         return 0;                                \
     } while (0)
 
-#endif /* SRC_REPL_UREPL_TRANSPORT_COMMON_H */
+#endif /* UREPL_TRANSPORT_COMMON_H */
