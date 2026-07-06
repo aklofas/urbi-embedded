@@ -173,8 +173,9 @@ urbi_vm_pop_tag_scope(UVM *vm, UStrand *s)
     if (s->cleanup_depth > 0) {
         UCleanupEntry *top = &s->cleanup_base[s->cleanup_depth - 1];
         if ((top->flags & FLAG_HAS_ONLEAVE) != 0U) {
-            /* onleave handler: not reachable at M3 (emit always sets flags=0).
-             * If somehow reached (bytecode corruption), halt safely. */
+            /* onleave handler: not emitted by the current compiler (DEFERRED-v1.x).
+             * If somehow reached (bytecode from future version or corruption),
+             * halt safely. */
             vm->last_error = UVM_TYPE_ERROR;
             urbi_vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired at M3");
             return UVM_TAG_SCOPE_HALT;

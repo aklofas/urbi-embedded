@@ -137,8 +137,9 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
      * stuck in the array (nested_count incremented, name slots not yet
      * declared, body never compiled).  By interning into a stack-local
      * cache up front, an intern OOM short-circuits with no module-state
-     * mutation.  UFS_MAX_LOCALS bounds nparams (the parser caps the
-     * formal-list length at 16 today; the bound here is conservative). */
+     * mutation.  UFS_MAX_LOCALS bounds nparams (the parser grows param
+     * arrays dynamically up to UFS_MAX_LOCALS = 200; the bound here is
+     * conservative relative to UFuncSig.param_is_lazy[16]). */
     const char *param_names[UFS_MAX_LOCALS];
     if (nparams > UFS_MAX_LOCALS) {
         e->error = EMIT_REG_EXHAUSTED;
