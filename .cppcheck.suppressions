@@ -217,4 +217,17 @@ constParameterPointer:src/ros/uros.c
 // because cppcheck does not model uint8_t wrap-around: when the field holds
 // 255 the cast truncates 256 to 0, making the check live.  The guard is the
 // two-fix for the pool-recycle stamp-collision bug (F2 in v0.13.4 review).
-knownConditionTrueFalse:src/watcher/uwatcher_eval.c:193
+knownConditionTrueFalse:src/watcher/uwatcher_eval.c:194
+
+// audit:v0.13.6-namespace-day — src/emit/uemit_internal.h patch_fwd_jmp_here(UEmitter *e, ...)
+// urbi_emit_patch_instr() mutates the emitter's instruction buffer; cppcheck cannot see through
+// the opaque UEmitter* and flags 'e' as constable.  Same rationale as atoms.c et al above.
+constParameterPointer:src/emit/uemit_internal.h:201
+
+// audit:v0.13.6-namespace-day — src/parse/uparse_stmt.c urbi_parse_function uses block-scoped
+// `UAstNode *err = NULL` inside `{ }` expect() one-liners; the outer `err` (reject_bare_function_forms
+// result) is a completely different variable at function scope.  The pattern is used at every
+// expect() call site in this file and cannot be removed without restructuring all callers.
+shadowVariable:src/parse/uparse_stmt.c:703
+shadowVariable:src/parse/uparse_stmt.c:720
+shadowVariable:src/parse/uparse_stmt.c:745

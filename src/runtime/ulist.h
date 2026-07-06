@@ -45,7 +45,7 @@
  * T    = element struct type (needed for the internal pp declaration). */
 #define URBI_SLIST_UNLINK(head, node, link, T)                  \
     do {                                                         \
-        T **_urbi_slist_pp_ = &(head);                          \
+        T **_urbi_slist_pp_ = &(head); /* NOLINT(bugprone-macro-parentheses) — T is a type arg, not an expression */ \
         while (*_urbi_slist_pp_ != NULL &&                      \
                *_urbi_slist_pp_ != (node))                      \
             _urbi_slist_pp_ = &(*_urbi_slist_pp_)->link;        \

@@ -407,7 +407,6 @@ emit_object_slots(UObject *obj, char *buf, size_t cap, size_t *n_inout)
     while (sh != NULL && sh->count > 0) {
         if (sh->name != NULL) {
             const char *name = (const char *)sh->name;
-            size_t name_len = strlen(name);
             int w = snprintf(buf + n, (cap > n) ? (cap - n) : 0,
                              "%s{\"name\":\"",
                              first ? "" : ",");
@@ -416,6 +415,7 @@ emit_object_slots(UObject *obj, char *buf, size_t cap, size_t *n_inout)
             }
             n += (size_t)w;
             {
+                size_t name_len = strlen(name);
                 int _w = urepl_json_escape(name, name_len,
                                            buf + n, (cap > n) ? cap - n : 0);
                 if (_w < 0) { *n_inout = n; return -1; }
