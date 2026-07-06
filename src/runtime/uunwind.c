@@ -39,7 +39,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Truncation guard (refactor-3 VM-04/SCHED-11; v0.13.1-E): safepoint_budget_remaining
+/* Truncation guard (v0.13.1-E): safepoint_budget_remaining
  * is uint16_t; URBI_SCRATCH_BUDGET_OPS must fit without silent truncation. */
 URBI_STATIC_ASSERT(URBI_SCRATCH_BUDGET_OPS > 0 && URBI_SCRATCH_BUDGET_OPS <= 65535,
                    "URBI_SCRATCH_BUDGET_OPS must fit uint16_t (v0.13.1-E)");
@@ -172,7 +172,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
 {
     UExecStatus saved_unwind = s->pending_unwind;
     UValue       saved_value = s->unwind_value;
-    /* refactor-3 VM-06a / v0.13.1-L: the nested dispatch below can run GC
+    /* v0.13.1-L: the nested dispatch below can run GC
      * slices, and this C local is otherwise invisible to the GC (no
      * conservative C-stack scan) — with the try scope's registers already
      * zeroed (Inv-5), saved_value may be the suppressed RETURN value's
@@ -231,7 +231,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
      * becomes non-OK; urbi_unwind is called recursively from that safepoint.
      * Recursion depth is bounded by URBI_CLEANUP_MAX.
      *
-     * refactor-3 VM-02 + SCHED-10: the nested dispatch must not disturb the
+     * The nested dispatch must not disturb the
      * embedder's urbi_step budget (urbi_vm_dispatch_loop_until_yield overwrites
      * vm->step_budget_remaining at entry), and a mature strand's depleted
      * per-strand safepoint budget must not park the cleanup body mid-run.
@@ -293,7 +293,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
              * Unpark defensively, then escalate via the overflow path
              * (walker marks the strand fatal). */
             if (USTRAND_IS_WAITING(s)) {
-                /* refactor-3 SCHED-05 (closes v0.13.1-D): unpark covers ALL
+                /* Unpark covers ALL
                  * WAITING reasons — sleep queue, event waiter chain, JOIN
                  * (child->joiners_head), WATCHER (waituntil back-pointer) —
                  * not just the SLEEP/EVENT pair the pre-fix code handled.
@@ -317,7 +317,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
             if (s->vm != NULL && s->vm->host_log_fn != NULL) {
                 s->vm->host_log_fn(s->vm, s->vm->host_log_ud, URBI_LOG_ERROR,
                     "URBI_ERR_CLEANUP_OVERFLOW: cleanup body yielded or blocked; "
-                    "finally/onleave bodies execute atomically (refactor-3 VM-02)");
+                    "finally/onleave bodies execute atomically");
             }
             ustrand_c_root_pop(s, &saved_value_root);
             s->cleanup_run_depth--;
@@ -387,8 +387,8 @@ urbi_unwind(UStrand *s)
      * RETURN crosses exactly one call-frame boundary; intervening tag /
      * try scopes belonging to the CALLER must stay intact.
      *
-     * refactor-3 VM-01 follow-on: cleanup entries belonging to the
-     * RETURNING frame (frame_depth >= frame_count — VM-01's push-time
+     * Cleanup entries belonging to the
+     * RETURNING frame (frame_depth >= frame_count — the push-time
      * stamps make this exact) must be processed BEFORE the frame pops.
      * Before this fix the direct pop skipped them entirely: a finally inside the
      * returning function was silently SKIPPED (REVIVAL §S5a violation),
@@ -437,7 +437,7 @@ urbi_unwind(UStrand *s)
                         s->state        = USTRAND_STATE_DEAD;
                         return;
                     }
-                    /* refactor-3 VM-02: strand may have terminated inside
+                    /* Strand may have terminated inside
                      * the nested dispatch; stop immediately. */
                     if (USTRAND_GET_STATE(s) == USTRAND_DEAD)
                         return;
@@ -493,7 +493,7 @@ urbi_unwind(UStrand *s)
         UCleanupEntry *e = &s->cleanup_base[s->cleanup_depth - 1];
         UCleanupKind kind = (UCleanupKind)e->kind;
 
-        /* refactor-3 VM-01 (B1): the unwind may have crossed call frames
+        /* The unwind may have crossed call frames
          * entered after this entry was pushed.  Tear them down FIRST:
          * handler_pc is relative to the proto that pushed the entry,
          * register_base/count index that frame's window, and
@@ -602,7 +602,7 @@ urbi_unwind(UStrand *s)
                     s->state        = USTRAND_STATE_DEAD;
                     return;
                 }
-                /* refactor-3 VM-02: the body's replacement unwind may have
+                /* The body's replacement unwind may have
                  * been fully handled inside the nested dispatch (absorbed at
                  * an outer handler, strand ran to completion) or escalated to
                  * a fatal there.  Either way the strand has terminated; stop
@@ -641,7 +641,7 @@ urbi_unwind(UStrand *s)
             if (s->pending_unwind == UEXEC_TAG_STOP &&
                 e->owning_tag != NULL &&
                 e->owning_tag == s->unwind_target) {
-                /* refactor-3 (carried-over pass-through fix): synthetic
+                /* Carried-over pass-through fix: synthetic
                  * ambient entries (FLAG_TAG_AMBIENT — realm tag / inherited
                  * fork-chain tag) must NOT absorb the TAG_STOP: their
                  * handler_pc == 0 (would restart the thunk at pc_base) and
@@ -714,7 +714,7 @@ urbi_unwind(UStrand *s)
                     s->state        = USTRAND_STATE_DEAD;
                     return;
                 }
-                /* refactor-3 VM-02: see the TRY_FRAME finally arm — strand
+                /* See the TRY_FRAME finally arm — strand
                  * terminated inside the nested dispatch; stop walking. */
                 if (USTRAND_GET_STATE(s) == USTRAND_DEAD)
                     return;
@@ -765,11 +765,11 @@ fatal:
  * sets s->cross_strand_stop_pending = 1 (idempotent flag; decremented at
  * ustrand_destroy so urbi_sched_quiescent eventually converges).
  *
- * WAITING strands are woken via urbi_sched_strand_unpark (refactor-3 SCHED-05:
- * unlink the reason-specific third-party links, then the make_runnable
+ * WAITING strands are woken via urbi_sched_strand_unpark (unlink the
+ * reason-specific third-party links, then the make_runnable
  * funnel) so they run and process the unwind before the scheduler reaches
  * quiescence.  SUSPENDED strands are resumed with their block/freeze gates
- * cleared (refactor-3 SCHED-08: stop overrides suspension) for the same
+ * cleared (stop overrides suspension) for the same
  * reason — pre-fix the deposit landed but the member never ran it.
  *
  * Watcher cascade: urbi_tag_stop walks tag->member_watchers_head and pushes
@@ -825,7 +825,7 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
         }
 
         /* Wake any blocked strand so it can consume the unwind.
-         * refactor-3 SCHED-05: urbi_sched_strand_unpark removes the strand's
+         * urbi_sched_strand_unpark removes the strand's
          * reason-specific third-party links (sleep queue / event waiter
          * chain / child->joiners_head / waituntil waiter_strand) BEFORE
          * routing through the make_runnable wake funnel, so no later waker
@@ -1030,10 +1030,10 @@ urbi_strand_cancel(struct UVM *vm, struct UStrand *strand, UValue cancel_reason)
     strand->pending_unwind = UEXEC_CANCEL;
     strand->unwind_value   = cancel_reason;
     /* If the strand is sleeping/waiting, unblock it so it can process the
-     * unwind.  refactor-3 VM-08/SCHED-04: route through the scheduler
+     * unwind.  Route through the scheduler
      * helpers — stamping READY in place left a sleeping strand linked on
-     * the sleep queue and never enqueued it (zombie strand).  refactor-3
-     * SCHED-05: urbi_sched_strand_unpark additionally removes the reason-
+     * the sleep queue and never enqueued it (zombie strand).
+     * urbi_sched_strand_unpark additionally removes the reason-
      * specific third-party links (event waiter chain / child->joiners_head
      * / waituntil waiter_strand) before the wake.  Mirrors the
      * urbi_tag_stop wake block.

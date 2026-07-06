@@ -75,7 +75,7 @@ int urbi_run_closure_on_scratch_with_payload(struct UVM      *vm,
                                              UValue          *out_result,
                                              int             *out_threw);
 
-/* === urbi_run_closure_on_scratch_ex (refactor-3 VM-07) ===
+/* === urbi_run_closure_on_scratch_ex ===
  *
  * Superset of the two variants above: `initial_r0` is optional (NULL → no
  * payload; non-NULL → written to R[0] before dispatch) and `out_fatal`

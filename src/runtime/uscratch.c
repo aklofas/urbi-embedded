@@ -52,8 +52,8 @@
  * `out_fatal` (optional, may be NULL): when the body dies with a latched
  * fatal_status, receives that status (UEXEC_THROW / UEXEC_TAG_STOP /
  * UEXEC_CANCEL); UEXEC_OK for every other outcome (clean return, budget
- * exhaustion, yield, vm->last_error halt, setup OOM).  refactor-3 VM-07:
- * lets operator-overload fallbacks distinguish a genuine user throw from
+ * exhaustion, yield, vm->last_error halt, setup OOM).  Lets operator-overload
+ * fallbacks distinguish a genuine user throw from
  * the other abnormal exits that *out_threw conflates. */
 static int
 run_on_scratch_core(struct UVM       *vm,
@@ -226,7 +226,7 @@ run_on_scratch_core(struct UVM       *vm,
         /* Run with bounded budget.  Cond closures must not yield (spec §6.4),
          * but we cap dispatch ops as a defensive measure.
          *
-         * refactor-3 VM-10 + SCHED-10: the nested dispatch must identify the
+         * The nested dispatch must identify the
          * scratch strand as current (slot faults / natives throw on
          * vm->cur_strand — pre-fix the throw landed on the OUTER strand, e.g.
          * the loader strand executing OP_AT_INSTALL, or was lost) and must
@@ -247,7 +247,7 @@ run_on_scratch_core(struct UVM       *vm,
             vm->last_error = UVM_OK;
             vm->last_errmsg[0] = '\0';
         } else if (strand.fatal_status != UEXEC_OK) {
-            /* refactor-3 VM-10: with cur_strand pointing at the scratch
+            /* With cur_strand pointing at the scratch
              * strand, typed throws (slot faults via slot_throw_or_fatal,
              * urbi_raise_typed natives) now land here and unwind to a DEAD
              * strand with fatal_status latched — vm->last_error stays UVM_OK
@@ -257,7 +257,7 @@ run_on_scratch_core(struct UVM       *vm,
             *out_threw = 1;
             if (out_fatal != NULL) *out_fatal = strand.fatal_status;
             if (strand.fatal_status == UEXEC_THROW) {
-                /* refactor-3 VM-07: surface the thrown value so operator-
+                /* Surface the thrown value so operator-
                  * overload callers can re-deposit the user's exception at
                  * the call site instead of replacing it with a numeric
                  * TypeError.  The unrooted window opened at strand DEATH,

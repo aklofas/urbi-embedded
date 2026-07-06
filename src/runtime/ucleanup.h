@@ -30,7 +30,7 @@ typedef enum {
  * variable, and may have other open member scopes).  Anonymous scopes (bit
  * clear) own their tag and destroy it at pop. */
 #define FLAG_TAG_USER_OWNED 0x8U
-/* TAG_SCOPE only (v0.13.3 / refactor-3 SCHED-05 + v0.13.1-M): synthetic
+/* TAG_SCOPE only (v0.13.3 / v0.13.1-M): synthetic
  * ambient-inheritance entry pushed by urbi_strand_attach_ambient_tags (realm
  * tag at strand create; parent chain at fork).  These entries reference a
  * SHARED tag (the realm's, or an outer scope's) and were never opened by an
@@ -56,7 +56,7 @@ struct UVM;      /* uvm.h */
      Pointers (64-bit): owning_tag(8) + catch_pattern(8) = 16 B.
      Total row 7: 24 B.
    Row 11 amendment adds next_member(8) + strand_back(8) = 16 B → 40 B on 64-bit.
-   refactor-3 VM-01 (v0.13.1) adds frame_depth(2) → fixed header 10 B
+   v0.13.1 adds frame_depth(2) → fixed header 10 B
    + 6 B padding before the 8-byte-aligned pointers → 48 B on 64-bit.
 
    On 32-bit targets (Cortex-M, RISC-V rv32), pointers shrink to 4 B each:
@@ -75,7 +75,7 @@ typedef struct UCleanupEntry {
     uint16_t      frame_depth;     /* 2 bytes — s->frame_count at push time;
                                       the walker pops call frames back to this
                                       depth before running or absorbing the
-                                      entry (refactor-3 VM-01/B1) */
+                                      entry */
     struct UTag         *owning_tag;    /* ptr — TAG_SCOPE only */
     struct UPattern     *catch_pattern; /* ptr — TRY_FRAME with catch */
     /* Row 11 §3.3 additions for tag membership tracking */
@@ -84,7 +84,7 @@ typedef struct UCleanupEntry {
 } UCleanupEntry;
 
 /* v0.5.5: pin the row 11 §3.3 layout target on 64-bit targets
- * (amended by refactor-3 VM-01: +frame_depth, 40 → 48).
+ * (amended: +frame_depth, 40 → 48).
  * 32-bit targets fall through (10 B fixed + 2 B pad + 4 × 4 B = 28 B); the
  * pointer-width guard mirrors the UObject / UIC pattern in src/object/. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
