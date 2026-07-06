@@ -61,8 +61,12 @@ typedef enum {
                                        wraps at 256) */
     EMIT_TAG_SPILL_OUT_OF_RANGE,    /* EMIT-015: AST_TAG_PREFIX spill register
                                        does not fit OP_PUSH_TAG's 4-bit
-                                       reg-nibble.  v1.x bytecode change widens
-                                       the encoding (filed as backlog under
+                                       reg-nibble.  1 hidden local → 14
+                                       outer-local headroom (was 15 before
+                                       v0.13.4 added the tag-value hidden
+                                       local; see uemit_unwind.c:681).
+                                       v1.x bytecode change widens the
+                                       encoding (filed as backlog under
                                        T129/Phase 22). */
 
     /* v0.6.2 Phase 2 — Gap #3 (this keyword) */
@@ -317,8 +321,8 @@ void urbi_emit_diag_free_all(UEmitter *e);
 /* --- M3 row 7 control-transfer opcode encoder helpers ---
  *
  * These emit exactly one instruction word into the module.  All accept the
- * source line number for syncline tracking.  See umodule.h §M3 row 7 for
- * the bit-layout of each opcode's fields.
+ * source line number for syncline tracking.  See chunk/uchunk.h §M3 row 7
+ * for the bit-layout of each opcode's fields.
  *
  * Used by T10 (try/catch/throw emit), T11 (tag-scope emit), and tests. */
 
@@ -380,7 +384,10 @@ ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap);
  * or function close (T7 adds the block-pop semantics). The slot index
  * equals the register holding the local's value (registers [0, nactvar)
  * are locals; [nactvar, freereg) are temps; [freereg, UFS_MAX_REGS) are
- * free). */
+ * free).  Exception: when r_global_slot is pre-reserved (EMIT-021),
+ * r_global_slot occupies one register in the [nactvar, freereg) zone
+ * independently of nactvar; uemit_close_block restores freereg_on_enter
+ * to compensate. */
 typedef struct {
     const char *name;                /* canonical (interned) pointer */
     int         name_len;
