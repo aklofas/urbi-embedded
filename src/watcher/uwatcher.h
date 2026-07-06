@@ -49,7 +49,7 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
                                          * body re-fires on every emission, no one-shot
                                          * teardown.  v0.10.2.  Closes reactive F1. */
 
-/* === Mode predicates (refactor-3 SCHED-16) ===
+/* === Mode predicates ===
  *
  * The mode lists for "is this an event watcher?" were duplicated 5+ times
  * and drifted: UWATCHER_WHENEVER_EVENT was missing from the
@@ -313,7 +313,7 @@ void urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s);
 /* === GC root provider (uwatcher_gc.c) === */
 
 /* urbi_gc_watcher_table_walk_roots: registered via urbi_gc_register_root_provider at
- * urbi_vm_init.  Pool-wide walk (refactor-3 GC-05): every in-use slab slot
+ * urbi_vm_init.  Pool-wide walk: every in-use slab slot
  * (URBI_WATCHER_ACTIVE set) yields closure + last_value_cache UValues to the
  * GC mark callback and shades owning_tag + event cells directly, regardless
  * of which list (if any) threads the slot.  Per spec §6.6 as amended.

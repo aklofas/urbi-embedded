@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Watcher table GC root walker.
  *
- * Per spec §6.6 as amended by refactor-3 GC-05: walks the whole watcher
+ * Per spec §6.6 as amended: walks the whole watcher
  * POOL SLAB (every in-use slot), yielding closure + last_value_cache
  * UValues to the GC mark callback and shading owning_tag + event cells
  * directly.
@@ -30,7 +30,7 @@ urbi_gc_watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
      * which itself ISR-asserts at its entry points.  (See urbi_gc_sched_walk_roots
      * for precedent — also no per-walker ISR assert.) */
 
-    /* refactor-3 GC-05: POOL-WIDE walk.  Rooting is a property of "slot is
+    /* POOL-WIDE walk.  Rooting is a property of "slot is
      * in use" (URBI_WATCHER_ACTIVE — set by uwatcher_pool_alloc, cleared
      * only by pool_free), NOT of list topology.  This subsumes the old
      * active-list + pending-onleave walks and — critically — covers
@@ -84,13 +84,13 @@ urbi_gc_watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
         }
         cb(vm, &w->last_value_cache, ctx);
 
-        /* refactor-3 GC-03: owning_tag IS a root — UTag has been
+        /* owning_tag IS a root — UTag has been
          * GC-managed (UTYPE_TAG via urbi_gc_alloc); the old
          * "host-managed" deferral note was stale. */
         if (w->owning_tag != NULL) {
             urbi_gc_shade_gray(vm, (UCell *)w->owning_tag);
         }
-        /* refactor-3 GC-05: the subscribed event must outlive the watcher
+        /* The subscribed event must outlive the watcher
          * (w->event is dereferenced at unregister/teardown). */
         if (w->event != NULL) {
             urbi_gc_shade_gray(vm, (UCell *)w->event);

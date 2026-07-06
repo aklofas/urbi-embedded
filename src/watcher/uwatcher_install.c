@@ -242,8 +242,8 @@ urbi_watcher_install_watcher_runtime(
      * instruction (fast path / immediate wake).
      *
      * Otherwise, park the waiter strand by transitioning it to WAITING with
-     * USTRAND_WAIT_WATCHER reason (0x32) via urbi_sched_strand_block (refactor-3
-     * SCHED-01: block owns the runnable-count decrement; the pre-refactor
+     * USTRAND_WAIT_WATCHER reason (0x32) via urbi_sched_strand_block (block
+     * owns the runnable-count decrement; the pre-refactor
      * direct state stamp left the accounting to a manual decrement in the
      * OP_WAITUNTIL_INSTALL arm).  The dispatcher observes the WAITING state
      * and yields to the scheduler; the watcher eval pass (urbi_vm_watcher_eval_dirty)
@@ -332,7 +332,7 @@ urbi_watcher_install_at_event_runtime(
 
     /* AT_EVENT watchers do NOT join active_watchers_head — only cond
      * watchers walk there (the dirty-eval loop).  But the count covers ALL
-     * armed watchers (refactor-3 SCHED-06): it is liveness/reporting
+     * armed watchers: it is liveness/reporting
      * bookkeeping (urbi_vm_liveness `armed`, urbi_vm_has_live_work), NOT the
      * eval-list length.  Pre-fix the bump was skipped here while
      * urbi_watcher_unregister_internal decrements unconditionally — uint32

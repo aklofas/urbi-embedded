@@ -58,7 +58,7 @@ uwatcher_pool_alloc(struct UVM *vm)
     w->body            = NULL;
     w->onleave         = NULL;
     /* Clear the event-mode fields too: the pool-wide GC root walker shades
-     * w->event on every ACTIVE slot (refactor-3 GC-05), so a recycled slot
+     * w->event on every ACTIVE slot, so a recycled slot
      * must never resurface a stale event pointer even if a future teardown
      * path forgets to NULL it before pool_free. */
     w->next_in_event   = NULL;
@@ -219,7 +219,7 @@ uwatcher_pool_destroy(struct UVM *vm)
      * watchers, unlink from event->at_watchers_head, and release the slot.
      * Slots on the freelist have URBI_WATCHER_ACTIVE cleared by pool_free;
      * slots never allocated have flags == 0 (slab pre-zeroed).
-     * SCHED-16 (refactor-3): use UWATCHER_IS_EVENT_MODE predicate so that
+     * Use UWATCHER_IS_EVENT_MODE predicate so that
      * WHENEVER_EVENT is not silently omitted. */
     {
         uint16_t i;
@@ -299,7 +299,7 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
     /* Unlink from the appropriate watcher list depending on mode.
      * Event-mode watchers (AT_EVENT / AT_EVENT_SYNC / WHENEVER_EVENT) live
      * on event->at_watchers_head, not on vm->active_watchers_head (spec #3
-     * §6.3).  SCHED-16 (refactor-3): use predicate so WHENEVER_EVENT is not
+     * §6.3).  Use predicate so WHENEVER_EVENT is not
      * silently omitted. */
     if (UWATCHER_IS_EVENT_MODE(w->mode)) {
         if (w->event) {
