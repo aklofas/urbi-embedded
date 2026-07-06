@@ -654,13 +654,23 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
         return 0U;
     }
 
+    /* rd: the incoming next_reg — anchors the result register and the freereg
+     * lower-bound throughout the loop.  Without this pin, a freereg reset to
+     * fs_temp_floor() after the condition can land below a live closure register
+     * held by an enclosing & or , emitter (the RHS thunk was compiled first and
+     * its register sits between the floor and rd).  The LOADNIL emitted at
+     * loop-exit would then overwrite that closure with nil, causing a runtime
+     * TypeError from OP_FORK_JOIN.  emit_if_arm already uses this pattern
+     * (`if (fs->freereg < rd) fs->freereg = rd`); align emit_while_arm. */
+    uint8_t rd = e->next_reg;
+
     /* W1/v0.10.5: open loop context for break/continue. */
     if (!uemit_loop_push(e, ULOOP_FRAME_LOOP)) return 0U;
 
     int loop_start = (int)emit_instr_count(e);
 
-    /* 1. Compile cond into rx. */
-    uint8_t rx = e->next_reg;
+    /* 1. Compile cond into rx (= rd — cond starts at the result register). */
+    uint8_t rx = rd;
     emit_expr(e, n->u.while_stmt.cond);
     if (e->error != EMIT_OK) { uemit_loop_pop(e); return 0U; }
 
@@ -671,8 +681,11 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
     int jmp_to_exit = (int)emit_instr_count(e);
     emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
 
-    /* Free cond temp; locals beneath rx stay. */
+    /* Free cond temp; pin freereg to at least rd so the body does not
+     * allocate into registers below the result anchor (which may overlap
+     * a caller's live closure register). */
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
     e->next_reg = e->current_fs->freereg;
 
     /* 4. Body — open block as is_loop=true (different from AST_BLOCK
@@ -695,8 +708,9 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
                 uemit_loop_pop(e);
                 return 0U;
             }
-            /* Release temps between body statements; locals stay. */
+            /* Release temps between body statements; pin freereg >= rd. */
             e->current_fs->freereg = fs_temp_floor(e->current_fs);
+            if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
             e->next_reg = e->current_fs->freereg;
         }
 

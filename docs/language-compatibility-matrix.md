@@ -154,7 +154,7 @@
 
 | Construct | Status | Reason / fix milestone |
 |---|---|---|
-| `;` `\|` `,` `&` separators | implemented | **v0.13.5**: statement forms as `&`/`\|` operands — blocks and `if`/`while` statement forms fold as operands (`{ a } & { b }`; `\|` operands emit inline, `&` RHS compiles as a fork thunk); `switch` does not enter the fold; `var` declarations are rejected as operands; `while`/`switch` nodes as `&` fork operands fail at runtime (design-risks v0.13.5-C); a `&`-fork thunk can READ chunk-top vars but WRITES fail to compile — use `Realm.*` slots (design-risks v0.13.5-A); `,` inside tag-scope bodies unsupported; see `tests/chk/separator/block_operands.chk` |
+| `;` `\|` `,` `&` separators | implemented | **v0.13.6**: fork-thunk emitter gaps closed — thunks can now write chunk-top vars via the realm-slot path (design-risks v0.13.5-A fixed); `while`-node as `&` LHS now compiles and runs correctly (design-risks v0.13.5-C fixed). **v0.13.5**: statement forms as `&`/`\|` operands — blocks and `if`/`while` statement forms fold as operands (`{ a } & { b }`); `switch` as a `&`/`\|` operand stays a parse error (`expected expression` — not admitted by `parse_sep_operand`); `var` declarations are rejected as operands; `,` inside tag-scope bodies unsupported; see `tests/chk/separator/block_operands.chk` + `tests/chk/separator/fork_operand_forms.chk` |
 | Chunk-top `&`/`,` fork | implemented | v0.8.0 loader strand |
 | `closure { }` (legacy) | migration | legacy F11; see [callmessage-migration.md §closure](migration/callmessage-migration.md#closure-keyword-migration) — replace with `function`; upvalue capture works since v0.8.4 |
 | `function () { }` (M6+) | implemented | — |

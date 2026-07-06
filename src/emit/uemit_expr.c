@@ -625,15 +625,20 @@ uint8_t emit_assign_arm(UEmitter *e, UAstNode *n) {
         upvalue_idx = find_or_install_upvalue(e, fs, canonical,
                                               n->u.assign.name_len);
         if (upvalue_idx < 0) {
-            /* T72: at chunk-top, check whether this name was declared via
-             * `var` (stored in global_var_names).  If so, route to the
-             * global slot via OP_SETSLOT rather than raising an error.
-             * Names that were never declared still produce EMIT_UNRESOLVED_NAME. */
-            if (fs->parent == NULL && fs->references_global) {
-                for (int gi = 0; gi < fs->n_global_vars; gi++) {
-                    if (fs->global_var_names[gi] == canonical) {
-                        is_global_assign = true;
-                        break;
+            /* T72: check whether this name was declared via `var` at chunk-top
+             * (stored in the root funcstate's global_var_names).  Walk up the
+             * parent chain so fork thunks can write chunk-top vars via the same
+             * realm-slot path that reads already use.  Names that were never
+             * declared anywhere still produce EMIT_UNRESOLVED_NAME. */
+            {
+                UFuncState *root_fs = fs;
+                while (root_fs->parent != NULL) root_fs = root_fs->parent;
+                if (root_fs->references_global) {
+                    for (int gi = 0; gi < root_fs->n_global_vars; gi++) {
+                        if (root_fs->global_var_names[gi] == canonical) {
+                            is_global_assign = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -657,14 +662,24 @@ uint8_t emit_assign_arm(UEmitter *e, UAstNode *n) {
                                      rhs_reg, 0U),
                    (uint32_t)n->line);
     } else if (is_global_assign) {
-        /* T72: write to the global slot on the realm object. */
+        /* T72: write to the global slot on the realm object.
+         * When called from a thunk (fs->parent != NULL) the thunk's own
+         * r_global_slot is pre-reserved by emit_function_literal; marking
+         * references_global here causes uemit_close_function to prepend the
+         * OP_LOAD_REALM_GLOBAL prologue so the register is live at runtime. */
+        if (!fs->references_global) {
+            fs->references_global = true;
+        }
         int ic_idx = uemit_assign_ic_index(e, (USymbol *)canonical);
         if (ic_idx < 0) return 0U;
         emit_instr(e, uinstr_enc_abc(OP_SETSLOT, rhs_reg, fs->r_global_slot,
                                      (uint8_t)ic_idx),
                    (uint32_t)n->line);
         /* T16: if RHS is a literal function, update global_var_sigs so
-         * subsequent calls to this global get correct lazy-arg wrapping. */
+         * subsequent calls to this global get correct lazy-arg wrapping.
+         * At chunk-top (fs->n_global_vars > 0) this updates the root's
+         * sigs; inside a thunk (fs->n_global_vars == 0) the loop is a
+         * no-op (root sigs were set by the original var declaration). */
         for (int gi = 0; gi < fs->n_global_vars; gi++) {
             if (fs->global_var_names[gi] == canonical) {
                 UFuncSig *gsig = &fs->global_var_sigs[gi];
@@ -707,14 +722,7 @@ uint8_t emit_nary_arm(UEmitter *e, UAstNode *n) {
          * cascade) and spawned as detached strands via OP_FORK_DETACH.
          * The last child runs inline as the parent's continuation.
          *
-         * Known limitation: fork-thunks cannot write to chunk-top variables
-         * (they fail with EMIT_UNRESOLVED_NAME). Chunk-top declarations live
-         * in global_var_names of the parent scope, while the thunk's assign
-         * path searches only its own actvars. The global-assign fallback in
-         * emit_assign_arm is gated on parent == NULL, preventing thunks from
-         * reaching it. Reads of chunk-top vars work via the realm-slot
-         * fallback. The fix would be teaching emit_assign_arm to emit
-         * OP_SETSLOT when the thunk assigns to a chunk-top name. */
+         */
         if (e->current_fs == NULL) {
             e->error = EMIT_UNSUPPORTED_AST;
             return 0U;
@@ -807,14 +815,7 @@ uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
          *   4. OP_JOIN_WAIT  A=child_reg                 → block until child DEAD.
          *   5. OP_LOADVOID   A=result_reg                → result is void (spec §7.2).
          *
-         * Known limitation: fork-thunks cannot write to chunk-top variables
-         * (they fail with EMIT_UNRESOLVED_NAME). Chunk-top declarations live
-         * in global_var_names of the parent scope, while the thunk's assign
-         * path searches only its own actvars. The global-assign fallback in
-         * emit_assign_arm is gated on parent == NULL, preventing thunks from
-         * reaching it. Reads of chunk-top vars work via the realm-slot
-         * fallback. The fix would be teaching emit_assign_arm to emit
-         * OP_SETSLOT when the thunk assigns to a chunk-top name. */
+         */
         if (e->current_fs == NULL) {
             e->error = EMIT_UNSUPPORTED_AST;
             return 0U;

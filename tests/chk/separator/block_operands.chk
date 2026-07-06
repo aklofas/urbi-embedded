@@ -2,12 +2,11 @@
 # Covers: blocks as & / | operands — the signature parallel-composition
 # syntax accepts statement forms, not only expressions.
 #
-# Note: & RHS is compiled as a closure thunk. Reads of chunk-top vars work,
-# but writes to chunk-top vars fail to compile (emitter scope-tracking split:
-# the thunk's assign path cannot reach the parent scope's global_var_names).
-# Realm slots work as the workaround because they are accessed by name at
-# runtime, not captured at compile time.  The | operands are emitted inline
-# so local vars work there.
+# Note: & RHS is compiled as a closure thunk. Both reads and writes of
+# chunk-top vars work — emit_assign_arm now walks the parent chain to the
+# root funcstate's global_var_names and emits OP_SETSLOT via the thunk's
+# own r_global_slot (same path reads use). The | operands are emitted inline
+# so local vars work there directly.
 
 Realm.ta = 0; Realm.tb = 0; { Realm.ta = 1 } & { Realm.tb = 2 }; Realm.ta + Realm.tb
 var s = ""; { s = s + "x" } | { s = s + "y" }; s
