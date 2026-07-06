@@ -1,17 +1,15 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uunwind.c — M3 control-transfer walker + row 7 C API (T12).
+/* uunwind.c — control-transfer walker + row 7 C API.
  *
- * T9: real 3-kind walker replacing T8's bridging stub.
- * Handles UEXEC_RETURN, UEXEC_THROW, and UEXEC_TAG_STOP (stub) via
- * a cleanup-stack walk that processes CALL_FRAME, TRY_FRAME, and TAG_SCOPE
- * entries from innermost to outermost.
+ * Handles UEXEC_RETURN, UEXEC_THROW, and UEXEC_TAG_STOP via a cleanup-stack
+ * walk that processes CALL_FRAME, TRY_FRAME, and TAG_SCOPE entries from
+ * innermost to outermost.
  *
- * Backward compatibility: when cleanup_depth == 0 and pending_unwind ==
- * UEXEC_RETURN, the walker performs the direct frame-pop path (identical
- * to T8's bridging stub) so all M2/M3 existing tests continue to pass.
- * T11 (OP_PUSH_FRAME_GUARD emit) will push CALL_FRAME entries so the
- * walker's CALL_FRAME branch handles it instead; the direct-pop path
- * remains the fallback for frames without an associated guard entry.
+ * The direct frame-pop path through frame_depth stamps is the permanent
+ * canonical path (T89/FOUND-028 BLOCKED — the t11_backward_compat_path is
+ * the live path; OP_PUSH_FRAME_GUARD was never wired by the emitter).
+ * The walker's CALL_FRAME branch is present but unreachable until a future
+ * bytecode extension pushes CALL_FRAME entries.
  *
  * Replace-on-raise (C-1): when a finally/onleave body raises a new unwind
  * during run_cleanup_with_replace(), the new pending state wins and the
@@ -60,31 +58,22 @@ zero_registers(UStrand *s, uint16_t base, uint16_t count)
     }
 }
 
-/* ===== M3 stubs for types/functions that land in later tasks =====
+/* ===== v1.0 intentional behavior: match-all catch pattern =====
  *
- * pattern_matches  (FOUND-026): M3 catch-everything stub.  Returns 1
- *                  unconditionally.  Wave 2 of M6 stdlib refines to
- *                  actual class-pattern dispatch (exception subclass
- *                  matching for `try { ... } catch (E e) { ... }`)
- *                  once class-decl AST_CLASS_DECL emit (Phase 6) lands
- *                  along with Wave 2's exception class hierarchy.
- * bind_catch_value (FOUND-027): no-op pattern parameter.  Wave 2 lands
- *                  the named-register binding when patterns gain
- *                  destructuring; for Wave 1 the catch variable is
- *                  always bound to the bare caught value (current
- *                  behaviour) and `pat` stays unused.
- *
- * Both stubs are not yet load-bearing at v1.0 — match-all is the
- * only behaviour exercised by the test corpus today.  Filed as Wave 2
- * deferral in the M6 stdlib design-risks register.
+ * pattern_matches  (FOUND-026, NR-14 confirmed): returns 1 unconditionally.
+ *                  Urbiscript v1.0 catch clauses match any thrown value
+ *                  (catch-all semantics, NR-14).  Class-pattern dispatch
+ *                  for `catch (ExceptionClass e)` is a v1.x extension.
+ * bind_catch_value (FOUND-027): catch variable is bound to the bare caught
+ *                  value; `pat` is reserved for future destructuring syntax.
  *
  * struct UPattern is forward-declared in ucleanup.h (included above). */
 
 static int
 pattern_matches(struct UPattern *pat, UValue val)
 {
-    /* M3 stub: always match — any throw is caught by any catch clause.
-     * FOUND-026: Wave 2 refines to class-pattern dispatch. */
+    /* Catch-all: any throw is caught by any catch clause (NR-14 v1.0 behavior).
+     * Class-pattern dispatch is a v1.x extension (FOUND-026). */
     (void)pat; (void)val;
     return 1;
 }
@@ -783,8 +772,8 @@ fatal:
  * cleared (refactor-3 SCHED-08: stop overrides suspension) for the same
  * reason — pre-fix the deposit landed but the member never ran it.
  *
- * Watcher cascade deferred to T34/T35 (UWatcher type not yet defined).
- * At M3 tag->member_watchers_head is always NULL.
+ * Watcher cascade: urbi_tag_stop walks tag->member_watchers_head and pushes
+ * each registered watcher to the pending-onleave queue (see step (2) below).
  *
  * NOT ISR-safe.  Returns URBI_ERR_INVALID_ARG for NULL vm or tag. */
 int
