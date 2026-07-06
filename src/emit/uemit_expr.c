@@ -824,16 +824,57 @@ uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
         uint8_t closure_reg = emit_lazy_thunk(e, n->u.bin_sep.rhs);
         if (e->error != EMIT_OK) return 0U;
 
+        /* Step 1b: adopt closure_reg as a hidden DECLARED local for the
+         * duration of the inline LHS compile.  The closure register must
+         * stay live until OP_FORK_JOIN reads it, but statement emitters
+         * inside the LHS reset freereg to fs_temp_floor() — and the floor
+         * is COUNT-based (nactvar + global_slot_reserved), so a raw temp
+         * below subsequently-declared locals breaks the math twice over:
+         * the emitter's next LOADNIL/temp lands on the closure register
+         * (runtime TypeError from OP_FORK_JOIN), and any local declared
+         * inside the operand sits one slot above its counted position, so
+         * later floor resets clobber IT instead (silent wrong values).
+         * Declaring the slot makes every fs_temp_floor reset inside the
+         * LHS — present and future emitters alike — land above it.  Same
+         * discipline as for-each's \x01iter and switch's \x01sw hidden
+         * locals.  Guard: adopt only when the closure landed exactly at
+         * the local-zone top, so the count formula stays exact; otherwise
+         * fall through to the historical raw-temp behavior. */
+        bool fork_slot_adopted = false;
+        if (e->vm != NULL &&
+            closure_reg == fs_temp_floor(e->current_fs) &&
+            e->current_fs->nactvar < UFS_MAX_LOCALS) {
+            const char *fork_name = ustr_intern(e->vm, "\x01fork", 5);
+            if (fork_name == NULL) { e->error = EMIT_OOM; return 0U; }
+            ULocalVar *lv = &e->current_fs->actvars[e->current_fs->nactvar];
+            lv->name        = fork_name;
+            lv->name_len    = 5;
+            lv->slot        = closure_reg;
+            lv->is_captured = false;
+            lv->is_lazy     = false;
+            e->current_fs->nactvar++;
+            fork_slot_adopted = true;
+        }
+
         /* Step 2: compile LHS inline; release its register after. */
         uint8_t lhs_save = e->next_reg;
         uint8_t lhs_r = emit_expr(e, n->u.bin_sep.lhs);
-        if (e->error != EMIT_OK) return 0U;
+        if (e->error != EMIT_OK) {
+            if (fork_slot_adopted) e->current_fs->nactvar--;
+            return 0U;
+        }
         (void)lhs_r;
         /* Restore next_reg to above freereg after LHS (keep closure_reg alive). */
         if (e->next_reg > e->current_fs->freereg &&
             e->next_reg > lhs_save)
             e->next_reg = lhs_save;
         (void)lhs_save;
+
+        /* Un-adopt: the remaining instructions of this arm are emitted
+         * right here with no floor resets, so the protection window ends
+         * with the LHS compile.  All LHS-opened blocks have closed, so
+         * the adopted entry is back on top of actvars. */
+        if (fork_slot_adopted) e->current_fs->nactvar--;
 
         /* Step 3: OP_FORK_JOIN A=closure_reg B=child_reg. */
         uint8_t child_reg = e->next_reg;

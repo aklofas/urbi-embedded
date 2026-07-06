@@ -1,5 +1,6 @@
 # Milestone: v0.13.6
-# Covers: fork-thunk emitter completeness — four operand-form cases.
+# Covers: fork-thunk emitter completeness — operand forms + closure-register
+# lifetime across the inline LHS compile.
 #
 # Case 1: RHS thunk assigns a chunk-top var.
 #   Before the fix the thunk's emit_assign_arm could not reach the root
@@ -31,12 +32,45 @@
 #   so the parser produces "expected expression". This is the intended
 #   boundary: forms that are not statement operands are rejected at parse
 #   time, not silently at runtime.
+#
+# Cases 5-10: closure-register lifetime across the inline LHS compile.
+#   The & emitter compiles the RHS thunk first and holds its register live
+#   while the LHS compiles inline. Any statement emitter reachable inside
+#   the LHS that resets freereg to fs_temp_floor() could then allocate at
+#   or below the closure register: either a terminal LOADNIL nilled the
+#   closure (runtime TypeError from OP_FORK_JOIN — cases 5, 7) or a local
+#   declared inside the operand was silently clobbered by a later temp,
+#   because count-based fs_temp_floor does not count the raw closure temp
+#   sitting below the local (cases 8-10; case 6 clobbers the hidden
+#   for-each iterator local the same way). Fixed by adopting the closure
+#   register as a hidden declared local for the duration of the LHS
+#   compile, so every floor reset inside the operand counts it.
+#
+# ACTUAL RED output (before fix):
+#   case 5:  urbi: TypeError: '&' (parallel-join): operand is not a closure
+#   case 6:  urbi: TypeError: method call: slot 'get' not found
+#   case 7:  urbi: TypeError: '&' (parallel-join): operand is not a closure
+#   case 8:  <object 0x...>   (local x clobbered by the Realm temp)
+#   case 9:  <object 0x...>   (local t clobbered by the Realm temp)
+#   case 10: <object 0x...>   (local y clobbered by the Realm temp)
 
 var n = 0; { } & { n = 1 }; n
 Realm.w = 0; Realm.w2 = 0; while (Realm.w < 1) { Realm.w = Realm.w + 1 } & { Realm.w2 = 5 }; Realm.w + Realm.w2
 if (true) { 1 } & if (false) { 2 }
 { 1 } & switch(1) { case 1: 2 }
+Realm.s1 = 0; Realm.s2 = 0; if (true) switch (1) { case 1: Realm.s1 = 1 } & { Realm.s2 = 2 }; Realm.s1 + Realm.s2
+Realm.fe = 0; if (true) for (var x : [7]) { Realm.fe = x } & { }; Realm.fe
+Realm.m1 = 0; Realm.m2 = 0; Realm.m3 = 0; { Realm.m1 = 1; Realm.m2 = 2 } & { Realm.m3 = 3 }; Realm.m1 + Realm.m2 + Realm.m3
+Realm.r3 = 0; if (true) { var x = 42; Realm.r3 = x } & { }; Realm.r3
+Realm.i4 = 0; Realm.o4 = 0; while (Realm.i4 < 1) { var t = 42; Realm.o4 = t; Realm.i4 = Realm.i4 + 1 } & { }; Realm.o4
+Realm.r5 = 0; { var y = 42; Realm.r5 = y } & { }; Realm.r5
 [00000000] 1
 [00000001] 6
 [00000002] <?>
 [00000003] !!! <stdin>:1:9: expected expression
+[00000004] 3
+[00000005] 7
+[00000006] 6
+[00000007] 42
+[00000008] 42
+[00000009] 42
