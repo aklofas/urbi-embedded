@@ -334,6 +334,26 @@ urepl_session_read_and_dispatch_one(UReplServer *server,
     return rc;
 }
 
+/* ---- Shared: emit the hello envelope into a session's output ringbuf --- */
+
+/* Emit the spec §6 hello envelope into session->output.  Called from both
+ * the POSIX and cooperative spawn_reader paths; the body is byte-identical
+ * between the two so it lives here as a single static helper. */
+static void
+session_emit_hello(UReplServer *server, UReplSession *session)
+{
+    char env[256];
+    size_t n = 0;
+    bool auth_required = (server->cfg.auth_token != NULL
+                          && server->cfg.auth_token[0] != '\0');
+    if (urepl_ndjson_emit_hello(env, sizeof(env),
+                                session->lobby_id_hex,
+                                /* synclines */ true,
+                                auth_required, &n) == 0) {
+        urepl_ringbuf_write(&session->output, env, n);
+    }
+}
+
 /* ---- POSIX-only: reader/listener pthreads, spawn, auth checks -------- */
 #ifndef URBI_REPL_COOPERATIVE_ONLY
 
@@ -522,26 +542,6 @@ reader_main(void *arg)
     /* === end W1 ======================================================== */
 
     return NULL;
-}
-
-/* ---- Shared: emit the hello envelope into a session's output ringbuf --- */
-
-/* Emit the spec §6 hello envelope into session->output.  Called from both
- * the POSIX and cooperative spawn_reader paths; the body is byte-identical
- * between the two so it lives here as a single static helper. */
-static void
-session_emit_hello(UReplServer *server, UReplSession *session)
-{
-    char env[256];
-    size_t n = 0;
-    bool auth_required = (server->cfg.auth_token != NULL
-                          && server->cfg.auth_token[0] != '\0');
-    if (urepl_ndjson_emit_hello(env, sizeof(env),
-                                session->lobby_id_hex,
-                                /* synclines */ true,
-                                auth_required, &n) == 0) {
-        urepl_ringbuf_write(&session->output, env, n);
-    }
 }
 
 /* ---- Listener thread ------------------------------------------------- */
