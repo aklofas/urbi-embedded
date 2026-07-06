@@ -47,10 +47,17 @@ slot_throw_or_fatal(UVM *vm, const char *msg)
 }
 
 /* -----------------------------------------------------------------------
- * vm_trace_slot_read_if_needed
+ * vm_trace_slot_read_if_needed: add recv's GC cell to vm->trace_read_set[]
+ * during watcher-install cond evaluation (vm->watchers->in_install == true).
+ *
+ * This is the EXCLUSIVE site for the read-set trace probe; after W1,
+ * OP_GETSLOT and OP_SELF never implement this inline.
+ *
+ * No-op when vm->watchers->in_install is false (normal hot path — zero
+ * cost).
  * ----------------------------------------------------------------------- */
 
-void
+static void
 vm_trace_slot_read_if_needed(UVM *vm, UObject *recv)
 {
     /* Pre: urbi_vm_init succeeded, so vm->watchers is non-NULL. */
@@ -71,14 +78,29 @@ vm_trace_slot_read_if_needed(UVM *vm, UObject *recv)
 }
 
 /* -----------------------------------------------------------------------
- * vm_resolve_ic
+ * vm_resolve_ic: resolve the IC entry for (recv, ic) and apply the
+ * OBJ-IC-POLY LOCAL-slot discipline.
  *
  * The LOCAL-slot re-dispatch discipline lives exclusively here (OBJ-IC-POLY
  * fix, audit-1 F3 + runtime-invariants F8).  After W1 the three OP arms
  * that previously each inlined this logic call through here instead.
+ *
+ * Returns UVM_SLOT_OK with *out_value filled on a normal fast-path hit.
+ * Returns UVM_SLOT_GETTER_NEEDED / UVM_SLOT_SETTER_NEEDED when a property
+ *   is set so the caller can dispatch the appropriate closure.
+ * Returns UVM_SLOT_MISSING when no IC entry matches (caller takes slow path).
+ * Returns UVM_SLOT_CONST_WRITE when FLAG_CONSTANT is set (write attempt only).
+ *
+ * `writing` selects between the get and set fast paths:
+ *   false → get path (returns UVM_SLOT_GETTER_NEEDED for OGET)
+ *   true  → set path (returns UVM_SLOT_SETTER_NEEDED for OSET, checks
+ *           CONSTANT).  The write + GC barrier + slot-change emit are
+ *           performed inside this function; *out_value is unused and
+ *           `v_write` is the value to write.
+ * When writing == false, the loaded value is placed in *out_value.
  * ----------------------------------------------------------------------- */
 
-UVmSlotResult
+static UVmSlotResult
 vm_resolve_ic(UVM *vm,
               UIC *ic,
               UObject *recv,

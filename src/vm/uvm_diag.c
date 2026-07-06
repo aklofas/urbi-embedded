@@ -11,7 +11,7 @@
 #include <string.h>
 
 /* Map UValKind to a human-readable name for diagnostic messages. */
-const char *kind_name(uint8_t kind) {
+static const char *kind_name(uint8_t kind) {
     switch (kind) {
         case UVAL_NIL:   return "Nil";
         case UVAL_INT:   return "Integer";
@@ -101,7 +101,7 @@ static void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
    index 0, summing deltas; abs_lines entries (triggered by INT8_MIN
    sentinel) replace the accumulator. Returns 0 on absent syncline
    data or out-of-range pc. */
-uint32_t vm_line_for_pc(const UProto *module, size_t pc) {
+static uint32_t vm_line_for_pc(const UProto *module, size_t pc) {
     /* v0.9.2: module IS the root UProto. */
     const UProto *rp = module;
     if (rp == NULL) return 0;

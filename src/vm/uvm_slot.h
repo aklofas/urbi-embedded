@@ -2,9 +2,10 @@
 /* src/vm/uvm_slot.h — slot-access helpers extracted from the OP_GETSLOT /
  * OP_SETSLOT / OP_SELF arms of the VM dispatch loop (Wave 5, W1).
  *
- * These six functions collapse the LOCAL-slot re-dispatch discipline to a
+ * These helpers collapse the LOCAL-slot re-dispatch discipline to a
  * single site (vm_resolve_ic) and the read-set trace probe to a single site
- * (vm_trace_slot_read_if_needed), closing audit findings:
+ * (vm_trace_slot_read_if_needed — both static in uvm_slot.c), closing
+ * audit findings:
  *   audit-1 F3   — LOCAL-slot re-dispatch duplicated in 3 OP arms
  *   runtime-invariants F8 — inline FLAG_LOCAL re-resolution spread
  *   bytecode F4  — (partial) IC discipline not factored
@@ -43,48 +44,6 @@ typedef enum {
     UVM_SLOT_CONST_WRITE,
     UVM_SLOT_THREW
 } UVmSlotResult;
-
-/* vm_resolve_ic: resolve the IC entry for (recv, ic) and apply the OBJ-IC-POLY
- * LOCAL-slot discipline.
- *
- * On a fast-path hit (shape + topology match), fills *out_flags and either
- * (a) writes the loaded value to *out_value (plain local or chain slot) or
- * (b) returns UVM_SLOT_GETTER_NEEDED / UVM_SLOT_SETTER_NEEDED so the caller can
- * dispatch the appropriate closure.
- *
- * The FLAG_LOCAL re-resolution is the EXCLUSIVE site for that discipline: after
- * W1, OP_GETSLOT / OP_SETSLOT / OP_SELF never re-implement it inline.
- *
- * Returns UVM_SLOT_OK with *out_value filled on a normal fast-path hit.
- * Returns UVM_SLOT_GETTER_NEEDED / UVM_SLOT_SETTER_NEEDED when a property is set.
- * Returns UVM_SLOT_MISSING when no IC entry matches (caller must take slow path).
- * Returns UVM_SLOT_CONST_WRITE when FLAG_CONSTANT is set (write attempt only).
- *
- * `writing` selects between the get and set fast paths:
- *   false → get path (returns UVM_SLOT_GETTER_NEEDED for OGET)
- *   true  → set path (returns UVM_SLOT_SETTER_NEEDED for OSET, checks CONSTANT)
- *
- * When writing == true and a LOCAL slot is found, the write + GC barrier +
- * slot-change emit are performed inside this function; *out_value is unused.
- * When writing == false, the loaded value is placed in *out_value.
- *
- * `v_write` is the value to write (only examined when writing == true). */
-UVmSlotResult vm_resolve_ic(UVM *vm,
-                             UIC *ic,
-                             UObject *recv,
-                             bool writing,
-                             UValue v_write,
-                             UValue *out_value,
-                             uint8_t *out_fresh_k);
-
-/* vm_trace_slot_read_if_needed: add recv's GC cell to vm->trace_read_set[]
- * during watcher-install cond evaluation (vm->watchers->in_install == true).
- *
- * This is the EXCLUSIVE site for the read-set trace probe; after W1,
- * OP_GETSLOT and OP_SELF never implement this inline.
- *
- * No-op when vm->watchers->in_install is false (normal hot path — zero cost). */
-void vm_trace_slot_read_if_needed(UVM *vm, UObject *recv);
 
 /* urbi_vm_getslot_value: IC-fast-path get for OP_GETSLOT.
  *

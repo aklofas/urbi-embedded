@@ -32,9 +32,7 @@ void urbi_vm_diag_write_cstr(UDiagWriter *w, const char *s);
 void urbi_vm_diag_write_u32(UDiagWriter *w, uint32_t n);
 void urbi_vm_diag_write_prefix(UDiagWriter *w, const UProto *module, size_t pc);
 
-const char *kind_name(uint8_t kind);
 const char *urbi_vm_op_name(uint8_t op);
-uint32_t    vm_line_for_pc(const UProto *module, size_t pc);
 
 void urbi_vm_format_type_error_binary(UVM *vm, const UProto *module, size_t pc,
                                  uint8_t op, uint8_t b_kind, uint8_t c_kind);

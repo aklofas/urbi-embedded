@@ -17,7 +17,6 @@ utrace_format
 # filter covers weak/common symbols since the v0.13.0 review fix, so it is
 # enumerated here like every other unprefixed export.
 urepl_dispatch_drain_if_active
-kind_name
 uarena_alloc
 uarena_destroy
 uarena_init
@@ -113,6 +112,3 @@ uwatcher_pool_destroy
 uwatcher_pool_init
 uwatcher_state_create
 uwatcher_state_destroy
-vm_line_for_pc
-vm_resolve_ic
-vm_trace_slot_read_if_needed
