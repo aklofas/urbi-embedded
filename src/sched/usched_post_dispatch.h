@@ -9,7 +9,7 @@
  *
  * The four fix-up steps (see F3 for the full analysis):
  *
- *   1. Runnable-count DEAD decrement (refactor-3 SCHED-01/B10 single-writer
+ *   1. Runnable-count DEAD decrement (single-writer
  *      scheme).  A strand that left dispatch DEAD was RUNNING and therefore
  *      counted; it leaves the counted set here.  WAITING strands were
  *      decremented by urbi_sched_strand_block, READY (yield) strands were

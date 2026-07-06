@@ -140,7 +140,7 @@ struct UChunkInstance;  /* object/uchunk_instance.h — per-(vm,module) IC tier 
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
 struct UPeriodic;        /* stdlib/temporal.h — v0.9.4 every() back-pointer */
 
-/* refactor-3 VM-06a / v0.13.1-L: C-stack root frame.  Runtime C code that
+/* v0.13.1-L: C-stack root frame.  Runtime C code that
  * must hold a UValue live across a nested dispatch (which can run GC
  * slices) pushes one of these stack-allocated frames onto
  * s->c_roots_head; strand_walk_roots yields every chained slot.  LIFO
@@ -224,7 +224,7 @@ struct UStrand {
     uint8_t                 cleanup_absorbed;
     uint8_t                 cleanup_run_pad;
     struct UCleanupEntry   *cleanup_base;
-    /* refactor-3 VM-06a / v0.13.1-L: head of the C-stack root frame chain
+    /* v0.13.1-L: head of the C-stack root frame chain
      * (UCRootFrame above).  NULL when no runtime C code is pinning a value
      * across a nested dispatch; all strand constructions zero-init the
      * struct (ustrand_init via urbi_zero; the urbi_vm_run / scratch
@@ -253,7 +253,7 @@ struct UStrand {
                                                            urbi_strand_create-managed strands
                                                            (heap-allocated).  See GC
                                                            strand-walker §5.1. */
-    uint8_t                 cleanup_body_done;          /* refactor-3 VM-02: set by OP_RESUME —
+    uint8_t                 cleanup_body_done;          /* set by OP_RESUME —
                                                            run_cleanup_with_replace's completion
                                                            marker (yield/budget exits leave it 0).
                                                            Absorbs the former state_pad[1] byte so
@@ -403,13 +403,13 @@ URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3912,
                 * v0.9.4: +8 B for periodic_owner back-pointer (3888 → 3896).
                 * v0.10.9 W3a: +16 B for unblock_value (UValue) supporting
                 *              SUSPENDED↔READY tag.block/unblock plumbing (3896 → 3912).
-                * v0.13.2 (refactor-3 VM-06a): +8 B for c_roots_head — the
+                * v0.13.2: +8 B for c_roots_head — the
                 *              C-stack root frame chain (3912 → 3920).
                 * v0.13.6 (REACT-07): -8 B removing suppressed_head reserved
                 *              placeholder (3920 → 3912). */);
 #endif
 
-/* === C-stack root frame push/pop (refactor-3 VM-06a) ===
+/* === C-stack root frame push/pop ===
  *
  * Strict LIFO: every push must be matched by a pop of the SAME frame on
  * every exit path of the holding function.  The frame and the rooted
@@ -494,7 +494,7 @@ void ustrand_destroy(UStrand *s, struct UVM *vm);
  *   - Suspending a READY strand splices it out of vm->ready_head and
  *     decrements vm->strand_runnable_count (via the unbind helper).
  *   - Suspending a RUNNING strand decrements vm->strand_runnable_count via
- *     urbi_sched_runnable_dec (refactor-3 SCHED-01: a RUNNING strand is in the
+ *     urbi_sched_runnable_dec (a RUNNING strand is in the
  *     counted set — count == |READY| + |RUNNING non-transient| — and
  *     RUNNING -> SUSPENDED leaves it).
  *   - Resuming a SUSPENDED strand routes through urbi_sched_strand_make_runnable

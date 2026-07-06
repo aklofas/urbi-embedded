@@ -113,7 +113,7 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
 }
 
 /* strand_unlink_park — reason-dispatched removal of a WAITING strand's
- * third-party links (refactor-3 SCHED-05).  Shared by urbi_sched_strand_unpark
+ * third-party links.  Shared by urbi_sched_strand_unpark
  * (the wake-side scrub) and strand_cleanup_observers (the death-side scrub,
  * for a strand dying while still parked).  Counter-neutral: callers own the
  * strand_waiting_count transition.
@@ -192,7 +192,7 @@ strand_unlink_park(UStrand *s)
 }
 
 /* urbi_sched_strand_unpark — reason-dispatched third-party-link removal for a
- * WAITING strand (refactor-3 SCHED-05): the wake-side mirror of
+ * WAITING strand: the wake-side mirror of
  * strand_cleanup_observers.  `enqueue` 0 leaves the strand's state byte
  * untouched and uncounted (cleanup-executor fail-soft, urbi_strand_panic —
  * the caller stamps the next state); 1 routes through
@@ -830,7 +830,7 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
          * inside the tag's own scope reaches here through the native
          * call).  Not on the queue; stamp the state and uncount.  The
          * OP_CALL post-native arm checks USTRAND_IS_SUSPENDED and exits
-         * dispatch (refactor-3 VM-03).  SCHED-01 single-writer scheme: a
+         * dispatch.  SCHED-01 single-writer scheme: a
          * RUNNING strand is in the counted set (the driver's dequeue is
          * count-neutral), so RUNNING → SUSPENDED decrements here —
          * matching the READY arm where unbind_from_ready_queue does. */

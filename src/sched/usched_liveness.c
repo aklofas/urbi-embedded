@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* urbi_vm_liveness — the ONE quiescence/liveness formula (refactor-3 SCHED-13).
+/* urbi_vm_liveness — the ONE quiescence/liveness formula.
  *
  * Pre-fix the runtime carried three divergent quiescence definitions:
  * urbi_sched_quiescent AND'd five counters (including the armed watcher count and

@@ -2,14 +2,14 @@
 /* Cooperative scheduler implementation — row 9 §2 contract.
    Freestanding-safe: only <stdbool.h> and <stdint.h> (both C99 freestanding). */
 
-/* === Liveness-counter ownership (refactor-3 SCHED-13: one formula) ===
+/* === Liveness-counter ownership (one formula) ===
  *
  * All liveness queries integrate through urbi_vm_liveness() (usched_liveness.c);
  * urbi_sched_quiescent / urbi_step / urbi_vm_has_live_work are thin views of it.
  * Each counter has single-writer ownership at its transition sites:
  *
- *   strand_runnable_count   — single-writer ownership (refactor-3
- *                             SCHED-01/B10): urbi_sched_runnable_inc /
+ *   strand_runnable_count   — single-writer ownership:
+ *                             urbi_sched_runnable_inc /
  *                             urbi_sched_runnable_dec are the ONLY writers
  *                             (init/destroy zeroing aside).
  *                             Invariant: count == |ready queue| + (1 if a
@@ -77,7 +77,7 @@
 #include "runtime/uframe.h"
 #include <stddef.h>
 
-/* Truncation guard (refactor-3 VM-04/SCHED-11; v0.13.1-E): safepoint_budget_remaining
+/* Truncation guard (v0.13.1-E): safepoint_budget_remaining
  * is uint16_t; URBI_STRAND_BUDGET_MAX (from usched_cooperative.h) must fit. */
 URBI_STATIC_ASSERT(URBI_STRAND_BUDGET_MAX > 0 && URBI_STRAND_BUDGET_MAX <= 65535,
                    "URBI_STRAND_BUDGET_MAX must fit uint16_t (v0.13.1-E)");
@@ -127,7 +127,7 @@ sleep_q_remove(UVM *vm, UStrand *s)
     /* If cur is NULL, s was not on the queue; do not decrement (no underflow). */
 }
 
-/* === Single-writer runnable-count ownership (refactor-3 SCHED-01/B10) ===
+/* === Single-writer runnable-count ownership ===
  *
  * Invariant: vm->strand_runnable_count == |ready queue| + |RUNNING strand|,
  * where transient strands (is_transient_strand) never participate.  These
@@ -157,7 +157,7 @@ urbi_sched_runnable_dec(UVM *vm, const UStrand *s)
     vm->strand_runnable_count--;
 }
 
-/* === Parked-strand counters (refactor-3 SCHED-13 / VM-12) ===
+/* === Parked-strand counters ===
  *
  * Same discipline as the runnable pair: transient strands never participate,
  * decrements assert > 0 (no saturation — masking forbidden).  Writer map at
@@ -484,7 +484,7 @@ urbi_sched_earliest_wake_us(const UVM *vm)
 bool
 urbi_sched_quiescent(const UVM *vm)
 {
-    /* refactor-3 SCHED-13: one formula — urbi_vm_liveness().  Quiescent means no
+    /* One formula — urbi_vm_liveness().  Quiescent means no
      * internal work: nothing runnable, nothing pending, no timer.  `armed`
      * (watchers + SUSPENDED + WAITING strands) is deliberately EXCLUDED —
      * armed work only progresses on external input (host slot write,
@@ -627,7 +627,7 @@ urbi_sched_dequeue_ready_head(UVM *vm)
  *   (1) Register window — conservative full-stack scan (see below).
  *   (2) Unwind state — unwind_value + fatal_value are UValue fields.
  *   (3) Cleanup stack — TAG_SCOPE entries' owning_tag (UTag*) is shaded
- *       directly since v0.13.2 (refactor-3 GC-03): the anonymous per-scope
+ *       directly since v0.13.2: the anonymous per-scope
  *       tag urbi_vm_push_tag_scope creates has no other reference.
  *       catch_pattern (UPattern*) is host-allocated, not GC-managed.
  *   (4) Wait payload — wait_payload.event / wait_payload.join_parent are
@@ -637,7 +637,7 @@ urbi_sched_dequeue_ready_head(UVM *vm)
  *       slot-change events; tag's enter_event/leave_event fields for tag-
  *       scoped events).  join_parent points at another live strand reached
  *       via realm.strands_head.  wait_payload.suspend_tag IS shaded since
- *       v0.13.2 (refactor-3 GC-03), guarded on the BLOCK/FREEZE reason.
+ *       v0.13.2, guarded on the BLOCK/FREEZE reason.
  *
  * Register window strategy (row 10 §5.2 guidance):
  *   s->stack is a heap-allocated UVM_STACK_CAP-slot array.  The active
@@ -683,13 +683,13 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
     cb(vm, &s->unwind_value, ctx);
     cb(vm, &s->fatal_value,  ctx);
     cb(vm, &s->catch_value,  ctx);
-    /* GC-04 (refactor-3): unblock_value carries the resume value between
+    /* unblock_value carries the resume value between
      * urbi_tag_block / urbi_strand_resume_if_ungated and opcode-level delivery
      * (v0.10.9 W3a) — same lifetime shape as catch_value, same rooting
      * requirement. */
     cb(vm, &s->unblock_value, ctx);
 
-    /* (2b) C-stack root frames (refactor-3 VM-06a): values runtime C code
+    /* (2b) C-stack root frames: values runtime C code
      *      pinned across nested dispatch.  Chain lives on the C stack of
      *      the strand's active dispatch; entries are pushed/popped LIFO by
      *      run_cleanup_with_replace et al. */
@@ -701,10 +701,10 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
     }
 
     /* (3) Cleanup-stack entries (row 7 §4.4).
-     *     GC-03 (refactor-3): TAG_SCOPE entries' owning_tag IS a root — an
+     *     TAG_SCOPE entries' owning_tag IS a root — an
      *     anonymous per-scope UTag created by urbi_vm_push_tag_scope is referenced
-     *     ONLY here (the "future audit" the old comment hedged on found it:
-     *     deep-audit GC-03/SCHED-07).  UTag embeds the cell header at offset
+     *     ONLY here (the "future audit" the old comment hedged on found it
+     *     in the deep audit).  UTag embeds the cell header at offset
      *     0; shade directly so the walk_utag type walker traces enter/leave
      *     events, member watchers, and name (it deliberately skips
      *     member_strands_head per TAGCH-017).  catch_pattern (UPattern*)
@@ -733,7 +733,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
      *     owning tag's enter_event/leave_event fields.  join_parent is
      *     another live strand reached via realm.strands_head.  No direct
      *     callback is needed here at v1.0. */
-    /*     GC-03 (refactor-3): the suspend_tag union arm is live ONLY while
+    /*     The suspend_tag union arm is live ONLY while
      *     the strand is SUSPENDED for BLOCK/FREEZE — guard on the reason
      *     before touching the union. */
     if (USTRAND_IS_SUSPENDED(s)
@@ -833,7 +833,7 @@ urbi_sched_wake_due_sleepers(UVM *vm)
 {
     if (vm->sleep_q_head != NULL && vm->host_time_us != NULL) {
         uint64_t now = vm->host_time_us(vm->host_time_ud);
-        /* refactor-4 B10/SCH4-01: walk with a predecessor pointer so due
+        /* Walk with a predecessor pointer so due
          * TRANSIENT entries are skipped (left parked) without stopping the
          * walk for real strands that follow them.
          *
@@ -914,7 +914,7 @@ sched_assert_runnable_count(const UVM *vm, uint32_t in_flight_extra)
  * centralises them.
  *
  * The four steps (see usched_post_dispatch.h for full documentation):
- *   1. Runnable-count DEAD decrement (refactor-3 SCHED-01 single-writer
+ *   1. Runnable-count DEAD decrement (single-writer
  *      scheme; replaces the pre-refactor WAITING re-increment).
  *   2. Eager DEAD-strand reap via urbi_strand_destroy.
  *   3. Sleep-queue wake for any strand whose wake_us <= now.

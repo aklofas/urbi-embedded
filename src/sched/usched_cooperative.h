@@ -74,7 +74,7 @@ sched_pick_next(const UVM *vm) {
     return vm->ready_head;
 }
 
-/* === Single-writer runnable-count ownership (refactor-3 SCHED-01/B10) ===
+/* === Single-writer runnable-count ownership ===
  *
  * Invariant: vm->strand_runnable_count == |ready queue| + (1 if a
  * non-transient strand is RUNNING else 0).  WAITING and SUSPENDED strands
@@ -96,7 +96,7 @@ sched_pick_next(const UVM *vm) {
 void urbi_sched_runnable_inc(UVM *vm, const UStrand *s);
 void urbi_sched_runnable_dec(UVM *vm, const UStrand *s);
 
-/* === Parked-strand counters (refactor-3 SCHED-13 / VM-12) ===
+/* === Parked-strand counters ===
  *
  * vm->strand_waiting_count   == |WAITING non-transient strands|
  * vm->strand_suspended_count == |SUSPENDED non-transient strands|
@@ -130,7 +130,7 @@ void urbi_sched_strand_yield(UStrand *s);
 void urbi_sched_strand_unblock(UStrand *s);
 
 /* urbi_sched_strand_unpark — reason-dispatched third-party-link removal for a
- * WAITING strand (refactor-3 SCHED-05): the wake-side mirror of the
+ * WAITING strand: the wake-side mirror of the
  * death-side scrub in strand_cleanup_observers.  Unlinks the strand from
  * its reason-specific external structure (SLEEP: sleep queue; EVENT:
  * waiter chain; JOIN: child->joiners_head; WATCHER: waituntil
@@ -152,7 +152,7 @@ void urbi_sched_strand_unpark(UStrand *s, int enqueue);
 uint64_t urbi_sched_earliest_wake_us(const UVM *vm);
 bool     urbi_sched_quiescent(const UVM *vm);
 
-/* === urbi_vm_liveness — the ONE quiescence/liveness formula (refactor-3 SCHED-13) ===
+/* === urbi_vm_liveness — the ONE quiescence/liveness formula ===
  *
  * Callers: urbi_sched_quiescent, urbi_step's post-loop verdict ladder, and
  * urbi_vm_has_live_work.  Pre-fix those three each computed a different
@@ -201,7 +201,7 @@ void urbi_sched_wake_due_sleepers(UVM *vm);
  * realm-hierarchy invariant the scheduler maintains. */
 void urbi_gc_sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx);
 
-/* Dequeue the ready-queue head.  Count-NEUTRAL (refactor-3 SCHED-01): the
+/* Dequeue the ready-queue head.  Count-NEUTRAL: the
  * dequeued strand is about to become the RUNNING strand, and the runnable
  * count covers |READY| + |RUNNING|.  Sets the strand's ready_next/ready_prev
  * to NULL.  Caller is responsible for setting the strand's state to
