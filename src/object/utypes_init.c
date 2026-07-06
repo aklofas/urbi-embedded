@@ -296,7 +296,7 @@ walk_uevent(struct UVM *vm, void *payload,
      * applies the heap-bearing check and shades the underlying cell if any. */
     cb(vm, &ev->name, ctx);
 
-    /* at_watchers_head chain: NOT walked here since refactor-3 GC-05 — the
+    /* at_watchers_head chain: NOT walked here — the
      * pool-wide urbi_gc_watcher_table_walk_roots roots every in-use watcher slot's
      * children regardless of which list (if any) threads it.  Single source
      * of truth; see uwatcher_gc.c.  (Supersedes the GC-008 / v1.0-stm32f4-hang
@@ -376,7 +376,7 @@ walk_utag(struct UVM *vm, void *payload,
         urbi_gc_shade_gray(vm, (UCell *)t->parent);
     }
 
-    /* member_watchers_head chain: NOT walked here since refactor-3 GC-05 —
+    /* member_watchers_head chain: NOT walked here —
      * the pool-wide urbi_gc_watcher_table_walk_roots roots every in-use watcher
      * slot's children regardless of which list (if any) threads it.  Single
      * source of truth; see uwatcher_gc.c.  (The old shade of each pool-cell
@@ -391,10 +391,10 @@ walk_utag(struct UVM *vm, void *payload,
  * refcount-managed per v0.8.1 Variant B fusion, not GC-managed.  The
  * finalizer (uclosure_destroy below) decrements proto refcount on sweep.
  *
- * cl->proto_inst is NOT shaded either (refactor-3 GC-15 fix): it is an
+ * cl->proto_inst is NOT shaded either: it is an
  * INTERIOR pointer (&arr->entries[k]) into the UProtoInstanceArr bulk, not
  * a UCell — UProtoInstance has no cell header (uchunk_instance.h).  The
- * pre-GC-15 shade here read/WROTE color bits into byte 1 of entries[k].proto
+ * pre-fix shade here read/WROTE color bits into byte 1 of entries[k].proto
  * (silent pointer corruption; the sidecar lookup then failed and the
  * work-list push was a no-op, so it never contributed reachability).  The
  * Arr's real liveness path is object_roots_walker → module_instances_head →

@@ -221,7 +221,7 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *root)
     mi->vm              = vm;
     mi->proto_instances = NULL;   /* wired after the second cell exists */
 
-    /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery chain): link
+    /* GC soundness (v0.13.2): link
      * onto vm->module_instances_head BEFORE the second GC allocation, not
      * after (pre-v0.13.2 linked at the end).  The Cell-2 alloc below —
      * and the interning inside init_ic_slices_recursive — can trigger a

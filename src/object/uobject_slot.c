@@ -176,7 +176,7 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
         return -1;
     }
 
-    /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery chain): pin
+    /* GC soundness (v0.13.2): pin
      * the receiver and the incoming value on the VM-level C-root chain for
      * the duration of the install.  Case 2 of the impl allocates (shape
      * transition + USlotArray) BEFORE the value lands in slots[]; a

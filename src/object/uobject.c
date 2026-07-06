@@ -59,7 +59,7 @@ urbi_object_next_id(UVM *vm)
 UObject *
 urbi_object_alloc(UVM *vm, URBIAtomFamily family)
 {
-    /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery chain):
+    /* GC soundness (v0.13.2):
      * resolve the root shape BEFORE allocating the object cell.  The
      * pre-v0.13.2 order (object cell first, then lazy urbi_shape_root)
      * left the fresh UObject reachable only through the C local `o`
