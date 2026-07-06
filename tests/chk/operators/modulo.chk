@@ -14,4 +14,4 @@
 7.5 % 2.0
 [00000002] 1.5
 5 % 0
-[00000003] !!! DivByZero: modulo by 0
+[00000003] !!! line 1: DivByZero: modulo by 0

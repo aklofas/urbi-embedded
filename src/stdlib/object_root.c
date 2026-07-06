@@ -203,6 +203,17 @@ urbi_raise_divzero(UVM *vm, const char *msg, UValue *out)
 {
     char buf[UVM_ERRMSG_CAP];
     UDiagWriter w; diag_init(&w, buf, sizeof buf);
+    /* Uniform position prefix: when called from inside the VM dispatch loop
+     * (vm->cur_strand non-NULL), prepend the call-site source location so
+     * native-method raises (e.g. `%`) carry the same prefix as opcode raises
+     * (e.g. OP_DIV via vm_divzero_error).  Outside dispatch cur_strand is
+     * NULL and the prefix is suppressed. */
+    if (vm != NULL && vm->cur_strand != NULL &&
+            vm->cur_strand->pc != NULL &&
+            vm->cur_strand->pc_base != NULL) {
+        diag_write_prefix(&w, vm->cur_strand->root_proto,
+                          (size_t)(vm->cur_strand->pc - vm->cur_strand->pc_base));
+    }
     diag_write_cstr(&w, "DivByZero: ");
     diag_write_cstr(&w, (msg != NULL ? msg : "division by 0"));
     return urbi_raise_typed(vm, vm ? vm->divbyzero_proto : NULL, out, buf);

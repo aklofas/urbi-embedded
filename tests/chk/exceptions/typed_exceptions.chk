@@ -77,4 +77,4 @@ var dg = "threw"; try { dg = (["a" => 1].get("missing") == nil) } catch (var e) 
 
 # --- uncaught integer modulo-by-zero surfaces the DivByZero diagnostic ---
 5 % 0
-[00000015] !!! DivByZero: modulo by 0
+[00000015] !!! line 1: DivByZero: modulo by 0
