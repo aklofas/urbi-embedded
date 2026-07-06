@@ -1,5 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/runtime/umemdebug.c — on-target memory-debug substate (v0.11.3). */
+/*
+ * umemdebug.c — on-target memory-debug sidecar (URBI_MEM_DEBUG).
+ *
+ * Adds redzone, quarantine, and poison tracking to every allocation.
+ * Compiled only when URBI_MEM_DEBUG is set; the normal-path allocator
+ * contract is unchanged in non-debug builds.
+ */
 #include "runtime/umemdebug.h"
 
 #if URBI_MEM_DEBUG

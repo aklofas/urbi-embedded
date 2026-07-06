@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/repl/ujson.c — tiny recursive-descent JSON parser (v0.9.1 Task 21).
+/* src/repl/ujson.c — tiny recursive-descent JSON parser.
  *
  * Strictly RFC 8259 with the following limits:
  *   - max nesting depth UJSON_MAX_DEPTH (32) — guards against DoS

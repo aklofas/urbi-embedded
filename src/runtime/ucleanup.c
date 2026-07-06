@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Cleanup-stack push/pop helpers and pre-allocated array init/destroy. */
-
-/* Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
-   Allocation uses the UVM pluggable allocator (vm->alloc_fn).
-   Zero-fill uses a volatile byte loop to prevent compiler lowering to memset.
-   Precondition checks use a guarded <assert.h> on hosted targets; on
-   freestanding targets the guard expands to a no-op — callers are expected
-   to never violate preconditions in production (safety-critical discipline). */
+/*
+ * ucleanup.c — cleanup-stack push/pop and pre-allocated array management.
+ *
+ * Each UStrand carries a small pre-allocated cleanup stack; entries pushed
+ * at scope entry (try/at/tag-scope) are popped on normal exit or during
+ * unwind.  Freestanding-safe: no <stdlib.h>, <string.h>, or <assert.h>;
+ * allocation goes through vm->alloc_fn; zero-fill uses a volatile loop.
+ */
 
 #if __STDC_HOSTED__
 #  include <assert.h>

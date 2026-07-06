@@ -1,4 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/*
+ * uros_msg.c — ROS2 message-type proto registry.
+ *
+ * Records the mapping from ROS2 type-name strings to their UObject protos so
+ * subscriber callbacks can look up the right prototype without re-scanning.
+ * Compiled only when URBI_ENABLE_ROS2 is set.
+ */
 #ifdef URBI_ENABLE_ROS2
 #include "ros/uros_msg.h"
 #include "object/uobject.h"

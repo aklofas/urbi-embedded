@@ -1,6 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uparse_top.c — parser entry points and error-recovery helpers.
- * Extracted from uparse.c during v0.5.4-decompose (PARSE-021 #6). */
+/*
+ * uparse_top.c — parser entry points and error-recovery helpers.
+ *
+ * Exposes urbi_parse() and urbi_parse_chunk() as the public API surface;
+ * handles statement-boundary sync on parse errors.  Split from uparse.c
+ * to keep each file to a coherent slice of the parser's responsibility.
+ */
 
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"

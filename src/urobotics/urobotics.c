@@ -1,5 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/urobotics/urobotics.c — register/run shim for the Robotics facet overlay. */
+/*
+ * urobotics.c — register/run shim for the Robotics facet overlay.
+ *
+ * Deserializes the baked urobotics bytecode blob and mounts it onto the
+ * VM as a chunk instance.  Compiled only when URBI_ENABLE_UROBOTICS is set;
+ * the core VM has no direct knowledge of this subsystem.
+ */
 #ifdef URBI_ENABLE_UROBOTICS
 
 #include "urbi/urobotics.h"

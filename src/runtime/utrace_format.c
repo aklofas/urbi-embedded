@@ -1,6 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/runtime/utrace_format.c — manual (no vsnprintf) trace record formatter
- * and the default writer_fn text backend (v0.11.0). Freestanding-safe. */
+/*
+ * utrace_format.c — manual (no vsnprintf) trace record formatter and the
+ * default writer_fn text backend.  Freestanding-safe.
+ *
+ * Converts URBI_TRACE event records to human-readable text without calling
+ * vsnprintf or any libc function, so trace output is available on bare-metal
+ * targets that lack printf.
+ */
 #include "urbi/trace.h"
 #include "vm/uvm.h"
 

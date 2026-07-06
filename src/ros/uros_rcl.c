@@ -4,8 +4,8 @@
  * Compiled only in the container build (URBI_ROS_BACKEND_RCL); the host build
  * compiles this to an empty translation unit and uses the mock backend.
  *
- * B2: node init/fini.  B4: publisher + publish.  B5: subscriber + executor
- * spin.  B6/B7 (client/service) land next. */
+ * Covers: node init/fini, publisher + publish, subscriber + executor spin.
+ * Client/service are not yet implemented. */
 #if defined(URBI_ENABLE_ROS2) && defined(URBI_ROS_BACKEND_RCL)
 
 #define _POSIX_C_SOURCE 199309L   /* nanosleep / struct timespec under -std=c99 */

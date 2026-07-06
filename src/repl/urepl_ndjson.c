@@ -3,7 +3,7 @@
  *
  * Schema-specific scanner.  Recognizes only the request fields enumerated
  * in spec §6.1; unknown keys are skipped, unknown ops fail.  Not a
- * general JSON parser (see src/json.c, Phase 4 Task 21). */
+ * general JSON parser (see src/repl/ujson.c for the full RFC-8259 subset). */
 #include "repl/urepl_ndjson.h"
 
 #include <stdio.h>
