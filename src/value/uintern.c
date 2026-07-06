@@ -45,7 +45,7 @@ typedef struct UInternTable {
     UInternStr **entries;             /* cap pointers; NULL = empty */
     size_t       cap;                 /* power of two */
     size_t       count;               /* live entries */
-    size_t       bytes;               /* refactor-3 GC-08: live UInternStr blocks + entries[] array, in bytes */
+    size_t       bytes;               /* live UInternStr blocks + entries[] array, in bytes */
 } UInternTable;
 
 /* --- helpers --- */
@@ -233,7 +233,7 @@ size_t uintern_count(const UVM *vm) {
 
 /* === urbi_intern_bytes ===
  *
- * (refactor-3 GC-08) Total bytes currently allocated by the intern
+ * Total bytes currently allocated by the intern
  * subsystem: every live UInternStr block (header + payload + NUL, exactly
  * the size handed to vm_alloc on the miss path) plus the current entries[]
  * pointer array (cap * sizeof(UInternStr *), re-accounted across grows).

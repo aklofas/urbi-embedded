@@ -327,7 +327,7 @@ gc_mark_incremental_step(UVM *vm, size_t budget)
 static size_t
 gc_atomic_finish_step(UVM *vm)
 {
-    /* refactor-3 GC-02/B5: stop-the-world root re-scan.  The mutator ran
+    /* Stop-the-world root re-scan.  The mutator ran
      * between MARK_ROOTS and here; any store of a white value into an
      * already-scanned ROOT slot (strand registers — urbi_gc_register_write
      * is deliberately barrier-free; un-barriered root tables: namespace
@@ -669,7 +669,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     URBI_ASSERT_NOT_ISR(vm);
 
 #if URBI_GC_STRESS
-    /* refactor-3 TEST-GAP-01: collect-on-every-alloc stress mode.  Collect
+    /* Collect-on-every-alloc stress mode.  Collect
      * BEFORE allocating (never after — the caller has not rooted the new
      * cell yet; collect-after would sweep it by design).  Armed only once
      * urbi_vm_init has registered all root providers; init-window allocs
@@ -806,7 +806,7 @@ urbi_gc_shade_gray(UVM *vm, UCell *cell)
     /* Sidecar lookup — O(N) scan (back-pointer collapse pending; see
      * GC-09 in the deep audit / design-risks).
      *
-     * NULL contract (refactor-3 GC-15): the ONLY cells legitimately absent
+     * NULL contract: the ONLY cells legitimately absent
      * from all_cells_head are FIXED pool cells (UWatcher slots — pool-
      * managed, never swept, children rooted by the pool-wide provider in
      * uwatcher_gc.c).  UClosure/UUpvalCell have been enrolled via
@@ -1110,7 +1110,7 @@ urbi_unpin(UVM *vm, UValue v)
  * uvalue_is_heap and uvalue_as_cell are static inline in ugc_incremental.h;
  * this function uses them directly.
  *
- * Task 9b (refactor-3 GC-07): "white" means EITHER white (IS_WHITE), not
+ * "white" means EITHER white (IS_WHITE), not
  * `== current_white`.  current_white flips at cycle START, so mid-cycle the
  * cells the sweep will actually free (IS_DEAD checks OTHER_WHITE — every
  * pre-cycle cell not yet marked) carried the other white; the old

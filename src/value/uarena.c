@@ -151,7 +151,7 @@ void *uarena_alloc(UArena *a, size_t nbytes) {
     /* Grab or create a chunk with enough room. */
     UArenaChunk *c = a->head;
     if (!c || c->used + need > c->capacity) {
-        /* refactor-3 FE-07: after uarena_reset the chunks allocated by a
+        /* After uarena_reset the chunks allocated by a
          * previous statement are still linked — probe the full chain for any
          * chunk that fits before allocating a fresh one (the old one-hop
          * succ check missed chunks at position 3+ when intermediate chunks

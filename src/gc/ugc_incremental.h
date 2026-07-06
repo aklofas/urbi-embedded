@@ -19,7 +19,7 @@
 #include "ugc.h"
 #include "runtime/umemdebug.h"   /* URBI_MEM_DEBUG gate (forward-decls only; no circular dep) */
 
-/* refactor-3 TEST-GAP-01: URBI_GC_STRESS — collect-before-every-alloc stress
+/* URBI_GC_STRESS — collect-before-every-alloc stress
  * mode (see urbi_gc_alloc in ugc_incremental.c).  Undefined => 0 => zero
  * behavior change (same default-0 idiom as URBI_MEM_DEBUG above). */
 #ifndef URBI_GC_STRESS
@@ -153,8 +153,8 @@ void urbi_gc_shade_gray(struct UVM *vm, UCell *cell);
 
 /* === urbi_c_root_push / urbi_c_root_pop — VM-level C-stack root chain ===
  *
- * v0.13.2 (refactor-3 TEST-GAP-01 discovery chain): strandless counterpart
- * of ustrand_c_root_push/_pop (refactor-3 VM-06a).  Runtime C code that
+ * v0.13.2: strandless counterpart
+ * of ustrand_c_root_push/_pop.  Runtime C code that
  * holds a fresh GC cell in a C local across further allocations — and may
  * run with vm->cur_strand == NULL (realm bootstrap, host API, native
  * helpers reachable from both paths) — pins the value by pushing a
@@ -200,7 +200,7 @@ void urbi_watcher_observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
  * Non-heap-bearing UValKinds (deliberately NOT shaded by mark_root_callback).
  * Each line below carries a structured `gc-no-shade:` marker that the
  * test-gc-roots-coverage gate requires — a free-text mention no longer
- * satisfies the gate (refactor-3 GATE-02):
+ * satisfies the gate:
  *   gc-no-shade: UVAL_NIL      — inline scalar (zero payload).
  *   gc-no-shade: UVAL_INT      — inline int64_t payload.
  *   gc-no-shade: UVAL_FLOAT    — inline f32/f64 payload.
@@ -250,8 +250,8 @@ uvalue_as_cell(UValue v)
 /* === uvalue_is_heap_white ===
  *
  * Two-step check: (a) UValue tag indicates heap-bearing kind (via uvalue_is_heap);
- * (b) cell color is white — EITHER white, IS_WHITE semantics (Task 9b /
- * refactor-3 GC-07: current_white flips at cycle START, so the cells the
+ * (b) cell color is white — EITHER white, IS_WHITE semantics
+ * (current_white flips at cycle START, so the cells the
  * sweep frees are the OTHER_WHITE pre-cycle ones; the previous
  * current_white-only test matched mid-cycle newborns exclusively — which
  * survive the sweep regardless — making every barrier site a no-op for
@@ -295,7 +295,7 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  *   Called when the dispatch loop writes a UValue into a strand register
  *   (OP_MOVE, arithmetic results, OP_LOADK, etc.).
  *   Registers are roots walked at MARK_ROOTS and re-walked at ATOMIC_FINISH
- *   with the mutator stopped (refactor-3 GC-02), so no per-write barrier is
+ *   with the mutator stopped, so no per-write barrier is
  *   needed — the re-scan is the soundness mechanism.
  *   s       — the strand whose register file is being updated.
  *   reg_idx — register index within s->R[].
@@ -304,8 +304,8 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  * urbi_gc_upvalue_pre_store(vm, cell, child):
  *   Barrier-only for HEAPIFIED upvalue stores (OP_SETUPVAL's on_heap arm +
  *   urbi_vm_close_upvalues).  The barrier parent is the UUpvalCell's embedded
- *   UCell header — NOT the executing closure (Task 9c / refactor-3 GC-07:
- *   the cell is SHARED between sibling closures via OP_CLOSURE's
+ *   UCell header — NOT the executing closure (the cell is SHARED between
+ *   sibling closures via OP_CLOSURE's
  *   re-capture arm, so its color diverges from any one closure's; the old
  *   closure-parent check let a gray sibling store a white value into an
  *   already-BLACK shared cell with no shade — lost object, since the gray
@@ -325,7 +325,7 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  *
  *   unamespace_set (src/realm/urealm_namespace.c): deliberately unwired.
  *   Namespace bindings are roots, re-walked at ATOMIC_FINISH with the
- *   mutator stopped (refactor-3 GC-02) — the re-scan, not a per-write
+ *   mutator stopped — the re-scan, not a per-write
  *   barrier, is the soundness mechanism (see the store-site comment).
  *
  *   OP_SETSLOT (v0.10.1): fast-path LOCAL arm uses urbi_gc_slot_store;
@@ -372,7 +372,7 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s, uint16_t reg_idx, UVal
 {
     /* No GC barrier on register writes — deliberately.  Registers are roots:
      * they are walked at MARK_ROOTS *and re-walked at ATOMIC_FINISH with the
-     * mutator stopped* (refactor-3 GC-02), so a white value stored into an
+     * mutator stopped*, so a white value stored into an
      * already-scanned register is re-discovered before SWEEP.  Do not add a
      * per-write barrier here; the re-scan is the soundness mechanism. */
 

@@ -55,7 +55,7 @@ void uintern_destroy(struct UVM *vm);
  * Returns 0 if intern_table is NULL. */
 size_t uintern_count(const struct UVM *vm);
 
-/* Stats accessor (refactor-3 GC-08). Total bytes currently allocated by
+/* Stats accessor. Total bytes currently allocated by
  * the intern subsystem on behalf of vm: every live UInternStr block
  * (header + payload, NUL included in the header's bytes[1]) PLUS the
  * current entries[] pointer array.  The fixed-size UInternTable struct
