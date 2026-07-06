@@ -3,7 +3,7 @@
  * root (Gap Q, v0.7.1).
  *
  * This is the load-bearing correctness test for the GC integration.
- * ref_table_walk_roots must be called by the GC mark phase for the pinned
+ * urbi_gc_ref_table_walk_roots must be called by the GC mark phase for the pinned
  * value to survive urbi_gc_collect.
  *
  * Strategy:
@@ -22,8 +22,8 @@
  *
  * NOTE: mark_root_callback in ugc_incremental.c only handles UVAL_CLOSURE
  * for the gc-shade path.  For non-CLOSURE GC cells we must register a custom
- * root provider that calls gc_shade_gray directly (same pattern as
- * ev_test_root_provider in test_event_gc.c).  ref_table_walk_roots calls
+ * root provider that calls urbi_gc_shade_gray directly (same pattern as
+ * ev_test_root_provider in test_event_gc.c).  urbi_gc_ref_table_walk_roots calls
  * cb(vm, &slot.value, ctx) where cb == mark_root_callback; that callback
  * shades the cell only for UVAL_CLOSURE.  For UVAL_EVENT we need the
  * cell-side shade path.
@@ -38,7 +38,7 @@
  * Actually: for UVAL_INT the mark_root_callback is a no-op (no heap cell).
  * For UVAL_OBJECT the callback shades the UObject.  For UVAL_EVENT it shades
  * the UEvent.  We'll use UVAL_EVENT with a urbi_ref to test the real path.
- * The ref_table_walk_roots calls cb(vm, &slot.value, ctx), and cb ==
+ * The urbi_gc_ref_table_walk_roots calls cb(vm, &slot.value, ctx), and cb ==
  * mark_root_callback.  Let's check if mark_root_callback handles UVAL_EVENT. */
 
 #include "utest.h"
@@ -47,7 +47,7 @@
 #include "urbi/types.h"
 #include "vm/uvm.h"
 #include "gc/ugc.h"
-#include "gc/ugc_incremental.h"  /* gc_shade_gray, GC_PHASE_* */
+#include "gc/ugc_incremental.h"  /* urbi_gc_shade_gray, GC_PHASE_* */
 #include "event/uevent.h"        /* urbi_event_create, UEvent */
 
 #include <stddef.h>
@@ -79,7 +79,7 @@ cell_is_alive(UVM *vm, UCell *target)
  * Sub-test 1: urbi_ref pins a UEvent value; it survives urbi_gc_collect.
  *
  * Without the ref, the event would be collected.  With the ref, the
- * ref_table_walk_roots provider calls mark_root_callback on the UValue,
+ * urbi_gc_ref_table_walk_roots provider calls mark_root_callback on the UValue,
  * which shades the UEvent cell gray → it survives.
  * ========================================================================= */
 
@@ -102,7 +102,7 @@ UTEST(ref_pins_value_across_gc)
     UASSERT(ref != URBI_REF_INVALID);
 
     /* Force full GC collection.
-     * ref_table_walk_roots calls mark_root_callback(vm, &slot.value, ctx)
+     * urbi_gc_ref_table_walk_roots calls mark_root_callback(vm, &slot.value, ctx)
      * which shades the UEvent cell via the UVAL_EVENT branch in
      * mark_root_callback. */
     urbi_gc_collect(&vm);

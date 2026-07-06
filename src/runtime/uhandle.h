@@ -5,7 +5,7 @@
  * demand via vm->alloc_fn.  Slots are "released" by writing nil in-place;
  * slot reuse via free-list is deferred to v1.x.
  *
- * host_handle_walk_roots is registered as a GC root provider by urbi_vm_init
+ * urbi_gc_host_handle_walk_roots is registered as a GC root provider by urbi_vm_init
  * (T26 wired the call; T27 provides the real implementation).
  *
  * Allocator contract (FOUND-003, v0.5.5): grow uses vm->alloc_fn with the
@@ -47,6 +47,6 @@ void     urbi_handle_release(struct UVM *vm, UHandle h);
 /* GC root provider: walks all non-nil slots and calls cb for each.
  * Registered with urbi_gc_register_root_provider in urbi_vm_init (T26 site).
  * Not ISR-safe. */
-void     host_handle_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
+void     urbi_gc_host_handle_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 #endif /* UHANDLE_H */

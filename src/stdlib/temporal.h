@@ -22,7 +22,7 @@
  *
  * GC reachability: a root walker registered with the GC at urbi_vm_init
  * yields each periodic's body closure to the mark callback.  Current body
- * strands are reachable via realm->strands_head (sched_walk_roots).
+ * strands are reachable via realm->strands_head (urbi_gc_sched_walk_roots).
  *
  * No new opcode.  No wire-format change.  ABI is additive only — new
  * field on UVM (periodics_head) + new field on UStrand (periodic_owner).

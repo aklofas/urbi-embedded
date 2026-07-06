@@ -11,12 +11,12 @@ struct UGcRootCallback;
 
 #include "gc/ugc.h"  /* UGcRootCallback, UGcRootProviderFn */
 
-/* ref_table_walk_roots: GC root provider for the per-VM reference table.
+/* urbi_gc_ref_table_walk_roots: GC root provider for the per-VM reference table.
  *
  * Registered at urbi_vm_init via urbi_gc_register_root_provider.
  * Calls cb(vm, &slot.value, ctx) for every in_use slot so the GC marks
  * those values live.  This is the load-bearing correctness piece for Gap Q
  * — without it, urbi_ref does not actually pin anything. */
-void ref_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
+void urbi_gc_ref_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 #endif /* UVM_REF_H */

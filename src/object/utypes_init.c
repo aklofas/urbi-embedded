@@ -48,7 +48,7 @@
 #include "changed/uchanged_node.h"        /* UChangedNode, UTYPE_CHANGED_NODE (spec #4 §3.1) */
 #include "tag/utag.h"                 /* UTag, UTYPE_TAG (T18 GC promotion) */
 #include "gc/ugc.h"
-#include "gc/ugc_incremental.h"   /* gc_shade_gray */
+#include "gc/ugc_incremental.h"   /* urbi_gc_shade_gray */
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"     /* UClosure, UUpvalCell (v0.8.4 Step B) */
 #include "chunk/uchunk.h"       /* uproto_root_of, urbi_proto_ref_release */
@@ -65,12 +65,12 @@ walk_uobject(struct UVM *vm, void *payload,
 {
     UObject *o = (UObject *)((UCell *)payload - 1);
 
-    /* shape is a direct UCell-headed object; shade via gc_shade_gray.
+    /* shape is a direct UCell-headed object; shade via urbi_gc_shade_gray.
      * (The mark callback only handles UValue slots; for direct cell
-     * pointers we go straight through gc_shade_gray, which is the same
+     * pointers we go straight through urbi_gc_shade_gray, which is the same
      * shading routine the callback ultimately calls.) */
     if (o->shape != NULL) {
-        gc_shade_gray(vm, (UCell *)o->shape);
+        urbi_gc_shade_gray(vm, (UCell *)o->shape);
     }
 
     /* Walk each USlot UValue payload via the mark callback.  The callback
@@ -84,7 +84,7 @@ walk_uobject(struct UVM *vm, void *payload,
         /* TIDY-006: single (char *) cast avoids casting-through-void. */
         UCell *wrapper = (UCell *)
             ((char *)o->slots - offsetof(USlotArray, entries));
-        gc_shade_gray(vm, wrapper);
+        urbi_gc_shade_gray(vm, wrapper);
         uint32_t i;
         for (i = 0U; i < o->shape->count; i++) {
             cb(vm, &o->slots[i], ctx);
@@ -104,12 +104,12 @@ walk_uobject(struct UVM *vm, void *payload,
      * collection over a realm with a multi-proto object → UAF). */
     {
         if (o->protos != 0U && (o->protos & 1U) == 0U) {
-            gc_shade_gray(vm, (UCell *)o->protos);  /* NOLINT(performance-no-int-to-ptr) — UProtos pointer-encoding (TIDY-003 design pin) */
+            urbi_gc_shade_gray(vm, (UCell *)o->protos);  /* NOLINT(performance-no-int-to-ptr) — UProtos pointer-encoding (TIDY-003 design pin) */
         }
         UObject *p;
         UPROTOS_FOREACH(o, p) {
             if (p != NULL) {
-                gc_shade_gray(vm, (UCell *)p);
+                urbi_gc_shade_gray(vm, (UCell *)p);
             }
         }
     }
@@ -118,7 +118,7 @@ walk_uobject(struct UVM *vm, void *payload,
      * lazy-populated at first `obj.x.changed?` install (R6).  UChangedNode
      * embeds UCell as its first member, so the cast to UCell* is well-defined. */
     if (o->changed_events_head != NULL) {
-        gc_shade_gray(vm, (UCell *)o->changed_events_head);
+        urbi_gc_shade_gray(vm, (UCell *)o->changed_events_head);
     }
 }
 
@@ -136,7 +136,7 @@ walk_uprotos(struct UVM *vm, void *payload,
     uint32_t i;
     for (i = 0U; i < up->n; i++) {
         if (up->items[i] != NULL) {
-            gc_shade_gray(vm, (UCell *)up->items[i]);
+            urbi_gc_shade_gray(vm, (UCell *)up->items[i]);
         }
     }
 }
@@ -155,14 +155,14 @@ walk_ushape(struct UVM *vm, void *payload,
     UShape *s = (UShape *)((UCell *)payload - 1);
 
     if (s->parent != NULL) {
-        gc_shade_gray(vm, (UCell *)s->parent);
+        urbi_gc_shade_gray(vm, (UCell *)s->parent);
     }
 
     /* transitions is the per-shape UShapeMap (T13).  NULL until the first
      * slot is added out of this shape; non-NULL once any child shape has
      * been created.  walk_ushapemap (below) shades each cached child. */
     if (s->transitions != NULL) {
-        gc_shade_gray(vm, (UCell *)s->transitions);
+        urbi_gc_shade_gray(vm, (UCell *)s->transitions);
     }
 
     /* props_table is NULL until the first slot in this lineage installs
@@ -180,11 +180,11 @@ walk_ushape(struct UVM *vm, void *payload,
         /* TIDY-006: single (char *) cast avoids casting-through-void. */
         UPropsTable *pt = (UPropsTable *)
             ((char *)s->props_table - offsetof(UPropsTable, entries));
-        gc_shade_gray(vm, (UCell *)pt);
+        urbi_gc_shade_gray(vm, (UCell *)pt);
         uint32_t i;
         for (i = 0U; i < s->count; i++) {
             if (s->props_table[i] != NULL) {
-                gc_shade_gray(vm, (UCell *)s->props_table[i]);
+                urbi_gc_shade_gray(vm, (UCell *)s->props_table[i]);
             }
         }
     }
@@ -205,7 +205,7 @@ walk_ushapemap(struct UVM *vm, void *payload,
     uint32_t i;
     for (i = 0U; i < m->cap; i++) {
         if (m->entries[i].v != NULL) {
-            gc_shade_gray(vm, (UCell *)m->entries[i].v);
+            urbi_gc_shade_gray(vm, (UCell *)m->entries[i].v);
         }
     }
 }
@@ -258,7 +258,7 @@ walk_uslothandle(struct UVM *vm, void *payload,
 
     USlotHandle *h = (USlotHandle *)((UCell *)payload - 1);
     if (h->owner != NULL) {
-        gc_shade_gray(vm, (UCell *)h->owner);
+        urbi_gc_shade_gray(vm, (UCell *)h->owner);
     }
 }
 
@@ -276,7 +276,7 @@ walk_umoduleinstance(struct UVM *vm, void *payload,
 
     UChunkInstance *mi = (UChunkInstance *)((UCell *)payload - 1);
     if (mi->proto_instances != NULL) {
-        gc_shade_gray(vm, (UCell *)mi->proto_instances);
+        urbi_gc_shade_gray(vm, (UCell *)mi->proto_instances);
     }
 }
 
@@ -299,7 +299,7 @@ walk_uevent(struct UVM *vm, void *payload,
     cb(vm, &ev->name, ctx);
 
     /* at_watchers_head chain: NOT walked here since refactor-3 GC-05 — the
-     * pool-wide watcher_table_walk_roots roots every in-use watcher slot's
+     * pool-wide urbi_gc_watcher_table_walk_roots roots every in-use watcher slot's
      * children regardless of which list (if any) threads it.  Single source
      * of truth; see uwatcher_gc.c.  (Supersedes the GC-008 / v1.0-stm32f4-hang
      * fix that marked the chain's closures here — that rooting only held
@@ -324,10 +324,10 @@ walk_uchanged_node(struct UVM *vm, void *payload,
     /* name is interned (lives for VM lifetime); no shade needed. */
 
     if (n->event != NULL) {
-        gc_shade_gray(vm, (UCell *)n->event);
+        urbi_gc_shade_gray(vm, (UCell *)n->event);
     }
     if (n->next != NULL) {
-        gc_shade_gray(vm, (UCell *)n->next);
+        urbi_gc_shade_gray(vm, (UCell *)n->next);
     }
 }
 
@@ -340,12 +340,12 @@ walk_uchanged_node(struct UVM *vm, void *payload,
  * TAGCH-017 — this is correctness, not just a perf optimization:
  *   - UCleanupEntry instances are NOT GC cells.  They live inside the
  *     owning strand's cleanup_base[] array (host-allocated by the strand,
- *     never registered on the all-cells list).  Calling gc_shade_gray on
+ *     never registered on the all-cells list).  Calling urbi_gc_shade_gray on
  *     a UCleanupEntry would pass a non-cell pointer to the GC and corrupt
  *     the gray-stack invariants.
  *   - Indirecting via entry->strand_back to walk the owning strand here
  *     would also be wrong: strands are root-walked once per cycle via the
- *     realm hierarchy (sched_walk_roots → strand_walk_roots; see
+ *     realm hierarchy (urbi_gc_sched_walk_roots → strand_walk_roots; see
  *     src/sched/usched_cooperative.c §strand_walk_roots).  A second walk
  *     here would not just be wasted work — strand_walk_roots performs a
  *     full conservative register-window scan, and re-entering it from a
@@ -366,20 +366,20 @@ walk_utag(struct UVM *vm, void *payload,
 
     /* enter_event and leave_event are UEvent* (direct UCell* walk). */
     if (t->enter_event != NULL) {
-        gc_shade_gray(vm, (UCell *)t->enter_event);
+        urbi_gc_shade_gray(vm, (UCell *)t->enter_event);
     }
     if (t->leave_event != NULL) {
-        gc_shade_gray(vm, (UCell *)t->leave_event);
+        urbi_gc_shade_gray(vm, (UCell *)t->leave_event);
     }
 
     /* parent tag (v0.7.1 Gap M): shade so the parent stays reachable
      * as long as the child tag is live.  Parent is always a UTag GC cell. */
     if (t->parent != NULL) {
-        gc_shade_gray(vm, (UCell *)t->parent);
+        urbi_gc_shade_gray(vm, (UCell *)t->parent);
     }
 
     /* member_watchers_head chain: NOT walked here since refactor-3 GC-05 —
-     * the pool-wide watcher_table_walk_roots roots every in-use watcher
+     * the pool-wide urbi_gc_watcher_table_walk_roots roots every in-use watcher
      * slot's children regardless of which list (if any) threads it.  Single
      * source of truth; see uwatcher_gc.c.  (The old shade of each pool-cell
      * UWatcher was a silent no-op anyway — pool slots are never on
@@ -417,7 +417,7 @@ walk_uclosure(struct UVM *vm, void *payload,
      * (an OP_CLOSURE in progress may have a partially populated array). */
     for (uint8_t i = 0U; i < cl->nupvals; i++) {
         if (cl->upvals[i] != NULL) {
-            gc_shade_gray(vm, &cl->upvals[i]->cell);
+            urbi_gc_shade_gray(vm, &cl->upvals[i]->cell);
         }
     }
 }

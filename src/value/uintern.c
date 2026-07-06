@@ -267,7 +267,7 @@ ustr_op_name(UVM *vm, const char *op, size_t len)
     return (USymbol *)ustr_intern(vm, op, len);
 }
 
-/* === intern_table_walk_roots ===
+/* === urbi_gc_intern_table_walk_roots ===
  *
  * GC root provider for the intern table (row 10 §5.5).
  *
@@ -288,7 +288,7 @@ ustr_op_name(UVM *vm, const char *op, size_t len)
  * GC cycle rather than the table allocation.  Filed under v1.x backlog
  * (FOUND-024 disposition, v0.5.5: no-op-by-design at v1.0). */
 void
-intern_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
+urbi_gc_intern_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     /* No-op by design — see banner above. */
     (void)vm;

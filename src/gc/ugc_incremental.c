@@ -224,7 +224,7 @@ mark_root_callback(UVM *vm, UValue *slot, void *ctx)
     if (IS_GRAY(cell) || IS_BLACK(cell)) return;
 
     /* Paint gray and push onto work-list via sidecar. */
-    gc_shade_gray(vm, cell);
+    urbi_gc_shade_gray(vm, cell);
 }
 
 /* === drain_gray: shared gray work-list drainer (GC-027) ===
@@ -466,14 +466,14 @@ gc_sweep_step(UVM *vm, size_t budget)
          * so the next mark phase observes it as not-yet-marked.  Without
          * the re-paint, a FIXED cell that survived two cycles in a row
          * (without being re-walked by its specialised root walker, e.g.
-         * watcher_table_walk_roots for UWatcher cells) would carry stale
+         * urbi_gc_watcher_table_walk_roots for UWatcher cells) would carry stale
          * non-current-white color into the next mark, breaking the
          * tri-color invariant.  Do not "optimise" this branch by
          * dropping the urbi_gc_set_color call without a separate root
          * walker that paints the cell every cycle.
          *
          * Note that some FIXED cells (UWatcher) are walked through a
-         * dedicated root walker (watcher_table_walk_roots) that
+         * dedicated root walker (urbi_gc_watcher_table_walk_roots) that
          * traverses active_watchers_head independently of the all-cells
          * sidecar list — so the cells exist in the sweep iteration even
          * when no ordinary heap reference reaches them. */
@@ -773,7 +773,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     return cell;
 }
 
-/* === gc_shade_gray ===
+/* === urbi_gc_shade_gray ===
  *
  * Paints a cell gray and pushes it onto the gray work-list via its sidecar
  * node.  Called from mark_root_callback and the forward write barrier (T25).
@@ -788,7 +788,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
  *
  * Idempotency guard: if the cell is already gray or black, no-op. */
 void
-gc_shade_gray(UVM *vm, UCell *cell)
+urbi_gc_shade_gray(UVM *vm, UCell *cell)
 {
     URBI_ASSERT_NOT_ISR(vm);
 

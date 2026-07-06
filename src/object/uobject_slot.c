@@ -11,7 +11,7 @@
 #include "vm/uvm.h"
 #include "urbi/types.h"         /* URBI_OK / URBI_ERR_* — OBJ-007 distinct codes */
 #include "urbi/gc.h"            /* urbi_gc_alloc + urbi_gc_slot_store barrier */
-#include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_store + urbi_c_root_push/_pop */
+#include "gc/ugc_incremental.h" /* urbi_gc_shade_gray + urbi_gc_slot_store + urbi_c_root_push/_pop */
 #include "gc/ugc.h"             /* UTYPE_SLOT_ARRAY / UTYPE_PROPS / UTYPE_PROPS_TABLE */
 #include "changed/uchanged_node.h" /* urbi_emit_slot_change_if_subscribed */
 #include "chunk/uchunk.h"
@@ -146,7 +146,7 @@ set_local_slot_impl(UVM *vm, UObject *obj, USymbol *name, UValue value)
          * alignment-safe by USlotArray's layout. */
         UCell *old_wrapper = (UCell *)
             ((char *)obj->slots - offsetof(USlotArray, entries));
-        gc_shade_gray(vm, old_wrapper);
+        urbi_gc_shade_gray(vm, old_wrapper);
     }
 
     /* Publish.  No unconditional topology_gen bump per topology spec §4.2
@@ -267,7 +267,7 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, const USymbol *name)
          * alignment-safe by USlotArray's layout. */
         UCell *old_wrapper = (UCell *)
             ((char *)obj->slots - offsetof(USlotArray, entries));
-        gc_shade_gray(vm, old_wrapper);
+        urbi_gc_shade_gray(vm, old_wrapper);
     }
 
     obj->slots = (fresh != NULL) ? fresh->entries : NULL;

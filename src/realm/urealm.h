@@ -84,7 +84,7 @@ typedef struct URealm {
     /* Global object: M4 UObject that holds the realm's named slot table.
      * Populated at urbi_realm_create with the 15 v1.0 built-in globals
      * (spec #5 §4.1).  NULL until realm_create completes the alloc step.
-     * GC-managed via realm_list_walk_roots shading this cell. */
+     * GC-managed via urbi_gc_realm_list_walk_roots shading this cell. */
     struct UObject *global_object; /* UTYPE_OBJECT; owned by GC */
 
     /* Host-attached data */
@@ -131,7 +131,7 @@ typedef struct URealm {
  *     constructing a full UObject (test_realm.c, test_determinism.c)
  *   - the determinism-checksum walk (src/urbi.c::checksum_walk_cb)
  *   - the GC root-provider walker, which folds these UValues into the
- *     reachable set (urealm.c::realm_list_walk_roots step 2)
+ *     reachable set (urealm.c::urbi_gc_realm_list_walk_roots step 2)
  * Removing the map would force tests to build full UObjects; the cost
  * vs. complexity trade keeps the side-channel through v1.0. */
 
@@ -158,10 +158,10 @@ void urealm_teardown_all(struct UVM *vm);
  * all UValues reachable from every live Realm.
  * Iterates vm->realms_head linked list; for each Realm visits:
  *   1. namespace entries       (via unamespace_walk_roots)
- *   2. realm->global_object    (gc_shade_gray — UTYPE_OBJECT cell)
- *   3. realm->tag              (gc_shade_gray — UTYPE_TAG cell at M5+)
+ *   2. realm->global_object    (urbi_gc_shade_gray — UTYPE_OBJECT cell)
+ *   3. realm->tag              (urbi_gc_shade_gray — UTYPE_TAG cell at M5+)
  * The implementation in urealm.c is the source of truth for this list. */
-void realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
+void urbi_gc_realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 /* === 4 Realm lifecycle C API functions ===
  *

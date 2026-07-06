@@ -15,7 +15,7 @@
  *   Scenario 1 — realm-global anchor survival:
  *     A closure stored as a realm global must survive urbi_gc_force_full.
  *     Root path: global_object slot → mark_root_callback (UVAL_CLOSURE) →
- *     gc_shade_gray → closure survives sweep.
+ *     urbi_gc_shade_gray → closure survives sweep.
  *
  *   Scenario 2 — heapified-upval reachability:
  *     A closure with a captured-and-closed UUpvalCell keeps the cell alive
@@ -25,7 +25,7 @@
  *   Scenario 3 — multi-cycle watcher closure survival:
  *     A closure stored as w->condition survives repeated GC cycles while the
  *     watcher is active, then is collected once the watcher is unregistered.
- *     Root path: watcher_table_walk_roots yields UVAL_CLOSURE →
+ *     Root path: urbi_gc_watcher_table_walk_roots yields UVAL_CLOSURE →
  *     mark_root_callback shades closure → closure survives sweep.
  *     Negative proof: after watcher removal the closure is collected.
  *
@@ -151,7 +151,7 @@ UTEST(realm_global_closure_survives_gc)
  *
  * Root path:
  *   realm global (UVAL_CLOSURE) → mark_root_callback shades cl →
- *   walk_uclosure: gc_shade_gray(vm, &upval->cell) →
+ *   walk_uclosure: urbi_gc_shade_gray(vm, &upval->cell) →
  *   walk_upvalcell: cb(vm, &upval->u.value, ctx) for on_heap=true →
  *   mark_root_callback (upval.u.value is UVAL_INT — not heap-bearing,
  *   no further shading; INT is kept because its cell is already traced).
@@ -217,7 +217,7 @@ UTEST(heapified_upval_survives_gc)
  * the watcher is active in vm->active_watchers_head.
  *
  * Root path:
- *   watcher_table_walk_roots (root provider) yields UVAL_CLOSURE for each
+ *   urbi_gc_watcher_table_walk_roots (root provider) yields UVAL_CLOSURE for each
  *   non-NULL w->condition → mark_root_callback shades the UClosure cell →
  *   walk_uclosure (nupvals=0 for native closure, no upvals to trace) →
  *   cell survives sweep.
@@ -225,7 +225,7 @@ UTEST(heapified_upval_survives_gc)
  * Negative proof:
  *   After urbi_watcher_unregister_internal removes the watcher from
  *   vm->active_watchers_head, the closure is no longer yielded by
- *   watcher_table_walk_roots.  If no other root holds the closure, a
+ *   urbi_gc_watcher_table_walk_roots.  If no other root holds the closure, a
  *   subsequent urbi_gc_force_full collects it.  This test verifies the
  *   closure IS collected after watcher removal, confirming the watcher
  *   was the sole root.
@@ -298,7 +298,7 @@ UTEST(watcher_closure_survives_multi_gc_then_collected)
  *
  * cl->proto_inst is an INTERIOR pointer into the UProtoInstanceArr bulk
  * (&arr->entries[k]); UProtoInstance has no UCell header.  Pre-GC-15,
- * walk_uclosure cast it to UCell* and gc_shade_gray'd it — writing color
+ * walk_uclosure cast it to UCell* and urbi_gc_shade_gray'd it — writing color
  * bits into byte 1 of entries[k].proto (silent pointer corruption) while
  * contributing nothing to reachability (interior pointers have no sidecar,
  * so the gray-list push was always a no-op).  The Arr's real liveness path

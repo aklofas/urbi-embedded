@@ -95,7 +95,7 @@ urbi_handle_release(UVM *vm, UHandle h)
 }
 
 void
-host_handle_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
+urbi_gc_host_handle_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     URBI_ASSERT_NOT_ISR(vm);
     uint32_t i;

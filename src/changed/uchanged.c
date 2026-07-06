@@ -7,7 +7,7 @@
 #include "object/uobject.h"       /* UObject */
 #include "gc/ugc.h"               /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h"   /* UGC_HAS_SLOT_CHANGE_EVENT, UGC_COLOR_BLACK,
-                                   * UGC_COLOR_MASK, gc_shade_gray, UNLIKELY */
+                                   * UGC_COLOR_MASK, urbi_gc_shade_gray, UNLIKELY */
 #include "vm/uvm.h"                  /* UVM, host_log_fn */
 #include "urbi/urbi.h"            /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include "chunk/uchunk.h"
@@ -21,7 +21,7 @@
  * On hit: return existing UEvent.
  * On miss: GC-alloc a UChangedNode + a new UEvent (spec #3 constructor),
  * prepend node to the chain, set UGC_HAS_SLOT_CHANGE_EVENT on the object,
- * manually gc_shade_gray the node when the parent object is BLACK (forward
+ * manually urbi_gc_shade_gray the node when the parent object is BLACK (forward
  * Dijkstra via a field write — not a UCell-slot write).
  *
  * TAGCH-009 — only the node is explicitly shaded:
@@ -98,7 +98,7 @@ urbi_object_get_or_create_change_event(UVM *vm, UObject *obj, USymbol *name)
      * prepended node (WHITE/GRAY born-white) must be shaded gray so the
      * tri-color invariant is preserved. */
     if (UNLIKELY((((UCell *)obj)->gc_byte & UGC_COLOR_MASK) == UGC_COLOR_BLACK))
-        gc_shade_gray(vm, (UCell *)node);
+        urbi_gc_shade_gray(vm, (UCell *)node);
 
     return event;
 }

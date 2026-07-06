@@ -116,7 +116,7 @@ UTEST(walk_roots_t26_walk_with_realm)
     urbi_gc_walk_roots(&vm, count_all_callback, &seen);
     /* No assertion on a specific count: a freshly created realm walks
      * zero UValue callbacks (its bindings namespace is empty; tag and
-     * global_object are shaded via gc_shade_gray, not via cb).
+     * global_object are shaded via urbi_gc_shade_gray, not via cb).
      * The check is simply "no crash". */
     (void)seen;
 
@@ -198,7 +198,7 @@ UTEST(walk_roots_t36_m4_object_singletons_survive_gc)
 
     /* Force a full mark+sweep cycle.  Without the T36 root provider these
      * cells would be reclaimed (T36 removed the manual urbi_pin).  With it,
-     * MARK_ROOTS shades each via gc_shade_gray and they survive sweep. */
+     * MARK_ROOTS shades each via urbi_gc_shade_gray and they survive sweep. */
     urbi_gc_collect(&vm);
     UASSERT_EQ(urbi_gc_phase(&vm), (int)GC_PHASE_IDLE);
 

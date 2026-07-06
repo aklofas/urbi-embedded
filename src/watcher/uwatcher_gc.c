@@ -15,7 +15,7 @@
 #include "uwatcher.h"
 #include "vm/uvm.h"
 #include "gc/ugc.h"
-#include "gc/ugc_incremental.h"   /* gc_shade_gray (owning_tag + event roots) */
+#include "gc/ugc_incremental.h"   /* urbi_gc_shade_gray (owning_tag + event roots) */
 #include <stddef.h>
 #include <stdint.h>
 #ifdef URBI_DEBUG
@@ -25,10 +25,10 @@
 #endif
 
 void
-watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
+urbi_gc_watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
 {
     /* No URBI_ASSERT_NOT_ISR — root walkers run from the GC slice path,
-     * which itself ISR-asserts at its entry points.  (See sched_walk_roots
+     * which itself ISR-asserts at its entry points.  (See urbi_gc_sched_walk_roots
      * for precedent — also no per-walker ISR assert.) */
 
     /* refactor-3 GC-05: POOL-WIDE walk.  Rooting is a property of "slot is
@@ -89,12 +89,12 @@ watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
          * GC-managed (UTYPE_TAG via urbi_gc_alloc) since M5; the old
          * "host-managed" deferral note was stale. */
         if (w->owning_tag != NULL) {
-            gc_shade_gray(vm, (UCell *)w->owning_tag);
+            urbi_gc_shade_gray(vm, (UCell *)w->owning_tag);
         }
         /* refactor-3 GC-05: the subscribed event must outlive the watcher
          * (w->event is dereferenced at unregister/teardown). */
         if (w->event != NULL) {
-            gc_shade_gray(vm, (UCell *)w->event);
+            urbi_gc_shade_gray(vm, (UCell *)w->event);
         }
     }
 }

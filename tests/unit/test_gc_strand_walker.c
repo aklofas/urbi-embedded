@@ -3,7 +3,7 @@
  * transient-strand routing to vm->global_realm (T33).
  *
  * Per pre-M4 GC strand-walker spec §4.2 / §5.1 / §6.1:
- *   sched_walk_roots iterates vm->realms_head → realm.strands_head, visiting
+ *   urbi_gc_sched_walk_roots iterates vm->realms_head → realm.strands_head, visiting
  *   every strand regardless of state (READY / RUNNING / WAITING_*); DEAD
  *   strands are visited but strand_walk_roots returns immediately so their
  *   register cells are not painted gray.
@@ -69,7 +69,7 @@ static void visit_probe_cb(UVM *vm, UValue *root, void *ctx)
  *   - Allocate two strands via urbi_strand_create (both end up on
  *     realm.strands_head with valid cleanup-stack entries).
  *   - Force the "parent" into WAITING_JOIN by hand (state byte + wait_payload).
- *   - Call sched_walk_roots with a probe callback; assert it fired enough
+ *   - Call urbi_gc_sched_walk_roots with a probe callback; assert it fired enough
  *     times to confirm both strands' register windows were walked. */
 UTEST(strand_walker_visits_waiting_join_strand)
 {
@@ -84,7 +84,7 @@ UTEST(strand_walker_visits_waiting_join_strand)
     UASSERT(parent != NULL);
     UASSERT(child  != NULL);
 
-    /* Allocate per-strand register stacks — sched_walk_roots only walks
+    /* Allocate per-strand register stacks — urbi_gc_sched_walk_roots only walks
      * UVM_STACK_CAP slots when stack != NULL. */
     const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
     parent->stack = (UValue *)vm.alloc_fn(NULL, stack_bytes, vm.alloc_ud);
@@ -116,7 +116,7 @@ UTEST(strand_walker_visits_waiting_join_strand)
 
     /* Probe: count total visits across the walker run. */
     VisitProbe probe = {0};
-    sched_walk_roots(&vm, visit_probe_cb, &probe);
+    urbi_gc_sched_walk_roots(&vm, visit_probe_cb, &probe);
 
     /* Both strands must contribute UVM_STACK_CAP slots + 2 unwind slots
      * (unwind_value + fatal_value).  Floor: 2 * (UVM_STACK_CAP + 2). */
@@ -156,12 +156,12 @@ UTEST(strand_walker_dead_strand_filtered)
     /* Baseline visit count with strand alive (RUNNING). */
     s->state = USTRAND_STATE_RUNNING;
     VisitProbe alive = {0};
-    sched_walk_roots(&vm, visit_probe_cb, &alive);
+    urbi_gc_sched_walk_roots(&vm, visit_probe_cb, &alive);
 
     /* Now mark DEAD; walker should report 0 slots for this strand. */
     s->state = USTRAND_STATE_DEAD;
     VisitProbe dead = {0};
-    sched_walk_roots(&vm, visit_probe_cb, &dead);
+    urbi_gc_sched_walk_roots(&vm, visit_probe_cb, &dead);
 
     UASSERT(alive.total_count > 0);
     UASSERT_EQ(dead.total_count, 0);
@@ -204,7 +204,7 @@ UTEST(strand_walker_reaches_strand_off_scheduler_queues)
     s->state = USTRAND_STATE_DORMANT;  /* not READY/WAITING — just on realm.strands_head */
 
     VisitProbe probe = {0};
-    sched_walk_roots(&vm, visit_probe_cb, &probe);
+    urbi_gc_sched_walk_roots(&vm, visit_probe_cb, &probe);
 
     /* The strand's register window + unwind slots must have been walked. */
     UASSERT(probe.total_count >= UVM_STACK_CAP + 2);

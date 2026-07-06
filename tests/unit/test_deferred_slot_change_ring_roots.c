@@ -46,7 +46,7 @@
 #include "changed/uchanged_node.h"   /* urbi_deferred_slot_changes_walk_roots,
                                         UDeferredSlotChange */
 #include "object/uobject.h"          /* urbi_object_alloc */
-#include "gc/ugc_incremental.h"      /* gc_shade_gray */
+#include "gc/ugc_incremental.h"      /* urbi_gc_shade_gray */
 #include "gc/ugc.h"                  /* UGcRootCallback */
 #include "urbi/object.h"             /* URBI_ATOM_OBJECT */
 #include "urbi/gc.h"                 /* urbi_gc_collect, urbi_gc_walk_roots */
@@ -238,7 +238,7 @@ UTEST(deferred_ring_provider_registered_at_init)
  * the mark phase shades the parent gray → it survives.
  * =================================================================== */
 
-/* Shading root provider: gc_shade_gray on UVAL_OBJECT, called from the
+/* Shading root provider: urbi_gc_shade_gray on UVAL_OBJECT, called from the
  * GC mark phase via mark_root_callback.  This follows the pattern in
  * test_ref_gc_root.c: mark_root_callback handles UVAL_OBJECT correctly.
  * We rely on it here — no custom provider needed for shading. */

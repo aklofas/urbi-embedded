@@ -21,7 +21,7 @@
 #include "object/uchunk_instance.h"  /* T36: walk module_instances_head */
 #include "vm/uvm.h"
 #include "urbi/gc.h"      /* urbi_gc_alloc + urbi_gc_register_root_provider */
-#include "gc/ugc_incremental.h"   /* gc_shade_gray */
+#include "gc/ugc_incremental.h"   /* urbi_gc_shade_gray */
 #include "urbi/object.h"
 #include "urbi/urbi.h"    /* urbi_panic */
 #include "gc/ugc.h"
@@ -261,7 +261,7 @@ urbi_object_clone(UVM *vm, UObject *parent)
  *   3. UChunkInstance chain reachable from vm->module_instances_head.
  *
  * Each is a direct UCell pointer (not a UValue), so we shade via
- * gc_shade_gray rather than calling cb (mark_root_callback acts on UValue
+ * urbi_gc_shade_gray rather than calling cb (mark_root_callback acts on UValue
  * slots — UVAL_CLOSURE / UVAL_OBJECT — which doesn't fit the singleton
  * pointers held in UVM fields).  The cb / ctx parameters are unused; their
  * presence keeps the UGcRootProviderFn signature uniform across providers.
@@ -282,7 +282,7 @@ urbi_object_clone(UVM *vm, UObject *parent)
 static void
 object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
 {
-    (void)cb; (void)ctx;   /* direct gc_shade_gray; cb only handles UValue slots */
+    (void)cb; (void)ctx;   /* direct urbi_gc_shade_gray; cb only handles UValue slots */
 
     /* Atom-family singletons — loop over the shared kAtomFieldOffset table.
      * TIDY-006: same (char *) intermediate pattern as urbi_object_atom; see
@@ -290,79 +290,79 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     for (int i = 0; i < KATOM_TABLE_COUNT; i++) {
         UObject *a = *(UObject **)((char *)vm + kAtomFieldOffset[i]);
         if (a != NULL) {
-            gc_shade_gray(vm, (UCell *)a);
+            urbi_gc_shade_gray(vm, (UCell *)a);
         }
     }
 
     /* M5 T53/T54 native proto objects. */
-    if (vm->event_proto != NULL) gc_shade_gray(vm, (UCell *)vm->event_proto);
-    if (vm->tag_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->tag_proto);
+    if (vm->event_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->event_proto);
+    if (vm->tag_proto   != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->tag_proto);
 
     /* M6 Phase 6: container proto singletons for Pair / Triplet / Tuple. */
-    if (vm->container_pair_proto    != NULL) gc_shade_gray(vm, (UCell *)vm->container_pair_proto);
-    if (vm->container_triplet_proto != NULL) gc_shade_gray(vm, (UCell *)vm->container_triplet_proto);
-    if (vm->container_tuple_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->container_tuple_proto);
+    if (vm->container_pair_proto    != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->container_pair_proto);
+    if (vm->container_triplet_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->container_triplet_proto);
+    if (vm->container_tuple_proto   != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->container_tuple_proto);
 
     /* M6 Phase 7: Exception primitive proto. */
-    if (vm->exception_proto != NULL) gc_shade_gray(vm, (UCell *)vm->exception_proto);
+    if (vm->exception_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->exception_proto);
     /* Cached Exception-subclass protos (urbi_exception_subclass_protos_resolve). */
-    if (vm->typeerror_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->typeerror_proto);
-    if (vm->arityerror_proto  != NULL) gc_shade_gray(vm, (UCell *)vm->arityerror_proto);
-    if (vm->lookuperror_proto != NULL) gc_shade_gray(vm, (UCell *)vm->lookuperror_proto);
-    if (vm->oomerror_proto    != NULL) gc_shade_gray(vm, (UCell *)vm->oomerror_proto);
-    if (vm->indexerror_proto  != NULL) gc_shade_gray(vm, (UCell *)vm->indexerror_proto);
-    if (vm->rangeerror_proto  != NULL) gc_shade_gray(vm, (UCell *)vm->rangeerror_proto);
-    if (vm->divbyzero_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->divbyzero_proto);
+    if (vm->typeerror_proto   != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->typeerror_proto);
+    if (vm->arityerror_proto  != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->arityerror_proto);
+    if (vm->lookuperror_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->lookuperror_proto);
+    if (vm->oomerror_proto    != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->oomerror_proto);
+    if (vm->indexerror_proto  != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->indexerror_proto);
+    if (vm->rangeerror_proto  != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->rangeerror_proto);
+    if (vm->divbyzero_proto   != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->divbyzero_proto);
 
     /* M6 Phase 8: namespace proto singletons.  T86 onwards.  platform_-
      * proto is reached transitively via System's "Platform" slot but is
      * shaded directly to keep the walker uniform. */
-    if (vm->math_proto             != NULL) gc_shade_gray(vm, (UCell *)vm->math_proto);
-    if (vm->system_proto           != NULL) gc_shade_gray(vm, (UCell *)vm->system_proto);
-    if (vm->platform_proto         != NULL) gc_shade_gray(vm, (UCell *)vm->platform_proto);
-    if (vm->global_namespace_proto != NULL) gc_shade_gray(vm, (UCell *)vm->global_namespace_proto);
-    if (vm->callmessage_proto      != NULL) gc_shade_gray(vm, (UCell *)vm->callmessage_proto);
+    if (vm->math_proto             != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->math_proto);
+    if (vm->system_proto           != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->system_proto);
+    if (vm->platform_proto         != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->platform_proto);
+    if (vm->global_namespace_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->global_namespace_proto);
+    if (vm->callmessage_proto      != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->callmessage_proto);
 
     /* M6 Phase 9: primitive proto singletons (Mutex / Date / Duration). */
-    if (vm->mutex_proto    != NULL) gc_shade_gray(vm, (UCell *)vm->mutex_proto);
-    if (vm->date_proto     != NULL) gc_shade_gray(vm, (UCell *)vm->date_proto);
-    if (vm->duration_proto != NULL) gc_shade_gray(vm, (UCell *)vm->duration_proto);
+    if (vm->mutex_proto    != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->mutex_proto);
+    if (vm->date_proto     != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->date_proto);
+    if (vm->duration_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->duration_proto);
     /* v1.0 stdlib-completeness: RegExp proto singleton. */
-    if (vm->regexp_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->regexp_proto);
+    if (vm->regexp_proto   != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->regexp_proto);
 
     /* v0.9.1 Phase 5: Lobby proto singleton.  Carries the
      * `__builtin_lobby_send` native method + the `lobbies` List slot
      * populated at lobby.u runtime.  Shaded directly so the List held
      * in the `lobbies` slot stays reachable through the proto's slot
      * walk (transitively reached via the proto's UShape + slots[]). */
-    if (vm->lobby_proto != NULL) gc_shade_gray(vm, (UCell *)vm->lobby_proto);
+    if (vm->lobby_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->lobby_proto);
 
     /* v0.10.10 / D7-A: Job proto singleton (R4). */
-    if (vm->job_proto != NULL) gc_shade_gray(vm, (UCell *)vm->job_proto);
+    if (vm->job_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->job_proto);
 
     /* v0.10.11 / D6: Channel proto singleton. */
-    if (vm->channel_proto != NULL) gc_shade_gray(vm, (UCell *)vm->channel_proto);
+    if (vm->channel_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->channel_proto);
 
     /* v0.9.1 Debug namespace proto.  Always present when URBI_ENABLE_REPL=1
      * AND urbi_debug_namespace_register has run; NULL on default builds.
      * The void* in UVM keeps this header REPL-condition-free; cast back
      * to UObject* for the shade. */
-    if (vm->debug_proto != NULL) gc_shade_gray(vm, (UCell *)vm->debug_proto);
+    if (vm->debug_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->debug_proto);
 
 #ifdef URBI_ENABLE_ROS2
     /* v0.12.0: `ros` namespace proto; NULL when URBI_ENABLE_ROS2=0 (field absent). */
-    if (vm->ros_proto != NULL) gc_shade_gray(vm, (UCell *)vm->ros_proto);
+    if (vm->ros_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->ros_proto);
 #endif
 
     /* Root shape. */
-    if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
+    if (vm->root_shape != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->root_shape);
 
     /* UChunkInstance chain (each cell's IC tables + proto_instances are
      * traced by walk_umoduleinstance / walk_uprotoinstance). */
     for (UChunkInstance *mi = vm->module_instances_head;
          mi != NULL;
          mi = mi->next_in_vm) {
-        gc_shade_gray(vm, (UCell *)mi);
+        urbi_gc_shade_gray(vm, (UCell *)mi);
     }
 }
 

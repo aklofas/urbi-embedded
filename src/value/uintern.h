@@ -99,7 +99,7 @@ USymbol *ustr_op_name(struct UVM *vm, const char *op, size_t len);
  * path stays symmetric with the other GC subsystems; the body deliberately
  * reports zero roots.  See uintern.c for the full disposition note + the
  * v1.x upgrade path (string→UString GC cell migration). */
-void intern_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
+void urbi_gc_intern_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 #ifdef __cplusplus
 }

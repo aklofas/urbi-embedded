@@ -183,7 +183,7 @@ run_on_scratch_core(struct UVM       *vm,
      * GC-006 + GC-038 (audit findings closed by construction):
      * Before this linkage step, no GC slice can fire — every prior allocation
      * uses vm->alloc_fn directly (register-stack alloc, scratch_arr, cleanup
-     * stack), none of which trigger GC.  Once linked, sched_walk_roots
+     * stack), none of which trigger GC.  Once linked, urbi_gc_sched_walk_roots
      * (src/sched/usched_cooperative.c) iterates vm->realms_head →
      * realm.strands_head → strand_walk_roots and visits the full register
      * window via the existing s->stack scan — so any UValue placed in

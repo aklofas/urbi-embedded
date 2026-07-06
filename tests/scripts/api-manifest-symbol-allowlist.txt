@@ -90,12 +90,9 @@ event_native_register
 find_or_install_upvalue
 fork_wake_joiners
 fs_temp_floor
-gc_shade_gray
-host_handle_walk_roots
 ident_equals
 install_at_event_runtime
 install_watcher_runtime
-intern_table_walk_roots
 invoke_condition_closure
 kEmitMethodName
 kErrorMessages
@@ -139,8 +136,6 @@ peek2
 pending_onleave_queue_push
 pipe_amp_fold
 proto_grow
-realm_list_walk_roots
-ref_table_walk_roots
 resolve_owning_tag
 respawn_body_coroutine
 sched_dequeue_ready_head
@@ -159,7 +154,6 @@ sched_strand_unbind_from_sleep_queue
 sched_strand_unblock
 sched_strand_yield
 sched_wake_due_sleepers
-sched_walk_roots
 spawn_body_coroutine
 strand_cleanup_pop
 strand_cleanup_push
@@ -290,4 +284,3 @@ vm_setslot_value
 vm_tag_scope_teardown
 vm_trace_slot_read_if_needed
 watcher_eval_dirty
-watcher_table_walk_roots

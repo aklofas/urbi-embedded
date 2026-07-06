@@ -998,11 +998,11 @@ UTEST(vm_create_zero_init_m3_fields) {
     /* ISR ring: T18 allocates it at urbi_vm_init time. */
     UASSERT(vm.event_ring != NULL);
     /* GC root provider registry — 11 providers registered at urbi_vm_init:
-     * sched_walk_roots, realm_list_walk_roots, intern_table_walk_roots,
-     * host_handle_walk_roots, vm_misc_walk_roots (Step C-1 v0.8.4),
-     * watcher_table_walk_roots, urbi_periodic_table_walk_roots (v0.9.4),
+     * urbi_gc_sched_walk_roots, urbi_gc_realm_list_walk_roots, urbi_gc_intern_table_walk_roots,
+     * urbi_gc_host_handle_walk_roots, vm_misc_walk_roots (Step C-1 v0.8.4),
+     * urbi_gc_watcher_table_walk_roots, urbi_periodic_table_walk_roots (v0.9.4),
      * T36's object_roots_walker (atom singletons + root_shape + module_-
-     * instances), ref_table_walk_roots (Gap Q v0.7.1),
+     * instances), urbi_gc_ref_table_walk_roots (Gap Q v0.7.1),
      * urbi_deferred_slot_changes_walk_roots (W3/v0.10.2 reactive F6), plus
      * urbi_stdlib_containers_walk_roots (refactor-3 B2/GC-01/STD-01). */
     UASSERT_EQ(11U, vm.root_provider_count);

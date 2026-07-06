@@ -304,6 +304,13 @@ CI gate tracks this list to prevent silent growth.
 - `urbi_c_root_push`, `urbi_c_root_pop` — VM-level C-stack root chain
   (refactor-3 VM-06a): runtime C code pins a UValue slot across allocating
   calls; frames live on the C stack and chain through the current strand.
+- `urbi_gc_shade_gray` — GC write-barrier shade helper (internal; renamed from unprefixed `gc_shade_gray` in v0.13.6)
+- `urbi_gc_host_handle_walk_roots` — GC root provider: host-handle table (renamed from `host_handle_walk_roots` in v0.13.6)
+- `urbi_gc_intern_table_walk_roots` — GC root provider: intern string table (renamed from `intern_table_walk_roots` in v0.13.6)
+- `urbi_gc_realm_list_walk_roots` — GC root provider: realm list (renamed from `realm_list_walk_roots` in v0.13.6)
+- `urbi_gc_ref_table_walk_roots` — GC root provider: per-VM reference table (renamed from `ref_table_walk_roots` in v0.13.6)
+- `urbi_gc_watcher_table_walk_roots` — GC root provider: watcher pool (renamed from `watcher_table_walk_roots` in v0.13.6)
+- `urbi_gc_sched_walk_roots` — GC root provider: scheduler strand roots (renamed from `sched_walk_roots` in v0.13.6)
 
 ### Chunk instance internals
 

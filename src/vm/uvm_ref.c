@@ -17,7 +17,7 @@
  *   an index into slots[]) when the slot is free.  free_list_head == SIZE_MAX
  *   means "no free slots; grow the table".
  *
- *   GC integration: ref_table_walk_roots is registered at urbi_vm_init.
+ *   GC integration: urbi_gc_ref_table_walk_roots is registered at urbi_vm_init.
  *   It calls the GC root callback for every in_use slot value, keeping
  *   pinned values alive across collection cycles.
  *
@@ -25,7 +25,7 @@
 
 #include "vm/uvm.h"
 #include "vm/uvm_error.h"   /* urbi_set_error_internal */
-#include "vm/uvm_ref.h"     /* ref_table_walk_roots declaration */
+#include "vm/uvm_ref.h"     /* urbi_gc_ref_table_walk_roots declaration */
 #include "runtime/umacros.h" /* urbi_zero */
 #include "urbi/urbi.h"       /* urbi_ref, urbi_ref_get, urbi_unref, URBI_REF_INVALID */
 #include "urbi/types.h"      /* UValue, urbi_make_nil, URBI_ERR_OOM */
@@ -160,7 +160,7 @@ slot_free_list_set_next(URefSlot *s, size_t next_idx)
  * GC root provider
  * ========================================================================= */
 
-/* ref_table_walk_roots: registered at urbi_vm_init.
+/* urbi_gc_ref_table_walk_roots: registered at urbi_vm_init.
  *
  * Called by the GC mark phase to enumerate all pinned values as roots.
  * For every in_use slot, calls cb(vm, &slot.value, ctx) so the mark-
@@ -168,7 +168,7 @@ slot_free_list_set_next(URefSlot *s, size_t next_idx)
  *
  * Slot 0 is always in_use == 0 (sentinel) so it is never visited. */
 void
-ref_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
+urbi_gc_ref_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
 {
     size_t i;
     if (vm->ref_table.slots == NULL) return;

@@ -41,7 +41,7 @@
 #endif
 
 #include "chunk/uchunk.h"            /* UValue / UVAL_* */
-#include "gc/ugc_incremental.h"        /* GC_PHASE_*, uvalue_is_heap_white, gc_shade_gray */
+#include "gc/ugc_incremental.h"        /* GC_PHASE_*, uvalue_is_heap_white, urbi_gc_shade_gray */
 #include "object/uobject.h"            /* urbi_object_alloc / atom / clone / set_local_slot */
 #include "realm/urealm.h"              /* URealm + global_object */
 #include "runtime/uclosure.h"          /* urbi_native_method_fn */
@@ -214,7 +214,7 @@ container_element_pre_store(UVM *vm, UValue child)
     if (UNLIKELY((vm->gc_phase == GC_PHASE_MARK_ROOTS
                   || vm->gc_phase == GC_PHASE_MARK_INCREMENTAL)
                  && uvalue_is_heap_white(vm, child))) {
-        gc_shade_gray(vm, uvalue_as_cell(child));
+        urbi_gc_shade_gray(vm, uvalue_as_cell(child));
     }
 }
 

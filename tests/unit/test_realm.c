@@ -342,7 +342,7 @@ UTEST(realm_walk_roots_invokes_callback_per_namespace_entry)
     unamespace_set(&vm, r->bindings, k3, make_int(3));
 
     int count = 0;
-    realm_list_walk_roots(&vm, root_count_cb, &count);
+    urbi_gc_realm_list_walk_roots(&vm, root_count_cb, &count);
 
     /* 3 namespace entries → 3 callbacks. */
     UASSERT(count >= 3);
@@ -576,7 +576,7 @@ UTEST(realm_destroy_unloads_non_vm_owned_proto)
  * onto vm->realms_head (an un-rooted window), urbi_object_alloc allocated
  * the object cell before lazily creating the root shape, and
  * urbi_chunk_instance_create linked its cells late — under URBI_GC_STRESS
- * every script run died at boot (gc_shade_gray on a swept cell).  On a
+ * every script run died at boot (urbi_gc_shade_gray on a swept cell).  On a
  * stress build vm.gc_stress_armed is 1 here, so both creates below run
  * the full bootstrap with collect-on-every-alloc; on a normal build this
  * is a smoke (the link-first ordering is still exercised, just without

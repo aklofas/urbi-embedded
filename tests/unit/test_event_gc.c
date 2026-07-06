@@ -22,7 +22,7 @@
  *
  *   3. strand_walker_roots_last_event_payload:
  *      Set strand.last_event_payload to a UVAL_EVENT.  Link the strand into
- *      a realm so sched_walk_roots visits it.  After full GC the UEvent cell
+ *      a realm so urbi_gc_sched_walk_roots visits it.  After full GC the UEvent cell
  *      survives because strand_walk_roots yields last_event_payload via cb.
  *
  *   4. unrooted_event_collected_by_gc:
@@ -31,7 +31,7 @@
  *
  * NOTE: mark_root_callback only handles UVAL_CLOSURE for the strand-register
  * root walk (M3 baseline).  For GC-managed cells of other types, we use
- * gc_shade_gray from a registered root provider (same technique as
+ * urbi_gc_shade_gray from a registered root provider (same technique as
  * test_ugc_object_cells.c).  The last_event_payload test is the exception:
  * strand_walk_roots calls cb(vm, &s->last_event_payload, ctx) where cb IS
  * mark_root_callback — so the test uses UVAL_CLOSURE as the last_event_payload
@@ -91,14 +91,14 @@ ev_test_root_provider(struct UVM *vm, UGcRootCallback cb, void *ctx)
 {
     (void)cb; (void)ctx;
     if (g_ev_test_root != NULL) {
-        gc_shade_gray(vm, g_ev_test_root);
+        urbi_gc_shade_gray(vm, g_ev_test_root);
     }
 }
 
 /* ===================================================================
  * Test 1: uevent_walker_shades_at_watchers_chain_not_waiters
  *
- * Root a UEvent via test root-provider (gc_shade_gray).  After full GC,
+ * Root a UEvent via test root-provider (urbi_gc_shade_gray).  After full GC,
  * the UEvent cell must survive because it was shaded from roots.
  *
  * AT_EVENT watcher (pool cell, UGC_IS_FIXED) is also shaded by the
@@ -280,7 +280,7 @@ UTEST(strand_walker_roots_last_event_payload)
     s.last_event_payload.kind = (uint8_t)UVAL_CLOSURE;
     s.last_event_payload.v.p  = (void *)cl_cell;
 
-    /* Link strand into realm for sched_walk_roots to find it. */
+    /* Link strand into realm for urbi_gc_sched_walk_roots to find it. */
     s.next_in_realm = r->strands_head;
     r->strands_head = &s;
 

@@ -499,7 +499,7 @@ urbi_strand_destroy(struct UVM *vm, UStrand *s)
      * ustrand_destroy follows so that the cleanup-stack unwind / register-
      * stack free / resource-chain release run with a strand that is no
      * longer reachable from the scheduler — eliminates the race window
-     * where a concurrent sched_walk_roots (M3 cooperative: not actually
+     * where a concurrent urbi_gc_sched_walk_roots (M3 cooperative: not actually
      * concurrent, but spec-level "the GC sees the strand on the queue
      * after we started tearing it down") would walk freed memory. */
     if (vm != NULL) {

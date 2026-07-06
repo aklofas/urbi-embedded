@@ -4,7 +4,7 @@
  * changes both the cell population and the accounting checkpoints.
  * Structural-by-design (refactor-3 TEST-GAP-01 stress-exempt list). */
 /* Phase 7 regression tests for v0.5.7-fixes:
- *   T36 / GC-009 — gc_shade_gray's silent NULL-sidecar return is now
+ *   T36 / GC-009 — urbi_gc_shade_gray's silent NULL-sidecar return is now
  *                  documented (DOCUMENT-only resolution): three legitimate
  *                  cell-allocation regimes coexist at v0.5.x and only one
  *                  enrolls a sidecar.  Tests pin both expected paths.
@@ -45,12 +45,12 @@ static int count_all_cells(UVM *vm) {
 }
 
 /* ===================================================================
- * T36 / GC-009 → refactor-3 GC-15 — gc_shade_gray NULL-sidecar contract
+ * T36 / GC-009 → refactor-3 GC-15 — urbi_gc_shade_gray NULL-sidecar contract
  *
- * Test 1 (tracked cell): gc_shade_gray on an urbi_gc_alloc'd cell pushes
+ * Test 1 (tracked cell): urbi_gc_shade_gray on an urbi_gc_alloc'd cell pushes
  *   it onto the gray work-list normally.  Positive regression.
  *
- * Test 2 (FIXED pool cell): gc_shade_gray on a hand-built FIXED cell (no
+ * Test 2 (FIXED pool cell): urbi_gc_shade_gray on a hand-built FIXED cell (no
  *   sidecar in vm->all_cells_head) silently no-ops the work-list push
  *   without aborting or crashing.  Mirrors the UWatcher pool slots —
  *   the ONLY cells legitimately absent from all_cells_head.
@@ -58,7 +58,7 @@ static int count_all_cells(UVM *vm) {
  * The former Test 3 ("regime 3" — a non-FIXED non-enrolled UClosure-like
  * cell silently no-ops) was retired by refactor-3 GC-15: UClosure /
  * UUpvalCell are enrolled via urbi_gc_alloc since v0.8.4 Step C-2, so a
- * NULL sidecar on a non-FIXED cell is an enrollment bug and gc_shade_gray
+ * NULL sidecar on a non-FIXED cell is an enrollment bug and urbi_gc_shade_gray
  * now asserts on it.  The inverted pin (debug-build abort) lives in
  * test_ugc_state_machine.c.
  * =================================================================== */
@@ -74,7 +74,7 @@ UTEST(gc_shade_gray_walks_alloced_cell)
     UASSERT(c != NULL);
 
     /* Pin so it survives sweep — exercises the sidecar lookup + work-list
-     * push path inside gc_shade_gray indirectly via the cycle. */
+     * push path inside urbi_gc_shade_gray indirectly via the cycle. */
     c->gc_byte |= UGC_IS_PINNED;
 
     urbi_gc_force_full(&vm);
@@ -99,11 +99,11 @@ UTEST(gc_shade_gray_silent_on_fixed_cell_without_sidecar)
     standalone.type_tag = UTYPE_OBJECT;
     standalone.gc_byte  = (uint8_t)(vm.current_white | UGC_IS_FIXED);
 
-    /* Per the GC-15 contract documented in gc_shade_gray, the NULL-return
+    /* Per the GC-15 contract documented in urbi_gc_shade_gray, the NULL-return
      * from find_sidecar_for_cell is an expected path for FIXED cells: the
      * function silently no-ops the work-list push and just leaves the
      * color flag set as an idempotency marker. */
-    gc_shade_gray(&vm, &standalone);
+    urbi_gc_shade_gray(&vm, &standalone);
 
     /* Color advanced to GRAY (idempotency marker for re-entry). */
     UASSERT_EQ((standalone.gc_byte & UGC_COLOR_MASK), (uint8_t)UGC_COLOR_GRAY);

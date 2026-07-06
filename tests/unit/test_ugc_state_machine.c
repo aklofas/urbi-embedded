@@ -348,12 +348,12 @@ UTEST(ugc_collect_frees_dead_cells)
     urbi_vm_destroy(&vm);
 }
 
-/* ===== Test 11 (refactor-3 GC-15): gc_shade_gray sidecar contract =====
+/* ===== Test 11 (refactor-3 GC-15): urbi_gc_shade_gray sidecar contract =====
  *
  * NULL-sidecar contract: the ONLY cells legitimately absent from
  * all_cells_head are FIXED pool cells (UWatcher slots).  Everything else
  * — including UClosure / UUpvalCell, GC-managed since v0.8.4 Step C-2 —
- * is enrolled by urbi_gc_alloc, so gc_shade_gray must always find a
+ * is enrolled by urbi_gc_alloc, so urbi_gc_shade_gray must always find a
  * sidecar and push it onto the gray work-list. */
 
 /* Is `cell` enrolled on the all-cells sidecar list? */
@@ -389,7 +389,7 @@ UTEST(ugc_shade_gray_graylists_every_enrolled_cell_type)
         UASSERT(cell_enrolled(&vm, c));
         UASSERT((c->gc_byte & UGC_COLOR_MASK) <= UGC_COLOR_WHITE1);
 
-        gc_shade_gray(&vm, c);
+        urbi_gc_shade_gray(&vm, c);
 
         UASSERT_EQ((int)(c->gc_byte & UGC_COLOR_MASK), (int)UGC_COLOR_GRAY);
         /* Sidecar found: the gray work-list head is this cell's sidecar. */
@@ -416,7 +416,7 @@ UTEST(ugc_shade_gray_fixed_pool_cell_colors_without_sidecar)
     UASSERT(!cell_enrolled(&vm, cell));
     UASSERT(vm.gray_work_head == NULL);
 
-    gc_shade_gray(&vm, cell);   /* must NOT abort: FIXED is the exemption */
+    urbi_gc_shade_gray(&vm, cell);   /* must NOT abort: FIXED is the exemption */
 
     /* Color set; work-list push correctly skipped (no sidecar to push). */
     UASSERT_EQ((int)(cell->gc_byte & UGC_COLOR_MASK), (int)UGC_COLOR_GRAY);
@@ -429,7 +429,7 @@ UTEST(ugc_shade_gray_fixed_pool_cell_colors_without_sidecar)
 /* Helper invoked inside the forked child of EXPECT_ABORT below.  Shades a
  * stack cell that is neither enrolled (no urbi_gc_alloc sidecar) nor FIXED
  * — a rooting/enrollment bug by the GC-15 contract; the NULL-sidecar
- * assert in gc_shade_gray must abort the child. */
+ * assert in urbi_gc_shade_gray must abort the child. */
 static void shade_unenrolled_nonfixed_cell(void)
 {
     UVM vm;
@@ -439,7 +439,7 @@ static void shade_unenrolled_nonfixed_cell(void)
     UCell orphan;
     orphan.type_tag = UTYPE_OBJECT;
     orphan.gc_byte  = vm.current_white;   /* white; not FIXED; not enrolled */
-    gc_shade_gray(&vm, &orphan);
+    urbi_gc_shade_gray(&vm, &orphan);
 }
 
 UTEST(ugc_shade_gray_unenrolled_nonfixed_aborts_in_debug)

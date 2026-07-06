@@ -70,7 +70,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "gc/ugc.h"
-#include "gc/ugc_incremental.h"  /* gc_shade_gray (Step C-1 closure/upval roots) */
+#include "gc/ugc_incremental.h"  /* urbi_gc_shade_gray (Step C-1 closure/upval roots) */
 #include "runtime/uclosure.h"   /* UClosure + UUpvalCell full defs (Step C-1) */
 #include "runtime/ucleanup.h"   /* UCleanupEntry + UCLEANUP_TAG_SCOPE (GC-03 owning_tag roots) */
 #include "tag/utag.h"           /* UTag full def — (UCell *) casts in strand_walk_roots (GC-03) */
@@ -551,7 +551,7 @@ sched_strand_unbind_from_sleep_queue(UStrand *s)
  * scheduler's queue head/tail pointers + neighbouring strands' ready_*
  * links never reference freed memory.  Without this, sched_strand_destroy
  * only zeroes the strand's own pointers — neighbours still point at the
- * freed cell, and the next dispatch (or sched_walk_roots GC scan) trips
+ * freed cell, and the next dispatch (or urbi_gc_sched_walk_roots GC scan) trips
  * use-after-free under ASan.
  *
  * Idempotent: safe whether the strand is on the queue (state == READY)
@@ -620,7 +620,7 @@ sched_dequeue_ready_head(UVM *vm)
 
 /* === strand_walk_roots (internal helper) ===
  *
- * Walk all GC roots for a single live strand.  Called by sched_walk_roots
+ * Walk all GC roots for a single live strand.  Called by urbi_gc_sched_walk_roots
  * for every non-DEAD strand in the ready and sleep queues.
  *
  * Root sources at v0.5.x baseline (M5 shipped):
@@ -720,7 +720,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
         for (ci = 0U; ci < s->cleanup_depth; ci++) {
             UCleanupEntry *e = &s->cleanup_base[ci];
             if (e->kind == (uint8_t)UCLEANUP_TAG_SCOPE && e->owning_tag != NULL) {
-                gc_shade_gray(vm, (UCell *)e->owning_tag);
+                urbi_gc_shade_gray(vm, (UCell *)e->owning_tag);
             }
         }
     }
@@ -740,7 +740,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
      && (USTRAND_GET_REASON(s) == USTRAND_REASON_BLOCK
       || USTRAND_GET_REASON(s) == USTRAND_REASON_FREEZE)
      && s->wait_payload.suspend_tag != NULL) {
-        gc_shade_gray(vm, (UCell *)s->wait_payload.suspend_tag);
+        urbi_gc_shade_gray(vm, (UCell *)s->wait_payload.suspend_tag);
     }
 
     /* (5) last_event_payload (spec #3 §7.1, T56).
@@ -755,9 +755,9 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
      *     UClosure is GC-managed (enrolled via urbi_gc_alloc since Step C-2),
      *     so this yield is load-bearing: without it, GC would sweep the
      *     closure out from under the strand.  UClosure embeds UCell at
-     *     offset 0; shade directly via gc_shade_gray. */
+     *     offset 0; shade directly via urbi_gc_shade_gray. */
     if (s->entry_closure != NULL) {
-        gc_shade_gray(vm, (UCell *)&s->entry_closure->cell);
+        urbi_gc_shade_gray(vm, (UCell *)&s->entry_closure->cell);
     }
 
     /* (7) Per-frame closures (v0.8.4 Option B Step C-1).
@@ -769,7 +769,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
         int i;
         for (i = 0; i < s->frame_count; i++) {
             if (s->frames[i].closure != NULL) {
-                gc_shade_gray(vm, (UCell *)&s->frames[i].closure->cell);
+                urbi_gc_shade_gray(vm, (UCell *)&s->frames[i].closure->cell);
             }
         }
     }
@@ -784,7 +784,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
     {
         UUpvalCell *uc = s->open_upvals;
         while (uc != NULL) {
-            gc_shade_gray(vm, (UCell *)&uc->cell);
+            urbi_gc_shade_gray(vm, (UCell *)&uc->cell);
             uc = uc->next;
         }
     }
@@ -804,7 +804,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
  *   Scheduler implementations are responsible for maintaining this
  *   invariant; the walker assumes it without re-verification. */
 void
-sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
+urbi_gc_sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     URealm  *r;
     UStrand *s;

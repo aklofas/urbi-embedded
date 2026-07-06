@@ -28,14 +28,14 @@
  *   urbi_periodic_table_walk_roots is registered with the GC root
  *   provider list at urbi_vm_init.  Each periodic's body closure is
  *   yielded as UVAL_CLOSURE.  Body strands themselves are reached via
- *   realm->strands_head (sched_walk_roots).
+ *   realm->strands_head (urbi_gc_sched_walk_roots).
  */
 
 #include "stdlib/temporal.h"
 #include "stdlib/object_root.h"       /* urbi_native_closure_create + raise helpers */
 
 #include "chunk/uchunk.h"             /* UValue / UVAL_* */
-#include "gc/ugc_incremental.h"       /* gc_shade_gray (owning_tag root, GC-03) */
+#include "gc/ugc_incremental.h"       /* urbi_gc_shade_gray (owning_tag root, GC-03) */
 #include "object/uchunk_instance.h"   /* UChunkInstance / UProtoInstanceArr */
 #include "realm/urealm.h"             /* URealm */
 #include "runtime/uclosure.h"         /* UClosure full definition */
@@ -342,7 +342,7 @@ void
 urbi_periodic_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     /* No URBI_ASSERT_NOT_ISR — root walkers run from the GC slice path
-     * (mirrors watcher_table_walk_roots). */
+     * (mirrors urbi_gc_watcher_table_walk_roots). */
     UPeriodic *p;
     for (p = vm->periodics_head; p != NULL; p = p->next) {
         if (p->body != NULL) {
@@ -353,7 +353,7 @@ urbi_periodic_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
         }
         /* current_strand reachable via realm->strands_head (sched walker). */
         if (p->owning_tag != NULL) {   /* GC-03: UTag is GC-managed since M5 */
-            gc_shade_gray(vm, (UCell *)p->owning_tag);
+            urbi_gc_shade_gray(vm, (UCell *)p->owning_tag);
         }
     }
     /* vm->every_native_closure is reached separately via vm_misc_walk_roots
@@ -362,9 +362,9 @@ urbi_periodic_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
      *
      * Actually: it is referenced by the realm-global slot for "every"
      * once urbi_temporal_native_register_globals runs, which the
-     * realm_list_walk_roots provider already reaches via
+     * urbi_gc_realm_list_walk_roots provider already reaches via
      * realm->global_object's slot table.  So no extra yield needed here
-     * for that closure — covered by realm_list_walk_roots.  Add the
+     * for that closure — covered by urbi_gc_realm_list_walk_roots.  Add the
      * explicit yield only if a path other than the global binding makes
      * the closure escape the realm.  None today. */
     if (vm->every_native_closure != NULL) {

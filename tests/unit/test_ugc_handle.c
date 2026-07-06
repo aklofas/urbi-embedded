@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: host-handle table (urbi_handle_create/get/release),
- * host_handle_walk_roots, urbi_pin/unpin, and UGC_IS_FIXED survival.
+ * urbi_gc_host_handle_walk_roots, urbi_pin/unpin, and UGC_IS_FIXED survival.
  * Row 10 §5.6 + §8.  T27.
  *
  * URBI_GC_STRESS disarm (v0.13.2): these tests allocate truncated raw
@@ -31,7 +31,7 @@ make_handle_cell_value(UCell *c)
 }
 
 /* === Test helper: callback for handle_walk_roots_active_only ===
- * Counts non-NIL slots visited by host_handle_walk_roots. */
+ * Counts non-NIL slots visited by urbi_gc_host_handle_walk_roots. */
 static void
 handle_walk_count_cb(struct UVM *vm, UValue *slot, void *ctx)
 {
@@ -125,7 +125,7 @@ UTEST(handle_grow_beyond_initial_cap)
     urbi_vm_destroy(&vm);
 }
 
-/* host_handle_walk_roots calls back for active (non-nil) slots only. */
+/* urbi_gc_host_handle_walk_roots calls back for active (non-nil) slots only. */
 UTEST(handle_walk_roots_active_only)
 {
     UVM vm;
@@ -149,8 +149,8 @@ UTEST(handle_walk_roots_active_only)
     static int walk_count;
     walk_count = 0;
 
-    /* Call host_handle_walk_roots with the file-scope callback. */
-    host_handle_walk_roots(&vm, handle_walk_count_cb, &walk_count);
+    /* Call urbi_gc_host_handle_walk_roots with the file-scope callback. */
+    urbi_gc_host_handle_walk_roots(&vm, handle_walk_count_cb, &walk_count);
 
     /* After creating h1 (released) and h2 (active): 1 active slot visited. */
     UASSERT_EQ(walk_count, 1);
@@ -259,7 +259,7 @@ UTEST(fixed_cell_survives_sweep)
  * The sweep loop in ugc_incremental.c paints FIXED cells with current_white
  * regardless of whether the mark phase reached them.  This is REQUIRED, not
  * redundant: the FIXED cell may not have a heap root walking to it (e.g. a
- * UWatcher reached only through watcher_table_walk_roots, which traverses
+ * UWatcher reached only through urbi_gc_watcher_table_walk_roots, which traverses
  * a side list rather than the all-cells sidecar).  Without the re-paint,
  * the cell would carry a stale OTHER_WHITE color into the next mark and
  * appear "already marked" — breaking the tri-color invariant.

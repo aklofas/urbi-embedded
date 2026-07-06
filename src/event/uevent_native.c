@@ -45,7 +45,7 @@
 #include "runtime/uclosure.h"  /* struct UClosure for UVAL_CLOSURE registration */
 #include "urbi/urbi.h"         /* UErrCode, URBI_ERR_* */
 #include "urbi/types.h"        /* urbi_make_nil */
-#include "urbi/gc.h"           /* gc_shade_gray (write barrier in set_local_slot) */
+#include "urbi/gc.h"           /* urbi_gc_shade_gray (write barrier in set_local_slot) */
 #include "runtime/umacros.h"   /* urbi_zero, urbi_strlen */
 
 #include <stddef.h>  /* size_t */

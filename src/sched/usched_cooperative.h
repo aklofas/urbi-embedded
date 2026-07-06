@@ -199,7 +199,7 @@ void sched_wake_due_sleepers(UVM *vm);
  * and event-wait payload is visited; DEAD strands are filtered inside
  * strand_walk_roots.  See pre-M4 GC strand-walker spec §4.2/§6.1 for the
  * realm-hierarchy invariant the scheduler maintains. */
-void sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx);
+void urbi_gc_sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx);
 
 /* Dequeue the ready-queue head.  Count-NEUTRAL (refactor-3 SCHED-01): the
  * dequeued strand is about to become the RUNNING strand, and the runnable

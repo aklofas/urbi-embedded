@@ -8,7 +8,7 @@
 #include "object/uobject_internal.h"
 #include "vm/uvm.h"
 #include "urbi/gc.h"           /* urbi_gc_alloc */
-#include "gc/ugc_incremental.h" /* gc_shade_gray */
+#include "gc/ugc_incremental.h" /* urbi_gc_shade_gray */
 #include "gc/ugc.h"            /* UTYPE_PROTOS */
 #include "urbi/urbi.h"         /* URBI_OK / URBI_ERR_INVALID_ARG */
 #include <stddef.h>
@@ -31,14 +31,14 @@ shade_existing_protos(UVM *vm, UObject *obj)
     if ((raw & 1U) != 0U) {
         /* single form: bit 0 set, raw pointer in remaining bits (alignment-
          * tagged) — see urbi_object_set_protos_single for rationale. */
-        gc_shade_gray(vm, (UCell *)(raw & ~(uintptr_t)1U));  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
+        urbi_gc_shade_gray(vm, (UCell *)(raw & ~(uintptr_t)1U));  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
     } else {
         /* heap form: raw is a UProtos*. Shade the UProtos cell itself.
          * The UObject*s in items[] are reachable from the UProtos walker
          * (utypes_init.c walk_uprotos), so shading the UProtos is sufficient
          * to keep them alive across the overwrite — the GC will trace into
          * items[] when it next dequeues this gray cell. */
-        gc_shade_gray(vm, (UCell *)raw);  /* NOLINT(performance-no-int-to-ptr) — UProtos heap-form pointer-encoding */
+        urbi_gc_shade_gray(vm, (UCell *)raw);  /* NOLINT(performance-no-int-to-ptr) — UProtos heap-form pointer-encoding */
     }
 }
 
@@ -56,7 +56,7 @@ urbi_object_set_protos_single(UVM *vm, UObject *obj, UObject *p)
     shade_existing_protos(vm, obj);
     /* Forward barrier on the inserted child (per spec §5.3 — barrier is
      * per-write, not per-disposition). */
-    gc_shade_gray(vm, (UCell *)p);
+    urbi_gc_shade_gray(vm, (UCell *)p);
     /* Single-form tag: bit 0 set, raw pointer in the remaining bits.
      * UObject is allocated by urbi_gc_alloc (UCell), >=8-byte aligned, so
      * bit 0 of the pointer is always 0 and OR'ing the tag does not collide.
@@ -79,11 +79,11 @@ urbi_object_set_protos_heap(UVM *vm, UObject *obj, UProtos *up)
     /* Shade every item in the new UProtos plus the UProtos cell itself —
      * pre-write barriers on inserted children (per spec §5.3). */
     for (uint32_t i = 0; i < up->n; i++) {
-        gc_shade_gray(vm, (UCell *)up->items[i]);
+        urbi_gc_shade_gray(vm, (UCell *)up->items[i]);
         /* T27: mark each prototype.  Monotonic (see _single above). */
         up->items[i]->flags |= URBI_OBJ_FLAG_IS_PROTOTYPE;
     }
-    gc_shade_gray(vm, (UCell *)up);
+    urbi_gc_shade_gray(vm, (UCell *)up);
     obj->protos = (uintptr_t)up;
     vm->topology_gen++;
 }

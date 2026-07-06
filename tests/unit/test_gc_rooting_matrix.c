@@ -116,7 +116,7 @@ static UValue obj_value_for(UCell *cell)
 /* === Strand construction (copied from test_gc_scratch_rooting.c) ===
  *
  * Hand-construct a minimal transient strand and link it onto the global
- * realm so sched_walk_roots → strand_walk_roots visits it:
+ * realm so urbi_gc_sched_walk_roots → strand_walk_roots visits it:
  *   1. Lazy-create global_realm via urbi_realm_global.
  *   2. Stack-allocate the UStrand (caller provides it); zero it.
  *   3. Allocate a register stack via the VM allocator (mimics
@@ -1246,7 +1246,7 @@ UTEST(matrix_slot_store_barrier_shades_other_white)
  * The cell's color diverges from any one closure's: sibling A traced →
  * shared cell BLACK; sibling B still GRAY executes the store → barrier
  * sees a gray closure parent → no shade; when B is traced later,
- * walk_uclosure's gc_shade_gray on the BLACK cell idempotency-skips →
+ * walk_uclosure's urbi_gc_shade_gray on the BLACK cell idempotency-skips →
  * the stored value is swept while reachable via the cell.  (The stack
  * arm needs nothing: it stores into a register, which the ATOMIC_FINISH
  * root re-scan covers.)

@@ -661,12 +661,12 @@ UTEST(sched_quiescent_false_when_host_call_pending_nonzero)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 26: sched_walk_roots is a no-op stub; calling it doesn't crash. */
+/* Case 26: urbi_gc_sched_walk_roots is a no-op stub; calling it doesn't crash. */
 UTEST(sched_walk_roots_noop)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_walk_roots(&vm, NULL, NULL);
+    urbi_gc_sched_walk_roots(&vm, NULL, NULL);
     UASSERT(1);  /* reached here without crash */
     urbi_vm_destroy(&vm);
 }

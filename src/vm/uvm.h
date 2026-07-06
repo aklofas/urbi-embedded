@@ -257,7 +257,7 @@ typedef struct {
  * reserved so URBI_REF_INVALID (== 0) can never be a valid handle.  Valid
  * handles always have (handle >> 8) >= 1.
  *
- * GC integration: ref_table_walk_roots is registered at urbi_vm_init via
+ * GC integration: urbi_gc_ref_table_walk_roots is registered at urbi_vm_init via
  * urbi_gc_register_root_provider; it calls cb for every in_use slot value
  * so the GC marks those values live. */
 #define URBI_REF_INDEX_BITS  24U
@@ -522,7 +522,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     /* === W2/v0.10.4: watcher substate (extracted per audit-1 F8) === */
     UWatcherState *watchers;           /* heap-allocated; NULL until urbi_vm_init */
     /* Linked list of live watchers — NOT in UWatcherState.
-     * GC walker (watcher_table_walk_roots) and the pending-onleave drain
+     * GC walker (urbi_gc_watcher_table_walk_roots) and the pending-onleave drain
      * loop walk this on every safepoint; keeping it on UVM avoids one
      * pointer indirection per iteration.  W2/v0.10.4 deliberate retention,
      * audit-1 F8 partial. */
@@ -849,7 +849,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
 
     /* --- Gap Q (v0.7.1): reference table ---
      * Heap-allocated URefSlot array; NULL until the first urbi_ref call.
-     * Freed at urbi_vm_destroy.  GC roots walked by ref_table_walk_roots
+     * Freed at urbi_vm_destroy.  GC roots walked by urbi_gc_ref_table_walk_roots
      * (registered at urbi_vm_init). */
     URefTable ref_table;
 

@@ -8,7 +8,7 @@
  *   - Compile-time tunables (row 10 §6.5)
  *   - UNLIKELY branch-prediction hint
  *   - Real Dijkstra forward-barrier implementations of the three inline barrier surfaces
- *   - Forward declarations for gc_shade_gray and observer_dirty
+ *   - Forward declarations for urbi_gc_shade_gray and observer_dirty
  *
  * Included by urbi/gc.h when URBI_GC == URBI_GC_INCREMENTAL.
  * Do NOT include uvm.h from this file (would be circular). */
@@ -147,9 +147,9 @@ static inline void urbi_gc_set_color(UCell *c, uint8_t color) {
     c->gc_byte = (uint8_t)((c->gc_byte & (uint8_t)~UGC_COLOR_MASK) | color);
 }
 
-/* === gc_shade_gray — mark a cell gray and push onto the worklist ===
+/* === urbi_gc_shade_gray — mark a cell gray and push onto the worklist ===
  * T23/T24: defined in ugc_incremental.c */
-void gc_shade_gray(struct UVM *vm, UCell *cell);
+void urbi_gc_shade_gray(struct UVM *vm, UCell *cell);
 
 /* === urbi_c_root_push / urbi_c_root_pop — VM-level C-stack root chain ===
  *
@@ -344,7 +344,7 @@ urbi_gc_slot_pre_store(struct UVM *vm, UCell *parent, uint32_t key, UValue child
      * to maintain the no-black-to-white invariant. */
     if (UNLIKELY((parent_gc & UGC_COLOR_MASK) == UGC_COLOR_BLACK
                  && uvalue_is_heap_white(vm, child))) {
-        gc_shade_gray(vm, uvalue_as_cell(child));
+        urbi_gc_shade_gray(vm, uvalue_as_cell(child));
     }
 
     /* (2) Watcher dirty-set hook.
@@ -394,7 +394,7 @@ urbi_gc_upvalue_pre_store(struct UVM *vm, const UCell *cell, UValue child)
     /* GC barrier: forward Dijkstra — same logic as slot_pre_store. */
     if (UNLIKELY((cell->gc_byte & UGC_COLOR_MASK) == UGC_COLOR_BLACK
                  && uvalue_is_heap_white(vm, child))) {
-        gc_shade_gray(vm, uvalue_as_cell(child));
+        urbi_gc_shade_gray(vm, uvalue_as_cell(child));
     }
 
     /* No watcher hook on upvalue writes: upvalue cells are not directly

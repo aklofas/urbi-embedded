@@ -149,8 +149,8 @@ UTEST(ugc_object_cells_full_cycle_reclaims_unreferenced) {
  * Test-local root provider: shades a single UCell* held in a file-static
  * pointer.  The provider mechanism normally walks UValue slots via the
  * mark callback; for direct UCell-headed roots like UShape* we bypass cb
- * and call gc_shade_gray directly (same routine the cb ultimately calls
- * for heap-bearing UValues).  Using gc_shade_gray instead of touching
+ * and call urbi_gc_shade_gray directly (same routine the cb ultimately calls
+ * for heap-bearing UValues).  Using urbi_gc_shade_gray instead of touching
  * gc_byte directly keeps the cell on the gray work-list so the mark
  * phase exercises its walker. */
 static UCell *g_test_root_cell = NULL;
@@ -158,7 +158,7 @@ static UCell *g_test_root_cell = NULL;
 static void test_root_provider(UVM *vm, UGcRootCallback cb, void *ctx) {
     (void)cb; (void)ctx;
     if (g_test_root_cell != NULL) {
-        gc_shade_gray(vm, g_test_root_cell);
+        urbi_gc_shade_gray(vm, g_test_root_cell);
     }
 }
 

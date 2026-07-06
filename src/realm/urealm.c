@@ -22,7 +22,7 @@
 #include "urbi/urbi.h"  /* urbi_tag_stop */
 #include "sched/ustrand.h"    /* urbi_strand_destroy, UStrand.next_in_realm */
 #include "sched/usched_cooperative.h"  /* sched_strand_unbind_from_ready_queue */
-#include "gc/ugc_incremental.h"  /* gc_shade_gray — shade realm->tag */
+#include "gc/ugc_incremental.h"  /* urbi_gc_shade_gray — shade realm->tag */
 #include "object/uobject.h"    /* urbi_object_alloc, URBI_ATOM_OBJECT */
 #include "realm/urealm_globals.h"    /* urbi_populate_realm_globals */
 #include "stdlib/temporal.h"         /* urbi_periodic_destroy_for_realm — v0.9.4 */
@@ -43,10 +43,10 @@
  * Normal builds never collect inside this window today (GC slices run at
  * strand safepoints / urbi_step, and realm bootstrap is host C code with no
  * strand), so the bug was latent — but URBI_GC_STRESS's collect-on-every-
- * alloc hook made every script run die at boot (gc_shade_gray on a swept
+ * alloc hook made every script run die at boot (urbi_gc_shade_gray on a swept
  * r->tag).  Link-first ROOTS the window by construction: each pointer is
- * reachable via realm_list_walk_roots the instant it is stored, and the
- * walkers (realm_list_walk_roots, unamespace_walk_roots, sched_walk_roots)
+ * reachable via urbi_gc_realm_list_walk_roots the instant it is stored, and the
+ * walkers (urbi_gc_realm_list_walk_roots, unamespace_walk_roots, urbi_gc_sched_walk_roots)
  * all NULL-guard the not-yet-populated fields of a fresh zeroed realm.
  *
  * Cleanup (REALM-009, REALM-021, reshaped at v0.13.2): once linked, every
@@ -224,7 +224,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * never holds dangling pointers into freed strand memory.  Without this
      * unbind step sched_strand_destroy zeroes only the strand's own
      * ready_next / ready_prev fields — neighbours retain stale pointers and
-     * the next dispatch (or sched_walk_roots GC scan) trips use-after-free
+     * the next dispatch (or urbi_gc_sched_walk_roots GC scan) trips use-after-free
      * under ASan.  The helper is idempotent on strands that are not on the
      * queue (DORMANT / RUNNING / WAITING / DEAD), so we can call it
      * unconditionally on every strand in the realm's list. */
@@ -405,14 +405,14 @@ urealm_teardown_all(struct UVM *vm)
     /* realms_head and global_realm are zeroed by urbi_realm_destroy as it unlinks. */
 }
 
-/* === realm_list_walk_roots ===
+/* === urbi_gc_realm_list_walk_roots ===
  *
  * GC root provider: enumerates all UValues reachable from every Realm in
  * vm->realms_head linked list.  For each Realm:
  *   1. namespace entries (via unamespace_walk_roots).
  *   2. realm->global_object — GC-managed UObject; shade so slot walker runs.
  *   3. realm->tag — GC-managed since M5 via urbi_gc_alloc / UTYPE_TAG.
- *      Shaded via gc_shade_gray so the UTYPE_TAG walker runs and yields
+ *      Shaded via urbi_gc_shade_gray so the UTYPE_TAG walker runs and yields
  *      name + enter_event + leave_event + parent (member watchers are
  *      rooted by the pool-wide provider in uwatcher_gc.c, GC-05).
  *
@@ -424,13 +424,13 @@ urealm_teardown_all(struct UVM *vm)
 
 URBI_STATIC_ASSERT(offsetof(UTag, type_tag) == 0,
                "UTag.type_tag must alias UCell.type_tag at offset 0 "
-               "(realm_list_walk_roots casts (UCell *)r->tag)");
+               "(urbi_gc_realm_list_walk_roots casts (UCell *)r->tag)");
 URBI_STATIC_ASSERT(offsetof(UTag, gc_byte) == 1,
                "UTag.gc_byte must alias UCell.gc_byte at offset 1 "
-               "(realm_list_walk_roots casts (UCell *)r->tag)");
+               "(urbi_gc_realm_list_walk_roots casts (UCell *)r->tag)");
 
 void
-realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
+urbi_gc_realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
 {
     URealm *r;
 
@@ -443,12 +443,12 @@ realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
 
         /* 2. global_object — GC-managed UObject; shade so slot walker runs. */
         if (r->global_object != NULL) {
-            gc_shade_gray(vm, (UCell *)r->global_object);
+            urbi_gc_shade_gray(vm, (UCell *)r->global_object);
         }
 
         /* 3. tag — GC-managed since M5; shade so the UTag walker runs. */
         if (r->tag != NULL) {
-            gc_shade_gray(vm, (UCell *)r->tag);
+            urbi_gc_shade_gray(vm, (UCell *)r->tag);
         }
     }
 }

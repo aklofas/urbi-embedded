@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit test: scratch-frame strand visibility to sched_walk_roots
+/* Unit test: scratch-frame strand visibility to urbi_gc_sched_walk_roots
  * (closes GC-006 + GC-038 by construction).
  *
  * Background:
@@ -9,13 +9,13 @@
  *   vm->global_realm->strands_head before entering the dispatch loop.  The
  *   audit findings GC-006 and GC-038 were filed against the pre-v0.5.1 shape
  *   ("UScratchFrame.registers[] not GC-rooted").  The transient-strand
- *   architecture closes both by construction — sched_walk_roots iterates the
+ *   architecture closes both by construction — urbi_gc_sched_walk_roots iterates the
  *   realm hierarchy via realm.strands_head → strand_walk_roots and sees the
  *   scratch strand's full register window just like any persistent strand.
  *
  * This test pins that invariant structurally: hand-construct a transient
  * scratch strand following the same linkage steps as run_on_scratch_core,
- * write a sentinel UValue into the register window, call sched_walk_roots
+ * write a sentinel UValue into the register window, call urbi_gc_sched_walk_roots
  * with a probe callback, and assert the sentinel is visited.  A regression
  * here (e.g. someone moving the linkage below the GC-allocating dispatch
  * call) would silently drop scratch-frame rooting; this test fails loudly.
@@ -61,7 +61,7 @@ static void scratch_probe_cb(UVM *vm, UValue *root, void *ctx)
 }
 
 /* === Test: a scratch strand linked to global_realm.strands_head is walked
- *           by sched_walk_roots (its register-window UValues are visited). ===
+ *           by urbi_gc_sched_walk_roots (its register-window UValues are visited). ===
  *
  * Setup mirrors run_on_scratch_core (src/runtime/uscratch.c) without entering
  * dispatch:
@@ -71,7 +71,7 @@ static void scratch_probe_cb(UVM *vm, UValue *root, void *ctx)
  *      urbi_strand_arm_from_closure → urbi_strand_register_stack_alloc).
  *   4. Plant a sentinel pointer into strand.R[0].
  *   5. Link strand onto gr->strands_head with next_in_realm.
- *   6. Call sched_walk_roots with the probe callback.
+ *   6. Call urbi_gc_sched_walk_roots with the probe callback.
  *   7. Verify the sentinel was visited; unlink + free.
  *
  * Pre-v0.5.1 (UScratchFrame design) would have failed this test because
@@ -116,7 +116,7 @@ UTEST(scratch_strand_register_window_walked_by_sched_walk_roots)
     /* Call the walker. */
     ScratchProbe probe = {0};
     probe.needle = needle;
-    sched_walk_roots(&vm, scratch_probe_cb, &probe);
+    urbi_gc_sched_walk_roots(&vm, scratch_probe_cb, &probe);
 
     /* The walker must have visited the register window — including R[0]. */
     UASSERT(probe.total_visits > 0);

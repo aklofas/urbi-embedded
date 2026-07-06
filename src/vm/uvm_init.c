@@ -13,18 +13,18 @@
 
 #include "vm/uvm.h"
 #include "vm/uvm_internal.h"
-#include "vm/uvm_ref.h"           /* ref_table_walk_roots */
+#include "vm/uvm_ref.h"           /* urbi_gc_ref_table_walk_roots */
 #include "runtime/umacros.h"      /* urbi_zero */
 /* uclosure.h include removed at v0.8.4 Step C-3 (stdlib_closures teardown deleted). */
 #include "urbi/urbi.h"            /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "urbi/gc.h"              /* urbi_gc_init, urbi_gc_destroy */
-#include "gc/ugc_incremental.h"   /* gc_shade_gray (vm_misc_walk_roots Step C-1) */
+#include "gc/ugc_incremental.h"   /* urbi_gc_shade_gray (vm_misc_walk_roots Step C-1) */
 #include "value/uintern.h"        /* uintern_destroy */
 #include "sched/ustrand.h"        /* UStrand (forward) */
 #include "realm/urealm.h"         /* urealm_teardown_all */
 #include "event/uevent_ring.h"    /* UEventRing, uevent_ring_init */
-#include "runtime/uhandle.h"      /* host_handle_walk_roots */
-#include "watcher/uwatcher.h"     /* uwatcher_pool_init/destroy, watcher_table_walk_roots */
+#include "runtime/uhandle.h"      /* urbi_gc_host_handle_walk_roots */
+#include "watcher/uwatcher.h"     /* uwatcher_pool_init/destroy, urbi_gc_watcher_table_walk_roots */
 #include "watcher/uwatcher_state.h" /* uwatcher_state_create/destroy (W2/v0.10.4) */
 #include "stdlib/temporal.h"      /* urbi_periodic_table_walk_roots, urbi_periodic_destroy_all */
 #include "stdlib/containers.h"    /* M6 Phase 6: urbi_stdlib_containers_destroy */
@@ -33,7 +33,7 @@
 #include "tag/utag_native.h"      /* tag_native_register */
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
-#include "sched/usched_cooperative.h" /* sched_walk_roots */
+#include "sched/usched_cooperative.h" /* urbi_gc_sched_walk_roots */
 #include "chunk/uchunk.h"           /* uchunk_destroy — M6 Phase 4 stdlib_module teardown */
 #include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM — T23 return-code surface */
 #include "changed/uchanged_node.h"  /* urbi_deferred_slot_changes_walk_roots */
@@ -104,7 +104,7 @@ static void
 vm_misc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     if (vm->last_return_closure != NULL) {
-        gc_shade_gray(vm, (UCell *)&vm->last_return_closure->cell);
+        urbi_gc_shade_gray(vm, (UCell *)&vm->last_return_closure->cell);
     }
     for (const UCRootFrame *f = vm->c_roots_head; f != NULL; f = f->next) {
         cb(vm, f->slot, ctx);
@@ -188,12 +188,12 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* Register default root providers.
      * Order: scheduler, realm, intern, host-handle, vm-misc, watcher table. */
-    urbi_gc_register_root_provider(vm, sched_walk_roots);
-    urbi_gc_register_root_provider(vm, realm_list_walk_roots);
-    urbi_gc_register_root_provider(vm, intern_table_walk_roots);
-    urbi_gc_register_root_provider(vm, host_handle_walk_roots);
+    urbi_gc_register_root_provider(vm, urbi_gc_sched_walk_roots);
+    urbi_gc_register_root_provider(vm, urbi_gc_realm_list_walk_roots);
+    urbi_gc_register_root_provider(vm, urbi_gc_intern_table_walk_roots);
+    urbi_gc_register_root_provider(vm, urbi_gc_host_handle_walk_roots);
     urbi_gc_register_root_provider(vm, vm_misc_walk_roots);   /* Step C-1 */
-    urbi_gc_register_root_provider(vm, watcher_table_walk_roots);
+    urbi_gc_register_root_provider(vm, urbi_gc_watcher_table_walk_roots);
     /* v0.9.4 Phase 5: every() periodic-spawn primitive — yields each
      * UPeriodic.body closure + vm->every_native_closure to the GC mark. */
     urbi_gc_register_root_provider(vm, urbi_periodic_table_walk_roots);
@@ -207,7 +207,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * because the script-visible `_storage` slot is a UVAL_INT leaf. */
     urbi_gc_register_root_provider(vm, urbi_stdlib_containers_walk_roots);
     /* Provider headroom: 11 of URBI_MAX_ROOT_PROVIDERS (12) slots used —
-     * the 9 above + ref_table_walk_roots (below) + object_roots_walker
+     * the 9 above + urbi_gc_ref_table_walk_roots (below) + object_roots_walker
      * (urbi_object_register_gc_roots).  v0.13.2 rewrites the watcher
      * provider IN PLACE (count stays 11). */
 
@@ -222,7 +222,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* T36: register the M4 GC root provider for atom singletons +
      * vm->root_shape + the UChunkInstance chain.  Replaces the manual
      * urbi_pin calls on atom singletons that lived in T8.  Must come
-     * after the type-table setup so the walker's gc_shade_gray invocations
+     * after the type-table setup so the walker's urbi_gc_shade_gray invocations
      * find a registered UType for each cell. */
     urbi_object_register_gc_roots(vm);
 
@@ -318,7 +318,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * free_list_head sentinel is non-zero (SIZE_MAX); other fields are zero.
      * Register the GC root walker so pinned values survive collection. */
     vm->ref_table.free_list_head = (size_t)-1;  /* SIZE_MAX: no free slots */
-    urbi_gc_register_root_provider(vm, ref_table_walk_roots);
+    urbi_gc_register_root_provider(vm, urbi_gc_ref_table_walk_roots);
 
     /* vm->repl is zeroed by urbi_zero backstop (the step-driver hook reads it
      * on every urbi_step call).  REPL state is allocated by urepl_state_create

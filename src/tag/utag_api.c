@@ -22,7 +22,7 @@
 #include "urbi/urbi.h"          /* urbi_tag_create, urbi_tag_info, urbi_tag_state_t,
                                    urbi_tag_info_t, URBI_OK, URBI_ERR_INVALID_ARG */
 #include "runtime/umacros.h"    /* URBI_ASSERT_NOT_ISR */
-#include "gc/ugc_incremental.h" /* gc_shade_gray (Dijkstra forward barrier) */
+#include "gc/ugc_incremental.h" /* urbi_gc_shade_gray (Dijkstra forward barrier) */
 #include "urbi/gc.h"            /* urbi_gc_slot_store / urbi_gc_slot_pre_store */
 
 #include <stddef.h>
@@ -103,7 +103,7 @@ urbi_tag_create(struct UVM *vm, struct URealm *realm,
      * Shade the parent via the forward barrier (realm->tag is reachable
      * through the realm GC root; the write here pins the reverse reference). */
     if (realm->tag != NULL) {
-        gc_shade_gray(vm, (UCell *)realm->tag);
+        urbi_gc_shade_gray(vm, (UCell *)realm->tag);
         tag->parent = realm->tag;
     }
 

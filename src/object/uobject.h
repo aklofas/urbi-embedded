@@ -424,7 +424,7 @@ int urbi_object_set_property_value (struct UVM *vm, UObject *obj,
  * Walks: vm->atom_object .. vm->atom_symbol (the nine atom-family singletons),
  * vm->root_shape, and every UChunkInstance reachable from
  * vm->module_instances_head.  Each non-NULL cell is shaded gray directly via
- * gc_shade_gray (the cells are direct UCell pointers, not UValue slots — the
+ * urbi_gc_shade_gray (the cells are direct UCell pointers, not UValue slots — the
  * mark_root_callback only handles UVAL_CLOSURE / UVAL_OBJECT slots).
  *
  * Once registered, the manual urbi_pin calls on atom singletons (T8) become
