@@ -54,7 +54,7 @@ fi
 # deliberately accepted process-global; a new one must not appear silently
 # (e.g. pasted from an example) and a removed one means a global was either
 # fixed (good — shrink the pin) or un-marked while still present (bad).
-EXPECTED_ALLOW_MARKERS=8
+EXPECTED_ALLOW_MARKERS=9
 ACTUAL_ALLOW_MARKERS=$(find src \( -name '*.c' -o -name '*.h' \) -print0 \
     | xargs -0 grep -Hn 'audit-globals-allow:' \
     | wc -l)
