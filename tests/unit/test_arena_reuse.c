@@ -96,9 +96,52 @@ UTEST(reset_mixed_size_insert_keeps_chain_reachable) {
     UASSERT_EQ(s.free_calls, s.alloc_calls);
 }
 
+
+UTEST(reset_whole_chain_scanned_for_reuse) {
+    /* Scenario: two reset cycles produce a chain where a fitting chunk is
+     * two or more hops from head.  A one-hop succ check misses it and
+     * would malloc a fresh chunk; a full chain walk reuses it. */
+    AllocSpy s = { 0, 0 };
+    UArena a;
+    uarena_init_ex(&a, 256, spy_alloc, spy_free, &s);   /* cap ~256 per chunk */
+
+    /* Round 1: 4 small allocs create 4 chunks of capacity ~256 each. */
+    for (int i = 0; i < 4; i++) {
+        UASSERT(uarena_alloc(&a, 200) != NULL);
+    }
+    UASSERT_EQ(s.alloc_calls, 4);
+
+    /* Reset: head -> chunk1, all used = 0. */
+    uarena_reset(&a);
+
+    /* Round 2: 3 small allocs fill chunk1/2/3; then one large alloc
+     * that chunk4(256) cannot satisfy inserts a new big chunk (cap~1024)
+     * between chunk3 and chunk4. */
+    for (int i = 0; i < 3; i++) {
+        UASSERT(uarena_alloc(&a, 200) != NULL);
+    }
+    UASSERT(uarena_alloc(&a, 1024) != NULL);
+    /* Chain is now: chunk1(256)->chunk2(256)->chunk3(256)->big(1024)->chunk4(256) */
+    UASSERT_EQ(s.alloc_calls, 5);
+
+    /* Reset again: head -> chunk1, all used = 0.  big(1024) is at position 4.
+     * Request 1024 bytes: chunk1 and chunk2 (the immediate succ) don't fit;
+     * the full chain walk must find and reuse big(1024). */
+    uarena_reset(&a);
+    UASSERT(uarena_alloc(&a, 1024) != NULL);
+    /* If only succ is checked, a 6th chunk is allocated — the whole-chain
+     * scan keeps the count at 5. */
+    UASSERT_EQ(s.alloc_calls, 5);
+
+    uarena_destroy(&a);
+    UASSERT_EQ(s.free_calls, s.alloc_calls);
+}
+
 void test_arena_reuse_suite(void) {
     utest_run("reset_then_grow_does_not_orphan",
               reset_then_grow_does_not_orphan);
     utest_run("reset_mixed_size_insert_keeps_chain_reachable",
               reset_mixed_size_insert_keeps_chain_reachable);
+    utest_run("reset_whole_chain_scanned_for_reuse",
+              reset_whole_chain_scanned_for_reuse);
 }

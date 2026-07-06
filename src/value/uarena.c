@@ -152,15 +152,18 @@ void *uarena_alloc(UArena *a, size_t nbytes) {
     UArenaChunk *c = a->head;
     if (!c || c->used + need > c->capacity) {
         /* refactor-3 FE-07: after uarena_reset the chunks allocated by a
-         * previous statement are still linked behind head — reuse the next
-         * one when it fits rather than appending (the old unconditional
-         * `head->next = new` overwrote the link, orphaning — leaking —
-         * every chunk after the reset point, unreachable even by
-         * uarena_destroy; LSan-verified ~32 KB per 3-statement session). */
-        UArenaChunk *succ = (c != NULL) ? c->next : NULL;
-        if (succ != NULL && succ->used + need <= succ->capacity) {
-            c = succ;
-            a->head = c;
+         * previous statement are still linked — probe the full chain for any
+         * chunk that fits before allocating a fresh one (the old one-hop
+         * succ check missed chunks at position 3+ when intermediate chunks
+         * were too small for the request). */
+        UArenaChunk *scan = (c != NULL) ? c->next : NULL;
+        while (scan != NULL && scan->used + need > scan->capacity)
+            scan = scan->next;
+        if (scan != NULL) {
+            /* Move scan to head; prev (old head) keeps its link to scan so
+             * the rest of the chain stays reachable. */
+            a->head = scan;
+            c = scan;
         } else {
             if (a->is_static) {
                 /* No dynamic allocation in static mode. */
