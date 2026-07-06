@@ -86,7 +86,7 @@ urbi_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
      * allocator and corrupt the runnable queue. */
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* SCHED-18 (refactor-3): pre-registered-subscribers-only pin.  Capture
+    /* Pre-registered-subscribers-only pin.  Capture
      * the tail of at_watchers_head before the walk.  Any watcher appended
      * mid-emit (e.g. from a C callback or a sync-body hook) lands after this
      * tail and must NOT receive the in-flight emission.  The next pointer for
@@ -110,7 +110,7 @@ urbi_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
                 w = next;
                 continue;
             }
-            /* SCHED-16 (refactor-3): use predicate so WHENEVER_EVENT is not
+            /* Use predicate so WHENEVER_EVENT is not
              * silently omitted from the dispatch check.
              * v0.10.5: pass &payload so urbi_watcher_do_spawn_body_coroutine writes it
              * into body->R[0] before enqueue.  The body closure was compiled
@@ -227,7 +227,7 @@ urbi_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
      * the sync modifier).  Re-fire on every emission is automatic because
      * WHENEVER_EVENT watchers are never removed from at_watchers_head.
      *
-     * SCHED-18 (refactor-3): pre-registered-subscribers-only pin.  Capture
+     * Pre-registered-subscribers-only pin.  Capture
      * the tail of at_watchers_head before the walk so that any watcher
      * installed mid-emit (from a sync body via run_event_body_on_scratch →
      * after_sync_body hook, or from an AT_EVENT_SYNC subscriber body) does
@@ -245,7 +245,7 @@ urbi_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
                 w = next;
                 continue;
             }
-            /* SCHED-16 (refactor-3): use IS_EVENT_MODE predicate.
+            /* Use IS_EVENT_MODE predicate.
              * AT_EVENT_SYNC runs inline; AT_EVENT and WHENEVER_EVENT spawn.
              * v0.10.5: pass &payload for body R[0] delivery. */
             if (w->mode == UWATCHER_AT_EVENT_SYNC) {
@@ -325,8 +325,8 @@ urbi_event_waituntil(struct UVM *vm, struct UEvent *e)
      * the wrong reason.  Idempotent for the normal path (RUNNING strand). */
     urbi_sched_strand_unbind_from_sleep_queue(s);
 
-    /* Transition to WAIT_EVENT via urbi_sched_strand_block (refactor-3 SCHED-01:
-     * block owns the runnable-count decrement under the single-writer
+    /* Transition to WAIT_EVENT via urbi_sched_strand_block (block owns
+     * the runnable-count decrement under the single-writer
      * scheme; the pre-refactor manual `state = USTRAND_WAIT_EVENT` +
      * guarded decrement pair is gone).  block's REASON_EVENT arm also
      * records the event in wait_payload.event — the documented active
