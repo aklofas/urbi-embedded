@@ -4,8 +4,8 @@
  *
  * Contains:
  *   - Public encoder helpers for unwind opcodes (uemit_throw, uemit_try_begin,
- *     uemit_try_end, uemit_tag_stop, uemit_push_tag, uemit_pop_tag,
- *     uemit_push_frame_guard, uemit_resume, uemit_load_catch_value).
+ *     uemit_try_end, uemit_push_tag, uemit_pop_tag,
+ *     uemit_resume, uemit_load_catch_value).
  *   - emit_expr arm helpers for AST_THROW, AST_TRY, AST_TAG_PREFIX. */
 
 #include "emit/uemit_internal.h"
@@ -26,11 +26,6 @@
 /* OP_THROW ABx: A = reg_value, Bx = 0 (unused). */
 void uemit_throw(UEmitter *e, uint8_t reg_value, uint32_t line) {
     emit_instr(e, uinstr_enc_abx(OP_THROW, reg_value, 0U), line);
-}
-
-/* OP_TAG_STOP ABC: A = reg_tag, B = reg_value, C = 0. */
-void uemit_tag_stop(UEmitter *e, uint8_t reg_tag, uint8_t reg_value, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_TAG_STOP, reg_tag, reg_value, 0U), line);
 }
 
 /* OP_TRY_BEGIN ABx: A = flags byte, Bx = handler PC (16-bit, range 0-65535).
@@ -59,13 +54,6 @@ void uemit_push_tag(UEmitter *e, uint8_t reg_tag, uint8_t flags,
 /* OP_POP_TAG ABC: A = reg_tag, B = C = 0. */
 void uemit_pop_tag(UEmitter *e, uint8_t reg_tag, uint32_t line) {
     emit_instr(e, uinstr_enc_abc(OP_POP_TAG, reg_tag, 0U, 0U), line);
-}
-
-/* OP_PUSH_FRAME_GUARD ABC: A = register_base, B = register_count, C = 0. */
-void uemit_push_frame_guard(UEmitter *e, uint8_t register_base,
-                             uint8_t register_count, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_PUSH_FRAME_GUARD, register_base,
-                                  register_count, 0U), line);
 }
 
 /* OP_RESUME ABC: A = reg_state, B = C = 0. */

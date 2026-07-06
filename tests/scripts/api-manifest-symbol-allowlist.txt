@@ -222,11 +222,9 @@ uemit_load_catch_value
 uemit_open_block
 uemit_open_function
 uemit_pop_tag
-uemit_push_frame_guard
 uemit_push_tag
 uemit_resume
 uemit_statement
-uemit_tag_stop
 uemit_throw
 uemit_try_begin
 uemit_try_end

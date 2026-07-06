@@ -674,6 +674,6 @@ const char *uemit_error_name(UEmitError code) {
 /* UFuncState lifecycle + upvalue cascade + block stack + IC index assign
  * + prologue_prepend_instr moved to uemit_funcstate.c (T13).
  *
- * Unwind opcode encoders (uemit_throw, uemit_tag_stop, uemit_try_begin,
- * uemit_try_end, uemit_push_tag, uemit_pop_tag, uemit_push_frame_guard,
- * uemit_resume, uemit_load_catch_value) moved to uemit_unwind.c. */
+ * Unwind opcode encoders (uemit_throw, uemit_try_begin, uemit_try_end,
+ * uemit_push_tag, uemit_pop_tag, uemit_resume, uemit_load_catch_value)
+ * moved to uemit_unwind.c. */

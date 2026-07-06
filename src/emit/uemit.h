@@ -325,9 +325,6 @@ void emit_diag_free_all(UEmitter *e);
 /* OP_THROW: reg_value is the register holding the thrown value. */
 void uemit_throw(UEmitter *e, uint8_t reg_value, uint32_t line);
 
-/* OP_TAG_STOP: reg_tag is the tag register, reg_value is the stop-value register. */
-void uemit_tag_stop(UEmitter *e, uint8_t reg_tag, uint8_t reg_value, uint32_t line);
-
 /* OP_TRY_BEGIN: flags (bit 0=has_catch, bit 1=has_finally); handler_pc is the
  * PC of the catch/finally handler (16-bit, 0-65535 instruction words). */
 void uemit_try_begin(UEmitter *e, uint8_t flags, uint16_t handler_pc, uint32_t line);
@@ -342,10 +339,6 @@ void uemit_push_tag(UEmitter *e, uint8_t reg_tag, uint8_t flags,
 
 /* OP_POP_TAG: reg_tag is the tag register to pop. */
 void uemit_pop_tag(UEmitter *e, uint8_t reg_tag, uint32_t line);
-
-/* OP_PUSH_FRAME_GUARD: register_base and register_count define the guarded range. */
-void uemit_push_frame_guard(UEmitter *e, uint8_t register_base,
-                             uint8_t register_count, uint32_t line);
 
 /* OP_RESUME: reg_state is the register holding the saved unwind state. */
 void uemit_resume(UEmitter *e, uint8_t reg_state, uint32_t line);
