@@ -88,7 +88,7 @@ int main(void)
 
         UWatcherInstallResult rc = urbi_watcher_install_at_event_runtime(
             &vm, &strand, UWATCHER_AT_EVENT, e, &bodies[i], NULL);
-        if (rc != URBI_INSTALL_OK) {
+        if (rc != UWATCHER_INSTALL_OK) {
             fprintf(stderr, "FAIL: urbi_watcher_install_at_event_runtime[%d] returned %d\n",
                     i, (int)rc);
             ustrand_destroy(&strand, &vm);

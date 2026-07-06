@@ -76,7 +76,7 @@ install_at_event_on_slot(UVM *vm, UStrand *s, UObject *obj, USymbol *sym,
     make_trivial_closure(cl, proto, instr);
     UWatcherInstallResult ir =
         urbi_watcher_install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, cl, NULL);
-    return (ir == URBI_INSTALL_OK) ? e : NULL;
+    return (ir == UWATCHER_INSTALL_OK) ? e : NULL;
 }
 
 /* ===================================================================

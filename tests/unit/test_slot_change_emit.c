@@ -140,7 +140,7 @@ UTEST(emit_dispatches_when_subscriber_present)
     make_trivial_closure(&body, &proto, instr_buf);
     UWatcherInstallResult ir =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)ir);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)ir);
 
     uint32_t runnable_before = vm.strand_runnable_count;
 

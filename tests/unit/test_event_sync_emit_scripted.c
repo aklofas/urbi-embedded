@@ -135,7 +135,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     UWatcherInstallResult ir =
         urbi_watcher_install_at_event_runtime(&vm, &inst_strand,
                                   UWATCHER_AT_EVENT_SYNC, e, body, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)ir);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)ir);
 
     UASSERT(e->at_watchers_head != NULL);
     UASSERT_EQ((int)UWATCHER_AT_EVENT_SYNC,

@@ -101,7 +101,7 @@ pipeline_ctx_destroy(PipeCtx *ctx)
  *
  * Compile "var x = 0; at (x > 5) x" — the at-install should normally pass.
  * Drain the watcher pool freelist before run; urbi_watcher_install_watcher_runtime then
- * returns URBI_INSTALL_OOM_POOL.  Pre-fix the dispatcher discarded the
+ * returns UWATCHER_INSTALL_OOM_POOL.  Pre-fix the dispatcher discarded the
  * result and kept running; post-fix the strand halts with UVM_OOM. */
 UTEST(reactive_install_propagates_pool_oom)
 {
@@ -155,7 +155,7 @@ UTEST(at_sync_install_propagates_pool_oom)
  *
  * Note: urbi_watcher_install_watcher_runtime in WAITUNTIL mode still runs the cond on a
  * scratch frame *before* attempting pool_alloc; if cond starts truthy the
- * fast-path returns URBI_INSTALL_OK without ever touching the pool, so the
+ * fast-path returns UWATCHER_INSTALL_OK without ever touching the pool, so the
  * drain trick never witnesses OOM.  We pick a script where cond starts
  * falsy ("var x = 0; waituntil (x)" — x is 0 → falsy → would park) so
  * pool_alloc is reached. */

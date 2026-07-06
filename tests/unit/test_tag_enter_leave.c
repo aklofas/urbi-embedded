@@ -124,7 +124,7 @@ UTEST(push_tag_fires_enter_event_when_subscribed)
     UWatcherInstallResult ri =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT,
                                  enter_ev, &body_cl, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)ri);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)ri);
     UASSERT(enter_ev->at_watchers_head != NULL);
 
     int runnable_before = (int)vm.strand_runnable_count;
@@ -189,7 +189,7 @@ UTEST(pop_tag_fires_leave_event_when_subscribed)
     UWatcherInstallResult ri =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT,
                                  leave_ev, &body_cl, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)ri);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)ri);
     UASSERT(leave_ev->at_watchers_head != NULL);
 
     int runnable_before = (int)vm.strand_runnable_count;

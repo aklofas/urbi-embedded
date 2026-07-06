@@ -124,7 +124,7 @@ order equals eval order.
 `event->at_watchers_head` instead of `vm->active_watchers_head`.
 
 The result enum is `UWatcherInstallResult` —
-`URBI_INSTALL_OK`, `_OOM_POOL`, `_READSET_OVER`, `_TRACE_FAULT`,
+`UWATCHER_INSTALL_OK`, `_OOM_POOL`, `_READSET_OVER`, `_TRACE_FAULT`,
 `_RECURSIVE`, `_NO_OBSERVABLE_CELLS` (W0/v0.10.2: empty read-set rejected
 for `AT`/`WHENEVER` watchers; `WAITUNTIL` is exempt).
 
@@ -508,7 +508,7 @@ unless noted; the inline sections above have been updated accordingly.
   `parse_whenever` now produces `AST_AT_EVENT` with `is_whenever=true`
   when the condition ends with `?`; `OP_WHENEVER_EVENT_INSTALL` (opcode 48,
   wire v1.9) routes to `UWATCHER_WHENEVER_EVENT`; empty-read-set installs
-  rejected as `URBI_INSTALL_NO_OBSERVABLE_CELLS`.
+  rejected as `UWATCHER_INSTALL_NO_OBSERVABLE_CELLS`.
 - **Finding 2** (AT_EVENT dangling on `event->at_watchers_head` after
   tag-stop): **CLOSED W3/v0.10.2** — `pending_onleave_queue_push`
   synchronously calls `uevent_at_watchers_remove` for AT_EVENT,

@@ -79,7 +79,7 @@ hook_false(struct UVM *vm, struct UClosure *cond,
 /* 1. waituntil_immediate_wake_when_cond_starts_true
  *
  * When the cond evaluates truthy at install, install must:
- *   - Return URBI_INSTALL_OK.
+ *   - Return UWATCHER_INSTALL_OK.
  *   - Unregister the watcher immediately (vm->active_watchers_head == NULL).
  *   - Leave the strand NOT in WAITING state. */
 UTEST(waituntil_immediate_wake_when_cond_starts_true)
@@ -100,7 +100,7 @@ UTEST(waituntil_immediate_wake_when_cond_starts_true)
     UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_WAITUNTIL, NULL, NULL, NULL, &s);
 
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r);
     /* Watcher unregistered immediately — active list must be empty. */
     UASSERT(vm.active_watchers_head == NULL);
     /* Strand must NOT be in WAITING state. */
@@ -114,7 +114,7 @@ UTEST(waituntil_immediate_wake_when_cond_starts_true)
 /* 2. waituntil_blocks_strand_when_cond_starts_false
  *
  * When the cond evaluates falsy at install, install must:
- *   - Return URBI_INSTALL_OK.
+ *   - Return UWATCHER_INSTALL_OK.
  *   - Leave the strand in USTRAND_WAIT_WATCHER state (0x32).
  *   - Leave the watcher installed (vm->active_watchers_head non-NULL).
  *   - Have watcher->waiter_strand == &s. */
@@ -138,7 +138,7 @@ UTEST(waituntil_blocks_strand_when_cond_starts_false)
     UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_WAITUNTIL, NULL, NULL, NULL, &s);
 
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r);
     /* Strand must be in WAITING state with WATCHER reason. */
     UASSERT(USTRAND_IS_WAITING(&s));
     UASSERT_EQ((int)USTRAND_WAIT_WATCHER, (int)s.state);

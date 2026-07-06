@@ -132,7 +132,7 @@ UTEST(at_event_unlink_from_event_chain_on_tag_stop)
 
     UWatcherInstallResult rc =
         install_event_watcher(&vm, r, UWATCHER_AT_EVENT, e, &body_cl);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)rc);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)rc);
 
     /* Pre-condition: watcher must be on the event chain. */
     UASSERT_EQ(1, at_watchers_count(e));
@@ -176,7 +176,7 @@ UTEST(at_event_emit_after_tag_stop_no_spawn)
 
     UWatcherInstallResult rc =
         install_event_watcher(&vm, r, UWATCHER_AT_EVENT, e, &body_cl);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)rc);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)rc);
 
     /* Tag-stop. */
     int sr = urbi_tag_stop(&vm, r->tag, nil);
@@ -226,7 +226,7 @@ UTEST(at_event_tag_stop_emit_stress)
 
         UWatcherInstallResult rc =
             install_event_watcher(&vm, r, UWATCHER_AT_EVENT, e, &body_cl);
-        UASSERT_EQ((int)URBI_INSTALL_OK, (int)rc);
+        UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)rc);
         UASSERT_EQ(1, at_watchers_count(e));
 
         /* Tag-stop. */
@@ -272,7 +272,7 @@ UTEST(at_event_sync_unlink_from_event_chain_on_tag_stop)
 
     UWatcherInstallResult rc =
         install_event_watcher(&vm, r, UWATCHER_AT_EVENT_SYNC, e, &body_cl);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)rc);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)rc);
     UASSERT_EQ(1, at_watchers_count(e));
 
     int sr = urbi_tag_stop(&vm, r->tag, nil);
@@ -311,7 +311,7 @@ UTEST(whenever_event_unlink_from_event_chain_on_tag_stop)
 
     UWatcherInstallResult rc =
         install_event_watcher(&vm, r, UWATCHER_WHENEVER_EVENT, e, &body_cl);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)rc);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)rc);
     UASSERT_EQ(1, at_watchers_count(e));
 
     int sr = urbi_tag_stop(&vm, r->tag, nil);

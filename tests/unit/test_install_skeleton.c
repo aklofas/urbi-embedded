@@ -3,16 +3,16 @@
  *
  * T34 cases:
  *   1. install_returns_recursive_when_in_eval:
- *      vm->watchers->in_eval=1 → install returns URBI_INSTALL_RECURSIVE and
+ *      vm->watchers->in_eval=1 → install returns UWATCHER_INSTALL_RECURSIVE and
  *      fires exactly one URBI_LOG_WARN containing "from within scratch-frame eval".
  *   2. install_returns_ok_normally:
- *      vm->watchers->in_eval=0 (default) → stub returns URBI_INSTALL_OK, no warn.
+ *      vm->watchers->in_eval=0 (default) → stub returns UWATCHER_INSTALL_OK, no warn.
  *
  * T38 cases (spec #2 §7.4–§7.5):
  *   3. install_warns_on_empty_readset:
  *      When trace_read_set_count==0 after phase-4, install warns but proceeds (OK).
  *   4. install_returns_oom_pool_when_exhausted:
- *      With pool drained, install returns URBI_INSTALL_OOM_POOL.
+ *      With pool drained, install returns UWATCHER_INSTALL_OOM_POOL.
  *   5. install_initializes_watcher_fields:
  *      After a successful install, watcher fields match the install arguments.
  *
@@ -81,7 +81,7 @@ static void hook_plant_one_cell(struct UVM *vm, struct UClosure *cond,
 /* 1. install_returns_recursive_when_in_eval
  *
  * With vm->watchers->in_eval = 1, urbi_watcher_install_watcher_runtime must:
- *   - Return URBI_INSTALL_RECURSIVE.
+ *   - Return UWATCHER_INSTALL_RECURSIVE.
  *   - Fire exactly one URBI_LOG_WARN containing "from within scratch-frame eval". */
 UTEST(install_returns_recursive_when_in_eval)
 {
@@ -97,7 +97,7 @@ UTEST(install_returns_recursive_when_in_eval)
     UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    UASSERT_EQ((int)r, (int)URBI_INSTALL_RECURSIVE);
+    UASSERT_EQ((int)r, (int)UWATCHER_INSTALL_RECURSIVE);
     UASSERT_EQ(g_warn_count, 1);
     /* Verify the message mentions the expected phrase. */
     UASSERT(strstr(g_last_msg, "from within scratch-frame eval") != NULL);
@@ -111,7 +111,7 @@ UTEST(install_returns_recursive_when_in_eval)
 /* 2. install_returns_ok_normally
  *
  * With default state (in_watcher_eval == 0) and a cond hook that plants one
- * observable cell into the read-set, install must return URBI_INSTALL_OK.
+ * observable cell into the read-set, install must return UWATCHER_INSTALL_OK.
  *
  * W0/v0.10.2 update: empty read-set is now a hard reject (Phase 5a).  The
  * hook_plant_one_cell is required for a clean OK path.  The empty-read-set
@@ -132,7 +132,7 @@ UTEST(install_returns_ok_normally)
     UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    UASSERT_EQ((int)r, (int)URBI_INSTALL_OK);
+    UASSERT_EQ((int)r, (int)UWATCHER_INSTALL_OK);
     UASSERT_EQ(g_warn_count, 0);  /* no warn when read-set is non-empty */
 
     vm.test_hooks->install_cond = NULL;
@@ -176,7 +176,7 @@ test_drain_watcher_pool(UVM *vm, UWatcher **out)
  *
  * W0/v0.10.2 update: when trace_read_set_count == 0 (no slot reads) for an
  * AT/WHENEVER watcher, install must now:
- *   - Return URBI_INSTALL_NO_OBSERVABLE_CELLS (hard reject; not OK).
+ *   - Return UWATCHER_INSTALL_NO_OBSERVABLE_CELLS (hard reject; not OK).
  *   - Fire exactly one URBI_LOG_WARN containing "no observable cells".
  *   - NOT install a watcher (active_watchers_head stays NULL).
  *
@@ -195,7 +195,7 @@ UTEST(install_warns_on_empty_readset)
     UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    UASSERT_EQ((int)URBI_INSTALL_NO_OBSERVABLE_CELLS, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_NO_OBSERVABLE_CELLS, (int)r);
     UASSERT_EQ(1, g_warn_count);
     UASSERT(strstr(g_last_msg, "no observable cells") != NULL);
     /* No watcher installed — active_watchers_head must still be NULL. */
@@ -208,7 +208,7 @@ UTEST(install_warns_on_empty_readset)
 /* 4. install_returns_oom_pool_when_exhausted
  *
  * With the pool drained AND a non-empty read-set (hook_plant_one_cell passes
- * Phase 5a), install must return URBI_INSTALL_OOM_POOL and fire a WARN.
+ * Phase 5a), install must return UWATCHER_INSTALL_OOM_POOL and fire a WARN.
  *
  * W0/v0.10.2 update: the cond hook is now required; without it, Phase 5a
  * rejects with INSTALL_NO_OBSERVABLE_CELLS before reaching the pool check. */
@@ -232,7 +232,7 @@ UTEST(install_returns_oom_pool_when_exhausted)
     UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    UASSERT_EQ((int)URBI_INSTALL_OOM_POOL, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OOM_POOL, (int)r);
     UASSERT(g_warn_count >= 1);
 
     vm.test_hooks->install_cond = NULL;
@@ -270,7 +270,7 @@ UTEST(install_initializes_watcher_fields)
     UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r);
 
     UWatcher *w = vm.active_watchers_head;
     UASSERT(w != NULL);
@@ -332,7 +332,7 @@ UTEST(install_marks_observed_cells_with_bit6)
     UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r);
     UASSERT(g_t39_cell.gc_byte & UGC_HAS_WATCHER_OBSERVER);
 
     vm.test_hooks->install_cond = NULL;
@@ -371,7 +371,7 @@ UTEST(install_appends_watcher_to_active_and_tag_lists)
     UWatcherInstallResult res = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)res);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)res);
 
     /* Watcher must be in the active list. */
     UWatcher *w = vm.active_watchers_head;
@@ -437,7 +437,7 @@ UTEST(install_oom_pool_clears_trace_state)
     UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
-    UASSERT_EQ((int)URBI_INSTALL_OOM_POOL, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OOM_POOL, (int)r);
     /* Post-fix invariant: trace state cleared on fall-through. */
     UASSERT_EQ(0, (int)vm.trace_read_set_count);
     UASSERT_EQ(0, (int)vm.trace_overflow);

@@ -100,11 +100,11 @@ UTEST(emit_async_spawns_at_event_bodies_in_fifo_order)
 
     UWatcherInstallResult r1 =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body1, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r1);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r1);
 
     UWatcherInstallResult r2 =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body2, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r2);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r2);
 
     UWatcher *w1 = e->at_watchers_head;
     UASSERT(w1 != NULL);

@@ -21,7 +21,7 @@
 #include "runtime/uclosure.h"         /* UClosure */
 #include "runtime/umacros.h"          /* URBI_INTERNAL_ASSERT */
 #include "watcher/uwatcher.h"         /* UWatcher, UWATCHER_* modes */
-#include "watcher/uwatcher_install.h" /* urbi_watcher_install_watcher_runtime, urbi_watcher_install_at_event_runtime, UWatcherInstallResult, URBI_INSTALL_* */
+#include "watcher/uwatcher_install.h" /* urbi_watcher_install_watcher_runtime, urbi_watcher_install_at_event_runtime, UWatcherInstallResult, UWATCHER_INSTALL_* */
 #include "event/uevent.h"             /* UEvent */
 #include "event/uevent_native.h"      /* uvalue_is_event */
 #include "value/uvalue.h"             /* UValue, UVAL_CLOSURE */
@@ -105,33 +105,33 @@ __attribute__((always_inline))
 static inline int
 vm_install_result_is_fatal(UWatcherInstallResult r)
 {
-    return r != URBI_INSTALL_OK;
+    return r != UWATCHER_INSTALL_OK;
 }
 
 static void
 vm_install_fault(UVM *vm, UWatcherInstallResult r, const char *opcode_name)
 {
     switch (r) {
-        case URBI_INSTALL_OOM_POOL:
+        case UWATCHER_INSTALL_OOM_POOL:
             vm->last_error = UVM_OOM;
             urbi_vm_format_oom(vm, sizeof(struct UWatcher));
             break;
-        case URBI_INSTALL_READSET_OVER:
+        case UWATCHER_INSTALL_READSET_OVER:
             vm->last_error = UVM_TYPE_ERROR;
             urbi_vm_format_type_error_msg(vm,
                 "watcher install: read-set exceeds URBI_WATCHER_READSET_MAX");
             break;
-        case URBI_INSTALL_TRACE_FAULT:
+        case UWATCHER_INSTALL_TRACE_FAULT:
             vm->last_error = UVM_TYPE_ERROR;
             urbi_vm_format_type_error_msg(vm,
                 "watcher install: condition threw during trace");
             break;
-        case URBI_INSTALL_RECURSIVE:
+        case UWATCHER_INSTALL_RECURSIVE:
             vm->last_error = UVM_TYPE_ERROR;
             urbi_vm_format_type_error_msg(vm,
                 "watcher install attempted from within scratch-frame eval");
             break;
-        case URBI_INSTALL_NO_OBSERVABLE_CELLS:
+        case UWATCHER_INSTALL_NO_OBSERVABLE_CELLS:
             /* W0/v0.10.2: cond watcher with empty read-set is a program error.
              * Use `whenever (e?) body` for event-driven subscriptions. */
             vm->last_error = UVM_TYPE_ERROR;
@@ -139,9 +139,9 @@ vm_install_fault(UVM *vm, UWatcherInstallResult r, const char *opcode_name)
                 "watcher install: condition observes no slots; "
                 "use 'whenever (e?) body' for event subscriptions");
             break;
-        case URBI_INSTALL_OK:
+        case UWATCHER_INSTALL_OK:
         default:
-            /* Caller should not invoke this on URBI_INSTALL_OK.  Defensive. */
+            /* Caller should not invoke this on UWATCHER_INSTALL_OK.  Defensive. */
             vm->last_error = UVM_TYPE_ERROR;
             urbi_vm_format_type_error_msg(vm, "watcher install: unknown result");
             break;
@@ -255,7 +255,7 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
             vm_install_fault(vm, r, "OP_WAITUNTIL_INSTALL");
             return UVM_INSTALL_HALT;
         }
-        if (r == URBI_INSTALL_OK && USTRAND_IS_WAITING(s)) {
+        if (r == UWATCHER_INSTALL_OK && USTRAND_IS_WAITING(s)) {
             /* Strand parked (cond started false).  Advance pc past this
              * instruction so resume lands at the correct next opcode.
              * Runnable-count accounting is owned by urbi_sched_strand_block

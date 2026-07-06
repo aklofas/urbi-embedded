@@ -92,7 +92,7 @@ urbi_watcher_install_watcher_runtime(
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher install attempted from within scratch-frame eval");
-        return URBI_INSTALL_RECURSIVE;
+        return UWATCHER_INSTALL_RECURSIVE;
     }
     URBI_TP(vm, URBI_TRACE_WATCHER, URBI_LOG_INFO, URBI_TP_WATCHER_INSTALL,
             (uint32_t)mode, 0);
@@ -128,13 +128,13 @@ urbi_watcher_install_watcher_runtime(
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher install: read-set exceeds URBI_WATCHER_READSET_MAX");
-        return URBI_INSTALL_READSET_OVER;
+        return UWATCHER_INSTALL_READSET_OVER;
     }
     if (cond_threw) {
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher install: condition threw during trace");
-        return URBI_INSTALL_TRACE_FAULT;
+        return UWATCHER_INSTALL_TRACE_FAULT;
     }
 
     /* Phase 5a (W0/v0.10.2): empty read-set is a programming error for
@@ -157,7 +157,7 @@ urbi_watcher_install_watcher_runtime(
                 "(if intent was event subscription, use `whenever (e?)`)");
         vm->trace_overflow       = 0;
         vm->trace_read_set_count = 0;
-        return URBI_INSTALL_NO_OBSERVABLE_CELLS;
+        return UWATCHER_INSTALL_NO_OBSERVABLE_CELLS;
     }
 
     /* Phase 5b (spec #2 §7.4): pool-alloc the watcher record. */
@@ -175,7 +175,7 @@ urbi_watcher_install_watcher_runtime(
          * invariant local to this function.) */
         vm->trace_overflow       = 0;
         vm->trace_read_set_count = 0;
-        return URBI_INSTALL_OOM_POOL;
+        return UWATCHER_INSTALL_OOM_POOL;
     }
 
     /* Phase 5c (spec #2 §7.5): initialize watcher fields.
@@ -263,7 +263,7 @@ urbi_watcher_install_watcher_runtime(
              * strand and silently drop the wake intent. */
             URBI_INTERNAL_ASSERT(s->state == USTRAND_RUNNING);
             urbi_watcher_unregister_internal(vm, w);
-            return URBI_INSTALL_OK;
+            return UWATCHER_INSTALL_OK;
         }
         /* Park waiter strand until the rising edge fires; urbi_vm_watcher_eval_dirty
          * wakes it via urbi_sched_strand_make_runnable.  The watcher holds the
@@ -271,7 +271,7 @@ urbi_watcher_install_watcher_runtime(
         urbi_sched_strand_block(s, USTRAND_REASON_WATCHER, 0);
     }
 
-    return URBI_INSTALL_OK;
+    return UWATCHER_INSTALL_OK;
 }
 
 /* === urbi_watcher_install_at_event_runtime (spec #3 §6.2) ===
@@ -297,7 +297,7 @@ urbi_watcher_install_at_event_runtime(
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher pool exhausted; AT_EVENT install dropped");
-        return URBI_INSTALL_OOM_POOL;
+        return UWATCHER_INSTALL_OOM_POOL;
     }
 
     /* type_tag and gc_byte are set by uwatcher_pool_alloc — no re-init needed. */
@@ -341,5 +341,5 @@ urbi_watcher_install_at_event_runtime(
      * quiescent again. */
     vm->watchers->active_count++;
 
-    return URBI_INSTALL_OK;
+    return UWATCHER_INSTALL_OK;
 }

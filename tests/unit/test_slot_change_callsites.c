@@ -90,7 +90,7 @@ setup_subscriber(UVM *vm_out, URealm **realm_out, UStrand *s_out,
     make_trivial_closure(cl_out, proto_out, instr_out);
     UWatcherInstallResult ir =
         urbi_watcher_install_at_event_runtime(vm_out, s_out, UWATCHER_AT_EVENT, e, cl_out, NULL);
-    if (ir != URBI_INSTALL_OK) return NULL;
+    if (ir != UWATCHER_INSTALL_OK) return NULL;
 
     return e;
 }

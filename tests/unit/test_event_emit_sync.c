@@ -124,12 +124,12 @@ UTEST(sync_emit_runs_sync_subs_inline)
     /* Install sync watcher first (appears at head of at_watchers_head). */
     UWatcherInstallResult rs =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, &body_sync, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)rs);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)rs);
 
     /* Install async watcher second. */
     UWatcherInstallResult ra =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body_async, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)ra);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)ra);
 
     UWatcher *ws = e->at_watchers_head;             /* sync watcher (first installed) */
     UASSERT(ws != NULL);

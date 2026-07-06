@@ -38,12 +38,12 @@ struct UEvent;
  *                  guard fired); watcher NOT installed. */
 
 typedef enum {
-    URBI_INSTALL_OK                  = 0,
-    URBI_INSTALL_OOM_POOL            = 1,
-    URBI_INSTALL_READSET_OVER        = 2,
-    URBI_INSTALL_TRACE_FAULT         = 3,
-    URBI_INSTALL_RECURSIVE           = 4,
-    URBI_INSTALL_NO_OBSERVABLE_CELLS = 5,  /* W0/v0.10.2: cond observes no cells;
+    UWATCHER_INSTALL_OK                  = 0,
+    UWATCHER_INSTALL_OOM_POOL            = 1,
+    UWATCHER_INSTALL_READSET_OVER        = 2,
+    UWATCHER_INSTALL_TRACE_FAULT         = 3,
+    UWATCHER_INSTALL_RECURSIVE           = 4,
+    UWATCHER_INSTALL_NO_OBSERVABLE_CELLS = 5,  /* W0/v0.10.2: cond observes no cells;
                                              * rejected as programming error (was
                                              * warn-and-proceed).  Use whenever (e?)
                                              * for event subscriptions. */
@@ -65,7 +65,7 @@ typedef enum {
  *   waiter  — blocking strand for WAITUNTIL; NULL for AT/WHENEVER.
  *
  * Returns a UWatcherInstallResult indicating outcome.
- * On URBI_INSTALL_OK the watcher is live and will be evaluated on the
+ * On UWATCHER_INSTALL_OK the watcher is live and will be evaluated on the
  * next urbi_vm_watcher_eval_dirty pass.
  * On any error result no watcher is installed; the error is already
  * logged via vm->host_log_fn (if non-NULL).

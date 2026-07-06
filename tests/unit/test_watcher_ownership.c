@@ -275,7 +275,7 @@ UTEST(waituntil_immediate_wake_state_explicit)
     /* Immediate-wake fast-path: install must succeed; the watcher was
      * unregistered inline; strand state must remain RUNNING (the assert
      * confirms we reach this branch in the documented state). */
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r);
     UASSERT_EQ((unsigned)USTRAND_RUNNING, (unsigned)s.state);
 
     /* Cleanup hook so subsequent tests in the same suite are unaffected. */

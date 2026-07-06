@@ -15,7 +15,7 @@
  *   3. at_event_install_does_not_join_active_watchers:
  *      vm->active_watchers_head must remain NULL (AT_EVENT skips that list).
  *   4. at_event_install_pool_exhausted:
- *      With pool drained, install returns URBI_INSTALL_OOM_POOL. */
+ *      With pool drained, install returns UWATCHER_INSTALL_OOM_POOL. */
 
 #include "utest.h"
 
@@ -45,7 +45,7 @@ UTEST(at_event_install_links_into_event_chain)
 
     UWatcherInstallResult r =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, NULL, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r);
 
     /* Watcher must be linked into the event's at_watchers_head. */
     UASSERT(e->at_watchers_head != NULL);
@@ -71,7 +71,7 @@ UTEST(at_event_sync_install_links_with_sync_mode)
 
     UWatcherInstallResult r =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, NULL, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r);
 
     UASSERT(e->at_watchers_head != NULL);
     UASSERT_EQ((int)UWATCHER_AT_EVENT_SYNC, (int)e->at_watchers_head->mode);
@@ -95,7 +95,7 @@ UTEST(at_event_install_does_not_join_active_watchers)
 
     UWatcherInstallResult r =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, NULL, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r);
 
     /* AT_EVENT must NOT appear on active_watchers_head. */
     UASSERT(vm.active_watchers_head == NULL);
@@ -130,7 +130,7 @@ UTEST(at_event_install_pool_exhausted)
 
     UWatcherInstallResult r =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, NULL, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OOM_POOL, (int)r);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OOM_POOL, (int)r);
 
     /* Return pool slots. */
     for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {

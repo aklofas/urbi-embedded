@@ -117,7 +117,7 @@ UTEST(whenever_event_unregister_unlinks_event_chain)
     /* Install a WHENEVER_EVENT watcher — lands on e->at_watchers_head. */
     UWatcherInstallResult ir =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_WHENEVER_EVENT, e, &body, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)ir);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)ir);
 
     UWatcher *w = e->at_watchers_head;
     UASSERT(w != NULL);
@@ -188,7 +188,7 @@ UTEST(pool_destroy_whenever_event_no_dangling)
      * watchers thread there), so drain_watcher_list won't touch it. */
     UWatcherInstallResult ir =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_WHENEVER_EVENT, e, &body, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)ir);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)ir);
 
     UASSERT(e->at_watchers_head != NULL);
     UASSERT_EQ(1u, (unsigned)vm.watchers->active_count);
@@ -258,7 +258,7 @@ sched18_hook(struct UVM *vm, struct UWatcher *w)
                                      UWATCHER_AT_EVENT,
                                      (struct UEvent *)w->event,
                                      g_sched18.w3_body, NULL);
-        if (r == URBI_INSTALL_OK) {
+        if (r == UWATCHER_INSTALL_OK) {
             /* w3 is the tail of at_watchers_head. */
             struct UWatcher *tail = ((struct UEvent *)w->event)->at_watchers_head;
             while (tail->next_in_event) tail = tail->next_in_event;
@@ -296,11 +296,11 @@ UTEST(sched18_mid_emit_watcher_not_fired)
     /* Install w1 (AT_EVENT_SYNC) then w2 (AT_EVENT_SYNC). */
     UWatcherInstallResult r1 =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, &body1, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r1);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r1);
 
     UWatcherInstallResult r2 =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, &body2, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r2);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)r2);
 
     /* Arm the after_sync_body hook: installs w3 (AT_EVENT async) after w1
      * runs, simulating a sync body calling an install inside the emit. */

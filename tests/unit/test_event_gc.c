@@ -147,7 +147,7 @@ UTEST(uevent_walker_shades_at_watchers_chain_not_waiters)
 
     UWatcherInstallResult ri =
         urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, ev, body_cl, NULL);
-    UASSERT_EQ((int)URBI_INSTALL_OK, (int)ri);
+    UASSERT_EQ((int)UWATCHER_INSTALL_OK, (int)ri);
     UASSERT(ev->at_watchers_head != NULL);
 
     /* Root the event via test root provider. */

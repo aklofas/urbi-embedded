@@ -45,7 +45,7 @@
  *   - vm->cur_strand and vm->step_budget_remaining are restored around the
  *     nested dispatch.
  *   - The at-install fault routes through the deliberate VM-002 install
- *     fault (URBI_INSTALL_TRACE_FAULT → "condition threw during trace"
+ *     fault (UWATCHER_INSTALL_TRACE_FAULT → "condition threw during trace"
  *     halt at the OP_AT_INSTALL site) instead of a spurious cross-strand
  *     throw, and the watcher is NOT left installed. */
 
@@ -299,7 +299,7 @@ UTEST(at_install_cond_fault_no_spurious_outer_throw)
     UASSERT(vm.fatal_strand == NULL);
 
     /* Post-fix: the failure is the deliberate install fault, raised at
-     * the OP_AT_INSTALL site (VM-002 promotes URBI_INSTALL_TRACE_FAULT
+     * the OP_AT_INSTALL site (VM-002 promotes UWATCHER_INSTALL_TRACE_FAULT
      * to a clean halt with a diagnosable message). */
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
     UASSERT(strstr(vm.last_errmsg, "condition threw during trace") != NULL);
