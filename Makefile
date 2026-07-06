@@ -2122,7 +2122,7 @@ DOCS_LINT_TARGETS := 'docs/**/*.md' README.md CONTRIBUTING.md CHANGELOG.md \
     'examples/**/*.md' 'components/**/*.md' 'tests/qemu/**/*.md' \
     '!**/build/**' '!**/_deps/**'
 
-docs-check: docs-check-tools docs-public-scrub
+docs-check: docs-check-tools docs-public-scrub src-comment-scrub
 	markdownlint-cli2 --config .markdownlint.yaml $(DOCS_LINT_TARGETS)
 	@echo "--- link-check ---"
 	@find docs examples components tests/qemu \
@@ -2136,6 +2136,14 @@ docs-check: docs-check-tools docs-public-scrub
 # carry a `scrub-allow: <reason>` marker on the same line.
 docs-public-scrub:
 	@tests/scripts/check-public-doc-scrub.sh
+
+# src-comment-scrub — verify no C/H source file under src/ include/ tools/
+# contains internal process-ID tokens (M<n>, T<n>, W<n>, FOUND-<n>,
+# refactor-<n>).  Excludes include/urbi/version.h (ABI history ledger) and
+# tests/ (fixtures may cite legacy IDs).  Inline escape: scrub-allow: <reason>.
+# See docs/STYLE.md §"Comment quality standard".
+src-comment-scrub:
+	@tests/scripts/check-source-comment-scrub.sh
 
 docs-check-tools:
 	@command -v markdownlint-cli2 >/dev/null 2>&1 || { \
@@ -2162,4 +2170,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace test-perf-counters test-determinism-perf cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk test-chk-ros releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-cross-stm32f4-app test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-gc-stress test-determinism-memdebug urbi-trace unit-runner test-ros2 check-ros-gate check-rosgen check-rosgen-determinism ros-integration test-urobotics test-chk-urobotics check-urobotics-determinism test-ros-urobotics test-chk-ros-urobotics test-chk-runner test-fuzz-smoke test-o2 fuzz-json force-flagstamp
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace test-perf-counters test-determinism-perf cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub src-comment-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk test-chk-ros releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-cross-stm32f4-app test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-abi-freeze test-wire-freeze test-repl-security test-stdlib-bytecode-fresh test-dependency-pins test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-gc-stress test-determinism-memdebug urbi-trace unit-runner test-ros2 check-ros-gate check-rosgen check-rosgen-determinism ros-integration test-urobotics test-chk-urobotics check-urobotics-determinism test-ros-urobotics test-chk-ros-urobotics test-chk-runner test-fuzz-smoke test-o2 fuzz-json force-flagstamp
