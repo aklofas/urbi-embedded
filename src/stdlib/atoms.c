@@ -1074,6 +1074,8 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (fmt == NULL) return urbi_raise_type(vm, "format: NULL string", out);
     size_t n = urbi_strlen(fmt);
     UObject *list_obj = (UObject *)args[0].v.p;
+    if (!urbi_stdlib_list_storage_present(vm, list_obj))
+        return urbi_raise_type(vm, "format: argument must be a List", out);
     size_t argc = urbi_stdlib_list_len(vm, list_obj);
 
     /* Arg-count pre-check: raise before any substitution. */
