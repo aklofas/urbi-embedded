@@ -282,7 +282,7 @@ typedef struct {
 
 /* --- VM state --- */
 
-#define UVM_ERRMSG_CAP 128
+#define UVM_ERRMSG_CAP 128   /* intentionally narrower than URBI_ERROR_STRING_BUF (256): short runtime messages vs. full structured-error buffers */
 
 /* Field order is intentional and load-bearing:
  *  - The early fields (alloc_fn, alloc_ud, last_error, last_errmsg) form the
