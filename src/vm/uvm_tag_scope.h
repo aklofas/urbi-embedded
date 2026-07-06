@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/vm/uvm_tag_scope.h — OP_PUSH_TAG / OP_POP_TAG dispatch helpers
- * (v0.10.15-vm-decomp-2, W1 stage 1).
+ * (v0.10.15-vm-decomp-2, stage 1).
  *
  * Mirrors the UVmSlotResult extraction pattern (uvm_slot.h, v0.10.4): each arm
  * body moves into a helper taking (UVM *vm, UStrand *s); the dispatch-loop
@@ -32,7 +32,7 @@ typedef enum {
  *
  * Stage 1 (v0.10.15): byte-for-byte the v0.10.14 anonymous-tag behavior — each
  * tag scope gets its own fresh anonymous UTag from the cleanup stack; the
- * A[3:0] tag_reg nibble is ignored.  W2 (v0.10.9-B) extends this to honor the
+ * A[3:0] tag_reg nibble is ignored.  v0.10.9-B extends this to honor the
  * nibble and bind the scope to the user tag.
  *
  * Returns UVM_TAG_SCOPE_NEXT on success, UVM_TAG_SCOPE_FATAL on a utag_create

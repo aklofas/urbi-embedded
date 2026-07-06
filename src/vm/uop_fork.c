@@ -3,20 +3,20 @@
  * Implements OP_FORK_DETACH, OP_FORK_JOIN, and OP_JOIN_WAIT dispatch bodies,
  * plus the urbi_vm_fork_wake_joiners() helper called at strand-DEAD transitions.
  *
- * M3 CLOSURE-SPAWN semantics vs. spec §7.1 shared-frame semantics:
- *   Pre-M2 separator-semantics spec §7.1 specifies that ,-spawned strands SHARE
+ * CLOSURE-SPAWN semantics vs. spec §7.1 shared-frame semantics:
+ *   Separator-semantics spec §7.1 specifies that ,-spawned strands SHARE
  *   the parent's register frame (lexical sharing, per legacy comma-environment.chk).
- *   This M3 implementation uses CLOSURE-SPAWN instead because:
+ *   This implementation uses CLOSURE-SPAWN instead because:
  *     (a) urbi_strand_create() accepts an entry_closure — shared-frame spawn has
- *         no API hook at M3.
+ *         no API hook yet.
  *     (b) Cross-strand stack-frame sharing + concurrent upvalue mutation requires
- *         substantial infrastructure not present at M3.
+ *         substantial infrastructure not yet present.
  *     (c) Design-risks item 7 (comma-environment.chk) and item 11 (,-detached +
- *         tag-scope cancel) are explicitly deferred to M5+.
- *     (d) No production urbiscript code at M3 depends on shared-frame semantics.
- *   T44 legacy chk corpus port: comma-environment.chk should be marked
- *   "# defer-to: M5" when ported, per design-risks item 7.
- *   TODO(M5+/design-risks-7): implement shared-frame spawn to satisfy spec §7.1.
+ *         tag-scope cancel) are explicitly deferred to v1.x.
+ *     (d) No production urbiscript code depends on shared-frame semantics.
+ *   Legacy chk corpus port: comma-environment.chk should be marked
+ *   "# blocked: <v1.x>" when ported, per design-risks item 7.
+ *   TODO(design-risks-7): implement shared-frame spawn to satisfy spec §7.1.
  *
  * Freestanding-strict: vm->alloc_fn for all alloc/free.
  * No <stdlib.h>, <string.h>, or <assert.h> — use URBI_INTERNAL_ASSERT.
@@ -24,7 +24,7 @@
 
 #include "vm/uop_fork.h"
 #include "chunk/uchunk.h"     /* uinstr_a, uinstr_b, UOpcode, UClosure (fwd), UProto */
-#include "runtime/uclosure.h"    /* UClosure full definition (M4: embeds UCell) */
+#include "runtime/uclosure.h"    /* UClosure full definition (embeds UCell) */
 #include "sched/ustrand.h"     /* UStrand, urbi_strand_create, urbi_strand_start, ... */
 #include "sched/usched_cooperative.h"  /* urbi_sched_strand_block, urbi_sched_strand_make_runnable */
 #include "runtime/ucleanup.h"    /* URBI_CLEANUP_MAX */
@@ -120,9 +120,9 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
     /* v0.8.1 Phase 2 (Variant B fusion): child strand-bind bump goes to
      * root_proto, not module->refcount.  child->root_proto is already set
      * above; ustrand_destroy will dec it at child death.
-     * v0.10.1 W4: typed-handle acquire for diagnostics (F3 fork-child site). */
+     * v0.10.1: typed-handle acquire for diagnostics (F3 fork-child site). */
     urbi_proto_strand_ref_acquire(child->root_proto, URBI_PROTO_REF_OWNER_FORK);
-    /* CHSTR-014 (T102): inherit the parent's UChunkInstance pointer so that
+    /* CHSTR-014: inherit the parent's UChunkInstance pointer so that
      * OP_GETSLOT / OP_SETSLOT in the child can resolve the IC table at
      * frame_count == 0 (which reads s->module_instance->proto_instances
      * ->entries[0].ic_table).  ,-spawned and &-spawned siblings execute in
@@ -263,7 +263,7 @@ urbi_vm_op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
      * safe because a strand cannot be simultaneously sleep-blocked AND
      * join-blocked.
      *
-     * T31 / VM-004: block-then-link ordering.  Previously the parent was
+     * VM-004: block-then-link ordering.  Previously the parent was
      * linked onto child->joiners_head BEFORE urbi_sched_strand_block, which
      * meant a concurrent walker (e.g. an unwind walker reaching DEAD on
      * the child between the two writes) could observe the parent on the

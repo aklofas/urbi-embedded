@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uvm_op_overload.c — operator-method fallback dispatch (Gap #4, M6 Wave 3).
+/* uvm_op_overload.c — operator-method fallback dispatch (Gap #4).
  *
  * When an arith_* call returns a type error (e.g., Object + Object where
  * neither is a numeric atom), the dispatch loop tries to find an operator-
@@ -174,7 +174,7 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
 
     /* Slow path: proto-chain walk capturing (holder, idx) so the IC can
      * cache the slot location.  On full-tree miss, retry once with the
-     * "fallback" slot — mirrors urbi_object_lookup's T40 GET_FALLBACK
+     * "fallback" slot — mirrors urbi_object_lookup's GET_FALLBACK
      * retry, which this path used before the GC-06 re-key.  Parity note:
      * urbi_object_resolve_slot bounds the walk at a 64-deep iterative DFS
      * (URBI_RESOLVE_STACK_CAP) where the old urbi_object_lookup recursion
@@ -257,7 +257,7 @@ urbi_vm_arith_method_fallback(UVM *vm,
     UValue result;
     urbi_zero(&result, sizeof result);
     if (cl->native_fn != NULL) {
-        /* GC soundness (v0.13.2 T14 follow-up): root the out-slot for the
+        /* GC soundness (v0.13.2 follow-up): root the out-slot for the
          * call's duration, mirroring the main OP_CALL native arm — result
          * is a C stack local, and a native that builds its result
          * incrementally would otherwise hand back a swept cell under
@@ -329,7 +329,7 @@ urbi_vm_arith_method_fallback_unary(UVM *vm,
     UValue result;
     urbi_zero(&result, sizeof result);
     if (cl->native_fn != NULL) {
-        /* GC soundness (v0.13.2 T14 follow-up): same out-slot rooting as
+        /* GC soundness (v0.13.2 follow-up): same out-slot rooting as
          * the binary arms above. */
         UCRootFrame f_res;
         urbi_c_root_push(vm, &f_res, &result);
@@ -395,7 +395,7 @@ urbi_vm_cmp_method_fallback(UVM *vm,
     UValue result;
     urbi_zero(&result, sizeof result);
     if (cl->native_fn != NULL) {
-        /* GC soundness (v0.13.2 T14 follow-up): root the out-slot for the
+        /* GC soundness (v0.13.2 follow-up): root the out-slot for the
          * call's duration, mirroring the main OP_CALL native arm — result
          * is a C stack local, and a native that builds its result
          * incrementally would otherwise hand back a swept cell under

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* urbi_step: 4-state cooperative scheduler driver (row 8 §6 / T16).
+/* urbi_step: 4-state cooperative scheduler driver (row 8 §6).
    Freestanding-safe: only <stdbool.h> and <stdint.h>. */
 
 #include "urbi/urbi.h"

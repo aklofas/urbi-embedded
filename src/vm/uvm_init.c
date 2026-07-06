@@ -25,24 +25,24 @@
 #include "event/uevent_ring.h"    /* UEventRing, uevent_ring_init */
 #include "runtime/uhandle.h"      /* urbi_gc_host_handle_walk_roots */
 #include "watcher/uwatcher.h"     /* uwatcher_pool_init/destroy, urbi_gc_watcher_table_walk_roots */
-#include "watcher/uwatcher_state.h" /* uwatcher_state_create/destroy (W2/v0.10.4) */
+#include "watcher/uwatcher_state.h" /* uwatcher_state_create/destroy (v0.10.4) */
 #include "stdlib/temporal.h"      /* urbi_periodic_table_walk_roots, urbi_periodic_destroy_all */
-#include "stdlib/containers.h"    /* M6 Phase 6: urbi_stdlib_containers_destroy */
+#include "stdlib/containers.h"    /* Phase 6: urbi_stdlib_containers_destroy */
 #include "event/uevent_native.h"  /* urbi_event_native_register */
 #include "event/uevent_registry.h" /* uevent_registry_init, uevent_registry_destroy */
 #include "tag/utag_native.h"      /* urbi_tag_native_register */
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
 #include "sched/usched_cooperative.h" /* urbi_gc_sched_walk_roots */
-#include "chunk/uchunk.h"           /* uchunk_destroy — M6 Phase 4 stdlib_module teardown */
-#include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM — T23 return-code surface */
+#include "chunk/uchunk.h"           /* uchunk_destroy — stdlib_module teardown */
+#include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM */
 #include "changed/uchanged_node.h"  /* urbi_deferred_slot_changes_walk_roots */
-#include "runtime/utest_hooks.h"    /* W3/v0.10.4: UTestHooks lifecycle */
+#include "runtime/utest_hooks.h"    /* v0.10.4: UTestHooks lifecycle */
 #ifdef URBI_ENABLE_ROS2
 #include "urbi/ros.h"               /* urbi_ros_shutdown — VM-scope the ros bridge */
 #endif
 #if URBI_ENABLE_REPL
-#  include "repl/urepl_state.h"     /* W3/v0.10.4: UReplState lifecycle (destroy in vm teardown) */
+#  include "repl/urepl_state.h"     /* v0.10.4: UReplState lifecycle (destroy in vm teardown) */
 #endif
 
 #if __STDC_HOSTED__
@@ -68,7 +68,7 @@ static void *uvm_stdlib_realloc(void *ptr, size_t nbytes, void *ud) {
    urbi_default_host_time_us is the non-static alias used by uvm_writer.c so
    that urbi_set_clock_fn(vm, NULL) can restore the built-in default without
    duplicating the #ifdef logic. */
-/* v0.10.3 (W3): signature gains void *ud (urbi_time_us_fn convention). */
+/* v0.10.3: signature gains void *ud (urbi_time_us_fn convention). */
 static uint64_t default_host_time_us_stub(void *ud) {
     (void)ud;
 #if defined(UVM_INIT_HAVE_CLOCK_GETTIME)
@@ -112,7 +112,7 @@ vm_misc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 }
 
 int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
-    /* T23 (VM-010 + VM-024): promoted from void to int return.  Sub-system
+    /* Promoted from void to int return (VM-010 + VM-024).  Sub-system
      * allocations that can OOM now surface URBI_ERR_OOM; callers can detect
      * partial init.  urbi_vm_destroy stays safe on any partial-init state
      * reached before the bailout. */
@@ -128,7 +128,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     urbi_zero(vm, sizeof(*vm));
 
 #ifdef URBI_DEBUG
-    /* v0.10.1 W4: notify the refcount accounting layer that a new VM is alive.
+    /* v0.10.1: notify the refcount accounting layer that a new VM is alive.
      * Paired with urbi_proto_ref_vm_gone() in urbi_vm_destroy. */
     urbi_proto_ref_vm_born();
 #endif
@@ -154,8 +154,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * drives the scheduler/GC). NULL-on-OOM ⇒ trace simply stays disabled. */
     urbi_trace_init(vm);
 #endif
-    vm->topology_gen   = 1ULL;   /* pre-M4 topology spec §3.1: init=1, 0 reserved */
-    vm->lookup_id      = 1ULL;   /* pre-M4 prototype-chain spec §7.1 */
+    vm->topology_gen   = 1ULL;   /* topology spec §3.1: init=1, 0 reserved */
+    vm->lookup_id      = 1ULL;   /* prototype-chain spec §7.1 */
 
     /* ISR ring: allocate and initialise the SPSC event ring. */
     if (vm->alloc_fn) {
@@ -164,7 +164,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         if (vm->event_ring) {
             uevent_ring_init(vm->event_ring);
         } else {
-            /* T23: surface partial-init OOM to caller via URBI_ERR_OOM.
+            /* Surface partial-init OOM to caller via URBI_ERR_OOM.
              * inject/drain still guard against NULL event_ring so the
              * remainder of init runs without aborting; destroy is safe. */
             oom_seen = 1;
@@ -172,18 +172,18 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     }
 
     /* GC state machine.
-     * gc_phase = 0 = IDLE per row 10 §6.2; named constant lands at T22.
+     * gc_phase = 0 = IDLE per row 10 §6.2.
      * (GC fields zeroed by urbi_zero backstop above.) */
 #if URBI_PERF_COUNTERS
     urbi_perf_reset(vm);
 #endif
 
-    /* T19 ISR-check + debug watchdog hooks: initialize before any subsystem
-     * calls URBI_ASSERT_NOT_ISR (T23 onwards). */
+    /* ISR-check + debug watchdog hooks: initialize before any subsystem
+     * calls URBI_ASSERT_NOT_ISR. */
     vm->callback_warn_us       = URBI_CALLBACK_WARN_US;
     vm->callback_watchdog_mode = URBI_WATCHDOG_WARN;
 
-    /* Delegate threshold + debt init to the GC strategy (T23). */
+    /* Delegate threshold + debt init to the GC strategy. */
     urbi_gc_init(vm);
 
     /* Register default root providers.
@@ -197,7 +197,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* v0.9.4 Phase 5: every() periodic-spawn primitive — yields each
      * UPeriodic.body closure + vm->every_native_closure to the GC mark. */
     urbi_gc_register_root_provider(vm, urbi_periodic_table_walk_roots);
-    /* W3/v0.10.2: deferred slot-change ring (reactive audit F6).
+    /* v0.10.2: deferred slot-change ring (reactive audit F6).
      * Makes vm->deferred_slot_changes[head..tail] visible to GC root walking.
      * No-op on empty ring; under the cooperative scheduler this is
      * correctness-preserving.  Becomes load-bearing at v1.x preemption. */
@@ -214,19 +214,18 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* Type table + host-handle table.
      * (type_table[] and host_type_count zeroed by urbi_zero backstop.) */
 
-    /* Register built-in M4 object-model UType descriptors directly into
+    /* Register built-in object-model UType descriptors directly into
      * vm->type_table[].  Built-in tags can't go through urbi_register_type
      * (which guards tags < UTYPE_HOST_BASE per src/utype.c). */
     urbi_object_builtin_types_init(vm);
 
-    /* T36: register the M4 GC root provider for atom singletons +
-     * vm->root_shape + the UChunkInstance chain.  Replaces the manual
-     * urbi_pin calls on atom singletons that lived in T8.  Must come
+    /* Register the GC root provider for atom singletons +
+     * vm->root_shape + the UChunkInstance chain.  Must come
      * after the type-table setup so the walker's urbi_gc_shade_gray invocations
      * find a registered UType for each cell. */
     urbi_object_register_gc_roots(vm);
 
-    /* T53/T54: urbi_event_native_register + urbi_tag_native_register allocate UObject
+    /* urbi_event_native_register + urbi_tag_native_register allocate UObject
      * proto cells and intern slot-name strings.  They are NOT called here
      * because existing GC + intern + object-model tests assert on exact cell /
      * entry counts immediately after urbi_vm_init (the atom singletons themselves
@@ -235,18 +234,18 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * typed C helpers (urbi_tag_enter_getter / urbi_tag_leave_getter) directly.
      *
      * The full "call from VM init" wiring will land when the globals-exposure
-     * task (T59) makes Event/Tag resolvable by name, at which point the cell
+     * task makes Event/Tag resolvable by name, at which point the cell
      * counts in the affected unit tests will be updated in the same commit. */
 
     /* (handle_table, watchers, trace, cur_strand zeroed by urbi_zero backstop.) */
 
-    /* W2+W3/v0.10.4 substate allocations.
+    /* v0.10.4 substate allocations.
      *
-     * Watcher substate (W2/v0.10.4): UWatcherState struct + pool storage.
+     * Watcher substate (v0.10.4): UWatcherState struct + pool storage.
      * Pool storage is allocated separately by uwatcher_pool_init below.
      * The struct itself is heap-allocated; uwatcher_state_create zero-fills it.
      *
-     * Test-seam substate (W3/v0.10.4): UTestHooks struct, allocated below
+     * Test-seam substate (v0.10.4): UTestHooks struct, allocated below
      * after the allocator is wired so alloc_fn is available. */
     /* trace_read_set[] is only read when watchers->in_install is set;
      * entries are written before they are read (covered by urbi_zero). */
@@ -267,9 +266,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * so pool_alloc can use vm->current_white and vm->alloc_fn is set.
      * uwatcher_pool_init writes vm->watchers->pool_base / pool_freelist. */
     if (uwatcher_pool_init(vm) != 0) {
-        /* T23: surface OOM.  pool_alloc still returns NULL at use sites,
-         * so the install path remains safe even if we did not bail.
-         * Pre-T23 this was a silent leave-NULL. */
+        /* Surface OOM.  pool_alloc still returns NULL at use sites,
+         * so the install path remains safe even if we did not bail. */
         oom_seen = 1;
     }
 
@@ -286,7 +284,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
             vm->deferred_slot_changes     = ring;
             vm->deferred_slot_changes_cap = (uint16_t)URBI_DEFERRED_SLOT_CHANGE_RING_SIZE;
         } else {
-            /* T23: surface partial-init OOM.  drain/enqueue still guard
+            /* Surface partial-init OOM.  drain/enqueue still guard
              * against NULL so the remainder of init runs without aborting. */
             oom_seen = 1;
         }
@@ -298,7 +296,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * stdlib protos, atomic_active, error_ring, ref_table scalars — all
      * zeroed by urbi_zero backstop above.) */
 
-    /* M6 Phase 3: stdlib state. */
+    /* stdlib state. */
     /* (All stdlib proto pointers zeroed by urbi_zero backstop above.
      * stdlib_closures + stdlib_upvalues deleted at v0.8.4 Step C-3.
      * stdlib_protos + stdlib_nested_arrays deleted at Task 11.) */
@@ -322,9 +320,9 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* vm->repl is zeroed by urbi_zero backstop (the step-driver hook reads it
      * on every urbi_step call).  REPL state is allocated by urepl_state_create
-     * only when a server is started (W3/v0.10.4). */
+     * only when a server is started (v0.10.4). */
 
-    /* W3/v0.10.4: allocate the UTestHooks wrapper so tests can install
+    /* v0.10.4: allocate the UTestHooks wrapper so tests can install
      * watcher/install seams via vm->test_hooks->watcher_condition etc.
      * vm->test_hooks is NULL-checked at every use site so freestanding
      * builds (alloc_fn == NULL) are safe. */
@@ -335,7 +333,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         }
     }
 
-    /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
+    /* Gap #4: heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
      * stack would overflow with a 4 KB inline IC). */
     if (vm->alloc_fn != NULL) {
@@ -345,7 +343,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
             urbi_zero(ic, sizeof(UOpOverloadIC));
             vm->op_overload_ic = ic;
         } else {
-            /* T23: surface partial-init OOM.  Fallback helpers in
+            /* Surface partial-init OOM.  Fallback helpers in
              * uvm_op_overload.c guard against NULL so dispatch survives. */
             oom_seen = 1;
         }
@@ -360,8 +358,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         vm->gc_stress_armed = 1U;
     }
 
-    /* T23 (VM-010 + VM-024): single return point for the success/OOM
-     * decision.  The destroy path is safe to call on partial-init state,
+    /* Single return point for the success/OOM decision (VM-010 + VM-024).
+     * The destroy path is safe to call on partial-init state,
      * so we let every sub-system init run before reporting OOM (this keeps
      * the use-site guards live and exercises them in the OOM-coverage
      * tests). */
@@ -383,11 +381,10 @@ void urbi_vm_destroy(UVM *vm) {
     urbi_trace_destroy(vm);
 #endif
 
-    /* --- M3 teardown stubs (in reverse-init order) ---
-     * Subsystem-owned teardowns are deferred to their landing tasks. */
-    urealm_teardown_all(vm);  /* T14: destroy all live Realms */
-    uwatcher_pool_destroy(vm);  /* T32: free pool slab before GC */
-    /* W2/v0.10.4: free UWatcherState struct after pool slab is freed. */
+    /* --- teardown (in reverse-init order) --- */
+    urealm_teardown_all(vm);  /* destroy all live Realms */
+    uwatcher_pool_destroy(vm);  /* free pool slab before GC */
+    /* v0.10.4: free UWatcherState struct after pool slab is freed. */
     uwatcher_state_destroy(vm, vm->watchers);
     vm->watchers = NULL;
     /* v0.9.4: free any periodics left dangling after realm teardown.
@@ -407,7 +404,7 @@ void urbi_vm_destroy(UVM *vm) {
     /* GC destroy must run after all subsystems that hold GC-managed cells.
      * Realm teardown (above) releases bindings; remaining infrastructure (event ring,
      * sched queues) is freed below — none of it owns GC cells. */
-    urbi_gc_destroy(vm);      /* T23: free all GC-managed cells */
+    urbi_gc_destroy(vm);      /* free all GC-managed cells */
 #if URBI_MEM_DEBUG
     /* v0.11.3: after GC has swept all cells into the quarantine, flush + verify
      * the quarantine poison and free the substate.  Runs while vm->alloc_fn is
@@ -415,7 +412,7 @@ void urbi_vm_destroy(UVM *vm) {
     umemdbg_destroy(vm);
 #endif
 #ifdef URBI_DEBUG
-    /* v0.10.1 W4: decrement the active-VM count; fires urbi_proto_ref_assert_balanced()
+    /* v0.10.1: decrement the active-VM count; fires urbi_proto_ref_assert_balanced()
      * when the last VM is destroyed.  Runs after urealm_teardown_all (all strands
      * destroyed → strand-bind refs released) and urbi_gc_destroy (all UClosure cells
      * finalized → closure-bind refs released).  The balanced check only fires when
@@ -440,16 +437,16 @@ void urbi_vm_destroy(UVM *vm) {
         vm->handle_table = NULL;
     }
 
-    /* W3/v0.10.4: free UTestHooks wrapper (audit-1 F8). */
+    /* v0.10.4: free UTestHooks wrapper (audit-1 F8). */
     if (vm->test_hooks != NULL) {
         utest_hooks_destroy(vm, vm->test_hooks);
         vm->test_hooks = NULL;
     }
 
 #if URBI_ENABLE_REPL
-    /* W3/v0.10.4: free UReplState wrapper if allocated (embedder skipped
-     * urbi_repl_stop).  Pre-W3 vm->repl_server was an inline void* (no heap
-     * allocation); W3 introduced an 8-byte heap wrapper that leaked when
+    /* v0.10.4: free UReplState wrapper if allocated (embedder skipped
+     * urbi_repl_stop).  Before v0.10.4, vm->repl_server was an inline void* (no heap
+     * allocation); v0.10.4 introduced an 8-byte heap wrapper that leaked when
      * urbi_vm_destroy ran without a preceding urbi_repl_stop.
      * urepl_state_destroy is NULL-tolerant; VMs that never started REPL have
      * vm->repl == NULL and this is a no-op.  Must run before alloc_fn is
@@ -458,7 +455,7 @@ void urbi_vm_destroy(UVM *vm) {
     vm->repl = NULL;
 #endif
 
-    /* Gap #4 (M6 Wave 3): free heap-allocated operator-overload IC. */
+    /* Gap #4: free heap-allocated operator-overload IC. */
     if (vm->op_overload_ic != NULL && vm->alloc_fn != NULL) {
         vm->alloc_fn(vm->op_overload_ic, 0, vm->alloc_ud);
         vm->op_overload_ic = NULL;
@@ -482,7 +479,7 @@ void urbi_vm_destroy(UVM *vm) {
         vm->ref_table.capacity = 0U;
     }
 
-    /* M2 baseline teardown. */
+    /* intern-table and string-pool teardown. */
     uintern_destroy(vm);
     /* v0.8.4 Step C-3: stdlib_closures + stdlib_upvalues fields deleted.
      * UClosure + UUpvalCell are GC-managed; urbi_gc_destroy (called above)
@@ -493,7 +490,7 @@ void urbi_vm_destroy(UVM *vm) {
 
     if (vm->alloc_fn != NULL) {
 
-        /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib root UProto
+        /* Phase 4: free the heap-allocated stdlib root UProto
          * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any
          * UChunkInstance referencing this root has already been
          * reaped — no dangling ic_names back-reference can survive.
@@ -563,7 +560,7 @@ void urbi_vm_destroy(UVM *vm) {
             vm->rescued_protos = NULL;
         }
 
-        /* M6 Phase 6: free container backing buffers (List/Dict/Tuple
+        /* Phase 6: free container backing buffers (List/Dict/Tuple
          * storage) threaded onto vm->stdlib_containers.  Runs after
          * urbi_gc_destroy so the per-instance UObjects (which carry the
          * pointer in a hidden _storage slot) have already been reaped —
@@ -579,7 +576,7 @@ void urbi_vm_destroy(UVM *vm) {
  *
  * Separated from urbi_vm_init because existing unit tests that assert exact
  * cell / intern counts immediately post-init would break (atoms are lazy
- * for the same reason).  The T59 globals-exposure task will wire this into
+ * for the same reason).  The globals-exposure task will wire this into
  * the vm-create path once the affected tests are updated to account for the
  * additional cells. */
 void
@@ -613,7 +610,7 @@ urbi_native_protos_init(UVM *vm)
     vm->gc_paused = saved_pause;
 }
 
-/* === urbi_register_event_drain (T57 — spec #3 §9) ===
+/* === urbi_register_event_drain (spec #3 §9) ===
  *
  * Install a host callback that is invoked at each safepoint (urbi_step entry)
  * for every entry drained from the ISR SPSC ring.  The handler maps event_id
@@ -631,7 +628,7 @@ urbi_native_protos_init(UVM *vm)
  * design assumes drain-handler installs are quiescent.  URBI_DEBUG asserts
  * the contract.
  */
-/* v0.10.3 (W3): gains void *ud parameter; event_drain_ud stored alongside. */
+/* v0.10.3: gains void *ud parameter; event_drain_ud stored alongside. */
 void
 urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h, void *ud)
 {
@@ -656,7 +653,7 @@ urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h, void *ud)
     __atomic_store_n(&vm->event_drain_handler, h, __ATOMIC_RELEASE);
 }
 
-/* v0.10.3 (W3): UVMError retired; parameter is now int.
+/* v0.10.3: UVMError retired; parameter is now int.
  * Returns the legacy name for backward compat with tests that check
  * the string. UVM_OK == URBI_OK == 0; UVM_OOM == URBI_ERR_OOM == -3;
  * UVM_TYPE_ERROR == URBI_ERR_STRAND_FATAL == -2. */

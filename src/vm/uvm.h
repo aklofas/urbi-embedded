@@ -12,7 +12,7 @@
 #include "value/uvalue.h"   /* UValue — needed for handle_table field */
 #include "runtime/uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
 #include "urbi/gc.h" /* UCell (opaque), UGcRootCallback/ProviderFn, non-inline ops */
-/* W2: urbi/gc.h no longer includes the strategy header; pull it here so
+/* urbi/gc.h no longer includes the strategy header; pull it here so
  * internal callers that reach gc state via uvm.h still get the inline
  * barrier helpers (urbi_gc_slot_store, urbi_gc_register_write, etc.) and
  * the UGC_* bit-flag macros without an additional explicit include. */
@@ -22,7 +22,7 @@
 extern "C" {
 #endif
 
-/* --- M3 forward declarations (rows 8, 9, 10, 11) ---
+/* --- forward declarations ---
    Types referenced in the UVM struct but defined in later tasks.
    Forward-decl only: all uses are pointer-typed.
    Note: UCell, UType, UGcRootCallback, UGcRootProviderFn are now defined in ugc.h
@@ -33,9 +33,9 @@ struct URealm;
 struct UWatcher;
 struct UPeriodic;    /* v0.9.4 — defined in src/stdlib/temporal.h */
 struct UClosure;     /* v0.9.4 — defined in src/runtime/uclosure.h */
-struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
-struct UShape;       /* M4 — defined in src/object/ushape.h */
-struct UChunkInstance;   /* M4 T30 — defined in src/object/uchunk_instance.h */
+struct UEventRing;   /* defined in event/uevent_ring.h; event_ring is a pointer */
+struct UShape;       /* defined in src/object/ushape.h */
+struct UChunkInstance;   /* defined in src/object/uchunk_instance.h */
 
 /* Gap B (v0.7.1): named-event registry — full type needed in UVM struct. */
 #include "event/uevent_registry.h"
@@ -43,7 +43,7 @@ struct UChunkInstance;   /* M4 T30 — defined in src/object/uchunk_instance.h *
 /* Gap J (v0.7.1): host-side watcher table — full type needed in UVM struct. */
 #include "watcher/uwatcher_host.h"
 
-/* === W2+W3/v0.10.4: substate struct headers (audit-1 F8) ===
+/* === substate struct headers (audit-1 F8, v0.10.4) ===
  * Full types are required for the pointer fields in struct UVM below.
  * uwatcher_state.h is always compiled (src/watcher/).
  * urepl_state.h is in src/repl/ (compiled only with URBI_ENABLE_REPL=1);
@@ -54,7 +54,7 @@ struct UChunkInstance;   /* M4 T30 — defined in src/object/uchunk_instance.h *
 struct UReplState;   /* forward-decl; full type in repl/urepl_state.h */
 #include "runtime/utest_hooks.h"
 
-/* --- M3 capacity macros --- */
+/* --- capacity macros --- */
 /* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
  * double-definition warnings if ugc_incremental.h is included standalone. */
 #ifndef URBI_GC_INITIAL_THRESHOLD
@@ -67,7 +67,7 @@ struct UReplState;   /* forward-decl; full type in repl/urepl_state.h */
 
 /* --- errors + pluggable allocator ---
  *
- * UVMError and UVMAllocFn moved to <urbi/types.h> at v0.5.5 (T17) so
+ * UVMError and UVMAllocFn moved to <urbi/types.h> at v0.5.5 so
  * include/urbi/urbi.h can declare urbi_vm_run / urbi_vm_init without
  * pulling internal headers.  See <urbi/types.h> for the canonical
  * definitions and the realloc-semantics docstring. */
@@ -95,7 +95,7 @@ struct UReplState;   /* forward-decl; full type in repl/urepl_state.h */
 
 /* Entry in the deferred slot-change ring (spec #4 §3.5).
  *
- * GC rooting contract (W3/v0.10.2 — closes reactive audit F6):
+ * GC rooting contract (v0.10.2 — closes reactive audit F6):
  *   The (parent, key, new_value) triple IS walked by the GC root provider
  *   urbi_deferred_slot_changes_walk_roots, registered at urbi_vm_init.
  *   Under the cooperative scheduler this is correctness-preserving (no GC
@@ -118,7 +118,7 @@ typedef struct UDeferredSlotChange {
     UValue          new_value;
 } UDeferredSlotChange;
 
-/* --- Operator-overload IC (Gap #4, M6 Wave 3) ---
+/* --- Operator-overload IC (Gap #4) ---
  *
  * Per-call-site inline cache for operator-method lookup.  When an arithmetic
  * or comparison opcode raises a type error and the lhs is a user object, the
@@ -287,8 +287,8 @@ typedef struct {
 /* Field order is intentional and load-bearing:
  *  - The early fields (alloc_fn, alloc_ud, last_error, last_errmsg) form the
  *    init-by-zero error-handling prefix used by urbi_vm_init's failure paths.
- *  - The M2/M3/M4/M5 sections cluster fields by lifecycle (M2 intern table,
- *    M4 prototype/atom singletons, M5 reactive runtime) so reviewing each
+ *  - Lifecycle sections cluster fields (intern table,
+ *    prototype/atom singletons, reactive runtime) so reviewing each
  *    milestone's contribution stays local to one block.
  *  - Six URBI_STATIC_ASSERT layout pins (in src/vm/uvm.c, guarded on
  *    __SIZEOF_POINTER__ == 8) cement specific field offsets for cross-arch
@@ -301,20 +301,20 @@ typedef struct {
 typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — field order is intentional, see comment above */
     UVMAllocFn alloc_fn;
     void      *alloc_ud;
-    /* v0.10.3 (W3): last_error is now plain int (was UVMError; UVMError is now
+    /* v0.10.3: last_error is now plain int (was UVMError; UVMError is now
      * typedef int for source compat).  Values: URBI_OK (0), URBI_ERR_OOM (-3),
      * URBI_ERR_STRAND_FATAL (-2) — same as UVM_OK / UVM_OOM / UVM_TYPE_ERROR
      * shims in <urbi/types.h>. */
     int        last_error;
     char       last_errmsg[UVM_ERRMSG_CAP];
 
-    /* M2 additions — per pre-m2-multi-vm-audit-design.md */
-    void      *intern_table;     /* opaque; owned by uintern.c (T3) */
+    /* intern-table and topology fields — per pre-m2-multi-vm-audit-design.md */
+    void      *intern_table;     /* opaque; owned by uintern.c */
     uint64_t   topology_gen;     /* shape-tree generation; bumped on §4.1 mutations.
-                                    Per pre-M4 topology-generation spec §3.1: monotonic
+                                    Per topology-generation spec §3.1: monotonic
                                     only, init=1, reserves 0 as IC unfilled sentinel. */
 
-    /* === M4 additions (per pre-M4 prototype-chain spec §7.1, §8.1) === */
+    /* === prototype-chain fields (spec §7.1, §8.1) === */
     uint64_t   lookup_id;        /* per-VM monotonic counter; bumped at each top-level
                                     lookup; truncated to u32 when stamping UObject.lookup_stamp.
                                     Mark phase clears stamps + resets to 1 on low-32 wrap.
@@ -323,12 +323,12 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
                                     at urbi_object_alloc. 32-bit wrap aborts the VM with
                                     URBI_FATAL_OBJECT_ID_EXHAUSTED. Init=0 (first object → 1). */
     struct UShape *root_shape;   /* lazy-allocated root hidden class
-                                    (per pre-M2 §7.1).  NULL until first
+                                    (per §7.1).  NULL until first
                                     urbi_shape_root() call. */
 
-    /* === M4 atom-family singletons (T8) + M6 Phase 4 additions (Boolean /
+    /* === atom-family singletons + Phase 4 additions (Boolean /
      *     Nil / Void) ===
-     * Lazy-allocated per-VM atom prototypes; pinned via the M4 T36 root
+     * Lazy-allocated per-VM atom prototypes; pinned via the GC root
      * walker (object_roots_walker) which shades each non-NULL singleton
      * during MARK_ROOTS.  Each is NULL until first urbi_object_root /
      * urbi_object_atom call.  Slot order mirrors URBIAtomFamily values
@@ -343,22 +343,22 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *atom_tag;
     struct UObject *atom_event;
     struct UObject *atom_symbol;
-    struct UObject *atom_boolean;    /* M6 Phase 4 — proto for UVAL_BOOL receivers */
-    struct UObject *atom_nil;        /* M6 Phase 4 — proto for UVAL_NIL receivers */
-    struct UObject *atom_void;       /* M6 Phase 4 — proto for UVAL_VOID receivers */
+    struct UObject *atom_boolean;    /* Phase 4 — proto for UVAL_BOOL receivers */
+    struct UObject *atom_nil;        /* Phase 4 — proto for UVAL_NIL receivers */
+    struct UObject *atom_void;       /* Phase 4 — proto for UVAL_VOID receivers */
 
-    /* === M5 T53/T54 — native proto objects ===
+    /* === native proto objects ===
      * event_proto: UObject carrying native method slots (new/emit/syncEmit/waituntil).
      *   Allocated at urbi_vm_init by urbi_event_native_register.  NULL until then.
      *   Walked by urbi_object_register_gc_roots (added to atom-proto walk pass).
      * tag_proto: UObject carrying native getter slots (enter/leave).
      *   Allocated at urbi_vm_init by urbi_tag_native_register.  NULL until then.
      * Both protos have atom_event / atom_tag as their single prototype respectively,
-     * mirroring the M4 atom hierarchy. */
+     * mirroring the atom hierarchy. */
     struct UObject *event_proto;
     struct UObject *tag_proto;
 
-    /* === M4 T30 — UChunkInstance registry ===
+    /* === UChunkInstance registry ===
      * Linked list head of every live UChunkInstance threaded via
      * UChunkInstance.next_in_vm.  Created at urbi_chunk_instance_create
      * time (no removal at v1.0 — the GC reaps both the cell and any chain
@@ -374,7 +374,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     UClosure   *last_return_closure;
 
     /* ================================================================
-     * M3 additions (rows 8, 9, 10, 11 of the pre-M3 design bundle)
+     * Scheduler/event/GC additions (rows 8, 9, 10, 11)
      * All pointer fields zero-init to NULL; uint fields zero-init to 0.
      * Non-zero defaults set explicitly in urbi_vm_init().
      * ================================================================ */
@@ -415,19 +415,19 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *                            tag-stop/cancel override funnel there),
      *                            urbi_strand_panic's SUSPENDED arm, and
      *                            ustrand_destroy for death-from-SUSPENDED.
-     * (event_queue_count deleted this task — vestigial M3 stub with no
+     * (event_queue_count deleted as vestigial stub with no
      * writer; ISR-ring pendingness is queried live via uevent_ring_has_pending.) */
     uint32_t strand_runnable_count;    /* == |READY| + |RUNNING non-transient|;
                                           single-writer via urbi_sched_runnable_inc/dec
                                           — see usched_cooperative.h (SCHED-01) */
     uint32_t strand_suspended_count;   /* |SUSPENDED non-transient| (VM-12) */
     uint32_t strand_waiting_count;     /* |WAITING non-transient| (SCHED-13) */
-    /* watcher_active_count moved to vm->watchers->active_count (W2/v0.10.4) */
+    /* watcher_active_count moved to vm->watchers->active_count (v0.10.4) */
     uint32_t wakeup_pending_count;     /* row 8 §3; scheduler timer heap */
     uint32_t host_call_pending_count;  /* row 8 §3 + row 9; cross-strand stop injection */
 
     /* --- Row 8 realm/fatal-strand pointers and counters --- */
-    struct URealm  *realms_head;       /* linked list of all realms; T14 maintains */
+    struct URealm  *realms_head;       /* linked list of all realms */
     struct URealm  *global_realm;      /* lazy-created on first urbi_realm_global() */
     struct UStrand *fatal_strand;      /* set by urbi_step on FATAL; NULL otherwise */
     uint32_t        realm_id_seq;      /* per-VM monotonic Realm ID counter; starts at 0, incremented to 1 on first create */
@@ -442,30 +442,30 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
 
     /* --- Row 9 dispatcher hooks --- */
     uint16_t gc_pending;               /* non-zero → gc_slice() at next safepoint */
-    /* watcher_dirty_count moved to vm->watchers->dirty_count (W2/v0.10.4) */
+    /* watcher_dirty_count moved to vm->watchers->dirty_count (v0.10.4) */
 
     /* --- Row 9 v2 reservation --- */
-    uint8_t  flag_preemption;          /* RESERVED — always 0 at M3 */
+    uint8_t  flag_preemption;          /* RESERVED — always 0 */
     uint8_t  flag_reserved[3];         /* padding; zeroed */
 
     /* --- Row 9 ISR-safe event ring ---
-     * Stored as a pointer (definition lands at T18).  Zero-init = NULL. */
-    struct UEventRing *event_ring;     /* T18: uevent_ring_init(vm) allocates */
+     * Stored as a pointer (see event/uevent_ring.h).  Zero-init = NULL. */
+    struct UEventRing *event_ring;     /* uevent_ring_init(vm) allocates */
 
-    /* --- T57 ISR ring drain handler ---
+    /* --- ISR ring drain handler ---
      * Optional host callback installed via urbi_register_event_drain.
      * Called at safepoint (uevent_ring_drain) for each injected entry.
      * Handler maps event_id to a UEvent* and calls urbi_event_emit_async.
      * NULL = no drain handler (ring entries are discarded).
-     * v0.10.3 (W3): handler gains void *ud; event_drain_ud forwarded. */
+     * v0.10.3: handler gains void *ud; event_drain_ud forwarded. */
     void (*event_drain_handler)(struct UVM *vm, void *ud, uint32_t event_id, UValue payload);
     void  *event_drain_ud;
 
     /* --- Row 10 GC state machine --- */
-    uint8_t  gc_phase;                 /* 0 = IDLE per row 10 §6.2; named constant lands at T22 */
+    uint8_t  gc_phase;                 /* 0 = IDLE per row 10 §6.2 */
     uint8_t  current_white;            /* current white color for tri-color marking */
     uint8_t  gc_paused;                /* non-zero → GC slices suppressed */
-    uint8_t  in_destroy_callback;      /* debug-build assertion guard (T22/T27 use) */
+    uint8_t  in_destroy_callback;      /* debug-build assertion guard */
     uint8_t  gc_stress_armed;          /* URBI_GC_STRESS: 1 after urbi_vm_init completes;
                                         * urbi_gc_alloc force-collects BEFORE every
                                         * allocation while set (refactor-3 TEST-GAP-01).
@@ -510,21 +510,21 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UCRootFrame *c_roots_head;
 
     /* --- Row 10 type table --- */
-    struct UType *type_table[256];     /* indexed by type_tag byte; T22/T27 populate */
+    struct UType *type_table[256];     /* indexed by type_tag byte */
     uint8_t       host_type_count;     /* host-registered types since UTYPE_HOST_BASE */
 
-    /* --- Row 10 host-handle table (T27 allocates) --- */
+    /* --- Row 10 host-handle table --- */
     UValue   *handle_table;            /* flat array of pinned host handles */
     uint32_t  handle_table_cap;
     uint32_t  handle_table_next_id;
 
-    /* --- Row 11 watcher substate (T32 allocates pool slab) --- */
-    /* === W2/v0.10.4: watcher substate (extracted per audit-1 F8) === */
+    /* --- Row 11 watcher substate --- */
+    /* === watcher substate (extracted per audit-1 F8, v0.10.4) === */
     UWatcherState *watchers;           /* heap-allocated; NULL until urbi_vm_init */
     /* Linked list of live watchers — NOT in UWatcherState.
      * GC walker (urbi_gc_watcher_table_walk_roots) and the pending-onleave drain
      * loop walk this on every safepoint; keeping it on UVM avoids one
-     * pointer indirection per iteration.  W2/v0.10.4 deliberate retention,
+     * pointer indirection per iteration.  v0.10.4 deliberate retention,
      * audit-1 F8 partial. */
     struct UWatcher *active_watchers_head;
 
@@ -535,7 +535,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UStrand *cur_strand;
 
     /* --- spec #2 §5.2 install-time trace state ---
-     * in_watcher_install: moved to vm->watchers->in_install (W2/v0.10.4).
+     * in_watcher_install: moved to vm->watchers->in_install (v0.10.4).
      * trace_overflow: set when trace_read_set[] is full and a new cell would
      *   have been recorded.  Install treats overflow as "untrackable — skip IC".
      * trace_read_set_count: number of valid UCell* entries written into
@@ -554,11 +554,11 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint16_t  trace_read_set_count;
     struct UCell *trace_read_set[URBI_WATCHER_READSET_MAX];
 
-    /* === W3/v0.10.4: substate pointers (extracted per audit-1 F8) ===
+    /* === substate pointers (extracted per audit-1 F8, v0.10.4) ===
      * Watcher/install test seams previously lived as four inline function
      * pointer fields; they are now bundled in UTestHooks (runtime/utest_hooks.h).
      * Production callers NULL-check vm->test_hooks before dereferencing, matching
-     * the pre-W3 pattern of checking each hook pointer individually.
+     * the pre-v0.10.4 pattern of checking each hook pointer individually.
      *
      * vm->test_hooks is allocated by utest_hooks_create at urbi_vm_init and is
      * non-NULL in all hosted builds.  Callers in src/watcher/ check
@@ -602,7 +602,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint16_t                deferred_slot_changes_cap;
 
     /* --- Row 9 host time hook ---
-     * v0.10.3 (W3): host_time_us gains a ud parameter; host_time_ud forwarded. */
+     * v0.10.3: host_time_us gains a ud parameter; host_time_ud forwarded. */
     uint64_t (*host_time_us)(void *ud);  /* returns monotonic microseconds; default set at init */
     void      *host_time_ud;
 
@@ -625,14 +625,14 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     void   (*wake_fn)(void *ud);
     void    *wake_ud;
 
-    /* --- T19 ISR-check + debug watchdog hooks ---
+    /* --- ISR-check + debug watchdog hooks ---
      * isr_check_fn: returns true when called from ISR context; NULL = no check.
      *   In URBI_DEBUG builds, every non-ISR-safe function asserts isr_check_fn() == false.
      * host_log_fn: structured log callback; NULL = silent.  Called by debug-build
      *   watchdog when a host callback exceeds callback_warn_us.
      * callback_warn_us: watchdog threshold in microseconds (default URBI_CALLBACK_WARN_US).
      * callback_watchdog_mode: URBI_WATCHDOG_WARN (0) or URBI_WATCHDOG_ASSERT (1).
-     * v0.10.3 (W3): isr_check_fn + host_log_fn gain void *ud; *_ud fields forwarded. */
+     * v0.10.3: isr_check_fn + host_log_fn gain void *ud; *_ud fields forwarded. */
     bool     (*isr_check_fn)(void *ud);
     void      *isr_check_ud;
     void     (*host_log_fn)(struct UVM *vm, void *ud, int level, const char *fmt, ...);
@@ -641,7 +641,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint8_t    callback_watchdog_mode;
     uint8_t    pad_watchdog[3];        /* padding; zeroed */
 
-    /* === M6 Phase 3 stdlib state ===
+    /* === stdlib state ===
      * stdlib_closures + stdlib_upvalues: deleted at v0.8.4 Step C-3.
      *   UClosure and UUpvalCell are GC-managed since Step C-2; no
      *   VM-level linked lists needed for lifetime.
@@ -670,24 +670,24 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Task 11: stdlib_protos (per-nested rescue) deleted; rescued_protos is
      * the sole deferred-destroy mechanism. */
     struct UProto      *rescued_protos;
-    struct UProto  *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above; v0.9.2: was UModule* */
+    struct UProto  *stdlib_module;      /* Phase 4 — see field doc above; v0.9.2: was UModule* */
 #ifdef URBI_ENABLE_UROBOTICS
     struct UProto  *urobotics_module;   /* v0.12.2: VM-owned Robotics overlay module (gated); freed at teardown like stdlib_module */
 #endif
-    /* M6 Phase 6 (containers): VM-lifetime backing buffers for List/Dict
+    /* Phase 6 (containers): VM-lifetime backing buffers for List/Dict
      * instances allocated via urbi_stdlib_register_containers.  Each
      * buffer begins with a (void *next) header that threads onto this
      * head pointer.  Freed in urbi_vm_destroy via
      * urbi_stdlib_containers_destroy.  See src/stdlib/containers.c. */
     void       *stdlib_containers;
-    /* M6 Phase 6: Pair / Triplet / Tuple proto singletons.  Allocated
+    /* Phase 6: Pair / Triplet / Tuple proto singletons.  Allocated
      * by urbi_stdlib_register_containers; bound to realm globals by
      * urbi_stdlib_register_container_globals after the registry loop.
      * NULL until first VM boot. */
     struct UObject *container_pair_proto;
     struct UObject *container_triplet_proto;
     struct UObject *container_tuple_proto;
-    /* M6 Phase 7: Exception primitive proto.  Allocated by
+    /* Phase 7: Exception primitive proto.  Allocated by
      * urbi_stdlib_register_runtime_types; bound to "Exception" realm
      * global by urbi_stdlib_register_runtime_globals after the registry
      * loop.  NULL until first VM boot. */
@@ -710,8 +710,8 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *indexerror_proto;
     struct UObject *rangeerror_proto;
     struct UObject *divbyzero_proto;
-    /* M6 Phase 8: namespace proto singletons.  T86 lands math_proto
-     * (pi / e / nan / infinity); subsequent T87+T88+T90+T91 tasks add
+    /* Phase 8: namespace proto singletons.  math_proto
+     * (pi / e / nan / infinity); subsequent phases add
      * system_proto / platform_proto / global_namespace_proto / call-
      * message_proto.  Allocated by urbi_stdlib_register_namespaces;
      * bound to realm globals by urbi_stdlib_register_namespace_globals
@@ -722,9 +722,9 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *platform_proto;
     struct UObject *global_namespace_proto;
     struct UObject *callmessage_proto;
-    /* M6 Phase 9: primitive proto singletons.  T94 lands mutex_proto
-     * (cooperative flag-flip); T95 date_proto (libc time() shim);
-     * T96 duration_proto (thin wrapper over integer microseconds).
+    /* Phase 9: primitive proto singletons.  mutex_proto
+     * (cooperative flag-flip); date_proto (libc time() shim);
+     * duration_proto (thin wrapper over integer microseconds).
      * Allocated by urbi_stdlib_register_primitives; bound to realm
      * globals by urbi_stdlib_register_primitives_globals after the
      * registry loop.  NULL until first VM boot.  GC reachability via
@@ -776,21 +776,21 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UClosure  *every_native_closure;
     struct UPeriodic *periodics_head;
     uint8_t     stdlib_booted;
-    /* heap_locked (Phase 13 / T145): non-zero → urbi_gc_alloc declines
+    /* heap_locked (Phase 13): non-zero → urbi_gc_alloc declines
      * new allocations and returns NULL.  One-way latch set via the
      * public C API urbi_lock_heap; never cleared.  Reserved for v2.0
      * hard-RT mode where post-init allocation is forbidden.  Zero
      * default at urbi_vm_init time. */
     uint8_t     heap_locked;
     uint8_t     pad_stdlib[6];          /* padding; zeroed */
-    /* Operator-overload IC (Gap #4, M6 Wave 3).  Heap-allocated at
+    /* Operator-overload IC (Gap #4).  Heap-allocated at
      * urbi_vm_init time via vm->alloc_fn; freed at urbi_vm_destroy.
      * NULL until first allocation (urbi_vm_init ensures it is allocated).
      * Pointer to UOpOverloadIC keeps the UVM struct small so tests that
      * put `UVM vm;` on the C stack do not overflow. */
     UOpOverloadIC *op_overload_ic;
 
-    /* T33 (v0.7.0 Wave 1): host-callback hook fired by
+    /* host-callback hook (v0.7.0 Wave 1) fired by
      * urbi_watcher_body_completed after internal cleanup, before any
      * re-spawn.  NULL default; installed via urbi_set_watcher_body_done_fn.
      * Declared as inline function-pointer to keep uvm.h independent of
@@ -798,7 +798,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * circular include).  The public typedef urbi_watcher_body_done_fn
      * in <urbi/urbi.h> expands to a function pointer with the exact same
      * shape, so the setter wires through cleanly across the seam.
-     * v0.10.3 (W3): gains void *ud; watcher_body_done_ud forwarded. */
+     * v0.10.3: gains void *ud; watcher_body_done_ud forwarded. */
     void (*watcher_body_done_fn)(struct UVM *vm, void *ud, int handle, int completion_status);
     void  *watcher_body_done_ud;
 
@@ -895,14 +895,14 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
    any subsequent urbi_vm_run will NULL-deref in the frame allocation
    path — caller's bug. Zero-initializes last_error and last_errmsg.
 
-   T23 (VM-010 + VM-024, v0.7.0 Wave 1) — promoted from void to int return.
+   Promoted from void to int return (VM-010 + VM-024, v0.7.0 Wave 1).
    Returns URBI_OK on success, URBI_ERR_OOM if any sub-system allocation
    fails (event_ring, watcher pool, deferred_slot_changes ring, operator
    overload IC).  urbi_vm_destroy remains safe to call regardless of the
    return value; partial-init state is reaped by the destroy path. */
 int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 
-/* Strand-driven dispatch loop (T6).  Runs s's bytecode until one of:
+/* Strand-driven dispatch loop.  Runs s's bytecode until one of:
    - strand reaches DEAD (top-level OP_RET or halt_error)
    - strand voluntarily yields via OP_YIELD (state → READY)
    - step_budget_in opcodes have been consumed (state remains RUNNING)
@@ -917,7 +917,7 @@ uint64_t urbi_vm_dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budg
    last_error and last_errmsg are reset at entry — a caller may inspect
    them after each urbi_vm_run call without stale state from prior runs.
 
-   v0.10.3 (W3): return type changed from UVMError to int.  UVMError is now
+   v0.10.3: return type changed from UVMError to int.  UVMError is now
    typedef int for source compat; existing callsites compile unchanged.
 
    API-004 (Wave 5): the `realm` argument selects which Realm the
@@ -940,11 +940,11 @@ void urbi_vm_destroy(UVM *vm);
 void urbi_native_protos_init(UVM *vm);
 
 /* Return a static string such as "UVM_TYPE_ERROR" for debug. */
-/* v0.10.3 (W3): UVMError is now typedef int; uvm_error_name accepts int. */
+/* v0.10.3: UVMError is now typedef int; uvm_error_name accepts int. */
 const char *uvm_error_name(int code);
 
 /* --- Internal cross-module declarations ---
- * Originally in uvm_internal.h (consolidated post-M3). All src/ headers are
+ * Originally in uvm_internal.h (consolidated post-v0.5.x). All src/ headers are
  * internal-by-definition after the include/urbi/ split — no separate friend
  * header needed. */
 

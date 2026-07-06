@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/vm/uvm_tag_scope.c — OP_PUSH_TAG / OP_POP_TAG dispatch helpers,
- * extracted from the uvm.c dispatch loop (v0.10.15-vm-decomp-2, W1 stage 1).
+ * extracted from the uvm.c dispatch loop (v0.10.15-vm-decomp-2, stage 1).
  *
  * Behavior-preserving move: the arm bodies are byte-for-byte the v0.10.14
  * versions, with the dispatch-loop control transfers rewritten as return
@@ -29,20 +29,20 @@ UVmTagScopeResult
 urbi_vm_push_tag_scope(UVM *vm, UStrand *s)
 {
     /* OP_PUSH_TAG ABx:
-     *   A[7:4] = flags nibble (0 at M3 — no FLAG_HAS_ONLEAVE)
+     *   A[7:4] = flags nibble (0 initially — no FLAG_HAS_ONLEAVE)
      *   A[3:0] = tag_reg nibble (v0.10.9-B: READ at runtime — the code
      *            below checks R[tag_reg] and, when it holds a UVAL_TAG,
      *            binds the scope to the user's tag instead of creating
      *            an anonymous one; the anonymous UTag is the fallback
      *            for non-UVAL_TAG values and pre-v0.10.15 bytecode)
-     *   Bx     = onleave_pc (handler PC; 0 at M3 since no onleave body)
+     *   Bx     = onleave_pc (handler PC; 0 initially since no onleave body)
      *
-     * T30: allocate a per-scope UTag (no UVAL_TAG / register binding at M3).
+     * Allocate a per-scope UTag (no UVAL_TAG / register binding).
      * Each tag-scope gets its own anonymous UTag; the tag's lifetime is
      * bounded by the corresponding OP_POP_TAG.
-     * Walker-pop (urbi_unwind via OP_THROW etc.) will leak the UTag at M3 —
-     * deferred for T31/walker integration when full tag lifecycle wires through.
-     * strand_back = s for future tag.stop() walk (T31 uses). */
+     * Walker-pop (urbi_unwind via OP_THROW etc.) will not visit this UTag —
+     * deferred until full tag lifecycle wires through.
+     * strand_back = s for future tag.stop() walk. */
     (void)vm;  /* the VM is reached via s->vm; vm kept for call-site symmetry */
     uint8_t  a          = uinstr_a(*s->pc);
     uint8_t  flags      = (uint8_t)((a >> 4) & 0xFU);
@@ -111,19 +111,19 @@ urbi_vm_push_tag_scope(UVM *vm, UStrand *s)
 void
 urbi_vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
 {
-    /* T30: capture owning_tag before pop — the slot remains valid memory but
+    /* Capture owning_tag before pop — the slot remains valid memory but
      * is below cleanup_depth after pop and may be reused by a later push.
      * Capture flags too (v0.10.9-B FLAG_TAG_USER_OWNED) for the same reason. */
     UTag *tag = top->owning_tag;
     uint8_t top_flags = top->flags;
     /* Unlink this entry from tag->member_strands_head (singly-linked
      * list removal via next_member). Only unlink when tag is non-NULL
-     * — older bytecode emitted before T30 may have owning_tag == NULL. */
+     * — older bytecode may have owning_tag == NULL. */
     if (tag != NULL) {
         URBI_SLIST_UNLINK(tag->member_strands_head, top, next_member,
                           UCleanupEntry);
     }
-    /* T55: tier-2 leave event hook (spec #3 §8.3).
+    /* Tier-2 leave event hook (spec #3 §8.3).
      * Fires BEFORE the tier-1 watcher cascade so subscribers see the
      * tag still ambient (spec ordering rationale: tier-1 onleave runs last). */
     if (tag != NULL && tag->leave_event != NULL &&
@@ -164,10 +164,10 @@ urbi_vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
 UVmTagScopeResult
 urbi_vm_pop_tag_scope(UVM *vm, UStrand *s)
 {
-    /* OP_POP_TAG ABC: A = tag_reg (unused at M3), B = C = 0.
+    /* OP_POP_TAG ABC: A = tag_reg (currently unused), B = C = 0.
      * Pop the top UCLEANUP_TAG_SCOPE entry.
      * If FLAG_HAS_ONLEAVE is set in the entry's flags, the onleave
-     * handler would run via run_cleanup_with_replace — but at M3
+     * handler would run via run_cleanup_with_replace — but
      * flags is always 0 (no onleave body is emitted), so the handler
      * branch is dead code.  Include the check for forward-compatibility. */
     if (s->cleanup_depth > 0) {
@@ -177,7 +177,7 @@ urbi_vm_pop_tag_scope(UVM *vm, UStrand *s)
              * If somehow reached (bytecode from future version or corruption),
              * halt safely. */
             vm->last_error = UVM_TYPE_ERROR;
-            urbi_vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired at M3");
+            urbi_vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired (DEFERRED-v1.x)");
             return UVM_TAG_SCOPE_HALT;
         }
         urbi_vm_tag_scope_teardown(s, top);

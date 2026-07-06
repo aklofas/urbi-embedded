@@ -4,26 +4,26 @@
 #include "vm/uvm.h"
 #include "runtime/umacros.h"
 #include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
-#include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
+#include "runtime/uclosure.h"     /* UClosure full definition (embeds UCell) */
 #include "sched/ustrand.h"
 #include "sched/usched_cooperative.h" /* urbi_sched_strand_yield */
 #include "value/uvalue.h"
 #include "runtime/uunwind.h"
 #include "realm/urealm.h"            /* URealm — OP_LOAD_REALM_GLOBAL */
 #include "urbi/gc.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
-#include "tag/utag.h"    /* UTag, utag_create/destroy (T30) */
-#include "watcher/uwatcher.h"          /* UWatcher — watcher dispatch (T32) */
-#include "watcher/uwatcher_install.h"  /* urbi_watcher_install_watcher_runtime, urbi_watcher_install_at_event_runtime (T41-T47) */
+#include "tag/utag.h"    /* UTag, utag_create/destroy */
+#include "watcher/uwatcher.h"          /* UWatcher — watcher dispatch */
+#include "watcher/uwatcher_install.h"  /* urbi_watcher_install_watcher_runtime, urbi_watcher_install_at_event_runtime */
 #include "stdlib/temporal.h"           /* v0.9.4: urbi_periodic_body_completed */
-#include "event/uevent.h"                    /* UEvent — cast target for OP_AT_EVENT_INSTALL (T47) */
-#include "event/uevent_emit.h"               /* urbi_event_emit_sync — tier-2 tag enter/leave hooks (T55) */
-#include "event/uevent_native.h"             /* uvalue_from_event — OP_GETSLOT_CHANGE_EVENT (T61) */
-#include "vm/uop_fork.h" /* urbi_vm_op_fork_detach/join/wait + urbi_vm_fork_wake_joiners (T38) */
-#include "vm/uvm_arith.h"    /* arith_add/sub/mul/div/neg + helpers (T16) */
-#include "vm/uvm_internal.h" /* diag / closure cross-TU decls (T15) */
-#include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
-#include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
-#include "changed/uchanged_node.h"          /* urbi_object_get_or_create_change_event (T60) */
+#include "event/uevent.h"                    /* UEvent — cast target for OP_AT_EVENT_INSTALL */
+#include "event/uevent_emit.h"               /* urbi_event_emit_sync — tier-2 tag enter/leave hooks */
+#include "event/uevent_native.h"             /* uvalue_from_event — OP_GETSLOT_CHANGE_EVENT */
+#include "vm/uop_fork.h" /* urbi_vm_op_fork_detach/join/wait + urbi_vm_fork_wake_joiners */
+#include "vm/uvm_arith.h"    /* arith_add/sub/mul/div/neg + helpers */
+#include "vm/uvm_internal.h" /* diag / closure cross-TU decls */
+#include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow */
+#include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT */
+#include "changed/uchanged_node.h"          /* urbi_object_get_or_create_change_event */
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"
 #include "chunk/uchunk.h"
@@ -32,9 +32,9 @@
 #include "runtime/uframe.h"
 #include "vm/uvm_op_overload.h"  /* urbi_vm_arith_method_fallback / _unary / _cmp (Gap #4) */
 #include "value/uintern.h"       /* ustr_op_name (Gap #4 operator-name interning) */
-#include "vm/uvm_slot.h"         /* urbi_vm_getslot_value, urbi_vm_setslot_value, urbi_vm_self_lookup, urbi_vm_dispatch_getter/setter, vm_trace_slot_read_if_needed (W1) */
-#include "vm/uvm_tag_scope.h"    /* urbi_vm_push_tag_scope, urbi_vm_pop_tag_scope (v0.10.15 W1 stage 1) */
-#include "vm/uvm_reactive_install.h" /* urbi_vm_reactive_install — 7 install arms (v0.10.15 W1 stage 2) */
+#include "vm/uvm_slot.h"         /* urbi_vm_getslot_value, urbi_vm_setslot_value, urbi_vm_self_lookup, urbi_vm_dispatch_getter/setter, vm_trace_slot_read_if_needed */
+#include "vm/uvm_tag_scope.h"    /* urbi_vm_push_tag_scope, urbi_vm_pop_tag_scope (v0.10.15, stage 1) */
+#include "vm/uvm_reactive_install.h" /* urbi_vm_reactive_install — 7 install arms (v0.10.15, stage 2) */
 #include "vm/uvm_reactive_drain.h"   /* vm_reactive_drain — centralised reactive pump (SCHED-02/SCHED-12) */
 #include "stdlib/object_root.h"      /* urbi_raise_typed — typed Exception instance builder */
 #include <stdbool.h>
@@ -115,7 +115,7 @@ ic_resolve_pi(UStrand *s)
 /* The reactive-install operand-check / fault helpers
  * (vm_install_check_closure_operand / vm_install_check_event_operand /
  * vm_install_result_is_fatal / vm_install_fault) and the seven install arm
- * bodies were extracted to src/vm/uvm_reactive_install.c (v0.10.15 W1
+ * bodies were extracted to src/vm/uvm_reactive_install.c (v0.10.15
  * stage 2).  See urbi_vm_reactive_install(). */
 
 /* ---------------------------------------------------------------------------
@@ -228,7 +228,7 @@ vm_call_typeerror(UVM *vm, UStrand *s)
 } while (0)
 
 /* --- urbi_vm_dispatch_loop_until_yield ---
-   The core execution engine (T6).  Runs s's bytecode until one of:
+   The core execution engine.  Runs s's bytecode until one of:
    - strand reaches DEAD (top-level OP_RET or halt_error)
    - strand yields via OP_YIELD (state → READY)
    - step_budget_in opcodes are consumed (state remains RUNNING)
@@ -247,7 +247,7 @@ urbi_vm_dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
     s->state = USTRAND_STATE_RUNNING;
     vm->step_budget_remaining = step_budget_in;
 
-    /* W9/v0.10.5: deliver event payload to the OP_CALL result register on
+    /* v0.10.5: deliver event payload to the OP_CALL result register on
      * resume from WAIT_EVENT.  urbi_event_waituntil parks the strand by setting
      * state=WAIT_EVENT, advancing pc past the OP_CALL, and exiting.  On wake,
      * c_event_emit_* deposits the payload in s->last_event_payload before
@@ -309,8 +309,8 @@ urbi_vm_dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_JOIN_WAIT]  = &&label_OP_JOIN_WAIT,
         [OP_GETSLOT]    = &&label_OP_GETSLOT,
         [OP_SETSLOT]    = &&label_OP_SETSLOT,
-        /* M3 row 7 control-transfer — T10 wires THROW/TRY_BEGIN/TRY_END/RESUME/LOAD_CATCH_VALUE
-         * T11 wires PUSH_TAG/POP_TAG/PUSH_FRAME_GUARD; TAG_STOP wired at v0.10.2. */
+        /* row 7 control-transfer — THROW/TRY_BEGIN/TRY_END/RESUME/LOAD_CATCH_VALUE
+         * PUSH_TAG/POP_TAG/PUSH_FRAME_GUARD; TAG_STOP wired at v0.10.2. */
         [OP_THROW]            = &&label_OP_THROW,
         [OP_TAG_STOP]         = &&label_op_tag_stop,
         [OP_TRY_BEGIN]        = &&label_OP_TRY_BEGIN,
@@ -320,7 +320,7 @@ urbi_vm_dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_PUSH_FRAME_GUARD] = &&label_OP_PUSH_FRAME_GUARD,
         [OP_RESUME]           = &&label_OP_RESUME,
         [OP_LOAD_CATCH_VALUE] = &&label_OP_LOAD_CATCH_VALUE,
-        /* M5 reactive runtime — T41 wires AT/WHENEVER install opcodes. */
+        /* reactive runtime — AT/WHENEVER install opcodes: */
         [OP_AT_INSTALL]            = &&label_OP_AT_INSTALL,
         [OP_AT_SYNC_INSTALL]       = &&label_OP_AT_SYNC_INSTALL,
         [OP_WHENEVER_INSTALL]      = &&label_OP_WHENEVER_INSTALL,
@@ -332,7 +332,7 @@ urbi_vm_dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_LOAD_RECV]             = &&label_OP_LOAD_RECV,
         /* v0.7.2 S42 method-call ABI cleanup. */
         [OP_SELF]                  = &&label_OP_SELF,
-        /* v0.10.2-reactive W0 — whenever (e?) install. */
+        /* v0.10.2-reactive — whenever (e?) install. */
         [OP_WHENEVER_EVENT_INSTALL] = &&label_OP_WHENEVER_EVENT_INSTALL,
     };
 
@@ -545,8 +545,7 @@ dispatch:
             }
 
             /* Non-top-frame: hand off to walker.
-             * M2's inline pop+deliver is now urbi_unwind()'s job (T8 bridging
-             * stub; T9 replaces with the real 5-kind walker). */
+             * urbi_unwind() handles pop+deliver (5-kind unwind walker). */
             s->unwind_value   = retval;
             s->pending_unwind = UEXEC_RETURN;
             steps_consumed++;
@@ -793,13 +792,13 @@ dispatch:
             UClosure *callee = (UClosure *)s->R[a].v.p;
             UValue    self_value = is_method ? s->R[a + 1U] : urbi_make_nil();
 
-            /* M6 Phase 3: C-native dispatch.  When native_fn is set, the
+            /* C-native dispatch.  When native_fn is set, the
              * closure has no bytecode body — invoke the C function instead.
              * The receiver (`self`) is R[A+1] on method calls (set by the
              * preceding OP_SELF) or nil on plain calls.  Result lands in
              * R[A]; nargs supplied via R[A+arg_off..A+B-1].
              *
-             * VM-009 closure (defer:M6 → closed at v0.6.1): the audit
+             * VM-009 closure (closed at v0.6.1): the audit
              * flagged that native-register paths allocate UClosure cells
              * with `proto_inst = NULL`, leaving any subsequent OP_GETSLOT
              * inside the callee with no IC table to bind.  This native-
@@ -834,7 +833,7 @@ dispatch:
                         s->pc++;
                         goto safepoint;
                     }
-                    /* W6/v0.10.2: a native method may block the strand (e.g.
+                    /* v0.10.2: a native method may block the strand (e.g.
                      * sleep()) by calling urbi_sched_strand_block.  If the strand
                      * is now WAITING, advance pc past this OP_CALL so the
                      * scheduler resumes at the correct next instruction, then
@@ -959,7 +958,7 @@ dispatch:
             s->R        = &s->R[a + arg_off];
             s->pc       = callee->proto->instructions;
             s->pc_base  = s->pc;
-            /* FOUND-032: route through the shared helper so OP_CALL and
+            /* Route through the shared helper so OP_CALL and
              * pop_call_frame cannot drift on the constants-from-closure rule. */
             s->cur_consts = ustrand_consts_for_closure(s, callee);
 
@@ -1086,7 +1085,7 @@ dispatch:
         }
 
         CASE(OP_LT) {
-            /* ABC: if ((R[B]<R[C]) != A) pc++ — numeric only at M2 */
+            /* ABC: if ((R[B]<R[C]) != A) pc++ — numeric comparison only */
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             const UValue *c = &s->R[uinstr_c(*s->pc)];
             bool lt = false;
@@ -1140,7 +1139,7 @@ dispatch:
         }
 
         CASE(OP_LE) {
-            /* ABC: if ((R[B]<=R[C]) != A) pc++ — numeric only at M2 */
+            /* ABC: if ((R[B]<=R[C]) != A) pc++ — numeric comparison only */
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             const UValue *c = &s->R[uinstr_c(*s->pc)];
             bool le = false;
@@ -1234,10 +1233,10 @@ dispatch:
         CASE(OP_FORK_DETACH) {
             /* `,` separator: spawn child closure as detached strand.
              * A = closure_reg.  Parent continues; child runs concurrently.
-             * See src/uop_fork.c for M3 closure-spawn vs. spec §7.1 rationale.
+             * See src/uop_fork.c for closure-spawn vs. spec §7.1 rationale.
              * Rejected from urbi_vm_run's stack-local transient because that
              * adapter only dispatches its own strand and would leak any
-             * spawned children.  T33 routes the transient onto
+             * spawned children.  The transient routes onto
              * vm->global_realm->strands_head for GC-walker visibility, so
              * realm == NULL no longer discriminates; the dedicated flag
              * is_transient_strand does. */
@@ -1282,7 +1281,7 @@ dispatch:
         CASE(OP_GETSLOT) {
             /* OP_GETSLOT ABC: R[A] := R[B].slot[ic_index].
              *
-             * Post-W1: thin arm — decode, resolve IC + recv, call helpers.
+             * Thin arm — decode, resolve IC + recv, call helpers.
              * All policy (IC fast-path, trace, getter, slow path + error)
              * lives in uvm_slot.c. */
             URBI_PERF_INC(vm, slot_get);
@@ -1335,7 +1334,7 @@ dispatch:
         CASE(OP_SETSLOT) {
             /* OP_SETSLOT ABC: R[B].slot[ic_index] := R[A].
              *
-             * Post-W1: thin arm — decode, guard, call helpers.
+             * Thin arm — decode, guard, call helpers.
              * All IC policy (fast-path + slow-path + error) lives in uvm_slot.c. */
             URBI_PERF_INC(vm, slot_set);
             uint32_t i = *s->pc;
@@ -1399,7 +1398,7 @@ dispatch:
             NEXT();
         }
 
-        /* --- M3 row 7 control-transfer opcodes (T10 real dispatch) --- */
+        /* --- row 7 control-transfer opcodes --- */
 
         CASE(OP_THROW) {
             /* OP_THROW ABx: A = reg_value, Bx = 0 (unused).
@@ -1469,7 +1468,7 @@ dispatch:
 
         CASE(OP_PUSH_TAG) {
             /* Body extracted to urbi_vm_push_tag_scope (uvm_tag_scope.c, v0.10.15
-             * W1 stage 1).  The helper cannot goto a dispatch label, so its
+             * stage 1).  The helper cannot goto a dispatch label, so its
              * fatal path returns UVM_TAG_SCOPE_FATAL for `goto exit_strand`. */
             UVmTagScopeResult r = urbi_vm_push_tag_scope(vm, s);
             if (r == UVM_TAG_SCOPE_FATAL) goto exit_strand;
@@ -1479,7 +1478,7 @@ dispatch:
 
         CASE(OP_POP_TAG) {
             /* Body extracted to urbi_vm_pop_tag_scope (uvm_tag_scope.c, v0.10.15
-             * W1 stage 1).  The (v1.0-dead) FLAG_HAS_ONLEAVE branch returns
+             * stage 1).  The (v1.0-dead) FLAG_HAS_ONLEAVE branch returns
              * UVM_TAG_SCOPE_HALT for HALT(). */
             UVmTagScopeResult r = urbi_vm_pop_tag_scope(vm, s);
             if (r == UVM_TAG_SCOPE_FATAL) goto exit_strand;
@@ -1490,7 +1489,7 @@ dispatch:
         CASE(OP_PUSH_FRAME_GUARD) {
             /* OP_PUSH_FRAME_GUARD ABC: A = register_base, B = register_count, C = 0.
              * Push a UCLEANUP_CALL_FRAME entry onto the cleanup stack.
-             * The T9 unwind walker absorbs UEXEC_RETURN at CALL_FRAME entries,
+             * The unwind walker absorbs UEXEC_RETURN at CALL_FRAME entries,
              * delivering the return value and popping the frame.
              * strand_back = s for compatibility with unwind walker. */
             uint8_t register_base  = uinstr_a(*s->pc);
@@ -1516,7 +1515,7 @@ dispatch:
             NEXT();
         }
 
-        /* OP_TAG_STOP: W4/v0.10.2 — real implementation replacing the M3
+        /* OP_TAG_STOP: v0.10.2 implementation
          * reserved-stub.  ABC encoding: A = reg_tag (UVAL_TAG), B = reg_value
          * (stop payload, reserved at v1.0 — pass nil), C = 0.
          *
@@ -1524,7 +1523,7 @@ dispatch:
          * member strand, walks the onleave watcher cascade, and sets
          * UTAG_FLAG_STOPPED.  Wire format v1.8 / 0x18 unchanged — OP_TAG_STOP
          * opcode value 30 is already in the bytecode table; no emit path
-         * produced it until W4, when Tag.new() + .stop() become scripted.
+         * produced it until v0.10.2, when Tag.new() + .stop() became scripted.
          *
          * Type-check: R[A] must be UVAL_TAG.  script-side `.stop()` resolves
          * through Tag.new() which always returns UVAL_TAG, so a TYPE_ERROR
@@ -1548,7 +1547,7 @@ dispatch:
             NEXT();
         }
 
-        /* === T41: OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL ===
+        /* === OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL ===
          *
          * ABC-encoded: A = cond_reg, B = body_reg, C = onleave_reg (0xFF = absent).
          * Routes through urbi_watcher_install_watcher_runtime with the appropriate UWATCHER_*
@@ -1556,7 +1555,7 @@ dispatch:
          * next instruction — at-watchers do not block the installing strand.
          * Spec #2 §6.3. */
         /* The seven reactive-install arm bodies are extracted to
-         * urbi_vm_reactive_install (uvm_reactive_install.c, v0.10.15 W1 stage 2).
+         * urbi_vm_reactive_install (uvm_reactive_install.c, v0.10.15, stage 2).
          * Each helper cannot goto a dispatch label, so the (v1.0-unreachable)
          * fault path returns UVM_INSTALL_HALT for HALT(); OP_WAITUNTIL_INSTALL's
          * park path returns UVM_INSTALL_PARK_EXIT, leaving the dispatch-loop-
@@ -1598,7 +1597,7 @@ dispatch:
             NEXT();
         }
 
-        /* === T61: OP_GETSLOT_CHANGE_EVENT ===
+        /* === OP_GETSLOT_CHANGE_EVENT ===
          *
          * ABC: A = dst_reg, B = recv_reg, C = ic_index.
          * R[A] := the UEvent for (R[B], ic_table[C].name), lazy-created.
@@ -1646,7 +1645,7 @@ dispatch:
             NEXT();
         }
 
-        /* M5 spec #5 §6: OP_LOAD_REALM_GLOBAL — loads realm->global_object into R[A].
+        /* OP_LOAD_REALM_GLOBAL — loads realm->global_object into R[A] (spec #5 §6).
          * Emitted as a prologue by the compiler when a function references any
          * realm global (spec #5 §5.1 + §5.2).  The register R[A] is then used
          * as the receiver for all OP_GETSLOT / OP_SETSLOT global accesses. */
@@ -1704,7 +1703,7 @@ dispatch:
         CASE(OP_SELF) {
             /* OP_SELF ABC: R[A] := R[B].slot[ic_index],  R[A+1] := R[B].
              *
-             * Post-W1: thin arm.  Receiver-snapshot BEFORE lookup (dst_reg
+             * Thin arm.  Receiver-snapshot BEFORE lookup (dst_reg
              * may alias recv_reg); R[A+1] is always written before R[A]. */
             uint32_t i = *s->pc;
             uint8_t  dst_reg  = uinstr_a(i);
@@ -1827,7 +1826,7 @@ safepoint:
     vm->step_budget_remaining--;
     if (vm->gc_pending)           urbi_gc_slice(vm, URBI_GC_SLICE_BUDGET);
     vm_reactive_drain(vm, /*bounded_whenever=*/0);
-    /* Preemption flag reserved for v2; not checked at M3. */
+    /* Preemption flag reserved for v2; not checked at v1.0. */
     /* Resume dispatch. */
 #if UVM_USE_COMPUTED_GOTO
     DISPATCH();

@@ -22,7 +22,7 @@
 #endif
 
 /* --- urbi_vm_run: thin adapter that wraps urbi_vm_dispatch_loop_until_yield.
-   Preserves the M2 public API contract:
+   Preserves the public API contract:
    - Resets error state at entry.
    - Frees the previous run's return closure.
    - Returns UVM_OK with *out set on success, or the error code on failure.
@@ -49,17 +49,17 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
 
     /* Create a transient strand for this run.
        We zero-init manually rather than calling ustrand_init to avoid
-       pre-allocating the cleanup stack (which unwind_walk wires at T9;
-       the M2 baseline dispatcher never uses it).  This preserves the
-       M2 contract that the first allocation failure returns OOM for the
+       pre-allocating the cleanup stack (which the unwind walker requires;
+       the transient-strand path never uses it).  This preserves the
+       contract that the first allocation failure returns OOM for the
        register stack, not the cleanup stack. */
     UStrand strand;
     urbi_zero(&strand, sizeof(strand));
     strand.vm                   = vm;
     strand.state                = USTRAND_STATE_DORMANT;
-    strand.is_transient_strand = 1U;  /* T33: discriminator for OP_FORK_* guards */
+    strand.is_transient_strand = 1U;  /* discriminator for OP_FORK_* guards */
 
-    /* Allocate the per-strand register stack first (preserves M2 OOM contract:
+    /* Allocate the per-strand register stack first (preserves OOM contract:
      * first allocation failure → UVM_OOM with diagnostic before cleanup init).
      * CHSTR-022: delegates alloc+zero to urbi_strand_arm_init; the manual
      * error path is preserved here because urbi_vm_run needs to set last_error
@@ -71,7 +71,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
         return UVM_OOM;
     }
 
-    /* T10: initialise the cleanup stack so OP_TRY_BEGIN can push entries.
+    /* Initialise the cleanup stack so OP_TRY_BEGIN can push entries.
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
     (void)urbi_sched_strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
 
@@ -79,7 +79,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
      * caller-supplied realm if given, else the VM's global Realm (lazy-created
      * on first use).  Failure here is non-fatal — the strand stays realm=NULL
      * and the GC walker simply skips it.  The strand is unlinked again before
-     * the matching ustrand_destroy below.  Per pre-M4 GC strand-walker spec §5.1.
+     * the matching ustrand_destroy below.  Per GC strand-walker spec §5.1.
      * entry_closure stays NULL — that is the discriminator the OP_FORK_DETACH
      * / OP_FORK_JOIN guards now use to reject forks from a urbi_vm_run transient.
      *
@@ -108,9 +108,9 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     strand.cur_consts = strand.root_proto->constants;
     /* v0.8.1 Phase 2 (Variant B fusion): strand-bind bump goes to root_proto.
      * Decrement fires in ustrand_destroy at the end of this function.
-     * v0.10.1 W4: typed-handle acquire for diagnostics (F3 transient site). */
+     * v0.10.1: typed-handle acquire for diagnostics (F3 transient site). */
     urbi_proto_strand_ref_acquire(strand.root_proto, URBI_PROTO_REF_OWNER_TRANSIENT);
-    /* M4 follow-up / T72 fix: always create a fresh UChunkInstance for each
+    /* Always create a fresh UChunkInstance for each
      * urbi_vm_run call.  urbi_get_or_create_chunk_instance is unsuitable here
      * because urbi_repl_eval heap-allocates UProto per line and reuses the same
      * address across calls; the cache lookup would return a stale instance
@@ -123,7 +123,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     strand.module_instance = urbi_chunk_instance_create(vm, (UProto *)root);
     if (strand.module_instance == NULL) {
         vm->last_error = UVM_OOM;
-        /* T33: unlink stack-local transient from realm before ustrand_destroy,
+        /* Unlink stack-local transient from realm before ustrand_destroy,
          * mirroring src/sched/ustrand.c:699-700 and the normal-exit path below. */
         if (strand.realm != NULL && strand.realm->strands_head != NULL) {
             UStrand **pp = &strand.realm->strands_head;
@@ -154,8 +154,8 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
 
     /* Run to completion: loop until strand is DEAD or a fatal error sets last_error.
        OP_YIELD or per-strand budget exhaustion leaves state READY — treat as
-       "continue" for the M2 API contract (urbi_vm_run must block until completion).
-       M6 Phase 7: vm->cur_strand must be set during dispatch so native methods
+       "continue" contract (urbi_vm_run must block until completion).
+       vm->cur_strand must be set during dispatch so native methods
        (Exception.raise, urbi_throw callers, urbi_event_waituntil, etc.) can
        reach the running strand.  Pre-Phase-7 only ustep.c set this field;
        urbi_vm_run is the synchronous one-shot path and was a gap. */
@@ -191,7 +191,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
             /* OP_YIELD (between separator children) or per-strand budget.
                Remove from ready queue (urbi_sched_strand_yield enqueued it),
                reset to RUNNING, and re-enter dispatch.
-               T24 / VM-011: route through urbi_sched_dequeue_ready_head so the
+               VM-011: route through urbi_sched_dequeue_ready_head so the
                ready-queue link cleanup lives at the sched boundary, not at
                the driver site.  SCHED-01: the dequeue is count-neutral
                (and transients never participate in the count anyway), so
@@ -208,7 +208,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
             continue;
         }
         if (USTRAND_IS_WAITING(&strand)) {
-            /* M2 baseline has no blocking opcodes; WAITING here is a bug. */
+            /* urbi_vm_run is synchronous; WAITING here is a bug. */
             vm->last_error = UVM_TYPE_ERROR;
             urbi_vm_format_type_error_msg(vm, "strand blocked unexpectedly in urbi_vm_run");
             break;
@@ -250,7 +250,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     /* CHSTR-044: free register stack via triplet helper. */
     urbi_strand_register_stack_free(&strand, vm);
 
-    /* T33: unlink the transient from global_realm->strands_head before
+    /* Unlink the transient from global_realm->strands_head before
      * ustrand_destroy.  The stack-local UStrand is about to leave scope; if
      * we leave it threaded, urealm_teardown_all → urbi_realm_destroy would
      * walk strands_head and call urbi_strand_destroy on a stack address.

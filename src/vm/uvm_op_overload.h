@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uvm_op_overload.h — operator-method fallback dispatch (Gap #4, M6 Wave 3).
+/* uvm_op_overload.h — operator-method fallback dispatch (Gap #4).
  *
  * Shared between uvm.c (call sites in dispatch arms) and uvm_op_overload.c
  * (implementation).  Not part of the public <urbi/> API. */

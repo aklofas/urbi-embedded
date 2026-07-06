@@ -43,7 +43,7 @@ UClosure *urbi_vm_alloc_closure(UVM *vm, UProto *proto) {
      * For a nested proto this lands on proto->root (the module's root_proto);
      * for a root proto (native stdlib closures) it lands on proto itself.
      * Paired with the dec in uclosure_destroy (the finalizer).
-     * v0.10.1 W4: use typed-handle API for saturation/underflow diagnostics. */
+     * v0.10.1: use typed-handle API for saturation/underflow diagnostics. */
     urbi_proto_ref_acquire(uproto_root_of(proto), URBI_PROTO_REF_OWNER_CLOSURE);
     cl->nupvals    = nup;
     return cl;

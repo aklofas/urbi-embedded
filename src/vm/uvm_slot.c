@@ -50,7 +50,7 @@ slot_throw_or_fatal(UVM *vm, const char *msg)
  * vm_trace_slot_read_if_needed: add recv's GC cell to vm->trace_read_set[]
  * during watcher-install cond evaluation (vm->watchers->in_install == true).
  *
- * This is the EXCLUSIVE site for the read-set trace probe; after W1,
+ * This is the EXCLUSIVE site for the read-set trace probe; after the vm-decomp extraction,
  * OP_GETSLOT and OP_SELF never implement this inline.
  *
  * No-op when vm->watchers->in_install is false (normal hot path — zero
@@ -82,7 +82,7 @@ vm_trace_slot_read_if_needed(UVM *vm, UObject *recv)
  * OBJ-IC-POLY LOCAL-slot discipline.
  *
  * The LOCAL-slot re-dispatch discipline lives exclusively here (OBJ-IC-POLY
- * fix, audit-1 F3 + runtime-invariants F8).  After W1 the three OP arms
+ * fix, audit-1 F3 + runtime-invariants F8).  After the vm-decomp extraction, the three OP arms
  * that previously each inlined this logic call through here instead.
  *
  * Returns UVM_SLOT_OK with *out_value filled on a normal fast-path hit.

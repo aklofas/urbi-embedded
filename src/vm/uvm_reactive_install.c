@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/vm/uvm_reactive_install.c — the seven reactive-install dispatch arms,
- * extracted from the uvm.c dispatch loop (v0.10.15-vm-decomp-2, W1 stage 2).
+ * extracted from the uvm.c dispatch loop (v0.10.15-vm-decomp-2, stage 2).
  *
  * Behavior-preserving move: each arm body is byte-for-byte its v0.10.14
  * version, with HALT() rewritten as `return UVM_INSTALL_HALT;`, the
@@ -66,7 +66,7 @@ vm_install_check_closure_operand(UVM *vm, const UStrand *s, uint8_t reg,
    and urbi_watcher_install_at_event_runtime dereferences garbage.
 
    Routes through uvalue_is_event() rather than a raw kind comparison
-   so the predicate location stays single-source-of-truth (T29's
+   so the predicate location stays single-source-of-truth (the uvalue_is_event
    refactor pattern). */
 static int
 vm_install_check_event_operand(UVM *vm, const UStrand *s, uint8_t reg,
@@ -132,7 +132,7 @@ vm_install_fault(UVM *vm, UWatcherInstallResult r, const char *opcode_name)
                 "watcher install attempted from within scratch-frame eval");
             break;
         case UWATCHER_INSTALL_NO_OBSERVABLE_CELLS:
-            /* W0/v0.10.2: cond watcher with empty read-set is a program error.
+            /* v0.10.2: cond watcher with empty read-set is a program error.
              * Use `whenever (e?) body` for event-driven subscriptions. */
             vm->last_error = UVM_TYPE_ERROR;
             urbi_vm_format_type_error_msg(vm,
@@ -229,7 +229,7 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
         return UVM_INSTALL_NEXT;
     }
 
-    /* === T42: OP_WAITUNTIL_INSTALL — strand-block or pass-through ===
+    /* === OP_WAITUNTIL_INSTALL — strand-block or pass-through ===
      *
      * A-encoded: A = cond_reg.
      *
@@ -240,7 +240,7 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
      *       urbi_sched_strand_block(USTRAND_REASON_WATCHER) (refactor-3 SCHED-01:
      *       block owns the runnable-count decrement).  Here we advance pc
      *       past this instruction and goto exit_strand so the scheduler can
-     *       pick up another strand.  The eval-pass wake (T43) will resume
+     *       pick up another strand.  The eval-pass wake will resume
      *       the strand on the rising edge.
      *
      * Spec #2 §6.3. */

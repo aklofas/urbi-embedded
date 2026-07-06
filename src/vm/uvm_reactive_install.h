@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/vm/uvm_reactive_install.h — shared dispatch for the seven reactive-install
- * opcodes (v0.10.15-vm-decomp-2, W1 stage 2).
+ * opcodes (v0.10.15-vm-decomp-2, stage 2).
  *
  * OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL /
  * OP_WAITUNTIL_INSTALL / OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL /

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/vm/uvm_create.c — opaque VM allocation API (W1, v0.10.3).
+/* src/vm/uvm_create.c — opaque VM allocation API (v0.10.3).
  *
  * urbi_vm_create allocates storage for struct UVM via the supplied allocator,
  * then defers to urbi_vm_init for initialisation.  urbi_vm_free is the

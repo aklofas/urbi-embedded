@@ -4,10 +4,10 @@
  * Declares the three fork-opcode handler bodies and the wake-on-DEAD helper.
  * Implementations in src/uop_fork.c; dispatch wiring in src/uvm.c.
  *
- * M3 closure-spawn semantics:
+ * closure-spawn semantics:
  *   Each forked child runs a closure compiled from the fork expression.
- *   This defers spec §7.1 (shared-frame , semantics) to M5+; see
- *   TODO(M5+/design-risks-7) in src/uop_fork.c for the full rationale.
+ *   This defers spec §7.1 (shared-frame , semantics) to v1.x; see
+ *   TODO(design-risks-7) in src/uop_fork.c for the full rationale.
  */
 
 #ifndef UOP_FORK_H
