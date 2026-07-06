@@ -783,9 +783,9 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
         if (prec < min_prec || prec == 0) break;
 
         urbi_parse_consume(p);
-        /* Comparison operators are left-associative; use prec+1 for right
-           so that `a == b == c` is rejected as ambiguous (each side parses
-           as atoms, and chained comparisons are a parse error in urbiscript). */
+        /* Comparison operators are left-associative; prec+1 for the right
+           operand makes `a == b == c` parse as `(a == b) == c` (left-assoc).
+           The last comparison's bool result then compares against `c`. */
         UAstNode *right = urbi_parse_expression(p, prec + 1);
         if (!right) return NULL;
         if (right->kind == AST_ERROR) return right;

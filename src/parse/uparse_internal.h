@@ -28,12 +28,12 @@
 extern const UAstNode uparser_oom_sentinel;
 
 /* Postfix precedence level — `expr(args)`, `expr.x`, `expr->x`,
- * `expr!`, `expr?` all bind tighter than any infix operator
- * (multiplicative=6 is the tightest infix; postfix=7 sits above).
+ * `expr!`, `expr?`, `expr[i]` all bind tighter than any infix operator
+ * (multiplicative=7 is the tightest infix; postfix=9 sits above).
  * Used as the `min_prec <=` ceiling check in urbi_parse_expression_cont.
- * Must stay strictly above the highest infix level (multiplicative=7,
- * v1.0-rc stdlib-completeness) so postfix ops bind tighter than any
- * infix even when an infix right operand parses at multiplicative+1=8. */
+ * Must stay strictly above the highest infix level (multiplicative=7)
+ * so postfix ops bind tighter than any infix even when an infix right
+ * operand parses at multiplicative+1=8. */
 #define PARSE_PREC_POSTFIX 9
 
 /* Method name used by the postfix `e!` desugar (`e!` → `e.emit()`).
