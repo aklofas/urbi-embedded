@@ -456,7 +456,7 @@ static const struct suite_entry suites[] = {
     {"watcher_lifecycle",          test_watcher_lifecycle_suite},
     {"watcher_gc_invariants",      test_watcher_gc_invariants_suite},
     {"watcher_ownership",          test_watcher_ownership_suite},
-    {"emit_function_literal",      test_emit_function_literal_suite},
+    {"urbi_emit_function_literal",      test_emit_function_literal_suite},
     {"cond_side_effect",           test_cond_side_effect_suite},
     {"emit_diag",                  test_emit_diag_suite},
     {"emit_const_index",           test_emit_const_index_suite},

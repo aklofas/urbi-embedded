@@ -3,7 +3,7 @@
  *
  * Closes the v0.5.6 MOD-008 reservation: the constant-pool kind UVAL_STR
  * is now a writable + readable wire-format kind.  Emitter routes AST_STR
- * through ustr_intern + add_const_str + OP_LOADK. */
+ * through ustr_intern + urbi_emit_add_const_str + OP_LOADK. */
 
 #include "utest.h"
 #include "value/uarena.h"
@@ -64,7 +64,7 @@ UTEST(emit_string_loadk_with_uval_str_constant) {
 
 UTEST(emit_string_dedups_repeated_literal) {
     /* Two equal AST_STR literals share a single UVAL_STR pool slot
-     * (intern returns the same pointer; add_const_str dedups by pointer). */
+     * (intern returns the same pointer; urbi_emit_add_const_str dedups by pointer). */
     UVM vm;
     UProto module = {0};
     UArena arena;

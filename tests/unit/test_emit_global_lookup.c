@@ -55,7 +55,7 @@ static UEmitError gl_ctx_run(GlCtx *c)
 
 static void gl_ctx_destroy(GlCtx *c)
 {
-    emit_diag_free_all(&c->e);
+    urbi_emit_diag_free_all(&c->e);
     urbi_emit_abandon(&c->e);   /* no-op after finish; frees fs_arena when
                                gl_ctx_run bailed early (FE-07) */
     uarena_destroy(&c->arena);
@@ -206,7 +206,7 @@ UTEST(emit_global_state_machine_distinct_flags) {
      *
      *   1. UNUSED          : !global_slot_reserved && !references_global
      *                        (nested function body that has not yet been
-     *                        emitted via emit_function_literal)
+     *                        emitted via urbi_emit_function_literal)
      *   2. RESERVED_NO_REF :  global_slot_reserved && !references_global
      *                        (chunk-top funcstate at open time, OR nested
      *                        funcstate after pre-reservation, before any

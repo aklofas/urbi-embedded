@@ -707,7 +707,7 @@ urbi_unwind(UStrand *s)
                 /* onleave handler: run under C-1 replace-on-raise AFTER the
                  * scope teardown, mirroring OP_POP_TAG's order (teardown at
                  * pop; the OP_POP_TAG onleave arm itself is emit-dead at
-                 * v1.0 — emit_tag_prefix_arm never sets FLAG_HAS_ONLEAVE).
+                 * v1.0 — urbi_emit_tag_prefix_arm never sets FLAG_HAS_ONLEAVE).
                  * T29 / FOUND-009: handle URBI_ERR_CLEANUP_OVERFLOW. */
                 uint16_t handler_pc = e->handler_pc;
                 int      rc;

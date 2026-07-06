@@ -138,7 +138,7 @@ UTEST(emit_at_sync_slot_change_uses_sync_install_op)
  *         fallback) must not produce event_reg == body_reg in the
  *         OP_AT_EVENT_INSTALL.  Same desync class as the AST_AT_EVENT
  *         sibling: AST_IDENT global-fallback bumps next_reg only, leaving
- *         freereg stale; emit_function_literal then allocates body_reg
+ *         freereg stale; urbi_emit_function_literal then allocates body_reg
  *         on top of event_reg.
  * ----------------------------------------------------------------------- */
 

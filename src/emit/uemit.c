@@ -59,7 +59,7 @@ static void emit_copy_source_name(UEmitter *e, const char *src) {
    Mirror of module_grow in umodule.c; used by constant-pool and instruction
    array in the emitter.
    Promoted from static so uemit_funcstate.c can call it cross-TU. */
-bool emit_grow(UProto *root, void **data, size_t *cap,
+bool urbi_emit_grow(UProto *root, void **data, size_t *cap,
                size_t new_cap, size_t elem_size) {
     if (*cap >= new_cap) return true;
     UChunkAllocFn alloc = emit_alloc_for(root);
@@ -74,9 +74,9 @@ bool emit_grow(UProto *root, void **data, size_t *cap,
 }
 
 /* Grow a buffer owned by either the module root or a nested UProto.
- * When `proto` is NULL, delegates to emit_grow (module root path).
+ * When `proto` is NULL, delegates to urbi_emit_grow (module root path).
  * Promoted from static so uemit_funcstate.c can call it cross-TU. */
-bool proto_grow(UProto *root, UProto *proto,
+bool urbi_emit_proto_grow(UProto *root, UProto *proto,
                 void **data, size_t *cap,
                 size_t new_cap, size_t elem_size) {
     if (proto != NULL) {
@@ -97,7 +97,7 @@ bool proto_grow(UProto *root, UProto *proto,
         *cap  = target;
         return true;
     }
-    return emit_grow(root, data, cap, new_cap, elem_size);
+    return urbi_emit_grow(root, data, cap, new_cap, elem_size);
 }
 
 
@@ -116,7 +116,7 @@ bool proto_grow(UProto *root, UProto *proto,
  *     But since params are counted in nactvar, the formula simplifies to
  *     nactvar + 1 in all cases where r_global_slot is placed at freereg
  *     (i.e., exactly once, between params and first body local). */
-uint8_t fs_temp_floor(const UFuncState *fs) {
+uint8_t urbi_emit_fs_temp_floor(const UFuncState *fs) {
     uint8_t floor_val = (uint8_t)fs->nactvar;
     if (fs->global_slot_reserved) {
         floor_val = (uint8_t)(fs->nactvar + 1U);
@@ -131,10 +131,10 @@ uint8_t fs_temp_floor(const UFuncState *fs) {
    otherwise appends a new entry and returns its index.  Sets e->error and
    returns 0 on pool-full (> UINT16_MAX entries) or OOM.
    Routes to the nested UProto constant pool when in a nested function.
-   Defined here next to add_const_int because the two share the proto-or-
+   Defined here next to urbi_emit_add_const_int because the two share the proto-or-
    module routing dispatch and the same pool-grow primitive. */
 /* Task 11: current_proto() always returns non-NULL — no dual-path dispatch. */
-uint16_t add_const_str(UEmitter *e, const char *interned) {
+uint16_t urbi_emit_add_const_str(UEmitter *e, const char *interned) {
     UProto *p = current_proto(e);
     UValue **pool  = &p->constants;
     size_t  *count = &p->const_count;
@@ -151,7 +151,7 @@ uint16_t add_const_str(UEmitter *e, const char *interned) {
         e->error = EMIT_CONSTANT_POOL_FULL;
         return 0U;
     }
-    if (!proto_grow(e->module, p, (void **)pool, cap, *count + 1U, sizeof(UValue))) {
+    if (!urbi_emit_proto_grow(e->module, p, (void **)pool, cap, *count + 1U, sizeof(UValue))) {
         e->error = EMIT_OOM;
         return 0U;
     }
@@ -173,7 +173,7 @@ uint16_t add_const_str(UEmitter *e, const char *interned) {
    Routes to the nested UProto constant pool when in a nested function.
    Promoted from static so uemit_expr.c (T12) can call it cross-TU. */
 /* Task 11: current_proto() always returns non-NULL — no dual-path dispatch. */
-uint16_t add_const_int(UEmitter *e, const int64_t v) {
+uint16_t urbi_emit_add_const_int(UEmitter *e, const int64_t v) {
     UProto *p = current_proto(e);
     UValue **pool  = &p->constants;
     size_t  *count = &p->const_count;
@@ -189,7 +189,7 @@ uint16_t add_const_int(UEmitter *e, const int64_t v) {
         e->error = EMIT_CONSTANT_POOL_FULL;
         return 0U;
     }
-    if (!proto_grow(e->module, p, (void **)pool, cap, *count + 1U, sizeof(UValue))) {
+    if (!urbi_emit_proto_grow(e->module, p, (void **)pool, cap, *count + 1U, sizeof(UValue))) {
         e->error = EMIT_OOM;
         return 0U;
     }
@@ -212,7 +212,7 @@ uint16_t add_const_int(UEmitter *e, const int64_t v) {
    Routes to the nested UProto constant pool when in a nested function.
    Promoted from static so uemit_expr.c can call it cross-TU. */
 /* Task 11: current_proto() always returns non-NULL — no dual-path dispatch. */
-uint16_t add_const_float(UEmitter *e, const double v) {
+uint16_t urbi_emit_add_const_float(UEmitter *e, const double v) {
     UProto *p = current_proto(e);
     UValue **pool  = &p->constants;
     size_t  *count = &p->const_count;
@@ -228,7 +228,7 @@ uint16_t add_const_float(UEmitter *e, const double v) {
         e->error = EMIT_CONSTANT_POOL_FULL;
         return 0U;
     }
-    if (!proto_grow(e->module, p, (void **)pool, cap, *count + 1U, sizeof(UValue))) {
+    if (!urbi_emit_proto_grow(e->module, p, (void **)pool, cap, *count + 1U, sizeof(UValue))) {
         e->error = EMIT_OOM;
         return 0U;
     }
@@ -245,10 +245,10 @@ uint16_t add_const_float(UEmitter *e, const double v) {
 
 /* Append one absolute-line checkpoint to abs_lines.
  * Task 11: current_proto() always returns non-NULL (root_proto or nested proto),
- * so the dual-path is collapsed to a single proto_grow call. */
+ * so the dual-path is collapsed to a single urbi_emit_proto_grow call. */
 static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t line) {
     UProto *p = current_proto(e);
-    if (!proto_grow(e->module, p, (void **)&p->abs_lines, &p->abs_line_cap,
+    if (!urbi_emit_proto_grow(e->module, p, (void **)&p->abs_lines, &p->abs_line_cap,
                     p->abs_line_count + 1U, sizeof(UAbsLine))) {
         e->error = EMIT_OOM;
         return;
@@ -263,7 +263,7 @@ static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t li
    incremented so the new slot is at [instr_count - 1].
    When writing to a nested proto, use the proto's allocator.
 
-   EMIT-001: every call site (emit_instr, root + nested paths) bumps
+   EMIT-001: every call site (urbi_emit_instr, root + nested paths) bumps
    instr_count BEFORE invoking; instr_count == 0 here would mean a caller
    bug.  Defensive early-return + assertion: alloc(ptr, 0, ud) is
    implementation-defined and `[instr_count - 1U]` underflows on the
@@ -287,14 +287,14 @@ static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
 /* Append one encoded instruction with Lua-5.5-style delta syncline encoding.
    No-op when e->error is already set.
    Task 11: current_proto() always returns non-NULL; single-path via proto. */
-void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
+void urbi_emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
     if (e->error != EMIT_OK) return;
     if (line > (uint32_t)INT32_MAX) { e->error = EMIT_LINE_OVERFLOW; return; }
 
     UProto *p = current_proto(e);
     {
         /* Write instruction into the current proto (root or nested). */
-        if (!proto_grow(e->module, p, (void **)&p->instructions,
+        if (!urbi_emit_proto_grow(e->module, p, (void **)&p->instructions,
                         &p->instr_cap, p->instr_count + 1U, sizeof(uint32_t))) {
             e->error = EMIT_OOM;
             return;
@@ -327,19 +327,19 @@ void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
 
 /* Patch instruction at index `pc` in the current proto (root or nested).
  * Task 11: current_proto() always returns non-NULL. */
-void emit_patch_instr(const UEmitter *e, int pc, uint32_t new_instr) {
+void urbi_emit_patch_instr(const UEmitter *e, int pc, uint32_t new_instr) {
     current_proto(e)->instructions[pc] = new_instr;
 }
 
 /* Return the current instruction count in the active proto.
  * Task 11: current_proto() always returns non-NULL. */
-size_t emit_instr_count(const UEmitter *e) {
+size_t urbi_emit_instr_count(const UEmitter *e) {
     return current_proto(e)->instr_count;
 }
 
 /* Map UAstBinaryOp to the corresponding arithmetic opcode.
  * Promoted from static so uemit_expr.c (T12) can call it cross-TU. */
-UOpcode binop_to_opcode(const UAstBinaryOp op) {
+UOpcode urbi_emit_binop_to_opcode(const UAstBinaryOp op) {
     switch (op) {
     case BOP_ADD: return OP_ADD;
     case BOP_SUB: return OP_SUB;
@@ -350,8 +350,8 @@ UOpcode binop_to_opcode(const UAstBinaryOp op) {
     return OP_ADD;
 }
 
-/* Forward declaration (emit_lazy_thunk + uemit_unwind.c call emit_expr). */
-uint8_t emit_expr(UEmitter *e, UAstNode *n);
+/* Forward declaration (urbi_emit_lazy_thunk + uemit_unwind.c call urbi_emit_expr). */
+uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n);
 
 /* T31: Best-effort compile-time check — returns true when `n` contains a
  * direct write operation (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET,
@@ -360,7 +360,7 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n);
  * positives on read-only methods.  Recurses through compound nodes;
  * the parser already caps nesting so stack overflow is not a concern.
  * Exported for unit tests via uemit.h test-friend section. */
-bool cond_has_direct_side_effect(UAstNode *n) {
+bool urbi_emit_cond_has_direct_side_effect(UAstNode *n) {
     if (n == NULL) return false;
     switch (n->kind) {
         case AST_ASSIGN:
@@ -371,27 +371,27 @@ bool cond_has_direct_side_effect(UAstNode *n) {
         case AST_NARY: {
             int i;
             for (i = 0; i < n->u.nary.count; i++)
-                if (cond_has_direct_side_effect(n->u.nary.children[i])) return true;
+                if (urbi_emit_cond_has_direct_side_effect(n->u.nary.children[i])) return true;
             return false;
         }
         case AST_BIN_SEP:
-            return cond_has_direct_side_effect(n->u.bin_sep.lhs)
-                || cond_has_direct_side_effect(n->u.bin_sep.rhs);
+            return urbi_emit_cond_has_direct_side_effect(n->u.bin_sep.lhs)
+                || urbi_emit_cond_has_direct_side_effect(n->u.bin_sep.rhs);
         case AST_BINARY:
-            return cond_has_direct_side_effect(n->u.binary.lhs)
-                || cond_has_direct_side_effect(n->u.binary.rhs);
+            return urbi_emit_cond_has_direct_side_effect(n->u.binary.lhs)
+                || urbi_emit_cond_has_direct_side_effect(n->u.binary.rhs);
         case AST_UNARY:
-            return cond_has_direct_side_effect(n->u.unary.operand);
+            return urbi_emit_cond_has_direct_side_effect(n->u.unary.operand);
         case AST_COMPARE:
-            return cond_has_direct_side_effect(n->u.cmp.lhs)
-                || cond_has_direct_side_effect(n->u.cmp.rhs);
+            return urbi_emit_cond_has_direct_side_effect(n->u.cmp.lhs)
+                || urbi_emit_cond_has_direct_side_effect(n->u.cmp.rhs);
         case AST_LOGICAL:
-            return cond_has_direct_side_effect(n->u.logical.lhs)
-                || cond_has_direct_side_effect(n->u.logical.rhs);
+            return urbi_emit_cond_has_direct_side_effect(n->u.logical.lhs)
+                || urbi_emit_cond_has_direct_side_effect(n->u.logical.rhs);
         case AST_BLOCK: {
             int i;
             for (i = 0; i < n->u.block.count; i++)
-                if (cond_has_direct_side_effect(n->u.block.stmts[i])) return true;
+                if (urbi_emit_cond_has_direct_side_effect(n->u.block.stmts[i])) return true;
             return false;
         }
         /* TIDY-008: AST_CALL is opaque (read-only methods are common; we avoid
@@ -403,11 +403,11 @@ bool cond_has_direct_side_effect(UAstNode *n) {
     }
 }
 
-/* emit_lazy_thunk, emit_function_literal, and the statement arm helpers
- * (emit_if_arm, emit_while_arm, emit_call_arm, emit_return_arm,
- * emit_function_arm) live in uemit_stmt.c.
+/* urbi_emit_lazy_thunk, urbi_emit_function_literal, and the statement arm helpers
+ * (urbi_emit_if_arm, urbi_emit_while_arm, urbi_emit_call_arm, urbi_emit_return_arm,
+ * urbi_emit_function_arm) live in uemit_stmt.c.
  * emit_catch_handler_section, emit_try_frame, and the unwind arm helpers
- * (emit_throw_arm, emit_try_arm, emit_tag_prefix_arm) live in
+ * (urbi_emit_throw_arm, urbi_emit_try_arm, urbi_emit_tag_prefix_arm) live in
  * uemit_unwind.c.  See uemit_internal.h for all their declarations. */
 
 /* AST walker — returns the register holding the result of the expression.
@@ -418,55 +418,55 @@ bool cond_has_direct_side_effect(UAstNode *n) {
    EMIT_UNSUPPORTED_AST; lowering arrow-access to OP_GETSLOT / OP_SETSLOT
    is filed as a v1.x backlog item once the arrow-vs-dot semantic
    distinction is pinned. */
-uint8_t emit_expr(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0U;
     switch (n->kind) {
-    case AST_INT:        return emit_int_arm(e, n);
-    case AST_FLOAT_LIT:  return emit_float_arm(e, n);
-    case AST_THIS:       return emit_this_arm(e, n);
-    case AST_BOOL:       return emit_bool_arm(e, n);
-    case AST_NIL:        return emit_nil_arm(e, n);
-    case AST_STR:        return emit_string_arm(e, n);
-    case AST_NOOP:       return emit_noop_arm(e, n);
-    case AST_UNARY:      return emit_unary_arm(e, n);
-    case AST_BINARY:     return emit_binary_arm(e, n);
-    case AST_COMPARE:    return emit_compare_arm(e, n);
-    case AST_LOGICAL:    return emit_logical_arm(e, n);
-    case AST_IDENT:      return emit_ident_arm(e, n);
-    case AST_VAR_DECL:   return emit_var_decl_arm(e, n);
-    case AST_ASSIGN:     return emit_assign_arm(e, n);
-    case AST_NARY:       return emit_nary_arm(e, n);
-    case AST_BIN_SEP:    return emit_bin_sep_arm(e, n);
-    case AST_BLOCK:      return emit_block_arm(e, n);
-    case AST_IF:         return emit_if_arm(e, n);
-    case AST_WHILE:    return emit_while_arm(e, n);
-    case AST_CALL:     return emit_call_arm(e, n);
-    case AST_RETURN:   return emit_return_arm(e, n);
-    case AST_FUNCTION: return emit_function_arm(e, n);
-    case AST_THROW:      return emit_throw_arm(e, n);
-    case AST_TRY:        return emit_try_arm(e, n);
-    case AST_TAG_PREFIX: return emit_tag_prefix_arm(e, n);
-    case AST_MEMBER_GET:     return emit_member_get_arm(e, n);
-    case AST_MEMBER_SET:     return emit_member_set_arm(e, n);
-    case AST_WATCHER:        return emit_watcher_arm(e, n);
-    case AST_WAITUNTIL:      return emit_waituntil_arm(e, n);
-    case AST_AT_EVENT:       return emit_at_event_arm(e, n);
-    case AST_AT_SLOT_CHANGE: return emit_at_slot_change_arm(e, n);
-    case AST_CLASS_DECL:     return emit_class_decl_arm(e, n);
-    case AST_PROPERTY_DECL:  return emit_property_decl_arm(e, n);
+    case AST_INT:        return urbi_emit_int_arm(e, n);
+    case AST_FLOAT_LIT:  return urbi_emit_float_arm(e, n);
+    case AST_THIS:       return urbi_emit_this_arm(e, n);
+    case AST_BOOL:       return urbi_emit_bool_arm(e, n);
+    case AST_NIL:        return urbi_emit_nil_arm(e, n);
+    case AST_STR:        return urbi_emit_string_arm(e, n);
+    case AST_NOOP:       return urbi_emit_noop_arm(e, n);
+    case AST_UNARY:      return urbi_emit_unary_arm(e, n);
+    case AST_BINARY:     return urbi_emit_binary_arm(e, n);
+    case AST_COMPARE:    return urbi_emit_compare_arm(e, n);
+    case AST_LOGICAL:    return urbi_emit_logical_arm(e, n);
+    case AST_IDENT:      return urbi_emit_ident_arm(e, n);
+    case AST_VAR_DECL:   return urbi_emit_var_decl_arm(e, n);
+    case AST_ASSIGN:     return urbi_emit_assign_arm(e, n);
+    case AST_NARY:       return urbi_emit_nary_arm(e, n);
+    case AST_BIN_SEP:    return urbi_emit_bin_sep_arm(e, n);
+    case AST_BLOCK:      return urbi_emit_block_arm(e, n);
+    case AST_IF:         return urbi_emit_if_arm(e, n);
+    case AST_WHILE:    return urbi_emit_while_arm(e, n);
+    case AST_CALL:     return urbi_emit_call_arm(e, n);
+    case AST_RETURN:   return urbi_emit_return_arm(e, n);
+    case AST_FUNCTION: return urbi_emit_function_arm(e, n);
+    case AST_THROW:      return urbi_emit_throw_arm(e, n);
+    case AST_TRY:        return urbi_emit_try_arm(e, n);
+    case AST_TAG_PREFIX: return urbi_emit_tag_prefix_arm(e, n);
+    case AST_MEMBER_GET:     return urbi_emit_member_get_arm(e, n);
+    case AST_MEMBER_SET:     return urbi_emit_member_set_arm(e, n);
+    case AST_WATCHER:        return urbi_emit_watcher_arm(e, n);
+    case AST_WAITUNTIL:      return urbi_emit_waituntil_arm(e, n);
+    case AST_AT_EVENT:       return urbi_emit_at_event_arm(e, n);
+    case AST_AT_SLOT_CHANGE: return urbi_emit_at_slot_change_arm(e, n);
+    case AST_CLASS_DECL:     return urbi_emit_class_decl_arm(e, n);
+    case AST_PROPERTY_DECL:  return urbi_emit_property_decl_arm(e, n);
     /* W3/v0.10.5: assert keyword */
-    case AST_ASSERT:         return emit_assert_arm(e, n);
+    case AST_ASSERT:         return urbi_emit_assert_arm(e, n);
     /* === W10/v0.10.5: list/dict literals + subscript === */
-    case AST_LIST_LIT:        return emit_list_lit_arm(e, n);
-    case AST_DICT_LIT:        return emit_dict_lit_arm(e, n);
-    case AST_SUBSCRIPT_GET:   return emit_subscript_get_arm(e, n);
-    case AST_SUBSCRIPT_SET:   return emit_subscript_set_arm(e, n);
+    case AST_LIST_LIT:        return urbi_emit_list_lit_arm(e, n);
+    case AST_DICT_LIT:        return urbi_emit_dict_lit_arm(e, n);
+    case AST_SUBSCRIPT_GET:   return urbi_emit_subscript_get_arm(e, n);
+    case AST_SUBSCRIPT_SET:   return urbi_emit_subscript_set_arm(e, n);
     /* === end W10/v0.10.5 === */
     /* === W1/v0.10.5: control flow === */
-    case AST_FOR_EACH:        return emit_for_each_arm(e, n);
-    case AST_BREAK:           return emit_break_arm(e, n);
-    case AST_CONTINUE:        return emit_continue_arm(e, n);
-    case AST_SWITCH:          return emit_switch_arm(e, n);
+    case AST_FOR_EACH:        return urbi_emit_for_each_arm(e, n);
+    case AST_BREAK:           return urbi_emit_break_arm(e, n);
+    case AST_CONTINUE:        return urbi_emit_continue_arm(e, n);
+    case AST_SWITCH:          return urbi_emit_switch_arm(e, n);
     /* === end W1/v0.10.5: control flow === */
     /* === W2/v0.10.7: synthetic register-reference leaf === */
     case AST_REG_REF: {
@@ -476,7 +476,7 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         uint8_t dst = alloc_reg(e);
         if (e->error != EMIT_OK) return 0U;
         if (dst != n->u.reg_ref.reg) {
-            emit_instr(e, uinstr_enc_abc(OP_MOVE, dst, n->u.reg_ref.reg, 0U), n->line);
+            urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, dst, n->u.reg_ref.reg, 0U), n->line);
         }
         return dst;
     }
@@ -493,7 +493,7 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
          * lower them once the semantics are pinned.
          *
          * AST_LOCAL_REF / AST_PARAM / AST_LAZY_PARAM: produced by
-         * parser/emitter internally and consumed before emit_expr is
+         * parser/emitter internally and consumed before urbi_emit_expr is
          * called (AST_PARAM/AST_LAZY_PARAM in the AST_FUNCTION arm;
          * AST_LOCAL_REF as an optimised AST_IDENT).  Reaching this arm
          * means a malformed AST.
@@ -556,7 +556,7 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt) {
      * are allocated above any declared locals. */
     e->next_reg = e->current_fs->freereg;
 
-    result = emit_expr(e, stmt);
+    result = urbi_emit_expr(e, stmt);
     if (e->error != EMIT_OK) return e->error;
     e->last_result_reg = result;
     e->any_stmt_emitted = true;
@@ -585,7 +585,7 @@ static void set_root_recursive(UProto *node, UProto *root) {
 UEmitError uemit_finish(UEmitter *e) {
     if (e->finished) return e->error;
     if (e->error == EMIT_OK && e->any_stmt_emitted) {
-        emit_instr(e, uinstr_enc_abc(OP_RET, e->last_result_reg, 0U, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_RET, e->last_result_reg, 0U, 0U),
                    e->prev_line);
     }
     /* Close any lazily-opened top-level FuncState. */
@@ -600,7 +600,7 @@ UEmitError uemit_finish(UEmitter *e) {
         rp->max_reg = e->max_reg_seen;
         /* v0.13.5: the emitter always produces the arity self-check
          * discipline (every >=1-param proto carries a min-arity prologue;
-         * see emit_function_literal step 3b).  Flag the root so the
+         * see urbi_emit_function_literal step 3b).  Flag the root so the
          * serializer sets header flag bit 0 and OP_CALL uses the relaxed
          * `nargs <= nparams` check for every proto of this module.  The
          * root chunk itself has nparams == 0, where relaxed and exact

@@ -276,6 +276,32 @@ CI gate tracks this list to prevent silent growth.
 - `urbi_emit_disasm_opnames_complete`, `urbi_vm_diag_opnames_complete` —
   opcode name-table completeness probes for the unit suite
 
+### Emitter arm dispatch (v0.13.6 namespace day)
+
+Per-AST-node emit functions renamed from unprefixed `emit_*_arm` symbols.
+
+- `urbi_emit_expr` — top-level AST dispatch (renamed from `emit_expr`)
+- `urbi_emit_instr`, `urbi_emit_instr_count`, `urbi_emit_patch_instr`, `urbi_emit_grow` — bytecode emission primitives
+- `urbi_emit_add_const_float`, `urbi_emit_add_const_int`, `urbi_emit_add_const_str` — constant-pool management (renamed from `add_const_*`)
+- `urbi_emit_fs_temp_floor` — frame-state temp-register floor (renamed from `fs_temp_floor`)
+- `urbi_emit_proto_grow` — proto-table growth (renamed from `proto_grow`)
+- `urbi_emit_binop_to_opcode` — binary operator → opcode mapping (renamed from `binop_to_opcode`)
+- `urbi_emit_cond_has_direct_side_effect` — side-effect predicate for at/whenever conditions (renamed from `cond_has_direct_side_effect`)
+- `urbi_emit_function_literal`, `urbi_emit_lazy_thunk` — closure/thunk emission
+- `urbi_emit_function_arm`, `urbi_emit_class_decl_arm`, `urbi_emit_property_decl_arm` — declaration arms
+- `urbi_emit_diag_free_all`, `urbi_emit_diag_warn` — emitter diagnostics (renamed from `emit_diag_*`)
+- `urbi_emit_assert_arm`, `urbi_emit_assign_arm`, `urbi_emit_at_event_arm`, `urbi_emit_at_slot_change_arm` — statement arms
+- `urbi_emit_binary_arm`, `urbi_emit_bin_sep_arm`, `urbi_emit_block_arm`, `urbi_emit_bool_arm` — expression arms
+- `urbi_emit_break_arm`, `urbi_emit_call_arm`, `urbi_emit_compare_arm`, `urbi_emit_continue_arm` — control flow arms
+- `urbi_emit_dict_lit_arm`, `urbi_emit_float_arm`, `urbi_emit_for_each_arm` — literal arms
+- `urbi_emit_ident_arm`, `urbi_emit_if_arm`, `urbi_emit_int_arm`, `urbi_emit_list_lit_arm` — identifier/literal arms
+- `urbi_emit_logical_arm`, `urbi_emit_member_get_arm`, `urbi_emit_member_set_arm`, `urbi_emit_nary_arm` — operator arms
+- `urbi_emit_nil_arm`, `urbi_emit_noop_arm`, `urbi_emit_return_arm`, `urbi_emit_string_arm` — value/control arms
+- `urbi_emit_subscript_get_arm`, `urbi_emit_subscript_set_arm`, `urbi_emit_switch_arm` — subscript/switch arms
+- `urbi_emit_tag_prefix_arm`, `urbi_emit_this_arm`, `urbi_emit_throw_arm`, `urbi_emit_try_arm` — tag/exception arms
+- `urbi_emit_unary_arm`, `urbi_emit_var_decl_arm`, `urbi_emit_waituntil_arm` — misc arms
+- `urbi_emit_watcher_arm`, `urbi_emit_while_arm` — reactive/loop arms
+
 ### Emitter diagnostic helpers (v0.13.5 conformance-and-stdlib)
 
 - `urbi_emit_diag_error` — record an ERROR-level diagnostic with source position

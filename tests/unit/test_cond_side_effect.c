@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* T31: cond_has_direct_side_effect compile-time walker — unit tests.
+/* T31: urbi_emit_cond_has_direct_side_effect compile-time walker — unit tests.
  *
  * Tests are built by constructing AST nodes directly on the stack rather
  * than going through the parser, so they are independent of parser feature
@@ -85,13 +85,13 @@ static UAstNode make_binary_node(UAstNode *lhs, UAstNode *rhs) {
 /* Direct AST_ASSIGN node — must be detected. */
 UTEST(cond_side_effect_detects_assign) {
     UAstNode n = make_assign_node();
-    UASSERT(cond_has_direct_side_effect(&n));
+    UASSERT(urbi_emit_cond_has_direct_side_effect(&n));
 }
 
 /* Direct AST_VAR_DECL node — must be detected. */
 UTEST(cond_side_effect_detects_var_decl) {
     UAstNode n = make_var_decl_node();
-    UASSERT(cond_has_direct_side_effect(&n));
+    UASSERT(urbi_emit_cond_has_direct_side_effect(&n));
 }
 
 /* AST_ASSIGN nested inside an AST_BINARY — must recurse and detect. */
@@ -99,7 +99,7 @@ UTEST(cond_side_effect_detects_assign_inside_binary) {
     UAstNode zero  = make_int_node(0);
     UAstNode assign = make_assign_node();
     UAstNode bin   = make_binary_node(&assign, &zero);
-    UASSERT(cond_has_direct_side_effect(&bin));
+    UASSERT(urbi_emit_cond_has_direct_side_effect(&bin));
 }
 
 /* AST_ASSIGN nested inside AST_COMPARE — must recurse and detect. */
@@ -107,7 +107,7 @@ UTEST(cond_side_effect_detects_assign_inside_compare) {
     UAstNode zero   = make_int_node(0);
     UAstNode assign = make_assign_node();
     UAstNode cmp    = make_compare_node(&assign, &zero);
-    UASSERT(cond_has_direct_side_effect(&cmp));
+    UASSERT(urbi_emit_cond_has_direct_side_effect(&cmp));
 }
 
 /* AST_CALL — opaque, must return false (best-effort). */
@@ -120,7 +120,7 @@ UTEST(cond_side_effect_treats_call_as_opaque) {
     n.u.call.callee     = NULL;
     n.u.call.args       = NULL;
     n.u.call.arg_count  = 0;
-    UASSERT(!cond_has_direct_side_effect(&n));
+    UASSERT(!urbi_emit_cond_has_direct_side_effect(&n));
 }
 
 /* Pure compare expression — no side effect. */
@@ -128,12 +128,12 @@ UTEST(cond_side_effect_clean_for_compare) {
     UAstNode lhs = make_int_node(5);
     UAstNode rhs = make_int_node(10);
     UAstNode cmp = make_compare_node(&lhs, &rhs);
-    UASSERT(!cond_has_direct_side_effect(&cmp));
+    UASSERT(!urbi_emit_cond_has_direct_side_effect(&cmp));
 }
 
 /* NULL pointer — must return false, not crash. */
 UTEST(cond_side_effect_null_returns_false) {
-    UASSERT(!cond_has_direct_side_effect(NULL));
+    UASSERT(!urbi_emit_cond_has_direct_side_effect(NULL));
 }
 
 /* TIDY-008: AST_CALL and any unhandled AST kind (e.g. AST_INT, AST_IDENT)
@@ -155,8 +155,8 @@ UTEST(cond_side_effect_call_and_unhandled_kinds_share_default) {
     UAstNode int_node = make_int_node(42);
 
     /* Both fall through the same return-false path. */
-    UASSERT(!cond_has_direct_side_effect(&call));
-    UASSERT(!cond_has_direct_side_effect(&int_node));
+    UASSERT(!urbi_emit_cond_has_direct_side_effect(&call));
+    UASSERT(!urbi_emit_cond_has_direct_side_effect(&int_node));
 }
 
 /* -----------------------------------------------------------------------

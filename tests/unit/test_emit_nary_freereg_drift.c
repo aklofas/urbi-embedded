@@ -25,15 +25,15 @@
  *     }
  *   };
  *
- * Pre-fix, emit_call_arm for the bare `Realm.helper.noop()` left
+ * Pre-fix, urbi_emit_call_arm for the bare `Realm.helper.noop()` left
  * fs->freereg at callee_reg+2 (above the call result), without
- * resetting back to the local-zone boundary.  emit_nary_arm between
- * children only synced next_reg = freereg (not freereg = fs_temp_floor),
+ * resetting back to the local-zone boundary.  urbi_emit_nary_arm between
+ * children only synced next_reg = freereg (not freereg = urbi_emit_fs_temp_floor),
  * so subsequent `var s`, `var iters`, `var y` got slot numbers above
- * what fs_temp_floor (count-based: nactvar + r_global_slot) reported.
+ * what urbi_emit_fs_temp_floor (count-based: nactvar + r_global_slot) reported.
  *
- * Result: when emit_while_arm opened the body block, it reset freereg =
- * fs_temp_floor — which UNDER-ESTIMATED the actual top of locals by the
+ * Result: when urbi_emit_while_arm opened the body block, it reset freereg =
+ * urbi_emit_fs_temp_floor — which UNDER-ESTIMATED the actual top of locals by the
  * drift amount.  `var x = 0` inside the body then allocated at a slot
  * already occupied by `iters` (or similar).  At runtime, x and iters
  * shared a register; the inner-loop counter aliased the outer counter;
@@ -42,9 +42,9 @@
  * Symptom on the eye_demo: BlobScan returned iters=240 instead of 57,600
  * for a subsample=1 scan, with centroid_x == centroid_y in every fire.
  *
- * Fix: emit_nary_arm now mirrors emit_block_arm's between-statement reset:
+ * Fix: urbi_emit_nary_arm now mirrors urbi_emit_block_arm's between-statement reset:
  *
- *     e->current_fs->freereg = fs_temp_floor(e->current_fs);
+ *     e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
  *     e->next_reg = e->current_fs->freereg;
  *
  * (previously only the second line ran).
@@ -122,7 +122,7 @@ UTEST(nary_freereg_drift_bare_call_then_var_chain)
 /* Sibling test: the same drift can be triggered by ANY bare-statement
  * (not just a call) that leaves freereg above the floor.  Cover the
  * pattern with a member-set whose RHS is a chained call expression — a
- * second realistic shape that exercises the same emit_nary_arm reset. */
+ * second realistic shape that exercises the same urbi_emit_nary_arm reset. */
 UTEST(nary_freereg_drift_member_set_then_var_chain)
 {
     UVM vm;

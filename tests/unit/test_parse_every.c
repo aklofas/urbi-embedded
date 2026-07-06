@@ -112,7 +112,7 @@ UTEST(parse_every_body_is_user_statement) {
     UAstNode *body_fn = n->u.call.args[1];
     UASSERT(body_fn != NULL);
     if (body_fn != NULL && body_fn->kind == AST_FUNCTION) {
-        /* The function body is whatever shape emit_function_literal can
+        /* The function body is whatever shape urbi_emit_function_literal can
          * compile (does not need to be AST_BLOCK).  For `f()` the body
          * is the call expression itself. */
         UAstNode *body = body_fn->u.func.body;

@@ -279,7 +279,7 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
     }
 
     if (had_error) {
-        emit_diag_free_all(&e);
+        urbi_emit_diag_free_all(&e);
         urbi_emit_abandon(&e);   /* parse error — finish never runs (FE-07) */
         uchunk_destroy(out_module, vm);
         uarena_destroy(arena);
@@ -293,7 +293,7 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
                      src_name, uemit_error_name(e.error));
         }
         snprintf(err_buf, err_cap, "%s", diag_msg);
-        emit_diag_free_all(&e);
+        urbi_emit_diag_free_all(&e);
         uchunk_destroy(out_module, vm);
         uarena_destroy(arena);
         return false;
@@ -309,7 +309,7 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
                         e.diag_buf[di].message);
         }
     }
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     return true;
 }
 

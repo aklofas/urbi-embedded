@@ -6,7 +6,7 @@
 #         chapter 17).
 # matrix-row: block-scoped-var
 #
-# Emit shape: emit_var_decl_arm routes the chunk-top realm-global install
+# Emit shape: urbi_emit_var_decl_arm routes the chunk-top realm-global install
 # only for a BARE chunk-top var (fs->parent == NULL && fs->nblocks == 0);
 # block-nested chunk-top vars fall through to the frame-local branch.
 # Activation was held behind the try-body register-seam fix (design-risks

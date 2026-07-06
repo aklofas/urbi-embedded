@@ -3,7 +3,7 @@
  * constant-pool indices (refactor-3 FE-09).
  *
  * The for-each emitter loads two int constants (0 for the index init,
- * 1 for the increment) via add_const_int, which returns uint16_t.  Both
+ * 1 for the increment) via urbi_emit_add_const_int, which returns uint16_t.  Both
  * call sites in uemit_stmt.c cast the result through uint8_t, silently
  * wrapping any pool index > 255 and loading the WRONG constant.  This
  * test pads the pool past index 255 with distinct int literals before a
@@ -26,7 +26,7 @@ UTEST(foreach_const_index_above_255)
 {
     /* 300 distinct int literals pad the pool past 255, then a for-each
      * whose 0/1 loop constants land at indices > 255.  The old
-     * (uint8_t)add_const_int casts truncated them (refactor-3 FE-09).
+     * (uint8_t)urbi_emit_add_const_int casts truncated them (refactor-3 FE-09).
      * The padding values deliberately avoid 0 and 1 so the loop
      * constants cannot dedup to a low pool index.  Bare-literal
      * expression statements are used (not assignments) because each

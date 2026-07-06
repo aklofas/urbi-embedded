@@ -179,7 +179,7 @@ typedef enum {
     /* === W2/v0.10.7: synthetic register-reference leaf === */
     AST_REG_REF  = 47   /* synthetic emit-only: reference to a previously-allocated
                          * register.  Never produced by the parser; created inside
-                         * emit_subscript_set_arm to pin recv/index temps so the
+                         * urbi_emit_subscript_set_arm to pin recv/index temps so the
                          * compound-subscript lowering evaluates each exactly once.
                          * Lowers to OP_MOVE (or no-op when target == source).
                          * Not serialised; not visible to the parser. */

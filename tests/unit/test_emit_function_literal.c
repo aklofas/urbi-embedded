@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* T30: emit_function_literal helper — unit tests.
+/* T30: urbi_emit_function_literal helper — unit tests.
  *
  * Verifies that:
- *   1. emit_function_literal returns a valid register and produces bytecode.
- *   2. The existing AST_FUNCTION emit path (which calls emit_function_literal
+ *   1. urbi_emit_function_literal returns a valid register and produces bytecode.
+ *   2. The existing AST_FUNCTION emit path (which calls urbi_emit_function_literal
  *      internally) continues to work correctly — no regression in M2 closure
  *      behaviour.
  */

@@ -47,9 +47,9 @@ static inline void *emit_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
 #endif  /* __STDC_HOSTED__ */
 
 /* Return the allocator to use for root UProto c.  Available in both hosted
-   and freestanding builds so that emit_grow can call it unconditionally.
+   and freestanding builds so that urbi_emit_grow can call it unconditionally.
    In freestanding builds the stdlib fallback is absent; the caller must have
-   supplied alloc_fn, and emit_grow will return false if it is NULL. */
+   supplied alloc_fn, and urbi_emit_grow will return false if it is NULL. */
 static inline UChunkAllocFn emit_alloc_for(const UProto *c) {
 #if __STDC_HOSTED__
     return c->alloc_fn != NULL ? c->alloc_fn : emit_stdlib_alloc;
@@ -63,45 +63,45 @@ static inline UChunkAllocFn emit_alloc_for(const UProto *c) {
 /* Core instruction emitters / helpers (defined in uemit.c).
  * Promoted to non-static so that extracted TUs (uemit_unwind.c, etc.)
  * can emit instructions without pulling uemit.c's internal statics. */
-void   emit_instr(UEmitter *e, uint32_t ins, uint32_t line);
-void   emit_patch_instr(const UEmitter *e, int pc, uint32_t new_instr);
-size_t emit_instr_count(const UEmitter *e);
-uint8_t fs_temp_floor(const UFuncState *fs);
+void   urbi_emit_instr(UEmitter *e, uint32_t ins, uint32_t line);
+void   urbi_emit_patch_instr(const UEmitter *e, int pc, uint32_t new_instr);
+size_t urbi_emit_instr_count(const UEmitter *e);
+uint8_t urbi_emit_fs_temp_floor(const UFuncState *fs);
 
 /* Buffer-growth helpers (defined in uemit.c).
  * Promoted from static so uemit_funcstate.c can call them cross-TU. */
-bool emit_grow(UProto *root, void **data, size_t *cap,
+bool urbi_emit_grow(UProto *root, void **data, size_t *cap,
                size_t new_cap, size_t elem_size);
-bool proto_grow(UProto *root, UProto *proto,
+bool urbi_emit_proto_grow(UProto *root, UProto *proto,
                 void **data, size_t *cap,
                 size_t new_cap, size_t elem_size);
 
 /* Main expression walker (defined in uemit.c); called recursively by
  * arm helpers in extracted TUs. */
-uint8_t emit_expr(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n);
 
 /* Diag-emit funnel (defined in uemit_diag.c). */
-void emit_diag_warn(UEmitter *e, const UAstNode *n, const char *fmt, ...);
-void emit_diag_free_all(UEmitter *e);
+void urbi_emit_diag_warn(UEmitter *e, const UAstNode *n, const char *fmt, ...);
+void urbi_emit_diag_free_all(UEmitter *e);
 
 /* Unwind AST arm helpers (defined in uemit_unwind.c).
- * Called from emit_expr via forwarding stubs; bodies live in uemit_unwind.c. */
-uint8_t emit_throw_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_try_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n);
+ * Called from urbi_emit_expr via forwarding stubs; bodies live in uemit_unwind.c. */
+uint8_t urbi_emit_throw_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_try_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n);
 
 /* Reactive AST arm helpers (defined in uemit_react.c).
- * Called from emit_expr via forwarding stubs; bodies live in uemit_react.c. */
-uint8_t emit_watcher_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_waituntil_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_at_event_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_at_slot_change_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_member_get_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_member_set_arm(UEmitter *e, UAstNode *n);
+ * Called from urbi_emit_expr via forwarding stubs; bodies live in uemit_react.c. */
+uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_waituntil_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_at_slot_change_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_member_get_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_member_set_arm(UEmitter *e, UAstNode *n);
 
 /* Class-decl AST arm helper (defined in uemit_class.c).
- * Called from emit_expr via forwarding stub; body lives in uemit_class.c. */
-uint8_t emit_class_decl_arm(UEmitter *e, UAstNode *n);
+ * Called from urbi_emit_expr via forwarding stub; body lives in uemit_class.c. */
+uint8_t urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n);
 
 /* T41 — getter/setter parse sugar.  AST_PROPERTY_DECL emits a
  * `recv.setProperty(name, "oget"|"oset", function() body)` call sequence;
@@ -109,16 +109,16 @@ uint8_t emit_class_decl_arm(UEmitter *e, UAstNode *n);
  * trigger on subsequent slot reads/writes.  When `recv` is NULL the emit
  * arm uses the implicit class receiver (class body) or the realm-global
  * `this` lookup (top-level form).  Lives in uemit_class.c. */
-uint8_t emit_property_decl_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_property_decl_arm(UEmitter *e, UAstNode *n);
 
 /* Closure + thunk builders (defined in uemit.c).
  * Promoted from static so that uemit_react.c can build closures for
  * reactive arms without duplicating the logic. */
-uint8_t emit_function_literal(UEmitter *e,
+uint8_t urbi_emit_function_literal(UEmitter *e,
                               UAstNode **params, int nparams,
                               UAstNode  *body,
                               bool       as_expression);
-uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr);
+uint8_t urbi_emit_lazy_thunk(UEmitter *e, UAstNode *expr);
 
 /* Funcstate ops (defined in uemit_funcstate.c — T8+). */
 UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent);
@@ -186,21 +186,21 @@ static inline uint16_t uemit_jmp_offset_backward(int from_pc, int target_pc) {
  *
  * emit_fwd_jmp — emit an OP_JMP with UEMIT_JMP_BIAS (the placeholder offset)
  * and return the PC of that instruction for later patching.  May set e->error
- * via emit_instr; callers that check e->error immediately after the old
- * emit_instr call must check it immediately after emit_fwd_jmp instead.
+ * via urbi_emit_instr; callers that check e->error immediately after the old
+ * urbi_emit_instr call must check it immediately after emit_fwd_jmp instead.
  *
  * patch_fwd_jmp_here — patch the placeholder at jmp_pc so it jumps to the
  * current instruction count (i.e., the instruction emitted next).  Pair with
  * emit_fwd_jmp; do NOT use for back-edges (use uemit_jmp_offset_backward) or
  * for non-JMP opcodes (TRY_BEGIN / PUSH_TAG handler-pc patches stay open-coded). */
 static inline int emit_fwd_jmp(UEmitter *e, uint32_t line) {
-    int pc = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
+    int pc = (int)urbi_emit_instr_count(e);
+    urbi_emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
     return pc;
 }
 static inline void patch_fwd_jmp_here(UEmitter *e, int jmp_pc) {
-    emit_patch_instr(e, jmp_pc, uinstr_enc_abx(OP_JMP, 0U,
-        uemit_jmp_offset(jmp_pc, (int)emit_instr_count(e))));
+    urbi_emit_patch_instr(e, jmp_pc, uinstr_enc_abx(OP_JMP, 0U,
+        uemit_jmp_offset(jmp_pc, (int)urbi_emit_instr_count(e))));
 }
 
 /* --- Register-allocator micro-helpers (inline for zero overhead) ---
@@ -234,7 +234,7 @@ static inline uint8_t alloc_reg(UEmitter *e) {
 
 /* Release the most-recently-allocated register (stack discipline).
  *
- * EMIT-012 fix (Wave 5, v0.5.7): respect fs_temp_floor — temp registers
+ * EMIT-012 fix (Wave 5, v0.5.7): respect urbi_emit_fs_temp_floor — temp registers
  * live at indices [floor, ...) where floor = nactvar + (1 if
  * global_slot_reserved else 0).  A bare next_reg-- with no floor guard
  * decrements *into* the local zone when the caller miscounted free_reg
@@ -247,20 +247,20 @@ static inline uint8_t alloc_reg(UEmitter *e) {
 static inline void free_reg(UEmitter *e) {
     if (e->next_reg == 0U) return;
     if (e->current_fs != NULL) {
-        uint8_t floor_val = fs_temp_floor(e->current_fs);
+        uint8_t floor_val = urbi_emit_fs_temp_floor(e->current_fs);
         if (e->next_reg <= floor_val) return;
     }
     e->next_reg--;
 }
 
 /* Release a register that was bumped through *both* next_reg AND the
- * FuncState freereg cursor (the pattern that emit_function_literal
+ * FuncState freereg cursor (the pattern that urbi_emit_function_literal
  * leaves behind on the parent FuncState — closure dst pulled from
  * freereg, then `freereg++` and `next_reg = freereg`).
  *
  * EMIT-010 fix (Wave 5, v0.5.7): watcher / waituntil / at-event install
  * arms compile their cond/body/onleave/event closures via
- * emit_function_literal, which raises freereg in lockstep with next_reg.
+ * urbi_emit_function_literal, which raises freereg in lockstep with next_reg.
  * Plain free_reg() decrements only next_reg, leaving freereg promoted
  * 1-N slots above the now-decremented next_reg.  Subsequent
  * declarations / temp allocations then land at the leaked freereg
@@ -274,7 +274,7 @@ static inline void free_reg_freereg_synced(UEmitter *e) {
 }
 
 /* === W1/v0.10.5: loop-context helpers (inline — shared by uemit_stmt.c) ===
- * These must be placed AFTER uemit_jmp_offset and emit_patch_instr are
+ * These must be placed AFTER uemit_jmp_offset and urbi_emit_patch_instr are
  * declared/defined so the inline patch helpers can reference them.
  *
  * uemit_loop_push — open a new loop context.  Returns false (sets
@@ -346,7 +346,7 @@ static inline void uemit_loop_patch_breaks(UEmitter *e, int exit_target) {
     int i;
     for (i = 0; i < ctx->break_count; i++) {
         int from_pc = ctx->break_pcs[i];
-        emit_patch_instr(e, from_pc,
+        urbi_emit_patch_instr(e, from_pc,
             uinstr_enc_abx(OP_JMP, 0U,
                            uemit_jmp_offset(from_pc, exit_target)));
     }
@@ -358,7 +358,7 @@ static inline void uemit_loop_patch_continues(UEmitter *e, int cont_target) {
     int i;
     for (i = 0; i < ctx->continue_count; i++) {
         int from_pc = ctx->continue_pcs[i];
-        emit_patch_instr(e, from_pc,
+        urbi_emit_patch_instr(e, from_pc,
             uinstr_enc_abx(OP_JMP, 0U,
                            uemit_jmp_offset(from_pc, cont_target)));
     }
@@ -368,7 +368,7 @@ static inline void uemit_loop_patch_continues(UEmitter *e, int cont_target) {
 /* === T24: emitter unwind-scope stack helpers ===
  *
  * uemit_unwind_scope_push / _pop bracket body emission in emit_try_frame
- * and emit_tag_prefix_arm.  Push failure latches EMIT_NESTING_TOO_DEEP.
+ * and urbi_emit_tag_prefix_arm.  Push failure latches EMIT_NESTING_TOO_DEEP.
  * Error-path returns inside the bracketed emitters intentionally skip the
  * pop — e->error latches and no further code is emitted, so a stale depth
  * is unobservable (same rationale as the loop-ctx discipline).
@@ -402,52 +402,52 @@ int urbi_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line);
 /* === end T24 === */
 
 /* Statement / control-flow AST arm helpers (defined in uemit_stmt.c).
- * Called from emit_expr via forwarding stubs; bodies live in uemit_stmt.c. */
-uint8_t emit_if_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_while_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_call_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_return_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_function_arm(UEmitter *e, UAstNode *n);
+ * Called from urbi_emit_expr via forwarding stubs; bodies live in uemit_stmt.c. */
+uint8_t urbi_emit_if_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_call_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_return_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_function_arm(UEmitter *e, UAstNode *n);
 /* W3/v0.10.5: assert keyword */
-uint8_t emit_assert_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_assert_arm(UEmitter *e, UAstNode *n);
 /* === W10/v0.10.5: list/dict literals + subscript === */
-uint8_t emit_list_lit_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_subscript_get_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_list_lit_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_subscript_get_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_subscript_set_arm(UEmitter *e, UAstNode *n);
 /* === end W10/v0.10.5 === */
 /* === W1/v0.10.5: control flow === */
-uint8_t emit_for_each_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_break_arm(UEmitter *e, const UAstNode *n);
-uint8_t emit_continue_arm(UEmitter *e, const UAstNode *n);
-uint8_t emit_switch_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_for_each_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_break_arm(UEmitter *e, const UAstNode *n);
+uint8_t urbi_emit_continue_arm(UEmitter *e, const UAstNode *n);
+uint8_t urbi_emit_switch_arm(UEmitter *e, UAstNode *n);
 /* === end W1/v0.10.5: control flow === */
 
 /* Leaf-expression AST arm helpers (defined in uemit_expr.c).
- * Called from emit_expr via forwarding stubs; bodies live in uemit_expr.c. */
-uint8_t emit_int_arm(UEmitter *e, const UAstNode *n);
-uint8_t emit_float_arm(UEmitter *e, const UAstNode *n);
-uint8_t emit_bool_arm(UEmitter *e, const UAstNode *n);
-uint8_t emit_nil_arm(UEmitter *e, const UAstNode *n);
-uint8_t emit_string_arm(UEmitter *e, const UAstNode *n);
-uint8_t emit_this_arm(UEmitter *e, const UAstNode *n);
-uint8_t emit_noop_arm(UEmitter *e, const UAstNode *n);
-uint8_t emit_unary_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_binary_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_compare_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_logical_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n);
-uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_assign_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_nary_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_block_arm(UEmitter *e, UAstNode *n);
+ * Called from urbi_emit_expr via forwarding stubs; bodies live in uemit_expr.c. */
+uint8_t urbi_emit_int_arm(UEmitter *e, const UAstNode *n);
+uint8_t urbi_emit_float_arm(UEmitter *e, const UAstNode *n);
+uint8_t urbi_emit_bool_arm(UEmitter *e, const UAstNode *n);
+uint8_t urbi_emit_nil_arm(UEmitter *e, const UAstNode *n);
+uint8_t urbi_emit_string_arm(UEmitter *e, const UAstNode *n);
+uint8_t urbi_emit_this_arm(UEmitter *e, const UAstNode *n);
+uint8_t urbi_emit_noop_arm(UEmitter *e, const UAstNode *n);
+uint8_t urbi_emit_unary_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_binary_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_compare_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_logical_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_ident_arm(UEmitter *e, const UAstNode *n);
+uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_nary_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_block_arm(UEmitter *e, UAstNode *n);
 
 /* Constant-pool helpers (defined in uemit.c).
  * Promoted from static so uemit_expr.c can call them cross-TU. */
-uint16_t add_const_int(UEmitter *e, int64_t v);
-uint16_t add_const_float(UEmitter *e, double v);
-uint16_t add_const_str(UEmitter *e, const char *interned);
-UOpcode  binop_to_opcode(UAstBinaryOp op);
+uint16_t urbi_emit_add_const_int(UEmitter *e, int64_t v);
+uint16_t urbi_emit_add_const_float(UEmitter *e, double v);
+uint16_t urbi_emit_add_const_str(UEmitter *e, const char *interned);
+UOpcode  urbi_emit_binop_to_opcode(UAstBinaryOp op);
 
 #endif /* UEMIT_INTERNAL_H */

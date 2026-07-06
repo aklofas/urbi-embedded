@@ -705,7 +705,7 @@ obj_setProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
      * with a clear ArityError instead.  `constant` carries through
      * whatever value is passed (no closure expected), so no check.
      *
-     * args[2] is a UClosure for oget/oset (emit_property_decl_arm
+     * args[2] is a UClosure for oget/oset (urbi_emit_property_decl_arm
      * synthesizes an AST_FUNCTION arg).  Nparams lives on the proto. */
     if (flag_bit == URBI_SLOT_FLAG_OGET || flag_bit == URBI_SLOT_FLAG_OSET) {
         if (args[2].kind != (uint8_t)UVAL_CLOSURE || args[2].v.p == NULL) {

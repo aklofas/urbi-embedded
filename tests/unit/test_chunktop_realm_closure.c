@@ -4,13 +4,13 @@
  * Bug: `Realm.fn = function () {...}` at chunk-top fataled with
  * "TypeError: SETSLOT: receiver is not an Object".
  *
- * Root cause (`emit_function_literal` in `src/emit/uemit_stmt.c`): the
+ * Root cause (`urbi_emit_function_literal` in `src/emit/uemit_stmt.c`): the
  * closure-destination register was computed from `current_fs->freereg`,
  * but freereg tracks only the local-zone floor (locals + params +
  * r_global_slot reservation).  Live temps above the floor — including
- * the `Realm` GETSLOT result returned by `emit_ident_arm`'s realm-global
+ * the `Realm` GETSLOT result returned by `urbi_emit_ident_arm`'s realm-global
  * fallback — are tracked via `e->next_reg`, which drifts above
- * `freereg` as the floor sits still.  `emit_function_literal` also
+ * `freereg` as the floor sits still.  `urbi_emit_function_literal` also
  * clobbered `e->next_reg` mid-helper (`e->next_reg = child_fs->freereg`)
  * without restoring the parent's value, so the post-close `dst` lookup
  * couldn't recover from `next_reg` either.

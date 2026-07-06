@@ -1,7 +1,7 @@
 # Milestone: v0.13.1
 # Covers: loop-exit and continue paths must execute the loop block's
 #         OP_CLOSE (refactor-3 FE-04 follow-on).  Two reachability gaps in
-#         emit_while_arm: (a) cont_target was recorded AFTER the back-edge
+#         urbi_emit_while_arm: (a) cont_target was recorded AFTER the back-edge
 #         OP_CLOSE, so `continue` skipped it and the next iteration reused
 #         the still-open cell; (b) the block-exit OP_CLOSE sat between the
 #         back-edge JMP and the exit-patch target, so the cond-false exit

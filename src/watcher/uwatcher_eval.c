@@ -315,7 +315,7 @@ urbi_vm_watcher_eval_dirty(struct UVM *vm)
                 /* W9: falling-edge else_body / onleave dispatch.
                  * The `onleave` slot doubles as the else_body closure when the
                  * parser compiles `whenever (cond) body else else_body` —
-                 * emit_watcher_arm stores else_body in register C of
+                 * urbi_emit_watcher_arm stores else_body in register C of
                  * OP_WHENEVER_INSTALL, which is the onleave slot.
                  * URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE gate prevents the
                  * else from firing at watcher install time when the condition

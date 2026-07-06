@@ -201,14 +201,14 @@ UTEST(emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL) {
 
 /* Regression: when event_expr routes through AST_IDENT global-fallback or
  * AST_MEMBER_GET, those arms only bump e->next_reg without bumping
- * fs->freereg.  AST_AT_EVENT's subsequent emit_function_literal then
+ * fs->freereg.  AST_AT_EVENT's subsequent urbi_emit_function_literal then
  * allocates body_reg from the stale freereg, colliding with event_reg.
  * OP_CLOSURE clobbers the event pointer at runtime; the install opcode
  * trips R[A] == R[B] (type confusion: closure interpreted as event).
  *
- * The fix syncs freereg to next_reg after emit_expr for the event
+ * The fix syncs freereg to next_reg after urbi_emit_expr for the event
  * expression.  AST_WATCHER does not have this bug because cond is wrapped
- * in a closure (which routes through emit_function_literal symmetrically).
+ * in a closure (which routes through urbi_emit_function_literal symmetrically).
  *
  * This test compiles `at sync (Realm.evt?) body_val` and asserts the
  * emitted OP_AT_EVENT_SYNC_INSTALL has distinct event/body registers.

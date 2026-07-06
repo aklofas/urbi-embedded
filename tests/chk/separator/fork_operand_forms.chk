@@ -3,7 +3,7 @@
 # lifetime across the inline LHS compile.
 #
 # Case 1: RHS thunk assigns a chunk-top var.
-#   Before the fix the thunk's emit_assign_arm could not reach the root
+#   Before the fix the thunk's urbi_emit_assign_arm could not reach the root
 #   funcstate's global_var_names and raised EMIT_UNRESOLVED_NAME.
 #   After the fix: the parent chain is walked to the root to find the
 #   global_var_names entry, and OP_SETSLOT is emitted using the thunk's
@@ -13,17 +13,17 @@
 #   !!! <stdin>:1:20: undefined name 'n'
 #
 # Case 2: while-node as LHS of & (inline strand).
-#   Before the fix, emit_while_arm reset freereg to fs_temp_floor() after
+#   Before the fix, urbi_emit_while_arm reset freereg to urbi_emit_fs_temp_floor() after
 #   the condition, landing below the RHS closure register. The LOADNIL at
 #   loop-exit wrote nil into the closure register, causing a runtime
-#   TypeError from OP_FORK_JOIN. emit_if_arm avoids this by pinning
+#   TypeError from OP_FORK_JOIN. urbi_emit_if_arm avoids this by pinning
 #   freereg >= rd (the incoming next_reg); while-arm now does the same.
 #
 # ACTUAL RED output (before fix) for case 2:
 #   !!! TypeError: '&' (parallel-join): operand is not a closure
 #
 # Case 3: unbraced-if as LHS of & — regression pin.
-#   parse_sep_operand already admitted if-nodes; emit_if_arm already pinned
+#   parse_sep_operand already admitted if-nodes; urbi_emit_if_arm already pinned
 #   freereg, so this never regressed. Kept as a pin.
 #
 # Case 4: switch as & operand — parse-error boundary pin.
@@ -36,11 +36,11 @@
 # Cases 5-10: closure-register lifetime across the inline LHS compile.
 #   The & emitter compiles the RHS thunk first and holds its register live
 #   while the LHS compiles inline. Any statement emitter reachable inside
-#   the LHS that resets freereg to fs_temp_floor() could then allocate at
+#   the LHS that resets freereg to urbi_emit_fs_temp_floor() could then allocate at
 #   or below the closure register: either a terminal LOADNIL nilled the
 #   closure (runtime TypeError from OP_FORK_JOIN — cases 5, 7) or a local
 #   declared inside the operand was silently clobbered by a later temp,
-#   because count-based fs_temp_floor does not count the raw closure temp
+#   because count-based urbi_emit_fs_temp_floor does not count the raw closure temp
 #   sitting below the local (cases 8-10; case 6 clobbers the hidden
 #   for-each iterator local the same way). Fixed by adopting the closure
 #   register as a hidden declared local for the duration of the LHS

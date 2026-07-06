@@ -2,7 +2,7 @@
 /* uemit_expr.c — leaf-expression bytecode emitters.
  * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #3).
  *
- * Contains emit_expr arm helpers for the 13 leaf-expression AST kinds:
+ * Contains urbi_emit_expr arm helpers for the 13 leaf-expression AST kinds:
  *   AST_INT       — integer literal (OP_LOADK)
  *   AST_BOOL      — boolean literal (OP_LOADBOOL)
  *   AST_NIL       — nil literal (OP_LOADNIL)
@@ -33,23 +33,23 @@
 
 /* --- AST_INT --- */
 
-uint8_t emit_int_arm(UEmitter *e, const UAstNode *n) {
+uint8_t urbi_emit_int_arm(UEmitter *e, const UAstNode *n) {
     const uint8_t r = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
-    const uint16_t k = add_const_int(e, n->u.i);
+    const uint16_t k = urbi_emit_add_const_int(e, n->u.i);
     if (e->error != EMIT_OK) return 0U;
-    emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
     return r;
 }
 
 /* --- AST_FLOAT_LIT --- */
 
-uint8_t emit_float_arm(UEmitter *e, const UAstNode *n) {
-    const uint16_t k = add_const_float(e, n->u.f);
+uint8_t urbi_emit_float_arm(UEmitter *e, const UAstNode *n) {
+    const uint16_t k = urbi_emit_add_const_float(e, n->u.f);
     if (e->error != EMIT_OK) return 0U;
     const uint8_t r = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
-    emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
     return r;
 }
 
@@ -61,7 +61,7 @@ uint8_t emit_float_arm(UEmitter *e, const UAstNode *n) {
  * Top-level `this` (fs->parent == NULL) is a v1.x feature (lobby alias);
  * raise EMIT_NO_THIS_OUTSIDE_METHOD for now. */
 
-uint8_t emit_this_arm(UEmitter *e, const UAstNode *n) {
+uint8_t urbi_emit_this_arm(UEmitter *e, const UAstNode *n) {
     const UFuncState *fs = e->current_fs;
     if (fs == NULL || fs->parent == NULL) {
         e->error = EMIT_NO_THIS_OUTSIDE_METHOD;
@@ -75,26 +75,26 @@ uint8_t emit_this_arm(UEmitter *e, const UAstNode *n) {
      * carries the method flag, v1.6 S42).  Stable across any GETSLOT /
      * SELF / CALL inside the method body since the value is held in the
      * frame record, not a global. */
-    emit_instr(e, uinstr_enc_abc(OP_LOAD_RECV, dst, 0U, 0U), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOAD_RECV, dst, 0U, 0U), (uint32_t)n->line);
     return dst;
 }
 
 /* --- AST_BOOL --- */
 
-uint8_t emit_bool_arm(UEmitter *e, const UAstNode *n) {
+uint8_t urbi_emit_bool_arm(UEmitter *e, const UAstNode *n) {
     uint8_t r = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
-    emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, r, n->u.b ? 1U : 0U, 0U),
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, r, n->u.b ? 1U : 0U, 0U),
                (uint32_t)n->line);
     return r;
 }
 
 /* --- AST_NIL --- */
 
-uint8_t emit_nil_arm(UEmitter *e, const UAstNode *n) {
+uint8_t urbi_emit_nil_arm(UEmitter *e, const UAstNode *n) {
     uint8_t r = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
-    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0U, 0U),
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0U, 0U),
                (uint32_t)n->line);
     return r;
 }
@@ -110,7 +110,7 @@ uint8_t emit_nil_arm(UEmitter *e, const UAstNode *n) {
  * (see src/chunk/uchunk_io.c constant-pool decoder for the symmetric load
  * arm). */
 
-uint8_t emit_string_arm(UEmitter *e, const UAstNode *n) {
+uint8_t urbi_emit_string_arm(UEmitter *e, const UAstNode *n) {
     /* Intern the escape-resolved bytes; ustr_intern returns a pointer-stable
      * canonical address per (vm, content) pair.  vm is non-NULL by emitter
      * contract (uemit_init wires it). */
@@ -118,66 +118,66 @@ uint8_t emit_string_arm(UEmitter *e, const UAstNode *n) {
                                        (size_t)n->u.str_lit.len);
     if (interned == NULL) { e->error = EMIT_OOM; return 0U; }
 
-    const uint16_t k = add_const_str(e, interned);
+    const uint16_t k = urbi_emit_add_const_str(e, interned);
     if (e->error != EMIT_OK) return 0U;
 
     const uint8_t r = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
-    emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
     return r;
 }
 
 /* --- AST_NOOP --- */
 
-uint8_t emit_noop_arm(UEmitter *e, const UAstNode *n) {
+uint8_t urbi_emit_noop_arm(UEmitter *e, const UAstNode *n) {
     /* No-op: load nil as the value. */
     uint8_t r = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
-    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0U, 0U),
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0U, 0U),
                (uint32_t)n->line);
     return r;
 }
 
 /* --- AST_UNARY --- */
 
-uint8_t emit_unary_arm(UEmitter *e, UAstNode *n) {
-    const uint8_t src_reg = emit_expr(e, n->u.unary.operand);
+uint8_t urbi_emit_unary_arm(UEmitter *e, UAstNode *n) {
+    const uint8_t src_reg = urbi_emit_expr(e, n->u.unary.operand);
     if (e->error != EMIT_OK) return 0U;
 
     if (n->u.unary.op == UOP_NOT) {
         /* Logical NOT — the 4-instruction OP_TEST/OP_LOADBOOL branch idiom
-         * (mirrors emit_compare_arm; no new opcode, refactor-3 FE-03):
+         * (mirrors urbi_emit_compare_arm; no new opcode, refactor-3 FE-03):
          *   TEST src, 0, 0     ; skip next when src is falsy
          *   JMP +1             ; truthy -> false arm
          *   LOADBOOL rd, 1, 1  ; rd = true; pc++ (skip false arm)
          *   LOADBOOL rd, 0, 0  ; rd = false */
         const uint8_t rd = src_reg;  /* in-place, same as NEG */
-        emit_instr(e, uinstr_enc_abc(OP_TEST, src_reg, 0U, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_TEST, src_reg, 0U, 0U),
                    (uint32_t)n->line);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U,
+        urbi_emit_instr(e, uinstr_enc_abx(OP_JMP, 0U,
                    (uint16_t)UEMIT_JMP_FALLTHROUGH_BIAS), (uint32_t)n->line);
-        emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rd, 1U, 1U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rd, 1U, 1U),
                    (uint32_t)n->line);
-        emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rd, 0U, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rd, 0U, 0U),
                    (uint32_t)n->line);
         return rd;
     }
 
     /* UOP_NEG: arithmetic negation (parser strips unary '+' at parse time). */
-    emit_instr(e, uinstr_enc_abc(OP_NEG, src_reg, src_reg, 0U),
+    urbi_emit_instr(e, uinstr_enc_abc(OP_NEG, src_reg, src_reg, 0U),
                (uint32_t)n->line);
     return src_reg;   /* dest reuses src; no free_reg */
 }
 
 /* --- AST_BINARY --- */
 
-uint8_t emit_binary_arm(UEmitter *e, UAstNode *n) {
-    const uint8_t lhs_reg = emit_expr(e, n->u.binary.lhs);
+uint8_t urbi_emit_binary_arm(UEmitter *e, UAstNode *n) {
+    const uint8_t lhs_reg = urbi_emit_expr(e, n->u.binary.lhs);
     if (e->error != EMIT_OK) return 0U;
-    const uint8_t rhs_reg = emit_expr(e, n->u.binary.rhs);
+    const uint8_t rhs_reg = urbi_emit_expr(e, n->u.binary.rhs);
     if (e->error != EMIT_OK) return 0U;
-    emit_instr(e,
-               uinstr_enc_abc(binop_to_opcode(n->u.binary.op),
+    urbi_emit_instr(e,
+               uinstr_enc_abc(urbi_emit_binop_to_opcode(n->u.binary.op),
                               lhs_reg, lhs_reg, rhs_reg),
                (uint32_t)n->line);
     free_reg(e);              /* rhs released; lhs holds result in place */
@@ -186,14 +186,14 @@ uint8_t emit_binary_arm(UEmitter *e, UAstNode *n) {
 
 /* --- AST_COMPARE --- */
 
-uint8_t emit_compare_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_compare_arm(UEmitter *e, UAstNode *n) {
     /* Compile LHS into rb, RHS into the next register. */
     uint8_t rb = e->next_reg;
-    uint8_t lhs_reg = emit_expr(e, n->u.cmp.lhs);
+    uint8_t lhs_reg = urbi_emit_expr(e, n->u.cmp.lhs);
     if (e->error != EMIT_OK) return 0U;
     (void)lhs_reg;  /* rb == lhs_reg; named for clarity */
     uint8_t rc_reg = e->next_reg;
-    uint8_t rhs_reg = emit_expr(e, n->u.cmp.rhs);
+    uint8_t rhs_reg = urbi_emit_expr(e, n->u.cmp.rhs);
     if (e->error != EMIT_OK) return 0U;
     (void)rhs_reg;  /* rc_reg == rhs_reg */
 
@@ -231,10 +231,10 @@ uint8_t emit_compare_arm(UEmitter *e, UAstNode *n) {
          LOADBOOL rb, 1, 1     ; rb = true; pc++ (skip false arm)
          LOADBOOL rb, 0, 0     ; rb = false
     */
-    emit_instr(e, uinstr_enc_abc(op, a_bit, b_reg, c_reg), (uint32_t)n->line);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, (uint16_t)UEMIT_JMP_FALLTHROUGH_BIAS), (uint32_t)n->line);
-    emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rb, 1U, 1U), (uint32_t)n->line);
-    emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rb, 0U, 0U), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abc(op, a_bit, b_reg, c_reg), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, (uint16_t)UEMIT_JMP_FALLTHROUGH_BIAS), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rb, 1U, 1U), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rb, 0U, 0U), (uint32_t)n->line);
 
     return rb;
 }
@@ -254,19 +254,19 @@ uint8_t emit_compare_arm(UEmitter *e, UAstNode *n) {
  *   for ||:  short-circuit (skip RHS, keep truthy LHS) when LHS is TRUTHY.
  *            Fall through to RHS when LHS is falsy → pc++ on falsy → C = 0.
  *
- * Register protocol mirrors emit_compare_arm: rd is a TEMP holding the
+ * Register protocol mirrors urbi_emit_compare_arm: rd is a TEMP holding the
  * expression value; reset next_reg to rd+1 and bump max_reg_seen so callers
  * can allocate above the result. */
-uint8_t emit_logical_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_logical_arm(UEmitter *e, UAstNode *n) {
     /* Evaluate LHS into rd (the result register). */
     uint8_t rd = e->next_reg;
-    uint8_t lhs_reg = emit_expr(e, n->u.logical.lhs);
+    uint8_t lhs_reg = urbi_emit_expr(e, n->u.logical.lhs);
     if (e->error != EMIT_OK) return 0U;
     (void)lhs_reg;  /* rd == lhs_reg */
 
     /* TESTSET rd, rd, c — see polarity reasoning above. */
     const uint8_t c = n->u.logical.is_or ? 0U : 1U;
-    emit_instr(e, uinstr_enc_abc(OP_TESTSET, rd, rd, c), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_TESTSET, rd, rd, c), (uint32_t)n->line);
 
     /* JMP placeholder — when taken, skips the RHS evaluation (short-circuit). */
     int jmp_skip = emit_fwd_jmp(e, (uint32_t)n->line);
@@ -274,10 +274,10 @@ uint8_t emit_logical_arm(UEmitter *e, UAstNode *n) {
     /* RHS path: evaluate RHS starting at rd (reset cursor so RHS reuses the
      * temp zone above rd), then move the value into rd if it landed elsewhere. */
     e->next_reg = rd;
-    uint8_t rhs_reg = emit_expr(e, n->u.logical.rhs);
+    uint8_t rhs_reg = urbi_emit_expr(e, n->u.logical.rhs);
     if (e->error != EMIT_OK) return 0U;
     if (rhs_reg != rd) {
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, rhs_reg, 0U), (uint32_t)n->line);
+        urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, rhs_reg, 0U), (uint32_t)n->line);
     }
 
     /* Patch the short-circuit JMP to land just past the RHS path. */
@@ -295,7 +295,7 @@ uint8_t emit_logical_arm(UEmitter *e, UAstNode *n) {
 
 /* --- AST_IDENT --- */
 
-uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n) {
+uint8_t urbi_emit_ident_arm(UEmitter *e, const UAstNode *n) {
     if (e->vm == NULL || e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
@@ -324,7 +324,7 @@ uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n) {
             e->error = EMIT_REG_EXHAUSTED;
             return 0U;
         }
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, dst, (uint8_t)slot, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, dst, (uint8_t)slot, 0U),
                    (uint32_t)n->line);
         e->next_reg++;
         if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
@@ -336,7 +336,7 @@ uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n) {
         if (is_lazy_local && !e->lazy_arg_context) {
             /* dst currently holds the thunk closure.  Force it:
              * OP_CALL dst, 1, 2 — zero args, 1 result, result in dst. */
-            emit_instr(e, uinstr_enc_abc(OP_CALL, dst, 1U, 2U),
+            urbi_emit_instr(e, uinstr_enc_abc(OP_CALL, dst, 1U, 2U),
                        (uint32_t)n->line);
         }
         return dst;
@@ -350,7 +350,7 @@ uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n) {
             e->error = EMIT_REG_EXHAUSTED;
             return 0U;
         }
-        emit_instr(e, uinstr_enc_abc(OP_GETUPVAL, dst, (uint8_t)up, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_GETUPVAL, dst, (uint8_t)up, 0U),
                    (uint32_t)n->line);
         e->next_reg++;
         if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
@@ -405,7 +405,7 @@ uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n) {
         }
         int ic_idx = uemit_assign_ic_index(e, (USymbol *)canonical);
         if (ic_idx < 0) return 0U;  /* error already set */
-        emit_instr(e, uinstr_enc_abc(OP_GETSLOT, dst, fs->r_global_slot,
+        urbi_emit_instr(e, uinstr_enc_abc(OP_GETSLOT, dst, fs->r_global_slot,
                                      (uint8_t)ic_idx),
                    (uint32_t)n->line);
         e->next_reg++;
@@ -417,7 +417,7 @@ uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n) {
 
 /* --- AST_VAR_DECL --- */
 
-uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
@@ -473,7 +473,7 @@ uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n) {
         }
 
         /* Emit init expression into a temp register. */
-        uint8_t init_reg = emit_expr(e, n->u.var_decl.init);
+        uint8_t init_reg = urbi_emit_expr(e, n->u.var_decl.init);
         if (e->error != EMIT_OK) return 0U;
 
         /* Intern slot name and assign IC index. */
@@ -481,7 +481,7 @@ uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n) {
         if (ic_idx < 0) return 0U;
 
         /* Write value into the global slot. */
-        emit_instr(e, uinstr_enc_abc(OP_SETSLOT, init_reg, fs->r_global_slot,
+        urbi_emit_instr(e, uinstr_enc_abc(OP_SETSLOT, init_reg, fs->r_global_slot,
                                      (uint8_t)ic_idx),
                    (uint32_t)n->line);
 
@@ -544,7 +544,7 @@ uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n) {
 
     /* Emit init expression — lands at reg_before (alloc_reg gives it
        the next free slot, which is e->next_reg == reg_before). */
-    uint8_t init_reg = emit_expr(e, n->u.var_decl.init);
+    uint8_t init_reg = urbi_emit_expr(e, n->u.var_decl.init);
     if (e->error != EMIT_OK) return 0U;
 
     /* Sanity: init must have landed at exactly reg_before. */
@@ -592,7 +592,7 @@ uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n) {
 
 /* --- AST_ASSIGN --- */
 
-uint8_t emit_assign_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
@@ -653,18 +653,18 @@ uint8_t emit_assign_arm(UEmitter *e, UAstNode *n) {
 
     /* Emit RHS into top temp. */
     uint8_t reg_before = e->next_reg;
-    uint8_t rhs_reg = emit_expr(e, n->u.assign.value);
+    uint8_t rhs_reg = urbi_emit_expr(e, n->u.assign.value);
     if (e->error != EMIT_OK) return 0U;
 
     /* Move into the target slot. */
     if (local_slot >= 0) {
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)local_slot,
+        urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)local_slot,
                                      rhs_reg, 0U),
                    (uint32_t)n->line);
     } else if (is_global_assign) {
         /* T72: write to the global slot on the realm object.
          * When called from a thunk (fs->parent != NULL) the thunk's own
-         * r_global_slot is pre-reserved by emit_function_literal; marking
+         * r_global_slot is pre-reserved by urbi_emit_function_literal; marking
          * references_global here causes uemit_close_function to prepend the
          * OP_LOAD_REALM_GLOBAL prologue so the register is live at runtime. */
         if (!fs->references_global) {
@@ -672,7 +672,7 @@ uint8_t emit_assign_arm(UEmitter *e, UAstNode *n) {
         }
         int ic_idx = uemit_assign_ic_index(e, (USymbol *)canonical);
         if (ic_idx < 0) return 0U;
-        emit_instr(e, uinstr_enc_abc(OP_SETSLOT, rhs_reg, fs->r_global_slot,
+        urbi_emit_instr(e, uinstr_enc_abc(OP_SETSLOT, rhs_reg, fs->r_global_slot,
                                      (uint8_t)ic_idx),
                    (uint32_t)n->line);
         /* T16: if RHS is a literal function, update global_var_sigs so
@@ -700,7 +700,7 @@ uint8_t emit_assign_arm(UEmitter *e, UAstNode *n) {
             }
         }
     } else {
-        emit_instr(e, uinstr_enc_abc(OP_SETUPVAL, rhs_reg,
+        urbi_emit_instr(e, uinstr_enc_abc(OP_SETUPVAL, rhs_reg,
                                      (uint8_t)upvalue_idx, 0U),
                    (uint32_t)n->line);
     }
@@ -712,7 +712,7 @@ uint8_t emit_assign_arm(UEmitter *e, UAstNode *n) {
 
 /* --- AST_NARY --- */
 
-uint8_t emit_nary_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_nary_arm(UEmitter *e, UAstNode *n) {
     if (n->u.nary.separator == SEP_COMMA) {
         /* `,` parallel semantics (M3 closure-spawn).
          *
@@ -730,10 +730,10 @@ uint8_t emit_nary_arm(UEmitter *e, UAstNode *n) {
         int i;
         for (i = 0; i < n->u.nary.count - 1; i++) {
             /* Compile child[i] as a zero-arg closure (thunk). */
-            uint8_t closure_reg = emit_lazy_thunk(e, n->u.nary.children[i]);
+            uint8_t closure_reg = urbi_emit_lazy_thunk(e, n->u.nary.children[i]);
             if (e->error != EMIT_OK) return 0U;
             /* OP_FORK_DETACH A=closure_reg: spawn detached strand. */
-            emit_instr(e, uinstr_enc_abc(OP_FORK_DETACH, closure_reg, 0U, 0U),
+            urbi_emit_instr(e, uinstr_enc_abc(OP_FORK_DETACH, closure_reg, 0U, 0U),
                        (uint32_t)n->u.nary.children[i]->line);
             if (e->error != EMIT_OK) return 0U;
             /* Release the closure register (temp). */
@@ -741,7 +741,7 @@ uint8_t emit_nary_arm(UEmitter *e, UAstNode *n) {
                 e->next_reg = e->current_fs->freereg;
         }
         /* Last child runs inline; its result is the NARY's value. */
-        uint8_t r = emit_expr(e, n->u.nary.children[n->u.nary.count - 1]);
+        uint8_t r = urbi_emit_expr(e, n->u.nary.children[n->u.nary.count - 1]);
         if (e->error != EMIT_OK) return 0U;
         return r;
     }
@@ -764,23 +764,23 @@ uint8_t emit_nary_arm(UEmitter *e, UAstNode *n) {
              * BlobScan.scan): the previous reset was just
              *     e->next_reg = e->current_fs->freereg;
              * which kept whatever freereg the previous child left behind.
-             * But emit_call_arm for a discarded-result bare call (e.g.
+             * But urbi_emit_call_arm for a discarded-result bare call (e.g.
              * `c_scan_begin();`) leaves freereg ABOVE the local-zone
              * floor (one past the call result), so subsequent var-decl
-             * children get a slot at the drifted next_reg.  emit_var_decl_arm
+             * children get a slot at the drifted next_reg.  urbi_emit_var_decl_arm
              * increments nactvar by 1 but assigns lv->slot = drifted-slot;
-             * fs_temp_floor (count-based: nactvar + r_global_slot) then
+             * urbi_emit_fs_temp_floor (count-based: nactvar + r_global_slot) then
              * UNDERESTIMATES the true local-zone top by the drift amount.
-             * On the next emit_while_arm body open, freereg gets reset to
-             * fs_temp_floor → lands BELOW already-declared locals → the
+             * On the next urbi_emit_while_arm body open, freereg gets reset to
+             * urbi_emit_fs_temp_floor → lands BELOW already-declared locals → the
              * loop body's `var x = 0` aliases the outer `iters` register,
              * and runtime x/y iterate in lockstep through the diagonal.
              *
-             * Mirror emit_block_arm's reset pattern: drop freereg back to
-             * fs_temp_floor so the next child sees a clean local-zone
+             * Mirror urbi_emit_block_arm's reset pattern: drop freereg back to
+             * urbi_emit_fs_temp_floor so the next child sees a clean local-zone
              * boundary, regardless of what kind of expression the
              * previous child was. */
-            e->current_fs->freereg = fs_temp_floor(e->current_fs);
+            e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
             e->next_reg = e->current_fs->freereg;
             /* refactor-3 VM-02/B4: cleanup bodies (finally / onleave) are
              * atomic — `;` separates statements but yields nothing there.
@@ -788,12 +788,12 @@ uint8_t emit_nary_arm(UEmitter *e, UAstNode *n) {
              * strand mid-walk (run_cleanup_with_replace treats the yield as
              * body completion): scheduler assert / corruption. */
             if (!e->in_cleanup_body) {
-                emit_instr(e, uinstr_enc_abc(OP_YIELD, 0U, 0U, 0U),
+                urbi_emit_instr(e, uinstr_enc_abc(OP_YIELD, 0U, 0U, 0U),
                            e->prev_line);
                 if (e->error != EMIT_OK) return 0U;
             }
         }
-        r = emit_expr(e, n->u.nary.children[i]);
+        r = urbi_emit_expr(e, n->u.nary.children[i]);
         if (e->error != EMIT_OK) return 0U;
     }
     return r;
@@ -801,7 +801,7 @@ uint8_t emit_nary_arm(UEmitter *e, UAstNode *n) {
 
 /* --- AST_BIN_SEP --- */
 
-uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
     if (n->u.bin_sep.separator == SEP_AMP) {
         /* `&` fork-join (M3 closure-spawn).
          *
@@ -821,20 +821,20 @@ uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
             return 0U;
         }
         /* Step 1: compile RHS to a closure. */
-        uint8_t closure_reg = emit_lazy_thunk(e, n->u.bin_sep.rhs);
+        uint8_t closure_reg = urbi_emit_lazy_thunk(e, n->u.bin_sep.rhs);
         if (e->error != EMIT_OK) return 0U;
 
         /* Step 1b: adopt closure_reg as a hidden DECLARED local for the
          * duration of the inline LHS compile.  The closure register must
          * stay live until OP_FORK_JOIN reads it, but statement emitters
-         * inside the LHS reset freereg to fs_temp_floor() — and the floor
+         * inside the LHS reset freereg to urbi_emit_fs_temp_floor() — and the floor
          * is COUNT-based (nactvar + global_slot_reserved), so a raw temp
          * below subsequently-declared locals breaks the math twice over:
          * the emitter's next LOADNIL/temp lands on the closure register
          * (runtime TypeError from OP_FORK_JOIN), and any local declared
          * inside the operand sits one slot above its counted position, so
          * later floor resets clobber IT instead (silent wrong values).
-         * Declaring the slot makes every fs_temp_floor reset inside the
+         * Declaring the slot makes every urbi_emit_fs_temp_floor reset inside the
          * LHS — present and future emitters alike — land above it.  Same
          * discipline as for-each's \x01iter and switch's \x01sw hidden
          * locals.  Guard: adopt only when the closure landed exactly at
@@ -842,7 +842,7 @@ uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
          * fall through to the historical raw-temp behavior. */
         bool fork_slot_adopted = false;
         if (e->vm != NULL &&
-            closure_reg == fs_temp_floor(e->current_fs) &&
+            closure_reg == urbi_emit_fs_temp_floor(e->current_fs) &&
             e->current_fs->nactvar < UFS_MAX_LOCALS) {
             const char *fork_name = ustr_intern(e->vm, "\x01fork", 5);
             if (fork_name == NULL) { e->error = EMIT_OOM; return 0U; }
@@ -858,7 +858,7 @@ uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
 
         /* Step 2: compile LHS inline; release its register after. */
         uint8_t lhs_save = e->next_reg;
-        uint8_t lhs_r = emit_expr(e, n->u.bin_sep.lhs);
+        uint8_t lhs_r = urbi_emit_expr(e, n->u.bin_sep.lhs);
         if (e->error != EMIT_OK) {
             if (fork_slot_adopted) e->current_fs->nactvar--;
             return 0U;
@@ -886,12 +886,12 @@ uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
         if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
         if (e->next_reg > e->current_fs->max_reg_seen)
             e->current_fs->max_reg_seen = e->next_reg;
-        emit_instr(e, uinstr_enc_abc(OP_FORK_JOIN, closure_reg, child_reg, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_FORK_JOIN, closure_reg, child_reg, 0U),
                    (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Step 4: OP_JOIN_WAIT A=child_reg. */
-        emit_instr(e, uinstr_enc_abc(OP_JOIN_WAIT, child_reg, 0U, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_JOIN_WAIT, child_reg, 0U, 0U),
                    (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
@@ -906,7 +906,7 @@ uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
             e->current_fs->max_reg_seen = e->current_fs->freereg;
         e->next_reg = e->current_fs->freereg;
         if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-        emit_instr(e, uinstr_enc_abc(OP_LOADVOID, result_reg, 0U, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_LOADVOID, result_reg, 0U, 0U),
                    (uint32_t)n->line);
         return result_reg;
     }
@@ -917,23 +917,23 @@ uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
        freereg before emitting RHS, mirroring the v0.5.2 AST_NARY shape
        (commit 882fbb8).  The bare next_reg-- is wrong when LHS leaves
        freereg promoted (e.g., LHS ends in a function literal, which
-       lifts freereg via emit_function_literal's `freereg++`); after
+       lifts freereg via urbi_emit_function_literal's `freereg++`); after
        next_reg-- the cursor sits BELOW freereg and RHS allocation
        clobbers a still-live LHS temp.  See
        tests/unit/test_emit_freereg_drift.c::
        emit_sep_pipe_does_not_alias_lhs_temp_with_rhs. */
-    uint8_t lhs_r = emit_expr(e, n->u.bin_sep.lhs);
+    uint8_t lhs_r = urbi_emit_expr(e, n->u.bin_sep.lhs);
     if (e->error != EMIT_OK) return 0U;
     /* Release lhs register before rhs so rhs may reuse the slot. */
     (void)lhs_r;
     e->next_reg = e->current_fs->freereg;
-    uint8_t rhs_r = emit_expr(e, n->u.bin_sep.rhs);
+    uint8_t rhs_r = urbi_emit_expr(e, n->u.bin_sep.rhs);
     return rhs_r;
 }
 
 /* --- AST_BLOCK --- */
 
-uint8_t emit_block_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_block_arm(UEmitter *e, UAstNode *n) {
     /* Scoped sequence of statements inside `{ }`.
        Opens a block scope so locals declared inside don't outlive the
        block.  The block's "value" is the last statement's result reg
@@ -946,14 +946,14 @@ uint8_t emit_block_arm(UEmitter *e, UAstNode *n) {
 
     uint8_t r = 0U;
     for (int i = 0; i < n->u.block.count; i++) {
-        r = emit_expr(e, n->u.block.stmts[i]);
+        r = urbi_emit_expr(e, n->u.block.stmts[i]);
         if (e->error != EMIT_OK) {
             uemit_close_block(e);
             return 0U;
         }
         if (i < n->u.block.count - 1) {
             /* Release temps between statements; locals stay. */
-            e->current_fs->freereg = fs_temp_floor(e->current_fs);
+            e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
             e->next_reg = e->current_fs->freereg;
         }
     }
@@ -973,7 +973,7 @@ uint8_t emit_block_arm(UEmitter *e, UAstNode *n) {
  *   l[i] += v         → l.set(i, l.get(i) + v)
  *
  * All lowerings use synthetic AST_IDENT + AST_CALL + AST_MEMBER_GET nodes
- * built on the arena and fed back through emit_expr — this inherits the
+ * built on the arena and fed back through urbi_emit_expr — this inherits the
  * existing method-call ABI (OP_SELF + OP_CALL), realm-global resolution,
  * and IC index assignment for free.
  * ========================================================================= */
@@ -1023,14 +1023,14 @@ static UAstNode *synth_call(UEmitter *e, UAstNode *callee,
     return n;
 }
 
-/* --- emit_list_lit_arm — AST_LIST_LIT: [e1, e2, ...]
+/* --- urbi_emit_list_lit_arm — AST_LIST_LIT: [e1, e2, ...]
  *
  * Lowers to: List.new(e1, e2, ...)
  *
  * Builds: AST_CALL { callee = AST_MEMBER_GET{List, "new"}, args = [e1...] }
- * then recurses through emit_call_arm for the standard method-call ABI. */
+ * then recurses through urbi_emit_call_arm for the standard method-call ABI. */
 
-uint8_t emit_list_lit_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_list_lit_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
@@ -1056,10 +1056,10 @@ uint8_t emit_list_lit_arm(UEmitter *e, UAstNode *n) {
     UAstNode *call = synth_call(e, callee, args, argc, line);
     if (!call) return 0U;
 
-    return emit_call_arm(e, call);
+    return urbi_emit_call_arm(e, call);
 }
 
-/* --- emit_dict_lit_arm — AST_DICT_LIT: ["k1" => v1, "k2" => v2, ...]
+/* --- urbi_emit_dict_lit_arm — AST_DICT_LIT: ["k1" => v1, "k2" => v2, ...]
  *
  * Lowers to:
  *   _d = Dict.new()
@@ -1080,7 +1080,7 @@ uint8_t emit_list_lit_arm(UEmitter *e, UAstNode *n) {
  * Simpler direct approach: emit Dict.new() call → result in rd; then for each
  * pair emit OP_SELF + OP_CALL for .set(k, v) using rd as receiver. */
 
-uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
@@ -1096,9 +1096,9 @@ uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
         if (!callee) return 0U;
         UAstNode *call0 = synth_call(e, callee, NULL, 0, line);
         if (!call0) return 0U;
-        /* emit_call_arm returns callee_reg which is where the result lives.
-         * After the call, next_reg = r + 1 (per emit_call_arm contract). */
-        rd = emit_call_arm(e, call0);
+        /* urbi_emit_call_arm returns callee_reg which is where the result lives.
+         * After the call, next_reg = r + 1 (per urbi_emit_call_arm contract). */
+        rd = urbi_emit_call_arm(e, call0);
         if (e->error != EMIT_OK) return 0U;
     }
 
@@ -1126,7 +1126,7 @@ uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
             /* OP_SELF: load method + snapshot receiver into call_base/call_base+1. */
             int ic_idx = uemit_assign_ic_index(e, set_sym);
             if (ic_idx < 0) return 0U;
-            emit_instr(e, uinstr_enc_abc(OP_SELF, call_base, rd, (uint8_t)ic_idx),
+            urbi_emit_instr(e, uinstr_enc_abc(OP_SELF, call_base, rd, (uint8_t)ic_idx),
                        (uint32_t)line);
 
             /* Reset next_reg to args position (call_base+2). */
@@ -1137,11 +1137,11 @@ uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
             /* Emit key arg. */
             if (e->current_fs->freereg < e->next_reg)
                 e->current_fs->freereg = e->next_reg;
-            uint8_t key_r = emit_expr(e, n->u.dict_lit.keys[i]);
+            uint8_t key_r = urbi_emit_expr(e, n->u.dict_lit.keys[i]);
             if (e->error != EMIT_OK) return 0U;
             uint8_t key_expected = (uint8_t)(call_base + 2U);
             if (key_r != key_expected) {
-                emit_instr(e, uinstr_enc_abc(OP_MOVE, key_expected, key_r, 0U),
+                urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, key_expected, key_r, 0U),
                            (uint32_t)line);
                 e->next_reg = key_expected + 1U;
             }
@@ -1149,16 +1149,16 @@ uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
             /* Emit value arg. */
             if (e->current_fs->freereg < e->next_reg)
                 e->current_fs->freereg = e->next_reg;
-            uint8_t val_r = emit_expr(e, n->u.dict_lit.vals[i]);
+            uint8_t val_r = urbi_emit_expr(e, n->u.dict_lit.vals[i]);
             if (e->error != EMIT_OK) return 0U;
             uint8_t val_expected = (uint8_t)(call_base + 3U);
             if (val_r != val_expected) {
-                emit_instr(e, uinstr_enc_abc(OP_MOVE, val_expected, val_r, 0U),
+                urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, val_expected, val_r, 0U),
                            (uint32_t)line);
             }
 
             /* OP_CALL: method call with 2 explicit args (B = 2+2 = 4). */
-            emit_instr(e, uinstr_enc_abc(OP_CALL, call_base, 4U, 0x82U),
+            urbi_emit_instr(e, uinstr_enc_abc(OP_CALL, call_base, 4U, 0x82U),
                        (uint32_t)line);
 
             /* Result of .set() is discarded; restore next_reg to rd+1. */
@@ -1178,7 +1178,7 @@ uint8_t emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
 
 /* Helper: build a synthetic AST_REG_REF leaf (W2/v0.10.7).
  *
- * Used in emit_subscript_set_arm to pin recv and index into temp registers
+ * Used in urbi_emit_subscript_set_arm to pin recv and index into temp registers
  * before building the synthetic .get/.set calls, so each expression is
  * evaluated exactly once even when the caller is a side-effectful expression
  * like makeList()[nextIdx()] += v. */
@@ -1192,9 +1192,9 @@ static UAstNode *synth_reg_ref(UEmitter *e, uint8_t reg, int line) {
     return n;
 }
 
-/* --- emit_subscript_get_arm — AST_SUBSCRIPT_GET: l[i] → l.get(i) */
+/* --- urbi_emit_subscript_get_arm — AST_SUBSCRIPT_GET: l[i] → l.get(i) */
 
-uint8_t emit_subscript_get_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_subscript_get_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
@@ -1203,7 +1203,7 @@ uint8_t emit_subscript_get_arm(UEmitter *e, UAstNode *n) {
 
     /* Build: recv.get(index)
      * Args array must be arena-allocated — synth_call stores the pointer and
-     * emit_call_arm may read it after this stack frame returns. */
+     * urbi_emit_call_arm may read it after this stack frame returns. */
     UAstNode *mg = synth_member_get(e, n->u.subscript.recv, "get", line);
     if (!mg) return 0U;
     UAstNode **args = (UAstNode **)uarena_alloc(e->arena, sizeof(UAstNode *));
@@ -1212,14 +1212,14 @@ uint8_t emit_subscript_get_arm(UEmitter *e, UAstNode *n) {
     UAstNode *call = synth_call(e, mg, args, 1, line);
     if (!call) return 0U;
 
-    return emit_call_arm(e, call);
+    return urbi_emit_call_arm(e, call);
 }
 
-/* --- emit_subscript_set_arm — AST_SUBSCRIPT_SET:
+/* --- urbi_emit_subscript_set_arm — AST_SUBSCRIPT_SET:
  *   l[i] = v    → l.set(i, v)
  *   l[i] += v   → l.set(i, l.get(i) + v)   (is_compound_add=true) */
 
-uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
@@ -1239,15 +1239,15 @@ uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
          * moves from the already-evaluated register rather than re-evaluating
          * the original AST node.
          *
-         * Register pinning: save next_reg before each emit_expr, then bump
+         * Register pinning: save next_reg before each urbi_emit_expr, then bump
          * freereg past the result so subsequent alloc_reg calls don't reuse
          * the slot. */
 
         /* --- Single-evaluate receiver --- */
         uint8_t recv_reg = e->next_reg;
-        (void)emit_expr(e, n->u.subscript.recv);
+        (void)urbi_emit_expr(e, n->u.subscript.recv);
         if (e->error != EMIT_OK) return 0U;
-        /* recv_reg now holds the receiver value (emit_call_arm contract:
+        /* recv_reg now holds the receiver value (urbi_emit_call_arm contract:
          * result at callee_reg, next_reg = callee_reg + 1). */
         if (e->current_fs->freereg <= recv_reg)
             e->current_fs->freereg = recv_reg + 1U;
@@ -1255,7 +1255,7 @@ uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
 
         /* --- Single-evaluate index --- */
         uint8_t idx_reg = e->next_reg;
-        (void)emit_expr(e, n->u.subscript.index);
+        (void)urbi_emit_expr(e, n->u.subscript.index);
         if (e->error != EMIT_OK) return 0U;
         if (e->current_fs->freereg <= idx_reg)
             e->current_fs->freereg = idx_reg + 1U;
@@ -1297,7 +1297,7 @@ uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
         UAstNode *call = synth_call(e, set_mg, set_args, 2, line);
         if (!call) return 0U;
 
-        return emit_call_arm(e, call);
+        return urbi_emit_call_arm(e, call);
     }
 
     /* Non-compound: simple recv.set(index, rhs_val) — single use, no change. */
@@ -1311,6 +1311,6 @@ uint8_t emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
     UAstNode *call = synth_call(e, mg, set_args, 2, line);
     if (!call) return 0U;
 
-    return emit_call_arm(e, call);
+    return urbi_emit_call_arm(e, call);
 }
 /* === end W10/v0.10.5 === */

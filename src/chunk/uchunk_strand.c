@@ -521,7 +521,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         /* Parse / statement-emit errors skipped uemit_finish; release
          * emitter-owned funcstate storage (no-op when has_error came from
          * uemit_finish itself, which already tore it down — FE-07). */
-        emit_diag_free_all(&e);
+        urbi_emit_diag_free_all(&e);
         urbi_emit_abandon(&e);
         /* Compile-error path: module was never registered in the realm
          * (urbi_run_chunk was not reached), so it is not realm-owned.
@@ -547,7 +547,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         }
     }
 #endif
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
 
     /* Run the module's root chunk via the persistent loader strand path. */
     UValue result = {0};

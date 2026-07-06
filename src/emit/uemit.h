@@ -4,7 +4,7 @@
 #ifndef UEMIT_H
 #define UEMIT_H
 
-#include <stdarg.h>               /* va_list — emit_diag_warn variadic */
+#include <stdarg.h>               /* va_list — urbi_emit_diag_warn variadic */
 #include <stdbool.h>
 #include <stddef.h>               /* ptrdiff_t */
 #include <stdint.h>
@@ -23,7 +23,7 @@ typedef struct {
     enum { UEMIT_DIAG_WARN = 0, UEMIT_DIAG_ERROR = 1 } level;
     int         line;
     int         col;
-    const char *message;    /* allocator-owned copy; freed by emit_diag_free_all */
+    const char *message;    /* allocator-owned copy; freed by urbi_emit_diag_free_all */
 } UEmitDiag;
 
 /* --- emit-time errors (distinct from loader errors) --- */
@@ -102,7 +102,7 @@ struct UFuncState;
  * silently no-op.  A larger / dynamic limit would require allocation,
  * which we avoid for freestanding targets.
  *
- * loop_depth tracks nesting so emit_break_arm / emit_continue_arm always
+ * loop_depth tracks nesting so urbi_emit_break_arm / urbi_emit_continue_arm always
  * target the INNERMOST enclosing loop (top of loop_stack[]). */
 
 #define UEMIT_LOOP_CTX_MAX       8   /* max for/while/switch nesting depth */
@@ -140,7 +140,7 @@ typedef struct {
  * link that a later tag.stop() absorbs at (time-travel resume).
  *
  * The emitter therefore tracks every unwind scope it currently has open
- * (pushed by emit_try_frame / emit_tag_prefix_arm around body emission)
+ * (pushed by emit_try_frame / urbi_emit_tag_prefix_arm around body emission)
  * and, at each break/continue site, emits the crossed scopes' teardown
  * innermost-first BEFORE the JMP: OP_POP_TAG for tag scopes; OP_TRY_END
  * plus an inline copy of the finally body (REVIVAL §S5a: finally runs on
@@ -197,7 +197,7 @@ typedef struct UEmitter {
     UEmitError    error;           /* sticky: first error latches */
     struct UFuncState *current_fs; /* M2: current compilation function */
 
-    /* T32: warn-level diagnostic buffer.  emit_diag_warn appends here;
+    /* T32: warn-level diagnostic buffer.  urbi_emit_diag_warn appends here;
      * never causes emit to fail.  diag_buf is module-allocator-owned and
      * grows by doubling.  diag_count diagnostics are valid after
      * uemit_finish; callers may walk diag_buf[0..diag_count-1]. */
@@ -206,7 +206,7 @@ typedef struct UEmitter {
     int          diag_cap;
 
     /* === W1/v0.10.5: break/continue loop context stack ===
-     * Pushed by emit_for_each_arm / emit_while_arm / emit_switch_arm when
+     * Pushed by urbi_emit_for_each_arm / urbi_emit_while_arm / urbi_emit_switch_arm when
      * entering a loop; popped after the exit target is known.  break and
      * continue sites record their placeholder OP_JMP PCs here for batch
      * patching.  See ULoopCtx documentation above. */
@@ -215,8 +215,8 @@ typedef struct UEmitter {
     /* === end W1/v0.10.5 === */
 
     /* === T24: open unwind scopes (try / tag) — see UUnwindScope above ===
-     * Pushed by emit_try_frame / emit_tag_prefix_arm around body emission;
-     * read by emit_break_arm / emit_continue_arm to emit scope-crossing
+     * Pushed by emit_try_frame / urbi_emit_tag_prefix_arm around body emission;
+     * read by urbi_emit_break_arm / urbi_emit_continue_arm to emit scope-crossing
      * teardown before the loop-exit JMP.  Zeroed by uemit_init. */
     UUnwindScope unwind_scopes[UEMIT_UNWIND_SCOPE_MAX];
     int          unwind_scope_depth;
@@ -290,7 +290,7 @@ const char *uemit_error_name(UEmitError code);
  * n may be NULL (position will be 0,0).  fmt is a printf-style format
  * string.  Does not set e->error; emit continues normally.
  * If the buffer cannot grow (OOM), the diagnostic is silently dropped. */
-void emit_diag_warn(UEmitter *e, const UAstNode *n, const char *fmt, ...);
+void urbi_emit_diag_warn(UEmitter *e, const UAstNode *n, const char *fmt, ...);
 
 /* T13: Append an error-level diagnostic to the emitter's diag buffer.
  * n may be NULL (position will be 0,0).  fmt is a printf-style format
@@ -312,7 +312,7 @@ bool urbi_emit_diag_format_first_error(const UEmitter *e, char *buf, size_t cap)
 /* T32: Free all diagnostic message strings and the diag_buf array itself.
  * Resets diag_count/diag_cap to 0.  Must be called before the emitter's
  * associated module is destroyed.  No-op on freestanding builds. */
-void emit_diag_free_all(UEmitter *e);
+void urbi_emit_diag_free_all(UEmitter *e);
 
 /* --- M3 row 7 control-transfer opcode encoder helpers ---
  *
@@ -488,7 +488,7 @@ typedef struct UFuncState {
      *
      *   (1) UNUSED          : !global_slot_reserved && !references_global
      *       Nested funcstate that has not yet been emitted via
-     *       emit_function_literal (no slot claim, no global reads).
+     *       urbi_emit_function_literal (no slot claim, no global reads).
      *
      *   (2) RESERVED_NO_REF :  global_slot_reserved && !references_global
      *       Slot has been claimed from freereg (and floor includes it) but
@@ -497,7 +497,7 @@ typedef struct UFuncState {
      *         - chunk-top funcstate at uemit_open_function entry: the slot
      *           is unconditionally pre-reserved so a subsequent if/while
      *           condition register cannot collide at index 0;
-     *         - nested function body in emit_function_literal: pre-reserved
+     *         - nested function body in urbi_emit_function_literal: pre-reserved
      *           above the last param so an if-arm-only first global use
      *           still claims a stable slot.
      *
@@ -508,7 +508,7 @@ typedef struct UFuncState {
      * The fourth combination (!reserved && referenced) is unreachable —
      * resolving a global always claims the slot first.
      *
-     * Floor semantics: fs_temp_floor includes the global slot iff
+     * Floor semantics: urbi_emit_fs_temp_floor includes the global slot iff
      * global_slot_reserved (NOT iff references_global).  This is the
      * load-bearing distinction: a chunk-top with no global reads still
      * has its r_global_slot register protected from temp-zone overwrites,
@@ -523,7 +523,7 @@ typedef struct UFuncState {
                                         gates OP_LOAD_REALM_GLOBAL prologue
                                         emission in uemit_close_function. */
     bool     global_slot_reserved;   /* true once r_global_slot is claimed from
-                                        freereg; gates fs_temp_floor inclusion.
+                                        freereg; gates urbi_emit_fs_temp_floor inclusion.
                                         Set INDEPENDENTLY of references_global
                                         — see EMIT-021 state machine above. */
     uint8_t  r_global_slot;          /* register for realm->global_object;
@@ -573,7 +573,7 @@ int uemit_assign_ic_index(struct UEmitter *e, USymbol *name);
  * Best-effort compile-time walker: returns true when n contains a direct
  * write (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET, AST_PROP_SET).
  * AST_CALL is treated as opaque (returns false). */
-bool cond_has_direct_side_effect(UAstNode *n);
+bool urbi_emit_cond_has_direct_side_effect(UAstNode *n);
 
 #ifdef __cplusplus
 }

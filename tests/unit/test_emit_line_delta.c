@@ -2,7 +2,7 @@
 /* Unit tests: emit_push_line_delta precondition.
  *
  * EMIT-001: emit_push_line_delta historically assumed `instr_count >= 1`
- * because all callers in emit_instr bump instr_count BEFORE calling.  If a
+ * because all callers in urbi_emit_instr bump instr_count BEFORE calling.  If a
  * future caller-side bug ever reached this function with instr_count == 0,
  * `alloc(ptr, 0, ud)` is implementation-defined (some allocators free, some
  * return a valid 1-byte block, some return NULL) and `[instr_count - 1u]`

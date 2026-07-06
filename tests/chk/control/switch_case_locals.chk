@@ -1,8 +1,8 @@
 # Milestone: v0.13.1
 # Covers: case-body locals must survive temp resets and close correctly
-#         (found during v0.13.1 review, FE-02 follow-on).  emit_switch_arm
+#         (found during v0.13.1 review, FE-02 follow-on).  urbi_emit_switch_arm
 #         held the switch subject in a raw temp register (sw_reg) below any
-#         case-body `var` declarations, but fs_temp_floor is COUNT-based
+#         case-body `var` declarations, but urbi_emit_fs_temp_floor is COUNT-based
 #         (nactvar + global_slot_reserved) and assumes locals occupy a
 #         contiguous register range from the floor.  A case-body local was
 #         allocated ABOVE the held sw_reg, so the floor landed BELOW the
@@ -14,7 +14,7 @@
 #         block, and the switch exit lands on an exit-path OP_CLOSE at the
 #         case-zone base register.  The exit close is unconditional (not
 #         gated on the case block's has_captured) because a braced case
-#         body emits through emit_block_arm — its captures mark that
+#         body emits through urbi_emit_block_arm — its captures mark that
 #         deeper block, invisible at case close — while the close's
 #         register-address threshold covers cells from any nesting depth.
 #

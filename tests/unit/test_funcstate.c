@@ -24,7 +24,7 @@ static void setup(UEmitter *e, UProto *m, UArena *a, UVM *v) {
     uemit_init(e, m, a, v, "test");
 }
 static void teardown(UEmitter *e, UProto *m, UArena *a, UVM *v) {
-    emit_diag_free_all(e);
+    urbi_emit_diag_free_all(e);
     urbi_emit_abandon(e);   /* these tests never uemit_finish (FE-07) */
     uarena_destroy(a);
     uchunk_destroy(m, NULL);

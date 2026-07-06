@@ -4,11 +4,11 @@
  * T20 (EMIT-003): uemit_close_function captures prologue_prepend_instr
  *                 return value and gates downstream IC-array work on
  *                 e->error so a partial-prepend proto is not extended.
- * T21 (EMIT-004): emit_function_literal cleans up partial child_proto on
+ * T21 (EMIT-004): urbi_emit_function_literal cleans up partial child_proto on
  *                 intern OOM (no half-initialised proto in module->nested[]).
  * T22 (EMIT-005): uemit_close_function propagates IC-array OOM rather than
  *                 silently zeroing p->ic_count.
- * T23 (SCAN-001): emit_expr explicitly handles AST_PROP_GET / AST_PROP_SET
+ * T23 (SCAN-001): urbi_emit_expr explicitly handles AST_PROP_GET / AST_PROP_SET
  *                 (closes scan-build -Wswitch concern).
  *
  * The OOM-injection tests sweep failure points across the alloc range and
@@ -150,11 +150,11 @@ UTEST(emit_close_function_propagates_prologue_oom)
     UASSERT(saw_oom);
 }
 
-/* --- T21: emit_function_literal cleanup on intern OOM ------------------- */
+/* --- T21: urbi_emit_function_literal cleanup on intern OOM ------------------- */
 
 UTEST(emit_function_literal_clean_on_intern_oom)
 {
-    /* A function with multiple parameters: emit_function_literal interns
+    /* A function with multiple parameters: urbi_emit_function_literal interns
      * each parameter name in sequence.  Pre-T21, a mid-loop ustr_intern
      * OOM left a half-initialised UProto stuck in module->nested[].  The
      * fix interns all names BEFORE allocating child_proto, so an intern
@@ -261,12 +261,12 @@ test_emit_error_paths_suite(void)
 {
     utest_run("emit_close_function propagates prologue OOM",
               emit_close_function_propagates_prologue_oom);
-    utest_run("emit_function_literal clean on intern OOM",
+    utest_run("urbi_emit_function_literal clean on intern OOM",
               emit_function_literal_clean_on_intern_oom);
     utest_run("emit_close_function propagates ic_array OOM",
               emit_close_function_propagates_ic_array_oom);
-    utest_run("emit_expr rejects arrow prop_get",
+    utest_run("urbi_emit_expr rejects arrow prop_get",
               emit_expr_rejects_arrow_prop_get);
-    utest_run("emit_expr rejects arrow prop_set",
+    utest_run("urbi_emit_expr rejects arrow prop_set",
               emit_expr_rejects_arrow_prop_set);
 }

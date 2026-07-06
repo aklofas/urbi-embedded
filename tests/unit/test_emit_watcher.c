@@ -200,7 +200,7 @@ UTEST(emit_at_with_assign_in_cond_warns) {
     UASSERT(strstr(e.diag_buf[0].message, "side-effect") != NULL ||
             strstr(e.diag_buf[0].message, "feedback loop") != NULL);
 
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);

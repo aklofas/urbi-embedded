@@ -89,11 +89,11 @@ static UEmitError emit_single_statement(UProto *module, UArena *arena, UVM *vm, 
     uemit_init(&e, module, arena, vm, "test");
     rc = uemit_statement(&e, ast);
     if (rc != EMIT_OK) {
-        emit_diag_free_all(&e);
+        urbi_emit_diag_free_all(&e);
         urbi_emit_abandon(&e);   /* finish never runs on this path (FE-07) */
         return rc;
     }
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     return uemit_finish(&e);
 }
 
@@ -778,7 +778,7 @@ UTEST(disassemble_module_with_move_instruction_shows_move) {
 UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
     /* When the line delta is <= INT8_MIN (-128) — i.e. going more than 127
        lines *backward* — a new abs_line checkpoint is emitted instead of
-       a delta.  Tests the `d <= INT8_MIN` branch in emit_instr. */
+       a delta.  Tests the `d <= INT8_MIN` branch in urbi_emit_instr. */
     UVM vm;
     UProto module = {0};
     UArena arena;
@@ -893,7 +893,7 @@ static UEmitError emit_ctx_run(EmitCtx *c) {
 }
 
 static void emit_ctx_destroy(EmitCtx *c) {
-    emit_diag_free_all(&c->e);
+    urbi_emit_diag_free_all(&c->e);
     urbi_emit_abandon(&c->e);   /* no-op after finish; frees fs_arena when
                                emit_ctx_run bailed early (FE-07) */
     uarena_destroy(&c->arena);

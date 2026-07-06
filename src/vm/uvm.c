@@ -574,7 +574,7 @@ dispatch:
             /* ABC: R[A] := upvalue[B] from the current frame's closure.
              * At frame_count == 0 (top-level strand including fork-spawned
              * children) fall back to s->entry_closure so that closures
-             * created by emit_lazy_thunk can read their captured upvalues. */
+             * created by urbi_emit_lazy_thunk can read their captured upvalues. */
             UClosure *cur_cl = (s->frame_count > 0)
                              ? s->frames[s->frame_count - 1].closure
                              : s->entry_closure;

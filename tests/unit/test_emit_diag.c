@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* T32: emit_diag_warn warn-level diagnostic plumbing — unit tests.
+/* T32: urbi_emit_diag_warn warn-level diagnostic plumbing — unit tests.
  *
  * Verifies that:
- *   1. emit_diag_warn records (level, line, col, message) in e.diag_buf.
+ *   1. urbi_emit_diag_warn records (level, line, col, message) in e.diag_buf.
  *   2. Warns are non-fatal — the emitter continues to produce bytecode.
  *   3. Multiple warns accumulate; diag_count matches.
  */
@@ -59,7 +59,7 @@ static void diag_cleanup(UProto *mod, UArena *arena, UVM *vm) {
  * T32 test cases
  * ----------------------------------------------------------------------- */
 
-/* emit_diag_warn records line, col, level, and message substring. */
+/* urbi_emit_diag_warn records line, col, level, and message substring. */
 UTEST(emit_diag_warn_records_message) {
     UVM vm;
     UProto module = {0};
@@ -76,7 +76,7 @@ UTEST(emit_diag_warn_records_message) {
     dummy.line = 17;
     dummy.col  = 4;
 
-    emit_diag_warn(&e, &dummy, "test warning %d", 42);
+    urbi_emit_diag_warn(&e, &dummy, "test warning %d", 42);
 
     UASSERT_EQ(1, e.diag_count);
     UASSERT_EQ((int)UEMIT_DIAG_WARN, (int)e.diag_buf[0].level);
@@ -85,13 +85,13 @@ UTEST(emit_diag_warn_records_message) {
     UASSERT(e.diag_buf[0].message != NULL);
     UASSERT(strstr(e.diag_buf[0].message, "test warning 42") != NULL);
 
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
 
-/* emit_diag_warn is non-fatal — bytecode is still produced after a warn. */
+/* urbi_emit_diag_warn is non-fatal — bytecode is still produced after a warn. */
 UTEST(emit_diag_warn_does_not_block_emit) {
     UVM vm;
     UProto module = {0};
@@ -106,14 +106,14 @@ UTEST(emit_diag_warn_does_not_block_emit) {
     dummy.kind = AST_INT;
     dummy.line = 1;
     dummy.col  = 1;
-    emit_diag_warn(&e, &dummy, "warn");
+    urbi_emit_diag_warn(&e, &dummy, "warn");
 
     UASSERT_EQ(EMIT_OK, rc);
     UASSERT_EQ(1, e.diag_count);
     /* Bytecode was emitted (at least one instruction). */
     UASSERT(module.instr_count >= 1U);
 
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     diag_cleanup(&module, &arena, &vm);
 }
 
@@ -133,18 +133,18 @@ UTEST(emit_diag_warn_accumulates_multiple) {
     dummy.kind = AST_INT;
 
     dummy.line = 1;
-    emit_diag_warn(&e, &dummy, "first");
+    urbi_emit_diag_warn(&e, &dummy, "first");
     dummy.line = 2;
-    emit_diag_warn(&e, &dummy, "second");
+    urbi_emit_diag_warn(&e, &dummy, "second");
     dummy.line = 3;
-    emit_diag_warn(&e, &dummy, "third");
+    urbi_emit_diag_warn(&e, &dummy, "third");
 
     UASSERT_EQ(3, e.diag_count);
     UASSERT_EQ(1, e.diag_buf[0].line);
     UASSERT_EQ(2, e.diag_buf[1].line);
     UASSERT_EQ(3, e.diag_buf[2].line);
 
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
@@ -161,13 +161,13 @@ UTEST(emit_diag_warn_null_node_uses_zero_position) {
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
 
-    emit_diag_warn(&e, NULL, "no node");
+    urbi_emit_diag_warn(&e, NULL, "no node");
 
     UASSERT_EQ(1, e.diag_count);
     UASSERT_EQ(0, e.diag_buf[0].line);
     UASSERT_EQ(0, e.diag_buf[0].col);
 
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
@@ -198,7 +198,7 @@ UTEST(emit_diag_error_records_position) {
         UASSERT(e.diag_buf[0].message != NULL);
     }
 
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     diag_cleanup(&module, &arena, &vm);
 }
 
@@ -219,7 +219,7 @@ UTEST(emit_diag_format_first_error_includes_location) {
     /* Message must contain ":1:" (line 1). */
     UASSERT(strstr(buf, ":1:") != NULL);
 
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     diag_cleanup(&module, &arena, &vm);
 }
 
@@ -238,7 +238,7 @@ UTEST(emit_diag_format_first_error_no_error_returns_false) {
     bool found = urbi_emit_diag_format_first_error(&e, buf, sizeof(buf));
     UASSERT(!found);
 
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     diag_cleanup(&module, &arena, &vm);
 }
 

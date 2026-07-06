@@ -52,7 +52,7 @@ urbi_vm_push_tag_scope(UVM *vm, UStrand *s)
     bool  tag_is_user_owned;
     if (s->R[tag_reg].kind == (uint8_t)UVAL_TAG && s->R[tag_reg].v.p != NULL) {
         /* v0.10.9-B: bind the scope to the user's tag (live in R[tag_reg], packed
-         * there by emit_tag_prefix_arm) instead of creating an anonymous one, so
+         * there by urbi_emit_tag_prefix_arm) instead of creating an anonymous one, so
          * tag.stop() / membership / scopeTag observe this scope as part of t. */
         tag               = (UTag *)s->R[tag_reg].v.p;
         tag_is_user_owned = true;

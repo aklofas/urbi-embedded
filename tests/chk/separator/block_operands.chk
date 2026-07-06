@@ -3,7 +3,7 @@
 # syntax accepts statement forms, not only expressions.
 #
 # Note: & RHS is compiled as a closure thunk. Both reads and writes of
-# chunk-top vars work — emit_assign_arm now walks the parent chain to the
+# chunk-top vars work — urbi_emit_assign_arm now walks the parent chain to the
 # root funcstate's global_var_names and emits OP_SETSLOT via the thunk's
 # own r_global_slot (same path reads use). The | operands are emitted inline
 # so local vars work there directly.

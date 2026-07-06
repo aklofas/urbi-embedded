@@ -117,7 +117,7 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
     fs->target_proto = NULL;            /* T14 wires nested-proto bufs */
 
     /* T73: For the chunk-top funcstate (parent == NULL), pre-reserve
-     * r_global_slot = 0 unconditionally, mirroring what emit_function_literal
+     * r_global_slot = 0 unconditionally, mirroring what urbi_emit_function_literal
      * does for nested functions.  This ensures r_global_slot is never
      * overwritten by a condition register (rd) in an if/while expression —
      * both would land at index 0 without the pre-reservation.  The prologue
@@ -135,7 +135,7 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
      * with lazy params.  The baked stdlib is compiled as a separate unit, so
      * their signatures are not visible when user code is compiled.  Pre-seeding
      * here ensures that call sites like `detach(expr)` get correct lazy-arg
-     * wrapping (emit_lazy_thunk) without requiring the user to write
+     * wrapping (urbi_emit_lazy_thunk) without requiring the user to write
      * `detach(function() { expr })` explicitly.
      *
      * Only seeds the root FuncState (parent == NULL) when a VM is present
@@ -216,7 +216,7 @@ int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
  * Returns true on success; false + sets e->error on OOM. */
 static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     /* Instructions: grow by 1, shift right, insert at [0]. */
-    if (!proto_grow(e->module, p,
+    if (!urbi_emit_proto_grow(e->module, p,
                     (void **)&p->instructions, &p->instr_cap,
                     p->instr_count + 1U, sizeof(uint32_t))) {
         e->error = EMIT_OOM; return false;
@@ -271,7 +271,7 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     if (p->abs_line_count > 0U && p->abs_lines[0].pc == 1U) {
         line0 = p->abs_lines[0].line;
     }
-    if (!proto_grow(e->module, p,
+    if (!urbi_emit_proto_grow(e->module, p,
                     (void **)&p->abs_lines, &p->abs_line_cap,
                     p->abs_line_count + 1U, sizeof(UAbsLine))) {
         e->error = EMIT_OOM; return false;
@@ -294,7 +294,7 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
     if (rp == NULL) { e->error = EMIT_OOM; return false; }
 
     /* Instructions. */
-    if (!emit_grow(rp, (void **)&rp->instructions, &rp->instr_cap,
+    if (!urbi_emit_grow(rp, (void **)&rp->instructions, &rp->instr_cap,
                    rp->instr_count + 1U, sizeof(uint32_t))) {
         e->error = EMIT_OOM; return false;
     }
@@ -339,7 +339,7 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
     if (rp->abs_line_count > 0U && rp->abs_lines[0].pc == 1U) {
         line0 = rp->abs_lines[0].line;
     }
-    if (!emit_grow(rp, (void **)&rp->abs_lines, &rp->abs_line_cap,
+    if (!urbi_emit_grow(rp, (void **)&rp->abs_lines, &rp->abs_line_cap,
                    rp->abs_line_count + 1U, sizeof(UAbsLine))) {
         e->error = EMIT_OOM; return false;
     }
@@ -565,12 +565,12 @@ UFuncState *uemit_close_function(UEmitter *e) {
  * freereg, if not already reserved.  Constructs that declare synthetic
  * locals (for-each's \x01iter/\x01n/\x01i, switch's \x01sw, tag-prefix's
  * \x01tag) must call this BEFORE the first uemit_declare_local: without
- * it the lazy global-slot claim (emit_ident_arm / emit_var_decl_arm)
- * could fire INSIDE a nested emit_expr, landing the OP_LOAD_REALM_GLOBAL
+ * it the lazy global-slot claim (urbi_emit_ident_arm / urbi_emit_var_decl_arm)
+ * could fire INSIDE a nested urbi_emit_expr, landing the OP_LOAD_REALM_GLOBAL
  * register ABOVE the declared local and aliasing it.  If no global is
  * actually referenced afterward, references_global stays false and the
  * prologue is never emitted — the slot is harmlessly "wasted" (but still
- * protected by fs_temp_floor).
+ * protected by urbi_emit_fs_temp_floor).
  *
  * Already-reserved is a no-op success (nested function bodies pre-reserve
  * in emit_function_body_impl; chunk-top pre-reserves in
@@ -578,8 +578,8 @@ UFuncState *uemit_close_function(UEmitter *e) {
  * register frame is full.
  *
  * NOTE: the three lazy-claim sites fused into the EMIT-021
- * references_global state machine (emit_ident_arm's global fallback,
- * emit_var_decl_arm's chunk-top path, emit_class_decl_arm) keep their
+ * references_global state machine (urbi_emit_ident_arm's global fallback,
+ * urbi_emit_var_decl_arm's chunk-top path, urbi_emit_class_decl_arm) keep their
  * inline copies: they additionally flip references_global, and two of
  * them sync e->next_reg UNCONDITIONALLY (no `<` guard), which is not
  * provably equivalent to the guarded sync below at every call point. */
@@ -705,7 +705,7 @@ bool uemit_close_block(UEmitter *e) {
                            ? fs->actvars[blk->first_local_idx].slot
                            : blk->freereg_on_enter;
         uint32_t i = uinstr_enc_abc(OP_CLOSE, close_base, 0U, 0U);
-        emit_instr(e, i, e->prev_line);
+        urbi_emit_instr(e, i, e->prev_line);
     }
 
     /* Propagate has_captured to the enclosing block before this ctx dies
@@ -748,6 +748,6 @@ void uemit_emit_loop_back_close(UEmitter *e) {
                            ? fs->actvars[blk->first_local_idx].slot
                            : blk->freereg_on_enter;
         uint32_t i = uinstr_enc_abc(OP_CLOSE, close_base, 0U, 0U);
-        emit_instr(e, i, e->prev_line);
+        urbi_emit_instr(e, i, e->prev_line);
     }
 }

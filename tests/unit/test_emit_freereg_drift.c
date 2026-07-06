@@ -46,7 +46,7 @@ static UEmitError compile_src(UVM *vm, UArena *arena, UProto *module,
         uarena_reset(arena);
     }
     UEmitError finish_rc = uemit_finish(&e);
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
     return finish_rc;
 }
 
@@ -72,7 +72,7 @@ static int find_loadk_int(const uint32_t *instrs, size_t count,
  * Pre-fix: AST_BIN_SEP SEP_PIPE arm did `if (next_reg > 0U) next_reg--;`,
  * which decrements past freereg when the LHS bumps freereg permanently
  * (e.g., LHS ends in a function literal, which lifts freereg via
- * emit_function_literal's `e->current_fs->freereg++`).
+ * urbi_emit_function_literal's `e->current_fs->freereg++`).
  *
  * Trigger: `5 | function() { 1 } | 2` (left-folded SEP_PIPE) at chunk top.
  *   - Inner `5 | function(){1}`: LHS=5 at r1; RHS=function literal at r1
@@ -110,7 +110,7 @@ UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
 /* -----------------------------------------------------------------------
  * T9 — EMIT-010: Watcher-install free_reg leaves freereg stale
  *
- * emit_function_literal raises BOTH next_reg and freereg in lockstep
+ * urbi_emit_function_literal raises BOTH next_reg and freereg in lockstep
  * when compiling the cond / body / onleave closures.  The plain free_reg
  * called by the install arms only decrements next_reg, leaving freereg
  * promoted 1-3 slots above next_reg.  Subsequent var-decls then land at
@@ -125,15 +125,15 @@ UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
  * that watcher install writes).
  * ----------------------------------------------------------------------- */
 
-/* The leak is observable at chunk-top: emit_function_literal called
+/* The leak is observable at chunk-top: urbi_emit_function_literal called
  * during install raises freereg in lockstep with next_reg, but plain
  * free_reg() decrements only next_reg.  At chunk-top, statements are
  * NOT wrapped in an AST_BLOCK that resets freereg between siblings, so
  * uemit_statement's sync (next_reg = freereg) carries the leaked value
  * forward.  module.max_reg ends up inflated by the closure depth.
  *
- * Inside a function-body block, the leak is masked by emit_block_arm's
- * `freereg = fs_temp_floor(...)` reset between statements — so these
+ * Inside a function-body block, the leak is masked by urbi_emit_block_arm's
+ * `freereg = urbi_emit_fs_temp_floor(...)` reset between statements — so these
  * tests use chunk-top form. */
 
 UTEST(emit_watcher_install_freereg_balanced_at) {
@@ -147,7 +147,7 @@ UTEST(emit_watcher_install_freereg_balanced_at) {
         "var c = function() { 99 };");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
-    /* Pre-fix: module.max_reg leaks 2 slots (one per emit_function_literal
+    /* Pre-fix: module.max_reg leaks 2 slots (one per urbi_emit_function_literal
      * call: cond, body).  Post-fix: leak gone.  Use 6 as a strict ceiling
      * post-fix; pre-fix routinely exceeds this. */
     UASSERT(module.max_reg <= 3U);
@@ -279,7 +279,7 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
 }
 
 /* -----------------------------------------------------------------------
- * T11 — EMIT-012: free_reg doesn't respect fs_temp_floor
+ * T11 — EMIT-012: free_reg doesn't respect urbi_emit_fs_temp_floor
  *
  * Pre-fix free_reg unconditionally decrements next_reg, even when
  * next_reg has reached the local-zone floor (nactvar + global_slot
@@ -287,7 +287,7 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
  * underflow next_reg into the local zone, causing the next alloc_reg
  * to return a slot aliasing a live local.
  *
- * Post-fix free_reg no-ops when next_reg <= fs_temp_floor.
+ * Post-fix free_reg no-ops when next_reg <= urbi_emit_fs_temp_floor.
  *
  * The fix is defensive — there is no current call site that exhibits
  * the underflow under normal compilation, so this test verifies that
@@ -350,12 +350,12 @@ UTEST(emit_free_reg_respects_temp_floor) {
 }
 
 /* -----------------------------------------------------------------------
- * T12 — EMIT-013: emit_lazy_thunk pass-through bumps next_reg only
+ * T12 — EMIT-013: urbi_emit_lazy_thunk pass-through bumps next_reg only
  *
- * The pass-through optimization in emit_lazy_thunk (used when a lazy
+ * The pass-through optimization in urbi_emit_lazy_thunk (used when a lazy
  * local appears in a lazy arg position) emits OP_MOVE of the local
  * into next_reg and bumps next_reg++.  Pre-fix it left freereg behind,
- * so a subsequent emit_function_literal (which pulls dst from freereg)
+ * so a subsequent urbi_emit_function_literal (which pulls dst from freereg)
  * could overwrite a still-live register — including the call's own
  * callee_reg.
  *
@@ -437,7 +437,7 @@ UTEST(emit_lazy_pass_through_does_not_alias) {
  * (which is reserved/ambiguous).  Pre-fix the emit arm silently cast
  * the count to uint8_t — corrupting any call with 254+ args.
  *
- * Post-fix: emit_call_arm rejects with EMIT_TOO_MANY_ARGS at the
+ * Post-fix: urbi_emit_call_arm rejects with EMIT_TOO_MANY_ARGS at the
  * gate before codegen.
  *
  * Test builds a synthetic call source with 300 args and verifies
@@ -487,7 +487,7 @@ UTEST(emit_call_too_many_args_returns_error) {
  * the old "defensive" spill branch (spill = next_reg++, which silently
  * truncated through the 0xF mask when spill >= 16) is gone.  When the
  * hidden local's slot exceeds 15 every lower register is local-occupied,
- * so there is no safe target and emit_tag_prefix_arm rejects outright.
+ * so there is no safe target and urbi_emit_tag_prefix_arm rejects outright.
  *
  * Trigger: function with 17+ locals declared before the tag-prefix, so
  * `\x01tag` is declared at slot >= 16.
@@ -504,7 +504,7 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
     /* Declare a tag identifier "t" plus 16 unrelated locals so the chain
      * `var t = 0; var l1 = 1; ...; var l16 = 16; t: { 1 };` pushes the
      * hidden `\x01tag` local's declared slot >= 16, tripping the > 15
-     * nibble check in emit_tag_prefix_arm. */
+     * nibble check in urbi_emit_tag_prefix_arm. */
     UEmitError rc = compile_src(&vm, &arena, &module,
         "var f = function() {"
         " var t = 0;"
@@ -527,7 +527,7 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
 /* -----------------------------------------------------------------------
  * T15 — EMIT-016: AST_IF leaked the result-register slot into freereg
  *
- * Pre-fix, emit_if_arm's trailer forced `fs->freereg = next_reg` (==
+ * Pre-fix, urbi_emit_if_arm's trailer forced `fs->freereg = next_reg` (==
  * rd + 1).  rd is a TEMP — the if-expr's result register — not a
  * local.  Bumping freereg up to rd+1 means subsequent var-decls
  * (whose slot = fs->freereg per uemit_declare_local) land above rd
@@ -541,10 +541,10 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
  * slot 3 (after the if's leaked rd at slot 2) instead of slot 2
  * (reusing rd).
  *
- * Wave 5 fix: drop the freereg bump in emit_if_arm's trailer; rd is
+ * Wave 5 fix: drop the freereg bump in urbi_emit_if_arm's trailer; rd is
  * still tracked via next_reg / max_reg_seen, but freereg stays at the
  * floor so siblings reuse the slot once rd is consumed.  Matches the
- * Lua-style protocol used by emit_compare_arm (which also leaves rb
+ * Lua-style protocol used by urbi_emit_compare_arm (which also leaves rb
  * as a temp without bumping freereg). */
 
 UTEST(emit_if_arm_pops_nested_var_decl) {
@@ -596,24 +596,24 @@ UTEST(emit_if_arm_pops_nested_var_decl) {
 }
 
 /* -----------------------------------------------------------------------
- * T16 — EMIT-017: AST_RETURN bare-return alloc_reg ignores fs_temp_floor
+ * T16 — EMIT-017: AST_RETURN bare-return alloc_reg ignores urbi_emit_fs_temp_floor
  *
  * Bare `return;` allocates a register via alloc_reg and emits OP_LOADNIL
  * into it.  Pre-fix, alloc_reg returned e->next_reg++, ignoring whether
  * next_reg sat below the FuncState temp floor (= nactvar +
  * global_slot_reserved).  Under parser-driven AST, the SEP_SEMI between-
- * stmt handler in emit_nary_arm and emit_block_arm syncs next_reg to
+ * stmt handler in urbi_emit_nary_arm and urbi_emit_block_arm syncs next_reg to
  * freereg before each child, so `next_reg < floor` is unreachable; the
  * bug is dormant against current emit arms but brittle against any
  * future arm that transiently drops next_reg without also raising
  * freereg.
  *
- * Wave 5 fix: bare-return forces next_reg above fs_temp_floor before
+ * Wave 5 fix: bare-return forces next_reg above urbi_emit_fs_temp_floor before
  * calling alloc_reg, so the LOADNIL slot is guaranteed to be strictly
  * above all live locals regardless of upstream emit-arm contract.
  *
  * The legitimate-syntax test below verifies the post-fix LOADNIL slot
- * lies at-or-above fs_temp_floor (= nactvar + global_slot_reserved =
+ * lies at-or-above urbi_emit_fs_temp_floor (= nactvar + global_slot_reserved =
  * 2 for the function below, where r_global = slot 0 and keep = slot 1).
  * This is a structural-correctness gate per cluster-1 T11 precedent —
  * the bug is unreachable through current parser-driven AST, but the
@@ -689,12 +689,12 @@ UTEST(emit_bare_return_does_not_clobber_local) {
 }
 
 /* -----------------------------------------------------------------------
- * T17 — EMIT-018: AST_THROW post-throw nil load ignores fs_temp_floor
+ * T17 — EMIT-018: AST_THROW post-throw nil load ignores urbi_emit_fs_temp_floor
  *
  * After OP_THROW, the throw arm emits a post-throw OP_LOADNIL into
  * rd = e->next_reg so the block's last-stmt-reg logic has a register
  * to report.  Pre-fix, this nil-load claimed `rd = e->next_reg`
- * without enforcing fs_temp_floor — same root cause as EMIT-017
+ * without enforcing urbi_emit_fs_temp_floor — same root cause as EMIT-017
  * (AST_RETURN).
  *
  * Like the bare-return case, current parser-driven AST never reaches
@@ -848,7 +848,7 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
 }
 
 /* -----------------------------------------------------------------------
- * T41 follow-up — emit_call_arm freereg drift between args
+ * T41 follow-up — urbi_emit_call_arm freereg drift between args
  *
  * Phase 2 (T41) `get`/`set` parse sugar desugars to
  * `recv.setProperty(name_str, prop_str, function() body)` — a 3-arg
@@ -856,13 +856,13 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
  * alloc_reg, which bumps next_reg only) and the trailing arg is an
  * AST_FUNCTION (whose OP_CLOSURE destination is pulled from freereg).
  *
- * Pre-fix, emit_call_arm synced freereg up to next_reg only ONCE
+ * Pre-fix, urbi_emit_call_arm synced freereg up to next_reg only ONCE
  * (before the arg loop) but not BETWEEN args.  When arg 0 / arg 1
  * are leaf literals that bump only next_reg, freereg lags behind by
  * the time arg 2 (the AST_FUNCTION) emits — so OP_CLOSURE's dst lands
  * on a slot already holding arg 0 or arg 1, corrupting the call.
  *
- * Post-fix: emit_call_arm syncs freereg to next_reg before EACH arg,
+ * Post-fix: urbi_emit_call_arm syncs freereg to next_reg before EACH arg,
  * not just before the loop.  Test verifies all OP_LOADK / OP_CLOSURE
  * destinations inside the call sequence land at strictly increasing
  * slots — no collision between leaf-literal args and the trailing
@@ -876,7 +876,7 @@ UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
 
     /* A 3-arg call mirroring T41's setProperty desugar shape: two leaf
      * args followed by an AST_FUNCTION literal.  `callee` doesn't need
-     * to exist — emit_call_arm runs before any binding check, and a
+     * to exist — urbi_emit_call_arm runs before any binding check, and a
      * realm-global lookup at call time is fine for emit's purposes. */
     UEmitError rc = compile_src(&vm, &arena, &module,
         "var callee = function (a, b, fn) { 0 };"

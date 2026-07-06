@@ -1,7 +1,7 @@
 # Milestone: v0.13.5
 # Covers: frame-locals declared inside a try body keep their registers —
 #         the try result register is anchored in nactvar (hidden local,
-#         emit_tag_prefix_arm pattern) so fs_temp_floor's count-based math
+#         urbi_emit_tag_prefix_arm pattern) so urbi_emit_fs_temp_floor's count-based math
 #         stays contiguous and statement-boundary temp resets cannot hand
 #         a body-declared local's register out as a temp.  Closes
 #         design-risks v0.13.5-E (switch-in-try first-arm / for-each-in-try

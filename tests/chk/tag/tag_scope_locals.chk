@@ -1,10 +1,10 @@
 # Milestone: v0.13.1
 # Covers: tag-scope body locals must survive temp resets and close correctly
 #         (found during v0.13.1 review, FE-02 follow-on — same bug family as
-#         the switch case-body fix).  emit_tag_prefix_arm held the evaluated
+#         the switch case-body fix).  urbi_emit_tag_prefix_arm held the evaluated
 #         tag expression in a raw temp register (tag_reg) for the whole
 #         tagged-scope body, below any body-declared `var`s, but
-#         fs_temp_floor is COUNT-based (nactvar + global_slot_reserved) and
+#         urbi_emit_fs_temp_floor is COUNT-based (nactvar + global_slot_reserved) and
 #         assumes locals occupy a contiguous register range from the floor.
 #         A body local was allocated ABOVE the held tag_reg, so the floor
 #         landed BELOW the local's actual slot and every later temp reset

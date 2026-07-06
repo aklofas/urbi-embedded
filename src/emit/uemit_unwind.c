@@ -6,7 +6,7 @@
  *   - Public encoder helpers for unwind opcodes (uemit_throw, uemit_try_begin,
  *     uemit_try_end, uemit_push_tag, uemit_pop_tag,
  *     uemit_resume, uemit_load_catch_value).
- *   - emit_expr arm helpers for AST_THROW, AST_TRY, AST_TAG_PREFIX. */
+ *   - urbi_emit_expr arm helpers for AST_THROW, AST_TRY, AST_TAG_PREFIX. */
 
 #include "emit/uemit_internal.h"
 #include "runtime/ucleanup.h"   /* FLAG_HAS_CATCH, FLAG_HAS_FINALLY */
@@ -19,24 +19,24 @@
 
 /* =========================================================================
  * M3 row 7 control-transfer opcode encoder helpers.
- * Each function encodes exactly one instruction word and calls emit_instr.
+ * Each function encodes exactly one instruction word and calls urbi_emit_instr.
  * See umodule.h §M3 row 7 for the field layout of each opcode.
  * ========================================================================= */
 
 /* OP_THROW ABx: A = reg_value, Bx = 0 (unused). */
 void uemit_throw(UEmitter *e, uint8_t reg_value, uint32_t line) {
-    emit_instr(e, uinstr_enc_abx(OP_THROW, reg_value, 0U), line);
+    urbi_emit_instr(e, uinstr_enc_abx(OP_THROW, reg_value, 0U), line);
 }
 
 /* OP_TRY_BEGIN ABx: A = flags byte, Bx = handler PC (16-bit, range 0-65535).
  * flags bits: bit 0 = has_catch, bit 1 = has_finally (defined by T9/T10). */
 void uemit_try_begin(UEmitter *e, uint8_t flags, uint16_t handler_pc, uint32_t line) {
-    emit_instr(e, uinstr_enc_abx(OP_TRY_BEGIN, flags, handler_pc), line);
+    urbi_emit_instr(e, uinstr_enc_abx(OP_TRY_BEGIN, flags, handler_pc), line);
 }
 
 /* OP_TRY_END ABC: no operands (all zero). Pops top cleanup entry. */
 void uemit_try_end(UEmitter *e, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_TRY_END, 0U, 0U, 0U), line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_TRY_END, 0U, 0U, 0U), line);
 }
 
 /* OP_PUSH_TAG ABx: A packs flags nibble and tag_reg nibble.
@@ -48,29 +48,29 @@ void uemit_try_end(UEmitter *e, uint32_t line) {
 void uemit_push_tag(UEmitter *e, uint8_t reg_tag, uint8_t flags,
                     uint16_t onleave_pc, uint32_t line) {
     uint8_t a = (uint8_t)(((flags & 0xFU) << 4) | (reg_tag & 0xFU));
-    emit_instr(e, uinstr_enc_abx(OP_PUSH_TAG, a, onleave_pc), line);
+    urbi_emit_instr(e, uinstr_enc_abx(OP_PUSH_TAG, a, onleave_pc), line);
 }
 
 /* OP_POP_TAG ABC: A = reg_tag, B = C = 0. */
 void uemit_pop_tag(UEmitter *e, uint8_t reg_tag, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_POP_TAG, reg_tag, 0U, 0U), line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_POP_TAG, reg_tag, 0U, 0U), line);
 }
 
 /* OP_RESUME ABC: A = reg_state, B = C = 0. */
 void uemit_resume(UEmitter *e, uint8_t reg_state, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_RESUME, reg_state, 0U, 0U), line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_RESUME, reg_state, 0U, 0U), line);
 }
 
 /* OP_LOAD_CATCH_VALUE ABC: A = destination register, B = C = 0.
  * T10 empirical addition — loads s->catch_value into R[A] at handler entry. */
 void uemit_load_catch_value(UEmitter *e, uint8_t reg, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_LOAD_CATCH_VALUE, reg, 0U, 0U), line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOAD_CATCH_VALUE, reg, 0U, 0U), line);
 }
 
 /* =========================================================================
- * emit_expr arm helpers for AST_THROW / AST_TRY / AST_TAG_PREFIX.
- * Moved from the monolithic emit_expr switch (EMIT-045 #6).
- * emit_try_arm contains the EMIT-033 collapse (emit_try_frame +
+ * urbi_emit_expr arm helpers for AST_THROW / AST_TRY / AST_TAG_PREFIX.
+ * Moved from the monolithic urbi_emit_expr switch (EMIT-045 #6).
+ * urbi_emit_try_arm contains the EMIT-033 collapse (emit_try_frame +
  * emit_catch_handler_section).
  * ========================================================================= */
 
@@ -101,7 +101,7 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
     const char *cv_name = NULL;
     uint8_t     e_reg   = 0U;  /* register holding the caught exception value */
     uint8_t     r_catch = 0U;  /* result register of the catch body */
-    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
     e->next_reg = e->current_fs->freereg;
 
     if (n->u.try_stmt.catch_var_start != NULL && e->vm != NULL) {
@@ -132,11 +132,11 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
      *   [rethrow_pc]: OP_THROW e_reg */
     int jmp_past_throw_pc = -1;
     if (n->u.try_stmt.catch_guard != NULL) {
-        uint8_t guard_reg = emit_expr(e, n->u.try_stmt.catch_guard);
+        uint8_t guard_reg = urbi_emit_expr(e, n->u.try_stmt.catch_guard);
         if (e->error != EMIT_OK) return 0U;
 
         /* TEST guard_reg, 0, 1 — skip the JMP when guard is truthy (pass) */
-        emit_instr(e, uinstr_enc_abc(OP_TEST, guard_reg, 0U, 1U), (uint32_t)n->line);
+        urbi_emit_instr(e, uinstr_enc_abc(OP_TEST, guard_reg, 0U, 1U), (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* JMP to re-throw when guard is falsy (patched after catch body) */
@@ -145,7 +145,7 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
     }
 
     if (!uemit_open_block(e, false)) return 0U;
-    r_catch = emit_expr(e, n->u.try_stmt.catch_body);
+    r_catch = urbi_emit_expr(e, n->u.try_stmt.catch_body);
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
     if (!uemit_close_block(e)) return 0U;
 
@@ -171,12 +171,12 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
          * Mirrors uemit_close_block's has_captured handling. */
         UFuncState *fs = e->current_fs;
         if (fs->actvars[fs->nactvar - 1].is_captured) {
-            emit_instr(e, uinstr_enc_abc(OP_CLOSE,
+            urbi_emit_instr(e, uinstr_enc_abc(OP_CLOSE,
                        (uint8_t)fs->actvars[fs->nactvar - 1].slot, 0U, 0U),
                        (uint32_t)n->line);
         }
         fs->nactvar--;
-        fs->freereg = fs_temp_floor(fs);
+        fs->freereg = urbi_emit_fs_temp_floor(fs);
         e->next_reg = fs->freereg;
     }
     return r_catch;
@@ -185,7 +185,7 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
 /* Collapse the 3 near-duplicate try paths (EMIT-033).
  * has_catch = (n->u.try_stmt.catch_body != NULL)
  * has_finally = (n->u.try_stmt.finally_body != NULL)
- * rd = result register (pre-allocated by emit_try_arm).
+ * rd = result register (pre-allocated by urbi_emit_try_arm).
  *
  * Returns rd on success or 0 on error (e->error set).
  *
@@ -206,7 +206,7 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
 static int emit_finally_body_at(UEmitter *e, UAstNode *finally_body,
                                 uint8_t reg_floor) {
     e->next_reg = reg_floor;
-    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
     if (e->current_fs->freereg < reg_floor) e->current_fs->freereg = reg_floor;
     if (!uemit_open_block(e, false)) return 0;
     /* refactor-3 VM-02/B4: cleanup bodies are atomic (`|` semantics) — the
@@ -217,7 +217,7 @@ static int emit_finally_body_at(UEmitter *e, UAstNode *finally_body,
     {
         uint8_t saved_icb = e->in_cleanup_body;
         e->in_cleanup_body = 1U;
-        emit_expr(e, finally_body);
+        urbi_emit_expr(e, finally_body);
         e->in_cleanup_body = saved_icb;
     }
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0; }
@@ -252,7 +252,7 @@ int urbi_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line) {
             if (e->error != EMIT_OK) return 0;
             if (sc->finally_body != NULL) {
                 if (!emit_finally_body_at(e, sc->finally_body,
-                                          fs_temp_floor(e->current_fs)))
+                                          urbi_emit_fs_temp_floor(e->current_fs)))
                     return 0;
             }
         }
@@ -269,7 +269,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
      * (next_reg starts at rd+1 in each arm), so temp resets inside the
      * bodies cannot reclaim this slot.  Each completing path MOVEs its
      * result into rd before jumping past the handler section. */
-    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
     if (e->error != EMIT_OK) return 0U;
     e->next_reg = rd + 1U;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
@@ -278,7 +278,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
     if (has_catch && has_finally) {
         /* === OUTER TRY_FRAME: finally wrapper === */
-        int outer_try_begin_pc = (int)emit_instr_count(e);
+        int outer_try_begin_pc = (int)urbi_emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_FINALLY, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
         /* T24: outer scope is open until the outer OP_TRY_END below;
@@ -288,7 +288,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
             return 0U;
 
         /* === INNER TRY_FRAME: catch wrapper === */
-        int inner_try_begin_pc = (int)emit_instr_count(e);
+        int inner_try_begin_pc = (int)urbi_emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_CATCH, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
         /* T24: inner (catch) scope covers only the body — the runtime pops
@@ -299,14 +299,14 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* Body — starts at rd+1 so rd stays reserved below body temps. */
         e->next_reg = rd + 1U;
-        e->current_fs->freereg = fs_temp_floor(e->current_fs);
+        e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < (uint8_t)(rd + 1U))
             e->current_fs->freereg = (uint8_t)(rd + 1U);
-        uint8_t r_body = emit_expr(e, n->u.try_stmt.body);
+        uint8_t r_body = urbi_emit_expr(e, n->u.try_stmt.body);
         if (e->error != EMIT_OK) return 0U;
         /* Thread body result into rd before inner TRY_END. */
         if (r_body != rd) {
-            emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, r_body, 0U), (uint32_t)n->line);
+            urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, r_body, 0U), (uint32_t)n->line);
             if (e->error != EMIT_OK) return 0U;
         }
 
@@ -318,11 +318,11 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Optional else body: runs on normal exit, still inside outer finally frame */
         if (has_else) {
             e->next_reg = rd + 1U;
-            e->current_fs->freereg = fs_temp_floor(e->current_fs);
+            e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
             if (e->current_fs->freereg < (uint8_t)(rd + 1U))
                 e->current_fs->freereg = (uint8_t)(rd + 1U);
             if (!uemit_open_block(e, false)) return 0U;
-            emit_expr(e, n->u.try_stmt.else_body);
+            urbi_emit_expr(e, n->u.try_stmt.else_body);
             if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
             if (!uemit_close_block(e)) return 0U;
         }
@@ -333,8 +333,8 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* Patch inner_try_begin handler_pc → catch handler */
         {
-            int catch_target = (int)emit_instr_count(e);
-            emit_patch_instr(e, inner_try_begin_pc,
+            int catch_target = (int)urbi_emit_instr_count(e);
+            urbi_emit_patch_instr(e, inner_try_begin_pc,
                 uinstr_enc_abx(OP_TRY_BEGIN, FLAG_HAS_CATCH,
                                (uint16_t)catch_target));
         }
@@ -344,7 +344,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         if (e->error != EMIT_OK) return 0U;
         /* Thread catch result into rd before JMP past catch. */
         if (r_catch_cf != rd) {
-            emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, r_catch_cf, 0U),
+            urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, r_catch_cf, 0U),
                        (uint32_t)n->line);
             if (e->error != EMIT_OK) return 0U;
         }
@@ -368,8 +368,8 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* Patch outer_try_begin handler_pc → finally handler */
         {
-            int finally_target = (int)emit_instr_count(e);
-            emit_patch_instr(e, outer_try_begin_pc,
+            int finally_target = (int)urbi_emit_instr_count(e);
+            urbi_emit_patch_instr(e, outer_try_begin_pc,
                 uinstr_enc_abx(OP_TRY_BEGIN, FLAG_HAS_FINALLY,
                                (uint16_t)finally_target));
         }
@@ -378,14 +378,14 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
          * mid-walk OP_YIELD would enqueue the strand while the unwind
          * walker still owns it) */
         e->next_reg = rd + 1U;
-        e->current_fs->freereg = fs_temp_floor(e->current_fs);
+        e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < (uint8_t)(rd + 1U))
             e->current_fs->freereg = (uint8_t)(rd + 1U);
         if (!uemit_open_block(e, false)) return 0U;
         {
             uint8_t saved_icb = e->in_cleanup_body;
             e->in_cleanup_body = 1U;
-            emit_expr(e, n->u.try_stmt.finally_body);
+            urbi_emit_expr(e, n->u.try_stmt.finally_body);
             e->in_cleanup_body = saved_icb;
         }
         if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
@@ -398,7 +398,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
     } else if (has_catch) {
         /* === Catch-only TRY_FRAME === */
-        int try_begin_pc = (int)emit_instr_count(e);
+        int try_begin_pc = (int)urbi_emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_CATCH, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
         /* T24: catch scope covers only the body (popped at runtime on the
@@ -408,14 +408,14 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* Body — starts at rd+1 so rd stays reserved below body temps. */
         e->next_reg = rd + 1U;
-        e->current_fs->freereg = fs_temp_floor(e->current_fs);
+        e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < (uint8_t)(rd + 1U))
             e->current_fs->freereg = (uint8_t)(rd + 1U);
-        uint8_t r_body_co = emit_expr(e, n->u.try_stmt.body);
+        uint8_t r_body_co = urbi_emit_expr(e, n->u.try_stmt.body);
         if (e->error != EMIT_OK) return 0U;
         /* Thread body result into rd before TRY_END. */
         if (r_body_co != rd) {
-            emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, r_body_co, 0U),
+            urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, r_body_co, 0U),
                        (uint32_t)n->line);
             if (e->error != EMIT_OK) return 0U;
         }
@@ -427,11 +427,11 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Optional else body: runs on normal exit (after TRY_END, before JMP past handler) */
         if (has_else) {
             e->next_reg = rd + 1U;
-            e->current_fs->freereg = fs_temp_floor(e->current_fs);
+            e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
             if (e->current_fs->freereg < (uint8_t)(rd + 1U))
                 e->current_fs->freereg = (uint8_t)(rd + 1U);
             if (!uemit_open_block(e, false)) return 0U;
-            emit_expr(e, n->u.try_stmt.else_body);
+            urbi_emit_expr(e, n->u.try_stmt.else_body);
             if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
             if (!uemit_close_block(e)) return 0U;
         }
@@ -442,8 +442,8 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* Patch try_begin handler_pc → catch handler */
         {
-            int catch_target = (int)emit_instr_count(e);
-            emit_patch_instr(e, try_begin_pc,
+            int catch_target = (int)urbi_emit_instr_count(e);
+            urbi_emit_patch_instr(e, try_begin_pc,
                 uinstr_enc_abx(OP_TRY_BEGIN, FLAG_HAS_CATCH,
                                (uint16_t)catch_target));
         }
@@ -453,7 +453,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         if (e->error != EMIT_OK) return 0U;
         /* Thread catch result into rd before JMP past handler. */
         if (r_catch_co != rd) {
-            emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, r_catch_co, 0U),
+            urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, r_catch_co, 0U),
                        (uint32_t)n->line);
             if (e->error != EMIT_OK) return 0U;
         }
@@ -463,7 +463,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
     } else {
         /* === Finally-only TRY_FRAME === */
-        int try_begin_pc = (int)emit_instr_count(e);
+        int try_begin_pc = (int)urbi_emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_FINALLY, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
         /* T24: a break/continue inside the body crosses this scope — the
@@ -474,14 +474,14 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* Body — starts at rd+1 so rd stays reserved below body temps. */
         e->next_reg = rd + 1U;
-        e->current_fs->freereg = fs_temp_floor(e->current_fs);
+        e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < (uint8_t)(rd + 1U))
             e->current_fs->freereg = (uint8_t)(rd + 1U);
-        uint8_t r_body_fo = emit_expr(e, n->u.try_stmt.body);
+        uint8_t r_body_fo = urbi_emit_expr(e, n->u.try_stmt.body);
         if (e->error != EMIT_OK) return 0U;
         /* Thread body result into rd before TRY_END. */
         if (r_body_fo != rd) {
-            emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, r_body_fo, 0U),
+            urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, r_body_fo, 0U),
                        (uint32_t)n->line);
             if (e->error != EMIT_OK) return 0U;
         }
@@ -500,8 +500,8 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* Patch try_begin handler_pc → finally handler */
         {
-            int finally_target = (int)emit_instr_count(e);
-            emit_patch_instr(e, try_begin_pc,
+            int finally_target = (int)urbi_emit_instr_count(e);
+            urbi_emit_patch_instr(e, try_begin_pc,
                 uinstr_enc_abx(OP_TRY_BEGIN, FLAG_HAS_FINALLY,
                                (uint16_t)finally_target));
         }
@@ -509,14 +509,14 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Finally body (unwind copy — atomic per refactor-3 VM-02/B4, see
          * the catch+finally arm above) */
         e->next_reg = rd + 1U;
-        e->current_fs->freereg = fs_temp_floor(e->current_fs);
+        e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < (uint8_t)(rd + 1U))
             e->current_fs->freereg = (uint8_t)(rd + 1U);
         if (!uemit_open_block(e, false)) return 0U;
         {
             uint8_t saved_icb = e->in_cleanup_body;
             e->in_cleanup_body = 1U;
-            emit_expr(e, n->u.try_stmt.finally_body);
+            urbi_emit_expr(e, n->u.try_stmt.finally_body);
             e->in_cleanup_body = saved_icb;
         }
         if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
@@ -538,31 +538,31 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 }
 
 /* ---------------------------------------------------------------------------
- * emit_throw_arm — AST_THROW dispatch target.
+ * urbi_emit_throw_arm — AST_THROW dispatch target.
  * throw expr: eval the expression, emit OP_THROW, set pending_unwind.
  * OP_THROW goes to safepoint; urbi_unwind walks the cleanup stack.
  * -------------------------------------------------------------------------- */
-uint8_t emit_throw_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_throw_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     }
-    uint8_t val_reg = emit_expr(e, n->u.throw_expr.value);
+    uint8_t val_reg = urbi_emit_expr(e, n->u.throw_expr.value);
     if (e->error != EMIT_OK) return 0U;
     uemit_throw(e, val_reg, (uint32_t)n->line);
     /* throw is a statement; return a nil reg for the block's last-stmt logic.
      *
-     * EMIT-018 fix (Wave 5, v0.5.7): force next_reg above fs_temp_floor
+     * EMIT-018 fix (Wave 5, v0.5.7): force next_reg above urbi_emit_fs_temp_floor
      * before claiming rd.  Same root cause as EMIT-017 (AST_RETURN
      * bare-return).  Defensive against future arms; current emit-arm
      * contract syncs next_reg to freereg between siblings, so the bug is
      * dormant.  Same fix shape as EMIT-017. */
     {
-        uint8_t floor_val = fs_temp_floor(e->current_fs);
+        uint8_t floor_val = urbi_emit_fs_temp_floor(e->current_fs);
         if (e->next_reg < floor_val) e->next_reg = floor_val;
     }
     uint8_t rd = e->next_reg;
-    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
     e->next_reg++;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
     if (e->current_fs->freereg < e->next_reg)
@@ -571,26 +571,26 @@ uint8_t emit_throw_arm(UEmitter *e, UAstNode *n) {
 }
 
 /* ---------------------------------------------------------------------------
- * emit_try_arm — AST_TRY dispatch target.
+ * urbi_emit_try_arm — AST_TRY dispatch target.
  * try { body } [catch (e) { handler }] [finally { cleanup }].
  * Three paths (catch+finally / catch-only / finally-only) are collapsed
  * into emit_try_frame (EMIT-033).
  * -------------------------------------------------------------------------- */
-uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_try_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     }
 
     /* Pre-reserve the global object slot before declaring the hidden
-     * local (\x01rd) — same rationale as emit_for_each_arm /
-     * emit_switch_arm (see urbi_emit_reserve_global_slot). */
+     * local (\x01rd) — same rationale as urbi_emit_for_each_arm /
+     * urbi_emit_switch_arm (see urbi_emit_reserve_global_slot). */
     if (e->current_fs->parent == NULL && !urbi_emit_reserve_global_slot(e))
         return 0U;
 
     /* v0.13.5-B/-E: anchor the try result register in nactvar as a
-     * declared hidden local (the emit_tag_prefix_arm pattern) instead of
-     * a raw temp.  A raw rd breaks fs_temp_floor's count-based math
+     * declared hidden local (the urbi_emit_tag_prefix_arm pattern) instead of
+     * a raw temp.  A raw rd breaks urbi_emit_fs_temp_floor's count-based math
      * (nactvar + global_slot_reserved assumes declared locals are
      * contiguous from the frame base): every local declared inside the
      * try body landed one register ABOVE the computed floor, so each
@@ -610,9 +610,9 @@ uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
 
     /* Close the anchor block (pops \x01rd from scope) and keep rd
-     * allocated for the caller — same epilogue as emit_tag_prefix_arm. */
+     * allocated for the caller — same epilogue as urbi_emit_tag_prefix_arm. */
     if (!uemit_close_block(e)) return 0U;
-    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
     e->next_reg = rd + 1U;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
     if (e->current_fs->freereg < e->next_reg)
@@ -621,7 +621,7 @@ uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
 }
 
 /* ---------------------------------------------------------------------------
- * emit_tag_prefix_arm — AST_TAG_PREFIX dispatch target.
+ * urbi_emit_tag_prefix_arm — AST_TAG_PREFIX dispatch target.
  *
  * mytag: { body }
  *
@@ -639,15 +639,15 @@ uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
  *
  * Register discipline (refactor-3 FE-02 follow-on, v0.13.4 fix): the
  * result register (rd) and the tag value (\x01tag) must both sit BELOW any
- * body-declared `var`s and below fs_temp_floor.  A raw temp for rd breaks
- * fs_temp_floor's count-based math (nactvar + global_slot_reserved assumes
+ * body-declared `var`s and below urbi_emit_fs_temp_floor.  A raw temp for rd breaks
+ * urbi_emit_fs_temp_floor's count-based math (nactvar + global_slot_reserved assumes
  * declared locals are contiguous from the floor): \x01tag landed AT the
  * floor rather than below it, so the body's first temp reset clobbered it.
  * Both rd and the tag value are therefore DECLARED hidden locals (`\x01rd`
  * and `\x01tag`, the for-each `\x01iter` / switch `\x01sw` machinery
  * pattern) in an outer block, so nactvar counts both and the temp floor
  * lands one above \x01tag:
- *   ... [outer locals] | \x01rd | \x01tag | <-- fs_temp_floor / body temps
+ *   ... [outer locals] | \x01rd | \x01tag | <-- urbi_emit_fs_temp_floor / body temps
  * The body keeps its own block so body-declared vars pop at scope end.
  *
  * 4-bit constraint: OP_PUSH_TAG packs tag_reg into A[3:0], so `\x01tag`'s
@@ -660,7 +660,7 @@ uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
  * EMIT_TAG_SPILL_OUT_OF_RANGE (widening the encoding to a full byte is a
  * v1.x bytecode change, filed as backlog under T129/Phase 22).
  * -------------------------------------------------------------------------- */
-uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
+uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
@@ -669,25 +669,25 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     const UFuncState *fs = e->current_fs;
 
     /* Pre-reserve the global object slot before declaring the hidden
-     * locals (\x01rd, \x01tag) — same rationale as emit_for_each_arm /
-     * emit_switch_arm (see urbi_emit_reserve_global_slot). */
+     * locals (\x01rd, \x01tag) — same rationale as urbi_emit_for_each_arm /
+     * urbi_emit_switch_arm (see urbi_emit_reserve_global_slot). */
     if (fs->parent == NULL && !urbi_emit_reserve_global_slot(e)) return 0U;
 
     /* Open outer block scope: \x01rd and \x01tag live here as proper
-     * locals so fs_temp_floor counts both and body temps start above them.
+     * locals so urbi_emit_fs_temp_floor counts both and body temps start above them.
      * Both are popped when this block closes. */
     if (!uemit_open_block(e, /*is_loop=*/false)) return 0U;
 
     /* Declare \x01rd as a hidden local to anchor rd in nactvar.  This is
      * the fix for the floor-aliasing bug: without it \x01tag lands AT
-     * fs_temp_floor and the body's first temp write clobbers it.  Emit
+     * urbi_emit_fs_temp_floor and the body's first temp write clobbers it.  Emit
      * LOADNIL so rd is nil-initialised (same semantic as emit_try_frame). */
     const char *rd_name = ustr_intern(e->vm, "\x01rd", 3);
     if (rd_name == NULL) { uemit_close_block(e); e->error = EMIT_OOM; return 0U; }
     int rd_slot = uemit_declare_local(e, rd_name, 3);
     if (rd_slot < 0) { uemit_close_block(e); return 0U; }
     uint8_t rd = (uint8_t)rd_slot;
-    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), line);
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), line);
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
 
     const char *tag_name = ustr_intern(e->vm, "\x01tag", 4);
@@ -696,14 +696,14 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     if (tag_slot < 0) { uemit_close_block(e); return 0U; }
 
     /* Evaluate tag_expr (will be nil at M3); MOVE the result into \x01tag. */
-    uint8_t tag_tmp = emit_expr(e, n->u.tag_prefix.tag_expr);
+    uint8_t tag_tmp = urbi_emit_expr(e, n->u.tag_prefix.tag_expr);
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
     if (tag_tmp != (uint8_t)tag_slot) {
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)tag_slot, tag_tmp, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)tag_slot, tag_tmp, 0U),
                    line);
         if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
     }
-    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
     e->next_reg = e->current_fs->freereg;
 
     /* 4-bit nibble check (EMIT-015, see header comment). */
@@ -717,7 +717,7 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
 
     /* Emit OP_PUSH_TAG with placeholder onleave_pc (will be patched). */
     uint8_t flags_m3 = 0U;  /* no FLAG_HAS_ONLEAVE at M3 */
-    int push_tag_pc = (int)emit_instr_count(e);
+    int push_tag_pc = (int)urbi_emit_instr_count(e);
     uemit_push_tag(e, tag_reg, flags_m3, 0U /* placeholder */, line);
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
     /* T24: a break/continue inside the body crosses this tag scope — the
@@ -736,20 +736,20 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
      * enclosing loop are covered by that loop's exit-path closes via
      * has_captured propagation (uemit_close_block). */
     if (!uemit_open_block(e, false)) { uemit_close_block(e); return 0U; }
-    uint8_t body_result = emit_expr(e, n->u.tag_prefix.body);
+    uint8_t body_result = urbi_emit_expr(e, n->u.tag_prefix.body);
     if (e->error != EMIT_OK) {
         uemit_close_block(e);
         uemit_close_block(e);
         return 0U;
     }
     if (!uemit_close_block(e)) { uemit_close_block(e); return 0U; }
-    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
     e->next_reg = e->current_fs->freereg;
     /* Thread body result into rd before OP_POP_TAG teardown.  The value
      * in body_result's slot is still live: close_block only resets
      * bookkeeping (freereg/nactvar), not the VM's register file. */
     if (body_result != rd) {
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, body_result, 0U), line);
+        urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, body_result, 0U), line);
         if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
     }
     uemit_unwind_scope_pop(e);   /* T24: body done — normal OP_POP_TAG next */
@@ -764,10 +764,10 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
 
     /* Onleave handler block starts here.
      * At M3, onleave is always NULL — emit nothing; just record the PC. */
-    int onleave_target = (int)emit_instr_count(e);
+    int onleave_target = (int)urbi_emit_instr_count(e);
 
     /* Patch OP_PUSH_TAG Bx to point to onleave handler PC. */
-    emit_patch_instr(e, push_tag_pc,
+    urbi_emit_patch_instr(e, push_tag_pc,
         uinstr_enc_abx(OP_PUSH_TAG,
                        (uint8_t)(((flags_m3 & 0xFU) << 4) | (tag_reg & 0xFU)),
                        (uint16_t)onleave_target));
@@ -782,7 +782,7 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
      * on the tag.stop() walker-resume path, which lands at the handler PC
      * past the body block's inline close. */
     if (!uemit_close_block(e)) return 0U;
-    e->current_fs->freereg = fs_temp_floor(e->current_fs);
+    e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
 
     /* rd holds the body's value (or nil if the body didn't complete).
      * Restore next_reg/freereg so the caller sees rd as allocated. */

@@ -8,7 +8,7 @@
  *     one loop used to silently no-op (its placeholder JMP was never
  *     patched, so it jumped 0 instructions forward);
  *   - ULoopCtx.continue_pcs[16] — same for continue;
- *   - emit_switch_arm's exit_jmps[64] — the 65th case's exit JMP kept
+ *   - urbi_emit_switch_arm's exit_jmps[64] — the 65th case's exit JMP kept
  *     its placeholder offset and fell into the next case's dispatch,
  *     silently executing a second case body on duplicate values.
  *

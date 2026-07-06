@@ -12,7 +12,7 @@
  * S-emit-freereg-discipline (carry-forward from v0.5.7-fixes): each
  * emitted call (clone, insertFront, body slot-set) is a sibling site
  * with its own register-allocation drift hazard.  Sync freereg to
- * next_reg between sibling sites — same fix shape as emit_at_event_arm
+ * next_reg between sibling sites — same fix shape as urbi_emit_at_event_arm
  * in uemit_react.c.
  *
  * Wave 1 body-statement support: AST_VAR_DECL (`var x = expr`) and
@@ -31,7 +31,7 @@
  *
  * Class-body `get name() { body }` and `set name(v) { body }`.  The
  * receiver is the class object held in foo_reg, but foo_reg is a raw
- * register slot (no AST node) — we can't reuse emit_property_decl_arm
+ * register slot (no AST node) — we can't reuse urbi_emit_property_decl_arm
  * (which builds an AST_MEMBER_GET on n->u.property_decl.recv).
  *
  * Inline the desugar (v1.6 S42 method-call ABI):
@@ -70,7 +70,7 @@ emit_class_body_property_decl(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
         e->current_fs->freereg = e->next_reg;
     }
 
-    emit_instr(e, uinstr_enc_abc(OP_SELF, callee_reg, foo_reg,
+    urbi_emit_instr(e, uinstr_enc_abc(OP_SELF, callee_reg, foo_reg,
                                  (uint8_t)ic_setProp),
                (uint32_t)stmt->line);
 
@@ -84,11 +84,11 @@ emit_class_body_property_decl(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
     if (e->current_fs->freereg < e->next_reg) {
         e->current_fs->freereg = e->next_reg;
     }
-    uint8_t name_reg = emit_expr(e, &name_str);
+    uint8_t name_reg = urbi_emit_expr(e, &name_str);
     if (e->error != EMIT_OK) return;
     uint8_t expected_name = (uint8_t)(callee_reg + 2U);
     if (name_reg != expected_name) {
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_name, name_reg, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_name, name_reg, 0U),
                    (uint32_t)stmt->line);
     }
 
@@ -102,11 +102,11 @@ emit_class_body_property_decl(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
     if (e->current_fs->freereg < e->next_reg) {
         e->current_fs->freereg = e->next_reg;
     }
-    uint8_t prop_reg = emit_expr(e, &prop_str);
+    uint8_t prop_reg = urbi_emit_expr(e, &prop_str);
     if (e->error != EMIT_OK) return;
     uint8_t expected_prop = (uint8_t)(callee_reg + 3U);
     if (prop_reg != expected_prop) {
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_prop, prop_reg, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_prop, prop_reg, 0U),
                    (uint32_t)stmt->line);
     }
 
@@ -114,17 +114,17 @@ emit_class_body_property_decl(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
     if (e->current_fs->freereg < e->next_reg) {
         e->current_fs->freereg = e->next_reg;
     }
-    uint8_t func_reg = emit_expr(e, stmt->u.property_decl.func);
+    uint8_t func_reg = urbi_emit_expr(e, stmt->u.property_decl.func);
     if (e->error != EMIT_OK) return;
     uint8_t expected_func = (uint8_t)(callee_reg + 4U);
     if (func_reg != expected_func) {
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_func, func_reg, 0U),
+        urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_func, func_reg, 0U),
                    (uint32_t)stmt->line);
     }
 
     /* OP_CALL method-flag: B = nargs(3) + self(1) + callee(1) = 5;
      * C = 2 (1 ret) | 0x80 (method flag). */
-    emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 5U, 0x82U),
+    urbi_emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 5U, 0x82U),
                (uint32_t)stmt->line);
 
     /* Discard the result and any trailing scratch above foo_reg. */
@@ -206,22 +206,22 @@ emit_class_body_stmt(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
     if (ic < 0) return;
 
     /* Emit init expression into a fresh temp.  Sync freereg up to
-     * next_reg first so emit_function_literal (when init is AST_FUNCTION)
+     * next_reg first so urbi_emit_function_literal (when init is AST_FUNCTION)
      * uses freereg as its OP_CLOSURE destination consistently with
-     * next_reg.  Same fix shape as emit_at_event_arm. */
+     * next_reg.  Same fix shape as urbi_emit_at_event_arm. */
     if (e->current_fs->freereg < e->next_reg) {
         e->current_fs->freereg = e->next_reg;
     }
-    uint8_t value_reg = emit_expr(e, stmt->u.var_decl.init);
+    uint8_t value_reg = urbi_emit_expr(e, stmt->u.var_decl.init);
     if (e->error != EMIT_OK) return;
 
     /* OP_SETSLOT A=src B=recv C=ic_idx — Foo.<name> = value. */
-    emit_instr(e, uinstr_enc_abc(OP_SETSLOT, value_reg, foo_reg,
+    urbi_emit_instr(e, uinstr_enc_abc(OP_SETSLOT, value_reg, foo_reg,
                                  (uint8_t)ic),
                (uint32_t)stmt->line);
 
     /* Release the value temp.  Use the freereg-synced variant when the
-     * init was an AST_FUNCTION literal (emit_function_literal raises both
+     * init was an AST_FUNCTION literal (urbi_emit_function_literal raises both
      * cursors); otherwise plain free_reg. */
     if (stmt->u.var_decl.init != NULL &&
         stmt->u.var_decl.init->kind == AST_FUNCTION) {
@@ -231,13 +231,13 @@ emit_class_body_stmt(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
     }
 }
 
-/* === emit_class_decl_arm — top-level class declaration desugar.
+/* === urbi_emit_class_decl_arm — top-level class declaration desugar.
  *
  * Returns the dest register holding the new class object (for use when
  * the class declaration appears as an expression in a separator chain).
  * Returns 0 with e->error set on failure. === */
 uint8_t
-emit_class_decl_arm(UEmitter *e, UAstNode *n)
+urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
 {
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
@@ -275,12 +275,12 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
     clone_call.u.call.args      = NULL;
     clone_call.u.call.arg_count = 0;
 
-    uint8_t foo_reg = emit_expr(e, &clone_call);
+    uint8_t foo_reg = urbi_emit_expr(e, &clone_call);
     if (e->error != EMIT_OK) return 0U;
 
     /* Sync freereg to next_reg before the proto-insertion calls
      * (S-emit-freereg-discipline; matches the v0.5.7 fix at
-     * AST_AT_EVENT in uemit_react.c).  emit_call_arm leaves freereg at
+     * AST_AT_EVENT in uemit_react.c).  urbi_emit_call_arm leaves freereg at
      * the local-zone boundary while next_reg points just past foo_reg;
      * subsequent OP_CLOSURE / OP_GETSLOT temps allocated through
      * alloc_reg use next_reg, so the cursors must agree. */
@@ -333,7 +333,7 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
 
             /* OP_SELF callee_reg, foo_reg, ic_protos — loads Foo.protos
              * into callee_reg and Foo (self) into callee_reg+1. */
-            emit_instr(e, uinstr_enc_abc(OP_SELF, callee_reg, foo_reg,
+            urbi_emit_instr(e, uinstr_enc_abc(OP_SELF, callee_reg, foo_reg,
                                          (uint8_t)ic_protos),
                        (uint32_t)n->line);
 
@@ -341,7 +341,7 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
              * = 2; C = 2|0x80 (1 ret + method flag).  Result lands at
              * callee_reg, replacing the method closure with the synthetic
              * protos-list UObject. */
-            emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 2U, 0x82U),
+            urbi_emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 2U, 0x82U),
                        (uint32_t)n->line);
 
             /* callee_reg now holds the protos list; look up insertFront
@@ -351,7 +351,7 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
              * callee_reg+1 = protos list (self). */
             int ic_insert = uemit_assign_ic_index(e, sym_insert);
             if (ic_insert < 0) return 0U;
-            emit_instr(e, uinstr_enc_abc(OP_SELF, callee_reg, callee_reg,
+            urbi_emit_instr(e, uinstr_enc_abc(OP_SELF, callee_reg, callee_reg,
                                          (uint8_t)ic_insert),
                        (uint32_t)n->line);
 
@@ -363,18 +363,18 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
 
             /* Emit the proto argument; it should land at callee_reg+2
              * (just past the implicit self in callee_reg+1). */
-            uint8_t arg_reg = emit_expr(e, proto_node);
+            uint8_t arg_reg = urbi_emit_expr(e, proto_node);
             if (e->error != EMIT_OK) return 0U;
             uint8_t expected = (uint8_t)(callee_reg + 2U);
             if (arg_reg != expected) {
-                emit_instr(e, uinstr_enc_abc(OP_MOVE, expected, arg_reg, 0U),
+                urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, expected, arg_reg, 0U),
                            (uint32_t)n->line);
             }
 
             /* OP_CALL list.insertFront(proto) — method-flagged: B = nargs(1)
              * + self + callee = 3; C = 2|0x80 (1 ret + method flag).
              * Result discarded. */
-            emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 3U, 0x82U),
+            urbi_emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 3U, 0x82U),
                        (uint32_t)n->line);
 
             /* Result is in callee_reg; we discard it.  Release the
@@ -428,11 +428,11 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
      *
      * Synthesize an AST_ASSIGN equivalent: at chunk-top this writes the
      * realm global; inside a function body this routes through the
-     * existing local/upvalue resolver via emit_assign_arm.  But we don't
-     * have a pre-bound local/global yet — the emit_var_decl_arm path
+     * existing local/upvalue resolver via urbi_emit_assign_arm.  But we don't
+     * have a pre-bound local/global yet — the urbi_emit_var_decl_arm path
      * declares a fresh binding.  We simulate that here: build a
      * synthetic AST_VAR_DECL whose init is an AST_LOCAL_REF pointing at
-     * foo_reg, but emit_expr doesn't dispatch AST_LOCAL_REF for read.
+     * foo_reg, but urbi_emit_expr doesn't dispatch AST_LOCAL_REF for read.
      *
      * Simpler approach: emit a synthetic AST_VAR_DECL with an AST_NIL
      * init, then OP_MOVE foo_reg into the local's slot.  But since
@@ -440,7 +440,7 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
      * the live stack, a straight var-decl won't work either.
      *
      * Cleanest approach for chunk-top (where M6 stdlib classes live):
-     * use emit_assign_arm-style realm-global write.  We synthesize an
+     * use urbi_emit_assign_arm-style realm-global write.  We synthesize an
      * AST_ASSIGN with foo_reg sourced via a no-op move and let the
      * assign arm route to either local-rewrite or realm-global SETSLOT.
      *
@@ -460,7 +460,7 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
     }
 
     /* Chunk-top: write Foo into the realm-global slot.  Reserve
-     * r_global_slot if needed (same protocol as emit_var_decl_arm
+     * r_global_slot if needed (same protocol as urbi_emit_var_decl_arm
      * chunk-top path). */
     if (!fs->references_global) {
         if (!fs->global_slot_reserved) {
@@ -484,7 +484,7 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
     if (ic_idx < 0) return 0U;
 
     /* OP_SETSLOT foo_reg → realm.global_object.<name> */
-    emit_instr(e, uinstr_enc_abc(OP_SETSLOT, foo_reg, fs->r_global_slot,
+    urbi_emit_instr(e, uinstr_enc_abc(OP_SETSLOT, foo_reg, fs->r_global_slot,
                                  (uint8_t)ic_idx),
                (uint32_t)n->line);
 
@@ -501,7 +501,7 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
     return foo_reg;
 }
 
-/* === emit_property_decl_arm — T41 get/set parse sugar.
+/* === urbi_emit_property_decl_arm — T41 get/set parse sugar.
  *
  * AST_PROPERTY_DECL desugars to:
  *
@@ -516,7 +516,7 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
  * forms (`recv == NULL`) are routed via emit_class_property_decl_arm
  * which synthesizes the implicit class-object receiver. === */
 uint8_t
-emit_property_decl_arm(UEmitter *e, UAstNode *n)
+urbi_emit_property_decl_arm(UEmitter *e, UAstNode *n)
 {
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
@@ -534,7 +534,7 @@ emit_property_decl_arm(UEmitter *e, UAstNode *n)
     const char *prop_name = (kind == UAST_METHOD_GETTER) ? "oget" : "oset";
 
     /* Build synthetic AST nodes for the desugar.  All on stack — they
-     * borrow into the emitter for the duration of one emit_expr call,
+     * borrow into the emitter for the duration of one urbi_emit_expr call,
      * which copies the bytes it needs (interned strings, function-
      * literal proto allocations, etc.) before returning. */
     UAstNode name_str = (UAstNode){0};
@@ -573,5 +573,5 @@ emit_property_decl_arm(UEmitter *e, UAstNode *n)
     setprop_call.u.call.args      = args;
     setprop_call.u.call.arg_count = 3;
 
-    return emit_expr(e, &setprop_call);
+    return urbi_emit_expr(e, &setprop_call);
 }

@@ -165,7 +165,7 @@ urbi_compile_source(struct UVM *vm,
     }
 
     if (had_error) {
-        emit_diag_free_all(&e);
+        urbi_emit_diag_free_all(&e);
         urbi_emit_abandon(&e);   /* parse error — finish never runs (FE-07) */
         uchunk_destroy(root, vm);
         uarena_destroy(&arena);
@@ -181,7 +181,7 @@ urbi_compile_source(struct UVM *vm,
             }
             snprintf(err_buf, err_cap, "%s", diag_msg);
         }
-        emit_diag_free_all(&e);
+        urbi_emit_diag_free_all(&e);
         uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
@@ -197,7 +197,7 @@ urbi_compile_source(struct UVM *vm,
                         e.diag_buf[di].message);
         }
     }
-    emit_diag_free_all(&e);
+    urbi_emit_diag_free_all(&e);
 
     /* First pass: query required size. */
     ptrdiff_t need = uchunk_serialize(root, NULL, 0);
