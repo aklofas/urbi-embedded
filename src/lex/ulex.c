@@ -452,7 +452,7 @@ static int apply_duration_suffix(ULexer *lex, int64_t *value) {
     return 0;
 }
 
-/* Float-path duration suffix (refactor-3 FE-08).  Mirrors
+/* Float-path duration suffix.  Mirrors
  * apply_duration_suffix but scales a double and rounds half-up to the
  * nearest microsecond.  Returns 1 if a suffix was consumed (*out_us
  * written), 2 on int64 overflow, 0 if no duration suffix present. */
@@ -550,7 +550,7 @@ static UToken scan_float_body(ULexer *lex, const char *start,
         return make_error(LEX_FLOAT_OVERFLOW, start_line, start_col, span);
     }
 
-    /* === refactor-3 FE-08: fractional duration literals — float path ===
+    /* === fractional duration literals — float path ===
      * Checked BEFORE angle suffixes, mirroring the integer path's order. */
     {
         int64_t us_val;
@@ -566,7 +566,7 @@ static UToken scan_float_body(ULexer *lex, const char *start,
             return td;
         }
     }
-    /* === end refactor-3 FE-08: fractional duration literals === */
+    /* === end fractional duration literals === */
 
     /* === v0.10.5: angle literals — float path ===
      * After the strtod conversion, check for an angle suffix.  If present,
