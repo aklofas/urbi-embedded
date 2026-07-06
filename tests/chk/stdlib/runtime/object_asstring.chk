@@ -29,10 +29,8 @@ var lst = List.new(1,2,3); lst.asString().startsWith("<object ")
 "x".asString()
 [00000003] "x"
 
-# Non-object atom kinds lacking their own asString are rejected with a
-# TypeError (pre-asString dispatch raised TypeError for these too).
-nil.asString()
-[00000004] !!! TypeError: asString: self must be a UObject
+# Boolean and Nil now have scripted asString overlays (bool_nil_overlay.u)
+# so they no longer reach this fallback.  String's overlay also shadows it.
+# The Object root asString rejects other atom kinds that lack their own
+# overlay.
 
-true.asString()
-[00000005] !!! TypeError: asString: self must be a UObject

@@ -16,6 +16,7 @@ number.u
 list_overlay.u
 dict_overlay.u
 string_overlay.u
+bool_nil_overlay.u
 lobby.u
 channel_overlay.u
 control_overlay.u

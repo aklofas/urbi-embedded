@@ -1,0 +1,6 @@
+# switch with two 'default:' arms — compile-time rejection.
+# The parser rejects a switch body that contains more than one default arm.
+# This is a parse error pinned here to prevent regressions.
+
+switch (1) { default: { 1 }; default: { 2 } }
+[00000000] !!! <stdin>:1:30: switch body may only have one 'default:' arm

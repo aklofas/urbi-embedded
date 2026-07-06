@@ -1,0 +1,19 @@
+// Boolean and Nil asString overlays.
+//
+// Adds asString to the Boolean and Nil atom protos via the overlay-class
+// pattern (same idiom as string_overlay.u).  Each returns the canonical
+// echo string for the receiver: "true", "false", or "nil".
+//
+// Boolean.asString delegates to the already-installed Boolean.toString
+// (atom_protos.c: true → "true", false → "false").  Nil has no toString,
+// so its overlay returns the literal "nil" directly.
+
+class BoolMethods {
+    var asString = function() { this.toString() }
+} |
+Boolean.addProto(BoolMethods) ;
+
+class NilMethods {
+    var asString = function() { "nil" }
+} |
+Nil.addProto(NilMethods);

@@ -1,0 +1,22 @@
+# Boolean.asString() and Nil.asString() — scripted overlays on the
+# Boolean and Nil atom protos; mirrors the String overlay (string_overlay.u).
+# Each returns the canonical echo string for the receiver.
+
+# --- Boolean.asString ---
+true.asString()
+[00000000] "true"
+
+false.asString()
+[00000001] "false"
+
+# --- idempotency: asString on the result stays a String ---
+true.asString().asString()
+[00000002] "true"
+
+# --- Nil.asString ---
+nil.asString()
+[00000003] "nil"
+
+# --- generic dispatch via a var ---
+var b = false; b.asString()
+[00000004] "false"
