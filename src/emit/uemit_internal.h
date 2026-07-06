@@ -16,7 +16,7 @@
 /* --- Byte-copy / string helpers (freestanding-safe) --- */
 
 /* Local byte-copy.  Replaces memcpy so the serializer compiles without
-   a hosted <string.h>.  Same pattern as module_memcpy in umodule.c. */
+   a hosted <string.h>.  Same pattern as chunk_memcpy in chunk/uchunk_io.c. */
 static inline void emit_memcpy(void *dst, const void *src, size_t n) {
     unsigned char *pd = (unsigned char *)dst;
     const unsigned char *ps = (const unsigned char *)src;

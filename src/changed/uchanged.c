@@ -13,8 +13,8 @@
 #include "chunk/uchunk.h"
 #include <stddef.h>
 
-/* USymbol is just an interned const char* — the typedef lives in umodule.h
- * which is pulled in transitively via uobject.h. */
+/* USymbol is just an interned const char* — the typedef lives in
+ * chunk/uproto.h, pulled in transitively via chunk/uchunk.h → uobject.h. */
 
 /* urbi_object_get_or_create_change_event: walk obj->changed_events_head by
  * USymbol pointer identity (interned → pointer-compare is sufficient).

@@ -222,7 +222,7 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
  *     (urbi_opcode_shapes[]); register operands < max_reg+1, Bx fields
  *     range-checked per UBxKind, last instruction must be OP_RET.
  *   - ic_names interning is deferred to urbi_chunk_instance_create
- *     (see object/umoduleinstance.h); deserialize itself does not need
+ *     (see object/uchunk_instance.h); deserialize itself does not need
  *     a VM. */
 UChunkLoadError uchunk_deserialize(UProto **out_root,
                                    const uint8_t *buf, size_t size,

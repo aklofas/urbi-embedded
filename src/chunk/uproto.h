@@ -10,7 +10,7 @@
  *      Populated by uemit at compile time, persisted in bytecode v1.3+,
  *      freed by uproto_destroy_buffers.
  *   2. UProtoInstance.ic_count + UIC entries[] — runtime IC table per
- *      (vm, proto) pair (object/umoduleinstance.h).  Sized from #1 at
+ *      (vm, proto) pair (object/uchunk_instance.h).  Sized from #1 at
  *      module-instance creation; UIC.name is copied from ic_names.
  *
  * Mirror discipline: any change to UProto IC field naming or layout must
@@ -88,7 +88,7 @@ struct USymbol;
 typedef struct USymbol USymbol;
 
 /* Forward declaration — UChunkInstance is introduced in M4 (see
- * object/umoduleinstance.h).  UProto.owning_module_instance (added v0.9.0)
+ * object/uchunk_instance.h).  UProto.owning_module_instance (added v0.9.0)
  * holds a back-pointer to the runtime instance this proto was first
  * instantiated under.  Defined as opaque here to avoid a circular dependency
  * on object/ layer types. */

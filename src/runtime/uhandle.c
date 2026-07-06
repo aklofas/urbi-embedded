@@ -23,7 +23,7 @@ handle_table_grow(UVM *vm)
      * `* 2U` wraps to a smaller value than old_cap; reject rather than
      * silently shrink the table. */
     if (old_cap != 0U && new_cap < old_cap) return -1;
-    /* vm->alloc_fn with (ptr, n>0) == realloc semantics (umodule.h comment). */
+    /* vm->alloc_fn with (ptr, n>0) == realloc semantics (see UVMConfig in urbi/urbi.h). */
     UValue *grown = (UValue *)vm->alloc_fn(vm->handle_table,
                                            new_cap * sizeof(UValue),
                                            vm->alloc_ud);

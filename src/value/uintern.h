@@ -6,7 +6,7 @@
 
 #include <stddef.h>
 
-/* Pull in UGcRootCallback typedef (via ugc.h → umodule.h for UValue). */
+/* Pull in UGcRootCallback typedef (via ugc.h → urbi/types.h for UValue). */
 #include "gc/ugc.h"
 
 #ifdef __cplusplus

@@ -10,11 +10,11 @@
  * parent is the UUpvalCell header — but the offset-0 embed stays
  * load-bearing for the value-tagging casts above.)
  *
- * Lives outside umodule.h because the struct definition needs both UValue
- * (from umodule.h) and UCell (from gc/ugc.h), and gc/ugc.h itself includes
- * umodule.h for UValue — a direct UCell embed inside umodule.h would create
+ * Lives outside chunk/uproto.h because the struct definition needs both UValue
+ * (from urbi/types.h) and UCell (from gc/ugc.h), and gc/ugc.h itself includes
+ * urbi/types.h for UValue — a direct UCell embed inside uproto.h would create
  * a circular include.  Files that only need `struct UClosure *` keep the
- * forward typedef in umodule.h; files that touch UClosure fields include
+ * forward typedef in chunk/uproto.h; files that touch UClosure fields include
  * this header. */
 
 #ifndef UCLOSURE_H
@@ -30,7 +30,7 @@
  * Forward typedef is in uframe.h; full layout lives here because the struct
  * embeds UCell (from gc/ugc.h) as its FIRST member, and uframe.h cannot
  * include ugc.h without forming a circular include (uframe.h → ugc.h →
- * umodule.h → uframe.h).  This header has both UValue (via umodule.h) and
+ * urbi/types.h → uframe.h).  This header has both UValue (via urbi/types.h) and
  * UCell (via gc/ugc.h) in scope, so the full definition is safe here.
  *
  * When a closure captures a local still live on a call frame stack, the cell

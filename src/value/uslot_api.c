@@ -63,7 +63,7 @@ urbi_slot_get(struct UVM *vm, UValue obj,
     /* Intern the name to get a canonical USymbol* for lookup.
      * ustr_intern returns const char* which aliases USymbol* by convention
      * (USymbol is an opaque forward-struct whose canonical rep is the
-     * interned pointer — see umodule.h / uintern.c). */
+     * interned pointer — see chunk/uproto.h / value/uintern.c). */
     sym = (USymbol *)ustr_intern(vm, name, name_len);
     if (sym == NULL) {
         urbi_set_error_internal(vm, URBI_ERR_OOM,

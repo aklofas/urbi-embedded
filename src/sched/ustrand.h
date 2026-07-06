@@ -20,7 +20,7 @@
 
 #include <stdint.h>
 #include <stddef.h>   /* size_t */
-#include "value/uvalue.h"   /* pulls in umodule.h which defines UValue — must come before uframe.h */
+#include "value/uvalue.h"   /* pulls in chunk/uchunk.h which defines UValue — must come before uframe.h */
 #include "runtime/uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT (ustrand_c_root_pop LIFO check) */
 
@@ -135,7 +135,7 @@ struct UEvent;           /* reactive runtime */
 struct UVM;              /* uvm.h — forward-decl to avoid circular include */
 struct URealm;           /* urealm.h — forward-decl for strand lifecycle context */
 struct UProto;           /* uproto.h — forward-decl for root_proto (v0.8.1+) */
-struct UClosure;         /* umodule.h — forward-decl for closure list threading */
+struct UClosure;         /* chunk/uproto.h — forward-decl for closure list threading */
 struct UChunkInstance;  /* object/uchunk_instance.h — M4 follow-up: per-(vm,module) IC tier */
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
 struct UPeriodic;        /* stdlib/temporal.h — v0.9.4 every() back-pointer */

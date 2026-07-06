@@ -12,7 +12,7 @@
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
 #include <stdint.h>
 
-/* Local byte-copy.  Replaces memcpy so umodule.c compiles without
+/* Local byte-copy.  Replaces memcpy so uchunk_io.c compiles without
    <string.h> under -ffreestanding. */
 static void module_memcpy(void *dst, const void *src, size_t n) {
     unsigned char *pd = (unsigned char *)dst;
@@ -155,7 +155,7 @@ static inline void module_buf_free(UChunkAllocFn alloc, void *alloc_ud,
 }
 
 /* Free the per-constant module-owned bytes attached to UVAL_STR slots whose
- * _pad[0] marker was set by the deserializer (ownership flag, see umodule.c
+ * _pad[0] marker was set by the deserializer (ownership flag, see uchunk_io.c
  * decode_constants_into UVAL_STR arm).  Emit-time UVAL_STR slots carry an
  * intern-table pointer (VM-owned) and must NOT be freed here; the marker
  * distinguishes the two ownership domains.

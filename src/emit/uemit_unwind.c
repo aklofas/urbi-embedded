@@ -20,7 +20,7 @@
 /* =========================================================================
  * M3 row 7 control-transfer opcode encoder helpers.
  * Each function encodes exactly one instruction word and calls urbi_emit_instr.
- * See umodule.h §M3 row 7 for the field layout of each opcode.
+ * See chunk/uchunk.h §M3 row 7 for the field layout of each opcode.
  * ========================================================================= */
 
 /* OP_THROW ABx: A = reg_value, Bx = 0 (unused). */

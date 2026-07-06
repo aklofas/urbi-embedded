@@ -56,7 +56,7 @@ static void emit_copy_source_name(UEmitter *e, const char *src) {
 /* --- Internal helpers --- */
 
 /* Grow *data to at least new_cap elements of elem_size.  Doubling policy.
-   Mirror of module_grow in umodule.c; used by constant-pool and instruction
+   Mirror of chunk_grow in chunk/uchunk_io.c; used by constant-pool and instruction
    array in the emitter.
    Promoted from static so uemit_funcstate.c can call it cross-TU. */
 bool urbi_emit_grow(UProto *root, void **data, size_t *cap,

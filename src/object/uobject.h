@@ -23,10 +23,9 @@
 #include "chunk/uchunk.h"   /* UValue (16 B) + USymbol forward-typedef */
 #include "gc/ugc.h"    /* UCell (2 B) */
 
-/* USymbol is forward-declared in umodule.h.  Real definition lives in
- * uintern.h once the intern layer migrates to UString GC cells (later M4
- * task).  Consumers of this header that need the full struct must include
- * uintern.h explicitly. */
+/* USymbol is forward-declared via chunk/uchunk.h (pulled in above).
+ * Consumers of this header that need the full struct must include
+ * chunk/uproto.h or value/uintern.h explicitly. */
 
 /* === USlot ===
  *
