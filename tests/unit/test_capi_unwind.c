@@ -11,12 +11,12 @@
  *  7. urbi_tag_stop_local deposits TAG_STOP with target pointer.
  *  8. urbi_tag_stop accepts valid args (URBI_OK) and rejects NULLs.
  *  9. urbi_strand_cancel on a WAITING strand transitions it to READY (T13).
- * 10. strand_cleanup_stack_init returns -1 when allocator returns NULL (T13). */
+ * 10. urbi_sched_strand_cleanup_stack_init returns -1 when allocator returns NULL (T13). */
 
 #include "utest.h"
 #include "urbi/urbi.h"
 #include "sched/ustrand.h"
-#include "sched/usched_cooperative.h"  /* sched_strand_block (case 9 park) */
+#include "sched/usched_cooperative.h"  /* urbi_sched_strand_block (case 9 park) */
 #include "runtime/ucleanup.h"
 #include "runtime/uunwind.h"  /* urbi_unwind — internal walker, used by W2 D3 test */
 #include "vm/uvm.h"
@@ -66,7 +66,7 @@ strand_minimal(UStrand *s, UVM *vm)
     s->pending_unwind = UEXEC_OK;
     s->fatal_status   = UEXEC_OK;
 
-    strand_cleanup_stack_init(s, vm, (uint16_t)URBI_CLEANUP_MAX);
+    urbi_sched_strand_cleanup_stack_init(s, vm, (uint16_t)URBI_CLEANUP_MAX);
     return reg_stack;
 }
 
@@ -92,7 +92,7 @@ UTEST(capi_strand_cancel_deposits_unwind)
     UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_CANCEL);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -110,7 +110,7 @@ UTEST(capi_strand_cancel_rejects_dead_strand)
     UASSERT_EQ(rc, URBI_ERR_STRAND_FATAL);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -138,7 +138,7 @@ UTEST(capi_strand_panic_marks_fatal)
     UASSERT_EQ(status, UEXEC_CANCEL);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -169,7 +169,7 @@ UTEST(capi_strand_reset_clears_fatal_and_returns_dormant)
     UASSERT_EQ(urbi_strand_unwind_status(&vm, &s), UEXEC_OK);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -186,7 +186,7 @@ UTEST(capi_strand_unwind_status_ok_on_clean_strand)
     UASSERT(!urbi_strand_is_fatal(&vm, &s, NULL, NULL));
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -211,7 +211,7 @@ UTEST(capi_host_callback_helpers_throw_and_return)
     UASSERT_EQ(s.unwind_value.v.i, (int64_t)99);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -233,7 +233,7 @@ UTEST(capi_tag_stop_local_deposits_tag_stop)
     UASSERT_EQ(s.unwind_value.v.i, (int64_t)7);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -285,13 +285,13 @@ UTEST(capi_strand_cancel_unblocks_waiting_strand)
 
     /* Place the strand in a WAITING state (sleeping) through the real
      * parking transition.  v0.13.3 (SCHED-13): a raw WAITING state stamp
-     * would bypass sched_strand_block's strand_waiting_count increment, so
+     * would bypass urbi_sched_strand_block's strand_waiting_count increment, so
      * the cancel wake path's decrement would trip the no-saturation
      * assert.  Park properly: RUNNING -> block (the RUNNING-decrement is
      * satisfied by seeding the runnable count). */
     s.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000U);
+    urbi_sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000U);
 
     int rc = urbi_strand_cancel(&vm, &s, make_nil());
     UASSERT_EQ(rc, URBI_OK);
@@ -304,7 +304,7 @@ UTEST(capi_strand_cancel_unblocks_waiting_strand)
     UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_READY);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -345,7 +345,7 @@ UTEST(capi_tag_stop_passes_isr_guard_when_not_in_isr)
     urbi_vm_destroy(&vm);
 }
 
-/* 10. strand_cleanup_stack_init returns -1 when the allocator returns NULL.
+/* 10. urbi_sched_strand_cleanup_stack_init returns -1 when the allocator returns NULL.
  *     Covers the allocation-failure path in ucleanup.c (lines 66-70). */
 static void *
 null_alloc(void *ptr, size_t nbytes, void *ud)
@@ -365,7 +365,7 @@ UTEST(capi_cleanup_stack_init_fails_on_null_alloc)
     memset(&s, 0, sizeof(s));
     s.vm = &vm;
 
-    int rc = strand_cleanup_stack_init(&s, &vm, 16);
+    int rc = urbi_sched_strand_cleanup_stack_init(&s, &vm, 16);
     UASSERT_EQ(rc, -1);
 
     /* All cleanup fields must be zero on failure. */
@@ -415,7 +415,7 @@ UTEST(capi_tag_stop_no_target_escalates_to_fatal)
     UASSERT_EQ((unsigned)s.state, (unsigned)USTRAND_STATE_DEAD);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

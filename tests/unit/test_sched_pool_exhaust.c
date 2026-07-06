@@ -151,7 +151,7 @@ UTEST(strand_dormant_destroy_no_counter_corrupt)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     /* ustrand_init with a NULL-alloc vm: cleanup_base stays NULL. */
     UVMAllocFn saved_alloc = vm.alloc_fn;

@@ -109,7 +109,7 @@ run_on_scratch_core(struct UVM       *vm,
     /* B11/SCHED-03: seed per-strand safepoint budget.  urbi_zero above leaves
      * safepoint_budget_remaining == 0; the first backward branch or bytecode
      * call inside the body hits the safepoint budget == 0 arm in uvm.c and
-     * would call sched_strand_yield, enqueuing this stack-local UStrand onto
+     * would call urbi_sched_strand_yield, enqueuing this stack-local UStrand onto
      * vm->ready_head — a dead-stack UAF on the next urbi_step call.
      * The transient guard in uvm.c (is_transient_strand check added by T7)
      * is a belt-and-suspenders second layer that prevents the enqueue even if
@@ -175,7 +175,7 @@ run_on_scratch_core(struct UVM       *vm,
 
     /* Initialise the cleanup stack so OP_TRY_BEGIN can push entries.
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
-    (void)strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
+    (void)urbi_sched_strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
 
     /* Thread onto a realm's strands_head so the GC walker sees the strand's
      * register window (mirrors urbi_vm_run's transient-strand dance).
@@ -281,7 +281,7 @@ run_on_scratch_core(struct UVM       *vm,
              * inside the body), or SUSPENDED (gate-suspended member strand,
              * v0.13.3 SCHED-08).  (READY is unreachable for a transient: the
              * B11/SCHED-03 guards in uvm.c divert OP_YIELD and both budget arms
-             * before sched_strand_yield, so a scratch strand is never enqueued.)
+             * before urbi_sched_strand_yield, so a scratch strand is never enqueued.)
              * All of these violate the §6.4 no-yield contract; treat as
              * cond-throw so install/eval can fail-soft.  Diagnostic neutralized
              * because the same core also handles AT_SYNC bodies, onleave handlers,
@@ -351,7 +351,7 @@ run_on_scratch_core(struct UVM       *vm,
      * leave dispatch fully detached from every scheduler structure before its
      * storage goes out of scope.  ready_next/ready_prev stay NULL because the
      * transient guards in uvm.c keep it off the ready queue (a non-NULL link
-     * would mean sched_strand_make_runnable enqueued a dead-stack pointer);
+     * would mean urbi_sched_strand_make_runnable enqueued a dead-stack pointer);
      * !WAITING holds because the clean-exit / fatal arms reach DEAD and the
      * fail-soft arm above explicitly unparks + stamps DEAD.  Both fail-fast in
      * URBI_DEBUG; production builds elide them. */

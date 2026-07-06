@@ -12,7 +12,7 @@
 #include "vm/uvm_internal.h"          /* urbi_vm_format_type_error_msg */
 #include "urbi/urbi.h"                /* UVM_TYPE_ERROR */
 #include "sched/ustrand.h"            /* UStrand, UEXEC_THROW, USTRAND_STATE_DEAD */
-#include "runtime/ucleanup.h"         /* UCleanupEntry, UCLEANUP_TAG_SCOPE, FLAG_HAS_ONLEAVE, strand_cleanup_push/pop */
+#include "runtime/ucleanup.h"         /* UCleanupEntry, UCLEANUP_TAG_SCOPE, FLAG_HAS_ONLEAVE, urbi_sched_strand_cleanup_push/pop */
 #include "runtime/umacros.h"          /* URBI_INTERNAL_ASSERT */
 #include "runtime/ulist.h"            /* URBI_SLIST_FOREACH_SAFE */
 #include "tag/utag.h"                 /* UTag, utag_create/destroy */
@@ -68,7 +68,7 @@ urbi_vm_push_tag_scope(UVM *vm, UStrand *s)
         }
         tag_is_user_owned = false;
     }
-    UCleanupEntry *entry = strand_cleanup_push(s);
+    UCleanupEntry *entry = urbi_sched_strand_cleanup_push(s);
     if (entry == NULL) {
         if (!tag_is_user_owned)
             utag_destroy(s->vm, tag);  /* roll back only an anonymous alloc */
@@ -148,7 +148,7 @@ urbi_vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
             pending_onleave_queue_push(s->vm, ww);
         }
     }
-    strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+    urbi_sched_strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
     /* Destroy only an anonymous per-scope UTag.  A user-owned tag
      * (v0.10.9-B, FLAG_TAG_USER_OWNED) outlives the scope: it is still
      * reachable via the user's variable and may have other open member

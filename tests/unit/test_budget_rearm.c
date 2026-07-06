@@ -2,7 +2,7 @@
 /* Unit test: per-slice safepoint budget re-arm (refactor-3 VM-04/SCHED-11).
  *
  * Bug: the per-strand safepoint budget (safepoint_budget_remaining) was seeded
- * once per strand LIFETIME via sched_strand_init.  After URBI_STRAND_BUDGET_MAX
+ * once per strand LIFETIME via urbi_sched_strand_init.  After URBI_STRAND_BUDGET_MAX
  * safepoints every subsequent safepoint yields BEFORE the GC-slice/drain
  * section, so a lone long-lived loop stops collecting garbage entirely.
  *

@@ -3,7 +3,7 @@
  * (row 12 §3.2 — budget-exhaustion safepoint in urbi_vm_dispatch_loop_until_yield).
  *
  * A soft yield occurs when safepoint_budget_remaining reaches 0 at a
- * safepoint.  The strand transitions RUNNING → READY (via sched_strand_yield)
+ * safepoint.  The strand transitions RUNNING → READY (via urbi_sched_strand_yield)
  * and is re-enqueued at the tail rather than killed.  urbi_step returns
  * URBI_STEP_RUNNING (budget exhausted) rather than QUIESCENT.
  *

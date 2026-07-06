@@ -17,7 +17,7 @@
 #include "value/uvalue.h"        /* uvalue_truthy */
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h" /* URBI_INTERNAL_ASSERT */
-#include "sched/usched_cooperative.h" /* sched_strand_make_runnable */
+#include "sched/usched_cooperative.h" /* urbi_sched_strand_make_runnable */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -339,7 +339,7 @@ urbi_vm_watcher_eval_dirty(struct UVM *vm)
                      * and returns w to the pool — do NOT touch w after this. */
                     urbi_watcher_unregister_internal(vm, w);
                     /* Wake the blocked strand: WAIT_WATCHER → READY. */
-                    sched_strand_make_runnable(waiter);
+                    urbi_sched_strand_make_runnable(waiter);
                     /* w is freed; skip the post-switch last_value_cache update.
                      * Advance directly to next. */
                     w = next;

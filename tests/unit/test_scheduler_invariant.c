@@ -61,26 +61,26 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
     UASSERT(strand_on_realm_list(r, s));
 
     /* READY → RUNNING (manual transition: scheduler dispatch would do this
-     * via sched_dequeue_ready_head + assign state).  The invariant is on
+     * via urbi_sched_dequeue_ready_head + assign state).  The invariant is on
      * realm.strands_head, not on ready_head. */
-    sched_dequeue_ready_head(&vm);
+    urbi_sched_dequeue_ready_head(&vm);
     s->state = USTRAND_STATE_RUNNING;
     UASSERT(strand_on_realm_list(r, s));
 
-    /* RUNNING → WAITING_SLEEP (sched_strand_block decrements
+    /* RUNNING → WAITING_SLEEP (urbi_sched_strand_block decrements
      * strand_runnable_count for RUNNING strands). */
-    sched_strand_block(s, USTRAND_REASON_SLEEP, /*wake_us*/ 1000U);
+    urbi_sched_strand_block(s, USTRAND_REASON_SLEEP, /*wake_us*/ 1000U);
     UASSERT_EQ((int)USTRAND_GET_STATE(s), (int)USTRAND_WAITING);
     UASSERT_EQ((int)USTRAND_GET_REASON(s), (int)USTRAND_REASON_SLEEP);
     UASSERT(strand_on_realm_list(r, s));    /* KEY: still on realm list */
 
     /* WAITING_SLEEP → READY. */
-    sched_strand_unblock(s);
+    urbi_sched_strand_unblock(s);
     UASSERT_EQ((int)USTRAND_GET_STATE(s), (int)USTRAND_READY);
     UASSERT(strand_on_realm_list(r, s));
 
     /* READY → RUNNING again. */
-    sched_dequeue_ready_head(&vm);
+    urbi_sched_dequeue_ready_head(&vm);
     s->state = USTRAND_STATE_RUNNING;
     UASSERT(strand_on_realm_list(r, s));
 
@@ -91,7 +91,7 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
 
     s->wait_next       = child->joiners_head;
     child->joiners_head = s;
-    sched_strand_block(s, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
+    urbi_sched_strand_block(s, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
     UASSERT_EQ((int)USTRAND_GET_STATE(s), (int)USTRAND_WAITING);
     UASSERT_EQ((int)USTRAND_GET_REASON(s), (int)USTRAND_REASON_JOIN);
     UASSERT(strand_on_realm_list(r, s));    /* KEY: WAITING_JOIN still on list */
@@ -105,9 +105,9 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
      * pre-M4 spec §5.2 (Option a). */
     s->wait_next        = NULL;
     child->joiners_head = NULL;
-    sched_strand_make_runnable(s);          /* WAITING → READY (waiting--) */
+    urbi_sched_strand_make_runnable(s);          /* WAITING → READY (waiting--) */
     UASSERT(strand_on_realm_list(r, s));
-    sched_dequeue_ready_head(&vm);
+    urbi_sched_dequeue_ready_head(&vm);
     /* The RUNNING store is immediately overwritten by the DEAD stamp below;
      * kept so the manual transition mirrors the driver's dequeue->RUNNING->
      * death sequence.  The count is provably 1 here (make_runnable just
@@ -143,14 +143,14 @@ UTEST(mixed_state_strands_all_remain_on_realm_list)
     /* Drive each into a different state. */
     urbi_strand_start(&vm, b);                                         /* DORMANT → READY */
 
-    sched_dequeue_ready_head(&vm);                                /* dequeues b */
+    urbi_sched_dequeue_ready_head(&vm);                                /* dequeues b */
     b->state = USTRAND_STATE_RUNNING;
-    sched_strand_block(b, USTRAND_REASON_SLEEP, 5000U);           /* RUNNING → WAITING_SLEEP */
+    urbi_sched_strand_block(b, USTRAND_REASON_SLEEP, 5000U);           /* RUNNING → WAITING_SLEEP */
 
     /* The above dequeued b but c was never on the queue.  Park c directly. */
     c->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;                                 /* satisfy block's RUNNING-decrement */
-    sched_strand_block(c, USTRAND_REASON_SLEEP, 200U);            /* RUNNING → WAITING_SLEEP */
+    urbi_sched_strand_block(c, USTRAND_REASON_SLEEP, 200U);            /* RUNNING → WAITING_SLEEP */
 
     d->state = USTRAND_STATE_DEAD;                                /* DORMANT → DEAD (manual) */
 

@@ -16,7 +16,7 @@
  *      right reason sub-code; hit9 is NOT yet set; no abort, no spin
  *      (urbi_step converges to QUIESCENT — a suspended strand does not
  *      count toward strand_runnable_count, matching the READY-arm
- *      convention where sched_strand_unbind_from_ready_queue
+ *      convention where urbi_sched_strand_unbind_from_ready_queue
  *      decrements);
  *   2. urbi_tag_unblock / urbi_tag_unfreeze resumes the strand AFTER
  *      the blocking call: hit9 == 1, the strand runs to DEAD and is

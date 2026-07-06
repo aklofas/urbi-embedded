@@ -33,12 +33,12 @@ ustrand_init(UStrand *s, struct UVM *vm) {
      * Frame-stack / register-window / lex-env init is deferred to urbi_step
      * or urbi_strand_arm_from_closure; the strand is a valid DORMANT without it. */
     if (vm != NULL) {
-        if (strand_cleanup_stack_init(s, vm, URBI_CLEANUP_MAX) != 0) {
+        if (urbi_sched_strand_cleanup_stack_init(s, vm, URBI_CLEANUP_MAX) != 0) {
             return -1;
         }
     }
     /* When vm is NULL the strand has no cleanup stack; callers that omit vm
-       must call strand_cleanup_stack_init explicitly before use. */
+       must call urbi_sched_strand_cleanup_stack_init explicitly before use. */
     return 0;
 }
 
@@ -53,7 +53,7 @@ ustrand_init(UStrand *s, struct UVM *vm) {
  * (e.g., test teardown, OOM recovery, urbi_strand_panic).
  *
  * CHSTR-051: scan the FULL allocated range [0..cleanup_cap) rather than just
- * [0..cleanup_depth).  strand_cleanup_pop decrements cleanup_depth but does
+ * [0..cleanup_depth).  urbi_sched_strand_cleanup_pop decrements cleanup_depth but does
  * NOT unlink the entry from owning_tag->member_strands_head; entries below
  * the current depth may therefore still be linked.  This arises in the fatal
  * unwind path for "try { throw 1 } finally { throw 2 }": the realm-tag
@@ -62,7 +62,7 @@ ustrand_init(UStrand *s, struct UVM *vm) {
  * assertion fires.  Scanning the full cap is safe: never-pushed slots are
  * zero-initialised (kind == 0, not UCLEANUP_TAG_SCOPE == 2) and are skipped;
  * already-unlinked popped entries harmlessly produce a no-op list walk. */
-/* strand_unlink_member_entry
+/* urbi_sched_strand_unlink_member_entry
  *
  * Unlink a single UCleanupEntry from its owning_tag->member_strands_head
  * singly-linked list.  No-op if entry->owning_tag is NULL or entry is
@@ -73,7 +73,7 @@ ustrand_init(UStrand *s, struct UVM *vm) {
  * disown helper can call it on a single entry without walking the whole
  * cleanup stack. */
 void
-strand_unlink_member_entry(UCleanupEntry *e)
+urbi_sched_strand_unlink_member_entry(UCleanupEntry *e)
 {
     UTag *tag;
 
@@ -94,7 +94,7 @@ strand_unlink_from_tags(UStrand *s)
     if (s->cleanup_base == NULL || s->cleanup_cap == 0) return;
 
     for (i = 0; i < s->cleanup_cap; i++) {
-        strand_unlink_member_entry(&s->cleanup_base[i]);
+        urbi_sched_strand_unlink_member_entry(&s->cleanup_base[i]);
     }
 }
 
@@ -154,7 +154,7 @@ strand_unlink_park(UStrand *s)
 {
     switch (USTRAND_GET_REASON(s)) {
     case USTRAND_REASON_SLEEP:
-        sched_strand_unbind_from_sleep_queue(s);
+        urbi_sched_strand_unbind_from_sleep_queue(s);
         break;
     case USTRAND_REASON_EVENT:
         uevent_waiter_unregister(s);
@@ -197,7 +197,7 @@ strand_unlink_park(UStrand *s)
  * strand_cleanup_observers.  `enqueue` 0 leaves the strand's state byte
  * untouched and uncounted (cleanup-executor fail-soft, urbi_strand_panic —
  * the caller stamps the next state); 1 routes through
- * sched_strand_make_runnable (tag-stop / cancel wake).
+ * urbi_sched_strand_make_runnable (tag-stop / cancel wake).
  *
  * Counter contract (SCHED-13 single-writer scheme): with enqueue == 1 the
  * make_runnable wake funnel performs the strand_waiting_count exit; with
@@ -212,7 +212,7 @@ urbi_sched_strand_unpark(UStrand *s, int enqueue)
     URBI_INTERNAL_ASSERT(USTRAND_IS_WAITING(s));
     strand_unlink_park(s);
     if (enqueue) {
-        sched_strand_make_runnable(s);
+        urbi_sched_strand_make_runnable(s);
     } else {
         urbi_sched_waiting_dec(s->vm, s);
     }
@@ -264,7 +264,7 @@ strand_cleanup_observers(UStrand *s)
      * Inline the walk from urbi_vm_fork_wake_joiners with a DEAD-joiner guard:
      * in adversarial teardown sequences a joiner may itself have been
      * forcibly DEAD before the child is destroyed (e.g., in test teardown
-     * or multi-realm destroy ordering).  Calling sched_strand_make_runnable
+     * or multi-realm destroy ordering).  Calling urbi_sched_strand_make_runnable
      * on a DEAD strand trips an assertion in hosted builds; guard here so the
      * teardown path is safe regardless of joiner state.  Joiners in WAITING
      * or any other live state are woken normally. */
@@ -275,7 +275,7 @@ strand_cleanup_observers(UStrand *s)
             UStrand *next_joiner = joiner->wait_next;
             joiner->wait_next = NULL;
             if (USTRAND_GET_STATE(joiner) != USTRAND_DEAD)
-                sched_strand_make_runnable(joiner);
+                urbi_sched_strand_make_runnable(joiner);
             joiner = next_joiner;
         }
     }
@@ -313,10 +313,10 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
     }
 
     /* CHSTR-031: cross-strand stop counter management moved to scheduler.
-     * sched_strand_account_destroy handles the host_call_pending_count
+     * urbi_sched_strand_account_destroy handles the host_call_pending_count
      * bookkeeping for strands that had a cross-strand stop deposited. */
     if (vm != NULL)
-        sched_strand_account_destroy(vm, s);
+        urbi_sched_strand_account_destroy(vm, s);
 
     /* Unlink all TAG_SCOPE entries from their owning tags before freeing
        the cleanup stack.  This maintains the §3.4 membership invariant
@@ -325,7 +325,7 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
 
     /* Free the pre-allocated cleanup stack if vm is available. */
     if (vm != NULL && s->cleanup_base != NULL) {
-        strand_cleanup_stack_destroy(s, vm);
+        urbi_sched_strand_cleanup_stack_destroy(s, vm);
     }
 
     /* CHSTR-044: register-stack free via urbi_strand_register_stack_free.
@@ -403,13 +403,13 @@ urbi_strand_create(struct UVM *vm, struct URealm *realm, struct UClosure *entry)
         }
     }
 
-    sched_strand_init(s, NULL);
+    urbi_sched_strand_init(s, NULL);
 
     /* Execution state (stack, R, pc, etc.) is zero-init; subsequent
        activation by urbi_step or a future urbi_strand_arm helper sets up
        frame-0 from entry_closure. */
 
-    /* state stays USTRAND_DORMANT — sched_strand_init does not change state. */
+    /* state stays USTRAND_DORMANT — urbi_sched_strand_init does not change state. */
     return s;
 }
 
@@ -419,12 +419,12 @@ urbi_strand_start(struct UVM *vm, UStrand *s)
     (void)vm;  /* mirrors s->vm; accepted for API convention */
     URBI_ASSERT_NOT_ISR(s->vm);
     /* CHSTR-033 (T104): the precondition is "DORMANT only — no double-start".
-     * sched_strand_make_runnable unconditionally tail-inserts into the
+     * urbi_sched_strand_make_runnable unconditionally tail-inserts into the
      * cooperative ready queue and bumps strand_runnable_count++; calling
      * urbi_strand_start twice on the same strand would re-enqueue it
      * (creating a circular ready_next/ready_prev chain because the strand
      * is already a list member) and double-count the runnable counter so
-     * sched_quiescent never converges.  The URBI_INTERNAL_ASSERT below
+     * urbi_sched_quiescent never converges.  The URBI_INTERNAL_ASSERT below
      * catches this in -DURBI_DEBUG builds, BUT it is a no-op in freestanding
      * production builds (umacros.h defaults to (void)0 when assert.h is
      * unavailable).  TODO(v1.x): consider promoting this to urbi_panic so
@@ -434,7 +434,7 @@ urbi_strand_start(struct UVM *vm, UStrand *s)
     URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) == USTRAND_DORMANT);
     URBI_TP(vm, URBI_TRACE_SCHED, URBI_LOG_DEBUG, URBI_TP_SCHED_START,
             (uint32_t)(uintptr_t)s, 0);
-    sched_strand_make_runnable(s);
+    urbi_sched_strand_make_runnable(s);
 }
 
 UStrand *
@@ -491,9 +491,9 @@ urbi_strand_destroy(struct UVM *vm, UStrand *s)
     }
 
     /* CHSTR-015 (T103): unbind the strand from any scheduler queue BEFORE
-     * sched_strand_destroy zeroes the local ready_next/ready_prev pointers
-     * that sched_strand_unbind_from_ready_queue walks to fix up neighbours.
-     * sched_strand_destroy is then a pure local-pointer wipe; the strand's
+     * urbi_sched_strand_destroy zeroes the local ready_next/ready_prev pointers
+     * that urbi_sched_strand_unbind_from_ready_queue walks to fix up neighbours.
+     * urbi_sched_strand_destroy is then a pure local-pointer wipe; the strand's
      * neighbours and the queue head/tail are already consistent.
      *
      * ustrand_destroy follows so that the cleanup-stack unwind / register-
@@ -503,10 +503,10 @@ urbi_strand_destroy(struct UVM *vm, UStrand *s)
      * concurrent, but spec-level "the GC sees the strand on the queue
      * after we started tearing it down") would walk freed memory. */
     if (vm != NULL) {
-        sched_strand_unbind_from_ready_queue(s);
-        sched_strand_unbind_from_sleep_queue(s);
+        urbi_sched_strand_unbind_from_ready_queue(s);
+        urbi_sched_strand_unbind_from_sleep_queue(s);
     }
-    sched_strand_destroy(s);
+    urbi_sched_strand_destroy(s);
     ustrand_destroy(s, vm);
     if (vm) vm->alloc_fn(s, 0, vm->alloc_ud);
     return rc;
@@ -593,7 +593,7 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
     URBI_ASSERT_NOT_ISR(new_s->vm);
 
     for (i = 0; i < chain_count; i++) {
-        UCleanupEntry *e = strand_cleanup_push(new_s);
+        UCleanupEntry *e = urbi_sched_strand_cleanup_push(new_s);
         if (e == NULL) {
             /* Cleanup-stack overflow — strand cannot start safely. */
             new_s->fatal_status = UEXEC_CANCEL;
@@ -605,7 +605,7 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
 
         /* Zero the entry up front so any future UCleanupEntry field gains
          * a defined initial value without a per-call-site touch (CHSTR-032).
-         * Then assign the live fields. strand_cleanup_push hands back a slot
+         * Then assign the live fields. urbi_sched_strand_cleanup_push hands back a slot
          * inside the pre-zeroed cleanup_base, but slots are reused across
          * push/pop cycles so a fresh zero per push is the safe contract. */
         urbi_zero(e, sizeof(*e));
@@ -629,7 +629,7 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
  * and stack-local allocation:
  *   - urbi_strand_create handles: pool alloc, ustrand_init (cleanup stack),
  *     realm link (next_in_realm + strands_head insert), ambient-tag attach,
- *     sched_strand_init.  Leaves strand DORMANT.
+ *     urbi_sched_strand_init.  Leaves strand DORMANT.
  *   - This function adds: module bind + refcount, register-stack arm,
  *     execution-state wiring, UChunkInstance creation.
  *   - urbi_strand_start transitions DORMANT → READY.
@@ -653,7 +653,7 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
      * entry_closure = NULL: chunk-top has no closure; root instructions come
      * from root->instructions directly.  urbi_strand_create handles:
      * ustrand_init (cleanup stack alloc), realm link, ambient-tag attach,
-     * sched_strand_init.  Leaves strand DORMANT. */
+     * urbi_sched_strand_init.  Leaves strand DORMANT. */
     UStrand *s = urbi_strand_create(vm, realm, NULL);
     if (!s) return NULL;
 
@@ -694,7 +694,7 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
     }
 
     /* Transition DORMANT → READY so the host's urbi_step loop picks it up.
-     * urbi_strand_start calls sched_strand_make_runnable internally. */
+     * urbi_strand_start calls urbi_sched_strand_make_runnable internally. */
     urbi_strand_start(vm, s);
 
     return s;
@@ -824,7 +824,7 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
          * from_ready_queue idempotently decrements strand_runnable_count
          * when the strand was actually on the queue (T1 discipline:
          * unbind first, then stamp). */
-        sched_strand_unbind_from_ready_queue(strand);
+        urbi_sched_strand_unbind_from_ready_queue(strand);
         break;
     case USTRAND_RUNNING:
         /* The strand is currently dispatching (t.block()/t.freeze() from
@@ -870,8 +870,8 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
     strand->state = (uint8_t)(USTRAND_SUSPENDED |
                               ustrand_gates_reason(strand->suspend_gates));
     /* VM-12: single SUSPENDED entry point apart from the gated-wake arm in
-     * sched_strand_make_runnable (SCHED-08) — the suspended counter enters
-     * here.  Exits: sched_strand_make_runnable (urbi_strand_resume_if_ungated
+     * urbi_sched_strand_make_runnable (SCHED-08) — the suspended counter enters
+     * here.  Exits: urbi_sched_strand_make_runnable (urbi_strand_resume_if_ungated
      * and the tag-stop/cancel override funnel there), urbi_strand_panic's
      * SUSPENDED arm, and ustrand_destroy.  The WAITING arm above returns
      * before this point (the strand stays parked and counted WAITING), so
@@ -905,7 +905,7 @@ urbi_strand_resume_if_ungated(struct UStrand *strand)
      * urbi_tag_block (nil otherwise) and stays in place across the resume
      * for the deferred opcode-level handoff (W3f, v0.10.9-C) — it is the
      * delivery slot, not a transient.  SUSPENDED → READY routes through
-     * sched_strand_make_runnable so queue accounting stays consistent; the
+     * urbi_sched_strand_make_runnable so queue accounting stays consistent; the
      * funnel's SUSPENDED arm owns the suspended-- handoff and clears the
      * dead suspend_tag union arm.
      *
@@ -913,5 +913,5 @@ urbi_strand_resume_if_ungated(struct UStrand *strand)
      * future W3f valued-block delivery must either consume-and-clear it at
      * handoff time, or gate delivery specifically on a BLOCK-resume (not a
      * FREEZE-resume), to avoid delivering a stale value from a prior cycle. */
-    sched_strand_make_runnable(strand);
+    urbi_sched_strand_make_runnable(strand);
 }

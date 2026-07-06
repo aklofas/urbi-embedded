@@ -73,7 +73,7 @@ UTEST(test_tag_scope_nested)
 /* === Test 3: two sequential scopes reuse the cleanup-stack slot freed by the
  * first scope's OP_POP_TAG; cleanup_depth returns to its prior level after
  * each pop so the second push lands in the same slot.  Pins that the pop path
- * correctly decrements depth (an extraction that drops strand_cleanup_pop or
+ * correctly decrements depth (an extraction that drops urbi_sched_strand_cleanup_pop or
  * mis-orders it would leave depth high and break the second scope or leak). */
 UTEST(test_tag_scope_sequential_reuse)
 {

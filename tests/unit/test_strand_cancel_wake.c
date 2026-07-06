@@ -9,8 +9,8 @@
  *     queue member must be REASON_SLEEP) and was never enqueued on the
  *     ready queue, so the CANCEL unwind never ran (zombie).  The very
  *     next urbi_step then tripped URBI_INTERNAL_ASSERT(reason == SLEEP)
- *     in sched_wake_due_sleepers (SIGABRT); in an assert-elided build
- *     the expiring timer would call sched_strand_unblock on the READY-
+ *     in urbi_sched_wake_due_sleepers (SIGABRT); in an assert-elided build
+ *     the expiring timer would call urbi_sched_strand_unblock on the READY-
  *     stamped strand, driving the READY -> READY make_runnable
  *     transition that corrupts the ready queue (SCHED-005);
  *   - an EVENT-parked strand was unregistered from the waiter chain but
@@ -18,9 +18,9 @@
  *     never dispatched, CANCEL never delivered).
  *
  * Post-fix contract (mirrors the urbi_tag_stop wake block):
- *   - SLEEP reason routes through sched_strand_unblock (removes from
+ *   - SLEEP reason routes through urbi_sched_strand_unblock (removes from
  *     sleep_q, decrements wakeup_pending_count, makes runnable);
- *   - other reasons route through sched_strand_make_runnable;
+ *   - other reasons route through urbi_sched_strand_make_runnable;
  *   - the strand dispatches on the next urbi_step, the CANCEL unwind
  *     runs at the first safepoint (backward branch of the while loop)
  *     and escalates to fatal: state DEAD, fatal_status UEXEC_CANCEL,
@@ -33,7 +33,7 @@
  * (count == |READY| + |RUNNING|), so the bounded pump now reports WAKE_AT
  * (sleeper parked) / QUIESCENT (event-parked) instead of the pre-refactor
  * RUNNING (which was the phantom count), and waking via
- * sched_strand_unblock / sched_strand_make_runnable leaves the counter at
+ * urbi_sched_strand_unblock / urbi_sched_strand_make_runnable leaves the counter at
  * exactly 1 (the READY strand). */
 
 #include "utest.h"

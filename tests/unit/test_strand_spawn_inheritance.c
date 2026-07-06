@@ -47,7 +47,7 @@ tag_init_local(UTag *t)
 static UCleanupEntry *
 push_tag_scope(UStrand *s, UTag *tag)
 {
-    UCleanupEntry *e = strand_cleanup_push(s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(s);
     if (!e) return NULL;
     e->kind        = (uint8_t)UCLEANUP_TAG_SCOPE;
     e->flags       = 0;
@@ -126,7 +126,7 @@ UTEST(capture_ambient_chain_skips_non_tag_kinds)
     UASSERT(s != NULL);
 
     /* Push a TRY_FRAME (no owning_tag). */
-    te = strand_cleanup_push(s);
+    te = urbi_sched_strand_cleanup_push(s);
     UASSERT(te != NULL);
     te->kind = (uint8_t)UCLEANUP_TRY_FRAME;
     te->flags = 0;

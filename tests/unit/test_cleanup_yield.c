@@ -10,8 +10,8 @@
  *
  * Cases:
  *   1. finally_that_blocks_is_fatal: sleep(1s) in a finally reached via the
- *      unwind path (tag.stop).  Pre-fix: sched_wake_due_sleepers /
- *      sched_strand_yield assert-abort (debug) or queue corruption (release).
+ *      unwind path (tag.stop).  Pre-fix: urbi_sched_wake_due_sleepers /
+ *      urbi_sched_strand_yield assert-abort (debug) or queue corruption (release).
  *      Post-fix: bounded urbi_step driving returns URBI_STEP_FATAL; the
  *      strand is DEAD and absent from both the sleep and ready queues.
  *   2. finally_budget_exhaustion_is_fatal: a budget-exhausting while loop
@@ -169,7 +169,7 @@ UTEST(finally_that_blocks_is_fatal)
  * Case 2: a finally body that exhausts the cleanup budget (200k-iter
  * while loop) on the unwind path must also produce a loud fatal.
  * Pre-fix: the backward-JMP safepoint yields the strand mid-unwind
- * (sched_strand_yield assert-abort in debug; ready-queue corruption
+ * (urbi_sched_strand_yield assert-abort in debug; ready-queue corruption
  * in release).
  * =================================================================== */
 UTEST(finally_budget_exhaustion_is_fatal)

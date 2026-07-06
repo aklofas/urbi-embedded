@@ -8,12 +8,12 @@
 ## timeout: 30
 
 # --- audit repro shape: tag.stop unwind through a 2-statement finally
-#     (pre-fix: sched_strand_yield assert, exit 134)
+#     (pre-fix: urbi_sched_strand_yield assert, exit 134)
 var t = Tag.new(); var a = 0; var b = 0; t: { try { t.stop() } finally { a = 1; b = 2 } }; a + b
 [00000000] 3
 
 # --- throw unwind through a 3-statement finally, then caught
-#     (pre-fix: sched_strand_yield assert, exit 134 — same as case 0 even
+#     (pre-fix: urbi_sched_strand_yield assert, exit 134 — same as case 0 even
 #     post-T10; the unwind-copy finally yields mid-walk)
 var c = 0; var d = 0; var f = 0; var r = 0; try { try { throw(9) } finally { c = 1; d = 2; f = 3 } } catch (var e) { r = e }; c + d + f + r
 [00000001] 15

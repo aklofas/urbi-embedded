@@ -128,7 +128,7 @@ int main(void)
                     /* SCHED-01: unbind owns the runnable-count decrement
                      * (the body strand is READY on the queue); also fixes
                      * up the queue neighbours before the destroy. */
-                    sched_strand_unbind_from_ready_queue(w->body_strand);
+                    urbi_sched_strand_unbind_from_ready_queue(w->body_strand);
                     ustrand_destroy(w->body_strand, &vm);
                     w->body_strand = NULL;
                 }

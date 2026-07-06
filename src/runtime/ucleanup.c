@@ -23,7 +23,7 @@
 #include "vm/uvm.h"
 
 UCleanupEntry *
-strand_cleanup_push(struct UStrand *s) {
+urbi_sched_strand_cleanup_push(struct UStrand *s) {
     UCleanupEntry *e;
     if (s->cleanup_depth >= s->cleanup_cap) return NULL; /* stack full */
     e = &s->cleanup_base[s->cleanup_depth];
@@ -33,7 +33,7 @@ strand_cleanup_push(struct UStrand *s) {
 }
 
 void
-strand_cleanup_pop(struct UStrand *s, UCleanupKind expected_kind) {
+urbi_sched_strand_cleanup_pop(struct UStrand *s, UCleanupKind expected_kind) {
     UCleanupEntry *top;
     UCLEANUP_ASSERT(s->cleanup_depth > 0);
     top = &s->cleanup_base[s->cleanup_depth - 1];
@@ -47,7 +47,7 @@ strand_cleanup_pop(struct UStrand *s, UCleanupKind expected_kind) {
 }
 
 int
-strand_cleanup_stack_init(struct UStrand *s, struct UVM *vm, uint16_t cap) {
+urbi_sched_strand_cleanup_stack_init(struct UStrand *s, struct UVM *vm, uint16_t cap) {
     /* Pre-allocated, no dynamic growth (row 7 §4.3).
        Uses the VM's pluggable allocator; compatible with freestanding targets. */
     const size_t nbytes = (size_t)cap * sizeof(UCleanupEntry);
@@ -70,7 +70,7 @@ strand_cleanup_stack_init(struct UStrand *s, struct UVM *vm, uint16_t cap) {
 }
 
 void
-strand_cleanup_stack_destroy(struct UStrand *s, struct UVM *vm) {
+urbi_sched_strand_cleanup_stack_destroy(struct UStrand *s, struct UVM *vm) {
     if (s->cleanup_base != NULL) {
         vm->alloc_fn(s->cleanup_base, 0, vm->alloc_ud);
     }

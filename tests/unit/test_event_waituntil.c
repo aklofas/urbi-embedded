@@ -10,7 +10,7 @@
  *      and returns); verify the strand is on e->waiters_head and in
  *      USTRAND_WAIT_EVENT state.
  *
- * Note on case 2: c_event_waituntil calls sched_strand_block which transitions
+ * Note on case 2: c_event_waituntil calls urbi_sched_strand_block which transitions
  * the strand to WAITING and decrements strand_runnable_count.  We pre-set
  * state to USTRAND_STATE_RUNNING (as if the strand were dispatching) so the
  * block path finds the correct initial state.  The function returns after
@@ -89,7 +89,7 @@ UTEST(waituntil_from_scratch_warns_and_returns_nil)
  *   - Append the strand to e->waiters_head.
  *   - Set the strand state to USTRAND_WAIT_EVENT.
  *   - Set wait_event_target = e.
- *   - Return (sched_strand_block does NOT switch context).
+ *   - Return (urbi_sched_strand_block does NOT switch context).
  *
  * After the call, manually wake the strand (simulating c_event_emit_*)
  * and verify last_event_payload is returned correctly on a second
@@ -110,7 +110,7 @@ UTEST(waituntil_appends_to_waiters_head)
     UStrand s;
     ustrand_init(&s, &vm);
     /* Put strand in RUNNING state and increment the runnable count so
-     * sched_strand_block's decrement does not underflow. */
+     * urbi_sched_strand_block's decrement does not underflow. */
     s.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
     vm.cur_strand = &s;

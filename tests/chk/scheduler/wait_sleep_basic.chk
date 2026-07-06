@@ -6,9 +6,9 @@
 # matrix-row: temporal-sleep
 #
 # Pre-v1.0 the lone sleeper was never woken: the sleep wake ran only inside the
-# post-dispatch fix-up (sched_post_dispatch step 3), which a VM whose sole live
+# post-dispatch fix-up (urbi_sched_post_dispatch step 3), which a VM whose sole live
 # strand is sleeping never reached (no dispatch -> the loop breaks before the
-# wake).  v0.11.4-A added sched_wake_due_sleepers as a pre-dispatch pump in
+# wake).  v0.11.4-A added urbi_sched_wake_due_sleepers as a pre-dispatch pump in
 # urbi_step (mirroring the periodic pre-pump), so a lone expired sleeper resumes.
 #
 # v0.13.3 (refactor-3 SCHED-01/B10): the step now reports QUIESCENT, not

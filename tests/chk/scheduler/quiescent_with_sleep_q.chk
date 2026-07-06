@@ -10,7 +10,7 @@
 # in strand_runnable_count, so urbi_step returns RUNNING while any strand is
 # parked" — gone under the single-writer runnable count (SCHED-01/B10, this
 # arc's Task 1).  The lone-sleeper wake itself was fixed at v1.0/M10
-# (design-risks v0.11.4-A: sched_wake_due_sleepers pre-dispatch pump).
+# (design-risks v0.11.4-A: urbi_sched_wake_due_sleepers pre-dispatch pump).
 # Activation closes the v1.0-loader-count-quiescence design-risk: vm_liveness
 # (SCHED-13) is the one quiescence formula — sleepers are `timed` work
 # (WAKE_AT), and a finished VM is QUIESCENT, with no phantom runnable count

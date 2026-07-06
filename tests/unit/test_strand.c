@@ -44,7 +44,7 @@ UTEST(strand_state_waiting_macros_round_trip) {
     UASSERT_EQ(USTRAND_GET_REASON(&s), USTRAND_REASON_JOIN);
 
     /* v0.13.3 (SCHED-13): restore DORMANT before teardown.  The raw state
-     * stamps above bypass sched_strand_block, so the strand was never
+     * stamps above bypass urbi_sched_strand_block, so the strand was never
      * counted in strand_waiting_count; destroying it in a WAITING state
      * would trip the no-saturation decrement (deliberately — masking
      * forbidden).  This test only exercises the state-byte macros. */
@@ -83,7 +83,7 @@ static URealm *g_realm;
 
 static void setup_vm_realm(void) {
     urbi_vm_init(&g_vm, NULL, NULL);
-    sched_init(&g_vm, NULL);
+    urbi_sched_init(&g_vm, NULL);
     g_realm = urbi_realm_create(&g_vm);
 }
 
@@ -148,7 +148,7 @@ UTEST(strand_start_transitions_to_ready) {
     UASSERT(g_vm.ready_head == s);
 
     /* Dequeue manually to leave the VM in a clean state for teardown. */
-    sched_dequeue_ready_head(&g_vm);
+    urbi_sched_dequeue_ready_head(&g_vm);
     urbi_strand_destroy(&g_vm, s);
     teardown_vm_realm();
 }
@@ -166,7 +166,7 @@ UTEST(strand_spawn_is_create_plus_start) {
     UASSERT_EQ(g_vm.strand_runnable_count, 1U);
     UASSERT(g_vm.ready_head == s);
 
-    sched_dequeue_ready_head(&g_vm);
+    urbi_sched_dequeue_ready_head(&g_vm);
     urbi_strand_destroy(&g_vm, s);
     teardown_vm_realm();
 }
@@ -206,8 +206,8 @@ UTEST(strand_spawn_two_fifo_order) {
     UASSERT(g_vm.ready_head == a);
     UASSERT(g_vm.ready_tail == b);
 
-    sched_dequeue_ready_head(&g_vm);
-    sched_dequeue_ready_head(&g_vm);
+    urbi_sched_dequeue_ready_head(&g_vm);
+    urbi_sched_dequeue_ready_head(&g_vm);
     urbi_strand_destroy(&g_vm, a);
     urbi_strand_destroy(&g_vm, b);
     teardown_vm_realm();
@@ -224,7 +224,7 @@ UTEST(strand_create_returns_null_on_oom) {
     /* First, count how many allocs are needed to set up a realm. */
     AllocSpy spy1 = { 0, -1 };  /* never fail */
     urbi_vm_init(&vm, spy_alloc, &spy1);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
     realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
     allocs_after_realm = spy1.alloc_calls;
@@ -236,7 +236,7 @@ UTEST(strand_create_returns_null_on_oom) {
     /* Now do the real test: allocate realm successfully, fail on strand alloc. */
     AllocSpy spy2 = { 0, allocs_after_realm };  /* fail on the next alloc after realm */
     urbi_vm_init(&vm, spy_alloc, &spy2);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
     realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
     UASSERT_EQ(spy2.alloc_calls, allocs_after_realm);
@@ -251,7 +251,7 @@ UTEST(strand_create_returns_null_on_oom) {
     urbi_vm_destroy(&vm);
 }
 
-/* CHSTR-042 (T107): sched_strand_make_runnable rejects a DEAD strand silently
+/* CHSTR-042 (T107): urbi_sched_strand_make_runnable rejects a DEAD strand silently
    in production (NDEBUG) builds AND asserts in debug builds.  Without this
    guard a re-enqueue of a DEAD strand would re-set state to READY, bump
    strand_runnable_count, and dispatch into a freed register stack.
@@ -275,7 +275,7 @@ UTEST(make_runnable_rejects_dead_strand) {
     UASSERT(g_vm.ready_head == NULL);
 
     /* Production fail-safe: should be a no-op. */
-    sched_strand_make_runnable(s);
+    urbi_sched_strand_make_runnable(s);
     UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_DEAD);  /* state UNCHANGED */
     UASSERT_EQ(g_vm.strand_runnable_count, 0U);       /* counter UNCHANGED */
     UASSERT(g_vm.ready_head == NULL);                 /* queue still empty */
@@ -322,15 +322,15 @@ UTEST(strand_destroy_unlinks_from_ready_queue_first) {
     UASSERT(c->ready_next == NULL);
 
     /* Drain remaining strands cleanly. */
-    sched_dequeue_ready_head(&g_vm);
-    sched_dequeue_ready_head(&g_vm);
+    urbi_sched_dequeue_ready_head(&g_vm);
+    urbi_sched_dequeue_ready_head(&g_vm);
     urbi_strand_destroy(&g_vm, a);
     urbi_strand_destroy(&g_vm, c);
     teardown_vm_realm();
 }
 
 /* CHSTR-013 (T101): ustrand_destroy must not underflow vm->host_call_pending_count
-   when it decrements via sched_strand_account_destroy.  Construct a strand with
+   when it decrements via urbi_sched_strand_account_destroy.  Construct a strand with
    cross_strand_stop_pending set but vm->host_call_pending_count == 0 and verify
    the counter stays at 0 (uint32_t underflow would produce 0xFFFFFFFF).  Pins
    the existing guard at usched_cooperative.c:261 against future reorderings. */
@@ -369,7 +369,7 @@ UTEST(strand_create_returns_null_on_cleanup_oom) {
     /* Count baseline allocs needed for VM + realm setup. */
     AllocSpy spy1 = { 0, -1 };
     urbi_vm_init(&vm, spy_alloc, &spy1);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
     realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
     allocs_after_realm = spy1.alloc_calls;
@@ -384,7 +384,7 @@ UTEST(strand_create_returns_null_on_cleanup_oom) {
        alloc (allocs_after_realm + 2). */
     AllocSpy spy2 = { 0, allocs_after_realm + 1 };
     urbi_vm_init(&vm, spy_alloc, &spy2);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
     realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
     UASSERT_EQ(spy2.alloc_calls, allocs_after_realm);

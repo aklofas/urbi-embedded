@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/sched/usched_post_dispatch.h — post-dispatch fix-up helper.
  *
- * sched_post_dispatch consolidates the four bookkeeping steps that must run
+ * urbi_sched_post_dispatch consolidates the four bookkeeping steps that must run
  * after every dispatch-loop iteration, regardless of which driver initiated
  * the dispatch.  Previously these steps lived exclusively in urbi_step
  * (scheduler audit F3); any alternative driver had to replicate them in order
@@ -12,11 +12,11 @@
  *   1. Runnable-count DEAD decrement (refactor-3 SCHED-01/B10 single-writer
  *      scheme).  A strand that left dispatch DEAD was RUNNING and therefore
  *      counted; it leaves the counted set here.  WAITING strands were
- *      decremented by sched_strand_block, READY (yield) strands were
+ *      decremented by urbi_sched_strand_block, READY (yield) strands were
  *      re-enqueued count-neutrally, SUSPENDED strands were decremented by
  *      urbi_strand_suspend — none of them is touched here.  (The
  *      pre-refactor step 1 was a WAITING *re-increment* pairing with a
- *      decrement in sched_dequeue_ready_head; that pair produced the B10
+ *      decrement in urbi_sched_dequeue_ready_head; that pair produced the B10
  *      phantom-count leak and is gone.)
  *
  *   2. Eager DEAD-strand reap.  Heap-allocated strands accumulate on
@@ -26,7 +26,7 @@
  *      range at moderate event rates and wedges on constrained targets
  *      (v0.7.x ESP32-EYE eye_demo wedge, ~200 body completions).
  *
- *   3. Sleep-queue wake.  Walks vm->sleep_q_head and calls sched_strand_unblock
+ *   3. Sleep-queue wake.  Walks vm->sleep_q_head and calls urbi_sched_strand_unblock
  *      for every strand whose wake_us <= now.  Must run per-iteration to bound
  *      wakeup latency to one dispatch cycle.
  *
@@ -46,7 +46,7 @@
  *
  * Note on urbi_repl_serve_step (src/repl/urepl.c): that function is a pure
  * data-plane sweep (accept/read/dispatch-jobs/write/disconnect) and performs
- * no strand dispatch; it does not call sched_post_dispatch.  The VM-thread
+ * no strand dispatch; it does not call urbi_sched_post_dispatch.  The VM-thread
  * urbi_step loop drives all actual bytecode execution and runs the fix-ups
  * via this helper.
  *
@@ -63,7 +63,7 @@
 extern "C" {
 #endif
 
-/* sched_post_dispatch: run the four fix-up operations that close out a
+/* urbi_sched_post_dispatch: run the four fix-up operations that close out a
  * dispatch-loop iteration.  Called by urbi_step internally after each strand
  * dispatch; also called by alternative drivers that run urbi_vm_dispatch_loop_until_yield
  * directly (e.g. urbi_vm_run).
@@ -91,7 +91,7 @@ extern "C" {
  *
  * See scheduler audit F3 for the full analysis of the duplication problem this
  * helper resolves. */
-void sched_post_dispatch(UVM *vm, UStrand *s);
+void urbi_sched_post_dispatch(UVM *vm, UStrand *s);
 
 #ifdef __cplusplus
 }

@@ -7,7 +7,7 @@
 #         Pre-fix: the woken strand absorbed at t, completed, and was
 #         eager-reaped while w->waiter_strand still pointed at it; the
 #         trig() rising edge had urbi_vm_watcher_eval_dirty call
-#         sched_strand_make_runnable on freed memory (ASan heap-UAF).
+#         urbi_sched_strand_make_runnable on freed memory (ASan heap-UAF).
 # matrix-row: tag-stop
 ## timeout: 30
 ## host: run var t = Tag.new()

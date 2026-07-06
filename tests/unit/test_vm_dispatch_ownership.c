@@ -35,7 +35,7 @@
 #include "watcher/uwatcher.h"  /* urbi_watcher_unregister_internal */
 #include "runtime/uclosure.h"  /* UClosure */
 #include "runtime/ucleanup.h"  /* UCleanupEntry */
-#include "sched/usched_cooperative.h" /* sched_init */
+#include "sched/usched_cooperative.h" /* urbi_sched_init */
 #include "sched/ustrand.h"     /* USTRAND_STATE_DEAD — T120 */
 #include "realm/urealm.h"      /* urbi_realm_create — T120 fork OOM */
 
@@ -319,7 +319,7 @@ UTEST(reactive_install_kind_checks_cond_operand)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     static uint32_t instrs[1];
     instrs[0] = uinstr_enc_abc(OP_AT_INSTALL,
@@ -369,7 +369,7 @@ UTEST(at_event_install_kind_check)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     static uint32_t instrs[1];
     instrs[0] = uinstr_enc_abc(OP_AT_EVENT_INSTALL,
@@ -414,7 +414,7 @@ UTEST(fork_detach_kind_checks_closure_operand)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     static uint32_t instrs[1];
     instrs[0] = uinstr_enc_abc(OP_FORK_DETACH, 0, 0, 0);
@@ -463,7 +463,7 @@ UTEST(fork_join_kind_checks_closure_operand)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     static uint32_t instrs[1];
     /* OP_FORK_JOIN A=closure_reg, B=child_handle_reg */
@@ -495,7 +495,7 @@ UTEST(join_wait_kind_checks_strand_handle_operand)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     static uint32_t instrs[1];
     /* OP_JOIN_WAIT A=child_handle_reg */
@@ -538,7 +538,7 @@ UTEST(fork_detach_oom_marks_strand_dead)
     UVM vm;
     FailAfterNAllocState st = { .allocs_remaining = -1 };
     urbi_vm_init(&vm, fail_after_n_alloc, &st);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -599,7 +599,7 @@ UTEST(fork_detach_arm_from_closure_oom)
     UVM vm;
     FailAfterNAllocState st = { .allocs_remaining = -1 };
     urbi_vm_init(&vm, fail_after_n_alloc, &st);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -656,7 +656,7 @@ UTEST(fork_join_oom_marks_strand_dead)
     UVM vm;
     FailAfterNAllocState st = { .allocs_remaining = -1 };
     urbi_vm_init(&vm, fail_after_n_alloc, &st);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -706,7 +706,7 @@ UTEST(join_wait_fast_path_when_child_already_dead)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     /* Build a fake "dead child" UStrand: zeroed except state = DEAD.
      * The fast-path check only reads child->state via USTRAND_GET_STATE;

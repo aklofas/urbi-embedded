@@ -372,7 +372,7 @@ UTEST(realm_create_oom_returns_null)
  * splicing it out of vm->ready_head / ready_tail's doubly-linked list,
  * leaving the queue head/tail and the surviving strand's ready_prev /
  * ready_next dangling — caught immediately by ASan on the next access.
- * Post-fix, sched_strand_unbind_from_ready_queue runs before each free,
+ * Post-fix, urbi_sched_strand_unbind_from_ready_queue runs before each free,
  * so the queue is fully drained and ready_head / ready_tail are NULL.
  *
  * The test deliberately runs the destroy without invoking the dispatch

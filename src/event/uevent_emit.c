@@ -7,7 +7,7 @@
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"  /* do_spawn_body_coroutine, UWATCHER_AT_EVENT* */
 #include "runtime/uscratch.h"  /* urbi_run_closure_on_scratch_with_payload */
-#include "sched/usched_cooperative.h"  /* sched_strand_make_runnable, sched_strand_block */
+#include "sched/usched_cooperative.h"  /* urbi_sched_strand_make_runnable, urbi_sched_strand_block */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (URBI_DEBUG-gated) */
 #include "runtime/ulist.h"     /* URBI_SLIST_UNLINK, URBI_SLIST_FOREACH_SAFE */
 #include "urbi/urbi.h"         /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
@@ -55,7 +55,7 @@ wake_event_waiters(struct UVM *vm, struct UEvent *e, UValue payload)
         s->last_event_payload = payload;
         s->wait_event_target  = NULL;
         s->next_event_waiter  = NULL;
-        sched_strand_make_runnable(s);
+        urbi_sched_strand_make_runnable(s);
     }
     e->waiters_head = NULL;
 }
@@ -264,7 +264,7 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
 /* === c_event_waituntil (spec #3 §7.1) ===
  *
  * Tail-appends the calling strand to e->waiters_head and parks it via
- * sched_strand_block(USTRAND_REASON_EVENT) — block owns the WAIT_EVENT
+ * urbi_sched_strand_block(USTRAND_REASON_EVENT) — block owns the WAIT_EVENT
  * (0x33) transition and the runnable-count decrement (SCHED-01).
  *
  * Callers that dispatch via the bytecode loop (T53 opcode binding) MUST
@@ -272,7 +272,7 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
  * and must not consume further opcodes until woken by c_event_emit_*.
  *
  * On wake: c_event_emit_* deposits last_event_payload before calling
- * sched_strand_make_runnable.  The T53 opcode binding reads the payload
+ * urbi_sched_strand_make_runnable.  The T53 opcode binding reads the payload
  * from s->last_event_payload after the strand resumes execution.
  *
  * Scratch-context guard: calling from within a watcher scratch or eval
@@ -286,7 +286,7 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
 
     /* EMITR-012: ISR re-entry would be unsafe here because waituntil parks
      * the calling strand (vm->cur_strand) onto e->waiters_head and calls
-     * sched_strand_block, which mutates the scheduler's wait queues and
+     * urbi_sched_strand_block, which mutates the scheduler's wait queues and
      * decrements strand_runnable_count.  An ISR has no cur_strand (no
      * scripting context) so the read at the function body would NULL-deref;
      * even if guarded, mutating scheduler state from an ISR would race the
@@ -323,16 +323,16 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
      * the dispatch loop's unblock contract), splice it out before changing
      * the state byte so wait_next does not point into the sleep queue with
      * the wrong reason.  Idempotent for the normal path (RUNNING strand). */
-    sched_strand_unbind_from_sleep_queue(s);
+    urbi_sched_strand_unbind_from_sleep_queue(s);
 
-    /* Transition to WAIT_EVENT via sched_strand_block (refactor-3 SCHED-01:
+    /* Transition to WAIT_EVENT via urbi_sched_strand_block (refactor-3 SCHED-01:
      * block owns the runnable-count decrement under the single-writer
      * scheme; the pre-refactor manual `state = USTRAND_WAIT_EVENT` +
      * guarded decrement pair is gone).  block's REASON_EVENT arm also
      * records the event in wait_payload.event — the documented active
      * union arm for this reason (ustrand.h) — alongside the
      * wait_event_target back-pointer wired above. */
-    sched_strand_block(s, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
+    urbi_sched_strand_block(s, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
 
     /* EMITR-002: this return value is *always* NIL.  c_event_waituntil parks
      * the strand and returns to the caller (the T53 opcode dispatcher); it

@@ -42,7 +42,7 @@
 #include "runtime/umacros.h"          /* URBI_INTERNAL_ASSERT, urbi_zero */
 #include "runtime/ulist.h"            /* URBI_SLIST_PUSH, URBI_SLIST_UNLINK, URBI_SLIST_FOREACH_SAFE */
 #include "sched/ustrand.h"            /* UEXEC_*, UStrand */
-#include "sched/usched_cooperative.h" /* sched_strand_make_runnable (via urbi_strand_start) */
+#include "sched/usched_cooperative.h" /* urbi_sched_strand_make_runnable (via urbi_strand_start) */
 #include "urbi/types.h"               /* urbi_make_nil */
 #include "urbi/urbi.h"                /* URBI_OK / URBI_ERR_* / urbi_realm_set_global / URBI_ASSERT_NOT_ISR / URBI_LOG_WARN */
 #include "vm/uvm.h"                   /* UVM */
@@ -222,13 +222,13 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  *   UVAL_FLOAT — seconds, converted via *1e6 (same scale as the int form).
  * Other kinds raise TypeError.  Negative values raise TypeError.
  *
- * Blocks the current strand by calling sched_strand_block(s,
+ * Blocks the current strand by calling urbi_sched_strand_block(s,
  * USTRAND_REASON_SLEEP, now_us + duration_us).  The scheduler's existing
  * sleep-queue infrastructure wakes the strand when host_time_us() reaches
  * the target.
  *
  * TAG_STOP on a sleeping strand wakes it via the existing
- * sched_strand_unblock path in urbi_tag_stop's member_strands walk
+ * urbi_sched_strand_unblock path in urbi_tag_stop's member_strands walk
  * (src/runtime/uunwind.c) — verified at v0.10.2 W6.
  *
  * Returns nil after wakeup (or when TAG_STOP interrupts the sleep;
@@ -278,8 +278,8 @@ sleep_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         return UEXEC_OK;
     }
     uint64_t now_us = (vm->host_time_us != NULL) ? vm->host_time_us(vm->host_time_ud) : 0U;
-    sched_strand_block(cur, USTRAND_REASON_SLEEP, now_us + duration_us);
-    /* sched_strand_block puts the strand on the sleep queue; the scheduler
+    urbi_sched_strand_block(cur, USTRAND_REASON_SLEEP, now_us + duration_us);
+    /* urbi_sched_strand_block puts the strand on the sleep queue; the scheduler
      * resumes it when wake_us elapses (or earlier via TAG_STOP).
      * Returns nil after wakeup — the strand yields immediately here and
      * the scheduler drives the actual wait. */

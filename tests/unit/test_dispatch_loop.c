@@ -116,7 +116,7 @@ static int strand_setup(UStrand *s, UVM *vm,
     s->state      = USTRAND_STATE_RUNNING;
     /* SCHED-01 (v0.13.3): a RUNNING non-transient strand is in the counted
      * set (count == |READY| + |RUNNING|).  Seed the count so in-dispatch
-     * transitions (sched_strand_yield's dec/inc, sched_strand_block's dec)
+     * transitions (urbi_sched_strand_yield's dec/inc, urbi_sched_strand_block's dec)
      * operate on a consistent counter; these harness tests drive exactly
      * one strand at a time. */
     vm->strand_runnable_count = 1;
@@ -152,7 +152,7 @@ UTEST(dispatch_loop_yields_on_op_yield) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -169,7 +169,7 @@ UTEST(dispatch_loop_yields_on_op_yield) {
 
     /* Drain the ready queue so sched state is clean (SCHED-01: unbind
        owns the count decrement). */
-    sched_strand_unbind_from_ready_queue(&s);
+    urbi_sched_strand_unbind_from_ready_queue(&s);
 
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
@@ -185,7 +185,7 @@ UTEST(dispatch_loop_dies_on_top_level_ret) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -210,7 +210,7 @@ UTEST(dispatch_loop_dies_on_top_level_ret) {
 /* ============================================================
  * Test 3: VM-wide step budget exhaustion — strand re-enqueues READY
  * urbi_vm_dispatch_loop_until_yield exits with state READY (count-neutral
- * RUNNING -> READY via sched_strand_yield) when the VM-wide
+ * RUNNING -> READY via urbi_sched_strand_yield) when the VM-wide
  * step_budget_remaining reaches 0 before the strand finishes, so the
  * next urbi_step re-dispatches it (refactor-3 VM-04/SCHED-11 — leaving
  * it RUNNING-off-queue wedged urbi_step at URBI_STEP_RUNNING forever).
@@ -237,7 +237,7 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -254,7 +254,7 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
     uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 1U);
 
     /* strand re-enqueued READY (budget exhausted from VM's perspective);
-       sched_strand_yield put it on the ready queue so the scheduler resumes
+       urbi_sched_strand_yield put it on the ready queue so the scheduler resumes
        it on the next dispatch. */
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
     UASSERT(consumed >= 1U);
@@ -262,7 +262,7 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
 
     /* Drain the ready queue so sched state is clean (SCHED-01: unbind
        owns the count decrement). */
-    sched_strand_unbind_from_ready_queue(&s);
+    urbi_sched_strand_unbind_from_ready_queue(&s);
 
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
@@ -282,7 +282,7 @@ UTEST(dispatch_loop_instruction_budget_decrements) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -302,7 +302,7 @@ UTEST(dispatch_loop_instruction_budget_decrements) {
     UASSERT_EQ(s.safepoint_budget_remaining, 0U);
 
     /* Drain ready queue (SCHED-01: unbind owns the count decrement). */
-    sched_strand_unbind_from_ready_queue(&s);
+    urbi_sched_strand_unbind_from_ready_queue(&s);
 
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
@@ -324,7 +324,7 @@ UTEST(dispatch_loop_forward_jump_no_safepoint) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -365,7 +365,7 @@ UTEST(dispatch_loop_multiple_yields) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -382,7 +382,7 @@ UTEST(dispatch_loop_multiple_yields) {
 
     /* Simulate scheduler dequeuing and re-dispatching (SCHED-01: the
        dequeue is count-neutral — READY -> RUNNING stays counted). */
-    if (vm.ready_head == &s) sched_dequeue_ready_head(&vm);
+    if (vm.ready_head == &s) urbi_sched_dequeue_ready_head(&vm);
     s.state = USTRAND_STATE_RUNNING;
 
     /* Second dispatch: should yield again. */
@@ -391,7 +391,7 @@ UTEST(dispatch_loop_multiple_yields) {
     UASSERT(c2 >= 1U);
 
     /* Drain ready queue again (count-neutral dequeue; see above). */
-    if (vm.ready_head == &s) sched_dequeue_ready_head(&vm);
+    if (vm.ready_head == &s) urbi_sched_dequeue_ready_head(&vm);
     s.state = USTRAND_STATE_RUNNING;
 
     /* Third dispatch: RET → DEAD. */
@@ -420,7 +420,7 @@ UTEST(dispatch_loop_try_begin_end_normal_path) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -469,7 +469,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -538,7 +538,7 @@ UTEST(dispatch_loop_loadk_and_ret) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -579,7 +579,7 @@ UTEST(dispatch_loop_move_and_add) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -617,7 +617,7 @@ UTEST(dispatch_loop_push_pop_tag_noop) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -688,7 +688,7 @@ UTEST(dispatch_loop_nested_call_and_ret) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -746,7 +746,7 @@ UTEST(dispatch_loop_loadnil_then_move) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -790,7 +790,7 @@ UTEST(dispatch_loop_gc_pending_flag_triggers_gc_slice_at_safepoint) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -832,7 +832,7 @@ UTEST(dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint) {
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);

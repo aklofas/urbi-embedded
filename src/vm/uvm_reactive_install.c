@@ -237,7 +237,7 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
      *   (a) fast-path: cond was truthy at install → watcher unregistered
      *       immediately, strand state unchanged (still RUNNING) → NEXT().
      *   (b) park path: cond was falsy → install parked the strand via
-     *       sched_strand_block(USTRAND_REASON_WATCHER) (refactor-3 SCHED-01:
+     *       urbi_sched_strand_block(USTRAND_REASON_WATCHER) (refactor-3 SCHED-01:
      *       block owns the runnable-count decrement).  Here we advance pc
      *       past this instruction and goto exit_strand so the scheduler can
      *       pick up another strand.  The eval-pass wake (T43) will resume
@@ -258,7 +258,7 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
         if (r == URBI_INSTALL_OK && USTRAND_IS_WAITING(s)) {
             /* Strand parked (cond started false).  Advance pc past this
              * instruction so resume lands at the correct next opcode.
-             * Runnable-count accounting is owned by sched_strand_block
+             * Runnable-count accounting is owned by urbi_sched_strand_block
              * inside install_watcher_runtime (SCHED-01) — no manual
              * adjustment here.  The arm completes the exit with
              * `steps_consumed++; goto exit_strand;`. */

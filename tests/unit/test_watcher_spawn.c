@@ -270,7 +270,7 @@ UTEST(watcher_spawn_oom_strand_alloc)
 /* 3. watcher_spawn_oom_stack_alloc
  *
  * Allow the strand alloc + cleanup-stack alloc (urbi_strand_create internally
- * calls ustrand_init which calls strand_cleanup_stack_init) to succeed, but
+ * calls ustrand_init which calls urbi_sched_strand_cleanup_stack_init) to succeed, but
  * fail the register-stack alloc inside urbi_strand_arm_from_closure.
  *
  * The implementation must:

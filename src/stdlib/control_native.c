@@ -11,7 +11,7 @@
 #include "runtime/umacros.h"          /* urbi_zero */
 #include "sched/ustrand.h"            /* urbi_strand_create, urbi_strand_arm_from_closure,
                                          urbi_strand_start, UStrand,
-                                         strand_unlink_member_entry */
+                                         urbi_sched_strand_unlink_member_entry */
 #include "urbi/types.h"               /* urbi_make_nil, UValue, UVAL_CLOSURE */
 #include "urbi/urbi.h"                /* URBI_OK / URBI_ERR_* / urbi_realm_set_global */
 #include "vm/uvm.h"                   /* UVM */
@@ -146,7 +146,7 @@ disown_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
                 kept_root_scope = true;
             } else {
                 /* Strip this user-applied tag scope. */
-                strand_unlink_member_entry(e);
+                urbi_sched_strand_unlink_member_entry(e);
                 /* Don't copy: drops this entry. */
             }
         } else {

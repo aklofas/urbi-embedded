@@ -149,7 +149,7 @@ UTEST(strand_scope_tag_returns_innermost)
     inner_tag.name.kind            = UVAL_NIL;
     inner_tag.name.v.i             = 0;
 
-    e = strand_cleanup_push(s);
+    e = urbi_sched_strand_cleanup_push(s);
     UASSERT(e != NULL);
     e->kind        = (uint8_t)UCLEANUP_TAG_SCOPE;
     e->flags       = 0;
@@ -279,7 +279,7 @@ UTEST(op_push_tag_inserts_member_strands_and_pop_clears)
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -323,7 +323,7 @@ UTEST(op_push_tag_member_strands_head_wired)
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -388,7 +388,7 @@ UTEST(op_push_tag_oom_marks_strand_fatal)
      * allocation (alloc_calls becomes 1 on call #1, which is > 0 → NULL). */
     AllocSpy spy = { 0, 0 };
     urbi_vm_init(&vm, spy_alloc, &spy);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     /* The cleanup stack is allocated via calloc() directly (not vm->alloc_fn),
      * so spy_alloc won't intercept it. */
@@ -413,7 +413,7 @@ UTEST(op_push_tag_oom_marks_strand_fatal)
 
 /* 11. op_push_tag_cleanup_overflow_releases_tag:
  *     Fill the cleanup stack to URBI_CLEANUP_MAX, then dispatch PUSH_TAG.
- *     The strand_cleanup_push call fails; the rollback utag_destroy must
+ *     The urbi_sched_strand_cleanup_push call fails; the rollback utag_destroy must
  *     free the tag — otherwise ASan reports a leak. */
 UTEST(op_push_tag_cleanup_overflow_releases_tag)
 {
@@ -423,7 +423,7 @@ UTEST(op_push_tag_cleanup_overflow_releases_tag)
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
     UASSERT(reg_stack != NULL);
@@ -432,7 +432,7 @@ UTEST(op_push_tag_cleanup_overflow_releases_tag)
     strand_setup_t30(&s, &vm, instrs, reg_stack);
     strand_setup_cleanup_t30(&s);
 
-    /* Fill the cleanup stack to capacity so strand_cleanup_push returns NULL. */
+    /* Fill the cleanup stack to capacity so urbi_sched_strand_cleanup_push returns NULL. */
     s.cleanup_depth = s.cleanup_cap;
 
     urbi_vm_dispatch_loop_until_yield(&s, 10000U);
@@ -477,7 +477,7 @@ tag_init_local_lifecycle(UTag *t)
 static UCleanupEntry *
 push_tag_scope_lifecycle(UStrand *s, UTag *tag)
 {
-    UCleanupEntry *e = strand_cleanup_push(s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(s);
     if (!e) return NULL;
     e->kind        = (uint8_t)UCLEANUP_TAG_SCOPE;
     e->flags       = 0;

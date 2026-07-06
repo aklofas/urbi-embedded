@@ -34,7 +34,7 @@
 #include "object/uobject.h"
 #include "value/uintern.h"
 #include "sched/ustrand.h"
-#include "sched/usched_cooperative.h"  /* sched_strand_block (waiter park) */
+#include "sched/usched_cooperative.h"  /* urbi_sched_strand_block (waiter park) */
 #include "chunk/uchunk.h"
 #include "runtime/uclosure.h"
 #include "urbi/urbi.h"
@@ -142,7 +142,7 @@ UTEST(event_emit_method_dispatches_to_async)
     ustrand_init(&waiter, &vm);
     waiter.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count++;     /* satisfy block's RUNNING-decrement */
-    sched_strand_block(&waiter, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
+    urbi_sched_strand_block(&waiter, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
     waiter.wait_event_target   = e;
     waiter.next_event_waiter   = NULL;
     waiter.last_event_payload.kind = (uint8_t)UVAL_NIL;

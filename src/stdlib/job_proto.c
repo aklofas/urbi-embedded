@@ -11,7 +11,7 @@
  *
  * P1 design choice: __strand slot stores the UStrand pointer cast to
  * uint64_t.  Resolving a pointer that was already freed (DEAD strand
- * reaped by sched_post_dispatch) returns NULL because the strand is no
+ * reaped by urbi_sched_post_dispatch) returns NULL because the strand is no
  * longer in any realm's strands_head; accessors degrade safely to
  * nil / empty-list / "dead".  No UAF because the resolver never
  * dereferences a pointer not found in strands_head. */

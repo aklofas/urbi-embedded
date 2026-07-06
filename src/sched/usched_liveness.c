@@ -2,7 +2,7 @@
 /* urbi_vm_liveness — the ONE quiescence/liveness formula (refactor-3 SCHED-13).
  *
  * Pre-fix the runtime carried three divergent quiescence definitions:
- * sched_quiescent AND'd five counters (including the armed watcher count and
+ * urbi_sched_quiescent AND'd five counters (including the armed watcher count and
  * a vestigial event_queue_count), urbi_step's post-loop returns used a
  * different subset, and urbi_vm_has_live_work read a third.  They are now
  * all thin views over this function.
@@ -47,7 +47,7 @@ urbi_vm_liveness(const UVM *vm, UVmLiveness *out)
 
     out->next_wake_us = UINT64_MAX;
     if (vm->wakeup_pending_count > 0)
-        out->next_wake_us = sched_earliest_wake_us(vm);
+        out->next_wake_us = urbi_sched_earliest_wake_us(vm);
     {
         uint64_t p = urbi_periodic_earliest_wake_us(vm);
         if (p < out->next_wake_us) out->next_wake_us = p;

@@ -25,23 +25,23 @@ UTEST(cleanup_push_pop_basic) {
     urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
-    UCleanupEntry *e1 = strand_cleanup_push(&s);
+    UCleanupEntry *e1 = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e1 != NULL);
     UASSERT_EQ((unsigned)s.cleanup_depth, 1U);
     e1->kind  = (uint8_t)UCLEANUP_TRY_FRAME;
     e1->flags = FLAG_HAS_FINALLY;
 
-    UCleanupEntry *e2 = strand_cleanup_push(&s);
+    UCleanupEntry *e2 = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e2 != NULL);
     UASSERT_EQ((unsigned)s.cleanup_depth, 2U);
     e2->kind = (uint8_t)UCLEANUP_TAG_SCOPE;
 
     /* LIFO: pop TAG_SCOPE first, then TRY_FRAME. */
-    strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
+    urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
     UASSERT_EQ((unsigned)s.cleanup_depth, 1U);
     UASSERT(s.cleanup_top == e1);
 
-    strand_cleanup_pop(&s, UCLEANUP_TRY_FRAME);
+    urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TRY_FRAME);
     UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
     UASSERT(s.cleanup_top == NULL);
 
@@ -58,13 +58,13 @@ UTEST(cleanup_overflow_returns_null) {
     ustrand_init(&s, &vm);
 
     for (i = 0; i < (uint16_t)URBI_CLEANUP_MAX; i++) {
-        UCleanupEntry *e = strand_cleanup_push(&s);
+        UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
         UASSERT(e != NULL);
     }
     UASSERT_EQ((unsigned)s.cleanup_depth, (unsigned)URBI_CLEANUP_MAX);
 
     /* One push beyond capacity must return NULL. */
-    UCleanupEntry *overflow = strand_cleanup_push(&s);
+    UCleanupEntry *overflow = urbi_sched_strand_cleanup_push(&s);
     UASSERT(overflow == NULL);
     /* Depth must not have advanced past the cap. */
     UASSERT_EQ((unsigned)s.cleanup_depth, (unsigned)URBI_CLEANUP_MAX);

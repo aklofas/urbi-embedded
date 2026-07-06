@@ -71,7 +71,7 @@ strand_minimal(UStrand *s, UVM *vm)
     s->pending_unwind = UEXEC_OK;
     s->fatal_status   = UEXEC_OK;
 
-    strand_cleanup_stack_init(s, vm, (uint16_t)URBI_CLEANUP_MAX);
+    urbi_sched_strand_cleanup_stack_init(s, vm, (uint16_t)URBI_CLEANUP_MAX);
     return reg_stack;
 }
 
@@ -80,7 +80,7 @@ strand_minimal(UStrand *s, UVM *vm)
 static void
 link_strand_to_tag(UStrand *s, UTag *tag)
 {
-    UCleanupEntry *e = strand_cleanup_push(s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(s);
     UASSERT(e != NULL);
     e->kind             = (uint8_t)UCLEANUP_TAG_SCOPE;
     e->flags            = 0U;
@@ -100,7 +100,7 @@ teardown_member(UVM *vm, UStrand *s, UTag *tag, UValue *reg)
 {
     tag->member_strands_head = NULL;
     free(reg);
-    strand_cleanup_stack_destroy(s, vm);
+    urbi_sched_strand_cleanup_stack_destroy(s, vm);
     urbi_vm_destroy(vm);
 }
 
@@ -117,7 +117,7 @@ UTEST(block_freeze_unblock_stays_suspended)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -156,7 +156,7 @@ UTEST(freeze_block_unfreeze_stays_suspended)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -194,7 +194,7 @@ UTEST(freeze_waiting_member_gates_wake)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -202,7 +202,7 @@ UTEST(freeze_waiting_member_gates_wake)
     link_strand_to_tag(&s, &tag);
 
     /* Park on the sleep queue (READY -> WAITING_SLEEP is a legal entry). */
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000u);
+    urbi_sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000u);
     UASSERT(USTRAND_IS_WAITING(&s));
     UASSERT_EQ(vm.strand_waiting_count, 1u);
 
@@ -214,7 +214,7 @@ UTEST(freeze_waiting_member_gates_wake)
     UASSERT_EQ(vm.strand_suspended_count, 0u);
 
     /* Timer fires: the wake must land in SUSPENDED, not READY. */
-    sched_strand_unblock(&s);
+    urbi_sched_strand_unblock(&s);
     UASSERT(USTRAND_IS_SUSPENDED(&s));
     UASSERT_EQ((int)USTRAND_GET_REASON(&s), (int)USTRAND_REASON_FREEZE);
     UASSERT_EQ(vm.strand_waiting_count, 0u);
@@ -242,14 +242,14 @@ UTEST(freeze_waiting_unfreeze_before_timer_stays_parked)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
     tag.type_tag = 5U;
     link_strand_to_tag(&s, &tag);
 
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000u);
+    urbi_sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000u);
     UASSERT_EQ(urbi_tag_freeze(&vm, &tag), URBI_OK);
 
     /* Unfreeze while still parked: stays WAITING (gate cleared in place). */
@@ -259,7 +259,7 @@ UTEST(freeze_waiting_unfreeze_before_timer_stays_parked)
     UASSERT_EQ(vm.strand_suspended_count, 0u);
 
     /* Timer fires normally: ungated wake -> READY. */
-    sched_strand_unblock(&s);
+    urbi_sched_strand_unblock(&s);
     UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_READY);
     UASSERT_EQ(vm.strand_waiting_count, 0u);
     UASSERT_EQ(vm.strand_runnable_count, 1u);
@@ -279,7 +279,7 @@ UTEST(tag_stop_wakes_suspended_member)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -311,7 +311,7 @@ UTEST(tag_stop_wakes_doubly_gated_member)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -336,7 +336,7 @@ UTEST(tag_stop_wakes_doubly_gated_member)
  * NON-REGRESSION PIN: passes because urbi_sched_strand_unpark routes through
  * the WAITING arm (pre-suspend) before the gate can redirect to SUSPENDED;
  * the interaction is correct but incidental to the WAITING/SUSPEND ordering
- * in sched_strand_make_runnable — retain as a guard against regression. */
+ * in urbi_sched_strand_make_runnable — retain as a guard against regression. */
 UTEST(tag_stop_overrides_gate_on_waiting_member)
 {
     UVM vm;
@@ -344,14 +344,14 @@ UTEST(tag_stop_overrides_gate_on_waiting_member)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
     tag.type_tag = 5U;
     link_strand_to_tag(&s, &tag);
 
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000u);
+    urbi_sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000u);
     UASSERT_EQ(urbi_tag_freeze(&vm, &tag), URBI_OK);
     UASSERT(USTRAND_IS_WAITING(&s));
 
@@ -376,7 +376,7 @@ UTEST(strand_cancel_wakes_suspended_target)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));

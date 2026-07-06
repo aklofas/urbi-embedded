@@ -238,7 +238,7 @@ UTEST(vm_run_uncaught_arith_error_is_uncaught_throw)
  * (SIGABRT with a real time function; URBI_ERR_STRAND_FATAL via the WAITING
  * arm with a NULL time function as used here).
  * Post-fix: the transient zero-sleep guard in sleep_native returns nil early
- * without ever calling sched_strand_block, so urbi_vm_run returns URBI_OK. */
+ * without ever calling urbi_sched_strand_block, so urbi_vm_run returns URBI_OK. */
 UTEST(sleep_zero_on_batch_path_is_noop)
 {
     UVM vm;
@@ -253,7 +253,7 @@ UTEST(sleep_zero_on_batch_path_is_noop)
  *         gracefully — returns URBI_ERR_STRAND_FATAL, does NOT abort (B10)
  * =========================================================================
  *
- * The sched_wake_due_sleepers Half-2 fix skips transient due-entries
+ * The urbi_sched_wake_due_sleepers Half-2 fix skips transient due-entries
  * (leaving them parked).  urbi_vm_run's WAITING arm at uvm_run.c:195-199
  * fires and returns UVM_TYPE_ERROR (== URBI_ERR_STRAND_FATAL == -2).
  * The run loop exits without spinning or aborting. */
@@ -264,7 +264,7 @@ UTEST(sleep_positive_transient_is_graceful_error)
     /* sleep(1s) parks the transient strand with wake_us = real_now + 1e6.
      * urbi_vm_init installs default_host_time_us_stub (uvm_init.c:416), so
      * "now" is a real clock reading, not zero; the strand is not due and
-     * sched_wake_due_sleepers leaves it parked on the sleep queue.
+     * urbi_sched_wake_due_sleepers leaves it parked on the sleep queue.
      * urbi_vm_run's WAITING arm at uvm_run.c returns URBI_ERR_STRAND_FATAL. */
     UASSERT_EQ(URBI_ERR_STRAND_FATAL,
                utest_compile_and_vm_run(&vm, "sleep(1s)", NULL));

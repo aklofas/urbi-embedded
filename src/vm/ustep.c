@@ -6,7 +6,7 @@
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 #include "sched/usched_cooperative.h"
-#include "sched/usched_post_dispatch.h"  /* sched_post_dispatch (scheduler F3) */
+#include "sched/usched_post_dispatch.h"  /* urbi_sched_post_dispatch (scheduler F3) */
 #include "event/uevent_ring.h"
 #include "stdlib/temporal.h"   /* v0.9.4: urbi_periodic_pump (pre-loop) + urbi_periodic_earliest_wake_us (quiescence) */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (CHSTR-025 wait_payload arm guard) */
@@ -80,12 +80,12 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
 
     /* v0.11.4-A: wake any sleeper whose timer has elapsed BEFORE the dispatch
      * loop tests strand_runnable_count.  Without this, a lone expired sleeper is
-     * never woken — the post-dispatch sleep wake (sched_post_dispatch step 3)
+     * never woken — the post-dispatch sleep wake (urbi_sched_post_dispatch step 3)
      * only runs after a dispatch, but a VM whose sole live strand is sleeping
      * never dispatches (ready_head is NULL while the loop breaks on a NULL
      * sched_pick_next), so urbi_step would spin on RUNNING/WAKE_AT forever.
      * Mirrors the periodic pre-pump rationale above. */
-    sched_wake_due_sleepers(vm);
+    urbi_sched_wake_due_sleepers(vm);
 
     /* Idle-VM reactive pump (SCHED-02 / B10): drain slot-change dirty marks
      * and fire watcher-eval BEFORE the dispatch loop tests runnable count,
@@ -125,7 +125,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      * Re-entry condition (runnable_before_drain): the outer do/while re-enters
      * the dispatch loop ONLY if the drain INCREASED strand_runnable_count — i.e.
      * it woke a parked waituntil/at or spawned a whenever body, both of which
-     * tail-insert a READY strand (sched_strand_make_runnable), so sched_pick_next
+     * tail-insert a READY strand (urbi_sched_strand_make_runnable), so sched_pick_next
      * is guaranteed to return dispatchable work that consumes budget.  Gating on
      * an INCREASE rather than on `runnable > 0` keeps re-entry tied to NEW work:
      * a leftover READY strand from this slice (e.g. one re-enqueued at VM-budget
@@ -139,7 +139,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      * a self-re-dirtying level-whenever fires at most once per rising edge (full
      * termination argument in uwatcher_eval.c's WHENEVER branch).
      *
-     * FORBIDDEN: draining right after sched_post_dispatch *inside* the inner
+     * FORBIDDEN: draining right after urbi_sched_post_dispatch *inside* the inner
      * loop — a per-iteration drain there reintroduces the reverted-S46
      * unbounded level-whenever re-spawn (see test_whenever_double_fire.c). */
     uint32_t runnable_before_drain;
@@ -150,23 +150,23 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
 
             /* W3a (v0.10.9): defence-in-depth skip for SUSPENDED strands.
              * urbi_strand_suspend always splices SUSPENDED strands out of the
-             * ready queue via sched_strand_unbind_from_ready_queue, so this
+             * ready queue via urbi_sched_strand_unbind_from_ready_queue, so this
              * branch should be unreachable today.  Guard kept so a future caller
              * that transitions a strand to SUSPENDED without unbinding cannot
              * crash the dispatcher by dispatching into a suspended strand.
              * SCHED-01: route through unbind (which decrements) rather than the
              * now count-neutral dequeue — a SUSPENDED strand leaves the counted
-             * set; resume() puts it back via sched_strand_make_runnable. */
+             * set; resume() puts it back via urbi_sched_strand_make_runnable. */
             if (USTRAND_IS_SUSPENDED(s)) {
-                sched_strand_unbind_from_ready_queue(s);
+                urbi_sched_strand_unbind_from_ready_queue(s);
                 continue;
             }
 
             /* Remove the strand from the ready queue.  Count-neutral
              * (SCHED-01): READY → RUNNING keeps the strand in the counted set.
              * If the strand yields mid-run, urbi_vm_dispatch_loop_until_yield calls
-             * sched_strand_yield which re-enqueues count-neutrally. */
-            sched_dequeue_ready_head(vm);
+             * urbi_sched_strand_yield which re-enqueues count-neutrally. */
+            urbi_sched_dequeue_ready_head(vm);
             s->state = USTRAND_STATE_RUNNING;
             /* refactor-3 VM-04/SCHED-11 (v0.13.1-E): re-arm per-slice safepoint budget.
              * Without this, a strand that exhausted its per-lifetime budget
@@ -191,7 +191,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
             if (s->fatal_status != UEXEC_OK) {
                 /* SCHED-01: a fatal strand is DEAD (every fatal_status writer
                  * pairs it with state = DEAD) and was RUNNING (counted) when it
-                 * died.  sched_post_dispatch — which owns the clean-death
+                 * died.  urbi_sched_post_dispatch — which owns the clean-death
                  * decrement — is deliberately NOT called on this path (it would
                  * eager-reap the strand the host wants to inspect), so the
                  * counted-set exit happens here via the owning helper.
@@ -204,7 +204,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
 
             /* Post-dispatch fix-ups — scheduler F3.
              *
-             * sched_post_dispatch runs four bookkeeping steps that must execute after
+             * urbi_sched_post_dispatch runs four bookkeeping steps that must execute after
              * every dispatch-loop iteration:
              *   1. Decrement strand_runnable_count if the strand died (SCHED-01:
              *      a DEAD strand was RUNNING and counted; parking transitions
@@ -217,7 +217,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
              *      this urbi_step call.
              *
              * After step 2, s may be freed.  Do NOT dereference s after this call. */
-            sched_post_dispatch(vm, s);
+            urbi_sched_post_dispatch(vm, s);
         }
 
         /* Step 4b: post-loop reactive drain (bounded/edge whenever).  Absorbs

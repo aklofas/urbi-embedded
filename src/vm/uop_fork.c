@@ -26,7 +26,7 @@
 #include "chunk/uchunk.h"     /* uinstr_a, uinstr_b, UOpcode, UClosure (fwd), UProto */
 #include "runtime/uclosure.h"    /* UClosure full definition (M4: embeds UCell) */
 #include "sched/ustrand.h"     /* UStrand, urbi_strand_create, urbi_strand_start, ... */
-#include "sched/usched_cooperative.h"  /* sched_strand_block, sched_strand_make_runnable */
+#include "sched/usched_cooperative.h"  /* urbi_sched_strand_block, urbi_sched_strand_make_runnable */
 #include "runtime/ucleanup.h"    /* URBI_CLEANUP_MAX */
 #include "urbi/urbi.h"        /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
@@ -264,14 +264,14 @@ urbi_vm_op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
      * join-blocked.
      *
      * T31 / VM-004: block-then-link ordering.  Previously the parent was
-     * linked onto child->joiners_head BEFORE sched_strand_block, which
+     * linked onto child->joiners_head BEFORE urbi_sched_strand_block, which
      * meant a concurrent walker (e.g. an unwind walker reaching DEAD on
      * the child between the two writes) could observe the parent on the
      * join chain while its state was still RUNNING.  Block first so the
      * parent's state transitions to WAITING|JOIN before it becomes
      * reachable via the join chain. */
     s->pc++;
-    sched_strand_block(s, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
+    urbi_sched_strand_block(s, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
     s->wait_next         = child->joiners_head;
     child->joiners_head  = s;
 
@@ -299,7 +299,7 @@ urbi_vm_fork_wake_joiners(UStrand *s, UVM *vm)
         next = joiner->wait_next;
         joiner->wait_next = NULL;
         /* Wake the joiner so the scheduler dispatches it on the next step. */
-        sched_strand_make_runnable(joiner);
+        urbi_sched_strand_make_runnable(joiner);
         joiner = next;
     }
 }

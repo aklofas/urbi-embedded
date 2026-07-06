@@ -104,25 +104,25 @@ URBI_STATIC_ASSERT(sizeof(UCleanupEntry) == 48,
 /* === Cleanup-stack operations (operate on UStrand) ===
 
    These functions are internal to the runtime; public only so that
-   ustrand.c can call strand_cleanup_stack_init/destroy. */
+   ustrand.c can call urbi_sched_strand_cleanup_stack_init/destroy. */
 
 /* Push a new cleanup entry onto s's stack. Returns pointer to the new top
    entry (caller fills in its fields), or NULL if the stack is full.
    Caller must set strand fatal status on NULL return. */
-UCleanupEntry *strand_cleanup_push(struct UStrand *s);
+UCleanupEntry *urbi_sched_strand_cleanup_push(struct UStrand *s);
 
 /* Pop the top entry and assert that its kind matches expected_kind.
    Precondition: s->cleanup_depth > 0. */
-void strand_cleanup_pop(struct UStrand *s, UCleanupKind expected_kind);
+void urbi_sched_strand_cleanup_pop(struct UStrand *s, UCleanupKind expected_kind);
 
 /* Allocate and zero-initialize the cleanup-stack array for s.
    Uses vm->alloc_fn for allocation; compatible with freestanding targets.
    Returns 0 on success, -1 on allocation failure.
    On failure, cleanup_base = NULL, cleanup_cap = 0, cleanup_depth = 0. */
-int strand_cleanup_stack_init(struct UStrand *s, struct UVM *vm, uint16_t cap);
+int urbi_sched_strand_cleanup_stack_init(struct UStrand *s, struct UVM *vm, uint16_t cap);
 
 /* Free the cleanup-stack array for s using vm->alloc_fn and zero all fields. */
-void strand_cleanup_stack_destroy(struct UStrand *s, struct UVM *vm);
+void urbi_sched_strand_cleanup_stack_destroy(struct UStrand *s, struct UVM *vm);
 
 #ifdef __cplusplus
 }

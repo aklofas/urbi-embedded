@@ -80,7 +80,7 @@ extern "C" {
  * the gate bits in suspend_gates are authoritative for resume eligibility).
  * Single source of truth for every SUSPENDED state stamp (urbi_strand_suspend,
  * urbi_strand_resume_if_ungated's still-gated re-stamp, and the gated-wake arm in
- * sched_strand_make_runnable). */
+ * urbi_sched_strand_make_runnable). */
 static inline uint8_t
 ustrand_gates_reason(uint8_t gates)
 {
@@ -446,7 +446,7 @@ ustrand_c_root_pop(struct UStrand *s, UCRootFrame *f)
 
    ustrand_destroy walks the cleanup stack to unregister the strand from
    any tag.member_strands_head lists (strand_unlink_from_tags), routes
-   cross-strand stop bookkeeping through sched_strand_account_destroy
+   cross-strand stop bookkeeping through urbi_sched_strand_account_destroy
    (which decrements vm->host_call_pending_count if a cross-strand stop was
    deposited on this strand), frees the cleanup stack and the register
    stack via vm->alloc_fn, and releases per-strand resource chains
@@ -501,7 +501,7 @@ void ustrand_destroy(UStrand *s, struct UVM *vm);
  *     urbi_sched_runnable_dec (refactor-3 SCHED-01: a RUNNING strand is in the
  *     counted set — count == |READY| + |RUNNING non-transient| — and
  *     RUNNING -> SUSPENDED leaves it).
- *   - Resuming a SUSPENDED strand routes through sched_strand_make_runnable
+ *   - Resuming a SUSPENDED strand routes through urbi_sched_strand_make_runnable
  *     (re-enters the counted set as READY; the funnel owns suspended--). */
 void urbi_strand_suspend(struct UStrand *strand, uint8_t reason,
                          struct UTag    *tag);
@@ -532,7 +532,7 @@ void   urbi_strand_attach_ambient_tags(struct UStrand *new_s,
 /* v0.10.10 / D7-C: single-entry tag-list unlink, exposed for the disown
  * helper so it can strip individual TAG_SCOPE entries from a child's
  * cleanup chain without walking the whole chain. */
-void strand_unlink_member_entry(struct UCleanupEntry *e);
+void urbi_sched_strand_unlink_member_entry(struct UCleanupEntry *e);
 
 /* === CHSTR-044: register-stack lifecycle triplet ===
  *

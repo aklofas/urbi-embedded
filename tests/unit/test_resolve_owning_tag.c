@@ -23,7 +23,7 @@
 #include "utest.h"
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
-#include "runtime/ucleanup.h"          /* strand_cleanup_push/pop, UCLEANUP_TAG_SCOPE, UCLEANUP_TRY_FRAME */
+#include "runtime/ucleanup.h"          /* urbi_sched_strand_cleanup_push/pop, UCLEANUP_TAG_SCOPE, UCLEANUP_TRY_FRAME */
 #include "tag/utag.h"              /* UTag, utag_create */
 #include "realm/urealm.h"      /* urbi_realm_create/destroy */
 
@@ -44,7 +44,7 @@ extern struct UTag *resolve_owning_tag(struct UStrand *s);
 static UCleanupEntry *
 push_tag_scope(UStrand *s, UTag *tag)
 {
-    UCleanupEntry *e = strand_cleanup_push(s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(s);
     if (e == NULL) return NULL;
     e->kind       = (uint8_t)UCLEANUP_TAG_SCOPE;
     e->owning_tag = tag;
@@ -87,11 +87,11 @@ UTEST(resolve_owning_tag_returns_innermost)
     UASSERT(resolve_owning_tag(&s) == inner);
 
     /* Pop inner; outer must now win. */
-    strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
+    urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
     UASSERT(resolve_owning_tag(&s) == outer);
 
     /* Pop outer; no TAG_SCOPE remains — fall through to realm->tag. */
-    strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
+    urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
     UASSERT(resolve_owning_tag(&s) == r->tag);
 
     ustrand_destroy(&s, &vm);
@@ -122,15 +122,15 @@ UTEST(resolve_owning_tag_skips_non_tag_scope)
     /* Push TAG_SCOPE for outer, then a TRY_FRAME on top. */
     UASSERT(push_tag_scope(&s, outer) != NULL);
 
-    UCleanupEntry *tf = strand_cleanup_push(&s);
+    UCleanupEntry *tf = urbi_sched_strand_cleanup_push(&s);
     UASSERT(tf != NULL);
     tf->kind = (uint8_t)UCLEANUP_TRY_FRAME;
 
     /* Top-down: TRY_FRAME at top is skipped; TAG_SCOPE below it returns outer. */
     UASSERT(resolve_owning_tag(&s) == outer);
 
-    strand_cleanup_pop(&s, UCLEANUP_TRY_FRAME);
-    strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
+    urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TRY_FRAME);
+    urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
 
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);

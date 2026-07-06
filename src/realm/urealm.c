@@ -21,7 +21,7 @@
 #include "vm/uvm.h"
 #include "urbi/urbi.h"  /* urbi_tag_stop */
 #include "sched/ustrand.h"    /* urbi_strand_destroy, UStrand.next_in_realm */
-#include "sched/usched_cooperative.h"  /* sched_strand_unbind_from_ready_queue */
+#include "sched/usched_cooperative.h"  /* urbi_sched_strand_unbind_from_ready_queue */
 #include "gc/ugc_incremental.h"  /* urbi_gc_shade_gray — shade realm->tag */
 #include "object/uobject.h"    /* urbi_object_alloc, URBI_ATOM_OBJECT */
 #include "realm/urealm_globals.h"    /* urbi_populate_realm_globals */
@@ -222,7 +222,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * REALM-011: before calling urbi_strand_destroy on a strand, splice
      * it out of vm->ready_head / ready_tail's doubly-linked list so the queue
      * never holds dangling pointers into freed strand memory.  Without this
-     * unbind step sched_strand_destroy zeroes only the strand's own
+     * unbind step urbi_sched_strand_destroy zeroes only the strand's own
      * ready_next / ready_prev fields — neighbours retain stale pointers and
      * the next dispatch (or urbi_gc_sched_walk_roots GC scan) trips use-after-free
      * under ASan.  The helper is idempotent on strands that are not on the
@@ -234,7 +234,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
         while (strand != NULL) {
             UStrand *next = strand->next_in_realm;
             strand->next_in_realm = NULL;
-            sched_strand_unbind_from_ready_queue(strand);
+            urbi_sched_strand_unbind_from_ready_queue(strand);
             urbi_strand_destroy(vm, strand);
             strand = next;
         }

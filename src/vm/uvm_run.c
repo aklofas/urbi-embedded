@@ -7,8 +7,8 @@
 #include "runtime/umacros.h"         /* urbi_zero */
 #include "runtime/uclosure.h"        /* UClosure, UUpvalCell */
 #include "sched/ustrand.h"           /* UStrand, ustrand_destroy, urbi_strand_arm_init, USTRAND_IS_WAITING */
-#include "sched/usched_cooperative.h" /* sched_strand_init */
-#include "sched/usched_post_dispatch.h" /* sched_post_dispatch (scheduler F3) */
+#include "sched/usched_cooperative.h" /* urbi_sched_strand_init */
+#include "sched/usched_post_dispatch.h" /* urbi_sched_post_dispatch (scheduler F3) */
 #include "realm/urealm.h"            /* URealm, urbi_realm_global */
 #include "object/uchunk_instance.h" /* urbi_chunk_instance_create */
 #include "chunk/uchunk.h"
@@ -73,7 +73,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
 
     /* T10: initialise the cleanup stack so OP_TRY_BEGIN can push entries.
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
-    (void)strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
+    (void)urbi_sched_strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
 
     /* API-004 (Wave 5): route this transient onto realm->strands_head — the
      * caller-supplied realm if given, else the VM's global Realm (lazy-created
@@ -140,17 +140,17 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     strand.open_upvals = NULL;
     strand.out_slot   = out;  /* OP_RET at top-frame writes *out_slot */
     strand.state      = USTRAND_STATE_RUNNING;
-    /* Arm the per-strand safepoint budget via sched_strand_init so the
+    /* Arm the per-strand safepoint budget via urbi_sched_strand_init so the
      * safepoint budget check does not immediately yield.  The transient
      * strand is zero-initialised above, leaving safepoint_budget_remaining=0;
      * without this the first safepoint (OP_CALL, backward JMP, or non-top
      * OP_RET) exits before reaching urbi_vm_watcher_eval_dirty.  urbi_vm_run re-enters on
      * yield so forward-progress is correct, but urbi_vm_watcher_eval_dirty never fires
-     * (the exit happens before the hook).  sched_strand_init was previously
+     * (the exit happens before the hook).  urbi_sched_strand_init was previously
      * skipped for transients; calling it here also zero-initialises the
      * scheduler list pointers (already zero from the volatile loop above,
      * so this is idempotent for all fields other than the budget). */
-    sched_strand_init(&strand, NULL);
+    urbi_sched_strand_init(&strand, NULL);
 
     /* Run to completion: loop until strand is DEAD or a fatal error sets last_error.
        OP_YIELD or per-strand budget exhaustion leaves state READY — treat as
@@ -166,7 +166,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
 
         /* Post-dispatch fix-ups — scheduler F3.
          *
-         * sched_post_dispatch runs the four bookkeeping steps after each
+         * urbi_sched_post_dispatch runs the four bookkeeping steps after each
          * dispatch-loop iteration.  For the transient strand (is_transient_strand=1):
          *   - Step 1 (runnable-count DEAD decrement, SCHED-01): skipped —
          *     transient strands never participate in strand_runnable_count
@@ -182,23 +182,23 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
          * running sleep-wake + periodic pump here is a convergence improvement but
          * does not change the fundamental semantics (the driver is still single-
          * strand). */
-        sched_post_dispatch(vm, &strand);
+        urbi_sched_post_dispatch(vm, &strand);
         /* strand is still valid here (step 2 was skipped for transient). */
 
         if (strand.state == USTRAND_STATE_DEAD) break;
         if (vm->last_error != UVM_OK) break;
         if (strand.state == USTRAND_STATE_READY) {
             /* OP_YIELD (between separator children) or per-strand budget.
-               Remove from ready queue (sched_strand_yield enqueued it),
+               Remove from ready queue (urbi_sched_strand_yield enqueued it),
                reset to RUNNING, and re-enter dispatch.
-               T24 / VM-011: route through sched_dequeue_ready_head so the
+               T24 / VM-011: route through urbi_sched_dequeue_ready_head so the
                ready-queue link cleanup lives at the sched boundary, not at
                the driver site.  SCHED-01: the dequeue is count-neutral
                (and transients never participate in the count anyway), so
                this is purely queue-link hygiene.  Future drivers that pop
                the ready head get the link invariant for free. */
             if (vm->ready_head == &strand) {
-                sched_dequeue_ready_head(vm);
+                urbi_sched_dequeue_ready_head(vm);
             }
             strand.state = USTRAND_STATE_RUNNING;
             /* refactor-3 VM-04/SCHED-11 (v0.13.1-E): re-arm per-slice safepoint
@@ -225,7 +225,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
             break;
         }
         /* RUNNING: safepoint-budget arm in uvm.c (B11/SCHED-03 transient guard)
-         * exited without calling sched_strand_yield — the strand was not enqueued
+         * exited without calling urbi_sched_strand_yield — the strand was not enqueued
          * so no dequeue is needed.  Re-arm the safepoint budget and continue,
          * mirroring the READY re-arm above. */
         strand.safepoint_budget_remaining = (uint16_t)URBI_STRAND_BUDGET_MAX;

@@ -75,7 +75,7 @@ strand_minimal(UStrand *s, UVM *vm)
     s->pending_unwind = UEXEC_OK;
     s->fatal_status   = UEXEC_OK;
 
-    strand_cleanup_stack_init(s, vm, (uint16_t)URBI_CLEANUP_MAX);
+    urbi_sched_strand_cleanup_stack_init(s, vm, (uint16_t)URBI_CLEANUP_MAX);
     return reg_stack;
 }
 
@@ -90,7 +90,7 @@ UTEST(suspend_ready_to_suspended_block)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
     UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_READY);
     UASSERT_EQ(vm.strand_runnable_count, 1u);
 
@@ -106,7 +106,7 @@ UTEST(suspend_ready_to_suspended_block)
     UASSERT_EQ(vm.strand_runnable_count, 0u);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -120,7 +120,7 @@ UTEST(resume_suspended_to_ready)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -145,7 +145,7 @@ UTEST(resume_suspended_to_ready)
     UASSERT(s.wait_payload.suspend_tag == NULL);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -168,7 +168,7 @@ UTEST(suspend_dead_strand_is_noop)
     UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_DEAD);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -180,7 +180,7 @@ UTEST(suspend_freeze_distinct_from_block)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -192,7 +192,7 @@ UTEST(suspend_freeze_distinct_from_block)
     UASSERT_EQ((int)USTRAND_GET_REASON(&s), (int)USTRAND_REASON_FREEZE);
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -213,13 +213,13 @@ UTEST(suspend_resume_null_strand)
     UStrand s;
     urbi_vm_init(&vm, NULL, NULL);
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     urbi_strand_suspend(&s, USTRAND_REASON_BLOCK, NULL);
     UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_READY);  /* unchanged */
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -228,7 +228,7 @@ UTEST(suspend_resume_null_strand)
 static void
 link_strand_to_tag(UStrand *s, UTag *tag)
 {
-    UCleanupEntry *e = strand_cleanup_push(s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(s);
     UASSERT(e != NULL);
     e->kind             = (uint8_t)UCLEANUP_TAG_SCOPE;
     e->flags            = 0U;
@@ -250,7 +250,7 @@ UTEST(tag_block_sets_flag_and_suspends_members)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -266,12 +266,12 @@ UTEST(tag_block_sets_flag_and_suspends_members)
     UASSERT_EQ(s.unblock_value.kind, (uint8_t)UVAL_INT);
     UASSERT_EQ(s.unblock_value.v.i, (int64_t)7);
 
-    /* Clear the synthetic tag-link so ustrand_destroy / strand_cleanup_stack_destroy
+    /* Clear the synthetic tag-link so ustrand_destroy / urbi_sched_strand_cleanup_stack_destroy
      * teardown does not assert on a non-empty member list. */
     tag.member_strands_head = NULL;
 
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -283,7 +283,7 @@ UTEST(tag_unblock_clears_flag_and_resumes_block_members)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -300,7 +300,7 @@ UTEST(tag_unblock_clears_flag_and_resumes_block_members)
 
     tag.member_strands_head = NULL;
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -312,7 +312,7 @@ UTEST(tag_unblock_leaves_freeze_suspended_alone)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -330,7 +330,7 @@ UTEST(tag_unblock_leaves_freeze_suspended_alone)
 
     tag.member_strands_head = NULL;
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -360,7 +360,7 @@ UTEST(tag_freeze_sets_flag_and_suspends_members)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -375,7 +375,7 @@ UTEST(tag_freeze_sets_flag_and_suspends_members)
 
     tag.member_strands_head = NULL;
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -387,7 +387,7 @@ UTEST(tag_unfreeze_clears_flag_and_resumes_freeze_members)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -404,7 +404,7 @@ UTEST(tag_unfreeze_clears_flag_and_resumes_freeze_members)
 
     tag.member_strands_head = NULL;
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -416,7 +416,7 @@ UTEST(tag_unfreeze_leaves_block_suspended_alone)
     urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UTag tag;
     memset(&tag, 0, sizeof(tag));
@@ -433,7 +433,7 @@ UTEST(tag_unfreeze_leaves_block_suspended_alone)
 
     tag.member_strands_head = NULL;
     free(reg);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 

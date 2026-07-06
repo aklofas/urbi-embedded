@@ -80,7 +80,7 @@ strand_setup_minimal(UStrand *s, UVM *vm)
     s->pending_unwind = UEXEC_OK;
 
     /* Initialise cleanup stack via the strand allocator. */
-    strand_cleanup_stack_init(s, vm, (uint16_t)URBI_CLEANUP_MAX);
+    urbi_sched_strand_cleanup_stack_init(s, vm, (uint16_t)URBI_CLEANUP_MAX);
 
     return reg_stack;
 }
@@ -129,7 +129,7 @@ UTEST(unwind_return_at_call_frame_absorbs)
     s.R = s.stack + 3;   /* callee's register window starts at stack[3] */
 
     /* Push a CALL_FRAME cleanup entry. */
-    UCleanupEntry *e = strand_cleanup_push(&s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e != NULL);
     e->kind           = (uint8_t)UCLEANUP_CALL_FRAME;
     e->flags          = 0;
@@ -177,7 +177,7 @@ UTEST(unwind_throw_caught_at_try_frame)
     UASSERT(reg_stack != NULL);
 
     /* Push TRY_FRAME with HAS_CATCH, no FINALLY. */
-    UCleanupEntry *e = strand_cleanup_push(&s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e != NULL);
     e->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
     e->flags          = FLAG_HAS_CATCH;       /* catch present, no finally */
@@ -265,7 +265,7 @@ UTEST(unwind_frame_teardown_zeros_registers)
     s.R = s.stack;             /* callee base same as caller base for this test */
 
     /* Push CALL_FRAME entry for registers 0..3 (4 slots). */
-    UCleanupEntry *e = strand_cleanup_push(&s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e != NULL);
     e->kind           = (uint8_t)UCLEANUP_CALL_FRAME;
     e->flags          = 0;
@@ -324,7 +324,7 @@ UTEST(unwind_noop_on_ok_state)
     cf->result_dest_reg = 0;
     s.R = s.stack;
 
-    UCleanupEntry *e = strand_cleanup_push(&s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e != NULL);
     e->kind           = (uint8_t)UCLEANUP_CALL_FRAME;
     e->flags          = 0;
@@ -434,7 +434,7 @@ UTEST(unwind_innermost_first_ordering)
     s.R = s.stack + 4;   /* innermost callee's register window */
 
     /* Push entries: outer CALL_FRAME, TRY_FRAME (no catch/finally), inner CALL_FRAME. */
-    UCleanupEntry *e1 = strand_cleanup_push(&s);  /* outer CALL_FRAME */
+    UCleanupEntry *e1 = urbi_sched_strand_cleanup_push(&s);  /* outer CALL_FRAME */
     UASSERT(e1 != NULL);
     e1->kind           = (uint8_t)UCLEANUP_CALL_FRAME;
     e1->flags          = 0;
@@ -444,7 +444,7 @@ UTEST(unwind_innermost_first_ordering)
     e1->owning_tag     = NULL;
     e1->catch_pattern  = NULL;
 
-    UCleanupEntry *e2 = strand_cleanup_push(&s);  /* TRY_FRAME, no catch/finally */
+    UCleanupEntry *e2 = urbi_sched_strand_cleanup_push(&s);  /* TRY_FRAME, no catch/finally */
     UASSERT(e2 != NULL);
     e2->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
     e2->flags          = 0;   /* neither catch nor finally — just pop on RETURN */
@@ -454,7 +454,7 @@ UTEST(unwind_innermost_first_ordering)
     e2->owning_tag     = NULL;
     e2->catch_pattern  = NULL;
 
-    UCleanupEntry *e3 = strand_cleanup_push(&s);  /* inner CALL_FRAME */
+    UCleanupEntry *e3 = urbi_sched_strand_cleanup_push(&s);  /* inner CALL_FRAME */
     UASSERT(e3 != NULL);
     e3->kind           = (uint8_t)UCLEANUP_CALL_FRAME;
     e3->flags          = 0;
@@ -488,7 +488,7 @@ UTEST(unwind_innermost_first_ordering)
 }
 
 /* Case 8: URBI_CLEANUP_MAX overflow: push a full cleanup stack then attempt
-   one more push; strand_cleanup_push returns NULL (stack full).
+   one more push; urbi_sched_strand_cleanup_push returns NULL (stack full).
    Simulate what the VM should do on NULL: set THROW + fatal escalation.
    Verify: fatal_status=THROW, state=DEAD. */
 UTEST(unwind_cleanup_max_overflow_marks_fatal)
@@ -503,7 +503,7 @@ UTEST(unwind_cleanup_max_overflow_marks_fatal)
 
     /* Fill the cleanup stack to capacity. */
     for (i = 0; i < s.cleanup_cap; i++) {
-        UCleanupEntry *e = strand_cleanup_push(&s);
+        UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
         UASSERT(e != NULL);
         e->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
         e->flags          = 0;
@@ -515,7 +515,7 @@ UTEST(unwind_cleanup_max_overflow_marks_fatal)
     }
 
     /* One more push must return NULL — stack is full. */
-    UCleanupEntry *overflow = strand_cleanup_push(&s);
+    UCleanupEntry *overflow = urbi_sched_strand_cleanup_push(&s);
     UASSERT(overflow == NULL);
 
     /* Simulate the VM escalating to fatal on overflow (as the spec requires):
@@ -562,7 +562,7 @@ UTEST(unwind_cancel_propagates_through_call_frame)
     s.R = s.stack + 2;
 
     /* Push a CALL_FRAME cleanup entry. */
-    UCleanupEntry *e = strand_cleanup_push(&s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e != NULL);
     e->kind           = (uint8_t)UCLEANUP_CALL_FRAME;
     e->flags          = 0;
@@ -608,7 +608,7 @@ UTEST(unwind_throw_propagates_past_try_with_only_finally)
     UASSERT(reg_stack != NULL);
 
     /* Push TRY_FRAME with FINALLY only (no CATCH). */
-    UCleanupEntry *e = strand_cleanup_push(&s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e != NULL);
     e->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
     e->flags          = FLAG_HAS_FINALLY;  /* only finally, no catch */
@@ -652,7 +652,7 @@ UTEST(unwind_nested_try_frames_innermost_catches)
     UASSERT(reg_stack != NULL);
 
     /* Push outer TRY_FRAME first (it will be at depth 0, i.e. outermost). */
-    UCleanupEntry *outer = strand_cleanup_push(&s);
+    UCleanupEntry *outer = urbi_sched_strand_cleanup_push(&s);
     UASSERT(outer != NULL);
     outer->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
     outer->flags          = FLAG_HAS_CATCH;
@@ -663,7 +663,7 @@ UTEST(unwind_nested_try_frames_innermost_catches)
     outer->catch_pattern  = NULL;
 
     /* Push inner TRY_FRAME on top (it's at depth 1, i.e. innermost). */
-    UCleanupEntry *inner = strand_cleanup_push(&s);
+    UCleanupEntry *inner = urbi_sched_strand_cleanup_push(&s);
     UASSERT(inner != NULL);
     inner->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
     inner->flags          = FLAG_HAS_CATCH;
@@ -708,7 +708,7 @@ UTEST(unwind_throw_propagates_through_tag_scope)
     UASSERT(reg_stack != NULL);
 
     /* Push TAG_SCOPE entry with no onleave (plain passthrough at M3). */
-    UCleanupEntry *e = strand_cleanup_push(&s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e != NULL);
     e->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
     e->flags          = 0;   /* no onleave */
@@ -755,7 +755,7 @@ UTEST(unwind_cleanup_run_depth_overflow_marks_fatal)
 
     /* Push a TRY_FRAME with HAS_FINALLY — would normally call
      * run_cleanup_with_replace during a THROW walk. */
-    UCleanupEntry *e = strand_cleanup_push(&s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e != NULL);
     e->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
     e->flags          = FLAG_HAS_FINALLY;
@@ -867,7 +867,7 @@ UTEST(unwind_return_processes_same_frame_cleanups)
     UASSERT(tag_callee != NULL);
 
     /* [0] caller's TAG_SCOPE (frame_depth 0). */
-    UCleanupEntry *e0 = strand_cleanup_push(&s);
+    UCleanupEntry *e0 = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e0 != NULL);
     e0->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
     e0->flags          = FLAG_TAG_USER_OWNED;
@@ -882,7 +882,7 @@ UTEST(unwind_return_processes_same_frame_cleanups)
     tag_caller->member_strands_head = e0;
 
     /* [1] callee's finally TRY_FRAME (frame_depth 1). */
-    UCleanupEntry *e1 = strand_cleanup_push(&s);
+    UCleanupEntry *e1 = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e1 != NULL);
     e1->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
     e1->flags          = FLAG_HAS_FINALLY;
@@ -894,7 +894,7 @@ UTEST(unwind_return_processes_same_frame_cleanups)
     e1->catch_pattern  = NULL;
 
     /* [2] callee's TAG_SCOPE (frame_depth 1). */
-    UCleanupEntry *e2 = strand_cleanup_push(&s);
+    UCleanupEntry *e2 = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e2 != NULL);
     e2->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
     e2->flags          = FLAG_TAG_USER_OWNED;
@@ -965,7 +965,7 @@ UTEST(unwind_tag_stop_ambient_entry_no_thunk_restart)
      *   flags       = FLAG_TAG_AMBIENT
      *   handler_pc  = 0  (from urbi_zero; a real scope's handler_pc is non-zero)
      *   owning_tag  = shared_tag */
-    UCleanupEntry *e = strand_cleanup_push(&s);
+    UCleanupEntry *e = urbi_sched_strand_cleanup_push(&s);
     UASSERT(e != NULL);
     e->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
     e->flags          = (uint8_t)FLAG_TAG_AMBIENT;

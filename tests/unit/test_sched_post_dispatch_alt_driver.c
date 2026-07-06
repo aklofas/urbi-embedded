@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* tests/unit/test_sched_post_dispatch_alt_driver.c
  *
- * Unit tests for sched_post_dispatch (scheduler audit F3).
+ * Unit tests for urbi_sched_post_dispatch (scheduler audit F3).
  *
  * Previously the four post-dispatch fix-up steps lived exclusively in urbi_step:
  *   1. Runnable-count DEAD decrement (refactor-3 SCHED-01 single-writer
@@ -15,7 +15,7 @@
  * centralises them.
  *
  * These tests exercise each step in isolation by constructing VM state that
- * exercises the step, calling sched_post_dispatch directly, and asserting the
+ * exercises the step, calling urbi_sched_post_dispatch directly, and asserting the
  * expected post-condition. */
 
 #include "utest.h"
@@ -70,7 +70,7 @@ static uint64_t mock_time_fn(void) { return s_mock_time_us; }
 
 /* v0.13.3 (SCHED-13): thread a stack-local strand onto the global realm's
  * strands_head for the duration of a test (mirrors urbi_vm_run's transient
- * setup).  sched_post_dispatch's debug recount oracle walks realms_head ->
+ * setup).  urbi_sched_post_dispatch's debug recount oracle walks realms_head ->
  * strands_head to verify strand_waiting_count, so a WAITING stub the
  * scheduler can see MUST be realm-reachable (the §6.1 invariant).  Callers
  * MUST unthread before ustrand_destroy/urbi_vm_destroy or realm teardown
@@ -101,10 +101,10 @@ unthread_from_realm(UStrand *s)
 /* =========================================================================
  * Step 1 (SCHED-01, v0.13.3): a WAITING strand gets NO count adjustment.
  *
- * Under the single-writer scheme the parking transition (sched_strand_block)
- * already decremented the count; sched_post_dispatch must leave a WAITING
+ * Under the single-writer scheme the parking transition (urbi_sched_strand_block)
+ * already decremented the count; urbi_sched_post_dispatch must leave a WAITING
  * strand alone.  (The pre-refactor step 1 re-incremented here, pairing with
- * a decrement in sched_dequeue_ready_head — that pair produced the B10
+ * a decrement in urbi_sched_dequeue_ready_head — that pair produced the B10
  * phantom-count leak.)
  * ========================================================================= */
 
@@ -119,7 +119,7 @@ UTEST(post_dispatch_step1_waiting_strand_count_unchanged)
     strand.is_transient_strand = 0U;
 
     /* The dispatch cycle that leads here: make_runnable (+1), dequeue
-     * (count-neutral), RUNNING, sched_strand_block (-1) -> count 0 with the
+     * (count-neutral), RUNNING, urbi_sched_strand_block (-1) -> count 0 with the
      * strand WAITING.  Represent the post-block state directly. */
     vm.strand_runnable_count = 0U;
     strand.state = USTRAND_STATE_WAITING_SLEEP;  /* any WAITING substate */
@@ -127,8 +127,8 @@ UTEST(post_dispatch_step1_waiting_strand_count_unchanged)
     UASSERT(USTRAND_IS_WAITING(&strand));
     UASSERT_EQ(vm.strand_runnable_count, 0U);
 
-    /* sched_post_dispatch: no adjustment for WAITING. */
-    sched_post_dispatch(&vm, &strand);
+    /* urbi_sched_post_dispatch: no adjustment for WAITING. */
+    urbi_sched_post_dispatch(&vm, &strand);
 
     UASSERT_EQ(vm.strand_runnable_count, 0U);
 
@@ -160,7 +160,7 @@ UTEST(post_dispatch_step1_dead_transient_strand_no_decrement)
     strand.state = USTRAND_STATE_DEAD;
 
     /* DEAD + transient: step 1 dec skipped (and step 2 reap skipped). */
-    sched_post_dispatch(&vm, &strand);
+    urbi_sched_post_dispatch(&vm, &strand);
 
     UASSERT_EQ(vm.strand_runnable_count, 0U);  /* unchanged: no underflow */
 
@@ -173,7 +173,7 @@ UTEST(post_dispatch_step1_dead_transient_strand_no_decrement)
  * Step 2: Heap-allocated DEAD strand is eagerly reaped.
  *
  * Create a heap-allocated strand via urbi_strand_create, mark it DEAD, call
- * sched_post_dispatch, and verify it is no longer on realm->strands_head
+ * urbi_sched_post_dispatch, and verify it is no longer on realm->strands_head
  * (urbi_strand_destroy unlinks from the realm list + frees backing storage).
  * ========================================================================= */
 
@@ -210,8 +210,8 @@ UTEST(post_dispatch_step2_dead_heap_strand_is_reaped)
 
     vm.strand_runnable_count = 1U;
 
-    /* sched_post_dispatch: step 1 decrements (DEAD), step 2 reaps. */
-    sched_post_dispatch(&vm, s);
+    /* urbi_sched_post_dispatch: step 1 decrements (DEAD), step 2 reaps. */
+    urbi_sched_post_dispatch(&vm, s);
     /* s is freed now — do NOT dereference. */
 
     UASSERT_EQ(vm.strand_runnable_count, 0U);  /* step 1 DEAD decrement */
@@ -255,7 +255,7 @@ UTEST(post_dispatch_step2_dead_transient_strand_not_reaped)
      * before urbi_strand_destroy (which would walk realm->strands_head).
      * This call must complete without crashing. */
     vm.strand_runnable_count = 0U;
-    sched_post_dispatch(&vm, &strand);
+    urbi_sched_post_dispatch(&vm, &strand);
 
     /* strand must still be addressable — not freed. */
     UASSERT_EQ(strand.is_transient_strand, 1U);
@@ -270,7 +270,7 @@ UTEST(post_dispatch_step2_dead_transient_strand_not_reaped)
  * Step 3: Sleep-queue strand woken when wake_us <= now.
  *
  * Install a strand on the sleep queue with wake_us = 500 and set mock clock
- * to 1000 (past the deadline).  sched_post_dispatch step 3 must wake it.
+ * to 1000 (past the deadline).  urbi_sched_post_dispatch step 3 must wake it.
  * ========================================================================= */
 
 UTEST(post_dispatch_step3_sleep_queue_strand_is_woken)
@@ -288,7 +288,7 @@ UTEST(post_dispatch_step3_sleep_queue_strand_is_woken)
     vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
 
     /* Put it on the sleep queue with wake_us = 500. */
-    sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 500U);
+    urbi_sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 500U);
     UASSERT(USTRAND_IS_WAITING(&sleeper));
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
@@ -306,16 +306,16 @@ UTEST(post_dispatch_step3_sleep_queue_strand_is_woken)
     /* Set mock time to 1000 (past sleeper's wake_us=500). */
     s_mock_time_us = 1000U;
 
-    /* sched_post_dispatch step 3: sleeper must be woken. */
-    sched_post_dispatch(&vm, &driver);
+    /* urbi_sched_post_dispatch step 3: sleeper must be woken. */
+    urbi_sched_post_dispatch(&vm, &driver);
 
-    /* Sleeper should now be READY (sched_strand_unblock makes it runnable). */
+    /* Sleeper should now be READY (urbi_sched_strand_unblock makes it runnable). */
     UASSERT(!USTRAND_IS_WAITING(&sleeper));
     UASSERT_EQ(vm.wakeup_pending_count, 0U);
     UASSERT_EQ(vm.strand_runnable_count, 1U);  /* sleeper became READY */
 
     /* Cleanup. */
-    sched_dequeue_ready_head(&vm);  /* remove sleeper from ready queue */
+    urbi_sched_dequeue_ready_head(&vm);  /* remove sleeper from ready queue */
     sleeper.state = USTRAND_STATE_DORMANT;
     unthread_from_realm(&sleeper);
     ustrand_destroy(&sleeper, &vm);
@@ -341,7 +341,7 @@ UTEST(post_dispatch_step3_sleep_queue_strand_not_woken_early)
     thread_on_global_realm(&vm, &sleeper);   /* SCHED-13 oracle visibility */
     sleeper.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
-    sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 1000U);
+    urbi_sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 1000U);
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
     UStrand driver;
@@ -352,14 +352,14 @@ UTEST(post_dispatch_step3_sleep_queue_strand_not_woken_early)
 
     /* Clock is 200, wake_us is 1000 — not yet due. */
     s_mock_time_us = 200U;
-    sched_post_dispatch(&vm, &driver);
+    urbi_sched_post_dispatch(&vm, &driver);
 
     UASSERT(USTRAND_IS_WAITING(&sleeper));       /* still sleeping */
     UASSERT_EQ(vm.wakeup_pending_count, 1U);     /* still on queue */
     UASSERT_EQ(vm.strand_runnable_count, 0U);    /* not made runnable */
 
     /* Cleanup via unblock (removes from sleep queue). */
-    sched_strand_unblock(&sleeper);
+    urbi_sched_strand_unblock(&sleeper);
     sleeper.state = USTRAND_STATE_DORMANT;
     unthread_from_realm(&sleeper);
     ustrand_destroy(&sleeper, &vm);
@@ -385,7 +385,7 @@ UTEST(post_dispatch_step3_skipped_without_time_fn)
     thread_on_global_realm(&vm, &sleeper);   /* SCHED-13 oracle visibility */
     sleeper.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
-    sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 0U);  /* wake_us=0: overdue */
+    urbi_sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 0U);  /* wake_us=0: overdue */
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
     UStrand driver;
@@ -394,14 +394,14 @@ UTEST(post_dispatch_step3_skipped_without_time_fn)
     vm.strand_runnable_count = 0U;
 
     /* Must not crash even though the strand is overdue and queue is non-empty. */
-    sched_post_dispatch(&vm, &driver);
+    urbi_sched_post_dispatch(&vm, &driver);
 
     /* Strand stays WAITING (step 3 skipped). */
     UASSERT(USTRAND_IS_WAITING(&sleeper));
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
     /* Cleanup. */
-    sched_strand_unblock(&sleeper);
+    urbi_sched_strand_unblock(&sleeper);
     sleeper.state = USTRAND_STATE_DORMANT;
     unthread_from_realm(&sleeper);
     ustrand_destroy(&sleeper, &vm);
@@ -417,7 +417,7 @@ UTEST(post_dispatch_step3_skipped_without_time_fn)
  *   - a sleep-queue strand that is overdue (step 3 should wake it),
  *   - mock time past both deadlines.
  *
- * After sched_post_dispatch:
+ * After urbi_sched_post_dispatch:
  *   - dead strand is gone from realm->strands_head,
  *   - sleeper is READY (wakeup_pending_count == 0, strand_runnable_count == 1).
  * ========================================================================= */
@@ -444,7 +444,7 @@ UTEST(post_dispatch_all_steps_integrated)
     thread_on_global_realm(&vm, &sleeper);   /* SCHED-13 oracle visibility */
     sleeper.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1U;   /* SCHED-01: RUNNING is counted */
-    sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 1000U);
+    urbi_sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 1000U);
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
     /* strand_runnable_count: dead_s was RUNNING when it died, so it is
@@ -452,7 +452,7 @@ UTEST(post_dispatch_all_steps_integrated)
     vm.strand_runnable_count = 1U;
 
     /* Call the helper with dead_s as the "just dispatched" strand. */
-    sched_post_dispatch(&vm, dead_s);
+    urbi_sched_post_dispatch(&vm, dead_s);
     /* dead_s is freed — do not dereference. */
 
     /* Step 2: dead strand gone from realm. */
@@ -472,7 +472,7 @@ UTEST(post_dispatch_all_steps_integrated)
     UASSERT_EQ(vm.strand_runnable_count, 1U);
 
     /* Cleanup. */
-    sched_dequeue_ready_head(&vm);
+    urbi_sched_dequeue_ready_head(&vm);
     sleeper.state = USTRAND_STATE_DORMANT;
     unthread_from_realm(&sleeper);
     ustrand_destroy(&sleeper, &vm);

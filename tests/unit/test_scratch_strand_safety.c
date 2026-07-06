@@ -4,13 +4,13 @@
  * Bug B11/SCHED-03: run_on_scratch_core never seeded the per-strand safepoint
  * budget (safepoint_budget_remaining stayed 0 from urbi_zero).  The first
  * backward branch (loop) or function call inside the scratch body hit the
- * safepoint budget-check at 0 and called sched_strand_yield, which ENQUEUED
+ * safepoint budget-check at 0 and called urbi_sched_strand_yield, which ENQUEUED
  * the stack-allocated UStrand onto vm->ready_head — a dead-stack UAF on the
  * next urbi_step call.
  *
  * Fix (T7): seed safepoint_budget_remaining = URBI_SCRATCH_BUDGET_OPS after
  * urbi_strand_arm_from_closure.  Also: transient guards in uvm.c prevent
- * budget-exhaust arms from calling sched_strand_yield for any transient
+ * budget-exhaust arms from calling urbi_sched_strand_yield for any transient
  * strand; explicit unpark/unbind in the fail-soft arm ensures the stack
  * strand is removed from scheduler queues before the frame dies; teardown
  * asserts pin the invariant.
@@ -79,7 +79,7 @@ scratch_compile(UVM *vm, const char *src, UProto *mod_out)
  *
  * Pre-fix (two layered bugs):
  *   (a) budget == 0: the while loop's first backward branch sees safepoint
- *       budget 0 and sched_strand_yield enqueues the stack-local UStrand
+ *       budget 0 and urbi_sched_strand_yield enqueues the stack-local UStrand
  *       onto vm->ready_head — a dead-stack UAF; AND
  *   (b) OP_YIELD-on-transient did `goto exit_strand` (the first T7 attempt),
  *       truncating the body at the first `;` — Realm.n never assigned, the
@@ -182,7 +182,7 @@ UTEST(scratch_budget_seeded_loop_completes)
 
     /* Post-fix: body runs to completion; vm.ready_head must be NULL.
      * Pre-fix: vm.ready_head != NULL (dead-stack pointer from
-     * sched_strand_yield enqueueing the stack UStrand). */
+     * urbi_sched_strand_yield enqueueing the stack UStrand). */
     UASSERT(vm.ready_head == NULL);
 
     /* Post-fix: no throw; pre-fix: threw == 1 from fail-soft else arm. */
@@ -204,7 +204,7 @@ static uint64_t mock_clock_safety(void *ud) { (void)ud; return g_mock_t_safety; 
  * A scratch body that calls sleep() blocks the strand on the sleep queue
  * (USTRAND_REASON_SLEEP).  At teardown the strand must NOT be reachable
  * via vm->sleep_q_head — a dead-stack UAF would occur at the next
- * sched_wake_due_sleepers call.
+ * urbi_sched_wake_due_sleepers call.
  *
  * v0.13.1 T3 (SCHED-05) shipped strand_cleanup_observers in ustrand_destroy
  * which calls strand_unlink_park for WAITING strands.  T7's FIX 3 adds an

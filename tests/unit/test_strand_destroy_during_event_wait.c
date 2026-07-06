@@ -68,7 +68,7 @@ UTEST(destroy_clears_event_waiter_head)
     UStrand *s = urbi_strand_create(&vm, realm, NULL);
     UASSERT(s != NULL);
 
-    /* Arm the strand so sched_strand_block's decrement does not underflow. */
+    /* Arm the strand so urbi_sched_strand_block's decrement does not underflow. */
     s->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
     vm.cur_strand = s;
@@ -189,7 +189,7 @@ UTEST(destroy_wakes_joiner)
      * call performs the increment" assertion below. */
     parent->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;   /* satisfy block's RUNNING-decrement */
-    sched_strand_block(parent, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
+    urbi_sched_strand_block(parent, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
     UASSERT_EQ(vm.strand_runnable_count, 0);
 
     /* Thread parent onto child's joiners_head (mirrors urbi_vm_op_join_wait internals). */

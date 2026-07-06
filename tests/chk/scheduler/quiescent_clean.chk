@@ -1,6 +1,6 @@
 # Milestone: M3
 # Covers: after all strands have run to completion and no pending events,
-#         watchers, or sleeping strands remain, sched_quiescent returns true
+#         watchers, or sleeping strands remain, urbi_sched_quiescent returns true
 #         and urbi_step returns URBI_STEP_QUIESCENT.
 #
 # Driven by the chk-host-driver (## host: step): a freshly-created VM with no

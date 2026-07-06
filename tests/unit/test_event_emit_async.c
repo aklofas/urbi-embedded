@@ -21,7 +21,7 @@
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
 #include "sched/ustrand.h"
-#include "sched/usched_cooperative.h"  /* sched_strand_block (case 2 park) */
+#include "sched/usched_cooperative.h"  /* urbi_sched_strand_block (case 2 park) */
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "chunk/uchunk.h"
@@ -165,7 +165,7 @@ UTEST(emit_async_wakes_waiters)
     ustrand_init(&waiter, &vm);
     waiter.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;   /* satisfy block's RUNNING-decrement */
-    sched_strand_block(&waiter, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
+    urbi_sched_strand_block(&waiter, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
     waiter.wait_event_target  = e;
     waiter.next_event_waiter  = NULL;
     waiter.last_event_payload.kind = UVAL_NIL;

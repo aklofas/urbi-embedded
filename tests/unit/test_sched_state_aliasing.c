@@ -3,10 +3,10 @@
  *
  * Audit IDs closed:
  *   SCHED-001 — JOIN/WAIT_EVENT state-byte alias (uunwind.c discriminator)
- *   SCHED-002 — sched_strand_block re-block already-WAITING (entry-state assert)
- *   SCHED-003 — sched_strand_yield re-yield already-READY (entry-state assert)
+ *   SCHED-002 — urbi_sched_strand_block re-block already-WAITING (entry-state assert)
+ *   SCHED-003 — urbi_sched_strand_yield re-yield already-READY (entry-state assert)
  *   SCHED-004 — c_event_waituntil re-stamp leaves stale sleep-queue links
- *   SCHED-005 — sched_strand_make_runnable idempotence assertion
+ *   SCHED-005 — urbi_sched_strand_make_runnable idempotence assertion
  */
 
 #include "utest.h"
@@ -64,7 +64,7 @@ UTEST(join_blocked_strand_state_distinct_from_wait_event)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UStrand parent, child;
     ustrand_init(&parent, &vm);
@@ -74,7 +74,7 @@ UTEST(join_blocked_strand_state_distinct_from_wait_event)
     child.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
 
-    sched_strand_block(&child, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)&parent);
+    urbi_sched_strand_block(&child, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)&parent);
 
     /* (a) literal byte distinct from WAIT_EVENT. */
     UASSERT(child.state != USTRAND_WAIT_EVENT);
@@ -135,7 +135,7 @@ UTEST(is_event_parked_predicate_distinguishes_reason_byte)
     UASSERT(is_event_parked_local(&s));
 
     /* v0.13.3 (SCHED-13): restore DORMANT before teardown — the raw stamps
-     * above bypass sched_strand_block, so the strand was never counted in
+     * above bypass urbi_sched_strand_block, so the strand was never counted in
      * strand_waiting_count; destroying it in a WAITING state would trip
      * the no-saturation decrement.  This test only exercises the
      * state-byte predicate. */
@@ -146,7 +146,7 @@ UTEST(is_event_parked_predicate_distinguishes_reason_byte)
 }
 
 /* ===================================================================
- * T39 — SCHED-002: sched_strand_block requires entry state RUNNING/READY
+ * T39 — SCHED-002: urbi_sched_strand_block requires entry state RUNNING/READY
  * ===================================================================
  *
  * Re-blocking a strand that's already WAITING re-inserts via sleep_q_insert,
@@ -160,7 +160,7 @@ UTEST(block_from_running_state_correct)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UStrand s;
     ustrand_init(&s, &vm);
@@ -168,7 +168,7 @@ UTEST(block_from_running_state_correct)
     s.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
 
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000U);
+    urbi_sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000U);
 
     UASSERT_EQ((int)(s.state & USTRAND_STATE_MASK), (int)USTRAND_WAITING);
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
@@ -181,14 +181,14 @@ UTEST(block_from_running_state_correct)
 
 #ifdef URBI_DEBUG
 /* Helper invoked inside the forked child of EXPECT_ABORT below.  Sets up a
- * SLEEP-blocked strand then re-blocks it — the second sched_strand_block must
+ * SLEEP-blocked strand then re-blocks it — the second urbi_sched_strand_block must
  * trip URBI_INTERNAL_ASSERT and abort the child. */
 static void
 reblock_waiting_strand(void)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UStrand s;
     ustrand_init(&s, &vm);
@@ -196,10 +196,10 @@ reblock_waiting_strand(void)
     /* First block: legitimate RUNNING → WAITING_SLEEP. */
     s.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000U);
+    urbi_sched_strand_block(&s, USTRAND_REASON_SLEEP, 1000U);
 
     /* Second block: WAITING → WAITING_SLEEP — must abort. */
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 2000U);
+    urbi_sched_strand_block(&s, USTRAND_REASON_SLEEP, 2000U);
 }
 
 UTEST(reblock_already_waiting_strand_aborts_in_debug)
@@ -209,7 +209,7 @@ UTEST(reblock_already_waiting_strand_aborts_in_debug)
 #endif
 
 /* ===================================================================
- * T40 — SCHED-003: sched_strand_yield requires entry state RUNNING
+ * T40 — SCHED-003: urbi_sched_strand_yield requires entry state RUNNING
  * ===================================================================
  *
  * Re-yielding a READY strand silently re-enqueues, double-counting
@@ -217,13 +217,13 @@ UTEST(reblock_already_waiting_strand_aborts_in_debug)
  * Fix: URBI_INTERNAL_ASSERT(s->state == USTRAND_RUNNING) at entry.
  * The two live call sites in uvm.c (OP_YIELD and the safepoint
  * budget-exhaust path) had each pre-set state to READY before the
- * yield call; that pre-set was redundant (sched_strand_make_runnable
+ * yield call; that pre-set was redundant (urbi_sched_strand_make_runnable
  * sets state unconditionally) and is removed in the same commit. */
 UTEST(yield_from_running_makes_ready)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UStrand s;
     ustrand_init(&s, &vm);
@@ -231,7 +231,7 @@ UTEST(yield_from_running_makes_ready)
     /* SCHED-01: a RUNNING strand is counted; yield is count-neutral. */
     s.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
-    sched_strand_yield(&s);
+    urbi_sched_strand_yield(&s);
 
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_READY);
     UASSERT_EQ(vm.strand_runnable_count, 1U);
@@ -248,7 +248,7 @@ yield_already_ready(void)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UStrand s;
     ustrand_init(&s, &vm);
@@ -256,11 +256,11 @@ yield_already_ready(void)
     /* First yield: legitimate RUNNING → READY (counted; SCHED-01). */
     s.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
-    sched_strand_yield(&s);
+    urbi_sched_strand_yield(&s);
     /* state now READY, on ready queue. */
 
     /* Second yield from READY — must abort. */
-    sched_strand_yield(&s);
+    urbi_sched_strand_yield(&s);
 }
 
 UTEST(yield_already_ready_strand_aborts_in_debug)
@@ -270,7 +270,7 @@ UTEST(yield_already_ready_strand_aborts_in_debug)
 #endif
 
 /* ===================================================================
- * T41 — SCHED-004: re-stamp through sched_strand_unbind_from_sleep_queue
+ * T41 — SCHED-004: re-stamp through urbi_sched_strand_unbind_from_sleep_queue
  * ===================================================================
  *
  * Direct exercise of the helper.  c_event_waituntil's full path requires
@@ -281,7 +281,7 @@ UTEST(unbind_from_sleep_queue_clears_links_when_present)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UStrand s;
     ustrand_init(&s, &vm);
@@ -289,12 +289,12 @@ UTEST(unbind_from_sleep_queue_clears_links_when_present)
     /* Setup: place strand on sleep queue (sole occupant). */
     s.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 5000U);
+    urbi_sched_strand_block(&s, USTRAND_REASON_SLEEP, 5000U);
     UASSERT(vm.sleep_q_head == &s);
     UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
     /* Helper unbinds the strand: queue empty, counter zero, wait_next NULL. */
-    sched_strand_unbind_from_sleep_queue(&s);
+    urbi_sched_strand_unbind_from_sleep_queue(&s);
     UASSERT(vm.sleep_q_head == NULL);
     UASSERT_EQ(vm.wakeup_pending_count, 0U);
     UASSERT(s.wait_next == NULL);
@@ -307,20 +307,20 @@ UTEST(unbind_from_sleep_queue_idempotent_when_not_on_queue)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UStrand s;
     ustrand_init(&s, &vm);
     /* Strand never put on sleep queue — wait_next is NULL by ustrand_init. */
 
     /* No-op: counter must not underflow, wait_next stays NULL. */
-    sched_strand_unbind_from_sleep_queue(&s);
+    urbi_sched_strand_unbind_from_sleep_queue(&s);
     UASSERT(vm.sleep_q_head == NULL);
     UASSERT_EQ(vm.wakeup_pending_count, 0U);
     UASSERT(s.wait_next == NULL);
 
     /* Repeated call still no-op (counter stays at 0, no underflow). */
-    sched_strand_unbind_from_sleep_queue(&s);
+    urbi_sched_strand_unbind_from_sleep_queue(&s);
     UASSERT_EQ(vm.wakeup_pending_count, 0U);
 
     ustrand_destroy(&s, &vm);
@@ -333,10 +333,10 @@ UTEST(unbind_from_sleep_queue_idempotent_when_not_on_queue)
  * This simulates the worst case the audit identified: a stale wait_next
  * pointer that would otherwise survive into the WAIT_EVENT state. */
 /* ===================================================================
- * SCHED-005: sched_strand_make_runnable idempotence assertion
+ * SCHED-005: urbi_sched_strand_make_runnable idempotence assertion
  * ===================================================================
  *
- * Calling sched_strand_make_runnable on a strand already in READY state
+ * Calling urbi_sched_strand_make_runnable on a strand already in READY state
  * tail-inserts it a second time, producing a circular ready_next/ready_prev
  * chain and double-counting strand_runnable_count.  Fix: assert
  * (s->state != USTRAND_STATE_READY) at entry.  Aborts only fire under
@@ -346,13 +346,13 @@ UTEST(make_runnable_from_dormant_correct)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UStrand s;
     ustrand_init(&s, &vm);
     /* state at init is DORMANT — make_runnable is the legitimate transition. */
 
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_READY);
     UASSERT_EQ(vm.strand_runnable_count, 1U);
@@ -369,17 +369,17 @@ make_runnable_already_ready(void)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UStrand s;
     ustrand_init(&s, &vm);
 
     /* First make_runnable: legitimate DORMANT → READY. */
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
     /* state now READY, on ready queue. */
 
     /* Second make_runnable from READY — must abort. */
-    sched_strand_make_runnable(&s);
+    urbi_sched_strand_make_runnable(&s);
 }
 
 UTEST(make_runnable_already_ready_aborts_in_debug)
@@ -392,7 +392,7 @@ UTEST(unbind_then_restamp_clears_stale_sleep_queue_link)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     /* Two sleep-blocked strands so unbind exercises the mid-list splice. */
     UStrand a, b;
@@ -403,15 +403,15 @@ UTEST(unbind_then_restamp_clears_stale_sleep_queue_link)
     b.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 2;
 
-    sched_strand_block(&a, USTRAND_REASON_SLEEP, 100U);
-    sched_strand_block(&b, USTRAND_REASON_SLEEP, 200U);
+    urbi_sched_strand_block(&a, USTRAND_REASON_SLEEP, 100U);
+    urbi_sched_strand_block(&b, USTRAND_REASON_SLEEP, 200U);
     UASSERT(vm.sleep_q_head == &a);
     UASSERT(a.wait_next == &b);
     UASSERT_EQ(vm.wakeup_pending_count, 2U);
 
     /* Pathological: re-stamp a's state to WAIT_EVENT.  Without unbind a
      * would still link to b on the sleep queue. */
-    sched_strand_unbind_from_sleep_queue(&a);
+    urbi_sched_strand_unbind_from_sleep_queue(&a);
     a.state = USTRAND_WAIT_EVENT;
 
     UASSERT(a.wait_next == NULL);

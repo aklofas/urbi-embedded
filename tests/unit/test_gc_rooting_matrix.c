@@ -291,14 +291,14 @@ UTEST(matrix_cleanup_owning_tag_is_rooted)
 
     /* Real cleanup stack via the runtime's own init (raw vm->alloc_fn —
      * never a GC allocation, so no stress hazard); entries arrive zeroed. */
-    int rc = strand_cleanup_stack_init(&s, &vm, (uint16_t)URBI_CLEANUP_MAX);
+    int rc = urbi_sched_strand_cleanup_stack_init(&s, &vm, (uint16_t)URBI_CLEANUP_MAX);
     UASSERT_EQ(rc, 0);
 
     /* Push FIRST (pure index bump, no allocation), THEN create the tag,
      * THEN store: under URBI_GC_STRESS utag_create force-collects before
      * allocating, and nothing may allocate between utag_create returning
      * and the owning_tag store while the tag is unrooted. */
-    UCleanupEntry *entry = strand_cleanup_push(&s);
+    UCleanupEntry *entry = urbi_sched_strand_cleanup_push(&s);
     UASSERT(entry != NULL);
     entry->kind        = (uint8_t)UCLEANUP_TAG_SCOPE;
     entry->strand_back = &s;   /* mirrors urbi_vm_push_tag_scope; the remaining
@@ -321,8 +321,8 @@ UTEST(matrix_cleanup_owning_tag_is_rooted)
      * live tag scope; the now-unreferenced tag is reclaimed by a later
      * cycle (GC owns it — no utag_destroy here). */
     entry->owning_tag = NULL;
-    strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
-    strand_cleanup_stack_destroy(&s, &vm);
+    urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
+    urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
     matrix_strand_teardown(&vm, &s);
     urbi_vm_destroy(&vm);
 }

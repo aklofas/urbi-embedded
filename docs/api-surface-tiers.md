@@ -357,6 +357,19 @@ CI gate tracks this list to prevent silent growth.
   `urbi_periodic_destroy_for_realm`, `urbi_periodic_earliest_wake_us`,
   `urbi_periodic_pump`, `urbi_periodic_table_walk_roots`
 
+### Scheduler internals (v0.13.6 namespace day)
+
+Core scheduler and strand management symbols renamed from unprefixed names.
+
+- `urbi_sched_init`, `urbi_sched_destroy` — scheduler lifecycle
+- `urbi_sched_dequeue_ready_head`, `urbi_sched_wake_due_sleepers`, `urbi_sched_earliest_wake_us` — run-queue management
+- `urbi_sched_quiescent`, `urbi_sched_post_dispatch` — quiescence and post-dispatch
+- `urbi_sched_strand_init`, `urbi_sched_strand_destroy`, `urbi_sched_strand_account_destroy` — strand lifecycle
+- `urbi_sched_strand_make_runnable`, `urbi_sched_strand_yield`, `urbi_sched_strand_block`, `urbi_sched_strand_unblock` — strand scheduling
+- `urbi_sched_strand_unbind_from_ready_queue`, `urbi_sched_strand_unbind_from_sleep_queue` — strand queue management
+- `urbi_sched_strand_cleanup_push`, `urbi_sched_strand_cleanup_pop`, `urbi_sched_strand_cleanup_stack_init`, `urbi_sched_strand_cleanup_stack_destroy` — strand cleanup stack (renamed from `strand_cleanup_*`)
+- `urbi_sched_strand_unlink_member_entry` — strand member-list management
+
 ### Scheduler liveness internals (v0.13.3 scheduler-liveness)
 
 Liveness counter mutators and the quiescence formula.  All are internal to

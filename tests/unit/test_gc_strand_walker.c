@@ -111,7 +111,7 @@ UTEST(strand_walker_visits_waiting_join_strand)
     urbi_strand_start(&vm, parent);            /* DORMANT -> READY */
     parent->wait_next   = child->joiners_head;
     child->joiners_head = parent;
-    sched_strand_block(parent, USTRAND_REASON_JOIN,
+    urbi_sched_strand_block(parent, USTRAND_REASON_JOIN,
                        (uint64_t)(uintptr_t)child);
 
     /* Probe: count total visits across the walker run. */

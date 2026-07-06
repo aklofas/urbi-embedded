@@ -23,7 +23,7 @@
  *     deposit, confirmed.  *out_threw was already 1, but only by ACCIDENT:
  *     the zeroed scratch strand's safepoint_budget_remaining == 0 made
  *     the first safepoint after the fault yield the strand
- *     (sched_strand_yield even enqueued the stack-local transient on the
+ *     (urbi_sched_strand_yield even enqueued the stack-local transient on the
  *     VM ready queue), and the "yielded/blocked" fail-soft arm fired.
  *   - case 2: vm->step_budget_remaining clobbered to
  *     URBI_SCRATCH_BUDGET_OPS (sentinel lost).

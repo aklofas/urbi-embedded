@@ -32,7 +32,7 @@
 #include "object/uic.h"                     /* UIC */
 #include "object/uchunk_instance.h"         /* urbi_chunk_instance_create,
                                                UChunkInstance, UProtoInstance */
-#include "sched/usched_cooperative.h"       /* sched_init */
+#include "sched/usched_cooperative.h"       /* urbi_sched_init */
 #include "watcher/uwatcher.h"               /* UWATCHER_AT */
 #include "watcher/uwatcher_install.h"       /* install_watcher_runtime */
 #include "urbi/urbi.h"                      /* URBI_LOG_WARN */
@@ -176,7 +176,7 @@ UTEST(trace_records_slot_reads_during_install)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
     vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UObject *obj = make_object_with_x_slot(&vm);
     UASSERT(obj != NULL);
@@ -205,7 +205,7 @@ UTEST(trace_deduplicates_same_receiver)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
     vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UObject *obj = make_object_with_x_slot(&vm);
     UASSERT(obj != NULL);
@@ -237,7 +237,7 @@ UTEST(trace_overflow_sets_flag_and_caps)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
     vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     /* Allocate MAX+2 distinct objects. */
     size_t extra = (size_t)URBI_WATCHER_READSET_MAX + 2U;
@@ -274,7 +274,7 @@ UTEST(trace_disabled_when_flag_clear)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
     vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
-    sched_init(&vm, NULL);
+    urbi_sched_init(&vm, NULL);
 
     UObject *obj = make_object_with_x_slot(&vm);
     UASSERT(obj != NULL);

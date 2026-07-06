@@ -47,12 +47,12 @@ int urbi_vm_op_fork_join(UStrand *s, UVM *vm, uint32_t instr);
  * ABC: A = child_handle_reg.  B and C are reserved (encoded as 0).
  * If child is already DEAD: returns 0 (parent continues).
  * Otherwise: threads parent onto child->joiners_head, blocks parent with
- * sched_strand_block(REASON_JOIN), and returns 1 (caller must goto exit_strand). */
+ * urbi_sched_strand_block(REASON_JOIN), and returns 1 (caller must goto exit_strand). */
 int urbi_vm_op_join_wait(UStrand *s, UVM *vm, uint32_t instr);
 
 /* Called at every strand-DEAD transition.
  * Walks s->joiners_head chain via wait_next and calls
- * sched_strand_make_runnable() for each blocked joiner.
+ * urbi_sched_strand_make_runnable() for each blocked joiner.
  * Idempotent (clears joiners_head after walking).
  * Not ISR-safe; must be called from the dispatch loop or step driver. */
 void urbi_vm_fork_wake_joiners(UStrand *s, UVM *vm);

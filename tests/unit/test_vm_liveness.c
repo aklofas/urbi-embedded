@@ -13,7 +13,7 @@
  *   SCHED-06 — install_at_event_runtime skipped the active_count bump while
  *              urbi_watcher_unregister_internal decrements unconditionally
  *              (uint32 underflow -> quiescent-never).
- *   SCHED-13 — three divergent quiescence formulas (sched_quiescent,
+ *   SCHED-13 — three divergent quiescence formulas (urbi_sched_quiescent,
  *              urbi_step's post-loop returns, urbi_vm_has_live_work) folded
  *              into one urbi_vm_liveness().
  *   VM-12   — SUSPENDED strands were invisible to every liveness query.
@@ -141,7 +141,7 @@ UTEST(suspended_strand_counted_and_quiescent)
     memset(&tag, 0, sizeof(tag));
     tag.type_tag = (uint8_t)UTYPE_TAG;
     {
-        UCleanupEntry *e = strand_cleanup_push(s);
+        UCleanupEntry *e = urbi_sched_strand_cleanup_push(s);
         UASSERT(e != NULL);
         e->kind          = (uint8_t)UCLEANUP_TAG_SCOPE;
         e->owning_tag    = &tag;

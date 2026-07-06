@@ -6,7 +6,7 @@
 #include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "sched/ustrand.h"
-#include "sched/usched_cooperative.h" /* sched_strand_yield */
+#include "sched/usched_cooperative.h" /* urbi_sched_strand_yield */
 #include "value/uvalue.h"
 #include "runtime/uunwind.h"
 #include "realm/urealm.h"            /* URealm — OP_LOAD_REALM_GLOBAL */
@@ -251,7 +251,7 @@ urbi_vm_dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
      * resume from WAIT_EVENT.  c_event_waituntil parks the strand by setting
      * state=WAIT_EVENT, advancing pc past the OP_CALL, and exiting.  On wake,
      * c_event_emit_* deposits the payload in s->last_event_payload before
-     * sched_strand_make_runnable (see wake_event_waiters in uevent_emit.c).
+     * urbi_sched_strand_make_runnable (see wake_event_waiters in uevent_emit.c).
      * At this point s->pc points to the instruction AFTER the OP_CALL, so
      * s->pc[-1] is the parked OP_CALL instruction; uinstr_a(s->pc[-1]) gives
      * the destination register.  Writing there before the first dispatch
@@ -835,13 +835,13 @@ dispatch:
                         goto safepoint;
                     }
                     /* W6/v0.10.2: a native method may block the strand (e.g.
-                     * sleep()) by calling sched_strand_block.  If the strand
+                     * sleep()) by calling urbi_sched_strand_block.  If the strand
                      * is now WAITING, advance pc past this OP_CALL so the
                      * scheduler resumes at the correct next instruction, then
                      * exit the dispatch loop.  Mirrors OP_WAITUNTIL_INSTALL's
                      * WAITING-exit at line ~1591.
                      * strand_runnable_count is already decremented by
-                     * sched_strand_block (RUNNING → WAITING path). */
+                     * urbi_sched_strand_block (RUNNING → WAITING path). */
                     if (USTRAND_IS_WAITING(s)) {
                         s->pc++;
                         steps_consumed++;
@@ -1196,7 +1196,7 @@ dispatch:
             /* Cooperative yield: advance past this opcode, transition to READY,
                and return to the scheduler.  The urbi_vm_run adapter re-enters
                urbi_vm_dispatch_loop_until_yield until strand is DEAD.
-               sched_strand_yield asserts entry state == RUNNING (SCHED-003)
+               urbi_sched_strand_yield asserts entry state == RUNNING (SCHED-003)
                and overwrites with READY on enqueue, so no pre-set here. */
             s->pc++;
             if (s->is_transient_strand) {
@@ -1207,7 +1207,7 @@ dispatch:
                  * are "synchronous scratch frame; no yield" per
                  * docs/internals/reactive-runtime.md).  Two reasons NOT to
                  * enqueue + exit here:
-                 *   (1) the UStrand lives on the C stack — sched_strand_yield
+                 *   (1) the UStrand lives on the C stack — urbi_sched_strand_yield
                  *       would put a dead-stack pointer on vm->ready_head (UAF);
                  *   (2) exiting at the first `;` would drop every statement
                  *       after it (the bug this replaces).
@@ -1218,7 +1218,7 @@ dispatch:
                  * ASYNC at/event/whenever bodies run on REAL (non-transient)
                  * strands via do_spawn_body_coroutine → urbi_strand_create
                  * (is_transient_strand stays 0), so they fall through to
-                 * sched_strand_yield below and still yield on `;` as before. */
+                 * urbi_sched_strand_yield below and still yield on `;` as before. */
                 URBI_PERF_INC(s->vm, opcodes);
 #if UVM_USE_COMPUTED_GOTO
                 DISPATCH();
@@ -1226,7 +1226,7 @@ dispatch:
                 goto dispatch;
 #endif
             }
-            sched_strand_yield(s);
+            urbi_sched_strand_yield(s);
             steps_consumed++;
             goto exit_strand;
         }
@@ -1418,7 +1418,7 @@ dispatch:
              * Push a UCLEANUP_TRY_FRAME entry onto the cleanup stack. */
             uint8_t  flags      = uinstr_a(*s->pc);
             uint16_t handler_pc = uinstr_bx(*s->pc);
-            UCleanupEntry *entry = strand_cleanup_push(s);
+            UCleanupEntry *entry = urbi_sched_strand_cleanup_push(s);
             if (entry == NULL) {
                 /* Cleanup stack full — strand fatal. */
                 s->fatal_status = UEXEC_THROW;
@@ -1441,7 +1441,7 @@ dispatch:
         CASE(OP_TRY_END) {
             /* OP_TRY_END ABC: no operands.  Pop the top UCLEANUP_TRY_FRAME entry. */
             if (s->cleanup_depth > 0) {
-                strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
+                urbi_sched_strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
             }
             NEXT();
         }
@@ -1495,7 +1495,7 @@ dispatch:
              * strand_back = s for compatibility with unwind walker. */
             uint8_t register_base  = uinstr_a(*s->pc);
             uint8_t register_count = uinstr_b(*s->pc);
-            UCleanupEntry *entry = strand_cleanup_push(s);
+            UCleanupEntry *entry = urbi_sched_strand_cleanup_push(s);
             if (entry == NULL) {
                 s->fatal_status = UEXEC_THROW;
                 s->state        = USTRAND_STATE_DEAD;
@@ -1793,15 +1793,15 @@ safepoint:
     }
     if (s->safepoint_budget_remaining == 0) {
         /* B11/SCHED-03: transient strands (scratch, urbi_vm_run) must not
-         * be enqueued via sched_strand_yield — the UStrand lives on the C
+         * be enqueued via urbi_sched_strand_yield — the UStrand lives on the C
          * stack and a later urbi_step traversal via vm->ready_head would be
          * a dead-stack UAF.  Exit dispatch with state == RUNNING; the callers
          * (run_on_scratch_core, urbi_vm_run) handle the RUNNING-on-return
          * case by re-arming the budget and continuing. */
         if (s->is_transient_strand) goto exit_strand;
-        /* sched_strand_yield asserts entry state == RUNNING (SCHED-003)
+        /* urbi_sched_strand_yield asserts entry state == RUNNING (SCHED-003)
          * and overwrites with READY on enqueue, so no pre-set here. */
-        sched_strand_yield(s);
+        urbi_sched_strand_yield(s);
         goto exit_strand;
     }
     s->safepoint_budget_remaining--;
@@ -1814,14 +1814,14 @@ safepoint:
            sched_pick_next only returns vm->ready_head, so no later call could
            ever pick the strand back up (an embedder `while (urbi_step(vm, N) ==
            RUNNING)` loop would spin without progress).  The state == RUNNING
-           assert inside sched_strand_yield is guaranteed here — the unwind and
+           assert inside urbi_sched_strand_yield is guaranteed here — the unwind and
            safepoint-budget arms above already diverted every non-RUNNING case.
            The urbi_vm_run adapter passes UINT64_MAX and never reaches this arm;
            were it to, its READY arm re-runs the strand identically.
            B11/SCHED-03: same transient guard as the safepoint-budget arm above —
            do not enqueue stack-local strands onto the scheduler queues. */
         if (s->is_transient_strand) goto exit_strand;
-        sched_strand_yield(s);
+        urbi_sched_strand_yield(s);
         goto exit_strand;
     }
     vm->step_budget_remaining--;
@@ -1864,12 +1864,12 @@ exit_strand:
      * single-writer scheme — urbi_sched_runnable_inc/dec are the only writers):
      *   - Transient strands (urbi_vm_run) never participate in the count;
      *     both helpers skip them.
-     *   - DEAD: the strand was RUNNING (counted); sched_post_dispatch step 1
+     *   - DEAD: the strand was RUNNING (counted); urbi_sched_post_dispatch step 1
      *     decrements after the driver clears vm->cur_strand.
-     *   - WAITING: sched_strand_block decremented at the parking site.
+     *   - WAITING: urbi_sched_strand_block decremented at the parking site.
      *   - SUSPENDED: urbi_strand_suspend decremented (RUNNING arm) or
      *     unbind_from_ready_queue did (READY arm).
-     *   - READY (yield): sched_strand_yield re-enqueued count-neutrally.
+     *   - READY (yield): urbi_sched_strand_yield re-enqueued count-neutrally.
      * No count mutation in the dispatch loop or its drivers. */
 
     /* refactor-3 VM-06a canary: at outermost dispatch exit (not nested under

@@ -393,9 +393,9 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Writer discipline for the strand-state counters (single-writer per
      * transition, mirroring SCHED-01; helpers in usched_cooperative.c):
      *   strand_runnable_count  — urbi_sched_runnable_inc/dec ONLY.
-     *   strand_waiting_count   — inc: sched_strand_block (the single WAITING
+     *   strand_waiting_count   — inc: urbi_sched_strand_block (the single WAITING
      *                            entry point).  dec (asserted > 0):
-     *                            sched_strand_make_runnable on a WAITING
+     *                            urbi_sched_strand_make_runnable on a WAITING
      *                            strand (every wake path funnels there —
      *                            urbi_sched_strand_unpark(s, 1) included; a
      *                            SCHED-08 gated wake also exits here, handing
@@ -406,11 +406,11 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *                            WAITING -> DEAD), and ustrand_destroy for
      *                            death-from-WAITING.
      *   strand_suspended_count — inc: urbi_strand_suspend (READY/RUNNING
-     *                            arms) and sched_strand_make_runnable's
+     *                            arms) and urbi_sched_strand_make_runnable's
      *                            gated-wake arm (SCHED-08: a WAITING strand
      *                            with a block/freeze gate set wakes into
      *                            SUSPENDED).  dec (asserted > 0):
-     *                            sched_strand_make_runnable on a SUSPENDED
+     *                            urbi_sched_strand_make_runnable on a SUSPENDED
      *                            strand (urbi_strand_resume_if_ungated and the
      *                            tag-stop/cancel override funnel there),
      *                            urbi_strand_panic's SUSPENDED arm, and

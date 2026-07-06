@@ -10,7 +10,7 @@
 # tag.stop(); that contradicted the locked S5a semantics and so could not be
 # activated.  The real behaviour — sleeper woken, block terminated, finally run,
 # catch skipped — is asserted here.  The sleeper is woken via tag.stop()'s
-# sched_strand_unblock (it becomes runnable, so the next step dispatches it).
+# urbi_sched_strand_unblock (it becomes runnable, so the next step dispatches it).
 #
 # v0.13.3 (refactor-3 SCHED-01/B10): step results updated under the
 # single-writer runnable count.  First step: only a not-yet-due sleeper is

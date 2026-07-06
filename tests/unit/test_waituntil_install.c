@@ -126,7 +126,7 @@ UTEST(waituntil_blocks_strand_when_cond_starts_false)
     urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     /* SCHED-01 (v0.13.3): the park path now routes through
-     * sched_strand_block, whose entry contract is RUNNING (or READY) —
+     * urbi_sched_strand_block, whose entry contract is RUNNING (or READY) —
      * matching the OP_WAITUNTIL_INSTALL dispatch context.  A RUNNING
      * strand is in the counted set, so seed the count accordingly. */
     s.state = USTRAND_RUNNING;
@@ -142,7 +142,7 @@ UTEST(waituntil_blocks_strand_when_cond_starts_false)
     /* Strand must be in WAITING state with WATCHER reason. */
     UASSERT(USTRAND_IS_WAITING(&s));
     UASSERT_EQ((int)USTRAND_WAIT_WATCHER, (int)s.state);
-    /* sched_strand_block owns the runnable-count decrement (SCHED-01). */
+    /* urbi_sched_strand_block owns the runnable-count decrement (SCHED-01). */
     UASSERT_EQ(vm.strand_runnable_count, 0U);
     /* Watcher must be installed and waiter_strand wired. */
     UASSERT(vm.active_watchers_head != NULL);

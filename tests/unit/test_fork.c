@@ -350,7 +350,7 @@ UTEST(fork_join_arithmetic_children)
  * The behavioral check is: a chain of joins (& separator) reaches
  * quiescence with the expected void result and no fatal.  If the
  * ordering re-broke (e.g. the parent's state was inconsistent at the
- * link site), one of sched_strand_block's SCHED-002 entry-state asserts
+ * link site), one of urbi_sched_strand_block's SCHED-002 entry-state asserts
  * or the make_runnable READY-idempotence assert in urbi_vm_fork_wake_joiners
  * would trip in URBI_DEBUG builds. */
 UTEST(fork_join_wait_parent_blocked_before_link_to_chain)

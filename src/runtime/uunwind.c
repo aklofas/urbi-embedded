@@ -321,7 +321,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
                 /* Yielded: still counted; splice off the queue (unbind
                  * decrements) and re-enter the counted set as RUNNING —
                  * net zero, queue links clean. */
-                sched_strand_unbind_from_ready_queue(s);
+                urbi_sched_strand_unbind_from_ready_queue(s);
                 s->state = USTRAND_STATE_RUNNING;
                 urbi_sched_runnable_inc(s->vm, s);
             }
@@ -437,7 +437,7 @@ urbi_unwind(UStrand *s)
                      * with the replacement value already in unwind_value. */
                     uint16_t handler_pc = e->handler_pc;
                     int      rc;
-                    strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
+                    urbi_sched_strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
                     rc = run_cleanup_with_replace(s, handler_pc);
                     if (rc == URBI_ERR_CLEANUP_OVERFLOW) {
                         UValue overflow_marker;
@@ -474,9 +474,9 @@ urbi_unwind(UStrand *s)
                 } else {
                     /* TRY_FRAME without finally (a catch never matches a
                      * RETURN): pop and continue.  The explicit kind keeps
-                     * strand_cleanup_pop's kind assert meaningful — TRY_FRAME
+                     * urbi_sched_strand_cleanup_pop's kind assert meaningful — TRY_FRAME
                      * is the only kind left after the arms above. */
-                    strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
+                    urbi_sched_strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
                 }
             }
             if (!replaced) {
@@ -539,7 +539,7 @@ urbi_unwind(UStrand *s)
                 : 0;
 
             /* Pop the cleanup entry. */
-            strand_cleanup_pop(s, UCLEANUP_CALL_FRAME);
+            urbi_sched_strand_cleanup_pop(s, UCLEANUP_CALL_FRAME);
 
             if (s->pending_unwind == UEXEC_RETURN) {
                 /* Absorb: restore caller frame and deliver the return value. */
@@ -581,7 +581,7 @@ urbi_unwind(UStrand *s)
                  * deref on `s->module` (body strands have module=NULL). */
                 bind_catch_value(s, e->catch_pattern, s->unwind_value);
                 uint16_t handler_pc = e->handler_pc;
-                strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
+                urbi_sched_strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
                 s->pc = s->pc_base + handler_pc;
                 s->pending_unwind = UEXEC_OK;
                 s->unwind_value   = nil;
@@ -602,7 +602,7 @@ urbi_unwind(UStrand *s)
                  * when recursion depth would exceed URBI_CLEANUP_MAX. */
                 uint16_t handler_pc = e->handler_pc;
                 int      rc;
-                strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
+                urbi_sched_strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
                 rc = run_cleanup_with_replace(s, handler_pc);
                 if (rc == URBI_ERR_CLEANUP_OVERFLOW) {
                     UValue overflow_marker;
@@ -631,7 +631,7 @@ urbi_unwind(UStrand *s)
             }
 
             /* No matching catch and no finally: pop and propagate. */
-            strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
+            urbi_sched_strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
             continue;
         }
 
@@ -661,7 +661,7 @@ urbi_unwind(UStrand *s)
                  * so the unwind propagates and eventually terminates the
                  * strand via USTRAND_STATE_DEAD. */
                 if (e->flags & FLAG_TAG_AMBIENT) {
-                    strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+                    urbi_sched_strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
                     continue;
                 }
                 uint16_t resume_pc = e->handler_pc;
@@ -712,7 +712,7 @@ urbi_unwind(UStrand *s)
                 uint16_t handler_pc = e->handler_pc;
                 int      rc;
                 if (e->flags & FLAG_TAG_AMBIENT)
-                    strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+                    urbi_sched_strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
                 else
                     urbi_vm_tag_scope_teardown(s, e);
                 rc = run_cleanup_with_replace(s, handler_pc);
@@ -736,7 +736,7 @@ urbi_unwind(UStrand *s)
             }
 
             if (e->flags & FLAG_TAG_AMBIENT)
-                strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+                urbi_sched_strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
             else
                 urbi_vm_tag_scope_teardown(s, e);
             continue;
@@ -745,7 +745,7 @@ urbi_unwind(UStrand *s)
         default: {
             /* Unknown entry kind — safety net; pop and continue to avoid
              * an infinite loop on corrupted cleanup stack. */
-            strand_cleanup_pop(s, (UCleanupKind)kind);
+            urbi_sched_strand_cleanup_pop(s, (UCleanupKind)kind);
             continue;
         }
         } /* switch */
@@ -774,7 +774,7 @@ fatal:
  *
  * For each fresh deposit, increments vm->host_call_pending_count once and
  * sets s->cross_strand_stop_pending = 1 (idempotent flag; decremented at
- * ustrand_destroy so sched_quiescent eventually converges).
+ * ustrand_destroy so urbi_sched_quiescent eventually converges).
  *
  * WAITING strands are woken via urbi_sched_strand_unpark (refactor-3 SCHED-05:
  * unlink the reason-specific third-party links, then the make_runnable
@@ -860,7 +860,7 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
              * resume.  The tracepoint in urbi_strand_resume_if_ungated covers
              * the normal gate-clear path; emitting here would mislabel the
              * stop-override event as a voluntary gate resume. */
-            sched_strand_make_runnable(s);
+            urbi_sched_strand_make_runnable(s);
         }
     }
 
@@ -1061,7 +1061,7 @@ urbi_strand_cancel(struct UVM *vm, struct UStrand *strand, UValue cancel_reason)
         strand->suspend_gates = 0U;
         /* URBI_TP_SCHED_RESUME intentionally not emitted: cancel override,
          * not a voluntary gate-clear resume (same rationale as tag-stop arm). */
-        sched_strand_make_runnable(strand);
+        urbi_sched_strand_make_runnable(strand);
     }
     return URBI_OK;
 }

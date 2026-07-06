@@ -5,14 +5,14 @@
  *
  * Pre-fix failure modes (OBSERVED on the pre-fix tree):
  *   - JOIN: urbi_tag_stop woke a JOIN-parked parent via
- *     sched_strand_make_runnable but left it threaded on
+ *     urbi_sched_strand_make_runnable but left it threaded on
  *     child->joiners_head.  When the child later reached DEAD,
  *     urbi_vm_fork_wake_joiners walked the (possibly freed) parent — ASan
  *     heap-use-after-free, or a READY->READY make_runnable (SCHED-005
  *     assert / circular ready-queue corruption).
  *   - WATCHER: urbi_tag_stop woke a waituntil(cond)-parked strand but left
  *     w->waiter_strand pointing at it.  The next rising edge had
- *     urbi_vm_watcher_eval_dirty call sched_strand_make_runnable on a DEAD/freed
+ *     urbi_vm_watcher_eval_dirty call urbi_sched_strand_make_runnable on a DEAD/freed
  *     strand (ASan UAF; pinned end-to-end by
  *     tests/chk/tag/stop_waituntil_nested.chk).
  *
@@ -76,7 +76,7 @@ UTEST(tag_stop_join_parked_unlinks_joiner)
      * child's joiners chain via wait_next. */
     parent->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count++;     /* satisfy block's RUNNING-decrement */
-    sched_strand_block(parent, USTRAND_REASON_JOIN,
+    urbi_sched_strand_block(parent, USTRAND_REASON_JOIN,
                        (uint64_t)(uintptr_t)child);
     parent->wait_next   = child->joiners_head;
     child->joiners_head = parent;
@@ -130,7 +130,7 @@ UTEST(tag_stop_watcher_parked_scrubs_waiter)
 
     s->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count++;     /* satisfy block's RUNNING-decrement */
-    sched_strand_block(s, USTRAND_REASON_WATCHER, 0);
+    urbi_sched_strand_block(s, USTRAND_REASON_WATCHER, 0);
     UASSERT_EQ(1U, vm.strand_waiting_count);
 
     UASSERT_EQ(URBI_OK, urbi_tag_stop(&vm, r->tag, nil));
@@ -178,7 +178,7 @@ UTEST(unpark_watcher_mid_eval_defers_retire)
 
     s->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count++;     /* satisfy block's RUNNING-decrement */
-    sched_strand_block(s, USTRAND_REASON_WATCHER, 0);
+    urbi_sched_strand_block(s, USTRAND_REASON_WATCHER, 0);
 
     uint16_t in_use_before = vm.watchers->pool_in_use;
     vm.watchers->in_eval = 1;       /* simulate a mid-eval wake */
