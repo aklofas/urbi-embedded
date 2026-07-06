@@ -23,10 +23,8 @@
  * Each top-level urbi_object_lookup call pre-bumps lookup_id, guaranteeing
  * the new id is fresh against every UObject's previous stamp.
  *
- * urbi_shape_find_slot is a stub at T12 (always returns -1); T13 lands the
- * real lineage walk.  Until then lookup_inner unconditionally falls into
- * the proto-walk path on every visit — which is exactly what the cycle and
- * rollover tests need to exercise. */
+ * urbi_shape_find_slot performs the real lineage walk (landed at T13;
+ * T26 made obj->slots non-NULL once the first slot transitions in). */
 
 static int
 lookup_inner(UVM *vm, UObject *obj, USymbol *name, UValue *out)
@@ -40,10 +38,9 @@ lookup_inner(UVM *vm, UObject *obj, USymbol *name, UValue *out)
     }
     obj->lookup_stamp = (uint32_t)vm->lookup_id;
 
-    /* Local-slot fast path.  T12: urbi_shape_find_slot is a stub returning
-     * -1, so this branch is never taken yet — obj->slots may be NULL.
-     * T13 lands the real find; T26 lands slot-array growth that makes
-     * obj->slots non-NULL once the first slot transitions in. */
+    /* Local-slot fast path.  urbi_shape_find_slot performs the real lineage
+     * walk (T13+); obj->slots is non-NULL once the first slot transitions
+     * in (T26+). */
     const UShape *s = obj->shape;
     int32_t idx = urbi_shape_find_slot(s, name);
     if (idx >= 0) {
