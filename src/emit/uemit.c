@@ -3,6 +3,7 @@
 
 #include "emit/uemit_internal.h"
 #include "runtime/umacros.h"
+#include "urbi/require.h"   /* URBI_REQUIRE */
 #include "value/uintern.h"
 #include "watcher/uwatcher.h"  /* UWATCHER_AT / _AT_SYNC / _WHENEVER — AST_WATCHER emit */
 
@@ -513,6 +514,9 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
 void uemit_init(UEmitter *e, UProto *root, UArena *arena,
                 struct UVM *vm, const char *source_name) {
+    URBI_REQUIRE(arena->alloc_fn != NULL,
+                 "uemit_init: arena must have an alloc_fn (freestanding: "
+                 "set arena->alloc_fn before calling uemit_init)");
     urbi_zero(e, sizeof(*e));
     e->module = root;
     e->arena = arena;
