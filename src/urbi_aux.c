@@ -270,7 +270,7 @@ urbi_aux_diag_to_stderr(struct UVM *vm, void *ud, int level, const char *fmt, ..
     fprintf(stderr, "[urbi %s] %s\n", tag, buf);
 }
 
-/* === W4/v0.10.3: urbi_aux_value_to_* checked-accessor family ============= */
+/* === v0.10.3: urbi_aux_value_to_* checked-accessor family ============= */
 /*
  * Each accessor: returns URBI_OK + writes *out on kind match; returns
  * URBI_ERR_TYPE (-26) and leaves *out untouched on kind mismatch.

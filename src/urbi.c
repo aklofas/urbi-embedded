@@ -26,7 +26,7 @@
 
 /* URBI_VERSION: source-of-truth string returned by urbi_version().
  *
- * API-011: stale at "0.3.0-concurrency" since M3 (2026-04-28), unchanged
+ * API-011: stale at "0.3.0-concurrency" since 2026-04-28, unchanged
  * through v0.4.0/v0.5.0/v0.5.1/v0.5.2/v0.5.3/v0.5.4/v0.5.5/v0.5.6.  The
  * release ritual (CHANGELOG cadence in WORKFLOW.md §8) updates this
  * literal before every annotated tag; the regression test in
@@ -69,7 +69,7 @@ urbi_panic(const char *msg)
 
 /* urbi_set_isr_check_fn: install an ISR-context predicate.
  * Pass NULL to disable ISR checking (the default after urbi_vm_init).
- * v0.10.3 (W3): gains void *ud; forwarded on each callback invocation. */
+ * v0.10.3: gains void *ud; forwarded on each callback invocation. */
 void
 urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void *ud), void *ud)
 {
@@ -81,8 +81,8 @@ urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void *ud), void *ud)
 /* urbi_set_watcher_body_done_fn: install the watcher-body-completion hook.
  * Pass NULL to uninstall (the default after urbi_vm_init).  NULL vm is a
  * no-op; the cast accepts the public typedef and stores it through the
- * inline-typed slot on UVM (shape-identical).  T33 / spec §7.
- * v0.10.3 (W3): gains void *ud (api-ergonomics F7 / reactive-runtime F7). */
+ * inline-typed slot on UVM (shape-identical).  Spec §7.
+ * v0.10.3: gains void *ud (api-ergonomics F7 / reactive-runtime F7). */
 void
 urbi_set_watcher_body_done_fn(struct UVM *vm, urbi_watcher_body_done_fn fn,
                                void *ud)
@@ -99,7 +99,7 @@ urbi_set_watcher_body_done_fn(struct UVM *vm, urbi_watcher_body_done_fn fn,
  * the build-time stdlib bake (tools/urbi-compile-stdlib) and any embedder
  * that wants to pre-compile a module.
  *
- * URBI_BYTECODE_ONLY=1 strips this entire function (M7 Wave 1 T17): the
+ * URBI_BYTECODE_ONLY=1 strips this entire function: the
  * header gates the declaration, so the symbol is intentionally absent from
  * freestanding liburbi.a; callers get a compile error at the call site. */
 int
@@ -395,7 +395,7 @@ urbi_get_determinism_checksum(struct UVM *vm)
     /* 4. Intern table entry count (number of unique strings seen). */
     FNV1A_MIX(ctx.h, (uint64_t)uintern_count(vm));
 
-    /* 5. M4 topology + identity counters (per pre-M4 topology-generation
+    /* 5. Topology + identity counters (per topology-generation
      *    spec §5 and prototype-chain spec §8.1).  Surfaces non-determinism
      *    in shape-tree mutation ordering, top-level-lookup sequencing, and
      *    UObject identity assignment. */
@@ -403,7 +403,7 @@ urbi_get_determinism_checksum(struct UVM *vm)
     FNV1A_MIX(ctx.h, vm->lookup_id);
     FNV1A_MIX(ctx.h, (uint64_t)vm->next_object_id);
 
-    /* 6. M4 T30 — per-IC observable state.  Walk every live UChunkInstance
+    /* 6. Per-IC observable state.  Walk every live UChunkInstance
      *    on the per-VM registry (insertion-order; deterministic in any
      *    well-formed test harness) and, for each UIC site in each
      *    UProtoInstance's IC table, fold in:
