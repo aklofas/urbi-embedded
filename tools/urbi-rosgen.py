@@ -178,7 +178,7 @@ def emit_registry(msgs):
         for fname, ftype in msgs[name]:
             out.append('    if (urbi_slot_set(vm, urbi_make_object(o), "%s", %d, urbi_make_nil())!=0) return -1;' % (fname, len(fname)))
         out.append('    urbi_ros_msg__record(vm, "%s", o);' % name)
-        out.append('    { USymbol *sy=(USymbol*)ustr_intern(vm,"%s",%d); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }' % (slot, len(slot)))
+        out.append('    { USymbol *sy=(USymbol*)ustr_intern(vm,"%s",%d); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }' % (slot, len(slot)))
     out.append("  return 0;\n}")
     return "\n".join(out)
 

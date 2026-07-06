@@ -324,7 +324,13 @@ urbi_repl_register_transport(UReplServer *server,
      * the test path.  Tests can opt out of starting the listener by
      * never calling urbi_repl_register_transport — the dispatcher
      * tests in Phase 2 use that path. */
-    (void)urepl_listener_start(server);
-
-    return URBI_OK;
+    {
+        int start_rc = urepl_listener_start(server);
+        if (start_rc != URBI_OK && server->vm != NULL &&
+                server->vm->host_log_fn != NULL)
+            server->vm->host_log_fn(server->vm, server->vm->host_log_ud,
+                                    URBI_LOG_WARN,
+                                    "urepl: listener thread failed to start");
+        return start_rc;
+    }
 }

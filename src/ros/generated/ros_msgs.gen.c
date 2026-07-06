@@ -400,57 +400,57 @@ int urbi_ros_msg_register_all(struct UVM *vm){
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "data", 4, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "std_msgs/Bool", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Bool",19); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Bool",19); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "data", 4, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "std_msgs/Int32", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Int32",20); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Int32",20); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "data", 4, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "std_msgs/Int64", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Int64",20); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Int64",20); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "data", 4, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "std_msgs/Float32", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Float32",22); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Float32",22); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "data", 4, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "std_msgs/Float64", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Float64",22); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Float64",22); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "data", 4, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "std_msgs/String", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__String",21); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__String",21); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "x", 1, urbi_make_nil())!=0) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "y", 1, urbi_make_nil())!=0) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "z", 1, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "geometry_msgs/Vector3", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__geometry_msgs__Vector3",27); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__geometry_msgs__Vector3",27); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "linear", 6, urbi_make_nil())!=0) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "angular", 7, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "geometry_msgs/Twist", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__geometry_msgs__Twist",25); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__geometry_msgs__Twist",25); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "a", 1, urbi_make_nil())!=0) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "b", 1, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "example_interfaces/AddTwoInts_Request", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__example_interfaces__AddTwoInts_Request",43); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__example_interfaces__AddTwoInts_Request",43); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "sum", 3, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "example_interfaces/AddTwoInts_Response", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__example_interfaces__AddTwoInts_Response",44); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__example_interfaces__AddTwoInts_Response",44); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "sec", 3, urbi_make_nil())!=0) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "nanosec", 7, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "builtin_interfaces/Time", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__builtin_interfaces__Time",29); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__builtin_interfaces__Time",29); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "stamp", 5, urbi_make_nil())!=0) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "frame_id", 8, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "std_msgs/Header", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Header",21); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__std_msgs__Header",21); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "header", 6, urbi_make_nil())!=0) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "angle_min", 9, urbi_make_nil())!=0) return -1;
@@ -463,7 +463,7 @@ int urbi_ros_msg_register_all(struct UVM *vm){
     if (urbi_slot_set(vm, urbi_make_object(o), "ranges", 6, urbi_make_nil())!=0) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "intensities", 11, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "sensor_msgs/LaserScan", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__sensor_msgs__LaserScan",27); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__sensor_msgs__LaserScan",27); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   { struct UObject *o = urbi_object_clone(vm, urbi_object_root(vm)); if(!o) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "header", 6, urbi_make_nil())!=0) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "radiation_type", 14, urbi_make_nil())!=0) return -1;
@@ -472,7 +472,7 @@ int urbi_ros_msg_register_all(struct UVM *vm){
     if (urbi_slot_set(vm, urbi_make_object(o), "max_range", 9, urbi_make_nil())!=0) return -1;
     if (urbi_slot_set(vm, urbi_make_object(o), "range", 5, urbi_make_nil())!=0) return -1;
     urbi_ros_msg__record(vm, "sensor_msgs/Range", o);
-    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__sensor_msgs__Range",23); if(!sy) return -1; urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o)); } }
+    { USymbol *sy=(USymbol*)ustr_intern(vm,"msg__sensor_msgs__Range",23); if(!sy) return -1; if(urbi_object_set_local_slot(vm,(struct UObject*)vm->ros_proto,sy,urbi_make_object(o))!=0) return -1; } }
   return 0;
 }
 
