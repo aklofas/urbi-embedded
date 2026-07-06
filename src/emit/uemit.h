@@ -74,7 +74,7 @@ typedef enum {
                                        NULL).  Top-level `this` resolves to the
                                        lobby object — deferred to v1.x. */
 
-    /* v0.13.1 refactor-3 FE-06 */
+    /* Break/continue/switch-exit patch-list overflow */
     EMIT_PATCH_LIST_FULL            /* > UEMIT_LOOP_PATCH_MAX break/continue
                                        sites in one loop, or > 64 cases' exit
                                        JMPs in one switch — latched instead of
@@ -101,7 +101,7 @@ struct UFuncState;
  *               same infrastructure.
  *
  * Maximum break/continue sites per loop nesting level: UEMIT_LOOP_PATCH_MAX
- * (16).  Overflow latches EMIT_PATCH_LIST_FULL (refactor-3 FE-06) — the
+ * (16).  Overflow latches EMIT_PATCH_LIST_FULL — the
  * excess site's placeholder JMP would otherwise never be patched and
  * silently no-op.  A larger / dynamic limit would require allocation,
  * which we avoid for freestanding targets.
@@ -175,7 +175,7 @@ typedef struct {
 typedef struct UEmitter {
     UProto        *module;           /* non-owning root UProto; caller supplies (was UModule*; v0.9.2) */
     UArena       *arena;           /* non-owning; currently unused initially but reserved */
-    UArena        fs_arena;        /* refactor-3 FE-07: UFuncState storage —
+    UArena        fs_arena;        /* UFuncState storage —
                                       compile-session lifetime; NOT reset per
                                       statement (the shared `arena` is).
                                       Owned by the emitter: uemit_init creates
@@ -193,7 +193,7 @@ typedef struct UEmitter {
     bool         lazy_arg_context; /* Set while emitting args in AST_CALL;
                                       suppresses implicit force on lazy-local reads
                                       (pass-through semantics, spec §4.2) */
-    uint8_t      in_cleanup_body; /* refactor-3 VM-02/B4: non-zero while
+    uint8_t      in_cleanup_body; /* non-zero while
                                      emitting a finally/onleave body — the
                                      `;` separator emits no OP_YIELD there
                                      (cleanup bodies are atomic; REVIVAL
@@ -245,7 +245,7 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt);
 /* Finalize: emit OP_RET (if any statement was emitted) and record max_reg.
    Further uemit_statement calls return EMIT_FINISHED.  Returns the first
    accumulated error, or EMIT_OK.  Also tears down the emitter-owned
-   fs_arena (refactor-3 FE-07) — every UFuncState pointer obtained from
+   fs_arena — every UFuncState pointer obtained from
    uemit_open_function / uemit_close_function is invalid afterwards. */
 UEmitError uemit_finish(UEmitter *e);
 
@@ -253,7 +253,7 @@ UEmitError uemit_finish(UEmitter *e);
    (fs_arena) without finishing the module.  For callers that bail between
    uemit_init and uemit_finish (e.g. on a parse error).  Idempotent, and
    safe to call after uemit_finish (which performs the same teardown on
-   the success path).  refactor-3 FE-07. */
+   the success path). */
 void urbi_emit_abandon(UEmitter *e);
 
 /* Open a new compilation function. At top-level, parent==NULL. Returns

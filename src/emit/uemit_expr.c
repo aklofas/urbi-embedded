@@ -146,7 +146,7 @@ uint8_t urbi_emit_unary_arm(UEmitter *e, UAstNode *n) {
 
     if (n->u.unary.op == UOP_NOT) {
         /* Logical NOT — the 4-instruction OP_TEST/OP_LOADBOOL branch idiom
-         * (mirrors urbi_emit_compare_arm; no new opcode, refactor-3 FE-03):
+         * (mirrors urbi_emit_compare_arm; no new opcode):
          *   TEST src, 0, 0     ; skip next when src is falsy
          *   JMP +1             ; truthy -> false arm
          *   LOADBOOL rd, 1, 1  ; rd = true; pc++ (skip false arm)
@@ -782,7 +782,7 @@ uint8_t urbi_emit_nary_arm(UEmitter *e, UAstNode *n) {
              * previous child was. */
             e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
             e->next_reg = e->current_fs->freereg;
-            /* refactor-3 VM-02/B4: cleanup bodies (finally / onleave) are
+            /* Cleanup bodies (finally / onleave) are
              * atomic — `;` separates statements but yields nothing there.
              * An OP_YIELD inside the unwind-copy finally would enqueue the
              * strand mid-walk (run_cleanup_with_replace treats the yield as

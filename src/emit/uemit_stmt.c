@@ -282,7 +282,7 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
     /* 3b + 4. Compile the arity prologue, then the body (AST_BLOCK);
      * urbi_emit_instr routes to child_proto.
      *
-     * refactor-3 VM-02/B4: clear in_cleanup_body across the nested body —
+     * Clear in_cleanup_body across the nested body —
      * a function literal (or lazy thunk / watcher closure) defined inside a
      * finally body runs LATER as ordinary code, not as part of the cleanup,
      * so its `;` separators keep normal OP_YIELD semantics.  Mirrors the
@@ -718,8 +718,7 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
         /* v0.10.5: continue PCs land here — BEFORE the back-edge
          * OP_CLOSE, so `continue` closes the iteration's captured cells
          * instead of jumping straight to the back-edge JMP and reusing
-         * the still-open cell next iteration (refactor-3 FE-04
-         * follow-on). */
+         * the still-open cell next iteration. */
         {
             int cont_target = (int)urbi_emit_instr_count(e);
             uemit_loop_patch_continues(e, cont_target);
@@ -741,7 +740,7 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
               OP_CLOSE that uemit_close_block emits here (after the
               back-edge JMP) — previously they landed past it, leaving the
               instruction dead and the breaking iteration's cells open into
-              recycled registers (refactor-3 FE-04 follow-on).  On the
+              recycled registers.  On the
               cond-false path the close is a no-op (the back-edge close
               already ran).  With no captured local no OP_CLOSE is emitted
               and exit_target degenerates to the position after the
@@ -1543,7 +1542,7 @@ uint8_t urbi_emit_for_each_arm(UEmitter *e, UAstNode *n) {
     /* continue PCs land here — BEFORE the back-edge OP_CLOSE, so
      * `continue` closes the iteration's captured cells and then falls
      * through the inner block close into the _i++ increment
-     * (refactor-3 FE-04 follow-on; previously cont_target sat between
+     * (previously cont_target sat between
      * steps 7 and 8 and only worked because step 8's OP_CLOSE happened
      * to be emitted exactly there). */
     {
@@ -1558,7 +1557,7 @@ uint8_t urbi_emit_for_each_arm(UEmitter *e, UAstNode *n) {
      * threshold first: breaks jump straight to the exit patch point
      * (step 11), past this close and the increment, so the exit path
      * needs its own OP_CLOSE for the breaking iteration's still-open
-     * cells (refactor-3 FE-04 follow-on; same guard rationale as
+     * cells (same guard rationale as
      * uemit_close_block). */
     bool body_captured = false;
     uint8_t body_first_slot = 0U;
@@ -1592,7 +1591,7 @@ uint8_t urbi_emit_for_each_arm(UEmitter *e, UAstNode *n) {
         e->next_reg = e->current_fs->freereg;
     }
 
-    /* 10. Back-edge JMP to loop_start (backward encoder — refactor-3 FE-01;
+    /* 10. Back-edge JMP to loop_start (backward encoder —
      *      replaces the local `loop_start + 1` compensation hack). */
     {
         int from_pc = (int)urbi_emit_instr_count(e);
@@ -1603,8 +1602,7 @@ uint8_t urbi_emit_for_each_arm(UEmitter *e, UAstNode *n) {
     /* 11. Patch exit JMP and break PCs.  When the body captured, the
      * exit target lands ON an exit-path OP_CLOSE: a no-op on normal
      * exit (the per-iteration close at step 8 already ran) but required
-     * on break paths, which jump here past steps 7-10
-     * (refactor-3 FE-04 follow-on). */
+     * on break paths, which jump here past steps 7-10. */
     {
         int exit_target = (int)urbi_emit_instr_count(e);
         if (body_captured) {
@@ -1637,7 +1635,7 @@ uint8_t urbi_emit_for_each_arm(UEmitter *e, UAstNode *n) {
  * Lowered to a chain of if/else-if comparisons.
  * break inside any case body exits the switch.
  *
- * Register discipline (refactor-3 FE-02 follow-on): the subject is held
+ * Register discipline: the subject is held
  * for the whole statement, BELOW any case-body `var` declarations.  A raw
  * temp there breaks urbi_emit_fs_temp_floor's count-based math (nactvar +
  * global_slot_reserved assumes locals are contiguous from the floor): a
@@ -1775,7 +1773,7 @@ uint8_t urbi_emit_switch_arm(UEmitter *e, UAstNode *n) {
             exit_jmps[n_exit_jmps] = (int)urbi_emit_instr_count(e);
             n_exit_jmps++;
         } else {
-            /* refactor-3 FE-06: a 65th exit JMP would keep its placeholder
+            /* A 65th exit JMP would keep its placeholder
              * offset and fall into the next case's dispatch.  Latch and
              * unwind: the per-case block is already closed here; the loop
              * ctx and the outer \x01sw block are still pending (same

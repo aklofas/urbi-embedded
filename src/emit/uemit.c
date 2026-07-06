@@ -520,7 +520,7 @@ void uemit_init(UEmitter *e, UProto *root, UArena *arena,
     urbi_zero(e, sizeof(*e));
     e->module = root;
     e->arena = arena;
-    /* refactor-3 FE-07: UFuncState storage lives in an emitter-owned arena
+    /* UFuncState storage lives in an emitter-owned arena
      * with compile-session lifetime — the shared `arena` is reset by the
      * driver after every statement, which (with correct chunk reuse) would
      * let statement N+1's AST overwrite the live funcstate.  Inherit the
@@ -621,7 +621,7 @@ UEmitError uemit_finish(UEmitter *e) {
         e->module->total_proto_count = (uint16_t)(e->module->next_proto_serial + 1U);
     }
 
-    /* refactor-3 FE-07: the module is sealed; release all UFuncState
+    /* The module is sealed; release all UFuncState
      * storage.  current_fs (and any pointer a caller kept from
      * uemit_open_function / uemit_close_function) dangles after this —
      * NULL it so a stale dereference faults loudly instead of reading
@@ -635,7 +635,7 @@ UEmitError uemit_finish(UEmitter *e) {
 }
 
 void urbi_emit_abandon(UEmitter *e) {
-    /* refactor-3 FE-07: driver error-path teardown — free emitter-owned
+    /* Driver error-path teardown — free emitter-owned
      * storage without finishing the module.  uarena_destroy on an
      * already-destroyed (or never-grown) arena is a no-op, so this is
      * idempotent and safe after uemit_finish too. */

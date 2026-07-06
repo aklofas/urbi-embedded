@@ -166,7 +166,7 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
     }
 
     if (cv_name != NULL && e->current_fs->nactvar > 0) {
-        /* refactor-3 FE-05: the catch body may have captured the catch
+        /* The catch body may have captured the catch
          * variable; close the upvalue before recycling the register.
          * Mirrors uemit_close_block's has_captured handling. */
         UFuncState *fs = e->current_fs;
@@ -209,7 +209,7 @@ static int emit_finally_body_at(UEmitter *e, UAstNode *finally_body,
     e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
     if (e->current_fs->freereg < reg_floor) e->current_fs->freereg = reg_floor;
     if (!uemit_open_block(e, false)) return 0;
-    /* refactor-3 VM-02/B4: cleanup bodies are atomic (`|` semantics) — the
+    /* Cleanup bodies are atomic (`|` semantics) — the
      * `;` separator emits no OP_YIELD inside a finally body.  Applies to
      * every inline copy (normal-path, break/continue-crossing) for
      * consistency with the unwind copy.  Save/restore handles nested
@@ -374,7 +374,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
                                (uint16_t)finally_target));
         }
 
-        /* Finally body (unwind copy — atomic per refactor-3 VM-02/B4: a
+        /* Finally body (unwind copy — atomic: a
          * mid-walk OP_YIELD would enqueue the strand while the unwind
          * walker still owns it) */
         e->next_reg = rd + 1U;
@@ -506,7 +506,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
                                (uint16_t)finally_target));
         }
 
-        /* Finally body (unwind copy — atomic per refactor-3 VM-02/B4, see
+        /* Finally body (unwind copy — atomic, see
          * the catch+finally arm above) */
         e->next_reg = rd + 1U;
         e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
@@ -637,7 +637,7 @@ uint8_t urbi_emit_try_arm(UEmitter *e, UAstNode *n) {
  *   [past_handler_pc]:
  *     <continuation>
  *
- * Register discipline (refactor-3 FE-02 follow-on, v0.13.4 fix): the
+ * Register discipline (v0.13.4 fix): the
  * result register (rd) and the tag value (\x01tag) must both sit BELOW any
  * body-declared `var`s and below urbi_emit_fs_temp_floor.  A raw temp for rd breaks
  * urbi_emit_fs_temp_floor's count-based math (nactvar + global_slot_reserved assumes

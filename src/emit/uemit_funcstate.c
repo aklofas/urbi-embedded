@@ -69,8 +69,7 @@ int urbi_vm_find_or_install_upvalue(UEmitter *e, UFuncState *fs,
     if (parent_local >= 0) {
         /* Mark the parent actvar as captured and flag the enclosing block.
          * Scan INNERMOST-first to match local_lookup_for_upvalue — with
-         * shadowing, the innermost declaration is the one captured
-         * (refactor-3 FE-04). */
+         * shadowing, the innermost declaration is the one captured. */
         for (int i = fs->parent->nactvar - 1; i >= 0; i--) {
             if (fs->parent->actvars[i].name == name) {
                 fs->parent->actvars[i].is_captured = true;
@@ -101,7 +100,7 @@ int urbi_vm_find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
     if (e->error != EMIT_OK) return NULL;
 
-    /* refactor-3 FE-07: allocate from the emitter-owned fs_arena, NOT the
+    /* Allocate from the emitter-owned fs_arena, NOT the
      * shared statement arena — drivers uarena_reset the latter after every
      * statement, and the funcstate must persist across the whole compile
      * session.  (Pre-fix it only survived by accident: the reset arena's
@@ -692,7 +691,7 @@ bool uemit_close_block(UEmitter *e) {
      * first_local_idx, which is an actvar INDEX; slots are offset from
      * indices by the reserved r_global_slot register, so the bare index
      * lands one register too low and prematurely heapifies the enclosing
-     * function's last-declared local (refactor-3 FE-04 follow-on).
+     * function's last-declared local.
      * When the block has no live own locals — its only local was a catch
      * variable popped (and closed) early by emit_catch_handler_section,
      * or has_captured arrived by propagation from a child block (below) —
@@ -708,8 +707,8 @@ bool uemit_close_block(UEmitter *e) {
         urbi_emit_instr(e, i, e->prev_line);
     }
 
-    /* Propagate has_captured to the enclosing block before this ctx dies
-     * (refactor-3 FE-04 follow-on).  urbi_vm_find_or_install_upvalue marks only
+    /* Propagate has_captured to the enclosing block before this ctx dies.
+     * urbi_vm_find_or_install_upvalue marks only
      * the INNERMOST block containing the captured local; without
      * propagation the flag dies with this ctx and the enclosing
      * construct's conditional closes (while/for-each back-edge + loop-exit
@@ -742,7 +741,7 @@ void uemit_emit_loop_back_close(UEmitter *e) {
      * A is a register slot, not an actvar index, and a loop block whose
      * has_captured arrived by child-block propagation may have no own
      * locals — close at freereg_on_enter to cover the (already-popped)
-     * child range (refactor-3 FE-04 follow-on). */
+     * child range. */
     if (blk->is_loop && blk->has_captured) {
         uint8_t close_base = (blk->first_local_idx < fs->nactvar)
                            ? fs->actvars[blk->first_local_idx].slot

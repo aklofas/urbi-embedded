@@ -150,7 +150,7 @@ int urbi_vm_find_or_install_upvalue(UEmitter *e, UFuncState *fs,
  * OP_JMP at from_pc landing at target_pc requires Bx = (target_pc -
  * from_pc - 1) + UEMIT_JMP_BIAS.  Back-edges do NOT get that pc++ —
  * they dispatch via the safepoint path; use uemit_jmp_offset_backward
- * for those (refactor-3 FE-01/B3).  Wave 3 named UEMIT_JMP_BIAS /
+ * for those.  Wave 3 named UEMIT_JMP_BIAS /
  * FALLTHROUGH_BIAS but left the arithmetic inline at every site; this
  * helper centralizes the encoding contract so future peephole /
  * extra-instr insertions cannot silently miscompute fall-through.
@@ -166,7 +166,7 @@ static inline uint16_t uemit_jmp_offset(int from_pc, int target_pc) {
     return (uint16_t)((int)UEMIT_JMP_BIAS + offset);
 }
 
-/* Backward-jump encoder (refactor-3 FE-01/B3).  Backward OP_JMPs dispatch
+/* Backward-jump encoder.  Backward OP_JMPs dispatch
  * via the VM's safepoint path, which executes the instruction at s->pc
  * directly — WITHOUT the implicit pc++ that NEXT() applies after forward
  * jumps.  The encoded offset must therefore be exactly (target - from),
@@ -311,7 +311,7 @@ static inline void uemit_loop_record_break(UEmitter *e, int pc) {
     if (ctx->break_count < UEMIT_LOOP_PATCH_MAX) {
         ctx->break_pcs[ctx->break_count++] = pc;
     } else {
-        e->error = EMIT_PATCH_LIST_FULL;  /* refactor-3 FE-06: the excess
+        e->error = EMIT_PATCH_LIST_FULL;  /* the excess
                                              site's placeholder JMP would
                                              never be patched — silent no-op */
         urbi_emit_diag_error(e, NULL, "too many break sites in loop (max %d)",
@@ -331,7 +331,7 @@ static inline void uemit_loop_record_continue(UEmitter *e, int pc) {
             if (ctx->continue_count < UEMIT_LOOP_PATCH_MAX) {
                 ctx->continue_pcs[ctx->continue_count++] = pc;
             } else {
-                e->error = EMIT_PATCH_LIST_FULL;  /* refactor-3 FE-06 */
+                e->error = EMIT_PATCH_LIST_FULL;  /* patch-list overflow */
                 urbi_emit_diag_error(e, NULL, "too many continue sites in loop (max %d)",
                                 UEMIT_LOOP_PATCH_MAX);
             }
