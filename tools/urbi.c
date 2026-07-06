@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* urbi — the M1 REPL binary.  Host-only. */
+/* urbi — the host REPL binary.  Host-only. */
 
 /* Enable POSIX interfaces: clock_gettime, struct timespec, fileno, isatty. */
 #define _POSIX_C_SOURCE 200809L
@@ -324,8 +324,8 @@ static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) 
         fprintf(stderr, "urbi: %s\n", err);
         return 1;
     }
-    /* 4 KiB is adequate for M1 — the 8-opcode VM produces tiny
-       disassemblies. Revisit (promote to a heap allocation) when M2
+    /* 4 KiB is adequate for initial use — the 8-opcode VM produces tiny
+       disassemblies. Revisit (promote to a heap allocation) when
        programs exceed this. */
     char buf[4096];
     size_t n = uemit_disassemble(&module, buf, sizeof buf);
@@ -467,7 +467,7 @@ static int cli_drive_to_quiescence(UVM *vm, int vrc) {
 }
 
 /* Run a source file: compile, execute, discard result (scripts produce
-   output via side effects, which do not exist at M1). */
+   output via side effects). */
 static int run_file(UVM *vm, const char *path) {
     size_t len = 0;
     char *src = slurp(path, &len);
@@ -476,7 +476,7 @@ static int run_file(UVM *vm, const char *path) {
     UArena arena;
     int rc = 1;
     char err[256] = {0};
-    /* CHSTR-027 pattern (refactor-3 VM-11/FE-13): heap-allocate the root
+    /* CHSTR-027 pattern: heap-allocate the root
      * proto — same rationale as run_expression above. */
     UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
     if (module == NULL) {
@@ -549,7 +549,7 @@ static int run_expression(UVM *vm, const char *expr) {
     UArena arena;
     int rc = 1;
     char err[256] = {0};
-    /* CHSTR-027 pattern (refactor-3 VM-11/FE-13): the root proto must be
+    /* CHSTR-027 pattern: the root proto must be
      * heap-allocated — closures created during the run keep proto pointers
      * alive past this frame; uchunk_destroy defers the actual free to the
      * refcount-rescue machinery (vm->rescued_protos) when references remain,
@@ -572,7 +572,7 @@ static int run_expression(UVM *vm, const char *expr) {
         vrc = cli_drive_to_quiescence(vm, vrc);
         if (vrc == URBI_OK) {
             /* 64 bytes fits Int (max 21 chars) and Float (~24 chars).
-               M2 string literals may truncate silently — promote to
+               early string literals may truncate silently — promote to
                UVALUE_FORMAT_MAX or heap when strings land. */
             char fmt[64];
             uvalue_format(&out, fmt, sizeof fmt);

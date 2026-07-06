@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Public C API for the urbi object model (M4 / T8).
+/* Public C API for the urbi object model.
  *
  * Stability: core.
  *
@@ -37,7 +37,7 @@ typedef struct UShape  UShape;
 
 /* Atom families (single source of truth; v0.5.5 retired the dual-enum
  * with `_F` suffixes).  Low 4 bits of UObject.flags encode the family;
- * slots 9..11 occupied by M6 Phase 4 (Boolean / Nil / Void protos);
+ * slots 9..11 occupied by Boolean, Nil, and Void atom protos;
  * 12..15 reserved for v1.x. */
 typedef enum {
     URBI_ATOM_OBJECT  = 0,   /* root Object */
@@ -49,12 +49,12 @@ typedef enum {
     URBI_ATOM_TAG     = 6,
     URBI_ATOM_EVENT   = 7,
     URBI_ATOM_SYMBOL  = 8,
-    URBI_ATOM_BOOLEAN = 9,   /* M6 Phase 4: Boolean atom proto */
-    URBI_ATOM_NIL     = 10,  /* M6 Phase 4: nil singleton proto */
-    URBI_ATOM_VOID    = 11   /* M6 Phase 4: void singleton proto */
+    URBI_ATOM_BOOLEAN = 9,   /* Boolean atom proto */
+    URBI_ATOM_NIL     = 10,  /* nil singleton proto */
+    URBI_ATOM_VOID    = 11   /* void singleton proto */
 } URBIAtomFamily;
 
-/* === Atom-family accessors (T8) ===
+/* === Atom-family accessors ===
  *
  * Lazy-allocate the per-VM atom singleton on first call; return the cached
  * pointer thereafter.  The root Object is the atom of all atoms; its protos
@@ -65,16 +65,15 @@ typedef enum {
 UObject *urbi_object_root(struct UVM *vm);
 UObject *urbi_object_atom(struct UVM *vm, URBIAtomFamily family);
 
-/* === Prototype-list mutators (T11 implements; declared here to lock the
- *     ABI surface introduced by T8) ===
+/* === Prototype-list mutators (declared here to lock the ABI surface) ===
  *
  * urbi_object_add_proto    — append `proto` to obj's prototype list.
  * urbi_object_remove_proto — remove first occurrence of `proto`.
  * urbi_object_set_protos   — replace obj's prototype list with `list[0..n)`.
  *
  * Returns URBI_OK on success or a negative UErrCode on failure.  All three
- * are stubbed at T8 (return URBI_ERR_INVALID_ARG); T11 lands the real
- * cycle-check + storage-form transitions. */
+ * were initially stubbed (return URBI_ERR_INVALID_ARG); the implementation
+ * provides the real cycle-check + storage-form transitions. */
 int urbi_object_add_proto    (struct UVM *vm, UObject *obj, UObject *proto);
 int urbi_object_remove_proto (struct UVM *vm, UObject *obj, const UObject *proto);
 int urbi_object_set_protos   (struct UVM *vm, UObject *obj, UObject **list, uint32_t n);

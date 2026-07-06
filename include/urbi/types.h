@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* include/urbi/types.h
  *
- * Stability: core (value types layout-pinned via _Static_assert; see T6).
+ * Stability: core (value types layout-pinned via _Static_assert).
  *
  * Public-facing type declarations needed by the rest of the public API.
  *
@@ -112,7 +112,7 @@ typedef enum {
     UVAL_EVENT   = 9,
     UVAL_HOST_FN = 10,
     /* slot 11 reserved for the public-only URBI_VALUE_PTR mirror */
-    UVAL_TAG     = 12   /* W4/v0.10.2: runtime-only — not serialized into
+    UVAL_TAG     = 12   /* runtime-only (v0.10.2) — not serialized into
                            constant pools (loader rejects > UVAL_STR per
                            v1.0 contract).  Carries UTag* in v.p. */
 } UValKind;
@@ -156,7 +156,7 @@ typedef enum {
     URBI_VALUE_OBJECT  = 8,   /* == UVAL_OBJECT */
     URBI_VALUE_EVENT   = 9,   /* == UVAL_EVENT */
     URBI_VALUE_PTR     = 11,  /* public-only: host opaque pointer, no UVAL_* mirror */
-    URBI_VALUE_TAG     = 12   /* == UVAL_TAG; W4/v0.10.2: runtime-only UTag* */
+    URBI_VALUE_TAG     = 12   /* == UVAL_TAG; runtime-only UTag* (v0.10.2) */
 } urbi_value_kind_t;
 
 URBI_STATIC_ASSERT((int)URBI_VALUE_INT     == (int)UVAL_INT,     "urbi_value_kind_t/UVAL_* drift: INT");
@@ -265,7 +265,7 @@ static inline UValue urbi_make_closure(struct UClosure *c)
     return v;
 }
 
-/* urbi_make_tag — W4/v0.10.2: runtime-only UTag* wrapper.
+/* urbi_make_tag — runtime-only UTag* wrapper (v0.10.2).
  * UVAL_TAG values are never serialized into constant pools — the constant-pool
  * loader at v1.0 already rejects > UVAL_STR (wire format v1.8 / 0x18
  * unchanged).  Use only for runtime values returned by Tag.new() etc. */
@@ -355,7 +355,7 @@ static inline struct UClosure *urbi_value_as_closure(UValue v)
     return (struct UClosure *)v.v.p;
 }
 
-/* === W4/v0.10.3: urbi_value_is_* predicate family ===
+/* === urbi_value_is_* predicate family (v0.10.3) ===
  *
  * Pure tag comparison; no validation of the payload.  Header-only static
  * inlines — zero-overhead at any optimisation level.
@@ -392,7 +392,7 @@ static inline bool urbi_value_is_host_fn(UValue v) { return v.kind == (uint8_t)U
 static inline bool urbi_value_is_ptr    (UValue v) { return v.kind == (uint8_t)URBI_VALUE_PTR;  }
 static inline bool urbi_value_is_tag    (UValue v) { return v.kind == (uint8_t)UVAL_TAG;        }
 
-/* === UValue layout pin (Wave 1 T6) ===
+/* === UValue layout pin ===
  *
  * Compile-time assertion that mirrors the runtime invariants tested in
  * tests/unit/test_uvalue_layout.c. Catches header/lib mismatches at
@@ -460,7 +460,7 @@ typedef uint16_t urbi_event_id_t;
  *
  * Alignment is achieved with __attribute__((aligned(8))) rather than C11
  * _Alignas to preserve -std=c99 compatibility (project convention, see
- * uevent_ring.h T25 / EVENT-003 note). */
+ * uevent_ring.h alignment note). */
 #define URBI_EVENT_PAYLOAD_MAX   16
 #define URBI_EVENT_PAYLOAD_ALIGN 8
 
@@ -483,8 +483,8 @@ URBI_STATIC_ASSERT(__alignof__(urbi_event_payload_t) == URBI_EVENT_PAYLOAD_ALIGN
  * Functions in the public C API return int: 0 = URBI_OK, negative = error.
  * New codes are appended; never reordered (numeric stability).
  *
- * URBI_ERR_RESERVED_10 was URBI_ERR_OUT_OF_MEMORY pre-v0.5.5; T8 collapsed
- * the two OOM codes into a single URBI_ERR_OOM at -3.  The slot is held
+ * URBI_ERR_RESERVED_10 was URBI_ERR_OUT_OF_MEMORY pre-v0.5.5; the two OOM
+ * codes were collapsed into a single URBI_ERR_OOM at -3.  The slot is held
  * to preserve numeric stability of the surrounding enumerators. */
 typedef enum {
     URBI_OK                             =  0,
@@ -494,8 +494,8 @@ typedef enum {
     /* URBI_ERR_BYTECODE_VERSION_MISMATCH: returned by the public-API
      * translation helper urbi_chunk_translate_load_err when the internal
      * loader reports UCHUNK_LOAD_UNSUPPORTED_VERSION (see src/chunk/uchunk_io.c).
-     * The deserialize-bytes entry point itself is still M6 work in
-     * progress; the translation helper exists now so any future caller
+     * The deserialize-bytes entry point is available via urbi_chunk_from_bytes;
+     * the translation helper exists so any caller
      * has a single mapping site to route through.  Closes API-005. */
     URBI_ERR_BYTECODE_VERSION_MISMATCH  = -4,
     URBI_ERR_COMPILE                    = -5,
@@ -506,18 +506,18 @@ typedef enum {
     URBI_ERR_RESERVED_10                = -10,
     URBI_ERR_CONST_SLOT_WRITE           = -11,
     URBI_ERR_SLOT_NOT_FOUND             = -12,
-    URBI_ERR_SHAPE_BOUNDS               = -13,  /* T68: slot index past v1.0 packed-flag cap */
-    URBI_ERR_PROTO_DEPTH                = -14,  /* T68: prototype-graph resolve-stack overflow */
+    URBI_ERR_SHAPE_BOUNDS               = -13,  /* slot index past v1.0 packed-flag cap */
+    URBI_ERR_PROTO_DEPTH                = -14,  /* prototype-graph resolve-stack overflow */
     /* URBI_ERR_STDLIB_BOOT_FAILED: returned by urbi_stdlib_boot (and any
      * caller that propagates it) when the embedded stdlib bytecode blob
      * fails to deserialize or bind during VM/realm bootstrap.  Distinct
      * from URBI_ERR_OOM (which signals allocation failure during boot)
      * and URBI_ERR_BYTECODE_VERSION_MISMATCH (which is reachable through
-     * urbi_chunk_translate_load_err for the file-load surface).  M6
-     * Phase 4 reserves this code; the empty-blob path never reaches it. */
+     * urbi_chunk_translate_load_err for the file-load surface).
+     * The empty-blob path never reaches it. */
     URBI_ERR_STDLIB_BOOT_FAILED         = -15,
     /* URBI_ERR_API_VERSION_MISMATCH: returned by urbi_aux_check_version
-     * (lands in Phase 2 T13) when the runtime library's API version
+     * when the runtime library's API version
      * disagrees with what the embedder compiled against. MINOR-additive
      * per the bump policy in <urbi/version.h>. */
     URBI_ERR_API_VERSION_MISMATCH       = -16,
@@ -553,17 +553,17 @@ typedef enum {
      * auth_token (default-secure posture).  Embedder must either set
      * cfg->auth_token or restrict cfg->bind_addr to "127.0.0.1" / "::1"
      * / a Unix-socket path starting with '/'.
-     * W4/v0.10.6: URBI_ERR_INVALID_CONFIG is a synonym for this code;
+     * v0.10.6: URBI_ERR_INVALID_CONFIG is a synonym for this code;
      * the canonical name remains URBI_ERR_INSECURE_CONFIG. */
     URBI_ERR_INSECURE_CONFIG            = -25,
 #define URBI_ERR_INVALID_CONFIG URBI_ERR_INSECURE_CONFIG
-    /* W4/v0.10.3: returned by urbi_aux_value_to_* checked accessors when
+    /* v0.10.3: returned by urbi_aux_value_to_* checked accessors when
      * the UValue kind does not match the requested type.  Embedders use
      * urbi_value_is_*() to guard before calling unchecked urbi_value_as_*;
      * or call urbi_aux_value_to_*() directly and handle this code.
      * Closes api-ergonomics F1. */
     URBI_ERR_TYPE                       = -26,
-    /* W5/v0.10.3: returned by urbi_strand_destroy (and similar lifecycle
+    /* v0.10.3: returned by urbi_strand_destroy (and similar lifecycle
      * functions) in debug builds when the strand is in an unsafe state for
      * the requested operation.  For example, urbi_strand_destroy on a READY
      * or RUNNING strand returns URBI_ERR_INVALID_STATE in -DURBI_DEBUG builds.
@@ -572,11 +572,9 @@ typedef enum {
     URBI_ERR_INVALID_STATE              = -27
 } UErrCode;
 
-/* === W3: error model === */
-
 /* === UCallbackSignal: positive return values for host callbacks ===
  *
- * v0.10.3 (W3): All public API functions return int with one convention:
+ * v0.10.3: All public API functions return int with one convention:
  *   URBI_OK  (0)        — success.
  *   negative URBI_ERR_* — failure; also published to urbi_last_error ring.
  *   positive UCallbackSignal — ONLY for urbi_native_method_fn and
@@ -592,7 +590,7 @@ typedef enum {
  * UVM internal code that previously used UVMError or UExecStatus to classify
  * results uses int + URBI_OK / URBI_ERR_* / UCallbackSignal constants now.
  * UExecStatus is retained for the strand-unwind-status public API family
- * (urbi_strand_unwind_status, urbi_strand_is_fatal) pending W5 migration. */
+ * (urbi_strand_unwind_status, urbi_strand_is_fatal) pending migration. */
 typedef enum {
     URBI_CB_OK         = 0, /* callback succeeded; no side-effect */
     URBI_CB_UNREGISTER = 1, /* watcher_fn: auto-unregister after this firing */
@@ -604,7 +602,7 @@ typedef enum {
  * unify with the positive-signal convention.  Retained for one release cycle
  * so existing host code using the old name still compiles without change.
  * New code should use URBI_CB_UNREGISTER directly.
- * (W7 may decorate this alias with URBI_DEPRECATED.) */
+ * (may be decorated with URBI_DEPRECATED in a future release.) */
 #define URBI_ERR_WATCHER_UNREGISTER  ((int)URBI_CB_UNREGISTER)
 
 /* === UExecStatus: strand-level execution status ===
@@ -612,7 +610,7 @@ typedef enum {
  * Mirror of the internal enum at src/sched/ustrand.h.  Numeric values are
  * not pinned cross-version; the enum is purely symbolic.
  *
- * v0.10.3 (W5): UExecStatus is retained as a deprecated alias for
+ * v0.10.3: UExecStatus is retained as a deprecated alias for
  * source compatibility for one release cycle.  New code should use the
  * public mirror UStrandUnwind below.  The internal scheduler's enum in
  * src/sched/ustrand.h is unchanged. */
@@ -624,14 +622,14 @@ typedef enum {
     UEXEC_CANCEL
 } UExecStatus;
 
-/* === W5/v0.10.3: UStrandUnwind — public mirror of UExecStatus ===
+/* === UStrandUnwind — public mirror of UExecStatus (v0.10.3) ===
  *
  * Public mirror of the internal UExecStatus enum.  Numeric values are
  * identical to UExecStatus constants so existing code using UEXEC_* still
  * compares correctly.  New code should use URBI_UNWIND_* constants.
  *
  * Used as the return type of urbi_strand_unwind_status(); replaces the
- * UExecStatus surface that was pending W5 migration per the W3 note in
+ * UExecStatus surface that was pending migration per the note in
  * the urbi.h header comment.
  *
  * UExecStatus is retained as a deprecated alias (source compat, one cycle). */
@@ -643,7 +641,7 @@ typedef enum {
     URBI_UNWIND_CANCEL   = 4   /* == UEXEC_CANCEL */
 } UStrandUnwind;
 
-/* === W5/v0.10.3: UStrandState — public strand lifecycle state ===
+/* === UStrandState — public strand lifecycle state (v0.10.3) ===
  *
  * Observable state of a strand as returned by urbi_strand_state().
  * Maps the internal USTRAND_* state nibble values (src/sched/ustrand.h)
@@ -664,7 +662,7 @@ typedef enum {
 /* === UVMError: retired — replaced by int + URBI_OK / URBI_ERR_* ===
  *
  * urbi_vm_run now returns int (URBI_OK / URBI_ERR_OOM / URBI_ERR_STRAND_FATAL).
- * UVMError is retired from the public API surface in v0.10.3 (W3).
+ * UVMError is retired from the public API surface in v0.10.3.
  * The vm->last_error internal field is now typed int.
  *
  * Legacy shims below preserve source compatibility for one release cycle.

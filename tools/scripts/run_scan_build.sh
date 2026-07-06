@@ -8,7 +8,7 @@ OUT="${1:-build/scan-build-out.txt}"
 HTML_DIR="${2:-build/scan-build-html}"
 mkdir -p "$(dirname "$OUT")" "$HTML_DIR"
 
-# T118: build into a dedicated tree so concurrent releasetest gates that
+# Build into a dedicated tree so concurrent releasetest gates that
 # share build/host/ (test, lint, ...) do not race with scan-build's
 # instrumented compile.
 "$SCAN_BUILD" --status-bugs -o "$HTML_DIR" make TARGET=host-scan-build all 2>&1 | tee "$OUT"

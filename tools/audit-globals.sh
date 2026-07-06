@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: BSD-3-Clause
-# Reject non-const file-scope mutables in src/*.c. Per pre-M2 multi-VM
+# Reject non-const file-scope mutables in src/*.c. Per multi-VM
 # audit decision: every mutable datum must live on UVM, not in
 # file-scope storage.
 #
@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.."
 # Accepted patterns:  static const, extern const, typedef, function defs.
 # Rejected:           static int counter; static UVM *current; etc.
 
-# refactor-3 GATE-05: scan src/**/*.c recursively (was top-level src/*.c only
+# GATE-05: scan src/**/*.c recursively (was top-level src/*.c only
 # — the gated REPL/ROS/urobotics subdirectories were never checked).
 # `typedef` lines are structurally global-free; `audit-globals-allow:` is the
 # blessed-exception marker (each carries a rationale + fixing-wave pointer).
@@ -45,7 +45,7 @@ VIOLATIONS=$(find src -name '*.c' -print0 \
 
 if [ -n "$VIOLATIONS" ]; then
     printf 'audit-globals: non-const file-scope mutable(s) found:\n%s\n' "$VIOLATIONS" >&2
-    printf '\nPer pre-M2 multi-VM audit: every mutable datum must live on UVM.\n' >&2
+    printf '\nPer multi-VM design: every mutable datum must live on UVM.\n' >&2
     printf 'See urbi-embedded/docs/internals/architecture.md "Multi-VM model".\n' >&2
     exit 1
 fi

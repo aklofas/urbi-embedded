@@ -111,7 +111,7 @@ static int run_boot_script(UVM *vm, const char *path) {
     UArena arena;
     uarena_init(&arena, 4096);
 
-    /* CHSTR-027 pattern (refactor-3 VM-11): the root proto must be
+    /* CHSTR-027 pattern: the root proto must be
      * heap-allocated — closures created by the boot script keep proto
      * pointers alive past this frame; uchunk_destroy defers the actual
      * free to the refcount-rescue machinery (vm->rescued_protos) when

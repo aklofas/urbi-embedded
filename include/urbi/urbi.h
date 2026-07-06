@@ -23,9 +23,9 @@
  * Replaces the pre-v0.5.5 `#include "sched/ustrand.h"` that pulled an
  * internal header into the public surface; closes API-012 / INC-003.
  * v0.9.2: UModule removed (struct deleted; a module IS its root UProto).
- * v0.10.3 (W3): UVMError retired; urbi_vm_run now returns int.
+ * v0.10.3: UVMError retired; urbi_vm_run now returns int.
  *   UCallbackSignal added for host-callback returns.
- * v0.10.3 (W5): UExecStatus deprecated; replaced by UStrandUnwind.
+ * v0.10.3: UExecStatus deprecated; replaced by UStrandUnwind.
  *   17 functions gain (struct UVM *vm, ...) first arg; 3 void→int. */
 #include "urbi/version.h"  /* URBI_ADVANCED (URBI_EXPERIMENTAL / URBI_DEPRECATED reserved) */
 #include "urbi/types.h"
@@ -37,20 +37,20 @@ extern "C" {
 
 const char *urbi_version(void);
 
-/* === Row 7 control-transfer C API (M3 / T12) ===
+/* === Row 7 control-transfer C API ===
  *
  * These functions allow host C code to inject unwind events into strands
  * and inspect their state.  They operate on struct UStrand / struct UTag /
  * struct UVM — forward-declared in <urbi/types.h>; definitions live in
  * sched/ustrand.h and vm/uvm.h.
  *
- * Thread safety: none at M3 — these are not ISR-safe.  The ISR-safe event
- * ring (urbi_inject_event) is added at T18. */
+ * Thread safety: none at v1.0 — these are not ISR-safe.  The ISR-safe event
+ * ring is available via urbi_inject_event. */
 
 /* Cross-strand: deposit TAG_STOP on `tag`'s member strands.
  * Synchronous deposit + queue, runs zero bytecode on the caller.
  *
- * WARNING (T28 / FOUND-013): not ISR-safe.  Walks tag->member_strands_head
+ * WARNING: not ISR-safe.  Walks tag->member_strands_head
  * and is reentrant via host callbacks invoked by waker logic (e.g.
  * sched_strand_unblock through urbi_event_drain_handler).  Embedders
  * calling from ISR contexts must use the urbi_inject_event ring instead
@@ -60,10 +60,10 @@ const char *urbi_version(void);
  * detected by the caller-installed ISR check function (see
  * urbi_set_isr_check_fn / urbi_in_isr below).
  *
- * T31 wires the real cross-strand walk; T12 provides a validity-check stub. */
+ * The cross-strand walk is fully wired; validity checks run on every call. */
 int urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value);
 
-/* W3b/v0.10.9: urbi_tag_block / urbi_tag_unblock — cross-strand suspend.
+/* urbi_tag_block / urbi_tag_unblock — cross-strand suspend (v0.10.9).
  *
  * urbi_tag_block walks tag->member_strands_head and arms each member's
  * BLOCK suspension gate: READY/RUNNING members suspend in place; a member
@@ -83,7 +83,7 @@ int urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value);
 int urbi_tag_block(struct UVM *vm, struct UTag *tag, UValue resume_value);
 int urbi_tag_unblock(struct UVM *vm, struct UTag *tag);
 
-/* W3c/v0.10.9: urbi_tag_freeze / urbi_tag_unfreeze — cross-strand suspend.
+/* urbi_tag_freeze / urbi_tag_unfreeze — cross-strand suspend (v0.10.9).
  *
  * Same shape as urbi_tag_block / _unblock but arming the FREEZE gate (no
  * resume-value semantic).  Sets and clears UTAG_FLAG_FROZEN.  A parked
@@ -97,7 +97,7 @@ int urbi_tag_unblock(struct UVM *vm, struct UTag *tag);
 int urbi_tag_freeze(struct UVM *vm, struct UTag *tag);
 int urbi_tag_unfreeze(struct UVM *vm, struct UTag *tag);
 
-/* === W5/v0.10.3: vm-first-arg sweep — control-transfer family ===
+/* === vm-first-arg convention — control-transfer family (v0.10.3) ===
  *
  * 9 functions previously took strand as their first argument.  They now
  * follow the dominant (struct UVM *vm, ...) convention used by every other
@@ -140,7 +140,7 @@ int urbi_strand_reset(struct UVM *vm, struct UStrand *strand);
  * on a native function) to inject control-transfer events.  The dispatch loop
  * detects the non-OK pending_unwind when the callback returns.
  *
- * v0.10.3 (W5): all three gain vm as first arg.  urbi_throw and
+ * v0.10.3: all three gain vm as first arg.  urbi_throw and
  * urbi_return_val change void → int so NULL vm/strand can return
  * URBI_ERR_INVALID_ARG (api-ergonomics F8). */
 
@@ -156,13 +156,13 @@ int urbi_return_val(struct UVM *vm, struct UStrand *strand, UValue value);
 void urbi_tag_stop_local(struct UVM *vm, struct UStrand *strand,
                          struct UTag *tag, UValue value);
 
-/* === Row 8 chunk-lifecycle C API (M3 / T14) ===
+/* === Row 8 chunk-lifecycle C API ===
  *
  * Realm lifecycle: create, destroy, global singleton, liveness query.
  * Full struct definition is in realm/urealm.h; include it for direct field access.
  * Forward-declaration here is sufficient for host code using only these funcs.
  *
- * Thread safety: none at M3 — same single-threaded constraint as row 7 API. */
+ * Thread safety: none at v1.0 — same single-threaded constraint as row 7 API. */
 struct URealm;
 
 /* Create a fresh, empty Realm bound to vm.  Returns NULL on OOM.
@@ -170,7 +170,7 @@ struct URealm;
  * urbi_last_error) is populated with the failure code. */
 struct URealm *urbi_realm_create(struct UVM *vm);
 
-/* Destroy realm: stop its tag (no-op at M3), free namespace, unlink from VM.
+/* Destroy realm: stop its tag, free namespace, unlink from VM.
  * Safe to call with realm == NULL (no-op). */
 void           urbi_realm_destroy(struct UVM *vm, struct URealm *realm);
 
@@ -217,7 +217,7 @@ bool           urbi_vm_has_live_work(const struct UVM *vm,
                                      uint32_t *out_watchers,
                                      uint32_t *out_wakes);
 
-/* === M5 realm globals C API (spec #5 §7) ===
+/* === Realm globals C API ===
  *
  * Install or retrieve slots on realm->global_object directly from host C.
  * Use urbi_realm_set_global_const to create a write-protected binding that
@@ -241,7 +241,7 @@ int urbi_realm_set_global_const(struct UVM *vm, struct URealm *realm,
 int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
                           const char *name, size_t name_len, UValue *out_value);
 
-/* === Row 8 step driver + chunk-execution C API (M3 / T16) ===
+/* === Row 8 step driver + chunk-execution C API ===
  *
  * urbi_step: drive the VM for up to budget_instructions opcodes, returning
  * a 4-state result describing what the caller should do next.
@@ -289,7 +289,7 @@ UStepResult urbi_step(struct UVM *vm,
 int urbi_run_chunk(struct UVM *vm, struct URealm *realm,
                    struct UProto *root, UValue *out_result);
 
-/* Compile-error gated when URBI_BYTECODE_ONLY=1 (M7 Wave 1 T16): the
+/* Compile-error gated when URBI_BYTECODE_ONLY=1: the
  * compiler frontend (src/lex, src/parse, src/emit) is not linked in
  * bytecode-only builds, so urbi_repl_eval cannot function — embedders
  * trying to call it get a compile error at the call site rather than
@@ -325,10 +325,10 @@ int urbi_unload(struct UVM *vm, struct UProto *root);
  * collapses every other internal code to URBI_ERR_INVALID_ARG.  Closes
  * API-005: URBI_ERR_BYTECODE_VERSION_MISMATCH is now reachable from a
  * public-API call site, even though the deserialize-bytes entry point
- * itself remains M6 work in progress. */
+ * itself is available via urbi_chunk_from_bytes. */
 URBI_ADVANCED int urbi_chunk_translate_load_err(int load_err);
 
-/* === Phase 10 stdlib bake (M6 Wave 2) ===
+/* === Stdlib bake (build-time tool) ===
  *
  * urbi_compile_source: compile a urbiscript source buffer to serialized
  * v1.5 wire-format bytecode.  Used by tools/urbi-compile-stdlib at build
@@ -354,7 +354,7 @@ URBI_ADVANCED int urbi_chunk_translate_load_err(int load_err);
  *   URBI_ERR_INVALID_ARG — NULL vm/src/out_buf/out_len.
  *   URBI_ERR_OOM         — allocation or serialize failure.
  *   URBI_ERR_INVALID_ARG — parse or emit error (see err_buf for details). */
-/* Compile-error gated when URBI_BYTECODE_ONLY=1 (M7 Wave 1 T16): the
+/* Compile-error gated when URBI_BYTECODE_ONLY=1: the
  * compiler frontend (src/lex, src/parse, src/emit) is not linked in
  * bytecode-only builds.  Pre-baked bytecode is loaded through
  * urbi_load_chunk / urbi_run_chunk instead. */
@@ -366,10 +366,10 @@ int urbi_compile_source(struct UVM *vm,
                         char *err_buf, size_t err_cap);
 #endif
 
-/* === Row 9 strand lifecycle C API (M3 / T20) ===
+/* === Row 9 strand lifecycle C API ===
  *
  * Separate _create (DORMANT alloc) from _start (DORMANT → READY enqueue) so
- * callers can pre-attach tags (T29), set scheduler attrs (v1.x), or pool/recycle
+ * callers can pre-attach tags, set scheduler attrs (v1.x), or pool/recycle
  * strands before making them runnable.  _spawn is the convenience composite.
  *
  * urbi_strand_create: allocate a strand in DORMANT state and bind it to realm.
@@ -384,17 +384,17 @@ int urbi_compile_source(struct UVM *vm,
  * urbi_strand_destroy: dequeue from scheduler, free cleanup stack, free strand.
  *   Safe to call with s == NULL (no-op).
  *
- * Thread safety: none at M3 — not ISR-safe.  Must be called from the same
+ * Thread safety: none at v1.0 — not ISR-safe.  Must be called from the same
  * thread that drives the VM.
  *
  * urbi_strand_cancel / urbi_strand_panic / urbi_strand_reset are declared
- * in the row 7 control-transfer section above (T12). */
+ * in the row 7 control-transfer section above. */
 
 struct UClosure;   /* forward decl — definition in src/chunk/uproto.h */
 
 /* urbi_native_method_fn: signature for host C functions that back a
  * UClosure slot.  Called by OP_CALL when the closure's native_fn field is
- * set (M6 Phase 3 dispatch arm, v0.6.0+).
+ * set (v0.6.0+).
  *
  * Parameters:
  *   vm    — the VM executing the call.
@@ -403,7 +403,7 @@ struct UClosure;   /* forward decl — definition in src/chunk/uproto.h */
  *   nargs — argument count.
  *   out   — write the return value here; initialised to NIL before the call.
  *
- * Return value (v0.10.3 W3 unified convention):
+ * Return value (v0.10.3 unified convention):
  *   URBI_CB_OK   (0) — no exception; *out holds the result.
  *   URBI_CB_THROW    — host raised an exception (set throw value via urbi_throw;
  *                      *out is ignored).
@@ -472,7 +472,7 @@ int urbi_register(struct UVM *vm, struct URealm *realm,
  *
  *   URBI_TAG_RUNNING — default state; no flags set.
  *   URBI_TAG_STOPPED — UTAG_FLAG_STOPPED (0x02) set via urbi_tag_stop.
- *   URBI_TAG_FROZEN  — UTAG_FLAG_FROZEN  (0x01) set (reserved; M7+ stdlib).
+ *   URBI_TAG_FROZEN  — UTAG_FLAG_FROZEN  (0x01) set (reserved; v1.x stdlib).
  *   URBI_TAG_BLOCKED — reserved for future scheduler-integration state.
  *
  * urbi_tag_info_t: aggregate tag state snapshot returned by urbi_tag_info.
@@ -519,7 +519,7 @@ typedef struct {
 struct UTag *urbi_tag_create(struct UVM *vm, struct URealm *realm,
                              const char *name, size_t name_len);
 
-/* W5/v0.10.3: vm added as first arg (api-ergonomics F6 partial). */
+/* v0.10.3: vm added as first arg (api-ergonomics F6 partial). */
 int urbi_tag_info(struct UVM *vm, const struct UTag *tag, urbi_tag_info_t *out);
 
 /* === Gap K — slot read/write from host C (v0.7.1) ===
@@ -528,7 +528,7 @@ int urbi_tag_info(struct UVM *vm, const struct UTag *tag, urbi_tag_info_t *out);
  *   Dispatches on obj's kind:
  *     UVAL_OBJECT → walk prototype chain (left-first DFS, cycle-safe).
  *     Atom kinds (INT/FLOAT/STR/BOOL/NIL/VOID) → route through the
- *       per-kind atom proto (M6 Wave 1 baseline; mirrors OP_GETSLOT).
+ *       per-kind atom proto (v0.6.0 baseline; mirrors OP_GETSLOT).
  *   Returns URBI_OK + *out_value on success.
  *   Returns URBI_ERR_INVALID_ARG if vm, name, or out_value is NULL.
  *   Returns URBI_ERR_SLOT_NOT_FOUND if the name is absent.
@@ -538,7 +538,7 @@ int urbi_tag_info(struct UVM *vm, const struct UTag *tag, urbi_tag_info_t *out);
  *   Only UVAL_OBJECT receivers are supported; atoms are immutable.
  *   Respects the CONSTANT flag on locally-owned slots: rejects writes
  *   with URBI_ERR_CONST_SLOT_WRITE.  COW-inherited slots (slot on a
- *   prototype) receive a mutable local copy per pre-M2 §6.1.
+ *   prototype) receive a mutable local copy per spec §6.1.
  *   Returns URBI_OK on success.
  *   Returns URBI_ERR_INVALID_ARG if vm or name is NULL.
  *   Returns URBI_ERR_TYPE if obj is not UVAL_OBJECT (type mismatch).
@@ -570,7 +570,7 @@ int urbi_slot_set(struct UVM *vm, UValue obj,
  * Thread safety: MAIN. */
 UValue urbi_make_str_interned(struct UVM *vm, const char *s, size_t len);
 
-/* === W5/v0.10.3: vm-first-arg sweep — strand lifecycle ===
+/* === vm-first-arg convention — strand lifecycle (v0.10.3) ===
  *
  * 4 functions previously took realm/strand as their first argument.  They
  * now follow the (struct UVM *vm, ...) convention.
@@ -593,7 +593,7 @@ int             urbi_strand_destroy(struct UVM *vm, struct UStrand *s);
 /* Query the current lifecycle state of a strand.  NULL strand returns DEAD. */
 UStrandState    urbi_strand_state(struct UVM *vm, const struct UStrand *s);
 
-/* === Row 9 ISR-safe event ring (M3 / T18) ===
+/* === Row 9 ISR-safe event ring ===
  *
  * urbi_inject_event: single-producer ISR-safe primitive.
  * May be called from interrupt context; no locks, no heap allocation.
@@ -604,7 +604,7 @@ UStrandState    urbi_strand_state(struct UVM *vm, const struct UStrand *s);
  * The VM drains injected events at the start of each urbi_step() call.
  * Single-producer / single-consumer: one ISR writer + one thread reader.
  *
- * Payload alignment: 8 bytes (T25 / EVENT-003).  Embedders pushing typed
+ * Payload alignment: 8 bytes.  Embedders pushing typed
  * payloads (uint64_t, double, struct fields) from ISR contexts may rely
  * on natural alignment for atomic-load semantics on aligned-only
  * architectures.  The underlying ring entry's payload field is
@@ -613,7 +613,7 @@ UStrandState    urbi_strand_state(struct UVM *vm, const struct UStrand *s);
 int urbi_inject_event(struct UVM *vm, uint32_t event_id,
                       const void *payload, size_t len);
 
-/* === T57 ISR ring drain handler (M5 / spec #3 §9) ===
+/* === ISR ring drain handler ===
  *
  * urbi_register_event_drain: install a drain callback invoked at each
  * safepoint (urbi_step entry) for every entry in the ISR event ring.
@@ -622,7 +622,7 @@ int urbi_inject_event(struct UVM *vm, uint32_t event_id,
  *   void handler(UVM *vm, uint32_t event_id, UValue payload);
  *
  *   event_id — the ID passed to urbi_inject_event.
- *   payload  — NIL at M5 baseline (raw-bytes ring does not carry UValues;
+ *   payload  — NIL at baseline (raw-bytes ring does not carry UValues;
  *              host implements event_id → UEvent* mapping in the handler).
  *
  * The handler runs in main-thread context (at safepoint, not in ISR).
@@ -631,7 +631,7 @@ int urbi_inject_event(struct UVM *vm, uint32_t event_id,
  *
  * Pass NULL to remove a previously registered handler.
  * Not ISR-safe (must be called from the same thread that drives urbi_step). */
-/* v0.10.3 (W3): urbi_event_drain_handler gains a void *ud parameter
+/* v0.10.3: urbi_event_drain_handler gains a void *ud parameter
  * (api-ergonomics F7) so the drain callback can carry per-VM state. */
 typedef void (*urbi_event_drain_handler)(struct UVM *vm,
                                          void *ud,
@@ -765,7 +765,7 @@ void urbi_realm_set_writer(struct UVM *vm, struct URealm *realm,
  * realm (urbi_realm_global) has no budget by default (trusted host code).
  *
  * Thread safety: MAIN. */
-/* W5/v0.10.3: vm added as first arg (api-ergonomics F6 partial). */
+/* v0.10.3: vm added as first arg (api-ergonomics F6 partial). */
 void urbi_realm_set_compile_budget(struct UVM *vm, struct URealm *realm,
                                    const UCompileBudget *budget);
 const UCompileBudget *urbi_realm_get_compile_budget(struct UVM *vm,
@@ -809,8 +809,7 @@ extern const UCompileBudget URBI_DEFAULT_REPL_BUDGET;
  * verb-/concept-callbacks (urbi_set_wake_fn, urbi_set_isr_check_fn).
  * Lua precedent: lua_setwarnf (Lua 5.4).  SQLite precedent:
  * sqlite3_config(SQLITE_CONFIG_LOG, ...). */
-/* === W3: error model === */
-/* v0.10.3 (W3): urbi_diag_fn gains a void *ud parameter (api-ergonomics F7).
+/* v0.10.3: urbi_diag_fn gains a void *ud parameter (api-ergonomics F7).
  * The ud is passed through by urbi_set_diag_fn and forwarded on every callback
  * invocation.  Embedders that want per-VM log state no longer need globals. */
 typedef void (*urbi_diag_fn)(struct UVM *vm, void *ud, int level,
@@ -860,7 +859,7 @@ void urbi_vm_write(struct UVM *vm,
  * Pass NULL to urbi_set_clock_fn to restore the default.
  *
  * Thread safety: MAIN. */
-/* v0.10.3 (W3): urbi_time_us_fn gains a void *ud parameter (api-ergonomics F7).
+/* v0.10.3: urbi_time_us_fn gains a void *ud parameter (api-ergonomics F7).
  * Embedders that maintain per-VM time state no longer need globals. */
 typedef uint64_t (*urbi_time_us_fn)(void *ud);
 
@@ -918,7 +917,7 @@ void urbi_set_wake_fn(struct UVM *vm, urbi_wake_fn fn, void *ud);
 void urbi_atomic_begin(struct UVM *vm);
 void urbi_atomic_end(struct UVM *vm);
 
-/* === Reactive: watcher-body-completion callback (Wave 1 T33) ===
+/* === Reactive: watcher-body-completion callback ===
  *
  * urbi_watcher_handle_t is an opaque int — non-zero identifies a live
  * host-installed watcher (urbi_register_watcher); zero (URBI_WATCHER_HANDLE_INVALID)
@@ -943,7 +942,7 @@ typedef int urbi_watcher_handle_t;
  * for script-side watcher-body-done notifications. */
 #define URBI_WATCHER_HANDLE_INVALID  ((urbi_watcher_handle_t)0)
 
-/* v0.10.3 (W3): urbi_watcher_body_done_fn gains a void *ud parameter
+/* v0.10.3: urbi_watcher_body_done_fn gains a void *ud parameter
  * (api-ergonomics F7 / reactive-runtime F7). */
 typedef void (*urbi_watcher_body_done_fn)(struct UVM *vm,
                                           void *ud,
@@ -970,7 +969,7 @@ void urbi_set_watcher_body_done_fn(struct UVM *vm,
  *   argc     — number of valid entries in args[].
  *   ud       — user-data pointer registered with urbi_register_watcher.
  *
- * Return value contract (v0.10.3 W3 unified convention):
+ * Return value contract (v0.10.3 unified convention):
  *   URBI_CB_OK         (0) — remain registered; fire again on next event.
  *   URBI_CB_UNREGISTER (1) — auto-unregister after this firing.
  *   URBI_ERR_WATCHER_UNREGISTER   — legacy alias for URBI_CB_UNREGISTER.
@@ -1012,7 +1011,7 @@ urbi_watcher_handle_t urbi_register_watcher(struct UVM *vm,
  * Thread safety: MAIN. */
 int urbi_unregister_watcher(struct UVM *vm, urbi_watcher_handle_t handle);
 
-/* === T19: ISR-safety assertions + URBI_DEBUG callback watchdog ===
+/* === ISR-safety assertions + URBI_DEBUG callback watchdog ===
  *
  * URBI_LOG_* — log level constants for the urbi_diag_fn callback
  *   (installed via urbi_set_diag_fn).  Named LOG_* because levels are
@@ -1035,7 +1034,7 @@ typedef enum {
 } ULogLevel;
 
 /* UWatchdogMode: response to slow host-callback timing in URBI_DEBUG builds.
- * Promoted from #defines to a typedef enum at v0.5.5 (T10) to match the
+ * Promoted from #defines to a typedef enum at v0.5.5 to match the
  * sibling ULogLevel idiom; numeric values pinned (0 = WARN, 1 = ASSERT). */
 typedef enum {
     URBI_WATCHDOG_WARN   = 0,
@@ -1043,8 +1042,8 @@ typedef enum {
 } UWatchdogMode;
 
 /* UHostFn: signature for host-implemented native functions called by OP_CALL.
- * M5 wires this into the call-dispatch path; M3 defines the typedef for the
- * watchdog wrapper infrastructure introduced here at T19. */
+ * Wired into the call-dispatch path; introduced alongside the watchdog
+ * wrapper infrastructure. */
 typedef UValue (*UHostFn)(struct UStrand *s, int argc, UValue *argv);
 
 /* URBI_NORETURN: marks functions that never return.
@@ -1119,7 +1118,7 @@ URBI_ADVANCED UValue urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand
 
 /* urbi_set_isr_check_fn: register a predicate that returns true when called
  * from ISR context.  Pass NULL to disable ISR checking (default).
- * v0.10.3 (W3): gains a trailing void *ud; the callback receives ud on each
+ * v0.10.3: gains a trailing void *ud; the callback receives ud on each
  * invocation so ISR-detection state can be per-VM without globals. */
 void urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void *ud), void *ud);
 
@@ -1128,7 +1127,7 @@ void urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void *ud), void *ud);
  * URBI_WATCHDOG_ASSERT — call urbi_panic on threshold exceeded. */
 void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
 
-/* === M4 module-instance C API (T16) ===
+/* === Module-instance C API ===
  *
  * The root UProto is read-only (flash-resident on freestanding targets).
  * The mutable IC state lives in a per-VM UChunkInstance.  Two instances of
@@ -1142,12 +1141,12 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
  * urbi_chunk_instance_destroy is a no-op at v1.0 — both cells are
  * GC-managed and reaped by sweep when no roots reach the instance.
  * (AUDIT: OBJ-027 — function body is dead at v1.0; symbol kept for
- * public-API stability.  M7 module-instance lifecycle work may give
+ * public-API stability.  Future module-instance lifecycle work may give
  * the call host-visible side-effects (e.g. detaching from a host-owned
  * registry); until then, callers should still pair create/destroy so
  * the symbol can grow semantics without source churn.)
  *
- * Thread safety: none at M4; same single-threaded constraint as the rest
+ * Thread safety: none at v1.0; same single-threaded constraint as the rest
  * of the v1.0 API. */
 #ifndef URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
 #define URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
@@ -1157,7 +1156,7 @@ typedef struct UChunkInstance UChunkInstance;
 URBI_ADVANCED UChunkInstance *urbi_chunk_instance_create (struct UVM *vm, struct UProto *root);
 URBI_ADVANCED void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi);
 
-/* === W1/v0.10.3: opaque VM allocation API ===
+/* === Opaque VM allocation API (v0.10.3) ===
  *
  * urbi_vm_create  — allocate + initialise a UVM via the supplied allocator.
  *                   Preferred entry point for new embedders.  Returns NULL on
@@ -1204,7 +1203,7 @@ size_t      urbi_vm_alignof(void);
  *
  * Conservative scope: pure rename.  Signatures, semantics, and error
  * codes are byte-identical to the pre-v0.5.5 internal forms. */
-/* T23 (v0.7.0 Wave 1) — returns URBI_OK on success, URBI_ERR_OOM if any
+/* v0.7.0 — returns URBI_OK on success, URBI_ERR_OOM if any
  * sub-system allocation (event_ring, deferred_slot_changes, watcher pool,
  * op_overload IC, ...) fails.  Pre-v0.7.0 this returned void; the change
  * is permitted under the pre-v1.0 ABI escape clause documented in
@@ -1213,7 +1212,7 @@ size_t      urbi_vm_alignof(void);
 URBI_ADVANCED int      urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 URBI_ADVANCED void     urbi_vm_destroy(struct UVM *vm);
 /* urbi_vm_run: run root proto to completion.
- * v0.10.3 (W3): return type changed from UVMError to int.
+ * v0.10.3: return type changed from UVMError to int.
  *   URBI_OK (0) on success; *out receives the final value.
  *   URBI_ERR_OOM if allocation fails during execution.
  *   URBI_ERR_UNCAUGHT_THROW (-18) if the root strand died with an uncaught
@@ -1226,7 +1225,7 @@ URBI_ADVANCED void     urbi_vm_destroy(struct UVM *vm);
 int      urbi_vm_run    (struct UVM *vm, struct URealm *realm,
                          const struct UProto *root, UValue *out);
 
-/* === urbi_lock_heap (Phase 13 / T145) ===
+/* === urbi_lock_heap ===
  *
  * Lock the allocator post-init.  After this call, urbi_gc_alloc declines
  * to allocate new GC-managed cells and returns NULL; the caller observes
@@ -1262,8 +1261,8 @@ void urbi_lock_heap(struct UVM *vm);
  *   2. watcher pool high-water mark
  *   3. gc_total_allocated counter
  *   4. intern table entry count
- *   5. topology_gen, lookup_id, next_object_id (M4 object-model counters)
- *   6. per-IC observable state across every live UChunkInstance (M4 T30):
+ *   5. topology_gen, lookup_id, next_object_id (object-model counters)
+ *   6. per-IC observable state across every live UChunkInstance:
  *      ic->n, ic->replace_cursor, and ic->topology_gen[0..n) for each
  *      UIC site in each UProtoInstance's IC table.  Heap pointers
  *      (recv_shapes, slots, uprops) are deliberately NOT folded —
@@ -1385,7 +1384,7 @@ void urbi_set_error(struct UVM *vm, int code,
 
 /* === Public bytecode deserialization (v0.7.1 spec amendment) ===
  *
- * W5/v0.10.3: both functions gain (struct UVM *vm, ...) as first arg.
+ * v0.10.3: both functions gain (struct UVM *vm, ...) as first arg.
  * urbi_chunk_from_bytes now routes allocation through vm->alloc_fn instead
  * of libc malloc, matching the rest of the VM allocator domain and closing
  * the cross-allocator hazard documented in api-ergonomics F3.

@@ -191,13 +191,13 @@ int urbi_aux_dump_value(struct UVM *vm, UValue v,
  * a libc should wire urbi_set_diag_fn to a platform-specific shim
  * (e.g., port_diag_to_esp on ESP-IDF).
  *
- * v0.10.3 (W3): signature gains void *ud to match urbi_diag_fn convention.
+ * v0.10.3: signature gains void *ud to match urbi_diag_fn convention.
  * Signature matches urbi_diag_fn — see <urbi/urbi.h> for the
  * level convention (URBI_LOG_DEBUG/INFO/WARN/ERROR). */
 void urbi_aux_diag_to_stderr(struct UVM *vm, void *ud, int level,
                              const char *fmt, ...);
 
-/* === W4/v0.10.3: checked-accessor family ===
+/* === Checked-accessor family (v0.10.3) ===
  *
  * Single-call safe extract: returns URBI_OK + writes *out on type match;
  * returns URBI_ERR_TYPE (-26) and leaves *out unmodified on kind mismatch.

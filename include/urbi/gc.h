@@ -15,13 +15,11 @@
  * -Isrc and include the strategy header themselves; this is intentional and
  * documented in docs/embedding-guide.md §advanced-barriers.
  *
- * === W2: public-header de-leak ===
  * Before v0.10.3, this header included "gc/ugc.h" and the active strategy
  * header ("gc/ugc_incremental.h" or "gc/ugc_none.h") — all src/-prefixed
  * paths that caused header-not-found errors for embedders using -Iinclude
- * alone.  W2 moves all public-facing declarations inline so that -Iinclude
- * alone is sufficient.  Closes audit-1 F1 (completion).
- * === end W2 === */
+ * alone.  The public-facing declarations were then moved inline so that
+ * -Iinclude alone is sufficient.  Closes audit-1 F1 (completion). */
 
 #ifndef URBI_GC_H
 #define URBI_GC_H
@@ -81,7 +79,7 @@ extern "C" {
 
 /* Default per-slice byte-work budget for urbi_gc_slice().
  * MCU default; Linux builds can override with -DURBI_GC_SLICE_BUDGET=16384.
- * Tunable per row 10 §6.5 of the M3 incremental GC design. */
+ * Tunable per row 10 §6.5 of the incremental GC design. */
 #ifndef URBI_GC_SLICE_BUDGET
 #  define URBI_GC_SLICE_BUDGET 4096
 #endif
@@ -107,8 +105,6 @@ typedef void (*UGcRootCallback)(struct UVM *vm, UValue *root, void *ctx);
 typedef void (*UGcRootProviderFn)(struct UVM *vm, UGcRootCallback cb, void *ctx);
 #endif
 
-/* === end W2: public-header de-leak === */
-
 /* Opaque GC-cell type — full layout (type_tag, gc_byte, payload) is in
  * src/gc/ugc.h for internal callers only.  External embedders use
  * struct UCell* pointers and never access fields directly. */
@@ -132,7 +128,7 @@ void urbi_unpin(struct UVM *vm, UValue v);
 
 /* === Strategy interface — 8 non-inline ops ===
  *
- * Non-inline ops (T23 provides implementations in ugc_incremental.c):
+ * Non-inline ops (implemented in ugc_incremental.c):
  *
  *   struct UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t type_tag);
  *   void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);
@@ -177,7 +173,7 @@ URBI_ADVANCED struct UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t t
  *
  * Step budget: incremental work is bounded so that any single
  * urbi_gc_slice() call returns within ~1ms on the host CI runner.
- * Verified by `make test-gc-pause` CI gate.  See M3 retrospective at
+ * Verified by `make test-gc-pause` CI gate.  See the GC pause-time history at
  * docs/milestones/m3-concurrency.md for the end-to-end pause-time history.
  *
  * ISR note: NOT ISR-safe — allocates/frees memory and modifies VM state. */
@@ -224,12 +220,12 @@ URBI_ADVANCED void   urbi_gc_force_full(struct UVM *vm);
  * non-ISR context.  Used by test harnesses + the determinism checksum. */
 URBI_ADVANCED size_t urbi_gc_bytes_allocated_inline(const struct UVM *vm);
 
-/* === Root provider forward declarations (T26) ===
+/* === Root provider forward declarations ===
  * Each subsystem's root-walker function is declared here so that urbi_vm_init
  * can register them without pulling in each subsystem's full header.
  * Definitions live in their respective source files.
  *
- * Note: host_handle_walk_roots is declared in uhandle.h (T27 moved it there
+ * Note: host_handle_walk_roots is declared in uhandle.h (moved there
  * to give the host-handle subsystem a proper home).  uvm.c includes uhandle.h
  * directly when registering the provider. */
 

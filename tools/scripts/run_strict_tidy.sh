@@ -7,7 +7,7 @@ CLANG_TIDY="${CLANG_TIDY:-clang-tidy-18}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-# refactor-3 GATE-01: a missing tool must fail loudly, not "OK: 0 violations"
+# GATE-01: a missing tool must fail loudly, not "OK: 0 violations"
 # (command-not-found output matches neither warning token).
 command -v "$CLANG_TIDY" >/dev/null 2>&1 || {
     echo "FAIL: $CLANG_TIDY not found in PATH — the strict-tidy gate cannot run." >&2
