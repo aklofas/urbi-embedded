@@ -356,17 +356,11 @@ urbi_periodic_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
             urbi_gc_shade_gray(vm, (UCell *)p->owning_tag);
         }
     }
-    /* vm->every_native_closure is reached separately via vm_misc_walk_roots
-     * extension below.  Allocated as a GC cell, but the only live pointer
-     * is the UVM-field — needs an explicit yield to survive collection.
-     *
-     * Actually: it is referenced by the realm-global slot for "every"
-     * once urbi_temporal_native_register_globals runs, which the
-     * urbi_gc_realm_list_walk_roots provider already reaches via
-     * realm->global_object's slot table.  So no extra yield needed here
-     * for that closure — covered by urbi_gc_realm_list_walk_roots.  Add the
-     * explicit yield only if a path other than the global binding makes
-     * the closure escape the realm.  None today. */
+    /* Belt-and-suspenders: the GC root is held for the duration of this
+     * walker because the walker itself may trigger GC (e.g. via shade_gray
+     * barriers that fire allocation).  The closure is also reachable via
+     * realm->global_object's "every" slot, but the explicit yield here
+     * guards against any future path where the global binding is absent. */
     if (vm->every_native_closure != NULL) {
         UValue tmp;
         tmp.kind = (uint8_t)UVAL_CLOSURE;
