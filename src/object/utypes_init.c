@@ -460,6 +460,11 @@ uclosure_destroy(struct UVM *vm, void *payload)
             vm->rescued_protos = rp;
         } else {
             rp->next_alloc = NULL;  /* clear sentinel first */
+            /* Free source_name before uproto_destroy_buffers zeroes the struct. */
+            if (rp->alloc_fn != NULL && rp->source_name != NULL) {
+                rp->alloc_fn(rp->source_name, 0, rp->alloc_ud);
+                rp->source_name = NULL;
+            }
             uproto_destroy_buffers(rp, rp->alloc_fn, rp->alloc_ud);
             /* struct itself is not freed: it is stack/static-allocated */
         }

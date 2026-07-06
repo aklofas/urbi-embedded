@@ -2224,6 +2224,50 @@ UTEST(verify_rejects_push_tag_handler_pc_above_instr_count) {
     uchunk_destroy(c, NULL);
 }
 
+
+/* --- Deferred-destroy source_name free tests --- */
+
+typedef struct {
+    void *expect_free; /* pointer we expect to be freed */
+    int   free_count;  /* incremented each time expect_free is freed via alloc */
+} SrcFreeSpy;
+
+static void *srcspy_alloc(void *ptr, size_t n, void *ud) {
+    SrcFreeSpy *spy = (SrcFreeSpy *)ud;
+    if (n == 0) {
+        if (ptr != NULL && ptr == spy->expect_free)
+            spy->free_count++;
+        free(ptr);
+        return NULL;
+    }
+    return malloc(n);
+}
+
+UTEST(deferred_destroy_strand_refcount_dec_frees_source_name) {
+    /* Verify the deferred-destroy path in uproto_strand_refcount_dec
+     * frees source_name before calling uproto_destroy_buffers.  Under ASan,
+     * the test is RED (memory leak) before the fix, GREEN after. */
+    SrcFreeSpy spy = { NULL, 0 };
+    char *name = (char *)malloc(8);
+    if (!name) return;
+    name[0] = 't'; name[1] = 'e'; name[2] = 's'; name[3] = 't';
+    name[4] = ' ';
+    spy.expect_free = name;
+
+    UProto root = {0};
+    root.alloc_fn       = srcspy_alloc;
+    root.alloc_ud       = &spy;
+    root.source_name    = name;
+    root.heap_allocated = false;  /* stack root: buffers freed, struct not */
+
+    uproto_refcount_inc(&root);    /* refcount = 1 */
+    root.next_alloc = &root;       /* self-link deferred-destroy sentinel */
+
+    uproto_strand_refcount_dec(&root, NULL);
+
+    UASSERT_EQ(spy.free_count, 1);  /* source_name must have been freed */
+}
+
 void test_module_suite(void);
 
 void test_module_suite(void) {
@@ -2231,6 +2275,8 @@ void test_module_suite(void) {
     utest_run("destroy empty module is a no-op",        destroy_empty_module_is_noop);
     utest_run("destroy module with allocated buffers frees them",
               destroy_module_with_buffers_frees_them);
+    utest_run("deferred-destroy strand_refcount_dec frees source_name",
+              deferred_destroy_strand_refcount_dec_frees_source_name);
     utest_run("deserialize accepts good header with empty body sections",
               deserialize_accepts_good_header_with_empty_body_sections);
     utest_run("deserialize rejects buffer shorter than header",

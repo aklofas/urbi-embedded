@@ -1559,6 +1559,11 @@ uproto_strand_refcount_dec(UProto *root, struct UVM *vm)
         void          *ud   = root->alloc_ud;
         bool          heap  = root->heap_allocated;
         root->next_alloc = NULL;
+        /* Free source_name before uproto_destroy_buffers zeroes the struct. */
+        if (fn != NULL && root->source_name != NULL) {
+            module_buf_free(fn, ud, root->source_name);
+            root->source_name = NULL;
+        }
         uproto_destroy_buffers(root, fn, ud);
         if (fn != NULL && heap) {
             fn(root, 0, ud);
