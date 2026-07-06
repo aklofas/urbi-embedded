@@ -68,6 +68,7 @@
 
 #if URBI_MEM_DEBUG && (URBI_GC != URBI_GC_INCREMENTAL)
 #  error "URBI_MEM_DEBUG requires URBI_GC_INCREMENTAL (the all-cells sidecar lives here)"
+#endif
 
 /* Enforce the 2-byte UCell header invariant (spec §2.5). */
 URBI_STATIC_ASSERT(sizeof(UCell) == 2, "UCell must be exactly 2 bytes (type_tag + gc_byte)");
@@ -80,7 +81,6 @@ URBI_STATIC_ASSERT(
       UGC_HAS_WATCHER_OBSERVER | UGC_HAS_SLOT_CHANGE_EVENT) == 0xFCu) &&
     (UGC_COLOR_MASK == 0x03u),
     "gc_byte fully claimed: bits 7..2 = flags, bits 1..0 = color");
-#endif
 
 /* No stdlib.h or string.h — freestanding-strict like every other src/c file.
  * Memory operations go through vm->alloc_fn.  Zero-init uses a byte loop. */
