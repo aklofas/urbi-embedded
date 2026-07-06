@@ -1876,7 +1876,9 @@ exit_strand:
      * a cleanup body — cleanup_run_depth == 0), the C-stack root chain must
      * be empty.  A frame leaked past its push/pop pair would leave
      * strand_walk_roots reading a dead C stack frame on the next mark phase
-     * (silent corruption, not a crash); catch it loudly in debug builds. */
+     * (silent corruption, not a crash); catch it loudly in hosted builds.
+     * Outermost-exit-only: nested cleanup re-entries (cleanup_run_depth > 0)
+     * intentionally leave c_roots_head non-NULL while their frame is live. */
     URBI_INTERNAL_ASSERT(s->cleanup_run_depth != 0U || s->c_roots_head == NULL);
 #if UVM_USE_COMPUTED_GOTO
 #  pragma GCC diagnostic pop

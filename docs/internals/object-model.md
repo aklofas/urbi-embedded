@@ -446,7 +446,7 @@ flag bit.
 ## Cross-references
 
 - [GC](gc.md) — cell types, gc_byte bit layout, the slot-write barrier
-  (`urbi_gc_slot_write`), and the realm-hierarchy walker that keeps
+  (`urbi_gc_slot_store` / `urbi_gc_slot_pre_store`), and the realm-hierarchy walker that keeps
   `UObject` / `UShape` / `UProps` / wrapper cells reachable.
 - [Realm and chunks](realm-and-chunks.md) — how the per-VM
   `UChunkInstance` carries the IC RAM tier and lazy-interns IC name

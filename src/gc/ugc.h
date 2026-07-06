@@ -146,8 +146,8 @@ typedef struct UType {
 /* Register a host type descriptor with the VM.
  * Precondition: type->type_tag must be 0 (auto-assign) or >= UTYPE_HOST_BASE (64).
  *   Tags 1..(UTYPE_HOST_BASE-1) are reserved for built-in runtime types;
- *   passing one of those tags triggers URBI_INTERNAL_ASSERT in debug builds
- *   and returns 0 in release builds.
+ *   passing one of those tags triggers URBI_INTERNAL_ASSERT in hosted builds
+ *   and returns 0 in freestanding builds.
  * Returns the assigned type_tag on success (== type->type_tag for explicit
  * tags; next auto-slot for tag == 0).
  * Returns 0 on error (tag conflict, runtime-reserved tag, or table full).
