@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* object_root.h — M6 Phase 3 stdlib boot: Object root C-native methods.
+/* object_root.h — stdlib boot: Object root C-native methods.
  *
- * Phase 3 of the M6 stdlib scaffolding lands the nine root-level Object
+ * This module lands the nine root-level Object
  * methods as C-native UClosures: setSlot, getSlot, hasSlot, removeSlot,
  * clone, addProto, removeProto, protos, setProtos.
  *
@@ -85,7 +85,7 @@ int urbi_install_native_methods(struct UVM *vm, struct UObject *proto,
  *
  * Install the nine Object root C-native methods on vm->atom_object.
  * Idempotent: re-installs are silently overwritten (acceptable for the
- * Phase 3 scaffolding; M7 C-API may tighten this).
+ * current scaffolding; a future C-API iteration may tighten this).
  *
  * Returns URBI_OK on success or URBI_ERR_OOM on allocation failure.  On
  * failure, partial registration is acceptable since the same closure

@@ -75,13 +75,13 @@ typedef struct URealm {
 
     /* Tag-ownership: implicit watcher/coroutine cleanup boundary.
      * UTag is created at realm-creation time and host-managed via vm->alloc_fn.
-     * GC migration (M5/M6) moves UTag to urbi_gc_alloc when needed. */
+     * UTag migrated to urbi_gc_alloc at v0.5.0. */
     struct UTag *tag;           /* allocated by urbi_realm_create via utag_create */
 
     /* Namespace: top-level bindings */
     struct UNamespace *bindings; /* name → UValue map; owned */
 
-    /* Global object: M4 UObject that holds the realm's named slot table.
+    /* Global object: UObject that holds the realm's named slot table.
      * Populated at urbi_realm_create with the 15 v1.0 built-in globals
      * (spec #5 §4.1).  NULL until realm_create completes the alloc step.
      * GC-managed via urbi_gc_realm_list_walk_roots shading this cell. */
@@ -109,7 +109,7 @@ typedef struct URealm {
      * loaded under this realm via urbi_run_chunk / urbi_repl_eval /
      * urbi_load_chunk.  Threaded via UProto.next_in_realm; head-insertion.
      * Walked at urbi_realm_destroy time to unload each non-vm_owned module
-     * (Task 12); vm_owned overlays (refactor-3 GC-18) only get their
+     * (urealm_register_module); vm_owned overlays (GC-18) only get their
      * back-pointers cleared there and are freed by urbi_vm_destroy.
      * v0.9.2 Task 4.1: was UModule*; now UProto* (UModule deleted). */
     struct UProto  *loaded_protos_head;
@@ -154,12 +154,12 @@ void urealm_teardown_all(struct UVM *vm);
 
 /* === GC root walker for the full realm list ===
  *
- * Called by the GC root-provider registry (row 10 / T26) to enumerate
+ * Called by the GC root-provider registry (row 10) to enumerate
  * all UValues reachable from every live Realm.
  * Iterates vm->realms_head linked list; for each Realm visits:
  *   1. namespace entries       (via unamespace_walk_roots)
  *   2. realm->global_object    (urbi_gc_shade_gray — UTYPE_OBJECT cell)
- *   3. realm->tag              (urbi_gc_shade_gray — UTYPE_TAG cell at M5+)
+ *   3. realm->tag              (urbi_gc_shade_gray — UTYPE_TAG cell at v0.5.0+)
  * The implementation in urealm.c is the source of truth for this list. */
 void urbi_gc_realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
@@ -175,7 +175,7 @@ URealm *urbi_realm_global(struct UVM *vm);
 URealm *urbi_realm_create_repl(struct UVM *vm);
 
 /* VM-wide liveness inspection — INCLUSIVE "anything at all alive?" query,
- * computed via urbi_vm_liveness() (refactor-3 SCHED-13).  Returns true when any
+ * computed via urbi_vm_liveness() (SCHED-13).  Returns true when any
  * of runnable/pending/timed/armed work exists — armed (watchers +
  * SUSPENDED/WAITING strands) counts here even though it does not block
  * urbi_step's QUIESCENT verdict.  out_strands (runnable), out_watchers

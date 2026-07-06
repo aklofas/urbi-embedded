@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* primitives.c — M6 Phase 9: C-native primitives (Mutex, Date, Duration).
+/* primitives.c — C-native primitives (Mutex, Date, Duration).
  *
- * Mutex / Date / Duration — see banner in primitives.h.  Phase 9 grows
- * incrementally task-by-task: T93 shell, T94 Mutex, T95 Date, T96
- * Duration, T97 Date.plus(Duration) seam.
+ * Mutex / Date / Duration — see banner in primitives.h.  Sections:
+ * Mutex, Date, Duration, Date.plus(Duration) seam.
  *
  * Allocation pattern mirrors namespaces.c / runtime_types.c: a vanilla
  * URBI_ATOM_OBJECT-family UObject per primitive proto, methods installed
@@ -90,7 +89,7 @@ write_local_slot(UVM *vm, UObject *o, const char *name, UValue value)
     return 0;
 }
 
-/* === Mutex (T94) =========================================================
+/* === Mutex ===============================================================
  *
  * v1.0 single-VM cooperative-only contract: lock/unlock/tryLock are
  * non-blocking flag flips on a hidden `_locked` UVAL_BOOL slot of the
@@ -196,7 +195,7 @@ static const UNativeMethodDef MUTEX_METHODS[] = {
 
 
 
-/* === Date (T95) ==========================================================
+/* === Date ================================================================
  *
  * Wall-clock access via libc time().  Each Date instance carries a
  * `seconds` slot holding the Unix epoch seconds as a UVAL_INT.  asString
@@ -312,7 +311,7 @@ date_as_string(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 #endif
 }
 
-/* === Date.plus(Duration) (T97) ===========================================
+/* === Date.plus(Duration) =================================================
  *
  * Phase 9 / Phase 10 seam.  Returns a fresh Date with seconds advanced
  * by the Duration's microseconds-to-seconds quotient (sub-second
@@ -370,10 +369,10 @@ static const UNativeMethodDef DATE_METHODS[] = {
 
 
 
-/* === Duration (T96) ======================================================
+/* === Duration ============================================================
  *
  * Thin wrapper over integer microseconds.  Time literals (100ms / 2s /
- * 1d) lex to integer microseconds at M2; Duration.fromMicroseconds wraps
+ * 1d) lex to integer microseconds at v0.2.0; Duration.fromMicroseconds wraps
  * such an integer in a typed Duration UObject for dispatch.  The backing
  * value lives on a hidden `_microseconds` UVAL_INT slot; named accessors
  * expose conversions to milliseconds / seconds / minutes / hours / days.
@@ -468,7 +467,7 @@ urbi_stdlib_register_primitives(UVM *vm)
     if (vm == NULL) return URBI_ERR_INVALID_ARG;
     int rc;
 
-    /* --- T94 Mutex --- */
+    /* --- Mutex --- */
     if (vm->mutex_proto == NULL) {
         UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
         if (p == NULL) return URBI_ERR_OOM;
@@ -481,7 +480,7 @@ urbi_stdlib_register_primitives(UVM *vm)
     rc = install_default_slot(vm, vm->mutex_proto, "_locked", urbi_make_bool(0));
     if (rc != URBI_OK) return rc;
 
-    /* --- T95 Date --- */
+    /* --- Date --- */
     if (vm->date_proto == NULL) {
         UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
         if (p == NULL) return URBI_ERR_OOM;
@@ -494,7 +493,7 @@ urbi_stdlib_register_primitives(UVM *vm)
     rc = install_default_slot(vm, vm->date_proto, "_seconds", urbi_make_int(0));
     if (rc != URBI_OK) return rc;
 
-    /* --- T96 Duration --- */
+    /* --- Duration --- */
     if (vm->duration_proto == NULL) {
         UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
         if (p == NULL) return URBI_ERR_OOM;

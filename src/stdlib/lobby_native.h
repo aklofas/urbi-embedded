@@ -41,7 +41,7 @@
  *   during teardown).  Returns URBI_OK whether or not a handler ran.
  *
  * GC reachability: vm->lobby_proto is shaded by object_roots_walker
- * alongside the M6 Phase 9 primitive protos.  The List held in its
+ * alongside the primitive protos.  The List held in its
  * `lobbies` slot is reachable through the proto's normal slot walk. */
 
 #ifndef URBI_STDLIB_LOBBY_NATIVE_H

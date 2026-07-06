@@ -34,7 +34,7 @@
  *
  * Returns NULL on OOM.
  *
- * GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery chain): the realm
+ * GC soundness (v0.13.2, TEST-GAP-01 discovery chain): the realm
  * is linked onto vm->realms_head BEFORE the first GC allocation, not after.
  * Pre-v0.13.2 the link happened after r->tag / r->bindings / r->global_object
  * were created — an un-rooted window in which a collection triggered by a
@@ -88,7 +88,7 @@ urbi_realm_create(struct UVM *vm)
     if (r->bindings == NULL) goto fail;
 
     /* Global object: fresh empty UObject to hold the realm's named slots.
-     * Pre-M5 spec #5 §4.1 step 2.  Allocated as root-atom family
+     * Spec #5 §4.1 step 2.  Allocated as root-atom family
      * (URBI_ATOM_OBJECT) so it inherits nothing by default. */
     r->global_object = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
     if (r->global_object == NULL) goto fail;
@@ -181,7 +181,7 @@ urbi_realm_get_compile_budget(struct UVM *vm, const URealm *realm)
  * Precondition: All strands attached to this realm's tag must be dead
  * before calling this function. The urbi_tag_stop call deposits TAG_STOP
  * on all member strands, but strands eventually fatal-escalate rather
- * than gracefully unwind at M3 (walker-side TAG_STOP absorption is
+ * than gracefully unwind (walker-side TAG_STOP absorption is
  * currently a pop-and-continue stub). Proper strand unwinding deferred
  * to when tag-scope absorption lands (deferred to v1.x; see
  * docs/urbi-embedded-design-risks.md).
@@ -241,9 +241,9 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
     }
 
     /* Step 2: Stop the realm's tag (deposits TAG_STOP on all
-     * member strands; they eventually fatal-escalate at M3).
+     * member strands; they eventually fatal-escalate).
      * After step 1, all realm strands are destroyed and unlinked, so the
-     * tag's member list is empty and urbi_tag_stop is a no-op here at M3.
+     * tag's member list is empty and urbi_tag_stop is a no-op here.
      * utag_destroy can then assert member_strands_head == NULL safely. */
     if (realm->tag != NULL) {
         urbi_tag_stop(vm, realm->tag, nil);
@@ -258,7 +258,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * (uchunk_destroy stashes them onto vm->rescued_protos).
      *
      * VM-owned overlays (stdlib, urobotics, future — flagged vm_owned at
-     * registration, refactor-3 GC-18) are freed by urbi_vm_destroy, never
+     * registration, GC-18) are freed by urbi_vm_destroy, never
      * here.  Their back-pointers to this (about-to-be-freed) realm are
      * cleared in the same pass.  In-list-only clearing is sufficient:
      * urealm_register_module is the sole setter of owning_realm and sets the
@@ -347,7 +347,7 @@ urbi_realm_global(struct UVM *vm)
  * never read per-realm state.  Per-realm partitioning is a v1.x deferral
  * (urbi-embedded-design-risks.md).
  *
- * v0.13.3 (refactor-3 SCHED-13): computed via urbi_vm_liveness(), the one
+ * v0.13.3 (SCHED-13): computed via urbi_vm_liveness(), the one
  * quiescence/liveness formula.  Unlike urbi_step's QUIESCENT verdict —
  * which excludes `armed` (watchers + SUSPENDED/WAITING strands, owner
  * decision 2026-06-11) — this query stays INCLUSIVE: an armed-but-idle VM
@@ -411,7 +411,7 @@ urealm_teardown_all(struct UVM *vm)
  * vm->realms_head linked list.  For each Realm:
  *   1. namespace entries (via unamespace_walk_roots).
  *   2. realm->global_object — GC-managed UObject; shade so slot walker runs.
- *   3. realm->tag — GC-managed since M5 via urbi_gc_alloc / UTYPE_TAG.
+ *   3. realm->tag — GC-managed via urbi_gc_alloc / UTYPE_TAG.
  *      Shaded via urbi_gc_shade_gray so the UTYPE_TAG walker runs and yields
  *      name + enter_event + leave_event + parent (member watchers are
  *      rooted by the pool-wide provider in uwatcher_gc.c, GC-05).
@@ -446,7 +446,7 @@ urbi_gc_realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
             urbi_gc_shade_gray(vm, (UCell *)r->global_object);
         }
 
-        /* 3. tag — GC-managed since M5; shade so the UTag walker runs. */
+        /* 3. tag — GC-managed; shade so the UTag walker runs. */
         if (r->tag != NULL) {
             urbi_gc_shade_gray(vm, (UCell *)r->tag);
         }

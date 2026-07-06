@@ -14,7 +14,7 @@
 #include "repl/urepl_introspect.h"
 #include "repl/urepl_listener.h"
 #include "repl/urepl_ndjson.h"
-#include "repl/urepl_state.h"  /* W3/v0.10.4: UReplState (vm->repl->server) */
+#include "repl/urepl_state.h"  /* v0.10.4: UReplState (vm->repl->server) */
 #include "realm/urealm.h"
 #include "stdlib/lobby_native.h"  /* v0.9.1 Phase 5 — Lobby.lobbies + handleDisconnect */
 #include "vm/uvm.h"
@@ -259,7 +259,7 @@ urepl_session_destroy(UReplServer *server, UReplSession *session)
     free(session);
 }
 
-/* === W1: single-owner teardown helpers ================================ */
+/* === Single-owner teardown helpers ==================================== */
 
 /* Thread-safe teardown request.  Reader threads call this instead of
  * urepl_session_destroy so that session memory is only freed on the VM
@@ -377,7 +377,7 @@ urepl_session_reap_pending(UReplServer *server)
 #endif /* !URBI_REPL_COOPERATIVE_ONLY */
 }
 
-/* === end W1 =========================================================== */
+/* === end single-owner teardown ======================================== */
 
 /* ---- Op handlers ----------------------------------------------------- */
 
@@ -532,7 +532,7 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
             push_env(s, env, n);
         }
     } else {
-        /* === W4: explicit error response + clean close on token mismatch ===
+        /* === Explicit error response + clean close on token mismatch ===
          * Emit the auth_failed envelope so the client sees a structured
          * error (not just EOF), then schedule teardown so the VM thread
          * closes the session on the next reap pass.  This prevents a
@@ -674,7 +674,7 @@ urepl_dispatch_job(UReplServer *server, UReplJob *job)
         }
     }
 
-    /* === W4: per-source job rate limit ===
+    /* === Per-source job rate limit ===
      * Enforce rate_limit_per_second when configured.  Uses wall-clock seconds
      * to define the window.  On the first job of each new second the counter
      * resets; once the counter hits the limit the session is torn down with an
@@ -768,7 +768,7 @@ urepl_dispatch_drain_if_active(struct UVM *vm)
     }
     UReplServer *server = (UReplServer *)vm->repl->server;
     urepl_listener_drain_accepts(server);
-    /* W1: reap sessions flagged for teardown by reader threads before
+    /* Reap sessions flagged for teardown by reader threads before
      * dispatching new jobs — ensures stale session_ids resolve to NULL
      * in the subsequent job-dispatch pass. */
     urepl_session_reap_pending(server);

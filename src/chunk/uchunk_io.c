@@ -22,7 +22,7 @@ static void module_memcpy(void *dst, const void *src, size_t n) {
 
 /* Canary constant lives in chunk/uchunk.h as URBI_BYTECODE_CANARY (MOD-029). */
 
-/* === W3/v0.10.6: wire-format freeze pin ====================================
+/* === v0.10.6: wire-format freeze pin =======================================
  *
  * Pins the on-disk wire format byte at v1.9 / 0x19.  Any change to the
  * wire format after this tag follows the post-freeze policy in
@@ -501,7 +501,7 @@ static UChunkLoadError decode_constants_into(MDecCtx *d,
             d->off += 4;
 #endif
         } else if (kind == (uint8_t)UVAL_STR) {
-            /* M6 (closes v0.5.6 MOD-008 reservation): UVAL_STR carries a
+            /* (closes v0.5.6 MOD-008 reservation): UVAL_STR carries a
              * uvarint byte-length prefix + raw UTF-8 bytes.  The loader has
              * no UVM in scope and therefore cannot intern; instead we
              * allocate a NUL-terminated buffer via the module allocator and
@@ -613,7 +613,7 @@ static UChunkLoadError decode_instructions_into(MDecCtx *d,
 /* Decode the syncline (line_deltas + abs_lines) section into the target
    buffers and counts.  instr_count is the expected n_deltas; the target
    buffers/cap are written via *line_deltas_out / *abs_lines_out etc.
-   The trailing-bytes check moved to decode_trailer (T13). */
+   The trailing-bytes check moved to decode_trailer. */
 static UChunkLoadError decode_line_table_into(MDecCtx *d,
                                                int8_t **line_deltas_out,
                                                UAbsLine **abs_lines_out,
@@ -860,7 +860,7 @@ static UChunkLoadError decode_proto(MDecCtx *d, UProto *p) {
     p->nparams = d->buf[d->off++];
     /* v0.13.5: module-granular arity discipline (header flag bit 0). */
     p->arity_prologue = d->arity_flag;
-    /* W4 / T79: nupvals + nparams cross-check.  Each occupies one byte
+    /* nupvals + nparams cross-check.  Each occupies one byte
      * (capped at 255 by the wire format) but the sum must fit in the
      * register frame so the runtime can address every captured upvalue
      * and parameter via a register slot.  emit_init_funcstate guarantees
@@ -975,7 +975,7 @@ static UChunkLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
  *   (effective range -32768..+32767).  The shape-table verifier (verify_walk_block)
  *   accepts UBXK_JUMP_SIGNED with no per-instruction bounds because it operates
  *   one instruction at a time without absolute PC context.  The per-sequence
- *   verify_chunk_bounds pass (bytecode F2 / W7) computes
+ *   verify_chunk_bounds pass (bytecode F2, v0.10.7) computes
  *   target = pc + signed(Bx) - 32768 and rejects targets outside [0, instr_count)
  *   with UCHUNK_LOAD_JMP_OUT_OF_BOUNDS, replacing the prior runtime-fatal path. */
 /* Return true if `op` is an IC-bearing opcode (carries an ic_idx in C).
@@ -1003,7 +1003,7 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                                           size_t nested_count,
                                           uint16_t ic_count,
                                           const uint32_t *instructions) {
-    /* MOD-016 / W4: count IC-bearing opcodes seen during the walk so we
+    /* MOD-016: count IC-bearing opcodes seen during the walk so we
      * can cross-validate ic_count after the loop.  Every ic_idx must be
      * < ic_count (per-instruction); ic_count must be <= ic_seen
      * (count check; rejects modules that lie about ic_count without
@@ -1054,7 +1054,7 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                     return UCHUNK_LOAD_CORRUPT;
                 }
             }
-            /* refactor-3 VM-14: OP_JOIN_WAIT's dead-child fast path reads a
+            /* VM-14: OP_JOIN_WAIT's dead-child fast path reads a
              * strand handle that eager DEAD-reap may have freed; the adjacency
              * invariant (OP_FORK_JOIN immediately before, FORK_JOIN.B ==
              * JOIN_WAIT.A) is the only pin.  Enforce at load time so corrupt or
@@ -1077,7 +1077,7 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                     return UCHUNK_LOAD_CORRUPT;
                 }
             }
-            /* refactor-3 VM-19: OP_SELF writes R[A] (looked-up slot value) and
+            /* VM-19: OP_SELF writes R[A] (looked-up slot value) and
              * R[A+1] (self/receiver copy for OP_CALL).  The shape table only
              * verifies A <= max_reg; the cross-byte check also requires A+1. */
             if (op == (uint8_t)OP_SELF) {
@@ -1146,7 +1146,7 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
             }
         }
     }
-    /* Last instruction must be OP_RET (preserved from pre-T4 behavior).
+    /* Last instruction must be OP_RET (preserved from pre-v0.5.0 behavior).
      *
      * v1.x relaxation note: this strict trailing-OP_RET requirement
      * assumes the emitter always closes a chunk with an explicit return.
@@ -1162,7 +1162,7 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
             return UCHUNK_LOAD_CORRUPT;
         }
     }
-    /* MOD-016 / W4: ic_count must not exceed the count of IC-bearing
+    /* MOD-016: ic_count must not exceed the count of IC-bearing
      * opcodes in the instruction stream.  Each ic_name (and the
      * corresponding runtime UIC entry) is keyed off an emitted
      * GETSLOT/SETSLOT/GETSLOT_CHANGE_EVENT site; lying about ic_count
@@ -1231,8 +1231,8 @@ static UChunkLoadError decode_verify(MDecCtx *d) {
  *     see the REPL-N4 note in the code below and pinned by
  *     test_verify_chunk_bounds.c (tag_stop_roundtrips_ok).
  *
- * Design note for W8: add ic_index DFS pre-order check here.  The function
- * receives the proto tree already decoded; W8 can walk the tree and verify
+ * Design note: add ic_index DFS pre-order check here.  The function
+ * receives the proto tree already decoded; a future pass can walk the tree and verify
  * that each proto's ic_index equals its DFS visit index without touching
  * the existing shape-table verifier. */
 static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
@@ -1347,7 +1347,7 @@ static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
             }
 
         }
-        /* refactor-3 VM-13: OP_TAG_STOP (opcode 30) has full VM dispatch since
+        /* VM-13: OP_TAG_STOP (opcode 30) has full VM dispatch since
          * v0.10.2 (label_op_tag_stop in uvm.c).  The compiler never emits it —
          * scripted tag.stop() routes through tag_stop_native → urbi_tag_stop
          * C API — but hand-built or future chunks may include it.  The stale
@@ -1371,7 +1371,7 @@ static UChunkLoadError verify_chunk_bounds(MDecCtx *d) {
     return verify_bounds_proto(d, d->rp);
 }
 
-/* --- bytecode F3: ic_index DFS pre-order verifier (W8) ---
+/* --- bytecode F3: ic_index DFS pre-order verifier ---
  *
  * v0.8.5 truly-recursive emit assigns ic_index via uproto_alloc_nested's
  * ++root->next_proto_serial in DFS pre-order.  The deserializer mirrors this
@@ -1543,7 +1543,7 @@ void
 uproto_strand_refcount_dec(UProto *root, struct UVM *vm)
 {
     if (root == NULL) return;
-    /* v0.10.1 W4: use typed-handle release for underflow detection + debug
+    /* v0.10.1: use typed-handle release for underflow detection + debug
      * accounting (runtime-invariants F3 strand-bind release site). */
     urbi_proto_strand_ref_release(root, URBI_PROTO_REF_OWNER_STRAND);
     /* Deferred-destroy trigger: self-link sentinel means uchunk_destroy was

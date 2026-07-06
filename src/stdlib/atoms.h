@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* atoms.h — M6 Phase 5: C-native methods on Boolean / Integer / Float /
+/* atoms.h — C-native methods on Boolean / Integer / Float /
  * String atom protos.
  *
  * Wave 1 (Phase 4) registered the Boolean / String stubs (toString /

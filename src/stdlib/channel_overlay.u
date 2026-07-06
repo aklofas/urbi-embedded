@@ -42,7 +42,7 @@ class Channel {
     };
 
     // '<<' (x): legacy shift-write operator.  Returns `this` so chains
-    // like `cout << "a" << "b" << "c"` work left-associatively (per W3's
+    // like `cout << "a" << "b" << "c"` work left-associatively (per the
     // parser sugar — see src/parse/uparse_expr.c LSHIFT branch).
     var '<<' = function(x) {
         if (this.enabled) {

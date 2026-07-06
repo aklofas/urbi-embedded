@@ -14,7 +14,7 @@
  *     the primitive.
  *
  *   urbi_lobby_native_register_globals — binds "Lobby" as a realm-global
- *     pointing at vm->lobby_proto.  Mirrors the M6 Phase 9 post-loop hook
+ *     pointing at vm->lobby_proto.  Mirrors the post-loop hook
  *     pattern (slots 15+).
  *
  *   urbi_lobby_register_session / unregister_session — host-side mutators

@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* stdlib_boot.c — M6 Phase 3/4 stdlib bootstrap.
+/* stdlib_boot.c — stdlib bootstrap.
  *
  * Wave 1 minimum: register the nine Object root C-native methods on
  * vm->atom_object.  Wave 2 grows this to load atom proto methods +
  * container internals + .u overlay blob.
  *
- * Boot order (M6 Phase 4 / Wave 2):
+ * Boot order (Wave 2):
  *   1. C-native Object root methods (urbi_object_root_register)
  *   2. C-native atom proto stubs (urbi_atom_protos_register)
  *   3. Deserialize the baked .u stdlib bytecode blob into
@@ -15,7 +15,7 @@
  * baseline the blob is empty (STDLIB_ORDER.txt empty), so this branch
  * is dead code that becomes live in Phase 10 when the order file is
  * populated.  Parser-independent: the blob is bytecode, not source —
- * verified by the URBI_BYTECODE_ONLY=1 build (T15 in v0.7.0-c-api)
+ * verified by the URBI_BYTECODE_ONLY=1 build (v0.7.0-c-api)
  * which strips src/lex/, src/parse/, src/emit/ entirely.
  *
  * The deserialized UModule lives on vm->stdlib_module, freed at
@@ -68,7 +68,7 @@ stdlib_boot_impl(UVM *vm)
     rc = urbi_stdlib_register_atom_methods(vm);
     if (rc != URBI_OK) return rc;
 
-    /* Phase 6 (M6 Wave 2): C-native containers.  Installs methods on the
+    /* Phase 6 (Wave 2): C-native containers.  Installs methods on the
      * existing URBI_ATOM_LIST / URBI_ATOM_DICT atom protos (the
      * realm-populate registry already publishes these as "List" / "Dict"
      * globals).  Pair / Triplet / Tuple realm-global registration is
@@ -79,7 +79,7 @@ stdlib_boot_impl(UVM *vm)
     rc = urbi_stdlib_register_containers(vm);
     if (rc != URBI_OK) return rc;
 
-    /* Phase 7 (M6 Wave 2): runtime-type protos.  Allocates
+    /* Phase 7 (Wave 2): runtime-type protos.  Allocates
      * vm->exception_proto and installs Exception.new / Exception.raise.
      * Realm-global binding for "Exception" is deferred to the post-loop
      * hook urbi_stdlib_register_runtime_globals, mirroring container
@@ -88,7 +88,7 @@ stdlib_boot_impl(UVM *vm)
     rc = urbi_stdlib_register_runtime_types(vm);
     if (rc != URBI_OK) return rc;
 
-    /* Phase 8 (M6 Wave 2): namespace protos.  Allocates Math / System /
+    /* Phase 8 (Wave 2): namespace protos.  Allocates Math / System /
      * System.Platform / Global / CallMessage proto UObjects with their
      * constants + native methods.  Realm-global binding for the
      * namespace names is deferred to urbi_stdlib_register_namespace_-
@@ -97,7 +97,7 @@ stdlib_boot_impl(UVM *vm)
     rc = urbi_stdlib_register_namespaces(vm);
     if (rc != URBI_OK) return rc;
 
-    /* Phase 9 (M6 Wave 2): primitive protos.  Allocates Mutex / Date /
+    /* Phase 9 (Wave 2): primitive protos.  Allocates Mutex / Date /
      * Duration proto UObjects with their native methods.  Realm-global
      * binding for the primitive names is deferred to urbi_stdlib_-
      * register_primitives_globals, again preserving the registry's
@@ -169,7 +169,7 @@ stdlib_boot_impl(UVM *vm)
     }
 #endif
 
-    /* M6 Phase 4 (Wave 2): deserialize the baked stdlib bytecode blob
+    /* Wave 2: deserialize the baked stdlib bytecode blob
      * and bind a per-VM UChunkInstance.  Empty blob (Phase 4 baseline)
      * skips this entirely. */
     if (urbi_stdlib_bytecode_len > 0) {

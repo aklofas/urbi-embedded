@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* containers.h — M6 Phase 6: C-native container types.
+/* containers.h — C-native container types.
  *
  * Phase 6 lands the v1.0 container surface as realm-globals registered
  * from this module.  Types covered:
@@ -69,7 +69,7 @@ int urbi_stdlib_register_container_globals(struct UVM *vm, struct URealm *realm)
  * Called by urbi_vm_destroy. */
 void urbi_stdlib_containers_destroy(struct UVM *vm);
 
-/* refactor-3 B2/GC-01/STD-01: GC root provider — yield every element slot
+/* GC root provider — yield every element slot
  * of every registered UList / UDict backing buffer.  Elements are
  * invisible to the object walker because the `_storage` slot is a
  * UVAL_INT leaf, so this provider is their only mark-phase entry point.

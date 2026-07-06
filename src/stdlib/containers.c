@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* containers.c — M6 Phase 6: C-native container types.
+/* containers.c — C-native container types.
  *
  * Pair / Triplet / Tuple / List / Dict — see banner in containers.h.
  *
@@ -143,7 +143,7 @@ urbi_stdlib_containers_destroy(UVM *vm)
     vm->stdlib_containers = NULL;
 }
 
-/* refactor-3 B2/GC-01/STD-01: container elements are GC roots.
+/* Container elements are GC roots.
  *
  * UList/UDict backing stores are raw vm->alloc_fn buffers (not GC cells)
  * threaded onto vm->stdlib_containers by container_register; the script-
@@ -186,7 +186,7 @@ urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
     }
 }
 
-/* refactor-3 B2: incremental-marking insertion barrier for container
+/* Incremental-marking insertion barrier for container
  * element stores.  Containers have no parent gc_byte (raw buffers), so the
  * Dijkstra parent-is-BLACK check is unavailable; instead shade the stored
  * child whenever a mark phase is in flight.  Stores while the GC is IDLE

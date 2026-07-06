@@ -9,7 +9,7 @@
  * ROW ORDER IS WIRE-FORMAT FROZEN (v1.9).  Do NOT reorder or insert rows.
  * Adding an opcode requires a wire-format version bump and ABI MINOR bump. */
 
-/* M1 (v1.0) opcodes 0-7 */
+/* v1.0 opcodes 0-7 */
 URBI_OP(LOADK,               "load constant",              ABX)
 URBI_OP(MOVE,                "register copy",              ABC)
 URBI_OP(ADD,                 "'+'",                        ABC)
@@ -19,7 +19,7 @@ URBI_OP(DIV,                 "'/'",                        ABC)
 URBI_OP(NEG,                 "unary '-'",                  ABC)
 URBI_OP(RET,                 "return",                     ABC)
 
-/* M2 (v1.1) opcodes 8-23 */
+/* v1.1 opcodes 8-23 */
 URBI_OP(LOADNIL,             "nil literal",                ABC)
 URBI_OP(LOADBOOL,            "bool literal",               ABC)
 URBI_OP(LOADVOID,            "void literal",               ABC)
@@ -37,16 +37,16 @@ URBI_OP(LT,                  "'<'",                        ABC)
 URBI_OP(LE,                  "'<='",                       ABC)
 URBI_OP(YIELD,               "yield",                      ABC)
 
-/* M3 separator opcodes 24-26 */
+/* v0.3.0 separator opcodes 24-26 */
 URBI_OP(FORK_DETACH,         "parallel fork",              ABC)
 URBI_OP(FORK_JOIN,           "join fork",                  ABC)
 URBI_OP(JOIN_WAIT,           "join wait",                  ABC)
 
-/* M4 slot opcodes 27-28 */
+/* v0.4.0 slot opcodes 27-28 */
 URBI_OP(GETSLOT,             "slot access",                ABC)
 URBI_OP(SETSLOT,             "slot write",                 ABC)
 
-/* M3 row 7 control-transfer opcodes 29-37 */
+/* v0.3.0 row 7 control-transfer opcodes 29-37 */
 URBI_OP(THROW,               "throw",                      ABC)
 URBI_OP(TAG_STOP,            "tag stop",                   ABC)
 URBI_OP(TRY_BEGIN,           "try begin",                  ABX)
@@ -57,7 +57,7 @@ URBI_OP(PUSH_FRAME_GUARD,    "frame guard install",        ABC)
 URBI_OP(RESUME,              "unwind resume",              ABC)
 URBI_OP(LOAD_CATCH_VALUE,    "catch value load",           ABC)
 
-/* M5 reactive opcodes 38-45 */
+/* v0.5.0 reactive opcodes 38-45 */
 URBI_OP(AT_INSTALL,              "at watcher install",         ABC)
 URBI_OP(AT_SYNC_INSTALL,         "at sync watcher install",    ABC)
 URBI_OP(WHENEVER_INSTALL,        "whenever watcher install",   ABC)
@@ -73,5 +73,5 @@ URBI_OP(LOAD_RECV,           "receiver load",              ABC)
 /* v0.7.2 S42 — method-call ABI (47) */
 URBI_OP(SELF,                "method call",                ABC)
 
-/* v0.10.2-reactive W0 — whenever (e?) install (48, wire v1.9) */
+/* v0.10.2-reactive — whenever (e?) install (48, wire v1.9) */
 URBI_OP(WHENEVER_EVENT_INSTALL, "whenever-event install",  ABC)

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* runtime_types.c — M6 Phase 7: C-native runtime-type protos.
+/* runtime_types.c — C-native runtime-type protos.
  *
  * Phase 7 ships the Exception primitive root.  See runtime_types.h banner
  * for what is intentionally deferred (Code reflection, Tag.new scripted
@@ -17,7 +17,7 @@
  * The raise mechanic depends on a v0.6.1 VM-internal change in the OP_CALL
  * native arm: when a native_fn returns UEXEC_THROW, the dispatch loop now
  * routes through pending_unwind / safepoint instead of HALTing with a fatal
- * TypeError (the pre-Phase-7 baseline).  See src/vm/uvm.c "M6 Phase 7" for
+ * TypeError.  See src/vm/uvm.c "Phase 7 gate" for
  * the gated change. */
 
 #include "stdlib/runtime_types.h"

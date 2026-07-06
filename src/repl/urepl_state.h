@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* === W3/v0.10.4: REPL substate extracted from struct UVM per audit-1 F8. ===
+/* === v0.10.4: REPL substate extracted from struct UVM per audit-1 F8. ===
  *
  * Currently a single back-pointer to the heap-allocated UReplServer; the
  * structured form is in place for future expansion.

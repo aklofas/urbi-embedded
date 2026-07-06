@@ -4,7 +4,7 @@
  * Implements urbi_proto_ref_acquire/release (closure-bind) and
  * urbi_proto_strand_ref_acquire/release (strand-bind) declared in uproto.h.
  *
- * Design: runtime-invariants audit F1, F3 (v0.10.1-invariants W4).
+ * Design: runtime-invariants audit F1, F3 (v0.10.1-invariants).
  *
  * Saturation handling: UINT16_MAX is a permanent-leak sentinel for v1.0
  * (see design-risks register).  Saturation is logged to stderr on hosted

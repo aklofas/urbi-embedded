@@ -48,7 +48,7 @@
  * they keep owning_realm pointing at the FIRST realm they were registered
  * in and are NOT re-registered for subsequent realms.  The unload path
  * (Task 12 / 13) handles per-realm teardown independently — except for
- * vm_owned overlays (refactor-3 GC-18): realm teardown only clears their
+ * vm_owned overlays (GC-18): realm teardown only clears their
  * back-pointers; urbi_vm_destroy frees them.  v0.9.0-repl. */
 static void
 urealm_register_module(URealm *realm, UProto *p)
@@ -75,7 +75,7 @@ urealm_register_module(URealm *realm, UProto *p)
 #define URBI_LOADER_OUTER_CAP      10000U
 
 /* UAF guard: confirm loader is still in realm->strands_head before reading
- * any of its fields.  T20 eager-reap may have freed the strand even when
+ * any of its fields.  Eager-reap may have freed the strand even when
  * mod->refcount > 0 (other strands — e.g. chunk-top fork children — still
  * bind the same module).  Realm-walk is UAF-safe: the list is rooted on
  * the realm (not on the strand), so we never touch freed memory.
@@ -167,7 +167,7 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
 
     /* Snapshot the realm pointer BEFORE any urbi_step calls.
      *
-     * Safety invariant (T20 eager-reap): urbi_step eagerly calls
+     * Safety invariant (eager-reap): urbi_step eagerly calls
      * urbi_strand_destroy on clean-dead strands, which frees the strand
      * struct.  Reading `loader->state` after urbi_step returns is a UAF
      * if the strand died cleanly.  Fatal strands are NOT reaped (ustep.c
@@ -262,7 +262,7 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
          * USTRAND_WAITING (0x30), covering all WAITING sub-states:
          * WAITING_SLEEP, WAIT_WATCHER, WAIT_EVENT, WAITING_JOIN, WAITING_HOST.
          *
-         * refactor-3 VM-03: SUSPENDED (0x50) is parked too — a chunk-top
+         * VM-03: SUSPENDED (0x50) is parked too — a chunk-top
          * t.block()/t.freeze() self-suspend now exits dispatch SUSPENDED
          * (OP_CALL post-native arm).  Without this arm the drive loop
          * classified SUSPENDED as "keep driving", spun the outer cap on a
@@ -274,7 +274,7 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
             /* Parked.  Strand persists in realm; caller continues with
              * their own urbi_step loop.  out_result stays nil.
              *
-             * W6/v0.10.2: clear out_slot so OP_RET on resume does not write
+             * v0.10.2: clear out_slot so OP_RET on resume does not write
              * to a dangling pointer (the caller's UValue result local is on
              * the stack of urbi_repl_eval which has already returned).
              * OP_RET guards against NULL out_slot (uvm.c CASE(OP_RET)), so
@@ -693,7 +693,7 @@ urbi_run_script(UVM *vm, URealm *realm, UProto *root)
  * is now reachable from public callers as URBI_ERR_BYTECODE_VERSION_MISMATCH.
  *
  * Other internal codes collapse to URBI_ERR_INVALID_ARG since the public
- * surface does not yet differentiate them; M6 may grow per-code mappings
+ * surface does not yet differentiate them; v1.x may grow per-code mappings
  * as the loader API matures. */
 int
 urbi_chunk_translate_load_err(int load_err)
@@ -727,7 +727,7 @@ urbi_chunk_translate_load_err(int load_err)
 #  include <stdlib.h>   /* malloc, free */
 #endif
 
-/* v0.10.3 W5: urbi_chunk_from_bytes gains (struct UVM *vm, ...) as first arg
+/* v0.10.3: urbi_chunk_from_bytes gains (struct UVM *vm, ...) as first arg
  * and routes allocation through vm->alloc_fn on hosted builds when vm is
  * non-NULL (closes the cross-allocator hazard in api-ergonomics F3).
  * Falls back to stdlib_alloc when vm is NULL (backward-compat path for
@@ -746,7 +746,7 @@ urbi_chunk_from_bytes(struct UVM *vm, const uint8_t *buf, size_t len,
     char *ebuf = errmsg ? errmsg : local_err;
     size_t ecap = errmsg ? errcap : sizeof(local_err);
     UProto *root = NULL;
-    /* Route through vm->alloc_fn when available (W5 allocator routing).
+    /* Route through vm->alloc_fn when available (v0.10.3 allocator routing).
      * Pass NULL alloc_fn when vm is NULL — uchunk_deserialize uses stdlib_alloc. */
     UVMAllocFn afn = (vm != NULL) ? vm->alloc_fn : NULL;
     void      *aud = (vm != NULL) ? vm->alloc_ud : NULL;
@@ -764,7 +764,7 @@ urbi_chunk_from_bytes(struct UVM *vm, const uint8_t *buf, size_t len,
 #endif
 }
 
-/* v0.10.3 W5: urbi_chunk_free gains (struct UVM *vm, ...) as first arg.
+/* v0.10.3: urbi_chunk_free gains (struct UVM *vm, ...) as first arg.
  * vm is used for the alloc_fn on hosted builds to free via the same domain
  * as urbi_chunk_from_bytes.  Falls back to NULL (stdlib free) when vm is NULL. */
 void
@@ -776,7 +776,7 @@ urbi_chunk_free(struct UVM *vm, struct UProto *root)
      * freed the root while strands still hold it (UAF). */
     URBI_INTERNAL_ASSERT(root->refcount == 0 &&
         "urbi_chunk_free called with live strand bindings — let strands drop refs first");
-    /* Use vm's alloc_fn for freeing when available (W5 allocator routing).
+    /* Use vm's alloc_fn for freeing when available (v0.10.3 allocator routing).
      * Pass NULL when vm is absent — uchunk_destroy uses stdlib free on hosted. */
     uchunk_destroy(root, vm);
     /* uchunk_destroy frees the struct when heap_allocated; no separate free needed. */

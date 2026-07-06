@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* atom_protos.c — M6 Phase 4: atom proto C-native method stubs.
+/* atom_protos.c — atom proto C-native method stubs.
  *
  * Each atom family (Boolean, Integer, Float, String, nil, void) gets a
  * minimum method set at Wave 1.  Wave 2 fills out the full Tier 1 method

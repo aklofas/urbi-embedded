@@ -30,7 +30,7 @@ extern "C" {
 
 /* --- tagged value shape shared between pool and runtime registers ---
  *
- * UValKind and UValue moved to <urbi/types.h> at v0.5.5 (T17) to break
+ * UValKind and UValue moved to <urbi/types.h> at v0.5.5 to break
  * the cycle where include/urbi/urbi.h pulled in this internal header
  * for UValue's definition.  Numeric values for UValKind are pinned by
  * the bytecode wire format; the kind-byte field comments below document
@@ -38,18 +38,18 @@ extern "C" {
  *
  * Runtime-semantics notes for each UValKind discriminator:
  *   UVAL_NIL/INT/FLOAT/BOOL/STR — bytecode-pool kinds (constants)
- *   UVAL_CLOSURE — M2: function closure; runtime-only
- *   UVAL_VOID    — M2: result of `&` separator; runtime-only
- *   UVAL_STRAND  — M3: strand handle (OP_FORK_JOIN → OP_JOIN_WAIT).
- *                  Stores a UStrand* in v.p.  GC root walker skips M3
+ *   UVAL_CLOSURE — v0.2.0: function closure; runtime-only
+ *   UVAL_VOID    — v0.2.0: result of `&` separator; runtime-only
+ *   UVAL_STRAND  — v0.3.0: strand handle (OP_FORK_JOIN → OP_JOIN_WAIT).
+ *                  Stores a UStrand* in v.p.  GC root walker skips
  *                  (strands are sched-managed, not GC cells).
- *                  TODO(M7+): revisit if strand handles become user-visible.
- *   UVAL_OBJECT  — M4: UObject pointer; runtime-only.  Receivers for
+ *                  TODO(v1.x): revisit if strand handles become user-visible.
+ *   UVAL_OBJECT  — v0.4.0: UObject pointer; runtime-only.  Receivers for
  *                  OP_GETSLOT/OP_SETSLOT live in registers tagged
  *                  UVAL_OBJECT.  Heap-bearing — UObject embeds UCell.
- *   UVAL_EVENT   — M5: UEvent pointer; runtime-only.  Heap-bearing.
- *                  Used by tag.enter / tag.leave getters and T53.
- *   UVAL_HOST_FN — M5: native host function slot; UHostFn cast to void*.
+ *   UVAL_EVENT   — v0.5.0: UEvent pointer; runtime-only.  Heap-bearing.
+ *                  Used by tag.enter / tag.leave getters.
+ *   UVAL_HOST_FN — v0.5.0: native host function slot; UHostFn cast to void*.
  *                  Used by uevent_native_register / utag_native_register.
  *                  NOT heap-bearing — function pointers are not GC cells.
  *   Kinds 0-10 in use at v0.5.5; kinds 11-15 reserved for future extension.
@@ -79,7 +79,7 @@ typedef void *(*UChunkAllocFn)(void *ptr, size_t nbytes, void *ud);
  *   ptr == NULL && nbytes == 0 : no-op; return NULL.
  * ud is an opaque caller-supplied cookie passed through unchanged (same pattern as uarena). */
 
-/* Forward declaration — USymbol is introduced in M4 (see uintern.h / object
+/* Forward declaration — USymbol is introduced in v0.4.0 (see uintern.h / object
  * model tasks).  UProto.ic_names below holds a parallel array of USymbol
  * pointers populated at emit time; populated by emit, consumed by IC fill at
  * module-instance load.  Defined as opaque here to keep uproto.h
@@ -87,7 +87,7 @@ typedef void *(*UChunkAllocFn)(void *ptr, size_t nbytes, void *ud);
 struct USymbol;
 typedef struct USymbol USymbol;
 
-/* Forward declaration — UChunkInstance is introduced in M4 (see
+/* Forward declaration — UChunkInstance is introduced in v0.4.0 (see
  * object/uchunk_instance.h).  UProto.owning_module_instance (added v0.9.0)
  * holds a back-pointer to the runtime instance this proto was first
  * instantiated under.  Defined as opaque here to avoid a circular dependency
@@ -138,7 +138,7 @@ typedef struct UProto {
                                     the deserializer from the header flag byte
                                     to every proto in the chunk. */
 
-    /* === M4 v1.3 additions (encoding spec §5.1) === */
+    /* === v1.3 additions (encoding spec §5.1) === */
     /* Number of GETSLOT/SETSLOT IC sites in this function.  Populated by the
      * emitter; the parallel ic_names[] array is sized to this count.  Capped
      * at 256 by the encoding spec §3.4 (an IC site index lives in a uint8). */
@@ -242,7 +242,7 @@ typedef struct UProto {
     struct UProto  *next_in_realm;          /* realm-lifecycle linkage — root only */
     struct URealm  *owning_realm;           /* root only */
     bool            heap_allocated;         /* renamed from shell_heap_allocated — root only */
-    bool            vm_owned;               /* refactor-3 GC-18: lifetime owned by
+    bool            vm_owned;               /* GC-18: lifetime owned by
                                                urbi_vm_destroy, NEVER by realm teardown.
                                                Set by the stdlib boot and by every overlay
                                                register path (urobotics, future overlays).
@@ -254,7 +254,7 @@ typedef struct UProto {
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
  * Forward declaration only — full struct definition lives in uclosure.h
- * (M4 split: UClosure embeds UCell as first member, which can't be done
+ * (v0.4.0 split: UClosure embeds UCell as first member, which can't be done
  * here without a circular include via gc/ugc.h).  Files that only need
  * `UClosure *` use the typedef below; files that touch UClosure fields
  * include "uclosure.h" explicitly. */

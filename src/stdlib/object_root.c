@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* object_root.c — M6 Phase 3 stdlib: Object root C-native methods.
+/* object_root.c — stdlib: Object root C-native methods.
  *
  * The nine root-level methods are the v1.0 surface for slot manipulation
  * + clone + proto graph mutation.  Each is registered as a UClosure with
@@ -223,7 +223,7 @@ urbi_raise_divzero(UVM *vm, const char *msg, UValue *out)
  *
  * Phase 3 synthetic proto-list helper: returns a fresh UObject carrying a
  * `size` slot.  Wave 2 replaces this with a proper List atom (currently
- * the M6 stdlib roadmap row).  For Phase 3, fixtures that read
+ * the stdlib roadmap.  For Phase 3, fixtures that read
  * `obj.protos.size` find the field directly; a real iteration API isn't
  * shipped here. */
 
@@ -263,7 +263,7 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
         return NULL;
     }
 
-    /* T63: thread the owner reference through so insertFront can mutate
+    /* Thread the owner reference through so insertFront can mutate
      * the original receiver's prototype list.  Wave 2's List atom replaces
      * this synthetic with a proper list value; for Wave 1 an underscore-
      * prefixed hidden slot is sufficient. */
@@ -277,7 +277,7 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
         return NULL;
     }
 
-    /* T63: install insertFront on this synthetic list.  Each protos call
+    /* Install insertFront on this synthetic list.  Each protos call
      * allocates a fresh list; this attaches a per-list closure so the
      * lookup hits the synthetic before climbing to Object root.  Wave 1:
      * the per-list allocation cost is acceptable; Wave 2's List atom
@@ -347,12 +347,12 @@ obj_getSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === Object.getSlotValue(name) ============================================
  *
- * T61: legacy alias for getSlot.  The 2014 inheritance.chk fixture uses
+ * Legacy alias for getSlot.  The 2014 inheritance.chk fixture uses
  * `getSlotValue("foo")` (line 17 in legacy/repos/aldebaran-urbi/tests/2.x/
  * inheritance.chk).  Same semantics — walk the prototype chain and return
  * the slot's value.  The legacy split between getSlot (returns the slot
  * descriptor) and getSlotValue (unwraps to the underlying value) doesn't
- * apply at v1.0 because USlot collapses onto UValue (pre-M4 design); both
+ * apply at v1.0 because USlot collapses onto UValue; both
  * names map to the same C body. */
 
 static int
@@ -412,7 +412,7 @@ obj_removeSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === Object.removeLocalSlot(name) =========================================
  *
- * T62: legacy alias for removeSlot.  The 2014 inheritance.chk fixture uses
+ * Legacy alias for removeSlot.  The 2014 inheritance.chk fixture uses
  * `removeLocalSlot("foo")` (line 36) to drop a slot installed on the
  * receiver itself (vs. removing from a proto chain).  At v1.0
  * urbi_object_remove_slot only operates on the receiver's own shape (no
@@ -451,7 +451,7 @@ obj_clone(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === Object.new() ==========================================================
  *
- * T39 (spec §8): Foo.new() is the Class.new() idiom — clone Foo's proto
+ * Foo.new() is the Class.new() idiom (spec §8) — clone Foo's proto
  * entry and return a fresh UObject.  At v1.0 .new() is identical to
  * .clone(); the distinction is reserved for future per-class init-hook
  * semantics (urbiscript has no special init() idiom — user code calls
@@ -561,7 +561,7 @@ obj_setProtos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === protos.insertFront(proto) ===========================================
  *
- * T63: Wave-1 stub for the legacy `C.protos.insertFront(A)` idiom (used in
+ * Wave-1 stub for the legacy `C.protos.insertFront(A)` idiom (used in
  * legacy/repos/aldebaran-urbi/tests/2.x/shared-protos.chk line 12).
  *
  * `self` is the synthetic UObject returned from .protos; we extract the
@@ -646,7 +646,7 @@ obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t nargs,
 
 /* === Object.setProperty(name, prop_name, value) ============================
  *
- * T41 (M6 Wave 2) — backing for the `get`/`set` parse sugar.  Installs a
+ * setProperty — backing for the `get`/`set` parse sugar.  Installs a
  * slot property on the receiver:
  *
  *   prop_name == "oget" → install URBI_SLOT_FLAG_OGET (slot read calls value)
@@ -697,7 +697,7 @@ obj_setProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
             out);
     }
 
-    /* T41 critical fix: validate the closure's arity at install time.
+    /* Validate the closure's arity at install time.
      * The runtime dispatch path (urbi_run_closure_on_scratch) does not
      * check nparams against the call shape — getter dispatch passes 0
      * args, setter dispatch passes 1 arg.  A wrong-arity closure body
@@ -970,17 +970,17 @@ urbi_install_native_methods(UVM *vm, UObject *proto,
 static const UNativeMethodDef OBJECT_METHODS[] = {
     { "setSlot",         obj_setSlot         },
     { "getSlot",         obj_getSlot         },
-    { "getSlotValue",    obj_getSlotValue    },   /* T61: legacy alias for getSlot */
+    { "getSlotValue",    obj_getSlotValue    },   /* legacy alias for getSlot */
     { "hasSlot",         obj_hasSlot         },
     { "removeSlot",      obj_removeSlot      },
-    { "removeLocalSlot", obj_removeLocalSlot },   /* T62: legacy alias for removeSlot */
+    { "removeLocalSlot", obj_removeLocalSlot },   /* legacy alias for removeSlot */
     { "clone",           obj_clone           },
     { "new",             obj_new             },
     { "addProto",        obj_addProto        },
     { "removeProto",     obj_removeProto     },
     { "protos",          obj_protos          },
     { "setProtos",       obj_setProtos       },
-    { "setProperty",     obj_setProperty     },   /* T41: backs get/set sugar */
+    { "setProperty",     obj_setProperty     },   /* backs get/set sugar */
     { "slotNames",       obj_slotNames       },
     { "localSlotNames",  obj_localSlotNames  },
     { "hasLocalSlot",    obj_hasLocalSlot    },

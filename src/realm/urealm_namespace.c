@@ -136,7 +136,7 @@ unamespace_set(struct UVM *vm, struct UNamespace *ns,
     /* Append new entry. */
     ns->entries[ns->count].name  = name;
     /* No barrier: namespace bindings are roots, re-walked at ATOMIC_FINISH
-     * with the mutator stopped (refactor-3 GC-02) — the soundness mechanism
+     * with the mutator stopped (GC-02) — the soundness mechanism
      * for this unbarriered store. */
     ns->entries[ns->count].value = value;
     ns->count++;
@@ -167,7 +167,7 @@ unamespace_get(struct UNamespace *ns, const char *name)
 /* === unamespace_walk_roots ===
  *
  * Invokes cb for every UValue stored in the namespace.
- * Used by the GC root-provider walker (row 10 / T26). */
+ * Used by the GC root-provider walker (row 10). */
 
 void
 unamespace_walk_roots(struct UNamespace *ns,

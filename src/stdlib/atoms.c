@@ -1,23 +1,22 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* atoms.c — M6 Phase 5: C-native methods on atom protos.
+/* atoms.c — C-native methods on atom protos.
  *
- * Phase 5 task taxonomy (one commit per group):
- *   T35 — file shell + per-proto registration helper
- *   T36 — Boolean.negate
- *   T39 — Integer.asString / asFloat / asBoolean
- *   T40 — Integer.and / or / xor / inv / shl / shr / ushr (Kotlin-named)
- *   T42 — Float.sqrt / sin / cos / tan / asin / acos / atan / atan2 /
+ * Methods implemented here (one section per group):
+ *   Boolean.negate
+ *   Integer.asString / asFloat / asBoolean
+ *   Integer.and / or / xor / inv / shl / shr / ushr (Kotlin-named)
+ *   Float.sqrt / sin / cos / tan / asin / acos / atan / atan2 /
  *         log / log10 / exp / pow / floor / ceil / abs / round
- *   T43 — Float.isNaN / isInfinite
- *   T44 — Float.asString / asInteger / asBoolean
- *   T45 — String.size / isEmpty / charAt / asciiAt
- *   T47 — String.toUpper / toLower
- *   T48 — String.indexOf / contains / startsWith / endsWith
- *   T49 — String.asInteger / asFloat
- *   T54 — close-out (no code change; CHANGELOG)
+ *   Float.isNaN / isInfinite
+ *   Float.asString / asInteger / asBoolean
+ *   String.size / isEmpty / charAt / asciiAt
+ *   String.toUpper / toLower
+ *   String.indexOf / contains / startsWith / endsWith
+ *   String.asInteger / asFloat
  *
- * Tasks T37 (Integer arithmetic), T38 (Integer comparison), T41 (Float
- * arith), T46 (String concat) are dropped: those operations are inline
+ * Note: Integer arithmetic, Integer comparison, Float arith, and String
+ * concat are inline VM opcodes (OP_ADD / OP_LT / OP_EQ / etc. in
+ * src/vm/uvm.c), not slot lookups, so registering them as slots would
  * VM opcodes (OP_ADD / OP_LT / OP_EQ / etc. in src/vm/uvm.c), not slot
  * lookups, so registering them as slots would have no effect on the
  * `1 + 2` source form.  The plan templated against an atom-method-only
@@ -109,7 +108,7 @@ bool_negate(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-/* === Integer.asString / asFloat / asBoolean / asInteger (T39) =============
+/* === Integer.asString / asFloat / asBoolean / asInteger ==================
  *
  * asString prints base-10 via snprintf into a stack buffer, then interns.
  * Buffer 24 B is large enough for any int64_t (worst case 20 chars +
@@ -176,7 +175,7 @@ int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-/* === Integer bitops (T40) =================================================
+/* === Integer bitops =======================================================
  *
  * Bitwise ops are NAMED methods (no symbolic-operator lex tokens reserve
  * `&` / `|` for bitwise — `&` is the parallel-join concurrency separator).
@@ -317,7 +316,7 @@ flt_random(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-/* === Float math + conversion (T42, T44) ===================================
+/* === Float math + conversion ==============================================
  *
  * Hosted libm passthroughs.  Freestanding builds raise TypeError; libm is
  * provided by newlib-nano on Cortex-M / picolibc on rv32imc and is included
@@ -464,7 +463,7 @@ flt_atan2(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 #endif
 }
 
-/* === Float.asString / asInteger / asBoolean (T44) =========================
+/* === Float.asString / asInteger / asBoolean ================================
  *
  * asString uses the same UVALUE_FLOAT_FMT (%.14g + Lua trailing-.0) as the
  * REPL printer for round-trip parity.  Wave 2 doesn't expose alternate
@@ -549,7 +548,7 @@ flt_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-/* === Float.isNaN / isInfinite (T43) ====================================== */
+/* === Float.isNaN / isInfinite ============================================ */
 
 static int
 flt_isNaN(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
@@ -601,7 +600,7 @@ flt_pow(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 #endif
 }
 
-/* === String basic methods (T45) ===========================================
+/* === String basic methods ==================================================
  *
  * UVAL_STR.v.p is a NUL-terminated `const char *` from ustr_intern.
  * Wave 1's Boolean.toString + String.length already use urbi_strlen;
@@ -664,7 +663,7 @@ str_charAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
-/* === String case methods (T47) ============================================
+/* === String case methods ===================================================
  *
  * ASCII-only conversion at v1.0.  Non-ASCII bytes (>= 0x80) pass through
  * unchanged.  Wave 2 delivers Unicode-aware case folding when libicu /
@@ -734,7 +733,7 @@ str_toLower(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return str_caseop(vm, self, args, nargs, out, 0, "String.toLower");
 }
 
-/* === String search methods (T48) ==========================================
+/* === String search methods =================================================
  *
  * Hosted builds use libc strstr/memcmp.  Freestanding builds open-code an
  * O(n*m) brute-force search to avoid the dependency.  v1.0 strings are
@@ -837,7 +836,7 @@ str_endsWith(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return str_starts_or_ends(vm, self, args, nargs, out, 0, "String.endsWith");
 }
 
-/* === String parse methods (T49) ===========================================
+/* === String parse methods ==================================================
  *
  * asInteger / asFloat use strtoll / strtod (hosted libc).  Freestanding
  * builds raise TypeError; the embedded path can override with newlib's
@@ -923,10 +922,10 @@ str_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         "String.asBoolean: only \"true\" / \"false\" recognized", out);
 }
 
-/* === String.asciiAt (T50) ================================================
+/* === String.asciiAt =======================================================
  *
  * Byte-level codepoint access — returns the byte at the given index as
- * Integer (0..255).  charAt (T45) returns a 1-byte string slice; asciiAt
+ * Integer (0..255).  charAt returns a 1-byte string slice; asciiAt
  * returns the numeric byte value.  Codepoint-aware variants (codePointAt
  * etc.) are deferred to Wave 2 Unicode follow-up (delta §3.2). */
 
@@ -1170,7 +1169,7 @@ str_percent(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return str_format(vm, self, &list_val, 1U, out);
 }
 
-/* === Per-family method tables (filled across T36-T54) ===================== */
+/* === Per-family method tables ============================================= */
 
 static const UNativeMethodDef BOOL_METHODS[] = {
     { "negate", bool_negate }
@@ -1238,10 +1237,10 @@ static const UNativeMethodDef STR_METHODS[] = {
  * least one element (C99 forbids zero-size arrays).  Tables with real
  * entries omit the sentinel. */
 
-/* === urbi_stdlib_register_atom_methods (T35 entry) ========================
+/* === urbi_stdlib_register_atom_methods =====================================
  *
- * T35 lands the helper + boot wiring; the per-family method tables fill
- * in across T36-T54.  At T35 baseline all four tables are sentinel-only
+ * This function lands the helper + boot wiring; the per-family method tables fill
+ * in across sections.  At baseline all four tables are sentinel-only
  * (count == 0); URBI_REGISTER_METHODS is a no-op for those but the call
  * sites are wired so subsequent tasks only edit the table arrays. */
 

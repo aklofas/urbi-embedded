@@ -66,7 +66,7 @@ struct UReplSession {
      * off == fill the staging is drained and the next sweep refills
      * from the ringbuf.
      *
-     * Reader-pthread path (W2.2): flush_session_output uses the same
+     * Reader-pthread path: flush_session_output uses the same
      * fields to stage a destructively-read ringbuf chunk.  On EAGAIN
      * it returns FLUSH_WOULD_BLOCK (instead of spinning) and leaves
      * the unwritten bytes at [coop_outbuf_off, coop_outbuf_fill).
@@ -78,7 +78,7 @@ struct UReplSession {
     /* v0.9.4: set by the cooperative read sweep on a clean EOF (peer
      * disconnect, read_fn == 0).  Task 4.5's close sweep reaps these. */
     bool                  needs_teardown;
-    /* === W4: per-session job rate limit (rate_limit_per_second) ===
+    /* === Per-session job rate limit (rate_limit_per_second) ===
      * Counts jobs dispatched in the current clock-second.  Resets when
      * rate_window_sec advances.  Only checked when server->cfg.rate_limit_per_second > 0. */
     int                   rate_jobs_this_sec;
@@ -106,7 +106,7 @@ UReplSession *urepl_session_find_by_lobby(UReplServer *server, const char *lobby
 /* Unlink + free a session.  Also destroys the underlying URealm. */
 void urepl_session_destroy(UReplServer *server, UReplSession *session);
 
-/* === W1: single-owner teardown contract ===
+/* === Single-owner teardown contract ===
  * Reader threads MUST NOT call urepl_session_destroy directly.  Instead
  * they call urepl_request_teardown(s) which sets needs_teardown atomically.
  * The VM-thread dispatcher reaps flagged sessions at the start of each

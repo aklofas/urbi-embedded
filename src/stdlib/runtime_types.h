@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* runtime_types.h — M6 Phase 7: C-native runtime-type protos.
+/* runtime_types.h — C-native runtime-type protos.
  *
- * Phase 7 of M6 stdlib lands the runtime-type method surfaces on top of
- * the M3/M4/M5/Wave-1 baselines:
+ * This module lands the runtime-type method surfaces on top of
+ * the Wave-1 baselines:
  *
  *   - Exception primitive root: fresh proto exposing `.new(message)`,
  *     `.message` slot, and `.raise` (which deposits THROW unwind so
@@ -16,7 +16,7 @@
  *     docs/urbi-embedded-backlog.md.
  *   - Tag.new / Tag.stop scripted constructors — DEFERRED: there is no
  *     UVAL_TAG kind, so a script-side Tag instance would need a UObject
- *     wrapper carrying a UTag in a hidden slot, and existing M3 utag_create
+ *     wrapper carrying a UTag in a hidden slot, and existing utag_create
  *     is realm-bound.  Tracked in docs/urbi-embedded-backlog.md.
  *   - Event.new / Event.emit / Event.syncEmit — already shipped at Wave 1
  *     via src/event/uevent_native.c.

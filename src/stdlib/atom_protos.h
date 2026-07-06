@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* atom_protos.h — M6 Phase 4: per-atom-family C-native method registration.
+/* atom_protos.h — per-atom-family C-native method registration.
  *
  * Each atom family (Boolean, Integer, Float, String, nil, void) gets a
  * dedicated proto with at least .clone() and a minimum method set.

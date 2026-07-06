@@ -13,12 +13,12 @@ extern "C" {
 
 /* --- bytecode format version (loader rejects anything other than VERSION_BYTE) ---
    Encoding: VERSION_BYTE = (major << 4) | minor.  Hard breaks require a minor bump.
-   v1.0 = 0x10 (M1), v1.1 = 0x11 (M2), v1.2 = 0x12 (M3 — control transfer),
-   v1.3 = 0x13 (M4 — UProto.ic_count + UProto.ic_names side table),
-   v1.4 = 0x14 (M5 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds),
+   v1.0 = 0x10 (v0.1.0), v1.1 = 0x11 (v0.2.0), v1.2 = 0x12 (v0.3.0 — control transfer),
+   v1.3 = 0x13 (v0.4.0 — UProto.ic_count + UProto.ic_names side table),
+   v1.4 = 0x14 (v0.5.0 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds),
    v1.5 = 0x15 (v0.5.6 Wave 4 — wire-format completion: nested protos + per-proto
                 + root ic_name_strs, header reserved bytes 16-23 strictly zero,
-                opcode-shape table verifier, OP_INVOKE retired, M5 reactive
+                opcode-shape table verifier, OP_INVOKE retired, v0.5.0 reactive
                 opcodes renumbered 39-46 -> 38-45).
    v1.6 = 0x16 (v0.7.2 S42 — method-call ABI cleanup: new OP_SELF (47) loads
                 method + receiver into adjacent registers; OP_CALL gains a
@@ -44,7 +44,7 @@ extern "C" {
                 emitting runtime treats every chunk as a UProto with no
                 separate loader-shell type.  v1.7 rejected as
                 UCHUNK_LOAD_UNSUPPORTED_VERSION.).
-   v1.9 = 0x19 (v0.10.2-reactive W0 — opcode space extension: new
+   v1.9 = 0x19 (v0.10.2-reactive — opcode space extension: new
                 OP_WHENEVER_EVENT_INSTALL at slot 48 for whenever (e?)
                 event-subscriber installs.  OP_MAX was 48; now 49.
                 v1.8 rejected as UCHUNK_LOAD_UNSUPPORTED_VERSION.).
@@ -81,7 +81,7 @@ static const uint8_t URBI_BYTECODE_CANARY[URBI_BYTECODE_CANARY_LEN] = {
 #endif
 
 #ifndef URBI_FLOAT_TYPE
-#define URBI_FLOAT_TYPE 8         /* 8 = f64, 4 = f32; overridden per target at M7 */
+#define URBI_FLOAT_TYPE 8         /* 8 = f64, 4 = f32; overridden per target */
 #endif
 
 #ifndef URBI_INSTR_WIDTH
@@ -148,13 +148,13 @@ typedef enum {
     UCHUNK_LOAD_OOM,
     UCHUNK_LOAD_INVALID_ARG,            /* NULL module / NULL buf etc.; distinct from TRUNCATED */
     UCHUNK_LOAD_OVERSIZED,              /* count fields exceed compile-time per-proto caps */
-    /* --- bytecode F2: per-instruction bounds hardening (W7 verifier pass) --- */
+    /* --- bytecode F2: per-instruction bounds hardening (v0.10.7 verifier pass) --- */
     UCHUNK_LOAD_TRUNCATED_UPVALUES,     /* OP_CLOSURE upvalue prelude extends past bytecode end */
     UCHUNK_LOAD_MALFORMED_UPVALUE,      /* OP_CLOSURE upvalue pseudo-instr has invalid in_stack or src_idx */
     UCHUNK_LOAD_JMP_OUT_OF_BOUNDS,      /* OP_JMP Bx target pc outside [0, instr_count) */
     UCHUNK_LOAD_CALL_NRESULTS_ZERO,     /* OP_CALL C low-7 == 0 (nresults+1 must be >= 1) */
     UCHUNK_LOAD_RESERVED_OPCODE,        /* opcode is reserved/unimplemented at this wire version */
-    /* --- bytecode F3: ic_index DFS pre-order mirror (W8 verifier pass) --- */
+    /* --- bytecode F3: ic_index DFS pre-order mirror (v0.10.8 verifier pass) --- */
     UCHUNK_LOAD_IC_INDEX_MISMATCH       /* proto->ic_index does not match its DFS pre-order visit index */
 } UChunkLoadError;
 

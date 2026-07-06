@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* namespaces.h — M6 Phase 8: C-native namespace globals.
+/* namespaces.h — C-native namespace globals.
  *
- * Phase 8 of M6 stdlib lands the namespace globals on top of the
- * Phase 5/6/7 baselines:
+ * This module lands the namespace globals on top of the
+ * atom-proto baselines:
  *
  *   Math          — IEEE-754 constants (pi / e / nan / infinity).  Method
  *                   surface (sin / cos / sqrt …) defers to the Phase 10

@@ -188,7 +188,7 @@ parse_lines_to_jobs(UReplServer *server, uint32_t session_id,
                         free(job);
                     }
                 } else {
-                    /* === W4: malformed-NDJSON tolerance ===
+                    /* === Malformed-NDJSON tolerance ===
                      * Emit an explicit error envelope into the session's
                      * output ringbuf rather than silently dropping the line.
                      * This gives the client a structured signal (not EOF)
@@ -517,12 +517,12 @@ reader_main(void *arg)
     }
     r->client_fd = -1;
 
-    /* === W1: single-owner teardown — request, don't destroy ============
+    /* === Single-owner teardown — request, don't destroy ================
      * Previously this called urepl_session_destroy here, which raced with
      * urepl_listener_stop_and_join's defensive destroy on the same session,
      * causing ~50% segfault rate under 4-session TCP stress.
      *
-     * After W1: reader thread ONLY sets the needs_teardown flag.  The VM
+     * After this fix: reader thread ONLY sets the needs_teardown flag.  The VM
      * thread (urepl_dispatch_drain_if_active → urepl_session_reap_pending)
      * observes the flag at the next safepoint and runs urepl_session_destroy
      * as the sole owner.  r->session is NULL'd immediately so any late
@@ -539,7 +539,7 @@ reader_main(void *arg)
         r->session = NULL;
         UREPL_MUTEX_UNLOCK(&r->server->sessions_mutex);
     }
-    /* === end W1 ======================================================== */
+    /* === end single-owner teardown ===================================== */
 
     return NULL;
 }
@@ -934,7 +934,7 @@ urepl_listener_stop_and_join(UReplServer *server)
             head->transport->close_fn(head->client_fd);
             head->client_fd = -1;
         }
-        /* W3/v0.10.7: the reader thread is fully joined at this point —
+        /* v0.10.7: the reader thread is fully joined at this point —
          * no concurrent access to head->session remains.  Flag the
          * session for teardown (idempotent if reader_main already did
          * so) then destroy it directly.  This is safe because:

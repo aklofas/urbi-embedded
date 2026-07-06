@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* === W3/v0.10.4: UReplState lifecycle (audit-1 F8). === */
+/* === v0.10.4: UReplState lifecycle (audit-1 F8). === */
 
 #include "repl/urepl_state.h"
 #include "vm/uvm.h"

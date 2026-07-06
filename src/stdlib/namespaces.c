@@ -1,10 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* namespaces.c — M6 Phase 8: C-native namespace globals.
+/* namespaces.c — C-native namespace globals.
  *
  * Math / System / System.Platform / Global / CallMessage — see banner in
- * namespaces.h.  Phase 8 grows incrementally task-by-task: T85 shell,
- * T86 Math constants, T87 System primitives, T88 System.Platform.kind,
- * T90 Global.length, T91 CallMessage stub.
+ * namespaces.h.
  *
  * Allocation pattern mirrors runtime_types.c (Exception primitive proto):
  * a vanilla URBI_ATOM_OBJECT-family UObject per namespace, methods
@@ -52,7 +50,7 @@ install_const_slot(UVM *vm, UObject *proto, const char *name, UValue value)
 /* === Compile-time platform kind ==========================================
  *
  * Set at compile-time via #ifdef cascade.  The freestanding fallback uses
- * "freertos" because the M0/M1 cross-arm baseline is freestanding-Cortex-
+ * "freertos" because the cross-arm baseline is freestanding-Cortex-
  * M7 with the FreeRTOS BSP target as the canonical embedded host; non-
  * FreeRTOS freestanding hosts can override in a v1.x BSP integration. */
 
@@ -225,8 +223,8 @@ static const UNativeMethodDef GLOBAL_METHODS[] = {
 
 /* === urbi_stdlib_register_namespaces ====================================
  *
- * Allocates Math / System / Global / CallMessage proto UObjects per task.
- * T86: Math with pi / e / nan / infinity constants.  GC reachability via
+ * Allocates Math / System / Global / CallMessage proto UObjects.
+ * Math: pi / e / nan / infinity constants.  GC reachability via
  * object_roots_walker shading vm->math_proto.
  *
  * Idempotent: re-allocates each proto only when its vm field is NULL. */
@@ -237,7 +235,7 @@ urbi_stdlib_register_namespaces(UVM *vm)
     if (vm == NULL) return URBI_ERR_INVALID_ARG;
     int rc;
 
-    /* --- T86 Math: pi / e / nan / infinity --- */
+    /* --- Math: pi / e / nan / infinity --- */
     if (vm->math_proto == NULL) {
         UObject *m = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
         if (m == NULL) return URBI_ERR_OOM;
@@ -257,7 +255,7 @@ urbi_stdlib_register_namespaces(UVM *vm)
     if (rc != URBI_OK) return rc;
 #endif
 
-    /* --- T87 System: time / cycle / getenv / gc --- */
+    /* --- System: time / cycle / getenv / gc --- */
     if (vm->system_proto == NULL) {
         UObject *s = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
         if (s == NULL) return URBI_ERR_OOM;
@@ -266,7 +264,7 @@ urbi_stdlib_register_namespaces(UVM *vm)
     rc = URBI_REGISTER_METHODS(vm, vm->system_proto, SYSTEM_METHODS);
     if (rc != URBI_OK) return rc;
 
-    /* --- T88 System.Platform: kind constant ---
+    /* --- System.Platform: kind constant ---
      *
      * Platform is nested as a slot on System (System.Platform.kind) — not a
      * top-level realm global.  The proto is allocated as a sibling singleton
@@ -289,7 +287,7 @@ urbi_stdlib_register_namespaces(UVM *vm)
                             urbi_make_object(vm->platform_proto));
     if (rc != URBI_OK) return rc;
 
-    /* --- T90 Global: length --- */
+    /* --- Global: length --- */
     if (vm->global_namespace_proto == NULL) {
         UObject *g = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
         if (g == NULL) return URBI_ERR_OOM;
@@ -298,9 +296,9 @@ urbi_stdlib_register_namespaces(UVM *vm)
     rc = URBI_REGISTER_METHODS(vm, vm->global_namespace_proto, GLOBAL_METHODS);
     if (rc != URBI_OK) return rc;
 
-    /* --- T91 CallMessage: placeholder proto (v0.10.5-W7-DROP) ---
+    /* --- CallMessage: placeholder proto (v0.10.5-legacy-decisions-DROP) ---
      *
-     * CallMessage was permanently dropped at v0.10.5-W7 (see REVIVAL §14
+     * CallMessage was permanently dropped at v0.10.5-legacy-decisions (see REVIVAL §14
      * and the 278-line migration design in docs/); this stub proto is
      * intentionally empty.  At v1.0 the proto exists as a realm global so
      * script code can verify its presence via `isNil(CallMessage)`, but no

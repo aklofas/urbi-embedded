@@ -211,7 +211,7 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === sleep_native ========================================================
  *
- * W6/v0.10.2: sleep(duration) stdlib C-native — blocks current strand via
+ * v0.10.2: sleep(duration) stdlib C-native — blocks current strand via
  * USTRAND_REASON_SLEEP.  Closes legacy audit F15 + v0.9.4-era Pico
  * follow-up (whenever(named_event) workaround required C-side watcher;
  * native sleep unblocks the simplest blocking-wait pattern from script).
@@ -229,7 +229,7 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  *
  * TAG_STOP on a sleeping strand wakes it via the existing
  * urbi_sched_strand_unblock path in urbi_tag_stop's member_strands walk
- * (src/runtime/uunwind.c) — verified at v0.10.2 W6.
+ * (src/runtime/uunwind.c) — verified at v0.10.2.
  *
  * Returns nil after wakeup (or when TAG_STOP interrupts the sleep;
  * the TAG_STOP unwind delivers UEXEC_TAG_STOP before the nil return
@@ -270,7 +270,7 @@ sleep_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     UStrand *cur = vm->cur_strand;
     URBI_INTERNAL_ASSERT(cur != NULL);
-    /* refactor-4 B10/SCH4-01: run-to-completion (transient) entry cannot park.
+    /* run-to-completion (transient) entry cannot park:
      * A zero sleep is a no-op — return nil immediately.  Real strands keep
      * their yield-shaped zero sleep (it lets watchers fire between statements). */
     if (cur->is_transient_strand && duration_us == 0U) {
@@ -318,7 +318,7 @@ urbi_temporal_native_register_globals(UVM *vm, URealm *realm)
         if (rc != URBI_OK) return rc;
     }
 
-    /* W6/v0.10.2: bind "sleep" as a realm global.  Allocate the closure
+    /* v0.10.2: bind "sleep" as a realm global.  Allocate the closure
      * here (no UVM field — GC reachability via the realm-global slot,
      * same as the comment above for every_native_closure).  One
      * allocation per realm creation; the realm's global_object slot keeps
@@ -352,7 +352,7 @@ urbi_periodic_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
             cb(vm, &tmp, ctx);
         }
         /* current_strand reachable via realm->strands_head (sched walker). */
-        if (p->owning_tag != NULL) {   /* GC-03: UTag is GC-managed since M5 */
+        if (p->owning_tag != NULL) {   /* GC-03: UTag is GC-managed since v0.5.0 */
             urbi_gc_shade_gray(vm, (UCell *)p->owning_tag);
         }
     }
@@ -623,7 +623,7 @@ urbi_periodic_earliest_wake_us(const UVM *vm)
 
 /* === urbi_periodics_stop_owned_by / urbi_tag_owns_periodic =============
  *
- * B5 / SCHED-N2 (refactor-4, 2026-07-04): tag.stop() must cascade to the
+ * B5 / SCHED-N2 (2026-07-04): tag.stop() must cascade to the
  * periodic list so the flagship `t: every(P) body(); t.stop()` idiom works.
  *
  * urbi_periodics_stop_owned_by: walk vm->periodics_head; for every periodic

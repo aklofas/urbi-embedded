@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* primitives.h — M6 Phase 9: C-native primitives (Mutex, Date, Duration).
+/* primitives.h — C-native primitives (Mutex, Date, Duration).
  *
- * Phase 9 of M6 stdlib lands three primitive types on top of the
+ * This module lands three primitive types on top of the
  * Phase 5/6/7/8 baselines:
  *
  *   Mutex     — cooperative single-VM lock.  v1.0 is URBI_SCHED_COOPERATIVE,
@@ -13,7 +13,7 @@
  *               formats UTC as ISO-style "YYYY-MM-DD HH:MM:SS".
  *               Freestanding builds without time() return 0 / "".
  *   Duration  — thin wrapper over integer microseconds.  Time literals
- *               (100ms / 2s / 1d — M2 baseline) lex to integer
+ *               (100ms / 2s / 1d) lex to integer
  *               microseconds; Duration.fromMicroseconds wraps an integer
  *               in a Duration proto-shaped UObject for typed dispatch.
  *               .asMicroseconds / .asMilliseconds read the backing slot.

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* urealm_globals.h — static built-in name registry + realm populate routine.
- * Pre-M5 spec #5 §3.  Row 13 / T69-T70. */
+ * Spec #5 §3.  Row 13 (built-in name registry). */
 
 #ifndef UREALM_GLOBALS_H
 #define UREALM_GLOBALS_H

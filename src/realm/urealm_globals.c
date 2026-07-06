@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* urealm_globals.c — static built-in name registry + realm populate routine.
  *
- * Pre-M5 spec #5 §3–§4.  Row 13 / T69-T70.
+ * Spec #5 §3–§4.  Row 13 (built-in name registry).
  *
  * 15 built-ins registered at every realm creation:
  *   Object, Integer, Float, String, Bool, Nil, Void, List, Dict, Symbol,
@@ -21,11 +21,11 @@
 #include "object/uobject.h"   /* urbi_object_root, urbi_object_atom, urbi_object_set_local_slot,
                                *   urbi_object_install_property */
 #include "object/ushape.h"    /* urbi_shape_find_slot */
-#include "stdlib/stdlib_boot.h" /* urbi_stdlib_boot — M6 Phase 3 */
-#include "stdlib/containers.h"  /* urbi_stdlib_register_container_globals — M6 Phase 6 */
-#include "stdlib/runtime_types.h"  /* urbi_stdlib_register_runtime_globals — M6 Phase 7 */
-#include "stdlib/namespaces.h"     /* urbi_stdlib_register_namespace_globals — M6 Phase 8 */
-#include "stdlib/primitives.h"     /* urbi_stdlib_register_primitives_globals — M6 Phase 9 */
+#include "stdlib/stdlib_boot.h" /* urbi_stdlib_boot */
+#include "stdlib/containers.h"  /* urbi_stdlib_register_container_globals */
+#include "stdlib/runtime_types.h"  /* urbi_stdlib_register_runtime_globals */
+#include "stdlib/namespaces.h"     /* urbi_stdlib_register_namespace_globals */
+#include "stdlib/primitives.h"     /* urbi_stdlib_register_primitives_globals */
 #include "stdlib/regexp.h"         /* urbi_stdlib_register_regexp_globals — v1.0 stdlib-completeness */
 #include "stdlib/job_proto.h"      /* urbi_job_proto_register_globals — v0.10.10 D7-A */
 #include "stdlib/lobby_native.h"   /* urbi_lobby_native_register_globals — v0.9.1 Phase 5 */
@@ -89,9 +89,8 @@ rg_make_void(void)
  * idempotent thereafter.  Returning rg_make_object(NULL) signals OOM to the
  * populate loop, which returns URBI_ERR_OOM.
  *
- * Resolvers for atom protos that do not exist at M5 baseline (Bool, Nil, Void)
- * return rg_make_nil() as a placeholder per spec #5 §3.2 note — these
- * singletons (Bool, Nil, Void) shipped at M6 stdlib. */
+ * Resolvers for Bool, Nil, Void return rg_make_nil() as a placeholder
+ * per spec #5 §3.2 note — these singletons shipped as part of the stdlib. */
 
 static UValue
 resolve_object_proto(UVM *vm)
@@ -118,9 +117,9 @@ resolve_atom_string(UVM *vm)
     return rg_make_object(urbi_object_atom(vm, URBI_ATOM_STRING));
 }
 
-/* M6 Phase 4 (T48): Boolean / Nil / Void atom protos now exist.
+/* Boolean / Nil / Void atom protos now exist.
  * Each resolver lazy-allocates the corresponding atom singleton
- * (urbi_object_atom is idempotent — replaces the M5 baseline
+ * (urbi_object_atom is idempotent — replaces the earlier
  * resolve_nil_placeholder used at REALM-018). */
 static UValue
 resolve_atom_boolean(UVM *vm)
@@ -214,9 +213,9 @@ const URegistryEntry urbi_builtin_registry[] = {
     { "Float",   resolve_atom_float,   true,  false },
     { "String",  resolve_atom_string,  true,  false },
 
-    /* Boolean / Nil / Void: M6 Phase 4 promoted the M5 placeholders to
-     * real atom protos.  The "Boolean" name replaces the M5 placeholder
-     * "Bool" (legacy precedent + spec §5.2 boot order spell out the
+    /* Boolean / Nil / Void: promoted from placeholders to real atom protos.
+     * The "Boolean" name replaces the earlier "Bool" placeholder
+     * (legacy precedent + spec §5.2 boot order spell out the
      * full name).  Note the case distinction: lowercase `nil` / `void`
      * are the value singletons (UVAL_NIL / UVAL_VOID), while
      * `Nil` / `Void` are the protos — separate rows below. */
@@ -243,14 +242,14 @@ const URegistryEntry urbi_builtin_registry[] = {
 const size_t urbi_builtin_registry_count =
     sizeof(urbi_builtin_registry) / sizeof(urbi_builtin_registry[0]);
 
-/* === REALM-023 / T70: realm_install_const shared helper ===
+/* === REALM-023: realm_install_const shared helper ===
  *
  * Common CONSTANT-install logic shared by urbi_populate_realm_globals (the
  * 15-row registry-driven realm boot path) and urbi_realm_set_global_const
  * (the public C API).  Both call sites previously open-coded the same
  * three-step pattern (already-CONSTANT check → set_local_slot →
  * install_property with URBI_SLOT_FLAG_CONSTANT) — keeping them in lockstep
- * is important because the T67 CONST-overwrite guard MUST apply to BOTH
+ * is important because the CONST-overwrite guard MUST apply to BOTH
  * paths consistently (the public API can be called BEFORE populate
  * finishes via host-supplied UVMAllocFn callbacks; future v1.x multi-realm
  * extension may also re-enter populate after public installs).
@@ -269,7 +268,7 @@ const size_t urbi_builtin_registry_count =
  *      flag the slot as constant.  At slots 0..7 this writes the CONSTANT
  *      bit into the packed shape nibble (IC-enforced for script writes);
  *      at slots >= 8 the bit lives only in UProps (not IC-enforced at
- *      v1.0 baseline; M6 spill side-table will lift the cap).  OOM here
+ *      v1.0 baseline; tracked in design-risks).  OOM here
  *      returns URBI_ERR_OOM. */
 static int
 realm_install_const(UVM *vm, URealm *realm, USymbol *sym, UValue value,
@@ -304,14 +303,14 @@ realm_install_const(UVM *vm, URealm *realm, USymbol *sym, UValue value,
      * UShape.flags is only 4 bits/slot across a single uint32_t (8 slots
      * worth).  urbi_shape_transition_property's bit-shift arithmetic
      * (shift = slot_index * 4) is undefined behaviour at slot_index >= 8
-     * — UB that pre-T70 populate's `idx < 8` gate suppressed.  The M6
-     * spill side-table will lift the cap; until then this gate is the
+     * — UB that pre-v0.6.2 populate's `idx < 8` gate suppressed.  Until
+     * the spill side-table lands this gate is the
      * single source of truth.
      *
      * Caller observability: the slot is still locally installed via
      * set_local_slot above (its value is reachable by name); only the
      * CONSTANT bit is dropped on the floor.  Public-API callers that
-     * need true CONSTANT enforcement past slot 7 must wait for M6 — the
+     * need true CONSTANT enforcement past slot 7 — the
      * v1.0 limitation is tracked in the design-risks register (S-globals-cap-8). */
     int32_t idx = urbi_shape_find_slot(realm->global_object->shape, sym);
     if (idx >= 0 && idx < 8) {
@@ -334,14 +333,14 @@ realm_install_const(UVM *vm, URealm *realm, USymbol *sym, UValue value,
  *
  * Calls urbi_native_protos_init(vm) on first call (guarded by vm->event_proto
  * being NULL) so that resolve_tag_proto / resolve_event_proto see live
- * pointers.  This is the wiring described in uvm.c §T59 comment.
+ * pointers.  This wiring is also described in uvm.c (init section comment).
  *
- * GC-pause bootstrap window (v0.13.2, refactor-3 TEST-GAP-01 discovery
+ * GC-pause bootstrap window (v0.13.2, TEST-GAP-01 discovery
  * chain): the host-C sections of populate run with vm->gc_paused held.
  * Rationale: realm population is a long chain of "allocate cell, hold it
  * in a C local across further allocations, then store it" sequences
  * (~70 native-slot installs across 16 stdlib registration files).  Host
- * bootstrap code has no strand, so the T6 UCRootFrame chain (strand-based
+ * bootstrap code has no strand, so the UCRootFrame chain (strand-based
  * C-stack roots) is inapplicable, and rooting each hop individually would
  * mean handle-scope discipline at every intermediate value.  Pausing is
  * the same shape Lua uses during lua_newstate bootstrap (g->gcstp held
@@ -376,7 +375,7 @@ populate_realm_globals_impl(UVM *vm, URealm *realm, uint8_t host_pause)
         urbi_native_protos_init(vm);
     }
 
-    /* M6 Phase 3: register Object root C-native methods on vm->atom_object
+    /* Phase 3: register Object root C-native methods on vm->atom_object
      * BEFORE the resolver loop installs Object as a realm global.  This way
      * the realm-global "Object" already carries setSlot/getSlot/clone/etc.
      * for the very first urbiscript chunk that references it.  Idempotent:
@@ -412,7 +411,7 @@ populate_realm_globals_impl(UVM *vm, URealm *realm, uint8_t host_pause)
             return URBI_ERR_OOM;
         }
 
-        /* T70: route CONSTANT installs through the shared helper so the
+        /* Route CONSTANT installs through the shared helper so the
          * populate path and the public set_global_const API share the
          * same set_local_slot → install_property sequence.  populate
          * iterates a fresh global_object whose slots do not pre-exist
@@ -436,7 +435,7 @@ populate_realm_globals_impl(UVM *vm, URealm *realm, uint8_t host_pause)
         }
     }
 
-    /* M6 Phase 6: post-registry container globals (Pair / Triplet / Tuple).
+    /* Post-registry container globals (Pair / Triplet / Tuple).
      * Lands at slots 15+, past the v1.0 packed-flag CONSTANT enforcement
      * range (slots 0..7), so it cannot displace the registry's stable
      * Object..List layout. */
@@ -447,7 +446,7 @@ populate_realm_globals_impl(UVM *vm, URealm *realm, uint8_t host_pause)
         }
     }
 
-    /* M6 Phase 7: post-registry runtime-type globals (Exception).  Same
+    /* Post-registry runtime-type globals (Exception).  Same
      * post-loop pattern as containers — lands at slots 15+, past the
      * v1.0 packed-flag CONSTANT enforcement range. */
     {
@@ -457,7 +456,7 @@ populate_realm_globals_impl(UVM *vm, URealm *realm, uint8_t host_pause)
         }
     }
 
-    /* M6 Phase 8: post-registry namespace globals (Math / System /
+    /* Post-registry namespace globals (Math / System /
      * Global / CallMessage).  Same post-loop pattern.  Note: Platform
      * is nested as a slot on System, NOT a top-level realm global —
      * scripts access it as System.Platform.kind. */
@@ -468,7 +467,7 @@ populate_realm_globals_impl(UVM *vm, URealm *realm, uint8_t host_pause)
         }
     }
 
-    /* M6 Phase 9: post-registry primitive globals (Mutex / Date /
+    /* Post-registry primitive globals (Mutex / Date /
      * Duration).  Same post-loop pattern. */
     {
         int rc = urbi_stdlib_register_primitives_globals(vm, realm);
@@ -551,7 +550,7 @@ populate_realm_globals_impl(UVM *vm, URealm *realm, uint8_t host_pause)
     }
 #endif
 
-    /* M6 Phase 10: run the baked-in stdlib bytecode chunk.  Top-level
+    /* Run the baked-in stdlib bytecode chunk (Phase 10).  Top-level
      * statements (currently only `class X : public Y {}` declarations)
      * install themselves as realm globals at this point — the C-native
      * registry is fully populated, so resolved-name references inside the
@@ -666,7 +665,7 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
     return rc;
 }
 
-/* === M5 public C API: realm global slot install / read (spec #5 §7) ===
+/* === Public C API: realm global slot install / read (spec #5 §7) ===
  *
  * Three thin wrappers over ustr_intern + urbi_object_set_local_slot /
  * urbi_object_install_property / urbi_object_resolve_slot.  The
@@ -685,10 +684,10 @@ urbi_realm_set_global(UVM *vm, URealm *realm,
     if (sym == NULL) {
         return URBI_ERR_OOM;
     }
-    /* REALM-004 / T68: a non-const set_global on an existing CONSTANT slot
+    /* REALM-004: a non-const set_global on an existing CONSTANT slot
      * must also reject — otherwise the host could bypass CONSTANT via the
      * non-const variant.  Same packed-nibble + UProps inspection as
-     * set_global_const (T67). */
+     * set_global_const. */
     int32_t existing = urbi_shape_find_slot(realm->global_object->shape, sym);
     if (existing >= 0) {
         bool already_const = false;
@@ -722,7 +721,7 @@ urbi_realm_set_global_const(UVM *vm, URealm *realm,
     if (sym == NULL) {
         return URBI_ERR_OOM;
     }
-    /* T70: shared helper does the already-CONSTANT check (T67),
+    /* Shared helper does the already-CONSTANT check,
      * set_local_slot, and install_property in lockstep.  Public-API
      * callers MUST reject overwrites of existing CONSTANT slots —
      * otherwise host code could silently bypass the CONSTANT flag. */
@@ -754,7 +753,7 @@ urbi_realm_get_global(UVM *vm, URealm *realm,
         return URBI_ERR_SLOT_NOT_FOUND;
     }
     /* found == -1: prototype-graph DFS exhausted the fixed 64-deep resolve
-     * stack at uobject_slot.c:561.  REALM-010 / T68: this is distinct from
+     * stack at uobject_slot.c:561.  REALM-010: this is distinct from
      * OOM (no allocation has been attempted on this path) — surface it as
      * URBI_ERR_PROTO_DEPTH so callers can disambiguate "your prototype
      * graph is too wide/deep" from "the host is out of memory". */

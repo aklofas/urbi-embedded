@@ -48,7 +48,7 @@ class LobbyMethods {
     // msg, tag, prefix must all be String; tag is typically ""; prefix
     // typically "***".
     //
-    // v0.10.11 / W4: `this` is the session-lobby instance; the proto
+    // v0.10.11: `this` is the session-lobby instance; the proto
     // chain (instance -> Lobby -> root) finds __builtin_lobby_send on
     // Lobby.  Bare-name resolution doesn't auto-walk `this`; explicit
     // qualifier is the v1.0 workaround (root-cause emit fix deferred

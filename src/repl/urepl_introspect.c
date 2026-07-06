@@ -277,7 +277,7 @@ urbi_introspect_gc(const UVM *vm, char *buf, size_t cap, size_t *out_n)
 {
     if (vm == NULL || buf == NULL || out_n == NULL) return URBI_ERR_INVALID_ARG;
     EMIT_INIT();
-    /* intern_bytes / intern_count (refactor-3 GC-08): interned strings are
+    /* intern_bytes / intern_count: interned strings are
      * never evicted at v1.0, so these only grow — this always-on stats
      * surface is what embedders watch on string-churn workloads. */
     EMIT_FMT("{\"alive_bytes\":%zu,\"threshold\":%zu,\"total_allocated\":%zu,"

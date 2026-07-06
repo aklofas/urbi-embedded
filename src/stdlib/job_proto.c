@@ -323,7 +323,7 @@ urbi_job_make(UVM *vm, UStrand *strand)
 /* === urbi_job_proto_register: stdlib_boot hook ==========================
  *
  * Allocates vm->job_proto if not yet present, chains it onto Object root,
- * and installs five C-native methods: current, tags, uid, status, jobs (W2).
+ * and installs five C-native methods: current, tags, uid, status, jobs.
  * Idempotent: returns URBI_OK immediately if already done. */
 int
 urbi_job_proto_register(UVM *vm)
