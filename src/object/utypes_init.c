@@ -550,7 +550,7 @@ static const UType type_upropstable = {
 /* USlotArray walker is a no-op: entries[] are reachable through the owning
  * UObject's walker (which iterates o->slots[0..shape->count] via cb).  The
  * wrapper cell itself stays alive because walk_uobject shades it via
- * offsetof recovery (T26). */
+ * offsetof recovery. */
 static const UType type_uslot_array = {
     .type_tag      = UTYPE_SLOT_ARRAY,
     .flags         = 0U,
@@ -638,7 +638,7 @@ static const UType type_upvalcell = {
 
 /* === urbi_object_builtin_types_init ===
  *
- * Writes the M4 cell-type descriptors directly into vm->type_table[].
+ * Writes the built-in cell-type descriptors directly into vm->type_table[].
  * Built-in tags can't go through urbi_register_type (which guards against
  * tags < UTYPE_HOST_BASE per src/utype.c).  Called from urbi_vm_init after
  * vm->type_table[] has been zeroed.

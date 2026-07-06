@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uobject.h — UObject / UProtos / USlot internal layout.
  *
- * Public API in include/urbi/object.h (lands at later M4 task).  This header
+ * Public API in include/urbi/object.h.  This header
  * is freestanding and may be included by any internal .c file that touches
  * object slots, prototypes, or hidden classes.
  *
- * Design references: pre-M4 prototype-chain representation §3/§4; pre-M4
+ * Design references: prototype-chain representation §3/§4;
  * uslot/uprops collapse §3.
  *
- * Reconciliation note (T0 R-1): the spec's §3 shorthand `UGCHeader gc_hdr; // 8B`
+ * Reconciliation note: the spec's §3 shorthand `UGCHeader gc_hdr; // 8B`
  * collapses, in this codebase, to the existing 2-byte UCell embedded as the
  * first member with 6 bytes of compiler-inserted natural alignment padding
  * before the next pointer field.  Net layout still matches spec §3 (48 B);
@@ -29,20 +29,20 @@
 
 /* === USlot ===
  *
- * USlot collapses to exactly one UValue (16 B) per the pre-M4 USlot/UProps
+ * USlot collapses to exactly one UValue (16 B) per the USlot/UProps
  * spec §3.  Inlined into UObject as `USlot slots[shape->count]`. */
 typedef UValue USlot;
 URBI_STATIC_ASSERT(sizeof(USlot) == sizeof(UValue),
                "USlot must equal UValue width");
 URBI_STATIC_ASSERT(sizeof(USlot) == 16,
-               "USlot must be 16 bytes per pre-M4 USlot/UProps spec §3");
+               "USlot must be 16 bytes per USlot/UProps spec §3");
 
 /* === USlotArray ===
  *
  * Wrapper GC cell holding a UObject's grow-on-write slot storage.  Allocated
- * lazily by urbi_object_set_local_slot (T26) on the first slot transition
+ * lazily by urbi_object_set_local_slot on the first slot transition
  * out of the empty root shape, then reallocated fresh on each subsequent
- * leaf-shape-add (M3 GC is non-relocating).
+ * leaf-shape-add (GC is non-relocating).
  *
  * UObject.slots points at the entries[] flexible array; the wrapper cell's
  * reachability is provided by walk_uobject, which recovers the cell base
@@ -61,9 +61,9 @@ typedef struct USlotArray {
 
 /* === IC + UProps slot-property flag bits ===
  *
- * Per pre-M4 GETSLOT/SETSLOT spec §6.5.  These flags populate UIC.flags
+ * Per GETSLOT/SETSLOT spec §6.5.  These flags populate UIC.flags
  * (inline-cache attribute summary) and the per-slot 4-bit nibbles packed
- * into UShape.flags (v1.0 cap of 8 slots in the packed form; T15 spills
+ * into UShape.flags (v1.0 cap of 8 slots in the packed form; spills
  * to a side allocation when a UShape's slot count exceeds 8). */
 #define URBI_SLOT_FLAG_OGET      (1U << 0)   /* slot has a getter installed */
 #define URBI_SLOT_FLAG_OSET      (1U << 1)   /* slot has a setter installed */
@@ -73,9 +73,9 @@ typedef struct USlotArray {
 
 /* === UObject.flags layout ===
  *
- * uint32_t bitfield per pre-M4 prototype-chain spec §3.  Low 4 bits encode
+ * uint32_t bitfield per prototype-chain spec §3.  Low 4 bits encode
  * the atom family (root Object, the eight built-in atoms 1..8, plus the
- * three M6 Phase 4 additions 9..11 — Boolean / Nil / Void; 12..15 still
+ * three Phase 4 additions 9..11 — Boolean / Nil / Void; 12..15 still
  * spare for v1.x); bit 4 is frozen; bit 5 is sandbox-readonly (per Luau
  * prior art); the high bits are spare.  URBIAtomFamily enum lives in
  * <urbi/object.h> as of v0.5.5; the internal duplicate (with no `_F`
@@ -84,7 +84,7 @@ typedef struct USlotArray {
 #define URBI_OBJ_ATOM_MASK         0x0FU
 #define URBI_OBJ_FLAG_FROZEN       (1U << 4)
 #define URBI_OBJ_FLAG_SANDBOX_RO   (1U << 5)   /* per Luau prior art */
-#define URBI_OBJ_FLAG_IS_PROTOTYPE (1U << 6)   /* T27: set when this object is referenced as another's prototype.
+#define URBI_OBJ_FLAG_IS_PROTOTYPE (1U << 6)   /* set when this object is referenced as another's prototype.
                                                   Monotonic — never cleared.  Drives the conditional topology_gen
                                                   bump in urbi_object_set_local_slot per topology spec §4.1 row 4
                                                   (slot install on a prototype must invalidate IC entries that
@@ -103,7 +103,7 @@ typedef struct USlotArray {
  * that follow the spec's nomenclature. */
 #define UPROTO_FLAG_READONLY  URBI_OBJ_FLAG_READONLY
 
-/* === forward decls (real definitions land at later M4 tasks) ===
+/* === forward decls ===
  * UShape + UObject are also typedef'd in include/urbi/object.h (the public
  * mirror); guard against C99-pedantic typedef redeclaration when both
  * headers are pulled in by a single TU.  UProps is internal-only. */
@@ -121,7 +121,7 @@ typedef struct UProps   UProps;
  * in UObject.protos and never allocate a UProtos block.  items[0] is the
  * highest-priority prototype (MRO position 0). */
 typedef struct UProtos {
-    UCell             cell;          /* 2 B GC header (M3 sidecar pattern) */
+    UCell             cell;          /* 2 B GC header */
     /* 6 B compiler-inserted padding before n */
     uint32_t          n;             /* prototype count; n >= 2 always */
     uint32_t          _pad;          /* explicit pad to 8 B align items[] */
@@ -138,8 +138,7 @@ struct UChangedNode;
 
 /* === UObject ===
  *
- * 56 B header on 64-bit host after M5 spec #4 §3.1 adds changed_events_head
- * (was 48 B at M4).  Field order is load-bearing: pinned by
+ * 56 B header on 64-bit host.  Field order is load-bearing: pinned by
  * tests/unit/test_uobject.c offset checks.  All fields are populated by
  * urbi_object_alloc. */
 struct UObject {
@@ -161,10 +160,10 @@ struct UObject {
  * tests/unit/test_uobject.c are host-only and supply the second signal there. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
 URBI_STATIC_ASSERT(sizeof(struct UObject) == 56,
-               "UObject header must be 56 bytes per M5 spec #4 §3.1");
+               "UObject header must be 56 bytes per spec #4 §3.1");
 #endif
 
-/* === Internal allocator (T8) ===
+/* === Internal allocator ===
  *
  * Allocate a fresh UObject in the named atom family.  Wires shape to the
  * per-VM root hidden class, protos to the empty form (0), object_id to
@@ -173,9 +172,9 @@ URBI_STATIC_ASSERT(sizeof(struct UObject) == 56,
 struct UVM;
 UObject *urbi_object_alloc(struct UVM *vm, URBIAtomFamily family);
 
-/* === T39: clone a UObject (atom-aware) ===
+/* === Clone a UObject (atom-aware) ===
  *
- * Per pre-M2 §4.4 + atom-clone.chk semantics.  Allocates a fresh UObject
+ * Per §4.4 + atom-clone.chk semantics.  Allocates a fresh UObject
  * in the same atom family as `parent`, then threads `parent` into the
  * clone's protos as the single-tag form (clone inherits all of parent's
  * lineage via prototype lookup).  parent.flags's IS_PROTOTYPE bit is set
@@ -184,12 +183,12 @@ UObject *urbi_object_alloc(struct UVM *vm, URBIAtomFamily family);
  *
  * Returns NULL if parent is NULL or on OOM.  Does NOT install a `new`
  * method on the result — Class.new() / Object.new() stdlib wiring lands
- * with the M5 stdlib bring-up and depends on a working runtime call site. */
+ * with the stdlib bring-up and depends on a working runtime call site. */
 UObject *urbi_object_clone(struct UVM *vm, UObject *parent);
 
-/* === Atom-family debug name (T8) ===
+/* === Atom-family debug name ===
  *
- * Stable static string per atom family.  Used by error messages (T11
+ * Stable static string per atom family.  Used by error messages (
  * urbi_object_valid_proto failure path and beyond). */
 const char *urbi_atom_family_name(URBIAtomFamily f);
 
@@ -216,13 +215,13 @@ const char *urbi_atom_family_name(URBIAtomFamily f);
  * allocation OOM). */
 struct UObject *urbi_atom_proto_for_value(struct UVM *vm, UValue v);
 
-/* === Prototype-mutation primitives (T10 — per pre-M4 prototype-chain spec §5) ===
+/* === Prototype-mutation primitives (per prototype-chain spec §5) ===
  *
  * Every prototype-chain mutation routes through one of these three primitives.
  * Each primitive (1) fires the forward Dijkstra barrier on the existing protos
  * value before overwriting it, (2) shades the inserted child(ren) (write-pre
- * barrier on the new value), and (3) bumps vm->topology_gen (per pre-M2 §7.4 /
- * pre-M4 topology-generation spec §3.1).
+ * barrier on the new value), and (3) bumps vm->topology_gen (per §7.4 /
+ * topology-generation spec §3.1).
  *
  * Caller invariants:
  *   - vm and obj must be non-NULL.
@@ -234,13 +233,14 @@ struct UObject *urbi_atom_proto_for_value(struct UVM *vm, UValue v);
  *                 publishes the pointer.
  *
  * Cycle detection / dedup / urbi_object_valid_proto checks are the caller's responsibility
- * (T11 wires those at the higher-level urbi_object_add_proto / set_protos
- * surfaces).  These primitives are the storage-form transition layer only. */
+ * (those checks are the caller's responsibility at the higher-level
+ * urbi_object_add_proto / set_protos surfaces).  These primitives are
+ * the storage-form transition layer only. */
 void urbi_object_set_protos_empty (struct UVM *vm, UObject *obj);
 void urbi_object_set_protos_single(struct UVM *vm, UObject *obj, UObject *p);
 void urbi_object_set_protos_heap  (struct UVM *vm, UObject *obj, UProtos *up);
 
-/* === UPROTOS_FOREACH (T9 — per pre-M4 prototype-chain spec §6.1) ===
+/* === UPROTOS_FOREACH (per prototype-chain spec §6.1) ===
  *
  * UObject.protos is a uintptr_t with three storage forms (spec §4.1):
  *   - empty:  obj->protos == 0
@@ -270,7 +270,7 @@ static inline struct upf_ctx upf_init(const UObject *obj) {
     c.i   = 0U;
     if (c.raw != 0U && (c.raw & 1U) == 0U) {
         /* Heap form: raw is a UProtos* stored as uintptr_t; bit 0 clear.
-         * Per pre-M4 prototype-chain spec §7.2 the high-bit encoding is a
+         * Per prototype-chain spec §7.2 the high-bit encoding is a
          * load-bearing design pin, so the int-to-pointer round-trip is
          * intentional. */
         c.up = (UProtos *)c.raw;  /* NOLINT(performance-no-int-to-ptr) — UProtos pointer-encoding (TIDY-003 design pin) */
@@ -300,14 +300,14 @@ static inline int upf_next(struct upf_ctx *c, UObject **out) {
          upf_next(&upf_ctx_local, &(p_var));                            \
         )
 
-/* === T12: cycle-safe DFS lookup primitive ===
+/* === Cycle-safe DFS lookup primitive ===
  *
- * Per pre-M4 prototype-chain spec §6 + GETSLOT/SETSLOT spec §6.5.
+ * Per prototype-chain spec §6 + GETSLOT/SETSLOT spec §6.5.
  *
  * urbi_object_lookup performs a left-first depth-first walk of obj's
  * prototype graph for the slot named `name`.  On hit, writes the slot
- * value to *out and returns 0.  On miss, returns -1 (no fallback retry
- * at T12; T40 lands the GET_FALLBACK retry path).
+ * value to *out and returns 0.  On miss, returns -1 (GET_FALLBACK
+ * retry path deferred).
  *
  * Cycle safety: each top-level call bumps vm->lookup_id, then stamps every
  * visited UObject's lookup_stamp (u32 truncation) so re-visits short-circuit.
@@ -316,21 +316,21 @@ static inline int upf_next(struct upf_ctx *c, UObject **out) {
  *
  * Rollover: the low 32 bits of vm->lookup_id wrap eventually.  When the
  * next bump would produce 0, urbi_object_lookup_id_force_wrap is called to
- * clear every UObject's lookup_stamp and reset lookup_id to 1.  T36 may
+ * clear every UObject's lookup_stamp and reset lookup_id to 1.  Future versions may
  * fold the clear pass into the GC mark phase to avoid the separate
  * iteration; the API contract here is unchanged.
  *
  * Returns 0 on hit, -1 on miss.  Negative-rc reservation matches the
- * other M4 ABI surfaces (see urbi_object_add_proto).
+ * other ABI surfaces (see urbi_object_add_proto).
  *
  * struct UVM is forward-declared above for urbi_object_alloc; it is
  * already in scope here. */
 int  urbi_object_lookup(struct UVM *vm, UObject *obj, USymbol *name, UValue *out);
 void urbi_object_lookup_id_force_wrap(struct UVM *vm);
 
-/* === T25: resolve-slot helper (shared between IC slow path and USlotHandle) ===
+/* === Resolve-slot helper (shared between IC slow path and USlotHandle) ===
  *
- * Per pre-M4 GETSLOT/SETSLOT spec §6.3.
+ * Per GETSLOT/SETSLOT spec §6.3.
  *
  * urbi_object_resolve_slot walks recv's prototype graph for `name` and on
  * hit reports the holding UObject and the slot index in *holder->slots.
@@ -348,9 +348,9 @@ void urbi_object_lookup_id_force_wrap(struct UVM *vm);
 int urbi_object_resolve_slot(struct UVM *vm, UObject *recv, const USymbol *name,
                              UObject **out_holder, uint32_t *out_index);
 
-/* === T26: install a local slot on a receiver ===
+/* === Install a local slot on a receiver ===
  *
- * Per pre-M2 §6.1 + pre-M4 topology-generation spec §4.2 row 2.
+ * Per §6.1 + topology-generation spec §4.2 row 2.
  *
  * If `name` already exists locally on `obj` (i.e. urbi_shape_find_slot hits
  * in obj->shape's lineage), perform an in-place value update; no shape
@@ -367,12 +367,12 @@ int urbi_object_resolve_slot(struct UVM *vm, UObject *recv, const USymbol *name,
  *
  * No topology_gen bump for the leaf-shape-add case: per topology spec
  * §4.2 row 2, the IC's per-site shape-mismatch check is sufficient to
- * invalidate stale entries on the receiver.  T27 lands the conditional
+ * invalidate stale entries on the receiver.  The conditional
  * bump for the "obj is itself a prototype" case via the IS_PROTOTYPE flag. */
 int urbi_object_set_local_slot(struct UVM *vm, UObject *obj,
                                USymbol *name, UValue value);
 
-/* === T27: remove a local slot from a receiver ===
+/* === Remove a local slot from a receiver ===
  *
  * Per topology-generation spec §4.1 row 1.  If the slot doesn't exist on
  * obj's lineage, returns 0 (silent no-op, no allocation).  Otherwise rebuilds
@@ -389,10 +389,10 @@ int urbi_object_set_local_slot(struct UVM *vm, UObject *obj,
  * Returns 0 on success or no-op, -1 on OOM. */
 int urbi_object_remove_slot(struct UVM *vm, UObject *obj, const USymbol *name);
 
-/* === T28: install / remove / mutate a slot property ===
+/* === Install / remove / mutate a slot property ===
  *
  * Per topology-generation spec §4.1 rows 5/6/7.  Each routes through
- * urbi_shape_transition_property (T17) for the shape transition, then
+ * urbi_shape_transition_property for the shape transition, then
  * writes the per-slot UProps* into new_shape->props_table[idx], and
  * bumps vm->topology_gen.
  *
@@ -416,9 +416,9 @@ int urbi_object_set_property_value (struct UVM *vm, UObject *obj,
                                     const USymbol *name, uint8_t flag_bit,
                                     UValue value);
 
-/* === T36: GC root provider for atom singletons + module instances ===
+/* === GC root provider for atom singletons + module instances ===
  *
- * Per pre-M3 GC roots spec §5.3 + pre-M4 amendments.  Registered via
+ * Per GC roots spec §5.3.  Registered via
  * urbi_gc_register_root_provider in urbi_vm_init after urbi_object_builtin_types_init.
  * Walks: vm->atom_object .. vm->atom_symbol (the nine atom-family singletons),
  * vm->root_shape, and every UChunkInstance reachable from
@@ -426,14 +426,14 @@ int urbi_object_set_property_value (struct UVM *vm, UObject *obj,
  * urbi_gc_shade_gray (the cells are direct UCell pointers, not UValue slots — the
  * mark_root_callback only handles UVAL_CLOSURE / UVAL_OBJECT slots).
  *
- * Once registered, the manual urbi_pin calls on atom singletons (T8) become
+ * Once registered, the manual urbi_pin calls on atom singletons become
  * load-bearing only for cycles BEFORE this provider runs (i.e. mid-init
  * allocations); after first MARK_ROOTS the root walker keeps them alive. */
 void urbi_object_register_gc_roots(struct UVM *vm);
 
 /* Convenience inlines — count + indexed access across all three forms.
  *
- * obj->protos encoding (pre-M4 prototype-chain spec §7.2, updated v0.8.2):
+ * obj->protos encoding (prototype-chain spec §7.2, updated v0.8.2):
  *   - empty:  obj->protos == 0
  *   - single: bit 0 = 1, remaining bits = raw UObject* (alignment guarantees
  *             bit 0 of the pointer is 0 so the tag does not collide)
