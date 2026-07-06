@@ -11,7 +11,7 @@
    uproto.h, which defines UValue and then includes uframe.h), so this
    is satisfied automatically.
 
-   T6 migration: UCallFrame and UUpvalCell moved from umodule.h (now uproto.h) to uframe.h.
+   UCallFrame and UUpvalCell moved from umodule.h (now uproto.h) to uframe.h.
    UVM_MAX_FRAMES and UVM_STACK_CAP moved from uvm.h to uframe.h.
    uproto.h includes uframe.h to re-export the types it previously defined.
    ustrand.h includes uframe.h after uvalue.h so UValue is available. */

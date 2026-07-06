@@ -66,7 +66,7 @@ urbi_object_set_protos_single(UVM *vm, UObject *obj, UObject *p)
      * 0xD0000000 — the shifted address became 0x50081D70 instead of
      * 0xD0081D70 and the next field deref hard-faulted into a wedge). */
     obj->protos = (uintptr_t)p | 1U;
-    /* T27: mark the inserted prototype so future slot installs on it bump
+    /* mark the inserted prototype so future slot installs on it bump
      * topology_gen (topology spec §4.1 row 4).  Monotonic — never cleared. */
     p->flags |= URBI_OBJ_FLAG_IS_PROTOTYPE;
     vm->topology_gen++;
@@ -80,7 +80,7 @@ urbi_object_set_protos_heap(UVM *vm, UObject *obj, UProtos *up)
      * pre-write barriers on inserted children (per spec §5.3). */
     for (uint32_t i = 0; i < up->n; i++) {
         urbi_gc_shade_gray(vm, (UCell *)up->items[i]);
-        /* T27: mark each prototype.  Monotonic (see _single above). */
+        /* mark each prototype.  Monotonic (see _single above). */
         up->items[i]->flags |= URBI_OBJ_FLAG_IS_PROTOTYPE;
     }
     urbi_gc_shade_gray(vm, (UCell *)up);
@@ -88,7 +88,7 @@ urbi_object_set_protos_heap(UVM *vm, UObject *obj, UProtos *up)
     vm->topology_gen++;
 }
 
-/* urbi_object_valid_proto — atom-family compatibility check per pre-M4 prototype-chain
+/* urbi_object_valid_proto — atom-family compatibility check per prototype-chain
  * spec §5.5.  An atom can only inherit from its own family OR from the
  * root Object atom.  The root Object never blocks (either side may be
  * URBI_ATOM_OBJECT and the relationship is permitted). */
@@ -133,7 +133,7 @@ urbi_object_add_proto(struct UVM *vm, UObject *obj, UObject *proto)
         return URBI_ERR_INVALID_ARG;
     }
 
-    /* Prepend at index 0 per pre-M2 §5.1: most-recently-added prototype
+    /* Prepend at index 0 per §5.1: most-recently-added prototype
      * gets MRO priority. */
     uint32_t old_n = urbi_object_proto_count(obj);
 
@@ -169,7 +169,7 @@ urbi_object_remove_proto(struct UVM *vm, UObject *obj, const UObject *proto)
     uint32_t old_n = urbi_object_proto_count(obj);
 
     /* Find first occurrence; silent no-op if absent (legacy semantics per
-     * pre-M2 §5.2). */
+     * §5.2). */
     uint32_t idx = old_n;   /* sentinel "not found" */
     for (uint32_t i = 0; i < old_n; i++) {
         if (urbi_object_proto_at(obj, i) == proto) {

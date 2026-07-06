@@ -54,7 +54,7 @@ void urbi_sched_destroy(UVM *vm);
  *   not touch the state byte).  `attrs` is reserved for the v1.x scheduler-
  *   class abstraction (priority/deadline schedulers); currently unused.
  *
- *   CHSTR-039 (T106): the caller MUST have set s->state before calling
+ *   CHSTR-039: the caller MUST have set s->state before calling
  *   (DORMANT for newly-created strands, RUNNING for the urbi_vm_run
  *   transient path).  -DURBI_DEBUG asserts the precondition; production
  *   builds elide the check.  The function is otherwise unchecked and
@@ -197,7 +197,7 @@ void urbi_sched_wake_due_sleepers(UVM *vm);
  * urbi_vm_create.  Iterates the realm hierarchy (vm->realms_head →
  * realm.strands_head) so every live strand's register window, unwind state
  * and event-wait payload is visited; DEAD strands are filtered inside
- * strand_walk_roots.  See pre-M4 GC strand-walker spec §4.2/§6.1 for the
+ * strand_walk_roots.  See GC strand-walker spec §4.2/§6.1 for the
  * realm-hierarchy invariant the scheduler maintains. */
 void urbi_gc_sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx);
 
@@ -205,7 +205,7 @@ void urbi_gc_sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx);
  * dequeued strand is about to become the RUNNING strand, and the runnable
  * count covers |READY| + |RUNNING|.  Sets the strand's ready_next/ready_prev
  * to NULL.  Caller is responsible for setting the strand's state to
- * USTRAND_STATE_RUNNING before dispatching.  T16 urbi_step driver calls
+ * USTRAND_STATE_RUNNING before dispatching.  The urbi_step driver calls
  * this before each urbi_vm_dispatch_loop_until_yield. */
 void urbi_sched_dequeue_ready_head(UVM *vm);
 
@@ -228,7 +228,7 @@ void urbi_sched_strand_account_destroy(UVM *vm, UStrand *s);
  * pointing into the sleep queue and wakeup_pending_count stale. */
 void urbi_sched_strand_unbind_from_sleep_queue(UStrand *s);
 
-/* REALM-011 / T69: splice a strand out of the cooperative ready queue if
+/* REALM-011: splice a strand out of the cooperative ready queue if
  * it is on it.  Idempotent (the strand's own ready_next/ready_prev guard
  * the work).  Decrements vm->strand_runnable_count exactly once if the
  * strand was actually present (via urbi_sched_runnable_dec, so transient

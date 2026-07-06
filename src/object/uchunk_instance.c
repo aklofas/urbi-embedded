@@ -223,7 +223,7 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *root)
 
     /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery chain): link
      * onto vm->module_instances_head BEFORE the second GC allocation, not
-     * after (pre-v0.13.2 T30 linked at the end).  The Cell-2 alloc below —
+     * after (pre-v0.13.2 linked at the end).  The Cell-2 alloc below —
      * and the interning inside init_ic_slices_recursive — can trigger a
      * collection while `mi` is reachable only through this C local; the
      * sweep then freed it and the late link published a dangling pointer
@@ -339,7 +339,7 @@ urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi)
     /* AUDIT: OBJ-027 — body intentionally empty at v1.0.  Both cells are
      * GC-managed; sweep reaps them when no roots reach mi.  Symbol kept
      * because the public-API contract (paired create/destroy) survives
-     * into M7, where this hook may grow semantics (host-visible registry
+     * into a future version, where this hook may grow semantics (host-visible registry
      * detach, etc.).  No churn for callers when that lands. */
     (void)vm;
     (void)mi;

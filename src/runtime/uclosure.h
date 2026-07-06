@@ -1,8 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uclosure.h — UClosure runtime function value (proto + captured upvalues).
  *
- * UClosure embeds UCell as its first member at offset 0 (M4 — closes the
- * M3 baseline TODO at gc/ugc_incremental.h).  This makes the
+ * UClosure embeds UCell as its first member at offset 0.  This makes the
  * UClosure* → UCell* casts performed by uvalue_as_cell (UVAL_CLOSURE
  * values in mark_root_callback) and the walker/root shading sites
  * (walk_uclosure, strand_walk_roots) well-defined.  (Task 9c:
@@ -24,7 +23,7 @@
 
 #include "chunk/uchunk.h"                       /* UProto + forward typedef `UClosure`; pulls in uframe.h which forward-declares UUpvalCell */
 #include "gc/ugc.h"                        /* UCell (2 B) */
-#include "object/uchunk_instance.h"        /* UProtoInstance — M4: IC table per nested proto */
+#include "object/uchunk_instance.h"        /* UProtoInstance — IC table per nested proto */
 
 /* --- UUpvalCell: runtime heap cell for captured locals (full definition).
  * Forward typedef is in uframe.h; full layout lives here because the struct
@@ -70,7 +69,7 @@ _Static_assert(sizeof(UUpvalCell) == 32,
  * uclosure_destroy finalizer reclaim each closure when it becomes unreachable.
  * v0.8.4 Step C-3: next_alloc (pre-GC free-list link) deleted.
  *
- * proto_inst is bound end-to-end by the M4 follow-up landed on `main`
+ * proto_inst is bound end-to-end; see commit history for
  * 2026-05-03: OP_CLOSURE writes
  * `s->module_instance->proto_instances->entries[bx + 1]` here so
  * OP_GETSLOT/OP_SETSLOT can read the per-(vm,proto) IC table off this
@@ -101,7 +100,7 @@ struct UClosure {
      * Either way the field order below matches natural pointer alignment;
      * no manual pad bytes are inserted. */
     UProto           *proto;
-    UProtoInstance   *proto_inst;  /* M4 follow-up: per-(vm,proto) IC tier
+    UProtoInstance   *proto_inst;  /* per-(vm,proto) IC tier
                                       pointer.  See banner above for
                                       binding/lifecycle. */
     /* next_alloc deleted at v0.8.4 Step C-3: pre-GC free-list link no longer needed. */
@@ -110,7 +109,7 @@ struct UClosure {
      * child_proto->owning_module_instance directly (Task 7).  Reachability:
      * UClosure -> proto_inst; UChunkInstance kept alive via
      * object_roots_walker -> vm->module_instances_head. */
-    /* M6 Phase 3: C-native method dispatch. NULL for ordinary urbiscript
+    /* Phase 3: C-native method dispatch. NULL for ordinary urbiscript
      * closures.  When non-NULL, OP_CALL calls this function instead of
      * pushing a bytecode frame.  proto / proto_inst / upvals are NULL on
      * native closures (GC trace already guards each via NULL checks).

@@ -28,11 +28,11 @@ struct UVM;
  *
  * Thread-safety: NOT thread-safe. Single-threaded per VM at v1.0.  Public
  * entry points (ustr_intern, uintern_destroy, uintern_count) are guarded
- * by URBI_ASSERT_NOT_ISR since T30 / FOUND-011 — ISR-deposited events that
+ * by URBI_ASSERT_NOT_ISR — ISR-deposited events that
  * intern would race the cooperative-VM intern table.  ustr_op_name
  * inherits the guard via its forward to ustr_intern.
  *
- * Lifetime invariants (FOUND-044, v0.5.5):
+ * Lifetime invariants (v0.5.5):
  *   - Intern pointers are NOT cross-VM-stable.  Two distinct UVMs each own
  *     their own intern table; pointers from one MUST NOT be passed to
  *     another, and pointer-equality between VMs has no meaning.
@@ -69,7 +69,7 @@ size_t uintern_count(const struct UVM *vm);
 size_t urbi_intern_bytes(const struct UVM *vm);
 
 /* Operator-name interning helpers (Gap #4 — operator overload via method
- * dispatch, M6 Wave 3).
+ * dispatch).
  *
  * Each helper interns the operator's slot-name string on the first call and
  * caches the result in a static (valid for the process lifetime, since intern
@@ -89,7 +89,7 @@ USymbol *ustr_op_name(struct UVM *vm, const char *op, size_t len);
 
 /* GC root provider for the intern table (row 10 §5.5).
  *
- * No-op by design through v1.0 (FOUND-024, v0.5.5).  Interned strings are
+ * No-op by design through v1.0 (v0.5.5).  Interned strings are
  * stored as raw `const char *` inside UInternStr allocations — they are NOT
  * GC-managed UValues, and the intern table itself owns each UInternStr block
  * directly (freed at uintern_destroy).  Strong ownership by the table means

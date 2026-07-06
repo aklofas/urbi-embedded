@@ -149,7 +149,7 @@ urbi_drain_deferred_slot_changes(UVM *vm)
     }
 }
 
-/* === urbi_deferred_slot_changes_walk_roots (W3/v0.10.2) ===
+/* === urbi_deferred_slot_changes_walk_roots (v0.10.2) ===
  *
  * GC root provider for vm->deferred_slot_changes[head..tail].
  * Yields each (parent, new_value) pair as roots so a GC slice between

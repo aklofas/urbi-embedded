@@ -133,7 +133,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     urbi_proto_ref_vm_born();
 #endif
 
-    /* v0.9.1 / W3-v0.10.4 — vm->repl must be NULL before any subsystem init
+    /* v0.9.1 / W3-v0.10.4 (scrub-allow: preserved ordering exemplar) —
+     * vm->repl must be NULL before any subsystem init
      * that drives bytecode (urbi_run_chunk → urbi_step →
      * urepl_dispatch_drain_if_active reads this field).  vm->debug_proto must
      * be NULL before object_roots_walker runs (walker dereferences it if
@@ -202,7 +203,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * No-op on empty ring; under the cooperative scheduler this is
      * correctness-preserving.  Becomes load-bearing at v1.x preemption. */
     urbi_gc_register_root_provider(vm, urbi_deferred_slot_changes_walk_roots);
-    /* refactor-3 B2/GC-01/STD-01: stdlib container backing-buffer elements
+    /* B2/GC-01/STD-01: stdlib container backing-buffer elements
      * (UList items[] / UDict entries[]) — invisible to the object walker
      * because the script-visible `_storage` slot is a UVAL_INT leaf. */
     urbi_gc_register_root_provider(vm, urbi_stdlib_containers_walk_roots);
@@ -349,7 +350,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         }
     }
 
-    /* refactor-3 TEST-GAP-01: arm GC stress mode only now — every root
+    /* TEST-GAP-01: arm GC stress mode only now — every root
      * provider is registered, so anything allocated after this point
      * (native protos, stdlib boot, user code — all of which run after
      * urbi_vm_init returns) must survive via a registered root.  Success
@@ -546,7 +547,7 @@ void urbi_vm_destroy(UVM *vm) {
                  * source_name first — uproto_destroy_buffers does not own it
                  * (uchunk_destroy_internal frees it separately; mirror that
                  * here).  Rescued roots from the REPL path have NULL
-                 * source_name; tool-driver roots (refactor-3 VM-11) carry
+                 * source_name; tool-driver roots (VM-11) carry
                  * "<expr>" / the script path. */
                 if (rp->source_name != NULL) {
                     rp_alloc(rp->source_name, 0, rp_ud);

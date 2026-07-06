@@ -139,7 +139,7 @@ uhost_watcher_table_walk_event(UHostWatcherTable *t, struct UVM *vm,
         {
             int result = e->cb(vm, event_id, args, argc, e->ud);
 
-            /* T70: fire done_fn after cb returns. */
+            /* fire done_fn after cb returns. */
             if (vm->watcher_body_done_fn != NULL) {
                 vm->watcher_body_done_fn(vm, vm->watcher_body_done_ud, e->handle, result);
             }

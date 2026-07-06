@@ -1,8 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* urbi_watcher_install_watcher_runtime: high-level entry point for OP_AT_INSTALL,
  * OP_WHENEVER_INSTALL, and OP_WAITUNTIL_INSTALL dispatchers.
- * Spec #2 §7.1–§7.2 (reactive runtime landed in M5; see
- * docs/milestones/m5-reactive.md).
+ * Spec #2 §7.1–§7.2 (see docs/milestones/m5-reactive.md).
  *
  * Implementation phases live inline in urbi_watcher_install_watcher_runtime
  * (uwatcher_install.c): re-entry guard, urbi_watcher_resolve_owning_tag, trace probe arm,
@@ -43,7 +42,7 @@ typedef enum {
     UWATCHER_INSTALL_READSET_OVER        = 2,
     UWATCHER_INSTALL_TRACE_FAULT         = 3,
     UWATCHER_INSTALL_RECURSIVE           = 4,
-    UWATCHER_INSTALL_NO_OBSERVABLE_CELLS = 5,  /* W0/v0.10.2: cond observes no cells;
+    UWATCHER_INSTALL_NO_OBSERVABLE_CELLS = 5,  /* v0.10.2: cond observes no cells;
                                              * rejected as programming error (was
                                              * warn-and-proceed).  Use whenever (e?)
                                              * for event subscriptions. */

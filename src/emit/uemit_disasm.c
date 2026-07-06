@@ -238,16 +238,16 @@ static bool fmt_join_wait(char *buf, size_t cap, size_t *off,
 static bool fmt_getslot(char *buf, size_t cap, size_t *off,
                         size_t *ip, uint32_t ins, const UProto *module) {
     (void)ins; (void)module;
-    return dis_printf(buf, cap, off, "%04zu  GETSLOT (reserved M4)\n", *ip);
+    return dis_printf(buf, cap, off, "%04zu  GETSLOT (reserved IC-sites)\n", *ip);
 }
 
 static bool fmt_setslot(char *buf, size_t cap, size_t *off,
                         size_t *ip, uint32_t ins, const UProto *module) {
     (void)ins; (void)module;
-    return dis_printf(buf, cap, off, "%04zu  SETSLOT (reserved M4)\n", *ip);
+    return dis_printf(buf, cap, off, "%04zu  SETSLOT (reserved IC-sites)\n", *ip);
 }
 
-/* M5 reactive runtime — spec #2: at/whenever/waituntil */
+/* reactive runtime — spec #2: at/whenever/waituntil */
 
 static bool fmt_at_install(char *buf, size_t cap, size_t *off,
                            size_t *ip, uint32_t ins, const UProto *module) {
@@ -285,7 +285,7 @@ static bool fmt_waituntil_install(char *buf, size_t cap, size_t *off,
                       *ip, (unsigned)uinstr_a(ins));
 }
 
-/* M5 reactive runtime — spec #3: event syncEmit + tag.enter/leave */
+/* reactive runtime — spec #3: event syncEmit + tag.enter/leave */
 
 static bool fmt_at_event_install(char *buf, size_t cap, size_t *off,
                                  size_t *ip, uint32_t ins,
@@ -307,7 +307,7 @@ static bool fmt_at_event_sync_install(char *buf, size_t cap, size_t *off,
                       (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
 }
 
-/* M5 reactive runtime — spec #4: slot-change events */
+/* reactive runtime — spec #4: slot-change events */
 
 static bool fmt_getslot_change_event(char *buf, size_t cap, size_t *off,
                                      size_t *ip, uint32_t ins,
@@ -320,7 +320,7 @@ static bool fmt_getslot_change_event(char *buf, size_t cap, size_t *off,
                       (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
 }
 
-/* M5 reactive runtime — spec #5: globals exposure */
+/* reactive runtime — spec #5: globals exposure */
 
 static bool fmt_load_realm_global(char *buf, size_t cap, size_t *off,
                                   size_t *ip, uint32_t ins,

@@ -4,7 +4,7 @@
    Freestanding-safe: no hosted headers.
 
    Power-of-2 depth required for bitmask modulo.
-   URBI_EVENT_RING_DEPTH default is 256; M4 footprint builds override to 32.
+   URBI_EVENT_RING_DEPTH default is 256; small-footprint builds override to 32.
 
    Naming convention (EVENT-014):
      Public host-callable: `urbi_inject_event` (declared in <urbi/urbi.h>).
@@ -17,12 +17,12 @@
 #ifndef UEVENT_RING_H
 #define UEVENT_RING_H
 
-#include <stdalign.h>  /* T25 / EVENT-003: _Alignas on UEventRingEntry.payload */
+#include <stdalign.h>  /* EVENT-003: _Alignas on UEventRingEntry.payload */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-/* URBI_EVENT_PAYLOAD_MAX is authoritative in <urbi/types.h> (Gap C / T13).
+/* URBI_EVENT_PAYLOAD_MAX is authoritative in <urbi/types.h> (Gap C).
  * Pull it from there so the internal ring uses the same pinned value. */
 #include "urbi/types.h"
 
@@ -39,8 +39,8 @@ typedef char uevent_ring_depth_must_be_power_of_two[
     ((URBI_EVENT_RING_DEPTH & (URBI_EVENT_RING_DEPTH - 1)) == 0) ? 1 : -1
 ];
 
-/* T27 / EVENT-024: sanity floor + ceiling on URBI_EVENT_RING_DEPTH.
- * The header advertises that M4 footprint builds override the default 256
+/* EVENT-024: sanity floor + ceiling on URBI_EVENT_RING_DEPTH.
+ * The header advertises that small-footprint builds override the default 256
  * to 32; both ends of that range must remain compile-time enforced so a
  * future override that breaks invariants (e.g. depth=4 starves the budget
  * loop, depth=4096 blows arm cap) fails at compile rather than at runtime.
@@ -53,7 +53,7 @@ URBI_STATIC_ASSERT(URBI_EVENT_RING_DEPTH <= 1024,
 typedef struct UEventRingEntry {
     uint32_t event_id;
     uint16_t payload_len;
-    /* T25 / EVENT-003: payload is 8-byte aligned so embedders pushing typed
+    /* EVENT-003: payload is 8-byte aligned so embedders pushing typed
      * payloads (uint64_t, double, struct fields) from ISR contexts get
      * atomic-load semantics on aligned-only architectures.  Pads the
      * entry to 24 B on host (was 22 B unaligned).  Public contract is

@@ -50,7 +50,7 @@ struct UStrand;
  * Bit 5  — UGC_IS_FIXED: pool-managed cell; never freed by GC sweep.
  * Bit 6  — UGC_HAS_WATCHER_OBSERVER: object has at least one watcher in the
  *           read-set; triggers urbi_watcher_observer_dirty() in urbi_gc_slot_pre_store /
- *           urbi_gc_slot_store.  Maintained at row 10/11 boundary (T33).
+ *           urbi_gc_slot_store.  Maintained at row 10/11 boundary.
  * Bit 7  — UGC_HAS_SLOT_CHANGE_EVENT: at least one slot on this UObject has
  *           a slot-change subscriber (spec #4 §3.4); post-store hook in
  *           urbi_gc_slot_store / urbi_gc_slot_pre_store fires the deferred
@@ -66,7 +66,7 @@ struct UStrand;
 #define UGC_IS_WEAK               0x08    /* RESERVED: v1.x weak-reference support (not implemented at v0.5.x) */
 #define UGC_IS_PINNED             0x10
 #define UGC_IS_FIXED              0x20    /* pool-managed; never swept */
-#define UGC_HAS_WATCHER_OBSERVER  0x40    /* row 10/11 boundary; T33 maintains */
+#define UGC_HAS_WATCHER_OBSERVER  0x40    /* row 10/11 boundary */
 #define UGC_HAS_SLOT_CHANGE_EVENT 0x80   /* spec #4 §3.4: at least one slot on
                                           * this UObject has a slot-change
                                           * subscriber; post-store hook in
@@ -148,7 +148,7 @@ static inline void urbi_gc_set_color(UCell *c, uint8_t color) {
 }
 
 /* === urbi_gc_shade_gray — mark a cell gray and push onto the worklist ===
- * T23/T24: defined in ugc_incremental.c */
+ * Defined in ugc_incremental.c */
 void urbi_gc_shade_gray(struct UVM *vm, UCell *cell);
 
 /* === urbi_c_root_push / urbi_c_root_pop — VM-level C-stack root chain ===
@@ -168,7 +168,7 @@ struct UCRootFrame;
 void urbi_c_root_push(struct UVM *vm, struct UCRootFrame *f, UValue *slot);
 void urbi_c_root_pop(struct UVM *vm, struct UCRootFrame *f);
 
-/* === urbi_gc_walk_all_cells — generic all-cells iterator (T12) ===
+/* === urbi_gc_walk_all_cells — generic all-cells iterator ===
  *
  * Calls cb(vm, cell, ctx) once for every live GC cell on vm->all_cells_head.
  * Iteration order is unspecified (matches sweep order — O(n) over the sidecar
@@ -176,8 +176,8 @@ void urbi_c_root_pop(struct UVM *vm, struct UCRootFrame *f);
  * trigger urbi_gc_alloc / urbi_gc_collect / sweep work.  cb may mutate
  * cell->gc_byte / type-private payload bytes safely.
  *
- * Used by urbi_object_lookup_id_force_wrap (T12) to clear UObject.lookup_stamp
- * bytes on u32 rollover.  T36 may fold this into the mark phase to avoid the
+ * Used by urbi_object_lookup_id_force_wrap to clear UObject.lookup_stamp
+ * bytes on u32 rollover.  A future refactor may fold this into the mark phase to avoid the
  * separate pass; until then this iterator is the load-bearing surface.
  *
  * Internal API — the UAllCellsNode sidecar layout is private to
@@ -187,7 +187,7 @@ void urbi_gc_walk_all_cells(struct UVM *vm, UGcCellCallback cb, void *ctx);
 
 /* === urbi_watcher_observer_dirty — watcher dirty-set hook ===
  * Defined in src/uwatcher.c.  Increments vm->watchers->dirty_count; the
- * scheduler calls urbi_vm_watcher_eval_dirty (T34) on the next safepoint turn. */
+ * scheduler calls urbi_vm_watcher_eval_dirty on the next safepoint turn. */
 void urbi_watcher_observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
 
 /* === uvalue_is_heap / uvalue_as_cell ===
@@ -198,7 +198,7 @@ void urbi_watcher_observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
  * uvalue_as_cell is well-defined.
  *
  * Non-heap-bearing UValKinds (deliberately NOT shaded by mark_root_callback).
- * Each line below carries a structured `gc-no-shade:` marker that the T34
+ * Each line below carries a structured `gc-no-shade:` marker that the
  * test-gc-roots-coverage gate requires — a free-text mention no longer
  * satisfies the gate (refactor-3 GATE-02):
  *   gc-no-shade: UVAL_NIL      — inline scalar (zero payload).
@@ -213,11 +213,11 @@ void urbi_watcher_observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
  *   gc-no-shade: UVAL_HOST_FN  — non-GC C function pointer; never reaches the heap.
  *
  * Future heap-bearing UVAL_* additions MUST extend uvalue_is_heap and
- * the heap-bearing list above.  The T34 gate
+ * the heap-bearing list above.  The gate
  * (tests/scripts/check-gc-roots-coverage.sh) enforces that every UVAL_*
  * declared in <urbi/types.h> appears at least once under src/gc/.
  *
- * W4/v0.10.2: UVAL_TAG added to the heap-bearing list.  UTag is a GC-managed
+ * (v0.10.2): UVAL_TAG added to the heap-bearing list.  UTag is a GC-managed
  * cell (UTYPE_TAG, allocated via urbi_gc_alloc) with UCell at offset 0, so
  * uvalue_as_cell() is well-defined for UVAL_TAG values.  The existing
  * walk_utag in src/object/utypes_init.c walks the cell graph (enter/leave
@@ -264,7 +264,7 @@ uvalue_as_cell(UValue v)
  * The inline barriers only need the function signature; the linker resolves the
  * call to ugc_incremental.c where uvm.h is fully included.
  *
- * Defined in ugc_incremental.c (T25). */
+ * Defined in ugc_incremental.c. */
 bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
 
 /* === Barrier surfaces — slot, register, upvalue ===
@@ -317,7 +317,7 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  *   Renamed from urbi_gc_upvalue_write (runtime-invariants F12); parent
  *   retargeted closure → cell at Task 9c.
  *
- * Callsite status (M4 / v0.10.1 / Task 9c):
+ * Callsite status (v0.10.1 / Task 9c):
  *   OP_SETUPVAL handler (src/vm/uvm.c): wired inside the on_heap arm with
  *   &uvc->cell as the parent; the stack arm stores barrier-free.
  *   urbi_vm_close_upvalues (src/vm/uvm_closure.c): same helper, same parent

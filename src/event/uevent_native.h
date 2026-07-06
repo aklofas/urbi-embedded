@@ -18,7 +18,7 @@ struct UVM;
 struct UEvent;
 struct UObject;
 
-/* === UValue ↔ UEvent helpers (M5 — UVAL_EVENT kind=9) ===
+/* === UValue ↔ UEvent helpers (UVAL_EVENT kind=9) ===
  *
  * Phase-18 footprint pin (2026-05-09): the three predicates below are
  * `static inline` so the compiler can elide the call-site overhead in
@@ -49,7 +49,7 @@ static inline int uvalue_is_event(UValue v) {
 /* === urbi_event_native_register ===
  *
  * Allocate vm->event_proto and install the four native method slots.
- * Called from urbi_vm_init after the M4 object-model setup completes.
+ * Called from urbi_vm_init after the object-model setup completes.
  * Returns UVM_OK on success, UVM_OOM if the proto object allocation fails. */
 UVMError urbi_event_native_register(struct UVM *vm);
 

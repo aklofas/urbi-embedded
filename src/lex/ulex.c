@@ -22,7 +22,7 @@
  * linker error for any float literal in the input — acceptable because
  * the URBI_BYTECODE_ONLY=1 build strips src/lex/, src/parse/, src/emit/
  * from the source list entirely for bare-metal deploys (Makefile
- * COMPILER_FRONTEND_DIRS_EXCLUDED, T15 in v0.7.0-c-api).  The
+ * COMPILER_FRONTEND_DIRS_EXCLUDED, see v0.7.0-c-api).  The
  * cross-compile gate only verifies that the code compiles; actual
  * float-literal parse is host-only. */
 extern double strtod(const char *, char **);
@@ -51,18 +51,18 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_QUESTION", "TOK_BANG",
     "TOK_KW_CLASS", "TOK_KW_PUBLIC",
     "TOK_KW_THIS",
-    /* === W3/v0.10.5: assert keyword === */
+    /* === v0.10.5: assert keyword === */
     "TOK_KW_ASSERT",
-    /* === W1/v0.10.5: control flow === */
+    /* === v0.10.5: control flow === */
     "TOK_KW_FOR", "TOK_KW_BREAK", "TOK_KW_CONTINUE", "TOK_KW_SWITCH", "TOK_KW_CASE",
     "TOK_KW_DEFAULT",
-    /* === end W1/v0.10.5: control flow === */
-    /* === W10/v0.10.5: list/dict literals + subscript + compound assign === */
+    /* === end v0.10.5: control flow === */
+    /* === v0.10.5: list/dict literals + subscript + compound assign === */
     "TOK_LBRACKET", "TOK_RBRACKET", "TOK_FAT_ARROW", "TOK_PLUS_EQ",
-    /* === end W10/v0.10.5 === */
-    /* === W3/v0.10.11: shift-write operator === */
+    /* === end v0.10.5 === */
+    /* === v0.10.11: shift-write operator === */
     "TOK_LSHIFT",
-    /* === end W3/v0.10.11 === */
+    /* === end v0.10.11 === */
     /* === v1.0-rc stdlib-completeness: % && || === */
     "TOK_PERCENT", "TOK_AMPAMP", "TOK_PIPEPIPE",
     /* === end v1.0-rc stdlib-completeness === */
@@ -94,10 +94,10 @@ static const char * const ERR_MSG[] = {
     "float literal has no fraction digits after the decimal point",
     "float literal exponent marker has no digits",
     "float literal exceeds representable range",
-    /* === W2/v0.10.5: quoted identifiers === */
+    /* === v0.10.5: quoted identifiers === */
     "unterminated quoted identifier (missing closing single-quote)",
     "empty quoted identifier ('' is not a valid name)"
-    /* === end W2/v0.10.5: quoted identifiers === */
+    /* === end v0.10.5: quoted identifiers === */
 };
 /* LEX-015: same drift guard for ERR_MSG[] vs ULexError. */
 URBI_STATIC_ASSERT(sizeof(ERR_MSG) / sizeof(ERR_MSG[0]) == LEX__LAST,
@@ -296,7 +296,7 @@ static const UDurationSuffix kDurationSuffixes[] = {
     { NULL, 0,             0LL },
 };
 
-/* === W4/v0.10.5: angle literals === */
+/* === v0.10.5: angle literals === */
 
 /* Angle-suffix table (legacy §20.1.6.1).  Each entry carries:
  *   suffix  — the literal suffix text (NUL-terminated for clarity).
@@ -353,7 +353,7 @@ static int apply_angle_suffix(ULexer *lex, double in_value, double *out_rad) {
     return 0;
 }
 
-/* === end W4/v0.10.5: angle literals === */
+/* === end v0.10.5: angle literals === */
 
 /* Result of dispatch_radix_prefix: either we routed to scan_radix / produced
    an AMBIGUOUS_LEADING_ZERO error (handled=1, tok carries the value), or
@@ -568,7 +568,7 @@ static UToken scan_float_body(ULexer *lex, const char *start,
     }
     /* === end refactor-3 FE-08: fractional duration literals === */
 
-    /* === W4/v0.10.5: angle literals — float path ===
+    /* === v0.10.5: angle literals — float path ===
      * After the strtod conversion, check for an angle suffix.  If present,
      * apply the radian conversion and extend the token span to include the
      * suffix.  This handles "1.5deg", "0.5rad", etc. */
@@ -581,7 +581,7 @@ static UToken scan_float_body(ULexer *lex, const char *start,
             return ta;
         }
     }
-    /* === end W4/v0.10.5: angle literals — float path === */
+    /* === end v0.10.5: angle literals — float path === */
 
     UToken t = make_tok_base(TOK_FLOAT, start_line, start_col);
     t.len = span;
@@ -662,7 +662,7 @@ static UToken scan_number(ULexer *lex) {
                           (int)(lex->cur - start));
     }
 
-    /* === W4/v0.10.5: angle literals — integer path ===
+    /* === v0.10.5: angle literals — integer path ===
      * Check for angle suffix AFTER duration (duration suffixes have already
      * consumed their tokens above).  apply_angle_suffix handles "deg", "grad",
      * "rad" with the same ident-cont boundary check used by duration. */
@@ -675,7 +675,7 @@ static UToken scan_number(ULexer *lex) {
             return ta;
         }
     }
-    /* === end W4/v0.10.5: angle literals — integer path === */
+    /* === end v0.10.5: angle literals — integer path === */
 
     UToken t = make_tok_base(TOK_INT, start_line, start_col);
     t.len = (int)(lex->cur - start);
@@ -698,21 +698,21 @@ typedef struct {
  * with the keyword set, faster than a hash for this size (LEX-017: count
  * elided to avoid drift between comment and table). */
 static const UKeyword KEYWORDS[] = {
-    KW_ENTRY("assert",    TOK_KW_ASSERT),    /* W3/v0.10.5 */
+    KW_ENTRY("assert",    TOK_KW_ASSERT),    /* v0.10.5 */
     KW_ENTRY("async",     TOK_KW_ASYNC),
     KW_ENTRY("at",        TOK_KW_AT),
-    KW_ENTRY("break",     TOK_KW_BREAK),    /* W1/v0.10.5 */
-    KW_ENTRY("case",      TOK_KW_CASE),     /* W1/v0.10.5 */
+    KW_ENTRY("break",     TOK_KW_BREAK),    /* v0.10.5 */
+    KW_ENTRY("case",      TOK_KW_CASE),     /* v0.10.5 */
     KW_ENTRY("catch",     TOK_KW_CATCH),
     KW_ENTRY("class",     TOK_KW_CLASS),
     KW_ENTRY("closure",   TOK_KW_CLOSURE),
-    KW_ENTRY("continue",  TOK_KW_CONTINUE), /* W1/v0.10.5 */
+    KW_ENTRY("continue",  TOK_KW_CONTINUE), /* v0.10.5 */
     KW_ENTRY("default",   TOK_KW_DEFAULT),  /* v0.13.5 */
     KW_ENTRY("else",      TOK_KW_ELSE),
     KW_ENTRY("every",     TOK_KW_EVERY),
     KW_ENTRY("false",     TOK_KW_FALSE),
     KW_ENTRY("finally",   TOK_KW_FINALLY),
-    KW_ENTRY("for",       TOK_KW_FOR),      /* W1/v0.10.5 */
+    KW_ENTRY("for",       TOK_KW_FOR),      /* v0.10.5 */
     KW_ENTRY("function",  TOK_KW_FUNCTION),
     KW_ENTRY("if",        TOK_KW_IF),
     KW_ENTRY("lazy",      TOK_KW_LAZY),
@@ -720,7 +720,7 @@ static const UKeyword KEYWORDS[] = {
     KW_ENTRY("onleave",   TOK_KW_ONLEAVE),
     KW_ENTRY("public",    TOK_KW_PUBLIC),
     KW_ENTRY("return",    TOK_KW_RETURN),
-    KW_ENTRY("switch",    TOK_KW_SWITCH),   /* W1/v0.10.5 */
+    KW_ENTRY("switch",    TOK_KW_SWITCH),   /* v0.10.5 */
     KW_ENTRY("sync",      TOK_KW_SYNC),
     KW_ENTRY("this",      TOK_KW_THIS),
     KW_ENTRY("throw",     TOK_KW_THROW),
@@ -765,7 +765,7 @@ static UToken scan_ident(ULexer *lex) {
     return t;
 }
 
-/* === W2/v0.10.5: quoted identifiers === */
+/* === v0.10.5: quoted identifiers === */
 
 /* scan_quoted_ident — scan a 'X' quoted-identifier form (legacy §20.1.4).
  *
@@ -822,7 +822,7 @@ static UToken scan_quoted_ident(ULexer *lex) {
     return make_error(LEX_UNTERMINATED_QUOTED_IDENT, start_line, start_col, span);
 }
 
-/* === end W2/v0.10.5: quoted identifiers === */
+/* === end v0.10.5: quoted identifiers === */
 
 /* urbi_encode_utf8 — emit 1-4 UTF-8 bytes for a code point.  See the
  * docstring in src/lex/ulex_internal.h for the full contract; this
@@ -1224,7 +1224,7 @@ static UTriviaResult skip_trivia(ULexer *l) {
              *   docs/LANG-CONVENTIONS.md §7 "Block comments — divergence
              *   from legacy"
              *   docs/language-compatibility-matrix.md row "Block comments"
-             *   (status: dropped / locked non-nesting; legacy F7 / Wave 6 W6)
+             *   (status: dropped / locked non-nesting; legacy F7 / v0.10.5)
              *
              * Record start for error reporting. */
             const int start_line = l->line;
@@ -1270,7 +1270,7 @@ static const UTokenType kPunctTable[256] = {
     [';'] = TOK_SEMI,    [','] = TOK_COMMA,
     ['{'] = TOK_LBRACE,  ['}'] = TOK_RBRACE,
     [':'] = TOK_COLON,  ['.'] = TOK_DOT,     ['?'] = TOK_QUESTION,
-    /* === W10/v0.10.5: subscript brackets === */
+    /* === v0.10.5: subscript brackets === */
     ['['] = TOK_LBRACKET, [']'] = TOK_RBRACKET,
     /* '&' / '|' are NOT here: they double as &&/|| and are scanned in the
      * multi-char switch below (v1.0-rc stdlib-completeness).  '%' is a fresh
@@ -1301,7 +1301,7 @@ UToken ulex_next(ULexer *lex) {
         return lex_string(lex, start_line, start_col);
     }
 
-    /* === W2/v0.10.5: quoted identifiers ===
+    /* === v0.10.5: quoted identifiers ===
      * 'X' — single-quote-delimited identifier (legacy §20.1.4).
      * Emits TOK_IDENT with u.str pointing at the unquoted body.
      * Branched ahead of the punct fast-path (single-quote is not in
@@ -1309,7 +1309,7 @@ UToken ulex_next(ULexer *lex) {
     if (c == '\'') {
         return scan_quoted_ident(lex);
     }
-    /* === end W2/v0.10.5: quoted identifiers === */
+    /* === end v0.10.5: quoted identifiers === */
 
     /* Leading-dot float: '.5', '.123', etc.  Must be checked before the
      * punct table fast-path (which would otherwise emit TOK_DOT).
@@ -1327,7 +1327,7 @@ UToken ulex_next(ULexer *lex) {
 
     /* Multi-char tokens and the default fall-through. */
     switch (c) {
-    /* === W10/v0.10.5: `+` can be TOK_PLUS or TOK_PLUS_EQ === */
+    /* === v0.10.5: `+` can be TOK_PLUS or TOK_PLUS_EQ === */
     case '+':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;
@@ -1347,7 +1347,7 @@ UToken ulex_next(ULexer *lex) {
             lex->cur += 2;
             return make_tok(lex, TOK_EQEQ, start, 2);
         }
-        /* === W10/v0.10.5: `=>` fat-arrow for dict literals === */
+        /* === v0.10.5: `=>` fat-arrow for dict literals === */
         if (lex->cur + 1 < lex->end && lex->cur[1] == '>') {
             lex->cur += 2;
             return make_tok(lex, TOK_FAT_ARROW, start, 2);

@@ -16,7 +16,7 @@
  * topology_gen, recv_shape, recv_protos) → (holder, slot_idx) slot
  * LOCATION per call site so the proto-chain walk is elided on subsequent
  * calls at the same site.  The hit path re-reads the live slot — the IC
- * never holds a closure pointer (refactor-3 GC-06/VM-06c: a cached
+ * never holds a closure pointer (GC-06/VM-06c: a cached
  * closure VALUE went stale on in-place slot overwrite, which deliberately
  * does not bump topology_gen, and dangled once GC swept the replaced
  * closure).  The receiver dimension (recv_shape + recv_protos word) keys
@@ -63,7 +63,7 @@ static uint32_t site_index(uint32_t pc_off)
  * shape.  Same-shape + same-protos different-identity receivers sharing
  * one entry is CORRECT (identical resolution; slot UIC semantics).
  * The entry caches WHERE the slot lives (holder or live receiver,
- * slot_idx), never the closure value (refactor-3 GC-06/VM-06c): the hit
+ * slot_idx), never the closure value (GC-06/VM-06c): the hit
  * path re-reads the live slot below. */
 static struct UClosure *
 ic_lookup(UVM *vm, const UObject *recv_obj,
@@ -112,7 +112,7 @@ ic_lookup(UVM *vm, const UObject *recv_obj,
 
 /* Fill one IC entry at the round-robin cursor for (recv_obj, pc_offset,
  * op_name) with the slot LOCATION the slow path resolved — not the
- * closure value (refactor-3 GC-06).  A slot local to the receiver
+ * closure value (GC-06).  A slot local to the receiver
  * (holder == recv_obj) is stored as URBI_OPIC_FLAG_LOCAL + slot_idx only;
  * the hit path re-resolves through the live receiver (OBJ-IC-POLY
  * mirror) so no per-instance pointer is retained.
@@ -161,7 +161,7 @@ ic_fill(UVM *vm, const UObject *recv_obj, uint32_t pc_off,
  * Returns a UClosure* if found and it is a bytecode or native closure.
  * Returns NULL if not found, not a closure, or OOM during lookup.
  * Caches the slot LOCATION (holder, slot_idx) in the IC table keyed by
- * pc_off (refactor-3 GC-06: cache WHERE, not WHAT). */
+ * pc_off (GC-06: cache WHERE, not WHAT). */
 static struct UClosure *
 resolve_op_closure(UVM *vm, UObject *recv_obj,
                    USymbol *op_name, uint32_t pc_off)
@@ -224,7 +224,7 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
  * emit the original type error and HALT).
  * Returns VM_OP_OVERLOAD_THREW when the (bytecode) body raised a user
  * exception; *dst holds the thrown value for the caller to re-deposit
- * (refactor-3 VM-07).
+ * (VM-07).
  * Returns VM_OP_OVERLOAD_OOM on allocation failure during lookup/call. */
 int
 urbi_vm_arith_method_fallback(UVM *vm,
@@ -283,7 +283,7 @@ urbi_vm_arith_method_fallback(UVM *vm,
         }
         if (threw) {
             if (fatal == UEXEC_THROW) {
-                /* refactor-3 VM-07: the body raised a user exception.  The
+                /* VM-07: the body raised a user exception.  The
                  * scratch runner surfaced the thrown value in `result`;
                  * park it in *dst (the call site's dst register — a GC root
                  * once written) and tell the caller to re-deposit it as a
@@ -295,7 +295,7 @@ urbi_vm_arith_method_fallback(UVM *vm,
             /* TAG_STOP / CANCEL / budget-exhaustion / yield from an operator
              * body: not a user exception — keep the legacy MISS path
              * (original type error) rather than inventing a cancel-to-throw
-             * conversion (refactor-3 VM-07 decision). */
+             * conversion (VM-07 decision). */
             return VM_OP_OVERLOAD_MISS;
         }
     }
@@ -348,7 +348,7 @@ urbi_vm_arith_method_fallback_unary(UVM *vm,
         }
         if (threw) {
             if (fatal == UEXEC_THROW) {
-                /* refactor-3 VM-07: see urbi_vm_arith_method_fallback — same
+                /* VM-07: see urbi_vm_arith_method_fallback — same
                  * thrown-value hand-off through *dst. */
                 *dst = result;
                 return VM_OP_OVERLOAD_THREW;
@@ -372,7 +372,7 @@ urbi_vm_arith_method_fallback_unary(UVM *vm,
  * Returns VM_OP_OVERLOAD_OK and writes result bool to *out_bool on success.
  * Returns VM_OP_OVERLOAD_MISS if no slot found (caller uses uvalue_equal).
  * Returns VM_OP_OVERLOAD_THREW when the (bytecode) body raised a user
- * exception; *out_thrown holds the thrown value (refactor-3 VM-07). */
+ * exception; *out_thrown holds the thrown value (VM-07). */
 int
 urbi_vm_cmp_method_fallback(UVM *vm,
                        bool *out_bool,
@@ -421,7 +421,7 @@ urbi_vm_cmp_method_fallback(UVM *vm,
         }
         if (threw) {
             if (fatal == UEXEC_THROW) {
-                /* refactor-3 VM-07: comparisons have no dst register, so the
+                /* VM-07: comparisons have no dst register, so the
                  * thrown value is handed off via *out_thrown.  The caller
                  * must re-deposit it into s->unwind_value (a rooted strand
                  * field) before any allocation can run a GC slice; the

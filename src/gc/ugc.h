@@ -2,7 +2,7 @@
 /* GC umbrella header: common UCell/UType definitions, build-flag values,
  * type-tag constants, and non-inline GC C API declarations.
  *
- * Include hierarchy (post-W2):
+ * Include hierarchy:
  *
  *   <urbi/gc.h>              <- public surface (stands alone, no src/ includes)
  *   src/gc/ugc.h             <- internal full struct/macros (this file)
@@ -24,7 +24,7 @@
 
 /* === Build-flag values === */
 
-#define URBI_GC_INCREMENTAL    1   /* Ships M3 (default) */
+#define URBI_GC_INCREMENTAL    1   /* ships by default */
 #define URBI_GC_NONE           2   /* Compile-smoke only (see ugc_none.h); real impl deferred to v2 */
 #define URBI_GC_GENERATIONAL   3   /* RESERVED — v1.x */
 #define URBI_GC_ARENA_PER_TAG  4   /* RESERVED — v1.x design / v2 ship */
@@ -39,7 +39,7 @@
 struct UVM;
 
 /* === GC root provider callbacks ===
- * W2: UGcRootCallback and UGcRootProviderFn are now also declared in
+ * UGcRootCallback and UGcRootProviderFn are now also declared in
  * include/urbi/gc.h (public header) so external embedders using -Iinclude
  * alone can resolve them.  The declarations below are guarded to avoid
  * -Wpedantic "redefinition of typedef" diagnostics when ugc.h is included
@@ -79,7 +79,7 @@ typedef struct UCell {
  *
  * One UType is registered per type_tag value.  The VM keeps a 256-entry
  * type_table[] indexed by type_tag.  Entries are populated by built-in init
- * code (T27) and by urbi_register_type() for host types.
+ * code and by urbi_register_type() for host types.
  *
  * flags field bits: */
 #define TYPE_HAS_FINALIZER  0x01   /* destroy != NULL and should be called */
@@ -92,31 +92,31 @@ typedef struct UType {
     const char       *name;
     UGcWalkPayloadFn  walk_payload;        /* precise scan; NULL = leaf (no refs) */
     UTypeDestroyFn    destroy;             /* finalizer; NULL if none */
-    /* M4 will add prototype + methods here */
+    /* will add prototype + methods here */
 } UType;
 
-/* === Type-tag enum (extended at M4 for object model) === */
+/* === Type-tag enum (extended for object model) === */
 
 #define UTYPE_OBJECT     1
 #define UTYPE_CLOSURE    2
-#define UTYPE_STRING     3   /* M2 baseline */
-#define UTYPE_ARRAY      4   /* M4 lists */
-#define UTYPE_TAG        5   /* M3 row 11 */
-#define UTYPE_WATCHER    6   /* M3 row 11 */
+#define UTYPE_STRING     3   /* baseline */
+#define UTYPE_ARRAY      4   /* lists */
+#define UTYPE_TAG        5   /* row 11 */
+#define UTYPE_WATCHER    6   /* row 11 */
 #define UTYPE_COROUTINE  7   /* row 9 */
-#define UTYPE_NAMESPACE  8   /* M3 row 8 */
-/* M4 object-model tags (UTYPE_OBJECT above is reused; not re-reserved). */
-#define UTYPE_PROTOS            9   /* M4 — heap UProtos block (n >= 2) */
-#define UTYPE_SHAPE            10   /* M4 — UShape hidden class */
-#define UTYPE_PROPS            11   /* M4 — UProps slot-property record */
-#define UTYPE_SLOTHANDLE       12   /* M4 — slot handle (later task) */
-#define UTYPE_MODULE_INSTANCE  13   /* M4 — module instance (later task) */
-#define UTYPE_PROTO_INSTANCE   14   /* M4 — proto-bound instance (later task) */
-#define UTYPE_SHAPE_MAP        15   /* M4 — UShapeMap transition cache (T13) */
-#define UTYPE_PROPS_TABLE      16   /* M4 — UPropsTable (per-shape UProps* array, T17) */
-#define UTYPE_SLOT_ARRAY       17   /* M4 — USlotArray wrapper (UObject's grow-on-write slot storage, T26) */
-#define UTYPE_EVENT            18   /* M5 — UEvent reactive cell (spec #3 §3.1) */
-#define UTYPE_CHANGED_NODE     19   /* M5 — UChangedNode slot-change subscriber (spec #4 §3.1) */
+#define UTYPE_NAMESPACE  8   /* row 8 */
+/* object-model tags (UTYPE_OBJECT above is reused; not re-reserved). */
+#define UTYPE_PROTOS            9   /* heap UProtos block (n >= 2) */
+#define UTYPE_SHAPE            10   /* UShape hidden class */
+#define UTYPE_PROPS            11   /* UProps slot-property record */
+#define UTYPE_SLOTHANDLE       12   /* slot handle (later task) */
+#define UTYPE_MODULE_INSTANCE  13   /* module instance (later task) */
+#define UTYPE_PROTO_INSTANCE   14   /* proto-bound instance (later task) */
+#define UTYPE_SHAPE_MAP        15   /* UShapeMap transition cache */
+#define UTYPE_PROPS_TABLE      16   /* UPropsTable (per-shape UProps* array) */
+#define UTYPE_SLOT_ARRAY       17   /* USlotArray wrapper (UObject's grow-on-write slot storage) */
+#define UTYPE_EVENT            18   /* UEvent reactive cell (spec #3 §3.1) */
+#define UTYPE_CHANGED_NODE     19   /* UChangedNode slot-change subscriber (spec #4 §3.1) */
 #define UTYPE_UPVAL_CELL       20   /* v0.8.4 — captured-local upvalue cell (closure-lifetime spec Piece C) */
 /* Tags 21-63 are RESERVED for future runtime expansion (v1.x/v2.0 GC cell
  * types such as UString heap cells, UArray, UDict, UWeakRef, UFiber, etc.).
@@ -164,7 +164,7 @@ void   urbi_gc_collect(struct UVM *vm);
  * void urbi_gc_destroy(struct UVM *vm);
  *
  * Ordering constraint: must be called AFTER all subsystems that hold
- * GC-managed cells have been torn down.  At M5 the required order is:
+ * GC-managed cells have been torn down.  The required teardown order is:
  *   1. urealm_teardown_all()  — releases Realm bindings (GC-managed values)
  *   2. uwatcher_pool_destroy() — frees the watcher pool slab before GC
  *   3. urbi_gc_destroy()      — frees all remaining GC cells + sidecar list

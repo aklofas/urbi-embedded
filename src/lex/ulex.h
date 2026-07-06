@@ -34,7 +34,7 @@ typedef enum {
     TOK_STRING,       /* string literal — "foo", with \n/\t/\\/\" escapes */
     TOK_IDENT,        /* identifier [a-zA-Z_][a-zA-Z0-9_]* */
 
-    /* arithmetic — M1 */
+    /* arithmetic */
     TOK_PLUS,         /* + */
     TOK_MINUS,        /* - */
     TOK_STAR,         /* * */
@@ -42,17 +42,17 @@ typedef enum {
     TOK_LPAREN,       /* ( */
     TOK_RPAREN,       /* ) */
 
-    /* separators — M2 */
+    /* separators */
     TOK_PIPE,         /* | */
     TOK_SEMI,         /* ; */
     TOK_COMMA,        /* , */
     TOK_AMP,          /* & */
 
-    /* blocks — M2 */
+    /* blocks */
     TOK_LBRACE,       /* { */
     TOK_RBRACE,       /* } */
 
-    /* assignment + comparison — M2 */
+    /* assignment + comparison */
     TOK_EQ,           /* =  */
     TOK_EQEQ,         /* == */
     TOK_NEQ,          /* != */
@@ -61,7 +61,7 @@ typedef enum {
     TOK_GT,           /* >  */
     TOK_GE,           /* >= */
 
-    /* keywords — M2 */
+    /* keywords */
     TOK_KW_VAR,
     TOK_KW_FUNCTION,
     TOK_KW_RETURN,
@@ -74,20 +74,20 @@ typedef enum {
     TOK_KW_FALSE,
     TOK_KW_NIL,
 
-    /* M3 tag-scope separator */
+    /* tag-scope separator */
     TOK_COLON,        /* : */
 
-    /* member access — M4 */
+    /* member access */
     TOK_DOT,          /* .  — slot access (obj.x) */
     TOK_ARROW,        /* -> — slot-property access (obj.x->prop) */
 
-    /* keywords — M3 control-transfer */
+    /* keywords — control-transfer */
     TOK_KW_TRY,
     TOK_KW_CATCH,
     TOK_KW_FINALLY,
     TOK_KW_THROW,
 
-    /* keywords — M5 reactive */
+    /* keywords — reactive */
     TOK_KW_AT,
     TOK_KW_WHENEVER,
     TOK_KW_WAITUNTIL,
@@ -96,45 +96,45 @@ typedef enum {
     TOK_KW_SYNC,
     TOK_KW_ASYNC,
 
-    /* M5 punctuation — event postfix sugar */
+    /* event postfix sugar */
     TOK_QUESTION,      /* ? — event-subscribe postfix inside at(...) */
     TOK_BANG,          /* ! — event-emit postfix (e.g. `e!`) */
 
-    /* M6 wave 1 — class declarations */
+    /* class declarations */
     TOK_KW_CLASS,
     TOK_KW_PUBLIC,
 
-    /* M6 wave 3 — this keyword (Gap #3) */
+    /* this keyword (Gap #3) */
     TOK_KW_THIS,
 
-    /* === W2/v0.10.5: quoted identifiers === */
+    /* === v0.10.5: quoted identifiers === */
     /* TOK_IDENT is reused for quoted identifiers; no new token type needed.
      * scan_quoted_ident emits TOK_IDENT with u.str pointing at the unquoted
      * body (does not include the surrounding single-quote delimiters). */
-    /* === end W2/v0.10.5: quoted identifiers === */
+    /* === end v0.10.5: quoted identifiers === */
 
-    /* === W3/v0.10.5: assert keyword === */
+    /* === v0.10.5: assert keyword === */
     TOK_KW_ASSERT,
 
-    /* === W1/v0.10.5: control flow === */
+    /* === v0.10.5: control flow === */
     TOK_KW_FOR,      /* for — for-each range loop */
     TOK_KW_BREAK,    /* break — exit innermost loop */
     TOK_KW_CONTINUE, /* continue — skip to next iteration */
     TOK_KW_SWITCH,   /* switch — equality-dispatch statement */
     TOK_KW_CASE,     /* case — label inside switch body */
     TOK_KW_DEFAULT,  /* default — catch-all arm inside switch body */
-    /* === end W1/v0.10.5: control flow === */
+    /* === end v0.10.5: control flow === */
 
-    /* === W10/v0.10.5: list/dict literals + subscript + compound assign === */
+    /* === v0.10.5: list/dict literals + subscript + compound assign === */
     TOK_LBRACKET,    /* [ — list/dict literal open; subscript open */
     TOK_RBRACKET,    /* ] — list/dict literal close; subscript close */
     TOK_FAT_ARROW,   /* => — dict key-value separator (e.g. "a" => 1) */
     TOK_PLUS_EQ,     /* += — compound add-assign (l[i] += v desugar) */
-    /* === end W10/v0.10.5 === */
+    /* === end v0.10.5 === */
 
-    /* === W3/v0.10.11: shift-write operator === */
+    /* === v0.10.11: shift-write operator === */
     TOK_LSHIFT,       /* << — desugars to method-call .'<<'(rhs) */
-    /* === end W3/v0.10.11 === */
+    /* === end v0.10.11 === */
 
     /* === v1.0-rc stdlib-completeness: arithmetic + logical operators === */
     TOK_PERCENT,      /* %  — modulo; desugars to method-call .'%'(rhs) */
@@ -170,10 +170,10 @@ typedef enum {
     LEX_FLOAT_TRAILING_DOT,          /* 1. — no fraction digits after the decimal point */
     LEX_FLOAT_EXPONENT_NO_DIGITS,    /* 1.5e+ or 1e — exponent marker with no digits */
     LEX_FLOAT_OVERFLOW,              /* float literal exceeds representable range (±inf) */
-    /* === W2/v0.10.5: quoted identifiers === */
+    /* === v0.10.5: quoted identifiers === */
     LEX_UNTERMINATED_QUOTED_IDENT,   /* 'name opened but not closed before EOF/newline */
     LEX_EMPTY_QUOTED_IDENT,          /* '' — zero-length quoted identifier */
-    /* === end W2/v0.10.5: quoted identifiers === */
+    /* === end v0.10.5: quoted identifiers === */
     LEX__LAST          /* sentinel; not a real error code — used to size
                           ERR_MSG[] and detect drift via URBI_STATIC_ASSERT */
 } ULexError;

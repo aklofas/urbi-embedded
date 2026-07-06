@@ -12,60 +12,60 @@
 extern "C" {
 #endif
 
-/* Node kinds for M1 and M2. */
+/* Node kinds. */
 typedef enum {
-    /* M1 — atomic + arithmetic */
+    /* atomic + arithmetic */
     AST_INT     = 0,
     AST_IDENT   = 1,
     AST_UNARY   = 2,
     AST_BINARY  = 3,
     AST_ERROR   = 4,
 
-    /* M2 — literal extensions */
+    /* literal extensions */
     AST_BOOL    = 5,
     AST_NIL     = 6,
 
-    /* M2 — separators */
+    /* separators */
     AST_NARY    = 7,        /* outer-tier: ;-or-,-joined sequence */
     AST_BIN_SEP = 8,        /* inner-tier: |-or-&-joined pair    */
     AST_NOOP    = 9,        /* singleton; legacy compat (see separator spec §3) */
 
-    /* M2 — declarations + scope */
+    /* declarations + scope */
     AST_VAR_DECL  = 10,     /* var x = expr; locals registered in FuncState */
     AST_LOCAL_REF = 11,     /* resolved local reference (parser produces AST_IDENT;
                                emit converts to AST_LOCAL_REF after FuncState lookup) */
     AST_BLOCK     = 12,     /* { stmt; stmt; ... } */
 
-    /* M2 — control flow */
+    /* control flow */
     AST_IF      = 13,       /* if (cond) then-block [else else-block] */
     AST_WHILE   = 14,       /* while (cond) body */
     AST_COMPARE = 15,       /* ==, !=, <, <=, >, >= */
 
-    /* M2 — functions */
+    /* functions */
     AST_FUNCTION   = 16,    /* function (params) { body } */
     AST_CALL       = 17,    /* callee(args) */
     AST_RETURN     = 18,    /* return [expr] */
     AST_PARAM      = 19,    /* formal parameter (eager, no `lazy`) */
     AST_LAZY_PARAM = 20,    /* formal parameter (`lazy x`) */
 
-    /* M2 — assignment */
+    /* assignment */
     AST_ASSIGN     = 21,    /* x = expr; assignment to existing local/upvalue */
 
-    /* M3 — control transfer */
+    /* control transfer */
     AST_TRY        = 22,    /* try { body } [catch (e) { handler }] [finally { cleanup }] */
     AST_THROW      = 23,    /* throw expr */
 
-    /* M3 — tag scope */
+    /* tag scope */
     AST_TAG_PREFIX = 24,    /* mytag: { body } — tag-scope syntax; tag-prefix
                                onleave clause is v1.x (PARSE-033 closure) */
 
-    /* M4 — slot member access */
+    /* slot member access */
     AST_MEMBER_GET = 25,    /* obj.x         — recv + name */
     AST_MEMBER_SET = 26,    /* obj.x = v     — recv + name + value */
     AST_PROP_GET   = 27,    /* obj.x->prop   — recv + prop_name */
     AST_PROP_SET   = 28,    /* obj.x->prop = v — recv + prop_name + value */
 
-    /* M5 — reactive constructs */
+    /* reactive constructs */
     AST_WATCHER      = 29,  /* at / at sync / whenever — mode discriminator in
                              * u.watcher.mode (UWATCHER_AT, UWATCHER_AT_SYNC,
                              * UWATCHER_WHENEVER); also carries optional onleave.
@@ -80,14 +80,14 @@ typedef enum {
                              * spec #4. Install needs OP_GETSLOT_CHANGE_EVENT (=44) prefix
                              * followed by OP_AT_EVENT_INSTALL. */
 
-    /* M6 — string literal */
+    /* string literal */
     AST_STR     = 33,       /* string literal — escape-resolved + adjacent-concat
                              * folded view into an arena-allocated buffer.  Emit
                              * routes through OP_LOADK with a UVAL_STR constant
                              * (interning happens at emit time, not parse time,
                              * matching the AST_IDENT pattern). */
 
-    /* M6 wave 1 — class declaration (T38) */
+    /* class declaration */
     AST_CLASS_DECL = 34,    /* class Foo [: public A, B] { body }
                              * Carries the class name (zero-copy lexeme view),
                              * an optional declaration-order proto array, and
@@ -100,13 +100,13 @@ typedef enum {
                              * emit reverses during insertFront so the chain
                              * ends up [P1, P2, Object] for `: public P1, P2`. */
 
-    /* M6 wave 2 — get/set parse sugar (T41) */
+    /* get/set parse sugar */
     AST_PROPERTY_DECL = 35, /* get name() { body } / set name(v) { body }
                              * Parse-only desugar — emit installs the closure
                              * as the slot's `oget` (URBI_SLOT_FLAG_OGET) or
                              * `oset` (URBI_SLOT_FLAG_OSET) property.  The
-                             * runtime slot-property dispatch path is the M4
-                             * baseline; T41 only adds the parse sugar.
+                             * runtime slot-property dispatch path is the IC-sites
+                             * baseline; this feature only adds the parse sugar.
                              *
                              * `recv` is NULL when the property-decl appears
                              * at the start of a class body — emit treats the
@@ -127,63 +127,63 @@ typedef enum {
                              * emitter raises EMIT_NO_THIS_OUTSIDE_METHOD when
                              * fs->parent == NULL. */
 
-    /* === W3/v0.10.5: assert keyword === */
+    /* === v0.10.5: assert keyword === */
     AST_ASSERT = 38,        /* assert(expr) / assert { block }
                              * Lowered to: if (!expr) throw "assertion failed: <src>"
                              * No new opcode needed.  src_text/src_len is the
                              * zero-copy source span of the expression (paren form);
                              * NULL/0 for block form.
-                             * Ruling: implemented (Wave 6 W3, legacy F9). */
+                             * Ruling: implemented (v0.10.5, legacy F9). */
 
-    /* === W10/v0.10.5: list/dict literals + subscript + var-obj-slot === */
+    /* === v0.10.5: list/dict literals + subscript + var-obj-slot === */
     AST_LIST_LIT = 39,      /* [e1, e2, e3]
                              * Lowered to: List.new(e1, e2, e3)
                              * No new opcode needed.
-                             * Ruling: implemented (Wave 6 W10, legacy F14). */
+                             * Ruling: implemented (v0.10.5, legacy F14). */
     AST_DICT_LIT = 40,      /* ["a" => 1, "b" => 2]
                              * Lowered to: var _d = Dict.new(); _d.set("a", 1); ...
                              * No new opcode needed.
-                             * Ruling: implemented (Wave 6 W10, legacy F14). */
+                             * Ruling: implemented (v0.10.5, legacy F14). */
     AST_SUBSCRIPT_GET = 41, /* l[i]  → l.get(i)
                              * No new opcode needed.
-                             * Ruling: implemented (Wave 6 W10, legacy F14). */
+                             * Ruling: implemented (v0.10.5, legacy F14). */
     AST_SUBSCRIPT_SET = 42, /* l[i] = v  → l.set(i, v)
                              * l[i] += v  → tmp=recv, tmpi=idx, tmp.set(tmpi, tmp.get(tmpi)+v)
-                             *              recv and idx evaluated exactly once (W2/v0.10.7).
+                             *              recv and idx evaluated exactly once (v0.10.7).
                              * No new opcode needed.
-                             * Ruling: implemented (Wave 6 W10, legacy F14);
-                             * single-eval fix (Wave 7 W2/v0.10.7, closes audit-1 F4). */
-    /* === end W10/v0.10.5 === */
+                             * Ruling: implemented (v0.10.5, legacy F14);
+                             * single-eval fix (Wave 7 v0.10.7, closes audit-1 F4). */
+    /* === end v0.10.5 === */
 
-    /* === W1/v0.10.5: control flow === */
+    /* === v0.10.5: control flow === */
     AST_FOR_EACH = 43,  /* for (var x : iter) body  / for (var x in iter) body
                          * Lowered to a while loop using list.length() + list.get(i).
                          * Also handles for (var x : list_expr) where list_expr is
                          * evaluated once before the loop.  No new opcode needed.
-                         * Ruling: implemented (Wave 6 W1, legacy F2). */
+                         * Ruling: implemented (v0.10.5, legacy F2). */
     AST_BREAK    = 44,  /* break — exits innermost for/while loop.
                          * Lowered to OP_JMP with the exit address patched after the loop.
                          * No new opcode needed.
-                         * Ruling: implemented (Wave 6 W1, legacy F2). */
+                         * Ruling: implemented (v0.10.5, legacy F2). */
     AST_CONTINUE = 45,  /* continue — jumps to next iteration of innermost for/while.
                          * Lowered to OP_JMP with the continue address patched after the loop.
                          * No new opcode needed.
-                         * Ruling: implemented (Wave 6 W1, legacy F2). */
+                         * Ruling: implemented (v0.10.5, legacy F2). */
     AST_SWITCH   = 46,  /* switch (expr) { case v1: body1; case v2: body2; }
                          * Equality-based dispatch only (no pattern matching).
                          * Lowered to a chain of if (expr == vN) { bodyN }.
                          * No new opcode needed.
-                         * Ruling: implemented (Wave 6 W1, legacy F2). */
-    /* === end W1/v0.10.5: control flow === */
+                         * Ruling: implemented (v0.10.5, legacy F2). */
+    /* === end v0.10.5: control flow === */
 
-    /* === W2/v0.10.7: synthetic register-reference leaf === */
+    /* === v0.10.7: synthetic register-reference leaf === */
     AST_REG_REF  = 47   /* synthetic emit-only: reference to a previously-allocated
                          * register.  Never produced by the parser; created inside
                          * urbi_emit_subscript_set_arm to pin recv/index temps so the
                          * compound-subscript lowering evaluates each exactly once.
                          * Lowers to OP_MOVE (or no-op when target == source).
                          * Not serialised; not visible to the parser. */
-    /* === end W2/v0.10.7 === */
+    /* === end v0.10.7 === */
     ,
     /* === v1.0-rc stdlib-completeness: short-circuit logical operators === */
     AST_LOGICAL  = 48   /* a && b / a || b — short-circuit.  Distinct from
@@ -193,7 +193,7 @@ typedef enum {
     /* === end v1.0-rc stdlib-completeness === */
 } UAstKind;
 
-/* Method/property-decl kind discriminator (T41 — M6 Wave 2). */
+/* Method/property-decl kind discriminator (getter/setter). */
 typedef enum {
     UAST_METHOD_PLAIN  = 0,
     UAST_METHOD_GETTER = 1,
@@ -237,7 +237,7 @@ typedef enum {
     PARSE_LEX_ERROR,
     PARSE_OOM,
 
-    /* M2 additions */
+    /* declaration additions */
     PARSE_EXPECTED_RBRACE,
     PARSE_EXPECTED_LBRACE,
     PARSE_EXPECTED_LPAREN,
@@ -249,15 +249,15 @@ typedef enum {
     PARSE_TRAILING_AMP,            /* `expr &` is illegal */
     PARSE_LAZY_OUT_OF_PARAM_LIST,
 
-    /* M3 additions */
+    /* control-transfer additions */
     PARSE_TRY_NEEDS_CATCH_OR_FINALLY, /* `try { }` with neither catch nor finally */
 
-    /* M5 additions */
+    /* reactive-runtime additions */
     PARSE_RESERVED_KEYWORD_AS_IDENT,  /* `var at = 1`: hard keyword used as variable name */
     PARSE_QUESTION_OUTSIDE_AT,        /* postfix `?` is only valid inside at(...) */
-    PARSE_EMIT_MULTI_ARG_V1,          /* `e!(x, y, z)` — multi-arg emit reserved for M6 */
+    PARSE_EMIT_MULTI_ARG_V1,          /* `e!(x, y, z)` — multi-arg emit reserved for v1.x */
 
-    /* M5 spec #4 additions */
+    /* spec #4 additions */
     PARSE_SLOT_CHANGED_BARE_V1,       /* `obj.x.changed` outside at(?) — use at(obj.x.changed?) */
     PARSE_SLOT_CHANGED_EMIT_V1,       /* `obj.x.changed!` — slot-change event cannot be emitted */
 
@@ -268,26 +268,26 @@ typedef enum {
     PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE, /* `at sync (cond) body onleave h` —
                                               at sync fires inline on the
                                               changed thread and has no leave
-                                              edge to hook (M5 spec §3) */
+                                              edge to hook (spec §3) */
 
-    /* M6 Wave 2 additions */
-    PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED, /* T41: `get name() {...}` /
+    /* getter/setter additions */
+    PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED, /* `get name() {...}` /
                                             `set name(v) {...}` at statement
                                             start.  The implicit-receiver form
                                             has no v1.0 resolver outside a
                                             class body; deferred to v1.x
                                             implicit-this. */
 
-    /* === W10/v0.10.5: list/dict literal + subscript errors === */
+    /* === v0.10.5: list/dict literal + subscript errors === */
     PARSE_EXPECTED_RBRACKET,    /* missing `]` in list/dict literal or subscript */
     PARSE_DICT_EXPECTED_FAT_ARROW, /* dict literal: `key` not followed by `=>` */
     PARSE_SUBSCRIPT_EXPECTED_RBRACKET, /* `l[i` missing `]` */
     PARSE_VAR_OBJ_SLOT_NO_INIT,        /* `var obj.slot` with no `= value` */
     PARSE_SUBSCRIPT_COMPOUND_OP_V1X,   /* compound subscript op other than +=
                                         * (e.g. -=, *=) — deferred to v1.x */
-    /* === end W10/v0.10.5 === */
+    /* === end v0.10.5 === */
 
-    /* === W1/v0.10.5: control flow === */
+    /* === v0.10.5: control flow === */
     PARSE_FOR_EXPECTED_VAR,            /* for loop header missing `var` keyword */
     PARSE_FOR_EXPECTED_COLON_OR_IN,    /* for (var x ...) — missing `:` or `in` */
     PARSE_BREAK_OUTSIDE_LOOP,          /* `break` not inside a for/while loop */
@@ -297,13 +297,13 @@ typedef enum {
     /* === v0.13.5: switch default arm === */
     PARSE_SWITCH_DUPLICATE_DEFAULT,    /* switch body has more than one default: arm */
     /* === end v0.13.5: switch default arm === */
-    /* === end W1/v0.10.5: control flow === */
+    /* === end v0.10.5: control flow === */
 
-    /* === W9/v0.10.5: event payload binding === */
+    /* === v0.10.5: event payload binding === */
     PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR,    /* `at (e?(x))` — must be `(var x)` */
     PARSE_EVENT_PAYLOAD_BIND_EXPECTED_IDENT,  /* `at (e?(var))` — identifier missing */
     PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN  /* `at (e?(var x` — missing `)` */
-    /* === end W9/v0.10.5 === */
+    /* === end v0.10.5 === */
 } UParseError;
 
 /*
@@ -517,18 +517,18 @@ struct UAstNode {
             UAstNode *cond;
             UAstNode *body;
             UAstNode *onleave;             /* nullable */
-            UAstNode *else_body;           /* nullable; W9: fires on falling edge
+            UAstNode *else_body;           /* nullable; fires on falling edge
                                             * (WHENEVER mode only).  NULL for AT/AT_SYNC.
                                             * When non-NULL, takes precedence over onleave
                                             * as the alt closure passed to OP_WHENEVER_INSTALL. */
             int       mode;               /* UWATCHER_AT / UWATCHER_AT_SYNC /
                                            * UWATCHER_WHENEVER — int for now;
-                                           * UWatcherMode enum lands in T12 */
+                                           * UWatcherMode enum lands */
         } watcher;
         struct {                                            /* AST_WAITUNTIL */
             UAstNode *cond;
-            bool      is_event_form;       /* W9: true when `waituntil (e?)` form */
-            const char *payload_var_name;  /* W9: user-given name from `(var x)`, or NULL */
+            bool      is_event_form;       /* True when `waituntil (e?)` form */
+            const char *payload_var_name;  /* User-given name from `(var x)`, or NULL */
             int         payload_var_len;
         } waituntil;
         struct {                                            /* AST_AT_EVENT */
@@ -539,8 +539,8 @@ struct UAstNode {
             bool      is_whenever;         /* whenever (e?) — re-fires on each emission;
                                             * no one-shot teardown (vs at (e?) which
                                             * fires once per emission but does not reset
-                                            * cond state).  W0/v0.10.2. */
-            const char *payload_var_name;  /* W9: user-given name from `at (e?(var x))`,
+                                            * cond state).  v0.10.2. */
+            const char *payload_var_name;  /* User-given name from `at (e?(var x))`,
                                             * or NULL (body param name defaults to __payload) */
             int         payload_var_len;
         } at_event;
@@ -574,14 +574,14 @@ struct UAstNode {
             UAstMethodKind kind;           /* UAST_METHOD_GETTER / UAST_METHOD_SETTER */
             UAstNode      *func;           /* AST_FUNCTION carrying params + body */
         } property_decl;
-        /* === W3/v0.10.5: assert keyword === */
+        /* === v0.10.5: assert keyword === */
         struct {                                            /* AST_ASSERT */
             UAstNode   *expr;              /* expression or block to assert */
             const char *src_text;          /* zero-copy source span (paren form);
                                             * NULL for block form */
             int         src_len;           /* byte count; 0 for block form */
         } assert_stmt;
-        /* === W1/v0.10.5: control flow === */
+        /* === v0.10.5: control flow === */
         struct {                                            /* AST_FOR_EACH */
             const char *var_name_start;  /* zero-copy lexeme view of loop variable */
             int         var_name_len;
@@ -596,9 +596,9 @@ struct UAstNode {
             int         case_count;
             UAstNode   *default_body;    /* catch-all arm body; NULL if absent */
         } switch_stmt;
-        /* === end W1/v0.10.5: control flow === */
+        /* === end v0.10.5: control flow === */
 
-        /* === W10/v0.10.5: list/dict literals + subscript === */
+        /* === v0.10.5: list/dict literals + subscript === */
         struct {                                            /* AST_LIST_LIT */
             UAstNode  **elems;             /* arena array of element expressions */
             int         count;             /* number of elements (0 for []) */
@@ -614,13 +614,13 @@ struct UAstNode {
             UAstNode   *value;             /* SET only: rhs value; NULL for GET */
             bool        is_compound_add;   /* true when desugared from `l[i] += v` */
         } subscript;
-        /* === end W10/v0.10.5 === */
+        /* === end v0.10.5 === */
 
-        /* === W2/v0.10.7: synthetic register-reference leaf === */
+        /* === v0.10.7: synthetic register-reference leaf === */
         struct {                           /* AST_REG_REF */
             uint8_t reg;                   /* register index to reference */
         } reg_ref;
-        /* === end W2/v0.10.7 === */
+        /* === end v0.10.7 === */
     } u;
 };
 

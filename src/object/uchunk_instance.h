@@ -8,7 +8,7 @@
  * independent IC tables — IC fill in one instance does not bleed into the
  * other.
  *
- * Design references: pre-M4 getslot/setslot encoding §4.1/§4.3.
+ * Design references: getslot/setslot encoding §4.1/§4.3.
  *
  * Layout:
  *   UChunkInstance (GC cell, type_tag = UTYPE_MODULE_INSTANCE)
@@ -48,7 +48,7 @@
  *   urbi_chunk_instance_create allocates both cells and zero-fills every
  *   IC entry (recv_shapes=NULL, recv_protos=0, topology_gen=0, slots=NULL,
  *   uprops=NULL, flags=0, n=0, replace_cursor=0).  topology_gen=0 is the
- *   unfilled sentinel per pre-M4 topology-generation spec §3.1
+ *   unfilled sentinel per topology-generation spec §3.1
  *   (vm->topology_gen init=1 — no live shape ever has gen 0).
  *
  *   urbi_chunk_instance_destroy is a no-op; both cells are GC-managed
@@ -118,7 +118,7 @@ struct UChunkInstance {
 UChunkInstance *urbi_chunk_instance_create (struct UVM *vm, UProto *root);
 
 /* No-op: both cells are GC-managed and freed by sweep.  Provided so the
- * public ABI matches the create/destroy pair convention (T22 may grow
+ * public ABI matches the create/destroy pair convention (a future version may grow
  * an explicit teardown for IC entries that pin host resources). */
 void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi);
 

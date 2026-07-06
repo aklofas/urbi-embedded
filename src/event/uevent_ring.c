@@ -128,7 +128,7 @@ uevent_ring_drain(struct UVM *vm)
     while (rd != w && drained < (uint32_t)(URBI_EVENT_RING_DEPTH - 1U)) {
         UEventRingEntry *e = &r->ring[rd];
 
-        /* Gap B drain auto-routing (T61): check the event registry first.
+        /* Gap B drain auto-routing: check the event registry first.
          * If event_id is registered and not tombstoned, call the destructure
          * fn (if any) to convert raw payload bytes into UValues, then
          * dispatch through the UEvent via urbi_event_emit_async.
@@ -141,7 +141,7 @@ uevent_ring_drain(struct UVM *vm)
          * Multi-arg threading: today we emit a single UValue payload —
          * args[0] when argc > 0, NIL when argc == 0.  Full args[0..argc-1]
          * threading into watcher body R[0..n] requires the host-watcher
-         * infrastructure landed in Sub-Bundle 3 (T64+).  Until then,
+         * infrastructure is not yet landed.  Until then,
          * single-arg events work end-to-end; multi-arg events deliver only
          * the first argument to script-side `at(name ?(x))` bodies.
          *

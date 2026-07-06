@@ -6,24 +6,24 @@
  * innermost to outermost.
  *
  * The direct frame-pop path through frame_depth stamps is the permanent
- * canonical path (T89/FOUND-028 BLOCKED — the t11_backward_compat_path is
+ * canonical path (BLOCKED — the t11_backward_compat_path is
  * the live path; OP_PUSH_FRAME_GUARD was never wired by the emitter).
  * The walker's CALL_FRAME branch is present but unreachable until a future
  * bytecode extension pushes CALL_FRAME entries.
  *
  * Replace-on-raise (C-1): when a finally/onleave body raises a new unwind
  * during run_cleanup_with_replace(), the new pending state wins and the
- * original is silently suppressed.  Warning emission deferred to T16/T19.
+ * original is silently suppressed.  Warning emission deferred to diag infra.
  *
  * Recursion bound: run_cleanup_with_replace() re-enters urbi_vm_dispatch_loop_until_yield.
  * Maximum depth is bounded by URBI_CLEANUP_MAX (default 64, footprint preset 16).
  * At 64 levels and ~8 KB per frame: ~512 KB max — safe on host.
- * TODO T20: evaluate non-recursive cleanup executor if Cortex-M stack budget
+ * TODO: evaluate non-recursive cleanup executor if Cortex-M stack budget
  * proves insufficient at URBI_CLEANUP_MAX=16. */
 
 #include "runtime/uunwind.h"
 #include "sched/ustrand.h"
-#include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
+#include "runtime/uclosure.h"     /* UClosure full definition (embeds UCell) */
 #include "runtime/uframe.h"       /* UCallFrame */
 #include "runtime/ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
 #include "vm/uvm.h"          /* urbi_vm_dispatch_loop_until_yield */
@@ -60,11 +60,11 @@ zero_registers(UStrand *s, uint16_t base, uint16_t count)
 
 /* ===== v1.0 intentional behavior: match-all catch pattern =====
  *
- * pattern_matches  (FOUND-026, NR-14 confirmed): returns 1 unconditionally.
+ * pattern_matches  (NR-14 confirmed): returns 1 unconditionally.
  *                  Urbiscript v1.0 catch clauses match any thrown value
  *                  (catch-all semantics, NR-14).  Class-pattern dispatch
  *                  for `catch (ExceptionClass e)` is a v1.x extension.
- * bind_catch_value (FOUND-027): catch variable is bound to the bare caught
+ * bind_catch_value: catch variable is bound to the bare caught
  *                  value; `pat` is reserved for future destructuring syntax.
  *
  * struct UPattern is forward-declared in ucleanup.h (included above). */
@@ -73,7 +73,7 @@ static int
 pattern_matches(struct UPattern *pat, UValue val)
 {
     /* Catch-all: any throw is caught by any catch clause (NR-14 v1.0 behavior).
-     * Class-pattern dispatch is a v1.x extension (FOUND-026). */
+     * Class-pattern dispatch is a v1.x extension. */
     (void)pat; (void)val;
     return 1;
 }
@@ -81,9 +81,9 @@ pattern_matches(struct UPattern *pat, UValue val)
 static void
 bind_catch_value(UStrand *s, struct UPattern *pat, UValue val)
 {
-    /* T10: write the caught value into s->catch_value; the catch handler's
+    /* Write the caught value into s->catch_value; the catch handler's
      * first instruction (OP_LOAD_CATCH_VALUE) reads it into the named
-     * register.  FOUND-027: Wave 2 of M6 stdlib refines to use `pat` for
+     * register.  A future stdlib pass refines to use `pat` for
      * destructuring; until then the catch-var is always the bare value. */
     (void)pat;
     s->catch_value = val;
@@ -131,7 +131,7 @@ pop_call_frame(UStrand *s)
     } else if (s->entry_closure != NULL && s->entry_closure->proto != NULL) {
         s->pc_base = s->entry_closure->proto->instructions;
     }
-    /* FOUND-032: route through the shared helper so the OP_CALL rule and the
+    /* Route through the shared helper so the OP_CALL rule and the
      * pop-frame rule cannot drift. */
     {
         const UClosure *outer = (s->frame_count > 0)
@@ -155,12 +155,12 @@ deliver_return_value(UStrand *s, UValue val, int result_dest_reg)
    - If the cleanup body completes normally (UEXEC_OK), restore the original
      unwind state so the walker continues propagating it outward.
    - If the cleanup body raises a new unwind, the new state wins and the
-     original is silently suppressed (warning deferred to T16/T19 diag infra).
+     original is silently suppressed (warning deferred to diag infra).
 
    Re-enters urbi_vm_dispatch_loop_until_yield; recursion depth bounded by
    URBI_CLEANUP_MAX (see file-level comment).
 
-   T29 / FOUND-009: the recursion bound is now enforced via the per-strand
+   The recursion bound is now enforced via the per-strand
    cleanup_run_depth counter.  Before the guard a misbehaving cleanup body
    that itself raised an unwind whose handler raised again ad infinitum
    could exhaust the C stack.  Returns 0 on normal completion (including
@@ -184,7 +184,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
     nil.kind = 0;
     nil.v.i  = 0;
 
-    /* T29 / FOUND-009: enforce the documented URBI_CLEANUP_MAX recursion
+    /* Enforce the documented URBI_CLEANUP_MAX recursion
      * bound.  Returning the error code (rather than escalating in place)
      * lets the walker handle the failure with the same fatal-state shape
      * it uses for unhandled THROW (avoids duplicating cleanup logic). */
@@ -337,7 +337,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
         /* C-1: cleanup body raised a new unwind; new state wins.
          * Original saved values are silently dropped.  Emit a diagnostic so
          * embedders can detect inadvertent unwind-loss in their tag-leave
-         * handlers.  host_log_fn is NULL-guarded per T19 pattern. */
+         * handlers.  host_log_fn is NULL-guarded. */
         if (s->vm != NULL && s->vm->host_log_fn != NULL) {
             s->vm->host_log_fn(s->vm, s->vm->host_log_ud, URBI_LOG_WARN,
                                "URBI_WARN_SUPPRESSED_UNWIND: cleanup body raised; "
@@ -369,13 +369,13 @@ urbi_unwind(UStrand *s)
     if (s->pending_unwind == UEXEC_OK)
         return;
 
-    /* RETURN absorption (T11 / T8 bridging stub).
+    /* RETURN absorption (bridging stub).
      *
      * Two paths:
-     *   (a) T11-forward: a CALL_FRAME cleanup entry exists on the stack.
+     *   (a) forward path: a CALL_FRAME cleanup entry exists on the stack.
      *       Let the walker run — it absorbs RETURN at the first CALL_FRAME
      *       and runs the register-zeroing pass (Inv-5, row 7 §7.1).
-     *   (b) T11 deferred (today's production reality — no CALL_FRAME entries
+     *   (b) deferred path (today's production reality — no CALL_FRAME entries
      *       are pushed by bytecode): use the backward-compat direct-pop
      *       path REGARDLESS of cleanup_depth.  Earlier code gated direct-pop
      *       on cleanup_depth == 0, so any RETURN through an at-body (which
@@ -387,10 +387,10 @@ urbi_unwind(UStrand *s)
      * RETURN crosses exactly one call-frame boundary; intervening tag /
      * try scopes belonging to the CALLER must stay intact.
      *
-     * T24 (refactor-3 VM-01 follow-on): cleanup entries belonging to the
+     * refactor-3 VM-01 follow-on: cleanup entries belonging to the
      * RETURNING frame (frame_depth >= frame_count — VM-01's push-time
      * stamps make this exact) must be processed BEFORE the frame pops.
-     * Pre-T24 the direct pop skipped them entirely: a finally inside the
+     * Before this fix the direct pop skipped them entirely: a finally inside the
      * returning function was silently SKIPPED (REVIVAL §S5a violation),
      * and TAG_SCOPE entries leaked one per call — at URBI_CLEANUP_MAX
      * accumulated leaks the next OP_PUSH_TAG killed the strand silently,
@@ -480,7 +480,7 @@ urbi_unwind(UStrand *s)
             /* C-1 replaced the RETURN: fall through to the general walker
              * with the new pending unwind. */
         }
-        /* else fall through to walker — T11-forward absorbs at CALL_FRAME. */
+        /* else fall through to walker — forward path absorbs at CALL_FRAME. */
     }
 
     if (s->cleanup_depth == 0) {
@@ -549,7 +549,7 @@ urbi_unwind(UStrand *s)
         case UCLEANUP_TRY_FRAME: {
             /* TRY_FRAME: try-catch or try-finally boundary. */
 
-            /* pattern_matches is a documented M3 / FOUND-026 stub that
+            /* pattern_matches is a documented stub that
              * always returns 1 (match-all).  Wave 2 will refine to
              * class-pattern dispatch; until then the stub keeps the call
              * site stable for the spec evolution.  cppcheck flags the
@@ -587,7 +587,7 @@ urbi_unwind(UStrand *s)
             if (e->flags & FLAG_HAS_FINALLY) {
                 /* Finally execution: run body, then continue unwinding.
                  * C-1 replace-on-raise: if body raises, new state wins.
-                 * T29 / FOUND-009: helper returns URBI_ERR_CLEANUP_OVERFLOW
+                 * The helper returns URBI_ERR_CLEANUP_OVERFLOW
                  * when recursion depth would exceed URBI_CLEANUP_MAX. */
                 uint16_t handler_pc = e->handler_pc;
                 int      rc;
@@ -625,7 +625,7 @@ urbi_unwind(UStrand *s)
         }
 
         case UCLEANUP_TAG_SCOPE: {
-            /* v0.10.15-B (T29): tag.stop() absorption / resume-after-scope.
+            /* v0.10.15-B: tag.stop() absorption / resume-after-scope.
              * If the pending unwind is a TAG_STOP targeting THIS scope's tag,
              * terminate the tagged block and resume execution AFTER it — legacy
              * urbi semantics: tag.stop ends the tagged block; enclosing code
@@ -641,7 +641,7 @@ urbi_unwind(UStrand *s)
             if (s->pending_unwind == UEXEC_TAG_STOP &&
                 e->owning_tag != NULL &&
                 e->owning_tag == s->unwind_target) {
-                /* refactor-3 (carried from T3 pass-through fix): synthetic
+                /* refactor-3 (carried-over pass-through fix): synthetic
                  * ambient entries (FLAG_TAG_AMBIENT — realm tag / inherited
                  * fork-chain tag) must NOT absorb the TAG_STOP: their
                  * handler_pc == 0 (would restart the thunk at pc_base) and
@@ -697,7 +697,7 @@ urbi_unwind(UStrand *s)
                  * scope teardown, mirroring OP_POP_TAG's order (teardown at
                  * pop; the OP_POP_TAG onleave arm itself is emit-dead at
                  * v1.0 — urbi_emit_tag_prefix_arm never sets FLAG_HAS_ONLEAVE).
-                 * T29 / FOUND-009: handle URBI_ERR_CLEANUP_OVERFLOW. */
+                 * Handle URBI_ERR_CLEANUP_OVERFLOW. */
                 uint16_t handler_pc = e->handler_pc;
                 int      rc;
                 if (e->flags & FLAG_TAG_AMBIENT)
@@ -748,10 +748,10 @@ fatal:
     s->state        = USTRAND_STATE_DEAD;
 }
 
-/* ===== Row 7 public C API (T12) =====
+/* ===== Row 7 public C API =====
  *
  * These functions expose strand control-transfer to host C code.
- * Thread safety: none at M3 — not ISR-safe.  T18 adds the ISR-safe path.
+ * Thread safety: not ISR-safe.  The ISR-safe path was added later.
  * Functions that accept NULL for mandatory pointer args return URBI_ERR_INVALID_ARG.
  */
 
@@ -962,7 +962,7 @@ urbi_tag_unblock(struct UVM *vm, struct UTag *tag)
  * and UTAG_FLAG_FROZEN.
  *
  * Replaces the flag-only stub previously installed by tag_freeze_native /
- * tag_unfreeze_native at v0.10.2 W4.  Those native methods now forward
+ * tag_unfreeze_native at v0.10.2.  Those native methods now forward
  * through this C API so the strand-suspension semantic actually fires.
  *
  * SCHED-08 (v0.13.3): unfreeze clears each member's FREEZE gate; a member
@@ -1056,9 +1056,9 @@ urbi_strand_cancel(struct UVM *vm, struct UStrand *strand, UValue cancel_reason)
 }
 
 /* urbi_strand_panic — skip walker, mark strand DEAD immediately.
- * No cleanup runs.  The msg parameter is for diagnostic context; at M3 it
- * is not stored (no string heap) — T16/T19 diagnostic infra will wire it.
- * The fatal_value is set to nil; T29 may upgrade to a string UValue. */
+ * No cleanup runs.  The msg parameter is for diagnostic context; it
+ * is not stored (no string heap) — diagnostic infra will wire it.
+ * The fatal_value is set to nil; a future pass may upgrade to a string UValue. */
 int
 urbi_strand_panic(struct UVM *vm, struct UStrand *strand, const char *msg)
 {
@@ -1069,7 +1069,7 @@ urbi_strand_panic(struct UVM *vm, struct UStrand *strand, const char *msg)
     (void)vm;  /* vm mirrors strand->vm; accepted for API convention */
     if (!strand) return URBI_ERR_INVALID_ARG;
     if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
-    /* FOUND-045: route diagnostic msg through host_log_fn before marking the
+    /* Route diagnostic msg through host_log_fn before marking the
      * strand dead so embedders can correlate panic causes with their own
      * logging pipeline.  URBI_LOG_FATAL is not defined; use ERROR (highest
      * level we have).  NULL-guarded — many tests wire vm without a log
@@ -1146,7 +1146,7 @@ urbi_strand_reset(struct UVM *vm, struct UStrand *strand)
     strand->fatal_status      = UEXEC_OK;
     strand->fatal_value       = nil;
     strand->cleanup_depth     = 0;
-    strand->cleanup_run_depth = 0;        /* T29 / FOUND-009: clear recursion counter */
+    strand->cleanup_run_depth = 0;        /* clear recursion counter */
     strand->cleanup_absorbed  = 0;        /* v0.13.1-B: no stale absorption flag */
     strand->cleanup_top       = NULL;
     strand->suspend_gates     = 0U;       /* SCHED-08: no stale block/freeze gate */
@@ -1163,7 +1163,7 @@ urbi_strand_reset(struct UVM *vm, struct UStrand *strand)
  */
 
 /* urbi_throw — deposit THROW unwind (equiv to bytecode OP_THROW).
- * v0.10.3 W5: gains vm as first arg and changes void → int so NULL
+ * v0.10.3: gains vm as first arg and changes void → int so NULL
  * vm/strand can return URBI_ERR_INVALID_ARG (api-ergonomics F8). */
 int
 urbi_throw(struct UVM *vm, struct UStrand *strand, UValue value)
@@ -1179,7 +1179,7 @@ urbi_throw(struct UVM *vm, struct UStrand *strand, UValue value)
 /* urbi_return_val — deposit RETURN unwind (equiv to bytecode OP_RETURN).
  * Named urbi_return_val (not urbi_return) to avoid conflict with the C
  * keyword `return` in macro expansion contexts and to be unambiguous.
- * v0.10.3 W5: gains vm as first arg and changes void → int. */
+ * v0.10.3: gains vm as first arg and changes void → int. */
 int
 urbi_return_val(struct UVM *vm, struct UStrand *strand, UValue value)
 {
@@ -1192,7 +1192,7 @@ urbi_return_val(struct UVM *vm, struct UStrand *strand, UValue value)
 }
 
 /* urbi_tag_stop_local — deposit TAG_STOP from within the same strand.
- * v0.10.3 W5: gains vm as first arg (api-ergonomics F3).
+ * v0.10.3: gains vm as first arg (api-ergonomics F3).
  * API-002: NULL strand or NULL strand->vm is a no-op. */
 void
 urbi_tag_stop_local(struct UVM *vm, struct UStrand *strand,

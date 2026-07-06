@@ -50,8 +50,8 @@ install_const_slot(UVM *vm, UObject *proto, const char *name, UValue value)
 /* === Compile-time platform kind ==========================================
  *
  * Set at compile-time via #ifdef cascade.  The freestanding fallback uses
- * "freertos" because the cross-arm baseline is freestanding-Cortex-
- * M7 with the FreeRTOS BSP target as the canonical embedded host; non-
+ * "freertos" because the cross-arm baseline is a freestanding Cortex-M7
+ * with the FreeRTOS BSP target as the canonical embedded host; non-
  * FreeRTOS freestanding hosts can override in a v1.x BSP integration. */
 
 #if defined(__linux__)

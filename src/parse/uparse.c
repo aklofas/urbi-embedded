@@ -42,23 +42,23 @@ const char * const urbi_parse_kErrorMessages[] = {
     "trailing '&' is illegal",
     "'lazy' keyword only allowed in parameter lists",
     "'try' requires at least one of 'catch' or 'finally'",
-    "reserved keyword used as variable name (M5 reactive runtime); rename the variable",
+    "reserved keyword used as variable name (reactive runtime); rename the variable",
     "postfix '?' is only valid inside at(...); use 'at (e?) body' for event-subscribe",
-    "multi-arg e!(x, y, z) is reserved for M6 (UList auto-boxing); use e!(x) with one arg",
+    "multi-arg e!(x, y, z) is reserved for v1.x (UList auto-boxing); use e!(x) with one arg",
     "bare '.changed' outside at(...) is a slot-change event; use: at (obj.x.changed?) body",
     "slot-change event cannot be emitted; use slot assignment to trigger subscribers",
     "named-function declarations are not supported at v1.0; use 'var name = function(...){...}'",
     "'onleave' is not allowed with 'at sync' — at sync has no leave edge; use 'at (cond) body onleave handler'",
     "statement-start 'get name() {...}' / 'set name(v) {...}' is not supported at v1.0 outside a class body; use 'recv.get name() {...}' or 'class C { get name() {...} }'",
-    /* === W10/v0.10.5: list/dict literal + subscript errors === */
+    /* === v0.10.5: list/dict literal + subscript errors === */
     "expected ']' to close list/dict literal or subscript",
     "dict literal key must be followed by '=>' (e.g. \"key\" => value)",
     "expected ']' to close subscript expression",
     "'var obj.slot' requires an initializer: use 'var obj.slot = value'",
     "compound subscript operator other than '+=' is not supported at v1.0; use 'obj[i] = obj[i] op v'",
-    /* === end W10/v0.10.5 === */
+    /* === end v0.10.5 === */
 
-    /* === W1/v0.10.5: control flow errors === */
+    /* === v0.10.5: control flow errors === */
     "for-each loop header must start with 'var' (e.g. for (var x : list))",
     "for-each loop header must use ':' or 'in' between variable and iterable",
     "'break' is only valid inside a 'for' or 'while' loop",
@@ -68,13 +68,13 @@ const char * const urbi_parse_kErrorMessages[] = {
     /* === v0.13.5: switch default arm === */
     "switch body may only have one 'default:' arm",
     /* === end v0.13.5: switch default arm === */
-    /* === end W1/v0.10.5: control flow errors === */
+    /* === end v0.10.5: control flow errors === */
 
-    /* === W9/v0.10.5: event payload binding errors === */
+    /* === v0.10.5: event payload binding errors === */
     "event payload binding requires 'var' keyword (e.g. at (e?(var x)) body)",
     "event payload binding requires an identifier after 'var' (e.g. at (e?(var x)) body)",
     "event payload binding is missing closing ')' (e.g. at (e?(var x)) body)"
-    /* === end W9/v0.10.5 === */
+    /* === end v0.10.5 === */
 };
 
 static const char * const kErrorNames[] = {
@@ -104,14 +104,14 @@ static const char * const kErrorNames[] = {
     "PARSE_NAMED_FUNCTION_NOT_SUPPORTED",
     "PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE",
     "PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED",
-    /* === W10/v0.10.5 === */
+    /* === v0.10.5 === */
     "PARSE_EXPECTED_RBRACKET",
     "PARSE_DICT_EXPECTED_FAT_ARROW",
     "PARSE_SUBSCRIPT_EXPECTED_RBRACKET",
     "PARSE_VAR_OBJ_SLOT_NO_INIT",
     "PARSE_SUBSCRIPT_COMPOUND_OP_V1X",
-    /* === end W10/v0.10.5 === */
-    /* === W1/v0.10.5: control flow === */
+    /* === end v0.10.5 === */
+    /* === v0.10.5: control flow === */
     "PARSE_FOR_EXPECTED_VAR",
     "PARSE_FOR_EXPECTED_COLON_OR_IN",
     "PARSE_BREAK_OUTSIDE_LOOP",
@@ -121,12 +121,12 @@ static const char * const kErrorNames[] = {
     /* === v0.13.5: switch default arm === */
     "PARSE_SWITCH_DUPLICATE_DEFAULT",
     /* === end v0.13.5: switch default arm === */
-    /* === end W1/v0.10.5: control flow === */
-    /* === W9/v0.10.5: event payload binding === */
+    /* === end v0.10.5: control flow === */
+    /* === v0.10.5: event payload binding === */
     "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR",
     "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_IDENT",
     "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN"
-    /* === end W9/v0.10.5 === */
+    /* === end v0.10.5 === */
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
@@ -152,7 +152,7 @@ URBI_STATIC_ASSERT(sizeof urbi_parse_kEmitMethodName - 1U == kEmitMethodNameLen,
 
 /* Read-only OOM error sentinel returned by parse functions when arena
  * allocation fails. Declared `static const` to satisfy the per-VM
- * audit (see tools/audit-globals.sh + pre-M2 multi-VM-audit spec):
+ * audit (see tools/audit-globals.sh + pre-v0.10 multi-VM-audit spec):
  * functionally immutable, but the public AST API uses `UAstNode *`
  * (non-const), so callers cast away const at return sites. The cast
  * is safe because the sentinel is never mutated by anyone — its
@@ -176,7 +176,7 @@ UToken urbi_parse_peek(UParser *p) {
 }
 
 /* Second-token lookahead — returns the token AFTER urbi_parse_peek() without
- * advancing the stream.  Used by T41 (get/set parse sugar) to detect
+ * advancing the stream.  Used by get/set parse sugar to detect
  * `get IDENT (` shapes; after we know the current IDENT is `get`/`set`,
  * we need to see whether the next two tokens are IDENT followed by `(`.
  *

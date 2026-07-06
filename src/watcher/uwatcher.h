@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UWatcher: reactive watcher record + pool allocation.
- * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.
@@ -48,7 +47,7 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
 #define UWATCHER_AT_EVENT_SYNC      6   /* at (event) body synchronous variant (spec #3 §3.2) */
 #define UWATCHER_WHENEVER_EVENT     7   /* whenever (e?) body — perpetual event subscriber;
                                          * body re-fires on every emission, no one-shot
-                                         * teardown.  W0/v0.10.2.  Closes reactive F1. */
+                                         * teardown.  v0.10.2.  Closes reactive F1. */
 
 /* === Mode predicates (refactor-3 SCHED-16) ===
  *
@@ -85,7 +84,7 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
  * Deleted at v0.8.4 Step C-3: UClosure lifetime is GC-managed; watcher
  * install no longer needs to take manual ownership of closures. */
 
-/* === Exhaust-policy constants (M5 dispatch; field present at M3) === */
+/* === Exhaust-policy constants === */
 
 #define URBI_EXHAUST_QUEUE  0   /* queue firings (default) */
 #define URBI_EXHAUST_DROP   1   /* drop if body is still running */
@@ -115,7 +114,7 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
 
 /* === UWatcher struct (spec §5.1) ===
  *
- * Exact layout per pre-M3 tag-lifecycle-and-watcher-dirty-set-design.md §5.1.
+ * Exact layout per tag-lifecycle-and-watcher-dirty-set-design.md §5.1.
  *
  * Size at default build (URBI_WATCHER_READSET_MAX=16):
  *   Header fields  : 16 B  (type_tag + gc_byte + mode + exhaust_policy +
@@ -149,7 +148,7 @@ typedef struct UWatcher {
 
     /* === Watcher-private state === */
     uint8_t   mode;                        /* 1 B  UWATCHER_AT / _WHENEVER / _AT_SYNC / _WAITUNTIL / _AT_EVENT / _AT_EVENT_SYNC */
-    uint8_t   exhaust_policy;              /* 1 B  URBI_EXHAUST_QUEUE / _DROP (M5 dispatch) */
+    uint8_t   exhaust_policy;              /* 1 B  URBI_EXHAUST_QUEUE / _DROP */
     uint8_t   flags;                       /* 1 B  URBI_WATCHER_ACTIVE / _PENDING_UNREGISTER / _FIRED_DURING_EVAL */
     uint8_t   read_set_count;              /* 1 B  number of valid entries in cells[] */
     uint8_t   pending_refire_count;        /* 1 B  events queued while body in flight (0..max_refire_queue); see URBI_WATCHER_REFIRE_QUEUE_DEFAULT */
@@ -178,7 +177,7 @@ typedef struct UWatcher {
     /* === Identity + closures === */
     struct UTag  *owning_tag;             /* 8 B  pin to tag scope */
     UClosure     *condition;              /* 8 B  evaluated each urbi_vm_watcher_eval_dirty */
-    UClosure     *body;                   /* 8 B  spawned per fire (M5) */
+    UClosure     *body;                   /* 8 B  spawned per fire */
     UClosure     *onleave;               /* 8 B  NULL if no onleave clause */
 
     /* === Body-spawn lifecycle anchors (spec #1 §4.1) === */

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/runtime/uheap_lock.c
  *
- * Phase 13 / T145: urbi_lock_heap public C API.
+ * Phase 13: urbi_lock_heap public C API.
  *
  * One-way latch that flips vm->heap_locked.  Subsequent urbi_gc_alloc
  * calls observe the flag and decline to allocate new GC-managed cells

@@ -12,13 +12,13 @@
  *
  * U-prefix on file-private types (UInternStr / UInternTable):
  *   These types are file-private (not exported in the public header) but
- *   carry the U prefix for historical reasons — at M3 they straddled the
+ *   carry the U prefix for historical reasons — they originally straddled the
  *   uintern.c / uvm.h boundary as cross-TU types, then v0.5.3 layout
  *   relocated their definitions here as the public surface narrowed to
  *   `vm->intern_table` (void *) + the four functions in uintern.h.  The
  *   prefix is retained to keep the type-name search path stable across
  *   the v0.5.x cleanup ramp; renaming would touch every grep history hit
- *   without functional benefit (FOUND-021, v0.5.5). */
+ *   without functional benefit (v0.5.5). */
 
 #include "value/uintern.h"
 #include "runtime/umacros.h"   /* urbi_memcpy */
@@ -28,7 +28,7 @@
 
 #include "vm/uvm.h"
 #include "gc/ugc.h"
-#include "urbi/urbi.h"     /* URBI_ASSERT_NOT_ISR (T30 / FOUND-011) */
+#include "urbi/urbi.h"     /* URBI_ASSERT_NOT_ISR */
 
 #define INTERN_INITIAL_CAP    16U     /* power of two */
 #define INTERN_LOAD_NUM       7U      /* grow when count*10 > cap*7 */
@@ -159,7 +159,7 @@ static int table_grow(UVM *vm, UInternTable *t) {
 
 const char *ustr_intern(UVM *vm, const char *bytes, size_t nbytes) {
     if (vm == NULL) return NULL;
-    URBI_ASSERT_NOT_ISR(vm);   /* T30 / FOUND-011: intern table is single-threaded */
+    URBI_ASSERT_NOT_ISR(vm);   /* intern table is single-threaded */
 
     /* Lazy table init. */
     UInternTable *t = (UInternTable *)vm->intern_table;
@@ -173,7 +173,7 @@ const char *ustr_intern(UVM *vm, const char *bytes, size_t nbytes) {
         vm->intern_table = t;
     }
 
-    /* FOUND-008: lookup-first ordering.  Compute hash, probe the table once;
+    /* lookup-first ordering.  Compute hash, probe the table once;
      * if the string is already interned, return the canonical pointer
      * unconditionally — the lookup-only fast path must never trigger a
      * grow.  Only when an insertion is actually needed do we re-check the
@@ -209,7 +209,7 @@ const char *ustr_intern(UVM *vm, const char *bytes, size_t nbytes) {
 
 void uintern_destroy(UVM *vm) {
     if (vm == NULL) return;
-    URBI_ASSERT_NOT_ISR(vm);   /* T30 / FOUND-011: intern table is single-threaded */
+    URBI_ASSERT_NOT_ISR(vm);   /* intern table is single-threaded */
     UInternTable *t = (UInternTable *)vm->intern_table;
     if (t == NULL) return;
 
@@ -227,7 +227,7 @@ void uintern_destroy(UVM *vm) {
 
 size_t uintern_count(const UVM *vm) {
     if (vm == NULL || vm->intern_table == NULL) return 0;
-    URBI_ASSERT_NOT_ISR(vm);   /* T30 / FOUND-011: intern table is single-threaded */
+    URBI_ASSERT_NOT_ISR(vm);   /* intern table is single-threaded */
     return ((const UInternTable *)vm->intern_table)->count;
 }
 
@@ -249,7 +249,7 @@ size_t
 urbi_intern_bytes(const UVM *vm)
 {
     if (vm == NULL) return 0;
-    URBI_ASSERT_NOT_ISR(vm);   /* T30 / FOUND-011: intern table is single-threaded */
+    URBI_ASSERT_NOT_ISR(vm);   /* intern table is single-threaded */
     const UInternTable *t = (const UInternTable *)vm->intern_table;
     return (t != NULL) ? t->bytes : (size_t)0;
 }
@@ -257,7 +257,7 @@ urbi_intern_bytes(const UVM *vm)
 /* === ustr_op_name ===
  *
  * Intern `op` (length `len`) and return the canonical USymbol*.  Used by the
- * operator-method-fallback dispatch (Gap #4, M6 Wave 3) to look up operator-
+ * operator-method-fallback dispatch (Gap #4) to look up operator-
  * named slots on user-type objects when an arith_* call returns a type error.
  *
  * Forwards to ustr_intern; returns NULL on OOM (caller must propagate). */
@@ -280,13 +280,13 @@ ustr_op_name(UVM *vm, const char *op, size_t len)
  *
  * The function is registered as a root provider only so that the provider
  * slot in vm->gc is occupied and the dispatch path is exercised, keeping
- * the M4-shipped GC root-provider API symmetric across all subsystems.
+ * the GC root-provider API symmetric across all subsystems.
  *
  * If a future revision migrates strings to a UString GC cell type, this
  * walker would iterate occupied non-tombstone entries and report each as
  * a UValue root via cb — at which point intern lifetime would track the
  * GC cycle rather than the table allocation.  Filed under v1.x backlog
- * (FOUND-024 disposition, v0.5.5: no-op-by-design at v1.0). */
+ * (v0.5.5: no-op-by-design at v1.0). */
 void
 urbi_gc_intern_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {

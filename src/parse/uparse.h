@@ -25,7 +25,7 @@ typedef struct {
     UArena *arena;
     UToken urbi_parse_peek;
     bool have_peek;
-    /* Second-token lookahead.  Used by T41 (get/set parse sugar) to detect
+    /* Second-token lookahead.  Used by get/set parse sugar to detect
      * `get IDENT (` / `set IDENT (` patterns without an irreversible commit:
      * after the current token (urbi_parse_peek), urbi_parse_peek2() returns the token AFTER it.
      * Filled lazily by urbi_parse_peek2(); consumed alongside urbi_parse_peek by urbi_parse_consume(). */
@@ -35,13 +35,13 @@ typedef struct {
      * When true, the postfix `?` handler in urbi_parse_expression passes through
      * the token (does not error) so urbi_parse_at can detect it after the fact. */
     bool at_event_cond;
-    /* T41 (Wave 2): nesting depth of `class { ... }` bodies currently being
+    /* Nesting depth of `class { ... }` bodies currently being
      * parsed.  Bumped by parse_class_declaration around its urbi_parse_block call.
      * Statement-start `get name() {...}` / `set name(v) {...}` is rejected
      * at parse time when this is zero — the implicit-receiver form has no
      * v1.0 resolver outside a class body (deferred to v1.x implicit-this). */
     int class_body_depth;
-    /* === W1/v0.10.5: control flow ===
+    /* === v0.10.5: control flow ===
      * Nesting depth of for/while loops currently being parsed.  Bumped
      * around each loop body parse so that break/continue can be detected
      * outside any loop (PARSE_BREAK_OUTSIDE_LOOP / PARSE_CONTINUE_OUTSIDE_LOOP).

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Watcher eval pass: urbi_vm_watcher_eval_dirty, urbi_watcher_invoke_condition_closure.
- * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.
@@ -312,7 +311,7 @@ urbi_vm_watcher_eval_dirty(struct UVM *vm)
                     }
                     w->flags |= URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE;
                 }
-                /* W9: falling-edge else_body / onleave dispatch.
+                /* falling-edge else_body / onleave dispatch.
                  * The `onleave` slot doubles as the else_body closure when the
                  * parser compiles `whenever (cond) body else else_body` —
                  * urbi_emit_watcher_arm stores else_body in register C of

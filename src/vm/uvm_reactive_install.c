@@ -237,7 +237,7 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
      *   (a) fast-path: cond was truthy at install → watcher unregistered
      *       immediately, strand state unchanged (still RUNNING) → NEXT().
      *   (b) park path: cond was falsy → install parked the strand via
-     *       urbi_sched_strand_block(USTRAND_REASON_WATCHER) (refactor-3 SCHED-01:
+     *       urbi_sched_strand_block(USTRAND_REASON_WATCHER) (SCHED-01:
      *       block owns the runnable-count decrement).  Here we advance pc
      *       past this instruction and goto exit_strand so the scheduler can
      *       pick up another strand.  The eval-pass wake will resume

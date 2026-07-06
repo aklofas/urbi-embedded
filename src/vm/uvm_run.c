@@ -201,7 +201,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
                 urbi_sched_dequeue_ready_head(vm);
             }
             strand.state = USTRAND_STATE_RUNNING;
-            /* refactor-3 VM-04/SCHED-11 (v0.13.1-E): re-arm per-slice safepoint
+            /* VM-04/SCHED-11 (v0.13.1-E): re-arm per-slice safepoint
              * budget so a budget-exhausted transient strand can reach the GC
              * check on the next dispatch iteration (mirrors ustep.c). */
             strand.safepoint_budget_remaining = (uint16_t)URBI_STRAND_BUDGET_MAX;
@@ -214,7 +214,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
             break;
         }
         if (USTRAND_IS_SUSPENDED(&strand)) {
-            /* refactor-3 VM-03: a native suspended the transient strand
+            /* VM-03: a native suspended the transient strand
              * (t.block()/t.freeze() from inside the tag's own scope).
              * urbi_vm_run is the synchronous one-shot path — no later
              * urbi_step loop exists to resume the strand, so parking

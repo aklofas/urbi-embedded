@@ -22,7 +22,7 @@ static UAstNode *parse_var_decl(UParser *p) {
     UToken kw = urbi_parse_consume(p);          /* urbi_parse_consume TOK_KW_VAR */
     UToken name = urbi_parse_peek(p);
 
-    /* Detect reserved keywords used as variable names (T4, spec #2 §3.11).
+    /* Detect reserved keywords used as variable names (spec #2 §3.11).
      * PARSE-007: `async` was previously treated as soft (allowed in
      * var-decl) but `async = 2` failed at the assignment site because
      * urbi_parse_statement_or_expr has no IDENT-fallthrough for TOK_KW_ASYNC.
@@ -40,7 +40,7 @@ static UAstNode *parse_var_decl(UParser *p) {
 
     { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
-    /* === W10/v0.10.5: `var obj.slot = value` slot-install form.
+    /* === v0.10.5: `var obj.slot = value` slot-install form.
      *
      * If the token after the IDENT is TOK_DOT (not TOK_EQ), this is the
      * legacy slot-install form `var obj.slot = value`.  Desugar to
@@ -53,7 +53,7 @@ static UAstNode *parse_var_decl(UParser *p) {
      * achieved naturally by building a full `a.b.c = v` AST_MEMBER_SET
      * tree where the receiver is AST_MEMBER_GET for `a.b`.
      *
-     * Ruling: implemented (Wave 6 W10, legacy F14). */
+     * Ruling: implemented (v0.10.5, legacy F14). */
     if (urbi_parse_peek(p).type == TOK_DOT) {
         /* Build receiver node from the already-consumed IDENT. */
         UAstNode *recv = urbi_parse_make_ident(p, name.u.str.start, name.u.str.len,
@@ -92,7 +92,7 @@ static UAstNode *parse_var_decl(UParser *p) {
             return ms;
         }
     }
-    /* === end W10/v0.10.5: var obj.slot form === */
+    /* === end v0.10.5: var obj.slot form === */
 
     UToken eq = urbi_parse_peek(p);
     UAstNode *init;
@@ -161,7 +161,7 @@ static UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
    The non-assign/non-tag path runs urbi_parse_expression_cont to
    finish the Pratt climb, then urbi_parse_pipe_amp_fold for `|`/`&`.
 
-   W8/v0.10.5: member-expr tag form.  After parsing a postfix chain
+   v0.10.5: member-expr tag form.  After parsing a postfix chain
    (member-access, calls, etc.) from the leading IDENT, if the result
    is followed by `:` at statement level, treat the whole expression as
    the tag-expr of an AST_TAG_PREFIX.  This enables `Tag.scope: body`
@@ -174,7 +174,7 @@ static UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
    Used from parse_arm_stmt (arm context — `&` must bind
    OUTSIDE the unbraced arm per ugrammar.y :374-378 cstmt tier). */
 static UAstNode *parse_assign_or_expr_impl(UParser *p, UToken name, bool fold) {
-    /* T41 statement-start getter/setter sugar: `get IDENT (...)` or
+    /* Getter/setter statement-start sugar: `get IDENT (...)` or
      * `set IDENT (...)` produces an AST_PROPERTY_DECL.  Recognized only
      * in the strict 3-token shape `get|set IDENT (`; outside that
      * pattern, `get`/`set` remain plain identifiers (no keyword
@@ -184,7 +184,7 @@ static UAstNode *parse_assign_or_expr_impl(UParser *p, UToken name, bool fold) {
     if ((urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "get", 3) ||
          urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "set", 3))
         && urbi_parse_peek(p).type == TOK_IDENT && urbi_parse_peek2(p).type == TOK_LPAREN) {
-        /* T41 (Phase 2 follow-up): the implicit-receiver form is legal
+        /* Getter/setter (follow-up): the implicit-receiver form is legal
          * only inside a `class { ... }` body.  At statement start there
          * is no v1.0 resolver for the implicit `this`; reject with a
          * dedicated diagnostic instead of falling through to a generic
@@ -215,7 +215,7 @@ static UAstNode *parse_assign_or_expr_impl(UParser *p, UToken name, bool fold) {
      * Pratt climb (urbi_parse_expression_cont) to collect postfix chains such
      * as `.member`, `(args)`, `!`.  Then check for `:` again — a colon
      * after a postfix chain is the member-expr tag form `Tag.scope: body`
-     * (W8/v0.10.5).  If no colon, finish with the pipe/amp fold as before. */
+     * (v0.10.5).  If no colon, finish with the pipe/amp fold as before. */
     UAstNode *lhs = urbi_parse_make_ident(p, name.u.str.start, name.u.str.len,
                                name.line, name.col);
     if (!lhs) return NULL;
@@ -223,11 +223,11 @@ static UAstNode *parse_assign_or_expr_impl(UParser *p, UToken name, bool fold) {
     lhs = urbi_parse_expression_cont(p, lhs, 0);
     if (!lhs) return NULL;
     if (lhs->kind == AST_ERROR) return lhs;
-    /* === W8/v0.10.5: member-expr tag check === */
+    /* === v0.10.5: member-expr tag check === */
     if (urbi_parse_peek(p).type == TOK_COLON) {
         return urbi_parse_tag_prefix_from_expr(p, lhs);
     }
-    /* === end W8/v0.10.5 === */
+    /* === end v0.10.5 === */
     /* Normal expression statement: fold `|` and `&` separators (unless
      * called from an arm context, where the enclosing fold handles them). */
     if (fold) return urbi_parse_pipe_amp_fold(p, lhs);
@@ -241,7 +241,7 @@ static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
 
 /* --- parse_class_declaration: `class Name [: public P1, P2, ...] { body }`.
  *
- * Phase 6 of M6 stdlib (T38).  Per S-mro-declaration-order, the proto
+ * Phase 6 of class stdlib.  Per S-mro-declaration-order, the proto
  * array preserves declaration left-to-right order; the emitter inserts
  * protos in REVERSE order during desugar so the resulting chain ends up
  * [P1, P2, Object] for `: public P1, P2`.
@@ -310,7 +310,7 @@ static UAstNode *parse_class_declaration(UParser *p) {
      * with whatever outer binding `name` has (per S-class-name-scope).
      * Bump class_body_depth around the parse so statement-start
      * `get`/`set` inside the body skip the top-level rejection in
-     * parse_assign_or_expr (T41 implicit-receiver form is legal in
+     * parse_assign_or_expr (implicit-receiver form is legal in
      * class bodies, illegal at statement-start). */
     UToken body_tok = urbi_parse_peek(p);
     if (body_tok.type != TOK_LBRACE) {
@@ -370,14 +370,14 @@ UAstNode *urbi_parse_statement_or_expr(UParser *p) {
     case TOK_KW_WAITUNTIL: return urbi_parse_waituntil(p);
     case TOK_KW_EVERY:    return urbi_parse_every(p);
     case TOK_KW_CLASS:    return parse_class_declaration(p);
-    /* W3/v0.10.5: assert keyword */
+    /* v0.10.5: assert keyword */
     case TOK_KW_ASSERT:   return urbi_parse_assert(p);
-    /* === W1/v0.10.5: control flow === */
+    /* === v0.10.5: control flow === */
     case TOK_KW_FOR:      return parse_for(p);
     case TOK_KW_BREAK:    return parse_break(p);
     case TOK_KW_CONTINUE: return parse_continue(p);
     case TOK_KW_SWITCH:   return parse_switch(p);
-    /* === end W1/v0.10.5: control flow === */
+    /* === end v0.10.5: control flow === */
     /* S47 (2026-05-16): allow `{ stmts }` as a statement-or-expression.
      * Original urbi spec supports brace blocks in at-bodies, onleave
      * handlers, whenever bodies, and any inner-tier position (see
@@ -408,7 +408,7 @@ UAstNode *urbi_parse_statement_or_expr(UParser *p) {
 /* --- urbi_parse_block: `{` stmts `}` → AST_BLOCK.
    Each statement inside is a full outer-tier parse (including `;` chains).
    Statements are separated by `;` or `|`; a missing separator ends the block.
-   Used by if/else; T13 (while) and T14 (function) will reuse this. --- */
+   Used by if/else; while and function will reuse this. --- */
 UAstNode *urbi_parse_block(UParser *p) {
     UToken lbrace = urbi_parse_peek(p);
     { UAstNode *err = NULL; if (!expect(p, TOK_LBRACE, PARSE_EXPECTED_LBRACE, &err)) return err; }
@@ -569,7 +569,7 @@ UAstNode *urbi_parse_while(UParser *p) {
 
     { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
-    /* W1/v0.10.5: bump loop_depth so break/continue are legal in body.
+    /* v0.10.5: bump loop_depth so break/continue are legal in body.
      * Accept an unbraced single-statement body as well. */
     p->loop_depth++;
     UAstNode *body = (urbi_parse_peek(p).type == TOK_LBRACE)
@@ -758,7 +758,7 @@ UAstNode *urbi_parse_function(UParser *p) {
 
 /* --- urbi_parse_property_decl: `(params) { body }` after a `get`/`set` IDENT.
  *
- * T41 (M6 Wave 2).  Caller has already consumed the leading IDENT
+ * getter/setter.  Caller has already consumed the leading IDENT
  * (`get`/`set`) and the following slot-name IDENT — `name_tok` carries
  * the slot-name token.  The current urbi_parse_peek is `(`.
  *
@@ -890,7 +890,7 @@ UAstNode *urbi_parse_throw(UParser *p) {
     return node;
 }
 
-/* === W3/v0.10.5: assert keyword ===
+/* === v0.10.5: assert keyword ===
  * urbi_parse_assert — `assert(expr)` or `assert { block }`.
  *
  * Paren form:   assert(expr)
@@ -902,7 +902,7 @@ UAstNode *urbi_parse_throw(UParser *p) {
  *   Evaluates the block; truthy final value = pass (no throw).
  *   src_text/src_len = NULL/0.
  *
- * Ruling: implemented (Wave 6 W3, legacy F9).
+ * Ruling: implemented (v0.10.5, legacy F9).
  * Lowers at emit time to: if (!expr) throw "assertion failed[: <src>]"
  * No new opcode needed. */
 UAstNode *urbi_parse_assert(UParser *p) {
@@ -967,7 +967,7 @@ UAstNode *urbi_parse_assert(UParser *p) {
 
 /* --- urbi_parse_try: `try { body } [catch ([var] e [if guard]) { handler }] [else { body }] [finally { cleanup }]`
  *
- * Wave 6 W5 (v0.10.5): extended grammar to accept:
+ * v0.10.5 (v0.10.5): extended grammar to accept:
  *   - optional `var` keyword before the catch variable name
  *   - optional `if expr` guard after the catch variable name
  *   - optional `else { body }` clause after catch (runs when no exception thrown)
@@ -1056,11 +1056,11 @@ UAstNode *urbi_parse_try(UParser *p) {
     return node;
 }
 
-/* === W1/v0.10.5: control flow ===
+/* === v0.10.5: control flow ===
  *
  * parse_for — `for (var x : iter_expr) body` or `for (var x in iter_expr) body`
  *
- * Ruling: implemented (Wave 6 W1, legacy F2).
+ * Ruling: implemented (v0.10.5, legacy F2).
  *
  * Supports only the for-each form.  C-style `for (init; cond; step)` is a
  * migration (see docs/migration/control-flow-migration.md).  Count-form
@@ -1126,7 +1126,7 @@ static UAstNode *parse_for(UParser *p) {
 }
 
 /* parse_break — `break` (statement).
- * Ruling: implemented (Wave 6 W1, legacy F2).
+ * Ruling: implemented (v0.10.5, legacy F2).
  * No payload beyond position.  Error if not inside a for/while/switch. */
 static UAstNode *parse_break(UParser *p) {
     UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_BREAK */
@@ -1141,7 +1141,7 @@ static UAstNode *parse_break(UParser *p) {
 }
 
 /* parse_continue — `continue` (statement).
- * Ruling: implemented (Wave 6 W1, legacy F2).
+ * Ruling: implemented (v0.10.5, legacy F2).
  * No payload beyond position.  Error if not inside a for/while. */
 static UAstNode *parse_continue(UParser *p) {
     UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_CONTINUE */
@@ -1157,7 +1157,7 @@ static UAstNode *parse_continue(UParser *p) {
 
 /* parse_switch — `switch (expr) { case v1: body1; case v2: body2; }`
  *
- * Ruling: implemented (Wave 6 W1, legacy F2).
+ * Ruling: implemented (v0.10.5, legacy F2).
  * Equality-based only (no pattern matching — that is deferred-v1.x).
  * Produces AST_SWITCH with parallel arrays of case-value nodes and body nodes.
  *
@@ -1353,4 +1353,4 @@ static UAstNode *parse_switch(UParser *p) {
     node->u.switch_stmt.default_body = default_body;
     return node;
 }
-/* === end W1/v0.10.5: control flow === */
+/* === end v0.10.5: control flow === */

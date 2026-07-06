@@ -17,7 +17,7 @@
 extern "C" {
 #endif
 
-/* --- emit-time diagnostic (warn/error) plumbing (T32) --- */
+/* --- emit-time diagnostic (warn/error) plumbing --- */
 
 typedef struct {
     enum { UEMIT_DIAG_WARN = 0, UEMIT_DIAG_ERROR = 1 } level;
@@ -38,22 +38,22 @@ typedef enum {
     EMIT_LINE_OVERFLOW,           /* source line > UINT32_MAX (effectively unreachable) */
     EMIT_FINISHED,                /* uemit_statement called after uemit_finish */
 
-    /* M2 additions */
-    EMIT_UPVAL_EXHAUSTED,         /* > UFS_MAX_UPVALUES captures (T8) */
+    /* declaration additions */
+    EMIT_UPVAL_EXHAUSTED,         /* > UFS_MAX_UPVALUES captures */
     EMIT_LOCAL_REDECLARE,         /* duplicate `var x` in same block */
     EMIT_UNRESOLVED_NAME,         /* identifier not local/upvalue/global */
-    EMIT_NESTING_TOO_DEEP,        /* > UFS_MAX_BLOCKS or function-nesting cap (T7) */
-    EMIT_BARE_LAZY_FUNCTION,      /* T17: `function name { body }` */
-    EMIT_CLOSURE_KEYWORD,         /* T17: `closure(x){...}` */
-    EMIT_LAZY_ON_METHOD,          /* T16: lazy on method-bound function */
-    EMIT_LAZY_PARAM_ASSIGN,       /* T16: assignment to lazy param */
+    EMIT_NESTING_TOO_DEEP,        /* > UFS_MAX_BLOCKS or function-nesting cap */
+    EMIT_BARE_LAZY_FUNCTION,      /* `function name { body }` */
+    EMIT_CLOSURE_KEYWORD,         /* `closure(x){...}` */
+    EMIT_LAZY_ON_METHOD,          /* Lazy on method-bound function */
+    EMIT_LAZY_PARAM_ASSIGN,       /* Assignment to lazy param */
 
-    /* M4 additions */
-    EMIT_TOO_MANY_IC_SITES,       /* T15: function exceeds 256 IC sites
-                                     (pre-M4 GETSLOT/SETSLOT encoding §3.4) */
+    /* IC site bookkeeping additions */
+    EMIT_TOO_MANY_IC_SITES,       /* Function exceeds 256 IC sites
+                                     (pre-IC-sites GETSLOT/SETSLOT encoding §3.4) */
 
-    /* M5 additions */
-    EMIT_RESERVED_KEYWORD_AS_IDENT, /* T4: `var at = 1` — hard keyword as variable name */
+    /* reactive-runtime additions */
+    EMIT_RESERVED_KEYWORD_AS_IDENT, /* `var at = 1` — hard keyword as variable name */
 
     /* v0.5.7 Wave 5 additions */
     EMIT_TOO_MANY_ARGS,             /* EMIT-014: AST_CALL with >= 254 args
@@ -67,7 +67,7 @@ typedef enum {
                                        local; see uemit_unwind.c:681).
                                        v1.x bytecode change widens the
                                        encoding (filed as backlog under
-                                       T129/Phase 22). */
+                                       Phase 22). */
 
     /* v0.6.2 Phase 2 — Gap #3 (this keyword) */
     EMIT_NO_THIS_OUTSIDE_METHOD,    /* `this` used at top-level (fs->parent ==
@@ -81,10 +81,10 @@ typedef enum {
                                        silently dropping the jump. */
 } UEmitError;
 
-/* Forward declaration for M2 FuncState lifecycle. */
+/* Forward declaration for FuncState lifecycle. */
 struct UFuncState;
 
-/* === W1/v0.10.5: break/continue loop-context infrastructure ===
+/* === v0.10.5: break/continue loop-context infrastructure ===
  *
  * break and continue lower to OP_JMP with the target patched after the loop.
  * Each for/while/switch body opens a ULoopCtx on the emitter's loop_stack[]
@@ -125,16 +125,16 @@ typedef struct {
     int continue_pcs[UEMIT_LOOP_PATCH_MAX];   /* OP_JMP PCs to patch to cond */
     int continue_count;
     ULoopFrameKind kind;                       /* LOOP or SWITCH */
-    int unwind_scope_depth_on_enter;           /* T24: e->unwind_scope_depth
+    int unwind_scope_depth_on_enter;           /* E->unwind_scope_depth
                                                   snapshot at loop entry; a
                                                   break/continue targeting this
                                                   frame must close every unwind
                                                   scope opened above it before
                                                   its JMP. */
 } ULoopCtx;
-/* === end W1/v0.10.5 === */
+/* === end v0.10.5 === */
 
-/* === T24 (refactor-3 VM-01 follow-on): emitter-side unwind-scope stack ===
+/* === emitter-side unwind-scope stack ===
  *
  * A break/continue JMP that crosses an open `try`/`finally` or tag scope
  * (`mytag: { ... }`) would leave the runtime's cleanup-stack entry behind:
@@ -152,7 +152,7 @@ typedef struct {
  * bounds the walk to scopes opened inside the target loop frame.
  *
  * `return` needs no emit-side handling — the runtime walker processes the
- * returning frame's cleanup entries (uunwind.c T24 pre-walk). */
+ * returning frame's cleanup entries (uunwind.c unwind-scope pre-walk). */
 
 #define UEMIT_UNWIND_SCOPE_MAX  16   /* max nested try/tag scopes; a
                                         catch+finally try consumes 2 */
@@ -168,13 +168,13 @@ typedef struct {
     struct UAstNode *finally_body; /* TRY with finally: body to inline at
                                       each crossing site; NULL otherwise */
 } UUnwindScope;
-/* === end T24 === */
+/* === end unwind-scope stack === */
 
 /* --- UEmitter state (caller stack-allocates, emitter fills) --- */
 
 typedef struct UEmitter {
     UProto        *module;           /* non-owning root UProto; caller supplies (was UModule*; v0.9.2) */
-    UArena       *arena;           /* non-owning; currently unused at M1 but reserved */
+    UArena       *arena;           /* non-owning; currently unused initially but reserved */
     UArena        fs_arena;        /* refactor-3 FE-07: UFuncState storage —
                                       compile-session lifetime; NOT reset per
                                       statement (the shared `arena` is).
@@ -183,14 +183,14 @@ typedef struct UEmitter {
                                       allocator pair); uemit_finish destroys
                                       it; driver error paths that bail before
                                       finish must call urbi_emit_abandon. */
-    struct UVM   *vm;              /* non-owning; set by uemit_init (M2) for intern access */
+    struct UVM   *vm;              /* non-owning; set by uemit_init for intern access */
     uint8_t      next_reg;        /* register allocator cursor */
     uint8_t      max_reg_seen;    /* highest slot ever used */
     uint8_t      last_result_reg; /* register of most recent statement's result */
     uint32_t     prev_line;       /* last emitted instruction's source line */
     bool         any_stmt_emitted;/* gates OP_RET at finish */
     bool         finished;
-    bool         lazy_arg_context; /* T16: set while emitting args in AST_CALL;
+    bool         lazy_arg_context; /* Set while emitting args in AST_CALL;
                                       suppresses implicit force on lazy-local reads
                                       (pass-through semantics, spec §4.2) */
     uint8_t      in_cleanup_body; /* refactor-3 VM-02/B4: non-zero while
@@ -199,9 +199,9 @@ typedef struct UEmitter {
                                      (cleanup bodies are atomic; REVIVAL
                                      §14 ledger 2026-06-10) */
     UEmitError    error;           /* sticky: first error latches */
-    struct UFuncState *current_fs; /* M2: current compilation function */
+    struct UFuncState *current_fs; /* current compilation function */
 
-    /* T32: warn-level diagnostic buffer.  urbi_emit_diag_warn appends here;
+    /* Warn-level diagnostic buffer.  urbi_emit_diag_warn appends here;
      * never causes emit to fail.  diag_buf is module-allocator-owned and
      * grows by doubling.  diag_count diagnostics are valid after
      * uemit_finish; callers may walk diag_buf[0..diag_count-1]. */
@@ -209,28 +209,28 @@ typedef struct UEmitter {
     int          diag_count;
     int          diag_cap;
 
-    /* === W1/v0.10.5: break/continue loop context stack ===
+    /* === v0.10.5: break/continue loop context stack ===
      * Pushed by urbi_emit_for_each_arm / urbi_emit_while_arm / urbi_emit_switch_arm when
      * entering a loop; popped after the exit target is known.  break and
      * continue sites record their placeholder OP_JMP PCs here for batch
      * patching.  See ULoopCtx documentation above. */
     ULoopCtx     loop_stack[UEMIT_LOOP_CTX_MAX];
     int          loop_depth;  /* current nesting depth (0 = not in a loop) */
-    /* === end W1/v0.10.5 === */
+    /* === end v0.10.5 === */
 
-    /* === T24: open unwind scopes (try / tag) — see UUnwindScope above ===
+    /* === open unwind scopes (try / tag) — see UUnwindScope above ===
      * Pushed by emit_try_frame / urbi_emit_tag_prefix_arm around body emission;
      * read by urbi_emit_break_arm / urbi_emit_continue_arm to emit scope-crossing
      * teardown before the loop-exit JMP.  Zeroed by uemit_init. */
     UUnwindScope unwind_scopes[UEMIT_UNWIND_SCOPE_MAX];
     int          unwind_scope_depth;
-    /* === end T24 === */
+    /* === end unwind-scope stack === */
 } UEmitter;
 
 /* --- API --- */
 
 /* Initialize.  root, arena, and vm must all outlive the emitter.
-   source_name may be NULL.  vm parameter (added at M2) lets the
+   source_name may be NULL.  vm parameter (added later) lets the
    emitter intern identifier lexemes into the per-VM string table and
    stamps root->origin_vm = vm.
    v0.9.2: first argument was UModule*; now UProto* (root proto). */
@@ -273,7 +273,7 @@ int uemit_declare_local(UEmitter *e, const char *name, int name_len);
 
 /* Open a lexical block scope. Pushes a UBlockCtx with current
    nactvar/freereg snapshot. is_loop=true marks while-bodies for
-   T8's OP_CLOSE-before-back-edge rule. Returns true on success;
+   OP_CLOSE-before-back-edge rule. Returns true on success;
    false (with EMIT_NESTING_TOO_DEEP) if UFS_MAX_BLOCKS exceeded. */
 bool uemit_open_block(UEmitter *e, bool is_loop);
 
@@ -282,7 +282,7 @@ bool uemit_open_block(UEmitter *e, bool is_loop);
    back to nactvar_on_enter. Returns true on success. */
 bool uemit_close_block(UEmitter *e);
 
-/* For T13 while-loop emit: emit OP_CLOSE before the back-edge JMP when
+/* For while-loop emit: emit OP_CLOSE before the back-edge JMP when
  * the topmost block is a loop AND has captured locals (Lua-style
  * closure-in-loop correctness). No-op otherwise. */
 void uemit_emit_loop_back_close(UEmitter *e);
@@ -290,13 +290,13 @@ void uemit_emit_loop_back_close(UEmitter *e);
 /* Debug helper. */
 const char *uemit_error_name(UEmitError code);
 
-/* T32: Append a warn-level diagnostic to the emitter's diag buffer.
+/* Append a warn-level diagnostic to the emitter's diag buffer.
  * n may be NULL (position will be 0,0).  fmt is a printf-style format
  * string.  Does not set e->error; emit continues normally.
  * If the buffer cannot grow (OOM), the diagnostic is silently dropped. */
 void urbi_emit_diag_warn(UEmitter *e, const UAstNode *n, const char *fmt, ...);
 
-/* T13: Append an error-level diagnostic to the emitter's diag buffer.
+/* Append an error-level diagnostic to the emitter's diag buffer.
  * n may be NULL (position will be 0,0).  fmt is a printf-style format
  * string.  Callers MUST still set e->error before returning — this only
  * enriches the record with source position and a human message; it does
@@ -304,7 +304,7 @@ void urbi_emit_diag_warn(UEmitter *e, const UAstNode *n, const char *fmt, ...);
  * If the buffer cannot grow (OOM), the diagnostic is silently dropped. */
 void urbi_emit_diag_error(UEmitter *e, const UAstNode *n, const char *fmt, ...);
 
-/* T13: Format the first ERROR-level diagnostic as "<source>:<line>:<col>: <msg>"
+/* Format the first ERROR-level diagnostic as "<source>:<line>:<col>: <msg>"
  * (or "<source>: <msg>" when line is 0) into buf[0..cap-1].  When the module
  * carries no source name, "<stdin>" is used — matching ulex_current_source's
  * default so REPL parse and emit errors share one prefix.  Returns true and
@@ -313,18 +313,18 @@ void urbi_emit_diag_error(UEmitter *e, const UAstNode *n, const char *fmt, ...);
  * No-op / returns false on freestanding builds. */
 bool urbi_emit_diag_format_first_error(const UEmitter *e, char *buf, size_t cap);
 
-/* T32: Free all diagnostic message strings and the diag_buf array itself.
+/* Free all diagnostic message strings and the diag_buf array itself.
  * Resets diag_count/diag_cap to 0.  Must be called before the emitter's
  * associated module is destroyed.  No-op on freestanding builds. */
 void urbi_emit_diag_free_all(UEmitter *e);
 
-/* --- M3 row 7 control-transfer opcode encoder helpers ---
+/* --- control-transfer row 7 opcode encoder helpers ---
  *
  * These emit exactly one instruction word into the module.  All accept the
- * source line number for syncline tracking.  See chunk/uchunk.h §M3 row 7
+ * source line number for syncline tracking.  See chunk/uchunk.h §row-7
  * for the bit-layout of each opcode's fields.
  *
- * Used by T10 (try/catch/throw emit), T11 (tag-scope emit), and tests. */
+ * Used by try/catch/throw emit, tag-scope emit, and tests. */
 
 /* OP_THROW: reg_value is the register holding the thrown value. */
 void uemit_throw(UEmitter *e, uint8_t reg_value, uint32_t line);
@@ -376,12 +376,12 @@ ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap);
  * Embedders never include uemit.h — only urbi.h is public. */
 
 #define UFS_MAX_LOCALS    200       /* per-function lexical-local cap */
-#define UFS_MAX_UPVALUES   60       /* per-function upvalue cap (T8) */
-#define UFS_MAX_BLOCKS     32       /* per-function block-nesting cap (T7) */
+#define UFS_MAX_UPVALUES   60       /* per-function upvalue cap */
+#define UFS_MAX_BLOCKS     32       /* per-function block-nesting cap */
 #define UFS_MAX_REGS      256       /* per-function register-frame cap */
 
 /* Active-local descriptor. Lifetime = lexical scope; popped on block exit
- * or function close (T7 adds the block-pop semantics). The slot index
+ * or function close (adds the block-pop semantics). The slot index
  * equals the register holding the local's value (registers [0, nactvar)
  * are locals; [nactvar, freereg) are temps; [freereg, UFS_MAX_REGS) are
  * free).  Exception: when r_global_slot is pre-reserved (EMIT-021),
@@ -393,13 +393,13 @@ typedef struct {
     int         name_len;
     uint8_t     slot;                /* register holding the value */
     bool        is_captured;         /* true once any inner closure flagged
-                                        it as an upvalue source — T8 sets;
-                                        T7 reads to drive OP_CLOSE. */
-    bool        is_lazy;             /* T16: lazy parameter; reserved here */
+                                        it as an upvalue source — sets;
+                                        reads to drive OP_CLOSE. */
+    bool        is_lazy;             /* Lazy parameter; reserved here */
 } ULocalVar;
 
-/* Upvalue descriptor — one per captured outer local. Reserved at T6;
- * populated at T8. */
+/* Upvalue descriptor — one per captured outer local. Initially reserved;
+ * populated later. */
 typedef struct {
     const char *name;                /* interned; for diagnostics + closure prelude */
     int         name_len;
@@ -410,7 +410,7 @@ typedef struct {
 } UUpvalDesc;
 
 /* Block context — stacked per `{` / function-body / loop body. Reserved
- * at T6; populated at T7. */
+ * initially allocated, populated during compilation. */
 typedef struct {
     int     nactvar_on_enter;        /* nactvar value when block opened */
     uint8_t freereg_on_enter;        /* freereg value when block opened;
@@ -421,12 +421,12 @@ typedef struct {
     int    first_local_idx;          /* index into actvars[] of first local
                                         declared in this block */
     bool   is_loop;                  /* true for while-body block —
-                                        drives OP_CLOSE-before-back-edge (T8) */
+                                        drives OP_CLOSE-before-back-edge */
     bool   has_captured;             /* set when any local in this block
                                         was flagged is_captured */
 } UBlockCtx;
 
-/* Per-local function-signature metadata (T16: lazy parameter tracking).
+/* Per-local function-signature metadata (lazy parameter tracking).
  * Populated when a var-decl init is a literal AST_FUNCTION; stays
  * resolved=false for all other binding forms. */
 typedef struct {
@@ -448,25 +448,25 @@ typedef struct UFuncState {
     /* Lexical-local stack (LIFO; pushed by uemit_declare_local). */
     ULocalVar actvars[UFS_MAX_LOCALS];
 
-    /* Per-local function-signature metadata (T16). Parallel to actvars[].
+    /* Per-local function-signature metadata. Parallel to actvars[].
      * Populated when var-decl init is a literal AST_FUNCTION. */
     UFuncSig actvar_sigs[UFS_MAX_LOCALS];
 
-    /* Upvalue descriptors (T8 populates). */
+    /* Upvalue descriptors (populates). */
     UUpvalDesc upvalues[UFS_MAX_UPVALUES];
     int        nupvalues;
 
-    /* Block stack (T7 populates). */
+    /* Block stack (populates). */
     UBlockCtx blocks[UFS_MAX_BLOCKS];
     int       nblocks;
 
     /* Where this function's bytecode lives. At top-level, this is
-     * the emitter's main module. For nested protos (T14), this is the
-     * nested UProto's instruction buffer. NULL at T6 — top-level only. */
-    void *target_proto;              /* opaque; cast to UProto* in T14 */
+     * the emitter's main module. For nested protos, this is the
+     * nested UProto's instruction buffer. NULL at top-level only. */
+    void *target_proto;              /* opaque; cast to UProto* */
 
-    /* === M4 T15: per-function IC site bookkeeping === */
-    /* Per pre-M4 GETSLOT/SETSLOT encoding spec §3.4 + §8.2.  Each
+    /* === per-function IC site bookkeeping === */
+    /* Per pre-IC-sites GETSLOT/SETSLOT encoding spec §3.4 + §8.2.  Each
      * OP_GETSLOT/SETSLOT instruction in this function carries an 8-bit IC
      * index; ic_next is the next index to assign.  ic_names is a dynamic
      * array (grown in 16/32/64/128/256-slot chunks) sized to ic_names_cap;
@@ -477,12 +477,12 @@ typedef struct UFuncState {
     USymbol  **ic_names;             /* lazily allocated via module allocator */
     uint16_t   ic_names_cap;
 
-    /* === M5 T71: realm-global fallback register ===
+    /* === realm-global fallback register ===
      *
      * When this function references any realm global (identifier that does
      * not resolve as a local or upvalue), references_global is set and
      * r_global_slot is assigned a register that will hold realm->global_object
-     * at runtime.  T73 prepends OP_LOAD_REALM_GLOBAL r_global_slot to the
+     * at runtime.  The prologue prepends OP_LOAD_REALM_GLOBAL r_global_slot to the
      * function prologue.  All global OP_GETSLOT(dst, r_global_slot, ic_idx)
      * instructions in this function route through that single live register.
      *
@@ -537,7 +537,7 @@ typedef struct UFuncState {
                                         meaningful only when
                                         global_slot_reserved is true. */
 
-    /* === M5 T72: chunk-top declared global names ===
+    /* === chunk-top declared global names ===
      *
      * At chunk-top (parent == NULL), `var x = init` does not add `x` to
      * actvars[] — it writes to the global slot via OP_SETSLOT.  To allow
@@ -554,7 +554,7 @@ typedef struct UFuncState {
     UFuncSig     global_var_sigs[UFS_MAX_LOCALS]; /* parallel to global_var_names[];
                                                      resolved=true when the init is
                                                      a literal AST_FUNCTION, enabling
-                                                     T16 lazy-arg wrapping at call sites
+                                                     lazy-arg wrapping at call sites
                                                      that reference globals. */
 } UFuncState;
 
@@ -565,7 +565,7 @@ typedef struct UFuncState {
 int urbi_vm_find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
                             const char *name, int name_len);
 
-/* M4 T15: assign the next IC site index for the current function and
+/* Assign the next IC site index for the current function and
  * record `name` in the funcstate's ic_names side table.  `name` is the
  * (interned) USymbol* identifying the slot accessed by an OP_GETSLOT or
  * OP_SETSLOT instruction; the caller writes the returned index into the
@@ -576,7 +576,7 @@ int urbi_vm_find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
  * own IC slot so per-site monomorphism is independent. */
 int uemit_assign_ic_index(struct UEmitter *e, USymbol *name);
 
-/* T31: Test-friend export — see uemit.c for full documentation.
+/* Test-friend export — see uemit.c for full documentation.
  * Best-effort compile-time walker: returns true when n contains a direct
  * write (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET, AST_PROP_SET).
  * AST_CALL is treated as opaque (returns false). */

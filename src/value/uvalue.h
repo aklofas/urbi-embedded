@@ -30,7 +30,7 @@ bool uvalue_truthy(const UValue *v);
    Different kinds with no promotion path → false. */
 bool uvalue_equal(const UValue *a, const UValue *b);
 
-/* Ordered comparison helpers — numeric only at M2.
+/* Ordered comparison helpers — numeric only.
    Returns UVAL_CMP_OK with *out set, or UVAL_CMP_TYPE_ERROR for non-numeric. */
 typedef enum { UVAL_CMP_OK = 0, UVAL_CMP_TYPE_ERROR } UValCmpResult;
 UValCmpResult uvalue_lt(const UValue *a, const UValue *b, bool *out);

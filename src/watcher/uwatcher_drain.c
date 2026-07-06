@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Watcher pending-onleave queue: push helper, run_watcher_onleave,
  * urbi_watcher_drain_pending_onleave_queue.
- * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.
@@ -39,7 +38,7 @@
 #include "runtime/uscratch.h"
 #include "vm/uvm.h"
 #include "tag/utag.h"           /* UTag, member_watchers_head */
-#include "event/uevent_subscribe.h"  /* uevent_at_watchers_remove (W2/v0.10.2) */
+#include "event/uevent_subscribe.h"  /* uevent_at_watchers_remove (v0.10.2) */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "runtime/ulist.h"    /* URBI_SLIST_UNLINK */
@@ -84,7 +83,7 @@ run_watcher_onleave(UVM *vm, UWatcher *w)
  *   1. Set URBI_WATCHER_PENDING_UNREGISTER so eval pass skips.
  *   2. Unlink from vm->active_watchers_head (pointer-to-pointer walk).
  *   3. Unlink from w->owning_tag->member_watchers_head (NULL-guarded).
- *   3b. (W2/v0.10.2) For AT_EVENT/AT_EVENT_SYNC/WHENEVER_EVENT, synchronously
+ *   3b. (v0.10.2) For AT_EVENT/AT_EVENT_SYNC/WHENEVER_EVENT, synchronously
  *       unlink from event->at_watchers_head to close the drain-vs-emit window.
  *   4. Append to pending_onleave_queue tail (set next_active = NULL). */
 void
@@ -116,7 +115,7 @@ urbi_watcher_pending_onleave_queue_push(UVM *vm, UWatcher *w)
                           w, next_in_tag, UWatcher);
     }
 
-    /* Step 3b (W2/v0.10.2): AT_EVENT, AT_EVENT_SYNC, and WHENEVER_EVENT
+    /* Step 3b (v0.10.2): AT_EVENT, AT_EVENT_SYNC, and WHENEVER_EVENT
      * watchers also thread on event->at_watchers_head via next_in_event.
      * Unlink synchronously here so that any urbi_event_emit_async/_sync call
      * that fires between this push and the next safepoint drain does NOT

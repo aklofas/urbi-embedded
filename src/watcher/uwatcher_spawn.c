@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Watcher body spawn — M5 implementation (spec #1 §5.2–§5.3).
+/* Watcher body spawn (spec #1 §5.2–§5.3).
  *
  * urbi_watcher_do_spawn_body_coroutine: the real three-step spawn sequence.
  *   1. urbi_strand_create — OOM → log warn, return; watcher stays installed.
@@ -10,7 +10,7 @@
  *   5. urbi_strand_start — DORMANT → READY (enqueues on run-queue).
  *
  * fire_context is the value / pattern context from the event that triggered
- * this spawn.  M5 baseline always passes NULL; spec #2 wires patterns later.
+ * this spawn.  Baseline always passes NULL; spec #2 wires patterns later.
  *
  * urbi_watcher_spawn_body_coroutine: eval-pass entry (spec #1 §5.2).
  *   Called by urbi_vm_watcher_eval_dirty when condition fires and w->body != NULL.
@@ -198,8 +198,8 @@ urbi_watcher_do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, const v
      * R[0] is UVAL_NIL until we overwrite it here.  Write before urbi_strand_start
      * (Step 6) so the body sees the payload on its first instruction.
      *
-     * W9/v0.10.5: wires payload delivery for AT_EVENT and WHENEVER_EVENT body
-     * strands.  M5 baseline always passed NULL; now urbi_event_emit_async/_sync
+     * v0.10.5: wires payload delivery for AT_EVENT and WHENEVER_EVENT body
+     * strands.  Baseline always passed NULL; now urbi_event_emit_async/_sync
      * pass &payload for event-subscribe body spawns. */
     if (fire_context != NULL && body->R != NULL) {
         const UValue *payload = (const UValue *)fire_context;
@@ -283,7 +283,7 @@ urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s)
         if (vm->host_log_fn)
             vm->host_log_fn(vm, vm->host_log_ud, URBI_LOG_WARN,
                 "watcher body uncaught throw");
-        /* TODO(M6): include throw value's string repr (Object.toString) */
+        /* TODO: include throw value's string repr (Object.toString) */
     }
     /* TAG_STOP, CANCEL, UEXEC_OK: silent */
 
@@ -294,7 +294,7 @@ urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s)
     s->watcher_body_owner = NULL;
     w->body_strand        = NULL;
 
-    /* T33 (v0.7.0 Wave 1): fire body-done callback if installed.  After
+    /* v0.7.0: fire body-done callback if installed.  After
      * internal cleanup (back-pointers cleared) so observers see a
      * consistent state; before any re-spawn so re-spawn-aware embedders
      * can correlate the completion event with the subsequent fresh body

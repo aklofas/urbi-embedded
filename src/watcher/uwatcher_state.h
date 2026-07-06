@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/watcher/uwatcher_state.h — UWatcherState: watcher substate extracted
- * from struct UVM per audit-1 F8 (v0.10.4-vm-decomp Wave 5 W2). */
+ * from struct UVM per audit-1 F8 (v0.10.4-vm-decomp). */
 
 #ifndef URBI_WATCHER_STATE_H
 #define URBI_WATCHER_STATE_H
@@ -10,7 +10,7 @@
 struct UVM;
 struct UWatcher;
 
-/* === W2/v0.10.4: UWatcherState — extracted from struct UVM per audit-1 F8 === */
+/* === UWatcherState (v0.10.4) — extracted from struct UVM per audit-1 F8 === */
 typedef struct UWatcherState {
     /* Liveness counters */
     uint32_t active_count;       /* was vm->watcher_active_count */

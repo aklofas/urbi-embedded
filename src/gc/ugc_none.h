@@ -25,7 +25,7 @@
  * URBI_GC_NONE has no GC-managed cells, no pinning, no finalizer tracking,
  * and no incremental barrier.
  *
- * W2: include/urbi/gc.h now defines default values for these macros via
+ * include/urbi/gc.h now defines default values for these macros via
  * #ifndef guards.  When ugc_none.h is included after urbi/gc.h (the correct
  * order for internal callers who include both), the defaults are already set.
  * #undef + redefine is the standard C idiom for intentional override.  The

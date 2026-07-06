@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* === W3/v0.10.4: UTestHooks extracted from struct UVM per audit-1 F8. ===
+/* === UTestHooks extracted from struct UVM per audit-1 F8 (v0.10.4). ===
  *
  * Bundles the four watcher/install test-seam function pointers that were
  * previously inline fields on struct UVM.  Structured form allows future
@@ -9,8 +9,7 @@
  *   utest_hooks_create is called from urbi_vm_init; vm->test_hooks is
  *   always non-NULL in hosted builds where an allocator is wired.
  *   Production callers in src/watcher/ NULL-check vm->test_hooks before
- *   dereferencing, matching the pre-W3 pattern of checking each hook
- *   function pointer individually.
+ *   dereferencing, checking each hook function pointer individually.
  *
  * Test callers set hooks via vm->test_hooks->watcher_condition etc.
  * after urbi_vm_init (which guarantees vm->test_hooks != NULL).

@@ -1,54 +1,54 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Incremental GC strategy: cell allocation, two-white tri-color marking,
- * allocation-debt trigger.  Spec: row 10 §3–§6 of the pre-M3 GC design doc.
- * T24 lands the 5-phase state machine; T25 lands the real write barriers;
- * T26 lands the root-provider registry walk. */
+ * allocation-debt trigger.  Spec: row 10 §3–§6 of the GC design doc.
+ * Implements the 5-phase state machine, write barriers, and root-provider
+ * registry walk. */
 
 /* === All-cells linkage design choice: Option B (sidecar nodes) ===
  *
  * Spec §3.4 wants the all-cells next-pointer at the end of each cell's
- * payload, at a type-specific offset given by cell_size(type_tag).  At T23,
- * no concrete cell types exist and no type_table entries are registered
- * (that lands at T27).  A per-type cell_size lookup is therefore impossible.
+ * payload, at a type-specific offset given by cell_size(type_tag).  When this
+ * file was written, no concrete cell types existed and no type_table entries
+ * were registered.  A per-type cell_size lookup is therefore impossible.
  *
  * Option B (chosen here): each urbi_gc_alloc call also allocates a small
  * UAllCellsNode sidecar { cell*, size, next* }.  The sidecar list is the
- * all-cells linked list for T23/T24/T25/T26.  UCell itself stays exactly
+ * all-cells linked list.  UCell itself stays exactly
  * 2 bytes (uint8_t type_tag + uint8_t gc_byte) per spec §2.5 — no fields
  * are added.
  *
  * vm->all_cells_head stores the UAllCellsNode* head cast to UCell*.  All
  * code inside this file uses the gc_node_head() accessor to recover it.
- * T24/T25/T26 sweep code must use the same accessor.  vm->sweep_cursor and
+ * Sweep code must use the same accessor.  vm->sweep_cursor and
  * vm->sweep_cursor_prev follow the same cast convention.
  *
- * T27 collapses the sidecar into the trailing-payload-pointer scheme from
- * spec §3.4 once concrete types with registered UType entries exist.
+ * A future refactor can collapse the sidecar into the trailing-payload-pointer
+ * scheme from spec §3.4 once concrete types with registered UType entries exist.
  * At that point vm->all_cells_head reverts to a plain UCell* list threaded
  * through the trailing pointer at offset (cell_size - sizeof(UCell*)).
  *
  * Option A (size stored inside UCell padding) was rejected: it would add a
  * uint16_t at offset 2 inside UCell, violating the 2-byte header invariant
- * from spec §2.5, and requiring a schema break when T27 lands.
- * Option C (hash table) is overkill for the M3 bootstrap. */
+ * from spec §2.5, and requiring a schema break when that refactor lands.
+ * Option C (hash table) is overkill for the bootstrap. */
 
 /* === Gray work-list design choice: Option A (cast pointer) ===
  *
- * vm->gray_work_head is typed struct UCell* in uvm.h (per T4).  At T24 the
- * gray work-list is implemented by threading UAllCellsNode* through each
- * sidecar's next_gray field.  We store the sidecar head in vm->gray_work_head
- * via a UCell* cast, and recover UAllCellsNode* via gc_gray_head() below.
+ * vm->gray_work_head is typed struct UCell* in uvm.h.  The gray work-list is
+ * implemented by threading UAllCellsNode* through each sidecar's next_gray
+ * field.  We store the sidecar head in vm->gray_work_head via a UCell* cast,
+ * and recover UAllCellsNode* via gc_gray_head() below.
  *
  * This is ugly but safe: we write and read through the same cast convention
  * within this TU.  No code outside ugc_incremental.c touches gray_work_head
- * directly at T24.
+ * directly.
  *
- * T27: when the sidecar disappears and trailing payload pointers are used,
- * vm->gray_work_head will hold plain UCell* directly.  Every cast site is
- * annotated with a T27 comment.
+ * Future sidecar collapse: when the sidecar disappears and trailing payload
+ * pointers are used, vm->gray_work_head will hold plain UCell* directly.
+ * Every cast site is annotated with a "sidecar collapse pending" comment.
  *
  * Option B (a parallel vm->gc_gray_head of type UAllCellsNode*) would avoid
- * the cast but adds a UVM field.  We prefer not to change uvm.h at T24. */
+ * the cast but adds a UVM field. */
 
 #include "ugc_incremental.h"
 #include "urbi/gc.h"
@@ -90,16 +90,16 @@ URBI_STATIC_ASSERT(
  * One node per allocated GC cell.  Provides:
  *   - the pointer to the cell (so destroy can free it)
  *   - the allocation size (so destroy can call alloc_fn(cell, 0, ud) correctly,
- *     and so T24 can track live-byte accounting during sweep)
+ *     and so sweep can track live-byte accounting)
  *   - next pointer for the all-cells linked list
  *
- * T27: collapse into trailing-payload-pointer per spec §3.4 once UType
- * cell_size lookups are available. */
+ * Future sidecar collapse: collapse into trailing-payload-pointer per spec §3.4
+ * once UType cell_size lookups are available. */
 typedef struct UAllCellsNode {
     UCell              *cell;
     size_t              size;        /* USER size (redzone excluded under URBI_MEM_DEBUG) */
     struct UAllCellsNode *next;
-    struct UAllCellsNode *next_gray;  /* T24: gray work-list link; NULL when not on gray queue */
+    struct UAllCellsNode *next_gray;  /* gray work-list link; NULL when not on gray queue */
 #if URBI_MEM_DEBUG
     uint64_t              seq;        /* v0.11.3 owner tag: monotonic alloc sequence */
     const uint32_t       *owner_pc;   /* vm->cur_strand->pc at alloc, or NULL */
@@ -118,19 +118,19 @@ typedef struct UAllCellsNode {
  * The cast convention is identical across all six (one-line cast through
  * `void *` to satisfy strict-aliasing).  The functions are kept as
  * separate inlines for type safety — a single parameterized helper would
- * defeat the type-safety value the audit cited.  See the T27 comment
+ * defeat the type-safety value the audit cited.  See the sidecar-collapse comment
  * threads above for what changes when the sidecar layout collapses
  * (each accessor body switches to a direct UCell* cast; signatures are
  * load-bearing across the file and stay). */
 static UAllCellsNode *gc_node_head(UVM *vm) {
     /* Intentional sidecar type laundering; UCell* and UAllCellsNode* alias
-     * the same storage by design.  See file-header on T27 collapse. */
+     * the same storage by design.  See file-header on sidecar collapse. */
     /* NOLINTNEXTLINE(bugprone-casting-through-void) */
     return (UAllCellsNode *)(void *)vm->all_cells_head;
 }
 
 /* Accessor: recover the gray-list head from vm->gray_work_head.
- * T27: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
+ * Future sidecar collapse: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
 static UAllCellsNode *gc_gray_head(UVM *vm) {
     /* See gc_node_head — sidecar laundering. */
     /* NOLINTNEXTLINE(bugprone-casting-through-void) */
@@ -138,14 +138,14 @@ static UAllCellsNode *gc_gray_head(UVM *vm) {
 }
 
 /* Set the gray-list head in vm->gray_work_head.
- * T27: when sidecar disappears, store UCell* directly. */
+ * Future sidecar collapse: when sidecar disappears, store UCell* directly. */
 static void gc_set_gray_head(UVM *vm, UAllCellsNode *node) {
     /* NOLINTNEXTLINE(bugprone-casting-through-void) — see gc_node_head. */
     vm->gray_work_head = (UCell *)(void *)node;
 }
 
 /* Accessor: recover sidecar from vm->sweep_cursor.
- * T27: when sidecar disappears, vm->sweep_cursor holds UCell* directly. */
+ * Future sidecar collapse: when sidecar disappears, vm->sweep_cursor holds UCell* directly. */
 static UAllCellsNode *gc_sweep_node(UVM *vm) {
     /* See gc_node_head — sidecar laundering. */
     /* NOLINTNEXTLINE(bugprone-casting-through-void) */
@@ -153,7 +153,7 @@ static UAllCellsNode *gc_sweep_node(UVM *vm) {
 }
 
 /* Accessor: recover prev-sidecar from vm->sweep_cursor_prev.
- * T27: when sidecar disappears, vm->sweep_cursor_prev holds UCell* directly. */
+ * Future sidecar collapse: when sidecar disappears, vm->sweep_cursor_prev holds UCell* directly. */
 static UAllCellsNode *gc_sweep_node_prev(UVM *vm) {
     /* See gc_node_head — sidecar laundering. */
     /* NOLINTNEXTLINE(bugprone-casting-through-void) */
@@ -161,14 +161,14 @@ static UAllCellsNode *gc_sweep_node_prev(UVM *vm) {
 }
 
 /* Set vm->sweep_cursor to a sidecar node (or NULL).
- * T27: when sidecar disappears, store UCell* directly. */
+ * Future sidecar collapse: when sidecar disappears, store UCell* directly. */
 static void gc_set_sweep_cursor(UVM *vm, UAllCellsNode *node) {
     /* NOLINTNEXTLINE(bugprone-casting-through-void) — see gc_node_head. */
     vm->sweep_cursor = (UCell *)(void *)node;
 }
 
 /* Set vm->sweep_cursor_prev to a sidecar node (or NULL).
- * T27: when sidecar disappears, store UCell* directly. */
+ * Future sidecar collapse: when sidecar disappears, store UCell* directly. */
 static void gc_set_sweep_cursor_prev(UVM *vm, UAllCellsNode *node) {
     /* NOLINTNEXTLINE(bugprone-casting-through-void) — see gc_node_head. */
     vm->sweep_cursor_prev = (UCell *)(void *)node;
@@ -177,8 +177,8 @@ static void gc_set_sweep_cursor_prev(UVM *vm, UAllCellsNode *node) {
 /* === Static helpers for gray work-list and all-cells traversal ===
  *
  * find_sidecar_for_cell: linear scan of the all-cells sidecar list to find
- * the sidecar node whose cell pointer matches the target cell.  O(N) at T24;
- * T27 collapse adds a back-pointer that makes this O(1).
+ * the sidecar node whose cell pointer matches the target cell.  O(N) currently;
+ * future sidecar collapse adds a back-pointer that makes this O(1).
  *
  * Returns NULL if not found (shouldn't happen in correct use). */
 static UAllCellsNode *
@@ -198,12 +198,12 @@ find_sidecar_for_cell(UVM *vm, const UCell *target)
  * heap-bearing and its cell is current_white, paints the cell gray and
  * pushes it onto the gray work-list via its sidecar node.
  *
- * At M3 baseline the only heap-bearing UValKind is UVAL_CLOSURE (carries
+ * Initially the only heap-bearing UValKind was UVAL_CLOSURE (carries
  * a UClosure*, which is a UCell-based object).  All other kinds (NIL, INT,
  * FLOAT, BOOL, STR, VOID) either have no cell pointer or have cells managed
  * outside the GC heap (interned strings, v1 strong roots).
  *
- * T25: uvalue_is_heap() + uvalue_as_cell() are now defined as static inline
+ * uvalue_is_heap() + uvalue_as_cell() are defined as static inline
  * in ugc_incremental.h.  This callback keeps its own inline kind check for
  * the sidecar-based mark path; the barrier surfaces use the helpers. */
 static void
@@ -212,8 +212,8 @@ mark_root_callback(UVM *vm, UValue *slot, void *ctx)
     (void)ctx;  /* ctx == vm; not needed separately */
 
     /* Shade any heap-bearing value (UVAL_CLOSURE, UVAL_OBJECT, UVAL_EVENT).
-     * M3 baseline only handled UVAL_CLOSURE; M4 added UVAL_OBJECT and M5
-     * UVAL_EVENT as heap-managed cell types. */
+     * Initially only handled UVAL_CLOSURE; UVAL_OBJECT and
+     * UVAL_EVENT were added later as heap-managed cell types. */
     if (!uvalue_is_heap(*slot)) return;
     if (slot->v.p == NULL) return;
 
@@ -240,7 +240,7 @@ drain_gray(UVM *vm, size_t budget)
 {
     size_t consumed = 0U;
     while (gc_gray_head(vm) != NULL && consumed < budget) {
-        /* T27: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
+        /* Future sidecar collapse: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
         UAllCellsNode *node = gc_gray_head(vm);
         UCell *cell = node->cell;
 
@@ -339,7 +339,7 @@ gc_atomic_finish_step(UVM *vm)
      * enumeration is not counted against the slice budget (same shape as
      * gc_mark_roots_step's flat 1024); the step is all-in-one-slice by
      * design — the drain below was already unbounded.
-     * (Replaces the M3-era TODO(T26), whose "cur_strand doesn't exist"
+     * (Replaces the earlier TODO on root-provider registry walk, whose "cur_strand doesn't exist"
      * justification went stale years ago.) */
     {
         uint8_t i;
@@ -564,7 +564,7 @@ gc_sweep_step(UVM *vm, size_t budget)
 
 /* === urbi_gc_init ===
  *
- * urbi_vm_init() already zero-initialises every GC field added at T4/T22, so
+ * urbi_vm_init() already zero-initialises every GC field, so
  * urbi_gc_init only needs to set fields whose correct initial value is NOT
  * zero: gc_threshold and gc_debt.  All pointer and flag fields are already
  * NULL / 0 after urbi_vm_init's zero pass.
@@ -602,7 +602,7 @@ urbi_gc_init(UVM *vm)
  *
  * Called from urbi_vm_destroy() as the last subsystem teardown step, after
  * urealm_teardown_all() and all other subsystems that might still hold
- * cells (at M3 no subsystem allocates via urbi_gc_alloc yet, so ordering
+ * cells (initially no subsystem allocates via urbi_gc_alloc, so ordering
  * is loose — placing gc_destroy last is safe and correct for all futures). */
 void
 urbi_gc_destroy(UVM *vm)
@@ -687,7 +687,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     }
 #endif
 
-    /* Phase 13 / T145: urbi_lock_heap one-way latch.  Once locked,
+    /* Phase 13: urbi_lock_heap one-way latch.  Once locked,
      * decline new allocations — caller observes NULL (the standard
      * OOM-shaped failure mode the rest of the runtime already handles
      * via urbi_raise_oom on the script surface). */
@@ -780,11 +780,11 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
 /* === urbi_gc_shade_gray ===
  *
  * Paints a cell gray and pushes it onto the gray work-list via its sidecar
- * node.  Called from mark_root_callback and the forward write barrier (T25).
+ * node.  Called from mark_root_callback and the forward write barrier.
  *
  * Algorithm:
  *   1. Paint cell gc_byte to GRAY.
- *   2. Find the cell's sidecar node (O(N) linear scan; T27 collapse makes
+ *   2. Find the cell's sidecar node (O(N) linear scan; future sidecar collapse makes
  *      this O(1) via back-pointer).
  *   3. Push sidecar onto the gray work-list via next_gray.
  *      Skip if sidecar is already on the gray list (next_gray != NULL or
@@ -803,7 +803,7 @@ urbi_gc_shade_gray(UVM *vm, UCell *cell)
     /* Paint gray. */
     urbi_gc_set_color(cell, UGC_COLOR_GRAY);
 
-    /* Sidecar lookup — O(N) scan (T27 back-pointer collapse pending; see
+    /* Sidecar lookup — O(N) scan (back-pointer collapse pending; see
      * GC-09 in the deep audit / design-risks).
      *
      * NULL contract (refactor-3 GC-15): the ONLY cells legitimately absent
@@ -974,14 +974,14 @@ urbi_gc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 
 /* === urbi_gc_walk_all_cells ===
  *
- * Generic all-cells iterator (T12).  Walks the sidecar list and invokes
+ * Generic all-cells iterator.  Walks the sidecar list and invokes
  * cb(vm, cell, ctx) once per live cell.  cb must not free, allocate, or
  * trigger sweep work — it may safely mutate cell->gc_byte and the cell's
  * type-private payload bytes.
  *
  * Used by urbi_object_lookup_id_force_wrap to clear UObject.lookup_stamp on
- * u32 rollover.  The sidecar list pre-dates T27's trailing-pointer
- * collapse; once T27 lands the implementation here updates to the same
+ * u32 rollover.  The sidecar list pre-dates the trailing-pointer collapse
+ * design; once that lands the implementation here updates to the same
  * iteration form, but the public signature stays the same. */
 void
 urbi_gc_walk_all_cells(UVM *vm, UGcCellCallback cb, void *ctx)
@@ -1073,7 +1073,7 @@ urbi_gc_phase(const UVM *vm)
  * Unpin: clear UGC_IS_PINNED, making the cell eligible for collection again.
  * Both are no-ops for non-heap UValues (NIL, INT, FLOAT, BOOL, STR, VOID).
  *
- * M3 ships single-bit pin (idempotent set/clear).  v1.x adds a refcount
+ * Single-bit pin (idempotent set/clear).  v1.x adds a refcount
  * table for nested pin/unpin pairs. */
 
 #if URBI_GC_HAS_PINNING

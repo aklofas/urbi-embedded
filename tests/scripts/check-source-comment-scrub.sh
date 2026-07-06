@@ -13,6 +13,9 @@
 #
 # Inline escape: if a line contains `scrub-allow: <reason>` it is exempt.
 # Example: /* W3-v0.10.4 — preserved ordering exemplar; scrub-allow: ABI ledger */
+#
+# Hardware names (Cortex-M0/M4/M7, ...) are not process IDs; occurrences of
+# M<n> that are part of an ARM core name are ignored.
 
 set -euo pipefail
 
@@ -29,6 +32,12 @@ while IFS= read -r file; do
     while IFS= read -r match; do
         # Skip lines with scrub-allow marker
         if echo "$match" | grep -qE 'scrub-allow'; then
+            continue
+        fi
+        # ARM core names (Cortex-M7 etc.) are hardware, not process IDs:
+        # re-test the line with them removed.
+        stripped=$(echo "$match" | sed -E 's/(Cortex|cortex)-M[0-9]+//g')
+        if ! echo "$stripped" | grep -qE "$PATTERN"; then
             continue
         fi
         echo "[src-comment-scrub] $match"

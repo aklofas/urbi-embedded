@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UTag: scope-nesting topology node for tag-based concurrency control.
- * Row 11 / T29.
+ * Row 11.
  *
- * M5 (T18): UTag is now GC-managed (urbi_gc_alloc, UTYPE_TAG).
+ * UTag is GC-managed (urbi_gc_alloc, UTYPE_TAG).
  * gc_byte is set by urbi_gc_alloc (current_white); utag_destroy retains
  * the §3.5 member-list invariant assertion but no longer frees (GC owns). */
 
@@ -31,7 +31,7 @@ struct UEvent;
 #define UTAG_FLAG_STOPPED 0x02U  /* set by urbi_tag_stop since v0.7.1 (Gap M) */
 #define UTAG_FLAG_BLOCKED 0x04U  /* set by urbi_tag_block since v0.10.9 (W3b) */
 
-/* === UTag struct (row 11 §3.2, extended M5 spec #3 §3.4) ===
+/* === UTag struct (row 11 §3.2, extended spec #3 §3.4) ===
  *
  * Pure scope-nesting topology: member lists, no parent/child tree.
  * The "hierarchy" emerges from scope nesting via the cleanup-stack.
@@ -54,7 +54,7 @@ struct UEvent;
 typedef struct UTag {
     /* --- common cell header (row 10 §3.1) --- */
     uint8_t  type_tag;                  /* UTYPE_TAG */
-    uint8_t  gc_byte;                   /* GC-managed since M5: tri-color color
+    uint8_t  gc_byte;                   /* GC-managed: tri-color color
                                          * bits + UGC_HAS_SLOT_CHANGE_EVENT.
                                          * Set to vm->current_white by
                                          * urbi_gc_alloc.  TAGCH-007. */
@@ -66,7 +66,7 @@ typedef struct UTag {
      * UTAG_FLAG_STOPPED (0x02) are declared above (alongside this struct)
      * for spec stability, but the runtime does not set or read them in
      * v0.5.x — `Tag.freeze` and `Tag.stop`-state semantics land with the
-     * stdlib at M6/M7.  Future flag adds need a header-comment update
+     * stdlib.  Future flag adds need a header-comment update
      * here and a corresponding macro at file head. */
     uint8_t  flags;                     /* UTAG_FLAG_FROZEN | UTAG_FLAG_STOPPED;
                                          * 0 in v0.5.x */
@@ -110,8 +110,8 @@ typedef struct UTag {
      * a child's parent pointer cannot be collected before the child. */
     struct UTag   *parent;               /* NULL for realm-root tags */
 
-    /* --- name (M6 stdlib) --- */
-    UValue   name;                      /* UVAL_NIL at M5; populated at M6 */
+    /* --- name (stdlib) --- */
+    UValue   name;                      /* UVAL_NIL at alloc; populated at stdlib init */
 } UTag;
 
 /* Layout pin: UTag is 64 B on 64-bit hosts after the v0.7.1 parent-pointer

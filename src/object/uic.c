@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uic.c — IC slow-path helpers (urbi_slot_get_slow / urbi_slot_set_slow).
  *
- * Design references: pre-M4 getslot/setslot encoding §6.3; pre-M4 uslot/uprops
- * collapse §4.2/§5.1; pre-M2 object-model §6.1/§8.1.
+ * Design references: getslot/setslot encoding §6.3; uslot/uprops
+ * collapse §4.2/§5.1; object-model §6.1/§8.1.
  *
  * Two entry points called from the OP_GETSLOT / OP_SETSLOT dispatch arms
  * when the inline-cache fast path misses (no shape+topology match).  Both
@@ -11,7 +11,7 @@
  * the dispatch arm inspects ic->flags[fresh_k] to dispatch a getter/setter
  * if needed; the helpers themselves never call into the VM.
  *
- * COW semantics for SET (per pre-M2 §6.1): if the slot resolves on a
+ * COW semantics for SET (per §6.1): if the slot resolves on a
  * prototype (holder != recv), install a fresh local slot on recv with the
  * new value, leaving the prototype's slot intact.
  *
@@ -133,8 +133,8 @@ urbi_slot_get_slow(UVM *vm, UObject *recv, UIC *ic, UValue *out_value)
     uint32_t idx    = 0U;
     int rc = urbi_object_resolve_slot(vm, recv, ic->name, &holder, &idx);
     if (rc <= 0) {
-        /* 0 == miss; -1 == resolve-stack overflow.  T40 will land the
-         * fallback retry; for now both surface as "not found" to caller. */
+        /* 0 == miss; -1 == resolve-stack overflow.  Both surface as
+         * "not found" to caller (megamorphic fallback retry deferred). */
         return -1;
     }
 
@@ -164,7 +164,7 @@ urbi_slot_get_slow(UVM *vm, UObject *recv, UIC *ic, UValue *out_value)
  *       - otherwise    → in-place write + IC fill
  *   (c) holder != recv (resolved on a prototype):
  *       - OSET         → fill IC pointing at holder's slot; caller
- *                        dispatches setter (per pre-M2 §8.1: setter on
+ *                        dispatches setter (per §8.1: setter on
  *                        the prototype's slot fires)
  *       - otherwise    → COW: install a local slot on recv with the new
  *                        value (no IC fill — the receiver's shape just
@@ -173,7 +173,7 @@ urbi_slot_get_slow(UVM *vm, UObject *recv, UIC *ic, UValue *out_value)
  *                        The source's CONSTANT flag does NOT carry through
  *                        to the COW'd local slot — const-ness binds the
  *                        source slot, not derivations (touchstone: legacy
- *                        slot-cow-const.chk; T57).
+ *                        slot-cow-const.chk).
  *
  * OBJ-009: distinct error codes — URBI_OK on success, URBI_ERR_INVALID_ARG
  * for NULL args, URBI_ERR_CONST_SLOT_WRITE on constant overwrite,
@@ -220,7 +220,7 @@ urbi_slot_set_slow(UVM *vm, UObject *recv, UIC *ic, UValue value)
     if (holder == recv) {
         /* Local slot on the receiver: const-ness is binding here. */
         if (flags & URBI_SLOT_FLAG_CONSTANT) {
-            /* Constant slot on the receiver — write rejected per pre-M2
+            /* Constant slot on the receiver — write rejected per
              * §8.1.  No IC fill (would just reject again on the next
              * access).  OBJ-009 / API-007: distinct from OOM. */
             return URBI_ERR_CONST_SLOT_WRITE;
@@ -232,7 +232,7 @@ urbi_slot_set_slow(UVM *vm, UObject *recv, UIC *ic, UValue value)
         return URBI_OK;
     }
 
-    /* holder != recv — slot resolves on a prototype.  COW per pre-M2
+    /* holder != recv — slot resolves on a prototype.  COW per
      * §6.1: install a fresh local slot on recv with the new value.  The
      * SOURCE slot's CONSTANT flag does NOT carry through: const-ness is
      * an attribute of the source slot, not a constraint on derivations

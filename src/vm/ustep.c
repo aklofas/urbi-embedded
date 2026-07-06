@@ -129,7 +129,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      * is guaranteed to return dispatchable work that consumes budget.  Gating on
      * an INCREASE rather than on `runnable > 0` keeps re-entry tied to NEW work:
      * a leftover READY strand from this slice (e.g. one re-enqueued at VM-budget
-     * exhaustion — refactor-3 VM-04/SCHED-11) must not trigger another drain
+     * exhaustion — VM-04/SCHED-11) must not trigger another drain
      * pass; the `&& step_budget_remaining > 0` clause already blocks that case,
      * and gating on the increase keeps the loop from re-running on a drain that
      * produced nothing.  When no new work is produced the loop exits and the
@@ -168,7 +168,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
              * urbi_sched_strand_yield which re-enqueues count-neutrally. */
             urbi_sched_dequeue_ready_head(vm);
             s->state = USTRAND_STATE_RUNNING;
-            /* refactor-3 VM-04/SCHED-11 (v0.13.1-E): re-arm per-slice safepoint budget.
+            /* VM-04/SCHED-11 (v0.13.1-E): re-arm per-slice safepoint budget.
              * Without this, a strand that exhausted its per-lifetime budget
              * (safepoint_budget_remaining==0 after URBI_STRAND_BUDGET_MAX safepoints)
              * yields at every subsequent safepoint before the GC-slice/drain section,
@@ -228,7 +228,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
     } while (vm->strand_runnable_count > runnable_before_drain
              && vm->step_budget_remaining > 0);
 
-    /* Post-loop verdict ladder (refactor-3 SCHED-13): one liveness formula.
+    /* Post-loop verdict ladder (SCHED-13): one liveness formula.
      *
      * RUNNING   — runnable strands remain (budget ran out) OR pending
      *             internal work exists (ISR-ring events, host-injected

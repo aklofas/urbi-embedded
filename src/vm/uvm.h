@@ -175,7 +175,7 @@ typedef struct UOpOverloadICEntry {
                                       UIC semantics). */
     struct UObject  *holder;       /* proto-chain object owning the operator slot;
                                       NULL when URBI_OPIC_FLAG_LOCAL
-                                      (refactor-3 GC-06: cache WHERE, not WHAT —
+                                      (GC-06: cache WHERE, not WHAT —
                                       the hit path re-reads holder->slots[slot_idx],
                                       so in-place overwrites and GC replacement of
                                       the closure are picked up without a gen bump;
@@ -379,7 +379,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Non-zero defaults set explicitly in urbi_vm_init().
      * ================================================================ */
 
-    /* --- Liveness counters (refactor-3 SCHED-13: one formula, urbi_vm_liveness) ---
+    /* --- Liveness counters (SCHED-13: one formula, urbi_vm_liveness) ---
      * Integrated exclusively by urbi_vm_liveness() (src/sched/usched_liveness.c):
      *   runnable = strand_runnable_count
      *   pending  = ISR ring + host_call_pending_count + watcher dirty/onleave
@@ -468,7 +468,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint8_t  in_destroy_callback;      /* debug-build assertion guard */
     uint8_t  gc_stress_armed;          /* URBI_GC_STRESS: 1 after urbi_vm_init completes;
                                         * urbi_gc_alloc force-collects BEFORE every
-                                        * allocation while set (refactor-3 TEST-GAP-01).
+                                        * allocation while set (TEST-GAP-01).
                                         * Always present (1 B) so layout is identical
                                         * across stress/non-stress builds; only read
                                         * under #if URBI_GC_STRESS. */
@@ -498,9 +498,9 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     UGcRootProviderFn root_providers[URBI_MAX_ROOT_PROVIDERS];
     uint8_t           root_provider_count;
 
-    /* v0.13.2 (refactor-3 TEST-GAP-01 discovery chain): VM-level C-stack
+    /* v0.13.2 (TEST-GAP-01 discovery chain): VM-level C-stack
      * root frame chain — the strandless counterpart of UStrand.c_roots_head
-     * (refactor-3 VM-06a).  Runtime C code that must hold a fresh GC cell
+     * (VM-06a).  Runtime C code that must hold a fresh GC cell
      * live across further allocations — and that may run WITHOUT a current
      * strand (realm bootstrap, host API, native helpers reached from both
      * paths) — pushes stack-allocated UCRootFrame entries here via

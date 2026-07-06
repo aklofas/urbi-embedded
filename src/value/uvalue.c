@@ -7,7 +7,7 @@
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"    /* URBI_INTERNAL_ASSERT */
 #include "chunk/uchunk.h"
-#include "tag/utag.h"           /* UTag, UVAL_TAG format (W4/v0.10.2) */
+#include "tag/utag.h"           /* UTag, UVAL_TAG format (v0.10.2) */
 
 /* --- Value semantic helpers (freestanding-safe). --- */
 
@@ -30,10 +30,10 @@ bool uvalue_truthy(const UValue *v) {
         case UVAL_CLOSURE: /* closure ref is truthy */
         case UVAL_EVENT:   /* event ref is truthy */
         case UVAL_HOST_FN: /* host-function ref is truthy */
-        case UVAL_TAG:     /* tag reference is truthy (W4/v0.10.2) */
+        case UVAL_TAG:     /* tag reference is truthy (v0.10.2) */
             return true;
         default:
-            /* FOUND-039: corrupt kind byte — fail-safe in release. */
+            /* corrupt kind byte — fail-safe in release. */
             URBI_INTERNAL_ASSERT(0 && "uvalue_truthy: unknown UValue kind");
             return false;
     }
@@ -61,10 +61,10 @@ bool uvalue_equal(const UValue *a, const UValue *b) {
             case UVAL_OBJECT:  /* object identity */
             case UVAL_EVENT:   /* event identity */
             case UVAL_HOST_FN: /* fn-pointer identity */
-            case UVAL_TAG:     /* tag pointer identity (W4/v0.10.2) */
+            case UVAL_TAG:     /* tag pointer identity (v0.10.2) */
                 return a->v.p == b->v.p;
             default:
-                /* FOUND-039: corrupt kind byte — fail-safe in release. */
+                /* corrupt kind byte — fail-safe in release. */
                 URBI_INTERNAL_ASSERT(0 && "uvalue_equal: unknown UValue kind");
                 return false;
         }
@@ -111,7 +111,7 @@ UValCmpResult uvalue_le(const UValue *a, const UValue *b, bool *out) {
     return UVAL_CMP_OK;
 }
 
-/* --- Host type registration (folded from utype.c — FOUND-020) ---
+/* --- Host type registration (folded from utype.c) ---
  * urbi_register_type is declared in ugc.h (row 10 §7). */
 
 uint8_t
@@ -132,7 +132,7 @@ urbi_register_type(UVM *vm, const UType *type)
     } else {
         /* Tags 1..(UTYPE_HOST_BASE-1) are reserved for built-in types and
          * must not be registered via this API.
-         * M4 NOTE: built-in types (UTYPE_OBJECT/CLOSURE/STRING/etc., tags 1..63)
+         * NOTE: built-in types (UTYPE_OBJECT/CLOSURE/STRING/etc., tags 1..63)
          * cannot be registered through urbi_register_type — they must write
          * vm->type_table[tag] directly via an internal init function
          * (e.g., builtin_types_init(vm) called from urbi_vm_init). This guard exists
@@ -142,7 +142,7 @@ urbi_register_type(UVM *vm, const UType *type)
         return 0U;
     }
 
-    /* FOUND-037: collision returns 0 unconditionally in both debug and
+    /* collision returns 0 unconditionally in both debug and
      * release.  Previously the URBI_INTERNAL_ASSERT(== NULL) fired in debug
      * and the slot was overwritten silently in release — inconsistent
      * behaviour across build modes is a poor public-API contract. */
@@ -203,7 +203,7 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
         break;
     }
     case UVAL_STR: {
-        /* FOUND-004: read interned-string pointer via v.p (the union member
+        /* read interned-string pointer via v.p (the union member
          * that semantically owns the pointer), not via v.i + uintptr_t cast. */
         const char *s = (const char *)v->v.p;
         size_t w = 0;
@@ -227,7 +227,7 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
                 if (c >= 0x20 && c < 0x7f) { single = (char)c; }
                 break;
             }
-            /* FOUND-005: every escape branch must reserve room for the
+            /* every escape branch must reserve room for the
              * trailing closing quote.  Reserved bytes = escape length + 1
              * (for the trailing '"'). */
             if (esc) {
@@ -259,15 +259,15 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
         n = snprintf(buf, cap, "<object %p>", v->v.p);
         break;
     case UVAL_HOST_FN:
-        /* FOUND-047 / COV-006: explicit case for host-function values. */
+        /* COV-006: explicit case for host-function values. */
         n = snprintf(buf, cap, "<hostfn %p>", v->v.p);
         break;
     case UVAL_EVENT:
-        /* FOUND-047 / COV-006: explicit case for event values. */
+        /* COV-006: explicit case for event values. */
         n = snprintf(buf, cap, "<event>");
         break;
     case UVAL_TAG: {
-        /* W4/v0.10.2: format as <Tag: name> where name is the tag's
+        /* (v0.10.2): format as <Tag: name> where name is the tag's
          * interned string name, or <Tag> if the name is nil/missing. */
         const UTag *_t = (const UTag *)v->v.p;
         if (_t != NULL && _t->name.kind == (uint8_t)UVAL_STR

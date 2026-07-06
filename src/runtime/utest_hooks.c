@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* === W3/v0.10.4: UTestHooks lifecycle (audit-1 F8). === */
+/* === UTestHooks lifecycle (audit-1 F8, v0.10.4). === */
 
 #include "runtime/utest_hooks.h"
 #include "vm/uvm.h"

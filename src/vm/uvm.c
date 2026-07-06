@@ -127,7 +127,7 @@ ic_resolve_pi(UStrand *s)
  * already use (uvm_slot.c slot_throw_or_fatal pattern).
  *
  * Out-of-line on purpose: keeps ~9 cold stanzas out of the hot dispatch body
- * (refactor-5 C7/VM-SIMPLIFY-01 icache win).
+ * (C7/VM-SIMPLIFY-01 icache win).
  *
  * Proto resolution: vm->typeerror_proto — exactly as slot_throw_or_fatal
  * (uvm_slot.c:30-46) uses; no new lookup path invented.
@@ -400,7 +400,7 @@ dispatch:
                         NEXT();
                     }
                     if (frc == VM_OP_OVERLOAD_THREW) {
-                        /* refactor-3 VM-07: re-deposit the overload body's
+                        /* VM-07: re-deposit the overload body's
                          * exception on this strand — mirrors OP_THROW's
                          * deposit shape (advance pc past this opcode so a
                          * catch handler resumes after the faulting op). */
@@ -430,7 +430,7 @@ dispatch:
                         NEXT();
                     }
                     if (frc == VM_OP_OVERLOAD_THREW) {
-                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_ADD). */
+                        /* VM-07: mirrors OP_THROW (see OP_ADD). */
                         s->unwind_value   = *a;   /* thrown value, in dst reg */
                         s->pending_unwind = UEXEC_THROW;
                         s->pc++;
@@ -457,7 +457,7 @@ dispatch:
                         NEXT();
                     }
                     if (frc == VM_OP_OVERLOAD_THREW) {
-                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_ADD). */
+                        /* VM-07: mirrors OP_THROW (see OP_ADD). */
                         s->unwind_value   = *a;   /* thrown value, in dst reg */
                         s->pending_unwind = UEXEC_THROW;
                         s->pc++;
@@ -490,7 +490,7 @@ dispatch:
                         NEXT();
                     }
                     if (frc == VM_OP_OVERLOAD_THREW) {
-                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_ADD). */
+                        /* VM-07: mirrors OP_THROW (see OP_ADD). */
                         s->unwind_value   = *a;   /* thrown value, in dst reg */
                         s->pending_unwind = UEXEC_THROW;
                         s->pc++;
@@ -517,7 +517,7 @@ dispatch:
                         NEXT();
                     }
                     if (frc == VM_OP_OVERLOAD_THREW) {
-                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_ADD). */
+                        /* VM-07: mirrors OP_THROW (see OP_ADD). */
                         s->unwind_value   = *a;   /* thrown value, in dst reg */
                         s->pending_unwind = UEXEC_THROW;
                         s->pc++;
@@ -608,7 +608,7 @@ dispatch:
                 uint8_t b = uinstr_b(*s->pc);
                 UUpvalCell *uvc = cur_cl->upvals[b];
                 if (uvc->on_heap) {
-                    /* Task 9c (refactor-3 GC-07): Dijkstra barrier on the
+                    /* Task 9c (GC-07): Dijkstra barrier on the
                      * CELL, not the executing closure.  The UUpvalCell is
                      * shared between sibling closures (OP_CLOSURE re-capture
                      * arm), so its color diverges from cur_cl's: a BLACK
@@ -622,7 +622,7 @@ dispatch:
                 } else {
                     /* Stack-resident upvalue: the store target is a strand
                      * register — a ROOT, re-walked at ATOMIC_FINISH
-                     * (refactor-3 GC-02) — so no barrier is needed (same
+                     * (GC-02) — so no barrier is needed (same
                      * rationale as urbi_gc_register_write). */
                     *uvc->u.stack_ptr = s->R[a];
                 }
@@ -702,7 +702,7 @@ dispatch:
             cl->proto_inst =
                 &omi->proto_instances->entries[child_proto->ic_index];
 
-            /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery
+            /* GC soundness (v0.13.2, TEST-GAP-01 discovery
              * chain): publish the closure into its destination register
              * BEFORE the upvalue-capture loop, not after.  urbi_vm_open_upvalue
              * below allocates UUpvalCells; a collection triggered there
@@ -809,7 +809,7 @@ dispatch:
                 URBI_PERF_INC(vm, native_calls);
                 UValue *args_ptr = (nargs > 0) ? &s->R[a + arg_off] : NULL;
                 UValue native_out;
-                /* GC soundness (v0.13.2, refactor-3 TEST-GAP-01 discovery
+                /* GC soundness (v0.13.2, TEST-GAP-01 discovery
                  * chain): root the native's out-slot (and the self copy)
                  * for the duration of the call.  native_out is a C stack
                  * local, NOT a register — natives that build a result
@@ -846,7 +846,7 @@ dispatch:
                         steps_consumed++;
                         goto exit_strand;
                     }
-                    /* refactor-3 VM-03/B12: a native may also SUSPEND the
+                    /* VM-03/B12: a native may also SUSPEND the
                      * running strand (t.block()/t.freeze() from inside the
                      * tag's own scope via urbi_strand_suspend's RUNNING arm).
                      * Mirror the WAITING exit: advance pc past the OP_CALL
@@ -1038,7 +1038,7 @@ dispatch:
                         NEXT();
                     }
                     if (frc == VM_OP_OVERLOAD_THREW) {
-                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_ADD).
+                        /* VM-07: mirrors OP_THROW (see OP_ADD).
                          * unwind_value is a rooted strand field; nothing
                          * allocates between the fallback's hand-off and
                          * this deposit. */
@@ -1071,7 +1071,7 @@ dispatch:
                         NEXT();
                     }
                     if (frc == VM_OP_OVERLOAD_THREW) {
-                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_EQ). */
+                        /* VM-07: mirrors OP_THROW (see OP_EQ). */
                         s->unwind_value   = thrown;
                         s->pending_unwind = UEXEC_THROW;
                         s->pc++;
@@ -1101,7 +1101,7 @@ dispatch:
                         NEXT();
                     }
                     if (frc == VM_OP_OVERLOAD_THREW) {
-                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_EQ). */
+                        /* VM-07: mirrors OP_THROW (see OP_EQ). */
                         s->unwind_value   = thrown;
                         s->pending_unwind = UEXEC_THROW;
                         s->pc++;
@@ -1155,7 +1155,7 @@ dispatch:
                         NEXT();
                     }
                     if (frc == VM_OP_OVERLOAD_THREW) {
-                        /* refactor-3 VM-07: mirrors OP_THROW (see OP_EQ). */
+                        /* VM-07: mirrors OP_THROW (see OP_EQ). */
                         s->unwind_value   = thrown;
                         s->pending_unwind = UEXEC_THROW;
                         s->pc++;
@@ -1452,7 +1452,7 @@ dispatch:
              * State stays RUNNING; caller (run_cleanup_with_replace) handles
              * the transition.  cleanup_body_done is the completion marker
              * distinguishing this exit from a yield/budget exit
-             * (refactor-3 VM-02). */
+             * (VM-02). */
             s->cleanup_body_done = 1U;
             s->pc++;
             goto exit_strand;
@@ -1805,7 +1805,7 @@ safepoint:
     }
     s->safepoint_budget_remaining--;
     if (vm->step_budget_remaining == 0) {
-        /* refactor-3 VM-04/SCHED-11 (scheduler-liveness wedge): the caller's
+        /* VM-04/SCHED-11 (scheduler-liveness wedge): the caller's
            urbi_step budget is exhausted mid-slice.  Re-enqueue the still-RUNNING
            strand as READY (count-neutral RUNNING -> READY) so the NEXT urbi_step
            re-dispatches it via sched_pick_next.  Leaving it RUNNING-but-off the
@@ -1859,7 +1859,7 @@ exit_strand:
         urbi_vm_fork_wake_joiners(s, vm);
     }
 
-    /* strand_runnable_count ownership at exit (refactor-3 SCHED-01
+    /* strand_runnable_count ownership at exit (SCHED-01
      * single-writer scheme — urbi_sched_runnable_inc/dec are the only writers):
      *   - Transient strands (urbi_vm_run) never participate in the count;
      *     both helpers skip them.
@@ -1871,7 +1871,7 @@ exit_strand:
      *   - READY (yield): urbi_sched_strand_yield re-enqueued count-neutrally.
      * No count mutation in the dispatch loop or its drivers. */
 
-    /* refactor-3 VM-06a canary: at outermost dispatch exit (not nested under
+    /* VM-06a canary: at outermost dispatch exit (not nested under
      * a cleanup body — cleanup_run_depth == 0), the C-stack root chain must
      * be empty.  A frame leaked past its push/pop pair would leave
      * strand_walk_roots reading a dead C stack frame on the next mark phase

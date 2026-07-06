@@ -330,7 +330,7 @@ uint8_t urbi_emit_ident_arm(UEmitter *e, const UAstNode *n) {
         if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
         if (e->next_reg > fs->max_reg_seen) fs->max_reg_seen = e->next_reg;
 
-        /* T16: implicit force for lazy locals (spec §4.1).
+        /* Implicit force for lazy locals (spec §4.1).
          * Skip when lazy_arg_context is set — caller is passing this
          * value as a call argument (pass-through, spec §4.2). */
         if (is_lazy_local && !e->lazy_arg_context) {
@@ -392,7 +392,7 @@ uint8_t urbi_emit_ident_arm(UEmitter *e, const UAstNode *n) {
          * was pre-reserved but references_global starts false). */
         fs->references_global = true;
         /* OP_LOAD_REALM_GLOBAL is emitted as a function prologue by the
-         * frame finalizer (uemit_close_function, T73), not inline here.
+         * frame finalizer (uemit_close_function, ), not inline here.
          * The register stays stable (local-zone floor) for the remainder
          * of the function body regardless of when the first reference
          * appears — including inside branch arms that may not execute. */
@@ -436,7 +436,7 @@ uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n) {
      *   OP_SETSLOT  init_reg, r_global_slot, ic_idx
      * where ic_idx is the IC site for the slot name.
      *
-     * The T73 prologue fills r_global_slot with realm->global_object at
+     * The emit prologue fills r_global_slot with realm->global_object at
      * function entry; the OP_SETSLOT then writes `init_value` into
      * the correct slot on the global object.
      *
@@ -449,7 +449,7 @@ uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n) {
      * ch. 17 block-scoped var semantics).  Bare-var REPL persistence
      * is unaffected. */
     if (fs->parent == NULL && fs->nblocks == 0) {
-        /* Reserve r_global_slot on first global use (same as T71).
+        /* Reserve r_global_slot on first global use (same as ).
          * Uses the same global_slot_reserved / references_global two-flag
          * protocol as the AST_IDENT global fallback. */
         if (!fs->references_global) {
@@ -469,7 +469,7 @@ uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n) {
             }
             fs->references_global = true;
             /* OP_LOAD_REALM_GLOBAL is prepended as a function prologue by
-             * uemit_close_function (T73) — not emitted inline here. */
+             * uemit_close_function — not emitted inline here. */
         }
 
         /* Emit init expression into a temp register. */
@@ -489,7 +489,7 @@ uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n) {
          * nodes (e.g. `n = n + 1` after `var n = 0` at chunk-top) can
          * route to the global slot rather than raising EMIT_UNRESOLVED_NAME.
          * Also record the function signature (global_var_sigs) so that
-         * T16 lazy-arg wrapping works at call sites that reference globals. */
+         * lazy-arg wrapping works at call sites that reference globals. */
         if (fs->n_global_vars < UFS_MAX_LOCALS) {
             int gidx = fs->n_global_vars++;
             fs->global_var_names[gidx] = canonical;
@@ -563,7 +563,7 @@ uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n) {
     lv->is_captured = false;
     lv->is_lazy    = false;
 
-    /* T16: if init is a literal function, record its lazy-param signature
+    /* If init is a literal function, record its lazy-param signature
      * so the call-site emit can wrap args correctly (spec §2.2). */
     if (n->u.var_decl.init->kind == AST_FUNCTION) {
         UAstNode *fn = n->u.var_decl.init;
@@ -607,7 +607,7 @@ uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n) {
     int local_slot = -1;
     for (int i = fs->nactvar - 1; i >= 0; i--) {
         if (fs->actvars[i].name == canonical) {
-            /* T16: reject assignment to lazy parameter (spec §4.5). */
+            /* Reject assignment to lazy parameter (spec §4.5). */
             if (fs->actvars[i].is_lazy) {
                 e->error = EMIT_LAZY_PARAM_ASSIGN;
                 urbi_emit_diag_error(e, n, "cannot assign to lazy parameter '%.*s'",
@@ -625,7 +625,7 @@ uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n) {
         upvalue_idx = urbi_vm_find_or_install_upvalue(e, fs, canonical,
                                               n->u.assign.name_len);
         if (upvalue_idx < 0) {
-            /* T72: check whether this name was declared via `var` at chunk-top
+            /* Check whether this name was declared via `var` at chunk-top
              * (stored in the root funcstate's global_var_names).  Walk up the
              * parent chain so fork thunks can write chunk-top vars via the same
              * realm-slot path that reads already use.  Names that were never
@@ -662,7 +662,7 @@ uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n) {
                                      rhs_reg, 0U),
                    (uint32_t)n->line);
     } else if (is_global_assign) {
-        /* T72: write to the global slot on the realm object.
+        /* Write to the global slot on the realm object.
          * When called from a thunk (fs->parent != NULL) the thunk's own
          * r_global_slot is pre-reserved by urbi_emit_function_literal; marking
          * references_global here causes uemit_close_function to prepend the
@@ -675,7 +675,7 @@ uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n) {
         urbi_emit_instr(e, uinstr_enc_abc(OP_SETSLOT, rhs_reg, fs->r_global_slot,
                                      (uint8_t)ic_idx),
                    (uint32_t)n->line);
-        /* T16: if RHS is a literal function, update global_var_sigs so
+        /* If RHS is a literal function, update global_var_sigs so
          * subsequent calls to this global get correct lazy-arg wrapping.
          * At chunk-top (fs->n_global_vars > 0) this updates the root's
          * sigs; inside a thunk (fs->n_global_vars == 0) the loop is a
@@ -714,10 +714,10 @@ uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n) {
 
 uint8_t urbi_emit_nary_arm(UEmitter *e, UAstNode *n) {
     if (n->u.nary.separator == SEP_COMMA) {
-        /* `,` parallel semantics (M3 closure-spawn).
+        /* `,` parallel semantics (closure-spawn).
          *
          * Spec §3 row 3: each child runs in parallel — last child's value
-         * is the expression's value.  M3 closure-spawn: children 0..count-2
+         * is the expression's value.  closure-spawn: children 0..count-2
          * are compiled to closures (capturing surrounding locals via upvalue
          * cascade) and spawned as detached strands via OP_FORK_DETACH.
          * The last child runs inline as the parent's continuation.
@@ -803,7 +803,7 @@ uint8_t urbi_emit_nary_arm(UEmitter *e, UAstNode *n) {
 
 uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
     if (n->u.bin_sep.separator == SEP_AMP) {
-        /* `&` fork-join (M3 closure-spawn).
+        /* `&` fork-join (closure-spawn).
          *
          * Spec §3 row 4 + §3.2 + §7.2: spawn RHS as a child strand,
          * wait for it to complete, then produce void as the result.
@@ -962,7 +962,7 @@ uint8_t urbi_emit_block_arm(UEmitter *e, UAstNode *n) {
     return r;
 }
 
-/* === W10/v0.10.5: list/dict literals + subscript emit =====================
+/* === v0.10.5: list/dict literals + subscript emit =====================
  *
  * Stdlib-call lowering — no new opcodes.  Wire format stays at v1.9.
  *
@@ -1176,7 +1176,7 @@ uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
     return rd;
 }
 
-/* Helper: build a synthetic AST_REG_REF leaf (W2/v0.10.7).
+/* Helper: build a synthetic AST_REG_REF leaf (v0.10.7).
  *
  * Used in urbi_emit_subscript_set_arm to pin recv and index into temp registers
  * before building the synthetic .get/.set calls, so each expression is
@@ -1229,7 +1229,7 @@ uint8_t urbi_emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
     UAstNode *rhs_val = n->u.subscript.value;
 
     if (n->u.subscript.is_compound_add) {
-        /* W2/v0.10.7: Single-evaluate recv and index.
+        /* v0.10.7: Single-evaluate recv and index.
          *
          * Previous lowering re-emitted n->u.subscript.recv and
          * n->u.subscript.index for both the synthetic .get and .set calls,
@@ -1313,4 +1313,4 @@ uint8_t urbi_emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
 
     return urbi_emit_call_arm(e, call);
 }
-/* === end W10/v0.10.5 === */
+/* === end v0.10.5 === */

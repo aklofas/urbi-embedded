@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* urbi_watcher_install_watcher_runtime: high-level watcher install entry point.
- * Spec #2 §7.1–§7.2 (reactive runtime landed in M5; see
- * docs/milestones/m5-reactive.md).
+ * Spec #2 §7.1–§7.2 (see docs/milestones/m5-reactive.md).
  *
  * The install path runs as a single linear sequence within
  * urbi_watcher_install_watcher_runtime:
@@ -137,7 +136,7 @@ urbi_watcher_install_watcher_runtime(
         return UWATCHER_INSTALL_TRACE_FAULT;
     }
 
-    /* Phase 5a (W0/v0.10.2): empty read-set is a programming error for
+    /* Phase 5a (v0.10.2): empty read-set is a programming error for
      * AT/WHENEVER watchers — reject.  Prior behavior was warn-and-proceed
      * (inert watcher never fires), which silently no-op'd whenever (e?)
      * because urbi_parse_whenever previously built AST_WATCHER and the event

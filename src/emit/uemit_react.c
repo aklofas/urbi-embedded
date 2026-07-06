@@ -3,11 +3,11 @@
  * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #5).
  *
  * Contains urbi_emit_expr arm helpers for:
- *   AST_MEMBER_GET, AST_MEMBER_SET   — slot access (M4 T20/T21)
- *   AST_WATCHER                      — at/whenever/at-sync installs (M5 T33)
- *   AST_WAITUNTIL                    — waituntil install (M5 T33)
- *   AST_AT_EVENT                     — event-driven at/at-sync (M5 T45)
- *   AST_AT_SLOT_CHANGE               — slot-change at/at-sync (M5 T63)
+ *   AST_MEMBER_GET, AST_MEMBER_SET   — slot access
+ *   AST_WATCHER                      — at/whenever/at-sync installs
+ *   AST_WAITUNTIL                    — waituntil install
+ *   AST_AT_EVENT                     — event-driven at/at-sync
+ *   AST_AT_SLOT_CHANGE               — slot-change at/at-sync
  *
  * IMPORTANT: AST_AT_EVENT and AST_AT_SLOT_CHANGE carry the v0.5.2 freereg-sync
  * fix (commit 6eb40a3).  The two `if (e->current_fs->freereg < e->next_reg)`
@@ -31,7 +31,7 @@
  * ========================================================================= */
 
 uint8_t urbi_emit_member_get_arm(UEmitter *e, UAstNode *n) {
-    /* M4 T20: obj.x → OP_GETSLOT.  Per pre-M4 GETSLOT/SETSLOT encoding
+    /* obj.x → OP_GETSLOT.  Per GETSLOT/SETSLOT encoding
      * spec §3: ABC layout where A=dst register, B=recv register,
      * C=IC site index assigned by uemit_assign_ic_index. */
     if (e->current_fs == NULL || e->vm == NULL) {
@@ -65,7 +65,7 @@ uint8_t urbi_emit_member_get_arm(UEmitter *e, UAstNode *n) {
  * ========================================================================= */
 
 uint8_t urbi_emit_member_set_arm(UEmitter *e, UAstNode *n) {
-    /* M4 T21: obj.x = v → OP_SETSLOT.  Per encoding spec §3:
+    /* obj.x = v → OP_SETSLOT.  Per encoding spec §3:
      * ABC layout where A=src register (value to write), B=recv register,
      * C=IC site index.  Assignment evaluates to the assigned value. */
     if (e->current_fs == NULL || e->vm == NULL) {
@@ -107,10 +107,10 @@ uint8_t urbi_emit_member_set_arm(UEmitter *e, UAstNode *n) {
  * ========================================================================= */
 
 uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n) {
-    /* T33: at (cond) body [onleave] / at sync (cond) body /
+    /* at (cond) body [onleave] / at sync (cond) body /
      *      whenever (cond) body [onleave]
      *
-     * Build cond/body/onleave closures via urbi_emit_function_literal (T30),
+     * Build cond/body/onleave closures via urbi_emit_function_literal,
      * then emit the appropriate install opcode (ABC-encoded).
      * Side-effect check on cond per spec #2 §9.1. */
     if (e->current_fs == NULL || e->vm == NULL) {
@@ -121,10 +121,10 @@ uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n) {
     UAstNode *cond_ast      = n->u.watcher.cond;
     UAstNode *body_ast      = n->u.watcher.body;
     UAstNode *onleave_ast   = n->u.watcher.onleave;  /* NULL if absent */
-    UAstNode *else_body_ast = n->u.watcher.else_body; /* W9: nullable; WHENEVER only */
+    UAstNode *else_body_ast = n->u.watcher.else_body; /* Nullable; WHENEVER only */
     int       mode          = n->u.watcher.mode;
 
-    /* W9: for WHENEVER mode, else_body takes precedence over onleave as the
+    /* For WHENEVER mode, else_body takes precedence over onleave as the
      * alt closure stored in register C of OP_WHENEVER_INSTALL.  The runtime
      * invokes the alt on the falling edge (true→false transition) after at
      * least one body firing.  AT/AT_SYNC modes do not support else_body. */
@@ -148,7 +148,7 @@ uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n) {
         : 0xFFU;
     if (e->error != EMIT_OK) return 0U;
 
-    /* alt_reg: compiled from else_body_ast (W9 WHENEVER) or onleave_ast.
+    /* alt_reg: compiled from else_body_ast (WHENEVER) or onleave_ast.
      * alt_ast is pre-selected above; when both else_body and onleave are
      * absent alt_ast is NULL → 0xFF sentinel. */
     uint8_t alt_reg = (alt_ast != NULL)
@@ -167,7 +167,7 @@ uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n) {
                (uint32_t)n->line);
 
     /* Release temporary closure regs — watcher install is a statement.
-     * EMIT-010 (Wave 5): use free_reg_freereg_synced so freereg unwinds
+     * EMIT-010 use free_reg_freereg_synced so freereg unwinds
      * symmetrically with next_reg.  urbi_emit_function_literal raised both
      * cursors when compiling the cond/body/alt closures; plain
      * free_reg() would leave freereg promoted, leaking 1-3 register
@@ -191,11 +191,11 @@ uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n) {
  * ========================================================================= */
 
 uint8_t urbi_emit_waituntil_arm(UEmitter *e, UAstNode *n) {
-    /* T33: waituntil (cond) — one-shot strand-block primitive.
+    /* waituntil (cond) — one-shot strand-block primitive.
      * Build a cond closure, emit OP_WAITUNTIL_INSTALL (=41).
      * Side-effect check per spec #2 §9.2.
      *
-     * W9/v0.10.5: waituntil (e?) event form desugars to e.waituntil().
+     * v0.10.5: waituntil (e?) event form desugars to e.waituntil().
      * The `urbi_event_waituntil` runtime function parks the calling strand on
      * the event's waiters_head until an emit fires; the emit payload is
      * deposited in s->last_event_payload and becomes the call's return
@@ -206,7 +206,7 @@ uint8_t urbi_emit_waituntil_arm(UEmitter *e, UAstNode *n) {
         return 0U;
     }
 
-    /* W9: event form — desugar waituntil (e?) to e.waituntil(). */
+    /* Event form — desugar waituntil (e?) to e.waituntil(). */
     if (n->u.waituntil.is_event_form) {
         UAstNode *event_ast = n->u.waituntil.cond;
 
@@ -267,7 +267,7 @@ uint8_t urbi_emit_waituntil_arm(UEmitter *e, UAstNode *n) {
  * ========================================================================= */
 
 uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
-    /* T45: at (e?) body [onleave] / at sync (e?) body [onleave]
+    /* at (e?) body [onleave] / at sync (e?) body [onleave]
      *
      * Emit the event-expression into a register, build a 1-param body
      * closure (R[0] receives the emit payload per spec #3 §5.5) and an
@@ -301,7 +301,7 @@ uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
         e->current_fs->freereg = e->next_reg;
 
     /* Body closure: 1 param (payload).
-     * W9: use user-specified name from `at (e?(var x))` if present;
+     * Use user-specified name from `at (e?(var x))` if present;
      * fall back to `__payload` for anonymous payload (legacy default). */
     const char *pname = (n->u.at_event.payload_var_name != NULL)
                       ? n->u.at_event.payload_var_name
@@ -329,7 +329,7 @@ uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
         : 0xFFU;
     if (e->error != EMIT_OK) return 0U;
 
-    /* W0/v0.10.2: three-way opcode select.
+    /* v0.10.2: three-way opcode select.
      *   whenever (e?)  → OP_WHENEVER_EVENT_INSTALL (=48; re-fires every emit)
      *   at sync (e?)   → OP_AT_EVENT_SYNC_INSTALL  (=43; sync, one-shot per emit)
      *   at (e?)        → OP_AT_EVENT_INSTALL        (=42; async, one-shot per emit)
@@ -341,7 +341,7 @@ uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
     urbi_emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
                (uint32_t)n->line);
 
-    /* EMIT-010 (Wave 5): unwind both cursors symmetrically. */
+    /* EMIT-010 unwind both cursors symmetrically. */
     if (alt_reg  != 0xFFU) free_reg_freereg_synced(e);
     if (body_reg != 0xFFU) free_reg_freereg_synced(e);
     free_reg_freereg_synced(e);  /* event_reg */
@@ -360,7 +360,7 @@ uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
  * ========================================================================= */
 
 uint8_t urbi_emit_at_slot_change_arm(UEmitter *e, UAstNode *n) {
-    /* T63: at (obj.x.changed?) body [onleave] / at sync variant.
+    /* at (obj.x.changed?) body [onleave] / at sync variant.
      * Spec #4 §4.2: emit GETSLOT_CHANGE_EVENT then AT_EVENT_INSTALL.
      *
      *   recv_reg  := emit receiver expression
@@ -431,7 +431,7 @@ uint8_t urbi_emit_at_slot_change_arm(UEmitter *e, UAstNode *n) {
     urbi_emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
                (uint32_t)n->line);
 
-    /* EMIT-010 (Wave 5): unwind both cursors symmetrically. */
+    /* EMIT-010 unwind both cursors symmetrically. */
     if (alt_reg  != 0xFFU) free_reg_freereg_synced(e);
     if (body_reg != 0xFFU) free_reg_freereg_synced(e);
     free_reg_freereg_synced(e);  /* event_reg */

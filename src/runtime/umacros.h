@@ -23,7 +23,7 @@
 /* urbi_zero — freestanding-discipline byte-zero with `volatile` to defeat
  * dead-store elimination on caller-provided memory.  Single source of truth
  * for the per-subsystem `*_zero` helpers retired during v0.5.4-decompose
- * (FOUND-030 + CHSTR-021 + REALM-020 + MOD-021 + WATCH-027).
+ * (CHSTR-021 + REALM-020 + MOD-021 + WATCH-027).
  *
  * Contract: writes exactly `n` bytes of `0` starting at `p`.  Caller-provided
  * memory must be at least `n` bytes; this helper does NOT bound-check.

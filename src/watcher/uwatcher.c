@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UWatcher pool lifecycle + install/unregister + urbi_watcher_observer_dirty.
- * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation uses vm->alloc_fn (realloc semantics).
@@ -149,7 +148,7 @@ uwatcher_pool_init(struct UVM *vm)
 
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* W2/v0.10.4: vm->watchers is heap-allocated in urbi_vm_init before this
+    /* v0.10.4: vm->watchers is heap-allocated in urbi_vm_init before this
      * call.  If OOM during uwatcher_state_create, vm->watchers is NULL — bail
      * early so we don't deref a NULL pointer writing pool fields. */
     if (vm->watchers == NULL) return -1;
@@ -162,8 +161,8 @@ uwatcher_pool_init(struct UVM *vm)
     /* Zero the entire slab (WATCH-029).  Freestanding builds cannot use
      * memset (libc dep); urbi_zero (runtime/umacros.h) is the canonical
      * helper repeated across all subsystems that need zero-fill at
-     * init/recycle time (FOUND-030: the pattern was de-duplicated in
-     * Wave 2 / v0.5.4-decompose).  We use the helper here too — the
+     * init/recycle time (the pattern was de-duplicated in
+     * v0.5.4-decompose).  We use the helper here too — the
      * watcher pool slab is the freelist's backing store, allocated
      * fresh per VM init, so byte-zeroing it is correct (clears every
      * UWatcher header to a known-quiescent state including flags ==
@@ -194,7 +193,7 @@ uwatcher_pool_destroy(struct UVM *vm)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* W2/v0.10.4: vm->watchers may be NULL on OOM partial-init. */
+    /* v0.10.4: vm->watchers may be NULL on OOM partial-init. */
     if (vm->watchers == NULL) return;
     if (vm->watchers->pool_base == NULL) return;
     if (vm->alloc_fn == NULL) return;

@@ -44,7 +44,7 @@
  *                             Decremented only when removal actually removes
  *                             the strand (not when the strand was not found).
  *
- *   host_call_pending_count — owned by urbi_tag_stop cross-strand path (T31).
+ *   host_call_pending_count — owned by urbi_tag_stop cross-strand path.
  *                             Invariant: number of pending host-injected
  *                             unwind events.
  *
@@ -54,16 +54,16 @@
  *                             (cond watchers on active_watchers_head AND
  *                             event watchers on event->at_watchers_head —
  *                             SCHED-06 made event installs count too).
- *                             (Pre-W2 name: vm->watcher_active_count.)
+ *                             (Former name: vm->watcher_active_count.)
  *
- * (event_queue_count deleted at v0.13.3 — vestigial M3 stub with no writer;
+ * (event_queue_count deleted at v0.13.3 — vestigial stub with no writer;
  * ISR-ring pendingness is queried live via uevent_ring_has_pending.) */
 
 #include "usched_cooperative.h"
 #include "sched/usched_post_dispatch.h"  /* urbi_sched_post_dispatch declaration */
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
-#include "realm/urealm.h"  /* URealm; realms_head → strands_head walk (T32) */
+#include "realm/urealm.h"  /* URealm; realms_head → strands_head walk */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT (SCHED-002/003) */
 #include "urbi/urbi.h"          /* urbi_strand_destroy (urbi_sched_post_dispatch step 2) */
 #include "stdlib/temporal.h"   /* urbi_periodic_pump (urbi_sched_post_dispatch step 4) */
@@ -235,11 +235,11 @@ urbi_sched_destroy(UVM *vm)
  * through this slot; see USchedClass at include/urbi/sched.h).  The
  * cooperative scheduler ignores it and always assigns URBI_STRAND_BUDGET_MAX.
  *
- * CHSTR-039 (T106): MUST NOT touch s->state.  The state byte is owned by
+ * CHSTR-039: MUST NOT touch s->state.  The state byte is owned by
  * the strand-lifecycle layer (urbi_strand_create sets DORMANT,
  * urbi_strand_arm_from_closure / urbi_vm_run set RUNNING, and the
  * urbi_sched_strand_make_runnable / _block transitions advance it from there).
- * urbi_sched_strand_init runs from two paths in M3+ baselines:
+ * urbi_sched_strand_init runs from two paths:
  *   1. ustrand_init (during urbi_strand_create) — state already DORMANT.
  *   2. urbi_vm_run's transient-strand setup — state already RUNNING.
  * If urbi_sched_strand_init wrote a state byte here it would clobber the
@@ -280,7 +280,7 @@ urbi_sched_strand_make_runnable(UStrand *s)
     /* Tail-insertion into the FIFO ready queue.
        Per row 12 §3: single entry point for DORMANT/WAITING → READY.
 
-       CHSTR-042 (T107): reject DEAD strands as a production fail-safe.
+       CHSTR-042: reject DEAD strands as a production fail-safe.
        A DEAD strand has had its register stack freed and its cleanup
        chain unwound; re-enqueueing one would dispatch into freed memory
        (and double-count strand_runnable_count, blocking quiescence).  In
@@ -505,11 +505,11 @@ urbi_sched_quiescent(const UVM *vm)
 void
 urbi_sched_strand_account_destroy(UVM *vm, UStrand *s)
 {
-    /* T31: if urbi_tag_stop deposited a cross-strand stop on this strand,
+    /* Cross-strand stop check: if urbi_tag_stop deposited a stop on this strand,
        decrement the host_call_pending_count so urbi_sched_quiescent converges
        once all tagged strands have been destroyed.
 
-       CHSTR-013 (T101): the inner `if (host_call_pending_count > 0)` guard
+       CHSTR-013: the inner `if (host_call_pending_count > 0)` guard
        is load-bearing, not defensive-by-style.  An earlier strand-tear-down
        path (or a future scheduler that pre-rolls-back deposits before the
        strand is destroyed) can leave the strand-level
@@ -541,7 +541,7 @@ urbi_sched_strand_unbind_from_sleep_queue(UStrand *s)
     sleep_q_remove(s->vm, s);
 }
 
-/* === REALM-011 / T69: urbi_sched_strand_unbind_from_ready_queue ===
+/* === REALM-011: urbi_sched_strand_unbind_from_ready_queue ===
  *
  * Splice s out of vm->ready_head / ready_tail's doubly-linked list if
  * present; clear s->ready_next / s->ready_prev; decrement
@@ -597,7 +597,7 @@ urbi_sched_strand_unbind_from_ready_queue(UStrand *s)
     urbi_sched_runnable_dec(vm, s);
 }
 
-/* === T16 step-driver helper === */
+/* === Step-driver helper === */
 
 void
 urbi_sched_dequeue_ready_head(UVM *vm)
@@ -623,7 +623,7 @@ urbi_sched_dequeue_ready_head(UVM *vm)
  * Walk all GC roots for a single live strand.  Called by urbi_gc_sched_walk_roots
  * for every non-DEAD strand in the ready and sleep queues.
  *
- * Root sources at v0.5.x baseline (M5 shipped):
+ * Root sources at v0.5.x baseline:
  *   (1) Register window — conservative full-stack scan (see below).
  *   (2) Unwind state — unwind_value + fatal_value are UValue fields.
  *   (3) Cleanup stack — TAG_SCOPE entries' owning_tag (UTag*) is shaded
@@ -631,7 +631,7 @@ urbi_sched_dequeue_ready_head(UVM *vm)
  *       tag urbi_vm_push_tag_scope creates has no other reference.
  *       catch_pattern (UPattern*) is host-allocated, not GC-managed.
  *   (4) Wait payload — wait_payload.event / wait_payload.join_parent are
- *       NOT yielded here.  UEvent became a GC cell at M5, but every UEvent
+ *       NOT yielded here.  UEvent is a GC cell, but every UEvent
  *       a strand can be waiting on is reachable through another path (realm
  *       globals for stdlib events; object's changed_events_head for
  *       slot-change events; tag's enter_event/leave_event fields for tag-
@@ -642,7 +642,7 @@ urbi_sched_dequeue_ready_head(UVM *vm)
  * Register window strategy (row 10 §5.2 guidance):
  *   s->stack is a heap-allocated UVM_STACK_CAP-slot array.  The active
  *   register window spans frames[0..frame_count-1]; the topmost frame's
- *   extent requires bytecode metadata not available at M3.  We walk the
+ *   extent requires bytecode metadata not available at that baseline.  We walk the
  *   entire allocated array (conservative over-mark; never under-marks).
  *   TODO(v1.x — frame-extent metadata): tighten to active-frame register
  *   window when bytecode emits per-frame extent metadata.  Tracked under
@@ -743,7 +743,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
         urbi_gc_shade_gray(vm, (UCell *)s->wait_payload.suspend_tag);
     }
 
-    /* (5) last_event_payload (spec #3 §7.1, T56).
+    /* (5) last_event_payload (spec #3 §7.1).
      *     Written by c_event_emit_* before unblocking a waituntil strand.
      *     May hold a heap-bearing UValue (e.g. UVAL_OBJECT, UVAL_CLOSURE,
      *     UVAL_EVENT) between the emit and the strand's next dispatch turn.
@@ -798,7 +798,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
  * blocked in any wait state (WAITING_JOIN, future WAITING_EVENT, …)
  * are visited.  DEAD-strand filter stays inside strand_walk_roots.
  *
- * Per pre-M4 GC strand-walker spec §4.2, §6.1:
+ * Per GC strand-walker spec §4.2, §6.1:
  *   Every UStrand whose register window may contain GC-managed UValues
  *   MUST be reachable from vm->realms_head → realm.strands_head.
  *   Scheduler implementations are responsible for maintaining this
@@ -809,7 +809,7 @@ urbi_gc_sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
     URealm  *r;
     UStrand *s;
 
-    /* Realm-hierarchy walk per pre-M4 GC strand-walker spec §4.2. Visits every
+    /* Realm-hierarchy walk per GC strand-walker spec §4.2. Visits every
      * live strand regardless of state (READY/RUNNING/WAITING_*); DEAD-strand
      * filter stays in strand_walk_roots. */
     for (r = vm->realms_head; r != NULL; r = r->next_in_vm) {
@@ -972,7 +972,7 @@ urbi_sched_post_dispatch(UVM *vm, UStrand *s)
      * this helper, so we never reap a strand the host still wants to inspect.
      *
      * is_transient_strand guard: urbi_vm_run creates a stack-local transient
-     * strand (T33 discriminator) and manages its own teardown via ustrand_destroy
+     * strand (watcher-body discriminator) and manages its own teardown via ustrand_destroy
      * at function exit.  Calling urbi_strand_destroy on a stack address would
      * free a pointer that was never heap-allocated, causing UB.  Transient
      * strands are explicitly excluded from eager reap here; their lifetime is

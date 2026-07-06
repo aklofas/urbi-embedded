@@ -14,17 +14,17 @@
 #include "chunk/uchunk.h"
 #include <stddef.h>
 
-/* === T12: cycle-safe DFS lookup ===
+/* === Cycle-safe DFS lookup ===
  *
- * Per pre-M4 prototype-chain spec §6 + GETSLOT/SETSLOT spec §6.5.
+ * Per prototype-chain spec §6 + GETSLOT/SETSLOT spec §6.5.
  *
  * The visited-set is encoded by stamping UObject.lookup_stamp with the low
  * 32 bits of vm->lookup_id; a re-visit (stamp == lookup_id) short-circuits.
  * Each top-level urbi_object_lookup call pre-bumps lookup_id, guaranteeing
  * the new id is fresh against every UObject's previous stamp.
  *
- * urbi_shape_find_slot performs the real lineage walk (landed at T13;
- * T26 made obj->slots non-NULL once the first slot transitions in). */
+ * urbi_shape_find_slot performs the real lineage walk; obj->slots is
+ * non-NULL once the first slot transitions in. */
 
 static int
 lookup_inner(UVM *vm, UObject *obj, USymbol *name, UValue *out)
@@ -39,8 +39,7 @@ lookup_inner(UVM *vm, UObject *obj, USymbol *name, UValue *out)
     obj->lookup_stamp = (uint32_t)vm->lookup_id;
 
     /* Local-slot fast path.  urbi_shape_find_slot performs the real lineage
-     * walk (T13+); obj->slots is non-NULL once the first slot transitions
-     * in (T26+). */
+     * walk; obj->slots is non-NULL once the first slot transitions in. */
     const UShape *s = obj->shape;
     int32_t idx = urbi_shape_find_slot(s, name);
     if (idx >= 0) {
@@ -94,7 +93,7 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
         return 0;   /* hit */
     }
 
-    /* T40: GET_FALLBACK retry per pre-M2 §4.3.  On full-tree miss, retry
+    /* GET_FALLBACK retry per §4.3.  On full-tree miss, retry
      * once with name = "fallback".  If fallback hits, return its value;
      * the caller is responsible for invoking it as a method.  v1.0 does
      * NOT implement the legacy `call.message` reflection layer (per
@@ -141,7 +140,7 @@ clear_lookup_stamp_cb(UVM *vm, UCell *cell, void *ctx)
 void
 urbi_object_lookup_id_force_wrap(UVM *vm)
 {
-    /* Walk every GC cell, zero lookup_stamp on UObject cells.  T36 may
+    /* Walk every GC cell, zero lookup_stamp on UObject cells.  Future versions may
      * fold this into the mark phase to avoid a separate iteration; for
      * now an immediate dedicated pass is correct (per spec §7.2). */
     urbi_gc_walk_all_cells(vm, clear_lookup_stamp_cb, NULL);

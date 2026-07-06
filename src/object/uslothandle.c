@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uslothandle.c — USlotHandle creation + validate-or-refresh access (T37).
+/* uslothandle.c — USlotHandle creation + validate-or-refresh access.
  *
- * Per pre-M4 USlot/UProps collapse spec §7.  See uslothandle.h for the
+ * Per USlot/UProps collapse spec §7.  See uslothandle.h for the
  * struct layout + public API contract. */
 
 #include <stdint.h>
@@ -12,7 +12,7 @@
 #include "vm/uvm.h"
 #include "urbi/gc.h"               /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h"    /* urbi_gc_slot_store */
-#include "changed/uchanged_node.h"         /* urbi_emit_slot_change_if_subscribed (T65) */
+#include "changed/uchanged_node.h"         /* urbi_emit_slot_change_if_subscribed */
 #include "gc/ugc.h"
 #include "chunk/uchunk.h"
 #include <stddef.h>
@@ -20,7 +20,7 @@
 /* === urbi_object_get_slot ===
  *
  * Resolve (obj, name) to a holder + slot index via urbi_object_resolve_slot
- * (T25 — the same DFS the IC slow path uses).  On hit, allocate a fresh
+ * (the same DFS the IC slow path uses).  On hit, allocate a fresh
  * USlotHandle that captures owner + shape + index + topology-gen + name.
  *
  * Returns NULL on miss or OOM. */
@@ -51,7 +51,7 @@ urbi_object_get_slot(UVM *vm, UObject *obj, USymbol *name)
     return h;
 }
 
-/* === validate_or_refresh — pre-M4 USlot/UProps spec §7.4 ===
+/* === validate_or_refresh — USlot/UProps spec §7.4 ===
  *
  * Fast path: shape unchanged, cached slot_index is still correct.
  * Slow path: shape transitioned since creation (slot may have moved or

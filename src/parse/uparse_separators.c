@@ -25,7 +25,7 @@ static bool at_statement_end(UParser *p) {
  *
  * This enables the signature parallel-composition idiom `{a} & {b}` at
  * the inner tier.  Parallel var-declare (`var a = 1 & var b = 2`) stays
- * rejected — `var` is absent from this dispatch (T14/deferred-v1.x).
+ * rejected — `var` is absent from this dispatch (deferred-v1.x).
  *
  * Note: the caller (urbi_parse_pipe_amp_fold) is a loop, so chaining is handled
  * there; this helper returns a single self-contained node per call. */
@@ -39,7 +39,7 @@ static UAstNode *parse_sep_operand(UParser *p) {
 
 /* urbi_parse_pipe_amp_fold: left-fold `|` and `&` binops starting from an already-parsed
    lhs.  Shared by urbi_parse_inner_tier and parse_assign_or_expr
-   (W8/v0.10.5 member-expr tag form). */
+   (v0.10.5 member-expr tag form). */
 UAstNode *urbi_parse_pipe_amp_fold(UParser *p, UAstNode *lhs) {
     for (;;) {
         UToken sep = urbi_parse_peek(p);

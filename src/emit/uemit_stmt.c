@@ -8,7 +8,7 @@
  *   AST_CALL     — function call with lazy-arg support
  *   AST_RETURN   — return statement
  *   AST_FUNCTION — function literal (thin caller for urbi_emit_function_literal)
- *   AST_ASSERT   — assert(expr) / assert { block } (W3/v0.10.5, legacy F9)
+ *   AST_ASSERT   — assert(expr) / assert { block } (v0.10.5, legacy F9)
  *
  * Also contains the shared function-building primitives:
  *   urbi_emit_function_literal — compile a function literal into UProto + OP_CLOSURE
@@ -19,7 +19,7 @@
 
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
 #include "value/uintern.h"        /* ustr_intern */
-#include "value/uarena.h"         /* uarena_alloc (W3: assert message building) */
+#include "value/uarena.h"         /* uarena_alloc (assert message building) */
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
 #include "parse/uast.h"
@@ -27,7 +27,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* T16: Compile `expr` as a zero-arg closure (lazy thunk).
+/* Compile `expr` as a zero-arg closure (lazy thunk).
  * Builds a synthetic AST_FUNCTION wrapping `expr` in a single-statement
  * body, then recurses into the AST_FUNCTION emit arm.  The result register
  * holds a UVAL_CLOSURE.  Upvalue capture falls out naturally from the
@@ -65,7 +65,7 @@ uint8_t urbi_emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
                         e->max_reg_seen = e->next_reg;
                     if (e->next_reg > fs->max_reg_seen)
                         fs->max_reg_seen = e->next_reg;
-                    /* EMIT-013 fix (Wave 5): also raise freereg to
+                    /* EMIT-013 fix also raise freereg to
                      * next_reg so a subsequent urbi_emit_function_literal
                      * call (which pulls dst from freereg) does not
                      * alias the thunk-pass-through slot at dst. */
@@ -115,7 +115,7 @@ uint8_t urbi_emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
     return dst;
 }
 
-/* T30: urbi_emit_function_literal — shared helper for AST_FUNCTION and (T33+)
+/* Urbi_emit_function_literal — shared helper for AST_FUNCTION and (nested protos)
  * watcher/waituntil cond/body/onleave closures.
  * params/nparams describe the formal parameter list (AST_PARAM or
  * AST_LAZY_PARAM nodes).  body must be an AST_BLOCK.  When as_expression
@@ -131,7 +131,7 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
                               bool       as_expression) {
     UFuncState *parent_fs = e->current_fs;
 
-    /* T21 (EMIT-004): intern all parameter names BEFORE allocating the
+    /* EMIT-004: intern all parameter names BEFORE allocating the
      * child UProto.  Pre-fix, child_proto was pushed to module->nested[]
      * first and a mid-loop ustr_intern OOM left a half-initialised proto
      * stuck in the array (nested_count incremented, name slots not yet
@@ -647,7 +647,7 @@ uint8_t urbi_emit_if_arm(UEmitter *e, UAstNode *n) {
  *       JMP loop_start       ; back-edge
  *     exit:
  *
- * W1/v0.10.5: pushes a ULoopCtx so break/continue inside the body are
+ * v0.10.5: pushes a ULoopCtx so break/continue inside the body are
  * lowered to OP_JMP with the targets patched here at exit. */
 uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
@@ -665,7 +665,7 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
      * (`if (fs->freereg < rd) fs->freereg = rd`); align urbi_emit_while_arm. */
     uint8_t rd = e->next_reg;
 
-    /* W1/v0.10.5: open loop context for break/continue. */
+    /* v0.10.5: open loop context for break/continue. */
     if (!uemit_loop_push(e, ULOOP_FRAME_LOOP)) return 0U;
 
     int loop_start = (int)urbi_emit_instr_count(e);
@@ -715,7 +715,7 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
             e->next_reg = e->current_fs->freereg;
         }
 
-        /* W1/v0.10.5: continue PCs land here — BEFORE the back-edge
+        /* v0.10.5: continue PCs land here — BEFORE the back-edge
          * OP_CLOSE, so `continue` closes the iteration's captured cells
          * instead of jumping straight to the back-edge JMP and reusing
          * the still-open cell next iteration (refactor-3 FE-04
@@ -758,7 +758,7 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
         urbi_emit_patch_instr(e, jmp_to_exit,
             uinstr_enc_abx(OP_JMP, 0U,
                            uemit_jmp_offset(jmp_to_exit, exit_target)));
-        /* W1/v0.10.5: patch break PCs to exit_target. */
+        /* v0.10.5: patch break PCs to exit_target. */
         uemit_loop_patch_breaks(e, exit_target);
     }
 
@@ -814,10 +814,10 @@ uint8_t urbi_emit_call_arm(UEmitter *e, UAstNode *n) {
     UAstNode *callee = n->u.call.callee;
     bool is_method   = (callee->kind == AST_MEMBER_GET);
 
-    /* T16: Look up callee's function signature when the callee is a
+    /* Look up callee's function signature when the callee is a
      * statically-visible local declared with a function literal.
      * Used below to decide whether to wrap each arg as a lazy thunk.
-     * T72 extension: also check global_var_sigs for chunk-top globals.
+     * Also check global_var_sigs for chunk-top globals.
      * Method calls (AST_MEMBER_GET) skip this — the callee is dispatched
      * via OP_SELF and the slot's lazy-param signature is not visible at
      * the call site (call_sig stays NULL → every arg is eager). */
@@ -837,7 +837,7 @@ uint8_t urbi_emit_call_arm(UEmitter *e, UAstNode *n) {
                     break;
                 }
             }
-            /* T72: global lookup (chunk-top functions not in actvars). */
+            /* Global lookup (chunk-top functions not in actvars). */
             if (call_sig == NULL && fs->parent == NULL) {
                 for (int gi = 0; gi < fs->n_global_vars; gi++) {
                     if (fs->global_var_names[gi] == cn) {
@@ -952,7 +952,7 @@ uint8_t urbi_emit_call_arm(UEmitter *e, UAstNode *n) {
              * AST_FUNCTION literal, urbi_emit_function_literal pulls its
              * OP_CLOSURE destination from freereg — without this sync
              * the closure lands on an already-allocated arg slot and
-             * clobbers it.  Pre-T41 this was unexercised; T41 (M6 Wave 2)
+             * clobbers it.  Previously unexercised; getter/setter parse sugar
              * surfaced it via the synthetic
              * `recv.setProperty("name", "oget", function() body)` arg
              * sequence. */
@@ -1034,9 +1034,9 @@ uint8_t urbi_emit_return_arm(UEmitter *e, UAstNode *n) {
 }
 
 /* urbi_emit_function_arm — AST_FUNCTION: function literal.
- * T30: thin caller — all logic lives in urbi_emit_function_literal.
+ * thin caller — all logic lives in urbi_emit_function_literal.
  * as_expression=true preserves original semantics: the child proto
- * returns its last statement's result register (existing M2 behaviour). */
+ * returns its last statement's result register (existing behaviour). */
 uint8_t urbi_emit_function_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
@@ -1049,7 +1049,7 @@ uint8_t urbi_emit_function_arm(UEmitter *e, UAstNode *n) {
                                  /*as_expression=*/true);
 }
 
-/* === W3/v0.10.5: assert keyword ===
+/* === v0.10.5: assert keyword ===
  * urbi_emit_assert_arm — AST_ASSERT: assert(expr) / assert { block }.
  *
  * Lowering (no new opcode needed):
@@ -1162,7 +1162,7 @@ uint8_t urbi_emit_assert_arm(UEmitter *e, UAstNode *n) {
 #undef KASSERT_PREFIX_LEN
 }
 
-/* === W1/v0.10.5: control-flow emit arms ===
+/* === v0.10.5: control-flow emit arms ===
  *
  * urbi_emit_break_arm — AST_BREAK: `break`
  *   Emits a placeholder OP_JMP and records the PC in the innermost loop
@@ -1204,7 +1204,7 @@ uint8_t urbi_emit_break_arm(UEmitter *e, const UAstNode *n) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     }
-    /* T24: the exit JMP must not cross open try/tag scopes without tearing
+    /* The exit JMP must not cross open try/tag scopes without tearing
      * them down — emit OP_POP_TAG / OP_TRY_END (+ inline finally) for every
      * scope opened since the target frame, innermost-first, BEFORE the JMP.
      * break targets the innermost loop/switch frame (top of loop_stack). */
@@ -1233,7 +1233,7 @@ uint8_t urbi_emit_continue_arm(UEmitter *e, const UAstNode *n) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     }
-    /* T24: same scope-crossing teardown as urbi_emit_break_arm, but the target
+    /* Same scope-crossing teardown as urbi_emit_break_arm, but the target
      * is the nearest LOOP frame (switch frames are transparent to
      * `continue` — mirror uemit_loop_record_continue's walk).  If no LOOP
      * frame exists the parser already rejected this; defensive no-op. */
@@ -1892,4 +1892,4 @@ uint8_t urbi_emit_switch_arm(UEmitter *e, UAstNode *n) {
         e->current_fs->freereg = e->next_reg;
     return r;
 }
-/* === end W1/v0.10.5: control-flow emit arms === */
+/* === end v0.10.5: control-flow emit arms === */

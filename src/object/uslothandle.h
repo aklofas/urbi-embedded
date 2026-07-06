@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uslothandle.h — USlotHandle wrapper + getSlot/refresh-on-access (M4 / T37).
+/* uslothandle.h — USlotHandle wrapper + getSlot/refresh-on-access.
  *
- * Per pre-M4 USlot/UProps collapse spec §7.  USlotHandle is a heap GC cell
+ * Per USlot/UProps collapse spec §7.  USlotHandle is a heap GC cell
  * (UCELL_TYPE_SLOTHANDLE = 12) that holds a stable reference to a specific
  * slot on a specific UObject.  urbi_object_get_slot resolves a (recv, name)
  * pair to the actual holder (slot may be local or on an inherited prototype)
@@ -55,14 +55,14 @@ typedef struct USlotHandle {
 } USlotHandle;
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
 URBI_STATIC_ASSERT(sizeof(USlotHandle) == 40,
-               "USlotHandle layout per pre-M4 USlot/UProps spec §7");
+               "USlotHandle layout per USlot/UProps spec §7");
 #endif
 
 /* === Public API ===
  *
  * urbi_object_get_slot:
  *   Allocate a USlotHandle pointing at the owner of `name` on `obj` or one
- *   of its prototypes (resolved via urbi_object_resolve_slot, T25).  Returns
+ *   of its prototypes (resolved via urbi_object_resolve_slot).  Returns
  *   NULL if the name doesn't resolve or on OOM.
  *
  * urbi_slothandle_read_value / urbi_slothandle_write_value:

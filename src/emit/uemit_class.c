@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uemit_class.c — class declaration emit (T38 desugar).
+/* uemit_class.c — class declaration emit (desugar).
  *
- * Phase 6 of M6 stdlib.  Per spec §8 T38, class Foo : public A, B { body }
+ * Phase 6 of class stdlib.  Per spec §8, class Foo : public A, B { body }
  * desugars to:
  *
  *   var Foo = Object.clone()
@@ -27,7 +27,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* === emit_class_body_property_decl — T41 in class body.
+/* === emit_class_body_property_decl — in class body.
  *
  * Class-body `get name() { body }` and `set name(v) { body }`.  The
  * receiver is the class object held in foo_reg, but foo_reg is a raw
@@ -181,7 +181,7 @@ emit_class_body_stmt(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
         return;
     }
 
-    /* T41 (Wave 2): class-body `get name() {...}` / `set name(v) {...}`
+    /* Getter/setter: class-body `get name() {...}` / `set name(v) {...}`
      * — implicit receiver is the class object (foo_reg). */
     if (stmt->kind == AST_PROPERTY_DECL) {
         emit_class_body_property_decl(e, stmt, foo_reg);
@@ -439,7 +439,7 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
      * foo_reg already holds the value and is positioned at the top of
      * the live stack, a straight var-decl won't work either.
      *
-     * Cleanest approach for chunk-top (where M6 stdlib classes live):
+     * Cleanest approach for chunk-top (where class stdlib classes live):
      * use urbi_emit_assign_arm-style realm-global write.  We synthesize an
      * AST_ASSIGN with foo_reg sourced via a no-op move and let the
      * assign arm route to either local-rewrite or realm-global SETSLOT.
@@ -501,7 +501,7 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
     return foo_reg;
 }
 
-/* === urbi_emit_property_decl_arm — T41 get/set parse sugar.
+/* === urbi_emit_property_decl_arm — get/set parse sugar.
  *
  * AST_PROPERTY_DECL desugars to:
  *
@@ -509,7 +509,7 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
  *
  * where the function literal carries the params + body parsed by
  * urbi_parse_property_decl.  No new opcodes; runtime `oget`/`oset` slot-
- * property dispatch (M4 baseline) handles the trigger on slot read /
+ * property dispatch (member-access baseline) handles the trigger on slot read /
  * write.
  *
  * `n->u.property_decl.recv` must be non-NULL on entry.  Class-body

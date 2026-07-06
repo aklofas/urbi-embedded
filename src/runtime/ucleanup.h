@@ -43,8 +43,8 @@ typedef enum {
 
 /* === Forward declarations for types that land in later tasks. === */
 
-struct UTag;     /* T29 */
-struct UPattern; /* T10 */
+struct UTag;
+struct UPattern;
 struct UStrand;  /* ustrand.h */
 struct UVM;      /* uvm.h */
 
@@ -83,7 +83,7 @@ typedef struct UCleanupEntry {
     struct UStrand       *strand_back;  /* ptr — TAG_SCOPE: back-link for tag.stop() walk */
 } UCleanupEntry;
 
-/* FOUND-036, v0.5.5: pin the row 11 §3.3 layout target on 64-bit targets
+/* v0.5.5: pin the row 11 §3.3 layout target on 64-bit targets
  * (amended by refactor-3 VM-01: +frame_depth, 40 → 48).
  * 32-bit targets fall through (10 B fixed + 2 B pad + 4 × 4 B = 28 B); the
  * pointer-width guard mirrors the UObject / UIC pattern in src/object/. */

@@ -95,7 +95,7 @@ void urbi_defer_slot_change(struct UVM    *vm,
  * Slow path: called when UGC_HAS_SLOT_CHANGE_EVENT is set on parent.
  * Walks changed_events_head by USymbol identity, dispatches via
  * urbi_event_emit_sync.  Re-entrancy from scratch context routes to the
- * deferred-emit ring (T66).
+ * deferred-emit ring.
  *
  * EMITR-013 contract: silent return on unmatched key is the normal case.
  * UGC_HAS_SLOT_CHANGE_EVENT is a per-OBJECT bit ("at least one slot on
@@ -157,7 +157,7 @@ urbi_emit_slot_change_if_subscribed(struct UVM    *vm,
  * No-op when the ring is empty (head == tail) or NULL (OOM at init). */
 void urbi_drain_deferred_slot_changes(struct UVM *vm);
 
-/* === urbi_deferred_slot_changes_walk_roots (W3/v0.10.2) ===
+/* === urbi_deferred_slot_changes_walk_roots (v0.10.2) ===
  *
  * GC root provider: yields (parent, new_value) for each pending entry in
  * vm->deferred_slot_changes[head..tail].  Registered in urbi_vm_init.

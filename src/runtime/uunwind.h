@@ -1,11 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uunwind.h — M3 control-transfer walker.
+/* uunwind.h — control-transfer walker.
  *
  * urbi_unwind() is called from urbi_vm_dispatch_loop_until_yield whenever
- * s->pending_unwind != UEXEC_OK.  T9 implements the real 3-kind walker:
+ * s->pending_unwind != UEXEC_OK.  Implements the 3-kind walker:
  * CALL_FRAME absorption (RETURN), TRY_FRAME absorption (THROW/FINALLY),
- * TAG_SCOPE stub (T29 owns absorption), and fatal escalation on
- * unhandled unwinds. */
+ * TAG_SCOPE absorption, and fatal escalation on unhandled unwinds. */
 
 #ifndef UUNWIND_H
 #define UUNWIND_H
@@ -27,7 +26,7 @@ void urbi_unwind(UStrand *s);
  * "constants pool from closure (or module fall-back)" rule.  Used by both
  * OP_CALL (entering callee) and pop_call_frame (returning to caller) so
  * the two sites cannot drift.  cl may be NULL when the calling frame is
- * the module's top-level.  Closes FOUND-032 (Wave 2 carry). */
+ * the module's top-level. */
 static inline const UValue *
 ustrand_consts_for_closure(const UStrand *s, const UClosure *cl)
 {

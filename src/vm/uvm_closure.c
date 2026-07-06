@@ -84,7 +84,7 @@ void urbi_vm_close_upvalues(UStrand *s, const UValue *threshold) {
     while (*link != NULL) {
         UUpvalCell *cell = *link;
         if (cell->u.stack_ptr >= threshold) {
-            /* refactor-3 GC-07: Dijkstra forward barrier on the CELL.  It
+            /* GC-07: Dijkstra forward barrier on the CELL.  It
              * may already be BLACK mid-cycle while the captured value is
              * still WHITE (either white — see uvalue_is_heap_white, Task
              * 9b); without a shade the value's only surviving reference can

@@ -21,7 +21,7 @@ struct UVM;
 #define VM_OP_OVERLOAD_THREW 3   /* body raised: thrown value in *dst (or
                                     *out_thrown for the cmp variant) — caller
                                     must re-deposit it as a strand THROW,
-                                    mirroring OP_THROW (refactor-3 VM-07) */
+                                    mirroring OP_THROW (VM-07) */
 
 /* Binary operator fallback (arith_add / sub / mul / div type-errors).
  * op_name: interned operator symbol ("+", "-", "*", "/").

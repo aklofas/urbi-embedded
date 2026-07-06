@@ -54,9 +54,9 @@ uprops_alloc(UVM *vm)
     return p;
 }
 
-/* === T26: install a local slot on a receiver ===
+/* === Install a local slot on a receiver ===
  *
- * Per pre-M2 §6.1 + pre-M4 topology-generation spec §4.2 row 2.
+ * Per §6.1 + topology-generation spec §4.2 row 2.
  *
  * Two cases:
  *   1. Slot already exists on this lineage (urbi_shape_find_slot returns
@@ -151,7 +151,7 @@ set_local_slot_impl(UVM *vm, UObject *obj, USymbol *name, UValue value)
 
     /* Publish.  No unconditional topology_gen bump per topology spec §4.2
      * row 2 — the IC's per-site shape-mismatch check catches any cached
-     * entry that referenced the old shape.  T27: BUT if obj is itself a
+     * entry that referenced the old shape.  BUT if obj is itself a
      * prototype of some other UObject, IC entries that walked through obj
      * looking for `name` may have cached a miss-then-fall-through past
      * obj; installing `name` on obj now changes that resolution result and
@@ -201,7 +201,7 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     return rc;
 }
 
-/* === T27: urbi_object_remove_slot ===
+/* === urbi_object_remove_slot ===
  *
  * Strategy: rebuild obj->shape via urbi_shape_transition_remove_slot,
  * allocate a fresh USlotArray sized for new_shape->count, copy the
@@ -247,7 +247,7 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, const USymbol *name)
 
         /* Walk the new shape's lineage in reverse (root-ward → leaf-ward) to
          * recover, for each surviving slot, the *old* index it occupied in
-         * obj->slots.  Per pre-M2 §7.1 each shape carries its own (name, index)
+         * obj->slots.  Per §7.1 each shape carries its own (name, index)
          * — old_idx for surviving name N is just urbi_shape_find_slot(obj->
          * shape, N).  The new shape's own (name, index) gives us the
          * destination. */
@@ -276,13 +276,13 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, const USymbol *name)
     return 0;
 }
 
-/* === T28: install / remove / mutate slot property primitives ===
+/* === Install / remove / mutate slot property primitives ===
  *
  * Each primitive resolves the slot index by urbi_shape_find_slot on the
  * receiver's local shape (NOT the prototype walk — properties belong to
  * shapes, and a slot's properties are pinned to the holding object).
  *
- * install + remove route through urbi_shape_transition_property (T17) for
+ * install + remove route through urbi_shape_transition_property for
  * the shape transition, then write the per-slot UProps* into
  * new_shape->props_table[idx].  set_property_value mutates the existing
  * UProps in-place. */
@@ -551,7 +551,7 @@ urbi_object_remove_property(UVM *vm, UObject *obj, const USymbol *name,
         return -1;
     }
 
-    /* GC soundness (v0.13.2 T14 follow-up): same construction window as
+    /* GC soundness (v0.13.2 follow-up): same construction window as
      * install_property_impl — a genuine sibling (+ its props-table
      * wrapper) is referenced ONLY by these C locals while uprops_alloc
      * runs; under URBI_GC_STRESS the unpinned sibling was swept and a
@@ -678,7 +678,7 @@ urbi_object_set_property_value(UVM *vm, UObject *obj, const USymbol *name,
         return -1;
     }
 
-    /* GC soundness (v0.13.2 T14 follow-up): pin receiver + property value
+    /* GC soundness (v0.13.2 follow-up): pin receiver + property value
      * on the VM-level C-root chain — the impl's uprops_alloc COW
      * allocation runs before `value` lands in the fresh UProps, the same
      * window class the urbi_object_set_local_slot /
@@ -698,9 +698,9 @@ urbi_object_set_property_value(UVM *vm, UObject *obj, const USymbol *name,
     return rc;
 }
 
-/* === T25: urbi_object_resolve_slot ===
+/* === urbi_object_resolve_slot ===
  *
- * Per pre-M4 GETSLOT/SETSLOT spec §6.3.  Same DFS shape as lookup_inner
+ * Per GETSLOT/SETSLOT spec §6.3.  Same DFS shape as lookup_inner
  * (left-first, cycle-safe via lookup_stamp), but captures (holder, index)
  * rather than the slot value so the IC slow path can fill cache entries
  * with a direct USlot* into the holding object's storage.

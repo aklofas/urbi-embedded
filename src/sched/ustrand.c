@@ -1,8 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UStrand lifecycle.
-   T20 adds urbi_strand_create/start/spawn/destroy (full lifecycle C API).
-   T29 adds urbi_strand_attach_ambient_tags + urbi_strand_capture_ambient_chain.
-   Cleanup-stack wiring: T3 (this file). */
+   Implements: strand lifecycle C API (create/start/spawn/destroy),
+   ambient-tag helpers (attach/capture), cleanup-stack wiring. */
 
 #include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
@@ -345,11 +344,11 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
         release_strand_resource_chain(vm, s);
 }
 
-/* === T20: Strand C API (create / start / spawn / destroy) ===
+/* === Strand C API (create / start / spawn / destroy) ===
  *
  * These functions implement the strand lifecycle as specified in row 9 §9.1.
  * Separate _create (DORMANT alloc) from _start (DORMANT → READY enqueue) so
- * callers can pre-attach tags (T29), set scheduler attrs (v1.x), or pool/recycle
+ * callers can pre-attach tags, set scheduler attrs (v1.x), or pool/recycle
  * strands before making them runnable.  _spawn is the convenience composite. */
 
 UStrand *
@@ -371,7 +370,7 @@ urbi_strand_create(struct UVM *vm, struct URealm *realm, struct UClosure *entry)
     s->realm         = realm;
     s->entry_closure = entry;
 
-    /* T38: head-insert into realm's strand ownership list so that
+    /* Head-insert into realm's strand ownership list so that
      * urbi_realm_destroy can free all heap-allocated child strands. */
     s->next_in_realm   = realm->strands_head;
     realm->strands_head = s;
@@ -418,7 +417,7 @@ urbi_strand_start(struct UVM *vm, UStrand *s)
 {
     (void)vm;  /* mirrors s->vm; accepted for API convention */
     URBI_ASSERT_NOT_ISR(s->vm);
-    /* CHSTR-033 (T104): the precondition is "DORMANT only — no double-start".
+    /* CHSTR-033: the precondition is "DORMANT only — no double-start".
      * urbi_sched_strand_make_runnable unconditionally tail-inserts into the
      * cooperative ready queue and bumps strand_runnable_count++; calling
      * urbi_strand_start twice on the same strand would re-enqueue it
@@ -474,7 +473,7 @@ urbi_strand_destroy(struct UVM *vm, UStrand *s)
     }
 #endif
 
-    /* T38: unlink from realm->strands_head singly-linked list so that
+    /* Unlink from realm->strands_head singly-linked list so that
      * urbi_realm_destroy (which walks strands_head) does not encounter a
      * freed strand if the caller already called urbi_strand_destroy directly.
      * Walk from head; O(n) but only called at strand teardown. */
@@ -490,7 +489,7 @@ urbi_strand_destroy(struct UVM *vm, UStrand *s)
         }
     }
 
-    /* CHSTR-015 (T103): unbind the strand from any scheduler queue BEFORE
+    /* CHSTR-015: unbind the strand from any scheduler queue BEFORE
      * urbi_sched_strand_destroy zeroes the local ready_next/ready_prev pointers
      * that urbi_sched_strand_unbind_from_ready_queue walks to fix up neighbours.
      * urbi_sched_strand_destroy is then a pure local-pointer wipe; the strand's
@@ -499,7 +498,7 @@ urbi_strand_destroy(struct UVM *vm, UStrand *s)
      * ustrand_destroy follows so that the cleanup-stack unwind / register-
      * stack free / resource-chain release run with a strand that is no
      * longer reachable from the scheduler — eliminates the race window
-     * where a concurrent urbi_gc_sched_walk_roots (M3 cooperative: not actually
+     * where a concurrent urbi_gc_sched_walk_roots (cooperative: not actually
      * concurrent, but spec-level "the GC sees the strand on the queue
      * after we started tearing it down") would walk freed memory. */
     if (vm != NULL) {
@@ -532,7 +531,7 @@ urbi_strand_state(struct UVM *vm, const struct UStrand *s)
     }
 }
 
-/* === T29: ambient-tag inheritance helpers ===
+/* === Ambient-tag inheritance helpers ===
  *
  * Row 11 §4.1 / §4.3. */
 
@@ -662,7 +661,7 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
      * the count on error.
      * v0.9.2: s->module deleted; root_proto IS the sole chunk identity. */
     s->root_proto = root;
-    /* v0.10.1 W4: typed-handle acquire for diagnostics (F3 strand-bind site). */
+    /* v0.10.1: typed-handle acquire for diagnostics (F3 strand-bind site). */
     urbi_proto_strand_ref_acquire(s->root_proto, URBI_PROTO_REF_OWNER_STRAND);
 
     /* Allocate and zero the per-strand register stack.
@@ -757,7 +756,7 @@ urbi_strand_arm_init(UStrand *s)
 /* === spec #1 §5.5: urbi_strand_arm_from_closure ===
  *
  * Lifted from the inlined stack-alloc + pc-arming block in fork_spawn_child
- * (uop_fork.c) so the watcher body-spawn path (T24) can reuse it.
+ * (uop_fork.c) so the watcher body-spawn path can reuse it.
  * Delegates stack alloc+zero to urbi_strand_arm_init (CHSTR-022); wires
  * pc/pc_base/cur_consts and clears exec-state fields from entry.
  *
@@ -822,7 +821,7 @@ urbi_strand_suspend(struct UStrand *strand, uint8_t reason, struct UTag *tag)
         /* Splice out of the cooperative scheduler's ready queue so the
          * dispatch loop doesn't pick the strand up.  sched_strand_unbind_
          * from_ready_queue idempotently decrements strand_runnable_count
-         * when the strand was actually on the queue (T1 discipline:
+         * when the strand was actually on the queue (enqueue discipline:
          * unbind first, then stamp). */
         urbi_sched_strand_unbind_from_ready_queue(strand);
         break;

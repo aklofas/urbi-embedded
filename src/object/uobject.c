@@ -1,24 +1,24 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uobject.c — atom-family singletons + UObject allocator (M4 / T8).
+/* uobject.c — atom-family singletons + UObject allocator.
  *
- * Design references: pre-M4 prototype-chain representation §3/§4.1/§8.1.
+ * Design references: prototype-chain representation §3/§4.1/§8.1.
  *
  * Per-VM lazy-allocated atom prototypes: root Object plus the eight built-in
- * atoms (Integer/Float/String/List/Dict/Tag/Event/Symbol).  T36's root
+ * atoms (Integer/Float/String/List/Dict/Tag/Event/Symbol).  The root
  * provider (object_roots_walker, registered via urbi_object_register_gc_roots
  * in urbi_vm_init) keeps the singletons alive across GC cycles by shading each
  * non-NULL vm->atom_* field directly during MARK_ROOTS.
  *
  * The single-tag prototype encoding `(root << 1) | 1` used in
  * urbi_object_atom matches the canonical form decoded by UPROTOS_FOREACH
- * (src/object/uobject.h, T9). */
+ * (src/object/uobject.h). */
 
 #include <stdint.h>
 
 #include "object/uobject.h"
 #include "object/uobject_internal.h"
 #include "object/ushape.h"
-#include "object/uchunk_instance.h"  /* T36: walk module_instances_head */
+#include "object/uchunk_instance.h"  /* walk module_instances_head */
 #include "vm/uvm.h"
 #include "urbi/gc.h"      /* urbi_gc_alloc + urbi_gc_register_root_provider */
 #include "gc/ugc_incremental.h"   /* urbi_gc_shade_gray */
@@ -96,7 +96,7 @@ urbi_object_alloc(UVM *vm, URBIAtomFamily family)
 /* === urbi_atom_family_name ===
  *
  * Stable static string per atom family; used by future error messages
- * (T11 urbi_object_valid_proto failure path and beyond). */
+ * (urbi_object_valid_proto failure path and beyond). */
 const char *
 urbi_atom_family_name(URBIAtomFamily f)
 {
@@ -136,10 +136,10 @@ urbi_object_root(struct UVM *vm)
     /* protos already 0 (empty form) from urbi_object_alloc. */
     vm->atom_object = o;
 
-    /* T36: object_roots_walker (registered via urbi_object_register_gc_roots
+    /* object_roots_walker (registered via urbi_object_register_gc_roots
      * in urbi_vm_init) keeps this singleton alive across collection cycles by
      * shading vm->atom_object directly during MARK_ROOTS.  No explicit pin
-     * needed — replaces the synthetic UVAL_CLOSURE wrapper trick used pre-T36. */
+     * needed — replaces the earlier synthetic UVAL_CLOSURE wrapper trick. */
     return o;
 }
 
@@ -148,15 +148,15 @@ urbi_object_root(struct UVM *vm)
  * Lazy-allocate the named atom singleton on first call.  Each non-root
  * atom's protos field carries the single-tag encoding `(uintptr_t)root | 1`
  * pointing at the root Object (the canonical single form decoded by
- * UPROTOS_FOREACH per pre-M4 prototype-chain spec §4.1).
+ * UPROTOS_FOREACH per prototype-chain spec §4.1).
  *
  * Returns NULL on OOM or invalid family tag. */
 
 /* Table entry: per-family vm field offset.  URBIAtomFamily values 0-11
- * (M4 baseline 0-8 plus M6 Phase 4 additions 9-11) are numerically
+ * (baseline 0-8 plus Phase 4 additions 9-11) are numerically
  * identical to the table indices, so the table is indexed directly by
  * family.  offsetof is used to avoid assuming struct-member ordering
- * beyond what is documented in uvm.h §M4 atom-family singletons. */
+ * beyond what is documented in uvm.h atom-family singletons. */
 static const size_t kAtomFieldOffset[] = {
     [URBI_ATOM_OBJECT]  = offsetof(UVM, atom_object),
     [URBI_ATOM_INTEGER] = offsetof(UVM, atom_integer),
@@ -212,20 +212,20 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamily family)
     if (o == NULL) {
         return NULL;
     }
-    /* Route through the canonical T10 primitive: empty → single transition,
+    /* Route through the canonical proto-set primitive: empty → single transition,
      * with the forward Dijkstra barrier on the inserted root and a
      * topology_gen bump.  o was just allocated with protos == 0 (empty form)
      * so the "shade existing" branch is a no-op. */
     urbi_object_set_protos_single(vm, o, root);
     *slot = o;
 
-    /* T36: kept alive by object_roots_walker (see urbi_object_root). */
+    /* Kept alive by object_roots_walker (see urbi_object_root). */
     return o;
 }
 
-/* === T39: urbi_object_clone ===
+/* === urbi_object_clone ===
  *
- * Per pre-M2 §4.4 + atom-clone.chk.  Atom-aware clone:
+ * Per §4.4 + atom-clone.chk.  Atom-aware clone:
  *   - Allocates a fresh UObject in parent's atom family (low-4 of flags).
  *   - Threads `parent` into the clone's protos as the single-tag form, so
  *     `clone.foo` resolves via the prototype walk to parent.foo (or any
@@ -253,9 +253,9 @@ urbi_object_clone(UVM *vm, UObject *parent)
     return clone;
 }
 
-/* === T36: GC root provider for atom singletons + UChunkInstance list ===
+/* === GC root provider for atom singletons + UChunkInstance list ===
  *
- * Per pre-M3 GC roots spec §5.3 + pre-M4 amendments.  Three new root sources:
+ * Per GC roots spec §5.3.  Three root sources:
  *   1. Atom-family singletons (vm->atom_object .. vm->atom_symbol).
  *   2. The root shape (vm->root_shape).
  *   3. UChunkInstance chain reachable from vm->module_instances_head.
@@ -294,16 +294,16 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
         }
     }
 
-    /* M5 T53/T54 native proto objects. */
+    /* Native proto objects. */
     if (vm->event_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->event_proto);
     if (vm->tag_proto   != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->tag_proto);
 
-    /* M6 Phase 6: container proto singletons for Pair / Triplet / Tuple. */
+    /* Container proto singletons for Pair / Triplet / Tuple. */
     if (vm->container_pair_proto    != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->container_pair_proto);
     if (vm->container_triplet_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->container_triplet_proto);
     if (vm->container_tuple_proto   != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->container_tuple_proto);
 
-    /* M6 Phase 7: Exception primitive proto. */
+    /* Exception primitive proto. */
     if (vm->exception_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->exception_proto);
     /* Cached Exception-subclass protos (urbi_exception_subclass_protos_resolve). */
     if (vm->typeerror_proto   != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->typeerror_proto);
@@ -314,7 +314,7 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->rangeerror_proto  != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->rangeerror_proto);
     if (vm->divbyzero_proto   != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->divbyzero_proto);
 
-    /* M6 Phase 8: namespace proto singletons.  T86 onwards.  platform_-
+    /* Namespace proto singletons.  platform_-
      * proto is reached transitively via System's "Platform" slot but is
      * shaded directly to keep the walker uniform. */
     if (vm->math_proto             != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->math_proto);
@@ -323,7 +323,7 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->global_namespace_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->global_namespace_proto);
     if (vm->callmessage_proto      != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->callmessage_proto);
 
-    /* M6 Phase 9: primitive proto singletons (Mutex / Date / Duration). */
+    /* Primitive proto singletons (Mutex / Date / Duration). */
     if (vm->mutex_proto    != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->mutex_proto);
     if (vm->date_proto     != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->date_proto);
     if (vm->duration_proto != NULL) urbi_gc_shade_gray(vm, (UCell *)vm->duration_proto);

@@ -7,8 +7,8 @@
  *   syncEmit   — sync fan-out via urbi_event_emit_sync
  *   waituntil  — block caller strand via urbi_event_waituntil
  *
- * Phase 7 (M6 stdlib): native slots are now installed as UVAL_CLOSURE values
- * carrying a `native_fn` pointer (the M6 Phase-3 native-method ABI), so
+ * Phase 7 (stdlib): native slots are now installed as UVAL_CLOSURE values
+ * carrying a `native_fn` pointer (the Phase-3 native-method ABI), so
  * scripted `Event.new()`, `e.emit(p)`, `e.syncEmit(p)`, and `e.waituntil()`
  * all dispatch through OP_CALL's native-method branch.
  *
@@ -17,7 +17,7 @@
  * called the host-fn pointers directly — useful for unit testing the emit
  * primitives but not reachable from script.
  *
- * EVENT-013 (defer:M6): urbi_register_fn was hoisted out of event-specific
+ * EVENT-013: urbi_register_fn was hoisted out of event-specific
  * code at Phase 7 by retiring it altogether.  The Phase-3 native-method
  * registration helper (urbi_native_closure_create) is the sole installer
  * for native methods on atom protos now.  urbi_tag_native_register still uses
@@ -29,7 +29,7 @@
  *   entirely.  They consume already-resolved UValues from argv and call
  *   straight into urbi_event_emit_async / urbi_event_emit_sync / urbi_event_waituntil
  *   from C — no emitter freereg / next_reg state to keep in sync.  The
- *   register-allocation desync that affected scripted emit (v0.5.2 T6;
+ *   register-allocation desync that affected scripted emit (v0.5.2;
  *   fixed at TWO sibling sites in src/emit/uemit_react.c, AST_AT_EVENT
  *   sync+async + AT_SLOT_CHANGE) does not apply here. */
 
@@ -54,7 +54,7 @@
 
 /* === uvalue_from_event / uvalue_as_event / uvalue_is_event ===
  *
- * UEvent is a GC-managed cell.  At M5 we added UVAL_EVENT (kind=9) to
+ * UEvent is a GC-managed cell.  UVAL_EVENT (kind=9) was added to
  * the UValKind enum (urbi/types.h) so the GC barrier in uvalue_is_heap()
  * shades it.  Phase-18 (Wave 6, 2026-05-09) made the three helpers
  * `static inline` in uevent_native.h to elide call overhead at the 5
@@ -90,7 +90,7 @@ event_optional_payload(uint8_t nargs, UValue *args)
  * UEvent.  Raises OOM on alloc failure (EVENT-011 — route via the canonical
  * urbi_raise_oom helper rather than open-coded NIL return).
  *
- * Used by scripted `Event.new()` since Phase 7 (M6 stdlib).  Pre-Phase-7 the
+ * Used by scripted `Event.new()` since Phase 7 (stdlib).  Pre-Phase-7 the
  * legacy host-fn variant urbi_native_event_new returned NIL on OOM through a
  * different ABI; the Phase-3 ABI surfaces OOM as a throw. */
 static int
@@ -179,7 +179,7 @@ static const UNativeMethodDef EVENT_METHODS[] = {
  * type-table setup and atom-proto walk are in place.
  * Returns UVM_OK on success, UVM_OOM if the proto object allocation fails.
  *
- * Phase 7 (M6 stdlib): vm->atom_event is set to the same object so that
+ * Phase 7 (stdlib): vm->atom_event is set to the same object so that
  * urbi_object_atom(URBI_ATOM_EVENT) — used by the receiver-resolution path
  * for UVAL_EVENT (src/object/uobject_atom_dispatch.c) — finds the native
  * method slots.  Pre-Phase-7 vm->atom_event was lazy-allocated as a

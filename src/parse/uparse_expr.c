@@ -13,7 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* v0.10.11 / W3: `<<` shift-write selector.  File-scope (with
+/* v0.10.11 / `<<` shift-write selector.  File-scope (with
  * URBI_STATIC_ASSERT length guard) matching the urbi_parse_kEmitMethodName pattern
  * in uparse.c; declared extern in uparse_internal.h for visibility. */
 static const char kLShiftSelector[] = "<<";
@@ -47,9 +47,9 @@ static int infix_prec(UTokenType t) {
     case TOK_PIPEPIPE: return 1;
     case TOK_AMPAMP:   return 2;
     /* === end v1.0-rc stdlib-completeness === */
-    /* === W3/v0.10.11: << method-call desugar (below equality) === */
+    /* === v0.10.11: << method-call desugar (below equality) === */
     case TOK_LSHIFT: return 3;
-    /* === end W3/v0.10.11 === */
+    /* === end v0.10.11 === */
     case TOK_EQEQ:
     case TOK_NEQ:   return 4;
     case TOK_LT:
@@ -303,7 +303,7 @@ UAstNode *urbi_parse_prefix(UParser *p) {
     return urbi_parse_atom(p);
 }
 
-/* === W10/v0.10.5: parse_bracket_literal =====================================
+/* === v0.10.5: parse_bracket_literal =====================================
  * Parses `[...]` — either a list literal `[e1, e2, e3]` or a dict literal
  * `["k1" => v1, "k2" => v2]`.  Disambiguation: after the first element, if
  * `=>` is present it is a dict; otherwise it is a list.  An empty `[]` is
@@ -411,7 +411,7 @@ static UAstNode *parse_bracket_literal(UParser *p) {
         return n;
     }
 }
-/* === end W10/v0.10.5: parse_bracket_literal === */
+/* === end v0.10.5: parse_bracket_literal === */
 
 /* --- urbi_parse_atom: INT | IDENT | true | false | nil | ( expr ) | error.
  *
@@ -470,7 +470,7 @@ UAstNode *urbi_parse_atom(UParser *p) {
         return urbi_parse_try(p);
     case TOK_KW_THROW:
         return urbi_parse_throw(p);
-    /* W9/v0.10.5: waituntil(e?) used as expression (e.g. `var r = waituntil(e?)`).
+    /* v0.10.5: waituntil(e?) used as expression (e.g. `var r = waituntil(e?)`).
      * urbi_parse_atom is the expression-parser entry; urbi_parse_statement_or_expr also
      * handles it at statement-start level.  Adding it here allows waituntil
      * to appear on the right-hand side of assignments and inside function bodies. */
@@ -481,10 +481,10 @@ UAstNode *urbi_parse_atom(UParser *p) {
         return urbi_parse_make_error(p, PARSE_CLOSURE_KEYWORD,
                           urbi_parse_kErrorMessages[PARSE_CLOSURE_KEYWORD],
                           t.line, t.col);
-    /* === W10/v0.10.5: list/dict literals === */
+    /* === v0.10.5: list/dict literals === */
     case TOK_LBRACKET:
         return parse_bracket_literal(p);
-    /* === end W10/v0.10.5 === */
+    /* === end v0.10.5 === */
     case TOK_EOF:
         return urbi_parse_make_error(p, PARSE_UNEXPECTED_EOF,
                           urbi_parse_kErrorMessages[PARSE_UNEXPECTED_EOF],
@@ -586,7 +586,7 @@ static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
 
     const bool is_arrow = (op.type == TOK_ARROW);
 
-    /* T41: `Foo.get value(...)` / `Foo.set value(...)` getter/setter sugar.
+    /* `Foo.get value(...)` / `Foo.set value(...)` getter/setter sugar.
      * Only triggers on dot-access (not arrow), where the consumed IDENT is
      * `get` or `set`, AND the next two tokens are IDENT followed by `(`.
      * Outside that strict shape, `get` / `set` remain plain slot names. */
@@ -713,7 +713,7 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             continue;
         }
 
-        /* === W10/v0.10.5: subscript `l[i]`, `l[i] = v`, `l[i] += v` ===
+        /* === v0.10.5: subscript `l[i]`, `l[i] = v`, `l[i] += v` ===
          * Postfix `[index]` — subscript access.  Lowers to:
          *   l[i]      → AST_SUBSCRIPT_GET  (emit: l.get(i))
          *   l[i] = v  → AST_SUBSCRIPT_SET  (emit: l.set(i, v))
@@ -766,7 +766,7 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             lhs = sg;
             continue;
         }
-        /* === end W10/v0.10.5: subscript === */
+        /* === end v0.10.5: subscript === */
 
         /* Postfix `?` — only valid inside at(...) condition.
          * When at_event_cond is set, pass through (urbi_parse_at will urbi_parse_consume it).
@@ -790,7 +790,7 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
         if (!right) return NULL;
         if (right->kind == AST_ERROR) return right;
 
-        /* === W3/v0.10.11: << desugars to lhs.'<<'(rhs) method call ===
+        /* === v0.10.11: << desugars to lhs.'<<'(rhs) method call ===
          *
          * Builds:  AST_CALL { callee = AST_MEMBER_GET(lhs, "<<"), args=[rhs] }
          *
@@ -820,7 +820,7 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             lhs = call;
             continue;
         }
-        /* === end W3/v0.10.11 === */
+        /* === end v0.10.11 === */
 
         /* === v1.0-rc stdlib-completeness: % desugars to lhs.'%'(rhs) ===
          *

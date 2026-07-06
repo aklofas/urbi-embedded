@@ -41,7 +41,7 @@ extern "C" {
 #define USTRAND_RUNNING        0x20U  /* currently dispatching */
 #define USTRAND_WAITING        0x30U  /* blocked, see reason sub-code */
 #define USTRAND_DEAD           0x40U  /* terminated, awaiting GC */
-#define USTRAND_SUSPENDED      0x50U  /* RESERVED — Tag.freeze (M5/M6) */
+#define USTRAND_SUSPENDED      0x50U  /* RESERVED — Tag.freeze */
 
 /* WAITING reason sub-codes (lower nibble).
  *
@@ -120,23 +120,23 @@ ustrand_gates_reason(uint8_t gates)
 #define USTRAND_GET_STATE(s)   ((s)->state & USTRAND_STATE_MASK)
 #define USTRAND_GET_REASON(s)  ((s)->state & USTRAND_REASON_MASK)
 
-/* === UExecStatus moved to <urbi/types.h> at v0.5.5 (T17) === */
+/* === UExecStatus moved to <urbi/types.h> at v0.5.5 === */
 #include "urbi/types.h"
 
-/* === Cleanup-stack type (T3) ===
+/* === Cleanup-stack type ===
    ucleanup.h defines UCleanupEntry and the stack init/destroy ops. */
 
 #include "runtime/ucleanup.h"
 
 /* === Forward declarations for types that land in later tasks. === */
 
-struct UTag;             /* T29 */
+struct UTag;
 struct UEvent;           /* reactive runtime */
 struct UVM;              /* uvm.h — forward-decl to avoid circular include */
 struct URealm;           /* urealm.h — forward-decl for strand lifecycle context */
 struct UProto;           /* uproto.h — forward-decl for root_proto (v0.8.1+) */
 struct UClosure;         /* chunk/uproto.h — forward-decl for closure list threading */
-struct UChunkInstance;  /* object/uchunk_instance.h — M4 follow-up: per-(vm,module) IC tier */
+struct UChunkInstance;  /* object/uchunk_instance.h — per-(vm,module) IC tier */
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
 struct UPeriodic;        /* stdlib/temporal.h — v0.9.4 every() back-pointer */
 
@@ -170,27 +170,27 @@ struct UStrand {
        state byte + budget -> scheduler list pointers -> wait-state ->
        watcher/event/join links -> realm strand list -> execution state. */
 
-    /* --- VM back-pointer (T5; set by ustrand_init; required by scheduler ops) --- */
+    /* --- VM back-pointer (set by ustrand_init; required by scheduler ops) --- */
     struct UVM             *vm;
 
-    /* --- T20 lifecycle fields: owning Realm + entry closure --- */
+    /* --- Lifecycle fields: owning Realm + entry closure --- */
     struct URealm          *realm;           /* owning Realm; NULL for internal/stack strands */
     struct UClosure        *entry_closure;   /* closure to invoke at strand activation;
                                                zero-init; frame-0 setup deferred to urbi_step
                                                or a future urbi_strand_arm helper */
 
-    /* --- Row 7 unwind/cleanup fields (T9 wires walker; T3 lands cleanup-stack) --- */
+    /* --- Row 7 unwind/cleanup fields --- */
     UExecStatus             pending_unwind;
     uint8_t                 unwind_pad[3];
     UValue                  unwind_value;
-    UValue                  catch_value;       /* T10: last caught exception value;
+    UValue                  catch_value;       /* last caught exception value;
                                                   written by unwind walker on catch absorption;
                                                   read by OP_LOAD_CATCH_VALUE at handler entry */
     struct UTag            *unwind_target;
     struct UCleanupEntry   *cleanup_top;
     uint16_t                cleanup_depth;
     uint16_t                cleanup_cap;
-    /* T29 / FOUND-009: recursion bound for run_cleanup_with_replace().
+    /* Recursion bound for run_cleanup_with_replace().
      * Distinct from cleanup_depth (cleanup-stack push/pop counter); this
      * tracks how deeply run_cleanup_with_replace has re-entered
      * urbi_vm_dispatch_loop_until_yield via finally/onleave handlers.  Without
@@ -237,7 +237,7 @@ struct UStrand {
 
     /* --- Row 9 state machine + budget --- */
     uint8_t                 state;
-    uint8_t                 cross_strand_stop_pending;  /* T31: set when urbi_tag_stop deposits
+    uint8_t                 cross_strand_stop_pending;  /* set when urbi_tag_stop deposits
                                                            cross-strand; cleared + counter-
                                                            decremented at ustrand_destroy.
                                                            Once-per-lifetime: repeated deposits on
@@ -251,7 +251,7 @@ struct UStrand {
                                                            forks even though realm now points at
                                                            vm->global_realm.  Always 0 for
                                                            urbi_strand_create-managed strands
-                                                           (heap-allocated).  See pre-M4 GC
+                                                           (heap-allocated).  See GC
                                                            strand-walker §5.1. */
     uint8_t                 cleanup_body_done;          /* refactor-3 VM-02: set by OP_RESUME —
                                                            run_cleanup_with_replace's completion
@@ -280,11 +280,8 @@ struct UStrand {
     uint8_t                 suspend_gates;
     uint8_t                 budget_pad;
 
-    /* --- Cooperative scheduler intrusive list (T5 wires) ---
-       Included unconditionally at T2; T5 will revisit whether to gate
-       these fields behind URBI_SCHED == URBI_SCHED_COOPERATIVE if the
-       scheduler dispatch becomes plural or multi-strategy.
-       TODO(T5): conditionally compile under URBI_SCHED == URBI_SCHED_COOPERATIVE
+    /* --- Cooperative scheduler intrusive list ---
+       TODO: conditionally compile under URBI_SCHED == URBI_SCHED_COOPERATIVE
        if scheduler dispatch becomes plural. */
     UStrand                *ready_next;
     UStrand                *ready_prev;
@@ -349,18 +346,17 @@ struct UStrand {
      * urbi_vm_fork_wake_joiners() walks this list when the strand reaches DEAD. */
     UStrand                *joiners_head;
 
-    /* --- Realm ownership list (T38) ---
+    /* --- Realm ownership list ---
      * Singly-linked list of all strands created under the same URealm.
      * Populated by urbi_strand_create; walked by urbi_realm_destroy to free
      * all realm-managed strands when the realm is torn down.
      * NULL for strands not created via urbi_strand_create (e.g. urbi_vm_run transient). */
     UStrand                *next_in_realm;
 
-    /* --- M2-baseline execution state migrated from urbi_vm_run-locals + UVM at T6 ---
+    /* --- Execution state (migrated from urbi_vm_run-locals + UVM) ---
        These fields are valid only while the strand is RUNNING or READY (paused mid-run).
        urbi_vm_run's thin adapter initialises them before calling urbi_vm_dispatch_loop_until_yield
-       and tears them down after the strand transitions to DEAD.
-       T20 will move strand creation here when the full Strand C API lands. */
+       and tears them down after the strand transitions to DEAD. */
     UValue                 *stack;          /* heap-alloc'd register array; UVM_STACK_CAP slots */
     UValue                 *R;              /* current frame register base (derived from stack) */
     const uint32_t         *pc;             /* current instruction pointer */
@@ -372,7 +368,7 @@ struct UStrand {
                                              * cleared in ustrand_destroy after refcount dec.
                                              * NULL for closure-based strands (set by arm_from_closure
                                              * callers via uproto_root_of on the closure's proto). */
-    /* module_instance: per-(vm, module) IC RAM tier (M4 follow-up).
+    /* module_instance: per-(vm, module) IC RAM tier.
      * Bound by urbi_vm_run / urbi_run_chunk via
      * urbi_get_or_create_chunk_instance.  May be NULL if not yet wired
      * (defensive).
@@ -507,7 +503,7 @@ void urbi_strand_suspend(struct UStrand *strand, uint8_t reason,
                          struct UTag    *tag);
 void urbi_strand_resume_if_ungated(struct UStrand *strand);
 
-/* === T29: ambient-tag inheritance helpers ===
+/* === Ambient-tag inheritance helpers ===
  *
  * urbi_strand_capture_ambient_chain: walk `parent`'s cleanup-stack bottom-up
  *   and collect the owning_tag pointer from every TAG_SCOPE entry into
@@ -569,7 +565,7 @@ int urbi_strand_arm_init(struct UStrand *s);
  * (R, pc, pc_base, cur_consts, frame_count, open_upvals, out_slot) from
  * `entry` and the strand's own vm->alloc_fn.
  *
- * Called by fork_spawn_child (T38) and the watcher body-spawn path (T24)
+ * Called by fork_spawn_child and the watcher body-spawn path
  * so the stack-alloc + pc-arming sequence is not duplicated.
  *
  * Returns 0 on success, -1 on allocation failure (s is left unarmed; caller
@@ -584,8 +580,8 @@ int urbi_strand_arm_init(struct UStrand *s);
  * NOTE: does NOT set s->root_proto — callers that need root_proto for
  * diagnostics or nested-proto lookup must set it explicitly after this call returns 0.
  *
- * NOTE (CHSTR-014, CHSTR-037 / T102 + T105): does NOT set s->module_instance
- * either.  The M4-follow-up per-(vm, module) IC RAM tier requires each spawn
+ * NOTE (CHSTR-014, CHSTR-037): does NOT set s->module_instance
+ * either.  The per-(vm, module) IC RAM tier requires each spawn
  * site to wire module_instance differently:
  *   - fork_spawn_child inherits parent's s->module_instance (siblings share
  *     modules);

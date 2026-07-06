@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uic.h — UIC inline-cache record + URBI_IC_ENTRIES_PER_SITE tunable.
  *
- * Design references: pre-M4 getslot/setslot encoding §4.1/§4.3.
+ * Design references: getslot/setslot encoding §4.1/§4.3.
  *
  * One UIC is reserved per GETSLOT/SETSLOT bytecode site (allocated alongside
- * the function's IC table per pre-M4 §4.1).  Each entry caches a (recv_shape,
+ * the function's IC table per §4.1).  Each entry caches a (recv_shape,
  * recv_protos, topology_gen) -> (slot, uprops, flags) mapping; lookups
  * linear-scan the first `n` entries (n <= URBI_IC_ENTRIES_PER_SITE) and miss
- * falls through to the megamorphic GET/SET fallback path (T40).
+ * falls through to the megamorphic GET/SET fallback path.
  * `replace_cursor` advances round-robin on miss-with-full-cache to give a
  * fair eviction order without an LRU bookkeeping field.
  *
@@ -89,9 +89,9 @@ URBI_STATIC_ASSERT(sizeof(struct UIC) == 184,
     "UIC must be 184 B at default 4-entry, 64-bit pointers");
 #endif
 
-/* === T25: slow-path helpers ===
+/* === Slow-path helpers ===
  *
- * Per pre-M4 GETSLOT/SETSLOT spec §6.3.  Called from the OP_GETSLOT /
+ * Per GETSLOT/SETSLOT spec §6.3.  Called from the OP_GETSLOT /
  * OP_SETSLOT dispatch arms when the inline-cache fast path misses
  * (no shape+topology match).  Each helper resolves the slot via
  * urbi_object_resolve_slot, fills exactly one IC entry at

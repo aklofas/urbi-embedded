@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Watcher table GC root walker.
- * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Per spec §6.6 as amended by refactor-3 GC-05: walks the whole watcher
  * POOL SLAB (every in-use slot), yielding closure + last_value_cache
@@ -86,7 +85,7 @@ urbi_gc_watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
         cb(vm, &w->last_value_cache, ctx);
 
         /* refactor-3 GC-03: owning_tag IS a root — UTag has been
-         * GC-managed (UTYPE_TAG via urbi_gc_alloc) since M5; the old
+         * GC-managed (UTYPE_TAG via urbi_gc_alloc); the old
          * "host-managed" deferral note was stale. */
         if (w->owning_tag != NULL) {
             urbi_gc_shade_gray(vm, (UCell *)w->owning_tag);

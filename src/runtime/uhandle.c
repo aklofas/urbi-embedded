@@ -19,7 +19,7 @@ handle_table_grow(UVM *vm)
 {
     uint32_t old_cap = vm->handle_table_cap;
     uint32_t new_cap = old_cap ? old_cap * 2U : INITIAL_CAP;
-    /* FOUND-002: doubling overflow check.  At old_cap > UINT32_MAX/2 the
+    /* Doubling overflow check.  At old_cap > UINT32_MAX/2 the
      * `* 2U` wraps to a smaller value than old_cap; reject rather than
      * silently shrink the table. */
     if (old_cap != 0U && new_cap < old_cap) return -1;
@@ -43,7 +43,7 @@ UHandle
 urbi_handle_create(UVM *vm, UValue v)
 {
     URBI_ASSERT_NOT_ISR(vm);
-    /* FOUND-002: pre-check next_id wraparound.  If the post-increment below
+    /* Pre-check next_id wraparound.  If the post-increment below
      * would wrap to 0, the returned (slot+1) collides with URBI_HANDLE_INVALID
      * AND the indexed write goes to a non-existent slot.  Reject here. */
     if (vm->handle_table_next_id == 0xFFFFFFFFU) {
@@ -65,7 +65,7 @@ urbi_handle_create(UVM *vm, UValue v)
 UValue
 urbi_handle_get(UVM *vm, UHandle h)
 {
-    /* FOUND-010: ISR-safety symmetry with urbi_handle_create / _release. */
+    /* ISR-safety symmetry with urbi_handle_create / _release. */
     URBI_ASSERT_NOT_ISR(vm);
     UValue nil = urbi_make_nil();
     if (h == URBI_HANDLE_INVALID) return nil;
@@ -88,9 +88,9 @@ urbi_handle_release(UVM *vm, UHandle h)
         umemdbg_handle_released(vm, slot, was_live);   /* flags double-release */
     }
 #endif
-    /* FOUND-019 + FOUND-048: zero-init UValue via canonical helper. */
+    /* Zero-init UValue via canonical helper. */
     vm->handle_table[slot] = urbi_make_nil();
-    /* Slot is logically free but not reused at M3 — no free-list.
+    /* Slot is logically free but not reused — no free-list.
      * v1.x adds slot reuse by threading nil slots as a free-list. */
 }
 

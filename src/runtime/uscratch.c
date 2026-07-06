@@ -26,7 +26,7 @@
 
 #include "runtime/uscratch.h"
 #include "vm/uvm.h"
-#include "runtime/uclosure.h"   /* UClosure full definition (M4: embeds UCell) */
+#include "runtime/uclosure.h"   /* UClosure full definition (embeds UCell) */
 #include "sched/ustrand.h"
 #include "sched/usched_cooperative.h" /* urbi_sched_strand_unpark (B11 fail-soft) */
 #include "runtime/ucleanup.h"
@@ -111,7 +111,7 @@ run_on_scratch_core(struct UVM       *vm,
      * call inside the body hits the safepoint budget == 0 arm in uvm.c and
      * would call urbi_sched_strand_yield, enqueuing this stack-local UStrand onto
      * vm->ready_head — a dead-stack UAF on the next urbi_step call.
-     * The transient guard in uvm.c (is_transient_strand check added by T7)
+     * The transient guard in uvm.c (is_transient_strand check)
      * is a belt-and-suspenders second layer that prevents the enqueue even if
      * the budget somehow reaches 0 (e.g. for very long scratch scripts). */
     strand.safepoint_budget_remaining = (uint16_t)URBI_SCRATCH_BUDGET_OPS;
@@ -143,7 +143,7 @@ run_on_scratch_core(struct UVM       *vm,
      * barriers that would mutate ICs, (2) closure->proto_inst already has
      * its ICs populated by the time the scratch helper runs, and (3) the
      * scratch frame's lifetime is strictly contained within the closure's.
-     * M6 will formalize this via a UClosure.owning_mi field; today the
+     * A future refactor will formalize this via a UClosure.owning_mi field; today the
      * scratch helper carries the pointer-share invariant in code.
      *
      * WATCH-007 (v0.5.7): on alloc failure, signal *out_threw = 1 and skip
@@ -373,7 +373,7 @@ run_on_scratch_core(struct UVM       *vm,
  * invoke_body_inline, invoke_onleave_inline, run_watcher_onleave — rely on
  * caller-owned vm->watchers->in_eval / vm->watchers->in_install for re-entry
  * protection instead.  See WATCH-036 (uvm.h field comment on
- * in_watcher_scratch — pre-W2 name; current field is in_scratch) for the
+ * in_watcher_scratch — former name; current field is in_scratch) for the
  * asymmetry rationale. */
 int
 urbi_run_closure_on_scratch(struct UVM      *vm,

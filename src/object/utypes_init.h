@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* utypes_init.h — single-purpose declaration for the M4 object-model
+/* utypes_init.h — single-purpose declaration for the object-model
  * built-in UType descriptor registration entry point.
  *
  * Implementation in utypes_init.c registers seven UTYPE_* tags
@@ -19,7 +19,7 @@ extern "C" {
 
 struct UVM;
 
-/* Register the M4 object-model cell types' UType descriptors directly into
+/* Register the object-model cell types' UType descriptors directly into
  * vm->type_table[].  Called from urbi_vm_init after vm->type_table[] has been
  * zeroed. */
 void urbi_object_builtin_types_init(struct UVM *vm);

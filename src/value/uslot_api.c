@@ -8,9 +8,9 @@
  *   urbi_slot_get:
  *     UVAL_OBJECT → walk prototype chain via urbi_object_lookup (DFS).
  *     UVAL_INT / FLOAT / STR / BOOL → route through atom-proto via
- *       urbi_atom_proto_for_value (M6 Wave 1 baseline) then walk.
+ *       urbi_atom_proto_for_value then walk.
  *     UVAL_NIL / VOID / other atoms → route through atom-proto (NIL/VOID
- *       protos exist since M6 Wave 1).
+ *       protos exist).
  *     Not found → URBI_ERR_SLOT_NOT_FOUND.
  *     NULL out_value → URBI_ERR_INVALID_ARG.
  *
@@ -108,7 +108,7 @@ urbi_slot_get(struct UVM *vm, UValue obj,
  *
  * Const-slot semantics: if the slot already exists on `obj` locally and
  * is flagged CONSTANT, the write is rejected.  If the slot exists only on
- * a prototype (COW case), the COW clone is mutable per pre-M2 §6.1 and
+ * a prototype (COW case), the COW clone is mutable per §6.1 and
  * the write succeeds.
  *
  * Returns:
@@ -159,7 +159,7 @@ urbi_slot_set(struct UVM *vm, UValue obj,
 
         /* Check whether the slot exists locally on `recv` and is const-flagged.
          * Only a LOCAL (same-object) const slot rejects the write; a const slot
-         * on a prototype results in a mutable COW copy (pre-M2 §6.1, §8.1). */
+         * on a prototype results in a mutable COW copy (§6.1, §8.1). */
         local_idx = urbi_shape_find_slot(recv->shape, sym);
         if (local_idx >= 0) {
             /* Slot exists locally. Check the CONSTANT flag. */

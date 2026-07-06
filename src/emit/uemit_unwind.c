@@ -18,9 +18,9 @@
 #include <stdint.h>
 
 /* =========================================================================
- * M3 row 7 control-transfer opcode encoder helpers.
+ * Control-transfer opcode encoder helpers.
  * Each function encodes exactly one instruction word and calls urbi_emit_instr.
- * See chunk/uchunk.h §M3 row 7 for the field layout of each opcode.
+ * See chunk/uchunk.h §row-7 for the field layout of each opcode.
  * ========================================================================= */
 
 /* OP_THROW ABx: A = reg_value, Bx = 0 (unused). */
@@ -29,7 +29,7 @@ void uemit_throw(UEmitter *e, uint8_t reg_value, uint32_t line) {
 }
 
 /* OP_TRY_BEGIN ABx: A = flags byte, Bx = handler PC (16-bit, range 0-65535).
- * flags bits: bit 0 = has_catch, bit 1 = has_finally (defined by T9/T10). */
+ * flags bits: bit 0 = has_catch, bit 1 = has_finally. */
 void uemit_try_begin(UEmitter *e, uint8_t flags, uint16_t handler_pc, uint32_t line) {
     urbi_emit_instr(e, uinstr_enc_abx(OP_TRY_BEGIN, flags, handler_pc), line);
 }
@@ -43,8 +43,8 @@ void uemit_try_end(UEmitter *e, uint32_t line) {
  *   A[7:4] = flags (4 bits, values 0-15)
  *   A[3:0] = tag_reg (4 bits, values 0-15)
  *   Bx     = onleave PC (16-bit, range 0-65535)
- * tag_reg must be in [0,15]; flags must be in [0,15]. T30 revisits
- * if wider operand ranges become necessary. */
+ * tag_reg must be in [0,15]; flags must be in [0,15].
+ * Widening deferred if wider operand ranges become necessary. */
 void uemit_push_tag(UEmitter *e, uint8_t reg_tag, uint8_t flags,
                     uint16_t onleave_pc, uint32_t line) {
     uint8_t a = (uint8_t)(((flags & 0xFU) << 4) | (reg_tag & 0xFU));
@@ -62,7 +62,7 @@ void uemit_resume(UEmitter *e, uint8_t reg_state, uint32_t line) {
 }
 
 /* OP_LOAD_CATCH_VALUE ABC: A = destination register, B = C = 0.
- * T10 empirical addition — loads s->catch_value into R[A] at handler entry. */
+ * Loads s->catch_value into R[A] at handler entry. */
 void uemit_load_catch_value(UEmitter *e, uint8_t reg, uint32_t line) {
     urbi_emit_instr(e, uinstr_enc_abc(OP_LOAD_CATCH_VALUE, reg, 0U, 0U), line);
 }
@@ -86,7 +86,7 @@ void uemit_load_catch_value(UEmitter *e, uint8_t reg, uint32_t line) {
  * Called once from the catch+finally path and once from the catch-only path.
  * Both callers have already patched the TRY_BEGIN Bx to the current PC.
  *
- * Wave 6 W5: if catch_guard != NULL, emit:
+ * if catch_guard != NULL, emit:
  *   OP_LOAD_CATCH_VALUE → e_reg
  *   <guard expr> → guard_reg
  *   OP_TEST guard_reg, 0, 1   ; skip JMP if guard is truthy (guard passes)
@@ -189,7 +189,7 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
  *
  * Returns rd on success or 0 on error (e->error set).
  *
- * Wave 6 W5: else_body is emitted inline on the normal-exit path (after
+ * else_body is emitted inline on the normal-exit path (after
  * TRY_END, before JMP past_handler) so finally still wraps it correctly
  * in the catch+finally case.  Guard logic lives in emit_catch_handler_section. */
 
@@ -229,7 +229,7 @@ static int emit_finally_inline(UEmitter *e, UAstNode *n, uint8_t rd) {
     return emit_finally_body_at(e, n->u.try_stmt.finally_body, rd);
 }
 
-/* T24: emit the teardown for every unwind scope above down_to_depth,
+/* Emit the teardown for every unwind scope above down_to_depth,
  * innermost-first, at a break/continue site whose JMP crosses them.
  * Tag scope → OP_POP_TAG (runtime pops + tears down the top TAG_SCOPE
  * entry; the A operand is disasm-fidelity only).  Try scope → OP_TRY_END,
@@ -281,7 +281,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         int outer_try_begin_pc = (int)urbi_emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_FINALLY, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
-        /* T24: outer scope is open until the outer OP_TRY_END below;
+        /* Outer scope is open until the outer OP_TRY_END below;
          * break/continue inside body / else / catch handler cross it. */
         if (!uemit_unwind_scope_push(e, UEMIT_SCOPE_TRY, 0U,
                                      n->u.try_stmt.finally_body))
@@ -291,7 +291,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         int inner_try_begin_pc = (int)urbi_emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_CATCH, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
-        /* T24: inner (catch) scope covers only the body — the runtime pops
+        /* Inner (catch) scope covers only the body — the runtime pops
          * it at the inner OP_TRY_END on the normal path and at catch
          * absorption on the unwind path. */
         if (!uemit_unwind_scope_push(e, UEMIT_SCOPE_TRY, 0U, NULL))
@@ -313,7 +313,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* OP_TRY_END (inner) */
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
-        uemit_unwind_scope_pop(e);   /* T24: inner catch scope closed */
+        uemit_unwind_scope_pop(e);   /* inner catch scope closed */
 
         /* Optional else body: runs on normal exit, still inside outer finally frame */
         if (has_else) {
@@ -355,7 +355,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* OP_TRY_END (outer) */
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
-        uemit_unwind_scope_pop(e);   /* T24: outer finally scope closed */
+        uemit_unwind_scope_pop(e);   /* outer finally scope closed */
 
         /* v0.11.4-D: normal-path finally.  Both the normal-completion path and
          * the post-catch path converge here (after the outer TRY_END), so this
@@ -401,7 +401,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         int try_begin_pc = (int)urbi_emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_CATCH, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
-        /* T24: catch scope covers only the body (popped at runtime on the
+        /* Catch scope covers only the body (popped at runtime on the
          * normal path by OP_TRY_END, on the unwind path at absorption). */
         if (!uemit_unwind_scope_push(e, UEMIT_SCOPE_TRY, 0U, NULL))
             return 0U;
@@ -422,7 +422,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
-        uemit_unwind_scope_pop(e);   /* T24 */
+        uemit_unwind_scope_pop(e);   /* catch scope closed */
 
         /* Optional else body: runs on normal exit (after TRY_END, before JMP past handler) */
         if (has_else) {
@@ -466,7 +466,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         int try_begin_pc = (int)urbi_emit_instr_count(e);
         uemit_try_begin(e, FLAG_HAS_FINALLY, 0U, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
-        /* T24: a break/continue inside the body crosses this scope — the
+        /* A break/continue inside the body crosses this scope — the
          * crossing site emits OP_TRY_END + an inline finally copy. */
         if (!uemit_unwind_scope_push(e, UEMIT_SCOPE_TRY, 0U,
                                      n->u.try_stmt.finally_body))
@@ -488,7 +488,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         uemit_try_end(e, (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
-        uemit_unwind_scope_pop(e);   /* T24 */
+        uemit_unwind_scope_pop(e);   /* finally scope closed */
 
         /* v0.11.4-D: normal-path finally — run the body on fall-through before
          * jumping past the unwind copy (REVIVAL §S5a). */
@@ -628,12 +628,12 @@ uint8_t urbi_emit_try_arm(UEmitter *e, UAstNode *n) {
  * Bytecode layout:
  *   <tag_expr → \x01tag local>
  *   [push_tag_pc]:
- *     OP_PUSH_TAG packed_A, onleave_pc_placeholder  ; onleave_pc=0 at M3
+ *     OP_PUSH_TAG packed_A, onleave_pc_placeholder  ; onleave_pc=0 initially
  *     <body opcodes>
  *     OP_POP_TAG  tag_reg
  *     OP_JMP      past_handler_placeholder
- *   [onleave_pc]:   ← OP_PUSH_TAG Bx points here (0 at M3)
- *     (empty — onleave body deferred to M5)
+ *   [onleave_pc]:   ← OP_PUSH_TAG Bx points here (0 initially)
+ *     (empty — onleave body deferred)
  *   [past_handler_pc]:
  *     <continuation>
  *
@@ -658,7 +658,7 @@ uint8_t urbi_emit_try_arm(UEmitter *e, UAstNode *n) {
  * When the slot exceeds 15 every lower register is local-occupied, so
  * there is no safe spill target; the EMIT-015 rejection stays:
  * EMIT_TAG_SPILL_OUT_OF_RANGE (widening the encoding to a full byte is a
- * v1.x bytecode change, filed as backlog under T129/Phase 22).
+ * v1.x bytecode change, filed as a deferred backlog item).
  * -------------------------------------------------------------------------- */
 uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
@@ -695,7 +695,7 @@ uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     int tag_slot = uemit_declare_local(e, tag_name, 4);
     if (tag_slot < 0) { uemit_close_block(e); return 0U; }
 
-    /* Evaluate tag_expr (will be nil at M3); MOVE the result into \x01tag. */
+    /* Evaluate tag_expr (will be nil initially); MOVE the result into \x01tag. */
     uint8_t tag_tmp = urbi_emit_expr(e, n->u.tag_prefix.tag_expr);
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
     if (tag_tmp != (uint8_t)tag_slot) {
@@ -716,11 +716,11 @@ uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     uint8_t tag_reg = (uint8_t)tag_slot;
 
     /* Emit OP_PUSH_TAG with placeholder onleave_pc (will be patched). */
-    uint8_t flags_m3 = 0U;  /* no FLAG_HAS_ONLEAVE at M3 */
+    uint8_t tag_flags = 0U;  /* no FLAG_HAS_ONLEAVE initially */
     int push_tag_pc = (int)urbi_emit_instr_count(e);
-    uemit_push_tag(e, tag_reg, flags_m3, 0U /* placeholder */, line);
+    uemit_push_tag(e, tag_reg, tag_flags, 0U /* placeholder */, line);
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
-    /* T24: a break/continue inside the body crosses this tag scope — the
+    /* A break/continue inside the body crosses this tag scope — the
      * crossing site emits an OP_POP_TAG so the runtime TAG_SCOPE entry
      * (and its tag-member link) is torn down before the JMP. */
     if (!uemit_unwind_scope_push(e, UEMIT_SCOPE_TAG, tag_reg, NULL)) {
@@ -752,7 +752,7 @@ uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
         urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, body_result, 0U), line);
         if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
     }
-    uemit_unwind_scope_pop(e);   /* T24: body done — normal OP_POP_TAG next */
+    uemit_unwind_scope_pop(e);   /* body done — normal OP_POP_TAG next */
 
     /* Emit OP_POP_TAG. */
     uemit_pop_tag(e, tag_reg, line);
@@ -763,13 +763,13 @@ uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
 
     /* Onleave handler block starts here.
-     * At M3, onleave is always NULL — emit nothing; just record the PC. */
+     * onleave is always NULL — emit nothing; just record the PC. */
     int onleave_target = (int)urbi_emit_instr_count(e);
 
     /* Patch OP_PUSH_TAG Bx to point to onleave handler PC. */
     urbi_emit_patch_instr(e, push_tag_pc,
         uinstr_enc_abx(OP_PUSH_TAG,
-                       (uint8_t)(((flags_m3 & 0xFU) << 4) | (tag_reg & 0xFU)),
+                       (uint8_t)(((tag_flags & 0xFU) << 4) | (tag_reg & 0xFU)),
                        (uint16_t)onleave_target));
 
     /* Past-handler: JMP lands here. */

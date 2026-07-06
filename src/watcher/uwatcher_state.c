@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/watcher/uwatcher_state.c — UWatcherState lifecycle.
  * Watcher substate extracted from struct UVM per audit-1 F8
- * (v0.10.4-vm-decomp Wave 5 W2). */
+ * (v0.10.4-vm-decomp). */
 
 #include "watcher/uwatcher_state.h"
 #include "vm/uvm.h"

@@ -65,8 +65,8 @@ wake_event_waiters(struct UVM *vm, struct UEvent *e, UValue payload)
  * Fan out payload to all subscribers in FIFO registration order.
  *
  * at_watchers_head (AT_EVENT / AT_EVENT_SYNC modes): spawn body coroutine
- *   via urbi_watcher_do_spawn_body_coroutine.  fire_context is NULL at M5 baseline —
- *   the fire payload threads into body R[0] via T53's opcode binding.
+ *   via urbi_watcher_do_spawn_body_coroutine.  fire_context is NULL at baseline —
+ *   the fire payload threads into body R[0] via the opcode binding.
  *
  * waiters_head (UStrand chain via next_event_waiter): deposit payload,
  *   clear wait fields, transition to RUNNABLE, enqueue. */
@@ -100,7 +100,7 @@ urbi_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
         struct UWatcher *w = e->at_watchers_head;
         while (w) {
             struct UWatcher *next = (w == last) ? NULL : w->next_in_event;
-            /* W2/v0.10.2 defence in depth: skip watchers whose tag-stop cascade
+            /* v0.10.2 defence in depth: skip watchers whose tag-stop cascade
              * pushed them to the pending-onleave queue (URBI_WATCHER_PENDING_UNREGISTER
              * set in urbi_watcher_pending_onleave_queue_push Step 1).  The synchronous unlink in
              * Step 3b normally removes them from at_watchers_head before any emit
@@ -112,11 +112,11 @@ urbi_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
             }
             /* SCHED-16 (refactor-3): use predicate so WHENEVER_EVENT is not
              * silently omitted from the dispatch check.
-             * W9/v0.10.5: pass &payload so urbi_watcher_do_spawn_body_coroutine writes it
+             * v0.10.5: pass &payload so urbi_watcher_do_spawn_body_coroutine writes it
              * into body->R[0] before enqueue.  The body closure was compiled
              * with a 1-param function literal (param name == user's `var x` or
              * `__payload` default); R[0] is the payload parameter slot.
-             * UWATCHER_WHENEVER_EVENT (W0/v0.10.2): same dispatch path as
+             * UWATCHER_WHENEVER_EVENT (v0.10.2): same dispatch path as
              * AT_EVENT — body spawned as a coroutine.  The "re-fires on every
              * emission" semantic is automatic because WHENEVER_EVENT watchers
              * are never removed from at_watchers_head (no one-shot teardown). */
@@ -222,7 +222,7 @@ urbi_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
     }
 
     /* Walk at_watchers_head: sync subs run inline; async subs spawn.
-     * UWATCHER_WHENEVER_EVENT (W0/v0.10.2) follows the AT_EVENT async path:
+     * UWATCHER_WHENEVER_EVENT (v0.10.2) follows the AT_EVENT async path:
      * spawn a body coroutine.  It is never sync (urbi_parse_whenever disallows
      * the sync modifier).  Re-fire on every emission is automatic because
      * WHENEVER_EVENT watchers are never removed from at_watchers_head.
@@ -239,7 +239,7 @@ urbi_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
         struct UWatcher *w = e->at_watchers_head;
         while (w) {
             struct UWatcher *next = (w == last) ? NULL : w->next_in_event;
-            /* W2/v0.10.2 defence in depth: skip watchers pending tag-stop drain.
+            /* v0.10.2 defence in depth: skip watchers pending tag-stop drain.
              * Mirrors the same guard in urbi_event_emit_async.  Closes reactive F2. */
             if (w->flags & URBI_WATCHER_PENDING_UNREGISTER) {
                 w = next;
@@ -247,7 +247,7 @@ urbi_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
             }
             /* SCHED-16 (refactor-3): use IS_EVENT_MODE predicate.
              * AT_EVENT_SYNC runs inline; AT_EVENT and WHENEVER_EVENT spawn.
-             * W9/v0.10.5: pass &payload for body R[0] delivery. */
+             * v0.10.5: pass &payload for body R[0] delivery. */
             if (w->mode == UWATCHER_AT_EVENT_SYNC) {
                 run_event_body_on_scratch(vm, w, payload);
             } else if (UWATCHER_IS_EVENT_MODE(w->mode)) {
@@ -267,12 +267,12 @@ urbi_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
  * urbi_sched_strand_block(USTRAND_REASON_EVENT) — block owns the WAIT_EVENT
  * (0x33) transition and the runnable-count decrement (SCHED-01).
  *
- * Callers that dispatch via the bytecode loop (T53 opcode binding) MUST
+ * Callers that dispatch via the bytecode loop MUST
  * goto exit_strand after this call returns — the strand is now WAITING
  * and must not consume further opcodes until woken by c_event_emit_*.
  *
  * On wake: c_event_emit_* deposits last_event_payload before calling
- * urbi_sched_strand_make_runnable.  The T53 opcode binding reads the payload
+ * urbi_sched_strand_make_runnable.  The opcode binding reads the payload
  * from s->last_event_payload after the strand resumes execution.
  *
  * Scratch-context guard: calling from within a watcher scratch or eval
@@ -335,13 +335,13 @@ urbi_event_waituntil(struct UVM *vm, struct UEvent *e)
     urbi_sched_strand_block(s, USTRAND_REASON_EVENT, (uint64_t)(uintptr_t)e);
 
     /* EMITR-002: this return value is *always* NIL.  urbi_event_waituntil parks
-     * the strand and returns to the caller (the T53 opcode dispatcher); it
+     * the strand and returns to the caller (the opcode dispatcher); it
      * does not block.  s->last_event_payload was just initialised to NIL
      * above (just before the tail-append) and no emit can have run between
      * then and here under the cooperative scheduler, so the value read
      * back is NIL by construction.  The meaningful payload is deposited
      * by c_event_emit_* into s->last_event_payload on wake and is consumed
-     * by the T53 opcode handler after the strand resumes at the next
+     * by the opcode handler after the strand resumes at the next
      * dispatch slice — not via this return value.  The read-then-clear
      * here is defence in depth against a future scheduler that might let
      * an emit fire before the park completes. */

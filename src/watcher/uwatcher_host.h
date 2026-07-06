@@ -81,7 +81,7 @@ UHostWatcher *uhost_watcher_table_add(UHostWatcherTable *t, struct UVM *vm);
  * Auto-unregister: if cb returns URBI_ERR_WATCHER_UNREGISTER, the entry's
  * pending_unregister is set to 1.
  *
- * done_fn fanout (T70): after each cb invocation, calls
+ * done_fn fanout: after each cb invocation, calls
  * vm->watcher_body_done_fn(vm, handle, cb_result) if non-NULL.
  *
  * Compaction: at the end of the walk, entries with pending_unregister == 1

@@ -1,15 +1,15 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* utypes_init.c — UType descriptor registration for the M4 object-model
+/* utypes_init.c — UType descriptor registration for the object-model
  * cell types.
  *
  * Built-in tags (1..UTYPE_HOST_BASE-1) cannot be registered through
  * urbi_register_type per src/utype.c §guard.  This file owns direct
- * vm->type_table[tag] = &descriptor writes for the M4 cell types and is
+ * vm->type_table[tag] = &descriptor writes for the built-in cell types and is
  * called from urbi_vm_init after vm->type_table[] has been zeroed.
  *
- * Walker shape (per pre-M4 prototype-chain spec §6 + USlot/UProps spec §4):
+ * Walker shape (per prototype-chain spec §6 + USlot/UProps spec §4):
  *   UObject  walks shape (direct UCell*) + each USlot UValue payload via cb +
- *            each prototype (direct UObject*) via UPROTOS_FOREACH (T9).
+ *            each prototype (direct UObject*) via UPROTOS_FOREACH.
  *   UProtos  walks items[i] (direct UObject*; embeds UCell at offset 0).
  *   UShape   walks parent (UShape*) + transitions (UShapeMap*) +
  *            the UPropsTable wrapper cell (recovered via offsetof from
@@ -24,15 +24,15 @@
  *   USlotArray no-op: entries[] are reachable through the owning UObject's
  *            walker (which iterates o->slots[0..shape->count] via cb).
  *            The wrapper cell stays alive because walk_uobject shades it
- *            via offsetof(USlotArray, entries) recovery (T26).
+ *            via offsetof(USlotArray, entries) recovery.
  *   USlotHandle walks owner (UObject*); shape_at_create + name are
- *            reachable transitively through the owner.  T37.
+ *            reachable transitively through the owner.
  *   UChunkInstance / UProtoInstance — see walkers below.
  *
  * cb is the GC's own mark_root_callback (see src/gc/ugc_incremental.c) —
  * it knows how to shade only those UValKinds that carry a heap cell.  At
- * M3 baseline that's UVAL_CLOSURE only; UVAL_OBJECT/UVAL_STRING etc. are
- * extended in later M4/M5 tasks.  The walker calls are written today so
+ * baseline that's UVAL_CLOSURE only; UVAL_OBJECT/UVAL_STRING etc. are
+ * extended in later tasks.  The walker calls are written today so
  * they automatically pick up the broader heap-bearing set when it lands. */
 
 #include <stddef.h>           /* offsetof */
@@ -42,11 +42,11 @@
 #include "object/uobject.h"
 #include "object/ushape.h"
 #include "object/uchunk_instance.h"
-#include "object/uslothandle.h"   /* T37 — walk_uslothandle shades owner */
+#include "object/uslothandle.h"   /* walk_uslothandle shades owner */
 #include "object/utypes_init.h"
 #include "event/uevent.h"               /* UEvent, UTYPE_EVENT (spec #3 §3.1) */
 #include "changed/uchanged_node.h"        /* UChangedNode, UTYPE_CHANGED_NODE (spec #4 §3.1) */
-#include "tag/utag.h"                 /* UTag, UTYPE_TAG (T18 GC promotion) */
+#include "tag/utag.h"                 /* UTag, UTYPE_TAG (GC promotion) */
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* urbi_gc_shade_gray */
 #include "vm/uvm.h"
@@ -58,7 +58,7 @@
  * Traces shape (direct UShape*), each USlot UValue payload via cb, and
  * each prototype (direct UObject*) via UPROTOS_FOREACH.  The macro
  * dispatches across the three storage forms of o->protos (empty/single/heap)
- * per pre-M4 prototype-chain spec §4.1. */
+ * per prototype-chain spec §4.1. */
 static void
 walk_uobject(struct UVM *vm, void *payload,
              UGcRootCallback cb, void *ctx)
@@ -77,7 +77,7 @@ walk_uobject(struct UVM *vm, void *payload,
      * checks uvalue_is_heap and shades the underlying cell if present.
      * USlot is a typedef for UValue (sizeof(USlot) == sizeof(UValue));
      * shape->count is the slot count when shape is non-NULL.  Also shade
-     * the USlotArray wrapper cell itself (T26): o->slots points at the
+     * the USlotArray wrapper cell itself: o->slots points at the
      * entries[] FAM, so recover the wrapper base via offsetof.  Same trick
      * walk_ushape uses for props_table -> UPropsTable. */
     if (o->slots != NULL && o->shape != NULL) {
@@ -158,7 +158,7 @@ walk_ushape(struct UVM *vm, void *payload,
         urbi_gc_shade_gray(vm, (UCell *)s->parent);
     }
 
-    /* transitions is the per-shape UShapeMap (T13).  NULL until the first
+    /* transitions is the per-shape UShapeMap.  NULL until the first
      * slot is added out of this shape; non-NULL once any child shape has
      * been created.  walk_ushapemap (below) shades each cached child. */
     if (s->transitions != NULL) {
@@ -166,9 +166,9 @@ walk_ushape(struct UVM *vm, void *payload,
     }
 
     /* props_table is NULL until the first slot in this lineage installs
-     * a property (per pre-M4 USlot/UProps spec §4.2).  When non-NULL it
+     * a property (per USlot/UProps spec §4.2).  When non-NULL it
      * points at the entries[] flexible array of a UPropsTable wrapper
-     * cell allocated by urbi_shape_transition_property (T17).
+     * cell allocated by urbi_shape_transition_property.
      *
      * Reachability: shade both (a) the wrapper cell itself, recovered via
      * offsetof(UPropsTable, entries), and (b) each non-NULL UProps* entry.
@@ -225,7 +225,7 @@ walk_uprops(struct UVM *vm, void *payload,
 /* === walk_noop ===
  *
  * No-op walker for cell types whose children are reachable through
- * stronger paths and need no separate scan.  Used post-M4 by:
+ * stronger paths and need no separate scan.  Used by:
  *   - UPropsTable        (reached via owning UShape)
  *   - USlotArray         (reached via owning UObject's walk_uobject)
  *   - UProtoInstance     (reached via UChunkInstance owner; stronger
@@ -233,9 +233,7 @@ walk_uprops(struct UVM *vm, void *payload,
  *                         type_uproto_instance below for the OBJ-028
  *                         retirement rationale)
  *
- * The "later M4 task" remark in the original comment referred to walks
- * that landed in M4 itself; M4 has shipped, and these three call sites
- * are the only legitimate consumers today. */
+ * These three call sites are the only legitimate consumers today. */
 static void
 walk_noop(struct UVM *vm, void *payload,
           UGcRootCallback cb, void *ctx)
@@ -243,9 +241,9 @@ walk_noop(struct UVM *vm, void *payload,
     (void)vm; (void)payload; (void)cb; (void)ctx;
 }
 
-/* === walk_uslothandle (T37) ===
+/* === walk_uslothandle ===
  *
- * Strong reference to owner per pre-M4 USlot/UProps spec §7.6: shading
+ * Strong reference to owner per USlot/UProps spec §7.6: shading
  * h->owner keeps the holding UObject alive as long as the handle is
  * reachable.  shape_at_create + name are reachable transitively through
  * h->owner (owner->shape's lineage carries USymbol* keys via UShape.name,
@@ -262,7 +260,7 @@ walk_uslothandle(struct UVM *vm, void *payload,
     }
 }
 
-/* === walk_umoduleinstance (T16) ===
+/* === walk_umoduleinstance ===
  *
  * Shades the UProtoInstanceArr bulk so it survives sweep as long as the
  * UChunkInstance is alive.  chunk is a non-owning pointer to a UChunk
@@ -285,7 +283,7 @@ walk_umoduleinstance(struct UVM *vm, void *payload,
  * Yields name (UValue payload via cb).
  *
  * waiters_head (UStrand chain) is intentionally NOT walked here: UStrands
- * are root-walked separately via the realm hierarchy (per M3 row 10 / GC
+ * are root-walked separately via the realm hierarchy (per GC
  * roots spec §5.3).  Walking them here would double-visit them and could
  * upset the write-barrier invariant during incremental mark. */
 static void
@@ -331,7 +329,7 @@ walk_uchanged_node(struct UVM *vm, void *payload,
     }
 }
 
-/* === walk_utag (T18 — spec #3 §3.4) ===
+/* === walk_utag (spec #3 §3.4) ===
  *
  * Yields name (UValue payload via cb) and shades enter_event and leave_event
  * when non-NULL (lazy-allocated by getter on first `at(tag.enter?)`).
@@ -352,7 +350,7 @@ walk_uchanged_node(struct UVM *vm, void *payload,
  *     different traversal context risks unbounded recursion if any future
  *     tag-on-stack reachability path emerges.
  * UStrands are therefore reached exclusively through the realm strand
- * walker (M3 row 10 / GC roots spec §5.3).  This walker only handles the
+ * walker (GC roots spec §5.3).  This walker only handles the
  * tag-owned cell graph: enter/leave events + member_watchers chain. */
 static void
 walk_utag(struct UVM *vm, void *payload,
@@ -446,7 +444,7 @@ uclosure_destroy(struct UVM *vm, void *payload)
     if (cl->proto == NULL) return;
 
     UProto *rp = uproto_root_of(cl->proto);
-    /* v0.10.1 W4: typed-handle release for diagnostics (F3 closure-bind site). */
+    /* v0.10.1: typed-handle release for diagnostics (F3 closure-bind site). */
     urbi_proto_ref_release(rp, URBI_PROTO_REF_OWNER_CLOSURE);
 
     /* v0.8.4 Option B Step C-2: sentinel-promotion.
@@ -495,7 +493,7 @@ walk_upvalcell(struct UVM *vm, void *payload,
 
 /* === Static UType descriptors ===
  *
- * flags = 0 (no finalizer) for every M4 type.  destroy = NULL for every
+ * flags = 0 (no finalizer) for every built-in type.  destroy = NULL for every
  * type at this task — finalizer integration lands when host memory
  * shows up in any of these payloads (none do today). */
 static const UType type_uobject = {

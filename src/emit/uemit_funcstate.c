@@ -2,7 +2,7 @@
 /* UFuncState lifecycle + upvalue cascade + block stack + IC index assign
  * + prologue_prepend_instr.
  *
- * Extracted from uemit.c (v0.5.4-decompose T13).
+ * Extracted from uemit.c (v0.5.4-decompose).
  * EMIT-034: prologue_prepend_instr split into proto_grow_for_prologue /
  * module_grow_for_prologue to name the two container paths. */
 
@@ -114,9 +114,9 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
     /* zero-init via byte-loop — UFuncState is POD */
     urbi_zero(fs, sizeof(UFuncState));
     fs->parent = parent;
-    fs->target_proto = NULL;            /* T14 wires nested-proto bufs */
+    fs->target_proto = NULL;            /* wired for nested-proto bufs by the caller */
 
-    /* T73: For the chunk-top funcstate (parent == NULL), pre-reserve
+    /* For the chunk-top funcstate (parent == NULL), pre-reserve
      * r_global_slot = 0 unconditionally, mirroring what urbi_emit_function_literal
      * does for nested functions.  This ensures r_global_slot is never
      * overwritten by a condition register (rd) in an if/while expression —
@@ -172,7 +172,7 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
     return fs;
 }
 
-/* M4 T15: assign the next IC index for the current function.  Allocates
+/* Assign the next IC index for the current function.  Allocates
  * fs->ic_names lazily in 16/32/64/128/256-slot chunks via the module
  * allocator (matches the rest of the emitter — funcstate itself is
  * arena-allocated, but variable-sized side tables go through the module
@@ -354,7 +354,7 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
     return true;
 }
 
-/* T73: Prepend one instruction to the current function's instruction buffer.
+/* Prepend one instruction to the current function's instruction buffer.
  *
  * Routes to UProto (nested function) via proto_grow_for_prologue or to
  * root UProto (chunk root) via module_grow_for_prologue.
@@ -382,7 +382,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
     UFuncState *fs = e->current_fs;
     if (fs == NULL) return NULL;
 
-    /* T73: Frame prologue — prepend OP_LOAD_REALM_GLOBAL as the first
+    /* Frame prologue — prepend OP_LOAD_REALM_GLOBAL as the first
      * instruction iff this function body referenced at least one realm
      * global.  This guarantees r_global_slot holds realm->global_object
      * before any OP_GETSLOT / OP_SETSLOT that targets the global object,
@@ -390,7 +390,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
      * may not be taken at runtime.  Pure-local functions are left
      * prologue-free (no wasted instruction).
      *
-     * T20 (EMIT-003): capture prologue_prepend_instr's return value.  On
+     * (EMIT-003) capture prologue_prepend_instr's return value.  On
      * OOM (instruction-buffer / line-table grow failure) it sets
      * e->error = EMIT_OOM internally.  The IC-array branches below gate
      * on e->error == EMIT_OK so a prologue failure cleanly short-circuits
@@ -414,12 +414,12 @@ UFuncState *uemit_close_function(UEmitter *e) {
         p->max_reg  = fs->max_reg_seen;
         p->nupvals  = (uint8_t)fs->nupvalues;
 
-        /* M4 T15: copy IC names side table into the UProto.  Use the
+        /* Copy IC names side table into the UProto.  Use the
          * proto's own allocator (inherited from the module at
          * uproto_alloc_nested time); the resulting array is freed
          * by uproto_destroy_buffers.
          *
-         * T22 (EMIT-005): mirror the module-sibling pattern below — only
+         * (EMIT-005) mirror the module-sibling pattern below — only
          * write p->ic_count / p->ic_names after the IC-array allocation
          * succeeds.  Pre-fix, the proto path assigned p->ic_count first,
          * then reset it to 0 on OOM (silent zeroing).  The new shape
@@ -445,7 +445,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
                     p->ic_count = fs->ic_next;
                     p->ic_names = dst;
                 }
-                /* T11: parallel char** companion array.  USymbol* is a const-char*
+                /* parallel char** companion array.  USymbol* is a const-char*
                  * canonical interned pointer (from ustr_intern); each entry is a
                  * NUL-terminated allocator-owned strdup so the deserializer can
                  * populate ic_name_strs without an originating VM intern table. */
@@ -504,7 +504,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
                 }
             }
         }
-        /* T11: parallel char** companion array for the root chunk. */
+        /* parallel char** companion array for the root chunk. */
         if (rp != NULL && rp->ic_names != NULL) {
             UChunkAllocFn malloc_fn = emit_alloc_for(rp);
             char **dst_strs = (char **)malloc_fn(NULL,
@@ -609,7 +609,7 @@ int uemit_declare_local(UEmitter *e, const char *name, int name_len) {
         return -1;
     }
     /* Search current block (or whole actvars table at no-block scope) for
-     * duplicate. T7 will use blocks[].first_local_idx; for T6 we just
+     * duplicate. Scan from the current block's first_local_idx when in a block,
      * scan from 0. */
     int search_from = (fs->nblocks > 0)
                     ? fs->blocks[fs->nblocks - 1].first_local_idx

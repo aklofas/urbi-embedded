@@ -59,7 +59,7 @@ static void append_diag(UEmitter *e, const UAstNode *n, int level,
 
 /* --- Public API --- */
 
-/* T32: Append a warn-level diagnostic to the emitter's buffer. */
+/* Append a warn-level diagnostic to the emitter's buffer. */
 void urbi_emit_diag_warn(UEmitter *e, const UAstNode *n, const char *fmt, ...) {
 #if __STDC_HOSTED__
     va_list ap;

@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* ushape.c — UShape root singleton + transition primitives.
  *
- * Design references: pre-M2 object-model §3/§7.1/§7.2; pre-M4 uslot/uprops
+ * Design references: object-model §3/§7.1/§7.2; uslot/uprops
  * collapse §4.1/§4.2.
  *
  * The root-shape singleton is owned by UVM (vm->root_shape) and lazily
  * allocated on the first urbi_shape_root call.  All root-shape fields are
  * zero except cell (filled by urbi_gc_alloc).
  *
- * T13 lands the transition cache (UShapeMap), the real
+ * Implements the transition cache (UShapeMap), the real
  * urbi_shape_transition_add_slot, and the real urbi_shape_find_slot.
- * T17 lands the sibling-shape primitive (urbi_shape_transition_property)
+ * Also implements the sibling-shape primitive (urbi_shape_transition_property)
  * and the lazy UPropsTable wrapper allocation. */
 
 #include <stddef.h>
@@ -221,7 +221,7 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
                                        uint32_t slot_index,
                                        uint8_t flag_bit, int install)
 {
-    /* Sibling-shape materialisation per pre-M2 §7.2 + pre-M4 USlot/UProps
+    /* Sibling-shape materialisation per §7.2 + USlot/UProps
      * spec §5.1, §5.2.  Allocates a fresh sibling that shares parent's
      * lineage but carries the new flag bit at slot_index's nibble and a
      * copy-on-write props_table (caller writes the per-slot UProps* into
@@ -233,7 +233,7 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
         return NULL;            /* no slot to attach a property to */
     }
 
-    /* Compute new flag nibble at slot_index.  Per pre-M4 USlot/UProps
+    /* Compute new flag nibble at slot_index.  Per USlot/UProps
      * spec §4.1, UShape.flags packs 4 bits/slot across slots (v1.0 cap of
      * 8 slots in the packed form — spill side-table deferred to T-later). */
     const uint32_t shift = slot_index * 4U;
@@ -304,9 +304,9 @@ int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name)
     return URBI_SHAPE_SLOT_INVALID;
 }
 
-/* T27: rebuild a shape with `name` dropped from the lineage.
+/* Rebuild a shape with `name` dropped from the lineage.
  *
- * Per pre-M2 §7.1's "private shape lineage fallback" allowance.  Walks
+ * Per §7.1's "private shape lineage fallback" allowance.  Walks
  * `parent` parent-ward into a fixed-depth name buffer, drops the entry
  * matching `name`, then rebuilds from the root via add_slot over the
  * surviving names (preserves declaration order of the survivors).

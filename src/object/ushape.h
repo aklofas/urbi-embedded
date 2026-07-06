@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* ushape.h — UShape (hidden class) + UShapeMap (transition cache) + UProps.
  *
- * Design references: pre-M2 object-model §3/§7.1/§7.2; pre-M4 uslot/uprops
+ * Design references: object-model §3/§7.1/§7.2; uslot/uprops
  * collapse §4.1/§4.2/§5.1/§5.2.
  *
  * Layout invariants pinned by tests/unit/test_ushape.c.  UShape header is
@@ -63,7 +63,7 @@ typedef struct UShapeMap {
  * Per-slot property record.  Allocated only when a slot has at least one
  * property installed; vector of UProps* lives in UShape.props_table.
  *
- * M5 reactive may extend with changed/accessed/removed; M6 stdlib pins the
+ * Reactive watchers may extend with changed/accessed/removed; stdlib pins the
  * full catalog. */
 struct UProps {
     UCell        cell;              /* 2 B GC header */
@@ -77,7 +77,7 @@ struct UProps {
 /* === UPropsTable ===
  *
  * Wrapper GC cell holding a UShape's per-slot UProps* array.  Allocated
- * lazily by urbi_shape_transition_property (T17) when the first property
+ * lazily by urbi_shape_transition_property when the first property
  * is installed on a shape's lineage.
  *
  * UShape.props_table points at the entries[] flexible array; the wrapper
@@ -96,7 +96,7 @@ typedef struct UPropsTable {
 
 /* === UShape ===
  *
- * Hidden class per pre-M2 §3 + pre-M4 USlot/UProps collapse §4.1.
+ * Hidden class per §3 + USlot/UProps collapse §4.1.
  *
  * Field order is load-bearing: layout pinned by test_ushape.c.
  *
@@ -134,9 +134,9 @@ struct UShape {
  * host-only and supply the second signal there. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
 URBI_STATIC_ASSERT(sizeof(struct UShape) == 56,
-               "UShape header must be 56 bytes per pre-M4 USlot/UProps spec §4.1");
+               "UShape header must be 56 bytes per USlot/UProps spec §4.1");
 URBI_STATIC_ASSERT(sizeof(struct UProps) == 48,
-               "UProps must be 48 bytes per pre-M4 USlot/UProps spec §4.2");
+               "UProps must be 48 bytes per USlot/UProps spec §4.2");
 #endif
 
 /* === API === */
@@ -146,7 +146,7 @@ URBI_STATIC_ASSERT(sizeof(struct UProps) == 48,
 UShape *urbi_shape_root(struct UVM *vm);
 
 /* Look up or allocate the child shape for adding `name` to `parent`.  Per
- * pre-M2 §7.1.  On first transition out of `parent`, allocates the
+ * §7.1.  On first transition out of `parent`, allocates the
  * transitions cache (cap=8).  Subsequent calls hit the cache and return
  * the cached child unchanged (deterministic shape sharing).  Returns NULL
  * on OOM. */
@@ -170,8 +170,8 @@ UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
 int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name);
 
 /* Materialise the sibling shape for installing or removing a property
- * flag bit on the slot at `slot_index` in `parent`.  Per pre-M2 §7.2 +
- * pre-M4 USlot/UProps collapse spec §5.1, §5.2.
+ * flag bit on the slot at `slot_index` in `parent`.  Per §7.2 +
+ * USlot/UProps collapse spec §5.1, §5.2.
  *
  * Behaviour:
  *  - If `parent->count == 0` or `slot_index >= parent->count`: returns NULL.
@@ -188,9 +188,9 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
                                        uint32_t slot_index,
                                        uint8_t flag_bit, int install);
 
-/* T27: build a child shape that drops `name` from `parent`'s lineage.
+/* Build a child shape that drops `name` from `parent`'s lineage.
  *
- * Strategy (private shape lineage fallback per pre-M2 §7.1): walk parent
+ * Strategy (private shape lineage fallback per §7.1): walk parent
  * parent-ward into a fixed-depth name buffer, drop the entry matching
  * `name`, then rebuild from the root via urbi_shape_transition_add_slot
  * over the surviving names in original order.  The resulting child shape
@@ -198,7 +198,7 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
  * caches that add_slot already populates).
  *
  * Returns NULL if `name` is not in `parent`'s lineage, or on OOM.  Depth
- * is capped at 256 names; deeper lineages return NULL (matches the M3-era
+ * is capped at 256 names; deeper lineages return NULL (matches the
  * 64-deep stack precedent in resolve_slot, doubled here because shape
  * lineages can be longer than prototype graph depth). */
 UShape *urbi_shape_transition_remove_slot(struct UVM *vm, UShape *parent,

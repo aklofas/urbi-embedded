@@ -14,7 +14,7 @@
  *   cell header   : type_tag(1) + gc_byte(1) + flags(1) + pad0(5) = 8 B
  *   at_watchers_head : 8 B
  *   waiters_head     : 8 B
- *   name             : 16 B  (UValue — UVAL_NIL at alloc; populated at M6)
+ *   name             : 16 B  (UValue — UVAL_NIL at alloc; populated at stdlib init)
  *   Total            : 40 B  (pinned by URBI_STATIC_ASSERT below — EVENT-021)
  *
  * type_tag = UTYPE_EVENT; gc_byte = vm->current_white at alloc (set by
@@ -57,7 +57,7 @@ typedef struct UEvent {
      * realm hierarchy; this field is NOT walked by the GC walker. */
     struct UStrand  *waiters_head;
 
-    /* --- name (M6 stdlib) ---
+    /* --- name (stdlib) ---
      * UVAL_NIL at alloc; populated when Event is assigned a name binding. */
     UValue   name;
 } UEvent;

@@ -171,7 +171,7 @@ uint16_t urbi_emit_add_const_str(UEmitter *e, const char *interned) {
    a new entry and returns its index.  Sets e->error and returns 0 on
    pool-full (> UINT16_MAX entries) or OOM.
    Routes to the nested UProto constant pool when in a nested function.
-   Promoted from static so uemit_expr.c (T12) can call it cross-TU. */
+   Promoted from static so uemit_expr.c can call it cross-TU. */
 /* Task 11: current_proto() always returns non-NULL — no dual-path dispatch. */
 uint16_t urbi_emit_add_const_int(UEmitter *e, const int64_t v) {
     UProto *p = current_proto(e);
@@ -338,7 +338,7 @@ size_t urbi_emit_instr_count(const UEmitter *e) {
 }
 
 /* Map UAstBinaryOp to the corresponding arithmetic opcode.
- * Promoted from static so uemit_expr.c (T12) can call it cross-TU. */
+ * Promoted from static so uemit_expr.c can call it cross-TU. */
 UOpcode urbi_emit_binop_to_opcode(const UAstBinaryOp op) {
     switch (op) {
     case BOP_ADD: return OP_ADD;
@@ -353,7 +353,7 @@ UOpcode urbi_emit_binop_to_opcode(const UAstBinaryOp op) {
 /* Forward declaration (urbi_emit_lazy_thunk + uemit_unwind.c call urbi_emit_expr). */
 uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n);
 
-/* T31: Best-effort compile-time check — returns true when `n` contains a
+/* Best-effort compile-time check — returns true when `n` contains a
  * direct write operation (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET,
  * AST_PROP_SET).  Used to warn when a watcher condition silently mutates
  * state.  AST_CALL is treated as opaque (returns false) to avoid false
@@ -412,7 +412,7 @@ bool urbi_emit_cond_has_direct_side_effect(UAstNode *n) {
 
 /* AST walker — returns the register holding the result of the expression.
    Returns 0 and sets e->error on any failure.
-   T23 (SCAN-001): every UAstKind has an explicit case arm so the switch
+   SCAN-001: every UAstKind has an explicit case arm so the switch
    is exhaustive without a NOLINT.  Forms that this milestone does not yet
    support (arrow-access AST_PROP_GET / AST_PROP_SET) reject with
    EMIT_UNSUPPORTED_AST; lowering arrow-access to OP_GETSLOT / OP_SETSLOT
@@ -454,21 +454,21 @@ uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     case AST_AT_SLOT_CHANGE: return urbi_emit_at_slot_change_arm(e, n);
     case AST_CLASS_DECL:     return urbi_emit_class_decl_arm(e, n);
     case AST_PROPERTY_DECL:  return urbi_emit_property_decl_arm(e, n);
-    /* W3/v0.10.5: assert keyword */
+    /* v0.10.5: assert keyword */
     case AST_ASSERT:         return urbi_emit_assert_arm(e, n);
-    /* === W10/v0.10.5: list/dict literals + subscript === */
+    /* === v0.10.5: list/dict literals + subscript === */
     case AST_LIST_LIT:        return urbi_emit_list_lit_arm(e, n);
     case AST_DICT_LIT:        return urbi_emit_dict_lit_arm(e, n);
     case AST_SUBSCRIPT_GET:   return urbi_emit_subscript_get_arm(e, n);
     case AST_SUBSCRIPT_SET:   return urbi_emit_subscript_set_arm(e, n);
-    /* === end W10/v0.10.5 === */
-    /* === W1/v0.10.5: control flow === */
+    /* === end v0.10.5 === */
+    /* === v0.10.5: control flow === */
     case AST_FOR_EACH:        return urbi_emit_for_each_arm(e, n);
     case AST_BREAK:           return urbi_emit_break_arm(e, n);
     case AST_CONTINUE:        return urbi_emit_continue_arm(e, n);
     case AST_SWITCH:          return urbi_emit_switch_arm(e, n);
-    /* === end W1/v0.10.5: control flow === */
-    /* === W2/v0.10.7: synthetic register-reference leaf === */
+    /* === end v0.10.5: control flow === */
+    /* === v0.10.7: synthetic register-reference leaf === */
     case AST_REG_REF: {
         /* Emit a reference to a previously-allocated register.
          * If the target register differs from source, emit OP_MOVE.
@@ -480,7 +480,7 @@ uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
         }
         return dst;
     }
-    /* === end W2/v0.10.7 === */
+    /* === end v0.10.7 === */
     case AST_PROP_GET:
     case AST_PROP_SET:
     case AST_LOCAL_REF:
@@ -672,7 +672,7 @@ const char *uemit_error_name(UEmitError code) {
 }
 
 /* UFuncState lifecycle + upvalue cascade + block stack + IC index assign
- * + prologue_prepend_instr moved to uemit_funcstate.c (T13).
+ * + prologue_prepend_instr moved to uemit_funcstate.c.
  *
  * Unwind opcode encoders (uemit_throw, uemit_try_begin, uemit_try_end,
  * uemit_push_tag, uemit_pop_tag, uemit_resume, uemit_load_catch_value)

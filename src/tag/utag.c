@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UTag lifecycle + ambient-tag scope lookup.
- * Row 11 / T29; GC-promoted at M5 T18.
+ * Row 11; GC-managed via urbi_gc_alloc.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
- * Allocation uses urbi_gc_alloc (GC-managed from birth, M5 T18).
+ * Allocation uses urbi_gc_alloc (GC-managed from birth).
  * Zero-fill initializes each field explicitly.
  * Assertions use URBI_INTERNAL_ASSERT from umacros.h. */
 
@@ -81,7 +81,7 @@ utag_destroy(struct UVM *vm, const UTag *tag)
  *
  * Read-only — does not modify any state.  ISR-safe from a data-race
  * perspective (strand must be quiescent while inspecting; not multi-threaded
- * at M3 so the constraint is trivially met).
+ * so the constraint is trivially met).
  *
  * Spec §3.8 specifies: "unreachable in practice — realm->tag is at the bottom".
  * We return NULL explicitly to handle empty cleanup-stacks safely (e.g. in

@@ -8,7 +8,7 @@
  *   subscribes — matters for the typical hot-path tag (used for cleanup,
  *   never observed).
  *
- * W4/v0.10.2: Tag scripted surface (reactive audit F3, audit-1 F5).
+ * v0.10.2: Tag scripted surface (reactive audit F3, audit-1 F5).
  *   tag_new_native:   Tag.new(name) — allocate + name + realm-parent.
  *   tag_stop_native:  tag.stop()    — forward to urbi_tag_stop.
  *   tag_freeze_native:   tag.freeze()   — set UTAG_FLAG_FROZEN.
@@ -19,7 +19,7 @@
  *   tag_leave_native:    tag.leave — return lazy leave_event.
  *
  * Native getter binding on vm->tag_proto:
- *   W4 promotes vm->tag_proto to a UVAL_CLOSURE-slot proto so OP_CALL
+ *   v0.10.2 promotes vm->tag_proto to a UVAL_CLOSURE-slot proto so OP_CALL
  *   can dispatch scripted tag.stop() etc.  vm->atom_tag is unified with
  *   vm->tag_proto (same UObject) so urbi_atom_proto_for_value(UVAL_TAG)
  *   finds the native methods.
@@ -33,25 +33,25 @@
 
 #include "vm/uvm.h"
 #include "tag/utag.h"              /* UTag, tag->enter_event / leave_event */
-/* urbi_tag_create + urbi_tag_stop declared in include/urbi/urbi.h (W4) */
+/* urbi_tag_create + urbi_tag_stop declared in include/urbi/urbi.h */
 #include "event/uevent.h"            /* UEvent, urbi_event_create */
 #include "event/uevent_native.h"      /* uvalue_from_event */
 #include "value/uintern.h"           /* ustr_intern */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_set_protos_single */
-#include "urbi/object.h"       /* urbi_object_root (W4) */
+#include "urbi/object.h"       /* urbi_object_root */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (TAGCH-002), urbi_strlen, urbi_zero */
-#include "runtime/uclosure.h"  /* UClosure, urbi_native_method_fn (W4) */
+#include "runtime/uclosure.h"  /* UClosure, urbi_native_method_fn */
 #include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OOM, UHostFn,
                                    urbi_tag_stop, urbi_tag_create */
-#include "urbi/types.h"        /* urbi_make_tag, urbi_make_nil (W4) */
-#include "realm/urealm.h"      /* URealm, realm->tag (W4) */
-#include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_* (W4) */
+#include "urbi/types.h"        /* urbi_make_tag, urbi_make_nil */
+#include "realm/urealm.h"      /* URealm, realm->tag */
+#include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_* */
 /* urbi_gc_slot_pre_store (Dijkstra forward barrier; barrier-only variant since
  * tag->enter_event / tag->leave_event are UEvent*, not UValue*, so the
  * combined urbi_gc_slot_store cannot be used here) is reached via urbi/gc.h
  * pulled in by vm/uvm.h above. */
 #include "sched/ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
-#include "runtime/ucleanup.h"        /* UCleanupEntry, UCLEANUP_TAG_SCOPE (W2 v0.10.9) */
+#include "runtime/ucleanup.h"        /* UCleanupEntry, UCLEANUP_TAG_SCOPE */
 #include "stdlib/temporal.h"         /* urbi_tag_owns_periodic (B5/SCHED-N2) */
 #include <stdbool.h>
 #include <stddef.h>
@@ -120,14 +120,14 @@ urbi_tag_leave_getter(struct UVM *vm, struct UTag *tag)
 
 /* Protected setter stub for both enter and leave.
  *
- * TAGCH-013 (defer:M6, partial close at Phase 7): the two getter stubs
+ * TAGCH-013: the two getter stubs
  * (tag_enter_getter_stub / tag_leave_getter_stub) were removed because they
  * were unreachable from any path — UVAL_TAG does not exist in UValKind so
  * neither OP_CALL nor any C-level test routed through them.  This setter
  * stub stays because tests/unit/test_tag_native.c still reaches it via a
  * direct UVAL_HOST_FN slot lookup to verify the URBI_ERR_PROTECTED_SLOT
  * raise behaviour.  When the proper UProps OGET/OSET dispatch path lands
- * (post-M6) this stub is replaced by typed getter/setter binding. */
+ * (post-v1.0) this stub is replaced by typed getter/setter binding. */
 static UValue
 tag_enter_leave_setter_protected(struct UStrand *s, int argc, UValue *argv)
 {
@@ -145,7 +145,7 @@ tag_enter_leave_setter_protected(struct UStrand *s, int argc, UValue *argv)
  *
  * Install a UVAL_HOST_FN slot named `name` on `proto`.
  *
- * Phase 7 (M6 stdlib, EVENT-013 closure): pre-Phase-7 this lived as
+ * Phase 7 (stdlib, EVENT-013 closure): pre-Phase-7 this lived as
  * `urbi_register_fn` in src/event/uevent_native.c, used by both event and
  * tag native registration.  Phase 7 migrated event registration to the
  * Phase-3 native-method ABI (UVAL_CLOSURE + native_fn) since OP_CALL only
@@ -153,7 +153,7 @@ tag_enter_leave_setter_protected(struct UStrand *s, int argc, UValue *argv)
  * `_enter_set`/`_leave_set` setter stubs which are unreachable from script
  * but tested directly from C — so the host-fn install helper survives here
  * as a private helper, not exported.  When tag-property dispatch lands
- * (post-M6) this whole code path is replaced by typed UProps installation. */
+ * (post-v1.0) this whole code path is replaced by typed UProps installation. */
 static int
 register_host_fn(struct UVM *vm, struct UObject *proto,
                  const char *name, UHostFn fn)
@@ -175,7 +175,7 @@ register_host_fn(struct UVM *vm, struct UObject *proto,
     return urbi_object_set_local_slot(vm, proto, sym, v);
 }
 
-/* === W4/v0.10.2 native method implementations (Phase-3 ABI) ===
+/* === v0.10.2 native method implementations (Phase-3 ABI) ===
  *
  * All methods: int fn(UVM *vm, UValue self, UValue *args, uint8_t nargs,
  *                     UValue *out).
@@ -225,7 +225,7 @@ tag_new_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
-/* W2 v0.10.9 helper for D3 fatal outside-scope check.
+/* v0.10.9 helper for D3 fatal outside-scope check.
  *
  * Walk the calling strand's cleanup stack to find a TAG_SCOPE entry whose
  * owning_tag matches t.  Returns true if found.  Used by the D3
@@ -249,10 +249,10 @@ strand_has_tag_in_scope(const struct UStrand *s, const UTag *t)
  * self must be UVAL_TAG.  Forwards to urbi_tag_stop with the optional
  * stop-value (nil if no argument).  Returns nil.
  *
- * v0.10.9 W1: valued-stop arity relax — accepts 0 or 1 argument; args[0]
+ * v0.10.9: valued-stop arity relax — accepts 0 or 1 argument; args[0]
  * is plumbed through as the unwind_value (S5 valued-stop ratification).
  *
- * v0.10.9 W2: D3 fatal outside-scope check — if there are no member
+ * v0.10.9: D3 fatal outside-scope check — if there are no member
  * strands AND the calling strand has no TAG_SCOPE for the receiver in
  * its cleanup stack, deposit a local TAG_STOP via urbi_tag_stop_local so
  * the unwind walker (uunwind.c:304 "empty cleanup stack → fatal escalation")
@@ -326,7 +326,7 @@ tag_stop_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
  *
  * Forwards to urbi_tag_freeze (W3c).  Sets UTAG_FLAG_FROZEN and suspends
  * every member strand with USTRAND_REASON_FREEZE.  Replaces the flag-only
- * stub from v0.10.2 W4.  Returns nil. */
+ * stub from v0.10.2.  Returns nil. */
 static int
 tag_freeze_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                   UValue *out)
@@ -544,7 +544,7 @@ urbi_tag_native_register(struct UVM *vm)
      * between the proto alloc and this call. */
     urbi_object_set_protos_single(vm, proto, root);
 
-    /* W4/v0.10.2: unify vm->atom_tag with vm->tag_proto so
+    /* v0.10.2: unify vm->atom_tag with vm->tag_proto so
      * urbi_atom_proto_for_value(UVAL_TAG) finds the native method slots via
      * urbi_object_atom(vm, URBI_ATOM_TAG).  Mirrors the urbi_event_native_register
      * pattern: vm->atom_event = vm->event_proto = proto. */
@@ -554,7 +554,7 @@ urbi_tag_native_register(struct UVM *vm)
      * non-zero return clear vm->tag_proto / vm->atom_tag and surface UVM_OOM.
      * The proto cell stays GC-managed and is collected at the next sweep.
      *
-     * W4 adds scripted Tag.new / .stop / .freeze / .unfreeze / .block /
+     * v0.10.2 adds scripted Tag.new / .stop / .freeze / .unfreeze / .block /
      * .unblock / .enter / .leave as UVAL_CLOSURE native methods.
      * The `_enter_set` / `_leave_set` host-fn stubs stay for C-test
      * compatibility until tag-property UProps dispatch lands (v1.x). */
