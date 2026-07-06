@@ -10,12 +10,11 @@
  *  6. UEXEC_RETURN without cleanup entries (backward-compat path).
  *  7. Innermost-first ordering: inner CALL_FRAME absorbs before outer.
  *  8. URBI_CLEANUP_MAX overflow marks strand fatal (T13).
- *  9. suppressed_head stays NULL throughout walk (T13 — Inv pre-v1.x).
- * 10. UEXEC_CANCEL propagates through CALL_FRAME without absorption (T13).
- * 11. UEXEC_THROW propagates past TRY_FRAME with only FINALLY (T13).
- * 12. Nested TRY_FRAMEs: innermost catch absorbs (T13).
- * 13. THROW propagates through TAG_SCOPE (M3 stub passthrough) (T13).
- * 14. TAG_STOP on a strand with a synthetic ambient TAG_SCOPE entry must
+ *  9. UEXEC_CANCEL propagates through CALL_FRAME without absorption (T13).
+ * 10. UEXEC_THROW propagates past TRY_FRAME with only FINALLY (T13).
+ * 11. Nested TRY_FRAMEs: innermost catch absorbs (T13).
+ * 12. THROW propagates through TAG_SCOPE (M3 stub passthrough) (T13).
+ * 13. TAG_STOP on a strand with a synthetic ambient TAG_SCOPE entry must
  *     NOT absorb-and-restart (carried fix from refactor-3 T10). */
 
 #include "utest.h"
@@ -539,51 +538,6 @@ UTEST(unwind_cleanup_max_overflow_marks_fatal)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 9: suppressed_head invariant.
-   s->suppressed_head must remain NULL throughout a normal unwind walk
-   (reserved for v1.x — no suppressed-unwind chain is built at M3).
-   Walk a THROW through a TRY_FRAME (no catch/finally) to fatal; verify
-   suppressed_head is still NULL afterward. */
-UTEST(unwind_suppressed_head_invariant)
-{
-    UVM vm;
-    UStrand s;
-
-    urbi_vm_init(&vm, NULL, NULL);
-    UValue *reg_stack = strand_setup_minimal(&s, &vm);
-    UASSERT(reg_stack != NULL);
-
-    /* Precondition: suppressed_head is NULL (zero-init via calloc). */
-    UASSERT(s.suppressed_head == NULL);
-
-    /* Push a TRY_FRAME with neither catch nor finally — pure passthrough. */
-    UCleanupEntry *e = strand_cleanup_push(&s);
-    UASSERT(e != NULL);
-    e->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
-    e->flags          = 0;   /* no catch, no finally */
-    e->register_base  = 0;
-    e->register_count = 0;
-    e->handler_pc     = 0;
-    e->owning_tag     = NULL;
-    e->catch_pattern  = NULL;
-
-    UValue throwval;
-    throwval.kind = (uint8_t)UVAL_INT;
-    throwval.v.i  = 2;
-    s.unwind_value   = throwval;
-    s.pending_unwind = UEXEC_THROW;
-
-    urbi_unwind(&s);
-
-    /* Fatal escalation expected (no handler). */
-    UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
-    /* suppressed_head must remain NULL throughout — no chain built at M3. */
-    UASSERT(s.suppressed_head == NULL);
-
-    strand_teardown_minimal(&s, &vm);
-    urbi_vm_destroy(&vm);
-}
-
 /* Case 10: UEXEC_CANCEL propagates through CALL_FRAME (not absorbed).
    RETURN is absorbed by CALL_FRAME; CANCEL (and THROW, TAG_STOP) must
    propagate past it.  Push a CALL_FRAME, set CANCEL, walk.
@@ -1071,8 +1025,6 @@ void test_unwind_suite(void) {
               unwind_innermost_first_ordering);
     utest_run("unwind: URBI_CLEANUP_MAX overflow escalates to fatal",
               unwind_cleanup_max_overflow_marks_fatal);
-    utest_run("unwind: suppressed_head stays NULL throughout walk (Inv pre-v1.x)",
-              unwind_suppressed_head_invariant);
     utest_run("unwind: CANCEL propagates through CALL_FRAME (not absorbed)",
               unwind_cancel_propagates_through_call_frame);
     utest_run("unwind: THROW propagates past TRY_FRAME with only FINALLY",

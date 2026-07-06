@@ -187,7 +187,6 @@ struct UStrand {
                                                   written by unwind walker on catch absorption;
                                                   read by OP_LOAD_CATCH_VALUE at handler entry */
     struct UTag            *unwind_target;
-    void                   *suppressed_head;   /* RESERVED v1.x */
     struct UCleanupEntry   *cleanup_top;
     uint16_t                cleanup_depth;
     uint16_t                cleanup_cap;
@@ -402,14 +401,16 @@ struct UStrand {
  * Guarded on pointer width to avoid a hard failure on 32-bit cross
  * targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3920,
+URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3912,
                "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change"
                /* v0.9.2 Task 4.1: -8 B from deleting s->module pointer (3896 → 3888).
                 * v0.9.4: +8 B for periodic_owner back-pointer (3888 → 3896).
                 * v0.10.9 W3a: +16 B for unblock_value (UValue) supporting
                 *              SUSPENDED↔READY tag.block/unblock plumbing (3896 → 3912).
                 * v0.13.2 (refactor-3 VM-06a): +8 B for c_roots_head — the
-                *              C-stack root frame chain (3912 → 3920). */);
+                *              C-stack root frame chain (3912 → 3920).
+                * v0.13.6 (REACT-07): -8 B removing suppressed_head reserved
+                *              placeholder (3920 → 3912). */);
 #endif
 
 /* === C-stack root frame push/pop (refactor-3 VM-06a) ===
