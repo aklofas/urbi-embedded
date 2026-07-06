@@ -22,9 +22,16 @@
  * and signals reader subthreads to flush output.  Called BEFORE any
  * other step work so REPL commands submitted between steps are
  * visible to bytecode that runs this tick. */
+#if defined(__GNUC__) || defined(__clang__)
 __attribute__((weak)) void urepl_dispatch_drain_if_active(struct UVM *vm);
 __attribute__((weak)) void
 urepl_dispatch_drain_if_active(struct UVM *vm) { (void)vm; }
+#else
+/* Non-GCC/clang: weak symbols unsupported; provide a plain stub.
+ * Embedders enabling URBI_ENABLE_REPL must supply the real definition
+ * and exclude this stub from the link. */
+void urepl_dispatch_drain_if_active(struct UVM *vm) { (void)vm; }
+#endif
 
 UStepResult
 urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)

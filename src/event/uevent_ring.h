@@ -60,7 +60,11 @@ typedef struct UEventRingEntry {
      * captured at urbi_inject_event in <urbi/urbi.h>. Using GCC/clang
      * __attribute__((aligned)) instead of C11 _Alignas to keep -std=c99
      * compatibility (project compiles with -std=c99). */
+#if defined(__GNUC__) || defined(__clang__)
     uint8_t payload[URBI_EVENT_PAYLOAD_MAX] __attribute__((aligned(8)));
+#else
+    uint8_t payload[URBI_EVENT_PAYLOAD_MAX]; /* alignment not enforced; ISR atomic-load not guaranteed */
+#endif
 } UEventRingEntry;
 
 /* Indices stored as plain volatile uint32_t; acquire/release ordering is
