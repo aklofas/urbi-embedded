@@ -252,7 +252,10 @@ drain_gray(UVM *vm, size_t budget)
         const UType *t = vm->type_table[cell->type_tag];
         if (t != NULL && t->walk_payload != NULL) {
             /* Payload starts immediately after UCell header.
-             * At M3 no concrete types exist, so this is unreachable in practice. */
+             * This is the precise-mark path: 15 concrete types are registered
+             * (UClosure, UUpvalCell, UObject, UShape, USlotArray, USlotHandle,
+             * UChunkInstance, UTag, UEvent, UWatcher, UProtoInstanceArr,
+             * URealm, UProtoRoot, UProtoFix, UProtoInst). */
             t->walk_payload(vm, (void *)(cell + 1), mark_root_callback, vm);
         }
 
@@ -295,9 +298,10 @@ gc_mark_roots_step(UVM *vm)
  * registered), then paint it black.  If the work-list empties, transition
  * to ATOMIC_FINISH.
  *
- * At M3 baseline no concrete cell types exist and no type_table entries are
- * registered, so walk_payload is never called.  The consumed accounting
- * uses the sidecar's `size` field (correct per the sidecar design).
+ * walk_payload is called for each gray cell with a registered walker; 15
+ * concrete types are registered in production (see drain_gray).  The
+ * consumed accounting uses the sidecar's `size` field (correct per the
+ * sidecar design).
  *
  * Returns bytes of work consumed. */
 static size_t
@@ -618,8 +622,8 @@ urbi_gc_destroy(UVM *vm)
             if (t != NULL && t->destroy != NULL) {
                 vm->in_destroy_callback = 1U;
                 /* Payload starts immediately after UCell header.
-                 * At M3 no concrete cell types exist, so this path is
-                 * unreachable in practice; provided for correctness at T27+. */
+                 * Called for each cell whose type has a registered destroy
+                 * callback and whose UGC_HAS_FINALIZER bit is set. */
                 t->destroy(vm, (void *)(cell + 1));
                 vm->in_destroy_callback = 0U;
             }
@@ -808,7 +812,7 @@ urbi_gc_shade_gray(UVM *vm, UCell *cell)
      * uwatcher_gc.c).  UClosure/UUpvalCell have been enrolled via
      * urbi_gc_alloc since v0.8.4 Step C-2 — the old "regime 3" exemption
      * is dead.  A NULL sidecar on a non-FIXED cell is a rooting/enrollment
-     * bug; assert it loudly in debug builds instead of masking it. */
+     * bug; assert it loudly in hosted builds instead of masking it. */
     UAllCellsNode *node = find_sidecar_for_cell(vm, cell);
     URBI_INTERNAL_ASSERT(node != NULL
                          || (cell->gc_byte & UGC_IS_FIXED) != 0U);
