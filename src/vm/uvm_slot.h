@@ -36,12 +36,12 @@
  *                 caller must `goto safepoint`.
  */
 typedef enum {
-    VM_SLOT_OK           = 0,
-    VM_SLOT_GETTER_NEEDED,
-    VM_SLOT_SETTER_NEEDED,
-    VM_SLOT_MISSING,
-    VM_SLOT_CONST_WRITE,
-    VM_SLOT_THREW
+    UVM_SLOT_OK           = 0,
+    UVM_SLOT_GETTER_NEEDED,
+    UVM_SLOT_SETTER_NEEDED,
+    UVM_SLOT_MISSING,
+    UVM_SLOT_CONST_WRITE,
+    UVM_SLOT_THREW
 } UVmSlotResult;
 
 /* vm_resolve_ic: resolve the IC entry for (recv, ic) and apply the OBJ-IC-POLY
@@ -49,20 +49,20 @@ typedef enum {
  *
  * On a fast-path hit (shape + topology match), fills *out_flags and either
  * (a) writes the loaded value to *out_value (plain local or chain slot) or
- * (b) returns VM_SLOT_GETTER_NEEDED / VM_SLOT_SETTER_NEEDED so the caller can
+ * (b) returns UVM_SLOT_GETTER_NEEDED / UVM_SLOT_SETTER_NEEDED so the caller can
  * dispatch the appropriate closure.
  *
  * The FLAG_LOCAL re-resolution is the EXCLUSIVE site for that discipline: after
  * W1, OP_GETSLOT / OP_SETSLOT / OP_SELF never re-implement it inline.
  *
- * Returns VM_SLOT_OK with *out_value filled on a normal fast-path hit.
- * Returns VM_SLOT_GETTER_NEEDED / VM_SLOT_SETTER_NEEDED when a property is set.
- * Returns VM_SLOT_MISSING when no IC entry matches (caller must take slow path).
- * Returns VM_SLOT_CONST_WRITE when FLAG_CONSTANT is set (write attempt only).
+ * Returns UVM_SLOT_OK with *out_value filled on a normal fast-path hit.
+ * Returns UVM_SLOT_GETTER_NEEDED / UVM_SLOT_SETTER_NEEDED when a property is set.
+ * Returns UVM_SLOT_MISSING when no IC entry matches (caller must take slow path).
+ * Returns UVM_SLOT_CONST_WRITE when FLAG_CONSTANT is set (write attempt only).
  *
  * `writing` selects between the get and set fast paths:
- *   false → get path (returns VM_SLOT_GETTER_NEEDED for OGET)
- *   true  → set path (returns VM_SLOT_SETTER_NEEDED for OSET, checks CONSTANT)
+ *   false → get path (returns UVM_SLOT_GETTER_NEEDED for OGET)
+ *   true  → set path (returns UVM_SLOT_SETTER_NEEDED for OSET, checks CONSTANT)
  *
  * When writing == true and a LOCAL slot is found, the write + GC barrier +
  * slot-change emit are performed inside this function; *out_value is unused.
@@ -89,10 +89,10 @@ void vm_trace_slot_read_if_needed(UVM *vm, UObject *recv);
 /* urbi_vm_getslot_value: IC-fast-path get for OP_GETSLOT.
  *
  * Combines vm_trace_slot_read_if_needed + vm_resolve_ic (read path).
- * On VM_SLOT_OK, *out_value holds the loaded value.
- * On VM_SLOT_GETTER_NEEDED, the IC entry index is in *out_fresh_k and
+ * On UVM_SLOT_OK, *out_value holds the loaded value.
+ * On UVM_SLOT_GETTER_NEEDED, the IC entry index is in *out_fresh_k and
  *   ic->uprops[*out_fresh_k].oget holds the getter closure.
- * On VM_SLOT_MISSING, the caller must take the slow path. */
+ * On UVM_SLOT_MISSING, the caller must take the slow path. */
 UVmSlotResult urbi_vm_getslot_value(UVM *vm,
                                 UIC *ic,
                                 UObject *recv,
@@ -104,7 +104,7 @@ UVmSlotResult urbi_vm_getslot_value(UVM *vm,
  * `up` must be ic->uprops[k] where flags[k] has FLAG_OGET set.
  * `opname` is the opcode name string used in diagnostic messages.
  * On success, *out_result holds the return value.
- * Returns VM_SLOT_OK on success; VM_SLOT_MISSING on error
+ * Returns UVM_SLOT_OK on success; UVM_SLOT_MISSING on error
  * (vm->last_error set; caller should HALT). */
 UVmSlotResult urbi_vm_dispatch_getter(UVM *vm,
                                   UProps *up,
@@ -114,9 +114,9 @@ UVmSlotResult urbi_vm_dispatch_getter(UVM *vm,
 /* urbi_vm_setslot_value: IC-fast-path set for OP_SETSLOT.
  *
  * Handles FLAG_LOCAL (write + GC barrier + slot-change), FLAG_OSET (returns
- * VM_SLOT_SETTER_NEEDED), FLAG_CONSTANT (returns VM_SLOT_CONST_WRITE), and
- * proto-chain hit (returns VM_SLOT_MISSING so caller falls to slow path).
- * Returns VM_SLOT_OK when the fast-path local write succeeded. */
+ * UVM_SLOT_SETTER_NEEDED), FLAG_CONSTANT (returns UVM_SLOT_CONST_WRITE), and
+ * proto-chain hit (returns UVM_SLOT_MISSING so caller falls to slow path).
+ * Returns UVM_SLOT_OK when the fast-path local write succeeded. */
 UVmSlotResult urbi_vm_setslot_value(UVM *vm,
                                 UIC *ic,
                                 UObject *recv,
@@ -128,7 +128,7 @@ UVmSlotResult urbi_vm_setslot_value(UVM *vm,
  *
  * `up` must be ic->uprops[k] where flags[k] has FLAG_OSET set.
  * Setter return value is discarded (OP_SETSLOT has no scripted result).
- * Returns VM_SLOT_OK on success; VM_SLOT_MISSING on error
+ * Returns UVM_SLOT_OK on success; UVM_SLOT_MISSING on error
  * (vm->last_error set; caller should HALT). */
 UVmSlotResult urbi_vm_dispatch_setter(UVM *vm,
                                   UProps *up,
@@ -152,9 +152,9 @@ UVmSlotResult urbi_vm_self_lookup(UVM *vm,
  * checks the freshly-filled IC entry for FLAG_OGET and dispatches the
  * getter closure inline if present.
  *
- * Returns VM_SLOT_OK with *out_value filled on success (including after
+ * Returns UVM_SLOT_OK with *out_value filled on success (including after
  * a getter dispatch — the getter result lands in *out_value).
- * Returns VM_SLOT_MISSING on error (slot not found or getter raised;
+ * Returns UVM_SLOT_MISSING on error (slot not found or getter raised;
  * vm->last_error set in both cases).
  *
  * `opname` is used in error messages ("slot access" or "method call"). */
@@ -170,9 +170,9 @@ UVmSlotResult urbi_vm_getslot_slow(UVM *vm,
  * if the freshly-filled entry has FLAG_OSET, fires the GC barrier +
  * slot-change event after a plain store.
  *
- * Returns VM_SLOT_OK on success.
- * Returns VM_SLOT_MISSING on failure (vm->last_error set).
- * Returns VM_SLOT_THREW when the setter raised a typed error
+ * Returns UVM_SLOT_OK on success.
+ * Returns UVM_SLOT_MISSING on failure (vm->last_error set).
+ * Returns UVM_SLOT_THREW when the setter raised a typed error
  *   (vm->last_error set; caller must `goto safepoint`).
  *
  * `opname` is used in error messages ("slot write"). */

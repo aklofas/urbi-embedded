@@ -27,15 +27,15 @@
  * vm      — VM context
  * ic      — IC entry table for this call site
  * recv    — resolved UObject* (after atom-proto substitution)
- * out_slot  — receives loaded slot value on VM_SLOT_OK, or getter result
- *             via urbi_vm_dispatch_getter when VM_SLOT_GETTER_NEEDED would
+ * out_slot  — receives loaded slot value on UVM_SLOT_OK, or getter result
+ *             via urbi_vm_dispatch_getter when UVM_SLOT_GETTER_NEEDED would
  *             have been returned (the OP_SELF arm dispatches getters here
  *             rather than in uvm.c to keep the arm thin)
- * out_fresh_k — receives the IC entry index on VM_SLOT_GETTER_NEEDED;
- *              unused for VM_SLOT_OK
+ * out_fresh_k — receives the IC entry index on UVM_SLOT_GETTER_NEEDED;
+ *              unused for UVM_SLOT_OK
  *
  * Return value: same semantics as urbi_vm_getslot_value.
- * VM_SLOT_GETTER_NEEDED means the caller should call urbi_vm_dispatch_getter
+ * UVM_SLOT_GETTER_NEEDED means the caller should call urbi_vm_dispatch_getter
  * (OP_SELF handles getters identically to OP_GETSLOT, including the
  * additional R[A+1] = self_value write). */
 UVmSlotResult

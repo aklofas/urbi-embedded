@@ -25,9 +25,9 @@
  * sites.  `msg` is the fully-formatted diagnostic text (already including the
  * "TypeError: " prefix).  When a strand is running (the normal dispatch case)
  * build a typed TypeError instance, throw it on vm->cur_strand, and return
- * VM_SLOT_THREW so the caller does `goto safepoint`.  With no active strand
+ * UVM_SLOT_THREW so the caller does `goto safepoint`.  With no active strand
  * (should be unreachable from dispatch) keep the legacy fatal diagnostic path:
- * copy `msg` into vm->last_errmsg and return VM_SLOT_MISSING. */
+ * copy `msg` into vm->last_errmsg and return UVM_SLOT_MISSING. */
 static UVmSlotResult
 slot_throw_or_fatal(UVM *vm, const char *msg)
 {
@@ -35,7 +35,7 @@ slot_throw_or_fatal(UVM *vm, const char *msg)
         UValue inst;
         urbi_raise_typed(vm, vm->typeerror_proto, &inst, msg);
         urbi_throw(vm, vm->cur_strand, inst);
-        return VM_SLOT_THREW;
+        return UVM_SLOT_THREW;
     }
     vm->last_error = UVM_TYPE_ERROR;
     {
@@ -43,7 +43,7 @@ slot_throw_or_fatal(UVM *vm, const char *msg)
         urbi_vm_diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
         urbi_vm_diag_write_cstr(&_w, msg);
     }
-    return VM_SLOT_MISSING;
+    return UVM_SLOT_MISSING;
 }
 
 /* -----------------------------------------------------------------------
@@ -106,7 +106,7 @@ vm_resolve_ic(UVM *vm,
             /* Get path. */
             if (ic->flags[k] & URBI_SLOT_FLAG_OGET) {
                 if (out_fresh_k) *out_fresh_k = k;
-                return VM_SLOT_GETTER_NEEDED;
+                return UVM_SLOT_GETTER_NEEDED;
             }
             /* OBJ-IC-POLY: re-resolve local slot per receiver.
              * The IC caches a slot index (not an absolute pointer) for
@@ -116,15 +116,15 @@ vm_resolve_ic(UVM *vm,
                             ? recv->slots[ic->slot_idx[k]]
                             : *ic->slots[k];
             if (out_value) *out_value = loaded;
-            return VM_SLOT_OK;
+            return UVM_SLOT_OK;
         } else {
             /* Set path. */
             if (ic->flags[k] & URBI_SLOT_FLAG_OSET) {
                 if (out_fresh_k) *out_fresh_k = k;
-                return VM_SLOT_SETTER_NEEDED;
+                return UVM_SLOT_SETTER_NEEDED;
             }
             if (ic->flags[k] & URBI_SLOT_FLAG_CONSTANT) {
-                return VM_SLOT_CONST_WRITE;
+                return UVM_SLOT_CONST_WRITE;
             }
             if (ic->flags[k] & URBI_SLOT_FLAG_LOCAL) {
                 /* OBJ-IC-POLY: write to the per-receiver slot using the
@@ -134,17 +134,17 @@ vm_resolve_ic(UVM *vm,
                 urbi_gc_slot_store(vm, (UCell *)recv, s_idx,
                                    &recv->slots[s_idx], v_write);
                 urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v_write);
-                return VM_SLOT_OK;
+                return UVM_SLOT_OK;
             }
             /* Proto-chain hit (no LOCAL, no OSET, no CONSTANT): the slot
              * lives on a parent; fall to slow path for COW. */
-            return VM_SLOT_MISSING;
+            return UVM_SLOT_MISSING;
         }
     }
 
     /* No matching IC entry — slow path needed. */
     URBI_PERF_INC(vm, ic_miss);
-    return VM_SLOT_MISSING;
+    return UVM_SLOT_MISSING;
 }
 
 /* -----------------------------------------------------------------------
@@ -176,7 +176,7 @@ urbi_vm_dispatch_getter(UVM *vm,
         return slot_throw_or_fatal(vm, "TypeError: getter raised");
     }
     if (out_result) *out_result = result;
-    return VM_SLOT_OK;
+    return UVM_SLOT_OK;
 }
 
 /* -----------------------------------------------------------------------
@@ -208,7 +208,7 @@ urbi_vm_dispatch_setter(UVM *vm,
         return slot_throw_or_fatal(vm, "TypeError: setter raised");
     }
     /* Setter return value is discarded. */
-    return VM_SLOT_OK;
+    return UVM_SLOT_OK;
 }
 
 /* -----------------------------------------------------------------------
@@ -273,10 +273,10 @@ urbi_vm_getslot_slow(UVM *vm,
                                 % URBI_IC_ENTRIES_PER_SITE);
     if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
         UVmSlotResult gr = urbi_vm_dispatch_getter(vm, ic->uprops[fresh_k], opname, out_value);
-        return gr; /* VM_SLOT_OK (getter result in *out_value) or error */
+        return gr; /* UVM_SLOT_OK (getter result in *out_value) or error */
     }
     if (out_value) *out_value = v;
-    return VM_SLOT_OK;
+    return UVM_SLOT_OK;
 }
 
 /* -----------------------------------------------------------------------
@@ -326,5 +326,5 @@ urbi_vm_setslot_slow(UVM *vm,
     if (recv->shape == shape_before) {
         urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
     }
-    return VM_SLOT_OK;
+    return UVM_SLOT_OK;
 }

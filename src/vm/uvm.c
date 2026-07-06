@@ -1311,22 +1311,22 @@ dispatch:
             }
             UValue out_val; uint8_t fk = 0;
             UVmSlotResult sr = urbi_vm_getslot_value(vm, ic, recv, &out_val, &fk);
-            if (sr == VM_SLOT_OK)             { s->R[dst_reg] = out_val; NEXT(); }
-            if (sr == VM_SLOT_GETTER_NEEDED)  {
+            if (sr == UVM_SLOT_OK)             { s->R[dst_reg] = out_val; NEXT(); }
+            if (sr == UVM_SLOT_GETTER_NEEDED)  {
                 UValue gr;
-                /* v0.11.4: VM_SLOT_THREW → catchable throw deposited on the
+                /* v0.11.4: UVM_SLOT_THREW → catchable throw deposited on the
                  * strand; advance pc past this OP_GETSLOT (mirrors OP_THROW)
                  * so a catch-handler resumes after the faulting op. */
                 UVmSlotResult _r = urbi_vm_dispatch_getter(vm, ic->uprops[fk], "slot access", &gr);
-                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
-                if (_r != VM_SLOT_OK) HALT();
+                if (_r == UVM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != UVM_SLOT_OK) HALT();
                 s->R[dst_reg] = gr; NEXT();
             }
             /* MISSING — slow path (error formatting + getter check inside helper). */
             {
                 UVmSlotResult _r = urbi_vm_getslot_slow(vm, ic, recv, "slot access", &out_val);
-                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
-                if (_r != VM_SLOT_OK) HALT();
+                if (_r == UVM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != UVM_SLOT_OK) HALT();
             }
             s->R[dst_reg] = out_val;
             NEXT();
@@ -1370,16 +1370,16 @@ dispatch:
             UValue v = s->R[src_reg];
             uint8_t fk = 0;
             UVmSlotResult sr = urbi_vm_setslot_value(vm, ic, recv, v, &fk);
-            if (sr == VM_SLOT_OK)            { NEXT(); }
-            if (sr == VM_SLOT_SETTER_NEEDED) {
-                /* v0.11.4: VM_SLOT_THREW → catchable throw; advance pc past
+            if (sr == UVM_SLOT_OK)            { NEXT(); }
+            if (sr == UVM_SLOT_SETTER_NEEDED) {
+                /* v0.11.4: UVM_SLOT_THREW → catchable throw; advance pc past
                  * this OP_SETSLOT (mirrors OP_THROW). */
                 UVmSlotResult _r = urbi_vm_dispatch_setter(vm, ic->uprops[fk], "slot write", v);
-                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
-                if (_r != VM_SLOT_OK) HALT();
+                if (_r == UVM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != UVM_SLOT_OK) HALT();
                 NEXT();
             }
-            if (sr == VM_SLOT_CONST_WRITE)   {
+            if (sr == UVM_SLOT_CONST_WRITE)   {
                 vm->last_error = UVM_TYPE_ERROR;
                 {
                     UDiagWriter _w;
@@ -1393,8 +1393,8 @@ dispatch:
             /* MISSING — slow path (error formatting + setter/barrier inside helper). */
             {
                 UVmSlotResult _r = urbi_vm_setslot_slow(vm, ic, recv, v, "slot write");
-                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
-                if (_r != VM_SLOT_OK) HALT();
+                if (_r == UVM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != UVM_SLOT_OK) HALT();
             }
             NEXT();
         }
@@ -1734,23 +1734,23 @@ dispatch:
 
             UValue out_slot; uint8_t fk = 0;
             UVmSlotResult sr = urbi_vm_self_lookup(vm, ic, recv, &out_slot, &fk);
-            if (sr == VM_SLOT_OK) {
+            if (sr == UVM_SLOT_OK) {
                 s->R[dst_reg + 1U] = self_value; s->R[dst_reg] = out_slot; NEXT();
             }
-            if (sr == VM_SLOT_GETTER_NEEDED) {
+            if (sr == UVM_SLOT_GETTER_NEEDED) {
                 UValue gr;
-                /* v0.11.4: VM_SLOT_THREW → catchable throw; advance pc past
+                /* v0.11.4: UVM_SLOT_THREW → catchable throw; advance pc past
                  * this OP_SELF (mirrors OP_THROW). */
                 UVmSlotResult _r = urbi_vm_dispatch_getter(vm, ic->uprops[fk], "method call", &gr);
-                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
-                if (_r != VM_SLOT_OK) HALT();
+                if (_r == UVM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != UVM_SLOT_OK) HALT();
                 s->R[dst_reg + 1U] = self_value; s->R[dst_reg] = gr; NEXT();
             }
             /* MISSING — slow path. */
             {
                 UVmSlotResult _r = urbi_vm_getslot_slow(vm, ic, recv, "method call", &out_slot);
-                if (_r == VM_SLOT_THREW) { s->pc++; goto safepoint; }
-                if (_r != VM_SLOT_OK) HALT();
+                if (_r == UVM_SLOT_THREW) { s->pc++; goto safepoint; }
+                if (_r != UVM_SLOT_OK) HALT();
             }
             s->R[dst_reg + 1U] = self_value;
             s->R[dst_reg]      = out_slot;
