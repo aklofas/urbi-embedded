@@ -91,7 +91,7 @@ rg_make_void(void)
  *
  * Resolvers for atom protos that do not exist at M5 baseline (Bool, Nil, Void)
  * return rg_make_nil() as a placeholder per spec #5 §3.2 note — these
- * singletons land in M6 stdlib. */
+ * singletons (Bool, Nil, Void) shipped at M6 stdlib. */
 
 static UValue
 resolve_object_proto(UVM *vm)

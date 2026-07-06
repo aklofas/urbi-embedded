@@ -298,13 +298,14 @@ urbi_stdlib_register_namespaces(UVM *vm)
     rc = URBI_REGISTER_METHODS(vm, vm->global_namespace_proto, GLOBAL_METHODS);
     if (rc != URBI_OK) return rc;
 
-    /* --- T91 CallMessage: stub proto ---
+    /* --- T91 CallMessage: placeholder proto (v0.10.5-W7-DROP) ---
      *
-     * CallMessage is reserved for the legacy fallback() reflection that
-     * lands at v1.x.  At v1.0 the proto exists as a
-     * realm global so script code can pattern-match on its presence,
-     * but no actual reflection methods are installed.  Expose a `kind`
-     * marker slot so fixtures can verify the proto is bound non-nil. */
+     * CallMessage was permanently dropped at v0.10.5-W7 (see REVIVAL §14
+     * and the 278-line migration design in docs/); this stub proto is
+     * intentionally empty.  At v1.0 the proto exists as a realm global so
+     * script code can verify its presence via `isNil(CallMessage)`, but no
+     * reflection methods are installed.  Expose a `kind` marker slot so
+     * fixtures can verify the proto is bound non-nil. */
     if (vm->callmessage_proto == NULL) {
         UObject *c = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
         if (c == NULL) return URBI_ERR_OOM;
