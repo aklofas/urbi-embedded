@@ -2260,7 +2260,7 @@ UTEST(deferred_destroy_strand_refcount_dec_frees_source_name) {
     root.source_name    = name;
     root.heap_allocated = false;  /* stack root: buffers freed, struct not */
 
-    uproto_refcount_inc(&root);    /* refcount = 1 */
+    urbi_proto_strand_ref_acquire(&root, URBI_PROTO_REF_OWNER_STRAND);  /* refcount = 1, strand-bind */
     root.next_alloc = &root;       /* self-link deferred-destroy sentinel */
 
     uproto_strand_refcount_dec(&root, NULL);
