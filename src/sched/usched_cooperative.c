@@ -651,7 +651,7 @@ sched_dequeue_ready_head(UVM *vm)
  *
  * Scratch-strand coverage (closes GC-006 + GC-038):
  *   The watcher cond/body/onleave scratch path (urbi_run_closure_on_scratch
- *   in src/watcher/uwatcher_scratch.c) builds a transient UStrand on the C
+ *   in src/runtime/uscratch.c) builds a transient UStrand on the C
  *   stack and threads it onto vm->global_realm->strands_head BEFORE entering
  *   dispatch.  That strand's register window is therefore visited here just
  *   like any persistent strand — no separate "scratch frame" walker is

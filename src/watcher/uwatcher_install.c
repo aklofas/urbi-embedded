@@ -15,6 +15,7 @@
 
 #include "watcher/uwatcher_install.h"
 #include "watcher/uwatcher.h"   /* UWATCHER_AT, UWatcher, uwatcher_pool_alloc */
+#include "runtime/uscratch.h"
 #include "vm/uvm.h"                /* UVM, URBI_LOG_WARN */
 #include "sched/ustrand.h"            /* UStrand, USTRAND_WAIT_WATCHER */
 #include "sched/usched_cooperative.h" /* sched_strand_block (WAITUNTIL park) */
@@ -111,7 +112,7 @@ install_watcher_runtime(
     /* Phase 3 (spec #2 §7.3): run cond on scratch frame.
      * Test hook short-circuits the dispatch path so install-trace tests can
      * inject specific cond results; otherwise routes to
-     * urbi_run_closure_on_scratch (uwatcher_scratch.c).  The OP_GETSLOT
+     * urbi_run_closure_on_scratch (src/runtime/uscratch.c).  The OP_GETSLOT
      * probe (armed above via in_watcher_install) records reads into
      * vm->trace_read_set during this dispatch. */
     if (vm->test_hooks != NULL && vm->test_hooks->install_cond != NULL) {

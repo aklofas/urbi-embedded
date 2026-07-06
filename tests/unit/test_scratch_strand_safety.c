@@ -32,7 +32,7 @@
 #include "sched/ustrand.h"
 #include "chunk/uchunk.h"
 #include "runtime/uclosure.h"
-#include "watcher/uwatcher.h"
+#include "runtime/uscratch.h"
 #include "value/uarena.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"

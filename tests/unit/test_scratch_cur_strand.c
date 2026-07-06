@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* test_scratch_cur_strand — refactor-3 VM-10 + SCHED-10 (scratch half).
  *
- * run_on_scratch_core (src/watcher/uwatcher_scratch.c) drives a nested
+ * run_on_scratch_core (src/runtime/uscratch.c) drives a nested
  * dispatch_loop_until_yield for watcher conds, at-sync bodies, onleave
  * handlers, getter/setter bodies, and event sync-emit bodies.  Pre-fix it
  * never set vm->cur_strand to the scratch strand and never preserved the
@@ -59,7 +59,7 @@
 #include "value/uarena.h"
 #include "runtime/uclosure.h"
 #include "runtime/umacros.h"
-#include "watcher/uwatcher.h"
+#include "runtime/uscratch.h"
 #include "lex/ulex.h"
 #include "parse/uast.h"
 #include "parse/uparse.h"
@@ -219,7 +219,7 @@ UTEST(step_budget_preserved_across_scratch_run)
     }
     UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
 
-    /* Stack-local proto/closure wrapper (mirrors test_uwatcher_scratch.c). */
+    /* Stack-local proto/closure wrapper (mirrors tests/unit/test_uwatcher_scratch.c). */
     UProto proto;
     memset(&proto, 0, sizeof(proto));
     proto.instructions = module.instructions;

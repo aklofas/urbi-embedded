@@ -29,8 +29,8 @@
  * with parens.
  *
  * Why call-style, not getter-property: at v1.0 baseline the OGET getter
- * dispatch path routes through urbi_run_closure_on_scratch (src/watcher/
- * uwatcher_scratch.c), which assumes a bytecode UClosure (reads
+ * dispatch path routes through urbi_run_closure_on_scratch (src/runtime/
+ * uscratch.c), which assumes a bytecode UClosure (reads
  * entry->proto->instructions).  Native closures have proto=NULL by
  * construction (urbi_native_closure_create in object_root.c).  Bridging
  * native closures into the OGET dispatch path is a v1.x follow-up (the

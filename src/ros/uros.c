@@ -11,7 +11,7 @@
 #include "realm/urealm.h"      /* URealm, urbi_realm_set_global */
 #include "runtime/umacros.h"   /* urbi_zero, urbi_strlen */
 #include "runtime/uclosure.h"  /* UClosure, urbi_native_method_fn */
-#include "watcher/uwatcher.h"  /* urbi_run_closure_on_scratch_with_payload */
+#include "runtime/uscratch.h"  /* urbi_run_closure_on_scratch_with_payload */
 #include "value/uintern.h"     /* ustr_intern */
 #include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_arity, urbi_raise_type, urbi_raise_oom */
 #include "ros/uros_internal.h" /* URosBridge, urbi_ros_bridge */

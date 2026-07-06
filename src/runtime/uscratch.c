@@ -24,7 +24,7 @@
  * Plumbing module through requires a UProto.module back-pointer or wrapping
  * UClosure with the owning module reference — out of scope for this patch. */
 
-#include "watcher/uwatcher.h"
+#include "runtime/uscratch.h"
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"   /* UClosure full definition (M4: embeds UCell) */
 #include "sched/ustrand.h"

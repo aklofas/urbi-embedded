@@ -13,7 +13,8 @@
 #include "object/ushape.h"            /* UProps */
 #include "object/uobject.h"           /* UObject, URBI_SLOT_FLAG_* */
 #include "watcher/uwatcher.h"         /* URBI_WATCHER_READSET_MAX */
-#include "watcher/uwatcher_install.h" /* urbi_run_closure_on_scratch */
+#include "watcher/uwatcher_install.h"
+#include "runtime/uscratch.h"         /* urbi_run_closure_on_scratch[_with_payload] */
 #include "changed/uchanged_node.h"    /* urbi_emit_slot_change_if_subscribed */
 #include "urbi/gc.h"                  /* urbi_gc_slot_store, urbi_gc_slot_pre_store */
 #include "gc/ugc.h"                   /* UCell */

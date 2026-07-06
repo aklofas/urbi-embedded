@@ -22,7 +22,7 @@
  *
  * run_watcher_onleave
  * -------------------
- * Routes through urbi_run_closure_on_scratch (uwatcher_scratch.c) for real
+ * Routes through urbi_run_closure_on_scratch (src/runtime/uscratch.c) for real
  * bytecode dispatch on the scratch frame.  Test hook short-circuits the
  * dispatch path so existing fire-path tests can inject behavior without
  * going through real bytecode.  Throws are suppressed (drain path cannot
@@ -36,6 +36,7 @@
  * watcher_eval_dirty in the same safepoint tick.  Per spec §6.5. */
 
 #include "uwatcher.h"
+#include "runtime/uscratch.h"
 #include "vm/uvm.h"
 #include "tag/utag.h"           /* UTag, member_watchers_head */
 #include "event/uevent_subscribe.h"  /* uevent_at_watchers_remove (W2/v0.10.2) */
@@ -48,7 +49,7 @@
  *
  * Execute w->onleave on the VM scratch frame via real bytecode dispatch.
  * Test hook short-circuits the dispatch path; otherwise routes to
- * urbi_run_closure_on_scratch (uwatcher_scratch.c).  Throws are suppressed
+ * urbi_run_closure_on_scratch (src/runtime/uscratch.c).  Throws are suppressed
  * (drain path cannot propagate; the watcher is being torn down).
  * Precondition: w->onleave != NULL (caller must check).
  * run_watcher_onleave inherits the ISR-safety guarantee from drain's guard —

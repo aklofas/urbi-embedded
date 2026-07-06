@@ -37,6 +37,7 @@
 #include "tag/utag.h"               /* UTag, member_strands_head */
 #include "stdlib/temporal.h"        /* urbi_periodics_stop_owned_by (B5/SCHED-N2) */
 #include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
+#include "runtime/uscratch.h"           /* URBI_SCRATCH_BUDGET_OPS */
 #include <stddef.h>
 #include <stdint.h>
 

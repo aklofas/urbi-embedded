@@ -12,6 +12,7 @@
  *   spawn_body_coroutine: lives in uwatcher_spawn.c. */
 
 #include "uwatcher.h"
+#include "runtime/uscratch.h"
 #include "vm/uvm.h"
 #include "value/uvalue.h"        /* uvalue_truthy */
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
@@ -25,7 +26,7 @@
  * Evaluate watcher w's condition and return the result.  Test hook short-
  * circuits the dispatch path so existing fire-path tests can inject
  * specific values; otherwise routes to urbi_run_closure_on_scratch
- * (uwatcher_scratch.c).  Eval-time throws fail-soft as nil — watcher does
+ * (src/runtime/uscratch.c).  Eval-time throws fail-soft as nil — watcher does
  * not fire this pass; caller (watcher_eval_dirty) does not propagate.
  *
  * Returns UVAL_NIL when w->condition is NULL (no-condition watchers fire

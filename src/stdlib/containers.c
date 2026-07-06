@@ -53,7 +53,7 @@
 #include "value/uintern.h"             /* ustr_intern + USymbol */
 #include "value/uvalue.h"              /* uvalue_equal + uvalue_truthy */
 #include "vm/uvm.h"                    /* UVM */
-#include "watcher/uwatcher.h"          /* urbi_run_closure_on_scratch_args (List.sort comparator) */
+#include "runtime/uscratch.h"          /* urbi_run_closure_on_scratch_args (List.sort comparator) */
 
 #include <stdint.h>
 #include <stddef.h>

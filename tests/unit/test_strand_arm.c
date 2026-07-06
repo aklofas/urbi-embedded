@@ -16,7 +16,7 @@
 #include "runtime/uframe.h"   /* UVM_STACK_CAP */
 #include "urbi/urbi.h" /* urbi_strand_create, urbi_strand_destroy, urbi_realm_create */
 #include "stdlib/object_root.h"  /* urbi_native_closure_create */
-#include "watcher/uwatcher.h"    /* urbi_run_closure_on_scratch */
+#include "runtime/uscratch.h"    /* urbi_run_closure_on_scratch */
 
 #include <stdint.h>
 #include <string.h>

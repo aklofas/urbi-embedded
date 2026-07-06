@@ -15,6 +15,7 @@
 #include "utest.h"
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"
+#include "runtime/uscratch.h"
 #include "twatcher_install_helper.h"
 #include "watcher/uwatcher_install.h"
 #include "runtime/uclosure.h"

@@ -3,7 +3,7 @@
  * (closes GC-006 + GC-038 by construction).
  *
  * Background:
- *   v0.5.1's urbi_run_closure_on_scratch (src/watcher/uwatcher_scratch.c)
+ *   v0.5.1's urbi_run_closure_on_scratch (src/runtime/uscratch.c)
  *   replaced an earlier vm->watcher_scratch_frame design with a transient
  *   UStrand allocated on the C stack and threaded onto
  *   vm->global_realm->strands_head before entering the dispatch loop.  The
@@ -63,7 +63,7 @@ static void scratch_probe_cb(UVM *vm, UValue *root, void *ctx)
 /* === Test: a scratch strand linked to global_realm.strands_head is walked
  *           by sched_walk_roots (its register-window UValues are visited). ===
  *
- * Setup mirrors run_on_scratch_core (uwatcher_scratch.c) without entering
+ * Setup mirrors run_on_scratch_core (src/runtime/uscratch.c) without entering
  * dispatch:
  *   1. Lazy-create global_realm via urbi_realm_global.
  *   2. Allocate a transient UStrand on the test stack; zero it.

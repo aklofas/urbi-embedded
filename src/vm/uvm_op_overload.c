@@ -38,7 +38,7 @@
 #include "sched/ustrand.h"
 #include "gc/ugc_incremental.h"  /* urbi_c_root_push/_pop (v0.13.2 native out-slot rooting) */
 #include "runtime/umacros.h"     /* urbi_zero */
-#include "watcher/uwatcher.h"   /* urbi_run_closure_on_scratch[_with_payload] */
+#include "runtime/uscratch.h"   /* urbi_run_closure_on_scratch[_with_payload|_ex] */
 #include "vm/uvm_reactive_drain.h"  /* vm_reactive_drain (VM-20: drain after operator call) */
 
 /* -----------------------------------------------------------------------

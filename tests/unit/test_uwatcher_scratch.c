@@ -17,7 +17,7 @@
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
-#include "watcher/uwatcher.h"
+#include "runtime/uscratch.h"
 
 #include <stddef.h>
 #include <string.h>

@@ -6,6 +6,7 @@
 #include "sched/ustrand.h"
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"  /* do_spawn_body_coroutine, UWATCHER_AT_EVENT* */
+#include "runtime/uscratch.h"  /* urbi_run_closure_on_scratch_with_payload */
 #include "sched/usched_cooperative.h"  /* sched_strand_make_runnable, sched_strand_block */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (URBI_DEBUG-gated) */
 #include "runtime/ulist.h"     /* URBI_SLIST_UNLINK, URBI_SLIST_FOREACH_SAFE */
