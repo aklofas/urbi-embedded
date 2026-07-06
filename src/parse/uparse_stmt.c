@@ -929,7 +929,7 @@ UAstNode *urbi_parse_assert(UParser *p) {
     /* Capture source text start: p->lex->cur is now right after '('.
      * Trim leading whitespace so the diagnostic text starts at the expression.
      * The source buffer is guaranteed to outlive the AST node.
-     * refactor-3 FE-10: bound the walk at p->lex->end — `assert(` at the very
+     * Bound the walk at p->lex->end — `assert(` at the very
      * end of a non-NUL-terminated buffer put cur one past the end, and the
      * unbounded loop read past the allocation. */
     const char *src_start = p->lex->cur;
@@ -1326,7 +1326,7 @@ static UAstNode *parse_switch(UParser *p) {
         /* Grow parallel arrays if needed.  urbi_parse_arena_grow_node_array doubles
          * *cap on every call, so the two arrays must track independent
          * capacities — sharing one cap left case_vals at half the claimed
-         * capacity and overran it into case_bodies (refactor-3 FE-02). */
+         * capacity and overran it into case_bodies. */
         if (case_count == cap) {
             int bodies_cap = cap; /* before grow */
             if (!urbi_parse_arena_grow_node_array(p, &case_vals,   &cap, case_count) ||

@@ -346,7 +346,7 @@ UAstNode *urbi_parse_at(UParser *p) {
      * is not immediately flagged as an error — urbi_parse_at checks for it after
      * the expression parse returns.  Save/restore rather than write false:
      * a nested event form (waituntil is an expression primary) would
-     * otherwise clobber an enclosing condition's flag (refactor-3 FE-22). */
+     * otherwise clobber an enclosing condition's flag. */
     bool saved_at_event_cond = p->at_event_cond;
     p->at_event_cond = true;
     UAstNode *cond = urbi_parse_inner_tier(p);
@@ -538,7 +538,7 @@ UAstNode *urbi_parse_waituntil(UParser *p) {
 
     /* Enable at_event_cond so `?` in the inner expression isn't flagged.
      * Save/restore: waituntil is an expression primary, so this very parse
-     * can sit inside another condition's flag scope (refactor-3 FE-22). */
+     * can sit inside another condition's flag scope. */
     bool saved_at_event_cond = p->at_event_cond;
     p->at_event_cond = true;
     UAstNode *cond = urbi_parse_inner_tier(p);
