@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: do_spawn_body_coroutine happy path + OOM fail-soft (spec #1 §5.3),
+/* Unit tests: urbi_watcher_do_spawn_body_coroutine happy path + OOM fail-soft (spec #1 §5.3),
  * and spawn / respawn entry-point contract asserts (spec #1 §5.2, T25).
  *
  * T24 cases:
@@ -16,9 +16,9 @@
  *
  * T25 cases (URBI_DEBUG only):
  *   4. watcher_spawn_rejects_at_sync:
- *      AT_SYNC mode → spawn_body_coroutine assert fires.
+ *      AT_SYNC mode → urbi_watcher_spawn_body_coroutine assert fires.
  *   5. watcher_respawn_skips_eval_assert:
- *      respawn_body_coroutine with in_watcher_eval=0 succeeds. */
+ *      urbi_watcher_respawn_body_coroutine with in_watcher_eval=0 succeeds. */
 
 #include "utest.h"
 #include "vm/uvm.h"
@@ -161,7 +161,7 @@ count_realm_strands(struct URealm *r)
 
 /* 1. watcher_spawn_happy_path
  *
- * Install an AT watcher with a real body closure; call do_spawn_body_coroutine;
+ * Install an AT watcher with a real body closure; call urbi_watcher_do_spawn_body_coroutine;
  * verify:
  *   - w->body_strand != NULL
  *   - w->body_strand->watcher_body_owner == w (back-pointer)
@@ -186,7 +186,7 @@ UTEST(watcher_spawn_happy_path)
     UASSERT(w != NULL);
     UASSERT(w->body_strand == NULL);  /* no body strand before spawn */
 
-    do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
 
     /* body_strand must be set. */
     UASSERT(w->body_strand != NULL);
@@ -246,7 +246,7 @@ UTEST(watcher_spawn_oom_strand_alloc)
     vm.alloc_ud = NULL;
 
     vm.watchers->in_eval = 1;
-    do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
     vm.watchers->in_eval = 0;
 
     /* Restore allocator before cleanup assertions. */
@@ -330,7 +330,7 @@ UTEST(watcher_spawn_oom_stack_alloc)
     vm.alloc_ud = &fa;
 
     vm.watchers->in_eval = 1;
-    do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
     vm.watchers->in_eval = 0;
 
     vm.alloc_fn = saved_alloc;
@@ -360,7 +360,7 @@ UTEST(watcher_spawn_oom_stack_alloc)
 /* 4. watcher_spawn_rejects_at_sync
  *
  * AT_SYNC bodies run inline on the scratch frame and must never go through
- * spawn_body_coroutine.  In URBI_DEBUG builds the mode assert fires. */
+ * urbi_watcher_spawn_body_coroutine.  In URBI_DEBUG builds the mode assert fires. */
 UTEST(watcher_spawn_rejects_at_sync)
 {
     UVM vm;
@@ -382,8 +382,8 @@ UTEST(watcher_spawn_rejects_at_sync)
     w->mode = UWATCHER_AT_SYNC;
     vm.watchers->in_eval = 1;
 
-    /* AT_SYNC mode must trigger the mode assert inside spawn_body_coroutine. */
-    EXPECT_ABORT(spawn_body_coroutine(&vm, w));
+    /* AT_SYNC mode must trigger the mode assert inside urbi_watcher_spawn_body_coroutine. */
+    EXPECT_ABORT(urbi_watcher_spawn_body_coroutine(&vm, w));
 
     vm.watchers->in_eval = 0;
 
@@ -394,8 +394,8 @@ UTEST(watcher_spawn_rejects_at_sync)
 
 /* 5. watcher_respawn_skips_eval_assert
  *
- * respawn_body_coroutine is the completion-path entry: it must succeed even
- * when in_watcher_eval == 0 (the eval guard applies only to spawn_body_coroutine).
+ * urbi_watcher_respawn_body_coroutine is the completion-path entry: it must succeed even
+ * when in_watcher_eval == 0 (the eval guard applies only to urbi_watcher_spawn_body_coroutine).
  * Verify body_strand is set after a successful respawn call. */
 UTEST(watcher_respawn_skips_eval_assert)
 {
@@ -417,7 +417,7 @@ UTEST(watcher_respawn_skips_eval_assert)
     /* in_watcher_eval == 0: this is the completion path. */
     UASSERT(vm.watchers->in_eval == 0);
 
-    respawn_body_coroutine(&vm, w);
+    urbi_watcher_respawn_body_coroutine(&vm, w);
 
     /* Spawn must have succeeded — body_strand non-NULL. */
     UASSERT(w->body_strand != NULL);
@@ -436,7 +436,7 @@ UTEST(watcher_respawn_skips_eval_assert)
 /* 6. watcher_spawn_queues_pending_refire_when_body_alive
  *
  * With body_strand already set (body running) and URBI_EXHAUST_QUEUE policy,
- * do_spawn_body_coroutine must:
+ * urbi_watcher_do_spawn_body_coroutine must:
  *   - Leave body_strand pointing at the sentinel (no new strand allocated).
  *   - Increment pending_refire_count (bounded by max_refire_queue).
  *
@@ -471,9 +471,9 @@ UTEST(watcher_spawn_queues_pending_refire_when_body_alive)
     /* Three back-to-back fires while body is "running" — counter must
      * increment to 3 (well under the default cap of 15). */
     vm.watchers->in_eval = 1;
-    do_spawn_body_coroutine(&vm, w, NULL);
-    do_spawn_body_coroutine(&vm, w, NULL);
-    do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
     vm.watchers->in_eval = 0;
 
     /* body_strand must be unchanged — sentinel pointer still there. */
@@ -517,7 +517,7 @@ UTEST(watcher_spawn_saturates_at_max_refire_queue)
 
     vm.watchers->in_eval = 1;
     for (int i = 0; i < 20; i++) {
-        do_spawn_body_coroutine(&vm, w, NULL);
+        urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
     }
     vm.watchers->in_eval = 0;
 
@@ -534,7 +534,7 @@ UTEST(watcher_spawn_saturates_at_max_refire_queue)
 /* 7. watcher_spawn_drops_silently_under_exhaust_drop
  *
  * With body_strand already set and URBI_EXHAUST_DROP policy,
- * do_spawn_body_coroutine must:
+ * urbi_watcher_do_spawn_body_coroutine must:
  *   - Leave body_strand pointing at the sentinel.
  *   - NOT increment pending_refire_count (silent drop). */
 UTEST(watcher_spawn_drops_silently_under_exhaust_drop)
@@ -560,7 +560,7 @@ UTEST(watcher_spawn_drops_silently_under_exhaust_drop)
     w->exhaust_policy = URBI_EXHAUST_DROP;
 
     vm.watchers->in_eval = 1;
-    do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
     vm.watchers->in_eval = 0;
 
     /* body_strand must still point at the sentinel. */

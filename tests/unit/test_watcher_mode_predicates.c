@@ -21,7 +21,7 @@
  *
  *   3. sched18_mid_emit_watcher_not_fired (SCHED-18)
  *      A subscriber appended to at_watchers_head by a sync body during an
- *      in-progress c_event_emit_sync must NOT fire for that emission.  The
+ *      in-progress urbi_event_emit_sync must NOT fire for that emission.  The
  *      tail-pin (last = tail at emit entry) stops the walk.  Pre-fix the
  *      next-capture was per-iteration, not pinned at entry; a sync body
  *      that appended w3 caused w3 to fire in the same emission.
@@ -109,14 +109,14 @@ UTEST(whenever_event_unregister_unlinks_event_chain)
 
     make_trivial_closure(&body, &proto, instr);
 
-    /* Wire a strand so install_at_event_runtime can resolve owning_tag/realm. */
+    /* Wire a strand so urbi_watcher_install_at_event_runtime can resolve owning_tag/realm. */
     UStrand s;
     ustrand_init(&s, &vm);
     s.realm = r;
 
     /* Install a WHENEVER_EVENT watcher — lands on e->at_watchers_head. */
     UWatcherInstallResult ir =
-        install_at_event_runtime(&vm, &s, UWATCHER_WHENEVER_EVENT, e, &body, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_WHENEVER_EVENT, e, &body, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)ir);
 
     UWatcher *w = e->at_watchers_head;
@@ -136,7 +136,7 @@ UTEST(whenever_event_unregister_unlinks_event_chain)
      * runner pre-fix; under ASan the unguarded emit would be the primary UAF
      * indicator).  Post-fix: head == NULL → emit is safe. */
     if (e->at_watchers_head == NULL) {
-        c_event_emit_async(&vm, e, make_int_val(1));
+        urbi_event_emit_async(&vm, e, make_int_val(1));
     }
 
     ustrand_destroy(&s, &vm);
@@ -187,7 +187,7 @@ UTEST(pool_destroy_whenever_event_no_dangling)
     /* Install WHENEVER_EVENT watcher — NOT on active_watchers_head (only cond
      * watchers thread there), so drain_watcher_list won't touch it. */
     UWatcherInstallResult ir =
-        install_at_event_runtime(&vm, &s, UWATCHER_WHENEVER_EVENT, e, &body, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_WHENEVER_EVENT, e, &body, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)ir);
 
     UASSERT(e->at_watchers_head != NULL);
@@ -211,7 +211,7 @@ UTEST(pool_destroy_whenever_event_no_dangling)
      * because the slab freed by uwatcher_pool_destroy still contains
      * the dangling at_watchers_head pointer (pre-fix). */
     if (e->at_watchers_head == NULL) {
-        c_event_emit_async(&vm, e, make_int_val(2));
+        urbi_event_emit_async(&vm, e, make_int_val(2));
     }
 
     /* urbi_vm_destroy skips pool_destroy (pool_base == NULL from above). */
@@ -222,7 +222,7 @@ UTEST(pool_destroy_whenever_event_no_dangling)
 /* ===================================================================
  * Test 3: sched18_mid_emit_watcher_not_fired  (SCHED-18)
  *
- * Legacy contract: c_event_emit_sync fires PRE-REGISTERED subscribers only.
+ * Legacy contract: urbi_event_emit_sync fires PRE-REGISTERED subscribers only.
  * A subscriber installed mid-emit by a sync body (into at_watchers_head)
  * must NOT receive the in-flight emission; it fires on the NEXT emit.
  *
@@ -254,7 +254,7 @@ sched18_hook(struct UVM *vm, struct UWatcher *w)
     if (g_sched18.hook_count++ == 0) {
         /* First call (after w1's body): install w3 mid-emit. */
         UWatcherInstallResult r =
-            install_at_event_runtime(vm, g_sched18.inst_strand,
+            urbi_watcher_install_at_event_runtime(vm, g_sched18.inst_strand,
                                      UWATCHER_AT_EVENT,
                                      (struct UEvent *)w->event,
                                      g_sched18.w3_body, NULL);
@@ -295,11 +295,11 @@ UTEST(sched18_mid_emit_watcher_not_fired)
 
     /* Install w1 (AT_EVENT_SYNC) then w2 (AT_EVENT_SYNC). */
     UWatcherInstallResult r1 =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, &body1, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, &body1, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r1);
 
     UWatcherInstallResult r2 =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, &body2, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, &body2, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r2);
 
     /* Arm the after_sync_body hook: installs w3 (AT_EVENT async) after w1
@@ -311,7 +311,7 @@ UTEST(sched18_mid_emit_watcher_not_fired)
     vm.test_hooks->after_sync_body = sched18_hook;
 
     /* === First emit === */
-    c_event_emit_sync(&vm, e, make_int_val(10));
+    urbi_event_emit_sync(&vm, e, make_int_val(10));
 
     /* Hook must have fired (at least once, for w1). */
     UASSERT(g_sched18.hook_count >= 1);
@@ -329,9 +329,9 @@ UTEST(sched18_mid_emit_watcher_not_fired)
 
     /* === Second emit === w3 is now pre-registered (it's on at_watchers_head).
      * SCHED-18 assertion: w3 DOES fire on the next emit. */
-    c_event_emit_sync(&vm, e, make_int_val(11));
+    urbi_event_emit_sync(&vm, e, make_int_val(11));
 
-    /* w3 is AT_EVENT (async): do_spawn_body_coroutine sets body_strand. */
+    /* w3 is AT_EVENT (async): urbi_watcher_do_spawn_body_coroutine sets body_strand. */
     UASSERT(g_sched18.w3->body_strand != NULL);
 
     /* Cleanup. */

@@ -484,7 +484,7 @@ obj_addProto(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UObject *proto = (UObject *)args[0].v.p;
     int rc = urbi_object_add_proto(vm, recv, proto);
     if (rc == URBI_ERR_INVALID_ARG) {
-        /* Either valid_proto rejected (atom-family mismatch / cycle) or
+        /* Either urbi_object_valid_proto rejected (atom-family mismatch / cycle) or
          * the proto-list cap is exceeded.  Both surface as TypeError to
          * scripted callers. */
         return urbi_raise_type(vm,

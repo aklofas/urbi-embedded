@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: c_event_emit_async (spec #3 §5.2).
+/* Unit tests: urbi_event_emit_async (spec #3 §5.2).
  *
  * Source-level tests require Event.new() (T53) and globals (post-M5), so we
- * drive via direct C-API: urbi_event_create + install_at_event_runtime +
- * manual c_event_emit_async.
+ * drive via direct C-API: urbi_event_create + urbi_watcher_install_at_event_runtime +
+ * manual urbi_event_emit_async.
  *
  * Cases:
  *   1. emit_async_spawns_at_event_bodies_in_fifo_order:
@@ -99,11 +99,11 @@ UTEST(emit_async_spawns_at_event_bodies_in_fifo_order)
     s.realm = r;
 
     UWatcherInstallResult r1 =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body1, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body1, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r1);
 
     UWatcherInstallResult r2 =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body2, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body2, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r2);
 
     UWatcher *w1 = e->at_watchers_head;
@@ -116,7 +116,7 @@ UTEST(emit_async_spawns_at_event_bodies_in_fifo_order)
     UASSERT(w2->body_strand == NULL);
 
     UValue payload = make_int(42);
-    c_event_emit_async(&vm, e, payload);
+    urbi_event_emit_async(&vm, e, payload);
 
     /* Both watchers must now have a body strand spawned. */
     UASSERT(w1->body_strand != NULL);
@@ -144,7 +144,7 @@ UTEST(emit_async_spawns_at_event_bodies_in_fifo_order)
  * Case 2: emit_async_wakes_waiters
  *
  * Manually park a strand as an event waiter (set USTRAND_WAIT_EVENT
- * and link into waiters_head); call c_event_emit_async; verify the
+ * and link into waiters_head); call urbi_event_emit_async; verify the
  * strand is now READY with last_event_payload set to the emitted value.
  * =================================================================== */
 
@@ -173,7 +173,7 @@ UTEST(emit_async_wakes_waiters)
     e->waiters_head = &waiter;
 
     UValue payload = make_int(99);
-    c_event_emit_async(&vm, e, payload);
+    urbi_event_emit_async(&vm, e, payload);
 
     /* waiters_head must be cleared. */
     UASSERT(e->waiters_head == NULL);

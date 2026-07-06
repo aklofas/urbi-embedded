@@ -16,7 +16,7 @@
  * Tests:
  *
  *   1. destroy_clears_event_waiter_head:
- *      Park a strand on a UEvent via c_event_waituntil.  Call
+ *      Park a strand on a UEvent via urbi_event_waituntil.  Call
  *      urbi_strand_destroy.  Assert UEvent.waiters_head == NULL.
  *
  *   2. destroy_clears_event_waiter_mid_chain:
@@ -74,7 +74,7 @@ UTEST(destroy_clears_event_waiter_head)
     vm.cur_strand = s;
 
     /* Park the strand on the event (simulates waituntil(ev?)). */
-    c_event_waituntil(&vm, ev);
+    urbi_event_waituntil(&vm, ev);
 
     /* Strand must now be on the waiter chain. */
     UASSERT(ev->waiters_head == s);
@@ -98,7 +98,7 @@ UTEST(destroy_clears_event_waiter_head)
  * (which ends up at the tail after head-insert / FIFO tail-append semantics).
  * Assert the second strand is still on the chain and the first is gone.
  *
- * Note: c_event_waituntil tail-appends to waiters_head, so:
+ * Note: urbi_event_waituntil tail-appends to waiters_head, so:
  *   - s1 parked first → s1 is at the head.
  *   - s2 parked second → s2 is at the tail (s1->next_event_waiter == s2).
  * =================================================================== */
@@ -120,7 +120,7 @@ UTEST(destroy_clears_event_waiter_mid_chain)
     s1->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
     vm.cur_strand = s1;
-    c_event_waituntil(&vm, ev);
+    urbi_event_waituntil(&vm, ev);
     vm.cur_strand = NULL;
 
     /* Strand 2. */
@@ -129,7 +129,7 @@ UTEST(destroy_clears_event_waiter_mid_chain)
     s2->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
     vm.cur_strand = s2;
-    c_event_waituntil(&vm, ev);
+    urbi_event_waituntil(&vm, ev);
     vm.cur_strand = NULL;
 
     /* Chain must be s1 → s2. */

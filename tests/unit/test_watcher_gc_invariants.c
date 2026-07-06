@@ -107,7 +107,7 @@ UTEST(watcher_invariant_holds_during_body_run)
     UASSERT(w->body_strand == NULL);
 
     vm.watchers->in_eval = 1;
-    do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
     vm.watchers->in_eval = 0;
 
     /* Body strand must be live with back-pointer set. */
@@ -146,7 +146,7 @@ UTEST(watcher_invariant_holds_after_body_completes)
     UASSERT(w != NULL);
 
     vm.watchers->in_eval = 1;
-    do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
     vm.watchers->in_eval = 0;
 
     UASSERT(w->body_strand != NULL);

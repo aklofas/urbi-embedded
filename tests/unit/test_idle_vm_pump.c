@@ -10,7 +10,7 @@
  *     the top of each urbi_step call.
  *
  *   SCHED-12 — sched12_drain_preserves_in_eval_when_nested:
- *     drain_pending_onleave_queue previously used absolute set/clear for
+ *     urbi_watcher_drain_pending_onleave_queue previously used absolute set/clear for
  *     in_eval (set 1 at entry, 0 at exit).  The save/restore fix ensures
  *     the caller's in_eval value is preserved across the call.  A nested
  *     call from within urbi_vm_watcher_eval_dirty (in_eval = 1 on entry) would
@@ -34,7 +34,7 @@
 #include "realm/urealm.h"
 #include "chunk/uchunk.h"
 #include "value/uarena.h"
-#include "watcher/uwatcher.h"     /* uwatcher_pool_alloc, drain_pending_onleave_queue */
+#include "watcher/uwatcher.h"     /* uwatcher_pool_alloc, urbi_watcher_drain_pending_onleave_queue */
 #include "runtime/utest_hooks.h"  /* UTestHooks */
 #include "runtime/umacros.h"      /* urbi_zero */
 
@@ -88,7 +88,7 @@ UTEST(host_write_wakes_waituntil_with_zero_runnable)
     /* Either the slot doesn't exist (URBI_ERR_NOT_FOUND) or it is nil/0. */
     (void)pre;
 
-    /* Host-C write: Realm.go = 1.  The write barrier fires observer_dirty →
+    /* Host-C write: Realm.go = 1.  The write barrier fires urbi_watcher_observer_dirty →
      * dirty_count++.  Without the pre-loop drain fix, no path drains this
      * dirty mark while the only strand is parked. */
     UValue go_val;
@@ -119,12 +119,12 @@ UTEST(host_write_wakes_waituntil_with_zero_runnable)
 }
 
 /* -----------------------------------------------------------------------
- * SCHED-12: drain_pending_onleave_queue save/restore for in_eval
+ * SCHED-12: urbi_watcher_drain_pending_onleave_queue save/restore for in_eval
  * --------------------------------------------------------------------- */
 
 UTEST(sched12_drain_preserves_in_eval_when_nested)
 {
-    /* SCHED-12: drain_pending_onleave_queue previously used absolute set/clear
+    /* SCHED-12: urbi_watcher_drain_pending_onleave_queue previously used absolute set/clear
      * for in_eval (set 1 at entry, hard-reset to 0 at exit).  A nested call
      * from within urbi_vm_watcher_eval_dirty (in_eval=1 on entry) would clobber the
      * flag to 0, dropping the outer eval's reentrancy guard and enabling a
@@ -143,7 +143,7 @@ UTEST(sched12_drain_preserves_in_eval_when_nested)
     /* Simulate being inside urbi_vm_watcher_eval_dirty. */
     vm.watchers->in_eval = 1;
     /* Drain with empty queue — the save/restore must preserve in_eval = 1. */
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     UASSERT_EQ(1, (int)vm.watchers->in_eval);
     /* Reset for clean teardown. */
     vm.watchers->in_eval = 0;
@@ -182,7 +182,7 @@ onleave_cascade_hook(struct UVM *vm, struct UWatcher *w)
     g_orphan_count++;
     if (!g_orphan_pushed) {
         g_orphan_pushed = true;
-        /* Direct append: mirrors what pending_onleave_queue_push does for the
+        /* Direct append: mirrors what urbi_watcher_pending_onleave_queue_push does for the
          * tail-link step (the active-list unlink is skipped because
          * g_orphan_w2 was never on active_watchers_head). */
         g_orphan_w2->next_active = NULL;
@@ -202,7 +202,7 @@ onleave_cascade_hook(struct UVM *vm, struct UWatcher *w)
 
 UTEST(onleave_orphan_mid_drain_push_not_lost)
 {
-    /* Onleave-orphan bug: drain_pending_onleave_queue did not update
+    /* Onleave-orphan bug: urbi_watcher_drain_pending_onleave_queue did not update
      * pending_onleave_tail when popping the last (tail) entry.  An onleave
      * handler that pushed a new entry mid-drain appended to the stale tail
      * pointer, which was now pointing at the just-popped entry.  The new
@@ -263,7 +263,7 @@ UTEST(onleave_orphan_mid_drain_push_not_lost)
     hooks.watcher_onleave = onleave_cascade_hook;
     vm.test_hooks = &hooks;
 
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
 
     vm.test_hooks = orig_hooks;
 

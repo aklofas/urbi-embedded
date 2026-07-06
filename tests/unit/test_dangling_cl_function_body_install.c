@@ -5,7 +5,7 @@
  *
  * Passes today via the M6 Phase 3 closure migration at urbi_vm_run exit
  * (src/vm/uvm_run.c:174-196) and the OWNS_BODY ownership transfer in
- * install_at_event_runtime.  v0.7.3 closure-lifetime reform replaces both
+ * urbi_watcher_install_at_event_runtime.  v0.7.3 closure-lifetime reform replaces both
  * mechanisms (migration deleted at T25; OWNS_BODY deleted at T20) with a
  * single GC-root mechanism — the watcher walker (uwatcher_gc.c) already
  * yields w->body as a UVAL_CLOSURE root, so once UClosure is GC-managed

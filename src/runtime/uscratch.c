@@ -10,8 +10,8 @@
  * All allocation goes through vm->alloc_fn.
  *
  * Used by:
- *   - install_watcher_runtime (install path cond eval, uwatcher_install.c)
- *   - invoke_condition_closure                  (eval path, uwatcher_eval.c)
+ *   - urbi_watcher_install_watcher_runtime (install path cond eval, uwatcher_install.c)
+ *   - urbi_watcher_invoke_condition_closure                  (eval path, uwatcher_eval.c)
  *   - invoke_body_inline                        (AT_SYNC body, uwatcher_eval.c)
  *   - invoke_onleave_inline                     (falling-edge onleave, uwatcher_eval.c)
  *   - run_watcher_onleave                       (drain onleave, uwatcher_drain.c)
@@ -367,9 +367,9 @@ run_on_scratch_core(struct UVM       *vm,
  *
  * NOTE: this function does NOT set vm->watchers->in_scratch despite the
  * name.  The flag is owned by callers that need re-entry guarding
- * (specifically c_event_emit_sync's run_event_body_on_scratch in
+ * (specifically urbi_event_emit_sync's run_event_body_on_scratch in
  * src/event/uevent_emit.c, which sets the flag around its call to this
- * helper).  Other callers — install_watcher_runtime, invoke_condition_closure,
+ * helper).  Other callers — urbi_watcher_install_watcher_runtime, urbi_watcher_invoke_condition_closure,
  * invoke_body_inline, invoke_onleave_inline, run_watcher_onleave — rely on
  * caller-owned vm->watchers->in_eval / vm->watchers->in_install for re-entry
  * protection instead.  See WATCH-036 (uvm.h field comment on

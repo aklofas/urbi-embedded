@@ -28,9 +28,9 @@
 #include "watcher/uwatcher_state.h" /* uwatcher_state_create/destroy (W2/v0.10.4) */
 #include "stdlib/temporal.h"      /* urbi_periodic_table_walk_roots, urbi_periodic_destroy_all */
 #include "stdlib/containers.h"    /* M6 Phase 6: urbi_stdlib_containers_destroy */
-#include "event/uevent_native.h"  /* event_native_register */
+#include "event/uevent_native.h"  /* urbi_event_native_register */
 #include "event/uevent_registry.h" /* uevent_registry_init, uevent_registry_destroy */
-#include "tag/utag_native.h"      /* tag_native_register */
+#include "tag/utag_native.h"      /* urbi_tag_native_register */
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
 #include "sched/usched_cooperative.h" /* urbi_gc_sched_walk_roots */
@@ -226,13 +226,13 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * find a registered UType for each cell. */
     urbi_object_register_gc_roots(vm);
 
-    /* T53/T54: event_native_register + tag_native_register allocate UObject
+    /* T53/T54: urbi_event_native_register + urbi_tag_native_register allocate UObject
      * proto cells and intern slot-name strings.  They are NOT called here
      * because existing GC + intern + object-model tests assert on exact cell /
      * entry counts immediately after urbi_vm_init (the atom singletons themselves
      * are lazy for the same reason).  Callers that need the native protos must
      * call urbi_native_protos_init(vm) after urbi_vm_init — or test them via the
-     * typed C helpers (tag_enter_getter / tag_leave_getter) directly.
+     * typed C helpers (urbi_tag_enter_getter / urbi_tag_leave_getter) directly.
      *
      * The full "call from VM init" wiring will land when the globals-exposure
      * task (T59) makes Event/Tag resolvable by name, at which point the cell
@@ -597,16 +597,16 @@ urbi_native_protos_init(UVM *vm)
     vm->gc_paused = 1U;
 
     /* Propagate UVM_OOM via vm->last_error so callers can detect failure.
-     * Both event_native_register and tag_native_register (TAGCH-004) now
+     * Both urbi_event_native_register and urbi_tag_native_register (TAGCH-004) now
      * return UVMError so partial-init OOM is surfaced rather than silently
      * leaving NULL protos behind. */
-    err = event_native_register(vm);
+    err = urbi_event_native_register(vm);
     if (err != UVM_OK) {
         vm->last_error = err;
         vm->gc_paused = saved_pause;
         return;
     }
-    err = tag_native_register(vm);
+    err = urbi_tag_native_register(vm);
     if (err != UVM_OK) {
         vm->last_error = err;
     }
@@ -617,7 +617,7 @@ urbi_native_protos_init(UVM *vm)
  *
  * Install a host callback that is invoked at each safepoint (urbi_step entry)
  * for every entry drained from the ISR SPSC ring.  The handler maps event_id
- * to a UEvent* and typically calls c_event_emit_async.  Pass NULL to remove
+ * to a UEvent* and typically calls urbi_event_emit_async.  Pass NULL to remove
  * the handler.  Not ISR-safe: must be called from the same thread as urbi_step.
  *
  * Step-safety contract (EVENT-022): only call between urbi_step / urbi_vm_run

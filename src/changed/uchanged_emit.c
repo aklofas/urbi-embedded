@@ -6,7 +6,7 @@
  *   Re-entrancy guard: if a sync body is currently running on the scratch
  *   frame (in_watcher_eval/install/scratch set), route to the deferred ring
  *   with a one-shot URBI_LOG_WARN.  Otherwise walk the UChangedNode chain by
- *   USymbol identity and dispatch via c_event_emit_sync.
+ *   USymbol identity and dispatch via urbi_event_emit_sync.
  *
  * urbi_drain_deferred_slot_changes — drain the per-VM deferred ring.
  *   Called at every safepoint BEFORE urbi_vm_watcher_eval_dirty per spec §5.4. */
@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "object/uobject.h"     /* UObject, struct UObject */
-#include "event/uevent_emit.h"        /* c_event_emit_sync */
+#include "event/uevent_emit.h"        /* urbi_event_emit_sync */
 #include "vm/uvm.h"                /* UVM, UDeferredSlotChange */
 #include "runtime/umacros.h"            /* URBI_INTERNAL_ASSERT */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */
@@ -58,7 +58,7 @@ urbi_emit_slot_change_slow(UVM *vm, UObject *parent,
     UChangedNode *n;
     for (n = parent->changed_events_head; n != NULL; n = n->next) {
         if (n->name == key) {
-            c_event_emit_sync(vm, n->event, new_value);
+            urbi_event_emit_sync(vm, n->event, new_value);
             return;
         }
     }
@@ -102,7 +102,7 @@ urbi_defer_slot_change(UVM *vm, UObject *parent,
 /* === urbi_drain_deferred_slot_changes (spec #4 §5.3) ===
  *
  * Pop each entry from head to tail and re-emit at top level (no scratch
- * context now, so c_event_emit_sync runs normally).  Called at every
+ * context now, so urbi_event_emit_sync runs normally).  Called at every
  * safepoint BEFORE urbi_vm_watcher_eval_dirty per spec §5.4 ordering.
  *
  * VM-016: the empty-ring fast path returns before any work.  Every
@@ -138,11 +138,11 @@ urbi_drain_deferred_slot_changes(UVM *vm)
                         % vm->deferred_slot_changes_cap);
 
         /* Walk chain and dispatch.  No scratch context at this point so
-         * c_event_emit_sync runs inline without looping back into defer. */
+         * urbi_event_emit_sync runs inline without looping back into defer. */
         UChangedNode *n;
         for (n = d.parent->changed_events_head; n != NULL; n = n->next) {
             if (n->name == d.key) {
-                c_event_emit_sync(vm, n->event, d.new_value);
+                urbi_event_emit_sync(vm, n->event, d.new_value);
                 break;
             }
         }

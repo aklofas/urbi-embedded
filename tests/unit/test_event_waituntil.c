@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: c_event_waituntil C primitive (spec #3 §7.1).
+/* Unit tests: urbi_event_waituntil C primitive (spec #3 §7.1).
  *
  * Source-level tests require T53 opcode binding and globals, so we use the
  * direct C-API path:
  *   1. waituntil_from_scratch_warns_and_returns_nil:
- *      Call c_event_waituntil with in_watcher_scratch=1; expect NIL + warn.
+ *      Call urbi_event_waituntil with in_watcher_scratch=1; expect NIL + warn.
  *   2. waituntil_appends_to_waiters_head:
- *      Set vm->cur_strand, call c_event_waituntil (which blocks the strand
+ *      Set vm->cur_strand, call urbi_event_waituntil (which blocks the strand
  *      and returns); verify the strand is on e->waiters_head and in
  *      USTRAND_WAIT_EVENT state.
  *
- * Note on case 2: c_event_waituntil calls urbi_sched_strand_block which transitions
+ * Note on case 2: urbi_event_waituntil calls urbi_sched_strand_block which transitions
  * the strand to WAITING and decrements strand_runnable_count.  We pre-set
  * state to USTRAND_STATE_RUNNING (as if the strand were dispatching) so the
  * block path finds the correct initial state.  The function returns after
@@ -48,7 +48,7 @@ capture_log(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 /* ===================================================================
  * Case 1: waituntil_from_scratch_warns_and_returns_nil
  *
- * c_event_waituntil must short-circuit when in_watcher_scratch is set:
+ * urbi_event_waituntil must short-circuit when in_watcher_scratch is set:
  *   - Return NIL without modifying waiters_head.
  *   - Emit exactly one URBI_LOG_WARN.
  * =================================================================== */
@@ -66,7 +66,7 @@ UTEST(waituntil_from_scratch_warns_and_returns_nil)
     vm.host_log_fn = capture_log;
 
     vm.watchers->in_scratch = 1;
-    UValue r = c_event_waituntil(&vm, e);
+    UValue r = urbi_event_waituntil(&vm, e);
     vm.watchers->in_scratch = 0;
 
     /* Must return NIL. */
@@ -84,7 +84,7 @@ UTEST(waituntil_from_scratch_warns_and_returns_nil)
 /* ===================================================================
  * Case 2: waituntil_appends_to_waiters_head
  *
- * Call c_event_waituntil with a real cur_strand set.  The function
+ * Call urbi_event_waituntil with a real cur_strand set.  The function
  * must:
  *   - Append the strand to e->waiters_head.
  *   - Set the strand state to USTRAND_WAIT_EVENT.
@@ -93,7 +93,7 @@ UTEST(waituntil_from_scratch_warns_and_returns_nil)
  *
  * After the call, manually wake the strand (simulating c_event_emit_*)
  * and verify last_event_payload is returned correctly on a second
- * c_event_waituntil call — but for now we only test the park path, since
+ * urbi_event_waituntil call — but for now we only test the park path, since
  * the resume path requires bytecode dispatch (T53).
  * =================================================================== */
 
@@ -115,7 +115,7 @@ UTEST(waituntil_appends_to_waiters_head)
     vm.strand_runnable_count = 1;
     vm.cur_strand = &s;
 
-    UValue ret = c_event_waituntil(&vm, e);
+    UValue ret = urbi_event_waituntil(&vm, e);
 
     /* The strand should be parked on the waiter list. */
     UASSERT(e->waiters_head == &s);

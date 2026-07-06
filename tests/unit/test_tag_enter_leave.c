@@ -13,7 +13,7 @@
  * Source-level `at (t.enter?) body` tests require globals exposure (blocked
  * at M5 by T59 / no-globals constraint at src/uemit.c:558).  These tests
  * drive via direct C-API:
- *   - install_at_event_runtime to subscribe to enter_event / leave_event.
+ *   - urbi_watcher_install_at_event_runtime to subscribe to enter_event / leave_event.
  *   - urbi_repl_eval ("t: {}") to drive OP_PUSH_TAG + OP_POP_TAG.
  *   - vm.strand_runnable_count to observe whether body strands were spawned.
  *
@@ -26,7 +26,7 @@
  *      Install AT_EVENT watcher on tag->leave_event; also register a test
  *      watcher (AT watcher with test hook) on the tag; run tag scope.
  *      After scope exits, leave watcher body strand spawned indicates tier-2
- *      fired.  The tier-1 cascade (pending_onleave_queue_push) happens after.
+ *      fired.  The tier-1 cascade (urbi_watcher_pending_onleave_queue_push) happens after.
  *
  *   3. push_tag_no_overhead_when_enter_event_null:
  *      No enter_event allocated (tag->enter_event == NULL); OP_PUSH_TAG
@@ -80,12 +80,12 @@ make_trivial_closure(UClosure *cl, UProto *proto, uint32_t *instr_buf)
  * Manually create a UTag, lazy-allocate its enter_event, install an
  * AT_EVENT watcher on it, then drive a tag-scope run via urbi_repl_eval.
  * After "var t = 0; t: {}" (which uses its own anonymous tag), we can't
- * easily intercept the specific tag.  Instead we drive c_event_emit_sync
+ * easily intercept the specific tag.  Instead we drive urbi_event_emit_sync
  * directly on a tag's enter_event to verify the hook fires correctly.
  *
  * This test verifies the enter-event code path: if enter_event is set
- * and has at_watchers_head != NULL, c_event_emit_sync is called, which
- * spawns body strands.  We test this directly via c_event_emit_sync
+ * and has at_watchers_head != NULL, urbi_event_emit_sync is called, which
+ * spawns body strands.  We test this directly via urbi_event_emit_sync
  * (the same function called by OP_PUSH_TAG) rather than via bytecode,
  * since source-level tag binding requires globals (post-M5).
  * =================================================================== */
@@ -122,7 +122,7 @@ UTEST(push_tag_fires_enter_event_when_subscribed)
     make_trivial_closure(&body_cl, &body_proto, instr_buf);
 
     UWatcherInstallResult ri =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT,
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT,
                                  enter_ev, &body_cl, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)ri);
     UASSERT(enter_ev->at_watchers_head != NULL);
@@ -133,10 +133,10 @@ UTEST(push_tag_fires_enter_event_when_subscribed)
     if (tag->enter_event != NULL && tag->enter_event->at_watchers_head != NULL) {
         UValue nil_val = {0};
         nil_val.kind = (uint8_t)UVAL_NIL;
-        c_event_emit_sync(&vm, tag->enter_event, nil_val);
+        urbi_event_emit_sync(&vm, tag->enter_event, nil_val);
     }
 
-    /* c_event_emit_sync spawns body strands for AT_EVENT watchers. */
+    /* urbi_event_emit_sync spawns body strands for AT_EVENT watchers. */
     UASSERT((int)vm.strand_runnable_count > runnable_before);
 
     /* Clean up. */
@@ -153,7 +153,7 @@ UTEST(push_tag_fires_enter_event_when_subscribed)
  * Test 2: pop_tag_fires_leave_event_when_subscribed
  *
  * Same pattern as test 1 but for leave_event.  Verifies that
- * c_event_emit_sync on leave_event spawns body strands (the same
+ * urbi_event_emit_sync on leave_event spawns body strands (the same
  * call that OP_POP_TAG performs before the tier-1 watcher cascade).
  * =================================================================== */
 
@@ -187,7 +187,7 @@ UTEST(pop_tag_fires_leave_event_when_subscribed)
     make_trivial_closure(&body_cl, &body_proto, instr_buf);
 
     UWatcherInstallResult ri =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT,
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT,
                                  leave_ev, &body_cl, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)ri);
     UASSERT(leave_ev->at_watchers_head != NULL);
@@ -198,7 +198,7 @@ UTEST(pop_tag_fires_leave_event_when_subscribed)
     if (tag->leave_event != NULL && tag->leave_event->at_watchers_head != NULL) {
         UValue nil_val = {0};
         nil_val.kind = (uint8_t)UVAL_NIL;
-        c_event_emit_sync(&vm, tag->leave_event, nil_val);
+        urbi_event_emit_sync(&vm, tag->leave_event, nil_val);
     }
 
     /* Body strand spawned — leave event fired. */
@@ -257,7 +257,7 @@ UTEST(push_tag_no_overhead_when_enter_event_null)
     if (tag->enter_event != NULL && tag->enter_event->at_watchers_head != NULL) {
         UValue nil_val = {0};
         nil_val.kind = (uint8_t)UVAL_NIL;
-        c_event_emit_sync(&vm, tag->enter_event, nil_val);
+        urbi_event_emit_sync(&vm, tag->enter_event, nil_val);
     }
 
     /* No new cells allocated by the fast-path check. */

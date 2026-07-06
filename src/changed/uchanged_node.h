@@ -94,7 +94,7 @@ void urbi_defer_slot_change(struct UVM    *vm,
  *
  * Slow path: called when UGC_HAS_SLOT_CHANGE_EVENT is set on parent.
  * Walks changed_events_head by USymbol identity, dispatches via
- * c_event_emit_sync.  Re-entrancy from scratch context routes to the
+ * urbi_event_emit_sync.  Re-entrancy from scratch context routes to the
  * deferred-emit ring (T66).
  *
  * EMITR-013 contract: silent return on unmatched key is the normal case.
@@ -124,7 +124,7 @@ void urbi_emit_slot_change_slow(struct UVM    *vm,
  * case (no subscriber, bit clear) this expands to ~2 instructions and does
  * not call into the slow path.  On the rare case (subscriber installed) the
  * slow path walks the UChangedNode chain by USymbol pointer identity and
- * dispatches via c_event_emit_sync.
+ * dispatches via urbi_event_emit_sync.
  *
  * Call site pattern (all slot-write callsites):
  *   store(obj, idx, v);

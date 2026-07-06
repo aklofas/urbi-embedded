@@ -5,7 +5,7 @@
  * Background (closes WATCH-023): the function previously lived in production
  * code as `urbi_watcher_install_internal` (src/watcher/uwatcher.c) and was
  * documented as "test-only seam".  In practice no production call site
- * referenced it — `install_watcher_runtime` and `install_at_event_runtime`
+ * referenced it — `urbi_watcher_install_watcher_runtime` and `urbi_watcher_install_at_event_runtime`
  * inline their own pool-alloc + list-wiring sequence.  Wave 5 retired the
  * production-side declaration and lifted the implementation here so the
  * test scaffolding is no longer part of the public src/ surface.
@@ -21,13 +21,13 @@
  * when set; otherwise seeds last_value_cache to nil.  Tests passing real
  * GC-managed closures (urbi_make_native_closure) as condition MUST also set
  * test_watcher_condition_hook before any subsequent eval, since
- * invoke_condition_closure dispatches real bytecode (v0.5.1-cond-unstub).
+ * urbi_watcher_invoke_condition_closure dispatches real bytecode (v0.5.1-cond-unstub).
  * Integer-cast sentinel values ((UClosure *)1 etc.) are deprecated; they
  * crash the GC walker if a GC cycle runs (Step D / T17).
  *
  * Cleanup goes through the production unregister entry point
  * urbi_watcher_unregister_internal (still in src/watcher/uwatcher.c) since
- * it is a real production primitive shared with install_watcher_runtime. */
+ * it is a real production primitive shared with urbi_watcher_install_watcher_runtime. */
 
 #ifndef TWATCHER_INSTALL_HELPER_H
 #define TWATCHER_INSTALL_HELPER_H

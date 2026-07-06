@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* UWatcher pool lifecycle + install/unregister + observer_dirty.
+/* UWatcher pool lifecycle + install/unregister + urbi_watcher_observer_dirty.
  * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
@@ -211,8 +211,8 @@ uwatcher_pool_destroy(struct UVM *vm)
     /* WATCH-002 + WATCH-006 (v0.5.7): walk the slab for tag-less event-mode
      * watchers (AT_EVENT / AT_EVENT_SYNC / WHENEVER_EVENT) still allocated.
      * Tagged AT_EVENT watchers are torn down via the tag-stop cascade before
-     * this function runs; tag-less ones (install_at_event_runtime called with
-     * resolve_owning_tag returning NULL) are not on active_watchers_head
+     * this function runs; tag-less ones (urbi_watcher_install_at_event_runtime called with
+     * urbi_watcher_resolve_owning_tag returning NULL) are not on active_watchers_head
      * (only cond watchers walk there), not on pending_onleave_head, and
      * not on any tag's member chain.  Without this slab walk they remain
      * linked to event->at_watchers_head pointing at slab memory we are
@@ -259,7 +259,7 @@ uwatcher_pool_destroy(struct UVM *vm)
  *             watcher_active_count.
  *
  * The companion `install` primitive lives in production code as
- * `install_watcher_runtime` / `install_at_event_runtime`
+ * `urbi_watcher_install_watcher_runtime` / `urbi_watcher_install_at_event_runtime`
  * (src/watcher/uwatcher_install.c).  See file-header HISTORICAL NOTE
  * for the WATCH-023 test-seam removal. */
 
@@ -312,14 +312,14 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
     }
 
     /* SCHED-06: the count covers ALL armed watchers (cond + event modes,
-     * since install_at_event_runtime bumps it too).  Assert > 0 so an
+     * since urbi_watcher_install_at_event_runtime bumps it too).  Assert > 0 so an
      * install/unregister asymmetry fail-fasts instead of wrapping. */
     URBI_INTERNAL_ASSERT(vm->watchers->active_count > 0);
     vm->watchers->active_count--;
     pool_free(vm, w);
 }
 
-/* === observer_dirty — watcher dirty-set hook ===
+/* === urbi_watcher_observer_dirty — watcher dirty-set hook ===
  *
  * Called by the write barriers in ugc_incremental.h whenever a cell with
  * bit-6 set (UGC_HAS_WATCHER_OBSERVER) is written.  Increments the dirty
@@ -330,14 +330,14 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
  * slot key is unnecessary — urbi_vm_watcher_eval_dirty visits every active watcher
  * whose read-set might be affected.
  *
- * ISR re-entry guard (WATCH-009): observer_dirty mutates vm->watchers->dirty_count
+ * ISR re-entry guard (WATCH-009): urbi_watcher_observer_dirty mutates vm->watchers->dirty_count
  * non-atomically; any ISR re-entry that triggers a slot write on a bit-6 cell
  * would corrupt the count under read-modify-write interleaving.  Slot writes
  * are not allowed from ISR context per the URBI_ASSERT_NOT_ISR contract that
  * guards every public-API entry point that mutates state — this assertion
  * is the dirty-set hot-path mirror of that contract. */
 void
-observer_dirty(struct UVM *vm, UCell *cell, uint32_t key)
+urbi_watcher_observer_dirty(struct UVM *vm, UCell *cell, uint32_t key)
 {
     URBI_ASSERT_NOT_ISR(vm);
     (void)cell;

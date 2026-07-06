@@ -100,7 +100,7 @@ pipeline_ctx_destroy(PipeCtx *ctx)
 /* reactive_install_propagates_pool_oom:
  *
  * Compile "var x = 0; at (x > 5) x" — the at-install should normally pass.
- * Drain the watcher pool freelist before run; install_watcher_runtime then
+ * Drain the watcher pool freelist before run; urbi_watcher_install_watcher_runtime then
  * returns URBI_INSTALL_OOM_POOL.  Pre-fix the dispatcher discarded the
  * result and kept running; post-fix the strand halts with UVM_OOM. */
 UTEST(reactive_install_propagates_pool_oom)
@@ -153,7 +153,7 @@ UTEST(at_sync_install_propagates_pool_oom)
 
 /* waituntil_install_propagates_pool_oom: covers OP_WAITUNTIL_INSTALL.
  *
- * Note: install_watcher_runtime in WAITUNTIL mode still runs the cond on a
+ * Note: urbi_watcher_install_watcher_runtime in WAITUNTIL mode still runs the cond on a
  * scratch frame *before* attempting pool_alloc; if cond starts truthy the
  * fast-path returns URBI_INSTALL_OK without ever touching the pool, so the
  * drain trick never witnesses OOM.  We pick a script where cond starts
@@ -180,7 +180,7 @@ UTEST(waituntil_install_propagates_pool_oom)
 
 /* at_event_install_propagates_pool_oom:
  *
- * Routes through install_at_event_runtime; same pool-drain trick. */
+ * Routes through urbi_watcher_install_at_event_runtime; same pool-drain trick. */
 UTEST(at_event_install_propagates_pool_oom)
 {
     PipeCtx ctx;
@@ -273,7 +273,7 @@ UTEST(vm_alloc_closure_oom_returns_null)
  * Run a hand-crafted single-opcode module against a strand whose
  * R[A] holds a non-closure UValue.  Pre-fix: the dispatcher casts to
  * UClosure* and (in release builds with the URBI_INTERNAL_ASSERT
- * compiled out) calls install_watcher_runtime with garbage.
+ * compiled out) calls urbi_watcher_install_watcher_runtime with garbage.
  * Post-fix: the new vm_install_check_closure_operand sets
  * UVM_TYPE_ERROR and HALT()s before dispatch.
  *
@@ -357,7 +357,7 @@ UTEST(reactive_install_kind_checks_cond_operand)
  * R[A] must hold UVAL_EVENT, but the dispatcher pre-T33 cast directly to
  * UEvent*.  This test hand-crafts an OP_AT_EVENT_INSTALL where R[0]
  * holds UVAL_NIL and R[1] holds a fake UVAL_CLOSURE — without the new
- * vm_install_check_event_operand, install_at_event_runtime would walk
+ * vm_install_check_event_operand, urbi_watcher_install_at_event_runtime would walk
  * NIL.v.p (NULL) through e->at_watchers_head and crash.
  *
  * NOTE: this is a separate test from T31's

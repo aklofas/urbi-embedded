@@ -349,10 +349,10 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
 
     /* === M5 T53/T54 — native proto objects ===
      * event_proto: UObject carrying native method slots (new/emit/syncEmit/waituntil).
-     *   Allocated at urbi_vm_init by event_native_register.  NULL until then.
+     *   Allocated at urbi_vm_init by urbi_event_native_register.  NULL until then.
      *   Walked by urbi_object_register_gc_roots (added to atom-proto walk pass).
      * tag_proto: UObject carrying native getter slots (enter/leave).
-     *   Allocated at urbi_vm_init by tag_native_register.  NULL until then.
+     *   Allocated at urbi_vm_init by urbi_tag_native_register.  NULL until then.
      * Both protos have atom_event / atom_tag as their single prototype respectively,
      * mirroring the M4 atom hierarchy. */
     struct UObject *event_proto;
@@ -455,7 +455,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     /* --- T57 ISR ring drain handler ---
      * Optional host callback installed via urbi_register_event_drain.
      * Called at safepoint (uevent_ring_drain) for each injected entry.
-     * Handler maps event_id to a UEvent* and calls c_event_emit_async.
+     * Handler maps event_id to a UEvent* and calls urbi_event_emit_async.
      * NULL = no drain handler (ring entries are discarded).
      * v0.10.3 (W3): handler gains void *ud; event_drain_ud forwarded. */
     void (*event_drain_handler)(struct UVM *vm, void *ud, uint32_t event_id, UValue payload);
@@ -530,7 +530,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
 
     /* --- spec #3 §7.1: currently-dispatching strand ---
      * Set to the running strand by urbi_step before urbi_vm_dispatch_loop_until_yield,
-     * cleared after.  Required by c_event_waituntil to locate the caller strand.
+     * cleared after.  Required by urbi_event_waituntil to locate the caller strand.
      * NULL when no strand is dispatching (between urbi_step slices). */
     struct UStrand *cur_strand;
 
@@ -591,7 +591,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint8_t                 slot_change_reentrancy_warned;
     uint8_t                 slot_change_ring_full_warned;
     /* event_sync_degradation_warned: one-shot flag; set on first
-     * c_event_emit_sync degradation to async (spec #3 §5.4 — call from
+     * urbi_event_emit_sync degradation to async (spec #3 §5.4 — call from
      * within a scratch / eval / install context).  Mirrors the
      * slot_change_reentrancy_warned shape so a tight loop that triggers
      * the degradation does not flood URBI_LOG_WARN.  Closes EMITR-005. */
@@ -836,7 +836,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Freed at urbi_vm_destroy via uhost_watcher_table_destroy.
      *
      * Walking and dispatch happen in uevent_ring_drain after the
-     * script-side UEvent dispatch (c_event_emit_async) completes.
+     * script-side UEvent dispatch (urbi_event_emit_async) completes.
      * Single-threaded at v1.0 — no locking required. */
     UHostWatcherTable host_watcher_table;
 

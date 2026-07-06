@@ -35,7 +35,7 @@
  * Body strands spawned by event-triggered at-handlers whose bodies are
  * flat statement sequences (no nested call, no loop) never hit a
  * safepoint mid-execution.  Their writes to subscribed Realm slots fire
- * `observer_dirty` and bump `watcher_dirty_count`, but `urbi_vm_watcher_eval_dirty`
+ * `urbi_watcher_observer_dirty` and bump `watcher_dirty_count`, but `urbi_vm_watcher_eval_dirty`
  * is never called — accumulated dirty marks aren't drained until SOME
  * other strand hits a safepoint.
  *
@@ -56,7 +56,7 @@
  *   (b) Those two drains use EDGE-gated whenever firing (uwatcher_eval.c,
  *       whenever_edge_only): a whenever fires only on its cond's rising edge,
  *       so a body that re-dirties its own observed object (cell-agnostic
- *       observer_dirty) cannot self-feed an unbounded re-fire — this is what
+ *       urbi_watcher_observer_dirty) cannot self-feed an unbounded re-fire — this is what
  *       bounds the storm and lets the VM quiesce.  The ACTIVE-dispatch drains
  *       (dispatcher safepoint / post-native / operator-fallback) keep LEVEL
  *       firing, so whenever_level.chk's 3 active-dispatch fires are unchanged.
@@ -142,12 +142,12 @@ UTEST(whenever_chunktop_write_fires_cond_baseline)
  *
  * Background.  An at-handler body that increments a Realm slot is a flat
  * statement sequence (no OP_CALL, no backward OP_JMP); it exits via top-frame
- * OP_RET, bypassing the dispatcher `safepoint:` label, so its observer_dirty
+ * OP_RET, bypassing the dispatcher `safepoint:` label, so its urbi_watcher_observer_dirty
  * marks were never drained during active dispatch.  The SCHED-02 idle/boundary
  * drain (ustep.c pre-loop + post-loop Step 4b) now drains them, so the whenever
  * subscribed to Realm.x fires.
  *
- * The hazard this test pins.  observer_dirty (uwatcher.c) is cell-agnostic: the
+ * The hazard this test pins.  urbi_watcher_observer_dirty (uwatcher.c) is cell-agnostic: the
  * whenever's body writes Realm.fired, which re-dirties the SAME Realm object
  * whose cell carries the OBSERVER bit (the cond reads Realm.x).  A level-trigger
  * idle drain would re-fire the still-truthy whenever on every step forever — the
@@ -250,7 +250,7 @@ UTEST(at_handler_body_with_call_drains_dirty)
         /* Body invokes a method (OP_CALL → safepoint).  The method does
          * the increment.  The OP_CALL safepoint hits BEFORE entering bump,
          * but the watcher's read-set includes Realm.x — the body's write
-         * inside bump fires observer_dirty, and the call from bump back
+         * inside bump fires urbi_watcher_observer_dirty, and the call from bump back
          * (OP_RET non-top → safepoint) drains it. */
         "class Helper { var bump = function () { Realm.x = Realm.x + 1 } };"
         "Realm.helper = Helper.new();"

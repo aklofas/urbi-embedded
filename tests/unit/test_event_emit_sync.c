@@ -7,7 +7,7 @@
  * be interrupted by a collection.  Each test sets vm.gc_stress_armed = 0
  * after init.  Structural-by-design, not a runtime rooting bug
  * (refactor-3 TEST-GAP-01 stress-exempt list). */
-/* Unit tests: c_event_emit_sync + scratch-context degrade (spec #3 §5.3-§5.4).
+/* Unit tests: urbi_event_emit_sync + scratch-context degrade (spec #3 §5.3-§5.4).
  *
  * Source-level tests require Event.new() (T53) and globals (post-M5), so we
  * drive via direct C-API.
@@ -20,7 +20,7 @@
  *      We confirm AT_EVENT (async) sub spawns a body_strand and AT_EVENT_SYNC
  *      sub does NOT spawn a body_strand (runs inline instead).
  *   2. sync_emit_degrades_when_in_watcher_eval:
- *      Set vm->watchers->in_eval = 1 before calling c_event_emit_sync;
+ *      Set vm->watchers->in_eval = 1 before calling urbi_event_emit_sync;
  *      expect URBI_LOG_WARN "degraded to async" and the emit to proceed
  *      asynchronously (waiter woken). */
 
@@ -88,7 +88,7 @@ capture_log(struct UVM *vm, void *ud, int level, const char *fmt, ...)
  * Case 1: sync_emit_runs_sync_subs_inline
  *
  * Install one AT_EVENT_SYNC watcher and one AT_EVENT watcher.
- * c_event_emit_sync must:
+ * urbi_event_emit_sync must:
  *   - NOT spawn a body_strand for AT_EVENT_SYNC (runs inline on scratch).
  *   - Spawn a body_strand for AT_EVENT (async path).
  *
@@ -123,12 +123,12 @@ UTEST(sync_emit_runs_sync_subs_inline)
 
     /* Install sync watcher first (appears at head of at_watchers_head). */
     UWatcherInstallResult rs =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, &body_sync, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, &body_sync, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)rs);
 
     /* Install async watcher second. */
     UWatcherInstallResult ra =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body_async, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body_async, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)ra);
 
     UWatcher *ws = e->at_watchers_head;             /* sync watcher (first installed) */
@@ -144,7 +144,7 @@ UTEST(sync_emit_runs_sync_subs_inline)
     UASSERT(wa->body_strand == NULL);
 
     UValue payload = make_int(7);
-    c_event_emit_sync(&vm, e, payload);
+    urbi_event_emit_sync(&vm, e, payload);
 
     /* AT_EVENT_SYNC: body runs inline on scratch — no body_strand spawned. */
     UASSERT(ws->body_strand == NULL);
@@ -162,9 +162,9 @@ UTEST(sync_emit_runs_sync_subs_inline)
 /* ===================================================================
  * Case 2: sync_emit_degrades_when_in_watcher_eval
  *
- * With vm->watchers->in_eval = 1, c_event_emit_sync must:
+ * With vm->watchers->in_eval = 1, urbi_event_emit_sync must:
  *   - Log URBI_LOG_WARN containing "degraded to async".
- *   - Delegate to c_event_emit_async (waiter still gets woken).
+ *   - Delegate to urbi_event_emit_async (waiter still gets woken).
  * =================================================================== */
 
 UTEST(sync_emit_degrades_when_in_watcher_eval)
@@ -197,7 +197,7 @@ UTEST(sync_emit_degrades_when_in_watcher_eval)
     vm.host_log_fn = capture_log;
 
     vm.watchers->in_eval = 1;
-    c_event_emit_sync(&vm, e, make_int(55));
+    urbi_event_emit_sync(&vm, e, make_int(55));
     vm.watchers->in_eval = 0;
 
     /* Must have emitted exactly one URBI_LOG_WARN. */
@@ -237,14 +237,14 @@ UTEST(sync_emit_degradation_warn_is_one_shot)
     g_log_total  = 0;
     vm.host_log_fn = capture_log;
 
-    /* Call c_event_emit_sync 100 times with the degradation flag set.
+    /* Call urbi_event_emit_sync 100 times with the degradation flag set.
      * Pre-fix: g_warn_count == 100 (warn-flooding).
      * Post-fix: g_warn_count == 1 (one-shot guard via
      *           vm->event_sync_degradation_warned). */
     vm.watchers->in_eval = 1;
     int i;
     for (i = 0; i < 100; i++) {
-        c_event_emit_sync(&vm, e, make_int(i));
+        urbi_event_emit_sync(&vm, e, make_int(i));
     }
     vm.watchers->in_eval = 0;
 

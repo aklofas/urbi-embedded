@@ -27,7 +27,7 @@
 #include "gc/ugc.h"
 #include <stddef.h>
 
-/* === next_id ===
+/* === urbi_object_next_id ===
  *
  * Per-VM monotonic UObject identity counter (spec §8.1).
  *
@@ -42,7 +42,7 @@
  * the initial offset disagrees, and 1-based ids leave 0 as a "no id"
  * sentinel for future debug printing. */
 uint32_t
-next_id(UVM *vm)
+urbi_object_next_id(UVM *vm)
 {
     if (vm->next_object_id == UINT32_MAX) {
         urbi_panic("URBI_FATAL_OBJECT_ID_EXHAUSTED");
@@ -88,7 +88,7 @@ urbi_object_alloc(UVM *vm, URBIAtomFamily family)
     o->lookup_stamp        = 0U;
     o->reserved            = 0U;
     o->changed_events_head = NULL;
-    o->object_id           = next_id(vm);
+    o->object_id           = urbi_object_next_id(vm);
     o->flags               = (uint32_t)((uint32_t)family & URBI_OBJ_ATOM_MASK);
     return o;
 }
@@ -96,7 +96,7 @@ urbi_object_alloc(UVM *vm, URBIAtomFamily family)
 /* === urbi_atom_family_name ===
  *
  * Stable static string per atom family; used by future error messages
- * (T11 valid_proto failure path and beyond). */
+ * (T11 urbi_object_valid_proto failure path and beyond). */
 const char *
 urbi_atom_family_name(URBIAtomFamily f)
 {

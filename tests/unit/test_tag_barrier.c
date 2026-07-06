@@ -10,7 +10,7 @@
 /* Unit tests: tag enter/leave + GC barrier fixes from v0.5.7-fixes Phase 12
  * (T53-T56).
  *
- * T53 TAGCH-001: tag_enter_getter / tag_leave_getter route the field write of
+ * T53 TAGCH-001: urbi_tag_enter_getter / urbi_tag_leave_getter route the field write of
  *                the freshly-allocated UEvent through the Dijkstra forward
  *                barrier.  Without the barrier, a black UTag storing a white
  *                UEvent breaks the tri-color invariant: the new event would
@@ -25,15 +25,15 @@
  *                on vm.tag_proto so the proto is correctly populated; the
  *                actual abort fires only with URBI_DEBUG on (Gate G1 stretch).
  *
- * T55 TAGCH-004: tag_native_register propagates urbi_register_fn failures
+ * T55 TAGCH-004: urbi_tag_native_register propagates urbi_register_fn failures
  *                instead of dropping them.  When the slot installer OOMs on
  *                any of the four slots, vm->tag_proto is reset to NULL and
  *                the function returns UVM_OOM.  Mirrors the Phase-11 T50
- *                pattern for event_native_register.
+ *                pattern for urbi_event_native_register.
  *
  * T56 TAGCH-016: URBI_ASSERT_NOT_ISR is asserted at every gc_alloc-bearing
- *                callsite in utag_native.c (tag_enter_getter, tag_leave_getter,
- *                tag_native_register).  Mirrors src/changed/uchanged.c:32.
+ *                callsite in utag_native.c (urbi_tag_enter_getter, urbi_tag_leave_getter,
+ *                urbi_tag_native_register).  Mirrors src/changed/uchanged.c:32.
  *                Test asserts the happy path under no ISR — the assertion
  *                fires only when an ISR-check function reports true (Gate G1
  *                stretch, URBI_DEBUG-only). */
@@ -86,7 +86,7 @@ UTEST(tag_enter_event_creation_triggers_dijkstra_barrier)
     UASSERT(IS_BLACK(parent));
     UASSERT(t->enter_event == NULL);
 
-    UValue r = tag_enter_getter(&vm, t);
+    UValue r = urbi_tag_enter_getter(&vm, t);
     UASSERT_EQ((int)r.kind, (int)UVAL_EVENT);
     UASSERT(t->enter_event != NULL);
     if (t->enter_event == NULL) { urbi_vm_destroy(&vm); return; }
@@ -100,7 +100,7 @@ UTEST(tag_enter_event_creation_triggers_dijkstra_barrier)
     urbi_vm_destroy(&vm);
 }
 
-/* Same shape but for tag_leave_getter. */
+/* Same shape but for urbi_tag_leave_getter. */
 UTEST(tag_leave_event_creation_triggers_dijkstra_barrier)
 {
     UVM vm;
@@ -117,7 +117,7 @@ UTEST(tag_leave_event_creation_triggers_dijkstra_barrier)
     UASSERT(IS_BLACK(parent));
     UASSERT(t->leave_event == NULL);
 
-    UValue r = tag_leave_getter(&vm, t);
+    UValue r = urbi_tag_leave_getter(&vm, t);
     UASSERT_EQ((int)r.kind, (int)UVAL_EVENT);
     UASSERT(t->leave_event != NULL);
     if (t->leave_event == NULL) { urbi_vm_destroy(&vm); return; }
@@ -164,7 +164,7 @@ UTEST(tag_proto_has_enter_leave_native_slots)
         UValue v;
         v.kind = (uint8_t)UVAL_NIL;
         /* W4: urbi_object_lookup returns 0 on hit — enter/leave are now
-         * UVAL_CLOSURE native methods installed by tag_native_register. */
+         * UVAL_CLOSURE native methods installed by urbi_tag_native_register. */
         int hit = (urbi_object_lookup(&vm, vm.tag_proto, sym, &v) == 0);
         UASSERT(hit);
         if (hit) {
@@ -180,7 +180,7 @@ UTEST(tag_proto_has_enter_leave_native_slots)
  *
  * Run with a failing allocator that succeeds long enough for the proto
  * object to allocate but OOMs on a later urbi_register_fn slot install.
- * After T55, tag_native_register clears vm->tag_proto on any failure
+ * After T55, urbi_tag_native_register clears vm->tag_proto on any failure
  * and returns UVM_OOM.  Mirrors the Phase-11
  * event_native_register_propagates_register_oom test pattern.
  * =================================================================== */
@@ -214,7 +214,7 @@ UTEST(tag_native_register_propagates_failures)
     UVM probe_vm;
     urbi_vm_init(&probe_vm, tag_spy_alloc, &probe);
 
-    UVMError ok = tag_native_register(&probe_vm);
+    UVMError ok = urbi_tag_native_register(&probe_vm);
     UASSERT_EQ((int)ok, (int)UVM_OK);
     UASSERT(probe_vm.tag_proto != NULL);
     int total_clean_calls = probe.alloc_calls;
@@ -229,7 +229,7 @@ UTEST(tag_native_register_propagates_failures)
     urbi_vm_init(&vm, tag_spy_alloc, &spy);
     vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
-    UVMError err = tag_native_register(&vm);
+    UVMError err = urbi_tag_native_register(&vm);
     UASSERT_EQ((int)err, (int)UVM_OOM);
     UASSERT(vm.tag_proto == NULL);
 
@@ -252,25 +252,25 @@ UTEST(tag_native_calls_assert_not_isr)
     urbi_vm_init(&vm, NULL, NULL);
     vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
-    /* tag_native_register: must complete without tripping the macro
+    /* urbi_tag_native_register: must complete without tripping the macro
      * because no ISR check function is registered (urbi_in_isr returns
      * false in that case). */
-    UVMError err = tag_native_register(&vm);
+    UVMError err = urbi_tag_native_register(&vm);
     UASSERT_EQ((int)err, (int)UVM_OK);
     UASSERT(vm.tag_proto != NULL);
     if (vm.tag_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
-    /* tag_enter_getter / tag_leave_getter: lazy-alloc paths must also
+    /* urbi_tag_enter_getter / urbi_tag_leave_getter: lazy-alloc paths must also
      * complete without panic in the no-ISR case. */
     UTag *t = utag_create(&vm);
     UASSERT(t != NULL);
     if (t == NULL) { urbi_vm_destroy(&vm); return; }
 
-    UValue re = tag_enter_getter(&vm, t);
+    UValue re = urbi_tag_enter_getter(&vm, t);
     UASSERT_EQ((int)re.kind, (int)UVAL_EVENT);
     UASSERT(t->enter_event != NULL);
 
-    UValue rl = tag_leave_getter(&vm, t);
+    UValue rl = urbi_tag_leave_getter(&vm, t);
     UASSERT_EQ((int)rl.kind, (int)UVAL_EVENT);
     UASSERT(t->leave_event != NULL);
 

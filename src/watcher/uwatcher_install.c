@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* install_watcher_runtime: high-level watcher install entry point.
+/* urbi_watcher_install_watcher_runtime: high-level watcher install entry point.
  * Spec #2 §7.1–§7.2 (reactive runtime landed in M5; see
  * docs/milestones/m5-reactive.md).
  *
  * The install path runs as a single linear sequence within
- * install_watcher_runtime:
+ * urbi_watcher_install_watcher_runtime:
  *   - re-entry guard + result enum (UWatcherInstallResult).
- *   - resolve_owning_tag — cleanup-stack walk.
+ *   - urbi_watcher_resolve_owning_tag — cleanup-stack walk.
  *   - OP_GETSLOT trace probe arm (spec §7.3 phase 2).
  *   - run cond on scratch frame + overflow/fault routing (spec §7.3 phases 3–4).
  *   - pool alloc + initialize watcher fields (spec §7.4–§7.5).
@@ -33,7 +33,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* === resolve_owning_tag (spec #2 §7.2) ===
+/* === urbi_watcher_resolve_owning_tag (spec #2 §7.2) ===
  *
  * Walk the strand's cleanup stack top-down looking for the innermost
  * UCLEANUP_TAG_SCOPE entry.  Returns its owning_tag pointer.
@@ -45,7 +45,7 @@
  * Declared non-static so unit tests in test_resolve_owning_tag.c can
  * call it via an extern declaration.  Not exposed in any public header. */
 
-struct UTag *resolve_owning_tag(struct UStrand *s)
+struct UTag *urbi_watcher_resolve_owning_tag(struct UStrand *s)
 {
     int i;
     for (i = (int)s->cleanup_depth - 1; i >= 0; i--) {
@@ -59,11 +59,11 @@ struct UTag *resolve_owning_tag(struct UStrand *s)
     return s->realm->tag;
 }
 
-/* === install_watcher_runtime (spec #2 §7.1) ===
+/* === urbi_watcher_install_watcher_runtime (spec #2 §7.1) ===
  *
  * High-level watcher install entry point.  Phases (in body order):
  *   1. Re-entry guard.
- *   2. resolve_owning_tag — cleanup-stack walk.
+ *   2. urbi_watcher_resolve_owning_tag — cleanup-stack walk.
  *   3. Phase 2 (spec §7.3): OP_GETSLOT trace-probe arm.
  *   4. Phase 3 (spec §7.3): cond run on scratch frame + phase-4
  *      overflow/fault routing.
@@ -71,7 +71,7 @@ struct UTag *resolve_owning_tag(struct UStrand *s)
  *   6. WAITUNTIL strand-block or immediate-wake fast path (spec §7.7). */
 
 UWatcherInstallResult
-install_watcher_runtime(
+urbi_watcher_install_watcher_runtime(
     struct UVM     *vm,
     struct UStrand *s,
     uint8_t         mode,
@@ -186,7 +186,7 @@ install_watcher_runtime(
     w->exhaust_policy   = URBI_EXHAUST_QUEUE;
     w->flags            = URBI_WATCHER_ACTIVE;
     w->read_set_count   = (uint8_t)vm->trace_read_set_count;
-    w->owning_tag       = resolve_owning_tag(s);
+    w->owning_tag       = urbi_watcher_resolve_owning_tag(s);
     w->realm            = s->realm;
     w->condition        = cond;
     w->body             = body;
@@ -274,16 +274,16 @@ install_watcher_runtime(
     return URBI_INSTALL_OK;
 }
 
-/* === install_at_event_runtime (spec #3 §6.2) ===
+/* === urbi_watcher_install_at_event_runtime (spec #3 §6.2) ===
  *
- * Thinner sibling of install_watcher_runtime for AT_EVENT / AT_EVENT_SYNC.
+ * Thinner sibling of urbi_watcher_install_watcher_runtime for AT_EVENT / AT_EVENT_SYNC.
  * No read-set trace (events fire on emit, not on slot writes).
  * No active_watchers_head linkage — only cond watchers walk there.
  * Watcher joins event->at_watchers_head (FIFO) + owning_tag's member chain.
  * Pool exhaustion is fail-soft: log a warning and return OOM. */
 
 UWatcherInstallResult
-install_at_event_runtime(
+urbi_watcher_install_at_event_runtime(
     struct UVM     *vm,
     struct UStrand *s,
     uint8_t         mode,
@@ -308,7 +308,7 @@ install_at_event_runtime(
     w->event            = e;
     w->next_in_event    = NULL;
     w->next_in_tag      = NULL;
-    w->owning_tag       = resolve_owning_tag(s);
+    w->owning_tag       = urbi_watcher_resolve_owning_tag(s);
     w->realm            = s->realm;
     w->exhaust_policy   = URBI_EXHAUST_QUEUE;
     w->flags            = URBI_WATCHER_ACTIVE;

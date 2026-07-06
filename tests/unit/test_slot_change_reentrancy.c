@@ -39,7 +39,7 @@
                                           urbi_drain_deferred_slot_changes,
                                           urbi_emit_slot_change_if_subscribed */
 #include "watcher/uwatcher.h"          /* UWatcher, UWATCHER_AT_EVENT */
-#include "watcher/uwatcher_install.h"  /* install_at_event_runtime */
+#include "watcher/uwatcher_install.h"  /* urbi_watcher_install_at_event_runtime */
 #include "value/uintern.h"                   /* ustr_intern */
 #include "chunk/uchunk.h"                   /* USymbol, UClosure, UProto */
 #include "runtime/uclosure.h"                  /* UClosure layout */
@@ -75,7 +75,7 @@ install_at_event_on_slot(UVM *vm, UStrand *s, UObject *obj, USymbol *sym,
     if (!e) return NULL;
     make_trivial_closure(cl, proto, instr);
     UWatcherInstallResult ir =
-        install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, cl, NULL);
+        urbi_watcher_install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, cl, NULL);
     return (ir == URBI_INSTALL_OK) ? e : NULL;
 }
 
@@ -125,7 +125,7 @@ UTEST(deferred_ring_drains_at_safepoint)
     UASSERT_EQ((int)vm.deferred_slot_changes_head,
                (int)vm.deferred_slot_changes_tail);
 
-    /* Strand was spawned by c_event_emit_sync inside the drain. */
+    /* Strand was spawned by urbi_event_emit_sync inside the drain. */
     UASSERT(vm.strand_runnable_count > runnable_before);
 
     if (e->at_watchers_head)

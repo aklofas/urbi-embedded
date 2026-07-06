@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Tag.enter / Tag.leave native getters with lazy alloc (spec #3 §8.2).
  *
- * tag_enter_getter / tag_leave_getter:
+ * urbi_tag_enter_getter / urbi_tag_leave_getter:
  *   First read allocates a UEvent and stores it in tag->enter_event /
  *   tag->leave_event.  Subsequent reads return the cached pointer.
  *   Lazy allocation keeps tags free of the extra UEvent until something
@@ -59,7 +59,7 @@
 
 /* === throw_oom_for_tag_event ===
  *
- * Shared OOM-throw path for tag_enter_getter / tag_leave_getter.
+ * Shared OOM-throw path for urbi_tag_enter_getter / urbi_tag_leave_getter.
  * If vm->cur_strand is non-NULL (normal dispatch), throws URBI_ERR_OOM.
  * Returns a NIL UValue for use as the getter's return value on failure. */
 static UValue
@@ -79,7 +79,7 @@ throw_oom_for_tag_event(struct UVM *vm)
 /* === Lazy-alloc getter helpers === */
 
 UValue
-tag_enter_getter(struct UVM *vm, struct UTag *tag)
+urbi_tag_enter_getter(struct UVM *vm, struct UTag *tag)
 {
     /* TAGCH-016: lazy-alloc path drives urbi_gc_alloc via urbi_event_create —
      * not ISR-safe.  Mirror src/changed/uchanged.c:32. */
@@ -93,7 +93,7 @@ tag_enter_getter(struct UVM *vm, struct UTag *tag)
          * shade the event gray so the mark phase reaches it.  UTag has
          * a UCell header at offset 0 (UTYPE_TAG); the cast is sound.
          * key=0 (no slot index — UTag isn't a UObject; UGC_HAS_WATCHER_
-         * OBSERVER is never set on UTag, so observer_dirty isn't fired). */
+         * OBSERVER is never set on UTag, so urbi_watcher_observer_dirty isn't fired). */
         urbi_gc_slot_pre_store(vm, (UCell *)tag, 0U, uvalue_from_event(e));
         tag->enter_event = e;
     }
@@ -101,15 +101,15 @@ tag_enter_getter(struct UVM *vm, struct UTag *tag)
 }
 
 UValue
-tag_leave_getter(struct UVM *vm, struct UTag *tag)
+urbi_tag_leave_getter(struct UVM *vm, struct UTag *tag)
 {
-    /* TAGCH-016: lazy-alloc path — see tag_enter_getter rationale above. */
+    /* TAGCH-016: lazy-alloc path — see urbi_tag_enter_getter rationale above. */
     URBI_ASSERT_NOT_ISR(vm);
     if (tag->leave_event == NULL) {
         UEvent *e = urbi_event_create(vm);
         if (e == NULL) return throw_oom_for_tag_event(vm);
         /* TAGCH-001: Dijkstra forward barrier on the leave_event field
-         * write — same rationale as tag_enter_getter above. */
+         * write — same rationale as urbi_tag_enter_getter above. */
         urbi_gc_slot_pre_store(vm, (UCell *)tag, 0U, uvalue_from_event(e));
         tag->leave_event = e;
     }
@@ -476,7 +476,7 @@ tag_enter_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     UTag *t = (UTag *)self.v.p;
     if (t == NULL) return urbi_raise_type(vm, "Tag.enter: NULL tag pointer", out);
 
-    *out = tag_enter_getter(vm, t);
+    *out = urbi_tag_enter_getter(vm, t);
     return UEXEC_OK;
 }
 
@@ -494,7 +494,7 @@ tag_leave_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     UTag *t = (UTag *)self.v.p;
     if (t == NULL) return urbi_raise_type(vm, "Tag.leave: NULL tag pointer", out);
 
-    *out = tag_leave_getter(vm, t);
+    *out = urbi_tag_leave_getter(vm, t);
     return UEXEC_OK;
 }
 
@@ -514,10 +514,10 @@ static const UNativeMethodDef TAG_METHODS[] = {
     { "leave",    tag_leave_native    }
 };
 
-/* === tag_native_register === */
+/* === urbi_tag_native_register === */
 
 UVMError
-tag_native_register(struct UVM *vm)
+urbi_tag_native_register(struct UVM *vm)
 {
     /* TAGCH-016: drives urbi_object_alloc + slot installs, neither of which
      * is ISR-safe.  Mirror src/changed/uchanged.c:32. */
@@ -525,7 +525,7 @@ tag_native_register(struct UVM *vm)
 
     /* GC soundness (v0.13.2): resolve root Object BEFORE allocating the
      * proto and publish vm->tag_proto IMMEDIATELY after allocation — same
-     * unrooted-C-local window as event_native_register (see the comment
+     * unrooted-C-local window as urbi_event_native_register (see the comment
      * there). */
     UObject *root = urbi_object_root(vm);
     if (root == NULL) {
@@ -540,13 +540,13 @@ tag_native_register(struct UVM *vm)
 
     /* Chain the tag proto onto root Object so OP_GETSLOT can walk past
      * Tag.* into Object.* (clone, getSlot, setSlot, etc.).  Mirrors the
-     * same hookup done by event_native_register for Event.  No allocation
+     * same hookup done by urbi_event_native_register for Event.  No allocation
      * between the proto alloc and this call. */
     urbi_object_set_protos_single(vm, proto, root);
 
     /* W4/v0.10.2: unify vm->atom_tag with vm->tag_proto so
      * urbi_atom_proto_for_value(UVAL_TAG) finds the native method slots via
-     * urbi_object_atom(vm, URBI_ATOM_TAG).  Mirrors the event_native_register
+     * urbi_object_atom(vm, URBI_ATOM_TAG).  Mirrors the urbi_event_native_register
      * pattern: vm->atom_event = vm->event_proto = proto. */
     vm->atom_tag = proto;
 

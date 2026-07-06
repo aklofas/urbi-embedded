@@ -88,7 +88,7 @@ static void *smoke_alloc(void *ptr, size_t nbytes, void *ud)
  * surfaces one UVAL_INT (the seq counter) to the event delivery path.
  *
  * Important caveat (see reactive_smoke.u header comment): the async
- * delivery path -- c_event_emit_async -> do_spawn_body_coroutine --
+ * delivery path -- urbi_event_emit_async -> urbi_watcher_do_spawn_body_coroutine --
  * passes fire_context=NULL and urbi_strand_arm_from_closure leaves the
  * body strand's R[0] zero-initialised, so out_args[0] never reaches the
  * script-side body parameter at v1.0.  Threading async payload into body

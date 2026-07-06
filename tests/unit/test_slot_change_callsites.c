@@ -24,7 +24,7 @@
  *      Without a subscriber, none of the callsites fires (fast-path passes).
  *
  * "Fired" is detected by checking vm.strand_runnable_count increments after
- * the emit: c_event_emit_sync calls do_spawn_body_coroutine which enqueues a
+ * the emit: urbi_event_emit_sync calls urbi_watcher_do_spawn_body_coroutine which enqueues a
  * body strand.  A URealm is required for strand spawning.
  */
 
@@ -40,7 +40,7 @@
 #include "object/uslothandle.h"        /* urbi_object_get_slot, urbi_slothandle_write_value */
 #include "changed/uchanged_node.h"             /* urbi_object_get_or_create_change_event */
 #include "watcher/uwatcher.h"          /* UWatcher, UWATCHER_AT_EVENT */
-#include "watcher/uwatcher_install.h"  /* install_at_event_runtime */
+#include "watcher/uwatcher_install.h"  /* urbi_watcher_install_at_event_runtime */
 #include "value/uintern.h"                   /* ustr_intern */
 #include "chunk/uchunk.h"                   /* USymbol, UClosure, UProto */
 #include "runtime/uclosure.h"                  /* UClosure layout */
@@ -89,7 +89,7 @@ setup_subscriber(UVM *vm_out, URealm **realm_out, UStrand *s_out,
 
     make_trivial_closure(cl_out, proto_out, instr_out);
     UWatcherInstallResult ir =
-        install_at_event_runtime(vm_out, s_out, UWATCHER_AT_EVENT, e, cl_out, NULL);
+        urbi_watcher_install_at_event_runtime(vm_out, s_out, UWATCHER_AT_EVENT, e, cl_out, NULL);
     if (ir != URBI_INSTALL_OK) return NULL;
 
     return e;

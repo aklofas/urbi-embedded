@@ -17,7 +17,7 @@
 #include "vm/uvm.h"
 #include "sched/ustrand.h"            /* USTRAND_WAIT_WATCHER, USTRAND_IS_WAITING */
 #include "watcher/uwatcher.h"   /* UWATCHER_WAITUNTIL, urbi_watcher_unregister_internal */
-#include "watcher/uwatcher_install.h"  /* install_watcher_runtime, UWatcherInstallResult */
+#include "watcher/uwatcher_install.h"  /* urbi_watcher_install_watcher_runtime, UWatcherInstallResult */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */
 #include "chunk/uchunk.h"            /* UValue, UVAL_BOOL, UVAL_NIL */
 
@@ -89,7 +89,7 @@ UTEST(waituntil_immediate_wake_when_cond_starts_true)
 
     urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
-    /* OP_WAITUNTIL_INSTALL enters install_watcher_runtime while the strand
+    /* OP_WAITUNTIL_INSTALL enters urbi_watcher_install_watcher_runtime while the strand
      * is dispatching (RUNNING).  WATCH-013 (v0.5.7) asserts this invariant
      * on the immediate-wake fast path. */
     s.state = USTRAND_RUNNING;
@@ -97,7 +97,7 @@ UTEST(waituntil_immediate_wake_when_cond_starts_true)
 
     vm.test_hooks->install_cond = hook_true;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_WAITUNTIL, NULL, NULL, NULL, &s);
 
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
@@ -135,7 +135,7 @@ UTEST(waituntil_blocks_strand_when_cond_starts_false)
 
     vm.test_hooks->install_cond = hook_false;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_WAITUNTIL, NULL, NULL, NULL, &s);
 
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);

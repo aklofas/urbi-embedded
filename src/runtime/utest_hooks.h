@@ -27,13 +27,13 @@ struct UClosure;
 struct UEvent;
 
 typedef struct UTestHooks {
-    /* test_watcher_condition_hook: replaces invoke_condition_closure when
+    /* test_watcher_condition_hook: replaces urbi_watcher_invoke_condition_closure when
      * non-NULL.  Tests install this to feed deterministic condition values
-     * for edge/level firing tests.  NULL → invoke_condition_closure runs
+     * for edge/level firing tests.  NULL → urbi_watcher_invoke_condition_closure runs
      * the real cond closure. */
     UValue (*watcher_condition)(struct UVM *vm, struct UWatcher *w);
 
-    /* test_watcher_fire_hook: invoked by spawn_body_coroutine when non-NULL.
+    /* test_watcher_fire_hook: invoked by urbi_watcher_spawn_body_coroutine when non-NULL.
      * Tests install this to observe watcher body fires.  NULL → real body
      * spawn. */
     void   (*watcher_fire)(struct UVM *vm, struct UWatcher *w);
@@ -43,7 +43,7 @@ typedef struct UTestHooks {
     void   (*watcher_onleave)(struct UVM *vm, struct UWatcher *w);
 
     /* test_install_cond_hook: install-time cond-eval test seam.
-     * When non-NULL, install_watcher_runtime calls this hook instead of the
+     * When non-NULL, urbi_watcher_install_watcher_runtime calls this hook instead of the
      * real urbi_run_closure_on_scratch.  Signature:
      *   hook(vm, cond, out_result, out_threw)
      * NULL → real urbi_run_closure_on_scratch. */

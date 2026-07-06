@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Watcher pending-onleave queue: push helper, run_watcher_onleave,
- * drain_pending_onleave_queue.
+ * urbi_watcher_drain_pending_onleave_queue.
  * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
@@ -30,7 +30,7 @@
  *
  * Drain ordering contract
  * -----------------------
- * drain_pending_onleave_queue is called by the dispatcher safepoint BEFORE
+ * urbi_watcher_drain_pending_onleave_queue is called by the dispatcher safepoint BEFORE
  * urbi_vm_watcher_eval_dirty.  If an onleave handler mutates a cell that is in another
  * watcher's read-set, the resulting dirty-count increment will be picked up by
  * urbi_vm_watcher_eval_dirty in the same safepoint tick.  Per spec §6.5. */
@@ -76,7 +76,7 @@ run_watcher_onleave(UVM *vm, UWatcher *w)
     }
 }
 
-/* === pending_onleave_queue_push ===
+/* === urbi_watcher_pending_onleave_queue_push ===
  *
  * Transfer watcher w from the active lists into the pending-onleave FIFO.
  *
@@ -88,7 +88,7 @@ run_watcher_onleave(UVM *vm, UWatcher *w)
  *       unlink from event->at_watchers_head to close the drain-vs-emit window.
  *   4. Append to pending_onleave_queue tail (set next_active = NULL). */
 void
-pending_onleave_queue_push(UVM *vm, UWatcher *w)
+urbi_watcher_pending_onleave_queue_push(UVM *vm, UWatcher *w)
 {
     UWatcher **pp;
 
@@ -118,13 +118,13 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
 
     /* Step 3b (W2/v0.10.2): AT_EVENT, AT_EVENT_SYNC, and WHENEVER_EVENT
      * watchers also thread on event->at_watchers_head via next_in_event.
-     * Unlink synchronously here so that any c_event_emit_async/_sync call
+     * Unlink synchronously here so that any urbi_event_emit_async/_sync call
      * that fires between this push and the next safepoint drain does NOT
      * dispatch a zombie body strand on the cancelled realm.
      *
      * The drain-vs-emit window is the primary hazard (reactive audit F2):
      * tag-stop cascade is most likely to coincide with event traffic, and
-     * do_spawn_body_coroutine would allocate a strand on the cancelled
+     * urbi_watcher_do_spawn_body_coroutine would allocate a strand on the cancelled
      * realm's strands_head and wire body->watcher_body_owner on a watcher
      * that is logically being torn down.
      *
@@ -152,7 +152,7 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
      * This keeps quiescence semantics simple: pending entries still count as active. */
 }
 
-/* === drain_pending_onleave_queue ===
+/* === urbi_watcher_drain_pending_onleave_queue ===
  *
  * Drain the entire pending-onleave FIFO in FIFO order.  For each watcher:
  *   1. Pop from queue head.
@@ -161,7 +161,7 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
  *   3. If w->onleave != NULL: run_watcher_onleave.
  *   4. urbi_watcher_unregister_internal: clears bit-6 on read-set cells
  *      (scan-on-unregister skips w because it was already removed from
- *      active_watchers_head by pending_onleave_queue_push — the (o == w)
+ *      active_watchers_head by urbi_watcher_pending_onleave_queue_push — the (o == w)
  *      guard in unregister is a no-op), then pool_frees the slot and
  *      decrements watcher_active_count.
  *
@@ -174,7 +174,7 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
  * previous URBI_INTERNAL_ASSERT(!in_eval) is removed — save/restore makes
  * nested calls safe; vm_reactive_drain's guard prevents unbounded nesting. */
 void
-drain_pending_onleave_queue(UVM *vm)
+urbi_watcher_drain_pending_onleave_queue(UVM *vm)
 {
     URBI_ASSERT_NOT_ISR(vm);
 

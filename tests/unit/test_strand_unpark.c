@@ -122,7 +122,7 @@ UTEST(tag_stop_watcher_parked_scrubs_waiter)
 
     /* Install a WAITUNTIL watcher (no owning tag — keeps it off the
      * stopped tag's member cascade so only the unpark scrub can clear it)
-     * and park s on it, mirroring install_watcher_runtime's park. */
+     * and park s on it, mirroring urbi_watcher_install_watcher_runtime's park. */
     UWatcher *w = urbi_watcher_install_for_test(
         &vm, UWATCHER_WAITUNTIL, NULL, NULL, NULL, NULL, NULL, 0);
     UASSERT(w != NULL);
@@ -154,7 +154,7 @@ UTEST(tag_stop_watcher_parked_scrubs_waiter)
  * inline — urbi_vm_watcher_eval_dirty's walk holds a `next` snapshot, and a freed
  * slot's next_active is repurposed as the pool freelist link (the walk
  * would wander into mode-0 freelist slots).  Mid-eval the retire is
- * deferred via pending_onleave_queue_push (PENDING_UNREGISTER keeps the
+ * deferred via urbi_watcher_pending_onleave_queue_push (PENDING_UNREGISTER keeps the
  * snapshot skippable-but-valid); the pool_free happens at the next
  * safepoint drain.  End-to-end shape pinned by
  * tests/chk/tag/stop_waituntil_mid_eval.chk.
@@ -195,7 +195,7 @@ UTEST(unpark_watcher_mid_eval_defers_retire)
     UASSERT_EQ((unsigned)USTRAND_READY, (unsigned)USTRAND_GET_STATE(s));
 
     /* The deferred drain performs the actual retire + pool_free. */
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     UASSERT(vm.pending_onleave_head == NULL);
     UASSERT_EQ((unsigned)(in_use_before - 1U),
                (unsigned)vm.watchers->pool_in_use);

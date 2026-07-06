@@ -63,7 +63,7 @@ urbi_atom_proto_for_value(struct UVM *vm, UValue v)
 
         case UVAL_TAG:
             /* W4/v0.10.2: UVAL_TAG routes to URBI_ATOM_TAG (= vm->atom_tag),
-             * which is unified with vm->tag_proto by tag_native_register.
+             * which is unified with vm->tag_proto by urbi_tag_native_register.
              * This allows scripted tag.stop() / .freeze() etc. to dispatch
              * through the OP_CALL native-method path. */
             return urbi_object_atom(vm, URBI_ATOM_TAG);

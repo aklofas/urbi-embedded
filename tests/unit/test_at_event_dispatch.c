@@ -2,13 +2,13 @@
 /* Unit tests: OP_AT_EVENT_INSTALL[_SYNC] dispatch helpers (T47).
  * Spec #3 §6.2.
  *
- * Uses install_at_event_runtime directly (the helper also called by the
+ * Uses urbi_watcher_install_at_event_runtime directly (the helper also called by the
  * OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL dispatchers) so that the
  * link-chain assertions are isolated from the full bytecode pipeline.
  *
  * Cases:
  *   1. at_event_install_links_into_event_chain:
- *      install_at_event_runtime places the watcher on event->at_watchers_head
+ *      urbi_watcher_install_at_event_runtime places the watcher on event->at_watchers_head
  *      with correct mode and back-pointer.
  *   2. at_event_sync_install_links_with_sync_mode:
  *      UWATCHER_AT_EVENT_SYNC mode is stored correctly.
@@ -44,7 +44,7 @@ UTEST(at_event_install_links_into_event_chain)
     UASSERT(e != NULL);
 
     UWatcherInstallResult r =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, NULL, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, NULL, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
 
     /* Watcher must be linked into the event's at_watchers_head. */
@@ -70,7 +70,7 @@ UTEST(at_event_sync_install_links_with_sync_mode)
     UASSERT(e != NULL);
 
     UWatcherInstallResult r =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, NULL, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT_SYNC, e, NULL, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
 
     UASSERT(e->at_watchers_head != NULL);
@@ -94,7 +94,7 @@ UTEST(at_event_install_does_not_join_active_watchers)
     UASSERT(e != NULL);
 
     UWatcherInstallResult r =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, NULL, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, NULL, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
 
     /* AT_EVENT must NOT appear on active_watchers_head. */
@@ -129,7 +129,7 @@ UTEST(at_event_install_pool_exhausted)
     UASSERT(e != NULL);
 
     UWatcherInstallResult r =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, NULL, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, NULL, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OOM_POOL, (int)r);
 
     /* Return pool slots. */

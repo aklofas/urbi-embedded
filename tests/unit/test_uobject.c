@@ -726,7 +726,7 @@ UTEST(uobject_lookup_safe_under_cycle) {
     vm.gc_stress_armed = 0;   /* URBI_GC_STRESS disarmed — see file banner */
 
     /* Build a→b→a cycle in the proto graph.  Atom OBJECT permits any
-     * inheritance (valid_proto accepts root-Object on either side), so
+     * inheritance (urbi_object_valid_proto accepts root-Object on either side), so
      * urbi_object_add_proto won't reject the second set_protos.
      *
      * Use the T10 primitive directly to bypass any v1.x cycle-check that
@@ -1148,7 +1148,7 @@ void test_uobject_suite(void) {
               uobject_remove_absent_proto_is_silent_noop);
     utest_run("uobject: set_protos dedups (first occurrence wins)",
               uobject_set_protos_dedups_first_occurrence_wins);
-    utest_run("uobject: valid_proto rejects cross-atom-family",
+    utest_run("uobject: urbi_object_valid_proto rejects cross-atom-family",
               uobject_valid_proto_rejects_cross_atom_family);
     utest_run("uobject: set_protos aborts on invalid proto (no partial state)",
               uobject_set_protos_aborts_on_invalid_proto_no_partial_state);

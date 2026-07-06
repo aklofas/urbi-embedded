@@ -12,7 +12,7 @@
  *   4. drain_registered_bad_destruct_drops_event: when destruct_fn returns < 0,
  *      the event is dropped and the watcher body does NOT run.
  *
- * Note on multi-arg: today c_event_emit_async accepts a single UValue payload
+ * Note on multi-arg: today urbi_event_emit_async accepts a single UValue payload
  * (args[0] or NIL).  Full args[0..argc-1] threading into watcher body
  * registers R[0..n] is deferred to Sub-Bundle 3 (T64+).  Sub-test 1 verifies
  * the destructure fn args via the destructure callback itself. */
@@ -174,7 +174,7 @@ UTEST(drain_registered_fires_watcher_body)
     rc = urbi_inject_event(&vm, (uint32_t)id, &pload, sizeof(pload));
     UASSERT_EQ(URBI_OK, rc);
 
-    /* Drain: destruct_fn called + c_event_emit_async fires. */
+    /* Drain: destruct_fn called + urbi_event_emit_async fires. */
     uevent_ring_drain(&vm);
     UASSERT_EQ(1, g_destruct.call_count);
 

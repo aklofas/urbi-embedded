@@ -376,6 +376,8 @@ Per-AST-node emit functions renamed from unprefixed `emit_*_arm` symbols.
   `urbi_object_root_register`, `urbi_object_set_local_slot`,
   `urbi_object_set_property_value`, `urbi_object_set_protos_empty`,
   `urbi_object_set_protos_heap`, `urbi_object_set_protos_single`
+- `urbi_object_next_id` — allocate the next monotonic object ID (renamed from `next_id` in v0.13.6)
+- `urbi_object_valid_proto` — validate a proto candidate for proto-list assignment (renamed from `valid_proto` in v0.13.6)
 
 ### Periodic / temporal scheduler internals
 
@@ -530,6 +532,9 @@ Renamed from unprefixed cross-TU VM symbols.
 ### Tag globals stdlib internals
 
 - `urbi_tag_globals_register`, `urbi_tag_globals_register_globals`
+- `urbi_tag_native_register` — register native tag slots on a tag object (renamed from `tag_native_register` in v0.13.6)
+- `urbi_tag_enter_getter` — getter for the tag `.enter` event slot (renamed from `tag_enter_getter` in v0.13.6)
+- `urbi_tag_leave_getter` — getter for the tag `.leave` event slot (renamed from `tag_leave_getter` in v0.13.6)
 
 ### Temporal stdlib internals
 
@@ -546,6 +551,23 @@ Renamed from unprefixed cross-TU VM symbols.
 ### Watcher internals
 
 - `urbi_watcher_body_completed`, `urbi_watcher_unregister_internal`
+- `urbi_watcher_observer_dirty` — mark a watcher as having a dirty condition (renamed from `observer_dirty` in v0.13.6)
+- `urbi_watcher_install_at_event_runtime` — install an at-event watcher at runtime (renamed from `install_at_event_runtime` in v0.13.6)
+- `urbi_watcher_install_watcher_runtime` — install an at/whenever slot-change watcher at runtime (renamed from `install_watcher_runtime` in v0.13.6)
+- `urbi_watcher_pending_onleave_queue_push` — push a pending on-leave action (renamed from `pending_onleave_queue_push` in v0.13.6)
+- `urbi_watcher_drain_pending_onleave_queue` — drain the on-leave pending queue (renamed from `drain_pending_onleave_queue` in v0.13.6)
+- `urbi_watcher_do_spawn_body_coroutine` — low-level body-coroutine spawn (renamed from `do_spawn_body_coroutine` in v0.13.6)
+- `urbi_watcher_spawn_body_coroutine` — spawn a fresh body coroutine (renamed from `spawn_body_coroutine` in v0.13.6)
+- `urbi_watcher_respawn_body_coroutine` — respawn a body coroutine after condition re-triggers (renamed from `respawn_body_coroutine` in v0.13.6)
+- `urbi_watcher_resolve_owning_tag` — resolve the tag that owns a watcher (renamed from `resolve_owning_tag` in v0.13.6)
+- `urbi_watcher_invoke_condition_closure` — invoke a watcher's condition closure (renamed from `invoke_condition_closure` in v0.13.6)
+
+### Event internals (v0.13.6 namespace day)
+
+- `urbi_event_emit_async` — fan-out payload to subscribers asynchronously (renamed from `c_event_emit_async`)
+- `urbi_event_emit_sync` — as async but AT_EVENT_SYNC bodies run inline (renamed from `c_event_emit_sync`)
+- `urbi_event_waituntil` — block calling strand until event emitted (renamed from `c_event_waituntil`)
+- `urbi_event_native_register` — register native event slots on an event object (renamed from `event_native_register`)
 
 ### Exported data symbols (refactor-3 GATE-04 inventory)
 

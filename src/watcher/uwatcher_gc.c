@@ -43,7 +43,7 @@ urbi_gc_watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
      * is immortal while subscribed (w->event shaded below).
      * PENDING_UNREGISTER slots keep ACTIVE set until pool_free, so
      * drained-but-not-yet-freed watchers (whose onleave may still run via
-     * drain_pending_onleave_queue) stay rooted.
+     * urbi_watcher_drain_pending_onleave_queue) stay rooted.
      *
      * The walk must visit ALL URBI_WATCHER_POOL_SIZE slots — no tighter
      * bound exists: in-use slots are non-contiguous under freelist

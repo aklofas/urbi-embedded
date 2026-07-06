@@ -21,7 +21,7 @@
 #include "ros/generated/ros_msgs.gen.h" /* struct urbi_ros__std_msgs__Int32 */
 #include "event/uevent.h"      /* urbi_event_create */
 #include "event/uevent_native.h" /* uvalue_from_event */
-#include "event/uevent_emit.h" /* c_event_emit_async */
+#include "event/uevent_emit.h" /* urbi_event_emit_async */
 
 #include <stddef.h> /* size_t */
 #include <stdio.h>  /* snprintf */
@@ -647,7 +647,7 @@ bridge_deliver(void *ud, uint32_t sub_handle, UValue msg_obj)
     int i;
     for (i = 0; i < b->sub_count; i++) {
         if (b->subs[i].handle == sub_handle) {
-            c_event_emit_async(b->deliver_vm, b->subs[i].event, msg_obj);
+            urbi_event_emit_async(b->deliver_vm, b->subs[i].event, msg_obj);
             return;
         }
     }

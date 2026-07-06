@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: install_watcher_runtime skeleton + re-entry guard (T34).
+/* Unit tests: urbi_watcher_install_watcher_runtime skeleton + re-entry guard (T34).
  *
  * T34 cases:
  *   1. install_returns_recursive_when_in_eval:
@@ -27,7 +27,7 @@
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 #include "watcher/uwatcher.h"          /* UWATCHER_AT, uwatcher_pool_alloc */
-#include "watcher/uwatcher_install.h"  /* install_watcher_runtime, UWatcherInstallResult */
+#include "watcher/uwatcher_install.h"  /* urbi_watcher_install_watcher_runtime, UWatcherInstallResult */
 #include "gc/ugc.h"                    /* UCell */
 #include "gc/ugc_incremental.h"        /* UGC_HAS_WATCHER_OBSERVER */
 #include "tag/utag.h"                      /* UTag, member_watchers_head */
@@ -80,7 +80,7 @@ static void hook_plant_one_cell(struct UVM *vm, struct UClosure *cond,
 
 /* 1. install_returns_recursive_when_in_eval
  *
- * With vm->watchers->in_eval = 1, install_watcher_runtime must:
+ * With vm->watchers->in_eval = 1, urbi_watcher_install_watcher_runtime must:
  *   - Return URBI_INSTALL_RECURSIVE.
  *   - Fire exactly one URBI_LOG_WARN containing "from within scratch-frame eval". */
 UTEST(install_returns_recursive_when_in_eval)
@@ -94,7 +94,7 @@ UTEST(install_returns_recursive_when_in_eval)
 
     vm.watchers->in_eval = 1;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)r, (int)URBI_INSTALL_RECURSIVE);
@@ -129,7 +129,7 @@ UTEST(install_returns_ok_normally)
     g_t39_cell.gc_byte = 0;
     vm.test_hooks->install_cond = hook_plant_one_cell;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)r, (int)URBI_INSTALL_OK);
@@ -192,7 +192,7 @@ UTEST(install_warns_on_empty_readset)
     reset_log(&vm);
 
     /* No hook → trace_read_set_count stays 0 (no slot reads). */
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_NO_OBSERVABLE_CELLS, (int)r);
@@ -229,7 +229,7 @@ UTEST(install_returns_oom_pool_when_exhausted)
     g_t39_cell.gc_byte = 0;
     vm.test_hooks->install_cond = hook_plant_one_cell;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_OOM_POOL, (int)r);
@@ -267,7 +267,7 @@ UTEST(install_initializes_watcher_fields)
     g_t39_cell.gc_byte = 0;
     vm.test_hooks->install_cond = hook_plant_one_cell;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
@@ -329,7 +329,7 @@ UTEST(install_marks_observed_cells_with_bit6)
     g_t39_cell.gc_byte = 0;
     vm.test_hooks->install_cond = hook_plant_one_cell;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
@@ -360,7 +360,7 @@ UTEST(install_appends_watcher_to_active_and_tag_lists)
     UASSERT(r != NULL);
 
     ustrand_init(&s, &vm);
-    s.realm = r;  /* wire realm so resolve_owning_tag falls through to realm->tag */
+    s.realm = r;  /* wire realm so urbi_watcher_resolve_owning_tag falls through to realm->tag */
 
     reset_log(&vm);
 
@@ -368,7 +368,7 @@ UTEST(install_appends_watcher_to_active_and_tag_lists)
     g_t39_cell.gc_byte = 0;
     vm.test_hooks->install_cond = hook_plant_one_cell;
 
-    UWatcherInstallResult res = install_watcher_runtime(
+    UWatcherInstallResult res = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)res);
@@ -408,7 +408,7 @@ hook_populate_trace(struct UVM *vm, struct UClosure *cond,
 
 /* WATCH-005: install_oom_pool_clears_trace_state
  *
- * When install_watcher_runtime fails at Phase 5b (pool exhaustion), it
+ * When urbi_watcher_install_watcher_runtime fails at Phase 5b (pool exhaustion), it
  * must NOT leak trace_read_set_count populated during Phase 3 — any
  * unrelated reader (or the next install attempt before its own reset)
  * would observe stale state otherwise.  The audit (WATCH-005) flagged
@@ -434,7 +434,7 @@ UTEST(install_oom_pool_clears_trace_state)
 
     vm.test_hooks->install_cond = hook_populate_trace;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_OOM_POOL, (int)r);

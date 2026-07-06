@@ -464,7 +464,7 @@ static const struct suite_entry suites[] = {
     {"parse_bounds",               test_parse_bounds_suite},
     {"emit_watcher",               test_emit_watcher_suite},
     {"install_skeleton",           test_install_skeleton_suite},
-    {"resolve_owning_tag",         test_resolve_owning_tag_suite},
+    {"urbi_watcher_resolve_owning_tag",         test_resolve_owning_tag_suite},
     {"install_trace",              test_install_trace_suite},
     {"waituntil_install",          test_waituntil_install_suite},
     {"at_install_dispatch",        test_at_install_dispatch_suite},

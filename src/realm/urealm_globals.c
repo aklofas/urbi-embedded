@@ -367,9 +367,9 @@ populate_realm_globals_impl(UVM *vm, URealm *realm, uint8_t host_pause)
     size_t i;
 
     /* Ensure event_proto + tag_proto are allocated.  Idempotent: guarded by
-     * the NULL check inside event_native_register / tag_native_register.
+     * the NULL check inside urbi_event_native_register / urbi_tag_native_register.
      * After this call vm->atom_object is also live (urbi_object_alloc in
-     * event/tag_native_register drives urbi_shape_root which allocates the
+     * event/urbi_tag_native_register drives urbi_shape_root which allocates the
      * root shape, and urbi_object_root is called by resolve_object_proto
      * inside the resolver loop below). */
     if (vm->event_proto == NULL) {

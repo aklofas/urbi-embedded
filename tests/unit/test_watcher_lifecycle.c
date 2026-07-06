@@ -57,7 +57,7 @@ make_ret_closure(UClosure *cl, UProto *proto, uint32_t *instr_buf)
 
 /* Install a minimal AT watcher with a real body closure in realm.
  * owning_tag is set to realm->tag so the ambient-attach step in
- * do_spawn_body_coroutine is skipped (the realm tag is already attached
+ * urbi_watcher_do_spawn_body_coroutine is skipped (the realm tag is already attached
  * by urbi_strand_create). */
 static UWatcher *
 install_body_watcher(struct UVM *vm, struct URealm *realm, UClosure *body_cl)
@@ -138,7 +138,7 @@ UTEST(watcher_body_completion_clears_back_pointer_before_destroy)
 
     /* Spawn body strand (simulates urbi_vm_watcher_eval_dirty firing the watcher). */
     vm.watchers->in_eval = 1;
-    do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
     vm.watchers->in_eval = 0;
 
     /* Body strand must have been created and enqueued. */
@@ -184,18 +184,18 @@ UTEST(unregister_while_body_alive_defers_drain)
 
     /* Spawn body strand (body_strand != NULL, state READY). */
     vm.watchers->in_eval = 1;
-    do_spawn_body_coroutine(&vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(&vm, w, NULL);
     vm.watchers->in_eval = 0;
     UASSERT(w->body_strand != NULL);
 
     /* Push watcher onto the onleave queue while body is still alive.
-     * pending_onleave_queue_push sets URBI_WATCHER_PENDING_UNREGISTER,
+     * urbi_watcher_pending_onleave_queue_push sets URBI_WATCHER_PENDING_UNREGISTER,
      * removes w from active_watchers_head and from the tag member list,
      * and appends w to the pending_onleave_queue FIFO. */
-    pending_onleave_queue_push(&vm, w);
+    urbi_watcher_pending_onleave_queue_push(&vm, w);
 
-    /* drain_pending_onleave_queue must defer w because body_strand != NULL. */
-    drain_pending_onleave_queue(&vm);
+    /* urbi_watcher_drain_pending_onleave_queue must defer w because body_strand != NULL. */
+    urbi_watcher_drain_pending_onleave_queue(&vm);
 
     /* Watcher must still be on the queue (drain deferred). */
     UASSERT(pending_queue_contains(&vm, w));
@@ -207,7 +207,7 @@ UTEST(unregister_while_body_alive_defers_drain)
      * + watcher_body_owner, sees PENDING_UNREGISTER → clears PENDING_REFIRE).
      *
      * v0.13.3 (SCHED-02 post-loop drain): urbi_step's Step-4b post-loop
-     * vm_reactive_drain now runs drain_pending_onleave_queue at the step
+     * vm_reactive_drain now runs urbi_watcher_drain_pending_onleave_queue at the step
      * boundary.  By then body_strand is NULL, so the previously-deferred entry
      * is processed within the SAME run_until_no_runnable call —
      * urbi_watcher_unregister_internal frees w back to the watcher pool.

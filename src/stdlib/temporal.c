@@ -3,7 +3,7 @@
  *
  * Approach: per-call UPeriodic records on a singly linked list rooted at
  * vm->periodics_head.  urbi_step pumps the list on each call; expired
- * periodics spawn a body strand via the same do_spawn_body_coroutine-style
+ * periodics spawn a body strand via the same urbi_watcher_do_spawn_body_coroutine-style
  * sequence the watcher subsystem uses.  No new opcode, no synthesized
  * UProto, no wire-format change.
  *
@@ -84,7 +84,7 @@ periodic_alloc(UVM *vm, UClosure *body, uint64_t period_us, URealm *realm)
 }
 
 /* Locate the UChunkInstance owning the body closure's proto_inst.  Mirrors
- * the cross-module_instance pointer-range walk in do_spawn_body_coroutine
+ * the cross-module_instance pointer-range walk in urbi_watcher_do_spawn_body_coroutine
  * (uwatcher_spawn.c).  Walked once at install time and cached on the
  * UPeriodic; later body-spawn iterations reuse the same module_instance.
  * Returns NULL if no owning instance is found (defensive — does not occur
@@ -377,7 +377,7 @@ urbi_periodic_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 
 /* === Periodic body spawn ===============================================
  *
- * Mirrors do_spawn_body_coroutine in uwatcher_spawn.c.  Returns the body
+ * Mirrors urbi_watcher_do_spawn_body_coroutine in uwatcher_spawn.c.  Returns the body
  * strand on success; on failure logs a warning and returns NULL so the
  * pump can leave the periodic re-armed for the next pass. */
 static UStrand *

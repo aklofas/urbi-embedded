@@ -104,7 +104,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      *
      * bounded_whenever = 1 (edge-only): a level-whenever whose body re-dirties
      * its own observed object would otherwise self-feed an unbounded re-fire on
-     * each idle step (observer_dirty is cell-agnostic — see uwatcher_eval.c).
+     * each idle step (urbi_watcher_observer_dirty is cell-agnostic — see uwatcher_eval.c).
      * Firing the whenever only on its rising edge here breaks that loop while
      * still letting a parked waituntil/at (both rising-edge) wake. */
     if (vm->strand_runnable_count == 0) {
@@ -176,7 +176,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
              * fresh dispatch slice a full URBI_STRAND_BUDGET_MAX window. */
             s->safepoint_budget_remaining = (uint16_t)URBI_STRAND_BUDGET_MAX;
             URBI_PERF_INC(vm, ctx_switches);   /* v0.11.1: strand go-live */
-            vm->cur_strand = s;   /* spec #3 §7.1: expose running strand for c_event_waituntil */
+            vm->cur_strand = s;   /* spec #3 §7.1: expose running strand for urbi_event_waituntil */
 
             uint64_t consumed = urbi_vm_dispatch_loop_until_yield(s, vm->step_budget_remaining);
             vm->cur_strand = NULL;

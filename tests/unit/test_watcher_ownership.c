@@ -141,9 +141,9 @@ UTEST(tag_less_at_event_watcher_freed_on_pool_destroy)
     memset(&ev, 0, sizeof(ev));
 
     /* Pool-alloc + manually wire as a tag-less AT_EVENT watcher to bypass
-     * install_at_event_runtime's resolve_owning_tag (which always returns
+     * urbi_watcher_install_at_event_runtime's urbi_watcher_resolve_owning_tag (which always returns
      * realm->tag for fully-initialised VMs).  Mirrors the production state
-     * where install_at_event_runtime ran with owning_tag == NULL: not on
+     * where urbi_watcher_install_at_event_runtime ran with owning_tag == NULL: not on
      * active_watchers_head (only cond watchers walk there), not on any
      * tag's member chain, only on event->at_watchers_head. */
     UWatcher *w = uwatcher_pool_alloc(&vm);
@@ -255,17 +255,17 @@ UTEST(waituntil_immediate_wake_state_explicit)
     /* Build a transient strand to act as the WAITUNTIL waiter — must be
      * RUNNING when install enters (matches the OP_WAITUNTIL_INSTALL
      * dispatch context).  We use a stack-local UStrand with realm wired
-     * (resolve_owning_tag walks to realm->tag, NULL-safe). */
+     * (urbi_watcher_resolve_owning_tag walks to realm->tag, NULL-safe). */
     UStrand s;
     memset(&s, 0, sizeof(s));
     s.vm    = &vm;
     s.state = USTRAND_RUNNING;
     s.realm = urbi_realm_global(&vm);
 
-    /* Register the hook so install_watcher_runtime sees a truthy cond. */
+    /* Register the hook so urbi_watcher_install_watcher_runtime sees a truthy cond. */
     vm.test_hooks->install_cond = truthy_cond_hook;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_WAITUNTIL,
         make_dummy_closure(&vm),  /* real GC closure — hook ignores it */
         NULL,                     /* body NULL for WAITUNTIL */

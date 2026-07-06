@@ -10,7 +10,7 @@
  * -> WAKE_AT (sleepers/periodics) -> QUIESCENT.
  *
  * Three findings pinned here:
- *   SCHED-06 — install_at_event_runtime skipped the active_count bump while
+ *   SCHED-06 — urbi_watcher_install_at_event_runtime skipped the active_count bump while
  *              urbi_watcher_unregister_internal decrements unconditionally
  *              (uint32 underflow -> quiescent-never).
  *   SCHED-13 — three divergent quiescence formulas (urbi_sched_quiescent,
@@ -40,7 +40,7 @@
  * Case 1: SCHED-06 — event-watcher install/unregister active_count
  * symmetry.
  *
- * Pre-fix: install_at_event_runtime skipped the active_count bump
+ * Pre-fix: urbi_watcher_install_at_event_runtime skipped the active_count bump
  * ("the count tracks cond-watcher pressure") while every teardown path
  * (urbi_watcher_unregister_internal, the pool-destroy drains) decrements
  * -> uint32 wrap -> a VM that ever hosted an event watcher never reports

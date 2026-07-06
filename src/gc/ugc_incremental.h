@@ -8,7 +8,7 @@
  *   - Compile-time tunables (row 10 §6.5)
  *   - UNLIKELY branch-prediction hint
  *   - Real Dijkstra forward-barrier implementations of the three inline barrier surfaces
- *   - Forward declarations for urbi_gc_shade_gray and observer_dirty
+ *   - Forward declarations for urbi_gc_shade_gray and urbi_watcher_observer_dirty
  *
  * Included by urbi/gc.h when URBI_GC == URBI_GC_INCREMENTAL.
  * Do NOT include uvm.h from this file (would be circular). */
@@ -49,7 +49,7 @@ struct UStrand;
  * Bit 4  — UGC_IS_PINNED: cell is exempt from sweep (host-pinned value).
  * Bit 5  — UGC_IS_FIXED: pool-managed cell; never freed by GC sweep.
  * Bit 6  — UGC_HAS_WATCHER_OBSERVER: object has at least one watcher in the
- *           read-set; triggers observer_dirty() in urbi_gc_slot_pre_store /
+ *           read-set; triggers urbi_watcher_observer_dirty() in urbi_gc_slot_pre_store /
  *           urbi_gc_slot_store.  Maintained at row 10/11 boundary (T33).
  * Bit 7  — UGC_HAS_SLOT_CHANGE_EVENT: at least one slot on this UObject has
  *           a slot-change subscriber (spec #4 §3.4); post-store hook in
@@ -185,10 +185,10 @@ void urbi_c_root_pop(struct UVM *vm, struct UCRootFrame *f);
 typedef void (*UGcCellCallback)(struct UVM *vm, UCell *cell, void *ctx);
 void urbi_gc_walk_all_cells(struct UVM *vm, UGcCellCallback cb, void *ctx);
 
-/* === observer_dirty — watcher dirty-set hook ===
+/* === urbi_watcher_observer_dirty — watcher dirty-set hook ===
  * Defined in src/uwatcher.c.  Increments vm->watchers->dirty_count; the
  * scheduler calls urbi_vm_watcher_eval_dirty (T34) on the next safepoint turn. */
-void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
+void urbi_watcher_observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
 
 /* === uvalue_is_heap / uvalue_as_cell ===
  *
@@ -348,10 +348,10 @@ urbi_gc_slot_pre_store(struct UVM *vm, UCell *parent, uint32_t key, UValue child
     }
 
     /* (2) Watcher dirty-set hook.
-     * observer_dirty (src/uwatcher.c) bumps vm->watchers->dirty_count;
+     * urbi_watcher_observer_dirty (src/uwatcher.c) bumps vm->watchers->dirty_count;
      * the scheduler calls urbi_vm_watcher_eval_dirty on the next safepoint turn. */
     if (UNLIKELY(parent_gc & UGC_HAS_WATCHER_OBSERVER)) {
-        observer_dirty(vm, parent, key);
+        urbi_watcher_observer_dirty(vm, parent, key);
     }
     /* Actual store is the caller's responsibility. */
 }

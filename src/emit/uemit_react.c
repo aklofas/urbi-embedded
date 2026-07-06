@@ -196,7 +196,7 @@ uint8_t urbi_emit_waituntil_arm(UEmitter *e, UAstNode *n) {
      * Side-effect check per spec #2 §9.2.
      *
      * W9/v0.10.5: waituntil (e?) event form desugars to e.waituntil().
-     * The `c_event_waituntil` runtime function parks the calling strand on
+     * The `urbi_event_waituntil` runtime function parks the calling strand on
      * the event's waiters_head until an emit fires; the emit payload is
      * deposited in s->last_event_payload and becomes the call's return
      * value when the strand resumes.  Stack-allocated AST nodes avoid arena
@@ -232,7 +232,7 @@ uint8_t urbi_emit_waituntil_arm(UEmitter *e, UAstNode *n) {
         call_node.u.call.arg_count = 0;
 
         /* Emit the desugared call — result is the payload value returned
-         * by c_event_waituntil / the strand's last_event_payload on resume. */
+         * by urbi_event_waituntil / the strand's last_event_payload on resume. */
         uint8_t rd = urbi_emit_expr(e, &call_node);
         return rd;
     }

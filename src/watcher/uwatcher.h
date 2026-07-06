@@ -169,7 +169,7 @@ typedef struct UWatcher {
      *     thread on event->at_watchers_head via next_in_event below.
      *   - Drained watchers (PENDING_UNREGISTER set, awaiting onleave):
      *     link in vm->pending_onleave_head FIFO.
-     * pending_onleave_queue_push transfers from the active chain to the
+     * urbi_watcher_pending_onleave_queue_push transfers from the active chain to the
      * pending FIFO (same field re-used as queue link).  A watcher is never
      * on both lists simultaneously. */
     struct UWatcher *next_active;          /* 8 B  active or pending-onleave list link (mutually exclusive) */
@@ -235,7 +235,7 @@ struct UWatcher *uwatcher_pool_alloc(struct UVM *vm);
  *   - return slot to pool.
  *
  * Production install entry points live in src/watcher/uwatcher_install.c
- * (`install_watcher_runtime`, `install_at_event_runtime`); both inline their
+ * (`urbi_watcher_install_watcher_runtime`, `urbi_watcher_install_at_event_runtime`); both inline their
  * own pool-alloc + list-wiring sequence.  Unit tests that exercise the pool
  * primitive directly use `urbi_watcher_install_for_test`
  * (tests/unit/twatcher_install_helper.{c,h}); WATCH-023 retired the former
@@ -245,7 +245,7 @@ void urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w);
 
 /* === Eval pass === */
 
-/* invoke_condition_closure: evaluate w->condition on the VM scratch frame.
+/* urbi_watcher_invoke_condition_closure: evaluate w->condition on the VM scratch frame.
  * Routes to `vm->test_hooks->watcher_condition` if set (existing fire-path
  * tests inject specific values); otherwise dispatches real bytecode via
  * `urbi_run_closure_on_scratch` (src/runtime/uscratch.c).  Eval-time throws
@@ -253,29 +253,29 @@ void urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w);
  * (urbi_vm_watcher_eval_dirty, which is void) cannot propagate.  Returns nil when
  * `w->condition == NULL` (no-condition watchers fire on dirty-mark only).
  * Per spec §6.4. */
-UValue invoke_condition_closure(struct UVM *vm, struct UWatcher *w);
+UValue urbi_watcher_invoke_condition_closure(struct UVM *vm, struct UWatcher *w);
 
 /* urbi_vm_watcher_eval_dirty: walk active_watchers_head, evaluate each condition, and
- * call spawn_body_coroutine on edge (AT/AT_SYNC) or level (WHENEVER) fire.
+ * call urbi_watcher_spawn_body_coroutine on edge (AT/AT_SYNC) or level (WHENEVER) fire.
  * Called from the safepoint when vm->watchers->dirty_count > 0. Per spec §6.2. */
 void   urbi_vm_watcher_eval_dirty(struct UVM *vm);
 
 /* === Pending-onleave queue ===
  *
- * pending_onleave_queue_push: transfer watcher from active lists to the FIFO.
+ * urbi_watcher_pending_onleave_queue_push: transfer watcher from active lists to the FIFO.
  *   Sets URBI_WATCHER_PENDING_UNREGISTER, unlinks from active_watchers_head and
  *   owning_tag->member_watchers_head, appends to pending_onleave_queue tail.
  *   Called from OP_POP_TAG (uvm.c) and urbi_tag_stop (uunwind.c) cascade sites.
  *
- * drain_pending_onleave_queue: drain the FIFO in FIFO order, running onleave
+ * urbi_watcher_drain_pending_onleave_queue: drain the FIFO in FIFO order, running onleave
  *   handlers and calling urbi_watcher_unregister_internal for each entry.
  *   Called from the dispatcher safepoint BEFORE urbi_vm_watcher_eval_dirty. */
-void pending_onleave_queue_push(struct UVM *vm, struct UWatcher *w);
-void drain_pending_onleave_queue(struct UVM *vm);
+void urbi_watcher_pending_onleave_queue_push(struct UVM *vm, struct UWatcher *w);
+void urbi_watcher_drain_pending_onleave_queue(struct UVM *vm);
 
 /* === Body spawn (uwatcher_spawn.c) === */
 
-/* do_spawn_body_coroutine: spec #1 §5.3 steps 1-6.
+/* urbi_watcher_do_spawn_body_coroutine: spec #1 §5.3 steps 1-6.
  *   Step 1 is the exhaust-policy gate (URBI_EXHAUST_QUEUE / _DROP).
  *   Steps 2-6 allocate the body strand via urbi_strand_create, attach
  *   owning_tag when distinct from realm->tag, arm via urbi_strand_arm_from_closure,
@@ -283,22 +283,22 @@ void drain_pending_onleave_queue(struct UVM *vm);
  *   (strand alloc / ambient overflow / stack alloc) all log URBI_LOG_WARN
  *   and tear down any partial state — watcher remains installed for future
  *   fires.  fire_context is NULL today; spec #2 wires patterns later. */
-void   do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w,
+void   urbi_watcher_do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w,
                                const void *fire_context);
 
-/* spawn_body_coroutine: eval-pass entry called by urbi_vm_watcher_eval_dirty.
+/* urbi_watcher_spawn_body_coroutine: eval-pass entry called by urbi_vm_watcher_eval_dirty.
  * Precondition: w->body != NULL (urbi_vm_watcher_eval_dirty only calls this when body
  * is set; body-less watchers use vm->test_hooks->watcher_fire directly in
  * eval).  In URBI_DEBUG builds, asserts: in_watcher_eval == 1, AT/WHENEVER
  * mode, ACTIVE, no PENDING_UNREGISTER, body and realm non-NULL. */
-void   spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
+void   urbi_watcher_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
 
-/* respawn_body_coroutine: completion-path entry (spec #1 §5.2).
+/* urbi_watcher_respawn_body_coroutine: completion-path entry (spec #1 §5.2).
  * Called when body strand reaches DEAD and pending_refire_count > 0.
  * No in_watcher_eval assert (runs outside eval at strand-DEAD notification).
  * Not in the public include/urbi/ API; declared here for internal callers
  * and test code (reachable via this header or an explicit extern declaration). */
-void   respawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
+void   urbi_watcher_respawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
 
 /* === Completion callback (uwatcher_spawn.c) === */
 
@@ -308,7 +308,7 @@ void   respawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
  *   - Logs URBI_LOG_WARN on UEXEC_THROW; silent for TAG_STOP/CANCEL/OK.
  *   - Clears both s->watcher_body_owner and w->body_strand atomically.
  *   - If PENDING_UNREGISTER: zeroes pending_refire_count and returns (no respawn).
- *   - Else if pending_refire_count > 0: decrements counter and calls respawn_body_coroutine. */
+ *   - Else if pending_refire_count > 0: decrements counter and calls urbi_watcher_respawn_body_coroutine. */
 void urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s);
 
 /* === GC root provider (uwatcher_gc.c) === */

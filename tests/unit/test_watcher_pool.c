@@ -209,7 +209,7 @@ UTEST(pool_destroy_zeroes_pending_onleave_head)
         UASSERT(w != NULL);
 
         /* Move w from active_watchers_head to pending_onleave_head by hand —
-         * mimics the urbi_tag_stop / pending_onleave_queue_push transition
+         * mimics the urbi_tag_stop / urbi_watcher_pending_onleave_queue_push transition
          * without depending on the tag layer.  active_watchers_head must be
          * cleared so urbi_vm_destroy's drain doesn't double-process w. */
         UASSERT(vm.active_watchers_head == w);

@@ -7,11 +7,11 @@
  * the pending_onleave_queue drained at a safepoint after urbi_tag_stop.
  *
  * The test installs a top-level `at (cond) body onleave handler` watcher.
- * Because the install site has no enclosing tag scope, resolve_owning_tag
+ * Because the install site has no enclosing tag scope, urbi_watcher_resolve_owning_tag
  * falls back to s->realm->tag, so the watcher's owning_tag IS the global
  * realm tag.  Calling urbi_tag_stop(vm, gr->tag, nil) cascades the watcher
  * onto vm->pending_onleave_head.  Driving a no-op nested function call
- * hits the dispatcher safepoint, which calls drain_pending_onleave_queue,
+ * hits the dispatcher safepoint, which calls urbi_watcher_drain_pending_onleave_queue,
  * which calls run_watcher_onleave — the function this task wires.
  *
  * Body fires Realm.fired += 1; onleave fires Realm.left += 100.  After
@@ -42,7 +42,7 @@
  * 1. Pre-install Realm.x = 0, Realm.fired = 0, Realm.left = 0.
  * 2. Compile `at (Realm.x > 5) Realm.fired = Realm.fired + 1
  *      onleave Realm.left = Realm.left + 100`.  Watcher's owning_tag
- *      defaults to gr->tag (resolve_owning_tag fallback).
+ *      defaults to gr->tag (urbi_watcher_resolve_owning_tag fallback).
  * 3. Trigger rising edge: nested `Realm.x = 10`.  Body fires inline
  *      (M5 spawn_body for AT mode actually spawns a strand; drive to
  *      completion).  Realm.fired == 1; URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE
@@ -50,7 +50,7 @@
  * 4. urbi_tag_stop(vm, gr->tag, nil) → watcher cascaded onto
  *      pending_onleave_head; tag's member_watchers_head cleared.
  * 5. Drive a no-op nested function call so the dispatcher safepoint
- *      runs drain_pending_onleave_queue → run_watcher_onleave.
+ *      runs urbi_watcher_drain_pending_onleave_queue → run_watcher_onleave.
  * 6. Verify Realm.left == 100 (onleave fired through real bytecode).
  *      Verify pending_onleave_head == NULL (watcher fully unregistered).
  * =================================================================== */
@@ -84,7 +84,7 @@ UTEST(scripted_tag_stop_drains_onleave)
 
     UASSERT(vm.active_watchers_head != NULL);
     UWatcher *w = vm.active_watchers_head;
-    /* resolve_owning_tag fallback: top-level install gets gr->tag. */
+    /* urbi_watcher_resolve_owning_tag fallback: top-level install gets gr->tag. */
     UASSERT(w->owning_tag == gr->tag);
     UASSERT(w->onleave != NULL);
 

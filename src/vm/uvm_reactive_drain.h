@@ -23,7 +23,7 @@
 #define UVM_REACTIVE_DRAIN_H
 
 #include "vm/uvm.h"
-#include "watcher/uwatcher.h"       /* drain_pending_onleave_queue, urbi_vm_watcher_eval_dirty */
+#include "watcher/uwatcher.h"       /* urbi_watcher_drain_pending_onleave_queue, urbi_vm_watcher_eval_dirty */
 #include "changed/uchanged_node.h"  /* urbi_drain_deferred_slot_changes */
 #include <stdint.h>
 
@@ -41,7 +41,7 @@
  *   1 (edge)   — idle / boundary drains (urbi_step pre-loop idle drain +
  *                post-loop Step-4b drain): fire only on the rising edge.  This
  *                is the SCHED-02 storm guard — a level-whenever whose body
- *                re-dirties its own observed object (observer_dirty is
+ *                re-dirties its own observed object (urbi_watcher_observer_dirty is
  *                cell-agnostic) would otherwise spin unboundedly while the VM is
  *                idle.  See the WHENEVER branch in uwatcher_eval.c for the full
  *                termination argument.
@@ -54,7 +54,7 @@ vm_reactive_drain(struct UVM *vm, int bounded_whenever)
     if (vm->watchers->in_eval || vm->watchers->in_install
         || vm->watchers->in_scratch)
         return;
-    if (vm->pending_onleave_head) drain_pending_onleave_queue(vm);
+    if (vm->pending_onleave_head) urbi_watcher_drain_pending_onleave_queue(vm);
     urbi_drain_deferred_slot_changes(vm);
     if (vm->watchers->dirty_count > 0) {
         uint8_t saved = vm->watchers->whenever_edge_only;

@@ -15,7 +15,7 @@
  * the typed C helpers directly:
  *
  *   1. tag_enter_is_lazy_allocated:
- *      tag->enter_event is NULL at create.  tag_enter_getter lazy-allocates
+ *      tag->enter_event is NULL at create.  urbi_tag_enter_getter lazy-allocates
  *      on first call and is idempotent on second call (same UEvent returned).
  *
  *   2. tag_leave_is_lazy_allocated:
@@ -66,7 +66,7 @@ UTEST(tag_enter_is_lazy_allocated)
     UASSERT(t->enter_event == NULL);
 
     /* First call: lazy-allocates. */
-    UValue r1 = tag_enter_getter(&vm, t);
+    UValue r1 = urbi_tag_enter_getter(&vm, t);
     UASSERT_EQ((int)r1.kind, (int)UVAL_EVENT);
     UASSERT(t->enter_event != NULL);
     if (r1.kind == (uint8_t)UVAL_EVENT) {
@@ -75,7 +75,7 @@ UTEST(tag_enter_is_lazy_allocated)
     }
 
     /* Second call: idempotent — same UEvent returned. */
-    UValue r2 = tag_enter_getter(&vm, t);
+    UValue r2 = urbi_tag_enter_getter(&vm, t);
     UASSERT_EQ((int)r2.kind, (int)UVAL_EVENT);
     if (r2.kind == (uint8_t)UVAL_EVENT && r1.kind == (uint8_t)UVAL_EVENT) {
         UASSERT(uvalue_as_event(r2) == uvalue_as_event(r1));
@@ -100,7 +100,7 @@ UTEST(tag_leave_is_lazy_allocated)
 
     UASSERT(t->leave_event == NULL);
 
-    UValue r1 = tag_leave_getter(&vm, t);
+    UValue r1 = urbi_tag_leave_getter(&vm, t);
     UASSERT_EQ((int)r1.kind, (int)UVAL_EVENT);
     UASSERT(t->leave_event != NULL);
     if (r1.kind == (uint8_t)UVAL_EVENT) {
@@ -108,7 +108,7 @@ UTEST(tag_leave_is_lazy_allocated)
     }
 
     /* Idempotent. */
-    UValue r2 = tag_leave_getter(&vm, t);
+    UValue r2 = urbi_tag_leave_getter(&vm, t);
     UASSERT_EQ((int)r2.kind, (int)UVAL_EVENT);
     if (r2.kind == (uint8_t)UVAL_EVENT && r1.kind == (uint8_t)UVAL_EVENT) {
         UASSERT(uvalue_as_event(r2) == uvalue_as_event(r1));
@@ -154,7 +154,7 @@ UTEST(tag_proto_has_enter_and_leave_native_slots)
         UValue v;
         v.kind = (uint8_t)UVAL_NIL;
         /* W4: urbi_object_lookup returns 0 on hit — enter/leave are now
-         * UVAL_CLOSURE native methods installed by tag_native_register. */
+         * UVAL_CLOSURE native methods installed by urbi_tag_native_register. */
         int hit = (urbi_object_lookup(&vm, vm.tag_proto, sym, &v) == 0);
         UASSERT(hit);
         if (hit) {

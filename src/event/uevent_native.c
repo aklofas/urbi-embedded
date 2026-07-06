@@ -3,9 +3,9 @@
  *
  * Installs four native slots on vm->event_proto at urbi_vm_init time:
  *   new        — allocate a fresh UEvent via urbi_event_create
- *   emit       — async fan-out via c_event_emit_async
- *   syncEmit   — sync fan-out via c_event_emit_sync
- *   waituntil  — block caller strand via c_event_waituntil
+ *   emit       — async fan-out via urbi_event_emit_async
+ *   syncEmit   — sync fan-out via urbi_event_emit_sync
+ *   waituntil  — block caller strand via urbi_event_waituntil
  *
  * Phase 7 (M6 stdlib): native slots are now installed as UVAL_CLOSURE values
  * carrying a `native_fn` pointer (the M6 Phase-3 native-method ABI), so
@@ -20,14 +20,14 @@
  * EVENT-013 (defer:M6): urbi_register_fn was hoisted out of event-specific
  * code at Phase 7 by retiring it altogether.  The Phase-3 native-method
  * registration helper (urbi_native_closure_create) is the sole installer
- * for native methods on atom protos now.  tag_native_register still uses
+ * for native methods on atom protos now.  urbi_tag_native_register still uses
  * the legacy host-fn path for its (still-stub) enter/leave slots; that is
  * tracked by TAGCH-013 and lands when tag-property dispatch lands.
  *
  * EVENT-026 — exemption from v0.5.2 AST_AT_EVENT register-allocation fix:
  *   The native emit/syncEmit/waituntil paths bypass AST_AT_EVENT codegen
  *   entirely.  They consume already-resolved UValues from argv and call
- *   straight into c_event_emit_async / c_event_emit_sync / c_event_waituntil
+ *   straight into urbi_event_emit_async / urbi_event_emit_sync / urbi_event_waituntil
  *   from C — no emitter freereg / next_reg state to keep in sync.  The
  *   register-allocation desync that affected scripted emit (v0.5.2 T6;
  *   fixed at TWO sibling sites in src/emit/uemit_react.c, AST_AT_EVENT
@@ -39,7 +39,7 @@
 #include "sched/ustrand.h"           /* UStrand (was transitively pulled via urbi.h pre-v0.5.5) */
 #include "value/uintern.h"           /* ustr_intern */
 #include "event/uevent.h"            /* UEvent, urbi_event_create */
-#include "event/uevent_emit.h"       /* c_event_emit_async, c_event_emit_sync, c_event_waituntil */
+#include "event/uevent_emit.h"       /* urbi_event_emit_async, urbi_event_emit_sync, urbi_event_waituntil */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_set_local_slot */
 #include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_* */
 #include "runtime/uclosure.h"  /* struct UClosure for UVAL_CLOSURE registration */
@@ -111,7 +111,7 @@ event_new_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
  *
  * `self` must be a UVAL_EVENT; args[0] is the optional payload.  Returns NIL.
  * Validates the receiver kind (EVENT-004) — non-event receivers raise rather
- * than dispatching c_event_emit_async on garbage. */
+ * than dispatching urbi_event_emit_async on garbage. */
 static int
 event_emit_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                   UValue *out)
@@ -121,14 +121,14 @@ event_emit_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
         return urbi_raise_type(vm, "Event.emit: receiver must be an Event", out);
 
     UEvent *e = uvalue_as_event(self);
-    c_event_emit_async(vm, e, event_optional_payload(nargs, args));
+    urbi_event_emit_async(vm, e, event_optional_payload(nargs, args));
 
     *out = urbi_make_nil();
     return UEXEC_OK;
 }
 
 /* event_sync_emit_method: synchronous emit.  Same shape as event_emit_method
- * but routes through c_event_emit_sync. */
+ * but routes through urbi_event_emit_sync. */
 static int
 event_sync_emit_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                        UValue *out)
@@ -138,7 +138,7 @@ event_sync_emit_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
         return urbi_raise_type(vm, "Event.syncEmit: receiver must be an Event", out);
 
     UEvent *e = uvalue_as_event(self);
-    c_event_emit_sync(vm, e, event_optional_payload(nargs, args));
+    urbi_event_emit_sync(vm, e, event_optional_payload(nargs, args));
 
     *out = urbi_make_nil();
     return UEXEC_OK;
@@ -147,7 +147,7 @@ event_sync_emit_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
 /* event_waituntil_method: block caller strand until event fires.
  *
  * `self` must be a UVAL_EVENT.  Returns the payload deposited by the emitting
- * strand on wake.  Routes through c_event_waituntil which handles the
+ * strand on wake.  Routes through urbi_event_waituntil which handles the
  * scratch-context guard and parking semantics (spec #3 §6.4). */
 static int
 event_waituntil_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
@@ -160,7 +160,7 @@ event_waituntil_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
         return urbi_raise_type(vm, "Event.waituntil: receiver must be an Event", out);
 
     UEvent *e = uvalue_as_event(self);
-    *out = c_event_waituntil(vm, e);
+    *out = urbi_event_waituntil(vm, e);
     return UEXEC_OK;
 }
 
@@ -172,7 +172,7 @@ static const UNativeMethodDef EVENT_METHODS[] = {
     { "waituntil", event_waituntil_method }
 };
 
-/* === event_native_register ===
+/* === urbi_event_native_register ===
  *
  * Allocate vm->event_proto as a UObject in the URBI_ATOM_EVENT family,
  * then install the four native slots.  Called from urbi_vm_init after the
@@ -188,7 +188,7 @@ static const UNativeMethodDef EVENT_METHODS[] = {
  * Both fields point at one object now; the GC walker is idempotent on
  * double-shade. */
 UVMError
-event_native_register(struct UVM *vm)
+urbi_event_native_register(struct UVM *vm)
 {
     /* Allocate the event proto object.  Use URBI_ATOM_EVENT as the family
      * so IC entries and atom-family checks behave correctly.

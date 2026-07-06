@@ -13,10 +13,10 @@
 #include "urbi/gc.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
 #include "tag/utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "watcher/uwatcher.h"          /* UWatcher — watcher dispatch (T32) */
-#include "watcher/uwatcher_install.h"  /* install_watcher_runtime, install_at_event_runtime (T41-T47) */
+#include "watcher/uwatcher_install.h"  /* urbi_watcher_install_watcher_runtime, urbi_watcher_install_at_event_runtime (T41-T47) */
 #include "stdlib/temporal.h"           /* v0.9.4: urbi_periodic_body_completed */
 #include "event/uevent.h"                    /* UEvent — cast target for OP_AT_EVENT_INSTALL (T47) */
-#include "event/uevent_emit.h"               /* c_event_emit_sync — tier-2 tag enter/leave hooks (T55) */
+#include "event/uevent_emit.h"               /* urbi_event_emit_sync — tier-2 tag enter/leave hooks (T55) */
 #include "event/uevent_native.h"             /* uvalue_from_event — OP_GETSLOT_CHANGE_EVENT (T61) */
 #include "vm/uop_fork.h" /* urbi_vm_op_fork_detach/join/wait + urbi_vm_fork_wake_joiners (T38) */
 #include "vm/uvm_arith.h"    /* arith_add/sub/mul/div/neg + helpers (T16) */
@@ -248,7 +248,7 @@ urbi_vm_dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
     vm->step_budget_remaining = step_budget_in;
 
     /* W9/v0.10.5: deliver event payload to the OP_CALL result register on
-     * resume from WAIT_EVENT.  c_event_waituntil parks the strand by setting
+     * resume from WAIT_EVENT.  urbi_event_waituntil parks the strand by setting
      * state=WAIT_EVENT, advancing pc past the OP_CALL, and exiting.  On wake,
      * c_event_emit_* deposits the payload in s->last_event_payload before
      * urbi_sched_strand_make_runnable (see wake_event_waiters in uevent_emit.c).
@@ -874,7 +874,7 @@ dispatch:
                      * mutation is followed only by a native call therefore never
                      * triggers the eval: e.g. the STM32F4 mandelbrot handler
                      * `at (gyro_tick?) { ...; Realm.redraw_requested = true;
-                     * lcd_fill_rect(...) }`.  Its observer_dirty bumps then
+                     * lcd_fill_rect(...) }`.  Its urbi_watcher_observer_dirty bumps then
                      * accumulate and the rising edge is never seen, so the
                      * demo's loader-strand `while (true) { ...;
                      * waituntil (Realm.redraw_requested) }` never wakes
@@ -887,7 +887,7 @@ dispatch:
                      * calls cheap and to avoid shifting GC color/timing.  This
                      * is bounded: the eval runs mid-body while the running body
                      * is still its watcher's body_strand, so
-                     * do_spawn_body_coroutine's gate prevents the unbounded
+                     * urbi_watcher_do_spawn_body_coroutine's gate prevents the unbounded
                      * level-trigger re-spawn that a *post-dispatch* drain caused
                      * (the reverted S46 attempt — see test_whenever_double_fire).
                      * Skip when already inside an eval/scratch/install context
@@ -1216,7 +1216,7 @@ dispatch:
                  * the safepoint-budget arm reached on the body's own backward
                  * branches / bytecode calls — same bound as finally/onleave.
                  * ASYNC at/event/whenever bodies run on REAL (non-transient)
-                 * strands via do_spawn_body_coroutine → urbi_strand_create
+                 * strands via urbi_watcher_do_spawn_body_coroutine → urbi_strand_create
                  * (is_transient_strand stays 0), so they fall through to
                  * urbi_sched_strand_yield below and still yield on `;` as before. */
                 URBI_PERF_INC(s->vm, opcodes);
@@ -1551,7 +1551,7 @@ dispatch:
         /* === T41: OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL ===
          *
          * ABC-encoded: A = cond_reg, B = body_reg, C = onleave_reg (0xFF = absent).
-         * Routes through install_watcher_runtime with the appropriate UWATCHER_*
+         * Routes through urbi_watcher_install_watcher_runtime with the appropriate UWATCHER_*
          * mode.  On return the watcher is installed and the strand continues to the
          * next instruction — at-watchers do not block the installing strand.
          * Spec #2 §6.3. */

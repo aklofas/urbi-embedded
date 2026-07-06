@@ -222,7 +222,7 @@ void urbi_sched_strand_account_destroy(UVM *vm, UStrand *s);
  * and decrements vm->wakeup_pending_count exactly once if the strand was
  * actually present.
  *
- * Used by re-stamp paths (e.g. c_event_waituntil) that change a strand's
+ * Used by re-stamp paths (e.g. urbi_event_waituntil) that change a strand's
  * state byte from one WAITING reason to another.  Without this helper,
  * a SLEEP-blocked strand re-stamped to WAIT_EVENT would leave wait_next
  * pointing into the sleep queue and wakeup_pending_count stale. */

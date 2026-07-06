@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Watcher body spawn — M5 implementation (spec #1 §5.2–§5.3).
  *
- * do_spawn_body_coroutine: the real three-step spawn sequence.
+ * urbi_watcher_do_spawn_body_coroutine: the real three-step spawn sequence.
  *   1. urbi_strand_create — OOM → log warn, return; watcher stays installed.
  *   2. urbi_strand_attach_ambient_tags (owning_tag != realm->tag only) — on
  *      overflow the strand goes DEAD; detect, destroy, log warn, return.
@@ -12,7 +12,7 @@
  * fire_context is the value / pattern context from the event that triggered
  * this spawn.  M5 baseline always passes NULL; spec #2 wires patterns later.
  *
- * spawn_body_coroutine: eval-pass entry (spec #1 §5.2).
+ * urbi_watcher_spawn_body_coroutine: eval-pass entry (spec #1 §5.2).
  *   Called by urbi_vm_watcher_eval_dirty when condition fires and w->body != NULL.
  *   In URBI_DEBUG builds, asserts: in_watcher_eval == 1 (eval-pass contract),
  *   AT/WHENEVER mode, ACTIVE flag, no PENDING_UNREGISTER, body and realm non-NULL.
@@ -20,9 +20,9 @@
  *   urbi_vm_watcher_eval_dirty (test-only path; urbi_vm_watcher_eval_dirty only calls this
  *   function when w->body != NULL).
  *
- * respawn_body_coroutine: completion-path entry (spec #1 §5.2).
+ * urbi_watcher_respawn_body_coroutine: completion-path entry (spec #1 §5.2).
  *   Called when a body strand reaches DEAD and pending_refire_count > 0.
- *   Shares do_spawn_body_coroutine but omits the in_watcher_eval assert
+ *   Shares urbi_watcher_do_spawn_body_coroutine but omits the in_watcher_eval assert
  *   (completion path runs outside eval, after strand-DEAD notification).
  *   Static in production builds; tests reach it via extern declaration. */
 
@@ -44,7 +44,7 @@
  * always contiguous in memory by language guarantee.  This helper makes
  * that invariant explicit at the call sites that depend on it (notably
  * the cross-module_instance pointer-range walk in
- * do_spawn_body_coroutine, WATCH-004).  Tautological by construction;
+ * urbi_watcher_do_spawn_body_coroutine, WATCH-004).  Tautological by construction;
  * its purpose is documentation + future-proofing if entries[] ever
  * changes shape. */
 static int
@@ -58,7 +58,7 @@ uprotoinstance_arr_is_contiguous(const UProtoInstanceArr *arr)
 #endif
 
 void
-do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, const void *fire_context)
+urbi_watcher_do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, const void *fire_context)
 {
     struct UStrand *body;
 
@@ -125,8 +125,8 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, const void *fire_con
      * when fire_context is non-NULL; otherwise the pre-zeroed register
      * delivers nil, the documented refire/eval-pass payload).  Passing
      * the deposit count instead would turn the long-standing
-     * nil-payload refire paths (spawn_body_coroutine /
-     * respawn_body_coroutine, fire_context == NULL) into spurious
+     * nil-payload refire paths (urbi_watcher_spawn_body_coroutine /
+     * urbi_watcher_respawn_body_coroutine, fire_context == NULL) into spurious
      * min-arity throws on 1-param event bodies. */
     if (urbi_strand_arm_from_closure(body, w->body,
                                      (int)w->body->proto->nparams) != 0) {
@@ -199,7 +199,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, const void *fire_con
      * (Step 6) so the body sees the payload on its first instruction.
      *
      * W9/v0.10.5: wires payload delivery for AT_EVENT and WHENEVER_EVENT body
-     * strands.  M5 baseline always passed NULL; now c_event_emit_async/_sync
+     * strands.  M5 baseline always passed NULL; now urbi_event_emit_async/_sync
      * pass &payload for event-subscribe body spawns. */
     if (fire_context != NULL && body->R != NULL) {
         const UValue *payload = (const UValue *)fire_context;
@@ -211,7 +211,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, const void *fire_con
 }
 
 void
-spawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
+urbi_watcher_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
 {
 #ifdef URBI_DEBUG
     URBI_ASSERT_NOT_ISR(vm);
@@ -232,14 +232,14 @@ spawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
     URBI_INTERNAL_ASSERT(w->body != NULL);
     URBI_INTERNAL_ASSERT(w->realm != NULL);
 #endif
-    do_spawn_body_coroutine(vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(vm, w, NULL);
 }
 
-/* respawn_body_coroutine: completion-path entry (spec #1 §5.2).
+/* urbi_watcher_respawn_body_coroutine: completion-path entry (spec #1 §5.2).
  * Not in the public include/urbi/ API; tests reach it via extern declaration
  * in uwatcher.h or directly.  Not static — must be linkable from test code. */
 void
-respawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
+urbi_watcher_respawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
 {
 #ifdef URBI_DEBUG
     URBI_ASSERT_NOT_ISR(vm);
@@ -260,7 +260,7 @@ respawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
     URBI_INTERNAL_ASSERT(w->body != NULL);
     URBI_INTERNAL_ASSERT(w->realm != NULL);
 #endif
-    do_spawn_body_coroutine(vm, w, NULL);
+    urbi_watcher_do_spawn_body_coroutine(vm, w, NULL);
 }
 
 /* urbi_watcher_body_completed: strand-DEAD notification (spec #1 §6.2).
@@ -310,6 +310,6 @@ urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s)
     }
     if (w->pending_refire_count > 0) {
         w->pending_refire_count--;
-        respawn_body_coroutine(vm, w);
+        urbi_watcher_respawn_body_coroutine(vm, w);
     }
 }

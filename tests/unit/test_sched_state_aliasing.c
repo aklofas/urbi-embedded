@@ -5,7 +5,7 @@
  *   SCHED-001 — JOIN/WAIT_EVENT state-byte alias (uunwind.c discriminator)
  *   SCHED-002 — urbi_sched_strand_block re-block already-WAITING (entry-state assert)
  *   SCHED-003 — urbi_sched_strand_yield re-yield already-READY (entry-state assert)
- *   SCHED-004 — c_event_waituntil re-stamp leaves stale sleep-queue links
+ *   SCHED-004 — urbi_event_waituntil re-stamp leaves stale sleep-queue links
  *   SCHED-005 — urbi_sched_strand_make_runnable idempotence assertion
  */
 
@@ -273,7 +273,7 @@ UTEST(yield_already_ready_strand_aborts_in_debug)
  * T41 — SCHED-004: re-stamp through urbi_sched_strand_unbind_from_sleep_queue
  * ===================================================================
  *
- * Direct exercise of the helper.  c_event_waituntil's full path requires
+ * Direct exercise of the helper.  urbi_event_waituntil's full path requires
  * a constructed UEvent + cur_strand wiring (covered by existing
  * test_event_waituntil suite); here we focus on the load-bearing helper
  * contract: idempotence + correct counter decrement. */

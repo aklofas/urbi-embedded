@@ -36,7 +36,7 @@
 #include "runtime/ulist.h"        /* URBI_SLIST_FOREACH_SAFE */
 #include "tag/utag.h"               /* UTag, member_strands_head */
 #include "stdlib/temporal.h"        /* urbi_periodics_stop_owned_by (B5/SCHED-N2) */
-#include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
+#include "watcher/uwatcher.h"           /* urbi_watcher_pending_onleave_queue_push */
 #include "runtime/uscratch.h"           /* URBI_SCRATCH_BUDGET_OPS */
 #include <stddef.h>
 #include <stdint.h>
@@ -876,7 +876,7 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
         UWatcher *ww, *ww_next;
         URBI_SLIST_FOREACH_SAFE(ww, ww_next, tag->member_watchers_head,
                                 next_in_tag) {
-            pending_onleave_queue_push(vm, ww);
+            urbi_watcher_pending_onleave_queue_push(vm, ww);
         }
     }
 

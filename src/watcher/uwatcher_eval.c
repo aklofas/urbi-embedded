@@ -1,15 +1,15 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Watcher eval pass: urbi_vm_watcher_eval_dirty, invoke_condition_closure.
+/* Watcher eval pass: urbi_vm_watcher_eval_dirty, urbi_watcher_invoke_condition_closure.
  * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.
  *
  * Architectural notes:
- *   invoke_condition_closure: test hook short-circuits; otherwise routes to
+ *   urbi_watcher_invoke_condition_closure: test hook short-circuits; otherwise routes to
  *     urbi_run_closure_on_scratch (spec §6.4 + §6.8).  Eval-time throws
  *     fail-soft as nil.
- *   spawn_body_coroutine: lives in uwatcher_spawn.c. */
+ *   urbi_watcher_spawn_body_coroutine: lives in uwatcher_spawn.c. */
 
 #include "uwatcher.h"
 #include "runtime/uscratch.h"
@@ -21,7 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* === invoke_condition_closure ===
+/* === urbi_watcher_invoke_condition_closure ===
  *
  * Evaluate watcher w's condition and return the result.  Test hook short-
  * circuits the dispatch path so existing fire-path tests can inject
@@ -32,7 +32,7 @@
  * Returns UVAL_NIL when w->condition is NULL (no-condition watchers fire
  * on dirty-mark only, not on cond eval). */
 UValue
-invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
+urbi_watcher_invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
 {
     UValue nil = {0};  /* kind = UVAL_NIL, payload zeroed */
 
@@ -142,11 +142,11 @@ invoke_onleave_inline(struct UVM *vm, struct UWatcher *w)
  * Walk active_watchers_head, evaluate each watcher's condition, and fire
  * the appropriate action based on mode and edge detection:
  *
- *   AT        rising edge  → spawn_body_coroutine (async)
+ *   AT        rising edge  → urbi_watcher_spawn_body_coroutine (async)
  *             falling edge + BODY_FIRED_SINCE_ONLEAVE + onleave != NULL
  *                          → invoke_onleave_inline; clear flag
  *   AT_SYNC   rising edge  → invoke_body_inline (synchronous, no yield)
- *   WHENEVER  level true   → spawn_body_coroutine each pass
+ *   WHENEVER  level true   → urbi_watcher_spawn_body_coroutine each pass
  *   WAITUNTIL rising edge  → wake waiter_strand, unregister self
  *
  * Per spec #2 §8.3:
@@ -197,7 +197,7 @@ urbi_vm_watcher_eval_dirty(struct UVM *vm)
     /* Save/restore in_eval (SCHED-12): in normal flow vm_reactive_drain's
      * guard ensures in_eval=0 on entry; the ASSERT pins that contract.
      * Restore on exit rather than hard-set-to-0 for defensive symmetry with
-     * drain_pending_onleave_queue's save/restore. */
+     * urbi_watcher_drain_pending_onleave_queue's save/restore. */
     uint8_t saved_eval = vm->watchers->in_eval;
     URBI_INTERNAL_ASSERT(!vm->watchers->in_eval);
     vm->watchers->in_eval = 1;
@@ -228,7 +228,7 @@ urbi_vm_watcher_eval_dirty(struct UVM *vm)
         }
         w->eval_pass_gen = cur_pass_gen;
 
-        new_val = invoke_condition_closure(vm, w);
+        new_val = urbi_watcher_invoke_condition_closure(vm, w);
         old_val = w->last_value_cache;
 
         rising  = uvalue_truthy(&new_val) && !uvalue_truthy(&old_val);
@@ -238,7 +238,7 @@ urbi_vm_watcher_eval_dirty(struct UVM *vm)
             case UWATCHER_AT:
                 if (rising) {
                     if (w->body != NULL) {
-                        spawn_body_coroutine(vm, w);
+                        urbi_watcher_spawn_body_coroutine(vm, w);
                     } else if (vm->test_hooks != NULL
                                && vm->test_hooks->watcher_fire != NULL) {
                         vm->test_hooks->watcher_fire(vm, w);
@@ -284,7 +284,7 @@ urbi_vm_watcher_eval_dirty(struct UVM *vm)
                  *
                  * Idle / boundary path (whenever_edge_only == 1 — urbi_step's
                  * pre-loop idle drain and post-loop Step-4b drain): fire only on
-                 * the rising edge (false->true).  observer_dirty is cell-agnostic
+                 * the rising edge (false->true).  urbi_watcher_observer_dirty is cell-agnostic
                  * (uwatcher.c), so a whenever body that writes ANY slot on an
                  * object whose cell carries the OBSERVER bit re-dirties the global
                  * dirty_count — including the body's write to its OWN observed
@@ -305,7 +305,7 @@ urbi_vm_watcher_eval_dirty(struct UVM *vm)
                 if (vm->watchers->whenever_edge_only ? rising
                                                      : uvalue_truthy(&new_val)) {
                     if (w->body != NULL) {
-                        spawn_body_coroutine(vm, w);
+                        urbi_watcher_spawn_body_coroutine(vm, w);
                     } else if (vm->test_hooks != NULL
                                && vm->test_hooks->watcher_fire != NULL) {
                         vm->test_hooks->watcher_fire(vm, w);
@@ -371,7 +371,7 @@ urbi_vm_watcher_eval_dirty(struct UVM *vm)
          * same-tick fire.  Restart from the head instead.
          *
          * Safety: the next->flags read is safe because
-         * drain_pending_onleave_queue runs at the dispatcher safepoint
+         * urbi_watcher_drain_pending_onleave_queue runs at the dispatcher safepoint
          * BEFORE urbi_vm_watcher_eval_dirty (uwatcher_drain.c:33-36) — nothing
          * pushed during a body is freed until after the eval loop exits.
          *
@@ -389,5 +389,5 @@ urbi_vm_watcher_eval_dirty(struct UVM *vm)
     vm->watchers->in_eval = saved_eval;
 }
 
-/* spawn_body_coroutine lives in uwatcher_spawn.c.
+/* urbi_watcher_spawn_body_coroutine lives in uwatcher_spawn.c.
  * Declaration is in uwatcher.h; urbi_vm_watcher_eval_dirty calls it above. */

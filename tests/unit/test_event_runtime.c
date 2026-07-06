@@ -9,7 +9,7 @@
  *                silently returning NIL.  The test pins the throw branch
  *                so future ABI shifts can't silently regress it.
  *
- * T50 EVENT-005: event_native_register propagates slot-install failures
+ * T50 EVENT-005: urbi_event_native_register propagates slot-install failures
  *                instead of dropping them.  When the slot installer OOMs
  *                on any of the four native slots, the function returns
  *                UVM_OOM and resets vm->event_proto to NULL.
@@ -113,7 +113,7 @@ UTEST(native_event_functions_validate_argv)
  * T50: event_native_register_propagates_register_oom
  * Use a failing allocator that OOMs after the proto object + its first
  * symbol intern have been allocated, so urbi_register_fn for "new" or
- * one of the later slots returns -1.  Assert that event_native_register
+ * one of the later slots returns -1.  Assert that urbi_event_native_register
  * returns UVM_OOM and that vm.event_proto has been reset to NULL.
  * =================================================================== */
 
@@ -140,13 +140,13 @@ static void *event_spy_alloc(void *ptr, size_t n, void *ud)
 
 UTEST(event_native_register_propagates_register_oom)
 {
-    /* Step 1: count how many allocations a clean event_native_register costs.
+    /* Step 1: count how many allocations a clean urbi_event_native_register costs.
      * We only need an upper bound on the proto + first slot install. */
     EventAllocSpy probe = { 0, -1 };
     UVM probe_vm;
     urbi_vm_init(&probe_vm, event_spy_alloc, &probe);
 
-    UVMError ok = event_native_register(&probe_vm);
+    UVMError ok = urbi_event_native_register(&probe_vm);
     UASSERT_EQ((int)ok, (int)UVM_OK);
     int total_clean_calls = probe.alloc_calls;
     UASSERT(total_clean_calls > 2);  /* proto + at least one slot */
@@ -160,7 +160,7 @@ UTEST(event_native_register_propagates_register_oom)
     UVM vm;
     urbi_vm_init(&vm, event_spy_alloc, &spy);
 
-    UVMError err = event_native_register(&vm);
+    UVMError err = urbi_event_native_register(&vm);
     UASSERT_EQ((int)err, (int)UVM_OOM);
     UASSERT(vm.event_proto == NULL);
 

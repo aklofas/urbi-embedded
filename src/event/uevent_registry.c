@@ -7,7 +7,7 @@
 #include "event/uevent_registry.h"
 #include "event/uevent.h"            /* urbi_event_create */
 #include "event/uevent_native.h"     /* uvalue_from_event */
-#include "event/uevent_emit.h"       /* c_event_emit_async (sentinel dispatch) */
+#include "event/uevent_emit.h"       /* urbi_event_emit_async (sentinel dispatch) */
 #include "vm/uvm.h"                  /* UVM, alloc_fn, last_error, heap_locked */
 #include "vm/uvm_error.h"            /* urbi_set_error_internal (Gap P) */
 #include "realm/urealm.h"            /* URealm, global_object */
@@ -283,7 +283,7 @@ urbi_event_unregister(struct UVM *vm, struct URealm *realm,
     }
 
     /* --- Sentinel dispatch: fire NIL payload through UEvent so bound
-     *     watchers run one final body.  c_event_emit_async is non-allocating
+     *     watchers run one final body.  urbi_event_emit_async is non-allocating
      *     for the dispatch walk itself; body coroutines allocate UStrands but
      *     that is safe here (main-thread context, heap not locked above).
      *     Watcher bodies may observe NIL in R[0] — sentinels are documented
@@ -292,7 +292,7 @@ urbi_event_unregister(struct UVM *vm, struct URealm *realm,
         UValue nil_payload;
         nil_payload.kind = (uint8_t)UVAL_NIL;
         nil_payload.v.i  = 0;
-        c_event_emit_async(vm, entry->event, nil_payload);
+        urbi_event_emit_async(vm, entry->event, nil_payload);
     }
 
     /* --- Unbind realm-global slot for the event name.

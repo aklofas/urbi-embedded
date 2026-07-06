@@ -47,9 +47,9 @@ make_nil(void)
 }
 
 /* Park a stack-local strand as an event waiter (tail-append to e->waiters_head).
- * Mirrors the setup in c_event_waituntil without going through the scratch
+ * Mirrors the setup in urbi_event_waituntil without going through the scratch
  * guard.  v0.13.3 (SCHED-13): the WAIT_EVENT transition goes through
- * urbi_sched_strand_block (as c_event_waituntil does) so strand_waiting_count is
+ * urbi_sched_strand_block (as urbi_event_waituntil does) so strand_waiting_count is
  * maintained — a raw state stamp would trip the wake paths' no-saturation
  * decrement. */
 static void
@@ -256,7 +256,7 @@ UTEST(tag_stop_middle_waiter_unlinks_correctly)
     UASSERT(s2.next_event_waiter == NULL);
 
     /* Clean up remaining waiters by emitting. */
-    c_event_emit_async(&vm, e, nil);
+    urbi_event_emit_async(&vm, e, nil);
     UASSERT(e->waiters_head == NULL);
 
     ustrand_destroy(&s1, &vm);

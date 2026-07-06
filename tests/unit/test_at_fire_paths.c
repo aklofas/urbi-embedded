@@ -23,7 +23,7 @@
  *
  *   4. at_sync_runs_inline:
  *      AT_SYNC mode, rising edge → inline body fires (via fire hook).
- *      No spawn_body_coroutine called (no body strand created).
+ *      No urbi_watcher_spawn_body_coroutine called (no body strand created).
  *
  *   5. waituntil_rising_edge_wakes_waiter:
  *      WAITUNTIL mode.  Install with falsy seed; wire waiter_strand in WAIT
@@ -325,7 +325,7 @@ UTEST(waituntil_rising_edge_wakes_waiter)
     g_cond_truthy = 0;   /* seed false so watcher stays installed */
 
     /* Park the waiter in WAIT_WATCHER through the real transition (mirrors
-     * install_watcher_runtime's urbi_sched_strand_block park).  v0.13.3
+     * urbi_watcher_install_watcher_runtime's urbi_sched_strand_block park).  v0.13.3
      * (SCHED-13): a raw state stamp would bypass the strand_waiting_count
      * increment, so the rising-edge wake below would trip the
      * no-saturation decrement in urbi_sched_strand_make_runnable. */

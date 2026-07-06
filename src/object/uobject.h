@@ -191,7 +191,7 @@ UObject *urbi_object_clone(struct UVM *vm, UObject *parent);
 /* === Atom-family debug name (T8) ===
  *
  * Stable static string per atom family.  Used by error messages (T11
- * valid_proto failure path and beyond). */
+ * urbi_object_valid_proto failure path and beyond). */
 const char *urbi_atom_family_name(URBIAtomFamily f);
 
 /* === urbi_atom_proto_for_value — Phase 2 atom-method dispatch helper ===
@@ -234,7 +234,7 @@ struct UObject *urbi_atom_proto_for_value(struct UVM *vm, UValue v);
  *                 with up->items[] populated; this primitive only shades and
  *                 publishes the pointer.
  *
- * Cycle detection / dedup / valid_proto checks are the caller's responsibility
+ * Cycle detection / dedup / urbi_object_valid_proto checks are the caller's responsibility
  * (T11 wires those at the higher-level urbi_object_add_proto / set_protos
  * surfaces).  These primitives are the storage-form transition layer only. */
 void urbi_object_set_protos_empty (struct UVM *vm, UObject *obj);

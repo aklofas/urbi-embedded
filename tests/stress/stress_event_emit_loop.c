@@ -2,7 +2,7 @@
 /* Stress test: reactive event emit loop (R8 hardening).
  *
  * Creates one event, installs 5 AT_EVENT subscribers (trivial OP_RET bodies),
- * then fires c_event_emit_async 10 000 times.  Verifies pool stability:
+ * then fires urbi_event_emit_async 10 000 times.  Verifies pool stability:
  * watcher_pool_in_use stays constant (no new pool allocations during emit)
  * and watcher_pool_high_water == NUM_SUBS after the loop.
  *
@@ -86,10 +86,10 @@ int main(void)
     for (int i = 0; i < NUM_SUBS; i++) {
         make_trivial_closure(&bodies[i], &protos[i], instrs[i]);
 
-        UWatcherInstallResult rc = install_at_event_runtime(
+        UWatcherInstallResult rc = urbi_watcher_install_at_event_runtime(
             &vm, &strand, UWATCHER_AT_EVENT, e, &bodies[i], NULL);
         if (rc != URBI_INSTALL_OK) {
-            fprintf(stderr, "FAIL: install_at_event_runtime[%d] returned %d\n",
+            fprintf(stderr, "FAIL: urbi_watcher_install_at_event_runtime[%d] returned %d\n",
                     i, (int)rc);
             ustrand_destroy(&strand, &vm);
             urbi_realm_destroy(&vm, realm);
@@ -116,7 +116,7 @@ int main(void)
     clock_gettime(CLOCK_MONOTONIC, &t0);
 
     for (int i = 0; i < EMIT_COUNT; i++) {
-        c_event_emit_async(&vm, e, make_int(i));
+        urbi_event_emit_async(&vm, e, make_int(i));
 
         /* Drain body_strand references every 100 emits to keep the run queue
          * bounded.  Body strands are trivial OP_RET stubs; we recycle their

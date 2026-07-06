@@ -51,7 +51,7 @@ int utest_e2e_compile_and_run(UVM *vm, const char *src, UValue *out_result);
  * Required by tests that capture a function-literal closure and call it
  * back later (e.g., test_event_sync_emit_scripted.c, where the body
  * closure is installed in an AT_EVENT_SYNC watcher and fired via
- * c_event_emit_sync after compile_and_run returns).
+ * urbi_event_emit_sync after compile_and_run returns).
  */
 int utest_e2e_compile_and_run_with_module(UVM *vm,
                                           UArena *arena,

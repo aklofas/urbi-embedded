@@ -21,7 +21,7 @@
 #include "runtime/uclosure.h"         /* UClosure */
 #include "runtime/umacros.h"          /* URBI_INTERNAL_ASSERT */
 #include "watcher/uwatcher.h"         /* UWatcher, UWATCHER_* modes */
-#include "watcher/uwatcher_install.h" /* install_watcher_runtime, install_at_event_runtime, UWatcherInstallResult, URBI_INSTALL_* */
+#include "watcher/uwatcher_install.h" /* urbi_watcher_install_watcher_runtime, urbi_watcher_install_at_event_runtime, UWatcherInstallResult, URBI_INSTALL_* */
 #include "event/uevent.h"             /* UEvent */
 #include "event/uevent_native.h"      /* uvalue_is_event */
 #include "value/uvalue.h"             /* UValue, UVAL_CLOSURE */
@@ -63,7 +63,7 @@ vm_install_check_closure_operand(UVM *vm, const UStrand *s, uint8_t reg,
    OP_AT_EVENT_SYNC_INSTALL: the A register must hold a UVAL_EVENT
    (produced by OP_GETSLOT_CHANGE_EVENT or by stdlib Event.new).
    Without this check the dispatcher casts (UEvent *)R[A].v.p directly
-   and install_at_event_runtime dereferences garbage.
+   and urbi_watcher_install_at_event_runtime dereferences garbage.
 
    Routes through uvalue_is_event() rather than a raw kind comparison
    so the predicate location stays single-source-of-truth (T29's
@@ -83,8 +83,8 @@ vm_install_check_event_operand(UVM *vm, const UStrand *s, uint8_t reg,
 }
 
 /* --- vm_install_result_is_fatal / vm_install_fault (VM-002, VM-012) ---
-   Translate a UWatcherInstallResult from install_watcher_runtime /
-   install_at_event_runtime into a VM fault.  Prior to v0.5.7-fixes Phase 5
+   Translate a UWatcherInstallResult from urbi_watcher_install_watcher_runtime /
+   urbi_watcher_install_at_event_runtime into a VM fault.  Prior to v0.5.7-fixes Phase 5
    the install opcodes ignored the return value entirely, so OOM-pool /
    trace-fault / recursive-install errors became silent no-ops: the strand
    sailed past a watcher that was never armed, with no observable diagnostic
@@ -93,7 +93,7 @@ vm_install_check_event_operand(UVM *vm, const UStrand *s, uint8_t reg,
    continuing with broken reactive semantics.
 
    READSET_OVER is currently treated as fatal as well: today
-   install_watcher_runtime returns it from Phase 4 (before pool_alloc) so
+   urbi_watcher_install_watcher_runtime returns it from Phase 4 (before pool_alloc) so
    the watcher is not actually installed; treating it as recoverable would
    diverge from the spec #2 §7.4 "fires on any slot write — conservative
    but correct" intent without the matching install path.  When that path
@@ -182,10 +182,10 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
     /* === Standard ABC install opcodes (6 arms collapsed to one body) ===
      *
      * Cond installs: A=cond(closure), B=body(closure), C=onleave|0xFF.
-     *   Calls install_watcher_runtime(vm, s, mode, cond, body, onleave, NULL).
+     *   Calls urbi_watcher_install_watcher_runtime(vm, s, mode, cond, body, onleave, NULL).
      *   AT_SYNC has no onleave (has_onleave=0; C ignored).
      * Event installs: A=event(UEvent), B=body(closure), C=onleave|0xFF.
-     *   Calls install_at_event_runtime(vm, s, mode, event, body, onleave).
+     *   Calls urbi_watcher_install_at_event_runtime(vm, s, mode, event, body, onleave).
      *
      * Per-opcode facts live in install_specs[] above. */
     case OP_AT_INSTALL:
@@ -217,10 +217,10 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
         UWatcherInstallResult r;
         if (spec->is_event) {
             UEvent *e = (UEvent *)s->R[A].v.p;
-            r = install_at_event_runtime(vm, s, spec->mode, e, body, onleave);
+            r = urbi_watcher_install_at_event_runtime(vm, s, spec->mode, e, body, onleave);
         } else {
             UClosure *cond = (UClosure *)s->R[A].v.p;
-            r = install_watcher_runtime(vm, s, spec->mode, cond, body, onleave, NULL);
+            r = urbi_watcher_install_watcher_runtime(vm, s, spec->mode, cond, body, onleave, NULL);
         }
         if (vm_install_result_is_fatal(r)) {
             vm_install_fault(vm, r, opn);
@@ -233,7 +233,7 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
      *
      * A-encoded: A = cond_reg.
      *
-     * Calls install_watcher_runtime which either:
+     * Calls urbi_watcher_install_watcher_runtime which either:
      *   (a) fast-path: cond was truthy at install → watcher unregistered
      *       immediately, strand state unchanged (still RUNNING) → NEXT().
      *   (b) park path: cond was falsy → install parked the strand via
@@ -249,7 +249,7 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
         if (!vm_install_check_closure_operand(vm, s, A, "OP_WAITUNTIL_INSTALL", "cond"))
             return UVM_INSTALL_HALT;
         UClosure *cond = (UClosure *)s->R[A].v.p;
-        UWatcherInstallResult r = install_watcher_runtime(
+        UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
             vm, s, UWATCHER_WAITUNTIL, cond, NULL, NULL, s);
         if (vm_install_result_is_fatal(r)) {
             vm_install_fault(vm, r, "OP_WAITUNTIL_INSTALL");
@@ -259,7 +259,7 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
             /* Strand parked (cond started false).  Advance pc past this
              * instruction so resume lands at the correct next opcode.
              * Runnable-count accounting is owned by urbi_sched_strand_block
-             * inside install_watcher_runtime (SCHED-01) — no manual
+             * inside urbi_watcher_install_watcher_runtime (SCHED-01) — no manual
              * adjustment here.  The arm completes the exit with
              * `steps_consumed++; goto exit_strand;`. */
             s->pc++;

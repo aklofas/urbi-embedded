@@ -5,8 +5,8 @@
  * Iteration-during-emit safety (EVENT-023):
  *   uevent_at_watchers_append walks the chain to find the tail; remove walks
  *   the chain to find the target.  Walking is safe when an emit is concurrent
- *   on the same event because the producer-side emit (c_event_emit_async /
- *   c_event_emit_sync in src/event/uevent_emit.c) snapshots `next_in_event`
+ *   on the same event because the producer-side emit (urbi_event_emit_async /
+ *   urbi_event_emit_sync in src/event/uevent_emit.c) snapshots `next_in_event`
  *   BEFORE invoking each subscriber — see the `next = w->next_in_event;`
  *   captures at the top of each emit's per-watcher loop iteration.  A
  *   subscriber removed during emit therefore can't yank the iterator's next

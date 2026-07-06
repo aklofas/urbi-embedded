@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: watcher read-set capture, bit-6 lifecycle, observer_dirty,
+/* Unit tests: watcher read-set capture, bit-6 lifecycle, urbi_watcher_observer_dirty,
  * urbi_vm_watcher_eval_dirty + edge/level firing, pending_onleave_queue drain.
  * Row 11. */
 
@@ -149,7 +149,7 @@ UTEST(watcher_install_inserts_into_tag_member_list)
 }
 
 /* 4. observer_dirty_bumps_counter:
- *    Directly call observer_dirty and verify watcher_dirty_count increments. */
+ *    Directly call urbi_watcher_observer_dirty and verify watcher_dirty_count increments. */
 UTEST(observer_dirty_bumps_counter)
 {
     UVM   vm;
@@ -162,7 +162,7 @@ UTEST(observer_dirty_bumps_counter)
     c.gc_byte  = 0;
 
     uint32_t before = vm.watchers->dirty_count;
-    observer_dirty(&vm, &c, 42U);
+    urbi_watcher_observer_dirty(&vm, &c, 42U);
     UASSERT_EQ((long long)vm.watchers->dirty_count, (long long)(before + 1U));
 
     urbi_vm_destroy(&vm);
@@ -324,7 +324,7 @@ static int       g_stamp_pin_cascade_done;
  *   A → first call only: push B to pending-onleave queue (cascade).
  *   C → increment c_fires counter.
  * The cascade_done gate prevents a double-push of B if A is re-visited on
- * a dc20bfb3 rescan (no stamp): without it pending_onleave_queue_push would
+ * a dc20bfb3 rescan (no stamp): without it urbi_watcher_pending_onleave_queue_push would
  * walk the already-empty active list and re-thread B on itself (tail → B →
  * B cycle). */
 static void
@@ -335,7 +335,7 @@ fire_hook_stamp_pin(struct UVM *vm, struct UWatcher *w)
     } else if (w == g_stamp_pin_a_ptr) {
         if (!g_stamp_pin_cascade_done) {
             g_stamp_pin_cascade_done = 1;
-            pending_onleave_queue_push(vm, g_stamp_pin_b_ptr);
+            urbi_watcher_pending_onleave_queue_push(vm, g_stamp_pin_b_ptr);
         }
     } else if (w == g_stamp_pin_c_ptr) {
         g_stamp_pin_c_fires++;
@@ -577,7 +577,7 @@ UTEST(pending_onleave_push_sets_flag_and_unlinks_from_active)
     UASSERT(vm.active_watchers_head == w);
     UASSERT(tag->member_watchers_head == w);
 
-    pending_onleave_queue_push(&vm, w);
+    urbi_watcher_pending_onleave_queue_push(&vm, w);
 
     /* Flag set. */
     UASSERT(w->flags & URBI_WATCHER_PENDING_UNREGISTER);
@@ -593,7 +593,7 @@ UTEST(pending_onleave_push_sets_flag_and_unlinks_from_active)
     UASSERT_EQ((long long)vm.watchers->active_count, 1LL);
 
     /* Drain to clean up (unregisters the watcher). */
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     UASSERT(vm.pending_onleave_head == NULL);
     UASSERT_EQ((long long)vm.watchers->active_count, 0LL);
 
@@ -621,10 +621,10 @@ UTEST(pending_onleave_drain_walks_until_empty)
     UASSERT_EQ((int)vm.watchers->pool_in_use, 5);
 
     for (i = 0; i < 5; i++) {
-        pending_onleave_queue_push(&vm, w[i]);
+        urbi_watcher_pending_onleave_queue_push(&vm, w[i]);
     }
 
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
 
     UASSERT(vm.pending_onleave_head == NULL);
     UASSERT(vm.pending_onleave_tail == NULL);
@@ -656,8 +656,8 @@ UTEST(pending_onleave_drain_invokes_hook_when_onleave_set)
         /*onleave=*/make_dummy_closure(&vm), NULL, 0U);
     UASSERT(w != NULL);
 
-    pending_onleave_queue_push(&vm, w);
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_pending_onleave_queue_push(&vm, w);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
 
     UASSERT_EQ(g_onleave_count, 1);
     UASSERT(vm.pending_onleave_head == NULL);
@@ -683,8 +683,8 @@ UTEST(pending_onleave_drain_skips_null_onleave)
         /*onleave=*/NULL, NULL, 0U);
     UASSERT(w != NULL);
 
-    pending_onleave_queue_push(&vm, w);
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_pending_onleave_queue_push(&vm, w);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
 
     /* Hook must NOT be called when onleave is NULL. */
     UASSERT_EQ(g_onleave_count, 0);
@@ -715,11 +715,11 @@ UTEST(pending_onleave_drain_ordering_FIFO)
         &vm, UWATCHER_AT, NULL, NULL, NULL, make_dummy_closure(&vm), NULL, 0U);
     UASSERT(wa != NULL && wb != NULL && wc != NULL);
 
-    pending_onleave_queue_push(&vm, wa);
-    pending_onleave_queue_push(&vm, wb);
-    pending_onleave_queue_push(&vm, wc);
+    urbi_watcher_pending_onleave_queue_push(&vm, wa);
+    urbi_watcher_pending_onleave_queue_push(&vm, wb);
+    urbi_watcher_pending_onleave_queue_push(&vm, wc);
 
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
 
     UASSERT_EQ(g_onleave_order_idx, 3);
     UASSERT(g_onleave_order[0] == wa);
@@ -764,7 +764,7 @@ UTEST(tag_stop_pushes_watchers_to_onleave_queue)
     UASSERT(tag->member_watchers_head == NULL);
 
     /* Drain to clean up. */
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     UASSERT(vm.pending_onleave_head == NULL);
 
     utag_destroy(&vm, tag);
@@ -854,7 +854,7 @@ UTEST(watcher_root_walker_visits_pending_onleave)
     urbi_gc_walk_roots(&vm, root_cb_count, &count_active);
 
     /* Move watcher to pending_onleave_queue. */
-    pending_onleave_queue_push(&vm, w);
+    urbi_watcher_pending_onleave_queue_push(&vm, w);
 
     /* Walk with watcher on pending queue — should still see onleave + last_value_cache. */
     count_pending = 0;
@@ -868,7 +868,7 @@ UTEST(watcher_root_walker_visits_pending_onleave)
      * (which would crash because native closures have proto == NULL).
      * Test only verifies walker presence (count_pending >= 2 above). */
     vm.test_hooks->watcher_onleave = onleave_drain_noop;
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
 
     urbi_vm_destroy(&vm);
 }
@@ -925,12 +925,12 @@ UTEST(watcher_root_provider_count_is_6_after_init)
 }
 
 /* 25. spawn_body_coroutine_relocated_still_works:
- *     After moving spawn_body_coroutine to uwatcher_spawn.c, verify
+ *     After moving urbi_watcher_spawn_body_coroutine to uwatcher_spawn.c, verify
  *     the test_watcher_fire_hook delegation still works as before.
  *
  *     Install without condition hook so seed is nil (falsy).  Then set
  *     the condition hook to return true on first dirty eval — this gives a
- *     false→true rising edge that fires spawn_body_coroutine via fire hook. */
+ *     false→true rising edge that fires urbi_watcher_spawn_body_coroutine via fire hook. */
 UTEST(spawn_body_coroutine_relocated_still_works)
 {
     UVM      vm;
@@ -1014,7 +1014,7 @@ UTEST(eval_pass_walks_all_watchers)
 /* 27. eval_pass_stamp_pins_whenever_double_fire:
  *     Topology [W(whenever), A(whenever/cascade), B(victim), C(tail)] in
  *     level mode (whenever_edge_only == 0).  A's fire hook calls
- *     pending_onleave_queue_push on its pre-captured successor B, which sets
+ *     urbi_watcher_pending_onleave_queue_push on its pre-captured successor B, which sets
  *     URBI_WATCHER_PENDING_UNREGISTER on B and unlinks B from the active list.
  *     The eval loop detects next == B has PENDING_UNREGISTER and restarts the
  *     walk from head (the cascade rescan).
@@ -1081,7 +1081,7 @@ UTEST(eval_pass_stamp_pins_whenever_double_fire)
 
     /* Cleanup: drain B from the pending queue (onleave=NULL → no hook called),
      * then unregister the remaining active watchers. */
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     urbi_watcher_unregister_internal(&vm, wW);
     urbi_watcher_unregister_internal(&vm, wA);
     urbi_watcher_unregister_internal(&vm, wC);

@@ -156,7 +156,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
        OP_YIELD or per-strand budget exhaustion leaves state READY — treat as
        "continue" for the M2 API contract (urbi_vm_run must block until completion).
        M6 Phase 7: vm->cur_strand must be set during dispatch so native methods
-       (Exception.raise, urbi_throw callers, c_event_waituntil, etc.) can
+       (Exception.raise, urbi_throw callers, urbi_event_waituntil, etc.) can
        reach the running strand.  Pre-Phase-7 only ustep.c set this field;
        urbi_vm_run is the synchronous one-shot path and was a gap. */
     for (;;) {

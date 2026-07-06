@@ -231,7 +231,7 @@ UTEST(heapified_upval_survives_gc)
  *   was the sole root.
  *
  * Implementation note: this test installs the watcher with a no-op
- * condition hook to prevent invoke_condition_closure from dispatching the
+ * condition hook to prevent urbi_watcher_invoke_condition_closure from dispatching the
  * native closure through urbi_run_closure_on_scratch (which would crash
  * because native closures have cl->proto == NULL, and strand_arm_from_closure
  * dereferences proto->instructions unconditionally).  The hook is only

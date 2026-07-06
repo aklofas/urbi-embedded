@@ -312,7 +312,7 @@ UTEST(realm_destroy_cascade_watchers)
     UASSERT(r->tag->member_watchers_head == NULL);
 
     /* Drain to unregister. */
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     UASSERT(vm.pending_onleave_head == NULL);
     UASSERT_EQ((long long)vm.watchers->active_count, 0LL);
 
@@ -323,7 +323,7 @@ UTEST(realm_destroy_cascade_watchers)
 /* 8. realm_destroy_drain_ordering
  *
  * Install a watcher; push it to pending_onleave_queue; set dirty count.
- * Verify that drain_pending_onleave_queue runs the onleave path BEFORE
+ * Verify that urbi_watcher_drain_pending_onleave_queue runs the onleave path BEFORE
  * urbi_vm_watcher_eval_dirty would run (i.e. drain clears in_watcher_eval correctly,
  * leaving it available for a subsequent eval pass). */
 UTEST(realm_destroy_drain_ordering)
@@ -345,7 +345,7 @@ UTEST(realm_destroy_drain_ordering)
 
     /* Simulate a dirty condition AND a pending cleanup simultaneously. */
     vm.watchers->dirty_count = 3U;
-    pending_onleave_queue_push(&vm, w);
+    urbi_watcher_pending_onleave_queue_push(&vm, w);
 
     /* Before drain: in_watcher_eval must be false (drain hasn't run yet). */
     UASSERT(!vm.watchers->in_eval);
@@ -353,7 +353,7 @@ UTEST(realm_destroy_drain_ordering)
     /* Run drain — must leave in_watcher_eval false when it returns.
      * After drain completes, watcher_dirty_count is unchanged (drain does not
      * call urbi_vm_watcher_eval_dirty; that's the scheduler's job after drain). */
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     UASSERT(!vm.watchers->in_eval);
     UASSERT(vm.pending_onleave_head == NULL);
     /* Dirty count must NOT have been cleared by drain alone. */

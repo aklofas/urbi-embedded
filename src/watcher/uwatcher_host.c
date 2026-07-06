@@ -6,7 +6,7 @@
  *   urbi_register_watcher / urbi_unregister_watcher (public, Gap J v0.7.1)
  *
  * Dispatch ordering (spec §2.6): registered-path drain fires the script-side
- * UEvent (c_event_emit_async) first, then uhost_watcher_table_walk_event for
+ * UEvent (urbi_event_emit_async) first, then uhost_watcher_table_walk_event for
  * host watchers.  This means script-side `at(name?)` watcher bodies and host
  * watcher callbacks both observe the same event; script bodies are queued
  * first, host callbacks run immediately at drain time.

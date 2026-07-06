@@ -227,7 +227,7 @@ UTEST(trace_watcher_install)
     size_t n;
     urbi_vm_init(&vm, NULL, NULL);
     urbi_trace_set_level(&vm, URBI_TRACE_WATCHER, URBI_LOG_INFO);
-    /* Value watcher routes through install_watcher_runtime (INSTALL tap). */
+    /* Value watcher routes through urbi_watcher_install_watcher_runtime (INSTALL tap). */
     utest_e2e_compile_and_run(&vm, "var x = 0; at (x > 5) Realm.y = 1", NULL);
     utest_e2e_run_to_no_runnable(&vm);
     n = urbi_trace_snapshot(&vm, out, 128, &d);

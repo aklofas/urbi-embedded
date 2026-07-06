@@ -82,7 +82,7 @@ urbi_watcher_install_for_test(
      * (no rising edge for AT/AT_SYNC; WHENEVER fires on next dirty pass).
      *
      * Low-level bypass path: only seed via hook when set; otherwise nil.
-     * Production watcher installs go through install_watcher_runtime which
+     * Production watcher installs go through urbi_watcher_install_watcher_runtime which
      * calls run_closure_on_scratch_frame_with_result for real bytecode eval.
      * This helper is used by tests that may pass fake closure sentinels
      * without setting a condition hook. */

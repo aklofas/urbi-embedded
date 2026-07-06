@@ -16,9 +16,9 @@
 #include "runtime/umacros.h"          /* URBI_INTERNAL_ASSERT */
 #include "runtime/ulist.h"            /* URBI_SLIST_FOREACH_SAFE */
 #include "tag/utag.h"                 /* UTag, utag_create/destroy */
-#include "watcher/uwatcher.h"         /* UWatcher, pending_onleave_queue_push */
+#include "watcher/uwatcher.h"         /* UWatcher, urbi_watcher_pending_onleave_queue_push */
 #include "event/uevent.h"             /* UEvent */
-#include "event/uevent_emit.h"        /* c_event_emit_sync */
+#include "event/uevent_emit.h"        /* urbi_event_emit_sync */
 #include "value/uvalue.h"             /* UValue, UVAL_NIL */
 
 #include <stdbool.h>
@@ -90,7 +90,7 @@ urbi_vm_push_tag_scope(UVM *vm, UStrand *s)
     /* VM-015: enter_event is unconditionally NULL on a fresh utag_create
      * (utag.c zero-fills enter_event/leave_event at allocation; only the
      * tag.enter native getter — invoked through a Tag.enter property
-     * read — lazy-allocates the UEvent later in tag_enter_getter).  For an
+     * read — lazy-allocates the UEvent later in urbi_tag_enter_getter).  For an
      * anonymous scope the tag was just created above, so enter_event MUST be
      * NULL; assert that contract.  A USER-owned tag (v0.10.9-B) may legitimately
      * carry an enter_event from a prior Tag.enter read, so it is exempt. */
@@ -130,7 +130,7 @@ urbi_vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
         tag->leave_event->at_watchers_head != NULL) {
         UValue nil_val = {0};
         nil_val.kind = (uint8_t)UVAL_NIL;
-        c_event_emit_sync(s->vm, tag->leave_event, nil_val);
+        urbi_event_emit_sync(s->vm, tag->leave_event, nil_val);
     }
     /* Watcher cascade: push each watcher registered on this tag to
      * the pending-onleave queue before cleanup_pop + utag_destroy.
@@ -145,7 +145,7 @@ urbi_vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
         UWatcher *ww, *ww_next;
         URBI_SLIST_FOREACH_SAFE(ww, ww_next, tag->member_watchers_head,
                                 next_in_tag) {
-            pending_onleave_queue_push(s->vm, ww);
+            urbi_watcher_pending_onleave_queue_push(s->vm, ww);
         }
     }
     urbi_sched_strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);

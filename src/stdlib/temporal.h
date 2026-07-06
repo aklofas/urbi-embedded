@@ -15,7 +15,7 @@
  * fire time.
  *
  * Cancellation: the body strand inherits the caller's ambient tag chain
- * (mirrors do_spawn_body_coroutine for watcher bodies).  When mytag.stop()
+ * (mirrors urbi_watcher_do_spawn_body_coroutine for watcher bodies).  When mytag.stop()
  * unwinds the body strand to DEAD with UEXEC_TAG_STOP or UEXEC_CANCEL, the
  * periodic-completion hook marks the periodic for unregister so no further
  * re-spawn fires; the next ustep sweep walks the list and frees it.
@@ -73,7 +73,7 @@ struct UChunkInstance;
  *                       OP_GETSLOT / OP_SETSLOT inside the body can
  *                       resolve the IC table at frame_count==0.  Walked
  *                       once at install time (same scheme as
- *                       do_spawn_body_coroutine, uwatcher_spawn.c).
+ *                       urbi_watcher_do_spawn_body_coroutine, uwatcher_spawn.c).
  * unregister_pending  — set when the periodic should not re-fire (body
  *                       cancelled via tag.stop, body threw uncaught, or
  *                       host called for teardown).  The next ustep sweep

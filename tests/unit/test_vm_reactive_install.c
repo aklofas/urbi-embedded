@@ -7,8 +7,8 @@
  * OP_WHENEVER_EVENT_INSTALL into urbi_vm_reactive_install (uvm_reactive_install.c).
  *
  * These two pins exercise the two distinct install ENTRY POINTS end-to-end:
- *   - install_watcher_runtime (closure-cond family) via `at (cond) body`
- *   - install_at_event_runtime (event family)       via `at (e?) body`
+ *   - urbi_watcher_install_watcher_runtime (closure-cond family) via `at (cond) body`
+ *   - urbi_watcher_install_at_event_runtime (event family)       via `at (e?) body`
  * and MUST pass identically before AND after the extraction (zero-delta gate).
  *
  * The per-mode variants and the irregular OP_WAITUNTIL_INSTALL park/fast-path
@@ -31,7 +31,7 @@
 
 #define UTEST(name) static void name(void)
 
-/* === Test 1: `at (cond) body` (closure-cond family, install_watcher_runtime)
+/* === Test 1: `at (cond) body` (closure-cond family, urbi_watcher_install_watcher_runtime)
  * installs and fires on the rising edge of an object-slot condition.  Mirrors
  * the install + trigger-in-a-function + run-to-quiescence pattern of
  * test_vm_slot_helpers.c case 6. */
@@ -76,7 +76,7 @@ UTEST(test_reactive_at_fires_on_rising_edge)
     urbi_vm_destroy(&vm);
 }
 
-/* === Test 2: `at (e?) body` (event family, install_at_event_runtime) installs
+/* === Test 2: `at (e?) body` (event family, urbi_watcher_install_at_event_runtime) installs
  * on an event and fires its body when the event is emitted.  The watcher joins
  * event->at_watchers_head (not the active chain), so no manual drain is needed
  * — urbi_vm_destroy reclaims it. */

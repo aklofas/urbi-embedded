@@ -857,8 +857,8 @@ static int matrix_native_nop(struct UVM *vm, UValue self,
 }
 
 /* Return a pool slot through the production free path.  v0.13.3
- * (SCHED-06): BOTH install paths (install_watcher_runtime and
- * install_at_event_runtime) now increment vm->watchers->active_count — the
+ * (SCHED-06): BOTH install paths (urbi_watcher_install_watcher_runtime and
+ * urbi_watcher_install_at_event_runtime) now increment vm->watchers->active_count — the
  * count covers all armed watchers — and urbi_watcher_unregister_internal's
  * decrement asserts > 0 instead of saturating.  These matrix cases use raw
  * uwatcher_pool_alloc (no installer ran), so mirror the installer's bump
@@ -937,7 +937,7 @@ UTEST(matrix_event_watcher_closures_rooted_without_reachable_event)
 
 /* Pins the in-use predicate covering PENDING_UNREGISTER slots: a watcher
  * between stop-request and drain still needs its onleave closure alive
- * (drain_pending_onleave_queue will run it). */
+ * (urbi_watcher_drain_pending_onleave_queue will run it). */
 UTEST(matrix_pending_unregister_watcher_still_rooted)
 {
     UVM vm;

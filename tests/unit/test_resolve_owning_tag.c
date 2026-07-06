@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* URBI_GC_STRESS disarm (v0.13.2): hand-wires synthetic strands + tags in
- * bare C locals outside the realm graph to drive resolve_owning_tag in
+ * bare C locals outside the realm graph to drive urbi_watcher_resolve_owning_tag in
  * isolation — collect-on-every-alloc sweeps the deliberately-unrooted
  * tags mid-test.  Structural-by-design (refactor-3 TEST-GAP-01
  * stress-exempt list). */
-/* Unit tests: resolve_owning_tag cleanup-stack walk (T35, spec #2 §7.2).
+/* Unit tests: urbi_watcher_resolve_owning_tag cleanup-stack walk (T35, spec #2 §7.2).
  *
- * resolve_owning_tag is non-static in uwatcher_install.c (exposed for test
+ * urbi_watcher_resolve_owning_tag is non-static in uwatcher_install.c (exposed for test
  * coverage) — reached here via an extern declaration.
  *
  * T35 cases:
@@ -32,8 +32,8 @@
 
 #define UTEST(name) static void name(void)
 
-/* resolve_owning_tag lives in uwatcher_install.c; non-static for test access. */
-extern struct UTag *resolve_owning_tag(struct UStrand *s);
+/* urbi_watcher_resolve_owning_tag lives in uwatcher_install.c; non-static for test access. */
+extern struct UTag *urbi_watcher_resolve_owning_tag(struct UStrand *s);
 
 /* ===================================================================
  * Helpers
@@ -84,15 +84,15 @@ UTEST(resolve_owning_tag_returns_innermost)
     UASSERT(push_tag_scope(&s, inner) != NULL);
 
     /* Innermost TAG_SCOPE (depth-1 = index 1) must win. */
-    UASSERT(resolve_owning_tag(&s) == inner);
+    UASSERT(urbi_watcher_resolve_owning_tag(&s) == inner);
 
     /* Pop inner; outer must now win. */
     urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
-    UASSERT(resolve_owning_tag(&s) == outer);
+    UASSERT(urbi_watcher_resolve_owning_tag(&s) == outer);
 
     /* Pop outer; no TAG_SCOPE remains — fall through to realm->tag. */
     urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
-    UASSERT(resolve_owning_tag(&s) == r->tag);
+    UASSERT(urbi_watcher_resolve_owning_tag(&s) == r->tag);
 
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
@@ -127,7 +127,7 @@ UTEST(resolve_owning_tag_skips_non_tag_scope)
     tf->kind = (uint8_t)UCLEANUP_TRY_FRAME;
 
     /* Top-down: TRY_FRAME at top is skipped; TAG_SCOPE below it returns outer. */
-    UASSERT(resolve_owning_tag(&s) == outer);
+    UASSERT(urbi_watcher_resolve_owning_tag(&s) == outer);
 
     urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TRY_FRAME);
     urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
@@ -154,7 +154,7 @@ UTEST(resolve_owning_tag_empty_stack_returns_realm_tag)
     s.realm = r;
 
     /* Stack is empty; must return realm->tag. */
-    UASSERT_EQ((void *)resolve_owning_tag(&s), (void *)r->tag);
+    UASSERT_EQ((void *)urbi_watcher_resolve_owning_tag(&s), (void *)r->tag);
 
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);

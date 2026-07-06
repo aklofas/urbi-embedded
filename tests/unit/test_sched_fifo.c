@@ -9,7 +9,7 @@
  *   (3) cooperative-yield:    urbi_sched_strand_yield (RUNNING → READY re-enqueue)
  *   (4) WAITING-unblock:      urbi_sched_strand_unblock (WAITING_SLEEP → READY)
  *   (5) watcher-body-spawn:   urbi_sched_strand_make_runnable called directly
- *                             (simulates what spawn_body_coroutine will do at M5)
+ *                             (simulates what urbi_watcher_spawn_body_coroutine will do at M5)
  *
  * All five go through urbi_sched_strand_make_runnable, which is the single
  * tail-insertion path: s → ready_tail → new tail. */
@@ -184,9 +184,9 @@ UTEST(fifo_transition4_unblock_appends_tail)
 
 /* === Transition 5: watcher-body-spawn goes to tail ===
  *
- * At M5, spawn_body_coroutine calls urbi_sched_strand_make_runnable for the new
+ * At M5, urbi_watcher_spawn_body_coroutine calls urbi_sched_strand_make_runnable for the new
  * watcher body strand.  Simulate this at M3 by calling make_runnable directly
- * (the same path spawn_body_coroutine takes) and verify tail insertion. */
+ * (the same path urbi_watcher_spawn_body_coroutine takes) and verify tail insertion. */
 
 UTEST(fifo_transition5_watcher_body_spawn_appends_tail)
 {

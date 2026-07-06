@@ -4,7 +4,7 @@
  * Four sub-tests:
  *   1. unregister_sentinel_fires: after unregister the UEvent is emitted async
  *      (sentinel NIL payload) so bound watchers run one last time.  Verified
- *      by checking that c_event_emit_async sees the event (we count at_watcher
+ *      by checking that urbi_event_emit_async sees the event (we count at_watcher
  *      spawns indirectly via the strand count after urbi_step).
  *      NOTE: full watcher spawn requires running urbiscript `at(evt)` which is
  *      an integration-level test.  At unit level we verify the sentinel path by

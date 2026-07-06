@@ -86,8 +86,8 @@ make_ret_closure(UClosure *cl, UProto *proto, uint32_t *instr_buf)
 }
 
 /* Install an AT_EVENT (or AT_EVENT_SYNC / WHENEVER_EVENT) watcher under
- * the realm's tag.  Uses install_at_event_runtime via a stack-local
- * UStrand whose realm is wired so resolve_owning_tag's fallthrough
+ * the realm's tag.  Uses urbi_watcher_install_at_event_runtime via a stack-local
+ * UStrand whose realm is wired so urbi_watcher_resolve_owning_tag's fallthrough
  * returns realm->tag. */
 static UWatcherInstallResult
 install_event_watcher(struct UVM *vm, struct URealm *realm,
@@ -96,11 +96,11 @@ install_event_watcher(struct UVM *vm, struct URealm *realm,
 {
     UStrand scratch_strand;
     ustrand_init(&scratch_strand, vm);
-    scratch_strand.realm = realm;   /* resolve_owning_tag fallthrough → realm->tag */
+    scratch_strand.realm = realm;   /* urbi_watcher_resolve_owning_tag fallthrough → realm->tag */
     scratch_strand.state = USTRAND_STATE_RUNNING;
 
     UWatcherInstallResult rc =
-        install_at_event_runtime(vm, &scratch_strand, mode, e, body, NULL);
+        urbi_watcher_install_at_event_runtime(vm, &scratch_strand, mode, e, body, NULL);
 
     ustrand_destroy(&scratch_strand, vm);
     return rc;
@@ -146,7 +146,7 @@ UTEST(at_event_unlink_from_event_chain_on_tag_stop)
     UASSERT_EQ(0, at_watchers_count(e));
 
     /* Drain + destroy. */
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -185,14 +185,14 @@ UTEST(at_event_emit_after_tag_stop_no_spawn)
 
     /* Defence-in-depth: emit on the stopped event must NOT spawn a body. */
     int runnable_before = (int)vm.strand_runnable_count;
-    c_event_emit_async(&vm, e, nil);
+    urbi_event_emit_async(&vm, e, nil);
     /* Step briefly to let any runnable strands execute. */
     urbi_step(&vm, 256, NULL);
 
     /* No new strand must have been enqueued as runnable. */
     UASSERT_EQ(runnable_before, (int)vm.strand_runnable_count);
 
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -236,11 +236,11 @@ UTEST(at_event_tag_stop_emit_stress)
 
         /* Emit must not spawn. */
         int runnable_before = (int)vm.strand_runnable_count;
-        c_event_emit_async(&vm, e, nil);
+        urbi_event_emit_async(&vm, e, nil);
         urbi_step(&vm, 64, NULL);
         UASSERT_EQ(runnable_before, (int)vm.strand_runnable_count);
 
-        drain_pending_onleave_queue(&vm);
+        urbi_watcher_drain_pending_onleave_queue(&vm);
         urbi_realm_destroy(&vm, r);
     }
 
@@ -281,7 +281,7 @@ UTEST(at_event_sync_unlink_from_event_chain_on_tag_stop)
     /* AT_EVENT_SYNC must also be unlinked immediately. */
     UASSERT_EQ(0, at_watchers_count(e));
 
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
@@ -320,7 +320,7 @@ UTEST(whenever_event_unlink_from_event_chain_on_tag_stop)
     /* WHENEVER_EVENT must also be unlinked immediately. */
     UASSERT_EQ(0, at_watchers_count(e));
 
-    drain_pending_onleave_queue(&vm);
+    urbi_watcher_drain_pending_onleave_queue(&vm);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }

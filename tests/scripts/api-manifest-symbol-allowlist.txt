@@ -17,25 +17,7 @@ utrace_format
 # filter covers weak/common symbols since the v0.13.0 review fix, so it is
 # enumerated here like every other unprefixed export.
 urepl_dispatch_drain_if_active
-c_event_emit_async
-c_event_emit_sync
-c_event_waituntil
-do_spawn_body_coroutine
-drain_pending_onleave_queue
-event_native_register
-install_at_event_runtime
-install_watcher_runtime
-invoke_condition_closure
 kind_name
-next_id
-observer_dirty
-pending_onleave_queue_push
-resolve_owning_tag
-respawn_body_coroutine
-spawn_body_coroutine
-tag_enter_getter
-tag_leave_getter
-tag_native_register
 uarena_alloc
 uarena_destroy
 uarena_init
@@ -131,7 +113,6 @@ uwatcher_pool_destroy
 uwatcher_pool_init
 uwatcher_state_create
 uwatcher_state_destroy
-valid_proto
 vm_line_for_pc
 vm_resolve_ic
 vm_trace_slot_read_if_needed

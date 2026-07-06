@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: three GC write-barrier surfaces — forward Dijkstra barrier
- * and observer_dirty hook.  Row 10 §4.  T25.
+ * and urbi_watcher_observer_dirty hook.  Row 10 §4.  T25.
  *
  * URBI_GC_STRESS disarm (v0.13.2): these tests allocate UNROOTED cells and
  * hand-paint their colors to exercise the barrier state table — the suite
@@ -142,10 +142,10 @@ UTEST(barrier_register_write_no_op)
     urbi_vm_destroy(&vm);
 }
 
-/* ===== Test 5: observer bit set + stub observer_dirty (T25 no-op) ===== */
+/* ===== Test 5: observer bit set + stub urbi_watcher_observer_dirty (T25 no-op) ===== */
 
 /* When UGC_HAS_WATCHER_OBSERVER is set on the parent, the barrier calls
- * observer_dirty.  At T25 the stub is a no-op; watcher_dirty_count stays zero.
+ * urbi_watcher_observer_dirty.  At T25 the stub is a no-op; watcher_dirty_count stays zero.
  * T34 will replace the stub with a real implementation. */
 UTEST(barrier_observer_bit_calls_stub)
 {

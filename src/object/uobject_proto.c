@@ -88,12 +88,12 @@ urbi_object_set_protos_heap(UVM *vm, UObject *obj, UProtos *up)
     vm->topology_gen++;
 }
 
-/* valid_proto — atom-family compatibility check per pre-M4 prototype-chain
+/* urbi_object_valid_proto — atom-family compatibility check per pre-M4 prototype-chain
  * spec §5.5.  An atom can only inherit from its own family OR from the
  * root Object atom.  The root Object never blocks (either side may be
  * URBI_ATOM_OBJECT and the relationship is permitted). */
 int
-valid_proto(const UObject *obj, const UObject *p)
+urbi_object_valid_proto(const UObject *obj, const UObject *p)
 {
     URBIAtomFamily ofam = (URBIAtomFamily)(obj->flags & URBI_OBJ_ATOM_MASK);
     URBIAtomFamily pfam = (URBIAtomFamily)(p->flags   & URBI_OBJ_ATOM_MASK);
@@ -129,7 +129,7 @@ urbi_object_add_proto(struct UVM *vm, UObject *obj, UObject *proto)
     if (vm == NULL || obj == NULL || proto == NULL) {
         return URBI_ERR_INVALID_ARG;
     }
-    if (!valid_proto(obj, proto)) {
+    if (!urbi_object_valid_proto(obj, proto)) {
         return URBI_ERR_INVALID_ARG;
     }
 
@@ -242,7 +242,7 @@ urbi_object_set_protos(struct UVM *vm, UObject *obj, UObject **list, uint32_t n)
     /* Validate every survivor BEFORE mutating any state — atomicity per the
      * plan's "no partial state" requirement. */
     for (uint32_t i = 0; i < dn; i++) {
-        if (!valid_proto(obj, deduped[i])) {
+        if (!urbi_object_valid_proto(obj, deduped[i])) {
             return URBI_ERR_INVALID_ARG;
         }
     }

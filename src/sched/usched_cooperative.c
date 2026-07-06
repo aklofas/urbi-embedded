@@ -531,7 +531,7 @@ urbi_sched_strand_account_destroy(UVM *vm, UStrand *s)
  * Idempotent: safe to call on a strand never inserted (no-op).
  *
  * Used by paths that re-stamp a strand's state from one WAITING reason to
- * another (e.g. c_event_waituntil — though under the cooperative scheduler
+ * another (e.g. urbi_event_waituntil — though under the cooperative scheduler
  * a strand cannot legitimately be on the sleep queue when it begins event-
  * waiting; the helper exists as defence-in-depth against future schedulers
  * or buggy callers that bypass the dispatch loop). */

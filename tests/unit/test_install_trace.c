@@ -19,7 +19,7 @@
  *   4. trace_disabled_when_flag_clear:
  *      in_install=0 (default): OP_GETSLOT does NOT touch trace_read_set_count.
  *   5. install_arms_trace_fields:
- *      install_watcher_runtime (non-recursive path) sets in_install=1,
+ *      urbi_watcher_install_watcher_runtime (non-recursive path) sets in_install=1,
  *      trace_overflow=0, trace_read_set_count=0 before returning the stub OK. */
 
 #include "utest.h"
@@ -34,7 +34,7 @@
                                                UChunkInstance, UProtoInstance */
 #include "sched/usched_cooperative.h"       /* urbi_sched_init */
 #include "watcher/uwatcher.h"               /* UWATCHER_AT */
-#include "watcher/uwatcher_install.h"       /* install_watcher_runtime */
+#include "watcher/uwatcher_install.h"       /* urbi_watcher_install_watcher_runtime */
 #include "urbi/urbi.h"                      /* URBI_LOG_WARN */
 
 #include <stddef.h>
@@ -310,7 +310,7 @@ hook_plant_one_cell_t36(struct UVM *vm, struct UClosure *cond,
 
 /* 5. install_arms_and_resets_trace_fields
  *
- * install_watcher_runtime (non-recursive path, no-throw hook) must:
+ * urbi_watcher_install_watcher_runtime (non-recursive path, no-throw hook) must:
  *   - Phase 2: set in_install=1, clear trace_overflow and
  *     trace_read_set_count.
  *   - Phase 4: clear in_install=0 after running the cond stub.
@@ -334,7 +334,7 @@ UTEST(install_arms_and_resets_trace_fields)
     g_t36_cell.gc_byte = 0;
     vm.test_hooks->install_cond = hook_plant_one_cell_t36;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     vm.test_hooks->install_cond = NULL;
@@ -405,7 +405,7 @@ capture_log_t37(struct UVM *vm, void *ud, int level, const char *fmt, ...)
 
 /* 6. install_returns_readset_over_when_overflow
  *
- * When the cond hook forces trace_overflow=1, install_watcher_runtime must:
+ * When the cond hook forces trace_overflow=1, urbi_watcher_install_watcher_runtime must:
  *   - Return URBI_INSTALL_READSET_OVER.
  *   - Reset in_install to 0.
  *   - Clear trace_overflow.
@@ -423,7 +423,7 @@ UTEST(install_returns_readset_over_when_overflow)
     vm.host_log_fn            = capture_log_t37;
     vm.test_hooks->install_cond = hook_force_overflow;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_READSET_OVER, (int)r);
@@ -439,7 +439,7 @@ UTEST(install_returns_readset_over_when_overflow)
 
 /* 7. install_returns_trace_fault_on_cond_throw
  *
- * When the cond hook sets *out_threw=1, install_watcher_runtime must:
+ * When the cond hook sets *out_threw=1, urbi_watcher_install_watcher_runtime must:
  *   - Return URBI_INSTALL_TRACE_FAULT.
  *   - Reset in_install to 0.
  *   - Fire a URBI_LOG_WARN containing "condition threw". */
@@ -456,7 +456,7 @@ UTEST(install_returns_trace_fault_on_cond_throw)
     vm.host_log_fn            = capture_log_t37;
     vm.test_hooks->install_cond = hook_force_throw;
 
-    UWatcherInstallResult r = install_watcher_runtime(
+    UWatcherInstallResult r = urbi_watcher_install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
     UASSERT_EQ((int)URBI_INSTALL_TRACE_FAULT, (int)r);

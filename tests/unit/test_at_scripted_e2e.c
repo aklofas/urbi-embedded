@@ -5,7 +5,7 @@
  * inject behavior), this suite compiles real urbiscript and runs it
  * through the production install + eval paths.  The watcher's cond
  * closure goes through urbi_run_closure_on_scratch (no hooks); the body
- * strand spawns through spawn_body_coroutine (M5 baseline).
+ * strand spawns through urbi_watcher_spawn_body_coroutine (M5 baseline).
  *
  * Body observes its run via Realm.fired counter — incremented inside the
  * body, read by the host afterwards via urbi_realm_get_global.  This
@@ -61,13 +61,13 @@ UTEST(scripted_at_fires_on_rising_edge)
     /* === Phase 1: install the at-watcher ===
      *
      * Compile and run "at (Realm.x > 5) Realm.fired = Realm.fired + 1".
-     * install_watcher_runtime runs the cond closure via
+     * urbi_watcher_install_watcher_runtime runs the cond closure via
      * urbi_run_closure_on_scratch (the T7 path); Realm.x == 0 so the
      * watcher installs with last_value_cache = false and enters the
      * active_watchers_head list.  The read-set records global_object
      * (the cell that holds Realm.x), setting UGC_HAS_WATCHER_OBSERVER
      * on it so any future OP_SETSLOT write to global_object triggers
-     * observer_dirty => watcher_dirty_count++. */
+     * urbi_watcher_observer_dirty => watcher_dirty_count++. */
     rc = utest_e2e_compile_and_run(&vm,
         "at (Realm.x > 5) Realm.fired = Realm.fired + 1",
         NULL);
@@ -90,7 +90,7 @@ UTEST(scripted_at_fires_on_rising_edge)
     /* === Phase 2: trigger the rising edge ===
      *
      * Mechanism: OP_SETSLOT writes Realm.x through urbi_gc_slot_store,
-     * which calls observer_dirty (UGC_HAS_WATCHER_OBSERVER is set from
+     * which calls urbi_watcher_observer_dirty (UGC_HAS_WATCHER_OBSERVER is set from
      * phase 1).  The non-top-frame OP_RET safepoint then calls
      * urbi_vm_watcher_eval_dirty, which spawns the body strand on rising edge.
      * Detailed walk-through (incl. body-strand module_instance synthesis)

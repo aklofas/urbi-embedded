@@ -15,7 +15,7 @@
  *      calling the slow path.  Verify no crash.
  *   2. emit_dispatches_when_subscriber_present:
  *      Object with a watcher installed on its slot-change event — slow path
- *      finds the chain entry, calls c_event_emit_sync, watcher fires (body
+ *      finds the chain entry, calls urbi_event_emit_sync, watcher fires (body
  *      strand spawned).
  *   3. emit_defers_when_in_scratch_context:
  *      With in_watcher_scratch set, a call must route to the deferred ring
@@ -34,7 +34,7 @@
 #include "changed/uchanged_node.h"             /* urbi_object_get_or_create_change_event,
                                           urbi_emit_slot_change_if_subscribed */
 #include "watcher/uwatcher.h"          /* UWatcher, UWATCHER_AT_EVENT */
-#include "watcher/uwatcher_install.h"  /* install_at_event_runtime */
+#include "watcher/uwatcher_install.h"  /* urbi_watcher_install_at_event_runtime */
 #include "gc/ugc_incremental.h"        /* UGC_HAS_SLOT_CHANGE_EVENT */
 #include "value/uintern.h"                   /* ustr_intern */
 #include "chunk/uchunk.h"                   /* USymbol, UClosure, UProto */
@@ -139,16 +139,16 @@ UTEST(emit_dispatches_when_subscriber_present)
     /* Install an AT_EVENT watcher with a trivial body closure. */
     make_trivial_closure(&body, &proto, instr_buf);
     UWatcherInstallResult ir =
-        install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body, NULL);
+        urbi_watcher_install_at_event_runtime(&vm, &s, UWATCHER_AT_EVENT, e, &body, NULL);
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)ir);
 
     uint32_t runnable_before = vm.strand_runnable_count;
 
-    /* Emit the slot change — should call c_event_emit_sync → spawn strand. */
+    /* Emit the slot change — should call urbi_event_emit_sync → spawn strand. */
     UValue v; v.kind = UVAL_INT; v.v.i = 7;
     urbi_emit_slot_change_if_subscribed(&vm, o, x, v);
 
-    /* do_spawn_body_coroutine must have spawned the body strand. */
+    /* urbi_watcher_do_spawn_body_coroutine must have spawned the body strand. */
     UASSERT(vm.strand_runnable_count > runnable_before ||
             e->at_watchers_head->body_strand != NULL);
 

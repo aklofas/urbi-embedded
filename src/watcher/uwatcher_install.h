@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* install_watcher_runtime: high-level entry point for OP_AT_INSTALL,
+/* urbi_watcher_install_watcher_runtime: high-level entry point for OP_AT_INSTALL,
  * OP_WHENEVER_INSTALL, and OP_WAITUNTIL_INSTALL dispatchers.
  * Spec #2 §7.1–§7.2 (reactive runtime landed in M5; see
  * docs/milestones/m5-reactive.md).
  *
- * Implementation phases live inline in install_watcher_runtime
- * (uwatcher_install.c): re-entry guard, resolve_owning_tag, trace probe arm,
+ * Implementation phases live inline in urbi_watcher_install_watcher_runtime
+ * (uwatcher_install.c): re-entry guard, urbi_watcher_resolve_owning_tag, trace probe arm,
  * cond eval on scratch frame, pool alloc, read-set wire, list insert. */
 
 #ifndef UWATCHER_INSTALL_H
@@ -26,7 +26,7 @@ struct UEvent;
 
 /* === UWatcherInstallResult ===
  *
- * Returned by install_watcher_runtime to its opcode-dispatcher caller.
+ * Returned by urbi_watcher_install_watcher_runtime to its opcode-dispatcher caller.
  * Values are stable — opcodes may branch on them.
  *
  *   OK           — watcher allocated, read-set traced, inserted into active list.
@@ -49,7 +49,7 @@ typedef enum {
                                              * for event subscriptions. */
 } UWatcherInstallResult;
 
-/* === install_watcher_runtime ===
+/* === urbi_watcher_install_watcher_runtime ===
  *
  * High-level entry point called by OP_AT_INSTALL / OP_WHENEVER_INSTALL /
  * OP_WAITUNTIL_INSTALL dispatchers.
@@ -57,7 +57,7 @@ typedef enum {
  * Parameters:
  *   vm      — owning VM.
  *   s       — installing strand (ambient tag scope walked here via
- *              resolve_owning_tag).
+ *              urbi_watcher_resolve_owning_tag).
  *   mode    — UWATCHER_AT / UWATCHER_WHENEVER / UWATCHER_WAITUNTIL.
  *   cond    — condition closure; non-NULL for AT/WHENEVER; NULL for WAITUNTIL.
  *   body    — body closure; non-NULL for AT/WHENEVER; NULL for WAITUNTIL.
@@ -80,7 +80,7 @@ typedef enum {
  *   - Otherwise: install parks the strand at `USTRAND_WAIT_WATCHER` and
  *     returns OK; OP_WAITUNTIL_INSTALL observes WAITING and yields. */
 
-UWatcherInstallResult install_watcher_runtime(
+UWatcherInstallResult urbi_watcher_install_watcher_runtime(
     struct UVM     *vm,
     struct UStrand *s,
     uint8_t         mode,
@@ -89,12 +89,12 @@ UWatcherInstallResult install_watcher_runtime(
     struct UClosure *onleave,
     struct UStrand  *waiter);
 
-/* install_at_event_runtime: thinner sibling of install_watcher_runtime for
+/* urbi_watcher_install_at_event_runtime: thinner sibling of urbi_watcher_install_watcher_runtime for
  * AT_EVENT / AT_EVENT_SYNC opcodes.  No read-set trace (events fire on emit,
  * not on slot writes); no active_watchers_head linkage.  Watcher joins
  * event->at_watchers_head + owning_tag's member chain.
  * Spec #3 §6.2. */
-UWatcherInstallResult install_at_event_runtime(
+UWatcherInstallResult urbi_watcher_install_at_event_runtime(
     struct UVM     *vm,
     struct UStrand *s,
     uint8_t         mode,

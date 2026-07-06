@@ -5,7 +5,7 @@
 
 #include "event/uevent_ring.h"
 #include "event/uevent_registry.h"  /* UEventRegistry, uevent_registry_lookup_by_id */
-#include "event/uevent_emit.h"      /* c_event_emit_async */
+#include "event/uevent_emit.h"      /* urbi_event_emit_async */
 #include "watcher/uwatcher_host.h"  /* uhost_watcher_table_walk_event (Gap J) */
 #include "vm/uvm.h"
 #include "urbi/urbi.h"  /* URBI_ERR_EVENT_* error codes, urbi_make_nil */
@@ -131,7 +131,7 @@ uevent_ring_drain(struct UVM *vm)
         /* Gap B drain auto-routing (T61): check the event registry first.
          * If event_id is registered and not tombstoned, call the destructure
          * fn (if any) to convert raw payload bytes into UValues, then
-         * dispatch through the UEvent via c_event_emit_async.
+         * dispatch through the UEvent via urbi_event_emit_async.
          *
          * Destructure fn contract:
          *   argc = destruct_fn(vm, payload_bytes, payload_len, args, 16, ud)
@@ -197,14 +197,14 @@ uevent_ring_drain(struct UVM *vm)
                     payload.kind = (uint8_t)UVAL_NIL;
                     payload.v.i  = 0;
                 }
-                c_event_emit_async(vm, re->event, payload);
+                urbi_event_emit_async(vm, re->event, payload);
 
                 /* Gap J (v0.7.1): dispatch host-side watchers.
                  * Pass ALL destructured args (argc, args[0..argc-1]) so host
                  * watchers receive the full multi-arg payload.  This closes the
                  * Sub-Bundle 2 multi-arg deferral for the host-watcher path.
                  * Note: script-side `at(name?)` bodies still see only args[0]
-                 * via c_event_emit_async above — full multi-arg script threading
+                 * via urbi_event_emit_async above — full multi-arg script threading
                  * is a separate v1.x item. */
                 uhost_watcher_table_walk_event(&vm->host_watcher_table, vm,
                         (urbi_event_id_t)e->event_id,

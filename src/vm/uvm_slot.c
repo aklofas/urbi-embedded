@@ -317,8 +317,8 @@ urbi_vm_setslot_slow(UVM *vm,
         return urbi_vm_dispatch_setter(vm, ic->uprops[fresh_k], opname, v);
     }
     /* Barrier-only post-slow-path: the store is done inside urbi_slot_set_slow;
-     * fire observer_dirty so watchers whose read-set includes recv see the write.
-     * Slot index 0 is a conservative sentinel — observer_dirty ignores the key. */
+     * fire urbi_watcher_observer_dirty so watchers whose read-set includes recv see the write.
+     * Slot index 0 is a conservative sentinel — urbi_watcher_observer_dirty ignores the key. */
     urbi_gc_slot_pre_store(vm, (UCell *)recv, 0U, v);
     /* Suppress the slot-change emit when the slow path installed a new slot
      * (shape transitioned = first-time install or COW).  Install is not a

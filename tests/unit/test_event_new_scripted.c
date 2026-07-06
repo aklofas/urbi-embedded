@@ -142,7 +142,7 @@ UTEST(event_new_then_at_watcher_fires)
  * Test 3: event_new_then_emit_with_payload
  *
  * `e.emit(42)` runs through OP_CALL → Event.emit's native_fn →
- * c_event_emit_async, exercising the full scripted dispatch.  Without
+ * urbi_event_emit_async, exercising the full scripted dispatch.  Without
  * a subscriber/waiter the call is a no-op fan-out; the test verifies
  * it executes cleanly without raising and that the URBI_OK status
  * propagates through urbi_run_chunk.

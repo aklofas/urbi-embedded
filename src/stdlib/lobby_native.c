@@ -250,7 +250,7 @@ urbi_lobby_native_register(UVM *vm)
 
     /* Chain Lobby onto root Object so prototype-graph walk past
      * Lobby.echo finds Object.clone / setSlot / etc.  Mirrors the
-     * pattern in event_native_register / tag_native_register. */
+     * pattern in urbi_event_native_register / urbi_tag_native_register. */
     UObject *root = urbi_object_root(vm);
     if (root == NULL) return URBI_ERR_OOM;
     urbi_object_set_protos_single(vm, proto, root);
@@ -282,7 +282,7 @@ urbi_lobby_native_register(UVM *vm)
     /* Install `onDisconnect` (fresh Event) — shared across every session
      * lobby instance so a subscriber from any realm sees every
      * disconnect.  Event_native already registered at this point
-     * (event_native_register fires at urbi_vm_init / urbi_native_-
+     * (urbi_event_native_register fires at urbi_vm_init / urbi_native_-
      * protos_init in urealm_globals.c before urbi_stdlib_boot). */
     {
         struct UEvent *e = urbi_event_create(vm);

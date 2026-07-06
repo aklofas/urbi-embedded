@@ -143,7 +143,7 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
  *             pool_free here invalidates the walk's captured `next`
  *             snapshot (the freed slot's next_active is repurposed as the
  *             pool freelist link, sending the walk into mode-0 freelist
- *             slots).  Defer via pending_onleave_queue_push instead — the
+ *             slots).  Defer via urbi_watcher_pending_onleave_queue_push instead — the
  *             same unlink-without-free transfer the member-watcher cascade
  *             uses: PENDING_UNREGISTER keeps the snapshot skippable-but-
  *             valid and the pool_free happens at the next safepoint drain.
@@ -178,7 +178,7 @@ strand_unlink_park(UStrand *s)
                     /* Mid-eval/drain: defer — see the WATCHER paragraph in
                      * the docstring above (the eval walk's `next` snapshot
                      * must stay valid; pool_free happens at the drain). */
-                    pending_onleave_queue_push(s->vm, w);
+                    urbi_watcher_pending_onleave_queue_push(s->vm, w);
                 } else {
                     urbi_watcher_unregister_internal(s->vm, w);
                 }
