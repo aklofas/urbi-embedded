@@ -3,7 +3,7 @@
 #include "utest.h"
 
 #include "vm/uvm.h"
-#include "vm/uvm_internal.h"    /* vm_diag_opnames_complete */
+#include "vm/uvm_internal.h"    /* urbi_vm_diag_opnames_complete */
 #include "chunk/uchunk.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
@@ -1268,12 +1268,12 @@ UTEST(opcode_op_name_covers_all) {
 UTEST(opcode_user_phrase_covers_all) {
     /* op_user_name() must return a non-"(operator)" string for every opcode
      * (all opcodes get a user phrase in the X-macro .def). */
-    UASSERT(vm_diag_opnames_complete());
+    UASSERT(urbi_vm_diag_opnames_complete());
 }
 
 UTEST(opcode_disasm_opname_covers_all) {
     /* disasm opname() must return a non-"OP?" string for every opcode. */
-    UASSERT(uemit_disasm_opnames_complete());
+    UASSERT(urbi_emit_disasm_opnames_complete());
 }
 
 void test_vm_suite(void) {

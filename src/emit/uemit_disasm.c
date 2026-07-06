@@ -469,7 +469,7 @@ size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
 /* completeness check: returns 1 if opname() returns a non-fallback string
  * for every opcode in [0, OP_MAX).  Called from the disasm completeness
  * unit test. */
-int uemit_disasm_opnames_complete(void) {
+int urbi_emit_disasm_opnames_complete(void) {
     for (int op = 0; op < (int)OP_MAX; op++) {
         if (strcmp(opname((UOpcode)op), "OP?") == 0)
             return 0;
@@ -485,6 +485,6 @@ size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
     return 0;
 }
 
-int uemit_disasm_opnames_complete(void) { return 1; }
+int urbi_emit_disasm_opnames_complete(void) { return 1; }
 
 #endif  /* __STDC_HOSTED__ */

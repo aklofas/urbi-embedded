@@ -74,8 +74,18 @@ UAstNode *make_error(UParser *p, UParseError code, const char *msg,
 /* expect: peek next token; if it matches type, consume and return true.
  * On mismatch, write *err = make_error(p, code, kErrorMessages[code], ...)
  * and return false.  On OOM make_error returns NULL; callers propagate via
- * `return *err` which yields NULL (OOM sentinel path). */
-bool expect(UParser *p, UTokenType type, UParseError code, UAstNode **err);
+ * `return *err` which yields NULL (OOM sentinel path).
+ * static inline: internal helper, must not export an archive symbol. */
+static inline bool expect(UParser *p, UTokenType type, UParseError code,
+                          UAstNode **err) {
+    UToken tok = peek(p);
+    if (tok.type != type) {
+        *err = make_error(p, code, kErrorMessages[code], tok.line, tok.col);
+        return false;
+    }
+    consume(p);
+    return true;
+}
 
 /* --- Arena-array growth helper + expression parser (defined in uparse_expr.c). --- */
 bool arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count);

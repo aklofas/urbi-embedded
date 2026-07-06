@@ -269,6 +269,13 @@ CI gate tracks this list to prevent silent growth.
 - `urbi_emit_abandon`, `urbi_emit_reserve_global_slot`,
   `urbi_emit_scope_crossings`
 
+### Consistency-wave internals (v0.13.6)
+
+- `urbi_install_native_methods` — shared native-method table installer
+  (stdlib/event/tag/ros registration converged on it)
+- `urbi_emit_disasm_opnames_complete`, `urbi_vm_diag_opnames_complete` —
+  opcode name-table completeness probes for the unit suite
+
 ### Emitter diagnostic helpers (v0.13.5 conformance-and-stdlib)
 
 - `urbi_emit_diag_error` — record an ERROR-level diagnostic with source position

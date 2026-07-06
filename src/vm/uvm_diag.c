@@ -207,7 +207,7 @@ void vm_format_oom(UVM *vm, size_t nbytes) {
 /* completeness check: returns 1 if every opcode in [0, OP_MAX) has a
  * non-fallback op_name() and op_user_name().  Called from the opcode
  * completeness unit test. */
-int vm_diag_opnames_complete(void) {
+int urbi_vm_diag_opnames_complete(void) {
     for (int op = 0; op < (int)OP_MAX; op++) {
         if (strcmp(op_name((uint8_t)op), "unknown") == 0)
             return 0;

@@ -47,7 +47,7 @@ void vm_format_oom(UVM *vm, size_t nbytes);
 
 /* completeness check: returns 1 if op_name() and op_user_name() return
  * non-fallback strings for every valid opcode. */
-int vm_diag_opnames_complete(void);
+int urbi_vm_diag_opnames_complete(void);
 
 /* --- From uvm_closure.c --- */
 
