@@ -16,34 +16,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifdef URBI_DEBUG
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-/* EXPECT_ABORT: assert that expr causes abort (via assert() failure).
- * Uses fork+waitpid: child executes expr; parent verifies abnormal exit.
- * Only meaningful in URBI_DEBUG builds where URBI_INTERNAL_ASSERT is assert(). */
-#define EXPECT_ABORT(expr)                                                   \
-    do {                                                                     \
-        utest_checks++;                                                      \
-        pid_t _pid = fork();                                                 \
-        if (_pid == 0) {                                                     \
-            (expr);                                                          \
-            _exit(0); /* should not reach — abort expected */                \
-        }                                                                    \
-        int _st = 0;                                                         \
-        waitpid(_pid, &_st, 0);                                              \
-        int _aborted = WIFSIGNALED(_st) ||                                   \
-                       (WIFEXITED(_st) && WEXITSTATUS(_st) != 0);            \
-        if (!_aborted) {                                                     \
-            utest_failures++;                                                \
-            printf("  FAIL: %s:%d: " #expr " did not abort\n",               \
-                   __FILE__, __LINE__);                                      \
-            fflush(stdout);                                                  \
-        }                                                                    \
-    } while (0)
-#endif /* URBI_DEBUG */
+#include "test_helpers.h"
 
 #define UTEST(name) static void name(void)
 
