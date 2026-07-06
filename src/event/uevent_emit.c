@@ -223,7 +223,7 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
 
     /* Walk at_watchers_head: sync subs run inline; async subs spawn.
      * UWATCHER_WHENEVER_EVENT (W0/v0.10.2) follows the AT_EVENT async path:
-     * spawn a body coroutine.  It is never sync (parse_whenever disallows
+     * spawn a body coroutine.  It is never sync (urbi_parse_whenever disallows
      * the sync modifier).  Re-fire on every emission is automatic because
      * WHENEVER_EVENT watchers are never removed from at_watchers_head.
      *

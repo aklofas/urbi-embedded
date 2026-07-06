@@ -140,7 +140,7 @@ install_watcher_runtime(
     /* Phase 5a (W0/v0.10.2): empty read-set is a programming error for
      * AT/WHENEVER watchers — reject.  Prior behavior was warn-and-proceed
      * (inert watcher never fires), which silently no-op'd whenever (e?)
-     * because parse_whenever previously built AST_WATCHER and the event
+     * because urbi_parse_whenever previously built AST_WATCHER and the event
      * expression resolved no observable cells.  Now whenever (e?) routes to
      * OP_WHENEVER_EVENT_INSTALL (not here), so any AT/WHENEVER AST_WATCHER
      * reaching install with an empty read-set is either a parse bug or a

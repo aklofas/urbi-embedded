@@ -23,20 +23,20 @@ extern "C" {
 typedef struct {
     ULexer *lex;
     UArena *arena;
-    UToken peek;
+    UToken urbi_parse_peek;
     bool have_peek;
     /* Second-token lookahead.  Used by T41 (get/set parse sugar) to detect
      * `get IDENT (` / `set IDENT (` patterns without an irreversible commit:
-     * after the current token (peek), peek2() returns the token AFTER it.
-     * Filled lazily by peek2(); consumed alongside peek by consume(). */
-    UToken peek2;
+     * after the current token (urbi_parse_peek), urbi_parse_peek2() returns the token AFTER it.
+     * Filled lazily by urbi_parse_peek2(); consumed alongside urbi_parse_peek by urbi_parse_consume(). */
+    UToken urbi_parse_peek2;
     bool have_peek2;
-    /* Set by parse_at while parsing the condition expression inside `at(...)`.
-     * When true, the postfix `?` handler in parse_expression passes through
-     * the token (does not error) so parse_at can detect it after the fact. */
+    /* Set by urbi_parse_at while parsing the condition expression inside `at(...)`.
+     * When true, the postfix `?` handler in urbi_parse_expression passes through
+     * the token (does not error) so urbi_parse_at can detect it after the fact. */
     bool at_event_cond;
     /* T41 (Wave 2): nesting depth of `class { ... }` bodies currently being
-     * parsed.  Bumped by parse_class_declaration around its parse_block call.
+     * parsed.  Bumped by parse_class_declaration around its urbi_parse_block call.
      * Statement-start `get name() {...}` / `set name(v) {...}` is rejected
      * at parse time when this is zero — the implicit-receiver form has no
      * v1.0 resolver outside a class body (deferred to v1.x implicit-this). */
@@ -61,11 +61,11 @@ typedef struct {
      *   point; decremented by uparse_budget_leave.  Compared against
      *   budget->max_parser_depth.
      *
-     * node_count — running tally of every make_node() success.  Compared
+     * node_count — running tally of every urbi_parse_make_node() success.  Compared
      *   against budget->max_ast_nodes.
      *
      * budget_exceeded — sticky latch set when any limit is first crossed.
-     *   Once set, make_node() and uparse_budget_enter return failure for
+     *   Once set, urbi_parse_make_node() and uparse_budget_enter return failure for
      *   every subsequent call, so the parse cleanly aborts.  The specific
      *   error is recorded in budget_err for the caller (urbi_repl_eval)
      *   to translate into the right UErrCode.

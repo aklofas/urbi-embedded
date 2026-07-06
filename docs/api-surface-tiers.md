@@ -383,6 +383,27 @@ Per-AST-node emit functions renamed from unprefixed `emit_*_arm` symbols.
   `urbi_periodic_destroy_for_realm`, `urbi_periodic_earliest_wake_us`,
   `urbi_periodic_pump`, `urbi_periodic_table_walk_roots`
 
+### Parser internals (v0.13.6 namespace day)
+
+Parser token helpers, AST constructors, and recursive-descent entry points
+renamed from unprefixed cross-TU names.
+
+- `urbi_parse_peek`, `urbi_parse_peek2`, `urbi_parse_consume` — token lookahead and advance (renamed from `peek`, `peek2`, `consume`)
+- `urbi_parse_kErrorMessages` — error-message string table (renamed from `kErrorMessages`)
+- `urbi_parse_kEmitMethodName` — postfix `!` desugar method name constant (renamed from `kEmitMethodName`)
+- `urbi_parse_ident_equals` — identifier byte-sequence comparison (renamed from `ident_equals`)
+- `urbi_parse_make_node`, `urbi_parse_make_int`, `urbi_parse_make_ident`, `urbi_parse_make_unary`, `urbi_parse_make_binary`, `urbi_parse_make_error`, `urbi_parse_make_nil_node` — AST node constructors (renamed from `make_*`)
+- `urbi_parse_arena_grow_node_array` — arena array growth (renamed from `arena_grow_node_array`)
+- `urbi_parse_expression`, `urbi_parse_expression_cont`, `urbi_parse_prefix`, `urbi_parse_atom` — Pratt expression parser entry points
+- `urbi_parse_pipe_amp_fold` — `|`/`&` separator left-fold (renamed from `pipe_amp_fold`)
+- `urbi_parse_inner_tier`, `urbi_parse_outer_tier` — separator-loop tiers
+- `urbi_parse_statement_or_expr`, `urbi_parse_block` — statement entry points
+- `urbi_parse_if`, `urbi_parse_while`, `urbi_parse_function`, `urbi_parse_throw`, `urbi_parse_try`, `urbi_parse_assert` — control-flow parsers
+- `urbi_parse_property_decl` — `get`/`set` property declaration parser
+- `urbi_parse_at`, `urbi_parse_whenever`, `urbi_parse_waituntil`, `urbi_parse_every` — reactive parsers
+- `urbi_parse_desugar_postfix_emit` — postfix `!` → `.emit()` desugar (renamed from `desugar_postfix_emit`)
+- `urbi_parse_tag_prefix`, `urbi_parse_tag_prefix_from_expr` — tag-scope prefix parsers
+
 ### Scheduler internals (v0.13.6 namespace day)
 
 Core scheduler and strand management symbols renamed from unprefixed names.

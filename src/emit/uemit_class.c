@@ -508,7 +508,7 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
  *   recv.setProperty(name, "oget"|"oset", function() body)
  *
  * where the function literal carries the params + body parsed by
- * parse_property_decl.  No new opcodes; runtime `oget`/`oset` slot-
+ * urbi_parse_property_decl.  No new opcodes; runtime `oget`/`oset` slot-
  * property dispatch (M4 baseline) handles the trigger on slot read /
  * write.
  *

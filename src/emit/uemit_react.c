@@ -333,7 +333,7 @@ uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
      *   whenever (e?)  → OP_WHENEVER_EVENT_INSTALL (=48; re-fires every emit)
      *   at sync (e?)   → OP_AT_EVENT_SYNC_INSTALL  (=43; sync, one-shot per emit)
      *   at (e?)        → OP_AT_EVENT_INSTALL        (=42; async, one-shot per emit)
-     * whenever-sync has no valid surface syntax; parse_whenever never sets
+     * whenever-sync has no valid surface syntax; urbi_parse_whenever never sets
      * is_sync=true, so whenever_flag && sync_flag cannot both be true. */
     UOpcode op = whenever_flag ? OP_WHENEVER_EVENT_INSTALL
                : sync_flag    ? OP_AT_EVENT_SYNC_INSTALL

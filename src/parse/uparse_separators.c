@@ -14,37 +14,37 @@
    Used by the trailing-drop rules for outer-tier ';'/','  and
    inner-tier '|'/'&'. */
 static bool at_statement_end(UParser *p) {
-    UTokenType t = peek(p).type;
+    UTokenType t = urbi_parse_peek(p).type;
     return t == TOK_EOF || t == TOK_RBRACE || t == TOK_RPAREN
         || t == TOK_PIPE;
 }
 
 /* parse_sep_operand: parse one & / | operand.
  * Accepts a block (`TOK_LBRACE`), `if`/`while` statement forms, or falls
- * back to parse_expression.
+ * back to urbi_parse_expression.
  *
  * This enables the signature parallel-composition idiom `{a} & {b}` at
  * the inner tier.  Parallel var-declare (`var a = 1 & var b = 2`) stays
  * rejected — `var` is absent from this dispatch (T14/deferred-v1.x).
  *
- * Note: the caller (pipe_amp_fold) is a loop, so chaining is handled
+ * Note: the caller (urbi_parse_pipe_amp_fold) is a loop, so chaining is handled
  * there; this helper returns a single self-contained node per call. */
 static UAstNode *parse_sep_operand(UParser *p) {
-    UToken t = peek(p);
-    if (t.type == TOK_LBRACE)   return parse_block(p);
-    if (t.type == TOK_KW_IF)    return parse_if(p);
-    if (t.type == TOK_KW_WHILE) return parse_while(p);
-    return parse_expression(p, 0);
+    UToken t = urbi_parse_peek(p);
+    if (t.type == TOK_LBRACE)   return urbi_parse_block(p);
+    if (t.type == TOK_KW_IF)    return urbi_parse_if(p);
+    if (t.type == TOK_KW_WHILE) return urbi_parse_while(p);
+    return urbi_parse_expression(p, 0);
 }
 
-/* pipe_amp_fold: left-fold `|` and `&` binops starting from an already-parsed
-   lhs.  Shared by parse_inner_tier, parse_inner_tier_from_lhs, and
-   parse_assign_or_expr (W8/v0.10.5 member-expr tag form). */
-UAstNode *pipe_amp_fold(UParser *p, UAstNode *lhs) {
+/* urbi_parse_pipe_amp_fold: left-fold `|` and `&` binops starting from an already-parsed
+   lhs.  Shared by urbi_parse_inner_tier and parse_assign_or_expr
+   (W8/v0.10.5 member-expr tag form). */
+UAstNode *urbi_parse_pipe_amp_fold(UParser *p, UAstNode *lhs) {
     for (;;) {
-        UToken sep = peek(p);
+        UToken sep = urbi_parse_peek(p);
         if (sep.type != TOK_PIPE && sep.type != TOK_AMP) break;
-        consume(p);
+        urbi_parse_consume(p);
         UAstSeparator s = (sep.type == TOK_PIPE) ? SEP_PIPE : SEP_AMP;
 
         /* Trailing-drop: pipe at end → drop silently and return lhs.
@@ -52,12 +52,12 @@ UAstNode *pipe_amp_fold(UParser *p, UAstNode *lhs) {
            Also treat an immediately following '|' as a trailing boundary
            so that the REPL's appended " |" doesn't hide a trailing '&'. */
         bool trail = at_statement_end(p)
-                  || peek(p).type == TOK_SEMI
-                  || peek(p).type == TOK_COMMA
-                  || peek(p).type == TOK_PIPE;
+                  || urbi_parse_peek(p).type == TOK_SEMI
+                  || urbi_parse_peek(p).type == TOK_COMMA
+                  || urbi_parse_peek(p).type == TOK_PIPE;
         if (trail) {
             if (s == SEP_PIPE) return lhs;
-            return make_error(p, PARSE_TRAILING_AMP, NULL,
+            return urbi_parse_make_error(p, PARSE_TRAILING_AMP, NULL,
                               sep.line, sep.col);
         }
 
@@ -65,7 +65,7 @@ UAstNode *pipe_amp_fold(UParser *p, UAstNode *lhs) {
         if (!rhs) return NULL;
         if (rhs->kind == AST_ERROR) return rhs;
 
-        UAstNode *node = make_node(p, AST_BIN_SEP, sep.line, sep.col);
+        UAstNode *node = urbi_parse_make_node(p, AST_BIN_SEP, sep.line, sep.col);
         if (!node) return NULL;
         node->u.bin_sep.separator = s;
         node->u.bin_sep.lhs = lhs;
@@ -79,22 +79,11 @@ UAstNode *pipe_amp_fold(UParser *p, UAstNode *lhs) {
    binops at equal precedence (left-associative).
    Trailing `|` at statement-end is silently dropped.
    Trailing `&` at statement-end is a parse error (PARSE_TRAILING_AMP). */
-UAstNode *parse_inner_tier(UParser *p) {
-    UAstNode *lhs = parse_expression(p, 0);
+UAstNode *urbi_parse_inner_tier(UParser *p) {
+    UAstNode *lhs = urbi_parse_expression(p, 0);
     if (!lhs) return NULL;
     if (lhs->kind == AST_ERROR) return lhs;
-    return pipe_amp_fold(p, lhs);
-}
-
-/* parse_inner_tier_from_lhs: resume inner-tier parsing from an already-parsed
-   lhs node (e.g. an IDENT already consumed by the statement dispatcher).
-   Runs parse_expression_cont(p, lhs, 0) to finish the Pratt climb, then
-   pipe_amp_fold for the | / & separator loop. */
-static UAstNode *parse_inner_tier_from_lhs(UParser *p, UAstNode *lhs) {
-    lhs = parse_expression_cont(p, lhs, 0);
-    if (!lhs) return NULL;
-    if (lhs->kind == AST_ERROR) return lhs;
-    return pipe_amp_fold(p, lhs);
+    return urbi_parse_pipe_amp_fold(p, lhs);
 }
 
 /* Outer-tier: parse one or more inner-tier expressions joined by `;` or `,`.
@@ -106,16 +95,16 @@ static UAstNode *parse_inner_tier_from_lhs(UParser *p, UAstNode *lhs) {
    OOM-sentinel comment at the top of uparse_internal.h. The top-level
    uparse_next_statement collapses both forms via the arena->oom
    recheck (closes PARSE-005). */
-UAstNode *parse_outer_tier(UParser *p) {
-    UAstNode *first = parse_statement_or_expr(p);
+UAstNode *urbi_parse_outer_tier(UParser *p) {
+    UAstNode *first = urbi_parse_statement_or_expr(p);
     if (!first) return NULL;
     if (first->kind == AST_ERROR) return first;
 
     /* If no outer-tier separator follows, return the single node unwrapped. */
-    UToken sep0 = peek(p);
+    UToken sep0 = urbi_parse_peek(p);
     if (sep0.type != TOK_SEMI && sep0.type != TOK_COMMA) return first;
 
-    consume(p);
+    urbi_parse_consume(p);
     UAstSeparator sep_kind = (sep0.type == TOK_SEMI) ? SEP_SEMI : SEP_COMMA;
 
     /* Trailing-drop: separator immediately at statement-end → return first. */
@@ -131,33 +120,33 @@ UAstNode *parse_outer_tier(UParser *p) {
     int count = 1;
 
     for (;;) {
-        UAstNode *child = parse_statement_or_expr(p);
+        UAstNode *child = urbi_parse_statement_or_expr(p);
         if (!child) return NULL;
         if (child->kind == AST_ERROR) return child;
 
         if (count == cap) {
-            if (!arena_grow_node_array(p, &children, &cap, count))
+            if (!urbi_parse_arena_grow_node_array(p, &children, &cap, count))
                 return (UAstNode *)&uparser_oom_sentinel;
         }
         children[count++] = child;
 
-        UToken s = peek(p);
+        UToken s = urbi_parse_peek(p);
         if (s.type != TOK_SEMI && s.type != TOK_COMMA) break;
 
         UAstSeparator s_kind = (s.type == TOK_SEMI) ? SEP_SEMI : SEP_COMMA;
         if (s_kind != sep_kind) {
-            consume(p);
-            return make_error(p, PARSE_UNEXPECTED_TOKEN,
+            urbi_parse_consume(p);
+            return urbi_parse_make_error(p, PARSE_UNEXPECTED_TOKEN,
                               "mixing ';' and ',' in same group is ambiguous; group with parens",
                               s.line, s.col);
         }
-        consume(p);
+        urbi_parse_consume(p);
 
         /* Trailing-drop: separator at statement-end → stop collecting. */
         if (at_statement_end(p)) break;
     }
 
-    UAstNode *node = make_node(p, AST_NARY, first->line, first->col);
+    UAstNode *node = urbi_parse_make_node(p, AST_NARY, first->line, first->col);
     if (!node) return NULL;
     node->u.nary.separator = sep_kind;
     node->u.nary.children  = children;

@@ -12,7 +12,7 @@
 
 /* Local string helper — compare an (unterminated) lexeme against a literal.
  * Returns non-zero when bytes[0..len) == literal (all ASCII, no NUL in bytes). */
-int ident_equals(const char *bytes, int len, const char *literal, int lit_len) {
+int urbi_parse_ident_equals(const char *bytes, int len, const char *literal, int lit_len) {
     if (len != lit_len) return 0;
     int i;
     for (i = 0; i < len; i++) {
@@ -23,7 +23,7 @@ int ident_equals(const char *bytes, int len, const char *literal, int lit_len) {
 
 /* --- Static error-message table.  Indices must match UParseError. --- */
 
-const char * const kErrorMessages[] = {
+const char * const urbi_parse_kErrorMessages[] = {
     "ok",
     "unexpected token",
     "unexpected end of input",
@@ -131,22 +131,22 @@ static const char * const kErrorNames[] = {
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
 
-/* Compile-time parity check: the kErrorNames / kErrorMessages tables
+/* Compile-time parity check: the kErrorNames / urbi_parse_kErrorMessages tables
  * are indexed by UParseError, so their length must equal the count of
  * UParseError enumerators.  Update both when adding new codes.
  * Closes PARSE-017. */
 URBI_STATIC_ASSERT(N_PARSE_ERROR_CODES == (int)PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN + 1,
                "kErrorNames length must match UParseError enum count");
-URBI_STATIC_ASSERT((int)(sizeof kErrorMessages / sizeof kErrorMessages[0])
+URBI_STATIC_ASSERT((int)(sizeof urbi_parse_kErrorMessages / sizeof urbi_parse_kErrorMessages[0])
                == (int)PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN + 1,
-               "kErrorMessages length must match UParseError enum count");
+               "urbi_parse_kErrorMessages length must match UParseError enum count");
 
 /* --- Postfix-emit method name.  Promoted to file scope so the postfix
  * `e!` desugar in uparse_react.c does not duplicate the literal.
  * Closes PARSE-016. --- */
-const char kEmitMethodName[] = "emit";
-URBI_STATIC_ASSERT(sizeof kEmitMethodName - 1U == kEmitMethodNameLen,
-               "kEmitMethodNameLen must equal strlen(kEmitMethodName)");
+const char urbi_parse_kEmitMethodName[] = "emit";
+URBI_STATIC_ASSERT(sizeof urbi_parse_kEmitMethodName - 1U == kEmitMethodNameLen,
+               "kEmitMethodNameLen must equal strlen(urbi_parse_kEmitMethodName)");
 
 /* --- OOM sentinel.  Returned whenever the arena is in OOM state. --- */
 
@@ -167,40 +167,40 @@ const UAstNode uparser_oom_sentinel = {
 
 /* --- ULexer lookahead helpers. --- */
 
-UToken peek(UParser *p) {
+UToken urbi_parse_peek(UParser *p) {
     if (!p->have_peek) {
-        p->peek = ulex_next(p->lex);
+        p->urbi_parse_peek = ulex_next(p->lex);
         p->have_peek = true;
     }
-    return p->peek;
+    return p->urbi_parse_peek;
 }
 
-/* Second-token lookahead — returns the token AFTER peek() without
+/* Second-token lookahead — returns the token AFTER urbi_parse_peek() without
  * advancing the stream.  Used by T41 (get/set parse sugar) to detect
  * `get IDENT (` shapes; after we know the current IDENT is `get`/`set`,
  * we need to see whether the next two tokens are IDENT followed by `(`.
  *
- * Implementation: ensure peek is filled, then pull one more token from
- * the lexer into peek2.  consume() advances the queue: peek2 (if filled)
- * becomes the new peek; have_peek2 clears. */
-UToken peek2(UParser *p) {
-    /* Ensure peek is filled first so peek2 sits exactly one token ahead. */
+ * Implementation: ensure urbi_parse_peek is filled, then pull one more token from
+ * the lexer into urbi_parse_peek2.  urbi_parse_consume() advances the queue: urbi_parse_peek2 (if filled)
+ * becomes the new urbi_parse_peek; have_peek2 clears. */
+UToken urbi_parse_peek2(UParser *p) {
+    /* Ensure urbi_parse_peek is filled first so urbi_parse_peek2 sits exactly one token ahead. */
     if (!p->have_peek) {
-        p->peek = ulex_next(p->lex);
+        p->urbi_parse_peek = ulex_next(p->lex);
         p->have_peek = true;
     }
     if (!p->have_peek2) {
-        p->peek2 = ulex_next(p->lex);
+        p->urbi_parse_peek2 = ulex_next(p->lex);
         p->have_peek2 = true;
     }
-    return p->peek2;
+    return p->urbi_parse_peek2;
 }
 
-UToken consume(UParser *p) {
-    UToken t = peek(p);
-    /* Slide peek2 down into peek if it was pre-fetched. */
+UToken urbi_parse_consume(UParser *p) {
+    UToken t = urbi_parse_peek(p);
+    /* Slide urbi_parse_peek2 down into urbi_parse_peek if it was pre-fetched. */
     if (p->have_peek2) {
-        p->peek = p->peek2;
+        p->urbi_parse_peek = p->urbi_parse_peek2;
         p->have_peek = true;
         p->have_peek2 = false;
     } else {
@@ -211,10 +211,10 @@ UToken consume(UParser *p) {
 
 /* --- AST constructors.  Return NULL on arena OOM. --- */
 
-UAstNode *make_node(UParser *p, UAstKind k, int line, int col) {
+UAstNode *urbi_parse_make_node(UParser *p, UAstKind k, int line, int col) {
     /* v0.9.1 compile-budget guard: every AST allocation is counted.  Once a
      * limit is tripped, the budget_exceeded latch is sticky and subsequent
-     * make_node calls fail-fast — the parse cleanly unwinds with NULL
+     * urbi_parse_make_node calls fail-fast — the parse cleanly unwinds with NULL
      * propagation (same shape as the existing arena OOM path). */
     if (p->budget_exceeded) return NULL;
     if (p->budget != NULL && p->budget->max_ast_nodes > 0U
@@ -232,33 +232,33 @@ UAstNode *make_node(UParser *p, UAstKind k, int line, int col) {
     return n;
 }
 
-UAstNode *make_int(UParser *p, int64_t v, int line, int col) {
-    UAstNode *n = make_node(p, AST_INT, line, col);
+UAstNode *urbi_parse_make_int(UParser *p, int64_t v, int line, int col) {
+    UAstNode *n = urbi_parse_make_node(p, AST_INT, line, col);
     if (!n) return NULL;
     n->u.i = v;
     return n;
 }
 
-UAstNode *make_ident(UParser *p, const char *start, int len, int line, int col) {
-    UAstNode *n = make_node(p, AST_IDENT, line, col);
+UAstNode *urbi_parse_make_ident(UParser *p, const char *start, int len, int line, int col) {
+    UAstNode *n = urbi_parse_make_node(p, AST_IDENT, line, col);
     if (!n) return NULL;
     n->u.ident.start = start;
     n->u.ident.len = len;
     return n;
 }
 
-UAstNode *make_unary(UParser *p, UAstUnaryOp op, UAstNode *operand,
+UAstNode *urbi_parse_make_unary(UParser *p, UAstUnaryOp op, UAstNode *operand,
                      int line, int col) {
-    UAstNode *n = make_node(p, AST_UNARY, line, col);
+    UAstNode *n = urbi_parse_make_node(p, AST_UNARY, line, col);
     if (!n) return NULL;
     n->u.unary.op = op;
     n->u.unary.operand = operand;
     return n;
 }
 
-UAstNode *make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
+UAstNode *urbi_parse_make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
                       int line, int col) {
-    UAstNode *n = make_node(p, AST_BINARY, line, col);
+    UAstNode *n = urbi_parse_make_node(p, AST_BINARY, line, col);
     if (!n) return NULL;
     n->u.binary.op = op;
     n->u.binary.lhs = lhs;
@@ -266,45 +266,45 @@ UAstNode *make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
     return n;
 }
 
-/* make_error: build a UParseError record from an error code + line/col.
+/* urbi_parse_make_error: build a UParseError record from an error code + line/col.
  *
  * msg parameter convention:
- *   - NULL → look up message text from kErrorMessages[code].  Used by
+ *   - NULL → look up message text from urbi_parse_kErrorMessages[code].  Used by
  *            error sites that report a bare code with no contextual prose.
  *   - non-NULL → use the caller-provided message verbatim.  Used by
  *            error sites that need to interpolate context not encoded in
  *            the bare error code (e.g. "expected ')' after ',' at column 17").
  *
  * Call-site convention is inconsistent across parse TUs: some pass NULL,
- * others pass kErrorMessages[code] explicitly even when the value is
+ * others pass urbi_parse_kErrorMessages[code] explicitly even when the value is
  * the same.  Both patterns are supported and produce identical output;
  * standardization across the parse subsystem is a Wave 6 cleanup target. */
-UAstNode *make_error(UParser *p, UParseError code, const char *msg,
+UAstNode *urbi_parse_make_error(UParser *p, UParseError code, const char *msg,
                      int line, int col) {
-    UAstNode *n = make_node(p, AST_ERROR, line, col);
+    UAstNode *n = urbi_parse_make_node(p, AST_ERROR, line, col);
     if (!n) return NULL;
     n->u.err.code = (int)code;
-    n->u.err.message = msg ? msg : kErrorMessages[code];
+    n->u.err.message = msg ? msg : urbi_parse_kErrorMessages[code];
     return n;
 }
 
 /* expect moved to uparse_internal.h as static inline (no archive symbol). */
 
 /* infix_prec / infix_binop / is_compare_token / compare_op /
-   make_compare / make_bool_node / make_nil_node /
-   parse_prefix / parse_atom / arena_grow_node_array /
-   parse_call_args / parse_member_access / parse_expression
+   make_compare / make_bool_node / urbi_parse_make_nil_node /
+   urbi_parse_prefix / urbi_parse_atom / urbi_parse_arena_grow_node_array /
+   parse_call_args / parse_member_access / urbi_parse_expression
    moved to uparse_expr.c (PARSE-021 #6). */
 
-/* at_statement_end / parse_inner_tier moved to uparse_separators.c. */
+/* at_statement_end / urbi_parse_inner_tier moved to uparse_separators.c. */
 
-/* parse_block / parse_while / parse_if / parse_function / parse_return /
-   parse_throw / parse_try moved to uparse_stmt.c (PARSE-021 #4). */
+/* urbi_parse_block / urbi_parse_while / urbi_parse_if / urbi_parse_function / parse_return /
+   urbi_parse_throw / urbi_parse_try moved to uparse_stmt.c (PARSE-021 #4). */
 
-/* parse_at / parse_whenever / parse_waituntil moved to uparse_react.c
+/* urbi_parse_at / urbi_parse_whenever / urbi_parse_waituntil moved to uparse_react.c
    (PARSE-021 #5). */
 
-/* parse_outer_tier moved to uparse_separators.c. */
+/* urbi_parse_outer_tier moved to uparse_separators.c. */
 
 /* --- Public API (moved to uparse_top.c). --- */
 

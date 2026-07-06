@@ -470,7 +470,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 
     if (has_error) {
         /* v0.9.1: budget trip surfaces here when uparse_next_statement
-         * returned the OOM sentinel (or a NULL from an inner make_node).
+         * returned the OOM sentinel (or a NULL from an inner urbi_parse_make_node).
          * Latch is sticky in UParser; check before composing the diag. */
         int budget_err = uparse_budget_err(&p);
         if (out_buf && out_buf_size > 0) {

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uparse_expr.c — Pratt expression parser (infix tables, prefix, atom, call,
- * member-access, parse_expression).
+ * member-access, urbi_parse_expression).
  * Extracted from uparse.c during v0.5.4-decompose (PARSE-021 #6). */
 
 #include "parse/uparse.h"
@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 /* v0.10.11 / W3: `<<` shift-write selector.  File-scope (with
- * URBI_STATIC_ASSERT length guard) matching the kEmitMethodName pattern
+ * URBI_STATIC_ASSERT length guard) matching the urbi_parse_kEmitMethodName pattern
  * in uparse.c; declared extern in uparse_internal.h for visibility. */
 static const char kLShiftSelector[] = "<<";
 URBI_STATIC_ASSERT(sizeof kLShiftSelector - 1U == kLShiftSelectorLen,
@@ -40,7 +40,7 @@ URBI_STATIC_ASSERT(sizeof kModSelector - 1U == (size_t)kModSelectorLen,
      7 = multiplicative (*, /, %)
      9 = postfix (call, member, `!`, `?`) — see PARSE_PREC_POSTFIX
          in uparse_internal.h; not produced by this function (handled
-         directly in parse_expression_cont). */
+         directly in urbi_parse_expression_cont). */
 static int infix_prec(UTokenType t) {
     switch (t) {
     /* === v1.0-rc stdlib-completeness: short-circuit logical operators === */
@@ -99,7 +99,7 @@ static UAstCompareOp compare_op(UTokenType t) {
 static UAstNode *make_compare(UParser *p, UAstCompareOp op,
                        UAstNode *lhs, UAstNode *rhs,
                        int line, int col) {
-    UAstNode *n = make_node(p, AST_COMPARE, line, col);
+    UAstNode *n = urbi_parse_make_node(p, AST_COMPARE, line, col);
     if (!n) return NULL;
     n->u.cmp.op  = op;
     n->u.cmp.lhs = lhs;
@@ -108,18 +108,18 @@ static UAstNode *make_compare(UParser *p, UAstCompareOp op,
 }
 
 static UAstNode *make_bool_node(UParser *p, bool value, int line, int col) {
-    UAstNode *n = make_node(p, AST_BOOL, line, col);
+    UAstNode *n = urbi_parse_make_node(p, AST_BOOL, line, col);
     if (!n) return NULL;
     n->u.b = value;
     return n;
 }
 
-UAstNode *make_nil_node(UParser *p, int line, int col) {
-    return make_node(p, AST_NIL, line, col);
+UAstNode *urbi_parse_make_nil_node(UParser *p, int line, int col) {
+    return urbi_parse_make_node(p, AST_NIL, line, col);
 }
 
 static UAstNode *make_this_node(UParser *p, int line, int col) {
-    return make_node(p, AST_THIS, line, col);
+    return urbi_parse_make_node(p, AST_THIS, line, col);
 }
 
 /* hex_digit_unchecked — convert one ASCII hex digit to its 0..15 value.
@@ -133,7 +133,7 @@ static int hex_digit_unchecked(char c) {
     return c - 'A' + 10;
 }
 
-/* parse_string_literal — consume a TOK_STRING (possibly followed by adjacent
+/* parse_string_literal — urbi_parse_consume a TOK_STRING (possibly followed by adjacent
  * TOK_STRING tokens per the L3 adjacent-string-concat rule) and produce AST_STR.
  *
  * Resolves Wave-1 escape sequences (\n / \t / \\ / \") and the v0.6.1
@@ -158,16 +158,16 @@ static int hex_digit_unchecked(char c) {
  *
  * Returns AST_STR on success, NULL on arena OOM. */
 static UAstNode *parse_string_literal(UParser *p) {
-    UToken first = consume(p);
+    UToken first = urbi_parse_consume(p);
     int line = first.line;
     int col = first.col;
 
     /* Worst-case capacity: sum of all interior spans for first + every
-     * adjacent TOK_STRING sibling.  We need to peek ahead to size it before
+     * adjacent TOK_STRING sibling.  We need to urbi_parse_peek ahead to size it before
      * committing the arena allocation; cheaper to allocate per the first
      * token and grow only when concat appends.  Since arena allocations are
      * single-shot (no realloc), we instead measure the total span first by
-     * walking the peek + consume loop, but the parser's peek/consume API is
+     * walking the urbi_parse_peek + urbi_parse_consume loop, but the parser's urbi_parse_peek/urbi_parse_consume API is
      * one-token lookahead.  Solution: allocate generously for the first
      * token, then reallocate by re-allocating + copy on each concat append.
      * This is O(n^2) in adjacent-concat depth but adjacency is bounded by
@@ -244,10 +244,10 @@ static UAstNode *parse_string_literal(UParser *p) {
         }
 
         /* Peek for adjacent TOK_STRING (L3 adjacent-string-concat).  If found,
-         * consume it and grow the buffer to fit. */
-        UToken nxt = peek(p);
+         * urbi_parse_consume it and grow the buffer to fit. */
+        UToken nxt = urbi_parse_peek(p);
         if (nxt.type != TOK_STRING) break;
-        cur = consume(p);
+        cur = urbi_parse_consume(p);
 
         if (len + cur.u.str.len > cap) {
             /* Allocate a wider buffer; copy the prefix.  Old buffer is
@@ -261,46 +261,46 @@ static UAstNode *parse_string_literal(UParser *p) {
         }
     }
 
-    UAstNode *n = make_node(p, AST_STR, line, col);
+    UAstNode *n = urbi_parse_make_node(p, AST_STR, line, col);
     if (n == NULL) return NULL;
     n->u.str_lit.bytes = buf;
     n->u.str_lit.len = len;
     return n;
 }
 
-/* --- parse_prefix: unary +/- /! then atom.  Unary '+' is a no-op. --- */
+/* --- urbi_parse_prefix: unary +/- /! then atom.  Unary '+' is a no-op. --- */
 
-UAstNode *parse_prefix(UParser *p) {
-    UToken t = peek(p);
+UAstNode *urbi_parse_prefix(UParser *p) {
+    UToken t = urbi_parse_peek(p);
     if (t.type == TOK_PLUS) {
-        consume(p);
-        return parse_prefix(p);             /* +x is x; no node */
+        urbi_parse_consume(p);
+        return urbi_parse_prefix(p);             /* +x is x; no node */
     }
     if (t.type == TOK_MINUS) {
-        consume(p);
-        UAstNode *operand = parse_prefix(p); /* right-assoc: --3 -> -(-3) */
+        urbi_parse_consume(p);
+        UAstNode *operand = urbi_parse_prefix(p); /* right-assoc: --3 -> -(-3) */
         if (!operand) return NULL;
         if (operand->kind == AST_ERROR) return operand;
-        operand = parse_expression_cont(p, operand, PARSE_PREC_POSTFIX);
+        operand = urbi_parse_expression_cont(p, operand, PARSE_PREC_POSTFIX);
         if (!operand) return NULL;
         if (operand->kind == AST_ERROR) return operand;
-        return make_unary(p, UOP_NEG, operand, t.line, t.col);
+        return urbi_parse_make_unary(p, UOP_NEG, operand, t.line, t.col);
     }
     if (t.type == TOK_BANG) {
         /* Prefix `!x` — logical NOT.  Recognized here (primary position) so
          * postfix `e!` (in the post-primary loop) does not steal it.
          * The operand is parsed through PARSE_PREC_POSTFIX, so a postfix `!`
          * on the operand binds first: `!e!` parses as `!(e!)`. */
-        consume(p);
-        UAstNode *operand = parse_prefix(p);
+        urbi_parse_consume(p);
+        UAstNode *operand = urbi_parse_prefix(p);
         if (!operand) return NULL;
         if (operand->kind == AST_ERROR) return operand;
-        operand = parse_expression_cont(p, operand, PARSE_PREC_POSTFIX);
+        operand = urbi_parse_expression_cont(p, operand, PARSE_PREC_POSTFIX);
         if (!operand) return NULL;
         if (operand->kind == AST_ERROR) return operand;
-        return make_unary(p, UOP_NOT, operand, t.line, t.col);
+        return urbi_parse_make_unary(p, UOP_NOT, operand, t.line, t.col);
     }
-    return parse_atom(p);
+    return urbi_parse_atom(p);
 }
 
 /* === W10/v0.10.5: parse_bracket_literal =====================================
@@ -309,14 +309,14 @@ UAstNode *parse_prefix(UParser *p) {
  * `=>` is present it is a dict; otherwise it is a list.  An empty `[]` is
  * an empty list; `[=>]` is not supported (use `Dict.new()`).
  *
- * Caller has confirmed peek() is TOK_LBRACKET.  Consumes `[` + contents + `]`.
+ * Caller has confirmed urbi_parse_peek() is TOK_LBRACKET.  Consumes `[` + contents + `]`.
  *
  * List:   AST_LIST_LIT { elems[], count }
  * Dict:   AST_DICT_LIT { keys[], vals[], count }
  * ========================================================================== */
 
 static UAstNode *parse_bracket_literal(UParser *p) {
-    UToken lbr = consume(p);  /* consume '[' */
+    UToken lbr = urbi_parse_consume(p);  /* urbi_parse_consume '[' */
 
     int cap = 4;
     UAstNode **elems = (UAstNode **)uarena_alloc(p->arena,
@@ -332,24 +332,24 @@ static UAstNode *parse_bracket_literal(UParser *p) {
     UAstNode **vals = NULL;
 
     /* Empty list: `[]` */
-    if (peek(p).type == TOK_RBRACKET) {
-        consume(p);
-        UAstNode *n = make_node(p, AST_LIST_LIT, lbr.line, lbr.col);
+    if (urbi_parse_peek(p).type == TOK_RBRACKET) {
+        urbi_parse_consume(p);
+        UAstNode *n = urbi_parse_make_node(p, AST_LIST_LIT, lbr.line, lbr.col);
         if (!n) return NULL;
         n->u.list_lit.elems = elems;  /* empty; valid pointer */
         n->u.list_lit.count = 0;
         return n;
     }
 
-    while (peek(p).type != TOK_RBRACKET && peek(p).type != TOK_EOF) {
+    while (urbi_parse_peek(p).type != TOK_RBRACKET && urbi_parse_peek(p).type != TOK_EOF) {
         /* Parse the first part of each element (key or element value). */
-        UAstNode *first = parse_expression(p, 0);
+        UAstNode *first = urbi_parse_expression(p, 0);
         if (!first) return (UAstNode *)&uparser_oom_sentinel;
         if (first->kind == AST_ERROR) return first;
 
         if (!dict_decided) {
             /* Decide list vs dict based on presence of `=>` after first elem. */
-            is_dict = (peek(p).type == TOK_FAT_ARROW);
+            is_dict = (urbi_parse_peek(p).type == TOK_FAT_ARROW);
             dict_decided = true;
             if (is_dict) {
                 /* Allocate keys/vals from arena (same initial cap). */
@@ -363,16 +363,16 @@ static UAstNode *parse_bracket_literal(UParser *p) {
 
         if (is_dict) {
             /* Dict mode: `key => value`. */
-            { UAstNode *err = NULL; if (!expect(p, TOK_FAT_ARROW, PARSE_DICT_EXPECTED_FAT_ARROW, &err)) return err; }  /* consume '=>' */
-            UAstNode *val = parse_expression(p, 0);
+            { UAstNode *err = NULL; if (!expect(p, TOK_FAT_ARROW, PARSE_DICT_EXPECTED_FAT_ARROW, &err)) return err; }  /* urbi_parse_consume '=>' */
+            UAstNode *val = urbi_parse_expression(p, 0);
             if (!val) return (UAstNode *)&uparser_oom_sentinel;
             if (val->kind == AST_ERROR) return val;
             if (count == cap) {
-                if (!arena_grow_node_array(p, &keys, &cap, count))
+                if (!urbi_parse_arena_grow_node_array(p, &keys, &cap, count))
                     return (UAstNode *)&uparser_oom_sentinel;
                 /* vals was allocated with same original cap; grow it too. */
                 int vals_cap = count; /* before grow */
-                if (!arena_grow_node_array(p, &vals, &vals_cap, count))
+                if (!urbi_parse_arena_grow_node_array(p, &vals, &vals_cap, count))
                     return (UAstNode *)&uparser_oom_sentinel;
             }
             keys[count] = first;
@@ -381,30 +381,30 @@ static UAstNode *parse_bracket_literal(UParser *p) {
         } else {
             /* List mode. */
             if (count == cap) {
-                if (!arena_grow_node_array(p, &elems, &cap, count))
+                if (!urbi_parse_arena_grow_node_array(p, &elems, &cap, count))
                     return (UAstNode *)&uparser_oom_sentinel;
             }
             elems[count++] = first;
         }
 
-        if (peek(p).type == TOK_COMMA) {
-            consume(p);
+        if (urbi_parse_peek(p).type == TOK_COMMA) {
+            urbi_parse_consume(p);
         } else {
             break;
         }
     }
 
-    { UAstNode *err = NULL; if (!expect(p, TOK_RBRACKET, PARSE_EXPECTED_RBRACKET, &err)) return err; }  /* consume ']' */
+    { UAstNode *err = NULL; if (!expect(p, TOK_RBRACKET, PARSE_EXPECTED_RBRACKET, &err)) return err; }  /* urbi_parse_consume ']' */
 
     if (is_dict) {
-        UAstNode *n = make_node(p, AST_DICT_LIT, lbr.line, lbr.col);
+        UAstNode *n = urbi_parse_make_node(p, AST_DICT_LIT, lbr.line, lbr.col);
         if (!n) return NULL;
         n->u.dict_lit.keys  = keys;
         n->u.dict_lit.vals  = vals;
         n->u.dict_lit.count = count;
         return n;
     } else {
-        UAstNode *n = make_node(p, AST_LIST_LIT, lbr.line, lbr.col);
+        UAstNode *n = urbi_parse_make_node(p, AST_LIST_LIT, lbr.line, lbr.col);
         if (!n) return NULL;
         n->u.list_lit.elems = elems;
         n->u.list_lit.count = count;
@@ -413,27 +413,27 @@ static UAstNode *parse_bracket_literal(UParser *p) {
 }
 /* === end W10/v0.10.5: parse_bracket_literal === */
 
-/* --- parse_atom: INT | IDENT | true | false | nil | ( expr ) | error.
+/* --- urbi_parse_atom: INT | IDENT | true | false | nil | ( expr ) | error.
  *
  * PARSE-032 closure (doc-only): time-literal suffixes (`100ms`, `1s`, `1d`)
  * + angle suffixes (`180deg`, `2pi`, `200grad`) are absorbed at the lexer
  * (`src/lex/ulex.c` rolls suffix into TOK_INT.u.i — microseconds for time,
- * milli-radians or fixed-point for angle).  parse_atom
+ * milli-radians or fixed-point for angle).  urbi_parse_atom
  * intentionally only handles the bare TOK_INT here — the audit was filed
  * because the parser surface looked incomplete; the apparent gap is the
  * lex-side absorption.  When v1.x adds suffix overloading for non-int
  * receivers (`Decimal(0.5s)` etc.), this comment + the lex translation
  * site are the canonical change-points. */
 
-UAstNode *parse_atom(UParser *p) {
-    UToken t = peek(p);
+UAstNode *urbi_parse_atom(UParser *p) {
+    UToken t = urbi_parse_peek(p);
     switch (t.type) {
     case TOK_INT:
-        consume(p);
-        return make_int(p, t.u.i, t.line, t.col);
+        urbi_parse_consume(p);
+        return urbi_parse_make_int(p, t.u.i, t.line, t.col);
     case TOK_FLOAT: {
-        consume(p);
-        UAstNode *n = make_node(p, AST_FLOAT_LIT, t.line, t.col);
+        urbi_parse_consume(p);
+        UAstNode *n = urbi_parse_make_node(p, AST_FLOAT_LIT, t.line, t.col);
         if (!n) return NULL;
         n->u.f = t.u.f;
         return n;
@@ -441,73 +441,73 @@ UAstNode *parse_atom(UParser *p) {
     case TOK_STRING:
         return parse_string_literal(p);
     case TOK_IDENT:
-        consume(p);
-        return make_ident(p, t.u.str.start, t.u.str.len, t.line, t.col);
+        urbi_parse_consume(p);
+        return urbi_parse_make_ident(p, t.u.str.start, t.u.str.len, t.line, t.col);
     case TOK_KW_TRUE:
-        consume(p);
+        urbi_parse_consume(p);
         return make_bool_node(p, true, t.line, t.col);
     case TOK_KW_FALSE:
-        consume(p);
+        urbi_parse_consume(p);
         return make_bool_node(p, false, t.line, t.col);
     case TOK_KW_NIL:
-        consume(p);
-        return make_nil_node(p, t.line, t.col);
+        urbi_parse_consume(p);
+        return urbi_parse_make_nil_node(p, t.line, t.col);
     case TOK_KW_THIS: {
-        UToken tok = consume(p);
+        UToken tok = urbi_parse_consume(p);
         return make_this_node(p, tok.line, tok.col);
     }
     case TOK_LPAREN: {
-        consume(p);
-        UAstNode *inner = parse_expression(p, 0);
+        urbi_parse_consume(p);
+        UAstNode *inner = urbi_parse_expression(p, 0);
         if (!inner) return NULL;
         if (inner->kind == AST_ERROR) return inner;
         { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
         return inner;
     }
     case TOK_KW_FUNCTION:
-        return parse_function(p);
+        return urbi_parse_function(p);
     case TOK_KW_TRY:
-        return parse_try(p);
+        return urbi_parse_try(p);
     case TOK_KW_THROW:
-        return parse_throw(p);
+        return urbi_parse_throw(p);
     /* W9/v0.10.5: waituntil(e?) used as expression (e.g. `var r = waituntil(e?)`).
-     * parse_atom is the expression-parser entry; parse_statement_or_expr also
+     * urbi_parse_atom is the expression-parser entry; urbi_parse_statement_or_expr also
      * handles it at statement-start level.  Adding it here allows waituntil
      * to appear on the right-hand side of assignments and inside function bodies. */
     case TOK_KW_WAITUNTIL:
-        return parse_waituntil(p);
+        return urbi_parse_waituntil(p);
     case TOK_KW_CLOSURE:
-        consume(p);
-        return make_error(p, PARSE_CLOSURE_KEYWORD,
-                          kErrorMessages[PARSE_CLOSURE_KEYWORD],
+        urbi_parse_consume(p);
+        return urbi_parse_make_error(p, PARSE_CLOSURE_KEYWORD,
+                          urbi_parse_kErrorMessages[PARSE_CLOSURE_KEYWORD],
                           t.line, t.col);
     /* === W10/v0.10.5: list/dict literals === */
     case TOK_LBRACKET:
         return parse_bracket_literal(p);
     /* === end W10/v0.10.5 === */
     case TOK_EOF:
-        return make_error(p, PARSE_UNEXPECTED_EOF,
-                          kErrorMessages[PARSE_UNEXPECTED_EOF],
+        return urbi_parse_make_error(p, PARSE_UNEXPECTED_EOF,
+                          urbi_parse_kErrorMessages[PARSE_UNEXPECTED_EOF],
                           t.line, t.col);
     case TOK_ERROR:
-        /* Note: do NOT consume — the statement-level recovery loop owns lexer advance. */
-        return make_error(p, PARSE_LEX_ERROR,
+        /* Note: do NOT urbi_parse_consume — the statement-level recovery loop owns lexer advance. */
+        return urbi_parse_make_error(p, PARSE_LEX_ERROR,
                           t.u.err.message ? t.u.err.message
-                                          : kErrorMessages[PARSE_LEX_ERROR],
+                                          : urbi_parse_kErrorMessages[PARSE_LEX_ERROR],
                           t.line, t.col);
     default:
-        return make_error(p, PARSE_EXPECTED_EXPRESSION,
-                          kErrorMessages[PARSE_EXPECTED_EXPRESSION],
+        return urbi_parse_make_error(p, PARSE_EXPECTED_EXPRESSION,
+                          urbi_parse_kErrorMessages[PARSE_EXPECTED_EXPRESSION],
                           t.line, t.col);
     }
 }
 
-/* --- arena_grow_node_array: double a UAstNode* arena array when full.
+/* --- urbi_parse_arena_grow_node_array: double a UAstNode* arena array when full.
    Called when count == cap.  Allocates a new block of cap*2 entries from the
    arena, copies the existing entries, and updates *arr and *cap.
    Returns true on success, false on arena OOM (caller should return the
    uparser_oom_sentinel). */
-bool arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count) {
+bool urbi_parse_arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count) {
     int new_cap = (*cap) * 2;
     UAstNode **bigger = (UAstNode **)uarena_alloc(p->arena,
                                                    (size_t)new_cap * sizeof(UAstNode *));
@@ -522,7 +522,7 @@ bool arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count) {
    Returns an AST_CALL node. callee is already parsed. --- */
 
 static UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
-    UToken lparen = consume(p);  /* consume '(' */
+    UToken lparen = urbi_parse_consume(p);  /* urbi_parse_consume '(' */
 
     int cap = 4;
     UAstNode **args = (UAstNode **)uarena_alloc(p->arena,
@@ -530,27 +530,27 @@ static UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
     if (!args) return (UAstNode *)&uparser_oom_sentinel;
     int count = 0;
 
-    while (peek(p).type != TOK_RPAREN && peek(p).type != TOK_EOF) {
-        UAstNode *arg = parse_inner_tier(p);
+    while (urbi_parse_peek(p).type != TOK_RPAREN && urbi_parse_peek(p).type != TOK_EOF) {
+        UAstNode *arg = urbi_parse_inner_tier(p);
         if (!arg) return (UAstNode *)&uparser_oom_sentinel;
         if (arg->kind == AST_ERROR) return arg;
 
         if (count == cap) {
-            if (!arena_grow_node_array(p, &args, &cap, count))
+            if (!urbi_parse_arena_grow_node_array(p, &args, &cap, count))
                 return (UAstNode *)&uparser_oom_sentinel;
         }
         args[count++] = arg;
 
-        if (peek(p).type == TOK_COMMA) {
-            consume(p);
+        if (urbi_parse_peek(p).type == TOK_COMMA) {
+            urbi_parse_consume(p);
         } else {
             break;
         }
     }
 
-    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }  /* consume ')' */
+    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }  /* urbi_parse_consume ')' */
 
-    UAstNode *node = make_node(p, AST_CALL, lparen.line, lparen.col);
+    UAstNode *node = urbi_parse_make_node(p, AST_CALL, lparen.line, lparen.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
     node->u.call.callee    = callee;
     node->u.call.args      = args;
@@ -559,7 +559,7 @@ static UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
 }
 
 /* --- parse_member_access: handle a single `.IDENT` or `->IDENT` postfix.
-   Caller has confirmed peek() is TOK_DOT or TOK_ARROW; this function
+   Caller has confirmed urbi_parse_peek() is TOK_DOT or TOK_ARROW; this function
    consumes the operator, the IDENT, and (optionally) `= rhs`.
 
    Shape produced:
@@ -578,10 +578,10 @@ static UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
 
 static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
                                      bool *out_is_assign) {
-    UToken op = consume(p);  /* TOK_DOT or TOK_ARROW */
+    UToken op = urbi_parse_consume(p);  /* TOK_DOT or TOK_ARROW */
     *out_is_assign = false;
 
-    UToken name = peek(p);
+    UToken name = urbi_parse_peek(p);
     { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
     const bool is_arrow = (op.type == TOK_ARROW);
@@ -591,14 +591,14 @@ static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
      * `get` or `set`, AND the next two tokens are IDENT followed by `(`.
      * Outside that strict shape, `get` / `set` remain plain slot names. */
     if (!is_arrow
-        && (ident_equals(name.u.str.start, name.u.str.len, "get", 3) ||
-            ident_equals(name.u.str.start, name.u.str.len, "set", 3))
-        && peek(p).type == TOK_IDENT && peek2(p).type == TOK_LPAREN) {
+        && (urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "get", 3) ||
+            urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "set", 3))
+        && urbi_parse_peek(p).type == TOK_IDENT && urbi_parse_peek2(p).type == TOK_LPAREN) {
         UAstMethodKind kind =
-            ident_equals(name.u.str.start, name.u.str.len, "get", 3)
+            urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "get", 3)
                 ? UAST_METHOD_GETTER : UAST_METHOD_SETTER;
-        UToken slot_name = consume(p);  /* consume the slot-name IDENT */
-        UAstNode *pd = parse_property_decl(p, recv, slot_name, kind,
+        UToken slot_name = urbi_parse_consume(p);  /* urbi_parse_consume the slot-name IDENT */
+        UAstNode *pd = urbi_parse_property_decl(p, recv, slot_name, kind,
                                            op.line, op.col);
         /* Property-decl is a side-effecting installation; treat as an
          * "assign" so the Pratt postfix loop stops climbing. */
@@ -606,22 +606,22 @@ static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
         return pd;
     }
 
-    if (peek(p).type == TOK_EQ) {
-        consume(p);  /* consume '=' */
+    if (urbi_parse_peek(p).type == TOK_EQ) {
+        urbi_parse_consume(p);  /* urbi_parse_consume '=' */
         /* S48 (2026-05-16): parse RHS as a Pratt expression, NOT
-         * parse_inner_tier — the latter absorbs `|` / `&` separators
+         * urbi_parse_inner_tier — the latter absorbs `|` / `&` separators
          * into the assignment value, so `Realm.a = 1 | Realm.b = 2`
          * mis-parses as `Realm.a = (1 | (Realm.b = 2))` instead of
          * `(Realm.a = 1) | (Realm.b = 2)`.  The mis-parse produces
          * nested MEMBER_SETs whose emit only writes the last slot
          * before fataling.  Hardware-observed on eye_demo blob_seen
-         * handler 2026-05-16; host repro confirms.  parse_expression
+         * handler 2026-05-16; host repro confirms.  urbi_parse_expression
          * stops at `|` / `&` since they aren't in the Pratt table,
          * leaving the separator for the outer inner-tier fold. */
-        UAstNode *value = parse_expression(p, 0);
+        UAstNode *value = urbi_parse_expression(p, 0);
         if (!value) return NULL;
         if (value->kind == AST_ERROR) return value;
-        UAstNode *node = make_node(p, is_arrow ? AST_PROP_SET : AST_MEMBER_SET,
+        UAstNode *node = urbi_parse_make_node(p, is_arrow ? AST_PROP_SET : AST_MEMBER_SET,
                                    op.line, op.col);
         if (!node) return NULL;
         if (is_arrow) {
@@ -639,7 +639,7 @@ static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
         return node;
     }
 
-    UAstNode *node = make_node(p, is_arrow ? AST_PROP_GET : AST_MEMBER_GET,
+    UAstNode *node = urbi_parse_make_node(p, is_arrow ? AST_PROP_GET : AST_MEMBER_GET,
                                op.line, op.col);
     if (!node) return NULL;
     if (is_arrow) {
@@ -656,13 +656,13 @@ static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
     return node;
 }
 
-/* --- parse_expression_cont: Pratt infix/postfix loop starting from lhs.
-   Called by parse_expression (after parse_prefix) and by
-   parse_inner_tier_from_lhs (after an already-produced lhs node). --- */
+/* --- urbi_parse_expression_cont: Pratt infix/postfix loop starting from lhs.
+   Called by urbi_parse_expression (after urbi_parse_prefix) and by
+   parse_assign_or_expr_impl (after an already-consumed leading IDENT). --- */
 
-UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
+UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
     for (;;) {
-        UToken op = peek(p);
+        UToken op = urbi_parse_peek(p);
 
         /* Postfix call: `expr(args)` — highest precedence (postfix). */
         if (op.type == TOK_LPAREN && min_prec <= PARSE_PREC_POSTFIX) {
@@ -685,17 +685,17 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             /* Spec #4 §4.4–§4.6: bare/emit `.changed` outside at(...). */
             if (!p->at_event_cond
                 && lhs->kind == AST_MEMBER_GET
-                && ident_equals(lhs->u.member.name_start,
+                && urbi_parse_ident_equals(lhs->u.member.name_start,
                                 lhs->u.member.name_len,
                                 "changed", 7)) {
-                UToken nxt = peek(p);
+                UToken nxt = urbi_parse_peek(p);
                 if (nxt.type == TOK_BANG) {
-                    return make_error(p, PARSE_SLOT_CHANGED_EMIT_V1,
-                                      kErrorMessages[PARSE_SLOT_CHANGED_EMIT_V1],
+                    return urbi_parse_make_error(p, PARSE_SLOT_CHANGED_EMIT_V1,
+                                      urbi_parse_kErrorMessages[PARSE_SLOT_CHANGED_EMIT_V1],
                                       nxt.line, nxt.col);
                 }
-                return make_error(p, PARSE_SLOT_CHANGED_BARE_V1,
-                                  kErrorMessages[PARSE_SLOT_CHANGED_BARE_V1],
+                return urbi_parse_make_error(p, PARSE_SLOT_CHANGED_BARE_V1,
+                                  urbi_parse_kErrorMessages[PARSE_SLOT_CHANGED_BARE_V1],
                                   lhs->line, lhs->col);
             }
             continue;
@@ -706,8 +706,8 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
            `e!(p)`     → AST_CALL { callee=lhs, method="emit", args=[p] }
            `e!(x,y,z)` → PARSE_EMIT_MULTI_ARG_V1 error */
         if (op.type == TOK_BANG && min_prec <= PARSE_PREC_POSTFIX) {
-            consume(p);  /* consume '!' */
-            lhs = desugar_postfix_emit(p, lhs, op);
+            urbi_parse_consume(p);  /* urbi_parse_consume '!' */
+            lhs = urbi_parse_desugar_postfix_emit(p, lhs, op);
             if (!lhs) return NULL;
             if (lhs->kind == AST_ERROR) return lhs;
             continue;
@@ -721,19 +721,19 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
          *                                   is_compound_add=true)
          * No new opcode needed; same precedence tier as member/call. */
         if (op.type == TOK_LBRACKET && min_prec <= PARSE_PREC_POSTFIX) {
-            consume(p);  /* consume '[' */
-            UAstNode *index = parse_expression(p, 0);
+            urbi_parse_consume(p);  /* urbi_parse_consume '[' */
+            UAstNode *index = urbi_parse_expression(p, 0);
             if (!index) return NULL;
             if (index->kind == AST_ERROR) return index;
-            { UAstNode *err = NULL; if (!expect(p, TOK_RBRACKET, PARSE_SUBSCRIPT_EXPECTED_RBRACKET, &err)) return err; }  /* consume ']' */
+            { UAstNode *err = NULL; if (!expect(p, TOK_RBRACKET, PARSE_SUBSCRIPT_EXPECTED_RBRACKET, &err)) return err; }  /* urbi_parse_consume ']' */
             /* Peek for assignment or compound-assign. */
-            UToken nxt = peek(p);
+            UToken nxt = urbi_parse_peek(p);
             if (nxt.type == TOK_EQ) {
-                consume(p);  /* consume '=' */
-                UAstNode *val = parse_expression(p, 0);
+                urbi_parse_consume(p);  /* urbi_parse_consume '=' */
+                UAstNode *val = urbi_parse_expression(p, 0);
                 if (!val) return NULL;
                 if (val->kind == AST_ERROR) return val;
-                UAstNode *ss = make_node(p, AST_SUBSCRIPT_SET, op.line, op.col);
+                UAstNode *ss = urbi_parse_make_node(p, AST_SUBSCRIPT_SET, op.line, op.col);
                 if (!ss) return NULL;
                 ss->u.subscript.recv            = lhs;
                 ss->u.subscript.index           = index;
@@ -743,11 +743,11 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
                 break;  /* assignment terminates postfix chain */
             }
             if (nxt.type == TOK_PLUS_EQ) {
-                consume(p);  /* consume '+=' */
-                UAstNode *rhs = parse_expression(p, 0);
+                urbi_parse_consume(p);  /* urbi_parse_consume '+=' */
+                UAstNode *rhs = urbi_parse_expression(p, 0);
                 if (!rhs) return NULL;
                 if (rhs->kind == AST_ERROR) return rhs;
-                UAstNode *ss = make_node(p, AST_SUBSCRIPT_SET, op.line, op.col);
+                UAstNode *ss = urbi_parse_make_node(p, AST_SUBSCRIPT_SET, op.line, op.col);
                 if (!ss) return NULL;
                 ss->u.subscript.recv            = lhs;
                 ss->u.subscript.index           = index;
@@ -757,7 +757,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
                 break;  /* assignment terminates postfix chain */
             }
             /* Plain get. */
-            UAstNode *sg = make_node(p, AST_SUBSCRIPT_GET, op.line, op.col);
+            UAstNode *sg = urbi_parse_make_node(p, AST_SUBSCRIPT_GET, op.line, op.col);
             if (!sg) return NULL;
             sg->u.subscript.recv            = lhs;
             sg->u.subscript.index           = index;
@@ -769,24 +769,24 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
         /* === end W10/v0.10.5: subscript === */
 
         /* Postfix `?` — only valid inside at(...) condition.
-         * When at_event_cond is set, pass through (parse_at will consume it).
+         * When at_event_cond is set, pass through (urbi_parse_at will urbi_parse_consume it).
          * Otherwise it is an error. */
         if (op.type == TOK_QUESTION && min_prec <= PARSE_PREC_POSTFIX) {
-            if (p->at_event_cond) break;  /* let parse_at consume it */
-            consume(p);
-            return make_error(p, PARSE_QUESTION_OUTSIDE_AT,
-                              kErrorMessages[PARSE_QUESTION_OUTSIDE_AT],
+            if (p->at_event_cond) break;  /* let urbi_parse_at urbi_parse_consume it */
+            urbi_parse_consume(p);
+            return urbi_parse_make_error(p, PARSE_QUESTION_OUTSIDE_AT,
+                              urbi_parse_kErrorMessages[PARSE_QUESTION_OUTSIDE_AT],
                               op.line, op.col);
         }
 
         int prec = infix_prec(op.type);
         if (prec < min_prec || prec == 0) break;
 
-        consume(p);
+        urbi_parse_consume(p);
         /* Comparison operators are left-associative; use prec+1 for right
            so that `a == b == c` is rejected as ambiguous (each side parses
            as atoms, and chained comparisons are a parse error in urbiscript). */
-        UAstNode *right = parse_expression(p, prec + 1);
+        UAstNode *right = urbi_parse_expression(p, prec + 1);
         if (!right) return NULL;
         if (right->kind == AST_ERROR) return right;
 
@@ -803,7 +803,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
         if (op.type == TOK_LSHIFT) {
             /* Selector: the two-byte string "<<" (quoted-ident style).
              * kLShiftSelector is the file-scope const above. */
-            UAstNode *member = make_node(p, AST_MEMBER_GET, op.line, op.col);
+            UAstNode *member = urbi_parse_make_node(p, AST_MEMBER_GET, op.line, op.col);
             if (!member) return NULL;
             member->u.member.recv       = lhs;
             member->u.member.name_start = kLShiftSelector;
@@ -812,7 +812,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             UAstNode **args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
             if (!args) return (UAstNode *)&uparser_oom_sentinel;
             args[0] = right;
-            UAstNode *call = make_node(p, AST_CALL, op.line, op.col);
+            UAstNode *call = urbi_parse_make_node(p, AST_CALL, op.line, op.col);
             if (!call) return NULL;
             call->u.call.callee    = member;
             call->u.call.args      = args;
@@ -829,7 +829,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
          * The `'%'` slot lives on Integer/Float (atoms stdlib).  Multiplicative
          * precedence (7), left-associative (prec+1 on right). */
         if (op.type == TOK_PERCENT) {
-            UAstNode *member = make_node(p, AST_MEMBER_GET, op.line, op.col);
+            UAstNode *member = urbi_parse_make_node(p, AST_MEMBER_GET, op.line, op.col);
             if (!member) return NULL;
             member->u.member.recv       = lhs;
             member->u.member.name_start = kModSelector;
@@ -838,7 +838,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             UAstNode **args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
             if (!args) return (UAstNode *)&uparser_oom_sentinel;
             args[0] = right;
-            UAstNode *call = make_node(p, AST_CALL, op.line, op.col);
+            UAstNode *call = urbi_parse_make_node(p, AST_CALL, op.line, op.col);
             if (!call) return NULL;
             call->u.call.callee    = member;
             call->u.call.args      = args;
@@ -854,7 +854,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
          * the result).  Distinct from AST_BINARY (which evaluates both
          * operands eagerly).  Left-associative via prec+1 on `right`. */
         if (op.type == TOK_AMPAMP || op.type == TOK_PIPEPIPE) {
-            UAstNode *node = make_node(p, AST_LOGICAL, op.line, op.col);
+            UAstNode *node = urbi_parse_make_node(p, AST_LOGICAL, op.line, op.col);
             if (!node) return NULL;
             node->u.logical.lhs   = lhs;
             node->u.logical.rhs   = right;
@@ -868,7 +868,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             lhs = make_compare(p, compare_op(op.type), lhs, right,
                                op.line, op.col);
         } else {
-            lhs = make_binary(p, infix_binop(op.type), lhs, right,
+            lhs = urbi_parse_make_binary(p, infix_binop(op.type), lhs, right,
                               op.line, op.col);
         }
         if (!lhs) return NULL;
@@ -876,17 +876,17 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
     return lhs;
 }
 
-/* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
+/* --- urbi_parse_expression: Pratt precedence climbing over urbi_parse_prefix. --- */
 
-UAstNode *parse_expression(UParser *p, int min_prec) {
-    /* v0.9.1: depth-guarded entry.  parse_expression is the canonical
+UAstNode *urbi_parse_expression(UParser *p, int min_prec) {
+    /* v0.9.1: depth-guarded entry.  urbi_parse_expression is the canonical
      * recursive descent site for nested expressions like `(((1)))` or
      * deep operator chains — a pathological compile bomb (e.g. 1000
-     * nested parens) trips here before stack exhaust.  parse_prefix and
-     * parse_expression_cont call back into parse_expression for grouped
+     * nested parens) trips here before stack exhaust.  urbi_parse_prefix and
+     * urbi_parse_expression_cont call back into urbi_parse_expression for grouped
      * sub-expressions, so guarding the entry is sufficient. */
     if (!uparse_budget_enter(p)) return NULL;
-    UAstNode *lhs = parse_prefix(p);
+    UAstNode *lhs = urbi_parse_prefix(p);
     if (!lhs) {
         uparse_budget_leave(p);
         return NULL;
@@ -895,7 +895,7 @@ UAstNode *parse_expression(UParser *p, int min_prec) {
         uparse_budget_leave(p);
         return lhs;
     }
-    UAstNode *r = parse_expression_cont(p, lhs, min_prec);
+    UAstNode *r = urbi_parse_expression_cont(p, lhs, min_prec);
     uparse_budget_leave(p);
     return r;
 }

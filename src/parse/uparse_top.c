@@ -9,14 +9,14 @@
 #include "value/uarena.h"
 #include <stddef.h>
 
-/* Advance the lexer until peek is TOK_PIPE or TOK_EOF.  If we land on
-   TOK_PIPE, consume it so the next statement starts clean. */
+/* Advance the lexer until urbi_parse_peek is TOK_PIPE or TOK_EOF.  If we land on
+   TOK_PIPE, urbi_parse_consume it so the next statement starts clean. */
 static void sync_to_statement_boundary(UParser *p) {
     for (;;) {
-        UToken t = peek(p);
-        if (t.type == TOK_PIPE) { consume(p); return; }
+        UToken t = urbi_parse_peek(p);
+        if (t.type == TOK_PIPE) { urbi_parse_consume(p); return; }
         if (t.type == TOK_EOF) return;
-        consume(p);
+        urbi_parse_consume(p);
     }
 }
 
@@ -75,10 +75,10 @@ int uparse_budget_err(const UParser *p) {
 UAstNode *uparse_next_statement(UParser *p) {
     if (p->arena->oom) return (UAstNode *)&uparser_oom_sentinel;
 
-    UToken t = peek(p);
+    UToken t = urbi_parse_peek(p);
     if (t.type == TOK_EOF) return NULL;
 
-    UAstNode *stmt = parse_outer_tier(p);
+    UAstNode *stmt = urbi_parse_outer_tier(p);
     if (!stmt || p->arena->oom) return (UAstNode *)&uparser_oom_sentinel;
 
     if (stmt->kind == AST_ERROR) {
@@ -87,18 +87,18 @@ UAstNode *uparse_next_statement(UParser *p) {
     }
 
     /* Consume trailing `|` (REPL statement-boundary convention). */
-    if (peek(p).type == TOK_PIPE) {
-        consume(p);
+    if (urbi_parse_peek(p).type == TOK_PIPE) {
+        urbi_parse_consume(p);
         return stmt;
     }
-    if (peek(p).type == TOK_EOF) {
+    if (urbi_parse_peek(p).type == TOK_EOF) {
         return stmt;
     }
 
     /* Unexpected trailing token — discard the valid subtree per the
        "no partial ASTs on error" rule, emit a single error, and sync. */
-    UToken term = peek(p);
-    UAstNode *err = make_error(p, PARSE_UNEXPECTED_TOKEN, NULL,
+    UToken term = urbi_parse_peek(p);
+    UAstNode *err = urbi_parse_make_error(p, PARSE_UNEXPECTED_TOKEN, NULL,
                                term.line, term.col);
     if (!err || p->arena->oom) return (UAstNode *)&uparser_oom_sentinel;
     sync_to_statement_boundary(p);
