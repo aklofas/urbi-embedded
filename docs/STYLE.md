@@ -111,6 +111,8 @@ Rules:
 
 The RISC-V CI job is the acceptance test. If your change makes `make cross-riscv` fail, the change is wrong — not the test.
 
+**Allocator discipline.** Core TUs use the `umacros.h` helpers (`urbi_malloc`, `urbi_free`, `urbi_memset`, `urbi_memcpy`) which route through the pluggable allocator and keep the freestanding discipline intact. Hosted or gated TUs — those compiled only under `__STDC_HOSTED__`, `URBI_INTERNAL_ASSERT`, `URBI_ENABLE_ROS2`, `URBI_MEM_DEBUG`, or `URBI_PERF_COUNTERS` — may use libc `mem*`/`str*` directly where it is the clearest choice.
+
 `src/value/uvalue.c` uses `<stdio.h>` for `snprintf` and is therefore gated
 behind `#if __STDC_HOSTED__`. The header `src/value/uvalue.h` declares the API
 unconditionally so callers can include it on any target; freestanding callers
@@ -204,6 +206,10 @@ Coverage targets: ≥ 90% line coverage, ≥ 80% branch coverage per subsystem. 
 - **Block comments on public API declarations.** See Headers, above.
 - **No emojis.** Anywhere. Commits, code, comments, docs.
 - **Avoid dead or speculative comments.** No `TODO`, no `XXX`, no `FIXME` without an owner and context. If a thing needs doing, either open an issue or do it. Drive-by TODOs turn into permanent lies.
+- **No internal process IDs in comments.** Do not embed milestone (`M<n>`), task (`T<n>`), wave (`W<n>`), or audit-finding (`FOUND-<n>`, `refactor-<n>`) identifiers in source comments. These identifiers are meaningful only in the private planning context and become noise in the public repository. Cite the specific invariant or behavior instead. Exception: `include/urbi/version.h` is the ABI history ledger and may retain these IDs. Inline escape: add `scrub-allow: <reason>` on the line if an ID genuinely belongs. The `src-comment-scrub` gate enforces this mechanically.
+- **File-header banner.** Every non-trivial translation unit should carry a 3–6 line what/why banner immediately after the SPDX line: `/* filename.c — one-line what. */ /* why: role in the system, non-obvious constraints. */` Single-function files may use the one-line form.
+
+**Cautionary tale:** A stale comment in `ugc_incremental.c` claimed the payload-walk path was unreachable ("At M3 no concrete types exist"). The comment was accurate when written but went stale when walkers were registered. A later reader trusted the comment over the code — this is the class of error (GC-03) that the "no process IDs, keep the rationale" rule prevents. Strip the ID token; always keep the *why*.
 
 ---
 
