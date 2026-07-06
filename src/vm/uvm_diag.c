@@ -86,14 +86,14 @@ void diag_write_u32(UDiagWriter *w, uint32_t n) {
     }
 }
 
-void diag_write_size(UDiagWriter *w, size_t n) {
+static void diag_write_size(UDiagWriter *w, size_t n) {
     /* size_t is at most 64 bits on our targets; fits in u32 for any
        realistic frame size or pc. Cap for safety. */
     if (n > UINT32_MAX) n = UINT32_MAX;
     diag_write_u32(w, (uint32_t)n);
 }
 
-void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
+static void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
     diag_write_cstr(w, kind_name(kind));
 }
 

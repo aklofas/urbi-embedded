@@ -30,8 +30,6 @@ typedef struct UDiagWriter {
 void diag_init(UDiagWriter *w, char *buf, size_t cap);
 void diag_write_cstr(UDiagWriter *w, const char *s);
 void diag_write_u32(UDiagWriter *w, uint32_t n);
-void diag_write_size(UDiagWriter *w, size_t n);
-void diag_write_kind_name(UDiagWriter *w, uint8_t kind);
 void diag_write_prefix(UDiagWriter *w, const UProto *module, size_t pc);
 
 const char *kind_name(uint8_t kind);

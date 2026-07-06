@@ -11,7 +11,7 @@
 
 /* Advance the lexer until peek is TOK_PIPE or TOK_EOF.  If we land on
    TOK_PIPE, consume it so the next statement starts clean. */
-void sync_to_statement_boundary(UParser *p) {
+static void sync_to_statement_boundary(UParser *p) {
     for (;;) {
         UToken t = peek(p);
         if (t.type == TOK_PIPE) { consume(p); return; }

@@ -16,7 +16,7 @@
 /* v0.10.11 / W3: `<<` shift-write selector.  File-scope (with
  * URBI_STATIC_ASSERT length guard) matching the kEmitMethodName pattern
  * in uparse.c; declared extern in uparse_internal.h for visibility. */
-const char kLShiftSelector[] = "<<";
+static const char kLShiftSelector[] = "<<";
 URBI_STATIC_ASSERT(sizeof kLShiftSelector - 1U == kLShiftSelectorLen,
                "kLShiftSelectorLen must equal strlen(kLShiftSelector)");
 
@@ -41,7 +41,7 @@ URBI_STATIC_ASSERT(sizeof kModSelector - 1U == (size_t)kModSelectorLen,
      9 = postfix (call, member, `!`, `?`) — see PARSE_PREC_POSTFIX
          in uparse_internal.h; not produced by this function (handled
          directly in parse_expression_cont). */
-int infix_prec(UTokenType t) {
+static int infix_prec(UTokenType t) {
     switch (t) {
     /* === v1.0-rc stdlib-completeness: short-circuit logical operators === */
     case TOK_PIPEPIPE: return 1;
@@ -67,7 +67,7 @@ int infix_prec(UTokenType t) {
     }
 }
 
-UAstBinaryOp infix_binop(UTokenType t) {
+static UAstBinaryOp infix_binop(UTokenType t) {
     switch (t) {
     case TOK_PLUS:  return BOP_ADD;
     case TOK_MINUS: return BOP_SUB;
@@ -78,13 +78,13 @@ UAstBinaryOp infix_binop(UTokenType t) {
 }
 
 /* True when t is a comparison operator token. */
-bool is_compare_token(UTokenType t) {
+static bool is_compare_token(UTokenType t) {
     return t == TOK_EQEQ || t == TOK_NEQ
         || t == TOK_LT   || t == TOK_LE
         || t == TOK_GT   || t == TOK_GE;
 }
 
-UAstCompareOp compare_op(UTokenType t) {
+static UAstCompareOp compare_op(UTokenType t) {
     switch (t) {
     case TOK_EQEQ: return CMP_EQ;
     case TOK_NEQ:  return CMP_NEQ;
@@ -96,7 +96,7 @@ UAstCompareOp compare_op(UTokenType t) {
     }
 }
 
-UAstNode *make_compare(UParser *p, UAstCompareOp op,
+static UAstNode *make_compare(UParser *p, UAstCompareOp op,
                        UAstNode *lhs, UAstNode *rhs,
                        int line, int col) {
     UAstNode *n = make_node(p, AST_COMPARE, line, col);
@@ -107,7 +107,7 @@ UAstNode *make_compare(UParser *p, UAstCompareOp op,
     return n;
 }
 
-UAstNode *make_bool_node(UParser *p, bool value, int line, int col) {
+static UAstNode *make_bool_node(UParser *p, bool value, int line, int col) {
     UAstNode *n = make_node(p, AST_BOOL, line, col);
     if (!n) return NULL;
     n->u.b = value;
@@ -118,7 +118,7 @@ UAstNode *make_nil_node(UParser *p, int line, int col) {
     return make_node(p, AST_NIL, line, col);
 }
 
-UAstNode *make_this_node(UParser *p, int line, int col) {
+static UAstNode *make_this_node(UParser *p, int line, int col) {
     return make_node(p, AST_THIS, line, col);
 }
 
@@ -315,7 +315,7 @@ UAstNode *parse_prefix(UParser *p) {
  * Dict:   AST_DICT_LIT { keys[], vals[], count }
  * ========================================================================== */
 
-UAstNode *parse_bracket_literal(UParser *p) {
+static UAstNode *parse_bracket_literal(UParser *p) {
     UToken lbr = consume(p);  /* consume '[' */
 
     int cap = 4;
@@ -521,7 +521,7 @@ bool arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count) {
 /* --- parse_call_args: parse `(` arg, arg, ... `)` after a callee expression.
    Returns an AST_CALL node. callee is already parsed. --- */
 
-UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
+static UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
     UToken lparen = consume(p);  /* consume '(' */
 
     int cap = 4;
@@ -576,7 +576,7 @@ UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
 
    Returns the new node, or an AST_ERROR / OOM sentinel on failure. --- */
 
-UAstNode *parse_member_access(UParser *p, UAstNode *recv,
+static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
                                      bool *out_is_assign) {
     UToken op = consume(p);  /* TOK_DOT or TOK_ARROW */
     *out_is_assign = false;

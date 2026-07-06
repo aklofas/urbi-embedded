@@ -13,7 +13,7 @@
    end-of-block, end-of-paren, EOF, or the REPL-boundary '|'.
    Used by the trailing-drop rules for outer-tier ';'/','  and
    inner-tier '|'/'&'. */
-bool at_statement_end(UParser *p) {
+static bool at_statement_end(UParser *p) {
     UTokenType t = peek(p).type;
     return t == TOK_EOF || t == TOK_RBRACE || t == TOK_RPAREN
         || t == TOK_PIPE;
@@ -90,7 +90,7 @@ UAstNode *parse_inner_tier(UParser *p) {
    lhs node (e.g. an IDENT already consumed by the statement dispatcher).
    Runs parse_expression_cont(p, lhs, 0) to finish the Pratt climb, then
    pipe_amp_fold for the | / & separator loop. */
-UAstNode *parse_inner_tier_from_lhs(UParser *p, UAstNode *lhs) {
+static UAstNode *parse_inner_tier_from_lhs(UParser *p, UAstNode *lhs) {
     lhs = parse_expression_cont(p, lhs, 0);
     if (!lhs) return NULL;
     if (lhs->kind == AST_ERROR) return lhs;

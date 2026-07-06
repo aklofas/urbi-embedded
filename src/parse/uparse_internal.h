@@ -45,9 +45,8 @@ extern const UAstNode uparser_oom_sentinel;
 extern const char kEmitMethodName[];
 #define kEmitMethodNameLen 4  /* strlen("emit") */
 
-/* v0.10.11 / W3: selector for `a << b` desugar to `a.'<<'(b)`.
- * Defined in uparse_expr.c at file scope. */
-extern const char kLShiftSelector[];
+/* v0.10.11 / W3: length of the `<<` selector used in uparse_expr.c.
+ * kLShiftSelector is static in uparse_expr.c (single-TU). */
 #define kLShiftSelectorLen 2  /* strlen("<<") */
 
 /* --- Error-message table (defined in uparse.c residual). --- */
@@ -89,55 +88,30 @@ static inline bool expect(UParser *p, UTokenType type, UParseError code,
 
 /* --- Arena-array growth helper + expression parser (defined in uparse_expr.c). --- */
 bool arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count);
-UAstNode *make_compare(UParser *p, UAstCompareOp op, UAstNode *lhs, UAstNode *rhs,
-                       int line, int col);
-UAstNode *make_bool_node(UParser *p, bool value, int line, int col);
 UAstNode *make_nil_node(UParser *p, int line, int col);
-UAstNode *make_this_node(UParser *p, int line, int col);
 UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec);
 UAstNode *parse_expression(UParser *p, int min_prec);
 UAstNode *parse_prefix(UParser *p);
 UAstNode *parse_atom(UParser *p);
-UAstNode *parse_call_args(UParser *p, UAstNode *callee);
-UAstNode *parse_member_access(UParser *p, UAstNode *recv, bool *out_is_assign);
-/* === W10/v0.10.5: list/dict literal + subscript === */
-UAstNode *parse_bracket_literal(UParser *p);
-/* === end W10/v0.10.5 === */
-int infix_prec(UTokenType t);
-UAstBinaryOp infix_binop(UTokenType t);
-bool is_compare_token(UTokenType t);
-UAstCompareOp compare_op(UTokenType t);
 
 /* --- Separator loop (defined in uparse_separators.c). --- */
-bool at_statement_end(UParser *p);
 /* pipe_amp_fold: left-fold `|` / `&` from an already-parsed lhs.
  * W8/v0.10.5: promoted from static to allow parse_assign_or_expr to call
  * it directly after intercepting the member-expr tag-prefix form. */
 UAstNode *pipe_amp_fold(UParser *p, UAstNode *lhs);
 UAstNode *parse_inner_tier(UParser *p);
-UAstNode *parse_inner_tier_from_lhs(UParser *p, UAstNode *lhs);
 UAstNode *parse_outer_tier(UParser *p);
 
 /* --- Statement parser (defined in uparse_stmt.c). --- */
 UAstNode *parse_statement_or_expr(UParser *p);
 UAstNode *parse_block(UParser *p);
-UAstNode *parse_var_decl(UParser *p);
-UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name);
 UAstNode *parse_if(UParser *p);
 UAstNode *parse_while(UParser *p);
 UAstNode *parse_function(UParser *p);
-UAstNode *parse_return(UParser *p);
 UAstNode *parse_throw(UParser *p);
 UAstNode *parse_try(UParser *p);
-UAstNode *parse_class_declaration(UParser *p);
 /* W3/v0.10.5: assert keyword — parse_assert handles both paren and block forms. */
 UAstNode *parse_assert(UParser *p);
-/* === W1/v0.10.5: control flow === */
-UAstNode *parse_for(UParser *p);
-UAstNode *parse_break(UParser *p);
-UAstNode *parse_continue(UParser *p);
-UAstNode *parse_switch(UParser *p);
-/* === end W1/v0.10.5: control flow === */
 /* T41 — property declaration helper.  `recv` is the explicit receiver
  * (or NULL for class-body / implicit self).  `name_tok` is the slot-
  * name IDENT (already consumed by the caller).  The next token must be
@@ -157,8 +131,5 @@ UAstNode *parse_tag_prefix(UParser *p, UToken name_tok);
 /* W8/v0.10.5: member-expr tag form `expr: body` — called when a postfix
  * chain ends in `:` at statement level.  `:` not yet consumed. */
 UAstNode *parse_tag_prefix_from_expr(UParser *p, UAstNode *tag_expr);
-
-/* --- Entry points + recovery (defined in uparse_top.c). --- */
-void sync_to_statement_boundary(UParser *p);
 
 #endif /* UPARSE_INTERNAL_H */

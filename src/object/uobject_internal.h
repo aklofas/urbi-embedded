@@ -18,12 +18,7 @@
 uint32_t  next_id(struct UVM *vm);
 
 /* From uobject_proto.c. */
-void      shade_existing_protos(struct UVM *vm, UObject *obj);
 int       valid_proto(const UObject *obj, const UObject *p);
 UProtos  *urbi_protos_alloc(struct UVM *vm, uint32_t n);
-
-/* From uobject_lookup.c. */
-int  lookup_inner(struct UVM *vm, UObject *obj, USymbol *name, UValue *out);
-void clear_lookup_stamp_cb(struct UVM *vm, UCell *cell, void *ctx);
 
 #endif /* UOBJECT_INTERNAL_H */

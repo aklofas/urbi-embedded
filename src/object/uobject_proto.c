@@ -21,7 +21,7 @@
 /* shade_existing_protos — internal helper. Decodes obj->protos's three
  * storage forms (empty/single/heap per spec §4.1) and shades the underlying
  * cell(s) before the field is overwritten. */
-void
+static void
 shade_existing_protos(UVM *vm, UObject *obj)
 {
     uintptr_t raw = obj->protos;

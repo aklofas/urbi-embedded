@@ -28,7 +28,7 @@
  * the proto-walk path on every visit — which is exactly what the cycle and
  * rollover tests need to exercise. */
 
-int
+static int
 lookup_inner(UVM *vm, UObject *obj, USymbol *name, UValue *out)
 {
     /* Cycle / re-visit guard.  Truncating lookup_id to u32 is intentional —
@@ -132,7 +132,7 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
 
 /* clear_lookup_stamp_cb — urbi_gc_walk_all_cells callback that resets
  * UObject.lookup_stamp to 0 on every UObject cell.  Skips non-object cells. */
-void
+static void
 clear_lookup_stamp_cb(UVM *vm, UCell *cell, void *ctx)
 {
     (void)vm; (void)ctx;

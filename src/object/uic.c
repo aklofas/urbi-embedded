@@ -75,7 +75,7 @@ ic_uprops_for_resolved_slot(const UObject *holder, uint32_t idx)
  * the cache is full.  Hoisted from static to header-declared at OBJ-033
  * (Wave 6 cleanup) to enable future megamorphic-bail call sites without
  * a follow-up edit. */
-void
+static void
 ic_fill_at_cursor(UIC *ic, const UVM *vm, const UObject *recv,
                   UObject *holder, uint32_t idx, UProps *up, uint8_t flags)
 {

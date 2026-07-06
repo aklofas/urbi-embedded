@@ -9,9 +9,16 @@
 #include "value/uarena.h"
 #include <stddef.h>
 
+/* Forward declarations for static helpers defined later in this file. */
+static UAstNode *parse_return(UParser *p);
+static UAstNode *parse_for(UParser *p);
+static UAstNode *parse_break(UParser *p);
+static UAstNode *parse_continue(UParser *p);
+static UAstNode *parse_switch(UParser *p);
+
 /* --- parse_var_decl: `var x = expr` --- */
 
-UAstNode *parse_var_decl(UParser *p) {
+static UAstNode *parse_var_decl(UParser *p) {
     UToken kw = consume(p);          /* consume TOK_KW_VAR */
     UToken name = peek(p);
 
@@ -127,7 +134,7 @@ UAstNode *parse_var_decl(UParser *p) {
  * The function name encodes that lexer-state precondition explicitly —
  * earlier name `parse_assign_from_ident` did not. --- */
 
-UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
+static UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
     /* TOK_EQ already peeked/confirmed by caller; consume it. */
     consume(p);
 
@@ -253,7 +260,7 @@ static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
  * Proto identifiers parse as full primary expressions so that future
  * v1.x extensions (e.g. `class C : public M.Inner`) just work; for
  * Wave 1 we expect AST_IDENT but do not gate on it. --- */
-UAstNode *parse_class_declaration(UParser *p) {
+static UAstNode *parse_class_declaration(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_CLASS */
 
     /* Class name. */
@@ -831,7 +838,7 @@ UAstNode *parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
 
 /* --- parse_return: `return [expr]` --- */
 
-UAstNode *parse_return(UParser *p) {
+static UAstNode *parse_return(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_RETURN */
 
     /* Determine whether a return value follows.  Stop at any statement-ending
@@ -1072,7 +1079,7 @@ UAstNode *parse_try(UParser *p) {
  *
  * break/continue work inside AST_FOR_EACH bodies because the emitter
  * tracks the break/continue patch-lists in the loop context. */
-UAstNode *parse_for(UParser *p) {
+static UAstNode *parse_for(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_FOR */
 
     { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }
@@ -1121,7 +1128,7 @@ UAstNode *parse_for(UParser *p) {
 /* parse_break — `break` (statement).
  * Ruling: implemented (Wave 6 W1, legacy F2).
  * No payload beyond position.  Error if not inside a for/while/switch. */
-UAstNode *parse_break(UParser *p) {
+static UAstNode *parse_break(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_BREAK */
     if (p->loop_depth == 0 && p->switch_depth == 0) {
         return make_error(p, PARSE_BREAK_OUTSIDE_LOOP,
@@ -1136,7 +1143,7 @@ UAstNode *parse_break(UParser *p) {
 /* parse_continue — `continue` (statement).
  * Ruling: implemented (Wave 6 W1, legacy F2).
  * No payload beyond position.  Error if not inside a for/while. */
-UAstNode *parse_continue(UParser *p) {
+static UAstNode *parse_continue(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_CONTINUE */
     if (p->loop_depth == 0) {
         return make_error(p, PARSE_CONTINUE_OUTSIDE_LOOP,
@@ -1160,7 +1167,7 @@ UAstNode *parse_continue(UParser *p) {
  * The emitter lowers to a chain of if-else comparisons.
  * Break inside a case body exits the switch (switch is a loop-context
  * in the emitter's patch-list sense). */
-UAstNode *parse_switch(UParser *p) {
+static UAstNode *parse_switch(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_SWITCH */
 
     { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }
