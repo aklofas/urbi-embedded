@@ -1,6 +1,6 @@
 # Milestone: v0.13.5 (v0.13.4-A)
 # Covers: falling-edge cascade path — `at (c) body onleave { t2.stop() }`:
-#         when the onleave fires inline inside watcher_eval_dirty (falling
+#         when the onleave fires inline inside urbi_vm_watcher_eval_dirty (falling
 #         edge) and calls t2.stop(), the t2-owned watcher (Q) is cascaded
 #         mid-pass via pending_onleave_queue_push; a later watcher (R) must
 #         survive the cascade and fire on the next rising edge.
@@ -12,7 +12,7 @@
 #   R (at)       — must survive the cascade and fire on all rises
 #
 # Registration order in active_watchers_head: P → Q → R.
-# On the falling edge, watcher_eval_dirty processes P first:
+# On the falling edge, urbi_vm_watcher_eval_dirty processes P first:
 #   - next = Q (pre-captured)
 #   - P's onleave fires inline (invoke_onleave_inline) → calls t2.stop()
 #   - t2.stop() cascades Q: PENDING_UNREGISTER set, Q unlinked from active

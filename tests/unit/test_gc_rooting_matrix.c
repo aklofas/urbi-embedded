@@ -29,7 +29,7 @@
 #include "gc/ugc.h"           /* UTYPE_OBJECT, urbi_gc_phase */
 #include "gc/ugc_incremental.h" /* GC_PHASE_* (ATOMIC_FINISH re-scan case) */
 #include "vm/uvm.h"
-#include "vm/uvm_internal.h"  /* vm_open_upvalue (upvalue-close barrier case) */
+#include "vm/uvm_internal.h"  /* urbi_vm_open_upvalue (upvalue-close barrier case) */
 #include "sched/ustrand.h"
 #include "realm/urealm.h"
 #include "object/uobject.h"   /* struct UObject (sentinel payload size) */
@@ -301,7 +301,7 @@ UTEST(matrix_cleanup_owning_tag_is_rooted)
     UCleanupEntry *entry = strand_cleanup_push(&s);
     UASSERT(entry != NULL);
     entry->kind        = (uint8_t)UCLEANUP_TAG_SCOPE;
-    entry->strand_back = &s;   /* mirrors vm_push_tag_scope; the remaining
+    entry->strand_back = &s;   /* mirrors urbi_vm_push_tag_scope; the remaining
                                   fields keep their zero/NULL init values.
                                   The real anonymous arm also threads
                                   tag->member_strands_head = entry — omitted
@@ -312,7 +312,7 @@ UTEST(matrix_cleanup_owning_tag_is_rooted)
     UTag *tag = utag_create(&vm);
     UASSERT(tag != NULL);
     entry->owning_tag = tag;   /* tag's ONLY reference (the anonymous
-                                  per-scope shape vm_push_tag_scope builds) */
+                                  per-scope shape urbi_vm_push_tag_scope builds) */
 
     collect_twice(&vm);
     UASSERT(cell_live(&vm, (UCell *)tag));
@@ -990,7 +990,7 @@ UTEST(matrix_periodic_owning_tag_is_rooted)
 
 /* === Upvalue-close write barrier case (Task 9 / refactor-3 GC-07) ===
  *
- * vm_close_upvalues copies *cell->u.stack_ptr into the UUpvalCell — a store
+ * urbi_vm_close_upvalues copies *cell->u.stack_ptr into the UUpvalCell — a store
  * of a possibly-WHITE value into a possibly-BLACK cell.  The close path had
  * no barrier at all, so a value whose ONLY reference migrates into a black
  * closed cell mid-mark is never re-scanned and gets swept while reachable.
@@ -1013,7 +1013,7 @@ UTEST(matrix_periodic_owning_tag_is_rooted)
  *      drain budget-1 slices (one gray pop each) until closure AND cell are
  *      BLACK with the parker still gray (phase stays MARK_INCREMENTAL).
  *   3. Mutator move: stack[2] = C2 (register write — deliberately
- *      barrier-free), then vm_close_upvalues copies C2 into the BLACK cell
+ *      barrier-free), then urbi_vm_close_upvalues copies C2 into the BLACK cell
  *      and unlinks it from open_upvals.  Pre-fix: no shade.
  *   4. Nil stack[2]: the closed cell's u.value is now C2's ONLY reference,
  *      and the ATOMIC_FINISH root re-scan (T4) sees neither the register
@@ -1058,7 +1058,7 @@ UTEST(matrix_upvalue_close_fires_barrier)
     /* Open upvalue over R[2] via the production path (links s.open_upvals,
      * rooted via strand_walk_roots section (8)); publish it in upvals[]
      * the way OP_CLOSURE does. */
-    UUpvalCell *uc = vm_open_upvalue(&vm, &s, &s.stack[2]);
+    UUpvalCell *uc = urbi_vm_open_upvalue(&vm, &s, &s.stack[2]);
     UASSERT(uc != NULL);
     cl->nupvals   = 1U;
     cl->upvals[0] = uc;
@@ -1096,7 +1096,7 @@ UTEST(matrix_upvalue_close_fires_barrier)
      * design), then close — the close copies *stack_ptr into the BLACK
      * cell.  Pre-fix: no shade fires here. */
     s.stack[2] = obj_value_for(c2);
-    vm_close_upvalues(&s, &s.stack[2]);
+    urbi_vm_close_upvalues(&s, &s.stack[2]);
     UASSERT(uc->on_heap);
     UASSERT(s.open_upvals == NULL);   /* unlinked — section (8) re-scan
                                          cannot rescue it */
@@ -1298,7 +1298,7 @@ UTEST(matrix_setupval_barrier_targets_shared_cell)
     /* Shared upvalue cell over R[3], published into A the way OP_CLOSURE's
      * in_stack arm does, then into B the way the re-capture arm does
      * (cl->upvals[i] = par_cl->upvals[src_idx] — same pointer). */
-    UUpvalCell *uc = vm_open_upvalue(&vm, &s, &s.stack[3]);
+    UUpvalCell *uc = urbi_vm_open_upvalue(&vm, &s, &s.stack[3]);
     UASSERT(uc != NULL);
     cl_a->nupvals   = 1U;
     cl_a->upvals[0] = uc;
@@ -1307,7 +1307,7 @@ UTEST(matrix_setupval_barrier_targets_shared_cell)
 
     /* Close pre-cycle (scope exit): u.value = nil, on_heap = true; the
      * cell is now reachable only via the two siblings' upvals[]. */
-    vm_close_upvalues(&s, &s.stack[3]);
+    urbi_vm_close_upvalues(&s, &s.stack[3]);
     UASSERT(uc->on_heap);
 
     /* C2: pre-cycle birth → OTHER_WHITE once the cycle flips; only

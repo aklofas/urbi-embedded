@@ -10,7 +10,7 @@
  *   VM-003 — reactive-install + uop_fork must kind-check operand registers
  *            (closed by T31: reactive_install_kind_checks_cond_operand +
  *             at_event_install_kind_check).
- *   VM-005 — vm_alloc_closure OOM must return NULL cleanly
+ *   VM-005 — urbi_vm_alloc_closure OOM must return NULL cleanly
  *            (closed by T32 — closure_list deleted at v0.8.4 Step C-3;
  *             test now verifies NULL return + no alloc_fn free call).
  *   VM-013 — op_at_event_install must verify R[event_reg].kind == UVAL_EVENT
@@ -30,7 +30,7 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
-#include "vm/uvm_internal.h"   /* vm_alloc_closure */
+#include "vm/uvm_internal.h"   /* urbi_vm_alloc_closure */
 #include "vm/uop_fork.h"       /* UVAL_STRAND_MAKE — T120 join-wait fast path */
 #include "watcher/uwatcher.h"  /* urbi_watcher_unregister_internal */
 #include "runtime/uclosure.h"  /* UClosure */
@@ -204,10 +204,10 @@ UTEST(at_event_install_propagates_pool_oom)
 }
 
 /* ===================================================================
- * VM-005 / T32: vm_alloc_closure OOM returns NULL
+ * VM-005 / T32: urbi_vm_alloc_closure OOM returns NULL
  *
  * Direct-API test against the helper function rather than going through
- * a whole compile-and-run.  We invoke vm_alloc_closure with a deliberately
+ * a whole compile-and-run.  We invoke urbi_vm_alloc_closure with a deliberately
  * starved allocator and verify NULL is returned without crashing.
  * (closure_list + next_alloc deleted at v0.8.4 Step C-3.) */
 /* =================================================================== */
@@ -235,12 +235,12 @@ fail_after_n_alloc(void *ptr, size_t nbytes, void *ud)
 
 /* vm_alloc_closure_oom_returns_null:
  *
- * T32 / VM-005 (v0.8.4 Step C-3 update).  Pins that vm_alloc_closure returns
+ * T32 / VM-005 (v0.8.4 Step C-3 update).  Pins that urbi_vm_alloc_closure returns
  * NULL on OOM and does not corrupt the GC heap.  The pre-C-3 test checked
  * that list_head was not corrupted; that mechanism is deleted — now the
  * relevant contract is: OOM returns NULL and the allocator state is clean.
  *
- * urbi_gc_alloc makes 2 alloc_fn calls per vm_alloc_closure call (cell +
+ * urbi_gc_alloc makes 2 alloc_fn calls per urbi_vm_alloc_closure call (cell +
  * sidecar node); setting allocs_remaining=0 triggers OOM on the first. */
 UTEST(vm_alloc_closure_oom_returns_null)
 {
@@ -248,18 +248,18 @@ UTEST(vm_alloc_closure_oom_returns_null)
     FailAfterNAllocState st = { .allocs_remaining = -1 };
     urbi_vm_init(&vm, fail_after_n_alloc, &st);
 
-    /* Build a minimal UProto to feed vm_alloc_closure. */
+    /* Build a minimal UProto to feed urbi_vm_alloc_closure. */
     UProto proto;
     memset(&proto, 0, sizeof(proto));
     proto.nupvals = 0;
 
     /* First alloc succeeds. */
-    UClosure *cl1 = vm_alloc_closure(&vm, &proto);
+    UClosure *cl1 = urbi_vm_alloc_closure(&vm, &proto);
     UASSERT(cl1 != NULL);
 
     /* Force OOM on the next alloc: must return NULL. */
     st.allocs_remaining = 0;
-    UClosure *cl2 = vm_alloc_closure(&vm, &proto);
+    UClosure *cl2 = urbi_vm_alloc_closure(&vm, &proto);
     UASSERT(cl2 == NULL);
 
     /* cl1 is GC-managed — urbi_vm_destroy reclaims it. */
@@ -338,7 +338,7 @@ UTEST(reactive_install_kind_checks_cond_operand)
     UStrand s;
     setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
 
-    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 100);
 
     /* Strand died (HALT); vm->last_error is UVM_TYPE_ERROR. */
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
@@ -394,7 +394,7 @@ UTEST(at_event_install_kind_check)
     UStrand s;
     setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
 
-    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 100);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
@@ -428,7 +428,7 @@ UTEST(fork_detach_kind_checks_closure_operand)
     UStrand s;
     setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
 
-    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 100);
 
     /* The is_transient_strand guard fires first (zero-init means it's
      * unset → guard does NOT fire here; the kind check runs).
@@ -456,7 +456,7 @@ UTEST(fork_detach_kind_checks_closure_operand)
  *
  * The test pattern matches fork_detach_kind_checks_closure_operand
  * exactly: a single hand-crafted opcode at instrs[0] with R[A] holding
- * a non-matching kind, dispatched via dispatch_loop_until_yield, then
+ * a non-matching kind, dispatched via urbi_vm_dispatch_loop_until_yield, then
  * asserts state == DEAD + last_error == UVM_TYPE_ERROR. */
 
 UTEST(fork_join_kind_checks_closure_operand)
@@ -481,7 +481,7 @@ UTEST(fork_join_kind_checks_closure_operand)
     UStrand s;
     setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
 
-    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 100);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
@@ -513,7 +513,7 @@ UTEST(join_wait_kind_checks_strand_handle_operand)
     UStrand s;
     setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
 
-    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 100);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
@@ -523,15 +523,15 @@ UTEST(join_wait_kind_checks_strand_handle_operand)
     urbi_vm_destroy(&vm);
 }
 
-/* fork_spawn_child OOM coverage: op_fork_detach reaches the
+/* fork_spawn_child OOM coverage: urbi_vm_op_fork_detach reaches the
  * urbi_strand_create-returns-NULL branch (uop_fork.c:58-63), then propagates
- * back through op_fork_detach (line 170) by setting strand DEAD +
+ * back through urbi_vm_op_fork_detach (line 170) by setting strand DEAD +
  * fatal_status = UEXEC_CANCEL.
  *
  * Setup pattern: arm a Realm with the fail_after_n allocator, allow the
  * realm + parent strand allocations to succeed (allocs_remaining = -1
  * during setup), then flip to allocs_remaining = 0 right before invoking
- * op_fork_detach.  fork_spawn_child's first allocation (urbi_strand_create's
+ * urbi_vm_op_fork_detach.  fork_spawn_child's first allocation (urbi_strand_create's
  * UStrand alloc) returns NULL, triggering the early-out path. */
 UTEST(fork_detach_oom_marks_strand_dead)
 {
@@ -565,14 +565,14 @@ UTEST(fork_detach_oom_marks_strand_dead)
 
     UStrand s;
     setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
-    /* op_fork_detach calls fork_spawn_child which asserts s->realm != NULL.
+    /* urbi_vm_op_fork_detach calls fork_spawn_child which asserts s->realm != NULL.
      * The setup helper zeroes the strand; we need realm pointer wired. */
     s.realm = realm;
 
     /* Starve next allocation. */
     st.allocs_remaining = 0;
 
-    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 100);
 
     /* After fork_spawn_child returns NULL: strand DEAD with CANCEL fatal. */
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
@@ -636,7 +636,7 @@ UTEST(fork_detach_arm_from_closure_oom)
      * CANCEL fatal). */
     st.allocs_remaining = 2;
 
-    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 100);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)UEXEC_CANCEL, (int)s.fatal_status);
@@ -649,8 +649,8 @@ UTEST(fork_detach_arm_from_closure_oom)
 }
 
 /* OP_FORK_JOIN OOM: same shape as fork_detach_oom_marks_strand_dead but
- * exercises op_fork_join's `return -1` at uop_fork.c:208 (the
- * fork_spawn_child-returns-NULL branch shared with op_fork_detach). */
+ * exercises urbi_vm_op_fork_join's `return -1` at uop_fork.c:208 (the
+ * fork_spawn_child-returns-NULL branch shared with urbi_vm_op_fork_detach). */
 UTEST(fork_join_oom_marks_strand_dead)
 {
     UVM vm;
@@ -682,7 +682,7 @@ UTEST(fork_join_oom_marks_strand_dead)
 
     st.allocs_remaining = 0;
 
-    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 100);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)UEXEC_CANCEL, (int)s.fatal_status);
@@ -695,7 +695,7 @@ UTEST(fork_join_oom_marks_strand_dead)
 }
 
 /* OP_JOIN_WAIT fast path: when the child handle in R[A] is already DEAD,
- * op_join_wait returns 0 immediately rather than threading the parent
+ * urbi_vm_op_join_wait returns 0 immediately rather than threading the parent
  * onto the joiners chain.  The dispatcher sees rc == 0 and continues
  * with NEXT() (uvm.c:746).
  *
@@ -710,7 +710,7 @@ UTEST(join_wait_fast_path_when_child_already_dead)
 
     /* Build a fake "dead child" UStrand: zeroed except state = DEAD.
      * The fast-path check only reads child->state via USTRAND_GET_STATE;
-     * no other fields are touched on this path (op_join_wait returns 0
+     * no other fields are touched on this path (urbi_vm_op_join_wait returns 0
      * before any other deref). */
     static UStrand fake_child;
     memset(&fake_child, 0, sizeof(fake_child));
@@ -734,7 +734,7 @@ UTEST(join_wait_fast_path_when_child_already_dead)
     UStrand s;
     setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
 
-    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 100);
 
     /* Strand reached HALT cleanly; no UVM_TYPE_ERROR. */
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);

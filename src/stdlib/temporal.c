@@ -179,7 +179,7 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     /* Resolve realm + ambient tag from the calling strand.  vm->cur_strand
      * is the strand currently in OP_CALL — set by urbi_step before
-     * dispatch_loop_until_yield. */
+     * urbi_vm_dispatch_loop_until_yield. */
     UStrand *caller = vm->cur_strand;
     URealm  *realm  = (caller != NULL) ? caller->realm : NULL;
     if (realm == NULL) {

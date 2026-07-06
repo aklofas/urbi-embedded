@@ -13,7 +13,7 @@
  *     drain_pending_onleave_queue previously used absolute set/clear for
  *     in_eval (set 1 at entry, 0 at exit).  The save/restore fix ensures
  *     the caller's in_eval value is preserved across the call.  A nested
- *     call from within watcher_eval_dirty (in_eval = 1 on entry) would
+ *     call from within urbi_vm_watcher_eval_dirty (in_eval = 1 on entry) would
  *     clobber the flag to 0, dropping the outer eval's reentrancy guard.
  *     This test pins the post-fix contract by calling drain with in_eval = 1
  *     and asserting it remains 1 on return.
@@ -99,7 +99,7 @@ UTEST(host_write_wakes_waituntil_with_zero_runnable)
                                                go_val));
 
     /* SCHED-02 post-fix: the next urbi_step pre-loop drain fires
-     * watcher_eval_dirty → waituntil rising edge → strand wakes → runs
+     * urbi_vm_watcher_eval_dirty → waituntil rising edge → strand wakes → runs
      * "Realm.done = 42" → exits.  Without the fix the strand stays parked. */
     int after = utest_e2e_run_to_no_runnable(&vm);
     UASSERT_EQ(1, after);
@@ -126,7 +126,7 @@ UTEST(sched12_drain_preserves_in_eval_when_nested)
 {
     /* SCHED-12: drain_pending_onleave_queue previously used absolute set/clear
      * for in_eval (set 1 at entry, hard-reset to 0 at exit).  A nested call
-     * from within watcher_eval_dirty (in_eval=1 on entry) would clobber the
+     * from within urbi_vm_watcher_eval_dirty (in_eval=1 on entry) would clobber the
      * flag to 0, dropping the outer eval's reentrancy guard and enabling a
      * pool-recycle UAF if the outer eval checked in_eval after drain returned.
      * The save/restore fix preserves the caller's in_eval value.
@@ -140,7 +140,7 @@ UTEST(sched12_drain_preserves_in_eval_when_nested)
      * Post-fix: in_eval is preserved across the call (= 1 on return). */
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
-    /* Simulate being inside watcher_eval_dirty. */
+    /* Simulate being inside urbi_vm_watcher_eval_dirty. */
     vm.watchers->in_eval = 1;
     /* Drain with empty queue — the save/restore must preserve in_eval = 1. */
     drain_pending_onleave_queue(&vm);

@@ -9,12 +9,12 @@
  * programmatically-constructed trees and any future API path that builds
  * UProto without the serializer).
  *
- * Because dispatch_loop_until_yield is an internal API, tests include
+ * Because urbi_vm_dispatch_loop_until_yield is an internal API, tests include
  * uvm.h and sched/ustrand.h — mirrors the approach in test_dispatch_loop.c.
  *
  * Refcount discipline (critical):
  *   - call urbi_proto_strand_ref_acquire before dispatch (strand-bind)
- *   - dispatch internally calls vm_alloc_closure → closure-bind +1
+ *   - dispatch internally calls urbi_vm_alloc_closure → closure-bind +1
  *   - ustrand_destroy → strand-bind -1
  *   - urbi_vm_destroy GC sweep → uclosure_destroy → closure-bind -1
  *   - Net: refcount reaches 0, no underflow URBI_REQUIRE fires.
@@ -75,7 +75,7 @@ static void ocl_strand_setup(UStrand *s, UVM *vm,
     s->module_instance = module_instance;
     /* Strand-bind refcount bump: paired with the uproto_strand_refcount_dec
      * inside ustrand_destroy (via uproto_strand_ref_release).  Must precede
-     * dispatch_loop_until_yield so the dec on teardown does not underflow. */
+     * urbi_vm_dispatch_loop_until_yield so the dec on teardown does not underflow. */
     if (root_proto != NULL)
         urbi_proto_strand_ref_acquire(root_proto, URBI_PROTO_REF_OWNER_TRANSIENT);
 }
@@ -200,7 +200,7 @@ UTEST(op_closure_null_owning_mi_raises_type_error)
                      &t.root, /*module_instance*/ NULL);
 
     vm.last_error = UVM_OK;
-    (void)dispatch_loop_until_yield(&s, /* step_budget */ 10000ULL);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /* step_budget */ 10000ULL);
 
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
     /* Error message must mention CLOSURE. */
@@ -238,7 +238,7 @@ UTEST(op_closure_null_proto_instances_raises_type_error)
                      &t.root, /*module_instance*/ NULL);
 
     vm.last_error = UVM_OK;
-    (void)dispatch_loop_until_yield(&s, /* step_budget */ 10000ULL);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /* step_budget */ 10000ULL);
 
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
     UASSERT(strstr(vm.last_errmsg, "CLOSURE") != NULL);
@@ -283,7 +283,7 @@ UTEST(op_closure_ic_index_out_of_range_raises_type_error)
                      &t.root, /*module_instance*/ NULL);
 
     vm.last_error = UVM_OK;
-    (void)dispatch_loop_until_yield(&s, /* step_budget */ 10000ULL);
+    (void)urbi_vm_dispatch_loop_until_yield(&s, /* step_budget */ 10000ULL);
 
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
     UASSERT(strstr(vm.last_errmsg, "CLOSURE") != NULL);

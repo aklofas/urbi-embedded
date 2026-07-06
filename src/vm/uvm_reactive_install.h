@@ -5,7 +5,7 @@
  * OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL /
  * OP_WAITUNTIL_INSTALL / OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL /
  * OP_WHENEVER_EVENT_INSTALL.  Each arm body moves verbatim into a `switch (op)`
- * inside vm_reactive_install; the operand-check / install / fault helpers move
+ * inside urbi_vm_reactive_install; the operand-check / install / fault helpers move
  * with them (kept static in the .c — they have no caller outside these arms).
  *
  * Audit constraint: NO generic macros that make dispatch harder to audit — a
@@ -20,7 +20,7 @@
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 
-/* UVmReactiveInstallResult — return codes from vm_reactive_install.
+/* UVmReactiveInstallResult — return codes from urbi_vm_reactive_install.
  *
  * NEXT      — arm continues with NEXT().
  * HALT      — arm does HALT() (helper already set vm->last_error + a diagnostic).
@@ -36,8 +36,8 @@ typedef enum {
     UVM_INSTALL_PARK_EXIT
 } UVmReactiveInstallResult;
 
-/* vm_reactive_install: execute the install opcode `op` for the instruction at
+/* urbi_vm_reactive_install: execute the install opcode `op` for the instruction at
  * s->pc.  `op` is one of the seven OP_*_INSTALL opcodes listed above. */
-UVmReactiveInstallResult vm_reactive_install(UVM *vm, UStrand *s, uint8_t op);
+UVmReactiveInstallResult urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op);
 
 #endif /* UVM_REACTIVE_INSTALL_H */

@@ -193,7 +193,7 @@ struct UStrand {
     /* T29 / FOUND-009: recursion bound for run_cleanup_with_replace().
      * Distinct from cleanup_depth (cleanup-stack push/pop counter); this
      * tracks how deeply run_cleanup_with_replace has re-entered
-     * dispatch_loop_until_yield via finally/onleave handlers.  Without
+     * urbi_vm_dispatch_loop_until_yield via finally/onleave handlers.  Without
      * this guard, a misbehaving cleanup body that itself triggers a new
      * unwind could push past URBI_CLEANUP_MAX levels of recursion and
      * exhaust the C stack.  Lives in the natural alignment gap between
@@ -346,7 +346,7 @@ struct UStrand {
     /* --- Join-blocker list (OP_FORK_JOIN / OP_JOIN_WAIT) ---
      * Singly-linked list of strands that are JOIN-blocked on THIS strand.
      * Threaded via each joiner's wait_next field.
-     * fork_wake_joiners() walks this list when the strand reaches DEAD. */
+     * urbi_vm_fork_wake_joiners() walks this list when the strand reaches DEAD. */
     UStrand                *joiners_head;
 
     /* --- Realm ownership list (T38) ---
@@ -358,7 +358,7 @@ struct UStrand {
 
     /* --- M2-baseline execution state migrated from urbi_vm_run-locals + UVM at T6 ---
        These fields are valid only while the strand is RUNNING or READY (paused mid-run).
-       urbi_vm_run's thin adapter initialises them before calling dispatch_loop_until_yield
+       urbi_vm_run's thin adapter initialises them before calling urbi_vm_dispatch_loop_until_yield
        and tears them down after the strand transitions to DEAD.
        T20 will move strand creation here when the full Strand C API lands. */
     UValue                 *stack;          /* heap-alloc'd register array; UVM_STACK_CAP slots */

@@ -13,7 +13,7 @@
 #
 # Install order: threshold starts at 0 (cond false at install); at(threshold>3)
 # does not fire immediately.  Trigger sets Realm.threshold = 10 via a nested
-# call which provides the safepoint watcher_eval_dirty needs.  The at-cond
+# call which provides the safepoint urbi_vm_watcher_eval_dirty needs.  The at-cond
 # body runs e! which enqueues the at(e?) subscriber body; that body runs and
 # sets Realm.log = "event" before Realm.log is read.
 

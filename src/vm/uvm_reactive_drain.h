@@ -11,7 +11,7 @@
  *   - dispatch safepoint: replaces the open-coded onleave/drain/eval trio
  *     — bounded_whenever = 0 (active level-trigger)
  *   - post-native-call arm in OP_CALL — bounded_whenever = 0
- *   - vm_arith_method_fallback{,_unary} / vm_cmp_method_fallback OK path
+ *   - urbi_vm_arith_method_fallback{,_unary} / urbi_vm_cmp_method_fallback OK path
  *     — bounded_whenever = 0
  *
  * Guard (SCHED-12): no-op when already inside an eval/install/scratch context.
@@ -23,7 +23,7 @@
 #define UVM_REACTIVE_DRAIN_H
 
 #include "vm/uvm.h"
-#include "watcher/uwatcher.h"       /* drain_pending_onleave_queue, watcher_eval_dirty */
+#include "watcher/uwatcher.h"       /* drain_pending_onleave_queue, urbi_vm_watcher_eval_dirty */
 #include "changed/uchanged_node.h"  /* urbi_drain_deferred_slot_changes */
 #include <stdint.h>
 
@@ -59,7 +59,7 @@ vm_reactive_drain(struct UVM *vm, int bounded_whenever)
     if (vm->watchers->dirty_count > 0) {
         uint8_t saved = vm->watchers->whenever_edge_only;
         vm->watchers->whenever_edge_only = (uint8_t)(bounded_whenever ? 1 : 0);
-        watcher_eval_dirty(vm);
+        urbi_vm_watcher_eval_dirty(vm);
         vm->watchers->whenever_edge_only = saved;
     }
 }

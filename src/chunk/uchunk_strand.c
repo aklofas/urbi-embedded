@@ -424,7 +424,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 
     UEmitter e;
     /* Deliberately NULL: a non-NULL module source_name changes RUNTIME
-     * error rendering (diag_write_prefix: "line N:" → "<name>:N:"), a
+     * error rendering (urbi_vm_diag_write_prefix: "line N:" → "<name>:N:"), a
      * fixture-pinned surface.  Compile diagnostics still unify on
      * "<stdin>" via the formatter/warning-loop fallbacks below, matching
      * ulex_current_source's default for the parse-error path. */
@@ -570,7 +570,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 
     /* v0.8.1 Variant B Phase 2: urbi_steal_repl_protos deleted.
      * Closures escaping into realm globals bump root_proto.refcount via
-     * uproto_root_of at vm_alloc_closure time; uchunk_destroy rescues the
+     * uproto_root_of at urbi_vm_alloc_closure time; uchunk_destroy rescues the
      * entire root_proto when refcount > 0.  No per-nested stealing needed. */
 
     if (run_rc != URBI_OK) {

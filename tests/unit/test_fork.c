@@ -264,7 +264,7 @@ UTEST(fork_detach_quiescent_count_zero)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 6: fork_wake_joiners is idempotent — calling it twice on a strand
+/* Case 6: urbi_vm_fork_wake_joiners is idempotent — calling it twice on a strand
  * with no joiners is a no-op. */
 UTEST(fork_wake_joiners_empty_is_noop)
 {
@@ -279,8 +279,8 @@ UTEST(fork_wake_joiners_empty_is_noop)
     UASSERT(s->joiners_head == NULL);
 
     /* Call twice — must not crash. */
-    fork_wake_joiners(s, &vm);
-    fork_wake_joiners(s, &vm);
+    urbi_vm_fork_wake_joiners(s, &vm);
+    urbi_vm_fork_wake_joiners(s, &vm);
     UASSERT(s->joiners_head == NULL);
 
     urbi_strand_destroy(&vm, s);
@@ -336,7 +336,7 @@ UTEST(fork_join_arithmetic_children)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 9 (T31 / VM-004): op_join_wait blocks parent BEFORE linking to the
+/* Case 9 (T31 / VM-004): urbi_vm_op_join_wait blocks parent BEFORE linking to the
  * child's join chain.  The audit identified the prior link-then-block
  * ordering as a latent race: any concurrent walker that read
  * child->joiners_head would observe the parent on the join chain while
@@ -351,7 +351,7 @@ UTEST(fork_join_arithmetic_children)
  * quiescence with the expected void result and no fatal.  If the
  * ordering re-broke (e.g. the parent's state was inconsistent at the
  * link site), one of sched_strand_block's SCHED-002 entry-state asserts
- * or the make_runnable READY-idempotence assert in fork_wake_joiners
+ * or the make_runnable READY-idempotence assert in urbi_vm_fork_wake_joiners
  * would trip in URBI_DEBUG builds. */
 UTEST(fork_join_wait_parent_blocked_before_link_to_chain)
 {

@@ -628,7 +628,7 @@ sched_dequeue_ready_head(UVM *vm)
  *   (2) Unwind state — unwind_value + fatal_value are UValue fields.
  *   (3) Cleanup stack — TAG_SCOPE entries' owning_tag (UTag*) is shaded
  *       directly since v0.13.2 (refactor-3 GC-03): the anonymous per-scope
- *       tag vm_push_tag_scope creates has no other reference.
+ *       tag urbi_vm_push_tag_scope creates has no other reference.
  *       catch_pattern (UPattern*) is host-allocated, not GC-managed.
  *   (4) Wait payload — wait_payload.event / wait_payload.join_parent are
  *       NOT yielded here.  UEvent became a GC cell at M5, but every UEvent
@@ -702,7 +702,7 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
 
     /* (3) Cleanup-stack entries (row 7 §4.4).
      *     GC-03 (refactor-3): TAG_SCOPE entries' owning_tag IS a root — an
-     *     anonymous per-scope UTag created by vm_push_tag_scope is referenced
+     *     anonymous per-scope UTag created by urbi_vm_push_tag_scope is referenced
      *     ONLY here (the "future audit" the old comment hedged on found it:
      *     deep-audit GC-03/SCHED-07).  UTag embeds the cell header at offset
      *     0; shade directly so the walk_utag type walker traces enter/leave
@@ -967,7 +967,7 @@ sched_post_dispatch(UVM *vm, UStrand *s)
      *
      * Safe to reap here because: watcher_body_owner was cleared by
      * urbi_watcher_body_completed in exit_strand; joiners were woken by
-     * fork_wake_joiners; ready/sleep queues were already unbound; vm->cur_strand
+     * urbi_vm_fork_wake_joiners; ready/sleep queues were already unbound; vm->cur_strand
      * was cleared after dispatch returned.  The FATAL path returns before reaching
      * this helper, so we never reap a strand the host still wants to inspect.
      *

@@ -11,7 +11,7 @@
 #   t.stop();
 #   e!;           // silent — t.stop() cancelled the watcher
 #
-# Pre-fix (v0.13.4-A): OP_POP_TAG's vm_tag_scope_teardown cascades ALL
+# Pre-fix (v0.13.4-A): OP_POP_TAG's urbi_vm_tag_scope_teardown cascades ALL
 # watchers unconditionally at scope close, even for user-owned tags
 # (FLAG_TAG_USER_OWNED).  The watcher dies with the lexical scope, so
 # the first post-scope fire is already silent and t.stop() sees no active

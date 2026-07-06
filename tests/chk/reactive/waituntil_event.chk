@@ -4,7 +4,7 @@
 #
 # Semantics: `waituntil (e?)` parks the calling strand on e's waiters_head
 #   via c_event_waituntil.  When e is emitted, the emit payload is deposited
-#   in strand->last_event_payload; on resume, dispatch_loop_until_yield
+#   in strand->last_event_payload; on resume, urbi_vm_dispatch_loop_until_yield
 #   delivers the payload to the OP_CALL result register before the first
 #   instruction executes.  The expression evaluates to the emit payload.
 #

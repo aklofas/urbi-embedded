@@ -343,7 +343,7 @@ uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n) {
     }
 
     /* Upvalue cascade. */
-    int up = find_or_install_upvalue(e, fs, canonical, n->u.ident.len);
+    int up = urbi_vm_find_or_install_upvalue(e, fs, canonical, n->u.ident.len);
     if (up >= 0) {
         uint8_t dst = e->next_reg;
         if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
@@ -622,7 +622,7 @@ uint8_t emit_assign_arm(UEmitter *e, UAstNode *n) {
     int upvalue_idx = -1;
     bool is_global_assign = false;
     if (local_slot < 0) {
-        upvalue_idx = find_or_install_upvalue(e, fs, canonical,
+        upvalue_idx = urbi_vm_find_or_install_upvalue(e, fs, canonical,
                                               n->u.assign.name_len);
         if (upvalue_idx < 0) {
             /* T72: check whether this name was declared via `var` at chunk-top

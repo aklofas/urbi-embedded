@@ -11,7 +11,7 @@
 # Fix (v0.13.3-scheduler-liveness, Task 5 — vm_reactive_drain):
 # urbi_step now calls vm_reactive_drain when strand_runnable_count == 0
 # BEFORE the dispatch loop.  The drain flushes the dirty mark, fires
-# watcher_eval_dirty, which sees the waituntil condition truthy and wakes
+# urbi_vm_watcher_eval_dirty, which sees the waituntil condition truthy and wakes
 # the strand.  The subsequent dispatch loop runs the now-READY strand.
 #
 # Host-driver protocol:

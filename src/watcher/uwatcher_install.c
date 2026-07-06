@@ -247,7 +247,7 @@ install_watcher_runtime(
      * SCHED-01: block owns the runnable-count decrement; the pre-refactor
      * direct state stamp left the accounting to a manual decrement in the
      * OP_WAITUNTIL_INSTALL arm).  The dispatcher observes the WAITING state
-     * and yields to the scheduler; the watcher eval pass (watcher_eval_dirty)
+     * and yields to the scheduler; the watcher eval pass (urbi_vm_watcher_eval_dirty)
      * wakes the strand by calling sched_strand_make_runnable when the rising
      * edge fires. */
     if (mode == UWATCHER_WAITUNTIL) {
@@ -265,7 +265,7 @@ install_watcher_runtime(
             urbi_watcher_unregister_internal(vm, w);
             return URBI_INSTALL_OK;
         }
-        /* Park waiter strand until the rising edge fires; watcher_eval_dirty
+        /* Park waiter strand until the rising edge fires; urbi_vm_watcher_eval_dirty
          * wakes it via sched_strand_make_runnable.  The watcher holds the
          * back-pointer (w->waiter_strand, wired above), so no payload. */
         sched_strand_block(s, USTRAND_REASON_WATCHER, 0);

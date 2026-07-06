@@ -17,7 +17,7 @@
  * during run_cleanup_with_replace(), the new pending state wins and the
  * original is silently suppressed.  Warning emission deferred to T16/T19.
  *
- * Recursion bound: run_cleanup_with_replace() re-enters dispatch_loop_until_yield.
+ * Recursion bound: run_cleanup_with_replace() re-enters urbi_vm_dispatch_loop_until_yield.
  * Maximum depth is bounded by URBI_CLEANUP_MAX (default 64, footprint preset 16).
  * At 64 levels and ~8 KB per frame: ~512 KB max — safe on host.
  * TODO T20: evaluate non-recursive cleanup executor if Cortex-M stack budget
@@ -28,8 +28,8 @@
 #include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "runtime/uframe.h"       /* UCallFrame */
 #include "runtime/ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
-#include "vm/uvm.h"          /* dispatch_loop_until_yield */
-#include "vm/uvm_tag_scope.h"     /* vm_tag_scope_teardown (v0.10.15-B absorption) */
+#include "vm/uvm.h"          /* urbi_vm_dispatch_loop_until_yield */
+#include "vm/uvm_tag_scope.h"     /* urbi_vm_tag_scope_teardown (v0.10.15-B absorption) */
 #include "urbi/urbi.h"         /* UErrCode, public API declarations */
 #include "sched/usched_cooperative.h" /* urbi_sched_strand_unpark, urbi_sched_runnable_inc */
 #include "runtime/umacros.h"      /* URBI_INTERNAL_ASSERT */
@@ -116,7 +116,7 @@ pop_call_frame(UStrand *s)
     /* Close any open upvalue cells pointing into this frame's registers.
      * Threshold: one past the result-destination slot in the caller's window,
      * covering all locals allocated above it in the callee's window. */
-    vm_close_upvalues(s, done->base + done->result_dest_reg + 1);
+    urbi_vm_close_upvalues(s, done->base + done->result_dest_reg + 1);
 
     /* Restore caller's register window, instruction pointer, and constant pool. */
     s->R       = done->base;
@@ -168,7 +168,7 @@ deliver_return_value(UStrand *s, UValue val, int result_dest_reg)
    - If the cleanup body raises a new unwind, the new state wins and the
      original is silently suppressed (warning deferred to T16/T19 diag infra).
 
-   Re-enters dispatch_loop_until_yield; recursion depth bounded by
+   Re-enters urbi_vm_dispatch_loop_until_yield; recursion depth bounded by
    URBI_CLEANUP_MAX (see file-level comment).
 
    T29 / FOUND-009: the recursion bound is now enforced via the per-strand
@@ -238,12 +238,12 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
     s->pc = s->pc_base + handler_pc;
 
     /* Run the cleanup body until it completes, yields, or raises a new unwind.
-     * dispatch_loop_until_yield exits via the safepoint path if pending_unwind
+     * urbi_vm_dispatch_loop_until_yield exits via the safepoint path if pending_unwind
      * becomes non-OK; urbi_unwind is called recursively from that safepoint.
      * Recursion depth is bounded by URBI_CLEANUP_MAX.
      *
      * refactor-3 VM-02 + SCHED-10: the nested dispatch must not disturb the
-     * embedder's urbi_step budget (dispatch_loop_until_yield overwrites
+     * embedder's urbi_step budget (urbi_vm_dispatch_loop_until_yield overwrites
      * vm->step_budget_remaining at entry), and a mature strand's depleted
      * per-strand safepoint budget must not park the cleanup body mid-run.
      * Save both, arm fresh values, restore after.  URBI_SCRATCH_BUDGET_OPS
@@ -255,7 +255,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
         s->safepoint_budget_remaining = (uint16_t)URBI_SCRATCH_BUDGET_OPS;
         s->cleanup_body_done = 0U;
 
-        (void)dispatch_loop_until_yield(s, /*step_budget*/ URBI_SCRATCH_BUDGET_OPS);
+        (void)urbi_vm_dispatch_loop_until_yield(s, /*step_budget*/ URBI_SCRATCH_BUDGET_OPS);
 
         if (vm != NULL) vm->step_budget_remaining = saved_step_budget;
         s->safepoint_budget_remaining = saved_strand_budget;
@@ -362,7 +362,7 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
 }
 
 /* ===== urbi_unwind: main 3-kind walker =====
-   Called from the safepoint in dispatch_loop_until_yield when
+   Called from the safepoint in urbi_vm_dispatch_loop_until_yield when
    s->pending_unwind != UEXEC_OK.  Walks the cleanup stack from innermost
    (top) to outermost (bottom), processing each entry by kind.
 
@@ -470,7 +470,7 @@ urbi_unwind(UStrand *s)
                      * event, watcher cascade, member unlink, anonymous-tag
                      * destroy).  NOT the stop-absorb arm: the RETURN exits
                      * the scope; nothing resumes inside it. */
-                    vm_tag_scope_teardown(s, e);
+                    urbi_vm_tag_scope_teardown(s, e);
                 } else {
                     /* TRY_FRAME without finally (a catch never matches a
                      * RETURN): pop and continue.  The explicit kind keeps
@@ -656,7 +656,7 @@ urbi_unwind(UStrand *s)
                  * ambient entries (FLAG_TAG_AMBIENT — realm tag / inherited
                  * fork-chain tag) must NOT absorb the TAG_STOP: their
                  * handler_pc == 0 (would restart the thunk at pc_base) and
-                 * vm_tag_scope_teardown would fire leave events and destroy
+                 * urbi_vm_tag_scope_teardown would fire leave events and destroy
                  * the shared tag per-strand.  Bare-pop and continue walking
                  * so the unwind propagates and eventually terminates the
                  * strand via USTRAND_STATE_DEAD. */
@@ -665,7 +665,7 @@ urbi_unwind(UStrand *s)
                     continue;
                 }
                 uint16_t resume_pc = e->handler_pc;
-                vm_tag_scope_teardown(s, e);
+                urbi_vm_tag_scope_teardown(s, e);
                 s->pc             = s->pc_base + resume_pc;
                 s->pending_unwind = UEXEC_OK;
                 s->unwind_value   = nil;
@@ -682,7 +682,7 @@ urbi_unwind(UStrand *s)
              *
              * v0.13.3 (design-risks v0.13.1-M): a real scope (opened by
              * OP_PUSH_TAG) gets the SAME teardown OP_POP_TAG runs —
-             * vm_tag_scope_teardown fires the tier-2 leave event, cascades
+             * urbi_vm_tag_scope_teardown fires the tier-2 leave event, cascades
              * member watchers to the pending-onleave queue, unlinks the
              * member entry, pops, and destroys an anonymous per-scope tag
              * (user-owned tags survive).  Pre-fix the bare pop skipped all
@@ -714,7 +714,7 @@ urbi_unwind(UStrand *s)
                 if (e->flags & FLAG_TAG_AMBIENT)
                     strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
                 else
-                    vm_tag_scope_teardown(s, e);
+                    urbi_vm_tag_scope_teardown(s, e);
                 rc = run_cleanup_with_replace(s, handler_pc);
                 if (rc == URBI_ERR_CLEANUP_OVERFLOW) {
                     UValue overflow_marker;
@@ -738,7 +738,7 @@ urbi_unwind(UStrand *s)
             if (e->flags & FLAG_TAG_AMBIENT)
                 strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
             else
-                vm_tag_scope_teardown(s, e);
+                urbi_vm_tag_scope_teardown(s, e);
             continue;
         }
 
@@ -840,7 +840,7 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
          * reason-specific third-party links (sleep queue / event waiter
          * chain / child->joiners_head / waituntil waiter_strand) BEFORE
          * routing through the make_runnable wake funnel, so no later waker
-         * (fork_wake_joiners at child death, watcher_eval_dirty on a rising
+         * (urbi_vm_fork_wake_joiners at child death, urbi_vm_watcher_eval_dirty on a rising
          * edge) can touch a strand that already moved on or was freed.
          *
          * SCHED-08: stop overrides suspension — the deposit must be

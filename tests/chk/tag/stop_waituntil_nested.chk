@@ -6,7 +6,7 @@
 #         condition cannot wake a dead/freed strand.
 #         Pre-fix: the woken strand absorbed at t, completed, and was
 #         eager-reaped while w->waiter_strand still pointed at it; the
-#         trig() rising edge had watcher_eval_dirty call
+#         trig() rising edge had urbi_vm_watcher_eval_dirty call
 #         sched_strand_make_runnable on freed memory (ASan heap-UAF).
 # matrix-row: tag-stop
 ## timeout: 30

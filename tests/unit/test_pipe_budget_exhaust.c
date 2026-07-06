@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: per-strand instruction budget exhaustion → soft yield
- * (row 12 §3.2 — budget-exhaustion safepoint in dispatch_loop_until_yield).
+ * (row 12 §3.2 — budget-exhaustion safepoint in urbi_vm_dispatch_loop_until_yield).
  *
  * A soft yield occurs when safepoint_budget_remaining reaches 0 at a
  * safepoint.  The strand transitions RUNNING → READY (via sched_strand_yield)

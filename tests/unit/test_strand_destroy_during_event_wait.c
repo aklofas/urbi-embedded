@@ -160,7 +160,7 @@ UTEST(destroy_clears_event_waiter_mid_chain)
  * Assert the parent is woken (READY / strand_runnable_count incremented)
  * and child->joiners_head is NULL.
  *
- * This tests the fork_wake_joiners call added to strand_cleanup_observers.
+ * This tests the urbi_vm_fork_wake_joiners call added to strand_cleanup_observers.
  * We bypass the VM bytecode (no need to compile & run OP_FORK_JOIN /
  * OP_JOIN_WAIT) because we are testing the teardown path, not the opcode.
  * =================================================================== */
@@ -192,7 +192,7 @@ UTEST(destroy_wakes_joiner)
     sched_strand_block(parent, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
     UASSERT_EQ(vm.strand_runnable_count, 0);
 
-    /* Thread parent onto child's joiners_head (mirrors op_join_wait internals). */
+    /* Thread parent onto child's joiners_head (mirrors urbi_vm_op_join_wait internals). */
     parent->wait_next   = NULL;
     child->joiners_head = parent;
 
@@ -203,7 +203,7 @@ UTEST(destroy_wakes_joiner)
     /* Destroy the child — should wake the parent. */
     urbi_strand_destroy(&vm, child);
 
-    /* joiners_head must be cleared (fork_wake_joiners clears it before walking). */
+    /* joiners_head must be cleared (urbi_vm_fork_wake_joiners clears it before walking). */
     /* child is freed at this point; do not dereference it. */
 
     /* Parent must be READY and runnable_count must be 1. */

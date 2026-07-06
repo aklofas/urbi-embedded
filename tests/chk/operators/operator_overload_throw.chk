@@ -10,7 +10,7 @@
 class Vec {}; Vec.setSlot("+", function(other) { throw("boom-value") }); var a = Vec.new(); var r = "none"; try { a + 1 } catch (var e) { r = e }; r
 [00000000] "boom-value"
 
-# --- comparison path: "<" body throws (vm_cmp_method_fallback) ---
+# --- comparison path: "<" body throws (urbi_vm_cmp_method_fallback) ---
 # pre-fix: [00000001] !!! line 1: TypeError: OP_LT operands must be Integer or Float (got unknown, Integer)
 class V2 {}; V2.setSlot("<", function(other) { throw("lt-boom") }); var a2 = V2.new(); var r2 = "none"; try { if (a2 < 1) { "x" } } catch (var e) { r2 = e }; r2
 [00000001] "lt-boom"
@@ -20,7 +20,7 @@ class V2 {}; V2.setSlot("<", function(other) { throw("lt-boom") }); var a2 = V2.
 class V4 {}; V4.setSlot("==", function(other) { throw("eq-boom") }); var a4 = V4.new(); var r4 = "none"; try { if (a4 == 1) { "x" } } catch (var e) { r4 = e }; r4
 [00000002] "eq-boom"
 
-# --- unary path: "-" body throws (vm_arith_method_fallback_unary) ---
+# --- unary path: "-" body throws (urbi_vm_arith_method_fallback_unary) ---
 # pre-fix: [00000003] !!! line 1: TypeError: OP_NEG operand must be Integer or Float (got unknown)
 class V3 {}; V3.setSlot("-", function() { throw("neg-boom") }); var a3 = V3.new(); var r3 = "none"; try { -a3 } catch (var e) { r3 = e }; r3
 [00000003] "neg-boom"

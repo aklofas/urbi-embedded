@@ -555,7 +555,7 @@ typedef struct UFuncState {
  * (must be interned) and installs it as an upvalue in fs's table.
  * Returns the upvalue index in fs, or -1 if name is not found in any
  * enclosing scope. Sets EMIT_UPVAL_EXHAUSTED on overflow. */
-int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
+int urbi_vm_find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
                             const char *name, int name_len);
 
 /* M4 T15: assign the next IC site index for the current function and

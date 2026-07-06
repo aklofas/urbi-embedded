@@ -7,12 +7,12 @@
  *   - JOIN: urbi_tag_stop woke a JOIN-parked parent via
  *     sched_strand_make_runnable but left it threaded on
  *     child->joiners_head.  When the child later reached DEAD,
- *     fork_wake_joiners walked the (possibly freed) parent — ASan
+ *     urbi_vm_fork_wake_joiners walked the (possibly freed) parent — ASan
  *     heap-use-after-free, or a READY->READY make_runnable (SCHED-005
  *     assert / circular ready-queue corruption).
  *   - WATCHER: urbi_tag_stop woke a waituntil(cond)-parked strand but left
  *     w->waiter_strand pointing at it.  The next rising edge had
- *     watcher_eval_dirty call sched_strand_make_runnable on a DEAD/freed
+ *     urbi_vm_watcher_eval_dirty call sched_strand_make_runnable on a DEAD/freed
  *     strand (ASan UAF; pinned end-to-end by
  *     tests/chk/tag/stop_waituntil_nested.chk).
  *
@@ -25,7 +25,7 @@
 
 #include "urbi/urbi.h"
 #include "vm/uvm.h"
-#include "vm/uop_fork.h"               /* fork_wake_joiners */
+#include "vm/uop_fork.h"               /* urbi_vm_fork_wake_joiners */
 #include "sched/ustrand.h"
 #include "sched/usched_cooperative.h"
 #include "realm/urealm.h"
@@ -54,7 +54,7 @@ make_nil(void)
  * src/vm/uop_fork.c's OP_JOIN_WAIT does (block-then-link), fires
  * urbi_tag_stop on the shared realm tag, then frees the woken parent and
  * drives the child's death-path joiner wake.  Pre-fix: the parent stays
- * linked (assert red) and fork_wake_joiners walks freed memory (ASan red).
+ * linked (assert red) and urbi_vm_fork_wake_joiners walks freed memory (ASan red).
  * =================================================================== */
 UTEST(tag_stop_join_parked_unlinks_joiner)
 {
@@ -94,7 +94,7 @@ UTEST(tag_stop_join_parked_unlinks_joiner)
     /* Drive the would-be waker: free the parent, then run the child's
      * death-path joiner wake.  Pre-fix this walked the freed parent. */
     urbi_strand_destroy(&vm, parent);
-    fork_wake_joiners(child, &vm);
+    urbi_vm_fork_wake_joiners(child, &vm);
     UASSERT(child->joiners_head == NULL);
 
     urbi_realm_destroy(&vm, r);   /* frees child */
@@ -151,7 +151,7 @@ UTEST(tag_stop_watcher_parked_scrubs_waiter)
  * Case 3 (spec-review hazard 1): unparking a WATCHER-parked strand while
  * vm->watchers->in_eval is set (a tag-stop/cancel fired from an AT_SYNC
  * inline body or a drain onleave handler) must NOT pool_free the watcher
- * inline — watcher_eval_dirty's walk holds a `next` snapshot, and a freed
+ * inline — urbi_vm_watcher_eval_dirty's walk holds a `next` snapshot, and a freed
  * slot's next_active is repurposed as the pool freelist link (the walk
  * would wander into mode-0 freelist slots).  Mid-eval the retire is
  * deferred via pending_onleave_queue_push (PENDING_UNREGISTER keeps the

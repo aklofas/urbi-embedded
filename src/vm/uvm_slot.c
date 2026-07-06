@@ -40,8 +40,8 @@ slot_throw_or_fatal(UVM *vm, const char *msg)
     vm->last_error = UVM_TYPE_ERROR;
     {
         UDiagWriter _w;
-        diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
-        diag_write_cstr(&_w, msg);
+        urbi_vm_diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+        urbi_vm_diag_write_cstr(&_w, msg);
     }
     return VM_SLOT_MISSING;
 }
@@ -148,11 +148,11 @@ vm_resolve_ic(UVM *vm,
 }
 
 /* -----------------------------------------------------------------------
- * vm_dispatch_getter
+ * urbi_vm_dispatch_getter
  * ----------------------------------------------------------------------- */
 
 UVmSlotResult
-vm_dispatch_getter(UVM *vm,
+urbi_vm_dispatch_getter(UVM *vm,
                    UProps *up,
                    const char *opname,
                    UValue *out_result)
@@ -161,10 +161,10 @@ vm_dispatch_getter(UVM *vm,
                    || up->oget.v.p == NULL) {
         /* v0.11.4: catchable typed throw (was fatal HALT). */
         char _b[UVM_ERRMSG_CAP];
-        UDiagWriter _w; diag_init(&_w, _b, sizeof _b);
-        diag_write_cstr(&_w, "TypeError: ");
-        diag_write_cstr(&_w, opname);
-        diag_write_cstr(&_w, ": getter is not a closure");
+        UDiagWriter _w; urbi_vm_diag_init(&_w, _b, sizeof _b);
+        urbi_vm_diag_write_cstr(&_w, "TypeError: ");
+        urbi_vm_diag_write_cstr(&_w, opname);
+        urbi_vm_diag_write_cstr(&_w, ": getter is not a closure");
         return slot_throw_or_fatal(vm, _b);
     }
     UValue result; int threw = 0;
@@ -172,7 +172,7 @@ vm_dispatch_getter(UVM *vm,
                                          &result, &threw);
     if (rc != 0 || threw) {
         /* v0.11.4: catchable typed throw (was fatal HALT).  Message text
-         * matches vm_format_type_error_msg(vm, "getter raised"). */
+         * matches urbi_vm_format_type_error_msg(vm, "getter raised"). */
         return slot_throw_or_fatal(vm, "TypeError: getter raised");
     }
     if (out_result) *out_result = result;
@@ -180,11 +180,11 @@ vm_dispatch_getter(UVM *vm,
 }
 
 /* -----------------------------------------------------------------------
- * vm_dispatch_setter
+ * urbi_vm_dispatch_setter
  * ----------------------------------------------------------------------- */
 
 UVmSlotResult
-vm_dispatch_setter(UVM *vm,
+urbi_vm_dispatch_setter(UVM *vm,
                    UProps *up,
                    const char *opname,
                    UValue payload)
@@ -193,10 +193,10 @@ vm_dispatch_setter(UVM *vm,
                    || up->oset.v.p == NULL) {
         /* v0.11.4: catchable typed throw (was fatal HALT). */
         char _b[UVM_ERRMSG_CAP];
-        UDiagWriter _w; diag_init(&_w, _b, sizeof _b);
-        diag_write_cstr(&_w, "TypeError: ");
-        diag_write_cstr(&_w, opname);
-        diag_write_cstr(&_w, ": setter is not a closure");
+        UDiagWriter _w; urbi_vm_diag_init(&_w, _b, sizeof _b);
+        urbi_vm_diag_write_cstr(&_w, "TypeError: ");
+        urbi_vm_diag_write_cstr(&_w, opname);
+        urbi_vm_diag_write_cstr(&_w, ": setter is not a closure");
         return slot_throw_or_fatal(vm, _b);
     }
     UValue result; int threw = 0;
@@ -204,7 +204,7 @@ vm_dispatch_setter(UVM *vm,
                 vm, (UClosure *)up->oset.v.p, payload, &result, &threw);
     if (rc != 0 || threw) {
         /* v0.11.4: catchable typed throw (was fatal HALT).  Message text
-         * matches vm_format_type_error_msg(vm, "setter raised"). */
+         * matches urbi_vm_format_type_error_msg(vm, "setter raised"). */
         return slot_throw_or_fatal(vm, "TypeError: setter raised");
     }
     /* Setter return value is discarded. */
@@ -212,11 +212,11 @@ vm_dispatch_setter(UVM *vm,
 }
 
 /* -----------------------------------------------------------------------
- * vm_getslot_value
+ * urbi_vm_getslot_value
  * ----------------------------------------------------------------------- */
 
 UVmSlotResult
-vm_getslot_value(UVM *vm,
+urbi_vm_getslot_value(UVM *vm,
                  UIC *ic,
                  UObject *recv,
                  UValue *out_value,
@@ -229,11 +229,11 @@ vm_getslot_value(UVM *vm,
 }
 
 /* -----------------------------------------------------------------------
- * vm_setslot_value
+ * urbi_vm_setslot_value
  * ----------------------------------------------------------------------- */
 
 UVmSlotResult
-vm_setslot_value(UVM *vm,
+urbi_vm_setslot_value(UVM *vm,
                  UIC *ic,
                  UObject *recv,
                  UValue v,
@@ -244,11 +244,11 @@ vm_setslot_value(UVM *vm,
 }
 
 /* -----------------------------------------------------------------------
- * vm_getslot_slow
+ * urbi_vm_getslot_slow
  * ----------------------------------------------------------------------- */
 
 UVmSlotResult
-vm_getslot_slow(UVM *vm,
+urbi_vm_getslot_slow(UVM *vm,
                 UIC *ic,
                 UObject *recv,
                 const char *opname,
@@ -259,20 +259,20 @@ vm_getslot_slow(UVM *vm,
     if (rc != 0) {
         /* v0.11.4: catchable typed throw (was fatal HALT). */
         char _b[UVM_ERRMSG_CAP];
-        UDiagWriter _w; diag_init(&_w, _b, sizeof _b);
-        diag_write_cstr(&_w, "TypeError: ");
-        diag_write_cstr(&_w, opname);
-        diag_write_cstr(&_w, ": slot '");
+        UDiagWriter _w; urbi_vm_diag_init(&_w, _b, sizeof _b);
+        urbi_vm_diag_write_cstr(&_w, "TypeError: ");
+        urbi_vm_diag_write_cstr(&_w, opname);
+        urbi_vm_diag_write_cstr(&_w, ": slot '");
         if (ic->name != NULL)
-            diag_write_cstr(&_w, (const char *)ic->name);
-        diag_write_cstr(&_w, "' not found");
+            urbi_vm_diag_write_cstr(&_w, (const char *)ic->name);
+        urbi_vm_diag_write_cstr(&_w, "' not found");
         return slot_throw_or_fatal(vm, _b);
     }
     /* Inspect the freshly-filled IC entry for a pending getter. */
     uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
                                 % URBI_IC_ENTRIES_PER_SITE);
     if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
-        UVmSlotResult gr = vm_dispatch_getter(vm, ic->uprops[fresh_k], opname, out_value);
+        UVmSlotResult gr = urbi_vm_dispatch_getter(vm, ic->uprops[fresh_k], opname, out_value);
         return gr; /* VM_SLOT_OK (getter result in *out_value) or error */
     }
     if (out_value) *out_value = v;
@@ -280,11 +280,11 @@ vm_getslot_slow(UVM *vm,
 }
 
 /* -----------------------------------------------------------------------
- * vm_setslot_slow
+ * urbi_vm_setslot_slow
  * ----------------------------------------------------------------------- */
 
 UVmSlotResult
-vm_setslot_slow(UVM *vm,
+urbi_vm_setslot_slow(UVM *vm,
                 UIC *ic,
                 UObject *recv,
                 UValue v,
@@ -301,20 +301,20 @@ vm_setslot_slow(UVM *vm,
     if (rc != 0) {
         /* v0.11.4: catchable typed throw (was fatal HALT). */
         char _b[UVM_ERRMSG_CAP];
-        UDiagWriter _w; diag_init(&_w, _b, sizeof _b);
-        diag_write_cstr(&_w, "TypeError: ");
-        diag_write_cstr(&_w, opname);
-        diag_write_cstr(&_w, ": slot write failed for '");
+        UDiagWriter _w; urbi_vm_diag_init(&_w, _b, sizeof _b);
+        urbi_vm_diag_write_cstr(&_w, "TypeError: ");
+        urbi_vm_diag_write_cstr(&_w, opname);
+        urbi_vm_diag_write_cstr(&_w, ": slot write failed for '");
         if (ic->name != NULL)
-            diag_write_cstr(&_w, (const char *)ic->name);
-        diag_write_cstr(&_w, "' (constant, OOM, or resolve overflow)");
+            urbi_vm_diag_write_cstr(&_w, (const char *)ic->name);
+        urbi_vm_diag_write_cstr(&_w, "' (constant, OOM, or resolve overflow)");
         return slot_throw_or_fatal(vm, _b);
     }
     /* Check if the freshly-filled IC entry has a pending setter. */
     uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
                                 % URBI_IC_ENTRIES_PER_SITE);
     if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OSET)) {
-        return vm_dispatch_setter(vm, ic->uprops[fresh_k], opname, v);
+        return urbi_vm_dispatch_setter(vm, ic->uprops[fresh_k], opname, v);
     }
     /* Barrier-only post-slow-path: the store is done inside urbi_slot_set_slow;
      * fire observer_dirty so watchers whose read-set includes recv see the write.

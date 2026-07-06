@@ -3,7 +3,7 @@
 #         subsequent writes to an existing slot.  Closes v0.10.7-C.
 #
 # Activation history: v0.10.13 W3 fixed the double-fire bug (urbi_object_set_local_slot
-#         Case 2 and vm_setslot_slow install path both suppressed slot-change
+#         Case 2 and urbi_vm_setslot_slow install path both suppressed slot-change
 #         emit on shape transition).  Activated at the same milestone.
 #
 # Uses Realm slots for the counter (Realm.fired) and the watched slot (Realm.x)

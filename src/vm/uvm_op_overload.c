@@ -213,7 +213,7 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
  * Public helpers: binary and unary fallback
  * --------------------------------------------------------------------- */
 
-/* vm_arith_method_fallback — binary operator fallback.
+/* urbi_vm_arith_method_fallback — binary operator fallback.
  *
  * Called when arith_add/sub/mul/div returns a type error and the lhs is a
  * user object.  Looks up `op_name` slot on lhs's proto chain; if found,
@@ -227,7 +227,7 @@ resolve_op_closure(UVM *vm, UObject *recv_obj,
  * (refactor-3 VM-07).
  * Returns VM_OP_OVERLOAD_OOM on allocation failure during lookup/call. */
 int
-vm_arith_method_fallback(UVM *vm,
+urbi_vm_arith_method_fallback(UVM *vm,
                          UValue *dst,
                          const UValue *lhs,
                          const UValue *rhs,
@@ -305,12 +305,12 @@ vm_arith_method_fallback(UVM *vm,
     return VM_OP_OVERLOAD_OK;
 }
 
-/* vm_arith_method_fallback_unary — unary operator fallback.
+/* urbi_vm_arith_method_fallback_unary — unary operator fallback.
  *
  * Same as the binary variant but no rhs argument.  Used by OP_NEG.
  * The slot should have nparams=0: `function() { ... }`. */
 int
-vm_arith_method_fallback_unary(UVM *vm,
+urbi_vm_arith_method_fallback_unary(UVM *vm,
                                UValue *dst,
                                const UValue *operand,
                                USymbol *op_name,
@@ -348,7 +348,7 @@ vm_arith_method_fallback_unary(UVM *vm,
         }
         if (threw) {
             if (fatal == UEXEC_THROW) {
-                /* refactor-3 VM-07: see vm_arith_method_fallback — same
+                /* refactor-3 VM-07: see urbi_vm_arith_method_fallback — same
                  * thrown-value hand-off through *dst. */
                 *dst = result;
                 return VM_OP_OVERLOAD_THREW;
@@ -362,7 +362,7 @@ vm_arith_method_fallback_unary(UVM *vm,
     return VM_OP_OVERLOAD_OK;
 }
 
-/* vm_cmp_method_fallback — comparison operator fallback for OP_EQ / OP_NEQ.
+/* urbi_vm_cmp_method_fallback — comparison operator fallback for OP_EQ / OP_NEQ.
  *
  * Unlike arith ops, uvalue_equal does not raise a type error — it just
  * returns false.  We intercept when lhs is a user object, look up the
@@ -374,7 +374,7 @@ vm_arith_method_fallback_unary(UVM *vm,
  * Returns VM_OP_OVERLOAD_THREW when the (bytecode) body raised a user
  * exception; *out_thrown holds the thrown value (refactor-3 VM-07). */
 int
-vm_cmp_method_fallback(UVM *vm,
+urbi_vm_cmp_method_fallback(UVM *vm,
                        bool *out_bool,
                        UValue *out_thrown,
                        const UValue *lhs,

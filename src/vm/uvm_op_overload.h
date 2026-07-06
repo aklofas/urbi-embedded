@@ -30,7 +30,7 @@ struct UVM;
  * On MISS: caller should emit the original type error and HALT.
  * On THREW: *dst holds the user exception thrown by the overload body;
  * caller re-deposits it (s->unwind_value / pending_unwind = UEXEC_THROW). */
-int vm_arith_method_fallback(struct UVM *vm,
+int urbi_vm_arith_method_fallback(struct UVM *vm,
                              UValue     *dst,
                              const UValue *lhs,
                              const UValue *rhs,
@@ -40,7 +40,7 @@ int vm_arith_method_fallback(struct UVM *vm,
 /* Unary operator fallback (arith_neg type-error).
  * op_name: typically "-" (same slot name as binary minus).
  * THREW contract identical to the binary variant. */
-int vm_arith_method_fallback_unary(struct UVM *vm,
+int urbi_vm_arith_method_fallback_unary(struct UVM *vm,
                                    UValue     *dst,
                                    const UValue *operand,
                                    USymbol    *op_name,
@@ -53,7 +53,7 @@ int vm_arith_method_fallback_unary(struct UVM *vm,
  * On THREW: *out_thrown holds the user exception thrown by the overload
  * body (there is no dst register for comparisons); caller re-deposits it.
  * out_thrown must be non-NULL; untouched unless THREW is returned. */
-int vm_cmp_method_fallback(struct UVM *vm,
+int urbi_vm_cmp_method_fallback(struct UVM *vm,
                            bool       *out_bool,
                            UValue     *out_thrown,
                            const UValue *lhs,

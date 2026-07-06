@@ -195,7 +195,7 @@ UTEST(scratch_alloc_fail_signals_throw_not_silent_null)
      * triggers the scratch_arr alloc path. */
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    /* No instructions — dispatch_loop_until_yield bails immediately on
+    /* No instructions — urbi_vm_dispatch_loop_until_yield bails immediately on
      * empty PC, but the scratch_arr alloc happens BEFORE dispatch. */
     UProtoInstance pi;
     memset(&pi, 0, sizeof(pi));
@@ -330,7 +330,7 @@ UTEST(aliased_closure_no_double_free)
  * ============================================================
  *
  * Smoke test only: set a watcher's mode to an out-of-range value, kick
- * watcher_eval_dirty.  In URBI_DEBUG builds, URBI_INTERNAL_ASSERT(0)
+ * urbi_vm_watcher_eval_dirty.  In URBI_DEBUG builds, URBI_INTERNAL_ASSERT(0)
  * aborts; in release builds the default branch silently updates
  * last_value_cache.  We exercise the production path in release mode
  * (the URBI_DEBUG assert is what makes the bug discoverable in CI). */
@@ -349,10 +349,10 @@ UTEST(unknown_watcher_mode_does_not_change_state_in_release)
      * we just verify the slot stays usable. */
     w->mode = 0xFE;
 
-    /* Force a dirty pass.  watcher_eval_dirty is internal; in release
+    /* Force a dirty pass.  urbi_vm_watcher_eval_dirty is internal; in release
      * builds the default branch updates last_value_cache and returns. */
     vm.watchers->dirty_count = 1;
-    /* Avoid actually running watcher_eval_dirty unless we have a fire
+    /* Avoid actually running urbi_vm_watcher_eval_dirty unless we have a fire
      * hook; instead we verify the seam itself: that an unknown mode is
      * structurally reachable. */
     UASSERT_EQ((unsigned)0xFE, (unsigned)w->mode);

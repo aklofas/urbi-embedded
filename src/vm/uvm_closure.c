@@ -27,7 +27,7 @@
  * The legacy list_head / closure_list parameter was deleted at Step C-3.
  *
  * Returns NULL on OOM. */
-UClosure *vm_alloc_closure(UVM *vm, UProto *proto) {
+UClosure *urbi_vm_alloc_closure(UVM *vm, UProto *proto) {
     uint8_t nup = proto->nupvals;
     /* sizeof(UClosure) already includes 1 pointer in upvals[1]; add nup-1 more. */
     size_t extra = (nup > 1U) ? (size_t)(nup - 1U) * sizeof(UUpvalCell *) : 0U;
@@ -56,7 +56,7 @@ UClosure *vm_alloc_closure(UVM *vm, UProto *proto) {
  * v0.8.4 Option B Step C-2: UUpvalCell is now GC-managed.  urbi_gc_alloc
  * zeroes the payload + sets type_tag = UTYPE_UPVAL_CELL.  The open_upvals
  * chain is yielded as a GC root by strand_walk_roots (Step C-1 root #8). */
-UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
+UUpvalCell *urbi_vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
     /* Scan existing open cells. */
     UUpvalCell *cell = s->open_upvals;
     while (cell != NULL) {
@@ -79,7 +79,7 @@ UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
  * Heapified cells are reachable via any closure's upvals[] array (GC root);
  * no per-run bulk list needed.  Called by OP_CLOSE, OP_RET, and urbi_unwind.
  * Declared in uvm.h for uunwind.c access. */
-void vm_close_upvalues(UStrand *s, const UValue *threshold) {
+void urbi_vm_close_upvalues(UStrand *s, const UValue *threshold) {
     UUpvalCell **link = &s->open_upvals;
     while (*link != NULL) {
         UUpvalCell *cell = *link;

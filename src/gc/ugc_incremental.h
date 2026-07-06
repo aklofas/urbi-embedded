@@ -187,7 +187,7 @@ void urbi_gc_walk_all_cells(struct UVM *vm, UGcCellCallback cb, void *ctx);
 
 /* === observer_dirty — watcher dirty-set hook ===
  * Defined in src/uwatcher.c.  Increments vm->watchers->dirty_count; the
- * scheduler calls watcher_eval_dirty (T34) on the next safepoint turn. */
+ * scheduler calls urbi_vm_watcher_eval_dirty (T34) on the next safepoint turn. */
 void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
 
 /* === uvalue_is_heap / uvalue_as_cell ===
@@ -303,7 +303,7 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  *
  * urbi_gc_upvalue_pre_store(vm, cell, child):
  *   Barrier-only for HEAPIFIED upvalue stores (OP_SETUPVAL's on_heap arm +
- *   vm_close_upvalues).  The barrier parent is the UUpvalCell's embedded
+ *   urbi_vm_close_upvalues).  The barrier parent is the UUpvalCell's embedded
  *   UCell header — NOT the executing closure (Task 9c / refactor-3 GC-07:
  *   the cell is SHARED between sibling closures via OP_CLOSURE's
  *   re-capture arm, so its color diverges from any one closure's; the old
@@ -320,7 +320,7 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  * Callsite status (M4 / v0.10.1 / Task 9c):
  *   OP_SETUPVAL handler (src/vm/uvm.c): wired inside the on_heap arm with
  *   &uvc->cell as the parent; the stack arm stores barrier-free.
- *   vm_close_upvalues (src/vm/uvm_closure.c): same helper, same parent
+ *   urbi_vm_close_upvalues (src/vm/uvm_closure.c): same helper, same parent
  *   shape, before the heapifying copy.
  *
  *   unamespace_set (src/realm/urealm_namespace.c): deliberately unwired.
@@ -349,7 +349,7 @@ urbi_gc_slot_pre_store(struct UVM *vm, UCell *parent, uint32_t key, UValue child
 
     /* (2) Watcher dirty-set hook.
      * observer_dirty (src/uwatcher.c) bumps vm->watchers->dirty_count;
-     * the scheduler calls watcher_eval_dirty on the next safepoint turn. */
+     * the scheduler calls urbi_vm_watcher_eval_dirty on the next safepoint turn. */
     if (UNLIKELY(parent_gc & UGC_HAS_WATCHER_OBSERVER)) {
         observer_dirty(vm, parent, key);
     }
@@ -383,7 +383,7 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s, uint16_t reg_idx, UVal
 }
 
 /* urbi_gc_upvalue_pre_store — barrier-only for heapified-upvalue stores
- * (OP_SETUPVAL on_heap arm + vm_close_upvalues).  `cell` is the
+ * (OP_SETUPVAL on_heap arm + urbi_vm_close_upvalues).  `cell` is the
  * UUpvalCell's embedded UCell header (offset 0) — the cell, not the
  * executing closure, is the Dijkstra parent because sibling closures
  * share it (see the surfaces banner above, Task 9c).

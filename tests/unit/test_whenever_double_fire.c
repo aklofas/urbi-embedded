@@ -19,10 +19,10 @@
  * transition of cond — this is what the eye_demo milestone tracker
  * actually wanted.
  *
- * === Finding 2: watcher_eval_dirty requires safepoint visits ============
+ * === Finding 2: urbi_vm_watcher_eval_dirty requires safepoint visits ============
  *
- * `watcher_eval_dirty` is only invoked from the `safepoint:` label in
- * `dispatch_loop_until_yield` (uvm.c around line 1933).  The label is
+ * `urbi_vm_watcher_eval_dirty` is only invoked from the `safepoint:` label in
+ * `urbi_vm_dispatch_loop_until_yield` (uvm.c around line 1933).  The label is
  * reached via explicit `goto safepoint` from a small set of opcodes:
  *
  *   - OP_CALL (every function call)
@@ -35,7 +35,7 @@
  * Body strands spawned by event-triggered at-handlers whose bodies are
  * flat statement sequences (no nested call, no loop) never hit a
  * safepoint mid-execution.  Their writes to subscribed Realm slots fire
- * `observer_dirty` and bump `watcher_dirty_count`, but `watcher_eval_dirty`
+ * `observer_dirty` and bump `watcher_dirty_count`, but `urbi_vm_watcher_eval_dirty`
  * is never called — accumulated dirty marks aren't drained until SOME
  * other strand hits a safepoint.
  *

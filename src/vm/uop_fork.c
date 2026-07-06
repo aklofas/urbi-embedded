@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Row 11 / row 12 §3 — , and & separator runtime.
  * Implements OP_FORK_DETACH, OP_FORK_JOIN, and OP_JOIN_WAIT dispatch bodies,
- * plus the fork_wake_joiners() helper called at strand-DEAD transitions.
+ * plus the urbi_vm_fork_wake_joiners() helper called at strand-DEAD transitions.
  *
  * M3 CLOSURE-SPAWN semantics vs. spec §7.1 shared-frame semantics:
  *   Pre-M2 separator-semantics spec §7.1 specifies that ,-spawned strands SHARE
@@ -31,7 +31,7 @@
 #include "urbi/urbi.h"        /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "vm/uvm.h"         /* UVM, UVM_STACK_CAP, vm->alloc_fn */
-#include "vm/uvm_internal.h" /* vm_format_type_error_msg (VM-003) */
+#include "vm/uvm_internal.h" /* urbi_vm_format_type_error_msg (VM-003) */
 #include "runtime/uframe.h"      /* UVM_STACK_CAP (also in uvm.h → uframe.h) */
 #include <stddef.h>
 #include <stdint.h>
@@ -143,7 +143,7 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
  * =================================================================== */
 
 int
-op_fork_detach(UStrand *s, UVM *vm, uint32_t instr)
+urbi_vm_op_fork_detach(UStrand *s, UVM *vm, uint32_t instr)
 {
     uint8_t a = uinstr_a(instr);
     UClosure *child_closure;
@@ -157,7 +157,7 @@ op_fork_detach(UStrand *s, UVM *vm, uint32_t instr)
      * fork_spawn_child dereferences child_closure->proto. */
     if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
         vm->last_error = UVM_TYPE_ERROR;
-        vm_format_type_error_msg(vm,
+        urbi_vm_format_type_error_msg(vm,
             "',' (parallel-detach): operand is not a closure");
         s->fatal_status     = UEXEC_CANCEL;
         s->fatal_value.kind = (uint8_t)UVAL_NIL;
@@ -185,7 +185,7 @@ op_fork_detach(UStrand *s, UVM *vm, uint32_t instr)
  * =================================================================== */
 
 int
-op_fork_join(UStrand *s, UVM *vm, uint32_t instr)
+urbi_vm_op_fork_join(UStrand *s, UVM *vm, uint32_t instr)
 {
     uint8_t a = uinstr_a(instr);   /* closure register */
     uint8_t b = uinstr_b(instr);   /* child-handle output register */
@@ -196,7 +196,7 @@ op_fork_join(UStrand *s, UVM *vm, uint32_t instr)
 
     if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
         vm->last_error = UVM_TYPE_ERROR;
-        vm_format_type_error_msg(vm,
+        urbi_vm_format_type_error_msg(vm,
             "'&' (parallel-join): operand is not a closure");
         s->fatal_status     = UEXEC_CANCEL;
         s->fatal_value.kind = (uint8_t)UVAL_NIL;
@@ -225,7 +225,7 @@ op_fork_join(UStrand *s, UVM *vm, uint32_t instr)
  * =================================================================== */
 
 int
-op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
+urbi_vm_op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
 {
     uint8_t a = uinstr_a(instr);   /* child-handle register */
     UStrand *child;
@@ -234,7 +234,7 @@ op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
 
     if (s->R[a].kind != (uint8_t)UVAL_STRAND) {
         vm->last_error = UVM_TYPE_ERROR;
-        vm_format_type_error_msg(vm,
+        urbi_vm_format_type_error_msg(vm,
             "'&' (parallel-join) wait: operand is not a strand handle");
         s->fatal_status     = UEXEC_CANCEL;
         s->fatal_value.kind = (uint8_t)UVAL_NIL;
@@ -250,7 +250,7 @@ op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
     }
 
     /* Advance the parent's PC past OP_JOIN_WAIT BEFORE blocking.  After
-     * fork_wake_joiners wakes us, the child is guaranteed DEAD; we must
+     * urbi_vm_fork_wake_joiners wakes us, the child is guaranteed DEAD; we must
      * NOT re-execute OP_JOIN_WAIT on resume because the eager DEAD-strand
      * reap in urbi_step (ustep.c) frees the child once it transitions to
      * DEAD — re-dereferencing R[A] then would read freed memory (S42-FU
@@ -280,11 +280,11 @@ op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
 }
 
 /* ===================================================================
- * Public: fork_wake_joiners
+ * Public: urbi_vm_fork_wake_joiners
  * =================================================================== */
 
 void
-fork_wake_joiners(UStrand *s, UVM *vm)
+urbi_vm_fork_wake_joiners(UStrand *s, UVM *vm)
 {
     UStrand *joiner;
     UStrand *next;

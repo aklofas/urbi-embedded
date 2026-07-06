@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Tests for dispatch_loop_until_yield (T6).
+/* Tests for urbi_vm_dispatch_loop_until_yield (T6).
    Extended from 2 to 13 cases at T21.
    Verifies the M3-scheduler-facing dispatch contract:
    budget accounting, safepoint firing, try/catch absorption,
@@ -142,7 +142,7 @@ static void strand_setup_cleanup(UStrand *s, UVM *vm)
 }
 
 /* ============================================================
- * Test 1: OP_YIELD causes dispatch_loop_until_yield to return READY
+ * Test 1: OP_YIELD causes urbi_vm_dispatch_loop_until_yield to return READY
  * ============================================================ */
 
 UTEST(dispatch_loop_yields_on_op_yield) {
@@ -162,7 +162,7 @@ UTEST(dispatch_loop_yields_on_op_yield) {
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 10000);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 10000);
 
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
     UASSERT(consumed >= 1);
@@ -198,7 +198,7 @@ UTEST(dispatch_loop_dies_on_top_level_ret) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 10000);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 10000);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT(consumed >= 1);
@@ -209,7 +209,7 @@ UTEST(dispatch_loop_dies_on_top_level_ret) {
 
 /* ============================================================
  * Test 3: VM-wide step budget exhaustion — strand re-enqueues READY
- * dispatch_loop_until_yield exits with state READY (count-neutral
+ * urbi_vm_dispatch_loop_until_yield exits with state READY (count-neutral
  * RUNNING -> READY via sched_strand_yield) when the VM-wide
  * step_budget_remaining reaches 0 before the strand finishes, so the
  * next urbi_step re-dispatches it (refactor-3 VM-04/SCHED-11 — leaving
@@ -251,7 +251,7 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
        cause a yield; use a tiny VM-wide step budget = 1. */
     s.safepoint_budget_remaining = 1000U;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 1U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 1U);
 
     /* strand re-enqueued READY (budget exhausted from VM's perspective);
        sched_strand_yield put it on the ready queue so the scheduler resumes
@@ -294,7 +294,7 @@ UTEST(dispatch_loop_instruction_budget_decrements) {
     s.safepoint_budget_remaining = 3U;  /* will soft-yield after 3 safepoints */
 
     /* Give a very large VM step budget so that never triggers. */
-    uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 100000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, /*step_budget*/ 100000U);
 
     /* Strand should be READY (soft-yield due to budget exhaustion). */
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
@@ -338,7 +338,7 @@ UTEST(dispatch_loop_forward_jump_no_safepoint) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     /* Strand reached DEAD via RET — no yield was triggered. */
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
@@ -376,7 +376,7 @@ UTEST(dispatch_loop_multiple_yields) {
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
 
     /* First dispatch: should yield. */
-    uint64_t c1 = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t c1 = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
     UASSERT(c1 >= 1U);
 
@@ -386,7 +386,7 @@ UTEST(dispatch_loop_multiple_yields) {
     s.state = USTRAND_STATE_RUNNING;
 
     /* Second dispatch: should yield again. */
-    uint64_t c2 = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t c2 = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
     UASSERT(c2 >= 1U);
 
@@ -397,7 +397,7 @@ UTEST(dispatch_loop_multiple_yields) {
     /* Third dispatch: RET → DEAD. */
     UValue retval = {0};
     s.out_slot = &retval;
-    uint64_t c3 = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t c3 = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT(c3 >= 1U);
 
@@ -434,7 +434,7 @@ UTEST(dispatch_loop_try_begin_end_normal_path) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     /* steps_consumed only counts safepoint-firing instrs (RET, CALL, backward JMP, YIELD).
@@ -502,7 +502,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     /* Strand should reach DEAD (handler ran; RET at top frame). */
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
@@ -549,7 +549,7 @@ UTEST(dispatch_loop_loadk_and_ret) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     /* LOADK hits no safepoint; only the final top-level RET counts. */
@@ -590,7 +590,7 @@ UTEST(dispatch_loop_move_and_add) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)retval.kind, (int)UVAL_INT);
@@ -631,7 +631,7 @@ UTEST(dispatch_loop_push_pop_tag_noop) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     /* PUSH_TAG/LOADNIL/POP_TAG fire no safepoints; only the top-level RET counts. */
@@ -716,7 +716,7 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)retval.kind, (int)UVAL_INT);
@@ -761,7 +761,7 @@ UTEST(dispatch_loop_loadnil_then_move) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)retval.kind, (int)UVAL_NIL);
@@ -804,7 +804,7 @@ UTEST(dispatch_loop_gc_pending_flag_triggers_gc_slice_at_safepoint) {
     /* Set gc_pending flag; it will be tested at the backward-branch safepoint. */
     vm.gc_pending = 1;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 100000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 100000U);
 
     /* Dispatch should complete without crash. Strand may be RUNNING or READY
        depending on budget exhaustion; we verify the dispatch path was exercised. */
@@ -815,15 +815,15 @@ UTEST(dispatch_loop_gc_pending_flag_triggers_gc_slice_at_safepoint) {
 }
 
 /* ============================================================
- * Test 15: watcher_dirty_count triggers watcher_eval_dirty at backward-branch safepoint
- * Verifies the dispatch loop calls watcher_eval_dirty when watcher_dirty_count > 0
- * at a backward-branch safepoint. watcher_eval_dirty is a no-op stub at M3.
+ * Test 15: watcher_dirty_count triggers urbi_vm_watcher_eval_dirty at backward-branch safepoint
+ * Verifies the dispatch loop calls urbi_vm_watcher_eval_dirty when watcher_dirty_count > 0
+ * at a backward-branch safepoint. urbi_vm_watcher_eval_dirty is a no-op stub at M3.
  * ============================================================ */
 
 UTEST(dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint) {
     /* Program: LOADNIL R0; JMP -1 (backward, hits safepoint); RET.
        With watcher_dirty_count=1, the backward-branch safepoint should invoke
-       watcher_eval_dirty. watcher_eval_dirty is a stub at M3 (no-op), so we
+       urbi_vm_watcher_eval_dirty. urbi_vm_watcher_eval_dirty is a stub at M3 (no-op), so we
        verify dispatch completes without crash and state remains consistent. */
     static uint32_t instrs[3];
     instrs[0] = enc_loadnil(0);
@@ -846,7 +846,7 @@ UTEST(dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint) {
     /* Set watcher_dirty_count; it will be tested at the backward-branch safepoint. */
     vm.watchers->dirty_count = 1;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 100000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 100000U);
 
     /* Dispatch should complete without crash. Strand may be RUNNING or READY
        depending on budget exhaustion; we verify the dispatch path was exercised. */

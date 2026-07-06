@@ -189,7 +189,7 @@ run_on_scratch_core(struct UVM       *vm,
      * window via the existing s->stack scan — so any UValue placed in
      * strand.R[k] (including the payload write at line 94 below) is rooted
      * for the duration of dispatch.  Unlinking happens below in the teardown
-     * block, after dispatch_loop_until_yield returns and *out_result has been
+     * block, after urbi_vm_dispatch_loop_until_yield returns and *out_result has been
      * captured into the caller's local.
      *
      * v0.9.0-repl: use the closure's owning realm so that OP_LOAD_REALM_GLOBAL
@@ -231,13 +231,13 @@ run_on_scratch_core(struct UVM       *vm,
          * vm->cur_strand — pre-fix the throw landed on the OUTER strand, e.g.
          * the loader strand executing OP_AT_INSTALL, or was lost) and must
          * not clobber the embedder's urbi_step budget
-         * (dispatch_loop_until_yield overwrites vm->step_budget_remaining at
+         * (urbi_vm_dispatch_loop_until_yield overwrites vm->step_budget_remaining at
          * entry).  Save both, point cur_strand at the scratch strand for the
          * duration of the dispatch, restore after. */
         UStrand *saved_cur    = vm->cur_strand;
         uint64_t saved_budget = vm->step_budget_remaining;
         vm->cur_strand = &strand;
-        (void)dispatch_loop_until_yield(&strand, URBI_SCRATCH_BUDGET_OPS);
+        (void)urbi_vm_dispatch_loop_until_yield(&strand, URBI_SCRATCH_BUDGET_OPS);
         vm->cur_strand = saved_cur;
         vm->step_budget_remaining = saved_budget;
 
@@ -328,7 +328,7 @@ run_on_scratch_core(struct UVM       *vm,
 
     /* v0.8.4 Option B Step C-2/C-3: UClosure and UUpvalCell are GC-managed.
      * The pre-C-2 free loops here were double-free hazards (C-2 migrated
-     * vm_alloc_closure to urbi_gc_alloc but missed this scratch teardown path).
+     * urbi_vm_alloc_closure to urbi_gc_alloc but missed this scratch teardown path).
      * Just clear the open_upvals head pointer — the GC sweep reclaims the cells
      * when they become unreachable from any root.  closure_list + closed_cells
      * fields were deleted at Step C-3. */

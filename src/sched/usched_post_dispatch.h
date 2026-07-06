@@ -65,7 +65,7 @@ extern "C" {
 
 /* sched_post_dispatch: run the four fix-up operations that close out a
  * dispatch-loop iteration.  Called by urbi_step internally after each strand
- * dispatch; also called by alternative drivers that run dispatch_loop_until_yield
+ * dispatch; also called by alternative drivers that run urbi_vm_dispatch_loop_until_yield
  * directly (e.g. urbi_vm_run).
  *
  * Preconditions:

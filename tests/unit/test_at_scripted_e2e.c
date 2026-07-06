@@ -35,7 +35,7 @@
  * Install at (Realm.x > 5) Realm.fired = Realm.fired + 1 via a real
  * compiled script.  Trigger the rising edge by writing Realm.x = 10
  * through a nested function call (so the non-top-frame OP_RET safepoint
- * fires watcher_eval_dirty and spawns the body strand).  Drive the body
+ * fires urbi_vm_watcher_eval_dirty and spawns the body strand).  Drive the body
  * strand to completion via urbi_step.  Verify Realm.fired == 1.
  *
  * A second write (Realm.x = 20) must not re-fire (rising-edge discipline).
@@ -92,7 +92,7 @@ UTEST(scripted_at_fires_on_rising_edge)
      * Mechanism: OP_SETSLOT writes Realm.x through urbi_gc_slot_store,
      * which calls observer_dirty (UGC_HAS_WATCHER_OBSERVER is set from
      * phase 1).  The non-top-frame OP_RET safepoint then calls
-     * watcher_eval_dirty, which spawns the body strand on rising edge.
+     * urbi_vm_watcher_eval_dirty, which spawns the body strand on rising edge.
      * Detailed walk-through (incl. body-strand module_instance synthesis)
      * lives in the M5 at/whenever/waituntil design spec §4.  This test
      * verifies presence + ordering; deep mechanism is the spec's responsibility. */
@@ -102,7 +102,7 @@ UTEST(scripted_at_fires_on_rising_edge)
     /* compile_and_run itself may return OK even if the watcher eval
      * spawned a body strand that later fails — the body strand runs
      * asynchronously via urbi_step, not synchronously inside urbi_vm_run.
-     * However, if the non-top OP_RET safepoint fires watcher_eval_dirty
+     * However, if the non-top OP_RET safepoint fires urbi_vm_watcher_eval_dirty
      * and the body is spawned BEFORE compile_and_run returns, the body
      * strand might already be in the ready queue. */
     if (rc != URBI_OK) {

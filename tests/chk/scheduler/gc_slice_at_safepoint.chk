@@ -2,7 +2,7 @@
 # Covers: an allocation-heavy strand sets vm->gc_pending (debt > threshold);
 #         urbi_gc_slice is invoked at the next dispatch-loop safepoint of any
 #         strand; GC slice runs and clears the pending flag (row 12 §4.4 —
-#         gc_pending safepoint hook in dispatch_loop_until_yield).
+#         gc_pending safepoint hook in urbi_vm_dispatch_loop_until_yield).
 ## timeout: 180
 # Timeout rationale: 5000 Object.new() allocations are the slowest chk
 # workload under URBI_GC_STRESS (collect-per-alloc with O(N) sidecar

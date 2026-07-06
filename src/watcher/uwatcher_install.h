@@ -66,7 +66,7 @@ typedef enum {
  *
  * Returns a UWatcherInstallResult indicating outcome.
  * On URBI_INSTALL_OK the watcher is live and will be evaluated on the
- * next watcher_eval_dirty pass.
+ * next urbi_vm_watcher_eval_dirty pass.
  * On any error result no watcher is installed; the error is already
  * logged via vm->host_log_fn (if non-NULL).
  *

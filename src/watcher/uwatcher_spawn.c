@@ -13,11 +13,11 @@
  * this spawn.  M5 baseline always passes NULL; spec #2 wires patterns later.
  *
  * spawn_body_coroutine: eval-pass entry (spec #1 §5.2).
- *   Called by watcher_eval_dirty when condition fires and w->body != NULL.
+ *   Called by urbi_vm_watcher_eval_dirty when condition fires and w->body != NULL.
  *   In URBI_DEBUG builds, asserts: in_watcher_eval == 1 (eval-pass contract),
  *   AT/WHENEVER mode, ACTIVE flag, no PENDING_UNREGISTER, body and realm non-NULL.
  *   The test_watcher_fire_hook delegation for body-less watchers has moved to
- *   watcher_eval_dirty (test-only path; watcher_eval_dirty only calls this
+ *   urbi_vm_watcher_eval_dirty (test-only path; urbi_vm_watcher_eval_dirty only calls this
  *   function when w->body != NULL).
  *
  * respawn_body_coroutine: completion-path entry (spec #1 §5.2).

@@ -13,7 +13,7 @@
  * simultaneously — push TRANSFERS the entry: unlinks from active_watchers_head
  * and from owning_tag->member_watchers_head, then appends to the tail of the
  * pending queue.  The URBI_WATCHER_PENDING_UNREGISTER flag is set at push time
- * so any concurrent watcher_eval_dirty pass skips the watcher.
+ * so any concurrent urbi_vm_watcher_eval_dirty pass skips the watcher.
  *
  * watcher_active_count is NOT decremented at push time; it is decremented by
  * urbi_watcher_unregister_internal (called by drain) when the watcher is truly
@@ -31,9 +31,9 @@
  * Drain ordering contract
  * -----------------------
  * drain_pending_onleave_queue is called by the dispatcher safepoint BEFORE
- * watcher_eval_dirty.  If an onleave handler mutates a cell that is in another
+ * urbi_vm_watcher_eval_dirty.  If an onleave handler mutates a cell that is in another
  * watcher's read-set, the resulting dirty-count increment will be picked up by
- * watcher_eval_dirty in the same safepoint tick.  Per spec §6.5. */
+ * urbi_vm_watcher_eval_dirty in the same safepoint tick.  Per spec §6.5. */
 
 #include "uwatcher.h"
 #include "runtime/uscratch.h"
@@ -165,12 +165,12 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
  *      guard in unregister is a no-op), then pool_frees the slot and
  *      decrements watcher_active_count.
  *
- * Called from the dispatcher safepoint BEFORE watcher_eval_dirty per spec §6.5.
+ * Called from the dispatcher safepoint BEFORE urbi_vm_watcher_eval_dirty per spec §6.5.
  * Reuses vm->watchers->in_eval as a reentrancy guard (same scratch-frame contract
- * as watcher_eval_dirty — drain and eval are always sequential, never nested).
+ * as urbi_vm_watcher_eval_dirty — drain and eval are always sequential, never nested).
  *
  * SCHED-12: save/restore in_eval so a nested call from vm_reactive_drain
- * inside watcher_eval_dirty preserves the outer eval's in_eval=1.  The
+ * inside urbi_vm_watcher_eval_dirty preserves the outer eval's in_eval=1.  The
  * previous URBI_INTERNAL_ASSERT(!in_eval) is removed — save/restore makes
  * nested calls safe; vm_reactive_drain's guard prevents unbounded nesting. */
 void

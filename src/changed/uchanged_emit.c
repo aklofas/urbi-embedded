@@ -9,7 +9,7 @@
  *   USymbol identity and dispatch via c_event_emit_sync.
  *
  * urbi_drain_deferred_slot_changes — drain the per-VM deferred ring.
- *   Called at every safepoint BEFORE watcher_eval_dirty per spec §5.4. */
+ *   Called at every safepoint BEFORE urbi_vm_watcher_eval_dirty per spec §5.4. */
 
 #include "changed/uchanged_node.h"  /* UChangedNode, urbi_emit_slot_change_slow,
                                        urbi_drain_deferred_slot_changes */
@@ -31,7 +31,7 @@
  * Re-entrancy: if any scratch-context flag is set the current call must
  * have originated from inside a sync slot-change body.  Route to the
  * deferred ring (urbi_drain_deferred_slot_changes runs at the next
- * safepoint before watcher_eval_dirty) and emit a one-shot URBI_LOG_WARN.
+ * safepoint before urbi_vm_watcher_eval_dirty) and emit a one-shot URBI_LOG_WARN.
  *
  * WATCH-010 drain dependency: vm->watchers->in_eval is the at/whenever-cond
  * eval flag.  When set, this function MUST route through the deferred
@@ -103,7 +103,7 @@ urbi_defer_slot_change(UVM *vm, UObject *parent,
  *
  * Pop each entry from head to tail and re-emit at top level (no scratch
  * context now, so c_event_emit_sync runs normally).  Called at every
- * safepoint BEFORE watcher_eval_dirty per spec §5.4 ordering.
+ * safepoint BEFORE urbi_vm_watcher_eval_dirty per spec §5.4 ordering.
  *
  * VM-016: the empty-ring fast path returns before any work.  Every
  * safepoint calls this drain unconditionally; the typical safepoint

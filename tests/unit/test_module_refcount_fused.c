@@ -85,7 +85,7 @@ UTEST(strand_bind_bumps_root_proto)
 
 /* Case 2: running `1 & 2` to completion — Variant B lifecycle.
  *
- * OP_FORK_JOIN allocates a closure for the `& 2` branch via vm_alloc_closure.
+ * OP_FORK_JOIN allocates a closure for the `& 2` branch via urbi_vm_alloc_closure.
  * Under Variant B, that closure bumps root_proto.refcount via uproto_root_of.
  * UClosure is GC-managed (v0.8.4 Step C-2); vm->stdlib_closures was deleted
  * at Step C-3.  After draining child strands, the GC sweep reclaims the
@@ -171,7 +171,7 @@ UTEST(module_refcount_lives_on_root_proto)
  * at strand exit).  uchunk_destroy must not trigger rescue.
  *
  * Case 5: escaping closure (stored in realm global).  After strand exits,
- * root_proto->refcount > 0 (vm_alloc_closure bumped via uproto_root_of).
+ * root_proto->refcount > 0 (urbi_vm_alloc_closure bumped via uproto_root_of).
  * uchunk_destroy must rescue root_proto.  vm_destroy must dec via
  * uproto_root_of before freeing rescued_protos (§3.7 ordering invariant). */
 
@@ -194,7 +194,7 @@ UTEST(closure_alloc_bumps_root_via_backptr)
     module->alloc_ud       = vm.alloc_ud;
     uarena_init(&arena, 4096);
 
-    /* Closure alloc: vm_alloc_closure bumps root_proto.refcount via uproto_root_of.
+    /* Closure alloc: urbi_vm_alloc_closure bumps root_proto.refcount via uproto_root_of.
      * UClosure is GC-managed (v0.8.4 Step C-2; vm->stdlib_closures deleted at C-3).
      * uchunk_destroy rescues root_proto; vm_destroy completes the lifecycle
      * per §3.7 ordering. */

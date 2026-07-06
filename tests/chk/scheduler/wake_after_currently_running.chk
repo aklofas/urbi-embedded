@@ -3,7 +3,7 @@
 #         while another strand is currently running; urbi_step delivers the
 #         wakeup at the next scheduler turn after the running strand yields or
 #         completes (row 12 §3.3 — sleep-queue drain runs at the end of each
-#         dispatch turn, after dispatch_loop_until_yield returns).
+#         dispatch turn, after urbi_vm_dispatch_loop_until_yield returns).
 #
 # blocked: chk-runner urbi_step driver path not implemented (T39)
 # matrix-row: scheduler-wake

@@ -1,6 +1,6 @@
 # Milestone: v0.13.3 (refactor-3 SCHED-05 spec-review hazard 1)
 # Covers: tag.stop() fired from an AT_SYNC inline body — i.e. from INSIDE
-#         watcher_eval_dirty's active-list walk — retiring a waituntil
+#         urbi_vm_watcher_eval_dirty's active-list walk — retiring a waituntil
 #         member's watcher must NOT pool_free it mid-walk: the walk's
 #         captured `next` pointer is the waituntil watcher (installed
 #         immediately after the at-sync watcher, so it IS the snapshot —

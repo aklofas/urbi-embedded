@@ -124,20 +124,20 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
  *   EVENT   — splice off the UEvent waiter chain (idempotent).
  *   JOIN    — splice off wait_payload.join_parent->joiners_head (threaded
  *             via wait_next, exactly as OP_JOIN_WAIT linked it).  Without
- *             this, fork_wake_joiners at the child's death walks a strand
+ *             this, urbi_vm_fork_wake_joiners at the child's death walks a strand
  *             that already left WAITING (READY -> READY make_runnable
  *             corruption) or was already freed (eager reap; ASan UAF).
  *   WATCHER — scrub the waituntil watcher's waiter_strand back-pointer and
  *             retire the watcher: a waituntil with no waiter has nothing
  *             left to wake, and leaving it armed means the next rising
- *             edge has watcher_eval_dirty make_runnable a DEAD/freed
+ *             edge has urbi_vm_watcher_eval_dirty make_runnable a DEAD/freed
  *             strand.  Direct unregister mirrors the normal WAITUNTIL fire
  *             path (waituntil watchers carry no body/onleave).  The active
  *             list walk is bounded by URBI_WATCHER_POOL_SIZE.
  *
  *             Mid-eval guard (v0.13.3 spec-review hazard 1): when
  *             vm->watchers->in_eval is set we are inside
- *             watcher_eval_dirty's active-list walk or the pending-onleave
+ *             urbi_vm_watcher_eval_dirty's active-list walk or the pending-onleave
  *             drain (which reuses the flag) — e.g. an AT_SYNC inline body
  *             or a drain onleave handler called tag.stop()/cancel.  A
  *             pool_free here invalidates the walk's captured `next`
@@ -241,7 +241,7 @@ urbi_sched_strand_unpark(UStrand *s, int enqueue)
  *      teardown path is safe regardless of joiner state.
  *
  * exit_strand in uvm.c (the normal dispatch-loop teardown path) also calls
- * fork_wake_joiners.  That call is kept as an "eager wake while we still have
+ * urbi_vm_fork_wake_joiners.  That call is kept as an "eager wake while we still have
  * CPU" optimisation; it becomes a no-op here because joiners_head is cleared
  * on the first call.  Similarly, uevent_waiter_unregister in the unwind/cancel
  * paths is idempotent, so double-calls are safe. */
@@ -261,7 +261,7 @@ strand_cleanup_observers(UStrand *s)
     uevent_waiter_unregister(s);
 
     /* Wake any JOIN-blocked parents so they do not stall forever.
-     * Inline the walk from fork_wake_joiners with a DEAD-joiner guard:
+     * Inline the walk from urbi_vm_fork_wake_joiners with a DEAD-joiner guard:
      * in adversarial teardown sequences a joiner may itself have been
      * forcibly DEAD before the child is destroyed (e.g., in test teardown
      * or multi-realm destroy ordering).  Calling sched_strand_make_runnable

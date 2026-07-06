@@ -21,7 +21,7 @@
 #  include <stdio.h>   /* snprintf: uncaught-throw errmsg formatting */
 #endif
 
-/* --- urbi_vm_run: thin adapter that wraps dispatch_loop_until_yield.
+/* --- urbi_vm_run: thin adapter that wraps urbi_vm_dispatch_loop_until_yield.
    Preserves the M2 public API contract:
    - Resets error state at entry.
    - Frees the previous run's return closure.
@@ -66,7 +66,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
      * before returning (urbi_strand_arm_init returns -1 without diagnostics). */
     if (urbi_strand_arm_init(&strand) != 0) {
         vm->last_error = UVM_OOM;
-        vm_format_oom(vm, UVM_STACK_CAP * sizeof(UValue));
+        urbi_vm_format_oom(vm, UVM_STACK_CAP * sizeof(UValue));
         ustrand_destroy(&strand, vm);
         return UVM_OOM;
     }
@@ -144,8 +144,8 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
      * safepoint budget check does not immediately yield.  The transient
      * strand is zero-initialised above, leaving safepoint_budget_remaining=0;
      * without this the first safepoint (OP_CALL, backward JMP, or non-top
-     * OP_RET) exits before reaching watcher_eval_dirty.  urbi_vm_run re-enters on
-     * yield so forward-progress is correct, but watcher_eval_dirty never fires
+     * OP_RET) exits before reaching urbi_vm_watcher_eval_dirty.  urbi_vm_run re-enters on
+     * yield so forward-progress is correct, but urbi_vm_watcher_eval_dirty never fires
      * (the exit happens before the hook).  sched_strand_init was previously
      * skipped for transients; calling it here also zero-initialises the
      * scheduler list pointers (already zero from the volatile loop above,
@@ -161,7 +161,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
        urbi_vm_run is the synchronous one-shot path and was a gap. */
     for (;;) {
         vm->cur_strand = &strand;
-        (void)dispatch_loop_until_yield(&strand, /* step_budget */ UINT64_MAX);
+        (void)urbi_vm_dispatch_loop_until_yield(&strand, /* step_budget */ UINT64_MAX);
         vm->cur_strand = NULL;
 
         /* Post-dispatch fix-ups — scheduler F3.
@@ -210,7 +210,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
         if (USTRAND_IS_WAITING(&strand)) {
             /* M2 baseline has no blocking opcodes; WAITING here is a bug. */
             vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "strand blocked unexpectedly in urbi_vm_run");
+            urbi_vm_format_type_error_msg(vm, "strand blocked unexpectedly in urbi_vm_run");
             break;
         }
         if (USTRAND_IS_SUSPENDED(&strand)) {
@@ -221,7 +221,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
              * would silently truncate the body at the blocking call.
              * Error loudly, mirroring the WAITING arm. */
             vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "strand suspended unexpectedly in urbi_vm_run");
+            urbi_vm_format_type_error_msg(vm, "strand suspended unexpectedly in urbi_vm_run");
             break;
         }
         /* RUNNING: safepoint-budget arm in uvm.c (B11/SCHED-03 transient guard)

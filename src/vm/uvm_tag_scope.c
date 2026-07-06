@@ -9,7 +9,7 @@
 #include "vm/uvm_tag_scope.h"
 
 #include "vm/uvm.h"
-#include "vm/uvm_internal.h"          /* vm_format_type_error_msg */
+#include "vm/uvm_internal.h"          /* urbi_vm_format_type_error_msg */
 #include "urbi/urbi.h"                /* UVM_TYPE_ERROR */
 #include "sched/ustrand.h"            /* UStrand, UEXEC_THROW, USTRAND_STATE_DEAD */
 #include "runtime/ucleanup.h"         /* UCleanupEntry, UCLEANUP_TAG_SCOPE, FLAG_HAS_ONLEAVE, strand_cleanup_push/pop */
@@ -26,7 +26,7 @@
 #include <stdint.h>
 
 UVmTagScopeResult
-vm_push_tag_scope(UVM *vm, UStrand *s)
+urbi_vm_push_tag_scope(UVM *vm, UStrand *s)
 {
     /* OP_PUSH_TAG ABx:
      *   A[7:4] = flags nibble (0 at M3 — no FLAG_HAS_ONLEAVE)
@@ -100,7 +100,7 @@ vm_push_tag_scope(UVM *vm, UStrand *s)
     return UVM_TAG_SCOPE_NEXT;
 }
 
-/* vm_tag_scope_teardown: the OP_POP_TAG teardown body, shared with the unwind
+/* urbi_vm_tag_scope_teardown: the OP_POP_TAG teardown body, shared with the unwind
  * walker's tag.stop() absorption path (v0.10.15-B).  `top` MUST be the top
  * UCLEANUP_TAG_SCOPE entry.  Unlinks the entry from the tag's member list,
  * fires the tier-2 leave event, cascades member watchers to the pending-onleave
@@ -109,7 +109,7 @@ vm_push_tag_scope(UVM *vm, UStrand *s)
  * whether reached via the OP_POP_TAG opcode (normal exit) or the walker
  * (tag.stop() absorption) — a single implementation prevents drift. */
 void
-vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
+urbi_vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
 {
     /* T30: capture owning_tag before pop — the slot remains valid memory but
      * is below cleanup_depth after pop and may be reused by a later push.
@@ -162,7 +162,7 @@ vm_tag_scope_teardown(UStrand *s, UCleanupEntry *top)
 }
 
 UVmTagScopeResult
-vm_pop_tag_scope(UVM *vm, UStrand *s)
+urbi_vm_pop_tag_scope(UVM *vm, UStrand *s)
 {
     /* OP_POP_TAG ABC: A = tag_reg (unused at M3), B = C = 0.
      * Pop the top UCLEANUP_TAG_SCOPE entry.
@@ -176,10 +176,10 @@ vm_pop_tag_scope(UVM *vm, UStrand *s)
             /* onleave handler: not reachable at M3 (emit always sets flags=0).
              * If somehow reached (bytecode corruption), halt safely. */
             vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired at M3");
+            urbi_vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired at M3");
             return UVM_TAG_SCOPE_HALT;
         }
-        vm_tag_scope_teardown(s, top);
+        urbi_vm_tag_scope_teardown(s, top);
     }
     return UVM_TAG_SCOPE_NEXT;
 }

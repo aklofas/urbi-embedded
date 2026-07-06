@@ -372,6 +372,26 @@ the scheduler; embedders use `urbi_vm_has_live_work` via the public API only.
 
 - `urbi_populate_realm_globals`
 
+### VM internals (v0.13.6 namespace day)
+
+Renamed from unprefixed cross-TU VM symbols.
+
+- `urbi_vm_alloc_closure`, `urbi_vm_open_upvalue`, `urbi_vm_close_upvalues` — closure/upvalue lifecycle
+- `urbi_vm_find_or_install_upvalue` — upvalue capture during function emit
+- `urbi_vm_arith_method_fallback`, `urbi_vm_arith_method_fallback_unary` — arithmetic fallback dispatch
+- `urbi_vm_cmp_method_fallback` — comparison fallback dispatch
+- `urbi_vm_dispatch_getter`, `urbi_vm_dispatch_setter` — property getter/setter dispatch
+- `urbi_vm_dispatch_loop_until_yield` — inner dispatch loop (renamed from `dispatch_loop_until_yield`)
+- `urbi_vm_format_oom`, `urbi_vm_format_type_error_binary`, `urbi_vm_format_type_error_unary`, `urbi_vm_format_type_error_msg` — diagnostic formatters
+- `urbi_vm_getslot_slow`, `urbi_vm_getslot_value`, `urbi_vm_setslot_slow`, `urbi_vm_setslot_value` — slot access helpers
+- `urbi_vm_self_lookup` — `self` slot resolution
+- `urbi_vm_push_tag_scope`, `urbi_vm_pop_tag_scope`, `urbi_vm_tag_scope_teardown` — tag scope management
+- `urbi_vm_reactive_install` — reactive watcher installation from bytecode
+- `urbi_vm_fork_wake_joiners`, `urbi_vm_op_fork_detach`, `urbi_vm_op_fork_join`, `urbi_vm_op_join_wait` — fork/join primitives
+- `urbi_vm_op_name` — opcode mnemonic lookup (renamed from `op_name`)
+- `urbi_vm_diag_init`, `urbi_vm_diag_write_cstr`, `urbi_vm_diag_write_u32`, `urbi_vm_diag_write_prefix` — diagnostic writer helpers
+- `urbi_vm_watcher_eval_dirty` — re-evaluate dirty watcher condition
+
 ### REPL introspection internals (URBI_ENABLE_REPL=1 only)
 
 - `urbi_introspect_coros`, `urbi_introspect_events`, `urbi_introspect_gc`,

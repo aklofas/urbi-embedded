@@ -15,7 +15,7 @@
  * with EXCVADDR=0x00000000.  Backtrace:
  *
  *   urbi_unwind (uunwind.c:358)
- *   dispatch_loop_until_yield (uvm.c:1914 safepoint)
+ *   urbi_vm_dispatch_loop_until_yield (uvm.c:1914 safepoint)
  *   urbi_step
  *
  * Root cause: `s->pc_base` already tracks the current proto's instructions

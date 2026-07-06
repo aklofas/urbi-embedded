@@ -10,8 +10,8 @@
 #include "chunk/uchunk.h"
 #include "vm/uvm.h"
 
-/* Expose find_or_install_upvalue for cascade tests. */
-int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
+/* Expose urbi_vm_find_or_install_upvalue for cascade tests. */
+int urbi_vm_find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
                             const char *name, int name_len);
 
 #define UTEST(name) static void name(void)
@@ -254,7 +254,7 @@ UTEST(upvalue_capture_immediate_parent_marks_in_stack) {
     uemit_declare_local(&e, x, 1);                    /* slot 1 in outer (T73: R0 pre-reserved) */
 
     UFuncState *inner = uemit_open_function(&e, outer);
-    int idx = find_or_install_upvalue(&e, inner, x, 1);
+    int idx = urbi_vm_find_or_install_upvalue(&e, inner, x, 1);
     UASSERT_EQ(0, idx);
     UASSERT_EQ(1, inner->nupvalues);
     UASSERT(inner->upvalues[0].in_stack == true);
@@ -277,7 +277,7 @@ UTEST(upvalue_two_level_cascade_intermediate_in_stack_false) {
     UFuncState *mid   = uemit_open_function(&e, outer);
     UFuncState *inner = uemit_open_function(&e, mid);
 
-    int idx = find_or_install_upvalue(&e, inner, x, 1);
+    int idx = urbi_vm_find_or_install_upvalue(&e, inner, x, 1);
     UASSERT_EQ(0, idx);
     UASSERT_EQ(1, mid->nupvalues);                   /* cppcheck-suppress nullPointerRedundantCheck */
     UASSERT(mid->upvalues[0].in_stack == true);
@@ -302,8 +302,8 @@ UTEST(upvalue_repeated_lookup_returns_same_idx) {
     uemit_declare_local(&e, x, 1);
 
     UFuncState *inner = uemit_open_function(&e, outer);
-    int a1 = find_or_install_upvalue(&e, inner, x, 1);
-    int a2 = find_or_install_upvalue(&e, inner, x, 1);
+    int a1 = urbi_vm_find_or_install_upvalue(&e, inner, x, 1);
+    int a2 = urbi_vm_find_or_install_upvalue(&e, inner, x, 1);
     UASSERT_EQ(a1, a2);
     UASSERT_EQ(1, inner->nupvalues);                 /* cppcheck-suppress nullPointerRedundantCheck */
 
@@ -319,7 +319,7 @@ UTEST(upvalue_unresolved_returns_negative) {
     UFuncState *inner = uemit_open_function(&e, outer);
 
     const char *missing = ustr_intern(&v, "ghost", 5);
-    int idx = find_or_install_upvalue(&e, inner, missing, 5);
+    int idx = urbi_vm_find_or_install_upvalue(&e, inner, missing, 5);
     UASSERT_EQ(-1, idx);
     UASSERT_EQ(0, inner->nupvalues);                 /* cppcheck-suppress nullPointerRedundantCheck */
 
@@ -344,13 +344,13 @@ UTEST(upvalue_exhaustion_errors) {
     /* Capture UFS_MAX_UPVALUES of them — fills the table. */
     for (int i = 0; i < UFS_MAX_UPVALUES; i++) {
         int len = snprintf(buf, sizeof buf, "v%04d", i);
-        int slot = find_or_install_upvalue(&e, inner,
+        int slot = urbi_vm_find_or_install_upvalue(&e, inner,
                     ustr_intern(&v, buf, (size_t)len), len);
         UASSERT(slot >= 0);
     }
     /* One more must fail. */
     int len = snprintf(buf, sizeof buf, "v%04d", UFS_MAX_UPVALUES);
-    int over = find_or_install_upvalue(&e, inner,
+    int over = urbi_vm_find_or_install_upvalue(&e, inner,
                 ustr_intern(&v, buf, (size_t)len), len);
     UASSERT_EQ(-1, over);
     UASSERT_EQ((int)EMIT_UPVAL_EXHAUSTED, (int)e.error);

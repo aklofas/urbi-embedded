@@ -49,7 +49,7 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     /* M3 row 7 separator opcodes 24-26.
      * FORK_DETACH: A=closure_reg; dispatch reads only A (B/C unused).
      * FORK_JOIN:   A=closure_reg, B=child-handle dst reg — dispatch WRITES
-     *              R[B] (uop_fork.c op_fork_join), so B must be bounds-checked
+     *              R[B] (uop_fork.c urbi_vm_op_fork_join), so B must be bounds-checked
      *              (refactor-3 VM-14 follow-up; was UOPK_UNUSED = unverified
      *              OOB-write hole for a bare FORK_JOIN with B > max_reg).
      * JOIN_WAIT:   A=child-handle reg; dispatch reads only A. */

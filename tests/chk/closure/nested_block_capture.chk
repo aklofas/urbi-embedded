@@ -1,7 +1,7 @@
 # Milestone: v0.13.1
 # Covers: uemit_close_block must propagate has_captured to the enclosing
 #         block ctx when popping (refactor-3 FE-04 follow-on).
-#         find_or_install_upvalue marks only the INNERMOST block containing
+#         urbi_vm_find_or_install_upvalue marks only the INNERMOST block containing
 #         a captured local; pre-fix the flag died with that block's ctx, so
 #         the enclosing construct's conditional closes (while back-edge +
 #         loop-exit closes gate on blk->has_captured) never saw captures

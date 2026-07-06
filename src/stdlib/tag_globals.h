@@ -12,7 +12,7 @@
  *
  * Why call-style (not the legacy getter-property form per
  * share/urbi/system.u:212-213): the v1.0 OGET dispatch path
- * (vm_dispatch_getter → urbi_run_closure_on_scratch) is bytecode-only
+ * (urbi_vm_dispatch_getter → urbi_run_closure_on_scratch) is bytecode-only
  * and crashes on native closures (proto NULL).  Bridging native
  * closures into the OGET path is a v1.x follow-up.
  *

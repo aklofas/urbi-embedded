@@ -789,8 +789,8 @@ UTEST(vm_add_unknown_kind_diagnostic_shows_unknown) {
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
-/* diag_write_u32 zero branch (line 196): type error at pc=0 with no synclines
-   produces "instr 0: ..." which calls diag_write_u32(w, 0). */
+/* urbi_vm_diag_write_u32 zero branch (line 196): type error at pc=0 with no synclines
+   produces "instr 0: ..." which calls urbi_vm_diag_write_u32(w, 0). */
 UTEST(vm_type_error_at_pc_zero_writes_instr_zero) {
     /* Build: LOADK R[0]=Bool, LOADK R[1]=Int not needed — just ADD at pc=0
        directly using a 1-instruction module with Bool in both slots. */
@@ -1254,10 +1254,10 @@ UTEST(vm_op_setslot_binds_ic_table_at_top_level) {
 /* --- opcode name completeness --- */
 
 UTEST(opcode_op_name_covers_all) {
-    /* op_name() must return a non-"unknown" string for every valid opcode. */
+    /* urbi_vm_op_name() must return a non-"unknown" string for every valid opcode. */
     int pass = 1;
     for (int op = 0; op < (int)OP_MAX; op++) {
-        const char *name = op_name((uint8_t)op);
+        const char *name = urbi_vm_op_name((uint8_t)op);
         if (strcmp(name, "unknown") == 0) {
             pass = 0;
         }
@@ -1394,7 +1394,7 @@ void test_vm_suite(void) {
               vm_op_setslot_binds_ic_table_at_top_level);
     utest_run("vm: OP_RET in nested call routes through urbi_unwind walker",
               vm_op_ret_nested_call_routes_through_walker);
-    utest_run("opcode op_name() covers all OP_MAX opcodes",
+    utest_run("opcode urbi_vm_op_name() covers all OP_MAX opcodes",
               opcode_op_name_covers_all);
     utest_run("opcode op_user_name() covers all OP_MAX opcodes",
               opcode_user_phrase_covers_all);

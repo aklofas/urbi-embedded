@@ -117,7 +117,7 @@ run_until_no_runnable(struct UVM *vm)
  *
  * After the body strand runs to completion through the real dispatcher,
  * w->body_strand must be NULL — confirming that the exit_strand path in
- * dispatch_loop_until_yield called urbi_watcher_body_completed.
+ * urbi_vm_dispatch_loop_until_yield called urbi_watcher_body_completed.
  * =================================================================== */
 UTEST(watcher_body_completion_clears_back_pointer_before_destroy)
 {
@@ -136,7 +136,7 @@ UTEST(watcher_body_completion_clears_back_pointer_before_destroy)
     UASSERT(w != NULL);
     UASSERT(w->body_strand == NULL);
 
-    /* Spawn body strand (simulates watcher_eval_dirty firing the watcher). */
+    /* Spawn body strand (simulates urbi_vm_watcher_eval_dirty firing the watcher). */
     vm.watchers->in_eval = 1;
     do_spawn_body_coroutine(&vm, w, NULL);
     vm.watchers->in_eval = 0;

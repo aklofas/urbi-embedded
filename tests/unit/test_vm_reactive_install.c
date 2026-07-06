@@ -4,7 +4,7 @@
  *
  * Stage 2 extracts OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL /
  * OP_WAITUNTIL_INSTALL / OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL /
- * OP_WHENEVER_EVENT_INSTALL into vm_reactive_install (uvm_reactive_install.c).
+ * OP_WHENEVER_EVENT_INSTALL into urbi_vm_reactive_install (uvm_reactive_install.c).
  *
  * These two pins exercise the two distinct install ENTRY POINTS end-to-end:
  *   - install_watcher_runtime (closure-cond family) via `at (cond) body`
@@ -111,8 +111,8 @@ UTEST(test_reactive_at_event_fires_on_emit)
 void
 test_vm_reactive_install_suite(void)
 {
-    utest_run("vm_reactive_install: at (cond) body fires on rising edge",
+    utest_run("urbi_vm_reactive_install: at (cond) body fires on rising edge",
               test_reactive_at_fires_on_rising_edge);
-    utest_run("vm_reactive_install: at (e?) body fires on event emit",
+    utest_run("urbi_vm_reactive_install: at (e?) body fires on event emit",
               test_reactive_at_event_fires_on_emit);
 }

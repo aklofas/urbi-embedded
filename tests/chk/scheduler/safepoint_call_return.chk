@@ -10,6 +10,6 @@
 #          solely to drive a golden-diff fixture — rejected on API-minimalism
 #          grounds.  Function-call frame push/pop correctness is already covered
 #          by tests/unit/test_dispatch_loop.c::dispatch_nested_call_and_ret,
-#          which exercises the C dispatch_loop_until_yield interface directly.
+#          which exercises the C urbi_vm_dispatch_loop_until_yield interface directly.
 #          Disposition: covered-by-unit-tests; not a chk target.
 # matrix-row: scheduler-safepoint

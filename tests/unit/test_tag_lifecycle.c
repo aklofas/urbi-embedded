@@ -208,7 +208,7 @@ UTEST(utag_type_tag_constant)
  *
  * These tests use the same dispatch_loop pattern as test_dispatch_loop.c:
  * a synthetic UStrand with a manually allocated cleanup stack is driven
- * through dispatch_loop_until_yield to exercise the opcode handlers.
+ * through urbi_vm_dispatch_loop_until_yield to exercise the opcode handlers.
  * ============================================================ */
 
 /* Bytecode encoding helpers (mirrors test_dispatch_loop.c local helpers). */
@@ -227,7 +227,7 @@ static uint32_t t30_enc_ret(void) {
 }
 
 /* strand_setup_t30: zero-initialize a UStrand and wire up the minimum fields
- * required by dispatch_loop_until_yield.  Mirrors the helper in
+ * required by urbi_vm_dispatch_loop_until_yield.  Mirrors the helper in
  * test_dispatch_loop.c; duplicated here to keep the test self-contained. */
 static void
 strand_setup_t30(UStrand *s, UVM *vm,
@@ -291,7 +291,7 @@ UTEST(op_push_tag_inserts_member_strands_and_pop_clears)
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     /* Strand must reach DEAD (top-level RET). */
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
@@ -333,7 +333,7 @@ UTEST(op_push_tag_member_strands_head_wired)
     strand_setup_cleanup_t30(&s);
 
     /* Dispatch: PUSH_TAG (executes) + YIELD (pauses). */
-    dispatch_loop_until_yield(&s, 10000U);
+    urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     /* Strand should be READY (yielded at OP_YIELD). */
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
@@ -399,7 +399,7 @@ UTEST(op_push_tag_oom_marks_strand_fatal)
     strand_setup_t30(&s, &vm, instrs, reg_stack);
     strand_setup_cleanup_t30(&s);
 
-    dispatch_loop_until_yield(&s, 10000U);
+    urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     /* OOM during utag_create → fatal_status=UEXEC_THROW, state=DEAD. */
     UASSERT_EQ((int)s.state,        (int)USTRAND_STATE_DEAD);
@@ -435,7 +435,7 @@ UTEST(op_push_tag_cleanup_overflow_releases_tag)
     /* Fill the cleanup stack to capacity so strand_cleanup_push returns NULL. */
     s.cleanup_depth = s.cleanup_cap;
 
-    dispatch_loop_until_yield(&s, 10000U);
+    urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     /* cleanup_push failure → utag_destroy rollback → fatal, DEAD. */
     UASSERT_EQ((int)s.state,        (int)USTRAND_STATE_DEAD);

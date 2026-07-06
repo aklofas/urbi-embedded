@@ -29,12 +29,12 @@ static const char * const op_name_table[OP_MAX] = {
 #include "chunk/uopcodes.def"
 #undef URBI_OP
 };
-const char *op_name(uint8_t op) {
+const char *urbi_vm_op_name(uint8_t op) {
     if (op >= (uint8_t)OP_MAX) return "unknown";
     return op_name_table[op];
 }
 
-void diag_init(UDiagWriter *w, char *buf, size_t cap) {
+void urbi_vm_diag_init(UDiagWriter *w, char *buf, size_t cap) {
     w->buf = buf;
     w->cap = cap;
     w->used = 0;
@@ -42,7 +42,7 @@ void diag_init(UDiagWriter *w, char *buf, size_t cap) {
     if (cap > 0) buf[0] = '\0';
 }
 
-void diag_write_cstr(UDiagWriter *w, const char *s) {
+void urbi_vm_diag_write_cstr(UDiagWriter *w, const char *s) {
     if (w->truncated) return;
     while (*s) {
         /* Leave 4 bytes for "..." + NUL. */
@@ -63,7 +63,7 @@ void diag_write_cstr(UDiagWriter *w, const char *s) {
 }
 
 /* Write an unsigned integer in decimal. */
-void diag_write_u32(UDiagWriter *w, uint32_t n) {
+void urbi_vm_diag_write_u32(UDiagWriter *w, uint32_t n) {
     char tmp[12];
     size_t i = 0;
     if (n == 0) {
@@ -82,7 +82,7 @@ void diag_write_u32(UDiagWriter *w, uint32_t n) {
     /* Reverse into the writer. */
     while (i > 0) {
         char one[2]; one[0] = tmp[--i]; one[1] = '\0';
-        diag_write_cstr(w, one);
+        urbi_vm_diag_write_cstr(w, one);
     }
 }
 
@@ -90,11 +90,11 @@ static void diag_write_size(UDiagWriter *w, size_t n) {
     /* size_t is at most 64 bits on our targets; fits in u32 for any
        realistic frame size or pc. Cap for safety. */
     if (n > UINT32_MAX) n = UINT32_MAX;
-    diag_write_u32(w, (uint32_t)n);
+    urbi_vm_diag_write_u32(w, (uint32_t)n);
 }
 
 static void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
-    diag_write_cstr(w, kind_name(kind));
+    urbi_vm_diag_write_cstr(w, kind_name(kind));
 }
 
 /* Decode source line number for the given PC. Walks line_deltas from
@@ -136,22 +136,22 @@ uint32_t vm_line_for_pc(const UProto *module, size_t pc) {
 }
 
 /* Format the prefix "source:line:" / "line N:" / "instr N:" into w. */
-void diag_write_prefix(UDiagWriter *w, const UProto *module, size_t pc) {
+void urbi_vm_diag_write_prefix(UDiagWriter *w, const UProto *module, size_t pc) {
     uint32_t line = vm_line_for_pc(module, pc);
     if (line == 0) {
-        diag_write_cstr(w, "instr ");
+        urbi_vm_diag_write_cstr(w, "instr ");
         diag_write_size(w, pc);
-        diag_write_cstr(w, ": ");
+        urbi_vm_diag_write_cstr(w, ": ");
         return;
     }
     if (module->source_name != NULL) {
-        diag_write_cstr(w, module->source_name);
-        diag_write_cstr(w, ":");
+        urbi_vm_diag_write_cstr(w, module->source_name);
+        urbi_vm_diag_write_cstr(w, ":");
     } else {
-        diag_write_cstr(w, "line ");
+        urbi_vm_diag_write_cstr(w, "line ");
     }
-    diag_write_u32(w, line);
-    diag_write_cstr(w, ": ");
+    urbi_vm_diag_write_u32(w, line);
+    urbi_vm_diag_write_cstr(w, ": ");
 }
 
 /* Map UOpcode to a user-facing phrase for error messages.
@@ -168,48 +168,48 @@ static const char *op_user_name(uint8_t op) {
 
 /* Binary-op TypeError: two operand kinds reported.
    Format: "<prefix>TypeError: <glyph> operands must be Integer or Float (got <Kind>, <Kind>)" */
-void vm_format_type_error_binary(UVM *vm, const UProto *module, size_t pc,
+void urbi_vm_format_type_error_binary(UVM *vm, const UProto *module, size_t pc,
                                  uint8_t op, uint8_t b_kind, uint8_t c_kind) {
     UDiagWriter w;
-    diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
-    diag_write_prefix(&w, module, pc);
-    diag_write_cstr(&w, "TypeError: ");
-    diag_write_cstr(&w, op_user_name(op));
-    diag_write_cstr(&w, " operands must be Integer or Float (got ");
+    urbi_vm_diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
+    urbi_vm_diag_write_prefix(&w, module, pc);
+    urbi_vm_diag_write_cstr(&w, "TypeError: ");
+    urbi_vm_diag_write_cstr(&w, op_user_name(op));
+    urbi_vm_diag_write_cstr(&w, " operands must be Integer or Float (got ");
     diag_write_kind_name(&w, b_kind);
-    diag_write_cstr(&w, ", ");
+    urbi_vm_diag_write_cstr(&w, ", ");
     diag_write_kind_name(&w, c_kind);
-    diag_write_cstr(&w, ")");
+    urbi_vm_diag_write_cstr(&w, ")");
 }
 
 /* Unary-op TypeError: one operand kind reported. */
-void vm_format_type_error_unary(UVM *vm, const UProto *module, size_t pc,
+void urbi_vm_format_type_error_unary(UVM *vm, const UProto *module, size_t pc,
                                 uint8_t op, uint8_t b_kind) {
     UDiagWriter w;
-    diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
-    diag_write_prefix(&w, module, pc);
-    diag_write_cstr(&w, "TypeError: ");
-    diag_write_cstr(&w, op_user_name(op));
-    diag_write_cstr(&w, " operand must be Integer or Float (got ");
+    urbi_vm_diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
+    urbi_vm_diag_write_prefix(&w, module, pc);
+    urbi_vm_diag_write_cstr(&w, "TypeError: ");
+    urbi_vm_diag_write_cstr(&w, op_user_name(op));
+    urbi_vm_diag_write_cstr(&w, " operand must be Integer or Float (got ");
     diag_write_kind_name(&w, b_kind);
-    diag_write_cstr(&w, ")");
+    urbi_vm_diag_write_cstr(&w, ")");
 }
 
 /* Format: "out of memory allocating register frame (<N> bytes requested)" */
-void vm_format_oom(UVM *vm, size_t nbytes) {
+void urbi_vm_format_oom(UVM *vm, size_t nbytes) {
     UDiagWriter w;
-    diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
-    diag_write_cstr(&w, "out of memory allocating register frame (");
+    urbi_vm_diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
+    urbi_vm_diag_write_cstr(&w, "out of memory allocating register frame (");
     diag_write_size(&w, nbytes);
-    diag_write_cstr(&w, " bytes requested)");
+    urbi_vm_diag_write_cstr(&w, " bytes requested)");
 }
 
 /* completeness check: returns 1 if every opcode in [0, OP_MAX) has a
- * non-fallback op_name() and op_user_name().  Called from the opcode
+ * non-fallback urbi_vm_op_name() and op_user_name().  Called from the opcode
  * completeness unit test. */
 int urbi_vm_diag_opnames_complete(void) {
     for (int op = 0; op < (int)OP_MAX; op++) {
-        if (strcmp(op_name((uint8_t)op), "unknown") == 0)
+        if (strcmp(urbi_vm_op_name((uint8_t)op), "unknown") == 0)
             return 0;
         if (strcmp(op_user_name((uint8_t)op), "(operator)") == 0)
             return 0;
@@ -219,9 +219,9 @@ int urbi_vm_diag_opnames_complete(void) {
 
 /* Generic unsupported-opcode error message.  Used by placeholder arms
  * that will be replaced by real implementations in later tasks. */
-void vm_format_type_error_msg(UVM *vm, const char *msg) {
+void urbi_vm_format_type_error_msg(UVM *vm, const char *msg) {
     UDiagWriter w;
-    diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
-    diag_write_cstr(&w, "TypeError: ");
-    diag_write_cstr(&w, msg);
+    urbi_vm_diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
+    urbi_vm_diag_write_cstr(&w, "TypeError: ");
+    urbi_vm_diag_write_cstr(&w, msg);
 }

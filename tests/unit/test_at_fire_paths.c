@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: watcher_eval_dirty fire-decision paths (T43).
+/* Unit tests: urbi_vm_watcher_eval_dirty fire-decision paths (T43).
  * Spec #2 §8.3–§8.5.
  *
  * All tests use the hook-based approach (test_watcher_condition_hook,
@@ -121,7 +121,7 @@ static void
 run_one_dirty_pass(struct UVM *vm)
 {
     vm->watchers->dirty_count = 1U;
-    watcher_eval_dirty(vm);
+    urbi_vm_watcher_eval_dirty(vm);
 }
 
 /* ===================================================================

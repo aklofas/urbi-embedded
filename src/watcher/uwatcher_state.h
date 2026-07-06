@@ -27,7 +27,7 @@ typedef struct UWatcherState {
     uint8_t  in_scratch;         /* was vm->in_watcher_scratch */
     uint8_t  in_install;         /* was vm->in_watcher_install */
 
-    /* SCHED-02 storm guard: when 1, watcher_eval_dirty fires a WHENEVER only on
+    /* SCHED-02 storm guard: when 1, urbi_vm_watcher_eval_dirty fires a WHENEVER only on
      * the rising edge (false->true) instead of level-triggered (every truthy
      * pass).  Set transiently by vm_reactive_drain's idle/boundary path
      * (bounded=1) so a self-re-dirtying level-whenever cannot spin while the VM
@@ -37,7 +37,7 @@ typedef struct UWatcherState {
     uint8_t  whenever_edge_only;
 
     /* Pass-generation counter for rescan idempotency (PENDING-cascade fix).
-     * Incremented once at the top of watcher_eval_dirty (wrap-around safe:
+     * Incremented once at the top of urbi_vm_watcher_eval_dirty (wrap-around safe:
      * comparison uses ==).  Each UWatcher carries a matching eval_pass_gen
      * stamp; watchers already evaluated in the current pass are skipped on
      * rescan to prevent level-triggered WHENEVER double-fire. */

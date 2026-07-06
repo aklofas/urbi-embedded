@@ -276,7 +276,7 @@ UTEST(cancel_event_parked_strand_unparks)
  * Case 3 (refactor-3 SCHED-05): cancel of a JOIN-parked strand unlinks it
  * from child->joiners_head before waking it.  Pre-fix the woken parent
  * stayed threaded on the chain; when the child later died,
- * fork_wake_joiners re-woke a strand that had already left WAITING
+ * urbi_vm_fork_wake_joiners re-woke a strand that had already left WAITING
  * (READY -> READY corruption, or a walk over freed memory once the
  * parent was reaped).
  * =================================================================== */
@@ -323,7 +323,7 @@ UTEST(cancel_join_parked_strand_unlinks_joiner)
         UASSERT_EQ((unsigned)UEXEC_CANCEL, (unsigned)s->fatal_status);
 
         /* Drive the would-be waker: cancel the sleeping child too so it
-         * runs to DEAD; its exit-path fork_wake_joiners must find an
+         * runs to DEAD; its exit-path urbi_vm_fork_wake_joiners must find an
          * empty joiners chain (pre-fix: it walked the stale parent link).
          * The child's thunk tail is straight-line (resume -> top OP_RET),
          * so the CANCEL is dropped (v0.13.1-G) and the child dies CLEANLY
@@ -343,7 +343,7 @@ UTEST(cancel_join_parked_strand_unlinks_joiner)
  * Case 4 (refactor-3 SCHED-05): cancel of a WATCHER-parked strand
  * (waituntil(cond)) scrubs w->waiter_strand and retires the watcher.
  * Pre-fix the watcher stayed armed with a stale back-pointer; the next
- * rising edge had watcher_eval_dirty wake the DEAD strand.
+ * rising edge had urbi_vm_watcher_eval_dirty wake the DEAD strand.
  * =================================================================== */
 UTEST(cancel_watcher_parked_strand_scrubs_waiter)
 {
@@ -388,7 +388,7 @@ UTEST(cancel_watcher_parked_strand_scrubs_waiter)
          * retired this is a no-op (pre-fix: make_runnable on the DEAD
          * strand). */
         vm.watchers->dirty_count = 1;
-        watcher_eval_dirty(&vm);
+        urbi_vm_watcher_eval_dirty(&vm);
     }
 
     uchunk_destroy(module, &vm);

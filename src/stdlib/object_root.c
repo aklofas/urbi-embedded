@@ -36,7 +36,7 @@
 #include "urbi/urbi.h"             /* URBI_OK, URBI_ERR_OOM */
 #include "value/uintern.h"         /* ustr_intern */
 #include "vm/uvm.h"                /* UVM, urbi_vm_destroy, vm->*error_proto, UVM_ERRMSG_CAP */
-#include "vm/uvm_internal.h"       /* UDiagWriter, diag_init, diag_write_* */
+#include "vm/uvm_internal.h"       /* UDiagWriter, urbi_vm_diag_init, diag_write_* */
 #include "object/uic.h"            /* urbi_slot_get_slow */
 #include "stdlib/containers.h"     /* urbi_stdlib_list_new_empty/_append_value */
 
@@ -137,13 +137,13 @@ urbi_raise_arity(UVM *vm, const char *fn_name, uint8_t expected,
                  uint8_t got, UValue *out)
 {
     char buf[UVM_ERRMSG_CAP];
-    UDiagWriter w; diag_init(&w, buf, sizeof buf);
-    diag_write_cstr(&w, "ArityError: ");
-    diag_write_cstr(&w, (fn_name != NULL ? fn_name : "<unknown>"));
-    diag_write_cstr(&w, " expected ");
-    diag_write_u32(&w, (uint32_t)expected);
-    diag_write_cstr(&w, " args, got ");
-    diag_write_u32(&w, (uint32_t)got);
+    UDiagWriter w; urbi_vm_diag_init(&w, buf, sizeof buf);
+    urbi_vm_diag_write_cstr(&w, "ArityError: ");
+    urbi_vm_diag_write_cstr(&w, (fn_name != NULL ? fn_name : "<unknown>"));
+    urbi_vm_diag_write_cstr(&w, " expected ");
+    urbi_vm_diag_write_u32(&w, (uint32_t)expected);
+    urbi_vm_diag_write_cstr(&w, " args, got ");
+    urbi_vm_diag_write_u32(&w, (uint32_t)got);
     return urbi_raise_typed(vm, vm ? vm->arityerror_proto : NULL, out, buf);
 }
 
@@ -151,9 +151,9 @@ int
 urbi_raise_type(UVM *vm, const char *msg, UValue *out)
 {
     char buf[UVM_ERRMSG_CAP];
-    UDiagWriter w; diag_init(&w, buf, sizeof buf);
-    diag_write_cstr(&w, "TypeError: ");
-    diag_write_cstr(&w, (msg != NULL ? msg : "<unspecified>"));
+    UDiagWriter w; urbi_vm_diag_init(&w, buf, sizeof buf);
+    urbi_vm_diag_write_cstr(&w, "TypeError: ");
+    urbi_vm_diag_write_cstr(&w, (msg != NULL ? msg : "<unspecified>"));
     return urbi_raise_typed(vm, vm ? vm->typeerror_proto : NULL, out, buf);
 }
 
@@ -169,8 +169,8 @@ urbi_raise_lookup(UVM *vm, USymbol *name, UValue *out)
 {
     (void)name;
     char buf[UVM_ERRMSG_CAP];
-    UDiagWriter w; diag_init(&w, buf, sizeof buf);
-    diag_write_cstr(&w, "LookupError: slot not found");
+    UDiagWriter w; urbi_vm_diag_init(&w, buf, sizeof buf);
+    urbi_vm_diag_write_cstr(&w, "LookupError: slot not found");
     return urbi_raise_typed(vm, vm ? vm->lookuperror_proto : NULL, out, buf);
 }
 
@@ -182,9 +182,9 @@ int
 urbi_raise_index(UVM *vm, const char *msg, UValue *out)
 {
     char buf[UVM_ERRMSG_CAP];
-    UDiagWriter w; diag_init(&w, buf, sizeof buf);
-    diag_write_cstr(&w, "IndexError: ");
-    diag_write_cstr(&w, (msg != NULL ? msg : "index out of range"));
+    UDiagWriter w; urbi_vm_diag_init(&w, buf, sizeof buf);
+    urbi_vm_diag_write_cstr(&w, "IndexError: ");
+    urbi_vm_diag_write_cstr(&w, (msg != NULL ? msg : "index out of range"));
     return urbi_raise_typed(vm, vm ? vm->indexerror_proto : NULL, out, buf);
 }
 
@@ -192,9 +192,9 @@ int
 urbi_raise_range(UVM *vm, const char *msg, UValue *out)
 {
     char buf[UVM_ERRMSG_CAP];
-    UDiagWriter w; diag_init(&w, buf, sizeof buf);
-    diag_write_cstr(&w, "RangeError: ");
-    diag_write_cstr(&w, (msg != NULL ? msg : "value out of range"));
+    UDiagWriter w; urbi_vm_diag_init(&w, buf, sizeof buf);
+    urbi_vm_diag_write_cstr(&w, "RangeError: ");
+    urbi_vm_diag_write_cstr(&w, (msg != NULL ? msg : "value out of range"));
     return urbi_raise_typed(vm, vm ? vm->rangeerror_proto : NULL, out, buf);
 }
 
@@ -202,7 +202,7 @@ int
 urbi_raise_divzero(UVM *vm, const char *msg, UValue *out)
 {
     char buf[UVM_ERRMSG_CAP];
-    UDiagWriter w; diag_init(&w, buf, sizeof buf);
+    UDiagWriter w; urbi_vm_diag_init(&w, buf, sizeof buf);
     /* Uniform position prefix: when called from inside the VM dispatch loop
      * (vm->cur_strand non-NULL), prepend the call-site source location so
      * native-method raises (e.g. `%`) carry the same prefix as opcode raises
@@ -211,11 +211,11 @@ urbi_raise_divzero(UVM *vm, const char *msg, UValue *out)
     if (vm != NULL && vm->cur_strand != NULL &&
             vm->cur_strand->pc != NULL &&
             vm->cur_strand->pc_base != NULL) {
-        diag_write_prefix(&w, vm->cur_strand->root_proto,
+        urbi_vm_diag_write_prefix(&w, vm->cur_strand->root_proto,
                           (size_t)(vm->cur_strand->pc - vm->cur_strand->pc_base));
     }
-    diag_write_cstr(&w, "DivByZero: ");
-    diag_write_cstr(&w, (msg != NULL ? msg : "division by 0"));
+    urbi_vm_diag_write_cstr(&w, "DivByZero: ");
+    urbi_vm_diag_write_cstr(&w, (msg != NULL ? msg : "division by 0"));
     return urbi_raise_typed(vm, vm ? vm->divbyzero_proto : NULL, out, buf);
 }
 

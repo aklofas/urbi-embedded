@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Watcher eval pass: watcher_eval_dirty, invoke_condition_closure.
+/* Watcher eval pass: urbi_vm_watcher_eval_dirty, invoke_condition_closure.
  * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
@@ -27,7 +27,7 @@
  * circuits the dispatch path so existing fire-path tests can inject
  * specific values; otherwise routes to urbi_run_closure_on_scratch
  * (src/runtime/uscratch.c).  Eval-time throws fail-soft as nil — watcher does
- * not fire this pass; caller (watcher_eval_dirty) does not propagate.
+ * not fire this pass; caller (urbi_vm_watcher_eval_dirty) does not propagate.
  *
  * Returns UVAL_NIL when w->condition is NULL (no-condition watchers fire
  * on dirty-mark only, not on cond eval). */
@@ -46,7 +46,7 @@ invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
 
     /* Real bytecode dispatch on the scratch frame.  Eval-time throws
      * fail-soft as nil — watcher does not fire this pass; caller
-     * (watcher_eval_dirty) does not propagate. */
+     * (urbi_vm_watcher_eval_dirty) does not propagate. */
     UValue out = {0};
     int    threw = 0;
     (void)urbi_run_closure_on_scratch(vm, w->condition, &out, &threw);
@@ -74,7 +74,7 @@ invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
  *   contract.
  *
  * Preconditions (URBI_DEBUG asserted):
- *   - vm->watchers->in_eval == 1 (we are inside watcher_eval_dirty).
+ *   - vm->watchers->in_eval == 1 (we are inside urbi_vm_watcher_eval_dirty).
  *   - w->mode == UWATCHER_AT_SYNC.
  *   - w->body != NULL.                                             */
 static void
@@ -137,7 +137,7 @@ invoke_onleave_inline(struct UVM *vm, struct UWatcher *w)
     }
 }
 
-/* === watcher_eval_dirty ===
+/* === urbi_vm_watcher_eval_dirty ===
  *
  * Walk active_watchers_head, evaluate each watcher's condition, and fire
  * the appropriate action based on mode and edge detection:
@@ -160,7 +160,7 @@ invoke_onleave_inline(struct UVM *vm, struct UWatcher *w)
  *   - WAITUNTIL: capture next_active before calling unregister_internal
  *     (unregister frees the slot; the pointer is stale after the call). */
 void
-watcher_eval_dirty(struct UVM *vm)
+urbi_vm_watcher_eval_dirty(struct UVM *vm)
 {
     struct UWatcher *w;
     struct UWatcher *next;
@@ -189,7 +189,7 @@ watcher_eval_dirty(struct UVM *vm)
      * that freshly allocated (or recycled) watchers — whose eval_pass_gen
      * is reset to 0 by uwatcher_pool_alloc — are never falsely considered
      * already-visited on their first pass.  Wrap-around safe: comparison
-     * uses ==; one increment per watcher_eval_dirty call. */
+     * uses ==; one increment per urbi_vm_watcher_eval_dirty call. */
     vm->watchers->eval_pass_gen = (uint8_t)(vm->watchers->eval_pass_gen + 1u);
     if (vm->watchers->eval_pass_gen == 0) vm->watchers->eval_pass_gen = 1;
     uint8_t cur_pass_gen = vm->watchers->eval_pass_gen;
@@ -295,7 +295,7 @@ watcher_eval_dirty(struct UVM *vm)
                  * edge breaks the loop: once the whenever fires, last_value_cache
                  * becomes truthy, so no subsequent idle pass sees an edge.
                  *
-                 * Termination argument: watcher_eval_dirty resets dirty_count to 0
+                 * Termination argument: urbi_vm_watcher_eval_dirty resets dirty_count to 0
                  * on entry.  In the idle/boundary drain a whenever fires at most
                  * once per rising edge; after firing, old==truthy so `rising` is
                  * false on every later pass.  With no fire, no body spawns, so
@@ -358,7 +358,7 @@ watcher_eval_dirty(struct UVM *vm)
                  * URBI_INTERNAL_ASSERT aborts in URBI_DEBUG; release builds
                  * fall through to update the cache (legacy soft-fail behavior)
                  * so production stays running. */
-                URBI_INTERNAL_ASSERT(0 && "watcher_eval_dirty: unknown watcher mode");
+                URBI_INTERNAL_ASSERT(0 && "urbi_vm_watcher_eval_dirty: unknown watcher mode");
                 w->last_value_cache = new_val;
                 break;
         }
@@ -372,7 +372,7 @@ watcher_eval_dirty(struct UVM *vm)
          *
          * Safety: the next->flags read is safe because
          * drain_pending_onleave_queue runs at the dispatcher safepoint
-         * BEFORE watcher_eval_dirty (uwatcher_drain.c:33-36) — nothing
+         * BEFORE urbi_vm_watcher_eval_dirty (uwatcher_drain.c:33-36) — nothing
          * pushed during a body is freed until after the eval loop exits.
          *
          * Termination: PENDING is a one-way transition, so rescans are
@@ -390,4 +390,4 @@ watcher_eval_dirty(struct UVM *vm)
 }
 
 /* spawn_body_coroutine lives in uwatcher_spawn.c.
- * Declaration is in uwatcher.h; watcher_eval_dirty calls it above. */
+ * Declaration is in uwatcher.h; urbi_vm_watcher_eval_dirty calls it above. */

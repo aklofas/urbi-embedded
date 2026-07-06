@@ -127,7 +127,7 @@ strand_setup_for_getslot(UStrand *s, UVM *vm,
 
 /* Run a single OP_GETSLOT (followed by OP_RET) against `obj` on `vm`.
  * Requires vm->topology_gen to be initialised (non-zero sentinel — see urbi_vm_init).
- * Returns the number of opcodes consumed by dispatch_loop_until_yield. */
+ * Returns the number of opcodes consumed by urbi_vm_dispatch_loop_until_yield. */
 static uint64_t
 run_one_getslot(UVM *vm, UObject *obj)
 {
@@ -151,7 +151,7 @@ run_one_getslot(UVM *vm, UObject *obj)
 
     strand_setup_for_getslot(&s, vm, instrs, reg_stack, obj, mi);
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
+    uint64_t consumed = urbi_vm_dispatch_loop_until_yield(&s, 10000U);
 
     /* Module IC names are heap-allocated in this helper; instructions point to
      * stack-allocated instrs[], so set to NULL before uchunk_destroy to avoid

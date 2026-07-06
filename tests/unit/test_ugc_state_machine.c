@@ -371,7 +371,7 @@ UTEST(ugc_shade_gray_graylists_every_enrolled_cell_type)
 {
     /* One tag per GC-managed allocation path that historically had its own
      * "regime": ordinary objects, the v0.8.4-promoted closure/upval pair
-     * (vm_alloc_closure / vm_open_upvalue → urbi_gc_alloc), tags, events.
+     * (urbi_vm_alloc_closure / urbi_vm_open_upvalue → urbi_gc_alloc), tags, events.
      * 256 B over-allocates every payload so the zero-init walkers stay in
      * bounds if a forced stress collection drains the gray list. */
     static const uint8_t tags[] = {

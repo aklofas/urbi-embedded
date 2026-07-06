@@ -103,7 +103,7 @@ UTEST(scratch_runner_returns_integer_value)
 /* scratch_runner_sets_threw_on_unhandled_throw
  *
  * Compile "nil()" — calling a non-closure value triggers OP_CALL's
- * "callee is not a closure" type-error path (vm_format_type_error_msg,
+ * "callee is not a closure" type-error path (urbi_vm_format_type_error_msg,
  * which is safe with a NULL strand.module).  The dispatch loop halts
  * with vm->last_error == UVM_TYPE_ERROR.  The helper must:
  *   - set *out_threw = 1
@@ -115,7 +115,7 @@ UTEST(scratch_runner_returns_integer_value)
  * error formatter, which dereferences s->module->line_deltas — NULL
  * on a scratch frame (the helper synthesizes a minimal module_instance
  * shell with no line table).  nil() routes through
- * vm_format_type_error_msg which doesn't touch the module, so it is
+ * urbi_vm_format_type_error_msg which doesn't touch the module, so it is
  * stable on scratch frames. */
 UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 {

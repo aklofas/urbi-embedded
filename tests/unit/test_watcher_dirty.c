@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: watcher read-set capture, bit-6 lifecycle, observer_dirty,
- * watcher_eval_dirty + edge/level firing, pending_onleave_queue drain.
+ * urbi_vm_watcher_eval_dirty + edge/level firing, pending_onleave_queue drain.
  * Row 11. */
 
 #include "utest.h"
@@ -259,7 +259,7 @@ UTEST(watcher_install_readset_overflow_returns_null)
 }
 
 /* ===================================================================
- * T34 test cases: watcher_eval_dirty + edge/level firing
+ * T34 test cases: urbi_vm_watcher_eval_dirty + edge/level firing
  * =================================================================== */
 
 /* --- Helpers for condition hook --- */
@@ -310,7 +310,7 @@ fire_hook_count(struct UVM *vm, struct UWatcher *w)
 
 /* === Globals for eval-pass stamp pin test (case 27) === */
 
-/* Watcher identity pointers set before each call to watcher_eval_dirty. */
+/* Watcher identity pointers set before each call to urbi_vm_watcher_eval_dirty. */
 static UWatcher *g_stamp_pin_w_ptr;
 static UWatcher *g_stamp_pin_a_ptr;
 static UWatcher *g_stamp_pin_b_ptr;
@@ -350,7 +350,7 @@ UTEST(watcher_eval_dirty_skips_when_count_zero)
     urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT_EQ((int)vm.watchers->dirty_count, 0);
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
     UASSERT(!vm.watchers->in_eval);
 
     urbi_vm_destroy(&vm);
@@ -364,7 +364,7 @@ UTEST(watcher_eval_dirty_resets_count_to_zero)
     urbi_vm_init(&vm, NULL, NULL);
 
     vm.watchers->dirty_count = 5U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
     UASSERT_EQ((int)vm.watchers->dirty_count, 0);
     UASSERT(!vm.watchers->in_eval);
 
@@ -399,18 +399,18 @@ UTEST(watcher_eval_at_edge_only_fires_on_false_to_true)
 
     /* Pass 1: still false → no fire. */
     vm.watchers->dirty_count = 1U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 0);
 
     /* Pass 2: flip to true → edge fires. */
     g_condition_truthy = 1;
     vm.watchers->dirty_count = 1U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 1);
 
     /* Pass 3: still true → no fire (no rising edge). */
     vm.watchers->dirty_count = 1U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 1);
 
     urbi_watcher_unregister_internal(&vm, w);
@@ -438,9 +438,9 @@ UTEST(watcher_eval_whenever_level_fires_each_dirty_pass)
     UASSERT(w != NULL);
 
     /* Three passes — WHENEVER fires every time condition is truthy. */
-    vm.watchers->dirty_count = 1U; watcher_eval_dirty(&vm);
-    vm.watchers->dirty_count = 1U; watcher_eval_dirty(&vm);
-    vm.watchers->dirty_count = 1U; watcher_eval_dirty(&vm);
+    vm.watchers->dirty_count = 1U; urbi_vm_watcher_eval_dirty(&vm);
+    vm.watchers->dirty_count = 1U; urbi_vm_watcher_eval_dirty(&vm);
+    vm.watchers->dirty_count = 1U; urbi_vm_watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 3);
 
     urbi_watcher_unregister_internal(&vm, w);
@@ -474,7 +474,7 @@ UTEST(watcher_eval_skips_pending_unregister)
     w->flags |= URBI_WATCHER_PENDING_UNREGISTER;
 
     vm.watchers->dirty_count = 1U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
 
     /* No fire, last_value_cache unchanged. */
     UASSERT_EQ(g_fire_count, 0);
@@ -512,7 +512,7 @@ UTEST(watcher_install_seeds_last_value_cache)
 
     /* First dirty pass: old=true, new=true → no rising edge → no fire. */
     vm.watchers->dirty_count = 1U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 0);
 
     urbi_watcher_unregister_internal(&vm, w);
@@ -954,7 +954,7 @@ UTEST(spawn_body_coroutine_relocated_still_works)
 
     /* Trigger one dirty eval — rising edge: nil→true fires once. */
     vm.watchers->dirty_count = 1U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 1);
 
     urbi_watcher_unregister_internal(&vm, w);
@@ -1000,7 +1000,7 @@ UTEST(eval_pass_walks_all_watchers)
 
     /* Single dirty-eval pass — all 3 see nil→true rising edge. */
     vm.watchers->dirty_count = 1U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
 
     /* All 3 must have fired. */
     UASSERT_EQ(g_fire_count, 3);
@@ -1072,7 +1072,7 @@ UTEST(eval_pass_stamp_pins_whenever_double_fire)
 
     /* One dirty pass — the whole test rides on this single call. */
     vm.watchers->dirty_count = 1U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
 
     /* Upper-bound pin: W fires exactly once (stamp blocks the rescan re-visit). */
     UASSERT_EQ(g_stamp_pin_w_fires, 1);
@@ -1103,7 +1103,7 @@ UTEST(eval_pass_stamp_pins_whenever_double_fire)
  *                   → fires; fire_count == 2.
  *
  *     Red-proof: disable the w->eval_pass_gen=0 reset in uwatcher_pool_alloc
- *     and the skip-zero guard in watcher_eval_dirty; this UASSERT_EQ(2) fails
+ *     and the skip-zero guard in urbi_vm_watcher_eval_dirty; this UASSERT_EQ(2) fails
  *     with fire_count=1.  Re-enable to green. */
 UTEST(watcher_pool_recycle_resets_eval_stamp)
 {
@@ -1125,7 +1125,7 @@ UTEST(watcher_pool_recycle_resets_eval_stamp)
     vm.test_hooks->watcher_fire      = fire_hook_count;
 
     vm.watchers->dirty_count = 1U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 1);
     /* VM gen is now 1; W1's stamp is 1. */
     UASSERT_EQ((int)vm.watchers->eval_pass_gen, 1);
@@ -1152,7 +1152,7 @@ UTEST(watcher_pool_recycle_resets_eval_stamp)
      * NEW: W2 stamp=0 ≠ cur=1 → fires (fire_count=2). */
     vm.test_hooks->watcher_condition = condition_hook_fixed_true;
     vm.watchers->dirty_count = 1U;
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 2);
 
     urbi_watcher_unregister_internal(&vm, w2);

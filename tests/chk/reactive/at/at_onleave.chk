@@ -11,7 +11,7 @@
 # "updown" string assembly is deferred to a later milestone.
 #
 # The nested function pattern (trigger_up/trigger_down) is required:
-# watcher_eval_dirty fires at non-top-frame OP_RET safepoints, which a
+# urbi_vm_watcher_eval_dirty fires at non-top-frame OP_RET safepoints, which a
 # nested call provides.  See at_rising_edge.chk for the safepoint detail.
 
 var x = 0;

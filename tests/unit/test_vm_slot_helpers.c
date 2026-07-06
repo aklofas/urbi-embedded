@@ -275,7 +275,7 @@ UTEST(getslot_getter_dispatch_via_ic_hit)
  * OP_SELF ABC: R[A] = method, R[A+1] = receiver.  If B == A+1 (dst
  * register = receiver register + 1), writing R[A+1] with the receiver
  * must happen before writing R[A] with the method — otherwise the
- * method clobbers the receiver.  W1's vm_self_lookup handles this by
+ * method clobbers the receiver.  W1's urbi_vm_self_lookup handles this by
  * snapshotting recv first and writing R[A+1] before R[A].
  *
  * This test exercises the case where the emitter places the method call

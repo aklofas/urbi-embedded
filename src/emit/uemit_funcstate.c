@@ -56,7 +56,7 @@ static int upvalue_install(UEmitter *e, UFuncState *fs,
 /* Recursive upvalue cascade. Returns the upvalue index in fs's table, or -1
  * if name is not found in any enclosing scope. Marks the parent's actvar and
  * enclosing block as captured so OP_CLOSE fires on block exit. */
-int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
+int urbi_vm_find_or_install_upvalue(UEmitter *e, UFuncState *fs,
                             const char *name, int name_len) {
     if (fs->parent == NULL) return -1;       /* no enclosing scope to capture from */
 
@@ -90,7 +90,7 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 
     /* Recurse into grandparent — intermediate frame captures via upvalue
      * (in_stack=false). */
-    int grand_idx = find_or_install_upvalue(e, fs->parent, name, name_len);
+    int grand_idx = urbi_vm_find_or_install_upvalue(e, fs->parent, name, name_len);
     if (grand_idx < 0) return -1;
     return upvalue_install(e, fs, name, name_len,
                            (uint8_t)grand_idx, false);
@@ -709,7 +709,7 @@ bool uemit_close_block(UEmitter *e) {
     }
 
     /* Propagate has_captured to the enclosing block before this ctx dies
-     * (refactor-3 FE-04 follow-on).  find_or_install_upvalue marks only
+     * (refactor-3 FE-04 follow-on).  urbi_vm_find_or_install_upvalue marks only
      * the INNERMOST block containing the captured local; without
      * propagation the flag dies with this ctx and the enclosing
      * construct's conditional closes (while/for-each back-edge + loop-exit

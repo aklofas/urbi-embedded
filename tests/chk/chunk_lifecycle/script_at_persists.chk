@@ -5,7 +5,7 @@
 # Activated: v0.10.7 W7 — at(cond) watcher shipped (M5 reactive runtime).
 # Old label: M5
 #
-# Note: the trigger() function pattern is required because watcher_eval_dirty
+# Note: the trigger() function pattern is required because urbi_vm_watcher_eval_dirty
 # fires at non-top-frame OP_RET safepoints; a bare top-level assignment does
 # not trigger the safepoint path.  Realm vars used instead of echo (Lobby
 # echo not available as bare name in single-session chk driver).

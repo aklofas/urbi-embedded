@@ -17,7 +17,7 @@
 #
 # B must be live in active_watchers_head at eval time.  Prior to v0.13.5
 # a bare `t2: at (Realm.go) { ... }` would cascade B immediately when the
-# t2: lexical scope exited (OP_POP_TAG → vm_tag_scope_teardown), so the
+# t2: lexical scope exited (OP_POP_TAG → urbi_vm_tag_scope_teardown), so the
 # old fixture used `t2: { at (...) B; waituntil(false) }` to keep the
 # scope open.  v0.13.5 (v0.13.4-A fix) guards the cascade with
 # FLAG_TAG_USER_OWNED so user-owned tags keep their watchers alive past
@@ -29,7 +29,7 @@
 # calls pending_onleave_queue_push for every watcher in
 # t2->member_watchers_head (B): PENDING_UNREGISTER set, unlinked from
 # active list, next_active cleared.
-# The pre-captured `next = B` in watcher_eval_dirty now has
+# The pre-captured `next = B` in urbi_vm_watcher_eval_dirty now has
 # next_active = NULL, so without the fix the loop terminates before
 # evaluating C — a silent same-tick truncation.
 # The fix: when the pre-captured successor is PENDING, restart from

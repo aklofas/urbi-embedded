@@ -206,7 +206,7 @@ void urbi_gc_sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx);
  * count covers |READY| + |RUNNING|.  Sets the strand's ready_next/ready_prev
  * to NULL.  Caller is responsible for setting the strand's state to
  * USTRAND_STATE_RUNNING before dispatching.  T16 urbi_step driver calls
- * this before each dispatch_loop_until_yield. */
+ * this before each urbi_vm_dispatch_loop_until_yield. */
 void sched_dequeue_ready_head(UVM *vm);
 
 /* CHSTR-031: decrement host_call_pending_count if s had a cross-strand stop

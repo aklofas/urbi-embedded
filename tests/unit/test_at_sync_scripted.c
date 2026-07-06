@@ -4,7 +4,7 @@
  *
  * Companion to test_at_scripted_e2e.c (the AT-mode version), but exercises
  * the AT_SYNC path: the body runs synchronously on the scratch frame inside
- * watcher_eval_dirty (no body-strand spawn).  No test hooks installed —
+ * urbi_vm_watcher_eval_dirty (no body-strand spawn).  No test hooks installed —
  * the watcher's cond closure goes through urbi_run_closure_on_scratch and
  * the body goes through invoke_body_inline → urbi_run_closure_on_scratch.
  *
@@ -32,7 +32,7 @@
  * Install at sync (Realm.x > 5) Realm.fired = Realm.fired + 1 via a real
  * compiled script.  Trigger the rising edge by writing Realm.x = 10
  * through a nested function call (so the non-top-frame OP_RET safepoint
- * fires watcher_eval_dirty).  Unlike AT mode, the body runs inline via
+ * fires urbi_vm_watcher_eval_dirty).  Unlike AT mode, the body runs inline via
  * invoke_body_inline (no body strand) — so Realm.fired must equal 1
  * immediately after compile_and_run returns.
  *
@@ -73,7 +73,7 @@ UTEST(scripted_at_sync_fires_on_rising_edge)
 
     /* === Phase 2: trigger the rising edge ===
      *
-     * The non-top OP_RET safepoint fires watcher_eval_dirty.  For AT_SYNC,
+     * The non-top OP_RET safepoint fires urbi_vm_watcher_eval_dirty.  For AT_SYNC,
      * the body runs inline on the scratch frame (no strand spawn).  So
      * Realm.fired must equal 1 by the time compile_and_run returns. */
     rc = utest_e2e_compile_and_run(&vm,

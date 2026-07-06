@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uunwind.h — M3 control-transfer walker.
  *
- * urbi_unwind() is called from dispatch_loop_until_yield whenever
+ * urbi_unwind() is called from urbi_vm_dispatch_loop_until_yield whenever
  * s->pending_unwind != UEXEC_OK.  T9 implements the real 3-kind walker:
  * CALL_FRAME absorption (RETURN), TRY_FRAME absorption (THROW/FINALLY),
  * TAG_SCOPE stub (T29 owns absorption), and fatal escalation on

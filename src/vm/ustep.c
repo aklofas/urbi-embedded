@@ -164,7 +164,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
 
             /* Remove the strand from the ready queue.  Count-neutral
              * (SCHED-01): READY → RUNNING keeps the strand in the counted set.
-             * If the strand yields mid-run, dispatch_loop_until_yield calls
+             * If the strand yields mid-run, urbi_vm_dispatch_loop_until_yield calls
              * sched_strand_yield which re-enqueues count-neutrally. */
             sched_dequeue_ready_head(vm);
             s->state = USTRAND_STATE_RUNNING;
@@ -178,7 +178,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
             URBI_PERF_INC(vm, ctx_switches);   /* v0.11.1: strand go-live */
             vm->cur_strand = s;   /* spec #3 §7.1: expose running strand for c_event_waituntil */
 
-            uint64_t consumed = dispatch_loop_until_yield(s, vm->step_budget_remaining);
+            uint64_t consumed = urbi_vm_dispatch_loop_until_yield(s, vm->step_budget_remaining);
             vm->cur_strand = NULL;
             /* Clamp subtraction to avoid unsigned underflow on floating rounding. */
             if (consumed >= vm->step_budget_remaining) {

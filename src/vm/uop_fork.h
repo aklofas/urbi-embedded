@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #include "sched/ustrand.h"   /* UStrand */
-#include "vm/uvm.h"       /* UVM, dispatch_loop_until_yield */
+#include "vm/uvm.h"       /* UVM, urbi_vm_dispatch_loop_until_yield */
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,27 +35,27 @@ extern "C" {
  * Spawns child from R[A] as a detached strand.
  * Parent inherits ambient tag chain; child also inherits it.
  * Returns 0 on success; sets s->fatal_status and returns -1 on OOM. */
-int op_fork_detach(UStrand *s, UVM *vm, uint32_t instr);
+int urbi_vm_op_fork_detach(UStrand *s, UVM *vm, uint32_t instr);
 
 /* OP_FORK_JOIN handler.
  * ABC: A = closure_reg, B = child_handle_reg.  C is reserved (encoded as 0).
  * Spawns child from R[A]; stores child handle in R[B].
  * Returns 0 on success; -1 on OOM (strand fatal). */
-int op_fork_join(UStrand *s, UVM *vm, uint32_t instr);
+int urbi_vm_op_fork_join(UStrand *s, UVM *vm, uint32_t instr);
 
 /* OP_JOIN_WAIT handler.
  * ABC: A = child_handle_reg.  B and C are reserved (encoded as 0).
  * If child is already DEAD: returns 0 (parent continues).
  * Otherwise: threads parent onto child->joiners_head, blocks parent with
  * sched_strand_block(REASON_JOIN), and returns 1 (caller must goto exit_strand). */
-int op_join_wait(UStrand *s, UVM *vm, uint32_t instr);
+int urbi_vm_op_join_wait(UStrand *s, UVM *vm, uint32_t instr);
 
 /* Called at every strand-DEAD transition.
  * Walks s->joiners_head chain via wait_next and calls
  * sched_strand_make_runnable() for each blocked joiner.
  * Idempotent (clears joiners_head after walking).
  * Not ISR-safe; must be called from the dispatch loop or step driver. */
-void fork_wake_joiners(UStrand *s, UVM *vm);
+void urbi_vm_fork_wake_joiners(UStrand *s, UVM *vm);
 
 #ifdef __cplusplus
 }

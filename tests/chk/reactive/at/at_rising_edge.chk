@@ -9,7 +9,7 @@
 # urbi_step after each urbi_vm_run so the counter is updated before the next
 # line executes.
 #
-# The nested function pattern (trigger()) is required: watcher_eval_dirty
+# The nested function pattern (trigger()) is required: urbi_vm_watcher_eval_dirty
 # fires at non-top-frame OP_RET safepoints, which a nested call provides.
 # A bare top-level assignment does not trigger the safepoint path.
 

@@ -277,7 +277,7 @@ UProto *uproto_alloc_nested(UProto *root, UProto *parent_proto) {
     /* v0.8.1 Variant B Option (a) per spec §3.5: slot-implicit refcount dropped.
      * The nested[] slot's reachability is structural (root owns nested[]);
      * no independent refcount needed.  Closures bump root->refcount via
-     * uproto_root_of() at vm_alloc_closure; that is the only accounting needed. */
+     * uproto_root_of() at urbi_vm_alloc_closure; that is the only accounting needed. */
     proto->refcount = 0U;
 
     /* v0.8.5: assign DFS pre-order serial.  Root's ic_index = 0 was set at

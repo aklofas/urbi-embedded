@@ -285,7 +285,7 @@ uproto_root_of(UProto *proto)
  * silent inline helpers omitted.
  *
  * Two logical owner families:
- *   Closure-bind  — acquired in vm_alloc_closure; released in uclosure_destroy.
+ *   Closure-bind  — acquired in urbi_vm_alloc_closure; released in uclosure_destroy.
  *   Strand-bind   — acquired at strand creation (urbi_strand_create_for_module,
  *                   uop_fork, uvm_run transient); released in ustrand_destroy /
  *                   uchunk_strand early-discharge path.
@@ -300,14 +300,14 @@ uproto_root_of(UProto *proto)
 /* Owner tag — one value per logical site identified in runtime-invariants F3.
  * Index range 0-15 maps to g_per_owner_count[] in uproto_ref.c. */
 typedef int urbi_proto_ref_owner_t;
-#define URBI_PROTO_REF_OWNER_CLOSURE  0   /* vm_alloc_closure / uclosure_destroy */
+#define URBI_PROTO_REF_OWNER_CLOSURE  0   /* urbi_vm_alloc_closure / uclosure_destroy */
 #define URBI_PROTO_REF_OWNER_STRAND   1   /* urbi_strand_create_for_module */
 #define URBI_PROTO_REF_OWNER_FORK     2   /* uop_fork child spawn */
 #define URBI_PROTO_REF_OWNER_TRANSIENT 3  /* uvm_run transient strand */
 /* 4-15 reserved for future owner sites */
 
 /* Closure-bind: long-lived ref held for the lifetime of a UClosure cell.
- * acquire: call before publishing the closure (e.g. in vm_alloc_closure).
+ * acquire: call before publishing the closure (e.g. in urbi_vm_alloc_closure).
  * release: call in the GC finalizer uclosure_destroy. */
 void urbi_proto_ref_acquire(UProto *p, urbi_proto_ref_owner_t owner);
 void urbi_proto_ref_release(UProto *p, urbi_proto_ref_owner_t owner);

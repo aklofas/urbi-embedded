@@ -9,7 +9,7 @@
 # cond reads, leaving the watcher dirty for the next safepoint).
 # whenever fires at every safepoint visit where cond is truthy
 # (fired = 3); at would fire only on the false→true transition (fired = 1).
-# Confirms UWATCHER_WHENEVER level-trigger path in watcher_eval_dirty
+# Confirms UWATCHER_WHENEVER level-trigger path in urbi_vm_watcher_eval_dirty
 # (uwatcher_eval.c).
 # See also: at_rising_edge.chk for the edge-trigger contrast.
 

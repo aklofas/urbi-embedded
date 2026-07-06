@@ -324,7 +324,7 @@ UTEST(realm_destroy_cascade_watchers)
  *
  * Install a watcher; push it to pending_onleave_queue; set dirty count.
  * Verify that drain_pending_onleave_queue runs the onleave path BEFORE
- * watcher_eval_dirty would run (i.e. drain clears in_watcher_eval correctly,
+ * urbi_vm_watcher_eval_dirty would run (i.e. drain clears in_watcher_eval correctly,
  * leaving it available for a subsequent eval pass). */
 UTEST(realm_destroy_drain_ordering)
 {
@@ -352,7 +352,7 @@ UTEST(realm_destroy_drain_ordering)
 
     /* Run drain — must leave in_watcher_eval false when it returns.
      * After drain completes, watcher_dirty_count is unchanged (drain does not
-     * call watcher_eval_dirty; that's the scheduler's job after drain). */
+     * call urbi_vm_watcher_eval_dirty; that's the scheduler's job after drain). */
     drain_pending_onleave_queue(&vm);
     UASSERT(!vm.watchers->in_eval);
     UASSERT(vm.pending_onleave_head == NULL);
@@ -360,7 +360,7 @@ UTEST(realm_destroy_drain_ordering)
     UASSERT_EQ((unsigned)vm.watchers->dirty_count, 3U);
 
     /* Now eval can run cleanly. */
-    watcher_eval_dirty(&vm);
+    urbi_vm_watcher_eval_dirty(&vm);
     UASSERT_EQ((unsigned)vm.watchers->dirty_count, 0U);
     UASSERT(!vm.watchers->in_eval);
 

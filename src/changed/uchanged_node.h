@@ -153,7 +153,7 @@ urbi_emit_slot_change_if_subscribed(struct UVM    *vm,
  *
  * Drain the per-VM deferred slot-change ring (filled by re-entrant writes
  * during a sync slot-change body).  Called at every safepoint BEFORE
- * watcher_eval_dirty, per spec §5.4 ordering.
+ * urbi_vm_watcher_eval_dirty, per spec §5.4 ordering.
  * No-op when the ring is empty (head == tail) or NULL (OOM at init). */
 void urbi_drain_deferred_slot_changes(struct UVM *vm);
 

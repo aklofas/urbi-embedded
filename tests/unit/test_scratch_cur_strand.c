@@ -2,7 +2,7 @@
 /* test_scratch_cur_strand — refactor-3 VM-10 + SCHED-10 (scratch half).
  *
  * run_on_scratch_core (src/runtime/uscratch.c) drives a nested
- * dispatch_loop_until_yield for watcher conds, at-sync bodies, onleave
+ * urbi_vm_dispatch_loop_until_yield for watcher conds, at-sync bodies, onleave
  * handlers, getter/setter bodies, and event sync-emit bodies.  Pre-fix it
  * never set vm->cur_strand to the scratch strand and never preserved the
  * embedder's urbi_step budget:
@@ -14,7 +14,7 @@
  *   unwinds an uncaught TypeError it never raised (or the throw is lost
  *   if no safepoint intervenes before the outer strand dies).
  *
- *   SCHED-10: dispatch_loop_until_yield overwrites
+ *   SCHED-10: urbi_vm_dispatch_loop_until_yield overwrites
  *   vm->step_budget_remaining at entry, so a scratch eval mid-urbi_step
  *   resets the embedder's budget to URBI_SCRATCH_BUDGET_OPS leftovers.
  *
@@ -155,7 +155,7 @@ UTEST(slot_fault_lands_on_scratch_strand_not_outer)
     memset(&module, 0, sizeof(module));
 
     /* Capture a function-literal closure whose body faults on an
-     * unresolved slot (vm_getslot_slow → slot_throw_or_fatal). */
+     * unresolved slot (urbi_vm_getslot_slow → slot_throw_or_fatal). */
     UValue fn = {0};
     int rc = utest_e2e_compile_and_run_with_module(
         &vm, &arena, &module, "function() { Realm.missing_obj }", &fn);
@@ -255,7 +255,7 @@ UTEST(step_budget_preserved_across_scratch_run)
     UASSERT_EQ(42, (int)out.v.i);
 
     /* Post-fix: budget untouched (pre-fix: overwritten with
-     * URBI_SCRATCH_BUDGET_OPS leftovers by dispatch_loop_until_yield). */
+     * URBI_SCRATCH_BUDGET_OPS leftovers by urbi_vm_dispatch_loop_until_yield). */
     UASSERT_EQ(7777, (long long)vm.step_budget_remaining);
 
     /* Post-fix: cur_strand restored to the caller's value (NULL here). */

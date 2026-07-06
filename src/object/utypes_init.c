@@ -429,7 +429,7 @@ walk_uclosure(struct UVM *vm, void *payload,
  * vm->rescued_protos so the vm_destroy sweep can free it.
  *
  * Pairs with the uproto_refcount_inc(uproto_root_of(proto)) call in
- * vm_alloc_closure (uvm_closure.c).  No memory is freed here — the GC sweep
+ * urbi_vm_alloc_closure (uvm_closure.c).  No memory is freed here — the GC sweep
  * reclaims the closure cell.  NULL-safe (proto may be NULL for native stdlib
  * closures registered via urbi_make_native_closure).
  *

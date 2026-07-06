@@ -107,7 +107,7 @@ struct UReplState;   /* forward-decl; full type in repl/urepl_state.h */
  *     defer-site (slot-write barrier inside a sync slot-change body)
  *       --> next safepoint
  *       --> urbi_drain_deferred_slot_changes (clears head..tail)
- *       --> watcher_eval_dirty
+ *       --> urbi_vm_watcher_eval_dirty
  *
  * Storage: heap-allocated ring buffer, one urbi_vm-init calloc, freed in
  * urbi_vm_destroy.  NOT GC-managed at any tier — the cell entries are
@@ -160,7 +160,7 @@ typedef struct UOpOverloadICEntry {
                                       instance-local operator shadowing the class
                                       slot transitions the instance shape).
                                       Receivers are always UVAL_OBJECT here
-                                      (vm_arith_method_fallback short-circuits
+                                      (urbi_vm_arith_method_fallback short-circuits
                                       non-objects), so recv->shape is valid. */
     uintptr_t        recv_protos;  /* receiver protos word at fill (polymorphic-site
                                       key: pins the proto-list identity.  Shape alone
@@ -529,7 +529,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UWatcher *active_watchers_head;
 
     /* --- spec #3 §7.1: currently-dispatching strand ---
-     * Set to the running strand by urbi_step before dispatch_loop_until_yield,
+     * Set to the running strand by urbi_step before urbi_vm_dispatch_loop_until_yield,
      * cleared after.  Required by c_event_waituntil to locate the caller strand.
      * NULL when no strand is dispatching (between urbi_step slices). */
     struct UStrand *cur_strand;
@@ -909,7 +909,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
    Returns the number of opcodes consumed.  s->vm must be non-NULL.
    Caller must have initialised s->stack, s->R, s->pc, s->pc_base,
    s->cur_consts, s->root_proto, and s->state = USTRAND_STATE_RUNNING. */
-uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
+uint64_t urbi_vm_dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
 
 /* Run module to completion. On URBI_OK (0), *out receives the RET value. On
    error, vm->last_error and vm->last_errmsg are populated and *out is
@@ -951,7 +951,7 @@ const char *uvm_error_name(int code);
 /* Heapify all open upvalue cells whose stack address is >= threshold.
  * v0.8.4 Step C-3: closed_list parameter removed; UUpvalCell is GC-managed.
  * Called by OP_CLOSE, OP_RET, and urbi_unwind. */
-void vm_close_upvalues(struct UStrand *s, const UValue *threshold);
+void urbi_vm_close_upvalues(struct UStrand *s, const UValue *threshold);
 
 #ifdef __cplusplus
 }

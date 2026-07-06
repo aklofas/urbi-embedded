@@ -129,7 +129,7 @@ bool urbi_emit_reserve_global_slot(UEmitter *e);
 bool uemit_open_block(UEmitter *e, bool is_loop);
 bool uemit_close_block(UEmitter *e);
 void uemit_emit_loop_back_close(UEmitter *e);
-int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
+int urbi_vm_find_or_install_upvalue(UEmitter *e, UFuncState *fs,
                             const char *name, int name_len);
 
 /* --- Sentinels and biases shared across emit TUs --- */

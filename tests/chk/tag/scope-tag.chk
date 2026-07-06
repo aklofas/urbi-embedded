@@ -10,7 +10,7 @@
 #   global). The fixture uses legacy bare-name `var t = scopeTag;` which
 #   requires the OGET dispatch path to wrap native closures as
 #   auto-invoked getters; that bridge defers v1.x (see workspace-root
-#   design-risks v0.10.10-A: vm_dispatch_getter is bytecode-only and
+#   design-risks v0.10.10-A: urbi_vm_dispatch_getter is bytecode-only and
 #   segfaults on native closures because proto=NULL). The fixture also
 #   uses `every(1s)` reactive looping + `,` separator for concurrent
 #   observation over a 3.5s timeline, both requiring the T39 chk driver.

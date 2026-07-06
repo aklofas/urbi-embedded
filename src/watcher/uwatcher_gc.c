@@ -101,7 +101,7 @@ urbi_gc_watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
 
 #ifdef URBI_DEBUG
 /* urbi_watcher_check_invariants: URBI_DEBUG-only bidirectional pointer check.
- * Called at watcher_eval_dirty entry to validate that every active watcher
+ * Called at urbi_vm_watcher_eval_dirty entry to validate that every active watcher
  * with a live body_strand satisfies:
  *   1. body_strand->watcher_body_owner == w  (back-pointer consistency).
  *   2. body_strand is reachable on w->realm->strands_head  (GC walker contract).

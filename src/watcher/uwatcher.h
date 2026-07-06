@@ -177,7 +177,7 @@ typedef struct UWatcher {
 
     /* === Identity + closures === */
     struct UTag  *owning_tag;             /* 8 B  pin to tag scope */
-    UClosure     *condition;              /* 8 B  evaluated each watcher_eval_dirty */
+    UClosure     *condition;              /* 8 B  evaluated each urbi_vm_watcher_eval_dirty */
     UClosure     *body;                   /* 8 B  spawned per fire (M5) */
     UClosure     *onleave;               /* 8 B  NULL if no onleave clause */
 
@@ -250,15 +250,15 @@ void urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w);
  * tests inject specific values); otherwise dispatches real bytecode via
  * `urbi_run_closure_on_scratch` (src/runtime/uscratch.c).  Eval-time throws
  * fail-soft as nil — the watcher does not fire this pass and the caller
- * (watcher_eval_dirty, which is void) cannot propagate.  Returns nil when
+ * (urbi_vm_watcher_eval_dirty, which is void) cannot propagate.  Returns nil when
  * `w->condition == NULL` (no-condition watchers fire on dirty-mark only).
  * Per spec §6.4. */
 UValue invoke_condition_closure(struct UVM *vm, struct UWatcher *w);
 
-/* watcher_eval_dirty: walk active_watchers_head, evaluate each condition, and
+/* urbi_vm_watcher_eval_dirty: walk active_watchers_head, evaluate each condition, and
  * call spawn_body_coroutine on edge (AT/AT_SYNC) or level (WHENEVER) fire.
  * Called from the safepoint when vm->watchers->dirty_count > 0. Per spec §6.2. */
-void   watcher_eval_dirty(struct UVM *vm);
+void   urbi_vm_watcher_eval_dirty(struct UVM *vm);
 
 /* === Pending-onleave queue ===
  *
@@ -269,7 +269,7 @@ void   watcher_eval_dirty(struct UVM *vm);
  *
  * drain_pending_onleave_queue: drain the FIFO in FIFO order, running onleave
  *   handlers and calling urbi_watcher_unregister_internal for each entry.
- *   Called from the dispatcher safepoint BEFORE watcher_eval_dirty. */
+ *   Called from the dispatcher safepoint BEFORE urbi_vm_watcher_eval_dirty. */
 void pending_onleave_queue_push(struct UVM *vm, struct UWatcher *w);
 void drain_pending_onleave_queue(struct UVM *vm);
 
@@ -286,8 +286,8 @@ void drain_pending_onleave_queue(struct UVM *vm);
 void   do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w,
                                const void *fire_context);
 
-/* spawn_body_coroutine: eval-pass entry called by watcher_eval_dirty.
- * Precondition: w->body != NULL (watcher_eval_dirty only calls this when body
+/* spawn_body_coroutine: eval-pass entry called by urbi_vm_watcher_eval_dirty.
+ * Precondition: w->body != NULL (urbi_vm_watcher_eval_dirty only calls this when body
  * is set; body-less watchers use vm->test_hooks->watcher_fire directly in
  * eval).  In URBI_DEBUG builds, asserts: in_watcher_eval == 1, AT/WHENEVER
  * mode, ACTIVE, no PENDING_UNREGISTER, body and realm non-NULL. */
@@ -328,7 +328,7 @@ void   urbi_gc_watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void
  * Validates that every active watcher with body_strand != NULL has:
  *   1. body_strand->watcher_body_owner == w.
  *   2. body_strand on w->realm->strands_head.
- * Called at watcher_eval_dirty entry.  spec #1 §7.2. */
+ * Called at urbi_vm_watcher_eval_dirty entry.  spec #1 §7.2. */
 void   urbi_watcher_check_invariants(struct UVM *vm);
 #endif /* URBI_DEBUG */
 

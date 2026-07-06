@@ -10,7 +10,7 @@
  * it is a heap-use-after-free.
  *
  * Pre-v0.7.3 + v0.8.0 refcount mechanisms: ASan heap-use-after-free in
- * dispatch_loop_until_yield at the UProto pointer dereference.
+ * urbi_vm_dispatch_loop_until_yield at the UProto pointer dereference.
  *
  * Post-v0.7.3 (UProto refcount + rescue) + v0.8.0 (UProto refcount +
  * deferred destroy): outcome TBD — this test classifies it.
@@ -53,7 +53,7 @@ drain_to_quiescent_uaf(UVM *vm)
  * holds a UClosure whose UProto pointer lives in the freed module's
  * nested[] array.  Firing the at-handler dispatches through that pointer.
  *
- * Pre-fix: ASan heap-use-after-free in dispatch_loop_until_yield.
+ * Pre-fix: ASan heap-use-after-free in urbi_vm_dispatch_loop_until_yield.
  * Post-fix: clean execution (UProto refcount rescue keeps proto alive). */
 UTEST(class_method_at_handler_after_module_destroy)
 {

@@ -72,7 +72,7 @@ uwatcher_pool_alloc(struct UVM *vm)
     /* Reset eval-pass generation stamp.  A recycled slot retains the stamp
      * from its previous life; if the VM gen counter has since cycled back to
      * that value the new watcher would be skipped on its very first pass.
-     * 0 is the sentinel "never stamped" value — watcher_eval_dirty skips
+     * 0 is the sentinel "never stamped" value — urbi_vm_watcher_eval_dirty skips
      * zero when incrementing vm->watchers->eval_pass_gen, so cur_pass_gen
      * is always >= 1 and a freshly allocated slot (stamp=0) is never equal
      * to it.  (slab-zeroed slots on first use are already safe; this clears
@@ -323,11 +323,11 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
  *
  * Called by the write barriers in ugc_incremental.h whenever a cell with
  * bit-6 set (UGC_HAS_WATCHER_OBSERVER) is written.  Increments the dirty
- * counter so the scheduler knows to call watcher_eval_dirty on the next
+ * counter so the scheduler knows to call urbi_vm_watcher_eval_dirty on the next
  * safepoint turn.
  *
  * Per spec §5.5: walk-all eval at safepoint; identifying the specific cell or
- * slot key is unnecessary — watcher_eval_dirty visits every active watcher
+ * slot key is unnecessary — urbi_vm_watcher_eval_dirty visits every active watcher
  * whose read-set might be affected.
  *
  * ISR re-entry guard (WATCH-009): observer_dirty mutates vm->watchers->dirty_count

@@ -594,7 +594,7 @@ UTEST(unwind_cancel_propagates_through_call_frame)
    A TRY_FRAME with FLAG_HAS_FINALLY but not FLAG_HAS_CATCH should run the
    finally body and then continue propagating the THROW.
    We exercise this via a pure-finally TRY_FRAME with handler_pc=3 (dummy
-   instr is OP_RESUME, the cleanup-body terminator — dispatch_loop_until_yield
+   instr is OP_RESUME, the cleanup-body terminator — urbi_vm_dispatch_loop_until_yield
    sees no THROW from the body and returns with cleanup_body_done set;
    run_cleanup_with_replace restores the original THROW).
    After the finally frame: no further handler → fatal escalation. */
@@ -618,7 +618,7 @@ UTEST(unwind_throw_propagates_past_try_with_only_finally)
     e->owning_tag     = NULL;
     e->catch_pattern  = NULL;
 
-    /* Running state required so dispatch_loop_until_yield can execute. */
+    /* Running state required so urbi_vm_dispatch_loop_until_yield can execute. */
     s.state = USTRAND_STATE_RUNNING;
 
     UValue throwval;
@@ -859,7 +859,7 @@ UTEST(unwind_return_processes_same_frame_cleanups)
     cf->result_dest_reg = 2;
     s.R = s.stack + 3;   /* callee's register window */
 
-    /* User-owned tags so vm_tag_scope_teardown leaves them alive for the
+    /* User-owned tags so urbi_vm_tag_scope_teardown leaves them alive for the
      * post-walk assertions (anonymous scopes destroy theirs at teardown). */
     UTag *tag_caller = utag_create(&vm);
     UTag *tag_callee = utag_create(&vm);
@@ -941,7 +941,7 @@ UTEST(unwind_return_processes_same_frame_cleanups)
  *
  * Synthetic ambient entries (pushed by urbi_strand_attach_ambient_tags for
  * realm->tag / outer fork-chain tags) have handler_pc=0.  Without the fix,
- * the TAG_SCOPE absorb arm would call vm_tag_scope_teardown (triggering
+ * the TAG_SCOPE absorb arm would call urbi_vm_tag_scope_teardown (triggering
  * shared-tag leave events and utag_destroy on the still-live shared tag) and
  * then set pc = pc_base + 0 (thunk restart), "absorbing" the stop.
  *
