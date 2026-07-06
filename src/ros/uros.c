@@ -295,21 +295,24 @@ ros_client_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
  *
  * urbi_ros_invoke_handler (B7): synchronously run the stored urbiscript handler
  * closure with the request object as its first argument (R[0]) on a transient
- * scratch frame, and take its return value as the response object.  Returns 0
- * on a clean return, -1 if the handler is not a closure, threw, or the VM is
- * unavailable. */
+ * scratch frame, and take its return value as the response object.  Returns
+ * URBI_OK on a clean return, URBI_ERR_INVALID_ARG if the handler is not a
+ * closure or the VM is unavailable, or the propagated URBI_ERR_* code if the
+ * invocation threw or failed. */
 static int
 urbi_ros_invoke_handler(struct UVM *vm, UValue handler,
                         UValue req_obj, UValue *resp_obj)
 {
-    if (vm == NULL || handler.kind != (uint8_t)UVAL_CLOSURE) return -1;
+    if (vm == NULL || handler.kind != (uint8_t)UVAL_CLOSURE)
+        return URBI_ERR_INVALID_ARG;
     UValue result = urbi_make_nil();
     int    threw  = 0;
     int rc = urbi_run_closure_on_scratch_with_payload(
                  vm, (UClosure *)handler.v.p, req_obj, &result, &threw);
-    if (rc != 0 || threw) return -1;
+    if (rc != URBI_OK) return rc;
+    if (threw) return URBI_ERR_UNCAUGHT_THROW;
     *resp_obj = result;
-    return 0;
+    return URBI_OK;
 }
 
 static int
@@ -324,7 +327,7 @@ bridge_serve(void *ud, uint32_t svc_handle, UValue req_obj, UValue *resp_obj)
                                            req_obj, resp_obj);
         }
     }
-    return -1;
+    return URBI_ERR_SLOT_NOT_FOUND;
 }
 
 /* === ros.service(name, type, closure) ===
