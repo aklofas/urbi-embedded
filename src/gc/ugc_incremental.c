@@ -253,9 +253,9 @@ drain_gray(UVM *vm, size_t budget)
         if (t != NULL && t->walk_payload != NULL) {
             /* Payload starts immediately after UCell header.
              * This is the precise-mark path: 15 concrete types are registered
-             * (UClosure, UUpvalCell, UObject, UShape, USlotArray, USlotHandle,
-             * UChunkInstance, UTag, UEvent, UWatcher, UProtoInstanceArr,
-             * URealm, UProtoRoot, UProtoFix, UProtoInst). */
+             * (UObject, Closure, UTag, UProtos, UShape, UProps, USlotHandle,
+             * UChunkInstance, UProtoInstance, UShapeMap, UPropsTable,
+             * USlotArray, UEvent, UChangedNode, UpvalCell). */
             t->walk_payload(vm, (void *)(cell + 1), mark_root_callback, vm);
         }
 
