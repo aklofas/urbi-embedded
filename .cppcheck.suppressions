@@ -48,8 +48,8 @@ unusedLabelConfiguration:src/vm/uvm.c
 // collide with the "no stamp" sentinel 0.  Guard is live correctness on
 // 64-bit hosts and required for stamp-uniqueness during DFS traversal.
 // Verified 2026-05-08 against src/vm/uvm.h:128 (uint64_t lookup_id field).
-knownConditionTrueFalse:src/object/uobject_lookup.c:86
-knownConditionTrueFalse:src/object/uobject_lookup.c:124
+knownConditionTrueFalse:src/object/uobject_lookup.c:82
+knownConditionTrueFalse:src/object/uobject_lookup.c:120
 knownConditionTrueFalse:src/object/uobject_slot.c:728
 
 // audit:CPPCHK-011 (Phase 19) — pattern_matches() is an M3 catch-everything
@@ -61,7 +61,9 @@ knownConditionTrueFalse:src/object/uobject_slot.c:728
 // CPPCHK-001 (defer:M6) is the same finding under a different ID — filed
 // before CPPCHK-011 from a different cppcheck pass and resolved transitively
 // when Phase 19 closed CPPCHK-011.  Both close at v0.6.1-stdlib (Phase 12).
-knownConditionTrueFalse:src/runtime/uunwind.c:313
+// Line-pinned entry knownConditionTrueFalse:src/runtime/uunwind.c:313 removed
+// (v0.13.6 comment-sweep shifted pattern_matches call-site; file-wide entry at
+// knownConditionTrueFalse:src/runtime/uunwind.c below covers it).
 
 // audit:CPPCHK-012 (Phase 19, closed Phase 9) — constParameterCallback
 // previously fired on event_sync_emit_method in uevent_native.c when
@@ -191,15 +193,15 @@ arrayIndexOutOfBoundsCond:src/runtime/umacros.h
 // without breaking every native-method registration site.
 constParameterPointer:src/stdlib/regexp.c
 
-// audit:v0.12.0-ros — src/ros/uros.c native-method callbacks
-// (ros_init_method, ros_msg_method, ros_subscribe_method, ros_client_method,
-// ros_service_method, ros_publisher_method, ros_inject_int32_method) expose
-// UValue *args via the urbi_native_method_fn typedef.  cppcheck flags each
-// as constParameterCallback, but const-qualifying args would cascade into
-// every native-method registration site.  Same rationale as Phase 5/6/7/9
-// above — the function-pointer signature is pinned and cannot be changed
-// without breaking the public C API.
-constParameterCallback:src/ros/uros.c
+// audit:v0.12.0-ros (retired v0.13.6) — constParameterCallback:src/ros/uros.c
+// was added at v0.12.0 under the assumption cppcheck would flag the
+// native-method callbacks with the constParameterCallback check ID.  In
+// practice cppcheck emits constParameterPointer for these sites (not
+// constParameterCallback); the entry never matched and cppcheck reports it
+// as unmatchedSuppression.  The constParameterPointer suppression below
+// (audit:v0.12.0-ros-R1 / constParameterPointer:src/ros/uros.c) already covers
+// all live findings; this entry is deleted rather than corrected to avoid a
+// duplicate.
 
 // audit:v0.12.0-ros-R1 — src/ros/uros.c urbi_ros_shutdown(vm) uses `vm` only
 // for the owner-equality check (b->owner != vm); cppcheck suggests
@@ -217,7 +219,7 @@ constParameterPointer:src/ros/uros.c
 // because cppcheck does not model uint8_t wrap-around: when the field holds
 // 255 the cast truncates 256 to 0, making the check live.  The guard is the
 // two-fix for the pool-recycle stamp-collision bug (F2 in v0.13.4 review).
-knownConditionTrueFalse:src/watcher/uwatcher_eval.c:194
+knownConditionTrueFalse:src/watcher/uwatcher_eval.c:193
 
 // audit:v0.13.6-namespace-day — src/emit/uemit_internal.h patch_fwd_jmp_here(UEmitter *e, ...)
 // urbi_emit_patch_instr() mutates the emitter's instruction buffer; cppcheck cannot see through
