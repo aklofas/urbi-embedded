@@ -29,8 +29,8 @@ function outer() {
 
 4. Inside `inner`, the expression `x` triggers `resolve_identifier("x")`.
 5. `inner`'s local table has no entry for `x`. The resolver calls
-   `find_or_install_upvalue(inner_state, "x")`.
-6. `find_or_install_upvalue` walks to the parent (`outer`'s `UFuncState`)
+   `urbi_vm_find_or_install_upvalue(inner_state, "x")`.
+6. `urbi_vm_find_or_install_upvalue` walks to the parent (`outer`'s `UFuncState`)
    and calls `local_lookup("x")` there — finds `outer.actvars[0]`.
 7. It marks `outer.actvars[0].is_captured = true` and sets
    `outer`'s enclosing block's `has_captured = true`.
@@ -63,10 +63,10 @@ outer.actvars[0]  →  OP_CLOSE R0   (emitted on outer's block exit)
 ## Cascade — upvalue of upvalue
 
 If `inner` itself contains a further-nested function `innermost` that
-captures `x`, `find_or_install_upvalue` propagates the upvalue chain:
+captures `x`, `urbi_vm_find_or_install_upvalue` propagates the upvalue chain:
 
 - `innermost` cannot find `x` locally.
-- It calls `find_or_install_upvalue(inner_state, "x")`.
+- It calls `urbi_vm_find_or_install_upvalue(inner_state, "x")`.
 - `inner` already has `upvalues[0]` for `x` with `in_stack=true`
   (while `outer`'s block is still open) or `in_stack=false` (after
   `outer`'s block has closed and the cell is on the heap).
@@ -83,7 +83,7 @@ captures `x`, `find_or_install_upvalue` propagates the upvalue chain:
 | Component | Location |
 |---|---|
 | `UFuncState` struct definition | `src/emit/uemit.h` |
-| `find_or_install_upvalue` | `src/emit/uemit_funcstate.c` |
+| `urbi_vm_find_or_install_upvalue` | `src/emit/uemit_funcstate.c` |
 | Block open / close | `uemit_open_block`, `uemit_close_block` in `src/emit/uemit_stmt.c` |
 | Back-edge close (while loops) | `uemit_emit_loop_back_close` in `src/emit/uemit_funcstate.c` |
 | `OP_CLOSE` runtime | `src/vm/uvm_closure.c` — closes all open upvalue cells ≥ R[A] |

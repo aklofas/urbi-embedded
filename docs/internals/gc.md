@@ -81,7 +81,7 @@ There are three barrier surfaces, all defined as `static inline` in
   variant `urbi_gc_slot_pre_store(vm, parent, key, child)` exists for
   callers whose store target is not a `UValue *` or whose store already
   happened; those callers perform the actual store themselves. Both combine
-  the GC barrier with the watcher dirty-set hook (`observer_dirty`) when
+  the GC barrier with the watcher dirty-set hook (`urbi_watcher_observer_dirty`) when
   `UGC_HAS_WATCHER_OBSERVER` is set on the parent. The post-store deferred
   slot-change emit is also wired here when bit 7 is set.
 - `urbi_gc_register_write(vm, strand, reg_idx, child)` — strand register
@@ -284,7 +284,7 @@ literals, and every result of runtime `String + String` concatenation (the
 `OP_ADD` atom fast path interns each result) — lands in the per-VM intern
 table (`src/value/uintern.c`) as a raw `vm->alloc_fn` allocation that is freed
 only at `urbi_vm_destroy`. There is no unintern and the collector never scans
-the table for dead entries (`intern_table_walk_roots` is a no-op by design);
+the table for dead entries (`urbi_gc_intern_table_walk_roots` is a no-op by design);
 a string-building loop therefore grows RAM monotonically for the life of the
 VM. Because the table allocates via the raw allocator rather than
 `urbi_gc_alloc`, intern growth also never triggers a collection (and

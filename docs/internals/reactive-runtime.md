@@ -95,7 +95,7 @@ Bits 0x20 / 0x40 / 0x80 are **available for reuse** — they held
 `URBI_WATCHER_OWNS_COND` / `_OWNS_BODY` / `_OWNS_ONLEAVE` until v0.8.4
 Step C-3, when the manual ownership model was deleted in favour of
 GC-managed closure lifetime. Watcher closures are now roots yielded by
-`watcher_table_walk_roots`; there is no per-closure ownership bit.
+`urbi_gc_watcher_table_walk_roots`; there is no per-closure ownership bit.
 
 ### Refire queue
 
@@ -105,12 +105,12 @@ initialised to `URBI_WATCHER_REFIRE_QUEUE_DEFAULT` = 15) replaced a single
 already in flight and `exhaust_policy == URBI_EXHAUST_QUEUE`, incoming fires
 increment the counter up to the cap; on body completion,
 `urbi_watcher_body_completed` decrements by one and calls
-`respawn_body_coroutine` if the counter is still positive.
+`urbi_watcher_respawn_body_coroutine` if the counter is still positive.
 
 ### Install
 
-`install_watcher_runtime` (`src/watcher/uwatcher_install.c`) runs as a
-single linear sequence: re-entry guard → `resolve_owning_tag` → arm the
+`urbi_watcher_install_watcher_runtime` (`src/watcher/uwatcher_install.c`) runs as a
+single linear sequence: re-entry guard → `urbi_watcher_resolve_owning_tag` → arm the
 `OP_GETSLOT` trace probe → run the cond closure on the scratch frame →
 check overflow / cond-throw → pool-alloc → wire fields → mark
 `UGC_HAS_WATCHER_OBSERVER` (bit 6) on each traced cell → tail-append to
@@ -118,7 +118,7 @@ check overflow / cond-throw → pool-alloc → wire fields → mark
 Tail-append (not prepend) preserves the determinism contract: install
 order equals eval order.
 
-`install_at_event_runtime` is the thinner sibling for
+`urbi_watcher_install_at_event_runtime` is the thinner sibling for
 `AT_EVENT` / `AT_EVENT_SYNC` / `WHENEVER_EVENT`. It skips the trace probe
 (events fire on emit, not on slot writes) and links onto
 `event->at_watchers_head` instead of `vm->active_watchers_head`.
@@ -131,19 +131,19 @@ for `AT`/`WHENEVER` watchers; `WAITUNTIL` is exempt).
 The `_NO_OBSERVABLE_CELLS` result closes reactive audit **Finding 1** (the
 legacy `whenever (e?)` silently installed a no-op cond watcher with an empty
 read-set). Now `whenever (e?)` routes to `OP_WHENEVER_EVENT_INSTALL` and any
-`AT`/`WHENEVER` watcher reaching `install_watcher_runtime` with an empty
+`AT`/`WHENEVER` watcher reaching `urbi_watcher_install_watcher_runtime` with an empty
 read-set is rejected as a programming error.
 
 ### Fire (eval pass)
 
-`watcher_eval_dirty` (`src/watcher/uwatcher_eval.c`) walks
+`urbi_vm_watcher_eval_dirty` (`src/watcher/uwatcher_eval.c`) walks
 `active_watchers_head` whenever `vm->watcher_dirty_count > 0` at a
 safepoint. For each non-pending watcher it computes
 `rising = truthy(new) && !truthy(old)` and dispatches by mode:
 
-- `AT` rising — `spawn_body_coroutine` (async strand spawn).
+- `AT` rising — `urbi_watcher_spawn_body_coroutine` (async strand spawn).
 - `AT_SYNC` rising — `invoke_body_inline` (synchronous scratch frame; no yield).
-- `WHENEVER` truthy — `spawn_body_coroutine` every dirty pass.
+- `WHENEVER` truthy — `urbi_watcher_spawn_body_coroutine` every dirty pass.
 - `WAITUNTIL` rising — wake `waiter_strand`, unregister self.
 
 Falling-edge `onleave` runs inline via `invoke_onleave_inline` when
@@ -151,18 +151,18 @@ Falling-edge `onleave` runs inline via `invoke_onleave_inline` when
 
 ### Drain
 
-`drain_pending_onleave_queue` (`src/watcher/uwatcher_drain.c`) runs at
-the safepoint *before* `watcher_eval_dirty`. The pending FIFO is fed by
-`pending_onleave_queue_push`, which transfers a watcher off the active
+`urbi_watcher_drain_pending_onleave_queue` (`src/watcher/uwatcher_drain.c`) runs at
+the safepoint *before* `urbi_vm_watcher_eval_dirty`. The pending FIFO is fed by
+`urbi_watcher_pending_onleave_queue_push`, which transfers a watcher off the active
 list and the tag member chain when its owning tag stops. Drain pops in
 FIFO order, runs `onleave` if present, and calls
 `urbi_watcher_unregister_internal`. Watchers whose body strand is still
 alive are deferred to the next safepoint.
 
-**CLOSED W3/v0.10.2 (Finding 2)** — `pending_onleave_queue_push` now
+**CLOSED (v0.10.2)** — `urbi_watcher_pending_onleave_queue_push` now
 synchronously calls `uevent_at_watchers_remove` for AT_EVENT, AT_EVENT_SYNC,
 and WHENEVER_EVENT before appending to the pending-onleave FIFO.  This closes
-the UAF window where `c_event_emit_async`/`_sync` would dispatch a
+the UAF window where `urbi_event_emit_async`/`_sync` would dispatch a
 logically-dead AT_EVENT watcher.  Defence-in-depth
 `URBI_WATCHER_PENDING_UNREGISTER` checks remain in both emit paths.
 
@@ -200,12 +200,12 @@ on `;` and reschedule as before.
 The five sync sites in the reactive runtime that route through this
 primitive:
 
-1. `install_watcher_runtime` — install-time cond eval.
-2. `invoke_condition_closure` — eval-time cond eval.
+1. `urbi_watcher_install_watcher_runtime` — install-time cond eval.
+2. `urbi_watcher_invoke_condition_closure` — eval-time cond eval.
 3. `invoke_body_inline` — `AT_SYNC` body fire.
 4. `invoke_onleave_inline` and `run_watcher_onleave` — falling-edge
    `onleave` (eval) and tag-stop drain `onleave` (drain).
-5. `run_event_body_on_scratch` — `AT_EVENT_SYNC` body on `c_event_emit_sync`,
+5. `run_event_body_on_scratch` — `AT_EVENT_SYNC` body on `urbi_event_emit_sync`,
    via the `_with_payload` variant so `R[0]` carries the emit payload.
 
 Sites (1)–(4) rely on caller-owned `vm->in_watcher_eval` /
@@ -216,7 +216,7 @@ because sync emit can fire from contexts that have not entered eval.
 ## Closure lifecycle and GC roots
 
 Watcher closures (`condition`, `body`, `onleave`) are GC-managed
-`UClosure*` pointers. The GC root provider `watcher_table_walk_roots`
+`UClosure*` pointers. The GC root provider `urbi_gc_watcher_table_walk_roots`
 (`src/watcher/uwatcher_gc.c`) walks the whole pool slab: every in-use
 slot (`URBI_WATCHER_ACTIVE` set — set by `uwatcher_pool_alloc`, cleared
 only by `pool_free`) yields each non-NULL closure pointer to the mark
@@ -226,7 +226,7 @@ use", not of list topology, so AT_EVENT / WHENEVER_EVENT watchers stay
 rooted even when their owning event is otherwise unreachable, and the
 subscribed event itself is immortal while subscribed.
 
-Fields intentionally NOT walked by `watcher_table_walk_roots`:
+Fields intentionally NOT walked by `urbi_gc_watcher_table_walk_roots`:
 
 - `body_strand` / `waiter_strand` — reached via `realm->strands_head` by
   the scheduler's root walker.
@@ -246,20 +246,20 @@ reached indirectly through closures and slot-tables.
 - `waiters_head` — one-shot `UStrand` chain (linked via
   `UStrand.next_event_waiter`); strands self-walk via the realm hierarchy.
 
-`c_event_emit_async` fans out payload to both lists: spawns body
+`urbi_event_emit_async` fans out payload to both lists: spawns body
 coroutines for at-watchers, wakes and makes-runnable all waiters.
-`c_event_emit_sync` runs AT_EVENT_SYNC subscribers inline on the scratch
+`urbi_event_emit_sync` runs AT_EVENT_SYNC subscribers inline on the scratch
 frame (before returning); degrades to async with a one-shot warn when any
 scratch re-entry flag is set.
 
-`c_event_waituntil` tail-appends the current strand to `waiters_head` and
+`urbi_event_waituntil` tail-appends the current strand to `waiters_head` and
 transitions it to `USTRAND_WAIT_EVENT`; the T53 opcode handler reads
 `last_event_payload` after the strand is woken.
 
 Named events (bound to Lobby slots or realm globals) are reachable via
 the event registry (`src/event/uevent_registry.{h,c}`). ISR-safe
 injection goes through the SPSC ring (`src/event/uevent_ring.{h,c}`) and
-is drained on the main thread before reaching `c_event_emit_async`.
+is drained on the main thread before reaching `urbi_event_emit_async`.
 
 ## UTag lifecycle
 
@@ -271,7 +271,7 @@ Fields of interest to the reactive runtime:
 - `member_strands_head` — `UCleanupEntry` instances for strands inside a
   TAG_SCOPE for this tag.
 - `enter_event` / `leave_event` — lazily allocated `UEvent*` by
-  `tag_enter_getter` / `tag_leave_getter` (`src/tag/utag_native.c`) on
+  `urbi_tag_enter_getter` / `urbi_tag_leave_getter` (`src/tag/utag_native.c`) on
   first subscriber access.
 - `parent` — points to the realm-root tag for host-created child tags
   (set by `urbi_tag_create`, v0.7.1 Gap M).
@@ -281,7 +281,7 @@ Ambient-tag inheritance at a strand's scope is via `UCleanupEntry`
 TAG_SCOPE entries on the strand's cleanup stack. `OP_PUSH_TAG` pushes a
 TAG_SCOPE entry; `OP_POP_TAG` pops it, fires `leave_event` if any
 subscriber is installed, then walks `tag->member_watchers_head` and calls
-`pending_onleave_queue_push` for each watcher.
+`urbi_watcher_pending_onleave_queue_push` for each watcher.
 
 `urbi_tag_stop` (`src/runtime/uunwind.c`) is the only current path that
 deposits `PENDING_UNWIND=UEXEC_TAG_STOP` on member strands, walks
@@ -371,8 +371,8 @@ Body completion is notified via `urbi_periodic_body_completed` from the
 `exit_strand` path in `uvm.c`, which mirrors `urbi_watcher_body_completed`
 in structure.
 
-**CLOSED W3/v0.10.2 (Finding 4)** — body strands spawned by
-`spawn_periodic_body` and `do_spawn_body_coroutine` now bind the body
+**CLOSED (v0.10.2)** — body strands spawned by
+`spawn_periodic_body` and `urbi_watcher_do_spawn_body_coroutine` now bind the body
 closure's proto as `root_proto` in the entry frame, so `OP_CLOSURE` inside
 `every`/`at`/`whenever` bodies correctly resolves `nested[]` children.
 Function literals and nested reactive primitives inside reactive bodies work.
@@ -393,10 +393,10 @@ Two VM-level data structures support the reactive subsystem
   (default 64). When a sync slot-change body re-enters the slot-write path,
   `urbi_emit_slot_change_slow` calls `urbi_defer_slot_change` to enqueue
   `(parent, key, new_value)`. `urbi_drain_deferred_slot_changes` runs at
-  every safepoint *before* `watcher_eval_dirty`. Ring-full silently drops
+  every safepoint *before* `urbi_vm_watcher_eval_dirty`. Ring-full silently drops
   with a one-shot warn. The cap is reduced for footprint targets.
 
-**CLOSED W3/v0.10.2 (Finding 6)** — `urbi_deferred_slot_changes_walk_roots`
+**CLOSED (v0.10.2)** — `urbi_deferred_slot_changes_walk_roots`
 is registered with the GC root registry at `urbi_vm_init`, making deferred
 ring entries explicit GC roots.  The cooperative safepoint ordering
 (GC before drain) remains the primary invariant, but the root walker
@@ -428,10 +428,10 @@ if (e->current_fs->freereg < e->next_reg)
 ```
 
 Without this `freereg`/`next_reg` synchronisation,
-`emit_function_literal` can allocate `body_reg` on top of `event_reg`,
+`urbi_emit_function_literal` can allocate `body_reg` on top of `event_reg`,
 causing `OP_CLOSURE` to clobber the event pointer at runtime.
 `AST_WATCHER` and `AST_WAITUNTIL` avoid this hazard by routing their
-condition through `emit_function_literal` symmetrically. Future
+condition through `urbi_emit_function_literal` symmetrically. Future
 reactive-emit work that introduces a new install opcode MUST audit
 this invariant. See [emit-correctness-notes.md](./emit-correctness-notes.md)
 for the full register-allocation rubric.
@@ -466,9 +466,9 @@ in this order:
 2. Per-strand instruction budget.
 3. VM-wide step budget.
 4. `urbi_gc_slice` if `vm->gc_pending`.
-5. `drain_pending_onleave_queue` if `vm->pending_onleave_head`.
+5. `urbi_watcher_drain_pending_onleave_queue` if `vm->pending_onleave_head`.
 6. `urbi_drain_deferred_slot_changes` (spec §5.4 — must precede step 7).
-7. `watcher_eval_dirty` if `vm->watcher_dirty_count > 0`.
+7. `urbi_vm_watcher_eval_dirty` if `vm->watcher_dirty_count > 0`.
 
 The ordering of 4 → 6 → 7 is the cooperative invariant that keeps
 deferred ring entries live across a GC slice (see Finding 6 above): slots
@@ -479,7 +479,7 @@ enforcing it.
 
 ## Strand-scheduler integration
 
-Async fires (`AT`, `WHENEVER`, `AT_EVENT`) call `do_spawn_body_coroutine`
+Async fires (`AT`, `WHENEVER`, `AT_EVENT`) call `urbi_watcher_do_spawn_body_coroutine`
 (`src/watcher/uwatcher_spawn.c`), which allocates a body strand via
 `urbi_strand_create`, optionally attaches `owning_tag` distinct from
 `realm->tag`, arms from the closure, wires
@@ -545,12 +545,12 @@ architectural refactor arc.  All were closed in Wave 3 (v0.10.2-reactive)
 unless noted; the inline sections above have been updated accordingly.
 
 - **Finding 1** (`whenever (e?)` silent no-op): **CLOSED W0/v0.10.2** —
-  `parse_whenever` now produces `AST_AT_EVENT` with `is_whenever=true`
+  `urbi_parse_whenever` now produces `AST_AT_EVENT` with `is_whenever=true`
   when the condition ends with `?`; `OP_WHENEVER_EVENT_INSTALL` (opcode 48,
   wire v1.9) routes to `UWATCHER_WHENEVER_EVENT`; empty-read-set installs
   rejected as `UWATCHER_INSTALL_NO_OBSERVABLE_CELLS`.
 - **Finding 2** (AT_EVENT dangling on `event->at_watchers_head` after
-  tag-stop): **CLOSED W3/v0.10.2** — `pending_onleave_queue_push`
+  tag-stop): **CLOSED W3/v0.10.2** — `urbi_watcher_pending_onleave_queue_push`
   synchronously calls `uevent_at_watchers_remove` for AT_EVENT,
   AT_EVENT_SYNC, and WHENEVER_EVENT before appending to the FIFO.
 - **Finding 3** (`OP_TAG_STOP` reserved stub; no script-level tag
@@ -558,7 +558,7 @@ unless noted; the inline sections above have been updated accordingly.
   bare-prefix `mytag: stmt`, and full `vm->tag_proto` method suite shipped.
   Member-expression `Tag.scope: body` closed in W8/v0.10.5.
 - **Finding 4** (`OP_CLOSURE` in reactive body strands): **CLOSED
-  W3/v0.10.2** — `spawn_periodic_body` and `do_spawn_body_coroutine` bind
+  W3/v0.10.2** — `spawn_periodic_body` and `urbi_watcher_do_spawn_body_coroutine` bind
   body closure proto as entry-frame `root_proto`.
 - **Finding 6** (deferred slot-change ring weakly rooted): **CLOSED
   W3/v0.10.2** — `urbi_deferred_slot_changes_walk_roots` registered with

@@ -200,7 +200,7 @@ the `v1.0` `URBI_SCHED_COOPERATIVE` baseline:
 - **The deferred slot-change ring** (`vm->deferred_slot_changes`, capacity
   `URBI_DEFERRED_SLOT_CHANGE_RING_SIZE`) — entries are weakly referenced
   and survive only on the safepoint-ordered invariant `defer-site → next
-  safepoint → drain → watcher_eval_dirty`. The cooperative scheduler steps
+  safepoint → drain → urbi_vm_watcher_eval_dirty`. The cooperative scheduler steps
   GC only at the dispatch-loop safepoint, and the drain runs before any
   potential GC trigger at that same safepoint. A preemptive scheduler
   would have to upgrade the ring entries to strong refs via a GC root

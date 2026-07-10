@@ -249,16 +249,16 @@ chunk-instance binding protocol and the per-VM IC RAM tier).
 - `vm_trace_slot_read_if_needed` — adds `recv`'s GC cell to
   `vm->trace_read_set[]` when `vm->in_watcher_install` is set (watcher
   install-time cond evaluation). Also single-site post-W1.
-- `vm_getslot_value` / `vm_setslot_value` — combine the trace probe +
+- `urbi_vm_getslot_value` / `urbi_vm_setslot_value` — combine the trace probe +
   IC fast-path for the get and set sides.
-- `vm_dispatch_getter` / `vm_dispatch_setter` — invoke property closures
+- `urbi_vm_dispatch_getter` / `urbi_vm_dispatch_setter` — invoke property closures
   via `urbi_run_closure_on_scratch[_with_payload]`.
-- `vm_getslot_slow` / `vm_setslot_slow` — slow-path wrappers around
+- `urbi_vm_getslot_slow` / `urbi_vm_setslot_slow` — slow-path wrappers around
   `urbi_slot_get_slow` / `urbi_slot_set_slow` with error formatting and
   post-fill getter/setter dispatch.
 
-`src/vm/uvm_self.c` holds `vm_self_lookup` (delegates to
-`vm_getslot_value`; the receiver-snapshot contract for `OP_SELF` is
+`src/vm/uvm_self.c` holds `urbi_vm_self_lookup` (delegates to
+`urbi_vm_getslot_value`; the receiver-snapshot contract for `OP_SELF` is
 documented there).
 
 Dispatch flow in `src/vm/uvm.c` (post-W1):
@@ -268,11 +268,11 @@ Dispatch flow in `src/vm/uvm.c` (post-W1):
    (see [closures.md](closures.md) — `UClosure.proto_inst`).
 2. Look up the `UIC` at `pi->ic_table[ic_index]`.
 3. Type-check the receiver; for atom values, route through the atom proto.
-4. Call `vm_getslot_value` / `vm_setslot_value` / `vm_self_lookup`
+4. Call `urbi_vm_getslot_value` / `urbi_vm_setslot_value` / `urbi_vm_self_lookup`
    (fast path: IC scan + LOCAL re-dispatch + watcher trace).
 5. On `VM_SLOT_GETTER_NEEDED` / `VM_SLOT_SETTER_NEEDED`: call
-   `vm_dispatch_getter` / `vm_dispatch_setter`.
-6. On `VM_SLOT_MISSING`: call `vm_getslot_slow` / `vm_setslot_slow`
+   `urbi_vm_dispatch_getter` / `urbi_vm_dispatch_setter`.
+6. On `VM_SLOT_MISSING`: call `urbi_vm_getslot_slow` / `urbi_vm_setslot_slow`
    (slow path: prototype-chain DFS, IC fill, getter/setter post-fill
    check, GC barrier on set path).
 
@@ -281,7 +281,7 @@ the LOCAL re-dispatch (see `vm_resolve_ic`) and getter check.
 
 For `OP_SETSLOT` the fast path is more layered. On shape+topology hit:
 
-- OSET flag set → setter dispatch via `vm_dispatch_setter`.
+- OSET flag set → setter dispatch via `urbi_vm_dispatch_setter`.
 - CONSTANT flag set → reject the write with a TypeError.
 - LOCAL flag set → in-place write through `urbi_gc_slot_store` (GC
   barrier + store in one call) using the cached slot **index** for
@@ -432,7 +432,7 @@ The implicit-receiver class-body form has its own emit arm
 (`emit_class_body_property_decl` in `src/emit/uemit_class.c`) that wires
 `foo_reg` (the class object's register) as the explicit `setProperty`
 receiver during desugar — the synthetic AST scaffold used by
-`emit_property_decl_arm` can't address a raw register, so this is a
+`urbi_emit_property_decl_arm` can't address a raw register, so this is a
 parallel call-sequence builder.
 
 The backing C-native `Object.setProperty(name, prop, value)` lives in
