@@ -40,6 +40,9 @@ rm -f "$LIB"
 # wildcard).  Compile each .c into the per-target build dir.
 # Keep-list source of truth: tests/scripts/_bytecode-only-tus.sh
 . "$(dirname "$0")/_bytecode-only-tus.sh"
+# BLD-CI-5: fail if the source tree grew a src/ dir the keep-list never
+# classified (kept vs excluded) — catches keep-list drift at gate time.
+check_all_src_dirs_classified
 # shellcheck disable=SC2207
 ALL_KEEP=( $(list_kept_tus) )
 

@@ -22,6 +22,10 @@ HERE="$(dirname "$0")"
 . "$HERE/_bytecode-only-tus.sh"
 . "$HERE/_freestanding-forbidden.sh"
 
+# BLD-CI-5: fail if a new src/ dir was added without a keep-vs-exclude
+# decision in the bytecode-only keep-list (drift guard).
+check_all_src_dirs_classified
+
 WORK=build/host-freestanding-host
 mkdir -p "$WORK"
 rm -f "$WORK"/*.o
