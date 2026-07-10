@@ -136,8 +136,8 @@ static int hex_digit_unchecked(char c) {
 /* parse_string_literal — urbi_parse_consume a TOK_STRING (possibly followed by adjacent
  * TOK_STRING tokens per the L3 adjacent-string-concat rule) and produce AST_STR.
  *
- * Resolves Wave-1 escape sequences (\n / \t / \\ / \") and the v0.6.1
- * Wave-2 \uXXXX / \u{HHHHHH} Unicode escapes into raw bytes (UTF-8 for
+ * Resolves the basic escape sequences (\n / \t / \\ / \") and the v0.6.1
+ * \uXXXX / \u{HHHHHH} Unicode escapes into raw bytes (UTF-8 for
  * the latter, via urbi_encode_utf8).  The lexer guarantees only the
  * recognized escape kinds reach the parser (others are already rejected
  * as LEX_INVALID_ESCAPE / LEX_UNICODE_*).  Concatenation is greedy: any

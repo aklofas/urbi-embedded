@@ -3,7 +3,7 @@
  *
  * Wire format per spec §6.  One JSON document per line.  This codec is
  * scoped to the REPL request schema — it is NOT a general-purpose JSON
- * parser (see src/json.c, Phase 4 Task 21, for that).
+ * parser (see src/json.c, Phase 4, for that).
  *
  * Allocation: parsed string fields are strdup-style owned by the
  * request struct; caller MUST call urepl_ndjson_free_req on success. */

@@ -152,7 +152,7 @@ uevent_ring_drain(struct UVM *vm)
          *
          * Registered path does NOT fall through to the legacy handler.
          * Unregistered or tombstoned ids fall through unchanged (backward
-         * compat with Wave-1 urbi_register_event_drain users).
+         * compat with legacy urbi_register_event_drain users).
          *
          * EVENT-007: legacy drain handler loaded with __ATOMIC_ACQUIRE for
          * the same reason documented in the original comment — defensive
@@ -217,7 +217,7 @@ uevent_ring_drain(struct UVM *vm)
         }
 
         /* Unregistered or out-of-range event_id: fall through to the
-         * Wave-1 legacy drain handler (backward compat). */
+         * legacy drain handler (backward compat). */
         urbi_event_drain_handler h = (urbi_event_drain_handler)
             __atomic_load_n(&vm->event_drain_handler, __ATOMIC_ACQUIRE);
         if (h) {

@@ -133,7 +133,7 @@ uint8_t urbi_emit_fs_temp_floor(const UFuncState *fs) {
    Routes to the nested UProto constant pool when in a nested function.
    Defined here next to urbi_emit_add_const_int because the two share the proto-or-
    module routing dispatch and the same pool-grow primitive. */
-/* Task 11: current_proto() always returns non-NULL — no dual-path dispatch. */
+/* current_proto() always returns non-NULL — no dual-path dispatch. */
 uint16_t urbi_emit_add_const_str(UEmitter *e, const char *interned) {
     UProto *p = current_proto(e);
     UValue **pool  = &p->constants;
@@ -172,7 +172,7 @@ uint16_t urbi_emit_add_const_str(UEmitter *e, const char *interned) {
    pool-full (> UINT16_MAX entries) or OOM.
    Routes to the nested UProto constant pool when in a nested function.
    Promoted from static so uemit_expr.c can call it cross-TU. */
-/* Task 11: current_proto() always returns non-NULL — no dual-path dispatch. */
+/* current_proto() always returns non-NULL — no dual-path dispatch. */
 uint16_t urbi_emit_add_const_int(UEmitter *e, const int64_t v) {
     UProto *p = current_proto(e);
     UValue **pool  = &p->constants;
@@ -211,7 +211,7 @@ uint16_t urbi_emit_add_const_int(UEmitter *e, const int64_t v) {
    and returns 0 on pool-full (> UINT16_MAX entries) or OOM.
    Routes to the nested UProto constant pool when in a nested function.
    Promoted from static so uemit_expr.c can call it cross-TU. */
-/* Task 11: current_proto() always returns non-NULL — no dual-path dispatch. */
+/* current_proto() always returns non-NULL — no dual-path dispatch. */
 uint16_t urbi_emit_add_const_float(UEmitter *e, const double v) {
     UProto *p = current_proto(e);
     UValue **pool  = &p->constants;
@@ -244,7 +244,7 @@ uint16_t urbi_emit_add_const_float(UEmitter *e, const double v) {
 }
 
 /* Append one absolute-line checkpoint to abs_lines.
- * Task 11: current_proto() always returns non-NULL (root_proto or nested proto),
+ * current_proto() always returns non-NULL (root_proto or nested proto),
  * so the dual-path is collapsed to a single urbi_emit_proto_grow call. */
 static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t line) {
     UProto *p = current_proto(e);
@@ -269,7 +269,7 @@ static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t li
    implementation-defined and `[instr_count - 1U]` underflows on the
    unsigned subscript, so failing closed is safer than relying on the
    precondition holding at every future call site. */
-/* Task 11: current_proto() always returns non-NULL; single-path via proto. */
+/* current_proto() always returns non-NULL; single-path via proto. */
 static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
     UProto *p = current_proto(e);
     URBI_INTERNAL_ASSERT(p->instr_count > 0U);
@@ -286,7 +286,7 @@ static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
 
 /* Append one encoded instruction with Lua-5.5-style delta syncline encoding.
    No-op when e->error is already set.
-   Task 11: current_proto() always returns non-NULL; single-path via proto. */
+   current_proto() always returns non-NULL; single-path via proto. */
 void urbi_emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
     if (e->error != EMIT_OK) return;
     if (line > (uint32_t)INT32_MAX) { e->error = EMIT_LINE_OVERFLOW; return; }
@@ -326,13 +326,13 @@ void urbi_emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
 }
 
 /* Patch instruction at index `pc` in the current proto (root or nested).
- * Task 11: current_proto() always returns non-NULL. */
+ * current_proto() always returns non-NULL. */
 void urbi_emit_patch_instr(const UEmitter *e, int pc, uint32_t new_instr) {
     current_proto(e)->instructions[pc] = new_instr;
 }
 
 /* Return the current instruction count in the active proto.
- * Task 11: current_proto() always returns non-NULL. */
+ * current_proto() always returns non-NULL. */
 size_t urbi_emit_instr_count(const UEmitter *e) {
     return current_proto(e)->instr_count;
 }
@@ -571,9 +571,9 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt) {
 }
 
 /* v0.8.5: recursively set every UProto's root back-pointer to the module's
- * root proto.  For flat trees (pre-Task-5 emitter) the inner recursion is
+ * root proto.  For flat trees the inner recursion is
  * a no-op because nested_count == 0 at depth 1.  For recursive trees
- * (post-Task-5) every grandchild also gets root set correctly. */
+ * every grandchild also gets root set correctly. */
 static void set_root_recursive(UProto *node, UProto *root) {
     if (node == NULL) return;
     node->root = (node == root) ? NULL : root;
@@ -609,8 +609,8 @@ UEmitError uemit_finish(UEmitter *e) {
         /* Back-pointer walk: every nested proto's root field points at rp.
          * v0.8.5 made this recursive (was flat-only): walks the full tree
          * DFS so grandchildren also get root set correctly when the
-         * truly-recursive emitter (Task 5) starts producing depth >1.
-         * For flat trees (pre-Task-5) the recursive descent is a no-op
+         * truly-recursive emitter starts producing depth >1.
+         * For flat trees the recursive descent is a no-op
          * because nested_count == 0 at depth 1. */
         set_root_recursive(rp, rp);
     }

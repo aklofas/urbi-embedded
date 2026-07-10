@@ -34,7 +34,7 @@
 #include "stdlib/tag_globals.h"    /* urbi_tag_globals_register_globals — v0.10.10 D7-D */
 #include "stdlib/channel_native.h" /* urbi_channel_proto_resolve, urbi_channel_register_globals — v0.10.11 D6 */
 #ifdef URBI_ENABLE_ROS2
-#  include "urbi/ros.h"            /* urbi_ros_register_globals — v0.12.0 Task 3 */
+#  include "urbi/ros.h"            /* urbi_ros_register_globals — v0.12.0 */
 #endif
 #ifdef URBI_ENABLE_UROBOTICS
 #  include "urbi/urobotics.h"   /* urbi_urobotics_run — v0.12.2 */
@@ -603,7 +603,7 @@ populate_realm_globals_impl(UVM *vm, URealm *realm, uint8_t host_pause)
         }
     }
 
-    /* v0.12.0 Task 3: bind `ros` as a realm global (URBI_ENABLE_ROS2 builds).
+    /* v0.12.0: bind `ros` as a realm global (URBI_ENABLE_ROS2 builds).
      *
      * vm->ros_proto is allocated at stdlib boot (urbi_ros_register, gated).
      * No resolve step needed — the proto is a raw UObject, not a .u class.

@@ -47,7 +47,7 @@
  * Shared modules (e.g. vm->stdlib_module) may be run into multiple realms;
  * they keep owning_realm pointing at the FIRST realm they were registered
  * in and are NOT re-registered for subsequent realms.  The unload path
- * (Task 12 / 13) handles per-realm teardown independently — except for
+ * handles per-realm teardown independently — except for
  * vm_owned overlays (GC-18): realm teardown only clears their
  * back-pointers; urbi_vm_destroy frees them.  v0.9.0-repl. */
 static void
@@ -816,7 +816,7 @@ urbi_load_chunk(UVM *vm, UProto *root, const char *module_name)
 }
 
 /* ---------------------------------------------------------------------------
- * urbi_unload  (v0.9.0-repl Task 11)
+ * urbi_unload  (v0.9.0-repl)
  *
  * Unlink module from its owning realm's loaded_protos_head list and route
  * through uchunk_destroy.  If root_proto->refcount > 0 the rescue mechanism

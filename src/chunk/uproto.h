@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UProto — nested function prototype and per-proto helpers.  Freestanding.
  *
- * --- Inline-cache (IC) layout post-Task-11 (v0.8.1-uproto-root) ---
+ * --- Inline-cache (IC) layout (v0.8.1-uproto-root) ---
  * The pair (ic_count + ic_names) appears in two places, each owned by a
  * different layer.  UModule no longer holds a copy — the root chunk is now
  * modeled as root_proto, a full UProto:
@@ -100,7 +100,7 @@ struct URealm;
 
 /* --- UProto: nested function prototype (used for function definitions). ---
  * A UProto holds the bytecode, constants, and line info for one nested
- * function body.  After v0.9.2 (Task 4.1) UModule is gone; a module IS its
+ * function body.  After v0.9.2 UModule is gone; a module IS its
  * root UProto.  Nested functions get heap-allocated UProtos stored in
  * root_proto->nested[]. */
 
@@ -376,14 +376,14 @@ uproto_source_name(const UProto *p)
 
 /* Layout pin — update deliberately when UProto fields change.
  * Guarded on pointer width to avoid a hard failure on 32-bit cross
- * targets, matching the UStrand / UEvent pattern.  Post-v0.9.2 Task 4.1:
+ * targets, matching the UStrand / UEvent pattern.  Post-v0.9.2:
  * +40 B on 64-bit from absorbed root metadata (source_name, origin_vm,
  * next_proto_serial, total_proto_count, next_in_realm, owning_realm,
  * heap_allocated) relative to the v0.9.1 layout. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
 URBI_STATIC_ASSERT(sizeof(UProto) == 224,
                "UProto size pin on 64-bit — update deliberately when fields change"
-               /* v0.9.2 Task 7.1: 224 B post-absorption of 7 root-only UModule fields */);
+               /* v0.9.2: 224 B post-absorption of 7 root-only UModule fields */);
 #endif
 
 #ifdef __cplusplus

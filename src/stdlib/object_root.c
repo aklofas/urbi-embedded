@@ -16,11 +16,11 @@
  * OP_GETSLOTs in argument evaluation; the OP_SELF+method-flag scheme
  * eliminates that whole bug class — S42.)
  *
- * Phase 3 baseline error handling: urbi_raise_arity / _type / _oom /
- * _lookup print to stderr (when stderr is available; freestanding builds
- * silently drop) and return UEXEC_THROW to signal a fault to OP_CALL.
- * Wave 2 swaps these for proper Exception class wiring; the call sites
- * here keep a stable ABI so the swap is mechanical. */
+ * Error handling: urbi_raise_arity / _type / _oom / _lookup return
+ * UEXEC_THROW to signal a fault to OP_CALL, cloning the matching cached
+ * Exception-subclass proto (via urbi_raise_typed) so scripted try/catch
+ * can intercept them.  The degraded fallback (no vm / OOM) leaves *out =
+ * nil and prints the message where a host stderr is available. */
 
 #include "stdlib/object_root.h"
 
@@ -222,10 +222,10 @@ urbi_raise_divzero(UVM *vm, const char *msg, UValue *out)
 /* === urbi_proto_list_create ================================================
  *
  * Phase 3 synthetic proto-list helper: returns a fresh UObject carrying a
- * `size` slot.  Wave 2 replaces this with a proper List atom (currently
- * the stdlib roadmap.  For Phase 3, fixtures that read
- * `obj.protos.size` find the field directly; a real iteration API isn't
- * shipped here. */
+ * `size` slot.  This is still a synthetic view rather than a proper List
+ * atom value; backing the .protos view with real list storage is a
+ * deferred follow-up.  Fixtures that read `obj.protos.size` find the
+ * field directly; a real iteration API isn't shipped here. */
 
 UObject *
 urbi_proto_list_create(UVM *vm, UObject *recv)
@@ -264,8 +264,8 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
     }
 
     /* Thread the owner reference through so insertFront can mutate
-     * the original receiver's prototype list.  Wave 2's List atom replaces
-     * this synthetic with a proper list value; for Wave 1 an underscore-
+     * the original receiver's prototype list.  A proper List atom value
+     * would carry the owner intrinsically; for the synthetic an underscore-
      * prefixed hidden slot is sufficient. */
     UValue owner = urbi_make_nil();
     owner.kind = (uint8_t)UVAL_OBJECT;
@@ -279,9 +279,9 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
 
     /* Install insertFront on this synthetic list.  Each protos call
      * allocates a fresh list; this attaches a per-list closure so the
-     * lookup hits the synthetic before climbing to Object root.  Wave 1:
-     * the per-list allocation cost is acceptable; Wave 2's List atom
-     * installs insertFront once on the List atom proto. */
+     * lookup hits the synthetic before climbing to Object root.  The
+     * per-list allocation cost is acceptable; a proper List atom backing
+     * would instead install insertFront once on the List atom proto. */
     UClosure *cl = urbi_native_closure_create(vm, obj_protos_insertFront);
     if (cl == NULL) {
         urbi_c_root_pop(vm, &f_list);
@@ -539,12 +539,13 @@ obj_setProtos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     URBI_CHECK_ARITY(vm, "setProtos", 1, nargs, out);
     URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "setProtos: self must be a UObject", out);
-    /* Wave 1 limited: List literal lex defers to Wave 2.  Accept a single
-     * UObject and treat as a one-element list.  A future setProtos that
-     * accepts a List value will branch on args[0].kind == UVAL_LIST. */
+    /* Limited: List-literal argument support is a deferred follow-up.
+     * Accept a single UObject and treat as a one-element list.  A future
+     * setProtos that accepts a List value will branch on
+     * args[0].kind == UVAL_LIST. */
     if (args[0].kind != (uint8_t)UVAL_OBJECT) {
         return urbi_raise_type(vm,
-            "setProtos: List literal deferred to Wave 2; pass a single UObject", out);
+            "setProtos: List literal not yet supported; pass a single UObject", out);
     }
 
     UObject *recv = (UObject *)self.v.p;
@@ -561,18 +562,18 @@ obj_setProtos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === protos.insertFront(proto) ===========================================
  *
- * Wave-1 stub for the legacy `C.protos.insertFront(A)` idiom (used in
+ * Stub for the legacy `C.protos.insertFront(A)` idiom (used in
  * legacy/repos/aldebaran-urbi/tests/2.x/shared-protos.chk line 12).
  *
  * `self` is the synthetic UObject returned from .protos; we extract the
  * underlying owner via the hidden `_owner` slot, prepend args[0] to the
  * owner's prototype list, and rebuild via urbi_object_set_protos.
  *
- * Wave 2 retires this when the proper List atom replaces the synthetic
- * proto-list (the List atom installs insertFront once on the List atom
- * proto and operates on the underlying list storage).  For Wave 1 the
- * mutation flows through urbi_object_set_protos with a stack-bounded
- * UObject* array.  If the combined list exceeds the proto cap,
+ * A proper List atom backing would retire this: the List atom installs
+ * insertFront once on the List atom proto and operates on the underlying
+ * list storage.  For the synthetic, the mutation flows through
+ * urbi_object_set_protos with a stack-bounded UObject* array.  If the
+ * combined list exceeds the proto cap,
  * set_protos returns URBI_ERR_INVALID_ARG which surfaces as TypeError. */
 
 #ifndef URBI_PROTO_LIST_INSERT_FRONT_CAP

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/vm/uvm_slot.h — slot-access helpers extracted from the OP_GETSLOT /
- * OP_SETSLOT / OP_SELF arms of the VM dispatch loop (Wave 5).
+ * OP_SETSLOT / OP_SELF arms of the VM dispatch loop.
  *
  * These helpers collapse the LOCAL-slot re-dispatch discipline to a
  * single site (vm_resolve_ic) and the read-set trace probe to a single site

@@ -552,7 +552,7 @@ uint8_t urbi_emit_throw_arm(UEmitter *e, UAstNode *n) {
     uemit_throw(e, val_reg, (uint32_t)n->line);
     /* throw is a statement; return a nil reg for the block's last-stmt logic.
      *
-     * EMIT-018 fix (Wave 5, v0.5.7): force next_reg above urbi_emit_fs_temp_floor
+     * EMIT-018 fix (v0.5.7): force next_reg above urbi_emit_fs_temp_floor
      * before claiming rd.  Same root cause as EMIT-017 (AST_RETURN
      * bare-return).  Defensive against future arms; current emit-arm
      * contract syncs next_reg to freereg between siblings, so the bug is

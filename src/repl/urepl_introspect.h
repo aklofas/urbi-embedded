@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/repl/urepl_introspect.h — 9 introspection C primitives (v0.9.1 Task 19).
+/* src/repl/urepl_introspect.h — 9 introspection C primitives (v0.9.1).
  *
  * Each primitive walks a chunk of VM state on the MAIN thread and emits a
  * single JSON object into a caller-provided buffer.  The output is wrapped
  * by the dispatcher into a {kind:result,value:<inner>} NDJSON envelope
- * (Task 20) and parsed back into a urbi value by the Debug namespace
- * (Task 22) — both consumers therefore see the same canonical JSON.
+ * and parsed back into a urbi value by the Debug namespace — both
+ * consumers therefore see the same canonical JSON.
  *
  * Thread-safety: MAIN ONLY.  These walk VM linked lists without locks; a
  * concurrent thread mutating realms/strands/watchers would race.  The

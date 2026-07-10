@@ -4,8 +4,8 @@
  * UClosure embeds UCell as its first member at offset 0.  This makes the
  * UClosure* → UCell* casts performed by uvalue_as_cell (UVAL_CLOSURE
  * values in mark_root_callback) and the walker/root shading sites
- * (walk_uclosure, strand_walk_roots) well-defined.  (Task 9c:
- * urbi_gc_upvalue_pre_store no longer takes a closure — its Dijkstra
+ * (walk_uclosure, strand_walk_roots) well-defined.
+ * (urbi_gc_upvalue_pre_store no longer takes a closure — its Dijkstra
  * parent is the UUpvalCell header — but the offset-0 embed stays
  * load-bearing for the value-tagging casts above.)
  *
@@ -104,9 +104,9 @@ struct UClosure {
                                       pointer.  See banner above for
                                       binding/lifecycle. */
     /* next_alloc deleted at v0.8.4 Step C-3: pre-GC free-list link no longer needed. */
-    /* origin_module_instance deleted at v0.9.0 Task 8: field retired in favour
-     * of UProto.owning_module_instance (Tasks 1+2); OP_CLOSURE reads
-     * child_proto->owning_module_instance directly (Task 7).  Reachability:
+    /* origin_module_instance deleted at v0.9.0: field retired in favour
+     * of UProto.owning_module_instance; OP_CLOSURE reads
+     * child_proto->owning_module_instance directly.  Reachability:
      * UClosure -> proto_inst; UChunkInstance kept alive via
      * object_roots_walker -> vm->module_instances_head. */
     /* Phase 3: C-native method dispatch. NULL for ordinary urbiscript
@@ -122,7 +122,7 @@ struct UClosure {
 };
 
 /* Layout pin (v0.9.0): UClosure shrunk 56 -> 48 B after origin_module_instance
- * retirement (Task 8).  Remaining fields: UCell (2 B) + pad (6 B) + proto ptr
+ * retirement.  Remaining fields: UCell (2 B) + pad (6 B) + proto ptr
  * (8 B) + proto_inst ptr (8 B) + native_fn ptr (8 B) + nupvals (1 B) + pad
  * (7 B) + upvals[1] ptr (8 B) = 48 B.  Pin on 64-bit hosts only (pointer
  * size drives the layout; 32-bit assertion is not separately tracked). */

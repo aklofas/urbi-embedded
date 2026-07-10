@@ -57,7 +57,7 @@
 #endif
 
 /* Forward declarations for pointer types used in barrier signatures.
- * (struct UClosure dropped at Task 9c — mirrors ugc_incremental.h.) */
+ * (struct UClosure dropped — mirrors ugc_incremental.h.) */
 struct UVM;
 struct UStrand;
 
@@ -92,7 +92,7 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s,
 }
 
 /* urbi_gc_upvalue_pre_store — barrier-only stub (no-op under NONE).
- * Task 9c: parent retargeted closure → UUpvalCell header (matches the
+ * Parent retargeted closure → UUpvalCell header (matches the
  * incremental strategy's signature). */
 static inline void
 urbi_gc_upvalue_pre_store(struct UVM *vm, const UCell *cell, UValue child)

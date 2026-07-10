@@ -251,7 +251,7 @@ uint8_t urbi_emit_waituntil_arm(UEmitter *e, UAstNode *n) {
 
     urbi_emit_instr(e, uinstr_enc_abc(OP_WAITUNTIL_INSTALL, cond_reg, 0U, 0U),
                (uint32_t)n->line);
-    free_reg_freereg_synced(e);  /* cond_reg — EMIT-010 (Wave 5) */
+    free_reg_freereg_synced(e);  /* cond_reg — EMIT-010 */
 
     uint8_t rd = e->next_reg;
     urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);

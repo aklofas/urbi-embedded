@@ -32,7 +32,7 @@ struct UStrand;
  *   URBI_ERR_LOADER_BUDGET — outer cap exhausted; strand still runnable
  *                             (likely infinite loop at chunk top).
  *
- * Loader-private API; not for general use.  Task 8's urbi_run_chunk
+ * Loader-private API; not for general use.  The urbi_run_chunk
  * restructure consumes this driver. */
 int uchunk_loader_drive(struct UVM *vm, struct UStrand *loader,
                         UValue *out_result);

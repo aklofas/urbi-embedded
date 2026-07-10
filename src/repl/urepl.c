@@ -3,7 +3,7 @@
  *
  * Phase 2 ships the create/destroy + default-secure check + transport
  * registration.  The listener thread + per-connection reader thread come
- * online in Phase 3 (Task 16). */
+ * online in Phase 3. */
 #include "repl/urepl.h"
 #ifndef URBI_REPL_COOPERATIVE_ONLY
 #include "repl/urepl_auth.h"
@@ -116,7 +116,7 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
         return NULL;
     }
 
-    /* Task 18: spin up per-IP rate limiter iff auth is enabled.  Loop-
+    /* Spin up per-IP rate limiter iff auth is enabled.  Loop-
      * back no-auth deployments skip it (no wrong-token attempts to
      * count).  Default tunables: 5 fails / 30 s window / 60 s lockout
      * (spec §7.4).
@@ -207,8 +207,8 @@ urbi_repl_stop(UReplServer *server)
     }
     server->transports = NULL;
 
-    /* auth_limiter struct is allocated by Task 18 (urepl_auth.c) if a
-     * token is configured; free if present. */
+    /* auth_limiter struct is allocated (urepl_auth.c) if a token is
+     * configured; free if present. */
     if (server->auth_limiter != NULL) {
         free(server->auth_limiter);
         server->auth_limiter = NULL;

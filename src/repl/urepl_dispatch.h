@@ -40,7 +40,7 @@ struct UReplSession {
      * session's socket I/O.  NULL for sessions created outside the
      * listener path (e.g. unit-test sessions; buffer transport). */
     struct UReplReader   *reader;
-    /* Task 18: peer identifier captured at accept() time.  For TCP this
+    /* Peer identifier captured at accept() time.  For TCP this
      * is sockaddr_in.sin_addr.s_addr (network byte order); for Unix
      * sockets the listener stores the peer's pid (cast).  0 = unknown
      * (unit-test sessions; buffer transport).  Used by dispatch_auth
@@ -76,7 +76,7 @@ struct UReplSession {
     size_t                coop_outbuf_fill;
     size_t                coop_outbuf_off;
     /* v0.9.4: set by the cooperative read sweep on a clean EOF (peer
-     * disconnect, read_fn == 0).  Task 4.5's close sweep reaps these. */
+     * disconnect, read_fn == 0).  The close sweep reaps these. */
     bool                  needs_teardown;
     /* === Per-session job rate limit (rate_limit_per_second) ===
      * Counts jobs dispatched in the current clock-second.  Resets when

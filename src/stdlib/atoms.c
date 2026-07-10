@@ -20,7 +20,7 @@
  * VM opcodes (OP_ADD / OP_LT / OP_EQ / etc. in src/vm/uvm.c), not slot
  * lookups, so registering them as slots would have no effect on the
  * `1 + 2` source form.  The plan templated against an atom-method-only
- * dispatch model the Wave 1 VM does not use.
+ * dispatch model the shipped VM does not use.
  */
 
 #include "stdlib/atoms.h"
@@ -92,8 +92,8 @@ prng_next(void)
 /* === Boolean.negate — return the unary inverse ============================
  *
  * Legacy `var '!' = false` (in share/urbi/boolean.u) installs the negation
- * as a slot value, not a method.  Wave 1 v1.0 uses the named-method form
- * `negate()` because slot-name dispatch through OP_GETSLOT requires a
+ * as a slot value, not a method.  The v1.0 runtime uses the named-method
+ * form `negate()` because slot-name dispatch through OP_GETSLOT requires a
  * UClosure value, not a UVAL_BOOL leaf.  The plan's `!` slot would not
  * dispatch from the v1.0 source `true.'!'` form (no quoted-name lex). */
 
@@ -112,9 +112,10 @@ bool_negate(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  *
  * asString prints base-10 via snprintf into a stack buffer, then interns.
  * Buffer 24 B is large enough for any int64_t (worst case 20 chars +
- * sign + NUL).  Freestanding builds without snprintf raise TypeError;
- * Wave 2 ships its own decimal formatter when the freestanding path
- * becomes load-bearing (urbi-embedded targets Cortex-M7 with newlib-nano,
+ * sign + NUL).  Freestanding builds without snprintf raise TypeError; a
+ * dedicated decimal formatter for that path is a deferred follow-up, to
+ * land when the freestanding path becomes load-bearing (urbi-embedded
+ * targets Cortex-M7 with newlib-nano,
  * which does provide snprintf — the freestanding fallback is reserved
  * for STM32 stripped-libc configurations). */
 
@@ -466,8 +467,8 @@ flt_atan2(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 /* === Float.asString / asInteger / asBoolean ================================
  *
  * asString uses the same UVALUE_FLOAT_FMT (%.14g + Lua trailing-.0) as the
- * REPL printer for round-trip parity.  Wave 2 doesn't expose alternate
- * format selectors; %g is canonical.
+ * REPL printer for round-trip parity.  Alternate format selectors are
+ * not exposed; %g is canonical.
  *
  * asInteger truncates toward zero (C99 (int64_t) cast).  Inf/NaN
  * conversions are implementation-defined in C; we explicitly raise
@@ -603,14 +604,14 @@ flt_pow(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 /* === String basic methods ==================================================
  *
  * UVAL_STR.v.p is a NUL-terminated `const char *` from ustr_intern.
- * Wave 1's Boolean.toString + String.length already use urbi_strlen;
+ * Boolean.toString + String.length already use urbi_strlen;
  * the runtime guarantees no embedded NULs in v1.0 strings (escape
- * `\0` is rejected by the lex; FUTURE Wave 2 backlog item LEX-035
+ * `\0` is rejected by the lex; FUTURE backlog item LEX-035
  * extension).
  *
  * Strings are BYTE-counted at v1.0 (delta §3.2): length / size return
  * byte count, charAt indexes by byte.  Unicode-aware code-point indexing
- * is a Wave 2 follow-up. */
+ * is a later follow-up. */
 
 static int
 str_size(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
@@ -666,8 +667,8 @@ str_charAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 /* === String case methods ===================================================
  *
  * ASCII-only conversion at v1.0.  Non-ASCII bytes (>= 0x80) pass through
- * unchanged.  Wave 2 delivers Unicode-aware case folding when libicu /
- * the embedded NFC tables land — tracked as a stdlib backlog item.
+ * unchanged.  Unicode-aware case folding will land when libicu /
+ * the embedded NFC tables do — tracked as a stdlib backlog item.
  *
  * Allocation strategy: build the result in a heap buffer sized to the
  * input (case-conversion is byte-length-preserving for ASCII), intern,
@@ -927,7 +928,7 @@ str_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  * Byte-level codepoint access — returns the byte at the given index as
  * Integer (0..255).  charAt returns a 1-byte string slice; asciiAt
  * returns the numeric byte value.  Codepoint-aware variants (codePointAt
- * etc.) are deferred to Wave 2 Unicode follow-up (delta §3.2). */
+ * etc.) are deferred to a later Unicode follow-up (delta §3.2). */
 
 static int
 str_asciiAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)

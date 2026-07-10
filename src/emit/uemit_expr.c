@@ -846,6 +846,14 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
             e->current_fs->nactvar < UFS_MAX_LOCALS) {
             const char *fork_name = ustr_intern(e->vm, "\x01fork", 5);
             if (fork_name == NULL) { e->error = EMIT_OOM; return 0U; }
+            /* Write actvars directly instead of uemit_declare_local: that
+             * helper allocates a FRESH slot at freereg and bumps freereg,
+             * but the closure already occupies the floor-top register, so we
+             * adopt closure_reg as the slot and leave freereg untouched.  The
+             * \x01 sentinel name can't collide with any user identifier, so
+             * the redeclare scan is skipped too; the adoption is temporary
+             * (undone by nactvar-- after the LHS), touching no scope-block
+             * bookkeeping. */
             ULocalVar *lv = &e->current_fs->actvars[e->current_fs->nactvar];
             lv->name        = fork_name;
             lv->name_len    = 5;
@@ -913,7 +921,7 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
     /* SEP_PIPE: lhs then rhs in sequence, no yield.
        LHS value is discarded; result is rhs.
 
-       EMIT-009 fix (Wave 5, v0.5.7): sync next_reg to the FuncState
+       EMIT-009 fix (v0.5.7): sync next_reg to the FuncState
        freereg before emitting RHS, mirroring the v0.5.2 AST_NARY shape
        (commit 882fbb8).  The bare next_reg-- is wrong when LHS leaves
        freereg promoted (e.g., LHS ends in a function literal, which

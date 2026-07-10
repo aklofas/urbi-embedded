@@ -154,7 +154,7 @@ UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
                                        USymbol *name);
 
 /* Sentinel returned by urbi_shape_find_slot when `name` is absent from
- * the lineage.  Replaces the magic-0 that several pre-Wave-6 callers
+ * the lineage.  Replaces the magic-0 that several earlier callers
  * used to mean "not found" (OBJ-017 — slot index 0 is a valid slot, not
  * a miss).  -1 chosen so the result fits in int32_t and never collides
  * with any valid slot index. */

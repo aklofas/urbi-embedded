@@ -24,9 +24,9 @@
  *   UEXEC_THROW — error raised; *out is left at urbi_make_nil() and the
  *                 OP_CALL arm propagates a TypeError to the strand.
  *
- * Phase 3 baseline error helpers (urbi_raise_arity / _type / _oom / _lookup)
- * print to stderr and return UEXEC_THROW; Wave 2 will swap them for the
- * Exception class hierarchy when scripted exceptions land. */
+ * Error helpers (urbi_raise_arity / _type / _oom / _lookup) return
+ * UEXEC_THROW; they clone the matching cached Exception-subclass proto
+ * (via urbi_raise_typed) so scripted try/catch can intercept them. */
 
 #ifndef URBI_STDLIB_OBJECT_ROOT_H
 #define URBI_STDLIB_OBJECT_ROOT_H
@@ -123,8 +123,9 @@ int urbi_raise_typed(struct UVM *vm, struct UObject *exc_proto,
 /* === urbi_proto_list_create ===
  *
  * Phase 3 synthetic helper: build a UObject that exposes a receiver's
- * proto chain as accessible-via-.size.  Wave 2 replaces this with a
- * proper List atom.  Returns NULL on OOM. */
+ * proto chain as accessible-via-.size.  This remains a synthetic; a
+ * proper List atom backing for the .protos view is a deferred follow-up.
+ * Returns NULL on OOM. */
 struct UObject *urbi_proto_list_create(struct UVM *vm, struct UObject *recv);
 
 /* === Shared VM-dependent string constructor ===

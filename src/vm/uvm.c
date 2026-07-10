@@ -608,7 +608,7 @@ dispatch:
                 uint8_t b = uinstr_b(*s->pc);
                 UUpvalCell *uvc = cur_cl->upvals[b];
                 if (uvc->on_heap) {
-                    /* Task 9c (GC-07): Dijkstra barrier on the
+                    /* GC-07: Dijkstra barrier on the
                      * CELL, not the executing closure.  The UUpvalCell is
                      * shared between sibling closures (OP_CLOSURE re-capture
                      * arm), so its color diverges from cur_cl's: a BLACK
@@ -670,7 +670,7 @@ dispatch:
             }
             /* v0.9.0-repl: cross-session-IC binding via per-UProto back-pointer.
              * child_proto->owning_module_instance was stamped at instance
-             * creation (Task 2) and is the mi where this proto was born.
+             * creation and is the mi where this proto was born.
              *
              * Replaces the v0.8.5 partial-bundle fallback chain that tried
              * s->module_instance first, then the parent closure's

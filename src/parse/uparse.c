@@ -278,7 +278,7 @@ UAstNode *urbi_parse_make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAs
  * Call-site convention is inconsistent across parse TUs: some pass NULL,
  * others pass urbi_parse_kErrorMessages[code] explicitly even when the value is
  * the same.  Both patterns are supported and produce identical output;
- * standardization across the parse subsystem is a Wave 6 cleanup target. */
+ * standardization across the parse subsystem remains a pending cleanup. */
 UAstNode *urbi_parse_make_error(UParser *p, UParseError code, const char *msg,
                      int line, int col) {
     UAstNode *n = urbi_parse_make_node(p, AST_ERROR, line, col);

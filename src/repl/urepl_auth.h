@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/repl/urepl_auth.h - bearer-token compare + per-IP rate limiter
  *
- * Task 17 lands the constant-time compare; Task 18 adds the LRU
- * rate-limit table.  Both are pure-functional + thread-unsafe — the
- * caller (server) wraps them in pthread_mutex_t auth_limiter_mutex.
+ * The constant-time compare and the LRU rate-limit table are both
+ * pure-functional + thread-unsafe — the caller (server) wraps them in
+ * pthread_mutex_t auth_limiter_mutex.
  *
  * Only compiled when URBI_ENABLE_REPL=1. */
 #ifndef UREPL_AUTH_H
@@ -29,7 +29,7 @@ extern "C" {
 bool urepl_auth_token_match(const char *a, size_t alen,
                             const char *b, size_t blen);
 
-/* ---- Per-source rate-limiter (Task 18) ------------------------------ */
+/* ---- Per-source rate-limiter ---------------------------------------- */
 
 /* Fixed-size LRU table.  Each slot tracks one peer (ip for TCP, pid
  * for Unix-socket) with a sliding window of failed-auth attempts.

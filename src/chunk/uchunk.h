@@ -16,7 +16,7 @@ extern "C" {
    v1.0 = 0x10 (v0.1.0), v1.1 = 0x11 (v0.2.0), v1.2 = 0x12 (v0.3.0 — control transfer),
    v1.3 = 0x13 (v0.4.0 — UProto.ic_count + UProto.ic_names side table),
    v1.4 = 0x14 (v0.5.0 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds),
-   v1.5 = 0x15 (v0.5.6 Wave 4 — wire-format completion: nested protos + per-proto
+   v1.5 = 0x15 (v0.5.6 — wire-format completion: nested protos + per-proto
                 + root ic_name_strs, header reserved bytes 16-23 strictly zero,
                 opcode-shape table verifier, OP_INVOKE retired, v0.5.0 reactive
                 opcodes renumbered 39-46 -> 38-45).
@@ -125,14 +125,13 @@ static inline uint32_t uinstr_enc_abx (UOpcode op, uint8_t a, uint16_t bx) {
          | ((uint32_t)bx << 16);
 }
 
-/* v0.9.2 Task 4.1: struct UModule has been deleted.  A "module" is now
+/* v0.9.2: struct UModule has been deleted.  A "module" is now
  * simply its root UProto.  The root UProto carries all fields that were
  * previously on UModule (source_name, origin_vm, next_proto_serial,
  * total_proto_count, next_in_realm, owning_realm, heap_allocated) in the
  * "root-only meaningful" section added to UProto in uproto.h.
  *
- * Public API function names remain urbi_module_* in this milestone;
- * rename to urbi_chunk_* happens in Task 5.1. */
+ * The public API function names use the urbi_chunk_* prefix. */
 
 /* --- errors --- */
 
@@ -167,7 +166,7 @@ typedef enum {
 
 /* --- API --- */
 
-/* v0.9.2 Task 4.1: strand-bind release helper.
+/* v0.9.2: strand-bind release helper.
  * Decrements root->refcount and, when it reaches 0 with a prior
  * uchunk_destroy call pending, fires uchunk_destroy_internal.
  * Pass NULL for root to no-op safely.  vm may be NULL in test contexts.

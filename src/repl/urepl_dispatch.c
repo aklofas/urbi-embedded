@@ -435,8 +435,8 @@ dispatch_eval(UReplServer *server, UReplSession *s, UReplJob *job)
     if (rc == URBI_OK) {
         /* Wrap result in JSON-string form.  urbi_repl_eval returns a
          * printable representation in 'result' (e.g. "3", "\"hello\"").
-         * We treat it as a JSON string for now; Phase 4 Task 21 brings
-         * a real JSON value formatter. */
+         * We treat it as a JSON string for now; Phase 4 is where a real
+         * JSON value formatter lands. */
         char value_json[1100];
         size_t off = 0;
         value_json[off++] = '"';
@@ -499,7 +499,7 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
         return;
     }
 #ifndef URBI_REPL_COOPERATIVE_ONLY
-    /* v0.9.1 Task 17: constant-time comparison.  strcmp's length-
+    /* v0.9.1: constant-time comparison.  strcmp's length-
      * dependent timing leaks ~1 byte per probe to an attacker timing
      * round-trips; urepl_auth_token_match walks the full token length
      * with a volatile accumulator (spec §7.3). */
@@ -507,7 +507,7 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
     size_t expected_len = strlen(expected);
     bool matched = urepl_auth_token_match(job->req.token, token_len,
                                           expected, expected_len);
-    /* Task 18: bump the per-source rate-limiter on each result.  On a
+    /* Bump the per-source rate-limiter on each result.  On a
      * successful auth the slot is cleared so a future legitimate
      * client doesn't inherit prior fail-count state. */
     if (server->auth_limiter != NULL) {
@@ -603,7 +603,8 @@ dispatch_introspect(UReplServer *server, UReplSession *s, UReplJob *job)
 static void
 dispatch_cancel_stub(UReplServer *server, UReplSession *s, const UReplJob *job)
 {
-    /* Task 26 wires real tag.stop() lookup.  Stub: emit cancelled:0
+    /* Real tag.stop() lookup is not yet wired — this stub emits
+     * cancelled:0 and cancels nothing
      * (spec §6.6 "unknown tag is a benign no-op"). */
     (void)server;
     push_result(s, job->req.id, "{\"cancelled\":0}");

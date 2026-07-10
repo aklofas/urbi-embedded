@@ -2,9 +2,9 @@
 /* atom_protos.c — atom proto C-native method stubs.
  *
  * Each atom family (Boolean, Integer, Float, String, nil, void) gets a
- * minimum method set at Wave 1.  Wave 2 fills out the full Tier 1 method
- * sets (logical ops on Boolean, arithmetic on Integer/Float, encode/decode
- * on String, etc.).
+ * minimum method set here.  The full Tier 1 method sets (logical ops on
+ * Boolean, arithmetic on Integer/Float, encode/decode on String, etc.)
+ * are installed by the atom-method modules (src/stdlib/atoms.c).
  *
  * The Object root .clone() method already handles atom short-circuit
  * (S-atom-clone-perf at Phase 3); the atom-proto chain inherits this via
@@ -105,12 +105,13 @@ urbi_atom_protos_register(UVM *vm)
     /* Allocate singletons (lazy-init via urbi_object_atom).  Boolean /
      * String are populated below; Integer / Float / Nil / Void are
      * touched here so the singletons exist at boot time even though no
-     * Wave-1 family-specific methods install on them — they inherit
+     * family-specific methods install on them in this module — they inherit
      * clone / setSlot / etc. from root Object via the proto chain.
      *
      * The Integer/Float/Nil/Void protos are pointer-to-const here because
-     * Wave 1 doesn't write to them (Wave 2 will, when family-specific
-     * methods land — at which point these become non-const).  The compile
+     * this module does not write to them (the family-specific Integer /
+     * Float / String methods install from src/stdlib/atoms.c on separately
+     * obtained mutable handles).  The compile
      * is otherwise unobserved between bool_proto/str_proto (mutated below)
      * and the four read-only ones, so the const distinction is honoured. */
     UObject       *bool_proto  = urbi_object_atom(vm, URBI_ATOM_BOOLEAN);
@@ -125,9 +126,9 @@ urbi_atom_protos_register(UVM *vm)
         return URBI_ERR_OOM;
     }
     /* int_proto / float_proto / nil_proto / void_proto exist for boot-
-     * time singleton allocation only at Wave 1 (they inherit Object
+     * time singleton allocation only in this module (they inherit Object
      * root's methods via the proto chain).  Mark them `(void)` so the
-     * compiler sees they are intentionally unused at this wave. */
+     * compiler sees they are intentionally unused here. */
     (void)int_proto;
     (void)float_proto;
     (void)nil_proto;

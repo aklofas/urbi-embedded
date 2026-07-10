@@ -1197,7 +1197,7 @@ size_t      urbi_vm_alignof(void);
  * a convenience wrapper that runs a module's root chunk to completion.
  *
  * Pre-v0.5.5 these were `uvm_*` and lived in src/vm/uvm.h; tests had to
- * include the internal header to call them.  Wave 3 promotes the names
+ * include the internal header to call them.  v0.5.5 promotes the names
  * to `urbi_vm_*` and publishes the supporting types via urbi/types.h.
  * Closes API-013 + API-027.
  *

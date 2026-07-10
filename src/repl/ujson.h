@@ -13,8 +13,8 @@
  *   - rejects deeply-nested DoS attempts and integer / depth overflows.
  *
  * Why this lives next to the REPL: it is only used by the Debug urbiscript
- * namespace (Task 22) to validate introspect-JSON round-trips and by the
- * NDJSON request-parser (Task 21 future work).  Putting it under src/repl/
+ * namespace to validate introspect-JSON round-trips, and is intended for the
+ * NDJSON request-parser (not yet wired to it).  Putting it under src/repl/
  * keeps the URBI_ENABLE_REPL=1 build gating natural — non-REPL builds
  * never link this TU. */
 #ifndef UJSON_H

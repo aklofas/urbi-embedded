@@ -32,7 +32,7 @@ urbi_vm_liveness(const UVM *vm, UVmLiveness *out)
      * old vestigial mirror, was deleted this task).  dirty_count / the
      * onleave queue make an idle step RUNNING so the host calls again —
      * the pre/post-loop reactive drain that consumes them with no strand
-     * dispatch lands in the vm_reactive_drain task (this arc, Task 5). */
+     * dispatch lands in the vm_reactive_drain pump. */
     out->pending = (uint32_t)((vm->event_ring != NULL
                                && uevent_ring_has_pending(vm->event_ring)) ? 1 : 0)
                  + vm->host_call_pending_count

@@ -73,7 +73,7 @@ ic_uprops_for_resolved_slot(const UObject *holder, uint32_t idx)
 /* Fill exactly one entry of `ic` at the round-robin replace_cursor with the
  * resolved slot information.  Advances replace_cursor and grows ic->n until
  * the cache is full.  Hoisted from static to header-declared at OBJ-033
- * (Wave 6 cleanup) to enable future megamorphic-bail call sites without
+ * to enable future megamorphic-bail call sites without
  * a follow-up edit. */
 static void
 ic_fill_at_cursor(UIC *ic, const UVM *vm, const UObject *recv,

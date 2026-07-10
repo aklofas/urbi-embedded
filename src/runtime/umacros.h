@@ -6,9 +6,9 @@
  * Note: URBI_ASSERT_NOT_ISR is intentionally NOT defined here — it lives in
  * include/urbi/urbi.h because it is part of the embedder-facing assertion
  * surface (host bridges can use it for ISR-unsafe-entry catches in debug
- * builds).  Per Wave-1 audit GC-012 the location is documented but not
+ * builds).  Per audit GC-012 the location is documented but not
  * relocated; the deeper hygiene of "public macro touching internal field"
- * carries forward to wave-3-naming. */
+ * remains a follow-up. */
 
 #ifndef UMACROS_H
 #define UMACROS_H
@@ -91,7 +91,7 @@ static inline void urbi_memcpy(void *dst, const void *src, size_t n) {
  * [b, b+n); 0 otherwise. Behavior is defined for n == 0 (returns 1).
  *
  * Pre-existing local equivalents (`lex_memeq`, `module_memcmp`) are
- * retired in favor of this helper at v0.5.5 (Wave 3). */
+ * retired in favor of this helper at v0.5.5. */
 static inline int urbi_memeq(const void *a, const void *b, size_t n) {
     const unsigned char *pa = (const unsigned char *)a;
     const unsigned char *pb = (const unsigned char *)b;

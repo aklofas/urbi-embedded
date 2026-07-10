@@ -198,7 +198,7 @@ urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
  * sound because the GC-02 full root re-scan runs at the START of the next
  * ATOMIC_FINISH slice, after the store, and re-discovers the element.
  *
- * Task 9b note: container backing stores are walked as ROOTS every cycle
+ * Container backing stores are walked as ROOTS every cycle
  * (urbi_stdlib_containers_walk_roots), and the GC-02 ATOMIC_FINISH re-scan
  * re-runs every provider — so a mid-mark store into any reachable
  * container is re-discovered before SWEEP even without this shade.  This

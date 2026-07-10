@@ -152,7 +152,7 @@ typedef enum {
                              *              recv and idx evaluated exactly once (v0.10.7).
                              * No new opcode needed.
                              * Ruling: implemented (v0.10.5, legacy F14);
-                             * single-eval fix (Wave 7 v0.10.7, closes audit-1 F4). */
+                             * single-eval fix (v0.10.7). */
     /* === end v0.10.5 === */
 
     /* === v0.10.5: control flow === */

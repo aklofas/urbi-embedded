@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/stdlib/debug_namespace.c — Debug urbiscript namespace (v0.9.1 Task 22).
+/* src/stdlib/debug_namespace.c — Debug urbiscript namespace (v0.9.1).
  *
  * Each Debug.X() method calls the corresponding urbi_introspect_X primitive
  * into a scratch buffer, then returns the JSON output as a urbi String.

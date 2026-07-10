@@ -265,7 +265,7 @@ static UToken scan_radix(ULexer *lex, const char *start, const int base,
 
 /* Identifier character classification.  Defined ahead of scan_number /
  * scan_radix so the suffix-parsing fall-throughs can call them without a
- * forward declaration (LEX-022, Wave 1 v0.5.3-layout). */
+ * forward declaration (LEX-022, v0.5.3-layout). */
 static int is_ident_start(const char c) {
     return (c >= 'a' && c <= 'z') ||
            (c >= 'A' && c <= 'Z') ||
@@ -936,10 +936,10 @@ static ULexError validate_unicode_escape(ULexer *lex) {
  * source view — escape sequences are NOT resolved here; the parser owns
  * escape resolution so the lexer stays zero-allocation (LEX-027).
  *
- * Wave 1 (v0.6.0) escape set: \n (newline), \t (tab), \\ (backslash),
+ * v0.6.0 escape set: \n (newline), \t (tab), \\ (backslash),
  * \" (quote).
  *
- * Wave 2 (v0.6.1) additions: \uXXXX (4-hex BMP code point) and
+ * v0.6.1 additions: \uXXXX (4-hex BMP code point) and
  * \u{HHHHHH} (1-6 hex full-plane up to U+10FFFF).  Both forms are
  * validated for syntax + range here; the parser uses urbi_encode_utf8
  * to materialize the UTF-8 byte sequence into the AST string-literal

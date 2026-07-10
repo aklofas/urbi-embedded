@@ -84,7 +84,7 @@ size_t urbi_intern_bytes(const struct UVM *vm);
  * A multi-VM aware version would key on vm pointer; that is a v1.x concern.
  *
  * Unary negation ("-") and binary subtraction ("-") share a slot name by
- * the locked convention in the Wave 3 plan; dispatch is contextual. */
+ * locked convention; dispatch is contextual. */
 USymbol *ustr_op_name(struct UVM *vm, const char *op, size_t len);
 
 /* GC root provider for the intern table (row 10 §5.5).

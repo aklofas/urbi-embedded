@@ -2,7 +2,7 @@
 /* atoms.h — C-native methods on Boolean / Integer / Float /
  * String atom protos.
  *
- * Wave 1 (Phase 4) registered the Boolean / String stubs (toString /
+ * Phase 4 registered the Boolean / String stubs (toString /
  * length) on the atom protos.  Phase 5 fills out the Tier 1 method set:
  *   Boolean: negate
  *   Integer: asString / asFloat / asBoolean / and / or / xor /

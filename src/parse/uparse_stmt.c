@@ -258,8 +258,8 @@ static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
  * has no access semantics but the keyword stays as a layout marker.
  *
  * Proto identifiers parse as full primary expressions so that future
- * v1.x extensions (e.g. `class C : public M.Inner`) just work; for
- * Wave 1 we expect AST_IDENT but do not gate on it. --- */
+ * v1.x extensions (e.g. `class C : public M.Inner`) just work; today
+ * we expect AST_IDENT but do not gate on it. --- */
 static UAstNode *parse_class_declaration(UParser *p) {
     UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_CLASS */
 

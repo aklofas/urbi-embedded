@@ -162,7 +162,7 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
      * leaves child_proto in nested[] but at least it is consistently a
      * fully-allocated empty proto (uchunk_destroy walks NULL slots
      * cleanly). */
-    /* v0.8.5 Task 5: allocate child_proto under the ENCLOSING parent's
+    /* v0.8.5: allocate child_proto under the ENCLOSING parent's
      * nested[] (parent_fs->target_proto), not flat under root_proto.  For
      * top-level function literals parent_fs->target_proto == root_proto so
      * the on-disk shape is byte-identical to pre-v0.8.5; for nested
@@ -614,7 +614,7 @@ uint8_t urbi_emit_if_arm(UEmitter *e, UAstNode *n) {
      * uemit_declare_local under SEP_SEMI between-stmt handling, which
      * uses fs->freereg as the next local's slot index).
      *
-     * EMIT-016 fix (Wave 5, v0.5.7): pre-fix the trailing
+     * EMIT-016 fix (v0.5.7): pre-fix the trailing
      * `fs->freereg = next_reg` line forced a `var b = init` after
      * `if (cond) { var x = init; x };` to land at slot rd+1 (e.g., 3)
      * instead of the actually-free slot rd (e.g., 2), wasting a register
@@ -662,7 +662,10 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
      * its register sits between the floor and rd).  The LOADNIL emitted at
      * loop-exit would then overwrite that closure with nil, causing a runtime
      * TypeError from OP_FORK_JOIN.  urbi_emit_if_arm already uses this pattern
-     * (`if (fs->freereg < rd) fs->freereg = rd`); align urbi_emit_while_arm. */
+     * (`if (fs->freereg < rd) fs->freereg = rd`); align urbi_emit_while_arm.
+     * This pin is a local guard: the structural fix is the closure-register
+     * adoption in urbi_emit_bin_sep_arm (uemit_expr.c), which declares the
+     * fork closure as a hidden local so floor resets land above it. */
     uint8_t rd = e->next_reg;
 
     /* v0.10.5: open loop context for break/continue. */
@@ -798,7 +801,7 @@ uint8_t urbi_emit_call_arm(UEmitter *e, UAstNode *n) {
         return 0U;
     }
 
-    /* EMIT-014 fix (Wave 5, v0.5.7): the OP_CALL B field is a uint8_t
+    /* EMIT-014 fix (v0.5.7): the OP_CALL B field is a uint8_t
      * holding (nargs + 1) for plain calls or (nargs + 2) for method calls.
      * Reject calls with >= 253 args before any codegen — method calls
      * need the extra self slot, so 253 args + 2 = 255 (the "all-results"
@@ -1006,7 +1009,7 @@ uint8_t urbi_emit_return_arm(UEmitter *e, UAstNode *n) {
     } else {
         /* Bare `return`: return nil.
          *
-         * EMIT-017 fix (Wave 5, v0.5.7): force next_reg above the
+         * EMIT-017 fix (v0.5.7): force next_reg above the
          * funcstate temp floor before alloc_reg.  alloc_reg uses
          * e->next_reg directly; if a future emit arm transiently drops
          * next_reg below urbi_emit_fs_temp_floor (= nactvar +

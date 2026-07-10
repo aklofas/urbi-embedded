@@ -685,7 +685,7 @@ drain_transport_accepts(UReplServer *server,
         if (ar == -1) return;           /* EAGAIN / no more clients */
         if (ar != 0)  return;           /* hard error */
 
-        /* Task 18: extract peer id from accepted socket.  TCP →
+        /* Extract peer id from accepted socket.  TCP →
          * IPv4 in_addr_t in network byte order; non-TCP (Unix /
          * pty / buffer) leaves it as 0. */
         uint32_t peer_id = 0;
@@ -699,7 +699,7 @@ drain_transport_accepts(UReplServer *server,
             }
         }
 
-        /* Task 18: per-IP rate-limit check.  Locked-out peers
+        /* Per-IP rate-limit check.  Locked-out peers
          * get the connection closed immediately, without ever
          * seeing a hello envelope. */
         if (server->auth_limiter != NULL) {
@@ -1174,7 +1174,7 @@ urepl_write_sweep_nonpollable(UReplServer *server)
             continue;
         }
         if (__atomic_load_n(&s->needs_teardown, __ATOMIC_ACQUIRE)) {
-            continue;  /* close sweep (Task 4.5) will reap */
+            continue;  /* close sweep will reap */
         }
         int n = urepl_session_write_drain_one(s, t, r->client_fd);
         if (n > 0) {
@@ -1293,7 +1293,7 @@ urepl_read_sweep_nonpollable(UReplServer *server)
             total_bytes += n;
         } else if (n == 0 || n == -2) {
             /* n == 0: clean EOF; n == -2: hard transport error.
-             * Both defer teardown to Task 4.5's close sweep. */
+             * Both defer teardown to the close sweep. */
             __atomic_store_n(&s->needs_teardown, true, __ATOMIC_RELEASE);
         }
         /* n == -1: would-block, normal. */
@@ -1303,7 +1303,7 @@ urepl_read_sweep_nonpollable(UReplServer *server)
     return total_bytes;
 }
 
-/* v0.9.4 Task 4.5: reap sessions whose needs_teardown flag was set by
+/* v0.9.4: reap sessions whose needs_teardown flag was set by
  * the read or write sweeps.  Mirrors the urbi_repl_stop reap loop but
  * targets a single session per iteration (the one being walked) rather
  * than draining the whole list.

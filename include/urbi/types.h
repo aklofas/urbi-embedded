@@ -5,7 +5,7 @@
  *
  * Public-facing type declarations needed by the rest of the public API.
  *
- * Created at v0.5.5 (Wave 3) to break the cycle where include/urbi/urbi.h
+ * Created at v0.5.5 to break the cycle where include/urbi/urbi.h
  * pulled in src/sched/ustrand.h to get UValue + UExecStatus declarations.
  * That made the public header non-self-contained — external consumers
  * using only -Iinclude could not resolve sibling internal includes.
@@ -17,7 +17,7 @@
  * Layout MUST match the internal canonical form byte-for-byte; v0.5.5
  * captures the canonical form here.  Any later change to UValue layout
  * requires updating this header, the internal mirrors, and the bytecode
- * wire format (Wave 4 territory).
+ * wire format (a wire-format version bump).
  *
  * Closes the structural half of API-012, INC-003.
  */

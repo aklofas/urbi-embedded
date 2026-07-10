@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/repl/urepl_introspect.c — 9 introspection C primitives (v0.9.1 Task 19).
+/* src/repl/urepl_introspect.c — 9 introspection C primitives (v0.9.1).
  *
  * Each primitive walks a chunk of VM state on the MAIN thread and emits a
  * single JSON object.  See urepl_introspect.h banner for the contract;

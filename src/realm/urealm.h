@@ -111,7 +111,7 @@ typedef struct URealm {
      * Walked at urbi_realm_destroy time to unload each non-vm_owned module
      * (urealm_register_module); vm_owned overlays (GC-18) only get their
      * back-pointers cleared there and are freed by urbi_vm_destroy.
-     * v0.9.2 Task 4.1: was UModule*; now UProto* (UModule deleted). */
+     * v0.9.2: was UModule*; now UProto* (UModule deleted). */
     struct UProto  *loaded_protos_head;
 } URealm;
 

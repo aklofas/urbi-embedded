@@ -15,7 +15,7 @@
  * next_reg between sibling sites — same fix shape as urbi_emit_at_event_arm
  * in uemit_react.c.
  *
- * Wave 1 body-statement support: AST_VAR_DECL (`var x = expr`) and
+ * Body-statement support: AST_VAR_DECL (`var x = expr`) and
  * AST_FUNCTION (`var f = function() { ... }`) emit as Foo.setSlot.
  * Other statement kinds raise EMIT_UNSUPPORTED_AST. */
 
@@ -188,7 +188,7 @@ emit_class_body_stmt(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
         return;
     }
 
-    /* Wave 1: only var-decl is supported in the class body.  The init
+    /* Only var-decl is supported in the class body.  The init
      * may be any expression including an AST_FUNCTION literal — that
      * case naturally produces a closure value that gets installed as a
      * slot-method. */
@@ -395,7 +395,7 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
     /* === Step 3: body[Foo] — walk body statements and install each
      * var-decl/function-decl as a slot on Foo.
      *
-     * Wave 1 simplification: only AST_VAR_DECL is supported (catches
+     * Simplification: only AST_VAR_DECL is supported (catches
      * `var x = 1` and `var f = function() { ... }` both via the same
      * arm).  Other body statement kinds raise EMIT_UNSUPPORTED_AST. === */
     if (n->u.class_decl.body != NULL) {
@@ -444,7 +444,7 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
      * AST_ASSIGN with foo_reg sourced via a no-op move and let the
      * assign arm route to either local-rewrite or realm-global SETSLOT.
      *
-     * For Wave 1: support chunk-top (fs->parent == NULL) only — write
+     * Support chunk-top (fs->parent == NULL) only — write
      * the class name into the realm global slot.  Inside-a-function
      * class declarations are EMIT_UNSUPPORTED_AST and deferred. === */
     UFuncState *fs = e->current_fs;

@@ -56,7 +56,7 @@
  *
  * UEvent is a GC-managed cell.  UVAL_EVENT (kind=9) was added to
  * the UValKind enum (urbi/types.h) so the GC barrier in uvalue_is_heap()
- * shades it.  Phase-18 (Wave 6, 2026-05-09) made the three helpers
+ * shades it.  Phase-18 (2026-05-09) made the three helpers
  * `static inline` in uevent_native.h to elide call overhead at the 5
  * in-tree call sites; no out-of-line definitions are needed. */
 

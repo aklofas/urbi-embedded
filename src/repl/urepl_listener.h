@@ -67,7 +67,7 @@ int  urepl_accept_sweep_nonpollable(UReplServer *server);
  * same line-framing path that the reader pthread uses, so the
  * v0.9.1 dispatcher sees an identical job stream.  Sessions that
  * observe a clean EOF (or a hard transport error) have their
- * needs_teardown flag set for the close sweep (Task 4.5) to reap.
+ * needs_teardown flag set for the close sweep to reap.
  *
  * Returns the total number of bytes consumed across all sessions
  * (informational).  Pollable sessions are skipped — owned by the
@@ -80,7 +80,7 @@ int  urepl_read_sweep_nonpollable(UReplServer *server);
  * call against the transport.  Bytes that the write_fn cannot accept
  * (EAGAIN / short write) stay in the per-session staging buffer for
  * the next sweep — order is preserved.  Sessions that observe a hard
- * transport error are marked needs_teardown for Task 4.5's close
+ * transport error are marked needs_teardown for the close
  * sweep to reap.
  *
  * Returns the total bytes written across all sessions (informational;

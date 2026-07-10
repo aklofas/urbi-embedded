@@ -251,7 +251,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
         realm->tag = NULL;
     }
 
-    /* Step 2b (v0.9.0-repl Task 12): walk loaded_protos_head and unload
+    /* Step 2b (v0.9.0-repl): walk loaded_protos_head and unload
      * realm-owned modules.  Strands were stopped in step 1, so strand-bind
      * refcounts have dropped; closures from other realms that reference these
      * modules' protos survive via the root_proto-refcount rescue mechanism
@@ -263,7 +263,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * cleared in the same pass.  In-list-only clearing is sufficient:
      * urealm_register_module is the sole setter of owning_realm and sets the
      * back-pointer and the list link together (skipping entirely when
-     * owning_realm != NULL — Task 5); the only writers that clear the pair
+     * owning_realm != NULL); the only writers that clear the pair
      * — urbi_unload plus the three uchunk_destroy clear sites in
      * uchunk_io.c (the rescue-path and no-vm-path unlinks in uchunk_destroy
      * and the one in uchunk_destroy_internal) — unlink from

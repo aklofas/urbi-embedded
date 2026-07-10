@@ -300,7 +300,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* stdlib state. */
     /* (All stdlib proto pointers zeroed by urbi_zero backstop above.
      * stdlib_closures + stdlib_upvalues deleted at v0.8.4 Step C-3.
-     * stdlib_protos + stdlib_nested_arrays deleted at Task 11.) */
+     * stdlib_protos + stdlib_nested_arrays deleted at v0.8.1-uproto-root.) */
 
     /* Gap R (v0.7.1): atomic_active must be zero so uevent_ring_drain is
      * NOT gated on entry.  Covered by urbi_zero backstop above. */
@@ -397,7 +397,7 @@ void urbi_vm_destroy(UVM *vm) {
     /* Clear module_instances_head before GC destroy so that:
      *   (a) object_roots_walker stops shading now-unreachable UChunkInstance
      *       cells (harmless but tidy), and
-     *   (b) uchunk_destroy_internal's vm->module_instances_head walk (Task 10)
+     *   (b) uchunk_destroy_internal's vm->module_instances_head walk
      *       skips the list instead of dereferencing GC-freed cells post-destroy.
      * The GC sweep will reclaim all UChunkInstance cells regardless; we only
      * clear the pointer so the walk in the stdlib teardown path below is safe. */
@@ -515,10 +515,10 @@ void urbi_vm_destroy(UVM *vm) {
         }
 #endif
 
-        /* Task 11 (v0.8.1-uproto-root): stdlib_protos and stdlib_nested_arrays
+        /* v0.8.1-uproto-root: stdlib_protos and stdlib_nested_arrays
          * deleted.  The rescued_protos sweep below handles all deferred protos. */
 
-        /* Phase 2 Task 9 (v0.8.1-uproto-root): free rescued whole root_protos.
+        /* Phase 2 (v0.8.1-uproto-root): free rescued whole root_protos.
          * Each entry is a root_proto that was detached from its UModule by
          * uchunk_destroy when root_proto->refcount > 0 (strand still alive).
          * The root_proto carries ownership of nested[] and all chunk-top buffers

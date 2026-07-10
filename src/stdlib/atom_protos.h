@@ -3,14 +3,14 @@
  *
  * Each atom family (Boolean, Integer, Float, String, nil, void) gets a
  * dedicated proto with at least .clone() and a minimum method set.
- * Wave 1 ships:
+ * This module ships:
  *   Boolean: toString
  *   String:  length
  * Integer / Float / Nil / Void protos exist but inherit clone +
  * getSlot/setSlot/etc. from the Object root via prototype chain.
  *
- * Wave 2 fills out the family-specific arithmetic / math / overlay
- * methods. */
+ * The family-specific arithmetic / math / overlay methods are installed
+ * by the atom-method modules (src/stdlib/atoms.c). */
 
 #ifndef URBI_STDLIB_ATOM_PROTOS_H
 #define URBI_STDLIB_ATOM_PROTOS_H

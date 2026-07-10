@@ -6,7 +6,7 @@
 
 #include <string.h>
 
-/* ---- Constant-time bearer-token comparison (Task 17) ---------------- */
+/* ---- Constant-time bearer-token comparison -------------------------- */
 
 bool
 urepl_auth_token_match(const char *a, size_t alen,
@@ -27,7 +27,7 @@ urepl_auth_token_match(const char *a, size_t alen,
     return accum == 0;
 }
 
-/* ---- Per-source rate-limiter (Task 18) ------------------------------ */
+/* ---- Per-source rate-limiter ---------------------------------------- */
 
 void
 urepl_auth_limiter_init(UReplAuthLimiter *lim)

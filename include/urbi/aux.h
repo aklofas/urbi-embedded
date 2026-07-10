@@ -14,9 +14,9 @@
  * addition to core (paying the cost against the 80-fn urbi.h budget
  * cap documented in CONTRIBUTING.md "Aux layer governance").
  *
- * v0.7.0 ships with one helper: urbi_aux_check_version. Wave 2 adds
- * batch registration helpers, error formatter, load-and-run composite,
- * and value dump utility.
+ * The aux layer provides urbi_aux_check_version, batch registration
+ * helpers, an error formatter, a load-and-run composite, and a value
+ * dump utility.
  */
 
 #ifndef URBI_AUX_H

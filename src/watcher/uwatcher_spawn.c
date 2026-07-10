@@ -298,8 +298,8 @@ urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s)
      * internal cleanup (back-pointers cleared) so observers see a
      * consistent state; before any re-spawn so re-spawn-aware embedders
      * can correlate the completion event with the subsequent fresh body
-     * strand on a later callback.  Handle is a Wave 1 placeholder (0);
-     * Wave 2 (ESP-IDF port) defines the real watcher-identity meaning. */
+     * strand on a later callback.  Handle is still a placeholder (0); a
+     * later revision defines the real watcher-identity meaning. */
     if (vm->watcher_body_done_fn != NULL) {
         vm->watcher_body_done_fn(vm, vm->watcher_body_done_ud, /* handle */ 0, completion_status);
     }

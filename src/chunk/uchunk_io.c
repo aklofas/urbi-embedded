@@ -41,7 +41,8 @@ _Static_assert(URBI_BYTECODE_VERSION_MAJOR == 1
 #  include <stdio.h>
 #  include <stdlib.h>
 
-/* Safe snprintf-style helper. No-op when errmsg==NULL or errcap==0. */
+/* Safe snprintf-style helper. No-op when errmsg==NULL or errcap==0.
+ * Byte-identical mirror lives in uchunk_verify.c; keep the two in sync. */
 static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
     if (errmsg == NULL || errcap == 0) return;
     va_list ap;
@@ -190,7 +191,7 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
 #else
     if (alloc == NULL) return;
 #endif
-    /* Task 11: root_proto owns nested[] — free sub-protos first.
+    /* root_proto owns nested[] — free sub-protos first.
      * Nested protos have nested_count == 0 so this walk is a no-op for them. */
     if (proto->nested != NULL) {
         size_t i;

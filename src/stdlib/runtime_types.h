@@ -2,7 +2,7 @@
 /* runtime_types.h — C-native runtime-type protos.
  *
  * This module lands the runtime-type method surfaces on top of
- * the Wave-1 baselines:
+ * the atom-proto baselines:
  *
  *   - Exception primitive root: fresh proto exposing `.new(message)`,
  *     `.message` slot, and `.raise` (which deposits THROW unwind so
@@ -18,7 +18,7 @@
  *     UVAL_TAG kind, so a script-side Tag instance would need a UObject
  *     wrapper carrying a UTag in a hidden slot, and existing utag_create
  *     is realm-bound.  Tracked in docs/urbi-embedded-backlog.md.
- *   - Event.new / Event.emit / Event.syncEmit — already shipped at Wave 1
+ *   - Event.new / Event.emit / Event.syncEmit — already shipped
  *     via src/event/uevent_native.c.
  *
  * Boot order: urbi_stdlib_register_runtime_types(vm) is called from

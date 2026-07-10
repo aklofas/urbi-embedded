@@ -21,8 +21,8 @@
  * Historical note: a few interior sites currently return the sentinel
  * directly (e.g. urbi_parse_outer_tier on urbi_parse_arena_grow_node_array failure).
  * This is harmless — the top-level recheck collapses both forms — but
- * standardizing on plain NULL inside the recursion is a Wave 5 fix
- * target.  New code should follow the NULL-propagation rule. */
+ * standardizing on plain NULL inside the recursion remains a pending
+ * cleanup.  New code should follow the NULL-propagation rule. */
 
 /* --- OOM sentinel (defined in uparse.c residual). --- */
 extern const UAstNode uparser_oom_sentinel;

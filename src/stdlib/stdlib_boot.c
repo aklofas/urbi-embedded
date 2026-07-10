@@ -1,11 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* stdlib_boot.c — stdlib bootstrap.
  *
- * Wave 1 minimum: register the nine Object root C-native methods on
- * vm->atom_object.  Wave 2 grows this to load atom proto methods +
- * container internals + .u overlay blob.
+ * Registers the nine Object root C-native methods on vm->atom_object,
+ * then loads atom proto methods + container internals + .u overlay blob.
  *
- * Boot order (Wave 2):
+ * Boot order:
  *   1. C-native Object root methods (urbi_object_root_register)
  *   2. C-native atom proto stubs (urbi_atom_protos_register)
  *   3. Deserialize the baked .u stdlib bytecode blob into
@@ -54,7 +53,7 @@ stdlib_boot_impl(UVM *vm)
     if (rc != URBI_OK) return rc;
 
     /* Phase 4 (atom proto stubs).  Allocates Boolean / Nil / Void
-     * singletons + installs Wave-1 family-specific methods (Boolean
+     * singletons + installs the baseline family-specific methods (Boolean
      * .toString, String.length).  Integer / Float / Nil / Void protos
      * exist but inherit clone + getSlot/etc. from Object root via the
      * prototype chain. */
@@ -68,7 +67,7 @@ stdlib_boot_impl(UVM *vm)
     rc = urbi_stdlib_register_atom_methods(vm);
     if (rc != URBI_OK) return rc;
 
-    /* Phase 6 (Wave 2): C-native containers.  Installs methods on the
+    /* Phase 6: C-native containers.  Installs methods on the
      * existing URBI_ATOM_LIST / URBI_ATOM_DICT atom protos (the
      * realm-populate registry already publishes these as "List" / "Dict"
      * globals).  Pair / Triplet / Tuple realm-global registration is
@@ -79,7 +78,7 @@ stdlib_boot_impl(UVM *vm)
     rc = urbi_stdlib_register_containers(vm);
     if (rc != URBI_OK) return rc;
 
-    /* Phase 7 (Wave 2): runtime-type protos.  Allocates
+    /* Phase 7: runtime-type protos.  Allocates
      * vm->exception_proto and installs Exception.new / Exception.raise.
      * Realm-global binding for "Exception" is deferred to the post-loop
      * hook urbi_stdlib_register_runtime_globals, mirroring container
@@ -88,7 +87,7 @@ stdlib_boot_impl(UVM *vm)
     rc = urbi_stdlib_register_runtime_types(vm);
     if (rc != URBI_OK) return rc;
 
-    /* Phase 8 (Wave 2): namespace protos.  Allocates Math / System /
+    /* Phase 8: namespace protos.  Allocates Math / System /
      * System.Platform / Global / CallMessage proto UObjects with their
      * constants + native methods.  Realm-global binding for the
      * namespace names is deferred to urbi_stdlib_register_namespace_-
@@ -97,7 +96,7 @@ stdlib_boot_impl(UVM *vm)
     rc = urbi_stdlib_register_namespaces(vm);
     if (rc != URBI_OK) return rc;
 
-    /* Phase 9 (Wave 2): primitive protos.  Allocates Mutex / Date /
+    /* Phase 9: primitive protos.  Allocates Mutex / Date /
      * Duration proto UObjects with their native methods.  Realm-global
      * binding for the primitive names is deferred to urbi_stdlib_-
      * register_primitives_globals, again preserving the registry's
@@ -149,7 +148,7 @@ stdlib_boot_impl(UVM *vm)
     if (rc != URBI_OK) return rc;
 
 #ifdef URBI_ENABLE_REPL
-    /* v0.9.1 Task 22: Debug namespace.  Allocates the singleton proto +
+    /* v0.9.1: Debug namespace.  Allocates the singleton proto +
      * binds 9 native-method slots.  The realm-global "Debug" binding is
      * deferred to urbi_debug_namespace_register_globals (called from
      * urbi_populate_realm_globals AFTER the mark_readonly pass).  The
@@ -169,7 +168,7 @@ stdlib_boot_impl(UVM *vm)
     }
 #endif
 
-    /* Wave 2: deserialize the baked stdlib bytecode blob
+    /* Deserialize the baked stdlib bytecode blob
      * and bind a per-VM UChunkInstance.  Empty blob (Phase 4 baseline)
      * skips this entirely. */
     if (urbi_stdlib_bytecode_len > 0) {
@@ -211,7 +210,7 @@ stdlib_boot_impl(UVM *vm)
     }
 #endif
 
-    /* v0.9.1 Task 4: mark every builtin atom + runtime-type proto readonly
+    /* v0.9.1: mark every builtin atom + runtime-type proto readonly
      * AFTER all population phases (1-9) so the method-install passes are not
      * blocked by their own readonly bits.  Spec §4.2.  The Global namespace
      * proto (vm->global_namespace_proto) is left mutable by design. */

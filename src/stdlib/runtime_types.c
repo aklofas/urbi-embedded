@@ -3,7 +3,7 @@
  *
  * Phase 7 ships the Exception primitive root.  See runtime_types.h banner
  * for what is intentionally deferred (Code reflection, Tag.new scripted
- * constructor, Event.* — already in Wave 1).
+ * constructor, Event.* — already shipped).
  *
  * Exception ABI:
  *   var e = Exception.new("boom")  → fresh clone of Exception proto with

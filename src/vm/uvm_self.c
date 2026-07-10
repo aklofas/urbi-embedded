@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/vm/uvm_self.c — Wave 5: OP_SELF helper.
+/* src/vm/uvm_self.c — OP_SELF helper.
  *
  * Extracted from src/vm/uvm.c OP_SELF arm (lines 1821-1953).
  * Built on urbi_vm_getslot_value + receiver copy.

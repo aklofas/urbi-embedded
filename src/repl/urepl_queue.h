@@ -5,8 +5,8 @@
  *
  *   UReplQueue — multiple-producer single-consumer linked list of
  *     parsed jobs.  Producers are per-connection reader threads (Phase
- *     3); consumer is the single dispatcher thread (Phase 3 +
- *     Task 13's synchronous helper).  Intrusive linked list; serialized
+ *     3); consumer is the single dispatcher thread (Phase 3, plus a
+ *     synchronous helper).  Intrusive linked list; serialized
  *     by a mutex.  A cond var lets the consumer block until non-empty.
  *
  *   UReplRingbuf — single-producer single-consumer byte ring used as

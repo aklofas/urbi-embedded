@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/stdlib/debug_namespace.h — Debug urbiscript namespace (v0.9.1 Task 22).
+/* src/stdlib/debug_namespace.h — Debug urbiscript namespace (v0.9.1).
  *
  * Allocates a Debug proto UObject with 9 C-native methods (one per
  * introspect primitive) and binds it as a slot on each realm's global

@@ -144,14 +144,14 @@ int urbi_vm_find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 #define UEMIT_JMP_FALLTHROUGH_BIAS    (UEMIT_JMP_BIAS + 1U)
 #define UEMIT_REG_LIMIT       UFS_MAX_REGS       /* alias for clarity at exhaustion-guard sites (EMIT-025) */
 
-/* EMIT-019 fix (Wave 5, v0.5.7): centralize OP_JMP Bx encoding in a
+/* EMIT-019 fix (v0.5.7): centralize OP_JMP Bx encoding in a
  * pc-based helper.  For FORWARD jumps the VM dispatches OP_JMP as
  * `pc += signed(Bx) - UEMIT_JMP_BIAS` AFTER the dispatch's pc++, so an
  * OP_JMP at from_pc landing at target_pc requires Bx = (target_pc -
  * from_pc - 1) + UEMIT_JMP_BIAS.  Back-edges do NOT get that pc++ —
  * they dispatch via the safepoint path; use uemit_jmp_offset_backward
- * for those.  Wave 3 named UEMIT_JMP_BIAS /
- * FALLTHROUGH_BIAS but left the arithmetic inline at every site; this
+ * for those.  UEMIT_JMP_BIAS / FALLTHROUGH_BIAS were named earlier but
+ * left the arithmetic inline at every site; this
  * helper centralizes the encoding contract so future peephole /
  * extra-instr insertions cannot silently miscompute fall-through.
  * Returns the biased Bx value ready for uinstr_enc_abx.  Bytecode-
@@ -211,7 +211,7 @@ static inline void patch_fwd_jmp_here(UEmitter *e, int jmp_pc) {
  * Returns the allocated register index.  Sets EMIT_REG_EXHAUSTED if
  * all 256 slots are consumed (cursor at 255 before call).
  *
- * EMIT-011 fix (Wave 5, v0.5.7): also bump the per-FuncState
+ * EMIT-011 fix (v0.5.7): also bump the per-FuncState
  * fs->max_reg_seen.  uemit_close_function rolls fs->max_reg_seen into
  * the nested proto's max_reg; the VM allocates (proto->max_reg + 1)
  * register slots at runtime.  Pre-fix, alloc_reg only updated the
@@ -234,7 +234,7 @@ static inline uint8_t alloc_reg(UEmitter *e) {
 
 /* Release the most-recently-allocated register (stack discipline).
  *
- * EMIT-012 fix (Wave 5, v0.5.7): respect urbi_emit_fs_temp_floor — temp registers
+ * EMIT-012 fix (v0.5.7): respect urbi_emit_fs_temp_floor — temp registers
  * live at indices [floor, ...) where floor = nactvar + (1 if
  * global_slot_reserved else 0).  A bare next_reg-- with no floor guard
  * decrements *into* the local zone when the caller miscounted free_reg
@@ -258,7 +258,7 @@ static inline void free_reg(UEmitter *e) {
  * leaves behind on the parent FuncState — closure dst pulled from
  * freereg, then `freereg++` and `next_reg = freereg`).
  *
- * EMIT-010 fix (Wave 5, v0.5.7): watcher / waituntil / at-event install
+ * EMIT-010 fix (v0.5.7): watcher / waituntil / at-event install
  * arms compile their cond/body/onleave/event closures via
  * urbi_emit_function_literal, which raises freereg in lockstep with next_reg.
  * Plain free_reg() decrements only next_reg, leaving freereg promoted

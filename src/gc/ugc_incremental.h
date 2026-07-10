@@ -28,7 +28,7 @@
 
 /* Forward declarations for pointer types used in barrier signatures.
  * Full definitions live in src/vm/uvm.h / src/sched/ustrand.h.
- * (struct UClosure dropped at Task 9c: urbi_gc_upvalue_pre_store now takes
+ * (struct UClosure dropped: urbi_gc_upvalue_pre_store now takes
  * the UUpvalCell's UCell header, not the executing closure.) */
 struct UVM;
 struct UStrand;
@@ -315,9 +315,9 @@ bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
  *   ATOMIC_FINISH root re-scan covers (same rationale as
  *   urbi_gc_register_write).
  *   Renamed from urbi_gc_upvalue_write (runtime-invariants F12); parent
- *   retargeted closure → cell at Task 9c.
+ *   retargeted from closure → cell.
  *
- * Callsite status (v0.10.1 / Task 9c):
+ * Callsite status (v0.10.1):
  *   OP_SETUPVAL handler (src/vm/uvm.c): wired inside the on_heap arm with
  *   &uvc->cell as the parent; the stack arm stores barrier-free.
  *   urbi_vm_close_upvalues (src/vm/uvm_closure.c): same helper, same parent
@@ -386,7 +386,7 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s, uint16_t reg_idx, UVal
  * (OP_SETUPVAL on_heap arm + urbi_vm_close_upvalues).  `cell` is the
  * UUpvalCell's embedded UCell header (offset 0) — the cell, not the
  * executing closure, is the Dijkstra parent because sibling closures
- * share it (see the surfaces banner above, Task 9c).
+ * share it (see the surfaces banner above).
  * Use urbi_gc_slot_store for ordinary UValue* slot writes. */
 static inline void
 urbi_gc_upvalue_pre_store(struct UVM *vm, const UCell *cell, UValue child)
@@ -406,7 +406,7 @@ urbi_gc_upvalue_pre_store(struct UVM *vm, const UCell *cell, UValue child)
 /* v0.11.3 memory-debug walkers (defined in ugc_incremental.c; need the private
  * UAllCellsNode type, so they cannot live in umemdebug.c). */
 int    urbi_gc_mem_validate(struct UVM *vm);   /* redzone + quarantine poison check */
-size_t urbi_gc_count_pinned(struct UVM *vm);   /* never-unpinned cell count (Task 4) */
+size_t urbi_gc_count_pinned(struct UVM *vm);   /* never-unpinned cell count */
 #endif
 
 #endif /* UGC_INCREMENTAL_H */

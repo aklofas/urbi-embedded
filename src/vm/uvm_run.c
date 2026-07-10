@@ -75,7 +75,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
     (void)urbi_sched_strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
 
-    /* API-004 (Wave 5): route this transient onto realm->strands_head — the
+    /* API-004: route this transient onto realm->strands_head — the
      * caller-supplied realm if given, else the VM's global Realm (lazy-created
      * on first use).  Failure here is non-fatal — the strand stays realm=NULL
      * and the GC walker simply skips it.  The strand is unlinked again before
@@ -83,11 +83,11 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
      * entry_closure stays NULL — that is the discriminator the OP_FORK_DETACH
      * / OP_FORK_JOIN guards now use to reject forks from a urbi_vm_run transient.
      *
-     * Pre-Wave-5: this branch unconditionally bound the transient to the global
+     * Previously this branch unconditionally bound the transient to the global
      * Realm regardless of any realm argument the caller might have intended;
-     * the realm argument was added at Wave 5 to thread urbi_run_chunk's
+     * the realm argument was later added to thread urbi_run_chunk's
      * caller-supplied Realm through here.  NULL → global preserves the
-     * implicit pre-Wave-5 behavior for callers that don't care which Realm
+     * implicit earlier behavior for callers that don't care which Realm
      * they run in. */
     {
         URealm *target_realm = realm;

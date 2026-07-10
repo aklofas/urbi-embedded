@@ -103,10 +103,9 @@ struct UReplServer {
     UReplAcceptItem         *accept_tail;
     urbi_mutex_t            accept_queue_mutex;
 
-    /* Phase 3 — per-IP auth-fail rate-limiter (Task 18 plugs the
-     * impl).  void* keeps the auth-internal struct private to the
-     * urepl_auth.c TU.  NULL when auth is disabled or before Task 18
-     * lands. */
+    /* Phase 3 — per-IP auth-fail rate-limiter.  void* keeps the
+     * auth-internal struct private to the urepl_auth.c TU.  NULL when
+     * auth is disabled. */
     void                    *auth_limiter;
     urbi_mutex_t            auth_limiter_mutex;
 };

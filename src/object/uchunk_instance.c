@@ -116,7 +116,7 @@ static bool intern_ic_names_from_strs(struct UVM *vm,
 
 /* Stamp owning_module_instance back-pointers on every UProto in the tree.
  * DFS pre-order; idempotent (re-running on the same tree overwrites with
- * the same value).  Added v0.9.0-repl (Task 2). */
+ * the same value).  Added v0.9.0-repl. */
 static void
 stamp_owning_mi(UProto *p, UChunkInstance *mi)
 {
@@ -325,9 +325,9 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *root)
                       root_ic_count, root_ic_names, &ic_cursor);
     }
 
-    /* v0.9.0-repl Task 2: stamp every UProto in the tree with its owning
+    /* v0.9.0-repl: stamp every UProto in the tree with its owning
      * UChunkInstance.  DFS pre-order matches ic_index assignment order.
-     * The field is currently unread by the runtime; Task 7 will use it. */
+     * OP_CLOSURE reads the field to bind cross-session ICs (see uvm.c). */
     stamp_owning_mi(root, mi);
 
     return mi;

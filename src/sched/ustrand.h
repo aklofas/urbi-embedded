@@ -363,7 +363,7 @@ struct UStrand {
     const uint32_t         *pc_base;        /* base of current frame's instruction array */
     const UValue           *cur_consts;     /* current frame's constant pool */
     struct UProto          *root_proto;     /* root UProto of the chunk being executed.
-                                             * Replaces the deleted s->module field (v0.9.2 Task 4.1).
+                                             * Replaces the deleted s->module field (v0.9.2).
                                              * Set at strand creation (strand_create_for_module) and
                                              * cleared in ustrand_destroy after refcount dec.
                                              * NULL for closure-based strands (set by arm_from_closure
@@ -389,7 +389,7 @@ struct UStrand {
     UValue                 *out_slot;       /* adapter-set: OP_RET at top-frame writes here */
 };
 
-/* Layout pin (Wave-1 v0.5.3 audit CHSTR-041): the bulk of UStrand's size
+/* Layout pin (v0.5.3 audit CHSTR-041): the bulk of UStrand's size
  * is the embedded frames[UVM_MAX_FRAMES] call-frame array (64 × ~56 B);
  * any change to that or the surrounding fields must update this assert
  * deliberately.  Default + footprint presets share this size — preset
@@ -399,7 +399,7 @@ struct UStrand {
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
 URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3912,
                "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change"
-               /* v0.9.2 Task 4.1: -8 B from deleting s->module pointer (3896 → 3888).
+               /* v0.9.2: -8 B from deleting s->module pointer (3896 → 3888).
                 * v0.9.4: +8 B for periodic_owner back-pointer (3888 → 3896).
                 * v0.10.9 W3a: +16 B for unblock_value (UValue) supporting
                 *              SUSPENDED↔READY tag.block/unblock plumbing (3896 → 3912).
@@ -609,7 +609,7 @@ int urbi_strand_arm_from_closure(struct UStrand *s, struct UClosure *entry,
  * UChunkInstance.  Transitions DORMANT → READY via urbi_strand_start so the
  * host's main urbi_step loop picks it up.
  *
- * v0.9.2 Task 4.1: takes UProto* (root proto) instead of UModule*.
+ * v0.9.2: takes UProto* (root proto) instead of UModule*.
  *
  * Strand lifecycle: persists in realm->strands_head until it reaches DEAD
  * naturally (OP_RET / fatal); the host's urbi_step loop drives it.

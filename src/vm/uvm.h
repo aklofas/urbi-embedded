@@ -205,10 +205,10 @@ typedef struct UOpOverloadIC {
  * stack footprint in tests that allocate `UVM vm;` on the C stack.  The IC
  * is heap-allocated at urbi_vm_init time and freed at urbi_vm_destroy. */
 
-/* UNestedArrayNode: deleted at Task 11 (v0.8.1-uproto-root).
+/* UNestedArrayNode: deleted at v0.8.1-uproto-root.
  * urbi_steal_repl_protos (which populated vm->stdlib_nested_arrays) was
- * deleted at Task 8a; vm->stdlib_protos and vm->stdlib_nested_arrays are
- * deleted at Task 11.  The whole-root_proto rescue path (vm->rescued_protos)
+ * deleted alongside vm->stdlib_protos and vm->stdlib_nested_arrays at
+ * v0.8.1-uproto-root.  The whole-root_proto rescue path (vm->rescued_protos)
  * is the sole deferred-destroy mechanism from v0.8.1 onward. */
 
 /* --- Gap P (v0.7.1): per-VM error ring buffer storage ---
@@ -652,11 +652,11 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   successful boot; subsequent calls are no-ops.
      * (last_recv removed at v1.6 S42 — method receivers are now passed
      *  via R[A+1] under OP_CALL's method flag, not a global side channel.) */
-    /* stdlib_protos and stdlib_nested_arrays deleted at Task 11 (v0.8.1-uproto-root).
+    /* stdlib_protos and stdlib_nested_arrays deleted at v0.8.1-uproto-root.
      * The whole-root_proto rescue path (vm->rescued_protos) is the sole mechanism. */
     /* rescued_protos: intrusive list (via UProto.next_alloc) of whole root_proto
      * objects rescued from uchunk_destroy when root_proto->refcount > 0 at
-     * destroy time (Phase 2 Task 9 of v0.8.1-uproto-root).
+     * destroy time (Phase 2 of v0.8.1-uproto-root).
      *
      * When a module is destroyed while a strand still holds a reference to its
      * root_proto, uchunk_destroy detaches the root_proto (with all nested[]
@@ -666,7 +666,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * At urbi_vm_destroy, each rescued root_proto is freed via
      * uproto_destroy_buffers (walks nested[], frees all owned buffers),
      * then the root_proto struct itself is freed via its stored allocator.
-     * Task 11: stdlib_protos (per-nested rescue) deleted; rescued_protos is
+     * stdlib_protos (per-nested rescue) deleted; rescued_protos is
      * the sole deferred-destroy mechanism. */
     struct UProto      *rescued_protos;
     struct UProto  *stdlib_module;      /* Phase 4 — see field doc above; v0.9.2: was UModule* */
@@ -789,7 +789,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * put `UVM vm;` on the C stack do not overflow. */
     UOpOverloadIC *op_overload_ic;
 
-    /* host-callback hook (v0.7.0 Wave 1) fired by
+    /* host-callback hook (v0.7.0) fired by
      * urbi_watcher_body_completed after internal cleanup, before any
      * re-spawn.  NULL default; installed via urbi_set_watcher_body_done_fn.
      * Declared as inline function-pointer to keep uvm.h independent of
@@ -852,7 +852,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * (registered at urbi_vm_init). */
     URefTable ref_table;
 
-    /* --- v0.9.1 Debug namespace proto (Task 22) ---
+    /* --- v0.9.1 Debug namespace proto ---
      * Lazily allocated by urbi_debug_namespace_register on first call;
      * stashed here so subsequent realm-global binds see the same singleton
      * and the GC root walker shades it once.  void* keeps the core VM
@@ -894,7 +894,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
    any subsequent urbi_vm_run will NULL-deref in the frame allocation
    path — caller's bug. Zero-initializes last_error and last_errmsg.
 
-   Promoted from void to int return (VM-010 + VM-024, v0.7.0 Wave 1).
+   Promoted from void to int return (VM-010 + VM-024, v0.7.0).
    Returns URBI_OK on success, URBI_ERR_OOM if any sub-system allocation
    fails (event_ring, watcher pool, deferred_slot_changes ring, operator
    overload IC).  urbi_vm_destroy remains safe to call regardless of the
@@ -920,9 +920,9 @@ uint64_t urbi_vm_dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budg
    typedef is retired to int for source compat); existing callsites compile
    unchanged.
 
-   API-004 (Wave 5): the `realm` argument selects which Realm the
+   API-004: the `realm` argument selects which Realm the
    transient strand runs in.  realm == NULL falls back to the VM's
-   global Realm (the pre-Wave-5 implicit behavior), preserving
+   global Realm (the earlier implicit behavior), preserving
    source-compat for existing callers via the matching update in the
    public header. */
 int urbi_vm_run(UVM *vm, struct URealm *realm,

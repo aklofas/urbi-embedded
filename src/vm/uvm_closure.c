@@ -89,11 +89,11 @@ void urbi_vm_close_upvalues(UStrand *s, const UValue *threshold) {
         if (cell->u.stack_ptr >= threshold) {
             /* GC-07: Dijkstra forward barrier on the CELL.  It
              * may already be BLACK mid-cycle while the captured value is
-             * still WHITE (either white — see uvalue_is_heap_white, Task
-             * 9b); without a shade the value's only surviving reference can
+             * still WHITE (either white — see uvalue_is_heap_white);
+             * without a shade the value's only surviving reference can
              * end up inside an already-scanned cell and the sweep frees it
              * while reachable.  Same helper + same cell-parent shape as
-             * OP_SETUPVAL's on_heap arm (Task 9c: the cell — shared between
+             * OP_SETUPVAL's on_heap arm (the cell — shared between
              * sibling closures — is the barrier parent at both heapified
              * store sites; a closure's color is never the right check). */
             urbi_gc_upvalue_pre_store(s->vm, &cell->cell,
