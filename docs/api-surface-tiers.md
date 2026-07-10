@@ -275,6 +275,9 @@ CI gate tracks this list to prevent silent growth.
   (stdlib/event/tag/ros registration converged on it)
 - `urbi_emit_disasm_opnames_complete`, `urbi_vm_diag_opnames_complete` —
   opcode name-table completeness probes for the unit suite
+- `urbi_chunk_decode_verify`, `urbi_chunk_verify_bounds` — bytecode verifier
+  passes split into `uchunk_verify.c`, driven by `uchunk_deserialize`
+  (renamed from the file-static `decode_verify` / `verify_chunk_bounds`)
 
 ### Emitter arm dispatch (v0.13.6 namespace day)
 
