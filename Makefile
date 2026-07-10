@@ -184,6 +184,29 @@ CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
 URBI_VIS_FLAGS := -fvisibility=hidden
 CPPFLAGS += -Iinclude -Isrc -Itests/unit
 
+# PERF-05/06/07: the single small-footprint knob preset.  One authoritative
+# definition, applied verbatim to every non-host cross target below so the
+# embedded builds share ONE tuning story instead of drifting per-target -D
+# lists.  Each macro is #ifndef-overridable at its grounded define site:
+#   UVM_STACK_CAP          (runtime/uframe.h)    2048 -> 512  register slots
+#   UVM_MAX_FRAMES         (runtime/uframe.h)    64   -> 24   call frames
+#   URBI_WATCHER_POOL_SIZE (watcher/uwatcher.h)  64   -> 16   watcher slab
+#   URBI_EVENT_RING_DEPTH  (event/uevent_ring.h) 256  -> 32   ISR ring depth
+#   URBI_IC_ENTRIES_PER_SITE (object/uic.h)      4    -> 2    inline-cache ways
+#   URBI_CLEANUP_MAX       (runtime/ucleanup.h)  64   -> 16   cleanup slots
+# PERF-06: the UVM_STACK_CAP + UVM_MAX_FRAMES cut is the bulk of the win —
+# per-strand cost drops from 36.7 KB (default) toward ~9.9 KB (see
+# docs/embedded/footprint-tunables.md).  UStrand's layout pin (CHSTR-041,
+# ustrand.h) and the UIC pin (uic.h) are both guarded on 64-bit pointers /
+# 4-way IC, so neither fires on these 32-bit cross targets under the preset.
+FOOTPRINT_CFLAGS := \
+    -DUVM_STACK_CAP=512 \
+    -DUVM_MAX_FRAMES=24 \
+    -DURBI_WATCHER_POOL_SIZE=16 \
+    -DURBI_EVENT_RING_DEPTH=32 \
+    -DURBI_IC_ENTRIES_PER_SITE=2 \
+    -DURBI_CLEANUP_MAX=16
+
 # refactor-3 BLD-04: flag stamp.  Any change to the compiler, CFLAGS, or
 # CPPFLAGS invalidates every object in this BUILDDIR — the root cause of the
 # whole stale-object trap family (v0.12.0-H et al.) and of CI's defensive
@@ -1622,23 +1645,26 @@ cross-arm:
 		URBI_STDLIB_FLAVOR=4 \
 		CC=arm-none-eabi-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding \
-		        -DURBI_CLEANUP_MAX=16 \
+		        $(FOOTPRINT_CFLAGS) \
 		        -DURBI_STRAND_BUDGET_MAX=200 \
 		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_POOL_SIZE=16 \
 		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_EVENT_RING_DEPTH=32 \
 		        -DURBI_FLOAT_TYPE=4" \
 		AR=arm-none-eabi-ar \
 		core
 
+# PERF-07: cross-riscv now shares the FOOTPRINT_CFLAGS preset.  It previously
+# kept the 32 KB (2048-slot) default register stack and a deliberately larger
+# 64-slot watcher pool; both are folded into the one shared preset (512-slot
+# stack, 16-slot pool) so every non-host cross target tells the same tuning
+# story.  rv32imc has no RAM budget that requires the larger pool.
 cross-riscv:
 	$(MAKE) TARGET=riscv-rv32imc \
 		URBI_STDLIB_FLAVOR=4 \
 		CC=riscv64-unknown-elf-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding \
-		        -DURBI_FLOAT_TYPE=4 \
-		        -DURBI_WATCHER_POOL_SIZE=64" \
+		        $(FOOTPRINT_CFLAGS) \
+		        -DURBI_FLOAT_TYPE=4" \
 		AR=riscv64-unknown-elf-ar \
 		core
 
@@ -1660,14 +1686,11 @@ cross-stm32f4:
 		        -mcpu=cortex-m4 -mthumb \
 		        -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
 		        -ffreestanding \
-		        -DURBI_CLEANUP_MAX=16 \
+		        $(FOOTPRINT_CFLAGS) \
 		        -DURBI_STRAND_BUDGET_MAX=200 \
 		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_POOL_SIZE=16 \
 		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_EVENT_RING_DEPTH=32 \
-		        -DURBI_FLOAT_TYPE=4 \
-		        -DUVM_STACK_CAP=512" \
+		        -DURBI_FLOAT_TYPE=4" \
 		AR=arm-none-eabi-ar \
 		core
 
@@ -1686,14 +1709,11 @@ cross-pico:
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
 		        -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft \
 		        -ffreestanding \
-		        -DURBI_CLEANUP_MAX=16 \
+		        $(FOOTPRINT_CFLAGS) \
 		        -DURBI_STRAND_BUDGET_MAX=200 \
 		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_POOL_SIZE=16 \
 		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_EVENT_RING_DEPTH=32 \
-		        -DURBI_FLOAT_TYPE=4 \
-		        -DUVM_STACK_CAP=512" \
+		        -DURBI_FLOAT_TYPE=4" \
 		AR=arm-none-eabi-ar \
 		core
 
@@ -1713,12 +1733,10 @@ cross-arm-bytecode-only:
 		CC=arm-none-eabi-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding \
 		        -DURBI_BYTECODE_ONLY=1 \
-		        -DURBI_CLEANUP_MAX=16 \
+		        $(FOOTPRINT_CFLAGS) \
 		        -DURBI_STRAND_BUDGET_MAX=200 \
 		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_POOL_SIZE=16 \
 		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_EVENT_RING_DEPTH=32 \
 		        -DURBI_FLOAT_TYPE=4" \
 		AR=arm-none-eabi-ar \
 		core
@@ -1729,8 +1747,8 @@ cross-riscv-bytecode-only:
 		CC=riscv64-unknown-elf-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding \
 		        -DURBI_BYTECODE_ONLY=1 \
-		        -DURBI_FLOAT_TYPE=4 \
-		        -DURBI_WATCHER_POOL_SIZE=64" \
+		        $(FOOTPRINT_CFLAGS) \
+		        -DURBI_FLOAT_TYPE=4" \
 		AR=riscv64-unknown-elf-ar \
 		core
 
@@ -1744,12 +1762,10 @@ cross-stm32f4-bytecode-only:
 		        -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
 		        -ffreestanding \
 		        -DURBI_BYTECODE_ONLY=1 \
-		        -DURBI_CLEANUP_MAX=16 \
+		        $(FOOTPRINT_CFLAGS) \
 		        -DURBI_STRAND_BUDGET_MAX=200 \
 		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_POOL_SIZE=16 \
 		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_EVENT_RING_DEPTH=32 \
 		        -DURBI_FLOAT_TYPE=4" \
 		AR=arm-none-eabi-ar \
 		core
@@ -1757,6 +1773,15 @@ cross-stm32f4-bytecode-only:
 
 # v0.9.4: bytecode-only variant of cross-pico — freestanding-clean
 # archive check ensures no libc symbols leak when URBI_BYTECODE_ONLY=1.
+#
+# PERF-07 exception: this target is a SYMBOL-SURFACE verification build whose
+# undefined-symbol set is pinned by the GHA-only golden
+# tests/golden/v0.9.4-pico-nm-bytecode-only.txt.  It deliberately does NOT
+# take FOOTPRINT_CFLAGS — the URBI_IC_ENTRIES_PER_SITE=2 cut changes codegen
+# (drops __aeabi_idivmod / __gnu_thumb1_case_uhi, adds strcmp), which would
+# require regenerating a golden that cannot be reproduced off the GHA apt
+# arm-gcc 13.2.1 (this box is xpack 14.2.1 — the documented skew).  The
+# shipping cross-pico build carries the preset; this check build stays neutral.
 cross-pico-bytecode-only:
 	$(MAKE) URBI_BYTECODE_ONLY=1 \
 		TARGET=cross-pico-bytecode-only \
@@ -1784,14 +1809,11 @@ cross-pico-repl:
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
 		        -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft \
 		        -ffreestanding \
-		        -DURBI_CLEANUP_MAX=16 \
+		        $(FOOTPRINT_CFLAGS) \
 		        -DURBI_STRAND_BUDGET_MAX=200 \
 		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_POOL_SIZE=16 \
 		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_EVENT_RING_DEPTH=32 \
-		        -DURBI_FLOAT_TYPE=4 \
-		        -DUVM_STACK_CAP=512" \
+		        -DURBI_FLOAT_TYPE=4" \
 		AR=arm-none-eabi-ar \
 		core
 	@arm-none-eabi-size --totals build/arm-cortex-m0plus-repl/liburbi.a | tail -1
@@ -1802,6 +1824,14 @@ cross-pico-repl:
 # Footprint -D set mirrors cross-arm-bytecode-only — ESP32-S3 has a
 # comparable RAM envelope to the Cortex-M7 target.  Inline freestanding
 # gate matches the spec §4.7 contract.
+#
+# PERF-07 exception: like cross-pico-bytecode-only, this is a symbol-surface
+# verification build pinned by the GHA-only golden
+# tests/golden/v0.7.2-esp32-nm-bytecode-only.txt, so it keeps its original
+# partial knob set and does NOT take the full FOOTPRINT_CFLAGS preset (the
+# UVM_STACK_CAP / UVM_MAX_FRAMES / URBI_IC_ENTRIES_PER_SITE additions would
+# perturb the pinned undefined-symbol surface).  The shipping cross-esp32s3-full
+# build carries the preset instead.
 cross-esp32s3-bytecode-only:
 	$(MAKE) URBI_BYTECODE_ONLY=1 \
 		TARGET=cross-esp32s3-bytecode-only \
@@ -1828,7 +1858,8 @@ cross-esp32s3-bytecode-only:
 cross-esp32s3-full:
 	$(MAKE) TARGET=cross-esp32s3-full \
 		CC=xtensa-esp-elf-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mlongcalls -ffreestanding" \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mlongcalls -ffreestanding \
+		        $(FOOTPRINT_CFLAGS)" \
 		AR=xtensa-esp-elf-ar \
 		core
 

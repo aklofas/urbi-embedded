@@ -4,7 +4,8 @@
    Freestanding-safe: no hosted headers.
 
    Power-of-2 depth required for bitmask modulo.
-   URBI_EVENT_RING_DEPTH default is 256; small-footprint builds override to 32.
+   URBI_EVENT_RING_DEPTH default is 256; the small-footprint cross builds bind
+   32 via the shared FOOTPRINT_CFLAGS preset in the Makefile.
 
    Naming convention (EVENT-014):
      Public host-callable: `urbi_inject_event` (declared in <urbi/urbi.h>).
