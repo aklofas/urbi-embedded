@@ -401,3 +401,16 @@ parameters, universal asString, String %, compat aliases, List.sort(comparator),
 typed exceptions from div-by-zero, RegExp budget, emit diagnostics with
 positions, message polish, tag-watcher persistence, REPL line-cap).  ABI triple
 after this tag: 0/23/6.)
+
+(v0.13.6-consistency bumped 0/23/6 → 0/23/7 PATCH — NOT an escape.
+No new public C API symbols, no new opcodes, wire format unchanged at v1.9 /
+0x19.  Tag 7 of the v0.13.x pre-release hardening arc: internal-consistency
+pass (cross-TU internals namespaced under `urbi_` — two internal-leak allowlist
+rows removed; duplicated internals consolidated; dead code removed with UStrand
+3920 → 3912; fork-operand register-allocation fix; Boolean/Nil asString; unified
+positioned division/modulo error prefixes; comment/doc truthfulness program +
+source-comment lint gate; internals-docs accuracy sweep; GC rooting-matrix
+additions; embedded footprint preset + per-port stack-cap knob + firmware size
+gate; bytecode-verifier and emitter control-flow-arm decompositions).  The XC-04
+public shims are untouched — deprecation banner comment only.  ABI triple after
+this tag: 0/23/7.)

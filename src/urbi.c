@@ -32,7 +32,7 @@
  * literal before every annotated tag; the regression test in
  * tests/unit/test_public_api.c::urbi_version_matches_release_tag pins
  * the expected value so a forgotten bump surfaces as a test failure. */
-#define URBI_VERSION "0.13.5-conformance-and-stdlib"
+#define URBI_VERSION "0.13.6-consistency"
 
 const char *urbi_version(void) { return URBI_VERSION; }
 

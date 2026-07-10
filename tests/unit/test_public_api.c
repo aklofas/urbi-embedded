@@ -253,7 +253,7 @@ UTEST(urbi_version_matches_release_tag)
 {
     const char *v = urbi_version();
     UASSERT(v != NULL);
-    UASSERT(strcmp(v, "0.13.5-conformance-and-stdlib") == 0);
+    UASSERT(strcmp(v, "0.13.6-consistency") == 0);
 }
 
 /* ===================================================================

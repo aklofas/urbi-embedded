@@ -260,7 +260,7 @@ extern "C" {
 
 #define URBI_API_VERSION_MAJOR  0
 #define URBI_API_VERSION_MINOR  23
-#define URBI_API_VERSION_PATCH  6
+#define URBI_API_VERSION_PATCH  7
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
@@ -473,10 +473,27 @@ extern "C" {
  * closes design-risks v0.13.4-A); REPL 8 KiB inbound line cap.  No new
  * public C API symbols; no new opcodes; wire format unchanged at v1.9 /
  * 0x19.  Not a pre-v1.0 escape.
+ *
+ * v0.13.6-consistency — PATCH bump 0/23/6 → 0/23/7 (NOT an escape).
+ * Tag 7 of the v0.13.x pre-release hardening arc.  Internal-consistency
+ * pass: cross-TU internals namespaced under the `urbi_` prefix (two
+ * internal-leak allowlist rows removed); duplicated internals consolidated
+ * (shared native-method registration, unified value constructors,
+ * parser/emitter helpers, opcode name tables, intrusive-list idiom, REPL
+ * transport); dead code removed (UStrand shrinks 3920 → 3912); fork-operand
+ * register allocation fixed for `&`/`,` statement operands; Boolean/Nil
+ * asString; unified positioned division/modulo error prefixes; comment/doc
+ * truthfulness program + source-comment lint gate; internals-docs accuracy
+ * sweep; GC rooting-matrix additions; embedded footprint preset +
+ * per-port stack-cap knob + firmware size gate; bytecode-verifier and
+ * emitter control-flow-arm decompositions.  No new public C API symbols
+ * (the XC-04 public shims are untouched — deprecation banner comment only);
+ * no new opcodes; wire format unchanged at v1.9 / 0x19.  Not a pre-v1.0
+ * escape.
  */
 _Static_assert(URBI_API_VERSION_MAJOR == 0
             && URBI_API_VERSION_MINOR == 23
-            && URBI_API_VERSION_PATCH == 6,
+            && URBI_API_VERSION_PATCH == 7,
     "ABI freeze pin: see docs/api-stability.md §3 before bumping");
 
 /* Runtime getter. NULL-tolerant per arg. */
