@@ -86,8 +86,8 @@ There are three barrier surfaces, all defined as `static inline` in
   slot-change emit is also wired here when bit 7 is set.
 - `urbi_gc_register_write(vm, strand, reg_idx, child)` — strand register
   store. **Intentionally a no-op:** registers are roots, walked at
-  `MARK_ROOTS` *and re-walked at `ATOMIC_FINISH` with the mutator stopped*
-  (refactor-3 GC-02). The atomic-phase full root-provider re-scan — not a
+  `MARK_ROOTS` *and re-walked at `ATOMIC_FINISH` with the mutator stopped*.
+  The atomic-phase full root-provider re-scan — not a
   per-write barrier — is the soundness mechanism: a white value stored into
   an already-scanned register is re-discovered before `SWEEP`.
 - `urbi_gc_upvalue_pre_store(vm, cell, child)` — barrier-only hook for
@@ -95,7 +95,7 @@ There are three barrier surfaces, all defined as `static inline` in
   `vm_close_upvalues`); the caller performs the store. The Dijkstra parent
   is the `UUpvalCell`'s embedded `UCell` header — not the executing closure,
   because sibling closures share the cell and its color diverges from any
-  one closure's (refactor-3 GC-07). No watcher hook (closures are not
+  one closure's. No watcher hook (closures are not
   directly watchable in v1.0).
 
 `UClosure` and `UObject` both embed `UCell` at offset 0, which is what makes
@@ -110,11 +110,26 @@ unrelated and holds freestanding helpers like `urbi_zero` and `urbi_strlen`.
 ## Safe-point discipline
 
 The collector advances cooperatively. The dispatcher reaches the
-`safepoint:` label in `src/vm/uvm.c` on three triggers:
+`safepoint:` label in `src/vm/uvm.c` on two triggers (see the `goto safepoint`
+call sites and the safepoint-contract comment in `src/vm/uvm.c`):
 
 1. **Backward branches** (loops, `while`, `for`).
-2. **Calls and non-top `OP_RET`** (every non-leaf call boundary).
-3. **Explicit yields** at statement-separator boundaries (`;`, `,`, `&`).
+2. **Bytecode calls and non-top `OP_RET`** (every non-leaf call boundary).
+
+Statement separators do **not** run the inline safepoint, so a GC slice never
+fires on a separator itself (`src/emit/uemit_expr.c` separator emit):
+
+- `;` (sequential-yield) emits `OP_YIELD`, which on a real strand transfers
+  control back to the scheduler (`goto exit_strand`) rather than reaching the
+  `safepoint:` label. The collector advances on the strand's *next* dispatch
+  entry, not at the yield.
+- `,` (parallel-detach) emits `OP_FORK_DETACH` and `&` (parallel-join) emits
+  `OP_FORK_JOIN`; both spawn a child and continue via `NEXT()` without running
+  a safepoint.
+- `|` (sequential-atomic) emits no separator opcode at all.
+
+Native (host C) calls also return via `NEXT()` and do not reach the safepoint;
+they run only the reactive drain, not a GC slice.
 
 At each safepoint the dispatcher runs:
 
@@ -179,27 +194,88 @@ side and the unit suites that verify the invariant.
 
 ## GC-cell inventory
 
-The cells the collector currently knows about, with their type tag and
-size pin (host = 64-bit pointers; embedded targets noted separately):
+A GC-managed cell is one allocated through `urbi_gc_alloc` with a `type_tag`
+whose `UType` descriptor is installed in `vm->type_table[]` (the built-in
+descriptors are registered by `urbi_object_builtin_types_init` in
+`src/object/utypes_init.c`; the `k_builtin_types[]` table there is the
+authoritative list). Every such cell embeds a `UCell` header at offset 0 and
+is reachable, marked, and swept by the collector. The complete set at v1.0,
+with type tag and size pin (host = 64-bit pointers; embedded targets noted
+separately):
 
-| Cell | `type_tag` | Header | Size pin (host) | Notes |
-|------|-----------|--------|-----------------|-------|
-| `UObject` | `UTYPE_OBJECT` (1) | yes | 56 B | `_Static_assert` in `src/object/uobject.h` |
-| `UClosure` | `UTYPE_CLOSURE` (2) | yes | variable + `(nupvals - 1) * sizeof(UUpvalCell*)` | `UCell` first member |
-| `UStrand` | `UTYPE_COROUTINE` (7) | yes | 3896 B | bulk is the embedded `frames[UVM_MAX_FRAMES]` array; `_Static_assert` in `src/sched/ustrand.h` |
-| `UVM` | n/a | n/a | n/a | not a GC cell — owns the heap, walked as the root container |
-| `UWatcher` | `UTYPE_WATCHER` (6) | pool | 240 B | pool-managed (`UGC_IS_FIXED`); `_Static_assert` in `src/watcher/uwatcher.h` |
-| `UEvent` | `UTYPE_EVENT` (18) | yes | 40 B | `_Static_assert` in `src/event/uevent.h` |
-| `UChangedNode` | `UTYPE_CHANGED_NODE` (19) | yes | 32 B (host) / 16 B (32-bit) | `_Static_assert` in `src/changed/uchanged_node.h`, guarded on pointer width |
-| `UTag` | `UTYPE_TAG` (5) | yes | 64 B | promoted to a GC cell in the `v0.5.0-reactive` release; `_Static_assert` in `src/tag/utag.h` |
+| Cell | `type_tag` | Size pin (host) | Notes |
+|------|-----------|-----------------|-------|
+| `UObject` | `UTYPE_OBJECT` (1) | 56 B | `_Static_assert` in `src/object/uobject.h` |
+| `UClosure` | `UTYPE_CLOSURE` (2) | 48 B fixed + `(nupvals - 1) * sizeof(UUpvalCell*)` trailing | `_Static_assert` in `src/runtime/uclosure.h` |
+| `UTag` | `UTYPE_TAG` (5) | 64 B | promoted to a GC cell in the `v0.5.0-reactive` release; `_Static_assert` in `src/tag/utag.h` |
+| `UProtos` | `UTYPE_PROTOS` (9) | variable | heap prototype-list block (`n >= 2`); flexible `items[]` array |
+| `UShape` | `UTYPE_SHAPE` (10) | 56 B | hidden-class record; `_Static_assert` in `src/object/ushape.h` |
+| `UProps` | `UTYPE_PROPS` (11) | 48 B | per-slot property record; `_Static_assert` in `src/object/ushape.h` |
+| `USlotHandle` | `UTYPE_SLOTHANDLE` (12) | 40 B | `_Static_assert` in `src/object/uslothandle.h` |
+| `UChunkInstance` | `UTYPE_MODULE_INSTANCE` (13) | variable | per-chunk instance; flexible `entries[]` (`UProtoInstance`) array |
+| `UProtoInstance` array | `UTYPE_PROTO_INSTANCE` (14) | variable | inline-cache backing block; walker is a no-op (reached via stronger paths) |
+| `UShapeMap` | `UTYPE_SHAPE_MAP` (15) | variable | shape-transition cache; flexible `entries[]` array |
+| `UPropsTable` | `UTYPE_PROPS_TABLE` (16) | variable | per-shape `UProps*` array; walker is a no-op (owning `UShape` shades entries) |
+| `USlotArray` | `UTYPE_SLOT_ARRAY` (17) | variable | grow-on-write slot storage; walker is a no-op (owning `UObject` iterates slots) |
+| `UEvent` | `UTYPE_EVENT` (18) | 40 B | `_Static_assert` in `src/event/uevent.h` |
+| `UChangedNode` | `UTYPE_CHANGED_NODE` (19) | 32 B (host) / 16 B (32-bit) | `_Static_assert` in `src/changed/uchanged_node.h`, guarded on pointer width |
+| `UUpvalCell` | `UTYPE_UPVAL_CELL` (20) | 32 B | captured-local upvalue cell; `_Static_assert` in `src/runtime/uclosure.h` |
 
 `UTag` was a pool-managed value before `v0.5.0-reactive`; promoting it to a
 proper GC cell let it own GC-managed `UValue` slots safely. `UEvent` and
 `UChangedNode` are the reactive-runtime cells that flow through the
 slot-change pipeline; see `reactive-runtime.md`.
 
+Three structures carry a `type_tag` and a `UCell`-shaped header but are **not**
+GC-`urbi_gc_alloc` cells, so they are not on this list:
+
+- `UVM` — owns the heap; walked as the root container, never allocated or
+  swept as a cell.
+- `UStrand` (`UTYPE_COROUTINE`, 3912 B) — allocated directly through
+  `vm->alloc_fn` (`src/sched/ustrand.c`), not `urbi_gc_alloc`, and freed by the
+  realm teardown. It is walked as a *root provider* (its register window,
+  frames, and unwind state are scanned via `strand_walk_roots` in
+  `src/sched/usched_cooperative.c`), not marked-and-swept. `_Static_assert` on
+  its size lives in `src/sched/ustrand.h`.
+- `UWatcher` (`UTYPE_WATCHER`, 248 B) — pool-managed. The slab is a single
+  `vm->alloc_fn` allocation at `urbi_vm_init`; individual watchers carry
+  `UGC_IS_FIXED` and are never reclaimed by sweep. The collector marks a
+  watcher's payload closures through the watcher root provider; the slot
+  itself is returned to the pool freelist on unregister. `_Static_assert` in
+  `src/watcher/uwatcher.h`.
+
+Runtime tags `UTYPE_STRING` (3), `UTYPE_ARRAY` (4), and `UTYPE_NAMESPACE` (8)
+are reserved but carry no `type_table` walker: strings live in the intern
+table (see below), and list/dict/namespace storage is reached through the
+container and namespace root providers rather than as first-class cells.
+
 Type tags 21–63 are reserved for future runtime cells; host types start at
 `UTYPE_HOST_BASE = 64` and are registered through `urbi_register_type`.
+
+## GC root providers
+
+Roots that live outside the object graph are enumerated by registered
+*root providers* — callbacks the collector runs at `MARK_ROOTS` and again at
+the `ATOMIC_FINISH` stop-the-world re-scan. They are registered in
+`urbi_vm_init` (`src/vm/uvm_init.c`) via `urbi_gc_register_root_provider`.
+Eleven providers are registered at v1.0:
+
+| Provider | Roots it yields |
+|----------|-----------------|
+| `urbi_gc_sched_walk_roots` | every live strand's register window, frames, unwind/cleanup state (via `strand_walk_roots`) |
+| `urbi_gc_realm_list_walk_roots` | each realm's namespace bindings, global object, and root tag |
+| `urbi_gc_intern_table_walk_roots` | no-op — interned strings are not GC cells (see below) |
+| `urbi_gc_host_handle_walk_roots` | host-side value handles pinned through the handle table |
+| `vm_misc_walk_roots` | `vm->last_return_closure` and the VM-level C-stack root-frame chain |
+| `urbi_gc_watcher_table_walk_roots` | active + pending watchers and their cond/body/onleave closures |
+| `urbi_periodic_table_walk_roots` | each `UPeriodic.body` closure plus `vm->every_native_closure` |
+| `urbi_deferred_slot_changes_walk_roots` | pending entries in the deferred slot-change ring |
+| `urbi_stdlib_containers_walk_roots` | `UList` / `UDict` backing-buffer elements (invisible to the object walker) |
+| `urbi_gc_ref_table_walk_roots` | values pinned via `urbi_ref` |
+| `object_roots_walker` | atom singletons, `vm->root_shape`, and the `UChunkInstance` chain |
+
+`URBI_MAX_ROOT_PROVIDERS` bounds the table; adding a provider requires raising
+that cap. See `src/vm/uvm_init.c` for the registration order.
 
 ## Interned strings never evict (v1.0)
 
@@ -220,7 +296,7 @@ string block plus the current entries array — and `Debug.gc()` exposes it as
 `intern_bytes` alongside `intern_count`. Embedders with string-churn
 workloads should monitor it and bound churn (precompute strings, avoid
 unbounded concat loops). Heap-allocated, collectable string cells are the
-v1.x fix (design-risks: GC-08); the no-op root walker above is the seam where
+v1.x fix; the no-op root walker above is the seam where
 that migration lands.
 
 ## Configurable knobs
