@@ -312,7 +312,7 @@ tag_stop_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
         !strand_has_tag_in_scope(vm->cur_strand, t) &&
         !had_periodic &&
         !had_watcher) {
-        vm->last_error = UVM_TYPE_ERROR;
+        vm->last_error = URBI_ERR_STRAND_FATAL;
         urbi_strncpy_truncating(vm->last_errmsg, UVM_ERRMSG_CAP,
             "tag.stop with no active scope");
         urbi_tag_stop_local(vm, vm->cur_strand, t, stop_value);
@@ -516,7 +516,7 @@ static const UNativeMethodDef TAG_METHODS[] = {
 
 /* === urbi_tag_native_register === */
 
-UVMError
+int
 urbi_tag_native_register(struct UVM *vm)
 {
     /* TAGCH-016: drives urbi_object_alloc + slot installs, neither of which
@@ -529,12 +529,12 @@ urbi_tag_native_register(struct UVM *vm)
      * there). */
     UObject *root = urbi_object_root(vm);
     if (root == NULL) {
-        return UVM_OOM;
+        return URBI_ERR_OOM;
     }
 
     UObject *proto = urbi_object_alloc(vm, URBI_ATOM_TAG);
     if (proto == NULL) {
-        return UVM_OOM;   /* OOM: leave tag_proto NULL */
+        return URBI_ERR_OOM;   /* OOM: leave tag_proto NULL */
     }
     vm->tag_proto = proto;
 
@@ -551,7 +551,7 @@ urbi_tag_native_register(struct UVM *vm)
     vm->atom_tag = proto;
 
     /* TAGCH-004: propagate slot-install failures.  Chain with || and on any
-     * non-zero return clear vm->tag_proto / vm->atom_tag and surface UVM_OOM.
+     * non-zero return clear vm->tag_proto / vm->atom_tag and surface URBI_ERR_OOM.
      * The proto cell stays GC-managed and is collected at the next sweep.
      *
      * v0.10.2 adds scripted Tag.new / .stop / .freeze / .unfreeze / .block /
@@ -563,7 +563,7 @@ urbi_tag_native_register(struct UVM *vm)
      || URBI_REGISTER_METHODS(vm, proto, TAG_METHODS)                               != URBI_OK) {
         vm->tag_proto = NULL;
         vm->atom_tag  = NULL;
-        return UVM_OOM;
+        return URBI_ERR_OOM;
     }
-    return UVM_OK;
+    return URBI_OK;
 }

@@ -15,7 +15,7 @@
 
 #include "vm/uvm.h"
 #include "vm/uvm_internal.h"          /* urbi_vm_format_type_error_msg, urbi_vm_format_oom */
-#include "urbi/urbi.h"                /* UVM_TYPE_ERROR, UVM_OOM */
+#include "urbi/urbi.h"                /* URBI_ERR_STRAND_FATAL, URBI_ERR_OOM */
 #include "sched/ustrand.h"            /* UStrand, USTRAND_IS_WAITING */
 #include "chunk/uchunk.h"             /* uinstr_a/b/c */
 #include "runtime/uclosure.h"         /* UClosure */
@@ -38,7 +38,7 @@
    dispatcher casts (UClosure *)R[reg].v.p anyway and downstream watcher
    ops dereference garbage.
 
-   Returns 1 on success.  On failure sets vm->last_error = UVM_TYPE_ERROR
+   Returns 1 on success.  On failure sets vm->last_error = URBI_ERR_STRAND_FATAL
    with a diagnostic message and returns 0; caller is expected to HALT()
    immediately.  urbi_vm_format_type_error_msg's bounded buffer is sufficient
    for the longest opcode name + slot name combination here. */
@@ -47,7 +47,7 @@ vm_install_check_closure_operand(UVM *vm, const UStrand *s, uint8_t reg,
                                  const char *opcode_name, const char *slot_name)
 {
     if (s->R[reg].kind != (uint8_t)UVAL_CLOSURE) {
-        vm->last_error = UVM_TYPE_ERROR;
+        vm->last_error = URBI_ERR_STRAND_FATAL;
         urbi_vm_format_type_error_msg(vm,
             "reactive install: register operand is not a closure");
         (void)opcode_name;  /* available for future diagnostic enrichment */
@@ -73,7 +73,7 @@ vm_install_check_event_operand(UVM *vm, const UStrand *s, uint8_t reg,
                                const char *opcode_name)
 {
     if (!uvalue_is_event(s->R[reg])) {
-        vm->last_error = UVM_TYPE_ERROR;
+        vm->last_error = URBI_ERR_STRAND_FATAL;
         urbi_vm_format_type_error_msg(vm,
             "AT_EVENT install: register operand is not an event");
         (void)opcode_name;
@@ -113,28 +113,28 @@ vm_install_fault(UVM *vm, UWatcherInstallResult r, const char *opcode_name)
 {
     switch (r) {
         case UWATCHER_INSTALL_OOM_POOL:
-            vm->last_error = UVM_OOM;
+            vm->last_error = URBI_ERR_OOM;
             urbi_vm_format_oom(vm, sizeof(struct UWatcher));
             break;
         case UWATCHER_INSTALL_READSET_OVER:
-            vm->last_error = UVM_TYPE_ERROR;
+            vm->last_error = URBI_ERR_STRAND_FATAL;
             urbi_vm_format_type_error_msg(vm,
                 "watcher install: read-set exceeds URBI_WATCHER_READSET_MAX");
             break;
         case UWATCHER_INSTALL_TRACE_FAULT:
-            vm->last_error = UVM_TYPE_ERROR;
+            vm->last_error = URBI_ERR_STRAND_FATAL;
             urbi_vm_format_type_error_msg(vm,
                 "watcher install: condition threw during trace");
             break;
         case UWATCHER_INSTALL_RECURSIVE:
-            vm->last_error = UVM_TYPE_ERROR;
+            vm->last_error = URBI_ERR_STRAND_FATAL;
             urbi_vm_format_type_error_msg(vm,
                 "watcher install attempted from within scratch-frame eval");
             break;
         case UWATCHER_INSTALL_NO_OBSERVABLE_CELLS:
             /* v0.10.2: cond watcher with empty read-set is a program error.
              * Use `whenever (e?) body` for event-driven subscriptions. */
-            vm->last_error = UVM_TYPE_ERROR;
+            vm->last_error = URBI_ERR_STRAND_FATAL;
             urbi_vm_format_type_error_msg(vm,
                 "watcher install: condition observes no slots; "
                 "use 'whenever (e?) body' for event subscriptions");
@@ -142,7 +142,7 @@ vm_install_fault(UVM *vm, UWatcherInstallResult r, const char *opcode_name)
         case UWATCHER_INSTALL_OK:
         default:
             /* Caller should not invoke this on UWATCHER_INSTALL_OK.  Defensive. */
-            vm->last_error = UVM_TYPE_ERROR;
+            vm->last_error = URBI_ERR_STRAND_FATAL;
             urbi_vm_format_type_error_msg(vm, "watcher install: unknown result");
             break;
     }
@@ -274,7 +274,7 @@ urbi_vm_reactive_install(UVM *vm, UStrand *s, uint8_t op)
         /* Unreachable: the dispatch arm passes only the seven install opcodes.
          * Defensive — set an error so a HALT() has a populated last_error. */
         URBI_INTERNAL_ASSERT(0);
-        vm->last_error = UVM_TYPE_ERROR;
+        vm->last_error = URBI_ERR_STRAND_FATAL;
         urbi_vm_format_type_error_msg(vm, "reactive install: unknown opcode");
         return UVM_INSTALL_HALT;
     }

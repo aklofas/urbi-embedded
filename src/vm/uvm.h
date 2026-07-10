@@ -301,10 +301,9 @@ typedef struct {
 typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — field order is intentional, see comment above */
     UVMAllocFn alloc_fn;
     void      *alloc_ud;
-    /* v0.10.3: last_error is now plain int (was UVMError; UVMError is now
-     * typedef int for source compat).  Values: URBI_OK (0), URBI_ERR_OOM (-3),
-     * URBI_ERR_STRAND_FATAL (-2) — same as UVM_OK / UVM_OOM / UVM_TYPE_ERROR
-     * shims in <urbi/types.h>. */
+    /* v0.10.3: last_error is plain int (the UVMError typedef was retired to
+     * int for source compat).  Values: URBI_OK (0), URBI_ERR_OOM (-3),
+     * URBI_ERR_STRAND_FATAL (-2). */
     int        last_error;
     char       last_errmsg[UVM_ERRMSG_CAP];
 
@@ -917,7 +916,7 @@ uint64_t urbi_vm_dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budg
    last_error and last_errmsg are reset at entry — a caller may inspect
    them after each urbi_vm_run call without stale state from prior runs.
 
-   v0.10.3: return type changed from UVMError to int.  UVMError is now
+   v0.10.3: return type changed from int to int.  int is now
    typedef int for source compat; existing callsites compile unchanged.
 
    API-004 (Wave 5): the `realm` argument selects which Realm the
@@ -940,7 +939,7 @@ void urbi_vm_destroy(UVM *vm);
 void urbi_native_protos_init(UVM *vm);
 
 /* Return a static string such as "UVM_TYPE_ERROR" for debug. */
-/* v0.10.3: UVMError is now typedef int; uvm_error_name accepts int. */
+/* v0.10.3: the UVMError typedef was retired to int; uvm_error_name accepts int. */
 const char *uvm_error_name(int code);
 
 /* --- Internal cross-module declarations ---

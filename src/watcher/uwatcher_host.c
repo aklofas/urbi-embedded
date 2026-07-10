@@ -19,7 +19,7 @@
 #include "vm/uvm_error.h"           /* urbi_set_error_internal (Gap P) */
 #include "urbi/types.h"             /* URBI_OK, URBI_ERR_INVALID_ARG, UErrCode */
 #include "urbi/urbi.h"              /* urbi_watcher_fn, URBI_WATCHER_HANDLE_INVALID,
-                                     * URBI_ERR_WATCHER_UNREGISTER */
+                                     * URBI_CB_UNREGISTER */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -144,7 +144,7 @@ uhost_watcher_table_walk_event(UHostWatcherTable *t, struct UVM *vm,
                 vm->watcher_body_done_fn(vm, vm->watcher_body_done_ud, e->handle, result);
             }
 
-            if (result == URBI_ERR_WATCHER_UNREGISTER) {
+            if (result == URBI_CB_UNREGISTER) {
                 e->pending_unregister = 1U;
             }
         }

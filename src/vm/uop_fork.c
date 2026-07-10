@@ -156,7 +156,7 @@ urbi_vm_op_fork_detach(UStrand *s, UVM *vm, uint32_t instr)
      * this kind check release builds happily cast NIL.v.p (NULL) and
      * fork_spawn_child dereferences child_closure->proto. */
     if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
-        vm->last_error = UVM_TYPE_ERROR;
+        vm->last_error = URBI_ERR_STRAND_FATAL;
         urbi_vm_format_type_error_msg(vm,
             "',' (parallel-detach): operand is not a closure");
         s->fatal_status     = UEXEC_CANCEL;
@@ -195,7 +195,7 @@ urbi_vm_op_fork_join(UStrand *s, UVM *vm, uint32_t instr)
     URBI_ASSERT_NOT_ISR(vm);
 
     if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
-        vm->last_error = UVM_TYPE_ERROR;
+        vm->last_error = URBI_ERR_STRAND_FATAL;
         urbi_vm_format_type_error_msg(vm,
             "'&' (parallel-join): operand is not a closure");
         s->fatal_status     = UEXEC_CANCEL;
@@ -233,7 +233,7 @@ urbi_vm_op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
     URBI_ASSERT_NOT_ISR(vm);
 
     if (s->R[a].kind != (uint8_t)UVAL_STRAND) {
-        vm->last_error = UVM_TYPE_ERROR;
+        vm->last_error = URBI_ERR_STRAND_FATAL;
         urbi_vm_format_type_error_msg(vm,
             "'&' (parallel-join) wait: operand is not a strand handle");
         s->fatal_status     = UEXEC_CANCEL;

@@ -591,21 +591,21 @@ urbi_native_protos_init(UVM *vm)
      * unit tests call this entry point directly on armed stress builds.
      * Save/restore so a host-held urbi_gc_pause latch survives. */
     uint8_t saved_pause = vm->gc_paused;
-    UVMError err;
+    int err;
     vm->gc_paused = 1U;
 
-    /* Propagate UVM_OOM via vm->last_error so callers can detect failure.
+    /* Propagate URBI_ERR_OOM via vm->last_error so callers can detect failure.
      * Both urbi_event_native_register and urbi_tag_native_register (TAGCH-004) now
-     * return UVMError so partial-init OOM is surfaced rather than silently
+     * return int so partial-init OOM is surfaced rather than silently
      * leaving NULL protos behind. */
     err = urbi_event_native_register(vm);
-    if (err != UVM_OK) {
+    if (err != URBI_OK) {
         vm->last_error = err;
         vm->gc_paused = saved_pause;
         return;
     }
     err = urbi_tag_native_register(vm);
-    if (err != UVM_OK) {
+    if (err != URBI_OK) {
         vm->last_error = err;
     }
     vm->gc_paused = saved_pause;
@@ -654,10 +654,11 @@ urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h, void *ud)
     __atomic_store_n(&vm->event_drain_handler, h, __ATOMIC_RELEASE);
 }
 
-/* v0.10.3: UVMError retired; parameter is now int.
- * Returns the legacy name for backward compat with tests that check
- * the string. UVM_OK == URBI_OK == 0; UVM_OOM == URBI_ERR_OOM == -3;
- * UVM_TYPE_ERROR == URBI_ERR_STRAND_FATAL == -2. */
+/* v0.10.3: the UVMError typedef was retired; parameter is now int.
+ * Returns the legacy name string for backward compat with tests that check
+ * it. The legacy codes map: "UVM_OK" == URBI_OK == 0;
+ * "UVM_OOM" == URBI_ERR_OOM == -3;
+ * "UVM_TYPE_ERROR" == URBI_ERR_STRAND_FATAL == -2. */
 const char *uvm_error_name(int code) {
     if (code == 0)  return "UVM_OK";
     if (code == -3) return "UVM_OOM";

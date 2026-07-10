@@ -597,6 +597,23 @@ typedef enum {
     URBI_CB_THROW      = 2  /* native_method_fn: host raised a script exception */
 } UCallbackSignal;
 
+/* ===================================================================
+ * Deprecated compatibility aliases
+ *
+ * The following symbols are retained only for host source compatibility.
+ * New code should use the canonical UErrCode / UCallbackSignal spellings:
+ *
+ *   UVM_OK                       -> URBI_OK
+ *   UVM_TYPE_ERROR               -> URBI_ERR_STRAND_FATAL
+ *   UVM_OOM                      -> URBI_ERR_OOM
+ *   UVMError                     -> int
+ *   URBI_ERR_WATCHER_UNREGISTER  -> URBI_CB_UNREGISTER
+ *
+ * The interpreter's own sources use the canonical spellings exclusively;
+ * these aliases exist purely so existing embedder code keeps compiling.
+ * They may be removed in a future release.
+ * =================================================================== */
+
 /* Legacy alias: URBI_ERR_WATCHER_UNREGISTER was -18 pre-v0.10.3.
  * Now maps to URBI_CB_UNREGISTER (positive 1) so callback return semantics
  * unify with the positive-signal convention.  Retained for one release cycle

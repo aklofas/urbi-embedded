@@ -37,7 +37,7 @@ slot_throw_or_fatal(UVM *vm, const char *msg)
         urbi_throw(vm, vm->cur_strand, inst);
         return UVM_SLOT_THREW;
     }
-    vm->last_error = UVM_TYPE_ERROR;
+    vm->last_error = URBI_ERR_STRAND_FATAL;
     {
         UDiagWriter _w;
         urbi_vm_diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);

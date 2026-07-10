@@ -7,7 +7,7 @@
 #include "chunk/uchunk.h"        /* UValue, UVAL_EVENT */
 #include "runtime/umacros.h"       /* urbi_zero (used by uvalue_from_event) */
 #include "urbi/urbi.h"      /* UHostFn */
-#include "vm/uvm.h"         /* UVMError */
+#include "vm/uvm.h"         /* struct UVM */
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -50,8 +50,8 @@ static inline int uvalue_is_event(UValue v) {
  *
  * Allocate vm->event_proto and install the four native method slots.
  * Called from urbi_vm_init after the object-model setup completes.
- * Returns UVM_OK on success, UVM_OOM if the proto object allocation fails. */
-UVMError urbi_event_native_register(struct UVM *vm);
+ * Returns URBI_OK on success, URBI_ERR_OOM if the proto object allocation fails. */
+int urbi_event_native_register(struct UVM *vm);
 
 #ifdef __cplusplus
 }

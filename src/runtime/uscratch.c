@@ -77,7 +77,7 @@ run_on_scratch_core(struct UVM       *vm,
 
     /* Reset last_error at entry so a stale error from a prior VM operation
      * doesn't get misread as a cond throw.  Mirrors urbi_vm_run's entry pattern. */
-    vm->last_error = UVM_OK;
+    vm->last_error = URBI_OK;
     vm->last_errmsg[0] = '\0';
 
     /* NULL closure: graceful nil — matches the prior stub contract for
@@ -242,15 +242,15 @@ run_on_scratch_core(struct UVM       *vm,
         vm->step_budget_remaining = saved_budget;
 
         /* Detect unhandled throw / abnormal exit. */
-        if (vm->last_error != UVM_OK) {
+        if (vm->last_error != URBI_OK) {
             *out_threw = 1;
-            vm->last_error = UVM_OK;
+            vm->last_error = URBI_OK;
             vm->last_errmsg[0] = '\0';
         } else if (strand.fatal_status != UEXEC_OK) {
             /* With cur_strand pointing at the scratch
              * strand, typed throws (slot faults via slot_throw_or_fatal,
              * urbi_raise_typed natives) now land here and unwind to a DEAD
-             * strand with fatal_status latched — vm->last_error stays UVM_OK
+             * strand with fatal_status latched — vm->last_error stays URBI_OK
              * on that path.  Report a throw so install/eval fail-soft
              * instead of misreading the death as a clean OP_RET (which
              * would deliver nil as the cond/body result). */

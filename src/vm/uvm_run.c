@@ -25,13 +25,13 @@
    Preserves the public API contract:
    - Resets error state at entry.
    - Frees the previous run's return closure.
-   - Returns UVM_OK with *out set on success, or the error code on failure.
+   - Returns URBI_OK with *out set on success, or the error code on failure.
    - Keeps vm->last_return_closure alive for the caller to inspect. */
 
 int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     /* Reset error state at entry so callers who run multiple modules
        don't see stale last_error from a prior failure. */
-    vm->last_error = UVM_OK;
+    vm->last_error = URBI_OK;
     vm->last_errmsg[0] = '\0';
 
     /* Clear last_return_closure; the GC keeps it alive via the root walker
@@ -44,7 +44,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
 
     /* Empty root (or failed emit): no instructions to dispatch; return Nil. */
     if (root == NULL || root->instr_count == 0) {
-        return UVM_OK;
+        return URBI_OK;
     }
 
     /* Create a transient strand for this run.
@@ -60,15 +60,15 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     strand.is_transient_strand = 1U;  /* discriminator for OP_FORK_* guards */
 
     /* Allocate the per-strand register stack first (preserves OOM contract:
-     * first allocation failure → UVM_OOM with diagnostic before cleanup init).
+     * first allocation failure → URBI_ERR_OOM with diagnostic before cleanup init).
      * CHSTR-022: delegates alloc+zero to urbi_strand_arm_init; the manual
      * error path is preserved here because urbi_vm_run needs to set last_error
      * before returning (urbi_strand_arm_init returns -1 without diagnostics). */
     if (urbi_strand_arm_init(&strand) != 0) {
-        vm->last_error = UVM_OOM;
+        vm->last_error = URBI_ERR_OOM;
         urbi_vm_format_oom(vm, UVM_STACK_CAP * sizeof(UValue));
         ustrand_destroy(&strand, vm);
-        return UVM_OOM;
+        return URBI_ERR_OOM;
     }
 
     /* Initialise the cleanup stack so OP_TRY_BEGIN can push entries.
@@ -122,7 +122,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
      * vm->module_instances_head) but both are functionally correct. */
     strand.module_instance = urbi_chunk_instance_create(vm, (UProto *)root);
     if (strand.module_instance == NULL) {
-        vm->last_error = UVM_OOM;
+        vm->last_error = URBI_ERR_OOM;
         /* Unlink stack-local transient from realm before ustrand_destroy,
          * mirroring src/sched/ustrand.c:699-700 and the normal-exit path below. */
         if (strand.realm != NULL && strand.realm->strands_head != NULL) {
@@ -134,7 +134,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
             strand.realm = NULL;
         }
         ustrand_destroy(&strand, vm);
-        return UVM_OOM;
+        return URBI_ERR_OOM;
     }
     strand.frame_count = 0;
     strand.open_upvals = NULL;
@@ -186,7 +186,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
         /* strand is still valid here (step 2 was skipped for transient). */
 
         if (strand.state == USTRAND_STATE_DEAD) break;
-        if (vm->last_error != UVM_OK) break;
+        if (vm->last_error != URBI_OK) break;
         if (strand.state == USTRAND_STATE_READY) {
             /* OP_YIELD (between separator children) or per-strand budget.
                Remove from ready queue (urbi_sched_strand_yield enqueued it),
@@ -209,7 +209,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
         }
         if (USTRAND_IS_WAITING(&strand)) {
             /* urbi_vm_run is synchronous; WAITING here is a bug. */
-            vm->last_error = UVM_TYPE_ERROR;
+            vm->last_error = URBI_ERR_STRAND_FATAL;
             urbi_vm_format_type_error_msg(vm, "strand blocked unexpectedly in urbi_vm_run");
             break;
         }
@@ -220,7 +220,7 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
              * urbi_step loop exists to resume the strand, so parking
              * would silently truncate the body at the blocking call.
              * Error loudly, mirroring the WAITING arm. */
-            vm->last_error = UVM_TYPE_ERROR;
+            vm->last_error = URBI_ERR_STRAND_FATAL;
             urbi_vm_format_type_error_msg(vm, "strand suspended unexpectedly in urbi_vm_run");
             break;
         }
@@ -269,10 +269,10 @@ int urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     }
 
     int rc = vm->last_error;
-    if (rc == UVM_OK) {
+    if (rc == URBI_OK) {
         /* Check whether the strand died with an uncaught script throw.
-         * HALT-path fatals (type errors, OOM) set vm->last_error != UVM_OK
-         * and skip this arm; script-level throw leaves last_error == UVM_OK
+         * HALT-path fatals (type errors, OOM) set vm->last_error != URBI_OK
+         * and skip this arm; script-level throw leaves last_error == URBI_OK
          * but marks strand->fatal_status = UEXEC_THROW. */
         UStrandUnwind fstat;
         UValue fval;

@@ -29,7 +29,7 @@ struct UVM;
  *   event_id         — the registered event this watcher listens to.
  *   cb               — the host callback invoked at drain.
  *   ud               — user-data forwarded to cb.
- *   pending_unregister — 1 if urbi_unregister_watcher or URBI_ERR_WATCHER_UNREGISTER
+ *   pending_unregister — 1 if urbi_unregister_watcher or URBI_CB_UNREGISTER
  *                       requested removal; 0 otherwise.  Entries with this flag
  *                       set are skipped during dispatch and compacted at drain-end.
  *   _pad             — alignment padding; always zero. */
@@ -78,7 +78,7 @@ UHostWatcher *uhost_watcher_table_add(UHostWatcherTable *t, struct UVM *vm);
  * Multi-arg: all argc values from args[0..argc-1] are passed to cb.  This
  * closes the Sub-Bundle 2 multi-arg deferral for the host-watcher path.
  *
- * Auto-unregister: if cb returns URBI_ERR_WATCHER_UNREGISTER, the entry's
+ * Auto-unregister: if cb returns URBI_CB_UNREGISTER, the entry's
  * pending_unregister is set to 1.
  *
  * done_fn fanout: after each cb invocation, calls

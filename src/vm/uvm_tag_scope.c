@@ -10,7 +10,7 @@
 
 #include "vm/uvm.h"
 #include "vm/uvm_internal.h"          /* urbi_vm_format_type_error_msg */
-#include "urbi/urbi.h"                /* UVM_TYPE_ERROR */
+#include "urbi/urbi.h"                /* URBI_ERR_STRAND_FATAL */
 #include "sched/ustrand.h"            /* UStrand, UEXEC_THROW, USTRAND_STATE_DEAD */
 #include "runtime/ucleanup.h"         /* UCleanupEntry, UCLEANUP_TAG_SCOPE, FLAG_HAS_ONLEAVE, urbi_sched_strand_cleanup_push/pop */
 #include "runtime/umacros.h"          /* URBI_INTERNAL_ASSERT */
@@ -176,7 +176,7 @@ urbi_vm_pop_tag_scope(UVM *vm, UStrand *s)
             /* onleave handler: not emitted by the current compiler (DEFERRED-v1.x).
              * If somehow reached (bytecode from future version or corruption),
              * halt safely. */
-            vm->last_error = UVM_TYPE_ERROR;
+            vm->last_error = URBI_ERR_STRAND_FATAL;
             urbi_vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired (DEFERRED-v1.x)");
             return UVM_TAG_SCOPE_HALT;
         }

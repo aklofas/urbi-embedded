@@ -159,11 +159,11 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
     loader->out_slot = out_slot_target;
 
     /* Reset vm->last_error so that clean-death detection can distinguish
-     * a type-error halt (UVM_TYPE_ERROR) from a pure unhandled throw
-     * (last_error stays UVM_OK).  Mirrors the reset at urbi_vm_run entry
-     * (uvm_run.c:29); without this reset a stale UVM_TYPE_ERROR from a
+     * a type-error halt (URBI_ERR_STRAND_FATAL) from a pure unhandled throw
+     * (last_error stays URBI_OK).  Mirrors the reset at urbi_vm_run entry
+     * (uvm_run.c:29); without this reset a stale URBI_ERR_STRAND_FATAL from a
      * prior REPL session would be misread as belonging to this run. */
-    vm->last_error = UVM_OK;
+    vm->last_error = URBI_OK;
 
     /* Snapshot the realm pointer BEFORE any urbi_step calls.
      *
@@ -243,18 +243,18 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
          * out_result was already written by OP_RET via out_slot before reap.
          *
          * Check vm->last_error to surface halt_error-path type errors.
-         * halt_error sets vm->last_error = UVM_TYPE_ERROR (or UVM_OOM) and
+         * halt_error sets vm->last_error = URBI_ERR_STRAND_FATAL (or URBI_ERR_OOM) and
          * marks the strand DEAD directly (fatal_status == UEXEC_OK), so
          * urbi_step eagerly reaps it without going through the FATAL path.
          * Without this check, TypeErrors would silently return URBI_OK and
          * show nil instead of the expected "!!! TypeError:" message. */
         if (!strand_still_alive(loader_realm, loader)) {
             switch (vm->last_error) {
-            case UVM_OK:          return URBI_OK;
-            case UVM_OOM:         return URBI_ERR_OOM;
-            case UVM_TYPE_ERROR:  return URBI_ERR_STRAND_FATAL;
+            case URBI_OK:          return URBI_OK;
+            case URBI_ERR_OOM:         return URBI_ERR_OOM;
+            case URBI_ERR_STRAND_FATAL:  return URBI_ERR_STRAND_FATAL;
             }
-            return URBI_ERR_STRAND_FATAL;  /* unknown UVMError */
+            return URBI_ERR_STRAND_FATAL;  /* unknown int */
         }
 
         /* Path 3: check for parked states (strand still alive — safe to read).
@@ -343,7 +343,7 @@ urbi_run_chunk(UVM *vm, URealm *realm, UProto *root, UValue *out_result)
 
     UStrand *loader = urbi_strand_create_for_module(vm, realm, root);
     if (!loader) {
-        vm->last_error = UVM_OOM;
+        vm->last_error = URBI_ERR_OOM;
         return URBI_ERR_OOM;
     }
 
@@ -575,17 +575,17 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 
     if (run_rc != URBI_OK) {
         /* REPL recovery for pure scriptlevel fatals (unhandled throw with no
-         * system error): vm->last_error == UVM_OK means the strand died from
+         * system error): vm->last_error == URBI_OK means the strand died from
          * an unhandled urbiscript `throw` that exhausted the cleanup stack,
          * not from a VM type-error or OOM.  Matching legacy transient-strand
-         * behaviour: urbi_vm_run returned UVM_OK (ignoring the strand's
+         * behaviour: urbi_vm_run returned URBI_OK (ignoring the strand's
          * UEXEC_THROW fatal_status), so the REPL showed nil.  Preserve that
          * REPL recovery contract — show nil, return URBI_OK.
          *
-         * System fatals (TypeError, OOM) have vm->last_error != UVM_OK
+         * System fatals (TypeError, OOM) have vm->last_error != URBI_OK
          * (set via HALT() in uvm.c) and reach the error-display path below. */
         if ((run_rc == URBI_ERR_UNCAUGHT_THROW || run_rc == URBI_ERR_STRAND_FATAL)
-                && vm->last_error == UVM_OK) {
+                && vm->last_error == URBI_OK) {
             /* v0.11.4-cat-f (D-F2): an uncaught throw whose value is an
              * Exception-instance object left a diagnostic in vm->last_errmsg
              * (capture_uncaught_throw_diag, Path 1).  Restore the legacy

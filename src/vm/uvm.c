@@ -77,7 +77,7 @@
  * Do NOT use URBI_DISPATCH_ASSERT for load-bearing invariants — those must
  * use unconditional HALT() paths so they fire in both debug and release builds.
  * In hosted builds this triggers assert() so CI catches stray opcodes.
- * In freestanding builds it is a no-op; the stub below sets UVM_TYPE_ERROR. */
+ * In freestanding builds it is a no-op; the stub below sets URBI_ERR_STRAND_FATAL. */
 #if __STDC_HOSTED__
 #  include <assert.h>
 #  define URBI_DISPATCH_ASSERT(cond) assert(cond)
@@ -149,7 +149,7 @@ vm_dispatch_throw_core(UVM *vm, UStrand *s, struct UObject *proto, const char *m
     s->unwind_value   = inst;
     s->pending_unwind = UEXEC_THROW;
     s->pc++;
-    vm->last_error = UVM_OK;  /* consumed into the throw */
+    vm->last_error = URBI_OK;  /* consumed into the throw */
     return VM_BINOP_THREW;
 }
 
@@ -375,7 +375,7 @@ dispatch:
                     /* ustr_intern takes (bytes, nbytes) and does NOT read a
                      * NUL terminator — no terminator needed in `tmp`. */
                     char *tmp = (char *)vm->alloc_fn(NULL, total, vm->alloc_ud);
-                    if (tmp == NULL) { vm->last_error = UVM_OOM; HALT(); }
+                    if (tmp == NULL) { vm->last_error = URBI_ERR_OOM; HALT(); }
                     /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) — ustr_intern uses explicit nbytes. */
                     if (bn > 0) memcpy(tmp, bs, bn);
                     /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) — ustr_intern uses explicit nbytes. */
@@ -383,14 +383,14 @@ dispatch:
                     interned = ustr_intern(vm, tmp, total);
                     vm->alloc_fn(tmp, 0, vm->alloc_ud);
                 }
-                if (interned == NULL) { vm->last_error = UVM_OOM; HALT(); }
+                if (interned == NULL) { vm->last_error = URBI_ERR_OOM; HALT(); }
                 a->kind = (uint8_t)UVAL_STR;
                 a->v.p  = (void *)interned;
                 NEXT();
             }
 
-            UVMError rc = arith_add(a, b, cc);
-            if (rc != UVM_OK) {
+            int rc = arith_add(a, b, cc);
+            if (rc != URBI_OK) {
                 /* Gap #4: type-error fallback to operator-method dispatch. */
                 USymbol *op = ustr_op_name(vm, "+", 1);
                 if (op != NULL) {
@@ -419,8 +419,8 @@ dispatch:
             UValue *a = &s->R[uinstr_a(*s->pc)];
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
-            UVMError rc = arith_sub(a, b, cc);
-            if (rc != UVM_OK) {
+            int rc = arith_sub(a, b, cc);
+            if (rc != URBI_OK) {
                 /* Gap #4: type-error fallback to operator-method dispatch. */
                 USymbol *op = ustr_op_name(vm, "-", 1);
                 if (op != NULL) {
@@ -446,8 +446,8 @@ dispatch:
             UValue *a = &s->R[uinstr_a(*s->pc)];
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
-            UVMError rc = arith_mul(a, b, cc);
-            if (rc != UVM_OK) {
+            int rc = arith_mul(a, b, cc);
+            if (rc != URBI_OK) {
                 /* Gap #4: type-error fallback to operator-method dispatch. */
                 USymbol *op = ustr_op_name(vm, "*", 1);
                 if (op != NULL) {
@@ -473,8 +473,8 @@ dispatch:
             UValue *a = &s->R[uinstr_a(*s->pc)];
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
-            UVMError rc = arith_div(a, b, cc);
-            if (rc != UVM_OK) {
+            int rc = arith_div(a, b, cc);
+            if (rc != URBI_OK) {
                 /* v0.13.5: a numeric zero divisor is a DivByZero, not a
                  * TypeError — both operands are numbers, so skip the
                  * operator-method fallback and raise the catchable subclass. */
@@ -505,8 +505,8 @@ dispatch:
         CASE(OP_NEG) {
             UValue *a = &s->R[uinstr_a(*s->pc)];
             const UValue *b = &s->R[uinstr_b(*s->pc)];
-            UVMError rc = arith_neg(a, b);
-            if (rc != UVM_OK) {
+            int rc = arith_neg(a, b);
+            if (rc != URBI_OK) {
                 /* Gap #4: type-error fallback to operator-method dispatch.
                  * Unary neg uses "-" slot name (same as binary minus; contextual). */
                 USymbol *op = ustr_op_name(vm, "-", 1);
@@ -578,7 +578,7 @@ dispatch:
                              ? s->frames[s->frame_count - 1].closure
                              : s->entry_closure;
             if (cur_cl == NULL) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "GETUPVAL: no closure in current frame");
                 HALT();
             }
@@ -599,7 +599,7 @@ dispatch:
                              ? s->frames[s->frame_count - 1].closure
                              : s->entry_closure;
             if (cur_cl == NULL) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "SETUPVAL: no closure in current frame");
                 HALT();
             }
@@ -657,14 +657,14 @@ dispatch:
                 executing_proto ? executing_proto->nested_count : 0U;
 
             if (nested_arr == NULL || (size_t)bx >= nested_cnt) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "CLOSURE: proto index out of range");
                 HALT();
             }
             UProto *child_proto = nested_arr[bx];
             UClosure *cl = urbi_vm_alloc_closure(vm, child_proto);
             if (cl == NULL) {
-                vm->last_error = UVM_OOM;
+                vm->last_error = URBI_ERR_OOM;
                 urbi_vm_format_oom(vm, sizeof(UClosure));
                 HALT();
             }
@@ -684,18 +684,18 @@ dispatch:
              * silent corruption in release builds. */
             struct UChunkInstance *omi = child_proto->owning_module_instance;
             if (UNLIKELY(omi == NULL)) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "CLOSURE: owning_module_instance not wired");
                 HALT();
             }
             if (UNLIKELY(omi->proto_instances == NULL)) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "CLOSURE: proto_instances array not allocated");
                 HALT();
             }
             if (UNLIKELY((size_t)child_proto->ic_index >=
                          (size_t)omi->proto_instances->n)) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "CLOSURE: ic_index out of proto_instances range");
                 HALT();
             }
@@ -732,7 +732,7 @@ dispatch:
                             /* VM-005: Step C-3: cl is GC-managed; do NOT free via
                              * alloc_fn (double-free hazard post-C-2).  The GC sweep
                              * reclaims it when it becomes unreachable after HALT. */
-                            vm->last_error = UVM_OOM;
+                            vm->last_error = URBI_ERR_OOM;
                             urbi_vm_format_oom(vm, sizeof(UUpvalCell));
                             HALT();
                         }
@@ -746,7 +746,7 @@ dispatch:
                                          : s->entry_closure;
                         if (par_cl == NULL || src_idx >= par_cl->nupvals) {
                             /* Step C-3: GC-managed closure; no alloc_fn free needed. */
-                            vm->last_error = UVM_TYPE_ERROR;
+                            vm->last_error = URBI_ERR_STRAND_FATAL;
                             urbi_vm_format_type_error_msg(vm, "CLOSURE: upvalue re-capture out of range");
                             HALT();
                         }
@@ -910,7 +910,7 @@ dispatch:
                     s->pc++;
                     goto safepoint;
                 }
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "function call: native method raised");
                 HALT();
             }
@@ -928,14 +928,14 @@ dispatch:
                 VM_CALL_TYPEERROR();
             }
             if (s->frame_count >= UVM_MAX_FRAMES) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "function call: call stack overflow");
                 HALT();
             }
 
             /* Check stack space: callee's frame starts at R[a+arg_off]. */
             if ((s->R + a + arg_off + callee->proto->max_reg + 1) > (s->stack + UVM_STACK_CAP)) {
-                vm->last_error = UVM_OOM;
+                vm->last_error = URBI_ERR_OOM;
                 urbi_vm_format_oom(vm, (size_t)(callee->proto->max_reg + 1) * sizeof(UValue));
                 HALT();
             }
@@ -1241,7 +1241,7 @@ dispatch:
              * realm == NULL no longer discriminates; the dedicated flag
              * is_transient_strand does. */
             if (s->is_transient_strand) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "',' (parallel-detach) requires an event-loop strand");
                 HALT();
             }
@@ -1255,7 +1255,7 @@ dispatch:
              * A = closure_reg, B = child_handle_reg.
              * Same urbi_vm_run-transient guard as OP_FORK_DETACH; see note above. */
             if (s->is_transient_strand) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "'&' (parallel-join) requires an event-loop strand");
                 HALT();
             }
@@ -1292,7 +1292,7 @@ dispatch:
 
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "slot access: no IC table bound");
                 HALT();
             }
@@ -1303,7 +1303,7 @@ dispatch:
             } else {
                 recv = urbi_atom_proto_for_value(vm, s->R[recv_reg]);
                 if (recv == NULL) {
-                    vm->last_error = UVM_OOM;
+                    vm->last_error = URBI_ERR_OOM;
                     urbi_vm_format_type_error_msg(vm, "slot access: atom proto allocation failed");
                     HALT();
                 }
@@ -1344,24 +1344,24 @@ dispatch:
 
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "slot write: no IC table bound");
                 HALT();
             }
             UIC *ic = &pi->ic_table[ic_index];
             if (s->R[recv_reg].kind != (uint8_t)UVAL_OBJECT) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "slot write: receiver is not an Object");
                 HALT();
             }
             UObject *recv = (UObject *)s->R[recv_reg].v.p;
             if (recv == NULL) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "slot write: receiver is NULL");
                 HALT();
             }
             if ((recv->flags & URBI_OBJ_FLAG_READONLY) != 0U) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm,
                     "slot write: cannot mutate a frozen object");
                 HALT();
@@ -1379,7 +1379,7 @@ dispatch:
                 NEXT();
             }
             if (sr == UVM_SLOT_CONST_WRITE)   {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 {
                     UDiagWriter _w;
                     urbi_vm_diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
@@ -1536,7 +1536,7 @@ dispatch:
         {
             uint8_t A = uinstr_a(*s->pc);
             if (s->R[A].kind != (uint8_t)UVAL_TAG) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm,
                     "tag.stop(): argument must be a Tag");
                 HALT();
@@ -1626,7 +1626,7 @@ dispatch:
              * entries[0].  VM-001 closed in v0.5.7-fixes Phase 5. */
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "slot-change event: no IC table bound");
                 HALT();
             }
@@ -1653,7 +1653,7 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             URealm *r = s->realm;
             if (r == NULL || r->global_object == NULL) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm,
                     "global access: strand has no realm");
                 HALT();
@@ -1712,7 +1712,7 @@ dispatch:
 
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
-                vm->last_error = UVM_TYPE_ERROR;
+                vm->last_error = URBI_ERR_STRAND_FATAL;
                 urbi_vm_format_type_error_msg(vm, "method call: no IC table bound");
                 HALT();
             }
@@ -1725,7 +1725,7 @@ dispatch:
             } else {
                 recv = urbi_atom_proto_for_value(vm, self_value);
                 if (recv == NULL) {
-                    vm->last_error = UVM_OOM;
+                    vm->last_error = URBI_ERR_OOM;
                     urbi_vm_format_type_error_msg(vm, "method call: atom proto allocation failed");
                     HALT();
                 }
@@ -1760,7 +1760,7 @@ dispatch:
         default: {
             /* Unreachable — loader rejects unknown opcodes before urbi_vm_run
                is called. The default: branch satisfies -Wswitch-enum. */
-            vm->last_error = UVM_TYPE_ERROR;
+            vm->last_error = URBI_ERR_STRAND_FATAL;
             HALT();
         }
     }

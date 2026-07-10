@@ -177,7 +177,7 @@ static const UNativeMethodDef EVENT_METHODS[] = {
  * Allocate vm->event_proto as a UObject in the URBI_ATOM_EVENT family,
  * then install the four native slots.  Called from urbi_vm_init after the
  * type-table setup and atom-proto walk are in place.
- * Returns UVM_OK on success, UVM_OOM if the proto object allocation fails.
+ * Returns URBI_OK on success, URBI_ERR_OOM if the proto object allocation fails.
  *
  * Phase 7 (stdlib): vm->atom_event is set to the same object so that
  * urbi_object_atom(URBI_ATOM_EVENT) — used by the receiver-resolution path
@@ -187,7 +187,7 @@ static const UNativeMethodDef EVENT_METHODS[] = {
  * proto-chain miss because the methods only lived on vm->event_proto.
  * Both fields point at one object now; the GC walker is idempotent on
  * double-shade. */
-UVMError
+int
 urbi_event_native_register(struct UVM *vm)
 {
     /* Allocate the event proto object.  Use URBI_ATOM_EVENT as the family
@@ -207,12 +207,12 @@ urbi_event_native_register(struct UVM *vm)
      * this function must stay sound when called directly (unit suites). */
     UObject *root = urbi_object_root(vm);
     if (root == NULL) {
-        return UVM_OOM;
+        return URBI_ERR_OOM;
     }
 
     UObject *proto = urbi_object_alloc(vm, URBI_ATOM_EVENT);
     if (proto == NULL) {
-        return UVM_OOM;
+        return URBI_ERR_OOM;
     }
     vm->event_proto = proto;
     vm->atom_event  = proto;  /* Phase 7: unify with atom-dispatch lookup. */
@@ -227,10 +227,10 @@ urbi_event_native_register(struct UVM *vm)
      * intern/install would otherwise leave a partially populated event_proto
      * on the VM.  On any failure, reset event_proto to NULL (the proto cell
      * itself is GC-managed and will be collected at the next sweep) and
-     * surface UVM_OOM to the caller. */
+     * surface URBI_ERR_OOM to the caller. */
     if (URBI_REGISTER_METHODS(vm, proto, EVENT_METHODS) != URBI_OK) {
         vm->event_proto = NULL;
-        return UVM_OOM;
+        return URBI_ERR_OOM;
     }
-    return UVM_OK;
+    return URBI_OK;
 }
