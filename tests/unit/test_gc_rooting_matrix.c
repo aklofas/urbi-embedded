@@ -444,6 +444,207 @@ UTEST(matrix_register_window_is_rooted)
     urbi_vm_destroy(&vm);
 }
 
+/* === Transitively-covered strand fields (frames[i].recv / unwind_target /
+ *     wait_event_target) ===
+ *
+ * These three fields are NOT shaded directly by strand_walk_roots.  Each holds
+ * a copy or back-pointer whose referent is kept alive by a DIFFERENT covering
+ * root, so the honest matrix contract for them is: with the covering root in
+ * place the referent survives (GREEN); with the covering root absent the SAME
+ * referent is swept (RED).  Both halves run in one case so the "transitively
+ * covered, not independently rooted" invariant is pinned in a single assert
+ * pair — a future regression that either (a) starts relying on a direct shade
+ * that is not there, or (b) drops the covering root, flips exactly one half.
+ *
+ * The covering roots, verified against strand_walk_roots
+ * (src/sched/usched_cooperative.c):
+ *   - frames[i].recv       — the recv UValue is a copy of the caller's R[A+1];
+ *                            it survives via the register-window scan, step (1).
+ *   - unwind_target        — a tag-stop deposit's target tag also owns a
+ *                            TAG_SCOPE cleanup entry on the strand; that
+ *                            owning_tag is shaded in step (3).
+ *   - wait_event_target    — the waited-on UEvent is reachable through another
+ *                            path (register / realm globals / subscriber list),
+ *                            NOT the back-pointer; step (4) documents this.
+ */
+
+UTEST(matrix_frame_recv_covered_by_register_scan)
+{
+    /* GREEN: recv holds the sentinel AND the same value is live in a register
+     * (the caller's R[A+1] that recv was copied from), so the register-window
+     * scan keeps it alive. */
+    {
+        UVM vm;
+        urbi_vm_init(&vm, NULL, NULL);
+        UStrand s;
+        matrix_strand_setup(&vm, &s);
+
+        UCell *sentinel = sentinel_alloc(&vm);
+        UASSERT(sentinel != NULL);
+        s.stack[5]         = obj_value_for(sentinel);   /* the covering register */
+        s.frames[0].recv   = obj_value_for(sentinel);   /* frame recv copy */
+        s.frame_count      = 1;
+
+        collect_twice(&vm);
+        UASSERT(cell_live(&vm, sentinel));
+
+        memset(&s.stack[5], 0, sizeof s.stack[5]);
+        memset(&s.frames[0].recv, 0, sizeof s.frames[0].recv);
+        s.frame_count = 0;
+        matrix_strand_teardown(&vm, &s);
+        urbi_vm_destroy(&vm);
+    }
+
+    /* RED-proof: recv is the ONLY reference (no register copy).  recv is not
+     * shaded, so the sentinel is swept — proving recv is transitively covered
+     * by the register, not an independent root. */
+    {
+        UVM vm;
+        urbi_vm_init(&vm, NULL, NULL);
+        UStrand s;
+        matrix_strand_setup(&vm, &s);
+
+        UCell *sentinel = sentinel_alloc(&vm);
+        UASSERT(sentinel != NULL);
+        s.frames[0].recv = obj_value_for(sentinel);   /* recv ONLY, no register */
+        s.frame_count    = 1;
+
+        collect_twice(&vm);
+        UASSERT(!cell_live(&vm, sentinel));
+
+        memset(&s.frames[0].recv, 0, sizeof s.frames[0].recv);
+        s.frame_count = 0;
+        matrix_strand_teardown(&vm, &s);
+        urbi_vm_destroy(&vm);
+    }
+}
+
+UTEST(matrix_unwind_target_covered_by_cleanup_scope)
+{
+    /* GREEN: the tag-stop target tag also owns a TAG_SCOPE cleanup entry, whose
+     * owning_tag is shaded in strand_walk_roots step (3).  Mirrors the deposit
+     * shape of urbi_tag_stop (pending_unwind = UEXEC_TAG_STOP; unwind_target =
+     * tag) plus the member strand's TAG_SCOPE entry. */
+    {
+        UVM vm;
+        urbi_vm_init(&vm, NULL, NULL);
+        UStrand s;
+        matrix_strand_setup(&vm, &s);
+
+        int rc = urbi_sched_strand_cleanup_stack_init(&s, &vm,
+                                                      (uint16_t)URBI_CLEANUP_MAX);
+        UASSERT_EQ(rc, 0);
+
+        /* Push the cleanup entry FIRST (pure index bump, no allocation), THEN
+         * create the tag, THEN wire both the cleanup owning_tag and the
+         * unwind_target — under URBI_GC_STRESS utag_create force-collects
+         * before allocating, and nothing allocates between the tag birth and
+         * the two stores while the tag is unrooted. */
+        UCleanupEntry *entry = urbi_sched_strand_cleanup_push(&s);
+        UASSERT(entry != NULL);
+        entry->kind        = (uint8_t)UCLEANUP_TAG_SCOPE;
+        entry->strand_back = &s;
+
+        UTag *tag = utag_create(&vm);
+        UASSERT(tag != NULL);
+        entry->owning_tag = tag;              /* the covering root (step 3) */
+        s.pending_unwind  = UEXEC_TAG_STOP;
+        s.unwind_target   = tag;              /* the field under test */
+
+        collect_twice(&vm);
+        UASSERT(cell_live(&vm, (UCell *)tag));
+
+        s.unwind_target  = NULL;
+        s.pending_unwind = UEXEC_OK;
+        entry->owning_tag = NULL;
+        urbi_sched_strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
+        urbi_sched_strand_cleanup_stack_destroy(&s, &vm);
+        matrix_strand_teardown(&vm, &s);
+        urbi_vm_destroy(&vm);
+    }
+
+    /* RED-proof: unwind_target is the ONLY reference (no cleanup entry).
+     * unwind_target is not shaded, so the tag is swept. */
+    {
+        UVM vm;
+        urbi_vm_init(&vm, NULL, NULL);
+        UStrand s;
+        matrix_strand_setup(&vm, &s);
+
+        UTag *tag = utag_create(&vm);
+        UASSERT(tag != NULL);
+        s.pending_unwind = UEXEC_TAG_STOP;
+        s.unwind_target  = tag;               /* unwind_target ONLY */
+
+        collect_twice(&vm);
+        UASSERT(!cell_live(&vm, (UCell *)tag));
+
+        s.unwind_target  = NULL;
+        s.pending_unwind = UEXEC_OK;
+        matrix_strand_teardown(&vm, &s);
+        urbi_vm_destroy(&vm);
+    }
+}
+
+UTEST(matrix_wait_event_target_covered_by_event_reachability)
+{
+    /* GREEN: the waited-on event is reachable through another path (here a
+     * register holding the event value); wait_event_target is a back-pointer
+     * for unregister, not a root.  Mirrors c_event_waituntil: state ==
+     * USTRAND_WAIT_EVENT, wait_event_target == the event. */
+    {
+        UVM vm;
+        urbi_vm_init(&vm, NULL, NULL);
+        UStrand s;
+        matrix_strand_setup(&vm, &s);
+
+        UEvent *ev = urbi_event_create(&vm);
+        UASSERT(ev != NULL);
+        {
+            UValue evv;
+            memset(&evv, 0, sizeof evv);
+            evv.kind = UVAL_EVENT;
+            evv.v.p  = (void *)ev;
+            s.stack[6] = evv;                 /* the covering register */
+        }
+        uint8_t state_saved  = s.state;
+        s.state              = (uint8_t)USTRAND_WAIT_EVENT;
+        s.wait_event_target  = ev;            /* the field under test */
+
+        collect_twice(&vm);
+        UASSERT(cell_live(&vm, (UCell *)ev));
+
+        s.wait_event_target = NULL;
+        s.state             = state_saved;
+        memset(&s.stack[6], 0, sizeof s.stack[6]);
+        matrix_strand_teardown(&vm, &s);
+        urbi_vm_destroy(&vm);
+    }
+
+    /* RED-proof: wait_event_target is the ONLY reference (event on no other
+     * path).  The back-pointer is not shaded, so the event is swept. */
+    {
+        UVM vm;
+        urbi_vm_init(&vm, NULL, NULL);
+        UStrand s;
+        matrix_strand_setup(&vm, &s);
+
+        UEvent *ev = urbi_event_create(&vm);
+        UASSERT(ev != NULL);
+        uint8_t state_saved  = s.state;
+        s.state              = (uint8_t)USTRAND_WAIT_EVENT;
+        s.wait_event_target  = ev;            /* back-pointer ONLY */
+
+        collect_twice(&vm);
+        UASSERT(!cell_live(&vm, (UCell *)ev));
+
+        s.wait_event_target = NULL;
+        s.state             = state_saved;
+        matrix_strand_teardown(&vm, &s);
+        urbi_vm_destroy(&vm);
+    }
+}
+
 /* === Container element cases (Task 3 / refactor-3 B2/GC-01/STD-01) ===
  *
  * UList / UDict backing stores are raw vm->alloc_fn buffers threaded onto
@@ -1517,6 +1718,12 @@ void test_gc_rooting_matrix_suite(void)
               matrix_uprotos_wrapper_survives_when_owner_live);
     utest_run("matrix_register_window_is_rooted",
               matrix_register_window_is_rooted);
+    utest_run("matrix_frame_recv_covered_by_register_scan",
+              matrix_frame_recv_covered_by_register_scan);
+    utest_run("matrix_unwind_target_covered_by_cleanup_scope",
+              matrix_unwind_target_covered_by_cleanup_scope);
+    utest_run("matrix_wait_event_target_covered_by_event_reachability",
+              matrix_wait_event_target_covered_by_event_reachability);
     utest_run("matrix_list_element_is_rooted",
               matrix_list_element_is_rooted);
     utest_run("matrix_dict_value_is_rooted",
