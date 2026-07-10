@@ -41,7 +41,7 @@ extern "C" {
 #define USTRAND_RUNNING        0x20U  /* currently dispatching */
 #define USTRAND_WAITING        0x30U  /* blocked, see reason sub-code */
 #define USTRAND_DEAD           0x40U  /* terminated, awaiting GC */
-#define USTRAND_SUSPENDED      0x50U  /* RESERVED — Tag.freeze */
+#define USTRAND_SUSPENDED      0x50U  /* live since v0.10.9 — Tag.block/freeze */
 
 /* WAITING reason sub-codes (lower nibble).
  *

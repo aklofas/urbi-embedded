@@ -916,8 +916,9 @@ uint64_t urbi_vm_dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budg
    last_error and last_errmsg are reset at entry — a caller may inspect
    them after each urbi_vm_run call without stale state from prior runs.
 
-   v0.10.3: return type changed from int to int.  int is now
-   typedef int for source compat; existing callsites compile unchanged.
+   v0.10.3: return type changed from `UVMError` to int (the `UVMError`
+   typedef is retired to int for source compat); existing callsites compile
+   unchanged.
 
    API-004 (Wave 5): the `realm` argument selects which Realm the
    transient strand runs in.  realm == NULL falls back to the VM's
