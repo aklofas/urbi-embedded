@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # check-source-comment-scrub.sh — fail if C/H source files contain internal
-# process-ID tokens (M<n>, T<n>, W<n>, FOUND-<n>, refactor-<n>) in comments.
+# process-ID tokens in comments.  Two token classes are caught:
+#   - abbreviated:  M<n>, T<n>, W<n>, FOUND-<n>, refactor-<n>
+#   - spelled-out:  the capitalized process words followed by a number,
+#                   separated by a space or hyphen (e.g. the Wave/Task/
+#                   Milestone family).  Lowercase words (RTOS "task", queue
+#                   "wave") are NOT process IDs and do not match.
 #
 # These identifiers are meaningful only in the private planning context and
 # must not appear in the public source tree.  Strip the ID token; keep the
@@ -21,7 +26,7 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-PATTERN='\b(M[0-9]+|T[0-9]+|W[0-9]+|FOUND-[0-9]+|refactor-[0-9]+)\b'
+PATTERN='\b(M[0-9]+|T[0-9]+|W[0-9]+|FOUND-[0-9]+|refactor-[0-9]+|(Wave|Task|Milestone)[ -][0-9]+)\b'
 
 # Tracked files under src/ include/ tools/, excluding version.h
 FILES=$(git ls-files src/ include/ tools/ \
