@@ -42,7 +42,9 @@
  * head = pointer-to-list-head (lvalue of element pointer type).
  * node = element to remove.
  * link = name of the next-pointer field on the element struct.
- * T    = element struct type (needed for the internal pp declaration). */
+ * T    = element struct type (needed for the internal pp declaration).
+ * NOTE: `node` is multi-evaluated — pass a plain lvalue, never a
+ *       side-effecting expression. */
 #define URBI_SLIST_UNLINK(head, node, link, T)                  \
     do {                                                         \
         T **_urbi_slist_pp_ = &(head); /* NOLINT(bugprone-macro-parentheses) — T is a type arg, not an expression */ \

@@ -193,8 +193,6 @@ static const UNativeMethodDef MUTEX_METHODS[] = {
     { "tryLock", mutex_trylock }
 };
 
-
-
 /* === Date ================================================================
  *
  * Wall-clock access via libc time().  Each Date instance carries a
@@ -367,8 +365,6 @@ static const UNativeMethodDef DATE_METHODS[] = {
     { "plus",        date_plus          }
 };
 
-
-
 /* === Duration ============================================================
  *
  * Thin wrapper over integer microseconds.  Time literals (100ms / 2s /
@@ -454,8 +450,6 @@ static const UNativeMethodDef DURATION_METHODS[] = {
     { "asMilliseconds",   duration_millis      },
     { "asSeconds",        duration_seconds     }
 };
-
-
 
 /* === urbi_stdlib_register_primitives ====================================
  *
