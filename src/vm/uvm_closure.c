@@ -50,8 +50,11 @@ UClosure *urbi_vm_alloc_closure(UVM *vm, UProto *proto) {
 }
 
 /* Find or create an open UUpvalCell for &R[slot].
- * Cells are kept in the strand's open_upvals list, sorted by stack address
- * (descending: newest captures at the front).
+ * Cells are kept in the strand's open_upvals list in insertion order — each
+ * new cell is prepended, so the most recent capture is at the front.  The
+ * list is NOT sorted by stack address; urbi_vm_close_upvalues scans the whole
+ * chain and closes every cell at or above the threshold, so order is
+ * immaterial to correctness.
  *
  * v0.8.4 Option B Step C-2: UUpvalCell is now GC-managed.  urbi_gc_alloc
  * zeroes the payload + sets type_tag = UTYPE_UPVAL_CELL.  The open_upvals
