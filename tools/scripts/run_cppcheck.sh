@@ -35,7 +35,7 @@ if [ "$TOOL_RC" -ne 0 ] && [ "$ERR_COUNT" -eq 0 ]; then
     echo "run_cppcheck: tool exited $TOOL_RC with no findings (crash?)" >&2
     exit "$TOOL_RC"
 fi
-if [[ "$ERR_COUNT" -gt 0 ]]; then
+if [ "$ERR_COUNT" -gt 0 ]; then
     echo "FAIL: $ERR_COUNT cppcheck violations" >&2
     exit 1
 fi

@@ -37,6 +37,8 @@ jobs:
         working-directory: examples/esp32/eye_demo
         run: |
           . /opt/esp/idf/export.sh
-          python3 $IDF_PATH/tools/idf_size.py build/eye_demo.map 2>/dev/null || \
-              ls -lh build/eye_demo.bin
+          # Use `idf.py size` (the version-agnostic front door that wraps
+          # esp_idf_size) rather than hardcoding $IDF_PATH/tools/idf_size.py,
+          # which moved/deprecated across ESP-IDF releases.
+          idf.py size 2>/dev/null || ls -lh build/eye_demo.bin
           echo "esp32 eye_demo app: OK"

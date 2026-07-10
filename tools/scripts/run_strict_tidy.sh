@@ -17,7 +17,7 @@ command -v "$CLANG_TIDY" >/dev/null 2>&1 || {
 
 # Use .clang-tidy.strict if present (parallel-config mode), else .clang-tidy.
 CONFIG_FILE=".clang-tidy"
-if [[ -f .clang-tidy.strict ]]; then
+if [ -f .clang-tidy.strict ]; then
     CONFIG_FILE=".clang-tidy.strict"
 fi
 
@@ -44,7 +44,7 @@ if [ "$TOOL_RC" -ne 0 ] && [ "$WARN_COUNT" -eq 0 ]; then
     echo "run_strict_tidy: tool exited $TOOL_RC with no findings (crash?)" >&2
     exit "$TOOL_RC"
 fi
-if [[ "$WARN_COUNT" -gt 0 ]]; then
+if [ "$WARN_COUNT" -gt 0 ]; then
     echo "FAIL: $WARN_COUNT strict-tidy violations" >&2
     exit 1
 fi

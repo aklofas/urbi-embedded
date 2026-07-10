@@ -14,7 +14,7 @@ mkdir -p "$(dirname "$OUT")" "$HTML_DIR"
 "$SCAN_BUILD" --status-bugs -o "$HTML_DIR" make TARGET=host-scan-build all 2>&1 | tee "$OUT"
 RC=${PIPESTATUS[0]}
 
-if [[ "$RC" -ne 0 ]]; then
+if [ "$RC" -ne 0 ]; then
     echo "FAIL: scan-build found bugs (exit $RC); see $HTML_DIR" >&2
     exit "$RC"
 fi
