@@ -226,7 +226,11 @@ RUNNER_WRAPPER ?=
 # The .d files precede `all:`, so without an explicit default goal a bare
 # `make` in an already-built tree picks up the first .d rule instead.
 .DEFAULT_GOAL := all
-sinclude $(shell find build -name '*.d' 2>/dev/null)
+# BLD-CI-4: scope the dep-file glob to THIS build's $(BUILDDIR), not the whole
+# build/ tree.  Pulling in every target's .d files (build/arm-cortex-m7/,
+# build/host-asan/, ...) is wasted work for a host `make` and risks a stale .d
+# from another TARGET shadowing a header rule in this one.
+sinclude $(shell find $(BUILDDIR) -name '*.d' 2>/dev/null)
 
 all: $(LIB) $(LIBURBI_AUX) $(BUILDDIR)/urbi
 
@@ -712,11 +716,21 @@ PORT_STM32F4_TEST_DEPS_COMMON := \
 	tests/port_stm32f4/mock_bsp.c \
 	src/runtime/uabi_guards.c
 
+# BLD-CI-6: -MMD -MP so a header edit under tests/port_stm32f4/ or
+# components/stm32f4-hal-baremetal/ rebuilds the affected port test.  Each
+# rule compiles several sources straight to a binary in one cc invocation,
+# so gcc emits a single build/port_stm32f4/<test>.d (named after -o $@,
+# capturing the last-listed source's headers — the port shim under test).
+# The scoped sinclude below pulls these in; they live outside $(BUILDDIR)
+# because the port binaries use a fixed TARGET-less path.
 PORT_STM32F4_CFLAGS := -std=c99 -Wall -Wextra \
 	-DURBI_PORT_TEST=1 \
+	-MMD -MP \
 	-I tests/port_stm32f4 \
 	-I include \
 	-I components/stm32f4-hal-baremetal/include
+
+sinclude $(shell find build/port_stm32f4 -name '*.d' 2>/dev/null)
 
 # Each test gets its own binary in build/port_stm32f4/
 build/port_stm32f4/test_port_allocator: tests/port_stm32f4/test_port_allocator.c \
