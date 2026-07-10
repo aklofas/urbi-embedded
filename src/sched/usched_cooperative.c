@@ -732,7 +732,13 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
      *     owning object's changed_events_head (slot-change events), or the
      *     owning tag's enter_event/leave_event fields.  join_parent is
      *     another live strand reached via realm.strands_head.  No direct
-     *     callback is needed here at v1.0. */
+     *     callback is needed here at v1.0.
+     *
+     *     s->wait_event_target (the UEvent back-pointer used for unregister)
+     *     is the same event as wait_payload.event and needs no shade for the
+     *     same reason: it is a back-pointer, not a root (a wait_event_target
+     *     whose event is reachable nowhere else would be swept).  The event's
+     *     independent reachability above is what keeps it alive. */
     /*     The suspend_tag union arm is live ONLY while
      *     the strand is SUSPENDED for BLOCK/FREEZE — guard on the reason
      *     before touching the union. */
@@ -764,7 +770,14 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
      *     Each active call frame holds a raw UClosure* (frames[i].closure).
      *     frame_count is the count of populated frames.  Frame 0 may have
      *     closure == NULL (top-level call into the strand entry); guard each.
-     *     Load-bearing for the same reason as (6). */
+     *     Load-bearing for the same reason as (6).
+     *
+     *     frames[i].recv needs NO callback here: recv is a copy of the
+     *     caller's R[A+1] saved at OP_CALL, and that source register lives in
+     *     the shared register window while the callee frame is active, so the
+     *     value is already covered by the full-stack scan in section (1).
+     *     recv is not a separate root (a recv-only, register-cleared value
+     *     would be swept) — the register scan is what keeps it alive. */
     {
         int i;
         for (i = 0; i < s->frame_count; i++) {
