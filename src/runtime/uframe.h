@@ -30,10 +30,17 @@
 extern "C" {
 #endif
 
-/* --- Capacity constants --- */
+/* --- Capacity constants (per-port footprint knobs) ---
+ *
+ * Both are #ifndef-overridable at compile time; embedded ports bind smaller
+ * values via -D (bundled into the Makefile's FOOTPRINT_CFLAGS preset).
+ * UVM_STACK_CAP is the largest single per-strand cost (an interim fixed-cap
+ * register stack; overflow raises urbi_vm_format_oom rather than growing —
+ * grow-on-demand is a v1.x item).  See docs/embedded/footprint-tunables.md
+ * for the full preset and the per-strand cost table. */
 
 #ifndef UVM_MAX_FRAMES
-#  define UVM_MAX_FRAMES 64
+#  define UVM_MAX_FRAMES 64        /* call frames per strand */
 #endif
 #ifndef UVM_STACK_CAP
 #  define UVM_STACK_CAP  2048      /* total register slots across all frames */
