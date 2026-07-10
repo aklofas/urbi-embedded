@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.13.6-consistency — 2026-07-10
+
+Tag 7 of the v0.13.x pre-release hardening arc: an internal-consistency pass
+that namespaces cross-module internals, consolidates duplicated code,
+removes dead code, and fixes a fork-operand register-allocation bug, along
+with a comment/documentation truthfulness program, embedded footprint
+tooling, and two file decompositions.  No new opcode, wire format unchanged
+(v1.9 / 0x19).
+ABI 0/23/6 -> 0/23/7 (PATCH; no new public C functions, no new public C
+API symbols).
+
+- Internal-symbol namespace cleanup: every cross-translation-unit internal
+  symbol now carries the `urbi_` prefix, eliminating the last unprefixed
+  externs and removing two internal-leak allowlist rows.  The public C API
+  is unchanged.
+- Consolidation of duplicated internals (≈-700 LOC): shared native-method
+  registration, unified value constructors, common parser and emitter
+  helpers, single opcode name tables, one intrusive-list idiom, and
+  deduplicated REPL transport handling.
+- Dead-code removal: unused strand fields dropped; `UStrand` shrinks from
+  3920 to 3912 bytes.
+- Fork-operand register allocation: `switch` and `for`-each statements used
+  as `&` and `,` statement operands now allocate registers correctly and
+  compile and run as expected.
+- `Boolean` and `Nil` gain an `asString` representation.
+- Division and modulo errors share a single positioned message prefix,
+  unifying the `/` and `%` diagnostics.
+- Comment and documentation truthfulness program: source comments and the
+  internals docs were swept for stale or inaccurate claims, an
+  error-channels internals note was added, and a new source-comment lint
+  gate guards against regressions.
+- GC rooting-matrix additions extend the rooting harness coverage.
+- Embedded footprint preset: a `FOOTPRINT_CFLAGS` build preset, a
+  documented per-port stack-cap knob, a new firmware size gate, and
+  build-dependency hygiene improvements.
+- Two file decompositions: the bytecode verifier and the emitter
+  control-flow arms are split into smaller translation units with no
+  behavior change.
+
 ## v0.13.5-conformance-and-stdlib — 2026-07-05
 
 Tag 6 of the v0.13.x pre-release hardening arc: a systematic legacy-

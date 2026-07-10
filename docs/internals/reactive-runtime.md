@@ -313,9 +313,9 @@ ISR-safe** — the only ISR-safe deposit primitive is `urbi_inject_event`
 
 **OP_TAG_STOP note** — `OP_TAG_STOP` (opcode 30) has a full VM
 dispatch arm (`label_op_tag_stop` in `uvm.c`) since v0.10.2.  The compiler
-(`uemit.c`) never emits it: scripted `tag.stop()` lowers to a method call
-resolved at runtime through `tag_stop_native` → `urbi_tag_stop`; the
-`uemit_tag_stop` function exists but has zero call sites.  Hand-built or
+(`uemit.c`) never emits it: scripted `tag.stop()` lowers to an ordinary
+method call resolved at runtime through `tag_stop_native` → `urbi_tag_stop`,
+so the emitter has no tag-stop opcode path at all.  Hand-built or
 foreign-assembled bytecode may legitimately contain `OP_TAG_STOP`, so the
 load-time "reserved opcode" reject (which predated the v0.10.2 dispatch
 wiring) is removed in v0.13.3.  The round-trip acceptance is pinned by
