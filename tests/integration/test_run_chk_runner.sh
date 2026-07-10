@@ -50,6 +50,52 @@ exit 0
 EOF
 chmod +x "$TMP/urbi-ok" "$TMP/urbi-crash" "$TMP/urbi-hang" "$TMP/urbi-wrong"
 
+# --- host-driver path stubs (BLD-CI-7) -----------------------------------
+# `## host:` fixtures dispatch to $(dirname urbi)/chk-host-driver instead of
+# `urbi -i`.  Each behavior needs its own driver binary, so give each case its
+# own dir holding a placeholder `urbi` (only its dirname is used to locate the
+# driver) plus a `chk-host-driver` with the desired behavior.
+HD_CRASH="$TMP/hd-crash"; HD_HANG="$TMP/hd-hang"; HD_VACUOUS="$TMP/hd-vacuous"
+mkdir -p "$HD_CRASH" "$HD_HANG" "$HD_VACUOUS"
+for d in "$HD_CRASH" "$HD_HANG" "$HD_VACUOUS"; do
+    printf '#!/bin/sh\nexit 0\n' > "$d/urbi"   # placeholder; host path never runs it
+    chmod +x "$d/urbi"
+done
+# Driver: correct output then crash — host-path crash-after-output FAIL case.
+cat > "$HD_CRASH/chk-host-driver" <<'EOF'
+#!/bin/sh
+printf '[00000000] 3\n'
+exit 139
+EOF
+# Driver: correct output then hangs — host-path TIMEOUT-kill case.
+cat > "$HD_HANG/chk-host-driver" <<'EOF'
+#!/bin/sh
+printf '[00000000] 3\n'
+sleep 1000
+EOF
+# Driver: never reached — the vacuous case is caught before the driver runs;
+# a well-behaved stub is enough to prove the driver would be available.
+cat > "$HD_VACUOUS/chk-host-driver" <<'EOF'
+#!/bin/sh
+printf '[00000000] 3\n'
+exit 0
+EOF
+chmod +x "$HD_CRASH/chk-host-driver" "$HD_HANG/chk-host-driver" "$HD_VACUOUS/chk-host-driver"
+
+# host-driver fixtures: `## host:` selects the driver path.
+cat > "$TMP/host-basic.chk" <<'EOF'
+## host: quiescence
+[00000000] 3
+EOF
+cat > "$TMP/host-timeout.chk" <<'EOF'
+## host: quiescence
+## timeout: 2
+[00000000] 3
+EOF
+cat > "$TMP/host-vacuous.chk" <<'EOF'
+## host: quiescence
+EOF
+
 cat > "$TMP/basic.chk" <<'EOF'
 1 + 2;
 [00000000] 3
@@ -108,8 +154,16 @@ expect_rc "missing binary is a runner error"     2 $?
 "$RUNNER" "$TMP/urbi-ok" "$TMP/bad-exit-directive.chk" >/dev/null 2>&1
 expect_rc "non-integer '## exit:' is a runner error" 2 $?
 
+# host-driver path contract (BLD-CI-7).  DRIVER = $(dirname urbi)/chk-host-driver.
+"$RUNNER" "$HD_CRASH/urbi" "$TMP/host-basic.chk" >/dev/null 2>&1
+expect_rc "host-driver crash-after-output FAILs (CHK-02 host path)"    1 $?
+"$RUNNER" "$HD_HANG/urbi" "$TMP/host-timeout.chk" >/dev/null 2>&1
+expect_rc "host-driver hang TIMEOUTs with '## timeout: 2' (CHK-03 host)" 1 $?
+"$RUNNER" "$HD_VACUOUS/urbi" "$TMP/host-vacuous.chk" >/dev/null 2>&1
+expect_rc "host-driver empty-expected is VACUOUS (CHK-01 host path)"   5 $?
+
 if [ "$fails" -gt 0 ]; then
     echo "test_run_chk_runner: $fails contract check(s) FAILED"
     exit 1
 fi
-echo "test_run_chk_runner: all 10 runner-contract checks PASS"
+echo "test_run_chk_runner: all 13 runner-contract checks PASS"
