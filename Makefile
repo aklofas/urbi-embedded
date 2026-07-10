@@ -1961,6 +1961,46 @@ test-cross-pico-repl-elf: cross-pico-repl tools/urbi-compile-stdlib-pico
 	                    | tail -2
 	@echo "PASS: cross-pico-repl example .elf links cleanly"
 
+# BLD-CI-2: footprint-cap gate.  Reads `arm-none-eabi-size -A` on the built
+# repl_demo.elf and asserts .text+.data <= PICO_FLASH_CAP and .data+.bss <=
+# PICO_RAM_CAP.  A regression that bloats flash or RAM past the cap fails the
+# gate loudly instead of silently eating a hardware target's budget.
+#
+# Caps are per-target Make vars (RP2040: 2 MB flash / 264 KB SRAM hardware).
+# Calibrated 2026-07-10 from the repl_demo.elf built with xpack
+# arm-none-eabi-gcc 14.2.1 (this box) under the FOOTPRINT_CFLAGS preset:
+#     .text = 133 224   .data = 5 964   .bss = 8 924
+#     .text+.data = 139 188 B   .data+.bss = 14 888 B
+# Caps set at measured + ~15 % headroom, rounded, so they hold under BOTH the
+# CI apt arm-none-eabi-gcc (~13.2.1) and this box's xpack 14.2.1 (the known
+# toolchain skew — the two produce slightly different sizes).  Well under the
+# RP2040's 2 MB flash / 264 KB SRAM ceilings; these are regression caps, not
+# hardware limits.
+PICO_FLASH_CAP ?= 163840
+PICO_RAM_CAP   ?= 20480
+.PHONY: test-footprint-cap
+test-footprint-cap: test-cross-pico-repl-elf
+	@elf=examples/pico/repl_demo/build/repl_demo.elf; \
+	 if [ ! -f "$$elf" ]; then \
+	     echo "SKIP: $$elf absent (pico-sdk not provisioned — build via test-cross-pico-repl-elf)"; \
+	     exit 0; \
+	 fi; \
+	 arm-none-eabi-size -A "$$elf" \
+	   | awk -v flash_cap=$(PICO_FLASH_CAP) -v ram_cap=$(PICO_RAM_CAP) ' \
+	       $$1 == ".text" { text = $$2 } \
+	       $$1 == ".data" { data = $$2 } \
+	       $$1 == ".bss"  { bss  = $$2 } \
+	       END { \
+	         flash = text + data; ram = data + bss; \
+	         printf "footprint: .text+.data = %d B (cap %d) | .data+.bss = %d B (cap %d)\n", \
+	                flash, flash_cap, ram, ram_cap; \
+	         fail = 0; \
+	         if (flash > flash_cap) { printf "FAIL: flash (.text+.data) %d B exceeds cap %d B\n", flash, flash_cap; fail = 1 } \
+	         if (ram   > ram_cap)   { printf "FAIL: ram (.data+.bss) %d B exceeds cap %d B\n", ram, ram_cap; fail = 1 } \
+	         if (fail) exit 1; \
+	         printf "PASS: repl_demo.elf within FLASH_CAP + RAM_CAP\n"; \
+	       }'
+
 # STM32F4 mandelbrot app compile gate.  Builds the full application
 # ELF (HAL + BSP + urbi port shims + liburbi.a) with arm-none-eabi-gcc.
 # Catches app-level breakage invisible to the library-only cross-stm32f4 job:

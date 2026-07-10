@@ -231,6 +231,8 @@ jobs:
         run: |
           arm-none-eabi-size --totals build/arm-cortex-m0plus-repl/liburbi.a
           arm-none-eabi-size examples/pico/repl_demo/build/repl_demo.elf
+      - name: Footprint cap gate (FLASH + RAM)
+        run: make test-footprint-cap
 
   cross-riscv:
     name: cross-compile (RISC-V rv32imc)
