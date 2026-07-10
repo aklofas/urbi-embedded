@@ -22,7 +22,7 @@ inline with their shipping milestone.
 | `at sync (e?) body` | emits `OP_AT_EVENT_SYNC_INSTALL` | working with sync-degradation caveat (Finding 7) |
 | `whenever (e?) body` | emits `OP_WHENEVER_EVENT_INSTALL` (W0/v0.10.2) | working; perpetual event subscriber — re-fires on every emission (not one-shot like `at (e?)`) |
 | `every (period) body` | desugars to `every(period_us, fn)` C-native call | working; re-spawn cadence via `UPeriodic` |
-| `tag.stop()` from script | routes via `tag_stop_native` → `urbi_tag_stop` C API (does NOT emit `OP_TAG_STOP`) | working — **CLOSED W3/v0.10.2**: `Tag.new()` + script-level `.stop()`, `.freeze()`, `.unfreeze()`, `.block()`, `.unblock()` all shipped. Bare-prefix `mytag: stmt` and member-expr `Tag.scope: body` (W6/v0.10.5) also working. C-level `urbi_tag_stop` remains the ISR-safe path. `OP_TAG_STOP` (opcode 30) exists in the VM dispatch table but has no compiler emit path; see the OP_TAG_STOP note below. |
+| `tag.stop()` from script | routes via `tag_stop_native` → `urbi_tag_stop` C API (does NOT emit `OP_TAG_STOP`) | working — **CLOSED (v0.10.2)**: `Tag.new()` + script-level `.stop()`, `.freeze()`, `.unfreeze()`, `.block()`, `.unblock()` all shipped. Bare-prefix `mytag: stmt` and member-expr `Tag.scope: body` (v0.10.5) also working. C-level `urbi_tag_stop` is **NOT ISR-safe** (it asserts `URBI_ASSERT_NOT_ISR`); interrupt-context work is deposited through the SPSC event ring (`urbi_inject_event`) instead. `OP_TAG_STOP` (opcode 30) exists in the VM dispatch table but has no compiler emit path; see the OP_TAG_STOP note below. |
 
 ## Reactive vocabulary at the lexer
 
@@ -60,13 +60,13 @@ receives the emit payload.
 Layout pins (guarded on `__SIZEOF_POINTER__ == 8`):
 
 ```c
-_Static_assert(sizeof(UWatcher) == 240,
-               "UWatcher size pin on 64-bit (URBI_WATCHER_READSET_MAX=16)");
+URBI_STATIC_ASSERT(sizeof(UWatcher) == 248,
+               "UWatcher size pin on 64-bit (URBI_WATCHER_READSET_MAX=16; ...)");
 ```
 
 At the embedded footprint preset (`URBI_WATCHER_READSET_MAX=4`) the size
-shrinks to 144 B — the only variable-size field is the `cells[]` read-set
-array. The fixed portion is 112 B; cells contribute `8 × cap` bytes.
+shrinks to 152 B — the only variable-size field is the `cells[]` read-set
+array. The fixed portion is 120 B; cells contribute `8 × cap` bytes.
 
 Watchers live in a fixed pool (`UGC_IS_FIXED`) sized
 `URBI_WATCHER_POOL_SIZE` (default 64). The pool slab is allocated once at
@@ -301,14 +301,15 @@ and the bookkeeping (`cross_strand_stop_pending` /
 `host_call_pending_count`) clears at strand destroy so the VM still reaches
 quiescence. Pinned by `tests/chk/tag/stop_straightline_ret.chk`.
 
-**CLOSED W3/v0.10.2 (Finding 3)** — Tag manipulation is fully
+**CLOSED (v0.10.2)** — Tag manipulation is fully
 script-accessible.  `UVAL_TAG = 12` is a first-class `UValKind` variant;
 `Tag.new()` creates tags; `OP_TAG_STOP` (opcode 30) calls `urbi_tag_stop`;
 `.freeze()`, `.unfreeze()`, `.block()`, `.unblock()`, `.enter`, `.leave`
-are registered on `vm->tag_proto`.  Bare-prefix `mytag: stmt` (v0.10.2-W4)
-and member-expression `Tag.scope: body` (v0.10.5-W8) are parser-accepted.
-`urbi_tag_stop` remains the ISR-safe C path; script-level `.stop()` routes
-through it.
+are registered on `vm->tag_proto`.  Bare-prefix `mytag: stmt` (v0.10.2)
+and member-expression `Tag.scope: body` (v0.10.5) are parser-accepted.
+Script-level `.stop()` routes through `urbi_tag_stop`, which is **not
+ISR-safe** — the only ISR-safe deposit primitive is `urbi_inject_event`
+(SPSC event ring); see the `urbi_tag_stop` note above.
 
 **OP_TAG_STOP note** — `OP_TAG_STOP` (opcode 30) has a full VM
 dispatch arm (`label_op_tag_stop` in `uvm.c`) since v0.10.2.  The compiler
@@ -495,8 +496,47 @@ Body-strand `module_instance` wiring: the spawn path walks
 the IC table correctly. A v1.x backlog item (`UClosure.owning_mi` field)
 would remove the O(N) walk.
 
-See [scheduler-design.md](./scheduler-design.md) for the strand state
-machine and run-queue contract.
+### Strand state byte
+
+A strand's lifecycle state is a single packed byte (`UStrand.state`,
+`src/sched/ustrand.h`): the high nibble (`USTRAND_STATE_MASK 0xF0`) is the
+top-level state and the low nibble (`USTRAND_REASON_MASK 0x0F`) is a wait/
+suspend reason sub-code that only applies in the `WAITING` and `SUSPENDED`
+states.
+
+| State (high nibble) | Value | Meaning | On which queue |
+|---------------------|-------|---------|----------------|
+| `USTRAND_DORMANT`   | `0x00` | allocated, not yet enqueued | none |
+| `USTRAND_READY`     | `0x10` | runnable | `ready_head` |
+| `USTRAND_RUNNING`   | `0x20` | currently dispatching | off-queue while running |
+| `USTRAND_WAITING`   | `0x30` | blocked; see reason sub-code | reason-specific wait list |
+| `USTRAND_DEAD`      | `0x40` | terminated, awaiting realm teardown | stays on `realm.strands_head` |
+| `USTRAND_SUSPENDED` | `0x50` | `tag.block` / `tag.freeze` — **live since v0.10.9** | off the run queue until ungated |
+
+The `SUSPENDED` state is not reserved: `urbi_tag_block` / `urbi_tag_freeze`
+move a strand into it and `urbi_strand_resume_if_ungated` returns it to
+`READY` once both suspend gates clear (see
+[scheduler-design.md](./scheduler-design.md#blockfreeze-suspension-gates-v0133)).
+
+| Reason (low nibble) | Value | Applies in | Waiting on |
+|---------------------|-------|------------|-----------|
+| `USTRAND_REASON_NONE`    | `0x00` | — | — |
+| `USTRAND_REASON_SLEEP`   | `0x01` | `WAITING` | `wait_payload.wake_us` (sleep queue) |
+| `USTRAND_REASON_WATCHER` | `0x02` | `WAITING` | a condition watcher (no `wait_payload`) |
+| `USTRAND_REASON_EVENT`   | `0x03` | `WAITING` | `wait_payload.event` / `wait_event_target` |
+| `USTRAND_REASON_JOIN`    | `0x04` | `WAITING` | `wait_payload.join_parent` (child strand) |
+| `USTRAND_REASON_HOST`    | `0x05` | reserved (v1.x/v2) | — |
+| `USTRAND_REASON_BLOCK`   | `0x06` | `SUSPENDED` | `wait_payload.suspend_tag` (`tag.block`) |
+| `USTRAND_REASON_FREEZE`  | `0x07` | `SUSPENDED` | `wait_payload.suspend_tag` (`tag.freeze`) |
+
+Typical transitions: `DORMANT → READY → RUNNING`; a running strand yields
+back to `READY` (`OP_YIELD` / `;`), parks to `WAITING` (sleep / event / join /
+watcher), suspends to `SUSPENDED` (block / freeze), or terminates to `DEAD`.
+`WAITING` and `SUSPENDED` strands return to `READY` when their wake / resume
+condition fires. `DEAD` is terminal.
+
+See [scheduler-design.md](./scheduler-design.md) for the run-queue contract,
+the `strand_runnable_count` invariant, and the block/freeze gate rules.
 
 ## Reactive arc findings — all closed v0.10.2
 
