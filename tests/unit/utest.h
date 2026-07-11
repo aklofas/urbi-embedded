@@ -1,6 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Minimal test harness. Header-only, zero dependencies, pure C99. */
 
+/* Expose POSIX.1-2008 interfaces (struct sigaction, fork, waitpid …).
+ * Must come before any system-header include so glibc's features.h picks
+ * it up on the first pass.  Harmless on non-POSIX hosted targets. */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #ifndef UTEST_H
 #define UTEST_H
 

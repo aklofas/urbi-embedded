@@ -5,6 +5,11 @@
  * Requires: <sys/types.h>, <sys/wait.h>, <signal.h>, <unistd.h>,
  *           <string.h>, <stdio.h> (all available on the host test runner). */
 
+/* Needed for struct sigaction under strict -std=c99 (-Wpedantic variants). */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #ifndef TEST_HELPERS_H
 #define TEST_HELPERS_H
 
