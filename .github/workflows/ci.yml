@@ -398,6 +398,14 @@ jobs:
         with:
           fetch-depth: 0  # need full tag history
       - name: Check version sync
+        # On a pull_request the release tag does not exist yet, so the gate
+        # would fail against the previous tag.  By repo convention the PR head
+        # branch is named for the tag-to-be, so feed it via the script's
+        # pre-tag escape.  On push events this is empty, which the script
+        # treats as "compare against the latest git tag" (the main-branch path
+        # keeps biting).
+        env:
+          URBI_RELEASE_TAG_TO_BE: ${{ github.event_name == 'pull_request' && github.head_ref || '' }}
         run: make check-version-sync
 
   wire-freeze:
