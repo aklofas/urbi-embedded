@@ -28,5 +28,4 @@ __umoddi3
 __umulsidi3
 memcpy
 memset
-strcmp
 strlen

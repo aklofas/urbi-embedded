@@ -8,7 +8,6 @@
 #include "value/uvalue.h"      /* UValKind, UVAL_* */
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 /* Map UValKind to a human-readable name for diagnostic messages. */
 static const char *kind_name(uint8_t kind) {
@@ -204,14 +203,24 @@ void urbi_vm_format_oom(UVM *vm, size_t nbytes) {
     urbi_vm_diag_write_cstr(&w, " bytes requested)");
 }
 
+/* diag_streq — freestanding string equality (no <string.h>).
+ * uvm_diag.c is a core TU (links into liburbi.a for every target, including
+ * bare-metal freestanding builds), so it must not pull libc strcmp.  Local to
+ * this TU to avoid adding a cross-TU symbol; follows the umacros.h leaf-helper
+ * idiom (see STYLE.md "Freestanding discipline"). */
+static int diag_streq(const char *a, const char *b) {
+    while (*a != '\0' && *a == *b) { a++; b++; }
+    return *a == *b;
+}
+
 /* completeness check: returns 1 if every opcode in [0, OP_MAX) has a
  * non-fallback urbi_vm_op_name() and op_user_name().  Called from the opcode
  * completeness unit test. */
 int urbi_vm_diag_opnames_complete(void) {
     for (int op = 0; op < (int)OP_MAX; op++) {
-        if (strcmp(urbi_vm_op_name((uint8_t)op), "unknown") == 0)
+        if (diag_streq(urbi_vm_op_name((uint8_t)op), "unknown"))
             return 0;
-        if (strcmp(op_user_name((uint8_t)op), "(operator)") == 0)
+        if (diag_streq(op_user_name((uint8_t)op), "(operator)"))
             return 0;
     }
     return 1;
