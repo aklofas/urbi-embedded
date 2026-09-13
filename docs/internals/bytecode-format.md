@@ -464,25 +464,3 @@ int64_t  v = (int64_t)((u >> 1) ^ -(int64_t)(u & 1));   /* decode */
 
 This maps 0 → 0, -1 → 1, 1 → 2, -2 → 3, etc., making small negative
 integers compact. Same as Protocol Buffers `sint64`.
-
----
-
-## Post-freeze policy
-
-> Status: wire format pinned at v1.9 / 0x19 by v0.10.6-stabilization.
-> See `docs/api-stability.md` for the C-API analogue.
-
-To break the freeze after v0.10.6:
-
-1. **CHANGELOG.md entry** under the new tag's section, explaining the bump
-   and the loader's strict-rejection contract.
-2. **Static-assert bump** in `src/chunk/uchunk_io.c`.  The build will not
-   compile until updated.
-3. **Macros bump** in `src/chunk/uchunk.h` (`URBI_BYTECODE_VERSION_MINOR`
-   and the derived `_BYTE`).
-4. **This document update** — table at the top + any byte-layout changes
-   below.
-
-The loader does NOT silently coerce wire formats.  A v1.x consumer
-loading a v1.(x+1) blob receives `UCHUNK_LOAD_UNSUPPORTED_VERSION`.  Live
-upgrade tooling is a v1.x deferral (see `docs/urbi-embedded-design-risks.md`).

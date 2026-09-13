@@ -185,9 +185,8 @@ for explicit module eviction.
 ## 4. Wire Format
 
 Module chunks follow the standard urbi bytecode wire format, currently
-v1.9 / `0x19` (frozen at v0.10.6-stabilization).  See
-`docs/internals/bytecode-format.md` for the full header layout,
-opcode table, and post-freeze policy.
+v1.9 / `0x19`.  See `docs/internals/bytecode-format.md` for the full
+header layout and opcode table.
 
 ### Module-specific layout
 

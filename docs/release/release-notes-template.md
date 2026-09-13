@@ -68,7 +68,7 @@ None required from vX.Y.Z-previous.
    is acknowledged.
 3. **ABI + wire format versions** must be stated explicitly. Embedders depend
    on these to decide when to relink.
-4. **Breaking changes** must reference the post-freeze policy. If the freeze
-   was overridden, explain why.
+4. **Breaking changes** must be listed explicitly, since no ABI/wire
+   compatibility promise applies before 1.0.0.
 5. Do not abbreviate the test evidence section — it is the primary audit trail
    for release quality.
