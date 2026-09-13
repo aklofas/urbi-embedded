@@ -8,19 +8,6 @@
  *     `.message` slot, and `.raise` (which deposits THROW unwind so
  *     try/catch blocks can intercept).
  *
- * Phase 7 is intentionally narrow:
- *   - Code (closure) reflection methods (`apply`, `bodyString`) — DEFERRED:
- *     UVAL_CLOSURE has no atom proto in v1.0 (urbi_atom_proto_for_value
- *     routes closures to root Object), so installing methods would require
- *     a new dispatch surface beyond the v1.0 scope.  Tracked in
- *     docs/urbi-embedded-backlog.md.
- *   - Tag.new / Tag.stop scripted constructors — DEFERRED: there is no
- *     UVAL_TAG kind, so a script-side Tag instance would need a UObject
- *     wrapper carrying a UTag in a hidden slot, and existing utag_create
- *     is realm-bound.  Tracked in docs/urbi-embedded-backlog.md.
- *   - Event.new / Event.emit / Event.syncEmit — already shipped
- *     via src/event/uevent_native.c.
- *
  * Boot order: urbi_stdlib_register_runtime_types(vm) is called from
  * urbi_stdlib_boot AFTER containers (which also depends on atom protos). */
 

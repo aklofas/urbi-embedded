@@ -104,14 +104,6 @@ static UChunkLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
     return UCHUNK_LOAD_OK;
 }
 
-/* OP_JMP Bx range note:
- *   Bx is a 16-bit unsigned field treated as signed with bias 32768
- *   (effective range -32768..+32767).  The shape-table verifier (verify_walk_block)
- *   accepts UBXK_JUMP_SIGNED with no per-instruction bounds because it operates
- *   one instruction at a time without absolute PC context.  The per-sequence
- *   verify_chunk_bounds pass (bytecode F2, v0.10.7) computes
- *   target = pc + signed(Bx) - 32768 and rejects targets outside [0, instr_count)
- *   with UCHUNK_LOAD_JMP_OUT_OF_BOUNDS, replacing the prior runtime-fatal path. */
 /* Return true if `op` is an IC-bearing opcode (carries an ic_idx in C).
  * Mirror at v1.6: OP_GETSLOT, OP_SETSLOT, OP_GETSLOT_CHANGE_EVENT, OP_SELF.
  * Mirror discipline: any new IC-bearing opcode added in a future
@@ -137,11 +129,6 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                                           size_t nested_count,
                                           uint16_t ic_count,
                                           const uint32_t *instructions) {
-    /* MOD-016: count IC-bearing opcodes seen during the walk so we
-     * can cross-validate ic_count after the loop.  Every ic_idx must be
-     * < ic_count (per-instruction); ic_count must be <= ic_seen
-     * (count check; rejects modules that lie about ic_count without
-     * emitting matching IC sites). */
     size_t ic_seen = 0;
     size_t vi;
     for (vi = 0; vi < instr_count; vi++) {
@@ -188,11 +175,6 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                     return UCHUNK_LOAD_CORRUPT;
                 }
             }
-            /* VM-14: OP_JOIN_WAIT's dead-child fast path reads a
-             * strand handle that eager DEAD-reap may have freed; the adjacency
-             * invariant (OP_FORK_JOIN immediately before, FORK_JOIN.B ==
-             * JOIN_WAIT.A) is the only pin.  Enforce at load time so corrupt or
-             * hand-built chunks cannot exploit the UAF. */
             if (op == (uint8_t)OP_JOIN_WAIT) {
                 if (vi == 0U) {
                     set_errmsg(d->errmsg, d->errcap,
@@ -211,9 +193,6 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                     return UCHUNK_LOAD_CORRUPT;
                 }
             }
-            /* VM-19: OP_SELF writes R[A] (looked-up slot value) and
-             * R[A+1] (self/receiver copy for OP_CALL).  The shape table only
-             * verifies A <= max_reg; the cross-byte check also requires A+1. */
             if (op == (uint8_t)OP_SELF) {
                 if ((unsigned)a + 1U > (unsigned)max_reg) {
                     set_errmsg(d->errmsg, d->errcap,
@@ -222,12 +201,6 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                     return UCHUNK_LOAD_CORRUPT;
                 }
             }
-            /* VM-CORE-02: OP_CALL reads R[A..A+B-1] at dispatch (plain call:
-             * R[A]=callee, R[A+1..A+B-1]=args; method: R[A+1]=self too).
-             * The shape table validates A and B independently (each <= max_reg)
-             * but not their sum; a chunk with A+B > max_reg+1 would read beyond
-             * the allocated register frame.  Mirrors the OP_PUSH_FRAME_GUARD
-             * check above (same pattern: base+count <= max_reg+1). */
             if (op == (uint8_t)OP_CALL) {
                 if ((unsigned)a + (unsigned)b > (unsigned)max_reg + 1U) {
                     set_errmsg(d->errmsg, d->errcap,
@@ -280,15 +253,6 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
             }
         }
     }
-    /* Last instruction must be OP_RET (preserved from pre-v0.5.0 behavior).
-     *
-     * v1.x relaxation note: this strict trailing-OP_RET requirement
-     * assumes the emitter always closes a chunk with an explicit return.
-     * If a future bytecode revision allows fall-through-to-end semantics
-     * (e.g. an implicit RET, or a tail-call that elides RET), this check
-     * will need to widen.  At v0.5.6 every chunk uemit produces ends in
-     * OP_RET, so the strict form catches truncated/corrupt bytecode
-     * early. */
     if (instr_count > 0U) {
         uint32_t last = instructions[instr_count - 1U];
         if (uinstr_op(last) != OP_RET) {
@@ -296,14 +260,6 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
             return UCHUNK_LOAD_CORRUPT;
         }
     }
-    /* MOD-016: ic_count must not exceed the count of IC-bearing
-     * opcodes in the instruction stream.  Each ic_name (and the
-     * corresponding runtime UIC entry) is keyed off an emitted
-     * GETSLOT/SETSLOT/GETSLOT_CHANGE_EVENT site; lying about ic_count
-     * would either leave UIC entries unused (waste) or — worse — leave
-     * ic_name_strs[k>=ic_seen] holding a name that no instruction
-     * indexes (eligible for confusion attacks at later milestones when
-     * ic_index becomes wider). */
     if ((size_t)ic_count > ic_seen) {
         set_errmsg(d->errmsg, d->errcap,
                    "ic_count=%u exceeds %zu IC-bearing opcodes seen",
@@ -313,12 +269,6 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
     return UCHUNK_LOAD_OK;
 }
 
-/* v0.8.5: recursive verifier walk.  Each UProto is verified against its
- * OWN nested_count (per-parent OP_CLOSURE Bx index space), matching the
- * truly-recursive emitter contract.  Pre-v0.8.5 the verifier passed
- * the root-level nested_count for every nested proto because the flat
- * emitter routed every OP_CLOSURE to root's nested[] regardless of
- * lexical scope. */
 static UChunkLoadError verify_proto_recursive(MDecCtx *d, const UProto *p) {
     if (p == NULL) return UCHUNK_LOAD_OK;
     UChunkLoadError rc = verify_walk_block(d,
@@ -346,24 +296,6 @@ UChunkLoadError urbi_chunk_decode_verify(MDecCtx *d) {
  * verify_proto_recursive above) and applies bounds checks that require
  * understanding instruction *sequences* or cross-instruction context, which
  * is more than the per-opcode shape table in verify_walk_block can express:
- *
- *   OP_CLOSURE upvalue prelude — the nupvals pseudo-instructions that follow
- *     an OP_CLOSURE must lie within the instruction array, and each must
- *     encode a valid (in_stack, src_idx) pair:
- *       in_stack = B in {0, 1}
- *       src_idx  = C; if in_stack==1, C <= proto->max_reg (local register);
- *                     if in_stack==0, C < proto->nupvals (re-capture from parent)
- *   OP_JMP target — Bx is a signed offset biased by 32768; the resolved target
- *     pc' = pc + signed(Bx) - 32768 must satisfy 0 <= pc' < instr_count.
- *     (The bias means Bx=32768 is a no-op jump; Bx=0 jumps backward 32768.)
- *   OP_CALL C low-7 — encodes nresults+1; must be >= 1 (0 means 0 results
- *     which is legal at runtime but the emitter never produces it; a
- *     hand-crafted module with C & 0x7F == 0 is malformed per the wire spec).
- *   OP_TAG_STOP — has full VM dispatch since v0.10.2 (label_op_tag_stop in
- *     uvm.c).  The compiler never emits it (scripted tag.stop() routes through
- *     the C API), but hand-built chunks may contain it.  Accepted at load time;
- *     see the REPL-N4 note in the code below and pinned by
- *     test_verify_chunk_bounds.c (tag_stop_roundtrips_ok).
  *
  * Design note: add ic_index DFS pre-order check here.  The function
  * receives the proto tree already decoded; a future pass can walk the tree and verify
@@ -481,13 +413,6 @@ static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
             }
 
         }
-        /* VM-13: OP_TAG_STOP (opcode 30) has full VM dispatch since
-         * v0.10.2 (label_op_tag_stop in uvm.c).  The compiler never emits it —
-         * scripted tag.stop() routes through tag_stop_native → urbi_tag_stop
-         * C API — but hand-built or future chunks may include it.  The stale
-         * "reserved" reject (from wire v1.8 when the dispatch arm was absent)
-         * is removed here; OP_TAG_STOP is accepted at load time.
-         * Pinned by tests/unit/test_verifier_cross_byte.c. */
 
         vi++;
     }
@@ -506,12 +431,6 @@ UChunkLoadError urbi_chunk_verify_bounds(MDecCtx *d) {
 }
 
 /* --- bytecode F3: ic_index DFS pre-order verifier ---
- *
- * v0.8.5 truly-recursive emit assigns ic_index via uproto_alloc_nested's
- * ++root->next_proto_serial in DFS pre-order.  The deserializer mirrors this
- * at decode time (decode_proto recursive descent).  A corrupted chunk with
- * mis-ordered nested[] would produce in-range but wrong proto-instance lookups
- * in the OP_CLOSURE VM hot path (uvm.c).
  *
  * verify_ic_index_dfs walks the tree in DFS pre-order, matching each proto's
  * ic_index against a running counter.  Root must be 0; children are visited

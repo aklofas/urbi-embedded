@@ -1,21 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uemit_stmt.c — statement and function bytecode emitters.
- * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #4).
- *
- * Contains urbi_emit_expr arm helpers for:
- *   AST_IF       — conditional expression (if/else)
- *   AST_WHILE    — while loop
- *   AST_CALL     — function call with lazy-arg support
- *   AST_RETURN   — return statement
- *   AST_FUNCTION — function literal (thin caller for urbi_emit_function_literal)
- *   AST_ASSERT   — assert(expr) / assert { block } (v0.10.5, legacy F9)
- *
+/*
  * Also contains the shared function-building primitives:
  *   urbi_emit_function_literal — compile a function literal into UProto + OP_CLOSURE
  *   urbi_emit_lazy_thunk       — wrap an expression as a zero-arg closure thunk
- *
- * NOTE: The AST_CALL arm deliberately preserves the EMIT-014 uint8_t
- * wraparound at 256+ args.  Do NOT fix EMIT-014 here (wave-5-fixes). */
+ */
 
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
 #include "value/uintern.h"        /* ustr_intern */
@@ -65,10 +53,6 @@ uint8_t urbi_emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
                         e->max_reg_seen = e->next_reg;
                     if (e->next_reg > fs->max_reg_seen)
                         fs->max_reg_seen = e->next_reg;
-                    /* EMIT-013 fix also raise freereg to
-                     * next_reg so a subsequent urbi_emit_function_literal
-                     * call (which pulls dst from freereg) does not
-                     * alias the thunk-pass-through slot at dst. */
                     if (fs->freereg < e->next_reg)
                         fs->freereg = e->next_reg;
                     return dst;
@@ -131,15 +115,6 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
                               bool       as_expression) {
     UFuncState *parent_fs = e->current_fs;
 
-    /* EMIT-004: intern all parameter names BEFORE allocating the
-     * child UProto.  Pre-fix, child_proto was pushed to module->nested[]
-     * first and a mid-loop ustr_intern OOM left a half-initialised proto
-     * stuck in the array (nested_count incremented, name slots not yet
-     * declared, body never compiled).  By interning into a stack-local
-     * cache up front, an intern OOM short-circuits with no module-state
-     * mutation.  UFS_MAX_LOCALS bounds nparams (the parser grows param
-     * arrays dynamically up to UFS_MAX_LOCALS = 200; the bound here is
-     * conservative relative to UFuncSig.param_is_lazy[16]). */
     const char *param_names[UFS_MAX_LOCALS];
     if (nparams > UFS_MAX_LOCALS) {
         e->error = EMIT_REG_EXHAUSTED;
@@ -162,14 +137,7 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
      * leaves child_proto in nested[] but at least it is consistently a
      * fully-allocated empty proto (uchunk_destroy walks NULL slots
      * cleanly). */
-    /* v0.8.5: allocate child_proto under the ENCLOSING parent's
-     * nested[] (parent_fs->target_proto), not flat under root_proto.  For
-     * top-level function literals parent_fs->target_proto == root_proto so
-     * the on-disk shape is byte-identical to pre-v0.8.5; for nested
-     * function literals (function-inside-function) the child UProto becomes
-     * a true child of the enclosing function's UProto and OP_CLOSURE Bx is
-     * a per-parent index into that scope's nested[].
-     *
+    /*
      * All parameter interns have already succeeded; from here on, any
      * failure leaves child_proto in parent_proto->nested[] but at least
      * it is consistently a fully-allocated empty proto (uchunk_destroy
@@ -183,18 +151,7 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
      * local-zone floor (locals + params + r_global_slot); live temps live
      * ABOVE the floor and are tracked by next_reg, so freereg alone is
      * the wrong source.  Task #22, surfaced 2026-05-16.
-     *
-     * v0.13.5: capture moved from AFTER the child param declarations to
-     * here.  uemit_declare_local's tail sync (`if (e->next_reg <
-     * fs->freereg) e->next_reg = fs->freereg`) raises the FLAT cursor to
-     * the CHILD's local floor while declaring child params — so when the
-     * child's param+synthetic-local count exceeded the parent's floor
-     * (e.g. any 1-param literal inside a 0-param watcher body once
-     * \x01nargs exists, or a 2-param literal there before it), the old
-     * capture point read the child-contaminated cursor and OP_CLOSURE's
-     * dst landed one-plus slots above the var-decl's expected register
-     * (urbi_emit_var_decl_arm's init_reg != reg_before check → spurious
-     * EMIT_UNSUPPORTED_AST). */
+     */
     uint8_t parent_next_reg_before = e->next_reg;
 
     UProto *parent_proto = parent_fs->target_proto;
@@ -225,17 +182,6 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
     }
     child_proto->nparams = (uint8_t)nparams;
 
-    /* v0.13.5 arity self-check discipline (default params):
-     * every >=1-param function reserves a synthetic local right above the
-     * params — slot index == nparams — that the VM (OP_CALL) and the
-     * strand-arm paths seed with the ACTUAL passed argument count as a
-     * UVAL_INT.  The prologue emitted below (step 3b) reads it to enforce
-     * the minimum arity and to fill omitted defaulted params at call time.
-     * Synthetic-name pattern per for-each's \x01iter / switch's \x01sw;
-     * \x01 is unlexable so user code can never collide.  Declared as a
-     * real local so urbi_emit_fs_temp_floor's count-based formula keeps protecting
-     * it from if/while temp resets.  ("nargs", not "argc": a name starting
-     * with a hex digit would be munched into the \x01 escape.) */
     int argc_slot = -1;
     if (nparams > 0) {
         const char *argc_name = ustr_intern(e->vm, "\x01nargs", 6);
@@ -273,10 +219,6 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
             child_fs->max_reg_seen = child_fs->freereg;
     }
 
-    /* Sync the flat register cursor to the child's freereg so temps
-     * inside the function body are allocated above all param slots.
-     * (parent_next_reg_before was captured before uemit_open_function —
-     * see the v0.13.5 note there.) */
     e->next_reg = child_fs->freereg;
 
     /* 3b + 4. Compile the arity prologue, then the body (AST_BLOCK);
@@ -292,12 +234,7 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
     uint8_t saved_icb = e->in_cleanup_body;
     e->in_cleanup_body = 0U;
 
-    /* === 3b: v0.13.5 arity self-check prologue ===
-     * Emitted BEFORE the body, using only existing wire-v1.9 opcodes
-     * (LOADK / LT / LE / JMP / MOVE / THROW — no wire change).  The
-     * synthetic \x01nargs local at argc_slot carries the actual passed
-     * count (seeded by OP_CALL / the strand-arm paths).
-     *
+    /*
      *   min_arity = 1 + highest param index WITHOUT a default (0 when all
      *   params carry defaults).  Matches the legacy runtime: formals
      *   desugar to in-order LocalDeclarations (factory.cc formals_to_decs),
@@ -614,13 +551,6 @@ uint8_t urbi_emit_if_arm(UEmitter *e, UAstNode *n) {
      * uemit_declare_local under SEP_SEMI between-stmt handling, which
      * uses fs->freereg as the next local's slot index).
      *
-     * EMIT-016 fix (v0.5.7): pre-fix the trailing
-     * `fs->freereg = next_reg` line forced a `var b = init` after
-     * `if (cond) { var x = init; x };` to land at slot rd+1 (e.g., 3)
-     * instead of the actually-free slot rd (e.g., 2), wasting a register
-     * across the function's lifetime — the leak compounds across nested
-     * conditionals, inflating proto.max_reg unnecessarily.
-     *
      * The if-expr's caller is responsible for the rd register: the
      * NARY/BLOCK between-stmt reset releases rd via urbi_emit_fs_temp_floor; the
      * assign-arm and similar consumers read rd before allocating new
@@ -646,9 +576,7 @@ uint8_t urbi_emit_if_arm(UEmitter *e, UAstNode *n) {
  *       emit_loop_back_close ; OP_CLOSE if any local captured
  *       JMP loop_start       ; back-edge
  *     exit:
- *
- * v0.10.5: pushes a ULoopCtx so break/continue inside the body are
- * lowered to OP_JMP with the targets patched here at exit. */
+ */
 uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
@@ -668,7 +596,6 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
      * fork closure as a hidden local so floor resets land above it. */
     uint8_t rd = e->next_reg;
 
-    /* v0.10.5: open loop context for break/continue. */
     if (!uemit_loop_push(e, ULOOP_FRAME_LOOP)) return 0U;
 
     int loop_start = (int)urbi_emit_instr_count(e);
@@ -718,10 +645,6 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
             e->next_reg = e->current_fs->freereg;
         }
 
-        /* v0.10.5: continue PCs land here — BEFORE the back-edge
-         * OP_CLOSE, so `continue` closes the iteration's captured cells
-         * instead of jumping straight to the back-edge JMP and reusing
-         * the still-open cell next iteration. */
         {
             int cont_target = (int)urbi_emit_instr_count(e);
             uemit_loop_patch_continues(e, cont_target);
@@ -760,7 +683,6 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
         urbi_emit_patch_instr(e, jmp_to_exit,
             uinstr_enc_abx(OP_JMP, 0U,
                            uemit_jmp_offset(jmp_to_exit, exit_target)));
-        /* v0.10.5: patch break PCs to exit_target. */
         uemit_loop_patch_breaks(e, exit_target);
     }
 
@@ -781,32 +703,13 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n) {
 }
 
 /* urbi_emit_call_arm — AST_CALL: function call.
- *
- * Two paths (v1.6 S42):
- *   1. Method call (callee is AST_MEMBER_GET, i.e. obj.m(args)):
- *        eval recv into a temp, emit OP_SELF dst, recv, ic_method (which
- *        writes the method into R[dst] and the receiver into R[dst+1]),
- *        emit args into R[dst+2..], then OP_CALL dst, nargs+2, 2|0x80.
- *        The method-flag bit tells the dispatcher to forward R[dst+1] as
- *        `self` to the callee.
- *   2. Plain call (everything else):
- *        eval callee into dst, emit args into R[dst+1..], then
- *        OP_CALL dst, nargs+1, 2.  Dispatcher passes nil as self.
- *
- * Eliminates the S42 silent-elision bug where intervening OP_GETSLOTs in
- * argument evaluation clobbered vm->last_recv before the outer OP_CALL. */
+ */
 uint8_t urbi_emit_call_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     }
 
-    /* EMIT-014 fix (v0.5.7): the OP_CALL B field is a uint8_t
-     * holding (nargs + 1) for plain calls or (nargs + 2) for method calls.
-     * Reject calls with >= 253 args before any codegen — method calls
-     * need the extra self slot, so 253 args + 2 = 255 (the "all-results"
-     * sentinel reserved for tail calls) is the safe upper bound for both
-     * paths. */
     if (n->u.call.arg_count >= 253) {
         e->error = EMIT_TOO_MANY_ARGS;
         urbi_emit_diag_error(e, n, "too many arguments (%d; max 252)", n->u.call.arg_count);
@@ -1008,16 +911,7 @@ uint8_t urbi_emit_return_arm(UEmitter *e, UAstNode *n) {
         if (e->error != EMIT_OK) return 0U;
     } else {
         /* Bare `return`: return nil.
-         *
-         * EMIT-017 fix (v0.5.7): force next_reg above the
-         * funcstate temp floor before alloc_reg.  alloc_reg uses
-         * e->next_reg directly; if a future emit arm transiently drops
-         * next_reg below urbi_emit_fs_temp_floor (= nactvar +
-         * global_slot_reserved), the returned slot would alias a live
-         * local and the subsequent OP_LOADNIL would clobber it.
-         * Defensive against new arms; current emit-arm contract syncs
-         * next_reg to freereg between siblings, so the bug is dormant.
-         * Same fix shape as EMIT-018 (AST_THROW). */
+         */
         {
             uint8_t floor_val = urbi_emit_fs_temp_floor(e->current_fs);
             if (e->next_reg < floor_val) e->next_reg = floor_val;
@@ -1051,9 +945,7 @@ uint8_t urbi_emit_function_arm(UEmitter *e, UAstNode *n) {
                                  /*as_expression=*/true);
 }
 
-/* === v0.10.5: assert keyword ===
- * urbi_emit_assert_arm — AST_ASSERT: assert(expr) / assert { block }.
- *
+/*
  * Lowering (no new opcode needed):
  *
  *   cond_reg = urbi_emit_expr(n->u.assert_stmt.expr)

@@ -55,7 +55,6 @@ typedef enum {
     /* reactive-runtime additions */
     EMIT_RESERVED_KEYWORD_AS_IDENT, /* `var at = 1` — hard keyword as variable name */
 
-    /* v0.5.7 additions */
     EMIT_TOO_MANY_ARGS,             /* EMIT-014: AST_CALL with >= 254 args
                                        (B field encodes nargs+1 as uint8_t,
                                        wraps at 256) */
@@ -69,7 +68,6 @@ typedef enum {
                                        encoding (filed as backlog under
                                        Phase 22). */
 
-    /* v0.6.2 Phase 2 — Gap #3 (this keyword) */
     EMIT_NO_THIS_OUTSIDE_METHOD,    /* `this` used at top-level (fs->parent ==
                                        NULL).  Top-level `this` resolves to the
                                        lobby object — deferred to v1.x. */
@@ -84,8 +82,7 @@ typedef enum {
 /* Forward declaration for FuncState lifecycle. */
 struct UFuncState;
 
-/* === v0.10.5: break/continue loop-context infrastructure ===
- *
+/*
  * break and continue lower to OP_JMP with the target patched after the loop.
  * Each for/while/switch body opens a ULoopCtx on the emitter's loop_stack[]
  * array; AST_BREAK / AST_CONTINUE record their OP_JMP PCs here so the
@@ -132,7 +129,6 @@ typedef struct {
                                                   scope opened above it before
                                                   its JMP. */
 } ULoopCtx;
-/* === end v0.10.5 === */
 
 /* === emitter-side unwind-scope stack ===
  *
@@ -142,14 +138,6 @@ typedef struct {
  * normal fall-through path that the JMP skips.  The leaked entry eats one
  * of URBI_CLEANUP_MAX slots and — for tag scopes — leaves a stale member
  * link that a later tag.stop() absorbs at (time-travel resume).
- *
- * The emitter therefore tracks every unwind scope it currently has open
- * (pushed by emit_try_frame / urbi_emit_tag_prefix_arm around body emission)
- * and, at each break/continue site, emits the crossed scopes' teardown
- * innermost-first BEFORE the JMP: OP_POP_TAG for tag scopes; OP_TRY_END
- * plus an inline copy of the finally body (REVIVAL §S5a: finally runs on
- * every exit kind) for try scopes.  ULoopCtx.unwind_scope_depth_on_enter
- * bounds the walk to scopes opened inside the target loop frame.
  *
  * `return` needs no emit-side handling — the runtime walker processes the
  * returning frame's cleanup entries (uunwind.c unwind-scope pre-walk). */
@@ -209,14 +197,8 @@ typedef struct UEmitter {
     int          diag_count;
     int          diag_cap;
 
-    /* === v0.10.5: break/continue loop context stack ===
-     * Pushed by urbi_emit_for_each_arm / urbi_emit_while_arm / urbi_emit_switch_arm when
-     * entering a loop; popped after the exit target is known.  break and
-     * continue sites record their placeholder OP_JMP PCs here for batch
-     * patching.  See ULoopCtx documentation above. */
     ULoopCtx     loop_stack[UEMIT_LOOP_CTX_MAX];
     int          loop_depth;  /* current nesting depth (0 = not in a loop) */
-    /* === end v0.10.5 === */
 
     /* === open unwind scopes (try / tag) — see UUnwindScope above ===
      * Pushed by emit_try_frame / urbi_emit_tag_prefix_arm around body emission;
@@ -229,11 +211,6 @@ typedef struct UEmitter {
 
 /* --- API --- */
 
-/* Initialize.  root, arena, and vm must all outlive the emitter.
-   source_name may be NULL.  vm parameter (added later) lets the
-   emitter intern identifier lexemes into the per-VM string table and
-   stamps root->origin_vm = vm.
-   v0.9.2: first argument was UModule*; now UProto* (root proto). */
 void uemit_init(UEmitter *e, UProto *root, UArena *arena,
                 struct UVM *vm, const char *source_name);
 
@@ -380,14 +357,6 @@ ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap);
 #define UFS_MAX_BLOCKS     32       /* per-function block-nesting cap */
 #define UFS_MAX_REGS      256       /* per-function register-frame cap */
 
-/* Active-local descriptor. Lifetime = lexical scope; popped on block exit
- * or function close (adds the block-pop semantics). The slot index
- * equals the register holding the local's value (registers [0, nactvar)
- * are locals; [nactvar, freereg) are temps; [freereg, UFS_MAX_REGS) are
- * free).  Exception: when r_global_slot is pre-reserved (EMIT-021),
- * r_global_slot occupies one register in the [nactvar, freereg) zone
- * independently of nactvar; uemit_close_block restores freereg_on_enter
- * to compensate. */
 typedef struct {
     const char *name;                /* canonical (interned) pointer */
     int         name_len;
@@ -489,9 +458,6 @@ typedef struct UFuncState {
      * r_global_slot is claimed from freereg (same floor as local slots) so
      * it stays valid across statement boundaries; freereg is bumped to prevent
      * the temp zone from aliasing it.
-     *
-     * EMIT-021 state machine — global_slot_reserved and references_global are
-     * NOT synonyms.  They encode three distinct states:
      *
      *   (1) UNUSED          : !global_slot_reserved && !references_global
      *       Nested funcstate that has not yet been emitted via

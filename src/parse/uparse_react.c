@@ -66,19 +66,12 @@ UAstNode *urbi_parse_desugar_postfix_emit(UParser *p, UAstNode *recv, UToken ban
     return call;
 }
 
-/* === v0.10.5: tag-expr widening ===
- *
+/*
  * parse_tag_prefix_body: shared body-parse helper for both `name:` and
  * `expr:` tag-prefix forms.  Called after `:` has been consumed.
  * `pos_line`/`pos_col` are the position of the tag expression (for the
  * implicit-block node position).
- *
- * PARSE-033 closure: the AST_TAG_PREFIX.onleave field is always NULL at
- * v1.0 — the surface form `tag: { body } onleave handler` is v1.x scope
- * (spec deferred it; class stdlib confirmed v1.0 ships without it).
- * `at (cond) body onleave handler` (AST_WATCHER) IS the supported
- * onleave form today; see uast.h tag_prefix.onleave for the canonical
- * comment. */
+ */
 static UAstNode *parse_tag_prefix_body(UParser *p, UAstNode *tag_expr,
                                         int pos_line, int pos_col) {
     UAstNode *body;
@@ -109,12 +102,6 @@ static UAstNode *parse_tag_prefix_body(UParser *p, UAstNode *tag_expr,
     return node;
 }
 
-/* --- urbi_parse_tag_prefix: `name : body`
-   Called from parse_assign_or_expr after consuming `name` and seeing `:`.
-   Produces AST_TAG_PREFIX with tag_expr = AST_IDENT(name).
-   v0.10.2: body may be bare stmt (no braces required) — both forms
-   produce an AST_BLOCK child so the emit path is uniform.
-   Partially closes legacy audit F3; member-expr tag form closed by. */
 UAstNode *urbi_parse_tag_prefix(UParser *p, UToken name_tok) {
     urbi_parse_consume(p);  /* urbi_parse_consume ':' */
     UAstNode *tag_expr = urbi_parse_make_ident(p, name_tok.u.str.start, name_tok.u.str.len,
@@ -123,28 +110,17 @@ UAstNode *urbi_parse_tag_prefix(UParser *p, UToken name_tok) {
     return parse_tag_prefix_body(p, tag_expr, name_tok.line, name_tok.col);
 }
 
-/* --- urbi_parse_tag_prefix_from_expr: `expr : body`                   (v0.10.5)
- *
+/*
  * Called from parse_assign_or_expr when a postfix-chain expression is
  * followed by `:` at statement level.  Enables `Tag.scope: { body }` and
  * other member-expr tag forms (legacy manual §9.1.1 example).
- *
- * Contract: `:` has already been peeked (but NOT consumed) by the caller.
- * `tag_expr` is the fully-parsed expression to the left of `:`.
- * Closes legacy audit finding F3 (member-expr tag position). */
+ */
 UAstNode *urbi_parse_tag_prefix_from_expr(UParser *p, UAstNode *tag_expr) {
     urbi_parse_consume(p);  /* urbi_parse_consume ':' */
     return parse_tag_prefix_body(p, tag_expr, tag_expr->line, tag_expr->col);
 }
-/* === end v0.10.5 === */
 
 /* --- parse_event_payload_binding: `(var x)` optional suffix after `?`
- *
- * v0.10.5: handles the optional payload-binding suffix that may appear
- * after `?` in event-subscribe forms:
- *   at (e?(var result)) body
- *   whenever (e?(var n)) body
- *   waituntil (e?(var x))
  *
  * Called after the preceding `?` has been consumed.  If the next token is
  * NOT `(`, the function returns NULL (success) with *out_name=NULL and
@@ -227,8 +203,6 @@ static UAstNode *parse_at_slot_change_form(UParser *p, UToken kw,
  * Disambiguates slot-change vs plain event form. */
 static UAstNode *parse_at_event_form(UParser *p, UToken kw,
                                       UAstNode *cond, bool is_sync) {
-    /* Optional `(var x)` payload binding immediately after `?` and
-     * before the `)` that closes the at-condition. */
     const char *pname = NULL;
     int         plen  = 0;
     UAstNode *perr = parse_event_payload_binding(p, &pname, &plen);
@@ -290,9 +264,6 @@ static UAstNode *parse_at_cond_form(UParser *p, UToken kw,
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 
-    /* Optional `onleave` handler — not allowed with `at sync`.
-     * PARSE-009: report a dedicated code so callers can distinguish this
-     * specific conflict from the generic PARSE_UNEXPECTED_TOKEN. */
     UAstNode *onleave = NULL;
     if (urbi_parse_peek(p).type == TOK_KW_ONLEAVE) {
         if (mode == UWATCHER_AT_SYNC) {
@@ -366,20 +337,12 @@ UAstNode *urbi_parse_at(UParser *p) {
 
 /* --- urbi_parse_whenever: `whenever` `(` cond `)` body [`onleave` handler]
  *                   | `whenever` `(` event `?` `)` body [`onleave` handler]
- *
- * v0.10.2: the event arm (TOK_QUESTION after cond) mirrors urbi_parse_at's
- * parse_at_event_form path.  Produces AST_AT_EVENT with is_whenever=true.
- * The cond arm (no `?`) produces AST_WATCHER with mode=UWATCHER_WHENEVER
- * as before. */
+ */
 UAstNode *urbi_parse_whenever(UParser *p) {
     UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_WHENEVER */
 
     { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }
 
-    /* Enable the at_event_cond context so that `?` in the inner expression
-     * is not immediately flagged as an error — urbi_parse_whenever checks for it
-     * after the expression parse returns.  Mirrors urbi_parse_at's pattern,
-     * including the FE-22 save/restore (no absolute clear). */
     bool saved_at_event_cond = p->at_event_cond;
     p->at_event_cond = true;
     UAstNode *cond = urbi_parse_inner_tier(p);
@@ -523,11 +486,6 @@ UAstNode *urbi_parse_every(UParser *p) {
 }
 
 /* --- urbi_parse_waituntil: `waituntil` `(` cond[?[(var x)]] `)`
- *
- * v0.10.5: two forms:
- *   waituntil (cond)          — condition-based block; existing form
- *   waituntil (e?)            — event-subscribe block; desugars to e.waituntil()
- *   waituntil (e?(var x))     — event-subscribe with named payload binding
  *
  * The event form is identified by trailing `?` after the condition expression,
  * mirroring urbi_parse_at's pattern.  The cond form is unchanged. */

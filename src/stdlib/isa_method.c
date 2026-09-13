@@ -1,13 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* isa_method.c — v0.10.11 isA universal type-test on Object root.
- *
+/*
  * obj.isA(Proto) -> Bool.  True iff Proto appears in obj's transitive
  * proto chain.  Atom-typed receivers are routed through
  * urbi_atom_proto_for_value (same routing table used by dispatch).
  * UVAL_OBJECT receivers walk their own UObject.protos chain.
- *
- * Per Cat. E re-audit Cluster #17 ratify (isA -> ship-v1.0).
- * Closes design-risks v0.10.7-E. */
+ */
 
 #include "stdlib/isa_method.h"
 

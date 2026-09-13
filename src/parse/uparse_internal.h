@@ -8,8 +8,7 @@
 #include "uparse.h"
 #include "uast.h"
 
-/* OOM sentinel convention (closes PARSE-003 / PARSE-005):
- *
+/*
  * Internal AST allocators (urbi_parse_make_node and friends) return NULL on
  * arena OOM. Pratt/recursive-descent parsers propagate NULL upward
  * unchanged; the top-level entrypoint (uparse_next_statement in
@@ -45,8 +44,6 @@ extern const UAstNode uparser_oom_sentinel;
 extern const char urbi_parse_kEmitMethodName[];
 #define kEmitMethodNameLen 4  /* strlen("emit") */
 
-/* v0.10.11 / length of the `<<` selector used in uparse_expr.c.
- * kLShiftSelector is static in uparse_expr.c (single-TU). */
 #define kLShiftSelectorLen 2  /* strlen("<<") */
 
 /* --- Error-message table (defined in uparse.c residual). --- */
@@ -95,9 +92,6 @@ UAstNode *urbi_parse_prefix(UParser *p);
 UAstNode *urbi_parse_atom(UParser *p);
 
 /* --- Separator loop (defined in uparse_separators.c). --- */
-/* urbi_parse_pipe_amp_fold: left-fold `|` / `&` from an already-parsed lhs.
- * v0.10.5: promoted from static to allow parse_assign_or_expr to call
- * it directly after intercepting the member-expr tag-prefix form. */
 UAstNode *urbi_parse_pipe_amp_fold(UParser *p, UAstNode *lhs);
 UAstNode *urbi_parse_inner_tier(UParser *p);
 UAstNode *urbi_parse_outer_tier(UParser *p);
@@ -110,7 +104,6 @@ UAstNode *urbi_parse_while(UParser *p);
 UAstNode *urbi_parse_function(UParser *p);
 UAstNode *urbi_parse_throw(UParser *p);
 UAstNode *urbi_parse_try(UParser *p);
-/* v0.10.5: assert keyword — urbi_parse_assert handles both paren and block forms. */
 UAstNode *urbi_parse_assert(UParser *p);
 /* Property declaration helper (get/set parse sugar).  `recv` is the explicit receiver
  * (or NULL for class-body / implicit self).  `name_tok` is the slot-
@@ -128,8 +121,6 @@ UAstNode *urbi_parse_whenever(UParser *p);
 UAstNode *urbi_parse_waituntil(UParser *p);
 UAstNode *urbi_parse_every(UParser *p);
 UAstNode *urbi_parse_tag_prefix(UParser *p, UToken name_tok);
-/* v0.10.5: member-expr tag form `expr: body` — called when a postfix
- * chain ends in `:` at statement level.  `:` not yet consumed. */
 UAstNode *urbi_parse_tag_prefix_from_expr(UParser *p, UAstNode *tag_expr);
 
 #endif /* UPARSE_INTERNAL_H */

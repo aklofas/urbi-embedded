@@ -1,8 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uemit_internal.h — private inter-TU API for the emit subsystem.
- *
- * Consumed only by src/emit/ TUs.  Public emit API is in src/emit/uemit.h.
- * Created v0.5.4-decompose; do NOT include from outside src/emit/. */
+ */
 
 #ifndef UEMIT_INTERNAL_H
 #define UEMIT_INTERNAL_H
@@ -144,19 +142,7 @@ int urbi_vm_find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 #define UEMIT_JMP_FALLTHROUGH_BIAS    (UEMIT_JMP_BIAS + 1U)
 #define UEMIT_REG_LIMIT       UFS_MAX_REGS       /* alias for clarity at exhaustion-guard sites (EMIT-025) */
 
-/* EMIT-019 fix (v0.5.7): centralize OP_JMP Bx encoding in a
- * pc-based helper.  For FORWARD jumps the VM dispatches OP_JMP as
- * `pc += signed(Bx) - UEMIT_JMP_BIAS` AFTER the dispatch's pc++, so an
- * OP_JMP at from_pc landing at target_pc requires Bx = (target_pc -
- * from_pc - 1) + UEMIT_JMP_BIAS.  Back-edges do NOT get that pc++ —
- * they dispatch via the safepoint path; use uemit_jmp_offset_backward
- * for those.  UEMIT_JMP_BIAS / FALLTHROUGH_BIAS were named earlier but
- * left the arithmetic inline at every site; this
- * helper centralizes the encoding contract so future peephole /
- * extra-instr insertions cannot silently miscompute fall-through.
- * Returns the biased Bx value ready for uinstr_enc_abx.  Bytecode-
- * byte-identical with the pre-extract inline form.
- *
+/*
  * Direction assert: strict > — target == from_pc + 1 encodes offset 0,
  * which the forward/NEXT path handles correctly; target <= from_pc
  * must go through the backward encoder. */
@@ -211,16 +197,6 @@ static inline void patch_fwd_jmp_here(UEmitter *e, int jmp_pc) {
  * Returns the allocated register index.  Sets EMIT_REG_EXHAUSTED if
  * all 256 slots are consumed (cursor at 255 before call).
  *
- * EMIT-011 fix (v0.5.7): also bump the per-FuncState
- * fs->max_reg_seen.  uemit_close_function rolls fs->max_reg_seen into
- * the nested proto's max_reg; the VM allocates (proto->max_reg + 1)
- * register slots at runtime.  Pre-fix, alloc_reg only updated the
- * EMITTER's global high-water (e->max_reg_seen), so leaf-expression
- * paths (AST_INT / AST_BOOL / AST_NIL / AST_NOOP) that allocate
- * temps without going through emit_compare or emit_ident (which sync
- * fs->max_reg_seen explicitly) caused proto->max_reg to under-report
- * the actual peak — out-of-bounds register access at runtime.
- *
  * NULL-guard on current_fs: alloc_reg may be called during the brief
  * window before uemit_statement opens the lazy top-level FuncState. */
 static inline uint8_t alloc_reg(UEmitter *e) {
@@ -233,14 +209,6 @@ static inline uint8_t alloc_reg(UEmitter *e) {
 }
 
 /* Release the most-recently-allocated register (stack discipline).
- *
- * EMIT-012 fix (v0.5.7): respect urbi_emit_fs_temp_floor — temp registers
- * live at indices [floor, ...) where floor = nactvar + (1 if
- * global_slot_reserved else 0).  A bare next_reg-- with no floor guard
- * decrements *into* the local zone when the caller miscounted free_reg
- * against alloc_reg, then a subsequent alloc_reg returns a slot that
- * aliases a still-live local.  Guard against the underflow by treating
- * the call as a no-op when next_reg is already at or below the floor.
  *
  * NULL-guard on current_fs: free_reg may be called during the brief
  * window before uemit_statement opens the lazy top-level FuncState. */
@@ -257,26 +225,14 @@ static inline void free_reg(UEmitter *e) {
  * FuncState freereg cursor (the pattern that urbi_emit_function_literal
  * leaves behind on the parent FuncState — closure dst pulled from
  * freereg, then `freereg++` and `next_reg = freereg`).
- *
- * EMIT-010 fix (v0.5.7): watcher / waituntil / at-event install
- * arms compile their cond/body/onleave/event closures via
- * urbi_emit_function_literal, which raises freereg in lockstep with next_reg.
- * Plain free_reg() decrements only next_reg, leaving freereg promoted
- * 1-N slots above the now-decremented next_reg.  Subsequent
- * declarations / temp allocations then land at the leaked freereg
- * floor instead of the actual top of the live stack, wasting register
- * slots and inflating proto.max_reg.  Use free_reg_freereg_synced at
- * each install-site teardown to symmetrically unwind both cursors. */
+ */
 static inline void free_reg_freereg_synced(UEmitter *e) {
     if (e->next_reg > 0U) e->next_reg--;
     if (e->current_fs != NULL && e->current_fs->freereg > e->next_reg)
         e->current_fs->freereg = e->next_reg;
 }
 
-/* === v0.10.5: loop-context helpers (inline — shared by uemit_stmt.c) ===
- * These must be placed AFTER uemit_jmp_offset and urbi_emit_patch_instr are
- * declared/defined so the inline patch helpers can reference them.
- *
+/*
  * uemit_loop_push — open a new loop context.  Returns false (sets
  *   EMIT_NESTING_TOO_DEEP) on overflow.
  * uemit_loop_pop — close the current loop context.
@@ -363,7 +319,6 @@ static inline void uemit_loop_patch_continues(UEmitter *e, int cont_target) {
                            uemit_jmp_offset(from_pc, cont_target)));
     }
 }
-/* === end v0.10.5: loop-context helpers === */
 
 /* === emitter unwind-scope stack helpers ===
  *
@@ -408,20 +363,15 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_call_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_return_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_function_arm(UEmitter *e, UAstNode *n);
-/* v0.10.5: assert keyword */
 uint8_t urbi_emit_assert_arm(UEmitter *e, UAstNode *n);
-/* === v0.10.5: list/dict literals + subscript === */
 uint8_t urbi_emit_list_lit_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_subscript_get_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_subscript_set_arm(UEmitter *e, UAstNode *n);
-/* === end v0.10.5 === */
-/* === v0.10.5: control flow === */
 uint8_t urbi_emit_for_each_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_break_arm(UEmitter *e, const UAstNode *n);
 uint8_t urbi_emit_continue_arm(UEmitter *e, const UAstNode *n);
 uint8_t urbi_emit_switch_arm(UEmitter *e, UAstNode *n);
-/* === end v0.10.5: control flow === */
 
 /* Leaf-expression AST arm helpers (defined in uemit_expr.c).
  * Called from urbi_emit_expr via forwarding stubs; bodies live in uemit_expr.c. */

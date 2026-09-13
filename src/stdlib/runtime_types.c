@@ -1,10 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* runtime_types.c — C-native runtime-type protos.
  *
- * Phase 7 ships the Exception primitive root.  See runtime_types.h banner
- * for what is intentionally deferred (Code reflection, Tag.new scripted
- * constructor, Event.* — already shipped).
- *
  * Exception ABI:
  *   var e = Exception.new("boom")  → fresh clone of Exception proto with
  *                                    a `message` slot bound to args[0].
@@ -13,12 +9,7 @@
  *                                    with unwind_value = self, so an
  *                                    enclosing try/catch handler binds the
  *                                    Exception object as its catch var.
- *
- * The raise mechanic depends on a v0.6.1 VM-internal change in the OP_CALL
- * native arm: when a native_fn returns UEXEC_THROW, the dispatch loop now
- * routes through pending_unwind / safepoint instead of HALTing with a fatal
- * TypeError.  See src/vm/uvm.c "Phase 7 gate" for
- * the gated change. */
+ */
 
 #include "stdlib/runtime_types.h"
 #include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
@@ -42,13 +33,7 @@
  *
  * Clone the Exception proto and install args[0] as the local `message`
  * slot.  Returns the fresh clone wrapped in a UVAL_OBJECT.
- *
- * Receiver routing: `self` is the Exception proto (or a subclass clone)
- * supplied by the OP_CALL native arm from R[A+1] (method-flagged OP_CALL
- * preceded by an OP_SELF — v1.6 S42).  Cloning the
- * receiver — not the proto-singleton — lets future scripted subclasses
- * (`class TypeError : Exception { ... }`) flow through `.new` correctly
- * when Phase 10 stdlib overlays land. */
+ */
 
 static int
 exc_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
@@ -216,11 +201,6 @@ urbi_exception_subclass_protos_resolve(UVM *vm, URealm *realm)
         { "ArityError",       10, offsetof(UVM, arityerror_proto) },
         { "LookupError",      11, offsetof(UVM, lookuperror_proto)},
         { "OutOfMemoryError", 16, offsetof(UVM, oomerror_proto)   },
-        /* v0.13.5: subclasses raised from C sites.  KeyError is
-         * intentionally omitted — the sole dict-miss accessor (Dict.get)
-         * keeps returning nil (documented divergence; see the language-
-         * compatibility-matrix stdlib-dict-get-nil row), so no C site
-         * raises it. */
         { "IndexError",       10, offsetof(UVM, indexerror_proto) },
         { "RangeError",       10, offsetof(UVM, rangeerror_proto) },
         { "DivByZero",         9, offsetof(UVM, divbyzero_proto)  },

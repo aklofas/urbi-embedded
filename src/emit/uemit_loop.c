@@ -23,8 +23,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* === v0.10.5: control-flow emit arms ===
- *
+/*
  * urbi_emit_break_arm — AST_BREAK: `break`
  *   Emits a placeholder OP_JMP and records the PC in the innermost loop
  *   context so the enclosing loop can patch it to the exit address.
@@ -401,12 +400,6 @@ uint8_t urbi_emit_for_each_arm(UEmitter *e, UAstNode *n) {
         e->next_reg = e->current_fs->freereg;
     }
 
-    /* continue PCs land here — BEFORE the back-edge OP_CLOSE, so
-     * `continue` closes the iteration's captured cells and then falls
-     * through the inner block close into the _i++ increment
-     * (previously cont_target sat between
-     * steps 7 and 8 and only worked because step 8's OP_CLOSE happened
-     * to be emitted exactly there). */
     {
         int cont_target = (int)urbi_emit_instr_count(e);
         uemit_loop_patch_continues(e, cont_target);
@@ -709,17 +702,6 @@ uint8_t urbi_emit_switch_arm(UEmitter *e, UAstNode *n) {
         urbi_emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
     }
 
-    /* exit: patch all exit JMPs and break PCs.  The exit target lands ON
-     * an exit-path OP_CLOSE at case_base: a no-op for normal completion
-     * and the no-match path (every block close already ran; closed cells
-     * leave the open-upval list) but required on break paths, which jump
-     * here past every pending block close (same exit-path-close shape as
-     * urbi_emit_for_each_arm step 11 / urbi_emit_while_arm step 7).  It is emitted
-     * UNCONDITIONALLY (when any case or default arm exists) rather than
-     * gated on the case block's has_captured: the common `case v: { ... }`
-     * body emits through urbi_emit_block_arm, so its captures mark that DEEPER
-     * block — invisible here once it closes — while OP_CLOSE's register-
-     * address threshold at case_base covers cells from any nesting depth. */
     {
         int exit_target = (int)urbi_emit_instr_count(e);
         if (n->u.switch_stmt.case_count > 0 ||
@@ -752,4 +734,3 @@ uint8_t urbi_emit_switch_arm(UEmitter *e, UAstNode *n) {
         e->current_fs->freereg = e->next_reg;
     return r;
 }
-/* === end v0.10.5: control-flow emit arms === */

@@ -100,7 +100,6 @@
  * ED (Erase display)
  *    Sequence: ESC [ 2 J
  *    Effect: clear the whole screen
- *
  */
 
 #include <termios.h>

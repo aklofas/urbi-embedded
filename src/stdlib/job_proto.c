@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* v0.10.10 / D7-A: Job proto — script-side strand introspection.
- *
+/*
  * See job_proto.h banner for design rationale.
  *
  * Four C-native methods installed on vm->job_proto:
@@ -189,9 +188,7 @@ job_uid_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
  *   "suspended" — USTRAND_SUSPENDED
  *   "dead"      — USTRAND_DEAD (or strand already reaped)
  *   "dormant"   — USTRAND_DORMANT (rare; pre-activation)
- *
- * Mirrors the state-name table in src/repl/urepl_introspect.c:64-90
- * but accessible from script-land per Cat. E re-audit D7 decision. */
+ */
 static int
 job_status_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
                   UValue *out)
@@ -234,13 +231,7 @@ job_status_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
  * every live (non-DEAD) strand across all realms.  DEAD strands are
  * excluded at source — they'd resolve to "dead" status anyway and their
  * memory may be recycled before the caller inspects the list.
- *
- * GC safety: the list UObject is allocated first and stored in `out` as
- * a UVAL_OBJECT before each urbi_job_make call; both the list and any
- * already-appended Job items are reachable via the list during the walk.
- * urbi_job_make itself stores only a UVAL_INT (pointer-as-integer) in the
- * fresh Job object, which cannot trigger GC movement in v0.10.10's
- * non-moving allocator.  The discipline costs nothing and is future-safe. */
+ */
 static int
 job_jobs_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,
                 UValue *out)
@@ -292,10 +283,6 @@ urbi_job_make(UVM *vm, UStrand *strand)
     URBI_INTERNAL_ASSERT(strand != NULL);
     URBI_INTERNAL_ASSERT(vm->job_proto != NULL);
 
-    /* GC soundness (v0.13.2): intern BEFORE the clone — the first runtime
-     * intern of "__strand" allocates, and a collection there would sweep
-     * the fresh clone held only in this C local (careful-ordering
-     * pattern; see urbi_proto_list_create). */
     USymbol *sym = (USymbol *)ustr_intern(vm, "__strand", 8);
     if (sym == NULL) return urbi_make_nil();
 
@@ -342,8 +329,6 @@ urbi_job_proto_register(UVM *vm)
     rc = URBI_REGISTER_METHODS(vm, p, JOB_METHODS);
     if (rc != URBI_OK) return rc;
 
-    /* Mark the proto readonly per the v0.9.1 atom-proto convention.
-     * Scripts can clone() Job instances but not setSlot on the proto. */
     p->flags |= (uint32_t)UPROTO_FLAG_READONLY;
 
     return URBI_OK;

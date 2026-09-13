@@ -114,12 +114,10 @@ typedef enum {
                              * `recv` is non-NULL (e.g. `Foo.get value() {}`)
                              * the receiver is emitted explicitly. */
 
-    /* v0.6.2 Phase 1 — float literal (Gap #5) */
     AST_FLOAT_LIT = 36,     /* floating-point literal — 1.5, .5, 1.5e3, 1e3.
                              * Parsed from TOK_FLOAT; emit routes through
                              * OP_LOADK with a UVAL_FLOAT constant. */
 
-    /* v0.6.2 Phase 2 — this keyword (Gap #3) */
     AST_THIS = 37,          /* `this` keyword — resolves to receiver (R0) in
                              * method bodies.  Carries no payload; line+col
                              * are inherited from the base node.  Top-level
@@ -127,7 +125,6 @@ typedef enum {
                              * emitter raises EMIT_NO_THIS_OUTSIDE_METHOD when
                              * fs->parent == NULL. */
 
-    /* === v0.10.5: assert keyword === */
     AST_ASSERT = 38,        /* assert(expr) / assert { block }
                              * Lowered to: if (!expr) throw "assertion failed: <src>"
                              * No new opcode needed.  src_text/src_len is the
@@ -135,7 +132,6 @@ typedef enum {
                              * NULL/0 for block form.
                              * Ruling: implemented (v0.10.5, legacy F9). */
 
-    /* === v0.10.5: list/dict literals + subscript + var-obj-slot === */
     AST_LIST_LIT = 39,      /* [e1, e2, e3]
                              * Lowered to: List.new(e1, e2, e3)
                              * No new opcode needed.
@@ -153,9 +149,7 @@ typedef enum {
                              * No new opcode needed.
                              * Ruling: implemented (v0.10.5, legacy F14);
                              * single-eval fix (v0.10.7). */
-    /* === end v0.10.5 === */
 
-    /* === v0.10.5: control flow === */
     AST_FOR_EACH = 43,  /* for (var x : iter) body  / for (var x in iter) body
                          * Lowered to a while loop using list.length() + list.get(i).
                          * Also handles for (var x : list_expr) where list_expr is
@@ -174,16 +168,13 @@ typedef enum {
                          * Lowered to a chain of if (expr == vN) { bodyN }.
                          * No new opcode needed.
                          * Ruling: implemented (v0.10.5, legacy F2). */
-    /* === end v0.10.5: control flow === */
 
-    /* === v0.10.7: synthetic register-reference leaf === */
     AST_REG_REF  = 47   /* synthetic emit-only: reference to a previously-allocated
                          * register.  Never produced by the parser; created inside
                          * urbi_emit_subscript_set_arm to pin recv/index temps so the
                          * compound-subscript lowering evaluates each exactly once.
                          * Lowers to OP_MOVE (or no-op when target == source).
                          * Not serialised; not visible to the parser. */
-    /* === end v0.10.7 === */
     ,
     /* === v1.0-rc stdlib-completeness: short-circuit logical operators === */
     AST_LOGICAL  = 48   /* a && b / a || b — short-circuit.  Distinct from
@@ -261,7 +252,6 @@ typedef enum {
     PARSE_SLOT_CHANGED_BARE_V1,       /* `obj.x.changed` outside at(?) — use at(obj.x.changed?) */
     PARSE_SLOT_CHANGED_EMIT_V1,       /* `obj.x.changed!` — slot-change event cannot be emitted */
 
-    /* v0.5.7 additions */
     PARSE_NAMED_FUNCTION_NOT_SUPPORTED, /* `function name(...){...}` — v1.0 has no
                                             named-function decls; use
                                             `var name = function(...){...}` */
@@ -278,32 +268,24 @@ typedef enum {
                                             class body; deferred to v1.x
                                             implicit-this. */
 
-    /* === v0.10.5: list/dict literal + subscript errors === */
     PARSE_EXPECTED_RBRACKET,    /* missing `]` in list/dict literal or subscript */
     PARSE_DICT_EXPECTED_FAT_ARROW, /* dict literal: `key` not followed by `=>` */
     PARSE_SUBSCRIPT_EXPECTED_RBRACKET, /* `l[i` missing `]` */
     PARSE_VAR_OBJ_SLOT_NO_INIT,        /* `var obj.slot` with no `= value` */
     PARSE_SUBSCRIPT_COMPOUND_OP_V1X,   /* compound subscript op other than +=
                                         * (e.g. -=, *=) — deferred to v1.x */
-    /* === end v0.10.5 === */
 
-    /* === v0.10.5: control flow === */
     PARSE_FOR_EXPECTED_VAR,            /* for loop header missing `var` keyword */
     PARSE_FOR_EXPECTED_COLON_OR_IN,    /* for (var x ...) — missing `:` or `in` */
     PARSE_BREAK_OUTSIDE_LOOP,          /* `break` not inside a for/while loop */
     PARSE_CONTINUE_OUTSIDE_LOOP,       /* `continue` not inside a for/while loop */
     PARSE_SWITCH_EXPECTED_CASE,        /* switch body contains non-case statement */
     PARSE_SWITCH_EXPECTED_COLON,       /* case label missing trailing `:` */
-    /* === v0.13.5: switch default arm === */
     PARSE_SWITCH_DUPLICATE_DEFAULT,    /* switch body has more than one default: arm */
-    /* === end v0.13.5: switch default arm === */
-    /* === end v0.10.5: control flow === */
 
-    /* === v0.10.5: event payload binding === */
     PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR,    /* `at (e?(x))` — must be `(var x)` */
     PARSE_EVENT_PAYLOAD_BIND_EXPECTED_IDENT,  /* `at (e?(var))` — identifier missing */
     PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN  /* `at (e?(var x` — missing `)` */
-    /* === end v0.10.5 === */
 } UParseError;
 
 /*
@@ -574,14 +556,12 @@ struct UAstNode {
             UAstMethodKind kind;           /* UAST_METHOD_GETTER / UAST_METHOD_SETTER */
             UAstNode      *func;           /* AST_FUNCTION carrying params + body */
         } property_decl;
-        /* === v0.10.5: assert keyword === */
         struct {                                            /* AST_ASSERT */
             UAstNode   *expr;              /* expression or block to assert */
             const char *src_text;          /* zero-copy source span (paren form);
                                             * NULL for block form */
             int         src_len;           /* byte count; 0 for block form */
         } assert_stmt;
-        /* === v0.10.5: control flow === */
         struct {                                            /* AST_FOR_EACH */
             const char *var_name_start;  /* zero-copy lexeme view of loop variable */
             int         var_name_len;
@@ -596,9 +576,7 @@ struct UAstNode {
             int         case_count;
             UAstNode   *default_body;    /* catch-all arm body; NULL if absent */
         } switch_stmt;
-        /* === end v0.10.5: control flow === */
 
-        /* === v0.10.5: list/dict literals + subscript === */
         struct {                                            /* AST_LIST_LIT */
             UAstNode  **elems;             /* arena array of element expressions */
             int         count;             /* number of elements (0 for []) */
@@ -614,13 +592,10 @@ struct UAstNode {
             UAstNode   *value;             /* SET only: rhs value; NULL for GET */
             bool        is_compound_add;   /* true when desugared from `l[i] += v` */
         } subscript;
-        /* === end v0.10.5 === */
 
-        /* === v0.10.7: synthetic register-reference leaf === */
         struct {                           /* AST_REG_REF */
             uint8_t reg;                   /* register index to reference */
         } reg_ref;
-        /* === end v0.10.7 === */
     } u;
 };
 

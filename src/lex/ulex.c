@@ -17,14 +17,6 @@
 #if __STDC_HOSTED__
 #  include <stdlib.h>
 #else
-/* Forward declaration for newlib / picolibc strtod on embedded targets.
- * On a pure freestanding build without a C library this will produce a
- * linker error for any float literal in the input — acceptable because
- * the URBI_BYTECODE_ONLY=1 build strips src/lex/, src/parse/, src/emit/
- * from the source list entirely for bare-metal deploys (Makefile
- * COMPILER_FRONTEND_DIRS_EXCLUDED, see v0.7.0-c-api).  The
- * cross-compile gate only verifies that the code compiles; actual
- * float-literal parse is host-only. */
 extern double strtod(const char *, char **);
 #endif
 
@@ -51,25 +43,16 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_QUESTION", "TOK_BANG",
     "TOK_KW_CLASS", "TOK_KW_PUBLIC",
     "TOK_KW_THIS",
-    /* === v0.10.5: assert keyword === */
     "TOK_KW_ASSERT",
-    /* === v0.10.5: control flow === */
     "TOK_KW_FOR", "TOK_KW_BREAK", "TOK_KW_CONTINUE", "TOK_KW_SWITCH", "TOK_KW_CASE",
     "TOK_KW_DEFAULT",
-    /* === end v0.10.5: control flow === */
-    /* === v0.10.5: list/dict literals + subscript + compound assign === */
     "TOK_LBRACKET", "TOK_RBRACKET", "TOK_FAT_ARROW", "TOK_PLUS_EQ",
-    /* === end v0.10.5 === */
-    /* === v0.10.11: shift-write operator === */
     "TOK_LSHIFT",
-    /* === end v0.10.11 === */
     /* === v1.0-rc stdlib-completeness: % && || === */
     "TOK_PERCENT", "TOK_AMPAMP", "TOK_PIPEPIPE",
     /* === end v1.0-rc stdlib-completeness === */
     "TOK_ERROR"
 };
-/* LEX-014: positional alignment with UTokenType — guard against silent
-   drift when a new token is added to one but not the other. */
 URBI_STATIC_ASSERT(sizeof(TOKEN_NAMES) / sizeof(TOKEN_NAMES[0]) == TOK__LAST,
                "TOKEN_NAMES[] must have one entry per UTokenType");
 
@@ -94,12 +77,9 @@ static const char * const ERR_MSG[] = {
     "float literal has no fraction digits after the decimal point",
     "float literal exponent marker has no digits",
     "float literal exceeds representable range",
-    /* === v0.10.5: quoted identifiers === */
     "unterminated quoted identifier (missing closing single-quote)",
     "empty quoted identifier ('' is not a valid name)"
-    /* === end v0.10.5: quoted identifiers === */
 };
-/* LEX-015: same drift guard for ERR_MSG[] vs ULexError. */
 URBI_STATIC_ASSERT(sizeof(ERR_MSG) / sizeof(ERR_MSG[0]) == LEX__LAST,
                "ERR_MSG[] must have one entry per ULexError");
 
@@ -115,10 +95,6 @@ static UToken make_error(const ULexError code, const int line, const int col, co
     UToken t = make_tok_base(TOK_ERROR, line, col);
     t.len = len;
     t.u.err.code = code;
-    /* Defensive bounds check (LEX-015); URBI_STATIC_ASSERT above pins the table
-       size to LEX__LAST, but a future caller could still pass an
-       out-of-range int.  Return a static fallback string rather than read
-       OOB. */
     t.u.err.message = ((unsigned)code < (unsigned)LEX__LAST)
                           ? ERR_MSG[code]
                           : "unknown lex error";
@@ -177,17 +153,6 @@ static UDigitAccResult accumulate_digits(ULexer *lex, const char *start,
         const int d = digit_value(c, base);
         if (d < 0) break;
         if (!acc_digit(&r.value, d, base)) {
-            /* LEX-013: "first error wins" — overflow is reported and the
-             * recovery loop consumes both digits AND underscores until the
-             * next non-digit-non-underscore boundary so the caller resumes
-             * at a clean lexeme boundary.  This deliberately MASKS any
-             * trailing or adjacent underscore violation that would
-             * otherwise be reported on the same literal: the user already
-             * has a more impactful error (overflow) to fix first, and the
-             * underscore violation reappears once they bring the literal
-             * within range.  Behaviour is locked in at v0.5.8 — see the
-             * scan_radix_overflow_consumes_trailing_underscores regression
-             * in test_lexer.c. */
             while (lex->cur < lex->end &&
                    (digit_value(*lex->cur, base) >= 0 || *lex->cur == '_')) {
                 lex->cur++;
@@ -263,9 +228,6 @@ static UToken scan_radix(ULexer *lex, const char *start, const int base,
     return t;
 }
 
-/* Identifier character classification.  Defined ahead of scan_number /
- * scan_radix so the suffix-parsing fall-throughs can call them without a
- * forward declaration (LEX-022, v0.5.3-layout). */
 static int is_ident_start(const char c) {
     return (c >= 'a' && c <= 'z') ||
            (c >= 'A' && c <= 'Z') ||
@@ -282,9 +244,6 @@ typedef struct {
     int64_t     mul;  /* positive: value *= mul; negative: value /= -mul */
 } UDurationSuffix;
 
-/* Longer suffixes first so "ms" / "us" / "ns" match before bare "m".
-   The single boundary check inside apply_duration_suffix is uniform across
-   one-char and two-char entries — closes LEX-008. */
 static const UDurationSuffix kDurationSuffixes[] = {
     { "ms", 2,          1000LL },
     { "us", 2,             1LL },
@@ -295,8 +254,6 @@ static const UDurationSuffix kDurationSuffixes[] = {
     { "d",  1,   86400000000LL },
     { NULL, 0,             0LL },
 };
-
-/* === v0.10.5: angle literals === */
 
 /* Angle-suffix table (legacy §20.1.6.1).  Each entry carries:
  *   suffix  — the literal suffix text (NUL-terminated for clarity).
@@ -309,11 +266,7 @@ static const UDurationSuffix kDurationSuffixes[] = {
  * This is intentionally "divide then multiply" (not "multiply by
  * precomputed ratio") so that integer multiples of a full circle are
  * exactly representable.  E.g. 200grad: 200/200 * π = 1.0 * π = exactly π.
- *
- * All three entries produce TOK_FLOAT regardless of whether the numeric
- * part was scanned as integer or float.  Longer suffixes first: "grad" (4)
- * before "deg" and "rad" (3) — same longest-first discipline as duration
- * table (LEX-008). */
+ */
 typedef struct {
     const char *suffix;
     int         sufflen;
@@ -333,12 +286,6 @@ static const UAngleSuffix kAngleSuffixes[] = {
     { NULL,   0,   0.0, 0.0       },
 };
 
-/* apply_angle_suffix — if lex->cur sits at an angle suffix ("deg", "rad",
-   "grad"), consume it and store the radian-converted double in *out_rad.
-   Returns 1 if a suffix was matched and consumed (caller must emit
-   TOK_FLOAT); 0 if no angle suffix present (caller continues as before).
-   Ident-cont boundary check: next char after suffix must not be ident-cont
-   (same discipline as apply_duration_suffix — closes LEX-008 for angles). */
 static int apply_angle_suffix(ULexer *lex, double in_value, double *out_rad) {
     for (const UAngleSuffix *e = kAngleSuffixes; e->suffix != NULL; e++) {
         if (lex->cur + e->sufflen > lex->end) continue;
@@ -352,8 +299,6 @@ static int apply_angle_suffix(ULexer *lex, double in_value, double *out_rad) {
     }
     return 0;
 }
-
-/* === end v0.10.5: angle literals === */
 
 /* Result of dispatch_radix_prefix: either we routed to scan_radix / produced
    an AMBIGUOUS_LEADING_ZERO error (handled=1, tok carries the value), or
@@ -390,12 +335,6 @@ static URadixDispatch dispatch_radix_prefix(ULexer *lex, const char *start,
         return r;
     }
     if ((c2 >= '0' && c2 <= '9') || c2 == '_') {
-        /* LEX-012: precondition for the leading-zero ambiguous path —
-         * lex->cur must be at start so that `cur - start` after consumption
-         * measures the full ambiguous span.  All entry paths into
-         * dispatch_radix_prefix come from scan_number which sets
-         * `start = lex->cur` immediately before the call; this assert pins
-         * that invariant against future refactors. */
         URBI_INTERNAL_ASSERT(lex->cur == start);
         /* Consume the leading-zero sequence so caller advances. */
         lex->cur++;
@@ -420,16 +359,6 @@ static UDigitAccResult scan_decimal_digits(ULexer *lex, const char *start,
     return accumulate_digits(lex, start, start_line, start_col, 10);
 }
 
-/* If lex->cur sits at a duration suffix ("ms", "us", "ns", "s", "m", "h",
-   "d"), consume it and scale *value to microseconds.  No-op otherwise.
-   Suffix table is ordered longest-first so "ms" beats bare "m"; the
-   ident-cont boundary check is uniform across all entries (LEX-008
-   structurally closed by the table rewrite — both two-char and one-char
-   paths now share one predicate).
-
-   Returns 1 on overflow (the multiply by mul would exceed INT64_MAX); the
-   caller is responsible for emitting a LEX_INT_OVERFLOW token.  The division
-   path (ns) cannot overflow.  Returns 0 on success or no-suffix (LEX-006). */
 static int apply_duration_suffix(ULexer *lex, int64_t *value) {
     for (const UDurationSuffix *e = kDurationSuffixes; e->suffix != NULL; e++) {
         if (lex->cur + e->sufflen > lex->end) continue;
@@ -568,10 +497,6 @@ static UToken scan_float_body(ULexer *lex, const char *start,
     }
     /* === end fractional duration literals === */
 
-    /* === v0.10.5: angle literals — float path ===
-     * After the strtod conversion, check for an angle suffix.  If present,
-     * apply the radian conversion and extend the token span to include the
-     * suffix.  This handles "1.5deg", "0.5rad", etc. */
     {
         double rad_val;
         if (apply_angle_suffix(lex, val, &rad_val)) {
@@ -581,7 +506,6 @@ static UToken scan_float_body(ULexer *lex, const char *start,
             return ta;
         }
     }
-    /* === end v0.10.5: angle literals — float path === */
 
     UToken t = make_tok_base(TOK_FLOAT, start_line, start_col);
     t.len = span;
@@ -599,18 +523,6 @@ static UToken scan_float_leading_dot(ULexer *lex) {
     return scan_float_body(lex, start, start_line, start_col);
 }
 
-/* Scan a numeric literal starting at lex->cur.  Caller has confirmed
-   *lex->cur is a decimal digit; this function dispatches to the radix
-   path on a leading '0' and otherwise scans a decimal integer with an
-   optional duration suffix or float promotion.  Renamed from scan_decimal
-   (LEX-018).
-   Float promotion rules (Gap #5):
-     - After accumulating decimal digits, if the next char is '.' followed by
-       a digit, promote to TOK_FLOAT (calls scan_float_body at the '.').
-     - If the next char after digits is 'e' or 'E', promote to TOK_FLOAT
-       (calls scan_float_body at the 'e'/'E').
-     - Disambiguation: '0.foo' keeps INT(0) DOT IDENT(foo) because '.' is not
-       followed by a digit. */
 static UToken scan_number(ULexer *lex) {
     const char *start = lex->cur;
     const int start_col = (int)(start - lex->line_start) + 1;
@@ -662,10 +574,6 @@ static UToken scan_number(ULexer *lex) {
                           (int)(lex->cur - start));
     }
 
-    /* === v0.10.5: angle literals — integer path ===
-     * Check for angle suffix AFTER duration (duration suffixes have already
-     * consumed their tokens above).  apply_angle_suffix handles "deg", "grad",
-     * "rad" with the same ident-cont boundary check used by duration. */
     {
         double rad_val;
         if (apply_angle_suffix(lex, (double)value, &rad_val)) {
@@ -675,7 +583,6 @@ static UToken scan_number(ULexer *lex) {
             return ta;
         }
     }
-    /* === end v0.10.5: angle literals — integer path === */
 
     UToken t = make_tok_base(TOK_INT, start_line, start_col);
     t.len = (int)(lex->cur - start);
@@ -689,14 +596,8 @@ typedef struct {
     UTokenType  type;
 } UKeyword;
 
-/* KW_ENTRY drops the redundant hand-counted length from KEYWORDS[] entries
-   (LEX-016).  `sizeof(name) - 1` excludes the trailing NUL of a string
-   literal — fine since every name above is a literal. */
 #define KW_ENTRY(name, tok) { name, (int)(sizeof(name) - 1), tok }
 
-/* Sorted by name for human readability; lookup is linear — kept in sync
- * with the keyword set, faster than a hash for this size (LEX-017: count
- * elided to avoid drift between comment and table). */
 static const UKeyword KEYWORDS[] = {
     KW_ENTRY("assert",    TOK_KW_ASSERT),    /* v0.10.5 */
     KW_ENTRY("async",     TOK_KW_ASYNC),
@@ -765,8 +666,6 @@ static UToken scan_ident(ULexer *lex) {
     return t;
 }
 
-/* === v0.10.5: quoted identifiers === */
-
 /* scan_quoted_ident — scan a 'X' quoted-identifier form (legacy §20.1.4).
  *
  * On entry lex->cur points at the opening single-quote character.
@@ -822,8 +721,6 @@ static UToken scan_quoted_ident(ULexer *lex) {
     return make_error(LEX_UNTERMINATED_QUOTED_IDENT, start_line, start_col, span);
 }
 
-/* === end v0.10.5: quoted identifiers === */
-
 /* urbi_encode_utf8 — emit 1-4 UTF-8 bytes for a code point.  See the
  * docstring in src/lex/ulex_internal.h for the full contract; this
  * helper is non-validating and assumes the caller has already rejected
@@ -855,11 +752,6 @@ int urbi_encode_utf8(uint32_t cp, unsigned char buf[4]) {
 /* Lex-time validation of a \u escape body.  On entry lex->cur points at
  * the 'u' of the escape; on success lex->cur is advanced past the entire
  * \u-form (4 hex digits for \uXXXX, '{' + 1-6 hex + '}' for \u{HHHHHH}).
- *
- * The caller (lex_string) owns the surrounding error-token construction;
- * this helper returns LEX_OK on success or one of the v0.6.1 unicode
- * lex error codes.  The cursor is advanced past the offending span on
- * error per the LEX-028 recovery contract.
  *
  * Lone surrogates (U+D800..U+DFFF) are rejected for both forms — they
  * are reserved by RFC 3629 / Unicode for UTF-16 pair encoding and have
@@ -925,39 +817,10 @@ static ULexError validate_unicode_escape(ULexer *lex) {
     return LEX_OK;
 }
 
-/* lex_string — consume a "..." string literal (LEX-035 / v0.6.1 Phase 1).
- *
+/*
  * Pre: lex->cur points at the opening '"'; start_line / start_col record
  * the position of that opening quote (1-based).
- *
- * Post: on success, lex->cur points one past the closing '"' and the
- * returned UToken has type=TOK_STRING with u.str.start/len pointing at the
- * INTERIOR of the literal (no quote chars).  The byte span is the raw
- * source view — escape sequences are NOT resolved here; the parser owns
- * escape resolution so the lexer stays zero-allocation (LEX-027).
- *
- * v0.6.0 escape set: \n (newline), \t (tab), \\ (backslash),
- * \" (quote).
- *
- * v0.6.1 additions: \uXXXX (4-hex BMP code point) and
- * \u{HHHHHH} (1-6 hex full-plane up to U+10FFFF).  Both forms are
- * validated for syntax + range here; the parser uses urbi_encode_utf8
- * to materialize the UTF-8 byte sequence into the AST string-literal
- * buffer (escape resolution is monotonically non-expansive — every \X
- * is at least 2 source bytes, every UTF-8 emission is at most 4 bytes,
- * so the parser's worst-case-source-len capacity holds).
- *
- * Errors (cursor advances past the offending span for clean recovery,
- * LEX-028 contract):
- *   - LEX_UNTERMINATED_STRING: EOF reached before closing quote.  Cursor
- *     ends at lex->end.
- *   - LEX_INVALID_ESCAPE: an unrecognized escape body was encountered.
- *     Cursor advances past the bad escape body so the next ulex_next can
- *     resume cleanly.
- *   - LEX_UNICODE_ESCAPE_TOO_SHORT: \uXXXX with fewer than 4 hex digits,
- *     or \u{} with no hex digits, or \u{...} missing the closing '}'.
- *   - LEX_UNICODE_ESCAPE_OUT_OF_RANGE: \u{HHHHHH} exceeds U+10FFFF.
- *   - LEX_LONE_SURROGATE: \u escape resolves to U+D800..U+DFFF. */
+ */
 static UToken lex_string(ULexer *lex, const int start_line, const int start_col) {
     /* Skip opening quote. */
     lex->cur++;
@@ -1013,11 +876,6 @@ static UToken lex_string(ULexer *lex, const int start_line, const int start_col)
 }
 
 void ulex_init(ULexer *lex, const char *src, const size_t len) {
-    /* Preconditions (LEX-001 + LEX-027): lex must be non-NULL; src must be
-     * non-NULL whenever len > 0.  The (NULL, 0) case is permitted — it
-     * represents empty input (e.g. an idle REPL) and ulex_next will return
-     * TOK_EOF without dereferencing src.  Asserts fire in URBI_DEBUG builds;
-     * release builds inherit the original behaviour (UB on NULL+N). */
     URBI_INTERNAL_ASSERT(lex != NULL);
     URBI_INTERNAL_ASSERT(src != NULL || len == 0);
 
@@ -1032,10 +890,6 @@ void ulex_init(ULexer *lex, const char *src, const size_t len) {
     lex->syncline_pool_idx = 0;
     /* syncline_name_pool contents irrelevant until first //#line or //#push */
 
-    /* LEX-002: post-init invariant.  `line_start == src` even on empty input;
-     * for len == 0, (cur - line_start) is 0 and the column computed by
-     * make_eof / make_tok stays 1.  The pointer arithmetic is well-defined
-     * for src == NULL only when len == 0 (asserted above). */
     URBI_INTERNAL_ASSERT(lex->line_start == lex->src);
     URBI_INTERNAL_ASSERT(lex->cur == lex->src);
     URBI_INTERNAL_ASSERT(lex->line == 1);
@@ -1072,8 +926,7 @@ typedef struct {
  * URBI_SYNCLINE_NAME_MAX-1 are silently truncated.  Pool slot count exceeds
  * the stack depth by one, guaranteeing that the live source_name and all
  * stacked entries remain valid simultaneously.
- *
- * v0.9.0-repl. */
+ */
 static bool
 try_parse_syncline(ULexer *l)
 {
@@ -1173,12 +1026,6 @@ fail:
 }
 
 static UTriviaResult skip_trivia(ULexer *l) {
-    /* LEX-003: initialize line/col to 1 (not 0) so that even if a future
-     * caller reads them on the LEX_OK path the values are valid 1-based
-     * positions, not sentinels.  Error paths overwrite these with the
-     * actual error position (e.g. start_line/start_col for an unterminated
-     * block comment).  LEX-004: len defaults to 2 (the "/" + "*" prefix);
-     * error paths overwrite with the actual span. */
     UTriviaResult r = {LEX_OK, 1, 1, 2};
     while (l->cur < l->end) {
         const char c = *l->cur;
@@ -1199,8 +1046,6 @@ static UTriviaResult skip_trivia(ULexer *l) {
                 break;
             }
         } else if (c == '/' && l->cur + 1 < l->end && l->cur[1] == '/') {
-            /* Line comment.  v0.9.0-repl: check for syncline directive
-             * (//#line / //#push / //#pop) before treating as plain comment. */
             l->cur += 2;   /* past '//' */
             if (l->cur < l->end && *l->cur == '#') {
                 /* Mini-parser handles directive; on failure falls back to
@@ -1213,19 +1058,7 @@ static UTriviaResult skip_trivia(ULexer *l) {
                 l->cur++;
             }
         } else if (c == '/' && l->cur + 1 < l->end && l->cur[1] == '*') {
-            /* Block comment — NON-NESTING (LEX-034).  The first occurrence
-             * of "*"+"/" closes the comment regardless of intervening
-             * "/"+"*" sequences.  Matches C semantics.
-             *
-             * This diverges from legacy urbiscript (aldebaran 2.x), which
-             * supported nested block comments.  The choice is locked by the
-             * tests/chk/lex/block_comment_no_nest.chk pin fixture and
-             * documented at:
-             *   docs/LANG-CONVENTIONS.md §7 "Block comments — divergence
-             *   from legacy"
-             *   docs/language-compatibility-matrix.md row "Block comments"
-             *   (status: dropped / locked non-nesting; legacy F7 / v0.10.5)
-             *
+            /*
              * Record start for error reporting. */
             const int start_line = l->line;
             const int start_col = (int)(l->cur - l->line_start) + 1;
@@ -1250,9 +1083,6 @@ static UTriviaResult skip_trivia(ULexer *l) {
                 r.code = LEX_UNTERMINATED_BLOCK_COMMENT;
                 r.line = start_line;
                 r.col = start_col;
-                /* LEX-004: report the full unterminated extent, not just the
-                 * "/" + "*" prefix.  Span runs from the opening "/" to the
-                 * end of the source. */
                 r.len = (int)(l->cur - start);
                 return r;
             }
@@ -1270,7 +1100,6 @@ static const UTokenType kPunctTable[256] = {
     [';'] = TOK_SEMI,    [','] = TOK_COMMA,
     ['{'] = TOK_LBRACE,  ['}'] = TOK_RBRACE,
     [':'] = TOK_COLON,  ['.'] = TOK_DOT,     ['?'] = TOK_QUESTION,
-    /* === v0.10.5: subscript brackets === */
     ['['] = TOK_LBRACKET, [']'] = TOK_RBRACKET,
     /* '&' / '|' are NOT here: they double as &&/|| and are scanned in the
      * multi-char switch below (v1.0-rc stdlib-completeness).  '%' is a fresh
@@ -1280,9 +1109,6 @@ static const UTokenType kPunctTable[256] = {
 UToken ulex_next(ULexer *lex) {
     UTriviaResult tr = skip_trivia(lex);
     if (tr.code != LEX_OK) {
-        /* LEX-004: tr.len carries the actual error span (full unterminated
-         * extent for block comments; 2 — "/" + "*" — for any future
-         * trivia-level error that doesn't override it). */
         return make_error(tr.code, tr.line, tr.col, tr.len);
     }
     if (lex->cur >= lex->end) {
@@ -1301,15 +1127,9 @@ UToken ulex_next(ULexer *lex) {
         return lex_string(lex, start_line, start_col);
     }
 
-    /* === v0.10.5: quoted identifiers ===
-     * 'X' — single-quote-delimited identifier (legacy §20.1.4).
-     * Emits TOK_IDENT with u.str pointing at the unquoted body.
-     * Branched ahead of the punct fast-path (single-quote is not in
-     * kPunctTable so would fall through to LEX_UNKNOWN_CHAR anyway). */
     if (c == '\'') {
         return scan_quoted_ident(lex);
     }
-    /* === end v0.10.5: quoted identifiers === */
 
     /* Leading-dot float: '.5', '.123', etc.  Must be checked before the
      * punct table fast-path (which would otherwise emit TOK_DOT).
@@ -1327,7 +1147,6 @@ UToken ulex_next(ULexer *lex) {
 
     /* Multi-char tokens and the default fall-through. */
     switch (c) {
-    /* === v0.10.5: `+` can be TOK_PLUS or TOK_PLUS_EQ === */
     case '+':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;
@@ -1347,7 +1166,6 @@ UToken ulex_next(ULexer *lex) {
             lex->cur += 2;
             return make_tok(lex, TOK_EQEQ, start, 2);
         }
-        /* === v0.10.5: `=>` fat-arrow for dict literals === */
         if (lex->cur + 1 < lex->end && lex->cur[1] == '>') {
             lex->cur += 2;
             return make_tok(lex, TOK_FAT_ARROW, start, 2);

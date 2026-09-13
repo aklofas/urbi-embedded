@@ -1,11 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UProto — nested function prototype and per-proto helpers.  Freestanding.
  *
- * --- Inline-cache (IC) layout (v0.8.1-uproto-root) ---
- * The pair (ic_count + ic_names) appears in two places, each owned by a
- * different layer.  UModule no longer holds a copy — the root chunk is now
- * modeled as root_proto, a full UProto:
- *
  *   1. UProto.ic_count / UProto.ic_names — per-proto (both root and nested).
  *      Populated by uemit at compile time, persisted in bytecode v1.3+,
  *      freed by uproto_destroy_buffers.
@@ -29,32 +24,7 @@ extern "C" {
 #endif
 
 /* --- tagged value shape shared between pool and runtime registers ---
- *
- * UValKind and UValue moved to <urbi/types.h> at v0.5.5 to break
- * the cycle where include/urbi/urbi.h pulled in this internal header
- * for UValue's definition.  Numeric values for UValKind are pinned by
- * the bytecode wire format; the kind-byte field comments below document
- * the runtime semantics still managed at this layer.
- *
- * Runtime-semantics notes for each UValKind discriminator:
- *   UVAL_NIL/INT/FLOAT/BOOL/STR — bytecode-pool kinds (constants)
- *   UVAL_CLOSURE — v0.2.0: function closure; runtime-only
- *   UVAL_VOID    — v0.2.0: result of `&` separator; runtime-only
- *   UVAL_STRAND  — v0.3.0: strand handle (OP_FORK_JOIN → OP_JOIN_WAIT).
- *                  Stores a UStrand* in v.p.  GC root walker skips
- *                  (strands are sched-managed, not GC cells).
- *                  TODO(v1.x): revisit if strand handles become user-visible.
- *   UVAL_OBJECT  — v0.4.0: UObject pointer; runtime-only.  Receivers for
- *                  OP_GETSLOT/OP_SETSLOT live in registers tagged
- *                  UVAL_OBJECT.  Heap-bearing — UObject embeds UCell.
- *   UVAL_EVENT   — v0.5.0: UEvent pointer; runtime-only.  Heap-bearing.
- *                  Used by tag.enter / tag.leave getters.
- *   UVAL_HOST_FN — v0.5.0: native host function slot; UHostFn cast to void*.
- *                  Used by uevent_native_register / utag_native_register.
- *                  NOT heap-bearing — function pointers are not GC cells.
- *   Kinds 0-10 in use at v0.5.5; kinds 11-15 reserved for future extension.
- *   In v0.5.5 bytecode constant pools, the loader rejects any kind >
- *   UVAL_STR (kinds 5-10 are runtime-only and never appear on disk). */
+ */
 #include "urbi/types.h"
 
 /* UUpvalCell, UCallFrame, UVM_MAX_FRAMES, UVM_STACK_CAP — placed here so
@@ -79,30 +49,14 @@ typedef void *(*UChunkAllocFn)(void *ptr, size_t nbytes, void *ud);
  *   ptr == NULL && nbytes == 0 : no-op; return NULL.
  * ud is an opaque caller-supplied cookie passed through unchanged (same pattern as uarena). */
 
-/* Forward declaration — USymbol is introduced in v0.4.0 (see uintern.h / object
- * model tasks).  UProto.ic_names below holds a parallel array of USymbol
- * pointers populated at emit time; populated by emit, consumed by IC fill at
- * module-instance load.  Defined as opaque here to keep uproto.h
- * dependency-free from the object/intern layer. */
 struct USymbol;
 typedef struct USymbol USymbol;
 
-/* Forward declaration — UChunkInstance is introduced in v0.4.0 (see
- * object/uchunk_instance.h).  UProto.owning_module_instance (added v0.9.0)
- * holds a back-pointer to the runtime instance this proto was first
- * instantiated under.  Defined as opaque here to avoid a circular dependency
- * on object/ layer types. */
 struct UChunkInstance;
 
 /* Forward declaration — URealm is referenced by the absorbed root-only fields
  * below.  Defined as opaque here to avoid a circular dependency with urealm.h. */
 struct URealm;
-
-/* --- UProto: nested function prototype (used for function definitions). ---
- * A UProto holds the bytecode, constants, and line info for one nested
- * function body.  After v0.9.2 UModule is gone; a module IS its
- * root UProto.  Nested functions get heap-allocated UProtos stored in
- * root_proto->nested[]. */
 
 typedef struct UProto {
     uint32_t  *instructions;
@@ -158,12 +112,6 @@ typedef struct UProto {
     UChunkAllocFn alloc_fn;
     void          *alloc_ud;
 
-    /* NEW (Phase 1 v0.8.1-uproto-root): recursive child protos.
-     * For v0.8.1 tag: populated only on the root_proto (flat-on-root emitter
-     * per spec §4.2).  Non-root UProtos: nested_count = 0, nested = NULL.
-     * For root_proto, this holds the module's nested functions.
-     * Truly-recursive emitter where Bx scopes per-enclosing-proto is
-     * deferred per spec §11.3. */
     struct UProto **nested;
     size_t          nested_count;
     size_t          nested_cap;
@@ -186,33 +134,13 @@ typedef struct UProto {
      * (uproto_alloc_nested). */
     struct UProto *next_alloc;
 
-    /* [runtime-only, NOT serialized] Back-pointer to the root UProto of the
-     * owning module.  NULL on the root proto itself; set to module->root_proto
-     * on every nested proto at allocation time.  Used by Phase 2 refcount
-     * bumpers to find the canonical refcount via (proto->root ?: proto).
-     * Zero-initialized at alloc time; populated by uemit_finish and
-     * uchunk_deserialize post-pass. */
     struct UProto *root;
 
-    /* [runtime-only, NOT serialized] Per-root-proto reference count for the
-     * module-grain closure lifetime fix (v0.7.3 + v0.8.1).  Bumped at every
-     * strand bind (uproto_root_of(proto)->refcount); decremented when the
-     * strand or closure is released.  uchunk_destroy checks this counter:
-     * if 0, the root_proto is freed normally; if non-zero, it is rescued onto
-     * vm->rescued_protos so surviving closures keep a valid backing proto.
-     *
+    /*
      * uint16_t with saturation at UINT16_MAX (logs URBI_LOG_WARN; proto leaks
      * — acceptable for the v1.0 timeframe). */
     uint16_t       refcount;
 
-    /* [runtime-only, NOT serialized] DFS pre-order serial assigned at
-     * UProto construction.  Root proto gets ic_index = 0; subsequent
-     * UProto allocations get module->next_proto_serial++ via either the
-     * emit path (uproto_alloc_nested) or the deserialize path
-     * (decode_nested_protos_into).  Both paths walk the tree in DFS pre-order
-     * so serial assignment is identical regardless of load source.  Root
-     * proto's ic_index = 0 is set explicitly at root-proto allocation; the
-     * first nested allocation produces ic_index = 1.  v0.8.5-recursive-emit. */
     uint16_t       ic_index;
 
     /* [runtime-only, NOT serialized] Back-pointer to the UChunkInstance
@@ -225,16 +153,9 @@ typedef struct UProto {
      * valid as long as this UProto exists (the instance is kept reachable
      * via vm->module_instances_head; the module-destroy path unlinks the
      * instance from that list before the proto's refcount can hit 0).
-     *
-     * Zero-initialised at alloc time; populated lazily on first instance
-     * creation.  NULL is the "not yet instantiated" state and is detected
-     * by the OP_CLOSURE assert when read.  v0.9.0-repl. */
+     */
     struct UChunkInstance *owning_module_instance;
 
-    /* === NEW v0.9.2: absorbed from UModule (root-only meaningful) ===
-     * On non-root protos (proto->root != NULL) these are zero-initialized
-     * and never written.  uproto_alloc_nested asserts proto->root != NULL
-     * at allocation time. */
     char           *source_name;            /* error messages — root only */
     struct UVM     *origin_vm;              /* debug — root only */
     uint16_t        next_proto_serial;      /* emit+deserialize bookkeeping — root only */
@@ -252,12 +173,6 @@ typedef struct UProto {
                                                else. */
 } UProto;
 
-/* --- UClosure: runtime function value (proto + captured upvalues).
- * Forward declaration only — full struct definition lives in uclosure.h
- * (v0.4.0 split: UClosure embeds UCell as first member, which can't be done
- * here without a circular include via gc/ugc.h).  Files that only need
- * `UClosure *` use the typedef below; files that touch UClosure fields
- * include "uclosure.h" explicitly. */
 typedef struct UClosure UClosure;
 
 /* --- Proto helpers --- */
@@ -266,10 +181,7 @@ typedef struct UClosure UClosure;
  * For root protos: returns proto itself (proto->root == NULL).
  * For nested protos: returns the owning module's root_proto via back-pointer.
  * NULL-safe (returns NULL if proto is NULL).
- *
- * v0.8.1 Variant B Phase 2: all closure-related refcount inc/dec sites
- * route through this helper to ensure bumps land on root_proto.refcount
- * (the single canonical counter for the whole module grain). */
+ */
 static inline UProto *
 uproto_root_of(UProto *proto)
 {
@@ -277,8 +189,7 @@ uproto_root_of(UProto *proto)
     return proto->root ? proto->root : proto;
 }
 
-/* --- UProto refcount typed-handle API (v0.10.1) ---
- *
+/*
  * All external callers MUST use these functions rather than touching
  * p->refcount directly.  The typed owner tag enables debug-build accounting
  * (urbi_proto_ref_assert_balanced) and surfaces diagnostics that the prior
@@ -289,12 +200,6 @@ uproto_root_of(UProto *proto)
  *   Strand-bind   — acquired at strand creation (urbi_strand_create_for_module,
  *                   uop_fork, uvm_run transient); released in ustrand_destroy /
  *                   uchunk_strand early-discharge path.
- *
- * Behaviour:
- *   Saturation (refcount == UINT16_MAX): logs to stderr on hosted builds,
- *   silent on freestanding.  Does NOT increment further (proto leaks — v1.0
- *   deferral documented in design-risks).
- *   Underflow (dec when refcount == 0): URBI_REQUIRE failure (all build modes).
  */
 
 /* Owner tag — one value per logical site identified in runtime-invariants F3.
@@ -374,9 +279,6 @@ uproto_source_name(const UProto *p)
     return p->root ? p->root->source_name : p->source_name;
 }
 
-/* Post-v0.9.2: +40 B on 64-bit from absorbed root metadata (source_name,
- * origin_vm, next_proto_serial, total_proto_count, next_in_realm,
- * owning_realm, heap_allocated) relative to the v0.9.1 layout. */
 #ifdef __cplusplus
 }
 #endif

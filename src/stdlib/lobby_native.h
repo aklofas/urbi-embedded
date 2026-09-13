@@ -1,13 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/stdlib/lobby_native.h — v0.9.1 Phase 5: Lobby proto + native primitive.
- *
- * The Lobby proto is a runtime-type singleton (sibling to Tag / Event /
- * Mutex / Date / Duration) that ships in every build — its existence is
- * NOT gated on URBI_ENABLE_REPL because the per-realm writer fallback
- * chain (Phase 1) is also a default-build feature and `Lobby.echo` /
- * `Lobby.wall` are useful as urbiscript-side output primitives even when
- * no network REPL is configured.
- *
+/*
  * urbi_lobby_native_register(vm)
  *   Allocates vm->lobby_proto as a URBI_ATOM_OBJECT-family UObject,
  *   chains it onto root Object, and installs the single native method

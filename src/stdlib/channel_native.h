@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* v0.10.11 / D6: Channel proto realm-global bindings.
- *
+/*
  * channel_overlay.u defines the Channel class as a stdlib overlay; this
  * C side does two things:
  *

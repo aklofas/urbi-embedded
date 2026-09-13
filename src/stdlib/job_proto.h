@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* v0.10.10 / D7-A: Job proto — script-side strand introspection.
- *
+/*
  * Job is a thin Object wrapper around a UStrand identified by its
  * pointer cast to a uint64_t stored in the `__strand` slot.  Using the
  * pointer (not a raw pointer dereference) lets Job instances survive

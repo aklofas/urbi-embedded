@@ -1,6 +1,4 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* tag_globals.c — v0.10.10-job-introspection / D7-D:
- * scopeTag realm-global native (call-style). */
 
 #include "stdlib/tag_globals.h"
 
@@ -27,22 +25,7 @@
  * Bound as a realm-global closure (mirrors the `every` and `sleep`
  * patterns in src/stdlib/temporal.c).  Script-side invocation: `scopeTag()`
  * with parens.
- *
- * Why call-style, not getter-property: at v1.0 baseline the OGET getter
- * dispatch path routes through urbi_run_closure_on_scratch (src/runtime/
- * uscratch.c), which assumes a bytecode UClosure (reads
- * entry->proto->instructions).  Native closures have proto=NULL by
- * construction (urbi_native_closure_create in object_root.c).  Bridging
- * native closures into the OGET dispatch path is a v1.x follow-up (the
- * urbi-embedded design-risks register will track this).  v0.10.10 ships
- * the scopeTag SEMANTIC via the call-style surface; the property-style
- * surface that legacy share/urbi/system.u:212-213 used is deferred.
- *
- * Per REVIVAL §3.8 the call-style is sufficient for the Go-defer /
- * C++-RAII pattern in idiomatic v1.0 use:
- *   function f() { var t = scopeTag(); t: every(1s) sense() }
- * The only behavioural delta vs the legacy getter form is the explicit
- * parens at the call site. */
+ */
 
 static int
 scope_tag_native(UVM *vm, UValue self, UValue *args, uint8_t nargs,

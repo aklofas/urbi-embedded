@@ -50,31 +50,23 @@ const char * const urbi_parse_kErrorMessages[] = {
     "named-function declarations are not supported at v1.0; use 'var name = function(...){...}'",
     "'onleave' is not allowed with 'at sync' — at sync has no leave edge; use 'at (cond) body onleave handler'",
     "statement-start 'get name() {...}' / 'set name(v) {...}' is not supported at v1.0 outside a class body; use 'recv.get name() {...}' or 'class C { get name() {...} }'",
-    /* === v0.10.5: list/dict literal + subscript errors === */
     "expected ']' to close list/dict literal or subscript",
     "dict literal key must be followed by '=>' (e.g. \"key\" => value)",
     "expected ']' to close subscript expression",
     "'var obj.slot' requires an initializer: use 'var obj.slot = value'",
     "compound subscript operator other than '+=' is not supported at v1.0; use 'obj[i] = obj[i] op v'",
-    /* === end v0.10.5 === */
 
-    /* === v0.10.5: control flow errors === */
     "for-each loop header must start with 'var' (e.g. for (var x : list))",
     "for-each loop header must use ':' or 'in' between variable and iterable",
     "'break' is only valid inside a 'for' or 'while' loop",
     "'continue' is only valid inside a 'for' or 'while' loop",
     "switch body must contain only 'case' labels (non-case statement found)",
     "case label must be followed by ':' (e.g. case \"foo\":)",
-    /* === v0.13.5: switch default arm === */
     "switch body may only have one 'default:' arm",
-    /* === end v0.13.5: switch default arm === */
-    /* === end v0.10.5: control flow errors === */
 
-    /* === v0.10.5: event payload binding errors === */
     "event payload binding requires 'var' keyword (e.g. at (e?(var x)) body)",
     "event payload binding requires an identifier after 'var' (e.g. at (e?(var x)) body)",
     "event payload binding is missing closing ')' (e.g. at (e?(var x)) body)"
-    /* === end v0.10.5 === */
 };
 
 static const char * const kErrorNames[] = {
@@ -104,60 +96,37 @@ static const char * const kErrorNames[] = {
     "PARSE_NAMED_FUNCTION_NOT_SUPPORTED",
     "PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE",
     "PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED",
-    /* === v0.10.5 === */
     "PARSE_EXPECTED_RBRACKET",
     "PARSE_DICT_EXPECTED_FAT_ARROW",
     "PARSE_SUBSCRIPT_EXPECTED_RBRACKET",
     "PARSE_VAR_OBJ_SLOT_NO_INIT",
     "PARSE_SUBSCRIPT_COMPOUND_OP_V1X",
-    /* === end v0.10.5 === */
-    /* === v0.10.5: control flow === */
     "PARSE_FOR_EXPECTED_VAR",
     "PARSE_FOR_EXPECTED_COLON_OR_IN",
     "PARSE_BREAK_OUTSIDE_LOOP",
     "PARSE_CONTINUE_OUTSIDE_LOOP",
     "PARSE_SWITCH_EXPECTED_CASE",
     "PARSE_SWITCH_EXPECTED_COLON",
-    /* === v0.13.5: switch default arm === */
     "PARSE_SWITCH_DUPLICATE_DEFAULT",
-    /* === end v0.13.5: switch default arm === */
-    /* === end v0.10.5: control flow === */
-    /* === v0.10.5: event payload binding === */
     "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR",
     "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_IDENT",
     "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN"
-    /* === end v0.10.5 === */
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
 
-/* Compile-time parity check: the kErrorNames / urbi_parse_kErrorMessages tables
- * are indexed by UParseError, so their length must equal the count of
- * UParseError enumerators.  Update both when adding new codes.
- * Closes PARSE-017. */
 URBI_STATIC_ASSERT(N_PARSE_ERROR_CODES == (int)PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN + 1,
                "kErrorNames length must match UParseError enum count");
 URBI_STATIC_ASSERT((int)(sizeof urbi_parse_kErrorMessages / sizeof urbi_parse_kErrorMessages[0])
                == (int)PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN + 1,
                "urbi_parse_kErrorMessages length must match UParseError enum count");
 
-/* --- Postfix-emit method name.  Promoted to file scope so the postfix
- * `e!` desugar in uparse_react.c does not duplicate the literal.
- * Closes PARSE-016. --- */
 const char urbi_parse_kEmitMethodName[] = "emit";
 URBI_STATIC_ASSERT(sizeof urbi_parse_kEmitMethodName - 1U == kEmitMethodNameLen,
                "kEmitMethodNameLen must equal strlen(urbi_parse_kEmitMethodName)");
 
 /* --- OOM sentinel.  Returned whenever the arena is in OOM state. --- */
 
-/* Read-only OOM error sentinel returned by parse functions when arena
- * allocation fails. Declared `static const` to satisfy the per-VM
- * audit (see tools/audit-globals.sh + pre-v0.10 multi-VM-audit spec):
- * functionally immutable, but the public AST API uses `UAstNode *`
- * (non-const), so callers cast away const at return sites. The cast
- * is safe because the sentinel is never mutated by anyone — its
- * contents are inspected only via the const-correct read path
- * (kind == AST_ERROR && u.err.code == PARSE_OOM). */
 const UAstNode uparser_oom_sentinel = {
     AST_ERROR,
     0,
@@ -212,10 +181,6 @@ UToken urbi_parse_consume(UParser *p) {
 /* --- AST constructors.  Return NULL on arena OOM. --- */
 
 UAstNode *urbi_parse_make_node(UParser *p, UAstKind k, int line, int col) {
-    /* v0.9.1 compile-budget guard: every AST allocation is counted.  Once a
-     * limit is tripped, the budget_exceeded latch is sticky and subsequent
-     * urbi_parse_make_node calls fail-fast — the parse cleanly unwinds with NULL
-     * propagation (same shape as the existing arena OOM path). */
     if (p->budget_exceeded) return NULL;
     if (p->budget != NULL && p->budget->max_ast_nodes > 0U
             && p->node_count >= p->budget->max_ast_nodes) {
@@ -290,19 +255,7 @@ UAstNode *urbi_parse_make_error(UParser *p, UParseError code, const char *msg,
 
 /* expect moved to uparse_internal.h as static inline (no archive symbol). */
 
-/* infix_prec / infix_binop / is_compare_token / compare_op /
-   make_compare / make_bool_node / urbi_parse_make_nil_node /
-   urbi_parse_prefix / urbi_parse_atom / urbi_parse_arena_grow_node_array /
-   parse_call_args / parse_member_access / urbi_parse_expression
-   moved to uparse_expr.c (PARSE-021 #6). */
-
 /* at_statement_end / urbi_parse_inner_tier moved to uparse_separators.c. */
-
-/* urbi_parse_block / urbi_parse_while / urbi_parse_if / urbi_parse_function / parse_return /
-   urbi_parse_throw / urbi_parse_try moved to uparse_stmt.c (PARSE-021 #4). */
-
-/* urbi_parse_at / urbi_parse_whenever / urbi_parse_waituntil moved to uparse_react.c
-   (PARSE-021 #5). */
 
 /* urbi_parse_outer_tier moved to uparse_separators.c. */
 

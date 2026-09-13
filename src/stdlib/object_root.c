@@ -7,15 +7,6 @@
  * native_fn instead of pushing a bytecode frame when this field is set
  * (runtime/uclosure.h).
  *
- * Receiver routing: method-call sites are compiled as OP_SELF (loads
- * method + receiver into adjacent registers) followed by OP_CALL with
- * the method-flag bit set in C; the OP_CALL native arm reads `self`
- * from R[A+1] and passes it to the native function.  Plain
- * (non-method) calls pass nil as self.  (Pre-v1.6 the receiver came
- * from vm->last_recv, which got silently clobbered by intervening
- * OP_GETSLOTs in argument evaluation; the OP_SELF+method-flag scheme
- * eliminates that whole bug class — S42.)
- *
  * Error handling: urbi_raise_arity / _type / _oom / _lookup return
  * UEXEC_THROW to signal a fault to OP_CALL, cloning the matching cached
  * Exception-subclass proto (via urbi_raise_typed) so scripted try/catch
@@ -79,9 +70,6 @@ urbi_native_closure_create(UVM *vm, urbi_native_method_fn fn)
 {
     if (vm == NULL || vm->alloc_fn == NULL || fn == NULL) return NULL;
 
-    /* v0.8.4 Step C-3: native closures are GC-managed via urbi_gc_alloc,
-     * same as bytecode closures (Step C-2).  The GC sweep + uclosure_destroy
-     * finalizer reclaim them; no manual free or stdlib_closures threading. */
     size_t nbytes = sizeof(UClosure);
     UCell *c = urbi_gc_alloc(vm, nbytes, UTYPE_CLOSURE);
     if (c == NULL) return NULL;
@@ -95,8 +83,6 @@ urbi_native_closure_create(UVM *vm, urbi_native_method_fn fn)
     cl->native_fn  = fn;
     return cl;
 }
-
-/* === Native error helpers (v0.11.4 typed-throw) ============================ */
 
 /* urbi_raise_typed — INTERNAL (not part of the public ABI manifest).
  * Clone a cached Exception-subclass proto, bind a `message` string slot, and
@@ -174,10 +160,6 @@ urbi_raise_lookup(UVM *vm, USymbol *name, UValue *out)
     return urbi_raise_typed(vm, vm ? vm->lookuperror_proto : NULL, out, buf);
 }
 
-/* v0.13.5: typed subclass raise helpers for native-method sites.
- * Each mirrors urbi_raise_type — prepend the subclass name, then clone the
- * cached proto via urbi_raise_typed.  INTERNAL (Tier-4 internal-leak, not
- * public ABI surface). */
 int
 urbi_raise_index(UVM *vm, const char *msg, UValue *out)
 {
@@ -220,24 +202,13 @@ urbi_raise_divzero(UVM *vm, const char *msg, UValue *out)
 }
 
 /* === urbi_proto_list_create ================================================
- *
- * Phase 3 synthetic proto-list helper: returns a fresh UObject carrying a
- * `size` slot.  This is still a synthetic view rather than a proper List
- * atom value; backing the .protos view with real list storage is a
- * deferred follow-up.  Fixtures that read `obj.protos.size` find the
- * field directly; a real iteration API isn't shipped here. */
+ */
 
 UObject *
 urbi_proto_list_create(UVM *vm, UObject *recv)
 {
     if (vm == NULL || recv == NULL) return NULL;
 
-    /* GC soundness (v0.13.2): intern every symbol BEFORE allocating GC
-     * cells (intern can allocate, and a collection at that point would
-     * sweep a fresh unrooted cell — careful-ordering pattern), and pin
-     * the fresh list on the VM-level C-root chain across the closure
-     * allocation below (the only remaining alloc while `list` is held
-     * solely in this C local). */
     USymbol *sym_size = (USymbol *)ustr_intern(vm, "size", 4);
     if (sym_size == NULL) return NULL;
     USymbol *sym_owner = (USymbol *)ustr_intern(vm, "_owner", 6);
@@ -402,10 +373,6 @@ obj_removeSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     int rc = urbi_object_remove_slot(vm, recv, name);
     if (rc != 0) return urbi_raise_oom(vm, out);
 
-    /* Return self to allow chaining; legacy semantics returned nil but
-     * that costs an extra arg parse on the script side.  Fixture
-     * expectations follow the Phase 3 contract documented in the .chk
-     * fixture. */
     *out = self;
     return UEXEC_OK;
 }

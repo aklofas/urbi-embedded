@@ -90,11 +90,7 @@ write_local_slot(UVM *vm, UObject *o, const char *name, UValue value)
 }
 
 /* === Mutex ===============================================================
- *
- * v1.0 single-VM cooperative-only contract: lock/unlock/tryLock are
- * non-blocking flag flips on a hidden `_locked` UVAL_BOOL slot of the
- * instance UObject.  Phase 10's `.u` overlay grows Mutex.synchronized
- * via `waituntil m.locked() == false` for cooperative wait semantics. */
+ */
 
 static int
 mutex_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
@@ -200,9 +196,7 @@ static const UNativeMethodDef MUTEX_METHODS[] = {
  * formats UTC as "YYYY-MM-DD HH:MM:SS" via gmtime_r + strftime on hosted
  * builds; freestanding builds return "" since neither time() nor
  * strftime are available outside the hosted environment.
- *
- * Phase 10's `.u` overlay can grow Date.toIso8601 / Date.fromString /
- * arithmetic-via-operator surface on top of this primitive. */
+ */
 
 static int64_t
 host_time_seconds(void)
@@ -310,22 +304,7 @@ date_as_string(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 }
 
 /* === Date.plus(Duration) =================================================
- *
- * Phase 9 / Phase 10 seam.  Returns a fresh Date with seconds advanced
- * by the Duration's microseconds-to-seconds quotient (sub-second
- * precision truncated).  Negative Durations subtract.
- *
- * Implementation note: the new Date instance clones vm->date_proto
- * directly (NOT the receiver `self.v.p`).  Cloning a clone-of-proto
- * exposes a chain-of-clone access pattern where slot lookups on the
- * second-generation clone can fail to walk past the user-instance
- * intermediary.  Cloning the proto keeps the chain at depth 1, matching
- * the Date.fromSeconds / Date.now patterns which work correctly at v1.0
- * baseline.  This is tracked in docs/urbi-embedded-design-risks.md as a
- * v1.x chain-of-clone proto-walk audit.
- *
- * Phase 10's `.u` overlay can promote this to the operator form `d + dur`
- * once the arithmetic-operator dispatch for non-atom receivers lands. */
+ */
 
 static int
 date_plus(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
@@ -366,16 +345,7 @@ static const UNativeMethodDef DATE_METHODS[] = {
 };
 
 /* === Duration ============================================================
- *
- * Thin wrapper over integer microseconds.  Time literals (100ms / 2s /
- * 1d) lex to integer microseconds at v0.2.0; Duration.fromMicroseconds wraps
- * such an integer in a typed Duration UObject for dispatch.  The backing
- * value lives on a hidden `_microseconds` UVAL_INT slot; named accessors
- * expose conversions to milliseconds / seconds / minutes / hours / days.
- *
- * v1.0 keeps Duration arithmetic plain integer arithmetic on the
- * microseconds value; Phase 10's `.u` overlay can grow Duration.+ /
- * Duration.- as operator overrides on top of this primitive. */
+ */
 
 static int
 duration_from_micros(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)

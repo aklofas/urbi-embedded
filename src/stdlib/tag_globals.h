@@ -1,14 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* tag_globals.h — v0.10.10-job-introspection / D7-D:
- * tag-related realm globals (scopeTag).
- *
+/*
  * scopeTag is a call-style native that returns the innermost
  * UCLEANUP_TAG_SCOPE.owning_tag on the current strand's cleanup stack
  * as a UVAL_TAG, or nil if there is none.  Script-side: `scopeTag()`.
- *
- * Per REVIVAL §3.8 the Go-defer / C++-RAII analog: assign to a local
- * in a function to bind every spawn-or-watcher inside the function to
- * a tag that auto-stops on function return.
  *
  * Why call-style (not the legacy getter-property form per
  * share/urbi/system.u:212-213): the v1.0 OGET dispatch path

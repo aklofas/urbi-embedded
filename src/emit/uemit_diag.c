@@ -1,6 +1,4 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uemit_diag.c — emit-time diagnostic warnings.
- * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #9). */
 
 #include "uemit_internal.h"
 #include "emit/uemit.h"

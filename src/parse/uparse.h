@@ -41,17 +41,10 @@ typedef struct {
      * at parse time when this is zero — the implicit-receiver form has no
      * v1.0 resolver outside a class body (deferred to v1.x implicit-this). */
     int class_body_depth;
-    /* === v0.10.5: control flow ===
-     * Nesting depth of for/while loops currently being parsed.  Bumped
-     * around each loop body parse so that break/continue can be detected
-     * outside any loop (PARSE_BREAK_OUTSIDE_LOOP / PARSE_CONTINUE_OUTSIDE_LOOP).
-     * Checked at parse time in parse_break / parse_continue; does not affect
-     * emit (the emitter independently tracks break/continue patch lists). */
     int loop_depth;
     int switch_depth;  /* for parse_break accept-set; parse_continue uses loop_depth only */
 
-    /* === v0.9.1 compile-budget guard ===
-     *
+    /*
      * budget — borrowed pointer to a UCompileBudget supplied by the caller
      *   (typically realm->compile_budget when urbi_repl_eval drives the
      *   parser under a REPL realm).  NULL = unlimited (default).
@@ -83,8 +76,7 @@ typedef struct {
  * Initializes budget to NULL (unlimited); caller may set it after init. */
 void uparse_init(UParser *p, ULexer *lex, UArena *arena);
 
-/* === v0.9.1 budget helpers ============================================
- *
+/*
  * uparse_set_budget — install a borrowed UCompileBudget pointer (NULL =
  *   unlimited).  Must be called BEFORE the first uparse_next_statement
  *   call.  Caller owns the budget storage; UParser does not copy.

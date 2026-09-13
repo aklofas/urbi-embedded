@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/stdlib/temporal.c — v0.9.4 Phase 5: every() periodic-spawn primitive.
- *
+/*
  * Approach: per-call UPeriodic records on a singly linked list rooted at
  * vm->periodics_head.  urbi_step pumps the list on each call; expired
  * periodics spawn a body strand via the same urbi_watcher_do_spawn_body_coroutine-style
@@ -146,10 +145,7 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         }
         period_us = (uint64_t)v;
     } else if (args[0].kind == (uint8_t)UVAL_FLOAT) {
-        /* SCHED-14 (owner-decided 2026-06-11): bare float = SECONDS,
-         * matching sleep().  Duration literals (100ms) reach here as
-         * UVAL_INT microseconds via the lexer and are unaffected.
-         *
+        /*
          * !(f > 0.0) rejects NaN, negatives, and zero in one test; the upper
          * bound rejects +inf and values whose µs conversion would overflow
          * int64 — (uint64_t)(int64_t)(f * 1e6) is UB for out-of-range f.
@@ -211,11 +207,6 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === sleep_native ========================================================
  *
- * v0.10.2: sleep(duration) stdlib C-native — blocks current strand via
- * USTRAND_REASON_SLEEP.  Closes legacy audit F15 + v0.9.4-era Pico
- * follow-up (whenever(named_event) workaround required C-side watcher;
- * native sleep unblocks the simplest blocking-wait pattern from script).
- *
  * Duration accepted as:
  *   UVAL_INT   — microseconds.  Matches the time-literal lexer output:
  *                `100ms` → UVAL_INT(100000), `1s` → UVAL_INT(1000000).
@@ -226,10 +217,6 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  * USTRAND_REASON_SLEEP, now_us + duration_us).  The scheduler's existing
  * sleep-queue infrastructure wakes the strand when host_time_us() reaches
  * the target.
- *
- * TAG_STOP on a sleeping strand wakes it via the existing
- * urbi_sched_strand_unblock path in urbi_tag_stop's member_strands walk
- * (src/runtime/uunwind.c) — verified at v0.10.2.
  *
  * Returns nil after wakeup (or when TAG_STOP interrupts the sleep;
  * the TAG_STOP unwind delivers UEXEC_TAG_STOP before the nil return
@@ -250,10 +237,6 @@ sleep_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         duration_us = (uint64_t)i;
     } else if (args[0].kind == (uint8_t)UVAL_FLOAT) {
         double f = (double)args[0].v.f;
-        /* SCHED-14: align guard with every() — reject NaN, negatives, +inf,
-         * and too-large values (UB on µs conversion) in one expression.
-         * !(f >= 0.0) catches NaN and negatives; f > 9.2e12 catches +inf
-         * and overflow-on-µs-conversion values. */
         if (!(f >= 0.0) || f > 9.2e12) {
             return urbi_raise_type(vm, "sleep: negative duration", out);
         }
@@ -318,11 +301,6 @@ urbi_temporal_native_register_globals(UVM *vm, URealm *realm)
         if (rc != URBI_OK) return rc;
     }
 
-    /* v0.10.2: bind "sleep" as a realm global.  Allocate the closure
-     * here (no UVM field — GC reachability via the realm-global slot,
-     * same as the comment above for every_native_closure).  One
-     * allocation per realm creation; the realm's global_object slot keeps
-     * the closure alive for the lifetime of the realm. */
     {
         UClosure *sl_cl = urbi_native_closure_create(vm, sleep_native);
         if (sl_cl == NULL) return URBI_ERR_OOM;
@@ -379,7 +357,6 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* Step 1: allocate body strand (DORMANT). */
     UStrand *body = urbi_strand_create(vm, p->realm, p->body);
     if (body == NULL) {
         if (vm->host_log_fn != NULL) {
@@ -389,8 +366,6 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
         return NULL;
     }
 
-    /* Step 2: inherit owning_tag only when distinct from realm->tag.
-     * urbi_strand_create already attaches realm->tag at depth 0. */
     if (p->owning_tag != NULL && p->owning_tag != p->realm->tag) {
         struct UTag *chain[1];
         chain[0] = p->owning_tag;
@@ -405,7 +380,6 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
         }
     }
 
-    /* Step 3: arm — allocates register stack, wires pc / R / frame_count. */
     if (urbi_strand_arm_from_closure(body, p->body, /*nargs=*/0) != 0) {
         urbi_strand_destroy(vm, body);
         if (vm->host_log_fn != NULL) {
@@ -423,14 +397,11 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
     body->root_proto = p->body->proto;
     urbi_proto_strand_ref_acquire(body->root_proto, URBI_PROTO_REF_OWNER_STRAND);
 
-    /* Step 4: wire module_instance for IC resolution at frame_count == 0. */
     body->module_instance = p->module_instance;
 
-    /* Step 5: wire back-pointers. */
     body->periodic_owner = p;
     p->current_strand    = body;
 
-    /* Step 6: DORMANT -> READY (enqueue on run-queue). */
     urbi_strand_start(vm, body);
 
     return body;
@@ -443,8 +414,6 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
 static void
 periodic_unlink_and_free(UVM *vm, UPeriodic *p)
 {
-    /* Caller contract: p is on vm->periodics_head (called only from the Phase 2
-     * teardown sweep where unregister_pending is confirmed). */
     URBI_SLIST_UNLINK(vm->periodics_head, p, next, UPeriodic);
     p->next = NULL;
     vm->alloc_fn(p, 0, vm->alloc_ud);
@@ -467,9 +436,6 @@ urbi_periodic_pump(UVM *vm)
     uint64_t now = 0U;
     if (vm->host_time_us != NULL) now = vm->host_time_us(vm->host_time_ud);
 
-    /* Phase 1: fire due periodics.  Walk the list; spawn into any slot
-     * with current_strand == NULL && fire time reached && not pending
-     * unregister.  spawn_periodic_body sets p->current_strand on success. */
     UPeriodic *p;
     for (p = vm->periodics_head; p != NULL; p = p->next) {
         if (p->unregister_pending) continue;
@@ -479,10 +445,6 @@ urbi_periodic_pump(UVM *vm)
         /* On spawn failure, leave p in place; next pump pass retries. */
     }
 
-    /* Phase 2: teardown sweep.  Free periodics with unregister_pending
-     * set AND no in-flight body strand.  An unregister with current_strand
-     * still alive defers the free until the strand reaches DEAD and
-     * urbi_periodic_body_completed clears the back-pointer. */
     {
         UPeriodic *p2, *next;
         URBI_SLIST_FOREACH_SAFE(p2, next, vm->periodics_head, next) {
@@ -526,28 +488,12 @@ urbi_periodic_body_completed(UVM *vm, UStrand *s)
     p->current_strand   = NULL;
 
     if (s->fatal_status == UEXEC_OK || s->fatal_status == UEXEC_RETURN) {
-        /* SCHED-14 (owner-decided 2026-06-11): FIXED cadence (legacy every|
-         * semantics).  The deadline advances by one period from the PREVIOUS
-         * deadline so the firing interval does not drift with body duration.
-         *
+        /*
          * On overrun (body duration >= period, next_fire_us already in the
          * past), the deadline resumes at now + period_us: the missed periods
          * are SKIPPED with no burst of catch-up iterations and NO immediate
          * catch-up fire.
-         *
-         * CONTROLLER-RATIFIED DEVIATION (pending owner confirmation at tag
-         * close-out) from the literal SCHED-14 "slide-to-now / single late
-         * fire": resuming at `now` (rather than `now + period_us`) makes the
-         * periodic perpetually-due whenever body-duration >= period.  The
-         * deadline is read from the completion clock here, but the periodic
-         * pump re-reads the (later) clock; on an advancing clock that deadline
-         * is then always <= the pump's read, so the body re-fires every pump
-         * pass within the same urbi_step and the scheduler never returns
-         * anything but RUNNING -- a 100% CPU non-quiescence hang (empirically:
-         * basic.chk 30s timeout, nested.chk 180s timeout).  Resuming at
-         * now + period_us lets the VM reach WAKE_AT/QUIESCENT between overrun
-         * fires -- which a cooperative embedded runtime requires -- and avoids
-         * double-actuation on robotics hardware. */
+         */
         uint64_t now = 0U;
         if (vm->host_time_us != NULL) now = vm->host_time_us(vm->host_time_ud);
         p->next_fire_us += p->period_us;
@@ -625,12 +571,6 @@ urbi_periodic_earliest_wake_us(const UVM *vm)
  *
  * B5 / SCHED-N2 (2026-07-04): tag.stop() must cascade to the
  * periodic list so the flagship `t: every(P) body(); t.stop()` idiom works.
- *
- * urbi_periodics_stop_owned_by: walk vm->periodics_head; for every periodic
- * whose owning_tag matches, set unregister_pending.  The next
- * urbi_periodic_pump pass (Phase 2) then frees any such periodic whose
- * current_strand is NULL.  Called from urbi_tag_stop (uunwind.c) after the
- * member-watcher cascade.
  *
  * urbi_tag_owns_periodic: returns true if at least one non-unregistered
  * periodic has owning_tag == tag.  Called from tag_stop_native (utag_native.c)

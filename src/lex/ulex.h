@@ -11,10 +11,6 @@
 extern "C" {
 #endif
 
-/* v0.9.0-repl: depth cap for //#push / //#pop syncline directives.
- * 4 is sufficient for any plausible REPL framing (top + include + macro-expand
- * + safety).  Overflow degrades silently (drop further pushes); underflow
- * pops on an empty stack also degrade silently. */
 #ifndef URBI_SYNCLINE_STACK_MAX
 #  define URBI_SYNCLINE_STACK_MAX 4
 #endif
@@ -107,34 +103,25 @@ typedef enum {
     /* this keyword (Gap #3) */
     TOK_KW_THIS,
 
-    /* === v0.10.5: quoted identifiers === */
     /* TOK_IDENT is reused for quoted identifiers; no new token type needed.
      * scan_quoted_ident emits TOK_IDENT with u.str pointing at the unquoted
      * body (does not include the surrounding single-quote delimiters). */
-    /* === end v0.10.5: quoted identifiers === */
 
-    /* === v0.10.5: assert keyword === */
     TOK_KW_ASSERT,
 
-    /* === v0.10.5: control flow === */
     TOK_KW_FOR,      /* for — for-each range loop */
     TOK_KW_BREAK,    /* break — exit innermost loop */
     TOK_KW_CONTINUE, /* continue — skip to next iteration */
     TOK_KW_SWITCH,   /* switch — equality-dispatch statement */
     TOK_KW_CASE,     /* case — label inside switch body */
     TOK_KW_DEFAULT,  /* default — catch-all arm inside switch body */
-    /* === end v0.10.5: control flow === */
 
-    /* === v0.10.5: list/dict literals + subscript + compound assign === */
     TOK_LBRACKET,    /* [ — list/dict literal open; subscript open */
     TOK_RBRACKET,    /* ] — list/dict literal close; subscript close */
     TOK_FAT_ARROW,   /* => — dict key-value separator (e.g. "a" => 1) */
     TOK_PLUS_EQ,     /* += — compound add-assign (l[i] += v desugar) */
-    /* === end v0.10.5 === */
 
-    /* === v0.10.11: shift-write operator === */
     TOK_LSHIFT,       /* << — desugars to method-call .'<<'(rhs) */
-    /* === end v0.10.11 === */
 
     /* === v1.0-rc stdlib-completeness: arithmetic + logical operators === */
     TOK_PERCENT,      /* %  — modulo; desugars to method-call .'%'(rhs) */
@@ -170,24 +157,14 @@ typedef enum {
     LEX_FLOAT_TRAILING_DOT,          /* 1. — no fraction digits after the decimal point */
     LEX_FLOAT_EXPONENT_NO_DIGITS,    /* 1.5e+ or 1e — exponent marker with no digits */
     LEX_FLOAT_OVERFLOW,              /* float literal exceeds representable range (±inf) */
-    /* === v0.10.5: quoted identifiers === */
     LEX_UNTERMINATED_QUOTED_IDENT,   /* 'name opened but not closed before EOF/newline */
     LEX_EMPTY_QUOTED_IDENT,          /* '' — zero-length quoted identifier */
-    /* === end v0.10.5: quoted identifiers === */
     LEX__LAST          /* sentinel; not a real error code — used to size
                           ERR_MSG[] and detect drift via URBI_STATIC_ASSERT */
 } ULexError;
 
 /*
  * UToken — returned by value from ulex_next; no heap allocation.
- *
- * Lifetime (LEX-029): u.str.start is a non-owning pointer into the caller's
- * source buffer (the same buffer passed to ulex_init).  The source buffer
- * MUST outlive any UToken that references it.  u.err.message is a static-
- * storage string literal (lives for the program lifetime; no caller action
- * required).  This holds for every UToken consumer — parser, REPL,
- * diagnostic emitters — every site that reads u.str.start must keep the
- * source buffer alive at least as long as the UToken.
  *
  * Union invariants (active member per type):
  *   u.i    — TOK_INT: the parsed integer value
@@ -231,10 +208,6 @@ typedef struct {
     const char *cur;
     int line;
     const char *line_start;
-    /* v0.9.0-repl: syncline state.
-     * source_name defaults to "<stdin>" (or whatever was passed to ulex_init).
-     * Rewritten by //#line / //#push / //#pop.  Pointer into the symbol
-     * table (lifetime = VM lifetime). */
     const char *source_name;
     struct {
         const char *file;
@@ -242,23 +215,11 @@ typedef struct {
         uint32_t    col;
     } syncline_stack[URBI_SYNCLINE_STACK_MAX];
     uint8_t syncline_depth;
-    /* Name pool for //#line and //#push filenames.  Round-robin allocation
-     * over (URBI_SYNCLINE_STACK_MAX + 1) slots keeps the current source_name
-     * plus all stacked names alive for the lifetime of the ULexer.
-     * Filenames longer than URBI_SYNCLINE_NAME_MAX - 1 are truncated.
-     * v0.9.0-repl. */
     char    syncline_name_pool[URBI_SYNCLINE_STACK_MAX + 1][URBI_SYNCLINE_NAME_MAX];
     uint8_t syncline_pool_idx;
 } ULexer;
 
 /* Initialize the ULexer over a source buffer.  No allocation.
- *
- * Preconditions (LEX-001 + LEX-027):
- *   - lex must be non-NULL.
- *   - src must point to at least len valid bytes for any len > 0.
- *   - The (NULL, 0) case is permitted: it represents empty input (e.g.
- *     a freshly-opened REPL with no line yet) and ulex_next will return
- *     TOK_EOF without dereferencing src.
  *
  * The source buffer must remain valid and unmodified for the lifetime of
  * the ULexer AND for the lifetime of every UToken the lexer produces
@@ -268,8 +229,6 @@ typedef struct {
  * release builds inherit the original UB-on-violation semantics. */
 void ulex_init(ULexer *lex, const char *src, size_t len);
 
-/* v0.9.0-repl: current claimed source name (syncline-aware).  Defaults to
- * "<stdin>" if no syncline directive has been seen. */
 static inline const char *
 ulex_current_source(const ULexer *lex)
 {
@@ -278,10 +237,6 @@ ulex_current_source(const ULexer *lex)
 
 /* Read and return the next UToken.  Idempotent at EOF — subsequent calls
  * keep returning TOK_EOF.
- *
- * Post-error advance contract (LEX-028): after a TOK_ERROR the cursor has
- * advanced past the offending lexeme so a follow-up ulex_next resumes at a
- * clean boundary.  Per-error specifics:
  *
  *   - LEX_UNKNOWN_CHAR: cursor advances exactly 1 byte (the bad byte).
  *   - LEX_UNTERMINATED_BLOCK_COMMENT: cursor jumps to end-of-source; the

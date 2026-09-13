@@ -1,7 +1,4 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uparse_expr.c — Pratt expression parser (infix tables, prefix, atom, call,
- * member-access, urbi_parse_expression).
- * Extracted from uparse.c during v0.5.4-decompose (PARSE-021 #6). */
 
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
@@ -13,9 +10,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* v0.10.11 / `<<` shift-write selector.  File-scope (with
- * URBI_STATIC_ASSERT length guard) matching the urbi_parse_kEmitMethodName pattern
- * in uparse.c; declared extern in uparse_internal.h for visibility. */
 static const char kLShiftSelector[] = "<<";
 URBI_STATIC_ASSERT(sizeof kLShiftSelector - 1U == kLShiftSelectorLen,
                "kLShiftSelectorLen must equal strlen(kLShiftSelector)");
@@ -47,9 +41,7 @@ static int infix_prec(UTokenType t) {
     case TOK_PIPEPIPE: return 1;
     case TOK_AMPAMP:   return 2;
     /* === end v1.0-rc stdlib-completeness === */
-    /* === v0.10.11: << method-call desugar (below equality) === */
     case TOK_LSHIFT: return 3;
-    /* === end v0.10.11 === */
     case TOK_EQEQ:
     case TOK_NEQ:   return 4;
     case TOK_LT:
@@ -135,13 +127,6 @@ static int hex_digit_unchecked(char c) {
 
 /* parse_string_literal — urbi_parse_consume a TOK_STRING (possibly followed by adjacent
  * TOK_STRING tokens per the L3 adjacent-string-concat rule) and produce AST_STR.
- *
- * Resolves the basic escape sequences (\n / \t / \\ / \") and the v0.6.1
- * \uXXXX / \u{HHHHHH} Unicode escapes into raw bytes (UTF-8 for
- * the latter, via urbi_encode_utf8).  The lexer guarantees only the
- * recognized escape kinds reach the parser (others are already rejected
- * as LEX_INVALID_ESCAPE / LEX_UNICODE_*).  Concatenation is greedy: any
- * number of adjacent TOK_STRING tokens fold into a single AST_STR.
  *
  * The result buffer lives in the parser arena.  Worst-case size is the sum
  * of raw source spans across all concatenated tokens; we allocate that
@@ -303,12 +288,7 @@ UAstNode *urbi_parse_prefix(UParser *p) {
     return urbi_parse_atom(p);
 }
 
-/* === v0.10.5: parse_bracket_literal =====================================
- * Parses `[...]` — either a list literal `[e1, e2, e3]` or a dict literal
- * `["k1" => v1, "k2" => v2]`.  Disambiguation: after the first element, if
- * `=>` is present it is a dict; otherwise it is a list.  An empty `[]` is
- * an empty list; `[=>]` is not supported (use `Dict.new()`).
- *
+/*
  * Caller has confirmed urbi_parse_peek() is TOK_LBRACKET.  Consumes `[` + contents + `]`.
  *
  * List:   AST_LIST_LIT { elems[], count }
@@ -411,19 +391,9 @@ static UAstNode *parse_bracket_literal(UParser *p) {
         return n;
     }
 }
-/* === end v0.10.5: parse_bracket_literal === */
 
 /* --- urbi_parse_atom: INT | IDENT | true | false | nil | ( expr ) | error.
- *
- * PARSE-032 closure (doc-only): time-literal suffixes (`100ms`, `1s`, `1d`)
- * + angle suffixes (`180deg`, `2pi`, `200grad`) are absorbed at the lexer
- * (`src/lex/ulex.c` rolls suffix into TOK_INT.u.i — microseconds for time,
- * milli-radians or fixed-point for angle).  urbi_parse_atom
- * intentionally only handles the bare TOK_INT here — the audit was filed
- * because the parser surface looked incomplete; the apparent gap is the
- * lex-side absorption.  When v1.x adds suffix overloading for non-int
- * receivers (`Decimal(0.5s)` etc.), this comment + the lex translation
- * site are the canonical change-points. */
+ */
 
 UAstNode *urbi_parse_atom(UParser *p) {
     UToken t = urbi_parse_peek(p);
@@ -470,10 +440,6 @@ UAstNode *urbi_parse_atom(UParser *p) {
         return urbi_parse_try(p);
     case TOK_KW_THROW:
         return urbi_parse_throw(p);
-    /* v0.10.5: waituntil(e?) used as expression (e.g. `var r = waituntil(e?)`).
-     * urbi_parse_atom is the expression-parser entry; urbi_parse_statement_or_expr also
-     * handles it at statement-start level.  Adding it here allows waituntil
-     * to appear on the right-hand side of assignments and inside function bodies. */
     case TOK_KW_WAITUNTIL:
         return urbi_parse_waituntil(p);
     case TOK_KW_CLOSURE:
@@ -481,10 +447,8 @@ UAstNode *urbi_parse_atom(UParser *p) {
         return urbi_parse_make_error(p, PARSE_CLOSURE_KEYWORD,
                           urbi_parse_kErrorMessages[PARSE_CLOSURE_KEYWORD],
                           t.line, t.col);
-    /* === v0.10.5: list/dict literals === */
     case TOK_LBRACKET:
         return parse_bracket_literal(p);
-    /* === end v0.10.5 === */
     case TOK_EOF:
         return urbi_parse_make_error(p, PARSE_UNEXPECTED_EOF,
                           urbi_parse_kErrorMessages[PARSE_UNEXPECTED_EOF],
@@ -608,16 +572,6 @@ static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
 
     if (urbi_parse_peek(p).type == TOK_EQ) {
         urbi_parse_consume(p);  /* urbi_parse_consume '=' */
-        /* S48 (2026-05-16): parse RHS as a Pratt expression, NOT
-         * urbi_parse_inner_tier — the latter absorbs `|` / `&` separators
-         * into the assignment value, so `Realm.a = 1 | Realm.b = 2`
-         * mis-parses as `Realm.a = (1 | (Realm.b = 2))` instead of
-         * `(Realm.a = 1) | (Realm.b = 2)`.  The mis-parse produces
-         * nested MEMBER_SETs whose emit only writes the last slot
-         * before fataling.  Hardware-observed on eye_demo blob_seen
-         * handler 2026-05-16; host repro confirms.  urbi_parse_expression
-         * stops at `|` / `&` since they aren't in the Pratt table,
-         * leaving the separator for the outer inner-tier fold. */
         UAstNode *value = urbi_parse_expression(p, 0);
         if (!value) return NULL;
         if (value->kind == AST_ERROR) return value;
@@ -713,13 +667,6 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             continue;
         }
 
-        /* === v0.10.5: subscript `l[i]`, `l[i] = v`, `l[i] += v` ===
-         * Postfix `[index]` — subscript access.  Lowers to:
-         *   l[i]      → AST_SUBSCRIPT_GET  (emit: l.get(i))
-         *   l[i] = v  → AST_SUBSCRIPT_SET  (emit: l.set(i, v))
-         *   l[i] += v → AST_SUBSCRIPT_SET  (emit: l.set(i, l.get(i) + v),
-         *                                   is_compound_add=true)
-         * No new opcode needed; same precedence tier as member/call. */
         if (op.type == TOK_LBRACKET && min_prec <= PARSE_PREC_POSTFIX) {
             urbi_parse_consume(p);  /* urbi_parse_consume '[' */
             UAstNode *index = urbi_parse_expression(p, 0);
@@ -766,7 +713,6 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             lhs = sg;
             continue;
         }
-        /* === end v0.10.5: subscript === */
 
         /* Postfix `?` — only valid inside at(...) condition.
          * When at_event_cond is set, pass through (urbi_parse_at will urbi_parse_consume it).
@@ -790,8 +736,7 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
         if (!right) return NULL;
         if (right->kind == AST_ERROR) return right;
 
-        /* === v0.10.11: << desugars to lhs.'<<'(rhs) method call ===
-         *
+        /*
          * Builds:  AST_CALL { callee = AST_MEMBER_GET(lhs, "<<"), args=[rhs] }
          *
          * The member name "<<" is a quoted-ident selector — the runtime
@@ -820,7 +765,6 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             lhs = call;
             continue;
         }
-        /* === end v0.10.11 === */
 
         /* === v1.0-rc stdlib-completeness: % desugars to lhs.'%'(rhs) ===
          *
@@ -879,12 +823,6 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
 /* --- urbi_parse_expression: Pratt precedence climbing over urbi_parse_prefix. --- */
 
 UAstNode *urbi_parse_expression(UParser *p, int min_prec) {
-    /* v0.9.1: depth-guarded entry.  urbi_parse_expression is the canonical
-     * recursive descent site for nested expressions like `(((1)))` or
-     * deep operator chains — a pathological compile bomb (e.g. 1000
-     * nested parens) trips here before stack exhaust.  urbi_parse_prefix and
-     * urbi_parse_expression_cont call back into urbi_parse_expression for grouped
-     * sub-expressions, so guarding the entry is sufficient. */
     if (!uparse_budget_enter(p)) return NULL;
     UAstNode *lhs = urbi_parse_prefix(p);
     if (!lhs) {

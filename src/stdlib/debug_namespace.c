@@ -1,19 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/stdlib/debug_namespace.c — Debug urbiscript namespace (v0.9.1).
- *
+/*
  * Each Debug.X() method calls the corresponding urbi_introspect_X primitive
  * into a scratch buffer, then returns the JSON output as a urbi String.
- *
- * Why a string and not a Dict/List?  v1.0 has no UVAL_LIST or UVAL_DICT
- * — lists and dicts are UObjects in the URBI_ATOM_LIST / URBI_ATOM_DICT
- * families with their methods backed by C-native impls in containers.c.
- * Constructing a List/Dict from C requires walking those internals
- * imperatively, which would significantly inflate the v0.9.1 patch.
- * The string-return contract matches the dispatcher's introspect-op JSON
- * envelope verbatim — clients that need structured access either parse
- * the string client-side or use the dispatcher path directly.  v1.x can
- * upgrade to first-class structured returns when the container surface
- * grows a C-allocator entry point. */
+ */
 
 #ifdef URBI_ENABLE_REPL
 

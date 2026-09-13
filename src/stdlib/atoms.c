@@ -274,8 +274,6 @@ int_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     URBI_CHECK_ARITY(vm, "Integer.%", 1, nargs, out);
     URBI_CHECK_SELF(vm, self, UVAL_INT, "%: self must be Integer", out);
     if (args[0].kind == (uint8_t)UVAL_FLOAT) {
-        /* v0.13.5: legacy-conformant modulo-by-zero (float.cc
-         * operator%: `if (rhs) fmod(...) else RAISE("modulo by 0")`). */
         if ((double)args[0].v.f == 0.0)
             return urbi_raise_divzero(vm, "modulo by 0", out);
         *out = urbi_make_float(fmod_portable((double)self.v.i, (double)args[0].v.f));
@@ -298,8 +296,6 @@ flt_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (args[0].kind == (uint8_t)UVAL_FLOAT) b = (double)args[0].v.f;
     else if (args[0].kind == (uint8_t)UVAL_INT) b = (double)args[0].v.i;
     else return urbi_raise_type(vm, "%: argument must be Integer or Float", out);
-    /* v0.13.5: legacy-conformant modulo-by-zero (float.cc
-     * operator%: `if (rhs) fmod(...) else RAISE("modulo by 0")`). */
     if (b == 0.0) return urbi_raise_divzero(vm, "modulo by 0", out);
     *out = urbi_make_float(fmod_portable((double)self.v.f, b));
     return UEXEC_OK;
@@ -318,15 +314,6 @@ flt_random(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 }
 
 /* === Float math + conversion ==============================================
- *
- * Hosted libm passthroughs.  Freestanding builds raise TypeError; libm is
- * provided by newlib-nano on Cortex-M / picolibc on rv32imc and is included
- * implicitly when the gcc driver builds the shared/static lib (no -lm
- * needed on those targets).  On hosted glibc, -lm becomes the linker
- * dependency — the v1.0 host build adds it via the implicit
- * `cc -o … -lm` chain in the Makefile if libm refs trigger the linker
- * (gcc auto-links libm on glibc).  Test commit will surface any missing
- * `-lm` and Phase 5 close-out can add it explicitly to LDFLAGS.
  */
 
 #define FLOAT_OF_VALUE(uv) \
@@ -361,13 +348,6 @@ DEF_FLOAT_UNARY(ceil,  ceil)
 DEF_FLOAT_UNARY(abs,   fabs)
 DEF_FLOAT_UNARY(round, round)
 #else
-/* Freestanding: most Float methods need libm and stay stubbed (raise
- * TypeError "libm not linked").  But a handful are trivial-to-implement
- * without libm — abs is sign-bit-clear, floor/ceil/round are int casts
- * with edge-case fixups.  v0.8.2 freestanding-fix: provide real impls
- * for these so embedded ports get usable Float math without pulling in
- * libm.  On Cortex-M4F, the compiler maps fabsf() to a single VABS.F32
- * instruction; the inline ternary below compiles to the same. */
 
 static int
 flt_abs(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
@@ -389,9 +369,6 @@ flt_floor(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     double x = (double)self.v.f;
     int64_t t = (int64_t)x;
     double tf = (double)t;
-    /* For negatives where x != tf, truncation rounded TOWARD zero; floor
-     * needs to round DOWN, so subtract 1.  Edge case: huge values that
-     * overflow int64_t fall through unchanged — acceptable for v0.8.2. */
     if (x < 0.0 && tf != x) tf -= 1.0;
     *out = urbi_make_float(tf);
     return UEXEC_OK;
@@ -603,12 +580,6 @@ flt_pow(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === String basic methods ==================================================
  *
- * UVAL_STR.v.p is a NUL-terminated `const char *` from ustr_intern.
- * Boolean.toString + String.length already use urbi_strlen;
- * the runtime guarantees no embedded NULs in v1.0 strings (escape
- * `\0` is rejected by the lex; FUTURE backlog item LEX-035
- * extension).
- *
  * Strings are BYTE-counted at v1.0 (delta §3.2): length / size return
  * byte count, charAt indexes by byte.  Unicode-aware code-point indexing
  * is a later follow-up. */
@@ -665,10 +636,6 @@ str_charAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 }
 
 /* === String case methods ===================================================
- *
- * ASCII-only conversion at v1.0.  Non-ASCII bytes (>= 0x80) pass through
- * unchanged.  Unicode-aware case folding will land when libicu /
- * the embedded NFC tables do — tracked as a stdlib backlog item.
  *
  * Allocation strategy: build the result in a heap buffer sized to the
  * input (case-conversion is byte-length-preserving for ASCII), intern,

@@ -32,13 +32,7 @@ typedef struct {
 } MDecCtx;
 
 /* --- Verifier entry points (uchunk_verify.c), driven by uchunk_deserialize ---
- *
- * urbi_chunk_decode_verify — Pass 1: opcode-shape table, per-block register
- *   bounds, ic_count cross-check (renamed from the file-static decode_verify).
- * urbi_chunk_verify_bounds  — Pass 2: per-instruction sequence bounds
- *   (renamed from the file-static verify_chunk_bounds).
- * Pass 3 (ic_index DFS mirror) is the already-public uchunk_verify_ic_index
- * in chunk/uchunk.h. */
+ */
 UChunkLoadError urbi_chunk_decode_verify(MDecCtx *d);
 UChunkLoadError urbi_chunk_verify_bounds(MDecCtx *d);
 

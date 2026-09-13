@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* isa_method.h — v0.10.11 / isA: universal type-test method on Object root.
- *
+/*
  * obj.isA(Proto) -> Bool.  True iff Proto appears in obj's transitive
  * proto chain.  For atom-typed receivers (UVAL_INT / FLOAT / STR /
  * BOOL / NIL), the logical proto is looked up via urbi_atom_proto_for_value.

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* include/urbi/trace.h — runtime trace subsystem (v0.11.0, EXPERIMENTAL).
- *
+/*
  * Master gate URBI_TRACE: undefined/0 ⇒ every tracepoint macro is (void)0,
  * no UVM fields, no ring/emit symbols in the archive.  Per-channel compile
  * mask URBI_TRACE_CHANNELS strips individual channels.  Runtime per-channel

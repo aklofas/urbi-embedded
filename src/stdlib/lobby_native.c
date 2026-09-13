@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/stdlib/lobby_native.c — v0.9.1 Phase 5: Lobby proto + native primitive.
- *
+/*
  * See lobby_native.h for the contract and rationale.  This TU implements:
  *
  *   __builtin_lobby_send(msg, tag, prefix) — C-native method installed on
@@ -108,12 +107,6 @@ append_u64_pad8(char *buf, size_t cap, size_t *off, uint64_t v)
  *
  * Signature on the urbi side: __builtin_lobby_send(msg, tag, prefix) -> nil
  *
- * msg, tag, prefix are expected to be String values (UVAL_STR — interned
- * NUL-terminated C strings via USymbol).  Non-string args raise TypeError
- * at this boundary; the lobby.u overlay forwards `msg` unchanged (String
- * has no `.asString` method at v0.10.11 — see workspace design-risks
- * v0.10.11-A for the v1.x stdlib gap).
- *
  * Output framing (spec §9.2):
  *   "[%08llu:tag] prefix msg\n"   when tag is non-empty
  *   "[%08llu] prefix msg\n"        when tag is empty
@@ -160,10 +153,6 @@ builtin_lobby_send(UVM *vm, UValue self, UValue *args, uint8_t nargs,
         ms = vm->host_time_us(vm->host_time_ud) / 1000ULL;
     }
 
-    /* Format the framed line into a stack-bounded buffer.  v0.9.1 wire-
-     * line cap is 1 MiB per spec §6, but typical script-side echo writes
-     * are O(100 B).  Truncate any oversize message — the consumer ringbuf
-     * line discipline splits on bytes, not on \n. */
     char framed[1024];
     size_t tag_len = strlen(tag);
     size_t off = 0;
@@ -303,14 +292,6 @@ urbi_lobby_native_register(UVM *vm)
  * at slots 15+, past the v1.0 packed-flag CONSTANT enforcement range
  * (slots 0..7).  Mirrors urbi_stdlib_register_primitives_globals.
  *
- * v0.10.10 / D7-E: also installs the `connectionTag` slot on
- * vm->lobby_proto pointing at realm->tag — the realm-root UTag — so that
- * the script expression `Lobby.connectionTag` resolves to a UVAL_TAG.
- * The slot is set via urbi_object_set_local_slot (C-side, bypasses the
- * OP_SETSLOT URBI_OBJ_FLAG_READONLY check that fires only on script-
- * side writes).  Idempotent — repeated registration overwrites with the
- * same value.
- *
  * Multi-realm note: vm->lobby_proto is a VM-singleton, so the
  * connectionTag slot value reflects the last realm registered.  Per-
  * session correctness is delivered by urbi_lobby_register_session below,
@@ -329,10 +310,6 @@ urbi_lobby_native_register_globals(UVM *vm, URealm *realm)
                                    urbi_make_object(vm->lobby_proto));
     if (rc != URBI_OK) return rc;
 
-    /* v0.10.10 / D7-E: install connectionTag slot on vm->lobby_proto
-     * pointing at realm->tag.  Honors REVIVAL §14.9 S11 commitment —
-     * the auto-cancel-on-disconnect behavior shipped at v0.9.1; the
-     * script-visible slot lands here. */
     if (realm->tag != NULL) {
         USymbol *sym = (USymbol *)ustr_intern(vm, "connectionTag", 13);
         if (sym == NULL) return URBI_ERR_OOM;
@@ -370,12 +347,6 @@ urbi_lobby_register_session(UVM *vm, URealm *session_realm)
     if (vm == NULL || session_realm == NULL) return URBI_ERR_INVALID_ARG;
     if (session_realm->global_object == NULL) return URBI_OK;
 
-    /* v0.10.10 / D7-E: set the per-session Lobby instance's connectionTag
-     * slot pointing at the session's realm-root tag (session_realm->tag).
-     * On session disconnect the realm-teardown path at urealm.c stops
-     * realm->tag which cascades to every strand tagged under it — the
-     * connection-tag is the per-session boundary.  `this.connectionTag`
-     * inside the session resolves here (instance wins over Lobby proto). */
     if (session_realm->tag != NULL) {
         USymbol *sym = (USymbol *)ustr_intern(vm, "connectionTag", 13);
         if (sym == NULL) return URBI_ERR_OOM;

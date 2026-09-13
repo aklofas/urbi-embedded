@@ -1,13 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Chunk-execution C API wrappers.
  *
- * v0.8.0: urbi_run_chunk allocates a persistent loader strand via
- * urbi_strand_create_for_module and drives it via uchunk_loader_drive's
- * park-or-die state machine.  The strand persists in realm->strands_head;
- * the host's main urbi_step loop advances it after urbi_run_chunk returns.
- * This replaces the v0.7.x transient-strand path and enables chunk-top `&`
- * and `,` fork semantics per the legacy urbiscript spec.
- *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * urbi_strncpy_truncating (runtime/umacros.h) is the shared bounded-copy helper. */
 
@@ -37,19 +30,9 @@
 #  endif
 #endif
 
-
 /* ---------------------------------------------------------------------------
  * urealm_register_module
- *
- * Register `m` onto `realm->loaded_protos_head` via head-insertion if not
- * already linked.  Idempotent: a second call with the same module for the
- * same realm is a no-op (owning_realm already set to this realm).
- * Shared modules (e.g. vm->stdlib_module) may be run into multiple realms;
- * they keep owning_realm pointing at the FIRST realm they were registered
- * in and are NOT re-registered for subsequent realms.  The unload path
- * handles per-realm teardown independently — except for
- * vm_owned overlays (GC-18): realm teardown only clears their
- * back-pointers; urbi_vm_destroy frees them.  v0.9.0-repl. */
+ */
 static void
 urealm_register_module(URealm *realm, UProto *p)
 {
@@ -63,14 +46,7 @@ urealm_register_module(URealm *realm, UProto *p)
 
 /* ---------------------------------------------------------------------------
  * uchunk_loader_drive
- *
- * v0.8.0: driver-loop budget for urbi_run_chunk's internal urbi_step
- * iterations.  Inner: per-step instruction budget passed to urbi_step.
- * Outer: how many urbi_step iterations to attempt before giving up
- * (returning URBI_ERR_LOADER_BUDGET).  At 1000 × 10000 = 10M instructions,
- * far beyond any reasonable chunk-top workload; an infinite-loop chunk
- * would hit this cap.  Tunable later if a workload demands it.
- * --------------------------------------------------------------------------- */
+ */
 #define URBI_LOADER_INNER_BUDGET   1000U
 #define URBI_LOADER_OUTER_CAP      10000U
 
@@ -90,12 +66,7 @@ strand_still_alive(const URealm *realm, const UStrand *loader)
     return false;
 }
 
-/* v0.11.4-cat-f (D-F2): capture a backward-compatible diagnostic for an
- * uncaught throw whose value is an Exception-instance object.  Prior tasks
- * made VM-internal errors (TypeError/ArityError/...) catchable as typed
- * Exception instances; when such an instance escapes to the top level the
- * REPL must restore the legacy "!!! <message>" line instead of bare nil.
- *
+/*
  * Only UVAL_OBJECT throws produce a diagnostic here — scalar/string throws
  * (`throw 42`, `throw "x"`) keep the historical nil-recovery contract
  * (control_transfer/throw_uncaught.chk).  Writes the instance's `message`
@@ -196,17 +167,6 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
          * loader is still valid.  vm->fatal_strand points at our strand,
          * distinguishable from an unrelated strand's fatal by address.
          *
-         * v0.8.0 lifetime contract: urbi_run_chunk may use a stack-allocated
-         * UModule (urbi_repl_eval pattern).  The fatal loader strand holds a
-         * module refcount that must be discharged BEFORE the caller frees the
-         * module (which happens when urbi_repl_eval returns and the stack
-         * frame unwinds).  Discharge early here:
-         *   1. Drop the module refcount and null s->module so the later
-         *      realm-teardown path (urealm_teardown_all → urbi_strand_destroy
-         *      → ustrand_destroy) does not double-decrement.
-         *   2. Clear vm->fatal_strand so the urbi_step fast-path does not
-         *      see a stale pointer on the next host urbi_step call.
-         *
          * The strand itself stays in realm->strands_head; urealm_teardown_all
          * owns the final urbi_strand_destroy. */
         if (step_rc == URBI_STEP_FATAL && vm->fatal_strand == loader) {
@@ -214,16 +174,7 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
                 urbi_zero(out_result, sizeof(*out_result));
                 out_result->kind = UVAL_NIL;
             }
-            /* v0.11.4-cat-f (D-F2): capture an uncaught Exception-instance's
-             * message into vm->last_errmsg while the loader strand is still
-             * live (fatal strands are not eager-reaped).  urbi_repl_eval reads
-             * this to restore the legacy "!!! <message>" diagnostic. */
             capture_uncaught_throw_diag(vm, loader);
-            /* v0.8.1 Phase 2: strand-bind ref is on root_proto.
-             * Discharge early here via the deferred-destroy-aware helper;
-             * null root_proto so ustrand_destroy (via urealm_teardown_all)
-             * does not double-dec.
-             * v0.9.2: loader->module deleted; root_proto is the sole identity. */
             if (loader->root_proto != NULL) {
                 uproto_strand_refcount_dec(loader->root_proto, vm);
                 loader->root_proto = NULL;
@@ -261,25 +212,11 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
          * USTRAND_IS_WAITING checks that the upper nibble equals
          * USTRAND_WAITING (0x30), covering all WAITING sub-states:
          * WAITING_SLEEP, WAIT_WATCHER, WAIT_EVENT, WAITING_JOIN, WAITING_HOST.
-         *
-         * VM-03: SUSPENDED (0x50) is parked too — a chunk-top
-         * t.block()/t.freeze() self-suspend now exits dispatch SUSPENDED
-         * (OP_CALL post-native arm).  Without this arm the drive loop
-         * classified SUSPENDED as "keep driving", spun the outer cap on a
-         * quiescent VM, and returned URBI_ERR_LOADER_BUDGET WITHOUT clearing
-         * out_slot — a later urbi_tag_unblock + urbi_step resumed the strand
-         * and OP_RET wrote 16 bytes through the dangling pointer into
-         * urbi_repl_eval's dead frame (ASan stack-use-after-return). */
+         */
         if (USTRAND_IS_WAITING(loader) || USTRAND_IS_SUSPENDED(loader)) {
             /* Parked.  Strand persists in realm; caller continues with
              * their own urbi_step loop.  out_result stays nil.
-             *
-             * v0.10.2: clear out_slot so OP_RET on resume does not write
-             * to a dangling pointer (the caller's UValue result local is on
-             * the stack of urbi_repl_eval which has already returned).
-             * OP_RET guards against NULL out_slot (uvm.c CASE(OP_RET)), so
-             * the strand's return value is silently discarded — the REPL
-             * already emitted nil for the parked call. */
+             */
             loader->out_slot = NULL;
             return URBI_OK;
         }
@@ -298,11 +235,6 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
  * Run a module's root chunk under realm, returning the RET value in
  * *out_result (or discarding it if out_result is NULL).  realm == NULL
  * auto-creates/uses the VM's global Realm.
- *
- * v0.8.0: persistent loader strand path.  Allocates a real scheduler-managed
- * strand via urbi_strand_create_for_module; the driver runs urbi_step
- * iterations until the strand parks (sleep / join-wait / event-wait) or
- * dies (OP_RET / fatal).
  *
  * On parked: the strand persists in realm->strands_head; the host's main
  * urbi_step loop continues advancing it after this returns.
@@ -382,10 +314,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     if (out_buf && out_buf_size > 0)
         out_buf[0] = '\0';
 
-    /* v0.9.1 compile-budget: source-byte check fires before any allocation
-     * so an oversized submission is rejected without touching the arena or
-     * UModule allocator.  Depth + node-count limits are enforced inside
-     * the parser via UCompileBudget threaded through UParser. */
     const UCompileBudget *budget = urbi_realm_get_compile_budget(vm, realm);
     if (budget != NULL && budget->max_source_bytes > 0U
             && line_len > (size_t)budget->max_source_bytes) {
@@ -403,12 +331,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     UArena arena;
     uarena_init(&arena, 4096);
 
-    /* v0.9.0-repl (CHSTR-027): heap-allocate root UProto per REPL line so each
-     * root persists in realm->loaded_protos_head past return.  The old
-     * stack-alloc reused the same address across REPL lines, causing the
-     * realm registry to alias.  Freed by urbi_realm_destroy (session-end)
-     * or the root_proto-refcount rescue mechanism (if a strand parks).
-     * v0.9.2: root IS the UProto; no UModule shell. */
     UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
     if (module == NULL) {
         if (out_buf && out_buf_size > 0) {
@@ -432,10 +354,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 
     UParser p;
     uparse_init(&p, &lex, &arena);
-    /* v0.9.1: thread the realm's compile-budget (if any) into the parser so
-     * depth + node-count limits are enforced as we go.  budget is NULL when
-     * the realm has no budget — uparse_set_budget(NULL) is the explicit
-     * "unlimited" path and matches the default uparse_init left behind. */
     uparse_set_budget(&p, budget);
 
     bool has_error = false;
@@ -469,9 +387,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     }
 
     if (has_error) {
-        /* v0.9.1: budget trip surfaces here when uparse_next_statement
-         * returned the OOM sentinel (or a NULL from an inner urbi_parse_make_node).
-         * Latch is sticky in UParser; check before composing the diag. */
         int budget_err = uparse_budget_err(&p);
         if (out_buf && out_buf_size > 0) {
 #if __STDC_HOSTED__
@@ -486,8 +401,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
                          "compile-budget exceeded: %s", which);
             } else
             if (parse_errmsg && (parse_err_line > 0 || parse_err_col > 0)) {
-                /* v0.9.0-repl: route lex.source_name through so syncline-framed
-                 * REPL submissions show correct file:line in errors. */
                 snprintf(out_buf, out_buf_size, "%s:%d:%d: %s",
                          ulex_current_source(&lex),
                          parse_err_line, parse_err_col, parse_errmsg);
@@ -507,10 +420,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
             } else
 #endif
             {
-                /* CPPCHK-005: surface uemit_finish's diagnostic when the parser
-                 * succeeded but finalization failed (e.g. EMIT_OOM, constant
-                 * pool exhausted at top-level RET emission).  Falls back to
-                 * the parser's static message when the parse stage errored. */
                 const char *msg = parse_errmsg
                                 ? parse_errmsg
                                 : (finish_rc != EMIT_OK ? uemit_error_name(finish_rc)
@@ -518,9 +427,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
                 urbi_strncpy_truncating(out_buf, out_buf_size, msg);
             }
         }
-        /* Parse / statement-emit errors skipped uemit_finish; release
-         * emitter-owned funcstate storage (no-op when has_error came from
-         * uemit_finish itself, which already tore it down — FE-07). */
         urbi_emit_diag_free_all(&e);
         urbi_emit_abandon(&e);
         /* Compile-error path: module was never registered in the realm
@@ -553,12 +459,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     UValue result = {0};
     int run_rc = urbi_run_chunk(vm, realm, module, &result);
 
-    /* API-009: drain any body strands spawned by watcher eval during this run.
-     * urbi_run_chunk now returns when the loader strand parks (persists
-     * in realm) or completes.  Body strands spawned by watcher eval still
-     * accumulate in the ready queue and need draining.
-     * Cap at URBI_REPL_DRAIN_BUDGET iterations to prevent
-     * infinite spin with persistent watchers. */
 #ifndef URBI_REPL_DRAIN_BUDGET
 #  define URBI_REPL_DRAIN_BUDGET 1000
 #endif
@@ -567,11 +467,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         for (drain = 0; drain < URBI_REPL_DRAIN_BUDGET && vm->strand_runnable_count > 0; drain++)
             urbi_step(vm, 1000, NULL);
     }
-
-    /* v0.8.1 Variant B Phase 2: urbi_steal_repl_protos deleted.
-     * Closures escaping into realm globals bump root_proto.refcount via
-     * uproto_root_of at urbi_vm_alloc_closure time; uchunk_destroy rescues the
-     * entire root_proto when refcount > 0.  No per-nested stealing needed. */
 
     if (run_rc != URBI_OK) {
         /* REPL recovery for pure scriptlevel fatals (unhandled throw with no
@@ -586,13 +481,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
          * (set via HALT() in uvm.c) and reach the error-display path below. */
         if ((run_rc == URBI_ERR_UNCAUGHT_THROW || run_rc == URBI_ERR_STRAND_FATAL)
                 && vm->last_error == URBI_OK) {
-            /* v0.11.4-cat-f (D-F2): an uncaught throw whose value is an
-             * Exception-instance object left a diagnostic in vm->last_errmsg
-             * (capture_uncaught_throw_diag, Path 1).  Restore the legacy
-             * "!!! <message>" line by surfacing the message and returning
-             * the fatal code (the REPL prints the !!! framing on non-OK).
-             * Scalar/string throws leave last_errmsg empty and keep the
-             * historical nil-recovery contract below. */
             if (vm->last_errmsg[0] != '\0') {
                 if (out_buf && out_buf_size > 0)
                     urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
@@ -623,9 +511,6 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     if (out_buf && out_buf_size > 0)
         uvalue_format(&result, out_buf, out_buf_size);
 
-    /* Module is realm-owned (heap-alloc); do NOT unload here — it persists
-     * in realm->loaded_protos_head until urbi_realm_destroy or explicit
-     * urbi_unload by the host.  This is the CHSTR-027 close-out. */
     uarena_destroy(&arena);
     return URBI_OK;
 #else
@@ -662,10 +547,6 @@ urbi_run_script(UVM *vm, URealm *realm, UProto *root)
  * Bind a pre-compiled UProto chunk into the VM and run its root chunk under
  * the global Realm so any top-level bindings install into realm globals.
  *
- * v0.6.0 (API-021): the body was previously a stub that returned a fixed
- * URBI_ERR_INVALID_ARG.  It now performs the minimum useful work that a
- * "load" semantic permits without an import table:
- *
  *   1. Validate (vm, module, module_name) all non-NULL.
  *   2. Bind a UChunkInstance via urbi_get_or_create_chunk_instance — this
  *      lazy-interns the IC name strings and prepares the per-(vm, module)
@@ -673,25 +554,9 @@ urbi_run_script(UVM *vm, URealm *realm, UProto *root)
  *      calls reuse the same instance.
  *   3. Run the root chunk under the global Realm; any `var foo = ...` at
  *      the module's top level lands in realm->global_object's slot table.
- *
- * The module_name argument is currently advisory: with no import table it
- * cannot be looked up via urbiscript `import "name"`.  v1.x adds the
- * import-registry surface and threads module_name through the registration
- * step; the existing public API stays compatible.  See backlog entry
- * "v1.x: import-table registration for urbi_load_chunk".
- *
- * Phase 3 / API-005: when this surface eventually deserializes bytecode it
- * must translate the internal UChunkLoadError UCHUNK_LOAD_UNSUPPORTED_VERSION
- * into the public URBI_ERR_BYTECODE_VERSION_MISMATCH (slot -4 in the
- * UErrCode enum).  See urbi_chunk_translate_load_err() below — the helper
- * is in place so any future deserialize-bytes entry point routes through
- * a single mapping site.
- * --------------------------------------------------------------------------- */
+ */
 
-/* urbi_chunk_translate_load_err: public-API translation of internal
- * UChunkLoadError → UErrCode.  Closes API-005: UCHUNK_LOAD_UNSUPPORTED_VERSION
- * is now reachable from public callers as URBI_ERR_BYTECODE_VERSION_MISMATCH.
- *
+/*
  * Other internal codes collapse to URBI_ERR_INVALID_ARG since the public
  * surface does not yet differentiate them; v1.x may grow per-code mappings
  * as the loader API matures. */
@@ -705,9 +570,7 @@ urbi_chunk_translate_load_err(int load_err)
     return URBI_ERR_INVALID_ARG;
 }
 
-/* ---------------------------------------------------------------------------
- * urbi_chunk_from_bytes / urbi_chunk_free  (v0.7.1 spec amendment)
- *
+/*
  * Public thin wrappers around uchunk_deserialize / uchunk_destroy.
  * These exist so the aux layer (urbi_aux_load_and_run) can deserialize
  * bytecode without including internal headers — aux governance requires
@@ -727,12 +590,6 @@ urbi_chunk_translate_load_err(int load_err)
 #  include <stdlib.h>   /* malloc, free */
 #endif
 
-/* v0.10.3: urbi_chunk_from_bytes gains (struct UVM *vm, ...) as first arg
- * and routes allocation through vm->alloc_fn on hosted builds when vm is
- * non-NULL (closes the cross-allocator hazard in api-ergonomics F3).
- * Falls back to stdlib_alloc when vm is NULL (backward-compat path for
- * tests that call with a dummy vm).
- * Returns root UProto on success. */
 struct UProto *
 urbi_chunk_from_bytes(struct UVM *vm, const uint8_t *buf, size_t len,
                       char *errmsg, size_t errcap)
@@ -746,8 +603,6 @@ urbi_chunk_from_bytes(struct UVM *vm, const uint8_t *buf, size_t len,
     char *ebuf = errmsg ? errmsg : local_err;
     size_t ecap = errmsg ? errcap : sizeof(local_err);
     UProto *root = NULL;
-    /* Route through vm->alloc_fn when available (v0.10.3 allocator routing).
-     * Pass NULL alloc_fn when vm is NULL — uchunk_deserialize uses stdlib_alloc. */
     UVMAllocFn afn = (vm != NULL) ? vm->alloc_fn : NULL;
     void      *aud = (vm != NULL) ? vm->alloc_ud : NULL;
     UChunkLoadError lerr = uchunk_deserialize(&root, buf, len, afn, aud, ebuf, ecap);
@@ -764,9 +619,6 @@ urbi_chunk_from_bytes(struct UVM *vm, const uint8_t *buf, size_t len,
 #endif
 }
 
-/* v0.10.3: urbi_chunk_free gains (struct UVM *vm, ...) as first arg.
- * vm is used for the alloc_fn on hosted builds to free via the same domain
- * as urbi_chunk_from_bytes.  Falls back to NULL (stdlib free) when vm is NULL. */
 void
 urbi_chunk_free(struct UVM *vm, struct UProto *root)
 {
@@ -776,8 +628,6 @@ urbi_chunk_free(struct UVM *vm, struct UProto *root)
      * freed the root while strands still hold it (UAF). */
     URBI_INTERNAL_ASSERT(root->refcount == 0 &&
         "urbi_chunk_free called with live strand bindings — let strands drop refs first");
-    /* Use vm's alloc_fn for freeing when available (v0.10.3 allocator routing).
-     * Pass NULL when vm is absent — uchunk_destroy uses stdlib free on hosted. */
     uchunk_destroy(root, vm);
     /* uchunk_destroy frees the struct when heap_allocated; no separate free needed. */
 #else
@@ -794,11 +644,6 @@ urbi_load_chunk(UVM *vm, UProto *root, const char *module_name)
         return URBI_ERR_INVALID_ARG;
     }
 
-    /* Bind a UChunkInstance.  urbi_run_chunk would do this anyway; doing
-     * it explicitly here lets us surface OOM as URBI_ERR_OOM rather than
-     * conflate it with a runtime-side STRAND_FATAL.  module_name is not
-     * stored on the instance at v0.6.0 — it is reserved for v1.x's
-     * import-table registration step. */
     if (urbi_get_or_create_chunk_instance(vm, root) == NULL) {
         return URBI_ERR_OOM;
     }
@@ -815,9 +660,7 @@ urbi_load_chunk(UVM *vm, UProto *root, const char *module_name)
     return urbi_run_script(vm, NULL, root);
 }
 
-/* ---------------------------------------------------------------------------
- * urbi_unload  (v0.9.0-repl)
- *
+/*
  * Unlink module from its owning realm's loaded_protos_head list and route
  * through uchunk_destroy.  If root_proto->refcount > 0 the rescue mechanism
  * defers final cleanup; this call returns URBI_OK either way.
@@ -845,11 +688,6 @@ urbi_unload(UVM *vm, UProto *root)
     root->owning_realm  = NULL;
     root->next_in_realm = NULL;
 
-    /* Route through uchunk_destroy.  If refcount > 0, rescue mechanism
-     * defers final cleanup; this call always returns success.
-     * uchunk_destroy also unlinks any UChunkInstance from
-     * vm->module_instances_head, so no dangling cells survive.
-     * v0.9.2: uchunk_destroy frees heap_allocated roots automatically. */
     uchunk_destroy(root, vm);
     return URBI_OK;
 }

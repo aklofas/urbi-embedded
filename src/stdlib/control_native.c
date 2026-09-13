@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* control_native.c — v0.10.10 / D7-C: detach / disown implementations. */
 
 #include "stdlib/control_native.h"
 #include "stdlib/object_root.h"       /* urbi_native_closure_create + raise helpers */

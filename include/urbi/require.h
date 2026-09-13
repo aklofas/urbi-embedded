@@ -15,13 +15,6 @@
  *
  * See docs/internals/assertion-discipline.md for the full macro comparison
  * table and "when to use which" guidance.
- *
- * Distinct from:
- *   - URBI_INTERNAL_ASSERT(cond): debug-only; strips in freestanding and
- *     in any build that doesn't define URBI_DEBUG (src/runtime/umacros.h).
- *   - URBI_DISPATCH_ASSERT(cond): debug-only; defined locally in src/vm/uvm.c
- *     and stripped in non-URBI_DEBUG builds — documented hazard per
- *     runtime-invariants audit F2.
  */
 
 #ifndef URBI_REQUIRE_H
@@ -72,7 +65,6 @@ void urbi_set_require_fail_hook(urbi_require_fail_hook_fn hook);
 #ifdef __cplusplus
 }
 #endif
-
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC visibility pop

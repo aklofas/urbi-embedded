@@ -25,13 +25,7 @@
 #endif
 
 /* URBI_VERSION: source-of-truth string returned by urbi_version().
- *
- * API-011: stale at "0.3.0-concurrency" since 2026-04-28, unchanged
- * through v0.4.0/v0.5.0/v0.5.1/v0.5.2/v0.5.3/v0.5.4/v0.5.5/v0.5.6.  The
- * release ritual (CHANGELOG cadence in WORKFLOW.md §8) updates this
- * literal before every annotated tag; the regression test in
- * tests/unit/test_public_api.c::urbi_version_matches_release_tag pins
- * the expected value so a forgotten bump surfaces as a test failure. */
+ */
 #define URBI_VERSION "0.13.6-consistency"
 
 const char *urbi_version(void) { return URBI_VERSION; }
@@ -45,11 +39,7 @@ void urbi_api_version(int *out_major, int *out_minor, int *out_patch) {
 /* urbi_panic: fatal runtime error.
  * Hosted: writes msg to stderr, then aborts.
  * Freestanding: spins forever (no OS abort).
- *
- * API-001: msg may be NULL (defensive); substituted with "<no diagnostic>"
- * before fputs.  fputs(NULL, stderr) is undefined behavior on hosted libcs;
- * the guard makes urbi_panic safe to call from any error path that may not
- * have a message to attach. */
+ */
 URBI_NORETURN void
 urbi_panic(const char *msg)
 {
@@ -67,9 +57,6 @@ urbi_panic(const char *msg)
 #endif
 }
 
-/* urbi_set_isr_check_fn: install an ISR-context predicate.
- * Pass NULL to disable ISR checking (the default after urbi_vm_init).
- * v0.10.3: gains void *ud; forwarded on each callback invocation. */
 void
 urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void *ud), void *ud)
 {
@@ -78,11 +65,6 @@ urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void *ud), void *ud)
     vm->isr_check_ud = ud;
 }
 
-/* urbi_set_watcher_body_done_fn: install the watcher-body-completion hook.
- * Pass NULL to uninstall (the default after urbi_vm_init).  NULL vm is a
- * no-op; the cast accepts the public typedef and stores it through the
- * inline-typed slot on UVM (shape-identical).  Spec §7.
- * v0.10.3: gains void *ud (api-ergonomics F7 / reactive-runtime F7). */
 void
 urbi_set_watcher_body_done_fn(struct UVM *vm, urbi_watcher_body_done_fn fn,
                                void *ud)
@@ -127,7 +109,6 @@ urbi_compile_source(struct UVM *vm,
     UArena arena;
     uarena_init(&arena, 4096);
 
-    /* v0.9.2: UModule deleted; allocate a root UProto directly. */
     UProto *root = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
     if (root == NULL) {
         if (err_buf && err_cap) {
@@ -247,9 +228,6 @@ urbi_compile_source(struct UVM *vm,
 #endif /* !URBI_BYTECODE_ONLY */
 
 #ifdef URBI_DEBUG
-/* urbi_in_isr: query the registered ISR-context predicate.  Hides
- * vm->isr_check_fn so URBI_ASSERT_NOT_ISR can be written without a
- * complete struct UVM in scope.  Closes API-018 / GC-012 structurally. */
 bool
 urbi_in_isr(const struct UVM *vm)
 {
@@ -270,10 +248,7 @@ urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode)
 /* urbi_call_host_with_watchdog: URBI_DEBUG build implementation.
  * Times fn() using vm->host_time_us; logs or panics if elapsed exceeds
  * vm->callback_warn_us.  Non-debug builds use the macro in urbi.h.
- *
- * API-010: NULL vm or NULL fn returns urbi_make_nil() defensively rather
- * than dereferencing.  Non-debug builds use the macro form which has no
- * defensive layer — those callers are expected to validate args themselves. */
+ */
 #ifdef URBI_DEBUG
 UValue
 urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
@@ -309,19 +284,6 @@ typedef struct {
     uint64_t h;
 } UChecksumCtx;
 
-/* unamespace_walk_roots callback: fold each UValue into the running hash.
- * UVAL_INT: hashes the integer value directly.
- * UVAL_BOOL: hashes the integer value (0/1 stored as int64_t).
- * UVAL_FLOAT: hashes the float bit pattern at its actual width (f32 or f64).
- * UVAL_STR: hashes the interned pointer address.  Stable within one VM
- *   lifetime (intern table never moves pointers); NOT cross-run-stable
- *   because allocator placement varies between process invocations.
- * UVAL_NIL / UVAL_VOID / UVAL_CLOSURE / UVAL_STRAND / UVAL_OBJECT /
- *   UVAL_EVENT / UVAL_HOST_FN: hash only the kind byte (already mixed
- *   above the switch).  All seven carry heap pointers (or sentinels) that
- *   are not deterministic across runs, so the payload is intentionally
- *   NOT folded.  Closes API-025: comment now matches the default arm's
- *   actual coverage. */
 static void
 checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
 {
@@ -332,10 +294,6 @@ checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
     switch (root->kind) {
         case UVAL_INT:
         case UVAL_BOOL: {
-            /* Reinterpret the int payload via memcpy for symmetry with the
-             * UVAL_FLOAT arm.  (uint64_t)root->v.i would also produce the
-             * same bits on two's-complement (universal in C), but the
-             * memcpy form is uniform across all numeric arms.  API-026. */
             uint64_t bits;
             memcpy(&bits, &root->v.i, sizeof(bits));
             FNV1A_MIX(c->h, bits);
@@ -431,8 +389,6 @@ urbi_get_determinism_checksum(struct UVM *vm)
                 if (pi->proto != NULL) {
                     ic_count = pi->proto->ic_count;
                 } else if (i == 0U) {
-                    /* Root chunk — ic_count lives directly on the root UProto.
-                     * v0.9.2: mi->module IS the root UProto (UModule deleted). */
                     ic_count = (mi->module != NULL) ? mi->module->ic_count : 0U;
                 } else {
                     ic_count = 0U;  /* entries[i>0] always have a proto */

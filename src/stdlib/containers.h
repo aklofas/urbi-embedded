@@ -1,9 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* containers.h — C-native container types.
  *
- * Phase 6 lands the v1.0 container surface as realm-globals registered
- * from this module.  Types covered:
- *
  *   Pair    — immutable 2-tuple with .first / .second slots
  *   Triplet — immutable 3-tuple with .first / .second / .third slots
  *   Tuple   — variadic immutable n-tuple over a fixed-cap UList backing
@@ -15,17 +12,7 @@
  * vm->stdlib_containers for VM-lifetime cleanup at urbi_vm_destroy.
  * The per-instance UObject holds a hidden `_storage` slot whose UValue
  * encodes the backing pointer as UVAL_INT (cast through uintptr_t).
- *
- * The VM-lifetime ownership is intentional at v1.0 — backing buffers
- * are NOT GC-collected mid-run.  Tracked at design-risks under
- * "stdlib container backing buffers vm-lifetime".  v1.x lifts this to
- * proper UTYPE_LIST / UTYPE_DICT GC types when the cross-cutting
- * walker plumbing lands.
- *
- * Methods: only named methods (no symbolic operators).  v1.0 lex has
- * no `<<` or `[]` operator tokens, so List.add / List.at / Dict.get /
- * etc. are the surface.  Phase 10's .u overlay lands operator wrappers
- * if/when the lex/parse extensions land. */
+ */
 
 #ifndef URBI_STDLIB_CONTAINERS_H
 #define URBI_STDLIB_CONTAINERS_H
@@ -77,8 +64,7 @@ void urbi_stdlib_containers_destroy(struct UVM *vm);
 void urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb,
                                        void *ctx);
 
-/* === v0.9.1 Phase 5: host-side List mutators for Lobby.lobbies ==========
- *
+/*
  * Append / remove a UValue from the UList backing a List UObject.  Intended
  * for the REPL dispatcher's session-lifecycle hooks (urbi_lobby_register_-
  * session / urbi_lobby_unregister_session) — NOT for general user-facing

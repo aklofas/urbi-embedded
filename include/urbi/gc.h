@@ -14,12 +14,7 @@
  * that write C extensions mutating UCell fields directly must compile with
  * -Isrc and include the strategy header themselves; this is intentional and
  * documented in docs/embedding-guide.md §advanced-barriers.
- *
- * Before v0.10.3, this header included "gc/ugc.h" and the active strategy
- * header ("gc/ugc_incremental.h" or "gc/ugc_none.h") — all src/-prefixed
- * paths that caused header-not-found errors for embedders using -Iinclude
- * alone.  The public-facing declarations were then moved inline so that
- * -Iinclude alone is sufficient.  Closes audit-1 F1 (completion). */
+ */
 
 #ifndef URBI_GC_H
 #define URBI_GC_H
@@ -139,11 +134,6 @@ void urbi_unpin(struct UVM *vm, UValue v);
  *   void   urbi_gc_force_full(struct UVM *vm);
  *   size_t urbi_gc_bytes_allocated_inline(const struct UVM *vm);
  *
- * Barrier surfaces (always inline, defined in src/gc/ugc_incremental.h;
- * renamed at v0.10.1 per runtime-invariants F12 to make barrier+store
- * atomic by default).  Internal src/ callers include "gc/ugc_incremental.h"
- * directly; external embedders that need barriers must compile with -Isrc.
- *
  *   urbi_gc_slot_store       -- combined barrier + store (preferred)
  *   urbi_gc_slot_pre_store   -- barrier-only; caller stores
  *   urbi_gc_register_write   -- register-slot barrier
@@ -187,11 +177,6 @@ URBI_ADVANCED void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);
  * the call.  Not ISR-safe. */
 URBI_ADVANCED void   urbi_gc_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
-/* Append `provider` to the VM's fixed root-provider array (capacity
- * URBI_MAX_ROOT_PROVIDERS = 12 per row 10 §5.1; bumped from 8 at Step C-1).  The provider function
- * pointer is borrowed: callee retains it for the lifetime of `vm`, and
- * caller must keep the underlying code object alive at least that long.
- * URBI_INTERNAL_ASSERT fires on overflow.  Not ISR-safe. */
 URBI_ADVANCED void   urbi_gc_register_root_provider(struct UVM *vm, UGcRootProviderFn provider);
 
 /* Initialize the GC fields on a fresh UVM.  Called from urbi_vm_init after
@@ -232,7 +217,6 @@ URBI_ADVANCED size_t urbi_gc_bytes_allocated_inline(const struct UVM *vm);
 #ifdef __cplusplus
 }
 #endif
-
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC visibility pop

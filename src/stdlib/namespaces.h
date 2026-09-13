@@ -4,19 +4,6 @@
  * This module lands the namespace globals on top of the
  * atom-proto baselines:
  *
- *   Math          — IEEE-754 constants (pi / e / nan / infinity).  Method
- *                   surface (sin / cos / sqrt …) defers to the Phase 10
- *                   .u overlay, which bounces to the Float atom-proto
- *                   methods landed in Phase 5.
- *   System        — host primitives.  time / cycle as a host-clock pair,
- *                   getenv as a libc shim, gc as an explicit collection
- *                   trigger.
- *   System.Platform — kind constant set at compile time via #ifdef.
- *   Global        — reflective namespace; .length returns the live count
- *                   of slots on realm->global_object.
- *   CallMessage   — inert placeholder proto; permanently dropped but kept as
- *                   a realm global so legacy source can verify its presence.
- *
  * Boot order: urbi_stdlib_register_namespaces(vm) is called from
  * urbi_stdlib_boot AFTER runtime_types.  Realm-global binding for the
  * namespace names (Math / System / Global / CallMessage) is deferred to

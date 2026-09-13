@@ -20,8 +20,6 @@ static void module_memcpy(void *dst, const void *src, size_t n) {
     for (size_t i = 0; i < n; i++) pd[i] = ps[i];
 }
 
-/* Canary constant lives in chunk/uchunk.h as URBI_BYTECODE_CANARY (MOD-029). */
-
 #if __STDC_HOSTED__
 #  include <stdio.h>
 #  include <stdlib.h>
@@ -58,9 +56,6 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
 }
 #endif  /* __STDC_HOSTED__ */
 
-/* Forward declaration — uchunk_destroy_internal is defined below, after
- * uproto_destroy_buffers.  The public uchunk_destroy shim (v0.8.0
- * deferred-destroy) calls into this. */
 static void uchunk_destroy_internal(UProto *root, struct UVM *vm);
 
 /* Resolve the effective allocator for a root UProto. */
@@ -82,11 +77,6 @@ static bool module_grow_with_alloc(UChunkAllocFn alloc, void *alloc_ud,
                                    size_t new_cap, size_t elem_size) {
     if (*cap >= new_cap) return true;
     if (alloc == NULL) return false;
-    /* MOD-004: defend against new_cap * elem_size overflow at the helper
-     * boundary, so wire-format count fields that slip past per-section
-     * caps cannot reach the allocator with a wrap-truncated byte count.
-     * Caller-side caps (URBI_MAX_INSTRS_PER_PROTO, n_const cap, etc.)
-     * are the primary line of defense; this is belt-and-braces. */
     if (elem_size != 0U && new_cap > SIZE_MAX / elem_size) return false;
     size_t target = *cap == 0U ? 8U : *cap;
     while (target < new_cap) {
@@ -129,12 +119,6 @@ static UChunkLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
 
 /* --- Proto helpers --- */
 
-/* MOD-032: free a single buffer through `alloc`, skipping NULL.
- * Centralizes the `if (p != NULL) (void)alloc(p, 0, ud);` pattern that
- * appears 6× in uchunk_destroy (and 5× in uproto_destroy_buffers,
- * which we leave alone for surgical scope).  The pointer is not NULLed
- * because both call sites zero the containing struct via urbi_zero after
- * all frees complete. */
 static inline void module_buf_free(UChunkAllocFn alloc, void *alloc_ud,
                                    void *p) {
     if (p != NULL) (void)alloc(p, 0, alloc_ud);
@@ -145,10 +129,7 @@ static inline void module_buf_free(UChunkAllocFn alloc, void *alloc_ud,
  * decode_constants_into UVAL_STR arm).  Emit-time UVAL_STR slots carry an
  * intern-table pointer (VM-owned) and must NOT be freed here; the marker
  * distinguishes the two ownership domains.
- *
- * Idempotent — safe to call on an already-freed slot because zero-init or
- * post-fixup buffers have _pad[0] == 0.  Module-instance create clears the
- * marker after the lazy intern fixup so this helper never double-frees. */
+ */
 static void free_owned_str_constants(UValue *constants, size_t count,
                                      UChunkAllocFn alloc, void *alloc_ud) {
     if (constants == NULL || alloc == NULL) return;
@@ -165,8 +146,6 @@ static void free_owned_str_constants(UValue *constants, size_t count,
 
 void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
                                    void *alloc_ud) {
-    /* MOD-030: every caller guards proto != NULL; the runtime contract is
-     * "non-NULL proto" — assert rather than silently no-op. */
     URBI_INTERNAL_ASSERT(proto != NULL);
 #if __STDC_HOSTED__
     /* Hosted fallback: if no custom allocator, use stdlib_alloc so that
@@ -193,11 +172,6 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
     if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
     if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
     if (proto->abs_lines    != NULL) alloc(proto->abs_lines,    0, alloc_ud);
-    /* TIDY-005: explicit (void *) casts on multi-level pointer free paths
-     * (USymbol ** / char ** / UProto ** all decay to void * for alloc's
-     * inout pointer; the implicit conversion violates strict-aliasing
-     * cleanliness even though every modern allocator treats the pointer
-     * as an opaque tag). */
     if (proto->ic_names     != NULL) alloc((void *)proto->ic_names,     0, alloc_ud);
     if (proto->ic_name_strs != NULL) {
         /* Each entry is a NUL-terminated string allocated separately. */
@@ -215,15 +189,11 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
 UProto *uproto_alloc_nested(UProto *root, UProto *parent_proto) {
     UChunkAllocFn alloc = module_allocator(root);
     if (alloc == NULL) return NULL;
-    /* v0.8.5: parent_proto is the explicit nested[] target.  For top-level
-     * function literals callers pass root directly; for nested
-     * function literals callers pass the enclosing UProto. */
     if (parent_proto == NULL) return NULL;
 
     /* Grow parent_proto->nested[] array if needed. */
     if (parent_proto->nested_count >= parent_proto->nested_cap) {
         size_t new_cap = parent_proto->nested_cap == 0 ? 4 : parent_proto->nested_cap * 2;
-        /* TIDY-005: explicit (void *) cast on UProto ** → void * decay. */
         void *fresh = alloc((void *)parent_proto->nested,
                             new_cap * sizeof(UProto *),
                             root->alloc_ud);
@@ -233,15 +203,6 @@ UProto *uproto_alloc_nested(UProto *root, UProto *parent_proto) {
     }
 
     /* Allocate the UProto struct itself.
-     *
-     * MOD-003: if this allocation fails AFTER the nested[] grow above
-     * succeeded, we leave `root->nested` pointing at the grown (larger)
-     * buffer with `nested_cap` bumped but `nested_count` unchanged.  This
-     * is "grow-without-commit" — the array is correctly sized for an
-     * unused trailing slot range [nested_count..nested_cap), every
-     * existing entry [0..nested_count) is intact, and the next caller
-     * walks the same grow path with the larger cap already satisfied
-     * (skipping the realloc).
      *
      * Rolling back the grow would require freeing the larger buffer and
      * restoring the prior nested pointer.  Since realloc invalidates the
@@ -260,17 +221,8 @@ UProto *uproto_alloc_nested(UProto *root, UProto *parent_proto) {
     proto->alloc_fn = root->alloc_fn;
     proto->alloc_ud = root->alloc_ud;
 
-    /* v0.8.1 Variant B Option (a) per spec §3.5: slot-implicit refcount dropped.
-     * The nested[] slot's reachability is structural (root owns nested[]);
-     * no independent refcount needed.  Closures bump root->refcount via
-     * uproto_root_of() at urbi_vm_alloc_closure; that is the only accounting needed. */
     proto->refcount = 0U;
 
-    /* v0.8.5: assign DFS pre-order serial.  Root's ic_index = 0 was set at
-     * root-proto allocation (uemit_init / uchunk_deserialize); each call
-     * here produces the next available serial.  The first nested
-     * allocation produces ic_index = 1 because next_proto_serial starts
-     * at 0 via the root zero-init. */
     proto->ic_index = ++root->next_proto_serial;
 
     parent_proto->nested[parent_proto->nested_count++] = proto;
@@ -302,12 +254,6 @@ static UChunkLoadError decode_header(MDecCtx *d) {
         set_errmsg(d->errmsg, d->errcap, "bad magic (expected \"URBI\")");
         return UCHUNK_LOAD_BAD_MAGIC;
     }
-    /* version byte: 0x18 = v1.8 (16*major + minor); all prior versions are
-       hard-rejected.  v1.7 → v1.8 is the v0.9.2-uproto-only Approach C bump
-       (UModule struct deleted; wire-byte layout unchanged — the bump is
-       semantic, signaling no separate loader-shell type).  Loading older
-       modules silently would produce unknown opcodes, misread GC state, or
-       wrongly-sized IC tables. */
     if (d->buf[4] != URBI_BYTECODE_VERSION_BYTE) {
         set_errmsg(d->errmsg, d->errcap,
                    "unsupported version byte 0x%02x (v%u.%u); this build expects 0x%02x (v%u.%u)",
@@ -317,14 +263,6 @@ static UChunkLoadError decode_header(MDecCtx *d) {
                    (unsigned)URBI_BYTECODE_VERSION_MAJOR, (unsigned)URBI_BYTECODE_VERSION_MINOR);
         return UCHUNK_LOAD_UNSUPPORTED_VERSION;
     }
-    /* buf[5] = flags; ignored for forward-compat except the bits defined
-     * below — unknown bits are still ignored.
-     * bit 0 (v0.13.5): arity self-check discipline.  Every >=1-param proto
-     * in the chunk carries a min-arity prologue; propagate to
-     * UProto.arity_prologue in decode_proto so OP_CALL uses the relaxed
-     * `nargs <= nparams` check.  Chunks with bit 0 clear (all pre-v0.13.5
-     * blobs) keep the exact-match check — no semantic shift for old
-     * bytecode on a new VM. */
     d->arity_flag = (uint8_t)(d->buf[5] & 0x01U);
     /* canary bytes at offsets 6-11 */
     if (!urbi_memeq(d->buf + 6, URBI_BYTECODE_CANARY, URBI_BYTECODE_CANARY_LEN)) {
@@ -353,8 +291,7 @@ static UChunkLoadError decode_header(MDecCtx *d) {
                    (unsigned)URBI_ENDIANNESS, (unsigned)d->buf[15]);
         return UCHUNK_LOAD_FLAVOR_MISMATCH;
     }
-    /* Strict enforcement of header bytes 16-23 (MOD-038):
-     *
+    /*
      * v1.0 defines no flag bits in this region.  Forward-compat tolerance
      * silently dropped flags that older builds didn't recognize, which is
      * the wrong policy when the runtime does not promise bytecode stability
@@ -475,14 +412,6 @@ static UChunkLoadError decode_constants_into(MDecCtx *d,
             d->off += 4;
 #endif
         } else if (kind == (uint8_t)UVAL_STR) {
-            /* (closes v0.5.6 MOD-008 reservation): UVAL_STR carries a
-             * uvarint byte-length prefix + raw UTF-8 bytes.  The loader has
-             * no UVM in scope and therefore cannot intern; instead we
-             * allocate a NUL-terminated buffer via the module allocator and
-             * record ownership with the _pad[0] = 1 marker.  Module-instance
-             * create (or any future fixup pass) interns the bytes against
-             * the runtime VM and clears the marker.  uchunk_destroy walks
-             * constants and frees any v.p whose owner-flag is still set. */
             uint64_t slen = 0;
             rc = module_decode_varint_u(d->buf + d->off, d->size - d->off,
                                         &slen, &consumed);
@@ -536,10 +465,6 @@ static UChunkLoadError decode_instructions_into(MDecCtx *d,
         return rc;
     }
     d->off += consumed;
-    /* MOD-017: cap instr_count BEFORE the (size_t)n_instr demotion below.
-     * On 32-bit ports a uint64_t > SIZE_MAX silently truncates; also
-     * defends against unbounded allocation request.  URBI_MAX_INSTRS_PER_PROTO
-     * is the documented cap. */
     if (n_instr > (uint64_t)URBI_MAX_INSTRS_PER_PROTO) {
         set_errmsg(d->errmsg, d->errcap,
                    "n_instructions=%llu exceeds URBI_MAX_INSTRS_PER_PROTO=%zu",
@@ -630,10 +555,6 @@ static UChunkLoadError decode_line_table_into(MDecCtx *d,
         return rc;
     }
     d->off += consumed;
-    /* MOD-018: n_abs is bounded by instr_count — every checkpoint
-     * references a unique pc < instr_count, and the existing monotonic
-     * check rejects duplicates.  Without this cap a corrupt module
-     * could request an arbitrarily large abs_lines allocation. */
     if (n_abs > (uint64_t)instr_count) {
         set_errmsg(d->errmsg, d->errcap,
                    "n_abs_lines=%llu exceeds instr_count=%zu",
@@ -647,10 +568,6 @@ static UChunkLoadError decode_line_table_into(MDecCtx *d,
             return UCHUNK_LOAD_OOM;
         }
     }
-    /* MOD-014: monotonic abs_line invariant — pc values must form a strictly
-     * increasing sequence (each later checkpoint references a higher pc than
-     * the prior).  Skip the comparison on i==0 since there is no prior to
-     * compare against; the first checkpoint may legitimately reference pc=0. */
     uint32_t prev_pc_checkpoint = 0;
     for (uint64_t i = 0; i < n_abs; i++) {
         uint64_t pc64 = 0;
@@ -772,10 +689,6 @@ static UChunkLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
         return UCHUNK_LOAD_CORRUPT;
     }
     for (uint64_t i = 0; i < n_nested; i++) {
-        /* B3/REPL-01: cap recursion depth before allocating so hostile input
-         * allocates nothing at the rejected level.  A crafted chain of
-         * >UCHUNK_MAX_PROTO_DEPTH levels overflows a 64 KB MCU stack via the
-         * public urbi_chunk_from_bytes entry; reject here. */
         if (++d->depth > UCHUNK_MAX_PROTO_DEPTH) {
             set_errmsg(d->errmsg, d->errcap,
                        "nested proto depth exceeds cap (%d) at child %llu",
@@ -800,10 +713,6 @@ static UChunkLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
         urbi_zero(child, sizeof(*child));
         child->alloc_fn = d->root_proto->alloc_fn;
         child->alloc_ud = d->root_proto->alloc_ud;
-        /* v0.8.5: assign DFS pre-order serial identical to the emit path.
-         * Recurse order matches uproto_alloc_nested's DFS pre-order
-         * because decode_proto is called per child (depth-first) before
-         * moving to the next sibling. */
         child->ic_index = ++d->root_proto->next_proto_serial;
         parent->nested[parent->nested_count++] = child;
         rc = decode_proto(d, child);
@@ -832,7 +741,6 @@ static UChunkLoadError decode_proto(MDecCtx *d, UProto *p) {
     p->max_reg = d->buf[d->off++];
     p->nupvals = d->buf[d->off++];
     p->nparams = d->buf[d->off++];
-    /* v0.13.5: module-granular arity discipline (header flag bit 0). */
     p->arity_prologue = d->arity_flag;
     /* nupvals + nparams cross-check.  Each occupies one byte
      * (capped at 255 by the wire format) but the sum must fit in the
@@ -879,10 +787,6 @@ static UChunkLoadError decode_trailer(MDecCtx *d) {
     return UCHUNK_LOAD_OK;
 }
 
-/* v0.8.5: recursively set every UProto's root back-pointer.  The module's
- * root_proto gets root = NULL; every other proto in the tree gets
- * root = rp.  Mirrors set_root_recursive in uemit.c — kept independent
- * to avoid cross-module static-helper coupling. */
 static void set_root_backptr_recursive(UProto *node, UProto *root) {
     if (node == NULL) return;
     node->root = (node == root) ? NULL : root;
@@ -893,10 +797,6 @@ static void set_root_backptr_recursive(UProto *node, UProto *root) {
 
 /* --- Public API --- */
 
-/* v0.9.2: uchunk_deserialize allocates the root UProto via alloc_fn and
- * decodes bytecode into it.  The caller receives the root via *out_root.
- * alloc_fn/alloc_ud are stored on the root and used for all sub-allocations.
- * On failure, *out_root is set to NULL and any partial allocations are freed. */
 UChunkLoadError uchunk_deserialize(UProto **out_root, const uint8_t *buf, size_t size,
                                    UChunkAllocFn alloc_fn, void *alloc_ud,
                                    char *errmsg, size_t errcap) {
@@ -953,16 +853,8 @@ UChunkLoadError uchunk_deserialize(UProto **out_root, const uint8_t *buf, size_t
     /* Pass 3 (bytecode F3): ic_index DFS pre-order mirror check. */
     if ((rc = uchunk_verify_ic_index(rp, errmsg, errcap)) != UCHUNK_LOAD_OK) goto fail;
 
-    /* Back-pointer walk: every UProto's root field points at rp.
-     * v0.8.5 made this recursive (was flat-only): walks the full tree
-     * DFS so grandchildren also get root set under recursive emission.
-     * For flat trees (pre-v0.8.5 bytecode) the inner recursion is a no-op
-     * because nested_count == 0 at depth 1. */
     set_root_backptr_recursive(rp, rp);
 
-    /* v0.8.5: stamp total_proto_count to match the emit path (uemit_finish).
-     * next_proto_serial holds the last assigned non-root serial; total
-     * includes root (ic_index = 0). */
     rp->total_proto_count = (uint16_t)(rp->next_proto_serial + 1U);
 
     *out_root = rp;
@@ -980,37 +872,10 @@ fail:
     return rc;
 }
 
-/* Destroy ordering (MOD-005):
- *   1. Resolve allocator BEFORE any frees — alloc_fn/alloc_ud are still
- *      live in the struct at this point and must remain readable for the
- *      entire free walk below.
- *   2. Walk nested[] and free each non-NULL UProto's sub-buffers + the
- *      UProto struct itself.  NULL slots in nested[] are by design (see
- *      MOD-015 below); skip them silently.
- *   3. Free the nested[] array, root-chunk buffers, source_name, and
- *      ic_names — all read directly from `module->...` because nothing
- *      has been zeroed yet.
- *   4. ONLY THEN zero the struct.  After step 4 the struct is fully wiped:
- *      source_name, alloc_fn, alloc_ud are all reset; the caller must
- *      re-init before reuse.
- */
-
-/* --- Module strand-bind release (v0.8.1 Phase 2) ----------------------- */
-
-/* v0.8.1 Phase 2: strand-bind release with deferred-destroy trigger.
- * Called by ustrand_destroy and the fatal-loader early-discharge path
- * (uchunk.c) when we hold the still-valid root proto pointer.
- * Decrements root->refcount; if it reaches 0 and the self-link
- * sentinel is set (uchunk_destroy was called with vm=NULL), fires
- * uchunk_destroy_internal immediately.
- *
- * v0.9.2: UModule deleted.  Signature is now (UProto *root, UVM *vm). */
 void
 uproto_strand_refcount_dec(UProto *root, struct UVM *vm)
 {
     if (root == NULL) return;
-    /* v0.10.1: use typed-handle release for underflow detection + debug
-     * accounting (runtime-invariants F3 strand-bind release site). */
     urbi_proto_strand_ref_release(root, URBI_PROTO_REF_OWNER_STRAND);
     /* Deferred-destroy trigger: self-link sentinel means uchunk_destroy was
      * called with vm=NULL while a strand was still alive.  Now that the last
@@ -1041,26 +906,6 @@ uproto_strand_refcount_dec(UProto *root, struct UVM *vm)
      * calling uchunk_destroy explicitly. */
 }
 
-/* MOD-015 — nested[k] may be NULL by design:
- *   strand_closure_unlink (src/watcher/uwatcher_install.c) detaches a UProto
- *   from module->nested[] when its UClosure is captured by a watcher
- *   (transferring ownership from the module to the watcher pool).  After
- *   detach, nested[k] reads NULL.  This is the expected steady-state for any
- *   chunk that installed reactive watchers — uchunk_destroy must skip NULL
- *   slots without freeing them, since the watcher's pool_free now owns
- *   that proto and will free it on watcher recycle.
- *
- *   v0.7.3 — detach only happens at `s->frame_count == 0` (chunk-top
- *   installs).  Installs inside a callee skip the transfer entirely to
- *   avoid the cascade-wake use-after-free on shared protos, so callee-side
- *   nested[] slots stay populated and are freed normally below.  See
- *   the watcher-ownership design rationale (URBI_WATCHER_OWNS_* flags deleted
- *   at v0.8.4 Step C-3; GC now manages closure lifetime). */
-
-/* v0.9.2: uchunk_destroy takes the root UProto directly.
- * Deferred-destroy: when root->refcount > 0 (a strand is still alive),
- * rescue root onto vm->rescued_protos (if vm != NULL) or set self-link
- * sentinel for uproto_strand_refcount_dec to trigger later. */
 void
 uchunk_destroy(UProto *root, struct UVM *vm)
 {

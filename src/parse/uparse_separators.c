@@ -1,6 +1,4 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uparse_separators.c — separator-loop dispatch (`;` `|` `,` `&`).
- * Extracted from uparse.c during v0.5.4-decompose (PARSE-021 #3). */
 
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
@@ -37,9 +35,6 @@ static UAstNode *parse_sep_operand(UParser *p) {
     return urbi_parse_expression(p, 0);
 }
 
-/* urbi_parse_pipe_amp_fold: left-fold `|` and `&` binops starting from an already-parsed
-   lhs.  Shared by urbi_parse_inner_tier and parse_assign_or_expr
-   (v0.10.5 member-expr tag form). */
 UAstNode *urbi_parse_pipe_amp_fold(UParser *p, UAstNode *lhs) {
     for (;;) {
         UToken sep = urbi_parse_peek(p);
@@ -86,15 +81,6 @@ UAstNode *urbi_parse_inner_tier(UParser *p) {
     return urbi_parse_pipe_amp_fold(p, lhs);
 }
 
-/* Outer-tier: parse one or more inner-tier expressions joined by `;` or `,`.
-   Returns a single node (no Nary) if only one inner-tier child exists.
-   Trailing `;` or `,` at statement-end is silently dropped.
-   Mixing `;` and `,` in the same outer-tier group is an error.
-   OOM convention: returns NULL on child OOM (preferred), but a few
-   sites currently return uparser_oom_sentinel directly — see the
-   OOM-sentinel comment at the top of uparse_internal.h. The top-level
-   uparse_next_statement collapses both forms via the arena->oom
-   recheck (closes PARSE-005). */
 UAstNode *urbi_parse_outer_tier(UParser *p) {
     UAstNode *first = urbi_parse_statement_or_expr(p);
     if (!first) return NULL;

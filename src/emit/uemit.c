@@ -100,7 +100,6 @@ bool urbi_emit_proto_grow(UProto *root, UProto *proto,
     return urbi_emit_grow(root, data, cap, new_cap, elem_size);
 }
 
-
 /* Minimum register that freereg/next_reg may be reset to when releasing temps.
  * Normally equals nactvar (frame locals occupy [0, nactvar)).
  * If a global slot register has been pre-reserved (global_slot_reserved), the
@@ -262,13 +261,7 @@ static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t li
    it is sized exactly to instr_count.  Called after instr_count has been
    incremented so the new slot is at [instr_count - 1].
    When writing to a nested proto, use the proto's allocator.
-
-   EMIT-001: every call site (urbi_emit_instr, root + nested paths) bumps
-   instr_count BEFORE invoking; instr_count == 0 here would mean a caller
-   bug.  Defensive early-return + assertion: alloc(ptr, 0, ud) is
-   implementation-defined and `[instr_count - 1U]` underflows on the
-   unsigned subscript, so failing closed is safer than relying on the
-   precondition holding at every future call site. */
+   */
 /* current_proto() always returns non-NULL; single-path via proto. */
 static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
     UProto *p = current_proto(e);
@@ -394,11 +387,6 @@ bool urbi_emit_cond_has_direct_side_effect(UAstNode *n) {
                 if (urbi_emit_cond_has_direct_side_effect(n->u.block.stmts[i])) return true;
             return false;
         }
-        /* TIDY-008: AST_CALL is opaque (read-only methods are common; we avoid
-         * false positives by treating calls as no-side-effect at compile time).
-         * The default arm returns false for every other unhandled kind too,
-         * so a separate `case AST_CALL: return false;` was a byte-identical
-         * branch clone — collapsed into the default with this comment. */
         default:         return false;
     }
 }
@@ -410,14 +398,6 @@ bool urbi_emit_cond_has_direct_side_effect(UAstNode *n) {
  * (urbi_emit_throw_arm, urbi_emit_try_arm, urbi_emit_tag_prefix_arm) live in
  * uemit_unwind.c.  See uemit_internal.h for all their declarations. */
 
-/* AST walker — returns the register holding the result of the expression.
-   Returns 0 and sets e->error on any failure.
-   SCAN-001: every UAstKind has an explicit case arm so the switch
-   is exhaustive without a NOLINT.  Forms that this milestone does not yet
-   support (arrow-access AST_PROP_GET / AST_PROP_SET) reject with
-   EMIT_UNSUPPORTED_AST; lowering arrow-access to OP_GETSLOT / OP_SETSLOT
-   is filed as a v1.x backlog item once the arrow-vs-dot semantic
-   distinction is pinned. */
 uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0U;
     switch (n->kind) {
@@ -454,21 +434,15 @@ uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     case AST_AT_SLOT_CHANGE: return urbi_emit_at_slot_change_arm(e, n);
     case AST_CLASS_DECL:     return urbi_emit_class_decl_arm(e, n);
     case AST_PROPERTY_DECL:  return urbi_emit_property_decl_arm(e, n);
-    /* v0.10.5: assert keyword */
     case AST_ASSERT:         return urbi_emit_assert_arm(e, n);
-    /* === v0.10.5: list/dict literals + subscript === */
     case AST_LIST_LIT:        return urbi_emit_list_lit_arm(e, n);
     case AST_DICT_LIT:        return urbi_emit_dict_lit_arm(e, n);
     case AST_SUBSCRIPT_GET:   return urbi_emit_subscript_get_arm(e, n);
     case AST_SUBSCRIPT_SET:   return urbi_emit_subscript_set_arm(e, n);
-    /* === end v0.10.5 === */
-    /* === v0.10.5: control flow === */
     case AST_FOR_EACH:        return urbi_emit_for_each_arm(e, n);
     case AST_BREAK:           return urbi_emit_break_arm(e, n);
     case AST_CONTINUE:        return urbi_emit_continue_arm(e, n);
     case AST_SWITCH:          return urbi_emit_switch_arm(e, n);
-    /* === end v0.10.5: control flow === */
-    /* === v0.10.7: synthetic register-reference leaf === */
     case AST_REG_REF: {
         /* Emit a reference to a previously-allocated register.
          * If the target register differs from source, emit OP_MOVE.
@@ -480,18 +454,12 @@ uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
         }
         return dst;
     }
-    /* === end v0.10.7 === */
     case AST_PROP_GET:
     case AST_PROP_SET:
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
-        /* AST_PROP_GET / AST_PROP_SET: arrow-access syntax (`obj.x->y` /
-         * `obj.x->y = v`).  v0.5.7 has no runtime support for arrow-access
-         * semantics (distinct from dot-access OP_GETSLOT / OP_SETSLOT);
-         * the parser still produces the nodes so a future milestone can
-         * lower them once the semantics are pinned.
-         *
+        /*
          * AST_LOCAL_REF / AST_PARAM / AST_LAZY_PARAM: produced by
          * parser/emitter internally and consumed before urbi_emit_expr is
          * called (AST_PARAM/AST_LAZY_PARAM in the AST_FUNCTION arm;
@@ -510,7 +478,6 @@ uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     e->error = EMIT_UNSUPPORTED_AST;
     return 0U;
 }
-
 
 void uemit_init(UEmitter *e, UProto *root, UArena *arena,
                 struct UVM *vm, const char *source_name) {
@@ -534,9 +501,6 @@ void uemit_init(UEmitter *e, UProto *root, UArena *arena,
     if (vm != NULL) {
         root->origin_vm = vm;
     }
-    /* root->alloc_fn/alloc_ud must already be set by caller before uemit_init.
-     * root->root = NULL (it is the root; set by zero-fill or caller).
-     * v0.9.2: root IS the root UProto — no separate allocation needed here. */
     emit_copy_source_name(e, source_name);
 }
 
@@ -570,10 +534,6 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt) {
     return EMIT_OK;
 }
 
-/* v0.8.5: recursively set every UProto's root back-pointer to the module's
- * root proto.  For flat trees the inner recursion is
- * a no-op because nested_count == 0 at depth 1.  For recursive trees
- * every grandchild also gets root set correctly. */
 static void set_root_recursive(UProto *node, UProto *root) {
     if (node == NULL) return;
     node->root = (node == root) ? NULL : root;
@@ -593,30 +553,12 @@ UEmitError uemit_finish(UEmitter *e) {
         uemit_close_function(e);
     }
     e->finished = true;
-    /* v0.9.2: e->module IS the root UProto.  Stamp max_reg and set the
-     * nested back-pointers. */
     if (e->module != NULL) {
         UProto *rp = e->module;
         rp->max_reg = e->max_reg_seen;
-        /* v0.13.5: the emitter always produces the arity self-check
-         * discipline (every >=1-param proto carries a min-arity prologue;
-         * see urbi_emit_function_literal step 3b).  Flag the root so the
-         * serializer sets header flag bit 0 and OP_CALL uses the relaxed
-         * `nargs <= nparams` check for every proto of this module.  The
-         * root chunk itself has nparams == 0, where relaxed and exact
-         * checks coincide. */
         rp->arity_prologue = 1U;
-        /* Back-pointer walk: every nested proto's root field points at rp.
-         * v0.8.5 made this recursive (was flat-only): walks the full tree
-         * DFS so grandchildren also get root set correctly when the
-         * truly-recursive emitter starts producing depth >1.
-         * For flat trees the recursive descent is a no-op
-         * because nested_count == 0 at depth 1. */
         set_root_recursive(rp, rp);
     }
-    /* v0.8.5: stamp total_proto_count for module-instance sizing.
-     * next_proto_serial is the LAST assigned serial (root = 0 not counted);
-     * total includes root. */
     if (e->module != NULL) {
         e->module->total_proto_count = (uint16_t)(e->module->next_proto_serial + 1U);
     }

@@ -1,6 +1,4 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uemit_serialize.c — module bytecode serialization.
- * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #8). */
 
 #include "uemit_internal.h"
 #include "value/uvarint.h"
@@ -60,9 +58,6 @@ static size_t proto_wire_size(const UProto *p, size_t start_off) {
         off += nlen;
     }
 
-    /* v1.7: nested_count varint + recursive nested[] children.
-     * For the v0.8.1 flat-on-root emitter, only root_proto.nested[] is
-     * populated; non-root UProtos write nested_count = 0 (one varint byte). */
     off += uvarint_size_u((uint64_t)p->nested_count);
     for (i = 0U; i < p->nested_count; i++) {
         if (p->nested[i] != NULL) {
@@ -152,9 +147,6 @@ static size_t write_proto(uint8_t *buf, size_t off, const UProto *p) {
 
     off = write_ic_names(buf, off, p->ic_count, p->ic_name_strs);
 
-    /* v1.7: nested_count varint + recursive nested[] children.
-     * For the v0.8.1 flat-on-root emitter, only root_proto.nested[] is
-     * populated; non-root UProtos write nested_count = 0 (one varint byte). */
     off = uvarint_write_u(buf, off, (uint64_t)p->nested_count);
     for (size_t ni = 0U; ni < p->nested_count; ni++) {
         const UProto *child = p->nested[ni];
@@ -194,8 +186,6 @@ static size_t module_wire_size(const UProto *c) {
     return n;
 }
 
-/* v1.7: chunk body = header + source_name + root UProto block.
- * v0.9.2: root parameter is the root UProto (was UModule*). */
 ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap) {
     size_t off;
     size_t src_len;
@@ -208,14 +198,6 @@ ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap) {
     /* --- 24-byte header --- */
     buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';
     buf[4] = (uint8_t)URBI_BYTECODE_VERSION_BYTE;  /* wire-format version byte (see include/urbi/version.h) */
-    /* flags byte — spec-sanctioned compatible-extension point ("loader
-     * ignores for forward-compat"; docs/internals/bytecode-format.md).
-     * bit 0 (v0.13.5): arity self-check discipline — every >=1-param
-     * proto in this chunk carries a min-arity prologue; the loader
-     * propagates the bit to every decoded proto (UProto.arity_prologue)
-     * and OP_CALL relaxes its check to `nargs <= nparams` for flagged
-     * protos.  Unflagged (pre-v0.13.5) chunks keep the exact-match
-     * check.  bits 1-7: none defined. */
     buf[5] = (root->arity_prologue != 0U) ? 0x01U : 0x00U;
     emit_memcpy(buf + 6, URBI_BYTECODE_CANARY, URBI_BYTECODE_CANARY_LEN);
     buf[12] = (uint8_t)URBI_INT_WIDTH;

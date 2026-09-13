@@ -19,9 +19,7 @@
  * the way the legacy share/urbi *.u files compose anyway.  The trade-off
  * is that all overlays share one global scope at boot, which is the
  * intended semantic for stdlib content.
- *
- * Phase 3 baseline: walked the order file but produced an empty blob
- * (no urbi_compile_source).  Phase 10 closes that gap. */
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -333,8 +331,6 @@ main(int argc, char **argv)
     }
     fclose(order);
 
-    /* Compile the combined source.  Empty blob if STDLIB_ORDER.txt is
-     * empty — preserves Phase 4 baseline behavior. */
     unsigned char *bc      = NULL;
     size_t         bc_len  = 0;
 

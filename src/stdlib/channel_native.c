@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* channel_native.c — v0.10.11 / D6 Channel realm-globals registration.
- *
+/*
  * See channel_native.h banner for design rationale.
  *
  * Implementation approach (vs. eval-string):

@@ -78,11 +78,7 @@ install_const_slot(UVM *vm, UObject *proto, const char *name, UValue value)
  *
  * Returns 0.0 on freestanding builds whose default_host_time_us_stub
  * returns 0; embedded callers MUST override host_time_us at boot.
- *
- * Semantic note: legacy urbi 2.x System.time returned wall-clock seconds-
- * since-epoch.  v1.0 narrows to the per-VM monotonic clock to avoid a
- * libc time() dependency on freestanding targets.  Wall-clock access
- * lands later via the Date primitive (Phase 9). */
+ */
 
 static int
 sys_time(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
@@ -191,7 +187,6 @@ static const UNativeMethodDef SYSTEM_METHODS[] = {
     { "gc",      sys_gc      }
 };
 
-
 /* === Global.length =======================================================
  *
  * Returns the number of slots currently installed on the active realm's
@@ -219,7 +214,6 @@ global_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static const UNativeMethodDef GLOBAL_METHODS[] = {
     { "length", global_length }
 };
-
 
 /* === urbi_stdlib_register_namespaces ====================================
  *
@@ -296,14 +290,6 @@ urbi_stdlib_register_namespaces(UVM *vm)
     rc = URBI_REGISTER_METHODS(vm, vm->global_namespace_proto, GLOBAL_METHODS);
     if (rc != URBI_OK) return rc;
 
-    /* --- CallMessage: placeholder proto (v0.10.5-legacy-decisions-DROP) ---
-     *
-     * CallMessage was permanently dropped at v0.10.5-legacy-decisions (see REVIVAL §14
-     * and the 278-line migration design in docs/); this stub proto is
-     * intentionally empty.  At v1.0 the proto exists as a realm global so
-     * script code can verify its presence via `isNil(CallMessage)`, but no
-     * reflection methods are installed.  Expose a `kind` marker slot so
-     * fixtures can verify the proto is bound non-nil. */
     if (vm->callmessage_proto == NULL) {
         UObject *c = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
         if (c == NULL) return URBI_ERR_OOM;

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* urbi/repl.h - public REPL service API (v0.9.1+)
- *
+/*
  * Opt-in via URBI_ENABLE_REPL=1 at build time. Provides a networked
  * NDJSON line-protocol REPL service over pluggable transports
  * (TCP / Unix sockets / UART / in-process buffers).
@@ -84,24 +83,15 @@ typedef struct UTransport {
 
 /* === Lifecycle ===
  *
- * urbi_repl_serve creates the server and (for transports that spawn one,
- * Phase 3+) starts the listener thread.  Returns NULL on failure with
- * *out_err set to URBI_ERR_*; out_err may be NULL.
- *
  * urbi_repl_stop signals shutdown, joins worker threads, frees per-
  * session state, and frees the server itself.  Idempotent on NULL.
- *
- * Phase 2 (v0.9.1) ships the data-plane primitives — queue / ringbuf /
- * dispatcher / NDJSON codec / in-process buffer transport — but no
- * networked listener yet.  serve_step is the host's manual drive hook;
- * Phase 3 connects it to a real accept/read loop. */
+ */
 UReplServer *urbi_repl_serve    (struct UVM *vm, const UReplConfig *cfg, int *out_err);
 void          urbi_repl_stop     (UReplServer *server);
 
 int  urbi_repl_serve_init    (struct UVM *vm, const UReplConfig *cfg, UReplServer **out_server);
 
-/* === Cooperative drive (v0.9.4+) ===
- *
+/*
  * urbi_repl_serve_step drives the data plane for transports whose
  * pollable_fd_fn returns -1 (Pi Pico USB CDC + UART, ESP-IDF UART,
  * FreeRTOS UART, in-process buffer).  Each call performs four
@@ -118,12 +108,7 @@ int  urbi_repl_serve_init    (struct UVM *vm, const UReplConfig *cfg, UReplServe
  * listener pthread — serve_step does NOT touch them.  Hosted
  * applications may mix both: pthread handles TCP, serve_step
  * handles a debug USB CDC link.
- *
- * The timeout_us argument is currently advisory on the cooperative
- * path: the sweep is best-effort non-blocking, and the embedder is
- * expected to __wfi() / sleep between calls.  Callers on pollable
- * transports treat timeout_us as a hint for the dispatcher idle
- * wait — see v0.9.1 dispatcher semantics. */
+ */
 int  urbi_repl_serve_step    (UReplServer *server, uint64_t timeout_us);
 void urbi_repl_serve_shutdown(UReplServer *server);
 
@@ -135,8 +120,7 @@ int  urbi_repl_register_transport(UReplServer *server,
 }
 #endif
 
-/* === URBI_REPL_COOPERATIVE_ONLY link-time guard (audit-1 F2, roadmap F7) ===
- *
+/*
  * Cooperative-only builds change struct layouts in urepl_threading.h.
  * Embedders MUST link with the same URBI_REPL_COOPERATIVE_ONLY setting
  * the library was compiled with; a mismatch produces memory corruption
@@ -157,7 +141,6 @@ static const int *urbi_abi_repl_guard_ref __attribute__((unused)) =
     &urbi_abi_requires_repl_pthread;
 #  endif
 #endif /* !URBI_INTERNAL_GUARD_REF */
-
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC visibility pop

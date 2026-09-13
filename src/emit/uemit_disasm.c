@@ -1,7 +1,4 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uemit_disasm.c — bytecode disassembler.
- * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #7).
- * EMIT-035: 30-arm switch replaced with static op_disasm[] table. */
 
 #include "uemit_internal.h"
 #include "chunk/uchunk.h"
@@ -433,7 +430,6 @@ size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
     if (cap == 0 || buf == NULL) return 0;
     buf[0] = '\0';
     off = 0;
-    /* v0.9.2: root IS the root UProto. */
     const UProto *rp = root;
     if (rp == NULL || rp->instr_count == 0) {
         dis_printf(buf, cap, &off, "(empty)\n");

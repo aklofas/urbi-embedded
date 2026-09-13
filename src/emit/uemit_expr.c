@@ -1,7 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uemit_expr.c — leaf-expression bytecode emitters.
- * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #3).
- *
+/*
  * Contains urbi_emit_expr arm helpers for the 13 leaf-expression AST kinds:
  *   AST_INT       — integer literal (OP_LOADK)
  *   AST_BOOL      — boolean literal (OP_LOADBOOL)
@@ -16,11 +14,7 @@
  *   AST_NARY      — separator list (SEP_SEMI `;` / SEP_COMMA `,`)
  *   AST_BIN_SEP   — binary separator (`|` pipe / `&` fork-join)
  *   AST_BLOCK     — braced block scope `{ ... }`
- *
- * NOTE: AST_BIN_SEP SEP_PIPE carries EMIT-009 (raw next_reg-- pattern).
- * AST_IDENT global-slot fallback carries the freereg-sync that AST_AT_EVENT
- * depends on.  AST_VAR_DECL / AST_ASSIGN carry EMIT-020/021/027.
- * Do NOT fix any of these here — they are wave-5/wave-6 dispositions. */
+ */
 
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
 #include "value/uintern.h"        /* ustr_intern */
@@ -53,8 +47,7 @@ uint8_t urbi_emit_float_arm(UEmitter *e, const UAstNode *n) {
     return r;
 }
 
-/* --- AST_THIS (v0.6.2 Phase 2 — Gap #3) ---
- *
+/*
  * `this` resolves to the receiver object, which the OP_CALL convention
  * places in register R0 of the callee's frame.  Emits OP_MOVE dst, R0.
  *
@@ -70,11 +63,6 @@ uint8_t urbi_emit_this_arm(UEmitter *e, const UAstNode *n) {
     }
     const uint8_t dst = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
-    /* OP_LOAD_RECV loads the receiver saved in the call frame at dispatch
-     * time (UCallFrame.recv ← R[A+1] of the calling OP_CALL when its C
-     * carries the method flag, v1.6 S42).  Stable across any GETSLOT /
-     * SELF / CALL inside the method body since the value is held in the
-     * frame record, not a global. */
     urbi_emit_instr(e, uinstr_enc_abc(OP_LOAD_RECV, dst, 0U, 0U), (uint32_t)n->line);
     return dst;
 }
@@ -105,10 +93,7 @@ uint8_t urbi_emit_nil_arm(UEmitter *e, const UAstNode *n) {
  * the arena; we intern those bytes against the VM's per-VM intern table
  * (pointer-equal for byte-equal content) and add a UVAL_STR slot to the
  * current constant pool.  OP_LOADK loads the slot into a fresh register.
- *
- * Closes the v0.5.6 MOD-008 reservation of the UVAL_STR constant-pool kind
- * (see src/chunk/uchunk_io.c constant-pool decoder for the symmetric load
- * arm). */
+ */
 
 uint8_t urbi_emit_string_arm(UEmitter *e, const UAstNode *n) {
     /* Intern the escape-resolved bytes; ustr_intern returns a pointer-stable
@@ -439,15 +424,7 @@ uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n) {
      * The emit prologue fills r_global_slot with realm->global_object at
      * function entry; the OP_SETSLOT then writes `init_value` into
      * the correct slot on the global object.
-     *
-     * NOTE: `var` inside a function body (fs->parent != NULL) still
-     * allocates a frame local — the else-branch below handles that.
-     * v0.13.5 (LANG4-06): only a BARE chunk-top var (nblocks == 0)
-     * installs a realm global; a block-nested chunk-top var falls
-     * through to the frame-local branch so it is scoped to its block
-     * and cannot clobber an outer binding of the same name (SDK 2.0
-     * ch. 17 block-scoped var semantics).  Bare-var REPL persistence
-     * is unaffected. */
+     */
     if (fs->parent == NULL && fs->nblocks == 0) {
         /* Reserve r_global_slot on first global use (same as ).
          * Uses the same global_slot_reserved / references_global two-flag
@@ -721,7 +698,6 @@ uint8_t urbi_emit_nary_arm(UEmitter *e, UAstNode *n) {
          * are compiled to closures (capturing surrounding locals via upvalue
          * cascade) and spawned as detached strands via OP_FORK_DETACH.
          * The last child runs inline as the parent's continuation.
-         *
          */
         if (e->current_fs == NULL) {
             e->error = EMIT_UNSUPPORTED_AST;
@@ -814,13 +790,11 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
          *   3. OP_FORK_JOIN  A=closure_reg  B=child_reg  → spawns + stores handle.
          *   4. OP_JOIN_WAIT  A=child_reg                 → block until child DEAD.
          *   5. OP_LOADVOID   A=result_reg                → result is void (spec §7.2).
-         *
          */
         if (e->current_fs == NULL) {
             e->error = EMIT_UNSUPPORTED_AST;
             return 0U;
         }
-        /* Step 1: compile RHS to a closure. */
         uint8_t closure_reg = urbi_emit_lazy_thunk(e, n->u.bin_sep.rhs);
         if (e->error != EMIT_OK) return 0U;
 
@@ -864,7 +838,6 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
             fork_slot_adopted = true;
         }
 
-        /* Step 2: compile LHS inline; release its register after. */
         uint8_t lhs_save = e->next_reg;
         uint8_t lhs_r = urbi_emit_expr(e, n->u.bin_sep.lhs);
         if (e->error != EMIT_OK) {
@@ -884,7 +857,6 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
          * the adopted entry is back on top of actvars. */
         if (fork_slot_adopted) e->current_fs->nactvar--;
 
-        /* Step 3: OP_FORK_JOIN A=closure_reg B=child_reg. */
         uint8_t child_reg = e->next_reg;
         if (child_reg >= (uint8_t)(UFS_MAX_REGS - 1)) {
             e->error = EMIT_REG_EXHAUSTED;
@@ -898,12 +870,10 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
                    (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
-        /* Step 4: OP_JOIN_WAIT A=child_reg. */
         urbi_emit_instr(e, uinstr_enc_abc(OP_JOIN_WAIT, child_reg, 0U, 0U),
                    (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
-        /* Step 5: OP_LOADVOID into result_reg (spec §7.2: `&` result is void). */
         uint8_t result_reg = e->current_fs->freereg;
         if (result_reg >= (uint8_t)(UFS_MAX_REGS - 1)) {
             e->error = EMIT_REG_EXHAUSTED;
@@ -920,16 +890,7 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
     }
     /* SEP_PIPE: lhs then rhs in sequence, no yield.
        LHS value is discarded; result is rhs.
-
-       EMIT-009 fix (v0.5.7): sync next_reg to the FuncState
-       freereg before emitting RHS, mirroring the v0.5.2 AST_NARY shape
-       (commit 882fbb8).  The bare next_reg-- is wrong when LHS leaves
-       freereg promoted (e.g., LHS ends in a function literal, which
-       lifts freereg via urbi_emit_function_literal's `freereg++`); after
-       next_reg-- the cursor sits BELOW freereg and RHS allocation
-       clobbers a still-live LHS temp.  See
-       tests/unit/test_emit_freereg_drift.c::
-       emit_sep_pipe_does_not_alias_lhs_temp_with_rhs. */
+       */
     uint8_t lhs_r = urbi_emit_expr(e, n->u.bin_sep.lhs);
     if (e->error != EMIT_OK) return 0U;
     /* Release lhs register before rhs so rhs may reuse the slot. */
@@ -970,8 +931,7 @@ uint8_t urbi_emit_block_arm(UEmitter *e, UAstNode *n) {
     return r;
 }
 
-/* === v0.10.5: list/dict literals + subscript emit =====================
- *
+/*
  * Stdlib-call lowering — no new opcodes.  Wire format stays at v1.9.
  *
  *   [e1, e2, e3]      → List.new(e1, e2, e3)
@@ -1095,7 +1055,6 @@ uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
     }
     int line = n->line;
 
-    /* Step 1: emit Dict.new() → result register becomes rd. */
     uint8_t rd;
     {
         UAstNode *dict_ident = synth_ident(e, "Dict", line);
@@ -1110,9 +1069,6 @@ uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
         if (e->error != EMIT_OK) return 0U;
     }
 
-    /* Step 2: for each key-value pair, emit rd.set(key, value).
-     * We use direct bytecode emission (OP_SELF + args + OP_CALL) to keep
-     * rd stable across iterations without declaring a local. */
     {
         const char *set_name = "set";
         USymbol *set_sym = (USymbol *)ustr_intern(e->vm, set_name, 3U);
@@ -1184,8 +1140,7 @@ uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
     return rd;
 }
 
-/* Helper: build a synthetic AST_REG_REF leaf (v0.10.7).
- *
+/*
  * Used in urbi_emit_subscript_set_arm to pin recv and index into temp registers
  * before building the synthetic .get/.set calls, so each expression is
  * evaluated exactly once even when the caller is a side-effectful expression
@@ -1237,8 +1192,7 @@ uint8_t urbi_emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
     UAstNode *rhs_val = n->u.subscript.value;
 
     if (n->u.subscript.is_compound_add) {
-        /* v0.10.7: Single-evaluate recv and index.
-         *
+        /*
          * Previous lowering re-emitted n->u.subscript.recv and
          * n->u.subscript.index for both the synthetic .get and .set calls,
          * causing side-effectful expressions like makeList()[nextIdx()] to
@@ -1321,4 +1275,3 @@ uint8_t urbi_emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
 
     return urbi_emit_call_arm(e, call);
 }
-/* === end v0.10.5 === */

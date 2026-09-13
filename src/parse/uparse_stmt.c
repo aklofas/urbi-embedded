@@ -1,6 +1,4 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uparse_stmt.c — statement-level parse functions.
- * Extracted from uparse.c during v0.5.4-decompose (PARSE-021 #4). */
 
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
@@ -22,14 +20,6 @@ static UAstNode *parse_var_decl(UParser *p) {
     UToken kw = urbi_parse_consume(p);          /* urbi_parse_consume TOK_KW_VAR */
     UToken name = urbi_parse_peek(p);
 
-    /* Detect reserved keywords used as variable names (spec #2 §3.11).
-     * PARSE-007: `async` was previously treated as soft (allowed in
-     * var-decl) but `async = 2` failed at the assignment site because
-     * urbi_parse_statement_or_expr has no IDENT-fallthrough for TOK_KW_ASYNC.
-     * That asymmetry meant `var async = 1` succeeded but the variable
-     * could never be re-assigned — silently un-usable.  Resolution: treat
-     * TOK_KW_ASYNC as fully reserved (matches its modifier role in
-     * `at async (...)` per parse_react.c). */
     if (name.type == TOK_KW_AT       || name.type == TOK_KW_WHENEVER  ||
         name.type == TOK_KW_WAITUNTIL || name.type == TOK_KW_ONLEAVE  ||
         name.type == TOK_KW_SYNC      || name.type == TOK_KW_ASYNC) {
@@ -40,8 +30,7 @@ static UAstNode *parse_var_decl(UParser *p) {
 
     { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
-    /* === v0.10.5: `var obj.slot = value` slot-install form.
-     *
+    /*
      * If the token after the IDENT is TOK_DOT (not TOK_EQ), this is the
      * legacy slot-install form `var obj.slot = value`.  Desugar to
      * `obj.slot = value` (AST_MEMBER_SET): OP_SETSLOT installs the slot
@@ -52,8 +41,7 @@ static UAstNode *parse_var_decl(UParser *p) {
      *   temp.c = v  (AST_MEMBER_SET)
      * achieved naturally by building a full `a.b.c = v` AST_MEMBER_SET
      * tree where the receiver is AST_MEMBER_GET for `a.b`.
-     *
-     * Ruling: implemented (v0.10.5, legacy F14). */
+     */
     if (urbi_parse_peek(p).type == TOK_DOT) {
         /* Build receiver node from the already-consumed IDENT. */
         UAstNode *recv = urbi_parse_make_ident(p, name.u.str.start, name.u.str.len,
@@ -92,7 +80,6 @@ static UAstNode *parse_var_decl(UParser *p) {
             return ms;
         }
     }
-    /* === end v0.10.5: var obj.slot form === */
 
     UToken eq = urbi_parse_peek(p);
     UAstNode *init;
@@ -103,12 +90,6 @@ static UAstNode *parse_var_decl(UParser *p) {
         if (!init) return NULL;
     } else {
         urbi_parse_consume(p);
-        /* S48-followup (2026-05-16): parse RHS as a Pratt expression, NOT
-         * urbi_parse_inner_tier — same root cause as the S48 fix to MEMBER_SET.
-         * `var x = 1 | y = 2` should parse as `(var x = 1) | (y = 2)` per
-         * legacy spec (see legacy/repos/aldebaran-urbi/tests/2.x/atomic.chk
-         * `var n = 0 | {};` pattern).  Pre-fix, urbi_parse_inner_tier absorbed
-         * the `|` into the init expression, producing nested wrong-AST. */
         init = urbi_parse_expression(p, 0);
         if (!init) return NULL;
         if (init->kind == AST_ERROR) return init;
@@ -124,13 +105,6 @@ static UAstNode *parse_var_decl(UParser *p) {
 
 /* --- parse_assign_after_eq_peek: `x = expr`.
  *
- * Caller contract (closes PARSE-012):
- *   - `name` is the already-consumed IDENT token (passed by value).
- *   - The next lexer token MUST be TOK_EQ; the caller has already
- *     peeked and confirmed it.  This function consumes the TOK_EQ
- *     and parses the RHS.  Calling it without that hidden lookahead
- *     state would mis-parse the expression.
- *
  * The function name encodes that lexer-state precondition explicitly —
  * earlier name `parse_assign_from_ident` did not. --- */
 
@@ -138,10 +112,6 @@ static UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
     /* TOK_EQ already peeked/confirmed by caller; urbi_parse_consume it. */
     urbi_parse_consume(p);
 
-    /* S48-followup (2026-05-16): parse RHS as a Pratt expression, NOT
-     * urbi_parse_inner_tier — same root cause as the S48 fix to MEMBER_SET.
-     * `x = 1 | y = 2` should parse as `(x = 1) | (y = 2)`.  Without
-     * this fix, urbi_parse_inner_tier absorbs the `|` into the assign RHS. */
     UAstNode *value = urbi_parse_expression(p, 0);
     if (!value) return NULL;
     if (value->kind == AST_ERROR) return value;
@@ -160,14 +130,6 @@ static UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
    identifier (call chains, member accesses, arithmetic).
    The non-assign/non-tag path runs urbi_parse_expression_cont to
    finish the Pratt climb, then urbi_parse_pipe_amp_fold for `|`/`&`.
-
-   v0.10.5: member-expr tag form.  After parsing a postfix chain
-   (member-access, calls, etc.) from the leading IDENT, if the result
-   is followed by `:` at statement level, treat the whole expression as
-   the tag-expr of an AST_TAG_PREFIX.  This enables `Tag.scope: body`
-   and similar forms.  The check is inserted between urbi_parse_expression_cont
-   (which builds the chain) and urbi_parse_pipe_amp_fold (which folds `|`/`&`) —
-
 
    fold: when false, skip the trailing urbi_parse_pipe_amp_fold so that any `|`/`&`
    after the expression is left for the enclosing statement-level fold.
@@ -211,11 +173,6 @@ static UAstNode *parse_assign_or_expr_impl(UParser *p, UToken name, bool fold) {
     if (urbi_parse_peek(p).type == TOK_COLON) {
         return urbi_parse_tag_prefix(p, name);
     }
-    /* Not assignment or bare-IDENT tag: build the ident node and run the
-     * Pratt climb (urbi_parse_expression_cont) to collect postfix chains such
-     * as `.member`, `(args)`, `!`.  Then check for `:` again — a colon
-     * after a postfix chain is the member-expr tag form `Tag.scope: body`
-     * (v0.10.5).  If no colon, finish with the pipe/amp fold as before. */
     UAstNode *lhs = urbi_parse_make_ident(p, name.u.str.start, name.u.str.len,
                                name.line, name.col);
     if (!lhs) return NULL;
@@ -223,11 +180,9 @@ static UAstNode *parse_assign_or_expr_impl(UParser *p, UToken name, bool fold) {
     lhs = urbi_parse_expression_cont(p, lhs, 0);
     if (!lhs) return NULL;
     if (lhs->kind == AST_ERROR) return lhs;
-    /* === v0.10.5: member-expr tag check === */
     if (urbi_parse_peek(p).type == TOK_COLON) {
         return urbi_parse_tag_prefix_from_expr(p, lhs);
     }
-    /* === end v0.10.5 === */
     /* Normal expression statement: fold `|` and `&` separators (unless
      * called from an arm context, where the enclosing fold handles them). */
     if (fold) return urbi_parse_pipe_amp_fold(p, lhs);
@@ -240,11 +195,6 @@ static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
 }
 
 /* --- parse_class_declaration: `class Name [: public P1, P2, ...] { body }`.
- *
- * Phase 6 of class stdlib.  Per S-mro-declaration-order, the proto
- * array preserves declaration left-to-right order; the emitter inserts
- * protos in REVERSE order during desugar so the resulting chain ends up
- * [P1, P2, Object] for `: public P1, P2`.
  *
  * Per S-class-name-scope: the class name is NOT in scope while parsing
  * either the proto list or the body.  Any name binding for the class
@@ -370,24 +320,11 @@ UAstNode *urbi_parse_statement_or_expr(UParser *p) {
     case TOK_KW_WAITUNTIL: return urbi_parse_waituntil(p);
     case TOK_KW_EVERY:    return urbi_parse_every(p);
     case TOK_KW_CLASS:    return parse_class_declaration(p);
-    /* v0.10.5: assert keyword */
     case TOK_KW_ASSERT:   return urbi_parse_assert(p);
-    /* === v0.10.5: control flow === */
     case TOK_KW_FOR:      return parse_for(p);
     case TOK_KW_BREAK:    return parse_break(p);
     case TOK_KW_CONTINUE: return parse_continue(p);
     case TOK_KW_SWITCH:   return parse_switch(p);
-    /* === end v0.10.5: control flow === */
-    /* S47 (2026-05-16): allow `{ stmts }` as a statement-or-expression.
-     * Original urbi spec supports brace blocks in at-bodies, onleave
-     * handlers, whenever bodies, and any inner-tier position (see
-     * legacy aldebaran-urbi/tests/2.x/at/ .chk files for examples like
-     * `at (e?) { ... }`, `at (cond) { ... } onleave { ... }`).
-     * Without this, the parser falls through to urbi_parse_inner_tier →
-     * urbi_parse_expression which doesn't accept LBRACE as an expression
-     * prefix, producing "expected expression" at the first statement
-     * inside the block.  Surfaced 2026-05-16 by eye_demo's attempt
-     * to use a multi-statement at-body. */
     case TOK_LBRACE: {
         UAstNode *block = urbi_parse_block(p);
         if (!block || block->kind == AST_ERROR) return block;
@@ -434,16 +371,8 @@ UAstNode *urbi_parse_block(UParser *p) {
          * `|` acts as the REPL-boundary convention inside blocks too.
          * If neither is present, the block ends (next token is `}` or
          * an expression starting another statement — stop and expect `}`).
-         *
-         * Trailing-separator handling: after consuming `;` or `|` we
-         * fall back to the top of the while-loop; the loop guard then
-         * exits on `}` or TOK_EOF, so a trailing `; }` or `| }` is
-         * silently accepted (closes PARSE-010). */
+         */
         UToken sep = urbi_parse_peek(p);
-        /* `;` and `|` are both block-statement separators here (REPL-boundary
-         * convention applies inside blocks too). Either consumes one token; a
-         * trailing-separator `; }` / `| }` falls through to the loop guard
-         * which exits on `}` or TOK_EOF (closes PARSE-010). */
         if (sep.type == TOK_SEMI || sep.type == TOK_PIPE) {
             urbi_parse_consume(p);
         } else {
@@ -511,11 +440,6 @@ static UAstNode *parse_arm_stmt(UParser *p) {
         return parse_assign_or_expr_impl(p, name, /*fold=*/false);
     }
     default:
-        /* Literal, prefix op, parenthesized expression, etc.
-         * NOT urbi_parse_inner_tier — that one calls urbi_parse_pipe_amp_fold and would
-         * absorb `&`/`|` into the arm (`if (false) 42 & { b }` folded
-         * inside pre-fix).  urbi_parse_expression is the fold-free Pratt tier,
-         * matching the fold=false IDENT path above. */
         return urbi_parse_expression(p, 0);
     }
 }
@@ -569,8 +493,6 @@ UAstNode *urbi_parse_while(UParser *p) {
 
     { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
-    /* v0.10.5: bump loop_depth so break/continue are legal in body.
-     * Accept an unbraced single-statement body as well. */
     p->loop_depth++;
     UAstNode *body = (urbi_parse_peek(p).type == TOK_LBRACE)
         ? urbi_parse_block(p)
@@ -627,13 +549,6 @@ UAstNode *urbi_parse_if(UParser *p) {
     return node;
 }
 
-/* Returns an AST_ERROR node if the parser sees a syntactic shape that v1.0
- * rejects:
- *   - bare `function {` (no parens)
- *   - bare `function name {` (no parens)
- *   - named `function name(...) {` (PARSE-004: v1.0 has no named-function
- *     decl form; use `var name = function(...){...}` instead).
- * Returns NULL if the form is the supported anonymous `function(...){...}`. */
 static UAstNode *reject_bare_function_forms(UParser *p) {
     UToken next = urbi_parse_peek(p);
     if (next.type == TOK_LBRACE) {
@@ -645,8 +560,6 @@ static UAstNode *reject_bare_function_forms(UParser *p) {
                           next.line, next.col);
     }
     if (next.type == TOK_IDENT) {
-        /* `function name {` is the bare named form; `function name(` is a
-         * named-function decl (PARSE-004: not supported at v1.0). */
         UToken name_tok = urbi_parse_consume(p);
         if (urbi_parse_peek(p).type == TOK_LBRACE) {
             return urbi_parse_make_error(p, PARSE_BARE_FUNCTION,
@@ -661,15 +574,7 @@ static UAstNode *reject_bare_function_forms(UParser *p) {
     return NULL;
 }
 
-/* parse_optional_param_default — v0.13.5: after a formal
- * parameter IDENT, accept an optional `= expr` default value and store it
- * on the param node.  The legacy grammar production is
- *   formal: var.opt "identifier" "=" exp   (ugrammar.y :1533)
- * with NO ordering constraint — non-trailing defaults parse (they are
- * simply dead at call time because a missing earlier argument already
- * raises; matches the legacy runtime, where formals desugar to in-order
- * LocalDeclarations and a missing non-defaulted formal errors).
- *
+/*
  * Rejected on lazy params: the lazy convention wraps caller-side thunks,
  * which has no legacy default-value semantics.
  *
@@ -725,7 +630,6 @@ UAstNode *urbi_parse_function(UParser *p) {
         pn->u.param.name_start = name.u.str.start;
         pn->u.param.name_len   = name.u.str.len;
 
-        /* v0.13.5: optional `= expr` default value. */
         UAstNode *derr = parse_optional_param_default(p, pn, is_lazy);
         if (derr) return derr;
 
@@ -794,8 +698,6 @@ UAstNode *urbi_parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
         pn->u.param.name_start = pname.u.str.start;
         pn->u.param.name_len   = pname.u.str.len;
 
-        /* v0.13.5: optional `= expr` default value (same rule as
-         * urbi_parse_function — getters take no args, setters one). */
         UAstNode *derr = parse_optional_param_default(p, pn, is_lazy);
         if (derr) return derr;
 
@@ -853,11 +755,6 @@ static UAstNode *parse_return(UParser *p) {
                      || nt == TOK_SEMI
                      || nt == TOK_COMMA;
         if (!no_value) {
-            /* S48-followup (2026-05-16): `return EXPR | rest` should parse
-             * as `(return EXPR) | rest` (return is final per legacy
-             * aldebaran-urbi convention).  Same root cause as the
-             * MEMBER_SET / var-decl / local-assign fixes: urbi_parse_inner_tier
-             * absorbs the pipe into the return value. */
             value = urbi_parse_expression(p, 0);
             if (!value) return (UAstNode *)&uparser_oom_sentinel;
             if (value->kind == AST_ERROR) return value;
@@ -875,11 +772,6 @@ static UAstNode *parse_return(UParser *p) {
 UAstNode *urbi_parse_throw(UParser *p) {
     UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_THROW */
 
-    /* S48-followup (2026-05-16): `throw EXPR | rest` should parse as
-     * `(throw EXPR) | rest` per legacy aldebaran-urbi convention (see
-     * aldebaran-urbi/tests/2.x/urbistyle.chk for `throw Exception.new(...) |`
-     * patterns).  Same root cause as MEMBER_SET / var-decl / local-assign
-     * fixes: urbi_parse_inner_tier would absorb the pipe into the throw value. */
     UAstNode *value = urbi_parse_expression(p, 0);
     if (!value) return (UAstNode *)&uparser_oom_sentinel;
     if (value->kind == AST_ERROR) return value;
@@ -890,9 +782,7 @@ UAstNode *urbi_parse_throw(UParser *p) {
     return node;
 }
 
-/* === v0.10.5: assert keyword ===
- * urbi_parse_assert — `assert(expr)` or `assert { block }`.
- *
+/*
  * Paren form:   assert(expr)
  *   Records the source text span of `expr` for use in the failure diagnostic.
  *   src_text points into the source buffer between the `(` and `)` characters
@@ -901,10 +791,7 @@ UAstNode *urbi_parse_throw(UParser *p) {
  * Block form:   assert { stmts }
  *   Evaluates the block; truthy final value = pass (no throw).
  *   src_text/src_len = NULL/0.
- *
- * Ruling: implemented (v0.10.5, legacy F9).
- * Lowers at emit time to: if (!expr) throw "assertion failed[: <src>]"
- * No new opcode needed. */
+ */
 UAstNode *urbi_parse_assert(UParser *p) {
     UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_ASSERT */
 
@@ -966,11 +853,6 @@ UAstNode *urbi_parse_assert(UParser *p) {
 }
 
 /* --- urbi_parse_try: `try { body } [catch ([var] e [if guard]) { handler }] [else { body }] [finally { cleanup }]`
- *
- * v0.10.5 (v0.10.5): extended grammar to accept:
- *   - optional `var` keyword before the catch variable name
- *   - optional `if expr` guard after the catch variable name
- *   - optional `else { body }` clause after catch (runs when no exception thrown)
  *
  * Both catch and finally remain optional, but at least one must be present.
  * `else` requires a preceding catch clause. */
@@ -1056,11 +938,8 @@ UAstNode *urbi_parse_try(UParser *p) {
     return node;
 }
 
-/* === v0.10.5: control flow ===
- *
+/*
  * parse_for — `for (var x : iter_expr) body` or `for (var x in iter_expr) body`
- *
- * Ruling: implemented (v0.10.5, legacy F2).
  *
  * Supports only the for-each form.  C-style `for (init; cond; step)` is a
  * migration (see docs/migration/control-flow-migration.md).  Count-form
@@ -1125,9 +1004,6 @@ static UAstNode *parse_for(UParser *p) {
     return node;
 }
 
-/* parse_break — `break` (statement).
- * Ruling: implemented (v0.10.5, legacy F2).
- * No payload beyond position.  Error if not inside a for/while/switch. */
 static UAstNode *parse_break(UParser *p) {
     UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_BREAK */
     if (p->loop_depth == 0 && p->switch_depth == 0) {
@@ -1140,9 +1016,6 @@ static UAstNode *parse_break(UParser *p) {
     return node;
 }
 
-/* parse_continue — `continue` (statement).
- * Ruling: implemented (v0.10.5, legacy F2).
- * No payload beyond position.  Error if not inside a for/while. */
 static UAstNode *parse_continue(UParser *p) {
     UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_CONTINUE */
     if (p->loop_depth == 0) {
@@ -1156,10 +1029,6 @@ static UAstNode *parse_continue(UParser *p) {
 }
 
 /* parse_switch — `switch (expr) { case v1: body1; case v2: body2; }`
- *
- * Ruling: implemented (v0.10.5, legacy F2).
- * Equality-based only (no pattern matching — that is deferred-v1.x).
- * Produces AST_SWITCH with parallel arrays of case-value nodes and body nodes.
  *
  * Grammar:
  *   switch ( expr ) { ( case expr : stmts )* }
@@ -1353,4 +1222,3 @@ static UAstNode *parse_switch(UParser *p) {
     node->u.switch_stmt.default_body = default_body;
     return node;
 }
-/* === end v0.10.5: control flow === */

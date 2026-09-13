@@ -1,20 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uemit_react.c — reactive / slot-access bytecode emitters.
- * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #5).
- *
+/*
  * Contains urbi_emit_expr arm helpers for:
  *   AST_MEMBER_GET, AST_MEMBER_SET   — slot access
  *   AST_WATCHER                      — at/whenever/at-sync installs
  *   AST_WAITUNTIL                    — waituntil install
  *   AST_AT_EVENT                     — event-driven at/at-sync
  *   AST_AT_SLOT_CHANGE               — slot-change at/at-sync
- *
- * IMPORTANT: AST_AT_EVENT and AST_AT_SLOT_CHANGE carry the v0.5.2 freereg-sync
- * fix (commit 6eb40a3).  The two `if (e->current_fs->freereg < e->next_reg)`
- * guards at the urbi_emit_function_literal call sites in urbi_emit_at_event_arm and
- * urbi_emit_at_slot_change_arm MUST NOT be removed.  Dropping them allows
- * urbi_emit_function_literal to allocate body_reg on top of event_reg, causing
- * OP_CLOSURE to clobber the event pointer at runtime. */
+ */
 
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
 #include "value/uintern.h"        /* ustr_intern */
@@ -166,12 +158,6 @@ uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n) {
     urbi_emit_instr(e, uinstr_enc_abc(op, cond_reg, body_reg, alt_reg),
                (uint32_t)n->line);
 
-    /* Release temporary closure regs — watcher install is a statement.
-     * EMIT-010 use free_reg_freereg_synced so freereg unwinds
-     * symmetrically with next_reg.  urbi_emit_function_literal raised both
-     * cursors when compiling the cond/body/alt closures; plain
-     * free_reg() would leave freereg promoted, leaking 1-3 register
-     * slots past the install statement. */
     if (alt_ast  != NULL) free_reg_freereg_synced(e);
     if (body_ast != NULL) free_reg_freereg_synced(e);
     free_reg_freereg_synced(e);  /* cond_reg */
@@ -194,13 +180,7 @@ uint8_t urbi_emit_waituntil_arm(UEmitter *e, UAstNode *n) {
     /* waituntil (cond) — one-shot strand-block primitive.
      * Build a cond closure, emit OP_WAITUNTIL_INSTALL (=41).
      * Side-effect check per spec #2 §9.2.
-     *
-     * v0.10.5: waituntil (e?) event form desugars to e.waituntil().
-     * The `urbi_event_waituntil` runtime function parks the calling strand on
-     * the event's waiters_head until an emit fires; the emit payload is
-     * deposited in s->last_event_payload and becomes the call's return
-     * value when the strand resumes.  Stack-allocated AST nodes avoid arena
-     * allocation for the desugar — their lifetime spans only this emit call. */
+     */
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
@@ -288,15 +268,6 @@ uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
     uint8_t event_reg = urbi_emit_expr(e, event_ast);
     if (e->error != EMIT_OK) return 0U;
 
-    /* Sync freereg up to next_reg before allocating the body closure.
-     * AST_IDENT global-fallback (line ~824) and the chains it feeds
-     * (AST_MEMBER_GET et al.) bump only e->next_reg, leaving freereg
-     * stale.  urbi_emit_function_literal allocates body_reg from freereg,
-     * so without this sync body_reg can land on top of event_reg —
-     * OP_CLOSURE then clobbers the event pointer at runtime.
-     * AST_WATCHER avoids this by routing cond through
-     * urbi_emit_function_literal symmetrically.
-     * v0.5.2 freereg-sync fix (commit 6eb40a3) — do NOT remove. */
     if (e->current_fs->freereg < e->next_reg)
         e->current_fs->freereg = e->next_reg;
 
@@ -329,19 +300,12 @@ uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
         : 0xFFU;
     if (e->error != EMIT_OK) return 0U;
 
-    /* v0.10.2: three-way opcode select.
-     *   whenever (e?)  → OP_WHENEVER_EVENT_INSTALL (=48; re-fires every emit)
-     *   at sync (e?)   → OP_AT_EVENT_SYNC_INSTALL  (=43; sync, one-shot per emit)
-     *   at (e?)        → OP_AT_EVENT_INSTALL        (=42; async, one-shot per emit)
-     * whenever-sync has no valid surface syntax; urbi_parse_whenever never sets
-     * is_sync=true, so whenever_flag && sync_flag cannot both be true. */
     UOpcode op = whenever_flag ? OP_WHENEVER_EVENT_INSTALL
                : sync_flag    ? OP_AT_EVENT_SYNC_INSTALL
                :                OP_AT_EVENT_INSTALL;
     urbi_emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
                (uint32_t)n->line);
 
-    /* EMIT-010 unwind both cursors symmetrically. */
     if (alt_reg  != 0xFFU) free_reg_freereg_synced(e);
     if (body_reg != 0xFFU) free_reg_freereg_synced(e);
     free_reg_freereg_synced(e);  /* event_reg */
@@ -398,12 +362,6 @@ uint8_t urbi_emit_at_slot_change_arm(UEmitter *e, UAstNode *n) {
                                  event_reg, recv_reg, (uint8_t)ic_idx),
                (uint32_t)n->line);
 
-    /* Sync freereg up to next_reg before allocating the body closure
-     * (mirrors AST_AT_EVENT).  AST_IDENT global-fallback feeding
-     * recv_ast bumps next_reg only, leaving freereg stale, so
-     * urbi_emit_function_literal can otherwise allocate body_reg on top
-     * of event_reg.
-     * v0.5.2 freereg-sync fix (commit 6eb40a3) — do NOT remove. */
     if (e->current_fs->freereg < e->next_reg)
         e->current_fs->freereg = e->next_reg;
 
@@ -431,7 +389,6 @@ uint8_t urbi_emit_at_slot_change_arm(UEmitter *e, UAstNode *n) {
     urbi_emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
                (uint32_t)n->line);
 
-    /* EMIT-010 unwind both cursors symmetrically. */
     if (alt_reg  != 0xFFU) free_reg_freereg_synced(e);
     if (body_reg != 0xFFU) free_reg_freereg_synced(e);
     free_reg_freereg_synced(e);  /* event_reg */

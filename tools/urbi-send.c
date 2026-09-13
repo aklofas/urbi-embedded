@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* urbi-send — one-shot NDJSON client for the v0.9.1 REPL service.
- *
+/*
  * Pure POSIX sockets + libc.  No liburbi dependency — this binary stays
  * usable from build hosts that don't have the runtime archive linked in.
  *
@@ -10,12 +9,7 @@
  *   2 — usage / network / auth / parse error
  *
  * Token precedence: --token flag > URBI_REPL_TOKEN env > none.
- *
- * JSON escaping for `eval` code:  the v0.9.1 minimal escape handles
- * embedded " and \\ only.  Strings containing literal newlines or other
- * control characters are NOT supported by this client — emit them via
- * urbiscript escape sequences (e.g. "a\\nb").  Full JSON-safe escaping
- * is a v1.x followup. */
+ */
 
 #define _POSIX_C_SOURCE 200809L
 

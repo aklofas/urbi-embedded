@@ -1,23 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* primitives.h — C-native primitives (Mutex, Date, Duration).
  *
- * This module lands three primitive types on top of the
- * Phase 5/6/7/8 baselines:
- *
- *   Mutex     — cooperative single-VM lock.  v1.0 is URBI_SCHED_COOPERATIVE,
- *               so the mutex is a non-blocking flag (lock / unlock /
- *               tryLock).  Phase 10's `.u` overlay grows Mutex.synchronized
- *               via waituntil for cooperative wait semantics.
- *   Date      — wall-clock access.  Date.now / Date.fromSeconds round-trip
- *               seconds-since-epoch via libc time(); Date.asString
- *               formats UTC as ISO-style "YYYY-MM-DD HH:MM:SS".
- *               Freestanding builds without time() return 0 / "".
- *   Duration  — thin wrapper over integer microseconds.  Time literals
- *               (100ms / 2s / 1d) lex to integer
- *               microseconds; Duration.fromMicroseconds wraps an integer
- *               in a Duration proto-shaped UObject for typed dispatch.
- *               .asMicroseconds / .asMilliseconds read the backing slot.
- *
  * Boot order: urbi_stdlib_register_primitives(vm) is called from
  * urbi_stdlib_boot AFTER namespaces.  Realm-global binding for the
  * primitive names (Mutex / Date / Duration) is deferred to

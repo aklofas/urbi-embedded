@@ -1,19 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uemit_class.c — class declaration emit (desugar).
  *
- * Phase 6 of class stdlib.  Per spec §8, class Foo : public A, B { body }
- * desugars to:
- *
  *   var Foo = Object.clone()
  *   Foo.protos.insertFront(B)        # protos in REVERSE order
  *   Foo.protos.insertFront(A)        # so chain ends in declaration order
  *   <body emitted with Foo as receiver>
- *
- * S-emit-freereg-discipline (carry-forward from v0.5.7-fixes): each
- * emitted call (clone, insertFront, body slot-set) is a sibling site
- * with its own register-allocation drift hazard.  Sync freereg to
- * next_reg between sibling sites — same fix shape as urbi_emit_at_event_arm
- * in uemit_react.c.
  *
  * Body-statement support: AST_VAR_DECL (`var x = expr`) and
  * AST_FUNCTION (`var f = function() { ... }`) emit as Foo.setSlot.
@@ -33,14 +24,6 @@
  * receiver is the class object held in foo_reg, but foo_reg is a raw
  * register slot (no AST node) — we can't reuse urbi_emit_property_decl_arm
  * (which builds an AST_MEMBER_GET on n->u.property_decl.recv).
- *
- * Inline the desugar (v1.6 S42 method-call ABI):
- *   1. OP_SELF callee_reg, foo_reg, ic_setProperty — loads method into
- *      callee_reg and class object (self) into callee_reg+1.
- *   2. Emit name / "oget"/"oset" / function-literal args into
- *      callee_reg+2..callee_reg+4.
- *   3. OP_CALL with method-flag bit so the native setProperty arm
- *      receives self via R[A+1].
  *
  * Sibling-site freereg discipline matches emit_class_body_stmt's
  * existing pattern (S-emit-freereg-discipline).  Result is discarded
@@ -244,8 +227,7 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
         return 0U;
     }
 
-    /* === Step 1: Foo = Object.clone() ===
-     *
+    /*
      * Build a synthetic AST_CALL of Object.clone() and dispatch through
      * the existing call/member-get arms.  Reusing the existing emit
      * machinery means we inherit lazy-arg context handling, IC alloc,
@@ -278,19 +260,11 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
     uint8_t foo_reg = urbi_emit_expr(e, &clone_call);
     if (e->error != EMIT_OK) return 0U;
 
-    /* Sync freereg to next_reg before the proto-insertion calls
-     * (S-emit-freereg-discipline; matches the v0.5.7 fix at
-     * AST_AT_EVENT in uemit_react.c).  urbi_emit_call_arm leaves freereg at
-     * the local-zone boundary while next_reg points just past foo_reg;
-     * subsequent OP_CLOSURE / OP_GETSLOT temps allocated through
-     * alloc_reg use next_reg, so the cursors must agree. */
     if (e->current_fs->freereg < e->next_reg) {
         e->current_fs->freereg = e->next_reg;
     }
 
-    /* === Step 2: For each proto in REVERSE order, emit
-     *   Foo.protos().insertFront(proto)
-     *
+    /*
      * Reversed iteration so declaration-order ends up as the chain head:
      * `class F : public A, B` parses [A, B], we emit insertFront(B) then
      * insertFront(A); final chain is [A, B, Object] (S-mro-declaration-
@@ -392,9 +366,7 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
         }
     }
 
-    /* === Step 3: body[Foo] — walk body statements and install each
-     * var-decl/function-decl as a slot on Foo.
-     *
+    /*
      * Simplification: only AST_VAR_DECL is supported (catches
      * `var x = 1` and `var f = function() { ... }` both via the same
      * arm).  Other body statement kinds raise EMIT_UNSUPPORTED_AST. === */
@@ -424,8 +396,7 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
         }
     }
 
-    /* === Step 4: bind the class name as a var in the enclosing scope.
-     *
+    /*
      * Synthesize an AST_ASSIGN equivalent: at chunk-top this writes the
      * realm global; inside a function body this routes through the
      * existing local/upvalue resolver via urbi_emit_assign_arm.  But we don't
@@ -523,9 +494,6 @@ urbi_emit_property_decl_arm(UEmitter *e, UAstNode *n)
         return 0U;
     }
     if (n->u.property_decl.recv == NULL) {
-        /* Implicit-receiver form (class body or top-level `get x()`).
-         * v0.6.1 supports the explicit-receiver form only at the AST arm;
-         * class-body wiring lives in emit_class_body_stmt. */
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     }

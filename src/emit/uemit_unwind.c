@@ -1,7 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uemit_unwind.c — unwind / control-transfer bytecode emitters.
- * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #6).
- *
+/*
  * Contains:
  *   - Public encoder helpers for unwind opcodes (uemit_throw, uemit_try_begin,
  *     uemit_try_end, uemit_push_tag, uemit_pop_tag,
@@ -66,17 +64,6 @@ void uemit_resume(UEmitter *e, uint8_t reg_state, uint32_t line) {
 void uemit_load_catch_value(UEmitter *e, uint8_t reg, uint32_t line) {
     urbi_emit_instr(e, uinstr_enc_abc(OP_LOAD_CATCH_VALUE, reg, 0U, 0U), line);
 }
-
-/* =========================================================================
- * urbi_emit_expr arm helpers for AST_THROW / AST_TRY / AST_TAG_PREFIX.
- * Moved from the monolithic urbi_emit_expr switch (EMIT-045 #6).
- * urbi_emit_try_arm contains the EMIT-033 collapse (emit_try_frame +
- * emit_catch_handler_section).
- * ========================================================================= */
-
-/* ---------------------------------------------------------------------------
- * try/catch/finally helpers (EMIT-033).
- * -------------------------------------------------------------------------- */
 
 /* Emit the catch-handler section: reset temps, declare the catch variable
  * (if named), emit OP_LOAD_CATCH_VALUE, optionally emit a guard check that
@@ -182,27 +169,13 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
     return r_catch;
 }
 
-/* Collapse the 3 near-duplicate try paths (EMIT-033).
- * has_catch = (n->u.try_stmt.catch_body != NULL)
- * has_finally = (n->u.try_stmt.finally_body != NULL)
- * rd = result register (pre-allocated by urbi_emit_try_arm).
- *
+/*
  * Returns rd on success or 0 on error (e->error set).
  *
  * else_body is emitted inline on the normal-exit path (after
  * TRY_END, before JMP past_handler) so finally still wraps it correctly
  * in the catch+finally case.  Guard logic lives in emit_catch_handler_section. */
 
-/* v0.11.4-D: emit an inline copy of the finally body for the NORMAL
- * (non-unwind) completion path.  The unwind path reaches the finally via the
- * TRY_BEGIN handler_pc + run_cleanup_with_replace (uunwind.c); the normal
- * fall-through path must ALSO run the body — REVIVAL §S5a: "finally runs on
- * every exit kind (return / throw / tag.stop / cancel) regardless."  Mirrors
- * the unwind-copy register/block setup but omits OP_RESUME: on the normal path
- * control simply falls through to the JMP-past-finally that skips the unwind
- * copy.  Runs exactly once per exit (the body either completes normally and
- * reaches this inline copy, or unwinds and reaches the handler copy — never
- * both).  Returns 1 on success, 0 on error (e->error set). */
 static int emit_finally_body_at(UEmitter *e, UAstNode *finally_body,
                                 uint8_t reg_floor) {
     e->next_reg = reg_floor;
@@ -229,17 +202,6 @@ static int emit_finally_inline(UEmitter *e, UAstNode *n, uint8_t rd) {
     return emit_finally_body_at(e, n->u.try_stmt.finally_body, rd);
 }
 
-/* Emit the teardown for every unwind scope above down_to_depth,
- * innermost-first, at a break/continue site whose JMP crosses them.
- * Tag scope → OP_POP_TAG (runtime pops + tears down the top TAG_SCOPE
- * entry; the A operand is disasm-fidelity only).  Try scope → OP_TRY_END,
- * then — when the scope carries a finally — an inline copy of the finally
- * body (REVIVAL §S5a: finally runs on every exit kind; same mechanism as
- * the v0.11.4-D normal-path copy).  Code-size cost is one copy per
- * crossing site, mirroring the normal-path/unwind-copy duplication.
- * Does NOT modify e->unwind_scope_depth: the scopes stay open for the
- * (unreachable-after-JMP, but still emitted) fall-through path and for
- * sibling break sites. */
 int urbi_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line) {
     int d;
     for (d = e->unwind_scope_depth; d > down_to_depth; d--) {
@@ -357,9 +319,6 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         if (e->error != EMIT_OK) return 0U;
         uemit_unwind_scope_pop(e);   /* outer finally scope closed */
 
-        /* v0.11.4-D: normal-path finally.  Both the normal-completion path and
-         * the post-catch path converge here (after the outer TRY_END), so this
-         * single inline copy runs the finally body on every non-unwind exit. */
         if (!emit_finally_inline(e, n, (uint8_t)(rd + 1U))) return 0U;
 
         /* JMP past finally */
@@ -490,8 +449,6 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         if (e->error != EMIT_OK) return 0U;
         uemit_unwind_scope_pop(e);   /* finally scope closed */
 
-        /* v0.11.4-D: normal-path finally — run the body on fall-through before
-         * jumping past the unwind copy (REVIVAL §S5a). */
         if (!emit_finally_inline(e, n, (uint8_t)(rd + 1U))) return 0U;
 
         /* JMP past finally (normal exit path) */
@@ -551,12 +508,7 @@ uint8_t urbi_emit_throw_arm(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0U;
     uemit_throw(e, val_reg, (uint32_t)n->line);
     /* throw is a statement; return a nil reg for the block's last-stmt logic.
-     *
-     * EMIT-018 fix (v0.5.7): force next_reg above urbi_emit_fs_temp_floor
-     * before claiming rd.  Same root cause as EMIT-017 (AST_RETURN
-     * bare-return).  Defensive against future arms; current emit-arm
-     * contract syncs next_reg to freereg between siblings, so the bug is
-     * dormant.  Same fix shape as EMIT-017. */
+     */
     {
         uint8_t floor_val = urbi_emit_fs_temp_floor(e->current_fs);
         if (e->next_reg < floor_val) e->next_reg = floor_val;
@@ -570,12 +522,6 @@ uint8_t urbi_emit_throw_arm(UEmitter *e, UAstNode *n) {
     return rd;
 }
 
-/* ---------------------------------------------------------------------------
- * urbi_emit_try_arm — AST_TRY dispatch target.
- * try { body } [catch (e) { handler }] [finally { cleanup }].
- * Three paths (catch+finally / catch-only / finally-only) are collapsed
- * into emit_try_frame (EMIT-033).
- * -------------------------------------------------------------------------- */
 uint8_t urbi_emit_try_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
@@ -588,18 +534,6 @@ uint8_t urbi_emit_try_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs->parent == NULL && !urbi_emit_reserve_global_slot(e))
         return 0U;
 
-    /* v0.13.5-B/-E: anchor the try result register in nactvar as a
-     * declared hidden local (the urbi_emit_tag_prefix_arm pattern) instead of
-     * a raw temp.  A raw rd breaks urbi_emit_fs_temp_floor's count-based math
-     * (nactvar + global_slot_reserved assumes declared locals are
-     * contiguous from the frame base): every local declared inside the
-     * try body landed one register ABOVE the computed floor, so each
-     * statement-boundary temp reset handed that local's register out as
-     * a temp — switch's \x01sw collided with the case-value temp (EQ
-     * Rn,Rn: first arm always ran), for-each's hidden locals collided
-     * with body temps (runtime TypeError), and a while loop's var was
-     * clobbered by the condition's result temp (raising a TypeError that
-     * masked the body's thrown value in the catch). */
     if (!uemit_open_block(e, /*is_loop=*/false)) return 0U;
     const char *rd_name = ustr_intern(e->vm, "\x01rd", 3);
     if (rd_name == NULL) { uemit_close_block(e); e->error = EMIT_OOM; return 0U; }
@@ -636,30 +570,7 @@ uint8_t urbi_emit_try_arm(UEmitter *e, UAstNode *n) {
  *     (empty — onleave body deferred)
  *   [past_handler_pc]:
  *     <continuation>
- *
- * Register discipline (v0.13.4 fix): the
- * result register (rd) and the tag value (\x01tag) must both sit BELOW any
- * body-declared `var`s and below urbi_emit_fs_temp_floor.  A raw temp for rd breaks
- * urbi_emit_fs_temp_floor's count-based math (nactvar + global_slot_reserved assumes
- * declared locals are contiguous from the floor): \x01tag landed AT the
- * floor rather than below it, so the body's first temp reset clobbered it.
- * Both rd and the tag value are therefore DECLARED hidden locals (`\x01rd`
- * and `\x01tag`, the for-each `\x01iter` / switch `\x01sw` machinery
- * pattern) in an outer block, so nactvar counts both and the temp floor
- * lands one above \x01tag:
- *   ... [outer locals] | \x01rd | \x01tag | <-- urbi_emit_fs_temp_floor / body temps
- * The body keeps its own block so body-declared vars pop at scope end.
- *
- * 4-bit constraint: OP_PUSH_TAG packs tag_reg into A[3:0], so `\x01tag`'s
- * slot must be <= 15.  OP_PUSH_TAG is the ONLY reader of R[tag_reg] (it
- * binds the scope's UTag at push time, v0.10.9-B); OP_POP_TAG ignores its
- * A operand and pops the top cleanup entry — holding the value in the
- * local across the body is for liveness/GC-rooting, not for the pop.
- * When the slot exceeds 15 every lower register is local-occupied, so
- * there is no safe spill target; the EMIT-015 rejection stays:
- * EMIT_TAG_SPILL_OUT_OF_RANGE (widening the encoding to a full byte is a
- * v1.x bytecode change, filed as a deferred backlog item).
- * -------------------------------------------------------------------------- */
+ */
 uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
@@ -673,9 +584,6 @@ uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
      * urbi_emit_switch_arm (see urbi_emit_reserve_global_slot). */
     if (fs->parent == NULL && !urbi_emit_reserve_global_slot(e)) return 0U;
 
-    /* Open outer block scope: \x01rd and \x01tag live here as proper
-     * locals so urbi_emit_fs_temp_floor counts both and body temps start above them.
-     * Both are popped when this block closes. */
     if (!uemit_open_block(e, /*is_loop=*/false)) return 0U;
 
     /* Declare \x01rd as a hidden local to anchor rd in nactvar.  This is
@@ -706,7 +614,6 @@ uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
     e->next_reg = e->current_fs->freereg;
 
-    /* 4-bit nibble check (EMIT-015, see header comment). */
     if (tag_slot > 15) {
         uemit_close_block(e);
         e->error = EMIT_TAG_SPILL_OUT_OF_RANGE;
@@ -728,13 +635,6 @@ uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
         return 0U;
     }
 
-    /* Body — its own block so body-declared locals pop at scope end and
-     * captured ones get an OP_CLOSE on the fall-through path.  The tag
-     * scope has NO emitted abnormal exits of its own: tag.stop() and
-     * throw unwind via the runtime walker (not emitted JMPs), so only
-     * this normal close matters at emit level; break/continue against an
-     * enclosing loop are covered by that loop's exit-path closes via
-     * has_captured propagation (uemit_close_block). */
     if (!uemit_open_block(e, false)) { uemit_close_block(e); return 0U; }
     uint8_t body_result = urbi_emit_expr(e, n->u.tag_prefix.body);
     if (e->error != EMIT_OK) {

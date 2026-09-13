@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* urbi-server — headless network REPL server (v0.9.1).
- *
+/*
  * Builds only when URBI_ENABLE_REPL=1.  Spins up a UVM, optionally runs
  * an urbiscript boot script under the global realm, then enters a step
  * loop driving the REPL service until SIGINT/SIGTERM.
@@ -111,14 +110,6 @@ static int run_boot_script(UVM *vm, const char *path) {
     UArena arena;
     uarena_init(&arena, 4096);
 
-    /* CHSTR-027 pattern: the root proto must be
-     * heap-allocated — closures created by the boot script keep proto
-     * pointers alive past this frame; uchunk_destroy defers the actual
-     * free to the refcount-rescue machinery (vm->rescued_protos) when
-     * references remain, and frees immediately when none do.  Ownership
-     * fields go in BEFORE uemit_init per its documented contract, so the
-     * single uchunk_destroy below also covers the compile-failure path
-     * (refcount 0 + heap_allocated → buffers and struct freed in place). */
     UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
     if (module == NULL) {
         fprintf(stderr, "urbi-server: out of memory\n");
@@ -154,8 +145,6 @@ static int run_boot_script(UVM *vm, const char *path) {
         rc = 1;
     }
     if (rc != 0) {
-        /* Parse-error path skipped uemit_finish; release emitter-owned
-         * funcstate storage (no-op when finish already ran — FE-07). */
         urbi_emit_abandon(&e);
     }
     if (rc == 0) {

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* v0.10.10 / D7-C: detach / disown C-natives.
- *
+/*
  * These back the overlay-side `var detach = function(lazy fun) { __detach_strand(fun) }`
  * and `var disown = function(lazy fun) { __disown_strand(fun) }` wrappers in
  * control_overlay.u.  The lazy-arg emit path (uemit_stmt.c) wraps the

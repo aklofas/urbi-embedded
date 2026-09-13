@@ -77,11 +77,6 @@ static void print_usage(FILE *out) {
 
 static int eq(const char *a, const char *b) { return strcmp(a, b) == 0; }
 
-/* --- trace capture (v0.11.2) ---
- * --trace=SPEC enables channels and --trace-out=FILE receives a URBT binary
- * dump at exit.  Globals exist in both build modes so the arg parser is
- * uniform; the ring-touching code is behind URBI_TRACE so a trace-off build
- * has no dead references and --trace fails with a friendly message. */
 static const char *trace_spec     = NULL;            /* "chan:level[,...]" or NULL */
 static const char *trace_out_path = "urbi-trace.bin";
 static int          want_dump_on_fatal = 0;          /* --dump-on-fatal */
@@ -475,8 +470,6 @@ static int run_file(UVM *vm, const char *path) {
     UArena arena;
     int rc = 1;
     char err[256] = {0};
-    /* CHSTR-027 pattern: heap-allocate the root
-     * proto — same rationale as run_expression above. */
     UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
     if (module == NULL) {
         fprintf(stderr, "urbi: out of memory\n");
@@ -489,10 +482,6 @@ static int run_file(UVM *vm, const char *path) {
         module->alloc_ud       = vm->alloc_ud;
         module->heap_allocated = true;
         UValue out;
-        /* LANG-S06: route through the persistent loader strand so chunk-top
-         * & and , forks are legal; urbi_vm_run used a transient strand that
-         * rejected OP_FORK_DETACH/OP_FORK_JOIN.  Drive urbi_step until
-         * quiescent, honoring WAKE_AT for sleep/timer workloads. */
         int vrc = urbi_run_chunk(vm, NULL, module, &out);
         vrc = cli_drive_to_quiescence(vm, vrc);
         if (vrc == URBI_OK) {
@@ -548,11 +537,6 @@ static int run_expression(UVM *vm, const char *expr) {
     UArena arena;
     int rc = 1;
     char err[256] = {0};
-    /* CHSTR-027 pattern: the root proto must be
-     * heap-allocated — closures created during the run keep proto pointers
-     * alive past this frame; uchunk_destroy defers the actual free to the
-     * refcount-rescue machinery (vm->rescued_protos) when references remain,
-     * and frees immediately when none do. */
     UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
     if (module == NULL) {
         fprintf(stderr, "urbi: out of memory\n");
@@ -565,8 +549,6 @@ static int run_expression(UVM *vm, const char *expr) {
         module->alloc_ud       = vm->alloc_ud;
         module->heap_allocated = true;
         UValue out;
-        /* LANG-S06: route through the persistent loader strand; same
-         * rationale as run_file above (urbi_vm_run transient → fork errors). */
         int vrc = urbi_run_chunk(vm, NULL, module, &out);
         vrc = cli_drive_to_quiescence(vm, vrc);
         if (vrc == URBI_OK) {
@@ -629,9 +611,7 @@ static char *history_path(void) {
 
 /* listen_addr_port: "[ADDR:]PORT" or "PORT".  NULL = no network listener.
  * listen_token:    NULL = no auth (loopback only).
- *
- * The local linenoise REPL realm and the network listener's per-session
- * lobby realms are independent — this is the simple v0.9.1 split. */
+ */
 static int run_interactive(UVM *vm,
                            const char *listen_addr_port,
                            const char *listen_token) {
@@ -836,11 +816,6 @@ static int run_interactive(UVM *vm,
             final_len   = ll + 2;
         }
 
-        /* Use urbi_repl_eval: compiles, runs, drains spawned strands, and
-         * formats the result.  The drain workaround previously inlined here
-         * is now inside urbi_repl_eval (API-009).
-         * 512 bytes: large enough for all parse-error messages (longest is
-         * ~200 chars for the 'closure' retirement message + line/col prefix). */
         char result_buf[512] = {0};
         int eval_rc = urbi_repl_eval(vm, repl_realm, buf, final_len,
                                      result_buf, sizeof result_buf);
@@ -906,11 +881,7 @@ int main(int argc, char *argv[]) {
         return 2;
     }
 
-    /* Scan for --listen [addr:]port and --token TOK (v0.9.1).  Both are
-     * interactive-mode-only — they're ignored by -e/-f/dump modes (which
-     * exit before reaching the local REPL loop).  Token precedence:
-     *   --token flag > URBI_REPL_TOKEN env > NULL (no auth, loopback only).
-     *
+    /*
      * Outside URBI_ENABLE_REPL=1 builds the flags are accepted and rejected
      * with a clear error rather than treated as unknown-option. */
     const char *listen_addr_port = NULL;
@@ -961,10 +932,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* Scan for --trace=SPEC / --trace-out=FILE (v0.11.2).  Both are the "="
-       form (single token), so the positional-file detector below skips them
-       (they start with '-').  They apply to the -e/-f/positional/stdin run
-       paths; ignored by dump and interactive modes. */
     for (int i = 1; i < argc; i++) {
         if (strncmp(argv[i], "--trace=", 8) == 0) {
             trace_spec = argv[i] + 8;
@@ -975,10 +942,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* Positional file: first non-flag argument that isn't an -e/-f value
-       nor a --listen/--token value (v0.9.1).  Skips known multi-arg flag
-       values so e.g. `urbi --listen :14242` doesn't treat ":14242" as a
-       script path. */
     if (!file_arg) {
         for (int i = 1; i < argc; i++) {
             if (eq(argv[i], "--listen") || eq(argv[i], "--token") ||

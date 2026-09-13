@@ -1,10 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UFuncState lifecycle + upvalue cascade + block stack + IC index assign
  * + prologue_prepend_instr.
- *
- * Extracted from uemit.c (v0.5.4-decompose).
- * EMIT-034: prologue_prepend_instr split into proto_grow_for_prologue /
- * module_grow_for_prologue to name the two container paths. */
+ */
 
 #include "emit/uemit_internal.h"
 
@@ -130,13 +127,7 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
             fs->max_reg_seen = fs->freereg;
     }
 
-    /* v0.10.10 / R5: pre-seed global_var_sigs for stdlib-defined functions
-     * with lazy params.  The baked stdlib is compiled as a separate unit, so
-     * their signatures are not visible when user code is compiled.  Pre-seeding
-     * here ensures that call sites like `detach(expr)` get correct lazy-arg
-     * wrapping (urbi_emit_lazy_thunk) without requiring the user to write
-     * `detach(function() { expr })` explicitly.
-     *
+    /*
      * Only seeds the root FuncState (parent == NULL) when a VM is present
      * (vm->intern_table is required for ustr_intern). */
     if (parent == NULL && e->vm != NULL) {
@@ -192,9 +183,6 @@ int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
         if (ic_rp == NULL) { e->error = EMIT_OOM; return -1; }
         UChunkAllocFn alloc = emit_alloc_for(ic_rp);
         if (alloc == NULL) { e->error = EMIT_OOM; return -1; }
-        /* TIDY-005: explicit (void *) cast on the inout pointer prevents
-         * bugprone-multi-level-implicit-pointer-conversion from firing on
-         * USymbol ** → void * decay through alloc's first argument. */
         USymbol **fresh = (USymbol **)alloc((void *)fs->ic_names,
                                             (size_t)new_cap * sizeof(USymbol *),
                                             ic_rp->alloc_ud);
@@ -206,8 +194,6 @@ int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
     fs->ic_names[idx] = name;
     return idx;
 }
-
-/* --- EMIT-034: prologue_prepend_instr split into per-container helpers --- */
 
 /* Grow and prepend one instruction into a nested UProto.
  * Shifts instructions, line_deltas, and abs_lines rightward by one.
@@ -286,8 +272,6 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     return true;
 }
 
-/* Grow and prepend one instruction into the root chunk (root proto).
- * v0.9.2: e->module IS the root UProto; rp == e->module. */
 static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
     UProto  *rp = e->module;
     if (rp == NULL) { e->error = EMIT_OOM; return false; }
@@ -388,15 +372,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
      * even when the first global reference is inside a branch arm that
      * may not be taken at runtime.  Pure-local functions are left
      * prologue-free (no wasted instruction).
-     *
-     * (EMIT-003) capture prologue_prepend_instr's return value.  On
-     * OOM (instruction-buffer / line-table grow failure) it sets
-     * e->error = EMIT_OOM internally.  The IC-array branches below gate
-     * on e->error == EMIT_OK so a prologue failure cleanly short-circuits
-     * the rest of close — no wasted IC-array allocation against a proto
-     * whose instructions buffer is in an indeterminate partial-shift
-     * state.  The cleanup-only tail (free fs->ic_names, reset prev_line,
-     * pop e->current_fs) still runs unconditionally. */
+     */
     if (fs->references_global && e->error == EMIT_OK) {
         uint32_t prologue = uinstr_enc_abc(OP_LOAD_REALM_GLOBAL,
                                            fs->r_global_slot, 0U, 0U);
@@ -417,14 +393,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
          * proto's own allocator (inherited from the module at
          * uproto_alloc_nested time); the resulting array is freed
          * by uproto_destroy_buffers.
-         *
-         * (EMIT-005) mirror the module-sibling pattern below — only
-         * write p->ic_count / p->ic_names after the IC-array allocation
-         * succeeds.  Pre-fix, the proto path assigned p->ic_count first,
-         * then reset it to 0 on OOM (silent zeroing).  The new shape
-         * leaves p->ic_count at its zero-init value when allocation
-         * fails and propagates the failure via e->error alone, matching
-         * the module path. */
+         */
         if (fs->ic_next > 0U) {
             UChunkAllocFn palloc = p->alloc_fn;
 #if __STDC_HOSTED__
@@ -478,9 +447,6 @@ UFuncState *uemit_close_function(UEmitter *e) {
             p->ic_name_strs = NULL;
         }
     }
-    /* v0.9.2: top-level funcstate (no target_proto) — copy IC names
-     * into root->ic_count / ic_names.  e->module IS the root UProto.
-     * Mirrors the UProto path above. */
     if (fs->target_proto == NULL && fs->parent == NULL && fs->ic_next > 0U) {
         UProto *rp = e->module;
         if (rp == NULL) {
@@ -540,7 +506,6 @@ UFuncState *uemit_close_function(UEmitter *e) {
         if (free_rp != NULL) {
             UChunkAllocFn alloc = emit_alloc_for(free_rp);
             if (alloc != NULL) {
-                /* TIDY-005: explicit (void *) cast on free path. */
                 alloc((void *)fs->ic_names, 0, free_rp->alloc_ud);
             }
         }
@@ -575,13 +540,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
  * in emit_function_body_impl; chunk-top pre-reserves in
  * uemit_open_function).  Returns false + EMIT_REG_EXHAUSTED when the
  * register frame is full.
- *
- * NOTE: the three lazy-claim sites fused into the EMIT-021
- * references_global state machine (urbi_emit_ident_arm's global fallback,
- * urbi_emit_var_decl_arm's chunk-top path, urbi_emit_class_decl_arm) keep their
- * inline copies: they additionally flip references_global, and two of
- * them sync e->next_reg UNCONDITIONALLY (no `<` guard), which is not
- * provably equivalent to the guarded sync below at every call point. */
+ */
 bool urbi_emit_reserve_global_slot(UEmitter *e) {
     UFuncState *fs = e->current_fs;
     if (fs->global_slot_reserved) return true;
@@ -637,16 +596,7 @@ int uemit_declare_local(UEmitter *e, const char *name, int name_len) {
     fs->freereg++;
     if (fs->freereg > fs->max_reg_seen) fs->max_reg_seen = fs->freereg;
 
-    /* Keep the emitter's scratch cursor in sync with the local zone's new
-     * top.  Without this, callers that don't manually sync afterward (the
-     * catch-handler emit was the first one found, 2026-05-16, S45) will
-     * have the next `alloc_reg` collide with the local's slot — the local
-     * gets clobbered by the first temp the surrounding expression
-     * allocates.  Pre-fix: catch variable `e` in `try { throw "x" } catch
-     * (e) { Realm.caught = e }` was overwritten with the Realm object
-     * (kind=8 / UVAL_OBJECT on host, kind=5 / UVAL_CLOSURE on ESP32)
-     * before the body could read it.
-     *
+    /*
      * The function-param emit path (uemit_stmt.c after the params loop)
      * does this same sync explicitly; making it part of the
      * uemit_declare_local contract removes the footgun for all future
@@ -707,19 +657,6 @@ bool uemit_close_block(UEmitter *e) {
         urbi_emit_instr(e, i, e->prev_line);
     }
 
-    /* Propagate has_captured to the enclosing block before this ctx dies.
-     * urbi_vm_find_or_install_upvalue marks only
-     * the INNERMOST block containing the captured local; without
-     * propagation the flag dies with this ctx and the enclosing
-     * construct's conditional closes (while/for-each back-edge + loop-exit
-     * closes gate on blk->has_captured) never see captures made inside a
-     * nested `{}` — break/continue then jump past this block's inline
-     * OP_CLOSE leaving the cell open into a recycled register.
-     * Propagation is UNCONDITIONAL (any captured child marks the parent):
-     * OP_CLOSE thresholds are register-address-based, so a parent's close
-     * at its own base register safely covers (re-)closing the child range
-     * — over-approximation costs at most a no-op OP_CLOSE.  blocks[] is
-     * per-UFuncState, so this cannot leak across function boundaries. */
     if (blk->has_captured && fs->nblocks >= 2) {
         fs->blocks[fs->nblocks - 2].has_captured = true;
     }

@@ -6,14 +6,7 @@
  * Declares the scheduler strategy enum, per-scheduler feature flags, and
  * priority-accessor prototypes (compiled only when the selected scheduler
  * exposes URBI_SCHED_HAS_PRIORITY).
- *
- * Before v0.10.3, this header included "sched/usched.h" — a src/-prefixed
- * path that caused header-not-found errors for embedders using -Iinclude
- * alone.  The public-facing content (feature flags, USchedClass enum, and 3
- * priority-accessor prototypes) is now declared directly in this header.
- * Internal src/ callers that need the cooperative-scheduler implementation
- * details continue to #include "sched/usched.h" directly with -Isrc.
- * Closes audit-1 F1 (completion). */
+ */
 
 #ifndef URBI_SCHED_H
 #define URBI_SCHED_H
@@ -48,20 +41,8 @@ extern "C" {
 /* Priority API — only compiled when the selected scheduler supports it.
    Cooperative (v1.0 baseline) never defines URBI_SCHED_HAS_PRIORITY != 0,
    so these declarations are absent in shipped builds.
-
-   v0.5.5 made the `_CLASS_` infix uniform across all three
-   enumerators (closes API-019).  The original asymmetric form had only
-   the third member CLASS-prefixed; dropping CLASS to match the others
-   would have collided with USCHED_DEADLINE (the scheduler-strategy
-   selector at src/sched/usched.h:11), so the infix was pushed onto the
-   first two enumerators instead. */
+   */
 #if URBI_SCHED_HAS_PRIORITY
-/* Opaque forward-declaration — full definition in src/sched/ustrand.h
- * (internal).  Before v0.10.3, sched.h pulled this in via
- * <sched/usched.h>; that include was removed when public headers stopped
- * leaking src/.  Re-declared here so the public API surface is
- * self-consistent.  Currently latent because URBI_SCHED_HAS_PRIORITY is
- * hard-defined to 0 by the cooperative scheduler (v1.0 baseline). */
 struct UStrand;
 
 typedef enum {
@@ -84,7 +65,6 @@ typedef enum {
  *   (DEFAULT / PRIORITY / DEADLINE).
  *
  * All three operate on caller-owned UStrand; no ownership transfer. */
-/* v0.10.3: vm added as first arg (api-ergonomics F3). */
 URBI_EXPERIMENTAL void        urbi_strand_set_priority(struct UVM *vm, struct UStrand *s, uint8_t priority);
 URBI_EXPERIMENTAL uint8_t     urbi_strand_get_priority(struct UVM *vm, struct UStrand *s);
 URBI_EXPERIMENTAL USchedClass urbi_strand_get_sched_class(struct UVM *vm, struct UStrand *s);
@@ -93,7 +73,6 @@ URBI_EXPERIMENTAL USchedClass urbi_strand_get_sched_class(struct UVM *vm, struct
 #ifdef __cplusplus
 }
 #endif
-
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC visibility pop

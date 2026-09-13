@@ -11,44 +11,7 @@
 extern "C" {
 #endif
 
-/* --- bytecode format version (loader rejects anything other than VERSION_BYTE) ---
-   Encoding: VERSION_BYTE = (major << 4) | minor.  Hard breaks require a minor bump.
-   v1.0 = 0x10 (v0.1.0), v1.1 = 0x11 (v0.2.0), v1.2 = 0x12 (v0.3.0 — control transfer),
-   v1.3 = 0x13 (v0.4.0 — UProto.ic_count + UProto.ic_names side table),
-   v1.4 = 0x14 (v0.5.0 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds),
-   v1.5 = 0x15 (v0.5.6 — wire-format completion: nested protos + per-proto
-                + root ic_name_strs, header reserved bytes 16-23 strictly zero,
-                opcode-shape table verifier, OP_INVOKE retired, v0.5.0 reactive
-                opcodes renumbered 39-46 -> 38-45).
-   v1.6 = 0x16 (v0.7.2 S42 — method-call ABI cleanup: new OP_SELF (47) loads
-                method + receiver into adjacent registers; OP_CALL gains a
-                method-flag bit (C & 0x80) so the receiver is read from
-                R[A+1] explicitly instead of the now-deleted vm->last_recv
-                global.  Eliminates the silent-elision bug where intervening
-                OP_GETSLOTs in argument evaluation clobbered last_recv before
-                the outer OP_CALL.  OP_MAX = 48.).
-   v1.7 = 0x17 (v0.8.1-uproto-root Phase 3 — UModule body shrinks to header
-                + source_name + recursive root_proto block.  Per-field
-                duplication of chunk-top fields removed from the UModule
-                wire section; root_proto is now serialized as a standard
-                UProto block (max_reg, nupvals, nparams, constants,
-                instructions, synclines, ic_names, nested_count, nested[]).
-                Non-root UProtos write nested_count = 0 (flat-on-root
-                emitter per spec §4.2).  v1.6 rejected as
-                UCHUNK_LOAD_UNSUPPORTED_VERSION.).
-   v1.8 = 0x18 (v0.9.2-uproto-only — Approach C: UModule struct deleted.
-                Wire-byte layout unchanged from v1.7 — source_name was
-                already at the chunk-body level pre-cliff, the spec §4.1
-                description of a separate "UModule-header section" was
-                imprecise; the bump is semantic, signaling that the
-                emitting runtime treats every chunk as a UProto with no
-                separate loader-shell type.  v1.7 rejected as
-                UCHUNK_LOAD_UNSUPPORTED_VERSION.).
-   v1.9 = 0x19 (v0.10.2-reactive — opcode space extension: new
-                OP_WHENEVER_EVENT_INSTALL at slot 48 for whenever (e?)
-                event-subscriber installs.  OP_MAX was 48; now 49.
-                v1.8 rejected as UCHUNK_LOAD_UNSUPPORTED_VERSION.).
-
+/*
    Version-mismatch policy: exact-match.  Any byte other than VERSION_BYTE is
    a hard UCHUNK_LOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
    forward/backward compatibility.  Older modules silently loading would
@@ -125,12 +88,7 @@ static inline uint32_t uinstr_enc_abx (UOpcode op, uint8_t a, uint16_t bx) {
          | ((uint32_t)bx << 16);
 }
 
-/* v0.9.2: struct UModule has been deleted.  A "module" is now
- * simply its root UProto.  The root UProto carries all fields that were
- * previously on UModule (source_name, origin_vm, next_proto_serial,
- * total_proto_count, next_in_realm, owning_realm, heap_allocated) in the
- * "root-only meaningful" section added to UProto in uproto.h.
- *
+/*
  * The public API function names use the urbi_chunk_* prefix. */
 
 /* --- errors --- */
@@ -147,13 +105,11 @@ typedef enum {
     UCHUNK_LOAD_OOM,
     UCHUNK_LOAD_INVALID_ARG,            /* NULL module / NULL buf etc.; distinct from TRUNCATED */
     UCHUNK_LOAD_OVERSIZED,              /* count fields exceed compile-time per-proto caps */
-    /* --- bytecode F2: per-instruction bounds hardening (v0.10.7 verifier pass) --- */
     UCHUNK_LOAD_TRUNCATED_UPVALUES,     /* OP_CLOSURE upvalue prelude extends past bytecode end */
     UCHUNK_LOAD_MALFORMED_UPVALUE,      /* OP_CLOSURE upvalue pseudo-instr has invalid in_stack or src_idx */
     UCHUNK_LOAD_JMP_OUT_OF_BOUNDS,      /* OP_JMP Bx target pc outside [0, instr_count) */
     UCHUNK_LOAD_CALL_NRESULTS_ZERO,     /* OP_CALL C low-7 == 0 (nresults+1 must be >= 1) */
     UCHUNK_LOAD_RESERVED_OPCODE,        /* opcode is reserved/unimplemented at this wire version */
-    /* --- bytecode F3: ic_index DFS pre-order mirror (v0.10.8 verifier pass) --- */
     UCHUNK_LOAD_IC_INDEX_MISMATCH       /* proto->ic_index does not match its DFS pre-order visit index */
 } UChunkLoadError;
 
@@ -166,28 +122,12 @@ typedef enum {
 
 /* --- API --- */
 
-/* v0.9.2: strand-bind release helper.
- * Decrements root->refcount and, when it reaches 0 with a prior
- * uchunk_destroy call pending, fires uchunk_destroy_internal.
- * Pass NULL for root to no-op safely.  vm may be NULL in test contexts.
- * (The UModule* first argument has been removed — root is the module.) */
 void uproto_strand_refcount_dec(UProto *root, struct UVM *vm);
 
 /* Allocate a new UProto as parent_proto->nested[nested_count++].
  * Returns pointer to the new proto on success, NULL on OOM.
  * The proto is zero-initialized; alloc_fn/alloc_ud are copied from root.
- *
- * Watcher-detach interaction: condition/body/onleave protos for installed
- * at/whenever/waituntil watchers are created here, then later detached from
- * root_proto->nested[] by strand_closure_unlink.
- * After detach, the corresponding nested[k] slot becomes NULL and ownership
- * transfers to the watcher (freed via pool_free on watcher recycle).
- * uchunk_destroy is robust to NULL slots in nested[].  See also MOD-015. */
-/* v0.8.5: parent_proto explicitly selects the nested[] array to grow
- * (root for top-level function literals, the enclosing UProto for nested
- * function literals).  Each call increments root->next_proto_serial and
- * assigns the new proto's ic_index from the post-increment value,
- * matching DFS pre-order. */
+ */
 UProto *uproto_alloc_nested(UProto *root, UProto *parent_proto);
 
 /* Free a UProto's owned buffers.  Does NOT free the UProto struct itself

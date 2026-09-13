@@ -16,11 +16,6 @@
  *     containers; freed at urbi_vm_destroy via
  *     urbi_stdlib_containers_destroy.
  *
- * VM-lifetime backing buffers are intentional at v1.0 (tracked at
- * docs/urbi-embedded-design-risks.md "stdlib container backing buffers
- * vm-lifetime"); proper UTYPE_LIST / UTYPE_DICT GC types land at v1.x
- * when the cross-cutting walker plumbing arrives.
- *
  * Method registration uses UNativeMethodDef tables with URBI_REGISTER_METHODS
  * (shared installer from stdlib/object_root.h).
  *
@@ -144,23 +139,7 @@ urbi_stdlib_containers_destroy(UVM *vm)
 }
 
 /* Container elements are GC roots.
- *
- * UList/UDict backing stores are raw vm->alloc_fn buffers (not GC cells)
- * threaded onto vm->stdlib_containers by container_register; the script-
- * visible object's `_storage` slot is deliberately UVAL_INT so the object
- * walker treats it as a leaf.  Elements therefore need a dedicated root
- * provider: walk every registered container and yield every element slot.
- * Tuple backing buffers are UCONTAINER_LIST too (tuple_new builds via
- * list_alloc), so the LIST arm covers Tuples.  NULL backing is only
- * possible with len == 0 / cap == 0, so the loop bounds already guard
- * the dereferences.  Cost: lists are O(len); the dict arm is O(cap), not
- * O(len) — bounded <= 4x len by the load factor.  Paid at MARK_ROOTS plus
- * the GC-02 ATOMIC_FINISH re-scan (twice per cycle).  Container backings
- * are vm-lifetime (container_register has no inverse), so root-scan cost
- * grows monotonically with container churn and elements of unreachable
- * containers stay pinned until VM destroy — a soundness-over-precision
- * tradeoff; the full fix is the v1.x UTYPE_LIST promotion (deferred; see
- * design-risks). */
+ */
 void
 urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
 {
@@ -186,26 +165,7 @@ urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
     }
 }
 
-/* Incremental-marking insertion barrier for container
- * element stores.  Containers have no parent gc_byte (raw buffers), so the
- * Dijkstra parent-is-BLACK check is unavailable; instead shade the stored
- * child whenever a mark phase is in flight.  Stores while the GC is IDLE
- * or SWEEPing need no barrier (IDLE: next cycle's root scan sees the
- * element; SWEEP: marking is complete and mid-sweep allocations are
- * current_white by construction).  A slice can also end with phase ==
- * ATOMIC_FINISH (gray list drained exactly at budget exhaustion), so the
- * mutator may store in that phase too and this barrier no-ops — that is
- * sound because the GC-02 full root re-scan runs at the START of the next
- * ATOMIC_FINISH slice, after the store, and re-discovers the element.
- *
- * Container backing stores are walked as ROOTS every cycle
- * (urbi_stdlib_containers_walk_roots), and the GC-02 ATOMIC_FINISH re-scan
- * re-runs every provider — so a mid-mark store into any reachable
- * container is re-discovered before SWEEP even without this shade.  This
- * barrier is therefore PACING-only (do the shade at store time instead of
- * piling the work into the atomic phase), unlike the slot/upvalue
- * barriers, which are load-bearing for soundness.
- *
+/*
  * Usage contract: call immediately before the store; no allocation may
  * intervene between barrier and store. */
 static void
@@ -1246,8 +1206,7 @@ urbi_stdlib_register_container_globals(UVM *vm, URealm *realm)
     return URBI_OK;
 }
 
-/* === Host-side List mutators (v0.9.1 Phase 5 / lobby.lobbies) ===========
- *
+/*
  * The Lobby proto's `lobbies` slot is created by lobby.u as a fresh List
  * (`var Lobby.lobbies = []`).  The C-side dispatcher (urepl_session_*)
  * needs to push/remove session global-objects from that List as sessions

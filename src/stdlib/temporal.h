@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/stdlib/temporal.h — v0.9.4 Phase 5: every() periodic-spawn primitive.
- *
+/*
  * `every (period) body` desugars at parse time to a regular call
  * `every(period_us, function() { body })`.  This TU implements the runtime
  * backing — a stdlib C-native function `every` plus the per-VM registry
@@ -110,10 +109,6 @@ int urbi_temporal_native_register(struct UVM *vm);
  * packed-flag CONSTANT enforcement range. */
 int urbi_temporal_native_register_globals(struct UVM *vm, struct URealm *realm);
 
-/* GC root walker (registered with urbi_gc_register_root_provider at
- * urbi_vm_init).  Yields each periodic's body closure to the GC mark
- * callback and shades owning_tag (GC-managed UTag, GC-03).
- * Signature matches UGcRootProviderFn in gc/ugc.h. */
 void urbi_periodic_table_walk_roots(struct UVM *vm,
                                     UGcRootCallback cb,
                                     void *ctx);
@@ -162,10 +157,6 @@ void urbi_periodic_destroy_all(struct UVM *vm);
 uint64_t urbi_periodic_earliest_wake_us(const struct UVM *vm);
 
 /* urbi_periodics_stop_owned_by (B5/SCHED-N2, 2026-07-04)
- *
- * Walk vm->periodics_head and set unregister_pending on every periodic whose
- * owning_tag == tag.  The next urbi_periodic_pump Phase 2 pass frees those
- * periodics once their current_strand is NULL.
  *
  * Called from urbi_tag_stop (uunwind.c) after the member-watcher cascade.
  * Kept in temporal.c so uunwind.c/utag_native.c never touch UPeriodic

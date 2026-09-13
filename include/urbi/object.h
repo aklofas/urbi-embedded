@@ -2,13 +2,7 @@
 /* Public C API for the urbi object model.
  *
  * Stability: core.
- *
- * Atom-family singletons + prototype-list mutators.  Internals (UObject
- * layout, UPROTOS_FOREACH macro, etc.) live in src/object/uobject.h and
- * are not exposed to host embedders.  The URBIAtomFamily enum (single
- * source of truth at v0.5.5) is shared between this public header and
- * the internal one; src/object/uobject.h includes this header rather
- * than redefining the enum. */
+ */
 
 #ifndef URBI_OBJECT_H
 #define URBI_OBJECT_H
@@ -35,10 +29,6 @@ typedef struct UObject UObject;
 typedef struct UShape  UShape;
 #endif
 
-/* Atom families (single source of truth; v0.5.5 retired the dual-enum
- * with `_F` suffixes).  Low 4 bits of UObject.flags encode the family;
- * slots 9..11 occupied by Boolean, Nil, and Void atom protos;
- * 12..15 reserved for v1.x. */
 typedef enum {
     URBI_ATOM_OBJECT  = 0,   /* root Object */
     URBI_ATOM_INTEGER = 1,
@@ -81,7 +71,6 @@ int urbi_object_set_protos   (struct UVM *vm, UObject *obj, UObject **list, uint
 #ifdef __cplusplus
 }
 #endif
-
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC visibility pop

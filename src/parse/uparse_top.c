@@ -35,15 +35,12 @@ void uparse_init(UParser *p, ULexer *lex, UArena *arena) {
     p->loop_depth   = 0;
     p->switch_depth = 0;
 
-    /* v0.9.1 compile-budget guard — uninstalled by default. */
     p->budget          = NULL;
     p->cur_depth       = 0U;
     p->node_count      = 0U;
     p->budget_exceeded = false;
     p->budget_err      = URBI_OK;
 }
-
-/* === v0.9.1 budget helpers ============================================ */
 
 void uparse_set_budget(UParser *p, const UCompileBudget *budget) {
     if (!p) return;

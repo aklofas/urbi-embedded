@@ -2,22 +2,6 @@
 /* atoms.h — C-native methods on Boolean / Integer / Float /
  * String atom protos.
  *
- * Phase 4 registered the Boolean / String stubs (toString /
- * length) on the atom protos.  Phase 5 fills out the Tier 1 method set:
- *   Boolean: negate
- *   Integer: asString / asFloat / asBoolean / and / or / xor /
- *            inv / shl / shr / ushr  (Kotlin-style bitwise names)
- *   Float:   asString / asInteger / asBoolean / sqrt / sin / cos / tan /
- *            asin / acos / atan / atan2 / log / log10 / exp / pow / floor /
- *            ceil / abs / round / isNaN / isInfinite
- *   String:  size / isEmpty / charAt / asciiAt / indexOf / contains /
- *            startsWith / endsWith / toUpper / toLower / asInteger / asFloat
- *
- * Symbolic operators (`+`, `-`, `*`, `/`, `==`, `<`, …) are NOT registered
- * as slots: those are inline VM opcodes (OP_ADD, OP_EQ, OP_LT, …) — see
- * src/vm/uvm.c and src/vm/uvm_arith.c.  Phase 5 registers only the named
- * methods that resolve via OP_GETSLOT atom-method dispatch (Phase 2).
- *
  * Boolean `&&`, `||`, `!` similarly dispatch through inline opcodes when
  * they exist (today: only inline truthiness via OP_TEST in conditions);
  * the legacy `'!' = false` form is a slot, not a method, and the v1.0

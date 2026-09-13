@@ -10,15 +10,6 @@
  *
  *   int (*)(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  *
- * - vm: the current VM.
- * - self: the receiver (`this`).  For 1.clone(), self.kind == UVAL_INT.
- *         The receiver is supplied by the OP_CALL native dispatch path,
- *         which reads it from R[A+1] when the call site is method-flagged
- *         (preceded by OP_SELF, v1.6 S42); plain calls pass nil.
- * - args: caller's argument array, count == nargs.
- * - nargs: number of arguments.
- * - out: where to write the return value.
- *
  * Return:
  *   UEXEC_OK   — success; *out holds the return value.
  *   UEXEC_THROW — error raised; *out is left at urbi_make_nil() and the
@@ -48,11 +39,6 @@ struct UObject;
 struct USymbol;
 
 /* === urbi_native_closure_create ===
- *
- * Allocate a GC-managed UClosure whose native_fn pointer is set; proto /
- * proto_inst / upvals are NULL.  The GC sweep reclaims it when it becomes
- * unreachable (v0.8.4 Step C-3: migrated from alloc_fn + stdlib_closures
- * to urbi_gc_alloc, matching bytecode closures).
  *
  * Returns NULL on OOM. */
 struct UClosure *urbi_native_closure_create(struct UVM *vm,
@@ -93,20 +79,13 @@ int urbi_install_native_methods(struct UVM *vm, struct UObject *proto,
 int urbi_object_root_register(struct UVM *vm);
 
 /* === Native-method error helpers ===
- *
- * Each builds a typed Exception instance (via urbi_raise_typed) into *out and
- * returns UEXEC_THROW.  The UEXEC_THROW return is load-bearing: the OP_CALL
- * arm and operator-overload dispatch treat the nonzero code as raise/miss.
- * Only the *out value changed (was nil placeholder pre-v0.11.4). */
+ */
 int urbi_raise_arity(struct UVM *vm, const char *fn_name,
                      uint8_t expected, uint8_t got, UValue *out);
 int urbi_raise_type(struct UVM *vm, const char *msg, UValue *out);
 int urbi_raise_oom(struct UVM *vm, UValue *out);
 int urbi_raise_lookup(struct UVM *vm, struct USymbol *name, UValue *out);
 
-/* v0.13.5: typed subclass raise helpers.  Same convention as
- * urbi_raise_type — build "<Subclass>: <msg>" and clone the cached proto.
- * INTERNAL (Tier-4 internal-leak), not public ABI surface. */
 int urbi_raise_index(struct UVM *vm, const char *msg, UValue *out);
 int urbi_raise_range(struct UVM *vm, const char *msg, UValue *out);
 int urbi_raise_divzero(struct UVM *vm, const char *msg, UValue *out);
@@ -121,11 +100,7 @@ int urbi_raise_typed(struct UVM *vm, struct UObject *exc_proto,
                      UValue *out, const char *msg);
 
 /* === urbi_proto_list_create ===
- *
- * Phase 3 synthetic helper: build a UObject that exposes a receiver's
- * proto chain as accessible-via-.size.  This remains a synthetic; a
- * proper List atom backing for the .protos view is a deferred follow-up.
- * Returns NULL on OOM. */
+ */
 struct UObject *urbi_proto_list_create(struct UVM *vm, struct UObject *recv);
 
 /* === Shared VM-dependent string constructor ===
@@ -133,9 +108,7 @@ struct UObject *urbi_proto_list_create(struct UVM *vm, struct UObject *recv);
  * urbi_val_str_intern: intern s[0..n) into the VM's string table and return
  * a UVAL_STR UValue.  Needs a live vm (unlike the pure urbi_make_* inlines
  * in urbi/types.h).  On OOM sets *oom (when non-NULL) and returns nil.
- *
- * Three stdlib files (atoms.c, namespaces.c, primitives.c) had identical
- * private copies of this body; this shared inline replaces them all (C2/GV-01). */
+ */
 static inline UValue
 urbi_val_str_intern(struct UVM *vm, const char *s, size_t n, int *oom)
 {
