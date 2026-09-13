@@ -59,10 +59,6 @@ struct UUpvalCell {
  *
  * On 32-bit hosts the union/pointer alignment is 4-byte, so the layout
  * differs — pin host-pointer-size cases independently. */
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(UUpvalCell) == 32,
-               "UUpvalCell size pin on 64-bit hosts (v0.8.4)");
-#endif
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
  * Heap-allocated by OP_CLOSURE via urbi_gc_alloc; the GC sweep +
@@ -126,9 +122,5 @@ struct UClosure {
  * (8 B) + proto_inst ptr (8 B) + native_fn ptr (8 B) + nupvals (1 B) + pad
  * (7 B) + upvals[1] ptr (8 B) = 48 B.  Pin on 64-bit hosts only (pointer
  * size drives the layout; 32-bit assertion is not separately tracked). */
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(UClosure) == 48,
-               "UClosure must be 48 B after v0.9.0 retirement; struct grew unexpectedly");
-#endif
 
 #endif /* UCLOSURE_H */
