@@ -14,8 +14,7 @@
  *   Total  : 32 B
  *
  * On 32-bit cross targets (Cortex-M7, rv32imc) pointer fields shrink to 4 B
- * and the total is 16 B.  The URBI_STATIC_ASSERT in this header gates the exact
- * 32-byte check to __SIZEOF_POINTER__ == 8 builds.
+ * and the total is 16 B.
  *
  * type_tag = UTYPE_CHANGED_NODE; gc_byte = 0 at alloc (set by urbi_gc_alloc).
  * name points to an interned USymbol (intern table keeps it alive — not walked
@@ -57,10 +56,6 @@ typedef struct UChangedNode {
     /* --- intrusive list link; NULL = end of chain --- */
     struct UChangedNode *next;
 } UChangedNode;
-
-/* Size assertion: 32 B on 64-bit host (8B header + 8B + 8B + 8B = 32B).
- * On 32-bit cross targets the total is 16 B (4B header + 4B + 4B + 4B).
- * Guarded on pointer width to avoid a hard failure on 32-bit cross targets. */
 
 /* === urbi_object_get_or_create_change_event (spec #4 §6.3) ===
  *

@@ -198,7 +198,7 @@ struct UStrand {
      * unwind could push past URBI_CLEANUP_MAX levels of recursion and
      * exhaust the C stack.  Lives in the natural alignment gap between
      * the two cleanup_* uint16_t fields and the cleanup_base pointer,
-     * keeping UStrand size stable (CHSTR-041 layout pin holds). */
+     * keeping UStrand size stable. */
     uint16_t                cleanup_run_depth;
     /* v0.13.3 (design-risks v0.13.1-B): set by the unwind walker when a
      * cleanup body's replacement unwind is ABSORBED at an OUTER handler
@@ -256,8 +256,8 @@ struct UStrand {
     uint8_t                 cleanup_body_done;          /* set by OP_RESUME —
                                                            run_cleanup_with_replace's completion
                                                            marker (yield/budget exits leave it 0).
-                                                           Absorbs the former state_pad[1] byte so
-                                                           the CHSTR-041 size pin holds. */
+                                                           Absorbs the former state_pad[1] byte,
+                                                           keeping UStrand size stable. */
     uint16_t                safepoint_budget_remaining;
     /* SCHED-08 (v0.13.3): independent block/freeze suspension gates —
      * USTRAND_GATE_BLOCK / USTRAND_GATE_FREEZE bits (see the macro block
@@ -276,7 +276,7 @@ struct UStrand {
      * a no-op (strand was already made runnable by the stop).
      *
      * Carved from the former uint16_t budget_pad — no UStrand size/offset
-     * change (CHSTR-041 pin holds). */
+     * change. */
     uint8_t                 suspend_gates;
     uint8_t                 budget_pad;
 
@@ -389,13 +389,10 @@ struct UStrand {
     UValue                 *out_slot;       /* adapter-set: OP_RET at top-frame writes here */
 };
 
-/* Layout pin (v0.5.3 audit CHSTR-041): the bulk of UStrand's size
- * is the embedded frames[UVM_MAX_FRAMES] call-frame array (64 × ~56 B);
- * any change to that or the surrounding fields must update this assert
- * deliberately.  Default + footprint presets share this size — preset
- * tunables change runtime budgets, not struct layout.
- * Guarded on pointer width to avoid a hard failure on 32-bit cross
- * targets, matching the UEvent / UObject pattern. */
+/* The bulk of UStrand's size is the embedded frames[UVM_MAX_FRAMES]
+ * call-frame array (64 × ~56 B).  Default + footprint presets share
+ * this size — preset tunables change runtime budgets, not struct
+ * layout. */
 
 /* === C-stack root frame push/pop ===
  *

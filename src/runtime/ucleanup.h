@@ -83,11 +83,6 @@ typedef struct UCleanupEntry {
     struct UStrand       *strand_back;  /* ptr — TAG_SCOPE: back-link for tag.stop() walk */
 } UCleanupEntry;
 
-/* v0.5.5: pin the row 11 §3.3 layout target on 64-bit targets
- * (amended: +frame_depth, 40 → 48).
- * 32-bit targets fall through (10 B fixed + 2 B pad + 4 × 4 B = 28 B); the
- * pointer-width guard mirrors the UObject / UIC pattern in src/object/. */
-
 /* === URBI_CLEANUP_MAX: pre-allocated slots per strand (row 7 §4.3) ===
 
    Default 64; footprint preset (cross-arm Makefile) overrides to 16.

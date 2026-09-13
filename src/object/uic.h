@@ -77,12 +77,12 @@ typedef struct UIC {
     uint8_t   replace_cursor;                             /* wrap-around eviction cursor */
 } UIC;
 
-/* Layout pin.  At default 4-entry / 64-bit-pointer build the natural layout
- * grew to 152 bytes when OBJ-IC-POLY added uint16_t slot_idx[N] (8 bytes at
- * N=4, padded to 8-byte alignment), then to 184 when T8b added the
- * uintptr_t recv_protos[N] polymorphic-site key (32 bytes at N=4).
- * Empirical sizeof on gcc x86_64 confirms 184.  Cross-target builds
- * (32-bit pointers) shrink the pointer arrays and skip this assert. */
+/* At default 4-entry / 64-bit-pointer build the natural layout grew to
+ * 152 bytes when OBJ-IC-POLY added uint16_t slot_idx[N] (8 bytes at N=4,
+ * padded to 8-byte alignment), then to 184 when T8b added the uintptr_t
+ * recv_protos[N] polymorphic-site key (32 bytes at N=4).  Empirical
+ * sizeof on gcc x86_64 confirms 184.  Cross-target builds (32-bit
+ * pointers) shrink the pointer arrays. */
 
 /* === Slow-path helpers ===
  *

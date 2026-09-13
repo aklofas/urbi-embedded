@@ -52,13 +52,8 @@ struct UUpvalCell {
     struct UUpvalCell *next;    /* intrusive singly-linked list in strand */
 };
 
-/* Layout pin (v0.8.4): UUpvalCell embeds UCell at offset 0 for GC.
- * sizeof stays 32 B on 64-bit (compiler already padded on_heap to the
- * 8-aligned union); the UCell prefix occupies bytes 0-1 where
- * compiler-inserted padding lived before.
- *
- * On 32-bit hosts the union/pointer alignment is 4-byte, so the layout
- * differs — pin host-pointer-size cases independently. */
+/* On 32-bit hosts the union/pointer alignment is 4-byte, so the layout
+ * differs from the 64-bit case described above. */
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
  * Heap-allocated by OP_CLOSURE via urbi_gc_alloc; the GC sweep +
@@ -117,10 +112,9 @@ struct UClosure {
     UUpvalCell       *upvals[1];  /* flexible trailing array of pointers */
 };
 
-/* Layout pin (v0.9.0): UClosure shrunk 56 -> 48 B after origin_module_instance
- * retirement.  Remaining fields: UCell (2 B) + pad (6 B) + proto ptr
- * (8 B) + proto_inst ptr (8 B) + native_fn ptr (8 B) + nupvals (1 B) + pad
- * (7 B) + upvals[1] ptr (8 B) = 48 B.  Pin on 64-bit hosts only (pointer
- * size drives the layout; 32-bit assertion is not separately tracked). */
+/* UClosure shrunk 56 -> 48 B after origin_module_instance retirement.
+ * Fields on 64-bit hosts: UCell (2 B) + pad (6 B) + proto ptr (8 B) +
+ * proto_inst ptr (8 B) + native_fn ptr (8 B) + nupvals (1 B) + pad (7 B)
+ * + upvals[1] ptr (8 B) = 48 B. */
 
 #endif /* UCLOSURE_H */

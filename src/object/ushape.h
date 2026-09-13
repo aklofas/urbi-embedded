@@ -127,11 +127,10 @@ struct UShape {
     UShapeMap   *transitions;
     UProps     **props_table;
 };
-/* The 56 / 48 byte invariants below assume 64-bit pointers (the supported
+/* The 56 / 48 byte totals above assume 64-bit pointers (the supported
  * host ABI).  On 32-bit cross targets the pointer fields and pre-pointer
- * padding shrink, so the literal byte totals no longer hold.  Gate on
- * pointer width; runtime offset checks in tests/unit/test_ushape.c are
- * host-only and supply the second signal there. */
+ * padding shrink, so the literal byte totals no longer hold.  Runtime
+ * offset checks in tests/unit/test_ushape.c are host-only. */
 
 /* === API === */
 

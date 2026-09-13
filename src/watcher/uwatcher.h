@@ -198,11 +198,8 @@ typedef struct UWatcher {
     UCell    *cells[URBI_WATCHER_READSET_MAX]; /* 8 × cap B */
 } UWatcher;
 
-/* Layout pin (v0.5.3 audit CHSTR-041 + sibling): UWatcher size is
- * 240 B at the default URBI_WATCHER_READSET_MAX (16); any change to the
- * read-set cap or to the leading fields must update this assert
- * deliberately.  Guarded on pointer width to avoid a hard failure on
- * 32-bit cross targets, matching the UEvent / UObject pattern. */
+/* UWatcher size is 240 B at the default URBI_WATCHER_READSET_MAX (16);
+ * it depends on the read-set cap and the leading fields. */
 
 /* === Pool lifecycle === */
 

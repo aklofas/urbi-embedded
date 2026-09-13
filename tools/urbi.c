@@ -338,9 +338,8 @@ static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) 
 
 /* Compile src and write the on-disk wire-format bytes to stdout (raw binary).
    Used by tests/scripts/capture_wire_format_hashes.sh to hash the genuine
-   wire-format shape, complementing capture_bytecode_hashes.sh which hashes
-   the disassembled mnemonic text.  Returns 0 on success, 1 on compile or
-   serialize error. */
+   wire-format shape.  Returns 0 on success, 1 on compile or serialize
+   error. */
 static int run_dump_wire_format(UVM *vm, const char *src, size_t len,
                                 const char *src_name) {
     UArena arena;

@@ -154,8 +154,7 @@ struct UObject {
 /* The 56-byte invariant assumes 64-bit pointers (the supported host ABI).
  * On 32-bit cross targets (e.g. Cortex-M7, rv32), the pointer fields shrink
  * and natural alignment changes, so the literal byte total no longer holds.
- * Gate the assert on pointer width; runtime offset checks in
- * tests/unit/test_uobject.c are host-only and supply the second signal there. */
+ * Runtime offset checks in tests/unit/test_uobject.c are host-only. */
 
 /* === Internal allocator ===
  *

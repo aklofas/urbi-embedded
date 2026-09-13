@@ -418,9 +418,7 @@ urealm_teardown_all(struct UVM *vm)
  *
  * REALM-008: the (UCell *)r->tag cast below depends on UTag laying out a
  * UCell-compatible header (type_tag at byte 0, gc_byte at byte 1) as its
- * first two bytes.  Pinned with URBI_STATIC_ASSERT so any reordering of UTag's
- * leading fields fails at compile time rather than producing a silently
- * miscoloured cell at runtime. */
+ * first two bytes. */
 
 void
 urbi_gc_realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
