@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # tests/scripts/capture_wire_format_hashes.sh
 # Capture sha256 of on-disk wire-format bytes for every tests/chk/**/*.chk
-# fixture. Complements capture_bytecode_hashes.sh (which hashes the
-# disassembled mnemonic text — stable across opcode renumber + version-byte
-# advance, but blind to genuine wire-format breaks). Use this gate to detect
-# wire-format changes (header byte, opcode-shape table, nested[]/ic_names
-# round-trip, varint encoding) that the disasm-text gate cannot observe.
+# fixture. Detects wire-format changes (header byte, opcode-shape table,
+# nested[]/ic_names round-trip, varint encoding). Used by
+# check_wire_format_determinism.sh to verify two captures of the same
+# build are byte-identical.
 #
 # Filed as a Wave-4 deferral in v0.5.6-bytecode (REVIVAL §14 row
 # S-bytecode-v1.5 caveat); landed at v0.5.7-fixes Phase 22 T131.

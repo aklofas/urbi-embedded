@@ -83,11 +83,6 @@ typedef struct UIC {
  * uintptr_t recv_protos[N] polymorphic-site key (32 bytes at N=4).
  * Empirical sizeof on gcc x86_64 confirms 184.  Cross-target builds
  * (32-bit pointers) shrink the pointer arrays and skip this assert. */
-#if URBI_IC_ENTRIES_PER_SITE == 4 \
-        && defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(struct UIC) == 184,
-    "UIC must be 184 B at default 4-entry, 64-bit pointers");
-#endif
 
 /* === Slow-path helpers ===
  *

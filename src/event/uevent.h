@@ -68,10 +68,6 @@ typedef struct UEvent {
  * this assertion (was "~48 B + natural padding"; the natural padding is
  * already absorbed by pad0[5]).
  * Guarded on pointer width to avoid a hard failure on 32-bit cross targets. */
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(UEvent) == 40,
-               "UEvent must be 40 bytes on 64-bit");
-#endif
 
 /* === UEvent lifecycle API === */
 

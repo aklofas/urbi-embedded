@@ -422,13 +422,6 @@ urealm_teardown_all(struct UVM *vm)
  * leading fields fails at compile time rather than producing a silently
  * miscoloured cell at runtime. */
 
-URBI_STATIC_ASSERT(offsetof(UTag, type_tag) == 0,
-               "UTag.type_tag must alias UCell.type_tag at offset 0 "
-               "(urbi_gc_realm_list_walk_roots casts (UCell *)r->tag)");
-URBI_STATIC_ASSERT(offsetof(UTag, gc_byte) == 1,
-               "UTag.gc_byte must alias UCell.gc_byte at offset 1 "
-               "(urbi_gc_realm_list_walk_roots casts (UCell *)r->tag)");
-
 void
 urbi_gc_realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
 {

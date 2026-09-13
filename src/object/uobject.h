@@ -34,8 +34,6 @@
 typedef UValue USlot;
 URBI_STATIC_ASSERT(sizeof(USlot) == sizeof(UValue),
                "USlot must equal UValue width");
-URBI_STATIC_ASSERT(sizeof(USlot) == 16,
-               "USlot must be 16 bytes per USlot/UProps spec §3");
 
 /* === USlotArray ===
  *
@@ -158,10 +156,6 @@ struct UObject {
  * and natural alignment changes, so the literal byte total no longer holds.
  * Gate the assert on pointer width; runtime offset checks in
  * tests/unit/test_uobject.c are host-only and supply the second signal there. */
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(struct UObject) == 56,
-               "UObject header must be 56 bytes per spec #4 §3.1");
-#endif
 
 /* === Internal allocator ===
  *

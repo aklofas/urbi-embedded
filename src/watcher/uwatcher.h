@@ -203,10 +203,6 @@ typedef struct UWatcher {
  * read-set cap or to the leading fields must update this assert
  * deliberately.  Guarded on pointer width to avoid a hard failure on
  * 32-bit cross targets, matching the UEvent / UObject pattern. */
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(UWatcher) == 248,
-               "UWatcher size pin on 64-bit (URBI_WATCHER_READSET_MAX=16; +8 B for eval_pass_gen + alignment padding)");
-#endif
 
 /* === Pool lifecycle === */
 

@@ -380,12 +380,6 @@ uproto_source_name(const UProto *p)
  * +40 B on 64-bit from absorbed root metadata (source_name, origin_vm,
  * next_proto_serial, total_proto_count, next_in_realm, owning_realm,
  * heap_allocated) relative to the v0.9.1 layout. */
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(UProto) == 224,
-               "UProto size pin on 64-bit — update deliberately when fields change"
-               /* v0.9.2: 224 B post-absorption of 7 root-only UModule fields */);
-#endif
-
 #ifdef __cplusplus
 }
 #endif

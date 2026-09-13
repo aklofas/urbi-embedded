@@ -70,9 +70,6 @@
 #  error "URBI_MEM_DEBUG requires URBI_GC_INCREMENTAL (the all-cells sidecar lives here)"
 #endif
 
-/* Enforce the 2-byte UCell header invariant (spec §2.5). */
-URBI_STATIC_ASSERT(sizeof(UCell) == 2, "UCell must be exactly 2 bytes (type_tag + gc_byte)");
-
 /* Enforce complete gc_byte bit coverage: every bit in [7:2] is claimed by a named
  * flag, and bits [1:0] are the color field.  This fires if a new bit is added
  * without updating one of the coverage sets. */

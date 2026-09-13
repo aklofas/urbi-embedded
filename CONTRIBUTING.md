@@ -225,32 +225,12 @@ For public-API or opcode-semantics changes:
 
 Or push and let CI catch it.
 
-Bytecode-byte-identical contract: any commit that touches `src/lex/`,
-`src/parse/`, `src/emit/`, `src/value/`, `src/module/`, `src/object/`, or
-`src/runtime/` should reproduce the active baseline bytecode hash table
-under `tests/golden/` exactly unless a deliberate codegen change is being
-made (which requires re-capturing the golden table and bumping bytecode
-version).  Each cleanup wave captures a fresh `v<TAG>-pre-<wave>` golden
-at Phase 0 against which the wave's commits must stay byte-identical;
-the v0.5.8-cleanup baseline is `tests/golden/v0.5.7-pre-cleanup-bytecode-hashes.txt`.
-
-The wire-format gate at `tests/golden/v0.5.7-pre-cleanup-wire-format-hashes.txt`
-provides complementary coverage: the disasm-text hash is stable across
-opcode renumber + version-byte advance and is blind to genuine wire-format
-breaks; the wire-format hash is sensitive to header bytes, opcode-shape
-table, varint encoding, and nested-proto round-trip.  Re-capture both
-golden tables in lockstep when a codegen change is intentional.
-
-Capture commands:
-
-    bash tests/scripts/capture_bytecode_hashes.sh       # writes tests/golden/bytecode-hashes.txt
-    bash tests/scripts/capture_wire_format_hashes.sh    # writes tests/golden/wire-format-hashes.txt
-
-`diff` the freshly-captured table against the active baseline; an empty
-diff is the bytecode-byte-identical contract holding.  The
-`make test-wire-format-determinism` gate checks separately that the
-wire-format capture is itself deterministic across runs (closes the
-v0.5.7.1 hotfix that fixed mktemp paths leaking into `source_name`).
+Wire-format hash capture: `tests/scripts/capture_wire_format_hashes.sh`
+hashes the on-disk wire-format bytes for every `tests/chk/**/*.chk` fixture
+(sensitive to header bytes, opcode-shape table, varint encoding, and
+nested-proto round-trip).  `make test-wire-format-determinism` checks that
+two captures of the same build are byte-identical (closes the v0.5.7.1
+hotfix that fixed mktemp paths leaking into `source_name`).
 
 ### TDD per fix commit (Wave 5 onward)
 

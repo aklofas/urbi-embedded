@@ -29,8 +29,8 @@ ESP32-S3, STM32F4. See [hardware-validation.md](hardware-validation.md).
 
 ### Breaking changes (OPTIONAL)
 
-> If this release bumps ABI per the post-freeze policy, list each break here.
-> Reference docs/api-stability.md §3.
+> If this release bumps ABI, list each break here. No compatibility promise
+> applies before 1.0.0; see docs/api-stability.md.
 
 None.
 

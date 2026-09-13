@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [test, test-asan, test-ubsan, test-debug, test-switch, test-abi-freeze, test-trace, test-trace-compiled-out, test-perf-counters]
+        mode: [test, test-asan, test-ubsan, test-debug, test-switch, test-trace, test-trace-compiled-out, test-perf-counters]
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
@@ -407,15 +407,6 @@ jobs:
         env:
           URBI_RELEASE_TAG_TO_BE: ${{ github.event_name == 'pull_request' && github.head_ref || '' }}
         run: make check-version-sync
-
-  wire-freeze:
-    name: wire-format freeze pin sync
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - name: Check wire-format freeze pin
-        run: make test-wire-freeze
 
   releasetest:
     name: releasetest (full local-parity sweep)

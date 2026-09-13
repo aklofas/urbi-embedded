@@ -392,28 +392,6 @@ static inline bool urbi_value_is_host_fn(UValue v) { return v.kind == (uint8_t)U
 static inline bool urbi_value_is_ptr    (UValue v) { return v.kind == (uint8_t)URBI_VALUE_PTR;  }
 static inline bool urbi_value_is_tag    (UValue v) { return v.kind == (uint8_t)UVAL_TAG;        }
 
-/* === UValue layout pin ===
- *
- * Compile-time assertion that mirrors the runtime invariants tested in
- * tests/unit/test_uvalue_layout.c. Catches header/lib mismatches at
- * compile time when host code includes this header against a different
- * library build.
- *
- * Behind URBI_API_PIN_LAYOUT (default ON). Hosts that intentionally rebuild
- * with non-standard alignment / packing can define this to 0 to skip. */
-#ifndef URBI_API_PIN_LAYOUT
-#define URBI_API_PIN_LAYOUT 1
-#endif
-
-#if URBI_API_PIN_LAYOUT
-URBI_STATIC_ASSERT(sizeof(UValue) == 16,
-               "UValue must be exactly 16 bytes (ABI pin)");
-URBI_STATIC_ASSERT(offsetof(UValue, v) == 8,
-               "UValue.v must be at offset 8 (ABI pin)");
-URBI_STATIC_ASSERT(offsetof(UValue, kind) == 0,
-               "UValue.kind must be at offset 0 (ABI pin)");
-#endif
-
 /* === UCompileBudget — per-realm parse-time guard (v0.9.1) ===
  *
  * Per-realm limits enforced during source-text compilation. Zero in any

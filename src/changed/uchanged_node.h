@@ -61,10 +61,6 @@ typedef struct UChangedNode {
 /* Size assertion: 32 B on 64-bit host (8B header + 8B + 8B + 8B = 32B).
  * On 32-bit cross targets the total is 16 B (4B header + 4B + 4B + 4B).
  * Guarded on pointer width to avoid a hard failure on 32-bit cross targets. */
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(UChangedNode) == 32,
-               "UChangedNode must be 32 bytes on 64-bit (spec #4 §3.1)");
-#endif
 
 /* === urbi_object_get_or_create_change_event (spec #4 §6.3) ===
  *

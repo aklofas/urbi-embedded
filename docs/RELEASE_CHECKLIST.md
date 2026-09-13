@@ -18,8 +18,6 @@ do not tag until every box is checked. The v1.0.0 release used this list (see
       fixtures only (covered by `test-chk-ros` / `test-chk-urobotics` / `test-chk-ros-urobotics`,
       where any SKIP is a failure); placeholder count matches `docs/release/conformance-report.md`
 - [ ] `make test-api-manifest` — exported `urbi_*` documented + frozen surface intact
-- [ ] `make test-abi-freeze` — `_Static_assert` ABI pin matches version.h
-- [ ] `make test-wire-freeze` — wire-format pin matches `uchunk.h`
 - [ ] `make docs-check` — markdownlint + public-doc scrub + link-check, 0 errors
 - [ ] `make releasetest` — the full pre-release sweep is green (supersedes the above on a clean machine)
 

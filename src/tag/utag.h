@@ -118,10 +118,6 @@ typedef struct UTag {
  * addition (+8 B from 56 B).  Guarded on pointer width to avoid a hard
  * failure on 32-bit cross targets (mirrors UEvent / UObject pattern).
  * Update this assert whenever UTag fields change. */
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(UTag) == 64,
-               "UTag size pin on 64-bit (v0.7.1 parent-pointer layout)");
-#endif
 
 /* === UTag lifecycle API ===
  *

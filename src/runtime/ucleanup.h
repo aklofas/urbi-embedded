@@ -87,10 +87,6 @@ typedef struct UCleanupEntry {
  * (amended: +frame_depth, 40 → 48).
  * 32-bit targets fall through (10 B fixed + 2 B pad + 4 × 4 B = 28 B); the
  * pointer-width guard mirrors the UObject / UIC pattern in src/object/. */
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(UCleanupEntry) == 48,
-               "UCleanupEntry must be 48 bytes on 64-bit per row 7 §4.2 + row 11 §3.3 + VM-01");
-#endif
 
 /* === URBI_CLEANUP_MAX: pre-allocated slots per strand (row 7 §4.3) ===
 

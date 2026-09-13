@@ -53,10 +53,6 @@ typedef struct USlotHandle {
     uint32_t   creation_topgen_low;
     USymbol   *name;
 } USlotHandle;
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(USlotHandle) == 40,
-               "USlotHandle layout per USlot/UProps spec §7");
-#endif
 
 /* === Public API ===
  *

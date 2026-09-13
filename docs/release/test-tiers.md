@@ -21,7 +21,6 @@ make test
 
 - Host build variants: `test`, `test-asan`, `test-ubsan`, `test-debug`, `test-switch`
 - Static analysis: `lint`, `test-cppcheck`, `test-tidy-strict`, `test-scan-build`
-- Freeze gates: `test-abi-freeze`, `test-wire-freeze`
 - REPL security: `test-repl-security`
 - Freshness: `test-stdlib-bytecode-fresh`
 - Dependency pins: `test-dependency-pins`
