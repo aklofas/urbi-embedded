@@ -25,10 +25,12 @@ needed and are recorded per row.
 
 `covered by` cells cite only ACTIVE fixtures. The corpus holds 387 `.chk` files,
 86 of which are annotated placeholders (`# blocked:` / `# deferred:` /
-`# dropped:`) that never execute; a placeholder does not count as coverage. Where
-a placeholder already records the wanted behavior, the harvest cell names it with
-`(activate placeholder)` so Task 5 fills in that file rather than adding a second
-one.
+`# dropped:`) that never execute; a placeholder does not count as coverage. Every
+cited path was machine-checked against that classification, so no `covered by`
+cell rests on a placeholder. Where a placeholder records the wanted behavior AND
+the feature actually ships, the cell names it with `(activate placeholder)`; where
+the placeholder's blocker is still real, the cell says `none` and names the
+blocker rather than sending Task 5 to write a red fixture.
 
 | file | verdict | reason | harvest |
 |---|---|---|---|
@@ -38,7 +40,7 @@ one.
 | test_athandler_wedge_repro.c | DELETE | bisection harness for the `pending_refire_count` widening; reads watcher counter fields and drain throughput | reactive/event/event_burst_fires_body_each_emission.chk: N back-to-back emissions on one event each run the `at (e?)` body once, so a counter incremented in the body reaches N rather than saturating at 2 |
 | test_at_install_dispatch.c | DELETE | implicit decl of `urbi_watcher_unregister_internal`; asserts `active_watchers_head` non-NULL after install | reactive/at/waituntil_true_at_install_does_not_park.chk: `waituntil(cond)` whose condition is already true at install returns immediately and the next statement on the same line still runs |
 | test_atom_dispatch.c | DELETE | calls `urbi_atom_proto_for_value` and inspects shape sentinels | covered by objects/atom_method_dispatch.chk, objects/atoms.chk, objects/slot-cow-const.chk |
-| test_atomic_batch.c | DELETE | implicit decl of `uevent_ring_drain`; asserts ISR-ring occupancy while `atomic_active` is set | none (host ISR-ring batching has no urbiscript surface; the script-level atomic separator is covered by separator/inplace-atomic.chk) |
+| test_atomic_batch.c | DELETE | implicit decl of `uevent_ring_drain`; asserts ISR-ring occupancy while `atomic_active` is set | none (host ISR-ring batching has no urbiscript surface; the script-level atomic separator has NO active fixture — separator/inplace-atomic.chk records it but is blocked on the T39 chk driver) |
 | test_atom_protos.c | DELETE | implicit decl of `urbi_atom_proto_for_value`; asserts realm-global proto identity and singleton pointers | covered by objects/atoms.chk, objects/atom_proto_clone.chk, stdlib/atoms/boolean.chk, stdlib/runtime/bool_nil_asstring.chk |
 | test_at_scripted_e2e.c | DELETE | implicit decl of `urbi_watcher_unregister_internal`; otherwise a real scripted rising-edge run read back through `urbi_realm_get_global` | covered by reactive/at/at_rising_edge.chk |
 | test_at_sync_scripted.c | DELETE | implicit decl of `urbi_watcher_unregister_internal`; scripted `at sync` run read back through `urbi_realm_get_global` | reactive/at/at_sync_body_runs_before_next_statement.chk (same fixture as test_at_fire_paths.c row) |
@@ -49,7 +51,7 @@ one.
 | test_channel_proto.c | DELETE | asserts `vm->channel_proto` is non-NULL and pokes a capture writer | covered by stdlib/runtime/channel_basic.chk, stdlib/runtime/cout_shift.chk |
 | test_class_decl_emit.c | DELETE | asserts desugaring shape and proto insertion order via slot read-back on internal handles | covered by objects/class_decl_basic.chk, objects/class_decl_multi_proto.chk, objects/class_decl_nested.chk, objects/class-multi-slot.chk |
 | test_cleanup.c | DELETE | pins `sizeof(UCleanupEntry) == 48` and push/pop depth counters | none (struct size and LIFO bookkeeping) |
-| test_cleanup_yield.c | DELETE | asserts `URBI_STEP_FATAL` plus strand DEAD-and-off-every-queue after a blocking cleanup body | control_transfer/finally_that_sleeps_is_fatal.chk: a `finally` body that calls `sleep` reports a loud uncaught error rather than silently truncating the cleanup |
+| test_cleanup_yield.c | DELETE | asserts `URBI_STEP_FATAL` plus strand DEAD-and-off-every-queue after a blocking cleanup body | control_transfer/finally_that_sleeps_is_fatal.chk: a `finally` body that calls `sleep` reports a loud fatal rather than silently truncating the cleanup — must be driven through the host driver and observed as a `## host: step` verdict, because on the plain `urbi -i` path a sleeping finally completes quietly on both the normal and the tag-stop unwind route (verified on this tree) |
 | test_closure_gc.c | DELETE | asserts cell survival on the all-cells list across `urbi_gc_force_full` | covered by gc/reactive_churn.chk, gc/container_element_survives.chk, closure/counter.chk |
 | test_deferred_slot_change_ring_roots.c | DELETE | implicit decl of `urbi_deferred_slot_changes_walk_roots`; hand-writes ring entries and calls the walker | none (GC root-provider plumbing for the deferred ring; new core has a stress mode) |
 | test_determinism.c | DELETE | vacuous under bare probe (URBI_DEBUG gate); asserts checksum stability over VM-internal topology and IC state | none (URBI_DEBUG diagnostic checksum over internal counters) |
@@ -61,7 +63,7 @@ one.
 | test_emit_this.c | KEEP | compiles with private includes removed | — |
 | test_emit_watcher.c | DELETE | asserts which install opcode the emitter produced and builds an AST by hand | none (opcode selection and a compile-time side-effect warning; install behavior covered by reactive/at/at_rising_edge.chk and reactive/waituntil_event.chk) |
 | test_error_ring_cascade.c | DELETE | implicit decl of `urbi_set_error_internal`; asserts error-ring depth and wrap | none (host error-ring buffer; `urbi_last_error` is a C-API surface) |
-| test_event_emit_async.c | DELETE | asserts watcher-list walk order and `USTRAND_WAIT_EVENT` state after a manual emit | reactive/event/emit_multi_subscriber_fifo.chk: two `at (e?)` subscribers on the same event run their bodies in registration order on a single emission |
+| test_event_emit_async.c | DELETE | asserts watcher-list walk order and `USTRAND_WAIT_EVENT` state after a manual emit | reactive/event/emit_multi_subscriber_fifo.chk: two `at (e?)` subscribers on the same event run their bodies in registration order on a single emission — both do fire today, so the fixture needs an order-sensitive accumulator (append to a string) rather than a sum, which cannot tell the orders apart |
 | test_event_emit_sync.c | DELETE | asserts `in_watcher_scratch` flag cycling via a log hook and body-strand spawn counts | reactive/event/event_sync_emit.chk (activate placeholder): a sync emission runs every subscriber body to completion before the emitting statement returns |
 | test_event_gc.c | DELETE | roots cells through a test root-provider and asserts all-cells membership after GC | none (GC walker coverage for UEvent / UTag / strand payload) |
 | test_event_native.c | DELETE | calls `closure->native_fn` directly and counts proto slots | covered by objects/event_new_emit.chk, reactive/whenever_event_dispatches.chk, globals/tag_event_globals.chk |
@@ -69,14 +71,14 @@ one.
 | test_event_register_success.c | DELETE | implicit decl of `uvalue_as_event`; asserts registry ids and `UVAL_EVENT` kind of an installed global | none (host event-registration ids; the script-visible half, a registered event name resolving as a global, is covered by globals/tag_event_globals.chk) |
 | test_event_ring.c | DELETE | SPSC ring indices, overflow counters, payload alignment, a 100k-iteration thread fuzz | none (ISR-safe ring internals; no urbiscript surface) |
 | test_event_runtime.c | DELETE | asserts native receiver-kind validation and OOM propagation through `urbi_event_native_register` | covered by exceptions/runtime_errors_catchable.chk, exceptions/vm_typeerror_catchable.chk |
-| test_event_sync_emit_scripted.c | DELETE | scripted `at sync (event?)` but asserts through a caller-owned module and internal payload plumbing | covered by reactive/event/event_sync_emit.chk (activate placeholder, named in the test_event_emit_sync.c row) |
+| test_event_sync_emit_scripted.c | DELETE | scripted `at sync (event?)` but asserts through a caller-owned module and internal payload plumbing | reactive/event/event_sync_emit.chk (activate placeholder): same target as the test_event_emit_sync.c row — one fixture serves both, no second file needed |
 | test_event_unregister.c | KEEP | compiles with private includes removed; only `urbi_strlen` is lost | — |
 | test_event_waituntil.c | DELETE | asserts the strand lands on `e->waiters_head` in `USTRAND_WAIT_EVENT` | covered by reactive/waituntil_event.chk, scheduler/wait_event_basic.chk |
-| test_fork.c | DELETE | drives fork opcodes and asserts child-strand linkage and quiescent counts | covered by separator/fork_operand_forms.chk, separator/comma.chk, separator/detach_basic.chk, separator/comma_amp_chunk_top.chk, tag/ambient_inherit_separator.chk |
+| test_fork.c | DELETE | drives fork opcodes and asserts child-strand linkage and quiescent counts | covered by separator/fork_operand_forms.chk, separator/comma.chk, separator/detach_basic.chk, separator/comma_amp_chunk_top.chk |
 | test_foundations.c | DELETE | handle-table wraparound, varint decode UB, arena overflow, format truncation, type-id collision | none (allocator, handle-table and encoding primitives below the language surface) |
 | test_function.c | DELETE | asserts `module->nested[]` population, `ic_index` assignment and UProto field values | covered by function/definition.chk, function/closure_call.chk, function/recursion.chk, closure/counter.chk, closure/two_level.chk, migration/bare_function.chk, migration/closure_keyword.chk |
 | test_gc_byte.c | DELETE | pins `gc_byte` bit assignments and checks for collisions | none (GC header bit layout) |
-| test_gc_rooting_matrix.c | DELETE | for each internal field, constructs "this field is the only reference" and asserts survival across two collections | none (executable rooting matrix over internal fields; the new core keeps a stress mode, and gc/reactive_churn.chk plus gc/container_element_survives.chk hold the language-visible half) |
+| test_gc_rooting_matrix.c | DELETE | for each internal field, constructs "this field is the only reference" and asserts survival across two collections | gc/return_value_survives_collection_in_finally.chk: a value returned from a try block is still intact after the finally body runs — allocate in the finally body instead of the test's `gcNow()` (no such script builtin exists) and let test-gc-stress supply the pressure, per the gc/container_element_survives.chk convention; the remaining cases are an executable rooting matrix over internal fields, whose language-visible half is covered by gc/reactive_churn.chk and gc/container_element_survives.chk |
 | test_gc_scratch_rooting.c | DELETE | asserts the scratch strand's register window is visited by `urbi_gc_sched_walk_roots` | none (root-walker reachability) |
 | test_gc_strand_walker.c | DELETE | asserts strand membership in `realm.strands_head` and that DEAD strands are filtered | none (walker iteration order and list membership) |
 | test_gc_stress_mode.c | KEEP | compiles with private includes removed | — |
@@ -105,10 +107,10 @@ one.
 | test_perf_counters.c | KEEP | compiles with private includes removed, gates defined, body non-vacuous | — |
 | test_periodic_cadence.c | DELETE | asserts `next_fire_us` re-arm arithmetic on the periodic record | covered by reactive/every/basic.chk, reactive/every/float_seconds.chk, reactive/every/tag_stop_cancels.chk; plus reactive/every/every_rejects_zero_and_nonfinite_period.chk: `every(0)` and a non-finite period raise a catchable error instead of spinning |
 | test_pipe_budget_exhaust.c | DELETE | asserts `URBI_STEP_RUNNING` versus `QUIESCENT` return codes from `urbi_step` | covered by scheduler/strand_budget_yield_completes_program.chk (named in the test_budget_rearm.c row), scheduler/quiescent_clean.chk |
-| test_public_api.c | DELETE | NULL-argument defence on `urbi_panic` / `urbi_throw` / `urbi_tag_stop_local` plus a `URBI_VERSION` string pin; needs `UStrand` internals | none (C-API NULL-safety and a version-string pin) |
+| test_public_api.c | DELETE | NULL-argument defence on `urbi_panic` / `urbi_throw` / `urbi_tag_stop_local` plus a `URBI_VERSION` string pin; needs `UStrand` internals | none (C-API NULL-safety, a version-string pin, and cross-realm chunk reuse — that third case is already covered by chunk_lifecycle/realm_isolation.chk) |
 | test_realm.c | DELETE | asserts realm linked-list stitching, id monotonicity, flag bits and OOM returns | covered by chunk_lifecycle/realm_isolation.chk, chunk_lifecycle/realm_global_default.chk, globals/realm_self_ref.chk, repl/lobby_isolation.chk |
 | test_realm_destroy_with_parked_loader.c | KEEP | compiles with private includes removed; only `urbi_zero` is lost | — |
-| test_realm_globals_api.c | DELETE | asserts const-slot enforcement is limited to slot indices 0-7 and distinguishes OOM from const-reject | globals/const_builtin_global_rejects_write.chk: assigning to a const built-in global such as `Object` raises a catchable error and leaves the original binding intact |
+| test_realm_globals_api.c | DELETE | asserts const-slot enforcement is limited to slot indices 0-7 and distinguishes OOM from const-reject | globals/const_builtin_global_rejects_write.chk: `Realm.Object = 42` raises a catchable TypeError and leaves the binding intact — use the `Realm.` form, because a bare `var Object = 42` is block-scoped since LANG4-06 and would silently shadow instead of throwing |
 | test_realm_populate.c | DELETE | counts the 15 built-in globals installed at realm create | covered by stdlib/namespaces/global.chk, globals/object_proto.chk, globals/tag_event_globals.chk |
 | test_recursive_emit.c | DELETE | asserts `ic_index` DFS pre-order numbering and `total_proto_count` | covered by closure/recursive_emit_smoke.chk, closure/nested_factory.chk |
 | test_ref_gc_root.c | DELETE | asserts a cell is collected when unrooted and survives while `urbi_ref` holds it | none (host ref-table rooting; no urbiscript surface) |
@@ -137,7 +139,7 @@ one.
 | test_repl_uart_pty.c | DELETE | vacuous under bare probe (URBI_ENABLE_REPL gate); pty-pair UART transport | none (parked feature; covered by its own smoke/chk presets when re-attached) |
 | test_repl_uproto_readonly.c | DELETE | asserts the `URBI_OBJ_FLAG_READONLY` bit on the 15 built-in atom protos | covered by repl/object_readonly.chk, repl/lobby_readonly.chk, objects/object_proto_mutable.chk |
 | test_rescued_protos.c | DELETE | asserts `vm->rescued_protos` membership when `root_proto->refcount` is non-zero at chunk destroy | covered by chunk_lifecycle/script_at_persists.chk, chunk_lifecycle/script_one_every.chk, repl/hot_reload.chk |
-| test_resolve_owning_tag.c | DELETE | calls `urbi_watcher_resolve_owning_tag` and walks the cleanup stack by hand | covered by tag/tagged_watcher_persists.chk, tag/scope_binds_user_tag.chk, tag/hierarchical.chk |
+| test_resolve_owning_tag.c | DELETE | calls `urbi_watcher_resolve_owning_tag` and walks the cleanup stack by hand | covered by tag/tagged_watcher_persists.chk, tag/scope_binds_user_tag.chk |
 | test_ros_marshal.c | DELETE | ROS2-gated; the bare probe compiles it vacuously and URBI_ENABLE_ROS2 needs external headers, so question 1 is unverifiable | none (parked feature; covered by its own smoke/chk presets when re-attached) |
 | test_ros_subscribe.c | DELETE | ROS2-gated; the bare probe compiles it vacuously and URBI_ENABLE_ROS2 needs external headers, so question 1 is unverifiable | none (parked feature; covered by its own smoke/chk presets when re-attached) |
 | test_sched_fifo.c | DELETE | asserts each of five state transitions tail-inserts on the ready queue | covered by separator/yield_seq.chk, separator/comma.chk, scheduler/wait_sleep_basic.chk |
@@ -149,32 +151,32 @@ one.
 | test_scratch_cur_strand.c | DELETE | asserts a slot fault lands on the scratch strand rather than the outer one, via internal strand pointers | covered by exceptions/vm_typeerror_uncaught.chk, exceptions/runtime_errors_catchable.chk, reactive/at/at_rising_edge.chk |
 | test_scratch_strand_safety.c | DELETE | asserts the scratch strand is removed from scheduler queues, via queue-head inspection | covered by reactive/at/cascade_same_pass.chk, reactive/at/onleave_cascade.chk, temporal/sleep_tag_stop.chk |
 | test_set_wake_fn.c | KEEP | compiles with private includes removed | — |
-| test_slot_change_callsites.c | DELETE | calls the three C write paths directly and counts spawned body strands | reactive/slot-change/slot_change_skips_install_fires_on_write.chk: `at (obj.x.changed?)` does not fire when `x` is first created on the object and does fire on a later assignment to it |
+| test_slot_change_callsites.c | DELETE | calls the three C write paths directly and counts spawned body strands | covered by reactive/slot-change/slot_change_no_install_emit.chk (it already walks install then no-fire then write then fire; the only gap is receiver shape — the fixture watches a Realm global while this test drives a plain object's COW install path, which Task 5 may add as a second case rather than a new file) |
 | test_slot_change_emit.c | DELETE | asserts the bit-7 fast-path short-circuit and the deferred-ring route | none (subscriber-presence bit and deferred-ring routing; the observable half is the fixture named in the test_slot_change_callsites.c row) |
 | test_slot_change_install.c | DELETE | asserts UEvent identity per slot name and chain length on the changed-events list | covered by reactive/slot-change/slot_change_no_install_emit.chk |
-| test_slot_change_reentrancy.c | DELETE | asserts deferred-ring drain order and the overflow warn flag | covered by reactive/slot_change_reentrancy_determinism.chk, reactive/at/cascade_same_pass.chk |
+| test_slot_change_reentrancy.c | DELETE | asserts deferred-ring drain order and the overflow warn flag | covered by reactive/at/cascade_same_pass.chk |
 | test_slot_get.c | DELETE | implicit decl of `urbi_object_alloc` and `urbi_object_set_local_slot`; asserts C-API return codes | covered by objects/lookup.chk, objects/inheritance.chk, objects/atom_method_dispatch.chk |
 | test_slot_set.c | DELETE | asserts `URBI_ERR_CONST_SLOT_WRITE` and `URBI_ERR_OOM` return codes from `urbi_slot_set` | covered by objects/slot-cow-const.chk, objects/get-set/set_basic.chk |
 | test_stdlib_install.c | KEEP | compiles with private includes removed | — |
 | test_step_driver.c | DELETE | asserts the five liveness counters and their underflow behavior | covered by scheduler/quiescent_clean.chk, scheduler/quiescent_with_sleep_q.chk, scheduler/wait_sleep_basic.chk, gc/expect_host_call.chk |
 | test_strand_arm.c | DELETE | asserts `pc`, `cur_consts`, `R` and `frame_count` after `urbi_strand_arm_from_closure` | none (execution-state field initialisation) |
-| test_strand.c | DELETE | asserts state-byte encoding, DORMANT-to-READY transitions and FIFO spawn order via queue inspection | covered by scheduler/dormant_attach_tag_then_start.chk, separator/comma.chk, separator/detach_basic.chk |
+| test_strand.c | DELETE | asserts state-byte encoding, DORMANT-to-READY transitions and FIFO spawn order via queue inspection | covered by separator/comma.chk, separator/detach_basic.chk |
 | test_strand_cancel_wake.c | DELETE | asserts a cancelled parked strand is unlinked from sleep, event, join and watcher queues | covered by temporal/sleep_tag_stop.chk, tag/stop_waituntil_mid_eval.chk, tag/stop_join_parked.chk |
 | test_strand_destroy.c | DELETE | allocator spy proving `s->stack` is not double-freed | none (free-idempotence contract) |
 | test_strand_destroy_during_event_wait.c | DELETE | asserts `UEvent.waiters_head` splicing and joiner wake on destroy | covered by tag/stop_join_parked.chk, chunk_lifecycle/realm_isolation.chk |
 | test_strand_root_proto_bind.c | DELETE | asserts `UStrand.root_proto` aliases the module root and is inherited by fork children | none (fast-path field population) |
-| test_strand_spawn_inheritance.c | DELETE | asserts the captured ambient-tag chain array and its bottom-up order | covered by tag/ambient_inherit_separator.chk, tag/hierarchical.chk, tag/implicit.chk |
+| test_strand_spawn_inheritance.c | DELETE | asserts the captured ambient-tag chain array and its bottom-up order | none (ambient-tag inheritance by a spawned strand has NO active fixture and is not writable against this core: the `,` form fails to compile inside a tag-scope body per the blocked tag/ambient_inherit_separator.chk, and the `detach()` form aborts — `t: { detach(sleep(1s)) ... t.stop() }` trips the `strand_runnable_count > 0` assertion in usched_cooperative.c, verified on this tree) |
 | test_strand_unpark.c | DELETE | asserts third-party links (`joiners_head`, `w->waiter_strand`) are scrubbed when a parked strand is tag-stopped | covered by tag/stop_join_parked.chk, tag/stop_waituntil_mid_eval.chk, tag/stop_waituntil_nested.chk |
-| test_tag_barrier.c | DELETE | asserts the Dijkstra barrier fires when `enter_event` / `leave_event` are lazily allocated | covered by tag/tag_enter_leave_minimal.chk |
+| test_tag_barrier.c | DELETE | asserts the Dijkstra barrier fires when `enter_event` / `leave_event` are lazily allocated | none (GC write-barrier shading on lazy enter/leave event allocation; tag/tag_enter_leave_minimal.chk is scope-nesting only and does not touch either event) |
 | test_tag_create.c | DELETE | asserts `urbi_tag_create` return state, parent pointer and name interning | covered by tag/scope_tag_basic.chk, globals/tag_event_globals.chk, tag/state.chk |
-| test_tag_enter_leave.c | DELETE | installs watchers through `urbi_watcher_install_at_event_runtime` and reads `strand_runnable_count` | reactive/tag/tag_enter.chk and reactive/tag/tag_leave.chk (activate placeholders): entering a tag scope runs an `at (t.enter?)` body and leaving it runs an `at (t.leave?)` body |
+| test_tag_enter_leave.c | DELETE | installs watchers through `urbi_watcher_install_at_event_runtime` and reads `strand_runnable_count` | none (tag enter/leave events are not reachable from script: reading `t.enter` / `t.leave` yields `<?>`, so `at (t.leave?)` dies with "AT_EVENT install: register operand is not an event" — verified on this tree. OP_PUSH_TAG additionally never emits enter at all. Both reactive/tag/tag_enter.chk and reactive/tag/tag_leave.chk stay deferred) |
 | test_tag_gate_matrix.c | DELETE | asserts SUSPENDED state bytes and `strand_suspended_count` across gate orderings | tag/block_freeze_independent_gates.chk: on a tag whose member strand is both blocked and frozen, unblocking alone does not resume it and unfreezing alone does not either; tag/tag_stop_resumes_suspended_member.chk: stopping a tag whose member is suspended wakes that member so its finally still runs |
 | test_tag_info.c | DELETE | asserts the `urbi_tag_info` struct fields including `member_count` | covered by tag/state.chk, tag/freeze_basic.chk |
-| test_tag_lifecycle.c | DELETE | asserts tag member-list bookkeeping across OP_PUSH_TAG / OP_POP_TAG and cleanup-stack overflow | covered by tag/scope.chk, tag/scope_tag_basic.chk, tag/hierarchical.chk, tag/tag_scope_locals.chk |
-| test_tag_native.c | DELETE | calls `urbi_tag_enter_getter` directly and asserts lazy-alloc idempotence | covered by tag/tag_enter_leave_minimal.chk, plus the two placeholders named in the test_tag_enter_leave.c row |
-| test_tag_self_block.c | DELETE | asserts the strand parks SUSPENDED mid-dispatch by reading the state byte | tag/self_block_in_own_scope.chk: `t: { t.block(); ... }` suspends before the rest of the scope body runs, and a later `t.unblock()` lets the remainder finish |
+| test_tag_lifecycle.c | DELETE | asserts tag member-list bookkeeping across OP_PUSH_TAG / OP_POP_TAG and cleanup-stack overflow | covered by tag/scope.chk, tag/scope_tag_basic.chk, tag/tag_scope_locals.chk |
+| test_tag_native.c | DELETE | calls `urbi_tag_enter_getter` directly and asserts lazy-alloc idempotence | none (lazy enter/leave allocation is internal, and the setter's `URBI_ERR_PROTECTED_SLOT` guard is unreachable from script — `t.enter = 1` is rejected earlier by OP_SETSLOT with "slot write: receiver is not an Object", verified on this tree) |
+| test_tag_self_block.c | DELETE | asserts the strand parks SUSPENDED mid-dispatch by reading the state byte | tag/self_block_in_own_scope.chk: `t: { t.block() ... }` suspends before the rest of the scope body runs (verified: the trailing assignment does not land), and a later `t.unblock()` lets the remainder finish — the resume must come from a `## host: run` between `## host: step` calls, since a self-suspended strand cannot resume itself |
 | test_tag_state.c | DELETE | asserts `urbi_strand_suspend` / `_resume_if_ungated` state transitions and queue membership | covered by tag/state.chk, tag/freeze_basic.chk, tag/block_freeze_independent_gates.chk (named in the test_tag_gate_matrix.c row) |
-| test_tag_stop_onleave_scripted.c | DELETE | asserts the watcher reaches `vm->pending_onleave_head` after `urbi_tag_stop` | tag/tag_stop_cascades.chk (activate placeholder): stopping an outer tag runs the inner scope's onleave before the outer one |
+| test_tag_stop_onleave_scripted.c | DELETE | asserts the watcher reaches `vm->pending_onleave_head` after `urbi_tag_stop` | none (tag-scope `onleave` is deferred-v1.x per PARSE-033; no onleave body is ever emitted, so the handler branch in uvm_tag_scope.c is dead code and tag/tag_stop_cascades.chk stays deferred) |
 | test_tag_stop_realm.c | DELETE | asserts unwind-status deposit priority and `host_call_pending_count` deltas | covered by control_transfer/tag_stop_basic.chk, control_transfer/tag_stop_skips_catch.chk, control_transfer/tag_stop_with_finally.chk, chunk_lifecycle/realm_isolation.chk |
 | test_topology_gen.c | DELETE | asserts which of twelve mutation surfaces bump `vm->topology_gen` | covered by objects/slot_ic_polymorphic_site.chk, operators/op_overload_redefine.chk, operators/op_overload_polymorphic_site.chk, objects/shared-protos.chk |
 | test_uchanged_node.c | DELETE | pins `sizeof(UObject)` and `sizeof(UChangedNode)` | none (struct size pins) |
@@ -204,7 +206,7 @@ one.
 | test_uwatcher_layout.c | DELETE | pins `sizeof(UWatcher)` and the presence of the refire counter fields | none (struct layout pins; the refire behavior is the fixture named in the test_athandler_wedge_repro.c row) |
 | test_uwatcher_scratch.c | DELETE | calls `urbi_run_closure_on_scratch` directly with a hand-wrapped closure | covered by reactive/at/at_rising_edge.chk, reactive/at/cascade_same_pass.chk, exceptions/vm_typeerror_uncaught.chk |
 | test_vm.c | DELETE | fabricates modules instruction by instruction and asserts arithmetic, wraparound, type-error diagnostics and opcode-name table completeness | covered by arithmetic/basic.chk, operators/add.chk, operators/sub.chk, operators/mul.chk, operators/div.chk, operators/neg.chk, operators/eq.chk, operators/neq.chk, operators/lt.chk, operators/le.chk, operators/truthiness.chk, exceptions/vm_typeerror_catchable.chk, exceptions/vm_typeerror_uncaught.chk, exceptions/runtime_errors_catchable.chk, stdlib/atoms/float_conversion.chk, stdlib/legacy/maths_errors_legacy.chk |
-| test_vm_dispatch_ownership.c | DELETE | asserts pool-OOM propagation and operand kind-checks on the reactive-install and fork opcodes | covered by exceptions/runtime_errors_catchable.chk, separator/fork_operand_forms.chk, separator/detach-error.chk |
+| test_vm_dispatch_ownership.c | DELETE | asserts pool-OOM propagation and operand kind-checks on the reactive-install and fork opcodes | covered by exceptions/runtime_errors_catchable.chk, separator/fork_operand_forms.chk |
 | test_vm_liveness.c | DELETE | asserts `active_count` symmetry and the QUIESCENT verdict ladder on counters | covered by scheduler/quiescent_clean.chk, scheduler/quiescent_with_sleep_q.chk, chunk_lifecycle/script_at_persists.chk |
 | test_vm_operator_overload.c | DELETE | asserts IC caching and staleness on the overload dispatch site | covered by operators/op_overload_redefine.chk, operators/op_overload_polymorphic_site.chk, operators/operator_overload_throw.chk, operators/compare_overload_mirror.chk, objects/class.chk |
 | test_waituntil_install.c | DELETE | drives the cond through a hook and asserts `active_watchers_head` and the `USTRAND_WAIT_WATCHER` state byte | covered by reactive/at/waituntil_true_at_install_does_not_park.chk (named in the test_at_install_dispatch.c row), reactive/waituntil_event.chk |
@@ -222,25 +224,32 @@ one.
 
 ## Harvest fixtures named
 
-Seventeen distinct fixtures, four of which are existing placeholders to activate
-rather than new files.
+Fourteen distinct fixtures: 13 new files plus 1 existing placeholder to activate.
+Every script-expressible target below was run against `build/host/urbi -i` on this
+tree, so none of them hands Task 5 a fixture the old core cannot pass. The two
+that need the host driver are marked.
 
 | fixture | behavior |
 |---|---|
 | reactive/event/at_event_unsubscribes_on_tag_stop.chk | an `at (e?)` watcher installed inside a tag scope stops running its body on emissions after that tag is stopped |
-| reactive/event/event_burst_fires_body_each_emission.chk | N back-to-back emissions each run the `at (e?)` body once |
-| reactive/event/emit_multi_subscriber_fifo.chk | two subscribers on one event run in registration order |
-| reactive/event/event_sync_emit.chk (activate placeholder) | `emit sync` runs every subscriber body before the emitting statement returns |
-| reactive/at/at_sync_body_runs_before_next_statement.chk | an `at sync (cond)` body finishes before the statement that flipped the condition returns |
-| reactive/at/waituntil_true_at_install_does_not_park.chk | `waituntil(cond)` with an already-true condition returns without parking |
-| reactive/slot-change/slot_change_skips_install_fires_on_write.chk | `at (obj.x.changed?)` is silent on slot creation and fires on a later write |
-| reactive/every/every_rejects_zero_and_nonfinite_period.chk | `every(0)` and a non-finite period raise a catchable error |
-| reactive/tag/tag_enter.chk (activate placeholder) | entering a tag scope runs an `at (t.enter?)` body |
-| reactive/tag/tag_leave.chk (activate placeholder) | leaving a tag scope runs an `at (t.leave?)` body |
-| scheduler/strand_budget_yield_completes_program.chk | a loop driven with a small per-step budget still completes across repeated steps |
-| tag/self_block_in_own_scope.chk | `t: { t.block(); ... }` suspends before the rest of the scope runs; `t.unblock()` resumes it |
-| tag/block_freeze_independent_gates.chk | block and freeze are independent gates; clearing one alone does not resume the strand |
+| reactive/event/event_burst_fires_body_each_emission.chk | N back-to-back emissions each run the `at (e?)` body once (verified: 3 emits give 3) |
+| reactive/event/emit_multi_subscriber_fifo.chk | two subscribers on one event run in registration order (verified both fire; needs an order-sensitive accumulator to pin the order) |
+| reactive/event/event_sync_emit.chk (activate placeholder) | `e.syncEmit(v)` runs every subscriber body before the emitting statement returns (verified; the placeholder's "not yet bound" blocker is stale) |
+| reactive/at/at_sync_body_runs_before_next_statement.chk | an `at sync (cond)` body finishes before the statement that flipped the condition returns (verified) |
+| reactive/at/waituntil_true_at_install_does_not_park.chk | `waituntil(cond)` with an already-true condition returns without parking (verified) |
+| reactive/every/every_rejects_zero_and_nonfinite_period.chk | `every(0)` and a non-finite period raise a catchable error (verified) |
+| scheduler/strand_budget_yield_completes_program.chk | a loop driven with a small per-step budget still completes across repeated steps (host driver: `## host: step <budget>`) |
+| tag/self_block_in_own_scope.chk | `t: { t.block() ... }` suspends before the rest of the scope runs (verified); `t.unblock()` from a `## host: run` resumes it |
+| tag/block_freeze_independent_gates.chk | block and freeze are independent gates; clearing one alone does not resume the strand (verified at the flag level: `block; freeze; unblock` leaves `frozen()` true) |
 | tag/tag_stop_resumes_suspended_member.chk | stopping a tag wakes a suspended member so its finally runs |
-| tag/tag_stop_cascades.chk (activate placeholder) | stopping an outer tag runs the inner scope's onleave before the outer one |
-| control_transfer/finally_that_sleeps_is_fatal.chk | a `finally` body that sleeps reports a loud error instead of silently truncating |
-| globals/const_builtin_global_rejects_write.chk | assigning to a const built-in global raises and leaves the binding intact |
+| gc/return_value_survives_collection_in_finally.chk | a value returned from a try block is intact after the finally body runs (verified under normal pressure; test-gc-stress supplies the collection) |
+| control_transfer/finally_that_sleeps_is_fatal.chk | a `finally` body that sleeps reports a loud fatal (host driver only — the plain REPL path completes it quietly) |
+| globals/const_builtin_global_rejects_write.chk | `Realm.Object = 42` raises a catchable TypeError and leaves the binding intact (verified) |
+
+Three targets from the first draft were withdrawn after probing:
+`reactive/slot-change/slot_change_skips_install_fires_on_write.chk` duplicates the
+shipping `slot_change_no_install_emit.chk`; `reactive/tag/tag_enter.chk` and
+`reactive/tag/tag_leave.chk` cannot be activated because `t.enter` / `t.leave`
+are not reachable from script (both read as `<?>`, so the `at` install throws),
+and `tag/tag_stop_cascades.chk` cannot because tag-scope `onleave` is
+deferred-v1.x and no onleave body is ever emitted.
