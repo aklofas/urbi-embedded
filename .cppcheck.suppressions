@@ -233,3 +233,15 @@ constParameterPointer:src/emit/uemit_internal.h:187
 shadowVariable:src/parse/uparse_stmt.c:608
 shadowVariable:src/parse/uparse_stmt.c:625
 shadowVariable:src/parse/uparse_stmt.c:649
+
+// src/chunk/uchunk_strand.c urbi_compile's error-message fallback: the
+// __STDC_HOSTED__ branch's final `else` already excludes
+// `finish_rc != EMIT_OK || e.error != EMIT_OK` before reaching the shared
+// msg block, so `finish_rc != EMIT_OK` is dead there; the freestanding
+// (!__STDC_HOSTED__) build has no such preceding branch and reaches the
+// same shared block directly, where the check is live. cppcheck analyzes
+// a limited subset of this file's #ifdef configurations per run (see its
+// own "Too many #ifdef configurations" note) and this run happened to pick
+// only the hosted one, reporting the check as always-false without
+// accounting for the freestanding configuration where it is not.
+knownConditionTrueFalse:src/chunk/uchunk_strand.c:425
