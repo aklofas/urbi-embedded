@@ -1,0 +1,67 @@
+# Covers: on a tag whose member strand is both blocked and frozen,
+#         unblocking alone does not resume it and unfreezing alone does
+#         not either — only clearing both gates resumes it.
+# Origin: harvested from tests/unit/test_tag_gate_matrix.c
+#         (deleted in Phase 0)
+#
+# Each member strand parks on `waituntil` BEFORE block()/freeze() are
+# called, so it is a genuine existing member when the gates are applied
+# (urbi_tag_block / urbi_tag_freeze only suspend EXISTING member strands —
+# src/runtime/uunwind.c).  Two independent tags isolate "unblock alone"
+# (t1) from "unfreeze alone" (t2) so neither check depends on the other's
+# gate having already been cleared.
+## timeout: 30
+## host: run var t1 = Tag.new()
+## host: run var t2 = Tag.new()
+## host: run Realm.hits = 0
+## host: run Realm.go1 = 0
+## host: run Realm.go2 = 0
+## host: run t1: { waituntil(Realm.go1 == 1); Realm.hits = Realm.hits + 1 }; 0
+## host: run t2: { waituntil(Realm.go2 == 1); Realm.hits = Realm.hits + 1 }; 0
+## host: run t1.block()
+## host: run t1.freeze()
+## host: run t2.block()
+## host: run t2.freeze()
+## host: run Realm.go1 = 1
+## host: run Realm.go2 = 1
+## host: step 1000
+## host: run Realm.hits
+## host: run t1.unblock()
+## host: step 1000
+## host: run Realm.hits
+## host: run t2.unfreeze()
+## host: step 1000
+## host: run Realm.hits
+## host: run t2.unblock()
+## host: step 1000
+## host: run Realm.hits
+## host: run t1.unfreeze()
+## host: step 1000
+## host: run Realm.hits
+[00000001] <Tag>
+[00000002] <Tag>
+[00000003] 0
+[00000004] 0
+[00000005] 0
+[00000006] nil
+[00000007] nil
+[00000008] nil
+[00000009] nil
+[00000010] nil
+[00000011] nil
+[00000012] 1
+[00000013] 1
+[00000014] step: QUIESCENT
+[00000015] 0
+[00000016] nil
+[00000017] step: QUIESCENT
+[00000018] 0
+[00000019] nil
+[00000020] step: QUIESCENT
+[00000021] 0
+[00000022] nil
+[00000023] step: QUIESCENT
+[00000024] 1
+[00000025] nil
+[00000026] step: QUIESCENT
+[00000027] 2

@@ -1,0 +1,17 @@
+# Covers: `Realm.Object = 42` raises a catchable TypeError and leaves the
+#         binding intact.
+# Origin: harvested from tests/unit/test_realm_globals_api.c
+#         (deleted in Phase 0)
+#
+# Uses the `Realm.` form: a bare `var Object = 42` is block-scoped since
+# LANG4-06 and would silently shadow instead of throwing.  Identity is
+# checked against the bare global `Object` (rather than printing the raw
+# object) so the fixture stays deterministic across ASLR/heap layout —
+# see globals/object_proto.chk for the same convention.
+
+Realm.Object == Object
+var ok = "no"; try { Realm.Object = 42 } catch (var e) { ok = e.isA(TypeError) }; ok
+Realm.Object == Object
+[00000001] true
+[00000002] true
+[00000003] true

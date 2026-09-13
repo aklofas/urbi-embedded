@@ -1,0 +1,36 @@
+# Covers: an `at sync (cond)` body finishes before the statement that
+#         flipped the condition returns, unlike async `at`.
+# Origin: harvested from tests/unit/test_at_fire_paths.c (deleted in Phase 0)
+#
+# Both watcher bodies write two chars ("1" then "2") so a merely-started
+# async body is distinguishable from a fully-completed sync one.  The
+# condition flip runs inside a nested function call: watcher-eval-dirty
+# fires at the OP_RET safepoint the call provides (a bare top-level
+# assignment does not trigger it — see reactive/at/at_rising_edge.chk).
+#
+# Async `at`: only "1" lands before the trigger call returns and "M" is
+# appended ("1M"); "2" lands later, once the REPL's post-line drain runs
+# ("1M2" on the next read).  Sync `at sync`: both "1" and "2" land before
+# the trigger call returns, so "M" is appended last ("12M") and stays that
+# way.
+
+Realm.log = ""
+Realm.condA = false
+at (Realm.condA) { Realm.log = Realm.log + "1"; Realm.log = Realm.log + "2" }
+var triggerA = function() { Realm.condA = true }; triggerA(); Realm.log = Realm.log + "M"
+Realm.log
+Realm.log2 = ""
+Realm.condS = false
+at sync (Realm.condS) { Realm.log2 = Realm.log2 + "1"; Realm.log2 = Realm.log2 + "2" }
+var triggerS = function() { Realm.condS = true }; triggerS(); Realm.log2 = Realm.log2 + "M"
+Realm.log2
+[00000001] ""
+[00000002] false
+[00000003] nil
+[00000004] "1M"
+[00000005] "1M2"
+[00000006] ""
+[00000007] false
+[00000008] nil
+[00000009] "12M"
+[00000010] "12M"

@@ -1,0 +1,26 @@
+# Covers: stopping a tag whose member is suspended wakes that member so
+#         its finally still runs.
+# Origin: harvested from tests/unit/test_tag_gate_matrix.c
+#         (deleted in Phase 0)
+#
+# The member strand parks on `waituntil` (never becomes true here) inside
+# a try/finally, then t.block() suspends it.  t.stop() must force the
+# unwind through regardless of the block gate — cancellation overrides
+# suspension — running the finally body.
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run Realm.log = ""
+## host: run Realm.go = 0
+## host: run t: { try { waituntil(Realm.go == 1) } finally { Realm.log = Realm.log + "F" } }; 0
+## host: run t.block()
+## host: run t.stop()
+## host: step 1000
+## host: run Realm.log
+[00000001] <Tag>
+[00000002] ""
+[00000003] 0
+[00000004] nil
+[00000005] nil
+[00000006] nil
+[00000007] step: QUIESCENT
+[00000008] "F"

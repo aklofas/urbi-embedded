@@ -1,0 +1,26 @@
+# Covers: `t: { t.block() ... }` suspends before the rest of the scope
+#         body runs, and a later `t.unblock()` lets the remainder finish.
+# Origin: harvested from tests/unit/test_tag_self_block.c
+#         (deleted in Phase 0)
+#
+# The resume must come from a separate `## host: run` between `## host:
+# step` calls: a self-suspended strand cannot resume itself, so
+# `t.unblock()` has to be issued by a different (later-installed) strand.
+
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run Realm.mark = 0
+## host: run t: { t.block(); Realm.mark = 1 }; 0
+## host: step 1000
+## host: run Realm.mark
+## host: run t.unblock()
+## host: step 1000
+## host: run Realm.mark
+[00000001] <Tag>
+[00000002] 0
+[00000003] nil
+[00000004] step: QUIESCENT
+[00000005] 0
+[00000006] nil
+[00000007] step: QUIESCENT
+[00000008] 1

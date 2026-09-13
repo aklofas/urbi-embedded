@@ -1,0 +1,12 @@
+# Covers: `waituntil(cond)` whose condition is already true at install
+#         returns immediately and the next statement on the same line
+#         still runs.
+# Origin: harvested from tests/unit/test_at_install_dispatch.c
+#         (deleted in Phase 0)
+
+Realm.flag = true
+Realm.flag = true; waituntil(Realm.flag); Realm.hits = 1
+Realm.hits
+[00000001] true
+[00000002] 1
+[00000003] 1

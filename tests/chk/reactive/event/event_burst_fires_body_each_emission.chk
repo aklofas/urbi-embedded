@@ -1,0 +1,16 @@
+# Covers: N back-to-back emissions on one event each run the `at (e?)`
+#         body once, so a counter incremented in the body reaches N rather
+#         than saturating at 2.
+# Origin: harvested from tests/unit/test_athandler_wedge_repro.c
+#         (deleted in Phase 0)
+
+var e = Event.new()
+Realm.hits = 0
+at (Realm.e?) { Realm.hits = Realm.hits + 1 }
+Realm.e!(); Realm.e!(); Realm.e!(); Realm.e!(); Realm.e!()
+Realm.hits
+[00000001] <event>
+[00000002] 0
+[00000003] nil
+[00000004] nil
+[00000005] 5

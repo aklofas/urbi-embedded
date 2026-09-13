@@ -1,0 +1,23 @@
+# Covers: an `at (e?)` watcher installed inside a tag scope stops running
+#         its body on emissions that happen after that tag is stopped.
+# Origin: harvested from tests/unit/test_at_event_unlink_on_tag_stop.c
+#         (deleted in Phase 0)
+
+var e = Event.new()
+var t = Tag.new()
+Realm.hits = 0
+t: at (Realm.e?) { Realm.hits = Realm.hits + 1 }
+Realm.e!()
+Realm.hits
+t.stop()
+Realm.e!()
+Realm.hits
+[00000001] <event>
+[00000002] <Tag>
+[00000003] 0
+[00000004] nil
+[00000005] nil
+[00000006] 1
+[00000007] nil
+[00000008] nil
+[00000009] 1

@@ -1,26 +1,26 @@
-# Milestone: M5
-# Covers: e.syncEmit(p) — synchronous event emit; all subscribers run inline
-#         before syncEmit returns; spec #3 §6.2 AT_EVENT_SYNC watcher mode.
-#
-# blocked: Event.syncEmit() method not yet bound on Event stdlib type (audit Cat. E)
+# Milestone: v0.13.6 (Phase 0 harvest activation)
+# Covers: e.syncEmit(p) — synchronous event emit; a SYNC-registered
+#         (`at sync (e?)`) subscriber runs inline before syncEmit returns;
+#         spec #3 §6.2 AT_EVENT_SYNC watcher mode.
 # matrix-row: reactive-event
 #
-# Reason:
-#   syncEmit() is a method on Event objects; requires T59 stdlib binding.
-#   AT_EVENT_SYNC mode (OP_AT_EVENT_SYNC_INSTALL) is wired in the VM but
-#   invoke_body_inline is a stub at M5-stub phase.  The synchronous inline
-#   dispatch path (no coroutine spawn) is exercised by test_event_emit_sync.c
-#   via the test_watcher_fire_hook.
-#
-# Activate when Event.new() + syncEmit method + inline body dispatch wired.
-#
-# Urbiscript source (activate at T59 + M5-scratch-frame):
-#   var e = Event.new();
-#   var order = "";
-#   at (e?) Realm.order = Realm.order + "async";
-#   e.syncEmit(1) | order
-#   --- expected output ---
-#   [00000000] nil
-#   [00000001] ""
-#   [00000002] nil
-#   [00000003] "async"
+# Activation note: the original draft below used `at (e?)` (async-mode
+# registration) and combined the emit and the read with `|` expecting the
+# subscriber's write to already be visible.  Verified on this tree: an
+# ASYNC-registered subscriber does NOT run inline under syncEmit (it still
+# completes later, on the REPL's post-line drain) — only a SYNC-registered
+# (`at sync (e?)`) subscriber does.  Same dot-syntax-vs-keyword-phrase class
+# of fixture-authoring drift as Cluster #15 verdict A (see
+# reactive/slot-change/slot_change_sync.chk); rewritten to the keyword form
+# below, which is the form spec #3 §6.2 actually describes.  The placeholder's
+# "not yet bound" blocker is otherwise stale — Event.new(), syncEmit(), and
+# `at sync (e?)` are all live on this tree.
+
+var e = Event.new()
+Realm.order = ""
+at sync (e?) Realm.order = Realm.order + "async"
+e.syncEmit(1) | Realm.order
+[00000001] <event>
+[00000002] ""
+[00000003] nil
+[00000004] "async"

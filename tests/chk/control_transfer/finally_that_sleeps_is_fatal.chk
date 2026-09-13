@@ -1,0 +1,19 @@
+# Covers: a `finally` body that calls `sleep` reports a loud fatal rather
+#         than silently truncating the cleanup.
+# Origin: harvested from tests/unit/test_cleanup_yield.c (deleted in Phase 0)
+#
+# Must be driven through the host driver and observed as a `## host: step`
+# verdict: on the plain `urbi -i` path (and via `## host: run` alone) a
+# sleeping finally reached through a tag-stop unwind completes quietly —
+# urbi_repl_eval's REPL-recovery path shows nil rather than surfacing the
+# fatal (verified on this tree).  Forking the tag-scope block off as a
+# detached strand (`, 0`) lets the loud fatal happen on a LATER `## host:
+# step` call, observed directly through urbi_step's own return value
+# rather than through repl_eval's masking.
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run t: { try { t.stop() } finally { sleep(1s); Realm.b9 = 2 } }, 0
+## host: step 1000
+[00000001] <Tag>
+[00000002] 0
+[00000003] step: FATAL

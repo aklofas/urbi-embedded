@@ -1,0 +1,16 @@
+# Covers: a value returned from a try block is still intact after the
+#         finally body runs.
+# Origin: harvested from tests/unit/test_gc_rooting_matrix.c
+#         (deleted in Phase 0)
+#
+# Allocates in the finally body itself (no script-level `gcNow()` builtin
+# exists) and relies on test-gc-stress to supply collection pressure, per
+# the gc/container_element_survives.chk convention: on the normal build
+# this passes trivially; under test-gc-stress every allocation collects,
+# so a missing GC root for the try block's return value would turn the
+# read-back into a UAF caught by ASan/poisoning.
+
+var f = function() { try { return Pair.new(1, 2) } finally { var churn = List.new(); var j = 0; while (j < 20) { churn.add(Pair.new(j, j + 1)); j = j + 1 } } }
+f().first
+[00000001] <?>
+[00000002] 1

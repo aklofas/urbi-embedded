@@ -1,0 +1,17 @@
+# Covers: `every(0)` and a non-finite period raise a catchable error
+#         instead of spinning.
+# Origin: harvested from tests/unit/test_periodic_cadence.c
+#         (deleted in Phase 0)
+#
+# Math.nan / Math.infinity (src/stdlib/namespaces.c) supply the non-finite
+# values; every_native's guard `!(f > 0.0) || f > 9.2e12` (src/stdlib/
+# temporal.c) rejects NaN, negatives, zero, and +/-infinity in one test.
+
+var r = "no"; try { every (0) { 1 } } catch (var e) { r = e.isA(TypeError) }; r
+var m = ""; try { every (0) { 1 } } catch (var e) { m = e.message }; m
+var r2 = "no"; try { every (Math.nan) { 1 } } catch (var e) { r2 = e.isA(TypeError) }; r2
+var r3 = "no"; try { every (Math.infinity) { 1 } } catch (var e) { r3 = e.isA(TypeError) }; r3
+[00000001] true
+[00000002] "TypeError: every: period must be positive"
+[00000003] true
+[00000004] true

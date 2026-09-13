@@ -1,0 +1,19 @@
+# Covers: a long-running loop driven with a small per-step budget still
+#         reaches its final value across repeated steps instead of
+#         stalling once the budget is first exhausted.
+# Origin: harvested from tests/unit/test_budget_rearm.c (deleted in Phase 0)
+#
+# The REPL drives urbi_step in URBI_REPL_DRAIN_BUDGET-bounded 1000-
+# instruction calls after each line (src/chunk/uchunk_strand.c).  A loop
+# needing far more than 1000 instructions to complete must survive many
+# budget exhaust-and-rearm cycles within that single line before its final
+# value is observable — 200000 iterations stays safely under the separate
+# ~10M-instruction no-yield loader cap (URBI_LOADER_OUTER_CAP *
+# URBI_LOADER_INNER_BUDGET), which exists to catch genuinely infinite loops.
+
+Realm.i = 0
+while (Realm.i < 200000) Realm.i = Realm.i + 1
+Realm.i
+[00000001] 0
+[00000002] nil
+[00000003] 200000

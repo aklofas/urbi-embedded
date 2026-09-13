@@ -1,0 +1,19 @@
+# Covers: two `at (e?)` subscribers on the same event run their bodies in
+#         registration order on a single emission — both do fire today, so
+#         the fixture uses an order-sensitive accumulator (string append)
+#         rather than a sum, which cannot tell the orders apart.
+# Origin: harvested from tests/unit/test_event_emit_async.c
+#         (deleted in Phase 0)
+
+var e = Event.new()
+Realm.seq = ""
+at (Realm.e?) { Realm.seq = Realm.seq + "A" }
+at (Realm.e?) { Realm.seq = Realm.seq + "B" }
+Realm.e!()
+Realm.seq
+[00000001] <event>
+[00000002] ""
+[00000003] nil
+[00000004] nil
+[00000005] nil
+[00000006] "AB"
