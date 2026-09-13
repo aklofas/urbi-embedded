@@ -5,7 +5,7 @@
 #define UCLEANUP_H
 
 #include <stdint.h>
-#include "urbi/types.h"   /* URBI_STATIC_ASSERT */
+#include "urbi/types.h"
 
 #ifdef __cplusplus
 extern "C" {

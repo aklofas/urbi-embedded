@@ -219,8 +219,7 @@ struct UStrand {
      * runs a COMPLETE nested cleanup and only then parks escalates too
      * (the nested run's entry-clear consumed the flag).  Single-level
      * absorption (the v0.13.1-B repro) is fully handled.  Carved from the
-     * former uint16_t cleanup_run_pad — no UStrand size/offset change
-     * (CHSTR-041 holds). */
+     * former uint16_t cleanup_run_pad — no UStrand size/offset change. */
     uint8_t                 cleanup_absorbed;
     uint8_t                 cleanup_run_pad;
     struct UCleanupEntry   *cleanup_base;
