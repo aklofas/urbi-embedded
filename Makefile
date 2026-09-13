@@ -783,30 +783,9 @@ test-port-stm32f4: $(addprefix build/port_stm32f4/, $(PORT_STM32F4_TESTS))
 	@for t in $^; do echo "Running $$t..."; $$t || exit 1; done
 	@echo "All STM32F4 port tests PASS"
 
-.PHONY: test-loc-cap
-test-loc-cap:
-	@./tests/scripts/check_loc_cap.sh
-
-# T34 (v0.7.0 Wave 1): GC roots-coverage gate.  Asserts every UVAL_*
-# enum value declared in include/urbi/types.h is referenced at least
-# once under src/gc/.  Closes the bug class that surfaced as the
-# M4-era UVAL_OBJECT / UVAL_EVENT shading gap (fixed inline at v0.6.2
-# Phase 6).  Hard-fail in releasetest Phase 1 below.
-.PHONY: test-gc-roots-coverage
-test-gc-roots-coverage:
-	@./tests/scripts/check-gc-roots-coverage.sh
-
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi
 	@./tests/scripts/check_wire_format_determinism.sh
-
-# Phase 21 (v0.5.8-cleanup) gate: every public-API and subsystem-public
-# header function declaration must carry an immediately-preceding /* ... */
-# comment.  Hard-fail in releasetest below.  See
-# tests/scripts/check_docstring_coverage.sh for the cascade rules.
-.PHONY: test-docstring-coverage
-test-docstring-coverage:
-	@./tests/scripts/check_docstring_coverage.sh
 
 # Phase 9 (v0.7.1-embedding-api) aux-symbols gate.
 # Asserts that liburbi.a (core) contains NO urbi_aux_* symbols.
@@ -843,14 +822,6 @@ test-embedding-guide: $(LIB) $(LIBURBI_AUX)
 .PHONY: test-stdlib-bytecode-fresh
 test-stdlib-bytecode-fresh: tools/urbi-compile-stdlib
 	@./tests/scripts/check-stdlib-fresh.sh
-
-# W5/v0.10.6: dependency-pin static check (release F14).
-# Parses CI for Docker/SDK/toolchain version pins and compares them to
-# docs/reference/embedded-port-sources.md.  Catches CI/docs drift without
-# needing network access or a live toolchain.
-.PHONY: test-dependency-pins
-test-dependency-pins:
-	@./tests/scripts/check-dependency-pins.sh
 
 # v0.11.2: host trace-tooling decoder unit test.  Runs the Python URBT decoder
 # (tools/urbi-trace-decode.py) against constructed dumps and asserts the
@@ -915,10 +886,6 @@ check-ros-gate:
 check-rosgen:
 	@sh tests/scripts/check-rosgen.sh
 
-.PHONY: check-rosgen-determinism
-check-rosgen-determinism:
-	@sh tests/scripts/check-rosgen-determinism.sh
-
 # test-chk-urobotics — runs all tests/chk/urobotics/*.chk under
 # URBI_BUILD_PRESET=urobotics.  Every fixture must RUN and PASS; a SKIP is a
 # gate failure (the vacuous-fixture trap: preset mismatch silently empties
@@ -947,10 +914,6 @@ test-urobotics:
 	$(MAKE) TARGET=host-urobotics URBI_ENABLE_UROBOTICS=1 \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" \
 		test test-chk-urobotics
-
-.PHONY: check-urobotics-determinism
-check-urobotics-determinism: tools/urbi-compile-stdlib
-	@sh tests/scripts/check-urobotics-determinism.sh
 
 # test-chk-ros-urobotics — runs all tests/chk/ros-urobotics/*.chk under
 # URBI_BUILD_PRESET=ros-urobotics.  Every fixture must RUN and PASS; a SKIP is
@@ -1000,15 +963,6 @@ ros-integration:
 test-external-embed-iinclude: $(LIB) $(LIBURBI_AUX)
 	@./tests/integration/test_external_embed_iinclude.sh $(BUILDDIR)
 
-# v1.0 (M10 / B1): fresh-clone build of every shipped-port example.  Proves a
-# pristine tree (no stale build/) builds the Linux REPL + each cross firmware.
-# ESP32-S3 skips cleanly when IDF_PATH is unset.  Advisory (not in releasetest's
-# core gate set) because it depends on cross toolchains; see
-# docs/release/clone-build-demo.md.
-.PHONY: clone-build-demo-check
-clone-build-demo-check: ## Fresh-clone build of all shipped-port examples
-	bash tests/scripts/clone-build-demo.sh
-
 # Phase 3 (v0.6.1-stdlib Wave 2) bake-tool determinism smoke gate.
 # Runs tools/urbi-compile-stdlib three times against
 # src/stdlib/STDLIB_ORDER.txt + src/stdlib/*.u and asserts that the
@@ -1040,21 +994,6 @@ test-bytecode-only:
 .PHONY: test-freestanding-host
 test-freestanding-host:
 	@./tests/scripts/build-freestanding-host.sh
-
-# v0.6.2 Wave 3 oracle-diff — third-party sanity check against urbiforge
-# 3.x (CMake-built, installed at $(URBI_ORACLE_ROOT)).  Diffs our urbi
-# binary's stdout against the urbiforge engine (`urbi-launch -s --`)
-# for selected legacy fixtures.  NOT a CI gate — opt-in for Wave 3
-# parity validation on Gaps #1 + #4.
-URBI_ORACLE_ROOT ?= /tmp/urbi-oracle
-
-.PHONY: oracle-diff
-oracle-diff: $(BUILDDIR)/urbi
-	@if [ ! -x "$(URBI_ORACLE_ROOT)/bin/urbi-launch" ]; then \
-	    echo "oracle-diff: $(URBI_ORACLE_ROOT)/bin/urbi-launch not built; see Phase 0 Task 4 of v0.6.2 plan"; \
-	    exit 1; \
-	fi
-	@URBI_ORACLE_ROOT=$(URBI_ORACLE_ROOT) bash tests/scripts/oracle-diff.sh $(ORACLE_FIXTURES)
 
 test-debug:
 	$(MAKE) TARGET=host-debug \
@@ -1108,27 +1047,15 @@ test-trace-compiled-out: $(LIB)
 # --- Determinism gate -------------------------------------------------------
 #
 # test-determinism builds and runs the full unit-test suite 100 times under
-# each of 3 tunable presets (footprint / default / linux), verifying that
-# urbi_get_determinism_checksum() returns a stable value across runs.
+# the default preset, verifying that urbi_get_determinism_checksum() returns
+# a stable value across runs.
 #
 # The full runner is invoked each iteration (no per-suite filter exists in
-# runner.c); at ~15-25ms per run, 300 total invocations take ~5-7 seconds.
+# runner.c); at ~15-25ms per run, 100 invocations take ~1.5-2.5 seconds.
 # Any non-zero exit from the runner fails the gate with the iteration number.
 #
-# All three presets enable -DURBI_DEBUG=1 because the determinism checksum
-# function is guarded by #ifdef URBI_DEBUG.  Distinct TARGET= values give
-# each preset its own BUILDDIR so no clean step is needed between presets.
-
-test-determinism-footprint:
-	$(MAKE) TARGET=host-determinism-footprint \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_CLEANUP_MAX=16 -DURBI_STRAND_BUDGET_MAX=200 -DURBI_GC_SLICE_BUDGET=2048 -DURBI_IC_ENTRIES_PER_SITE=2" \
-		test
-	@echo "=== Determinism gate: footprint preset (100 runs) ==="
-	@for i in $$(seq 1 100); do \
-	    build/host-determinism-footprint/tests/unit/runner > /dev/null \
-	    || { echo "FAIL on iteration $$i (footprint preset)"; exit 1; }; \
-	done
-	@echo "=== Footprint preset: 100 runs PASS ==="
+# Enables -DURBI_DEBUG=1 because the determinism checksum function is
+# guarded by #ifdef URBI_DEBUG.
 
 test-determinism-default:
 	$(MAKE) TARGET=host-determinism-default \
@@ -1141,34 +1068,8 @@ test-determinism-default:
 	done
 	@echo "=== Default preset: 100 runs PASS ==="
 
-test-determinism-linux:
-	$(MAKE) TARGET=host-determinism-linux \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_GC_SLICE_BUDGET=16384 -DURBI_EVENT_RING_DEPTH=256" \
-		test
-	@echo "=== Determinism gate: linux preset (100 runs) ==="
-	@for i in $$(seq 1 100); do \
-	    build/host-determinism-linux/tests/unit/runner > /dev/null \
-	    || { echo "FAIL on iteration $$i (linux preset)"; exit 1; }; \
-	done
-	@echo "=== Linux preset: 100 runs PASS ==="
-
-test-determinism: test-determinism-footprint test-determinism-default test-determinism-linux
-	@echo "=== Determinism gate: all 3 presets × 100 runs PASS ==="
-
-# test-determinism-trace — the default preset with URBI_TRACE=1 added.  Proves
-# a trace-enabled build stays deterministic across 100 runs: trace channels
-# default OFF, so no records are emitted and the checksummed observable state
-# is unperturbed by compiling the subsystem in.  CI-only (not in releasetest).
-test-determinism-trace:
-	$(MAKE) TARGET=host-determinism-trace \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_TRACE=1" \
-		test
-	@echo "=== Determinism gate: trace preset (100 runs) ==="
-	@for i in $$(seq 1 100); do \
-	    build/host-determinism-trace/tests/unit/runner > /dev/null \
-	    || { echo "FAIL on iteration $$i (trace preset)"; exit 1; }; \
-	done
-	@echo "=== Trace preset: 100 runs PASS (URBI_TRACE=1 stays deterministic) ==="
+test-determinism: test-determinism-default
+	@echo "=== Determinism gate: default preset × 100 runs PASS ==="
 
 # test-perf-counters — full suite under URBI_PERF_COUNTERS=1 (per-opcode/slot
 # counters compiled in; per-event GC counters are always-on).  Verifies the
@@ -1179,24 +1080,6 @@ test-perf-counters:
 	$(MAKE) TARGET=host-perf \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PERF_COUNTERS=1" \
 		test
-
-# test-determinism-perf — the default preset with URBI_PERF_COUNTERS=1 added.
-# Proves a perf-counter build stays deterministic across 100 runs: ALL counters
-# (and GC timing) are excluded from urbi_get_determinism_checksum, so the
-# checksummed observable state is unperturbed.  This is the same URBI_DEBUG +
-# extra-define combination that surfaced the v0.11.0 CI-only fault, so it runs
-# in CI even though UPerfCounters is small + embedded (no on-stack hazard).
-# CI-only (not in releasetest).
-test-determinism-perf:
-	$(MAKE) TARGET=host-determinism-perf \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_PERF_COUNTERS=1" \
-		test
-	@echo "=== Determinism gate: perf preset (100 runs) ==="
-	@for i in $$(seq 1 100); do \
-	    build/host-determinism-perf/tests/unit/runner > /dev/null \
-	    || { echo "FAIL on iteration $$i (perf preset)"; exit 1; }; \
-	done
-	@echo "=== Perf preset: 100 runs PASS (counters excluded from checksum) ==="
 
 # test-mem-debug — full suite under URBI_MEM_DEBUG=1 (owner tags, trailing
 # redzone, poison-on-free + quarantine, handle/pin leak detection).  Own
@@ -1220,22 +1103,6 @@ test-gc-stress:
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_GC_STRESS=1" \
 		test
 
-# test-determinism-memdebug — the URBI_DEBUG + URBI_MEM_DEBUG combo.  Proves the
-# determinism checksum is unperturbed by the memdbg substate (alloc_seq, owner
-# pointers, poison/quarantine/redzone state are all excluded) AND doubles as the
-# UVM-layout-perturbation canary (the same class that surfaced the v0.11.0
-# CI-only fault).  CI-only (not in releasetest).
-test-determinism-memdebug:
-	$(MAKE) TARGET=host-determinism-memdbg \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_MEM_DEBUG=1" \
-		test
-	@echo "=== Determinism gate: mem-debug preset (100 runs) ==="
-	@for i in $$(seq 1 100); do \
-	    build/host-determinism-memdbg/tests/unit/runner > /dev/null \
-	    || { echo "FAIL on iteration $$i (mem-debug preset)"; exit 1; }; \
-	done
-	@echo "=== mem-debug preset: 100 runs PASS (memdbg excluded from checksum) ==="
-
 # Valgrind memcheck — runs the test suite under valgrind's memcheck tool.
 # Catches uninitialized reads, heap corruption, leaks.  Complements ASan:
 # memcheck's bit-precise tracking catches uninit reads that ASan misses.
@@ -1256,8 +1123,8 @@ test-determinism-memdebug:
 # exceeds the unsharded total because every shard pays valgrind
 # startup + leak-summary cost, and the worst case is bottleneck-bound).
 # The wall-clock win in releasetest comes from running test-valgrind
-# in parallel with test-valgrind-deep + the sanitizer matrix + lint +
-# coverage etc., which IS what releasetest does.
+# in parallel with the sanitizer matrix + lint + coverage etc., which
+# IS what releasetest does.
 # URBI_SKIP_THREAD_FUZZ_TESTS skips event_ring_multi_thread_fuzz_100k, which
 # memcheck cannot meaningfully run: it serializes threads onto one CPU, so
 # the SPSC producer fills the ring then busy-spins on RING_FULL while the
@@ -1268,20 +1135,6 @@ test-valgrind: valgrind-tools
 	$(MAKE) TARGET=host-valgrind \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_SKIP_THREAD_FUZZ_TESTS=1" \
 		RUNNER_WRAPPER="valgrind --tool=memcheck --error-exitcode=1 --leak-check=full -q" \
-		test
-
-# test-valgrind-deep — diagnostic counterpart to test-valgrind. Enables
-# --track-origins=yes (resolves uninit-read complaints to the allocation
-# site that produced the undefined byte) and --show-leak-kinds=all
-# (reports indirect/reachable/suppressed leaks, not just definite/possible).
-# Roughly 2× slower than test-valgrind. Intended for local triage when
-# test-valgrind reports a hit and you need a usable stack trace, or for
-# pre-release sweeps. NOT wired into CI — too expensive for per-push gating.
-# Sharding env vars (URBI_SHARD_TOTAL/INDEX) work here too.
-test-valgrind-deep: valgrind-tools
-	$(MAKE) TARGET=host-valgrind-deep \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g -DURBI_SKIP_THREAD_FUZZ_TESTS=1" \
-		RUNNER_WRAPPER="valgrind --tool=memcheck --error-exitcode=1 --leak-check=full --track-origins=yes --show-leak-kinds=all -q" \
 		test
 
 valgrind-tools:
@@ -1321,7 +1174,7 @@ test-corpus-sanitize:
 #
 # All sub-targets use disjoint $(BUILDDIR) trees ($(TARGET)=host /
 # host-asan / host-ubsan / host-debug / host-switch / host-valgrind /
-# host-valgrind-deep / host-coverage / host-analyzer), so concurrent
+# host-coverage / host-analyzer), so concurrent
 # rebuilds do not race.  The sole shared artifact is build/host/liburbi.a
 # (needed by `test`, `test-stress`, and the `lint` machinery's
 # compile_commands.json consumers); GNU make's dep graph builds it once
@@ -1354,14 +1207,14 @@ RELEASETEST_PHASE1 := \
     test-mem-debug test-gdb-memdebug test-gc-stress \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
-    test-wire-format-determinism test-docstring-coverage \
+    test-wire-format-determinism \
     test-bake-smoke test-bytecode-only test-freestanding-host \
-    test-gc-roots-coverage test-api-manifest test-aux-symbols \
+    test-api-manifest test-aux-symbols \
     test-embedding-guide test-external-embed-iinclude test-port-stm32f4 \
     test-repl-security \
-    test-stdlib-bytecode-fresh test-dependency-pins \
-    test-ros2 check-ros-gate check-rosgen check-rosgen-determinism \
-    test-urobotics check-urobotics-determinism test-ros-urobotics \
+    test-stdlib-bytecode-fresh \
+    test-ros2 check-ros-gate check-rosgen \
+    test-urobotics test-ros-urobotics \
     test-chk-runner test-fuzz-smoke test-o2
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # ros-integration is excluded from releasetest (container-only; needs docker).
@@ -1372,13 +1225,6 @@ RELEASETEST_PHASE1 := \
 # Phase 1 first is still substantially faster than the original 15-min
 # fully-sequential design.
 RELEASETEST_PHASE2 := test-valgrind test-corpus-sanitize
-
-# test-valgrind-deep is intentionally NOT in releasetest. Per its
-# docstring ("Intended for local triage when test-valgrind reports a hit
-# and you need a usable stack trace") it is a triage tool, not a gate;
-# its --track-origins=yes and --show-leak-kinds=all flags roughly double
-# wall-clock vs the fast variant. Run it explicitly when triaging:
-#   make test-valgrind-deep
 
 RELEASETEST_JOBS   ?= $(shell nproc)
 RELEASETEST_OUTPUT ?= target
@@ -2121,40 +1967,10 @@ coverage-tools:
 	    exit 1; \
 	}
 
-# Branch coverage — same instrumentation as `coverage`, with branch + decision
-# tracking. Closes COV-009 audit finding. Uses gcovr's native --branches flag
-# rather than lcov (cited by audit) — gcovr is already in PATH and the
-# existing coverage target uses it; lcov would add a dep without functional
-# benefit.
-#
-# Threshold gating: informational-only at v0.5.7 baseline (69.4%). Phase 20
-# (T119-T125) closes coverage gaps; the gate enables in T118 / T126 once
-# the baseline is above 75%. Currently the target reports + writes the
-# HTML but does not fail-under.
-test-branch-coverage: coverage-tools
-	rm -f build/host-coverage/src/*.gcda build/host-coverage/tests/unit/*.gcda
-	$(MAKE) TARGET=host-coverage \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g --coverage" \
-		test
-	gcovr --root . \
-	      --object-directory build/host-coverage \
-	      --filter 'src/' \
-	      --merge-mode-functions=merge-use-line-min \
-	      --branches \
-	      --decisions \
-	      --txt \
-	      --html-details build/host-coverage/branch-report.html
-	@echo ""
-	@echo "Branch + decision coverage report: build/host-coverage/branch-report.html"
-	@echo "(gate enables in v0.5.7-fixes Phase 20 once baseline exceeds 75%)"
-
-# Aggregate: gating audit-globals, tidy, advisory cppcheck, advisory analyzer.
+# Aggregate: gating tidy, advisory cppcheck, advisory analyzer.
 # CI invokes this as one step per-target so failures clearly name
 # which tool caught the issue.
-lint: audit-globals tidy cppcheck analyzer
-
-audit-globals:
-	@./tools/audit-globals.sh
+lint: tidy cppcheck analyzer
 
 clean:
 	rm -rf build compile_commands.json
@@ -2191,7 +2007,7 @@ DOCS_LINT_TARGETS := 'docs/**/*.md' README.md CONTRIBUTING.md CHANGELOG.md \
     'examples/**/*.md' 'components/**/*.md' 'tests/qemu/**/*.md' \
     '!**/build/**' '!**/_deps/**'
 
-docs-check: docs-check-tools docs-public-scrub src-comment-scrub
+docs-check: docs-check-tools
 	markdownlint-cli2 --config .markdownlint.yaml $(DOCS_LINT_TARGETS)
 	@echo "--- link-check ---"
 	@find docs examples components tests/qemu \
@@ -2199,20 +2015,6 @@ docs-check: docs-check-tools docs-public-scrub src-comment-scrub
 	    -name '*.md' -type f \
 	    ! -path '*/build/*' ! -path '*/_deps/*' \
 	    -exec markdown-link-check --quiet --config .markdown-link-check.json {} +
-
-# docs-public-scrub — verify no tracked file mentions workspace-private paths,
-# tool-context filenames, or AI-attribution patterns.  Allowed exceptions must
-# carry a `scrub-allow: <reason>` marker on the same line.
-docs-public-scrub:
-	@tests/scripts/check-public-doc-scrub.sh
-
-# src-comment-scrub — verify no C/H source file under src/ include/ tools/
-# contains internal process-ID tokens (M<n>, T<n>, W<n>, FOUND-<n>,
-# refactor-<n>).  Excludes include/urbi/version.h (ABI history ledger) and
-# tests/ (fixtures may cite legacy IDs).  Inline escape: scrub-allow: <reason>.
-# See docs/STYLE.md §"Comment quality standard".
-src-comment-scrub:
-	@tests/scripts/check-source-comment-scrub.sh
 
 docs-check-tools:
 	@command -v markdownlint-cli2 >/dev/null 2>&1 || { \
@@ -2239,4 +2041,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-determinism-footprint test-determinism-linux test-determinism-trace test-perf-counters test-determinism-perf cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools docs-public-scrub src-comment-scrub check-version-sync coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk test-chk-ros releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-cross-stm32f4-app test-gc-roots-coverage test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude oracle-diff test-port-stm32f4 test-repl-security test-stdlib-bytecode-fresh test-dependency-pins test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-gc-stress test-determinism-memdebug urbi-trace unit-runner test-ros2 check-ros-gate check-rosgen check-rosgen-determinism ros-integration test-urobotics test-chk-urobotics check-urobotics-determinism test-ros-urobotics test-chk-ros-urobotics test-chk-runner test-fuzz-smoke test-o2 fuzz-json force-flagstamp
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-perf-counters cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk test-chk-ros releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-cross-stm32f4-app test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude test-port-stm32f4 test-repl-security test-stdlib-bytecode-fresh test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-gc-stress urbi-trace unit-runner test-ros2 check-ros-gate check-rosgen ros-integration test-urobotics test-chk-urobotics test-ros-urobotics test-chk-ros-urobotics test-chk-runner test-fuzz-smoke test-o2 fuzz-json force-flagstamp

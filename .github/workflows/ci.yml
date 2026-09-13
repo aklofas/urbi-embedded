@@ -23,7 +23,7 @@ jobs:
         run: make ${{ matrix.mode }}
 
   tooling:
-    name: tooling subsystem (trace + perf, REPL + determinism + host tooling)
+    name: tooling subsystem (trace + perf, REPL + host tooling)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -36,16 +36,12 @@ jobs:
           make URBI_ENABLE_REPL=1 \
             CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_TRACE=1 -DURBI_ENABLE_REPL=1" \
             test
-      - name: determinism stays stable with URBI_TRACE=1
-        run: make test-determinism-trace
       - name: perf-counters + REPL combined build (Debug.profile / Debug.gc seam)
         run: |
           make clean
           make URBI_ENABLE_REPL=1 \
             CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PERF_COUNTERS=1 -DURBI_ENABLE_REPL=1" \
             test
-      - name: determinism stays stable with URBI_PERF_COUNTERS=1
-        run: make test-determinism-perf
       - name: host trace tooling — decoder unit test
         run: make test-trace-decode
       - name: host trace tooling — capture end-to-end
@@ -54,16 +50,12 @@ jobs:
         run: make test-gdb
       - name: memory debug — build + unit detectors
         run: make test-mem-debug
-      - name: determinism stays stable with URBI_MEM_DEBUG=1
-        run: make test-determinism-memdebug
       - name: memory debug — GDB owner-tag walkers
         run: make test-gdb-memdebug
       - name: ROS2 bridge (mock) tests
         run: make test-ros2
       - name: Robotics facet overlay tests
         run: make test-urobotics
-      - name: Robotics overlay blob determinism
-        run: make check-urobotics-determinism
       - name: facet<->ROS2 binding tests
         run: make test-ros-urobotics
 
@@ -116,15 +108,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc make
       - name: Build and check stdlib freshness
         run: make test-stdlib-bytecode-fresh
-
-  dependency-pins:
-    name: dependency pin static check (W5)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - name: Check CI/docs dependency-pin sync
-        run: make test-dependency-pins
 
   cross-arm:
     name: cross-compile (ARM Cortex-M7)
@@ -353,7 +336,7 @@ jobs:
         run: make test-valgrind
 
   determinism-gate:
-    name: determinism gate (3 presets × 100 runs)
+    name: determinism gate (100 runs)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

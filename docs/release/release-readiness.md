@@ -27,7 +27,6 @@
 | Bar | Threshold | Current | Evidence | Last measured | Owner / blocker |
 |---|---|---|---|---|---|
 | Line coverage | ≥85% (enforced; aspirational v1.0: ≥90%) | 87% | `make coverage` (gcovr `--fail-under-line 85`) | 2026-05-26 | **passing-evidence** — Path A enforcement at 85%; threshold raised to 90% at v1.0 when gap closes |
-| Branch coverage | informational | not gated | `make test-branch-coverage` (gcovr `--branches`) | n/a | **removed from v1.0 claims** — branch coverage measured but not gated; see CHANGELOG entry |
 | Condition coverage | n/a | not measured | n/a | n/a | **removed from v1.0 claims** — no meaningful coverage tool for C99 MC/DC; dropped |
 
 ## Memory + performance
@@ -74,7 +73,6 @@ STM32H7 and ESP32-C3 are deferred to v1.x; not in the v1.0 hardware-support clai
 | Error model unified | **done (v0.10.3)** | `src/runtime/uabi_guards.c` unified return-int model | **passing-evidence** — closed at v0.10.3-api-opacity W3 |
 | ABI freeze pin | **retired** | n/a | The pre-1.0 ABI/wire freeze machinery (`_Static_assert` pin, `test-abi-freeze`) was removed ahead of the runtime re-foundation; see `docs/api-stability.md`. No API/ABI compatibility promise exists before 1.0.0. |
 | Wire format freeze pin | **retired** | n/a | The wire-format freeze machinery (`_Static_assert` pin, `test-wire-freeze`) was removed alongside the ABI freeze pin; see `docs/api-stability.md`. |
-| Dependency pins documented | **done (W5)** | `make test-dependency-pins` — passes | **passing-evidence** — ESP-IDF v6.0.1, pico-sdk 2.2.0, xpack riscv 15.2.0 pinned in CI and docs; apt arm divergence documented |
 
 ## REPL
 
@@ -130,7 +128,6 @@ Cut a v1.0-rc only when:
 
 The following bars were removed from v1.0 scope at v0.10.6-stabilization:
 
-- **Branch coverage gate:** Branch coverage is measured via `make test-branch-coverage` and reported per-tag, but not gated. Branch coverage at v0.10.5 was below 80%; gating a bar we cannot currently meet would make the release gate unenforced-in-practice. Moved to v1.x aspirational target.
 - **Condition coverage gate:** No standard gcovr mode for C99 MC/DC. Measuring would require gcov branch-level instrumentation which is already captured by branch coverage. Dropped from v1.0 quality bar.
 - **GC pause ≤1ms:** No representative reactive workload is defined; pausing under synthetic microbenchmark would be misleading. GC-pause SLA deferred to v1.x. Tracking entry in `docs/urbi-embedded-design-risks.md`.
 - **STM32H7 target:** Not brought up; no CI gate. Deferred to v1.x / ROS2 milestone.

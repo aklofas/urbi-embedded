@@ -447,8 +447,7 @@ touching the bit-packing scheme.
 **Locked:** 2026-04-24
 **Status:** active
 **Reference docs:**
-[`internals/architecture.md` — Multi-VM model](architecture.md#multi-vm-model),
-`tools/audit-globals.sh`
+[`internals/architecture.md` — Multi-VM model](architecture.md#multi-vm-model)
 
 **Decision.** No mutable datum may live at file scope in any `src/*.c` translation
 unit. Every piece of state that changes at runtime must live on a `UVM` struct (or
@@ -472,8 +471,7 @@ The empirical baseline at v0.1.0-skeleton was zero non-const file-scope mutable
 variables. The rule codifies that baseline as a forward constraint enforced
 mechanically rather than by audit: the `cppcoreguidelines-avoid-non-const-global-variables`
 clang-tidy check (enabled in `.clang-tidy`, gated under `make lint`) rejects any
-new mutable file-scope definition at CI time. The `tools/audit-globals.sh` script
-provides a secondary human-readable report. Both run in the CI `lint` job.
+new mutable file-scope definition at CI time, running in the CI `lint` job.
 
 **Implications.** Every new mutable datum added after the initial release must land on `UVM`
 or on a struct that `UVM` owns. Subsystem authors may not use `static` local
@@ -598,12 +596,11 @@ roadmap item.
 **Locked:** 2026-05-09
 **Status:** active
 
-**Decision.** Four strict-tooling gates hard-fail in `make releasetest`:
+**Decision.** Three strict-tooling gates hard-fail in `make releasetest`:
 cppcheck-strict (across all categories), tidy-strict (across all
-categories), scan-build (clang static analyzer), docstring-coverage
-(every header-exposed declaration in `include/urbi/*.h` carries a
-contract docstring). A green `make releasetest` is the canonical
-signal that the codebase is ready to ship.
+categories), scan-build (clang static analyzer). A green
+`make releasetest` is the canonical signal that the codebase is ready
+to ship.
 
 **Alternatives considered.**
 

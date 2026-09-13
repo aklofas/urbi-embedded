@@ -2,18 +2,16 @@
 
 This is the third-party "does it work from a fresh clone" path for each shipped
 port. The goal is **≤ 5 minutes from clone to a running demo** on each
-architecture. The host-side build of all firmware is verified automatically by
-`tests/scripts/clone-build-demo.sh` (run it via `make clone-build-demo-check`);
-hardware flashing is manual and documented per-architecture below.
+architecture. Both the host-side build of all firmware and hardware flashing
+are manual and documented per-architecture below.
 
 ```sh
 git clone <repo-url> urbi-embedded
 cd urbi-embedded
-make clone-build-demo-check     # builds: linux REPL + pico + stm32f4 (+ esp32 if IDF_PATH set)
 ```
 
-The harness does a `make clean` first, so it proves a **pristine** tree builds
-(no stale `build/` artifacts).
+Work through the per-architecture steps below on a pristine tree (no stale
+`build/` artifacts from a prior clone).
 
 ## Prerequisites (per architecture)
 
@@ -76,7 +74,7 @@ view (gyro) and the USER button zooms 2×. This port runs `URBI_FLOAT_TYPE=4`
 
 ## Notes
 
-- `make clone-build-demo-check` skips ESP32-S3 cleanly when `IDF_PATH` is unset
-  (its build is environment-heavy); the other three are always exercised.
-- A non-zero exit means a port stopped building from a fresh tree — that is a
-  release blocker (it would also block the Track A hardware regression).
+- Skip the ESP32-S3 step cleanly when `IDF_PATH` is unset (its build is
+  environment-heavy); work through the other three regardless.
+- A port that fails to build from a fresh tree is a release blocker (it would
+  also block the Track A hardware regression).

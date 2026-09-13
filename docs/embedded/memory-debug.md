@@ -56,8 +56,7 @@ embedded bring-up is exactly where it earns its keep.
 
 All bookkeeping lives in a lazily-heap-allocated substate reached through a
 single pointer on `struct UVM` (debug builds only), and is excluded from
-`urbi_get_determinism_checksum` — a `URBI_MEM_DEBUG` build still passes the
-determinism presets (see `make test-determinism-memdebug`).
+`urbi_get_determinism_checksum`.
 
 ## `Debug.memCheck()`
 

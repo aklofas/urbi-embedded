@@ -189,7 +189,6 @@ structure and testing script logic without hardware.
 ```sh
 make test-urobotics          # build host-urobotics preset + run all urobotics fixtures
 make test-chk-urobotics      # run only the chk fixtures under URBI_BUILD_PRESET=urobotics
-make check-urobotics-determinism   # verify baked bytecode is deterministic
 ```
 
 The three chk fixtures (`tests/chk/urobotics/`): `identity.chk`,

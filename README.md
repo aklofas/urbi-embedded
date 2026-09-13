@@ -16,7 +16,7 @@ echo "1 + 2" | ./build/host/urbi -i      # -> [..........] 3
 ./build/host/urbi -i                     # interactive REPL
 ```
 
-Embedding a VM in your own C program is one header and a handful of calls — see the [embedding guide](docs/embedding-guide.md). Porting to a new MCU is covered by the [ports guide](docs/internals/ports.md) and the worked ports under `examples/` (Pico, ESP32-S3, STM32F4); a fresh clone builds all three via `make clone-build-demo-check` (see [`docs/release/clone-build-demo.md`](docs/release/clone-build-demo.md)).
+Embedding a VM in your own C program is one header and a handful of calls — see the [embedding guide](docs/embedding-guide.md). Porting to a new MCU is covered by the [ports guide](docs/internals/ports.md) and the worked ports under `examples/` (Pico, ESP32-S3, STM32F4); see [`docs/release/port-build-flash-guide.md`](docs/release/port-build-flash-guide.md) for the from-a-fresh-clone build steps for each.
 
 ## Design goals
 

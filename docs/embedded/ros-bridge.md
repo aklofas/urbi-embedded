@@ -160,7 +160,6 @@ Tests are mock-backed and host-only. No real ROS installation is required.
 ```sh
 make test-ros2          # build ros preset + unit suite + 4 chk fixtures
 make check-rosgen       # verify urbi-rosgen.py output is deterministic
-make check-rosgen-determinism   # codegen determinism gate
 ```
 
 The 4 chk fixtures (`tests/chk/ros/`): `import_ros.chk`, `init.chk`,

@@ -23,11 +23,10 @@ make test
 - Static analysis: `lint`, `test-cppcheck`, `test-tidy-strict`, `test-scan-build`
 - REPL security: `test-repl-security`
 - Freshness: `test-stdlib-bytecode-fresh`
-- Dependency pins: `test-dependency-pins`
-- Docs: `docs-check`, `test-docstring-coverage`
-- Coverage: `coverage` (`--fail-under-line 85` hard gate in Phase 1; see Makefile `coverage` target. GitHub Actions runs the same target with `continue-on-error: true` so a regression does not block CI on already-merged code, but pre-tag `make releasetest` hard-fails. Branch and condition coverage are measured but not gated — v1.x target.)
+- Docs: `docs-check`
+- Coverage: `coverage` (`--fail-under-line 85` hard gate in Phase 1; see Makefile `coverage` target. GitHub Actions runs the same target with `continue-on-error: true` so a regression does not block CI on already-merged code, but pre-tag `make releasetest` hard-fails. Condition coverage is not measured — v1.x target.)
 - Build hygiene: `test-bytecode-only`, `test-freestanding-host`, `test-bake-smoke`
-- API surface: `test-gc-roots-coverage`, `test-api-manifest`, `test-aux-symbols`, `test-embedding-guide`, `test-external-embed-iinclude`
+- API surface: `test-api-manifest`, `test-aux-symbols`, `test-embedding-guide`, `test-external-embed-iinclude`
 - Cross-compile (when toolchains present): pico, esp32s3, stm32f4, arm, riscv
 
 **Phase 2** (sequential, after Phase 1 completes):
@@ -64,5 +63,5 @@ stable releases. Not required for v0.10.x interstitial tags.
 | releasetest Phase 2 | 2 gates | ~60 s |
 | shiptest | releasetest + manual checklist | variable |
 
-The 27-gate Phase 1 count includes the 2 W5 gates (`test-stdlib-bytecode-fresh`,
-`test-dependency-pins`) added at v0.10.6-stabilization.
+The 27-gate Phase 1 count includes the W5 gate (`test-stdlib-bytecode-fresh`)
+added at v0.10.6-stabilization.

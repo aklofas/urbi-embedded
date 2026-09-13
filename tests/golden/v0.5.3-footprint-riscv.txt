@@ -1,3 +1,0 @@
-# riscv64-unknown-elf cross build (rv32imc) — liburbi.a size (text+data+bss)
-   text	   data	    bss	    dec	    hex	filename
-  69712	      0	      0	  69712	(TOTAL liburbi.a)

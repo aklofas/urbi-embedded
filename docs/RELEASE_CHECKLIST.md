@@ -18,13 +18,12 @@ do not tag until every box is checked. The v1.0.0 release used this list (see
       fixtures only (covered by `test-chk-ros` / `test-chk-urobotics` / `test-chk-ros-urobotics`,
       where any SKIP is a failure); placeholder count matches `docs/release/conformance-report.md`
 - [ ] `make test-api-manifest` — exported `urbi_*` documented + frozen surface intact
-- [ ] `make docs-check` — markdownlint + public-doc scrub + link-check, 0 errors
+- [ ] `make docs-check` — markdownlint + link-check, 0 errors
 - [ ] `make releasetest` — the full pre-release sweep is green (supersedes the above on a clean machine)
 
 ## 3. Cross builds
 
 - [ ] `make cross-pico cross-esp32s3 cross-stm32f4` (and `cross-arm cross-riscv` if toolchains present)
-- [ ] `make clone-build-demo-check` — every shipped-port example builds from a pristine tree
 
 ## 4. Hardware-in-the-loop (for any release touching the VM / GC / scheduler / stdlib / bytecode)
 

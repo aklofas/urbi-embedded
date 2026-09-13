@@ -122,10 +122,8 @@ Symptom → channels to enable:
 ## Determinism
 
 Trace state (ring, sequence, levels) is excluded from
-`urbi_get_determinism_checksum`. A `URBI_TRACE=1` build passes the determinism
-presets unchanged — verified by `make test-determinism-trace`. Because channels
-default off, compiling the subsystem in has zero behavioural effect until an
-embedder enables a channel.
+`urbi_get_determinism_checksum`. Because channels default off, compiling the
+subsystem in has zero behavioural effect until an embedder enables a channel.
 
 ## Host tooling
 

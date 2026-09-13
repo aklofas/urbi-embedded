@@ -597,8 +597,7 @@ variables.
 name arrays, version strings, static error messages — may live at file
 scope. No mutable file-scope variables are permitted; enforcement is via
 the `cppcoreguidelines-avoid-non-const-global-variables` clang-tidy check
-(gated under `make lint`) and the `tools/audit-globals.sh` script, which
-scans the source tree for non-const file-scope definitions.
+(gated under `make lint`).
 
 **Single-threaded per VM.** Each `UVM` is driven by one thread at a time.
 Multiple `UVM` instances may run in separate threads without

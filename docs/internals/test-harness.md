@@ -172,7 +172,7 @@ The test targets form two tiers:
   commit lands on `main`.
 - **Pre-release tier** — `make releasetest` aggregates every host-side
   gate that CI runs (sanitizer matrix including `test-switch`,
-  `test-valgrind`, `lint`, `docs-check`, `coverage`, plus the four
+  `test-valgrind`, `lint`, `docs-check`, `coverage`, plus the three
   strict-tooling gates listed below) into a two-phase parallel run that
   finishes in ~2 min wall-clock. Invoked before tagging a release or
   before pushing a branch that touches multiple subsystems; otherwise
@@ -204,10 +204,9 @@ is the single longest gate within `releasetest`.
 - **Stage A (parallel under `-j$(nproc) -Otarget`):** host build, host
   ASan, host UBSan, host debug build, cross-arm sanity compile,
   cross-riscv sanity compile, lint suite (clang-tidy strict, cppcheck
-  strict, GCC `-fanalyzer`), scan-build, docstring-coverage, LOC-cap
-  enforcement, GC-stress, `URBI_GC_NONE` smoke, scheduler determinism
-  (3 presets × 100 iterations), `make docs-check`. Wall-clock ~10 s on
-  a 32-core host.
+  strict, GCC `-fanalyzer`), scan-build, GC-stress, `URBI_GC_NONE`
+  smoke, scheduler determinism (100 iterations), `make docs-check`.
+  Wall-clock ~10 s on a 32-core host.
 - **Stage B (solo, valgrind-only):** full corpus under valgrind
   memcheck with leak-check; full corpus × 3 sanitizers run alongside.
   Wall-clock ~120 s.
@@ -217,11 +216,10 @@ under memory-bandwidth contention from concurrent gcov, clang-tidy,
 cppcheck, and `-fanalyzer`. Solo isolation buys back almost all the
 slowdown. Sharding by suite-index doesn't help — heavy suites cluster.
 
-**Four strict-tooling gates are hard-fail in `releasetest`:**
-`cppcheck-strict`, `tidy-strict`, `scan-build`, and
-`docstring-coverage`. Advisory-only mode is retired. A green
-`make releasetest` is the canonical signal that the codebase meets the
-v1.0 quality contract.
+**Three strict-tooling gates are hard-fail in `releasetest`:**
+`cppcheck-strict`, `tidy-strict`, and `scan-build`. Advisory-only mode
+is retired. A green `make releasetest` is the canonical signal that
+the codebase meets the v1.0 quality contract.
 
 Cross-compile variants build `liburbi.a` for Cortex-M7 (`make cross-arm`) and
 RISC-V rv32imc (`make cross-riscv`) but do not execute tests — there is no

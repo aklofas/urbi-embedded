@@ -29,15 +29,6 @@ they coexist and no `make clean` is required when switching between them.
 `build/host-coverage/report.html` via gcovr. Threshold ≥85% line coverage
 (enforced in `make releasetest`).
 
-`make test-branch-coverage` reports branch + decision coverage via gcovr's
-`--branches` + `--decisions` flags.  Informational-only at the v0.5.8
-baseline (~69%); the gate enables (`--fail-under-branch 75`) once
-baseline exceeds threshold.  Drops below the informational baseline flag
-PRs; either close the gap in the same commit or document at the bottom
-of the affected file:
-
-    // AUDIT: branch <description> covered indirectly via tests/path/test_other.c
-
 ## Cross-compile sanity
 
 If you have `arm-none-eabi-gcc` or `riscv64-unknown-elf-gcc` installed:
@@ -123,10 +114,6 @@ While `URBI_API_VERSION_MAJOR == 0`, MINOR bumps **may** break ABI per standard 
 | Project release | `urbi_version()` | This file's heading | Each tag |
 
 Keeping these independent matches Lua's `LUA_VERSION_NUM` / `LUAC_VERSION` / `LUA_RELEASE` pattern.
-
-### Aux layer governance
-
-`<urbi/aux.h>` + `liburbi_aux.a` is the convenience layer. Rule: every aux function must be **strictly implementable via `<urbi/urbi.h>` public API**. No private header access, no internal state peeking, no performance shortcuts. Enforced at PR review: if a proposed aux function can't meet the rule, either refactor until it can, or propose the addition to core (paying the cost against the 80-fn `urbi.h` budget cap).
 
 ## Layout policy
 
@@ -265,7 +252,7 @@ test-suite-passes gates.
 
 ### Strict-tooling baselines
 
-Four strict-tooling targets gate at hard-fail tier in releasetest;
+Three strict-tooling targets gate at hard-fail tier in releasetest;
 all stand at 0 violations against the v0.5.8-cleanup baseline:
 
 - **`make test-scan-build`** — Clang static analyzer.  Hard gate
@@ -295,11 +282,6 @@ all stand at 0 violations against the v0.5.8-cleanup baseline:
   cannot trace through; `optin.performance.Padding` on `struct UVM`
   whose field order is pinned by 6 `_Static_assert`s and clusters
   fields by milestone for maintainability.
-- **`make test-docstring-coverage`** — every header-declared
-  symbol in `include/urbi/` and subsystem-public `src/<subsys>/u*.h`
-  headers carries a contract docstring.  Promoted to hard-fail at
-  v0.5.8-cleanup Phase 21.  See **Header docstring coverage** below
-  for content requirements and the cascading-comment rule.
 
 Suppression preference: prefer **inline** `// NOLINT(category)`
 (clang-tidy) and `// cppcheck-suppress category` immediately above
@@ -316,43 +298,6 @@ releases adding checks) must either be fixed at source, suppressed
 inline with audit-ID rationale, or — only when truly necessary —
 added to the documented blanket suppressions in
 `.cppcheck.suppressions` / `.clang-tidy.suppressions`.
-
-### Header docstring coverage
-
-`make test-docstring-coverage` enforces that every function declaration
-in a public-API or subsystem-public header carries an immediately
-preceding `/* ... */` block comment (or `//` line comment).  **Hard
-gate in releasetest as of v0.5.8-cleanup Phase 21.**
-
-Scope:
-
-- `include/urbi/*.h`              — public C API
-- `src/<subsys>/u<subsys>.h`      — subsystem-public headers
-
-Skipped: `_internal.h` (intentionally private inter-TU API) and
-`umacros.h` (macro-only helper bag).
-
-A docstring "cascades" through a contiguous run of declarations: a
-comment above the first decl in a group covers later decls in the
-same group as long as no blank line, function definition, or non-decl
-content intervenes.  Forward declarations (`struct X;`, simple
-`typedef`) and callback typedefs do not break the cascade — they
-typically sit between a docstring and the function decl that uses
-the type.
-
-Required content per docstring (per Phase 21 of the v0.5.8-cleanup
-plan):
-
-- one-line summary of what the function does;
-- preconditions (state any required caller-side setup);
-- postconditions (state any guaranteed callee-side effects);
-- ownership of pointer arguments (caller-owned, callee-owned, shared);
-- return-value meaning + error codes when applicable;
-- ISR-safety (note whether the function is ISR-safe).
-
-Group-style docstrings are accepted for tightly-related decls.  See
-the priority API in `include/urbi/sched.h:45-61` for the canonical
-group-doc form.
 
 ### Full-corpus sanitizer gate
 
@@ -371,22 +316,6 @@ One annotated tag per milestone or wave. Format:
     v<MAJOR>.<MINOR>.<PATCH>-<codename>
 
 Examples: `v0.5.3-layout`, `v0.5.4-decompose`, `v0.5.5-naming`.
-
-## Per-file LOC-cap exceptions
-
-The default soft cap is 1000 LOC per `.c` source file (enforced by
-`make test-loc-cap`).  Files listed below are exempted with rationale.
-
-- `loc-cap-exception:src/vm/uvm.c` — opcode dispatch loop. The body of
-  `dispatch_loop_until_yield` (computed-goto dispatch + ~47 inline opcode
-  handlers + safepoint / exit-strand / halt-error labels) is intentionally
-  inlined in a single TU for cache locality of the dispatch table and to
-  let the compiler keep the entire instruction-stream state machine in
-  registers across opcodes.  Decomposing into per-opcode helpers would
-  defeat the threading optimization that gives the VM ~10x dispatch-loop
-  throughput on hosted builds and ~3x on Cortex-M7.  This exception is
-  permitted by the v0.5.x cleanup design spec §3.3 ("generated dispatch
-  tables, opcode trampolines").
 
 ## v0.5.x cleanup ramp (2026-05-06 to 2026-05-09)
 
