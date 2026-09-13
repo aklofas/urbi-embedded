@@ -129,6 +129,11 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                                           size_t nested_count,
                                           uint16_t ic_count,
                                           const uint32_t *instructions) {
+    /* Count IC-bearing opcodes seen during the walk so we can
+     * cross-validate ic_count after the loop.  Every ic_idx must be
+     * < ic_count (per-instruction); ic_count must be <= ic_seen
+     * (count check; rejects modules that lie about ic_count without
+     * emitting matching IC sites). */
     size_t ic_seen = 0;
     size_t vi;
     for (vi = 0; vi < instr_count; vi++) {
@@ -175,6 +180,11 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                     return UCHUNK_LOAD_CORRUPT;
                 }
             }
+            /* OP_JOIN_WAIT's dead-child fast path reads a strand handle
+             * that eager DEAD-reap may have freed; the adjacency
+             * invariant (OP_FORK_JOIN immediately before, FORK_JOIN.B ==
+             * JOIN_WAIT.A) is the only pin.  Enforce at load time so
+             * corrupt or hand-built chunks cannot exploit the UAF. */
             if (op == (uint8_t)OP_JOIN_WAIT) {
                 if (vi == 0U) {
                     set_errmsg(d->errmsg, d->errcap,
@@ -253,6 +263,15 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
             }
         }
     }
+    /* Last instruction must be OP_RET.
+     *
+     * Relaxation note: this strict trailing-OP_RET requirement assumes
+     * the emitter always closes a chunk with an explicit return.  If a
+     * future bytecode revision allows fall-through-to-end semantics
+     * (e.g. an implicit RET, or a tail-call that elides RET), this
+     * check will need to widen.  Every chunk the emitter currently
+     * produces ends in OP_RET, so the strict form catches
+     * truncated/corrupt bytecode early. */
     if (instr_count > 0U) {
         uint32_t last = instructions[instr_count - 1U];
         if (uinstr_op(last) != OP_RET) {
@@ -260,6 +279,14 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
             return UCHUNK_LOAD_CORRUPT;
         }
     }
+    /* ic_count must not exceed the count of IC-bearing opcodes in the
+     * instruction stream.  Each ic_name (and the corresponding runtime
+     * UIC entry) is keyed off an emitted GETSLOT/SETSLOT/
+     * GETSLOT_CHANGE_EVENT site; lying about ic_count would either
+     * leave UIC entries unused (waste) or — worse — leave
+     * ic_name_strs[k>=ic_seen] holding a name that no instruction
+     * indexes (eligible for confusion attacks if ic_index ever
+     * widens). */
     if ((size_t)ic_count > ic_seen) {
         set_errmsg(d->errmsg, d->errcap,
                    "ic_count=%u exceeds %zu IC-bearing opcodes seen",
@@ -296,6 +323,23 @@ UChunkLoadError urbi_chunk_decode_verify(MDecCtx *d) {
  * verify_proto_recursive above) and applies bounds checks that require
  * understanding instruction *sequences* or cross-instruction context, which
  * is more than the per-opcode shape table in verify_walk_block can express:
+ *
+ *   OP_CLOSURE upvalue prelude — the nupvals pseudo-instructions that follow
+ *     an OP_CLOSURE must lie within the instruction array, and each must
+ *     encode a valid (in_stack, src_idx) pair:
+ *       in_stack = B in {0, 1}
+ *       src_idx  = C; if in_stack==1, C <= proto->max_reg (local register);
+ *                     if in_stack==0, C < proto->nupvals (re-capture from parent)
+ *   OP_JMP target — Bx is a signed offset biased by 32768; the resolved target
+ *     pc' = pc + signed(Bx) - 32768 must satisfy 0 <= pc' < instr_count.
+ *     (The bias means Bx=32768 is a no-op jump; Bx=0 jumps backward 32768.)
+ *   OP_CALL C low-7 — encodes nresults+1; must be >= 1 (0 means 0 results
+ *     which is legal at runtime but the emitter never produces it; a
+ *     hand-crafted module with C & 0x7F == 0 is malformed per the wire spec).
+ *   OP_TAG_STOP — has full VM dispatch (label_op_tag_stop in uvm.c).  The
+ *     compiler never emits it (scripted tag.stop() routes through the C
+ *     API), but hand-built chunks may contain it.  Accepted at load time;
+ *     pinned by test_verify_chunk_bounds.c (tag_stop_roundtrips_ok).
  *
  * Design note: add ic_index DFS pre-order check here.  The function
  * receives the proto tree already decoded; a future pass can walk the tree and verify

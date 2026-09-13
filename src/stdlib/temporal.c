@@ -357,6 +357,7 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
+    /* Step 1: allocate body strand (DORMANT). */
     UStrand *body = urbi_strand_create(vm, p->realm, p->body);
     if (body == NULL) {
         if (vm->host_log_fn != NULL) {
@@ -366,6 +367,8 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
         return NULL;
     }
 
+    /* Step 2: inherit owning_tag only when distinct from realm->tag.
+     * urbi_strand_create already attaches realm->tag at depth 0. */
     if (p->owning_tag != NULL && p->owning_tag != p->realm->tag) {
         struct UTag *chain[1];
         chain[0] = p->owning_tag;
@@ -380,6 +383,7 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
         }
     }
 
+    /* Step 3: arm — allocates register stack, wires pc / R / frame_count. */
     if (urbi_strand_arm_from_closure(body, p->body, /*nargs=*/0) != 0) {
         urbi_strand_destroy(vm, body);
         if (vm->host_log_fn != NULL) {
@@ -397,11 +401,14 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
     body->root_proto = p->body->proto;
     urbi_proto_strand_ref_acquire(body->root_proto, URBI_PROTO_REF_OWNER_STRAND);
 
+    /* Step 4: wire module_instance for IC resolution at frame_count == 0. */
     body->module_instance = p->module_instance;
 
+    /* Step 5: wire back-pointers. */
     body->periodic_owner = p;
     p->current_strand    = body;
 
+    /* Step 6: DORMANT -> READY (enqueue on run-queue). */
     urbi_strand_start(vm, body);
 
     return body;
@@ -414,6 +421,8 @@ spawn_periodic_body(UVM *vm, UPeriodic *p)
 static void
 periodic_unlink_and_free(UVM *vm, UPeriodic *p)
 {
+    /* Caller contract: p is on vm->periodics_head (called only from the Phase 2
+     * teardown sweep where unregister_pending is confirmed). */
     URBI_SLIST_UNLINK(vm->periodics_head, p, next, UPeriodic);
     p->next = NULL;
     vm->alloc_fn(p, 0, vm->alloc_ud);
@@ -436,6 +445,9 @@ urbi_periodic_pump(UVM *vm)
     uint64_t now = 0U;
     if (vm->host_time_us != NULL) now = vm->host_time_us(vm->host_time_ud);
 
+    /* Phase 1: fire due periodics.  Walk the list; spawn into any slot
+     * with current_strand == NULL && fire time reached && not pending
+     * unregister.  spawn_periodic_body sets p->current_strand on success. */
     UPeriodic *p;
     for (p = vm->periodics_head; p != NULL; p = p->next) {
         if (p->unregister_pending) continue;
@@ -445,6 +457,10 @@ urbi_periodic_pump(UVM *vm)
         /* On spawn failure, leave p in place; next pump pass retries. */
     }
 
+    /* Phase 2: teardown sweep.  Free periodics with unregister_pending
+     * set AND no in-flight body strand.  An unregister with current_strand
+     * still alive defers the free until the strand reaches DEAD and
+     * urbi_periodic_body_completed clears the back-pointer. */
     {
         UPeriodic *p2, *next;
         URBI_SLIST_FOREACH_SAFE(p2, next, vm->periodics_head, next) {
@@ -571,6 +587,12 @@ urbi_periodic_earliest_wake_us(const UVM *vm)
  *
  * B5 / SCHED-N2 (2026-07-04): tag.stop() must cascade to the
  * periodic list so the flagship `t: every(P) body(); t.stop()` idiom works.
+ *
+ * urbi_periodics_stop_owned_by: walk vm->periodics_head; for every periodic
+ * whose owning_tag matches, set unregister_pending.  The next
+ * urbi_periodic_pump pass (Phase 2) then frees any such periodic whose
+ * current_strand is NULL.  Called from urbi_tag_stop (uunwind.c) after the
+ * member-watcher cascade.
  *
  * urbi_tag_owns_periodic: returns true if at least one non-unregistered
  * periodic has owning_tag == tag.  Called from tag_stop_native (utag_native.c)

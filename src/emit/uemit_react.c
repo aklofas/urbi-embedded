@@ -6,6 +6,14 @@
  *   AST_WAITUNTIL                    — waituntil install
  *   AST_AT_EVENT                     — event-driven at/at-sync
  *   AST_AT_SLOT_CHANGE               — slot-change at/at-sync
+ *
+ * IMPORTANT: AST_AT_EVENT and AST_AT_SLOT_CHANGE carry a freereg-sync
+ * fix.  The two `if (e->current_fs->freereg < e->next_reg)` guards at
+ * the urbi_emit_function_literal call sites in urbi_emit_at_event_arm
+ * and urbi_emit_at_slot_change_arm MUST NOT be removed.  Dropping them
+ * allows urbi_emit_function_literal to allocate body_reg on top of
+ * event_reg, causing OP_CLOSURE to clobber the event pointer at
+ * runtime.
  */
 
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
@@ -268,6 +276,14 @@ uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
     uint8_t event_reg = urbi_emit_expr(e, event_ast);
     if (e->error != EMIT_OK) return 0U;
 
+    /* Sync freereg up to next_reg before allocating the body closure.
+     * AST_IDENT global-fallback and the chains it feeds (AST_MEMBER_GET
+     * et al.) bump only e->next_reg, leaving freereg stale.
+     * urbi_emit_function_literal allocates body_reg from freereg, so
+     * without this sync body_reg can land on top of event_reg —
+     * OP_CLOSURE then clobbers the event pointer at runtime.
+     * AST_WATCHER avoids this by routing cond through
+     * urbi_emit_function_literal symmetrically.  Do NOT remove. */
     if (e->current_fs->freereg < e->next_reg)
         e->current_fs->freereg = e->next_reg;
 
@@ -362,6 +378,11 @@ uint8_t urbi_emit_at_slot_change_arm(UEmitter *e, UAstNode *n) {
                                  event_reg, recv_reg, (uint8_t)ic_idx),
                (uint32_t)n->line);
 
+    /* Sync freereg up to next_reg before allocating the body closure
+     * (mirrors AST_AT_EVENT).  AST_IDENT global-fallback feeding
+     * recv_ast bumps next_reg only, leaving freereg stale, so
+     * urbi_emit_function_literal can otherwise allocate body_reg on top
+     * of event_reg.  Do NOT remove. */
     if (e->current_fs->freereg < e->next_reg)
         e->current_fs->freereg = e->next_reg;
 

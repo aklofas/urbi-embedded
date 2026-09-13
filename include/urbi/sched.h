@@ -41,7 +41,13 @@ extern "C" {
 /* Priority API — only compiled when the selected scheduler supports it.
    Cooperative (v1.0 baseline) never defines URBI_SCHED_HAS_PRIORITY != 0,
    so these declarations are absent in shipped builds.
-   */
+
+   The `_CLASS_` infix is uniform across all three enumerators.  The
+   original asymmetric form had only the third member CLASS-prefixed;
+   dropping CLASS to match the others would have collided with
+   USCHED_DEADLINE (the scheduler-strategy selector at
+   src/sched/usched.h:11), so the infix was pushed onto the first two
+   enumerators instead. */
 #if URBI_SCHED_HAS_PRIORITY
 struct UStrand;
 

@@ -14,6 +14,13 @@
  *   AST_NARY      — separator list (SEP_SEMI `;` / SEP_COMMA `,`)
  *   AST_BIN_SEP   — binary separator (`|` pipe / `&` fork-join)
  *   AST_BLOCK     — braced block scope `{ ... }`
+ *
+ * NOTE: AST_BIN_SEP SEP_PIPE carries a known raw next_reg-- register-
+ * aliasing quirk (documented at its arm below).  AST_IDENT global-slot
+ * fallback carries the freereg-sync that AST_AT_EVENT depends on.
+ * AST_VAR_DECL / AST_ASSIGN carry their own known freereg-sync quirks.
+ * Do NOT fix any of these here — each has a tracked disposition
+ * elsewhere.
  */
 
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
@@ -795,6 +802,7 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
             e->error = EMIT_UNSUPPORTED_AST;
             return 0U;
         }
+        /* Step 1: compile RHS to a closure. */
         uint8_t closure_reg = urbi_emit_lazy_thunk(e, n->u.bin_sep.rhs);
         if (e->error != EMIT_OK) return 0U;
 
@@ -838,6 +846,7 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
             fork_slot_adopted = true;
         }
 
+        /* Step 2: compile LHS inline; release its register after. */
         uint8_t lhs_save = e->next_reg;
         uint8_t lhs_r = urbi_emit_expr(e, n->u.bin_sep.lhs);
         if (e->error != EMIT_OK) {
@@ -857,6 +866,7 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
          * the adopted entry is back on top of actvars. */
         if (fork_slot_adopted) e->current_fs->nactvar--;
 
+        /* Step 3: OP_FORK_JOIN A=closure_reg B=child_reg. */
         uint8_t child_reg = e->next_reg;
         if (child_reg >= (uint8_t)(UFS_MAX_REGS - 1)) {
             e->error = EMIT_REG_EXHAUSTED;
@@ -870,10 +880,12 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
                    (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
+        /* Step 4: OP_JOIN_WAIT A=child_reg. */
         urbi_emit_instr(e, uinstr_enc_abc(OP_JOIN_WAIT, child_reg, 0U, 0U),
                    (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
+        /* Step 5: OP_LOADVOID into result_reg (`&` result is void). */
         uint8_t result_reg = e->current_fs->freereg;
         if (result_reg >= (uint8_t)(UFS_MAX_REGS - 1)) {
             e->error = EMIT_REG_EXHAUSTED;
@@ -890,7 +902,14 @@ uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
     }
     /* SEP_PIPE: lhs then rhs in sequence, no yield.
        LHS value is discarded; result is rhs.
-       */
+
+       Sync next_reg to the FuncState freereg before emitting RHS.  The
+       bare next_reg-- is wrong when LHS leaves freereg promoted (e.g.,
+       LHS ends in a function literal, which lifts freereg via
+       urbi_emit_function_literal's `freereg++`); after next_reg-- the
+       cursor sits BELOW freereg and RHS allocation clobbers a
+       still-live LHS temp.  See tests/unit/test_emit_freereg_drift.c::
+       emit_sep_pipe_does_not_alias_lhs_temp_with_rhs. */
     uint8_t lhs_r = urbi_emit_expr(e, n->u.bin_sep.lhs);
     if (e->error != EMIT_OK) return 0U;
     /* Release lhs register before rhs so rhs may reuse the slot. */
@@ -1056,6 +1075,7 @@ uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
     int line = n->line;
 
     uint8_t rd;
+    /* Step 1: emit Dict.new() -> result register becomes rd. */
     {
         UAstNode *dict_ident = synth_ident(e, "Dict", line);
         if (!dict_ident) return 0U;
@@ -1069,6 +1089,9 @@ uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
         if (e->error != EMIT_OK) return 0U;
     }
 
+    /* Step 2: for each key-value pair, emit rd.set(key, value).
+     * We use direct bytecode emission (OP_SELF + args + OP_CALL) to keep
+     * rd stable across iterations without declaring a local. */
     {
         const char *set_name = "set";
         USymbol *set_sym = (USymbol *)ustr_intern(e->vm, set_name, 3U);

@@ -24,7 +24,28 @@ extern "C" {
 #endif
 
 /* --- tagged value shape shared between pool and runtime registers ---
- */
+ *
+ * Numeric values for UValKind are pinned by the bytecode wire format;
+ * the kind-byte field comments below document the runtime semantics
+ * still managed at this layer.
+ *
+ * Runtime-semantics notes for each UValKind discriminator:
+ *   UVAL_NIL/INT/FLOAT/BOOL/STR — bytecode-pool kinds (constants)
+ *   UVAL_CLOSURE — function closure; runtime-only
+ *   UVAL_VOID    — result of `&` separator; runtime-only
+ *   UVAL_STRAND  — strand handle (OP_FORK_JOIN -> OP_JOIN_WAIT).
+ *                  Stores a UStrand* in v.p.  GC root walker skips
+ *                  (strands are sched-managed, not GC cells).
+ *   UVAL_OBJECT  — UObject pointer; runtime-only.  Receivers for
+ *                  OP_GETSLOT/OP_SETSLOT live in registers tagged
+ *                  UVAL_OBJECT.  Heap-bearing — UObject embeds UCell.
+ *   UVAL_EVENT   — UEvent pointer; runtime-only.  Heap-bearing.
+ *                  Used by tag.enter / tag.leave getters.
+ *   UVAL_HOST_FN — native host function slot; UHostFn cast to void*.
+ *                  Used by uevent_native_register / utag_native_register.
+ *                  NOT heap-bearing — function pointers are not GC cells.
+ *   The loader rejects any bytecode constant-pool kind greater than
+ *   UVAL_STR; the runtime-only kinds above never appear on disk. */
 #include "urbi/types.h"
 
 /* UUpvalCell, UCallFrame, UVM_MAX_FRAMES, UVM_STACK_CAP — placed here so
@@ -136,11 +157,23 @@ typedef struct UProto {
 
     struct UProto *root;
 
-    /*
+    /* [runtime-only, NOT serialized] Per-root-proto reference count for
+     * the module-grain closure lifetime.  Bumped at every strand bind
+     * (uproto_root_of(proto)->refcount); decremented when the strand or
+     * closure is released.  uchunk_destroy checks this counter:
+     * if 0, the root_proto is freed normally; if non-zero, it is rescued onto
+     * vm->rescued_protos so surviving closures keep a valid backing proto.
+     *
      * uint16_t with saturation at UINT16_MAX (logs URBI_LOG_WARN; proto leaks
      * — acceptable for the v1.0 timeframe). */
     uint16_t       refcount;
 
+    /* [runtime-only, NOT serialized] DFS pre-order serial assigned at
+     * UProto construction.  Root proto gets ic_index = 0; subsequent
+     * UProto allocations get module->next_proto_serial++ via either the
+     * emit path (uproto_alloc_nested) or the deserialize path
+     * (decode_nested_protos_into).  Both paths walk the tree in DFS pre-order
+     * so serial assignment is identical regardless of load source. */
     uint16_t       ic_index;
 
     /* [runtime-only, NOT serialized] Back-pointer to the UChunkInstance
@@ -200,6 +233,12 @@ uproto_root_of(UProto *proto)
  *   Strand-bind   — acquired at strand creation (urbi_strand_create_for_module,
  *                   uop_fork, uvm_run transient); released in ustrand_destroy /
  *                   uchunk_strand early-discharge path.
+ *
+ * Behaviour:
+ *   Saturation (refcount == UINT16_MAX): logs to stderr on hosted builds,
+ *   silent on freestanding.  Does NOT increment further (proto leaks —
+ *   a v1.0 deferral).
+ *   Underflow (dec when refcount == 0): URBI_REQUIRE failure (all build modes).
  */
 
 /* Owner tag — one value per logical site identified in runtime-invariants F3.

@@ -54,13 +54,29 @@ const char *urbi_version(void);
  * The cross-strand walk is fully wired; validity checks run on every call. */
 int urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value);
 
-/*
+/* urbi_tag_block walks tag->member_strands_head and arms each member's
+ * BLOCK suspension gate: READY/RUNNING members suspend in place; a member
+ * parked in a wait (sleep / event / join / waituntil) stays parked with
+ * the gate armed, and its eventual wake lands in SUSPENDED instead of
+ * READY.  Each strand's unblock_value is set to resume_value so a future
+ * resume can deliver it.  Sets UTAG_FLAG_BLOCKED on the tag.
+ *
+ * urbi_tag_unblock clears UTAG_FLAG_BLOCKED and clears each member's
+ * BLOCK gate; a member resumes only once its FREEZE gate is also clear.
+ * Block and freeze are independent gates: block -> freeze -> unblock
+ * leaves the member suspended until unfreeze.
+ *
  * Not ISR-safe.  Returns URBI_OK on success or URBI_ERR_INVALID_ARG
  * on NULL vm/tag. */
 int urbi_tag_block(struct UVM *vm, struct UTag *tag, UValue resume_value);
 int urbi_tag_unblock(struct UVM *vm, struct UTag *tag);
 
-/*
+/* Same shape as urbi_tag_block / _unblock but arming the FREEZE gate (no
+ * resume-value semantic).  Sets and clears UTAG_FLAG_FROZEN.  A parked
+ * (sleeping/waiting) member of a frozen tag keeps its park; its wake is
+ * gated into SUSPENDED until unfreeze.  unfreeze clears the FREEZE gate;
+ * BLOCK-gated members are independent and stay suspended until unblock.
+ *
  * Not ISR-safe.  Returns URBI_OK on success or URBI_ERR_INVALID_ARG
  * on NULL vm/tag. */
 int urbi_tag_freeze(struct UVM *vm, struct UTag *tag);
@@ -245,6 +261,12 @@ int urbi_repl_eval(struct UVM *vm, struct URealm *realm,
 
 int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UProto *root);
 
+/* urbi_load_chunk: bind a pre-compiled module into the VM and run its root
+ * chunk under the global Realm so top-level bindings install into realm
+ * globals.  module_name is currently advisory (no import-table lookup
+ * yet).  Returns URBI_OK on success, URBI_ERR_INVALID_ARG if any
+ * argument is NULL, URBI_ERR_OOM on UChunkInstance allocation failure, or
+ * an int error code (URBI_ERR_*) if root-chunk execution fails. */
 int urbi_load_chunk(struct UVM *vm, struct UProto *root, const char *module_name);
 
 /*
@@ -327,13 +349,24 @@ int urbi_compile_source(struct UVM *vm,
 
 struct UClosure;   /* forward decl — definition in src/chunk/uproto.h */
 
-/*
+/* urbi_native_method_fn: signature for host C functions that back a
+ * UClosure slot.  Called by OP_CALL when the closure's native_fn field is
+ * set.
+ *
  * Parameters:
  *   vm    — the VM executing the call.
  *   self  — receiver value (the object the slot was loaded from).
  *   args  — argument array (NULL when nargs == 0).
  *   nargs — argument count.
  *   out   — write the return value here; initialised to NIL before the call.
+ *
+ * Return value:
+ *   URBI_CB_OK   (0) — no exception; *out holds the result.
+ *   URBI_CB_THROW    — host raised an exception (set throw value via urbi_throw;
+ *                      *out is ignored).
+ *   negative URBI_ERR_* — host-side error (treated as fatal at v1.0).
+ * Note: UEXEC_OK (0) and UEXEC_THROW (1) are still accepted for source
+ * compatibility (UEXEC_OK == URBI_CB_OK == 0; UEXEC_THROW == URBI_CB_THROW).
  *
  * Guard prevents double-typedef when internal src/runtime/uclosure.h is
  * also included (identical definition — C99 §6.7 allows re-typedef only
@@ -573,6 +606,12 @@ typedef int (*urbi_event_payload_destructure_fn)(
  * at drain time.  destruct_fn may be NULL (no-args event); when non-NULL it
  * runs on MAIN thread at drain to convert raw ISR payload bytes into UValues
  * for the `at(name ?(args))` body.
+ *
+ * Returns URBI_EVENT_ID_INVALID on error; consult urbi_last_error for the
+ * specific code:
+ *   URBI_ERR_INVALID_ARG      — NULL vm, realm, or name
+ *   URBI_ERR_EVENT_NAME_TAKEN — name already registered in this VM
+ *   URBI_ERR_OOM              — UEvent alloc or registry grow failed
  *
  * Thread safety: MAIN. */
 urbi_event_id_t urbi_event_register(struct UVM *vm, struct URealm *realm,

@@ -227,7 +227,8 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
         return 0U;
     }
 
-    /*
+    /* === Step 1: Foo = Object.clone() ===
+     *
      * Build a synthetic AST_CALL of Object.clone() and dispatch through
      * the existing call/member-get arms.  Reusing the existing emit
      * machinery means we inherit lazy-arg context handling, IC alloc,
@@ -264,7 +265,9 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
         e->current_fs->freereg = e->next_reg;
     }
 
-    /*
+    /* === Step 2: For each proto in REVERSE order, emit
+     *   Foo.protos().insertFront(proto)
+     *
      * Reversed iteration so declaration-order ends up as the chain head:
      * `class F : public A, B` parses [A, B], we emit insertFront(B) then
      * insertFront(A); final chain is [A, B, Object] (S-mro-declaration-
@@ -366,7 +369,9 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
         }
     }
 
-    /*
+    /* === Step 3: body[Foo] — walk body statements and install each
+     * var-decl/function-decl as a slot on Foo.
+     *
      * Simplification: only AST_VAR_DECL is supported (catches
      * `var x = 1` and `var f = function() { ... }` both via the same
      * arm).  Other body statement kinds raise EMIT_UNSUPPORTED_AST. === */
@@ -396,7 +401,8 @@ urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n)
         }
     }
 
-    /*
+    /* === Step 4: bind the class name as a var in the enclosing scope.
+     *
      * Synthesize an AST_ASSIGN equivalent: at chunk-top this writes the
      * realm global; inside a function body this routes through the
      * existing local/upvalue resolver via urbi_emit_assign_arm.  But we don't

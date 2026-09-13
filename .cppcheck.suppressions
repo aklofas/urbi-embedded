@@ -230,9 +230,9 @@ constParameterPointer:src/emit/uemit_internal.h:187
 // `UAstNode *err = NULL` inside `{ }` expect() one-liners; the outer `err` (reject_bare_function_forms
 // result) is a completely different variable at function scope.  The pattern is used at every
 // expect() call site in this file and cannot be removed without restructuring all callers.
-shadowVariable:src/parse/uparse_stmt.c:608
-shadowVariable:src/parse/uparse_stmt.c:625
-shadowVariable:src/parse/uparse_stmt.c:649
+shadowVariable:src/parse/uparse_stmt.c:623
+shadowVariable:src/parse/uparse_stmt.c:640
+shadowVariable:src/parse/uparse_stmt.c:664
 
 // src/chunk/uchunk_strand.c urbi_compile's error-message fallback: the
 // __STDC_HOSTED__ branch's final `else` already excludes

@@ -8,6 +8,10 @@
  * Internal headers (src/chunk/uchunk.h, src/sched/ustrand.h, src/vm/uvm.h)
  * include this file rather than redefining the types, ensuring single
  * source of truth.
+ *
+ * Layout MUST match the internal canonical form byte-for-byte.  Any later
+ * change to UValue layout requires updating this header, the internal
+ * mirrors, and the bytecode wire format (a wire-format version bump).
  */
 
 #ifndef URBI_TYPES_H
@@ -470,14 +474,36 @@ typedef enum {
      * (allocation or registry mutation) when urbi_lock_heap has been called.
      * Covers urbi_event_unregister and future Gap-B unregister paths. */
     URBI_ERR_HEAP_LOCKED                = -19,
+    /* urbi_run_chunk's internal driver loop exhausted its outer cap
+     * (URBI_LOADER_OUTER_CAP * URBI_LOADER_INNER_BUDGET) without the
+     * loader strand reaching a parked or dead state.  Almost certainly
+     * an infinite loop at chunk-top with no yield points.  Host may
+     * call urbi_step manually to continue the strand, or destroy the
+     * realm/vm to abort it. */
     URBI_ERR_LOADER_BUDGET              = -20,
     URBI_ERR_FROZEN_PROTO               = -21,
     URBI_ERR_COMPILE_BUDGET_DEPTH       = -22,
     URBI_ERR_COMPILE_BUDGET_NODES       = -23,
     URBI_ERR_COMPILE_BUDGET_SOURCE      = -24,
+    /* urbi_repl_serve refused a non-loopback bind without an auth_token
+     * (default-secure posture).  Embedder must either set
+     * cfg->auth_token or restrict cfg->bind_addr to "127.0.0.1" / "::1"
+     * / a Unix-socket path starting with '/'.
+     * URBI_ERR_INVALID_CONFIG is a synonym for this code; the canonical
+     * name remains URBI_ERR_INSECURE_CONFIG. */
     URBI_ERR_INSECURE_CONFIG            = -25,
 #define URBI_ERR_INVALID_CONFIG URBI_ERR_INSECURE_CONFIG
+    /* Returned by urbi_aux_value_to_* checked accessors when the UValue
+     * kind does not match the requested type.  Embedders use
+     * urbi_value_is_*() to guard before calling unchecked
+     * urbi_value_as_*; or call urbi_aux_value_to_*() directly and
+     * handle this code. */
     URBI_ERR_TYPE                       = -26,
+    /* Returned by urbi_strand_destroy (and similar lifecycle functions)
+     * in debug builds when the strand is in an unsafe state for the
+     * requested operation.  For example, urbi_strand_destroy on a READY
+     * or RUNNING strand returns URBI_ERR_INVALID_STATE in -DURBI_DEBUG
+     * builds.  Release builds treat the call as a no-op. */
     URBI_ERR_INVALID_STATE              = -27
 } UErrCode;
 

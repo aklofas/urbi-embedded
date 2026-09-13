@@ -657,6 +657,19 @@ bool uemit_close_block(UEmitter *e) {
         urbi_emit_instr(e, i, e->prev_line);
     }
 
+    /* Propagate has_captured to the enclosing block before this ctx dies.
+     * urbi_vm_find_or_install_upvalue marks only
+     * the INNERMOST block containing the captured local; without
+     * propagation the flag dies with this ctx and the enclosing
+     * construct's conditional closes (while/for-each back-edge + loop-exit
+     * closes gate on blk->has_captured) never see captures made inside a
+     * nested `{}` — break/continue then jump past this block's inline
+     * OP_CLOSE leaving the cell open into a recycled register.
+     * Propagation is UNCONDITIONAL (any captured child marks the parent):
+     * OP_CLOSE thresholds are register-address-based, so a parent's close
+     * at its own base register safely covers (re-)closing the child range
+     * — over-approximation costs at most a no-op OP_CLOSE.  blocks[] is
+     * per-UFuncState, so this cannot leak across function boundaries. */
     if (blk->has_captured && fs->nblocks >= 2) {
         fs->blocks[fs->nblocks - 2].has_captured = true;
     }

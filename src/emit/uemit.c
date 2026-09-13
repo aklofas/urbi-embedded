@@ -261,7 +261,13 @@ static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t li
    it is sized exactly to instr_count.  Called after instr_count has been
    incremented so the new slot is at [instr_count - 1].
    When writing to a nested proto, use the proto's allocator.
-   */
+
+   Every call site (urbi_emit_instr, root + nested paths) bumps
+   instr_count BEFORE invoking; instr_count == 0 here would mean a caller
+   bug.  Defensive early-return + assertion: alloc(ptr, 0, ud) is
+   implementation-defined and `[instr_count - 1U]` underflows on the
+   unsigned subscript, so failing closed is safer than relying on the
+   precondition holding at every future call site. */
 /* current_proto() always returns non-NULL; single-path via proto. */
 static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
     UProto *p = current_proto(e);
@@ -398,6 +404,13 @@ bool urbi_emit_cond_has_direct_side_effect(UAstNode *n) {
  * (urbi_emit_throw_arm, urbi_emit_try_arm, urbi_emit_tag_prefix_arm) live in
  * uemit_unwind.c.  See uemit_internal.h for all their declarations. */
 
+/* AST walker — returns the register holding the result of the expression.
+   Returns 0 and sets e->error on any failure.
+   Every UAstKind has an explicit case arm so the switch is exhaustive
+   without a NOLINT.  Forms that are not yet supported (arrow-access
+   AST_PROP_GET / AST_PROP_SET) reject with EMIT_UNSUPPORTED_AST;
+   lowering arrow-access to OP_GETSLOT / OP_SETSLOT is deferred until the
+   arrow-vs-dot semantic distinction is pinned. */
 uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0U;
     switch (n->kind) {

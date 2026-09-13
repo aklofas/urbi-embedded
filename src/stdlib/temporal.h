@@ -158,6 +158,10 @@ uint64_t urbi_periodic_earliest_wake_us(const struct UVM *vm);
 
 /* urbi_periodics_stop_owned_by (B5/SCHED-N2, 2026-07-04)
  *
+ * Walk vm->periodics_head and set unregister_pending on every periodic whose
+ * owning_tag == tag.  The next urbi_periodic_pump Phase 2 pass frees those
+ * periodics once their current_strand is NULL.
+ *
  * Called from urbi_tag_stop (uunwind.c) after the member-watcher cascade.
  * Kept in temporal.c so uunwind.c/utag_native.c never touch UPeriodic
  * internals directly. */

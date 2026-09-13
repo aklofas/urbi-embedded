@@ -105,6 +105,13 @@ static UAstNode *parse_var_decl(UParser *p) {
 
 /* --- parse_assign_after_eq_peek: `x = expr`.
  *
+ * Caller contract:
+ *   - `name` is the already-consumed IDENT token (passed by value).
+ *   - The next lexer token MUST be TOK_EQ; the caller has already
+ *     peeked and confirmed it.  This function consumes the TOK_EQ
+ *     and parses the RHS.  Calling it without that hidden lookahead
+ *     state would mis-parse the expression.
+ *
  * The function name encodes that lexer-state precondition explicitly —
  * earlier name `parse_assign_from_ident` did not. --- */
 
@@ -112,6 +119,9 @@ static UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
     /* TOK_EQ already peeked/confirmed by caller; urbi_parse_consume it. */
     urbi_parse_consume(p);
 
+    /* Parse RHS as a Pratt expression, NOT urbi_parse_inner_tier.
+     * `x = 1 | y = 2` should parse as `(x = 1) | (y = 2)`.  Without
+     * this, urbi_parse_inner_tier absorbs the `|` into the assign RHS. */
     UAstNode *value = urbi_parse_expression(p, 0);
     if (!value) return NULL;
     if (value->kind == AST_ERROR) return value;
@@ -440,6 +450,11 @@ static UAstNode *parse_arm_stmt(UParser *p) {
         return parse_assign_or_expr_impl(p, name, /*fold=*/false);
     }
     default:
+        /* Literal, prefix op, parenthesized expression, etc.
+         * NOT urbi_parse_inner_tier — that one calls urbi_parse_pipe_amp_fold and would
+         * absorb `&`/`|` into the arm (`if (false) 42 & { b }` folded
+         * inside pre-fix).  urbi_parse_expression is the fold-free Pratt tier,
+         * matching the fold=false IDENT path above. */
         return urbi_parse_expression(p, 0);
     }
 }

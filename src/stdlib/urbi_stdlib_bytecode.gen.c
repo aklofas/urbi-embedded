@@ -3,6 +3,8 @@
  * Build-time output: walks src/stdlib/STDLIB_ORDER.txt, compiles
  * each .u to bytecode via the public compile API, concatenates the
  * resulting v1.5 wire-format buffers, emits this file.
+ *
+ * Empty placeholder until Phase 10 populates STDLIB_ORDER.txt.
  */
 
 #include <stddef.h>

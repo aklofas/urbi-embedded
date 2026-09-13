@@ -202,6 +202,17 @@ static int emit_finally_inline(UEmitter *e, UAstNode *n, uint8_t rd) {
     return emit_finally_body_at(e, n->u.try_stmt.finally_body, rd);
 }
 
+/* Emit the teardown for every unwind scope above down_to_depth,
+ * innermost-first, at a break/continue site whose JMP crosses them.
+ * Tag scope -> OP_POP_TAG (runtime pops + tears down the top TAG_SCOPE
+ * entry; the A operand is disasm-fidelity only).  Try scope -> OP_TRY_END,
+ * then — when the scope carries a finally — an inline copy of the finally
+ * body (finally runs on every exit kind; same mechanism as the
+ * normal-path copy).  Code-size cost is one copy per crossing site,
+ * mirroring the normal-path/unwind-copy duplication.
+ * Does NOT modify e->unwind_scope_depth: the scopes stay open for the
+ * (unreachable-after-JMP, but still emitted) fall-through path and for
+ * sibling break sites. */
 int urbi_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line) {
     int d;
     for (d = e->unwind_scope_depth; d > down_to_depth; d--) {
@@ -534,6 +545,9 @@ uint8_t urbi_emit_try_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs->parent == NULL && !urbi_emit_reserve_global_slot(e))
         return 0U;
 
+    /* Open outer block scope: \x01rd and \x01tag live here as proper
+     * locals so urbi_emit_fs_temp_floor counts both and body temps start above them.
+     * Both are popped when this block closes. */
     if (!uemit_open_block(e, /*is_loop=*/false)) return 0U;
     const char *rd_name = ustr_intern(e->vm, "\x01rd", 3);
     if (rd_name == NULL) { uemit_close_block(e); e->error = EMIT_OOM; return 0U; }
@@ -635,6 +649,13 @@ uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
         return 0U;
     }
 
+    /* Body — its own block so body-declared locals pop at scope end and
+     * captured ones get an OP_CLOSE on the fall-through path.  The tag
+     * scope has NO emitted abnormal exits of its own: tag.stop() and
+     * throw unwind via the runtime walker (not emitted JMPs), so only
+     * this normal close matters at emit level; break/continue against an
+     * enclosing loop are covered by that loop's exit-path closes via
+     * has_captured propagation (uemit_close_block). */
     if (!uemit_open_block(e, false)) { uemit_close_block(e); return 0U; }
     uint8_t body_result = urbi_emit_expr(e, n->u.tag_prefix.body);
     if (e->error != EMIT_OK) {

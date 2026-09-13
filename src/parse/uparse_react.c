@@ -203,6 +203,8 @@ static UAstNode *parse_at_slot_change_form(UParser *p, UToken kw,
  * Disambiguates slot-change vs plain event form. */
 static UAstNode *parse_at_event_form(UParser *p, UToken kw,
                                       UAstNode *cond, bool is_sync) {
+    /* Optional `(var x)` payload binding immediately after `?` and
+     * before the `)` that closes the at-condition. */
     const char *pname = NULL;
     int         plen  = 0;
     UAstNode *perr = parse_event_payload_binding(p, &pname, &plen);

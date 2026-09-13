@@ -177,6 +177,11 @@ URBI_ADVANCED void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);
  * the call.  Not ISR-safe. */
 URBI_ADVANCED void   urbi_gc_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
+/* Append `provider` to the VM's fixed root-provider array (capacity
+ * URBI_MAX_ROOT_PROVIDERS).  The provider function pointer is borrowed:
+ * callee retains it for the lifetime of `vm`, and caller must keep the
+ * underlying code object alive at least that long.
+ * URBI_INTERNAL_ASSERT fires on overflow.  Not ISR-safe. */
 URBI_ADVANCED void   urbi_gc_register_root_provider(struct UVM *vm, UGcRootProviderFn provider);
 
 /* Initialize the GC fields on a fresh UVM.  Called from urbi_vm_init after

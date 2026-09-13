@@ -129,7 +129,10 @@ static inline void module_buf_free(UChunkAllocFn alloc, void *alloc_ud,
  * decode_constants_into UVAL_STR arm).  Emit-time UVAL_STR slots carry an
  * intern-table pointer (VM-owned) and must NOT be freed here; the marker
  * distinguishes the two ownership domains.
- */
+ *
+ * Idempotent — safe to call on an already-freed slot because zero-init or
+ * post-fixup buffers have _pad[0] == 0.  Module-instance create clears the
+ * marker after the lazy intern fixup so this helper never double-frees. */
 static void free_owned_str_constants(UValue *constants, size_t count,
                                      UChunkAllocFn alloc, void *alloc_ud) {
     if (constants == NULL || alloc == NULL) return;
@@ -905,6 +908,20 @@ uproto_strand_refcount_dec(UProto *root, struct UVM *vm)
      * owned by the host.  Do not auto-destroy — the host is responsible for
      * calling uchunk_destroy explicitly. */
 }
+
+/* nested[k] may be NULL by design:
+ *   strand_closure_unlink (src/watcher/uwatcher_install.c) detaches a UProto
+ *   from module->nested[] when its UClosure is captured by a watcher
+ *   (transferring ownership from the module to the watcher pool).  After
+ *   detach, nested[k] reads NULL.  This is the expected steady-state for any
+ *   chunk that installed reactive watchers — uchunk_destroy must skip NULL
+ *   slots without freeing them, since the watcher's pool_free now owns
+ *   that proto and will free it on watcher recycle.
+ *
+ *   Detach only happens at `s->frame_count == 0` (chunk-top installs).
+ *   Installs inside a callee skip the transfer entirely to avoid the
+ *   cascade-wake use-after-free on shared protos, so callee-side
+ *   nested[] slots stay populated and are freed normally below. */
 
 void
 uchunk_destroy(UProto *root, struct UVM *vm)

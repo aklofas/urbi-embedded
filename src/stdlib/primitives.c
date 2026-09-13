@@ -90,7 +90,11 @@ write_local_slot(UVM *vm, UObject *o, const char *name, UValue value)
 }
 
 /* === Mutex ===============================================================
- */
+ *
+ * Single-VM cooperative-only contract: lock/unlock/tryLock are
+ * non-blocking flag flips on a hidden `_locked` UVAL_BOOL slot of the
+ * instance UObject.  A later `.u` overlay may grow Mutex.synchronized
+ * via `waituntil m.locked() == false` for cooperative wait semantics. */
 
 static int
 mutex_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
