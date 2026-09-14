@@ -6,11 +6,13 @@
  * observable contract (value in, value or error out) rather than the
  * walker's internals.
  *
- * Two contracts these cases depend on, both inherited from the old core
- * and pinned by the .chk corpus:
- *   - An uncaught throw of a NON-object value recovers to nil and reports
- *     URBI_OK (control_transfer/throw_uncaught.chk); only an exception
- *     OBJECT escaping surfaces as URBI_ERR_UNCAUGHT_THROW.
+ * Two contracts these cases depend on:
+ *   - An uncaught throw of ANY value kills the strand and is reported as
+ *     URBI_ERR_UNCAUGHT_THROW (spec section 9).  The old core swallowed
+ *     non-object throws and answered nil; the re-foundation reports them.
+ *     vm->last_error holds the exception's `message` for an object and
+ *     the formatted value otherwise, which the REPL renders as
+ *     "!!! <that>".
  *   - `try` is an expression: its value is the body's, or the catch
  *     body's when the catch absorbed (exceptions/try_value.chk). */
 
@@ -82,15 +84,14 @@ static void slot_write_on_an_atom_is_catchable(void) {
     fix_close(&fx);
 }
 
-/* (d) a finally runs on the way out even when nothing catches.  The
- *     scalar throw escapes to the nil-recovery contract, so the run
- *     itself reports URBI_OK with a nil value. */
+/* (d) a finally runs on the way out even when nothing catches, and the
+ *     throw is then reported rather than swallowed. */
 static void finally_runs_on_an_uncaught_throw(void) {
     UwFix fx; fix_open(&fx);
     UValue out = uv_nil();
     RT_EQ(run(&fx, "var r = 0 |", &out), URBI_OK);
-    RT_EQ(run(&fx, "try { throw 1 } finally { r = 4 } |", &out), URBI_OK);
-    RT_EQ(out.kind, (uint8_t)UV_NIL);
+    RT_EQ(run(&fx, "try { throw 1 } finally { r = 4 } |", &out), URBI_ERR_UNCAUGHT_THROW);
+    RT_STREQ(fx.vm->last_error, "1");
     run_int(&fx, "r |", 4);
     fix_close(&fx);
 }
@@ -208,6 +209,104 @@ static void execution_resumes_after_a_catch(void) {
     fix_close(&fx);
 }
 
+/* A nested proto's line table has to stand on its own: the walker decodes
+ * it from line 0, so the emitter cannot let it continue the enclosing
+ * proto's line state.  The literal opens on line 4 and raises on line 6.
+ *
+ * The `var seed` on line 1 is load-bearing.  Without a statement ahead of
+ * the literal the enclosing proto has emitted nothing, the emitter's
+ * prev_line is still 0, and the child's first instruction gets an
+ * absolute checkpoint that masks the bug entirely. */
+static const char *const uw_nested_src =
+    "var seed = 1;\n"                                     /* 1 */
+    "\n"                                                  /* 2 */
+    "\n"                                                  /* 3 */
+    "var f = function() {\n"                              /* 4 */
+    "  var q = 1;\n"                                      /* 5 */
+    "  q + \"a\"\n"                                       /* 6 */
+    "}\n";                                                /* 7 */
+
+static void nested_proto_reports_its_own_source_line(void) {
+    UwFix fx; fix_open(&fx);
+    UValue out = uv_nil();
+    RT_EQ(run(&fx, uw_nested_src, &out), URBI_OK);
+    RT_EQ(run(&fx, "f() |", &out), URBI_ERR_UNCAUGHT_THROW);
+    if (strstr(fx.vm->last_error, "line 6: ") == NULL) {
+        RT_CHECK(0);
+        printf("    last_error: %s\n", fx.vm->last_error);
+    } else {
+        RT_CHECK(1);
+    }
+    fix_close(&fx);
+}
+
+/* The `line` slot on the exception object carries the same position on
+ * its own, so a handler can read it without parsing the message. */
+static void the_exception_carries_its_line(void) {
+    UwFix fx; fix_open(&fx);
+    UValue out = uv_nil();
+    RT_EQ(run(&fx, uw_nested_src, &out), URBI_OK);
+    run_int(&fx, "var n = 0; try { f() } catch (var e) { n = e.line }; n |", 6);
+    fix_close(&fx);
+}
+
+/* Spec section 9: an uncaught throw of ANY value is fatal, and the
+ * diagnostic is the formatted value when it is not an exception object. */
+static void an_escaping_scalar_throw_is_fatal(void) {
+    UwFix fx; fix_open(&fx);
+    UValue out = uv_nil();
+    RT_EQ(run(&fx, "throw 42 |", &out), URBI_ERR_UNCAUGHT_THROW);
+    RT_STREQ(fx.vm->last_error, "42");
+    RT_EQ(run(&fx, "throw \"boom\" |", &out), URBI_ERR_UNCAUGHT_THROW);
+    RT_STREQ(fx.vm->last_error, "\"boom\"");
+    RT_EQ(run(&fx, "throw true |", &out), URBI_ERR_UNCAUGHT_THROW);
+    RT_STREQ(fx.vm->last_error, "true");
+    fix_close(&fx);
+}
+
+/* The same throw has to be reported the same way through every entry
+ * point -- spec section 9's "batch and REPL paths are the same path". */
+static void every_entry_point_reports_the_same_escape(void) {
+    UwFix fx; fix_open(&fx);
+    UValue fn = uv_nil();
+    RT_EQ(run(&fx, "var boom = function() { throw 42 }; boom |", &fn), URBI_OK);
+
+    UValue res = uv_nil();
+    RT_EQ(urbi_call(fx.vm, fx.realm, fn, uv_nil(), NULL, 0, &res), URBI_ERR_UNCAUGHT_THROW);
+    UErrorInfo info;
+    urbi_last_error(fx.vm, &info);
+    RT_EQ(info.code, URBI_ERR_UNCAUGHT_THROW);
+    RT_STREQ(info.message, "42");   /* the REPL renders this as "!!! 42" */
+
+    /* urbi_load walks the same mapping. */
+    uint8_t *bytes = NULL; size_t nbytes = 0;
+    char err[128] = {0};
+    RT_EQ(urbi_compile(fx.vm, "throw 42", 8, NULL, &bytes, &nbytes, err, sizeof err), URBI_OK);
+    RT_EQ(urbi_load(fx.vm, fx.realm, bytes, nbytes, &res), URBI_ERR_UNCAUGHT_THROW);
+    urbi_last_error(fx.vm, &info);
+    RT_STREQ(info.message, "42");
+    urbi_chunk_free(fx.vm, bytes, nbytes);
+    fix_close(&fx);
+}
+
+/* A caught throw leaves no trace on the error channel: uexec_throw records
+ * eagerly, so the successful return has to clear it. */
+static void the_error_channel_clears_on_success(void) {
+    UwFix fx; fix_open(&fx);
+    UValue out = uv_nil();
+    run_int(&fx, "var b = 0; try { 1 + \"z\" } catch (var e) { b = 1 }; b |", 1);
+    UErrorInfo info;
+    urbi_last_error(fx.vm, &info);
+    RT_EQ(info.code, URBI_OK);
+    RT_CHECK(info.message[0] == '\0');
+
+    RT_EQ(run(&fx, "1 + 1 |", &out), URBI_OK);
+    urbi_last_error(fx.vm, &info);
+    RT_EQ(info.code, URBI_OK);
+    RT_CHECK(info.message[0] == '\0');
+    fix_close(&fx);
+}
+
 RT_SUITE(rt_unwind_suite) {
     rt_run("catch_absorbs_a_throw", catch_absorbs_a_throw);
     rt_run("runtime_type_error_is_catchable", runtime_type_error_is_catchable);
@@ -222,4 +321,9 @@ RT_SUITE(rt_unwind_suite) {
     rt_run("throw_in_a_finally_replaces_the_pending_one", throw_in_a_finally_replaces_the_pending_one);
     rt_run("nested_try_rethrow", nested_try_rethrow);
     rt_run("execution_resumes_after_a_catch", execution_resumes_after_a_catch);
+    rt_run("nested_proto_reports_its_own_source_line", nested_proto_reports_its_own_source_line);
+    rt_run("the_exception_carries_its_line", the_exception_carries_its_line);
+    rt_run("an_escaping_scalar_throw_is_fatal", an_escaping_scalar_throw_is_fatal);
+    rt_run("every_entry_point_reports_the_same_escape", every_entry_point_reports_the_same_escape);
+    rt_run("the_error_channel_clears_on_success", the_error_channel_clears_on_success);
 }

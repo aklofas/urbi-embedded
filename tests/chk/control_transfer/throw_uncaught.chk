@@ -1,6 +1,7 @@
 # Milestone: M3
-# Covers: uncaught throw terminates the strand fatally; top-level expression
-#         result is nil (strand died without producing a value).
+# Covers: uncaught throw terminates the strand fatally and is reported.
+# The old core swallowed non-object throws and answered nil; the
+# re-foundation reports them (spec section 9).
 
 throw 42
-[00000001] nil
+[00000001] !!! 42

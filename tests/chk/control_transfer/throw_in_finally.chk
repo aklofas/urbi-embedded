@@ -1,6 +1,9 @@
 # Milestone: M3
 # Covers: throw inside finally body (C-1 replace-on-raise); new exception
-#         supersedes original; no outer catch → strand terminates fatally → nil.
+#         supersedes original; no outer catch → strand terminates fatally.
+# The old core swallowed non-object throws and answered nil; the
+# re-foundation reports them (spec section 9), so the 2 that replaced the
+# 1 is what surfaces.
 
 try { throw 1 } finally { throw 2 }
-[00000001] nil
+[00000001] !!! 2
