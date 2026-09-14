@@ -180,11 +180,6 @@ typedef struct UEmitter {
     bool         lazy_arg_context; /* Set while emitting args in AST_CALL;
                                       suppresses implicit force on lazy-local reads
                                       (pass-through semantics, spec §4.2) */
-    uint8_t      in_cleanup_body; /* non-zero while
-                                     emitting a finally/onleave body — the
-                                     `;` separator emits no OP_YIELD there
-                                     (cleanup bodies are atomic; REVIVAL
-                                     §14 ledger 2026-06-10) */
     UEmitError    error;           /* sticky: first error latches */
     struct UFuncState *current_fs; /* current compilation function */
 

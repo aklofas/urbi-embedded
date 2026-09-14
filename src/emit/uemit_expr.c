@@ -758,16 +758,16 @@ uint8_t urbi_emit_nary_arm(UEmitter *e, UAstNode *n) {
              * previous child was. */
             e->current_fs->freereg = urbi_emit_fs_temp_floor(e->current_fs);
             e->next_reg = e->current_fs->freereg;
-            /* Cleanup bodies (finally / onleave) are
-             * atomic — `;` separates statements but yields nothing there.
-             * An OP_YIELD inside the unwind-copy finally would enqueue the
-             * strand mid-walk (run_cleanup_with_replace treats the yield as
-             * body completion): scheduler assert / corruption. */
-            if (!e->in_cleanup_body) {
-                urbi_emit_instr(e, uinstr_enc_abc(OP_YIELD, 0U, 0U, 0U),
-                           e->prev_line);
-                if (e->error != EMIT_OK) return 0U;
-            }
+            /* A cleanup body is ordinary code, so `;` yields there like
+             * anywhere else.  The old core suppressed this because a
+             * finally ran as a nested VM invocation and a yield inside one
+             * was read as body completion; the re-founded walker runs a
+             * finally as a continuation of the same frame, holding the
+             * suspended unwind in a cleanup marker that OP_RESUME hands
+             * back, so a yield mid-body is just a yield. */
+            urbi_emit_instr(e, uinstr_enc_abc(OP_YIELD, 0U, 0U, 0U),
+                       e->prev_line);
+            if (e->error != EMIT_OK) return 0U;
         }
         r = urbi_emit_expr(e, n->u.nary.children[i]);
         if (e->error != EMIT_OK) return 0U;

@@ -186,10 +186,7 @@ static int emit_finally_body_at(UEmitter *e, UAstNode *finally_body,
      * consistency with the unwind copy.  Save/restore handles nested
      * try/finally inside a finally. */
     {
-        uint8_t saved_icb = e->in_cleanup_body;
-        e->in_cleanup_body = 1U;
         urbi_emit_expr(e, finally_body);
-        e->in_cleanup_body = saved_icb;
     }
     if (e->error != EMIT_OK) { uemit_close_block(e); return 0; }
     if (!uemit_close_block(e)) return 0;
@@ -351,10 +348,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
             e->current_fs->freereg = (uint8_t)(rd + 1U);
         if (!uemit_open_block(e, false)) return 0U;
         {
-            uint8_t saved_icb = e->in_cleanup_body;
-            e->in_cleanup_body = 1U;
             urbi_emit_expr(e, n->u.try_stmt.finally_body);
-            e->in_cleanup_body = saved_icb;
         }
         if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
         if (!uemit_close_block(e)) return 0U;
@@ -480,10 +474,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
             e->current_fs->freereg = (uint8_t)(rd + 1U);
         if (!uemit_open_block(e, false)) return 0U;
         {
-            uint8_t saved_icb = e->in_cleanup_body;
-            e->in_cleanup_body = 1U;
             urbi_emit_expr(e, n->u.try_stmt.finally_body);
-            e->in_cleanup_body = saved_icb;
         }
         if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
         if (!uemit_close_block(e)) return 0U;

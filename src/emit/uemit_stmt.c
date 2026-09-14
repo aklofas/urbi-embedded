@@ -222,17 +222,7 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
     /* 3b + 4. Compile the arity prologue, then the body (AST_BLOCK);
      * urbi_emit_instr routes to child_proto.
      *
-     * Clear in_cleanup_body across the nested body —
-     * a function literal (or lazy thunk / watcher closure) defined inside a
-     * finally body runs LATER as ordinary code, not as part of the cleanup,
-     * so its `;` separators keep normal OP_YIELD semantics.  Mirrors the
-     * lazy_arg_context save/clear/restore in urbi_emit_lazy_thunk.  The arity
-     * prologue (and its default expressions) get the same treatment: they
-     * run at call time as ordinary function code. */
-    uint8_t saved_icb = e->in_cleanup_body;
-    e->in_cleanup_body = 0U;
-
-     /*   min_arity = 1 + highest param index WITHOUT a default (0 when all
+     *   min_arity = 1 + highest param index WITHOUT a default (0 when all
      *   params carry defaults).  Matches the legacy runtime: formals
      *   desugar to in-order LocalDeclarations (factory.cc formals_to_decs),
      *   so a missing non-defaulted formal raises regardless of defaults on
@@ -267,7 +257,6 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
         if (min_arity > 0) {
             uint16_t kmin = urbi_emit_add_const_int(e, (int64_t)min_arity);
             if (e->error != EMIT_OK) {
-                e->in_cleanup_body = saved_icb;
                 uemit_close_function(e);
                 return 0U;
             }
@@ -297,20 +286,17 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
             const char *msg_interned = ustr_intern(e->vm, msgbuf, (size_t)mlen);
             if (msg_interned == NULL) {
                 e->error = EMIT_OOM;
-                e->in_cleanup_body = saved_icb;
                 uemit_close_function(e);
                 return 0U;
             }
             uint16_t kmsg = urbi_emit_add_const_str(e, msg_interned);
             if (e->error != EMIT_OK) {
-                e->in_cleanup_body = saved_icb;
                 uemit_close_function(e);
                 return 0U;
             }
 
             uint8_t tmp = alloc_reg(e);
             if (e->error != EMIT_OK) {
-                e->in_cleanup_body = saved_icb;
                 uemit_close_function(e);
                 return 0U;
             }
@@ -326,7 +312,6 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
              * (target > from) would trip (OOM-injection suites sweep
              * every allocation point through this path). */
             if (e->error != EMIT_OK) {
-                e->in_cleanup_body = saved_icb;
                 uemit_close_function(e);
                 return 0U;
             }
@@ -343,13 +328,11 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
                 uint32_t dline = (uint32_t)params[pi]->line;
                 uint16_t ki = urbi_emit_add_const_int(e, (int64_t)pi);
                 if (e->error != EMIT_OK) {
-                    e->in_cleanup_body = saved_icb;
                     uemit_close_function(e);
                     return 0U;
                 }
                 uint8_t tmp = alloc_reg(e);
                 if (e->error != EMIT_OK) {
-                    e->in_cleanup_body = saved_icb;
                     uemit_close_function(e);
                     return 0U;
                 }
@@ -359,7 +342,6 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
                 int jmp_skip = emit_fwd_jmp(e, dline);
                 uint8_t r = urbi_emit_expr(e, def);
                 if (e->error != EMIT_OK) {
-                    e->in_cleanup_body = saved_icb;
                     uemit_close_function(e);
                     return 0U;
                 }
@@ -369,7 +351,6 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
                 }
                 /* Same bail-before-patch rule as the too-few block. */
                 if (e->error != EMIT_OK) {
-                    e->in_cleanup_body = saved_icb;
                     uemit_close_function(e);
                     return 0U;
                 }
@@ -383,7 +364,6 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
     /* === end 3b === */
 
     uint8_t body_reg = urbi_emit_expr(e, body);
-    e->in_cleanup_body = saved_icb;
     if (e->error != EMIT_OK) {
         uemit_close_function(e);
         return 0U;
