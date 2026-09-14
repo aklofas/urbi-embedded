@@ -12,9 +12,19 @@
 # refactor-3 GATE-03: the previous version checked only the FIRST mention of
 # each string (head -1) — the known README-ordering trap was structural.
 #
-# Pre-tag window escape: during the release ritual the manifests are bumped
-# BEFORE the tag exists.  Export URBI_RELEASE_TAG_TO_BE=vX.Y.Z-name to check
-# against the tag about to be created instead of `git tag` history.
+# Pre-tag window: during the release ritual every manifest is bumped BEFORE
+# the tag exists, so "compare against the newest tag in git" is the wrong
+# question for the whole of a release branch's life.  The string the four
+# files must agree ON is version.h's URBI_RELEASE_STRING -- that is where
+# the release ritual writes the new version first -- so version.h is the
+# anchor whenever it is AHEAD of git's newest tag, and git's newest tag is
+# the anchor otherwise (which is what keeps a forgotten bump failing).
+#
+# Being ahead is decided by `sort -V`, so a version.h left BEHIND the
+# newest tag still fails rather than quietly re-anchoring on itself.
+#
+# URBI_RELEASE_TAG_TO_BE=vX.Y.Z-name overrides both, for a release whose
+# version.h has not been bumped yet.
 #
 # Run by `make check-version-sync` and by the version-sync GHA job.
 set -eu
@@ -22,13 +32,24 @@ set -eu
 fail=0
 fail_msg() { echo "ERROR: $*" >&2; fail=1; }
 
-LATEST_TAG=$(git tag --sort=-v:refname | head -1)
+VERSION_H_REL=$(grep -E '^#define URBI_RELEASE_STRING ' include/urbi/version.h | \
+                sed -E 's/^#define URBI_RELEASE_STRING[[:space:]]+"([^"]*)".*/\1/')
+GIT_TAG=$(git tag --sort=-v:refname | head -1)
+
 if [ -n "${URBI_RELEASE_TAG_TO_BE:-}" ]; then
     LATEST_TAG="$URBI_RELEASE_TAG_TO_BE"
-    echo "note: URBI_RELEASE_TAG_TO_BE=$LATEST_TAG (pre-tag window escape)"
+    echo "note: URBI_RELEASE_TAG_TO_BE=$LATEST_TAG (explicit override)"
+elif [ -n "$VERSION_H_REL" ] && [ -n "$GIT_TAG" ] && \
+     [ "v$VERSION_H_REL" != "$GIT_TAG" ] && \
+     [ "$(printf '%s\n%s\n' "$GIT_TAG" "v$VERSION_H_REL" | sort -V | tail -1)" = "v$VERSION_H_REL" ]; then
+    LATEST_TAG="v$VERSION_H_REL"
+    echo "note: pre-tag window — anchoring on include/urbi/version.h ($LATEST_TAG, ahead of $GIT_TAG)"
+else
+    LATEST_TAG="$GIT_TAG"
 fi
+
 if [ -z "$LATEST_TAG" ]; then
-    fail_msg "no git tag found and URBI_RELEASE_TAG_TO_BE unset"
+    fail_msg "no git tag found, version.h carries no release string, and URBI_RELEASE_TAG_TO_BE is unset"
     exit 1
 fi
 

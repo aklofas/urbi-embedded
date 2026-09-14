@@ -1,0 +1,29 @@
+# Milestone: v0.14.0-refoundation
+# Covers: `every` armed by a deployed script keeps firing after the chunk
+#         returns, and `tag.stop()` from inside the body is what ends the
+#         run.  The canonical robotics idiom, on the path a deployed
+#         script actually takes.
+#
+#         Before the CLI grew its own pump loop the periodic never fired
+#         at all: the chunk armed the timer, `urbi_run` came back because
+#         nothing was READY, and the process exited 0 having run none of
+#         the body.  It also pins the other half -- the pump stops on its
+#         own once the tag is stopped, rather than spinning on an empty
+#         timer heap.
+#
+#         The body is written with `;` separators deliberately: `every (P)
+#         A | B` currently parses B INTO the body closure, so a `|` here
+#         would test the parser rather than the pump.
+# matrix-row: temporal-every
+
+## mode: file
+## timeout: 10
+
+var n = 0;
+var t = Tag.new();
+echo("armed");
+t: every(2ms) { n = n + 1; echo(n); if (n >= 3) { t.stop() } }
+[00000000] *** armed
+[00000000] *** 1
+[00000000] *** 2
+[00000000] *** 3

@@ -484,6 +484,16 @@ test-bake-smoke: test-stdlib-bytecode-fresh
 test-integration: $(BUILDDIR)/urbi
 	tests/integration/repl_smoke.sh $(BUILDDIR)/urbi
 
+# test-batch-errors is the gate for the OTHER entry point.  Every .chk
+# fixture but one runs through `urbi -i` or the host driver, so nothing in
+# the corpus watches `urbi -e` / `urbi -f`: exit status on an uncaught
+# throw, chunk-top fork separators, and whether a script that parks ever
+# resumes.  It was dropped from `make test` during the re-foundation and
+# went red unnoticed; it is a direct prerequisite again for that reason.
+.PHONY: test-batch-errors
+test-batch-errors: $(BUILDDIR)/urbi
+	@URBI=$(BUILDDIR)/urbi bash tests/scripts/test-batch-errors.sh
+
 # --- .chk conformance fixtures -----------------------------------------
 #
 # test-chk runs every tests/chk/**/*.chk fixture against the built urbi
@@ -523,8 +533,11 @@ test-chk-runner:
 	@bash tests/integration/test_run_chk_runner.sh
 
 # `make test`: the frontend runner, the runtime runner, the layering
-# gate, and the .chk corpus driven through the urbi binary.
-test: $(LIB) test-unit test-rt check-rt-layering test-chk test-probes
+# gate, the .chk corpus driven through the urbi binary, and the two shell
+# harnesses that cover what the corpus cannot see -- the REPL smoke run
+# and the batch (-e / -f) entry point.
+test: $(LIB) test-unit test-rt check-rt-layering test-chk test-probes \
+      test-integration test-batch-errors
 
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi
@@ -975,12 +988,10 @@ docs-check-tools:
 # ---- version sync gate -------------------------------------------------------
 #
 # Checks that the ESP-IDF component manifest version, README.md version
-# strings, and include/urbi/version.h all agree with the latest git tag.
-# Run by `make check-version-sync` and by the version-sync GHA job.
-#
-# TODO (Wave 1 merge): add check-version-sync as a dep of docs-check once
-# the W1 README refresh lands on the integration branch and the README ABI /
-# wire / tag strings match the version.h + uchunk.h values.
+# strings, and include/urbi/version.h all agree on the release being
+# prepared.  Run by `make check-version-sync` and by the version-sync GHA
+# job; deliberately NOT a dep of docs-check, which must stay runnable
+# without a git tag history.
 
 check-version-sync:
 	@tests/scripts/check-version-sync.sh

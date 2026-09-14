@@ -1,0 +1,20 @@
+# Milestone: v0.14.0-refoundation
+# Covers: a `&` join where one arm PARKS, run as a deployed script rather
+#         than a REPL line.  `urbi_run` pumps only until nothing is READY,
+#         which is the right cadence for a REPL but truncates a batch
+#         program: before the CLI grew its own pump loop, everything after
+#         the 5ms sleep was silently dropped and the process still exited
+#         0.  The `1` on the last line is the whole point -- it can only
+#         be read after the sleeping arm has woken and the join completed.
+#
+#         Line mode cannot host this: under -i each statement is its own
+#         chunk, so the fork and the read never share a pump.
+# matrix-row: separator-and
+
+## mode: file
+
+var done = 0;
+{ sleep(5ms); done = 1 } & { echo("arm") };
+echo(done)
+[00000000] *** arm
+[00000000] *** 1

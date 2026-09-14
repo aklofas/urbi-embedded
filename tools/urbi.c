@@ -106,56 +106,18 @@ static char *terminate(const char *src, size_t len, size_t *out_len) {
     return buf;
 }
 
-/* --- batch modes --------------------------------------------------------- */
-
-/* Runs one whole source text and prints the result, the way -e and a
- * file argument both behave.  Returns the process exit status. */
-static int run_once(UVM *vm, const char *src, size_t len, const char *name, bool print_result) {
-    char err[512] = {0};
-    UValue out;
-    int rc = urbi_run(vm, urbi_realm_main(vm), src, len, name, &out, err, sizeof err);
-    if (rc == URBI_OK) {
-        if (print_result && !urbi_value_is_void(out)) {
-            char fmt[512];
-            urbi_value_to_string(vm, out, fmt, sizeof fmt);
-            puts(fmt);
-        }
-        return 0;
-    }
-    if (rc == URBI_ERR_UNCAUGHT_THROW) {
-        UErrorInfo info;
-        urbi_last_error(vm, &info);
-        fprintf(stderr, "urbi: %s\n", info.message && info.message[0] ? info.message : "uncaught throw");
-    } else {
-        fprintf(stderr, "urbi: %s\n", err[0] ? err : "run failed");
-    }
-    return 1;
-}
-
-static int run_dump(UVM *vm, const char *src, size_t len, const char *name, bool wire) {
-    char err[512] = {0};
-    UProto *root = NULL;
-    if (wire) {
-        uint8_t *bytes = NULL; size_t n = 0;
-        int rc = urbi_compile(vm, src, len, name, &bytes, &n, err, sizeof err);
-        if (rc != URBI_OK) { fprintf(stderr, "urbi: %s\n", err); return 1; }
-        fwrite(bytes, 1, n, stdout);
-        urbi_chunk_free(vm, bytes, n);
-        return 0;
-    }
-    if (ufront_compile(vm, src, len, name, NULL, &root, err, sizeof err) != URBI_OK) {
-        fprintf(stderr, "urbi: %s\n", err);
-        return 1;
-    }
-    ufront_disassemble(root, NULL);
-    uchunk_destroy(root, NULL);
-    return 0;
-}
-
-/* --- interactive / line mode ---------------------------------------------- */
+/* --- host hooks and the process clock -------------------------------------
+ *
+ * Shared by both modes: batch needs the clock to sleep on a timer
+ * deadline and the diag counter to set an exit status, interactive needs
+ * the same clock for its result frames. */
 
 static struct timespec g_start_time;
 static volatile sig_atomic_t g_interrupted = 0;
+/* Error-level diagnostics seen so far.  A batch pump compares this across
+ * its loop to decide the exit status: a strand nobody awaits reports an
+ * uncaught throw here and nowhere else. */
+static unsigned g_diag_errors;
 
 static uint32_t ms_since_start(void) {
     struct timespec now;
@@ -188,7 +150,8 @@ static void cli_writer(void *ud, const char *chan, size_t cl, const char *msg, s
  * same thing. */
 static void cli_diag(UVM *vm, void *ud, int level, const char *msg, size_t len)
 {
-    (void)vm; (void)ud; (void)level;
+    (void)vm; (void)ud;
+    if (level <= 3) g_diag_errors++;   /* syslog LOG_ERR and worse */
     printf("[%08u] !!! %.*s\n", ms_since_start(), (int)len, msg);
     fflush(stdout);
 }
@@ -205,6 +168,108 @@ static uint64_t cli_clock(void *ud)
     if (nsec < 0) { sec -= 1; nsec += 1000000000L; }
     return (uint64_t)sec * 1000000ULL + (uint64_t)nsec / 1000ULL;
 }
+
+/* --- batch modes --------------------------------------------------------- */
+
+/* Sleep until `wake_us`, a deadline on the same monotonic origin
+ * cli_clock reports.  A deadline already past sleeps not at all; an
+ * interrupted sleep just returns, because the caller re-steps and works
+ * out what to do next from the scheduler rather than from the clock. */
+static void sleep_until(uint64_t wake_us) {
+    uint64_t now = cli_clock(NULL);
+    if (wake_us <= now) return;
+    uint64_t delta = wake_us - now;
+    struct timespec ts;
+    ts.tv_sec  = (time_t)(delta / 1000000ULL);
+    ts.tv_nsec = (long)((delta % 1000000ULL) * 1000ULL);
+    (void)nanosleep(&ts, NULL);
+}
+
+/* Drive the scheduler until the program is done.
+ *
+ * urbi_run pumps only until nothing is READY -- deliberately, because
+ * that is the line-at-a-time cadence the REPL and the host driver need.
+ * A DEPLOYED script is the other case: `sleep(1s)`, an `every` a tag
+ * later stops, a `&` join where one arm parks, all hand control back to
+ * the caller with work still pending, and without this loop the process
+ * would exit 0 having silently run about half the program.
+ *
+ * So: step, and on IDLE_UNTIL sleep on the real clock until the next
+ * timer is due.  QUIESCENT ends it -- no runnable strand, no timer, so
+ * nothing can happen again without the host, and a batch run has no host
+ * left to ask.  A periodic nobody stops therefore runs forever, which is
+ * what `every(100ms) sense()` is for; SIGINT is the way out, the same as
+ * under -i.
+ *
+ * Returns 0, or 1 if a strand died on an uncaught throw while pumping --
+ * the diag hook is the only channel such a strand has, so that is what
+ * this counts. */
+static int pump_to_quiescence(UVM *vm) {
+    unsigned errors_before = g_diag_errors;
+    for (;;) {
+        if (g_interrupted) return 130;          /* 128 + SIGINT, as a shell expects */
+        uint64_t wake_us = 0;
+        int st = urbi_step(vm, 0, &wake_us);
+        if (st < 0) {                            /* a negative result is a URBI_ERR_* */
+            fprintf(stderr, "urbi: scheduler error %d\n", st);
+            return 1;
+        }
+        if (st == URBI_STEP_QUIESCENT) break;
+        if (st == URBI_STEP_IDLE_UNTIL) sleep_until(wake_us);
+    }
+    return g_diag_errors != errors_before ? 1 : 0;
+}
+
+/* Runs one whole source text and prints the result, the way -e and a
+ * file argument both behave.  Returns the process exit status. */
+static int run_once(UVM *vm, const char *src, size_t len, const char *name, bool print_result) {
+    char err[512] = {0};
+    UValue out;
+    int rc = urbi_run(vm, urbi_realm_main(vm), src, len, name, &out, err, sizeof err);
+    if (rc == URBI_OK) {
+        if (print_result && !urbi_value_is_void(out)) {
+            char fmt[512];
+            urbi_value_to_string(vm, out, fmt, sizeof fmt);
+            puts(fmt);
+        }
+        /* The chunk returned; the PROGRAM has not necessarily finished. */
+        return pump_to_quiescence(vm);
+    }
+    if (rc == URBI_ERR_UNCAUGHT_THROW) {
+        UErrorInfo info;
+        urbi_last_error(vm, &info);
+        /* The rendered value, not a category: `throw 99` says 99, which
+         * is what the corpus pins for the same throw under -i
+         * (tests/chk/control_transfer/throw_uncaught.chk).  The fallback
+         * is for a throw the unwinder could not spell at all. */
+        fprintf(stderr, "urbi: %s\n", info.message && info.message[0] ? info.message : "uncaught throw");
+    } else {
+        fprintf(stderr, "urbi: %s\n", err[0] ? err : "run failed");
+    }
+    return 1;
+}
+
+static int run_dump(UVM *vm, const char *src, size_t len, const char *name, bool wire) {
+    char err[512] = {0};
+    UProto *root = NULL;
+    if (wire) {
+        uint8_t *bytes = NULL; size_t n = 0;
+        int rc = urbi_compile(vm, src, len, name, &bytes, &n, err, sizeof err);
+        if (rc != URBI_OK) { fprintf(stderr, "urbi: %s\n", err); return 1; }
+        fwrite(bytes, 1, n, stdout);
+        urbi_chunk_free(vm, bytes, n);
+        return 0;
+    }
+    if (ufront_compile(vm, src, len, name, NULL, &root, err, sizeof err) != URBI_OK) {
+        fprintf(stderr, "urbi: %s\n", err);
+        return 1;
+    }
+    ufront_disassemble(root, NULL);
+    uchunk_destroy(root, NULL);
+    return 0;
+}
+
+/* --- interactive / line mode ---------------------------------------------- */
 
 static char *history_path(void) {
     const char *home = getenv("HOME");
@@ -377,6 +442,10 @@ int main(int argc, char *argv[]) {
     }
 
     clock_gettime(CLOCK_MONOTONIC, &g_start_time);
+    /* Batch mode needs this as much as the REPL does: a script that arms a
+     * periodic nobody stops keeps the pump running, and Ctrl-C is the way
+     * out.  run_interactive re-installs it for its own reasons. */
+    signal(SIGINT, sigint_handler);
     UVM *vm = urbi_open(cli_alloc, NULL, NULL);
     if (!vm) { fprintf(stderr, "urbi: out of memory\n"); return 1; }
     urbi_set_writer(vm, cli_writer, NULL);

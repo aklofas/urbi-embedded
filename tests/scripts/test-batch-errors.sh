@@ -16,9 +16,18 @@ chk() { # chk <expected-rc> <desc> <args...>
 chk 0 "clean expr"            -e '1 + 1'
 chk 0 "sleep(0) no-op"        -e 'sleep(0)'
 chk 1 "uncaught scalar throw" -e 'throw 99'
-# v0.13.4-B: scalar throw must say "uncaught throw", not "(vm error)".
+# v0.13.4-B: a scalar throw must be REPORTED, not swallowed as "(vm error)".
+#
+# The wording changed at v0.14.0-refoundation.  v0.13.4 could only answer
+# with the category, "uncaught throw", because the old core rendered a
+# non-object throw as nil; the re-founded unwinder renders the value, so
+# the batch path now says what was thrown.  That is what the corpus pins
+# for the same throw under -i -- tests/chk/control_transfer/throw_uncaught.chk
+# expects `!!! 42` -- and the two paths have to agree.  The category
+# wording survives only as the fallback for a value the unwinder cannot
+# spell at all, which is why it is not asserted here.
 stderr=$("$URBI" -e 'throw 99' 2>&1 >/dev/null)
-case "$stderr" in *"uncaught throw"*) : ;; *) echo "FAIL: scalar throw stderr='$stderr' (want 'uncaught throw')"; fail=1 ;; esac
+case "$stderr" in *"99"*) : ;; *) echo "FAIL: scalar throw stderr='$stderr' (want the thrown value, 99)"; fail=1 ;; esac
 case "$stderr" in *"(vm error)"*) echo "FAIL: scalar throw stderr still says '(vm error)'"; fail=1 ;; *) : ;; esac
 chk 1 "uncaught exception"    -e 'throw Exception.new("boom")'
 chk 1 "fork strand throw after root ok" -e 'cout << "x", { throw 1 }'
