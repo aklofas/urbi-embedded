@@ -560,7 +560,6 @@ tests/unit/
   test_varint.c       Varint codec test suite
   test_module.c       Chunk loader / verifier test suite
   test_emit.c         Emitter test suite
-  test_vm.c           VM test suite
   test_uvalue.c       UValue formatter test suite
 
 tests/integration/

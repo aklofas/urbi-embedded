@@ -315,7 +315,11 @@ as the M8 REPL milestone milestone work.
   "Changed" section; design-risks entry "WATCH-015 cascade-wake".
 - **CHSTR-051** — commit `9e2c725`, `tests/chk/exceptions/throw_in_finally.chk`.
 - **Test files:**
-  - `tests/unit/test_loader_strand_persistence.c` (7 cases)
   - `tests/unit/test_module_refcount.c` (6 cases)
   - `tests/chk/separator/and-environment.chk`, `comma.chk`, `comma-environment.chk`
     (3 activated legacy separator fixtures)
+  - Persistence itself (`test_loader_strand_persistence.c`, removed in the
+    Phase 0 runtime-internals test cleanup) is now covered from script by
+    `tests/chk/temporal/sleep_basic.chk`, `tests/chk/separator/comma_amp_chunk_top.chk`,
+    `tests/chk/chunk_lifecycle/script_at_persists.chk`, and
+    `tests/chk/reactive/waituntil_event.chk`

@@ -33,13 +33,17 @@ Implications:
   unlinked before they leave scope. The convenience getter is
   `urbi_realm_global(vm)`, which lazy-creates the global realm on first call.
 
-The contract is verified by the unit suite in
-`tests/unit/test_scheduler_invariant.c`, which sweeps READY → WAITING_SLEEP
-→ READY → RUNNING → WAITING_JOIN → DEAD and asserts `strand` remains on
-`realm.strands_head` after every transition. A second suite in
-`tests/unit/test_gc_strand_walker.c` confirms the walker visits WAITING_JOIN
-strands, filters DEAD strands, reaches strands that sit on no scheduler
-queue, and round-trips the `uvm_run` transient through the global realm.
+This invariant was verified by dedicated internals unit suites
+(`test_scheduler_invariant.c`, sweeping READY → WAITING_SLEEP → READY →
+RUNNING → WAITING_JOIN → DEAD and asserting `strand` remains on
+`realm.strands_head` after every transition; `test_gc_strand_walker.c`,
+confirming the walker visits WAITING_JOIN strands, filters DEAD strands,
+reaches strands that sit on no scheduler queue, and round-trips the
+`uvm_run` transient through the global realm). Both were removed in the
+Phase 0 runtime-internals test cleanup since they asserted private
+list-membership directly rather than any urbiscript-visible behavior; no
+chk fixture reproduces this invariant, since it underlies GC-walker
+correctness rather than a user-facing effect.
 
 ## Runnable-count ownership (v0.13.3)
 

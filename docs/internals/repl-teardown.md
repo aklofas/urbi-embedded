@@ -156,8 +156,10 @@ the stop path; it is designed for the concurrent normal case where
 
 - **TSAN coverage absent.** The `claude-yolo-cross` dev image does not
   include the Thread Sanitizer runtime.  Baking TSAN is deferred to v1.x.
-  The ASan 100-trial stress CI job (`repl-multi-client-stress`) catches
-  use-after-free but not data races.
+  The dedicated ASan 100-trial multi-client stress test and its CI job
+  (`repl-multi-client-stress`) were removed in the Phase 0
+  runtime-internals test cleanup; REPL is currently a parked feature
+  pending v1.x re-attachment.
 - **Cooperative-only builds** are single-threaded by contract (`POSIX
   reader pthread` path is `#ifdef`-excluded).  The atomic operations on
   `needs_teardown` in cooperative sweeps are a consistency requirement, not

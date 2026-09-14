@@ -39,7 +39,7 @@ struct UObject {
 };
 ```
 
-Total on a 64-bit host: 56 bytes. The literal byte total is pinned by
+Total on a 64-bit host: 56 bytes. The literal byte total used to be pinned by
 
 ```c
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
@@ -47,12 +47,17 @@ _Static_assert(sizeof(struct UObject) == 56, ...);
 #endif
 ```
 
-The pin is gated on pointer width because 32-bit cross targets (Cortex-M7,
+(the assert lived in the now-removed `tests/unit/test_uobject.c`, not in a
+header — see below).
+
+The pin was gated on pointer width because 32-bit cross targets (Cortex-M7,
 rv32imc) shrink the pointer fields and reshuffle the natural alignment, so the
-literal 56 B no longer holds. On 32-bit targets the host-only runtime offset
-checks in `tests/unit/test_uobject.c` supply the second signal — they pin
-field offsets rather than the total. Architecturally the same nine fields
-appear in the same order on every supported target.
+literal 56 B no longer holds. `tests/unit/test_uobject.c`, which carried both
+this assert and host-only runtime offset checks for 32-bit targets, was
+removed in the Phase 0 runtime-internals test cleanup; no automated check
+currently pins `sizeof(UObject)` or field offsets on either width.
+Architecturally the same nine fields appear in the same order on every
+supported target.
 
 Field-order is load-bearing. `cell` must be the first member so a `UCell *`
 points at the same byte as the enclosing `UObject *` (every walker recovers

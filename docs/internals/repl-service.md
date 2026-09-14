@@ -591,10 +591,12 @@ Two known issues filed in `docs/urbi-embedded-design-risks.md`:
   in `urepl_request_teardown`), unguarded `r->session = NULL` in
   `reader_main` (now under `sessions_mutex`), and `stop_and_join`
   directly calling `urepl_session_destroy` (now routed through the
-  reaper).  The multi-client test runs by default; a dedicated CI job
-  (`repl-multi-client-stress`) runs 100 ASan trials.  Ownership contract
-  documented in `docs/internals/repl-teardown.md`.  TSAN coverage
-  deferred to v1.x (image lacks runtime).
+  reaper).  The multi-client test and its dedicated CI job
+  (`repl-multi-client-stress`, 100 ASan trials) were removed in the
+  Phase 0 runtime-internals test cleanup; REPL is currently a parked
+  feature pending v1.x re-attachment.  Ownership contract documented in
+  `docs/internals/repl-teardown.md`.  TSAN coverage deferred to v1.x
+  (image lacks runtime).
 
 ## Uncaught-throw contract
 

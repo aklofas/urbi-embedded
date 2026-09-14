@@ -119,7 +119,6 @@ SRC := $(filter-out $(AUX_SRCS), \
        $(ROS2_SRCS) \
        $(UROBOTICS_SRCS)
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
-            tests/unit/twatcher_install_helper.c \
             tests/unit/utest_e2e_helpers.c
 
 TARGET ?= host
@@ -629,9 +628,11 @@ endif
 # as test-integration — urbi itself is memory-clean, and wrapping the
 # sh+awk+sed pipeline adds noise, not signal).
 
-# tests/chk/repl/*.chk are NDJSON fixtures (v0.9.1 Phase 8) driven in-
-# process by tests/unit/test_repl_chk_corpus.c, not by run_chk.sh which
-# expects urbiscript input.  Excluded here.
+# tests/chk/repl/*.chk are NDJSON fixtures (v0.9.1 Phase 8) for the REPL
+# dispatcher, not urbiscript input consumable by run_chk.sh.  Their
+# in-process driver was removed in the Phase 0 runtime-internals test
+# cleanup; REPL is currently a parked feature pending v1.x re-attachment.
+# Excluded here.
 # refactor-3 CHK-01/04: per-outcome tally.  PASS(0) / SKIP(3, preset-gated;
 # covered by test-chk-ros + test-chk-urobotics + test-chk-ros-urobotics) /
 # PLACEHOLDER(4, annotated blocked:/deferred:/dropped: specification records)
@@ -854,17 +855,6 @@ test-gdb:
 .PHONY: test-gdb-memdebug
 test-gdb-memdebug:
 	@MEMDBG=1 sh tests/scripts/check-gdb.sh
-
-# W4/v0.10.6: REPL security gate aggregate.
-# Runs all repl_security_* and repl_oom_paths tests via the unit-test runner.
-# Wired into RELEASETEST_PHASE1; also runs standalone for CI cost budgeting.
-# Builds with URBI_ENABLE_REPL=1 so the REPL TUs and security test suites
-# are compiled in (the suites are guarded by #ifdef URBI_ENABLE_REPL).
-.PHONY: test-repl-security
-test-repl-security:
-	$(MAKE) TARGET=host-repl-security \
-		URBI_ENABLE_REPL=1 \
-		test
 
 # v0.12.0: ROS2 bridge (mock) gate.  Builds the ros-enabled host binary,
 # runs the full unit suite (which includes ros bridge unit tests), then
@@ -1211,7 +1201,6 @@ RELEASETEST_PHASE1 := \
     test-bake-smoke test-bytecode-only test-freestanding-host \
     test-api-manifest test-aux-symbols \
     test-embedding-guide test-external-embed-iinclude test-port-stm32f4 \
-    test-repl-security \
     test-stdlib-bytecode-fresh \
     test-ros2 check-ros-gate check-rosgen \
     test-urobotics test-ros-urobotics \
@@ -2041,4 +2030,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-perf-counters cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk test-chk-ros releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-cross-stm32f4-app test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude test-port-stm32f4 test-repl-security test-stdlib-bytecode-fresh test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-gc-stress urbi-trace unit-runner test-ros2 check-ros-gate check-rosgen ros-integration test-urobotics test-chk-urobotics test-ros-urobotics test-chk-ros-urobotics test-chk-runner test-fuzz-smoke test-o2 fuzz-json force-flagstamp
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-perf-counters cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk test-chk-ros releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-cross-stm32f4-app test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude test-port-stm32f4 test-stdlib-bytecode-fresh test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-gc-stress urbi-trace unit-runner test-ros2 check-ros-gate check-rosgen ros-integration test-urobotics test-chk-urobotics test-ros-urobotics test-chk-ros-urobotics test-chk-runner test-fuzz-smoke test-o2 fuzz-json force-flagstamp

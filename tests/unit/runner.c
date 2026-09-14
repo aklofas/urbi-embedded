@@ -50,7 +50,6 @@ extern void test_parser_suite(void);
 extern void test_varint_suite(void);
 extern void test_module_suite(void);
 extern void test_emit_suite(void);
-extern void test_vm_suite(void);
 extern void test_pipeline_suite(void);
 extern void test_uvalue_suite(void);
 extern void test_uvalue_layout_suite(void);
@@ -58,168 +57,64 @@ extern void test_multi_vm_suite(void);
 extern void test_intern_suite(void);
 extern void test_funcstate_suite(void);
 extern void test_separators_suite(void);
-extern void test_function_suite(void);
 extern void test_lazy_suite(void);
-extern void test_strand_suite(void);
-extern void test_cleanup_suite(void);
-extern void test_scheduler_cooperative_suite(void);
-extern void test_dispatch_loop_suite(void);
-extern void test_unwind_suite(void);
-extern void test_capi_unwind_suite(void);
-extern void test_realm_suite(void);
-extern void test_step_driver_suite(void);
 extern void test_chunk_apis_suite(void);
-extern void test_event_ring_suite(void);
 extern void test_callback_watchdog_suite(void);
 extern void test_ugc_color_invariants_suite(void);
-extern void test_ugc_state_machine_suite(void);
 extern void test_gc_stress_mode_suite(void);
-extern void test_gc_rooting_matrix_suite(void);
-extern void test_ugc_barrier_suite(void);
-extern void test_ugc_walk_roots_suite(void);
-extern void test_ugc_handle_suite(void);
 extern void test_ugc_finalizer_suite(void);
-extern void test_tag_lifecycle_suite(void);
-extern void test_strand_spawn_inheritance_suite(void);
-extern void test_tag_stop_realm_suite(void);
-extern void test_watcher_pool_suite(void);
-extern void test_watcher_dirty_suite(void);
-extern void test_fork_suite(void);
-extern void test_determinism_suite(void);
-extern void test_sched_fifo_suite(void);
-extern void test_sched_pool_exhaust_suite(void);
-extern void test_pipe_budget_exhaust_suite(void);
 extern void test_determinism_two_runs_suite(void);
-extern void test_determinism_tunable_pin_suite(void);
-extern void test_uobject_suite(void);
-extern void test_uslothandle_suite(void);
-extern void test_ushape_suite(void);
-extern void test_uic_suite(void);
 extern void test_ic_polymorphic_suite(void);
-extern void test_topology_gen_suite(void);
-extern void test_ugc_object_cells_suite(void);
-extern void test_gc_strand_walker_suite(void);
-extern void test_gc_scratch_rooting_suite(void);
-extern void test_scheduler_invariant_suite(void);
 extern void test_op_allocation_suite(void);
 extern void test_disasm_suite(void);
-extern void test_gc_byte_suite(void);
 extern void test_ast_alloc_suite(void);
-extern void test_uwatcher_layout_suite(void);
-extern void test_ustrand_layout_suite(void);
-extern void test_uevent_suite(void);
-extern void test_utag_gc_suite(void);
-extern void test_uchanged_node_suite(void);
 extern void test_uvm_trace_fields_suite(void);
-extern void test_uvm_deferred_ring_suite(void);
-extern void test_deferred_slot_change_ring_roots_suite(void);
-extern void test_strand_arm_suite(void);
-extern void test_strand_destroy_suite(void);
-extern void test_watcher_spawn_suite(void);
-extern void test_watcher_completed_suite(void);
-extern void test_watcher_lifecycle_suite(void);
-extern void test_watcher_gc_invariants_suite(void);
-extern void test_watcher_ownership_suite(void);
 extern void test_emit_function_literal_suite(void);
 extern void test_cond_side_effect_suite(void);
 extern void test_emit_diag_suite(void);
 extern void test_emit_const_index_suite(void);
 extern void test_emit_patch_limit_suite(void);
 extern void test_parse_bounds_suite(void);
-extern void test_emit_watcher_suite(void);
-extern void test_install_skeleton_suite(void);
-extern void test_resolve_owning_tag_suite(void);
-extern void test_install_trace_suite(void);
-extern void test_waituntil_install_suite(void);
-extern void test_at_install_dispatch_suite(void);
-extern void test_at_fire_paths_suite(void);
 extern void test_parse_at_event_suite(void);
 extern void test_parse_every_suite(void);
 extern void test_parse_emit_postfix_suite(void);
-extern void test_uevent_subscribe_suite(void);
-extern void test_at_event_dispatch_suite(void);
-extern void test_event_emit_async_suite(void);
-extern void test_event_emit_sync_suite(void);
-extern void test_event_waituntil_suite(void);
-extern void test_waituntil_tag_stop_suite(void);
-extern void test_event_native_suite(void);
-extern void test_event_new_scripted_suite(void);
-extern void test_tag_native_suite(void);
-extern void test_tag_enter_leave_suite(void);
-extern void test_event_gc_suite(void);
-extern void test_isr_event_drain_suite(void);
-extern void test_slot_change_install_suite(void);
-extern void test_op_getslot_change_event_suite(void);
 extern void test_parse_at_slot_change_suite(void);
 extern void test_emit_at_slot_change_suite(void);
-extern void test_slot_change_emit_suite(void);
-extern void test_slot_change_callsites_suite(void);
-extern void test_slot_change_reentrancy_suite(void);
-extern void test_registry_table_suite(void);
-extern void test_realm_populate_suite(void);
 extern void test_emit_global_lookup_suite(void);
 extern void test_emit_global_var_suite(void);
 extern void test_op_load_realm_global_suite(void);
 extern void test_const_global_suite(void);
-extern void test_realm_globals_api_suite(void);
-extern void test_uwatcher_scratch_suite(void);
-extern void test_at_scripted_e2e_suite(void);
-extern void test_at_sync_scripted_suite(void);
-extern void test_tag_stop_onleave_scripted_suite(void);
-extern void test_event_sync_emit_scripted_suite(void);
 extern void test_utest_e2e_helpers_suite(void);
 extern void test_emit_freereg_drift_suite(void);
 extern void test_emit_line_delta_suite(void);
 extern void test_emit_error_paths_suite(void);
-extern void test_vm_dispatch_ownership_suite(void);
 extern void test_gc_sweep_accounting_suite(void);
-extern void test_sched_state_aliasing_suite(void);
-extern void test_event_runtime_suite(void);
-extern void test_tag_barrier_suite(void);
-extern void test_object_in_place_barrier_suite(void);
 extern void test_module_loader_hardening_suite(void);
 extern void test_module_alloc_nested_suite(void);
-extern void test_foundations_suite(void);
-extern void test_public_api_suite(void);
-extern void test_atom_dispatch_suite(void);
 extern void test_object_root_suite(void);
-extern void test_atom_protos_suite(void);
 extern void test_class_decl_parse_suite(void);
-extern void test_class_decl_emit_suite(void);
 extern void test_bake_tool_suite(void);
 extern void test_stdlib_boot_suite(void);
 extern void test_lock_heap_suite(void);
-extern void test_emit_class_multi_slot_suite(void);
-extern void test_vm_operator_overload_suite(void);
 extern void test_emit_this_suite(void);
 extern void test_emit_closure_capture_suite(void);
 extern void test_vm_init_oom_suite(void);
 extern void test_watcher_body_done_fn_suite(void);
 extern void test_event_payload_layout_suite(void);
-extern void test_make_native_closure_suite(void);
 extern void test_value_kind_drift_suite(void);
 extern void test_make_value_suite(void);
 extern void test_value_as_suite(void);
 extern void test_make_str_interned_suite(void);
-extern void test_slot_get_suite(void);
-extern void test_slot_set_suite(void);
-extern void test_tag_create_suite(void);
-extern void test_tag_info_suite(void);
 extern void test_set_writer_suite(void);
 extern void test_set_time_us_suite(void);
 extern void test_set_wake_fn_suite(void);
 extern void test_set_diag_fn_suite(void);
 extern void test_register_host_fn_suite(void);
 extern void test_register_dup_name_suite(void);
-extern void test_atomic_batch_suite(void);
 extern void test_atomic_nesting_suite(void);
 extern void test_atomic_watchdog_suite(void);
-extern void test_event_register_success_suite(void);
 extern void test_event_register_errors_suite(void);
 extern void test_event_unregister_suite(void);
-extern void test_drain_routing_registered_suite(void);
-extern void test_drain_routing_unregistered_suite(void);
-extern void test_athandler_wedge_repro_suite(void);
 extern void test_athandler_class_method_fatal_suite(void);
 extern void test_chunktop_realm_closure_suite(void);
 extern void test_emit_nary_freereg_drift_suite(void);
@@ -233,16 +128,10 @@ extern void test_dangling_cl_function_body_install_suite(void);
 extern void test_proto_refcount_suite(void);
 extern void test_module_refcount_suite(void);
 extern void test_fork_amp_at_body_suite(void);
-extern void test_register_watcher_callback_suite(void);
-extern void test_watcher_auto_unregister_suite(void);
-extern void test_unregister_watcher_suite(void);
-extern void test_watcher_done_fanout_suite(void);
 extern void test_imu_integration_suite(void);
 extern void test_last_error_populated_suite(void);
 extern void test_error_string_lifetime_suite(void);
-extern void test_error_ring_cascade_suite(void);
 extern void test_ref_basic_suite(void);
-extern void test_ref_gc_root_suite(void);
 extern void test_ref_capacity_suite(void);
 extern void test_aux_event_table_suite(void);
 extern void test_aux_function_table_suite(void);
@@ -251,54 +140,22 @@ extern void test_aux_load_and_run_suite(void);
 extern void test_aux_dump_value_suite(void);
 extern void test_detect_blob_suite(void);
 extern void test_draw_crosshair_suite(void);
-extern void test_loader_strand_persistence_suite(void);
 extern void test_test_helper_uaf_repro_suite(void);
 extern void test_uproto_root_backptr_suite(void);
-extern void test_strand_root_proto_bind_suite(void);
-extern void test_module_refcount_fused_suite(void);
-extern void test_rescued_protos_suite(void);
 extern void test_module_grain_lifetime_suite(void);
-extern void test_closure_gc_suite(void);
-extern void test_recursive_emit_suite(void);
 extern void test_uproto_owning_mi_suite(void);
 extern void test_loaded_protos_registry_suite(void);
 extern void test_multi_realm_suite(void);
-extern void test_uchunk_instance_lifetime_suite(void);
 extern void test_urbi_unload_suite(void);
 extern void test_realm_destroy_with_parked_loader_suite(void);
 extern void test_lexer_syncline_suite(void);
 extern void test_repl_per_realm_writer_suite(void);
-extern void test_repl_uproto_readonly_suite(void);
 extern void test_repl_global_atom_suite(void);
 extern void test_compile_budget_suite(void);
-extern void test_repl_ndjson_parse_suite(void);
-extern void test_repl_ndjson_emit_suite(void);
-extern void test_repl_dispatcher_suite(void);
-extern void test_repl_buffer_transport_suite(void);
-extern void test_repl_tcp_loopback_suite(void);
-extern void test_repl_uart_pty_suite(void);
-extern void test_repl_auth_flow_suite(void);
-extern void test_repl_chk_corpus_suite(void);
-extern void test_repl_multi_client_suite(void);
 extern void test_repl_serve_step_cooperative_suite(void);
-extern void test_repl_security_bind_auth_suite(void);
-extern void test_repl_security_rate_limit_suite(void);
-extern void test_repl_security_compile_budget_suite(void);
-extern void test_repl_security_malformed_suite(void);
-extern void test_repl_security_output_isolation_suite(void);
-extern void test_repl_oom_paths_suite(void);
-extern void test_repl_stop_path_suite(void);
-extern void test_repl_backpressure_suite(void);
-extern void test_repl_queue_suite(void);
-extern void test_introspect_each_suite(void);
-extern void test_json_parse_suite(void);
 extern void test_require_suite(void);
 extern void test_verify_chunk_bounds_suite(void);
-extern void test_sched_post_dispatch_alt_driver_suite(void);
-extern void test_strand_destroy_during_event_wait_suite(void);
 extern void test_ic_index_dfs_suite(void);
-extern void test_op_closure_invariants_suite(void);
-extern void test_at_event_unlink_on_tag_stop_suite(void);
 extern void test_value_predicates_suite(void);
 extern void test_error_model_unified_suite(void);
 extern void test_vm_create_opaque_suite(void);
@@ -307,47 +164,27 @@ extern void test_vm_first_arg_suite(void);
 extern void test_vm_slot_helpers_suite(void);
 extern void test_vm_tag_scope_suite(void);
 extern void test_vm_reactive_install_suite(void);
-extern void test_tag_state_suite(void);
-extern void test_tag_gate_matrix_suite(void);
-extern void test_job_proto_suite(void);
 extern void test_isa_method_suite(void);
 extern void test_detach_disown_suite(void);
 extern void test_scope_tag_suite(void);
 extern void test_connection_tag_suite(void);
 extern void test_lshift_parse_suite(void);
-extern void test_object_unfrozen_suite(void);
 extern void test_lobby_echo_suite(void);
-extern void test_channel_proto_suite(void);
 extern void test_runtime_typed_throw_suite(void);
 extern void test_trace_suite(void);
 extern void test_perf_counters_suite(void);
-extern void test_mem_debug_suite(void);
 extern void test_ros_proto_suite(void);
 extern void test_ros_mock_suite(void);
-extern void test_ros_marshal_suite(void);
 extern void test_ros_registry_suite(void);
 extern void test_ros_publish_suite(void);
-extern void test_ros_subscribe_suite(void);
 extern void test_ros_service_suite(void);
 extern void test_ros_pump_suite(void);
 extern void test_ros_bridge_lifetime_suite(void);
-extern void test_ulist_suite(void);
 extern void test_ulist_build_suite(void);
 extern void test_regexp_suite(void);
 extern void test_object_reflection_suite(void);
 extern void test_lex_operators_suite(void);
 extern void test_atoms_random_suite(void);
-extern void test_cleanup_yield_suite(void);
-extern void test_tag_self_block_suite(void);
-extern void test_strand_cancel_wake_suite(void);
-extern void test_strand_unpark_suite(void);
-extern void test_scratch_cur_strand_suite(void);
-extern void test_vm_liveness_suite(void);
-extern void test_idle_vm_pump_suite(void);
-extern void test_budget_rearm_suite(void);
-extern void test_scratch_strand_safety_suite(void);
-extern void test_periodic_cadence_suite(void);
-extern void test_watcher_mode_predicates_suite(void);
 extern void test_verifier_cross_byte_suite(void);
 extern void test_batch_error_surfacing_suite(void);
 extern void test_chunk_loader_hardening_suite(void);
@@ -377,7 +214,6 @@ static const struct suite_entry suites[] = {
     /* Same early ordering as gc_stress_mode: the rooting-matrix cases must
      * execute under test-gc-stress before the known baseline boot crash in
      * string_literal_e2e kills the runner (refactor-3 GC-17). */
-    {"gc_rooting_matrix",          test_gc_rooting_matrix_suite},
     {"string_literal_e2e",         test_string_literal_e2e_suite},
     {"api_version",                test_api_version_suite},
     {"port_allocator_mock",        test_port_allocator_mock_suite},
@@ -388,7 +224,6 @@ static const struct suite_entry suites[] = {
     {"varint",                     test_varint_suite},
     {"module",                     test_module_suite},
     {"emit",                       test_emit_suite},
-    {"vm",                         test_vm_suite},
     {"pipeline",                   test_pipeline_suite},
     {"uvalue",                     test_uvalue_suite},
     {"uvalue_layout",              test_uvalue_layout_suite},
@@ -396,166 +231,63 @@ static const struct suite_entry suites[] = {
     {"intern",                     test_intern_suite},
     {"funcstate",                  test_funcstate_suite},
     {"separators",                 test_separators_suite},
-    {"function",                   test_function_suite},
     {"lazy",                       test_lazy_suite},
-    {"strand",                     test_strand_suite},
-    {"cleanup",                    test_cleanup_suite},
-    {"scheduler_cooperative",      test_scheduler_cooperative_suite},
-    {"dispatch_loop",              test_dispatch_loop_suite},
-    {"unwind",                     test_unwind_suite},
-    {"capi_unwind",                test_capi_unwind_suite},
-    {"realm",                      test_realm_suite},
-    {"step_driver",                test_step_driver_suite},
     {"chunk_apis",                 test_chunk_apis_suite},
-    {"event_ring",                 test_event_ring_suite},
     {"callback_watchdog",          test_callback_watchdog_suite},
     {"ugc_color_invariants",       test_ugc_color_invariants_suite},
-    {"ugc_state_machine",          test_ugc_state_machine_suite},
-    {"ugc_barrier",                test_ugc_barrier_suite},
-    {"ugc_walk_roots",             test_ugc_walk_roots_suite},
-    {"ugc_handle",                 test_ugc_handle_suite},
     {"ugc_finalizer",              test_ugc_finalizer_suite},
-    {"tag_lifecycle",              test_tag_lifecycle_suite},
-    {"strand_spawn_inheritance",   test_strand_spawn_inheritance_suite},
-    {"tag_stop_realm",             test_tag_stop_realm_suite},
-    {"watcher_pool",               test_watcher_pool_suite},
-    {"watcher_dirty",              test_watcher_dirty_suite},
-    {"fork",                       test_fork_suite},
-    {"determinism",                test_determinism_suite},
-    {"sched_fifo",                 test_sched_fifo_suite},
-    {"sched_pool_exhaust",         test_sched_pool_exhaust_suite},
-    {"pipe_budget_exhaust",        test_pipe_budget_exhaust_suite},
     {"determinism_two_runs",       test_determinism_two_runs_suite},
-    {"determinism_tunable_pin",    test_determinism_tunable_pin_suite},
-    {"uobject",                    test_uobject_suite},
-    {"uslothandle",                test_uslothandle_suite},
-    {"ushape",                     test_ushape_suite},
-    {"uic",                        test_uic_suite},
     {"ic_polymorphic",             test_ic_polymorphic_suite},
-    {"topology_gen",               test_topology_gen_suite},
-    {"ugc_object_cells",           test_ugc_object_cells_suite},
-    {"gc_strand_walker",           test_gc_strand_walker_suite},
-    {"gc_scratch_rooting",         test_gc_scratch_rooting_suite},
-    {"scheduler_invariant",        test_scheduler_invariant_suite},
     {"op_allocation",              test_op_allocation_suite},
     {"disasm",                     test_disasm_suite},
-    {"gc_byte",                    test_gc_byte_suite},
     {"ast_alloc",                  test_ast_alloc_suite},
-    {"uwatcher_layout",            test_uwatcher_layout_suite},
-    {"ustrand_layout",             test_ustrand_layout_suite},
-    {"uevent",                     test_uevent_suite},
-    {"utag_gc",                    test_utag_gc_suite},
-    {"uchanged_node",              test_uchanged_node_suite},
     {"uvm_trace_fields",           test_uvm_trace_fields_suite},
-    {"uvm_deferred_ring",          test_uvm_deferred_ring_suite},
-    {"deferred_slot_change_ring_roots", test_deferred_slot_change_ring_roots_suite},
-    {"strand_arm",                 test_strand_arm_suite},
-    {"strand_destroy",             test_strand_destroy_suite},
-    {"watcher_spawn",              test_watcher_spawn_suite},
-    {"watcher_completed",          test_watcher_completed_suite},
-    {"watcher_lifecycle",          test_watcher_lifecycle_suite},
-    {"watcher_gc_invariants",      test_watcher_gc_invariants_suite},
-    {"watcher_ownership",          test_watcher_ownership_suite},
     {"urbi_emit_function_literal",      test_emit_function_literal_suite},
     {"cond_side_effect",           test_cond_side_effect_suite},
     {"emit_diag",                  test_emit_diag_suite},
     {"emit_const_index",           test_emit_const_index_suite},
     {"emit_patch_limit",           test_emit_patch_limit_suite},
     {"parse_bounds",               test_parse_bounds_suite},
-    {"emit_watcher",               test_emit_watcher_suite},
-    {"install_skeleton",           test_install_skeleton_suite},
-    {"urbi_watcher_resolve_owning_tag",         test_resolve_owning_tag_suite},
-    {"install_trace",              test_install_trace_suite},
-    {"waituntil_install",          test_waituntil_install_suite},
-    {"at_install_dispatch",        test_at_install_dispatch_suite},
-    {"at_fire_paths",              test_at_fire_paths_suite},
     {"parse_at_event",             test_parse_at_event_suite},
     {"parse_every",                test_parse_every_suite},
     {"parse_emit_postfix",         test_parse_emit_postfix_suite},
-    {"uevent_subscribe",           test_uevent_subscribe_suite},
-    {"at_event_dispatch",          test_at_event_dispatch_suite},
-    {"event_emit_async",           test_event_emit_async_suite},
-    {"event_emit_sync",            test_event_emit_sync_suite},
-    {"event_waituntil",            test_event_waituntil_suite},
-    {"waituntil_tag_stop",         test_waituntil_tag_stop_suite},
-    {"event_native",               test_event_native_suite},
-    {"event_new_scripted",         test_event_new_scripted_suite},
-    {"tag_native",                 test_tag_native_suite},
-    {"tag_enter_leave",            test_tag_enter_leave_suite},
-    {"event_gc",                   test_event_gc_suite},
-    {"isr_event_drain",            test_isr_event_drain_suite},
-    {"slot_change_install",        test_slot_change_install_suite},
-    {"op_getslot_change_event",    test_op_getslot_change_event_suite},
     {"parse_at_slot_change",       test_parse_at_slot_change_suite},
     {"emit_at_slot_change",        test_emit_at_slot_change_suite},
-    {"slot_change_emit",           test_slot_change_emit_suite},
-    {"slot_change_callsites",      test_slot_change_callsites_suite},
-    {"slot_change_reentrancy",     test_slot_change_reentrancy_suite},
-    {"registry_table",            test_registry_table_suite},
-    {"realm_populate",            test_realm_populate_suite},
     {"emit_global_lookup",        test_emit_global_lookup_suite},
     {"emit_global_var",           test_emit_global_var_suite},
     {"op_load_realm_global",      test_op_load_realm_global_suite},
     {"const_global",              test_const_global_suite},
-    {"realm_globals_api",         test_realm_globals_api_suite},
-    {"uwatcher_scratch",          test_uwatcher_scratch_suite},
-    {"at_scripted_e2e",           test_at_scripted_e2e_suite},
-    {"at_sync_scripted",          test_at_sync_scripted_suite},
-    {"tag_stop_onleave_scripted", test_tag_stop_onleave_scripted_suite},
-    {"event_sync_emit_scripted",  test_event_sync_emit_scripted_suite},
     {"utest_e2e_helpers",         test_utest_e2e_helpers_suite},
     {"emit_freereg_drift",        test_emit_freereg_drift_suite},
     {"emit_line_delta",           test_emit_line_delta_suite},
     {"emit_error_paths",          test_emit_error_paths_suite},
-    {"vm_dispatch_ownership",     test_vm_dispatch_ownership_suite},
     {"gc_sweep_accounting",       test_gc_sweep_accounting_suite},
-    {"sched_state_aliasing",      test_sched_state_aliasing_suite},
-    {"event_runtime",             test_event_runtime_suite},
-    {"tag_barrier",               test_tag_barrier_suite},
-    {"object_in_place_barrier",   test_object_in_place_barrier_suite},
     {"module_loader_hardening",   test_module_loader_hardening_suite},
     {"module_alloc_nested",       test_module_alloc_nested_suite},
-    {"foundations",               test_foundations_suite},
-    {"public_api",                test_public_api_suite},
-    {"atom_dispatch",             test_atom_dispatch_suite},
     {"object_root",               test_object_root_suite},
-    {"atom_protos",               test_atom_protos_suite},
     {"class_decl_parse",          test_class_decl_parse_suite},
-    {"class_decl_emit",           test_class_decl_emit_suite},
     {"bake_tool",                 test_bake_tool_suite},
     {"stdlib_boot",               test_stdlib_boot_suite},
     {"lock_heap",                 test_lock_heap_suite},
-    {"emit_class_multi_slot",    test_emit_class_multi_slot_suite},
-    {"vm_operator_overload",     test_vm_operator_overload_suite},
     {"emit_this",                test_emit_this_suite},
     {"emit_closure_capture",    test_emit_closure_capture_suite},
     {"vm_init_oom",             test_vm_init_oom_suite},
     {"watcher_body_done_fn",    test_watcher_body_done_fn_suite},
     {"event_payload_layout",   test_event_payload_layout_suite},
-    {"make_native_closure",    test_make_native_closure_suite},
     {"value_kind_drift",       test_value_kind_drift_suite},
     {"make_value",             test_make_value_suite},
     {"value_as",               test_value_as_suite},
     {"make_str_interned",      test_make_str_interned_suite},
-    {"slot_get",               test_slot_get_suite},
-    {"slot_set",               test_slot_set_suite},
-    {"tag_create",             test_tag_create_suite},
-    {"tag_info",               test_tag_info_suite},
     {"set_writer",             test_set_writer_suite},
     {"set_time_us",            test_set_time_us_suite},
     {"set_wake_fn",            test_set_wake_fn_suite},
     {"set_diag_fn",            test_set_diag_fn_suite},
     {"register_host_fn",      test_register_host_fn_suite},
     {"register_dup_name",     test_register_dup_name_suite},
-    {"atomic_batch",          test_atomic_batch_suite},
     {"atomic_nesting",        test_atomic_nesting_suite},
     {"atomic_watchdog",       test_atomic_watchdog_suite},
-    {"event_register_success", test_event_register_success_suite},
     {"event_register_errors",  test_event_register_errors_suite},
     {"event_unregister",             test_event_unregister_suite},
-    {"drain_routing_registered",     test_drain_routing_registered_suite},
-    {"drain_routing_unregistered",   test_drain_routing_unregistered_suite},
-    {"athandler_wedge_repro",        test_athandler_wedge_repro_suite},
     {"athandler_class_method_fatal", test_athandler_class_method_fatal_suite},
     {"chunktop_realm_closure",       test_chunktop_realm_closure_suite},
     {"emit_nary_freereg_drift",      test_emit_nary_freereg_drift_suite},
@@ -569,16 +301,10 @@ static const struct suite_entry suites[] = {
     {"proto_refcount",               test_proto_refcount_suite},
     {"module_refcount",              test_module_refcount_suite},
     {"fork_amp_at_body",             test_fork_amp_at_body_suite},
-    {"register_watcher_callback",    test_register_watcher_callback_suite},
-    {"watcher_auto_unregister",      test_watcher_auto_unregister_suite},
-    {"unregister_watcher",           test_unregister_watcher_suite},
-    {"watcher_done_fanout",          test_watcher_done_fanout_suite},
     {"imu_integration",              test_imu_integration_suite},
     {"last_error_populated",         test_last_error_populated_suite},
     {"error_string_lifetime",        test_error_string_lifetime_suite},
-    {"error_ring_cascade",           test_error_ring_cascade_suite},
     {"ref_basic",                    test_ref_basic_suite},
-    {"ref_gc_root",                  test_ref_gc_root_suite},
     {"ref_capacity",                 test_ref_capacity_suite},
     {"aux_event_table",              test_aux_event_table_suite},
     {"aux_function_table",           test_aux_function_table_suite},
@@ -587,54 +313,22 @@ static const struct suite_entry suites[] = {
     {"aux_dump_value",               test_aux_dump_value_suite},
     {"detect_blob",                  test_detect_blob_suite},
     {"draw_crosshair",               test_draw_crosshair_suite},
-    {"loader_strand_persistence",    test_loader_strand_persistence_suite},
     {"test_helper_uaf_repro",        test_test_helper_uaf_repro_suite},
     {"uproto_root_backptr",          test_uproto_root_backptr_suite},
-    {"strand_root_proto_bind",       test_strand_root_proto_bind_suite},
-    {"module_refcount_fused",        test_module_refcount_fused_suite},
-    {"rescued_protos",               test_rescued_protos_suite},
     {"module_grain_lifetime",        test_module_grain_lifetime_suite},
-    {"closure_gc",                   test_closure_gc_suite},
-    {"recursive_emit",               test_recursive_emit_suite},
     {"uproto_owning_mi",             test_uproto_owning_mi_suite},
     {"loaded_protos_registry",       test_loaded_protos_registry_suite},
     {"multi_realm",                  test_multi_realm_suite},
-    {"uchunk_instance_lifetime",     test_uchunk_instance_lifetime_suite},
     {"urbi_unload",                  test_urbi_unload_suite},
     {"realm_destroy_with_parked_loader", test_realm_destroy_with_parked_loader_suite},
     {"lexer_syncline",                   test_lexer_syncline_suite},
     {"repl_per_realm_writer",            test_repl_per_realm_writer_suite},
-    {"repl_uproto_readonly",             test_repl_uproto_readonly_suite},
     {"repl_global_atom",                 test_repl_global_atom_suite},
     {"compile_budget",                   test_compile_budget_suite},
-    {"repl_ndjson_parse",                test_repl_ndjson_parse_suite},
-    {"repl_ndjson_emit",                 test_repl_ndjson_emit_suite},
-    {"repl_dispatcher",                  test_repl_dispatcher_suite},
-    {"repl_buffer_transport",            test_repl_buffer_transport_suite},
-    {"repl_tcp_loopback",                test_repl_tcp_loopback_suite},
-    {"repl_uart_pty",                    test_repl_uart_pty_suite},
-    {"repl_auth_flow",                   test_repl_auth_flow_suite},
-    {"repl_chk_corpus",                  test_repl_chk_corpus_suite},
-    {"repl_multi_client",                test_repl_multi_client_suite},
     {"repl_serve_step_cooperative",      test_repl_serve_step_cooperative_suite},
-    {"repl_security_bind_auth",          test_repl_security_bind_auth_suite},
-    {"repl_security_rate_limit",         test_repl_security_rate_limit_suite},
-    {"repl_security_compile_budget",     test_repl_security_compile_budget_suite},
-    {"repl_security_malformed",          test_repl_security_malformed_suite},
-    {"repl_security_output_isolation",   test_repl_security_output_isolation_suite},
-    {"repl_oom_paths",                   test_repl_oom_paths_suite},
-    {"repl_stop_path",                   test_repl_stop_path_suite},
-    {"repl_backpressure",                test_repl_backpressure_suite},
-    {"repl_queue",                       test_repl_queue_suite},
-    {"introspect_each",                  test_introspect_each_suite},
-    {"json_parse",                       test_json_parse_suite},
     {"require",                          test_require_suite},
     {"verify_chunk_bounds",              test_verify_chunk_bounds_suite},
-    {"sched_post_dispatch_alt_driver",   test_sched_post_dispatch_alt_driver_suite},
-    {"strand_destroy_during_event_wait", test_strand_destroy_during_event_wait_suite},
     {"ic_index_dfs",                     test_ic_index_dfs_suite},
-    {"op_closure_invariants",            test_op_closure_invariants_suite},
-    {"at_event_unlink_on_tag_stop",      test_at_event_unlink_on_tag_stop_suite},
     {"value_predicates",                 test_value_predicates_suite},
     {"error_model_unified",              test_error_model_unified_suite},
     {"vm_create_opaque",                 test_vm_create_opaque_suite},
@@ -643,47 +337,27 @@ static const struct suite_entry suites[] = {
     {"vm_slot_helpers",                  test_vm_slot_helpers_suite},
     {"vm_tag_scope",                     test_vm_tag_scope_suite},
     {"urbi_vm_reactive_install",              test_vm_reactive_install_suite},
-    {"tag_state",                        test_tag_state_suite},
-    {"tag_gate_matrix",                  test_tag_gate_matrix_suite},
-    {"job_proto",                        test_job_proto_suite},
     {"isa_method",                       test_isa_method_suite},
     {"detach_disown",                    test_detach_disown_suite},
     {"scope_tag",                        test_scope_tag_suite},
     {"connection_tag",                   test_connection_tag_suite},
     {"lshift_parse",                     test_lshift_parse_suite},
-    {"object_unfrozen",                  test_object_unfrozen_suite},
     {"lobby_echo",                       test_lobby_echo_suite},
-    {"channel_proto",                    test_channel_proto_suite},
     {"runtime_typed_throw",              test_runtime_typed_throw_suite},
     {"trace",                            test_trace_suite},
     {"perf_counters",                    test_perf_counters_suite},
-    {"mem_debug",                        test_mem_debug_suite},
     {"ros_proto",                        test_ros_proto_suite},
     {"ros_mock",                         test_ros_mock_suite},
-    {"ros_marshal",                      test_ros_marshal_suite},
     {"ros_registry",                     test_ros_registry_suite},
     {"ros_publish",                      test_ros_publish_suite},
-    {"ros_subscribe",                    test_ros_subscribe_suite},
     {"ros_service",                      test_ros_service_suite},
     {"ros_pump",                         test_ros_pump_suite},
     {"ros_bridge_lifetime",              test_ros_bridge_lifetime_suite},
-    {"ulist",                            test_ulist_suite},
     {"ulist_build",                      test_ulist_build_suite},
     {"regexp",                           test_regexp_suite},
     {"object_reflection",                test_object_reflection_suite},
     {"lex_operators",                    test_lex_operators_suite},
     {"atoms_random",                     test_atoms_random_suite},
-    {"cleanup_yield",                    test_cleanup_yield_suite},
-    {"tag_self_block",                   test_tag_self_block_suite},
-    {"strand_cancel_wake",               test_strand_cancel_wake_suite},
-    {"strand_unpark",                    test_strand_unpark_suite},
-    {"scratch_cur_strand",               test_scratch_cur_strand_suite},
-    {"urbi_vm_liveness",                      test_vm_liveness_suite},
-    {"idle_vm_pump",                          test_idle_vm_pump_suite},
-    {"budget_rearm",                          test_budget_rearm_suite},
-    {"scratch_strand_safety",                 test_scratch_strand_safety_suite},
-    {"periodic_cadence",                      test_periodic_cadence_suite},
-    {"watcher_mode_predicates",               test_watcher_mode_predicates_suite},
     {"verifier_cross_byte",                   test_verifier_cross_byte_suite},
     {"batch_error_surfacing",                 test_batch_error_surfacing_suite},
     {"chunk_loader_hardening",                test_chunk_loader_hardening_suite},

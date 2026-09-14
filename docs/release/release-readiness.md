@@ -78,12 +78,14 @@ STM32H7 and ESP32-C3 are deferred to v1.x; not in the v1.0 hardware-support clai
 
 | Bar | Status | Evidence | Owner / blocker |
 |---|---|---|---|
-| Multi-client teardown stress | **default CI (W1)** | `tests/unit/test_repl_multi_client.c` — 100 trials, 4 concurrent sessions | **passing-evidence** — single-owner teardown model; `repl-multi-client-stress` CI job; race closed at v0.10.6 |
-| Non-loopback bind requires token | **enforced (W4)** | `tests/unit/test_repl_security_bind_auth.c` | **passing-evidence** — `urepl_create` rejects `URBI_ERR_INVALID_CONFIG` on non-loopback + no token |
-| Rate limit per source | **enforced (W4)** | `tests/unit/test_repl_security_rate_limit.c` | **passing-evidence** — per-source token bucket via `UReplConfig.rate_limit_per_second` |
-| Compile-budget enforcement | yes | `docs/internals/repl-service.md` | **passing-evidence** — `urbi_realm_set_compile_budget`; `test_repl_security_compile_budget` test |
-| Malformed NDJSON tolerance | **tested (W4)** | `tests/unit/test_repl_security_malformed.c` | **passing-evidence** — explicit `{"error":"malformed_ndjson"}` response; no crash under ASan |
-| Per-session output isolation | yes | `docs/internals/repl-service.md` | **passing-evidence** — per-realm writer model; `test_repl_security_output_isolation` test |
+| Compile-budget enforcement | yes | `docs/internals/repl-service.md` | **passing-evidence** — `urbi_realm_set_compile_budget` |
+| Per-session output isolation | yes | `docs/internals/repl-service.md` | **passing-evidence** — per-realm writer model |
+
+REPL is currently a parked feature (Phase 0 runtime-internals test cleanup
+removed the dedicated multi-client-stress and security-gate unit suites,
+along with the `repl-multi-client-stress` / `repl-security` CI jobs); the
+bars above reflect the remaining evidence, and the rest are unverified
+by automation pending v1.x re-attachment.
 
 ## Reactive runtime
 

@@ -21,7 +21,6 @@ make test
 
 - Host build variants: `test`, `test-asan`, `test-ubsan`, `test-debug`, `test-switch`
 - Static analysis: `lint`, `test-cppcheck`, `test-tidy-strict`, `test-scan-build`
-- REPL security: `test-repl-security`
 - Freshness: `test-stdlib-bytecode-fresh`
 - Docs: `docs-check`
 - Coverage: `coverage` (`--fail-under-line 85` hard gate in Phase 1; see Makefile `coverage` target. GitHub Actions runs the same target with `continue-on-error: true` so a regression does not block CI on already-merged code, but pre-tag `make releasetest` hard-fails. Condition coverage is not measured — v1.x target.)
