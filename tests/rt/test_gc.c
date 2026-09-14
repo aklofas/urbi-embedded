@@ -137,11 +137,12 @@ static void gray_overflow_all_survive(void) {
      * starts, so roughly a third of the parents -- and, only via the
      * fallback rescan, their children -- are found after the main drain. */
     struct UVM vm; UCell *roots[100] = { NULL };
-    ugc_init(&vm.gc, capped_alloc, NULL);
-    vm.gc.hooks.mark_fixed = fake_mark_fixed;
+    fakevm_init(&vm, roots, 100);
+    /* Swap the allocator in after the string table is up: capped_alloc
+     * rejects anything larger than one full gray array, which is exactly
+     * the size of the initial bucket array, so ordering matters. */
+    vm.gc.alloc = capped_alloc;
     vm.gc.hooks.trace = linked_trace;
-    vm.gc.hooks.finalize = fake_finalize;
-    vm.roots = roots; vm.nroots = 100;
     for (int i = 0; i < 100; i++) {
         LinkedCell *parent = (LinkedCell *)ugc_alloc(&vm, UCELL_HOST, sizeof(LinkedCell));
         RT_CHECK(parent != NULL);
@@ -156,7 +157,7 @@ static void gray_overflow_all_survive(void) {
     }
     ugc_collect(&vm);
     RT_EQ(vm.gc.cells_live, 200u);
-    ugc_destroy(&vm);
+    fakevm_destroy(&vm);
 }
 RT_SUITE(rt_gc_suite) {
     rt_run("alloc_and_collect_unrooted", alloc_and_collect_unrooted);

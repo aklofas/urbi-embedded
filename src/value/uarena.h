@@ -16,7 +16,7 @@ typedef struct UArenaChunk UArenaChunk;
 
 /* Pluggable backing allocator signatures.
    alloc returns NULL on failure. free must accept NULL as a no-op. */
-typedef void *(*UAllocFn)(size_t nbytes, void *ud);
+typedef void *(*UArenaAllocFn)(size_t nbytes, void *ud);
 typedef void  (*UFreeFn)(void *ptr, void *ud);
 
 /*
@@ -37,7 +37,7 @@ typedef struct {
     UArenaChunk *head;      /* current chunk — allocations go here */
     UArenaChunk *first;     /* list head for reset / destroy */
     size_t chunk_size;     /* new-chunk default; 0 in static-buffer mode */
-    UAllocFn alloc_fn;     /* NULL in static-buffer mode */
+    UArenaAllocFn alloc_fn;     /* NULL in static-buffer mode */
     UFreeFn  free_fn;      /* NULL in static-buffer mode */
     void *alloc_ud;        /* userdata passed to alloc_fn / free_fn */
     bool oom;              /* sticky OOM flag */
@@ -55,7 +55,7 @@ void uarena_init(UArena *a, size_t chunk_size);
 /* Initialize with a caller-supplied allocator pair.
    chunk_size == 0 selects the default (4096). */
 void uarena_init_ex(UArena *a, size_t chunk_size,
-                    UAllocFn alloc, UFreeFn free_fn, void *ud);
+                    UArenaAllocFn alloc, UFreeFn free_fn, void *ud);
 
 /* Initialize with a fixed caller-owned buffer.  No dynamic allocation
    is ever performed.  OOM fires when the buffer is exhausted.

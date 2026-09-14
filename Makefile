@@ -111,29 +111,36 @@ else
   UROBOTICS_SRCS :=
 endif
 
-SRC := $(filter-out $(AUX_SRCS), \
-       $(wildcard src/*.c)) \
+# refound/core (Task 8, ruling P2): the old runtime core has left the
+# default build.  liburbi.a is now exactly two things:
+#
+#   FRONTEND_SRCS — the kept compiler frontend (lexer, parser, emitter,
+#                   chunk loader/verifier/disassembler) plus the two
+#                   src/value/ helpers it still needs (the arena and the
+#                   varint codec).  src/value/uintern.c is NOT built: the
+#                   intern seam is implemented in src/emit/ufront.c over
+#                   the new core's USym table.
+#   RT_SRCS       — the new runtime core under src/rt/.
+#
+# Everything else (src/vm, src/sched, src/gc, src/object, src/realm,
+# src/watcher, src/event, src/tag, src/changed, src/runtime, src/repl,
+# src/stdlib, src/urbi.c, src/urbi_aux.c) stays in the tree for reference
+# and is deleted wholesale by the clean-up task.  src/stdlib/ re-attaches
+# to the new core with the boot table.
+FRONTEND_SRCS := \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/lex/*.c)) \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/parse/*.c)) \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/emit/*.c)) \
-       $(wildcard src/vm/*.c) \
-       $(wildcard src/gc/*.c) \
-       $(wildcard src/sched/*.c) \
-       $(wildcard src/watcher/*.c) \
-       $(wildcard src/event/*.c) \
-       $(wildcard src/tag/*.c) \
-       $(wildcard src/changed/*.c) \
-       $(wildcard src/chunk/*.c) \
-       $(wildcard src/value/*.c) \
-       $(filter-out $(RUNTIME_PARKED_SRCS),$(wildcard src/runtime/*.c)) \
-       $(wildcard src/realm/*.c) \
-       $(wildcard src/object/*.c) \
-       $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(wildcard src/stdlib/*.c)) \
-       $(REPL_SRCS) \
-       $(ROS2_SRCS) \
-       $(UROBOTICS_SRCS)
-TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
-            tests/unit/utest_e2e_helpers.c
+       src/chunk/uchunk_io.c \
+       src/chunk/uchunk_verify.c \
+       src/chunk/uopcode_shape.c \
+       src/chunk/uproto_ref.c \
+       src/runtime/urequire.c \
+       src/value/uarena.c \
+       src/value/uvarint.c
+
+SRC := $(FRONTEND_SRCS) $(wildcard src/rt/*.c)
+TEST_SRC :=
 
 TARGET ?= host
 BUILDDIR := build/$(TARGET)
@@ -152,48 +159,20 @@ ifeq ($(TARGET),host)
   endif
 endif
 
-# Stdlib bytecode flavor selection.  The tracked
-# src/stdlib/urbi_stdlib_bytecode.gen.c is host-baked at f64.  Float is now
-# fixed at f64/double for every target (the old per-target f32 flavor has
-# been retired — see include/urbi/types.h), so a per-target rebake no
-# longer changes the baked bytes; URBI_STDLIB_FLAVOR / the tools/urbi-
-# compile-stdlib-f% bake-tool variants are kept only for external build
-# scripts (examples/stm32f4, examples/pico) that still name a flavor by
-# number.
-#
-# Default (URBI_STDLIB_FLAVOR unset, e.g. host build): use the tracked .gen.c.
-# Cross builds opt in by setting URBI_STDLIB_FLAVOR=N.  The cross-*
-# convenience targets that used to pass this automatically are parked
-# (refound/core); an embedder driving their own cross toolchain sets
-# URBI_STDLIB_FLAVOR=N on the command line directly.
-#
-# Bytecode-only targets never rebake — they only verify the freestanding
-# symbol contract, the bake tool isn't built under URBI_BYTECODE_ONLY=1, and
-# the f64 .gen.c is harmless data in that build.
-ifeq ($(URBI_BYTECODE_ONLY),1)
-  override URBI_STDLIB_FLAVOR :=
-endif
+# The stdlib bytecode blob and its bake tool are parked with src/stdlib/
+# until the boot table re-attaches them to the new core.
 
-ifeq ($(URBI_STDLIB_FLAVOR),)
-  STDLIB_BYTECODE_GEN_C := src/stdlib/urbi_stdlib_bytecode.gen.c
-else
-  STDLIB_BYTECODE_GEN_C := $(BUILDDIR)/src/stdlib/urbi_stdlib_bytecode.gen.c
-endif
-STDLIB_BYTECODE_GEN_O := $(BUILDDIR)/src/stdlib/urbi_stdlib_bytecode.gen.o
-
-OBJ := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(SRC)) $(STDLIB_BYTECODE_GEN_O)
-AUX_OBJS := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(AUX_SRCS))
-TEST_OBJ := $(patsubst tests/unit/%.c,$(BUILDDIR)/tests/unit/%.o,$(TEST_SRC))
+OBJ := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(SRC))
+FRONTEND_OBJS := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(FRONTEND_SRCS))
 LIB := $(BUILDDIR)/liburbi.a
-LIBURBI_AUX := $(BUILDDIR)/liburbi_aux.a
-RUNNER := $(BUILDDIR)/tests/unit/runner
 
 # refound/core: the new runtime core (src/rt/) and its standalone test
-# runner.  Empty today (src/rt/ holds only README.md); Task 2 onward adds
-# src/rt/*.c and appends a suite + extern to tests/rt/runner.c.
+# runner.  liburbi-rt.a is the core on its own — the runner links it
+# against the frontend objects because uexec.c calls uchunk_destroy and
+# ufront_compile.
 RT_SRCS   := $(wildcard src/rt/*.c)
 RT_OBJS   := $(patsubst %.c,$(BUILDDIR)/%.o,$(RT_SRCS))
-RT_TEST_SRCS := $(wildcard tests/rt/test_*.c) tests/rt/runner.c tests/rt/fakevm.c
+RT_TEST_SRCS := $(wildcard tests/rt/test_*.c) tests/rt/runner.c
 RT_LIB    := $(BUILDDIR)/liburbi-rt.a
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
@@ -233,24 +212,17 @@ RUNNER_WRAPPER ?=
 # from another TARGET shadowing a header rule in this one.
 sinclude $(shell find $(BUILDDIR) -name '*.d' 2>/dev/null)
 
-all: $(LIB) $(LIBURBI_AUX) $(BUILDDIR)/urbi
+all: $(LIB) $(BUILDDIR)/urbi
 
 $(LIB): $(OBJ)
 	$(AR) rcs $@ $^
 
-# Aux layer archive — separate from $(LIB). Embedders link -laux at
-# link time; liburbi.a contains zero aux symbols (nm-verified).
-$(LIBURBI_AUX): $(AUX_OBJS)
+$(RT_LIB): $(RT_OBJS)
 	$(AR) rcs $@ $^
 
-aux: $(LIBURBI_AUX)
-
-$(RT_LIB): $(RT_OBJS)
-	ar rcs $@ $^
-
-$(BUILDDIR)/tests/rt/runner: $(RT_TEST_SRCS) $(RT_LIB)
+$(BUILDDIR)/tests/rt/runner: $(RT_TEST_SRCS) $(RT_LIB) $(FRONTEND_OBJS)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/rt -o $@ $(RT_TEST_SRCS) $(RT_LIB) -lm
+	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/rt -o $@ $(RT_TEST_SRCS) $(RT_LIB) $(FRONTEND_OBJS) -lm
 
 .PHONY: test-rt check-rt-layering
 test-rt: $(BUILDDIR)/tests/rt/runner check-rt-layering
@@ -258,10 +230,8 @@ test-rt: $(BUILDDIR)/tests/rt/runner check-rt-layering
 check-rt-layering:
 	sh tests/scripts/check_rt_layering.sh
 
-# Core archive without aux. Aux is hosted-only (uses <stdio.h>, etc.);
-# cross-compile freestanding targets build `core` instead of `all` because
-# bare-metal toolchains (e.g. Ubuntu's gcc-riscv64-unknown-elf) may not
-# ship the libc headers aux depends on.
+# Core archive. Kept as its own target for cross-compile / freestanding
+# consumers that build the library without the host tools.
 core: $(LIB)
 
 # refactor-3 BLD-04: flag-stamp rules (variables defined above, before the

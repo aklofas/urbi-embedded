@@ -5,9 +5,11 @@
 #include "chunk/uchunk_internal.h"  /* MDecCtx + verifier entry-point decls */
 #include "runtime/umacros.h"
 #include "value/uvarint.h"
-#include "vm/uvm.h"               /* struct UVM access for uchunk_destroy rescue path */
-#include "object/uchunk_instance.h" /* UChunkInstance: unlink on destroy (§5.4) */
-#include "realm/urealm.h"            /* URealm.loaded_protos_head: unlink on destroy */
+/* refound/core: the destroy path no longer reaches into the VM, the
+ * module-instance list, or the realm's loaded-chunk list.  The new core
+ * owns a bound chunk through one GC cell (rt/uexec.h UProtoCell) whose
+ * finaliser calls uchunk_destroy, so there is nothing left to unlink and
+ * no refcount rescue to perform. */
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
 #include <stdint.h>
@@ -56,7 +58,7 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
 }
 #endif  /* __STDC_HOSTED__ */
 
-static void uchunk_destroy_internal(UProto *root, struct UVM *vm);
+static void uchunk_destroy_internal(UProto *root);
 
 /* Resolve the effective allocator for a root UProto. */
 static UChunkAllocFn module_allocator(const UProto *c) {
@@ -917,97 +919,13 @@ uproto_strand_refcount_dec(UProto *root, struct UVM *vm)
 void
 uchunk_destroy(UProto *root, struct UVM *vm)
 {
+    (void)vm;   /* the rescue path is retired; the caller's cell owns the chunk */
     if (root == NULL) return;
-    /* Variant B: when root->refcount > 0 (a strand is alive), rescue or defer. */
-    if (root->refcount > 0U) {
-        if (vm != NULL && root->heap_allocated) {
-            /* Thread root onto vm->rescued_protos (reuses UProto.next_alloc).
-             * Only heap-allocated roots may go on rescued_protos — stack roots
-             * would be freed by vm_destroy after the stack frame is gone.
-             * Unlink from realm BEFORE threading so realm walk stays clean. */
-            if (root->owning_realm != NULL) {
-                URealm *r = root->owning_realm;
-                if (r->loaded_protos_head == root) {
-                    r->loaded_protos_head = root->next_in_realm;
-                } else {
-                    for (UProto *p = r->loaded_protos_head; p != NULL;
-                         p = p->next_in_realm) {
-                        if (p->next_in_realm == root) {
-                            p->next_in_realm = root->next_in_realm;
-                            break;
-                        }
-                    }
-                }
-                root->owning_realm  = NULL;
-                root->next_in_realm = NULL;
-            }
-            root->next_alloc    = vm->rescued_protos;
-            vm->rescued_protos  = root;
-            return;
-        } else {
-            /* No vm or stack-allocated root — set self-link sentinel.
-             * uclosure_destroy will free buffers when refcount reaches 0.
-             * Unlink from realm. */
-            if (root->owning_realm != NULL) {
-                URealm *r = root->owning_realm;
-                if (r->loaded_protos_head == root) {
-                    r->loaded_protos_head = root->next_in_realm;
-                } else {
-                    for (UProto *p = r->loaded_protos_head; p != NULL;
-                         p = p->next_in_realm) {
-                        if (p->next_in_realm == root) {
-                            p->next_in_realm = root->next_in_realm;
-                            break;
-                        }
-                    }
-                }
-                root->owning_realm  = NULL;
-                root->next_in_realm = NULL;
-            }
-            root->next_alloc = root;  /* self-link sentinel */
-            return;
-        }
-    }
-    uchunk_destroy_internal(root, vm);
+    uchunk_destroy_internal(root);
 }
 
-static void uchunk_destroy_internal(UProto *root, struct UVM *vm) {
+static void uchunk_destroy_internal(UProto *root) {
     if (root == NULL) return;
-
-    /* §5.4: unlink any UChunkInstances bound to this root from
-     * vm->module_instances_head BEFORE freeing root buffers. */
-    if (vm != NULL) {
-        struct UChunkInstance **slot = &vm->module_instances_head;
-        while (*slot != NULL) {
-            if ((*slot)->module == root) {
-                struct UChunkInstance *dead = *slot;
-                *slot = dead->next_in_vm;
-                dead->next_in_vm = NULL;
-                dead->module     = NULL;
-                continue;   /* re-check same slot position — don't advance */
-            }
-            slot = &(*slot)->next_in_vm;
-        }
-    }
-
-    /* Unlink from owning_realm's loaded_protos_head list before freeing.
-     * Idempotent: if owning_realm is NULL (already unlinked), skip. */
-    if (root->owning_realm != NULL) {
-        URealm *r = root->owning_realm;
-        if (r->loaded_protos_head == root) {
-            r->loaded_protos_head = root->next_in_realm;
-        } else {
-            for (UProto *p = r->loaded_protos_head; p != NULL;
-                 p = p->next_in_realm) {
-                if (p->next_in_realm == root) {
-                    p->next_in_realm = root->next_in_realm;
-                    break;
-                }
-            }
-        }
-        root->owning_realm  = NULL;
-        root->next_in_realm = NULL;
-    }
 
     UChunkAllocFn alloc = module_allocator(root);
     void *alloc_ud = root->alloc_ud;   /* capture before uproto_destroy_buffers zeroes root */

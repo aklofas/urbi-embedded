@@ -56,7 +56,7 @@ static void stdlib_free(void *p, void *ud) {
 /* --- Common init. --- */
 
 static void init_common(UArena *a, size_t chunk_size,
-                        UAllocFn alloc, UFreeFn free_fn, void *ud) {
+                        UArenaAllocFn alloc, UFreeFn free_fn, void *ud) {
     a->head = NULL;
     a->first = NULL;
     a->chunk_size = chunk_size ? chunk_size : ARENA_DEFAULT_CHUNK_SIZE;
@@ -74,7 +74,7 @@ void uarena_init(UArena *a, size_t chunk_size) {
 #endif /* __STDC_HOSTED__ */
 
 void uarena_init_ex(UArena *a, size_t chunk_size,
-                    UAllocFn alloc, UFreeFn free_fn, void *ud) {
+                    UArenaAllocFn alloc, UFreeFn free_fn, void *ud) {
     init_common(a, chunk_size, alloc, free_fn, ud);
 }
 

@@ -9,7 +9,8 @@
 typedef void *(*UAllocFn)(void *ptr, size_t nbytes, void *ud);   /* realloc-shaped; nbytes==0 frees */
 
 typedef enum { UCELL_STR = 1, UCELL_OBJ, UCELL_CLOSURE, UCELL_UPVAL, UCELL_LIST, UCELL_DICT,
-               UCELL_TAG, UCELL_EVENT, UCELL_STRAND, UCELL_WATCHER, UCELL_PROTO, UCELL_PROPS, UCELL_HOST } UCellType;
+               UCELL_TAG, UCELL_EVENT, UCELL_STRAND, UCELL_WATCHER, UCELL_PROTO, UCELL_PROPS,
+               UCELL_REALM, UCELL_HOST } UCellType;
 
 typedef struct UCell {
     struct UCell *next;
