@@ -15,7 +15,7 @@
 #include "utest.h"
 #include "utest_e2e_helpers.h"
 #include "lex/ulex.h"
-#include "runtime/umacros.h"   /* urbi_strlen */
+#include "runtime/umacros.h"   /* urbi_zero/urbi_strlen only */
 #include "vm/uvm.h"
 #include "urbi/urbi.h"
 

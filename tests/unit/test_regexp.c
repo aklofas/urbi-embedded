@@ -17,7 +17,7 @@
 #include "urbi/urbi.h"
 #include "urbi/types.h"   /* URBI_ERR_UNCAUGHT_THROW */
 #include "chunk/uchunk.h"
-#include "runtime/umacros.h"
+#include "runtime/umacros.h"   /* urbi_zero/urbi_strlen only */
 
 #define UTEST(name) static void name(void)
 

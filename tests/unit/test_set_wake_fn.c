@@ -13,7 +13,6 @@
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 #include "vm/uvm.h"
-#include "event/uevent_ring.h"
 
 #include <stdint.h>
 #include <stddef.h>

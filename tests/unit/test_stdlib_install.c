@@ -17,7 +17,6 @@
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 #include "urbi/object.h"
-#include "object/uobject.h"
 #include "stdlib/object_root.h"   /* UNativeMethodDef, urbi_install_native_methods,
                                      URBI_REGISTER_METHODS */
 #include "vm/uvm.h"

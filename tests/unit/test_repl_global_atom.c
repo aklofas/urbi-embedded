@@ -22,7 +22,6 @@
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 #include "urbi/object.h"
-#include "object/uobject.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
 

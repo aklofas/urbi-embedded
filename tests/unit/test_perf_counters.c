@@ -12,7 +12,6 @@
 #include "urbi/urbi.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "runtime/uperf.h"
 #include <string.h>
 
 #define UTEST(name) static void name(void)

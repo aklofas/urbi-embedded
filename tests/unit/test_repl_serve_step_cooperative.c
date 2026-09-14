@@ -23,7 +23,6 @@
 #include "urbi/repl.h"
 #include "urbi/types.h"
 #include "vm/uvm.h"
-#include "repl/urepl.h"
 
 #include <stdlib.h>
 #include <string.h>

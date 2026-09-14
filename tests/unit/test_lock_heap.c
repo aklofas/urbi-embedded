@@ -10,7 +10,6 @@
 #include "urbi/urbi.h"
 #include "urbi/gc.h"
 #include "vm/uvm.h"
-#include "gc/ugc.h"
 
 #define UTEST(name) static void name(void)
 

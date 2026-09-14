@@ -34,7 +34,7 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "parse/uast.h"
-#include "runtime/umacros.h"   /* urbi_zero */
+#include "runtime/umacros.h"   /* urbi_zero/urbi_strlen only */
 
 #include <stddef.h>
 #include <string.h>

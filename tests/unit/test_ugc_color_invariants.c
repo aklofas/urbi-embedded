@@ -4,7 +4,6 @@
 
 #include "utest.h"
 #include "urbi/gc.h"
-#include "gc/ugc_incremental.h"
 #include "vm/uvm.h"
 #include <stdlib.h>
 

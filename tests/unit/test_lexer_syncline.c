@@ -10,7 +10,7 @@
 #include "realm/urealm.h"
 #include "vm/uvm.h"
 #include "lex/ulex.h"
-#include "runtime/umacros.h"   /* urbi_zero */
+#include "runtime/umacros.h"   /* urbi_zero/urbi_strlen only */
 
 #define UTEST(name) static void name(void)
 

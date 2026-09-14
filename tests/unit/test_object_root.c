@@ -24,8 +24,6 @@
 
 #include "utest.h"
 
-#include "object/uobject.h"
-#include "object/uic.h"
 #include "chunk/uchunk.h"
 #include "value/uintern.h"
 #include "value/uarena.h"
@@ -34,7 +32,6 @@
 #include "emit/uemit.h"
 #include "stdlib/object_root.h"
 #include "stdlib/stdlib_boot.h"
-#include "runtime/uclosure.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "urbi/object.h"

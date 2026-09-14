@@ -23,8 +23,7 @@
 #include "urbi/types.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "event/uevent_registry.h"
-#include "runtime/umacros.h"   /* urbi_strlen */
+#include "runtime/umacros.h"   /* urbi_zero/urbi_strlen only */
 
 #include <stddef.h>
 #include <stdint.h>

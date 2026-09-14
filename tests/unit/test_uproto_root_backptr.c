@@ -17,7 +17,7 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "emit/uemit.h"
-#include "runtime/umacros.h"
+#include "runtime/umacros.h"   /* urbi_zero/urbi_strlen only */
 
 #define UTEST(name) static void name(void)
 

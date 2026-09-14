@@ -30,7 +30,6 @@
 #include "urbi/types.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "event/uevent_ring.h"
 
 #include <stddef.h>
 #include <stdint.h>

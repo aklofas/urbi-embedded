@@ -21,7 +21,6 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "object/uobject.h"
 #include "emit/uemit.h"
 #include "parse/uast.h"
 #include "parse/uparse.h"
