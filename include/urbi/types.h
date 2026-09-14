@@ -64,10 +64,16 @@ struct UVM;
 struct UStrand;
 struct UTag;
 struct URealm;
-struct UProto;    /* v0.9.2: replaced UModule — a "module" IS its root UProto */
+struct UProto;    /* a "module" IS its root UProto */
 struct UClosure;
 struct UObject;
 struct UEvent;
+
+/* The two handles the public API passes around by name.  The runtime
+ * core completes the structs (src/rt/uexec.h) without re-typedef'ing
+ * them. */
+typedef struct UVM    UVM;
+typedef struct URealm URealm;
 
 /* === UValKind: tag byte for UValue's union discriminant ===
  *
@@ -410,180 +416,51 @@ URBI_STATIC_ASSERT(__alignof__(urbi_event_payload_t) == URBI_EVENT_PAYLOAD_ALIGN
 /* === UErrCode: public error codes ===
  *
  * Functions in the public C API return int: 0 = URBI_OK, negative = error.
- * New codes are appended; never reordered (numeric stability).
- */
+ * Numeric values are stable; new codes are appended, never renumbered. */
 typedef enum {
     URBI_OK                             =  0,
     URBI_ERR_INVALID_ARG                = -1,
-    URBI_ERR_STRAND_FATAL               = -2,
     URBI_ERR_OOM                        = -3,
     URBI_ERR_BYTECODE_VERSION_MISMATCH  = -4,
     URBI_ERR_COMPILE                    = -5,
-    URBI_ERR_CLEANUP_OVERFLOW           = -6,
-    URBI_ERR_EVENT_PAYLOAD_TOO_LARGE    = -7,
-    URBI_ERR_EVENT_RING_FULL            = -8,
-    URBI_ERR_PROTECTED_SLOT             = -9,
-    URBI_ERR_RESERVED_10                = -10,
-    URBI_ERR_CONST_SLOT_WRITE           = -11,
-    URBI_ERR_SLOT_NOT_FOUND             = -12,
-    URBI_ERR_SHAPE_BOUNDS               = -13,  /* slot index past v1.0 packed-flag cap */
-    URBI_ERR_PROTO_DEPTH                = -14,  /* prototype-graph resolve-stack overflow */
-    /* URBI_ERR_STDLIB_BOOT_FAILED: returned by urbi_stdlib_boot (and any
-     * caller that propagates it) when the embedded stdlib bytecode blob
-     * fails to deserialize or bind during VM/realm bootstrap.  Distinct
-     * from URBI_ERR_OOM (which signals allocation failure during boot)
-     * and URBI_ERR_BYTECODE_VERSION_MISMATCH (which is reachable through
-     * urbi_chunk_translate_load_err for the file-load surface).
-     * The empty-blob path never reaches it. */
-    URBI_ERR_STDLIB_BOOT_FAILED         = -15,
-    /* URBI_ERR_API_VERSION_MISMATCH: returned by urbi_aux_check_version
-     * when the runtime library's API version
-     * disagrees with what the embedder compiled against. MINOR-additive
-     * per the bump policy in <urbi/version.h>. */
-    URBI_ERR_API_VERSION_MISMATCH       = -16,
-    /* URBI_ERR_EVENT_NAME_TAKEN: returned by urbi_event_register (Gap B)
-     * when name is already registered in the event registry for this VM. */
-    URBI_ERR_EVENT_NAME_TAKEN           = -17,
+    /* A throw reached the top frame of a strand.  urbi_last_error carries
+     * the rendered exception. */
     URBI_ERR_UNCAUGHT_THROW             = -18,
-    /* URBI_ERR_HEAP_LOCKED: returned by operations that require a live heap
-     * (allocation or registry mutation) when urbi_lock_heap has been called.
-     * Covers urbi_event_unregister and future Gap-B unregister paths. */
-    URBI_ERR_HEAP_LOCKED                = -19,
-    /* urbi_run_chunk's internal driver loop exhausted its outer cap
-     * (URBI_LOADER_OUTER_CAP * URBI_LOADER_INNER_BUDGET) without the
-     * loader strand reaching a parked or dead state.  Almost certainly
-     * an infinite loop at chunk-top with no yield points.  Host may
-     * call urbi_step manually to continue the strand, or destroy the
-     * realm/vm to abort it. */
-    URBI_ERR_LOADER_BUDGET              = -20,
-    URBI_ERR_FROZEN_PROTO               = -21,
+    /* The requested subsystem is not available yet in this build — see the
+     * per-function notes in <urbi/urbi.h>. */
+    URBI_ERR_INVALID_STATE              = -27,
+    /* Per-realm compile limits (UCompileBudget below). */
     URBI_ERR_COMPILE_BUDGET_DEPTH       = -22,
     URBI_ERR_COMPILE_BUDGET_NODES       = -23,
-    URBI_ERR_COMPILE_BUDGET_SOURCE      = -24,
-    /* urbi_repl_serve refused a non-loopback bind without an auth_token
-     * (default-secure posture).  Embedder must either set
-     * cfg->auth_token or restrict cfg->bind_addr to "127.0.0.1" / "::1"
-     * / a Unix-socket path starting with '/'.
-     * URBI_ERR_INVALID_CONFIG is a synonym for this code; the canonical
-     * name remains URBI_ERR_INSECURE_CONFIG. */
-    URBI_ERR_INSECURE_CONFIG            = -25,
-#define URBI_ERR_INVALID_CONFIG URBI_ERR_INSECURE_CONFIG
-    /* Returned by urbi_aux_value_to_* checked accessors when the UValue
-     * kind does not match the requested type.  Embedders use
-     * urbi_value_is_*() to guard before calling unchecked
-     * urbi_value_as_*; or call urbi_aux_value_to_*() directly and
-     * handle this code. */
-    URBI_ERR_TYPE                       = -26,
-    /* Returned by urbi_strand_destroy (and similar lifecycle functions)
-     * in debug builds when the strand is in an unsafe state for the
-     * requested operation.  For example, urbi_strand_destroy on a READY
-     * or RUNNING strand returns URBI_ERR_INVALID_STATE in -DURBI_DEBUG
-     * builds.  Release builds treat the call as a no-op. */
-    URBI_ERR_INVALID_STATE              = -27
+    URBI_ERR_COMPILE_BUDGET_SOURCE      = -24
 } UErrCode;
 
 /* === UCallbackSignal: positive return values for host callbacks ===
  *
- * Positive values are in a separate namespace from UErrCode's negative range
- * so a callback return can be unambiguously classified:
- *   rc < 0 → error
- *   rc == 0 → URBI_CB_OK / URBI_OK
- *   rc > 0 → callback signal (auto-unregister, host throw, etc.)
- *
- * UVM internal code that previously used UVMError or UExecStatus to classify
- * results uses int + URBI_OK / URBI_ERR_* / UCallbackSignal constants now.
- * UExecStatus is retained for the strand-unwind-status public API family
- * (urbi_strand_unwind_status, urbi_strand_is_fatal) pending migration. */
+ *   rc < 0  → error        rc == 0 → success        rc > 0 → signal */
 typedef enum {
     URBI_CB_OK         = 0, /* callback succeeded; no side-effect */
-    URBI_CB_UNREGISTER = 1, /* watcher_fn: auto-unregister after this firing */
-    URBI_CB_THROW      = 2  /* native_method_fn: host raised a script exception */
+    URBI_CB_UNREGISTER = 1, /* watcher callback: auto-unregister after this firing */
+    URBI_CB_THROW      = 2  /* native: a script exception was raised */
 } UCallbackSignal;
 
-/* ===================================================================
- * Deprecated compatibility aliases
+/* === UExecStatus: what a native or a synchronous call returned ===
  *
- * The following symbols are retained only for host source compatibility.
- * New code should use the canonical UErrCode / UCallbackSignal spellings:
- *
- *   UVM_OK                       -> URBI_OK
- *   UVM_TYPE_ERROR               -> URBI_ERR_STRAND_FATAL
- *   UVM_OOM                      -> URBI_ERR_OOM
- *   UVMError                     -> int
- *   URBI_ERR_WATCHER_UNREGISTER  -> URBI_CB_UNREGISTER
- *
- * The interpreter's own sources use the canonical spellings exclusively;
- * these aliases exist purely so existing embedder code keeps compiling.
- * They may be removed in a future release.
- * =================================================================== */
-
-#define URBI_ERR_WATCHER_UNREGISTER  ((int)URBI_CB_UNREGISTER)
-
-/* === UExecStatus: strand-level execution status ===
- *
- * Mirror of the internal enum at src/sched/ustrand.h.  Numeric values are
- * not pinned cross-version; the enum is purely symbolic.
- */
+ * Natives return UEXEC_OK or UEXEC_THROW; the runtime's unwind state
+ * uses the other two. */
 typedef enum {
-    UEXEC_OK       = 0,
-    UEXEC_RETURN,
-    UEXEC_THROW,
-    UEXEC_TAG_STOP,
-    UEXEC_CANCEL
+    UEXEC_OK     = 0,
+    UEXEC_RETURN = 1,
+    UEXEC_THROW  = 2,
+    UEXEC_STOP   = 3
 } UExecStatus;
-
-/* Public mirror of the internal UExecStatus enum.  Numeric values are
- * identical to UExecStatus constants so existing code using UEXEC_* still
- * compares correctly.  New code should use URBI_UNWIND_* constants.
- *
- * Used as the return type of urbi_strand_unwind_status(); replaces the
- * UExecStatus surface that was pending migration per the note in
- * the urbi.h header comment.
- *
- * UExecStatus is retained as a deprecated alias (source compat, one cycle). */
-typedef enum {
-    URBI_UNWIND_OK       = 0,  /* == UEXEC_OK */
-    URBI_UNWIND_RETURN   = 1,  /* == UEXEC_RETURN */
-    URBI_UNWIND_THROW    = 2,  /* == UEXEC_THROW */
-    URBI_UNWIND_TAG_STOP = 3,  /* == UEXEC_TAG_STOP */
-    URBI_UNWIND_CANCEL   = 4   /* == UEXEC_CANCEL */
-} UStrandUnwind;
-
-/* Observable state of a strand as returned by urbi_strand_state().
- * Maps the internal USTRAND_* state nibble values (src/sched/ustrand.h)
- * to a public enum without exposing the packed-byte encoding.
- *
- * URBI_STRAND_BLOCKED is reserved; the cooperative scheduler uses
- * URBI_STRAND_WAITING for all blocked-on-event / sleep / join states.
- * The distinction between blocked sub-reasons is not exposed at v1.0. */
-typedef enum {
-    URBI_STRAND_DORMANT  = 0,  /* allocated, not yet started */
-    URBI_STRAND_READY    = 1,  /* on run-queue, awaiting dispatch */
-    URBI_STRAND_RUNNING  = 2,  /* currently executing */
-    URBI_STRAND_BLOCKED  = 3,  /* reserved (RT scheduler sub-state) */
-    URBI_STRAND_WAITING  = 4,  /* sleeping / waiting for event / join */
-    URBI_STRAND_DEAD     = 5   /* terminated — safe to destroy */
-} UStrandState;
-
-/* === UVMError: retired — replaced by int + URBI_OK / URBI_ERR_* ===
- *
- * Legacy shims below preserve source compatibility for one release cycle.
- * New code should use URBI_OK / URBI_ERR_OOM / URBI_ERR_STRAND_FATAL. */
-/* UVM_OK is now URBI_OK (0). */
-#define UVM_OK         (URBI_OK)
-/* UVM_TYPE_ERROR corresponds to a strand fatal (unhandled throw / type error). */
-#define UVM_TYPE_ERROR (URBI_ERR_STRAND_FATAL)
-/* UVM_OOM corresponds to an out-of-memory failure. */
-#define UVM_OOM        (URBI_ERR_OOM)
-/* UVMError typedef retained as int alias so old declarations compile. */
-typedef int UVMError;
 
 /* === UVMAllocFn: pluggable allocator signature ===
  *
  * Standard realloc semantics:
  *   ptr == NULL, nbytes > 0   → allocate
  *   ptr != NULL, nbytes == 0  → free
- *   ptr != NULL, nbytes > 0   → realloc
+ *   ptr != NULL, nbytes > 0   → reallocate
  */
 typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
 

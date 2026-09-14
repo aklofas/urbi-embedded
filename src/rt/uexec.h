@@ -22,12 +22,12 @@ enum { UP_OBJECT = 0, UP_INTEGER, UP_FLOAT, UP_STRING, UP_BOOLEAN, UP_NIL, UP_VO
  *
  * Stub shape until the realm task moves it to rt/urealm.h.  It is a GC
  * cell because UStrand.realm is marked through as one (ustrand_trace). */
-typedef struct URealm {
+struct URealm {
     UCell          cell;
     UObject       *globals;        /* this realm's global object; protos[UP_OBJECT] is its proto */
     UStrand       *strands;        /* threaded via UStrand.next_in_realm */
     struct URealm *next;           /* vm->realms list */
-} URealm;
+};
 
 /* --- bound chunk ----------------------------------------------------
  *
@@ -48,7 +48,7 @@ typedef struct UProtoCell {
 
 /* --- the VM ---------------------------------------------------------- */
 
-typedef struct UVM {
+struct UVM {
     UGc        gc;
     UStrTab    strings;
     UObjStats  objstats;
@@ -82,7 +82,7 @@ typedef struct UVM {
      * shipping configuration; mark_fixed calls it when set. */
     void     (*test_mark_extra)(struct UVM *vm, void *ud);
     void      *test_mark_ud;
-} UVM;
+};
 
 /* --- lifecycle ------------------------------------------------------- */
 

@@ -128,3 +128,8 @@ void ufront_disassemble(struct UProto *root, const char *name)
     fwrite(buf, 1, n, stdout);
     if (n > 0 && buf[n - 1] != '\n') fputc('\n', stdout);
 }
+
+ptrdiff_t ufront_serialize(struct UProto *root, unsigned char *buf, size_t cap)
+{
+    return uchunk_serialize(root, (uint8_t *)buf, cap);
+}

@@ -20,6 +20,7 @@
 #define UFRONT_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 struct UVM;
 struct UProto;
@@ -39,6 +40,11 @@ struct UProto;
  * NULL with nothing for the caller to free. */
 int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
                    struct UProto **out, char *err, size_t errcap);
+
+/* Serialize a compiled chunk to the on-disk bytecode format.  Returns
+ * the byte count, or a negative value on failure; pass (NULL, 0) to
+ * query the required size.  Thin pass-through to the kept encoder. */
+ptrdiff_t ufront_serialize(struct UProto *root, unsigned char *buf, size_t cap);
 
 /* Disassemble one bound-or-unbound chunk to stdout (hosted only).  Thin
  * pass-through to the kept disassembler so tools/ does not need the
