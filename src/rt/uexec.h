@@ -121,6 +121,14 @@ struct UVM {
     void (*writer)(void *ud, const char *chan, size_t cl, const char *msg, size_t ml); void *writer_ud;
     void (*wake)(void *ud); void *wake_ud;
 
+    /* How to render a value the core's own formatter cannot spell.  A
+     * hosted build points this at urbi_value_to_string (src/host), whose
+     * snprintf("%.14g") is what the corpus pins for a Float; the core's
+     * formatter has no libc and prints "<?>" for anything it cannot
+     * build out of integer digits.  NULL on a freestanding build, which
+     * keeps the minimal spelling. */
+    size_t (*render_value)(struct UVM *vm, UValue v, char *buf, size_t cap);
+
     /* last error that escaped a top frame */
     char       last_error[256];
     int        last_error_code;
@@ -202,6 +210,14 @@ int uexec_throw_value(UVM *vm, UStrand *s, UValue v);
  * into the caller), 1 when the strand is DEAD or control must go back to
  * uexec_call. */
 int uexec_unwind(UVM *vm, UStrand *s);
+/* Renders what escaped `s` into vm->last_error and sets last_error_code,
+ * or clears both when `s` did not die on a throw.  The walker calls it as
+ * the strand dies; a caller that awaited a strand calls it again once the
+ * pump is over, because vm->last_error is ONE buffer and a detached
+ * strand dying later in the same pump would otherwise be what the caller
+ * reads.  Reads s->unwind and s->transfer, which stay valid for as long
+ * as the strand is pinned. */
+void uexec_report_escape(UVM *vm, const UStrand *s);
 /* Completes a return out of the top frame: closes its upvalues, pops it
  * and delivers `rv`.  0 = dispatch continues in the caller, 1 = the run
  * is over (s->state and s->result are set). */

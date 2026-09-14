@@ -32,6 +32,14 @@ UVM *urbi_open(UVMAllocFn alloc, void *ud, const UVMConfig *config)
     (void)config;   /* step_budget becomes live with the scheduler task */
     UVM *vm = uvm_open((UAllocFn)alloc, ud);
     if (!vm) return NULL;
+#if __STDC_HOSTED__
+    /* src/host is in this archive on a hosted build, so the unwinder can
+     * borrow its formatter for the values the core cannot spell on its
+     * own.  A freestanding build omits that directory and leaves the hook
+     * NULL; nothing here reaches into src/host directly, the symbol is
+     * the public one from <urbi/urbi.h>. */
+    vm->render_value = urbi_value_to_string;
+#endif
     /* config->boot_stdlib defaults to 1; a host that passes a config
      * asking for 0 gets a VM with no built-ins at all, which is only
      * useful for measuring the bare core. */

@@ -92,7 +92,11 @@ bool_negate(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === Integer.asString / asFloat / asBoolean / asInteger ==================
  *
- * asString prints base-10 via snprintf into a stack buffer, then interns.
+ * asString prints base-10 via snprintf into a stack buffer, then copies
+ * it into a GC cell -- NOT a symbol.  The symbol table is immortal, so
+ * interning here would make every distinct number a program ever
+ * printed a permanent cost: a robot logging a sensor reading once a
+ * tick would grow without bound.  Slot keys intern; values do not.
  * Buffer 24 B is large enough for any int64_t (worst case 20 chars +
  * sign + NUL).  Freestanding builds without snprintf raise TypeError; a
  * dedicated decimal formatter for that path is a deferred follow-up, to
@@ -113,9 +117,8 @@ int_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     int n = snprintf(buf, sizeof(buf), "%lld", (long long)self.v.i);
     if (n <= 0 || (size_t)n >= sizeof(buf))
         return urbi_raise_type(vm, "Integer.asString: format failure", out);
-    int oom = 0;
-    UValue v = urbi_val_str_intern(vm, buf, (size_t)n, &oom);
-    if (oom) return urbi_raise_oom(vm, out);
+    UValue v = urbi_make_str(vm, buf, (size_t)n);
+    if (v.kind == UV_NIL) return urbi_raise_oom(vm, out);
     *out = v;
     return UEXEC_OK;
 #else
@@ -463,9 +466,8 @@ flt_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         buf[n] = '\0';
     }
 
-    int oom = 0;
-    UValue v = urbi_val_str_intern(vm, buf, (size_t)n, &oom);
-    if (oom) return urbi_raise_oom(vm, out);
+    UValue v = urbi_make_str(vm, buf, (size_t)n);
+    if (v.kind == UV_NIL) return urbi_raise_oom(vm, out);
     *out = v;
     return UEXEC_OK;
 #else
@@ -606,13 +608,13 @@ str_charAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (i < 0 || (size_t)i >= n)
         return urbi_raise_range(vm, "String.charAt: index out of range", out);
 
-    /* Single-byte slice — interns into a 1-byte string. */
+    /* Single-byte slice.  A GC cell, not a symbol: a character read out
+     * of arbitrary text is a value, and the symbol table never shrinks. */
     char tmp[2];
     tmp[0] = s[i];
     tmp[1] = '\0';
-    int oom = 0;
-    UValue v = urbi_val_str_intern(vm, tmp, 1U, &oom);
-    if (oom) return urbi_raise_oom(vm, out);
+    UValue v = urbi_make_str(vm, tmp, 1U);
+    if (v.kind == UV_NIL) return urbi_raise_oom(vm, out);
     *out = v;
     return UEXEC_OK;
 }
@@ -663,10 +665,9 @@ str_caseop(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out,
     }
     buf[n] = '\0';
 
-    int oom = 0;
-    UValue v = urbi_val_str_intern(vm, buf, n, &oom);
+    UValue v = urbi_make_str(vm, buf, n);
     vm->gc.alloc(buf, 0U, vm->gc.alloc_ud);
-    if (oom) return urbi_raise_oom(vm, out);
+    if (v.kind == UV_NIL) return urbi_raise_oom(vm, out);
     *out = v;
     return UEXEC_OK;
 }

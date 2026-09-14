@@ -1170,6 +1170,12 @@ int uexec_run_chunk(UVM *vm, URealm *realm, UClosure *cl, UValue *out)
     bool died = (s->state == USTRAND_DEAD);
     bool threw = died && s->unwind == (uint8_t)UUNWIND_THROW;
     UValue res = died ? s->result : uv_nil();
+    /* vm->last_error is one buffer and this pump may have outlived the
+     * strand: any detached strand that died after it left ITS message
+     * there on the way to the diag hook, which is the channel a strand
+     * nobody awaits reports through.  Render this strand's again, so the
+     * message the caller reads is the failure it is being handed. */
+    if (threw) uexec_report_escape(vm, s);
     s->cell.flags &= (uint16_t)~UCELL_F_PINNED;
 
     int rc = uexec_finish_run(vm, threw ? UEXEC_THROW : UEXEC_OK);

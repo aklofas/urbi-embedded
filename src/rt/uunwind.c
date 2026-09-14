@@ -166,9 +166,15 @@ size_t uexec_position_prefix(UStrand *s, uint32_t line, char *buf, size_t cap, s
  * other value is formatted the way the REPL prints a value.
  *
  * The shapes mirror urbi_value_to_string, which lives in src/host because
- * a Float needs snprintf's "%.14g".  That is unavailable under the
- * freestanding rule, so a Float whose value is not an exact integer
- * renders as "<?>" here.  No fixture pins a non-integral Float throw. */
+ * a Float needs snprintf's "%.14g" — unavailable under the freestanding
+ * rule.  A hosted build hands that formatter over as vm->render_value and
+ * the two shapes below defer to it: a Float that is not an exact integer,
+ * and the kinds the core has no spelling for at all.  With no hook, which
+ * is what a freestanding build has, both render as "<?>".
+ *
+ * An exception object is the one shape that does NOT defer: it
+ * contributes its `message`, where urbi_value_to_string would print the
+ * address, which is not reproducible across runs. */
 
 static size_t uw_append_i64(char *buf, size_t cap, size_t at, int64_t n)
 {
@@ -217,6 +223,15 @@ static size_t uw_append_quoted(char *buf, size_t cap, size_t at, UValue v)
     return at;
 }
 
+/* The shapes the core cannot build out of integer digits.  Returns false
+ * when there is no hook, leaving the caller to write "<?>". */
+static bool uw_render_via_host(UVM *vm, char *buf, size_t cap, UValue v)
+{
+    if (vm->render_value == NULL) return false;
+    (void)vm->render_value(vm, v, buf, cap);
+    return buf[0] != '\0';
+}
+
 static void uw_format_value(UVM *vm, char *buf, size_t cap, UValue v)
 {
     buf[0] = '\0';
@@ -227,13 +242,13 @@ static void uw_format_value(UVM *vm, char *buf, size_t cap, UValue v)
     case UV_FLOAT: {
         double x = v.v.f;
         /* Every comparison is false for a NaN and the range test rejects
-         * the infinities, so both fall through to "<?>". */
+         * the infinities, so both go to the host formatter. */
         if (x >= -9.0e18 && x <= 9.0e18 && (double)(int64_t)x == x) {
             size_t at = uw_append_i64(buf, cap, 0, (int64_t)x);
             (void)uw_append(buf, cap, at, ".0");   /* Lua's rule, as uformat.c has it */
             return;
         }
-        (void)uw_append(buf, cap, 0, "<?>");
+        if (!uw_render_via_host(vm, buf, cap, v)) (void)uw_append(buf, cap, 0, "<?>");
         return;
     }
     case UV_SYM: case UV_STR: (void)uw_append_quoted(buf, cap, 0, v); return;
@@ -255,7 +270,9 @@ static void uw_format_value(UVM *vm, char *buf, size_t cap, UValue v)
         (void)uw_append(buf, cap, 0, "<object>");
         return;
     }
-    default: (void)uw_append(buf, cap, 0, "<?>"); return;
+    default:
+        if (!uw_render_via_host(vm, buf, cap, v)) (void)uw_append(buf, cap, 0, "<?>");
+        return;
     }
 }
 
@@ -265,7 +282,7 @@ static void uw_format_value(UVM *vm, char *buf, size_t cap, UValue v)
  * reported.  Every value, not only an exception object -- the old core
  * answered nil for a scalar throw, the "errors vanish" defect the
  * refactor-4 audit named. */
-static void uexec_report_escape(UVM *vm, const UStrand *s)
+void uexec_report_escape(UVM *vm, const UStrand *s)
 {
     vm->last_error[0] = '\0';
     vm->last_error_code = URBI_OK;

@@ -585,7 +585,23 @@ void urbi_emit_abandon(UEmitter *e) {
     /* Driver error-path teardown — free emitter-owned
      * storage without finishing the module.  uarena_destroy on an
      * already-destroyed (or never-grown) arena is a no-op, so this is
-     * idempotent and safe after uemit_finish too. */
+     * idempotent and safe after uemit_finish too.
+     *
+     * The funcstates themselves live in fs_arena, but each one's ic_names
+     * side table does NOT: it comes from the MODULE's allocator, and
+     * uemit_close_function is what normally hands it back.  A driver that
+     * bails part-way through a function never reaches that, so the chain
+     * of still-open funcstates is walked here before the arena holding
+     * them goes.  (Found by the re-enabled emit patch-limit tests under
+     * AddressSanitizer: a program with 17 breaks in one loop leaked its
+     * IC array on every compile.) */
+    UChunkAllocFn alloc = (e->module != NULL) ? emit_alloc_for(e->module) : NULL;
+    for (struct UFuncState *fs = e->current_fs; fs != NULL; fs = fs->parent) {
+        if (fs->ic_names != NULL && alloc != NULL)
+            alloc((void *)fs->ic_names, 0, e->module->alloc_ud);
+        fs->ic_names = NULL;
+        fs->ic_names_cap = 0;
+    }
     uarena_destroy(&e->fs_arena);
     e->current_fs = NULL;
 }

@@ -1,0 +1,11 @@
+# Milestone: v0.14.0-refoundation
+# Covers: two strands dying on an uncaught throw in one pump.  vm->last_error
+#         is one buffer, so before the fix the detached strand's message was
+#         what the awaited strand's caller read: `{ throw "A" } , throw "B"`
+#         reported "A" twice and lost "B" entirely.  A strand nobody awaits
+#         reports through the diag hook; the awaited strand's message is the
+#         one its caller is handed, and the two must not be the same text
+#         unless the two throws were.
+{ throw "A" } , throw "B"
+[00000000] !!! "A"
+[00000000] !!! "B"

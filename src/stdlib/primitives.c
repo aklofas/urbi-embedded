@@ -262,9 +262,8 @@ date_as_string(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     }
     char buf[32];
     size_t n = strftime(buf, sizeof buf, "%Y-%m-%d %H:%M:%S", &tmv);
-    int oom = 0;
-    UValue sv = urbi_val_str_intern(vm, buf, n, &oom);
-    if (oom) return urbi_raise_oom(vm, out);
+    UValue sv = urbi_make_str(vm, buf, n);
+    if (sv.kind == UV_NIL) return urbi_raise_oom(vm, out);
     *out = sv;
     return UEXEC_OK;
 #else

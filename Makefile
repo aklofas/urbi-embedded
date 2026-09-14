@@ -255,9 +255,42 @@ $(BUILDDIR)/tests/unit/runner: $(UNIT_TEST_SRCS) $(LIB)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/unit -o $@ $(UNIT_TEST_SRCS) $(LIB) -lm
 
-.PHONY: test-unit
+.PHONY: test-unit test-probes
 test-unit: $(BUILDDIR)/tests/unit/runner
 	$(RUNNER_WRAPPER) $<
+
+# --- footprint and performance probes -----------------------------------
+#
+# Four numbers the project has committed to: what a booted VM costs, what
+# an idle strand costs, whether a ten-thousand-iteration loop gives its
+# memory back, and how the core compares to the one it replaced.  Each
+# probe prints what it measured and exits non-zero when it missed, so the
+# numbers in the release notes and the docs can be regenerated rather than
+# trusted.  See tests/probes/probe.h.
+#
+# lookup_bench times $(BUILDDIR)/urbi as a subprocess, which is why it
+# takes the binary and the fixture directory as arguments and why it is
+# not wrapped: timing a valgrind-instrumented binary against an
+# uninstrumented baseline would compare nothing.
+PROBE_SRCS := $(wildcard tests/probes/*.c)
+PROBE_BINS := $(patsubst tests/probes/%.c,$(BUILDDIR)/tests/probes/%,$(PROBE_SRCS))
+
+$(BUILDDIR)/tests/probes/%: tests/probes/%.c $(LIB)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/probes -o $@ $< $(LIB) -lm
+
+.PHONY: test-probes
+test-probes: $(PROBE_BINS) $(BUILDDIR)/urbi
+	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/boot_heap
+	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/strand_cost
+	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/leaks
+ifeq ($(TARGET),host)
+	@$(BUILDDIR)/tests/probes/lookup_bench $(BUILDDIR)/urbi tests/probes
+else
+	@echo "lookup_bench: SKIP — $(TARGET) is instrumented or built at a"
+	@echo "  different optimization level, and the baseline it compares"
+	@echo "  against was recorded on the default host build."
+endif
 
 # Core archive. Kept as its own target for cross-compile / freestanding
 # consumers that build the library without the host tools.
@@ -464,7 +497,7 @@ test-chk-runner:
 
 # `make test`: the frontend runner, the runtime runner, the layering
 # gate, and the .chk corpus driven through the urbi binary.
-test: $(LIB) test-unit test-rt check-rt-layering test-chk
+test: $(LIB) test-unit test-rt check-rt-layering test-chk test-probes
 
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi
@@ -918,5 +951,5 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: test-unit
+.PHONY: test-unit test-probes
 .PHONY: all core test test-asan test-ubsan test-debug test-switch clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-fuzz-smoke test-o2 force-flagstamp

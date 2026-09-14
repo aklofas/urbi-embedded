@@ -1,0 +1,14 @@
+# Milestone: v0.14.0-refoundation
+# Covers: an uncaught throw of a value the core cannot spell with integer
+#         digits alone.  The unwinder lives under the freestanding rule and
+#         has no snprintf, so it renders a Float only when the value is an
+#         exact integer; anything else used to come out as "<?>".  A hosted
+#         build hands it urbi_value_to_string as vm->render_value, which is
+#         what "%.14g" and the corpus's Float spelling come from.  A
+#         freestanding build has no hook and keeps "<?>".
+throw 1.5;
+[00000000] !!! 1.5
+throw 2.0;
+[00000000] !!! 2.0
+throw 0.1;
+[00000000] !!! 0.1
