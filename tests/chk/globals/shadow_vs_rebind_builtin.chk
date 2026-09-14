@@ -1,0 +1,28 @@
+# Covers: a built-in global name may be SHADOWED by a declaration but not
+#         REBOUND.  `var Object = 42` adds a slot on the realm's globals
+#         and the name reads 42 from then on; `Object = 42` asks to change
+#         the binding the built-ins hold and raises TypeError.
+# matrix-row: globals-constness
+#
+# The two are different requests, not two spellings of one.  A bare
+# `x = v` resolves the name through the prototype chain before writing —
+# that is what makes a typo in an assignment a LookupError rather than a
+# silent new global — and the same walk is where it sees that the slot it
+# found is constant.  A declaration resolves nothing: it creates a slot on
+# the receiver, which shadows whatever the chain held, exactly as
+# `obj.x = v` shadows a prototype's `x`.
+#
+# `class Pair { ... }` is a declaration too, which is why
+# objects/class-multi-slot.chk may name a class after the built-in `Pair`.
+#
+# The rebind is checked FIRST: the declaration on the line after it
+# shadows the name for the rest of the session.
+
+var e1 = "no"; try { Pair = 1 } catch (var e) { e1 = e.isA(TypeError) }; e1
+Pair == Pair
+var Pair = 42; Pair
+class Tuple { var a = 7 }; Tuple.a
+[00000001] true
+[00000002] true
+[00000003] 42
+[00000004] 7

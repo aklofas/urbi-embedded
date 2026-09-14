@@ -747,6 +747,22 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                     (void)uexec_throw(vm, s, UP_LOOKUPERROR, msg);
                     goto unwind;
                 }
+                /* CONSTNESS IS INHERITED BY AN UPDATE, and only by one.
+                 * `Object = 42` names the binding the built-in globals
+                 * hold and asks to change it, so a constant anywhere on
+                 * the chain refuses -- on the walk that has just proved
+                 * the name resolves at all, so it costs nothing extra.
+                 * A CREATE is a different request: `var Object = 42`,
+                 * `class Pair { ... }` and `Realm.Object = 42` add a slot
+                 * of their own that SHADOWS the built-in for one object,
+                 * which is ordinary prototype shadowing and stays legal.
+                 * The three are indistinguishable at this opcode anyway --
+                 * same receiver, same instruction -- so a create-side rule
+                 * could not tell them apart even if one were wanted. */
+                if (uobj_slot_attrs(&probe) & USLOT_CONSTANT) {
+                    (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: slot is constant");
+                    goto unwind;
+                }
             }
             if (o->cell.flags & UOBJ_F_READONLY) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: receiver is read-only");
@@ -757,19 +773,6 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             if (idx >= 0 && (o->attrs[idx] & USLOT_CONSTANT)) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: slot is constant");
                 goto unwind;
-            }
-            if (idx < 0) {
-                /* Constness is INHERITED.  A name that resolves to a
-                 * constant further up the chain may not be shadowed by a
-                 * local slot -- `Realm.Object = 42` has to raise, not
-                 * quietly rebind the name for this realm.  Only the
-                 * creation path pays for the walk; a rewrite of an
-                 * existing local slot took the branch above. */
-                UObjSlotRef up;
-                if (uobj_resolve(vm, o, name, &up) && (uobj_slot_attrs(&up) & USLOT_CONSTANT)) {
-                    (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: slot is constant");
-                    goto unwind;
-                }
             }
             UValue written = R[OPA(i)];
             if (idx >= 0 && (o->attrs[idx] & (USLOT_GETTER | USLOT_SETTER))) {

@@ -8,10 +8,10 @@
 # decl in a multi-statement class body emits as a sibling Foo.<name> = …
 # site.
 #
-# The two-slot classes are named Duo / Duo2 rather than Pair / Pair2:
-# `Pair` is a built-in global and built-in globals are constant, so
-# `class Pair { ... }` raises rather than shadowing — see
-# globals/const_builtin_global_rejects_write.chk.
+# `Pair` is also a built-in global name.  Declaring a class over it is
+# ordinary prototype shadowing and is allowed; only REBINDING a constant
+# built-in (`Pair = 1`) raises — see
+# globals/shadow_vs_rebind_builtin.chk.
 
 # Two slots: x and y survive as independent slots on the class object.
 class Point { var x = 1; var y = 2 }; Point.x
@@ -32,10 +32,10 @@ var v = Vec3.new(); v.x = 1; v.y = 2; v.z = 3; v.x + v.y + v.z
 [00000004] 6
 
 # .new() inherits all slots from a multi-slot class (COW).
-class Duo { var first = 10; var second = 20 }; var p = Duo.new(); p.first
+class Pair { var first = 10; var second = 20 }; var p = Pair.new(); p.first
 [00000005] 10
 
-class Duo2 { var first = 10; var second = 20 }; var p2 = Duo2.new(); p2.second
+class Pair2 { var first = 10; var second = 20 }; var p2 = Pair2.new(); p2.second
 [00000006] 20
 
 # Mixed: var + function-literal + var (freereg discipline between siblings).

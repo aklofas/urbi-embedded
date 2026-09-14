@@ -1,16 +1,24 @@
-# Covers: `Realm.Object = 42` raises a catchable TypeError and leaves the
-#         binding intact.
+# Covers: rebinding a constant built-in global raises a catchable
+#         TypeError and leaves the binding intact.
 # Origin: harvested from tests/unit/test_realm_globals_api.c
 #         (deleted in Phase 0)
 #
-# Uses the `Realm.` form: a bare `var Object = 42` is block-scoped since
-# LANG4-06 and would silently shadow instead of throwing.  Identity is
-# checked against the bare global `Object` (rather than printing the raw
-# object) so the fixture stays deterministic across ASLR/heap layout —
-# see globals/object_proto.chk for the same convention.
+# `Object = 42` is the REBIND: the bare-name write resolves the name
+# through the prototype chain — that is what makes a typo in an
+# assignment reportable — and refuses when what it finds is constant.
+# Every built-in global is constant.
+#
+# Not `Realm.Object = 42`, and not `var Object = 42`: both of those are
+# CREATES, which add a slot on the realm's own globals that shadows the
+# built-in rather than changing it.  Shadowing is legal, and
+# globals/shadow_vs_rebind_builtin.chk pins the two apart.
+#
+# Identity is checked against the bare global `Object` (rather than
+# printing the raw object) so the fixture stays deterministic across
+# ASLR/heap layout — see globals/object_proto.chk for the same convention.
 
 Realm.Object == Object
-var ok = "no"; try { Realm.Object = 42 } catch (var e) { ok = e.isA(TypeError) }; ok
+var ok = "no"; try { Object = 42 } catch (var e) { ok = e.isA(TypeError) }; ok
 Realm.Object == Object
 [00000001] true
 [00000002] true
