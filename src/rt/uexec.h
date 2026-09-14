@@ -110,8 +110,10 @@ UClosure  *uclosure_native(UVM *vm, int (*fn)(UVM *, UValue, UValue *, uint8_t, 
 /* Bind a loaded chunk root to this VM: interns every proto's ic names
  * into USym (rewriting proto->ic_names in place), rewrites every UVAL_STR
  * constant into a UV_SYM value, and wraps the root in a UCELL_PROTO cell
- * whose finaliser calls uchunk_destroy.  Takes ownership of `root` on
- * success.  NULL on OOM (the caller still owns `root`). */
+ * whose finaliser calls uchunk_destroy.  Takes ownership of `root`
+ * unconditionally: on OOM it returns NULL having already released (or
+ * handed to a soon-collected cell) the chunk, so the caller must never
+ * destroy `root` itself after calling this. */
 UProtoCell *uproto_bind(UVM *vm, UProto *root);
 /* The USym array for a proto's IC sites, or NULL when it has none. */
 static inline USym **uproto_names(const UProto *p) { return (USym **)p->ic_names; }

@@ -386,7 +386,7 @@ UProtoCell *uproto_bind(UVM *vm, UProto *root)
 {
     if (!root) return NULL;
     UProtoCell *pc = (UProtoCell *)ugc_alloc(vm, UCELL_PROTO, sizeof(UProtoCell));
-    if (!pc) return NULL;
+    if (!pc) { uchunk_destroy(root, NULL); return NULL; }
     /* Publish the back-pointer and the list link before interning: an
      * intern can grow the symbol table but never collects, and a later
      * failure still leaves a consistent (destroyable) cell. */

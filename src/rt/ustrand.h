@@ -96,6 +96,13 @@ UClosure *uclosure_new(struct UVM *vm, UProto *proto, uint8_t nupvals);
  * base + 1 for a native closure), zero-fills that frame's register window
  * to nil, and pushes the frame. 0 ok, -1 OOM (no frame pushed). */
 int      ustrand_push_frame(UStrand *s, UClosure *cl, UValue recv, uint32_t base, uint8_t ret_reg);
+/* As ustrand_push_frame, but leaves the first `nkeep` registers of the
+ * new window untouched instead of nil-filling them.  OP_CALL places the
+ * callee's arguments at exactly those slots (the caller's R[A+1..]), so
+ * the callee window overlaps them and a blanket nil-fill would erase the
+ * arguments it is being handed. */
+int      ustrand_push_frame_args(UStrand *s, UClosure *cl, UValue recv, uint32_t base,
+                                 uint8_t ret_reg, uint8_t nkeep);
 /* Closes any upvalues opened within the top frame's register window, then
  * pops it. No-op on an empty strand. */
 void     ustrand_pop_frame(UStrand *s);

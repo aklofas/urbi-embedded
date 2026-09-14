@@ -48,6 +48,11 @@ static int ustrand_grow_frames(UStrand *s) {
 }
 
 int ustrand_push_frame(UStrand *s, UClosure *cl, UValue recv, uint32_t base, uint8_t ret_reg) {
+    return ustrand_push_frame_args(s, cl, recv, base, ret_reg, 0);
+}
+
+int ustrand_push_frame_args(UStrand *s, UClosure *cl, UValue recv, uint32_t base,
+                            uint8_t ret_reg, uint8_t nkeep) {
     if (s->nframes == s->frames_cap && ustrand_grow_frames(s) != 0) return -1;
     uint32_t max_reg = cl->proto ? cl->proto->max_reg : 0;
     uint32_t needed = base + max_reg + 1;
@@ -56,7 +61,7 @@ int ustrand_push_frame(UStrand *s, UClosure *cl, UValue recv, uint32_t base, uin
      * popped frame -- ensure_stack's zero-fill only covers newly grown
      * capacity, so this frame's own registers must be reset to nil here
      * regardless of whether growth just happened. */
-    for (uint32_t i = base; i < needed; i++) s->stack[i] = uv_nil();
+    for (uint32_t i = base + nkeep; i < needed; i++) s->stack[i] = uv_nil();
     UFrame *f = &s->frames[s->nframes++];
     f->closure = cl;
     f->pc = cl->proto ? cl->proto->instructions : NULL;
