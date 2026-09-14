@@ -32,11 +32,19 @@ static void *ufront_chunk_alloc(void *ptr, size_t nbytes, void *ud)
 }
 
 int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
+                   const UCompileBudget *budget,
                    struct UProto **out, char *err, size_t errcap)
 {
     if (!vm || !src || !out) return URBI_ERR_INVALID_ARG;
     *out = NULL;
     if (errcap > 0 && err) err[0] = '\0';
+
+    /* The source-bytes limit is the one that is cheaper to check than to
+     * hit: refusing here means never lexing the text at all. */
+    if (budget && budget->max_source_bytes > 0 && n > budget->max_source_bytes) {
+        if (err && errcap) snprintf(err, errcap, "compile-budget exceeded: source");
+        return URBI_ERR_COMPILE_BUDGET_SOURCE;
+    }
 
     ULexer lex;
     ulex_init(&lex, src, n);
@@ -60,6 +68,7 @@ int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
 
     UParser p;
     uparse_init(&p, &lex, &arena);
+    uparse_set_budget(&p, budget);
 
     bool has_error = false;
     const char *parse_errmsg = NULL;
@@ -84,8 +93,15 @@ int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
     }
 
     if (has_error) {
+        /* A crossed limit stops the parser by starving its node
+         * allocator, which surfaces as an ordinary parse error; asking
+         * the parser which limit it was is what tells the two apart. */
+        int budget_err = uparse_budget_err(&p);
         if (err && errcap) {
-            if (parse_errmsg && (parse_err_line > 0 || parse_err_col > 0)) {
+            if (budget_err != URBI_OK) {
+                snprintf(err, errcap, "compile-budget exceeded: %s",
+                         budget_err == URBI_ERR_COMPILE_BUDGET_DEPTH ? "depth" : "nodes");
+            } else if (parse_errmsg && (parse_err_line > 0 || parse_err_col > 0)) {
                 snprintf(err, errcap, "%s:%d:%d: %s", ulex_current_source(&lex),
                          parse_err_line, parse_err_col, parse_errmsg);
             } else if (!urbi_emit_diag_format_first_error(&e, err, errcap)) {
@@ -99,6 +115,7 @@ int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
         urbi_emit_abandon(&e);
         uchunk_destroy(root, NULL);   /* heap_allocated: frees the struct too */
         uarena_destroy(&arena);
+        if (budget_err != URBI_OK) return budget_err;
         return (finish_rc == EMIT_OOM || e.error == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
     }
 

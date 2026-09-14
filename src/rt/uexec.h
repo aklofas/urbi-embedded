@@ -40,6 +40,11 @@ struct URealm {
     /* Per-realm output sink.  NULL falls back to the VM-wide writer. */
     void (*writer)(void *ud, const char *chan, size_t cl, const char *msg, size_t ml);
     void  *writer_ud;
+    /* Compile limits for source text this realm runs.  All-zero (the
+     * state urealm_new leaves it in) means unlimited, which is what a
+     * host running its own code wants; a REPL session sets real numbers,
+     * because the text arrives from somewhere else. */
+    UCompileBudget budget;
 };
 
 /* --- the watcher set ------------------------------------------------

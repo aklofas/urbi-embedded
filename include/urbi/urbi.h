@@ -128,6 +128,13 @@ URealm *urbi_realm_main(UVM *vm);
  * realm's reactive surface -- including the MAIN realm's, which
  * urbi_realm_free refuses to touch. */
 UValue  urbi_realm_tag(UVM *vm, URealm *realm);
+/* Send one realm's output somewhere of its own.  NULL puts the realm back
+ * on the VM-wide writer.  A host that runs two realms -- a control script
+ * and a REPL session, say -- needs this to keep their output apart; with
+ * only urbi_set_writer the two would interleave on one sink. */
+void    urbi_realm_set_writer(UVM *vm, URealm *realm,
+                              void (*fn)(void *ud, const char *chan, size_t chan_len,
+                                         const char *msg, size_t msg_len), void *ud);
 
 /* ===================================================================
  * Code

@@ -119,6 +119,24 @@ void urealm_free(UVM *vm, URealm *r)
     r->root_tag = NULL;
 }
 
+void urealm_set_writer(UVM *vm, URealm *r,
+                       void (*fn)(void *ud, const char *chan, size_t cl,
+                                  const char *msg, size_t ml), void *ud)
+{
+    (void)vm;
+    if (!r) return;
+    r->writer = fn;
+    r->writer_ud = ud;
+}
+
+void urealm_set_budget(UVM *vm, URealm *r, const UCompileBudget *b)
+{
+    (void)vm;
+    if (!r) return;
+    if (b) r->budget = *b;
+    else { r->budget.max_parser_depth = 0; r->budget.max_ast_nodes = 0; r->budget.max_source_bytes = 0; }
+}
+
 void urealm_write(UVM *vm, URealm *r, const char *chan, size_t cl,
                   const char *msg, size_t ml)
 {

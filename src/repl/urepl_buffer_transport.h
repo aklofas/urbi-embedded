@@ -1,47 +1,44 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/repl/urepl_buffer_transport.h - in-process loopback transport
+/* src/repl/urepl_buffer_transport.h — a stream made of two byte queues.
  *
- * A pair of byte buffers (client → server, server → client) wrapped in
- * the UTransport vtable.  Used by unit + integration tests to drive
- * the dispatcher end-to-end without opening sockets.
+ * The in-process loopback the tests drive the service through: what the
+ * "client" writes is what the service reads, and what the service writes
+ * is what the client reads back.  No socket, no file descriptor, no
+ * blocking — which is what lets a .chk fixture be a deterministic list of
+ * requests and expected responses.
  *
- * Single-client per state object.  accept_fn returns once with a sentinel
- * fd (always 0) and then signals "would block" on subsequent calls. */
+ * It is also the reference implementation of the four-member UTransport
+ * vtable: read returns 0 when the queue is empty AND the client has not
+ * finished, and negative once it has, which is exactly the "nothing now"
+ * versus "end of stream" distinction a UART or a socket makes. */
+
 #ifndef UREPL_BUFFER_TRANSPORT_H
 #define UREPL_BUFFER_TRANSPORT_H
 
 #include "urbi/repl.h"
 
 #include <stddef.h>
-#include <stdint.h>
 
-typedef struct UBufferTransportState UBufferTransportState;
+typedef struct UBufferTransport UBufferTransport;
 
-/* Allocate a buffer-transport pair.  Returns NULL on OOM. */
-UBufferTransportState *urepl_buffer_transport_create(void);
+/* NULL on OOM.  Free with urepl_buffer_transport_destroy, which is safe
+ * to call after the service has closed the transport. */
+UBufferTransport *urepl_buffer_transport_create(void);
+void              urepl_buffer_transport_destroy(UBufferTransport *bt);
 
-/* Free the transport state. */
-void urepl_buffer_transport_destroy(UBufferTransportState *st);
+/* Fills `out` with the vtable pointing at `bt`. */
+void urepl_buffer_transport_vtable(UBufferTransport *bt, UTransport *out);
 
-/* The transport vtable.  Pass &UREPL_BUFFER_TRANSPORT (plus the state)
- * to urbi_repl_register_transport. */
-extern const UTransport UREPL_BUFFER_TRANSPORT;
+/* Client side: queue bytes for the service to read.  Returns the count
+ * queued, or 0 on OOM. */
+size_t urepl_buffer_client_write(UBufferTransport *bt, const void *bytes, size_t n);
 
-/* ---- Client-side helpers --------------------------------------------- */
+/* Client side: take bytes the service has written.  Returns the count. */
+size_t urepl_buffer_client_read(UBufferTransport *bt, void *buf, size_t cap);
 
-/* The "client" half of the loopback.  Tests write what the client would
- * send over the wire; the server's read_fn returns those bytes. */
-size_t urepl_buffer_client_write(UBufferTransportState *st,
-                                 const void *bytes, size_t n);
-
-/* The "client" half of the loopback.  After the dispatcher calls
- * write_fn on the server's fd, the bytes appear here for the test to
- * read. */
-size_t urepl_buffer_client_read(UBufferTransportState *st,
-                                void *buf, size_t cap);
-
-/* Reset accept_fn — the next call returns the sentinel fd one more
- * time.  Useful when tests want to drive multiple accept cycles. */
-void urepl_buffer_transport_reset_accept(UBufferTransportState *st);
+/* Client side: declare that no more requests are coming.  The service's
+ * next read past the end of the queued bytes reports end of stream, which
+ * is what makes the disconnect path reachable from a test. */
+void urepl_buffer_client_finish(UBufferTransport *bt);
 
 #endif /* UREPL_BUFFER_TRANSPORT_H */

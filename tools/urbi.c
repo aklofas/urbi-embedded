@@ -143,7 +143,7 @@ static int run_dump(UVM *vm, const char *src, size_t len, const char *name, bool
         urbi_chunk_free(vm, bytes, n);
         return 0;
     }
-    if (ufront_compile(vm, src, len, name, &root, err, sizeof err) != URBI_OK) {
+    if (ufront_compile(vm, src, len, name, NULL, &root, err, sizeof err) != URBI_OK) {
         fprintf(stderr, "urbi: %s\n", err);
         return 1;
     }

@@ -1,778 +1,267 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/repl/urepl_dispatch.c - REPL job dispatcher + session machinery */
-#ifndef URBI_REPL_COOPERATIVE_ONLY
-/* _POSIX_C_SOURCE=200809L exposes clock_gettime / CLOCK_MONOTONIC. */
-#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
-#  undef _POSIX_C_SOURCE
-#  define _POSIX_C_SOURCE 200809L
-#endif
-#endif /* !URBI_REPL_COOPERATIVE_ONLY */
-#include "repl/urepl_dispatch.h"
-#ifndef URBI_REPL_COOPERATIVE_ONLY
-#include "repl/urepl_auth.h"
-#endif
-#include "repl/urepl_introspect.h"
-#include "repl/urepl_listener.h"
-#include "repl/urepl_ndjson.h"
-#include "repl/urepl_state.h"  /* v0.10.4: UReplState (vm->repl->server) */
-#include "realm/urealm.h"
-#include "stdlib/lobby_native.h"  /* v0.9.1 Phase 5 — Lobby.lobbies + handleDisconnect */
-#include "vm/uvm.h"
+/* src/repl/urepl_dispatch.c — see repl/urepl_dispatch.h. */
 
-#include <stdio.h>
+#include "repl/urepl_dispatch.h"
+
+#include "rt/urealm.h"
+#include "stdlib/debug_namespace.h"   /* urbi_introspect_coros */
+
 #include <stdlib.h>
 #include <string.h>
-#ifndef URBI_REPL_COOPERATIVE_ONLY
-#include <time.h>
-#include <unistd.h>   /* close() — used by urepl_session_reap_pending */
-#endif
 
-/* Default per-session output ringbuf cap (used when cfg.output_ringbuf_cap
- * is 0). */
+/* Default per-session output staging when the config leaves it at zero. */
 #define UREPL_DEFAULT_OUTPUT_CAP ((size_t)64U * 1024U)
 
-/* ---- Helpers --------------------------------------------------------- */
+/* ---- output staging --------------------------------------------------- */
 
-/* Build a lobby id hex string from a 32-bit counter.  Format: 4-8 hex
- * digits zero-padded to at least 4.  Fits in lobby_id_hex[10]. */
-static void
-format_lobby_id(uint32_t id, char out[10])
+/* Reclaims the leading `off` bytes the transport has already taken.  Done
+ * lazily, at the point a write would not otherwise fit, so a session that
+ * drains completely every sweep never memmoves at all. */
+static void outbuf_compact(UReplOutBuf *o)
 {
-    int n = snprintf(out, 10, "%04x", id);
-    (void)n;  /* always 4 digits for 32-bit input up to 0xFFFF;
-               * snprintf truncates safely for larger ids */
+    if (o->off == 0) return;
+    if (o->off >= o->fill) { o->fill = 0; o->off = 0; return; }
+    memmove(o->buf, o->buf + o->off, o->fill - o->off);
+    o->fill -= o->off;
+    o->off = 0;
 }
 
-/* session_writer: realm-writer callback that captures urbiscript output
- * into the session's output ringbuf.  If the session is mid-eval
- * (current_eval_id != 0), the envelope carries that id; otherwise it
- * is lobby-scoped (no id, lobby field set). */
-static void
-session_writer(void *ud, const char *channel, size_t channel_len,
-               const char *msg, size_t msg_len, uint64_t ts_us)
+void urepl_session_push(UReplSession *s, const char *bytes, size_t n)
+{
+    UReplOutBuf *o = &s->out;
+    if (o->fill + n > o->cap) outbuf_compact(o);
+    if (o->fill + n > o->cap) { o->dropped = true; return; }
+    memcpy(o->buf + o->fill, bytes, n);
+    o->fill += n;
+}
+
+/* The two shapes every handler ends in.  A local buffer rather than a
+ * shared one: these are re-entered through the session writer while an
+ * eval is running, and a shared scratch buffer would be clobbered
+ * mid-frame. */
+static void push_error(UReplSession *s, uint64_t id, const char *code, const char *msg)
+{
+    char env[1024];
+    size_t n = 0;
+    if (urepl_ndjson_emit_error(env, sizeof env, id, code, msg, &n) == 0)
+        urepl_session_push(s, env, n);
+}
+
+static void push_result(UReplSession *s, uint64_t id, const char *value_json)
+{
+    char env[8192];
+    size_t n = 0;
+    if (urepl_ndjson_emit_result(env, sizeof env, id, value_json, &n) == 0)
+        urepl_session_push(s, env, n);
+    else
+        push_error(s, id, "response_too_large", NULL);
+}
+
+void urepl_dispatch_parse_error(UReplSession *s)
+{
+    /* Id zero: the line never parsed, so there is no id to correlate to. */
+    push_error(s, 0, "parse", "malformed request");
+}
+
+void urepl_dispatch_line_too_long(UReplSession *s)
+{
+    push_error(s, 0, "line_too_long", "request exceeded the framing cap");
+}
+
+void urepl_dispatch_output_dropped(UReplSession *s)
+{
+    push_error(s, 0, "output_dropped", "output was lost: the client is not reading");
+}
+
+/* ---- the session writer ------------------------------------------------
+ *
+ * Installed on the session's realm, so everything the session's own code
+ * echoes is framed as an output envelope for the session's own client.
+ * Output produced INSIDE an eval carries that eval's id; output produced
+ * after its `done` — by a watcher or a timer the eval armed — carries
+ * none, which is how a client tells a reply from an interruption. */
+static void session_writer(void *ud, const char *chan, size_t cl,
+                           const char *msg, size_t ml)
 {
     UReplSession *s = (UReplSession *)ud;
-    if (s == NULL) {
-        return;
-    }
-    /* Channel must be NUL-terminated for emit; copy to a local stack
-     * buffer.  The vm's writer fn typedef gives us length + pointer,
-     * but channels are short identifiers (typically "clog" / "cerr"). */
-    char channel_buf[64];
-    if (channel_len >= sizeof(channel_buf)) {
-        channel_len = sizeof(channel_buf) - 1;
-    }
-    if (channel != NULL && channel_len > 0U) {
-        memcpy(channel_buf, channel, channel_len);
-    }
-    channel_buf[channel_len] = '\0';
+    if (s == NULL) return;
 
-    /* Stack-bounded envelope; spec §6 line cap is 1 MiB but typical
-     * channel writes are O(100 B).  Truncate longer messages and emit
-     * a single envelope; downstream tooling sees the truncation marker. */
+    char channel[64];
+    if (cl >= sizeof channel) cl = sizeof channel - 1;
+    if (chan != NULL && cl > 0) memcpy(channel, chan, cl);
+    channel[cl] = '\0';
+
+    /* Half the envelope is reserved for framing and escapes, so a
+     * message longer than that is truncated rather than dropped: a
+     * shortened line of tracing is more use than none. */
     char env[4096];
+    if (ml > sizeof env / 2) ml = sizeof env / 2;
     size_t n = 0;
-    uint64_t id = s->current_eval_id;
-    const char *lobby = (id == 0U) ? s->lobby_id_hex : NULL;
-    if (msg_len > sizeof(env) / 2U) {
-        /* Reserve room for envelope overhead. */
-        msg_len = sizeof(env) / 2U;
-    }
-    int rc = urepl_ndjson_emit_output(env, sizeof(env), id, lobby,
-                                      channel_buf, msg, msg_len,
-                                      ts_us, &n);
-    if (rc == 0) {
-        urepl_ringbuf_write(&s->output, env, n);
-    }
+    if (urepl_ndjson_emit_output(env, sizeof env, s->current_eval_id,
+                                 channel, msg, ml, &n) == 0)
+        urepl_session_push(s, env, n);
+    else
+        s->out.dropped = true;
 }
 
-/* ---- Session lifecycle ----------------------------------------------- */
+/* ---- session lifecycle ------------------------------------------------- */
 
-UReplSession *
-urepl_session_create(UReplServer *server)
+UReplSession *urepl_session_create(UReplServer *server, const UTransport *transport)
 {
-    if (server == NULL) {
-        return NULL;
-    }
-    UReplSession *s = (UReplSession *)calloc(1, sizeof(*s));
-    if (s == NULL) {
-        return NULL;
-    }
+    if (server == NULL || transport == NULL) return NULL;
 
-    /* Assign a unique session id + matching lobby hex. */
-    UREPL_MUTEX_LOCK(&server->sessions_mutex);
-    s->session_id = server->next_session_id++;
-    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
-    format_lobby_id(s->session_id, s->lobby_id_hex);
+    UReplSession *s = (UReplSession *)calloc(1, sizeof *s);
+    if (s == NULL) return NULL;
 
-    /* Sized output ringbuf. */
-    size_t cap = server->cfg.output_ringbuf_cap;
-    if (cap == 0U) {
-        cap = UREPL_DEFAULT_OUTPUT_CAP;
-    }
-    if (urepl_ringbuf_init(&s->output, cap) != URBI_OK) {
-        free(s);
-        return NULL;
-    }
+    size_t cap = server->cfg.output_buf_cap ? server->cfg.output_buf_cap
+                                            : UREPL_DEFAULT_OUTPUT_CAP;
+    s->out.buf = (char *)malloc(cap);
+    if (s->out.buf == NULL) { free(s); return NULL; }
+    s->out.cap = cap;
 
-    /* Per-session realm with REPL default compile-budget.  If the
-     * server config overrode default_budget, apply that instead. */
-    URealm *r = urbi_realm_create_repl(server->vm);
-    if (r == NULL) {
-        urepl_ringbuf_destroy(&s->output);
-        free(s);
-        return NULL;
-    }
-    bool override_budget = (server->cfg.default_budget.max_parser_depth != 0U
-                            || server->cfg.default_budget.max_ast_nodes != 0U
-                            || server->cfg.default_budget.max_source_bytes != 0U);
-    if (override_budget) {
-        urbi_realm_set_compile_budget(server->vm, r, &server->cfg.default_budget);
-    }
+    /* One realm per session is the whole isolation story: its globals
+     * object is its own, and the built-ins below it are shared. */
+    s->realm = urbi_realm_new(server->vm);
+    if (s->realm == NULL) { free(s->out.buf); free(s); return NULL; }
+
     s->vm = server->vm;
-    s->realm = r;
-    s->server = server;
-    URBI_TP(server->vm, URBI_TRACE_REPL, URBI_LOG_INFO, URBI_TP_REPL_SESSION,
-            1u, (uint32_t)(uintptr_t)s);
+    s->transport = *transport;
+    urealm_set_writer(server->vm, s->realm, session_writer, s);
+    urealm_set_budget(server->vm, s->realm, &server->cfg.default_budget);
 
-    /* Install the session's writer so urbiscript output flows into our
-     * ringbuf instead of the VM's default stderr writer. */
-    urbi_realm_set_writer(server->vm, r, session_writer, s);
-
-    /* v0.9.1 Phase 5: register this session's global_object on
-     * Lobby.lobbies so the urbiscript-side view stays in sync.  A
-     * failure here would surface as URBI_ERR_OOM, but the slot is
-     * already initialised by lobby.u (the bake-blob's deferred run
-     * fires during urbi_realm_create_repl -> urbi_populate_realm_-
-     * globals above), so practical OOM is unlikely.  We swallow it:
-     * a session whose entry didn't land in Lobby.lobbies still works
-     * for its own client; only `wall` broadcast would miss it. */
-    (void)urbi_lobby_register_session(server->vm, r);
-
-    /* Link into server's session list (head-insert). */
-    UREPL_MUTEX_LOCK(&server->sessions_mutex);
-    s->next = server->sessions_head;
-    server->sessions_head = s;
-    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
-
+    s->next = server->sessions;
+    server->sessions = s;
     return s;
 }
 
-UReplSession *
-urepl_session_find(UReplServer *server, uint32_t session_id)
+void urepl_session_destroy(UReplServer *server, UReplSession *s)
 {
-    if (server == NULL) {
-        return NULL;
+    if (server == NULL || s == NULL) return;
+
+    /* The lobby's disconnect hook, before the realm goes.  It is a script
+     * call because the hook is a script slot the client may have
+     * replaced; whatever it throws is dropped, since a teardown that
+     * fails is still a teardown. */
+    if (s->realm != NULL) {
+        static const char HOOK[] = "Realm.handleDisconnect()";
+        UValue ignored;
+        char err[128];
+        (void)urbi_run(server->vm, s->realm, HOOK, sizeof HOOK - 1u,
+                       "<disconnect>", &ignored, err, sizeof err);
+        /* The hook's own failure must not look like the VM's. */
+        urbi_clear_error(server->vm);
     }
-    UREPL_MUTEX_LOCK(&server->sessions_mutex);
-    UReplSession *s = server->sessions_head;
-    while (s != NULL) {
-        if (s->session_id == session_id) {
-            break;
-        }
-        s = s->next;
+
+    /* Detach the writer before the realm is freed: a strand of this realm
+     * still on the run queue would otherwise write into a freed session. */
+    if (s->realm != NULL) urealm_set_writer(server->vm, s->realm, NULL, NULL);
+    if (s->realm != NULL) urbi_realm_free(server->vm, s->realm);
+
+    if (!s->closed && s->transport.close != NULL) s->transport.close(s->transport.ctx);
+    s->closed = true;
+
+    for (UReplSession **pp = &server->sessions; *pp; pp = &(*pp)->next) {
+        if (*pp == s) { *pp = s->next; break; }
     }
-    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
-    return s;
+    free(s->out.buf);
+    free(s->in);
+    free(s);
 }
 
-UReplSession *
-urepl_session_find_by_lobby(UReplServer *server, const char *lobby_hex)
+/* ---- op handlers ------------------------------------------------------- */
+
+/* The service's error vocabulary.  Each name is what a client keys on, so
+ * the mapping is the wire contract, not a convenience. */
+static const char *error_code_for(int rc)
 {
-    if (server == NULL || lobby_hex == NULL) {
-        return NULL;
+    switch (rc) {
+    case URBI_ERR_COMPILE:               return "parse";
+    case URBI_ERR_COMPILE_BUDGET_DEPTH:  return "budget_depth";
+    case URBI_ERR_COMPILE_BUDGET_NODES:  return "budget_nodes";
+    case URBI_ERR_COMPILE_BUDGET_SOURCE: return "budget_source";
+    case URBI_ERR_UNCAUGHT_THROW:        return "runtime";
+    case URBI_ERR_OOM:                   return "oom";
+    default:                             return "error";
     }
-    UREPL_MUTEX_LOCK(&server->sessions_mutex);
-    UReplSession *s = server->sessions_head;
-    while (s != NULL) {
-        if (strcmp(s->lobby_id_hex, lobby_hex) == 0) {
-            break;
-        }
-        s = s->next;
-    }
-    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
-    return s;
 }
 
-void
-urepl_session_destroy(UReplServer *server, UReplSession *session)
+static void dispatch_eval(UReplServer *server, UReplSession *s, const UReplNdjsonReq *req)
 {
-    if (server == NULL || session == NULL) {
-        return;
-    }
-    URBI_TP(server->vm, URBI_TRACE_REPL, URBI_LOG_INFO, URBI_TP_REPL_SESSION,
-            0u, (uint32_t)(uintptr_t)session);
-    /* Unlink from server's session list FIRST so concurrent finders
-     * (`urepl_session_find` from the listener subthread) won't see a
-     * session that's mid-teardown.  After this point only the caller
-     * holds a reference. */
-    UREPL_MUTEX_LOCK(&server->sessions_mutex);
-    UReplSession **cur = &server->sessions_head;
-    while (*cur != NULL) {
-        if (*cur == session) {
-            *cur = session->next;
-            break;
-        }
-        cur = &(*cur)->next;
-    }
-    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
+    if (req->code == NULL) { push_error(s, req->id, "parse", "eval without code"); return; }
 
-    /* v0.9.1 Phase 5 disconnect-cleanup sequence (spec section 9):
-     *
-     *   1. Fire handleDisconnect against the session's lobby instance
-     *      so user code or the default onDisconnect Event runs while
-     *      the realm is still live.  Errors silently dropped — teardown
-     *      shouldn't abort because a user-supplied hook faulted.
-     *   2. Unregister from Lobby.lobbies so subsequent `wall` calls
-     *      and `Lobby.lobbies.length()` reads see consistent state.
-     *   3. Clear the realm writer so any late writer call during step 4
-     *      teardown can't hit session_writer with a freed session.
-     *   4. urbi_realm_destroy cancels any tags + strands owned by this
-     *      realm, then frees the realm (and the v0.7.3 root_proto-
-     *      refcount mechanism rescues any persistent strand still
-     *      holding a UProto reference).
-     *   5. Destroy the output ringbuf and free the session struct.
-     *
-     * Steps 1-2 are no-ops in builds where the lobby.u overlay didn't
-     * run (e.g. URBI_BYTECODE_ONLY builds — though such builds also
-     * disable urbi_repl_eval so the dispatcher is unreachable). */
-    (void)urbi_lobby_invoke_handleDisconnect(server->vm, session->realm);
-    (void)urbi_lobby_unregister_session(server->vm, session->realm);
+    char err[512];
+    err[0] = '\0';
+    UValue value = urbi_make_nil();
 
-    /* Clear the realm's writer before destroying the realm to avoid a
-     * dangling callback during teardown. */
-    urbi_realm_set_writer(server->vm, session->realm, NULL, NULL);
-    urbi_realm_destroy(server->vm, session->realm);
-    urepl_ringbuf_destroy(&session->output);
-    /* v0.9.4: free the cooperative inbound parse buffer if one was
-     * lazily allocated by urepl_session_read_and_dispatch_one. */
-    if (session->coop_inbuf != NULL) {
-        free(session->coop_inbuf);
-        session->coop_inbuf = NULL;
-    }
-    /* v0.9.4: free the cooperative outbound staging buffer if one was
-     * lazily allocated by urepl_session_write_drain_one. */
-    if (session->coop_outbuf != NULL) {
-        free(session->coop_outbuf);
-        session->coop_outbuf = NULL;
-    }
-    free(session);
-}
+    /* Set before the run, cleared before the `done`, so the window in
+     * which output is attributed to this eval is exactly the eval. */
+    s->current_eval_id = req->id;
+    int rc = urbi_run(server->vm, s->realm, req->code, req->code_len,
+                      "<stdin>", &value, err, sizeof err);
 
-/* === Single-owner teardown helpers ==================================== */
-
-/* Thread-safe teardown request.  Reader threads call this instead of
- * urepl_session_destroy so that session memory is only freed on the VM
- * thread.  Release store paired with the acquire load in
- * urepl_session_reap_pending forms a synchronizes-with edge: all writes
- * made by this thread up to this point (e.g. client_fd close, parse
- * buffer state) are visible to the reaper before it observes the flag.
- * See docs/internals/repl-teardown.md §4. */
-void
-urepl_request_teardown(UReplSession *s)
-{
-    if (s == NULL) {
-        return;
-    }
-    __atomic_store_n(&s->needs_teardown, true, __ATOMIC_RELEASE);
-}
-
-/* Reap sessions flagged for teardown by POSIX reader threads.  Called
- * by the VM thread at the head of urepl_dispatch_drain_if_active, before
- * job dispatch.  Unlinking sessions here means urepl_session_find will
- * not find them during the subsequent dispatch pass.
- *
- * Scope: only sessions whose paired reader is a POSIX pthread
- * (reader->started == true).  Cooperative sessions (reader->started ==
- * false, reader->cooperative == true) are owned by urepl_disconnect_sweep
- * which runs from urbi_repl_serve_step — we skip them here to avoid
- * double-reap.
- *
- * Locking note: we unlink under sessions_mutex, then release before
- * calling urepl_session_destroy (which can invoke handleDisconnect —
- * arbitrary urbiscript — and must not run under sessions_mutex). */
-void
-urepl_session_reap_pending(UReplServer *server)
-{
-#ifndef URBI_REPL_COOPERATIVE_ONLY
-    if (server == NULL) {
-        return;
-    }
-    for (;;) {
-        /* Find the first POSIX-thread session that needs teardown. */
-        UREPL_MUTEX_LOCK(&server->sessions_mutex);
-        UReplSession *found = NULL;
-        UReplSession **link = &server->sessions_head;
-        while (*link != NULL) {
-            UReplSession *s = *link;
-            bool flagged = __atomic_load_n(&s->needs_teardown,
-                                           __ATOMIC_ACQUIRE);
-            /* Only reap sessions backed by a started POSIX reader thread;
-             * leave cooperative sessions for urepl_disconnect_sweep. */
-            bool posix_reader = (s->reader != NULL && s->reader->started);
-            if (flagged && posix_reader) {
-                found = s;
-                *link = s->next;   /* unlink */
-                break;
-            }
-            link = &s->next;
-        }
-
-        /* Unlink the paired reader from readers_head while we still hold
-         * the lock so urepl_listener_wake_all_readers won't dereference
-         * a reader whose session we're about to destroy. */
-        UReplReader *reader = NULL;
-        if (found != NULL) {
-            reader = found->reader;
-            if (reader != NULL) {
-                UReplReader **cur = &server->readers_head;
-                while (*cur != NULL) {
-                    if (*cur == reader) {
-                        *cur = reader->next;
-                        break;
-                    }
-                    cur = &(*cur)->next;
-                }
-                found->reader   = NULL;
-                reader->session = NULL;
-            }
-        }
-        UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
-
-        if (found == NULL) {
-            break;   /* no more pending POSIX-thread teardowns */
-        }
-
-        /* Join the reader thread (it already exited — reader_main called
-         * urepl_request_teardown then returned).  client_fd was closed
-         * by reader_main before requesting teardown. */
-        if (reader != NULL) {
-            if (reader->started) {
-                UREPL_THREAD_JOIN(reader->thread);
-            }
-            if (reader->wake_eventfd >= 0) {
-                close(reader->wake_eventfd);
-                reader->wake_eventfd = -1;
-            }
-            /* client_fd was set to -1 by reader_main; this is a no-op
-             * guard in case a future code path misses the close. */
-            if (reader->client_fd >= 0 && reader->transport != NULL
-                && reader->transport->close_fn != NULL) {
-                reader->transport->close_fn(reader->client_fd);
-                reader->client_fd = -1;
-            }
-            free(reader);
-        }
-
-        /* Destroy the session outside the lock — may run arbitrary
-         * urbiscript (handleDisconnect) via urbi_lobby_invoke_handleDisconnect.
-         * urepl_session_destroy's own unlink pass is a no-op because we
-         * already removed found from sessions_head above. */
-        urepl_session_destroy(server, found);
-    }
-#else
-    (void)server;
-    /* Cooperative-only builds have no POSIX reader threads; all session
-     * reaping is handled by urepl_disconnect_sweep. */
-#endif /* !URBI_REPL_COOPERATIVE_ONLY */
-}
-
-/* === end single-owner teardown ======================================== */
-
-/* ---- Op handlers ----------------------------------------------------- */
-
-static void
-push_env(UReplSession *s, const char *env, size_t n)
-{
-    urepl_ringbuf_write(&s->output, env, n);
-}
-
-/* Emit a standard error envelope into s->output.  Covers the common
- * emit_error + push_env pattern shared by multiple dispatch paths.
- * Uses a 256-byte local buffer; adequate for all standard error codes
- * and short messages. */
-static void
-push_error(UReplSession *s, uint64_t id, const char *code, const char *msg)
-{
-    char env[256];
-    size_t n = 0;
-    if (urepl_ndjson_emit_error(env, sizeof(env), id, code, msg, &n) == 0)
-        push_env(s, env, n);
-}
-
-/* Emit a standard result envelope into s->output.  Uses a 256-byte local
- * buffer; adequate for short value_json strings (lobby ids, booleans,
- * small JSON objects). */
-static void
-push_result(UReplSession *s, uint64_t id, const char *value_json)
-{
-    char env[256];
-    size_t n = 0;
-    if (urepl_ndjson_emit_result(env, sizeof(env), id, value_json, 0, &n) == 0)
-        push_env(s, env, n);
-}
-
-static void
-dispatch_eval(UReplServer *server, UReplSession *s, UReplJob *job)
-{
-    (void)server;
-    char result[1024];
-    /* Set live eval id BEFORE the eval so any session_writer hits
-     * during the call carry the eval id (spec §6.3). */
-    s->current_eval_id = job->req.id;
-
-    int rc = urbi_repl_eval(s->vm, s->realm,
-                            job->req.code,
-                            job->req.code_len,
-                            result, sizeof(result));
-
-    /* Emit result or error envelope, then done.  Important: zero the
-     * current_eval_id BEFORE the done envelope is emitted so any
-     * post-done output (from watchers spawned by the eval) is
-     * lobby-scoped per spec §6.3. */
-    char env[4096];
-    size_t n = 0;
     if (rc == URBI_OK) {
-        /* Wrap result in JSON-string form.  urbi_repl_eval returns a
-         * printable representation in 'result' (e.g. "3", "\"hello\"").
-         * We treat it as a JSON string for now; Phase 4 is where a real
-         * JSON value formatter lands. */
-        char value_json[1100];
-        size_t off = 0;
-        value_json[off++] = '"';
-        int esc = urepl_json_escape(result, strlen(result),
-                                    value_json + off,
-                                    sizeof(value_json) - off - 2);
-        if (esc < 0) {
-            /* Fall back to a truncation marker. */
-            const char *trunc = "<truncated>";
-            size_t tn = strlen(trunc);
-            memcpy(value_json + off, trunc, tn);
-            off += tn;
-        } else {
-            off += (size_t)esc;
-        }
-        value_json[off++] = '"';
-        value_json[off] = '\0';
-        if (urepl_ndjson_emit_result(env, sizeof(env), job->req.id,
-                                     value_json, 0, &n) == 0) {
-            push_env(s, env, n);
+        /* The value goes over as a JSON string holding what the REPL would
+         * have printed.  A structural JSON rendering of an arbitrary
+         * urbiscript value is a separate design, not a formatting detail. */
+        char rendered[1024];
+        size_t rn = urbi_value_to_string(server->vm, value, rendered, sizeof rendered);
+        char quoted[2200];
+        quoted[0] = '"';
+        int esc = urepl_json_escape(rendered, rn, quoted + 1, sizeof quoted - 3);
+        if (esc < 0) { push_error(s, req->id, "response_too_large", NULL); }
+        else {
+            quoted[1 + (size_t)esc] = '"';
+            quoted[2 + (size_t)esc] = '\0';
+            push_result(s, req->id, quoted);
         }
     } else {
-        const char *code;
-        switch (rc) {
-        case URBI_ERR_COMPILE:                 code = "parse";        break;
-        case URBI_ERR_STRAND_FATAL:            code = "runtime";      break;
-        case URBI_ERR_COMPILE_BUDGET_DEPTH:    code = "budget_depth"; break;
-        case URBI_ERR_COMPILE_BUDGET_NODES:    code = "budget_nodes"; break;
-        case URBI_ERR_COMPILE_BUDGET_SOURCE:   code = "budget_source";break;
-        case URBI_ERR_FROZEN_PROTO:            code = "frozen_proto"; break;
-        case URBI_ERR_OOM:                     code = "oom";          break;
-        default:                               code = "error";        break;
+        /* A compile failure explains itself in `err`; a throw explains
+         * itself through the error channel. */
+        const char *msg = err;
+        if (msg[0] == '\0') {
+            UErrorInfo info;
+            (void)urbi_last_error(server->vm, &info);
+            msg = (info.message != NULL && info.message[0] != '\0') ? info.message : "";
         }
-        if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
-                                    code, result, &n) == 0) {
-            push_env(s, env, n);
-        }
+        push_error(s, req->id, error_code_for(rc), msg);
+        urbi_clear_error(server->vm);
     }
 
-    /* Done envelope.  Zero the eval id BEFORE so any session_writer
-     * fires after 'done' are lobby-scoped. */
-    s->current_eval_id = 0U;
-    if (urepl_ndjson_emit_done(env, sizeof(env), job->req.id, &n) == 0) {
-        push_env(s, env, n);
-    }
-}
-
-static void
-dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
-{
-    char env[256];
+    s->current_eval_id = 0;
+    char env[128];
     size_t n = 0;
-    const char *expected = server->cfg.auth_token;
-    if (expected == NULL || expected[0] == '\0') {
-        /* No auth configured — treat as success (loopback default). */
-        s->authed = true;
-        if (urepl_ndjson_emit_auth_ok(env, sizeof(env), job->req.id, &n) == 0) {
-            push_env(s, env, n);
-        }
-        return;
-    }
-#ifndef URBI_REPL_COOPERATIVE_ONLY
-    /* v0.9.1: constant-time comparison.  strcmp's length-
-     * dependent timing leaks ~1 byte per probe to an attacker timing
-     * round-trips; urepl_auth_token_match walks the full token length
-     * with a volatile accumulator (spec §7.3). */
-    size_t token_len = (job->req.token != NULL) ? strlen(job->req.token) : 0U;
-    size_t expected_len = strlen(expected);
-    bool matched = urepl_auth_token_match(job->req.token, token_len,
-                                          expected, expected_len);
-    /* Bump the per-source rate-limiter on each result.  On a
-     * successful auth the slot is cleared so a future legitimate
-     * client doesn't inherit prior fail-count state. */
-    if (server->auth_limiter != NULL) {
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ULL
-                          + (uint64_t)ts.tv_nsec / 1000ULL;
-        UREPL_MUTEX_LOCK(&server->auth_limiter_mutex);
-        if (matched) {
-            urepl_auth_limiter_record_success(
-                (UReplAuthLimiter *)server->auth_limiter, s->peer_id);
-        } else {
-            urepl_auth_limiter_record_fail(
-                (UReplAuthLimiter *)server->auth_limiter,
-                s->peer_id, now_us);
-        }
-        UREPL_MUTEX_UNLOCK(&server->auth_limiter_mutex);
-    }
-    if (matched) {
-        s->authed = true;
-        if (urepl_ndjson_emit_auth_ok(env, sizeof(env), job->req.id, &n) == 0) {
-            push_env(s, env, n);
-        }
-    } else {
-        /* === Explicit error response + clean close on token mismatch ===
-         * Emit the auth_failed envelope so the client sees a structured
-         * error (not just EOF), then schedule teardown so the VM thread
-         * closes the session on the next reap pass.  This prevents a
-         * brute-force loop from keeping the session open indefinitely. */
-        push_error(s, job->req.id, "auth_failed", NULL);
-        urepl_request_teardown(s);
-    }
-#else
-    /* Cooperative-only: auth TU is not compiled in; auto-approve.
-     * Freestanding embedded targets have no network threat model. */
-    (void)expected;
-    s->authed = true;
-    if (urepl_ndjson_emit_auth_ok(env, sizeof(env), job->req.id, &n) == 0) {
-        push_env(s, env, n);
-    }
-#endif /* URBI_REPL_COOPERATIVE_ONLY */
+    if (urepl_ndjson_emit_done(env, sizeof env, req->id, &n) == 0)
+        urepl_session_push(s, env, n);
 }
 
-static void
-dispatch_introspect(UReplServer *server, UReplSession *s, UReplJob *job)
+static void dispatch_introspect(UReplServer *server, UReplSession *s,
+                                const UReplNdjsonReq *req)
 {
-    /* Each introspect_* primitive emits a structured JSON object into a
-     * scratch buffer; we wrap it in a {kind:result,value:<inner>} envelope.
-     *
-     * Inner cap of 8 KiB matches the per-primitive expected ceiling for
-     * idle / small VMs.  Buffer overflow returns an error envelope rather
-     * than silently truncating the JSON. */
-    char inner[8192];
-    size_t inner_n = 0;
-    const char *what = (job->req.what != NULL) ? job->req.what : "";
-    int rc = -1;
-
-    if      (strcmp(what, "coros")    == 0) rc = urbi_introspect_coros   (server->vm, inner, sizeof(inner), &inner_n);
-    else if (strcmp(what, "tags")     == 0) rc = urbi_introspect_tags    (server->vm, inner, sizeof(inner), &inner_n);
-    else if (strcmp(what, "watchers") == 0) rc = urbi_introspect_watchers(server->vm, inner, sizeof(inner), &inner_n);
-    else if (strcmp(what, "events")   == 0) rc = urbi_introspect_events  (server->vm, inner, sizeof(inner), &inner_n);
-    else if (strcmp(what, "profile")  == 0) rc = urbi_introspect_profile (server->vm, inner, sizeof(inner), &inner_n);
-    else if (strcmp(what, "gc")       == 0) rc = urbi_introspect_gc      (server->vm, inner, sizeof(inner), &inner_n);
-    else if (strcmp(what, "lobbies")  == 0) rc = urbi_introspect_lobbies (server->vm, inner, sizeof(inner), &inner_n);
-    else if (strcmp(what, "stack")    == 0) rc = urbi_introspect_stack   (server->vm, job->req.coro_id, inner, sizeof(inner), &inner_n);
-    else if (strcmp(what, "slots")    == 0) {
-        const char *obj = (job->req.obj != NULL) ? job->req.obj : "";
-        rc = urbi_introspect_slots(server->vm, s->realm,
-                                   obj, strlen(obj),
-                                   inner, sizeof(inner), &inner_n);
-    } else {
-        push_error(s, job->req.id, "unknown_introspect", what);
+    const char *what = req->what != NULL ? req->what : "";
+    if (strcmp(what, "coros") != 0) {
+        /* The eight other primitives the old server carried each walked a
+         * structure the re-founded runtime does not have in that shape;
+         * they return with the server, rather than as eight stubs. */
+        push_error(s, req->id, "unknown_introspect", what);
         return;
     }
-
-    if (rc != URBI_OK) {
-        push_error(s, job->req.id, "introspect_failed", what);
-        return;
-    }
-
-    /* Wrap inner JSON in the result envelope.  inner is NOT NUL-terminated
-     * by the introspect primitives, so we temporarily terminate it for
-     * urepl_ndjson_emit_result (which expects a C string). */
-    inner[inner_n] = '\0';
-    char env[10240];
+    char inner[4096];
     size_t n = 0;
-    if (urepl_ndjson_emit_result(env, sizeof(env), job->req.id,
-                                 inner, 0, &n) == 0) {
-        push_env(s, env, n);
-    }
-}
-
-static void
-dispatch_cancel_stub(UReplServer *server, UReplSession *s, const UReplJob *job)
-{
-    /* Real tag.stop() lookup is not yet wired — this stub emits
-     * cancelled:0 and cancels nothing
-     * (spec §6.6 "unknown tag is a benign no-op"). */
-    (void)server;
-    push_result(s, job->req.id, "{\"cancelled\":0}");
-}
-
-static void
-dispatch_lobby_new(UReplServer *server, UReplSession *s, const UReplJob *job)
-{
-    /* Multi-lobby per connection is deferred to v1.x.  For now, return
-     * the existing session's lobby id (treat lobby_new as idempotent on
-     * the implicit lobby).  Caller gets a result envelope with the lobby
-     * field as a JSON string. */
-    (void)server;
-    char value_json[32];
-    snprintf(value_json, sizeof(value_json), "\"%s\"", s->lobby_id_hex);
-    push_result(s, job->req.id, value_json);
-}
-
-static void
-dispatch_lobby_close(UReplServer *server, UReplSession *s, const UReplJob *job)
-{
-    /* lobby_close on the implicit lobby is treated as a benign no-op in
-     * v0.9.1 (the lobby is destroyed only when the connection closes).
-     * Return result:true so clients can sequence shutdown. */
-    (void)server;
-    (void)s;
-    push_result(s, job->req.id, "true");
-}
-
-/* ---- Job entry point ------------------------------------------------- */
-
-void
-urepl_dispatch_job(UReplServer *server, UReplJob *job)
-{
-    if (server == NULL || job == NULL) {
+    if (urbi_introspect_coros(server->vm, inner, sizeof inner, &n) != URBI_OK) {
+        push_error(s, req->id, "introspect_failed", what);
         return;
     }
-    UReplSession *s = urepl_session_find(server, job->session_id);
-    if (s == NULL) {
-        /* Stale job for a closed session — drop silently. */
-        urepl_ndjson_free_req(&job->req);
-        free(job);
-        return;
-    }
-
-    /* REPL-02: consume the output-ring overflow flag once per overflow event.
-     * The output ring drops oldest bytes (and with the frame-boundary fix,
-     * extends through the next '\n') when the writer outruns the reader.
-     * Emit one error envelope per event so the client knows output was lost,
-     * then clear the flag so subsequent jobs do not re-emit it.
-     * id=0 → lobby-scoped (not tied to a specific eval request).
-     *
-     * Headroom guard: if the ring cannot absorb the envelope without itself
-     * overflowing, skip the write.  The flag is already consumed at this
-     * point, so the skip does NOT re-arm it — the ping-pong loop (saturated
-     * ring → envelope write → re-overflow → flag re-set → repeat) is broken.
-     * The client infers drops from missing eval results rather than seeing
-     * an infinite stream of junk overflow envelopes. */
-    if (urepl_ringbuf_overflow_consume(&s->output)) {
-        char ofenv[256];
-        size_t ofn = 0;
-        if (urepl_ndjson_emit_error(ofenv, sizeof(ofenv), 0,
-                                    "overflow",
-                                    "output overflow: frames dropped",
-                                    &ofn) == 0
-            && urepl_ringbuf_headroom(&s->output, ofn)) {
-            push_env(s, ofenv, ofn);
-        }
-    }
-
-    /* === Per-source job rate limit ===
-     * Enforce rate_limit_per_second when configured.  Uses wall-clock seconds
-     * to define the window.  On the first job of each new second the counter
-     * resets; once the counter hits the limit the session is torn down with an
-     * explicit error envelope.  Only compiled for POSIX (clock_gettime). */
-#ifndef URBI_REPL_COOPERATIVE_ONLY
-    if (server->cfg.rate_limit_per_second > 0) {
-        struct timespec rate_ts;
-        clock_gettime(CLOCK_MONOTONIC, &rate_ts);
-        int64_t now_sec = (int64_t)rate_ts.tv_sec;
-        if (now_sec != s->rate_window_sec) {
-            s->rate_window_sec  = now_sec;
-            s->rate_jobs_this_sec = 0;
-        }
-        s->rate_jobs_this_sec++;
-        if (s->rate_jobs_this_sec > server->cfg.rate_limit_per_second) {
-            push_error(s, job->req.id, "rate_limit_exceeded",
-                       "too many requests per second");
-            urepl_request_teardown(s);
-            urepl_ndjson_free_req(&job->req);
-            free(job);
-            return;
-        }
-    }
-#endif /* URBI_REPL_COOPERATIVE_ONLY */
-
-    /* Pre-auth gate: only 'auth' is allowed before authed=true (spec §7). */
-    if (!s->authed
-        && server->cfg.auth_token != NULL
-        && server->cfg.auth_token[0] != '\0'
-        && job->req.op != UREPL_OP_AUTH) {
-        push_error(s, job->req.id, "auth_required",
-                   "send {\"op\":\"auth\",\"token\":...} first");
-        urepl_ndjson_free_req(&job->req);
-        free(job);
-        return;
-    }
-
-    switch (job->req.op) {
-    case UREPL_OP_AUTH:        dispatch_auth(server, s, job); break;
-    case UREPL_OP_EVAL:        dispatch_eval(server, s, job); break;
-    case UREPL_OP_CANCEL:      dispatch_cancel_stub(server, s, job); break;
-    case UREPL_OP_INTROSPECT:  dispatch_introspect(server, s, job); break;
-    case UREPL_OP_LOBBY_NEW:   dispatch_lobby_new(server, s, job); break;
-    case UREPL_OP_LOBBY_CLOSE: dispatch_lobby_close(server, s, job); break;
-    case UREPL_OP_NONE:
-    default:
-        push_error(s, job->req.id, "unknown_op", NULL);
-        break;
-    }
-
-    urepl_ndjson_free_req(&job->req);
-    free(job);
+    inner[n] = '\0';
+    /* Inline, not quoted: an introspect answer IS JSON already. */
+    push_result(s, req->id, inner);
 }
 
-void
-urepl_dispatch_drain(UReplServer *server)
+void urepl_dispatch(UReplServer *server, UReplSession *s, const UReplNdjsonReq *req)
 {
-    if (server == NULL || server->job_queue == NULL) {
-        return;
+    if (server == NULL || s == NULL || req == NULL) return;
+    switch (req->op) {
+    case UREPL_OP_EVAL:       dispatch_eval(server, s, req); break;
+    case UREPL_OP_INTROSPECT: dispatch_introspect(server, s, req); break;
+    default:                  push_error(s, req->id, "unknown_op", NULL); break;
     }
-    UReplJob *head = urepl_queue_drain_all(server->job_queue);
-    while (head != NULL) {
-        UReplJob *next = head->next;
-        urepl_dispatch_job(server, head);
-        head = next;
-    }
-}
-
-/* Step-driver hook.  Called from urbi_step() before any opcode work.
- *
- * Order matters:
- *
- *   1. Drain the listener's pending-accept queue first.  Listener
- *      thread does no VM-touching work; new sessions get their realm
- *      bootstrapped here on the VM thread (spec §3.1).  Any session
- *      created in step 1 is then findable by sub-step 2/3.
- *
- *   2. Drain the job MPSC queue and dispatch each — writes response
- *      envelopes into per-session output ringbufs.
- *
- *   3. Wake every reader subthread so it flushes its session's
- *      ringbuf to socket.
- *
- * Linked weakly from src/vm/ustep.c so the default (URBI_ENABLE_REPL=0)
- * build resolves to a no-op without dragging the REPL TUs in. */
-void
-urepl_dispatch_drain_if_active(struct UVM *vm)
-{
-    if (vm == NULL || vm->repl == NULL || vm->repl->server == NULL) {
-        return;
-    }
-    UReplServer *server = (UReplServer *)vm->repl->server;
-    urepl_listener_drain_accepts(server);
-    /* Reap sessions flagged for teardown by reader threads before
-     * dispatching new jobs — ensures stale session_ids resolve to NULL
-     * in the subsequent job-dispatch pass. */
-    urepl_session_reap_pending(server);
-    urepl_dispatch_drain(server);
-    urepl_listener_wake_all_readers(server);
 }

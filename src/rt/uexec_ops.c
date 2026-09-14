@@ -1184,7 +1184,7 @@ int uexec_run_source(UVM *vm, URealm *realm, const char *src, size_t n,
     if (!vm || !realm) return URBI_ERR_INVALID_ARG;
 
     UProto *root = NULL;
-    int rc = ufront_compile(vm, src, n, name, &root, err, errcap);
+    int rc = ufront_compile(vm, src, n, name, &realm->budget, &root, err, errcap);
     if (rc != URBI_OK) return rc;
 
     UProtoCell *pc = uproto_bind(vm, root);   /* takes ownership of root either way */

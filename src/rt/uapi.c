@@ -87,6 +87,11 @@ URealm *urbi_realm_main(UVM *vm)
 
 void urbi_realm_free(UVM *vm, URealm *realm) { urealm_free(vm, realm); }
 
+void urbi_realm_set_writer(UVM *vm, URealm *realm,
+                           void (*fn)(void *, const char *, size_t, const char *, size_t),
+                           void *ud)
+{ if (vm) urealm_set_writer(vm, realm ? realm : urbi_realm_main(vm), fn, ud); }
+
 UValue urbi_realm_tag(UVM *vm, URealm *realm)
 {
     if (!vm) return urbi_make_nil();
@@ -106,7 +111,9 @@ int urbi_compile(UVM *vm, const char *src, size_t n, const char *name,
     *out_len = 0;
 
     UProto *root = NULL;
-    int rc = ufront_compile(vm, src, n, name, &root, err, errcap);
+    /* No realm, so no budget: urbi_compile is the host compiling its own
+     * source ahead of time, not a session compiling text off a wire. */
+    int rc = ufront_compile(vm, src, n, name, NULL, &root, err, errcap);
     if (rc != URBI_OK) return rc;
 
     ptrdiff_t need = ufront_serialize(root, NULL, 0);
@@ -464,7 +471,7 @@ int urbi_watch(UVM *vm, URealm *realm, const char *expr,
     if (!realm) return URBI_ERR_INVALID_ARG;
 
     UProto *root = NULL;
-    int rc = ufront_compile(vm, expr, strlen(expr), "<watch>", &root,
+    int rc = ufront_compile(vm, expr, strlen(expr), "<watch>", &realm->budget, &root,
                             vm->last_error, sizeof vm->last_error);
     if (rc != URBI_OK) { vm->last_error_code = rc; return rc; }
 

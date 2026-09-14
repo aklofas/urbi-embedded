@@ -1,140 +1,77 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/repl/urepl.h - internal REPL service types (v0.9.1)
+/* src/repl/urepl.h — the shapes behind <urbi/repl.h>.
  *
- * Only compiled when URBI_ENABLE_REPL=1.  Public REPL types live in
- * <urbi/repl.h>; this header pulls those in and extends with internal-
- * only types (sessions, transport list, etc.). */
+ * One server, a list of sessions, and nothing else: no queue, no mutex,
+ * no thread.  Everything here runs on the caller's thread inside
+ * urbi_repl_serve_step, which is the whole reason the cooperative core
+ * could come back before the networked server did.
+ *
+ * The networked server's session machinery — auth state, peer identity,
+ * rate-limit counters, the reader thread back-pointer — is not reduced
+ * here, it is absent.  Each of those fields existed to coordinate with a
+ * thread that no longer runs. */
+
 #ifndef UREPL_H
 #define UREPL_H
 
 #include "urbi/repl.h"
 #include "urbi/urbi.h"
 
-#include "urepl_threading.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-/* Forward declarations — full definitions in private TUs. */
+struct UReplSession;
 typedef struct UReplSession UReplSession;
-typedef struct UReplQueue UReplQueue;
-typedef struct UReplRingbuf UReplRingbuf;
-typedef struct UReplJob UReplJob;
-typedef struct UReplTransportEntry UReplTransportEntry;
-typedef struct UReplAcceptItem UReplAcceptItem;
 
-/* Pending-accept item.  Listener thread accepts a connection on the
- * kernel side (socket fd + peer id) and pushes one of these onto the
- * server's accept queue.  VM thread drains the queue at the dispatch
- * boundary and does the *VM-touching* work — session create (allocates
- * a realm + stdlib boot) + reader-pthread spawn — on the VM thread,
- * preserving the spec §3.1 invariant that VM state is single-threaded.
+/* Per-session output staging.  A plain FIFO of bytes, not a ring: the
+ * consumer is the transport in the same sweep that produced them, so the
+ * only thing wraparound would buy is a memmove saved on a buffer that is
+ * usually empty.
  *
- * Without this hand-off the listener thread would call
- * urbi_realm_create_repl → urbi_run_chunk → urbi_step, racing with the
- * host's own urbi_step on the VM. */
-struct UReplAcceptItem {
-    int                      client_fd;
-    uint32_t                 peer_id;
-    const UTransport        *transport;
-    struct UReplAcceptItem  *next;
+ * An envelope that does not fit is DROPPED, and `dropped` latches so the
+ * client is told a gap happened rather than silently receiving a
+ * truncated stream.  Dropping beats blocking: the alternative is stalling
+ * the VM on a client that has stopped reading. */
+typedef struct UReplOutBuf {
+    char   *buf;
+    size_t  cap;      /* allocated */
+    size_t  fill;     /* bytes held */
+    size_t  off;      /* bytes already handed to the transport */
+    bool    dropped;  /* an envelope was lost; report once, then clear */
+} UReplOutBuf;
+
+struct UReplSession {
+    UVM         *vm;
+    URealm      *realm;
+    UTransport   transport;
+    UReplOutBuf  out;
+
+    /* Inbound line accumulator.  A transport hands over arbitrary chunks,
+     * so a request may arrive in pieces and two may arrive at once. */
+    char   *in;
+    size_t  in_cap;
+    size_t  in_fill;
+    /* Set when a line exceeded the framing cap: bytes are discarded until
+     * the newline that ends it, so one oversized request cannot desync
+     * every request after it. */
+    bool    in_discard;
+
+    /* The id of the eval currently running, so output written inside the
+     * frame is correlated to it.  Zero outside an eval, which is what
+     * marks a watcher's output as unsolicited. */
+    uint64_t current_eval_id;
+
+    bool     ended;      /* the transport reported end of stream */
+    bool     closed;     /* close() has been called; do not call it twice */
+
+    struct UReplSession *next;
 };
 
-/* Cross-thread bool helpers.  shutting_down (server) and stop_requested
- * (reader) are set by one thread and polled by another; the bare bool
- * would be a data race even though the semantics are benign (one-shot
- * transition false→true, eventfd carries the wake-up).  Acquire/release
- * pairing makes the transition observable to helgrind/tsan and gives a
- * happens-before edge between the write and a subsequent read. */
-#define UREPL_ATOMIC_LOAD_BOOL(p)  __atomic_load_n((p), __ATOMIC_ACQUIRE)
-#define UREPL_ATOMIC_STORE_BOOL(p, v) __atomic_store_n((p), (v), __ATOMIC_RELEASE)
-
-/* Transport list entry.  Each call to urbi_repl_register_transport
- * appends one of these to the server's transport chain. */
-struct UReplTransportEntry {
-    const UTransport          *transport;
-    void                      *listener_state;
-    struct UReplTransportEntry *next;
-};
-
-/* The server is opaque to embedders; this is the full layout used by
- * src/repl/* TUs.
- *
- * Threading (Phase 3):
- *   - VM thread (caller of urbi_repl_serve / urbi_step) owns the VM
- *     state.  Drains job_queue + dispatches each job + signals each
- *     session's reader wake_eventfd to flush output.
- *   - Listener pthread (when transports are registered) polls all
- *     transports + stop_eventfd; on accept allocates a session +
- *     spawns a per-connection reader subthread.
- *   - Per-session reader pthread polls client_fd + wake_eventfd;
- *     reads NDJSON lines + pushes jobs to job_queue, drains
- *     session->output to socket on wake.
- *
- * Mutex discipline:
- *   - sessions_mutex protects sessions_head + next_session_id and
- *     readers_head linked-list mutations.  All threads acquire it
- *     for the duration of list scans.
- *   - auth_limiter_mutex protects the auth limiter table only; held
- *     for the duration of check/record (microseconds). */
 struct UReplServer {
-    struct UVM              *vm;
-    UReplConfig              cfg;
-    UReplTransportEntry     *transports;
-    UReplQueue              *job_queue;
-    UReplSession            *sessions_head;
-    uint32_t                 next_session_id;
-    urbi_mutex_t            sessions_mutex;
-    bool                     shutting_down;
-
-    /* Phase 3 — listener + reader pthread machinery. */
-    urbi_thread_t           listener_thread;
-    bool                     listener_running;
-    int                      stop_eventfd;     /* -1 = not initialized */
-
-    /* Per-session reader threads.  Indexed by session_id via the
-     * sessions list; reader joins happen at urbi_repl_stop. */
-    struct UReplReader      *readers_head;
-
-    /* Pending-accept queue (listener producer / VM-thread consumer).
-     * Protected by accept_queue_mutex; the listener pushes each new
-     * accepted fd here, the VM thread drains in the dispatch hook. */
-    UReplAcceptItem         *accept_head;
-    UReplAcceptItem         *accept_tail;
-    urbi_mutex_t            accept_queue_mutex;
-
-    /* Phase 3 — per-IP auth-fail rate-limiter.  void* keeps the
-     * auth-internal struct private to the urepl_auth.c TU.  NULL when
-     * auth is disabled. */
-    void                    *auth_limiter;
-    urbi_mutex_t            auth_limiter_mutex;
+    UVM          *vm;
+    UReplConfig   cfg;
+    UReplSession *sessions;
 };
-
-/* Per-connection reader subthread.  Created on accept, owned by the
- * listener thread until joined at urbi_repl_stop.  Each carries one
- * client fd + a wake eventfd used by the VM thread (via the dispatch
- * drain hook) to signal "output ready, please flush to socket". */
-typedef struct UReplReader {
-    urbi_thread_t     thread;
-    int                client_fd;
-    int                wake_eventfd;       /* -1 = none */
-    bool               started;
-    bool               stop_requested;     /* set by shutdown path */
-    /* v0.9.4: true when the reader has NO pthread — spawned for a
-     * non-pollable transport (Pico USB CDC + UART, ESP-IDF UART,
-     * FreeRTOS UART, in-process buffer).  The cooperative
-     * urbi_repl_serve_step sweep drives accept/read/write/close
-     * for these sessions instead of a per-connection reader thread.
-     * Reap paths (urepl_listener_stop_and_join, close-sweep) gate
-     * pthread_join on `started`, so cooperative readers are skipped
-     * naturally.  The flag exists for documentation + to gate the
-     * shutdown(client_fd, SHUT_RDWR) force-EOF path which is a
-     * socket-only operation. */
-    bool               cooperative;
-    const UTransport  *transport;
-    UReplSession      *session;
-    UReplServer       *server;
-    struct UReplReader *next;              /* server->readers_head chain */
-} UReplReader;
 
 #endif /* UREPL_H */

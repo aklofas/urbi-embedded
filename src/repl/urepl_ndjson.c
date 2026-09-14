@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/repl/urepl_ndjson.c - NDJSON request parser + response emitter
+/* src/repl/urepl_ndjson.c — see repl/urepl_ndjson.h.
  *
- * Schema-specific scanner.  Recognizes only the request fields enumerated
- * in spec §6.1; unknown keys are skipped, unknown ops fail.  Not a
- * general JSON parser (see src/repl/ujson.c for the full RFC-8259 subset). */
+ * A schema scanner for the request side and a hand-rolled emitter for the
+ * response side.  Neither is a JSON library: the request grammar is four
+ * keys wide, and every response this service produces is built here, so
+ * there is nothing to generalise over. */
 #include "repl/urepl_ndjson.h"
 
 #include <stdio.h>
@@ -297,146 +298,74 @@ skip_value(Scan *s)
     }
     return -1;
 }
-
 /* ---- Op-name dispatch ------------------------------------------------- */
 
 static UReplOp
 op_from_name(const char *s, size_t n)
 {
-    if (n == 4 && memcmp(s, "auth", 4) == 0) {
-        return UREPL_OP_AUTH;
-    }
-    if (n == 4 && memcmp(s, "eval", 4) == 0) {
-        return UREPL_OP_EVAL;
-    }
-    if (n == 6 && memcmp(s, "cancel", 6) == 0) {
-        return UREPL_OP_CANCEL;
-    }
-    if (n == 10 && memcmp(s, "introspect", 10) == 0) {
-        return UREPL_OP_INTROSPECT;
-    }
-    if (n == 9 && memcmp(s, "lobby_new", 9) == 0) {
-        return UREPL_OP_LOBBY_NEW;
-    }
-    if (n == 11 && memcmp(s, "lobby_close", 11) == 0) {
-        return UREPL_OP_LOBBY_CLOSE;
-    }
+    if (n == 4  && memcmp(s, "eval", 4) == 0)        return UREPL_OP_EVAL;
+    if (n == 10 && memcmp(s, "introspect", 10) == 0) return UREPL_OP_INTROSPECT;
     return UREPL_OP_NONE;
 }
 
 void
 urepl_ndjson_free_req(UReplNdjsonReq *req)
 {
-    if (req == NULL) {
-        return;
-    }
-    free(req->lobby);
-    free(req->token);
+    if (req == NULL) return;
     free(req->code);
     free(req->what);
-    free(req->tag);
-    free(req->file);
-    free(req->obj);
     memset(req, 0, sizeof(*req));
 }
 
 int
 urepl_ndjson_parse(const char *line, size_t len, UReplNdjsonReq *out)
 {
-    if (out == NULL || line == NULL) {
-        return -1;
-    }
+    if (out == NULL || line == NULL) return -1;
     memset(out, 0, sizeof(*out));
-    if (len > UREPL_MAX_LINE) {
-        return -1;
-    }
+    if (len > UREPL_MAX_LINE) return -1;
 
     Scan s = { line, line + len };
-    if (expect(&s, '{') != 0) {
-        return -1;
-    }
+    if (expect(&s, '{') != 0) return -1;
     skip_ws(&s);
-
-    /* Empty object => malformed request. */
-    if (s.p < s.end && *s.p == '}') {
-        return -1;
-    }
+    if (s.p < s.end && *s.p == '}') return -1;   /* {} is not a request */
 
     bool first = true;
     while (s.p < s.end) {
         skip_ws(&s);
-        if (s.p >= s.end) {
-            urepl_ndjson_free_req(out);
-            return -1;
-        }
+        if (s.p >= s.end) { urepl_ndjson_free_req(out); return -1; }
         if (*s.p == '}') {
             s.p++;
-            /* Trailing junk after the closing brace is OK (NDJSON line
-             * may have trailing whitespace before the newline). */
-            skip_ws(&s);
+            /* An object that named no op parses but means nothing. */
+            if (out->op == UREPL_OP_NONE) { urepl_ndjson_free_req(out); return -1; }
             return 0;
         }
         if (!first) {
-            if (expect(&s, ',') != 0) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
+            if (expect(&s, ',') != 0) { urepl_ndjson_free_req(out); return -1; }
             skip_ws(&s);
         }
         first = false;
 
-        /* Key string. */
         char *key = NULL;
         size_t key_len = 0;
-        int rc = parse_string(&s, &key, &key_len, 64);
-        if (rc != 0 || key == NULL) {
+        if (parse_string(&s, &key, &key_len, 64) != 0 || key == NULL) {
             urepl_ndjson_free_req(out);
             return -1;
         }
-        if (expect(&s, ':') != 0) {
-            free(key);
-            urepl_ndjson_free_req(out);
-            return -1;
-        }
+        if (expect(&s, ':') != 0) { free(key); urepl_ndjson_free_req(out); return -1; }
         skip_ws(&s);
 
         if (strcmp(key, "id") == 0) {
             free(key);
-            if (parse_uint64(&s, &out->id) != 0) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
+            if (parse_uint64(&s, &out->id) != 0) { urepl_ndjson_free_req(out); return -1; }
         } else if (strcmp(key, "op") == 0) {
             free(key);
             char *opname = NULL;
             size_t opn = 0;
-            if (parse_string(&s, &opname, &opn, 32) != 0) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
+            if (parse_string(&s, &opname, &opn, 32) != 0) { urepl_ndjson_free_req(out); return -1; }
             UReplOp op = op_from_name(opname, opn);
             free(opname);
-            if (op == UREPL_OP_NONE) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
+            if (op == UREPL_OP_NONE) { urepl_ndjson_free_req(out); return -1; }
             out->op = op;
-        } else if (strcmp(key, "lobby") == 0) {
-            free(key);
-            if (out->lobby != NULL) { urepl_ndjson_free_req(out); return -1; }
-            size_t n = 0;
-            if (parse_string(&s, &out->lobby, &n, UREPL_MAX_LOBBY) != 0) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
-        } else if (strcmp(key, "token") == 0) {
-            free(key);
-            if (out->token != NULL) { urepl_ndjson_free_req(out); return -1; }
-            size_t n = 0;
-            if (parse_string(&s, &out->token, &n, UREPL_MAX_TOKEN) != 0) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
         } else if (strcmp(key, "code") == 0) {
             free(key);
             if (out->code != NULL) { urepl_ndjson_free_req(out); return -1; }
@@ -452,58 +381,16 @@ urepl_ndjson_parse(const char *line, size_t len, UReplNdjsonReq *out)
                 urepl_ndjson_free_req(out);
                 return -1;
             }
-        } else if (strcmp(key, "tag") == 0) {
-            free(key);
-            if (out->tag != NULL) { urepl_ndjson_free_req(out); return -1; }
-            size_t n = 0;
-            if (parse_string(&s, &out->tag, &n, UREPL_MAX_TAG) != 0) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
-        } else if (strcmp(key, "file") == 0) {
-            free(key);
-            if (out->file != NULL) { urepl_ndjson_free_req(out); return -1; }
-            size_t n = 0;
-            if (parse_string(&s, &out->file, &n, UREPL_MAX_FILE) != 0) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
-        } else if (strcmp(key, "line") == 0) {
-            free(key);
-            uint64_t v = 0;
-            if (parse_uint64(&s, &v) != 0 || v > 0xFFFFFFFFULL) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
-            out->line = (uint32_t)v;
-        } else if (strcmp(key, "coro_id") == 0) {
-            free(key);
-            uint64_t v = 0;
-            if (parse_uint64(&s, &v) != 0 || v > 0xFFFFFFFFULL) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
-            out->coro_id = (uint32_t)v;
-        } else if (strcmp(key, "obj") == 0) {
-            free(key);
-            if (out->obj != NULL) { urepl_ndjson_free_req(out); return -1; }
-            size_t n = 0;
-            if (parse_string(&s, &out->obj, &n, UREPL_MAX_OBJ) != 0) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
         } else {
-            /* Unknown key — skip value silently for forward compat. */
+            /* An unknown key is skipped rather than refused, so a newer
+             * client talking to an older service still gets its request
+             * run instead of a parse error. */
             free(key);
-            if (skip_value(&s) != 0) {
-                urepl_ndjson_free_req(out);
-                return -1;
-            }
+            if (skip_value(&s) != 0) { urepl_ndjson_free_req(out); return -1; }
         }
     }
 
-    /* End of buffer without closing '}'. */
-    urepl_ndjson_free_req(out);
+    urepl_ndjson_free_req(out);   /* ran out before the closing brace */
     return -1;
 }
 
@@ -604,96 +491,43 @@ finish(char *buf, size_t cap, size_t off, size_t *out_len)
 }
 
 int
-urepl_ndjson_emit_hello(char *buf, size_t cap, const char *lobby,
-                        bool synclines, bool auth_required,
-                        size_t *out_len)
-{
-    size_t off = 0;
-    if (append_lit(buf, cap, &off, "{\"kind\":\"hello\",\"version\":\"v0.9.1\"") != 0) {
-        return -1;
-    }
-    if (lobby != NULL) {
-        if (append_lit(buf, cap, &off, ",\"lobby\":") != 0) { return -1; }
-        if (append_quoted(buf, cap, &off, lobby) != 0) { return -1; }
-    }
-    if (append_lit(buf, cap, &off, ",\"synclines\":") != 0) { return -1; }
-    if (append_lit(buf, cap, &off, synclines ? "true" : "false") != 0) { return -1; }
-    if (append_lit(buf, cap, &off, ",\"auth_required\":") != 0) { return -1; }
-    if (append_lit(buf, cap, &off, auth_required ? "true" : "false") != 0) { return -1; }
-    if (append_lit(buf, cap, &off, "}") != 0) { return -1; }
-    return finish(buf, cap, off, out_len);
-}
-
-int
-urepl_ndjson_emit_auth_ok(char *buf, size_t cap, uint64_t id, size_t *out_len)
-{
-    size_t off = 0;
-    if (append_lit(buf, cap, &off, "{\"id\":") != 0) return -1;
-    if (append_u64(buf, cap, &off, id) != 0) return -1;
-    if (append_lit(buf, cap, &off, ",\"kind\":\"auth_ok\"}") != 0) return -1;
-    return finish(buf, cap, off, out_len);
-}
-
-int
 urepl_ndjson_emit_result(char *buf, size_t cap, uint64_t id,
-                         const char *value_json, uint64_t ts_us,
-                         size_t *out_len)
+                         const char *value_json, size_t *out_len)
 {
     size_t off = 0;
     if (append_lit(buf, cap, &off, "{\"id\":") != 0) return -1;
     if (append_u64(buf, cap, &off, id) != 0) return -1;
     if (append_lit(buf, cap, &off, ",\"kind\":\"result\",\"value\":") != 0) return -1;
+    /* value_json is a JSON fragment the caller built: an eval hands over a
+     * quoted string, an introspect hands over an object. */
     if (value_json == NULL || value_json[0] == '\0') {
         if (append_lit(buf, cap, &off, "null") != 0) return -1;
-    } else {
-        /* value_json is a raw JSON fragment supplied by the caller
-         * (formatted result from urbi_repl_eval).  We don't try to
-         * validate it here; embedder is trusted.  In practice it is
-         * a string like "3" or "\"hello\"" — already JSON-shaped. */
-        if (append_lit(buf, cap, &off, value_json) != 0) return -1;
-    }
-    if (ts_us != 0) {
-        if (append_lit(buf, cap, &off, ",\"ts\":") != 0) return -1;
-        if (append_u64(buf, cap, &off, ts_us) != 0) return -1;
+    } else if (append_lit(buf, cap, &off, value_json) != 0) {
+        return -1;
     }
     if (append_lit(buf, cap, &off, "}") != 0) return -1;
     return finish(buf, cap, off, out_len);
 }
 
 int
-urepl_ndjson_emit_output(char *buf, size_t cap,
-                         uint64_t id_or_zero,
-                         const char *lobby_or_null,
-                         const char *channel,
-                         const char *msg, size_t msg_len,
-                         uint64_t ts_us,
+urepl_ndjson_emit_output(char *buf, size_t cap, uint64_t id_or_zero,
+                         const char *channel, const char *msg, size_t msg_len,
                          size_t *out_len)
 {
     size_t off = 0;
-    bool need_comma = false;
     if (append_lit(buf, cap, &off, "{") != 0) return -1;
+    /* No id means the write did not come from inside an eval frame — a
+     * watcher or a timer the client armed earlier. */
     if (id_or_zero != 0) {
         if (append_lit(buf, cap, &off, "\"id\":") != 0) return -1;
         if (append_u64(buf, cap, &off, id_or_zero) != 0) return -1;
-        need_comma = true;
-    } else if (lobby_or_null != NULL) {
-        if (append_lit(buf, cap, &off, "\"lobby\":") != 0) return -1;
-        if (append_quoted(buf, cap, &off, lobby_or_null) != 0) return -1;
-        need_comma = true;
-    }
-    if (need_comma) {
         if (append_lit(buf, cap, &off, ",") != 0) return -1;
     }
     if (append_lit(buf, cap, &off, "\"kind\":\"output\",\"channel\":") != 0) return -1;
     if (append_quoted(buf, cap, &off, channel != NULL ? channel : "") != 0) return -1;
     if (append_lit(buf, cap, &off, ",\"msg\":\"") != 0) return -1;
     if (append_escaped(buf, cap, &off, msg, msg_len) != 0) return -1;
-    if (append_lit(buf, cap, &off, "\"") != 0) return -1;
-    if (ts_us != 0) {
-        if (append_lit(buf, cap, &off, ",\"ts\":") != 0) return -1;
-        if (append_u64(buf, cap, &off, ts_us) != 0) return -1;
-    }
-    if (append_lit(buf, cap, &off, "}") != 0) return -1;
+    if (append_lit(buf, cap, &off, "\"}") != 0) return -1;
     return finish(buf, cap, off, out_len);
 }
 
@@ -709,8 +543,7 @@ urepl_ndjson_emit_done(char *buf, size_t cap, uint64_t id, size_t *out_len)
 
 int
 urepl_ndjson_emit_error(char *buf, size_t cap, uint64_t id_or_zero,
-                        const char *code, const char *msg,
-                        size_t *out_len)
+                        const char *code, const char *msg, size_t *out_len)
 {
     size_t off = 0;
     if (append_lit(buf, cap, &off, "{") != 0) return -1;
@@ -720,53 +553,10 @@ urepl_ndjson_emit_error(char *buf, size_t cap, uint64_t id_or_zero,
         if (append_lit(buf, cap, &off, ",") != 0) return -1;
     }
     if (append_lit(buf, cap, &off, "\"kind\":\"error\",\"code\":") != 0) return -1;
-    if (append_quoted(buf, cap, &off, code != NULL ? code : "unknown") != 0) return -1;
+    if (append_quoted(buf, cap, &off, code != NULL ? code : "error") != 0) return -1;
     if (msg != NULL && msg[0] != '\0') {
-        if (append_lit(buf, cap, &off, ",\"msg\":") != 0) return -1;
+        if (append_lit(buf, cap, &off, ",\"message\":") != 0) return -1;
         if (append_quoted(buf, cap, &off, msg) != 0) return -1;
-    }
-    if (append_lit(buf, cap, &off, "}") != 0) return -1;
-    return finish(buf, cap, off, out_len);
-}
-
-/* Reserved wire shape — not yet emitted by the server (spec §6 defines
- * the envelope; the server-side push path lands in a future release). */
-int
-urepl_ndjson_emit_event(char *buf, size_t cap,
-                        const char *lobby, const char *name,
-                        const char *payload_json, uint64_t ts_us,
-                        size_t *out_len)
-{
-    size_t off = 0;
-    if (append_lit(buf, cap, &off, "{\"kind\":\"event\"") != 0) return -1;
-    if (lobby != NULL) {
-        if (append_lit(buf, cap, &off, ",\"lobby\":") != 0) return -1;
-        if (append_quoted(buf, cap, &off, lobby) != 0) return -1;
-    }
-    if (append_lit(buf, cap, &off, ",\"name\":") != 0) return -1;
-    if (append_quoted(buf, cap, &off, name != NULL ? name : "") != 0) return -1;
-    if (payload_json != NULL && payload_json[0] != '\0') {
-        if (append_lit(buf, cap, &off, ",\"payload\":") != 0) return -1;
-        if (append_lit(buf, cap, &off, payload_json) != 0) return -1;
-    }
-    if (ts_us != 0) {
-        if (append_lit(buf, cap, &off, ",\"ts\":") != 0) return -1;
-        if (append_u64(buf, cap, &off, ts_us) != 0) return -1;
-    }
-    if (append_lit(buf, cap, &off, "}") != 0) return -1;
-    return finish(buf, cap, off, out_len);
-}
-
-/* Reserved wire shape — not yet emitted by the server (spec §6 defines
- * the envelope; teardown wiring lands in a future release). */
-int
-urepl_ndjson_emit_goodbye(char *buf, size_t cap, const char *reason, size_t *out_len)
-{
-    size_t off = 0;
-    if (append_lit(buf, cap, &off, "{\"kind\":\"goodbye\"") != 0) return -1;
-    if (reason != NULL) {
-        if (append_lit(buf, cap, &off, ",\"reason\":") != 0) return -1;
-        if (append_quoted(buf, cap, &off, reason) != 0) return -1;
     }
     if (append_lit(buf, cap, &off, "}") != 0) return -1;
     return finish(buf, cap, off, out_len);

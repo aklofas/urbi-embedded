@@ -39,6 +39,18 @@ URealm *urealm_new(UVM *vm);
  * realm is refused: urbi_realm_main must keep returning a live realm. */
 void urealm_free(UVM *vm, URealm *r);
 
+/* Points the realm's output at `fn`.  NULL restores the fallback to the
+ * VM-wide writer.  This is what gives one REPL session its own output
+ * while another session and the host share the same VM. */
+void urealm_set_writer(UVM *vm, URealm *r,
+                       void (*fn)(void *ud, const char *chan, size_t cl,
+                                  const char *msg, size_t ml), void *ud);
+
+/* Installs the compile limits for source text this realm runs.  NULL or
+ * an all-zero budget means unlimited.  The budget is copied, so the
+ * caller's struct need not outlive the call. */
+void urealm_set_budget(UVM *vm, URealm *r, const UCompileBudget *b);
+
 /* GC: marks the realm's globals and every strand threaded onto it. */
 void urealm_trace(UVM *vm, URealm *r);
 

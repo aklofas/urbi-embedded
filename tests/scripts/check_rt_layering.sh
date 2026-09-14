@@ -22,6 +22,13 @@ TOP=99
 # still enforces on all of them: rt/usched.h itself may reach no further
 # than rt/ustrand.h, which the loop below checks as usual.
 LAYER_OVERRIDES="src/rt/usched.c=uexec src/rt/utag.c=uexec src/rt/usched_natives.c=top"
+# The src/repl files the Makefile actually compiles, with their headers.
+# The parked networked server is left alone: it is held to the layering of
+# the runtime it was written against, not this one.
+REPL_CORE_FILES="src/repl/urepl.c src/repl/urepl.h \
+src/repl/urepl_dispatch.c src/repl/urepl_dispatch.h \
+src/repl/urepl_ndjson.c src/repl/urepl_ndjson.h \
+src/repl/urepl_buffer_transport.c src/repl/urepl_buffer_transport.h"
 rank() { i=0; for n in $ORDER; do i=$((i+1)); [ "$n" = "$1" ] && { echo $i; return; }; done; echo 0; }
 layer_of() {
     best=""
@@ -34,6 +41,12 @@ layer_of() {
 }
 # src/stdlib reaches the runtime through exactly one header.
 STDLIB_ALLOWED="ustdlib_glue"
+# src/repl sits ABOVE src/stdlib: the eval service drives the public API,
+# and needs the realm it points a writer and a compile budget at, which is
+# rt/urealm.h plus the rt/uexec.h that completes URealm.  Anything deeper
+# — the collector, the scheduler, the object model — would make the
+# service part of the runtime instead of a client of it.
+REPL_ALLOWED="uexec urealm"
 rc=0
 for f in src/rt/*.c src/rt/*.h; do
     [ -f "$f" ] || continue
@@ -73,5 +86,15 @@ for f in src/stdlib/*.c src/stdlib/*.h; do
         ok=0; for a in $STDLIB_ALLOWED; do [ "$a" = "$inc" ] && ok=1; done
         [ $ok -eq 1 ] || { echo "LAYERING: $f includes rt/$inc.h (stdlib may include: $STDLIB_ALLOWED)"; rc=1; }
     done
+done
+for f in $REPL_CORE_FILES; do
+    [ -f "$f" ] || continue
+    for inc in $(grep -oE '#include "rt/u[a-z_]+\.h"' "$f" | sed -E 's/.*rt\/(u[a-z_]+)\.h"/\1/'); do
+        ok=0; for a in $REPL_ALLOWED; do [ "$a" = "$inc" ] && ok=1; done
+        [ $ok -eq 1 ] || { echo "LAYERING: $f includes rt/$inc.h (repl may include: $REPL_ALLOWED)"; rc=1; }
+    done
+    if grep -qE '#include "(vm|sched|object|gc|runtime|watcher|event|tag|realm|changed|value)/' "$f"; then
+        echo "LAYERING: $f includes an old-runtime header"; rc=1
+    fi
 done
 exit $rc

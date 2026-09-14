@@ -1,184 +1,124 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/repl/urepl_buffer_transport.c - in-process loopback transport
- *
- * Backed by two SPSC ringbufs:
- *   c2s  — client writes here (urepl_buffer_client_write), server
- *          read_fn drains it.
- *   s2c  — server write_fn writes here, client drains it via
- *          urepl_buffer_client_read.
- *
- * The "fd" returned by accept_fn is purely symbolic (a fixed value of
- * 0); the transport's read/write/close fns route via the state object
- * directly.  In Phase 3 the listener thread will need a way to find the
- * state from the fd; for v0.9.1 there is exactly one buffer transport
- * per server (single-test pattern), so we attach the state on accept
- * via the global pointer the listener thread already holds (the
- * listener_state arg). */
-#include "repl/urepl_buffer_transport.h"
-#include "repl/urepl_queue.h"
-#include "urbi/types.h"
+/* src/repl/urepl_buffer_transport.c — see repl/urepl_buffer_transport.h. */
 
-#include <pthread.h>
+#include "repl/urepl_buffer_transport.h"
+
+#include "urbi/urbi.h"
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define BT_DEFAULT_CAP ((size_t)64u * 1024u)
+/* One direction of the loopback: a growable byte queue, consumed from the
+ * front and appended at the back.  Growth is by doubling and the front is
+ * reclaimed on the next append, which keeps a long session from growing
+ * without bound while never memmoving in the common drain-it-all case. */
+typedef struct {
+    char  *buf;
+    size_t cap, fill, off;
+} Queue;
 
-struct UBufferTransportState {
-    UReplRingbuf c2s;    /* client → server */
-    UReplRingbuf s2c;    /* server → client */
-    bool         accept_consumed;
-    urbi_mutex_t accept_mutex;
-    /* Single global pointer used by the static vtable functions to map
-     * a fd back to the state.  Phase 3's TCP transport will use a real
-     * fd-indexed table; for now v0.9.1's single-test pattern means each
-     * server gets one buffer transport state, set via accept_fn. */
-    /* (See urbi_repl_register_transport's listener_state arg.) */
+struct UBufferTransport {
+    Queue to_service;    /* client writes here, the service reads */
+    Queue to_client;     /* the service writes here, the client reads */
+    bool  client_done;   /* no more requests are coming */
+    bool  closed;        /* the service has closed its end */
 };
 
-/* Per-fd state lookup.  The buffer transport's accept_fn stores the
- * state in a thread-local for the duration of the test; tests that
- * spin up multiple buffer transports per process will need to lock-
- * step around this, which v0.9.1 doesn't exercise. */
-static __thread UBufferTransportState *g_buffer_state = NULL;
-
-UBufferTransportState *
-urepl_buffer_transport_create(void)
+static bool queue_push(Queue *q, const char *bytes, size_t n)
 {
-    UBufferTransportState *st = (UBufferTransportState *)calloc(1, sizeof(*st));
-    if (st == NULL) {
-        return NULL;
+    if (q->off > 0 && q->fill + n > q->cap) {
+        memmove(q->buf, q->buf + q->off, q->fill - q->off);
+        q->fill -= q->off;
+        q->off = 0;
     }
-    if (urepl_ringbuf_init(&st->c2s, BT_DEFAULT_CAP) != URBI_OK) {
-        free(st);
-        return NULL;
+    if (q->fill + n > q->cap) {
+        size_t cap = q->cap ? q->cap : 256u;
+        while (cap < q->fill + n) cap *= 2u;
+        char *nb = (char *)realloc(q->buf, cap);
+        if (nb == NULL) return false;
+        q->buf = nb;
+        q->cap = cap;
     }
-    if (urepl_ringbuf_init(&st->s2c, BT_DEFAULT_CAP) != URBI_OK) {
-        urepl_ringbuf_destroy(&st->c2s);
-        free(st);
-        return NULL;
-    }
-    if (UREPL_MUTEX_INIT(&st->accept_mutex) != 0) {
-        urepl_ringbuf_destroy(&st->c2s);
-        urepl_ringbuf_destroy(&st->s2c);
-        free(st);
-        return NULL;
-    }
-    return st;
+    memcpy(q->buf + q->fill, bytes, n);
+    q->fill += n;
+    return true;
 }
 
-void
-urepl_buffer_transport_destroy(UBufferTransportState *st)
+static size_t queue_take(Queue *q, char *dst, size_t cap)
 {
-    if (st == NULL) {
-        return;
+    size_t have = q->fill - q->off;
+    size_t n = have < cap ? have : cap;
+    if (n > 0) {
+        memcpy(dst, q->buf + q->off, n);
+        q->off += n;
     }
-    urepl_ringbuf_destroy(&st->c2s);
-    urepl_ringbuf_destroy(&st->s2c);
-    UREPL_MUTEX_DESTROY(&st->accept_mutex);
-    free(st);
+    if (q->off >= q->fill) { q->off = 0; q->fill = 0; }
+    return n;
 }
 
-void
-urepl_buffer_transport_reset_accept(UBufferTransportState *st)
+/* ---- the vtable --------------------------------------------------------- */
+
+static int bt_read(void *ctx, void *buf, size_t n)
 {
-    if (st == NULL) {
-        return;
-    }
-    UREPL_MUTEX_LOCK(&st->accept_mutex);
-    st->accept_consumed = false;
-    UREPL_MUTEX_UNLOCK(&st->accept_mutex);
+    UBufferTransport *bt = (UBufferTransport *)ctx;
+    size_t got = queue_take(&bt->to_service, (char *)buf, n);
+    if (got > 0) return (int)got;
+    /* Empty.  That is "nothing yet" while the client may still write, and
+     * end of stream once it has said it will not. */
+    return bt->client_done ? URBI_ERR_INVALID_STATE : 0;
 }
 
-/* ---- Vtable impl ----------------------------------------------------- */
-
-static int
-bt_accept(void *listener_state, int *out_client_fd)
+static int bt_write(void *ctx, const void *buf, size_t n)
 {
-    UBufferTransportState *st = (UBufferTransportState *)listener_state;
-    if (st == NULL || out_client_fd == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
-    int taken = 0;
-    UREPL_MUTEX_LOCK(&st->accept_mutex);
-    if (!st->accept_consumed) {
-        st->accept_consumed = true;
-        taken = 1;
-    }
-    UREPL_MUTEX_UNLOCK(&st->accept_mutex);
-    if (!taken) {
-        return -1;  /* signal "would block / no client" */
-    }
-    /* Map the fd to our state pointer for the duration of the test. */
-    g_buffer_state = st;
-    *out_client_fd = 0;  /* sentinel fd */
-    return 0;
+    UBufferTransport *bt = (UBufferTransport *)ctx;
+    if (!queue_push(&bt->to_client, (const char *)buf, n)) return URBI_ERR_OOM;
+    return (int)n;
 }
 
-static int
-bt_read(int client_fd, void *buf, size_t n)
+static void bt_close(void *ctx)
 {
-    (void)client_fd;
-    UBufferTransportState *st = g_buffer_state;
-    if (st == NULL || buf == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
-    return (int)urepl_ringbuf_read(&st->c2s, (char *)buf, n);
+    UBufferTransport *bt = (UBufferTransport *)ctx;
+    bt->closed = true;
 }
 
-static int
-bt_write(int client_fd, const void *buf, size_t n)
+void urepl_buffer_transport_vtable(UBufferTransport *bt, UTransport *out)
 {
-    (void)client_fd;
-    UBufferTransportState *st = g_buffer_state;
-    if (st == NULL || buf == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
-    return (int)urepl_ringbuf_write(&st->s2c, (const char *)buf, n);
+    if (out == NULL) return;
+    out->ctx = bt;
+    out->read = bt_read;
+    out->write = bt_write;
+    out->close = bt_close;
 }
 
-static void
-bt_close(int client_fd)
+/* ---- lifecycle and the client side -------------------------------------- */
+
+UBufferTransport *urepl_buffer_transport_create(void)
 {
-    (void)client_fd;
-    /* Nothing to do — the state outlives the fd by design (tests own
-     * the state via _create / _destroy). */
+    return (UBufferTransport *)calloc(1, sizeof(UBufferTransport));
 }
 
-static int
-bt_pollable_fd(int client_fd)
+void urepl_buffer_transport_destroy(UBufferTransport *bt)
 {
-    (void)client_fd;
-    return -1;  /* not pollable; tests drive manually */
+    if (bt == NULL) return;
+    free(bt->to_service.buf);
+    free(bt->to_client.buf);
+    free(bt);
 }
 
-const UTransport UREPL_BUFFER_TRANSPORT = {
-    .name           = "buffer",
-    .accept_fn      = bt_accept,
-    .read_fn        = bt_read,
-    .write_fn       = bt_write,
-    .close_fn       = bt_close,
-    .pollable_fd_fn = bt_pollable_fd
-};
-
-/* ---- Client-side helpers --------------------------------------------- */
-
-size_t
-urepl_buffer_client_write(UBufferTransportState *st,
-                          const void *bytes, size_t n)
+size_t urepl_buffer_client_write(UBufferTransport *bt, const void *bytes, size_t n)
 {
-    if (st == NULL || bytes == NULL || n == 0U) {
-        return 0;
-    }
-    return urepl_ringbuf_write(&st->c2s, (const char *)bytes, n);
+    if (bt == NULL || bytes == NULL) return 0;
+    return queue_push(&bt->to_service, (const char *)bytes, n) ? n : 0;
 }
 
-size_t
-urepl_buffer_client_read(UBufferTransportState *st, void *buf, size_t cap)
+size_t urepl_buffer_client_read(UBufferTransport *bt, void *buf, size_t cap)
 {
-    if (st == NULL || buf == NULL || cap == 0U) {
-        return 0;
-    }
-    return urepl_ringbuf_read(&st->s2c, (char *)buf, cap);
+    if (bt == NULL || buf == NULL) return 0;
+    return queue_take(&bt->to_client, (char *)buf, cap);
+}
+
+void urepl_buffer_client_finish(UBufferTransport *bt)
+{
+    if (bt != NULL) bt->client_done = true;
 }

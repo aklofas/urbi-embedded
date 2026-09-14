@@ -1,336 +1,179 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/repl/urepl.c - REPL server lifecycle (v0.9.1)
+/* src/repl/urepl.c — the cooperative service loop behind <urbi/repl.h>.
  *
- * Phase 2 ships the create/destroy + default-secure check + transport
- * registration.  The listener thread + per-connection reader thread come
- * online in Phase 3. */
-#include "repl/urepl.h"
-#ifndef URBI_REPL_COOPERATIVE_ONLY
-#include "repl/urepl_auth.h"
-#endif
+ * One sweep per call, four phases per session: read what the transport
+ * has, run every COMPLETE request in it, write back what the transport
+ * will take, and close the session if its stream has ended and its
+ * output has drained.  Nothing blocks and nothing is queued, because the
+ * caller's thread is the only thread and a request is finished before
+ * the next one is looked at.
+ *
+ * That ordering is the contract a client depends on: responses to
+ * request N are all in the stream before any response to request N+1,
+ * and an eval's own output precedes its result. */
+
 #include "repl/urepl_dispatch.h"
-#include "repl/urepl_listener.h"
-#include "repl/urepl_queue.h"
-#include "repl/urepl_state.h"  /* v0.10.4: UReplState lifecycle */
-#include "vm/uvm.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-/* Default-secure rule: if bind_addr is non-loopback (i.e. neither NULL,
- * "127.0.0.1", "::1", nor a Unix-socket path beginning with '/'), an
- * auth_token must be set. */
-static bool
-is_loopback_bind(const UReplConfig *cfg)
+/* One read per session per sweep.  Big enough that a typical request
+ * arrives whole, small enough to be a stack buffer. */
+#define UREPL_READ_CHUNK 4096u
+
+/* ---- inbound line assembly --------------------------------------------- */
+
+/* Grows the accumulator to hold `need` more bytes, up to the framing cap.
+ * false means the line is over the cap, which the caller turns into a
+ * discard-until-newline rather than an allocation failure. */
+static bool inbuf_reserve(UReplSession *s, size_t need)
 {
-    if (cfg->bind_addr == NULL) {
-        return true;  /* NULL defaults to loopback */
-    }
-    if (cfg->bind_addr[0] == '\0') {
-        return true;
-    }
-    if (cfg->bind_addr[0] == '/') {
-        return true;  /* Unix-domain socket path */
-    }
-    if (strcmp(cfg->bind_addr, "127.0.0.1") == 0) {
-        return true;
-    }
-    if (strcmp(cfg->bind_addr, "::1") == 0) {
-        return true;
-    }
-    if (strcmp(cfg->bind_addr, "localhost") == 0) {
-        return true;
-    }
-    return false;
+    if (s->in_fill + need <= s->in_cap) return true;
+    if (s->in_fill + need > UREPL_MAX_LINE) return false;
+    size_t cap = s->in_cap ? s->in_cap : 1024u;
+    while (cap < s->in_fill + need) cap *= 2u;
+    if (cap > UREPL_MAX_LINE) cap = UREPL_MAX_LINE;
+    char *n = (char *)realloc(s->in, cap);
+    if (n == NULL) return false;
+    s->in = n;
+    s->in_cap = cap;
+    return true;
 }
 
-UReplServer *
-urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
+/* Runs every complete line held in the accumulator and keeps the partial
+ * tail for the next sweep. */
+static void drain_lines(UReplServer *server, UReplSession *s)
 {
-    if (out_err != NULL) {
-        *out_err = URBI_OK;
-    }
-    if (vm == NULL || cfg == NULL) {
-        if (out_err != NULL) {
-            *out_err = URBI_ERR_INVALID_ARG;
-        }
-        return NULL;
-    }
-
-    if (!is_loopback_bind(cfg) && cfg->auth_token == NULL) {
-        if (out_err != NULL) {
-            *out_err = URBI_ERR_INSECURE_CONFIG;
-        }
-        return NULL;
-    }
-
-    UReplServer *server = (UReplServer *)calloc(1, sizeof(*server));
-    if (server == NULL) {
-        if (out_err != NULL) {
-            *out_err = URBI_ERR_OOM;
-        }
-        return NULL;
-    }
-    server->vm = vm;
-    server->cfg = *cfg;
-    server->next_session_id = 1U;
-    server->stop_eventfd = -1;
-    if (UREPL_MUTEX_INIT(&server->sessions_mutex) != 0) {
-        free(server);
-        if (out_err != NULL) {
-            *out_err = URBI_ERR_OOM;
-        }
-        return NULL;
-    }
-    if (UREPL_MUTEX_INIT(&server->auth_limiter_mutex) != 0) {
-        UREPL_MUTEX_DESTROY(&server->sessions_mutex);
-        free(server);
-        if (out_err != NULL) {
-            *out_err = URBI_ERR_OOM;
-        }
-        return NULL;
-    }
-    if (UREPL_MUTEX_INIT(&server->accept_queue_mutex) != 0) {
-        UREPL_MUTEX_DESTROY(&server->auth_limiter_mutex);
-        UREPL_MUTEX_DESTROY(&server->sessions_mutex);
-        free(server);
-        if (out_err != NULL) {
-            *out_err = URBI_ERR_OOM;
-        }
-        return NULL;
-    }
-    /* Allocate the per-server job queue.  Phase 3 hooks the listener
-     * thread up to it; in Phase 2 it is used by direct callers to
-     * urepl_dispatch_drain for unit tests. */
-    server->job_queue = (UReplQueue *)calloc(1, sizeof(*server->job_queue));
-    if (server->job_queue == NULL
-        || urepl_queue_init(server->job_queue) != URBI_OK) {
-        free(server->job_queue);
-        UREPL_MUTEX_DESTROY(&server->accept_queue_mutex);
-        UREPL_MUTEX_DESTROY(&server->auth_limiter_mutex);
-        UREPL_MUTEX_DESTROY(&server->sessions_mutex);
-        free(server);
-        if (out_err != NULL) {
-            *out_err = URBI_ERR_OOM;
-        }
-        return NULL;
-    }
-
-    /* Spin up per-IP rate limiter iff auth is enabled.  Loop-
-     * back no-auth deployments skip it (no wrong-token attempts to
-     * count).  Default tunables: 5 fails / 30 s window / 60 s lockout
-     * (spec §7.4).
-     * Cooperative-only: auth TU is not compiled in; skip. */
-#ifndef URBI_REPL_COOPERATIVE_ONLY
-    if (cfg->auth_token != NULL && cfg->auth_token[0] != '\0') {
-        UReplAuthLimiter *lim =
-            (UReplAuthLimiter *)calloc(1, sizeof(*lim));
-        if (lim == NULL) {
-            urepl_queue_destroy(server->job_queue);
-            free(server->job_queue);
-            UREPL_MUTEX_DESTROY(&server->accept_queue_mutex);
-            UREPL_MUTEX_DESTROY(&server->auth_limiter_mutex);
-            UREPL_MUTEX_DESTROY(&server->sessions_mutex);
-            free(server);
-            if (out_err != NULL) {
-                *out_err = URBI_ERR_OOM;
+    size_t start = 0;
+    for (;;) {
+        char *nl = (char *)memchr(s->in + start, '\n', s->in_fill - start);
+        if (nl == NULL) break;
+        size_t len = (size_t)(nl - (s->in + start));
+        if (s->in_discard) {
+            /* The newline that ends the oversized line is the resync
+             * point; everything before it was already thrown away. */
+            s->in_discard = false;
+        } else {
+            /* Tolerate CRLF from a line-oriented client. */
+            size_t l = len;
+            if (l > 0 && s->in[start + l - 1] == '\r') l--;
+            if (l > 0) {
+                UReplNdjsonReq req;
+                if (urepl_ndjson_parse(s->in + start, l, &req) == 0) {
+                    urepl_dispatch(server, s, &req);
+                    urepl_ndjson_free_req(&req);
+                } else {
+                    urepl_dispatch_parse_error(s);
+                }
             }
-            return NULL;
         }
-        urepl_auth_limiter_init(lim);
-        server->auth_limiter = lim;
+        start += len + 1;
+        if (start >= s->in_fill) break;
     }
-#endif /* URBI_REPL_COOPERATIVE_ONLY */
-
-    /* Register the server on the VM so urepl_dispatch_drain_if_active
-     * (the step-driver hook) finds it without a global lookup table.
-     * v0.10.4: vm->repl is a UReplState wrapper; allocate on first use. */
-    vm->repl = urepl_state_create(vm);
-    if (vm->repl == NULL) {
-        /* OOM: state wrapper failed — mirror the earlier error arms and free
-         * the mutexes, job queue, and auth limiter that were already allocated. */
-        if (server->auth_limiter != NULL) {
-            free(server->auth_limiter);
-        }
-        urepl_queue_destroy(server->job_queue);
-        free(server->job_queue);
-        UREPL_MUTEX_DESTROY(&server->accept_queue_mutex);
-        UREPL_MUTEX_DESTROY(&server->auth_limiter_mutex);
-        UREPL_MUTEX_DESTROY(&server->sessions_mutex);
-        free(server);
-        if (out_err != NULL) {
-            *out_err = URBI_ERR_OOM;
-        }
-        return NULL;
+    if (start > 0) {
+        memmove(s->in, s->in + start, s->in_fill - start);
+        s->in_fill -= start;
     }
-    vm->repl->server = server;
-
-    return server;
 }
 
-void
-urbi_repl_stop(UReplServer *server)
+static void read_sweep(UReplServer *server, UReplSession *s)
 {
-    if (server == NULL) {
-        return;
-    }
-    UREPL_ATOMIC_STORE_BOOL(&server->shutting_down, true);
+    if (s->ended || s->transport.read == NULL) return;
+    char chunk[UREPL_READ_CHUNK];
+    int rc = s->transport.read(s->transport.ctx, chunk, sizeof chunk);
+    if (rc < 0) { s->ended = true; return; }
+    if (rc == 0) return;
 
-    /* Phase 3: signal + join the listener pthread and all reader
-     * subthreads BEFORE tearing down sessions/queue/vm.  Reader threads
-     * destroy their sessions on the way out (see reader_main), so by
-     * the time this returns sessions_head is typically empty.  Any
-     * still-attached session (e.g. unit tests that created sessions
-     * directly) gets reaped in the loop below. */
-    urepl_listener_stop_and_join(server);
-
-    /* Reap any unit-test sessions that weren't owned by a reader. */
-    while (server->sessions_head != NULL) {
-        urepl_session_destroy(server, server->sessions_head);
-    }
-
-    /* Drain + free the job queue. */
-    if (server->job_queue != NULL) {
-        urepl_queue_signal_shutdown(server->job_queue);
-        urepl_queue_destroy(server->job_queue);
-        free(server->job_queue);
-        server->job_queue = NULL;
-    }
-
-    /* Free transport-list entries.  Listener-state is owned by the
-     * caller of urbi_repl_register_transport. */
-    UReplTransportEntry *e = server->transports;
-    while (e != NULL) {
-        UReplTransportEntry *next = e->next;
-        free(e);
-        e = next;
-    }
-    server->transports = NULL;
-
-    /* auth_limiter struct is allocated (urepl_auth.c) if a token is
-     * configured; free if present. */
-    if (server->auth_limiter != NULL) {
-        free(server->auth_limiter);
-        server->auth_limiter = NULL;
-    }
-    UREPL_MUTEX_DESTROY(&server->auth_limiter_mutex);
-
-    /* Drain + free any pending-accept items that the listener pushed
-     * after the last VM-thread drain but before shutdown.  Each item
-     * owns its client_fd; close + free. */
-    UReplAcceptItem *ai = server->accept_head;
-    server->accept_head = NULL;
-    server->accept_tail = NULL;
-    while (ai != NULL) {
-        UReplAcceptItem *anext = ai->next;
-        if (ai->transport != NULL && ai->transport->close_fn != NULL) {
-            ai->transport->close_fn(ai->client_fd);
+    size_t n = (size_t)rc;
+    if (!inbuf_reserve(s, n)) {
+        /* Over the framing cap.  Drop what is held, refuse the rest of
+         * this line, and tell the client — a silent truncation would be
+         * indistinguishable from a request that ran. */
+        s->in_fill = 0;
+        s->in_discard = true;
+        urepl_dispatch_line_too_long(s);
+        /* Still scan the chunk for the newline that ends the bad line, so
+         * a request packed behind it is not lost. */
+        char *nl = (char *)memchr(chunk, '\n', n);
+        if (nl != NULL) {
+            size_t after = n - (size_t)(nl - chunk) - 1u;
+            s->in_discard = false;
+            if (after > 0 && inbuf_reserve(s, after)) {
+                memcpy(s->in + s->in_fill, nl + 1, after);
+                s->in_fill += after;
+            }
         }
-        free(ai);
-        ai = anext;
+    } else {
+        memcpy(s->in + s->in_fill, chunk, n);
+        s->in_fill += n;
     }
-    UREPL_MUTEX_DESTROY(&server->accept_queue_mutex);
-
-    /* Unhook the VM back-pointer so the step-driver drain hook no longer
-     * sees a freed server.  v0.10.4: clear vm->repl->server and free
-     * the UReplState wrapper so vm->repl returns to NULL. */
-    if (server->vm != NULL && server->vm->repl != NULL
-            && server->vm->repl->server == server) {
-        server->vm->repl->server = NULL;
-        urepl_state_destroy(server->vm, server->vm->repl);
-        server->vm->repl = NULL;
-    }
-
-    UREPL_MUTEX_DESTROY(&server->sessions_mutex);
-    free(server);
+    drain_lines(server, s);
 }
 
-int
-urbi_repl_serve_init(struct UVM *vm, const UReplConfig *cfg, UReplServer **out_server)
+static void write_sweep(UReplSession *s)
 {
-    int err = URBI_OK;
-    if (out_server == NULL) {
-        return URBI_ERR_INVALID_ARG;
+    UReplOutBuf *o = &s->out;
+    if (o->dropped && o->fill == o->off) {
+        /* Report the gap only once the buffer has room again, so the
+         * report itself cannot be the thing that is dropped. */
+        o->dropped = false;
+        o->fill = 0;
+        o->off = 0;
+        urepl_dispatch_output_dropped(s);
     }
-    *out_server = urbi_repl_serve(vm, cfg, &err);
-    return err;
+    while (o->off < o->fill) {
+        if (s->transport.write == NULL) { o->off = o->fill; break; }
+        int rc = s->transport.write(s->transport.ctx, o->buf + o->off, o->fill - o->off);
+        if (rc < 0) { s->ended = true; return; }
+        if (rc == 0) return;            /* the transport is full for now */
+        o->off += (size_t)rc;
+    }
+    if (o->off >= o->fill) { o->fill = 0; o->off = 0; }
 }
 
-/* Public API — signature pinned by include/urbi/repl.h.  Cooperative
- * data plane for non-pollable transports (Pico USB CDC, UART).  The
- * embedder is expected to call this periodically (e.g. between
- * urbi_step iterations) and to __wfi() / sleep when idle. */
-int
-urbi_repl_serve_step(UReplServer *server, uint64_t timeout_us)
+/* ---- public surface ---------------------------------------------------- */
+
+int urbi_repl_serve_init(UVM *vm, const UReplConfig *cfg, UReplServer **out_server)
 {
-    (void)timeout_us;  /* Best-effort non-blocking sweep; no internal
-                          wait — caller paces idle. */
-    if (server == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
-    /* Phase A: accept new clients on non-pollable transports.  Pollable
-     * transports stay on the listener pthread (when running). */
-    (void)urepl_accept_sweep_nonpollable(server);
-    /* Phase B: read NDJSON bytes from each non-pollable session and
-     * push complete lines as jobs onto server->job_queue. */
-    (void)urepl_read_sweep_nonpollable(server);
-    /* Drain the job queue on this (VM) thread so the embedder doesn't
-     * also have to drive urbi_step just to get dispatch.  This is the
-     * cooperative counterpart of urepl_dispatch_drain_if_active's
-     * step-hook invocation. */
-    urepl_dispatch_drain(server);
-    /* Phase C: drain pending output from each non-pollable session's
-     * ringbuf via one non-blocking write_fn call per session.  Partial
-     * writes stage in per-session coop_outbuf for the next sweep. */
-    (void)urepl_write_sweep_nonpollable(server);
-    /* Phase D: reap sessions whose read or write sweep set
-     * needs_teardown (clean EOF, hard transport error).  Calls close_fn,
-     * pthread_joins + frees the paired reader, fires the v0.9.1
-     * disconnect-cleanup sequence, and unlinks from sessions_head. */
-    (void)urepl_disconnect_sweep(server);
+    if (vm == NULL || out_server == NULL) return URBI_ERR_INVALID_ARG;
+    *out_server = NULL;
+    UReplServer *server = (UReplServer *)calloc(1, sizeof *server);
+    if (server == NULL) return URBI_ERR_OOM;
+    server->vm = vm;
+    if (cfg != NULL) server->cfg = *cfg;
+    *out_server = server;
     return URBI_OK;
 }
 
-void
-urbi_repl_serve_shutdown(UReplServer *server)
+int urbi_repl_register_transport(UReplServer *server, const UTransport *transport)
 {
-    urbi_repl_stop(server);
+    if (server == NULL || transport == NULL) return URBI_ERR_INVALID_ARG;
+    if (transport->read == NULL || transport->write == NULL) return URBI_ERR_INVALID_ARG;
+    return urepl_session_create(server, transport) != NULL ? URBI_OK : URBI_ERR_OOM;
 }
 
-int
-urbi_repl_register_transport(UReplServer *server,
-                             const UTransport *transport,
-                             void *listener_state)
+int urbi_repl_serve_step(UReplServer *server, uint64_t timeout_us)
 {
-    if (server == NULL || transport == NULL) {
-        return URBI_ERR_INVALID_ARG;
+    (void)timeout_us;   /* the sweep never waits; the caller owns the clock */
+    if (server == NULL) return URBI_ERR_INVALID_ARG;
+    UReplSession *s = server->sessions;
+    while (s != NULL) {
+        /* Captured before the sweep: a session that ends inside it is
+         * freed at the bottom of the loop. */
+        UReplSession *next = s->next;
+        read_sweep(server, s);
+        write_sweep(s);
+        /* A closing session keeps its place until everything it has
+         * already answered is on the wire. */
+        if (s->ended && s->out.off >= s->out.fill) urepl_session_destroy(server, s);
+        s = next;
     }
-    UReplTransportEntry *entry = (UReplTransportEntry *)calloc(1, sizeof(*entry));
-    if (entry == NULL) {
-        return URBI_ERR_OOM;
-    }
-    entry->transport = transport;
-    entry->listener_state = listener_state;
-    /* Append to head — order does not matter (each transport runs its
-     * own accept loop in Phase 3). */
-    entry->next = server->transports;
-    server->transports = entry;
+    return URBI_OK;
+}
 
-    /* Phase 3: lazily start the listener pthread on first transport
-     * registration.  Embedders that only use the in-process buffer
-     * transport (unit tests) drive the dispatcher manually; the
-     * listener thread no-ops on buffer transport (its pollable
-     * listener fd is -1) so starting it here is harmless even for
-     * the test path.  Tests can opt out of starting the listener by
-     * never calling urbi_repl_register_transport — the dispatcher
-     * tests in Phase 2 use that path. */
-    {
-        int start_rc = urepl_listener_start(server);
-        if (start_rc != URBI_OK && server->vm != NULL &&
-                server->vm->host_log_fn != NULL)
-            server->vm->host_log_fn(server->vm, server->vm->host_log_ud,
-                                    URBI_LOG_WARN,
-                                    "urepl: listener thread failed to start");
-        return start_rc;
-    }
+void urbi_repl_serve_shutdown(UReplServer *server)
+{
+    if (server == NULL) return;
+    while (server->sessions != NULL) urepl_session_destroy(server, server->sessions);
+    free(server);
 }

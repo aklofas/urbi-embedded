@@ -22,10 +22,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "urbi/types.h"   /* UCompileBudget */
+
 struct UVM;
 struct UProto;
 
 /* Compile `src` into a fresh heap-allocated root UProto.
+ *
+ * `budget` caps the compile: source bytes, recursive-descent depth and
+ * AST node count, each disabled by a zero field, NULL disabling all
+ * three.  A crossed limit returns URBI_ERR_COMPILE_BUDGET_SOURCE /
+ * _DEPTH / _NODES and writes which one into `err`.  This is what keeps
+ * one REPL line from exhausting the parser stack of a device with no
+ * memory protection.
  *
  * On success returns URBI_OK and writes the root through *out; the caller
  * owns it and must hand it to uproto_bind (which takes ownership) or
@@ -39,6 +48,7 @@ struct UProto;
  * positioned diagnostic into `err` (when errcap > 0), and leaves *out
  * NULL with nothing for the caller to free. */
 int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
+                   const UCompileBudget *budget,
                    struct UProto **out, char *err, size_t errcap);
 
 /* Serialize a compiled chunk to the on-disk bytecode format.  Returns

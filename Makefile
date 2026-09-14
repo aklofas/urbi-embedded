@@ -1,18 +1,25 @@
 # refound/core: parked sources.  Filtered out of the default source lists
 # below so the files stay in the tree (a later v1.x REPL-server /
 # trace-tooling re-attachment reads them) but never enter the build.
-# The REPL network listener, session auth, and outbound queue only serve
-# the networked REPL server (parked); urepl.c/urepl_dispatch.c reference
-# their headers but nothing in this build calls into them, so they compile
-# cleanly into the archive without ever being pulled into a link.
 # src/runtime/utrace_format.c, uperf.c, and umemdebug.c compile to empty
 # translation units whenever their feature macro is off (no unconditional
 # public-API stub, unlike utrace.c's URBI_TRACE=0 branch) — parking them
 # changes nothing about the default archive.
+# The four files of the cooperative eval service are in REPL_CORE_SRCS
+# below; every other src/repl file is parked.  The listener, auth and
+# queue exist only to coordinate with threads that no longer run;
+# urepl_state.c was a vm->repl back-pointer whose only reader was the
+# job-queue drain hook in urbi_step; urepl_introspect.c's one live
+# primitive now lives in src/stdlib/debug_namespace.c so the dependency
+# runs repl -> stdlib; ujson.c was a general JSON reader for the Debug
+# namespace, which now hands its answer over as a String.
 REPL_PARKED_SRCS := \
     src/repl/urepl_listener.c \
     src/repl/urepl_auth.c \
     src/repl/urepl_queue.c \
+    src/repl/urepl_state.c \
+    src/repl/urepl_introspect.c \
+    src/repl/ujson.c \
     $(wildcard src/repl/urepl_transport_*.c)
 RUNTIME_PARKED_SRCS := \
     src/runtime/utrace_format.c \
@@ -32,25 +39,24 @@ ifeq ($(URBI_BYTECODE_ONLY),1)
   COMPILER_FRONTEND_DIRS_EXCLUDED := 1
 endif
 
-# v0.9.1 — opt-in REPL service over TCP/Unix/UART.  Requires the
-# compiler frontend (URBI_BYTECODE_ONLY=0); the combination is rejected
-# at the Makefile level because urbi_repl_eval cannot exist without
-# src/lex/, src/parse/, src/emit/ linked in.  Adds src/repl/*.c to the
-# core archive.
+# The cooperative NDJSON eval service is UNCONDITIONAL, not opt-in.  The
+# spec keeps "only the eval path, the NDJSON framing it needs, and the
+# cooperative step" in the build during the re-foundation, and a service
+# that never starts a thread or opens a socket has nothing an embedded
+# target needs protecting from.  The networked SERVER is what
+# URBI_ENABLE_REPL used to gate, and it is parked with its transports.
+REPL_CORE_SRCS := \
+       src/repl/urepl.c \
+       src/repl/urepl_dispatch.c \
+       src/repl/urepl_ndjson.c \
+       src/repl/urepl_buffer_transport.c
 ifeq ($(URBI_ENABLE_REPL),1)
-  ifeq ($(URBI_BYTECODE_ONLY),1)
-    $(error URBI_ENABLE_REPL=1 is incompatible with URBI_BYTECODE_ONLY=1)
-  endif
-  CPPFLAGS += -DURBI_ENABLE_REPL=1
-  ifeq ($(URBI_REPL_COOPERATIVE_ONLY),1)
-    CPPFLAGS += -DURBI_REPL_COOPERATIVE_ONLY=1
-  endif
-  # refound/core: the listener, auth, queue, and transports are parked
-  # (see REPL_PARKED_SRCS above) regardless of URBI_REPL_COOPERATIVE_ONLY —
-  # that flag now only controls the CPPFLAGS define kept-file callers read.
-  REPL_SRCS := $(filter-out $(REPL_PARKED_SRCS),$(wildcard src/repl/*.c))
-else
-  REPL_SRCS :=
+  $(error URBI_ENABLE_REPL=1 gates the networked REPL server, which is parked during the refound/core re-foundation; the cooperative eval service is in every build)
+endif
+ifeq ($(URBI_BYTECODE_ONLY),1)
+  # No compiler, no eval service.  urbi/repl.h says so with an #error, and
+  # the source list has to agree or the link fails on ufront_compile.
+  REPL_CORE_SRCS :=
 endif
 
 # v0.12.0: opt-in ROS2 bridge component (URBI_ENABLE_ROS2=1).
@@ -106,7 +112,7 @@ else
 endif
 
 # refound/core (Task 8, ruling P2): the old runtime core has left the
-# default build.  liburbi.a is now exactly two things:
+# default build.  liburbi.a is now exactly these:
 #
 #   FRONTEND_SRCS — the kept compiler frontend (lexer, parser, emitter,
 #                   chunk loader/verifier/disassembler) plus the two
@@ -118,15 +124,16 @@ endif
 #                   (the value formatter needs snprintf), kept out of
 #                   src/rt/ so the freestanding rule there stays true.
 #   RT_SRCS       — the new runtime core under src/rt/.
+#   REPL_CORE_SRCS — the cooperative NDJSON eval service (four files;
+#                   the networked server is parked, see above).
 #
 # src/chunk/uproto_ref.c is NOT built: the UProto refcount family served
 # the old core's lifetime model and has no caller left.
 #
 # Everything else (src/vm, src/sched, src/gc, src/object, src/realm,
-# src/watcher, src/event, src/tag, src/changed, src/runtime, src/repl,
-# src/stdlib, src/urbi.c, src/urbi_aux.c) stays in the tree for reference
-# and is deleted wholesale by the clean-up task.  src/stdlib/ re-attaches
-# to the new core with the boot table.
+# src/watcher, src/event, src/tag, src/changed, src/runtime, src/urbi.c,
+# src/urbi_aux.c) stays in the tree for reference and is deleted
+# wholesale by the clean-up task.
 # refound/core Task 9: the standard library re-attaches to the new core.
 # Each file exports one or more UMethodDef tables; src/rt/uboot.c's table
 # points at them and uboot_init installs them.
@@ -165,7 +172,7 @@ FRONTEND_SRCS := \
        src/value/uvarint.c \
        $(wildcard src/host/*.c)
 
-SRC := $(FRONTEND_SRCS) $(wildcard src/rt/*.c) $(STDLIB_SRCS) $(STDLIB_BLOB_SRC)
+SRC := $(FRONTEND_SRCS) $(wildcard src/rt/*.c) $(STDLIB_SRCS) $(STDLIB_BLOB_SRC) $(REPL_CORE_SRCS)
 TEST_SRC :=
 
 TARGET ?= host
@@ -424,8 +431,8 @@ test-integration: $(BUILDDIR)/urbi
 # each subsystem is re-founded.  tests/chk/bringup-exclusions.txt is the
 # ratchet for individual fixtures a later subsystem still blocks.
 #
-# tests/chk/repl/*.chk are NDJSON fixtures for the REPL dispatcher, not
-# urbiscript, and are skipped by the script.
+# tests/chk/repl/*.chk are NDJSON fixtures for the eval service, not
+# urbiscript; they are skipped by the script until their driver lands.
 #
 # Not valgrind-wrapped: urbi itself is memory-clean, and wrapping the
 # sh+awk+sed pipeline adds noise, not signal.

@@ -172,7 +172,7 @@ static void forward_jmp_past_end_is_rejected(void) {
     const char *src = "var i = 0; while (i < 3) { i = i + 1 } |";
     char err[256] = {0};
     UProto *root = NULL;
-    RT_EQ(ufront_compile(fx.vm, src, strlen(src), "<unit>", &root, err, sizeof err), URBI_OK);
+    RT_EQ(ufront_compile(fx.vm, src, strlen(src), "<unit>", NULL, &root, err, sizeof err), URBI_OK);
 
     /* Retarget the first forward JMP so it resolves to exactly
      * instr_count.  Forward offsets are relative to the instruction after
