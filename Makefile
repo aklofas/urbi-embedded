@@ -145,10 +145,10 @@ BUILDDIR := build/$(TARGET)
 # previously comment-only convention, now enforced).
 ifeq ($(TARGET),host)
   ifeq ($(URBI_ENABLE_ROS2),1)
-    $(error URBI_ENABLE_ROS2=1 on bare TARGET=host is forbidden (stale-object trap v0.12.0-H). Use the dedicated targets: `make test-ros2` / `make test-ros-urobotics`, or pass an explicit TARGET=host-ros2)
+    $(error URBI_ENABLE_ROS2=1 is parked during the refound/core re-foundation and not buildable on this branch)
   endif
   ifeq ($(URBI_ENABLE_UROBOTICS),1)
-    $(error URBI_ENABLE_UROBOTICS=1 on bare TARGET=host is forbidden (stale-object trap v0.12.0-H). Use the dedicated targets: `make test-urobotics` / `make test-ros-urobotics`, or pass an explicit TARGET=host-urobotics)
+    $(error URBI_ENABLE_UROBOTICS=1 is parked during the refound/core re-foundation and not buildable on this branch)
   endif
 endif
 
@@ -161,8 +161,9 @@ endif
 #
 # Default (URBI_STDLIB_FLAVOR unset, e.g. host build): use the tracked .gen.c.
 # Cross builds opt in by setting URBI_STDLIB_FLAVOR=N (matches URBI_FLOAT_TYPE
-# numeric value).  The recursive cross-arm / cross-riscv / cross-stm32f4
-# targets pass URBI_STDLIB_FLAVOR=4 automatically.
+# numeric value).  The cross-* convenience targets that used to pass this
+# automatically are parked (refound/core); an embedder driving their own
+# cross toolchain sets URBI_STDLIB_FLAVOR=N on the command line directly.
 #
 # Bytecode-only targets never rebake — they only verify the freestanding
 # symbol contract, the bake tool isn't built under URBI_BYTECODE_ONLY=1, and
@@ -431,7 +432,7 @@ HOST_BAKE_SRC := \
        $(wildcard src/changed/*.c) \
        $(wildcard src/chunk/*.c) \
        $(wildcard src/value/*.c) \
-       $(wildcard src/runtime/*.c) \
+       $(filter-out $(RUNTIME_PARKED_SRCS),$(wildcard src/runtime/*.c)) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c) \
        $(wildcard src/stdlib/*.c) \
@@ -443,9 +444,13 @@ HOST_BAKE_SRC := \
 # ros objects here forces a bake-tool RELINK whenever they change, which (in a
 # shared build/host populated by a prior URBI_ENABLE_REPL=1 TARGET=host build)
 # pulls in stale REPL-flagged objects without REPL_SRCS in the link -> undefined
-# refs (urepl_state_destroy / ujson_parse / urbi_introspect_*).  Build ros via
-# `make test-ros2` / TARGET=host-ros2, never URBI_ENABLE_ROS2=1 on TARGET=host
-# (design-risk v0.12.0-H).
+# refs (urepl_state_destroy / ujson_parse / urbi_introspect_*).  ROS2 is
+# parked during the refound/core re-foundation (the dedicated non-host
+# TARGET=host-ros2 target that used to isolate this build is gone, and
+# URBI_ENABLE_ROS2=1 on bare TARGET=host still hard-errors above); this
+# note stays for whoever re-attaches ROS2, so the TARGET=host
+# stale-object trap (design-risk v0.12.0-H) isn't rediscovered the hard
+# way.
 HOST_BAKE_OBJ := $(filter-out build/host/src/stdlib/urbi_stdlib_bytecode.gen.o, \
                               $(patsubst src/%.c,build/host/src/%.o,$(HOST_BAKE_SRC)))
 BAKE_STUB_O   := build/host/tools/stub_stdlib_bytecode.o
@@ -640,7 +645,6 @@ test-wire-format-determinism: $(BUILDDIR)/urbi
 # Aux functions live in liburbi_aux.a; leaking them into core breaks the
 # aux governance contract (CONTRIBUTING.md "Aux layer governance") and
 # the embedder's ability to strip the aux layer at link time.
-# Inverse of the Wave-1 freestanding gate (test-freestanding).
 .PHONY: test-aux-symbols
 test-aux-symbols: $(LIB)
 	@./scripts/check_aux_symbols.sh $(BUILDDIR)/liburbi.a
@@ -776,7 +780,7 @@ test-determinism: test-determinism-default
 # v0.11.4, walk_uevent v1.0 hang, container elements B2).  -O1 keeps
 # wall-clock tolerable.  Own TARGET= so Phase 1 -j parallelism stays
 # race-free.  In RELEASETEST_PHASE1 since v0.13.2 (corpus green; ~2 min
-# wall-clock solo, comparable to test-mem-debug).
+# wall-clock solo).
 .PHONY: test-gc-stress
 test-gc-stress:
 	$(MAKE) TARGET=host-gc-stress \
