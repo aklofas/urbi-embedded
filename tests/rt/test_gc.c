@@ -7,7 +7,7 @@ static void alloc_and_collect_unrooted(void) {
     RT_CHECK(c != NULL && c->type == UCELL_STR && c->size == 64 && vm.gc.cells_live == 1);
     ugc_collect(&vm);
     RT_EQ(vm.gc.cells_live, 0u);
-    ugc_destroy(&vm);
+    fakevm_destroy(&vm);
 }
 static void rooted_survives(void) {
     /* roots[] must be zero-initialized: under URBI_GC_STRESS the very first
@@ -20,10 +20,15 @@ static void rooted_survives(void) {
     ugc_collect(&vm);
     RT_EQ(vm.gc.cells_live, 1u);
     RT_CHECK(roots[0]->marked == 0);        /* marks are cleared by sweep */
-    ugc_destroy(&vm);
+    fakevm_destroy(&vm);
 }
 static void threshold_triggers(void) {
     struct UVM vm; fakevm_init(&vm, NULL, 0);
+    /* fakevm_init's ustrtab_init raw-allocates the initial bucket array,
+     * which already counts toward bytes_since/bytes_live; collect once to
+     * fold that into a clean post-collect baseline (bytes_since = 0,
+     * bytes_live = raw_live only) before the exact byte math below. */
+    ugc_collect(&vm);
     vm.gc.threshold = 1024;
     /* 17 * 64 = 1088 is the first multiple of 64 that clears the 1024
      * threshold; ugc_alloc's own maybe_collect call checks *before* each
@@ -41,7 +46,7 @@ static void threshold_triggers(void) {
     ugc_maybe_collect(&vm);
     RT_EQ(vm.gc.cells_live, 0u);
     RT_CHECK(!ugc_should_collect(&vm.gc));
-    ugc_destroy(&vm);
+    fakevm_destroy(&vm);
 }
 static void mark_is_idempotent_and_iterative(void) {
     struct UVM vm; UCell *roots[1] = { NULL }; fakevm_init(&vm, roots, 1);
@@ -50,7 +55,7 @@ static void mark_is_idempotent_and_iterative(void) {
     RT_EQ(vm.gc.gray_len, 1u);
     ugc_collect(&vm);  /* must not loop or double free */
     RT_EQ(vm.gc.cells_live, 1u);
-    ugc_destroy(&vm);
+    fakevm_destroy(&vm);
 }
 static void raw_memory_tracked(void) {
     struct UVM vm; fakevm_init(&vm, NULL, 0);
@@ -61,7 +66,7 @@ static void raw_memory_tracked(void) {
     RT_EQ(vm.gc.bytes_live, bytes_live_before_raw + 1000);
     ugc_raw_free(&vm, p, 1000);
     RT_EQ(vm.gc.bytes_live, bytes_live_before_raw);
-    ugc_destroy(&vm);
+    fakevm_destroy(&vm);
 }
 static void pacing_triggers_mid_loop(void) {
     /* Unlike threshold_triggers (which picks the exact count that crosses
@@ -75,7 +80,7 @@ static void pacing_triggers_mid_loop(void) {
     for (int i = 0; i < 40; i++) ugc_alloc(&vm, UCELL_STR, 64);
     RT_CHECK(vm.gc.cycles >= 1u);
     RT_CHECK(vm.gc.cells_live < 40u);
-    ugc_destroy(&vm);
+    fakevm_destroy(&vm);
 }
 typedef struct { UCell hdr; UCell *child; } LinkedCell;
 static void linked_trace(struct UVM *vm, UCell *c) {
@@ -101,7 +106,7 @@ static void pinned_cell_traces_child(void) {
     parent->child = (UCell *)child;
     ugc_collect(&vm);
     RT_EQ(vm.gc.cells_live, 2u);
-    ugc_destroy(&vm);
+    fakevm_destroy(&vm);
 }
 /* One gray-stack slot is one UCell*; capping every allocation request to
  * the exact byte size of a full 64-entry gray array lets the one initial

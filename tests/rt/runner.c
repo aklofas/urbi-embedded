@@ -9,9 +9,11 @@ void rt_run(const char *name, void (*fn)(void)) {
 /* RT_SUITES: one extern + one call per suite; tasks append here. */
 extern void rt_value_suite(void);
 extern void rt_gc_suite(void);
+extern void rt_str_suite(void);
 int main(void) {
     rt_run("value", rt_value_suite);
     rt_run("gc", rt_gc_suite);
+    rt_run("str", rt_str_suite);
     printf("rt: %d cases, %d failed, %d checks\n", cases, failed, rt_checks);
     return failed ? 1 : 0;
 }
