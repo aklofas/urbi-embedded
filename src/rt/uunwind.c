@@ -190,7 +190,7 @@ int uexec_return(UVM *vm, UStrand *s, UValue rv)
 {
     (void)vm;
     if (s->nframes == 0) { s->result = rv; s->state = USTRAND_DEAD; return 1; }
-    UFrame *f = &s->frames[s->nframes - 1];
+    const UFrame *f = &s->frames[s->nframes - 1];
     uint8_t  boundary = f->is_boundary;
     uint8_t  rr = f->ret_reg;
     uint32_t caller_base = s->nframes > 1 ? s->frames[s->nframes - 2].base : 0;
@@ -284,7 +284,7 @@ int uexec_unwind(UVM *vm, UStrand *s)
          * hands control back to the native that called in, with the
          * unwind still pending so ITS caller carries on unwinding. */
         {
-            UFrame *f = &s->frames[fi];
+            const UFrame *f = &s->frames[fi];
             uint8_t boundary = f->is_boundary;
             ustrand_pop_frame(s);
             if (boundary) {

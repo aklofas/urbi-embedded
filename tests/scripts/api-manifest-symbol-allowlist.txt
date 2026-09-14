@@ -56,9 +56,12 @@ uemit_throw
 uemit_try_begin
 uemit_try_end
 uexec_call
+uexec_position_prefix
+uexec_return
 uexec_run
 uexec_run_source
 uexec_throw
+uexec_throw_here
 uexec_throw_value
 uexec_unwind
 ufront_compile
@@ -106,6 +109,7 @@ uparser_oom_sentinel
 uproto_alloc_nested
 uproto_bind
 uproto_destroy_buffers
+uproto_line_at
 urealm_free
 urealm_new
 urealm_trace
