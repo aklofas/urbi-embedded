@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: BSD-3-Clause
 # test_embedding_guide_compiles.sh — compile every C code sample in
-# docs/embedding-guide.md to catch API-drift early.
+# docs/embedding-guide.md, and RUN the standalone ones, so the page cannot
+# drift from the headers it documents.
+#
+# EVERY block must carry a marker.  A block that carries neither is
+# counted as a skip, and a skip is what let five wrong public-API
+# prototypes sit on that page unnoticed: the unmarked blocks were exactly
+# the transcribed signatures, which is the highest drift risk in the
+# document.  Prototype listings belong in a FRAGMENT -- they are
+# declarations, so -fsyntax-only against the real headers turns any drift
+# into a redeclaration conflict.
 #
 # Extraction convention
 # ---------------------
@@ -21,18 +30,19 @@
 #       #include <stdlib.h>
 #       #include <stdint.h>
 #       #include <string.h>
+#       #include <stdbool.h>
 #       #include "urbi/urbi.h"
 #       #include "urbi/types.h"
-#       #include "urbi/aux.h"
 #       /* fragment source */
-#       /* dummy references to avoid unused-declaration warnings */
 #
+#     A fragment needing <urbi/repl.h> includes it itself.
 #     Fragments are compiled with -fsyntax-only (type-check only; no link).
-#     Standalone examples are compiled with a full link against liburbi.a.
+#     Standalone examples are compiled with a full link against liburbi.a,
+#     then EXECUTED; $EXPECT_<block index> names a substring the output
+#     must contain.
 #
-# Any block that is neither labelled STANDALONE nor FRAGMENT is skipped
-# (e.g., the bare typedefs shown for exposition; these are already covered
-# by the FRAGMENT blocks that use them).
+# Any block that is neither labelled STANDALONE nor FRAGMENT is counted as
+# a skip.  The gate prints the skip count; it should be 0.
 #
 # Usage
 # -----
@@ -69,6 +79,12 @@ trap cleanup EXIT
 PASS=0
 FAIL=0
 SKIP=0
+
+# What each standalone example must print when it runs, by block index.
+# The flagship registers a native, installs an `at` watcher and a timer,
+# and steps until the watcher fires; if it ever stops firing the guide is
+# telling embedders something that is no longer true.
+EXPECT_1="threshold crossed"
 
 # ---------------------------------------------------------------------------
 # Extract and compile each C block from the guide.
@@ -134,14 +150,39 @@ compile_standalone() {
 
     local errbuf
     # Standalone examples include a full main(); link the shipped archive.
-    if errbuf=$($CC $CFLAGS_BASE "$src" "$LIB" -lm -o "$exe" 2>&1); then
-        PASS=$((PASS + 1))
-        echo "  PASS standalone $idx"
-    else
+    if ! errbuf=$($CC $CFLAGS_BASE "$src" "$LIB" -lm -o "$exe" 2>&1); then
         FAIL=$((FAIL + 1))
         echo "  FAIL standalone $idx:" >&2
         echo "$errbuf" >&2
         echo "  Source: $src" >&2
+        return
+    fi
+
+    # And RUN it.  A guide example that compiles but does not do what the
+    # surrounding prose says it does is still wrong, and this one is the
+    # page's flagship: it registers a native, installs a watcher, drives
+    # the scheduler and expects the watcher to fire.  $EXPECT_<idx> names
+    # a substring its output must contain.
+    local expect_var="EXPECT_${idx}"
+    local expect="${!expect_var:-}"
+    local out
+    if ! out=$(timeout 60 "$exe" 2>&1); then
+        FAIL=$((FAIL + 1))
+        echo "  FAIL standalone $idx: exited non-zero when run" >&2
+        echo "$out" >&2
+        return
+    fi
+    if [ -n "$expect" ] && [[ "$out" != *"$expect"* ]]; then
+        FAIL=$((FAIL + 1))
+        echo "  FAIL standalone $idx: output did not contain \"$expect\"" >&2
+        echo "  got: $out" >&2
+        return
+    fi
+    PASS=$((PASS + 1))
+    if [ -n "$expect" ]; then
+        echo "  PASS standalone $idx (ran; output contains \"$expect\")"
+    else
+        echo "  PASS standalone $idx (ran)"
     fi
 }
 

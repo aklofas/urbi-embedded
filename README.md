@@ -16,7 +16,7 @@ echo "1 + 2" | ./build/host/urbi -i      # -> [..........] 3
 ./build/host/urbi -i                     # interactive REPL
 ```
 
-Embedding a VM in your own C program is one header and a handful of calls — the [embedding guide](docs/embedding-guide.md) walks a complete program, and every sample on that page is compiled by the build. The MCU ports (Pico, ESP32-S3, STM32F4) are parked while the core settles; [the ports guide](docs/internals/ports.md) records what each one needed.
+Embedding a VM in your own C program is one header and a handful of calls — the [embedding guide](docs/embedding-guide.md) walks a complete program, and the build compiles every sample on that page and runs the complete one. The MCU ports (Pico, ESP32-S3, STM32F4) are parked while the core settles; [the ports guide](docs/internals/ports.md) records what each one needed.
 
 ## Design goals
 

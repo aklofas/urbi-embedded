@@ -15,7 +15,7 @@ top-to-bottom; do not tag until every box is checked.
 - [ ] `make test-bench` — the timing probe, on an otherwise idle machine
 - [ ] `make test-chk` — `0 vacuous, 0 failed`; SKIPs are parked-component fixtures only
 - [ ] `make test-api-manifest` — every exported `urbi_*` documented, frozen surface intact, no new unprefixed global
-- [ ] `make test-embedding-guide` — every C sample in the guide still compiles
+- [ ] `make test-embedding-guide` — every C sample compiles, 0 skipped, and the complete program runs
 - [ ] `make docs-check` — markdownlint + link-check, 0 errors
 - [ ] `make releasetest` — the full parallel sweep is green (supersedes the above on a clean machine)
 

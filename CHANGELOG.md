@@ -85,7 +85,9 @@ measured cost and prints the spec's target beside it.
 - `tests/probes/` is new: four programs that measure a committed number,
   print it, and fail the build when it moves the wrong way.
 - Every C sample in the embedding guide is compiled by
-  `make test-embedding-guide`, which is back in `releasetest`.
+  `make test-embedding-guide` — all 21 blocks, none skipped — and the
+  complete program is run and its output checked. The gate is back in
+  `releasetest`.
 - The coverage floor is re-baselined 75 -> 85 against a measured 89%.
 - The layering gate's ban on old-runtime directory names becomes the
   positive rule it stood in for: `src/rt` may reach `rt/`, `chunk/`,

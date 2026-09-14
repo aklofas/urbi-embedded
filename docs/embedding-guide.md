@@ -139,7 +139,12 @@ chunks. Every pointer you obtained from the VM is invalid afterwards.
 ## Opening and closing
 
 ```c
+/* FRAGMENT — the lifecycle pair.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
 UVM *urbi_open(UVMAllocFn alloc, void *ud, const UVMConfig *config);
+
 void urbi_close(UVM *vm);
 ```
 
@@ -179,8 +184,12 @@ that the three cases behave.
 ## Running script
 
 ```c
-int urbi_run(UVM *vm, URealm *realm, const char *src, size_t n,
-             const char *name, UValue *out, char *err, size_t errcap);
+/* FRAGMENT — compile and run.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
+int  urbi_run(UVM *vm, URealm *realm, const char *src, size_t n, const char *name,
+              UValue *out, char *err, size_t errcap);
 ```
 
 Compiles and runs, and writes the value of the last statement through
@@ -201,14 +210,23 @@ needs the step loop.
 To call a function value you already hold:
 
 ```c
-int urbi_call(UVM *vm, URealm *realm, UValue callee, UValue recv,
-              const UValue *argv, uint8_t argc, UValue *out);
+/* FRAGMENT — calling a closure you hold.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
+int  urbi_call(UVM *vm, URealm *realm, UValue callee, UValue recv,
+               const UValue *argv, uint8_t argc, UValue *out);
 ```
 
 ## The step loop
 
 ```c
+/* FRAGMENT — the step loop.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
 int urbi_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us);
+
 bool urbi_has_live_work(UVM *vm);
 ```
 
@@ -246,8 +264,11 @@ the write unprocessed until something else wakes it.
 ## Host functions
 
 ```c
-int urbi_register(UVM *vm, const char *path, urbi_native_fn fn,
-                  uint8_t min_args, uint8_t max_args);
+/* FRAGMENT — binding a C function to a name.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
+int urbi_register(UVM *vm, const char *path, urbi_native_fn fn, uint8_t min_args, uint8_t max_args);
 ```
 
 `path` is a dotted name: `"read_sensor"` puts it in the global scope,
@@ -286,10 +307,17 @@ restructure so nothing allocates in between.
 Four callbacks, all optional:
 
 ```c
-void urbi_set_clock (UVM *vm, uint64_t (*fn)(void *ud), void *ud);
-void urbi_set_diag  (UVM *vm, void (*fn)(UVM *, void *, int, const char *, size_t), void *ud);
-void urbi_set_writer(UVM *vm, void (*fn)(void *, const char *, size_t, const char *, size_t), void *ud);
-void urbi_set_wake  (UVM *vm, void (*fn)(void *ud), void *ud);
+/* FRAGMENT — the four host hooks.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
+void urbi_set_clock(UVM *vm, uint64_t (*fn)(void *ud), void *ud);
+
+void urbi_set_diag(UVM *vm, void (*fn)(UVM *vm, void *ud, int level, const char *msg, size_t len), void *ud);
+
+void urbi_set_writer(UVM *vm, void (*fn)(void *ud, const char *chan, size_t chan_len, const char *msg, size_t msg_len), void *ud);
+
+void urbi_set_wake(UVM *vm, void (*fn)(void *ud), void *ud);
 ```
 
 - **clock** returns microseconds. Without it the VM advances its own
@@ -336,9 +364,16 @@ way the REPL does.
 Reading and writing from C:
 
 ```c
+/* FRAGMENT — reading and writing from C.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
 int urbi_global_get(UVM *vm, URealm *realm, const char *name, UValue *out);
+
 int urbi_global_set(UVM *vm, URealm *realm, const char *name, UValue v);
+
 int urbi_slot_get(UVM *vm, UValue obj, const char *name, UValue *out);
+
 int urbi_slot_set(UVM *vm, UValue obj, const char *name, UValue v);
 ```
 
@@ -371,8 +406,14 @@ holds the standard library, so a new realm costs one cell and one object
 rather than a copy of everything.
 
 ```c
+/* FRAGMENT — realms.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
 URealm *urbi_realm_new(UVM *vm);
+
 URealm *urbi_realm_main(UVM *vm);
+
 void    urbi_realm_free(UVM *vm, URealm *realm);
 ```
 
@@ -382,10 +423,13 @@ per-session REPL, or a per-behaviour sandbox, cheap.
 ## Events and watchers from C
 
 ```c
-int urbi_event_register(UVM *vm, URealm *realm, const char *name,
-                        urbi_event_id_t *out_id);
-int urbi_inject_event(UVM *vm, urbi_event_id_t id,
-                      const urbi_event_payload_t *payload, size_t n);
+/* FRAGMENT — events from C.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
+int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_t *out_id);
+
+int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *payload, size_t n);
 ```
 
 Register once, at start-up, and keep the id. `urbi_inject_event` is the
@@ -394,22 +438,58 @@ ring the scheduler drains — which makes it the right shape for an
 interrupt handler.
 
 ```c
+/* FRAGMENT — installing a watcher with a C body.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
 int urbi_watch(UVM *vm, URealm *realm, const char *expr,
-               void (*fn)(UVM *vm, void *ud), void *ud);
+               int (*cb)(UVM *vm, void *ud, UValue value), void *ud);
 ```
 
-installs a watcher whose body is a C callback rather than script.
+installs a watcher whose body is a C callback rather than script. The
+callback receives the condition's value, and its `int` return is IGNORED
+— it is an int only so the typedef matches the rest of the host-callback
+family.
+
+```c
+/* FRAGMENT — a watcher whose body is C. */
+static int on_level_high(UVM *vm, void *ud, UValue value)
+{
+    (void)vm; (void)value;
+    int *crossings = (int *)ud;
+    (*crossings)++;
+    return URBI_OK;            /* ignored; see above */
+}
+
+static int watch_the_level(UVM *vm, URealm *realm, int *crossings)
+{
+    return urbi_watch(vm, realm, "Realm.level > 20", on_level_high, crossings);
+}
+```
+
+A watch lives until the realm's connection tag is stopped —
+`urbi_tag_stop(vm, urbi_realm_tag(vm, realm))`, which works for the main
+realm too.
 
 ## Tags
 
 A tag is a cancellation handle:
 
 ```c
+/* FRAGMENT — tags.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
 int urbi_tag_new(UVM *vm, URealm *realm, const char *name, UValue *out);
+
 int urbi_tag_stop(UVM *vm, UValue tag);
+
 int urbi_tag_block(UVM *vm, UValue tag);
+
 int urbi_tag_unblock(UVM *vm, UValue tag);
+
 int urbi_tag_freeze(UVM *vm, UValue tag);
+
 int urbi_tag_unfreeze(UVM *vm, UValue tag);
 ```
 
@@ -427,9 +507,15 @@ Compiling on the device costs the parser and the emitter. To avoid it,
 compile on the host and ship the bytes:
 
 ```c
+/* FRAGMENT — precompiled bytecode.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+
 int  urbi_compile(UVM *vm, const char *src, size_t n, const char *name,
                   uint8_t **out_bytes, size_t *out_len, char *err, size_t errcap);
+
 int  urbi_load(UVM *vm, URealm *realm, const uint8_t *bytes, size_t n, UValue *out);
+
 void urbi_chunk_free(UVM *vm, uint8_t *bytes, size_t n);
 ```
 
@@ -444,16 +530,66 @@ drop the frontend entirely when the device only ever loads bytes.
 that does not want a REPL does not get one.
 
 ```c
-int urbi_repl_serve_init(UVM *vm);
-int urbi_repl_register_transport(UVM *vm, const URbReplTransport *t, void *ud);
-int urbi_repl_serve_step(UVM *vm);
-int urbi_repl_serve_shutdown(UVM *vm);
+/* FRAGMENT — the eval service.  Declarations only: the harness compiles this
+ * against the real headers, so a signature that drifts from them
+ * is a redeclaration conflict and fails the build. */
+#include <urbi/repl.h>
+
+int  urbi_repl_serve_init(struct UVM *vm, const UReplConfig *cfg,
+                          UReplServer **out_server);
+
+int  urbi_repl_register_transport(UReplServer *server, const UTransport *transport);
+
+int  urbi_repl_serve_step(UReplServer *server, uint64_t timeout_us);
+
+void urbi_repl_serve_shutdown(UReplServer *server);
 ```
 
 It is cooperative: `urbi_repl_serve_step` reads what a transport has,
-evaluates it, writes the reply, and returns. No thread, no socket. You
-supply the transport — a UART, a buffer, whatever the device has — and
-call it from the same loop as `urbi_step`.
+evaluates it, writes the reply, and returns. No thread, no socket. Its
+`timeout_us` is accepted and ignored — the sweep never waits, so pacing
+an idle loop is the caller's business, and the caller already owns the
+clock.
+
+You supply the transport. A `UTransport` is four fields — a `ctx` and
+`read` / `write` / `close` over it — and registering one adopts that
+stream as a session with its own realm, its own globals and its own
+output, so two clients cannot see each other's variables. The struct is
+COPIED at registration; the `ctx` it points at stays yours until `close`
+is called on it.
+
+```c
+/* FRAGMENT — standing the service up and driving it. */
+#include <urbi/repl.h>
+
+/* Whatever the device has behind it; the service never looks. */
+int  uart_read(void *ctx, void *buf, size_t n);
+int  uart_write(void *ctx, const void *buf, size_t n);
+void uart_close(void *ctx);
+
+static int serve_over_uart(UVM *vm, void *uart)
+{
+    /* The text a session compiles arrives from outside, so cap it. */
+    UReplConfig cfg = { 0 };
+    cfg.default_budget.max_source_bytes = 64 * 1024;
+
+    UReplServer *repl = NULL;
+    int rc = urbi_repl_serve_init(vm, &cfg, &repl);
+    if (rc != URBI_OK) return rc;
+
+    UTransport t = { uart, uart_read, uart_write, uart_close };
+    rc = urbi_repl_register_transport(repl, &t);
+    if (rc != URBI_OK) { urbi_repl_serve_shutdown(repl); return rc; }
+
+    for (;;) {
+        urbi_repl_serve_step(repl, 0);      /* never blocks */
+        uint64_t next_wake_us = 0;
+        if (urbi_step(vm, 0, &next_wake_us) == URBI_STEP_QUIESCENT) {
+            /* Nothing to run and nothing pending: wait on the UART. */
+        }
+    }
+}
+```
 
 The protocol is newline-delimited JSON, one request per line. See
 [internals/repl-service.md](internals/repl-service.md).
