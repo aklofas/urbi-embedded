@@ -31,12 +31,20 @@ excluded() {
     [ -f "$EXCLUSIONS" ] || return 1
     sed 's/#.*//' "$EXCLUSIONS" | tr -d ' \t' | grep -qx "$1"
 }
+# A gate name covers a directory and everything under it, so listing
+# `stdlib` gates stdlib/atoms, stdlib/containers and the rest.
 gated() {
-    for g in $CHK_GATE_DIRS; do [ "$g" = "$1" ] && return 0; done
+    for g in $CHK_GATE_DIRS; do
+        case "$1" in "$g"|"$g"/*) return 0 ;; esac
+    done
     return 1
 }
 
-DIRS=$(find tests/chk -mindepth 1 -maxdepth 1 -type d ! -name repl \
+# Every directory that actually holds fixtures, nested ones included:
+# tests/chk/stdlib has no fixtures of its own, only subdirectories, and
+# a depth-1 scan silently reported it as empty.
+DIRS=$(find tests/chk -mindepth 1 -type d ! -path 'tests/chk/repl*' \
+       -exec sh -c 'ls "$1"/*.chk >/dev/null 2>&1' _ {} \; -print \
        | sed 's|tests/chk/||' | sort)
 
 gate_fail=""
@@ -65,12 +73,12 @@ for d in $DIRS; do
     done
     mark=" "
     gated "$d" && mark="*"
-    printf '%s %-22s PASS=%-4d PLACEHOLDER=%-4d SKIP=%-4d VACUOUS=%-3d FAIL=%d\n' \
+    printf '%s %-26s PASS=%-4d PLACEHOLDER=%-4d SKIP=%-4d VACUOUS=%-3d FAIL=%d\n' \
            "$mark" "$d" "$p" "$ph" "$sk" "$v" "$f"
     tp=$((tp + p)); tf=$((tf + f)); tph=$((tph + ph)); tsk=$((tsk + sk)); tv=$((tv + v))
 done
 
-printf '  %-22s PASS=%-4d PLACEHOLDER=%-4d SKIP=%-4d VACUOUS=%-3d FAIL=%d\n' \
+printf '  %-26s PASS=%-4d PLACEHOLDER=%-4d SKIP=%-4d VACUOUS=%-3d FAIL=%d\n' \
        "TOTAL" "$tp" "$tph" "$tsk" "$tv" "$tf"
 printf '  (* = gated: %s)\n' "$CHK_GATE_DIRS"
 

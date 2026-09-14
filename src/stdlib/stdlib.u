@@ -39,7 +39,7 @@ class RangeIterable {
 //
 // Only the ones the VM never raises itself.  Exception, TypeError,
 // ArityError, LookupError, OutOfMemoryError, IndexError, RangeError and
-// DivisionByZero are table rows in rt/uboot.c and are NOT redeclared
+// DivByZero are table rows in rt/uboot.c and are NOT redeclared
 // here: a second declaration would both shadow the protos the runtime
 // throws and fail, because their globals are constant.
 //
@@ -145,3 +145,11 @@ class ChannelMethods {
     }
 } |
 Channel.addProto(ChannelMethods);
+
+// The three standard channels.  Legacy urbi binds them as realm globals
+// so `cout << "x"` works unqualified; they are ordinary Channel
+// instances differing only in their tag.
+
+var cout = Channel.new("output") |
+var cerr = Channel.new("error") |
+var clog = Channel.new("clog");

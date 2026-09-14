@@ -245,6 +245,7 @@ static const UMethodDef k_dict_methods[] = {
     { "set",  dict_set,  2, 2 },
     { "get",  dict_get,  1, 1 },
     { "size", dict_size, 0, 0 },
+    { "length", dict_size, 0, 0 },
     { "has",  dict_has,  1, 1 }
 };
 
@@ -298,7 +299,7 @@ const UBuiltinDef uboot_table[] = {
     { "OutOfMemoryError", UP_OOMERROR,   UP_EXCEPTION, NONE, 0 },
     { "IndexError",       UP_INDEXERROR, UP_EXCEPTION, NONE, 0 },
     { "RangeError",       UP_RANGEERROR, UP_EXCEPTION, NONE, 0 },
-    { "DivisionByZero",   UP_DIVBYZERO,  UP_EXCEPTION, NONE, 0 },
+    { "DivByZero",        UP_DIVBYZERO,  UP_EXCEPTION, NONE, 0 },
 
     /* Output.  Lobby is in every realm's chain, which is what makes a
      * bare `echo("hi")` work everywhere. */
@@ -318,7 +319,12 @@ const UBuiltinDef uboot_table[] = {
     { "Pair",    UP_PAIR,    UP_OBJECT,  NONE, 0 },
     { "Triplet", UP_TRIPLET, UP_OBJECT,  NONE, 0 },
     { "Tuple",   UP_TUPLE,   UP_OBJECT,  NONE, 0 },
-    { "Global",  UP_GLOBAL,  UP_OBJECT,  k_global_methods, K_GLOBAL_NMETHODS, 0 }
+    { "Global",  UP_GLOBAL,  UP_OBJECT,  k_global_methods, K_GLOBAL_NMETHODS, 0 },
+
+    /* Vestigial.  The legacy fallback() reflection mechanism is not
+     * coming back, but the marker slot is what scripts test for, so the
+     * prototype stays with its `kind` constant and nothing else. */
+    { "CallMessage", UP_CALLMESSAGE, UP_OBJECT, NONE, 0 }
 };
 
 const uint16_t uboot_table_len = (uint16_t)(sizeof uboot_table / sizeof uboot_table[0]);
@@ -372,21 +378,25 @@ static int uboot_run_stdlib(UVM *vm)
     if (lrc != UCHUNK_LOAD_OK)
         return lrc == UCHUNK_LOAD_OOM ? URBI_ERR_OOM : URBI_ERR_BYTECODE_VERSION_MISMATCH;
 
+    /* The blob runs before any realm exists, on a spare strand with no
+     * realm: it only ever touches root_globals through its receiver.
+     * Acquired FIRST, because acquiring one can allocate -- and therefore
+     * collect -- and the closure built below is reachable from nothing
+     * until uexec_call roots it. */
+    UStrand *s = uvm_spare_acquire(vm, NULL);
+    if (!s) { uchunk_destroy(root, NULL); return URBI_ERR_OOM; }
+
     UProtoCell *pc = uproto_bind(vm, root);   /* owns `root` either way */
-    if (!pc) return URBI_ERR_OOM;
+    if (!pc) { uvm_spare_release(vm, s); return URBI_ERR_OOM; }
 
     /* Pin across the closure allocation: the chunk is reachable from
      * nothing until a closure points at it. */
     pc->cell.flags |= UCELL_F_PINNED;
     UClosure *cl = uclosure_new(vm, root, 0);
     pc->cell.flags &= (uint16_t)~UCELL_F_PINNED;
-    if (!cl) return URBI_ERR_OOM;
+    if (!cl) { uvm_spare_release(vm, s); return URBI_ERR_OOM; }
     cl->proto_obj = vm->protos[UP_CLOSURE];
 
-    /* The blob runs before any realm exists, on a spare strand with no
-     * realm: it only ever touches root_globals through its receiver. */
-    UStrand *s = uvm_spare_acquire(vm, NULL);
-    if (!s) return URBI_ERR_OOM;
     UValue ignored = uv_nil();
     int rc = uexec_call(vm, s, cl, uv_obj(vm->root_globals), NULL, 0, &ignored);
     uvm_spare_release(vm, s);
@@ -468,6 +478,13 @@ int uboot_init(UVM *vm)
     /* Pass 5 — the constant and default SLOTS the table has no column
      * for.  Each is a one-function hook beside the methods it belongs
      * with. */
+    {
+        USym *k = usym_cstr(vm, "kind");
+        UValue v = urbi_make_str_interned(vm, "callmessage", 11);
+        if (!k || v.kind == UV_NIL) return URBI_ERR_OOM;
+        if (uobj_set_local(vm, vm->protos[UP_CALLMESSAGE], k, v, USLOT_CONSTANT) < 0)
+            return URBI_ERR_OOM;
+    }
     {
         int rc = urbi_namespaces_init(vm);
         if (rc == URBI_OK) rc = urbi_primitives_init(vm);

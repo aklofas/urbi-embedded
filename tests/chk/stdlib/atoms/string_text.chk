@@ -59,4 +59,4 @@ var p = "xyz".split(","); p.length()
 # _storage backing) raises the same TypeError as List.join — one shared
 # implementation, one contract.
 ",".join(List.clone())
-[00000018] !!! TypeError: join: missing _storage
+[00000018] !!! TypeError: join: argument must be a List

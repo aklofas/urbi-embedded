@@ -96,7 +96,7 @@ static void division_by_zero_is_a_throw(void) {
     ExecFix fx; fix_open(&fx);
     UValue out;
     RT_EQ(run(&fx, "1 / 0 |", &out), URBI_ERR_UNCAUGHT_THROW);
-    RT_CHECK(strstr(fx.vm->last_error, "DivisionByZero") != NULL);
+    RT_CHECK(strstr(fx.vm->last_error, "DivByZero") != NULL);
     fix_close(&fx);
 }
 

@@ -9,9 +9,14 @@
 # than a fatal HALT (see tests/chk/exceptions/vm_typeerror_catchable.chk).
 # Uncaught at the REPL surface it surfaces the instance `message` slot as the
 # legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
+#
+# v0.14 (re-foundation): a missing slot raises LookupError, not TypeError.
+# The runtime has had a LookupError prototype all along; the old core
+# raised TypeError for it, which was both less precise and further from
+# the legacy diagnostic ("lookup failed").
 
 asdfjklm
-[00000000] !!! TypeError: slot access: slot 'asdfjklm' not found
+[00000000] !!! LookupError: slot access: slot 'asdfjklm' not found
 
 aoeuhtns
-[00000001] !!! TypeError: slot access: slot 'aoeuhtns' not found
+[00000001] !!! LookupError: slot access: slot 'aoeuhtns' not found

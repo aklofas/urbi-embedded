@@ -169,8 +169,14 @@ global_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "Global.length", 0, nargs, out);
 
+    /* Everything the realm resolves by bare name: its own slots plus the
+     * shared built-ins it inherits.  Counting only the realm's own would
+     * report 1 (the Realm self-reference), which is not what "the
+     * bindings in scope" means to a script. */
     URealm *r = uvm_current_realm(vm);
-    *out = uv_int(r && r->globals ? (int64_t)r->globals->count : 0);
+    int64_t n = (r && r->globals) ? (int64_t)r->globals->count : 0;
+    if (vm->root_globals) n += (int64_t)vm->root_globals->count;
+    *out = uv_int(n);
     return UEXEC_OK;
 }
 

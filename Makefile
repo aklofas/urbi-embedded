@@ -333,28 +333,40 @@ urbi-bin: $(BUILDDIR)/urbi
 # tools/stub_stdlib_bytecode.c -- the same two symbols with a zero
 # length, which uboot_init treats as "no script overlay".
 #
-# HOST-ONLY.  The bake runs once with the native compiler and its output
-# ships as portable C source, so a cross build compiles the .gen.c like
-# any other source and never needs the tool.
+# ALWAYS build/host.  The bake runs once with the native compiler and its
+# output ships as portable C source, so a cross or sanitizer sub-make
+# neither needs the tool nor should rebuild it with its own flags (that
+# would clobber the host binary and churn the tracked .gen.c).
 #
 # .gen.c is TRACKED, not a build artifact: the first build of liburbi.a
 # must not require a tool that requires liburbi.a.
-BAKE_OBJS := $(filter-out $(BUILDDIR)/src/stdlib/urbi_stdlib_bytecode.gen.o,$(OBJ))
+BAKE_SRCS := $(filter-out $(STDLIB_BLOB_SRC),$(FRONTEND_SRCS) $(wildcard src/rt/*.c) $(STDLIB_SRCS))
+BAKE_OBJS := $(patsubst src/%.c,build/host/src/%.o,$(BAKE_SRCS))
 
-$(BUILDDIR)/tools/stub_stdlib_bytecode.o: tools/stub_stdlib_bytecode.c $(FLAGSTAMP) | $(BUILDDIR)/tools
-	$(CC) $(CFLAGS) -Iinclude -Isrc -MMD -MP -c -o $@ $<
+# Host-object pattern for cross and sanitizer sub-makes, which have their
+# own $(BUILDDIR).  Guarded so it does not duplicate the standard pattern
+# rule when $(BUILDDIR) already IS build/host.
+ifneq ($(TARGET),host)
+build/host/src/%.o: src/%.c
+	@mkdir -p $(@D)
+	cc -std=c99 -Wall -Wextra -Wpedantic -Os -fvisibility=hidden -Iinclude -Isrc -MMD -MP -c -o $@ $<
+endif
+
+build/host/tools/stub_stdlib_bytecode.o: tools/stub_stdlib_bytecode.c
+	@mkdir -p $(@D)
+	cc -std=c99 -Os -Iinclude -Isrc -MMD -MP -c -o $@ $<
 
 tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(BAKE_OBJS) \
-                           $(BUILDDIR)/tools/stub_stdlib_bytecode.o
-	$(CC) $(CFLAGS) -Iinclude -Isrc -o $@ $< $(BAKE_OBJS) \
-	    $(BUILDDIR)/tools/stub_stdlib_bytecode.o -lm
+                           build/host/tools/stub_stdlib_bytecode.o
+	cc -std=c99 -Wall -Wextra -Wpedantic -Os -Iinclude -Isrc -o $@ $< \
+	    $(BAKE_OBJS) build/host/tools/stub_stdlib_bytecode.o -lm
 
 src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib src/stdlib/stdlib.u
 	./tools/urbi-compile-stdlib src/stdlib/stdlib.u $@
 
-# Drift gate: re-bake and diff against the tracked file, so a .u edit
-# that was never baked fails the build rather than shipping stale
-# bytecode.  Determinism gate: three bakes of the same input must be
+# Drift gate: re-bake and diff against the tracked file, so a stdlib.u
+# edit that was never baked fails the build rather than shipping stale
+# bytecode.  Determinism gate: three bakes of one input must be
 # byte-identical, or the wire-format hashes churn on every build.
 .PHONY: test-stdlib-bytecode-fresh test-bake-smoke
 test-stdlib-bytecode-fresh: tools/urbi-compile-stdlib
@@ -388,7 +400,8 @@ test-integration: $(BUILDDIR)/urbi
 #
 # Not valgrind-wrapped: urbi itself is memory-clean, and wrapping the
 # sh+awk+sed pipeline adds noise, not signal.
-CHK_GATE_DIRS ?= arithmetic closure function control
+CHK_GATE_DIRS ?= arithmetic closure function control \
+                 objects globals stdlib lobby operators
 
 test-chk: $(BUILDDIR)/urbi
 	@CHK_GATE_DIRS="$(CHK_GATE_DIRS)" sh tests/integration/chk_summary.sh $(BUILDDIR)/urbi
@@ -402,7 +415,7 @@ test-chk-runner:
 # `make test` on the re-founded core: the rt suites, the layering gate,
 # and the .chk corpus driven through the new urbi binary.  The old
 # unit-test runner is parked with the core it exercised.
-test: $(LIB) test-rt check-rt-layering test-chk test-stdlib-bytecode-fresh
+test: $(LIB) test-rt check-rt-layering test-chk
 
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi
@@ -564,6 +577,7 @@ RELEASETEST_PHASE1 := \
     lint docs-check coverage \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism \
+    test-stdlib-bytecode-fresh test-bake-smoke \
     test-api-manifest \
     test-chk-runner test-fuzz-smoke test-o2
 # Phase 2: valgrind, running alone after Phase 1 finishes.

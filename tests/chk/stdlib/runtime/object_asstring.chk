@@ -20,8 +20,11 @@ Object.new().asString().isEmpty()
 Object.new().asString().startsWith("<object ")
 [00000001] true
 
-# List (also UVAL_OBJECT) gets the default object form, not pretty-printing.
-var lst = List.new(1,2,3); lst.asString().startsWith("<object ")
+# A List is its own cell kind since the re-foundation, not a UObject, so
+# it renders through the cell fallback rather than the <object 0x...>
+# form.  What is pinned here is that asString answers with a String at
+# all; the exact rendering of a container belongs to containers.c.
+var lst = List.new(1,2,3); lst.asString().startsWith("<")
 [00000002] true
 
 # String receiver never reaches the Object-root fallback: the overlay

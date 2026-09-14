@@ -331,7 +331,7 @@ int urbi_throw(UVM *vm, const char *proto, const char *msg)
             { "TypeError", UP_TYPEERROR }, { "ArityError", UP_ARITYERROR },
             { "LookupError", UP_LOOKUPERROR }, { "OutOfMemoryError", UP_OOMERROR },
             { "IndexError", UP_INDEXERROR }, { "RangeError", UP_RANGEERROR },
-            { "DivisionByZero", UP_DIVBYZERO }, { "Exception", UP_EXCEPTION }
+            { "DivByZero", UP_DIVBYZERO }, { "Exception", UP_EXCEPTION }
         };
         for (size_t k = 0; k < sizeof known / sizeof known[0]; k++) {
             if (strcmp(known[k].name, proto) == 0) { which = known[k].idx; break; }
