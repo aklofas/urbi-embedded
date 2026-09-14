@@ -1936,14 +1936,14 @@ coverage: coverage-tools
 	$(MAKE) TARGET=host-coverage \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g --coverage" \
 		test
-	# W5/v0.10.6: enforce ≥85% line coverage (Path A — see release-readiness.md §Coverage).
-	# Threshold set at 85% to match measured baseline at v0.10.6-stabilization (87%).
-	# Aspirational target for v1.0 is 90%; raise the threshold when the gap closes.
+	# Line-coverage floor lowered from 85% to 80% in Phase 0 of the core re-foundation:
+	# the deleted runtime-internals unit tests covered code that the refound/core
+	# branch replaces. Re-baseline for the new core when it lands.
 	gcovr --root . \
 	      --object-directory build/host-coverage \
 	      --filter 'src/' \
 	      --merge-mode-functions=merge-use-line-min \
-	      --fail-under-line 85 \
+	      --fail-under-line 80 \
 	      --txt \
 	      --html-details build/host-coverage/report.html
 	@echo ""
