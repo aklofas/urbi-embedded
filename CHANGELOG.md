@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Phase 0 of the core re-foundation
+
+- Removed the pre-1.0 ABI/wire freeze machinery, internal layout pins, and the version.h ledger. No compatibility promise exists before 1.0.0.
+- Removed repository self-audit gates (loc-cap, comment-scrub, doc-scrub, docstring-coverage, dependency-pins, five determinism presets, two codegen-determinism checks, gc-roots-coverage, audit-globals) and 58 unreferenced golden files.
+- Swept version and audit narration from the frontend, stdlib, tools, and public headers.
+- Replaced 163 runtime-internals unit test files with 14 chk fixtures (see `git log` for the harvest ledger).
+- The REPL reader now continues a statement across lines until brackets balance.
+- Lowered the coverage-floor gate from 85% to 80%: the deleted runtime-internals unit tests covered code that the refound/core branch replaces.
+
 ## v0.13.6-consistency — 2026-07-10
 
 Tag 7 of the v0.13.x pre-release hardening arc: an internal-consistency pass
