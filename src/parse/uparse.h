@@ -44,8 +44,7 @@ typedef struct {
     int loop_depth;
     int switch_depth;  /* for parse_break accept-set; parse_continue uses loop_depth only */
 
-    /*
-     * budget — borrowed pointer to a UCompileBudget supplied by the caller
+    /* budget — borrowed pointer to a UCompileBudget supplied by the caller
      *   (typically realm->compile_budget when urbi_repl_eval drives the
      *   parser under a REPL realm).  NULL = unlimited (default).
      *
@@ -76,8 +75,7 @@ typedef struct {
  * Initializes budget to NULL (unlimited); caller may set it after init. */
 void uparse_init(UParser *p, ULexer *lex, UArena *arena);
 
-/*
- * uparse_set_budget — install a borrowed UCompileBudget pointer (NULL =
+/* uparse_set_budget — install a borrowed UCompileBudget pointer (NULL =
  *   unlimited).  Must be called BEFORE the first uparse_next_statement
  *   call.  Caller owns the budget storage; UParser does not copy.
  *

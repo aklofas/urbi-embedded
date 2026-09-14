@@ -1,9 +1,8 @@
 # C API stability policy
 
 There is no API or ABI compatibility promise before 1.0.0. The runtime core is
-being re-founded (see the workspace `docs/refactor-6/` reassessment); the 1.0.0
-tag will be the first freeze. The sections below describe what that freeze will
-promise.
+being re-founded; the 1.0.0 tag will be the first freeze. The sections below
+describe what that freeze will promise.
 
 ## 2. What counts as a breaking change
 

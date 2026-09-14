@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uemit_internal.h — private inter-TU API for the emit subsystem.
- */
+ *
+ * Consumed only by src/emit/ TUs.  Public emit API is in src/emit/uemit.h.
+ * Do NOT include from outside src/emit/. */
 
 #ifndef UEMIT_INTERNAL_H
 #define UEMIT_INTERNAL_H
@@ -142,7 +144,14 @@ int urbi_vm_find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 #define UEMIT_JMP_FALLTHROUGH_BIAS    (UEMIT_JMP_BIAS + 1U)
 #define UEMIT_REG_LIMIT       UFS_MAX_REGS       /* alias for clarity at exhaustion-guard sites (EMIT-025) */
 
-/*
+/* Centralize OP_JMP Bx encoding in a
+ * pc-based helper.  For FORWARD jumps the VM dispatches OP_JMP as
+ * `pc += signed(Bx) - UEMIT_JMP_BIAS` AFTER the dispatch's pc++, so an
+ * OP_JMP at from_pc landing at target_pc requires Bx = (target_pc -
+ * from_pc - 1) + UEMIT_JMP_BIAS.  Back-edges do NOT get that pc++ —
+ * they dispatch via the safepoint path; use uemit_jmp_offset_backward
+ * for those.
+ *
  * Direction assert: strict > — target == from_pc + 1 encodes offset 0,
  * which the forward/NEXT path handles correctly; target <= from_pc
  * must go through the backward encoder. */
@@ -232,8 +241,7 @@ static inline void free_reg_freereg_synced(UEmitter *e) {
         e->current_fs->freereg = e->next_reg;
 }
 
-/*
- * uemit_loop_push — open a new loop context.  Returns false (sets
+/* uemit_loop_push — open a new loop context.  Returns false (sets
  *   EMIT_NESTING_TOO_DEEP) on overflow.
  * uemit_loop_pop — close the current loop context.
  * uemit_loop_record_break / _continue — record placeholder JMP PCs.

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Builds only when URBI_ENABLE_REPL=1.  Spins up a UVM, optionally runs
+/* Builds only when URBI_ENABLE_REPL=1.  Spins up a UVM, optionally runs
  * an urbiscript boot script under the global realm, then enters a step
  * loop driving the REPL service until SIGINT/SIGTERM.
  *

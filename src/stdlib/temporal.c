@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Approach: per-call UPeriodic records on a singly linked list rooted at
+/* Approach: per-call UPeriodic records on a singly linked list rooted at
  * vm->periodics_head.  urbi_step pumps the list on each call; expired
  * periodics spawn a body strand via the same urbi_watcher_do_spawn_body_coroutine-style
  * sequence the watcher subsystem uses.  No new opcode, no synthesized
@@ -145,8 +144,7 @@ every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         }
         period_us = (uint64_t)v;
     } else if (args[0].kind == (uint8_t)UVAL_FLOAT) {
-        /*
-         * !(f > 0.0) rejects NaN, negatives, and zero in one test; the upper
+        /* !(f > 0.0) rejects NaN, negatives, and zero in one test; the upper
          * bound rejects +inf and values whose µs conversion would overflow
          * int64 — (uint64_t)(int64_t)(f * 1e6) is UB for out-of-range f.
          *
@@ -504,8 +502,7 @@ urbi_periodic_body_completed(UVM *vm, UStrand *s)
     p->current_strand   = NULL;
 
     if (s->fatal_status == UEXEC_OK || s->fatal_status == UEXEC_RETURN) {
-        /*
-         * On overrun (body duration >= period, next_fire_us already in the
+        /* On overrun (body duration >= period, next_fire_us already in the
          * past), the deadline resumes at now + period_us: the missed periods
          * are SKIPPED with no burst of catch-up iterations and NO immediate
          * catch-up fire.

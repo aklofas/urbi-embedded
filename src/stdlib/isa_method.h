@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * obj.isA(Proto) -> Bool.  True iff Proto appears in obj's transitive
+/* obj.isA(Proto) -> Bool.  True iff Proto appears in obj's transitive
  * proto chain.  For atom-typed receivers (UVAL_INT / FLOAT / STR /
  * BOOL / NIL), the logical proto is looked up via urbi_atom_proto_for_value.
  * For UVAL_OBJECT, the receiver's own UObject.protos chain is walked.

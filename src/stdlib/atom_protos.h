@@ -29,8 +29,7 @@ struct UVM;
  * Returns URBI_OK on success or URBI_ERR_OOM on allocation failure. */
 int urbi_atom_protos_register(struct UVM *vm);
 
-/*
- * Sets URBI_OBJ_FLAG_READONLY (= UPROTO_FLAG_READONLY) on all 15 builtin
+/* Sets URBI_OBJ_FLAG_READONLY (= UPROTO_FLAG_READONLY) on all 15 builtin
  * protos per spec §4.2, denying bytecode-side mutation (OP_SETSLOT raises
  * URBI_ERR_FROZEN_PROTO).  Host-side C API mutators are unaffected.
  *

@@ -11,7 +11,7 @@
 #define URBI_VERSION_H
 
 #if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC visibility push(default)   /* v1.0: export only public-header symbols */
+#  pragma GCC visibility push(default)   /* export only public-header symbols */
 #endif
 
 #ifdef __cplusplus

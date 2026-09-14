@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Each Debug.X() method calls the corresponding urbi_introspect_X primitive
+/* Each Debug.X() method calls the corresponding urbi_introspect_X primitive
  * into a scratch buffer, then returns the JSON output as a urbi String.
  */
 

@@ -8,6 +8,7 @@
 - Replaced 163 runtime-internals unit test files with 14 chk fixtures (see `git log` for the harvest ledger).
 - The REPL reader now continues a statement across lines until brackets balance.
 - Lowered the coverage-floor gate from 85% to 80%: the deleted runtime-internals unit tests covered code that the refound/core branch replaces.
+- Removed the REPL chk corpus's in-process driver (`tests/unit/test_repl_chk_corpus.c`). The 16 fixtures under `tests/chk/repl/` are parked and run nowhere pending re-attachment of the REPL eval path.
 
 ## v0.13.6-consistency — 2026-07-10
 

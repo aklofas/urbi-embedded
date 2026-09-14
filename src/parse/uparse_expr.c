@@ -288,8 +288,7 @@ UAstNode *urbi_parse_prefix(UParser *p) {
     return urbi_parse_atom(p);
 }
 
-/*
- * Caller has confirmed urbi_parse_peek() is TOK_LBRACKET.  Consumes `[` + contents + `]`.
+ /* Caller has confirmed urbi_parse_peek() is TOK_LBRACKET.  Consumes `[` + contents + `]`.
  *
  * List:   AST_LIST_LIT { elems[], count }
  * Dict:   AST_DICT_LIT { keys[], vals[], count }
@@ -736,8 +735,7 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
         if (!right) return NULL;
         if (right->kind == AST_ERROR) return right;
 
-        /*
-         * Builds:  AST_CALL { callee = AST_MEMBER_GET(lhs, "<<"), args=[rhs] }
+         /* Builds:  AST_CALL { callee = AST_MEMBER_GET(lhs, "<<"), args=[rhs] }
          *
          * The member name "<<" is a quoted-ident selector — the runtime
          * dispatches it via the normal OP_GETSLOT + OP_CALL pipeline for

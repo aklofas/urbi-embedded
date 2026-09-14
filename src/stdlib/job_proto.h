@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Job is a thin Object wrapper around a UStrand identified by its
+/* Job is a thin Object wrapper around a UStrand identified by its
  * pointer cast to a uint64_t stored in the `__strand` slot.  Using the
  * pointer (not a raw pointer dereference) lets Job instances survive
  * past strand-DEAD without dangling: the resolve function walks

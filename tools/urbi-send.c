@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Pure POSIX sockets + libc.  No liburbi dependency — this binary stays
+/* Pure POSIX sockets + libc.  No liburbi dependency — this binary stays
  * usable from build hosts that don't have the runtime archive linked in.
  *
  * Exit status:

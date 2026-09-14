@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Contains urbi_emit_expr arm helpers for the 13 leaf-expression AST kinds:
+/* Contains urbi_emit_expr arm helpers for the 13 leaf-expression AST kinds:
  *   AST_INT       — integer literal (OP_LOADK)
  *   AST_BOOL      — boolean literal (OP_LOADBOOL)
  *   AST_NIL       — nil literal (OP_LOADNIL)
@@ -54,8 +53,7 @@ uint8_t urbi_emit_float_arm(UEmitter *e, const UAstNode *n) {
     return r;
 }
 
-/*
- * `this` resolves to the receiver object, which the OP_CALL convention
+/* `this` resolves to the receiver object, which the OP_CALL convention
  * places in register R0 of the callee's frame.  Emits OP_MOVE dst, R0.
  *
  * Top-level `this` (fs->parent == NULL) is a v1.x feature (lobby alias);
@@ -950,8 +948,7 @@ uint8_t urbi_emit_block_arm(UEmitter *e, UAstNode *n) {
     return r;
 }
 
-/*
- * Stdlib-call lowering — no new opcodes.  Wire format stays at v1.9.
+ /* Stdlib-call lowering — no new opcodes.  Wire format stays at v1.9.
  *
  *   [e1, e2, e3]      → List.new(e1, e2, e3)
  *   ["k" => v, ...]   → _d = Dict.new(); _d.set("k", v); ... ; _d
@@ -1163,8 +1160,7 @@ uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n) {
     return rd;
 }
 
-/*
- * Used in urbi_emit_subscript_set_arm to pin recv and index into temp registers
+/* Used in urbi_emit_subscript_set_arm to pin recv and index into temp registers
  * before building the synthetic .get/.set calls, so each expression is
  * evaluated exactly once even when the caller is a side-effectful expression
  * like makeList()[nextIdx()] += v. */
@@ -1215,8 +1211,7 @@ uint8_t urbi_emit_subscript_set_arm(UEmitter *e, UAstNode *n) {
     UAstNode *rhs_val = n->u.subscript.value;
 
     if (n->u.subscript.is_compound_add) {
-        /*
-         * Previous lowering re-emitted n->u.subscript.recv and
+        /* Previous lowering re-emitted n->u.subscript.recv and
          * n->u.subscript.index for both the synthetic .get and .set calls,
          * causing side-effectful expressions like makeList()[nextIdx()] to
          * fire twice.  Fix: emit each expression once into a temp register,

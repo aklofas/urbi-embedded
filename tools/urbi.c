@@ -927,8 +927,7 @@ int main(int argc, char *argv[]) {
         return 2;
     }
 
-    /*
-     * Outside URBI_ENABLE_REPL=1 builds the flags are accepted and rejected
+    /* Outside URBI_ENABLE_REPL=1 builds the flags are accepted and rejected
      * with a clear error rather than treated as unknown-option. */
     const char *listen_addr_port = NULL;
     const char *listen_token     = getenv("URBI_REPL_TOKEN");

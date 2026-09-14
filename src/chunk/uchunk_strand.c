@@ -66,8 +66,7 @@ strand_still_alive(const URealm *realm, const UStrand *loader)
     return false;
 }
 
-/*
- * Only UVAL_OBJECT throws produce a diagnostic here — scalar/string throws
+/* Only UVAL_OBJECT throws produce a diagnostic here — scalar/string throws
  * (`throw 42`, `throw "x"`) keep the historical nil-recovery contract
  * (control_transfer/throw_uncaught.chk).  Writes the instance's `message`
  * slot (a UVAL_STR) into vm->last_errmsg; falls back to a generic label for
@@ -293,7 +292,7 @@ urbi_run_chunk(UVM *vm, URealm *realm, UProto *root, UValue *out_result)
  * Returns URBI_ERR_COMPILE on parse/emit error (buf gets "compile error").
  * Returns URBI_ERR_STRAND_FATAL on runtime error (buf gets vm->last_errmsg).
  *
- * Mirrors the lex→parse→emit→urbi_vm_run pipeline in tests/unit/test_vm.c.
+ * Mirrors the lex→parse→emit→urbi_vm_run pipeline used by the caller.
  * --------------------------------------------------------------------------- */
 int
 urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
@@ -556,8 +555,7 @@ urbi_run_script(UVM *vm, URealm *realm, UProto *root)
  *      the module's top level lands in realm->global_object's slot table.
  */
 
-/*
- * Other internal codes collapse to URBI_ERR_INVALID_ARG since the public
+/* Other internal codes collapse to URBI_ERR_INVALID_ARG since the public
  * surface does not yet differentiate them; v1.x may grow per-code mappings
  * as the loader API matures. */
 int
@@ -570,8 +568,7 @@ urbi_chunk_translate_load_err(int load_err)
     return URBI_ERR_INVALID_ARG;
 }
 
-/*
- * Public thin wrappers around uchunk_deserialize / uchunk_destroy.
+/* Public thin wrappers around uchunk_deserialize / uchunk_destroy.
  * These exist so the aux layer (urbi_aux_load_and_run) can deserialize
  * bytecode without including internal headers — aux governance requires
  * that aux functions use only the public <urbi/urbi.h> surface.
@@ -660,8 +657,7 @@ urbi_load_chunk(UVM *vm, UProto *root, const char *module_name)
     return urbi_run_script(vm, NULL, root);
 }
 
-/*
- * Unlink module from its owning realm's loaded_protos_head list and route
+/* Unlink module from its owning realm's loaded_protos_head list and route
  * through uchunk_destroy.  If root_proto->refcount > 0 the rescue mechanism
  * defers final cleanup; this call returns URBI_OK either way.
  * --------------------------------------------------------------------------- */

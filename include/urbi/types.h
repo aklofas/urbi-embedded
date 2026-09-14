@@ -333,8 +333,7 @@ static inline struct UClosure *urbi_value_as_closure(UValue v)
     return (struct UClosure *)v.v.p;
 }
 
-/*
- * Pure tag comparison; no validation of the payload.  Header-only static
+/* Pure tag comparison; no validation of the payload.  Header-only static
  * inlines — zero-overhead at any optimisation level.
  *
  * Ordered by UValKind numeric value (not by urbi_make_* declaration order,
@@ -369,8 +368,7 @@ static inline bool urbi_value_is_host_fn(UValue v) { return v.kind == (uint8_t)U
 static inline bool urbi_value_is_ptr    (UValue v) { return v.kind == (uint8_t)URBI_VALUE_PTR;  }
 static inline bool urbi_value_is_tag    (UValue v) { return v.kind == (uint8_t)UVAL_TAG;        }
 
-/*
- * Per-realm limits enforced during source-text compilation. Zero in any
+/* Per-realm limits enforced during source-text compilation. Zero in any
  * field means "unlimited" for that limit. urbi_realm_create_repl auto-
  * applies URBI_DEFAULT_REPL_BUDGET; the global Realm has no budget by
  * default (trusted host code).
@@ -557,8 +555,7 @@ typedef enum {
     UEXEC_CANCEL
 } UExecStatus;
 
-/*
- * Public mirror of the internal UExecStatus enum.  Numeric values are
+/* Public mirror of the internal UExecStatus enum.  Numeric values are
  * identical to UExecStatus constants so existing code using UEXEC_* still
  * compares correctly.  New code should use URBI_UNWIND_* constants.
  *
@@ -575,8 +572,7 @@ typedef enum {
     URBI_UNWIND_CANCEL   = 4   /* == UEXEC_CANCEL */
 } UStrandUnwind;
 
-/*
- * Observable state of a strand as returned by urbi_strand_state().
+/* Observable state of a strand as returned by urbi_strand_state().
  * Maps the internal USTRAND_* state nibble values (src/sched/ustrand.h)
  * to a public enum without exposing the packed-byte encoding.
  *
@@ -618,8 +614,7 @@ typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
 }
 #endif
 
-/*
- * Every TU that includes this header (other than uabi_guards.c itself)
+/* Every TU that includes this header (other than uabi_guards.c itself)
  * references the symbol that matches the active URBI_FLOAT_TYPE value.
  * src/runtime/uabi_guards.c defines exactly one such symbol per build.
  * If embedder and library disagree on URBI_FLOAT_TYPE the reference

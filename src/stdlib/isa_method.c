@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * obj.isA(Proto) -> Bool.  True iff Proto appears in obj's transitive
+/* obj.isA(Proto) -> Bool.  True iff Proto appears in obj's transitive
  * proto chain.  Atom-typed receivers are routed through
  * urbi_atom_proto_for_value (same routing table used by dispatch).
  * UVAL_OBJECT receivers walk their own UObject.protos chain.

@@ -30,8 +30,7 @@ static UAstNode *parse_var_decl(UParser *p) {
 
     { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
-    /*
-     * If the token after the IDENT is TOK_DOT (not TOK_EQ), this is the
+    /* If the token after the IDENT is TOK_DOT (not TOK_EQ), this is the
      * legacy slot-install form `var obj.slot = value`.  Desugar to
      * `obj.slot = value` (AST_MEMBER_SET): OP_SETSLOT installs the slot
      * when absent, so no new opcode is needed.
@@ -589,8 +588,7 @@ static UAstNode *reject_bare_function_forms(UParser *p) {
     return NULL;
 }
 
-/*
- * Rejected on lazy params: the lazy convention wraps caller-side thunks,
+/* Rejected on lazy params: the lazy convention wraps caller-side thunks,
  * which has no legacy default-value semantics.
  *
  * Returns NULL on success (default stored or absent); an AST_ERROR or
@@ -797,8 +795,7 @@ UAstNode *urbi_parse_throw(UParser *p) {
     return node;
 }
 
-/*
- * Paren form:   assert(expr)
+/* Paren form:   assert(expr)
  *   Records the source text span of `expr` for use in the failure diagnostic.
  *   src_text points into the source buffer between the `(` and `)` characters
  *   (trailing whitespace trimmed).
@@ -953,8 +950,7 @@ UAstNode *urbi_parse_try(UParser *p) {
     return node;
 }
 
-/*
- * parse_for — `for (var x : iter_expr) body` or `for (var x in iter_expr) body`
+ /* parse_for — `for (var x : iter_expr) body` or `for (var x in iter_expr) body`
  *
  * Supports only the for-each form.  C-style `for (init; cond; step)` is a
  * migration (see docs/migration/control-flow-migration.md).  Count-form

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * See channel_native.h banner for design rationale.
+ /* See channel_native.h banner for design rationale.
  *
  * Implementation approach (vs. eval-string):
  *   urbi_eval_string is not available as an internal API; the public

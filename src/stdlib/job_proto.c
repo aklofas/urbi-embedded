@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * See job_proto.h banner for design rationale.
+ /* See job_proto.h banner for design rationale.
  *
  * Four C-native methods installed on vm->job_proto:
  *   current  — returns a fresh Job wrapping vm->cur_strand

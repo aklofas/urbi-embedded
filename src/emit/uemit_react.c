@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Contains urbi_emit_expr arm helpers for:
+/* Contains urbi_emit_expr arm helpers for:
  *   AST_MEMBER_GET, AST_MEMBER_SET   — slot access
  *   AST_WATCHER                      — at/whenever/at-sync installs
  *   AST_WAITUNTIL                    — waituntil install

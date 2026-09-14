@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Master gate URBI_TRACE: undefined/0 ⇒ every tracepoint macro is (void)0,
+/* Master gate URBI_TRACE: undefined/0 ⇒ every tracepoint macro is (void)0,
  * no UVM fields, no ring/emit symbols in the archive.  Per-channel compile
  * mask URBI_TRACE_CHANNELS strips individual channels.  Runtime per-channel
  * level (a ULogLevel severity threshold) gates emission; URBI_TRACE_OFF

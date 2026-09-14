@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Add a new entry per opcode rather than extending an inline switch.
+ /* Add a new entry per opcode rather than extending an inline switch.
  *
  * UOpcodeFormat — top-level encoding shape:
  *   UOPF_ABC : one byte per operand A/B/C (each 0..255)

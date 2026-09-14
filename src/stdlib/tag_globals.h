@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * scopeTag is a call-style native that returns the innermost
+/* scopeTag is a call-style native that returns the innermost
  * UCLEANUP_TAG_SCOPE.owning_tag on the current strand's cleanup stack
  * as a UVAL_TAG, or nil if there is none.  Script-side: `scopeTag()`.
  *

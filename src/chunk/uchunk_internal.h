@@ -25,7 +25,7 @@ typedef struct {
     char           *errmsg;
     size_t          errcap;
     int             depth;       /* current nesting depth inside decode_proto recursion */
-    uint8_t         arity_flag;  /* v0.13.5: header flag byte bit 0 — arity
+    uint8_t         arity_flag;  /* header flag byte bit 0 — arity
                                     self-check discipline; propagated to
                                     UProto.arity_prologue on every decoded
                                     proto (see uproto.h field comment) */

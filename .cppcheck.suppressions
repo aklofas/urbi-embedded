@@ -224,15 +224,15 @@ knownConditionTrueFalse:src/watcher/uwatcher_eval.c:193
 // audit:v0.13.6-namespace-day — src/emit/uemit_internal.h patch_fwd_jmp_here(UEmitter *e, ...)
 // urbi_emit_patch_instr() mutates the emitter's instruction buffer; cppcheck cannot see through
 // the opaque UEmitter* and flags 'e' as constable.  Same rationale as atoms.c et al above.
-constParameterPointer:src/emit/uemit_internal.h:187
+constParameterPointer:src/emit/uemit_internal.h:196
 
 // audit:v0.13.6-namespace-day — src/parse/uparse_stmt.c urbi_parse_function uses block-scoped
 // `UAstNode *err = NULL` inside `{ }` expect() one-liners; the outer `err` (reject_bare_function_forms
 // result) is a completely different variable at function scope.  The pattern is used at every
 // expect() call site in this file and cannot be removed without restructuring all callers.
-shadowVariable:src/parse/uparse_stmt.c:623
-shadowVariable:src/parse/uparse_stmt.c:640
-shadowVariable:src/parse/uparse_stmt.c:664
+shadowVariable:src/parse/uparse_stmt.c:621
+shadowVariable:src/parse/uparse_stmt.c:638
+shadowVariable:src/parse/uparse_stmt.c:662
 
 // src/chunk/uchunk_strand.c urbi_compile's error-message fallback: the
 // __STDC_HOSTED__ branch's final `else` already excludes
@@ -244,4 +244,4 @@ shadowVariable:src/parse/uparse_stmt.c:664
 // own "Too many #ifdef configurations" note) and this run happened to pick
 // only the hosted one, reporting the check as always-false without
 // accounting for the freestanding configuration where it is not.
-knownConditionTrueFalse:src/chunk/uchunk_strand.c:425
+knownConditionTrueFalse:src/chunk/uchunk_strand.c:424

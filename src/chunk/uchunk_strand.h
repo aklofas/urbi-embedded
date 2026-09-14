@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Loader-private declarations for the park-or-die state machine that powers
+/* Loader-private declarations for the park-or-die state machine that powers
  * urbi_run_chunk's persistent loader strand path.  Not for general embedder
  * use — embedders use the public urbi_step + urbi_strand_create API from
  * <urbi/urbi.h> instead. */

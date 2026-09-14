@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * See lobby_native.h for the contract and rationale.  This TU implements:
+ /* See lobby_native.h for the contract and rationale.  This TU implements:
  *
  *   __builtin_lobby_send(msg, tag, prefix) — C-native method installed on
  *     the Lobby proto.  Formats "[%08llu:tag] prefix msg\n" (or without

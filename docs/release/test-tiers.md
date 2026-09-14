@@ -23,7 +23,7 @@ make test
 - Static analysis: `lint`, `test-cppcheck`, `test-tidy-strict`, `test-scan-build`
 - Freshness: `test-stdlib-bytecode-fresh`
 - Docs: `docs-check`
-- Coverage: `coverage` (`--fail-under-line 85` hard gate in Phase 1; see Makefile `coverage` target. GitHub Actions runs the same target with `continue-on-error: true` so a regression does not block CI on already-merged code, but pre-tag `make releasetest` hard-fails. Condition coverage is not measured — v1.x target.)
+- Coverage: `coverage` (`--fail-under-line 80` hard gate in Phase 1; see Makefile `coverage` target. Lowered from 85% in Phase 0 of the core re-foundation — the deleted runtime-internals unit tests covered code that the refound/core branch replaces; re-baseline for the new core when it lands. GitHub Actions runs the same target with `continue-on-error: true` so a regression does not block CI on already-merged code, but pre-tag `make releasetest` hard-fails. Condition coverage is not measured — v1.x target.)
 - Build hygiene: `test-bytecode-only`, `test-freestanding-host`, `test-bake-smoke`
 - API surface: `test-api-manifest`, `test-aux-symbols`, `test-embedding-guide`, `test-external-embed-iinclude`
 - Cross-compile (when toolchains present): pico, esp32s3, stm32f4, arm, riscv
@@ -58,9 +58,9 @@ stable releases. Not required for v0.10.x interstitial tags.
 | Tier | Count | Wall-clock |
 |---|---|---|
 | devtest | ~1970 unit cases + 269 .chk fixtures | ~30 s |
-| releasetest Phase 1 | 27 gates | ~90 s |
+| releasetest Phase 1 | 40 gates | ~90 s |
 | releasetest Phase 2 | 2 gates | ~60 s |
 | shiptest | releasetest + manual checklist | variable |
 
-The 27-gate Phase 1 count includes the W5 gate (`test-stdlib-bytecode-fresh`)
+The 40-gate Phase 1 count includes the W5 gate (`test-stdlib-bytecode-fresh`)
 added at v0.10.6-stabilization.

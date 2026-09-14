@@ -8,8 +8,7 @@
 #include "uparse.h"
 #include "uast.h"
 
-/*
- * Internal AST allocators (urbi_parse_make_node and friends) return NULL on
+/* Internal AST allocators (urbi_parse_make_node and friends) return NULL on
  * arena OOM. Pratt/recursive-descent parsers propagate NULL upward
  * unchanged; the top-level entrypoint (uparse_next_statement in
  * uparse_top.c) converts NULL → uparser_oom_sentinel at its single

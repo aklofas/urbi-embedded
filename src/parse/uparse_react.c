@@ -66,8 +66,7 @@ UAstNode *urbi_parse_desugar_postfix_emit(UParser *p, UAstNode *recv, UToken ban
     return call;
 }
 
-/*
- * parse_tag_prefix_body: shared body-parse helper for both `name:` and
+/* parse_tag_prefix_body: shared body-parse helper for both `name:` and
  * `expr:` tag-prefix forms.  Called after `:` has been consumed.
  * `pos_line`/`pos_col` are the position of the tag expression (for the
  * implicit-block node position).
@@ -110,8 +109,7 @@ UAstNode *urbi_parse_tag_prefix(UParser *p, UToken name_tok) {
     return parse_tag_prefix_body(p, tag_expr, name_tok.line, name_tok.col);
 }
 
-/*
- * Called from parse_assign_or_expr when a postfix-chain expression is
+/* Called from parse_assign_or_expr when a postfix-chain expression is
  * followed by `:` at statement level.  Enables `Tag.scope: { body }` and
  * other member-expr tag forms (legacy manual §9.1.1 example).
  */

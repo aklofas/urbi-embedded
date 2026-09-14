@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Also contains the shared function-building primitives:
+/* Also contains the shared function-building primitives:
  *   urbi_emit_function_literal — compile a function literal into UProto + OP_CLOSURE
  *   urbi_emit_lazy_thunk       — wrap an expression as a zero-arg closure thunk
  */
@@ -137,8 +136,7 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
      * leaves child_proto in nested[] but at least it is consistently a
      * fully-allocated empty proto (uchunk_destroy walks NULL slots
      * cleanly). */
-    /*
-     * All parameter interns have already succeeded; from here on, any
+    /* All parameter interns have already succeeded; from here on, any
      * failure leaves child_proto in parent_proto->nested[] but at least
      * it is consistently a fully-allocated empty proto (uchunk_destroy
      * walks NULL slots cleanly). */
@@ -234,8 +232,7 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
     uint8_t saved_icb = e->in_cleanup_body;
     e->in_cleanup_body = 0U;
 
-    /*
-     *   min_arity = 1 + highest param index WITHOUT a default (0 when all
+     /*   min_arity = 1 + highest param index WITHOUT a default (0 when all
      *   params carry defaults).  Matches the legacy runtime: formals
      *   desugar to in-order LocalDeclarations (factory.cc formals_to_decs),
      *   so a missing non-defaulted formal raises regardless of defaults on
@@ -945,8 +942,7 @@ uint8_t urbi_emit_function_arm(UEmitter *e, UAstNode *n) {
                                  /*as_expression=*/true);
 }
 
-/*
- * Lowering (no new opcode needed):
+ /* Lowering (no new opcode needed):
  *
  *   cond_reg = urbi_emit_expr(n->u.assert_stmt.expr)
  *   TEST  cond_reg, 0, 1     ; skip JMP when cond is truthy (assertion passes)

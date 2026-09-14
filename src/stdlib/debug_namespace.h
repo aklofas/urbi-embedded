@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Allocates a Debug proto UObject with 9 C-native methods (one per
+/* Allocates a Debug proto UObject with 9 C-native methods (one per
  * introspect primitive) and binds it as a slot on each realm's global
  * object via urbi_realm_set_global.  Gated on URBI_ENABLE_REPL — the
  * default build (and freestanding cross targets) never link this TU

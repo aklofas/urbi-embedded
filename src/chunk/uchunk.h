@@ -88,8 +88,7 @@ static inline uint32_t uinstr_enc_abx (UOpcode op, uint8_t a, uint16_t bx) {
          | ((uint32_t)bx << 16);
 }
 
-/*
- * The public API function names use the urbi_chunk_* prefix. */
+ /* The public API function names use the urbi_chunk_* prefix. */
 
 /* --- errors --- */
 

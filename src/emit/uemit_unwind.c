@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Contains:
+/* Contains:
  *   - Public encoder helpers for unwind opcodes (uemit_throw, uemit_try_begin,
  *     uemit_try_end, uemit_push_tag, uemit_pop_tag,
  *     uemit_resume, uemit_load_catch_value).
@@ -169,8 +168,7 @@ static uint8_t emit_catch_handler_section(UEmitter *e, UAstNode *n) {
     return r_catch;
 }
 
-/*
- * Returns rd on success or 0 on error (e->error set).
+ /* Returns rd on success or 0 on error (e->error set).
  *
  * else_body is emitted inline on the normal-exit path (after
  * TRY_END, before JMP past_handler) so finally still wraps it correctly

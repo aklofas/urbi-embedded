@@ -472,8 +472,7 @@ uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
-        /*
-         * AST_LOCAL_REF / AST_PARAM / AST_LAZY_PARAM: produced by
+        /* AST_LOCAL_REF / AST_PARAM / AST_LAZY_PARAM: produced by
          * parser/emitter internally and consumed before urbi_emit_expr is
          * called (AST_PARAM/AST_LAZY_PARAM in the AST_FUNCTION arm;
          * AST_LOCAL_REF as an optimised AST_IDENT).  Reaching this arm

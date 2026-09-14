@@ -165,8 +165,7 @@ urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
     }
 }
 
-/*
- * Usage contract: call immediately before the store; no allocation may
+/* Usage contract: call immediately before the store; no allocation may
  * intervene between barrier and store. */
 static void
 container_element_pre_store(UVM *vm, UValue child)
@@ -1206,8 +1205,7 @@ urbi_stdlib_register_container_globals(UVM *vm, URealm *realm)
     return URBI_OK;
 }
 
-/*
- * The Lobby proto's `lobbies` slot is created by lobby.u as a fresh List
+/* The Lobby proto's `lobbies` slot is created by lobby.u as a fresh List
  * (`var Lobby.lobbies = []`).  The C-side dispatcher (urepl_session_*)
  * needs to push/remove session global-objects from that List as sessions
  * come and go.  Reaching directly into the script-side List from urbi_-

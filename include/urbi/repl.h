@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * Opt-in via URBI_ENABLE_REPL=1 at build time. Provides a networked
+/* Opt-in via URBI_ENABLE_REPL=1 at build time. Provides a networked
  * NDJSON line-protocol REPL service over pluggable transports
  * (TCP / Unix sockets / UART / in-process buffers).
  *
@@ -91,8 +90,7 @@ void          urbi_repl_stop     (UReplServer *server);
 
 int  urbi_repl_serve_init    (struct UVM *vm, const UReplConfig *cfg, UReplServer **out_server);
 
-/*
- * urbi_repl_serve_step drives the data plane for transports whose
+/* urbi_repl_serve_step drives the data plane for transports whose
  * pollable_fd_fn returns -1 (Pi Pico USB CDC + UART, ESP-IDF UART,
  * FreeRTOS UART, in-process buffer).  Each call performs four
  * non-blocking sweeps over the registered transports + active
@@ -120,8 +118,7 @@ int  urbi_repl_register_transport(UReplServer *server,
 }
 #endif
 
-/*
- * Cooperative-only builds change struct layouts in urepl_threading.h.
+/* Cooperative-only builds change struct layouts in urepl_threading.h.
  * Embedders MUST link with the same URBI_REPL_COOPERATIVE_ONLY setting
  * the library was compiled with; a mismatch produces memory corruption
  * or silent feature failure.  This reference forces a link-time

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * channel_overlay.u defines the Channel class as a stdlib overlay; this
+/* channel_overlay.u defines the Channel class as a stdlib overlay; this
  * C side does two things:
  *
  *   1. urbi_channel_proto_resolve caches vm->channel_proto by looking up

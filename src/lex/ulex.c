@@ -599,21 +599,21 @@ typedef struct {
 #define KW_ENTRY(name, tok) { name, (int)(sizeof(name) - 1), tok }
 
 static const UKeyword KEYWORDS[] = {
-    KW_ENTRY("assert",    TOK_KW_ASSERT),    /* v0.10.5 */
+    KW_ENTRY("assert",    TOK_KW_ASSERT),
     KW_ENTRY("async",     TOK_KW_ASYNC),
     KW_ENTRY("at",        TOK_KW_AT),
-    KW_ENTRY("break",     TOK_KW_BREAK),    /* v0.10.5 */
-    KW_ENTRY("case",      TOK_KW_CASE),     /* v0.10.5 */
+    KW_ENTRY("break",     TOK_KW_BREAK),
+    KW_ENTRY("case",      TOK_KW_CASE),
     KW_ENTRY("catch",     TOK_KW_CATCH),
     KW_ENTRY("class",     TOK_KW_CLASS),
     KW_ENTRY("closure",   TOK_KW_CLOSURE),
-    KW_ENTRY("continue",  TOK_KW_CONTINUE), /* v0.10.5 */
-    KW_ENTRY("default",   TOK_KW_DEFAULT),  /* v0.13.5 */
+    KW_ENTRY("continue",  TOK_KW_CONTINUE),
+    KW_ENTRY("default",   TOK_KW_DEFAULT),
     KW_ENTRY("else",      TOK_KW_ELSE),
     KW_ENTRY("every",     TOK_KW_EVERY),
     KW_ENTRY("false",     TOK_KW_FALSE),
     KW_ENTRY("finally",   TOK_KW_FINALLY),
-    KW_ENTRY("for",       TOK_KW_FOR),      /* v0.10.5 */
+    KW_ENTRY("for",       TOK_KW_FOR),
     KW_ENTRY("function",  TOK_KW_FUNCTION),
     KW_ENTRY("if",        TOK_KW_IF),
     KW_ENTRY("lazy",      TOK_KW_LAZY),
@@ -621,7 +621,7 @@ static const UKeyword KEYWORDS[] = {
     KW_ENTRY("onleave",   TOK_KW_ONLEAVE),
     KW_ENTRY("public",    TOK_KW_PUBLIC),
     KW_ENTRY("return",    TOK_KW_RETURN),
-    KW_ENTRY("switch",    TOK_KW_SWITCH),   /* v0.10.5 */
+    KW_ENTRY("switch",    TOK_KW_SWITCH),
     KW_ENTRY("sync",      TOK_KW_SYNC),
     KW_ENTRY("this",      TOK_KW_THIS),
     KW_ENTRY("throw",     TOK_KW_THROW),
@@ -817,8 +817,7 @@ static ULexError validate_unicode_escape(ULexer *lex) {
     return LEX_OK;
 }
 
-/*
- * Pre: lex->cur points at the opening '"'; start_line / start_col record
+/* Pre: lex->cur points at the opening '"'; start_line / start_col record
  * the position of that opening quote (1-based).
  */
 static UToken lex_string(ULexer *lex, const int start_line, const int start_col) {
@@ -1058,8 +1057,7 @@ static UTriviaResult skip_trivia(ULexer *l) {
                 l->cur++;
             }
         } else if (c == '/' && l->cur + 1 < l->end && l->cur[1] == '*') {
-            /*
-             * Record start for error reporting. */
+             /* Record start for error reporting. */
             const int start_line = l->line;
             const int start_col = (int)(l->cur - l->line_start) + 1;
             const char *const start = l->cur;

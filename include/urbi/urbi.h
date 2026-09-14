@@ -82,8 +82,7 @@ int urbi_tag_unblock(struct UVM *vm, struct UTag *tag);
 int urbi_tag_freeze(struct UVM *vm, struct UTag *tag);
 int urbi_tag_unfreeze(struct UVM *vm, struct UTag *tag);
 
-/*
- * 2 functions (urbi_throw, urbi_return_val) change void→int so they can
+/* 2 functions (urbi_throw, urbi_return_val) change void→int so they can
  * return URBI_ERR_INVALID_ARG on NULL vm/strand (api-ergonomics F8).
  *
  * urbi_strand_unwind_status now returns UStrandUnwind (public mirror of
@@ -156,8 +155,7 @@ void           urbi_realm_destroy(struct UVM *vm, struct URealm *realm);
  * urbi_last_error) is populated with the failure code. */
 struct URealm *urbi_realm_global(struct UVM *vm);
 
-/*
- * Returns NULL on OOM.
+/* Returns NULL on OOM.
  * On failure returns NULL; the per-VM error ring (queryable via
  * urbi_last_error) is populated with the failure code.
  * Thread safety: MAIN. */
@@ -269,8 +267,7 @@ int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UProto *root);
  * an int error code (URBI_ERR_*) if root-chunk execution fails. */
 int urbi_load_chunk(struct UVM *vm, struct UProto *root, const char *module_name);
 
-/*
- * Unload root from its owning realm's loaded_protos_head list.  If the
+/* Unload root from its owning realm's loaded_protos_head list.  If the
  * root's refcount is > 0 (a strand is parked on the loader, or closures hold
  * UProtos), the rescue mechanism transfers the root to vm->rescued_protos and
  * final cleanup completes when the last refcount-holder releases.  Otherwise
@@ -397,8 +394,7 @@ typedef int (*urbi_native_method_fn)(struct UVM *vm,
 struct UClosure *urbi_make_native_closure(struct UVM *vm,
                                           urbi_native_method_fn fn);
 
-/*
- * urbi_register: install a native C function as a script-visible global.
+/* urbi_register: install a native C function as a script-visible global.
  * Composite of urbi_make_native_closure (Gap L) + urbi_realm_set_global_const.
  * The binding is const by default — re-registering the same name returns
  * URBI_ERR_CONST_SLOT_WRITE.
@@ -417,8 +413,7 @@ struct UClosure *urbi_make_native_closure(struct UVM *vm,
 int urbi_register(struct UVM *vm, struct URealm *realm,
                   const char *name, urbi_native_method_fn fn);
 
-/*
- * urbi_tag_state_t: observable state of a UTag derived from its flags byte.
+ /* urbi_tag_state_t: observable state of a UTag derived from its flags byte.
  *
  *   URBI_TAG_RUNNING — default state; no flags set.
  *   URBI_TAG_STOPPED — UTAG_FLAG_STOPPED (0x02) set via urbi_tag_stop.
@@ -448,8 +443,7 @@ typedef struct {
  * the internal utag.h header); they cannot live here because urbi.h is a public
  * header that must not include internal src/ headers. */
 
-/*
- * urbi_tag_create: allocate a GC-managed UTag, intern its name, and parent
+/* urbi_tag_create: allocate a GC-managed UTag, intern its name, and parent
  *   it under realm->tag so urbi_tag_info reports has_parent = true.
  *   Returns NULL on OOM or if vm/realm is NULL.
  *   On failure returns NULL; the per-VM error ring (queryable via
@@ -470,8 +464,7 @@ struct UTag *urbi_tag_create(struct UVM *vm, struct URealm *realm,
 
 int urbi_tag_info(struct UVM *vm, const struct UTag *tag, urbi_tag_info_t *out);
 
-/*
- * urbi_slot_set: write `value` to local slot `name[0..name_len)` on `obj`.
+/* urbi_slot_set: write `value` to local slot `name[0..name_len)` on `obj`.
  *   Only UVAL_OBJECT receivers are supported; atoms are immutable.
  *   Respects the CONSTANT flag on locally-owned slots: rejects writes
  *   with URBI_ERR_CONST_SLOT_WRITE.  COW-inherited slots (slot on a
@@ -507,8 +500,7 @@ int urbi_slot_set(struct UVM *vm, UValue obj,
  * Thread safety: MAIN. */
 UValue urbi_make_str_interned(struct UVM *vm, const char *s, size_t len);
 
-/*
- * 4 functions previously took realm/strand as their first argument.  They
+/* 4 functions previously took realm/strand as their first argument.  They
  * now follow the (struct UVM *vm, ...) convention.
  *
  * urbi_strand_destroy changes void → int (api-ergonomics F8): returns
@@ -578,8 +570,7 @@ URBI_ADVANCED void urbi_register_event_drain(struct UVM *vm,
                                              urbi_event_drain_handler h,
                                              void *ud);
 
-/*
- * urbi_event_payload_destructure_fn: convert raw ISR payload bytes into
+/* urbi_event_payload_destructure_fn: convert raw ISR payload bytes into
  * UValues for `at(name ?(args))` watcher body.
  *
  * Runs on MAIN thread at safepoint drain; may allocate; may call urbi_make_*.
@@ -636,8 +627,7 @@ urbi_event_id_t urbi_event_register(struct UVM *vm, struct URealm *realm,
 int urbi_event_unregister(struct UVM *vm, struct URealm *realm,
                           urbi_event_id_t id);
 
-/*
- * urbi_writer_fn: callback invoked by urbi_vm_write for every channel write.
+/* urbi_writer_fn: callback invoked by urbi_vm_write for every channel write.
  *   ud         — user-data pointer registered with urbi_set_writer.
  *   channel    — NUL-terminated channel name (e.g., "cout", "cerr", "clog").
  *   channel_len — length of channel name in bytes (not including NUL).
@@ -664,8 +654,7 @@ typedef void (*urbi_writer_fn)(void *ud,
 
 void urbi_set_writer(struct UVM *vm, urbi_writer_fn writer, void *ud);
 
-/*
- * Each URealm may install its own writer.  The runtime dispatch
+/* Each URealm may install its own writer.  The runtime dispatch
  * (urbi_vm_write_in_realm) consults realm->writer_fn first; if NULL,
  * it falls back to vm->writer_fn (the VM-wide writer installed via
  * urbi_set_writer).
@@ -679,8 +668,7 @@ void urbi_set_writer(struct UVM *vm, urbi_writer_fn writer, void *ud);
 void urbi_realm_set_writer(struct UVM *vm, struct URealm *realm,
                            urbi_writer_fn fn, void *ud);
 
-/*
- * Install (or clear) the compile-budget that the parser will honour for
+/* Install (or clear) the compile-budget that the parser will honour for
  * any source compiled under `realm` via urbi_repl_eval / urbi_compile_source.
  *
  * urbi_realm_set_compile_budget(realm, &budget) — apply a copy of *budget
@@ -705,8 +693,7 @@ const UCompileBudget *urbi_realm_get_compile_budget(struct UVM *vm,
  * (256 / 100000 / 1 MiB). */
 extern const UCompileBudget URBI_DEFAULT_REPL_BUDGET;
 
-/*
- * urbi_diag_fn: callback invoked by the runtime itself for internal
+/* urbi_diag_fn: callback invoked by the runtime itself for internal
  *   diagnostic events — body throw, watcher-spawn OOM, ambient-attach
  *   overflow, callback watchdog warnings, etc.  Distinct from
  *   urbi_writer_fn above (the script-side I/O sink for `print` /
@@ -749,8 +736,7 @@ void urbi_set_diag_fn(struct UVM *vm, urbi_diag_fn fn, void *ud);
  * through the same channel as urbiscript's cout / cerr.
  *
  * Thread safety: MAIN. */
-/*
- * Emit msg to channel through the writer chain, consulting `realm`'s
+/* Emit msg to channel through the writer chain, consulting `realm`'s
  * per-realm writer first.  If realm is non-NULL and realm->writer_fn is
  * set, that writer receives the call; otherwise falls back to the VM-wide
  * writer (vm->writer_fn) or the default writer.  Passing realm == NULL is
@@ -768,8 +754,7 @@ void urbi_vm_write(struct UVM *vm,
                    const char *channel, size_t channel_len,
                    const char *msg,     size_t msg_len);
 
-/*
- * urbi_time_us_fn: callback returning monotonic microseconds.  urbi uses
+/* urbi_time_us_fn: callback returning monotonic microseconds.  urbi uses
  *   this for every/sleep precision; 1 kHz control loops need µs granularity.
  *
  * Default: clock_gettime(CLOCK_MONOTONIC) on hosted builds.
@@ -785,8 +770,7 @@ typedef uint64_t (*urbi_time_us_fn)(void *ud);
  * NULL vm is a no-op. */
 void urbi_set_clock_fn(struct UVM *vm, urbi_time_us_fn fn, void *ud);
 
-/*
- * urbi_wake_fn: callback fired after each successful urbi_inject_event ring
+/* urbi_wake_fn: callback fired after each successful urbi_inject_event ring
  *   deposit.  May run from ISR context.  The callback MUST be O(1),
  *   non-blocking, and MUST NOT allocate memory.  Typical use: post a
  *   FreeRTOS task notification (xTaskNotifyGiveFromISR) or POSIX sem_post so
@@ -802,8 +786,7 @@ typedef void (*urbi_wake_fn)(void *ud);
 
 void urbi_set_wake_fn(struct UVM *vm, urbi_wake_fn fn, void *ud);
 
-/*
- * urbi_atomic_begin / urbi_atomic_end: bracket a group of ISR-deposited
+/* urbi_atomic_begin / urbi_atomic_end: bracket a group of ISR-deposited
  * events that must be observed together.  While atomic_active is true,
  * uevent_ring_drain is a no-op; all ring entries stay queued until
  * urbi_atomic_end clears the flag and triggers a drain pass.
@@ -868,8 +851,7 @@ typedef void (*urbi_watcher_body_done_fn)(struct UVM *vm,
 void urbi_set_watcher_body_done_fn(struct UVM *vm,
                                    urbi_watcher_body_done_fn fn, void *ud);
 
-/*
- * urbi_register_watcher installs a C callback that fires at safepoint drain
+/* urbi_register_watcher installs a C callback that fires at safepoint drain
  * whenever a named event is dispatched.  Coexists with script-side
  * `at(name?)` watchers — both fire on the same dispatch.
  *
@@ -1044,8 +1026,7 @@ typedef struct UChunkInstance UChunkInstance;
 URBI_ADVANCED UChunkInstance *urbi_chunk_instance_create (struct UVM *vm, struct UProto *root);
 URBI_ADVANCED void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi);
 
-/*
- * urbi_vm_create  — allocate + initialise a UVM via the supplied allocator.
+/* urbi_vm_create  — allocate + initialise a UVM via the supplied allocator.
  *                   Preferred entry point for new embedders.  Returns NULL on
  *                   alloc failure or when alloc_fn == NULL.
  *
@@ -1076,8 +1057,7 @@ void        urbi_vm_free   (struct UVM *vm);
 size_t      urbi_vm_sizeof(void);
 size_t      urbi_vm_alignof(void);
 
-/*
- * Hosts allocate a UVM struct themselves, initialize it with urbi_vm_init
+/* Hosts allocate a UVM struct themselves, initialize it with urbi_vm_init
  * (passing a host allocator), drive it via urbi_step / urbi_run_chunk /
  * urbi_repl_eval, and tear it down with urbi_vm_destroy.  urbi_vm_run is
  * a convenience wrapper that runs a module's root chunk to completion.
@@ -1140,8 +1120,7 @@ void urbi_lock_heap(struct UVM *vm);
 URBI_ADVANCED uint64_t urbi_get_determinism_checksum(struct UVM *vm);
 #endif /* URBI_DEBUG */
 
-/*
- * urbi_error_info_t: structured error detail for the most-recent API failure.
+ /* urbi_error_info_t: structured error detail for the most-recent API failure.
  *
  *   code        — UErrCode value (negative; URBI_OK == 0 means no error).
  *   message     — human-readable description (may be empty string).
@@ -1182,8 +1161,7 @@ int  urbi_last_error (struct UVM *vm, urbi_error_info_t *out_info);
  * Thread safety: MAIN. */
 void urbi_clear_error(struct UVM *vm);
 
-/*
- * urbi_ref_t: opaque GC-root handle.  Encodes a 24-bit slot index and an
+/* urbi_ref_t: opaque GC-root handle.  Encodes a 24-bit slot index and an
  * 8-bit generation counter.  URBI_REF_INVALID (== 0) is the sentinel.
  *
  * The ref table is a per-VM growable array.  Slot 0 is permanently reserved
@@ -1220,8 +1198,7 @@ UValue     urbi_ref_get(struct UVM *vm, urbi_ref_t ref);
  * Thread safety: MAIN. */
 void       urbi_unref  (struct UVM *vm, urbi_ref_t ref);
 
-/*
- * urbi_set_error: publish an error entry to the per-VM error ring.
+ /* urbi_set_error: publish an error entry to the per-VM error ring.
  *
  * Thin public wrapper around the internal urbi_set_error_internal; exposes
  * the entry point needed by the aux layer (urbi_aux_set_error) without
@@ -1241,8 +1218,7 @@ void urbi_set_error(struct UVM *vm, int code,
                     const char *source_name, int source_line,
                     const char *context);
 
-/*
- * On success: returns a non-NULL pointer that must be freed with
+/* On success: returns a non-NULL pointer that must be freed with
  * urbi_chunk_free when no longer needed.  The caller must ensure no live VM
  * is executing inside the module when urbi_chunk_free is called.
  *
@@ -1271,8 +1247,7 @@ void urbi_chunk_free(struct UVM *vm, struct UProto *root);
 }
 #endif
 
-/*
- * Opt-in surface — only included when URBI_ENABLE_REPL is defined at
+/* Opt-in surface — only included when URBI_ENABLE_REPL is defined at
  * configuration time.  The REPL service requires the compiler frontend
  * (it accepts source text over the wire), so it is mutually exclusive
  * with URBI_BYTECODE_ONLY (enforced both at build time in the Makefile
@@ -1281,8 +1256,7 @@ void urbi_chunk_free(struct UVM *vm, struct UProto *root);
 #  include <urbi/repl.h>
 #endif
 
-/*
- * Bytecode-only builds strip src/lex/, src/parse/, src/emit/ from the
+/* Bytecode-only builds strip src/lex/, src/parse/, src/emit/ from the
  * archive.  An embedder that builds its application TUs without
  * URBI_BYTECODE_ONLY=1 but links against a bytecode-only liburbi.a
  * will see an undefined-symbol link error naming the mismatch:

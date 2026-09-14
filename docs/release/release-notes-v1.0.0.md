@@ -71,7 +71,7 @@ Three runtime correctness fixes landed before the freeze:
 
 ### Breaking changes (vs the last pre-1.0 tag)
 
-Two ABI changes landed under the final pre-1.0 escape (see api-stability §6 #33):
+Two ABI changes landed under the final pre-1.0 escape:
 
 - `urbi_set_time_us` → **`urbi_set_clock_fn`** (a plain rename; same signature).
 - The library is built `-fvisibility=hidden`; only the documented public `urbi_*`

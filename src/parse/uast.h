@@ -129,45 +129,35 @@ typedef enum {
                              * Lowered to: if (!expr) throw "assertion failed: <src>"
                              * No new opcode needed.  src_text/src_len is the
                              * zero-copy source span of the expression (paren form);
-                             * NULL/0 for block form.
-                             * Ruling: implemented (v0.10.5, legacy F9). */
+                             * NULL/0 for block form. */
 
     AST_LIST_LIT = 39,      /* [e1, e2, e3]
                              * Lowered to: List.new(e1, e2, e3)
-                             * No new opcode needed.
-                             * Ruling: implemented (v0.10.5, legacy F14). */
+                             * No new opcode needed. */
     AST_DICT_LIT = 40,      /* ["a" => 1, "b" => 2]
                              * Lowered to: var _d = Dict.new(); _d.set("a", 1); ...
-                             * No new opcode needed.
-                             * Ruling: implemented (v0.10.5, legacy F14). */
+                             * No new opcode needed. */
     AST_SUBSCRIPT_GET = 41, /* l[i]  → l.get(i)
-                             * No new opcode needed.
-                             * Ruling: implemented (v0.10.5, legacy F14). */
+                             * No new opcode needed. */
     AST_SUBSCRIPT_SET = 42, /* l[i] = v  → l.set(i, v)
                              * l[i] += v  → tmp=recv, tmpi=idx, tmp.set(tmpi, tmp.get(tmpi)+v)
                              *              recv and idx evaluated exactly once (v0.10.7).
-                             * No new opcode needed.
-                             * Ruling: implemented (v0.10.5, legacy F14);
-                             * single-eval fix (v0.10.7). */
+                             * No new opcode needed. */
 
     AST_FOR_EACH = 43,  /* for (var x : iter) body  / for (var x in iter) body
                          * Lowered to a while loop using list.length() + list.get(i).
                          * Also handles for (var x : list_expr) where list_expr is
-                         * evaluated once before the loop.  No new opcode needed.
-                         * Ruling: implemented (v0.10.5, legacy F2). */
+                         * evaluated once before the loop.  No new opcode needed. */
     AST_BREAK    = 44,  /* break — exits innermost for/while loop.
                          * Lowered to OP_JMP with the exit address patched after the loop.
-                         * No new opcode needed.
-                         * Ruling: implemented (v0.10.5, legacy F2). */
+                         * No new opcode needed. */
     AST_CONTINUE = 45,  /* continue — jumps to next iteration of innermost for/while.
                          * Lowered to OP_JMP with the continue address patched after the loop.
-                         * No new opcode needed.
-                         * Ruling: implemented (v0.10.5, legacy F2). */
+                         * No new opcode needed. */
     AST_SWITCH   = 46,  /* switch (expr) { case v1: body1; case v2: body2; }
                          * Equality-based dispatch only (no pattern matching).
                          * Lowered to a chain of if (expr == vN) { bodyN }.
-                         * No new opcode needed.
-                         * Ruling: implemented (v0.10.5, legacy F2). */
+                         * No new opcode needed. */
 
     AST_REG_REF  = 47   /* synthetic emit-only: reference to a previously-allocated
                          * register.  Never produced by the parser; created inside

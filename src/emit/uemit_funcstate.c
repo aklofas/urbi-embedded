@@ -127,8 +127,7 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
             fs->max_reg_seen = fs->freereg;
     }
 
-    /*
-     * Only seeds the root FuncState (parent == NULL) when a VM is present
+    /* Only seeds the root FuncState (parent == NULL) when a VM is present
      * (vm->intern_table is required for ustr_intern). */
     if (parent == NULL && e->vm != NULL) {
         struct {
@@ -596,8 +595,7 @@ int uemit_declare_local(UEmitter *e, const char *name, int name_len) {
     fs->freereg++;
     if (fs->freereg > fs->max_reg_seen) fs->max_reg_seen = fs->freereg;
 
-    /*
-     * The function-param emit path (uemit_stmt.c after the params loop)
+    /* The function-param emit path (uemit_stmt.c after the params loop)
      * does this same sync explicitly; making it part of the
      * uemit_declare_local contract removes the footgun for all future
      * callers — they can no longer forget. */

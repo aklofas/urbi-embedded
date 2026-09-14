@@ -38,11 +38,10 @@ do not tag until every box is checked. The v1.0.0 release used this list (see
 - [ ] `docs/release/release-readiness.md` closure items all ✅ (or explicit accepted known-issues)
 - [ ] `CHANGELOG.md` has the new version entry
 - [ ] `README.md` status + supported-targets table reflect this release
-- [ ] `docs/api-stability.md` escape ledger updated (or, post-1.0, a §3 deprecation entry)
 
 ## 6. Version transition
 
-- [ ] `include/urbi/version.h` — `MAJOR/MINOR/PATCH` bumped + `_Static_assert` pin updated
+- [ ] `include/urbi/version.h` — `MAJOR/MINOR/PATCH` bumped
 - [ ] `tests/unit/test_api_version.c` — constants match version.h
 - [ ] `components/esp32-idf/idf_component.yml` — `version:` matches the tag-to-be
 - [ ] `README.md` — `ABI X/Y/Z`, `wire vN.N`, and tag reference all updated

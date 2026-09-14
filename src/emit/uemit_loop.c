@@ -23,8 +23,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/*
- * urbi_emit_break_arm — AST_BREAK: `break`
+/* urbi_emit_break_arm — AST_BREAK: `break`
  *   Emits a placeholder OP_JMP and records the PC in the innermost loop
  *   context so the enclosing loop can patch it to the exit address.
  *

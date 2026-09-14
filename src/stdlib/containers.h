@@ -64,8 +64,7 @@ void urbi_stdlib_containers_destroy(struct UVM *vm);
 void urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb,
                                        void *ctx);
 
-/*
- * Append / remove a UValue from the UList backing a List UObject.  Intended
+/* Append / remove a UValue from the UList backing a List UObject.  Intended
  * for the REPL dispatcher's session-lifecycle hooks (urbi_lobby_register_-
  * session / urbi_lobby_unregister_session) — NOT for general user-facing
  * mutation, which should go through the urbiscript .add / .set methods.

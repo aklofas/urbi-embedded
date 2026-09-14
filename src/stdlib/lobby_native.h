@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * urbi_lobby_native_register(vm)
+/* urbi_lobby_native_register(vm)
  *   Allocates vm->lobby_proto as a URBI_ATOM_OBJECT-family UObject,
  *   chains it onto root Object, and installs the single native method
  *   `__builtin_lobby_send`.  Idempotent (no-op if vm->lobby_proto is

@@ -194,8 +194,7 @@ int urbi_aux_dump_value(struct UVM *vm, UValue v,
 void urbi_aux_diag_to_stderr(struct UVM *vm, void *ud, int level,
                              const char *fmt, ...);
 
-/*
- * Single-call safe extract: returns URBI_OK + writes *out on type match;
+/* Single-call safe extract: returns URBI_OK + writes *out on type match;
  * returns URBI_ERR_TYPE (-26) and leaves *out unmodified on kind mismatch.
  *
  * When out is NULL (single-out variants), or when both out and out_len are

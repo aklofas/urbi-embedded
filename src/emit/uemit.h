@@ -82,8 +82,7 @@ typedef enum {
 /* Forward declaration for FuncState lifecycle. */
 struct UFuncState;
 
-/*
- * break and continue lower to OP_JMP with the target patched after the loop.
+/* break and continue lower to OP_JMP with the target patched after the loop.
  * Each for/while/switch body opens a ULoopCtx on the emitter's loop_stack[]
  * array; AST_BREAK / AST_CONTINUE record their OP_JMP PCs here so the
  * enclosing loop can patch them after it knows the exit / continue addresses.

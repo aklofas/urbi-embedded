@@ -137,8 +137,7 @@ urbi_atom_protos_register(UVM *vm)
     return URBI_OK;
 }
 
-/*
- * Walks the builtin atom + runtime-type protos registered earlier in
+/* Walks the builtin atom + runtime-type protos registered earlier in
  * urbi_stdlib_boot and sets URBI_OBJ_FLAG_READONLY on each so that
  * urbiscript-side mutation (OP_SETSLOT) raises TypeError.
  *

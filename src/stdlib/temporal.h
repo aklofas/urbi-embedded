@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/*
- * `every (period) body` desugars at parse time to a regular call
+/* `every (period) body` desugars at parse time to a regular call
  * `every(period_us, function() { body })`.  This TU implements the runtime
  * backing — a stdlib C-native function `every` plus the per-VM registry
  * that drives periodic body re-spawn from urbi_step.

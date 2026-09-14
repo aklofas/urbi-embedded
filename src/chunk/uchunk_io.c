@@ -294,8 +294,7 @@ static UChunkLoadError decode_header(MDecCtx *d) {
                    (unsigned)URBI_ENDIANNESS, (unsigned)d->buf[15]);
         return UCHUNK_LOAD_FLAVOR_MISMATCH;
     }
-    /*
-     * v1.0 defines no flag bits in this region.  Forward-compat tolerance
+    /* v1.0 defines no flag bits in this region.  Forward-compat tolerance
      * silently dropped flags that older builds didn't recognize, which is
      * the wrong policy when the runtime does not promise bytecode stability
      * before v1.0.  We reject any non-zero reserved byte. */

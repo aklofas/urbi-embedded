@@ -222,8 +222,7 @@ uproto_root_of(UProto *proto)
     return proto->root ? proto->root : proto;
 }
 
-/*
- * All external callers MUST use these functions rather than touching
+/* All external callers MUST use these functions rather than touching
  * p->refcount directly.  The typed owner tag enables debug-build accounting
  * (urbi_proto_ref_assert_balanced) and surfaces diagnostics that the prior
  * silent inline helpers omitted.
