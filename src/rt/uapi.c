@@ -162,9 +162,9 @@ int urbi_load(UVM *vm, URealm *realm, const uint8_t *bytes, size_t n, UValue *ou
     UValue res = urbi_make_nil();
     int crc = uexec_call(vm, s, cl, uv_obj(realm->globals), NULL, 0, &res);
     uvm_spare_release(vm, s);
-    if (crc != UEXEC_OK) return URBI_ERR_UNCAUGHT_THROW;
-    if (out) *out = res;
-    return URBI_OK;
+    int rc = uexec_finish_run(vm, crc);
+    if (rc == URBI_OK && out) *out = res;
+    return rc;
 }
 
 int urbi_run(UVM *vm, URealm *realm, const char *src, size_t n, const char *name,
@@ -186,11 +186,11 @@ int urbi_call(UVM *vm, URealm *realm, UValue callee, UValue recv,
     UStrand *s = uvm_spare_acquire(vm, realm);
     if (!s) return URBI_ERR_OOM;
     UValue res = urbi_make_nil();
-    int rc = uexec_call(vm, s, (UClosure *)callee.v.p, recv, argv, argc, &res);
+    int crc = uexec_call(vm, s, (UClosure *)callee.v.p, recv, argv, argc, &res);
     uvm_spare_release(vm, s);
-    if (rc != UEXEC_OK) return URBI_ERR_UNCAUGHT_THROW;
-    if (out) *out = res;
-    return URBI_OK;
+    int rc = uexec_finish_run(vm, crc);
+    if (rc == URBI_OK && out) *out = res;
+    return rc;
 }
 
 /* ===================================================================
