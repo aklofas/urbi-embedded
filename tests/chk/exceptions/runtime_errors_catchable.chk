@@ -3,7 +3,10 @@
 
 var r1 = "no"; try { nil + 1 } catch (var e) { r1 = "caught" }; r1
 [00000001] "caught"
-var r2 = "no"; try { "a" < "b" } catch (var e) { r2 = "caught" }; r2
+# Comparison against a non-number: `<` now orders two Strings (see
+# stdlib/containers/list_sort.chk), so a mixed-kind comparison is what
+# still type-errors here.
+var r2 = "no"; try { nil < 1 } catch (var e) { r2 = "caught" }; r2
 [00000002] "caught"
 var f = 0; try { try { nil + 1 } finally { f = 9 } } catch (var e) { }; f
 [00000003] 9

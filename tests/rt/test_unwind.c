@@ -137,10 +137,17 @@ static int uw_native_boom(UVM *vm, UValue self, UValue *args, uint8_t nargs, UVa
 
 static void native_throw_is_catchable(void) {
     UwFix fx; fix_open(&fx);
-    UValue out = uv_nil();
-    RT_EQ(run(&fx, "var Probe = Object.clone() |", &out), URBI_OK);
+    /* The fixture VM is unbooted (no stdlib prototypes), so the host
+     * object the native hangs off is built directly, exactly as
+     * test_exec.c's register_preserves_a_host_pin does. */
+    UObject *o = uobj_new(fx.vm, NULL);
+    RT_CHECK(o != NULL);
+    UValue ov = uv_obj(o);
+    urbi_ref(fx.vm, ov);
+    RT_EQ(urbi_global_set(fx.vm, fx.realm, "Probe", ov), URBI_OK);
     RT_EQ(urbi_register(fx.vm, "Probe.boom", uw_native_boom, 0, 0), URBI_OK);
     run_int(&fx, "var r = 0; try { Probe.boom() } catch (var e) { r = 1 }; r |", 1);
+    urbi_unref(fx.vm, ov);
     fix_close(&fx);
 }
 

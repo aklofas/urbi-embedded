@@ -413,7 +413,8 @@ test-integration: $(BUILDDIR)/urbi
 # Not valgrind-wrapped: urbi itself is memory-clean, and wrapping the
 # sh+awk+sed pipeline adds noise, not signal.
 CHK_GATE_DIRS ?= arithmetic closure function control \
-                 objects globals stdlib lobby operators
+                 objects globals stdlib lobby operators \
+                 exceptions control_transfer
 
 test-chk: $(BUILDDIR)/urbi
 	@CHK_GATE_DIRS="$(CHK_GATE_DIRS)" sh tests/integration/chk_summary.sh $(BUILDDIR)/urbi

@@ -27,18 +27,20 @@
 # Math at v0.6.1 ships constants only; method lookups fail as
 # `slot 'NAME' not found` via the SELF proto-walk diagnostic.
 #
-# NOTE (v0.11.4): the slot-not-found TypeError is now a CATCHABLE typed
-# throw (see tests/chk/exceptions/vm_typeerror_catchable.chk) rather than a
-# fatal HALT.  Uncaught at the REPL surface it surfaces the instance `message`
-# slot as the legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
+# NOTE: the slot-not-found LookupError is a CATCHABLE typed throw (see
+# tests/chk/exceptions/vm_typeerror_catchable.chk) rather than a fatal HALT.
+# Uncaught at the REPL surface it surfaces the instance `message` slot as the
+# legacy "!!! <Error>: ..." diagnostic (D-F2 backward-compat).  The
+# re-foundation raises LookupError where the old core raised TypeError --
+# see the note in objects/lookup.chk.
 Math.sqrt(4)
-[00000001] !!! TypeError: method call: slot 'sqrt' not found
+[00000001] !!! LookupError: method call: slot 'sqrt' not found
 
 Math.log(1)
-[00000002] !!! TypeError: method call: slot 'log' not found
+[00000002] !!! LookupError: method call: slot 'log' not found
 
 Math.sqr(2)
-[00000003] !!! TypeError: method call: slot 'sqr' not found
+[00000003] !!! LookupError: method call: slot 'sqr' not found
 
 # Math.nan exists; Math.nan.isNaN() routes through the Float atom-
 # proto installed at Phase 5.

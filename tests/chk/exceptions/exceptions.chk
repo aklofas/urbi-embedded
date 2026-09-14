@@ -17,8 +17,12 @@ var r = "none"; try { throw Exception.new("exc") } catch (var e) { r = e.message
 [00000001] "exc"
 
 # --- catch with isA() guard on a typed subclass raised natively ---
+# The arity diagnostic is the re-founded runtime's own -- named, with both
+# bounds, and spelled the same way for a native as for a script function.
+# The pre-refoundation core wrote "Exception.new expected 1 args, got 0";
+# see the same wording change in stdlib/containers/list_sort.chk.
 var g = "none"; try { Exception.new() } catch (var e if e.isA(ArityError)) { g = e.message }; g
-[00000002] "ArityError: Exception.new expected 1 args, got 0"
+[00000002] "ArityError: new: expected 1 argument, got 0"
 
 # --- re-throw of the caught instance propagates to the outer handler ---
 var hops = ""; try { try { throw Exception.new("exc") } catch (var e) { hops = hops + "1"; throw e } } catch (var e2) { hops = hops + "2:" + e2.message }; hops

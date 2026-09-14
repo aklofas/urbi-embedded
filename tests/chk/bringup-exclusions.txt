@@ -7,36 +7,30 @@
 #
 # Each line: <path>  # <what it needs>
 
-# --- needs try/catch — the cleanup-stack unwinder ----------------------
-tests/chk/closure/capture_shadowed.chk             # two cases capture a catch variable
-tests/chk/function/default_params.chk              # arity failures observed through try/catch
-tests/chk/globals/const_builtin_global_rejects_write.chk  # catches the constant-slot TypeError
-tests/chk/operators/compare_overload_mirror.chk    # a comparison operator that throws, caught
-tests/chk/operators/operator_overload_throw.chk    # an overload that throws, caught
-tests/chk/stdlib/overlays/exception_subclasses.chk # every case is a try/catch round-trip
-tests/chk/stdlib/runtime/exception_basic.chk       # try/catch round-trip
-tests/chk/stdlib/runtime/exception_chain.chk       # try/catch round-trip
-tests/chk/stdlib/runtime/regexp.chk                # last case catches a budget RangeError
-tests/chk/stdlib/runtime/legacy_aliases.chk        # last case catches List.head on the empty list
-tests/chk/stdlib/containers/list_sort.chk          # 7 cases catch a comparator throw or an arity error
-
-# --- needs runtime diagnostic positions --------------------------------
+# --- needs tags and the scheduler --------------------------------------
 #
-# Each of these differs from the current output only in the `line N: `
-# prefix an uncaught runtime error used to carry (and, for some, in the
-# operand-type wording that went with it).  Reconstructing the position
-# means decoding UProto's line-delta table at throw time, which belongs
-# with the unwinder and its diagnostics, not with the boot table.
-tests/chk/operators/add.chk                        # `line 1: ... (got unknown, unknown)`
-tests/chk/operators/add_string.chk                 # `line 1: ... (got String, Integer)`
-tests/chk/operators/div.chk                        # `line 1: ...`
-tests/chk/operators/le.chk                         # `line 1: ...`
-tests/chk/operators/lt.chk                         # `line 1: ...`
-tests/chk/operators/modulo.chk                     # `line 1: ...`
-tests/chk/operators/mul.chk                        # `line 1: ...`
-tests/chk/operators/neg.chk                        # `line 1: ...`
-tests/chk/operators/sub.chk                        # `line 1: ...`
-tests/chk/stdlib/legacy/maths_errors_legacy.chk    # `line 1: ...`
+# Each of these drives Tag.new() / tag.stop() through the unwinder.  The
+# cleanup stack already carries TAG_SCOPE entries and walks them; what is
+# missing is the tag object itself, the leave event, and the STOP unwind
+# kind that matches a scope against the tag being stopped.
+tests/chk/control_transfer/cross_frame_tag_stop.chk   # tag.stop() across a call frame
+tests/chk/control_transfer/finally_multi_statement.chk # case 0 stops a tag from inside its own scope
+tests/chk/control_transfer/scope_crossing_exits.chk   # two cases call tag.stop(); the rest pass
+tests/chk/control_transfer/tag_stop_basic.chk         # tag.stop()
+tests/chk/control_transfer/tag_stop_no_target.chk     # tag.stop() outside any scope
+tests/chk/control_transfer/tag_stop_skips_catch.chk   # a STOP must pass a catch by
+tests/chk/control_transfer/tag_stop_with_finally.chk  # a STOP must still run finallys
+
+# --- needs the concurrency separators ----------------------------------
+tests/chk/control_transfer/unbraced_bodies.chk        # four cases bind `&` after an unbraced arm
+
+# --- needs slot-write constness through the prototype chain ------------
+#
+# `Realm.Object = 42` must raise: the CONSTANT attribute is on the
+# root-globals slot, one link up the chain from the receiver, and
+# OP_SETSLOT only inspects the receiver's own slots.  The try/catch half
+# of the fixture works.
+tests/chk/globals/const_builtin_global_rejects_write.chk  # constant is inherited, not local
 
 # --- needs events ------------------------------------------------------
 tests/chk/objects/event_new_emit.chk               # Event.new / emit / the `!` postfix
