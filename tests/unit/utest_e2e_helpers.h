@@ -25,7 +25,7 @@
 #include <stdint.h>
 
 #include "urbi/urbi.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "chunk/uchunk.h"
 #include "vm/uvm.h"
 

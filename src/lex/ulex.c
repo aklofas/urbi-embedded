@@ -3,7 +3,7 @@
 
 #include "lex/ulex.h"
 #include "lex/ulex_internal.h"
-#include "runtime/umacros.h"
+#include "util/umacros.h"
 #include "urbi/types.h"   /* URBI_STATIC_ASSERT */
 
 #include <limits.h>

@@ -4,8 +4,8 @@
 
 #include "chunk/uchunk.h"
 #include "vm/uvm.h"
-#include "value/uarena.h"
-#include "value/uintern.h"
+#include "util/uarena.h"
+#include "emit/uintern.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"

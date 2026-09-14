@@ -23,11 +23,11 @@
  */
 
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
-#include "value/uintern.h"        /* ustr_intern */
+#include "emit/uintern.h"        /* ustr_intern */
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
 #include "parse/uast.h"
-#include "runtime/umacros.h"
+#include "util/umacros.h"
 #include <stddef.h>
 #include <stdint.h>
 

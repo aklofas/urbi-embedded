@@ -10,7 +10,7 @@
 
 #include "urbi/urbi.h"
 #include "chunk/uchunk.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "emit/uemit.h"

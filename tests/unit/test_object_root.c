@@ -25,8 +25,8 @@
 #include "utest.h"
 
 #include "chunk/uchunk.h"
-#include "value/uintern.h"
-#include "value/uarena.h"
+#include "emit/uintern.h"
+#include "util/uarena.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "emit/uemit.h"

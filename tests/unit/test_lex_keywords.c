@@ -2,7 +2,7 @@
 /* Lexer tests for M5 reactive keywords. */
 
 #include "utest.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "parse/uast.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"

@@ -11,7 +11,7 @@
 #include "parse/uparse.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "chunk/uchunk.h"
 
 /* --- the intern seam (see the header banner) -------------------------- */

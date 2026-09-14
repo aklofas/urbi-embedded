@@ -3,7 +3,7 @@
 
 #include "repl/urepl_state.h"
 #include "vm/uvm.h"
-#include "runtime/umacros.h"  /* urbi_zero */
+#include "util/umacros.h"  /* urbi_zero */
 
 /* urepl_state_create: allocate a UReplState wrapper.
  *

@@ -9,9 +9,9 @@
 #include <stdint.h>
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
-#include "runtime/umacros.h"
-#include "value/uarena.h"
-#include "value/uintern.h"    /* ustr_intern — for known-lazy pre-seed */
+#include "util/umacros.h"
+#include "util/uarena.h"
+#include "emit/uintern.h"    /* ustr_intern — for known-lazy pre-seed */
 
 /* --- Upvalue cascade helpers --- */
 

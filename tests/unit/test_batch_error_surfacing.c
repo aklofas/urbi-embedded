@@ -28,13 +28,13 @@
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 #include "vm/uvm.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "chunk/uchunk.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "parse/uast.h"
-#include "runtime/umacros.h"   /* urbi_zero/urbi_strlen only */
+#include "util/umacros.h"   /* urbi_zero/urbi_strlen only */
 
 #include <stddef.h>
 #include <string.h>

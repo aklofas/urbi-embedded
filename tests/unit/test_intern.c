@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "value/uintern.h"
+#include "emit/uintern.h"
 #include "vm/uvm.h"
 
 #define UTEST(name) static void name(void)

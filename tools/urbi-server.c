@@ -32,7 +32,7 @@
  * compile-then-run pattern for the optional boot script.  Same approach
  * tools/urbi.c uses for `urbi script.u`. */
 #include "repl/urepl_transport_tcp.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "parse/uast.h"
 #include "parse/uparse.h"
 #include "lex/ulex.h"

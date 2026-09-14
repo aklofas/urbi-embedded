@@ -12,7 +12,7 @@
  * LSan flags it under make test-asan). */
 
 #include "utest.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 
 #include <stdlib.h>
 

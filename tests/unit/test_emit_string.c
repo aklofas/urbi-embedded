@@ -6,8 +6,8 @@
  * through ustr_intern + urbi_emit_add_const_str + OP_LOADK. */
 
 #include "utest.h"
-#include "value/uarena.h"
-#include "value/uintern.h"
+#include "util/uarena.h"
+#include "emit/uintern.h"
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
 #include "vm/uvm.h"

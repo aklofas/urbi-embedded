@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* LEB128 varint codec.  Freestanding; see uvarint.h. */
 
-#include "value/uvarint.h"
+#include "util/uvarint.h"
 #include <stdint.h>
 
 /* --- Encode --- */

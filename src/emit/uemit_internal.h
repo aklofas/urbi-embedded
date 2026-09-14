@@ -8,7 +8,7 @@
 #define UEMIT_INTERNAL_H
 
 #include "uemit.h"
-#include "runtime/umacros.h"   /* urbi_zero */
+#include "util/umacros.h"   /* urbi_zero */
 
 #include <stddef.h>
 #include <stdint.h>

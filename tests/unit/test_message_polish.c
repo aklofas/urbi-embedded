@@ -15,7 +15,7 @@
 #include "urbi/urbi.h"
 #include "vm/uvm.h"
 #include "chunk/uchunk.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"

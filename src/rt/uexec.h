@@ -126,7 +126,7 @@ struct UVM {
     int        last_error_code;
 
     /* Frontend seam: the emitter interns identifier names through
-     * ustr_intern(vm, ...), declared by src/value/uintern.h.  The new
+     * ustr_intern(vm, ...), declared by src/emit/uintern.h.  The new
      * core implements that function over the USym table above, so
      * `strings` IS the intern table and there is no second one.  See
      * src/emit/ufront.h. */

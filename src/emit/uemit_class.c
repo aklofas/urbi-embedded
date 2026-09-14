@@ -11,10 +11,10 @@
  * Other statement kinds raise EMIT_UNSUPPORTED_AST. */
 
 #include "emit/uemit_internal.h"
-#include "value/uintern.h"
+#include "emit/uintern.h"
 #include "parse/uast.h"
 #include "chunk/uchunk.h"
-#include "runtime/umacros.h"
+#include "util/umacros.h"
 #include <stddef.h>
 #include <stdint.h>
 

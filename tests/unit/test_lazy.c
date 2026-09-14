@@ -10,7 +10,7 @@
 
 #include "utest.h"
 
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "parse/uast.h"
 #include "chunk/uchunk.h"
 #include "emit/uemit.h"

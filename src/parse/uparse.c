@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include "lex/ulex.h"
 #include "parse/uast.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "urbi/types.h"   /* URBI_STATIC_ASSERT */
 #include <stdint.h>
 

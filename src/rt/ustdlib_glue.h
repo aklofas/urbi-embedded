@@ -36,7 +36,7 @@
 
 /* === freestanding byte helpers ======================================== */
 
-/* The old bodies called these out of src/runtime/umacros.h, which is an
+/* The old bodies called these out of src/util/umacros.h, which is an
  * old-runtime header the layering gate keeps out of src/rt.  They are
  * three lines each; re-declaring them here costs less than an exception
  * to the rule. */

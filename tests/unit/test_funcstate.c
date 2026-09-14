@@ -4,9 +4,9 @@
 
 #include <stdio.h>
 
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "emit/uemit.h"
-#include "value/uintern.h"
+#include "emit/uintern.h"
 #include "chunk/uchunk.h"
 #include "vm/uvm.h"
 

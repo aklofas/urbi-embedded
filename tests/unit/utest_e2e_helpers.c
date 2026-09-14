@@ -17,7 +17,7 @@
 #include "parse/uparse.h"
 #include "emit/uemit.h"
 #include "realm/urealm.h"
-#include "runtime/umacros.h"   /* urbi_zero/urbi_strlen only */
+#include "util/umacros.h"   /* urbi_zero/urbi_strlen only */
 
 #define UTEST_E2E_MAX_ITERS 1000
 

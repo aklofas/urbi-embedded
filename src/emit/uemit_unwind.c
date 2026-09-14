@@ -6,8 +6,7 @@
  *   - urbi_emit_expr arm helpers for AST_THROW, AST_TRY, AST_TAG_PREFIX. */
 
 #include "emit/uemit_internal.h"
-#include "runtime/ucleanup.h"   /* FLAG_HAS_CATCH, FLAG_HAS_FINALLY */
-#include "value/uintern.h"      /* ustr_intern — catch variable interning */
+#include "emit/uintern.h"      /* ustr_intern — catch variable interning */
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
 #include "parse/uast.h"

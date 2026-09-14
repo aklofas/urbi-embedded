@@ -10,7 +10,7 @@
 #include "lex/ulex.h"
 #include "parse/uast.h"
 #include "parse/uparse.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include <string.h>
 
 typedef struct {

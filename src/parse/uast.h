@@ -12,6 +12,17 @@
 extern "C" {
 #endif
 
+/* Watcher modes — the value AST_WATCHER carries in `u.watcher.mode`, and
+ * the only thing the emitter needs to pick between OP_AT_INSTALL,
+ * OP_AT_SYNC_INSTALL and OP_WHENEVER_INSTALL.  The runtime does not read
+ * these: each mode has its own opcode, and src/rt/uwatch.h keeps its own
+ * representation of what an installed watcher is.  (They used to live in
+ * the old runtime's watcher header, which also enumerated event-watcher
+ * and waituntil modes the frontend never named.) */
+#define UWATCHER_AT        1   /* at (cond) body       — edge-triggered  */
+#define UWATCHER_WHENEVER  2   /* whenever (cond) body — level-triggered */
+#define UWATCHER_AT_SYNC   3   /* at sync (cond) body  — synchronous     */
+
 /* Node kinds. */
 typedef enum {
     /* atomic + arithmetic */

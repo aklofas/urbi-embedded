@@ -5,8 +5,8 @@
 #include "lex/ulex.h"
 #include "lex/ulex_internal.h"
 #include "parse/uast.h"
-#include "value/uarena.h"
-#include "runtime/umacros.h"   /* urbi_memcpy */
+#include "util/uarena.h"
+#include "util/umacros.h"   /* urbi_memcpy */
 #include <stddef.h>
 #include <stdint.h>
 

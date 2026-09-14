@@ -14,10 +14,10 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"
-#include "value/uintern.h"  /* ustr_intern */
+#include "emit/uintern.h"  /* ustr_intern */
 #include "lex/ulex.h"
 #include "chunk/uchunk.h"
 #include "parse/uparse.h"

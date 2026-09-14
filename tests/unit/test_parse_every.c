@@ -16,7 +16,7 @@
 #include "lex/ulex.h"
 #include "parse/uast.h"
 #include "parse/uparse.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 
 #define UTEST(name) static void name(void)
 

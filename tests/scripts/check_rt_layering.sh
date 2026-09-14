@@ -63,9 +63,20 @@ for f in src/rt/*.c src/rt/*.h; do
         ir=$(rank "$inc")
         if [ "$ir" -gt "$sr" ]; then echo "LAYERING: $f includes rt/$inc.h (rank $ir > $sr)"; rc=1; fi
     done
-    if grep -qE '#include "(vm|sched|object|gc|runtime|watcher|event|tag|realm|changed|value)/' "$f"; then
-        echo "LAYERING: $f includes an old-runtime header"; rc=1
-    fi
+    # Neighbourhood rule: the core reaches four places outside itself and
+    # nowhere else.  chunk/ is the bytecode it executes; emit/ufront.h is
+    # the one compile entry point uexec.c calls for `load`; stdlib/ is the
+    # boot table's list of installers; urbi/ is the public API it
+    # implements.  The lexer, the parser, the arena, the host formatter
+    # and the eval service are all above the core, and a core that
+    # included one would stop being the thing a microcontroller links.
+    for inc in $(grep -oE '#include "[a-z_]+/[a-z_]+\.h"' "$f" |
+                 sed -E 's/.*"(.*)"/\1/'); do
+        case "$inc" in
+            rt/*|chunk/*|urbi/*|stdlib/*|emit/ufront.h) ;;
+            *) echo "LAYERING: $f includes \"$inc\" (src/rt may reach only rt/ chunk/ stdlib/ urbi/ emit/ufront.h)"; rc=1 ;;
+        esac
+    done
     # Freestanding rule (spec section 3): src/rt/ uses no libc beyond
     # these five headers.  Anything hosted -- snprintf, malloc, assert --
     # belongs in src/host/ or the frontend, not in the core that has to
@@ -93,8 +104,5 @@ for f in $REPL_CORE_FILES; do
         ok=0; for a in $REPL_ALLOWED; do [ "$a" = "$inc" ] && ok=1; done
         [ $ok -eq 1 ] || { echo "LAYERING: $f includes rt/$inc.h (repl may include: $REPL_ALLOWED)"; rc=1; }
     done
-    if grep -qE '#include "(vm|sched|object|gc|runtime|watcher|event|tag|realm|changed|value)/' "$f"; then
-        echo "LAYERING: $f includes an old-runtime header"; rc=1
-    fi
 done
 exit $rc

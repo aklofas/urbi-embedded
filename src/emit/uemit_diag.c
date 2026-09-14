@@ -4,7 +4,7 @@
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
 #include "parse/uast.h"
-#include "runtime/umacros.h"
+#include "util/umacros.h"
 
 #if __STDC_HOSTED__
 #  include <stdarg.h>

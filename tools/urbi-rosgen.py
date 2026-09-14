@@ -191,7 +191,7 @@ def emit_c(msgs):
         '#include "urbi/types.h"',
         '#include "vm/uvm.h"',
         '#include "object/uobject.h"',
-        '#include "value/uintern.h"',
+        '#include "emit/uintern.h"',
         '#include "value/ulist_build.h"',
         '#include "ros/uros_msg.h"',
         '#include "ros/generated/ros_msgs.gen.h"',

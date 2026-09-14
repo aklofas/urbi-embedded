@@ -68,6 +68,19 @@ typedef enum {
     OP_MAX
 } UOpcode;
 
+/* --- cleanup-boundary flag bits (wire-format frozen) ---
+ *
+ * OP_TRY_BEGIN carries these verbatim in operand A; OP_PUSH_TAG carries
+ * them in A[7:4].  They say what the boundary the instruction opens is
+ * able to do, which is what the unwind walker consults on the way out.
+ * src/rt/ustrand.h restates the same three values as UCLEAN_F_* — the
+ * runtime is not allowed to reach into the frontend, and these bits are
+ * part of the bytecode contract rather than either side's private
+ * business, so both ends spell them out against this comment. */
+#define FLAG_HAS_CATCH    0x1U    /* the try frame has a catch handler   */
+#define FLAG_HAS_FINALLY  0x2U    /* the try frame has a finally body    */
+#define FLAG_HAS_ONLEAVE  0x4U    /* the tag scope has an onleave body   */
+
 /* --- instruction decode helpers (static inline; byte-aligned fields) --- */
 
 static inline UOpcode  uinstr_op (uint32_t i) { return (UOpcode)(i & 0xFFU); }

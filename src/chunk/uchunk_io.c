@@ -3,8 +3,8 @@
 
 #include "chunk/uchunk.h"
 #include "chunk/uchunk_internal.h"  /* MDecCtx + verifier entry-point decls */
-#include "runtime/umacros.h"
-#include "value/uvarint.h"
+#include "util/umacros.h"
+#include "util/uvarint.h"
 /* refound/core: the destroy path no longer reaches into the VM, the
  * module-instance list, or the realm's loaded-chunk list.  The new core
  * owns a bound chunk through one GC cell (rt/uexec.h UProtoCell) whose

@@ -14,7 +14,7 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "parse/uast.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"

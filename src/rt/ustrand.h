@@ -59,8 +59,8 @@ typedef enum { UCLEAN_TRY = 1, UCLEAN_TAG_SCOPE = 2 } UCleanKind;
 /* UCLEAN_F_HAS_CATCH / _HAS_FINALLY are the bytecode's own flag bits:
  * OP_TRY_BEGIN carries them verbatim in A, and OP_PUSH_TAG in A[7:4].
  * They must keep the values the emitter writes (FLAG_HAS_CATCH /
- * FLAG_HAS_FINALLY / FLAG_HAS_ONLEAVE in the emitter's ucleanup.h); the
- * layering rule forbids src/rt from including that header, so the values
+ * FLAG_HAS_FINALLY / FLAG_HAS_ONLEAVE in src/chunk/uchunk.h); this
+ * header sits below the chunk format in the include order, so the values
  * are restated rather than shared.
  *
  * UCLEAN_F_RUNNING is the unwinder's own and never appears in bytecode:

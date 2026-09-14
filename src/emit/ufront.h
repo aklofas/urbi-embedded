@@ -8,7 +8,7 @@
  * (URBI_BYTECODE_ONLY) without the core noticing.
  *
  * Intern seam.  The emitter interns every identifier and string literal
- * through ustr_intern(vm, bytes, n), declared by src/value/uintern.h.
+ * through ustr_intern(vm, bytes, n), declared by src/emit/uintern.h.
  * That function is implemented HERE, over the new core's USym table
  * (rt/ustr.h), returning the interned symbol's NUL-terminated bytes.  So
  * there is exactly one string table in the process: a `const char *` an

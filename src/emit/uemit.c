@@ -2,17 +2,16 @@
 /* Bytecode emitter. */
 
 #include "emit/uemit_internal.h"
-#include "runtime/umacros.h"
+#include "util/umacros.h"
 #include "urbi/require.h"   /* URBI_REQUIRE */
-#include "value/uintern.h"
-#include "watcher/uwatcher.h"  /* UWATCHER_AT / _AT_SYNC / _WHENEVER — AST_WATCHER emit */
+#include "emit/uintern.h"
 
 #include <limits.h>
 #include <stddef.h>
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
 #include "parse/uast.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include <stdint.h>
 
 /* Resolve which proto to write instructions/constants/synclines into.

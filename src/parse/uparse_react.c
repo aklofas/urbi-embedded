@@ -2,12 +2,11 @@
 /* Reactive parser fragments: at / whenever / waituntil / tag-prefix. */
 
 #include "parse/uparse_internal.h"
-#include "watcher/uwatcher.h"
 #include <stddef.h>
 #include "lex/ulex.h"
 #include "parse/uast.h"
 #include "parse/uparse.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 
 /* --- urbi_parse_desugar_postfix_emit: common helper for postfix `e!` desugar.
  *

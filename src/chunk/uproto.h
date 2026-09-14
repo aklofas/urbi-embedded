@@ -48,10 +48,10 @@ extern "C" {
  *   UVAL_STR; the runtime-only kinds above never appear on disk. */
 #include "urbi/types.h"
 
-/* UUpvalCell, UCallFrame, UVM_MAX_FRAMES, UVM_STACK_CAP — placed here so
-   UValue is in scope when uframe.h is processed (uframe.h uses UValue but
-   cannot include uproto.h/uvalue.h to avoid a circular dependency). */
-#include "runtime/uframe.h"
+/* (This header used to re-export UCallFrame, UUpvalCell, UVM_MAX_FRAMES and
+   UVM_STACK_CAP from the old runtime's frame header.  Call frames and the
+   register stack are the strand's business now: src/rt/ustrand.h owns both,
+   sizes the stack per strand instead of per VM, and grows it on demand.) */
 
 /* --- absolute-line checkpoint record --- */
 

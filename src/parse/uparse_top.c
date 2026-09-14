@@ -11,7 +11,7 @@
 #include "parse/uparse_internal.h"
 #include "lex/ulex.h"
 #include "parse/uast.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include <stddef.h>
 
 /* Advance the lexer until urbi_parse_peek is TOK_PIPE or TOK_EOF.  If we land on

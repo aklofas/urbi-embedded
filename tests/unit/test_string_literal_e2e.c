@@ -10,7 +10,7 @@
 
 #include "utest.h"
 #include "value/uvalue.h"
-#include "value/uintern.h"
+#include "emit/uintern.h"
 #include "vm/uvm.h"
 #include "chunk/uchunk.h"
 #include "realm/urealm.h"

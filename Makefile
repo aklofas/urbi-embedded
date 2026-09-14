@@ -1,18 +1,18 @@
-# refound/core: parked sources.  Filtered out of the default source lists
-# below so the files stay in the tree (a later v1.x REPL-server /
-# trace-tooling re-attachment reads them) but never enter the build.
-# src/runtime/utrace_format.c, uperf.c, and umemdebug.c compile to empty
-# translation units whenever their feature macro is off (no unconditional
-# public-API stub, unlike utrace.c's URBI_TRACE=0 branch) — parking them
-# changes nothing about the default archive.
-# The four files of the cooperative eval service are in REPL_CORE_SRCS
-# below; every other src/repl file is parked.  The listener, auth and
-# queue exist only to coordinate with threads that no longer run;
+# Parked sources: in the tree, never in the build, waiting for Phase 5 to
+# re-attach them.  The four files of the cooperative eval service are in
+# REPL_CORE_SRCS below; every other src/repl file is here.  The listener,
+# auth and queue exist only to coordinate with threads that no longer run;
 # urepl_state.c was a vm->repl back-pointer whose only reader was the
 # job-queue drain hook in urbi_step; urepl_introspect.c's one live
 # primitive now lives in src/stdlib/debug_namespace.c so the dependency
 # runs repl -> stdlib; ujson.c was a general JSON reader for the Debug
-# namespace, which now hands its answer over as a String.
+# namespace, which now hands its answer over as a String.  src/ros/ and
+# src/urobotics/ are parked the same way, behind the $(error)s below.
+#
+# The trace, perf-counter and memory-debug tooling is NOT parked: it was
+# part of the old runtime and went with it.  Phase 5 re-derives whatever
+# of it the new core wants from git history rather than from a stale
+# translation unit that no longer compiles.
 REPL_PARKED_SRCS := \
     src/repl/urepl_listener.c \
     src/repl/urepl_auth.c \
@@ -21,10 +21,6 @@ REPL_PARKED_SRCS := \
     src/repl/urepl_introspect.c \
     src/repl/ujson.c \
     $(wildcard src/repl/urepl_transport_*.c)
-RUNTIME_PARKED_SRCS := \
-    src/runtime/utrace_format.c \
-    src/runtime/uperf.c \
-    src/runtime/umemdebug.c
 
 # URBI_BYTECODE_ONLY=1 promotes the v0.6.1 smoke approximation to a real
 # pure-strip build: src/lex/, src/parse/, src/emit/ are removed from the
@@ -111,42 +107,35 @@ else
   UROBOTICS_SRCS :=
 endif
 
-# refound/core (Task 8, ruling P2): the old runtime core has left the
-# default build.  liburbi.a is now exactly these:
+# liburbi.a is exactly four source groups, and every src/ directory that
+# is not one of them is either the compiler frontend feeding one or an
+# optional component parked for Phase 5 (src/ros, src/urobotics, and the
+# networked half of src/repl):
 #
-#   FRONTEND_SRCS — the kept compiler frontend (lexer, parser, emitter,
-#                   chunk loader/verifier/disassembler) plus the two
-#                   src/value/ helpers it still needs (the arena and the
-#                   varint codec).  src/value/uintern.c is NOT built: the
-#                   intern seam is implemented in src/emit/ufront.c over
-#                   the new core's USym table.
+#   FRONTEND_SRCS — the compiler frontend (lexer, parser, emitter) and the
+#                   bytecode container it produces (src/chunk: writer,
+#                   loader, verifier, opcode shapes), plus src/util —
+#                   the AST arena, the varint codec, the freestanding
+#                   string/zero helpers, and URBI_REQUIRE's failure path.
+#                   There is no separate intern TU: the intern seam is
+#                   implemented in src/emit/ufront.c over the core's USym
+#                   table, so one string table serves compile and run.
 #   src/host/     — public API whose implementation is inherently hosted
 #                   (the value formatter needs snprintf), kept out of
 #                   src/rt/ so the freestanding rule there stays true.
-#   RT_SRCS       — the new runtime core under src/rt/.
+#   RT_SRCS       — the runtime core under src/rt/ plus the standard
+#                   library that boots on top of it.
 #   REPL_CORE_SRCS — the cooperative NDJSON eval service (four files;
 #                   the networked server is parked, see above).
 #
-# src/chunk/uproto_ref.c is NOT built: the UProto refcount family served
-# the old core's lifetime model and has no caller left.
-#
-# Everything else (src/vm, src/sched, src/gc, src/object, src/realm,
-# src/watcher, src/event, src/tag, src/changed, src/runtime, src/urbi.c,
-# src/urbi_aux.c) stays in the tree for reference and is deleted
-# wholesale by the clean-up task.
-# refound/core Task 9: the standard library re-attaches to the new core.
-# Each file exports one or more UMethodDef tables; src/rt/uboot.c's table
-# points at them and uboot_init installs them.
-#
-# Four of the old files are SUPERSEDED rather than waiting: temporal.c,
-# job_proto.c, tag_globals.c and control_native.c held `every`, `sleep`,
-# Job, Tag and the detach primitives, all of which are scheduler state and
-# now live in src/rt/usched_natives.c (the scheduler task).  They stay in
-# the tree with the rest of the old core for the clean-up task to remove.
-# Still genuinely waiting: channel_native, whose Channel proto is a
-# script overlay in stdlib.u today.  The stdlib blob object is separate so
-# the bake tool can link the zero-length stub in its place and avoid a
-# build cycle.
+# The standard library reaches the core through exactly one header
+# (src/rt/ustdlib_glue.h).  Each file exports one or more UMethodDef
+# tables; src/rt/uboot.c's table points at them and uboot_init installs
+# them.  `every`, `sleep`, Job, Tag and the detach primitives are NOT
+# here — they are scheduler state and live in src/rt/usched_natives.c.
+# Channel is a script overlay in stdlib.u.  The stdlib blob object is
+# listed separately from STDLIB_SRCS so the bake tool can link the
+# zero-length stub in its place and avoid a build cycle.
 STDLIB_SRCS := \
        src/stdlib/object_root.c \
        src/stdlib/isa_method.c \
@@ -164,12 +153,8 @@ FRONTEND_SRCS := \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/lex/*.c)) \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/parse/*.c)) \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/emit/*.c)) \
-       src/chunk/uchunk_io.c \
-       src/chunk/uchunk_verify.c \
-       src/chunk/uopcode_shape.c \
-       src/runtime/urequire.c \
-       src/value/uarena.c \
-       src/value/uvarint.c \
+       $(wildcard src/chunk/*.c) \
+       $(wildcard src/util/*.c) \
        $(wildcard src/host/*.c)
 
 SRC := $(FRONTEND_SRCS) $(wildcard src/rt/*.c) $(STDLIB_SRCS) $(STDLIB_BLOB_SRC) $(REPL_CORE_SRCS)
@@ -196,17 +181,15 @@ endif
 # until the boot table re-attaches them to the new core.
 
 OBJ := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(SRC))
-FRONTEND_OBJS := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(FRONTEND_SRCS))
 LIB := $(BUILDDIR)/liburbi.a
 
-# refound/core: the new runtime core (src/rt/) and its standalone test
-# runner.  liburbi-rt.a is the core on its own — the runner links it
-# against the frontend objects because uexec.c calls uchunk_destroy and
-# ufront_compile.
+# The runtime core's own test runner.  It links $(LIB) — the shipped
+# archive — rather than a core-only sub-archive: uexec.c calls
+# uchunk_destroy and ufront_compile anyway, so a core-only archive was
+# never self-contained, and testing the same bytes the embedder links is
+# worth more than the separation was.
 RT_SRCS   := $(wildcard src/rt/*.c) $(STDLIB_SRCS) $(STDLIB_BLOB_SRC)
-RT_OBJS   := $(patsubst %.c,$(BUILDDIR)/%.o,$(RT_SRCS))
 RT_TEST_SRCS := $(wildcard tests/rt/test_*.c) tests/rt/runner.c
-RT_LIB    := $(BUILDDIR)/liburbi-rt.a
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
 # v1.0 (B6a) / refactor-3 BLD-05: hide internal cross-TU symbols from the
@@ -250,12 +233,9 @@ all: $(LIB) $(BUILDDIR)/urbi
 $(LIB): $(OBJ)
 	$(AR) rcs $@ $^
 
-$(RT_LIB): $(RT_OBJS)
-	$(AR) rcs $@ $^
-
-$(BUILDDIR)/tests/rt/runner: $(RT_TEST_SRCS) $(RT_LIB) $(FRONTEND_OBJS)
+$(BUILDDIR)/tests/rt/runner: $(RT_TEST_SRCS) $(LIB)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/rt -o $@ $(RT_TEST_SRCS) $(RT_LIB) $(FRONTEND_OBJS) -lm
+	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/rt -o $@ $(RT_TEST_SRCS) $(LIB) -lm
 
 .PHONY: test-rt check-rt-layering
 test-rt: $(BUILDDIR)/tests/rt/runner check-rt-layering
@@ -476,7 +456,7 @@ test-wire-format-determinism: $(BUILDDIR)/urbi
 	@./tests/scripts/check_wire_format_determinism.sh
 
 # API manifest gate — verifies that every urbi_ symbol exported from
-# liburbi.a and liburbi_aux.a is enumerated in docs/api-surface-tiers.md.
+# liburbi.a is enumerated in docs/api-surface-tiers.md.
 # Catches new internal symbols accidentally becoming public and ensures the
 # manifest stays in sync with the library.  Closes audit-1 F13 /
 # api-ergonomics F12.  See tests/scripts/check-api-manifest.sh.
@@ -590,7 +570,7 @@ test-corpus-sanitize:
 # releasetest runs every host-side gate the CI matrix runs, in parallel.
 # Cross-compile, REPL-server, ROS2, urobotics, trace, perf-counters, and
 # mem-debug gates are parked (refound/core) and excluded — see
-# REPL_PARKED_SRCS / RUNTIME_PARKED_SRCS above.
+# REPL_PARKED_SRCS above.
 #
 # Runtime: ~5 minutes on a 32-core / 64 GB box (dominated by the two
 # valgrind passes; sanitizer variants and analysis run alongside them).

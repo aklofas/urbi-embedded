@@ -4,7 +4,7 @@
 #include "parse/uparse_internal.h"
 #include "lex/ulex.h"
 #include "parse/uast.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include <stddef.h>
 
 /* True when the next token is a statement-terminating position:

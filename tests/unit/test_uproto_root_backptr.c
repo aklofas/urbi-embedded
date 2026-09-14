@@ -13,11 +13,11 @@
 #include "urbi/urbi.h"
 #include "vm/uvm.h"
 #include "chunk/uchunk.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "emit/uemit.h"
-#include "runtime/umacros.h"   /* urbi_zero/urbi_strlen only */
+#include "util/umacros.h"   /* urbi_zero/urbi_strlen only */
 
 #define UTEST(name) static void name(void)
 

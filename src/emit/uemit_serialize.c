@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 #include "uemit_internal.h"
-#include "value/uvarint.h"
+#include "util/uvarint.h"
 #include "chunk/uchunk.h"
-#include "runtime/umacros.h"
+#include "util/umacros.h"
 #include <stddef.h>
 #include <stdint.h>
 

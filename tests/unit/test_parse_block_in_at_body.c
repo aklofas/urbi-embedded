@@ -27,7 +27,7 @@
 #include "realm/urealm.h"
 #include "vm/uvm.h"
 #include "chunk/uchunk.h"
-#include "value/uarena.h"
+#include "util/uarena.h"
 
 #include <stddef.h>
 #include <stdint.h>

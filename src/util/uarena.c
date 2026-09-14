@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UArena allocator implementation. */
 
-#include "value/uarena.h"
-#include "runtime/umacros.h"
+#include "util/uarena.h"
+#include "util/umacros.h"
 #include <stdint.h>
 
 #if __STDC_HOSTED__

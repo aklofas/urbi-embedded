@@ -30,7 +30,7 @@
 #include "tag/utag.h"
 #include "runtime/ucleanup.h"
 #include "urbi/urbi.h"
-#include "value/uintern.h"
+#include "emit/uintern.h"
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"
 
