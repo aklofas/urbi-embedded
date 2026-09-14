@@ -267,10 +267,18 @@ test-unit: $(BUILDDIR)/tests/unit/runner
 # numbers in the release notes and the docs can be regenerated rather than
 # trusted.  See tests/probes/probe.h.
 #
-# lookup_bench times $(BUILDDIR)/urbi as a subprocess, which is why it
-# takes the binary and the fixture directory as arguments and why it is
-# not wrapped: timing a valgrind-instrumented binary against an
-# uninstrumented baseline would compare nothing.
+# The three MEMORY probes are in `make test`: their numbers are
+# deterministic and a busy machine does not change them.
+#
+# The TIMING probe is not, and cannot be.  `make test` is itself one gate
+# of a 20-way parallel releasetest sweep, and a wall-clock measurement
+# taken while nineteen other compiles saturate the box measures the box
+# (observed: 4.99x under -j32 against 1.46x solo).  It gets its own
+# target, `test-bench`, which releasetest runs alone in its sequential
+# phase for the same reason valgrind runs there.  It takes the binary and
+# the fixture directory as arguments and is never $(RUNNER_WRAPPER)'d:
+# timing an instrumented binary against an uninstrumented baseline would
+# compare nothing.
 PROBE_SRCS := $(wildcard tests/probes/*.c)
 PROBE_BINS := $(patsubst tests/probes/%.c,$(BUILDDIR)/tests/probes/%,$(PROBE_SRCS))
 
@@ -278,11 +286,15 @@ $(BUILDDIR)/tests/probes/%: tests/probes/%.c $(LIB)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/probes -o $@ $< $(LIB) -lm
 
-.PHONY: test-probes
+.PHONY: test-probes test-bench
 test-probes: $(PROBE_BINS) $(BUILDDIR)/urbi
 	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/boot_heap
 	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/strand_cost
 	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/leaks
+
+# Run this alone.  Under `make -j` beside anything else the number is the
+# machine's, not the interpreter's.
+test-bench: $(PROBE_BINS) $(BUILDDIR)/urbi
 ifeq ($(TARGET),host)
 	@$(BUILDDIR)/tests/probes/lookup_bench $(BUILDDIR)/urbi tests/probes
 else
@@ -675,7 +687,9 @@ RELEASETEST_PHASE1 := \
 # contention).  Phase 2 is sequential — the cumulative wall-clock with
 # Phase 1 first is still substantially faster than the original 15-min
 # fully-sequential design.
-RELEASETEST_PHASE2 := test-valgrind test-corpus-sanitize
+# test-bench comes FIRST: it is the one gate whose answer depends on
+# how busy the machine is, so it runs before the two that make it busy.
+RELEASETEST_PHASE2 := test-bench test-valgrind test-corpus-sanitize
 
 RELEASETEST_JOBS   ?= $(shell nproc)
 RELEASETEST_OUTPUT ?= target
@@ -958,5 +972,5 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: test-unit test-probes test-embedding-guide
+.PHONY: test-unit test-probes test-bench test-embedding-guide
 .PHONY: all core test test-asan test-ubsan test-debug test-switch clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-fuzz-smoke test-o2 force-flagstamp

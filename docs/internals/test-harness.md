@@ -1,6 +1,6 @@
 # Test harness
 
-Four things test this codebase, and which one a new test belongs in is
+Five things test this codebase, and which one a new test belongs in is
 usually obvious from what it is asking:
 
 | Runner | Asks | Lives in |
@@ -8,9 +8,11 @@ usually obvious from what it is asking:
 | `make test-unit` | Does the compiler frontend produce the right bytecode? | `tests/unit/` |
 | `make test-rt` | Does a runtime subsystem hold its own invariants? | `tests/rt/` |
 | `make test-chk` | Does the language behave the way the corpus says? | `tests/chk/` |
-| `make test-probes` | Is it still small and fast enough? | `tests/probes/` |
+| `make test-probes` | Is it still small enough? | `tests/probes/` |
+| `make test-bench` | Is it still fast enough? Run alone. | `tests/probes/` |
 
-`make test` runs all four plus the layering gate. Every sanitizer variant
+`make test` runs the first four plus the layering gate; `test-bench` is
+separate, for the reason below. Every sanitizer variant
 (`test-asan`, `test-ubsan`, `test-gc-stress`, `test-valgrind`,
 `test-debug`, `test-switch`, `test-o2`) is the same aggregate rebuilt
 with different flags, so a new test is picked up by all of them for free.
@@ -122,9 +124,14 @@ memory back, and how the runtime compares to the one it replaced.
 rationale; `tests/probes/baseline-timings.md` holds the old core's
 numbers.
 
-The timing probe runs only on the default host build — comparing an
-instrumented binary against an uninstrumented baseline would measure the
-instrumentation.
+The timing probe is `make test-bench`, deliberately NOT part of `make
+test`: `make test` is one gate of a 20-way parallel releasetest sweep,
+and a wall-clock number taken while nineteen other compiles saturate the
+machine is the machine's number, not the interpreter's — the same probe
+read 4.99x under `-j32` and 1.46x solo. Releasetest runs it first in its
+sequential phase, for the same reason valgrind runs there. It also runs
+only on the default host build: comparing an instrumented binary against
+an uninstrumented baseline would measure the instrumentation.
 
 ## Running
 
@@ -138,7 +145,8 @@ instrumentation.
 | `make test-valgrind` | `-O1 -g` under memcheck | `build/host-valgrind/` | uninitialized reads ASan cannot see |
 | `make test-switch` | `-Os -DURBI_VM_FORCE_SWITCH=1` | `build/host-switch/` | keeps the portable dispatch path honest |
 | `make test-o2` | `-O2 -g` | `build/host-o2/` | the level desktop embedders actually use |
-| `make releasetest` | all of the above, in parallel | — | before a tag |
+| `make test-bench` | `-Os` | `build/host/` | the timing probe, alone |
+| `make releasetest` | all of the above: 20 gates in parallel, then 3 alone | — | before a tag |
 
 Build directories are disjoint, so the parallel sweep does not race.
 

@@ -37,9 +37,19 @@
  * fails the build, while the spec's 1.2 is kept in view as the number the
  * performance work has to reach.
  *
- * Timing is noisy: a shared machine, a 21-millisecond workload.  The
- * ceilings carry enough slack for that, which is why they are not pinned
- * at exactly the measured ratio. */
+ * ---------------------------------------------------------------------
+ * Run this alone
+ * ---------------------------------------------------------------------
+ *
+ * `make test-bench`, and releasetest runs it first in its SEQUENTIAL
+ * phase -- not inside `make test`, which is itself one gate of a 20-way
+ * parallel sweep.  Measured under -j32 beside nineteen other compiles
+ * this probe reported 4.99x; solo, on the same tree, 1.46x.  A wall-clock
+ * number taken on a saturated box is the box's number.
+ *
+ * Even solo it is noisy: a shared machine, a 21-millisecond workload.
+ * The ceilings carry slack for that, which is why they are not pinned at
+ * exactly the measured ratio. */
 
 #define _POSIX_C_SOURCE 200809L
 
