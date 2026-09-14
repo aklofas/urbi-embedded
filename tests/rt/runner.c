@@ -14,6 +14,7 @@ extern void rt_obj_suite(void);
 extern void rt_list_suite(void);
 extern void rt_strand_suite(void);
 extern void rt_exec_suite(void);
+extern void rt_unwind_suite(void);
 extern void rt_api_suite(void);
 extern void rt_realm_suite(void);
 extern void rt_leaks_suite(void);
@@ -26,6 +27,7 @@ int main(void) {
     rt_run("list", rt_list_suite);
     rt_run("strand", rt_strand_suite);
     rt_run("exec", rt_exec_suite);
+    rt_run("unwind", rt_unwind_suite);
     rt_run("api", rt_api_suite);
     rt_run("realm", rt_realm_suite);
     rt_run("leaks", rt_leaks_suite);
