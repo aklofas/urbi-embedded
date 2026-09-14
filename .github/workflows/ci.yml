@@ -14,50 +14,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [test, test-asan, test-ubsan, test-debug, test-switch, test-trace, test-trace-compiled-out, test-perf-counters]
+        mode: [test, test-asan, test-ubsan, test-debug, test-switch]
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y gcc make
       - name: Build and test
         run: make ${{ matrix.mode }}
-
-  tooling:
-    name: tooling subsystem (trace + perf, REPL + host tooling)
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y gcc make gdb python3
-      - name: trace + REPL combined build (session + Debug.trace taps)
-        run: |
-          make clean
-          make URBI_ENABLE_REPL=1 \
-            CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_TRACE=1 -DURBI_ENABLE_REPL=1" \
-            test
-      - name: perf-counters + REPL combined build (Debug.profile / Debug.gc seam)
-        run: |
-          make clean
-          make URBI_ENABLE_REPL=1 \
-            CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PERF_COUNTERS=1 -DURBI_ENABLE_REPL=1" \
-            test
-      - name: host trace tooling — decoder unit test
-        run: make test-trace-decode
-      - name: host trace tooling — capture end-to-end
-        run: make test-trace-capture
-      - name: host trace tooling — GDB walkers smoke
-        run: make test-gdb
-      - name: memory debug — build + unit detectors
-        run: make test-mem-debug
-      - name: memory debug — GDB owner-tag walkers
-        run: make test-gdb-memdebug
-      - name: ROS2 bridge (mock) tests
-        run: make test-ros2
-      - name: Robotics facet overlay tests
-        run: make test-urobotics
-      - name: facet<->ROS2 binding tests
-        run: make test-ros-urobotics
 
   stdlib-bytecode-fresh:
     name: stdlib bytecode freshness (W5)
@@ -69,172 +32,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc make
       - name: Build and check stdlib freshness
         run: make test-stdlib-bytecode-fresh
-
-  cross-arm:
-    name: cross-compile (ARM Cortex-M7)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install cross toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
-      - name: Cross-compile
-        run: make cross-arm
-      - name: Inspect archive
-        run: arm-none-eabi-ar t build/arm-cortex-m7/liburbi.a
-
-  cross-stm32f4:
-    name: cross-compile (STM32F4 / Cortex-M4F)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install cross toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
-      - name: Fetch STM32CubeF4 HAL (Drivers only, sparse)
-        run: |
-          # Sparse clone of the subtrees the mandelbrot app needs (~52 MB
-          # vs 181 MB full-recursive). Cloned to ../tools/stm32cube-f4 so
-          # the app Makefile's relative path (../../../../tools/stm32cube-f4)
-          # resolves from examples/stm32f4/mandelbrot/ inside the checkout.
-          # The HAL, CMSIS device, and BSP trees are git SUBMODULES in the
-          # Cube repo — the sparse checkout alone yields empty directories;
-          # each needed submodule is initialized explicitly below.
-          # --skip-checks: on a blob-filtered sparse clone the nested paths
-          # are not materialized yet, and git >= 2.54 rejects them as cone
-          # paths without it.
-          git clone --depth 1 --filter=blob:none --no-checkout --branch v1.28.2 \
-              https://github.com/STMicroelectronics/STM32CubeF4.git \
-              ../tools/stm32cube-f4
-          git -C ../tools/stm32cube-f4 sparse-checkout set --skip-checks \
-              Drivers/STM32F4xx_HAL_Driver \
-              Drivers/BSP/STM32F429I-Discovery \
-              Drivers/BSP/Components/ili9341 \
-              Drivers/BSP/Components/l3gd20 \
-              Drivers/BSP/Components/Common \
-              Drivers/CMSIS/Device/ST/STM32F4xx \
-              Drivers/CMSIS/Include \
-              Utilities/Fonts
-          git -C ../tools/stm32cube-f4 checkout v1.28.2
-          git -C ../tools/stm32cube-f4 submodule update --init --depth 1 \
-              Drivers/STM32F4xx_HAL_Driver \
-              Drivers/CMSIS/Device/ST/STM32F4xx \
-              Drivers/BSP/STM32F429I-Discovery \
-              Drivers/BSP/Components/ili9341 \
-              Drivers/BSP/Components/l3gd20 \
-              Drivers/BSP/Components/Common
-          # Fail HERE, loudly, if the layout drifts — not at compile time.
-          test -f ../tools/stm32cube-f4/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h
-          test -f ../tools/stm32cube-f4/Drivers/CMSIS/Include/core_cm4.h
-          test -f ../tools/stm32cube-f4/Utilities/Fonts/fonts.h
-          test -f ../tools/stm32cube-f4/Drivers/BSP/Components/Common/lcd.h
-      - name: Cross-compile (full)
-        run: make cross-stm32f4
-      - name: Build stm32f4 example app
-        run: make test-cross-stm32f4-app
-      - name: Cross-compile (bytecode-only + freestanding gate)
-        run: make cross-stm32f4-bytecode-only
-      - name: Inspect archive
-        run: arm-none-eabi-ar t build/arm-cortex-m4/liburbi.a
-
-  cross-pico:
-    name: cross-compile (RP2040 / Cortex-M0+)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install cross toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
-      - name: Cross-compile (full)
-        run: make cross-pico
-      - name: Cross-compile (bytecode-only + freestanding gate)
-        run: make cross-pico-bytecode-only
-      - name: Freestanding signature golden
-        run: make test-cross-pico-freestanding-golden
-      - name: Inspect archive
-        run: arm-none-eabi-ar t build/arm-cortex-m0plus/liburbi.a
-
-  cross-pico-repl:
-    name: cross-compile (RP2040 / cooperative REPL + example .elf)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install cross toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi cmake
-      - name: Clone pico-sdk
-        run: |
-          git clone --depth 1 --branch 2.2.0 \
-              https://github.com/raspberrypi/pico-sdk.git ../tools/pico-sdk
-          git -C ../tools/pico-sdk submodule update --init --depth 1
-      - name: Cross-compile liburbi.a (cooperative REPL)
-        run: make cross-pico-repl
-      - name: Build repl_demo.elf
-        run: make test-cross-pico-repl-elf
-      - name: Inspect archive + ELF footprint
-        run: |
-          arm-none-eabi-size --totals build/arm-cortex-m0plus-repl/liburbi.a
-          arm-none-eabi-size examples/pico/repl_demo/build/repl_demo.elf
-      - name: Footprint cap gate (FLASH + RAM)
-        run: make test-footprint-cap
-
-  cross-riscv:
-    name: cross-compile (RISC-V rv32imc)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install cross toolchain (xpack riscv-none-elf-gcc)
-        run: |
-          # Ubuntu's gcc-riscv64-unknown-elf package ships the compiler
-          # without a newlib sysroot, so `#include <string.h>` fails.
-          # xpack's riscv-none-elf-gcc bundles newlib headers + libs.
-          # The Makefile's `cross-riscv` target hardcodes the
-          # `riscv64-unknown-elf-*` tool prefix; symlink xpack's tools
-          # so the Makefile stays unchanged.
-          XPACK_VER=15.2.0-1
-          XPACK_URL="https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${XPACK_VER}/xpack-riscv-none-elf-gcc-${XPACK_VER}-linux-x64.tar.gz"
-          curl -fsSL "$XPACK_URL" -o /tmp/riscv-xpack.tar.gz
-          sudo mkdir -p /opt/riscv-xpack
-          sudo tar xf /tmp/riscv-xpack.tar.gz -C /opt/riscv-xpack --strip-components=1
-          # Expose the xpack bin dir and create the riscv64-unknown-elf-* aliases.
-          echo "/opt/riscv-xpack/bin" >> "$GITHUB_PATH"
-          for tool in gcc ar nm objcopy objdump size strip; do
-            sudo ln -sf "/opt/riscv-xpack/bin/riscv-none-elf-${tool}" \
-                        "/opt/riscv-xpack/bin/riscv64-unknown-elf-${tool}"
-          done
-      - name: Cross-compile
-        run: make cross-riscv
-      - name: Inspect archive
-        run: riscv64-unknown-elf-ar t build/riscv-rv32imc/liburbi.a
-
-  cross-esp32s3:
-    name: cross-compile (ESP32-S3, Xtensa LX7)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # espressif/idf:v6.0.1 ships ESP-IDF + xtensa-esp-elf toolchain
-    # pre-installed at /opt/esp/idf/. Version matches the pin in
-    # components/esp32-idf/idf_component.yml.
-    container: espressif/idf:v6.0.1
-    steps:
-      - uses: actions/checkout@v5
-      - name: Cross-compile (full mode)
-        run: |
-          . /opt/esp/idf/export.sh
-          make cross-esp32s3-full
-      - name: Cross-compile (bytecode-only mode)
-        run: |
-          . /opt/esp/idf/export.sh
-          make cross-esp32s3-bytecode-only
-      - name: Verify freestanding signature golden
-        run: |
-          . /opt/esp/idf/export.sh
-          make test-cross-esp32s3-freestanding-golden
-      - name: Inspect archives
-        run: |
-          . /opt/esp/idf/export.sh
-          xtensa-esp-elf-ar t build/cross-esp32s3-full/liburbi.a
-          xtensa-esp-elf-ar t build/cross-esp32s3-bytecode-only/liburbi.a
 
   lint:
     name: lint
@@ -307,17 +104,6 @@ jobs:
       - name: Run determinism gate
         run: make test-determinism
 
-  gc-pause-gate:
-    name: gc pause gate (<1 ms per slice)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y gcc make
-      - name: Run GC pause gate
-        run: make test-gc-pause
-
   docs-check:
     name: docs-check
     runs-on: ubuntu-latest
@@ -366,7 +152,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc make clang clang-tools-18 clang-tidy-18 clang-tidy \
-              cppcheck valgrind gcovr gdb python3 libclang-rt-18-dev
+              cppcheck valgrind gcovr libclang-rt-18-dev
           npm install -g markdownlint-cli2@0.13 markdown-link-check@3.12
       - name: Run releasetest
         run: make releasetest

@@ -4,6 +4,27 @@
 # CONTRIBUTING.md "Aux layer governance" and include/urbi/aux.h.
 AUX_SRCS := src/urbi_aux.c
 
+# refound/core: parked sources.  Filtered out of the default source lists
+# below so the files stay in the tree (a later v1.x REPL-server /
+# trace-tooling re-attachment reads them) but never enter the build.
+# The REPL network listener, session auth, and outbound queue only serve
+# the networked REPL server (parked); urepl.c/urepl_dispatch.c reference
+# their headers but nothing in this build calls into them, so they compile
+# cleanly into the archive without ever being pulled into a link.
+# src/runtime/utrace_format.c, uperf.c, and umemdebug.c compile to empty
+# translation units whenever their feature macro is off (no unconditional
+# public-API stub, unlike utrace.c's URBI_TRACE=0 branch) — parking them
+# changes nothing about the default archive.
+REPL_PARKED_SRCS := \
+    src/repl/urepl_listener.c \
+    src/repl/urepl_auth.c \
+    src/repl/urepl_queue.c \
+    $(wildcard src/repl/urepl_transport_*.c)
+RUNTIME_PARKED_SRCS := \
+    src/runtime/utrace_format.c \
+    src/runtime/uperf.c \
+    src/runtime/umemdebug.c
+
 # URBI_BYTECODE_ONLY=1 promotes the v0.6.1 smoke approximation to a real
 # pure-strip build: src/lex/, src/parse/, src/emit/ are removed from the
 # source list.  Source-taking public entry points (urbi_compile_source,
@@ -27,20 +48,13 @@ ifeq ($(URBI_ENABLE_REPL),1)
     $(error URBI_ENABLE_REPL=1 is incompatible with URBI_BYTECODE_ONLY=1)
   endif
   CPPFLAGS += -DURBI_ENABLE_REPL=1
-  REPL_SRCS := $(wildcard src/repl/*.c)
-  # v0.9.4-followup: cooperative-only filter (Pico, bare-metal STM32, etc.)
-  # When URBI_REPL_COOPERATIVE_ONLY=1, drop the POSIX-only TUs: TCP/Unix/PTY
-  # listener (pthread + eventfd + sockets) and socket transports. Embedder
-  # drives serve_step from main loop; no listener thread needed.
   ifeq ($(URBI_REPL_COOPERATIVE_ONLY),1)
     CPPFLAGS += -DURBI_REPL_COOPERATIVE_ONLY=1
-    REPL_SRCS := $(filter-out \
-        src/repl/urepl_transport_tcp.c \
-        src/repl/urepl_transport_unix.c \
-        src/repl/urepl_transport_pty.c \
-        src/repl/urepl_auth.c, \
-        $(REPL_SRCS))
   endif
+  # refound/core: the listener, auth, queue, and transports are parked
+  # (see REPL_PARKED_SRCS above) regardless of URBI_REPL_COOPERATIVE_ONLY —
+  # that flag now only controls the CPPFLAGS define kept-file callers read.
+  REPL_SRCS := $(filter-out $(REPL_PARKED_SRCS),$(wildcard src/repl/*.c))
 else
   REPL_SRCS :=
 endif
@@ -111,7 +125,7 @@ SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/changed/*.c) \
        $(wildcard src/chunk/*.c) \
        $(wildcard src/value/*.c) \
-       $(wildcard src/runtime/*.c) \
+       $(filter-out $(RUNTIME_PARKED_SRCS),$(wildcard src/runtime/*.c)) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c) \
        $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(wildcard src/stdlib/*.c)) \
@@ -171,6 +185,14 @@ LIB := $(BUILDDIR)/liburbi.a
 LIBURBI_AUX := $(BUILDDIR)/liburbi_aux.a
 RUNNER := $(BUILDDIR)/tests/unit/runner
 
+# refound/core: the new runtime core (src/rt/) and its standalone test
+# runner.  Empty today (src/rt/ holds only README.md); Task 2 onward adds
+# src/rt/*.c and appends a suite + extern to tests/rt/runner.c.
+RT_SRCS   := $(wildcard src/rt/*.c)
+RT_OBJS   := $(patsubst %.c,$(BUILDDIR)/%.o,$(RT_SRCS))
+RT_TEST_SRCS := $(wildcard tests/rt/test_*.c) tests/rt/runner.c
+RT_LIB    := $(BUILDDIR)/liburbi-rt.a
+
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
 # v1.0 (B6a) / refactor-3 BLD-05: hide internal cross-TU symbols from the
 # export surface.  Lives in a dedicated always-applied variable — NOT a
@@ -182,29 +204,6 @@ CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
 # include/urbi/*.h headers.
 URBI_VIS_FLAGS := -fvisibility=hidden
 CPPFLAGS += -Iinclude -Isrc -Itests/unit
-
-# PERF-05/06/07: the single small-footprint knob preset.  One authoritative
-# definition, applied verbatim to every non-host cross target below so the
-# embedded builds share ONE tuning story instead of drifting per-target -D
-# lists.  Each macro is #ifndef-overridable at its grounded define site:
-#   UVM_STACK_CAP          (runtime/uframe.h)    2048 -> 512  register slots
-#   UVM_MAX_FRAMES         (runtime/uframe.h)    64   -> 24   call frames
-#   URBI_WATCHER_POOL_SIZE (watcher/uwatcher.h)  64   -> 16   watcher slab
-#   URBI_EVENT_RING_DEPTH  (event/uevent_ring.h) 256  -> 32   ISR ring depth
-#   URBI_IC_ENTRIES_PER_SITE (object/uic.h)      4    -> 2    inline-cache ways
-#   URBI_CLEANUP_MAX       (runtime/ucleanup.h)  64   -> 16   cleanup slots
-# PERF-06: the UVM_STACK_CAP + UVM_MAX_FRAMES cut is the bulk of the win —
-# per-strand cost drops from 36.7 KB (default) toward ~9.9 KB (see
-# docs/embedded/footprint-tunables.md).  UStrand's layout pin (CHSTR-041,
-# ustrand.h) and the UIC pin (uic.h) are both guarded on 64-bit pointers /
-# 4-way IC, so neither fires on these 32-bit cross targets under the preset.
-FOOTPRINT_CFLAGS := \
-    -DUVM_STACK_CAP=512 \
-    -DUVM_MAX_FRAMES=24 \
-    -DURBI_WATCHER_POOL_SIZE=16 \
-    -DURBI_EVENT_RING_DEPTH=32 \
-    -DURBI_IC_ENTRIES_PER_SITE=2 \
-    -DURBI_CLEANUP_MAX=16
 
 # refactor-3 BLD-04: flag stamp.  Any change to the compiler, CFLAGS, or
 # CPPFLAGS invalidates every object in this BUILDDIR — the root cause of the
@@ -242,6 +241,19 @@ $(LIBURBI_AUX): $(AUX_OBJS)
 	$(AR) rcs $@ $^
 
 aux: $(LIBURBI_AUX)
+
+$(RT_LIB): $(RT_OBJS)
+	ar rcs $@ $^
+
+$(BUILDDIR)/tests/rt/runner: $(RT_TEST_SRCS) $(RT_LIB)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/rt -o $@ $(RT_TEST_SRCS) $(RT_LIB) -lm
+
+.PHONY: test-rt check-rt-layering
+test-rt: $(BUILDDIR)/tests/rt/runner check-rt-layering
+	$<
+check-rt-layering:
+	sh tests/scripts/check_rt_layering.sh
 
 # Core archive without aux. Aux is hosted-only (uses <stdio.h>, etc.);
 # cross-compile freestanding targets build `core` instead of `all` because
@@ -329,18 +341,6 @@ $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
 
 urbi-bin: $(BUILDDIR)/urbi
 
-# urbi-trace — the urbi CLI built with URBI_TRACE=1 so --trace/--trace-out work
-# (the default CLI is trace-off, so its trace control API resolves to no-op
-# stubs).  Built into build/host-trace via a recursive make with the trace
-# flag, mirroring the test-trace pattern; the binary lands at
-# build/host-trace/urbi.
-.PHONY: urbi-trace
-urbi-trace:
-	$(MAKE) TARGET=host-trace \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_TRACE=1" \
-		urbi-bin
-	@echo "urbi-trace: built build/host-trace/urbi (URBI_TRACE=1)"
-
 # --- chk-host-driver ----------------------------------------------------
 #
 # chk-host-driver — bounded test host-driver for `.chk` fixtures whose
@@ -362,38 +362,6 @@ $(BUILDDIR)/chk-host-driver: $(BUILDDIR)/tests/integration/chk_host_driver.o $(L
 	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tests/integration/chk_host_driver.o $(LIB) -lm
 
 chk-host-driver: $(BUILDDIR)/chk-host-driver
-
-# --- v0.9.1 REPL CLIs (URBI_ENABLE_REPL=1 only) ------------------------
-#
-# urbi-server: headless network REPL daemon — boots a UVM, optionally
-#   runs a boot script, registers the TCP transport, drives urbi_step()
-#   until SIGINT/SIGTERM.  Links against liburbi.a + libm.
-#
-# urbi-send: NDJSON client utility — pure POSIX sockets + libc.  Does
-#   NOT link against liburbi.  Gated behind URBI_ENABLE_REPL=1 only to
-#   avoid maintaining a binary nobody can talk to (server side disabled).
-
-ifeq ($(URBI_ENABLE_REPL),1)
-URBI_SERVER := $(BUILDDIR)/urbi-server
-URBI_SEND   := $(BUILDDIR)/urbi-send
-
-$(BUILDDIR)/tools/urbi-server.o: tools/urbi-server.c $(FLAGSTAMP) | $(BUILDDIR)/tools
-	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -Itools -MMD -MP -c -o $@ $<
-
-$(URBI_SERVER): $(BUILDDIR)/tools/urbi-server.o $(LIB)
-	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi-server.o $(LIB) -lm
-
-$(BUILDDIR)/tools/urbi-send.o: tools/urbi-send.c $(FLAGSTAMP) | $(BUILDDIR)/tools
-	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
-
-$(URBI_SEND): $(BUILDDIR)/tools/urbi-send.o
-	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi-send.o
-
-urbi-server-bin: $(URBI_SERVER)
-urbi-send-bin:   $(URBI_SEND)
-
-all: $(URBI_SERVER) $(URBI_SEND)
-endif
 
 # --- Stdlib bake tool (host-only) ---------------------------------------
 #
@@ -607,18 +575,6 @@ test-integration: $(BUILDDIR)/urbi
 test-batch-errors: $(BUILDDIR)/urbi
 	@URBI=$(BUILDDIR)/urbi bash tests/scripts/test-batch-errors.sh
 
-# v0.9.1: urbi-server end-to-end smoke (URBI_ENABLE_REPL=1 only).  Spins
-# up the daemon on a high port, runs `1+2` via NDJSON, expects the
-# `"value":"3"` envelope back, then SIGTERMs the daemon.  Uses python3
-# as the TCP client; skips cleanly if python3 is missing.
-ifeq ($(URBI_ENABLE_REPL),1)
-test-urbi-server-smoke: $(URBI_SERVER)
-	BUILD=$(BUILDDIR) tests/integration/urbi_server_smoke.sh
-else
-test-urbi-server-smoke:
-	@echo "test-urbi-server-smoke: URBI_ENABLE_REPL=0; skipping"
-endif
-
 # --- .chk conformance fixtures -----------------------------------------
 #
 # test-chk iterates all tests/chk/**/*.chk against the built urbi binary
@@ -633,8 +589,7 @@ endif
 # in-process driver was removed in the Phase 0 runtime-internals test
 # cleanup; REPL is currently a parked feature pending v1.x re-attachment.
 # Excluded here.
-# refactor-3 CHK-01/04: per-outcome tally.  PASS(0) / SKIP(3, preset-gated;
-# covered by test-chk-ros + test-chk-urobotics + test-chk-ros-urobotics) /
+# refactor-3 CHK-01/04: per-outcome tally.  PASS(0) / SKIP(3, preset-gated) /
 # PLACEHOLDER(4, annotated blocked:/deferred:/dropped: specification records)
 # are healthy; VACUOUS(5, unannotated empty fixture) and FAIL(everything
 # else) fail the suite.
@@ -666,123 +621,15 @@ test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
 test-chk-runner:
 	@bash tests/integration/test_run_chk_runner.sh
 
-# test-chk-ros — runs all tests/chk/ros/*.chk under URBI_BUILD_PRESET=ros.
-# Every fixture must RUN and PASS; a SKIP is a gate failure (the vacuous-
-# fixture trap: preset mismatch silently empties coverage).
-.PHONY: test-chk-ros
-test-chk-ros: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
-	@count=0; \
-	for f in tests/chk/ros/*.chk; do \
-	    count=$$((count + 1)); \
-	    out=$$(URBI_BUILD_PRESET=ros tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f" 2>&1); rc=$$?; \
-	    echo "$$out"; \
-	    if [ $$rc -ne 0 ]; then \
-	        echo "test-chk-ros: FAIL — $$f rc=$$rc under preset ros (SKIP/placeholder counts as failure here)"; \
-	        exit 1; \
-	    fi; \
-	done; \
-	echo "$$count ros chk fixture(s) ran + passed under preset ros"
-
-test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-urbi-server-smoke test-batch-errors
+test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-batch-errors test-rt check-rt-layering
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
 
 # unit-runner — link the unit-test runner WITHOUT running it or the
-# integration/chk gates.  Used by the GDB smoke gate (test-gdb) to produce a
-# debug (-O0 -g) inferior with readable symbols.  Mirrors the link in `test`.
+# integration/chk gates.  Mirrors the link in `test`.
 .PHONY: unit-runner
 unit-runner: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
-# Note: test-port-stm32f4 used to be in the line above but was pulled out to
-# avoid a parallel-make race - it builds host-side stub binaries into a
-# fixed `build/port_stm32f4/` path with no $(TARGET) suffix, so every
-# releasetest Phase 1 variant (test / test-asan / test-ubsan / test-debug
-# / test-switch) raced to write the same binary, producing intermittent
-# "Text file busy" / "Permission denied" failures under -j. Phase 1 now
-# invokes test-port-stm32f4 once as a separate gate.
-
-# v0.8.2: host-side unit tests for STM32F4 port shims, using mock BSP.
-# Each test compiles a single port shim TU against the mock BSP layer.
-# URBI_PORT_TEST=1 selects the mock-include path in the port shim TUs.
-PORT_STM32F4_TESTS := \
-	test_port_allocator \
-	test_port_time \
-	test_port_writer \
-	test_port_diag \
-	test_port_lcd \
-	test_port_gyro \
-	test_port_button
-
-PORT_STM32F4_TEST_DEPS_COMMON := \
-	tests/port_stm32f4/mock_bsp.c \
-	src/runtime/uabi_guards.c
-
-# BLD-CI-6: -MMD -MP so a header edit under tests/port_stm32f4/ or
-# components/stm32f4-hal-baremetal/ rebuilds the affected port test.  Each
-# rule compiles several sources straight to a binary in one cc invocation,
-# so gcc emits a single build/port_stm32f4/<test>.d (named after -o $@,
-# capturing the last-listed source's headers — the port shim under test).
-# The scoped sinclude below pulls these in; they live outside $(BUILDDIR)
-# because the port binaries use a fixed TARGET-less path.
-PORT_STM32F4_CFLAGS := -std=c99 -Wall -Wextra \
-	-DURBI_PORT_TEST=1 \
-	-MMD -MP \
-	-I tests/port_stm32f4 \
-	-I include \
-	-I components/stm32f4-hal-baremetal/include
-
-sinclude $(shell find build/port_stm32f4 -name '*.d' 2>/dev/null)
-
-# Each test gets its own binary in build/port_stm32f4/
-build/port_stm32f4/test_port_allocator: tests/port_stm32f4/test_port_allocator.c \
-	$(PORT_STM32F4_TEST_DEPS_COMMON) \
-	components/stm32f4-hal-baremetal/src/port/port_allocator.c
-	@mkdir -p $(@D)
-	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
-
-build/port_stm32f4/test_port_time: tests/port_stm32f4/test_port_time.c \
-	$(PORT_STM32F4_TEST_DEPS_COMMON) \
-	components/stm32f4-hal-baremetal/src/port/port_time.c
-	@mkdir -p $(@D)
-	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
-
-build/port_stm32f4/test_port_writer: tests/port_stm32f4/test_port_writer.c \
-	$(PORT_STM32F4_TEST_DEPS_COMMON) \
-	components/stm32f4-hal-baremetal/src/port/port_writer.c
-	@mkdir -p $(@D)
-	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
-
-build/port_stm32f4/test_port_diag: tests/port_stm32f4/test_port_diag.c \
-	$(PORT_STM32F4_TEST_DEPS_COMMON) \
-	components/stm32f4-hal-baremetal/src/port/port_writer.c \
-	components/stm32f4-hal-baremetal/src/port/port_diag.c
-	@mkdir -p $(@D)
-	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
-
-build/port_stm32f4/test_port_lcd: tests/port_stm32f4/test_port_lcd.c \
-	$(PORT_STM32F4_TEST_DEPS_COMMON) \
-	components/stm32f4-hal-baremetal/src/port/port_lcd.c \
-	$(LIB)
-	@mkdir -p $(@D)
-	$(CC) $(PORT_STM32F4_CFLAGS) $^ -lm -o $@
-
-build/port_stm32f4/test_port_gyro: tests/port_stm32f4/test_port_gyro.c \
-	$(PORT_STM32F4_TEST_DEPS_COMMON) \
-	components/stm32f4-hal-baremetal/src/port/port_gyro.c \
-	$(LIB)
-	@mkdir -p $(@D)
-	$(CC) $(PORT_STM32F4_CFLAGS) $^ -lm -o $@
-
-build/port_stm32f4/test_port_button: tests/port_stm32f4/test_port_button.c \
-	$(PORT_STM32F4_TEST_DEPS_COMMON) \
-	components/stm32f4-hal-baremetal/src/port/port_button.c
-	@mkdir -p $(@D)
-	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
-
-.PHONY: test-port-stm32f4
-test-port-stm32f4: $(addprefix build/port_stm32f4/, $(PORT_STM32F4_TESTS))
-	@for t in $^; do echo "Running $$t..."; $$t || exit 1; done
-	@echo "All STM32F4 port tests PASS"
 
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi
@@ -823,127 +670,6 @@ test-embedding-guide: $(LIB) $(LIBURBI_AUX)
 .PHONY: test-stdlib-bytecode-fresh
 test-stdlib-bytecode-fresh: tools/urbi-compile-stdlib
 	@./tests/scripts/check-stdlib-fresh.sh
-
-# v0.11.2: host trace-tooling decoder unit test.  Runs the Python URBT decoder
-# (tools/urbi-trace-decode.py) against constructed dumps and asserts the
-# Chrome Trace JSON.  Skips cleanly if python3 is missing (host-only gate).
-.PHONY: test-trace-decode
-test-trace-decode:
-	@sh tests/scripts/check-trace-decode.sh
-
-# v0.11.2: host trace-tooling end-to-end gate.  Builds the URBI_TRACE=1 CLI,
-# captures a tiny run to a URBT dump, decodes it, and asserts valid Chrome
-# Trace JSON.  Skips cleanly if python3 is missing.
-.PHONY: test-trace-capture
-# refactor-3 BLD-02a: depend on test-trace (same build/host-trace tree, same
-# CFLAGS string) instead of urbi-trace, so releasetest Phase 1's -j fanout
-# cannot run two recursive makes into build/host-trace concurrently.
-# test-trace's recursive `make test` builds build/host-trace/urbi as a side
-# effect (test-chk prerequisite), which is the binary the capture script uses.
-test-trace-capture: test-trace
-	@sh tests/scripts/check-trace-capture.sh
-
-# v0.11.2: GDB walker smoke gate.  Loads tools/gdb/urbi.py against a debug
-# (-O0 -g) unit runner and asserts the walkers run without a Python error.
-# Skips cleanly if gdb is missing (net-new tooling in this repo).
-.PHONY: test-gdb
-test-gdb:
-	@sh tests/scripts/check-gdb.sh
-
-# test-gdb-memdebug — GDB owner-tag walkers against a -DURBI_MEM_DEBUG=1 runner.
-# Asserts urbi-allocs surfaces allocation sites (owner sidecar populated).
-.PHONY: test-gdb-memdebug
-test-gdb-memdebug:
-	@MEMDBG=1 sh tests/scripts/check-gdb.sh
-
-# v0.12.0: ROS2 bridge (mock) gate.  Builds the ros-enabled host binary,
-# runs the full unit suite (which includes ros bridge unit tests), then
-# runs all tests/chk/ros/*.chk under preset ros so no fixture is skipped.
-# Own TARGET= keeps Phase 1 -j parallelism race-free.
-.PHONY: test-ros2
-test-ros2:
-	$(MAKE) TARGET=host-ros2 URBI_ENABLE_ROS2=1 \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" \
-		test test-chk-ros
-
-# v0.12.0: ROS2 codegen + gate script targets.  Mirror the test-gdb pattern
-# (delegate entirely to a script; skip-if-absent logic lives in the script).
-.PHONY: check-ros-gate
-check-ros-gate:
-	@sh tests/scripts/check-ros-gate.sh
-
-.PHONY: check-rosgen
-check-rosgen:
-	@sh tests/scripts/check-rosgen.sh
-
-# test-chk-urobotics — runs all tests/chk/urobotics/*.chk under
-# URBI_BUILD_PRESET=urobotics.  Every fixture must RUN and PASS; a SKIP is a
-# gate failure (the vacuous-fixture trap: preset mismatch silently empties
-# coverage).
-.PHONY: test-chk-urobotics
-test-chk-urobotics: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
-	@count=0; \
-	for f in tests/chk/urobotics/*.chk; do \
-	    count=$$((count + 1)); \
-	    out=$$(URBI_BUILD_PRESET=urobotics tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f" 2>&1); rc=$$?; \
-	    echo "$$out"; \
-	    if [ $$rc -ne 0 ]; then \
-	        echo "test-chk-urobotics: FAIL — $$f rc=$$rc under preset urobotics (SKIP/placeholder counts as failure here)"; \
-	        exit 1; \
-	    fi; \
-	done; \
-	echo "$$count urobotics chk fixture(s) ran + passed under preset urobotics"
-
-# v0.12.2: Standard Robotics API overlay gate.  Builds the overlay-enabled host
-# binary (TARGET=host-urobotics — never URBI_ENABLE_UROBOTICS=1 on bare
-# TARGET=host: the build/host stale-object collision, design-trap v0.12.0-H),
-# runs the unit suite, then all tests/chk/urobotics/*.chk under preset
-# urobotics so no fixture is silently skipped.
-.PHONY: test-urobotics
-test-urobotics:
-	$(MAKE) TARGET=host-urobotics URBI_ENABLE_UROBOTICS=1 \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" \
-		test test-chk-urobotics
-
-# test-chk-ros-urobotics — runs all tests/chk/ros-urobotics/*.chk under
-# URBI_BUILD_PRESET=ros-urobotics.  Every fixture must RUN and PASS; a SKIP is
-# a gate failure (the vacuous-fixture trap: preset mismatch silently empties
-# coverage).
-.PHONY: test-chk-ros-urobotics
-test-chk-ros-urobotics: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
-	@count=0; \
-	for f in tests/chk/ros-urobotics/*.chk; do \
-	    count=$$((count + 1)); \
-	    out=$$(URBI_BUILD_PRESET=ros-urobotics tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f" 2>&1); rc=$$?; \
-	    echo "$$out"; \
-	    if [ $$rc -ne 0 ]; then \
-	        echo "test-chk-ros-urobotics: FAIL — $$f rc=$$rc under preset ros-urobotics (SKIP/placeholder counts as failure here)"; \
-	        exit 1; \
-	    fi; \
-	done; \
-	echo "$$count ros-urobotics chk fixture(s) ran + passed under preset ros-urobotics"
-
-# v0.12.3: facet<->ROS2 binding gate.  Builds with BOTH optional components on
-# (TARGET=host-ros-urobotics — never the flags on bare TARGET=host: v0.12.0-H),
-# runs the unit suite, then all tests/chk/ros-urobotics/*.chk under the combined
-# preset so no binding fixture is silently skipped.
-.PHONY: test-ros-urobotics
-test-ros-urobotics:
-	$(MAKE) TARGET=host-ros-urobotics URBI_ENABLE_ROS2=1 URBI_ENABLE_UROBOTICS=1 \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" \
-		test test-chk-ros-urobotics
-
-# B1/v0.12.1: Docker ros:jazzy integration harness.
-# Builds a derived image (copy-in only — never a host mount), compiles the
-# grounding spike inside the container, and asserts "PUBSUB got=42".
-# Skipped automatically when docker is absent.
-.PHONY: ros-integration
-ros-integration:
-	@command -v docker >/dev/null 2>&1 || { echo "ros-integration: docker not found — SKIP"; exit 0; }
-	@docker build -q -t urbi-ros-jazzy tests/integration/ros/ >/dev/null
-	@cid=$$(docker create --rm -w /src urbi-ros-jazzy bash tests/integration/ros/run-integration.sh); \
-	 docker cp . $$cid:/src; \
-	 docker start -a $$cid
 
 # W2/v0.10.3: public-header self-containment gate.
 # Compiles a minimal external program with ONLY -Iinclude (no -Isrc) to
@@ -1017,23 +743,6 @@ test-o2:
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O2 -g" \
 		test
 
-# test-trace — full suite under URBI_TRACE=1 (trace subsystem compiled in,
-# all channels default-OFF).  Verifies the trace build is green and that the
-# ring / tracepoints / bring-up primitives / Debug.trace marker behave.  Own
-# TARGET= so Phase 1 -j parallelism stays race-free.
-.PHONY: test-trace
-test-trace:
-	$(MAKE) TARGET=host-trace \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_TRACE=1" \
-		test
-
-# test-trace-compiled-out — proves the URBI_TRACE-OFF archive (default $(LIB))
-# carries no trace ring/emit internals.  The control-API stubs are present in
-# both modes by design and are excluded from the forbidden list.
-.PHONY: test-trace-compiled-out
-test-trace-compiled-out: $(LIB)
-	@sh tests/scripts/check-trace-compiled-out.sh $(LIB)
-
 # --- Determinism gate -------------------------------------------------------
 #
 # test-determinism builds and runs the full unit-test suite 100 times under
@@ -1060,25 +769,6 @@ test-determinism-default:
 
 test-determinism: test-determinism-default
 	@echo "=== Determinism gate: default preset × 100 runs PASS ==="
-
-# test-perf-counters — full suite under URBI_PERF_COUNTERS=1 (per-opcode/slot
-# counters compiled in; per-event GC counters are always-on).  Verifies the
-# perf build is green and that the counters increment + Debug.profile() seam
-# behave.  Own TARGET= so Phase 1 -j parallelism stays race-free.
-.PHONY: test-perf-counters
-test-perf-counters:
-	$(MAKE) TARGET=host-perf \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PERF_COUNTERS=1" \
-		test
-
-# test-mem-debug — full suite under URBI_MEM_DEBUG=1 (owner tags, trailing
-# redzone, poison-on-free + quarantine, handle/pin leak detection).  Own
-# TARGET= so Phase 1 -j parallelism stays race-free.
-.PHONY: test-mem-debug
-test-mem-debug:
-	$(MAKE) TARGET=host-memdbg \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g -DURBI_MEM_DEBUG=1" \
-		test
 
 # test-gc-stress — refactor-3 TEST-GAP-01: full suite under URBI_GC_STRESS=1
 # (synchronous full collection before EVERY GC-cell allocation — the
@@ -1152,10 +842,9 @@ test-corpus-sanitize:
 # --- Release test aggregate --------------------------------------------
 #
 # releasetest runs every host-side gate the CI matrix runs, in parallel.
-# Cross-compile jobs (cross-arm, cross-riscv) are excluded — their
-# toolchains are not universally installable. CI remains authoritative
-# for cross-compile verification; this target is for local pre-release
-# confidence that a branch will pass CI end-to-end.
+# Cross-compile, REPL-server, ROS2, urobotics, trace, perf-counters, and
+# mem-debug gates are parked (refound/core) and excluded — see
+# REPL_PARKED_SRCS / RUNTIME_PARKED_SRCS above.
 #
 # Runtime: ~5 minutes on a 32-core / 64 GB box (dominated by the two
 # valgrind passes; sanitizer variants and analysis run alongside them).
@@ -1192,21 +881,16 @@ test-corpus-sanitize:
 # hard-fail.
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
-    test-trace test-trace-compiled-out test-perf-counters \
-    test-trace-decode test-trace-capture test-gdb \
-    test-mem-debug test-gdb-memdebug test-gc-stress \
+    test-gc-stress \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism \
     test-bake-smoke test-bytecode-only test-freestanding-host \
     test-api-manifest test-aux-symbols \
-    test-embedding-guide test-external-embed-iinclude test-port-stm32f4 \
+    test-embedding-guide test-external-embed-iinclude \
     test-stdlib-bytecode-fresh \
-    test-ros2 check-ros-gate check-rosgen \
-    test-urobotics test-ros-urobotics \
     test-chk-runner test-fuzz-smoke test-o2
 # Phase 2: valgrind, running alone after Phase 1 finishes.
-# ros-integration is excluded from releasetest (container-only; needs docker).
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
 # (instrumented runner balloons from ~2 min solo to 40+ min under
@@ -1219,64 +903,8 @@ RELEASETEST_JOBS   ?= $(shell nproc)
 RELEASETEST_OUTPUT ?= target
 
 releasetest:
-	@detect() { \
-	     cc="$$1"; \
-	     command -v "$$cc" >/dev/null 2>&1 || { echo absent; return; }; \
-	     tmpc=$$(mktemp --suffix=.c); \
-	     tmpo=$$(mktemp --suffix=.o); \
-	     printf '#include <string.h>\nint main(void){return 0;}\n' > "$$tmpc"; \
-	     if "$$cc" -c -o "$$tmpo" "$$tmpc" 2>/dev/null; then \
-	         rm -f "$$tmpc" "$$tmpo"; echo present; \
-	     else \
-	         rm -f "$$tmpc" "$$tmpo"; echo broken; \
-	     fi; \
-	 }; \
-	 arm=$$(detect arm-none-eabi-gcc); \
-	 riscv=$$(detect riscv-none-elf-gcc); \
-	 esp=$$(detect xtensa-esp-elf-gcc); \
-	 echo "=== releasetest: cross-toolchain detection ==="; \
-	 phase0=""; \
-	 if [ "$$arm" = present ]; then \
-	     echo "  arm-none-eabi-gcc    : present  -> cross-arm + cross-stm32f4 + cross-pico + cross-pico-repl + test-freestanding(arm,stm32f4,pico) included"; \
-	     echo "    (test-cross-pico-freestanding-golden runs only under GHA - golden is captured against GHA's apt arm-none-eabi-gcc 13.2.1, image bake uses xpack 14.2.1; symbol set differs by ~1 libgcc helper. See design-risks: 'switch GHA ARM jobs to xpack')"; \
-	     echo "    (test-cross-pico-repl-elf NOT in Phase 0 - SKIP path would mask CI regressions; run explicitly when working on Pico REPL)"; \
-	     phase0="$$phase0 cross-arm-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl"; \
-	 elif [ "$$arm" = broken ]; then \
-	     echo "  arm-none-eabi-gcc    : broken   -> sysroot missing; skipped (install xpack via docs/cross-toolchain-setup.md)"; \
-	 else \
-	     echo "  arm-none-eabi-gcc    : absent   -> cross-arm + cross-stm32f4 skipped (GHA CI authoritative)"; \
-	 fi; \
-	 if [ "$$riscv" = present ]; then \
-	     echo "  riscv-none-elf-gcc   : present  -> cross-riscv + test-freestanding(riscv) included"; \
-	     phase0="$$phase0 cross-riscv-bytecode-only"; \
-	 elif [ "$$riscv" = broken ]; then \
-	     echo "  riscv-none-elf-gcc   : broken   -> sysroot missing; skipped (install xpack via docs/cross-toolchain-setup.md)"; \
-	 else \
-	     echo "  riscv-none-elf-gcc   : absent   -> cross-riscv skipped (GHA CI authoritative)"; \
-	 fi; \
-	 if [ "$$esp" = present ]; then \
-	     echo "  xtensa-esp-elf-gcc   : present  -> cross-esp32s3-bytecode-only + freestanding-golden included"; \
-	     phase0="$$phase0 cross-esp32s3-bytecode-only test-cross-esp32s3-freestanding-golden"; \
-	 elif [ "$$esp" = broken ]; then \
-	     echo "  xtensa-esp-elf-gcc   : broken   -> sysroot missing; skipped (install xpack via docs/cross-toolchain-setup.md)"; \
-	 else \
-	     echo "  xtensa-esp-elf-gcc   : absent   -> cross-esp32s3 + freestanding-golden skipped (GHA CI authoritative)"; \
-	 fi; \
-	 echo "For full local parity install xpack toolchains - see docs/cross-toolchain-setup.md."; \
-	 if [ -n "$$phase0" ]; then \
-	     echo "=== releasetest: Phase 0 (cross, sequential):$$phase0 ==="; \
-	     phase0_start=$$(date +%s); \
-	     $(MAKE) --no-print-directory $$phase0 || exit $$?; \
-	     for tc_archive in $$(echo "$$phase0" | tr ' ' '\n' | grep -E 'cross-(arm|stm32f4|riscv)-bytecode-only' | awk '{print "build/" $$0 "/liburbi.a"}'); do \
-	         sh tests/scripts/test-freestanding.sh "$$tc_archive" || exit $$?; \
-	     done; \
-	     phase0_end=$$(date +%s); \
-	     echo "=== releasetest: Phase 0 passed ($$((phase0_end - phase0_start)) s) ==="; \
-	 fi
 	@echo "=== releasetest: pre-fanout regeneration (serialized; refactor-3 BLD-02c) ==="
 	@$(MAKE) --no-print-directory tools/urbi-compile-stdlib src/stdlib/urbi_stdlib_bytecode.gen.c
-	@$(MAKE) --no-print-directory URBI_ENABLE_UROBOTICS=1 TARGET=host-urobotics src/urobotics/urobotics_bytecode.gen.c
-	@$(MAKE) --no-print-directory URBI_ENABLE_ROS2=1 TARGET=host-ros2 src/ros/generated/ros_msgs.gen.c src/ros/generated/ros_msgs.gen.h
 	@echo "=== releasetest: 2-phase sweep ==="
 	@echo "Phase 1 ($(words $(RELEASETEST_PHASE1)) gates, -j$(RELEASETEST_JOBS) -O$(RELEASETEST_OUTPUT)): $(RELEASETEST_PHASE1)"
 	@echo "Phase 2 ($(words $(RELEASETEST_PHASE2)) gate, sequential): $(RELEASETEST_PHASE2)"
@@ -1472,381 +1100,6 @@ fuzz-tools:
 	    exit 1; \
 	}
 
-# Cross-compile sanity (builds liburbi.a only; no test runner).
-cross-arm:
-	$(MAKE) TARGET=arm-cortex-m7 \
-		URBI_STDLIB_FLAVOR=4 \
-		CC=arm-none-eabi-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding \
-		        $(FOOTPRINT_CFLAGS) \
-		        -DURBI_STRAND_BUDGET_MAX=200 \
-		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_FLOAT_TYPE=4" \
-		AR=arm-none-eabi-ar \
-		core
-
-# PERF-07: cross-riscv now shares the FOOTPRINT_CFLAGS preset.  It previously
-# kept the 32 KB (2048-slot) default register stack and a deliberately larger
-# 64-slot watcher pool; both are folded into the one shared preset (512-slot
-# stack, 16-slot pool) so every non-host cross target tells the same tuning
-# story.  rv32imc has no RAM budget that requires the larger pool.
-cross-riscv:
-	$(MAKE) TARGET=riscv-rv32imc \
-		URBI_STDLIB_FLAVOR=4 \
-		CC=riscv64-unknown-elf-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding \
-		        $(FOOTPRINT_CFLAGS) \
-		        -DURBI_FLOAT_TYPE=4" \
-		AR=riscv64-unknown-elf-ar \
-		core
-
-# v0.8.2: cross-compile for STM32F4 (Cortex-M4F).  Same arm-none-eabi
-# toolchain as cross-arm; differs in -mcpu and FPU flags.
-#
-# UVM_STACK_CAP override: default 2048 slots × 16 B = 32 KB per strand
-# register stack is too big for a 1 MB SDRAM heap with frequent watcher-
-# body spawns (gyro_tick @ 50 ms).  512 slots × 16 B = 8 KB lets ~100+
-# alive strands coexist, eliminating the OOM bursts from the v0.8.2
-# bring-up.  Mandelbrot demo functions are shallow enough (~5 nested
-# calls × ~10 locals each) that 512 slots is comfortable; complex
-# embeddings can override per-build.
-cross-stm32f4:
-	$(MAKE) TARGET=arm-cortex-m4 \
-		URBI_STDLIB_FLAVOR=4 \
-		CC=arm-none-eabi-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
-		        -mcpu=cortex-m4 -mthumb \
-		        -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
-		        -ffreestanding \
-		        $(FOOTPRINT_CFLAGS) \
-		        -DURBI_STRAND_BUDGET_MAX=200 \
-		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_FLOAT_TYPE=4" \
-		AR=arm-none-eabi-ar \
-		core
-
-# v0.9.4: cross-compile for Raspberry Pi Pico (RP2040 / Cortex-M0+ / armv6-m).
-# Same arm-none-eabi toolchain as cross-arm; differs in -mcpu (no FPU,
-# no integer divide, libgcc soft-float helpers in play).
-#
-# UVM_STACK_CAP=512 mirrors cross-stm32f4 — Pico's 264 KB SRAM is even
-# tighter, so the same 8 KB register-stack-per-strand cap applies.
-cross-pico:
-	$(MAKE) TARGET=arm-cortex-m0plus \
-		URBI_STDLIB_FLAVOR=4 \
-		URBI_ENABLE_REPL=$(URBI_ENABLE_REPL) \
-		URBI_REPL_COOPERATIVE_ONLY=$(if $(filter 1,$(URBI_ENABLE_REPL)),1,) \
-		CC=arm-none-eabi-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
-		        -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft \
-		        -ffreestanding \
-		        $(FOOTPRINT_CFLAGS) \
-		        -DURBI_STRAND_BUDGET_MAX=200 \
-		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_FLOAT_TYPE=4" \
-		AR=arm-none-eabi-ar \
-		core
-
-# T19 / Wave 1: URBI_BYTECODE_ONLY=1 variants of the cross-arch builds.
-# Used by `make test-freestanding` (T18) to verify the freestanding subset
-# contract on the embedded targets (no hosted libc fallthrough).
-#
-# Distinct TARGET names give each variant its own $(BUILDDIR) tree
-# (build/cross-arm-bytecode-only/, build/cross-riscv-bytecode-only/), so
-# `make cross-arm cross-arm-bytecode-only` can coexist without rebuild
-# churn.  URBI_BYTECODE_ONLY=1 propagates through the recursive $(MAKE)
-# invocation (-DURBI_BYTECODE_ONLY=1 reaches the CFLAGS+CPPFLAGS append
-# in the top-of-Makefile gate).
-cross-arm-bytecode-only:
-	$(MAKE) URBI_BYTECODE_ONLY=1 \
-		TARGET=cross-arm-bytecode-only \
-		CC=arm-none-eabi-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding \
-		        -DURBI_BYTECODE_ONLY=1 \
-		        $(FOOTPRINT_CFLAGS) \
-		        -DURBI_STRAND_BUDGET_MAX=200 \
-		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_FLOAT_TYPE=4" \
-		AR=arm-none-eabi-ar \
-		core
-
-cross-riscv-bytecode-only:
-	$(MAKE) URBI_BYTECODE_ONLY=1 \
-		TARGET=cross-riscv-bytecode-only \
-		CC=riscv64-unknown-elf-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding \
-		        -DURBI_BYTECODE_ONLY=1 \
-		        $(FOOTPRINT_CFLAGS) \
-		        -DURBI_FLOAT_TYPE=4" \
-		AR=riscv64-unknown-elf-ar \
-		core
-
-# v0.8.2: STM32F4 bytecode-only freestanding variant.
-cross-stm32f4-bytecode-only:
-	$(MAKE) URBI_BYTECODE_ONLY=1 \
-		TARGET=cross-stm32f4-bytecode-only \
-		CC=arm-none-eabi-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
-		        -mcpu=cortex-m4 -mthumb \
-		        -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
-		        -ffreestanding \
-		        -DURBI_BYTECODE_ONLY=1 \
-		        $(FOOTPRINT_CFLAGS) \
-		        -DURBI_STRAND_BUDGET_MAX=200 \
-		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_FLOAT_TYPE=4" \
-		AR=arm-none-eabi-ar \
-		core
-	@sh tests/scripts/test-freestanding.sh build/cross-stm32f4-bytecode-only/liburbi.a
-
-# v0.9.4: bytecode-only variant of cross-pico — freestanding-clean
-# archive check ensures no libc symbols leak when URBI_BYTECODE_ONLY=1.
-#
-# PERF-07 exception: this target is a SYMBOL-SURFACE verification build whose
-# undefined-symbol set is pinned by the GHA-only golden
-# tests/golden/v0.9.4-pico-nm-bytecode-only.txt.  It deliberately does NOT
-# take FOOTPRINT_CFLAGS — the URBI_IC_ENTRIES_PER_SITE=2 cut changes codegen
-# (drops __aeabi_idivmod / __gnu_thumb1_case_uhi, adds strcmp), which would
-# require regenerating a golden that cannot be reproduced off the GHA apt
-# arm-gcc 13.2.1 (this box is xpack 14.2.1 — the documented skew).  The
-# shipping cross-pico build carries the preset; this check build stays neutral.
-cross-pico-bytecode-only:
-	$(MAKE) URBI_BYTECODE_ONLY=1 \
-		TARGET=cross-pico-bytecode-only \
-		CC=arm-none-eabi-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
-		        -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft \
-		        -ffreestanding \
-		        -DURBI_BYTECODE_ONLY=1 \
-		        -DURBI_FLOAT_TYPE=4" \
-		AR=arm-none-eabi-ar \
-		core
-	@sh tests/scripts/test-freestanding.sh build/cross-pico-bytecode-only/liburbi.a
-
-# v0.9.4-followup: cooperative-only REPL build for Pi Pico. Composes
-# cross-pico with URBI_REPL_COOPERATIVE_ONLY=1 + URBI_ENABLE_REPL=1.
-# Distinct TARGET so build dir doesn't clobber the non-REPL cross-pico
-# build at build/arm-cortex-m0plus/. Locks in the portability work
-# via test-cross-pico-repl-elf below.
-cross-pico-repl:
-	$(MAKE) TARGET=arm-cortex-m0plus-repl \
-		URBI_STDLIB_FLAVOR=4 \
-		URBI_ENABLE_REPL=1 \
-		URBI_REPL_COOPERATIVE_ONLY=1 \
-		CC=arm-none-eabi-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
-		        -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft \
-		        -ffreestanding \
-		        $(FOOTPRINT_CFLAGS) \
-		        -DURBI_STRAND_BUDGET_MAX=200 \
-		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_FLOAT_TYPE=4" \
-		AR=arm-none-eabi-ar \
-		core
-	@arm-none-eabi-size --totals build/arm-cortex-m0plus-repl/liburbi.a | tail -1
-
-# T10 / Wave 2: ESP32-S3 (Xtensa LX7) bytecode-only cross-build.
-# Uses the unified ESP-IDF v6.0.1+ toolchain (xtensa-esp-elf-{gcc,ar,nm});
-# target ISA selection happens via `-mlongcalls` (the ESP32 Xtensa marker).
-# Footprint -D set mirrors cross-arm-bytecode-only — ESP32-S3 has a
-# comparable RAM envelope to the Cortex-M7 target.  Inline freestanding
-# gate matches the spec §4.7 contract.
-#
-# PERF-07 exception: like cross-pico-bytecode-only, this is a symbol-surface
-# verification build pinned by the GHA-only golden
-# tests/golden/v0.7.2-esp32-nm-bytecode-only.txt, so it keeps its original
-# partial knob set and does NOT take the full FOOTPRINT_CFLAGS preset (the
-# UVM_STACK_CAP / UVM_MAX_FRAMES / URBI_IC_ENTRIES_PER_SITE additions would
-# perturb the pinned undefined-symbol surface).  The shipping cross-esp32s3-full
-# build carries the preset instead.
-cross-esp32s3-bytecode-only:
-	$(MAKE) URBI_BYTECODE_ONLY=1 \
-		TARGET=cross-esp32s3-bytecode-only \
-		CC=xtensa-esp-elf-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mlongcalls -ffreestanding \
-		        -DURBI_BYTECODE_ONLY=1 \
-		        -DURBI_CLEANUP_MAX=16 \
-		        -DURBI_STRAND_BUDGET_MAX=200 \
-		        -DURBI_GC_SLICE_BUDGET=2048 \
-		        -DURBI_WATCHER_POOL_SIZE=16 \
-		        -DURBI_WATCHER_READSET_MAX=4 \
-		        -DURBI_EVENT_RING_DEPTH=32 \
-		        -DURBI_FLOAT_TYPE=4" \
-		AR=xtensa-esp-elf-ar \
-		core
-	@sh tests/scripts/test-freestanding.sh build/cross-esp32s3-bytecode-only/liburbi.a
-
-# T11 / Wave 2: ESP32-S3 (Xtensa LX7) full cross-build (lex/parse/emit
-# included).  Mirrors the cross-arm / cross-riscv shape — no
-# URBI_BYTECODE_ONLY=1 and no inline freestanding gate, since full mode
-# pulls in the compiler front-end which may surface hosted-libc deps for
-# diagnostics.  Uses the unified ESP-IDF v6.0.1+ toolchain
-# (xtensa-esp-elf-{gcc,ar,nm}); target ISA selection via `-mlongcalls`.
-cross-esp32s3-full:
-	$(MAKE) TARGET=cross-esp32s3-full \
-		CC=xtensa-esp-elf-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mlongcalls -ffreestanding \
-		        $(FOOTPRINT_CFLAGS)" \
-		AR=xtensa-esp-elf-ar \
-		core
-
-# T12 / Wave 2: ESP32-S3 bytecode-only freestanding-signature golden gate.
-# Tighter than the hardcoded-libc forbidden list in test-freestanding.sh:
-# pins the FULL set of truly-unresolved (archive-level) symbols against a
-# golden.  Any NEW unresolved symbol — even one not in the hardcoded list —
-# trips the gate, surfacing latent dependency drift (e.g. a newly-introduced
-# libgcc helper, or accidental leakage of time() / strncmp() / etc. behind
-# a missed __STDC_HOSTED__ guard).  To update the golden after verifying
-# intent: delete tests/golden/v0.7.2-esp32-nm-bytecode-only.txt and
-# re-run this target; the FAIL diff doubles as the regeneration command.
-# NOT wired into releasetest — toolchain availability isn't universal;
-# CI invokes this from the cross-compile workflow (see T13).
-.PHONY: test-cross-esp32s3-freestanding-golden
-test-cross-esp32s3-freestanding-golden: cross-esp32s3-bytecode-only
-	@actual=$$(mktemp); \
-	 xtensa-esp-elf-nm build/cross-esp32s3-bytecode-only/liburbi.a 2>/dev/null \
-	  | awk 'NF >= 3 && $$3 !~ /:$$/ && $$1 != "U" {defined[$$3]=1} \
-	         NF >= 2 && $$1 == "U" {undefined[$$2]=1} \
-	         END {for (s in undefined) if (!(s in defined)) print s}' \
-	  | LC_ALL=C sort -u > "$$actual"; \
-	 if diff -u tests/golden/v0.7.2-esp32-nm-bytecode-only.txt "$$actual"; then \
-	     echo "PASS: cross-esp32s3-bytecode-only freestanding signature matches golden"; \
-	     rm -f "$$actual"; \
-	 else \
-	     echo "FAIL: cross-esp32s3-bytecode-only freestanding signature drifted from golden."; \
-	     echo "      Either fix the leak or update the golden after verifying intent:"; \
-	     echo "        cp $$actual tests/golden/v0.7.2-esp32-nm-bytecode-only.txt"; \
-	     exit 1; \
-	 fi
-
-# v0.9.4: cross-pico freestanding signature golden — mirror of the
-# esp32s3 gate above.  Locks the symbol surface of the cortex-m0plus
-# bytecode-only archive against drift.  Not wired into releasetest by
-# default (the existing v0.9.3 probe-compile dispatcher includes it
-# conditionally — Task 2.2 wires that).  On FAIL, the recipe prints
-# the regeneration command.
-.PHONY: test-cross-pico-freestanding-golden
-test-cross-pico-freestanding-golden: cross-pico-bytecode-only
-	@actual=$$(mktemp); \
-	 arm-none-eabi-nm build/cross-pico-bytecode-only/liburbi.a 2>/dev/null \
-	  | awk 'NF >= 3 && $$3 !~ /:$$/ && $$1 != "U" {defined[$$3]=1} \
-	         NF >= 2 && $$1 == "U" {undefined[$$2]=1} \
-	         END {for (s in undefined) if (!(s in defined)) print s}' \
-	  | LC_ALL=C sort -u > "$$actual"; \
-	 if diff -u tests/golden/v0.9.4-pico-nm-bytecode-only.txt "$$actual"; then \
-	     echo "PASS: cross-pico-bytecode-only freestanding signature matches golden"; \
-	     rm -f "$$actual"; \
-	 else \
-	     echo "FAIL: cross-pico-bytecode-only freestanding signature drifted from golden."; \
-	     echo "      Either fix the leak or update the golden after verifying intent:"; \
-	     echo "        cp $$actual tests/golden/v0.9.4-pico-nm-bytecode-only.txt"; \
-	     exit 1; \
-	 fi
-
-# v0.9.4-followup: example .elf link gate. Builds liburbi.a (cooperative
-# REPL) + the repl_demo Pico example to verify the embedding API surface
-# stays linkable end-to-end. Requires pico-sdk at $$PICO_SDK_PATH or
-# vendored at workspace-root tools/pico-sdk; SKIPs if absent (CI clones
-# it explicitly before invoking this target).
-# NOT wired into Phase 0 — the SKIP path would mask CI regressions when
-# pico-sdk is absent; local devs without the SDK should run releasetest
-# without false reds. Run explicitly or from CI when working on Pico REPL.
-.PHONY: test-cross-pico-repl-elf
-test-cross-pico-repl-elf: cross-pico-repl tools/urbi-compile-stdlib-pico
-	@if [ -z "$$PICO_SDK_PATH" ] && [ ! -d "../tools/pico-sdk" ]; then \
-	    echo "SKIP: PICO_SDK_PATH unset and ../tools/pico-sdk absent"; \
-	    exit 0; \
-	fi
-	@PSP="$${PICO_SDK_PATH:-$$PWD/../tools/pico-sdk}"; \
-	 cmlog=$$(mktemp); mklog=$$(mktemp); \
-	 cd examples/pico/repl_demo && \
-	 mkdir -p build && cd build && \
-	 cmake -DPICO_SDK_PATH="$$PSP" \
-	       -DLIBURBI_BUILD_SUBDIR=arm-cortex-m0plus-repl \
-	       .. > "$$cmlog" 2>&1 || \
-	     { cat "$$cmlog"; exit 1; }; \
-	 $(MAKE) repl_demo > "$$mklog" 2>&1 || \
-	     { echo "--- CMake output ---"; cat "$$cmlog"; \
-	       echo "--- make output ---"; cat "$$mklog"; exit 1; }; \
-	 rm -f "$$cmlog" "$$mklog"
-	@arm-none-eabi-size build/arm-cortex-m0plus-repl/liburbi.a \
-	                    examples/pico/repl_demo/build/repl_demo.elf \
-	                    | tail -2
-	@echo "PASS: cross-pico-repl example .elf links cleanly"
-
-# BLD-CI-2: footprint-cap gate.  Reads `arm-none-eabi-size -A` on the built
-# repl_demo.elf and asserts .text+.data <= PICO_FLASH_CAP and .data+.bss <=
-# PICO_RAM_CAP.  A regression that bloats flash or RAM past the cap fails the
-# gate loudly instead of silently eating a hardware target's budget.
-#
-# Caps are per-target Make vars (RP2040: 2 MB flash / 264 KB SRAM hardware).
-# Calibrated 2026-07-10 from the repl_demo.elf built with xpack
-# arm-none-eabi-gcc 14.2.1 (this box) under the FOOTPRINT_CFLAGS preset:
-#     .text = 133 224   .data = 5 964   .bss = 8 924
-#     .text+.data = 139 188 B   .data+.bss = 14 888 B
-# Caps set at measured + ~15 % headroom, rounded, so they hold under BOTH the
-# CI apt arm-none-eabi-gcc (~13.2.1) and this box's xpack 14.2.1 (the known
-# toolchain skew — the two produce slightly different sizes).  Well under the
-# RP2040's 2 MB flash / 264 KB SRAM ceilings; these are regression caps, not
-# hardware limits.
-PICO_FLASH_CAP ?= 163840
-PICO_RAM_CAP   ?= 20480
-.PHONY: test-footprint-cap
-test-footprint-cap: test-cross-pico-repl-elf
-	@elf=examples/pico/repl_demo/build/repl_demo.elf; \
-	 if [ ! -f "$$elf" ]; then \
-	     echo "SKIP: $$elf absent (pico-sdk not provisioned — build via test-cross-pico-repl-elf)"; \
-	     exit 0; \
-	 fi; \
-	 arm-none-eabi-size -A "$$elf" \
-	   | awk -v flash_cap=$(PICO_FLASH_CAP) -v ram_cap=$(PICO_RAM_CAP) ' \
-	       $$1 == ".text" { text = $$2 } \
-	       $$1 == ".data" { data = $$2 } \
-	       $$1 == ".bss"  { bss  = $$2 } \
-	       END { \
-	         flash = text + data; ram = data + bss; \
-	         printf "footprint: .text+.data = %d B (cap %d) | .data+.bss = %d B (cap %d)\n", \
-	                flash, flash_cap, ram, ram_cap; \
-	         fail = 0; \
-	         if (flash > flash_cap) { printf "FAIL: flash (.text+.data) %d B exceeds cap %d B\n", flash, flash_cap; fail = 1 } \
-	         if (ram   > ram_cap)   { printf "FAIL: ram (.data+.bss) %d B exceeds cap %d B\n", ram, ram_cap; fail = 1 } \
-	         if (fail) exit 1; \
-	         printf "PASS: repl_demo.elf within FLASH_CAP + RAM_CAP\n"; \
-	       }'
-
-# STM32F4 mandelbrot app compile gate.  Builds the full application
-# ELF (HAL + BSP + urbi port shims + liburbi.a) with arm-none-eabi-gcc.
-# Catches app-level breakage invisible to the library-only cross-stm32f4 job:
-# public header regressions, internal header changes used by main.c (vm/uvm.h,
-# chunk/uchunk.h), and URBI_FLOAT_TYPE mismatch.
-#
-# Requires STM32CubeF4 v1.28.2 at ../tools/stm32cube-f4 (sibling peer checkout;
-# see docs/reference/embedded-port-sources.md).  Not wired into releasetest —
-# the external HAL dependency makes it ill-suited as a default local gate.
-# CI provisions the HAL before invoking this target.
-.PHONY: test-cross-stm32f4-app
-test-cross-stm32f4-app: cross-stm32f4
-	$(MAKE) -C examples/stm32f4/mandelbrot
-	@echo "stm32f4 mandelbrot app: OK"
-
-# T18 / Wave 1: freestanding CI gate.  Asserts cross-arch URBI_BYTECODE_ONLY=1
-# liburbi.a archives have no unresolved hosted-libc symbols (printf, malloc,
-# fopen, etc.).  Depends on cross-arm-bytecode-only and cross-riscv-bytecode-only
-# (T19).  Not wired into `releasetest` — the cross-toolchain dependency makes
-# it ill-suited as a default local gate (matches the existing releasetest
-# policy that excludes cross-arm/cross-riscv).  CI invokes it directly.
-.PHONY: test-freestanding
-test-freestanding: cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only
-	sh tests/scripts/test-freestanding.sh build/cross-arm-bytecode-only/liburbi.a
-	sh tests/scripts/test-freestanding.sh build/cross-riscv-bytecode-only/liburbi.a
-	sh tests/scripts/test-freestanding.sh build/cross-stm32f4-bytecode-only/liburbi.a
-
 # Compilation database for clangd / CLion / VS Code indexing.
 # Generated on demand; gitignored. Re-run after changing CFLAGS/CPPFLAGS or
 # adding/removing source files.
@@ -2030,4 +1283,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-trace test-trace-compiled-out test-determinism test-determinism-default test-perf-counters cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk test-chk-ros releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-cross-stm32f4-app test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude test-port-stm32f4 test-stdlib-bytecode-fresh test-trace-decode test-trace-capture test-gdb test-gdb-memdebug test-mem-debug test-gc-stress urbi-trace unit-runner test-ros2 check-ros-gate check-rosgen ros-integration test-urobotics test-chk-urobotics test-ros-urobotics test-chk-ros-urobotics test-chk-runner test-fuzz-smoke test-o2 fuzz-json force-flagstamp
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-bake-smoke test-bytecode-only test-freestanding-host test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude test-stdlib-bytecode-fresh test-gc-stress unit-runner test-chk-runner test-fuzz-smoke test-o2 fuzz-json force-flagstamp
