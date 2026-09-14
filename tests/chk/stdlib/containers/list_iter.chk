@@ -60,8 +60,10 @@ List.new().join(",")
 List.new(1, 2).join(",")
 [00000013] !!! TypeError: join: all elements must be String
 
-# join on a storage-less List object (bare clone of the proto carries no
-# _storage backing) raises the house-style TypeError, same as every other
-# List method.
+# join on an object that merely INHERITS the List prototype -- a bare
+# List.clone() is an ordinary object, not a list cell -- raises the
+# house-style TypeError, same as every other List method.  (The message
+# named the vanished `_storage` slot before the containers re-founding;
+# the property pinned is unchanged.)
 List.clone().join(",")
-[00000014] !!! TypeError: join: missing _storage
+[00000014] !!! TypeError: join: self must be a List

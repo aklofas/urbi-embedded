@@ -26,8 +26,7 @@ var s = List.new(3, 1, 2).sort(function(a, b) { a > b }); s.get(0)
 var s = List.new(3, 1, 2).sort(function(a, b) { a > b }); s.get(2)
 [00000003] 1
 
-# --- string elements ordered by a derived key (comparator computes it;
-#     `<` is numeric-only in this runtime, so order strings by length) ---
+# --- string elements ordered by a derived key the comparator computes ---
 var s = List.new("ccc", "a", "bb").sort(function(a, b) { a.length() < b.length() }); s.get(0)
 [00000004] "a"
 
@@ -82,8 +81,10 @@ List.new(1, 2).sort(5)
 [00000017] !!! TypeError: sort: comparator must be a function
 
 # --- too many arguments raises ArityError ---
+# (The arity diagnostic is the runtime's own, named and with both bounds;
+# the pre-refoundation core spelled it `sort expected 1 args, got 2`.)
 List.new(1, 2).sort(function(a, b) { a < b }, 3)
-[00000018] !!! ArityError: sort expected 1 args, got 2
+[00000018] !!! ArityError: sort: expected 0..1 arguments, got 2
 
 # --- a comparator that declares fewer than 2 params raises TypeError up
 #     front (a 1-param body would otherwise read a clobbered arg window and
@@ -112,13 +113,15 @@ var s = List.new(3, 1, 2).sort(function(a, b = nil) { a < b }); s.get(0)
 List.new(3, 1, 2).sort(Object.getSlot("clone"))
 [00000024] !!! TypeError: sort: comparator must accept 2 arguments
 
-# --- raw String `<` inside a comparator is the numeric-only OP_LT TypeError,
-#     catchable out of sort (use a derived numeric key instead, above) ---
-var r = false; try { List.new("bb", "a").sort(function(a, b) { a < b }) } catch (var e) { r = e.isA(TypeError) }; r
-[00000025] true
+# --- raw String `<` inside a comparator orders lexicographically.  The
+#     pre-refoundation core's `<` was numeric-only and these two cases
+#     pinned the TypeError it raised; comparison now accepts two strings,
+#     so what they pin is the order it produces ---
+List.new("bb", "a").sort(function(a, b) { a < b }).get(0)
+[00000025] "a"
 
-List.new("bb", "a").sort(function(a, b) { a < b })
-[00000026] !!! instr 7: TypeError: '<' operands must be Integer or Float (got String, String)
+List.new("bb", "a").sort(function(a, b) { a < b }).get(1)
+[00000026] "bb"
 
 # --- receiver is unchanged after a comparator THROW (snapshot guarantee
 #     holds on the throw path, not just on success) ---

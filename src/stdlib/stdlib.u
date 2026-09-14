@@ -108,6 +108,105 @@ class NilMethods {
 } |
 Nil.addProto(NilMethods);
 
+// === List and Dict ========================================================
+//
+// The C tables in src/stdlib/containers.c carry everything that touches
+// the backing store: new, length, isEmpty, get, set, add, contains,
+// concat, diff, sort, reverse, join and the legacy aliases.  What is
+// here is the higher-order surface, which is script because it calls
+// back into script.
+//
+// each / all / any are RangeIterable's — a List has length() and get(i),
+// which is the whole of what that mixin derives from, so they are not
+// written a second time here.
+//
+// Legacy reference: share/urbi/list.u and share/urbi/dict.u.
+
+class ListMethods {
+    // map(f): a new List of f applied to each element.
+    var map = function(f) {
+        var res = List.new();
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            var v = f(this.get(i));
+            res.add(v);
+            i = i + 1
+        };
+        res
+    };
+
+    // filter(pred): a new List of the elements pred accepts.
+    var filter = function(pred) {
+        var res = List.new();
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            var v = this.get(i);
+            if (pred(v)) { res.add(v) };
+            i = i + 1
+        };
+        res
+    };
+
+    // foldl(f, acc): left fold.
+    var foldl = function(f, acc) {
+        var res = acc;
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            var next = f(res, this.get(i));
+            res = next;
+            i = i + 1
+        };
+        res
+    };
+
+    // has(e): membership, over the C-native contains.
+    var has = function(e) { this.contains(e) };
+
+    // head(): the first element.  Legacy alias for front()
+    // (list.u:106 copySlot("front","head")); raises on the empty list
+    // through get(0)'s bounds check.
+    var head = function() { this.get(0) }
+} |
+List.addProto(RangeIterable) |
+List.addProto(ListMethods);
+
+// Mutation during iteration: `n` is read once at entry, so an element
+// appended under each/map/filter is not visited, and removing one
+// shifts the indices that are still to come.  sort() is the mutation-safe
+// one — it copies the backing store before any comparator runs.
+
+class DictMethods {
+    // getWithDefault(key, dflt): dflt when the key is absent, which is
+    // what tells an absent key from one whose value is nil.
+    var getWithDefault = function(key, dflt) {
+        if (this.has(key)) { this.get(key) } else { dflt }
+    };
+
+    // setIfAbsent(key, val): the existing value, or val after storing it.
+    var setIfAbsent = function(key, val) {
+        if (this.has(key)) { this.get(key) } else { this.set(key, val); val }
+    };
+
+    // each(f): f(key, value) over a keys() snapshot taken at entry.  An
+    // entry added under the loop is not visited; one removed before its
+    // key comes up reads back as nil rather than raising.
+    var each = function(f) {
+        var ks = this.keys();
+        var i = 0;
+        var n = ks.length();
+        while (i < n) {
+            var k = ks.get(i);
+            f(k, this.get(k));
+            i = i + 1
+        };
+        nil
+    }
+} |
+Dict.addProto(DictMethods);
+
 // === Channel ==============================================================
 //
 // A named output stream.  echo tags every message with the channel's

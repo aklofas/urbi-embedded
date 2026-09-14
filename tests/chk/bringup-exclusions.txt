@@ -17,6 +17,8 @@ tests/chk/stdlib/overlays/exception_subclasses.chk # every case is a try/catch r
 tests/chk/stdlib/runtime/exception_basic.chk       # try/catch round-trip
 tests/chk/stdlib/runtime/exception_chain.chk       # try/catch round-trip
 tests/chk/stdlib/runtime/regexp.chk                # last case catches a budget RangeError
+tests/chk/stdlib/runtime/legacy_aliases.chk        # last case catches List.head on the empty list
+tests/chk/stdlib/containers/list_sort.chk          # 7 cases catch a comparator throw or an arity error
 
 # --- needs runtime diagnostic positions --------------------------------
 #
@@ -35,18 +37,6 @@ tests/chk/operators/mul.chk                        # `line 1: ...`
 tests/chk/operators/neg.chk                        # `line 1: ...`
 tests/chk/operators/sub.chk                        # `line 1: ...`
 tests/chk/stdlib/legacy/maths_errors_legacy.chk    # `line 1: ...`
-
-# --- needs the List and Dict script overlay ----------------------------
-#
-# The C surface is complete; each / map / filter / getWithDefault are the
-# ListMethods and DictMethods classes, which are still parked in
-# src/stdlib/stdlib_later.u.
-tests/chk/stdlib/containers/dict_iter.chk          # keys / each
-tests/chk/stdlib/containers/list_iter.chk          # each / map / filter
-tests/chk/stdlib/containers/list_sort.chk          # sort
-tests/chk/stdlib/overlays/dict_overlay.chk         # the overlay is in stdlib_later.u
-tests/chk/stdlib/overlays/list_overlay.chk         # the overlay is in stdlib_later.u
-tests/chk/stdlib/runtime/legacy_aliases.chk        # insertBack / add / head on List
 
 # --- needs events ------------------------------------------------------
 tests/chk/objects/event_new_emit.chk               # Event.new / emit / the `!` postfix
