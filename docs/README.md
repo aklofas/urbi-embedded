@@ -24,29 +24,26 @@ For anyone learning the language or porting scripts from urbi 2.x.
 
 For application developers linking urbi-embedded into firmware or a host process.
 
-- Embedding guide — planned for `v0.7.0-C-API`
-- C API reference — planned for `v0.7.0-C-API`
-- REPL protocol — planned for `v0.8.0-repl`
-- ROS2 bridge — planned for `v0.9.0-ros2`
-- Sandbox API — planned for `v0.7.0-C-API`
-- Footprint guide — planned for `v0.7.0-C-API`
+- [Embedding guide](embedding-guide.md) — the 45-function API, with one complete program
+- [API surface tiers](api-surface-tiers.md) — the manifest the `test-api-manifest` gate checks
+- [REPL protocol](internals/repl-service.md) — the NDJSON eval service
+- ROS2 bridge — parked until Phase 5
+- Footprint guide — planned
 
 ### Working on the runtime
 
 For contributors building or modifying the C99 implementation.
 
-- [Architecture](internals/architecture.md) — module map and data-flow overview
+- [Architecture](internals/architecture.md) — the compiler frontend: lexer, parser, arena, emitter, chunk
 - [Opcode reference](internals/opcodes.md) — every opcode: encoding, operands, semantics
 - [Bytecode format](internals/bytecode-format.md) — `.urb` on-disk layout
-- [Object model](internals/object-model.md) — UObject layout, hidden classes, inline cache, atom families
-- [Garbage collection](internals/gc.md) — incremental tri-color mark-sweep, write barriers, walker contract
-- [Reactive runtime](internals/reactive-runtime.md) — watchers, scratch frames, sync-execution sites
-- [Realm and chunks](internals/realm-and-chunks.md) — per-realm globals, chunk instance cache, IC name interning
-- [Scheduler design](internals/scheduler-design.md) — cooperative scheduler contract
-- [Closures](internals/closures.md) — `UFuncState`, upvalue capture, `proto_inst` binding
+- [The runtime](internals/runtime.md) — values, the collector, objects, strands, the scheduler, errors, realms, booting
+- [Reactive runtime](internals/reactive-runtime.md) — watchers in full: modes, the dirty set, the drain
+- [Error channels](internals/error-channels.md) — where a failure goes and who can see it
 - [Emit correctness notes](internals/emit-correctness-notes.md) — verified emit invariants
+- [Embedded ports](internals/ports.md) — per-target record; all parked until Phase 5
 - [Design decisions](internals/design-decisions.md) — rationale log for implementation choices
-- [Test harness](internals/test-harness.md) — `utest.h` API and how to add unit tests
+- [Test harness](internals/test-harness.md) — the four runners and how to add to each
 - [Code style](STYLE.md) — C naming, memory model, freestanding discipline, const-correctness
 - [Language conventions](LANG-CONVENTIONS.md) — numeric types, time literals, enums-as-singletons, C API contract
 
@@ -115,27 +112,27 @@ The "Since" column is the first release where the doc ships. Rows without a link
 | Doc | Description | Since |
 | --- | ----------- | ----- |
 | Embedding guide | Step-by-step: link the library, plug in allocator and time source, push urbiscript, read results | `v0.7.0-C-API` |
-| C API reference | Every public function in `urbi.h` and `urbi_aux.h`: signature, preconditions, error codes, examples | `v0.7.0-C-API` |
-| REPL protocol | NDJSON wire format, connection lifecycle, lobby multiplexing, `urbi-send` CLI reference | `v0.8.0-repl` |
-| ROS2 bridge | micro-ROS integration: `ros.subscribe()`, `ros.publisher()`, `ros.client()`, reactive topic bindings | `v0.9.0-ros2` |
-| Sandbox API | Instruction and allocation budgets, host-call allow-lists, isolation contract | `v0.7.0-C-API` |
+| [Embedding guide](embedding-guide.md) | The 45-function API with one complete program: open, register a native, run a script with an `at`, step to quiescence, close | `v0.14.0-refoundation` |
+| [API surface tiers](api-surface-tiers.md) | Every symbol the archive exports, by tier; the `test-api-manifest` gate checks it | `v0.10.3-api-opacity` |
+| ROS2 bridge | micro-ROS integration; parked until Phase 5 | — |
 | Footprint guide | Flash and RAM breakdown by subsystem; trim strategies for deeply constrained targets | `v0.7.0-C-API` (initial), refresh at `v1.0.0` |
 
 ### internals/
 
 | Doc | Description | Since |
 | --- | ----------- | ----- |
-| [Architecture](internals/architecture.md) | Module map, data-flow between lexer / parser / emitter / VM / GC / scheduler, threading model | `v0.1.0-skeleton` |
+| [Architecture](internals/architecture.md) | The compiler frontend: lexer, parser, arena, emitter, chunk container, source layout, multi-VM model | `v0.1.0-skeleton` |
+| [The runtime](internals/runtime.md) | Everything under `src/rt/`: values, the collector, objects and slots, strands, the scheduler, the one error channel, realms, the boot table, the C API | `v0.14.0-refoundation` |
 | [Bytecode format](internals/bytecode-format.md) | `.urb` on-disk layout: 24-byte header, varint sections, constant table, instruction stream, delta synclines | `v0.1.0-skeleton` |
 | [Opcode reference](internals/opcodes.md) | Every opcode in the current set: encoding, operand fields, semantics, pseudocode | `v0.1.0-skeleton` |
-| [Test harness](internals/test-harness.md) | `utest.h` header-only harness API, naming conventions, sanitizer and cross-compile targets | `v0.1.0-skeleton` |
+| [Test harness](internals/test-harness.md) | The four runners (frontend, runtime, corpus, probes), how to add to each, and the sanitizer matrix | `v0.1.0-skeleton` |
 | [Design decisions](internals/design-decisions.md) | Rationale log: choices made during implementation with the alternatives that were rejected | `v0.1.0-skeleton` |
-| [Closures](internals/closures.md) | `UFuncState` upvalue capture, `UClosure.proto_inst` binding, watcher closure ownership | `v0.2.0-expressions` |
-| [Scheduler design](internals/scheduler-design.md) | Cooperative scheduler contract; coroutine lifecycle; statement-boundary preemption points; tag integration; GC walker contract | `v0.3.0-concurrency` |
-| [Garbage collection](internals/gc.md) | Incremental tri-color mark-sweep: `gc_byte` bit layout, write-barrier protocol, safe-points, strand-walker contract, GC-cell inventory, configurable knobs | `v0.3.0-concurrency` |
-| [Object model](internals/object-model.md) | UObject layout, UShape hidden classes, inline cache, atom-family singletons, prototype-chain forms, slot operations | `v0.4.0-objects` |
-| [Reactive runtime](internals/reactive-runtime.md) | Reactive vocabulary, AST node kinds and emit shapes, watcher lifecycle, scratch-frame primitive, ownership flags, register-allocation invariant | `v0.5.0-reactive` |
-| [Realm and chunks](internals/realm-and-chunks.md) | Realm structure, per-realm globals API, chunk instance cache, `ic_name_strs` lazy interning, chunk-load contract, single-threaded VM assumptions | `v0.5.0-reactive` |
+| [Reactive runtime](internals/reactive-runtime.md) | One watcher type: modes, the dirty set, the drain, what an `at` edge means and why `whenever` is level-triggered | `v0.5.0-reactive` |
+| [Error channels](internals/error-channels.md) | Where a runtime failure goes and who can observe it | `v0.13.6-consistency` |
+| [Embedded ports](internals/ports.md) | Per-target bring-up record; every port is parked until Phase 5 | `v0.7.2-esp32` |
+| [REPL service](internals/repl-service.md) | The NDJSON eval protocol and the cooperative service | `v0.9.1-repl-service` |
+| [Assertion discipline](internals/assertion-discipline.md) | `URBI_REQUIRE` vs `URBI_INTERNAL_ASSERT`: which fires where, and when to use which | `v0.10.1-invariants` |
+| [Build system](internals/build-system.md) | Targets, build directories, flag stamping, the stdlib bake cycle | `v0.6.1-stdlib` |
 | [Emit correctness notes](internals/emit-correctness-notes.md) | Verified emit invariants that don't fit in source comments | `v0.5.2-scratch-frame-followup` |
 
 ### reference/

@@ -1,7 +1,12 @@
 # Milestone: M3
 # Covers: tag.stop(42) injects a return value into all sleeping strands under
 #         that tag; echo of the stopped block shows the injected value.
-# blocked: T39 chk-driver (parallel `,` step) AND TAG_SCOPE absorption — script-side observable valued-stop result defers v1.x (C API urbi_tag_stop accepts value; user-tag→scope-tag binding pending — see workspace-root design-risks v0.10.9-B + S5)
+# blocked: needs a `## host:` body.  The host driver has existed since
+# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
+# missing is this fixture, rewritten to drive its own clock and its own
+# urbi_step calls.  That is per-fixture authoring work, scheduled with the
+# rest of the corpus in Phase 5.  The annotation it replaced said the
+# driver did not exist, which stopped being true at Task 12.
 # matrix-row: tag-stop
 #
 # Reason:

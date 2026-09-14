@@ -1,7 +1,12 @@
 # Milestone: v0.10.10-job-introspection
 # Covers: detach() vs disown() tag-inheritance semantics; detach() inherits tags,
 #         disown() strips all tags; Job.current.tags inspection.
-# blocked: T39 chk driver only
+# blocked: needs a `## host:` body.  The host driver has existed since
+# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
+# missing is this fixture, rewritten to drive its own clock and its own
+# urbi_step calls.  That is per-fixture authoring work, scheduled with the
+# rest of the corpus in Phase 5.  The annotation it replaced said the
+# driver did not exist, which stopped being true at Task 12.
 # matrix-row: separator-detach
 #
 # Reason:

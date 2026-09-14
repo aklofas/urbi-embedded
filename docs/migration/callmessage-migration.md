@@ -31,7 +31,7 @@ lifetime.  In urbi-embedded that metadata is not retained:
   fixed per-strand register file.  Keeping per-call frame metadata would
   require a heap-allocated frame chain that conflicts with the embedded
   heap budget targets (ARM Cortex-M7: 240 KB total; see
-  `docs/internals/gc.md` for the allocation budget).
+  `docs/internals/runtime.md` for how the collector is paced).
 - Argument AST nodes are freed after the emitter closes a function body.
   Retaining them post-emit would require a persistent AST arena, which
   doubles the heap pressure during compilation.

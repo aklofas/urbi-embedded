@@ -1,6 +1,114 @@
 # Changelog
 
-## Unreleased — Phase 0 of the core re-foundation
+## v0.14.0-refoundation — 2026-09-14
+
+The runtime is new. `src/vm`, `src/sched`, `src/gc`, `src/object`,
+`src/realm`, `src/watcher`, `src/event`, `src/tag`, `src/changed`,
+`src/runtime` and `src/value` are deleted; `src/rt/` replaces them.
+The compiler frontend, the bytecode format and the language are the
+same, and the conformance corpus is what says so.
+
+The public C API is replaced wholesale — 45 functions, opaque `UVM`,
+`urbi_open` / `urbi_run` / `urbi_step` / `urbi_close` — so ABI goes
+0/23/7 -> 0/24/0 and the wire format 0x19 -> 0x1A (v1.10) for the one
+new opcode. There is no compatibility promise before 1.0.0.
+
+### Measured on this build
+
+| Number | Value |
+|---|---|
+| boot heap | 69,743 bytes live in 1,016 blocks, 64-bit host |
+| idle strand | 615 bytes each; 61,568 for a hundred parked sleepers |
+| leak probes | zero growth over 10,000 iterations of five allocating shapes |
+| lookup benchmark | 1.47x the old core; mandelbrot 1.44x |
+| corpus | 325 passed, 0 failed, 77 placeholders, 9 skipped |
+| runners | frontend 636 cases / 6,406 checks; runtime 135 cases / 4,315 checks |
+| sanitizers | ASan, UBSan, `URBI_GC_STRESS`, valgrind memcheck: clean |
+
+The 48 KB boot-heap target is a 32-bit number and this branch has no
+cross toolchain, so the probe holds the host figure under a 72 KB cap and
+Phase 5 measures the real one. The lookup benchmark MISSES the spec's
+20 percent gate: the re-founded object model has no inline caches and
+the dispatch loop is a plain switch where the old one used computed
+goto. `tests/probes/lookup_bench.c` pins a ratchet just above the
+measured cost and prints the spec's target beside it.
+
+### What changed inside
+
+- One collector: stop-the-world mark-sweep, tri-state marking with an
+  overflow rescan. No write barriers, no incremental phases.
+- Growable strand stacks. The fixed per-VM register cap is gone.
+- One scheduler: a run queue, a timer heap, park/wake, and liveness
+  derived from both rather than tracked in a counter that could drift.
+- One error channel: every failure is a throw, and the cleanup stack is
+  the only thing that moves control. Nothing is swallowed — an uncaught
+  throw of any value reaches the host, where the old core answered `nil`
+  for a scalar.
+- One watcher type. `at`, `at sync`, `whenever` and `waituntil` differ by
+  a mode byte. The old core's separate event-watcher struct, per-watcher
+  read sets, cascade rescan and generation stamps are all gone.
+- One boot table, replacing eighteen hand-ordered registration functions.
+- Realms share the standard library through the proto chain, so a new
+  realm costs one cell and one object.
+- Float is always `double`; the `URBI_FLOAT_TYPE` width knob is gone.
+
+### Fixed
+
+- `Integer.asString`, `Float.asString`, `String.charAt`, the String case
+  methods and Date's formatter interned their results into the immortal
+  symbol table. A program printing a changing number grew without bound.
+- `urbi_emit_abandon` leaked one IC array per open funcstate on any
+  compile that failed inside a function.
+- `vm->last_error` is one buffer, and a detached strand dying later in
+  the same pump overwrote what an awaited strand left there:
+  `{ throw "A" } , throw "B"` reported "A" twice and lost "B".
+- A thrown non-integral Float rendered as `<?>`. A hosted build now
+  lends the runtime its formatter; freestanding keeps `<?>`.
+
+### Retired
+
+- The D3 fatal-outside-scope `tag.stop()` rule: a stop from outside the
+  scope unwinds like any other.
+- `S-cleanup-atomic`: cleanup bodies are ordinary code, and the
+  emitter's yield suppression around them is gone.
+- `S-atsync-atomic` resolved: an `at sync` body runs to completion on a
+  spare strand, where YIELD is a no-op.
+- Nil-recovery on an uncaught non-object throw. It was how errors
+  vanished on the batch path.
+
+### Testing and tooling
+
+- `tests/unit/` is the frontend runner: 51 files covering the lexer,
+  parser, arena, emitter, chunk container, varint codec, intern seam and
+  the public header's inline values. 109 runtime-coupled files are gone.
+- `tests/rt/` is the runtime runner, one suite per subsystem.
+- `tests/probes/` is new: four programs that measure a committed number,
+  print it, and fail the build when it moves the wrong way.
+- Every C sample in the embedding guide is compiled by
+  `make test-embedding-guide`, which is back in `releasetest`.
+- The coverage floor is re-baselined 75 -> 85 against a measured 89%.
+- The layering gate's ban on old-runtime directory names becomes the
+  positive rule it stood in for: `src/rt` may reach `rt/`, `chunk/`,
+  `stdlib/`, `urbi/` and `emit/ufront.h`, and nothing else.
+
+### Parked until Phase 5
+
+The networked REPL server and its transports, the ROS2 bridge, the
+Standard Robotics overlay, and every hardware port under `examples/` and
+`components/`. The trace spine, the performance counters and the
+memory-debug sidecar were part of the old runtime and went with it;
+Phase 5 re-derives what the new core wants of them from git history.
+
+### Documentation
+
+`docs/internals/runtime.md` is new and replaces eight documents that
+described a runtime that no longer exists (garbage collection, scheduler
+design, object model, closures, the loader strand, the module system,
+realms and chunks, REPL teardown). `docs/internals/architecture.md` is
+now the compiler frontend only. `docs/embedding-guide.md` and
+`docs/internals/test-harness.md` are rewritten.
+
+### Phase 0 of the re-foundation, folded in
 
 - Removed the pre-1.0 ABI/wire freeze machinery, internal layout pins, and the version.h ledger. No compatibility promise exists before 1.0.0.
 - Removed repository self-audit gates (loc-cap, comment-scrub, doc-scrub, docstring-coverage, dependency-pins, five determinism presets, two codegen-determinism checks, gc-roots-coverage, audit-globals) and 58 unreferenced golden files.

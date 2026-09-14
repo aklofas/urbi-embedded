@@ -2,13 +2,12 @@
 # Covers: determinism rule D-cross-2 — slot-change burst with 2 sync subs;
 #         50 sequential obj.x = i writes; subscriber walk order is byte-stable
 #         across 100x3 preset runs; D-slotchange-2 FIFO sub walk confirmed.
-# blocked: T39 chk-runner tunables-extension (multi-preset mode) per
-#          design-risks v0.10.7-G — the `at sync` keyword form ships
-#          (Cat. E re-audit Cluster #15 verdict A reclassified the
-#          original `at.sync` dot-syntax as a fixture-authoring error;
-#          rewritten to keyword form below), but the 100x3-preset
-#          determinism guarantee additionally requires the chk-runner
-#          tunables-extension that hasn't shipped yet.
+# blocked: needs a `## host:` body.  The host driver has existed since
+# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
+# missing is this fixture, rewritten to drive its own clock and its own
+# urbi_step calls.  That is per-fixture authoring work, scheduled with the
+# rest of the corpus in Phase 5.  The annotation it replaced said the
+# driver did not exist, which stopped being true at Task 12.
 # matrix-row: reactive-slot-change
 #
 # Reason:

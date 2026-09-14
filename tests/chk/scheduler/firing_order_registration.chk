@@ -3,7 +3,12 @@
 #         when both conditions become true simultaneously (row 12 §6 watcher
 #         eval determinism — active_watchers_head preserves insertion order).
 #
-# blocked: chk-runner urbi_step driver path not implemented (T39)
+# blocked: needs a `## host:` body.  The host driver has existed since
+# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
+# missing is this fixture, rewritten to drive its own clock and its own
+# urbi_step calls.  That is per-fixture authoring work, scheduled with the
+# rest of the corpus in Phase 5.  The annotation it replaced said the
+# driver did not exist, which stopped being true at Task 12.
 # matrix-row: scheduler-fifo
 #
 # Reason: verifying watcher firing order requires installing watchers via

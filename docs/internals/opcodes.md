@@ -115,7 +115,7 @@ table and will be honoured when the emit path is activated in a future release.
 
 Registers are 0-based per proto. `UProto.max_reg` records the highest register
 index used by that block; the runtime allocates `max_reg + 1` tagged-value
-slots. Register values share the `UValue` shape (see `src/value/`): 16 bytes,
+slots. Register values share the `UValue` shape (see `include/urbi/types.h`): 16 bytes,
 with a `kind` byte (`UValKind`), 7 bytes of padding, and an 8-byte value union
 — `int64_t i` for integer values, `double` or `float` for float values
 (selected by `URBI_FLOAT_TYPE` at compile time: 8 = `double`, 4 = `float`).

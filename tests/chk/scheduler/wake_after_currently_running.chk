@@ -5,7 +5,12 @@
 #         completes (row 12 §3.3 — sleep-queue drain runs at the end of each
 #         dispatch turn, after urbi_vm_dispatch_loop_until_yield returns).
 #
-# blocked: chk-runner urbi_step driver path not implemented (T39)
+# blocked: needs a `## host:` body.  The host driver has existed since
+# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
+# missing is this fixture, rewritten to drive its own clock and its own
+# urbi_step calls.  That is per-fixture authoring work, scheduled with the
+# rest of the corpus in Phase 5.  The annotation it replaced said the
+# driver did not exist, which stopped being true at Task 12.
 # matrix-row: scheduler-wake
 #
 # Reason: observing that a sleeping strand wakes while another strand is

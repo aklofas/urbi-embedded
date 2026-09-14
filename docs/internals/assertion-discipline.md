@@ -9,7 +9,6 @@ use case, and the guidance for choosing the right one.
 |---|---|---|---|---|---|
 | `URBI_REQUIRE(cond, msg)` | **yes** | **yes** | **yes (via hook)** | **yes (via hook)** | **yes (spin/hook)** |
 | `URBI_INTERNAL_ASSERT(cond)` | yes | no | no | no | no |
-| `URBI_DISPATCH_ASSERT(cond)` | yes | no | no | no | no |
 | `assert(cond)` (libc) | yes | no | banned | banned | banned |
 
 **Key:** "yes" = the check fires and aborts/fails on violation.  "no" = expands
@@ -29,11 +28,11 @@ false:
    defect — freestanding targets **should** always register a hook (typically
    one that triggers a watchdog reset or writes to a debug UART before halting).
 
-Implementation lives in `src/runtime/urequire.c`.  The hook storage is a
+Implementation lives in `src/util/urequire.c`.  The hook storage is a
 file-static pointer; it is not thread-safe.  Register the hook once at
-startup, before `urbi_vm_init`, and leave it set for the process lifetime.
+startup, before `urbi_open`, and leave it set for the process lifetime.
 
-### `URBI_INTERNAL_ASSERT(cond)` — `src/runtime/umacros.h`
+### `URBI_INTERNAL_ASSERT(cond)` — `src/util/umacros.h`
 
 Debug-only null-trap diagnostic.  Expands to `assert(cond)` when
 `__STDC_HOSTED__` is true (which implies a hosted build where `<assert.h>` is
@@ -46,20 +45,6 @@ result: `URBI_INTERNAL_ASSERT` fires only on host debug builds.
 **Do not** use `URBI_INTERNAL_ASSERT` for invariants whose violation would
 cause data corruption or silent incorrect behavior in production — it will not
 fire on embedded targets or release builds.
-
-### `URBI_DISPATCH_ASSERT(cond)` — `src/vm/uvm.c` (local macro)
-
-Hot-path debug check defined locally in the VM dispatch loop.  Defined as
-`assert(cond)` under `URBI_DEBUG`, and `((void)0)` otherwise.
-
-Per runtime-invariants audit F2: the three `URBI_DISPATCH_ASSERT` guards in
-the `OP_CLOSURE` handler verify `omi != NULL`, `omi->proto_instances != NULL`,
-and `ic_index` bounds before the `cl->proto_inst` assignment.  These asserts
-**compile out in release**, leaving three sequential dereferences unguarded.
-W5 of the v0.10.1-invariants arc replaces these with `URBI_REQUIRE`.
-
-**Do not** introduce new `URBI_DISPATCH_ASSERT` sites.  Use `URBI_REQUIRE` for
-any check that must survive release.
 
 ### `assert(cond)` (libc) — banned in new code
 
@@ -81,11 +66,7 @@ Is the invariant load-bearing in production (freestanding / release)?
 └─ NO  → Is this a hot-path inner loop where the check measurably hurts
 │         release performance?
 │
-         ├─ YES (hot path) → URBI_DISPATCH_ASSERT(cond)  [existing sites only]
-         │                   Do NOT add new ones.  Document why the invariant
-         │                   is provably correct without the assert in release.
-         │
-         └─ NO (not hot)  → URBI_INTERNAL_ASSERT(cond)
+         └─ Either way → URBI_INTERNAL_ASSERT(cond)
                             Appropriate for post-condition sanity checks,
                             refcount arithmetic guards, and alignment proofs
                             that are only exercised in debug runs.
@@ -108,7 +89,7 @@ static void my_require_fail(const char *file, int line,
     for (;;) {}   /* never reached, but silence noreturn warnings */
 }
 
-/* Call before urbi_vm_init */
+/* Call before urbi_open */
 urbi_set_require_fail_hook(my_require_fail);
 ```
 
@@ -116,28 +97,24 @@ For hosts (Linux, macOS) the default behavior (stderr + abort) is sufficient
 during development.  For production host daemons, register a hook that logs
 to the application logger before calling `abort()`.
 
-## Adoption Plan
+## Where they are used
 
-`URBI_REQUIRE` was introduced in v0.10.1-invariants Wave 2 (W0).  Adoption at
-specific invariant sites occurs across the remaining worktrees in that wave:
+`URBI_REQUIRE` guards the invariants that must catch a bug on a device
+with no debugger attached: scheduler-contract preconditions, link-time
+configuration agreement, pointer validity before a dereference the caller
+cannot have checked. `URBI_INTERNAL_ASSERT` covers the post-condition
+sanity checks that are worth running in a debug build and not worth the
+bytes anywhere else.
 
-- **W4** — link-time guards: `_Static_assert` pairing with `URBI_REQUIRE` for
-  run-time reachability checks.
-- **W5** — `OP_CLOSURE` dispatch: replaces the three `URBI_DISPATCH_ASSERT`
-  sites identified in runtime-invariants audit F2.
-- **W7, W8, W9, W10** — scheduler, GC, and VM invariant sites identified in
-  the scheduler audit F2.
-
-The scheduler audit F2 ("`Cooperative-Only Invariants Encoded in Prose, Not
-Asserts`") is the primary driver: several scheduler-contract preconditions are
-documented in comments but not enforced in production builds.  `URBI_REQUIRE`
-provides the mechanism; the wave worktrees supply the sites.
+The rule for new code is the flow chart above, and the reason the two
+macros exist rather than one is that a freestanding release build has no
+`assert` and no `abort` — what it has is the hook, and `URBI_REQUIRE` is
+the only macro that reaches it.
 
 ## References
 
 - `include/urbi/require.h` — public header (macro + hook API)
-- `src/runtime/urequire.c` — implementation
-- `src/runtime/umacros.h` — `URBI_INTERNAL_ASSERT` + freestanding helpers
-- `src/vm/uvm.c` (local) — `URBI_DISPATCH_ASSERT`
+- `src/util/urequire.c` — implementation
+- `src/util/umacros.h` — `URBI_INTERNAL_ASSERT` + freestanding helpers
 - `docs/refactor-1/urbi-embedded-scheduler-audit.md` §F2 — motivation
 - `docs/refactor-1/urbi-embedded-runtime-invariants-audit.md` §F2 — OP_CLOSURE hazard

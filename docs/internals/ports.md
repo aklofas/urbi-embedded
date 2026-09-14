@@ -11,6 +11,16 @@ target Make recipes are in [`build-system.md`](./build-system.md).
 The host build is not a port — `make` (POSIX glibc) is the canonical
 development target. Ports below cover bare-metal + RTOS silicon.
 
+**Every port on this page is PARKED.** The core re-foundation replaced
+the runtime these ports were brought up against, and none of them has
+been rebuilt on it: the component manifests, the `components/` trees and
+the `examples/` workloads are all in the tree and all out of the build.
+Phase 5 re-attaches them, and that is also when the 32-bit boot-heap
+figure gets measured for real — `tests/probes/boot_heap.c` currently
+holds a 64-bit host number because this branch has no cross toolchain.
+Read what follows as a record of what each target needed last time, not
+as a claim about today.
+
 ## ESP32-S3 (Espressif, Xtensa LX7)
 
 - **Status:** Shipped at `v0.7.2-esp32` (2026-05-16). Validated on
@@ -89,8 +99,8 @@ development target. Ports below cover bare-metal + RTOS silicon.
   `tests/golden/v0.9.4-pico-nm-bytecode-only.txt`. The `__aeabi_d*`
   double-precision helpers are not from urbiscript code paths exercising
   double; UVAL_FLOAT arithmetic on `URBI_FLOAT_TYPE=4` builds currently
-  promotes through C `double` and narrows back (see `src/vm/uvm_arith.h`
-  and `src/value/uvalue.c`) — a true-f32 promotion path is on the v1.x
+  promotes through C `double` and narrows back — a true-f32 path is on
+  the v1.x
   roadmap.
 - **Footprint:** Full **114 713 B** / **112.0 KB** (88.2 % of the
   **130 KB** cap; xpack `arm-none-eabi-gcc` 14.2.1 @ `-Os`, calibrated

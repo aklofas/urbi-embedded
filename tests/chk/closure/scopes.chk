@@ -2,7 +2,12 @@
 # Covers: closure capture from definition scope, not call scope; 'var Object.f'
 #         slot assignment on a prototype; lookup of i inside f() resolves to
 #         outer global i, not inner block-local i.
-# blocked: T39 chk driver only
+# blocked: needs a `## host:` body.  The host driver has existed since
+# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
+# missing is this fixture, rewritten to drive its own clock and its own
+# urbi_step calls.  That is per-fixture authoring work, scheduled with the
+# rest of the corpus in Phase 5.  The annotation it replaced said the
+# driver did not exist, which stopped being true at Task 12.
 # matrix-row: object-slot-install
 #
 # Reason:

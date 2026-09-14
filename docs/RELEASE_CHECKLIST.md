@@ -1,8 +1,7 @@
 # Release Checklist
 
-A repeatable gate for cutting a tagged urbi-embedded release. Run top-to-bottom;
-do not tag until every box is checked. The v1.0.0 release used this list (see
-`docs/release/release-notes-v1.0.0.md`).
+A repeatable gate for cutting a tagged urbi-embedded release. Run
+top-to-bottom; do not tag until every box is checked.
 
 ## 1. Branch
 
@@ -10,51 +9,49 @@ do not tag until every box is checked. The v1.0.0 release used this list (see
 
 ## 2. Gate sweep (host)
 
-- [ ] `make test` — unit + integration + `.chk` fixtures, 0 failures
-- [ ] `make test-asan` — AddressSanitizer clean
-- [ ] `make test-ubsan` — UBSan clean
-- [ ] `make test-stdlib-bytecode-fresh` — baked stdlib blob is byte-fresh
-- [ ] `make test-chk` — tally line shows `0 vacuous-unannotated, 0 failed`; SKIPs are preset-gated
-      fixtures only (covered by `test-chk-ros` / `test-chk-urobotics` / `test-chk-ros-urobotics`,
-      where any SKIP is a failure); placeholder count matches `docs/release/conformance-report.md`
-- [ ] `make test-api-manifest` — exported `urbi_*` documented + frozen surface intact
+- [ ] `make clean && make test` — both runners, the layering gate, the corpus and the probes, 0 failures
+- [ ] `make test-asan` / `make test-ubsan` / `make test-gc-stress` / `make test-valgrind` — clean
+- [ ] `make test-probes` — every number printed; nothing above its cap
+- [ ] `make test-chk` — `0 vacuous, 0 failed`; SKIPs are parked-component fixtures only
+- [ ] `make test-api-manifest` — every exported `urbi_*` documented, frozen surface intact, no new unprefixed global
+- [ ] `make test-embedding-guide` — every C sample in the guide still compiles
 - [ ] `make docs-check` — markdownlint + link-check, 0 errors
-- [ ] `make releasetest` — the full pre-release sweep is green (supersedes the above on a clean machine)
+- [ ] `make releasetest` — the full parallel sweep is green (supersedes the above on a clean machine)
 
-## 3. Cross builds
+## 3. Cross builds and hardware
 
-- [ ] `make cross-pico cross-esp32s3 cross-stm32f4` (and `cross-arm cross-riscv` if toolchains present)
+PARKED. Every cross target and every hardware port is out of the build
+until Phase 5 re-attaches them to the re-founded runtime. When they come
+back, so do these boxes: the cross archive builds, a re-flash of each
+board's demo, and the evidence appended to
+`docs/release/hardware-validation.md`.
 
-## 4. Hardware-in-the-loop (for any release touching the VM / GC / scheduler / stdlib / bytecode)
+The boot-heap probe holds a 64-bit host figure for the same reason. The
+32-bit number the spec targets gets measured on the first cross build.
 
-- [ ] Pico (RP2040) — re-flash `examples/pico/repl_demo`, confirm REPL + watcher LED
-- [ ] ESP32-S3 — re-flash `examples/esp32/eye_demo`, confirm continuous run + button cycling
-- [ ] STM32F4 — re-flash `examples/stm32f4/mandelbrot`, confirm render + tilt/zoom
-- [ ] Append evidence to `docs/release/hardware-validation.md`; bump the "Last verified" rows in `docs/release/release-readiness.md`
+## 4. Documentation current
 
-## 5. Documentation current
+- [ ] `CHANGELOG.md` has the new version entry, with the probe numbers in it
+- [ ] `README.md` status line and targets table reflect this release
+- [ ] `docs/internals/` says what the code does — no document describes a subsystem that is gone
 
-- [ ] `docs/release/conformance-report.md` recomputed (fixture counts, coverage %)
-- [ ] `docs/release/release-readiness.md` closure items all ✅ (or explicit accepted known-issues)
-- [ ] `CHANGELOG.md` has the new version entry
-- [ ] `README.md` status + supported-targets table reflect this release
-
-## 6. Version transition
+## 5. Version transition
 
 - [ ] `include/urbi/version.h` — `MAJOR/MINOR/PATCH` bumped
 - [ ] `tests/unit/test_api_version.c` — constants match version.h
 - [ ] `components/esp32-idf/idf_component.yml` — `version:` matches the tag-to-be
 - [ ] `README.md` — `ABI X/Y/Z`, `wire vN.N`, and tag reference all updated
-- [ ] `make check-version-sync` — passes (run again after tagging; it compares idf to the latest tag)
+- [ ] `URBI_RELEASE_TAG_TO_BE=vX.Y.Z make check-version-sync` — passes in the pre-tag window
+- [ ] `include/urbi/version.h` — `URBI_RELEASE_STRING` matches the tag with its leading `v` stripped
 
-## 7. Tag + push (irreversible — needs explicit go-ahead)
+## 6. Tag + push (irreversible — needs explicit go-ahead)
 
 - [ ] `git checkout main && git merge --ff-only release/vX.Y.Z`
 - [ ] `git tag -a vX.Y.Z -m "<summary>"`
 - [ ] `make check-version-sync` (now passes — tag exists)
 - [ ] `git push origin main && git push origin vX.Y.Z`
 
-## 8. Post-release
+## 7. Post-release
 
 - [ ] Write `docs/milestones/vX.Y.Z.md` retrospective
 - [ ] Update `STATUS.md` (shipped + next pointer)

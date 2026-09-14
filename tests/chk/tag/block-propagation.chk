@@ -1,7 +1,12 @@
 # Milestone: M3
 # Covers: tag.block() called inside a tagged scope; block propagates from
 #         the scope tag to the outer join ('&'); no deadlock.
-# blocked: `&`-separator chk-driver support (M5 chk driver residual) — user-tag→scope-tag binding resolved at v0.10.15 (v0.10.9-B)
+# blocked: needs a `## host:` body.  The host driver has existed since
+# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
+# missing is this fixture, rewritten to drive its own clock and its own
+# urbi_step calls.  That is per-fixture authoring work, scheduled with the
+# rest of the corpus in Phase 5.  The annotation it replaced said the
+# driver did not exist, which stopped being true at Task 12.
 # matrix-row: tag-block
 #
 # Reason:

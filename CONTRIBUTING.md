@@ -119,18 +119,43 @@ Keeping these independent matches Lua's `LUA_VERSION_NUM` / `LUAC_VERSION` / `LU
 
 Source files live under per-subsystem folders:
 
-    src/lex/      src/parse/    src/emit/     src/vm/
-    src/gc/       src/sched/    src/watcher/  src/event/
-    src/tag/      src/changed/  src/module/   src/value/
-    src/runtime/  src/realm/    src/object/
+    src/lex/    src/parse/  src/emit/   src/chunk/  src/util/
+    src/rt/     src/stdlib/ src/host/   src/repl/
 
 Public C API lives in `include/urbi/`:
 
-    include/urbi/types.h     UValue, UExecStatus, UErrCode, UVMError, UVMAllocFn, opaque struct fwd-decls
-    include/urbi/urbi.h      Public lifecycle + control + step
-    include/urbi/gc.h        GC strategy router
-    include/urbi/sched.h     Per-scheduler API umbrella
-    include/urbi/object.h    Object-model public API
+    include/urbi/types.h     UValue, the error codes, the allocator signature, opaque forward declarations
+    include/urbi/urbi.h      The 45-function embedding API
+    include/urbi/version.h   API and release version macros
+    include/urbi/repl.h      The optional cooperative eval service
+    include/urbi/require.h   URBI_REQUIRE and its embedder hook
+
+### The layering rule
+
+`src/rt/` is the runtime, and two rules make it portable. Both are
+enforced by `tests/scripts/check_rt_layering.sh`, which `make test`
+runs.
+
+**It reaches four places outside itself and nowhere else:** `chunk/`
+(the bytecode it executes), `urbi/` (the API it implements), `stdlib/`
+(the boot table's installers) and `emit/ufront.h` (the single compile
+entry point `load` needs). The lexer, the parser, the arena, the host
+formatter and the eval service all sit above the core, and a core that
+included one would stop being the thing a microcontroller links.
+
+**It uses no libc beyond five headers:** `stdint.h`, `stddef.h`,
+`stdbool.h`, `string.h`, `math.h`. Anything needing `snprintf`,
+`malloc` or `assert` belongs in `src/host/`, which a freestanding build
+omits, or in the frontend.
+
+Within `src/rt/` the headers have a fixed include order — uvalue, ugc,
+ustr, uobj, ulist, ustrand, usched, uexec, uwatch, urealm, uboot — and a
+header may include only headers to its left. `src/stdlib/` reaches the
+runtime through exactly one header, `rt/ustdlib_glue.h`.
+
+A new global that is not `static` and does not start with `urbi_` fails
+`make test-api-manifest`: an embedder links this archive statically, so
+every exported name is a potential collision in their build.
 
 ## Commit messages
 

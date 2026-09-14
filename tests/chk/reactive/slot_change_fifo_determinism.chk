@@ -5,11 +5,12 @@
 #         maintain that order across all firings.  Run under all 3 tunable
 #         presets × 100 runs to assert byte-identical output.
 #
-# blocked: T39 chk-runner tunables-extension (multi-preset mode) per
-#          design-risks v0.10.7-G — the body uses keyword `at` (not the
-#          audit's at.sync dot-syntax false-positive in the original
-#          header; Cat. E re-audit Cluster #15 verdict A corrected the
-#          misattribution).
+# blocked: needs a `## host:` body.  The host driver has existed since
+# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
+# missing is this fixture, rewritten to drive its own clock and its own
+# urbi_step calls.  That is per-fixture authoring work, scheduled with the
+# rest of the corpus in Phase 5.  The annotation it replaced said the
+# driver did not exist, which stopped being true at Task 12.
 # matrix-row: reactive-slot-change
 #
 # Reason:

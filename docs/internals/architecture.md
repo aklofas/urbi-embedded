@@ -18,7 +18,7 @@ source (const char *)
      │
      ▼  [uemit.c]    produces  compiled chunk (root UProto: bytecode, constants, synclines, max_reg)
      │
-     ▼  [uvm.c]      produces  result (UValue tagged value)
+     ▼  [rt/uexec_ops.c] produces  result (UValue tagged value)
      │
      ▼  [urbi CLI]   prints    result to REPL output
 ```
@@ -29,10 +29,8 @@ Changing the emitter's register-allocation strategy does not touch the lexer.
 Adding a new opcode to the VM does not touch the parser. The boundaries are
 the design.
 
-At the v0.1.0-skeleton tag all stages described here are shipped: lexer,
-parser, arena, emitter, VM, formatter (`uvalue`), and the `urbi` REPL binary.
-The architecture described here is the shape the v0.1.0-skeleton release
-implements.
+This document covers the front half — everything that turns text into a
+chunk. The back half is [runtime.md](runtime.md).
 
 ---
 
@@ -261,9 +259,9 @@ The eight opcodes at the walking-skeleton stage are described in full in
 **Source:** `src/chunk/uchunk_io.c` / `src/chunk/uchunk.h`
 
 The compiled chunk is the interface between the front end (emitter) and the
-back end (VM). Since v0.9.2 there is no standalone `UModule` struct: the root
+back end. There is no standalone module struct: the root
 `UProto` carries the owned arrays directly, plus the metadata that was absorbed
-from the retired `UModule`. The owned arrays are:
+that a module type used to carry. The owned arrays are:
 
 - `instructions` — array of `uint32_t`, 4-byte aligned.
 - `constants` — array of `UValue` (16-byte tagged-value records).
@@ -324,189 +322,13 @@ zero-initialized root `UProto`.
 
 ---
 
-## VM
+## The runtime
 
-**Source:** `src/vm/uvm.c` / `src/vm/uvm.h`
-
-The VM is a register-based interpreter. It takes a populated chunk (root
-`UProto`), allocates a register frame of `max_reg + 1` tagged-value slots, and dispatches
-each instruction using a computed-goto table under GCC/Clang (`__GNUC__` /
-`__clang__` detected at compile time) or a `switch`-based loop otherwise.
-The `URBI_VM_FORCE_SWITCH` build flag overrides the detection to exercise the
-switch path on GCC/Clang hosts; CI uses this flag in a dedicated `test-switch`
-matrix entry to keep both paths compiling and passing.
-
-Register values share the `UValue` layout from `include/urbi/types.h`: 16 bytes
-per slot, with a `kind` byte (`UValKind`) discriminating Integer, Float, Bool,
-String, or Nil, 7 bytes of alignment padding, and an 8-byte value union
-(`int64_t i` for Integer; `double` or `float f` for Float, selected by
-`URBI_FLOAT_TYPE` at compile time).
-
-Arithmetic dispatch follows the rules in
-[LANG-CONVENTIONS.md §1.3](../LANG-CONVENTIONS.md#13-arithmetic-semantics):
-
-- `OP_ADD`, `OP_SUB`, `OP_MUL`: Integer op Integer yields Integer (wrapping
-  on overflow); Integer op Float, or Float op Float, promotes to Float.
-- `OP_DIV`: always yields Float, regardless of operand types. `3 / 2` is
-  `1.5`, never `1`.
-- `OP_NEG`: negates the register value; preserves type (Integer stays Integer,
-  Float stays Float).
-
-`OP_RET` terminates dispatch and returns the tagged value from the named
-register to the caller.
-
-The chunk is consumed by reference; the VM does not own it and does not free
-it. In-process use (REPL loop) passes the emitter's root `UProto` directly — no
-serialize/deserialize round-trip is needed. An embedded host loading compiled
-bytecode from flash calls `uchunk_deserialize` first, then hands the resulting
-root `UProto` to the VM.
-
-The persistent `UVM` struct supports an `init` / `run` / `destroy` lifecycle
-and carries a VM-owned allocator hook (distinct from the chunk loader's
-allocator). A 128-byte fixed error-message buffer provides
-`source:line:`-prefixed diagnostics for `URBI_ERR_STRAND_FATAL` and `URBI_ERR_OOM`
-without depending on `<stdio.h>`, `<string.h>`, or `<stdlib.h>` (the
-stdlib-realloc shim is `__STDC_HOSTED__`-gated).
-
----
-
-## REPL
-
-**Source:** `tools/urbi.c`
-
-The `urbi` CLI binary is the first end-user-visible consumer of the full
-pipeline. It drives the pipeline in a loop and supports five modes:
-
-- `-i` — interactive REPL: reads one line at a time via vendored linenoise,
-  runs the pipeline, prints `[%08u] value` timestamp frames (wall-clock
-  milliseconds via `clock_gettime(CLOCK_MONOTONIC, …)`), and persists
-  history to `~/.urbi_history`.
-- `-e <expr>` — evaluates a single expression string and exits.
-- `[-f] <file>` / positional file argument — reads and evaluates a source
-  file; no per-statement print (Unix script convention).
-- `--dump-bytecode` — disassembles compiled bytecode via `uemit_disassemble`
-  (incompatible with `-i`).
-- `--version` / `--help` — print version or usage and exit.
-
-Uncaught-throw rendering on the batch paths (`-e` and file): when the root
-chunk dies with an uncaught throw, the CLI prints the VM's fatal message when
-one exists (typed exceptions carry a `message` slot) and the fixed string
-`urbi: uncaught throw` when none does (scalar throws such as `throw 99` carry
-no message). Printing the thrown *value* itself is deliberately deferred:
-`urbi_run_chunk` reports the failure as a return code and does not hand the
-thrown value back to the caller, so a value-carrying print would require a
-contract change to the chunk-run API rather than a CLI-side fix.
-
-In all evaluation modes the pipeline is: `ulex_init` → `uparse_next_statement`
-loop → `uemit_statement` loop → `uemit_finish` → VM dispatch → result print.
-The `UVM` is persistent across interactive lines. A fresh chunk (root `UProto`)
-and `UArena` is allocated per line; `uarena_reset` reclaims AST memory after each
-emitter pass without a `destroy`/`init` cycle. An implicit `|` statement
-terminator is appended if the input line is missing one.
-
-Result formatting is handled by `src/uvalue.{c,h}` (the `uvalue_format`
-function), which is a separate hosted-only library module — not part of
-`tools/urbi.c` itself. This keeps the formatter testable in isolation and
-available to future embedding scenarios (e.g. a debugger or a remote REPL
-over a byte-stream transport).
-
-The `urbi` binary lives in `tools/` rather than `src/` to preserve the
-`cc src/*.c` drop-in invariant. It is never built for cross-compile targets.
-The factoring of the per-line eval logic into a reusable `urbi_repl_eval_line`
-function in `src/urepl.{c,h}` is a scheduled future refactor (see the
-"Embedded REPL over UART / byte-stream transports" backlog entry); at the
-v0.1.0-skeleton tag the logic lives inline in `tools/urbi.c`.
-
----
-
-## Runtime subsystems
-
-The pipeline above produces and runs bytecode for the arithmetic
-expression core. Beyond that, several runtime subsystems collaborate to
-implement the language features that make urbiscript distinctive —
-concurrency, the prototype object model, reactive watchers, garbage
-collection, and the realm + module-instance system. Each has a dedicated
-deep-dive doc; this section is the orientation map.
-
-### Concurrency
-
-urbiscript's statement separators encode concurrency:
-
-- `;` — sequential with yield (one statement completes before the next
-  starts, yielding to the scheduler between them).
-- `|` — sequential atomic (no yield between statements).
-- `,` — parallel fire-and-forget (both sides spawn immediately; caller does
-  not wait).
-- `&` — parallel join (both sides spawn; caller waits for both to complete).
-
-The runtime ships a cooperative scheduler (`URBI_SCHED_COOPERATIVE`) as
-the `v1.0` baseline. Every running coroutine is a `UStrand` that holds
-its own register window, instruction pointer, and trace state; the
-scheduler walks a priority-aware ready queue and yields control at
-statement-separator boundaries. An ISR-safe SPSC event ring buffers
-events from interrupt context for drain at the next safe point. The
-scheduler determinism gate runs three configurations × 100 iterations
-on every release. See [Scheduler design](scheduler-design.md) for the
-full contract.
-
-First-class `Tag` objects group related watchers and coroutines;
-`tag.stop()` cancels all activity under the tag. Tags carry `enter`
-and `leave` event callbacks for RAII-style cleanup.
-
-### Object model
-
-Objects are prototype-based with hidden-class slot layout. A `UObject`
-header (56 B host, 48 B 32-bit embedded, both pinned by
-`_Static_assert`) points at a `UShape` describing its slot layout, plus
-a tagged-pointer prototype chain (three forms: zero-proto, single-proto,
-multi-proto). Slot lookup goes through a 4-entry-per-call-site inline
-cache (2 entries on the embedded-footprint preset). Shape transitions
-are interned through a per-VM `UShapeMap` so that two objects that have
-evolved through the same series of slot adds share identity. See
-[Object model](object-model.md) for the layout, IC design, and the nine
-atom-family singletons.
-
-### Reactive runtime
-
-`at (cond) body` registers a persistent watcher that fires whenever
-`cond` transitions from false to true. `whenever` re-fires while `cond`
-remains true. `every(100ms)` fires on a timer. `waituntil` blocks the
-current coroutine until a condition holds.
-
-Reactive constructs compile to install opcodes that build watchers on
-the heap. Watchers fire from three safe-point families: condition-dirty
-re-evaluation, slot-change events, and explicit emit (`E.emit(...)`).
-The emit pipeline routes every sync-execution site through a single
-primitive — `urbi_run_closure_on_scratch` — that spins up an ephemeral
-strand for the body closure and tears it down on completion. See
-[Reactive runtime](reactive-runtime.md) for the full lifecycle, the
-ownership flags that govern watcher teardown, and the freereg/next_reg
-sync rubric.
-
-### Garbage collection
-
-The runtime uses incremental tri-color mark-sweep
-(`URBI_GC_INCREMENTAL`) with a no-GC build (`URBI_GC_NONE`) carried
-through CI for the smallest embedded footprints. Write barriers fire on
-slot stores and other heap-pointer mutations; safe points are
-statement-separator boundaries plus explicit `urbi_gc_slice()` calls in
-embedded driver loops. The strand-walker traverses live coroutines from
-realm hierarchy roots so that a single GC pass sees all reachable
-strand state. Pause budget is ≤2.1 µs measured against a 1 ms target.
-See [GC](gc.md) for the cell-type inventory, gc_byte bit layout, and
-the realm-hierarchy walker contract.
-
-### Realm and chunk instances
-
-A realm holds the top-level globals plus the (vm, root proto) → instance
-cache. `urbi_run_chunk` and `urbi_vm_run` automatically bind a
-`UChunkInstance` for the realm at first invocation, lazily interning
-the IC name table and threading `proto_instances` through the call
-frame for `UClosure.proto_inst` access. The walk-then-prepend protocol
-on the cache is correct under the single-threaded-VM assumption that
-defines the `v1.0` baseline. See [Realm and chunks](realm-and-chunks.md)
-for the load contract, the lazy-intern protocol, and the multi-threaded
-deferrals.
+The pipeline above ends where the runtime begins. Everything past the
+chunk — the collector, objects and slots, strands, the scheduler, the
+unwinder, watchers, realms, the boot table and the C API — is
+[runtime.md](runtime.md). The watcher chapter in full is
+[reactive-runtime.md](reactive-runtime.md).
 
 ---
 
@@ -514,94 +336,55 @@ deferrals.
 
 ```text
 src/
-  urbi.h              Public C embedding API (currently: urbi_version())
-  urbi.c              Core implementation (minimal at walking-skeleton stage)
-  ulex.h              Lexer API: UToken, UTokenType, ULexError, ULexer
-  ulex.c              Lexer implementation: ulex_init, ulex_next, ulex_token_name
-  uast.h              AST node types: UAstKind, UAstNode, UAstUnaryOp, UAstBinaryOp, UParseError
-  uarena.h            Arena allocator API: UArena, UAllocFn, UFreeFn
-  uarena.c            Arena implementation: uarena_init, _ex, _static, alloc, reset, destroy
-  uparse.h            Parser API: UParser
-  uparse.c            Parser implementation: uparse_init, uparse_next_statement, uparse_error_name
-  chunk/uchunk.h      Chunk load/serialize API, UOpcode, UValKind, instruction encode/decode helpers (UValue lives in include/urbi/types.h)
-  chunk/uchunk_io.c   Chunk deserializer, verifier, destroy: uchunk_deserialize, uchunk_destroy
-  uvarint.h           LEB128 varint codec API: UVarintError, size/write/decode for u + zz
-  uvarint.c           LEB128 varint implementation: pure byte math, freestanding-clean
-  uemit.h             Emitter API: UEmitter, UEmitError; also declares uchunk_serialize
-  uemit.c             Emitter implementation: uemit_init, uemit_statement, uemit_finish,
-                      uemit_disassemble, uchunk_serialize
-  uvm.h               VM API: UVM, UValue, uvm_init, uvm_run, uvm_destroy (int return codes)
-  uvm.c               VM implementation: computed-goto / switch dispatch, arithmetic
-                      type matrix, TypeError/OOM diagnostics, syncline decoder.
-                      Per-opcode helper bodies live in sibling src/vm/ TUs:
-                      uvm_slot.c (GETSLOT/SETSLOT/SELF, v0.10.4), uvm_tag_scope.c
-                      (PUSH_TAG/POP_TAG + the v0.10.9-B user-tag binding, v0.10.15),
-                      uvm_reactive_install.c (the 7 at/whenever/waituntil/at-event
-                      install opcodes, v0.10.15). uvm.c retains the dispatch loop,
-                      the remaining arms, and the safepoint
-  uvalue.h            UValue-to-string formatter API: uvalue_format
-  uvalue.c            Formatter implementation (hosted only, __STDC_HOSTED__-gated):
-                      Lua-5.4-style number formatting for all 5 UValKinds
+  lex/                Lexer: UToken, UTokenType, ULexError, ULexer, synclines
+  parse/              Parser and AST: UAstNode, UArena-allocated, recursive descent
+  emit/               Emitter, disassembler, serializer, and ufront.c — the one
+                      lex -> parse -> emit entry point the runtime calls
+  chunk/              The bytecode container: writer, loader, verifier, opcode
+                      shape table, UProto
+  util/               Shared by the frontend and nobody else: the AST arena, the
+                      varint codec, the freestanding string helpers, URBI_REQUIRE
+  rt/                 The runtime — see runtime.md
+  stdlib/             Built-in methods (C) plus stdlib.u (urbiscript), baked to a
+                      tracked bytecode blob by tools/urbi-compile-stdlib
+  host/               Public API whose implementation is inherently hosted: the
+                      value formatter needs snprintf, which src/rt may not use
+  repl/               The cooperative NDJSON eval service (four files built);
+                      the networked server and its transports are parked
+  ros/  urobotics/    Parked for Phase 5
 
 tools/
-  urbi.c              REPL binary — the first end-user-visible consumer of the full
-                      pipeline. Five modes: -i (interactive), -e, -f / positional
-                      file, --dump-bytecode, --version / --help. Not part of
-                      liburbi.a; never built on cross-compile targets.
-  linenoise.h         Vendored line editor header (BSD-2, antirez/linenoise)
-  linenoise.c         Vendored line editor implementation; see LINENOISE-UPSTREAM.md
+  urbi.c              The CLI: -i (interactive), -e, -f / positional file,
+                      --dump-bytecode, --version, --help.  Not part of
+                      liburbi.a; never built for a cross target
+  linenoise.{c,h}     Vendored line editor (BSD-2, antirez/linenoise)
+  urbi-compile-stdlib.c  Bakes stdlib.u into the tracked blob
 
-tests/unit/
-  utest.h             Header-only test harness — see internals/test-harness.md
-  runner.c            main() — calls each suite function in sequence
-  test_lexer.c        Lexer test suite
-  test_arena.c        Arena allocator test suite
-  test_parser.c       Parser test suite
-  test_varint.c       Varint codec test suite
-  test_module.c       Chunk loader / verifier test suite
-  test_emit.c         Emitter test suite
-  test_uvalue.c       UValue formatter test suite
-
-tests/integration/
-  repl_smoke.sh       POSIX sh harness covering every CLI mode and error path
+tests/
+  unit/               The frontend runner: lexer, parser, arena, emitter, chunk,
+                      varint, intern, and the public header's inline values
+  rt/                 The runtime runner: one suite per src/rt subsystem
+  chk/                The conformance corpus — .chk fixtures, one REPL (or host,
+                      or NDJSON) session each
+  probes/             Footprint and performance probes; see runtime.md
+  integration/        The .chk runners and the REPL smoke harness
+  fuzz/               libFuzzer harnesses for the lexer, parser, VM and loader
 ```
 
 ---
 
 ## Multi-VM model
 
-Multiple `UVM` instances may coexist in the same process. Each is fully
-independent: no mutable state is shared across VMs.
+Multiple `UVM` instances may coexist in one process, fully independent:
+no mutable state is shared. Every mutable datum lives on the `UVM`
+struct — the collector, the symbol table, the scheduler, the watcher
+state, the prototype table, the realm list, all by value.
 
-```text
-Process
-  ├── UVM (A)
-  │     ├── intern_table   (per-VM string interning pool, ustr_intern)
-  │     ├── topology_gen   (per-VM IC invalidation counter)
-  │     └── UProto.origin_vm → (A)   stamped at compile time
-  └── UVM (B)
-        ├── intern_table
-        ├── topology_gen
-        └── UProto.origin_vm → (B)
-```
+Only compile-time constant tables (opcode names, version strings, static
+error messages) may live at file scope. The
+`cppcoreguidelines-avoid-non-const-global-variables` clang-tidy check
+gates it under `make lint`.
 
-**Per-VM state catalog.** Every mutable datum lives on the `UVM` struct.
-At v0.2.0-expressions this includes `intern_table` (the string interning
-pool) and `topology_gen` (the inline-cache invalidation generation counter).
-As additional subsystems land (GC, scheduler, coroutine stacks, reactive
-registry) their state will extend `UVM`, not introduce new file-scope
-variables.
-
-**Allowed-immutable globals.** Only compile-time constant tables — opcode
-name arrays, version strings, static error messages — may live at file
-scope. No mutable file-scope variables are permitted; enforcement is via
-the `cppcoreguidelines-avoid-non-const-global-variables` clang-tidy check
-(gated under `make lint`).
-
-**Single-threaded per VM.** Each `UVM` is driven by one thread at a time.
-Multiple `UVM` instances may run in separate threads without
-synchronization; cross-VM value handoff is not supported in v1.0 and is
-undefined behavior. The multi-threaded-per-VM and shared-immutable-bytecode-pool
-paths are deferred to v1.x. See [`internals/design-decisions.md` — No global
-mutable state](design-decisions.md#no-global-mutable-state) for the rationale
-and the 8-case test matrix.
+Each `UVM` is driven by one thread at a time. Two of them may run in
+separate threads without synchronization; handing a value from one to the
+other is not supported and is undefined behaviour.

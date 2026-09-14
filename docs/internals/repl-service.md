@@ -6,7 +6,7 @@ ringbuf, the pluggable `UTransport` adapter, and the `Debug` urbiscript
 namespace. The subsystem is opt-in via `URBI_ENABLE_REPL=1`; default
 builds omit `src/repl/` entirely.
 
-Read [`realm-and-chunks.md`](./realm-and-chunks.md) first — the REPL
+Read [`runtime.md`](./runtime.md) first — the REPL
 service builds on `urbi_realm_create_repl` and the per-realm writer
 plumbing introduced in v0.9.0 / Phase 1 of v0.9.1.
 
@@ -595,7 +595,7 @@ Two known issues filed in `docs/urbi-embedded-design-risks.md`:
   (`repl-multi-client-stress`, 100 ASan trials) were removed in the
   Phase 0 runtime-internals test cleanup; REPL is currently a parked
   feature pending v1.x re-attachment.  Ownership contract documented in
-  `docs/internals/repl-teardown.md`.  TSAN coverage deferred to v1.x
+  the parked listener's own source.  TSAN coverage deferred to v1.x
   (image lacks runtime).
 
 ## Uncaught-throw contract
@@ -634,7 +634,7 @@ is empty for scalar throws — the same distinction as the REPL path above.
 `URBI_ERR_UNCAUGHT_THROW` (-18).  `vm->last_errmsg` is populated for both
 scalar and Exception-typed throws: when `last_errmsg` is empty on entry to the
 fatal-detection arm, `uvalue_format` formats the thrown value into it (see
-`src/vm/uvm_run.c`).  When `out` is non-NULL, `urbi_vm_run` delivers the thrown
+`src/rt/uexec_ops.c`).  When `out` is non-NULL, the run entry point delivers the thrown
 value in `*out` (mirroring `include/urbi/urbi.h`'s contract for
 `URBI_ERR_UNCAUGHT_THROW`); `urbi_run_chunk` sets `*out_result` to nil instead.
 
@@ -646,9 +646,9 @@ session alive); the batch paths treat both as errors, with `last_errmsg` and
 ## See also
 
 - `docs/embedding-guide.md` §12 — public-facing how-to for embedders.
-- `docs/internals/realm-and-chunks.md` — URealm, the per-realm writer,
+- `docs/internals/runtime.md` — URealm, the per-realm writer,
   and `urbi_realm_create_repl` (v0.9.0 foundation).
-- `docs/internals/repl-teardown.md` — ownership model for session
+- (retired) the teardown note — ownership model for session
   teardown: roles, field ownership, lifecycle states, synchronizes-with
   edges, and stop-path contract.
 - `<urbi/repl.h>` — public API surface and transport pluggability.

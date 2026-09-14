@@ -255,7 +255,6 @@ $(BUILDDIR)/tests/unit/runner: $(UNIT_TEST_SRCS) $(LIB)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/unit -o $@ $(UNIT_TEST_SRCS) $(LIB) -lm
 
-.PHONY: test-unit test-probes
 test-unit: $(BUILDDIR)/tests/unit/runner
 	$(RUNNER_WRAPPER) $<
 
@@ -489,6 +488,13 @@ CHK_GATE_DIRS ?= arithmetic closure function control \
 test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver $(BUILDDIR)/repl-chk-driver
 	@CHK_GATE_DIRS="$(CHK_GATE_DIRS)" sh tests/integration/chk_summary.sh $(BUILDDIR)/urbi
 
+# The embedding guide's samples are compiled, not asserted: every C block
+# in docs/embedding-guide.md is extracted and built against the archive,
+# so an API change that the guide does not follow fails the build.
+.PHONY: test-embedding-guide
+test-embedding-guide: $(LIB)
+	@bash tests/integration/test_embedding_guide_compiles.sh $(BUILDDIR)
+
 # refactor-3 CHK meta-gate: pins run_chk.sh's exit-code contract with stub
 # binaries (no VM involved).  Must stay green across any future runner edit.
 .PHONY: test-chk-runner
@@ -661,7 +667,7 @@ RELEASETEST_PHASE1 := \
     test-wire-format-determinism \
     test-stdlib-bytecode-fresh test-bake-smoke \
     test-api-manifest \
-    test-chk-runner test-fuzz-smoke test-o2
+    test-chk-runner test-fuzz-smoke test-o2 test-embedding-guide
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -952,5 +958,5 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: test-unit test-probes
+.PHONY: test-unit test-probes test-embedding-guide
 .PHONY: all core test test-asan test-ubsan test-debug test-switch clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-fuzz-smoke test-o2 force-flagstamp

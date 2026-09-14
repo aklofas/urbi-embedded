@@ -37,6 +37,29 @@ Each entry follows this template:
 
 ---
 
+## What the core re-foundation superseded
+
+This is a decision LOG, so entries are kept once written even when the
+decision is later reversed. Five of them describe a runtime that no
+longer exists, and reading them as current will mislead:
+
+- **Inline cache: 4 entries per call site** — REVERSED. The re-founded
+  object model has no inline caches at all; `src/rt/uobj.h` says so in
+  its first paragraph. The cost is measured by
+  `tests/probes/lookup_bench.c`.
+- **Tagged-pointer prototype chain** — REVERSED. Prototypes are a plain
+  pointer array on the object.
+- **Pluggable allocator on `UModule` via `UModuleAllocFn`** — the
+  mechanism survives on `UProto`; the module struct it hung off does not.
+- **Scratch-frame primitive for AT_SYNC body execution** — REVERSED. A
+  synchronous watcher body runs on a spare strand, and YIELD is a no-op
+  there.
+- **Uniform 16-byte `UValue` value layout** — still true, but the
+  `URBI_FLOAT_TYPE` width knob it mentions is gone: float is always
+  `double`.
+
+Everything below stands as written at the time it was decided.
+
 ## Decisions
 
 ### Per-target bytecode flavor, not universal portability

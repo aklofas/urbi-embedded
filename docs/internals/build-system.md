@@ -69,7 +69,7 @@ The standard library ships as a hybrid:
   e.g. `object_root.c`, `atom_protos.c`).
 - Pre-compiled urbiscript modules baked at build time as a single
   `.rodata` byte blob (`urbi_stdlib_bytecode[]`) and loaded at
-  `urbi_vm_init` via `urbi_module_load`.
+  `urbi_open` via the boot table.
 
 Per master spec §5.1.
 
@@ -153,7 +153,7 @@ the wire-format-hash CI gate (`tests/golden/*-wire-format-hashes.txt`).
 ### Boot
 
 Phase 4 wires `urbi_module_load(stdlib_blob, len)` into the
-`urbi_vm_init` boot path after the C-native protos register. Single
+`urbi_open` boot path after the C-native protos are installed. Single
 ordered module load; no parser/emit involvement at boot.
 
 ### Cross-arch builds

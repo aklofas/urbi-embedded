@@ -46,7 +46,6 @@ set -euo pipefail
 BUILDDIR="${1:-build/host}"
 GUIDE="docs/embedding-guide.md"
 LIB="${BUILDDIR}/liburbi.a"
-LIBURBI_AUX="${BUILDDIR}/liburbi_aux.a"
 CC="${CC:-cc}"
 CFLAGS_BASE="-std=c99 -Wall -Wextra -Wpedantic -Os -Iinclude"
 
@@ -96,32 +95,13 @@ compile_fragment() {
         printf '#include <stdbool.h>\n'
         printf '#include "urbi/urbi.h"\n'
         printf '#include "urbi/types.h"\n'
-        printf '#include "urbi/aux.h"\n'
         printf '\n'
-        # Provide stub types/functions for hardware abstractions used in examples.
-        # Declared as weak/static so that fragment redefinitions don't collide.
+        # The guide's fragments are self-contained: each declares whatever
+        # it uses.  The only thing the harness still supplies is an event id,
+        # because a fragment that shows host input should not have to invent
+        # a registration call to demonstrate the step ordering.
         printf '/* Compilation harness stubs */\n'
-        printf 'static struct UVM *vm_ptr;\n'
-        printf 'static struct UTag *my_tag;\n'
-        printf 'static urbi_event_id_t EV_SENSOR;\n'
-        # Note: EV_ACCEL/EV_GYRO/EV_MAG are defined within the IMU fragment itself.
-        printf 'static void host_sleep_until(uint64_t t) { (void)t; }\n'
-        printf 'static void handle_fatal(struct UVM **v) { (void)v; }\n'
-        printf 'static void record_watcher_latency(urbi_watcher_handle_t h, int s) { (void)h; (void)s; }\n'
-        printf 'static float read_sensor_x(void) { return 0.0f; }\n'
-        printf 'static float read_sensor_y(void) { return 0.0f; }\n'
-        printf 'static float read_sensor_z(void) { return 0.0f; }\n'
-        printf 'static void hardware_set_motor(int v) { (void)v; }\n'
-        printf 'static float hardware_read_temperature(void) { return 0.0f; }\n'
-        printf 'static void hardware_set_led(bool v) { (void)v; }\n'
-        printf 'static void hardware_watchdog_kick(void) { }\n'
-        printf 'static void read_imu_burst(float *ax, float *ay, float *az, float *gx, float *gy, float *gz, float *mx, float *my, float *mz) { *ax=*ay=*az=*gx=*gy=*gz=*mx=*my=*mz=0.0f; }\n'
-        # Note: fn_read_temperature, fn_set_led, fn_set_motor, sensor_destructure
-        # are NOT pre-defined here — some fragments define them themselves.
-        # The forward declarations in those fragments (added to the guide) handle
-        # self-contained compilation.  sensor_destructure is defined in the
-        # event-registration fragment; the IMU fragment uses a separate stub.
-        printf 'static int harness_sensor_destructure(struct UVM *vm, const urbi_event_payload_t *p, size_t plen, UValue *out, int max, void *ud) { (void)vm; (void)p; (void)plen; (void)out; (void)max; (void)ud; return 0; }\n'
+        printf 'static urbi_event_id_t harness_event_id;\n'
         printf '\n'
         for line in "${lines[@]}"; do
             printf '%s\n' "$line"
@@ -153,10 +133,8 @@ compile_standalone() {
     } > "$src"
 
     local errbuf
-    # Standalone examples include full main(); link against both archives.
-    # liburbi_aux.a references symbols in liburbi.a, so pass aux first, then
-    # core; the linker resolves aux's undefined refs from the core archive.
-    if errbuf=$($CC $CFLAGS_BASE "$src" "$LIBURBI_AUX" "$LIB" -lm -o "$exe" 2>&1); then
+    # Standalone examples include a full main(); link the shipped archive.
+    if errbuf=$($CC $CFLAGS_BASE "$src" "$LIB" -lm -o "$exe" 2>&1); then
         PASS=$((PASS + 1))
         echo "  PASS standalone $idx"
     else

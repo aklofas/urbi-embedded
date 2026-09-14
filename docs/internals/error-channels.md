@@ -7,7 +7,7 @@ mixing them is a common source of confusion. This document maps the channels
 and states which one to use when.
 
 For the canonical enum definitions see `include/urbi/types.h`; the internal
-strand-unwind taxonomy lives in `src/sched/ustrand.h`.
+strand-unwind taxonomy lives in `src/rt/ustrand.h`.
 
 ## The channels
 
@@ -69,7 +69,7 @@ value.
 
 Internally, control transfer out of a strand is one of five kinds:
 `UEXEC_OK`, `UEXEC_RETURN`, `UEXEC_THROW`, `UEXEC_TAG_STOP`, `UEXEC_CANCEL`
-(`src/sched/ustrand.h`, mirrored publicly as `UStrandUnwind` /
+(`src/rt/ustrand.h`, mirrored publicly as `UStrandUnwind` /
 `URBI_UNWIND_*`). This is not an error channel per se — `UEXEC_RETURN` and
 `UEXEC_OK` are normal exits — but `UEXEC_THROW` and `UEXEC_TAG_STOP` are how
 raises and tag cancellation propagate through the unwind walker before they

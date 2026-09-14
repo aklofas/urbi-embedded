@@ -1,7 +1,12 @@
 # Milestone: M3
 # Covers: t.block() pauses all strands tagged with t; t.unblock() resumes them;
 #         new strand started while tag is blocked also stays paused.
-# blocked: T39 chk-driver (parallel `,` step + mid-flight observation, v0.10.7-G residual) AND loop {} (deferred-v1.x, v0.10.5 W1) — user-tag→scope-tag binding resolved at v0.10.15 (v0.10.9-B)
+# blocked: needs a `## host:` body.  The host driver has existed since
+# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
+# missing is this fixture, rewritten to drive its own clock and its own
+# urbi_step calls.  That is per-fixture authoring work, scheduled with the
+# rest of the corpus in Phase 5.  The annotation it replaced said the
+# driver did not exist, which stopped being true at Task 12.
 # matrix-row: tag-block
 #
 # Reason:

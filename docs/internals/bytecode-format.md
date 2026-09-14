@@ -18,15 +18,15 @@ tolerance: all v1.x changes are hard breaks.
 ## Overview
 
 `.urb` is the on-disk serialized form of a chunk — the interface between the
-front end (emitter) and the back end (VM). At v0.9.2 the `UModule` struct was
-deleted; a chunk IS its root `UProto`. The format is pinned to the v1.10
+front end (emitter) and the back end (the runtime under `src/rt/`). A chunk
+IS its root `UProto`; there is no separate module struct. The format is pinned to the v1.10
 version byte in the header; the loader rejects any version mismatch with a
 specific diagnostic. No run-time coercion is attempted.
 
 Source files:
 
 - `src/chunk/uchunk_io.c` — deserializer + verifier
-- `src/chunk/uemit_serialize.c` — serializer (via the emit layer)
+- `src/emit/uemit_serialize.c` — serializer
 - `src/chunk/uchunk.h` — structs, enums, error codes, opcode set
 - `src/chunk/uproto.h` — UProto definition
 - `src/chunk/uopcode_shape.c` — verifier shape table data
@@ -158,9 +158,8 @@ noted. All signed integers use zigzag LEB128 (see [Appendix](#appendix-varint-en
 When `source_name_len` is 0, no bytes follow and `source_name` is NULL in
 the loaded root `UProto`.
 
-**v0.9.2 note:** `source_name` was previously a field in `UModule`; with
-`UModule` deleted it now lives directly on the root `UProto`. On non-root
-nested protos this field is zero-initialized and never written.
+`source_name` lives directly on the root `UProto`. On non-root nested
+protos the field is zero-initialized and never written.
 
 ### UProto Block
 

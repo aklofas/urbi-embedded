@@ -6,7 +6,7 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** tagged `v0.13.6-consistency` — the runtime core is being re-founded, so there is no pre-1.0 compatibility promise and the ABI/wire numbers below are current-build facts, not commitments. The language is complete — separators-encode-concurrency (`;` `|` `,` `&`), the reactive trio (`at` / `whenever` / `waituntil`), first-class tags with `stop` / `block` / `freeze`, prototype OOP, and `try` / `catch` / `finally` — backed by a tracing-free bytecode VM, incremental tri-color GC, and a cooperative scheduler with a 4-state `urbi_step` driver. ROS2 integration ships via a host rcl/Fast-DDS backend (with a documented micro-ROS-on-MCU path). Conformance: ~80–85% of the in-scope legacy urbiscript 2.x surface, 100% pass-rate on the implemented surface — see [`docs/release/conformance-report.md`](docs/release/conformance-report.md) for the coverage breakdown and the intentional divergences. ABI 0/23/7; wire v1.9 / 0x19.
+**Status:** tagged `v0.14.0-refoundation` — the runtime core has been rebuilt from scratch, so there is no pre-1.0 compatibility promise and the numbers below are current-build facts, not commitments. The language is intact: separators-encode-concurrency (`;` `|` `,` `&`), the reactive trio (`at` / `whenever` / `waituntil`), first-class tags with `stop` / `block` / `freeze`, prototype OOP, and `try` / `catch` / `finally`. Underneath it is new — a stop-the-world mark-sweep collector, growable strands, a park/wake scheduler, one error channel, one watcher type, one boot table — and 325 conformance fixtures pass against it with none failing. Measured on this build: a booted VM costs 69,743 bytes on a 64-bit host, an idle strand 615 bytes, and a ten-thousand-iteration loop gives every byte back. The ROS2 bridge, the networked REPL server and every hardware port are parked and return in Phase 5. ABI 0/24/0; wire v1.10 / 0x1A.
 
 ## 30-second quickstart
 
@@ -16,13 +16,13 @@ echo "1 + 2" | ./build/host/urbi -i      # -> [..........] 3
 ./build/host/urbi -i                     # interactive REPL
 ```
 
-Embedding a VM in your own C program is one header and a handful of calls — see the [embedding guide](docs/embedding-guide.md). Porting to a new MCU is covered by the [ports guide](docs/internals/ports.md) and the worked ports under `examples/` (Pico, ESP32-S3, STM32F4); see [`docs/release/port-build-flash-guide.md`](docs/release/port-build-flash-guide.md) for the from-a-fresh-clone build steps for each.
+Embedding a VM in your own C program is one header and a handful of calls — the [embedding guide](docs/embedding-guide.md) walks a complete program, and every sample on that page is compiled by the build. The MCU ports (Pico, ESP32-S3, STM32F4) are parked while the core settles; [the ports guide](docs/internals/ports.md) records what each one needed.
 
 ## Design goals
 
 - Pure C99, single library, zero external dependencies
 - Builds with `make` — no CMake, no autotools, no bootstrap
-- Target footprint: < 400 KB flash on Cortex-M class MCUs
+- Target footprint: under 400 KB of flash on Cortex-M class MCUs
 - Host-pluggable allocator, I/O sink, time source, panic handler
 - No global state — multiple VM instances coexist, fully isolated
 - Bytecode / source split: embedded targets can omit the compiler
@@ -30,16 +30,19 @@ Embedding a VM in your own C program is one header and a handful of calls — se
 
 ## Supported targets
 
-| Target | Status | CI gate | Runtime smoke | Hardware evidence |
-|---|---|---|---|---|
-| Linux x86_64 (host) | shipped | host-test matrix | n/a | n/a |
-| Raspberry Pi Pico (RP2040 / Cortex-M0+) | shipped | cross-pico + cross-pico-repl | none | yes — see `docs/release/hardware-validation.md` |
-| ESP32-S3 (Xtensa LX7, ESP-IDF v6.0.1) | shipped | cross-esp32s3 | none | yes — eye_demo bring-up |
-| STM32F4 (Cortex-M4F) | shipped | cross-stm32f4 | none | yes — Mandelbrot demo |
-| ARM Cortex-M7 (generic) | shipped | cross-arm | none | n/a — archive build only |
-| RISC-V rv32imc (generic) | shipped | cross-riscv | none | n/a — archive build only |
-| STM32H7 | planned | n/a | n/a | n/a — see ROADMAP |
-| ESP32-C3 | planned | n/a | n/a | n/a — see ROADMAP |
+| Target | Status | Note |
+|---|---|---|
+| Linux x86_64 (host) | shipped | the canonical development target; the whole CI matrix runs here |
+| Raspberry Pi Pico (RP2040 / Cortex-M0+) | parked | brought up and hardware-validated against the previous core |
+| ESP32-S3 (Xtensa LX7) | parked | brought up and hardware-validated (eye_demo) |
+| STM32F4 (Cortex-M4F) | parked | brought up and hardware-validated (Mandelbrot demo) |
+| ARM Cortex-M7 (generic) | parked | archive build only |
+| RISC-V rv32imc (generic) | parked | archive build only |
+
+Every cross target is parked: the runtime they were brought up against
+has been replaced, and none has been rebuilt on the new one. Phase 5
+re-attaches them, and that is when the 32-bit footprint figure gets
+measured for real.
 
 ## Build
 
@@ -47,7 +50,9 @@ Embedding a VM in your own C program is one header and a handful of calls — se
 make
 ```
 
-Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers, cross-compiles) land in `build/<TARGET>/` subtrees — see `CONTRIBUTING.md` for the full list. The public API is spread across `<urbi/types.h>`, `<urbi/urbi.h>`, `<urbi/gc.h>`, `<urbi/sched.h>`, and `<urbi/object.h>` — VM lifecycle, chunk loading, strand spawn / step driver, ISR-safe event injection, realm globals, GC primitives, and the object surface. The headers are self-contained: external consumers using only `-Iinclude` resolve cleanly without internal includes. See `docs/embedding-guide.md` for the full embedding contract (host integration patterns, FreeRTOS pattern, REPL service).
+Produces `build/host/liburbi.a`. Every build variant (debug, sanitizers, coverage) lands in its own `build/<TARGET>/` subtree — see `CONTRIBUTING.md` for the list.
+
+The public API is 45 functions in `<urbi/urbi.h>`, with values in `<urbi/types.h>`, version macros in `<urbi/version.h>` and the optional eval service in `<urbi/repl.h>`. The headers are self-contained: `-Iinclude` is the whole include path an embedder needs. `docs/embedding-guide.md` is the contract.
 
 ## Using the REPL
 
@@ -102,21 +107,8 @@ the host calls `urbi_repl_serve_step` from the same loop it calls
 what keeps every VM touch on one thread. It is in every build the
 compiler frontend is in.
 
-```c
-#include <urbi/repl.h>
-
-UReplConfig cfg = {0};
-cfg.default_budget.max_source_bytes = 64 * 1024;   /* the text is untrusted */
-
-UReplServer *repl;
-urbi_repl_serve_init(vm, &cfg, &repl);
-urbi_repl_register_transport(repl, &my_uart_transport);   /* {ctx, read, write, close} */
-
-for (;;) {
-    urbi_repl_serve_step(repl, 0);
-    urbi_step(vm, 0, NULL);
-}
-```
+See `docs/embedding-guide.md` for the calls and
+`docs/internals/repl-service.md` for the protocol.
 
 ```json
 > {"id":1,"op":"eval","code":"echo(1+2)"}
@@ -136,36 +128,34 @@ build. It returns in a later phase, on the same `UTransport` vtable.
 ## Source layout
 
 ```text
-include/urbi/   public C API headers (urbi.h, gc.h, sched.h, object.h, ...)
+include/urbi/   the public API: urbi.h, types.h, version.h, repl.h, require.h
 src/
-├── chunk/      bytecode + UProto + UChunkIO
-├── emit/       compiler emit
-├── event/      UEvent + native event registration
-├── gc/         incremental GC + barriers
 ├── lex/        lexer
-├── object/     UObject + UShape + UIC + UChunkInstance
-├── parse/      parser
-├── realm/      URealm + lobby + per-realm globals
-├── repl/       REPL service + transports + listener
-├── runtime/    UCallFrame + UUpvalCell + unwind + cleanup
-├── sched/      cooperative scheduler + UStrand
-├── stdlib/     baked stdlib + Object/List/Dict/etc.
-├── tag/        UTag
-├── value/      UValue + intern + arena
-├── vm/         dispatch loop + OP_* handlers
-└── watcher/    UWatcher + install/eval/drain/spawn
-tools/          host binaries (urbi, urbi-server, urbi-send) + vendored linenoise
+├── parse/      parser and AST
+├── emit/       emitter, disassembler, serializer, and the one compile entry point
+├── chunk/      the bytecode container: writer, loader, verifier, UProto
+├── util/       shared by the frontend: AST arena, varint codec, freestanding helpers
+├── rt/         the runtime — see docs/internals/runtime.md
+├── stdlib/     built-in methods in C, plus stdlib.u baked to bytecode
+├── host/       public API whose implementation needs libc (the value formatter)
+├── repl/       the cooperative NDJSON eval service; the networked server is parked
+├── ros/        parked until Phase 5
+└── urobotics/  parked until Phase 5
+tools/          host binaries (urbi, the stdlib bake tool) + vendored linenoise
 ```
 
-Subsystem-directory layout under `src/`; each subsystem is a
-self-contained set of translation units. The `tools/` directory
-contains host binaries and vendored linenoise — neither is part of
-`liburbi.a`.
+`src/rt/` holds to a strict include order and a freestanding rule —
+no libc beyond five headers — which is what lets the same source build
+for a microcontroller. `tests/scripts/check_rt_layering.sh` enforces
+both. The `tools/` directory is not part of `liburbi.a`.
 
 ## Documentation
 
-- `CONTRIBUTING.md` — build, test, cross-compile, and contribution how-tos
-- `docs/STYLE.md` — code-level style decisions (naming, const-correctness, error model, initialization, headers, tests)
+- [`docs/embedding-guide.md`](docs/embedding-guide.md) — the C API, with a complete worked program
+- [`docs/internals/runtime.md`](docs/internals/runtime.md) — how the runtime works
+- [`docs/internals/architecture.md`](docs/internals/architecture.md) — how the compiler works
+- `CONTRIBUTING.md` — build, test, and contribution how-tos
+- `docs/STYLE.md` — naming, const-correctness, error model, initialization, headers, tests
 
 ## License
 

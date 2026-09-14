@@ -7,7 +7,7 @@ describes the runtime in `src/rt/uwatch.c`; the header block in
 be read together. Read [architecture.md](./architecture.md) first.
 
 `every (period) body` is NOT part of this subsystem. It is a periodic timer on
-the scheduler's heap — see [scheduler-design.md](./scheduler-design.md) — and
+the scheduler's heap — see [runtime.md](./runtime.md) — and
 appears here only because a tag stop cancels both kinds of thing at once.
 
 ## One watcher type
