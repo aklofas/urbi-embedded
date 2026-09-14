@@ -29,9 +29,11 @@ static void uapi_set_err(char *err, size_t errcap, const char *msg)
 
 UVM *urbi_open(UVMAllocFn alloc, void *ud, const UVMConfig *config)
 {
-    (void)config;   /* step_budget becomes live with the scheduler task */
     UVM *vm = uvm_open((UAllocFn)alloc, ud);
     if (!vm) return NULL;
+    /* config->step_budget is what urbi_step spends when its caller passes
+     * 0; leaving it unset keeps 0 meaning "until nothing is runnable". */
+    if (config) uvm_sched(vm)->default_budget = config->step_budget;
 #if __STDC_HOSTED__
     /* src/host is in this archive on a hosted build, so the unwinder can
      * borrow its formatter for the values the core cannot spell on its
@@ -54,6 +56,10 @@ void urbi_close(UVM *vm) { uvm_close(vm); }
 int urbi_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
 {
     if (!vm) return URBI_ERR_INVALID_ARG;
+    /* A caller that names no budget gets the one the VM was configured
+     * with, which is itself 0 -- "until nothing is runnable" -- unless the
+     * host asked for a bounded slice at urbi_open. */
+    if (budget == 0) budget = uvm_sched(vm)->default_budget;
     /* USTEP_* and URBI_STEP_* are the same three values, declared apart
      * so the core's header does not have to be the public one. */
     switch (usched_step(vm, budget, next_wake_us)) {
@@ -179,9 +185,9 @@ int urbi_load(UVM *vm, URealm *realm, const uint8_t *bytes, size_t n, UValue *ou
 
     UProtoCell *pc = uproto_bind(vm, root);
     if (!pc) return URBI_ERR_OOM;
-    pc->cell.flags |= UCELL_F_PINNED;
+    pc->cell.flags |= UCELL_F_RTPIN;
     UClosure *cl = uclosure_new(vm, root, 0);
-    pc->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    pc->cell.flags &= (uint16_t)~UCELL_F_RTPIN;
     if (!cl) return URBI_ERR_OOM;
     if (vm->protos[UP_CLOSURE]) cl->proto_obj = vm->protos[UP_CLOSURE];
 
@@ -228,9 +234,11 @@ UValue urbi_make_string(UVM *vm, const char *bytes, size_t n)
 }
 
 /* One pin bit per cell, not a counter — see the header.  The runtime
- * never touches it: anything the core needs to hold across an allocation
- * goes on a strand's C-root stack instead, so a host's pin is only ever
- * cleared by that host's own urbi_unref. */
+ * never touches THIS bit: what the core needs to hold across an
+ * allocation goes on a strand's C-root stack, or on the separate
+ * UCELL_F_RTPIN bit (src/rt/ugc.h) when there is no strand to hang it
+ * on.  So a host's pin is only ever cleared by that host's own
+ * urbi_unref, whatever script runs in between. */
 void urbi_ref(UVM *vm, UValue v)
 {
     (void)vm;
@@ -485,17 +493,17 @@ int urbi_watch(UVM *vm, URealm *realm, const char *expr,
 
     UProtoCell *pc = uproto_bind(vm, root);   /* takes ownership either way */
     if (!pc) return URBI_ERR_OOM;
-    pc->cell.flags |= UCELL_F_PINNED;
+    pc->cell.flags |= UCELL_F_RTPIN;
     UClosure *cl = uclosure_new(vm, root, 0);
-    pc->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    pc->cell.flags &= (uint16_t)~UCELL_F_RTPIN;
     if (!cl) return URBI_ERR_OOM;
     if (vm->protos[UP_CLOSURE]) cl->proto_obj = vm->protos[UP_CLOSURE];
 
-    cl->cell.flags |= UCELL_F_PINNED;         /* reachable from nothing yet */
+    cl->cell.flags |= UCELL_F_RTPIN;         /* reachable from nothing yet */
     /* Tagged with the realm's connection tag, which urbi_realm_tag hands
      * back, so a host can stop its own watches. */
     const UWatcher *w = uwatch_install_host(vm, realm, cl, cb, ud);
-    cl->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    cl->cell.flags &= (uint16_t)~UCELL_F_RTPIN;
     return w ? URBI_OK : URBI_ERR_OOM;
 }
 

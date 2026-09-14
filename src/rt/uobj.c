@@ -69,6 +69,14 @@ static int uobj_grow(struct UVM *vm, UObject *o) {
     return 0;
 }
 
+/* Install or overwrite a LOCAL slot.  `attrs` describes the slot being
+ * written, not a delta on the slot that was there: writing with attrs 0
+ * over a getter/setter slot REPLACES the property with a plain value and
+ * drops the accessors, and does not run the setter.  That is what the
+ * public urbi_slot_set / urbi_global_set do, and <urbi/urbi.h> says so;
+ * a caller that means to drive a property calls its setter itself.
+ * USLOT_CHANGED_EVENT is the one bit that survives, because it records a
+ * subscription rather than anything about the value. */
 int uobj_set_local(struct UVM *vm, UObject *o, USym *name, UValue v, uint8_t attrs) {
     UValue stored = v;
     if (attrs & (USLOT_GETTER | USLOT_SETTER)) {
@@ -173,23 +181,29 @@ int uobj_set_protos(struct UVM *vm, UObject *o, UObject **ps, uint16_t n) {
  * stamp (0 is reserved as "never visited", so a wrap skips back over it)
  * and the push-in-reverse helper that puts protos[0]/proto0 on top of the
  * stack so it's the first one popped and searched. */
+/* Starts a walk: bumps the visit stamp and clears the overflow marker, so
+ * uobj_resolve_overflowed describes THIS walk and not an older one. */
 static uint32_t uobj_next_stamp(struct UVM *vm) {
     UObjStats *st = uvm_objstats(vm);
     st->visit_stamp++;
     if (st->visit_stamp == 0) st->visit_stamp++;
+    st->resolve_overflow = 0;
     return st->visit_stamp;
 }
-static bool uobj_push_protos(const UObject *cur, UObject **stack, int *sp) {
-    if (cur->nprotos == 1) {
-        if (*sp >= URESOLVE_STACK_CAP) return false;
-        stack[(*sp)++] = cur->proto0;
-    } else {
-        for (int i = (int)cur->nprotos - 1; i >= 0; i--) {
-            if (*sp >= URESOLVE_STACK_CAP) return false;
-            stack[(*sp)++] = cur->protos[i];
-        }
+/* A frontier that outgrows the walk stack ends the search early.  Both
+ * callers then return false, which is indistinguishable from a genuine
+ * miss -- so record which one happened; the raise sites say so. */
+static bool uobj_push_protos(struct UVM *vm, const UObject *cur, UObject **stack, int *sp) {
+    uint16_t n = cur->nprotos == 1 ? 1u : cur->nprotos;
+    for (int i = (int)n - 1; i >= 0; i--) {
+        if (*sp >= URESOLVE_STACK_CAP) { uvm_objstats(vm)->resolve_overflow = 1; return false; }
+        stack[(*sp)++] = (cur->nprotos == 1) ? cur->proto0 : cur->protos[i];
     }
     return true;
+}
+
+bool uobj_resolve_overflowed(struct UVM *vm) {
+    return uvm_objstats(vm)->resolve_overflow != 0;
 }
 
 bool uobj_resolve(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out) {
@@ -203,7 +217,7 @@ bool uobj_resolve(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out
         cur->visit = stamp;
         int idx = uobj_find_local(cur, name);
         if (idx >= 0) { out->owner = cur; out->index = idx; return true; }
-        if (cur->nprotos > 0 && !uobj_push_protos(cur, stack, &sp)) return false;   /* proto graph too deep */
+        if (cur->nprotos > 0 && !uobj_push_protos(vm, cur, stack, &sp)) return false;   /* proto graph too deep */
     }
     return false;
 }
@@ -218,7 +232,7 @@ bool uobj_is_a(struct UVM *vm, UObject *o, UObject *proto) {
         if (cur->visit == stamp) continue;
         cur->visit = stamp;
         if (cur == proto) return true;
-        if (cur->nprotos > 0 && !uobj_push_protos(cur, stack, &sp)) return false;   /* proto graph too deep */
+        if (cur->nprotos > 0 && !uobj_push_protos(vm, cur, stack, &sp)) return false;   /* proto graph too deep */
     }
     return false;
 }

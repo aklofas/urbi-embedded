@@ -169,9 +169,9 @@ static int uboot_run_stdlib(UVM *vm)
 
     /* Pin across the closure allocation: the chunk is reachable from
      * nothing until a closure points at it. */
-    pc->cell.flags |= UCELL_F_PINNED;
+    pc->cell.flags |= UCELL_F_RTPIN;
     UClosure *cl = uclosure_new(vm, root, 0);
-    pc->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    pc->cell.flags &= (uint16_t)~UCELL_F_RTPIN;
     if (!cl) { uvm_spare_release(vm, s); return URBI_ERR_OOM; }
     cl->proto_obj = vm->protos[UP_CLOSURE];
 

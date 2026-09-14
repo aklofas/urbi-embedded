@@ -81,12 +81,13 @@ void ugc_collect(struct UVM *vm) {
     g->gray_len = 0;
     g->gray_overflow = 0;
     if (g->hooks.mark_fixed) g->hooks.mark_fixed(vm);
-    /* A pinned cell survives sweep unconditionally (see below), but that
-     * must not let it also skip tracing -- otherwise a child reachable
-     * only through a pinned parent gets swept while the parent survives.
-     * Marking every pinned cell here queues it (and, once traced, its
-     * children) through the normal gray machinery. */
-    for (UCell *c = g->all; c; c = c->next) if (c->flags & UCELL_F_PINNED) ugc_mark(vm, c);
+    /* A pinned cell survives sweep because THIS loop marks it: sweep keeps
+     * any cell with a nonzero mark and knows nothing about the pin bits.
+     * Going through ugc_mark rather than setting the mark directly is what
+     * also traces the cell, so a child reachable only through a pinned
+     * parent is not swept while the parent survives.  Both pins count --
+     * the host's (urbi_ref) and the runtime's short-lived one. */
+    for (UCell *c = g->all; c; c = c->next) if (c->flags & UCELL_F_PIN_ANY) ugc_mark(vm, c);
     /* Cells that couldn't be pushed onto gray[] (OOM growing it) are still
      * gray (marked == 1) but were never traced. Drain gray[] normally,
      * then -- if anything overflowed -- rescan the whole heap once for

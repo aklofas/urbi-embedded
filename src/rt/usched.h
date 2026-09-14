@@ -126,11 +126,18 @@ typedef struct USched {
      * microsecond per usched_step.  Timers still fire, just slowly; a
      * host that cares installs urbi_set_clock. */
     uint64_t fallback_now_us;
+
+    /* UVMConfig.step_budget: what urbi_step spends when its caller passes
+     * 0.  Zero here keeps the original meaning of 0 -- run until nothing
+     * is runnable -- so a host that never sets it sees no change.  Read
+     * only by urbi_step; the internal pumps pass their own budget. */
+    uint32_t default_budget;
 } USched;
 
 /* Instructions handed to one strand before the scheduler looks at the
- * queue again.  Only backward jumps and calls consume budget, so a
- * straight-line strand runs to its next park or death regardless. */
+ * queue again.  Only backward jumps consume budget (one decrement, in
+ * uexec_ops.c), so a straight-line strand runs to its next park or death
+ * regardless. */
 #define USCHED_SLICE 256u
 
 /* Accessor into the owning VM, defined by the layer above (uexec.c) —

@@ -10,11 +10,8 @@
  * throw inside urbiscript — surfaces as URBI_ERR_UNCAUGHT_THROW with the
  * rendered exception available from urbi_last_error.
  *
- * Subsystems still under construction (events, watchers, tags, and the
- * scheduler behind urbi_step) are declared here with their final
- * signatures and return URBI_ERR_INVALID_STATE until their task lands;
- * each one says so in its own comment.  Nothing here changes shape when
- * they do.
+ * Every function declared here is implemented and live; nothing in this
+ * header is a stub.
  *
  * Threading: a UVM is single-threaded.  urbi_inject_event is the one
  * exception and is safe to call from an interrupt handler. */
@@ -43,7 +40,12 @@ extern "C" {
 
 /* Optional knobs for urbi_open.  Pass NULL for the defaults. */
 typedef struct UVMConfig {
-    uint32_t step_budget;   /* instructions per urbi_step slice; 0 = built-in default */
+    /* What urbi_step spends when its caller passes 0.  Leave it 0 and a
+     * zero budget keeps its plain meaning: run until nothing is runnable.
+     * Set it and every unbudgeted urbi_step becomes a bounded slice,
+     * which is what a host on a fixed RTOS tick wants without having to
+     * repeat the number at each call.  An explicit budget always wins. */
+    uint32_t step_budget;
     uint8_t  boot_stdlib;   /* 1 = install the standard library at open (default 1) */
 } UVMConfig;
 
@@ -116,10 +118,18 @@ void urbi_set_wake(UVM *vm, void (*fn)(void *ud), void *ud);
  * from the VM's built-in globals, so realms share the standard library
  * but not each other's variables. */
 URealm *urbi_realm_new(UVM *vm);
-/* Detach a realm.  Its objects are reclaimed by the collector once
- * nothing else refers to them.  Freeing the main realm is a no-op. */
+/* Tear a realm down.  This is not a detach-and-forget: it stops the
+ * realm's connection tag, drops the realm's pending timers and disarms
+ * its watchers.  The globals object goes with it, so a strand of that
+ * realm still on the run queue throws at its next global read; one that
+ * was parked is simply never scheduled again, so its cleanup does not
+ * run.  What is left is reclaimed by the collector once nothing else
+ * refers to it.  Freeing the main realm is a no-op. */
 void    urbi_realm_free(UVM *vm, URealm *realm);
-/* The realm created at urbi_open; never NULL for a live VM. */
+/* The VM's main realm, created on first demand rather than at urbi_open:
+ * a host that only ever calls urbi_run(vm, NULL, ...) never names one.
+ * NULL only if that creation hits OOM, so it is worth a check on the
+ * first call and not on later ones. */
 URealm *urbi_realm_main(UVM *vm);
 /* A realm's connection tag, as a Tag value, or nil when the realm has
  * none.  Every strand the realm spawns inherits it, and every watch
@@ -206,6 +216,23 @@ void urbi_unref(UVM *vm, UValue v);
  * Globals and slots
  * =================================================================== */
 
+/* Read and write a named slot, on a realm's globals or on an object.
+ * The _get pair resolves up the proto chain; the _set pair always writes
+ * a LOCAL slot on the named object, shadowing anything inherited.
+ *
+ * A host write REPLACES the slot outright.  If the slot was a property —
+ * one carrying a getter and a setter — the accessors go with it and the
+ * setter is NOT invoked: the slot becomes a plain value.  A host that
+ * means to drive a property calls its setter itself, via urbi_call.  A
+ * `changed?` subscription on the slot does survive, because that is a
+ * subscription rather than a property of the value being written.
+ *
+ * Both _set forms mark the slot changed, so watchers and `changed?`
+ * subscribers see a host write the same way they see a script one.
+ *
+ * URBI_ERR_INVALID_ARG for a name that does not resolve, for
+ * urbi_slot_set on anything but an object, and for a write to one of the
+ * read-only built-in prototypes. */
 int urbi_global_get(UVM *vm, URealm *realm, const char *name, UValue *out);
 int urbi_global_set(UVM *vm, URealm *realm, const char *name, UValue v);
 int urbi_slot_get(UVM *vm, UValue obj, const char *name, UValue *out);
@@ -235,15 +262,23 @@ int urbi_throw(UVM *vm, const char *proto, const char *msg);
  * Events and watchers
  * =================================================================== */
 
-/* Create a named event object on `realm`. */
+/* Create a named event object.
+ *
+ * `realm` is RESERVED and currently ignored — pass NULL.  An event is a
+ * plain collectable cell with no realm affiliation: it is installed
+ * nowhere, and the caller decides which namespace (if any) the returned
+ * value lands in.  The parameter is kept so realm-scoped events can
+ * arrive without a signature change; the same is true of urbi_tag_new
+ * and urbi_event_register below. */
 int urbi_event_new(UVM *vm, URealm *realm, const char *name, UValue *out);
 /* Emit an event with an optional payload value. */
 int urbi_event_emit(UVM *vm, UValue event, UValue payload);
-/* Create-or-find a named event on `realm` and hand back the id an
- * interrupt handler routes through.  This is the other half of
- * urbi_inject_event: an id has no other source, and a registered event
- * is held for the life of the VM so an ISR can never name a collected
- * one.  URBI_ERR_OOM once the id table is full. */
+/* Create-or-find a named event and hand back the id an interrupt handler
+ * routes through.  This is the other half of urbi_inject_event: an id has
+ * no other source, and a registered event is held for the life of the VM
+ * so an ISR can never name a collected one.  The id table is VM-wide,
+ * which is why `realm` is RESERVED here too — pass NULL.
+ * URBI_ERR_OOM once the id table is full. */
 int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_t *out_id);
 /* Deposit an event from an interrupt handler.  ISR-safe and
  * allocation-free: the payload is copied into a lock-free ring and
@@ -276,6 +311,9 @@ int urbi_watch(UVM *vm, URealm *realm, const char *expr,
  * inside it through its cleanup -- from wherever the caller is, inside
  * the scope or out.  block and freeze are independent gates. */
 
+/* `realm` is RESERVED and currently ignored — pass NULL.  A tag is a
+ * plain collectable cell; utag_stop finds its members by walking every
+ * realm, so a tag belongs to whoever holds it, not to one namespace. */
 int urbi_tag_new(UVM *vm, URealm *realm, const char *name, UValue *out);
 int urbi_tag_stop(UVM *vm, UValue tag);
 int urbi_tag_block(UVM *vm, UValue tag);

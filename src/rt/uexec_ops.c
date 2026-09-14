@@ -99,11 +99,17 @@ static int slot_get(UVM *vm, UStrand *s, UValue recv, const USym *name, const ch
         /* A miss is a read too: the condition `at (Realm.x > 5)` installed
          * before anything declared `x` has to notice the declaration. */
         uwatch_observe(vm, o);
-        char msg[160]; size_t at = 0;
+        char msg[192]; size_t at = 0;
         const char *p = what; while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
         p = ": slot '"; while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
         p = name->bytes; while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
-        p = "' not found"; while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
+        /* "Not found" and "gave up looking" are different answers, and a
+         * proto graph wide or deep enough to exhaust the walk stack gets
+         * the second one -- said out loud rather than mis-reported as a
+         * missing slot. */
+        p = uobj_resolve_overflowed(vm) ? "' unreachable: proto graph exceeds the 64-entry resolution stack"
+                                        : "' not found";
+        while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
         msg[at] = '\0';
         return uexec_throw(vm, s, UP_LOOKUPERROR, msg);
     }
@@ -736,12 +742,14 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             if ((i & 0xFFu) == OP_SETSLOT_UPDATE) {
                 UObjSlotRef probe;
                 if (!uobj_resolve(vm, o, names[OPC(i)], &probe)) {
-                    char msg[160]; size_t at = 0;
+                    char msg[192]; size_t at = 0;
                     const char *p = "slot write: slot '";
                     while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
                     p = names[OPC(i)]->bytes;
                     while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
-                    p = "' not found";
+                    p = uobj_resolve_overflowed(vm)
+                        ? "' unreachable: proto graph exceeds the 64-entry resolution stack"
+                        : "' not found";
                     while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
                     msg[at] = '\0';
                     (void)uexec_throw(vm, s, UP_LOOKUPERROR, msg);
@@ -1152,14 +1160,14 @@ int uexec_run_chunk(UVM *vm, URealm *realm, UClosure *cl, UValue *out)
      * its strands are mid-run. */
     UValue recv = realm->globals ? uv_obj(realm->globals) : uv_nil();
     /* usched_spawn allocates; the closure is reachable from nothing yet. */
-    cl->cell.flags |= UCELL_F_PINNED;
+    cl->cell.flags |= UCELL_F_RTPIN;
     UStrand *s = usched_spawn(vm, realm, cl, realm->root_tag, recv, NULL, 0);
-    cl->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    cl->cell.flags &= (uint16_t)~UCELL_F_RTPIN;
     if (!s) return URBI_ERR_OOM;
 
     /* Held across the pump: the step that sees the strand die unlinks it
      * from its realm, and then nothing else keeps the cell addressable. */
-    s->cell.flags |= UCELL_F_PINNED;
+    s->cell.flags |= UCELL_F_RTPIN;
     /* Saved and restored rather than assigned, so a native that calls
      * back in through urbi_run leaves the outer chunk's claim in place. */
     USched *sc = uvm_sched(vm);
@@ -1176,7 +1184,7 @@ int uexec_run_chunk(UVM *vm, URealm *realm, UClosure *cl, UValue *out)
      * nobody awaits reports through.  Render this strand's again, so the
      * message the caller reads is the failure it is being handed. */
     if (threw) uexec_report_escape(vm, s);
-    s->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    s->cell.flags &= (uint16_t)~UCELL_F_RTPIN;
 
     int rc = uexec_finish_run(vm, threw ? UEXEC_THROW : UEXEC_OK);
     if (rc == URBI_OK && out) *out = res;
@@ -1198,9 +1206,9 @@ int uexec_run_source(UVM *vm, URealm *realm, const char *src, size_t n,
 
     /* Pin across the closure allocation: the chunk is not yet reachable
      * from any closure, frame or register, and uclosure_new may collect. */
-    pc->cell.flags |= UCELL_F_PINNED;
+    pc->cell.flags |= UCELL_F_RTPIN;
     UClosure *cl = uclosure_new(vm, root, 0);
-    pc->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    pc->cell.flags &= (uint16_t)~UCELL_F_RTPIN;
     if (!cl) return URBI_ERR_OOM;
     if (vm->protos[UP_CLOSURE]) cl->proto_obj = vm->protos[UP_CLOSURE];
 

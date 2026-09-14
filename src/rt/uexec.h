@@ -112,6 +112,7 @@ struct UVM {
     URealm    *realms;             /* list; realms->... ; main_realm is the first created */
     URealm    *main_realm;
     UStrand   *spare;              /* free list of spare strands for synchronous runs */
+    uint8_t    nspare;             /* how many are on it; capped at UVM_SPARE_CAP */
     UStrand   *spare_active;       /* spares currently handed out; a GC root (linked via UStrand.link) */
     UProtoCell *bound_protos;      /* every live bound chunk, for uvm_close teardown */
 
@@ -246,6 +247,14 @@ int uexec_call(UVM *vm, UStrand *s, UClosure *cl, UValue recv, const UValue *arg
 /* Run a strand until it parks, dies, or the budget is spent.  Returns
  * the strand's new state (USTRAND_READY / PARKED / DEAD / RUNNING). */
 int uexec_run(UVM *vm, UStrand *s, uint32_t budget);
+
+/* How many released spares the free list keeps (spec section 7).  Each one
+ * retains the register stack it grew to, so the list is a memory floor as
+ * well as an allocation saver; four covers the nesting the reactive
+ * runtime actually reaches (a condition, its body, and a sync emit inside
+ * that body) and a fifth concurrent spare is cheaper to re-allocate than
+ * to hold for the life of the VM. */
+#define UVM_SPARE_CAP 4u
 
 UStrand *uvm_spare_acquire(UVM *vm, URealm *realm);
 void     uvm_spare_release(UVM *vm, UStrand *s);

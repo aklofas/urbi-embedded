@@ -47,7 +47,16 @@ typedef struct UObject {
     uint32_t  visit;             /* per-VM stamp for diamond-safe walks */
 } UObject;
 
-typedef struct UObjStats { uint32_t next_id, visit_stamp; } UObjStats;
+typedef struct UObjStats {
+    uint32_t next_id, visit_stamp;
+    /* Set when the last uobj_resolve / uobj_is_a ran out of walk stack
+     * (URESOLVE_STACK_CAP, 64 frontier entries) and gave up.  Both return
+     * "not found" in that case, which for a legal-but-huge proto graph is
+     * a wrong answer rather than an answer -- so the message a caller
+     * raises has to say which of the two it got.  Cleared at the top of
+     * every walk; read through uobj_resolve_overflowed. */
+    uint8_t  resolve_overflow;
+} UObjStats;
 UObjStats *uvm_objstats(struct UVM *vm);      /* defined in uexec.c; see tests/rt/fakevm.c */
 
 static inline UValue uv_obj(UObject *o) { return uv_ptr(UV_OBJ, o); }
@@ -71,6 +80,9 @@ bool     uobj_resolve(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef 
 static inline UValue  uobj_slot_value(const UObjSlotRef *r) { return r->owner->values[r->index]; }
 static inline uint8_t uobj_slot_attrs(const UObjSlotRef *r) { return r->owner->attrs[r->index]; }
 bool     uobj_is_a(struct UVM *vm, UObject *o, UObject *proto);    /* o == proto or proto in o's ancestry */
+/* Whether the walk that just returned false ran out of stack rather than
+ * searching the whole graph.  Valid until the next walk. */
+bool     uobj_resolve_overflowed(struct UVM *vm);
 void     uobj_trace(struct UVM *vm, UObject *o);                   /* GC: mark names? no (immortal), values, protos */
 void     uobj_finalize(struct UVM *vm, UObject *o);                /* free the three arrays and protos[] */
 #endif

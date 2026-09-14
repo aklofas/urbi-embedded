@@ -399,6 +399,50 @@ static void changed_event_fires_on_a_write_but_not_on_the_install(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* Taking `x.changed?` on an object has to hold that object across two
+ * allocations.  It used to borrow UCELL_F_PINNED -- the HOST's pin bit --
+ * and clear it unconditionally on the way out, so an embedder that had
+ * urbi_ref'd the object lost its hold the first time script subscribed to
+ * one of its slots, and the next collection was free to free a value the
+ * host still held.  The runtime has its own pin bit now (UCELL_F_RTPIN).
+ *
+ * The object is reachable by name only while the subscription is set up;
+ * dropping the name afterwards leaves the host's pin as the one thing
+ * keeping it alive, which is what makes the collect below load-bearing. */
+static void a_host_pin_survives_a_changed_subscription(void)
+{
+    Fix fx; fix_open(&fx);
+    URealm *realm = urbi_realm_main(fx.vm);
+
+    UValue ov = run(&fx, "Object.new()");
+    RT_EQ(ov.kind, (uint8_t)UV_OBJ);
+    urbi_ref(fx.vm, ov);
+
+    RT_EQ(urbi_global_set(fx.vm, realm, "Probe", ov), URBI_OK);
+    run(&fx, "var fired = 0");
+    run(&fx, "var Probe.x = 0");
+    run(&fx, "at (Probe.x.changed?) { fired = fired + 1 }");
+    run(&fx, "Probe.x = 1");
+    RT_EQ(global_int(&fx, "fired"), 1);
+
+    /* The direct regression: the subscription must not have cleared the
+     * host's bit. */
+    RT_CHECK((((UCell *)ov.v.p)->flags & UCELL_F_PINNED) != 0);
+
+    /* And the pin must still do its job with nothing else referring to
+     * the object. */
+    RT_EQ(urbi_global_set(fx.vm, realm, "Probe", urbi_make_nil()), URBI_OK);
+    urbi_gc_collect(fx.vm);
+    RT_EQ(((UCell *)ov.v.p)->type, (uint8_t)UCELL_OBJ);
+    UValue x = urbi_make_nil();
+    RT_EQ(urbi_slot_get(fx.vm, ov, "x", &x), URBI_OK);
+    RT_EQ(x.v.i, 1);
+
+    urbi_unref(fx.vm, ov);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 /* --- (h) a tag cancels the watchers installed inside its scope ----------- */
 
 static void tag_stop_removes_the_watcher(void)
@@ -617,6 +661,7 @@ RT_SUITE(rt_watch_suite) {
     rt_run("sync_emit_runs_a_sync_subscriber_inline", sync_emit_runs_a_sync_subscriber_inline);
     rt_run("waituntil_event_resumes_with_the_payload", waituntil_event_resumes_with_the_payload);
     rt_run("changed_event_fires_on_a_write_but_not_on_the_install", changed_event_fires_on_a_write_but_not_on_the_install);
+    rt_run("a_host_pin_survives_a_changed_subscription", a_host_pin_survives_a_changed_subscription);
     rt_run("tag_stop_removes_the_watcher", tag_stop_removes_the_watcher);
     rt_run("tag_stop_unsubscribes_an_event_watcher", tag_stop_unsubscribes_an_event_watcher);
     rt_run("a_condition_may_cancel_its_own_watcher", a_condition_may_cancel_its_own_watcher);

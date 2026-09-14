@@ -247,6 +247,33 @@ static void register_preserves_a_host_pin(void) {
     fix_close(&fx);
 }
 
+/* Spec section 7 caps the spare-strand free list at four.  Each retained
+ * spare holds on to the register stack it grew, so an uncapped list turns
+ * one deep nesting into a permanent memory floor. */
+static void the_spare_free_list_is_capped(void)
+{
+    ExecFix fx; fix_open(&fx);
+    UStrand *held[UVM_SPARE_CAP + 3];
+    const int n = (int)(sizeof held / sizeof held[0]);
+
+    for (int i = 0; i < n; i++) {
+        held[i] = uvm_spare_acquire(fx.vm, fx.realm);
+        RT_CHECK(held[i] != NULL);
+    }
+    /* All of them are out, so the free list is empty. */
+    RT_EQ(fx.vm->nspare, 0u);
+    for (int i = 0; i < n; i++) uvm_spare_release(fx.vm, held[i]);
+    RT_EQ(fx.vm->nspare, (uint8_t)UVM_SPARE_CAP);
+
+    /* And the list still hands them back: the cap drops spares, it does
+     * not corrupt the list. */
+    int got = 0;
+    while (fx.vm->spare) { RT_CHECK(uvm_spare_acquire(fx.vm, fx.realm) != NULL); got++; }
+    RT_EQ(got, (int)UVM_SPARE_CAP);
+    RT_EQ(fx.vm->nspare, 0u);
+    fix_close(&fx);
+}
+
 RT_SUITE(rt_exec_suite) {
     rt_run("int_arithmetic", int_arithmetic);
     rt_run("function_call_returns_value", function_call_returns_value);
@@ -259,4 +286,5 @@ RT_SUITE(rt_exec_suite) {
     rt_run("every_emitted_opcode_has_an_arm", every_emitted_opcode_has_an_arm);
     rt_run("forward_jmp_past_end_is_rejected", forward_jmp_past_end_is_rejected);
     rt_run("register_preserves_a_host_pin", register_preserves_a_host_pin);
+    rt_run("the_spare_free_list_is_capped", the_spare_free_list_is_capped);
 }

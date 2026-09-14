@@ -17,9 +17,23 @@ typedef struct UCell {
     uint32_t size;
     uint8_t  type;       /* UCellType */
     uint8_t  marked;      /* tri-state: 0 white, 1 gray (queued, not yet traced), 2 black (traced) */
-    uint16_t flags;      /* per-type bits; UCELL_F_PINNED is reserved here */
+    uint16_t flags;      /* per-type bits; the two pin bits are reserved here */
 } UCell;
+/* The HOST's pin, taken by urbi_ref and released by urbi_unref.  The
+ * runtime never sets or clears it -- that is the guarantee <urbi/urbi.h>
+ * makes, and the reason the internal pin below is a separate bit. */
 #define UCELL_F_PINNED 0x8000
+/* The RUNTIME's pin: a short-lived hold on a cell that is reachable from
+ * nothing yet (a fresh chunk, a fresh closure) or reachable only through a
+ * caller's register, taken across an allocation that may collect.
+ *
+ * NOT NESTABLE.  It is one bit, so an inner release clears an outer hold;
+ * every site that takes it must therefore release it before returning, and
+ * no two live holds may name the same cell.  A hold that has to outlive a
+ * call goes on the strand's C-root stack instead (see USTRAND_ROOT). */
+#define UCELL_F_RTPIN  0x4000
+/* Either pin keeps a cell through sweep; ugc_collect pre-marks both. */
+#define UCELL_F_PIN_ANY (UCELL_F_PINNED | UCELL_F_RTPIN)
 
 struct UVM;
 typedef struct UGcRoots {              /* fixed roots the VM registers once */

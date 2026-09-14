@@ -157,6 +157,7 @@ void uvm_close(UVM *vm)
     vm->realms = NULL;
     vm->main_realm = NULL;
     vm->spare = NULL;
+    vm->nspare = 0;
     vm->spare_active = NULL;
     vm->sched.run_head = vm->sched.run_tail = vm->sched.current = NULL;
     vm->sched.dead = NULL;
@@ -304,6 +305,7 @@ UStrand *uvm_spare_acquire(UVM *vm, URealm *realm)
     UStrand *s = vm->spare;
     if (s) {
         vm->spare = s->link;
+        vm->nspare--;
         s->link = NULL;
         s->realm = realm;
     } else {
@@ -344,8 +346,14 @@ void uvm_spare_release(UVM *vm, UStrand *s)
     s->croots = NULL;
     s->tag = NULL;
     s->realm = NULL;
+    /* The free list is capped (spec section 7).  Past the cap the strand
+     * is simply dropped: it is off the in-use list and off the free list,
+     * so nothing roots it and the next collection takes it -- along with
+     * the register stack it grew, which is the point of the cap. */
+    if (vm->nspare >= UVM_SPARE_CAP) { s->link = NULL; return; }
     s->link = vm->spare;
     vm->spare = s;
+    vm->nspare++;
 }
 
 /* --- chunk binding ------------------------------------------------------ */

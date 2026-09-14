@@ -483,12 +483,18 @@ UEvent *uwatch_slot_change_event(UVM *vm, UObject *o, const USym *name)
 
     /* Pin the owner across the allocations below: it is reachable only
      * through the caller's register, which OP_GETSLOT_CHANGE_EVENT
-     * re-derives afterwards, and ugc_alloc may collect. */
-    o->cell.flags |= UCELL_F_PINNED;
+     * re-derives afterwards, and ugc_alloc may collect.
+     *
+     * The RUNTIME's pin bit, not the host's.  `o` is an arbitrary user
+     * object -- whatever receiver the script took `x.changed?` on -- and
+     * an embedder may be holding it through urbi_ref.  Taking and
+     * clearing UCELL_F_PINNED here would release that hold and leave the
+     * host with a pointer the next collection is free to free. */
+    o->cell.flags |= UCELL_F_RTPIN;
     UEvent *e = uevent_new(vm, uv_nil());
     int rc = -1;
     if (e) rc = uobj_set_local(vm, o, hidden, uv_ptr(UV_CELL, e), 0);
-    o->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    o->cell.flags &= (uint16_t)~UCELL_F_RTPIN;
     if (rc < 0) return NULL;
 
     /* The watched slot is NOT created here.  Subscribing to a slot that

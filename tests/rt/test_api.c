@@ -193,6 +193,47 @@ static void globals_slots_and_call(void) {
     RT_EQ(api_live, 0L);
 }
 
+/* UVMConfig.step_budget is the budget urbi_step spends when its caller
+ * names none.  It was declared in the header and dropped on the floor for
+ * the whole re-foundation; this case is what keeps it wired.
+ *
+ * The work has to arrive BETWEEN two steps, because the pump inside
+ * urbi_run passes its own budget and runs a chunk out regardless.  A
+ * watcher armed on a slot the host then writes is exactly that: the drain
+ * at the top of the next step spawns the body, and the budget decides how
+ * far it gets. */
+static void the_configured_step_budget_bounds_an_unbudgeted_step(void) {
+    static const char *arm  = "var x = 0 | at (x > 0) { var i = 0 | while (i < 200000) { i = i + 1 } } |";
+    UValue out;
+
+    UVMConfig cfg;
+    memset(&cfg, 0, sizeof cfg);
+    cfg.boot_stdlib = 1;
+    cfg.step_budget = 1;
+    api_live = 0;
+    UVM *vm = urbi_open(api_alloc, NULL, &cfg);
+    RT_CHECK(vm != NULL);
+    RT_EQ(run_ok(vm, arm, &out), URBI_OK);
+    RT_EQ(urbi_global_set(vm, NULL, "x", urbi_make_int(1)), URBI_OK);
+    /* One instruction is not a loop, so the step comes back with the body
+     * strand still on the run queue. */
+    RT_EQ(urbi_step(vm, 0, NULL), URBI_STEP_RAN);
+    RT_CHECK(urbi_has_live_work(vm));
+    urbi_close(vm);
+    RT_EQ(api_live, 0L);
+
+    /* Same program, no configured budget: 0 keeps its plain meaning and
+     * one step runs the body out. */
+    api_live = 0;
+    vm = urbi_open(api_alloc, NULL, NULL);
+    RT_CHECK(vm != NULL);
+    RT_EQ(run_ok(vm, arm, &out), URBI_OK);
+    RT_EQ(urbi_global_set(vm, NULL, "x", urbi_make_int(1)), URBI_OK);
+    RT_EQ(urbi_step(vm, 0, NULL), URBI_STEP_QUIESCENT);
+    urbi_close(vm);
+    RT_EQ(api_live, 0L);
+}
+
 static void scheduler_api_surface(void) {
     UVM *vm = api_open();
     UValue v = urbi_make_nil();
@@ -284,5 +325,6 @@ RT_SUITE(rt_api_suite) {
     rt_run("host_functions", host_functions);
     rt_run("globals_slots_and_call", globals_slots_and_call);
     rt_run("scheduler_api_surface", scheduler_api_surface);
+    rt_run("the_configured_step_budget_bounds_an_unbudgeted_step", the_configured_step_budget_bounds_an_unbudgeted_step);
     rt_run("version_and_null_arguments", version_and_null_arguments);
 }
