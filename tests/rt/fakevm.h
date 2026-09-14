@@ -4,6 +4,7 @@
 #include "rt/ugc.h"
 #include "rt/ustr.h"
 #include "rt/uobj.h"
+#include "rt/ulist.h"
 /* Until uexec.h exists, tests define struct UVM themselves; Task 8 replaces
  * this header with one that includes rt/uexec.h and keeps the same helpers. */
 struct UVM { UGc gc; UCell **roots; int nroots; UStrTab strings; UObjStats objstats; };
@@ -19,12 +20,16 @@ static void fake_trace(struct UVM *vm, UCell *c) {
         ugc_mark_value(vm, p->value);
         break;
     }
+    case UCELL_LIST: ulist_trace(vm, (UList *)c); break;
+    case UCELL_DICT: udict_trace(vm, (UDict *)c); break;
     default: break;
     }
 }
 static void fake_finalize(struct UVM *vm, UCell *c) {
     switch (c->type) {
     case UCELL_OBJ: uobj_finalize(vm, (UObject *)c); break;
+    case UCELL_LIST: ulist_finalize(vm, (UList *)c); break;
+    case UCELL_DICT: udict_finalize(vm, (UDict *)c); break;
     default: break;
     }
 }

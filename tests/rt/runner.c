@@ -11,11 +11,13 @@ extern void rt_value_suite(void);
 extern void rt_gc_suite(void);
 extern void rt_str_suite(void);
 extern void rt_obj_suite(void);
+extern void rt_list_suite(void);
 int main(void) {
     rt_run("value", rt_value_suite);
     rt_run("gc", rt_gc_suite);
     rt_run("str", rt_str_suite);
     rt_run("obj", rt_obj_suite);
+    rt_run("list", rt_list_suite);
     printf("rt: %d cases, %d failed, %d checks\n", cases, failed, rt_checks);
     return failed ? 1 : 0;
 }
