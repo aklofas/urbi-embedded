@@ -712,14 +712,17 @@ coverage: coverage-tools
 	$(MAKE) TARGET=host-coverage \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g --coverage" \
 		test
-	# Line-coverage floor lowered from 85% to 80% in Phase 0 of the core re-foundation:
-	# the deleted runtime-internals unit tests covered code that the refound/core
-	# branch replaces. Re-baseline for the new core when it lands.
+	# Line-coverage floor. Phase 0 took it from 85% to 80% when the
+	# runtime-internals unit tests were deleted; the core re-foundation takes
+	# it to 75%. src/rt is 77-100% per file, but the frontend (parser,
+	# emitter) is now exercised only by the reduced .chk corpus, and most of
+	# that corpus needs subsystems that have not landed yet. Ratchet this
+	# back up as each one comes online and its directories rejoin the gate.
 	gcovr --root . \
 	      --object-directory build/host-coverage \
 	      --filter 'src/' \
 	      --merge-mode-functions=merge-use-line-min \
-	      --fail-under-line 80 \
+	      --fail-under-line 75 \
 	      --txt \
 	      --html-details build/host-coverage/report.html
 	@echo ""

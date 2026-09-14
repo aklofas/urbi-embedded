@@ -264,7 +264,7 @@ static int do_call(UVM *vm, UStrand *s, uint16_t fi, uint32_t instr)
 
 /* --- the dispatch loop --------------------------------------------------- */
 
-int uexec_run(UVM *vm, UStrand *s, uint32_t budget)
+static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
 {
     bool unbounded = (budget == 0);
     s->state = USTRAND_RUNNING;
@@ -515,6 +515,20 @@ int uexec_run(UVM *vm, UStrand *s, uint32_t budget)
     unwind:
         if (uexec_unwind(vm, s) != 0) return s->state;
     }
+}
+
+/* The strand in dispatch is published on the scheduler for the duration
+ * of the run: urbi_throw reads it to find where to deposit a native's
+ * exception, and mark_fixed walks it.  Saved and restored so a native
+ * that calls back into script (uexec_call) leaves the outer strand in
+ * place when it returns. */
+int uexec_run(UVM *vm, UStrand *s, uint32_t budget)
+{
+    UStrand *prev = vm->sched.current;
+    vm->sched.current = s;
+    int st = uexec_run_inner(vm, s, budget);
+    vm->sched.current = prev;
+    return st;
 }
 
 /* --- synchronous entry points -------------------------------------------- */
