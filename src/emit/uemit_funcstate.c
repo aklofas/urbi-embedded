@@ -157,6 +157,17 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
         }
     }
 
+    /* Drop prev_line to the sentinel so the child proto's first
+     * instruction bootstraps its own absolute checkpoint instead of
+     * encoding a delta against the PARENT's last line.  Each proto owns
+     * its own line_deltas table and a decoder reads that table from line
+     * 0, so a table that continues the parent's state decodes as
+     * `actual - parent_prev_line`.  Mirrors the reset uemit_close_function
+     * already does on the way out; the caller wires target_proto
+     * immediately after this returns, so `parent != NULL` is exactly the
+     * nested case. */
+    if (parent != NULL) e->prev_line = 0U;
+
     e->current_fs = fs;
     return fs;
 }
