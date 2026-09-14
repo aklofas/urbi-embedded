@@ -43,9 +43,9 @@ static const uint8_t URBI_BYTECODE_CANARY[URBI_BYTECODE_CANARY_LEN] = {
 #define URBI_INT_WIDTH 8          /* i64 on every v1 target */
 #endif
 
-#ifndef URBI_FLOAT_TYPE
-#define URBI_FLOAT_TYPE 8         /* 8 = f64, 4 = f32; overridden per target */
-#endif
+/* Float flavor is fixed at 8 (f64/double) — the old per-target f32 flavor
+ * (URBI_FLOAT_TYPE) has been retired; UValue's float arm is always double
+ * (include/urbi/types.h). */
 
 #ifndef URBI_INSTR_WIDTH
 #define URBI_INSTR_WIDTH 4        /* uint32 always */

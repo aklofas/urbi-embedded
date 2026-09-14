@@ -260,7 +260,6 @@ static void checked_to_str_succeeds_on_str(void)
      * matching the UVAL_STR layout documented in types.h:254-261. */
     UValue v;
     v.kind = (uint8_t)UVAL_STR;
-    for (size_t i = 0; i < sizeof(v._pad); i++) v._pad[i] = 0;
     v.v.p = (void *)"hello";
     const char *s = NULL;
     size_t len = 999;
@@ -378,7 +377,6 @@ static void checked_to_str_null_out_is_type_check(void)
     /* Build a UVAL_STR synthetically (no live VM needed). */
     UValue v;
     v.kind = (uint8_t)UVAL_STR;
-    for (size_t i = 0; i < sizeof(v._pad); i++) v._pad[i] = 0;
     v.v.p = (void *)"hi";
     int rc = urbi_aux_value_to_str(v, NULL, NULL);
     UASSERT(rc == URBI_OK);   /* type matches; both outs NULL = pure type check */

@@ -87,6 +87,15 @@ typedef struct UProto {
     UValue    *constants;
     size_t     const_count;
     size_t     const_cap;
+    /* [runtime-only, NOT serialized] true iff constants[] was populated by
+     * the chunk deserializer (decode_constants_into), whose UVAL_STR arm
+     * mallocs a fresh buffer per string constant — uproto_destroy_buffers
+     * must free those.  false for emit-time protos, whose UVAL_STR
+     * constants hold intern-table pointers (VM-owned, must NOT be freed
+     * here).  A single UProto's constants[] is populated exclusively by
+     * one path or the other, never a mix.  Zero-init (false) elsewhere via
+     * urbi_zero at proto alloc. */
+    bool       constants_owned;
 
     int8_t    *line_deltas;
 

@@ -8,7 +8,6 @@
  * an undefined symbol — link fails with a self-documenting name.
  *
  * Guards provided:
- *   URBI_FLOAT_TYPE            — 4 (float/f32) or 8 (double/f64)
  *   URBI_REPL_COOPERATIVE_ONLY — defined or undefined
  *   URBI_BYTECODE_ONLY         — defined or undefined
  *
@@ -23,24 +22,7 @@
 
 #define URBI_INTERNAL_GUARD_REF 1
 
-/* urbi/types.h supplies the URBI_FLOAT_TYPE default (8 = double) when the
- * flag is not supplied via -D on the command line. */
 #include "urbi/types.h"
-
-/* === URBI_FLOAT_TYPE ===
- *
- * Default: 8 (double/f64) for hosted builds.  Cross targets opt in to
- * URBI_FLOAT_TYPE=4 (float/f32) via -DURBI_FLOAT_TYPE=4 in their CFLAGS.
- * Motivating incident: v0.8.2 STM32F4 bring-up — embedder built with
- * URBI_FLOAT_TYPE=8 (header default) while liburbi.a was built with
- * URBI_FLOAT_TYPE=4, silently zeroing every UVAL_FLOAT crossing the boundary. */
-#if URBI_FLOAT_TYPE == 4
-const int urbi_abi_requires_float_type_4 = 1;
-#elif URBI_FLOAT_TYPE == 8
-const int urbi_abi_requires_float_type_8 = 1;
-#else
-#  error "URBI_FLOAT_TYPE must be 4 (float/f32) or 8 (double/f64)"
-#endif
 
 /* === URBI_REPL_COOPERATIVE_ONLY ===
  *

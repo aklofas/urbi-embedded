@@ -56,18 +56,6 @@ extern "C" {
 #  define URBI_STATIC_ASSERT(cond, msg) _Static_assert((cond), msg)
 #endif
 
-/* === Float-type configuration ===
- *
- * URBI_FLOAT_TYPE selects the size of the float arm in UValue's union:
- *   8 → double (f64)  -- default for hosted builds
- *   4 → float  (f32)  -- typically set on 32-bit cross-targets via
- *                        -DURBI_FLOAT_TYPE=4 in build flags.
- * The canonical definition lives in src/chunk/uchunk.h; this header
- * supplies the same default so external consumers see the same layout. */
-#ifndef URBI_FLOAT_TYPE
-#define URBI_FLOAT_TYPE 8
-#endif
-
 /* === Opaque struct forward declarations ===
  *
  * Host code uses these as opaque pointers; full definitions live in
@@ -84,13 +72,17 @@ struct UEvent;
 /* === UValKind: tag byte for UValue's union discriminant ===
  *
  * Numeric values pinned by the bytecode wire format (uchunk.h is the
- * runtime mirror; this header is the consumer-facing copy). 11-15 are
+ * runtime mirror; this header is the consumer-facing copy). 11 and 15 are
  * reserved; the loader rejects > UVAL_STR in constant pools at v1.0.
  *
  * UVAL_TAG = 12 is runtime-only — it carries a UTag* in v.p and is never
  * serialized into constant pools (the loader already rejects > UVAL_STR
  * per the v1.0 contract, wire format v1.8 / 0x18 unchanged).  Slot 11 is
- * reserved for the public-only URBI_VALUE_PTR mirror. */
+ * reserved for the public-only URBI_VALUE_PTR mirror.
+ *
+ * UVAL_SYM = 13 and UVAL_CELL = 14 are runtime-only, added for the
+ * refound/core value representation (src/rt/uvalue.h); like UVAL_TAG they
+ * are never serialized into constant pools. */
 typedef enum {
     UVAL_NIL     = 0,
     UVAL_INT     = 1,
@@ -104,25 +96,24 @@ typedef enum {
     UVAL_EVENT   = 9,
     UVAL_HOST_FN = 10,
     /* slot 11 reserved for the public-only URBI_VALUE_PTR mirror */
-    UVAL_TAG     = 12   /* runtime-only (v0.10.2) — not serialized into
+    UVAL_TAG     = 12,  /* runtime-only (v0.10.2) — not serialized into
                            constant pools (loader rejects > UVAL_STR per
                            v1.0 contract).  Carries UTag* in v.p. */
+    UVAL_SYM     = 13,  /* runtime-only (refound/core) — interned symbol. */
+    UVAL_CELL    = 14   /* runtime-only (refound/core) — GC cell pointer. */
 } UValKind;
 
 /* === UValue: 16-byte tagged union ===
  *
- * 1 byte kind + 7 byte pad + 8 byte payload.  Layout mirrored exactly by
- * src/chunk/uchunk.h. */
-typedef struct {
+ * 1 byte kind + implicit alignment padding + 8 byte payload.  The float
+ * arm is always `double` (f64) — the old per-target f32 float flavor
+ * (URBI_FLOAT_TYPE) has been retired; every build now shares one fixed
+ * layout.  Layout mirrored exactly by src/chunk/uchunk.h. */
+typedef struct UValue {
     uint8_t  kind;       /* UValKind */
-    uint8_t  _pad[7];
     union {
         int64_t i;
-#if URBI_FLOAT_TYPE == 8
         double  f;
-#else
-        float   f;
-#endif
         void   *p;
     } v;
 } UValue;
@@ -162,9 +153,9 @@ URBI_STATIC_ASSERT((int)URBI_VALUE_TAG     == (int)UVAL_TAG,     "urbi_value_kin
 /* === Gap N: urbi_make_* value constructors (inline) ===
  *
  * Typed constructors for all UValue kinds exposed at the public API surface.
- * These are zero-overhead inlines that set kind + clear pad + fill the
- * appropriate union arm.  urbi_make_str_interned is declared in
- * <urbi/urbi.h> (requires a live UVM for interning).
+ * These are zero-overhead inlines that set kind + fill the appropriate
+ * union arm.  urbi_make_str_interned is declared in <urbi/urbi.h> (requires
+ * a live UVM for interning).
  *
  * Pointer-bearing constructors (object/event/closure/ptr) store via v.p.
  * Boolean uses v.i with 0/1 (same convention as internal val_bool).
@@ -173,7 +164,6 @@ static inline UValue urbi_make_nil(void)
 {
     UValue v;
     v.kind = (uint8_t)UVAL_NIL;
-    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
     v.v.i = 0;
     return v;
 }
@@ -182,7 +172,6 @@ static inline UValue urbi_make_bool(bool b)
 {
     UValue v;
     v.kind = (uint8_t)UVAL_BOOL;
-    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
     v.v.i = b ? 1 : 0;
     return v;
 }
@@ -191,7 +180,6 @@ static inline UValue urbi_make_int(int64_t n)
 {
     UValue v;
     v.kind = (uint8_t)UVAL_INT;
-    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
     v.v.i = n;
     return v;
 }
@@ -200,12 +188,7 @@ static inline UValue urbi_make_float(double f)
 {
     UValue v;
     v.kind = (uint8_t)UVAL_FLOAT;
-    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
-#if URBI_FLOAT_TYPE == 8
     v.v.f = f;
-#else
-    v.v.f = (float)f;   /* explicit narrowing on f32 builds (-Wfloat-conversion clean) */
-#endif
     return v;
 }
 
@@ -213,7 +196,6 @@ static inline UValue urbi_make_void(void)
 {
     UValue v;
     v.kind = (uint8_t)UVAL_VOID;
-    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
     v.v.i = 0;
     return v;
 }
@@ -222,7 +204,6 @@ static inline UValue urbi_make_ptr(void *p)
 {
     UValue v;
     v.kind = (uint8_t)URBI_VALUE_PTR;
-    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
     v.v.p = p;
     return v;
 }
@@ -231,7 +212,6 @@ static inline UValue urbi_make_object(struct UObject *o)
 {
     UValue v;
     v.kind = (uint8_t)UVAL_OBJECT;
-    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
     v.v.p = (void *)o;
     return v;
 }
@@ -240,7 +220,6 @@ static inline UValue urbi_make_event(struct UEvent *e)
 {
     UValue v;
     v.kind = (uint8_t)UVAL_EVENT;
-    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
     v.v.p = (void *)e;
     return v;
 }
@@ -249,7 +228,6 @@ static inline UValue urbi_make_closure(struct UClosure *c)
 {
     UValue v;
     v.kind = (uint8_t)UVAL_CLOSURE;
-    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
     v.v.p = (void *)c;
     return v;
 }
@@ -258,7 +236,6 @@ static inline UValue urbi_make_tag(struct UTag *tag)
 {
     UValue v;
     v.kind = (uint8_t)UVAL_TAG;
-    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
     v.v.p = (void *)tag;
     return v;
 }
@@ -613,28 +590,6 @@ typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
 #ifdef __cplusplus
 }
 #endif
-
-/* Every TU that includes this header (other than uabi_guards.c itself)
- * references the symbol that matches the active URBI_FLOAT_TYPE value.
- * src/runtime/uabi_guards.c defines exactly one such symbol per build.
- * If embedder and library disagree on URBI_FLOAT_TYPE the reference
- * is undefined at link time, producing a diagnostic name like
- *   urbi_abi_requires_float_type_8 (undefined)
- * rather than silent UVAL_FLOAT truncation.
- *
- * Suppressed when URBI_INTERNAL_GUARD_REF=1 (i.e. inside uabi_guards.c
- * itself, which defines the symbols and must not also reference them). */
-#ifndef URBI_INTERNAL_GUARD_REF
-#  if URBI_FLOAT_TYPE == 4
-extern const int urbi_abi_requires_float_type_4;
-static const int *urbi_abi_float_guard_ref __attribute__((unused)) =
-    &urbi_abi_requires_float_type_4;
-#  elif URBI_FLOAT_TYPE == 8
-extern const int urbi_abi_requires_float_type_8;
-static const int *urbi_abi_float_guard_ref __attribute__((unused)) =
-    &urbi_abi_requires_float_type_8;
-#  endif
-#endif /* !URBI_INTERNAL_GUARD_REF */
 
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC visibility pop

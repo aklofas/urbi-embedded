@@ -189,7 +189,6 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     UCRootFrame f_obj, f_val;
     UValue obj_v;
     obj_v.kind = (uint8_t)UVAL_OBJECT;
-    for (int i = 0; i < 7; i++) obj_v._pad[i] = 0;
     obj_v.v.p = obj;
     urbi_c_root_push(vm, &f_obj, &obj_v);
     urbi_c_root_push(vm, &f_val, &value);
@@ -511,7 +510,6 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
     UCRootFrame f_obj, f_val;
     UValue obj_v;
     obj_v.kind = (uint8_t)UVAL_OBJECT;
-    for (int i = 0; i < 7; i++) obj_v._pad[i] = 0;
     obj_v.v.p = obj;
     urbi_c_root_push(vm, &f_obj, &obj_v);
     urbi_c_root_push(vm, &f_val, &value);
@@ -686,7 +684,6 @@ urbi_object_set_property_value(UVM *vm, UObject *obj, const USymbol *name,
     UCRootFrame f_obj, f_val;
     UValue obj_v;
     obj_v.kind = (uint8_t)UVAL_OBJECT;
-    for (int i = 0; i < 7; i++) obj_v._pad[i] = 0;
     obj_v.v.p = obj;
     urbi_c_root_push(vm, &f_obj, &obj_v);
     urbi_c_root_push(vm, &f_val, &value);

@@ -8,8 +8,6 @@
 #include "utest.h"
 #include "utest_e2e_helpers.h"
 
-#include <string.h>
-
 #include "urbi/urbi.h"
 #include "vm/uvm.h"
 
@@ -41,14 +39,18 @@ UTEST(make_int_round_trip)
     UASSERT_EQ(123, (int)v.v.i);
 }
 
-/* make_nil_matches_canonical: utest_e2e_make_nil must be byte-identical
- * to the public urbi_make_nil() — it is just a delegate. */
+/* make_nil_matches_canonical: utest_e2e_make_nil must match the public
+ * urbi_make_nil() field-for-field — it is just a delegate.  Compared by
+ * field rather than by memcmp: UValue's implicit alignment padding is not
+ * initialized by either constructor, so a whole-struct memcmp is not
+ * guaranteed deterministic. */
 UTEST(make_nil_matches_canonical)
 {
     UValue v = utest_e2e_make_nil();
     UASSERT_EQ((int)UVAL_NIL, (int)v.kind);
     UValue canonical = urbi_make_nil();
-    UASSERT_EQ(0, memcmp(&v, &canonical, sizeof(UValue)));
+    UASSERT_EQ((int)canonical.kind, (int)v.kind);
+    UASSERT_EQ(canonical.v.i, v.v.i);
 }
 
 /* run_to_no_runnable_zero_iters_when_no_strand: fresh VM has no runnable

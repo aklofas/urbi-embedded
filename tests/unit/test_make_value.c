@@ -3,8 +3,7 @@
  *
  * Verifies each of the 9 inline constructors by checking:
  *   1. The .kind field is set to the expected UVAL_* / URBI_VALUE_* constant.
- *   2. The payload union arm matches the input value.
- *   3. Pad bytes are zero (canonical bit-identical form, same as urbi_make_nil). */
+ *   2. The payload union arm matches the input value. */
 
 #include "utest.h"
 #include "urbi/types.h"
@@ -12,21 +11,11 @@
 #include <math.h>
 #include <string.h>
 
-/* Helper: verify all pad bytes are zero. */
-static int pad_is_zero(const UValue *v)
-{
-    for (size_t i = 0; i < sizeof(v->_pad); i++) {
-        if (v->_pad[i] != 0) return 0;
-    }
-    return 1;
-}
-
 static void make_nil_kind_and_payload(void)
 {
     UValue v = urbi_make_nil();
     UASSERT_EQ((int)v.kind, (int)UVAL_NIL);
     UASSERT_EQ(v.v.i, 0);
-    UASSERT(pad_is_zero(&v));
 }
 
 static void make_bool_true(void)
@@ -34,7 +23,6 @@ static void make_bool_true(void)
     UValue v = urbi_make_bool(true);
     UASSERT_EQ((int)v.kind, (int)UVAL_BOOL);
     UASSERT_EQ(v.v.i, 1);
-    UASSERT(pad_is_zero(&v));
 }
 
 static void make_bool_false(void)
@@ -42,7 +30,6 @@ static void make_bool_false(void)
     UValue v = urbi_make_bool(false);
     UASSERT_EQ((int)v.kind, (int)UVAL_BOOL);
     UASSERT_EQ(v.v.i, 0);
-    UASSERT(pad_is_zero(&v));
 }
 
 static void make_int_positive(void)
@@ -50,7 +37,6 @@ static void make_int_positive(void)
     UValue v = urbi_make_int(42);
     UASSERT_EQ((int)v.kind, (int)UVAL_INT);
     UASSERT_EQ(v.v.i, 42);
-    UASSERT(pad_is_zero(&v));
 }
 
 static void make_int_negative(void)
@@ -58,7 +44,6 @@ static void make_int_negative(void)
     UValue v = urbi_make_int(-1);
     UASSERT_EQ((int)v.kind, (int)UVAL_INT);
     UASSERT_EQ(v.v.i, -1);
-    UASSERT(pad_is_zero(&v));
 }
 
 static void make_int_min(void)
@@ -76,7 +61,6 @@ static void make_float_basic(void)
     /* Compare via memcmp for exact bit round-trip */
     double expected = 3.14;
     UASSERT(memcmp(&v.v.f, &expected, sizeof(double)) == 0);
-    UASSERT(pad_is_zero(&v));
 }
 
 static void make_float_zero(void)
@@ -91,7 +75,6 @@ static void make_void_kind(void)
     UValue v = urbi_make_void();
     UASSERT_EQ((int)v.kind, (int)UVAL_VOID);
     UASSERT_EQ(v.v.i, 0);
-    UASSERT(pad_is_zero(&v));
 }
 
 static void make_ptr_roundtrip(void)
@@ -100,7 +83,6 @@ static void make_ptr_roundtrip(void)
     UValue v = urbi_make_ptr(&sentinel);
     UASSERT_EQ((int)v.kind, (int)URBI_VALUE_PTR);
     UASSERT(v.v.p == (void *)&sentinel);
-    UASSERT(pad_is_zero(&v));
 }
 
 static void make_ptr_null(void)
@@ -117,7 +99,6 @@ static void make_object_roundtrip(void)
     UValue v = urbi_make_object(fake);
     UASSERT_EQ((int)v.kind, (int)UVAL_OBJECT);
     UASSERT(v.v.p == (void *)fake);
-    UASSERT(pad_is_zero(&v));
 }
 
 static void make_event_roundtrip(void)
@@ -126,7 +107,6 @@ static void make_event_roundtrip(void)
     UValue v = urbi_make_event(fake);
     UASSERT_EQ((int)v.kind, (int)UVAL_EVENT);
     UASSERT(v.v.p == (void *)fake);
-    UASSERT(pad_is_zero(&v));
 }
 
 static void make_closure_roundtrip(void)
@@ -135,7 +115,6 @@ static void make_closure_roundtrip(void)
     UValue v = urbi_make_closure(fake);
     UASSERT_EQ((int)v.kind, (int)UVAL_CLOSURE);
     UASSERT(v.v.p == (void *)fake);
-    UASSERT(pad_is_zero(&v));
 }
 
 void test_make_value_suite(void)

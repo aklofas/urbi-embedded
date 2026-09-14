@@ -682,15 +682,7 @@ UTEST(serialize_module_with_float_constant_round_trips) {
     module.const_cap = 1;
     module.const_count = 1;
     module.constants[0].kind = (uint8_t)UVAL_FLOAT;
-    {
-        int p;
-        for (p = 0; p < 7; p++) module.constants[0]._pad[p] = 0;
-    }
-#if URBI_FLOAT_TYPE == 8
     module.constants[0].v.f = 2.718281828;
-#else
-    module.constants[0].v.f = 2.718f;
-#endif
 
     /* Add a RET instruction and synclines so the module is valid. */
     module.instructions = (uint32_t *)malloc(sizeof(uint32_t));
@@ -747,10 +739,6 @@ UTEST(disassemble_module_with_move_instruction_shows_move) {
     module.constants  = (UValue *)malloc(sizeof(UValue));
     module.const_cap  = 1; module.const_count = 1;
     module.constants[0].kind = (uint8_t)UVAL_INT;
-    {
-        int p;
-        for (p = 0; p < 7; p++) module.constants[0]._pad[p] = 0;
-    }
     module.constants[0].v.i = consts[0];
     module.instructions = (uint32_t *)malloc(sizeof(instrs));
     module.instr_cap = 3; module.instr_count = 3;

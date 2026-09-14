@@ -156,9 +156,7 @@ uint16_t urbi_emit_add_const_str(UEmitter *e, const char *interned) {
     }
     {
         const size_t idx = *count;
-        int pad;
         (*pool)[idx].kind = (uint8_t)UVAL_STR;
-        for (pad = 0; pad < 7; pad++) (*pool)[idx]._pad[pad] = 0U;
         (*pool)[idx].v.p = (void *)interned;
         (*count)++;
         return (uint16_t)idx;
@@ -194,9 +192,7 @@ uint16_t urbi_emit_add_const_int(UEmitter *e, const int64_t v) {
     }
     {
         const size_t idx = *count;
-        int pad;
         (*pool)[idx].kind = (uint8_t)UVAL_INT;
-        for (pad = 0; pad < 7; pad++) (*pool)[idx]._pad[pad] = 0U;
         (*pool)[idx].v.i = v;
         (*count)++;
         return (uint16_t)idx;
@@ -233,9 +229,7 @@ uint16_t urbi_emit_add_const_float(UEmitter *e, const double v) {
     }
     {
         const size_t idx = *count;
-        int pad;
         (*pool)[idx].kind = (uint8_t)UVAL_FLOAT;
-        for (pad = 0; pad < 7; pad++) (*pool)[idx]._pad[pad] = 0U;
         (*pool)[idx].v.f = v;
         (*count)++;
         return (uint16_t)idx;

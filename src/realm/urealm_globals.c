@@ -47,15 +47,11 @@
 #include "chunk/uchunk.h"
 #include <stdint.h>
 
-/* === Zero-fill helper for UValue padding bytes === */
-
 static UValue
 rg_make_object(void *p)
 {
     UValue v;
-    int i;
     v.kind = UVAL_OBJECT;
-    for (i = 0; i < 7; i++) v._pad[i] = 0;
     v.v.p = p;
     return v;
 }
@@ -64,9 +60,7 @@ static UValue
 rg_make_nil(void)
 {
     UValue v;
-    int i;
     v.kind = UVAL_NIL;
-    for (i = 0; i < 7; i++) v._pad[i] = 0;
     v.v.i = 0;
     return v;
 }
@@ -75,9 +69,7 @@ static UValue
 rg_make_void(void)
 {
     UValue v;
-    int i;
     v.kind = UVAL_VOID;
-    for (i = 0; i < 7; i++) v._pad[i] = 0;
     v.v.i = 0;
     return v;
 }

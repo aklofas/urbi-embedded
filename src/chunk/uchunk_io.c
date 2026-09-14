@@ -124,25 +124,23 @@ static inline void module_buf_free(UChunkAllocFn alloc, void *alloc_ud,
     if (p != NULL) (void)alloc(p, 0, alloc_ud);
 }
 
-/* Free the per-constant module-owned bytes attached to UVAL_STR slots whose
- * _pad[0] marker was set by the deserializer (ownership flag, see uchunk_io.c
- * decode_constants_into UVAL_STR arm).  Emit-time UVAL_STR slots carry an
- * intern-table pointer (VM-owned) and must NOT be freed here; the marker
- * distinguishes the two ownership domains.
- *
- * Idempotent — safe to call on an already-freed slot because zero-init or
- * post-fixup buffers have _pad[0] == 0.  Module-instance create clears the
- * marker after the lazy intern fixup so this helper never double-frees. */
+/* Free the per-constant module-owned bytes attached to UVAL_STR slots, when
+ * `owned` says this constants[] array was populated by the deserializer
+ * (decode_constants_into's UVAL_STR arm mallocs a fresh NUL-terminated
+ * buffer per string).  Emit-time UVAL_STR slots carry an intern-table
+ * pointer (VM-owned) and must NOT be freed here; `owned` (proto->
+ * constants_owned) distinguishes the two ownership domains — a single
+ * UProto's constants[] is populated exclusively by one path or the other,
+ * never a mix, so one flag per proto is enough (no per-value marker
+ * needed). */
 static void free_owned_str_constants(UValue *constants, size_t count,
+                                     bool owned,
                                      UChunkAllocFn alloc, void *alloc_ud) {
-    if (constants == NULL || alloc == NULL) return;
+    if (!owned || constants == NULL || alloc == NULL) return;
     for (size_t i = 0U; i < count; i++) {
-        if (constants[i].kind == (uint8_t)UVAL_STR
-            && constants[i]._pad[0] == 1U
-            && constants[i].v.p != NULL) {
+        if (constants[i].kind == (uint8_t)UVAL_STR && constants[i].v.p != NULL) {
             (void)alloc(constants[i].v.p, 0, alloc_ud);
             constants[i].v.p = NULL;
-            constants[i]._pad[0] = 0U;
         }
     }
 }
@@ -171,7 +169,8 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
         alloc((void *)proto->nested, 0, alloc_ud);
     }
     if (proto->instructions != NULL) alloc(proto->instructions, 0, alloc_ud);
-    free_owned_str_constants(proto->constants, proto->const_count, alloc, alloc_ud);
+    free_owned_str_constants(proto->constants, proto->const_count,
+                             proto->constants_owned, alloc, alloc_ud);
     if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
     if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
     if (proto->abs_lines    != NULL) alloc(proto->abs_lines,    0, alloc_ud);
@@ -279,9 +278,9 @@ static UChunkLoadError decode_header(MDecCtx *d) {
                    (unsigned)URBI_INT_WIDTH, (unsigned)d->buf[12]);
         return UCHUNK_LOAD_FLAVOR_MISMATCH;
     }
-    if (d->buf[13] != (uint8_t)URBI_FLOAT_TYPE) {
+    if (d->buf[13] != 8U) {
         set_errmsg(d->errmsg, d->errcap, "flavor mismatch: float_type expected %u, got %u",
-                   (unsigned)URBI_FLOAT_TYPE, (unsigned)d->buf[13]);
+                   8U, (unsigned)d->buf[13]);
         return UCHUNK_LOAD_FLAVOR_MISMATCH;
     }
     if (d->buf[14] != (uint8_t)URBI_INSTR_WIDTH) {
@@ -396,7 +395,6 @@ static UChunkLoadError decode_constants_into(MDecCtx *d,
             d->off += consumed;
             (*target_buf)[*target_count].v.i = v;
         } else if (kind == (uint8_t)UVAL_FLOAT) {
-#if URBI_FLOAT_TYPE == 8
             if (d->off + 8U > d->size) {
                 set_errmsg(d->errmsg, d->errcap, "truncated at UVAL_FLOAT");
                 return UCHUNK_LOAD_TRUNCATED;
@@ -404,15 +402,6 @@ static UChunkLoadError decode_constants_into(MDecCtx *d,
             module_memcpy(&(*target_buf)[*target_count].v.f,
                           d->buf + d->off, 8);
             d->off += 8;
-#else
-            if (d->off + 4U > d->size) {
-                set_errmsg(d->errmsg, d->errcap, "truncated at UVAL_FLOAT");
-                return UCHUNK_LOAD_TRUNCATED;
-            }
-            module_memcpy(&(*target_buf)[*target_count].v.f,
-                          d->buf + d->off, 4);
-            d->off += 4;
-#endif
         } else if (kind == (uint8_t)UVAL_STR) {
             uint64_t slen = 0;
             rc = module_decode_varint_u(d->buf + d->off, d->size - d->off,
@@ -435,7 +424,6 @@ static UChunkLoadError decode_constants_into(MDecCtx *d,
             bytes[slen] = '\0';
             d->off += (size_t)slen;
             (*target_buf)[*target_count].v.p = bytes;
-            (*target_buf)[*target_count]._pad[0] = 1U;  /* owned-by-module marker */
         } else {
             /* UVAL_NIL / UVAL_BOOL — no payload encoder/decoder.  The emitter
              * never produces these in constant pools (BOOL is OP_LOADBOOL
@@ -764,6 +752,10 @@ static UChunkLoadError decode_proto(MDecCtx *d, UProto *p) {
     rc = decode_constants_into(d, &p->constants, &p->const_count, &p->const_cap,
                                alloc, alloc_ud);
     if (rc != UCHUNK_LOAD_OK) return rc;
+    /* Every UVAL_STR entry decode_constants_into just wrote is a fresh
+     * malloc'd buffer (see its UVAL_STR arm) — mark the whole pool
+     * module-owned so uproto_destroy_buffers frees them. */
+    p->constants_owned = true;
     rc = decode_instructions_into(d, &p->instructions, &p->instr_count, &p->instr_cap,
                                   alloc, alloc_ud);
     if (rc != UCHUNK_LOAD_OK) return rc;

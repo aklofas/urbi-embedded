@@ -153,17 +153,19 @@ ifeq ($(TARGET),host)
 endif
 
 # Stdlib bytecode flavor selection.  The tracked
-# src/stdlib/urbi_stdlib_bytecode.gen.c is host-baked at f64
-# (URBI_FLOAT_TYPE=8).  Cross targets built with a different URBI_FLOAT_TYPE
-# need a per-target rebake — otherwise urbi_stdlib_boot fails silently
-# inside urbi_vm_init (ULOAD_FLAVOR_MISMATCH on byte 13) and urbi_realm_create
-# returns NULL because no stdlib protos got installed.
+# src/stdlib/urbi_stdlib_bytecode.gen.c is host-baked at f64.  Float is now
+# fixed at f64/double for every target (the old per-target f32 flavor has
+# been retired — see include/urbi/types.h), so a per-target rebake no
+# longer changes the baked bytes; URBI_STDLIB_FLAVOR / the tools/urbi-
+# compile-stdlib-f% bake-tool variants are kept only for external build
+# scripts (examples/stm32f4, examples/pico) that still name a flavor by
+# number.
 #
 # Default (URBI_STDLIB_FLAVOR unset, e.g. host build): use the tracked .gen.c.
-# Cross builds opt in by setting URBI_STDLIB_FLAVOR=N (matches URBI_FLOAT_TYPE
-# numeric value).  The cross-* convenience targets that used to pass this
-# automatically are parked (refound/core); an embedder driving their own
-# cross toolchain sets URBI_STDLIB_FLAVOR=N on the command line directly.
+# Cross builds opt in by setting URBI_STDLIB_FLAVOR=N.  The cross-*
+# convenience targets that used to pass this automatically are parked
+# (refound/core); an embedder driving their own cross toolchain sets
+# URBI_STDLIB_FLAVOR=N on the command line directly.
 #
 # Bytecode-only targets never rebake — they only verify the freestanding
 # symbol contract, the bake tool isn't built under URBI_BYTECODE_ONLY=1, and
@@ -467,16 +469,12 @@ tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(HOST_BAKE_OBJ) $(BAKE_S
 	cc -std=c99 -Wall -Wextra -Wpedantic -Os \
 	    -Iinclude -Isrc -o $@ $< $(HOST_BAKE_OBJ) $(BAKE_STUB_O) -lm
 
-# Per-flavor bake tool variants — produce bytecode for a target with a
-# different URBI_FLOAT_TYPE than the host (the default tool above is f64).
-# Cross-compile targets that use f32 (-DURBI_FLOAT_TYPE=4) must bake their
-# bytecode using `tools/urbi-compile-stdlib-f4`, otherwise the runtime will
-# reject the module with ULOAD_FLAVOR_MISMATCH on byte 13.
-#
-# Pattern target: `tools/urbi-compile-stdlib-f4` builds a tool with
-# -DURBI_FLOAT_TYPE=4.  Compiles all sources in one cc invocation rather
-# than reusing build/host/*.o (which were compiled with f64).  ~10s build
-# per flavor; cached after first build.
+# Per-flavor bake tool variants.  Float is fixed at f64/double for every
+# target now (the old per-target f32 flavor has been retired — see
+# include/urbi/types.h), so `tools/urbi-compile-stdlib-f%` produces
+# byte-identical output to the default tool above regardless of `%`.  Kept
+# as a named target for external build scripts (examples/stm32f4,
+# examples/pico) that still invoke a flavor-numbered binary.
 #
 # Note: urbi_stdlib_bytecode.gen.c is filtered out (same as HOST_BAKE_OBJ
 # above) — it defines urbi_stdlib_bytecode/_len symbols that also live in
@@ -485,13 +483,12 @@ tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(HOST_BAKE_OBJ) $(BAKE_S
 tools/urbi-compile-stdlib-f%: tools/urbi-compile-stdlib.c \
         $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(HOST_BAKE_SRC)) \
         tools/stub_stdlib_bytecode.c
-	cc -std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_FLOAT_TYPE=$* \
+	cc -std=c99 -Wall -Wextra -Wpedantic -Os \
 	    $(if $(filter 1,$(URBI_REPL_COOPERATIVE_ONLY)),-DURBI_REPL_COOPERATIVE_ONLY=1,) \
 	    -Iinclude -Isrc -o $@ $^ -lm
 
 # v0.9.4: tools/urbi-compile-stdlib-pico is a symlink to the f4 variant.
-# Cortex-M0+ Pico uses URBI_FLOAT_TYPE=4 (float32), functionally identical
-# to STM32F4.  The target-named symlink keeps the Pico example's CMakeLists
+# The target-named symlink keeps the Pico example's CMakeLists
 # invoking a target-named binary for clarity (and avoids hard-coding the
 # floats convention into the example's build script).
 tools/urbi-compile-stdlib-pico: tools/urbi-compile-stdlib-f4

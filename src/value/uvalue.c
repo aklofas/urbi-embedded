@@ -160,11 +160,7 @@ urbi_register_type(UVM *vm, const UType *type)
 #include <stdio.h>
 #include <string.h>
 
-#if URBI_FLOAT_TYPE == 8
-#  define UVALUE_FLOAT_FMT "%.14g"
-#else
-#  define UVALUE_FLOAT_FMT "%.7g"
-#endif
+#define UVALUE_FLOAT_FMT "%.14g"
 
 size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
     if (cap == 0) return 0;

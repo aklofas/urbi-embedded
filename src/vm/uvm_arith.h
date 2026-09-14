@@ -24,11 +24,7 @@ static inline double uvalue_to_double(const UValue *v) {
 
 static inline void uvalue_set_float(UValue *a, const double val) {
     a->kind = UVAL_FLOAT;
-#if URBI_FLOAT_TYPE == 8
     a->v.f = val;
-#else
-    a->v.f = (float)val;
-#endif
 }
 
 static inline bool is_number(const UValue *v) {

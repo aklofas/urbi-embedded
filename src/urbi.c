@@ -300,18 +300,10 @@ checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
             break;
         }
         case UVAL_FLOAT: {
-            /* Mix the float's bit pattern at its actual width.  Reading v.i would
-             * include stale upper bytes for f32 (URBI_FLOAT_TYPE==4) when a slot
-             * was previously assigned UVAL_INT — non-deterministic. */
-#if URBI_FLOAT_TYPE == 8
+            /* Mix the float's bit pattern (always 8-byte double). */
             uint64_t bits;
             memcpy(&bits, &root->v.f, sizeof(bits));
             FNV1A_MIX(c->h, bits);
-#else
-            uint32_t bits;
-            memcpy(&bits, &root->v.f, sizeof(bits));
-            FNV1A_MIX(c->h, (uint64_t)bits);
-#endif
             break;
         }
         case UVAL_STR:

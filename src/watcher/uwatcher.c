@@ -63,9 +63,8 @@ uwatcher_pool_alloc(struct UVM *vm)
      * path forgets to NULL it before pool_free. */
     w->next_in_event   = NULL;
     w->event           = NULL;
-    /* Re-init last_value_cache kind+value; UValue._pad bytes are zero on
-     * first use (slab-zeroed at pool_init) and irrelevant on recycle since
-     * they have no semantic meaning. */
+    /* Re-init last_value_cache kind+value; any UValue implicit alignment
+     * padding is irrelevant here since it carries no semantic meaning. */
     w->last_value_cache.kind  = UVAL_NIL;
     w->last_value_cache.v.i   = 0;
     /* Reset eval-pass generation stamp.  A recycled slot retains the stamp

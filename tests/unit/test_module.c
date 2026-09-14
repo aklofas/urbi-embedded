@@ -43,12 +43,11 @@ UTEST(destroy_module_with_buffers_frees_them) {
     c.instructions[1] = 0x55667788;
 
     /* calloc, not malloc: uchunk_destroy walks `const_count` slots through
-     * free_owned_str_constants, which inspects each UValue's kind + _pad[0]
-     * (the deserializer-set ownership marker for UVAL_STR; emit-time slots
-     * carry _pad[0] == 0).  malloc'd uninitialised bytes trip valgrind on
-     * the kind/_pad reads even when no slot is actually a marked string;
-     * calloc gives a valgrind-clean baseline that matches the deserializer
-     * (which zero-fills before decoding). */
+     * free_owned_str_constants, which inspects each UValue's kind (only
+     * frees .v.p for UVAL_STR, and only when proto->constants_owned is
+     * set).  c.constants_owned is false here (c = {0}), so no per-value
+     * frees fire regardless; calloc still gives a valgrind-clean baseline
+     * for the kind reads instead of malloc's uninitialised bytes. */
     c.constants = (UValue *)calloc(2, sizeof(UValue));
     c.const_cap = 2;
     c.const_count = 1;
@@ -425,7 +424,7 @@ UTEST(deserialize_rejects_wrong_int_width) {
 UTEST(deserialize_rejects_wrong_float_type) {
     uint8_t hdr[24];
     build_good_header(hdr);
-    hdr[13] = (URBI_FLOAT_TYPE == 8) ? 4 : 8;  /* flip to the other flavor */
+    hdr[13] = 4;  /* flip to the other (retired) flavor */
     UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
@@ -1221,15 +1220,7 @@ UTEST(roundtrip_preserves_nested_proto_float_constant) {
     p->const_cap   = 1;
     p->const_count = 1;
     p->constants[0].kind = (uint8_t)UVAL_FLOAT;
-    {
-        int q;
-        for (q = 0; q < 7; q++) p->constants[0]._pad[q] = 0;
-    }
-#if URBI_FLOAT_TYPE == 8
     p->constants[0].v.f = 2.718281828;
-#else
-    p->constants[0].v.f = 2.718f;
-#endif
 
     /* Minimum viable proto body: one OP_RET + one syncline checkpoint.
      * write_proto requires line_deltas[i] for each instruction and
@@ -1286,11 +1277,7 @@ UTEST(roundtrip_preserves_nested_proto_float_constant) {
     UASSERT(b->nested[0] != NULL);
     UASSERT_EQ(p->const_count, b->nested[0]->const_count);
     UASSERT_EQ((uint8_t)UVAL_FLOAT, b->nested[0]->constants[0].kind);
-#if URBI_FLOAT_TYPE == 8
     UASSERT(b->nested[0]->constants[0].v.f == 2.718281828);
-#else
-    UASSERT(b->nested[0]->constants[0].v.f == 2.718f);
-#endif
 
     free(buf);
     uchunk_destroy(&a, NULL);
@@ -1343,7 +1330,7 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
     UASSERT_EQ((uint8_t)0x1A, buf[10]);              /* canary[4] */
     UASSERT_EQ((uint8_t)'\n', buf[11]);              /* canary[5] */
     UASSERT_EQ((uint8_t)URBI_INT_WIDTH,   buf[12]);
-    UASSERT_EQ((uint8_t)URBI_FLOAT_TYPE,  buf[13]);
+    UASSERT_EQ((uint8_t)8,  buf[13]);
     UASSERT_EQ((uint8_t)URBI_INSTR_WIDTH, buf[14]);
     UASSERT_EQ((uint8_t)URBI_ENDIANNESS,  buf[15]);
 
@@ -1522,17 +1509,12 @@ UTEST(deserialize_loads_float_constant) {
     buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 1);              /* 1 constant: UVAL_FLOAT */
     buf[off++] = (uint8_t)UVAL_FLOAT;
-    /* Write a float value (3.14) as raw bytes matching URBI_FLOAT_TYPE. */
-    if (URBI_FLOAT_TYPE == 8) {
+    /* Write a float value (3.14) as raw bytes (always an 8-byte double). */
+    {
         double fval = 3.14;
         unsigned char fbytes[8];
         memcpy(fbytes, &fval, 8);
         for (i = 0; i < 8; i++) buf[off++] = fbytes[i];
-    } else {
-        float fval = 3.14f;
-        unsigned char fbytes[4];
-        memcpy(fbytes, &fval, 4);
-        for (i = 0; i < 4; i++) buf[off++] = fbytes[i];
     }
     /* n_instructions = 0; then write 4-byte alignment padding if needed. */
     off = put_varint(buf, off, 0);

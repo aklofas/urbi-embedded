@@ -7,8 +7,8 @@
  *
  * Embedders MUST link with the same URBI_REPL_COOPERATIVE_ONLY setting the
  * library was built with — struct layouts (UReplServer, UReplReader,
- * UReplQueue, UReplRingbuf) differ between modes. Same trap class as
- * URBI_FLOAT_TYPE. */
+ * UReplQueue, UReplRingbuf) differ between modes. Same trap class as any
+ * other build-flag mismatch guarded by src/runtime/uabi_guards.c. */
 #ifndef UREPL_THREADING_H
 #define UREPL_THREADING_H
 

@@ -29,7 +29,7 @@ static size_t proto_wire_size(const UProto *p, size_t start_off) {
         if (p->constants[i].kind == (uint8_t)UVAL_INT) {
             off += uvarint_size_zz(p->constants[i].v.i);
         } else if (p->constants[i].kind == (uint8_t)UVAL_FLOAT) {
-            off += (URBI_FLOAT_TYPE == 8) ? 8U : 4U;
+            off += 8U;   /* float constants are always 8-byte doubles */
         } else if (p->constants[i].kind == (uint8_t)UVAL_STR) {
             const char *s = (const char *)p->constants[i].v.p;
             const size_t n = (s != NULL) ? urbi_strlen(s) : 0U;
@@ -109,9 +109,8 @@ static size_t write_proto(uint8_t *buf, size_t off, const UProto *p) {
         if (p->constants[i].kind == (uint8_t)UVAL_INT) {
             off = uvarint_write_zz(buf, off, p->constants[i].v.i);
         } else if (p->constants[i].kind == (uint8_t)UVAL_FLOAT) {
-            const size_t fsz = (URBI_FLOAT_TYPE == 8) ? 8U : 4U;
-            emit_memcpy(buf + off, &p->constants[i].v.f, fsz);
-            off += fsz;
+            emit_memcpy(buf + off, &p->constants[i].v.f, 8U);
+            off += 8U;
         } else if (p->constants[i].kind == (uint8_t)UVAL_STR) {
             const char *s = (const char *)p->constants[i].v.p;
             const size_t n = (s != NULL) ? urbi_strlen(s) : 0U;
@@ -201,7 +200,7 @@ ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap) {
     buf[5] = (root->arity_prologue != 0U) ? 0x01U : 0x00U;
     emit_memcpy(buf + 6, URBI_BYTECODE_CANARY, URBI_BYTECODE_CANARY_LEN);
     buf[12] = (uint8_t)URBI_INT_WIDTH;
-    buf[13] = (uint8_t)URBI_FLOAT_TYPE;
+    buf[13] = 8U;   /* float flavor is fixed at f64/double */
     buf[14] = (uint8_t)URBI_INSTR_WIDTH;
     buf[15] = (uint8_t)URBI_ENDIANNESS;
     buf[16] = 0U; buf[17] = 0U; buf[18] = 0U; buf[19] = 0U;  /* reserved */
