@@ -448,11 +448,16 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
         }
 
         case OP_LOAD_REALM_GLOBAL: {
-            if (s->realm == NULL || s->realm->globals == NULL) {
-                (void)uexec_throw(vm, s, UP_TYPEERROR, "global access: strand has no realm");
+            /* A strand with no realm is the boot strand that runs the
+             * stdlib blob: its globals ARE the VM's shared root object,
+             * which is exactly where the overlay's top-level `var`s
+             * belong. */
+            UObject *g = (s->realm && s->realm->globals) ? s->realm->globals : vm->root_globals;
+            if (g == NULL) {
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "global access: no globals object");
                 goto unwind;
             }
-            R[OPA(i)] = uv_obj(s->realm->globals);
+            R[OPA(i)] = uv_obj(g);
             break;
         }
         case OP_LOAD_RECV: R[OPA(i)] = f->recv; break;

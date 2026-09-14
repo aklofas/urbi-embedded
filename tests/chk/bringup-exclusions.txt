@@ -7,13 +7,9 @@
 #
 # Each line: <path>  # <what it needs>
 
-# --- needs List (for-each iteration) — the stdlib boot table -----------
-tests/chk/control/for_basic.chk                   # `for (var x : [..])`
-tests/chk/control/for_break_continue.chk          # `for (var x : [..])`
-tests/chk/control/switch_break_in_loop.chk        # `for (var x : [..])`
-tests/chk/control/switch_continue_in_loop.chk     # `for (var x : [..])`
-tests/chk/control/while_in_branch_arm.chk         # one case iterates a list literal
-tests/chk/closure/loop_exit_capture.chk           # captures inside `for (var x : [..])`
+# --- needs the full List surface — containers.c ------------------------
+tests/chk/control/switch_break_in_loop.chk        # `switch` inside `for (var x : [..])`
+tests/chk/control/switch_continue_in_loop.chk     # `switch` inside `for (var x : [..])`
 
 # --- needs try/catch — the cleanup-stack unwinder ---------------------
 tests/chk/closure/capture_shadowed.chk            # two cases capture a catch variable

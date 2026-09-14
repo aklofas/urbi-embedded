@@ -32,7 +32,7 @@ static const char *const uexec_proto_names[UP_COUNT] = {
     "Object", "Integer", "Float", "String", "Boolean", "nil", "void", "List", "Dictionary", "Symbol",
     "Closure", "Tag", "Event", "Job", "Exception", "TypeError", "ArityError", "LookupError",
     "OutOfMemoryError", "IndexError", "RangeError", "DivisionByZero", "Lobby", "Channel", "Math", "System", "Date",
-    "Duration", "RegExp", "Mutex", "Pair", "Triplet", "Tuple", "Debug"
+    "Duration", "RegExp", "Mutex", "Pair", "Triplet", "Tuple", "Debug", "Global"
 };
 
 /* --- GC hooks -------------------------------------------------------- */

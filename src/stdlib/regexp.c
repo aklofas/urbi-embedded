@@ -36,24 +36,8 @@
  *   The top-level native call (regexp_do_test) converts that into a
  *   catchable RangeError; the matcher itself never allocates or raises. */
 
+#include "rt/ustdlib_glue.h"
 #include "stdlib/regexp.h"
-#include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
-
-#include "chunk/uchunk.h"              /* UValue / UVAL_* */
-#include "object/uobject.h"            /* urbi_object_alloc / clone / set_local_slot */
-#include "object/ushape.h"             /* urbi_shape_find_slot */
-#include "realm/urealm.h"              /* URealm */
-#include "runtime/uclosure.h"          /* urbi_native_method_fn */
-#include "runtime/umacros.h"           /* urbi_strlen */
-#include "sched/ustrand.h"             /* UEXEC_OK */
-#include "urbi/object.h"               /* URBI_ATOM_OBJECT */
-#include "urbi/types.h"                /* urbi_make_nil */
-#include "urbi/urbi.h"                 /* URBI_OK / URBI_ERR_* / urbi_realm_set_global */
-#include "value/uintern.h"             /* ustr_intern + USymbol */
-#include "vm/uvm.h"                    /* UVM */
-
-#include <stdint.h>
-#include <stddef.h>
 
 /* === Backtracking budget constants ======================================= */
 
@@ -255,23 +239,21 @@ urbi_regexp_search(const char *re, size_t relen, const char *s, const char *s_en
 static int
 write_local_slot(UVM *vm, UObject *o, const char *name, UValue value)
 {
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
+    USym *sym = usym_cstr(vm, name);
     if (sym == NULL) return -1;
-    if (urbi_object_set_local_slot(vm, o, sym, value) != 0) return -1;
-    return 0;
+    return uobj_set_local(vm, o, sym, value, 0) < 0 ? -1 : 0;
 }
 
 static int
 read_local_slot(UVM *vm, UObject *o, const char *name, UValue *out)
 {
-    const USymbol *sym = (const USymbol *)ustr_intern(vm, name, urbi_strlen(name));
+    const USym *sym = usym_cstr(vm, name);
+    UObjSlotRef ref;
     if (sym == NULL) return -1;
-    int32_t idx = urbi_shape_find_slot(o->shape, sym);
-    if (idx < 0 || o->slots == NULL) {
-        *out = urbi_make_nil();
-        return 0;
-    }
-    *out = o->slots[idx];
+    /* Through the chain, so an un-cloned RegExp still sees the
+     * prototype's default pattern. */
+    if (!uobj_resolve(vm, o, sym, &ref)) { *out = uv_nil(); return 0; }
+    *out = uobj_slot_value(&ref);
     return 0;
 }
 
@@ -280,19 +262,19 @@ read_local_slot(UVM *vm, UObject *o, const char *name, UValue *out)
 static int
 regexp_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "RegExp.new", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
+    (void)nargs;
+    if (self.kind != UV_OBJ)
         return urbi_raise_type(vm, "RegExp.new: receiver must be an Object", out);
-    if (args[0].kind != (uint8_t)UVAL_STR)
+    if (!urbi_is_str(args[0]))
         return urbi_raise_type(vm, "RegExp.new: pattern must be String", out);
 
-    UObject *r = urbi_object_clone(vm, (UObject *)self.v.p);
+    UObject *r = uobj_new(vm, (UObject *)self.v.p);
     if (r == NULL) return urbi_raise_oom(vm, out);
 
     if (write_local_slot(vm, r, "_pattern", args[0]) != 0)
         return urbi_raise_oom(vm, out);
 
-    *out = urbi_make_object(r);
+    *out = uv_obj(r);
     return UEXEC_OK;
 }
 
@@ -301,22 +283,22 @@ static int
 regexp_do_test(UVM *vm, UValue self, UValue *args, uint8_t nargs,
                UValue *out, const char *fn_name)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, fn_name, 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
+    (void)nargs; (void)fn_name;
+    if (self.kind != UV_OBJ)
         return urbi_raise_type(vm, "RegExp.test: receiver must be a RegExp", out);
-    if (args[0].kind != (uint8_t)UVAL_STR)
+    if (!urbi_is_str(args[0]))
         return urbi_raise_type(vm, "RegExp.test: argument must be String", out);
 
     UValue pat;
     if (read_local_slot(vm, (UObject *)self.v.p, "_pattern", &pat) != 0)
         return urbi_raise_oom(vm, out);
-    if (pat.kind != (uint8_t)UVAL_STR)
+    if (!urbi_is_str(pat))
         return urbi_raise_type(vm, "RegExp.test: no pattern", out);
 
-    const char *re  = (const char *)pat.v.p;
-    size_t      relen = urbi_strlen(re);
-    const char *s   = (const char *)args[0].v.p;
-    size_t      slen = urbi_strlen(s);
+    const char *re  = urbi_str_cstr(pat);
+    size_t      relen = urbi_str_size(pat);
+    const char *s   = urbi_str_cstr(args[0]);
+    size_t      slen = urbi_str_size(args[0]);
 
     int result = urbi_regexp_search(re, relen, s, s + slen);
     if (result < 0) {
@@ -325,7 +307,7 @@ regexp_do_test(UVM *vm, UValue self, UValue *args, uint8_t nargs,
          * recursive matcher before the throw is delivered. */
         return urbi_raise_range(vm, "regexp budget exceeded", out);
     }
-    *out = urbi_make_bool(result);
+    *out = uv_bool(result);
     return UEXEC_OK;
 }
 
@@ -342,50 +324,20 @@ regexp_match(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return regexp_do_test(vm, self, args, nargs, out, "RegExp.match");
 }
 
-/* Method table uses UNativeMethodDef from stdlib/object_root.h. */
+/* === the table =========================================================== */
 
-static const UNativeMethodDef REGEXP_METHODS[] = {
-    { "new",   regexp_new   },
-    { "test",  regexp_test  },
-    { "match", regexp_match }
+const UMethodDef k_regexp_methods[K_REGEXP_NMETHODS] = {
+    { "new",   regexp_new,   1, 1 },
+    { "test",  regexp_test,  1, 1 },
+    { "match", regexp_match, 1, 1 }
 };
 
-/* === Registration ======================================================== */
-
-int
-urbi_stdlib_register_regexp(UVM *vm)
+/* The bare prototype carries the empty pattern, which matches anything,
+ * so `RegExp.test("x")` on the un-cloned proto answers rather than
+ * failing to find a pattern. */
+int urbi_regexp_init(UVM *vm, UObject *proto)
 {
-    if (vm == NULL) return URBI_ERR_INVALID_ARG;
-
-    if (vm->regexp_proto == NULL) {
-        UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-        if (p == NULL) return URBI_ERR_OOM;
-        vm->regexp_proto = p;
-    }
-    int rc = URBI_REGISTER_METHODS(vm, vm->regexp_proto, REGEXP_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    /* Default the proto's `_pattern` slot to the empty string so an
-     * un-cloned RegExp proto reads as the always-matching empty pattern. */
-    USymbol *empty = (USymbol *)ustr_intern(vm, "", 0U);
-    if (empty == NULL) return URBI_ERR_OOM;
-    UValue ev = urbi_make_nil();
-    ev.kind = (uint8_t)UVAL_STR;
-    ev.v.p  = empty;
-    if (write_local_slot(vm, vm->regexp_proto, "_pattern", ev) != 0)
-        return URBI_ERR_OOM;
-
-    return URBI_OK;
-}
-
-int
-urbi_stdlib_register_regexp_globals(UVM *vm, URealm *realm)
-{
-    if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
-    if (vm->regexp_proto != NULL) {
-        int rc = urbi_realm_set_global(vm, realm, "RegExp", 6,
-                                       urbi_make_object(vm->regexp_proto));
-        if (rc != URBI_OK) return rc;
-    }
-    return URBI_OK;
+    UValue empty = urbi_make_str_interned(vm, "", 0);
+    if (empty.kind == UV_NIL) return URBI_ERR_OOM;
+    return write_local_slot(vm, proto, "_pattern", empty) == 0 ? URBI_OK : URBI_ERR_OOM;
 }

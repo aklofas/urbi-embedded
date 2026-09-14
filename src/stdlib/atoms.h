@@ -1,31 +1,22 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* atoms.h — C-native methods on Boolean / Integer / Float /
- * String atom protos.
+/* atoms.h — the per-atom-family method tables.
  *
- * Boolean `&&`, `||`, `!` similarly dispatch through inline opcodes when
- * they exist (today: only inline truthiness via OP_TEST in conditions);
- * the legacy `'!' = false` form is a slot, not a method, and the v1.0
- * surface uses `negate()` for the named-method form.
- */
+ * Boolean, Integer, Float and String each get one table; uboot_table
+ * points its matching row at them.  A fifth name would mean a fifth atom
+ * family, which the UP_* enum would have to grow first. */
 
 #ifndef URBI_STDLIB_ATOMS_H
 #define URBI_STDLIB_ATOMS_H
 
-#ifdef __cplusplus
-extern "C" {
+#include "rt/ustdlib_glue.h"
+
+enum { K_BOOL_NMETHODS = 2 };
+extern const UMethodDef k_bool_methods[K_BOOL_NMETHODS];
+enum { K_INT_NMETHODS = 12 };
+extern const UMethodDef k_int_methods[K_INT_NMETHODS];
+enum { K_FLOAT_NMETHODS = 23 };
+extern const UMethodDef k_float_methods[K_FLOAT_NMETHODS];
+enum { K_STRING_NMETHODS = 19 };
+extern const UMethodDef k_string_methods[K_STRING_NMETHODS];
+
 #endif
-
-struct UVM;
-
-/* Install Phase-5 C-native method slots on the Boolean / Integer / Float
- * / String atom protos.  Idempotent — subsequent calls overwrite existing
- * slot values with the same closure objects (mirrors atom_protos.c).
- *
- * Returns URBI_OK on success or URBI_ERR_OOM on allocation failure. */
-int urbi_stdlib_register_atom_methods(struct UVM *vm);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* URBI_STDLIB_ATOMS_H */

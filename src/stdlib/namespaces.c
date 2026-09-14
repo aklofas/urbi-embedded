@@ -10,29 +10,12 @@
  * GC reachability comes from object_roots_walker (uobject.c) which
  * shades each vm->*_proto field during MARK_ROOTS. */
 
+#include "rt/ustdlib_glue.h"
 #include "stdlib/namespaces.h"
-#include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
-
-#include "gc/ugc.h"                    /* urbi_gc_collect */
-#include "chunk/uchunk.h"            /* UValue / UVAL_* */
-#include "object/uobject.h"            /* urbi_object_alloc + set_local_slot */
-#include "object/ushape.h"             /* UShape.count for Global.length */
-#include "realm/urealm.h"              /* URealm */
-#include "runtime/uclosure.h"          /* urbi_native_method_fn */
-#include "runtime/umacros.h"           /* urbi_strlen */
-#include "sched/ustrand.h"             /* UEXEC_OK / UEXEC_THROW */
-#include "urbi/object.h"               /* URBI_ATOM_OBJECT */
-#include "urbi/types.h"                /* urbi_make_nil */
-#include "urbi/urbi.h"                 /* URBI_OK / URBI_ERR_* / urbi_realm_set_global */
-#include "value/uintern.h"             /* ustr_intern + USymbol */
-#include "vm/uvm.h"                    /* UVM */
-
-#include <stdint.h>
-#include <stddef.h>
 
 #if __STDC_HOSTED__
-#  include <math.h>                    /* NAN / INFINITY macros */
-#  include <stdlib.h>                  /* getenv */
+#  include <math.h>     /* NAN / INFINITY */
+#  include <stdlib.h>   /* getenv */
 #endif
 
 /* Install a constant slot (UValue) on proto, looking up the symbol via
@@ -40,10 +23,9 @@
 static int
 install_const_slot(UVM *vm, UObject *proto, const char *name, UValue value)
 {
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
-    if (sym == NULL) return URBI_ERR_OOM;
-    if (urbi_object_set_local_slot(vm, proto, sym, value) != 0)
-        return URBI_ERR_OOM;
+    USym *sym = usym_cstr(vm, name);
+    if (sym == NULL || proto == NULL) return URBI_ERR_OOM;
+    if (uobj_set_local(vm, proto, sym, value, USLOT_CONSTANT) < 0) return URBI_ERR_OOM;
     return URBI_OK;
 }
 
@@ -85,8 +67,8 @@ sys_time(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "System.time", 0, nargs, out);
-    uint64_t us = (vm->host_time_us != NULL) ? vm->host_time_us(vm->host_time_ud) : 0U;
-    *out = urbi_make_float((double)us / 1000000.0);
+    uint64_t us = vm->clock_us ? vm->clock_us(vm->clock_ud) : 0U;
+    *out = uv_float((double)us / 1000000.0);
     return UEXEC_OK;
 }
 
@@ -105,8 +87,8 @@ sys_time_us(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "System.time_us", 0, nargs, out);
-    uint64_t us = (vm->host_time_us != NULL) ? vm->host_time_us(vm->host_time_ud) : 0U;
-    *out = urbi_make_int((int64_t)us);
+    uint64_t us = vm->clock_us ? vm->clock_us(vm->clock_ud) : 0U;
+    *out = uv_int((int64_t)us);
     return UEXEC_OK;
 }
 
@@ -123,13 +105,13 @@ sys_cycle(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "System.cycle", 0, nargs, out);
-    *out = urbi_make_int((int64_t)vm->lookup_id);
+    *out = uv_int((int64_t)vm->objstats.visit_stamp);
     return UEXEC_OK;
 }
 
 /* === System.getenv(name) =================================================
  *
- * Hosted: libc getenv() shim.  Returns the value as a UVAL_STR (interned)
+ * Hosted: libc getenv() shim.  Returns the value as a UV_STR (interned)
  * or nil if the variable is unset.
  *
  * Freestanding: always returns nil.  No libc getenv on freestanding
@@ -141,26 +123,21 @@ sys_getenv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)self;
     if (nargs != 1) return urbi_raise_arity(vm, "System.getenv", 1, nargs, out);
-    if (args[0].kind != (uint8_t)UVAL_STR)
+    if (!urbi_is_str(args[0]))
         return urbi_raise_type(vm, "System.getenv: name must be String", out);
 
 #if defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 1)
-    /* UVAL_STR.v.p is the NUL-terminated `const char *` returned by
+    /* UV_STR.v.p is the NUL-terminated `const char *` returned by
      * ustr_intern (per atoms.c §"String basic methods" banner). */
-    const char *name = (const char *)args[0].v.p;
-    if (name == NULL) return urbi_raise_type(vm, "System.getenv: NULL String", out);
-    const char *v = getenv(name);
-    if (v == NULL) {
-        *out = urbi_make_nil();
-        return UEXEC_OK;
-    }
-    int oom = 0;
-    *out = urbi_val_str_intern(vm, v, urbi_strlen(v), &oom);
-    if (oom) return urbi_raise_oom(vm, out);
+    const char *v = getenv(urbi_str_cstr(args[0]));
+    if (v == NULL) { *out = uv_nil(); return UEXEC_OK; }
+    UValue sv = urbi_make_str(vm, v, urbi_strlen(v));
+    if (sv.kind == UV_NIL) return urbi_raise_oom(vm, out);
+    *out = sv;
     return UEXEC_OK;
 #else
     (void)args;
-    *out = urbi_make_nil();
+    *out = uv_nil();
     return UEXEC_OK;
 #endif
 }
@@ -175,17 +152,9 @@ sys_gc(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "System.gc", 0, nargs, out);
     urbi_gc_collect(vm);
-    *out = urbi_make_nil();
+    *out = uv_nil();
     return UEXEC_OK;
 }
-
-static const UNativeMethodDef SYSTEM_METHODS[] = {
-    { "time",    sys_time    },
-    { "time_us", sys_time_us },
-    { "cycle",   sys_cycle   },
-    { "getenv",  sys_getenv  },
-    { "gc",      sys_gc      }
-};
 
 /* === Global.length =======================================================
  *
@@ -200,141 +169,57 @@ global_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "Global.length", 0, nargs, out);
 
-    int64_t n = 0;
-    if (vm->cur_strand != NULL && vm->cur_strand->realm != NULL) {
-        URealm *r = vm->cur_strand->realm;
-        if (r->global_object != NULL && r->global_object->shape != NULL) {
-            n = (int64_t)r->global_object->shape->count;
-        }
-    }
-    *out = urbi_make_int(n);
+    URealm *r = uvm_current_realm(vm);
+    *out = uv_int(r && r->globals ? (int64_t)r->globals->count : 0);
     return UEXEC_OK;
 }
 
-static const UNativeMethodDef GLOBAL_METHODS[] = {
-    { "length", global_length }
+/* === the tables ==========================================================
+ *
+ * Math carries constants and no methods, so it has no table at all: its
+ * whole content is installed by urbi_namespaces_init below. */
+
+const UMethodDef k_system_methods[K_SYSTEM_NMETHODS] = {
+    { "time",    sys_time,    0, 0 },
+    { "time_us", sys_time_us, 0, 0 },
+    { "cycle",   sys_cycle,   0, 0 },
+    { "getenv",  sys_getenv,  1, 1 },
+    { "gc",      sys_gc,      0, 0 }
 };
 
-/* === urbi_stdlib_register_namespaces ====================================
- *
- * Allocates Math / System / Global / CallMessage proto UObjects.
- * Math: pi / e / nan / infinity constants.  GC reachability via
- * object_roots_walker shading vm->math_proto.
- *
- * Idempotent: re-allocates each proto only when its vm field is NULL. */
+const UMethodDef k_global_methods[K_GLOBAL_NMETHODS] = {
+    { "length", global_length, 0, 0 }
+};
 
-int
-urbi_stdlib_register_namespaces(UVM *vm)
+/* === constants ===========================================================
+ *
+ * The boot table describes protos and methods; a handful of built-ins
+ * also need constant SLOTS, and this is where those go.  Math is all
+ * constants; System owns the nested Platform object, which is a slot on
+ * System rather than a global of its own. */
+
+int urbi_namespaces_init(UVM *vm)
 {
-    if (vm == NULL) return URBI_ERR_INVALID_ARG;
-    int rc;
-
-    /* --- Math: pi / e / nan / infinity --- */
-    if (vm->math_proto == NULL) {
-        UObject *m = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-        if (m == NULL) return URBI_ERR_OOM;
-        vm->math_proto = m;
-    }
-    rc = install_const_slot(vm, vm->math_proto, "pi",       urbi_make_float(3.141592653589793));
+    int rc = install_const_slot(vm, vm->protos[UP_MATH], "pi", uv_float(3.141592653589793));
     if (rc != URBI_OK) return rc;
-    rc = install_const_slot(vm, vm->math_proto, "e",        urbi_make_float(2.718281828459045));
+    rc = install_const_slot(vm, vm->protos[UP_MATH], "e", uv_float(2.718281828459045));
     if (rc != URBI_OK) return rc;
-    /* IEEE-754 NaN / +Inf via <math.h> macros on hosted; freestanding
-     * targets omit the constants (no libm contract — embedded code that
-     * needs IEEE-754 sentinels constructs them via bit-pattern). */
 #if __STDC_HOSTED__
-    rc = install_const_slot(vm, vm->math_proto, "nan",      urbi_make_float((double)NAN));
+    /* IEEE-754 sentinels come from <math.h>; a freestanding target has no
+     * libm contract and code that needs them builds them from bits. */
+    rc = install_const_slot(vm, vm->protos[UP_MATH], "nan", uv_float((double)NAN));
     if (rc != URBI_OK) return rc;
-    rc = install_const_slot(vm, vm->math_proto, "infinity", urbi_make_float((double)INFINITY));
+    rc = install_const_slot(vm, vm->protos[UP_MATH], "infinity", uv_float((double)INFINITY));
     if (rc != URBI_OK) return rc;
 #endif
 
-    /* --- System: time / cycle / getenv / gc --- */
-    if (vm->system_proto == NULL) {
-        UObject *s = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-        if (s == NULL) return URBI_ERR_OOM;
-        vm->system_proto = s;
-    }
-    rc = URBI_REGISTER_METHODS(vm, vm->system_proto, SYSTEM_METHODS);
+    UObject *platform = uobj_new(vm, vm->protos[UP_OBJECT]);
+    if (platform == NULL) return URBI_ERR_OOM;
+    UValue pv = uv_obj(platform);
+    URBI_ROOT(vm, pv);
+    UValue kind = urbi_make_str_interned(vm, URBI_PLATFORM_KIND, urbi_strlen(URBI_PLATFORM_KIND));
+    rc = (kind.kind == UV_NIL) ? URBI_ERR_OOM : install_const_slot(vm, platform, "kind", kind);
+    URBI_UNROOT(vm, pv);
     if (rc != URBI_OK) return rc;
-
-    /* --- System.Platform: kind constant ---
-     *
-     * Platform is nested as a slot on System (System.Platform.kind) — not a
-     * top-level realm global.  The proto is allocated as a sibling singleton
-     * and shaded directly by the GC walker for uniformity even though the
-     * System slot already keeps it reachable transitively. */
-    if (vm->platform_proto == NULL) {
-        UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-        if (p == NULL) return URBI_ERR_OOM;
-        vm->platform_proto = p;
-    }
-    {
-        int oom = 0;
-        UValue kind = urbi_val_str_intern(vm, URBI_PLATFORM_KIND,
-                                     urbi_strlen(URBI_PLATFORM_KIND), &oom);
-        if (oom) return URBI_ERR_OOM;
-        rc = install_const_slot(vm, vm->platform_proto, "kind", kind);
-        if (rc != URBI_OK) return rc;
-    }
-    rc = install_const_slot(vm, vm->system_proto, "Platform",
-                            urbi_make_object(vm->platform_proto));
-    if (rc != URBI_OK) return rc;
-
-    /* --- Global: length --- */
-    if (vm->global_namespace_proto == NULL) {
-        UObject *g = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-        if (g == NULL) return URBI_ERR_OOM;
-        vm->global_namespace_proto = g;
-    }
-    rc = URBI_REGISTER_METHODS(vm, vm->global_namespace_proto, GLOBAL_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    if (vm->callmessage_proto == NULL) {
-        UObject *c = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-        if (c == NULL) return URBI_ERR_OOM;
-        vm->callmessage_proto = c;
-    }
-    {
-        int oom = 0;
-        UValue k = urbi_val_str_intern(vm, "callmessage", 11, &oom);
-        if (oom) return URBI_ERR_OOM;
-        rc = install_const_slot(vm, vm->callmessage_proto, "kind", k);
-        if (rc != URBI_OK) return rc;
-    }
-
-    return URBI_OK;
-}
-
-/* === urbi_stdlib_register_namespace_globals =============================
- *
- * Post-registry hook: bind namespaces as realm globals on `realm`.  Lands
- * at slots 15+, past the v1.0 packed-flag CONSTANT enforcement range
- * (slots 0..7).  Mirrors urbi_stdlib_register_runtime_globals. */
-
-int
-urbi_stdlib_register_namespace_globals(UVM *vm, URealm *realm)
-{
-    if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
-
-    int rc;
-    if (vm->math_proto != NULL) {
-        rc = urbi_realm_set_global(vm, realm, "Math", 4, urbi_make_object(vm->math_proto));
-        if (rc != URBI_OK) return rc;
-    }
-    if (vm->system_proto != NULL) {
-        rc = urbi_realm_set_global(vm, realm, "System", 6, urbi_make_object(vm->system_proto));
-        if (rc != URBI_OK) return rc;
-    }
-    if (vm->global_namespace_proto != NULL) {
-        rc = urbi_realm_set_global(vm, realm, "Global", 6,
-                                   urbi_make_object(vm->global_namespace_proto));
-        if (rc != URBI_OK) return rc;
-    }
-    if (vm->callmessage_proto != NULL) {
-        rc = urbi_realm_set_global(vm, realm, "CallMessage", 11,
-                                   urbi_make_object(vm->callmessage_proto));
-        if (rc != URBI_OK) return rc;
-    }
-    return URBI_OK;
+    return install_const_slot(vm, vm->protos[UP_SYSTEM], "Platform", pv);
 }

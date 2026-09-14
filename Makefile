@@ -127,6 +127,25 @@ endif
 # src/stdlib, src/urbi.c, src/urbi_aux.c) stays in the tree for reference
 # and is deleted wholesale by the clean-up task.  src/stdlib/ re-attaches
 # to the new core with the boot table.
+# refound/core Task 9: the standard library re-attaches to the new core.
+# Each file exports one or more UMethodDef tables; src/rt/uboot.c's table
+# points at them and uboot_init installs them.  Files still waiting on a
+# subsystem that does not exist yet (containers on the full List/Dict
+# surface, temporal and job_proto and tag_globals on the scheduler,
+# channel_native and lobby_native on events and sessions,
+# debug_namespace on the REPL) stay out of the build; see the task
+# report.  The stdlib blob object is separate so the bake tool can link
+# the zero-length stub in its place and avoid a build cycle.
+STDLIB_SRCS := \
+       src/stdlib/object_root.c \
+       src/stdlib/isa_method.c \
+       src/stdlib/atoms.c \
+       src/stdlib/runtime_types.c \
+       src/stdlib/namespaces.c \
+       src/stdlib/primitives.c \
+       src/stdlib/regexp.c
+STDLIB_BLOB_SRC := src/stdlib/urbi_stdlib_bytecode.gen.c
+
 FRONTEND_SRCS := \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/lex/*.c)) \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/parse/*.c)) \
@@ -139,7 +158,7 @@ FRONTEND_SRCS := \
        src/value/uvarint.c \
        $(wildcard src/host/*.c)
 
-SRC := $(FRONTEND_SRCS) $(wildcard src/rt/*.c)
+SRC := $(FRONTEND_SRCS) $(wildcard src/rt/*.c) $(STDLIB_SRCS) $(STDLIB_BLOB_SRC)
 TEST_SRC :=
 
 TARGET ?= host
@@ -170,7 +189,7 @@ LIB := $(BUILDDIR)/liburbi.a
 # runner.  liburbi-rt.a is the core on its own — the runner links it
 # against the frontend objects because uexec.c calls uchunk_destroy and
 # ufront_compile.
-RT_SRCS   := $(wildcard src/rt/*.c)
+RT_SRCS   := $(wildcard src/rt/*.c) $(STDLIB_SRCS) $(STDLIB_BLOB_SRC)
 RT_OBJS   := $(patsubst %.c,$(BUILDDIR)/%.o,$(RT_SRCS))
 RT_TEST_SRCS := $(wildcard tests/rt/test_*.c) tests/rt/runner.c
 RT_LIB    := $(BUILDDIR)/liburbi-rt.a

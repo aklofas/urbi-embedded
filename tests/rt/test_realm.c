@@ -12,7 +12,7 @@
 #include <string.h>
 
 #include "rtest.h"
-#include "rt/urealm.h"
+#include "rt/uboot.h"
 #include "urbi/urbi.h"
 
 /* --- a counting allocator, for the boot-heap and realm-cost gates ----- */
@@ -105,8 +105,10 @@ static void t_realm_is_cheap(void)
     URealm *r2 = urbi_realm_new(vm);
     unsigned long cost = ca.allocs - before;
     RT_CHECK(r2 != NULL);
-    if (cost >= 8) printf("    realm creation cost %lu allocations\n", cost);
-    RT_CHECK(cost < 8);
+    printf("    realm creation: %lu allocations\n", cost);
+    /* The realm cell, its globals object, and the three parallel slot
+     * arrays the `Realm` self-reference forces into existence. */
+    RT_CHECK(cost <= 5);
 
     urbi_close(vm);
 }
@@ -233,9 +235,12 @@ static void t_boot_installs_the_protos(void)
     URealm *r = urbi_realm_main(vm);
 
     RT_CHECK(vm->stdlib_booted != 0);
-    for (int i = 0; i < UP_COUNT; i++) {
-        if (vm->protos[i] == NULL) printf("    proto %d missing\n", i);
-        RT_CHECK(vm->protos[i] != NULL);
+    /* Every row of the table produced a prototype.  A UP_* slot with no
+     * row (Debug, which needs the REPL) is legitimately absent. */
+    for (uint16_t i = 0; i < uboot_table_len; i++) {
+        int idx = uboot_table[i].proto_index;
+        if (vm->protos[idx] == NULL) printf("    proto for %s missing\n", uboot_table[i].global);
+        RT_CHECK(vm->protos[idx] != NULL);
     }
     if (vm->protos[UP_EXCEPTION] == NULL) { urbi_close(vm); return; }
     /* The exception family is linked under Exception, and the atoms under
@@ -292,11 +297,11 @@ static void t_atoms_dispatch_on_their_proto(void)
     v = run(vm, r, "\"ab\" + \"cd\"");
     RT_CHECK(str_is(v, "abcd"));
 
-    v = run(vm, r, "\"abc\".size");
+    v = run(vm, r, "\"abc\".size()");
     RT_EQ(v.kind, UV_INT);
     RT_EQ(v.v.i, 3);
 
-    v = run(vm, r, "[1,2,3].size");
+    v = run(vm, r, "[1,2,3].size()");
     RT_EQ(v.kind, UV_INT);
     RT_EQ(v.v.i, 3);
 
@@ -345,8 +350,10 @@ static void t_lobby_echo_reaches_the_writer(void)
     g_echo[0] = '\0'; g_echo_len = 0;
     urbi_set_writer(vm, capture_writer, NULL);
 
+    /* The Lobby primitive frames its output "[<ms>] *** <msg>\n"; what
+     * matters here is that the message reached the writer at all. */
     (void)run(vm, r, "Lobby.echo(\"hello\")");
-    RT_STREQ(g_echo, "hello");
+    RT_CHECK(strstr(g_echo, "*** hello") != NULL);
 
     /* Every realm has the Lobby in its chain, so `echo` works unqualified
      * and from a second realm too. */
@@ -354,7 +361,7 @@ static void t_lobby_echo_reaches_the_writer(void)
     URealm *b = urbi_realm_new(vm);
     if (b) {
         (void)run(vm, b, "echo(\"two\")");
-        RT_STREQ(g_echo, "two");
+        RT_CHECK(strstr(g_echo, "*** two") != NULL);
     }
 
     urbi_close(vm);

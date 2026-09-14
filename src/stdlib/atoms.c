@@ -23,33 +23,15 @@
  * dispatch model the shipped VM does not use.
  */
 
+#include "rt/ustdlib_glue.h"
 #include "stdlib/atoms.h"
-#include "stdlib/containers.h"         /* urbi_stdlib_list_new_empty/append/len/get */
-#include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
-#include "stdlib/stdlib_join_core.h"   /* join_core: shared String/List join logic */
-
-#include "chunk/uchunk.h"            /* UValue / UVAL_* */
-#include "object/uobject.h"            /* urbi_object_atom, set_local_slot */
-#include "runtime/uclosure.h"          /* urbi_native_method_fn */
-#include "runtime/umacros.h"           /* urbi_strlen, urbi_zero */
-#include "sched/ustrand.h"             /* UEXEC_OK / UEXEC_THROW */
-#include "urbi/object.h"               /* URBI_ATOM_* */
-#include "urbi/types.h"                /* urbi_make_nil, UExecStatus */
-#include "urbi/urbi.h"                 /* URBI_OK / URBI_ERR_OOM */
-#include "value/uintern.h"             /* ustr_intern + USymbol */
-#include "vm/uvm.h"                    /* UVM */
-
-#include <stddef.h>
-#include <stdint.h>
+#include "stdlib/stdlib_join_core.h"
 
 #if __STDC_HOSTED__
-#  include <math.h>                    /* sqrt, sin, cos, ... for Float math */
-#  include <stdio.h>                   /* snprintf for asString */
-#  include <stdlib.h>                  /* strtoll, strtod for parse methods */
+#  include <math.h>     /* sqrt, sin, cos, ... for the Float methods */
+#  include <stdio.h>    /* snprintf, for asString */
+#  include <stdlib.h>   /* strtoll, strtod, for the parse methods */
 #endif
-
-/* Method tables use UNativeMethodDef from stdlib/object_root.h;
- * urbi_install_native_methods / URBI_REGISTER_METHODS do the install loop. */
 
 /* === Numeric helpers (freestanding-safe) ================================== */
 
@@ -94,17 +76,17 @@ prng_next(void)
  * Legacy `var '!' = false` (in share/urbi/boolean.u) installs the negation
  * as a slot value, not a method.  The v1.0 runtime uses the named-method
  * form `negate()` because slot-name dispatch through OP_GETSLOT requires a
- * UClosure value, not a UVAL_BOOL leaf.  The plan's `!` slot would not
+ * UClosure value, not a UV_BOOL leaf.  The plan's `!` slot would not
  * dispatch from the v1.0 source `true.'!'` form (no quoted-name lex). */
 
 static int
 bool_negate(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Boolean.negate", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_BOOL, "Boolean.negate: self must be Boolean", out);
+    if (self.kind != UV_BOOL) return urbi_raise_type(vm, "Boolean.negate: self must be Boolean", out);
 
-    *out = urbi_make_bool(self.v.i == 0);
+    *out = uv_bool(self.v.i == 0);
     return UEXEC_OK;
 }
 
@@ -122,9 +104,9 @@ bool_negate(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 int_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Integer.asString", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.asString: self must be Integer", out);
+    if (self.kind != UV_INT) return urbi_raise_type(vm, "Integer.asString: self must be Integer", out);
 
 #if __STDC_HOSTED__
     char buf[24];
@@ -146,31 +128,31 @@ int_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 int_asFloat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Integer.asFloat", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.asFloat: self must be Integer", out);
+    if (self.kind != UV_INT) return urbi_raise_type(vm, "Integer.asFloat: self must be Integer", out);
 
-    *out = urbi_make_float((double)self.v.i);
+    *out = uv_float((double)self.v.i);
     return UEXEC_OK;
 }
 
 static int
 int_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Integer.asBoolean", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.asBoolean: self must be Integer", out);
+    if (self.kind != UV_INT) return urbi_raise_type(vm, "Integer.asBoolean: self must be Integer", out);
 
-    *out = urbi_make_bool(self.v.i != 0);
+    *out = uv_bool(self.v.i != 0);
     return UEXEC_OK;
 }
 
 static int
 int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Integer.asInteger", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.asInteger: self must be Integer", out);
+    if (self.kind != UV_INT) return urbi_raise_type(vm, "Integer.asInteger: self must be Integer", out);
 
     *out = self;
     return UEXEC_OK;
@@ -190,11 +172,11 @@ int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     int_##name(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) \
     {                                                                        \
         if (nargs != 1) return urbi_raise_arity(vm, "Integer." #name, 1, nargs, out); \
-        if (self.kind != (uint8_t)UVAL_INT)                                  \
+        if (self.kind != UV_INT)                                  \
             return urbi_raise_type(vm, "Integer." #name ": self must be Integer", out); \
-        if (args[0].kind != (uint8_t)UVAL_INT)                               \
+        if (args[0].kind != UV_INT)                               \
             return urbi_raise_type(vm, "Integer." #name ": argument must be Integer", out); \
-        *out = urbi_make_int(self.v.i op args[0].v.i);                             \
+        *out = uv_int(self.v.i op args[0].v.i);                             \
         return UEXEC_OK;                                                     \
     }
 
@@ -207,41 +189,41 @@ DEF_INT_BINOP(xor, ^)
 static int
 int_inv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Integer.inv", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.inv: self must be Integer", out);
+    if (self.kind != UV_INT) return urbi_raise_type(vm, "Integer.inv: self must be Integer", out);
 
-    *out = urbi_make_int(~self.v.i);
+    *out = uv_int(~self.v.i);
     return UEXEC_OK;
 }
 
 static int
 int_shl(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "Integer.shl", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.shl: self must be Integer", out);
-    if (args[0].kind != (uint8_t)UVAL_INT)
+    (void)nargs;
+    if (self.kind != UV_INT) return urbi_raise_type(vm, "Integer.shl: self must be Integer", out);
+    if (args[0].kind != UV_INT)
         return urbi_raise_type(vm, "Integer.shl: argument must be Integer", out);
 
     /* Kotlin Long.shl mask: effective = raw & 63, always in [0, 63]. */
     int64_t n = args[0].v.i & (int64_t)63;
-    *out = urbi_make_int((int64_t)((uint64_t)self.v.i << (uint64_t)n));
+    *out = uv_int((int64_t)((uint64_t)self.v.i << (uint64_t)n));
     return UEXEC_OK;
 }
 
 static int
 int_shr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "Integer.shr", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.shr: self must be Integer", out);
-    if (args[0].kind != (uint8_t)UVAL_INT)
+    (void)nargs;
+    if (self.kind != UV_INT) return urbi_raise_type(vm, "Integer.shr: self must be Integer", out);
+    if (args[0].kind != UV_INT)
         return urbi_raise_type(vm, "Integer.shr: argument must be Integer", out);
 
     /* Kotlin Long.shr mask: effective = raw & 63, always in [0, 63].
      * Implementation uses uint64_t cast (logical right shift on the raw
      * i64 bit pattern) matching the pre-existing shr semantic. */
     int64_t n = args[0].v.i & (int64_t)63;
-    *out = urbi_make_int((int64_t)((uint64_t)self.v.i >> (uint64_t)n));
+    *out = uv_int((int64_t)((uint64_t)self.v.i >> (uint64_t)n));
     return UEXEC_OK;
 }
 
@@ -251,13 +233,13 @@ int_shr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 int_ushr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "Integer.ushr", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_INT, "Integer.ushr: self must be Integer", out);
-    if (args[0].kind != (uint8_t)UVAL_INT)
+    (void)nargs;
+    if (self.kind != UV_INT) return urbi_raise_type(vm, "Integer.ushr: self must be Integer", out);
+    if (args[0].kind != UV_INT)
         return urbi_raise_type(vm, "Integer.ushr: argument must be Integer", out);
 
     int64_t n = args[0].v.i & 63;
-    *out = urbi_make_int((int64_t)((uint64_t)self.v.i >> (uint64_t)n));
+    *out = uv_int((int64_t)((uint64_t)self.v.i >> (uint64_t)n));
     return UEXEC_OK;
 }
 
@@ -271,33 +253,33 @@ int_ushr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 int_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "Integer.%", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_INT, "%: self must be Integer", out);
-    if (args[0].kind == (uint8_t)UVAL_FLOAT) {
+    (void)nargs;
+    if (self.kind != UV_INT) return urbi_raise_type(vm, "%: self must be Integer", out);
+    if (args[0].kind == UV_FLOAT) {
         if ((double)args[0].v.f == 0.0)
             return urbi_raise_divzero(vm, "modulo by 0", out);
-        *out = urbi_make_float(fmod_portable((double)self.v.i, (double)args[0].v.f));
+        *out = uv_float(fmod_portable((double)self.v.i, (double)args[0].v.f));
         return UEXEC_OK;
     }
-    if (args[0].kind != (uint8_t)UVAL_INT)
+    if (args[0].kind != UV_INT)
         return urbi_raise_type(vm, "%: argument must be Integer or Float", out);
     if (args[0].v.i == 0) return urbi_raise_divzero(vm, "modulo by 0", out);
-    if (self.v.i == INT64_MIN && args[0].v.i == -1) { *out = urbi_make_int(0); return UEXEC_OK; }
-    *out = urbi_make_int(self.v.i % args[0].v.i);
+    if (self.v.i == INT64_MIN && args[0].v.i == -1) { *out = uv_int(0); return UEXEC_OK; }
+    *out = uv_int(self.v.i % args[0].v.i);
     return UEXEC_OK;
 }
 
 static int
 flt_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "Float.%", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "%: self must be Float", out);
+    (void)nargs;
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "%: self must be Float", out);
     double b;
-    if (args[0].kind == (uint8_t)UVAL_FLOAT) b = (double)args[0].v.f;
-    else if (args[0].kind == (uint8_t)UVAL_INT) b = (double)args[0].v.i;
+    if (args[0].kind == UV_FLOAT) b = (double)args[0].v.f;
+    else if (args[0].kind == UV_INT) b = (double)args[0].v.i;
     else return urbi_raise_type(vm, "%: argument must be Integer or Float", out);
     if (b == 0.0) return urbi_raise_divzero(vm, "modulo by 0", out);
-    *out = urbi_make_float(fmod_portable((double)self.v.f, b));
+    *out = uv_float(fmod_portable((double)self.v.f, b));
     return UEXEC_OK;
 }
 
@@ -306,10 +288,11 @@ flt_mod(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 flt_random(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)vm;
+    (void)nargs;
     (void)self; (void)args;
-    URBI_CHECK_ARITY(vm, "Float.random", 0, nargs, out);
     uint64_t bits = prng_next() >> 11;          /* top 53 bits */
-    *out = urbi_make_float((double)bits * (1.0 / 9007199254740992.0)); /* / 2^53 */
+    *out = uv_float((double)bits * (1.0 / 9007199254740992.0)); /* / 2^53 */
     return UEXEC_OK;
 }
 
@@ -317,8 +300,8 @@ flt_random(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  */
 
 #define FLOAT_OF_VALUE(uv) \
-    ((uv).kind == (uint8_t)UVAL_FLOAT ? (double)(uv).v.f : \
-     (uv).kind == (uint8_t)UVAL_INT   ? (double)(uv).v.i : 0.0)
+    ((uv).kind == UV_FLOAT ? (double)(uv).v.f : \
+     (uv).kind == UV_INT   ? (double)(uv).v.i : 0.0)
 
 #define DEF_FLOAT_UNARY(name, libm_call)                                     \
     static int                                                               \
@@ -326,9 +309,9 @@ flt_random(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     {                                                                        \
         (void)args;                                                          \
         if (nargs != 0) return urbi_raise_arity(vm, "Float." #name, 0, nargs, out); \
-        if (self.kind != (uint8_t)UVAL_FLOAT)                                \
+        if (self.kind != UV_FLOAT)                                \
             return urbi_raise_type(vm, "Float." #name ": self must be Float", out); \
-        *out = urbi_make_float(libm_call((double)self.v.f));                       \
+        *out = uv_float(libm_call((double)self.v.f));                       \
         return UEXEC_OK;                                                     \
     }
 
@@ -352,52 +335,52 @@ DEF_FLOAT_UNARY(round, round)
 static int
 flt_abs(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Float.abs", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.abs: self must be Float", out);
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.abs: self must be Float", out);
     double x = (double)self.v.f;
-    *out = urbi_make_float(x < 0.0 ? -x : x);
+    *out = uv_float(x < 0.0 ? -x : x);
     return UEXEC_OK;
 }
 
 static int
 flt_floor(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Float.floor", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.floor: self must be Float", out);
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.floor: self must be Float", out);
     double x = (double)self.v.f;
     int64_t t = (int64_t)x;
     double tf = (double)t;
     if (x < 0.0 && tf != x) tf -= 1.0;
-    *out = urbi_make_float(tf);
+    *out = uv_float(tf);
     return UEXEC_OK;
 }
 
 static int
 flt_ceil(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Float.ceil", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.ceil: self must be Float", out);
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.ceil: self must be Float", out);
     double x = (double)self.v.f;
     int64_t t = (int64_t)x;
     double tf = (double)t;
     if (x > 0.0 && tf != x) tf += 1.0;
-    *out = urbi_make_float(tf);
+    *out = uv_float(tf);
     return UEXEC_OK;
 }
 
 static int
 flt_round(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Float.round", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.round: self must be Float", out);
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.round: self must be Float", out);
     double x = (double)self.v.f;
     /* Round half-away-from-zero (matches glibc round()). */
     double biased = x < 0.0 ? x - 0.5 : x + 0.5;
-    *out = urbi_make_float((double)(int64_t)biased);
+    *out = uv_float((double)(int64_t)biased);
     return UEXEC_OK;
 }
 
@@ -428,12 +411,12 @@ DEF_FLOAT_UNARY_FREESTANDING(exp)
 static int
 flt_atan2(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "Float.atan2", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.atan2: self must be Float", out);
+    (void)nargs;
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.atan2: self must be Float", out);
 
     double x = FLOAT_OF_VALUE(args[0]);
 #if __STDC_HOSTED__
-    *out = urbi_make_float(atan2((double)self.v.f, x));
+    *out = uv_float(atan2((double)self.v.f, x));
     return UEXEC_OK;
 #else
     (void)x;
@@ -454,9 +437,9 @@ flt_atan2(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 flt_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Float.asString", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.asString: self must be Float", out);
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.asString: self must be Float", out);
 
 #if __STDC_HOSTED__
     char buf[40];
@@ -495,9 +478,9 @@ flt_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 flt_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Float.asInteger", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.asInteger: self must be Float", out);
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.asInteger: self must be Float", out);
 
     double f = (double)self.v.f;
     /* Reject NaN / Inf — C99 conversion is implementation-defined; we
@@ -506,23 +489,23 @@ flt_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (f != 0.0 && (f - f) != 0.0) return urbi_raise_type(vm, "Float.asInteger: infinite", out);
     /* Out-of-range conversion is also implementation-defined; clamp at
      * INT64_MIN / INT64_MAX for safety. */
-    if (f >= (double)INT64_MAX) { *out = urbi_make_int(INT64_MAX); return UEXEC_OK; }
-    if (f <= (double)INT64_MIN) { *out = urbi_make_int(INT64_MIN); return UEXEC_OK; }
-    *out = urbi_make_int((int64_t)f);
+    if (f >= (double)INT64_MAX) { *out = uv_int(INT64_MAX); return UEXEC_OK; }
+    if (f <= (double)INT64_MIN) { *out = uv_int(INT64_MIN); return UEXEC_OK; }
+    *out = uv_int((int64_t)f);
     return UEXEC_OK;
 }
 
 static int
 flt_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Float.asBoolean", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.asBoolean: self must be Float", out);
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.asBoolean: self must be Float", out);
 
     double f = (double)self.v.f;
     /* Legacy semantics: NaN is truthy (non-comparable but not zero).
      * Inf is also truthy.  Only +/- zero is falsy. */
-    *out = urbi_make_bool(f != 0.0);
+    *out = uv_bool(f != 0.0);
     return UEXEC_OK;
 }
 
@@ -531,23 +514,23 @@ flt_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 flt_isNaN(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Float.isNaN", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.isNaN: self must be Float", out);
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.isNaN: self must be Float", out);
 
     /* IEEE-754 NaN-detection: x != x is true iff x is NaN.  Avoids the
      * isnan() macro dependency on freestanding builds. */
     double f = (double)self.v.f;
-    *out = urbi_make_bool(f != f);
+    *out = uv_bool(f != f);
     return UEXEC_OK;
 }
 
 static int
 flt_isInfinite(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "Float.isInfinite", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.isInfinite: self must be Float", out);
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.isInfinite: self must be Float", out);
 
     double f = (double)self.v.f;
     /* +/- inf detection: NaN compares unordered, so subtraction yields
@@ -557,7 +540,7 @@ flt_isInfinite(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
      *
      * Equivalent to isinf() under POSIX; we open-code to keep the
      * freestanding path identical. */
-    *out = urbi_make_bool(f != 0.0 && (f - f) != 0.0 && f == f);
+    *out = uv_bool(f != 0.0 && (f - f) != 0.0 && f == f);
     return UEXEC_OK;
 }
 
@@ -565,12 +548,12 @@ flt_isInfinite(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 flt_pow(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "Float.pow", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_FLOAT, "Float.pow: self must be Float", out);
+    (void)nargs;
+    if (self.kind != UV_FLOAT) return urbi_raise_type(vm, "Float.pow: self must be Float", out);
 
     double e = FLOAT_OF_VALUE(args[0]);
 #if __STDC_HOSTED__
-    *out = urbi_make_float(pow((double)self.v.f, e));
+    *out = uv_float(pow((double)self.v.f, e));
     return UEXEC_OK;
 #else
     (void)e;
@@ -587,37 +570,37 @@ flt_pow(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_size(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "String.size", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.size: self must be String", out);
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.size: self must be String", out);
 
-    const char *s = (const char *)self.v.p;
+    const char *s = urbi_str_cstr(self);
     if (s == NULL) return urbi_raise_type(vm, "String.size: NULL string", out);
-    *out = urbi_make_int((int64_t)urbi_strlen(s));
+    *out = uv_int((int64_t)urbi_strlen(s));
     return UEXEC_OK;
 }
 
 static int
 str_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "String.isEmpty", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.isEmpty: self must be String", out);
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.isEmpty: self must be String", out);
 
-    const char *s = (const char *)self.v.p;
-    *out = urbi_make_bool(s == NULL || s[0] == '\0');
+    const char *s = urbi_str_cstr(self);
+    *out = uv_bool(s == NULL || s[0] == '\0');
     return UEXEC_OK;
 }
 
 static int
 str_charAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "String.charAt", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.charAt: self must be String", out);
-    if (args[0].kind != (uint8_t)UVAL_INT)
+    (void)nargs;
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.charAt: self must be String", out);
+    if (args[0].kind != UV_INT)
         return urbi_raise_type(vm, "String.charAt: index must be Integer", out);
 
-    const char *s = (const char *)self.v.p;
+    const char *s = urbi_str_cstr(self);
     if (s == NULL) return urbi_raise_type(vm, "String.charAt: NULL string", out);
     size_t n = urbi_strlen(s);
     int64_t i = args[0].v.i;
@@ -646,11 +629,11 @@ static int
 str_caseop(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out,
            int to_upper, const char *fn_name)
 {
+    (void)nargs; (void)fn_name;
     (void)args;
-    URBI_CHECK_ARITY(vm, fn_name, 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String case op: self must be String", out);
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String case op: self must be String", out);
 
-    const char *s = (const char *)self.v.p;
+    const char *s = urbi_str_cstr(self);
     if (s == NULL) return urbi_raise_type(vm, "String case op: NULL string", out);
     size_t n = urbi_strlen(s);
 
@@ -662,8 +645,8 @@ str_caseop(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out,
         return UEXEC_OK;
     }
 
-    if (vm->alloc_fn == NULL) return urbi_raise_oom(vm, out);
-    char *buf = (char *)vm->alloc_fn(NULL, n + 1U, vm->alloc_ud);
+    if (vm->gc.alloc == NULL) return urbi_raise_oom(vm, out);
+    char *buf = (char *)vm->gc.alloc(NULL, n + 1U, vm->gc.alloc_ud);
     if (buf == NULL) return urbi_raise_oom(vm, out);
 
     /* ASCII case toggle: bit 0x20 distinguishes 'A'..'Z' (0x41..0x5A)
@@ -683,7 +666,7 @@ str_caseop(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out,
 
     int oom = 0;
     UValue v = urbi_val_str_intern(vm, buf, n, &oom);
-    vm->alloc_fn(buf, 0U, vm->alloc_ud);
+    vm->gc.alloc(buf, 0U, vm->gc.alloc_ud);
     if (oom) return urbi_raise_oom(vm, out);
     *out = v;
     return UEXEC_OK;
@@ -729,38 +712,38 @@ strs_find(const char *hay, size_t hlen, const char *ndl, size_t nlen,
 static int
 str_indexOf(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "String.indexOf", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.indexOf: self must be String", out);
-    if (args[0].kind != (uint8_t)UVAL_STR)
+    (void)nargs;
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.indexOf: self must be String", out);
+    if (!urbi_is_str(args[0]))
         return urbi_raise_type(vm, "String.indexOf: argument must be String", out);
 
-    const char *h = (const char *)self.v.p;
-    const char *n = (const char *)args[0].v.p;
+    const char *h = urbi_str_cstr(self);
+    const char *n = urbi_str_cstr(args[0]);
     if (h == NULL || n == NULL)
         return urbi_raise_type(vm, "String.indexOf: NULL string", out);
 
     int64_t idx;
     (void)strs_find(h, urbi_strlen(h), n, urbi_strlen(n), &idx);
-    *out = urbi_make_int(idx);
+    *out = uv_int(idx);
     return UEXEC_OK;
 }
 
 static int
 str_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "String.contains", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.contains: self must be String", out);
-    if (args[0].kind != (uint8_t)UVAL_STR)
+    (void)nargs;
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.contains: self must be String", out);
+    if (!urbi_is_str(args[0]))
         return urbi_raise_type(vm, "String.contains: argument must be String", out);
 
-    const char *h = (const char *)self.v.p;
-    const char *n = (const char *)args[0].v.p;
+    const char *h = urbi_str_cstr(self);
+    const char *n = urbi_str_cstr(args[0]);
     if (h == NULL || n == NULL)
         return urbi_raise_type(vm, "String.contains: NULL string", out);
 
     int64_t idx;
     int found = strs_find(h, urbi_strlen(h), n, urbi_strlen(n), &idx);
-    *out = urbi_make_bool(found);
+    *out = uv_bool(found);
     return UEXEC_OK;
 }
 
@@ -768,27 +751,27 @@ static int
 str_starts_or_ends(UVM *vm, UValue self, UValue *args, uint8_t nargs,
                    UValue *out, int starts, const char *fn_name)
 {
-    URBI_CHECK_ARITY(vm, fn_name, 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String prefix/suffix op: self must be String", out);
-    if (args[0].kind != (uint8_t)UVAL_STR)
+    (void)nargs; (void)fn_name;
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String prefix/suffix op: self must be String", out);
+    if (!urbi_is_str(args[0]))
         return urbi_raise_type(vm, "String prefix/suffix op: argument must be String", out);
 
-    const char *h = (const char *)self.v.p;
-    const char *n = (const char *)args[0].v.p;
+    const char *h = urbi_str_cstr(self);
+    const char *n = urbi_str_cstr(args[0]);
     if (h == NULL || n == NULL)
         return urbi_raise_type(vm, "String prefix/suffix op: NULL string", out);
 
     size_t hlen = urbi_strlen(h);
     size_t nlen = urbi_strlen(n);
-    if (nlen == 0) { *out = urbi_make_bool(1); return UEXEC_OK; }
-    if (nlen > hlen) { *out = urbi_make_bool(0); return UEXEC_OK; }
+    if (nlen == 0) { *out = uv_bool(1); return UEXEC_OK; }
+    if (nlen > hlen) { *out = uv_bool(0); return UEXEC_OK; }
 
     const char *base = starts ? h : (h + (hlen - nlen));
     size_t k;
     for (k = 0; k < nlen; k++) {
-        if (base[k] != n[k]) { *out = urbi_make_bool(0); return UEXEC_OK; }
+        if (base[k] != n[k]) { *out = uv_bool(0); return UEXEC_OK; }
     }
-    *out = urbi_make_bool(1);
+    *out = uv_bool(1);
     return UEXEC_OK;
 }
 
@@ -815,11 +798,11 @@ str_endsWith(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "String.asInteger", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.asInteger: self must be String", out);
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.asInteger: self must be String", out);
 
-    const char *s = (const char *)self.v.p;
+    const char *s = urbi_str_cstr(self);
     if (s == NULL || s[0] == '\0')
         return urbi_raise_type(vm, "String.asInteger: empty / NULL string", out);
 
@@ -832,7 +815,7 @@ str_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     while (*endptr == ' ' || *endptr == '\t') endptr++;
     if (*endptr != '\0')
         return urbi_raise_type(vm, "String.asInteger: trailing garbage", out);
-    *out = urbi_make_int((int64_t)v);
+    *out = uv_int((int64_t)v);
     return UEXEC_OK;
 #else
     return urbi_raise_type(vm,
@@ -843,11 +826,11 @@ str_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_asFloat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "String.asFloat", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.asFloat: self must be String", out);
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.asFloat: self must be String", out);
 
-    const char *s = (const char *)self.v.p;
+    const char *s = urbi_str_cstr(self);
     if (s == NULL || s[0] == '\0')
         return urbi_raise_type(vm, "String.asFloat: empty / NULL string", out);
 
@@ -859,7 +842,7 @@ str_asFloat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     while (*endptr == ' ' || *endptr == '\t') endptr++;
     if (*endptr != '\0')
         return urbi_raise_type(vm, "String.asFloat: trailing garbage", out);
-    *out = urbi_make_float(v);
+    *out = uv_float(v);
     return UEXEC_OK;
 #else
     return urbi_raise_type(vm,
@@ -870,20 +853,20 @@ str_asFloat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)args;
-    URBI_CHECK_ARITY(vm, "String.asBoolean", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.asBoolean: self must be String", out);
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.asBoolean: self must be String", out);
 
-    const char *s = (const char *)self.v.p;
+    const char *s = urbi_str_cstr(self);
     if (s == NULL) return urbi_raise_type(vm, "String.asBoolean: NULL string", out);
 
     /* Case-sensitive byte compare against "true" / "false". */
     if (s[0] == 't' && s[1] == 'r' && s[2] == 'u' && s[3] == 'e' && s[4] == '\0') {
-        *out = urbi_make_bool(1);
+        *out = uv_bool(1);
         return UEXEC_OK;
     }
     if (s[0] == 'f' && s[1] == 'a' && s[2] == 'l' && s[3] == 's' && s[4] == 'e' && s[5] == '\0') {
-        *out = urbi_make_bool(0);
+        *out = uv_bool(0);
         return UEXEC_OK;
     }
     return urbi_raise_type(vm,
@@ -900,19 +883,19 @@ str_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_asciiAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "String.asciiAt", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.asciiAt: self must be String", out);
-    if (args[0].kind != (uint8_t)UVAL_INT)
+    (void)nargs;
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.asciiAt: self must be String", out);
+    if (args[0].kind != UV_INT)
         return urbi_raise_type(vm, "String.asciiAt: index must be Integer", out);
 
-    const char *s = (const char *)self.v.p;
+    const char *s = urbi_str_cstr(self);
     if (s == NULL) return urbi_raise_type(vm, "String.asciiAt: NULL string", out);
     size_t n = urbi_strlen(s);
     int64_t i = args[0].v.i;
     if (i < 0 || (size_t)i >= n)
         return urbi_raise_range(vm, "String.asciiAt: index out of range", out);
 
-    *out = urbi_make_int((int64_t)(unsigned char)s[i]);
+    *out = uv_int((int64_t)(unsigned char)s[i]);
     return UEXEC_OK;
 }
 
@@ -937,68 +920,65 @@ bytes_eq(const char *a, const char *b, size_t n)
 static int
 str_split(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "String.split", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_STR || args[0].kind != (uint8_t)UVAL_STR)
+    (void)nargs;
+    if (!urbi_is_str(self) || !urbi_is_str(args[0]))
         return urbi_raise_type(vm, "split: self and separator must be String", out);
 
-    const char *s = (const char *)self.v.p;
-    const char *sep = (const char *)args[0].v.p;
-    if (s == NULL || sep == NULL)
-        return urbi_raise_type(vm, "split: NULL string", out);
-    size_t n = urbi_strlen(s), seplen = urbi_strlen(sep);
+    /* Root the receiver and the separator: every append below can collect,
+     * and s / sep point INTO their cells. */
+    UValue rself = self, rsep = args[0];
+    URBI_ROOT(vm, rself); URBI_ROOT(vm, rsep);
+    const char *s = urbi_str_cstr(rself);
+    const char *sep = urbi_str_cstr(rsep);
+    size_t n = urbi_str_size(rself), seplen = urbi_str_size(rsep);
 
-    UObject *lst = urbi_stdlib_list_new_empty(vm);
-    if (lst == NULL) return urbi_raise_oom(vm, out);
-
-    if (seplen == 0U) {   /* empty sep -> per-byte split (legacy string.cc:385-391).
-                           * Per-BYTE, not per-character: multi-byte UTF-8
-                           * characters split into byte fragments — matches
-                           * the reference implementation (foreach char c). */
-        size_t j;
-        for (j = 0U; j < n; j++) {
-            int oom = 0;
-            UValue ch = urbi_val_str_intern(vm, s + j, 1U, &oom);
-            if (oom) return urbi_raise_oom(vm, out);
-            if (urbi_stdlib_list_append_value(vm, lst, ch) != 0)
-                return urbi_raise_oom(vm, out);
-        }
-        *out = urbi_make_object(lst);
-        return UEXEC_OK;
-    }
-
-    size_t start = 0U, i = 0U;
-    while (i + seplen <= n) {
-        if (bytes_eq(s + i, sep, seplen)) {
-            UValue piece = urbi_make_str_interned(vm, s + start, i - start);
-            if (piece.kind == (uint8_t)UVAL_NIL) return urbi_raise_oom(vm, out);
-            if (urbi_stdlib_list_append_value(vm, lst, piece) != 0)
-                return urbi_raise_oom(vm, out);
-            i += seplen;
-            start = i;
+    UValue lst = urbi_list_new(vm);
+    int failed = 0;
+    if (lst.kind == UV_NIL) {
+        failed = 1;
+    } else {
+        URBI_ROOT(vm, lst);
+        if (seplen == 0U) {
+            /* An empty separator splits per BYTE, not per character: a
+             * multi-byte UTF-8 sequence comes apart into its bytes.  That
+             * is what the reference implementation does (foreach char c). */
+            for (size_t j = 0U; j < n; j++) {
+                UValue ch = urbi_make_str(vm, s + j, 1U);
+                if (ch.kind == UV_NIL || urbi_list_append(vm, lst, ch) != 0) { failed = 1; break; }
+            }
         } else {
-            i++;
+            size_t start = 0U, i = 0U;
+            while (i + seplen <= n) {
+                if (bytes_eq(s + i, sep, seplen)) {
+                    UValue piece = urbi_make_str(vm, s + start, i - start);
+                    if (piece.kind == UV_NIL || urbi_list_append(vm, lst, piece) != 0) { failed = 1; break; }
+                    i += seplen;
+                    start = i;
+                } else {
+                    i++;
+                }
+            }
+            if (!failed) {
+                UValue last = urbi_make_str(vm, s + start, n - start);
+                if (last.kind == UV_NIL || urbi_list_append(vm, lst, last) != 0) failed = 1;
+            }
         }
+        URBI_UNROOT(vm, lst);
     }
-    {
-        UValue last = urbi_make_str_interned(vm, s + start, n - start);
-        if (last.kind == (uint8_t)UVAL_NIL) return urbi_raise_oom(vm, out);
-        if (urbi_stdlib_list_append_value(vm, lst, last) != 0)
-            return urbi_raise_oom(vm, out);
-    }
-    *out = urbi_make_object(lst);
+    URBI_UNROOT(vm, rsep); URBI_UNROOT(vm, rself);
+    if (failed) return urbi_raise_oom(vm, out);
+    *out = lst;
     return UEXEC_OK;
 }
 
+/* join — concatenate a List's String elements with `self` between them. */
 static int
 str_join(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "String.join", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "join: self (separator) must be String", out);
-    if (args[0].kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "join: argument must be a List", out);
-    const char *sep = (const char *)self.v.p;
-    size_t seplen = urbi_strlen(sep);
-    return join_core(vm, sep, seplen, (UObject *)args[0].v.p, out);
+    (void)nargs;
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "join: self (separator) must be String", out);
+    if (!uv_is_list(args[0])) return urbi_raise_type(vm, "join: argument must be a List", out);
+    return join_core(vm, self, args[0], out);
 }
 
 /* format — minimal printf substitution.  Numeric specs (%d/%f) require the
@@ -1032,18 +1012,15 @@ count_format_specs(const char *fmt, size_t n)
 static int
 str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "String.format", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "format: self must be String", out);
-    if (args[0].kind != (uint8_t)UVAL_OBJECT)
+    (void)nargs;
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "format: self must be String", out);
+    if (!uv_is_list(args[0]))
         return urbi_raise_type(vm, "format: argument must be a List", out);
 
-    const char *fmt = (const char *)self.v.p;
-    if (fmt == NULL) return urbi_raise_type(vm, "format: NULL string", out);
-    size_t n = urbi_strlen(fmt);
-    UObject *list_obj = (UObject *)args[0].v.p;
-    if (!urbi_stdlib_list_storage_present(vm, list_obj))
-        return urbi_raise_type(vm, "format: argument must be a List", out);
-    size_t argc = urbi_stdlib_list_len(vm, list_obj);
+    const char *fmt = urbi_str_cstr(self);
+    size_t n = urbi_str_size(self);
+    UValue list_v = args[0];
+    size_t argc = urbi_list_len(list_v);
 
     /* Arg-count pre-check: raise before any substitution. */
     size_t spec_count = count_format_specs(fmt, n);
@@ -1064,10 +1041,10 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
                 if (off + 1U >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
                 buf[off++] = '%'; i += 2U; continue;
             }
-            UValue a = (ai < argc) ? urbi_stdlib_list_get(vm, list_obj, ai) : urbi_make_nil();
+            UValue a = (ai < argc) ? urbi_list_get(list_v, (uint32_t)ai) : uv_nil();
             ai++;
             if (k == 's') {
-                const char *sv = (a.kind == (uint8_t)UVAL_STR) ? (const char *)a.v.p : "";
+                const char *sv = (urbi_is_str(a)) ? urbi_str_cstr(a) : "";
                 size_t sl = urbi_strlen(sv);
                 if (off + sl >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
                 urbi_memcpy(buf + off, sv, sl); off += sl;
@@ -1077,7 +1054,7 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
             if (k == 'd') {
                 char tmp[32];
                 int tn = snprintf(tmp, sizeof tmp, "%lld",
-                                  (long long)((a.kind == (uint8_t)UVAL_INT) ? a.v.i : 0));
+                                  (long long)((a.kind == UV_INT) ? a.v.i : 0));
                 if (tn <= 0) return urbi_raise_type(vm, "format: int conversion failed", out);
                 if (off + (size_t)tn >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
                 { int j; for (j = 0; j < tn; j++) buf[off++] = tmp[j]; }
@@ -1085,8 +1062,8 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
             }
             if (k == 'f') {
                 char tmp[64];
-                double dv = (a.kind == (uint8_t)UVAL_FLOAT) ? (double)a.v.f :
-                            (a.kind == (uint8_t)UVAL_INT)   ? (double)a.v.i : 0.0;
+                double dv = (a.kind == UV_FLOAT) ? (double)a.v.f :
+                            (a.kind == UV_INT)   ? (double)a.v.i : 0.0;
                 int tn = snprintf(tmp, sizeof tmp, "%g", dv);
                 if (tn <= 0) return urbi_raise_type(vm, "format: float conversion failed", out);
                 if (off + (size_t)tn >= sizeof buf) return urbi_raise_type(vm, "format: overflow", out);
@@ -1106,9 +1083,8 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         buf[off++] = c; i++;
     }
 
-    int oom = 0;
-    UValue v = urbi_val_str_intern(vm, buf, off, &oom);
-    if (oom) return urbi_raise_oom(vm, out);
+    UValue v = urbi_make_str(vm, buf, off);
+    if (v.kind == UV_NIL) return urbi_raise_oom(vm, out);
     *out = v;
     return UEXEC_OK;
 }
@@ -1124,115 +1100,108 @@ str_format(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 str_percent(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "String.%", 1, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_STR, "String.%: self must be String", out);
-    if (args[0].kind == (uint8_t)UVAL_OBJECT)
+    (void)nargs;
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.%: self must be String", out);
+    if (uv_is_list(args[0]))
         return str_format(vm, self, args, 1U, out);
-    /* Non-list scalar: wrap in a one-element list then delegate. */
-    UObject *lst = urbi_stdlib_list_new_empty(vm);
-    if (lst == NULL) return urbi_raise_oom(vm, out);
-    if (urbi_stdlib_list_append_value(vm, lst, args[0]) != 0)
-        return urbi_raise_oom(vm, out);
-    UValue list_val = urbi_make_object(lst);
-    return str_format(vm, self, &list_val, 1U, out);
+    /* A scalar operand is wrapped in a one-element list and delegated, the
+     * way the legacy `%` does. */
+    UValue lst = urbi_list_new(vm);
+    if (lst.kind == UV_NIL) return urbi_raise_oom(vm, out);
+    URBI_ROOT(vm, lst);
+    int rc = urbi_list_append(vm, lst, args[0]);
+    URBI_UNROOT(vm, lst);
+    if (rc != 0) return urbi_raise_oom(vm, out);
+    return str_format(vm, self, &lst, 1U, out);
 }
 
-/* === Per-family method tables ============================================= */
-
-static const UNativeMethodDef BOOL_METHODS[] = {
-    { "negate", bool_negate }
-};
-static const UNativeMethodDef INT_METHODS[] = {
-    { "asString",  int_asString  },
-    { "asFloat",   int_asFloat   },
-    { "asBoolean", int_asBoolean },
-    { "asInteger", int_asInteger },
-    { "and",       int_and       },
-    { "or",        int_or        },
-    { "xor",       int_xor       },
-    { "inv",       int_inv       },
-    { "shl",       int_shl       },
-    { "shr",       int_shr       },
-    { "ushr",      int_ushr      },
-    { "%",         int_mod       }
-};
-static const UNativeMethodDef FLOAT_METHODS[] = {
-    { "sqrt",  flt_sqrt  },
-    { "sin",   flt_sin   },
-    { "cos",   flt_cos   },
-    { "tan",   flt_tan   },
-    { "asin",  flt_asin  },
-    { "acos",  flt_acos  },
-    { "atan",  flt_atan  },
-    { "atan2", flt_atan2 },
-    { "log",   flt_log   },
-    { "log10", flt_log10 },
-    { "exp",   flt_exp   },
-    { "pow",   flt_pow   },
-    { "floor", flt_floor },
-    { "ceil",  flt_ceil  },
-    { "abs",   flt_abs   },
-    { "round", flt_round },
-    { "isNaN",      flt_isNaN      },
-    { "isInfinite", flt_isInfinite },
-    { "asString",   flt_asString   },
-    { "asInteger",  flt_asInteger  },
-    { "asBoolean",  flt_asBoolean  },
-    { "%",          flt_mod        },
-    { "random",     flt_random     }
-};
-static const UNativeMethodDef STR_METHODS[] = {
-    { "size",    str_size    },
-    { "isEmpty", str_isEmpty },
-    { "charAt",  str_charAt  },
-    { "toUpper", str_toUpper },
-    { "toLower", str_toLower },
-    { "indexOf",    str_indexOf    },
-    { "contains",   str_contains   },
-    { "startsWith", str_startsWith },
-    { "endsWith",   str_endsWith   },
-    { "asInteger",  str_asInteger  },
-    { "asFloat",    str_asFloat    },
-    { "asBoolean",  str_asBoolean  },
-    { "asciiAt",    str_asciiAt    },
-    { "split",      str_split      },
-    { "join",       str_join       },
-    { "format",     str_format     },
-    { "%",          str_percent    }   /* infix format sugar */
-};
-
-/* Empty tables retain a `{NULL, NULL}` sentinel so the array has at
- * least one element (C99 forbids zero-size arrays).  Tables with real
- * entries omit the sentinel. */
-
-/* === urbi_stdlib_register_atom_methods =====================================
+/* === Boolean.toString / String.asString ==================================
  *
- * This function lands the helper + boot wiring; the per-family method tables fill
- * in across sections.  At baseline all four tables are sentinel-only
- * (count == 0); URBI_REGISTER_METHODS is a no-op for those but the call
- * sites are wired so subsequent tasks only edit the table arrays. */
+ * Boolean.toString came from the retired atom_protos.c; String.asString
+ * came from the string_overlay.u script overlay, which could express it
+ * only as `self`.  Both are one line of C, and having them here keeps
+ * every String and Boolean method in one table. */
 
-int
-urbi_stdlib_register_atom_methods(UVM *vm)
+static int
+bool_toString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (vm == NULL) return URBI_ERR_INVALID_ARG;
-
-    int rc;
-    rc = URBI_REGISTER_METHODS(vm, urbi_object_atom(vm, URBI_ATOM_BOOLEAN),
-                               BOOL_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    rc = URBI_REGISTER_METHODS(vm, urbi_object_atom(vm, URBI_ATOM_INTEGER),
-                               INT_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    rc = URBI_REGISTER_METHODS(vm, urbi_object_atom(vm, URBI_ATOM_FLOAT),
-                               FLOAT_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    rc = URBI_REGISTER_METHODS(vm, urbi_object_atom(vm, URBI_ATOM_STRING),
-                               STR_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    return URBI_OK;
+    (void)args; (void)nargs;
+    if (self.kind != UV_BOOL) return urbi_raise_type(vm, "Boolean.toString: self must be Boolean", out);
+    const char *s = self.v.i ? "true" : "false";
+    UValue v = urbi_make_str(vm, s, urbi_strlen(s));
+    if (v.kind == UV_NIL) return urbi_raise_oom(vm, out);
+    *out = v;
+    return UEXEC_OK;
 }
+
+static int
+str_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args; (void)nargs;
+    if (!urbi_is_str(self)) return urbi_raise_type(vm, "String.asString: self must be String", out);
+    *out = self;
+    return UEXEC_OK;
+}
+
+/* === the tables ==========================================================
+ *
+ * Arity is declared here and enforced by uexec before a body runs, which
+ * is why none of the bodies above count their arguments. */
+
+const UMethodDef k_bool_methods[K_BOOL_NMETHODS] = {
+    { "negate",   bool_negate,   0, 0 },
+    { "toString", bool_toString, 0, 0 }
+};
+const UMethodDef k_int_methods[K_INT_NMETHODS] = {
+    { "asString",  int_asString,  0, 0 },
+    { "asFloat",   int_asFloat,   0, 0 },
+    { "asBoolean", int_asBoolean, 0, 0 },
+    { "asInteger", int_asInteger, 0, 0 },
+    { "and",       int_and,       1, 1 },
+    { "or",        int_or,        1, 1 },
+    { "xor",       int_xor,       1, 1 },
+    { "inv",       int_inv,       0, 0 },
+    { "shl",       int_shl,       1, 1 },
+    { "shr",       int_shr,       1, 1 },
+    { "ushr",      int_ushr,      1, 1 },
+    { "%",         int_mod,       1, 1 }
+};
+const UMethodDef k_float_methods[K_FLOAT_NMETHODS] = {
+    { "sqrt",  flt_sqrt,  0, 0 }, { "sin",   flt_sin,   0, 0 },
+    { "cos",   flt_cos,   0, 0 }, { "tan",   flt_tan,   0, 0 },
+    { "asin",  flt_asin,  0, 0 }, { "acos",  flt_acos,  0, 0 },
+    { "atan",  flt_atan,  0, 0 }, { "atan2", flt_atan2, 1, 1 },
+    { "log",   flt_log,   0, 0 }, { "log10", flt_log10, 0, 0 },
+    { "exp",   flt_exp,   0, 0 }, { "pow",   flt_pow,   1, 1 },
+    { "floor", flt_floor, 0, 0 }, { "ceil",  flt_ceil,  0, 0 },
+    { "abs",   flt_abs,   0, 0 }, { "round", flt_round, 0, 0 },
+    { "isNaN",      flt_isNaN,      0, 0 },
+    { "isInfinite", flt_isInfinite, 0, 0 },
+    { "asString",   flt_asString,   0, 0 },
+    { "asInteger",  flt_asInteger,  0, 0 },
+    { "asBoolean",  flt_asBoolean,  0, 0 },
+    { "%",          flt_mod,        1, 1 },
+    { "random",     flt_random,     0, 0 }
+};
+const UMethodDef k_string_methods[K_STRING_NMETHODS] = {
+    { "size",       str_size,       0, 0 },
+    { "length",     str_size,       0, 0 },   /* legacy spelling of size */
+    { "isEmpty",    str_isEmpty,    0, 0 },
+    { "charAt",     str_charAt,     1, 1 },
+    { "toUpper",    str_toUpper,    0, 0 },
+    { "toLower",    str_toLower,    0, 0 },
+    { "indexOf",    str_indexOf,    1, 1 },
+    { "contains",   str_contains,   1, 1 },
+    { "startsWith", str_startsWith, 1, 1 },
+    { "endsWith",   str_endsWith,   1, 1 },
+    { "asInteger",  str_asInteger,  0, 0 },
+    { "asFloat",    str_asFloat,    0, 0 },
+    { "asBoolean",  str_asBoolean,  0, 0 },
+    { "asString",   str_asString,   0, 0 },
+    { "asciiAt",    str_asciiAt,    1, 1 },
+    { "split",      str_split,      1, 1 },
+    { "join",       str_join,       1, 1 },
+    { "format",     str_format,     1, 1 },
+    { "%",          str_percent,    1, 1 }    /* infix format sugar */
+};
+

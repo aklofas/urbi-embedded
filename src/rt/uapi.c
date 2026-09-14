@@ -2,7 +2,7 @@
 /* src/rt/uapi.c — the public C API, implemented on the runtime core.
  * See include/urbi/urbi.h for the contract of every function here. */
 
-#include "rt/urealm.h"
+#include "rt/uboot.h"
 #include "urbi/urbi.h"
 #include "chunk/uchunk.h"
 #include "emit/ufront.h"
@@ -27,10 +27,15 @@ static void uapi_set_err(char *err, size_t errcap, const char *msg)
 
 UVM *urbi_open(UVMAllocFn alloc, void *ud, const UVMConfig *config)
 {
-    (void)config;   /* step_budget/boot_stdlib become live with the scheduler and boot tasks */
+    (void)config;   /* step_budget becomes live with the scheduler task */
     UVM *vm = uvm_open((UAllocFn)alloc, ud);
     if (!vm) return NULL;
-    if (urealm_new(vm) == NULL) { uvm_close(vm); return NULL; }
+    /* config->boot_stdlib defaults to 1; a host that passes a config
+     * asking for 0 gets a VM with no built-ins at all, which is only
+     * useful for measuring the bare core. */
+    if (!config || config->boot_stdlib) {
+        if (uboot_init(vm) != URBI_OK) { uvm_close(vm); return NULL; }
+    }
     return vm;
 }
 
@@ -130,7 +135,7 @@ int urbi_load(UVM *vm, URealm *realm, const uint8_t *bytes, size_t n, UValue *ou
 {
     if (out) *out = urbi_make_nil();
     if (!vm || !bytes) return URBI_ERR_INVALID_ARG;
-    if (!realm) realm = vm->main_realm;
+    if (!realm) realm = urbi_realm_main(vm);
     if (!realm) return URBI_ERR_INVALID_ARG;
 
     UProto *root = NULL;
@@ -166,7 +171,7 @@ int urbi_run(UVM *vm, URealm *realm, const char *src, size_t n, const char *name
              UValue *out, char *err, size_t errcap)
 {
     if (!vm) return URBI_ERR_INVALID_ARG;
-    if (!realm) realm = vm->main_realm;
+    if (!realm) realm = urbi_realm_main(vm);
     return uexec_run_source(vm, realm, src, n, name, out, err, errcap);
 }
 
@@ -175,7 +180,7 @@ int urbi_call(UVM *vm, URealm *realm, UValue callee, UValue recv,
 {
     if (out) *out = urbi_make_nil();
     if (!vm) return URBI_ERR_INVALID_ARG;
-    if (!realm) realm = vm->main_realm;
+    if (!realm) realm = urbi_realm_main(vm);
     if (callee.kind != UV_CELL || ((UCell *)callee.v.p)->type != UCELL_CLOSURE)
         return URBI_ERR_INVALID_ARG;
     UStrand *s = uvm_spare_acquire(vm, realm);
@@ -225,7 +230,7 @@ int urbi_global_get(UVM *vm, URealm *realm, const char *name, UValue *out)
 {
     if (out) *out = urbi_make_nil();
     if (!vm || !name) return URBI_ERR_INVALID_ARG;
-    if (!realm) realm = vm->main_realm;
+    if (!realm) realm = urbi_realm_main(vm);
     if (!realm || !realm->globals) return URBI_ERR_INVALID_ARG;
     const USym *sym = usym_cstr(vm, name);
     if (!sym) return URBI_ERR_OOM;
@@ -238,7 +243,7 @@ int urbi_global_get(UVM *vm, URealm *realm, const char *name, UValue *out)
 int urbi_global_set(UVM *vm, URealm *realm, const char *name, UValue v)
 {
     if (!vm || !name) return URBI_ERR_INVALID_ARG;
-    if (!realm) realm = vm->main_realm;
+    if (!realm) realm = urbi_realm_main(vm);
     if (!realm || !realm->globals) return URBI_ERR_INVALID_ARG;
     USym *sym = usym_cstr(vm, name);
     if (!sym) return URBI_ERR_OOM;
@@ -278,7 +283,7 @@ int urbi_register(UVM *vm, const char *path, urbi_native_fn fn,
                   uint8_t min_args, uint8_t max_args)
 {
     if (!vm || !path || !fn) return URBI_ERR_INVALID_ARG;
-    URealm *realm = vm->main_realm;
+    URealm *realm = urbi_realm_main(vm);   /* creates it if the host never named one */
     if (!realm || !realm->globals) return URBI_ERR_INVALID_STATE;
 
     UObject *owner = realm->globals;

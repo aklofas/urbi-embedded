@@ -169,6 +169,29 @@ static uint32_t ms_since_start(void) {
 
 static void sigint_handler(int sig) { (void)sig; g_interrupted = 1; }
 
+/* Script output.  Everything a program echoes arrives here already
+ * framed by the Lobby primitive, so the CLI writes it through
+ * unchanged and interleaved with the REPL's own result lines. */
+static void cli_writer(void *ud, const char *chan, size_t cl, const char *msg, size_t ml)
+{
+    (void)ud; (void)chan; (void)cl;
+    fwrite(msg, 1, ml, stdout);
+    fflush(stdout);
+}
+
+/* Monotonic microseconds since process start, so the timestamp the
+ * Lobby frame carries and the one the REPL prints share an origin. */
+static uint64_t cli_clock(void *ud)
+{
+    (void)ud;
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    long sec = (long)(now.tv_sec - g_start_time.tv_sec);
+    long nsec = now.tv_nsec - g_start_time.tv_nsec;
+    if (nsec < 0) { sec -= 1; nsec += 1000000000L; }
+    return (uint64_t)sec * 1000000ULL + (uint64_t)nsec / 1000ULL;
+}
+
 static char *history_path(void) {
     const char *home = getenv("HOME");
     if (!home || !home[0]) return NULL;
@@ -264,7 +287,6 @@ static void cont_flush(UVM *vm) {
 }
 
 static int run_interactive(UVM *vm) {
-    clock_gettime(CLOCK_MONOTONIC, &g_start_time);
     signal(SIGINT, sigint_handler);
 
     char *histpath = history_path();
@@ -340,8 +362,11 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    clock_gettime(CLOCK_MONOTONIC, &g_start_time);
     UVM *vm = urbi_open(cli_alloc, NULL, NULL);
     if (!vm) { fprintf(stderr, "urbi: out of memory\n"); return 1; }
+    urbi_set_writer(vm, cli_writer, NULL);
+    urbi_set_clock(vm, cli_clock, NULL);
     int rc = EXIT_SUCCESS;
 
     if (dump || dump_wire) {

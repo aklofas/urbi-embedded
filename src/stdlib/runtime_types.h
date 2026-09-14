@@ -1,55 +1,15 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* runtime_types.h — C-native runtime-type protos.
- *
- * This module lands the runtime-type method surfaces on top of
- * the atom-proto baselines:
- *
- *   - Exception primitive root: fresh proto exposing `.new(message)`,
- *     `.message` slot, and `.raise` (which deposits THROW unwind so
- *     try/catch blocks can intercept).
- *
- * Boot order: urbi_stdlib_register_runtime_types(vm) is called from
- * urbi_stdlib_boot AFTER containers (which also depends on atom protos). */
+/* runtime_types.h — the Exception prototype's method table and its one
+ * init hook.  The subclass protos are table rows in rt/uboot.c. */
 
 #ifndef URBI_STDLIB_RUNTIME_TYPES_H
 #define URBI_STDLIB_RUNTIME_TYPES_H
 
-#ifdef __cplusplus
-extern "C" {
+#include "rt/ustdlib_glue.h"
+
+enum { K_EXCEPTION_NMETHODS = 2 };
+extern const UMethodDef k_exception_methods[K_EXCEPTION_NMETHODS];
+
+int urbi_exception_init(UVM *vm, UObject *proto);
+
 #endif
-
-struct UVM;
-struct URealm;
-
-/* Allocates vm->exception_proto + installs Exception.new / Exception.raise
- * + binds "Exception" as a realm-global constant (deferred to a post-loop
- * hook that mirrors the container post-loop registration).
- *
- * Idempotent: re-entry through urbi_stdlib_boot is gated upstream by
- * vm->stdlib_booted.
- *
- * Returns URBI_OK on success or URBI_ERR_OOM on alloc failure. */
-int urbi_stdlib_register_runtime_types(struct UVM *vm);
-
-/* Post-registry hook: installs Exception as a realm global on `realm`.
- * Called by urbi_populate_realm_globals AFTER the 15-row registry loop
- * completes (same pattern as urbi_stdlib_register_container_globals).
- *
- * Returns URBI_OK on success, URBI_ERR_OOM / URBI_ERR_INVALID_ARG. */
-int urbi_stdlib_register_runtime_globals(struct UVM *vm, struct URealm *realm);
-
-/* Caches the Exception-subclass protos (TypeError / ArityError /
- * LookupError / OutOfMemoryError) on `vm` by resolving them as realm
- * globals from `realm` after the stdlib bake-blob run has installed them.
- * Called by urbi_populate_realm_globals after the channel resolve block;
- * idempotent across realms (caches once on the first realm).
- *
- * Returns URBI_OK on success, URBI_ERR_INVALID_ARG / URBI_ERR_INVALID_STATE
- * / the propagated urbi_realm_get_global error. */
-int urbi_exception_subclass_protos_resolve(struct UVM *vm, struct URealm *realm);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* URBI_STDLIB_RUNTIME_TYPES_H */

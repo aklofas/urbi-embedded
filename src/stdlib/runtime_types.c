@@ -1,217 +1,56 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* runtime_types.c — C-native runtime-type protos.
+/* runtime_types.c — the Exception prototype's own methods.
  *
- * Exception ABI:
- *   var e = Exception.new("boom")  → fresh clone of Exception proto with
- *                                    a `message` slot bound to args[0].
- *   e.message                       → returns the bound message UValue.
- *   e.raise                         → deposit pending_unwind = UEXEC_THROW
- *                                    with unwind_value = self, so an
- *                                    enclosing try/catch handler binds the
- *                                    Exception object as its catch var.
- */
+ *   var e = Exception.new("boom")   a fresh clone carrying `message`
+ *   e.message                       the bound message
+ *   e.raise                         throw `e` itself, so an enclosing
+ *                                   catch binds this very object
+ *
+ * The Exception FAMILY — Exception and the seven subclasses the VM
+ * raises — is built by uboot_table, not here: the runtime has to be able
+ * to throw a TypeError before any script has run, so the protos and
+ * their parent links are C data rather than something an overlay
+ * installs. */
 
+#include "rt/ustdlib_glue.h"
 #include "stdlib/runtime_types.h"
-#include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
 
-#include "chunk/uchunk.h"            /* UValue, UVAL_* */
-#include "object/uobject.h"            /* urbi_object_alloc / clone / set_local_slot */
-#include "realm/urealm.h"              /* URealm */
-#include "runtime/uclosure.h"          /* urbi_native_method_fn */
-#include "runtime/umacros.h"           /* urbi_strlen */
-#include "sched/ustrand.h"             /* UEXEC_OK, UEXEC_THROW, UStrand */
-#include "urbi/object.h"               /* URBI_ATOM_OBJECT */
-#include "urbi/types.h"                /* urbi_make_nil */
-#include "urbi/urbi.h"                 /* URBI_OK, URBI_ERR_*, urbi_throw */
-#include "value/uintern.h"             /* ustr_intern, USymbol */
-#include "vm/uvm.h"                    /* UVM, vm->exception_proto */
-
-#include <stdint.h>
-#include <stddef.h>
-
-/* === Exception.new(message) =============================================
- *
- * Clone the Exception proto and install args[0] as the local `message`
- * slot.  Returns the fresh clone wrapped in a UVAL_OBJECT.
- */
-
-static int
-exc_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+static int exc_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (nargs != 1) return urbi_raise_arity(vm, "Exception.new", 1, nargs, out);
-    if (self.kind != (uint8_t)UVAL_OBJECT)
+    (void)nargs;
+    if (self.kind != UV_OBJ)
         return urbi_raise_type(vm, "Exception.new: receiver must be an Object", out);
 
-    UObject *e = urbi_object_clone(vm, (UObject *)self.v.p);
+    UObject *e = uobj_new(vm, (UObject *)self.v.p);
     if (e == NULL) return urbi_raise_oom(vm, out);
-
-    USymbol *sym_message = (USymbol *)ustr_intern(vm, "message", 7);
-    if (sym_message == NULL) return urbi_raise_oom(vm, out);
-
-    if (urbi_object_set_local_slot(vm, e, sym_message, args[0]) != 0)
+    USym *sym_message = usym_cstr(vm, "message");
+    if (sym_message == NULL || uobj_set_local(vm, e, sym_message, args[0], 0) < 0)
         return urbi_raise_oom(vm, out);
-
-    *out = urbi_make_object(e);
+    *out = uv_obj(e);
     return UEXEC_OK;
 }
 
-/* === Exception.raise ====================================================
- *
- * Deposit pending_unwind = UEXEC_THROW with unwind_value = self.  The
- * dispatch loop's safepoint observes pending_unwind on next entry and
- * walks the cleanup stack via urbi_unwind, which routes a UCLEANUP_TRY_-
- * FRAME match to its handler PC binding the unwind value as the catch
- * variable.
- *
- * The native function MUST return UEXEC_OK so the OP_CALL native arm
- * doesn't HALT.  The Phase-7 OP_CALL native arm sees pending_unwind
- * non-OK after the call and jumps to safepoint.
- *
- * `self` is the Exception instance (a clone with .message bound) — that
- * is exactly the value `catch (e) { e.message }` expects to bind. */
-
-static int
-exc_raise(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+/* Throws `self` rather than building a new exception, so the object the
+ * script has been holding is exactly the one its catch clause binds. */
+static int exc_raise(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Exception.raise", 0, nargs, out);
-    if (vm->cur_strand == NULL) {
-        /* Defensive: no active strand (shouldn't occur from script).
-         * Fall back to the legacy raise helper which prints + UEXEC_THROW. */
-        return urbi_raise_type(vm, "Exception.raise: no active strand", out);
-    }
-
-    urbi_throw(vm, vm->cur_strand, self);
-    *out = urbi_make_nil();
-    /* Return UEXEC_OK so OP_CALL doesn't fatal-halt; safepoint picks up
-     * the deposited pending_unwind. */
-    return UEXEC_OK;
+    (void)args; (void)nargs;
+    UStrand *s = uvm_current_strand(vm);
+    if (s == NULL) return urbi_raise_type(vm, "Exception.raise: no active strand", out);
+    *out = uv_nil();
+    return uexec_throw_value(vm, s, self);
 }
 
-/* === Method tables ======================================================= */
-
-/* Method tables use UNativeMethodDef from stdlib/object_root.h;
- * URBI_REGISTER_METHODS does the install loop. */
-
-static const UNativeMethodDef EXCEPTION_METHODS[] = {
-    { "new",   exc_new   },
-    { "raise", exc_raise }
+const UMethodDef k_exception_methods[K_EXCEPTION_NMETHODS] = {
+    { "new",   exc_new,   1, 1 },
+    { "raise", exc_raise, 0, 0 }
 };
 
-/* === urbi_stdlib_register_runtime_types =================================
- *
- * Allocates vm->exception_proto (a vanilla URBI_ATOM_OBJECT-family UObject)
- * and installs Exception.new / Exception.raise as native methods.  GC
- * reachability is via the same object_roots_walker path that shades
- * vm->container_*_proto — extending uobject.c's MARK_ROOTS list to include
- * exception_proto.
- *
- * Idempotent: re-allocates only when vm->exception_proto is NULL. */
-
-int
-urbi_stdlib_register_runtime_types(UVM *vm)
+/* `Exception.message` without a clone reads as nil instead of failing to
+ * resolve, which is what the corpus expects of the bare prototype. */
+int urbi_exception_init(UVM *vm, UObject *proto)
 {
-    if (vm == NULL) return URBI_ERR_INVALID_ARG;
-
-    if (vm->exception_proto == NULL) {
-        UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-        if (p == NULL) return URBI_ERR_OOM;
-        vm->exception_proto = p;
-    }
-
-    int rc = URBI_REGISTER_METHODS(vm, vm->exception_proto, EXCEPTION_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    /* Wire exception_proto into the Object proto chain so that Exception
-     * inherits Object methods (addProto, setSlot, hasSlot, clone, isA,
-     * etc.).
-     *
-     * Why: exception_proto is allocated with an empty proto list, so
-     * without this call `Exception.addProto(...)` is unreachable — and the
-     * stdlib blob's Exception.addProto(ExceptionLookupAlias) (the legacy
-     * Exception.Lookup alias, exception_subclasses.u) needs it.
-     *
-     * Legacy-conformant: upstream Exception inherits Object via Traceable
-     * (exception.u:16), so legacy Exception always had the full Object
-     * surface.
-     *
-     * Side-effect (intentional): exception_proto itself now answers the
-     * whole Object surface — asString/clone/etc. work on the proto, not
-     * just on instances.  Tasks wiring typed exceptions should rely on
-     * this chain rather than re-adding Object per subclass proto. */
-    {
-        UObject *obj_root = urbi_object_root(vm);
-        if (obj_root != NULL) {
-            int rc_proto = urbi_object_add_proto(vm, vm->exception_proto,
-                                                 obj_root);
-            if (rc_proto != URBI_OK) return rc_proto;
-        }
-    }
-
-    /* Also install a default `message` slot on the proto itself so
-     * `Exception.message` (without a clone) reads as nil rather than
-     * raising a missing-slot error.  Per-instance .new() overwrites
-     * this with the user-supplied value. */
-    USymbol *sym_message = (USymbol *)ustr_intern(vm, "message", 7);
-    if (sym_message == NULL) return URBI_ERR_OOM;
-    if (urbi_object_set_local_slot(vm, vm->exception_proto, sym_message,
-                                   urbi_make_nil()) != 0) {
-        return URBI_ERR_OOM;
-    }
-
-    return URBI_OK;
-}
-
-/* === urbi_stdlib_register_runtime_globals ===============================
- *
- * Post-registry hook: installs Exception as a realm global on `realm`.
- * Mirrors urbi_stdlib_register_container_globals — lands at slots 15+,
- * past the v1.0 packed-flag CONSTANT enforcement range (slots 0..7).
- *
- * Called by urbi_populate_realm_globals AFTER the 15-row registry loop
- * AND after urbi_stdlib_register_container_globals. */
-
-int
-urbi_stdlib_register_runtime_globals(UVM *vm, URealm *realm)
-{
-    if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
-
-    if (vm->exception_proto != NULL) {
-        int rc = urbi_realm_set_global(vm, realm, "Exception", 9,
-                                       urbi_make_object(vm->exception_proto));
-        if (rc != URBI_OK) return rc;
-    }
-    return URBI_OK;
-}
-
-/* === urbi_exception_subclass_protos_resolve ============================
- *
- * The exception_subclasses.u bake run installs TypeError / ArityError /
- * LookupError / OutOfMemoryError as realm globals.  Cache each once per VM
- * from the first realm that completes its bake-blob run, so C raise sites
- * can clone a typed instance without a realm handle.  Idempotent. */
-int
-urbi_exception_subclass_protos_resolve(UVM *vm, URealm *realm)
-{
-    if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
-    if (vm->typeerror_proto != NULL) return URBI_OK;   /* idempotent */
-
-    static const struct { const char *name; size_t len; size_t off; } tbl[] = {
-        { "TypeError",         9, offsetof(UVM, typeerror_proto)  },
-        { "ArityError",       10, offsetof(UVM, arityerror_proto) },
-        { "LookupError",      11, offsetof(UVM, lookuperror_proto)},
-        { "OutOfMemoryError", 16, offsetof(UVM, oomerror_proto)   },
-        { "IndexError",       10, offsetof(UVM, indexerror_proto) },
-        { "RangeError",       10, offsetof(UVM, rangeerror_proto) },
-        { "DivByZero",         9, offsetof(UVM, divbyzero_proto)  },
-    };
-    for (size_t i = 0; i < sizeof tbl / sizeof tbl[0]; i++) {
-        UValue v;
-        urbi_zero(&v, sizeof(v));
-        int rc = urbi_realm_get_global(vm, realm, tbl[i].name, tbl[i].len, &v);
-        if (rc != URBI_OK) return rc;
-        if (v.kind != (uint8_t)UVAL_OBJECT) return URBI_ERR_INVALID_STATE;
-        *(UObject **)((char *)vm + tbl[i].off) = (UObject *)v.v.p;
-    }
+    USym *sym = usym_cstr(vm, "message");
+    if (!sym || uobj_set_local(vm, proto, sym, uv_nil(), 0) < 0) return URBI_ERR_OOM;
     return URBI_OK;
 }

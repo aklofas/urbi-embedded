@@ -1,28 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* obj.isA(Proto) -> Bool.  True iff Proto appears in obj's transitive
- * proto chain.  For atom-typed receivers (UVAL_INT / FLOAT / STR /
- * BOOL / NIL), the logical proto is looked up via urbi_atom_proto_for_value.
- * For UVAL_OBJECT, the receiver's own UObject.protos chain is walked.
- *
- * Installed on vm->atom_object at stdlib_boot.  Reached by every proto
- * chain (atom_object is the root). */
+/* isa_method.h — the isA method table.  Installed on the Object root by
+ * uboot_table alongside k_object_methods. */
 
-#ifndef URBI_ISA_METHOD_H
-#define URBI_ISA_METHOD_H
+#ifndef URBI_STDLIB_ISA_METHOD_H
+#define URBI_STDLIB_ISA_METHOD_H
 
-struct UVM;
+#include "rt/ustdlib_glue.h"
 
-#ifdef __cplusplus
-extern "C" {
+enum { K_ISA_NMETHODS = 1 };
+extern const UMethodDef k_isa_methods[K_ISA_NMETHODS];
+
 #endif
-
-/* Install the isA native method on vm->atom_object.  Idempotent; safe to
- * call multiple times.  Returns URBI_OK on success, URBI_ERR_OOM or
- * URBI_ERR_INVALID_STATE on failure. */
-int urbi_isa_method_register(struct UVM *vm);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* URBI_ISA_METHOD_H */

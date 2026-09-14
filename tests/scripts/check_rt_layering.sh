@@ -21,14 +21,15 @@ layer_of() {
     done
     echo "$best"
 }
-STDLIB_ALLOWED="uvalue ugc ustr uobj ulist uexec"
+# src/stdlib reaches the runtime through exactly one header.
+STDLIB_ALLOWED="ustdlib_glue"
 rc=0
 for f in src/rt/*.c src/rt/*.h; do
     [ -f "$f" ] || continue
     base=$(basename "$f" | sed -E 's/\.(c|h)$//')
     self=$(layer_of "$base")
     if [ -z "$self" ]; then sr=$TOP; else sr=$(rank "$self"); fi
-    for inc in $(grep -oE '#include "rt/u[a-z]+\.h"' "$f" | sed -E 's/.*rt\/(u[a-z]+)\.h"/\1/'); do
+    for inc in $(grep -oE '#include "rt/u[a-z_]+\.h"' "$f" | sed -E 's/.*rt\/(u[a-z_]+)\.h"/\1/'); do
         ir=$(rank "$inc")
         if [ "$ir" -gt "$sr" ]; then echo "LAYERING: $f includes rt/$inc.h (rank $ir > $sr)"; rc=1; fi
     done
@@ -51,7 +52,7 @@ for f in src/rt/*.c src/rt/*.h; do
 done
 for f in src/stdlib/*.c src/stdlib/*.h; do
     [ -f "$f" ] || continue
-    for inc in $(grep -oE '#include "rt/u[a-z]+\.h"' "$f" | sed -E 's/.*rt\/(u[a-z]+)\.h"/\1/'); do
+    for inc in $(grep -oE '#include "rt/u[a-z_]+\.h"' "$f" | sed -E 's/.*rt\/(u[a-z_]+)\.h"/\1/'); do
         ok=0; for a in $STDLIB_ALLOWED; do [ "$a" = "$inc" ] && ok=1; done
         [ $ok -eq 1 ] || { echo "LAYERING: $f includes rt/$inc.h (stdlib may include: $STDLIB_ALLOWED)"; rc=1; }
     done
