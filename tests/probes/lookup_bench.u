@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Slot-lookup micro-benchmark for the refound/core lookup gate
+// (docs/superpowers/plans/... v0.13.x -> refound/core baseline-timings).
+//
+// Structure: a 3-deep prototype chain (P1 -> P2 -> o) carrying 6 total
+// slots (a, b on P1; c, d on P2; e, f on o).  200,000 reads of `o.f`,
+// then 100,000 read-modify-write statements `o.f = o.f + 1`.  The
+// checksum loop touches `o.f` through a fully-resolved own slot so the
+// timing reflects steady-state (post-inline-cache-warmup) lookup cost,
+// not first-access proto-chain walking.
+//
+// Run via `urbi -e "$(cat tests/probes/lookup_bench.u)"` -- `-f` never
+// prints a chunk's return value (no writer is wired outside the REPL
+// path); `-e` prints the trailing expression, which is how the final
+// slot value below reaches stdout.
+
+var P1 = Object.clone();
+var P1.a = 1;
+var P1.b = 2;
+
+var P2 = P1.clone();
+var P2.c = 3;
+var P2.d = 4;
+
+var o = P2.clone();
+var o.e = 5;
+var o.f = 0;
+
+var checksum = 0;
+var i = 0;
+while (i < 200000) {
+    checksum = checksum + o.f;
+    i = i + 1
+};
+
+var j = 0;
+while (j < 100000) {
+    o.f = o.f + 1;
+    j = j + 1
+};
+
+o.f

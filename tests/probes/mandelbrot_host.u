@@ -1,0 +1,110 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Host-runnable variant of examples/stm32f4/mandelbrot/mandelbrot.u for the
+// refound/core baseline-timings gate (docs/superpowers/plans/... under
+// 2026-09-13-phase1-2-core-refoundation).
+//
+// The original script needs board-specific globals (lcd_fill_rect,
+// gyro_x/y/z, the gyro_tick/button_press events registered by main.c) and
+// never terminates (`while (true) { ... waituntil (...) }`), so it cannot
+// run through `build/host/urbi -f` as-is. This variant keeps World
+// parameters and the mandel()/color_for() functions byte-for-byte
+// identical to the original (the actual computational inner loop the
+// timing measures) and replaces the LCD/progressive-refinement/gyro/
+// button machinery with a single full-resolution 320xH pass that
+// accumulates a checksum instead of drawing, then terminates.
+//
+// Run via `urbi -e "$(cat tests/probes/mandelbrot_host.u)"` -- `-f` never
+// prints a chunk's return value (no writer is wired outside the REPL
+// path); `-e` prints the trailing expression, which is how the checksum
+// below reaches stdout.
+//
+// Realm.H is 125, not the original 240: a single un-yielded pass over the
+// full 320x240 frame (76,800 mandel()+color_for() calls, each up to
+// MAX_ITER=100 inner-loop iterations) trips URBI_ERR_LOADER_BUDGET --
+// src/chunk/uchunk_strand.c's loader-strand forward-progress cap
+// (URBI_LOADER_OUTER_CAP=10000 * URBI_LOADER_INNER_BUDGET=1000 =
+// 10,000,000 instructions with no yield; there is no `at`/`sleep`/
+// `waituntil`/fork in this straight-line pass to reset it). Empirically:
+// 320x130 (41,600 calls) succeeds, 320x140 (44,800 calls) hits
+// URBI_ERR_LOADER_BUDGET; 125 rows leaves headroom below that edge.
+// Worth flagging: the real board script's render_level(1) finest pass
+// (examples/stm32f4/mandelbrot/mandelbrot.u) does the same 76,800-call
+// straight-line pass with no intervening yield and would hit the
+// identical cap on real hardware.
+
+// === World parameters (identical to mandelbrot.u, except H -- see above) ===
+Realm.W        = 320;
+Realm.H        = 125;
+Realm.MAX_ITER = 100;
+
+Realm.cx   = -0.5;
+Realm.cy   = 0.0;
+Realm.span = 3.0;
+
+// === Mandelbrot iteration (identical to mandelbrot.u) =======================
+Realm.mandel = function (px, py) {
+    var x0 = Realm.cx - Realm.span * 0.5 + Realm.span * px / Realm.W;
+    var y0 = Realm.cy - Realm.span * 0.5 * Realm.H / Realm.W
+             + Realm.span * Realm.H / Realm.W * py / Realm.H;
+    var x  = 0.0;
+    var y  = 0.0;
+    var i  = 0;
+    while (x * x + y * y < 4.0) {
+        if (i >= Realm.MAX_ITER) {
+            x = 4.0    // force exit: x*x = 16 >= 4 breaks the while
+        } else {
+            var xt = x * x - y * y + x0;
+            y = 2.0 * x * y + y0;
+            x = xt;
+            i = i + 1
+        }
+    };
+    i
+};
+
+// === RGB565 colour map (identical to mandelbrot.u) ==========================
+Realm.color_for = function (iter) {
+    if (iter >= Realm.MAX_ITER) {
+        0
+    } else {
+        if (iter < 20) {
+            5 + iter
+        } else {
+            if (iter < 40) {
+                var g = iter - 20;
+                var b = 25 + (iter - 20);
+                if (b > 31) { b = 31 };
+                g * 32 + b
+            } else {
+                if (iter < 60) {
+                    var r5 = iter - 40;
+                    if (r5 > 31) { r5 = 31 };
+                    r5 * 2048 + 50 * 32 + 31
+                } else {
+                    if (iter < 80) {
+                        var b = 31 - (iter - 60) * 2;
+                        if (b < 0) { b = 0 };
+                        31 * 2048 + 50 * 32 + b
+                    } else {
+                        var fade = 99 - iter;
+                        fade * 2048 + fade * 32
+                    }
+                }
+            }
+        }
+    }
+};
+
+// === Single full-resolution pass, checksummed instead of drawn ============
+var checksum = 0;
+var y = 0;
+while (y < Realm.H) {
+    var x = 0;
+    while (x < Realm.W) {
+        checksum = checksum + Realm.color_for(Realm.mandel(x, y));
+        x = x + 1
+    };
+    y = y + 1
+};
+
+checksum
