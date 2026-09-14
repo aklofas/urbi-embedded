@@ -12,6 +12,13 @@ command -v "$CPPCHECK" >/dev/null 2>&1 || {
 }
 
 OUT="${1:-build/cppcheck-out.txt}"
+shift || true
+# The sources to scan come from the Makefile ($(SRC)) so the gate
+# never drifts from the build.  The old runtime core is parked in the
+# tree but not compiled, and scanning it against the new public
+# header produces only noise.
+SCAN=("$@")
+[ "${#SCAN[@]}" -gt 0 ] || SCAN=(src/)
 mkdir -p "$(dirname "$OUT")"
 
 # Run cppcheck without --error-exitcode so we observe the full output
@@ -23,9 +30,10 @@ set +e
    --inconclusive \
    --suppressions-list=.cppcheck.suppressions \
    --suppress=missingIncludeSystem \
+   --inline-suppr \
    --quiet \
    -Iinclude -Isrc \
-   src/ 2>&1 | tee "$OUT"
+   "${SCAN[@]}" 2>&1 | tee "$OUT"
 TOOL_RC=${PIPESTATUS[0]}
 set -e
 

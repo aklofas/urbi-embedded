@@ -14,7 +14,7 @@ UObject *uobj_new(struct UVM *vm, UObject *proto) {
     return o;
 }
 
-int uobj_find_local(const UObject *o, USym *name) {
+int uobj_find_local(const UObject *o, const USym *name) {
     for (uint16_t i = 0; i < o->count; i++) if (o->names[i] == name) return (int)i;
     return -1;
 }
@@ -27,7 +27,7 @@ int uobj_find_local(const UObject *o, USym *name) {
 static int uobj_grow(struct UVM *vm, UObject *o) {
     uint16_t old_cap = o->cap;
     uint16_t new_cap = old_cap ? (uint16_t)(old_cap * 2) : UOBJ_INITIAL_CAP;
-    USym **names = (USym **)ugc_raw_realloc(vm, o->names, (size_t)old_cap * sizeof(USym *), (size_t)new_cap * sizeof(USym *));
+    USym **names = (USym **)ugc_raw_realloc(vm, (void *)o->names, (size_t)old_cap * sizeof(USym *), (size_t)new_cap * sizeof(USym *));
     if (!names) return -1;
     o->names = names;
     UValue *values = (UValue *)ugc_raw_realloc(vm, o->values, (size_t)old_cap * sizeof(UValue), (size_t)new_cap * sizeof(UValue));
@@ -63,7 +63,7 @@ int uobj_set_local(struct UVM *vm, UObject *o, USym *name, UValue v, uint8_t att
     return (int)o->count++;
 }
 
-bool uobj_remove_local(struct UVM *vm, UObject *o, USym *name) {
+bool uobj_remove_local(struct UVM *vm, UObject *o, const USym *name) {
     (void)vm;
     int idx = uobj_find_local(o, name);
     if (idx < 0) return false;
@@ -86,14 +86,14 @@ int uobj_add_proto(struct UVM *vm, UObject *o, UObject *p) {
         o->protos = arr; o->proto0 = arr[0]; o->nprotos = 2;
         return 0;
     }
-    UObject **arr = (UObject **)ugc_raw_realloc(vm, o->protos, (size_t)o->nprotos * sizeof(UObject *), (size_t)(o->nprotos + 1) * sizeof(UObject *));
+    UObject **arr = (UObject **)ugc_raw_realloc(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *), (size_t)(o->nprotos + 1) * sizeof(UObject *));
     if (!arr) return -1;
     arr[o->nprotos] = p;
     o->protos = arr; o->proto0 = arr[0]; o->nprotos++;
     return 0;
 }
 
-int uobj_remove_proto(struct UVM *vm, UObject *o, UObject *p) {
+int uobj_remove_proto(struct UVM *vm, UObject *o, const UObject *p) {
     if (o->nprotos == 1 && o->proto0 == p) { o->proto0 = NULL; o->nprotos = 0; return 0; }
     if (o->nprotos <= 1) return -1;   /* not present (protos[] doesn't exist yet) */
     int idx = -1;
@@ -104,12 +104,12 @@ int uobj_remove_proto(struct UVM *vm, UObject *o, UObject *p) {
         /* Collapses back to the proto0-only representation: protos[] is
          * NULL whenever nprotos <= 1. */
         UObject *remaining = o->protos[idx == 0 ? 1 : 0];
-        ugc_raw_free(vm, o->protos, (size_t)o->nprotos * sizeof(UObject *));
+        ugc_raw_free(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *));
         o->protos = NULL; o->proto0 = remaining; o->nprotos = 1;
         return 0;
     }
     o->protos[idx] = o->protos[n];   /* swap the last slot into the hole */
-    UObject **arr = (UObject **)ugc_raw_realloc(vm, o->protos, (size_t)o->nprotos * sizeof(UObject *), (size_t)n * sizeof(UObject *));
+    UObject **arr = (UObject **)ugc_raw_realloc(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *), (size_t)n * sizeof(UObject *));
     if (arr) o->protos = arr;        /* shrink failure just leaves it oversized -- harmless */
     o->proto0 = o->protos[0];
     o->nprotos = n;
@@ -118,15 +118,15 @@ int uobj_remove_proto(struct UVM *vm, UObject *o, UObject *p) {
 
 int uobj_set_protos(struct UVM *vm, UObject *o, UObject **ps, uint16_t n) {
     if (n <= 1) {
-        if (o->protos) { ugc_raw_free(vm, o->protos, (size_t)o->nprotos * sizeof(UObject *)); o->protos = NULL; }
+        if (o->protos) { ugc_raw_free(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *)); o->protos = NULL; }
         o->proto0 = n ? ps[0] : NULL;
         o->nprotos = n;
         return 0;
     }
     UObject **arr = (UObject **)ugc_raw_alloc(vm, (size_t)n * sizeof(UObject *));
     if (!arr) return -1;
-    memcpy(arr, ps, (size_t)n * sizeof(UObject *));
-    if (o->protos) ugc_raw_free(vm, o->protos, (size_t)o->nprotos * sizeof(UObject *));
+    memcpy((void *)arr, (const void *)ps, (size_t)n * sizeof(UObject *));
+    if (o->protos) ugc_raw_free(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *));
     o->protos = arr; o->proto0 = arr[0]; o->nprotos = n;
     return 0;
 }
@@ -154,7 +154,7 @@ static bool uobj_push_protos(const UObject *cur, UObject **stack, int *sp) {
     return true;
 }
 
-bool uobj_resolve(struct UVM *vm, UObject *o, USym *name, UObjSlotRef *out) {
+bool uobj_resolve(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out) {
     uint32_t stamp = uobj_next_stamp(vm);
     UObject *stack[URESOLVE_STACK_CAP];
     int sp = 0;
@@ -195,8 +195,8 @@ void uobj_trace(struct UVM *vm, UObject *o) {
 }
 
 void uobj_finalize(struct UVM *vm, UObject *o) {
-    ugc_raw_free(vm, o->names, (size_t)o->cap * sizeof(USym *));
+    ugc_raw_free(vm, (void *)o->names, (size_t)o->cap * sizeof(USym *));
     ugc_raw_free(vm, o->values, (size_t)o->cap * sizeof(UValue));
     ugc_raw_free(vm, o->attrs, (size_t)o->cap);
-    ugc_raw_free(vm, o->protos, (size_t)o->nprotos * sizeof(UObject *));
+    ugc_raw_free(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *));
 }

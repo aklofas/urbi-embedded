@@ -46,18 +46,18 @@ static inline UValue uv_obj(UObject *o) { return uv_ptr(UV_OBJ, o); }
  * it isn't otherwise reachable. */
 UObject *uobj_new(struct UVM *vm, UObject *proto);
 int      uobj_add_proto(struct UVM *vm, UObject *o, UObject *p);   /* append; 0 ok, -1 OOM */
-int      uobj_remove_proto(struct UVM *vm, UObject *o, UObject *p); /* 0 ok, -1 not found */
+int      uobj_remove_proto(struct UVM *vm, UObject *o, const UObject *p); /* 0 ok, -1 not found */
 int      uobj_set_protos(struct UVM *vm, UObject *o, UObject **ps, uint16_t n); /* copies ps[]; 0 ok, -1 OOM */
 /* Local slots */
-int      uobj_find_local(const UObject *o, USym *name);            /* index or -1 */
+int      uobj_find_local(const UObject *o, const USym *name);            /* index or -1 */
 /* Add or overwrite; returns index or -1 OOM. When attrs has GETTER or
  * SETTER set, allocates a UProps cell (may collect -- `o` must already be
  * rooted by the caller) and stores v as the cell's `value` field. */
 int      uobj_set_local(struct UVM *vm, UObject *o, USym *name, UValue v, uint8_t attrs);
-bool     uobj_remove_local(struct UVM *vm, UObject *o, USym *name);
+bool     uobj_remove_local(struct UVM *vm, UObject *o, const USym *name);
 /* Resolution through protos (depth-first, diamond-safe). */
 typedef struct UObjSlotRef { UObject *owner; int index; } UObjSlotRef;
-bool     uobj_resolve(struct UVM *vm, UObject *o, USym *name, UObjSlotRef *out);
+bool     uobj_resolve(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out);
 static inline UValue  uobj_slot_value(const UObjSlotRef *r) { return r->owner->values[r->index]; }
 static inline uint8_t uobj_slot_attrs(const UObjSlotRef *r) { return r->owner->attrs[r->index]; }
 bool     uobj_is_a(struct UVM *vm, UObject *o, UObject *proto);    /* o == proto or proto in o's ancestry */

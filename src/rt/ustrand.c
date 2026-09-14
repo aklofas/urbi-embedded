@@ -74,7 +74,7 @@ int ustrand_push_frame_args(UStrand *s, UClosure *cl, UValue recv, uint32_t base
 
 void ustrand_pop_frame(UStrand *s) {
     if (s->nframes == 0) return;
-    UFrame *f = &s->frames[s->nframes - 1];
+    const UFrame *f = &s->frames[s->nframes - 1];
     ustrand_close_upvals(s, f->base);
     s->nframes--;
 }
@@ -94,6 +94,9 @@ int ustrand_push_cleanup(UStrand *s, UCleanup c) {
 UUpval *ustrand_find_or_open_upval(UStrand *s, uint32_t stack_index) {
     UUpval **pp = &s->open_upvals;
     while (*pp && (*pp)->stack_index > stack_index) pp = &(*pp)->next_open;
+    /* The loop above also exits on *pp == NULL, so this guard is
+     * load-bearing rather than a repeat of the loop condition. */
+    /* cppcheck-suppress identicalInnerCondition */
     if (*pp && (*pp)->stack_index == stack_index) return *pp;
     UUpval *u = (UUpval *)ugc_alloc(s->vm, UCELL_UPVAL, sizeof(UUpval));
     if (!u) return NULL;

@@ -68,7 +68,7 @@ void uvm_gc_trace(UVM *vm, UCell *c)
     case UCELL_DICT: udict_trace(vm, (UDict *)c); break;
     case UCELL_STRAND: ustrand_trace(vm, (UStrand *)c); break;
     case UCELL_PROPS: {
-        UProps *p = (UProps *)c;
+        const UProps *p = (const UProps *)c;
         ugc_mark_value(vm, p->getter);
         ugc_mark_value(vm, p->setter);
         ugc_mark_value(vm, p->value);
@@ -91,11 +91,11 @@ void uvm_gc_trace(UVM *vm, UCell *c)
     case UCELL_REALM:
         urealm_trace(vm, (URealm *)c);
         break;
-    case UCELL_PROTO:
-        /* Constants were rewritten to UV_SYM (immortal) at bind time and
-         * IC names are USym, so a bound chunk owns no GC cells. */
+    default:
+        /* Nothing else owns GC cells.  UCELL_PROTO in particular: binding
+         * rewrote its constants to UV_SYM and its IC names to USym, both
+         * immortal, so a bound chunk has no children to mark. */
         break;
-    default: break;
     }
 }
 
@@ -253,7 +253,7 @@ int uexec_throw_value(UVM *vm, UStrand *s, UValue v)
 /* Format whatever is in s->transfer into vm->last_error.  An exception
  * object built by uexec_throw carries `name` and `message` slots; any
  * other thrown value is rendered by kind. */
-static void uexec_format_thrown(UVM *vm, UStrand *s)
+static void uexec_format_thrown(UVM *vm, const UStrand *s)
 {
     UValue v = s->transfer;
     if (v.kind == UV_OBJ) {
@@ -261,8 +261,8 @@ static void uexec_format_thrown(UVM *vm, UStrand *s)
         UObjSlotRef ref;
         const char *name = NULL; uint32_t nlen = 0;
         const char *msg = NULL;  uint32_t mlen = 0;
-        USym *kname = usym_cstr(vm, "name");
-        USym *kmsg  = usym_cstr(vm, "message");
+        const USym *kname = usym_cstr(vm, "name");
+        const USym *kmsg  = usym_cstr(vm, "message");
         if (kname && uobj_resolve(vm, o, kname, &ref)) {
             UValue nv = uobj_slot_value(&ref);
             if (nv.kind == UV_SYM || nv.kind == UV_STR) name = uv_str_bytes(nv, &nlen);

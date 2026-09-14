@@ -31,10 +31,9 @@ static void *ufront_chunk_alloc(void *ptr, size_t nbytes, void *ud)
     return vm->gc.alloc(ptr, nbytes, vm->gc.alloc_ud);
 }
 
-int ufront_compile(struct UVM *vmp, const char *src, size_t n, const char *name,
+int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
                    struct UProto **out, char *err, size_t errcap)
 {
-    UVM *vm = (UVM *)vmp;
     if (!vm || !src || !out) return URBI_ERR_INVALID_ARG;
     *out = NULL;
     if (errcap > 0 && err) err[0] = '\0';
@@ -57,7 +56,7 @@ int ufront_compile(struct UVM *vmp, const char *src, size_t n, const char *name,
     root->heap_allocated = true;
 
     UEmitter e;
-    uemit_init(&e, root, &arena, vmp, name);
+    uemit_init(&e, root, &arena, vm, name);
 
     UParser p;
     uparse_init(&p, &lex, &arena);
@@ -120,7 +119,7 @@ int ufront_compile(struct UVM *vmp, const char *src, size_t n, const char *name,
     return URBI_OK;
 }
 
-void ufront_disassemble(struct UProto *root, const char *name)
+void ufront_disassemble(const struct UProto *root, const char *name)
 {
     char buf[16384];
     size_t n = uemit_disassemble(root, buf, sizeof buf);
@@ -129,7 +128,7 @@ void ufront_disassemble(struct UProto *root, const char *name)
     if (n > 0 && buf[n - 1] != '\n') fputc('\n', stdout);
 }
 
-ptrdiff_t ufront_serialize(struct UProto *root, unsigned char *buf, size_t cap)
+ptrdiff_t ufront_serialize(const struct UProto *root, unsigned char *buf, size_t cap)
 {
     return uchunk_serialize(root, (uint8_t *)buf, cap);
 }

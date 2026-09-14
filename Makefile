@@ -656,7 +656,7 @@ tidy-fix: compile_commands.json
 # Informational at v0.5.7 baseline; promoted to releasetest gate in T118.
 .PHONY: test-tidy-strict
 test-tidy-strict: ## Run clang-tidy strict checklist over src/
-	@bash tools/scripts/run_strict_tidy.sh build/strict-tidy-out.txt
+	@bash tools/scripts/run_strict_tidy.sh build/strict-tidy-out.txt $(SRC)
 
 # Static analysis — cppcheck (advisory).
 # Different engine from clang-tidy; catches value-flow, UAF, null-deref
@@ -677,7 +677,7 @@ cppcheck: compile_commands.json
 # for audit-ID-blessed exceptions; closes lock in T118 (releasetest gate).
 .PHONY: test-cppcheck
 test-cppcheck: ## Run cppcheck --enable=all --inconclusive
-	@bash tools/scripts/run_cppcheck.sh build/cppcheck-out.txt
+	@bash tools/scripts/run_cppcheck.sh build/cppcheck-out.txt $(SRC)
 
 # Static analysis — clang scan-build over the default `make` build.
 # Closes a Wave-0 deferral (audit ran scan-build but did not wire the

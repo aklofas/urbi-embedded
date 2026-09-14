@@ -7,43 +7,43 @@
 int ugc_init(UGc *g, UAllocFn alloc, void *ud) {
     memset(g, 0, sizeof *g);
     g->alloc = alloc; g->alloc_ud = ud;
-    g->threshold = 16 * 1024; g->pause_ratio = 200;
+    g->threshold = (size_t)16 * 1024; g->pause_ratio = 200;
     return 0;
 }
 
-void *ugc_raw_alloc(struct UVM *vm, size_t n) {
+void *ugc_raw_alloc(struct UVM *vm, size_t nbytes) {
     UGc *g = uvm_gc(vm);
     UGC_ASSERT(!g->in_collect);   /* finalize hooks must not allocate */
-    void *p = g->alloc(NULL, n, g->alloc_ud);
-    if (p) { memset(p, 0, n); g->bytes_since += n; g->bytes_live += n; g->raw_live += n; }
+    void *p = g->alloc(NULL, nbytes, g->alloc_ud);
+    if (p) { memset(p, 0, nbytes); g->bytes_since += nbytes; g->bytes_live += nbytes; g->raw_live += nbytes; }
     return p;
 }
-void *ugc_raw_realloc(struct UVM *vm, void *p, size_t old, size_t n) {
+void *ugc_raw_realloc(struct UVM *vm, void *p, size_t old, size_t nbytes) {
     UGc *g = uvm_gc(vm);
-    void *q = g->alloc(p, n, g->alloc_ud);
+    void *q = g->alloc(p, nbytes, g->alloc_ud);
     if (q) {
-        if (n > old) {
-            memset((char *)q + old, 0, n - old);
-            g->bytes_since += n - old; g->bytes_live += n - old; g->raw_live += n - old;
+        if (nbytes > old) {
+            memset((char *)q + old, 0, nbytes - old);
+            g->bytes_since += nbytes - old; g->bytes_live += nbytes - old; g->raw_live += nbytes - old;
         } else {
-            g->bytes_live -= old - n; g->raw_live -= old - n;
+            g->bytes_live -= old - nbytes; g->raw_live -= old - nbytes;
         }
     }
     return q;
 }
-void ugc_raw_free(struct UVM *vm, void *p, size_t n) {
+void ugc_raw_free(struct UVM *vm, void *p, size_t nbytes) {
     UGc *g = uvm_gc(vm);
-    if (p) { g->alloc(p, 0, g->alloc_ud); g->bytes_live -= n; g->raw_live -= n; }
+    if (p) { g->alloc(p, 0, g->alloc_ud); g->bytes_live -= nbytes; g->raw_live -= nbytes; }
 }
 
-void *ugc_alloc(struct UVM *vm, UCellType type, size_t n) {
+void *ugc_alloc(struct UVM *vm, UCellType type, size_t nbytes) {
     UGc *g = uvm_gc(vm);
     UGC_ASSERT(!g->in_collect);   /* finalize hooks must not allocate */
     ugc_maybe_collect(vm);
-    UCell *c = (UCell *)g->alloc(NULL, n, g->alloc_ud);
-    if (!c) { ugc_collect(vm); c = (UCell *)g->alloc(NULL, n, g->alloc_ud); if (!c) return NULL; }
-    memset(c, 0, n);
-    c->type = (uint8_t)type; c->size = (uint32_t)n;
+    UCell *c = (UCell *)g->alloc(NULL, nbytes, g->alloc_ud);
+    if (!c) { ugc_collect(vm); c = (UCell *)g->alloc(NULL, nbytes, g->alloc_ud); if (!c) return NULL; }
+    memset(c, 0, nbytes);
+    c->type = (uint8_t)type; c->size = (uint32_t)nbytes;
     c->next = g->all; g->all = c;
     /* bytes_live is the live-set size as of the last collection (plus
      * raw_live, which is exact without a sweep) -- it is the pacing
@@ -51,7 +51,7 @@ void *ugc_alloc(struct UVM *vm, UCellType type, size_t n) {
      * next collect folds it in. Bumping bytes_live here too would make it
      * track bytes_since 1:1 and ugc_should_collect's 2x-live check could
      * never fire from allocation alone. */
-    g->cells_live++; g->bytes_since += n;
+    g->cells_live++; g->bytes_since += nbytes;
     return c;
 }
 
@@ -61,7 +61,7 @@ void ugc_mark(struct UVM *vm, UCell *c) {
     c->marked = 1;                    /* gray: queued, not yet traced */
     if (g->gray_len == g->gray_cap) {
         uint32_t nc = g->gray_cap ? g->gray_cap * 2 : 64;
-        UCell **ng = (UCell **)g->alloc(g->gray, nc * sizeof *ng, g->alloc_ud);
+        UCell **ng = (UCell **)g->alloc((void *)g->gray, (size_t)nc * sizeof(UCell *), g->alloc_ud);
         if (!ng) { g->gray_overflow = 1; return; }   /* stays gray; the post-drain
                                                        * fallback rescan in ugc_collect
                                                        * finds and traces it instead. */
@@ -133,7 +133,7 @@ bool ugc_should_collect(const UGc *g) {
 }
 
 void ugc_maybe_collect(struct UVM *vm) {
-    UGc *g = uvm_gc(vm);
+    const UGc *g = uvm_gc(vm);
 #ifdef URBI_GC_STRESS
     (void)g; ugc_collect(vm);
 #else
@@ -146,6 +146,6 @@ void ugc_destroy(struct UVM *vm) {
     UCell *c = g->all;
     while (c) { UCell *next = c->next; if (g->hooks.finalize) g->hooks.finalize(vm, c); g->alloc(c, 0, g->alloc_ud); c = next; }
     g->all = NULL; g->cells_live = 0;
-    if (g->gray) g->alloc(g->gray, 0, g->alloc_ud);
+    if (g->gray) g->alloc((void *)g->gray, 0, g->alloc_ud);
     g->gray = NULL; g->gray_cap = g->gray_len = 0;
 }

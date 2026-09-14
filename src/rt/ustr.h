@@ -27,8 +27,8 @@ UStr    *ustr_concat(struct UVM *vm, const char *a, size_t na, const char *b, si
 uint32_t ustr_hash(const char *s, size_t n);                     /* FNV-1a 32 */
 /* Uniform access for SYM and STR values. */
 static inline const char *uv_str_bytes(UValue v, uint32_t *len) {
-    if (v.kind == UV_SYM) { USym *s = (USym *)v.v.p; *len = s->len; return s->bytes; }
-    UStr *s = (UStr *)v.v.p; *len = s->len; return s->bytes;
+    if (v.kind == UV_SYM) { const USym *s = (const USym *)v.v.p; *len = s->len; return s->bytes; }
+    const UStr *s = (const UStr *)v.v.p; *len = s->len; return s->bytes;
 }
 bool     uv_str_equal(UValue a, UValue b);       /* both SYM/STR; byte compare, SYM/SYM by pointer */
 USym    *uv_to_sym(struct UVM *vm, UValue v);    /* SYM → itself; STR → interned */

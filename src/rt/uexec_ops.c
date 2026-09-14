@@ -41,7 +41,7 @@ static int slot_read(UVM *vm, UStrand *s, const UObjSlotRef *ref, UValue recv, U
     return UEXEC_OK;
 }
 
-static int slot_get(UVM *vm, UStrand *s, UValue recv, USym *name, const char *what, UValue *out)
+static int slot_get(UVM *vm, UStrand *s, UValue recv, const USym *name, const char *what, UValue *out)
 {
     UObject *o = uv_dispatch_proto(vm, recv);
     if (o == NULL) {
@@ -74,11 +74,11 @@ static bool str_kind(UValue v) { return v.kind == UV_STR || v.kind == UV_SYM; }
 static int object_binop(UVM *vm, UStrand *s, UValue lhs, UValue rhs, const char *name, UValue *out)
 {
     if (lhs.kind != UV_OBJ) return 1;
-    USym *sym = usym_cstr(vm, name);
+    const USym *sym = usym_cstr(vm, name);
     if (!sym) return uexec_throw(vm, s, UP_OOMERROR, "out of memory interning an operator name");
     UObjSlotRef ref;
     if (!uobj_resolve(vm, (UObject *)lhs.v.p, sym, &ref)) return 1;
-    UValue fn;
+    UValue fn = uv_nil();
     int rc = slot_read(vm, s, &ref, lhs, &fn);
     if (rc != UEXEC_OK) return rc;
     if (fn.kind != UV_CELL || ((UCell *)fn.v.p)->type != UCELL_CLOSURE) return 1;
@@ -148,6 +148,9 @@ static int arith(UVM *vm, UStrand *s, uint8_t op, UValue b, UValue c, UValue *ou
         UValue rb = b, rc2 = c;
         USTRAND_ROOT(s, rb); USTRAND_ROOT(s, rc2);
         UStr *r = ustr_concat(vm, pb, nb, pc, nc);
+        /* Unrooting in reverse order writes s->croots twice in a row and
+         * the first write is dead, but the pairing is the macro protocol. */
+        /* cppcheck-suppress redundantAssignment */
         USTRAND_UNROOT(s, rc2); USTRAND_UNROOT(s, rb);
         if (!r) return uexec_throw(vm, s, UP_OOMERROR, "out of memory concatenating strings");
         *out = uv_str(r);
@@ -180,7 +183,7 @@ static int compare_lt_le(UVM *vm, UStrand *s, uint8_t op, UValue b, UValue c, bo
         return UEXEC_OK;
     }
     {
-        UValue r;
+        UValue r = uv_nil();
         int rc = object_binop(vm, s, b, c, op == OP_LT ? "<" : "<=", &r);
         if (rc == UEXEC_OK) { *out = uv_truthy(r); return UEXEC_OK; }
         if (rc != 1) return rc;
@@ -193,7 +196,7 @@ static int compare_lt_le(UVM *vm, UStrand *s, uint8_t op, UValue b, UValue c, bo
 static int compare_eq(UVM *vm, UStrand *s, UValue b, UValue c, bool *out)
 {
     if (b.kind == UV_OBJ) {
-        UValue r;
+        UValue r = uv_nil();
         int rc = object_binop(vm, s, b, c, "==", &r);
         if (rc == UEXEC_OK) { *out = uv_truthy(r); return UEXEC_OK; }
         if (rc != 1) return rc;
@@ -235,6 +238,9 @@ static int do_call(UVM *vm, UStrand *s, uint16_t fi, uint32_t instr)
         USTRAND_ROOT(s, out); USTRAND_ROOT(s, self);
         UValue *args = nargs ? &s->stack[base + a + arg_off] : NULL;
         int rc = callee->native(vm, self, args, nargs, &out);
+        /* Unrooting in reverse order writes s->croots twice in a row and
+         * the first write is dead, but the pairing is the macro protocol. */
+        /* cppcheck-suppress redundantAssignment */
         USTRAND_UNROOT(s, self); USTRAND_UNROOT(s, out);
         if (rc != UEXEC_OK) return rc;
         /* The native may have grown the stack through a nested call, so
@@ -279,7 +285,7 @@ int uexec_run(UVM *vm, UStrand *s, uint32_t budget)
             break;
 
         case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: {
-            UValue res;
+            UValue res = uv_nil();
             if (arith(vm, s, (uint8_t)(i & 0xFFu), R[OPB(i)], R[OPC(i)], &res) != UEXEC_OK) goto unwind;
             f = &s->frames[s->nframes - 1];
             s->stack[f->base + OPA(i)] = res;
@@ -448,7 +454,7 @@ int uexec_run(UVM *vm, UStrand *s, uint32_t budget)
                 goto unwind;
             }
             UValue recv = R[OPB(i)];
-            UValue out;
+            UValue out = uv_nil();
             const char *what = ((i & 0xFFu) == OP_SELF) ? "method call" : "slot access";
             if (slot_get(vm, s, recv, names[OPC(i)], what, &out) != UEXEC_OK) goto unwind;
             f = &s->frames[s->nframes - 1];
@@ -483,7 +489,7 @@ int uexec_run(UVM *vm, UStrand *s, uint32_t budget)
             if (idx >= 0 && (o->attrs[idx] & (USLOT_GETTER | USLOT_SETTER))) {
                 UProps *pr = (UProps *)o->values[idx].v.p;
                 if ((o->attrs[idx] & USLOT_SETTER) && pr->setter.kind == UV_CELL) {
-                    UValue arg = R[OPA(i)], ignored;
+                    UValue arg = R[OPA(i)], ignored = uv_nil();
                     if (uexec_call(vm, s, (UClosure *)pr->setter.v.p, recv, &arg, 1, &ignored) != UEXEC_OK) goto unwind;
                 } else {
                     pr->value = R[OPA(i)];
@@ -522,6 +528,9 @@ int uexec_call(UVM *vm, UStrand *s, UClosure *cl, UValue recv, const UValue *arg
         UValue res = uv_nil(), self = recv;
         USTRAND_ROOT(s, res); USTRAND_ROOT(s, self);
         int rc = cl->native(vm, self, (UValue *)argv, argc, &res);
+        /* Unrooting in reverse order writes s->croots twice in a row and
+         * the first write is dead, but the pairing is the macro protocol. */
+        /* cppcheck-suppress redundantAssignment */
         USTRAND_UNROOT(s, self); USTRAND_UNROOT(s, res);
         if (rc == UEXEC_OK && out) *out = res;
         return rc;

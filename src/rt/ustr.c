@@ -29,7 +29,7 @@ void ustrtab_destroy(struct UVM *vm, UStrTab *t) {
             s = next;
         }
     }
-    ugc_raw_free(vm, t->buckets, (size_t)t->nbuckets * sizeof(USym *));
+    ugc_raw_free(vm, (void *)t->buckets, (size_t)t->nbuckets * sizeof(USym *));
     t->buckets = NULL; t->nbuckets = 0; t->count = 0;
 }
 
@@ -52,7 +52,7 @@ static void ustrtab_grow(struct UVM *vm, UStrTab *t) {
             s = next;
         }
     }
-    ugc_raw_free(vm, old_buckets, (size_t)old_n * sizeof(USym *));
+    ugc_raw_free(vm, (void *)old_buckets, (size_t)old_n * sizeof(USym *));
     t->buckets = new_buckets;
     t->nbuckets = new_n;
 }
@@ -108,6 +108,6 @@ bool uv_str_equal(UValue a, UValue b) {
 
 USym *uv_to_sym(struct UVM *vm, UValue v) {
     if (v.kind == UV_SYM) return (USym *)v.v.p;
-    UStr *s = (UStr *)v.v.p;
+    const UStr *s = (const UStr *)v.v.p;
     return usym_intern(vm, s->bytes, s->len);
 }

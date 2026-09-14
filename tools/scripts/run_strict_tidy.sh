@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run clang-tidy with the strict checklist over src/.
+# Run clang-tidy with the strict checklist over the built sources.
 # Exit non-zero if any violation is reported.
 set -euo pipefail
 
@@ -22,6 +22,13 @@ if [ -f .clang-tidy.strict ]; then
 fi
 
 OUT="${1:-build/strict-tidy-out.txt}"
+shift || true
+# The file list comes from the Makefile ($(SRC)) so the gate never
+# drifts from the build.  The old runtime core is parked in the tree
+# but not compiled, and analysing it against the new public header
+# produces only noise.
+SCAN=("$@")
+[ "${#SCAN[@]}" -gt 0 ] || mapfile -t SCAN < <(find src -name '*.c' | sort)
 mkdir -p "$(dirname "$OUT")"
 
 # Run clang-tidy without letting `--warnings-as-errors` propagate via
@@ -33,7 +40,7 @@ set +e
 "$CLANG_TIDY" --config-file="$CONFIG_FILE" \
    --warnings-as-errors='*' \
    --quiet \
-   $(find src -name '*.c' | sort) \
+   "${SCAN[@]}" \
    -- -Iinclude -Isrc -std=c99 \
    2>&1 | tee "$OUT"
 TOOL_RC=${PIPESTATUS[0]}

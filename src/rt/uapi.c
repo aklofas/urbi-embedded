@@ -284,7 +284,7 @@ int urbi_global_get(UVM *vm, URealm *realm, const char *name, UValue *out)
     if (!vm || !name) return URBI_ERR_INVALID_ARG;
     if (!realm) realm = vm->main_realm;
     if (!realm || !realm->globals) return URBI_ERR_INVALID_ARG;
-    USym *sym = usym_cstr(vm, name);
+    const USym *sym = usym_cstr(vm, name);
     if (!sym) return URBI_ERR_OOM;
     UObjSlotRef ref;
     if (!uobj_resolve(vm, realm->globals, sym, &ref)) return URBI_ERR_INVALID_ARG;
@@ -308,7 +308,7 @@ int urbi_slot_get(UVM *vm, UValue obj, const char *name, UValue *out)
     if (!vm || !name) return URBI_ERR_INVALID_ARG;
     UObject *o = uv_dispatch_proto(vm, obj);
     if (!o) return URBI_ERR_INVALID_ARG;
-    USym *sym = usym_cstr(vm, name);
+    const USym *sym = usym_cstr(vm, name);
     if (!sym) return URBI_ERR_OOM;
     UObjSlotRef ref;
     if (!uobj_resolve(vm, o, sym, &ref)) return URBI_ERR_INVALID_ARG;
@@ -344,7 +344,7 @@ int urbi_register(UVM *vm, const char *path, urbi_native_fn fn,
         const char *dot = seg;
         while (*dot && *dot != '.') dot++;
         if (*dot == '\0') break;                    /* `seg` is the final slot name */
-        USym *sym = usym_intern(vm, seg, (size_t)(dot - seg));
+        const USym *sym = usym_intern(vm, seg, (size_t)(dot - seg));
         if (!sym) return URBI_ERR_OOM;
         UObjSlotRef ref;
         if (!uobj_resolve(vm, owner, sym, &ref)) return URBI_ERR_INVALID_STATE;
@@ -415,6 +415,9 @@ int urbi_tag_unfreeze(UVM *vm, UValue tag) { (void)vm; (void)tag; return URBI_ER
  * Errors, GC, version
  * =================================================================== */
 
+/* The public signature takes a plain UVM handle, like every other entry
+ * point; it does not become const just because this one only reads. */
+/* cppcheck-suppress constParameterPointer */
 int urbi_last_error(UVM *vm, UErrorInfo *info)
 {
     if (!vm) return URBI_ERR_INVALID_ARG;
