@@ -292,19 +292,28 @@ static void usched_fire_due(UVM *vm, uint64_t now)
 {
     USched *sc = uvm_sched(vm);
     while (sc->heap_len > 0 && sc->heap[0].due_us <= now) {
-        UTimer t = sc->heap[0];
-        heap_remove_at(sc, 0);
-        if (t.period_us == 0) {
-            usched_wake(t.strand, uv_nil());
+        if (sc->heap[0].period_us == 0) {
+            UStrand *s = sc->heap[0].strand;
+            heap_remove_at(sc, 0);
+            usched_wake(s, uv_nil());     /* allocates nothing */
             continue;
         }
-        /* Periodic: one fire per due window, then re-arm past `now` so a
-         * clock jump produces one body, not one per missed tick. */
-        UValue recv = t.realm ? uv_obj(t.realm->globals) : uv_nil();
-        (void)usched_spawn(vm, t.realm, t.body, t.tag, recv, NULL, 0);
-        t.due_us += t.period_us;
-        if (t.due_us <= now) t.due_us = now + t.period_us;
-        (void)usched_timer_add(vm, t);
+        /* Periodic: RE-ARM FIRST, then spawn.  usched_spawn allocates and
+         * may therefore collect, and the heap record is the only thing
+         * rooting the body closure, the tag and the realm -- lifting the
+         * record out before spawning would leave all three reachable from
+         * nothing but C locals.  Re-arming past `now` is also what makes a
+         * clock jump produce one body rather than one per missed tick. */
+        UTimer *t = &sc->heap[0];
+        UClosure *body = t->body;
+        UTag     *tag  = t->tag;
+        URealm   *realm = t->realm;
+        uint64_t due = t->due_us + t->period_us;
+        if (due <= now) due = now + t->period_us;
+        t->due_us = due;
+        heap_down(sc, 0);                 /* `t` is stale from here on */
+        UValue recv = realm ? uv_obj(realm->globals) : uv_nil();
+        (void)usched_spawn(vm, realm, body, tag, recv, NULL, 0);
     }
 }
 

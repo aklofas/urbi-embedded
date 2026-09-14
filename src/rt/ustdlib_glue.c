@@ -184,7 +184,16 @@ int urbi_object_install_property(UVM *vm, UObject *o, USym *name,
     if (urbi_is_closure(getter)) attrs |= USLOT_GETTER;
     if (urbi_is_closure(setter)) attrs |= USLOT_SETTER;
     if (attrs == 0) return uobj_set_local(vm, o, name, value, 0) >= 0 ? 0 : -1;
+    /* uobj_set_local allocates the UProps cell, and until it returns the
+     * accessors are reachable from nothing but this call's arguments --
+     * a caller that just built them would otherwise watch the collector
+     * take them mid-install.  Pinning them here fixes it once for every
+     * caller instead of asking each one to remember. */
+    if (attrs & USLOT_GETTER) ((UCell *)getter.v.p)->flags |= UCELL_F_PINNED;
+    if (attrs & USLOT_SETTER) ((UCell *)setter.v.p)->flags |= UCELL_F_PINNED;
     int idx = uobj_set_local(vm, o, name, value, attrs);
+    if (attrs & USLOT_GETTER) ((UCell *)getter.v.p)->flags &= (uint16_t)~UCELL_F_PINNED;
+    if (attrs & USLOT_SETTER) ((UCell *)setter.v.p)->flags &= (uint16_t)~UCELL_F_PINNED;
     if (idx < 0) return -1;
     UProps *pr = (UProps *)o->values[idx].v.p;
     pr->getter = getter;
