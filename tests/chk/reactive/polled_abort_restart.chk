@@ -21,13 +21,17 @@
 # the cond off the compute's own writes is the closest pure-urbi
 # analogue and exercises the same dispatch path.
 #
-# v0.13.1 (refactor-3 FE-01/B3): counter expectation moved 4 -> 5.  The
-# pre-fix back-edge JMP landed one instruction short of loop_start, on
-# the YIELD emitted for the `;` before the while -- re-executing it every
-# iteration gave the watcher body an extra (unspecified) scheduling point
-# per iteration.  With the back-edge corrected, each iteration has exactly
-# the one yield its body's `;` specifies: the cond-eval and the body run
-# on consecutive yields, so the flag flip is visible one poll later.
+# The counter settles at 4.  Each iteration has exactly the one yield its
+# body's `;` specifies, and that yield is where the drain happens: the
+# iteration that takes the counter to 4 evaluates the condition on its own
+# `;`, spawns the watcher body, and the body -- enqueued ahead of the
+# yielding strand -- sets the flag before the loop's next poll reads it.
+#
+# HISTORY.  This expectation was 5 while the drain ran at a later
+# safepoint than the flip, so the flag became visible one poll after the
+# condition rose.  With the drain at the `;` the reaction is one poll
+# prompter; nothing else about the pattern changed, and the restart half
+# still reproduces the same count.
 
 var counter = 0
 var abort_flag = false
@@ -45,9 +49,9 @@ Realm.counter
 [00000000] nil
 [00000000] <?>
 [00000000] nil
-[00000000] 5
+[00000000] 4
 [00000000] true
 [00000000] 0
 [00000000] false
 [00000000] nil
-[00000000] 5
+[00000000] 4

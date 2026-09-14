@@ -1,32 +1,19 @@
-# Milestone: v0.10.12-cat-e-activation
-# Covers: at sync (obj.x.changed?) — synchronous slot-change subscriber;
-#         body runs inline before the slot-write statement returns; value
-#         visible to subscriber is the new value just written.
+# Covers: at sync (obj.x.changed?) — the subscriber body runs inline, so
+#         the value it reads is the one just written and it has finished
+#         before the next statement on the same line.
 # matrix-row: reactive-slot-change
 #
-# Activation history: Cat. E re-audit Cluster #15 verdict A reclassified
-# the original `at.sync` dot-syntax as a fixture-authoring error
-# (urbiscript has no dot-syntax for sync watchers; the canonical form is
-# the `at sync (cond) body` keyword phrase shipped at M5 per §S-watcher-3
-# — see at_sync_no_yield.chk).  Rewritten to keyword form + attempted
-# activation at v0.10.12.
+# The canonical spelling is the `at sync (...)` keyword phrase; the M5-era
+# draft used a `.sync` dot-syntax that the language does not have.
 #
-# blocked: scripted slot-change subscribe + body dispatch require T69 globals
-#          exposure (same as slot_change_basic.chk).  The `at sync` keyword
-#          form is correct per §S-watcher-3; the double-fire bug (v0.10.7-C)
-#          was fixed at v0.10.13.
-#
-# Reason:
-#   Same blockers as slot_change_basic.chk.  The sync (AT_SYNC) vs async (AT)
-#   mode distinction for slot-change watchers is documented in spec #4 §5.3 and
-#   was tested in test_slot_change_reentrancy.c at the C level until the
-#   Phase 0 runtime-internals test cleanup; no C-level coverage today.
-#
-# Urbiscript source (activate when slot-change double-fire bug resolved):
-#   var obj = Object.new();
-#   var Realm.seen = 0;
-#   at sync (obj.x.changed?) Realm.seen = obj.x;
-#   obj.x = 7;
-#   Realm.seen
-#   --- expected output ---
-#   [00000001] 7
+# `obj.x = 0` on the declaration line: declaring a slot is not changing it
+# (see slot_change_no_install_emit.chk).
+
+var obj = Object.new(); obj.x = 0
+var seen = 0
+at sync (obj.x.changed?) seen = obj.x
+obj.x = 7; seen
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] 7

@@ -154,9 +154,17 @@ static const UMethodDef ustdlib_tag_methods[] = {
     { "freeze",   tag_freeze,   0, 0 },
     { "unfreeze", tag_unfreeze, 0, 0 },
     { "blocked",  tag_blocked,  0, 0 },
-    { "frozen",   tag_frozen,   0, 0 },
-    { "enter",    tag_enter_ev, 0, 0 },
-    { "leave",    tag_leave_ev, 0, 0 }
+    { "frozen",   tag_frozen,   0, 0 }
+};
+
+/* `enter` and `leave` are PROPERTIES, not methods: `at (t.enter?)` reads
+ * the slot and expects the event itself, so a closure there would make
+ * the install fail on its own prototype's method.  The getter allocates
+ * the event on first ask, which is why a tag nobody subscribes to still
+ * costs nothing. */
+static const UMethodDef ustdlib_tag_properties[] = {
+    { "enter", tag_enter_ev, 0, 0 },
+    { "leave", tag_leave_ev, 0, 0 }
 };
 
 /* --- Event --------------------------------------------------------------- */
@@ -438,6 +446,17 @@ int usched_natives_init(UVM *vm)
         rc = uboot_install_methods(vm, vm->root_globals, ustdlib_sched_globals,
                                    (uint16_t)(sizeof ustdlib_sched_globals / sizeof ustdlib_sched_globals[0]));
     if (rc != URBI_OK) return rc;
+
+    for (size_t i = 0; i < sizeof ustdlib_tag_properties / sizeof ustdlib_tag_properties[0]; i++) {
+        const UMethodDef *m = &ustdlib_tag_properties[i];
+        USym *name = usym_cstr(vm, m->name);
+        UClosure *g = uclosure_native(vm, m->fn, m->min_args, m->max_args);
+        if (!name || !g) return URBI_ERR_OOM;
+        g->name = m->name;
+        if (urbi_object_install_property(vm, vm->protos[UP_TAG], name,
+                                         uv_ptr(UV_CELL, g), uv_nil(), uv_nil()) != 0)
+            return URBI_ERR_OOM;
+    }
 
     {
         USym *name = usym_cstr(vm, "connectionTag");

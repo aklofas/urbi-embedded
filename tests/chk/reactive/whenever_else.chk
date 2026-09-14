@@ -1,36 +1,28 @@
-# Wave: v0.10.5-legacy-decisions W9
-# Covers: whenever (cond) body else else_body — else fires on falling edge.
-#         Ruling: implemented (Wave 6 W9, legacy F4).
+# Covers: whenever (cond) body else else_body — the else arm fires once on
+#         the falling edge, and only after the body has run at least once.
 #
-# Semantics: `whenever (cond) body else else_body` — the body fires each pass
-#   the condition is truthy (level-triggered); the else_body fires once on the
-#   transition from true to false (falling edge), but only after the body has
-#   fired at least once.
+# `whenever` is a reactive loop: the body re-fires while the condition
+# holds, so this body walks the condition down (10 -> 5) and runs five
+# times; the else arm then fires exactly once for the single true->false
+# transition.  The same guard that stops `at`'s onleave from firing at
+# install time stops the else arm from firing before any body has run.
 #
-# The BODY_FIRED_SINCE_ONLEAVE gate (shared with AT) prevents the else body
-# from firing at watcher install time when the condition starts false.
-#
-# Note: WHENEVER is level-triggered — on_count reflects multiple safepoints
-#   where condition is truthy during trigger() execution.  off_count is always
-#   1 because the falling edge fires exactly once per true→false transition.
-#
-# Note: single-line form required; REPL processes one line at a time.
-#
-# Activated: 2026-05-26 as part of v0.10.5-legacy-decisions W9.
+# HISTORY.  The pre-activation form pinned `on_count == 2` for a body that
+# never touched its condition; the 2 was a count of old-core safepoints,
+# and under the ratified loop semantics that program does not terminate.
+# See reactive/at/whenever_level.chk.
 
 var x = 0
 var on_count = 0
 var off_count = 0
-whenever (Realm.x > 5) { Realm.on_count = Realm.on_count + 1 } else { Realm.off_count = Realm.off_count + 1 }
-var trigger = function() { Realm.x = 10 }; trigger()
-var lower = function() { Realm.x = 0 }; lower()
-Realm.on_count
-Realm.off_count
+whenever (x > 5) { on_count = on_count + 1; x = x - 1 } else { off_count = off_count + 1 }
+var trigger = function() { x = 10 }; trigger()
+on_count
+off_count
 [00000000] 0
 [00000000] 0
 [00000000] 0
 [00000000] nil
 [00000000] 10
-[00000000] 0
-[00000000] 2
+[00000000] 5
 [00000000] 1

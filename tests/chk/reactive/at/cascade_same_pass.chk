@@ -1,59 +1,45 @@
-# Covers: a watcher body that unregisters the next watcher in the
-# active list must not truncate the rest of the evaluation pass.
-# (refactor-4 SCH4-04)
+# Covers: a watcher body that cancels a LATER watcher must not truncate
+#         the rest of the drain.
 #
-# Five watchers observe Realm.go in registration order:
-#   P (at)        — idempotency probe, appends "P"
-#   W (whenever)  — idempotency probe, appends "W"
-#   A (at sync)   — cascade trigger, calls t2.stop()
-#   B (at, t2-owned) — gets cascaded (PENDING_UNREGISTER) by A's inline body
-#   C (at)        — must still fire after the cascade rescan
+# Five watchers observe Realm.go / Realm.wpend in registration order:
+#   P (at)        — appends "P"
+#   W (whenever)  — appends "W" and clears its own condition
+#   A (at sync)   — the cascade trigger: its inline body calls t2.stop()
+#   B (at, t2-owned) — cancelled by A before the drain reaches it
+#   C (at)        — must still fire after the cancellation
 #
-# P and W are installed first so they precede the cascade watcher in
-# active_watchers_head.  They pin that each fires exactly once (no double-fire
-# on the rescan).  A truthy WHENEVER is level-triggered under active dispatch
-# (whenever_edge_only == 0) and would re-fire on a naive rescan re-visit;
-# the eval-pass stamp (eval_pass_gen) prevents this.
+# Expected: Realm.hits == "PWC".  B never fires (its tag was stopped
+# earlier in the same drain); P, W and C each fire exactly once.
 #
-# B must be live in active_watchers_head at eval time.  Prior to v0.13.5
-# a bare `t2: at (Realm.go) { ... }` would cascade B immediately when the
-# t2: lexical scope exited (OP_POP_TAG → urbi_vm_tag_scope_teardown), so the
-# old fixture used `t2: { at (...) B; waituntil(false) }` to keep the
-# scope open.  v0.13.5 (v0.13.4-A fix) guards the cascade with
-# FLAG_TAG_USER_OWNED so user-owned tags keep their watchers alive past
-# scope close; the bare form is now correct.  The D3 "no-active-scope"
-# guard in tag_stop_native also snapshots had_watcher before urbi_tag_stop
-# so stopping a watcher-only tag does not false-alarm.
+# WHY IT CANNOT REGRESS THE OLD WAY.  The old core unlinked a cancelled
+# watcher from the active list immediately, so the pre-captured successor
+# of the watcher being processed could have a NULL next pointer and the
+# pass silently stopped there — which needed a rescan, which needed a
+# per-pass stamp to keep a level-triggered whenever from firing twice on
+# the re-visit.  None of that exists now: cancelling only clears `armed`,
+# and the list is compacted by a sweep that runs outside the walk, so the
+# walk's `next` pointer stays valid and every watcher is visited once.
 #
-# When Realm.go rises, A's inline body calls t2.stop().  urbi_tag_stop
-# calls pending_onleave_queue_push for every watcher in
-# t2->member_watchers_head (B): PENDING_UNREGISTER set, unlinked from
-# active list, next_active cleared.
-# The pre-captured `next = B` in urbi_vm_watcher_eval_dirty now has
-# next_active = NULL, so without the fix the loop terminates before
-# evaluating C — a silent same-tick truncation.
-# The fix: when the pre-captured successor is PENDING, restart from
-# active_watchers_head so C still fires this pass.
-#
-# B never fires: its watcher is unregistered before it is evaluated.
-# C must fire.  P and W each fire exactly once.
-# Post-fix expected: Realm.hits == "PWC".
-# Pre-fix expected:  Realm.hits == "" (C missed entirely; P, W also missed
-#                    because the truncation swallows the whole tail).
+# W is a `whenever`, which is a reactive LOOP: it re-fires on body
+# completion while its condition still holds, so its body clears the
+# latch it watches.  Both writes on the trigger line are joined by `|`
+# (atomic, no yield) so a single drain sees both.
 #
 ## timeout: 30
 ## host: run Realm.hits = ""
 ## host: run Realm.go = false
+## host: run Realm.wpend = false
 ## host: run var t2 = Tag.new()
 ## host: run at (Realm.go) { Realm.hits = Realm.hits + "P" }
-## host: run whenever (Realm.go) { Realm.hits = Realm.hits + "W" }
+## host: run whenever (Realm.wpend) { Realm.hits = Realm.hits + "W"; Realm.wpend = false }
 ## host: run at sync (Realm.go) { t2.stop() }
 ## host: run t2: at (Realm.go) { Realm.hits = Realm.hits + "B" }
 ## host: run at (Realm.go) { Realm.hits = Realm.hits + "C" }
-## host: run Realm.go = true
+## host: run Realm.wpend = true | Realm.go = true
 ## host: step 100000
 ## host: run Realm.hits
 [00000000] ""
+[00000000] false
 [00000000] false
 [00000000] <Tag>
 [00000000] nil

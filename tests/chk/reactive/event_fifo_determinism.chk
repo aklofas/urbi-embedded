@@ -8,20 +8,15 @@
 # matrix-row: reactive-event
 #
 # Reason:
-#   The fixture requires:
-#     - String literals (not yet lexed/parsed at M5 baseline)
-#     - Event.new() constructor (requires globals exposure + T59 stdlib binding)
-#     - at (e?) event-subscribe watcher (requires globals access for `e`)
-#     - e!(1) event-emit postfix (requires globals access for `e`)
-#   All of these require the T59 globals-exposure task.  The tier-2 enter/leave
-#   emit hooks (T55), the GC walker amendments (T56), and the ISR drain handler
-#   (T57) were tested via unit tests in test_tag_enter_leave.c, test_event_gc.c,
-#   and test_isr_event_drain.c respectively until the Phase 0 runtime-internals
-#   test cleanup; no C-level coverage today.
+#   The language half is live: Event.new(), `at (e?)`, `e!(1)` and the
+#   registration-order walk are covered by reactive/event/event_multi_sub_fifo.chk.
+#   What is missing is the RUNNER feature this fixture exists for -- running one
+#   source under every tunable preset, many times, and asserting byte-identical
+#   output.  There is no `## tunables: presets` directive to write.
 #
-# Activate at T59 by replacing the source below with the uncommented version.
+# Activate when the runner grows multi-preset mode.
 #
-# Urbiscript source (activate at T59):
+# Urbiscript source:
 #   var e = Event.new();
 #   var seq = "";
 #   at (e?) function (p) { seq = seq + "A" + p };

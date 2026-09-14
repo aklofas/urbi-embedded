@@ -6,9 +6,17 @@
 // block moves into stdlib.u and the next bake picks it up.
 //
 //   Lobby.wall             — needs Lobby.lobbies, i.e. REPL sessions.
-//   Lobby.handleDisconnect — needs events (`onDisconnect!`).
+//   Lobby.handleDisconnect — rides along: it is a member of the same
+//                            `class LobbyMethods { ... }` statement, and
+//                            splitting the class to land it alone would
+//                            buy a second addProto for nothing.
 //
 // detach / disown moved into stdlib.u with the scheduler task.
+//
+// The reactive task did NOT unblock either of these.  `onDisconnect!(...)`
+// -- the emit postfix handleDisconnect was waiting on -- compiles and runs
+// now, but `Lobby.lobbies` is still the blocker for the block as a whole,
+// and that is REPL sessions.
 
 // ==== from lobby.u (needs Lobby.lobbies and events) ====
 

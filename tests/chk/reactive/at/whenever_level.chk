@@ -1,27 +1,31 @@
-# Milestone: M5
-# Covers: whenever (cond) body — level-trigger semantics; body fires on every
-#         eval pass where condition is truthy, not just on rising edge.
+# Covers: whenever (cond) body — a reactive LOOP.  The body fires on the
+#         rising edge and re-fires as soon as it finishes, for as long as
+#         the condition still holds; the loop ends when the condition
+#         goes false, not when some number of scheduler safepoints have
+#         gone by.
 #
-# Activated 2026-05-05 as part of cond-closure unstub.
-# Mechanism: three fires from three safepoints — install-time eval of the
-# level cond, t1's non-top-frame OP_RET, and t2's non-top-frame OP_RET
-# (the body's write to Realm.fired re-dirties the same Realm cell the
-# cond reads, leaving the watcher dirty for the next safepoint).
-# whenever fires at every safepoint visit where cond is truthy
-# (fired = 3); at would fire only on the false→true transition (fired = 1).
-# Confirms UWATCHER_WHENEVER level-trigger path in urbi_vm_watcher_eval_dirty
-# (uwatcher_eval.c).
-# See also: at_rising_edge.chk for the edge-trigger contrast.
+# The body here takes the condition down one step per run, so the number
+# of runs is a property of the program (three, for x = 8 down to 5) rather
+# than of how often the scheduler happened to look.
+#
+# HISTORY.  This fixture used to pin `fired == 3` for a body that never
+# touched its condition, and the 3 was the number of safepoints the old
+# core's per-pass evaluation happened to reach.  Under the ratified
+# semantics that program does not terminate at all — which is what a
+# `whenever` whose body cannot falsify its condition means, exactly as a
+# `while (true)` does.  See reactive/at/at_rising_edge.chk for the
+# edge-triggered contrast: `at` fires once per false->true transition
+# whatever the body does.
 
-var x = 0;
-var fired = 0;
-whenever (Realm.x > 5) Realm.fired = Realm.fired + 1;
-var t1 = function() { Realm.x = 10 }; t1();
-var t2 = function() { Realm.x = 11 }; t2();
-Realm.fired
+var x = 0
+var fired = 0
+whenever (x > 5) { fired = fired + 1; x = x - 1 }
+var t1 = function() { x = 8 }; t1()
+fired
+x
 [00000000] 0
 [00000000] 0
 [00000000] nil
-[00000000] 10
-[00000000] 11
+[00000000] 8
 [00000000] 3
+[00000000] 5

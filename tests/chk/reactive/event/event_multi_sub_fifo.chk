@@ -1,33 +1,19 @@
-# Milestone: M5
-# Covers: multiple subscribers on the same event receive emits in registration
-#         FIFO order; D-event-1 rule (spec #3 §10.2); 3 subs on 3 emits.
-#
-# blocked: subscriber walk order not observable from script — log-building pattern needs slot-write ordering verified across spawn (audit Cat. E)
+# Covers: three subscribers on one event, two emissions: every subscriber
+#         runs once per emission, and the subscriber list is walked in
+#         registration order both times.
 # matrix-row: reactive-event
-#
-# Reason:
-#   Same blockers as event_emit_async.chk.  The FIFO walk of event->at_watchers_head
-#   was exercised by test_uevent_subscribe.c and test_event_emit_async.c at the
-#   C level until the Phase 0 runtime-internals test cleanup; no C-level
-#   coverage today.  The scripted fixture requires Event.new() T59 binding
-#   and scratch-frame body dispatch.
-#
-# Activate when Event.new() + scratch-frame body dispatch are wired.
-#
-# Urbiscript source (activate at T59 + M5-scratch-frame):
-#   var e = Event.new();
-#   var seq = "";
-#   at (e?) Realm.seq = Realm.seq + "A";
-#   at (e?) Realm.seq = Realm.seq + "B";
-#   at (e?) Realm.seq = Realm.seq + "C";
-#   e!; e!;
-#   seq
-#   --- expected output ---
-#   [00000000] nil
-#   [00000001] ""
-#   [00000002] nil
-#   [00000003] nil
-#   [00000004] nil
-#   [00000005] nil
-#   [00000006] nil
-#   [00000007] "ABCABC"
+
+var e = Event.new()
+var seq = ""
+at (e?) seq = seq + "A"
+at (e?) seq = seq + "B"
+at (e?) seq = seq + "C"
+e!; e!
+seq
+[00000000] <event>
+[00000000] ""
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] "ABCABC"

@@ -1,30 +1,22 @@
-# Milestone: M5
-# Covers: at (mytag.enter?) — tier-2 tag-enter event; subscriber fires when
-#         OP_PUSH_TAG executes for `mytag`; lazy-alloc of UTag.enter_event on
-#         first subscription (spec #3 §3.1).
-#
-# deferred: v1.x — tag.enter? events not implemented (T55 tag enter/leave emit hooks)
+# Covers: at (mytag.enter?) — the tag's enter event fires when a scope
+#         prefixed with that tag is entered (OP_PUSH_TAG).
 # matrix-row: tag-scope-events
 #
-# Reason:
-#   Tag.new() requires T59 stdlib binding.  The tier-2 enter/leave event
-#   lazy-alloc and OP_PUSH_TAG emit path (T55) were tested by
-#   test_tag_enter_leave.c at the C level until the Phase 0 runtime-internals
-#   test cleanup; no C-level coverage today.  The at (mytag.enter?) subscribe
-#   watcher requires OP_AT_EVENT_INSTALL with a tag-event UEvent source;
-#   the subscriber body requires scratch-frame execution.
+# `t.enter` is a PROPERTY, not a method: reading it allocates the tag's
+# enter event on first ask and hands it back, which is what lets
+# `at (t.enter?)` name it.  A tag nobody ever subscribes to never
+# allocates one, so entering and leaving its scope costs nothing.
 #
-# Activate when Tag.new() + enter-event wiring + body dispatch are complete.
-#
-# Urbiscript source (activate at T55 + T59 + M5-scratch-frame):
-#   var t = Tag.new("scope");
-#   var log = "";
-#   at (t.enter?) Realm.log = Realm.log + "in";
-#   t: { 1 };
-#   log
-#   --- expected output ---
-#   [00000000] nil
-#   [00000001] ""
-#   [00000002] nil
-#   [00000003] 1
-#   [00000004] "in"
+# Activated with the reactive runtime; the pre-activation draft named
+# `Realm.log` only because a closure could not see a top-level `var`.
+
+var t = Tag.new("scope")
+var log = ""
+at (t.enter?) log = log + "in"
+t: { 1 }
+log
+[00000000] <Tag: scope>
+[00000000] ""
+[00000000] nil
+[00000000] 1
+[00000000] "in"

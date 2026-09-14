@@ -20,9 +20,12 @@
 #         the cascade guard) and hits == 1 (watcher survived the throw, fires when
 #         trig() sets never=1).  The "L" confirms leave-event teardown runs; the
 #         "hits==1" confirms the watcher persists for user-owned tags.
+#
+# `u.leave` is a PROPERTY, not a method: reading it allocates the tag's
+# leave event on first ask and hands it back.
 ## timeout: 30
 ## host: run var u = Tag.new()
-## host: run var lv = Realm.u.leave()
+## host: run var lv = Realm.u.leave
 ## host: run Realm.log = ""
 ## host: run Realm.hits = 0
 ## host: run Realm.never = 0

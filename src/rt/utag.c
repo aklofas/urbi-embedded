@@ -87,8 +87,14 @@ UEvent *utag_leave_event(UVM *vm, UTag *t)
 void utag_fire(UVM *vm, UEvent *ev)
 {
     /* A tag nobody ever asked for an enter/leave event on has none, so
-     * entering and leaving its scope costs nothing at all. */
-    if (ev) uevent_emit(vm, ev, uv_nil());
+     * entering and leaving its scope costs nothing at all.
+     *
+     * Fired SYNCHRONOUSLY: crossing a scope boundary is an event of the
+     * strand doing the crossing, so an `at sync (t.enter?)` subscriber
+     * runs before the scope body does -- which is the only way "before"
+     * can mean anything here.  A plain `at (t.enter?)` still gets a
+     * spawned strand, as it does for every other emit. */
+    if (ev) uevent_emit_to(vm, ev, uv_nil(), true);
 }
 
 /* --- scope membership -------------------------------------------------------

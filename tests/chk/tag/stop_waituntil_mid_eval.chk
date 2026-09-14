@@ -1,24 +1,18 @@
-# Milestone: v0.13.3 (refactor-3 SCHED-05 spec-review hazard 1)
-# Covers: tag.stop() fired from an AT_SYNC inline body — i.e. from INSIDE
-#         urbi_vm_watcher_eval_dirty's active-list walk — retiring a waituntil
-#         member's watcher must NOT pool_free it mid-walk: the walk's
-#         captured `next` pointer is the waituntil watcher (installed
-#         immediately after the at-sync watcher, so it IS the snapshot —
-#         ordering assumption this fixture depends on), and a freed slot's
-#         next_active is repurposed as the pool freelist link.
-#         Pre-fix: the walk continued into the freed slot and then into the
-#         freelist (mode 0 slots) — "unknown watcher mode" assert abort in
-#         checked builds; silent freelist-slot writes in release builds.
-#         Post-fix: mid-eval the unpark WATCHER arm scrubs waiter_strand and
-#         defers the retire via pending_onleave_queue_push (PENDING_UNREGISTER
-#         keeps the snapshot valid; the pool_free happens at the next
-#         safepoint drain).  The woken strand's tail is straight-line, so the
-#         deposit drops (v0.13.1-G) and the full body runs: log == "WA".
-#         The trailing Realm.nop() call provides the dispatch safepoint that
-#         drains the deferred entry (the pending-onleave drain runs at
-#         safepoints only until Task 5's idle pump), so the final step
-#         reports QUIESCENT.
+# Covers: tag.stop() called from an AT_SYNC watcher body -- that is, from
+#         inside the drain's own walk -- cancels a `waituntil` member of
+#         that tag without disturbing the walk, and the VM still reaches
+#         quiescence.
 # matrix-row: tag-stop
+#
+# The at-sync body runs inline on a spare strand during the drain, and
+# t.stop() cancels both the waiting strand and the tag's watchers.
+# Cancelling a watcher only clears its `armed` flag; the list is compacted
+# by a sweep that runs outside the walk, so the walk's pointers stay valid
+# -- the whole class of mid-walk free the old core needed a
+# PENDING_UNREGISTER flag and a rescan to survive.
+#
+# HISTORY.  This fixture pinned "WA" under the old finish-then-drop rule;
+# see tag/stop_straightline_ret.chk for why a cancelled wait now stops.
 ## timeout: 30
 ## host: run var t = Tag.new()
 ## host: run Realm.flag = 0
@@ -37,6 +31,6 @@
 [00000000] nil
 [00000000] nil
 [00000000] 1
-[00000000] "WA"
+[00000000] "A"
 [00000000] 0
 [00000000] step: QUIESCENT

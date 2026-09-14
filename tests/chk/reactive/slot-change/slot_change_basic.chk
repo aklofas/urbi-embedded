@@ -1,29 +1,19 @@
-# Milestone: M5
-# Covers: at (obj.x.changed?) subscriber fires on slot mutation; basic
-#         slot-change event: single subscriber, single write, single fire.
-#
-# blocked: scripted slot-change subscribe + body dispatch require T69 globals exposure
+# Covers: at (obj.x.changed?) — one subscriber, one write, one fire.
 # matrix-row: reactive-slot-change
 #
-# Reason:
-#   Object.new() and slot-change event subscription via at (obj.x.changed?)
-#   require T69 globals exposure + stdlib.  The OP_GETSLOT_CHANGED fast-path
-#   probe (test_op_getslot_change_event.c) and urbi_emit_slot_change_if_subscribed
-#   chain walk (test_slot_change_callsites.c) were tested at the C level until
-#   the Phase 0 runtime-internals test cleanup; no C-level coverage today.
-#   The subscriber body dispatch requires scratch-frame execution.
-#
-# Activate when Object.new() + slot-change scripted subscribe + body dispatch wired.
-#
-# Urbiscript source (activate at T69 + M5-scratch-frame):
-#   var obj = Object.new();
-#   var fired = 0;
-#   at (obj.x.changed?) Realm.fired = Realm.fired + 1;
-#   obj.x = 42;
-#   fired
-#   --- expected output ---
-#   [00000000] nil
-#   [00000001] 0
-#   [00000002] nil
-#   [00000003] 42
-#   [00000004] 1
+# `obj.x = 0` comes first, on the declaration line, because declaring a
+# slot is not changing it:
+# reactive/slot-change/slot_change_no_install_emit.chk pins that rule, and
+# the pre-activation draft here (written before it) expected the declaring
+# write to fire.
+
+var obj = Object.new(); obj.x = 0
+var fired = 0
+at (obj.x.changed?) fired = fired + 1
+obj.x = 42
+fired
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] 42
+[00000000] 1

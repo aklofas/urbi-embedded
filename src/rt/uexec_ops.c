@@ -758,6 +758,19 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: slot is constant");
                 goto unwind;
             }
+            if (idx < 0) {
+                /* Constness is INHERITED.  A name that resolves to a
+                 * constant further up the chain may not be shadowed by a
+                 * local slot -- `Realm.Object = 42` has to raise, not
+                 * quietly rebind the name for this realm.  Only the
+                 * creation path pays for the walk; a rewrite of an
+                 * existing local slot took the branch above. */
+                UObjSlotRef up;
+                if (uobj_resolve(vm, o, name, &up) && (uobj_slot_attrs(&up) & USLOT_CONSTANT)) {
+                    (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: slot is constant");
+                    goto unwind;
+                }
+            }
             UValue written = R[OPA(i)];
             if (idx >= 0 && (o->attrs[idx] & (USLOT_GETTER | USLOT_SETTER))) {
                 UProps *pr = (UProps *)o->values[idx].v.p;

@@ -1,31 +1,31 @@
-# Milestone: M5
-# Covers: tier-2 tag enter/leave event ordering (spec #3 §8.3, §10.2):
-#         at (t.enter?) fires before OP_PUSH_TAG body runs; at (t.leave?)
-#         fires before tier-1 watcher cascade (i.e., while tag is still ambient).
-#         Two successive tag-scope entries produce EinLEinL in deterministic order.
-#
-# deferred: v1.x — tag.enter?/tag.leave? events not implemented (T55 not shipped)
+# Covers: tier-2 tag enter/leave event ordering.  `at sync (t.enter?)`
+#         runs before the scope body; `at sync (t.leave?)` runs after it,
+#         while the scope is still being left.  Two successive entries
+#         produce EinLEinL, in that order, every run.
 # matrix-row: tag-scope-events
 #
-# Reason:
-#   The fixture requires:
-#     - String literals (not yet lexed/parsed at M5 baseline)
-#     - Tag.new() constructor (requires globals exposure + T59 stdlib binding)
-#     - at (t.enter?) / at (t.leave?) event-subscribe watchers (require globals
-#       access for `t`, plus T59 to wire Tag.enter / Tag.leave as resolvable names)
-#   The tier-2 hook itself (T55 OP_PUSH_TAG / OP_POP_TAG enter/leave emit) was
-#   exercised end-to-end in tests/unit/test_tag_enter_leave.c until the Phase 0
-#   runtime-internals test cleanup; no C-level coverage today.
+# The SYNC form is what makes "before" and "after" mean anything here:
+# entering a scope fires the tag's enter event synchronously on the
+# crossing strand, so an at-sync subscriber's body runs inside OP_PUSH_TAG.
+# A plain `at (t.enter?)` gets a spawned strand like every other event
+# subscriber, and its body lands after the installing strand next yields
+# -- "inELinEL" for the same program, which is deterministic but says
+# nothing about scope boundaries.
 #
-# Activate at T59 by replacing the source below with the uncommented version.
-#
-# Urbiscript source (activate at T59):
-#   var t = Tag.new("t");
-#   var log = "";
-#   at (t.enter?) function () { log = log + "E" };
-#   at (t.leave?) function () { log = log + "L" };
-#   t: { log = log + "in" };
-#   t: { log = log + "in" };
-#   echo(log);
-#   --- expected output ---
-#   [00000001] "EinLEinL"
+# `t.enter` and `t.leave` are properties whose getters allocate the event
+# on first ask, so a tag nobody subscribes to pays nothing for either.
+
+var t = Tag.new("t")
+var log = ""
+at sync (t.enter?) log = log + "E"
+at sync (t.leave?) log = log + "L"
+t: { log = log + "in" }
+t: { log = log + "in" }
+log
+[00000000] <Tag: t>
+[00000000] ""
+[00000000] nil
+[00000000] nil
+[00000000] "Ein"
+[00000000] "EinLEin"
+[00000000] "EinLEinL"

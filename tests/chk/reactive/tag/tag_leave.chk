@@ -1,30 +1,25 @@
-# Milestone: M5
-# Covers: at (mytag.leave?) — tier-2 tag-leave event; subscriber fires when
-#         OP_POP_TAG executes (normal exit and tag.stop() cascades); ordering
-#         relative to tier-1 onleave clause (spec #3 §3.2).
-#
-# deferred: v1.x — tag.leave? events not implemented (T55 tag enter/leave emit hooks)
+# Covers: at (mytag.leave?) — the tag's leave event fires when a scope
+#         prefixed with that tag is left (OP_POP_TAG).
 # matrix-row: tag-scope-events
 #
-# Reason:
-#   Same blockers as tag_enter.chk.  Additionally, the ordering between tier-1
-#   onleave and tier-2 leave-event subscribers is specified in spec #3 §4.3:
-#   tier-1 fires first, then tier-2.  This ordering was verified in
-#   test_tag_enter_leave.c until the Phase 0 runtime-internals test cleanup;
-#   no C-level coverage today.  The scripted fixture additionally requires
-#   tag.stop() method dispatch (M4 dispatch path, already present).
+# Like `t.enter`, `t.leave` is a property whose getter allocates the event
+# on first ask.
 #
-# Activate when Tag.new() + leave-event wiring + body dispatch are complete.
-#
-# Urbiscript source (activate at T55 + T59 + M5-scratch-frame):
-#   var t = Tag.new("scope");
-#   var log = "";
-#   at (t.leave?) Realm.log = Realm.log + "out";
-#   t: { 1 } onleave { Realm.log = Realm.log + "tier1" };
-#   log
-#   --- expected output ---
-#   [00000000] nil
-#   [00000001] ""
-#   [00000002] nil
-#   [00000003] 1
-#   [00000004] "tier1out"
+# NOT covered here: the ordering between a tier-1 `onleave` clause on the
+# tag PREFIX and this tier-2 event.  `t: { ... } onleave { ... }` does not
+# parse — tag-prefix onleave is a frontend v1.x item
+# (src/parse/uparse_react.c, AST_TAG_PREFIX.onleave is always NULL) — so
+# there is no second edge to order against yet.  The `at (cond) body
+# onleave handler` form, which is a different construct, is covered by
+# reactive/at/at_onleave.chk.
+
+var t = Tag.new("scope")
+var log = ""
+at (t.leave?) log = log + "out"
+t: { 1 }
+log
+[00000000] <Tag: scope>
+[00000000] ""
+[00000000] nil
+[00000000] 1
+[00000000] "out"

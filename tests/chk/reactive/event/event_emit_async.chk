@@ -1,31 +1,20 @@
-# Milestone: M5
-# Covers: e! (async emit) — event fires all AT_EVENT subscribers in registration
-#         order; subscriber bodies run asynchronously on spawned coroutines.
-#
-# blocked: spawn_body_coroutine path for at(e?) subscriber dispatch — body fires once on emit but logging slot-write ordering not yet observable (audit Cat. E)
+# Covers: e! — an emit fires every `at (e?)` subscriber, in the order they
+#         subscribed.
 # matrix-row: reactive-event
 #
-# Reason:
-#   Event.new() requires T59 stdlib binding (attaches Event prototype to realm
-#   globals via urbi_populate_realm_globals).  The at (e?) subscribe watcher
-#   uses OP_AT_EVENT_INSTALL (T47), which is wired.  The subscriber body
-#   dispatch requires spawn_body_coroutine (stub at M5-stub phase).  The
-#   urbi_event_emit_async path was exercised by test_event_emit_async.c until
-#   the Phase 0 runtime-internals test cleanup; no C-level coverage today.
-#
-# Activate when Event.new() + scratch-frame body dispatch are wired.
-#
-# Urbiscript source (activate at T59 + M5-scratch-frame):
-#   var e = Event.new();
-#   var log = "";
-#   at (e?) Realm.log = Realm.log + "A";
-#   at (e?) Realm.log = Realm.log + "B";
-#   e!;
-#   log
-#   --- expected output ---
-#   [00000000] nil
-#   [00000001] ""
-#   [00000002] nil
-#   [00000003] nil
-#   [00000004] nil
-#   [00000005] "AB"
+# The bodies run on spawned strands, so the accumulator is only settled
+# once the emitting line's pump has drained them; the read is therefore on
+# its own line.
+
+var e = Event.new()
+var log = ""
+at (e?) log = log + "A"
+at (e?) log = log + "B"
+e!
+log
+[00000000] <event>
+[00000000] ""
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] "AB"
