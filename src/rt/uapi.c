@@ -398,7 +398,10 @@ int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_
             return URBI_OK;
         }
     }
-    if (sc->event_count >= USCHED_MAX_EVENTS) return URBI_ERR_INVALID_STATE;
+    /* OOM, not INVALID_STATE: the id table is a fixed resource that ran
+     * out, and INVALID_STATE is this API's "not available in this build"
+     * marker. */
+    if (sc->event_count >= USCHED_MAX_EVENTS) return URBI_ERR_OOM;
     UValue ev = urbi_make_nil();
     int rc = urbi_event_new(vm, realm, name, &ev);
     if (rc != URBI_OK) return rc;
@@ -415,6 +418,11 @@ int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *p
 {
     if (!vm || n > URBI_EVENT_PAYLOAD_MAX) return URBI_ERR_INVALID_ARG;
     USched *sc = &vm->sched;
+    /* Reject an id nothing was registered under, rather than accepting it
+     * and dropping it silently at the drain.  Reading event_count from an
+     * interrupt races with a concurrent urbi_event_register, whose only
+     * outcome is rejecting an id registered microseconds ago. */
+    if (id >= sc->event_count) return URBI_ERR_INVALID_ARG;
     uint32_t head = sc->isr_head;
     uint32_t tail = __atomic_load_n(&sc->isr_tail, __ATOMIC_ACQUIRE);
     if (head - tail >= USCHED_ISR_SLOTS) return URBI_ERR_OOM;   /* ring full: drop */

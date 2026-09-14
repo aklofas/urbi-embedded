@@ -284,6 +284,12 @@ static void uexec_report_escape(UVM *vm, const UStrand *s)
 int uexec_finish_run(UVM *vm, int exec_rc)
 {
     if (exec_rc == UEXEC_OK) {
+        /* A strand OTHER than the one this result belongs to may have
+         * died on an uncaught throw while the scheduler was pumping.
+         * Spec section 9 reports that through the diag callback AND the
+         * error channel, so the clean-run clear stands down until the
+         * next step; see usched_step. */
+        if (vm->sched.threw) return URBI_OK;
         vm->last_error[0] = '\0';
         vm->last_error_code = URBI_OK;
         return URBI_OK;

@@ -218,12 +218,15 @@ int urbi_event_emit(UVM *vm, UValue event, UValue payload);
  * interrupt handler routes through.  This is the other half of
  * urbi_inject_event: an id has no other source, and a registered event
  * is held for the life of the VM so an ISR can never name a collected
- * one.  URBI_ERR_INVALID_STATE once the id table is full. */
+ * one.  URBI_ERR_OOM once the id table is full. */
 int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_t *out_id);
 /* Deposit an event from an interrupt handler.  ISR-safe and
  * allocation-free: the payload is copied into a lock-free ring and
  * delivered at the next urbi_step, where it reaches script as one
- * integer -- the first eight bytes of the payload, zero-extended. */
+ * integer -- the first eight bytes of the payload, zero-extended.
+ * URBI_ERR_INVALID_ARG for an unregistered id or an oversized payload,
+ * URBI_ERR_OOM when the ring is full (the injection is dropped, which is
+ * the only thing available without blocking an interrupt). */
 int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *payload, size_t n);
 /* Watch a condition expression; `cb` fires on each rising edge. */
 int urbi_watch(UVM *vm, URealm *realm, const char *expr,
