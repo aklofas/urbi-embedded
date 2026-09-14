@@ -19,7 +19,7 @@
 
 typedef struct { size_t live, peak; unsigned long allocs; } CountAlloc;
 
-/* realloc-shaped, with an 16-byte header carrying the block size so the
+/* realloc-shaped, with a two-word header carrying the block size so the
  * accounting survives free and resize. */
 static void *counting_alloc(void *ptr, size_t n, void *ud)
 {
@@ -62,6 +62,19 @@ static UValue run(UVM *vm, URealm *r, const char *src)
     return out;
 }
 
+/* Runs `src` expecting it to throw, and returns vm->last_error. */
+static const char *run_throws(UVM *vm, URealm *r, const char *src)
+{
+    UValue out = urbi_make_nil();
+    char err[256] = { 0 };
+    int rc = urbi_run(vm, r, src, strlen(src), "<test>", &out, err, sizeof err);
+    if (rc == URBI_OK) printf("    run(%s) unexpectedly succeeded\n", src);
+    RT_EQ(rc, URBI_ERR_UNCAUGHT_THROW);
+    UErrorInfo info;
+    urbi_last_error(vm, &info);
+    return info.message ? info.message : "";
+}
+
 static bool str_is(UValue v, const char *want)
 {
     if (v.kind != UV_STR && v.kind != UV_SYM) return false;
@@ -87,6 +100,11 @@ static void t_realm_shape(void)
     RT_CHECK(m->globals != NULL);
     RT_EQ(m->globals->proto0, vm->root_globals);
     RT_EQ(m->vm, vm);
+    /* Spec section 6: the Lobby is in every realm's chain, so its slots
+     * resolve unqualified.  globals -> root_globals -> Lobby -> Object. */
+    RT_CHECK(uobj_is_a(vm, m->globals, vm->protos[UP_LOBBY]));
+    RT_EQ(vm->root_globals->proto0, vm->protos[UP_LOBBY]);
+    RT_CHECK(uobj_is_a(vm, m->globals, vm->protos[UP_OBJECT]));
     /* The scheduler task creates the root tag; until then it is documented
      * as absent, not forgotten. */
     RT_CHECK(m->root_tag == NULL);
@@ -338,6 +356,65 @@ static void t_slot_write_on_an_atom_throws(void)
     urbi_close(vm);
 }
 
+static void t_realmless_globals_are_boot_only(void)
+{
+    CountAlloc ca;
+    UVM *vm = open_counted(&ca);
+    if (!vm) { RT_CHECK(0); return; }
+
+    /* The blob ran on a realm-less strand during uboot_init and its
+     * declarations landed on root_globals -- that is the fallback's one
+     * legitimate user, and it has already happened by the time
+     * urbi_open returns. */
+    RT_CHECK(vm->stdlib_booted != 0);
+    UValue v = urbi_make_nil();
+    RT_EQ(urbi_global_get(vm, NULL, "Singleton", &v), URBI_OK);
+
+    /* After boot the fallback is closed: a strand whose realm is gone
+     * throws instead of writing into the object every realm inherits. */
+    URealm *r = urbi_realm_new(vm);
+    if (r) {
+        UValue out = urbi_make_nil();
+        char err[256] = { 0 };
+        const char *src = "var leak = 1";
+        r->globals = NULL;                    /* what urealm_free leaves behind */
+        int rc = urbi_run(vm, r, src, strlen(src), "<test>", &out, err, sizeof err);
+        RT_EQ(rc, URBI_ERR_UNCAUGHT_THROW);
+        UErrorInfo info;
+        urbi_last_error(vm, &info);
+        RT_CHECK(info.message != NULL && strstr(info.message, "no realm") != NULL);
+        RT_CHECK(urbi_global_get(vm, urbi_realm_main(vm), "leak", &v) != URBI_OK);
+    }
+
+    urbi_close(vm);
+}
+
+static void t_arity_errors_name_and_count(void)
+{
+    CountAlloc ca;
+    UVM *vm = open_counted(&ca);
+    if (!vm) { RT_CHECK(0); return; }
+    URealm *r = urbi_realm_main(vm);
+
+    /* A native names itself and both counts. */
+    const char *msg = run_throws(vm, r, "Object.clone(1, 2)");
+    RT_CHECK(strstr(msg, "clone") != NULL);
+    RT_CHECK(strstr(msg, "expected 0 arguments, got 2") != NULL);
+
+    /* A range prints as a range, and the singular is singular. */
+    msg = run_throws(vm, r, "Lobby.echo()");
+    RT_CHECK(strstr(msg, "echo: expected 1..3 arguments, got 0") != NULL);
+    msg = run_throws(vm, r, "\"ab\".charAt()");
+    RT_CHECK(strstr(msg, "charAt: expected 1 argument, got 0") != NULL);
+
+    /* A script closure has no name to print, and its emitted prologue
+     * owns the lower bound, so the VM reports the upper one. */
+    msg = run_throws(vm, r, "var f = function (a, b) { a }; f(1, 2, 3)");
+    RT_CHECK(strstr(msg, "expected at most 2 arguments, got 3") != NULL);
+
+    urbi_close(vm);
+}
+
 /* --- the writer -------------------------------------------------------- */
 
 static char g_echo[256];
@@ -366,8 +443,9 @@ static void t_lobby_echo_reaches_the_writer(void)
     (void)run(vm, r, "Lobby.echo(\"hello\")");
     RT_CHECK(strstr(g_echo, "*** hello") != NULL);
 
-    /* Every realm has the Lobby in its chain, so `echo` works unqualified
-     * and from a second realm too. */
+    /* Unqualified, and from a second realm: `echo` resolves by
+     * INHERITANCE, not by a second global binding -- root_globals's
+     * prototype is the Lobby. */
     g_echo[0] = '\0'; g_echo_len = 0;
     URealm *b = urbi_realm_new(vm);
     if (b) {
@@ -390,5 +468,7 @@ void rt_realm_suite(void)
     t_boot_heap_is_small();
     t_atoms_dispatch_on_their_proto();
     t_slot_write_on_an_atom_throws();
+    t_realmless_globals_are_boot_only();
+    t_arity_errors_name_and_count();
     t_lobby_echo_reaches_the_writer();
 }

@@ -31,16 +31,16 @@ typedef struct UMethodDef {
     uint8_t min_args, max_args;
 } UMethodDef;
 
-/* max_args sentinel: any argument count at or above min_args. */
-#define UMETHOD_VARARGS 255
+/* max_args sentinel: any argument count at or above min_args.  The same
+ * value the closure layer calls UCLOSURE_ANY_ARGS. */
+#define UMETHOD_VARARGS UCLOSURE_ANY_ARGS
 
 /* Flags column. */
 #define UBOOT_F_READONLY  0x0001   /* script-side slot writes throw TypeError */
-#define UBOOT_F_NO_GLOBAL 0x0002   /* the proto exists but gets no globals slot */
 
 /* One built-in.
  *   global       — the name it binds in root_globals, or NULL for none.
- *   proto_index  — its slot in vm->protos[]; UP_COUNT for "no proto slot".
+ *   proto_index  — its slot in vm->protos[]; one row per slot, no repeats.
  *   parent_index — the UP_* it inherits from, or -1 for the root itself.
  *   methods/n    — its native methods.
  *   flags        — UBOOT_F_*. */

@@ -45,7 +45,7 @@ static inline UValue uv_obj(UObject *o) { return uv_ptr(UV_OBJ, o); }
 /* proto may be NULL. May collect (via ugc_alloc); root `proto` first if
  * it isn't otherwise reachable. */
 UObject *uobj_new(struct UVM *vm, UObject *proto);
-int      uobj_add_proto(struct UVM *vm, UObject *o, UObject *p);   /* append; 0 ok, -1 OOM */
+int      uobj_add_proto(struct UVM *vm, UObject *o, UObject *p);   /* PREPEND; 0 ok, -1 OOM */
 int      uobj_remove_proto(struct UVM *vm, UObject *o, const UObject *p); /* 0 ok, -1 not found */
 int      uobj_set_protos(struct UVM *vm, UObject *o, UObject **ps, uint16_t n); /* copies ps[]; 0 ok, -1 OOM */
 /* Local slots */

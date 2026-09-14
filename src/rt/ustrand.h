@@ -15,6 +15,8 @@
 
 struct URealm; struct UTag;
 
+#define UCLOSURE_ANY_ARGS 255
+
 /* chunk/uproto.h already declares `typedef struct UClosure UClosure;`
  * (forward, opaque -- the old core completes it elsewhere); this completes
  * the same tag rather than re-typedef'ing the name, which pedantic C99
@@ -24,6 +26,13 @@ struct UClosure {
     UProto   *proto;             /* NULL for a native closure */
     UObject  *proto_obj;         /* Closure prototype object for method dispatch; may be NULL */
     int      (*native)(struct UVM *, UValue self, UValue *args, uint8_t nargs, UValue *out);
+    /* max_args == UCLOSURE_ANY_ARGS accepts any count at or above
+     * min_args; the boot table spells the same value UMETHOD_VARARGS. */
+    /* The name this closure was installed under, for diagnostics only.
+     * NULL when it has none (a script function literal).  Never freed and
+     * never traced: every writer stores either a boot-table string literal
+     * or an interned USym's bytes, both immortal. */
+    const char *name;
     uint8_t   min_args, max_args, nupvals;
     struct UUpval *upvals[1];    /* flexible array; nupvals entries */
 };

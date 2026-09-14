@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/rt/ustdlib_glue.h — the ONE header every src/stdlib file includes.
+/* src/rt/ustdlib_glue.h — the one RUNTIME header a src/stdlib file
+ * includes.  Each also includes its own stdlib/<file>.h to export its
+ * method table, and nothing else.
  *
  * The standard-library bodies are ordinary C functions with one shape:
  *

@@ -317,6 +317,9 @@ int urbi_register(UVM *vm, const char *path, urbi_native_fn fn,
     USTRAND_UNROOT(s, ownerv);
     uvm_spare_release(vm, s);
     if (!cl) return URBI_ERR_OOM;
+    /* The interned bytes, not the caller's `path`: a diagnostic must not
+     * point into a buffer the host is free to reuse. */
+    cl->name = name->bytes;
     return uobj_set_local(vm, owner, name, uv_ptr(UV_CELL, cl), 0) < 0 ? URBI_ERR_OOM : URBI_OK;
 }
 

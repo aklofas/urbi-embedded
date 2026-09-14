@@ -265,7 +265,11 @@ static const UMethodDef ustdlib_dict_methods[] = {
  *
  * READONLY keeps script-side `String.foo = 1` from mutating a prototype
  * every realm shares.  Object is deliberately NOT readonly — extending
- * Object is a documented urbiscript idiom. */
+ * Object is a documented urbiscript idiom.
+ *
+ * Exactly one UP_* slot has no row: UP_DEBUG.  The Debug namespace is
+ * REPL introspection and arrives with the REPL; nothing dispatches on it
+ * in the meantime, because it is not a value kind. */
 const UBuiltinDef uboot_table[] = {
     { "Object",  UP_OBJECT,  -1,         ustdlib_object_methods, USTDLIB_OBJECT_NMETHODS,    0 },
 
@@ -350,6 +354,7 @@ int uboot_install_methods(UVM *vm, UObject *proto, const UMethodDef *m, uint16_t
          * caller), so the allocation below cannot collect it. */
         UClosure *cl = uclosure_native(vm, m[i].fn, m[i].min_args, m[i].max_args);
         if (!cl) return URBI_ERR_OOM;
+        cl->name = m[i].name;   /* a string literal in the table: immortal */
         if (uobj_set_local(vm, proto, name, uv_ptr(UV_CELL, cl), 0) < 0) return URBI_ERR_OOM;
     }
     return URBI_OK;
@@ -444,12 +449,19 @@ int uboot_init(UVM *vm)
         if (rc != URBI_OK) return rc;
     }
 
-    /* Pass 4 — the shared root globals object every realm inherits. */
-    vm->root_globals = uobj_new(vm, vm->protos[UP_OBJECT]);
+    /* Pass 4 — the shared root globals object every realm inherits.
+     *
+     * Its prototype is the LOBBY, not Object: spec section 6 puts the
+     * Lobby in every realm's chain, and Lobby's own prototype is Object,
+     * so the chain reads globals -> root_globals -> Lobby -> Object and
+     * an unqualified `echo("hi")` resolves by inheritance rather than by
+     * a second binding.  Every other Lobby slot -- `lobbies`, `wall`,
+     * the LobbyMethods overlay -- arrives on the same path. */
+    vm->root_globals = uobj_new(vm, vm->protos[UP_LOBBY]);
     if (!vm->root_globals) return URBI_ERR_OOM;
     for (uint16_t i = 0; i < uboot_table_len; i++) {
         const UBuiltinDef *d = &uboot_table[i];
-        if (!d->global || (d->flags & UBOOT_F_NO_GLOBAL)) continue;
+        if (!d->global) continue;
         USym *name = usym_cstr(vm, d->global);
         if (!name) return URBI_ERR_OOM;
         if (uobj_set_local(vm, vm->root_globals, name,
@@ -465,16 +477,6 @@ int uboot_init(UVM *vm)
         if (uobj_set_local(vm, vm->root_globals, n, uv_nil(), USLOT_CONSTANT) < 0) return URBI_ERR_OOM;
         if (uobj_set_local(vm, vm->root_globals, v, uv_void(), USLOT_CONSTANT) < 0) return URBI_ERR_OOM;
     }
-    /* `echo("hi")` unqualified, from any realm: the same native the
-     * Lobby prototype carries, also bound as a global. */
-    {
-        USym *e = usym_cstr(vm, "echo");
-        UClosure *cl = uclosure_native(vm, lobby_echo, 1, 3);
-        if (!e || !cl) return URBI_ERR_OOM;
-        if (uobj_set_local(vm, vm->root_globals, e, uv_ptr(UV_CELL, cl), 0) < 0)
-            return URBI_ERR_OOM;
-    }
-
     /* Pass 5 — the constant and default SLOTS the table has no column
      * for.  Each is a one-function hook beside the methods it belongs
      * with. */

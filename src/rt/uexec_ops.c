@@ -208,9 +208,70 @@ static int compare_eq(UVM *vm, UStrand *s, UValue b, UValue c, bool *out)
 
 /* --- calls -------------------------------------------------------------- */
 
-static int arity_error(UVM *vm, UStrand *s)
+/* Decimal into buf at `at`, NUL-terminating.  src/rt has no <stdio.h>. */
+static size_t arity_put_u8(char *buf, size_t cap, size_t at, uint8_t n)
 {
-    return uexec_throw(vm, s, UP_ARITYERROR, "function call: wrong argument count");
+    char tmp[4];
+    size_t k = 0;
+    do { tmp[k++] = (char)('0' + (n % 10u)); n = (uint8_t)(n / 10u); } while (n);
+    while (k && at + 1 < cap) buf[at++] = tmp[--k];
+    buf[at] = '\0';
+    return at;
+}
+
+static size_t arity_put(char *buf, size_t cap, size_t at, const char *s)
+{
+    while (*s && at + 1 < cap) buf[at++] = *s++;
+    buf[at] = '\0';
+    return at;
+}
+
+/* "<name>: expected N..M arguments, got K", or the same without the name
+ * when the callee has none (a script function literal carries no name
+ * through the wire format).  A single accepted count prints as "N"
+ * rather than "N..N". */
+static int arity_error(UVM *vm, UStrand *s, const char *name,
+                       uint8_t lo, uint8_t hi, uint8_t got)
+{
+    char msg[128];
+    size_t at = 0;
+    if (name) {
+        at = arity_put(msg, sizeof msg, at, name);
+        at = arity_put(msg, sizeof msg, at, ": ");
+    }
+    at = arity_put(msg, sizeof msg, at, "expected ");
+    at = arity_put_u8(msg, sizeof msg, at, lo);
+    if (hi != lo) {
+        at = arity_put(msg, sizeof msg, at, hi == UCLOSURE_ANY_ARGS ? " or more" : "..");
+        if (hi != UCLOSURE_ANY_ARGS) at = arity_put_u8(msg, sizeof msg, at, hi);
+    }
+    at = arity_put(msg, sizeof msg, at, " argument");
+    if (lo != 1 || hi != 1) at = arity_put(msg, sizeof msg, at, "s");
+    at = arity_put(msg, sizeof msg, at, ", got ");
+    (void)arity_put_u8(msg, sizeof msg, at, got);
+    return uexec_throw(vm, s, UP_ARITYERROR, msg);
+}
+
+/* A bytecode closure with default parameters checks its own MINIMUM in
+ * an emitted prologue (uemit_stmt.c), so all the VM can say is that too
+ * many arrived; without defaults it owns both bounds. */
+static int arity_error_proto(UVM *vm, UStrand *s, const UClosure *cl, uint8_t got)
+{
+    const UProto *p = cl->proto;
+    char msg[128];
+    size_t at = 0;
+    if (cl->name) {
+        at = arity_put(msg, sizeof msg, at, cl->name);
+        at = arity_put(msg, sizeof msg, at, ": ");
+    }
+    /* With no parameters the relaxed and exact checks coincide, so the
+     * "at most" hedge would be noise. */
+    at = arity_put(msg, sizeof msg, at,
+                   (p->arity_prologue && p->nparams > 0) ? "expected at most " : "expected ");
+    at = arity_put_u8(msg, sizeof msg, at, p->nparams);
+    at = arity_put(msg, sizeof msg, at, p->nparams == 1 ? " argument, got " : " arguments, got ");
+    (void)arity_put_u8(msg, sizeof msg, at, got);
+    return uexec_throw(vm, s, UP_ARITYERROR, msg);
 }
 
 /* Executes one OP_CALL from frame index `fi`.  Either runs a native
@@ -233,7 +294,8 @@ static int do_call(UVM *vm, UStrand *s, uint16_t fi, uint32_t instr)
     UValue self_value = is_method ? s->stack[base + a + 1u] : uv_nil();
 
     if (callee->native) {
-        if (nargs < callee->min_args || nargs > callee->max_args) return arity_error(vm, s);
+        if (nargs < callee->min_args || nargs > callee->max_args)
+            return arity_error(vm, s, callee->name, callee->min_args, callee->max_args, nargs);
         UValue out = uv_nil();
         UValue self = self_value;
         USTRAND_ROOT(s, out); USTRAND_ROOT(s, self);
@@ -251,7 +313,8 @@ static int do_call(UVM *vm, UStrand *s, uint16_t fi, uint32_t instr)
     }
 
     UProto *p = callee->proto;
-    if (p->arity_prologue ? (nargs > p->nparams) : (nargs != p->nparams)) return arity_error(vm, s);
+    if (p->arity_prologue ? (nargs > p->nparams) : (nargs != p->nparams))
+        return arity_error_proto(vm, s, callee, nargs);
 
     uint32_t new_base = base + a + arg_off;
     UValue clv = callee_v;
@@ -448,13 +511,17 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
         }
 
         case OP_LOAD_REALM_GLOBAL: {
-            /* A strand with no realm is the boot strand that runs the
-             * stdlib blob: its globals ARE the VM's shared root object,
-             * which is exactly where the overlay's top-level `var`s
-             * belong. */
-            UObject *g = (s->realm && s->realm->globals) ? s->realm->globals : vm->root_globals;
+            UObject *g = (s->realm && s->realm->globals) ? s->realm->globals : NULL;
+            /* Exactly one strand legitimately has no realm: the one
+             * uboot_init runs the stdlib blob on, before any realm
+             * exists.  Its globals ARE the shared root object, which is
+             * where the overlay's top-level `var`s belong.  After boot a
+             * realm-less strand is a bug -- a freed realm still held by a
+             * strand, say -- and must not silently write into the object
+             * every realm inherits. */
+            if (g == NULL && !vm->stdlib_booted) g = vm->root_globals;
             if (g == NULL) {
-                (void)uexec_throw(vm, s, UP_TYPEERROR, "global access: no globals object");
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "global access: strand has no realm");
                 goto unwind;
             }
             R[OPA(i)] = uv_obj(g);
@@ -553,7 +620,8 @@ int uexec_call(UVM *vm, UStrand *s, UClosure *cl, UValue recv, const UValue *arg
     if (cl == NULL) return uexec_throw(vm, s, UP_TYPEERROR, "call: callee is not a closure");
 
     if (cl->native) {
-        if (argc < cl->min_args || argc > cl->max_args) return arity_error(vm, s);
+        if (argc < cl->min_args || argc > cl->max_args)
+            return arity_error(vm, s, cl->name, cl->min_args, cl->max_args, argc);
         UValue res = uv_nil(), self = recv;
         USTRAND_ROOT(s, res); USTRAND_ROOT(s, self);
         int rc = cl->native(vm, self, (UValue *)argv, argc, &res);
@@ -566,7 +634,8 @@ int uexec_call(UVM *vm, UStrand *s, UClosure *cl, UValue recv, const UValue *arg
     }
 
     UProto *p = cl->proto;
-    if (p->arity_prologue ? (argc > p->nparams) : (argc != p->nparams)) return arity_error(vm, s);
+    if (p->arity_prologue ? (argc > p->nparams) : (argc != p->nparams))
+        return arity_error_proto(vm, s, cl, argc);
 
     uint32_t base = 0;
     if (s->nframes > 0) {
