@@ -2,12 +2,17 @@
 # Covers: destroying a Realm cancels all periodics/watchers registered in
 #         that Realm; pending bodies do not fire after destruction.
 #
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: no driver verb frees a realm.  The action under test is
+#          urbi_realm_free, a C entry with no urbiscript surface; the host
+#          driver can create and select realms (`## host: realm <name>`)
+#          but has no verb for tearing one down.  Adding it is the whole
+#          activation.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 #
 # Status at v0.9.4: SKIPPED — no urbiscript surface for the action.
 #
@@ -17,15 +22,17 @@
 # REPL session against build/host/urbi and does not provide a C host-
 # driver hook to instantiate or destroy realms out-of-band.
 #
-# The realm-side cancel-on-periodic semantics ARE covered:
-#   - C-level coverage: tests/unit/test_temporal.c (urbi_periodic_destroy_for_realm
-#     marks every periodic owned by the realm with unregister_pending=1,
-#     and urbi_periodic_pump frees them on the next sweep).  The realm-destroy
-#     strand teardown was additionally covered by tests/unit/test_realm.c
-#     until the Phase 0 runtime-internals test cleanup; no C-level coverage
-#     of that half today.
-#   - The relevant source is src/stdlib/temporal.c::urbi_periodic_destroy_for_realm
-#     which urbi_realm_destroy calls before sweeping the realm's strands.
+# Where the two halves stand at the re-foundation:
+#   - the TIMER half is covered in C by
+#     tests/rt/test_sched.c::freeing_a_realm_drops_its_timers, which arms a
+#     periodic in a second realm, frees the realm, and asserts the heap is
+#     empty and the VM quiescent.
+#   - the WATCHER half has no C-level case today.  urealm_free calls
+#     uwatch_realm_dropped (src/rt/urealm.c), which disarms every watcher
+#     whose realm is the one going away; nothing asserts it.
+#
+# The C entry point is urbi_realm_free, not the urbi_realm_destroy this
+# header was written against -- that name went with the old core.
 #
 # To activate this fixture a host-driver tunable would have to be added to
 # the chk runner (parallels tests/chk/chunk_lifecycle/realm_isolation.chk —

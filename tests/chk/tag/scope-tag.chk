@@ -2,12 +2,19 @@
 # Covers: scopeTag builtin returns the implicit scope tag for the current
 #         function call; used with every() to auto-cancel a loop when
 #         function exits.
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: a function's scope tag is not stopped when the function
+#          returns.  Probed: `scopeTag` resolves bare-name AND call-style
+#          now -- the native-closure getter bridge this header used to
+#          name is no longer the blocker -- but
+#          `var t = scopeTag; t: every(20ms) echo("foobar")` goes on
+#          firing after the function has returned.  Auto-cancel at scope
+#          exit is the missing semantic.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: tag-scopetag
 #
 # Reason:

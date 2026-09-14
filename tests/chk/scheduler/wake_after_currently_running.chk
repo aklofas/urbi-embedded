@@ -5,12 +5,18 @@
 #         completes (row 12 §3.3 — sleep-queue drain runs at the end of each
 #         dispatch turn, after urbi_vm_dispatch_loop_until_yield returns).
 #
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: a chunk-top `,` group cannot share a declaration with its
+#          arms.  The fixture needs one accumulator visible to a sleeper
+#          and to a busy loop, which means `;` before `,` -- and the
+#          parser refuses to mix the two in one group.  The single-strand
+#          sleep path is covered by temporal/sleep_in_strand.chk and, in
+#          C, by tests/rt/test_sched.c::sleep_parks_until_its_deadline.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: scheduler-wake
 #
 # Reason: observing that a sleeping strand wakes while another strand is

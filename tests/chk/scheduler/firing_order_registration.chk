@@ -1,29 +1,24 @@
-# Milestone: M3
-# Covers: watchers registered in order A-then-B fire in registration order
-#         when both conditions become true simultaneously (row 12 §6 watcher
-#         eval determinism — active_watchers_head preserves insertion order).
+# Milestone: M3 (activated v0.14.0-refoundation)
+# Covers: two watchers whose conditions become true at the same moment
+#         fire in REGISTRATION order.  Both bodies append their own letter
+#         to one accumulator, so "AB" is the whole claim: a sum or a
+#         counter could not tell the two orders apart.
 #
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+#         Both conditions are `true`, so they hold at install and the
+#         first drain fires both -- which is the simultaneity the fixture
+#         wants, without a clock.
+#
+#         Previously a placeholder claiming the `at` body's fork path was
+#         unavailable through the runner.  It is available: watcher bodies
+#         are spawned as scheduled strands, and a drain runs after every
+#         slice, so by the time the installing chunk returns both have
+#         run.
 # matrix-row: scheduler-fifo
-#
-# Reason: verifying watcher firing order requires installing watchers via
-# `at (cond) body` syntax, which produces watcher body strands that run via
-# OP_FORK_DETACH (spawn_body_coroutine path).  The chk runner uses the REPL
-# (urbi_vm_run path) — fork opcodes return TypeError there.  Additionally, the
-# `at` keyword emit path requires the M5 reactive runtime wiring (condition
-# closures, install/uninstall, edge/level detection).  The watcher pool and
-# dirty-set infrastructure is wired at M3 but the full activation requires M5.
-#
-# When M5 reactive runtime + urbi_step chk driver land, implement this by:
-#   var log = ""
-#   at (true) { log = log + "A" | stop }
-#   at (true) { log = log + "B" | stop }
-#   -- step to quiescent --
-#   log
-#   --- expected output (registration FIFO ordering) ---
-#   [00000001] "AB"
+
+## mode: file
+
+var log = "";
+at (true) { log = log + "A" };
+at (true) { log = log + "B" };
+echo(log)
+[00000000] *** AB

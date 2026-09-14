@@ -2,12 +2,17 @@
 # Covers: two strands enqueued in FIFO order; scheduler dispatches them
 #         in order A-then-B; both run to completion.
 #
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: no way to enqueue two strands and observe the order without
+#          running them.  `Strand` is not a script-visible name and the
+#          host driver has no create-without-start verb.  The claim itself
+#          is covered: separator/yield_seq.chk from script, and
+#          tests/rt/test_sched.c::yield_round_robins_in_fifo_order in C.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: scheduler-fifo
 #
 # Reason: requires Strand.new urbiscript syntax to create multiple strands

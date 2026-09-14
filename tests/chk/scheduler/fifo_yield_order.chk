@@ -10,9 +10,11 @@
 #          freezing test-only host-observation hooks (an enqueue-without-drive
 #          primitive plus a per-strand yield-boundary emitter) into the v1.0
 #          embedding API — rejected on API-minimalism grounds; the final
-#          quiescent state is order-independent.  FIFO scheduling order was
-#          covered by tests/unit/test_sched_fifo.c and test_fork.c
-#          (fork_detach_basic_no_crash, fork_detach_quiescent_count_zero) until
-#          the Phase 0 runtime-internals test cleanup; no C-level coverage
-#          today.
+#          quiescent state is order-independent.  FIFO scheduling order IS
+#          covered in C, by
+#          tests/rt/test_sched.c::yield_round_robins_in_fifo_order, which
+#          detaches three strands that each append their own letter twice
+#          across a yield and asserts the interleaving is ABCABC; the fork
+#          half is separators_run_both_arms and join_waits_for_the_child
+#          in the same file.
 # matrix-row: scheduler-fifo

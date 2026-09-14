@@ -1,20 +1,36 @@
-# Milestone: M3
-# Covers: a strand whose per-strand safepoint_budget_remaining reaches 0
-#         yields back to the scheduler (soft yield) and is re-enqueued READY
-#         rather than killed; it resumes on the next scheduler turn.
+# Milestone: M3 (activated v0.14.0-refoundation)
+# Covers: a strand cut off by an exhausted step budget RESUMES where it
+#         stopped; it does not restart.  Three one-instruction steps each
+#         come back RUNNING, and the loop counter ends at exactly 3000 --
+#         a restart would overshoot, a lost resume would fall short.  That
+#         is the soft-yield-and-resume contract, observed across turns
+#         rather than inside one.
 #
-# blocked: per-strand soft-yield-and-resume is a scheduler internal, verified
-#          by C unit tests, not a chk target.  Surfacing the yield/resume
-#          boundary as two cross-turn observables in a golden-diff fixture
-#          would require freezing test-only host-observation hooks (an
-#          enqueue-without-drive primitive plus a mid-flight per-strand
-#          emitter) into the v1.0 embedding API — rejected on API-minimalism
-#          grounds.  The soft-yield-and-resume path was covered by
-#          tests/unit/test_dispatch_loop.c (per_strand_budget_zero_causes_soft_yield,
-#          zero_strand_budget_forces_mid_step_yield) until the Phase 0
-#          runtime-internals test cleanup; no C-level coverage today.  If
-#          runtime per-strand budget control is ever exposed, it belongs in
-#          the reserved v1.x
-#          scheduler-class abstraction (USchedClass / urbi_sched_strand_init attrs),
-#          not a one-off setter.  Disposition: covered-by-unit-tests; not a chk target.
+#         Sibling of budget_step_exhausted.chk, which pins the step RESULT
+#         and the strand's survival; this one pins the arithmetic that
+#         proves the strand is the same strand.
+#
+#         The `,` interleaving the original fixture wanted -- catching a
+#         second strand running in the gap -- is still out of reach from a
+#         golden-diff fixture, and still does not justify freezing a
+#         per-strand budget accessor into the API.
 # matrix-row: scheduler-budget
+
+## host: run var x = 0
+## host: run var ticks = 0
+## host: run at (x > 0) { var i = 0; while (i < 3000) { i = i + 1; ticks = ticks + 1 } }
+## host: set-global x 1
+## host: step 1
+## host: step 1
+## host: step 1
+## host: step 1000000
+## host: run ticks
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] set-global: ok
+[00000000] step: RUNNING
+[00000000] step: RUNNING
+[00000000] step: RUNNING
+[00000000] step: QUIESCENT
+[00000000] 3000

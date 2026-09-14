@@ -30,11 +30,14 @@
 #         fallback, not a stable surface (and brittle: an at-watcher fired
 #         inside such a scope currently aborts at teardown).  GC survival of
 #         the unnamed per-scope tag — the case where its SOLE reference is the
-#         cleanup-stack scope entry, collected under pressure — was pinned
-#         directly as a focused unit test in
-#         tests/unit/test_gc_rooting_matrix.c (matrix_cleanup_owning_tag_is_rooted)
-#         until the Phase 0 runtime-internals test cleanup; no C-level
-#         coverage today.
+#         cleanup-stack scope entry, collected under pressure — has no
+#         focused C-level case today; the rooting-matrix file it was pinned
+#         in went with the old core.  What stands adjacent is
+#         tests/rt/test_strand.c::c_root_macro_keeps_value_alive (the C-root
+#         mechanism the cleanup stack relies on) and
+#         tests/rt/test_watch.c::a_hundred_watchers_are_all_reclaimed (the
+#         teardown side).  The gap is the tag reachable ONLY from a
+#         cleanup-stack entry.
 # matrix-row: gc-pressure-tag-scope
 ## host: run var t = Tag.new()
 ## host: run Realm.cond = 0

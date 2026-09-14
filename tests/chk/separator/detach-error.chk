@@ -1,12 +1,17 @@
 # Milestone: v0.10.10-job-introspection
 # Covers: errors in detached code are displayed; parent block is stopped on
 #         error in sequential code; detach() call propagation semantics.
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: the script-side diagnostic no longer matches.  The core says
+#          `LookupError: slot access: slot 'f' not found`, not the legacy
+#          `input.u:@.1: lookup failed: f` this fixture expects.  The
+#          detached-throw REPORTING it is really about is covered by
+#          separator/detached_throw_is_reported.chk.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: separator-detach
 #
 # Reason:

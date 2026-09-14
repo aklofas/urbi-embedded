@@ -3,10 +3,14 @@
 #         iteration; the safepoint decrements safepoint_budget_remaining
 #         and the step budget, preventing infinite-loop starvation.
 #         Behavioral correctness: the loop completes and produces the
-#         expected result (5).  The budget-decrement itself is internal and
-#         not observable from pure urbiscript; that path was covered by
-#         tests/unit/test_step_driver.c until the Phase 0 runtime-internals
-#         test cleanup; no C-level coverage today.
+#         expected result (5).  The backward-branch decrement itself is
+#         internal and not observable from pure urbiscript.  Its EFFECT is
+#         covered in C by
+#         tests/rt/test_api.c::the_configured_step_budget_bounds_an_unbudgeted_step,
+#         which is a loop that outruns a one-instruction budget -- and a
+#         loop can only do that because its back-edge is what spends it.
+#         The decrement site is uexec_ops.c's sole budget decrement; no
+#         case reads the counter directly.
 
 var i = 0; while (i < 5) { i = i + 1 }; i
 [00000000] 5

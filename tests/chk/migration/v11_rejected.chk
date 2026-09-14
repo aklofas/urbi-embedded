@@ -1,25 +1,24 @@
 # Milestone: M3
 # Covers: loader rejects v1.1 (M2) bytecode modules at v1.2 runtime
 #
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: no way to feed a pre-baked binary chunk.  The runner has source
+#          text and the host driver has no verb for loading bytes, so the
+#          version byte under test cannot be presented to the loader at
+#          all.  The gap is a `## host: load-bytes <hex>` directive.
 # matrix-row: wire-format
 #
 # Reason: the chk runner (tests/integration/run_chk.sh) feeds .u source text
 # into the REPL.  There is no mechanism to inject a pre-baked binary blob and
-# call uchunk_deserialize directly.  The runtime behaviour being tested here
-# (UCHUNK_LOAD_UNSUPPORTED_VERSION for version byte 0x11) is already covered by the
-# C unit tests:
-#   - "deserialize rejects v1.1 module (M2 hard break)"  in tests/unit/test_module.c
-#   - "deserialize rejects v1.0 module"                  in tests/unit/test_module.c
+# call uchunk_deserialize directly.
 #
-# When T44 (M3 legacy chk corpus port) adds binary-blob injection support to
-# the runner, implement this fixture by:
-#   1. Emitting a minimal module at v1.1 format using the M2 emitter (or hand-
-#      crafting a 30-byte blob with version byte 0x11 at offset 4).
-#   2. Loading it via the T44-era --load-bytecode flag (or equivalent) and
-#      asserting the output contains "unsupported version byte 0x11".
+# NO C-LEVEL COVERAGE of an old-version rejection today.  The two unit
+# cases that used to pin it went with the old loader's test file.  What
+# stands is tests/rt/test_api.c::compile_then_load, which round-trips a
+# real chunk through urbi_compile / urbi_load and asserts that eight bytes
+# of garbage are refused -- that is the BAD_MAGIC arm, not the
+# UNSUPPORTED_VERSION one this fixture is about.
+#
+# To activate, the runner needs binary-blob injection:
+#   1. Hand-craft a blob with version byte 0x11 at offset 4.
+#   2. Load it through a host-driver directive and assert the diagnostic
+#      names the unsupported version.

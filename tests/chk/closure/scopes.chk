@@ -2,12 +2,19 @@
 # Covers: closure capture from definition scope, not call scope; 'var Object.f'
 #         slot assignment on a prototype; lookup of i inside f() resolves to
 #         outer global i, not inner block-local i.
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: the expected output interleaves a lookup diagnostic with value
+#          lines, and the text no longer matches.  The core says
+#          `LookupError: slot access: slot 'i' not found`, not the legacy
+#          `input.u:4.31: lookup failed: i` this fixture was written
+#          against.  Re-spelling the expectation is the activation; the
+#          language half (`var Object.f = ...`, capture from definition
+#          scope) works and is covered by closure/counter.chk.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: object-slot-install
 #
 # Reason:

@@ -1,12 +1,17 @@
 # Milestone: v0.10.10-job-introspection
 # Covers: connection tag is always present in Job.current.tags; tagged blocks
 #         add their tag to the ambient tag list visible via Job.current.tags.
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: `Job.current.tags` does not exist.  Probed: the slot raises
+#          `LookupError: slot access: slot 'tags' not found`, and the
+#          fixture reads the ambient tag list off it.  That a chunk runs
+#          under its realm's connection tag IS covered, in C, by
+#          tests/rt/test_sched.c::a_chunk_runs_under_the_connection_tag.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: scheduler-jobs
 #
 # Reason:

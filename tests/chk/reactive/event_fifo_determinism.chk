@@ -4,12 +4,12 @@
 #         maintain that order across all M firings.  Run under all 3 tunable
 #         presets × 100 runs each to assert byte-identical output.
 #
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: no multi-preset runner mode.  The language half is live --
+#          Event.new(), `at (e?)`, `e!(1)` and the registration-order walk
+#          are covered by reactive/event/event_multi_sub_fifo.chk.  What is
+#          missing is the RUNNER feature this fixture exists for: running
+#          one source under every tunable preset, many times, and asserting
+#          byte-identical output.  There is no directive to write.
 # matrix-row: reactive-event
 #
 # Reason:

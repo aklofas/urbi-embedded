@@ -4,9 +4,16 @@
 #         must remain callable in subsequent REPL sessions after its originating
 #         UModule is destroyed.
 #
-# Because the .chk runner drives everything in a single urbi process/session,
-# the pure cross-session scenario (separate urbi_repl_eval calls) is covered
-# by tests/unit/test_emit_closure_capture.c instead.
+# Because the .chk runner drives everything in a single urbi process, the
+# pure cross-chunk scenario -- a closure built by one urbi_run call and
+# called by the next -- has no C-level case of its own today; the file
+# that used to hold it went with the old core.  The nearest standing
+# coverage is tests/rt/test_exec.c::upvalue_outlives_defining_frame, which
+# pins the capture itself but within one chunk.
+#
+# UModule no longer exists either: a closure keeps its chunk alive through
+# its root proto's back-pointer, so "after its originating module is
+# destroyed" is now "after nothing else refers to the chunk".
 #
 # This fixture validates single-session nested closure construction so that any
 # bytecode-level regression in the OP_CLOSURE origin_nested path is caught

@@ -1,12 +1,16 @@
 # Milestone: M3
 # Covers: tag.stop(42) injects a return value into all sleeping strands under
 #         that tag; echo of the stopped block shows the injected value.
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: stop() takes no value.  Probed: `t.stop(42)` raises
+#          `ArityError: stop: expected 0 arguments, got 1`, so the injected
+#          return value this fixture is entirely about cannot be produced.
+#          Plain tag.stop() works and is covered by temporal/sleep_tag_stop.chk.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: tag-stop
 #
 # Reason:

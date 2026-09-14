@@ -5,12 +5,18 @@
 #         other strands can run, then resumes at the next instruction on the
 #         next dispatch turn (row 12 §3.2 budget-exhaustion safepoint).
 #
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: a `|` chain is not a statement sequence the parser accepts
+#          inside a body.  Probed: `{ 1 | 2 | 3 }` is a parse error, so
+#          the long chain this fixture is named for cannot be written.
+#          The budget-exhaustion claim underneath it is now covered
+#          without a chain, by scheduler/budget_step_exhausted.chk and
+#          budget_soft_yield.chk, both activated at the re-foundation.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: scheduler-pipe
 #
 # Reason: the chk runner executes under urbi_vm_run which drives the entire REPL

@@ -1,23 +1,19 @@
-# Milestone: M3
-# Covers: loop body with break/continue is desugared only once; '&' inside a
-#         while loop fires both echo calls before breaking.
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# Milestone: M3 (activated v0.14.0-refoundation)
+# Covers: a loop body containing `&` is desugared once, not once per
+#         iteration.  Both arms of the join fire, and `break` leaves after
+#         a single pass -- so exactly two lines come out.  A body
+#         re-desugared on each visit would either fork again or fail to
+#         fork at all.
+#
+#         Ported from legacy/repos/aldebaran-urbi/tests/2.x/multiple-visit.chk.
+#         Previously a placeholder claiming `&` needed a step driver; it
+#         does not.  The join runs on the loader strand like any other
+#         chunk-top fork, and `## mode: file` is what gives the whole
+#         program one pump instead of one per line.
 # matrix-row: separator-and
-#
-# Reason:
-#   The fixture uses '&' inside while/for loop bodies to verify that the AST is
-#   not incorrectly re-desugared on each iteration.  '&' requires the M5 chk
-#   driver (realm-managed scheduler path).  The cooperative scheduler's loop
-#   body handling with break/continue is separately verified at the unit-test
-#   level in M3.
-#
-# Original urbiscript (activate at M5 with urbi_step chk driver):
-# # while(true) { echo(1) & echo(1); break };
-# # [00000001] *** 1
-# # [00000002] *** 1
-# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/multiple-visit.chk)
+
+## mode: file
+
+while(true) { echo(1) & echo(1); break }
+[00000000] *** 1
+[00000000] *** 1

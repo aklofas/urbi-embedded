@@ -1,12 +1,18 @@
 # Milestone: M3
 # Covers: tag.freeze() suspends all strands under that tag; the strand stays
 #         frozen until t2.stop() terminates the outer scope.
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: a chunk-top `,` group cannot share a declaration with its
+#          arms.  t.freeze() / t.unfreeze() work from script (probed), but
+#          the fixture needs the frozen strand and its observer in one
+#          program, which means `;` before `,` -- and the parser refuses
+#          to mix the two in one group.  Freeze semantics are covered in C
+#          by tests/rt/test_sched.c::block_and_freeze_are_independent.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: tag-freeze
 #
 # Reason:

@@ -4,12 +4,16 @@
 #         (deferred ring); the deferred entry is dispatched at the next
 #         safepoint before urbi_vm_watcher_eval_dirty, producing deterministic output.
 #
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: no multi-preset runner mode.  The prerequisites this header
+#          used to list -- top-level `var`, Object.new(), `at sync`, and
+#          slot-change subscription -- all work now.  What is missing is
+#          the repetition and preset sweep the determinism claim needs.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: reactive-slot-change
 #
 # Reason:

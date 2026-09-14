@@ -5,24 +5,24 @@
 # blocked: no finalizer->host-fn bridge for a script-creatable type
 # matrix-row: gc-finalizer
 #
-# The `## host: expect-host-call <n>` directive now exists (v0.11.4-cat-f) and
-# its generic host-callback-observation path is exercised by
+# The `## host: expect-host-call <n>` directive exists and its generic
+# host-callback-observation path is exercised by
 # tests/chk/gc/expect_host_call.chk.  This fixture stays blocked on the OTHER
-# prerequisite: there is no public type-registration API and no FileHandle
-# binding.  Concretely:
-#   - The GC finalizer hook (src/gc/ugc_incremental.c ~476/590) only calls
-#     `t->destroy` off the cell's UType entry — a per-TYPE destructor, not a
-#     host-fn a fixture can register and count.  Its own comment notes "no
-#     concrete cell types exist, so this path is unreachable in practice".
-#   - include/urbi/ exposes no urbi_register_type / UType registration symbol,
-#     so a fixture cannot create a finalizable type (the FileHandle example)
-#     nor route its destroy through a counting host fn.
+# prerequisite: there is no way for a host to register a finalizable type.
+#   - The collector's finalize hook is uvm_gc_finalize (src/rt/uexec.c),
+#     which switches on UCellType and frees the non-cell memory each
+#     built-in kind owns.  It is per-KIND and internal -- there is no slot
+#     in it for a host callback, and no host cell kind to attach one to.
+#   - <urbi/urbi.h> exposes no type-registration entry point, so a fixture
+#     cannot create the FileHandle of the original scenario nor route its
+#     destroy through a counting host fn.
 #
-# The equivalent finalizer path is unit-tested via
-# tests/unit/test_ugc_finalizer.c using the internal UType + urbi_gc_alloc
-# APIs directly (no chk runner, no public type-registration API needed).
+# No C-level coverage of a HOST finalizer, because there is nothing to
+# cover.  The internal hook itself is exercised on every collection and
+# asserted indirectly by tests/rt/test_leaks.c, which requires the
+# allocator's live count back at zero after each suite.
 #
 # Activating this fixture needs a public finalizable-type registration API
-# (urbi_register_type with a host destroy callback) — out of scope for the
-# test-harness-only T39 work.  The generic expect-host-call mechanism is
-# proven separately in expect_host_call.chk.
+# with a host destroy callback -- a v1.x API question, not a test-harness
+# one.  The generic expect-host-call mechanism is proven separately in
+# expect_host_call.chk.

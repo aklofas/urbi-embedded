@@ -1,12 +1,17 @@
 # Milestone: M3
 # Covers: tag.block() called inside a tagged scope; block propagates from
 #         the scope tag to the outer join ('&'); no deadlock.
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: a chunk-top `,` group cannot share a declaration with its
+#          arms, so the tag cannot be both created and named by a sibling
+#          strand in one program.  tag.block() itself works (probed) and
+#          the gate semantics are covered in C by
+#          tests/rt/test_sched.c::block_and_freeze_are_independent.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: tag-block
 #
 # Reason:

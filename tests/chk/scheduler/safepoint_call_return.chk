@@ -8,9 +8,12 @@
 #          around an OP_CALL/OP_RET safepoint would need a public
 #          safepoint_budget_remaining read accessor frozen into the v1.0 API
 #          solely to drive a golden-diff fixture — rejected on API-minimalism
-#          grounds.  Function-call frame push/pop correctness was covered
-#          by tests/unit/test_dispatch_loop.c::dispatch_nested_call_and_ret,
-#          which exercised the C urbi_vm_dispatch_loop_until_yield interface
-#          directly, until the Phase 0 runtime-internals test cleanup; no
-#          C-level coverage today.
+#          grounds.  Function-call frame push/pop correctness IS covered in
+#          C, by tests/rt/test_strand.c (push_frame_grows_stack_for_max_reg,
+#          nested_frames_grow_stack_and_preserve_upvals,
+#          pop_frame_closes_its_upvals) and end to end by
+#          tests/rt/test_exec.c::deep_recursion_and_reclaim at 10000
+#          frames.  There is no C-level coverage of the BUDGET accounting
+#          around a call, which is the half this fixture was about -- and
+#          there is nothing to cover: only backward jumps spend budget.
 # matrix-row: scheduler-safepoint

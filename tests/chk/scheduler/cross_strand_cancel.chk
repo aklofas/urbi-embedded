@@ -3,12 +3,20 @@
 #         is currently in WAITING state or mid-execution; the cancelled strand
 #         does not produce further output.
 #
-# blocked: needs a `## host:` body.  The host driver has existed since
-# the core re-foundation (tests/integration/chk_host_driver.c) -- what is
-# missing is this fixture, rewritten to drive its own clock and its own
-# urbi_step calls.  That is per-fixture authoring work, scheduled with the
-# rest of the corpus in Phase 5.  The annotation it replaced said the
-# driver did not exist, which stopped being true at Task 12.
+# blocked: a chunk-top `,` group cannot share a declaration with its arms.
+#          The fixture needs `var t = Tag.new()` visible to both the
+#          tagged sleeper and the stopper, which means `;` before `,` --
+#          and the parser refuses to mix the two in one group ("mixing ';'
+#          and ',' in same group is ambiguous").  Probed: writing it all
+#          with `,` makes every arm fail on `slot 't' not found`.
+#          Cross-strand cancellation ITSELF works and is covered in C by
+#          tests/rt/test_sched.c::stop_from_a_sibling_runs_the_finally.
+#
+# Everything below this line predates the re-foundation: it names
+# tasks and entry points that no longer exist, and its account of
+# what stands in the way has been superseded by the `blocked:` line
+# above, which was probed against this branch.  Kept for the
+# original urbiscript it carries.
 # matrix-row: scheduler-strand
 #
 # Reason: cross-strand tag cancellation requires urbi_tag_stop's cross-strand

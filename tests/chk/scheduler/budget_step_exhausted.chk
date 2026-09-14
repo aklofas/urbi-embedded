@@ -1,16 +1,34 @@
-# Milestone: M3
-# Covers: when the VM-wide step_budget_remaining reaches 0, dispatch_loop
-#         exits with the strand still in RUNNING state; urbi_step returns
-#         URBI_STEP_RUNNING and the host is expected to call urbi_step again.
+# Milestone: M3 (activated v0.14.0-refoundation)
+# Covers: a urbi_step whose budget runs out mid-strand comes back RUNNING
+#         with that strand still on the run queue, rather than running the
+#         program out regardless of what the host asked for.
 #
-# blocked: scheduler mid-flight observation is unit-test territory, not a
-#          chk-runner gap.  Catching a strand in the budget-exhausted RUNNING
-#          state from a golden-diff fixture would require freezing test-only
-#          host-observation hooks (an enqueue-without-drive primitive) into the
-#          v1.0 embedding API purely so a .chk file can watch scheduler
-#          internals — rejected on API-minimalism grounds.  The step-budget
-#          exhaustion path was covered by C unit tests with internal access
-#          (tests/unit/test_pipe_budget_exhaust.c, test_dispatch_loop.c) until
-#          the Phase 0 runtime-internals test cleanup; no C-level coverage
-#          today.
+#         Previously a placeholder claiming this needed "test-only
+#         host-observation hooks frozen into the v1.0 embedding API".  It
+#         does not: `## host: step <budget>` prints the URBI_STEP_* result
+#         and `## host: live-work` answers urbi_has_live_work, both already
+#         public.  What the fixture did need was work that ARRIVES BETWEEN
+#         two steps -- a chunk run through `## host: run` is pumped to
+#         completion by urbi_run before any step is taken, so the budget
+#         never sees it.  A watcher armed on a slot the host then writes is
+#         that work: the drain at the top of the next step spawns the body.
 # matrix-row: scheduler-budget
+
+## host: run var x = 0
+## host: run var done = 0
+## host: run at (x > 0) { var i = 0; while (i < 20000) { i = i + 1 }; done = 1 }
+## host: set-global x 1
+## host: step 1
+## host: run done
+## host: live-work
+## host: step 1000000
+## host: run done
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] set-global: ok
+[00000000] step: RUNNING
+[00000000] 0
+[00000000] live-work: true
+[00000000] step: QUIESCENT
+[00000000] 1
