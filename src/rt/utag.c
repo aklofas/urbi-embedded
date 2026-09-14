@@ -149,11 +149,13 @@ void utag_gate(UVM *vm, UTag *t, uint8_t bit, bool on)
             if (s->state == USTRAND_DEAD || !utag_covers(s, t)) continue;
             if (on) {
                 s->gates = (uint8_t)(s->gates | bit);
+                /* Through the primitives, not by writing the state here:
+                 * park is the one way a strand leaves the run queue.  A
+                 * queued strand is never a spare and never inside a call
+                 * boundary, so the park cannot be refused. */
                 if (s->state == USTRAND_READY) {
                     usched_unqueue(s);
-                    s->state = USTRAND_PARKED;
-                    s->waiting_on = NULL;
-                    s->wake_us = 0;
+                    (void)usched_park(s, NULL, 0);
                 } else if (s == sc->current) {
                     (void)usched_park(s, NULL, 0);
                 }

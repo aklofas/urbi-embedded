@@ -831,6 +831,19 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             }
             s->tag = t;
             utag_fire(vm, t->enter);
+            /* Newcomers are gated.  Entering the scope of a blocked or
+             * frozen tag takes that tag's bits and parks here, so a
+             * strand cannot slip into a stopped-short scope and run;
+             * unblocking releases it with every other member.  A strand
+             * that may not park (a spare, or one inside a call boundary)
+             * keeps the bit and is stopped at its next enqueue. */
+            {
+                uint8_t g = utag_gate_bits(t);
+                if (g != 0) {
+                    s->gates = (uint8_t)(s->gates | g);
+                    if (usched_park(s, NULL, 0) == 0) return s->state;
+                }
+            }
             break;
         }
 
@@ -973,7 +986,13 @@ int uexec_run_chunk(UVM *vm, URealm *realm, UClosure *cl, UValue *out)
     /* Held across the pump: the step that sees the strand die unlinks it
      * from its realm, and then nothing else keeps the cell addressable. */
     s->cell.flags |= UCELL_F_PINNED;
+    /* Saved and restored rather than assigned, so a native that calls
+     * back in through urbi_run leaves the outer chunk's claim in place. */
+    USched *sc = uvm_sched(vm);
+    UStrand *prev_awaited = sc->awaited;
+    sc->awaited = s;
     while (usched_step(vm, 0, NULL) == USTEP_RAN) { }
+    sc->awaited = prev_awaited;
     bool died = (s->state == USTRAND_DEAD);
     bool threw = died && s->unwind == (uint8_t)UUNWIND_THROW;
     UValue res = died ? s->result : uv_nil();

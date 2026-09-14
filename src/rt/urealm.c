@@ -52,6 +52,11 @@ void urealm_free(UVM *vm, URealm *r)
      * by walking vm->realms, so a realm already off that list would leave
      * its strands marked by nobody. */
     if (r->root_tag) utag_stop(vm, r->root_tag);
+    /* And every timer the realm owns.  Stopping the connection tag drops
+     * only connection-tag periodics; one armed under a user tag in this
+     * realm would go on spawning bodies into a realm with no globals,
+     * and would keep urbi_has_live_work true for the life of the VM. */
+    usched_timers_drop_realm(vm, r);
     for (URealm **pp = &vm->realms; *pp; pp = &(*pp)->next) {
         if (*pp == r) { *pp = r->next; r->next = NULL; break; }
     }

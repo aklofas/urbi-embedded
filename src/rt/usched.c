@@ -15,6 +15,28 @@ void usched_enqueue(UStrand *s)
 {
     if (s == NULL || s->state == USTRAND_DEAD) return;
     USched *sc = uvm_sched(s->vm);
+    /* Already queued?  The tail's link is NULL and every earlier entry's
+     * points at its successor, and every path that takes a strand off a
+     * queue or a wait list clears `link` -- so a strand that is NOT
+     * queued always arrives here with it NULL.  O(1), no second copy of
+     * the membership fact to keep in step. */
+    if (s == sc->run_tail || s->link != NULL) return;
+    /* Held by a gate.  utag_gate cannot reach a strand that is RUNNING
+     * but not the DISPATCHING one -- the parent of a join whose child ran
+     * inline -- so such a strand keeps its gate bit and comes back READY,
+     * and this is the last place that can stop it running while blocked.
+     * It parks instead; the gate's release is what enqueues it.  One that
+     * is already PARKED is left exactly as it is, because it may be on a
+     * wait list or a timer that this call knows nothing about. */
+    if (s->gates != 0) {
+        if (s->state != USTRAND_PARKED) {
+            s->state = USTRAND_PARKED;
+            s->waiting_on = NULL;
+            s->wake_us = 0;
+            s->link = NULL;
+        }
+        return;
+    }
     s->state = USTRAND_READY;
     s->waiting_on = NULL;
     s->wake_us = 0;
@@ -120,14 +142,41 @@ bool usched_has_timer(UVM *vm, const UStrand *s)
     return heap_find_sleeper(uvm_sched(vm), s) >= 0;
 }
 
+/* Finish a bulk removal: heap[0 .. w) are the keepers, in whatever order
+ * the scan left them, so rebuild the heap property bottom-up.
+ *
+ * A scan that called heap_remove_at per victim would MISS records.  That
+ * routine fills the hole with the array's LAST entry and sifts it, and a
+ * sift UP carries it above the scan position -- to an index the scan has
+ * already read -- so a victim that lands there survives.  It is not a
+ * rare interleaving: three periodics under one tag among seven arm
+ * orders is enough. */
+static void usched_heap_rebuild(USched *sc, uint32_t w)
+{
+    if (w == sc->heap_len) return;
+    sc->heap_len = w;
+    for (uint32_t i = w / 2; i > 0; i--) heap_down(sc, i - 1);
+}
+
 void usched_timers_drop_tag(UVM *vm, const UTag *tag)
 {
     USched *sc = uvm_sched(vm);
     if (tag == NULL) return;
-    for (uint32_t i = 0; i < sc->heap_len; ) {
-        if (sc->heap[i].period_us != 0 && sc->heap[i].tag == tag) heap_remove_at(sc, i);
-        else i++;
-    }
+    uint32_t w = 0;
+    for (uint32_t i = 0; i < sc->heap_len; i++)
+        if (!(sc->heap[i].period_us != 0 && sc->heap[i].tag == tag))
+            sc->heap[w++] = sc->heap[i];
+    usched_heap_rebuild(sc, w);
+}
+
+void usched_timers_drop_realm(UVM *vm, const URealm *realm)
+{
+    USched *sc = uvm_sched(vm);
+    if (realm == NULL) return;
+    uint32_t w = 0;
+    for (uint32_t i = 0; i < sc->heap_len; i++)
+        if (sc->heap[i].realm != realm) sc->heap[w++] = sc->heap[i];
+    usched_heap_rebuild(sc, w);
 }
 
 /* --- the clock ---------------------------------------------------------- */
@@ -192,6 +241,18 @@ void usched_wake(UStrand *s, UValue payload)
 
 /* --- spawning ------------------------------------------------------------ */
 
+/* Undo the realm linkage for a child whose stack or frame allocation
+ * failed.  Left on the list it would be a permanent zombie with no
+ * frames, and stopping its tag later would enqueue something dispatch
+ * cannot run. */
+static UStrand *usched_spawn_failed(URealm *realm, const UStrand *c)
+{
+    for (UStrand **pp = &realm->strands; *pp; pp = &(*pp)->next_in_realm) {
+        if (*pp == c) { *pp = c->next_in_realm; break; }
+    }
+    return NULL;
+}
+
 UStrand *usched_spawn(UVM *vm, URealm *realm, UClosure *cl, UTag *tag,
                       UValue recv, const UValue *argv, uint8_t argc)
 {
@@ -207,11 +268,18 @@ UStrand *usched_spawn(UVM *vm, URealm *realm, UClosure *cl, UTag *tag,
     realm->strands = c;
     c->tag = tag;
 
-    if (ustrand_ensure_stack(c, (uint32_t)argc + (uint32_t)p->max_reg + 1u) != 0) return NULL;
+    if (ustrand_ensure_stack(c, (uint32_t)argc + (uint32_t)p->max_reg + 1u) != 0)
+        return usched_spawn_failed(realm, c);
     for (uint8_t k = 0; k < argc; k++) c->stack[k] = argv[k];
-    if (ustrand_push_frame_args(c, cl, recv, 0, 0, argc) != 0) return NULL;
+    if (ustrand_push_frame_args(c, cl, recv, 0, 0, argc) != 0)
+        return usched_spawn_failed(realm, c);
     if (p->arity_prologue && p->nparams > 0) c->stack[p->nparams] = uv_int((int64_t)argc);
 
+    /* Newcomers are gated.  A strand entering the scope of a blocked or
+     * frozen tag takes that tag's bits, so it parks on its first
+     * safepoint instead of running, and the gate's release frees it with
+     * every other member.  usched_enqueue is what applies that, above. */
+    c->gates = utag_gate_bits(tag);
     usched_enqueue(c);
     return c;
 }
@@ -223,11 +291,19 @@ static void usched_on_death(UVM *vm, UStrand *s)
     USched *sc = uvm_sched(vm);
     s->state = USTRAND_DEAD;
     /* Spec section 9: what escapes the top frame kills the strand and is
-     * REPORTED.  The walker has already rendered it into vm->last_error;
-     * a detached strand has no caller to return a code to, so the diag
-     * hook is the only place the failure can surface. */
-    if (s->unwind == (uint8_t)UUNWIND_THROW && vm->diag && vm->last_error[0])
-        vm->diag(vm, vm->diag_ud, 3 /* syslog LOG_ERR */, vm->last_error, strlen(vm->last_error));
+     * reported through the diag callback AND urbi_last_error.  The walker
+     * has already rendered it into vm->last_error; `threw` is what keeps
+     * the clean-run clear from wiping it before the host can read it (see
+     * uexec_finish_run), and the diag hook is what a DETACHED strand --
+     * one with no caller to return a code to -- surfaces through.  The
+     * awaited strand is excluded from both: its caller is about to be
+     * handed the same failure as a return value, and reporting it twice
+     * is how the same throw ends up printed twice. */
+    if (s->unwind == (uint8_t)UUNWIND_THROW && vm->last_error[0] && s != sc->awaited) {
+        sc->threw = 1;
+        if (vm->diag)
+            vm->diag(vm, vm->diag_ud, 3 /* syslog LOG_ERR */, vm->last_error, strlen(vm->last_error));
+    }
     /* Joiners first: usched_wake needs them still threaded on s->joiners. */
     while (s->joiners) {
         UStrand *j = s->joiners;
@@ -331,6 +407,14 @@ USchedStep usched_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
 {
     USched *sc = uvm_sched(vm);
     if (vm->clock_us == NULL) sc->fallback_now_us++;
+    /* A strand that died throwing during the PREVIOUS step left its
+     * message in the error channel for the host to read.  This is where
+     * it goes, so the channel describes this step and not an older one. */
+    if (sc->threw) {
+        vm->last_error[0] = '\0';
+        vm->last_error_code = URBI_OK;
+        sc->threw = 0;
+    }
 
     usched_reap(vm);
     usched_drain_isr(vm);

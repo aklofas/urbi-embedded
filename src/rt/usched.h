@@ -106,6 +106,18 @@ typedef struct USched {
     UIsrRec  isr[USCHED_ISR_SLOTS];
     uint32_t isr_head, isr_tail;
 
+    /* The strand a caller is waiting on for the length of a pump.  Its
+     * death IS the caller's return code, so it is the one strand whose
+     * uncaught throw does not also go to the diag hook -- that channel
+     * exists for strands nobody is waiting on. */
+    struct UStrand *awaited;
+
+    /* A strand nobody awaited died on an uncaught throw during this step.
+     * It keeps the clean-run clear in uexec_finish_run from wiping the
+     * message before the host reads it, and the next usched_step clears
+     * both. */
+    uint8_t  threw;
+
     /* Monotonic fallback for a VM with no clock hook installed: one
      * microsecond per usched_step.  Timers still fire, just slowly; a
      * host that cares installs urbi_set_clock. */
@@ -123,8 +135,10 @@ USched *uvm_sched(struct UVM *vm);
 
 /* --- queue and park/wake ---------------------------------------------- */
 
-/* Put a READY strand at the tail of the run queue.  A strand already on
- * the queue, DEAD, or held by a gate is left alone. */
+/* Put a strand at the tail of the run queue.  A strand that is already
+ * queued, or DEAD, is left alone; one held by a gate parks instead, so
+ * this is also the last line of defence against a blocked strand being
+ * scheduled. */
 void usched_enqueue(UStrand *s);
 
 /* Take a READY strand back off the run queue without changing its state
@@ -136,6 +150,14 @@ void usched_unqueue(UStrand *s);
  *   waitlist  — address of an intrusive `UStrand *` head (an event's
  *               `waiters`, a strand's `joiners`), or NULL.
  *   wake_us   — absolute deadline for a timed park, or 0 for none.
+ *
+ * WHAT KEEPS THE WAITED-ON OBJECT ALIVE.  Nothing here does: `waiting_on`
+ * is a raw pointer into a cell's interior and the trace edge runs the
+ * other way (an event marks its waiters, not the reverse).  The rule in
+ * force is that the caller must hold the object somewhere ustrand_trace
+ * reaches -- in practice a native's argument register, which is inside
+ * the parked strand's marked register window.  Anything parked on an
+ * object held only by a C local is a dangling wait.
  *
  * NULL waitlist with wake_us == 0 is a gate park: the strand waits for
  * utag_block/freeze to be cleared.  Returns 0 when the strand parked and
@@ -156,8 +178,10 @@ bool usched_may_deschedule(const UStrand *s);
 /* Take a strand off whatever it is waiting on and make it READY — unless
  * a gate bit still holds it, in which case it stays PARKED with nothing
  * to wait for and the gate's release enqueues it.  A non-nil payload is
- * delivered through s->transfer when no unwind is pending.  Safe on a
- * DEAD or already-running strand (no-op). */
+ * delivered through s->transfer when no unwind is pending; NOTHING READS
+ * IT BACK yet, so the reactive task choosing where a woken watcher picks
+ * its value up is designing that seam, not inheriting it.  Safe on a DEAD
+ * or already-running strand (no-op). */
 void usched_wake(UStrand *s, UValue payload);
 
 /* The one spawn path: allocate a strand in `realm`, give it `tag` as its
@@ -177,6 +201,11 @@ bool     usched_has_timer(struct UVM *vm, const UStrand *s);
  * sleeping member is stopped through its own unwind, not by deleting its
  * wake-up. */
 void     usched_timers_drop_tag(struct UVM *vm, const UTag *tag);
+/* Drops every record belonging to `realm`, sleepers included.  Realm
+ * teardown needs this: stopping the connection tag only reaches
+ * connection-tag periodics, and one armed under a USER tag in that realm
+ * would keep firing bodies into a realm that no longer has globals. */
+void     usched_timers_drop_realm(struct UVM *vm, const struct URealm *realm);
 
 /* --- stepping ---------------------------------------------------------- */
 
@@ -222,6 +251,11 @@ bool    utag_covers(const UStrand *s, const UTag *t);
  * return UEXEC_THROW so the dispatch loop unwinds), 0 otherwise. */
 int     utag_stop(struct UVM *vm, UTag *t);
 void    utag_gate(struct UVM *vm, UTag *t, uint8_t bit, bool on);
+/* The strand gate bits a newcomer to `t`'s scope inherits.  UTAG_F_* and
+ * USTRAND_GATE_* share their values, but the two live in different
+ * headers and this is the one place that relies on it. */
+static inline uint8_t utag_gate_bits(const UTag *t)
+{ return t ? (uint8_t)(t->flags & (UTAG_F_BLOCKED | UTAG_F_FROZEN)) : 0u; }
 /* The tag's enter / leave event, allocated on first ask.  NULL on OOM. */
 UEvent *utag_enter_event(struct UVM *vm, UTag *t);
 UEvent *utag_leave_event(struct UVM *vm, UTag *t);

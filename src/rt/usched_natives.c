@@ -289,14 +289,18 @@ static int sleep_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValu
         return urbi_raise_type(vm, "sleep: duration must be an Integer (microseconds) or a Float (seconds)", out);
     *out = uv_nil();
     UStrand *s = uvm_current_strand(vm);
-    if (!s) return UEXEC_OK;
+    if (!s || !usched_may_deschedule(s)) return UEXEC_OK;
+    /* Arm first, park second.  The other order has to undo the park when
+     * the heap cannot grow, and re-enqueueing a strand that is about to
+     * throw splices the run queue into the dead list. */
     uint64_t due = usched_now(vm) + us;
-    if (usched_park(s, NULL, due) != 0) return UEXEC_OK;
     UTimer t;
     memset(&t, 0, sizeof t);
     t.due_us = due;
     t.strand = s;
-    if (usched_timer_add(vm, t) != 0) { usched_enqueue(s); return urbi_raise_oom(vm, out); }
+    t.realm = s->realm;   /* so realm teardown can drop it */
+    if (usched_timer_add(vm, t) != 0) return urbi_raise_oom(vm, out);
+    (void)usched_park(s, NULL, due);   /* checked above; cannot be refused */
     return UEXEC_OK;
 }
 
