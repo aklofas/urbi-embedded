@@ -1,12 +1,8 @@
-# v0.10.11 D5 update — Object proto unfrozen; mutation now succeeds.
-#
-# Pre-D5 (v0.9.1 Phase 8 Task 32): Object.foo = 5 raised TypeError
-# ("cannot mutate frozen prototype").  D5 (Cat. E re-audit at v0.10.11)
-# removes Object from the readonly cohort so the canonical
-# `var Object.x = ...` / `Object.x = ...` idiom works.
-#
-# This fixture pins the new behaviour: the eval succeeds and the value
-# round-trips.  Lobby stays frozen (set Lobby.x raises TypeError).
+# Object is NOT read-only: extending it is a documented urbiscript
+# idiom, so `Object.foo = 5` succeeds and the value round-trips.  The
+# companion claim — that Lobby is read-only — is lobby_readonly.chk.
+
+## mode: repl
 
 > {"id":11,"op":"eval","code":"Object.foo = 5; Object.foo"}
 < "id":11 | "kind":"result" | "value":"5"

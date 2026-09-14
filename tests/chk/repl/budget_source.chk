@@ -1,10 +1,10 @@
-# v0.9.1 Phase 8 Task 32 — compile-budget source-bytes limit.
+# max_source_bytes is checked before the lexer runs, so oversized source
+# is refused without being read at all — the cheapest of the three
+# limits and the first to fire.
 #
-# Spec §3.4: max_source_bytes caps incoming source size before parsing.
-# Triggers URBI_ERR_COMPILE_BUDGET_SOURCE, surfaced as
-# "code":"budget_source" in the dispatcher.
-#
-# A tight @budget-source=5 override rejects any code longer than 5 bytes.
+# A tight override of 5 rejects anything longer.
+
+## mode: repl
 
 @budget-source=5
 

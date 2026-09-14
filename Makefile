@@ -346,6 +346,20 @@ $(BUILDDIR)/chk-host-driver: tests/integration/chk_host_driver.c $(LIB)
 .PHONY: chk-host-driver
 chk-host-driver: $(BUILDDIR)/chk-host-driver
 
+# --- REPL .chk driver ---------------------------------------------------
+#
+# tests/chk/repl/*.chk are NDJSON, not urbiscript, and their expectation
+# lines are substring sets rather than exact output, so the match happens
+# inside the driver and the verdict is its exit status.  It reaches one
+# internal header (the in-process buffer transport) because a stream with
+# no socket behind it is exactly what a deterministic fixture needs.
+$(BUILDDIR)/repl-chk-driver: tests/integration/repl_chk_driver.c $(LIB)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Iinclude -Isrc -o $@ $< $(LIB) -lm
+
+.PHONY: repl-chk-driver
+repl-chk-driver: $(BUILDDIR)/repl-chk-driver
+
 # --- Stdlib bake tool (host-only) ---------------------------------------
 #
 # tools/urbi-compile-stdlib compiles src/stdlib/stdlib.u into
@@ -431,18 +445,19 @@ test-integration: $(BUILDDIR)/urbi
 # each subsystem is re-founded.  tests/chk/bringup-exclusions.txt is the
 # ratchet for individual fixtures a later subsystem still blocks.
 #
-# tests/chk/repl/*.chk are NDJSON fixtures for the eval service, not
-# urbiscript; they are skipped by the script until their driver lands.
+# tests/chk/repl/*.chk are NDJSON fixtures for the eval service rather
+# than urbiscript; they carry `## mode: repl` and run through
+# repl-chk-driver, which does its own matching.
 #
 # Not valgrind-wrapped: urbi itself is memory-clean, and wrapping the
 # sh+awk+sed pipeline adds noise, not signal.
 CHK_GATE_DIRS ?= arithmetic closure function control \
-                 objects globals stdlib lobby operators \
+                 objects globals stdlib lobby operators repl \
                  exceptions control_transfer \
                  separator scheduler tag temporal mutex semaphore \
                  chunk_lifecycle reactive lazy migration
 
-test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
+test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver $(BUILDDIR)/repl-chk-driver
 	@CHK_GATE_DIRS="$(CHK_GATE_DIRS)" sh tests/integration/chk_summary.sh $(BUILDDIR)/urbi
 
 # refactor-3 CHK meta-gate: pins run_chk.sh's exit-code contract with stub

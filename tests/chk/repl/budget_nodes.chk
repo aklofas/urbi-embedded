@@ -1,10 +1,9 @@
-# v0.9.1 Phase 8 Task 32 — compile-budget node limit.
+# max_ast_nodes caps how much tree one request may allocate, which is
+# the limit that bounds memory rather than stack.
 #
-# Spec §3.4: max_ast_nodes caps AST node count post-parse.
-# Triggers URBI_ERR_COMPILE_BUDGET_NODES, surfaced as
-# "code":"budget_nodes" in the dispatcher.
-#
-# A tight @budget-nodes=3 override fails on `1+2+3` (4-5 nodes).
+# A tight override of 3 fails a four-term sum.
+
+## mode: repl
 
 @budget-nodes=3
 

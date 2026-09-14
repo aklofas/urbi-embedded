@@ -1,0 +1,29 @@
+# Covers: Lobby.wall is a BROADCAST.  Session 1's wall reaches session 2's
+#         output and does NOT reach session 1's own, which is the whole
+#         difference between wall and echo.  The overlay in stdlib.u
+#         delivers each copy through __builtin_lobby_send_to, so the frame
+#         is written on the TARGET realm's writer.
+#
+#         Two sessions, so `Lobby.lobbies` has two entries and the skip of
+#         the caller's own lobby is observable.  wall_broadcasts.chk with
+#         its single session can only show that the registry exists.
+# matrix-row: lobby-wall
+
+## mode: repl
+
+@sessions=2
+
+> {"id":1,"op":"eval","code":"Lobby.lobbies.length()"}
+< "id":1 | "kind":"result" | "value":"2"
+< "id":1 | "kind":"done"
+
+# Session 1 broadcasts.  Session 2 sees an output envelope carrying no id,
+# because the write did not happen inside ITS eval frame.
+> {"id":2,"op":"eval","code":"Lobby.wall(\"hello-all\", \"\")"}
+< "id":2 | "kind":"result"
+< "id":2 | "kind":"done"
+<2 "kind":"output" | *** hello-all
+
+# And session 1 got nothing but its own two envelopes: an unclaimed
+# response at end of fixture is a failure, so a copy delivered to the
+# sender would fail this fixture rather than pass unnoticed.

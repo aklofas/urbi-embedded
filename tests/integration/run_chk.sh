@@ -16,6 +16,10 @@
 # Directives (comment lines; same style as `# tunables:` / `## host:`):
 #   # tunables: <preset>   — run only when URBI_BUILD_PRESET matches
 #   ## host: <op>          — drive via chk-host-driver instead of `urbi -i`
+#   ## mode: repl          — drive via repl-chk-driver: the fixture is
+#                            NDJSON for the eval service and checks itself,
+#                            so the driver's exit status IS the verdict and
+#                            nothing is diffed.
 #   ## mode: file          — drive via `urbi -f`: the fixture's input lines
 #                            are written to one temporary source file and
 #                            run as a batch program, not fed a line at a
@@ -106,6 +110,29 @@ esac
 
 TMPDIR_LOCAL=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_LOCAL"' EXIT
+
+# NDJSON fixtures for the eval service.  Their expectation lines are
+# substring sets, not exact output, so the driver does the matching and
+# its exit status is the whole result — there is nothing here to diff.
+if grep -qE '^[[:space:]]*##[[:space:]]*mode:[[:space:]]*repl[[:space:]]*$' "$CHK"; then
+    DRIVER="$(dirname "$URBI")/repl-chk-driver"
+    if [ ! -x "$DRIVER" ]; then
+        printf 'SKIP-NO-DRIVER %s (repl-chk-driver not built)\n' "$CHK"
+        exit 3
+    fi
+    timeout "$timeout_s" "$DRIVER" "$CHK"
+    rc=$?
+    if [ "$rc" -eq 124 ]; then
+        printf 'TIMEOUT: %s (repl-driver; no exit within %ss)\n' "$CHK" "$timeout_s" >&2
+        exit 1
+    fi
+    if [ "$rc" -ne 0 ]; then
+        printf 'FAIL: %s (repl-driver)\n' "$CHK" >&2
+        exit 1
+    fi
+    printf 'PASS: %s (repl-driver)\n' "$CHK"
+    exit 0
+fi
 
 # Detect fixtures that carry `## host:` driver directives.  These need the
 # C host-driver (multi-realm setup, urbi_step quiescence observation) which

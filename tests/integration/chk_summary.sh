@@ -5,11 +5,14 @@
 #
 # Usage: chk_summary.sh <urbi-binary>
 #
-# The whole corpus (minus tests/chk/repl, which is NDJSON rather than
-# urbiscript) is always RUN and REPORTED, so the report shows how much of
-# the language is back.  Only $CHK_GATE_DIRS decides pass/fail, because
-# the runtime is being re-founded subsystem by subsystem: a directory
-# joins the gate when its subsystem lands.
+# The whole corpus is always RUN and REPORTED, so the report shows how
+# much of the language is back.  tests/chk/repl is NDJSON for the eval
+# service rather than urbiscript; its fixtures carry `## mode: repl` and
+# run through repl-chk-driver, which run_chk.sh routes them to.
+#
+# Only $CHK_GATE_DIRS decides pass/fail, because the runtime is being
+# re-founded subsystem by subsystem: a directory joins the gate when its
+# subsystem lands.
 #
 # tests/chk/bringup-exclusions.txt names individual fixtures inside a
 # gated directory that a later subsystem still blocks.  It is a ratchet:
@@ -43,7 +46,7 @@ gated() {
 # Every directory that actually holds fixtures, nested ones included:
 # tests/chk/stdlib has no fixtures of its own, only subdirectories, and
 # a depth-1 scan silently reported it as empty.
-DIRS=$(find tests/chk -mindepth 1 -type d ! -path 'tests/chk/repl*' \
+DIRS=$(find tests/chk -mindepth 1 -type d \
        -exec sh -c 'ls "$1"/*.chk >/dev/null 2>&1' _ {} \; -print \
        | sed 's|tests/chk/||' | sort)
 

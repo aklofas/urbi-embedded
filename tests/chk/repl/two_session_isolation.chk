@@ -1,0 +1,39 @@
+# Covers: what one session shares with another and what it does not.
+#         A top-level `var` is a slot on the session's OWN globals, so the
+#         other session cannot see it; `Global` is a VM singleton, so the
+#         other session sees it immediately; and an `echo` reaches only
+#         the session that ran it.
+#
+#         lobby_isolation.chk and global_cross_session.chk each state one
+#         half of this from inside a single session, which can only show
+#         that the write worked.  This is the half that needs two.
+# matrix-row: lobby-isolation
+
+## mode: repl
+
+@sessions=2
+
+# Realm-local: session 1 declares it, session 2 cannot resolve it.
+> {"id":1,"op":"eval","code":"var mine = 7; mine"}
+< "id":1 | "kind":"result" | "value":"7"
+< "id":1 | "kind":"done"
+
+>2 {"id":2,"op":"eval","code":"mine"}
+<2 "id":2 | "kind":"error"
+<2 "id":2 | "kind":"done"
+
+# Shared: session 1 writes Global, session 2 reads it back.
+> {"id":3,"op":"eval","code":"Global.shared = 42"}
+< "id":3 | "kind":"result" | "value":"42"
+< "id":3 | "kind":"done"
+
+>2 {"id":4,"op":"eval","code":"Global.shared"}
+<2 "id":4 | "kind":"result" | "value":"42"
+<2 "id":4 | "kind":"done"
+
+# Output: session 2's echo reaches session 2 only.  Session 1 claims
+# nothing here, and an unclaimed response fails the fixture.
+>2 {"id":5,"op":"eval","code":"echo(\"just-for-two\")"}
+<2 "id":5 | "kind":"output" | *** just-for-two
+<2 "id":5 | "kind":"result"
+<2 "id":5 | "kind":"done"

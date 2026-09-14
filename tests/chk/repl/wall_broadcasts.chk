@@ -1,19 +1,14 @@
 # v0.9.1 Phase 8 Task 32 — Lobby.lobbies as the wall target list.
 #
-# Spec §9.1 / §14 exit-criterion 5: A's `wall "hi"` reaches B/C/D but
-# not A.  The wall body (in lobby.u) iterates Lobby.lobbies skipping
-# `this`.  This fixture verifies the substrate: Lobby.lobbies contains
-# exactly one entry per active session (the session realm's global
-# object), and that List indexing returns a non-nil lobby reference.
+# This fixture verifies the SUBSTRATE: Lobby.lobbies holds exactly one
+# entry per live realm (the realm's globals object), and indexing it
+# returns a real lobby reference.  Every realm registers itself in
+# urealm_new, so a single-session run finds exactly one.
 #
-# The cross-session broadcast aspect (A's wall actually reaching B/C/D
-# via per-realm writer routing) was verified end-to-end by
-# tests/unit/test_repl_multi_client.c (Task 33) over real TCP loopback until
-# the Phase 0 runtime-internals test cleanup; no C-level coverage today.
-# The Lobby.wall closure body calls l.echo(msg, tag, "***") which now
-# works end-to-end via the v0.10.11 W4 fix (Lobby.echo uses
-# this.__builtin_lobby_send, resolving through the proto chain).
-# The bare-name auto-walk root-cause remains a v1.x emit follow-up.
+# The broadcast itself — A's wall reaching B but not A — needs two
+# sessions and lives in wall_reaches_other_sessions.chk.
+
+## mode: repl
 
 > {"id":17,"op":"eval","code":"Lobby.lobbies.length()"}
 < "id":17 | "kind":"result" | "value":"1"

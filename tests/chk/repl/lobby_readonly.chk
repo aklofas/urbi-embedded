@@ -1,10 +1,12 @@
-# Milestone: v0.10.11-channel-and-isA (D5 companion fixture)
+# Lobby is read-only and Object is not.  The Lobby prototype carries the
+# `lobbies` registry that the runtime maintains on every realm create and
+# free; a script reshaping it would corrupt session management for every
+# other lobby.  Extending Object, by contrast, is a documented idiom.
 #
-# Lobby stays in the readonly cohort after D5 unfreezes Object.  The
-# Lobby.lobbies session-registry invariant is load-bearing for REPL
-# session management and must remain C-managed.
-#
-# Assigning to Lobby from script must still raise TypeError.
+# So a slot write to Lobby raises, and the throw reaches the client as a
+# runtime error rather than being swallowed.
+
+## mode: repl
 
 > {"id":12,"op":"eval","code":"Lobby.forbidden = 99"}
 < "id":12 | "kind":"error" | "code":"runtime"

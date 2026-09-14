@@ -1,11 +1,11 @@
-# v0.9.1 Phase 8 Task 32 — compile-budget depth limit.
+# max_parser_depth caps recursive descent, which is what keeps one
+# deeply nested expression off a client's wire from exhausting the
+# parser's C stack on a device with no memory protection.
 #
-# Spec §3.4: max_parser_depth caps recursive descent.
-# Exit-criterion 11: triggers URBI_ERR_COMPILE_BUDGET_DEPTH, surfaced as
-# "code":"budget_depth" in the dispatcher's eval handler.
-#
-# Use a tight @budget-depth=5 override so the fixture stays compact;
-# the production 256 default is exercised by tests/unit/test_compile_budget.c.
+# A tight override of 5 keeps the fixture compact; a real deployment
+# sets something like 256.
+
+## mode: repl
 
 @budget-depth=5
 

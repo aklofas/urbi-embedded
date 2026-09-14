@@ -1,13 +1,17 @@
 # v0.9.1 Phase 8 Task 32 — introspect coros JSON shape.
 #
-# Spec §10: 9 introspection ops; coros lists active strands.
-# Exit-criterion 8: ops return non-empty JSON for an idle VM.  The
-# dispatcher emits the introspect JSON as the value field directly (not
-# JSON-string-wrapped like the eval result path) — so the "coros" key
-# appears verbatim as a substring of the response line.
+# `coros` is the one introspection primitive the re-founded service
+# carries; the other eight walked structures the runtime no longer has in
+# that shape and return with the networked server.
 #
-# Note: introspect emits ONLY a result envelope, no done envelope (the
-# done is reserved for eval-frame end-of-output marking, per spec §6).
+# The answer is emitted INLINE as the value — an introspect answer is
+# already JSON — so the key appears verbatim rather than escaped the way
+# the eval path's string-wrapped value does.
+#
+# introspect emits a result and no done: `done` marks the end of an
+# eval's output, and an introspect produces none.
+
+## mode: repl
 
 > {"id":3,"op":"introspect","what":"coros"}
 < "id":3 | "kind":"result" | "coros"
