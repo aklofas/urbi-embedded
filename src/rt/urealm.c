@@ -19,7 +19,7 @@ static UList *urealm_lobbies(UVM *vm)
 {
     UObject *lobby = vm->protos[UP_LOBBY];
     if (!lobby) return NULL;
-    USym *name = usym_cstr(vm, "lobbies");
+    const USym *name = usym_cstr(vm, "lobbies");
     if (!name) return NULL;
     int idx = uobj_find_local(lobby, name);
     if (idx < 0) return NULL;

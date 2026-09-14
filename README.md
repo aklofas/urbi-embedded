@@ -88,40 +88,50 @@ Disassemble:
 
 See `./build/host/urbi --help` for the full flag list.
 
-## REPL service
+## Eval service
 
-Opt-in subsystem (build with `URBI_ENABLE_REPL=1`): NDJSON line-protocol REPL over TCP / Unix socket / UART, with bearer-token auth, per-session output isolation, and 9 introspection ops. Builds two extra host binaries: `urbi-server` (headless) and `urbi-send` (client).
+An NDJSON line protocol over a byte stream the host supplies: one JSON
+request per line in, result and output envelopes out. Each connected
+stream is one session with its own realm, its own globals and its own
+output, so two clients cannot see each other's variables and neither
+sees the other's `echo`.
 
-Build:
+It is cooperative. Nothing starts a thread and nothing opens a socket:
+the host calls `urbi_repl_serve_step` from the same loop it calls
+`urbi_step` from, which is what makes it usable on a microcontroller and
+what keeps every VM touch on one thread. It is in every build the
+compiler frontend is in.
 
-```sh
-make URBI_ENABLE_REPL=1            # liburbi.a with REPL support
-make urbi-server-bin URBI_ENABLE_REPL=1  # build/host/urbi-server
-make urbi-send-bin   URBI_ENABLE_REPL=1  # build/host/urbi-send
+```c
+#include <urbi/repl.h>
+
+UReplConfig cfg = {0};
+cfg.default_budget.max_source_bytes = 64 * 1024;   /* the text is untrusted */
+
+UReplServer *repl;
+urbi_repl_serve_init(vm, &cfg, &repl);
+urbi_repl_register_transport(repl, &my_uart_transport);   /* {ctx, read, write, close} */
+
+for (;;) {
+    urbi_repl_serve_step(repl, 0);
+    urbi_step(vm, 0, NULL);
+}
 ```
 
-Start a server on loopback (no token needed):
-
-```sh
-./build/host/urbi-server --port 54000
+```json
+> {"id":1,"op":"eval","code":"echo(1+2)"}
+< {"id":1,"kind":"output","channel":"clog","msg":"[00000000] *** 3\n"}
+< {"id":1,"kind":"result","value":"nil"}
+< {"id":1,"kind":"done"}
 ```
 
-From a second shell, send one-shot ops:
+Two ops: `eval` and `introspect`. The compile budget in the config is
+applied to every session's realm and caps source bytes, parser depth and
+AST nodes, because the text arrives from outside.
 
-```sh
-./build/host/urbi-send eval "1 + 2"             # → 3
-./build/host/urbi-send introspect coros         # → JSON list of strands
-./build/host/urbi-send --tail eval "every(1s) { echo 'tick' }"
-```
-
-Exposing the server on a LAN interface requires `--token`:
-
-```sh
-./build/host/urbi-server --bind 0.0.0.0 --port 54000 --token "$(openssl rand -hex 16)"
-./build/host/urbi-send --host robot.local:54000 --token "$TOK" eval "Robot.battery"
-```
-
-Embedders can also combine local linenoise REPL + network service in one process via the `urbi --listen` flag, or start the service programmatically with `urbi_repl_serve` from `<urbi/repl.h>`. See `docs/embedding-guide.md` §12 (REPL Service) and `docs/internals/repl-service.md` for the full API + wire-protocol reference.
+The networked server — a listener, per-connection threads, bearer-token
+auth, rate limiting and the TCP / Unix / UART transports — is not in this
+build. It returns in a later phase, on the same `UTransport` vtable.
 
 ## Source layout
 

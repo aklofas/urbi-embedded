@@ -2,19 +2,26 @@
 # Covers: Lobby is an alias for the global Realm; bindings in Lobby are visible
 #         globally and vice versa.
 #
-# blocked: Lobby readonly (defer-v1.x per D5 verdict)
+# blocked: Lobby is read-only, deliberately and still
 # matrix-row: stdlib-lobby
 #
-# Reason: D5 (v0.10.11 W5) unfroze Object only; Lobby remains in the readonly
-# cohort.  The `Lobby.lobbies` session-registry invariant is load-bearing for
-# the REPL session-management contract: Lobby.lobbies is written by the C REPL
-# layer at session open/close, and allowing arbitrary script-side slot
-# installation on Lobby could corrupt the registry.  Sandboxing policy for
-# post-D5 Lobby is deferred to v1.x (if a concrete threat model warrants it,
-# a capability-gated unfreeze can be introduced).  Until then, `Lobby.x = v`
-# raises TypeError.
+# Reason: the Lobby prototype carries `lobbies`, the registry of every live
+# realm's globals object, which the runtime maintains on every realm create
+# and free.  A script installing slots on Lobby could reshape that registry,
+# and it is shared by every session on the VM — so a mistake in one session
+# breaks lobby lookup and `wall` for all of them.  The prototype is sealed
+# read-only at the end of boot for that reason, and `Lobby.x = v` raises
+# TypeError.
 #
-# Urbiscript source (activate when Lobby readonly is revisited at v1.x):
+# Note that this is NOT the legacy behaviour: in legacy urbi the lobby WAS
+# the top-level object and writing to it was the normal way to declare a
+# global.  The re-founded core gives each realm its own globals object for
+# that instead, which is what `Realm.x = v` and a top-level `var x` both
+# reach.  So the fixture's claim is not merely unimplemented, it is one the
+# design has decided against; activating it means revisiting that decision
+# with a threat model in hand, not filling in a gap.
+#
+# Urbiscript source (activate only if Lobby is ever unsealed):
 #   Lobby.x = 123;
 #   x
 #   --- expected output ---

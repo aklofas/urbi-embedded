@@ -1,21 +1,31 @@
 # Milestone: M3
 # Covers: tag.stop() stops a sleeping strand tagged with that tag;
 #         concurrent variants: stop before vs after strand starts sleeping.
-# blocked: runtime — sleep(100ms) suspends indefinitely in REPL context; echo undefined at top level
+# blocked: needs a `## host:` rewrite — on the line-at-a-time path the
+#          sleeper never wakes whether it is stopped or not, so the fixture
+#          would pass without testing anything
 # matrix-row: tag-stop
 #
-# Reason (updated v0.13.5 probe):
-#   Parse error FIXED by v0.13.5: `{expr} & stmt` now parses inside tag-scope
-#   bodies.  New runtime blockers:
-#     1. sleep(100ms) — in REPL mode the single loader strand suspends
-#        indefinitely (no other strand to keep the scheduler alive); the
-#        statement never resumes and produces nil.
-#     2. echo("No") — `echo` is not defined at top level. Bare `echo` is
-#        not a global alias; unqualified names inside closure bodies do not
-#        resolve to Lobby methods (use Lobby.echo explicitly).
-#   Redesign requires the ## host: driver or a test that avoids blocking sleep.
+# Reason (re-probed on the re-founded core):
+#   The two blockers this fixture used to name are gone.  `{expr} & stmt`
+#   parses inside a tag-scope body, and `echo` resolves unqualified from
+#   any realm now that the Lobby is in every realm's prototype chain.
 #
-# Original urbiscript (blocked on runtime; redesign before re-activating):
-# # var tag = Tag.new() | {};
+#   What remains is not a gap in the language, it is the wrong runner.  A
+#   chunk runs until nothing is READY and then hands back, which is what
+#   makes line-at-a-time input work at all; a strand parked on
+#   sleep(100ms) is therefore still parked when the line returns.  So
+#   `echo("No")` is absent from the output EITHER WAY — with the stop and
+#   without it.  Activating the fixture as written would produce a green
+#   result that proves nothing, which is the one outcome worse than a
+#   placeholder.
+#
+#   The rewrite it wants is the host driver: `## host: run` the tag scope,
+#   `## host: advance-clock 200`, `## host: step`, and assert that nothing
+#   was echoed — against a control that advances the clock with no stop
+#   and DOES see the echo.
+#
+# Original urbiscript (kept for the rewrite):
+# # var tag = Tag.new()
 # # tag: { {sleep(100ms); echo("No")} & tag.stop() };
 # # tag: { tag.stop() & {sleep(100ms); echo("No")} };

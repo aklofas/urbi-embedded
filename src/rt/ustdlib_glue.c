@@ -261,7 +261,7 @@ int urbi_realm_get_global(UVM *vm, URealm *realm, const char *name, UValue *out)
 void urbi_stdlib_write(UVM *vm, const char *chan, size_t cl, const char *msg, size_t ml)
 { urealm_write(vm, uvm_current_realm(vm), chan, cl, msg, ml); }
 
-void urbi_stdlib_write_to(UVM *vm, UObject *globals, const char *chan, size_t cl,
+void urbi_stdlib_write_to(UVM *vm, const UObject *globals, const char *chan, size_t cl,
                           const char *msg, size_t ml)
 {
     if (!vm || !globals) return;

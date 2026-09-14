@@ -45,6 +45,18 @@ New public symbols require a PR-review-touch on this manifest.
 - `urbi_realm_free`
 - `urbi_realm_main`
 - `urbi_realm_tag`
+- `urbi_realm_set_writer`
+
+### The eval service
+
+Declared in `include/urbi/repl.h`, which `<urbi/urbi.h>` does not pull in
+— an embedder that wants a REPL includes it itself.  The networked
+server is parked; these four are the cooperative core.
+
+- `urbi_repl_serve_init`
+- `urbi_repl_register_transport`
+- `urbi_repl_serve_step`
+- `urbi_repl_serve_shutdown`
 
 ### Code
 
@@ -158,7 +170,10 @@ none of them is part of the embedding surface.
 - `urbi_stdlib_bytecode`
 - `urbi_stdlib_bytecode_len`
 - `urbi_stdlib_write`
+- `urbi_stdlib_write_to`
 - `urbi_str_to_sym`
+- `urbi_lobby_init`
+- `urbi_introspect_coros`
 
 ### The kept compiler frontend
 

@@ -46,7 +46,7 @@ static void drain_lines(UReplServer *server, UReplSession *s)
 {
     size_t start = 0;
     for (;;) {
-        char *nl = (char *)memchr(s->in + start, '\n', s->in_fill - start);
+        const char *nl = (const char *)memchr(s->in + start, '\n', s->in_fill - start);
         if (nl == NULL) break;
         size_t len = (size_t)(nl - (s->in + start));
         if (s->in_discard) {
@@ -94,7 +94,7 @@ static void read_sweep(UReplServer *server, UReplSession *s)
         urepl_dispatch_line_too_long(s);
         /* Still scan the chunk for the newline that ends the bad line, so
          * a request packed behind it is not lost. */
-        char *nl = (char *)memchr(chunk, '\n', n);
+        const char *nl = (const char *)memchr(chunk, '\n', n);
         if (nl != NULL) {
             size_t after = n - (size_t)(nl - chunk) - 1u;
             s->in_discard = false;

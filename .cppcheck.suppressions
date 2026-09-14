@@ -110,11 +110,8 @@ constParameterPointer:src/stdlib/atoms.c
 // (retired at the re-foundation: same Callback-spelling move as
 // runtime_types.c above.)
 
-// audit:CPPCHK-Phase-v091 — src/stdlib/debug_namespace.c native-method
-// callbacks (Debug.stack / Debug.slots / etc.) expose UValue *args via the
-// urbi_native_method_fn typedef.  Same rationale as Phase 5/6/7/9 above —
-// the function-pointer signature is pinned.
-constParameterPointer:src/stdlib/debug_namespace.c
+// (src/stdlib/debug_namespace.c's entry retired at the re-foundation:
+// the namespace is one method now and its unused args are cast away.)
 
 // audit:S44-followup — src/runtime/uunwind.c pattern_matches() at TRY_FRAME
 // catch absorption is a documented M3 / FOUND-026 stub returning 1.  Wave 2
@@ -163,13 +160,9 @@ constVariablePointer:src/tag/utag_native.c
 constParameterPointer:src/repl/urepl_queue.c
 knownConditionTrueFalse:src/repl/urepl_queue.c
 
-// audit:v094-repl-portability — src/repl/urepl_dispatch.c dispatch_auth's
-// `job` parameter is only read on both the POSIX and cooperative branches
-// after Task 4's URBI_REPL_COOPERATIVE_ONLY split.  cppcheck suggests
-// const-qualification, but `urbi_native_method_fn`-style dispatch entry
-// points keep matching signatures across the call chain; cascading const
-// into the dispatcher's contract is out of scope for the portability fix.
-constParameterPointer:src/repl/urepl_dispatch.c
+// (src/repl/urepl_dispatch.c's entry retired at the re-foundation: the
+// handler it covered was dispatch_auth, which went with the networked
+// server, and the live handlers already take a const request.)
 
 // audit:v0_10_9_W2_D3 — src/runtime/umacros.h urbi_strncpy_truncating is a
 // bounded-copy helper whose loop condition `n + 1U < cap && src[n] != '\0'`
@@ -244,7 +237,7 @@ shadowVariable:src/parse/uparse_stmt.c:662
 // accounting for the freestanding configuration where it is not.
 knownConditionTrueFalse:src/chunk/uchunk_strand.c:424
 
-// audit:refound-task9 — every src/stdlib file and rt/uboot.c defines native
+// audit:refound-task9 — every src/stdlib file defines native
 // methods whose signature is pinned by the boot table's UMethodDef:
 //   int (*)(UVM *, UValue self, UValue *args, uint8_t nargs, UValue *out)
 // A body that only READS args[0] draws constParameterCallback, but
@@ -253,7 +246,7 @@ knownConditionTrueFalse:src/chunk/uchunk_strand.c:424
 // per-file constParameterPointer entries above; cppcheck emits the
 // Callback spelling for these because it can see the function-pointer
 // table in the same translation unit or its header.
-constParameterCallback:src/rt/uboot.c
+constParameterCallback:src/stdlib/lobby_native.c
 constParameterCallback:src/stdlib/object_root.c
 constParameterCallback:src/stdlib/atoms.c
 constParameterCallback:src/stdlib/containers.c

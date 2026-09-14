@@ -104,12 +104,12 @@ static int lobby_echo(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue 
     UValue stars = urbi_make_str_interned(vm, "***", 3);
     if (empty.kind == UV_NIL || stars.kind == UV_NIL) return urbi_raise_oom(vm, out);
 
-    char rendered[512];
     UValue a[3];
     a[0] = args[0];
     a[1] = nargs > 1 ? args[1] : empty;
     a[2] = nargs > 2 ? args[2] : stars;
     if (!urbi_is_str(a[0])) {
+        char rendered[512];
         size_t n = urbi_value_to_string(vm, a[0], rendered, sizeof rendered);
         a[0] = urbi_make_str(vm, rendered, n);
         if (a[0].kind == UV_NIL) return urbi_raise_oom(vm, out);

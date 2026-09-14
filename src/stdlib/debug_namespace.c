@@ -3,27 +3,23 @@
 
 #include "stdlib/debug_namespace.h"
 
-#include <stdarg.h>
-#include <stdio.h>    /* vsnprintf — src/stdlib is hosted, unlike src/rt */
+#include <stdio.h>    /* snprintf — src/stdlib is hosted, unlike src/rt */
+#include <string.h>
 
 /* One appender with an overflow latch.  `at` is the bytes written so far;
  * once a write would not fit, `*ok` goes false and every later call is a
- * no-op, so the caller checks once at the end instead of at each step. */
-static size_t dbg_add(char *buf, size_t cap, size_t at, bool *ok, const char *fmt, ...)
-#if defined(__GNUC__) || defined(__clang__)
-    __attribute__((format(printf, 5, 6)))
-#endif
-    ;
-
-static size_t dbg_add(char *buf, size_t cap, size_t at, bool *ok, const char *fmt, ...)
+ * no-op, so the caller checks once at the end instead of at each step.
+ *
+ * Not variadic: each caller formats into its own scratch first.  A
+ * va_list threaded through a helper is the shape the static analyser
+ * cannot follow, and there are two call sites. */
+static size_t dbg_add(char *buf, size_t cap, size_t at, bool *ok, const char *s)
 {
     if (!*ok) return at;
-    va_list ap;
-    va_start(ap, fmt);
-    int n = vsnprintf(buf + at, cap - at, fmt, ap);
-    va_end(ap);
-    if (n < 0 || (size_t)n >= cap - at) { *ok = false; return at; }
-    return at + (size_t)n;
+    size_t n = strlen(s);
+    if (at + n + 1u > cap) { *ok = false; return at; }
+    memcpy(buf + at, s, n + 1u);
+    return at + n;
 }
 
 /* The four states a strand can be in, plus the two gates that suspend a
@@ -53,8 +49,13 @@ int urbi_introspect_coros(UVM *vm, char *buf, size_t cap, size_t *out_n)
     bool first = true;
     for (URealm *r = vm->realms; r; r = r->next, realm_index++) {
         for (UStrand *s = r->strands; s; s = s->next_in_realm) {
-            at = dbg_add(buf, cap, at, &ok, "%s{\"id\":%u,\"state\":\"%s\",\"realm\":%u}",
-                         first ? "" : ",", (unsigned)s->id, dbg_state_name(s), realm_index);
+            char entry[128];
+            int n = snprintf(entry, sizeof entry,
+                             "%s{\"id\":%u,\"state\":\"%s\",\"realm\":%u}",
+                             first ? "" : ",", (unsigned)s->id,
+                             dbg_state_name(s), realm_index);
+            if (n < 0 || (size_t)n >= sizeof entry) { ok = false; break; }
+            at = dbg_add(buf, cap, at, &ok, entry);
             first = false;
         }
     }

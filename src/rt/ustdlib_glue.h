@@ -169,7 +169,7 @@ void urbi_stdlib_write(UVM *vm, const char *chan, size_t cl, const char *msg, si
  * — the one operation `Lobby.wall` needs and `urbi_stdlib_write` cannot
  * express, since a broadcast writes where the SENDER is not.  A globals
  * object matching no live realm is ignored. */
-void urbi_stdlib_write_to(UVM *vm, UObject *globals, const char *chan, size_t cl,
+void urbi_stdlib_write_to(UVM *vm, const UObject *globals, const char *chan, size_t cl,
                           const char *msg, size_t ml);
 
 #endif
