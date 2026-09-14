@@ -1,0 +1,147 @@
+// stdlib.u — the script half of the standard library.
+//
+// One file, baked into one chunk (src/stdlib/urbi_stdlib_bytecode.gen.c)
+// and run once per VM by uboot_init with the receiver set to the shared
+// root globals object.  Its top-level declarations therefore become
+// slots every realm inherits, built once rather than per realm.
+//
+// What belongs here rather than in C: anything expressible in
+// urbiscript that does not have to exist before a script can run.  The
+// exception FAMILY is the counter-example and lives in rt/uboot.c --
+// the runtime has to be able to throw a TypeError before this file has
+// been loaded.
+//
+// The house pattern is `class XMethods { ... }` followed by
+// `Target.addProto(XMethods)`, not a direct write to the prototype:
+// the built-in prototypes are shared, several are sealed read-only
+// after boot, and addProto composes where an assignment would clobber.
+//
+// Content still waiting on a subsystem lives in stdlib_later.u, which
+// is NOT baked; see the banner there.
+//
+// Legacy reference: legacy/repos/aldebaran-urbi/share/urbi/*.u.
+
+// === mixins ===============================================================
+//
+// Marker protos the container types attach to, plus the iteration
+// surface anything with length() and get(i) inherits by adding
+// RangeIterable to its chain.
+
+class Comparable {} |
+class Orderable  {} |
+class RangeIterable {
+    var each = function(f) { var i = 0; var n = this.length(); while (i < n) { f(this.get(i)); i = i + 1 }; nil };
+    var all  = function(pred) { var i = 0; var n = this.length(); var r = true;  while (i < n) { if (pred(this.get(i)) == false) { r = false }; i = i + 1 }; r };
+    var any  = function(pred) { var i = 0; var n = this.length(); var r = false; while (i < n) { if (pred(this.get(i))) { r = true }; i = i + 1 }; r }
+} |
+
+// === exception subclasses =================================================
+//
+// Only the ones the VM never raises itself.  Exception, TypeError,
+// ArityError, LookupError, OutOfMemoryError, IndexError, RangeError and
+// DivisionByZero are table rows in rt/uboot.c and are NOT redeclared
+// here: a second declaration would both shadow the protos the runtime
+// throws and fail, because their globals are constant.
+//
+// `Lookup` is the legacy spelling of LookupError, kept reachable as
+// `Exception.Lookup`.
+
+class KeyError        : public LookupError {} |
+class IOError         : public Exception {} |
+class CapacityError   : public Exception {} |
+class RuntimeError    : public Exception {} |
+class SchedulingError : public Exception {} |
+class SyntaxError     : public Exception {} |
+class ExceptionLookupAlias {
+    var Lookup = LookupError
+} |
+Exception.addProto(ExceptionLookupAlias);
+
+// === Singleton ============================================================
+//
+// A proto whose clone and new both answer the prototype itself, so
+// there is exactly one of it.
+
+class Singleton {
+    var clone = function() { this };
+    var new   = function() { this }
+} |
+
+// === number ===============================================================
+
+class IntegerMath {
+    var sqr  = function() { this * this };
+    var abs  = function() { if (this < 0) { 0 - this } else { this } };
+    var sign = function() { if (this < 0) { -1 } else { if (this > 0) { 1 } else { 0 } } };
+    var even = function() { this.and(1) == 0 };
+    var odd  = function() { this.and(1) != 0 };
+    var times = function(f) { var i = 0; while (i < this) { f(i); i = i + 1 }; nil };
+    var upto  = function(hi, f) { var i = this; while (i <= hi) { f(i); i = i + 1 }; nil }
+} |
+class FloatMath {
+    var sqr  = function() { this * this };
+    var sign = function() { if (this < 0.0) { -1 } else { if (this > 0.0) { 1 } else { 0 } } }
+} |
+Integer.addProto(IntegerMath) |
+Float.addProto(FloatMath);
+
+// === String ===============================================================
+//
+// size / isEmpty / startsWith / endsWith / asString are C natives; these
+// are the spellings the legacy library adds on top of them.
+
+class StringMethods {
+    var nonEmpty  = function() { this.isEmpty() == false };
+    var hasPrefix = function(s) { this.startsWith(s) };
+    var hasSuffix = function(s) { this.endsWith(s) }
+} |
+String.addProto(StringMethods);
+
+// === Boolean and Nil ======================================================
+
+class BoolMethods {
+    var asString = function() { this.toString() }
+} |
+Boolean.addProto(BoolMethods) ;
+class NilMethods {
+    var asString = function() { "nil" }
+} |
+Nil.addProto(NilMethods);
+
+// === Channel ==============================================================
+//
+// A named output stream.  echo tags every message with the channel's
+// name; `<<` is the legacy shift-write spelling and returns `this` so
+// `c << "a" << "b"` chains left to right.
+//
+// Ported from legacy/repos/aldebaran-urbi/share/urbi/channel.u:24-65.
+// Channel.Filter is not here: it needs Container.any / Container.all,
+// which arrive with the full container surface.
+
+class ChannelMethods {
+    var enabled = true;
+    var quote = true;
+    var name = "";
+
+    var new = function(n) {
+        var inst = this.clone();
+        inst.init(n)
+    };
+
+    var init = function(n) {
+        this.name = n;
+        this
+    };
+
+    var echo = function(msg) {
+        Lobby.echo(msg, this.name, "***")
+    };
+
+    var '<<' = function(x) {
+        if (this.enabled) {
+            Lobby.echo(x, this.name, "***")
+        };
+        this
+    }
+} |
+Channel.addProto(ChannelMethods);

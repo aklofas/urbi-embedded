@@ -77,18 +77,24 @@ bool uobj_remove_local(struct UVM *vm, UObject *o, const USym *name) {
     return true;
 }
 
+/* PREPENDS.  The most recently added prototype takes priority in the
+ * depth-first walk, which is what both legacy urbi (Object::proto_add's
+ * push_front) and every `Target.addProto(TargetMethods)` line in the
+ * stdlib overlay rely on: an overlay method has to shadow the Object
+ * root's, not sit behind it. */
 int uobj_add_proto(struct UVM *vm, UObject *o, UObject *p) {
     if (o->nprotos == 0) { o->proto0 = p; o->nprotos = 1; return 0; }
     if (o->nprotos == 1) {
         UObject **arr = (UObject **)ugc_raw_alloc(vm, 2 * sizeof(UObject *));
         if (!arr) return -1;
-        arr[0] = o->proto0; arr[1] = p;
+        arr[0] = p; arr[1] = o->proto0;
         o->protos = arr; o->proto0 = arr[0]; o->nprotos = 2;
         return 0;
     }
     UObject **arr = (UObject **)ugc_raw_realloc(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *), (size_t)(o->nprotos + 1) * sizeof(UObject *));
     if (!arr) return -1;
-    arr[o->nprotos] = p;
+    for (uint16_t i = o->nprotos; i > 0; i--) arr[i] = arr[i - 1];
+    arr[0] = p;
     o->protos = arr; o->proto0 = arr[0]; o->nprotos++;
     return 0;
 }

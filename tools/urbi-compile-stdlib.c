@@ -1,24 +1,27 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* tools/urbi-compile-stdlib.c
+/* tools/urbi-compile-stdlib.c — the build-time bake tool.
  *
- * Build-time tool: walk STDLIB_ORDER.txt, concatenate each .u source in
- * declared order, compile the joined buffer once via urbi_compile_source,
- * emit src/stdlib/urbi_stdlib_bytecode.gen.c with the resulting v1.5
- * wire-format bytecode.
+ * Compiles one urbiscript source to wire-format bytecode and emits it as
+ * a C array.  Two modes:
  *
- * Two-pass build (per delta spec §3.1):
- *   1. liburbi.a builds with placeholder .gen.c (0-length blob)
- *   2. tools/urbi-compile-stdlib runs against that intermediate library
- *   3. liburbi.a re-links with the populated .gen.c
+ *   urbi-compile-stdlib SOURCE.u OUTPUT.gen.c [SYMBOL]
+ *       the stdlib bake: src/stdlib/stdlib.u becomes
+ *       src/stdlib/urbi_stdlib_bytecode.gen.c, which uboot_init loads.
  *
- * Why concatenate-then-compile-once instead of one-module-per-file:
- * urbi_stdlib_boot deserializes a single UProto from the blob (see
- * src/stdlib/stdlib_boot.c).  Multi-module loading would
- * need a length-prefixed framing format and a boot-side loop; the
- * one-module-shared-scope form keeps the boot path simple and matches
- * the way the legacy share/urbi *.u files compose anyway.  The trade-off
- * is that all overlays share one global scope at boot, which is the
- * intended semantic for stdlib content.
+ *   urbi-compile-stdlib --to-header -i SOURCE.u -o OUTPUT.h --symbol NAME
+ *       embedder pre-bake: a header a firmware image can #include and
+ *       hand to urbi_load.
+ *
+ * CYCLE BREAK.  The tool needs the compiler, which lives in liburbi.a,
+ * which contains the .gen.o built from the file this tool produces.  So
+ * the tool links the library objects directly plus
+ * tools/stub_stdlib_bytecode.c, which defines the same two symbols with
+ * a zero length.  uboot_init treats a zero-length blob as "no overlay"
+ * and boots cleanly, which is all the tool needs: it only compiles.
+ *
+ * DETERMINISM.  The output must be byte-stable across runs and machines
+ * (tests/scripts/bake_smoke.sh pins it), so nothing here writes a
+ * timestamp, an input path, or anything else that varies.
  */
 
 #include <stdio.h>
@@ -28,30 +31,113 @@
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 
-/* The bake tool needs to stack-allocate a UVM, which is opaque in the
- * public API.  Pulling in the internal header here is acceptable for a
- * build-time host tool (mirrors what tools/urbi.c already does). */
-#include "vm/uvm.h"
+#define MAX_SOURCE (1024 * 1024)   /* 1 MiB cap on the source */
 
-#define MAX_LINE        256
-#define MAX_SOURCE      (1024 * 1024)  /* 1 MiB cap on combined .u sources */
+/* The tool's allocator.  Plain realloc: a build-time host tool has no
+ * reason to police its own heap. */
+static void *bake_alloc(void *ptr, size_t n, void *ud)
+{
+    (void)ud;
+    if (n == 0) { free(ptr); return NULL; }
+    return realloc(ptr, n);
+}
 
-/* emit_header: emit a C header file with the bytecode as a const uint8_t
- * array named `symbol`, plus a `<symbol>_size` constant.
- *
- *   const uint8_t <symbol>[] = { 0xXX, 0xXX, ... };
- *   const size_t  <symbol>_size = sizeof <symbol>;
- *
- * Format is the canonical embedder pre-bake form: the embedder #includes this
- * header and passes <symbol> / <symbol>_size to urbi_aux_load_and_run (or the
- * lower-level urbi_chunk_from_bytes). */
-static void
-emit_header(FILE *out, const unsigned char *blob, size_t blob_len,
-            const char *symbol)
+/* Reads a whole file into a NUL-terminated heap buffer.  NULL on
+ * failure, with a message on stderr. */
+static char *read_source(const char *path, size_t *out_len)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) { fprintf(stderr, "[bake] cannot open %s\n", path); return NULL; }
+
+    size_t cap = 8192, len = 0;
+    char *buf = (char *)malloc(cap);
+    if (!buf) { fclose(fp); fprintf(stderr, "[bake] out of memory\n"); return NULL; }
+
+    for (;;) {
+        if (len + 4096 + 1 > cap) {
+            cap *= 2;
+            if (cap > MAX_SOURCE) {
+                fclose(fp); free(buf);
+                fprintf(stderr, "[bake] %s exceeds the %u byte cap\n", path, (unsigned)MAX_SOURCE);
+                return NULL;
+            }
+            char *nb = (char *)realloc(buf, cap);
+            if (!nb) { fclose(fp); free(buf); fprintf(stderr, "[bake] out of memory\n"); return NULL; }
+            buf = nb;
+        }
+        size_t r = fread(buf + len, 1, 4096, fp);
+        len += r;
+        if (r == 0) break;
+    }
+    fclose(fp);
+    buf[len] = '\0';
+    *out_len = len;
+    return buf;
+}
+
+/* Compiles `src` to a freshly allocated bytecode buffer.  0 on success;
+ * the caller frees *out through urbi_chunk_free. */
+static int compile_source(const char *src, size_t len, const char *name,
+                          uint8_t **out, size_t *out_len)
+{
+    *out = NULL;
+    *out_len = 0;
+    if (len == 0) return 0;
+
+    UVM *vm = urbi_open(bake_alloc, NULL, NULL);
+    if (!vm) { fprintf(stderr, "[bake] cannot open a VM\n"); return 1; }
+
+    char err[512] = { 0 };
+    int rc = urbi_compile(vm, src, len, name, out, out_len, err, sizeof err);
+    if (rc != URBI_OK) {
+        fprintf(stderr, "[bake] compile failed: %s\n", err[0] ? err : "(no diagnostic)");
+        urbi_close(vm);
+        return 1;
+    }
+    /* The buffer came from the VM's allocator, which is plain realloc
+     * here, so it outlives the VM and free() releases it. */
+    urbi_close(vm);
+    return 0;
+}
+
+static void emit_bytes(FILE *out, const unsigned char *blob, size_t n,
+                       const char *indent, int per_line, int trailing_comma)
+{
+    for (size_t i = 0; i < n; i++) {
+        if (i % (size_t)per_line == 0) fputs(indent, out);
+        fprintf(out, "0x%02X", blob[i]);
+        if (trailing_comma || i + 1 < n) fputc(',', out);
+        if ((i + 1) % (size_t)per_line == 0 || i + 1 == n) fputc('\n', out);
+        else fputc(' ', out);
+    }
+}
+
+/* The .gen.c form: what liburbi.a compiles and uboot_init loads. */
+static void emit_c_array(FILE *out, const unsigned char *blob, size_t n, const char *symbol)
+{
+    fprintf(out,
+        "/* AUTO-GENERATED by tools/urbi-compile-stdlib. Do not edit.\n"
+        " *\n"
+        " * The baked form of src/stdlib/stdlib.u: one chunk, deserialized and run\n"
+        " * once per VM by uboot_init with recv = root_globals, so its top-level\n"
+        " * declarations land as slots on the object every realm inherits from.\n"
+        " */\n"
+        "\n"
+        "#include <stddef.h>\n"
+        "\n"
+        "const unsigned char %s[%zu] = {\n",
+        symbol, n ? n : (size_t)1);
+    if (n == 0) fputs("    0\n", out);
+    else emit_bytes(out, blob, n, "    ", 16, 1);
+    fprintf(out, "};\n\nconst size_t %s_len = %zu;\n", symbol, n);
+}
+
+/* The --to-header form: what an embedder #includes. */
+static void emit_header(FILE *out, const unsigned char *blob, size_t n, const char *symbol)
 {
     fprintf(out,
         "/* Auto-generated from urbiscript source via urbi-compile-stdlib.\n"
-        " * Do not edit — regenerate with:\n"
+        " * Do not edit -- regenerate with:\n"
         " *   tools/urbi-compile-stdlib --to-header -i <source>.u -o <file>.h --symbol %s\n"
         " */\n"
         "#ifndef URBI_BC_%s_H\n"
@@ -62,19 +148,8 @@ emit_header(FILE *out, const unsigned char *blob, size_t blob_len,
         "\n"
         "static const uint8_t %s[] = {\n",
         symbol, symbol, symbol, symbol);
-
-    if (blob_len == 0) {
-        fprintf(out, "    0x00\n");
-    } else {
-        for (size_t i = 0; i < blob_len; i++) {
-            if (i % 12 == 0) fprintf(out, "    ");
-            fprintf(out, "0x%02X", blob[i]);
-            if (i + 1 < blob_len) fprintf(out, ",");
-            if ((i + 1) % 12 == 0 || i + 1 == blob_len) fprintf(out, "\n");
-            else fprintf(out, " ");
-        }
-    }
-
+    if (n == 0) fputs("    0x00\n", out);
+    else emit_bytes(out, blob, n, "    ", 12, 0);
     fprintf(out,
         "};\n"
         "static const size_t %s_size = sizeof %s;\n"
@@ -83,286 +158,57 @@ emit_header(FILE *out, const unsigned char *blob, size_t blob_len,
         symbol, symbol, symbol);
 }
 
-/* Emit the .gen.c file: header comment, byte array, length variable.
- * `symbol` names the emitted array (`<symbol>` + `<symbol>_len`).
- * Output format must be byte-stable for the determinism smoke gate
- * (tests/scripts/bake_smoke.sh): no timestamps, no input-path strings,
- * no PID-derived markers. */
-static void
-emit_c_array(FILE *out, const unsigned char *blob, size_t blob_len,
-             const char *symbol)
+static int write_out(const char *path, const unsigned char *blob, size_t n,
+                     const char *symbol, int as_header)
 {
-    fprintf(out,
-        "/* AUTO-GENERATED by tools/urbi-compile-stdlib. Do not edit.\n"
-        " *\n"
-        " * Build-time output: walks src/stdlib/STDLIB_ORDER.txt, compiles\n"
-        " * each .u to bytecode via the public compile API, concatenates the\n"
-        " * resulting v1.5 wire-format buffers, emits this file.\n"
-        " *\n"
-        " * Empty placeholder until Phase 10 populates STDLIB_ORDER.txt.\n"
-        " */\n"
-        "\n"
-        "#include <stddef.h>\n"
-        "\n"
-        "const unsigned char %s[%zu] = {\n",
-        symbol, blob_len ? blob_len : (size_t)1);
-
-    if (blob_len == 0) {
-        fprintf(out, "    0\n");
-    } else {
-        for (size_t i = 0; i < blob_len; i++) {
-            if (i % 16 == 0) fprintf(out, "    ");
-            fprintf(out, "0x%02X,", blob[i]);
-            if ((i + 1) % 16 == 0 || i + 1 == blob_len) {
-                fprintf(out, "\n");
-            } else {
-                fprintf(out, " ");
-            }
-        }
-    }
-    fprintf(out,
-        "};\n"
-        "\n"
-        "const size_t %s_len = %zu;\n",
-        symbol, blob_len);
-}
-
-/* Append the contents of `path` to (*src, *len), growing the heap buffer.
- * Returns 0 on success, non-zero on failure (message to stderr). */
-static int
-append_source_file(const char *path, char **src, size_t *len, size_t *cap)
-{
-    FILE *fp = fopen(path, "rb");
-    if (!fp) {
-        fprintf(stderr, "[bake] cannot open %s\n", path);
-        return 1;
-    }
-    /* File-scope banner so concat boundaries appear in compile diagnostics. */
-    char banner[512];
-    int blen = snprintf(banner, sizeof banner,
-                        "// === %s ===\n", path);
-    if (blen < 0) blen = 0;
-
-    /* Reserve banner bytes first. */
-    while (*len + (size_t)blen + 1 > *cap) {
-        size_t ncap = *cap ? *cap * 2 : 8192;
-        if (ncap > MAX_SOURCE) {
-            fclose(fp);
-            fprintf(stderr, "[bake] combined sources exceed %u byte cap\n",
-                    (unsigned)MAX_SOURCE);
-            return 1;
-        }
-        char *nb = realloc(*src, ncap);
-        if (!nb) { fclose(fp); fprintf(stderr, "[bake] OOM\n"); return 1; }
-        *src = nb;
-        *cap = ncap;
-    }
-    memcpy(*src + *len, banner, (size_t)blen);
-    *len += (size_t)blen;
-
-    /* Append file body. */
-    for (;;) {
-        if (*len + 4096 + 2 > *cap) {
-            size_t ncap = *cap * 2;
-            if (ncap > MAX_SOURCE) {
-                fclose(fp);
-                fprintf(stderr, "[bake] combined sources exceed %u byte cap\n",
-                        (unsigned)MAX_SOURCE);
-                return 1;
-            }
-            char *nb = realloc(*src, ncap);
-            if (!nb) {
-                fclose(fp);
-                fprintf(stderr, "[bake] OOM\n");
-                return 1;
-            }
-            *src = nb;
-            *cap = ncap;
-        }
-        size_t r = fread(*src + *len, 1, 4096, fp);
-        *len += r;
-        if (r == 0) break;
-    }
-    fclose(fp);
-
-    /* Trailing newline guards against a final source missing a newline
-     * before the next file's banner.  Two newlines so any unterminated
-     * trailing comment / pipe sees a clean separator. */
-    if (*len + 2 > *cap) {
-        size_t ncap = *cap * 2;
-        char *nb = realloc(*src, ncap);
-        if (!nb) { fprintf(stderr, "[bake] OOM\n"); return 1; }
-        *src = nb;
-        *cap = ncap;
-    }
-    (*src)[(*len)++] = '\n';
-    (*src)[(*len)++] = '\n';
+    FILE *out = fopen(path, "w");
+    if (!out) { fprintf(stderr, "[bake] cannot open %s for writing\n", path); return 1; }
+    if (as_header) emit_header(out, blob, n, symbol);
+    else emit_c_array(out, blob, n, symbol);
+    fclose(out);
     return 0;
 }
 
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
-    /* === --to-header mode ===
-     *
-     * usage: urbi-compile-stdlib --to-header -i SOURCE.u -o OUTPUT.h --symbol NAME
-     *
-     * Compiles a single .u source file and emits a C header with a
-     * `const uint8_t <NAME>[]` array + `const size_t <NAME>_size`.
-     * Intended for embedder pre-bake: include the generated header in
-     * your firmware and pass it to urbi_aux_load_and_run / urbi_chunk_from_bytes.
-     */
     int to_header = 0;
-    const char *input_path  = NULL;
-    const char *symbol_name = NULL;
-    const char *out_path    = NULL;
+    const char *input_path = NULL, *out_path = NULL, *symbol = NULL;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--to-header") == 0) {
-            to_header = 1;
-        } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
-            input_path = argv[++i];
-        } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
-            out_path = argv[++i];
-        } else if (strcmp(argv[i], "--symbol") == 0 && i + 1 < argc) {
-            symbol_name = argv[++i];
+        if (strcmp(argv[i], "--to-header") == 0) to_header = 1;
+        else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) input_path = argv[++i];
+        else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) out_path = argv[++i];
+        else if (strcmp(argv[i], "--symbol") == 0 && i + 1 < argc) symbol = argv[++i];
+        else if (argv[i][0] != '-') {
+            if (!input_path) input_path = argv[i];
+            else if (!out_path) out_path = argv[i];
+            else if (!symbol) symbol = argv[i];
         }
     }
 
-    if (to_header) {
-        if (input_path == NULL || out_path == NULL || symbol_name == NULL) {
-            fprintf(stderr,
-                "usage: %s --to-header -i SOURCE.u -o OUTPUT.h --symbol NAME\n",
-                argv[0]);
-            return 2;
-        }
-
-        char  *src     = NULL;
-        size_t src_len = 0;
-        size_t src_cap = 0;
-        if (append_source_file(input_path, &src, &src_len, &src_cap) != 0) {
-            free(src);
-            return 1;
-        }
-
-        unsigned char *bc    = NULL;
-        size_t         bc_len = 0;
-
-        if (src_len > 0) {
-            UVM vm;
-            urbi_vm_init(&vm, NULL, NULL);
-
-            char err[512] = {0};
-            int rc = urbi_compile_source(&vm, src, src_len, input_path,
-                                         &bc, &bc_len, err, sizeof err);
-            urbi_vm_destroy(&vm);
-            free(src);
-
-            if (rc != URBI_OK) {
-                fprintf(stderr, "[bake] compile failed: %s\n",
-                        err[0] ? err : "(no diagnostic)");
-                return 1;
-            }
-        } else {
-            free(src);
-        }
-
-        FILE *out = fopen(out_path, "w");
-        if (!out) {
-            free(bc);
-            fprintf(stderr, "[bake] cannot open %s for writing\n", out_path);
-            return 1;
-        }
-        emit_header(out, bc, bc_len, symbol_name);
-        fclose(out);
-        free(bc);
-
-        fprintf(stderr, "[bake] --to-header: wrote %s (symbol %s, %zu bytes)\n",
-                out_path, symbol_name, bc_len);
-        return 0;
-    }
-
-    /* === Legacy stdlib bake mode ===
-     *
-     * usage: urbi-compile-stdlib STDLIB_ORDER.txt SRC_DIR OUTPUT.gen.c [SYMBOL]
-     */
-    if (argc != 4 && argc != 5) {
+    if (!input_path || !out_path || (to_header && !symbol)) {
         fprintf(stderr,
-            "usage: %s STDLIB_ORDER.txt SRC_DIR OUTPUT.gen.c [SYMBOL]\n"
+            "usage: %s SOURCE.u OUTPUT.gen.c [SYMBOL]\n"
             "   or: %s --to-header -i SOURCE.u -o OUTPUT.h --symbol NAME\n",
             argv[0], argv[0]);
         return 2;
     }
-    const char *order_path  = argv[1];
-    const char *src_dir     = argv[2];
-    out_path                = argv[3];
-    const char *blob_symbol = (argc == 5) ? argv[4] : "urbi_stdlib_bytecode";
+    if (!symbol) symbol = "urbi_stdlib_bytecode";
 
-    FILE *order = fopen(order_path, "r");
-    if (!order) {
-        fprintf(stderr, "[bake] cannot open %s\n", order_path);
-        return 1;
-    }
+    size_t src_len = 0;
+    char *src = read_source(input_path, &src_len);
+    if (!src) return 1;
 
-    char  *combined = NULL;
-    size_t comb_len = 0;
-    size_t comb_cap = 0;
-    int    n_files  = 0;
+    uint8_t *blob = NULL;
+    size_t blob_len = 0;
+    int rc = compile_source(src, src_len, "stdlib", &blob, &blob_len);
+    free(src);
+    if (rc != 0) { free(blob); return 1; }
 
-    char line[MAX_LINE];
-    while (fgets(line, sizeof line, order)) {
-        size_t n = strlen(line);
-        while (n && (line[n - 1] == '\n' || line[n - 1] == '\r')) {
-            line[--n] = 0;
-        }
-        if (n == 0) continue;            /* blank line */
-        if (line[0] == '#') continue;    /* comment */
+    rc = write_out(out_path, blob, blob_len, symbol, to_header);
+    free(blob);
+    if (rc != 0) return 1;
 
-        /* Build SRC_DIR/<basename>. */
-        char path[MAX_LINE * 2];
-        snprintf(path, sizeof path, "%s/%s", src_dir, line);
-
-        if (append_source_file(path, &combined, &comb_len, &comb_cap) != 0) {
-            free(combined);
-            fclose(order);
-            return 1;
-        }
-        n_files++;
-    }
-    fclose(order);
-
-    unsigned char *bc      = NULL;
-    size_t         bc_len  = 0;
-
-    if (comb_len > 0) {
-        UVM vm;
-        urbi_vm_init(&vm, NULL, NULL);
-
-        char err[512] = {0};
-        int rc = urbi_compile_source(&vm, combined, comb_len, "stdlib",
-                                     &bc, &bc_len, err, sizeof err);
-        urbi_vm_destroy(&vm);
-
-        if (rc != URBI_OK) {
-            fprintf(stderr, "[bake] compile failed: %s\n",
-                    err[0] ? err : "(no diagnostic)");
-            free(combined);
-            return 1;
-        }
-    }
-    free(combined);
-
-    FILE *out = fopen(out_path, "w");
-    if (!out) {
-        free(bc);
-        fprintf(stderr, "[bake] cannot open %s for writing\n", out_path);
-        return 1;
-    }
-    emit_c_array(out, bc, bc_len, blob_symbol);
-    fclose(out);
-    free(bc);
-
-    fprintf(stderr, "[bake] wrote %s (%d file(s), %zu bytes blob)\n",
-            out_path, n_files, bc_len);
+    fprintf(stderr, "[bake] wrote %s (symbol %s, %zu bytes)\n", out_path, symbol, blob_len);
     return 0;
 }

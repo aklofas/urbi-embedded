@@ -320,8 +320,47 @@ urbi-bin: $(BUILDDIR)/urbi
 
 # The C .chk host-driver is parked with the old core; run_chk.sh reports
 # `## host:` fixtures as SKIP-NO-DRIVER until it is rewritten against the
-# new core.  The stdlib bake tool and its freshness/determinism gates are
-# parked with src/stdlib/ until the boot table re-attaches it.
+# new core.
+
+# --- Stdlib bake tool (host-only) ---------------------------------------
+#
+# tools/urbi-compile-stdlib compiles src/stdlib/stdlib.u into
+# src/stdlib/urbi_stdlib_bytecode.gen.c, the blob uboot_init loads.
+#
+# CYCLE BREAK.  The tool needs the compiler, which lives in liburbi.a,
+# which contains the .gen.o built from the file the tool produces.  So it
+# links the library objects DIRECTLY, minus .gen.o, plus
+# tools/stub_stdlib_bytecode.c -- the same two symbols with a zero
+# length, which uboot_init treats as "no script overlay".
+#
+# HOST-ONLY.  The bake runs once with the native compiler and its output
+# ships as portable C source, so a cross build compiles the .gen.c like
+# any other source and never needs the tool.
+#
+# .gen.c is TRACKED, not a build artifact: the first build of liburbi.a
+# must not require a tool that requires liburbi.a.
+BAKE_OBJS := $(filter-out $(BUILDDIR)/src/stdlib/urbi_stdlib_bytecode.gen.o,$(OBJ))
+
+$(BUILDDIR)/tools/stub_stdlib_bytecode.o: tools/stub_stdlib_bytecode.c $(FLAGSTAMP) | $(BUILDDIR)/tools
+	$(CC) $(CFLAGS) -Iinclude -Isrc -MMD -MP -c -o $@ $<
+
+tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(BAKE_OBJS) \
+                           $(BUILDDIR)/tools/stub_stdlib_bytecode.o
+	$(CC) $(CFLAGS) -Iinclude -Isrc -o $@ $< $(BAKE_OBJS) \
+	    $(BUILDDIR)/tools/stub_stdlib_bytecode.o -lm
+
+src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib src/stdlib/stdlib.u
+	./tools/urbi-compile-stdlib src/stdlib/stdlib.u $@
+
+# Drift gate: re-bake and diff against the tracked file, so a .u edit
+# that was never baked fails the build rather than shipping stale
+# bytecode.  Determinism gate: three bakes of the same input must be
+# byte-identical, or the wire-format hashes churn on every build.
+.PHONY: test-stdlib-bytecode-fresh test-bake-smoke
+test-stdlib-bytecode-fresh: tools/urbi-compile-stdlib
+	@./tests/scripts/check-stdlib-fresh.sh
+test-bake-smoke: tools/urbi-compile-stdlib
+	@bash tests/scripts/bake_smoke.sh
 
 # --- Integration tests --------------------------------------------------
 #
@@ -363,7 +402,7 @@ test-chk-runner:
 # `make test` on the re-founded core: the rt suites, the layering gate,
 # and the .chk corpus driven through the new urbi binary.  The old
 # unit-test runner is parked with the core it exercised.
-test: $(LIB) test-rt check-rt-layering test-chk
+test: $(LIB) test-rt check-rt-layering test-chk test-stdlib-bytecode-fresh
 
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi

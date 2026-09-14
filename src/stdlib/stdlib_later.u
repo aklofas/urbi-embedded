@@ -1,0 +1,219 @@
+// stdlib_later.u — the script half of the standard library that is NOT
+// baked yet.
+//
+// Each block below needs a subsystem that does not exist on this branch.
+// The bake tool never reads this file; when the blocking task lands, its
+// block moves into stdlib.u and the next bake picks it up.
+//
+//   List / Dict overlays   — need the full container surface (add, keys,
+//                            sort, front/back) that containers.c brings.
+//   Lobby.wall             — needs Lobby.lobbies, i.e. REPL sessions.
+//   Lobby.handleDisconnect — needs events (`onDisconnect!`).
+//   detach / disown        — need the scheduler's __detach_strand and
+//                            __disown_strand primitives.
+
+// ==== from list_overlay.u (needs containers.c) ====
+
+// List overlay — Phase 6.
+//
+// Adds higher-order methods to List via an extension class attached with
+// addProto.  Uses the class-body / addProto pattern required by the v0.6.2
+// blob-scope constraint (see number.u for details).
+//
+// Legacy reference: share/urbi/list.u (Gostai 2008-2012).
+// Methods provided: map, filter, foldl, has, any, all, each.
+//
+// Note: `this` resolution inside class body methods works correctly at
+// v0.6.2 (Gap #3 closed).  Closure upvalue capture works (Gap #1 closed).
+// Multi-slot class bodies work (Gap #2 closed).
+
+class ListMethods {
+    // map(f): apply f to each element, return new List with results.
+    var map = function(f) {
+        var res = List.new();
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            var v = f(this.get(i));
+            res.add(v);
+            i = i + 1
+        };
+        res
+    };
+
+    // filter(pred): return new List containing elements for which pred is true.
+    var filter = function(pred) {
+        var res = List.new();
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            var v = this.get(i);
+            if (pred(v)) { res.add(v) };
+            i = i + 1
+        };
+        res
+    };
+
+    // foldl(f, acc): left fold over list with accumulator.
+    var foldl = function(f, acc) {
+        var res = acc;
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            var next = f(res, this.get(i));
+            res = next;
+            i = i + 1
+        };
+        res
+    };
+
+    // has(e): true if e is in the list (delegates to C-native contains).
+    var has = function(e) { this.contains(e) };
+
+    // any(pred): true if pred(e) for at least one element.
+    var any = function(pred) {
+        var i = 0;
+        var n = this.length();
+        var found = false;
+        while (i < n) {
+            if (pred(this.get(i))) { found = true; i = n };
+            i = i + 1
+        };
+        found
+    };
+
+    // all(pred): true if pred(e) for every element.
+    var all = function(pred) {
+        var i = 0;
+        var n = this.length();
+        var ok = true;
+        while (i < n) {
+            if (pred(this.get(i))) { i = i + 1 } else { ok = false; i = n }
+        };
+        ok
+    };
+
+    // each(f): apply f to each element in order for side effects; returns nil.
+    //
+    // Mutation contract: `n` is captured from this.length() at call entry;
+    // adding elements to the list during iteration does NOT extend the loop
+    // (n is fixed).  Removing or replacing elements mid-iteration shifts
+    // indices and visits the wrong elements — mutation during each() is
+    // undefined behaviour at v1.0.  For mutation-safe iteration, use sort()
+    // which snapshots the backing store before invoking the comparator.
+    var each = function(f) {
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            f(this.get(i));
+            i = i + 1
+        };
+        nil
+    };
+
+    // head(): first element — legacy alias for front().
+    // Legacy: list.u:106 copySlot("front","head"); list.cc:84 BIND(front).
+    // Delegates to the C-native get(0); raises (bounds check) on empty list.
+    var head = function() { this.get(0) }
+} |
+
+List.addProto(ListMethods);
+
+// ==== from dict_overlay.u (needs containers.c) ====
+
+// Dict overlay — Phase 6.
+//
+// Adds scripted utility methods to Dict via an extension class attached
+// with addProto.  Uses the class-body / addProto pattern required by the
+// v0.6.2 blob-scope constraint (see number.u for details).
+//
+// Legacy reference: share/urbi/dict.u (Gostai 2008-2012).
+// Note: v1.0 Dict has native: new, length, isEmpty, set, get, has,
+// remove, keys, values.  each() is provided here over the native keys()
+// primitive.
+//
+// Note: `this` resolution inside class body methods works correctly at
+// v0.6.2 (Gap #3 closed).
+
+class DictMethods {
+    // getWithDefault(key, default): return value for key, or default.
+    var getWithDefault = function(key, dflt) {
+        if (this.has(key)) { this.get(key) } else { dflt }
+    };
+
+    // setIfAbsent(key, value): set key only if not already present.
+    var setIfAbsent = function(key, val) {
+        if (this.has(key)) { this.get(key) } else { this.set(key, val); val }
+    };
+
+    // each(f): apply f(key, value) to each entry for side effects; nil.
+    //
+    // Mutation contract: keys() is called once at entry and iteration
+    // proceeds over that snapshot List.  Entries added to the dict after
+    // each() begins are NOT visited.  Entries removed before their key is
+    // visited will cause get(k) to return nil — not an error (see the
+    // nil-return contract on dict_get in containers.c).
+    var each = function(f) {
+        var ks = this.keys();
+        var i = 0;
+        var n = ks.length();
+        while (i < n) {
+            var k = ks.get(i);
+            f(k, this.get(k));
+            i = i + 1
+        };
+        nil
+    }
+} |
+
+Dict.addProto(DictMethods);
+
+// ==== from lobby.u (needs Lobby.lobbies and events) ====
+
+class LobbyMethods {
+    // wall(msg, tag): broadcast to every OTHER lobby.  Sequential (no
+    // `for|`) so a partial delivery cannot strand mid-loop on the
+    // host-call boundary.
+    var wall = function(msg, tag) {
+        var n = Lobby.lobbies.length();
+        var i = 0;
+        while (i < n) {
+            var l = Lobby.lobbies.get(i);
+            if (l != this) { l.echo(msg, tag, "***") };
+            i = i + 1
+        }
+    };
+
+    // handleDisconnect: fired by the session dispatcher on destroy.
+    // Overridable per instance; the default emits onDisconnect.
+    var handleDisconnect = function() {
+        onDisconnect!(this)
+    }
+} |
+
+Lobby.addProto(LobbyMethods);
+
+// ==== from control_overlay.u (needs the scheduler) ====
+
+// control_overlay.u — v0.10.10 / D7-C.
+//
+// Lazy-arg wrappers around the C-native __detach_strand /
+// __disown_strand.  The lazy parameter machinery (AST_LAZY_PARAM +
+// uemit_stmt.c lazy_arg_context) wraps the call-site expression in an
+// implicit closure when detach/disown are called from the same
+// compilation unit; the natives receive that closure and spawn it as
+// a new strand.
+//
+// detach: child inherits the parent's ambient tag chain.
+// disown: child inherits the connection tag only (all user tags stripped).
+//
+// Reference: legacy share/urbi/control.u:23-31 — same shape, same
+// semantics, ported to our lazy-param syntax.
+
+var detach = function(lazy fun) {
+    __detach_strand(fun)
+};
+
+var disown = function(lazy fun) {
+    __disown_strand(fun)
+};

@@ -1,34 +1,32 @@
 #!/bin/sh
 # tests/scripts/check-stdlib-fresh.sh
 #
-# Regenerates the stdlib bytecode at the current host flavor and diffs
-# against the checked-in src/stdlib/urbi_stdlib_bytecode.gen.c.  Fails
-# on drift — forces re-bake to be tracked at every stdlib .u change.
+# Re-bakes src/stdlib/stdlib.u and diffs the result against the tracked
+# src/stdlib/urbi_stdlib_bytecode.gen.c.  Fails on drift, so an overlay
+# edit that was never baked cannot ship as stale bytecode.
 #
-# Requires: tools/urbi-compile-stdlib must already be built (make first).
-# Called by: make test-stdlib-bytecode-fresh (RELEASETEST_PHASE1).
+# Requires tools/urbi-compile-stdlib to be built already (`make` first).
+# Called by: make test-stdlib-bytecode-fresh.
 
 set -eu
+cd "$(dirname "$0")/../.."
 
 BAKED="src/stdlib/urbi_stdlib_bytecode.gen.c"
-GENERATED="/tmp/urbi_stdlib_bytecode.gen.c.fresh.$$"
+GENERATED=$(mktemp -t urbi_stdlib_fresh.XXXXXX.c)
+trap 'rm -f "$GENERATED"' EXIT
 
 if [ ! -x "tools/urbi-compile-stdlib" ]; then
     echo "stdlib-fresh: tools/urbi-compile-stdlib not found — run 'make' first"
     exit 1
 fi
 
-./tools/urbi-compile-stdlib \
-    src/stdlib/STDLIB_ORDER.txt \
-    src/stdlib \
-    "$GENERATED"
+./tools/urbi-compile-stdlib src/stdlib/stdlib.u "$GENERATED" >/dev/null 2>&1
 
-if ! diff -q "$BAKED" "$GENERATED" >/dev/null 2>&1; then
-    echo "stdlib bytecode drift detected — run 'make bake-clean' to refresh"
+if ! cmp -s "$BAKED" "$GENERATED"; then
+    echo "stdlib bytecode drift — re-bake with:"
+    echo "    ./tools/urbi-compile-stdlib src/stdlib/stdlib.u $BAKED"
     diff "$BAKED" "$GENERATED" | head -40
-    rm -f "$GENERATED"
     exit 1
 fi
 
-rm -f "$GENERATED"
 echo "stdlib bytecode is fresh"

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Bake-tool determinism smoke test.
 #
-# Run tools/urbi-compile-stdlib three times against the same input
-# (src/stdlib/STDLIB_ORDER.txt + src/stdlib/*.u files) and assert that
-# the three outputs are byte-identical.
+# Run tools/urbi-compile-stdlib three times against src/stdlib/stdlib.u
+# and assert that the three outputs are byte-identical.
 #
 # The bake-tool output is the contents of
 # src/stdlib/urbi_stdlib_bytecode.gen.c, which gets baked into liburbi.a
@@ -17,8 +16,7 @@
 set -euo pipefail
 
 TOOL=./tools/urbi-compile-stdlib
-ORDER=src/stdlib/STDLIB_ORDER.txt
-SRC=src/stdlib
+SRC=src/stdlib/stdlib.u
 OUT1=$(mktemp -t bake_smoke_run1.XXXXXX.c)
 OUT2=$(mktemp -t bake_smoke_run2.XXXXXX.c)
 OUT3=$(mktemp -t bake_smoke_run3.XXXXXX.c)
@@ -31,9 +29,9 @@ if [ ! -x "$TOOL" ]; then
     exit 1
 fi
 
-"$TOOL" "$ORDER" "$SRC" "$OUT1" >/dev/null 2>&1
-"$TOOL" "$ORDER" "$SRC" "$OUT2" >/dev/null 2>&1
-"$TOOL" "$ORDER" "$SRC" "$OUT3" >/dev/null 2>&1
+"$TOOL" "$SRC" "$OUT1" >/dev/null 2>&1
+"$TOOL" "$SRC" "$OUT2" >/dev/null 2>&1
+"$TOOL" "$SRC" "$OUT3" >/dev/null 2>&1
 
 if ! cmp -s "$OUT1" "$OUT2"; then
     echo "FAIL: bake-tool output differs between run 1 and run 2" >&2
