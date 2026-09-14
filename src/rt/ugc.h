@@ -1,0 +1,58 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* src/rt/ugc.h — cells, allocator, roots, and the stop-the-world mark-sweep
+ * collector for the refound/core runtime. */
+
+#ifndef URT_GC_H
+#define URT_GC_H
+#include "rt/uvalue.h"
+
+typedef void *(*UAllocFn)(void *ptr, size_t nbytes, void *ud);   /* realloc-shaped; nbytes==0 frees */
+
+typedef enum { UCELL_STR = 1, UCELL_OBJ, UCELL_CLOSURE, UCELL_UPVAL, UCELL_LIST, UCELL_DICT,
+               UCELL_TAG, UCELL_EVENT, UCELL_STRAND, UCELL_WATCHER, UCELL_PROTO, UCELL_PROPS, UCELL_HOST } UCellType;
+
+typedef struct UCell {
+    struct UCell *next;
+    uint32_t size;
+    uint8_t  type;       /* UCellType */
+    uint8_t  marked;
+    uint16_t flags;      /* per-type bits; UCELL_F_PINNED is reserved here */
+} UCell;
+#define UCELL_F_PINNED 0x8000
+
+struct UVM;
+typedef struct UGcRoots {              /* fixed roots the VM registers once */
+    void (*mark_fixed)(struct UVM *vm);           /* marks realms, run queue, timers, watchers, protos */
+    void (*trace)(struct UVM *vm, UCell *c);      /* marks a cell's children by type */
+    void (*finalize)(struct UVM *vm, UCell *c);   /* frees a cell's owned non-cell memory */
+} UGcRoots;
+
+typedef struct UGc {
+    UAllocFn alloc; void *alloc_ud;
+    UCell   *all;                 /* intrusive all-cells list */
+    UCell  **gray; uint32_t gray_len, gray_cap;   /* explicit mark stack (no recursion) */
+    size_t   bytes_live, bytes_since, threshold;
+    size_t   raw_live;            /* live bytes owned via ugc_raw_* (arrays etc.), not swept as cells */
+    uint32_t cycles, cells_live;
+    uint8_t  pause_ratio;         /* percent; 200 = collect when since > 2x live */
+    uint8_t  in_collect;
+    UGcRoots hooks;
+} UGc;
+
+/* Accessor into the owning VM, defined by the layer above (uexec.c); see
+ * tests/rt/fakevm.c for the stand-in used before that layer exists. Keeps
+ * this header from depending on uexec.h, which would violate layering. */
+UGc *uvm_gc(struct UVM *vm);
+
+int    ugc_init(UGc *g, UAllocFn alloc, void *ud);
+void   ugc_destroy(struct UVM *vm);                /* frees every cell via finalize + alloc(0) */
+void  *ugc_alloc(struct UVM *vm, UCellType type, size_t nbytes);  /* zeroed; NULL on OOM */
+void  *ugc_raw_alloc(struct UVM *vm, size_t nbytes);              /* non-cell owned memory (arrays) */
+void  *ugc_raw_realloc(struct UVM *vm, void *p, size_t old, size_t nbytes);
+void   ugc_raw_free(struct UVM *vm, void *p, size_t nbytes);
+void   ugc_mark(struct UVM *vm, UCell *c);          /* push gray if unmarked; O(1) */
+void   ugc_mark_value(struct UVM *vm, UValue v);    /* marks STR/OBJ/CELL payloads */
+void   ugc_collect(struct UVM *vm);                 /* full stop-the-world cycle */
+bool   ugc_should_collect(const UGc *g);
+void   ugc_maybe_collect(struct UVM *vm);           /* called at safepoints; also honours URBI_GC_STRESS */
+#endif
