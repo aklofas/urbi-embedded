@@ -182,14 +182,24 @@ no pending event or host-call drain, no timer due. The reactive surface (install
 `at`/`whenever` watchers and parked `sleep`/`waituntil` strands) remains armed but
 does not count as internal work; it waits for external input.
 
-**QUIESCENT ≠ dead.** Use `urbi_vm_has_live_work(vm, NULL, NULL, NULL)` to
-distinguish the two cases:
+**QUIESCENT ≠ dead.** Use `urbi_has_live_work(vm)` to distinguish the two
+cases. It is not a loop condition: an armed watcher makes it true for as long
+as the watcher is installed, while every `urbi_step` keeps returning
+QUIESCENT, so `while (urbi_has_live_work(vm)) urbi_step(...)` spins at full
+CPU on any reactive program. Sleep on the step RESULT — QUIESCENT means wait
+for the host to offer something, IDLE_UNTIL means wait until `next_wake_us` —
+and ask this predicate only the shutdown question it answers.
+
+A wait does not count as live work, in either spelling: a strand parked in
+`waituntil (cond)`, in `waituntil (e?)`, or on an event nobody will emit, is
+quiescent.
 
 | Scenario | `urbi_step` returns | `urbi_vm_has_live_work` |
 |---|---|---|
 | Active strands running | `RUNNING` | `true` |
 | All strands sleeping (timer pending) | `WAKE_AT` | `true` |
-| Watchers armed, waiting for input | `QUIESCENT` | `true` — armed surface is live |
+| `at`/`whenever` armed, waiting for input | `QUIESCENT` | `true` — armed surface is live |
+| Every strand parked in a `waituntil` | `QUIESCENT` | `false` — wait lists do not count |
 | No script loaded, nothing installed | `QUIESCENT` | `false` — VM is fully dead |
 
 **Host-write-then-step wake pattern.** When the host writes a slot or injects an

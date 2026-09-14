@@ -31,6 +31,12 @@
  *                               steps -- a host-side slot write, which is
  *                               not a thing script can do to itself.
  *                               Prints "set-global: ok".
+ *   ## host: live-work         print "live-work: true|false", what
+ *                               urbi_has_live_work says right now.  It
+ *                               and `step` answer different questions --
+ *                               an armed watcher is live work while every
+ *                               step reports QUIESCENT -- which is
+ *                               exactly what wants pinning.
  *   ## host: expect-host-call <n>
  *                               print "host-calls: <count>", the number
  *                               of times the pre-registered native global
@@ -174,6 +180,13 @@ static int run_directive(UVM *vm, const char *verb, const char *rest)
     if (strcmp(verb, "expect-host-call") == 0) {
         char line[64];
         snprintf(line, sizeof line, "host-calls: %d", g_hostcalls);
+        emit_framed(line);
+        return 0;
+    }
+    if (strcmp(verb, "live-work") == 0) {
+        char line[64];
+        snprintf(line, sizeof line, "live-work: %s",
+                 urbi_has_live_work(vm) ? "true" : "false");
         emit_framed(line);
         return 0;
     }

@@ -402,9 +402,10 @@ bool usched_has_live_work(UVM *vm)
 {
     if (!vm) return false;
     const USched *sc = uvm_sched(vm);
-    /* An armed watcher is pending work even with nothing runnable: a host
-     * write between steps is exactly what it is there to notice.  A wait
-     * with nobody waiting on it is not -- see uwatch_has_live_work. */
+    /* An armed `at` / `whenever` is pending work even with nothing
+     * runnable: a host write between two steps is exactly what it is there
+     * to notice.  A WAIT is not, however it is spelled -- see
+     * uwatch_has_live_work and spec section 8. */
     return sc->run_head != NULL || sc->heap_len > 0 || uwatch_has_live_work(vm);
 }
 

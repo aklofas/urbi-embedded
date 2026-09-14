@@ -525,13 +525,16 @@ bool uwatch_has_live_work(const UVM *vm)
 {
     for (const UWatcher *w = vm->watch.all; w; w = w->next) {
         if (!w->armed) continue;
-        /* A wait that nobody is waiting on, and a subscription with
-         * nothing to run, are both as quiescent as an event nobody can
-         * emit any more. */
-        if (w->mode == (uint8_t)UWATCH_WAITUNTIL || w->mode == (uint8_t)UWATCH_ONCE) {
-            if (w->waiters) return true;
-            continue;
-        }
+        /* A WAIT NEVER COUNTS, however it is spelled.  Spec section 8:
+         * wait lists do not count, because a program whose every strand is
+         * waiting for something that can no longer arrive is quiescent.
+         * `waituntil (cond)` parks on a watcher's wait list and
+         * `waituntil (e?)` parks on an event's; reporting the first as
+         * live and the second as quiescent would make one construct answer
+         * two ways depending on its spelling. */
+        if (w->mode == (uint8_t)UWATCH_WAITUNTIL || w->mode == (uint8_t)UWATCH_ONCE) continue;
+        /* A subscription with nothing to run is as quiescent as an event
+         * nobody can emit any more. */
         if (w->body || w->host_cb) return true;
     }
     return false;

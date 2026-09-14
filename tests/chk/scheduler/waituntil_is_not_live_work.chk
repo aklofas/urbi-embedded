@@ -1,0 +1,40 @@
+# Covers: a program parked in `waituntil` is QUIESCENT and is not live
+#         work, in BOTH spellings -- `waituntil (cond)` parks on a
+#         watcher's wait list, `waituntil (e?)` parks on an event's, and
+#         spec section 8 says wait lists do not count.  An armed `at` is
+#         the thing that does count, because a host slot write between two
+#         steps is what it exists to notice.
+# matrix-row: scheduler-quiescence
+#
+# The two predicates answer different questions and a host must not
+# confuse them: `urbi_step` says "is there anything to run right now",
+# `urbi_has_live_work` says "is there anything left at all".  An armed
+# watcher makes the second true forever while the first stays QUIESCENT,
+# which is why an event loop keys its sleep on the step result.
+## timeout: 30
+## host: run var x = 0
+## host: live-work
+## host: run waituntil (x == 1)
+## host: step 100000
+## host: live-work
+## host: run var e = Event.new()
+## host: run var t = Tag.new()
+## host: run t: { waituntil(e?) }
+## host: step 100000
+## host: live-work
+## host: run at (x == 7) { x = 0 }
+## host: step 100000
+## host: live-work
+[00000000] 0
+[00000000] live-work: false
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] live-work: false
+[00000000] <event>
+[00000000] <Tag>
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] live-work: false
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] live-work: true

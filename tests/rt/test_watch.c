@@ -241,7 +241,10 @@ static void waituntil_parks_until_the_condition_holds(void)
     UValue v = run(&fx, "waituntil (x == 1); done = 42");
     RT_EQ(v.kind, (uint8_t)UVAL_NIL);
     RT_EQ(global_int(&fx, "done"), 0);
-    RT_CHECK(urbi_has_live_work(fx.vm));
+    /* A wait is not live work, however it is spelled -- and the step says
+     * so too: there is nothing runnable and no timer. */
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    RT_EQ(urbi_step(fx.vm, 0, NULL), URBI_STEP_QUIESCENT);
 
     run(&fx, "x = 1");
     RT_EQ(global_int(&fx, "done"), 42);
@@ -275,6 +278,33 @@ static void a_host_write_wakes_a_parked_waituntil(void)
     RT_EQ(urbi_global_set(fx.vm, urbi_realm_main(fx.vm), "go", urbi_make_bool(true)), URBI_OK);
     while (urbi_step(fx.vm, 0, NULL) == URBI_STEP_RAN) { }
     RT_EQ(global_int(&fx, "done"), 42);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* Neither spelling of a wait is live work: `waituntil (cond)` parks on a
+ * watcher's wait list and `waituntil (e?)` on an event's, and spec section
+ * 8 says wait lists do not count.  An armed `at` does count, which is the
+ * line between the two. */
+static void neither_waituntil_form_is_live_work(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var x = 0");
+    run(&fx, "waituntil (x == 1)");
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    RT_EQ(urbi_step(fx.vm, 0, NULL), URBI_STEP_QUIESCENT);
+
+    run(&fx, "var e = Event.new()");
+    run(&fx, "var t = Tag.new()");
+    run(&fx, "t: { waituntil(e?) }");
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    RT_EQ(urbi_step(fx.vm, 0, NULL), URBI_STEP_QUIESCENT);
+
+    /* An armed `at` is the thing that IS live: a host write between two
+     * steps is what it exists to notice. */
+    run(&fx, "at (x == 7) { x = 0 }");
+    RT_CHECK(urbi_has_live_work(fx.vm));
+    RT_EQ(urbi_step(fx.vm, 0, NULL), URBI_STEP_QUIESCENT);
     fix_close(&fx);
     RT_EQ(fx.ca.live, 0u);
 }
@@ -552,6 +582,7 @@ RT_SUITE(rt_watch_suite) {
     rt_run("waituntil_parks_until_the_condition_holds", waituntil_parks_until_the_condition_holds);
     rt_run("waituntil_true_at_install_does_not_park", waituntil_true_at_install_does_not_park);
     rt_run("a_host_write_wakes_a_parked_waituntil", a_host_write_wakes_a_parked_waituntil);
+    rt_run("neither_waituntil_form_is_live_work", neither_waituntil_form_is_live_work);
     rt_run("at_event_fires_per_emission_in_registration_order", at_event_fires_per_emission_in_registration_order);
     rt_run("at_event_binds_the_payload", at_event_binds_the_payload);
     rt_run("sync_emit_runs_a_sync_subscriber_inline", sync_emit_runs_a_sync_subscriber_inline);

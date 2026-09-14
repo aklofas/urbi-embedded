@@ -77,9 +77,24 @@ typedef enum {
  * otherwise, so an event loop can sleep until then. */
 int urbi_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us);
 
-/* True when the VM has a runnable strand or a pending timer.  Strands
- * parked on an event nobody will emit do not count: a program with
- * nothing left to drive it is quiescent, not live. */
+/* True when the VM has a runnable strand, a pending timer, or an armed
+ * `at` / `whenever` watcher.  A watcher counts because a host slot write
+ * between two steps is what it is there to notice, and nothing else in
+ * the VM records that such a write could matter.
+ *
+ * WAITS DO NOT COUNT, however they are spelled: a strand parked in
+ * `waituntil (cond)`, in `waituntil (e?)`, or on an event nobody will
+ * emit, is quiescent.  A program with nothing left to drive it is done,
+ * not busy.
+ *
+ * NOT A LOOP CONDITION.  `while (urbi_has_live_work(vm)) urbi_step(...)`
+ * spins at full CPU on any program that installs a watcher, because an
+ * armed watcher is permanently live while urbi_step keeps returning
+ * URBI_STEP_QUIESCENT.  An event loop sleeps on the urbi_step RESULT --
+ * QUIESCENT means sleep until the host has something to offer,
+ * IDLE_UNTIL means sleep until `next_wake_us` -- and uses this predicate
+ * only to answer "is there anything left at all", which is a different
+ * question asked at shutdown. */
 bool urbi_has_live_work(UVM *vm);
 
 /* Host hooks.  All are optional; each may be set at any time.
