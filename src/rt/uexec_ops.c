@@ -68,16 +68,23 @@ static int slot_get(UVM *vm, UStrand *s, UValue recv, const USym *name, const ch
 
 static bool str_kind(UValue v) { return v.kind == UV_STR || v.kind == UV_SYM; }
 
-/* Resolves `name` on an object receiver and calls it with one argument.
- * Returns 1 when the slot did not exist (caller falls through to its own
- * error), 0 on a completed call, or UEXEC_THROW. */
+/* Resolves `name` on the left operand's prototype and calls it with one
+ * argument.  Returns 1 when the slot did not exist (caller falls through
+ * to its own error), 0 on a completed call, or UEXEC_THROW.
+ *
+ * The lookup goes through uv_dispatch_proto rather than requiring a UV_OBJ
+ * receiver, because a List is a cell: `[1, 2] + [3]` has to find List's
+ * `+` slot the same way a user class finds the one it declared.  An atom
+ * resolves against its own prototype and finds nothing, which is the same
+ * fall-through as before. */
 static int object_binop(UVM *vm, UStrand *s, UValue lhs, UValue rhs, const char *name, UValue *out)
 {
-    if (lhs.kind != UV_OBJ) return 1;
+    UObject *recv_proto = uv_dispatch_proto(vm, lhs);
+    if (!recv_proto) return 1;
     const USym *sym = usym_cstr(vm, name);
     if (!sym) return uexec_throw(vm, s, UP_OOMERROR, "out of memory interning an operator name");
     UObjSlotRef ref;
-    if (!uobj_resolve(vm, (UObject *)lhs.v.p, sym, &ref)) return 1;
+    if (!uobj_resolve(vm, recv_proto, sym, &ref)) return 1;
     UValue fn = uv_nil();
     int rc = slot_read(vm, s, &ref, lhs, &fn);
     if (rc != UEXEC_OK) return rc;

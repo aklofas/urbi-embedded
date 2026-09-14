@@ -1,1364 +1,522 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* containers.c — C-native container types.
+/* containers.c — List, Dict, Tuple, Pair and Triplet.  See containers.h.
  *
- * Pair / Triplet / Tuple / List / Dict — see banner in containers.h.
+ * RECEIVERS.  A List, a Tuple and a Dict arrive as UV_CELL values, not as
+ * objects: `self.v.p` IS the UList / UDict.  Every body therefore starts
+ * with uv_is_list / uv_is_dict rather than with a slot lookup, and a bare
+ * `List.clone()` — an ordinary object that merely inherits the List
+ * prototype — is rejected by those guards the way the old core's missing
+ * `_storage` slot rejected it.
  *
- * Storage strategy at v1.0:
- *   - Pair / Triplet are stateless: each instance is a clone of the
- *     proto with `first` / `second` (/ `third`) installed as ordinary
- *     UObject slots.  Lookup goes through OP_GETSLOT → walks proto
- *     chain → finds the slot.
- *   - Tuple / List / Dict carry a heap-allocated backing buffer
- *     (UList / UDict struct).  The pointer is stashed in a hidden
- *     `_storage` slot as UVAL_INT (cast through uintptr_t) so the
- *     GC walker treats it as a leaf scalar.  Each backing buffer
- *     starts with a void *next header threading onto vm->stdlib_-
- *     containers; freed at urbi_vm_destroy via
- *     urbi_stdlib_containers_destroy.
+ * WHICH PROTOTYPE A RESULT CARRIES.  concat / diff / reverse / sort hand
+ * back a fresh list carrying the RECEIVER's prototype, which is the new
+ * spelling of the old "clone the receiver's proto object" step.
  *
- * Method registration uses UNativeMethodDef tables with URBI_REGISTER_METHODS
- * (shared installer from stdlib/object_root.h).
+ * EQUALITY AND ORDER.  Membership (contains, diff, Dict keys) is uv_equal,
+ * the runtime's own structural comparison.  Order exists in exactly one
+ * place — the no-argument sort — so there is exactly one comparator,
+ * container_cmp.  The old file carried a private uval_cmp and a private
+ * str_lex_cmp that between them duplicated both.
  *
- * Pair / Triplet / Tuple are exposed as fresh UObjects via
- * urbi_realm_set_global (the realm-populate registry has no row for
- * them; see src/realm/urealm_globals.c).  List and Dict reuse the
- * existing URBI_ATOM_LIST / URBI_ATOM_DICT atom-proto singletons —
- * the registry already exposes "List" / "Dict" as realm globals
- * pointing at those protos, so installing methods on the protos is
- * sufficient.
- */
+ * CALLING BACK INTO SCRIPT.  sort(f) is the only native here that runs
+ * user code.  Two hazards come with that: a nested call can grow the
+ * strand's register stack, so the `args` window a native was handed may
+ * be a dangling pointer afterwards (every value needed across a call is
+ * copied into a local first), and a collection can run between calls, so
+ * the snapshot list and the element lifted out of it are rooted.
+ * map / filter / each and the rest of the higher-order surface stay in
+ * the script overlay (stdlib.u), as they were before.
+ *
+ * ARITY is the boot table's (min_args / max_args in the tables below);
+ * uexec rejects a mis-counted call before the body runs. */
 
+#include "rt/ustdlib_glue.h"
 #include "stdlib/containers.h"
-#include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
-#include "stdlib/stdlib_join_core.h"   /* join_core: shared String/List join logic */
-#ifdef URBI_ENABLE_ROS2
-#include "value/ulist_build.h"         /* declaration cross-check for the C-builder wrappers */
-#endif
+#include "stdlib/stdlib_join_core.h"
 
-#include "chunk/uchunk.h"            /* UValue / UVAL_* */
-#include "gc/ugc_incremental.h"        /* GC_PHASE_*, uvalue_is_heap_white, urbi_gc_shade_gray */
-#include "object/uobject.h"            /* urbi_object_alloc / atom / clone / set_local_slot */
-#include "realm/urealm.h"              /* URealm + global_object */
-#include "runtime/uclosure.h"          /* urbi_native_method_fn */
-#include "runtime/umacros.h"           /* urbi_strlen, urbi_zero */
-#include "sched/ustrand.h"             /* UEXEC_OK / UEXEC_THROW */
-#include "urbi/object.h"               /* URBI_ATOM_LIST / DICT / OBJECT */
-#include "urbi/types.h"                /* urbi_make_nil */
-#include "urbi/urbi.h"                 /* URBI_OK / URBI_ERR_* / urbi_realm_set_global */
-#include "value/uintern.h"             /* ustr_intern + USymbol */
-#include "value/uvalue.h"              /* uvalue_equal + uvalue_truthy */
-#include "vm/uvm.h"                    /* UVM */
-#include "runtime/uscratch.h"          /* urbi_run_closure_on_scratch_args (List.sort comparator) */
+/* === shared helpers ====================================================== */
 
-#include <stdint.h>
-#include <stddef.h>
-
-/* === Backing-buffer header ================================================
- *
- * Every UList / UDict allocation begins with this header so urbi_stdlib_-
- * containers_destroy can walk the chain at VM teardown.  `next` threads onto
- * vm->stdlib_containers (declared as void * in uvm.h to keep that header
- * decoupled from this struct).  `kind` distinguishes UList vs UDict for
- * teardown (UDict carries a separately-allocated entries[] array). */
-
-typedef enum {
-    UCONTAINER_LIST = 1,
-    UCONTAINER_DICT = 2
-} UContainerKind;
-
-typedef struct UContainerHdr {
-    struct UContainerHdr *next;
-    uint8_t               kind;
-    uint8_t               _pad[7];
-} UContainerHdr;
-
-/* === UList — backing for List, Tuple ===================================== */
-
-typedef struct UList {
-    UContainerHdr hdr;
-    UValue       *items;         /* heap array, len * sizeof(UValue) */
-    size_t        len;
-    size_t        cap;
-} UList;
-
-/* === UDict — backing for Dict (open-address linear-probe) ================ */
-
-#define UDICT_EMPTY 0
-#define UDICT_USED  1
-#define UDICT_TOMB  2
-
-typedef struct UDictEntry {
-    UValue   key;     /* UVAL_STR only at v1.0 */
-    UValue   val;
-    uint32_t hash;
-    uint8_t  state;
-    uint8_t  _pad[3];
-} UDictEntry;
-
-typedef struct UDict {
-    UContainerHdr hdr;
-    UDictEntry   *entries;       /* heap array, cap entries; cap is power of two */
-    size_t        cap;
-    size_t        len;           /* USED entries (TOMB excluded) */
-} UDict;
-
-/* === Container-list helpers ============================================== */
-
-static void
-container_register(UVM *vm, UContainerHdr *hdr, uint8_t kind)
-{
-    hdr->kind = kind;
-    hdr->next = (UContainerHdr *)vm->stdlib_containers;
-    vm->stdlib_containers = hdr;
-}
-
-void
-urbi_stdlib_containers_destroy(UVM *vm)
-{
-    if (vm == NULL || vm->alloc_fn == NULL) return;
-    UContainerHdr *h = (UContainerHdr *)vm->stdlib_containers;
-    while (h != NULL) {
-        UContainerHdr *next = h->next;
-        if (h->kind == (uint8_t)UCONTAINER_LIST) {
-            UList *l = (UList *)h;
-            if (l->items != NULL) {
-                vm->alloc_fn(l->items, 0, vm->alloc_ud);
-                l->items = NULL;
-            }
-        } else if (h->kind == (uint8_t)UCONTAINER_DICT) {
-            UDict *d = (UDict *)h;
-            if (d->entries != NULL) {
-                vm->alloc_fn(d->entries, 0, vm->alloc_ud);
-                d->entries = NULL;
-            }
-        }
-        vm->alloc_fn(h, 0, vm->alloc_ud);
-        h = next;
-    }
-    vm->stdlib_containers = NULL;
-}
-
-/* Container elements are GC roots.
- */
-void
-urbi_stdlib_containers_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
-{
-    UContainerHdr *h = (UContainerHdr *)vm->stdlib_containers;
-    while (h != NULL) {
-        if (h->kind == (uint8_t)UCONTAINER_LIST) {
-            UList *l = (UList *)h;
-            size_t i;
-            for (i = 0U; i < l->len; i++) {
-                cb(vm, &l->items[i], ctx);
-            }
-        } else if (h->kind == (uint8_t)UCONTAINER_DICT) {
-            UDict *d = (UDict *)h;
-            size_t i;
-            for (i = 0U; i < d->cap; i++) {
-                if (d->entries[i].state == UDICT_USED) {
-                    cb(vm, &d->entries[i].key, ctx);
-                    cb(vm, &d->entries[i].val, ctx);
-                }
-            }
-        }
-        h = h->next;
-    }
-}
-
-/* Usage contract: call immediately before the store; no allocation may
- * intervene between barrier and store. */
-static void
-container_element_pre_store(UVM *vm, UValue child)
-{
-    if (UNLIKELY((vm->gc_phase == GC_PHASE_MARK_ROOTS
-                  || vm->gc_phase == GC_PHASE_MARK_INCREMENTAL)
-                 && uvalue_is_heap_white(vm, child))) {
-        urbi_gc_shade_gray(vm, uvalue_as_cell(child));
-    }
-}
-
-/* === UList / UDict alloc helpers ========================================= */
-
-static UList *
-list_alloc(UVM *vm, size_t initial_cap)
-{
-    if (vm->alloc_fn == NULL) return NULL;
-    UList *l = (UList *)vm->alloc_fn(NULL, sizeof(UList), vm->alloc_ud);
-    if (l == NULL) return NULL;
-    urbi_zero(l, sizeof(UList));
-    if (initial_cap > 0U) {
-        l->items = (UValue *)vm->alloc_fn(NULL, initial_cap * sizeof(UValue), vm->alloc_ud);
-        if (l->items == NULL) {
-            vm->alloc_fn(l, 0, vm->alloc_ud);
-            return NULL;
-        }
-        urbi_zero(l->items, initial_cap * sizeof(UValue));
-    }
-    l->len = 0U;
-    l->cap = initial_cap;
-    container_register(vm, &l->hdr, (uint8_t)UCONTAINER_LIST);
-    return l;
-}
-
-static int
-list_grow(UVM *vm, UList *l, size_t need)
-{
-    size_t new_cap = l->cap > 0U ? l->cap : 4U;
-    while (new_cap < need) new_cap *= 2U;
-    if (new_cap == l->cap) return 0;
-    UValue *fresh = (UValue *)vm->alloc_fn(NULL, new_cap * sizeof(UValue), vm->alloc_ud);
-    if (fresh == NULL) return -1;
-    urbi_zero(fresh, new_cap * sizeof(UValue));
-    size_t i;
-    for (i = 0U; i < l->len; i++) fresh[i] = l->items[i];
-    if (l->items != NULL) vm->alloc_fn(l->items, 0, vm->alloc_ud);
-    l->items = fresh;
-    l->cap   = new_cap;
-    return 0;
-}
-
-static UDict *
-dict_alloc(UVM *vm, size_t initial_cap)
-{
-    if (vm->alloc_fn == NULL) return NULL;
-    UDict *d = (UDict *)vm->alloc_fn(NULL, sizeof(UDict), vm->alloc_ud);
-    if (d == NULL) return NULL;
-    urbi_zero(d, sizeof(UDict));
-    if (initial_cap > 0U) {
-        d->entries = (UDictEntry *)vm->alloc_fn(NULL, initial_cap * sizeof(UDictEntry), vm->alloc_ud);
-        if (d->entries == NULL) {
-            vm->alloc_fn(d, 0, vm->alloc_ud);
-            return NULL;
-        }
-        urbi_zero(d->entries, initial_cap * sizeof(UDictEntry));
-    }
-    d->cap = initial_cap;
-    d->len = 0U;
-    container_register(vm, &d->hdr, (uint8_t)UCONTAINER_DICT);
-    return d;
-}
-
-/* === Hidden _storage slot helpers ========================================
- *
- * The UObject visible to scripts holds the underlying UList* / UDict* in a
- * UVAL_INT slot named `_storage`.  The pointer is round-tripped through
- * uintptr_t.  GC sees a UVAL_INT and treats it as a scalar leaf — the
- * backing buffer's lifetime is owned by vm->stdlib_containers, not by GC. */
-
-static void *
-ptr_from_val(UValue v)
-{
-    if (v.kind != (uint8_t)UVAL_INT) return NULL;
-    /* NOLINT(performance-no-int-to-ptr) — UList/UDict backing pointer
-     * stashed as int64 via urbi_make_int((int64_t)(intptr_t)p) in
-     * attach_storage; this reverses that encoding.  See file banner. */
-    return (void *)(intptr_t)v.v.i;  /* NOLINT(performance-no-int-to-ptr) */
-}
-
-static int
-attach_storage(UVM *vm, UObject *o, void *storage)
-{
-    USymbol *sym = (USymbol *)ustr_intern(vm, "_storage", 8);
-    if (sym == NULL) return -1;
-    return urbi_object_set_local_slot(vm, o, sym,
-                                      urbi_make_int((int64_t)(intptr_t)storage));
-}
-
-static void *
-fetch_storage_ptr(UVM *vm, UObject *o)
-{
-    if (o == NULL) return NULL;
-    USymbol *sym = (USymbol *)ustr_intern(vm, "_storage", 8);
-    if (sym == NULL) return NULL;
-    UObject *holder = NULL;
-    uint32_t idx = 0U;
-    int rc = urbi_object_resolve_slot(vm, o, sym, &holder, &idx);
-    if (rc != 1 || holder == NULL || holder->slots == NULL) return NULL;
-    return ptr_from_val(holder->slots[idx]);
-}
-
-static UList *
-list_storage(UVM *vm, UValue self)
-{
-    if (self.kind != (uint8_t)UVAL_OBJECT || self.v.p == NULL) return NULL;
-    return (UList *)fetch_storage_ptr(vm, (UObject *)self.v.p);
-}
-
-static UDict *
-dict_storage(UVM *vm, UValue self)
-{
-    if (self.kind != (uint8_t)UVAL_OBJECT || self.v.p == NULL) return NULL;
-    return (UDict *)fetch_storage_ptr(vm, (UObject *)self.v.p);
-}
-
-/* Method tables use UNativeMethodDef from stdlib/object_root.h;
- * URBI_REGISTER_METHODS does the install loop. */
-
-/* === Pair (immutable 2-tuple) ============================================
- *
- * Pair.new(a, b) clones the Pair proto (urbi_object_clone) and installs
- * `first` + `second` as ordinary slots.  No backing storage. */
-
-static int
-pair_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_ARITY(vm, "Pair.new", 2, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Pair.new: self must be Pair proto", out);
-
-    UObject *p = urbi_object_clone(vm, (UObject *)self.v.p);
-    if (p == NULL) return urbi_raise_oom(vm, out);
-
-    USymbol *sym_first  = (USymbol *)ustr_intern(vm, "first",  5);
-    USymbol *sym_second = (USymbol *)ustr_intern(vm, "second", 6);
-    if (sym_first == NULL || sym_second == NULL) return urbi_raise_oom(vm, out);
-    if (urbi_object_set_local_slot(vm, p, sym_first,  args[0]) != 0)
-        return urbi_raise_oom(vm, out);
-    if (urbi_object_set_local_slot(vm, p, sym_second, args[1]) != 0)
-        return urbi_raise_oom(vm, out);
-
-    *out = urbi_make_object(p);
-    return UEXEC_OK;
-}
-
-/* === Triplet (immutable 3-tuple) ========================================= */
-
-static int
-triplet_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_ARITY(vm, "Triplet.new", 3, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Triplet.new: self must be Triplet proto", out);
-
-    UObject *t = urbi_object_clone(vm, (UObject *)self.v.p);
-    if (t == NULL) return urbi_raise_oom(vm, out);
-
-    USymbol *sf = (USymbol *)ustr_intern(vm, "first",  5);
-    USymbol *ss = (USymbol *)ustr_intern(vm, "second", 6);
-    USymbol *st = (USymbol *)ustr_intern(vm, "third",  5);
-    if (sf == NULL || ss == NULL || st == NULL) return urbi_raise_oom(vm, out);
-    if (urbi_object_set_local_slot(vm, t, sf, args[0]) != 0) return urbi_raise_oom(vm, out);
-    if (urbi_object_set_local_slot(vm, t, ss, args[1]) != 0) return urbi_raise_oom(vm, out);
-    if (urbi_object_set_local_slot(vm, t, st, args[2]) != 0) return urbi_raise_oom(vm, out);
-
-    *out = urbi_make_object(t);
-    return UEXEC_OK;
-}
-
-/* === Tuple (variadic immutable n-tuple) ==================================
- *
- * Backed by a UList that's populated at construction and never grown.
- * Methods: length, at(i). */
-
-static int
-tuple_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Tuple.new: self must be Tuple proto", out);
-
-    UList *l = list_alloc(vm, (size_t)nargs > 0U ? (size_t)nargs : 1U);
-    if (l == NULL) return urbi_raise_oom(vm, out);
-
-    uint8_t i;
-    for (i = 0U; i < nargs; i++) {
-        container_element_pre_store(vm, args[i]);
-        l->items[i] = args[i];
-    }
-    l->len = (size_t)nargs;
-
-    UObject *t = urbi_object_clone(vm, (UObject *)self.v.p);
-    if (t == NULL) return urbi_raise_oom(vm, out);
-    if (attach_storage(vm, t, l) != 0) return urbi_raise_oom(vm, out);
-
-    *out = urbi_make_object(t);
-    return UEXEC_OK;
-}
-
-static int
-list_or_tuple_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)args;
-    URBI_CHECK_ARITY(vm, "length", 0, nargs, out);
-    UList *l = list_storage(vm, self);
-    if (l == NULL) return urbi_raise_type(vm, "length: missing _storage", out);
-    *out = urbi_make_int((int64_t)l->len);
-    return UEXEC_OK;
-}
-
-static int
-list_or_tuple_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_ARITY(vm, "get", 1, nargs, out);
-    if (args[0].kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "get: index must be Integer", out);
-    UList *l = list_storage(vm, self);
-    if (l == NULL) return urbi_raise_type(vm, "get: missing _storage", out);
-    int64_t i = args[0].v.i;
-    if (i < 0 || (size_t)i >= l->len)
-        return urbi_raise_index(vm, "get: index out of range", out);
-    *out = l->items[(size_t)i];
-    return UEXEC_OK;
-}
-
-/* === List ================================================================
- *
- * Mutable, growable.  `List.new(...)` constructs from variadic args.
- * Methods: new, length, isEmpty, at(i), add(v), set(i, v), concat(other),
- * diff(other), contains(v). */
-
-static int
-list_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "List.new: self must be List proto", out);
-
-    size_t cap = (size_t)nargs > 0U ? (size_t)nargs : 4U;
-    UList *l = list_alloc(vm, cap);
-    if (l == NULL) return urbi_raise_oom(vm, out);
-
-    uint8_t i;
-    for (i = 0U; i < nargs; i++) {
-        container_element_pre_store(vm, args[i]);
-        l->items[i] = args[i];
-    }
-    l->len = (size_t)nargs;
-
-    UObject *o = urbi_object_clone(vm, (UObject *)self.v.p);
-    if (o == NULL) return urbi_raise_oom(vm, out);
-    if (attach_storage(vm, o, l) != 0) return urbi_raise_oom(vm, out);
-
-    *out = urbi_make_object(o);
-    return UEXEC_OK;
-}
-
-static int
-list_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)args;
-    URBI_CHECK_ARITY(vm, "isEmpty", 0, nargs, out);
-    UList *l = list_storage(vm, self);
-    if (l == NULL) return urbi_raise_type(vm, "isEmpty: missing _storage", out);
-    *out = urbi_make_bool(l->len == 0U);
-    return UEXEC_OK;
-}
-
-static int
-list_add(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_ARITY(vm, "add", 1, nargs, out);
-    UList *l = list_storage(vm, self);
-    if (l == NULL) return urbi_raise_type(vm, "add: missing _storage", out);
-    if (l->len == l->cap) {
-        if (list_grow(vm, l, l->len + 1U) != 0)
-            return urbi_raise_oom(vm, out);
-    }
-    container_element_pre_store(vm, args[0]);
-    l->items[l->len++] = args[0];
-    *out = self;   /* allow chaining */
-    return UEXEC_OK;
-}
-
-static int
-list_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_ARITY(vm, "set", 2, nargs, out);
-    if (args[0].kind != (uint8_t)UVAL_INT)
-        return urbi_raise_type(vm, "set: index must be Integer", out);
-    UList *l = list_storage(vm, self);
-    if (l == NULL) return urbi_raise_type(vm, "set: missing _storage", out);
-    int64_t i = args[0].v.i;
-    if (i < 0 || (size_t)i >= l->len)
-        return urbi_raise_index(vm, "set: index out of range", out);
-    container_element_pre_store(vm, args[1]);
-    l->items[(size_t)i] = args[1];
-    *out = self;
-    return UEXEC_OK;
-}
-
-static int
-list_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_ARITY(vm, "contains", 1, nargs, out);
-    UList *l = list_storage(vm, self);
-    if (l == NULL) return urbi_raise_type(vm, "contains: missing _storage", out);
-    size_t i;
-    for (i = 0U; i < l->len; i++) {
-        if (uvalue_equal(&l->items[i], &args[0])) {
-            *out = urbi_make_bool(1);
-            return UEXEC_OK;
-        }
-    }
-    *out = urbi_make_bool(0);
-    return UEXEC_OK;
-}
-
-static int
-list_concat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_ARITY(vm, "concat", 1, nargs, out);
-    if (args[0].kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "concat: argument must be a List", out);
-    UList *a = list_storage(vm, self);
-    UList *b = list_storage(vm, args[0]);
-    if (a == NULL || b == NULL)
-        return urbi_raise_type(vm, "concat: missing _storage", out);
-
-    /* Allocate a fresh List proto-clone backed by a new UList. */
-    UList *o = list_alloc(vm, a->len + b->len > 0U ? a->len + b->len : 1U);
-    if (o == NULL) return urbi_raise_oom(vm, out);
-    /* No element barrier on these copy loops (same for diff / reverse /
-     * sort below): every value copied is already reachable from a
-     * registered source container, which the root provider re-yields. */
-    size_t i;
-    for (i = 0U; i < a->len; i++) o->items[o->len++] = a->items[i];
-    for (i = 0U; i < b->len; i++) o->items[o->len++] = b->items[i];
-
-    UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
-    if (ret == NULL) return urbi_raise_oom(vm, out);
-    if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
-
-    *out = urbi_make_object(ret);
-    return UEXEC_OK;
-}
-
-static int
-list_diff(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_ARITY(vm, "diff", 1, nargs, out);
-    if (args[0].kind != (uint8_t)UVAL_OBJECT)
-        return urbi_raise_type(vm, "diff: argument must be a List", out);
-    UList *a = list_storage(vm, self);
-    UList *b = list_storage(vm, args[0]);
-    if (a == NULL || b == NULL)
-        return urbi_raise_type(vm, "diff: missing _storage", out);
-
-    /* Allocate a fresh List backed by a UList with capacity a->len. */
-    UList *o = list_alloc(vm, a->len > 0U ? a->len : 1U);
-    if (o == NULL) return urbi_raise_oom(vm, out);
-
-    size_t i, j;
-    for (i = 0U; i < a->len; i++) {
-        int present = 0;
-        for (j = 0U; j < b->len; j++) {
-            if (uvalue_equal(&a->items[i], &b->items[j])) { present = 1; break; }
-        }
-        if (!present) o->items[o->len++] = a->items[i];
-    }
-
-    UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
-    if (ret == NULL) return urbi_raise_oom(vm, out);
-    if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
-
-    *out = urbi_make_object(ret);
-    return UEXEC_OK;
-}
-
-/* reverse(): return a fresh List with the elements in reverse order. */
-static int
-list_reverse(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)args;
-    URBI_CHECK_ARITY(vm, "reverse", 0, nargs, out);
-    UList *a = list_storage(vm, self);
-    if (a == NULL) return urbi_raise_type(vm, "reverse: missing _storage", out);
-    UList *o = list_alloc(vm, a->len > 0U ? a->len : 1U);
-    if (o == NULL) return urbi_raise_oom(vm, out);
-    size_t i;
-    for (i = 0U; i < a->len; i++) o->items[i] = a->items[a->len - 1U - i];
-    o->len = a->len;
-    UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
-    if (ret == NULL) return urbi_raise_oom(vm, out);
-    if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
-    *out = urbi_make_object(ret);
-    return UEXEC_OK;
-}
-
-/* Lexicographic byte compare of two NUL-terminated interned strings.
- * Returns <0, 0, >0 like strcmp (no <string.h> dependency). */
-static int
-str_lex_cmp(const char *x, const char *y)
-{
-    size_t i = 0U;
-    while (x[i] != '\0' && x[i] == y[i]) i++;
-    return (int)(unsigned char)x[i] - (int)(unsigned char)y[i];
-}
-
-/* Three-way compare of two UValues for sort.  Supports Integer, Float
- * (mixed numeric), and String.  Sets *ok = 0 when incomparable. */
-static int
-uval_cmp(const UValue *x, const UValue *y, int *ok)
+/* Three-way order for the no-argument sort: number against number,
+ * string against string.  *ok goes 0 for anything else, which the caller
+ * turns into "elements not comparable". */
+static int container_cmp(UValue a, UValue b, int *ok)
 {
     *ok = 1;
-    if (x->kind == (uint8_t)UVAL_INT && y->kind == (uint8_t)UVAL_INT)
-        return (x->v.i < y->v.i) ? -1 : (x->v.i > y->v.i) ? 1 : 0;
-    if ((x->kind == (uint8_t)UVAL_INT || x->kind == (uint8_t)UVAL_FLOAT) &&
-        (y->kind == (uint8_t)UVAL_INT || y->kind == (uint8_t)UVAL_FLOAT)) {
-        double xd = (x->kind == (uint8_t)UVAL_FLOAT) ? x->v.f : (double)x->v.i;
-        double yd = (y->kind == (uint8_t)UVAL_FLOAT) ? y->v.f : (double)y->v.i;
-        return (xd < yd) ? -1 : (xd > yd) ? 1 : 0;
+    if (uv_is_number(a) && uv_is_number(b)) {
+        if (a.kind == UV_INT && b.kind == UV_INT)
+            return a.v.i < b.v.i ? -1 : (a.v.i > b.v.i ? 1 : 0);
+        double x = uv_as_double(a), y = uv_as_double(b);
+        return x < y ? -1 : (x > y ? 1 : 0);
     }
-    if (x->kind == (uint8_t)UVAL_STR && y->kind == (uint8_t)UVAL_STR)
-        return str_lex_cmp((const char *)x->v.p, (const char *)y->v.p);
+    if (urbi_is_str(a) && urbi_is_str(b)) {
+        size_t na = urbi_str_size(a), nb = urbi_str_size(b);
+        size_t n = na < nb ? na : nb;
+        int d = n ? memcmp(urbi_str_cstr(a), urbi_str_cstr(b), n) : 0;
+        if (d != 0) return d < 0 ? -1 : 1;
+        return na < nb ? -1 : (na > nb ? 1 : 0);
+    }
     *ok = 0;
     return 0;
 }
 
-/* sort() / sort(comparator): return a fresh List sorted ascending
- * (insertion sort).
- *
- *   sort()  — order by uval_cmp (Integer / Float / String); all elements must
- *             be mutually comparable.
- *   sort(f) — order by a user comparator closure.  Legacy convention
- *             (aldebaran-urbi src/object/list.cc compareListItems / share/urbi
- *             argMin/max/min default `function (a, b) { a < b }`): the
- *             comparator is a strict LESS-THAN predicate — f(a, b) truthy means
- *             a sorts before b.  Ascending by that predicate; a descending sort
- *             is expressed with `function(a, b) { a > b }`.
- *
- * Re-entrancy / snapshot contract: the elements are copied into a
- * private backing store `o` BEFORE any comparator runs, and each comparison is
- * evaluated against `o`'s own elements — never the script-visible receiver or
- * any list a comparator can reach.  A comparator that mutates the source list
- * (e.g. `src.add(x)`) under sort therefore cannot corrupt the in-progress
- * sort; the returned list reflects the pre-sort membership.  This mirrors
- * legacy's `value_type s(content_)` copy-then-sort.
- *
- * GC discipline: `o` is threaded onto vm->stdlib_containers by list_alloc, so
- * urbi_stdlib_containers_walk_roots pins every element of o->items[0..len-1]
- * across every comparator call (a comparator can allocate and trigger a
- * collection).  The single value lifted out of the array during an insertion
- * pass — `key` — is rooted explicitly with a VM-level C-root frame for the
- * duration of that pass.
- *
- * Comparator outcomes: a throw re-propagates the thrown value catchably
- * (typed, e.g. DivByZero); a comparator that blocks, yields, exhausts the
- * scratch budget, or is cancelled is reported as a catchable TypeError (a
- * comparator is required to return synchronously). */
-static int
-list_sort(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+/* A fresh list carrying the receiver's prototype, so a derived list stays
+ * whatever the receiver was.  NULL on OOM. */
+static UList *fresh_like(UVM *vm, UValue self, uint32_t cap)
 {
-    if (nargs > 1) return urbi_raise_arity(vm, "sort", 1, nargs, out);
-    UList *a = list_storage(vm, self);
-    if (a == NULL) return urbi_raise_type(vm, "sort: missing _storage", out);
+    UObject *proto = ((const UList *)self.v.p)->proto;
+    return ulist_new(vm, proto ? proto : vm->protos[UP_LIST], cap);
+}
 
-    struct UClosure *cmp = NULL;
-    if (nargs == 1) {
-        if (args[0].kind != (uint8_t)UVAL_CLOSURE)
-            return urbi_raise_type(vm, "sort: comparator must be a function", out);
-        cmp = (struct UClosure *)args[0].v.p;
-        /* The comparator must declare at least 2 params.  Under-2 protos are
-         * exactly the broken class on the scratch frame: the 2-arg deposit
-         * into R[0..1] reaches or passes the R[nparams] arity-seed slot, so a
-         * 0-/1-param body would read a clobbered window and silently
-         * mis-sort instead of erroring the way a direct OP_CALL would.
-         * More-than-2 protos are left to their own arity prologue, which
-         * rejects the 2-arg call correctly; defaulted trailing params count
-         * toward nparams and keep working.  Native closures (proto == NULL)
-         * have no bytecode body to run on the scratch frame — same guard
-         * (pre-guard they crashed the runner's proto deref). */
-        if (cmp->proto == NULL || cmp->proto->nparams < 2U)
-            return urbi_raise_type(vm,
-                "sort: comparator must accept 2 arguments", out);
+/* Installs `n` values as `first` / `second` / `third` on a fresh clone of
+ * `proto`.  Used by Pair and Triplet, which carry their payload as
+ * ordinary slots rather than as a cell. */
+static int tuple_object_new(UVM *vm, UObject *proto, const UValue *args,
+                            uint8_t n, UValue *out)
+{
+    static const char *const kNames[3] = { "first", "second", "third" };
+    UObject *o = urbi_object_clone(vm, proto);
+    if (!o) return urbi_raise_oom(vm, out);
+
+    /* Rooted for the rest of the body: interning a name and growing the
+     * slot block both allocate, and nothing else points at `o` yet. */
+    UValue ov = uv_obj(o);
+    URBI_ROOT(vm, ov);
+    int rc = 0;
+    for (uint8_t i = 0; i < n && rc == 0; i++) {
+        USym *nm = usym_cstr(vm, kNames[i]);
+        rc = (nm && urbi_object_set_local_slot(vm, o, nm, args[i]) == 0) ? 0 : -1;
     }
-
-    /* Snapshot the backing store first (re-entrancy guard); once copied and
-     * o->len is set, every element is a GC root via the container provider. */
-    UList *o = list_alloc(vm, a->len > 0U ? a->len : 1U);
-    if (o == NULL) return urbi_raise_oom(vm, out);
-    size_t i;
-    for (i = 0U; i < a->len; i++) o->items[i] = a->items[i];
-    o->len = a->len;
-
-    for (i = 1U; i < o->len; i++) {
-        UValue key = o->items[i];
-        size_t j = i;
-        if (cmp == NULL) {
-            /* Default order: uval_cmp (unchanged from the no-arg path). */
-            while (j > 0U) {
-                int ok;
-                int c = uval_cmp(&o->items[j - 1U], &key, &ok);
-                if (!ok) return urbi_raise_type(vm, "sort: elements not comparable", out);
-                if (c <= 0) break;
-                o->items[j] = o->items[j - 1U];
-                j--;
-            }
-        } else {
-            /* Comparator order: shift the earlier element right while the
-             * comparator reports key < earlier (less(key, earlier)). */
-            UCRootFrame keyframe;
-            urbi_c_root_push(vm, &keyframe, &key);  /* key is lifted out of o->items */
-            while (j > 0U) {
-                UValue cargs[2];
-                cargs[0] = key;                 /* rooted via keyframe */
-                cargs[1] = o->items[j - 1U];     /* rooted via container provider */
-                UValue      cres  = urbi_make_nil();
-                int         threw = 0;
-                UExecStatus fatal = UEXEC_OK;
-                int src = urbi_run_closure_on_scratch_args(vm, cmp, cargs, 2U,
-                                                           &cres, &threw, &fatal);
-                if (src != 0) {
-                    /* Register-stack OOM during scratch arm (threw stays 0). */
-                    urbi_c_root_pop(vm, &keyframe);
-                    return urbi_raise_oom(vm, out);
-                }
-                if (threw) {
-                    /* Re-deposit the comparator's exception (catchable, typed)
-                     * before any allocation can run a GC slice; *out is rooted
-                     * by the OP_CALL native arm.  TAG_STOP / CANCEL / parking /
-                     * budget exhaustion (fatal != UEXEC_THROW) become a
-                     * catchable TypeError. */
-                    if (fatal == UEXEC_THROW) {
-                        *out = cres;
-                        urbi_c_root_pop(vm, &keyframe);
-                        return UEXEC_THROW;
-                    }
-                    urbi_c_root_pop(vm, &keyframe);
-                    return urbi_raise_type(vm,
-                        "sort: comparator did not return a value", out);
-                }
-                if (!uvalue_truthy(&cres)) break;
-                o->items[j] = o->items[j - 1U];
-                j--;
-            }
-            urbi_c_root_pop(vm, &keyframe);
-        }
-        o->items[j] = key;
-    }
-
-    UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
-    if (ret == NULL) return urbi_raise_oom(vm, out);
-    if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
-    *out = urbi_make_object(ret);
+    URBI_UNROOT(vm, ov);
+    if (rc != 0) return urbi_raise_oom(vm, out);
+    *out = ov;
     return UEXEC_OK;
 }
 
-/* join(sep): concatenate String elements separated by the String sep.
- * Raises TypeError if any element is not a String.
- *
- * Delegates to join_core (stdlib_join_core.h), the shared implementation
- * used by String.join (atoms.c) as well.  Both call sites use the same
- * urbi_stdlib_list_len / urbi_stdlib_list_get accessors and produce
- * identical results for any well-formed List. */
-static int
-list_join(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+/* A fresh list cell on `proto` holding args[0..nargs). */
+static int list_cell_new(UVM *vm, UObject *proto, const UValue *args,
+                         uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "join", 1, nargs, out);
-    if (args[0].kind != (uint8_t)UVAL_STR)
-        return urbi_raise_type(vm, "join: separator must be String", out);
-    if (self.kind != (uint8_t)UVAL_OBJECT || self.v.p == NULL)
-        return urbi_raise_type(vm, "join: self must be a List", out);
-    const char *sep = (const char *)args[0].v.p;
-    size_t seplen = urbi_strlen(sep);
-    return join_core(vm, sep, seplen, (UObject *)self.v.p, out);
+    UList *l = ulist_new(vm, proto, nargs);
+    if (!l) return urbi_raise_oom(vm, out);
+    /* ulist_push only touches the raw items array, so nothing between
+     * here and the last push can collect; the root is the cheap way to
+     * keep that true if ulist_push ever grows a cell allocation. */
+    UValue lv = uv_list(l);
+    URBI_ROOT(vm, lv);
+    int rc = 0;
+    for (uint8_t i = 0; i < nargs && rc == 0; i++) rc = ulist_push(vm, l, args[i]);
+    URBI_UNROOT(vm, lv);
+    if (rc != 0) return urbi_raise_oom(vm, out);
+    *out = lv;
+    return UEXEC_OK;
+}
+
+/* === Pair and Triplet ==================================================== */
+
+static int pair_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)nargs;
+    return tuple_object_new(vm, vm->protos[UP_PAIR], args, 2, out);
+}
+
+static int triplet_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)nargs;
+    return tuple_object_new(vm, vm->protos[UP_TRIPLET], args, 3, out);
+}
+
+/* === Tuple ===============================================================
+ *
+ * A Tuple is a UList cell whose prototype is Tuple, so `length` and `get`
+ * are the very same bodies List uses.  Immutability is by omission: the
+ * Tuple table has no mutator. */
+
+static int tuple_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self;
+    return list_cell_new(vm, vm->protos[UP_TUPLE], args, nargs, out);
+}
+
+/* === List and Tuple readers ============================================== */
+
+static int list_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args; (void)nargs;
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "length: self must be a List", out);
+    *out = uv_int((int64_t)((const UList *)self.v.p)->len);
+    return UEXEC_OK;
+}
+
+static int list_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args; (void)nargs;
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "isEmpty: self must be a List", out);
+    *out = uv_bool(((const UList *)self.v.p)->len == 0);
+    return UEXEC_OK;
+}
+
+static int list_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)nargs;
+    if (args[0].kind != UV_INT) return urbi_raise_type(vm, "get: index must be an Integer", out);
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "get: self must be a List", out);
+    const UList *l = (const UList *)self.v.p;
+    int64_t i = args[0].v.i;
+    if (i < 0 || (uint64_t)i >= l->len) return urbi_raise_index(vm, "get: index out of range", out);
+    *out = l->items[i];
+    return UEXEC_OK;
+}
+
+static int list_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)nargs;
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "contains: self must be a List", out);
+    const UList *l = (const UList *)self.v.p;
+    bool found = false;
+    for (uint32_t i = 0; i < l->len && !found; i++) found = uv_equal(l->items[i], args[0]);
+    *out = uv_bool(found);
+    return UEXEC_OK;
+}
+
+/* === List mutators ======================================================= */
+
+static int list_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self;
+    return list_cell_new(vm, vm->protos[UP_LIST], args, nargs, out);
+}
+
+/* add(v) / insertBack(v) / `<<` — appends and returns the RECEIVER, which
+ * is what makes the corpus's `l << a << b << c` chain work. */
+static int list_add(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)nargs;
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "add: self must be a List", out);
+    if (ulist_push(vm, (UList *)self.v.p, args[0]) != 0) return urbi_raise_oom(vm, out);
+    *out = self;
+    return UEXEC_OK;
+}
+
+static int list_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)nargs;
+    if (args[0].kind != UV_INT) return urbi_raise_type(vm, "set: index must be an Integer", out);
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "set: self must be a List", out);
+    UList *l = (UList *)self.v.p;
+    int64_t i = args[0].v.i;
+    if (i < 0 || (uint64_t)i >= l->len) return urbi_raise_index(vm, "set: index out of range", out);
+    l->items[i] = args[1];
+    *out = self;
+    return UEXEC_OK;
+}
+
+/* === List derivations ====================================================
+ *
+ * Each builds a fresh list and never mutates the receiver.  `self` and the
+ * argument are both rooted by uexec's native call arm, so the one
+ * allocation in each body (the result) cannot sweep them. */
+
+static int list_concat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)nargs;
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "concat: self must be a List", out);
+    if (!uv_is_list(args[0])) return urbi_raise_type(vm, "concat: argument must be a List", out);
+    const UList *a = (const UList *)self.v.p;
+    const UList *b = (const UList *)args[0].v.p;
+
+    UList *o = fresh_like(vm, self, a->len + b->len);
+    if (!o) return urbi_raise_oom(vm, out);
+    int rc = 0;
+    for (uint32_t i = 0; i < a->len && rc == 0; i++) rc = ulist_push(vm, o, a->items[i]);
+    for (uint32_t i = 0; i < b->len && rc == 0; i++) rc = ulist_push(vm, o, b->items[i]);
+    if (rc != 0) return urbi_raise_oom(vm, out);
+    *out = uv_list(o);
+    return UEXEC_OK;
+}
+
+static int list_diff(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)nargs;
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "diff: self must be a List", out);
+    if (!uv_is_list(args[0])) return urbi_raise_type(vm, "diff: argument must be a List", out);
+    const UList *a = (const UList *)self.v.p;
+    const UList *b = (const UList *)args[0].v.p;
+
+    UList *o = fresh_like(vm, self, a->len);
+    if (!o) return urbi_raise_oom(vm, out);
+    for (uint32_t i = 0; i < a->len; i++) {
+        bool present = false;
+        for (uint32_t j = 0; j < b->len && !present; j++) present = uv_equal(a->items[i], b->items[j]);
+        if (!present && ulist_push(vm, o, a->items[i]) != 0) return urbi_raise_oom(vm, out);
+    }
+    *out = uv_list(o);
+    return UEXEC_OK;
+}
+
+static int list_reverse(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args; (void)nargs;
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "reverse: self must be a List", out);
+    const UList *a = (const UList *)self.v.p;
+    UList *o = fresh_like(vm, self, a->len);
+    if (!o) return urbi_raise_oom(vm, out);
+    for (uint32_t i = a->len; i > 0; i--)
+        if (ulist_push(vm, o, a->items[i - 1]) != 0) return urbi_raise_oom(vm, out);
+    *out = uv_list(o);
+    return UEXEC_OK;
+}
+
+/* Insertion sort over `o`'s own items.  `cmp` is nil for the default
+ * order, otherwise a strict less-than predicate: cmp(a, b) truthy means
+ * `a` sorts before `b` (the legacy convention — a descending sort is
+ * written `function(a, b) { a > b }`).
+ *
+ * `o` and `cmp` are rooted by the caller.  `key` is rooted here because
+ * the shift lifts it out of the array, leaving nothing else pointing at
+ * it while the comparator allocates. */
+static int sort_items(UVM *vm, UList *o, UValue cmp, UValue *out)
+{
+    for (uint32_t i = 1; i < o->len; i++) {
+        UValue key = o->items[i];
+        uint32_t j = i;
+        URBI_ROOT(vm, key);
+        while (j > 0) {
+            bool before;
+            if (cmp.kind == UV_NIL) {
+                int ok;
+                int c = container_cmp(o->items[j - 1], key, &ok);
+                if (!ok) {
+                    URBI_UNROOT(vm, key);
+                    return urbi_raise_type(vm, "sort: elements not comparable", out);
+                }
+                before = c > 0;
+            } else {
+                UValue cargs[2], cres = uv_nil();
+                cargs[0] = key;
+                cargs[1] = o->items[j - 1];
+                int rc = urbi_call_closure(vm, cmp, uv_nil(), cargs, 2, &cres);
+                if (rc != UEXEC_OK) { URBI_UNROOT(vm, key); return rc; }
+                before = uv_truthy(cres);
+            }
+            if (!before) break;
+            o->items[j] = o->items[j - 1];
+            j--;
+        }
+        URBI_UNROOT(vm, key);
+        o->items[j] = key;
+    }
+    return UEXEC_OK;
+}
+
+/* sort() / sort(f) — a fresh sorted list; the receiver is untouched even
+ * when the comparator throws.
+ *
+ * The snapshot is taken before any comparator runs and is reachable from
+ * nothing the script can name, so a comparator that mutates the source
+ * list cannot disturb the sort in progress. */
+static int list_sort(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "sort: self must be a List", out);
+
+    /* Copied out of the argument window up front: running the comparator
+     * can grow the strand's register stack, and `args` points into it. */
+    UValue cmp = nargs ? args[0] : uv_nil();
+    if (nargs == 1) {
+        if (!urbi_is_closure(cmp))
+            return urbi_raise_type(vm, "sort: comparator must be a function", out);
+        const UClosure *cl = (const UClosure *)cmp.v.p;
+        /* A native comparator has no bytecode body to run per comparison,
+         * and an under-2-parameter body would read a window the 2-argument
+         * call has already overwritten and silently mis-sort.  Both are the
+         * same guard.  A 3-parameter body is left to its own arity
+         * prologue, which rejects the 2-argument call correctly. */
+        if (cl->proto == NULL || cl->proto->nparams < 2)
+            return urbi_raise_type(vm, "sort: comparator must accept 2 arguments", out);
+    }
+
+    const UList *src = (const UList *)self.v.p;
+    UList *o = fresh_like(vm, self, src->len);
+    if (!o) return urbi_raise_oom(vm, out);
+    UValue ov = uv_list(o);
+    URBI_ROOT(vm, ov);
+    URBI_ROOT(vm, cmp);
+    int rc = 0;
+    for (uint32_t i = 0; i < src->len && rc == 0; i++) rc = ulist_push(vm, o, src->items[i]);
+    if (rc == 0) rc = sort_items(vm, o, cmp, out);
+    else rc = urbi_raise_oom(vm, out);
+    URBI_UNROOT(vm, cmp);
+    URBI_UNROOT(vm, ov);
+    if (rc != UEXEC_OK) return rc;
+    *out = ov;
+    return UEXEC_OK;
+}
+
+/* join(sep) — the shared join_core, the same one String.join uses. */
+static int list_join(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)nargs;
+    if (!urbi_is_str(args[0])) return urbi_raise_type(vm, "join: separator must be a String", out);
+    if (!uv_is_list(self)) return urbi_raise_type(vm, "join: self must be a List", out);
+    return join_core(vm, args[0], self, out);
 }
 
 /* === Dict ================================================================
  *
- * Mutable, string-keyed open-address hash table.  Methods: new, length,
- * isEmpty, get(key), set(key, value), has(key), remove(key).
- *
- * Iteration order is unspecified at v1.0 (Dict iteration order joins
- * Lua/Ruby<1.9 in declining the insertion-order guarantee).
- *
- * Hash: FNV-1a over string bytes.  Capacity grows by doubling when load
- * factor crosses 0.5. */
+ * Keys are compared with uv_equal, so a number, a boolean or nil is as
+ * good a key as a string; the old core restricted them to String because
+ * its hash table hashed bytes, and nothing in the corpus asked for the
+ * restriction. */
 
-static uint32_t
-dict_hash_bytes(const char *s, size_t n)
+static int dict_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    uint32_t h = 0x811C9DC5U;
-    size_t i;
-    for (i = 0U; i < n; i++) {
-        h ^= (uint32_t)(unsigned char)s[i];
-        h *= 0x01000193U;
-    }
-    return h;
-}
-
-static int
-dict_key_check(UVM *vm, UValue key, UValue *out, const char *fn_name)
-{
-    (void)fn_name;
-    if (key.kind != (uint8_t)UVAL_STR || key.v.p == NULL) {
-        return urbi_raise_type(vm, "Dict op: key must be String", out);
-    }
+    (void)self; (void)args; (void)nargs;
+    UDict *d = udict_new(vm, vm->protos[UP_DICT]);
+    if (!d) return urbi_raise_oom(vm, out);
+    *out = uv_dict(d);
     return UEXEC_OK;
 }
 
-/* dict_lookup walks the open-address probe sequence and returns either the
- * matching USED entry or the first EMPTY/TOMB slot suitable for insert.
- * Returns NULL only when the table is full of USED entries (caller must
- * grow first).  d->cap must be a power of two. */
-static UDictEntry *
-dict_lookup(UDict *d, const char *ks, size_t kn, uint32_t h)
+static int dict_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    if (d->cap == 0U) return NULL;
-    UDictEntry *first_avail = NULL;
-    size_t mask = d->cap - 1U;
-    size_t start = (size_t)h & mask;
-    size_t probe;
-    for (probe = 0U; probe < d->cap; probe++) {
-        UDictEntry *e = &d->entries[(start + probe) & mask];
-        if (e->state == UDICT_EMPTY) {
-            return first_avail != NULL ? first_avail : e;
-        }
-        if (e->state == UDICT_TOMB) {
-            if (first_avail == NULL) first_avail = e;
-            continue;
-        }
-        /* USED — compare. */
-        if (e->hash == h && e->key.kind == (uint8_t)UVAL_STR
-            && e->key.v.p != NULL) {
-            const char *sk = (const char *)e->key.v.p;
-            size_t sklen = urbi_strlen(sk);
-            if (sklen == kn) {
-                size_t i;
-                int eq = 1;
-                for (i = 0U; i < kn; i++) {
-                    if (sk[i] != ks[i]) { eq = 0; break; }
-                }
-                if (eq) return e;
-            }
-        }
-    }
-    return first_avail;   /* table full of USED + TOMB */
-}
-
-static int
-dict_grow(UVM *vm, UDict *d)
-{
-    size_t new_cap = d->cap > 0U ? d->cap * 2U : 8U;
-    UDictEntry *fresh = (UDictEntry *)vm->alloc_fn(NULL,
-        new_cap * sizeof(UDictEntry), vm->alloc_ud);
-    if (fresh == NULL) return -1;
-    urbi_zero(fresh, new_cap * sizeof(UDictEntry));
-    UDictEntry *old = d->entries;
-    size_t old_cap = d->cap;
-    d->entries = fresh;
-    d->cap     = new_cap;
-    d->len     = 0U;
-    if (old != NULL) {
-        size_t i;
-        for (i = 0U; i < old_cap; i++) {
-            if (old[i].state != UDICT_USED) continue;
-            const char *sk = (const char *)old[i].key.v.p;
-            size_t sklen = urbi_strlen(sk);
-            UDictEntry *slot = dict_lookup(d, sk, sklen, old[i].hash);
-            if (slot == NULL) {
-                /* should never happen — fresh table has empty slots */
-                vm->alloc_fn(old, 0, vm->alloc_ud);
-                return -1;
-            }
-            *slot = old[i];
-            d->len++;
-        }
-        vm->alloc_fn(old, 0, vm->alloc_ud);
-    }
-    return 0;
-}
-
-static int
-dict_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)args;
-    URBI_CHECK_ARITY(vm, "Dict.new", 0, nargs, out);
-    URBI_CHECK_SELF(vm, self, UVAL_OBJECT, "Dict.new: self must be Dict proto", out);
-
-    UDict *d = dict_alloc(vm, 8U);
-    if (d == NULL) return urbi_raise_oom(vm, out);
-
-    UObject *o = urbi_object_clone(vm, (UObject *)self.v.p);
-    if (o == NULL) return urbi_raise_oom(vm, out);
-    if (attach_storage(vm, o, d) != 0) return urbi_raise_oom(vm, out);
-
-    *out = urbi_make_object(o);
+    (void)args; (void)nargs;
+    if (!uv_is_dict(self)) return urbi_raise_type(vm, "length: self must be a Dictionary", out);
+    *out = uv_int((int64_t)((const UDict *)self.v.p)->len);
     return UEXEC_OK;
 }
 
-static int
-dict_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+static int dict_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    (void)args;
-    URBI_CHECK_ARITY(vm, "length", 0, nargs, out);
-    UDict *d = dict_storage(vm, self);
-    if (d == NULL) return urbi_raise_type(vm, "length: missing _storage", out);
-    *out = urbi_make_int((int64_t)d->len);
+    (void)args; (void)nargs;
+    if (!uv_is_dict(self)) return urbi_raise_type(vm, "isEmpty: self must be a Dictionary", out);
+    *out = uv_bool(((const UDict *)self.v.p)->len == 0);
     return UEXEC_OK;
 }
 
-static int
-dict_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+static int dict_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    (void)args;
-    URBI_CHECK_ARITY(vm, "isEmpty", 0, nargs, out);
-    UDict *d = dict_storage(vm, self);
-    if (d == NULL) return urbi_raise_type(vm, "isEmpty: missing _storage", out);
-    *out = urbi_make_bool(d->len == 0U);
-    return UEXEC_OK;
-}
-
-static int
-dict_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    URBI_CHECK_ARITY(vm, "set", 2, nargs, out);
-    int rc = dict_key_check(vm, args[0], out, "set");
-    if (rc != UEXEC_OK) return rc;
-
-    UDict *d = dict_storage(vm, self);
-    if (d == NULL) return urbi_raise_type(vm, "set: missing _storage", out);
-
-    /* Grow if load factor would exceed 0.5 after potential insert. */
-    if ((d->len + 1U) * 2U > d->cap) {
-        if (dict_grow(vm, d) != 0) return urbi_raise_oom(vm, out);
-    }
-
-    const char *ks = (const char *)args[0].v.p;
-    size_t kn = urbi_strlen(ks);
-    uint32_t h = dict_hash_bytes(ks, kn);
-    UDictEntry *e = dict_lookup(d, ks, kn, h);
-    if (e == NULL) return urbi_raise_oom(vm, out);
-
-    if (e->state != UDICT_USED) {
-        container_element_pre_store(vm, args[0]);
-        e->key   = args[0];
-        e->hash  = h;
-        e->state = UDICT_USED;
-        d->len++;
-    }
-    container_element_pre_store(vm, args[1]);
-    e->val = args[1];
+    (void)nargs;
+    if (!uv_is_dict(self)) return urbi_raise_type(vm, "set: self must be a Dictionary", out);
+    if (udict_set(vm, (UDict *)self.v.p, args[0], args[1]) != 0) return urbi_raise_oom(vm, out);
     *out = self;
     return UEXEC_OK;
 }
 
-/* get(key): return the value stored under key, or nil if the key is absent.
- *
- * Nil-return contract: a missing key returns nil without raising an
- * exception.  This matches the legacy Dict.u behaviour (no KeyError).
- * To distinguish a nil-valued entry from an absent key, call has(key)
- * first, or use the scripted getWithDefault(key, default) overlay. */
-static int
-dict_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+/* get(key) — nil for an absent key rather than a raise, which is the
+ * legacy contract.  has(key) is how a nil VALUE is told from a missing
+ * one. */
+static int dict_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "get", 1, nargs, out);
-    int rc = dict_key_check(vm, args[0], out, "get");
-    if (rc != UEXEC_OK) return rc;
-
-    UDict *d = dict_storage(vm, self);
-    if (d == NULL) return urbi_raise_type(vm, "get: missing _storage", out);
-    if (d->cap == 0U) { *out = urbi_make_nil(); return UEXEC_OK; }
-
-    const char *ks = (const char *)args[0].v.p;
-    size_t kn = urbi_strlen(ks);
-    UDictEntry *e = dict_lookup(d, ks, kn, dict_hash_bytes(ks, kn));
-    if (e == NULL || e->state != UDICT_USED) {
-        *out = urbi_make_nil();
-        return UEXEC_OK;
-    }
-    *out = e->val;
+    (void)nargs;
+    if (!uv_is_dict(self)) return urbi_raise_type(vm, "get: self must be a Dictionary", out);
+    if (!udict_get((const UDict *)self.v.p, args[0], out)) *out = uv_nil();
     return UEXEC_OK;
 }
 
-static int
-dict_has(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+static int dict_has(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "has", 1, nargs, out);
-    int rc = dict_key_check(vm, args[0], out, "has");
-    if (rc != UEXEC_OK) return rc;
-
-    UDict *d = dict_storage(vm, self);
-    if (d == NULL) return urbi_raise_type(vm, "has: missing _storage", out);
-    if (d->cap == 0U) { *out = urbi_make_bool(0); return UEXEC_OK; }
-
-    const char *ks = (const char *)args[0].v.p;
-    size_t kn = urbi_strlen(ks);
-    UDictEntry *e = dict_lookup(d, ks, kn, dict_hash_bytes(ks, kn));
-    *out = urbi_make_bool(e != NULL && e->state == UDICT_USED);
+    (void)nargs;
+    if (!uv_is_dict(self)) return urbi_raise_type(vm, "has: self must be a Dictionary", out);
+    UValue ignored;
+    *out = uv_bool(udict_get((const UDict *)self.v.p, args[0], &ignored));
     return UEXEC_OK;
 }
 
-static int
-dict_remove(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+static int dict_remove(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    URBI_CHECK_ARITY(vm, "remove", 1, nargs, out);
-    int rc = dict_key_check(vm, args[0], out, "remove");
-    if (rc != UEXEC_OK) return rc;
-
-    UDict *d = dict_storage(vm, self);
-    if (d == NULL) return urbi_raise_type(vm, "remove: missing _storage", out);
-    if (d->cap == 0U) { *out = self; return UEXEC_OK; }
-
-    const char *ks = (const char *)args[0].v.p;
-    size_t kn = urbi_strlen(ks);
-    UDictEntry *e = dict_lookup(d, ks, kn, dict_hash_bytes(ks, kn));
-    if (e != NULL && e->state == UDICT_USED) {
-        /* No element barrier: deletion stores nil — an insertion barrier
-         * only guards new black→white edges. */
-        e->state = UDICT_TOMB;
-        e->key   = urbi_make_nil();
-        e->val   = urbi_make_nil();
-        d->len--;
-    }
+    (void)nargs;
+    if (!uv_is_dict(self)) return urbi_raise_type(vm, "remove: self must be a Dictionary", out);
+    (void)udict_remove((UDict *)self.v.p, args[0]);
     *out = self;
     return UEXEC_OK;
 }
 
-/* keys(): return a fresh List of the dict's keys.  Order is unspecified
- * (matches the v1.0 Dict iteration-order contract).
- *
- * Mutation-during-iteration contract: the scripted Dict.each() overlay
- * (dict_overlay.u) calls keys() BEFORE beginning iteration and iterates
- * over that snapshot List.  Entries added to the dict after each() begins
- * are NOT visited; entries removed before their key is reached will cause
- * get() to return nil for that key — not an error.  This mirrors the
- * list_sort snapshot contract (see list_sort above). */
-static int
-dict_keys(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+/* keys() / values() — a fresh List.  Iteration order is unspecified, and
+ * the two agree with each other for a dict nothing has touched in
+ * between.  The scripted Dict.each iterates over a keys() snapshot, so an
+ * entry added under it is not visited and one removed under it reads back
+ * as nil. */
+static int dict_collect(UVM *vm, UValue self, bool want_keys, UValue *out)
 {
-    (void)args;
-    URBI_CHECK_ARITY(vm, "keys", 0, nargs, out);
-    UDict *d = dict_storage(vm, self);
-    if (d == NULL) return urbi_raise_type(vm, "keys: missing _storage", out);
-    UObject *lst = urbi_stdlib_list_new_empty(vm);
-    if (lst == NULL) return urbi_raise_oom(vm, out);
-    size_t i;
-    for (i = 0U; i < d->cap; i++) {
-        if (d->entries[i].state != UDICT_USED) continue;
-        if (urbi_stdlib_list_append_value(vm, lst, d->entries[i].key) != 0)
-            return urbi_raise_oom(vm, out);
-    }
-    *out = urbi_make_object(lst);
+    const UDict *d = (const UDict *)self.v.p;
+    UList *l = ulist_new(vm, vm->protos[UP_LIST], d->len);
+    if (!l) return urbi_raise_oom(vm, out);
+    UValue lv = uv_list(l);
+    URBI_ROOT(vm, lv);
+    int rc = 0;
+    for (uint32_t i = 0; i < d->len && rc == 0; i++)
+        rc = ulist_push(vm, l, want_keys ? d->keys[i] : d->vals[i]);
+    URBI_UNROOT(vm, lv);
+    if (rc != 0) return urbi_raise_oom(vm, out);
+    *out = lv;
     return UEXEC_OK;
 }
 
-/* values(): return a fresh List of the dict's values.  Order is
- * unspecified and parallels keys() for a given dict instance. */
-static int
-dict_values(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+static int dict_keys(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    (void)args;
-    URBI_CHECK_ARITY(vm, "values", 0, nargs, out);
-    UDict *d = dict_storage(vm, self);
-    if (d == NULL) return urbi_raise_type(vm, "values: missing _storage", out);
-    UObject *lst = urbi_stdlib_list_new_empty(vm);
-    if (lst == NULL) return urbi_raise_oom(vm, out);
-    size_t i;
-    for (i = 0U; i < d->cap; i++) {
-        if (d->entries[i].state != UDICT_USED) continue;
-        if (urbi_stdlib_list_append_value(vm, lst, d->entries[i].val) != 0)
-            return urbi_raise_oom(vm, out);
-    }
-    *out = urbi_make_object(lst);
-    return UEXEC_OK;
+    (void)args; (void)nargs;
+    if (!uv_is_dict(self)) return urbi_raise_type(vm, "keys: self must be a Dictionary", out);
+    return dict_collect(vm, self, true, out);
 }
 
-/* === Method tables ======================================================= */
+static int dict_values(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args; (void)nargs;
+    if (!uv_is_dict(self)) return urbi_raise_type(vm, "values: self must be a Dictionary", out);
+    return dict_collect(vm, self, false, out);
+}
 
-static const UNativeMethodDef PAIR_METHODS[] = {
-    { "new", pair_new }
+/* === the tables ==========================================================
+ *
+ * The legacy names each alias carries, with the source it came from:
+ *   List.size       list.cc:167 BINDG(size)
+ *   List.insertBack list.cc:92  BIND(insertBack)
+ *   List.<<         list.u:35   copySlot("insertBack", "<<")
+ *   List.+          list.cc:88  BIND(PLUS, operator+)
+ *   Dict.size       dictionary.cc:91 BINDG(size)
+ * `head` and the higher-order surface are the script overlay's. */
+
+const UMethodDef ustdlib_pair_methods[USTDLIB_PAIR_NMETHODS] = {
+    { "new", pair_new, 2, 2 }
 };
 
-static const UNativeMethodDef TRIPLET_METHODS[] = {
-    { "new", triplet_new }
+const UMethodDef ustdlib_triplet_methods[USTDLIB_TRIPLET_NMETHODS] = {
+    { "new", triplet_new, 3, 3 }
 };
 
-static const UNativeMethodDef TUPLE_METHODS[] = {
-    { "new",    tuple_new            },
-    { "length", list_or_tuple_length },
-    { "get",    list_or_tuple_get     }
+const UMethodDef ustdlib_tuple_methods[USTDLIB_TUPLE_NMETHODS] = {
+    { "new",    tuple_new,   0, UMETHOD_VARARGS },
+    { "length", list_length, 0, 0 },
+    { "get",    list_get,    1, 1 }
 };
 
-static const UNativeMethodDef LIST_METHODS[] = {
-    { "new",      list_new             },
-    { "length",   list_or_tuple_length },
-    { "isEmpty",  list_isEmpty         },
-    { "get",      list_or_tuple_get     },
-    { "add",      list_add             },
-    { "set",      list_set             },
-    { "contains", list_contains        },
-    { "concat",   list_concat          },
-    { "diff",     list_diff            },
-    { "sort",     list_sort            },
-    { "reverse",  list_reverse         },
-    { "join",     list_join            },
-    /* Legacy compat aliases:
-     * size    — legacy primary: list.cc:167 BINDG(size)
-     * insertBack — legacy primary: list.cc:92 BIND(insertBack)
-     * <<      — legacy alias:   list.u:35 copySlot("insertBack","<<")
-     * +       — legacy primary: list.cc:88 BIND(PLUS, operator+) */
-    { "size",       list_or_tuple_length },
-    { "insertBack", list_add             },
-    { "<<",         list_add             },
-    { "+",          list_concat          }
+const UMethodDef ustdlib_list_methods[USTDLIB_LIST_NMETHODS] = {
+    { "new",        list_new,     0, UMETHOD_VARARGS },
+    { "length",     list_length,  0, 0 },
+    { "isEmpty",    list_isEmpty, 0, 0 },
+    { "get",        list_get,     1, 1 },
+    { "add",        list_add,     1, 1 },
+    { "set",        list_set,     2, 2 },
+    { "contains",   list_contains, 1, 1 },
+    { "concat",     list_concat,  1, 1 },
+    { "diff",       list_diff,    1, 1 },
+    { "sort",       list_sort,    0, 1 },
+    { "reverse",    list_reverse, 0, 0 },
+    { "join",       list_join,    1, 1 },
+    { "size",       list_length,  0, 0 },
+    { "insertBack", list_add,     1, 1 },
+    { "<<",         list_add,     1, 1 },
+    { "+",          list_concat,  1, 1 }
 };
 
-static const UNativeMethodDef DICT_METHODS[] = {
-    { "new",     dict_new     },
-    { "length",  dict_length  },
-    { "isEmpty", dict_isEmpty },
-    { "set",     dict_set     },
-    { "get",     dict_get     },
-    { "has",     dict_has     },
-    { "remove",  dict_remove  },
-    { "keys",    dict_keys    },
-    { "values",  dict_values  },
-    /* Legacy compat alias:
-     * size — legacy primary: dictionary.cc:91 BINDG(size) */
-    { "size",    dict_length  }
+const UMethodDef ustdlib_dict_methods[USTDLIB_DICT_NMETHODS] = {
+    { "new",     dict_new,     0, 0 },
+    { "length",  dict_length,  0, 0 },
+    { "isEmpty", dict_isEmpty, 0, 0 },
+    { "set",     dict_set,     2, 2 },
+    { "get",     dict_get,     1, 1 },
+    { "has",     dict_has,     1, 1 },
+    { "remove",  dict_remove,  1, 1 },
+    { "keys",    dict_keys,    0, 0 },
+    { "values",  dict_values,  0, 0 },
+    { "size",    dict_length,  0, 0 }
 };
-
-/* === urbi_stdlib_register_containers ====================================
- *
- * Boot phase (called from urbi_stdlib_boot AFTER atom_protos_register and
- * atoms.c register_atom_methods, BEFORE the realm-populate registry loop):
- *
- *   1. Install List / Dict methods on the existing URBI_ATOM_LIST /
- *      URBI_ATOM_DICT atom-proto singletons.  The realm-populate registry
- *      already publishes these as "List" / "Dict" globals.
- *   2. Allocate fresh Pair / Triplet / Tuple proto UObjects, install
- *      their methods, and stash the pointers in vm fields.
- *      Realm-global binding for these names is deferred to
- *      urbi_stdlib_register_container_globals (called after the registry
- *      loop) so the registry's stable slot 0..7 layout for the v1.0
- *      packed-flag CONSTANT enforcement range stays intact.
- *
- * Idempotent — guarded by vm->stdlib_booted upstream. */
-
-int
-urbi_stdlib_register_containers(UVM *vm)
-{
-    if (vm == NULL) return URBI_ERR_INVALID_ARG;
-
-    int rc;
-
-    /* 1. List / Dict atom protos (existing singletons; realm-populate
-     *    registry already binds the names). */
-    UObject *list_proto = urbi_object_atom(vm, URBI_ATOM_LIST);
-    if (list_proto == NULL) return URBI_ERR_OOM;
-    rc = URBI_REGISTER_METHODS(vm, list_proto, LIST_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    UObject *dict_proto = urbi_object_atom(vm, URBI_ATOM_DICT);
-    if (dict_proto == NULL) return URBI_ERR_OOM;
-    rc = URBI_REGISTER_METHODS(vm, dict_proto, DICT_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    /* 2. Pair / Triplet / Tuple fresh protos.  Each is a vanilla
-     *    URBI_ATOM_OBJECT-family UObject with the proper methods installed.
-     *    GC reachability comes from object_roots_walker (uobject.c) which
-     *    shades vm->container_*_proto during MARK_ROOTS. */
-    if (vm->container_pair_proto == NULL) {
-        UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-        if (p == NULL) return URBI_ERR_OOM;
-        vm->container_pair_proto = p;
-    }
-    rc = URBI_REGISTER_METHODS(vm, vm->container_pair_proto, PAIR_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    if (vm->container_triplet_proto == NULL) {
-        UObject *t = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-        if (t == NULL) return URBI_ERR_OOM;
-        vm->container_triplet_proto = t;
-    }
-    rc = URBI_REGISTER_METHODS(vm, vm->container_triplet_proto, TRIPLET_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    if (vm->container_tuple_proto == NULL) {
-        UObject *t = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-        if (t == NULL) return URBI_ERR_OOM;
-        vm->container_tuple_proto = t;
-    }
-    rc = URBI_REGISTER_METHODS(vm, vm->container_tuple_proto, TUPLE_METHODS);
-    if (rc != URBI_OK) return rc;
-
-    return URBI_OK;
-}
-
-/* === urbi_stdlib_register_container_globals =============================
- *
- * Post-registry hook: installs Pair / Triplet / Tuple as realm globals on
- * `realm`.  Called by urbi_populate_realm_globals AFTER the 15-row
- * registry loop completes, so these names occupy slots 15+ and don't
- * displace the registry's slot 0..7 CONSTANT-enforcement layout.
- *
- * The protos themselves are allocated by urbi_stdlib_register_containers
- * (which runs at BOOT TIME, before this function); this hook just binds
- * names to the existing protos. */
-
-int
-urbi_stdlib_register_container_globals(UVM *vm, URealm *realm)
-{
-    if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
-
-    int rc;
-    if (vm->container_pair_proto != NULL) {
-        rc = urbi_realm_set_global(vm, realm, "Pair", 4,
-                                   urbi_make_object(vm->container_pair_proto));
-        if (rc != URBI_OK) return rc;
-    }
-    if (vm->container_triplet_proto != NULL) {
-        rc = urbi_realm_set_global(vm, realm, "Triplet", 7,
-                                   urbi_make_object(vm->container_triplet_proto));
-        if (rc != URBI_OK) return rc;
-    }
-    if (vm->container_tuple_proto != NULL) {
-        rc = urbi_realm_set_global(vm, realm, "Tuple", 5,
-                                   urbi_make_object(vm->container_tuple_proto));
-        if (rc != URBI_OK) return rc;
-    }
-    return URBI_OK;
-}
-
-/* The Lobby proto's `lobbies` slot is created by lobby.u as a fresh List
- * (`var Lobby.lobbies = []`).  The C-side dispatcher (urepl_session_*)
- * needs to push/remove session global-objects from that List as sessions
- * come and go.  Reaching directly into the script-side List from urbi_-
- * repl_eval is too heavyweight for a lifecycle event; instead we expose
- * two thin C helpers that operate on the UList backing buffer the same
- * way list_add / list_contains do.
- *
- * Both helpers accept a List UObject* and a UValue item; they no-op
- * (returning URBI_OK) when list_obj is NULL or carries no _storage slot
- * — the early-call scenario where urbi_lobby_register_session fires
- * before the .u overlay has populated Lobby.lobbies.  Out-of-memory
- * surfaces as URBI_ERR_OOM.
- *
- * Scope: only the Lobby dispatcher should call these; user-facing List
- * mutation goes through list_add / list_set / list_contains. */
-
-int
-urbi_stdlib_list_append_value(UVM *vm, UObject *list_obj, UValue item)
-{
-    if (vm == NULL) return URBI_ERR_INVALID_ARG;
-    if (list_obj == NULL) return URBI_OK;
-    UList *l = (UList *)fetch_storage_ptr(vm, list_obj);
-    if (l == NULL) return URBI_OK;  /* Lobby.lobbies not yet initialized */
-    if (l->len == l->cap) {
-        if (list_grow(vm, l, l->len + 1U) != 0) return URBI_ERR_OOM;
-    }
-    container_element_pre_store(vm, item);
-    l->items[l->len++] = item;
-    return URBI_OK;
-}
-
-/* Ungated list-read accessors mirroring the ROS2-gated urbi_list_len/get,
- * but taking a UObject* (like urbi_stdlib_list_append_value) so stdlib code
- * outside the ROS2 component (e.g. String.join/format) can read List backing
- * without the URBI_ENABLE_ROS2 gate.  Internal; not public ABI. */
-size_t
-urbi_stdlib_list_len(UVM *vm, UObject *list_obj)
-{
-    if (vm == NULL || list_obj == NULL) return 0U;
-    UList *l = (UList *)fetch_storage_ptr(vm, list_obj);
-    if (l == NULL) return 0U;
-    return l->len;
-}
-
-UValue
-urbi_stdlib_list_get(UVM *vm, UObject *list_obj, size_t i)
-{
-    if (vm == NULL || list_obj == NULL) return urbi_make_nil();
-    UList *l = (UList *)fetch_storage_ptr(vm, list_obj);
-    if (l == NULL || i >= l->len) return urbi_make_nil();
-    return l->items[i];
-}
-
-int
-urbi_stdlib_list_storage_present(UVM *vm, UObject *list_obj)
-{
-    if (vm == NULL || list_obj == NULL) return 0;
-    return fetch_storage_ptr(vm, list_obj) != NULL;
-}
-
-int
-urbi_stdlib_list_remove_first_equal(UVM *vm, UObject *list_obj, UValue item)
-{
-    if (vm == NULL) return URBI_ERR_INVALID_ARG;
-    if (list_obj == NULL) return URBI_OK;
-    UList *l = (UList *)fetch_storage_ptr(vm, list_obj);
-    if (l == NULL) return URBI_OK;
-    size_t i;
-    for (i = 0U; i < l->len; i++) {
-        if (uvalue_equal(&l->items[i], &item)) {
-            /* Shift tail left by one; len decrements. */
-            size_t j;
-            for (j = i; j + 1U < l->len; j++) {
-                l->items[j] = l->items[j + 1U];
-            }
-            l->len--;
-            return URBI_OK;
-        }
-    }
-    return URBI_OK;  /* not found — silent no-op (mirrors Lobby spec) */
-}
-
-UObject *
-urbi_stdlib_list_new_empty(UVM *vm)
-{
-    if (vm == NULL) return NULL;
-    UObject *list_proto = urbi_object_atom(vm, URBI_ATOM_LIST);
-    if (list_proto == NULL) return NULL;
-    UList *l = list_alloc(vm, 4U);
-    if (l == NULL) return NULL;
-    UObject *o = urbi_object_clone(vm, list_proto);
-    if (o == NULL) return NULL;
-    if (attach_storage(vm, o, l) != 0) return NULL;
-    return o;
-}
-
-#ifdef URBI_ENABLE_ROS2
-/* === Internal List C-builder (src/value/ulist_build.h) ===================
- *
- * Thin wrappers over the file-static helpers above, exposed so the ROS2
- * bridge can build List objects from incoming sequence fields without
- * duplicating storage logic.  Bodies live here (not in a separate .c)
- * because list_storage / list_grow / urbi_object_atom / urbi_object_clone
- * / attach_storage are all file-static.  Declarations: src/value/ulist_build.h.
- *
- * All three are INTERNAL; they are NOT part of the public ABI surface. */
-
-/* Create a new empty List object backed by a fresh UList.
- * Returns a UVAL_OBJECT UValue, or urbi_make_nil() on OOM. */
-UValue
-urbi_list_create(UVM *vm)
-{
-    if (vm == NULL) return urbi_make_nil();
-    UObject *o = urbi_stdlib_list_new_empty(vm);
-    if (o == NULL) return urbi_make_nil();
-    return urbi_make_object(o);
-}
-
-/* Append value `v` to List object `lst`.
- * Returns 0 on success, -1 on allocation failure or invalid argument. */
-int
-urbi_list_append(UVM *vm, UValue lst, UValue v)
-{
-    if (vm == NULL) return -1;
-    UList *l = list_storage(vm, lst);
-    if (l == NULL) return -1;
-    if (l->len == l->cap) {
-        if (list_grow(vm, l, l->len + 1U) != 0) return -1;
-    }
-    container_element_pre_store(vm, v);
-    l->items[l->len++] = v;
-    return 0;
-}
-
-/* Return the number of elements in List object `lst`, or -1 if invalid. */
-int
-urbi_list_len(UVM *vm, UValue lst)
-{
-    if (vm == NULL) return -1;
-    UList *l = list_storage(vm, lst);
-    if (l == NULL) return -1;
-    return (int)l->len;
-}
-
-/* Return the element at index `i` (0-based) from List object `lst`.
- * Returns urbi_make_nil() if `i` is out of range or `lst` is invalid. */
-UValue
-urbi_list_get(UVM *vm, UValue lst, int i)
-{
-    if (vm == NULL || i < 0) return urbi_make_nil();
-    UList *l = list_storage(vm, lst);
-    if (l == NULL) return urbi_make_nil();
-    if ((size_t)i >= l->len) return urbi_make_nil();
-    return l->items[(size_t)i];
-}
-#endif /* URBI_ENABLE_ROS2 */

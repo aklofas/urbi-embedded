@@ -1,19 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/rt/uboot.c — the boot table and the VM it builds.  See rt/uboot.h.
  *
- * Also home to three small families of natives that have no stdlib file
- * of their own:
- *
- *   Lobby   — __builtin_lobby_send, the one primitive every echo goes
- *             through, and echo itself as a root-level native so the
- *             bare name works in every realm.
- *   List /  — the minimum the emitter's literal lowering calls:
- *   Dict      `[1,2]` becomes List.new(1,2) and `["k"=>v]` becomes
- *             Dict.new() plus a .set per pair, and `l[i]` becomes
- *             l.get(i).  The full container surface arrives with
- *             containers.c and replaces these.
- *   nil/void— no methods; the rows exist so `nil.isA(Object)` resolves.
- */
+ * Also home to the Lobby natives, which have no stdlib file of their own:
+ * __builtin_lobby_send, the one primitive every echo goes through, and
+ * echo itself as a root-level native so the bare name works in every
+ * realm.  Nil and Void have no methods at all; their rows exist so that
+ * `nil.isA(Object)` resolves. */
 
 #include "rt/uboot.h"
 #include "chunk/uchunk.h"
@@ -25,6 +17,7 @@
 #include "stdlib/primitives.h"
 #include "stdlib/runtime_types.h"
 #include "stdlib/regexp.h"
+#include "stdlib/containers.h"
 
 /* ====================================================================
  * Lobby
@@ -114,142 +107,6 @@ static const UMethodDef ustdlib_lobby_methods[] = {
 };
 
 /* ====================================================================
- * List and Dict — the emitter's literal lowering, and nothing more
- * ==================================================================== */
-
-static int list_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)self;
-    UList *l = ulist_new(vm, vm->protos[UP_LIST], nargs);
-    if (!l) return urbi_raise_oom(vm, out);
-    UValue lv = uv_list(l);
-    URBI_ROOT(vm, lv);
-    int rc = 0;
-    for (uint8_t i = 0; i < nargs && rc == 0; i++) rc = ulist_push(vm, l, args[i]);
-    URBI_UNROOT(vm, lv);
-    if (rc != 0) return urbi_raise_oom(vm, out);
-    *out = lv;
-    return UEXEC_OK;
-}
-
-static int list_size(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)args; (void)nargs;
-    if (!uv_is_list(self)) return urbi_raise_type(vm, "List.size: self must be a List", out);
-    *out = uv_int((int64_t)((const UList *)self.v.p)->len);
-    return UEXEC_OK;
-}
-
-static int list_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)nargs;
-    if (!uv_is_list(self)) return urbi_raise_type(vm, "List.get: self must be a List", out);
-    if (args[0].kind != UV_INT) return urbi_raise_type(vm, "List.get: index must be an Integer", out);
-    const UList *l = (const UList *)self.v.p;
-    int64_t i = args[0].v.i;
-    if (i < 0 || (uint64_t)i >= l->len) return urbi_raise_index(vm, "List.get: index out of range", out);
-    *out = l->items[i];
-    return UEXEC_OK;
-}
-
-static int list_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)nargs;
-    if (!uv_is_list(self)) return urbi_raise_type(vm, "List.set: self must be a List", out);
-    if (args[0].kind != UV_INT) return urbi_raise_type(vm, "List.set: index must be an Integer", out);
-    UList *l = (UList *)self.v.p;
-    int64_t i = args[0].v.i;
-    if (i < 0 || (uint64_t)i >= l->len) return urbi_raise_index(vm, "List.set: index out of range", out);
-    l->items[i] = args[1];
-    *out = args[1];
-    return UEXEC_OK;
-}
-
-static int list_push(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)nargs;
-    if (!uv_is_list(self)) return urbi_raise_type(vm, "List.push: self must be a List", out);
-    if (ulist_push(vm, (UList *)self.v.p, args[0]) != 0) return urbi_raise_oom(vm, out);
-    *out = self;
-    return UEXEC_OK;
-}
-
-static int list_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)nargs;
-    if (!uv_is_list(self)) return urbi_raise_type(vm, "List.contains: self must be a List", out);
-    const UList *l = (const UList *)self.v.p;
-    bool found = false;
-    for (uint32_t i = 0; i < l->len && !found; i++) found = uv_equal(l->items[i], args[0]);
-    *out = uv_bool(found);
-    return UEXEC_OK;
-}
-
-static const UMethodDef ustdlib_list_methods[] = {
-    { "new",      list_new,      0, UMETHOD_VARARGS },
-    { "size",     list_size,     0, 0 },
-    { "length",   list_size,     0, 0 },
-    { "get",      list_get,      1, 1 },
-    { "set",      list_set,      2, 2 },
-    { "push",     list_push,     1, 1 },
-    { "<<",       list_push,     1, 1 },
-    { "contains", list_contains, 1, 1 }
-};
-
-static int dict_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)self; (void)args; (void)nargs;
-    UDict *d = udict_new(vm, vm->protos[UP_DICT]);
-    if (!d) return urbi_raise_oom(vm, out);
-    *out = uv_dict(d);
-    return UEXEC_OK;
-}
-
-static int dict_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)nargs;
-    if (!uv_is_dict(self)) return urbi_raise_type(vm, "Dict.set: self must be a Dictionary", out);
-    if (udict_set(vm, (UDict *)self.v.p, args[0], args[1]) != 0) return urbi_raise_oom(vm, out);
-    *out = args[1];
-    return UEXEC_OK;
-}
-
-static int dict_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)nargs;
-    if (!uv_is_dict(self)) return urbi_raise_type(vm, "Dict.get: self must be a Dictionary", out);
-    if (!udict_get((const UDict *)self.v.p, args[0], out))
-        return urbi_raise_index(vm, "Dict.get: key not present", out);
-    return UEXEC_OK;
-}
-
-static int dict_size(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)args; (void)nargs;
-    if (!uv_is_dict(self)) return urbi_raise_type(vm, "Dict.size: self must be a Dictionary", out);
-    *out = uv_int((int64_t)((const UDict *)self.v.p)->len);
-    return UEXEC_OK;
-}
-
-static int dict_has(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)nargs;
-    if (!uv_is_dict(self)) return urbi_raise_type(vm, "Dict.has: self must be a Dictionary", out);
-    UValue ignored;
-    *out = uv_bool(udict_get((const UDict *)self.v.p, args[0], &ignored));
-    return UEXEC_OK;
-}
-
-static const UMethodDef ustdlib_dict_methods[] = {
-    { "new",  dict_new,  0, 0 },
-    { "set",  dict_set,  2, 2 },
-    { "get",  dict_get,  1, 1 },
-    { "size", dict_size, 0, 0 },
-    { "length", dict_size, 0, 0 },
-    { "has",  dict_has,  1, 1 }
-};
-
-/* ====================================================================
  * The table
  * ==================================================================== */
 
@@ -281,8 +138,8 @@ const UBuiltinDef uboot_table[] = {
     { "Boolean", UP_BOOLEAN, UP_OBJECT,  ustdlib_bool_methods, USTDLIB_BOOL_NMETHODS,      UBOOT_F_READONLY },
     { "Nil",     UP_NIL,     UP_OBJECT,  NONE,                    UBOOT_F_READONLY },
     { "Void",    UP_VOID,    UP_OBJECT,  NONE,                    UBOOT_F_READONLY },
-    { "List",    UP_LIST,    UP_OBJECT,  NML(list),      UBOOT_F_READONLY },
-    { "Dict",    UP_DICT,    UP_OBJECT,  NML(dict),      UBOOT_F_READONLY },
+    { "List",    UP_LIST,    UP_OBJECT,  ustdlib_list_methods, USTDLIB_LIST_NMETHODS, UBOOT_F_READONLY },
+    { "Dict",    UP_DICT,    UP_OBJECT,  ustdlib_dict_methods, USTDLIB_DICT_NMETHODS, UBOOT_F_READONLY },
     { "Symbol",  UP_SYMBOL,  UP_OBJECT,  NONE,                    UBOOT_F_READONLY },
 
     /* Runtime types.  Tag, Event and Job get their methods with the
@@ -318,11 +175,10 @@ const UBuiltinDef uboot_table[] = {
     { "RegExp",   UP_REGEXP,   UP_OBJECT, ustdlib_regexp_methods, USTDLIB_REGEXP_NMETHODS,   0 },
     { "Mutex",    UP_MUTEX,    UP_OBJECT, ustdlib_mutex_methods, USTDLIB_MUTEX_NMETHODS,    0 },
 
-    /* Containers beyond List/Dict, and the Global reflection namespace.
-     * Pair/Triplet/Tuple have no methods until containers.c lands. */
-    { "Pair",    UP_PAIR,    UP_OBJECT,  NONE, 0 },
-    { "Triplet", UP_TRIPLET, UP_OBJECT,  NONE, 0 },
-    { "Tuple",   UP_TUPLE,   UP_OBJECT,  NONE, 0 },
+    /* Containers beyond List/Dict, and the Global reflection namespace. */
+    { "Pair",    UP_PAIR,    UP_OBJECT,  ustdlib_pair_methods, USTDLIB_PAIR_NMETHODS, 0 },
+    { "Triplet", UP_TRIPLET, UP_OBJECT,  ustdlib_triplet_methods, USTDLIB_TRIPLET_NMETHODS, 0 },
+    { "Tuple",   UP_TUPLE,   UP_OBJECT,  ustdlib_tuple_methods, USTDLIB_TUPLE_NMETHODS, 0 },
     { "Global",  UP_GLOBAL,  UP_OBJECT,  ustdlib_global_methods, USTDLIB_GLOBAL_NMETHODS, 0 },
 
     /* Vestigial.  The legacy fallback() reflection mechanism is not

@@ -130,16 +130,16 @@ endif
 # refound/core Task 9: the standard library re-attaches to the new core.
 # Each file exports one or more UMethodDef tables; src/rt/uboot.c's table
 # points at them and uboot_init installs them.  Files still waiting on a
-# subsystem that does not exist yet (containers on the full List/Dict
-# surface, temporal and job_proto and tag_globals on the scheduler,
-# channel_native and lobby_native on events and sessions,
-# debug_namespace on the REPL) stay out of the build; see the task
-# report.  The stdlib blob object is separate so the bake tool can link
+# subsystem that does not exist yet (temporal, job_proto and tag_globals
+# on the scheduler, channel_native and lobby_native on events and
+# sessions, debug_namespace on the REPL) stay out of the build; see the
+# task report.  The stdlib blob object is separate so the bake tool can link
 # the zero-length stub in its place and avoid a build cycle.
 STDLIB_SRCS := \
        src/stdlib/object_root.c \
        src/stdlib/isa_method.c \
        src/stdlib/atoms.c \
+       src/stdlib/containers.c \
        src/stdlib/runtime_types.c \
        src/stdlib/namespaces.c \
        src/stdlib/primitives.c \
