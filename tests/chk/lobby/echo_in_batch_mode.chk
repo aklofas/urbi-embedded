@@ -1,0 +1,21 @@
+# Covers: the Lobby is in the chain of the realm a BATCH run uses, so a
+#         bare `echo` resolves from a source file the same way it does
+#         from a REPL line.  Spec section 6: "the CLI, batch mode, and
+#         every REPL session get a realm whose chain includes the Lobby
+#         proto".  Before the Lobby landed on root_globals this was a
+#         lookup error, not output.
+#
+#         `echo(1)` also pins the coercion: echo renders a non-String
+#         argument rather than raising, which is what makes `echo` usable
+#         for the printf-debugging it exists for.
+#
+#         The line-mode half of the same claim is echo_in_line_mode.chk.
+#         The two cannot be one fixture: -f prints no per-statement result
+#         line and -i prints one, so their expected output differs by
+#         exactly that line.
+# matrix-row: lobby-echo
+
+## mode: file
+
+echo(1)
+[00000000] *** 1

@@ -1,61 +1,38 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* urbi_lobby_native_register(vm)
- *   Allocates vm->lobby_proto as a URBI_ATOM_OBJECT-family UObject,
- *   chains it onto root Object, and installs the single native method
- *   `__builtin_lobby_send`.  Idempotent (no-op if vm->lobby_proto is
- *   already non-NULL).  Returns URBI_OK / URBI_ERR_INVALID_ARG /
- *   URBI_ERR_OOM.
+/* lobby_native.h — the Lobby prototype's native methods and the
+ * session-registry hook.
  *
- * urbi_lobby_native_register_globals(vm, realm)
- *   Post-loop hook for urbi_populate_realm_globals: binds "Lobby" as a
- *   realm-global slot pointing at vm->lobby_proto.  Mirrors
- *   urbi_stdlib_register_primitives_globals — lands past the slot-0..7
- *   packed-flag CONSTANT enforcement range.
+ * The Lobby sits in every realm's prototype chain (globals ->
+ * root_globals -> Lobby -> Object), so `echo("hi")` resolves unqualified
+ * from the CLI, from a batch file and from a REPL line alike.  Three
+ * primitives are native because they reach the writer:
  *
- * urbi_lobby_register_session(vm, session_realm)
- *   Append session_realm->global_object to the `lobbies` List slot on
- *   vm->lobby_proto.  Called by urepl_session_create (REPL only) to keep
- *   the urbiscript-visible `Lobby.lobbies` collection in sync with live
- *   sessions.  Safe to call before the .u overlay has populated
- *   Lobby.lobbies — early calls during VM init return URBI_OK without
- *   mutation.
+ *   __builtin_lobby_send(msg, tag, prefix)      — frame + write on the
+ *       CURRENT realm's writer.  Everything a program echoes goes here.
+ *   __builtin_lobby_send_to(lobby, msg, tag, prefix) — the same frame
+ *       written on the writer of the realm whose globals is `lobby`.
+ *       This is what makes `wall` a broadcast rather than three copies
+ *       of the sender's own output.
+ *   echo(msg[, tag[, prefix]])                  — the defaulted wrapper,
+ *       native so the defaults do not depend on default-parameter
+ *       lowering and so a non-String argument still prints.
  *
- * urbi_lobby_unregister_session(vm, session_realm)
- *   Remove session_realm->global_object from the `lobbies` List.  Called
- *   by urepl_session_destroy.
- *
- * urbi_lobby_invoke_handleDisconnect(vm, session_realm)
- *   Look up `handleDisconnect` on session_realm->global_object's proto
- *   chain; if it resolves to a UClosure, invoke it with the lobby as
- *   `self` and no args.  Errors are silently dropped (the dispatcher
- *   cannot meaningfully recover from a user-defined cleanup hook fault
- *   during teardown).  Returns URBI_OK whether or not a handler ran.
- *
- * GC reachability: vm->lobby_proto is shaded by object_roots_walker
- * alongside the primitive protos.  The List held in its
- * `lobbies` slot is reachable through the proto's normal slot walk. */
+ * `Lobby.lobbies` is a List of every live realm's globals object.  It is
+ * maintained in rt/urealm.c (urealm_new pushes, urealm_free removes),
+ * not here: a realm comes and goes below the stdlib layer.  This file
+ * only CREATES the slot, at boot, through urbi_lobby_init. */
 
 #ifndef URBI_STDLIB_LOBBY_NATIVE_H
 #define URBI_STDLIB_LOBBY_NATIVE_H
 
-#ifdef __cplusplus
-extern "C" {
+#include "rt/ustdlib_glue.h"
+
+enum { USTDLIB_LOBBY_NMETHODS = 3 };
+extern const UMethodDef ustdlib_lobby_methods[USTDLIB_LOBBY_NMETHODS];
+
+/* Installs the `lobbies` List on the Lobby prototype.  Called from
+ * uboot_init's slot pass, before the read-only seal and before the
+ * script overlay, so the overlay's `wall` can already read it. */
+int urbi_lobby_init(UVM *vm);
+
 #endif
-
-struct UVM;
-struct URealm;
-
-int urbi_lobby_native_register(struct UVM *vm);
-int urbi_lobby_native_register_globals(struct UVM *vm, struct URealm *realm);
-
-int urbi_lobby_register_session(struct UVM *vm, struct URealm *session_realm);
-int urbi_lobby_unregister_session(struct UVM *vm, struct URealm *session_realm);
-
-int urbi_lobby_invoke_handleDisconnect(struct UVM *vm,
-                                       struct URealm *session_realm);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* URBI_STDLIB_LOBBY_NATIVE_H */

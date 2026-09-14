@@ -16,6 +16,13 @@
 # Directives (comment lines; same style as `# tunables:` / `## host:`):
 #   # tunables: <preset>   — run only when URBI_BUILD_PRESET matches
 #   ## host: <op>          — drive via chk-host-driver instead of `urbi -i`
+#   ## mode: file          — drive via `urbi -f`: the fixture's input lines
+#                            are written to one temporary source file and
+#                            run as a batch program, not fed a line at a
+#                            time.  A multi-statement body therefore needs
+#                            its own separators, and the CLI prints no
+#                            per-statement result line — only what the
+#                            program itself writes.
 #   ## exit: <n>           — expected process exit status (default 0)
 #   ## timeout: <seconds>  — per-fixture timeout (default 30)
 
@@ -191,11 +198,23 @@ sed -E 's/^\[[^]]*\] //' \
     < "$TMPDIR_LOCAL/expected.raw" \
     > "$TMPDIR_LOCAL/expected.norm"
 
-# 3. Drive the REPL once with all inputs; merge stderr to catch leakage.
+# 3. Drive the binary once with all inputs; merge stderr to catch leakage.
 #    refactor-3 CHK-02/03: capture the exit status; bound the run.
-timeout "$timeout_s" "$URBI" -i < "$TMPDIR_LOCAL/inputs.txt" \
-    > "$TMPDIR_LOCAL/actual.raw" 2>&1
-rc=$?
+#
+#    `## mode: file` runs the inputs as ONE batch program through -f, which
+#    is the path a deployed script takes; the default feeds them to -i one
+#    line at a time, which is the path a REPL client takes.  Both see the
+#    same realm and the same Lobby.
+if grep -qE '^[[:space:]]*##[[:space:]]*mode:[[:space:]]*file[[:space:]]*$' "$CHK"; then
+    cp "$TMPDIR_LOCAL/inputs.txt" "$TMPDIR_LOCAL/program.u"
+    timeout "$timeout_s" "$URBI" -f "$TMPDIR_LOCAL/program.u" \
+        > "$TMPDIR_LOCAL/actual.raw" 2>&1
+    rc=$?
+else
+    timeout "$timeout_s" "$URBI" -i < "$TMPDIR_LOCAL/inputs.txt" \
+        > "$TMPDIR_LOCAL/actual.raw" 2>&1
+    rc=$?
+fi
 if [ "$rc" -eq 124 ]; then
     printf 'TIMEOUT: %s (no exit within %ss)\n' "$CHK" "$timeout_s" >&2
     exit 1

@@ -260,3 +260,14 @@ int urbi_realm_get_global(UVM *vm, URealm *realm, const char *name, UValue *out)
 
 void urbi_stdlib_write(UVM *vm, const char *chan, size_t cl, const char *msg, size_t ml)
 { urealm_write(vm, uvm_current_realm(vm), chan, cl, msg, ml); }
+
+void urbi_stdlib_write_to(UVM *vm, UObject *globals, const char *chan, size_t cl,
+                          const char *msg, size_t ml)
+{
+    if (!vm || !globals) return;
+    for (URealm *r = vm->realms; r; r = r->next) {
+        if (r->globals == globals) { urealm_write(vm, r, chan, cl, msg, ml); return; }
+    }
+    /* A globals object that belongs to no live realm is a stale entry in
+     * someone's hand, not a reason to write on the wrong session. */
+}

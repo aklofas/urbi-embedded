@@ -1,0 +1,8 @@
+# Covers: the same claim as echo_in_batch_mode.chk, on the interactive
+#         path: a bare `echo` resolves from a REPL line, and the CLI adds
+#         its own result line for the statement's value (nil).
+# matrix-row: lobby-echo
+
+echo(1)
+[00000000] *** 1
+[00000001] nil

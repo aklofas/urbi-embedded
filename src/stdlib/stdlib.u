@@ -16,9 +16,6 @@
 // the built-in prototypes are shared, several are sealed read-only
 // after boot, and addProto composes where an assignment would clobber.
 //
-// Content still waiting on a subsystem lives in stdlib_later.u, which
-// is NOT baked; see the banner there.
-//
 // Legacy reference: legacy/repos/aldebaran-urbi/share/urbi/*.u.
 
 // === mixins ===============================================================
@@ -273,4 +270,49 @@ var detach = function(lazy fun) {
 
 var disown = function(lazy fun) {
     __disown_strand(fun)
-};
+} |
+
+// === Lobby ================================================================
+//
+// The Lobby prototype sits in every realm's chain, so these are reachable
+// as `Lobby.wall(...)` and, unqualified, as `wall(...)` from any realm.
+// `echo` and the two send primitives are native (src/stdlib/lobby_native.c);
+// only the two methods that are pure composition live here.
+//
+// Legacy reference: legacy/repos/aldebaran-urbi/share/urbi/lobby.u.
+
+class LobbyMethods {
+    // The disconnect event every lobby shares.  One Event for the VM: it
+    // lives on the prototype, so a subscriber in any realm sees every
+    // session go.
+    var onDisconnect = Event.new("onDisconnect");
+
+    // wall(msg, tag): broadcast to every lobby EXCEPT the caller's own.
+    // Each delivery goes through __builtin_lobby_send_to, which writes on
+    // the TARGET realm's writer -- a plain l.echo(...) would write every
+    // copy onto the sender's own output instead.
+    //
+    // Sequential (no `for|`) so a partial delivery cannot strand mid-loop
+    // on the host-call boundary.
+    var wall = function(msg, tag) {
+        var here = Realm;
+        var all = Lobby.lobbies;
+        var n = all.length();
+        var i = 0;
+        while (i < n) {
+            var l = all.get(i);
+            if (l != here) { Lobby.__builtin_lobby_send_to(l, msg, tag, "***") };
+            i = i + 1
+        };
+        nil
+    };
+
+    // handleDisconnect: fired by the session dispatcher when a REPL
+    // session closes.  Overridable per lobby (`Realm.handleDisconnect =
+    // function() { ... }`); the default emits onDisconnect.
+    var handleDisconnect = function() {
+        onDisconnect!(this)
+    }
+} |
+
+Lobby.addProto(LobbyMethods);

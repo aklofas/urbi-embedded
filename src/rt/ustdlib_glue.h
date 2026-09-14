@@ -165,4 +165,11 @@ int urbi_realm_get_global(UVM *vm, URealm *realm, const char *name, UValue *out)
 /* One message on one channel, through the current realm's writer. */
 void urbi_stdlib_write(UVM *vm, const char *chan, size_t cl, const char *msg, size_t ml);
 
+/* The same, on the writer of the realm whose globals object is `globals`
+ * — the one operation `Lobby.wall` needs and `urbi_stdlib_write` cannot
+ * express, since a broadcast writes where the SENDER is not.  A globals
+ * object matching no live realm is ignored. */
+void urbi_stdlib_write_to(UVM *vm, UObject *globals, const char *chan, size_t cl,
+                          const char *msg, size_t ml);
+
 #endif

@@ -1,10 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/rt/uboot.c — the boot table and the VM it builds.  See rt/uboot.h.
  *
- * Also home to the Lobby natives, which have no stdlib file of their own:
- * __builtin_lobby_send, the one primitive every echo goes through, and
- * echo itself as a root-level native so the bare name works in every
- * realm.  Nil and Void have no methods at all; their rows exist so that
+ * Nil and Void have no methods at all; their rows exist so that
  * `nil.isA(Object)` resolves. */
 
 #include "rt/uboot.h"
@@ -18,102 +15,15 @@
 #include "stdlib/runtime_types.h"
 #include "stdlib/regexp.h"
 #include "stdlib/containers.h"
-
-/* ====================================================================
- * Lobby
- * ==================================================================== */
-
-/* Appends into buf[*off..cap) when there is room and advances *off by
- * what the full value WOULD take, the way snprintf reports length.  The
- * core has no <stdio.h>, so the frame is assembled by hand. */
-static void boot_put(char *buf, size_t cap, size_t *off, const char *s, size_t n)
-{
-    for (size_t i = 0; i < n; i++) {
-        if (*off < cap) buf[*off] = s[i];
-        (*off)++;
-    }
-}
-
-static void boot_put_char(char *buf, size_t cap, size_t *off, char c)
-{ if (*off < cap) buf[*off] = c; (*off)++; }
-
-/* Width-8 zero-padded decimal.  Eight is a MINIMUM, not a truncation:
- * a value past 10^8 prints every digit. */
-static void boot_put_ms(char *buf, size_t cap, size_t *off, uint64_t v)
-{
-    char tmp[20];
-    size_t n = 0;
-    do { tmp[n++] = (char)('0' + (unsigned)(v % 10u)); v /= 10u; } while (v > 0u);
-    while (n < 8u) tmp[n++] = '0';
-    while (n > 0) boot_put_char(buf, cap, off, tmp[--n]);
-}
-
-/* __builtin_lobby_send(msg, tag, prefix) -> nil
- *
- * Frames "[<ms>:tag] prefix msg\n" (the ":tag" segment is dropped when
- * the tag is empty) and writes it on the "clog" channel through the
- * current realm's writer, so a per-session writer wins over the VM-wide
- * one. */
-static int lobby_send(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)self; (void)nargs;
-    if (!urbi_is_str(args[0]) || !urbi_is_str(args[1]) || !urbi_is_str(args[2]))
-        return urbi_raise_type(vm, "__builtin_lobby_send: msg/tag/prefix must be String", out);
-
-    uint64_t ms = vm->clock_us ? vm->clock_us(vm->clock_ud) / 1000u : 0u;
-    char framed[1024];
-    size_t off = 0;
-    boot_put_char(framed, sizeof framed, &off, '[');
-    boot_put_ms(framed, sizeof framed, &off, ms);
-    if (urbi_str_size(args[1]) > 0) {
-        boot_put_char(framed, sizeof framed, &off, ':');
-        boot_put(framed, sizeof framed, &off, urbi_str_cstr(args[1]), urbi_str_size(args[1]));
-    }
-    boot_put(framed, sizeof framed, &off, "] ", 2);
-    boot_put(framed, sizeof framed, &off, urbi_str_cstr(args[2]), urbi_str_size(args[2]));
-    boot_put_char(framed, sizeof framed, &off, ' ');
-    boot_put(framed, sizeof framed, &off, urbi_str_cstr(args[0]), urbi_str_size(args[0]));
-    boot_put_char(framed, sizeof framed, &off, '\n');
-
-    size_t len = off < sizeof framed ? off : sizeof framed - 1u;
-    urbi_stdlib_write(vm, "clog", 4, framed, len);
-    *out = uv_nil();
-    return UEXEC_OK;
-}
-
-/* echo(msg, tag = "", prefix = "***").
- *
- * A native rather than the script overlay's `var echo = function(...)`
- * so the defaulted arguments do not depend on default-parameter
- * lowering, and so the bare name resolves from any realm: it is a slot
- * on the Lobby prototype AND on root_globals. */
-static int lobby_echo(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)self;
-    UValue empty = urbi_make_str_interned(vm, "", 0);
-    UValue stars = urbi_make_str_interned(vm, "***", 3);
-    if (empty.kind == UV_NIL || stars.kind == UV_NIL) return urbi_raise_oom(vm, out);
-    UValue a[3];
-    a[0] = args[0];
-    a[1] = nargs > 1 ? args[1] : empty;
-    a[2] = nargs > 2 ? args[2] : stars;
-    if (!urbi_is_str(a[0])) return urbi_raise_type(vm, "echo: message must be a String", out);
-    return lobby_send(vm, uv_nil(), a, 3, out);
-}
-
-static const UMethodDef ustdlib_lobby_methods[] = {
-    { "__builtin_lobby_send", lobby_send, 3, 3 },
-    { "echo",                 lobby_echo, 1, 3 }
-};
+#include "stdlib/lobby_native.h"
+#include "stdlib/debug_namespace.h"
 
 /* ====================================================================
  * The table
  * ==================================================================== */
 
-/* A table exported by a src/stdlib file comes with its own count (the
- * array itself is an incomplete type here); one defined locally in this
- * file can be measured. */
-#define NML(t) ustdlib_##t##_methods, (uint16_t)(sizeof ustdlib_##t##_methods / sizeof ustdlib_##t##_methods[0])
+/* Every table is exported by a src/stdlib file with its own count (the
+ * array itself is an incomplete type here). */
 #define NONE   NULL, 0
 
 /* Every built-in, once.  Order is irrelevant: uboot_init allocates all
@@ -124,9 +34,7 @@ static const UMethodDef ustdlib_lobby_methods[] = {
  * every realm shares.  Object is deliberately NOT readonly — extending
  * Object is a documented urbiscript idiom.
  *
- * Exactly one UP_* slot has no row: UP_DEBUG.  The Debug namespace is
- * REPL introspection and arrives with the REPL; nothing dispatches on it
- * in the meantime, because it is not a value kind. */
+ * Every UP_* slot has a row. */
 const UBuiltinDef uboot_table[] = {
     { "Object",  UP_OBJECT,  -1,         ustdlib_object_methods, USTDLIB_OBJECT_NMETHODS,    0 },
 
@@ -168,8 +76,10 @@ const UBuiltinDef uboot_table[] = {
     { "DivByZero",        UP_DIVBYZERO,  UP_EXCEPTION, NONE, 0 },
 
     /* Output.  Lobby is in every realm's chain, which is what makes a
-     * bare `echo("hi")` work everywhere. */
-    { "Lobby",   UP_LOBBY,   UP_OBJECT,  NML(lobby),     0 },
+     * bare `echo("hi")` work everywhere.  READONLY because it carries
+     * the `lobbies` session registry, which the runtime maintains and a
+     * script may read but not reshape. */
+    { "Lobby",   UP_LOBBY,   UP_OBJECT,  ustdlib_lobby_methods, USTDLIB_LOBBY_NMETHODS, UBOOT_F_READONLY },
     { "Channel", UP_CHANNEL, UP_OBJECT,  NONE,                    0 },
 
     /* Namespaces and primitives. */
@@ -186,6 +96,9 @@ const UBuiltinDef uboot_table[] = {
     { "Tuple",   UP_TUPLE,   UP_OBJECT,  ustdlib_tuple_methods, USTDLIB_TUPLE_NMETHODS, 0 },
     { "Global",  UP_GLOBAL,  UP_OBJECT,  ustdlib_global_methods, USTDLIB_GLOBAL_NMETHODS, 0 },
 
+    /* REPL introspection, reachable from script as `Debug.coros()`. */
+    { "Debug",   UP_DEBUG,   UP_OBJECT,  ustdlib_debug_methods, USTDLIB_DEBUG_NMETHODS, UBOOT_F_READONLY },
+
     /* Vestigial.  The legacy fallback() reflection mechanism is not
      * coming back, but the marker slot is what scripts test for, so the
      * prototype stays with its `kind` constant and nothing else. */
@@ -194,7 +107,6 @@ const UBuiltinDef uboot_table[] = {
 
 const uint16_t uboot_table_len = (uint16_t)(sizeof uboot_table / sizeof uboot_table[0]);
 
-#undef NML
 #undef NONE
 
 /* ====================================================================
@@ -349,7 +261,8 @@ int uboot_init(UVM *vm)
             return URBI_ERR_OOM;
     }
     {
-        int rc = urbi_namespaces_init(vm);
+        int rc = urbi_lobby_init(vm);
+        if (rc == URBI_OK) rc = urbi_namespaces_init(vm);
         if (rc == URBI_OK) rc = usched_natives_init(vm);
         if (rc == URBI_OK) rc = urbi_primitives_init(vm);
         if (rc == URBI_OK) rc = urbi_exception_init(vm, vm->protos[UP_EXCEPTION]);

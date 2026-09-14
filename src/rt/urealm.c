@@ -3,6 +3,42 @@
 
 #include "rt/urealm.h"
 
+/* --- the session registry -------------------------------------------
+ *
+ * `Lobby.lobbies` is a List of every live realm's globals object.  It is
+ * maintained HERE rather than in the stdlib file that creates it because
+ * a realm comes and goes below the stdlib layer: urealm_new is the only
+ * place that knows a new script world exists, and urealm_free the only
+ * place that knows one is gone.
+ *
+ * The slot is a plain local on the Lobby prototype (stdlib/lobby_native.c
+ * installs it at boot), so a realm created before the boot finished — or
+ * in a VM booted without the standard library at all — finds no list and
+ * simply is not registered. */
+static UList *urealm_lobbies(UVM *vm)
+{
+    UObject *lobby = vm->protos[UP_LOBBY];
+    if (!lobby) return NULL;
+    USym *name = usym_cstr(vm, "lobbies");
+    if (!name) return NULL;
+    int idx = uobj_find_local(lobby, name);
+    if (idx < 0) return NULL;
+    UValue v = lobby->values[idx];
+    return uv_is_list(v) ? (UList *)v.v.p : NULL;
+}
+
+static void urealm_lobbies_remove(UVM *vm, URealm *r)
+{
+    UList *l = urealm_lobbies(vm);
+    if (!l || !r->globals) return;
+    for (uint32_t i = 0; i < l->len; i++) {
+        if (l->items[i].kind == UV_OBJ && l->items[i].v.p == (void *)r->globals) {
+            (void)ulist_remove_at(l, i);
+            return;
+        }
+    }
+}
+
 void urealm_trace(UVM *vm, URealm *r)
 {
     if (r->globals) ugc_mark(vm, &r->globals->cell);
@@ -41,6 +77,14 @@ URealm *urealm_new(UVM *vm)
     r->root_tag = utag_new(vm, uv_nil());
     if (!r->root_tag) { vm->realms = r->next; return NULL; }
 
+    /* Publish the realm as a lobby.  Last, and its failure is not the
+     * realm's: an unregistered realm still runs code and still writes on
+     * its own writer; only a `wall` from elsewhere would miss it. */
+    {
+        UList *l = urealm_lobbies(vm);
+        if (l) (void)ulist_push(vm, l, uv_obj(r->globals));
+    }
+
     if (!vm->main_realm) vm->main_realm = r;
     return r;
 }
@@ -48,6 +92,8 @@ URealm *urealm_new(UVM *vm)
 void urealm_free(UVM *vm, URealm *r)
 {
     if (!vm || !r || r == vm->main_realm) return;
+    /* Unpublish first, while r->globals still names the entry to drop. */
+    urealm_lobbies_remove(vm, r);
     /* Stop the connection tag BEFORE unlinking: utag_stop finds members
      * by walking vm->realms, so a realm already off that list would leave
      * its strands marked by nobody. */

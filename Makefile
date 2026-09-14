@@ -136,9 +136,10 @@ endif
 # Job, Tag and the detach primitives, all of which are scheduler state and
 # now live in src/rt/usched_natives.c (the scheduler task).  They stay in
 # the tree with the rest of the old core for the clean-up task to remove.
-# Still genuinely waiting: channel_native and lobby_native on sessions,
-# debug_namespace on the REPL.  The stdlib blob object is separate so the bake tool can link
-# the zero-length stub in its place and avoid a build cycle.
+# Still genuinely waiting: channel_native, whose Channel proto is a
+# script overlay in stdlib.u today.  The stdlib blob object is separate so
+# the bake tool can link the zero-length stub in its place and avoid a
+# build cycle.
 STDLIB_SRCS := \
        src/stdlib/object_root.c \
        src/stdlib/isa_method.c \
@@ -147,7 +148,9 @@ STDLIB_SRCS := \
        src/stdlib/runtime_types.c \
        src/stdlib/namespaces.c \
        src/stdlib/primitives.c \
-       src/stdlib/regexp.c
+       src/stdlib/regexp.c \
+       src/stdlib/lobby_native.c \
+       src/stdlib/debug_namespace.c
 STDLIB_BLOB_SRC := src/stdlib/urbi_stdlib_bytecode.gen.c
 
 FRONTEND_SRCS := \
