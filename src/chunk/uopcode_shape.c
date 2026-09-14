@@ -6,7 +6,7 @@
 
 /* Pin the row count against the .def so a new opcode in the enum without a
  * matching shape entry causes a compile-time error. */
-URBI_STATIC_ASSERT(OP_MAX == 49, "uopcodes.def row count diverged from shape table");
+URBI_STATIC_ASSERT(OP_MAX == 50, "uopcodes.def row count diverged from shape table");
 
 const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     /* v1.0 opcodes 0-7 */
@@ -68,4 +68,7 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     [OP_SELF]                  = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
 
     [OP_WHENEVER_EVENT_INSTALL] = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
+
+    /* Identical shape to OP_SETSLOT; only the miss behaviour differs. */
+    [OP_SETSLOT_UPDATE] = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
 };

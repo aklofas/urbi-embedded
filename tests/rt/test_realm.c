@@ -356,6 +356,52 @@ static void t_slot_write_on_an_atom_throws(void)
     urbi_close(vm);
 }
 
+/* --- a bare-name write is an update, not a declaration ------------------ */
+
+static void t_bare_write_is_an_update(void)
+{
+    CountAlloc ca;
+    UVM *vm = open_counted(&ca);
+    if (!vm) { RT_CHECK(0); return; }
+    URealm *r = urbi_realm_main(vm);
+
+    /* A name that resolves nowhere is a typo, not a declaration -- at
+     * chunk top... */
+    const char *msg = run_throws(vm, r, "zzz = 7");
+    RT_CHECK(strstr(msg, "LookupError") != NULL);
+    RT_CHECK(strstr(msg, "zzz") != NULL);
+    RT_CHECK(urbi_global_get(vm, r, "zzz", &(UValue){0}) != URBI_OK);
+
+    /* ...and from inside a function, where there is no chunk-depth
+     * excuse either. */
+    msg = run_throws(vm, r, "var f = function () { qqq = 1 }; f()");
+    RT_CHECK(strstr(msg, "LookupError") != NULL);
+    RT_CHECK(strstr(msg, "qqq") != NULL);
+
+    /* A declared name updates, across chunk boundaries. */
+    UValue v = run(vm, r, "var x = 1");
+    (void)run(vm, r, "x = 2");
+    v = run(vm, r, "x");
+    RT_EQ(v.kind, UV_INT);
+    RT_EQ(v.v.i, 2);
+
+    /* The explicit member form keeps create semantics: that is how a
+     * script adds a global on purpose. */
+    (void)run(vm, r, "Realm.w = 0");
+    v = run(vm, r, "w");
+    RT_EQ(v.v.i, 0);
+    (void)run(vm, r, "w = 5");
+    v = run(vm, r, "Realm.w");
+    RT_EQ(v.v.i, 5);
+
+    /* And `var` still declares. */
+    (void)run(vm, r, "var fresh = 3");
+    v = run(vm, r, "fresh");
+    RT_EQ(v.v.i, 3);
+
+    urbi_close(vm);
+}
+
 static void t_realmless_globals_are_boot_only(void)
 {
     CountAlloc ca;
@@ -468,6 +514,7 @@ void rt_realm_suite(void)
     t_boot_heap_is_small();
     t_atoms_dispatch_on_their_proto();
     t_slot_write_on_an_atom_throws();
+    t_bare_write_is_an_update();
     t_realmless_globals_are_boot_only();
     t_arity_errors_name_and_count();
     t_lobby_echo_reaches_the_writer();

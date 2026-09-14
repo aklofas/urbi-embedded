@@ -352,7 +352,7 @@ static bool fmt_self(char *buf, size_t cap, size_t *off,
 }
 
 /* --- opname helper (used by the generic fallback in uemit_disassemble) ---
- * Generated from uopcodes.def; covers all 49 opcodes. */
+ * Generated from uopcodes.def; covers all 50 opcodes. */
 
 static const char * const opname_table[OP_MAX] = {
 #define URBI_OP(n, u, s) #n,
@@ -422,6 +422,7 @@ static const UDisFormatFn op_disasm[OP_MAX] = {
     /* 46 OP_LOAD_RECV          */ fmt_load_recv,
     /* 47 OP_SELF               */ fmt_self,
     /* 48 OP_WHENEVER_EVENT_INSTALL */ NULL,  /* generic ABC format */
+    /* 49 OP_SETSLOT_UPDATE     */ fmt_setslot,
 };
 
 size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {

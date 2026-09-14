@@ -112,6 +112,9 @@ forward- or backward-compatibility tolerance at v1.x.
 | 0x19 | v1.9    | v0.10.2-reactive     | Semantic bump only — whenever-event    |
 |      |         |                      | + OP_CLOSURE-in-body reactive fixes;   |
 |      |         |                      | byte layout unchanged from v1.8.       |
+| 0x1A | v1.10   | refound/core         | OP_SETSLOT_UPDATE (slot 49); OP_MAX    |
+|      |         |                      | 49 → 50.  Byte layout unchanged from   |
+|      |         |                      | v1.9.                                  |
 
 ---
 
@@ -234,8 +237,8 @@ the start of the buffer. Pad bytes must be zero;
 the loader returns `UCHUNK_LOAD_CORRUPT` on any non-zero pad byte.
 
 Instruction encoding is described in [internals/opcodes.md](opcodes.md).
-`OP_MAX` is currently **48** (opcodes 0–47, after the addition of `OP_SELF`
-at slot 47 in v1.6).
+`OP_MAX` is currently **50** (opcodes 0–49, after the addition of
+`OP_SETSLOT_UPDATE` at slot 49 in v1.10).
 
 #### Synclines
 

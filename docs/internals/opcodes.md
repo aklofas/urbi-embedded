@@ -29,10 +29,10 @@ Encode helpers: `uinstr_enc_abc(op, a, b, c)`, `uinstr_enc_abx(op, a, bx)`.
 ## Opcode table
 
 The canonical enum is `UOpcode` in `src/chunk/uchunk.h`, generated from
-`src/chunk/uopcodes.def` (the single source of truth for the 49-opcode set).
+`src/chunk/uopcodes.def` (the single source of truth for the 50-opcode set).
 The verifier shape table is `urbi_opcode_shapes[]` in
-`src/chunk/uopcode_shape.{h,c}`. The live opcode space is contiguous `0..48`
-with `OP_MAX = 49` (as of wire format v1.9, introduced at `v0.10.2-reactive`).
+`src/chunk/uopcode_shape.{h,c}`. The live opcode space is contiguous `0..49`
+with `OP_MAX = 50` (as of wire format v1.10, which added `OP_SETSLOT_UPDATE`).
 
 The **Since** column records the tag at which the bytecode opcode was first
 live; wire-format version bumps that introduced structural layout changes are
@@ -89,6 +89,7 @@ noted in the Semantics column.
 | `OP_LOAD_RECV`             | 46 | ABC | A           | `R[A] := current frame's receiver` (`self`); nil when called from top-level or non-method frame; introduced with `this` keyword support (wire v1.6 context) | `v0.6.2-language-completion` |
 | `OP_SELF`                  | 47 | ABC | A, B, C     | Load method and receiver atomically: `R[A+1] := R[B]` (receiver snapshot), `R[A] := lookup_slot(R[B], IC[C])`; atom receivers routed via `urbi_atom_proto_for_value`; eliminates the `vm->last_recv` side-channel clobbering bug; wire v1.6 | `v0.7.2-esp32` |
 | `OP_WHENEVER_EVENT_INSTALL`| 48 | ABC | A, B, C     | Install `whenever (event?) body`; A=event_reg, B=body_reg (closure), C=onleave_reg or `0xFF` (absent); re-fires body on every event emission (perpetual subscriber, no one-shot teardown); wire v1.9 | `v0.10.2-reactive` |
+| `OP_SETSLOT_UPDATE`     | 49 | ABC | A, B, C        | `R[B].slot := R[A]` keyed by IC site index C, as `OP_SETSLOT`, but resolves the name through the prototype chain first and raises `LookupError` when it is nowhere: a bare `x = 1` rebinds, it does not declare. Emitted only for the bare-name realm-global write; `var x = 1` and `Realm.x = 1` keep `OP_SETSLOT` | wire v1.10 |
 
 ## Reserved stub opcodes
 
@@ -121,7 +122,7 @@ with a `kind` byte (`UValKind`), 7 bytes of padding, and an 8-byte value union
 
 ## Reserved opcode space
 
-The opcode field is 8 bits. Values `0..OP_MAX-1` (currently `0..48`) are live;
+The opcode field is 8 bits. Values `0..OP_MAX-1` (currently `0..49`) are live;
 values `OP_MAX..255` are reserved for future releases. The loader rejects any
 opcode with value `>= OP_MAX` via the shape-table walk (`UCHUNK_LOAD_CORRUPT`).
 

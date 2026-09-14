@@ -105,12 +105,14 @@ static UChunkLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
 }
 
 /* Return true if `op` is an IC-bearing opcode (carries an ic_idx in C).
- * Mirror at v1.6: OP_GETSLOT, OP_SETSLOT, OP_GETSLOT_CHANGE_EVENT, OP_SELF.
+ * Mirror at v1.10: OP_GETSLOT, OP_SETSLOT, OP_SETSLOT_UPDATE,
+ * OP_GETSLOT_CHANGE_EVENT, OP_SELF.
  * Mirror discipline: any new IC-bearing opcode added in a future
  * milestone must be added here AND in uemit_assign_ic_index call sites. */
 static bool op_carries_ic_index(uint8_t op) {
     return op == (uint8_t)OP_GETSLOT
         || op == (uint8_t)OP_SETSLOT
+        || op == (uint8_t)OP_SETSLOT_UPDATE
         || op == (uint8_t)OP_GETSLOT_CHANGE_EVENT
         || op == (uint8_t)OP_SELF;
 }

@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uopcodes.def — single source of truth for the 49-opcode set (v1.9/OP_MAX=49).
+/* uopcodes.def — single source of truth for the 50-opcode set (v1.10/OP_MAX=50).
  *
  * URBI_OP(enum_suffix, user_phrase, form)
  *   enum_suffix  OP_##suffix is the UOpcode enumerator; value = row position.
  *   user_phrase  user-facing error-message phrase (lowercase, no mnemonic).
  *   form         instruction encoding: ABC or ABX (informational; Phase 2 use).
  *
- * ROW ORDER IS WIRE-FORMAT FROZEN (v1.9).  Do NOT reorder or insert rows.
+ * ROW ORDER IS WIRE-FORMAT FROZEN (v1.10).  Do NOT reorder or insert rows.
  * Adding an opcode requires a wire-format version bump and ABI MINOR bump. */
 
 /* Core arithmetic and return opcodes 0-7 */
@@ -75,3 +75,12 @@ URBI_OP(SELF,                "method call",                ABC)
 
 /* Whenever-event install (48) */
 URBI_OP(WHENEVER_EVENT_INSTALL, "whenever-event install",  ABC)
+
+/* Bare-name write to a realm global (49) --------------------------------
+ *
+ * Same operands as SETSLOT (A=value, B=receiver, C=ic index) and the same
+ * write, but it first resolves the name THROUGH the prototype chain and
+ * raises LookupError when it is nowhere: `x = 1` updates a binding, it
+ * does not declare one.  `var x = 1` and the explicit `Realm.x = 1` keep
+ * SETSLOT's create semantics. */
+URBI_OP(SETSLOT_UPDATE,      "slot update",                ABC)

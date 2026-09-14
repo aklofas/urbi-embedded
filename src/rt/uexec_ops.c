@@ -546,7 +546,7 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             break;
         }
 
-        case OP_SETSLOT: {
+        case OP_SETSLOT: case OP_SETSLOT_UPDATE: {
             USym **names = uproto_names(f->closure->proto);
             if (names == NULL || OPC(i) >= f->closure->proto->ic_count) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: no name table bound");
@@ -558,6 +558,27 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 goto unwind;
             }
             UObject *o = (UObject *)recv.v.p;
+            /* UPDATE is the bare-name write, `x = 1`.  It rebinds an
+             * existing name and never declares one, so a name that
+             * resolves nowhere on the chain is a LookupError rather than
+             * a silent new global -- which is what makes a typo in an
+             * assignment reportable.  `var x = 1` and the explicit
+             * `Realm.x = 1` both emit plain SETSLOT and still create. */
+            if ((i & 0xFFu) == OP_SETSLOT_UPDATE) {
+                UObjSlotRef probe;
+                if (!uobj_resolve(vm, o, names[OPC(i)], &probe)) {
+                    char msg[160]; size_t at = 0;
+                    const char *p = "slot write: slot '";
+                    while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
+                    p = names[OPC(i)]->bytes;
+                    while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
+                    p = "' not found";
+                    while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
+                    msg[at] = '\0';
+                    (void)uexec_throw(vm, s, UP_LOOKUPERROR, msg);
+                    goto unwind;
+                }
+            }
             if (o->cell.flags & UOBJ_F_READONLY) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: receiver is read-only");
                 goto unwind;

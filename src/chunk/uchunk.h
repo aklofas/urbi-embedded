@@ -19,7 +19,7 @@ extern "C" {
    Re-emit from source to migrate. */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1U
-#define URBI_BYTECODE_VERSION_MINOR  9U
+#define URBI_BYTECODE_VERSION_MINOR  10U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- Header canary bytes (offsets 6-11) ---
@@ -55,7 +55,7 @@ static const uint8_t URBI_BYTECODE_CANARY[URBI_BYTECODE_CANARY_LEN] = {
 #define URBI_ENDIANNESS 0         /* 0 = little, 1 = big; v1 ships little-only */
 #endif
 
-/* --- opcode set — generated from src/chunk/uopcodes.def (49 opcodes, v1.9) ---
+/* --- opcode set — generated from src/chunk/uopcodes.def (50 opcodes, v1.10) ---
  *
  * Row order is wire-format frozen; do NOT reorder.  Operand encoding notes
  * live in docs/internals/opcodes.md and individual comments in uopcodes.def.

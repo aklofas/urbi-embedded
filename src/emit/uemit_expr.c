@@ -645,7 +645,11 @@ uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n) {
         }
         int ic_idx = uemit_assign_ic_index(e, (USymbol *)canonical);
         if (ic_idx < 0) return 0U;
-        urbi_emit_instr(e, uinstr_enc_abc(OP_SETSLOT, rhs_reg, fs->r_global_slot,
+        /* SETSLOT_UPDATE, not SETSLOT: a bare `x = v` rebinds an existing
+         * global and raises LookupError when the name resolves nowhere.
+         * Only `var x = v` (the declaration arm above) and the explicit
+         * `Realm.x = v` member form declare one. */
+        urbi_emit_instr(e, uinstr_enc_abc(OP_SETSLOT_UPDATE, rhs_reg, fs->r_global_slot,
                                      (uint8_t)ic_idx),
                    (uint32_t)n->line);
         /* If RHS is a literal function, update global_var_sigs so
