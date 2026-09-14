@@ -129,11 +129,15 @@ endif
 # to the new core with the boot table.
 # refound/core Task 9: the standard library re-attaches to the new core.
 # Each file exports one or more UMethodDef tables; src/rt/uboot.c's table
-# points at them and uboot_init installs them.  Files still waiting on a
-# subsystem that does not exist yet (temporal, job_proto and tag_globals
-# on the scheduler, channel_native and lobby_native on events and
-# sessions, debug_namespace on the REPL) stay out of the build; see the
-# task report.  The stdlib blob object is separate so the bake tool can link
+# points at them and uboot_init installs them.
+#
+# Four of the old files are SUPERSEDED rather than waiting: temporal.c,
+# job_proto.c, tag_globals.c and control_native.c held `every`, `sleep`,
+# Job, Tag and the detach primitives, all of which are scheduler state and
+# now live in src/rt/usched_natives.c (the scheduler task).  They stay in
+# the tree with the rest of the old core for the clean-up task to remove.
+# Still genuinely waiting: channel_native and lobby_native on sessions,
+# debug_namespace on the REPL.  The stdlib blob object is separate so the bake tool can link
 # the zero-length stub in its place and avoid a build cycle.
 STDLIB_SRCS := \
        src/stdlib/object_root.c \
