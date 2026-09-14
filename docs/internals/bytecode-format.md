@@ -2,12 +2,12 @@
 
 ## Wire Format Version
 
-The current wire format version byte is **`0x19`** (v1.9), defined as:
+The current wire format version byte is **`0x1A`** (v1.10), defined as:
 
 ```c
 /* src/chunk/uchunk.h */
 #define URBI_BYTECODE_VERSION_MAJOR  1U
-#define URBI_BYTECODE_VERSION_MINOR  9U
+#define URBI_BYTECODE_VERSION_MINOR  10U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 ```
 
@@ -19,7 +19,7 @@ tolerance: all v1.x changes are hard breaks.
 
 `.urb` is the on-disk serialized form of a chunk — the interface between the
 front end (emitter) and the back end (VM). At v0.9.2 the `UModule` struct was
-deleted; a chunk IS its root `UProto`. The format is pinned to the v1.9
+deleted; a chunk IS its root `UProto`. The format is pinned to the v1.10
 version byte in the header; the loader rejects any version mismatch with a
 specific diagnostic. No run-time coercion is attempted.
 
@@ -36,10 +36,10 @@ Source files:
 ## Header (24 bytes)
 
 ```text
-Offset  Size  Field         Value at v1.9
+Offset  Size  Field         Value at v1.10
 ------  ----  ----------    -----------------------------------------------
      0     4  magic         0x55 0x52 0x42 0x49  ("URBI")
-     4     1  version       16·major + minor;  v1.9 = 0x19
+     4     1  version       16·major + minor;  v1.10 = 0x1A
      5     1  flags         bit 0 = arity self-check discipline (below);
                             bits 1-7 undefined (0 at write); loader
                             ignores unknown bits for forward-compat
@@ -259,9 +259,9 @@ Encodes the per-proto IC site names. Mirrors `UProto.ic_count` +
 `ic_name_strs` array; module-instance create interns each into a `USymbol`
 via the receiving VM and populates `ic_names`.
 
-IC-bearing opcodes at v1.9: `OP_GETSLOT`, `OP_SETSLOT`,
-`OP_GETSLOT_CHANGE_EVENT`, `OP_SELF`. The C operand of each carries the
-`ic_idx` (0-based index into `ic_names`).
+IC-bearing opcodes at v1.10: `OP_GETSLOT`, `OP_SETSLOT`,
+`OP_SETSLOT_UPDATE`, `OP_GETSLOT_CHANGE_EVENT`, `OP_SELF`. The C operand
+of each carries the `ic_idx` (0-based index into `ic_names`).
 
 | Field           | Encoding | Notes                                |
 |-----------------|----------|---------------------------------------|
@@ -344,7 +344,7 @@ stops, sets the diagnostic string, and returns the indicated error code.
 
 - Buffer is at least 24 bytes (`UCHUNK_LOAD_TRUNCATED`).
 - Bytes 0–3 equal `"URBI"` (`UCHUNK_LOAD_BAD_MAGIC`).
-- Version byte equals `URBI_BYTECODE_VERSION_BYTE` = `0x19` (`UCHUNK_LOAD_UNSUPPORTED_VERSION`).
+- Version byte equals `URBI_BYTECODE_VERSION_BYTE` = `0x1A` (`UCHUNK_LOAD_UNSUPPORTED_VERSION`).
 - Bytes 6–11 equal `URBI_BYTECODE_CANARY` exactly (`UCHUNK_LOAD_BAD_MAGIC`).
 - `int_width` (byte 12) equals `URBI_INT_WIDTH` (`UCHUNK_LOAD_FLAVOR_MISMATCH`).
 - `float_type` (byte 13) equals `URBI_FLOAT_TYPE` (`UCHUNK_LOAD_FLAVOR_MISMATCH`).
@@ -392,7 +392,7 @@ field of ABx-format opcodes is interpreted per `UBxKind` (constant pool
 index / nested-proto index / signed jump / handler PC / symbol id) and
 validated against the matching section count.
 
-At v1.9, the verifier passes **each proto's own `nested_count`** for
+At v1.10, the verifier passes **each proto's own `nested_count`** for
 `OP_CLOSURE Bx` range checks (per-parent index space). This matches the
 truly-recursive emitter contract added in v0.8.5.
 
@@ -403,8 +403,8 @@ Specific cross-byte invariants enforced outside the shape walk:
 - `OP_PUSH_FRAME_GUARD` requires `A + B <= max_reg + 1` (base + count
   must not exceed the register window).
 - `ic_count` must not exceed the count of IC-bearing opcodes
-  (`OP_GETSLOT`, `OP_SETSLOT`, `OP_GETSLOT_CHANGE_EVENT`, `OP_SELF`) in
-  the instruction stream.
+  (`OP_GETSLOT`, `OP_SETSLOT`, `OP_SETSLOT_UPDATE`,
+  `OP_GETSLOT_CHANGE_EVENT`, `OP_SELF`) in the instruction stream.
 
 `OP_JMP` Bx is intentionally NOT range-checked at load time: the
 legitimate range depends on absolute PC, and runtime dispatch surfaces
