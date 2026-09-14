@@ -57,6 +57,9 @@ void urealm_free(UVM *vm, URealm *r)
      * realm would go on spawning bodies into a realm with no globals,
      * and would keep urbi_has_live_work true for the life of the VM. */
     usched_timers_drop_realm(vm, r);
+    /* And every watcher: a condition whose realm has no globals left
+     * would raise on every drain for the life of the VM. */
+    uwatch_realm_dropped(vm, r);
     for (URealm **pp = &vm->realms; *pp; pp = &(*pp)->next) {
         if (*pp == r) { *pp = r->next; r->next = NULL; break; }
     }

@@ -145,15 +145,20 @@ static void deep_recursion_and_reclaim(void) {
     RT_EQ(fx.live, 0L);   /* every allocation handed back */
 }
 
-static void unknown_opcode_throws(void) {
+/* Every opcode the emitter produces has an arm.  The three rows of
+ * uopcodes.def the dispatch loop does not handle -- NEQ, TAG_STOP,
+ * PUSH_FRAME_GUARD -- are ones the emitter never writes (`!=` lowers to
+ * OP_EQ, `t.stop()` is an ordinary method call, and the frame guard is
+ * retired), so `default:` is reachable only by a malformed chunk.  What
+ * this case pins is the script-visible half: an install that used to
+ * throw "opcode not available" now runs. */
+static void every_emitted_opcode_has_an_arm(void) {
     ExecFix fx; fix_open(&fx);
     UValue out;
-    /* `at (cond) body` compiles to OP_AT_INSTALL, which this build does
-     * not dispatch -- the reactive runtime is its own task. */
-    int rc = run(&fx, "at (1 == 1) 2 |", &out);
-    RT_CHECK(rc == URBI_ERR_UNCAUGHT_THROW || rc == URBI_ERR_COMPILE);
-    if (rc == URBI_ERR_UNCAUGHT_THROW)
-        RT_CHECK(strstr(fx.vm->last_error, "opcode not available") != NULL);
+    RT_EQ(run(&fx, "at (1 == 1) 2 |", &out), URBI_OK);
+    RT_EQ(run(&fx, "1 != 2 |", &out), URBI_OK);
+    RT_EQ(out.kind, (uint8_t)UV_BOOL);
+    RT_EQ(out.v.i, 1);
     fix_close(&fx);
 }
 
@@ -251,7 +256,7 @@ RT_SUITE(rt_exec_suite) {
     rt_run("string_concat_and_compare", string_concat_and_compare);
     rt_run("control_flow", control_flow);
     rt_run("deep_recursion_and_reclaim", deep_recursion_and_reclaim);
-    rt_run("unknown_opcode_throws", unknown_opcode_throws);
+    rt_run("every_emitted_opcode_has_an_arm", every_emitted_opcode_has_an_arm);
     rt_run("forward_jmp_past_end_is_rejected", forward_jmp_past_end_is_rejected);
     rt_run("register_preserves_a_host_pin", register_preserves_a_host_pin);
 }

@@ -45,6 +45,7 @@ void uvm_gc_mark_fixed(UVM *vm)
     for (UStrand *s = vm->spare; s; s = s->link) ugc_mark(vm, &s->cell);
     for (UStrand *s = vm->spare_active; s; s = s->link) ugc_mark(vm, &s->cell);
     usched_mark(vm);
+    uwatch_mark(vm);
     if (vm->test_mark_extra) vm->test_mark_extra(vm, vm->test_mark_ud);
 }
 
@@ -92,6 +93,7 @@ void uvm_gc_trace(UVM *vm, UCell *c)
         break;
     case UCELL_TAG:   utag_trace(vm, (UTag *)c); break;
     case UCELL_EVENT: uevent_trace(vm, (UEvent *)c); break;
+    case UCELL_WATCHER: uwatch_trace(vm, (UWatcher *)c); break;
     default:
         /* Nothing else owns GC cells.  UCELL_PROTO in particular: binding
          * rewrote its constants to UV_SYM and its IC names to USym, both
@@ -158,6 +160,7 @@ void uvm_close(UVM *vm)
     vm->spare_active = NULL;
     vm->sched.run_head = vm->sched.run_tail = vm->sched.current = NULL;
     vm->sched.dead = NULL;
+    vm->watch.all = NULL;
     /* The timer heap is raw (non-cell) memory the scheduler owns; its
      * records only POINT at cells, so it is released here rather than by
      * the sweep. */
@@ -314,6 +317,7 @@ UStrand *uvm_spare_acquire(UVM *vm, URealm *realm)
     s->ncleanup = 0;
     s->transfer = uv_nil();
     s->result = uv_nil();
+    s->resume_slot = 0;
     s->croots = NULL;
     /* An acquired spare is off the free list and not yet on any realm or
      * run queue, so nothing else keeps it alive: park it on the in-use
@@ -336,7 +340,9 @@ void uvm_spare_release(UVM *vm, UStrand *s)
     s->unwind = UUNWIND_NONE;
     s->transfer = uv_nil();
     s->result = uv_nil();
+    s->resume_slot = 0;
     s->croots = NULL;
+    s->tag = NULL;
     s->realm = NULL;
     s->link = vm->spare;
     vm->spare = s;

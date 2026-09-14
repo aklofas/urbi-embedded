@@ -122,6 +122,17 @@ typedef struct UStrand {
     UValue     result;             /* value of the top frame's RET */
     struct UStrand *next_in_realm;
     struct UStrand *joiners;       /* strands parked on this one, threaded via their own `link` */
+    /* One PLUS the absolute stack index the next wake's payload is
+     * delivered to; 0 is "none", so a zeroed strand starts correct.
+     *
+     * A native that parks (`e.waituntil()`) has already had its nil result
+     * written into the caller's destination register by the time the
+     * strand stops, so the value the wake carries would otherwise be lost
+     * in `transfer`.  The native records the destination here through
+     * ustrand_want_payload, and uexec_run_inner delivers `transfer` into
+     * it on the way back in.  An unwind consumes `transfer` instead and
+     * clears this. */
+    uint32_t   resume_slot;
     struct UCRoot { UValue *slot; struct UCRoot *prev; } *croots;   /* C-root stack for natives */
 } UStrand;
 

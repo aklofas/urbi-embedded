@@ -229,8 +229,9 @@ static void scheduler_api_surface(void) {
     RT_EQ(urbi_inject_event(vm, id, &p, sizeof p + 1), URBI_ERR_INVALID_ARG);
     RT_EQ(urbi_step(vm, 100, NULL), URBI_STEP_QUIESCENT);   /* drained, nobody waiting */
 
-    /* The reactive runtime is the one entry still to come. */
-    RT_EQ(urbi_watch(vm, NULL, "x", NULL, NULL), URBI_ERR_INVALID_STATE);
+    /* urbi_watch needs a callback to call; the working path is covered by
+     * tests/rt/test_watch.c. */
+    RT_EQ(urbi_watch(vm, NULL, "x", NULL, NULL), URBI_ERR_INVALID_ARG);
     /* urbi_throw outside a running strand has nowhere to deposit. */
     RT_EQ(urbi_throw(vm, "TypeError", "nope"), URBI_ERR_INVALID_STATE);
     urbi_close(vm);

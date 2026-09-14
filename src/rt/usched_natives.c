@@ -184,9 +184,48 @@ static int event_emit(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue 
     return UEXEC_OK;
 }
 
+/* e.syncEmit(p) — the same fan-out, except that a subscriber registered
+ * with `at sync (e?)` runs its body inline before this returns.  Every
+ * other subscriber still gets a spawned strand: "synchronous" is a
+ * property of the subscription, not of the emit. */
+static int event_sync_emit(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    UEvent *e = as_event(self);
+    if (!e) return urbi_raise_type(vm, "event.syncEmit: receiver is not an Event", out);
+    uevent_emit_to(vm, e, nargs > 0 ? args[0] : uv_nil(), true);
+    *out = uv_nil();
+    return UEXEC_OK;
+}
+
+/* e.waituntil() — what `waituntil (e?)` desugars to.  Parks the caller on
+ * the event's wait list and evaluates to the payload of the emission that
+ * wakes it; ustrand_want_payload is what routes that payload into this
+ * call's destination register instead of the nil written here.
+ *
+ * A strand that may not park -- a spare, or one inside a synchronous call
+ * -- returns nil at once rather than wedging a C frame that is waiting
+ * for a value. */
+static int event_waituntil(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out)
+{
+    (void)a; (void)n;
+    UEvent *e = as_event(self);
+    if (!e) return urbi_raise_type(vm, "event.waituntil: receiver is not an Event", out);
+    *out = uv_nil();
+    UStrand *s = uvm_current_strand(vm);
+    if (!s || !usched_may_deschedule(s)) return UEXEC_OK;
+    ustrand_want_payload(s);
+    /* The event is held in this native's `self` root, which is inside the
+     * parked strand's marked window -- the rooting the park contract
+     * requires of whoever parks on a cell's interior. */
+    (void)usched_park(s, &e->waiters, 0);
+    return UEXEC_OK;
+}
+
 static const UMethodDef ustdlib_event_methods[] = {
-    { "new",  event_new,  0, 1 },
-    { "emit", event_emit, 0, 1 }
+    { "new",       event_new,        0, 1 },
+    { "emit",      event_emit,       0, 1 },
+    { "syncEmit",  event_sync_emit,  0, 1 },
+    { "waituntil", event_waituntil,  0, 0 }
 };
 
 /* --- Job ----------------------------------------------------------------- */
@@ -314,7 +353,7 @@ static int every_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValu
     (void)self; (void)nargs;
     uint64_t period;
     if (dur_us(args[0], &period) != 0 || period == 0)
-        return urbi_raise_type(vm, "every: period must be a positive Duration", out);
+        return urbi_raise_type(vm, "every: period must be positive", out);
     if (!urbi_is_closure(args[1]))
         return urbi_raise_type(vm, "every: body must be a Function", out);
     UStrand *s = uvm_current_strand(vm);

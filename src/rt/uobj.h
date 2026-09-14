@@ -15,6 +15,16 @@
 #define UOBJ_F_READONLY     0x0001   /* in cell.flags: slot writes throw */
 #define UOBJ_F_FROZEN       0x0002   /* proto list immutable */
 #define UOBJ_F_IS_PROTO     0x0004
+/* Sticky: some watcher condition has read a slot on this object, so every
+ * later write to it has to mark the dirty set.  Set once by the reactive
+ * task and never cleared -- an object a condition looked at once is
+ * assumed interesting for the life of the VM, which is what "no
+ * per-watcher read sets" costs and buys. */
+#define UOBJ_F_WATCHED      0x0008
+/* Somebody has taken `x.changed?` on at least one of this object's slots,
+ * so a write that INSTALLS a slot has to check whether that slot is the
+ * subscribed one.  Writes to objects without the bit cost nothing. */
+#define UOBJ_F_CHANGE_EVENTS 0x0010
 
 /* Value-array entry for a slot with GETTER and/or SETTER set: values[i]
  * holds a UValue of kind UV_CELL pointing at one of these instead of the

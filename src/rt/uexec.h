@@ -42,6 +42,41 @@ struct URealm {
     void  *writer_ud;
 };
 
+/* --- the watcher set ------------------------------------------------
+ *
+ * The reactive runtime's per-VM state.  Like URealm, only the SHAPE is
+ * here -- `UWatchState` is a by-value member of `struct UVM` below, so it
+ * has to be complete before the VM is, while rt/uwatch.h sits ABOVE this
+ * header and carries UWatcher and every function that touches one.
+ *
+ * THE DIRTY SET IS A COUNT, not a list of objects.  `UOBJ_F_WATCHED` is
+ * sticky and per-object, so once a condition has read a realm's globals
+ * every global write marks dirty and every drain re-evaluates every armed
+ * condition anyway; an object array would be a second copy of that fact
+ * with a rooting problem attached (a dirty-marked object the script has
+ * dropped would either be kept alive or dangle).  `ndirty` is therefore
+ * the number of writes to watched objects since the last drain, and the
+ * drain's question is only "any?". */
+typedef struct UWatcher UWatcher;
+
+/* The five shapes a watcher comes in.  Here rather than in rt/uwatch.h
+ * because the install opcodes name them and the dispatch loop is
+ * exec-rank; rt/uwatch.h carries everything else about a watcher. */
+typedef enum {
+    UWATCH_AT = 1,      /* at (cond) / at (e?) -- the body spawns on the rising edge */
+    UWATCH_AT_SYNC,     /* at sync (...) -- the body runs inline on a spare strand */
+    UWATCH_WHENEVER,    /* whenever (cond) -- re-fires while the condition holds */
+    UWATCH_WAITUNTIL,   /* waituntil (cond) -- wakes its waiters once, then dies */
+    UWATCH_ONCE         /* one-shot event subscription; dies on its first fire */
+} UWatchMode;
+
+typedef struct UWatchState {
+    UWatcher *all;        /* every live watcher; a fixed GC root */
+    uint32_t  ndirty;     /* writes to watched objects since the last drain */
+    uint8_t   draining;   /* a drain or an event fan-out is walking the lists */
+    uint8_t   observing;  /* a condition is running: slot reads mark their object */
+} UWatchState;
+
 /* --- bound chunk ----------------------------------------------------
  *
  * One cell per loaded chunk root.  Binding interns the chunk's IC names
@@ -66,6 +101,7 @@ struct UVM {
     UStrTab    strings;
     UObjStats  objstats;
     USched     sched;
+    UWatchState watch;
     UObject   *protos[UP_COUNT];
     UObject   *root_globals;       /* built-in globals; every realm's globals inherits from it */
     URealm    *realms;             /* list; realms->... ; main_realm is the first created */
@@ -107,6 +143,7 @@ UGc       *uvm_gc(UVM *vm);
 UStrTab   *uvm_strings(UVM *vm);
 UObjStats *uvm_objstats(UVM *vm);
 USched    *uvm_sched(UVM *vm);
+UWatchState *uvm_watch(UVM *vm);
 
 static inline uint8_t uproto_max_reg(const UProto *p) { return p ? p->max_reg : 0; }
 
@@ -204,6 +241,70 @@ int uexec_run_chunk(UVM *vm, URealm *realm, UClosure *cl, UValue *out);
  * holds the message). */
 int uexec_run_source(UVM *vm, URealm *realm, const char *src, size_t n,
                      const char *name, UValue *out, char *err, size_t errcap);
+
+/* Arrange for the payload of the next wake to land in the register the
+ * OP_CALL currently running this native writes its result into.  The
+ * native reads its own call site: do_call does not push a frame for a
+ * native, so the top frame is the CALLER's and the instruction it has
+ * just consumed (pc[-1]) is that OP_CALL, whose A field is the
+ * destination register.  A no-op on a strand that is not inside one. */
+void ustrand_want_payload(UStrand *s);
+
+/* Everything a completed slot write owes the reactive runtime: a watched
+ * object re-arms the dirty set, and a slot subscribed to through
+ * `x.changed?` fires its event with the value just written.  Defined in
+ * uexec_ops.c beside OP_SETSLOT; urbi_slot_set and urbi_global_set call it
+ * too, which is what makes a HOST write between two steps wake a
+ * `waituntil` on the same slot. */
+void uexec_note_write(UVM *vm, UObject *o, const USym *name, UValue v, bool existed);
+
+/* --- provided by the layer above (uwatch) ---------------------------
+ *
+ * rt/uwatch.h ranks above this header, so the exec core, the scheduler
+ * and the GC hooks reach the reactive runtime through these declarations
+ * rather than by including it -- the same arrangement as uexec_run being
+ * declared in rt/usched.h.  rt/uwatch.h carries the contract for each. */
+
+/* Install a condition watcher (`cond` non-NULL) or an event watcher
+ * (`event` non-NULL) on behalf of the strand executing the install
+ * opcode.  `body` and `onleave` may be NULL.  NULL on OOM. */
+UWatcher *uwatch_install(UVM *vm, UStrand *s, uint8_t mode, UClosure *cond,
+                         UEvent *event, UClosure *body, UClosure *onleave);
+/* OP_WAITUNTIL_INSTALL: 0 = the condition already held (or the strand may
+ * not park) and dispatch continues, 1 = the strand is parked, -1 = the
+ * condition threw and s is unwinding. */
+int   uwatch_waituntil(UVM *vm, UStrand *s, UClosure *cond);
+/* A write landed on an object carrying UOBJ_F_WATCHED. */
+void  uwatch_mark_dirty(UVM *vm, UObject *o);
+/* A slot read, while a condition is running: `o` becomes watched. */
+void  uwatch_observe(UVM *vm, UObject *o);
+/* Evaluate every armed condition watcher once and act on the edges. */
+void  uwatch_drain(UVM *vm);
+/* Fan `payload` out to `e`'s watchers.  See uevent_emit_to. */
+void  uwatch_event_fired(UVM *vm, UEvent *e, UValue payload, bool sync);
+/* A strand died: a `whenever` whose body it was re-evaluates and respawns
+ * while the condition still holds. */
+void  uwatch_body_done(UVM *vm, UStrand *dead);
+/* Cancel every watcher installed under `t`. */
+void  uwatch_tag_stopped(UVM *vm, const UTag *t);
+/* Cancel every watcher belonging to `r`, for realm teardown. */
+void  uwatch_realm_dropped(UVM *vm, const URealm *r);
+/* The slot-change event for (o, name), created on first ask.  NULL on
+ * OOM. */
+UEvent *uwatch_slot_change_event(UVM *vm, UObject *o, const USym *name);
+/* A slot with USLOT_CHANGED_EVENT was just written: emit its event with
+ * the new value as the payload. */
+void  uwatch_slot_changed(UVM *vm, UObject *o, const USym *name, UValue v);
+/* A write has just INSTALLED `name` on an object that carries
+ * UOBJ_F_CHANGE_EVENTS: attach the marker when that slot is the one
+ * somebody subscribed to before it existed.  Installing a slot is never
+ * itself a change, so this arms rather than fires. */
+void  uwatch_slot_installed(UVM *vm, UObject *o, const USym *name);
+/* Whether any armed watcher still has a subscriber that could run. */
+bool  uwatch_has_live_work(UVM *vm);
+/* GC: the watcher list (a fixed root) and one watcher's children. */
+void  uwatch_mark(UVM *vm);
+void  uwatch_trace(UVM *vm, UWatcher *w);
 
 /* GC hooks — exported so tests/rt/fakevm.h can reuse the real ones. */
 void uvm_gc_mark_fixed(UVM *vm);

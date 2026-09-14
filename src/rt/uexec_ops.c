@@ -96,6 +96,9 @@ static int slot_get(UVM *vm, UStrand *s, UValue recv, const USym *name, const ch
     }
     UObjSlotRef ref;
     if (!uobj_resolve(vm, o, name, &ref)) {
+        /* A miss is a read too: the condition `at (Realm.x > 5)` installed
+         * before anything declared `x` has to notice the declaration. */
+        uwatch_observe(vm, o);
         char msg[160]; size_t at = 0;
         const char *p = what; while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
         p = ": slot '"; while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
@@ -104,6 +107,11 @@ static int slot_get(UVM *vm, UStrand *s, UValue recv, const USym *name, const ch
         msg[at] = '\0';
         return uexec_throw(vm, s, UP_LOOKUPERROR, msg);
     }
+    /* BOTH ends of the resolution.  The write that matters may land on the
+     * receiver (SETSLOT creates a local slot that shadows the proto's) or
+     * on the owner the value actually came from. */
+    uwatch_observe(vm, o);
+    uwatch_observe(vm, ref.owner);
     return slot_read(vm, s, &ref, recv, out);
 }
 
@@ -408,6 +416,21 @@ static int do_call(UVM *vm, UStrand *s, uint16_t fi, uint32_t instr)
     return UEXEC_OK;
 }
 
+/* See rt/uexec.h. */
+void uexec_note_write(UVM *vm, UObject *o, const USym *name, UValue v, bool existed)
+{
+    if (o->cell.flags & UOBJ_F_WATCHED) uwatch_mark_dirty(vm, o);
+    if (!existed) {
+        /* The write DECLARED the slot.  Installing is not changing, so it
+         * arms a pending `x.changed?` subscription rather than firing it. */
+        if (o->cell.flags & UOBJ_F_CHANGE_EVENTS) uwatch_slot_installed(vm, o, name);
+        return;
+    }
+    int idx = uobj_find_local(o, name);
+    if (idx >= 0 && (o->attrs[idx] & USLOT_CHANGED_EVENT))
+        uwatch_slot_changed(vm, o, name, v);
+}
+
 /* The fork opcodes take a closure thunk the emitter built for the arm.
  * A native closure has no bytecode to run on a strand of its own, so it
  * is rejected here rather than deep inside usched_spawn. */
@@ -415,6 +438,33 @@ static bool fork_closure(UValue v)
 {
     if (v.kind != UV_CELL || ((const UCell *)v.v.p)->type != UCELL_CLOSURE) return false;
     return ((const UClosure *)v.v.p)->proto != NULL;
+}
+
+/* The closure in a watcher-install operand register, or NULL. */
+static UClosure *install_closure(UValue v)
+{
+    if (v.kind != UV_CELL || ((UCell *)v.v.p)->type != UCELL_CLOSURE) return NULL;
+    return (UClosure *)v.v.p;
+}
+
+/* An OPTIONAL install operand: the emitter writes 0xFF into B or C when
+ * the source had no body / no onleave. */
+static UClosure *install_operand(const UValue *R, uint8_t reg)
+{
+    return reg == 0xFFu ? NULL : install_closure(R[reg]);
+}
+
+/* See rt/uexec.h.  `resume_slot` is biased by one so that zero reads as
+ * "nothing pending" on a freshly zeroed strand. */
+void ustrand_want_payload(UStrand *s)
+{
+    if (s == NULL || s->nframes == 0) return;
+    const UFrame *f = &s->frames[s->nframes - 1];
+    if (f->closure == NULL || f->closure->proto == NULL || f->pc == NULL) return;
+    if (f->pc <= f->closure->proto->instructions) return;
+    uint32_t call = f->pc[-1];
+    if ((call & 0xFFu) != (uint32_t)OP_CALL) return;
+    s->resume_slot = f->base + OPA(call) + 1u;
 }
 
 /* --- the dispatch loop --------------------------------------------------- */
@@ -428,7 +478,20 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
      * marked strand walks its own cleanup stack here, the first time the
      * scheduler hands it back to dispatch.  Stop never runs on another
      * strand's stack. */
-    if (s->unwind != UUNWIND_NONE && uexec_unwind(vm, s) != 0) return s->state;
+    if (s->unwind != UUNWIND_NONE) {
+        /* An unwind owns `transfer`; a pending payload delivery does not
+         * get to overwrite it. */
+        s->resume_slot = 0;
+        if (uexec_unwind(vm, s) != 0) return s->state;
+    } else if (s->resume_slot != 0) {
+        /* A native parked asking for the next wake's payload (see
+         * ustrand_want_payload).  Deliver it now, before the instruction
+         * after that OP_CALL runs. */
+        uint32_t slot = s->resume_slot - 1u;
+        s->resume_slot = 0;
+        if (slot < s->stack_cap) s->stack[slot] = s->transfer;
+        s->transfer = uv_nil();
+    }
     for (;;) {
         if (s->nframes == 0) {
             /* Nothing to dispatch.  Reachable only if a caller enters with
@@ -486,6 +549,18 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
         }
 
         case OP_YIELD:
+            /* `;` is a sequence point, and a sequence point is where the
+             * reactive runtime gets to look: an `at sync` body has to have
+             * run before the NEXT statement of this strand, which is what
+             * this drain buys and nothing else does.  A strand that may
+             * not be descheduled is inside somebody's synchronous call --
+             * a comparator, a getter, a watcher body -- and drains
+             * nothing, which is also what keeps a drain from nesting. */
+            if (usched_may_deschedule(s)) {
+                uwatch_drain(vm);
+                f = &s->frames[s->nframes - 1];
+                R = s->stack + f->base;
+            }
             /* A scheduled strand goes READY at the queue tail.  A strand
              * that may not be descheduled -- a spare, or one inside a
              * synchronous uexec_call -- treats the yield as the plain
@@ -617,6 +692,7 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "global access: strand has no realm");
                 goto unwind;
             }
+            uwatch_observe(vm, g);
             R[OPA(i)] = uv_obj(g);
             break;
         }
@@ -682,20 +758,23 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: slot is constant");
                 goto unwind;
             }
+            UValue written = R[OPA(i)];
             if (idx >= 0 && (o->attrs[idx] & (USLOT_GETTER | USLOT_SETTER))) {
                 UProps *pr = (UProps *)o->values[idx].v.p;
                 if ((o->attrs[idx] & USLOT_SETTER) && pr->setter.kind == UV_CELL) {
-                    UValue arg = R[OPA(i)], ignored = uv_nil();
+                    UValue arg = written, ignored = uv_nil();
                     if (uexec_call(vm, s, (UClosure *)pr->setter.v.p, recv, &arg, 1, &ignored) != UEXEC_OK) goto unwind;
                 } else {
-                    pr->value = R[OPA(i)];
+                    pr->value = written;
                 }
+                uexec_note_write(vm, o, name, written, true);
                 break;
             }
-            if (uobj_set_local(vm, o, name, R[OPA(i)], 0) < 0) {
+            if (uobj_set_local(vm, o, name, written, 0) < 0) {
                 (void)uexec_throw(vm, s, UP_OOMERROR, "slot write: out of memory");
                 goto unwind;
             }
+            uexec_note_write(vm, o, name, written, idx >= 0);
             break;
         }
 
@@ -753,6 +832,85 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
              * inside a synchronous call): the join still has to wait, so
              * the child runs nested on this stack instead. */
             usched_run_inline(vm, child);
+            break;
+        }
+
+        /* --- the reactive installs --------------------------------------
+         *
+         * All six carry their operands the same way: A is the condition
+         * closure or the event, B the body and C the onleave (or the
+         * `else` body, which the emitter puts in the same register), with
+         * 0xFF in B or C meaning "absent".  The watcher takes the
+         * installing strand's realm and its ambient tag, so `mytag: at (c)
+         * body` is cancelled by `mytag.stop()`. */
+
+        case OP_AT_INSTALL: case OP_AT_SYNC_INSTALL: case OP_WHENEVER_INSTALL: {
+            UClosure *cond = install_closure(R[OPA(i)]);
+            if (cond == NULL) {
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "at watcher install: condition is not a closure");
+                goto unwind;
+            }
+            uint8_t mode = ((i & 0xFFu) == OP_AT_SYNC_INSTALL)  ? (uint8_t)UWATCH_AT_SYNC
+                         : ((i & 0xFFu) == OP_WHENEVER_INSTALL) ? (uint8_t)UWATCH_WHENEVER
+                         :                                       (uint8_t)UWATCH_AT;
+            if (uwatch_install(vm, s, mode, cond, NULL,
+                               install_operand(R, OPB(i)), install_operand(R, OPC(i))) == NULL) {
+                (void)uexec_throw(vm, s, UP_OOMERROR, "at watcher install: out of memory");
+                goto unwind;
+            }
+            break;
+        }
+
+        case OP_AT_EVENT_INSTALL: case OP_AT_EVENT_SYNC_INSTALL: case OP_WHENEVER_EVENT_INSTALL: {
+            UValue ev = R[OPA(i)];
+            if (ev.kind != UV_CELL || ((UCell *)ev.v.p)->type != UCELL_EVENT) {
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "at-event watcher install: operand is not an event");
+                goto unwind;
+            }
+            /* An event subscription fires per emission, so `whenever (e?)`
+             * and `at (e?)` are the same watcher; only the SYNC form
+             * differs, by running its body inline under syncEmit. */
+            uint8_t mode = ((i & 0xFFu) == OP_AT_EVENT_SYNC_INSTALL)
+                         ? (uint8_t)UWATCH_AT_SYNC : (uint8_t)UWATCH_AT;
+            if (uwatch_install(vm, s, mode, NULL, (UEvent *)ev.v.p,
+                               install_operand(R, OPB(i)), install_operand(R, OPC(i))) == NULL) {
+                (void)uexec_throw(vm, s, UP_OOMERROR, "at-event watcher install: out of memory");
+                goto unwind;
+            }
+            break;
+        }
+
+        case OP_WAITUNTIL_INSTALL: {
+            UClosure *cond = install_closure(R[OPA(i)]);
+            if (cond == NULL) {
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "waituntil install: condition is not a closure");
+                goto unwind;
+            }
+            int rc = uwatch_waituntil(vm, s, cond);
+            if (rc < 0) goto unwind;              /* the condition raised, or OOM */
+            if (rc > 0) return s->state;          /* parked until it holds */
+            break;                                /* already true: carry straight on */
+        }
+
+        case OP_GETSLOT_CHANGE_EVENT: {
+            USym **names = uproto_names(f->closure->proto);
+            if (names == NULL || OPC(i) >= f->closure->proto->ic_count) {
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "slot-change event: no name table bound");
+                goto unwind;
+            }
+            UValue recv = R[OPB(i)];
+            if (recv.kind != UV_OBJ) {
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "slot-change event: receiver is not an Object");
+                goto unwind;
+            }
+            UEvent *e = uwatch_slot_change_event(vm, (UObject *)recv.v.p, names[OPC(i)]);
+            if (e == NULL) {
+                (void)uexec_throw(vm, s, UP_OOMERROR, "slot-change event: out of memory");
+                goto unwind;
+            }
+            f = &s->frames[s->nframes - 1];       /* the lookup allocated */
+            R = s->stack + f->base;
+            R[OPA(i)] = uv_ptr(UV_CELL, e);
             break;
         }
 

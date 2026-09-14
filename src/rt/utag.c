@@ -51,10 +51,14 @@ void uevent_trace(UVM *vm, UEvent *e)
 
 /* --- events ---------------------------------------------------------------- */
 
-void uevent_emit(UVM *vm, UEvent *e, UValue payload)
+void uevent_emit_to(UVM *vm, UEvent *e, UValue payload, bool sync)
 {
     if (e == NULL) return;
-    (void)vm;
+    /* Subscribers first, then waiters: a `waituntil (e?)` resumes with the
+     * payload and carries on from there, so running it before the
+     * subscriber bodies would let it observe a fan-out that has not
+     * happened. */
+    uwatch_event_fired(vm, e, payload, sync);
     /* Detach the whole list first: a woken strand must not be able to
      * re-park onto the list being walked. */
     UStrand *w = e->waiters;
@@ -66,7 +70,6 @@ void uevent_emit(UVM *vm, UEvent *e, UValue payload)
         usched_wake(w, payload);
         w = next;
     }
-    /* The reactive task fans out to condition/event watchers here. */
 }
 
 UEvent *utag_enter_event(UVM *vm, UTag *t)
@@ -128,6 +131,10 @@ int utag_stop(UVM *vm, UTag *t)
         }
     }
     usched_timers_drop_tag(vm, t);
+    /* And every watcher installed inside the tag's scope: `mytag: at (c)
+     * body` is cancelled by `mytag.stop()` exactly as `mytag: every(P)
+     * body` is. */
+    uwatch_tag_stopped(vm, t);
     return hit_current;
 }
 

@@ -4,6 +4,7 @@
 
 #include "rt/uboot.h"
 #include "rt/ustdlib_glue.h"
+#include "rt/uwatch.h"
 #include "urbi/urbi.h"
 #include "chunk/uchunk.h"
 #include "emit/ufront.h"
@@ -247,7 +248,13 @@ int urbi_global_set(UVM *vm, URealm *realm, const char *name, UValue v)
     if (!realm || !realm->globals) return URBI_ERR_INVALID_ARG;
     USym *sym = usym_cstr(vm, name);
     if (!sym) return URBI_ERR_OOM;
-    return uobj_set_local(vm, realm->globals, sym, v, 0) < 0 ? URBI_ERR_OOM : URBI_OK;
+    bool existed = uobj_find_local(realm->globals, sym) >= 0;
+    if (uobj_set_local(vm, realm->globals, sym, v, 0) < 0) return URBI_ERR_OOM;
+    /* A host write is a write: it re-arms the dirty set and fires the
+     * slot's change event exactly as OP_SETSLOT would, which is what lets
+     * a slot set between two steps wake a `waituntil` on it. */
+    uexec_note_write(vm, realm->globals, sym, v, existed);
+    return URBI_OK;
 }
 
 int urbi_slot_get(UVM *vm, UValue obj, const char *name, UValue *out)
@@ -272,7 +279,10 @@ int urbi_slot_set(UVM *vm, UValue obj, const char *name, UValue v)
     if (o->cell.flags & UOBJ_F_READONLY) return URBI_ERR_INVALID_ARG;
     USym *sym = usym_cstr(vm, name);
     if (!sym) return URBI_ERR_OOM;
-    return uobj_set_local(vm, o, sym, v, 0) < 0 ? URBI_ERR_OOM : URBI_OK;
+    bool existed = uobj_find_local(o, sym) >= 0;
+    if (uobj_set_local(vm, o, sym, v, 0) < 0) return URBI_ERR_OOM;
+    uexec_note_write(vm, o, sym, v, existed);
+    return URBI_OK;
 }
 
 /* ===================================================================
@@ -435,9 +445,35 @@ int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *p
     return URBI_OK;
 }
 
+/* The expression is compiled as an ordinary chunk and its root closure
+ * becomes the watcher's condition: a chunk's value is its last statement's
+ * value, which for a one-expression source is the expression.  The
+ * callback takes the place of a body closure -- see rt/uwatch.h. */
 int urbi_watch(UVM *vm, URealm *realm, const char *expr,
                int (*cb)(UVM *, void *, UValue), void *ud)
-{ (void)vm; (void)realm; (void)expr; (void)cb; (void)ud; return URBI_ERR_INVALID_STATE; }
+{
+    if (!vm || !expr || !cb) return URBI_ERR_INVALID_ARG;
+    if (!realm) realm = urbi_realm_main(vm);
+    if (!realm) return URBI_ERR_INVALID_ARG;
+
+    UProto *root = NULL;
+    int rc = ufront_compile(vm, expr, strlen(expr), "<watch>", &root,
+                            vm->last_error, sizeof vm->last_error);
+    if (rc != URBI_OK) { vm->last_error_code = rc; return rc; }
+
+    UProtoCell *pc = uproto_bind(vm, root);   /* takes ownership either way */
+    if (!pc) return URBI_ERR_OOM;
+    pc->cell.flags |= UCELL_F_PINNED;
+    UClosure *cl = uclosure_new(vm, root, 0);
+    pc->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    if (!cl) return URBI_ERR_OOM;
+    if (vm->protos[UP_CLOSURE]) cl->proto_obj = vm->protos[UP_CLOSURE];
+
+    cl->cell.flags |= UCELL_F_PINNED;         /* reachable from nothing yet */
+    UWatcher *w = uwatch_install_host(vm, realm, cl, cb, ud);
+    cl->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    return w ? URBI_OK : URBI_ERR_OOM;
+}
 
 int urbi_tag_new(UVM *vm, URealm *realm, const char *name, UValue *out)
 {

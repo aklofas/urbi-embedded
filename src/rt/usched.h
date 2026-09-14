@@ -27,7 +27,7 @@
 #include "rt/ustrand.h"
 
 struct URealm;
-struct UWatcher;   /* the reactive task's watcher cell; not used here yet */
+struct UWatcher;   /* completed by rt/uwatch.h, which sits above this header */
 
 /* --- tags and events --------------------------------------------------
  *
@@ -54,7 +54,11 @@ typedef struct UTag {
  * `waiters` threaded through their own UStrand.link. */
 typedef struct UEvent {
     UCell    cell;
-    UStrand *waiters;
+    UStrand *waiters;               /* strands parked in `waituntil (e?)` */
+    /* Watchers subscribed through `at (e?)` and friends, threaded via
+     * UWatcher.next_on_event.  The watchers are rooted by the VM's watch
+     * list, so this list is a membership record and not a trace edge. */
+    struct UWatcher *watchers;
     UValue   name;                  /* a string, or nil */
 } UEvent;
 
@@ -266,9 +270,13 @@ void    utag_trace(struct UVM *vm, UTag *t);
 /* --- events ------------------------------------------------------------ */
 
 UEvent *uevent_new(struct UVM *vm, UValue name);
-/* Wakes every waiter with `payload`.  The reactive task adds watcher
- * fan-out on the same call. */
-void    uevent_emit(struct UVM *vm, UEvent *e, UValue payload);
+/* Fans `payload` out to every watcher on `e`, then wakes every waiter
+ * with it.  `sync` makes an AT_SYNC subscriber run its body inline before
+ * this returns (what `e.syncEmit(p)` means); every other subscriber, and
+ * every subscriber of a plain `e.emit(p)`, gets a spawned body strand. */
+void    uevent_emit_to(struct UVM *vm, UEvent *e, UValue payload, bool sync);
+static inline void uevent_emit(struct UVM *vm, UEvent *e, UValue payload)
+{ uevent_emit_to(vm, e, payload, false); }
 void    uevent_trace(struct UVM *vm, UEvent *e);
 
 /* --- provided by the layer above (uexec) ------------------------------- */

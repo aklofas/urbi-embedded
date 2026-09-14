@@ -389,6 +389,11 @@ static int obj_properties(UVM *vm, UValue self, UValue *args, uint8_t nargs, UVa
 static int collect_local_slot_names(UVM *vm, const UObject *o, UValue lst)
 {
     for (uint16_t i = o->count; i > 0; i--) {
+        /* A leading \x01 marks a slot the runtime keeps on the object for
+         * its own use -- today, the event behind `x.changed?`.  No
+         * identifier can contain that byte, so the prefix is a namespace
+         * script cannot reach and must not be shown. */
+        if (o->names[i - 1]->len > 0 && o->names[i - 1]->bytes[0] == '\x01') continue;
         UValue nm = uv_sym(o->names[i - 1]);
         if (urbi_list_append(vm, lst, nm) != 0) return -1;
     }

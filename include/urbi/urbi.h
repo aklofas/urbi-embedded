@@ -204,11 +204,7 @@ int urbi_throw(UVM *vm, const char *proto, const char *msg);
 
 /* ===================================================================
  * Events and watchers
- * ===================================================================
- *
- * urbi_watch is NOT YET AVAILABLE: it returns URBI_ERR_INVALID_STATE
- * until the reactive-runtime task lands.  The rest of the section is
- * live. */
+ * =================================================================== */
 
 /* Create a named event object on `realm`. */
 int urbi_event_new(UVM *vm, URealm *realm, const char *name, UValue *out);
@@ -228,7 +224,12 @@ int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_
  * URBI_ERR_OOM when the ring is full (the injection is dropped, which is
  * the only thing available without blocking an interrupt). */
 int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *payload, size_t n);
-/* Watch a condition expression; `cb` fires on each rising edge. */
+/* Watch a condition expression; `cb` fires on each rising edge, with the
+ * value the expression produced.  `expr` is compiled once against
+ * `realm`'s globals and re-evaluated whenever a slot it reads is written,
+ * so it costs nothing between writes.  A watch lives until the realm's
+ * connection tag is stopped.  URBI_ERR_COMPILE (the diagnostic is in
+ * urbi_last_error) or URBI_ERR_OOM. */
 int urbi_watch(UVM *vm, URealm *realm, const char *expr,
                int (*cb)(UVM *vm, void *ud, UValue value), void *ud);
 

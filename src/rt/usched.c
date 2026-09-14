@@ -314,6 +314,9 @@ static void usched_on_death(UVM *vm, UStrand *s)
     }
     s->link = sc->dead;
     sc->dead = s;
+    /* Now that the dead list roots it, and only now: uwatch_body_done
+     * re-evaluates a `whenever` condition, which allocates. */
+    uwatch_body_done(vm, s);
 }
 
 /* Unlink every strand that died since the last step from its realm, which
@@ -399,8 +402,10 @@ bool usched_has_live_work(UVM *vm)
 {
     if (!vm) return false;
     const USched *sc = uvm_sched(vm);
-    /* The reactive task adds "|| any watcher armed" here. */
-    return sc->run_head != NULL || sc->heap_len > 0;
+    /* An armed watcher is pending work even with nothing runnable: a host
+     * write between steps is exactly what it is there to notice.  A wait
+     * with nobody waiting on it is not -- see uwatch_has_live_work. */
+    return sc->run_head != NULL || sc->heap_len > 0 || uwatch_has_live_work(vm);
 }
 
 USchedStep usched_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
@@ -422,6 +427,9 @@ USchedStep usched_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
      * would let a short-period `every` fire again the moment its own body
      * finished, and an unbounded step would never return. */
     usched_fire_due(vm, usched_now(vm));
+    /* Before the queue, so a slot a HOST wrote between two steps reaches
+     * the conditions that read it even when no strand is runnable. */
+    uwatch_drain(vm);
 
     uint32_t remaining = budget;
     while (sc->run_head) {
@@ -434,9 +442,12 @@ USchedStep usched_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
         /* The strand is back on the run queue or the dead list, so it is
          * rooted again and this is a safe place to collect. */
         ugc_maybe_collect(vm);
-        /* The reactive task drains the watcher dirty set here.
-         *
-         * Charging.  uexec_run does not report how many instructions it
+        /* Every armed condition is re-evaluated here, once, if anything
+         * wrote to a watched object during that slice.  A write made by a
+         * watcher body or condition re-arms the NEXT drain, which is what
+         * bounds one pass. */
+        uwatch_drain(vm);
+        /* Charging.  uexec_run does not report how many instructions it
          * actually ran, so the budget is spent by outcome: a strand that
          * comes back READY used its whole slice or yielded, and is charged
          * for it; one that parked or died is charged one, because it

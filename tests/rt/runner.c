@@ -15,6 +15,7 @@ extern void rt_list_suite(void);
 extern void rt_strand_suite(void);
 extern void rt_exec_suite(void);
 extern void rt_sched_suite(void);
+extern void rt_watch_suite(void);
 extern void rt_unwind_suite(void);
 extern void rt_api_suite(void);
 extern void rt_realm_suite(void);
@@ -29,6 +30,7 @@ int main(void) {
     rt_run("strand", rt_strand_suite);
     rt_run("exec", rt_exec_suite);
     rt_run("sched", rt_sched_suite);
+    rt_run("watch", rt_watch_suite);
     rt_run("unwind", rt_unwind_suite);
     rt_run("api", rt_api_suite);
     rt_run("realm", rt_realm_suite);

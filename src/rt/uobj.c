@@ -82,7 +82,10 @@ int uobj_set_local(struct UVM *vm, UObject *o, USym *name, UValue v, uint8_t att
     int idx = uobj_find_local(o, name);
     if (idx >= 0) {
         o->values[idx] = stored;
-        o->attrs[idx] = attrs;
+        /* USLOT_CHANGED_EVENT is a SUBSCRIPTION, not a property of the
+         * value being written: `x = 2` after someone took `x.changed?`
+         * must not silently unsubscribe them. */
+        o->attrs[idx] = (uint8_t)(attrs | (o->attrs[idx] & USLOT_CHANGED_EVENT));
         return idx;
     }
     if (o->count == o->cap && uobj_grow(vm, o) != 0) return -1;
