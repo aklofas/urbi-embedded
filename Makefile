@@ -1,9 +1,3 @@
-# Aux layer — separate translation unit, separate archive. Filtered out
-# of the core SRC list below so liburbi.a (core) stays free of aux symbols.
-# Embedders opt into the aux layer by linking -laux at link time. See
-# CONTRIBUTING.md "Aux layer governance" and include/urbi/aux.h.
-AUX_SRCS := src/urbi_aux.c
-
 # refound/core: parked sources.  Filtered out of the default source lists
 # below so the files stay in the tree (a later v1.x REPL-server /
 # trace-tooling re-attachment reads them) but never enter the build.
@@ -185,7 +179,7 @@ CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
 # re-exported via `#pragma GCC visibility push(default)` in the
 # include/urbi/*.h headers.
 URBI_VIS_FLAGS := -fvisibility=hidden
-CPPFLAGS += -Iinclude -Isrc -Itests/unit
+CPPFLAGS += -Iinclude -Isrc
 
 # refactor-3 BLD-04: flag stamp.  Any change to the compiler, CFLAGS, or
 # CPPFLAGS invalidates every object in this BUILDDIR — the root cause of the
@@ -272,21 +266,6 @@ $(ROS2_RCL_GEN_C) $(ROS2_RCL_GEN_H) &: tools/urbi-rosgen.py src/ros/msgs/manifes
 $(ROS2_OBJS): $(ROS2_RCL_GEN_H)
 endif
 
-$(BUILDDIR)/tests/unit/%.o: tests/unit/%.c $(FLAGSTAMP)
-	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
-
-# tests/unit/test_detect_blob.c includes detect_blob.h from the eye_demo
-# example's main/ directory.  Per-target CPPFLAGS append picks up the
-# extra include path for just this TU; all other unit tests stay isolated
-# from the example tree.
-$(BUILDDIR)/tests/unit/test_detect_blob.o: CPPFLAGS += -Iexamples/esp32/eye_demo/main
-
-# tests/unit/test_draw_crosshair.c includes crosshair.h from the same
-# eye_demo main/ directory — same per-TU include-path pattern as
-# test_detect_blob.o just above.
-$(BUILDDIR)/tests/unit/test_draw_crosshair.o: CPPFLAGS += -Iexamples/esp32/eye_demo/main
-
 # --- REPL binary --------------------------------------------------------
 #
 # urbi — the REPL binary.  Builds from tools/urbi.c + vendored linenoise
@@ -314,220 +293,10 @@ $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
 
 urbi-bin: $(BUILDDIR)/urbi
 
-# --- chk-host-driver ----------------------------------------------------
-#
-# chk-host-driver — bounded test host-driver for `.chk` fixtures whose
-# observable needs an embedding-API operation the single-pass `urbi -i`
-# REPL path cannot express (multi-realm isolation, urbi_step quiescence).
-# Built into $(BUILDDIR) alongside `urbi` so each sanitizer variant
-# (host-asan / host-ubsan) gets its own instrumented driver; run_chk.sh
-# derives the driver path from the urbi-binary path it is handed.
-# Test binary: links against liburbi.a + libm; includes private src/ headers.
-
-$(BUILDDIR)/tests/integration:
-	@mkdir -p $@
-
-$(BUILDDIR)/tests/integration/chk_host_driver.o: tests/integration/chk_host_driver.c $(FLAGSTAMP) \
-		| $(BUILDDIR)/tests/integration
-	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
-
-$(BUILDDIR)/chk-host-driver: $(BUILDDIR)/tests/integration/chk_host_driver.o $(LIB)
-	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tests/integration/chk_host_driver.o $(LIB) -lm
-
-chk-host-driver: $(BUILDDIR)/chk-host-driver
-
-# --- Stdlib bake tool (host-only) ---------------------------------------
-#
-# tools/urbi-compile-stdlib is the Wave-2 build-time bake tool.  It
-# walks src/stdlib/STDLIB_ORDER.txt, compiles each listed .u file via
-# the public Urbi compile API, and emits the bytecode blob as
-# src/stdlib/urbi_stdlib_bytecode.gen.c.
-#
-# HOST-ONLY: the bake tool always builds with native cc, never the
-# cross toolchain.  Cross-arch builds consume the already-emitted
-# .gen.c source (compiled for the target like any other src/stdlib/*.c).
-# This keeps the chicken-and-egg out of the cross build: the bake
-# runs once on the host, its output ships as portable C source.
-#
-# Cycle break:
-#   The bake tool needs the urbi runtime to call urbi_compile_source,
-#   but MUST NOT depend on .gen.o — that's the file it produces, and
-#   the dep would form a build cycle:
-#       liburbi.a → .gen.o → .gen.c → bake-tool → liburbi.a
-#   So the bake tool links against host .o files DIRECTLY (excluding
-#   .gen.o) plus a small stub (tools/stub_stdlib_bytecode.c) that
-#   defines urbi_stdlib_bytecode[]=0 / urbi_stdlib_bytecode_len=0.
-#   urbi_stdlib_boot gates on _len > 0 (see src/stdlib/stdlib_boot.c),
-#   so the stub yields a clean no-op boot; the bake tool only needs
-#   lex/parse/emit, not a populated stdlib.
-#
-# Two-pass stdlib bake (per delta spec §3.1):
-#   1. liburbi.a builds with the committed .gen.c
-#   2. tools/urbi-compile-stdlib links against host .o files + stub
-#   3. .gen.c regenerates whenever a .u or STDLIB_ORDER.txt is newer,
-#      and liburbi.a re-links from the regenerated .gen.o.
-
-# Host-build pattern for the bake tool's deps: always native cc, so
-# cross-arch sub-makes (TARGET=arm-*, TARGET=riscv-*, TARGET=host-asan,
-# etc.) can still produce build/host/src/*.o for the host tool.
-# Guarded by TARGET != host so it does NOT shadow the standard
-# $(BUILDDIR)/src/%.o pattern when $(BUILDDIR) == build/host (default
-# target) — same paths, same recipe, but a duplicate rule would emit
-# a warning.
-ifneq ($(TARGET),host)
-build/host/src/%.o: src/%.c
-	@mkdir -p $(@D)
-	cc -std=c99 -Wall -Wextra -Wpedantic -Os -fvisibility=hidden -Iinclude -Isrc -MMD -MP -c -o $@ $<
-endif
-
-build/host/tools/stub_stdlib_bytecode.o: tools/stub_stdlib_bytecode.c
-	@mkdir -p $(@D)
-	cc -std=c99 -Os -Iinclude -Isrc -MMD -MP -c -o $@ $<
-
-# T17 / Wave 1: bake-tool host source list must always include lex/parse/
-# emit, regardless of URBI_BYTECODE_ONLY.  The bake tool runs at host build
-# time and CALLS urbi_compile_source — both the symbol and the compiler
-# frontend must be present.  Computed as a flag-independent enumeration of
-# every src/**/*.c (matching the unfiltered $(SRC) expansion) minus the
-# self-referential .gen.o.
-HOST_BAKE_SRC := \
-       $(filter-out $(AUX_SRCS),$(wildcard src/*.c)) \
-       $(wildcard src/lex/*.c) \
-       $(wildcard src/parse/*.c) \
-       $(wildcard src/emit/*.c) \
-       $(wildcard src/vm/*.c) \
-       $(wildcard src/gc/*.c) \
-       $(wildcard src/sched/*.c) \
-       $(wildcard src/watcher/*.c) \
-       $(wildcard src/event/*.c) \
-       $(wildcard src/tag/*.c) \
-       $(wildcard src/changed/*.c) \
-       $(wildcard src/chunk/*.c) \
-       $(wildcard src/value/*.c) \
-       $(filter-out $(RUNTIME_PARKED_SRCS),$(wildcard src/runtime/*.c)) \
-       $(wildcard src/realm/*.c) \
-       $(wildcard src/object/*.c) \
-       $(wildcard src/stdlib/*.c) \
-       $(REPL_SRCS)
-# NOTE: $(ROS2_SRCS) is deliberately NOT in the bake-tool source list.  The
-# bake tool builds from flag-free build/host objects (the TARGET!=host rule),
-# where stdlib_boot.o's urbi_ros_register call is #ifdef'd out — so the bake
-# tool never references a ros symbol and does not need uros*.o.  Listing the
-# ros objects here forces a bake-tool RELINK whenever they change, which (in a
-# shared build/host populated by a prior URBI_ENABLE_REPL=1 TARGET=host build)
-# pulls in stale REPL-flagged objects without REPL_SRCS in the link -> undefined
-# refs (urepl_state_destroy / ujson_parse / urbi_introspect_*).  ROS2 is
-# parked during the refound/core re-foundation (the dedicated non-host
-# TARGET=host-ros2 target that used to isolate this build is gone, and
-# URBI_ENABLE_ROS2=1 on bare TARGET=host still hard-errors above); this
-# note stays for whoever re-attaches ROS2, so the TARGET=host
-# stale-object trap (design-risk v0.12.0-H) isn't rediscovered the hard
-# way.
-HOST_BAKE_OBJ := $(filter-out build/host/src/stdlib/urbi_stdlib_bytecode.gen.o, \
-                              $(patsubst src/%.c,build/host/src/%.o,$(HOST_BAKE_SRC)))
-BAKE_STUB_O   := build/host/tools/stub_stdlib_bytecode.o
-
-# T17 / Wave 1: the bake tool is a HOST-ONLY build-time helper.  Under
-# URBI_BYTECODE_ONLY=1 the main $(SRC) excludes lex/parse/emit and
-# urbi_compile_source becomes a header-gated absent symbol — neither of
-# which the bake tool can use.  Solution: when URBI_BYTECODE_ONLY=1,
-# don't try to (re)build the bake tool.  The committed
-# src/stdlib/urbi_stdlib_bytecode.gen.c is consumed as-is.  Cross-arch
-# bytecode-only builds never invoke the bake tool by design.
-ifneq ($(URBI_BYTECODE_ONLY),1)
-tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(HOST_BAKE_OBJ) $(BAKE_STUB_O)
-	cc -std=c99 -Wall -Wextra -Wpedantic -Os \
-	    -Iinclude -Isrc -o $@ $< $(HOST_BAKE_OBJ) $(BAKE_STUB_O) -lm
-
-# Per-flavor bake tool variants.  Float is fixed at f64/double for every
-# target now (the old per-target f32 flavor has been retired — see
-# include/urbi/types.h), so `tools/urbi-compile-stdlib-f%` produces
-# byte-identical output to the default tool above regardless of `%`.  Kept
-# as a named target for external build scripts (examples/stm32f4,
-# examples/pico) that still invoke a flavor-numbered binary.
-#
-# Note: urbi_stdlib_bytecode.gen.c is filtered out (same as HOST_BAKE_OBJ
-# above) — it defines urbi_stdlib_bytecode/_len symbols that also live in
-# the stub.  We use the stub at link time to break the chicken-and-egg
-# (the bake tool itself is what would normally regenerate the .gen.c).
-tools/urbi-compile-stdlib-f%: tools/urbi-compile-stdlib.c \
-        $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(HOST_BAKE_SRC)) \
-        tools/stub_stdlib_bytecode.c
-	cc -std=c99 -Wall -Wextra -Wpedantic -Os \
-	    $(if $(filter 1,$(URBI_REPL_COOPERATIVE_ONLY)),-DURBI_REPL_COOPERATIVE_ONLY=1,) \
-	    -Iinclude -Isrc -o $@ $^ -lm
-
-# v0.9.4: tools/urbi-compile-stdlib-pico is a symlink to the f4 variant.
-# The target-named symlink keeps the Pico example's CMakeLists
-# invoking a target-named binary for clarity (and avoids hard-coding the
-# floats convention into the example's build script).
-tools/urbi-compile-stdlib-pico: tools/urbi-compile-stdlib-f4
-	ln -sf urbi-compile-stdlib-f4 $@
-
-# Two-pass stdlib bake (per delta §3.1):
-# 1. liburbi.a builds with the placeholder .gen.c (committed in repo)
-# 2. tools/urbi-compile-stdlib runs against intermediate liburbi.a
-# 3. liburbi.a re-links with populated .gen.c
-#
-# The .gen.c rule depends on the bake tool + the order file + every
-# .u under src/stdlib/.  Touching any of those triggers a rebake; the
-# resulting .gen.c is then picked up by the existing src/stdlib/*.c
-# wildcard, so liburbi.a re-links automatically.
-#
-# .gen.c is a TRACKED source file (not a generated artifact under
-# build/) so the first build of liburbi.a does not require the bake
-# tool — closing the chicken-and-egg between the tool and the library.
-
-src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib \
-                                        src/stdlib/STDLIB_ORDER.txt \
-                                        $(STDLIB_U_FILES)
-	./tools/urbi-compile-stdlib \
-	    src/stdlib/STDLIB_ORDER.txt \
-	    src/stdlib \
-	    $@
-endif  # URBI_BYTECODE_ONLY != 1
-
-# Shared with the per-target rebake rule below (must live outside the
-# URBI_BYTECODE_ONLY guard so the rule body can expand it).
-STDLIB_U_FILES := $(wildcard src/stdlib/*.u)
-UROBOTICS_U_FILES := $(wildcard src/urobotics/*.u)
-
-# Per-target stdlib rebake — fires only when URBI_STDLIB_FLAVOR is set
-# (see commentary near the SRC/OBJ block).  Pattern rule
-# $(BUILDDIR)/src/%.o: src/%.c does not match a source under $(BUILDDIR)/,
-# so define both the .gen.c bake step and the .gen.o compile step
-# explicitly.  Explicit rule with a recipe takes precedence over the
-# pattern rule for the same target.
-ifneq ($(URBI_STDLIB_FLAVOR),)
-$(STDLIB_BYTECODE_GEN_C): tools/urbi-compile-stdlib-f$(URBI_STDLIB_FLAVOR) \
-                          src/stdlib/STDLIB_ORDER.txt \
-                          $(STDLIB_U_FILES)
-	@mkdir -p $(@D)
-	./tools/urbi-compile-stdlib-f$(URBI_STDLIB_FLAVOR) \
-	    src/stdlib/STDLIB_ORDER.txt \
-	    src/stdlib \
-	    $@
-
-$(STDLIB_BYTECODE_GEN_O): $(STDLIB_BYTECODE_GEN_C) $(FLAGSTAMP)
-	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
-endif
-
-# v0.12.2: bake the gated urobotics overlay into urbi_urobotics_bytecode.
-# Host-only (default flavor); the tracked .gen.c is rebaked in place exactly
-# like src/stdlib/urbi_stdlib_bytecode.gen.c.  Gated so the rule only exists
-# when the overlay is enabled; the tracked 0-length placeholder covers the
-# gate-off build.
-ifeq ($(URBI_ENABLE_UROBOTICS),1)
-src/urobotics/urobotics_bytecode.gen.c: tools/urbi-compile-stdlib \
-                                        src/urobotics/UROBOTICS_ORDER.txt \
-                                        $(UROBOTICS_U_FILES)
-	./tools/urbi-compile-stdlib \
-	    src/urobotics/UROBOTICS_ORDER.txt \
-	    src/urobotics \
-	    $@ \
-	    urbi_urobotics_bytecode
-endif
+# The C .chk host-driver is parked with the old core; run_chk.sh reports
+# `## host:` fixtures as SKIP-NO-DRIVER until it is rewritten against the
+# new core.  The stdlib bake tool and its freshness/determinism gates are
+# parked with src/stdlib/ until the boot table re-attaches it.
 
 # --- Integration tests --------------------------------------------------
 #
@@ -540,52 +309,25 @@ endif
 test-integration: $(BUILDDIR)/urbi
 	tests/integration/repl_smoke.sh $(BUILDDIR)/urbi
 
-# v0.13.4: batch/embedding error-surfacing gate (B1/LANG4-14).  Exercises the
-# -e / file entry points for uncaught-throw exit status (the chk suite only
-# exercises the REPL path).
-.PHONY: test-batch-errors
-test-batch-errors: $(BUILDDIR)/urbi
-	@URBI=$(BUILDDIR)/urbi bash tests/scripts/test-batch-errors.sh
-
 # --- .chk conformance fixtures -----------------------------------------
 #
-# test-chk iterates all tests/chk/**/*.chk against the built urbi binary
-# via tests/integration/run_chk.sh. One REPL session per fixture. Folded
-# into `test` alongside test-integration so every sanitizer variant
-# runs the fixtures automatically. Not valgrind-wrapped (same rationale
-# as test-integration — urbi itself is memory-clean, and wrapping the
-# sh+awk+sed pipeline adds noise, not signal).
+# test-chk runs every tests/chk/**/*.chk fixture against the built urbi
+# binary through tests/integration/chk_summary.sh, one REPL session per
+# fixture.  The whole corpus is always run and reported per directory, so
+# the tally shows how much of the language the current core covers; only
+# the directories in CHK_GATE_DIRS decide pass/fail, and they widen as
+# each subsystem is re-founded.  tests/chk/bringup-exclusions.txt is the
+# ratchet for individual fixtures a later subsystem still blocks.
+#
+# tests/chk/repl/*.chk are NDJSON fixtures for the REPL dispatcher, not
+# urbiscript, and are skipped by the script.
+#
+# Not valgrind-wrapped: urbi itself is memory-clean, and wrapping the
+# sh+awk+sed pipeline adds noise, not signal.
+CHK_GATE_DIRS ?= arithmetic closure function control
 
-# tests/chk/repl/*.chk are NDJSON fixtures (v0.9.1 Phase 8) for the REPL
-# dispatcher, not urbiscript input consumable by run_chk.sh.  Their
-# in-process driver was removed in the Phase 0 runtime-internals test
-# cleanup; REPL is currently a parked feature pending v1.x re-attachment.
-# Excluded here.
-# refactor-3 CHK-01/04: per-outcome tally.  PASS(0) / SKIP(3, preset-gated) /
-# PLACEHOLDER(4, annotated blocked:/deferred:/dropped: specification records)
-# are healthy; VACUOUS(5, unannotated empty fixture) and FAIL(everything
-# else) fail the suite.
-test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
-	@pass=0; fail=0; skip=0; placeholder=0; vacuous=0; bad=""; \
-	for f in $$(find tests/chk -path tests/chk/repl -prune -o -name '*.chk' -print 2>/dev/null | sort); do \
-	    URBI_BUILD_PRESET=default tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f"; rc=$$?; \
-	    case $$rc in \
-	        0) pass=$$((pass + 1));; \
-	        3) skip=$$((skip + 1));; \
-	        4) placeholder=$$((placeholder + 1));; \
-	        5) vacuous=$$((vacuous + 1)); bad="$$bad $$f";; \
-	        *) fail=$$((fail + 1)); bad="$$bad $$f";; \
-	    esac; \
-	done; \
-	echo "test-chk: $$pass passed, $$skip skipped (preset-gated), $$placeholder placeholders (blocked/deferred/dropped), $$vacuous vacuous-unannotated, $$fail failed"; \
-	if [ $$fail -gt 0 ] || [ $$vacuous -gt 0 ]; then \
-	    echo "test-chk: FAIL —$$bad"; \
-	    exit 1; \
-	fi; \
-	if [ $$pass -eq 0 ]; then \
-	    echo "test-chk: zero fixtures passed — corpus missing or runner broken"; \
-	    exit 1; \
-	fi
+test-chk: $(BUILDDIR)/urbi
+	@CHK_GATE_DIRS="$(CHK_GATE_DIRS)" sh tests/integration/chk_summary.sh $(BUILDDIR)/urbi
 
 # refactor-3 CHK meta-gate: pins run_chk.sh's exit-code contract with stub
 # binaries (no VM involved).  Must stay green across any future runner edit.
@@ -593,28 +335,14 @@ test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
 test-chk-runner:
 	@bash tests/integration/test_run_chk_runner.sh
 
-test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-batch-errors test-rt check-rt-layering
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
-	$(RUNNER_WRAPPER) $(RUNNER)
-
-# unit-runner — link the unit-test runner WITHOUT running it or the
-# integration/chk gates.  Mirrors the link in `test`.
-.PHONY: unit-runner
-unit-runner: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
+# `make test` on the re-founded core: the rt suites, the layering gate,
+# and the .chk corpus driven through the new urbi binary.  The old
+# unit-test runner is parked with the core it exercised.
+test: $(LIB) test-rt check-rt-layering test-chk
 
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi
 	@./tests/scripts/check_wire_format_determinism.sh
-
-# Phase 9 (v0.7.1-embedding-api) aux-symbols gate.
-# Asserts that liburbi.a (core) contains NO urbi_aux_* symbols.
-# Aux functions live in liburbi_aux.a; leaking them into core breaks the
-# aux governance contract (CONTRIBUTING.md "Aux layer governance") and
-# the embedder's ability to strip the aux layer at link time.
-.PHONY: test-aux-symbols
-test-aux-symbols: $(LIB)
-	@./scripts/check_aux_symbols.sh $(BUILDDIR)/liburbi.a
 
 # API manifest gate — verifies that every urbi_ symbol exported from
 # liburbi.a and liburbi_aux.a is enumerated in docs/api-surface-tiers.md.
@@ -622,65 +350,8 @@ test-aux-symbols: $(LIB)
 # manifest stays in sync with the library.  Closes audit-1 F13 /
 # api-ergonomics F12.  See tests/scripts/check-api-manifest.sh.
 .PHONY: test-api-manifest
-test-api-manifest: $(LIB) $(LIBURBI_AUX)
+test-api-manifest: $(LIB)
 	@./tests/scripts/check-api-manifest.sh $(BUILDDIR)
-
-# Embedding-guide code-sample drift detection — compiles every C block
-# in docs/embedding-guide.md to catch API-signature drift.  Lightweight
-# (<5 s); wired into releasetest Phase 1.  See
-# tests/integration/test_embedding_guide_compiles.sh for the extraction
-# and harness convention (STANDALONE vs FRAGMENT markers).
-.PHONY: test-embedding-guide
-test-embedding-guide: $(LIB) $(LIBURBI_AUX)
-	@./tests/integration/test_embedding_guide_compiles.sh $(BUILDDIR)
-
-# W5/v0.10.6: stdlib bytecode freshness gate (release F7).
-# Regenerates the stdlib bytecode blob and diffs against the checked-in
-# src/stdlib/urbi_stdlib_bytecode.gen.c.  Detects .u edits that were not
-# followed by a re-bake commit.  Depends on the bake tool being built.
-.PHONY: test-stdlib-bytecode-fresh
-test-stdlib-bytecode-fresh: tools/urbi-compile-stdlib
-	@./tests/scripts/check-stdlib-fresh.sh
-
-# W2/v0.10.3: public-header self-containment gate.
-# Compiles a minimal external program with ONLY -Iinclude (no -Isrc) to
-# verify that include/urbi/gc.h and include/urbi/sched.h no longer pull in
-# src/-prefixed internal headers.  Closes audit-1 F1 (completion).
-.PHONY: test-external-embed-iinclude
-test-external-embed-iinclude: $(LIB) $(LIBURBI_AUX)
-	@./tests/integration/test_external_embed_iinclude.sh $(BUILDDIR)
-
-# Phase 3 (v0.6.1-stdlib Wave 2) bake-tool determinism smoke gate.
-# Runs tools/urbi-compile-stdlib three times against
-# src/stdlib/STDLIB_ORDER.txt + src/stdlib/*.u and asserts that the
-# three outputs are byte-identical.  Hard-fail in releasetest below.
-# See tests/scripts/bake_smoke.sh.
-.PHONY: test-bake-smoke
-test-bake-smoke: tools/urbi-compile-stdlib
-	@./tests/scripts/bake_smoke.sh
-	@./tests/scripts/test_compile_stdlib_to_header.sh
-
-# URBI_BYTECODE_ONLY smoke gate — originally a Phase 13 (v0.6.1-stdlib
-# Wave 2) shape-only approximation; promoted at v0.7.0-c-api T15 to a
-# real strip via the main Makefile (see COMPILER_FRONTEND_DIRS_EXCLUDED
-# above).  This script still drives a standalone bypass-build to verify
-# the architectural shape independently of the main Makefile and to
-# confirm urbi_stdlib_boot / urbi_vm_init / urbi_vm_destroy /
-# urbi_lock_heap remain exported after the strip.  Hard-fail in
-# releasetest below.  See tests/scripts/build-bytecode-only.sh.
-.PHONY: test-bytecode-only
-test-bytecode-only:
-	@./tests/scripts/build-bytecode-only.sh
-
-# v0.9.3-ci-hardening: host-side freestanding gate.  Compiles each
-# URBI_BYTECODE_ONLY-eligible TU under host cc with -ffreestanding
-# -DURBI_BYTECODE_ONLY=1 + nm-greps each .o against the forbidden-
-# libc regex (printf/snprintf/malloc/free/…).  Catches the leak
-# class that masked v0.9.1 + v0.9.2 from CI without requiring any
-# cross toolchain.  See tests/scripts/build-freestanding-host.sh.
-.PHONY: test-freestanding-host
-test-freestanding-host:
-	@./tests/scripts/build-freestanding-host.sh
 
 test-debug:
 	$(MAKE) TARGET=host-debug \
@@ -713,33 +384,6 @@ test-o2:
 	$(MAKE) TARGET=host-o2 \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O2 -g" \
 		test
-
-# --- Determinism gate -------------------------------------------------------
-#
-# test-determinism builds and runs the full unit-test suite 100 times under
-# the default preset, verifying that urbi_get_determinism_checksum() returns
-# a stable value across runs.
-#
-# The full runner is invoked each iteration (no per-suite filter exists in
-# runner.c); at ~15-25ms per run, 100 invocations take ~1.5-2.5 seconds.
-# Any non-zero exit from the runner fails the gate with the iteration number.
-#
-# Enables -DURBI_DEBUG=1 because the determinism checksum function is
-# guarded by #ifdef URBI_DEBUG.
-
-test-determinism-default:
-	$(MAKE) TARGET=host-determinism-default \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1" \
-		test
-	@echo "=== Determinism gate: default preset (100 runs) ==="
-	@for i in $$(seq 1 100); do \
-	    build/host-determinism-default/tests/unit/runner > /dev/null \
-	    || { echo "FAIL on iteration $$i (default preset)"; exit 1; }; \
-	done
-	@echo "=== Default preset: 100 runs PASS ==="
-
-test-determinism: test-determinism-default
-	@echo "=== Determinism gate: default preset × 100 runs PASS ==="
 
 # test-gc-stress — refactor-3 TEST-GAP-01: full suite under URBI_GC_STRESS=1
 # (synchronous full collection before EVERY GC-cell allocation — the
@@ -853,13 +497,10 @@ test-corpus-sanitize:
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
     test-gc-stress \
-    lint docs-check coverage test-stress test-gc-none-build \
+    lint docs-check coverage \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism \
-    test-bake-smoke test-bytecode-only test-freestanding-host \
-    test-api-manifest test-aux-symbols \
-    test-embedding-guide test-external-embed-iinclude \
-    test-stdlib-bytecode-fresh \
+    test-api-manifest \
     test-chk-runner test-fuzz-smoke test-o2
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
@@ -874,8 +515,6 @@ RELEASETEST_JOBS   ?= $(shell nproc)
 RELEASETEST_OUTPUT ?= target
 
 releasetest:
-	@echo "=== releasetest: pre-fanout regeneration (serialized; refactor-3 BLD-02c) ==="
-	@$(MAKE) --no-print-directory tools/urbi-compile-stdlib src/stdlib/urbi_stdlib_bytecode.gen.c
 	@echo "=== releasetest: 2-phase sweep ==="
 	@echo "Phase 1 ($(words $(RELEASETEST_PHASE1)) gates, -j$(RELEASETEST_JOBS) -O$(RELEASETEST_OUTPUT)): $(RELEASETEST_PHASE1)"
 	@echo "Phase 2 ($(words $(RELEASETEST_PHASE2)) gate, sequential): $(RELEASETEST_PHASE2)"
@@ -911,82 +550,6 @@ _releasetest_phase2: $(RELEASETEST_PHASE2)
 # full src/ tree; no .a dependency because libFuzzer needs the sanitizer
 # runtimes linked in.  Local-only (no CI); see docs/internals/test-harness.md
 # for time-budget guidance.
-# --- Stress tests -------------------------------------------------------
-#
-# test-stress builds and runs 4 GC stress programs against the default
-# (URBI_GC_INCREMENTAL) library.  Each program self-asserts and exits 0
-# on success.  NOT wired into `make test` (slower path); invoked by
-# `make test-stress` or `make releasetest`.
-
-STRESS_BUILDDIR := $(BUILDDIR)/tests/stress
-
-$(STRESS_BUILDDIR):
-	@mkdir -p $@
-
-# Stress tests are hosted programs; clock_gettime needs _POSIX_C_SOURCE.
-STRESS_CPPFLAGS := $(CPPFLAGS) -D_POSIX_C_SOURCE=200809L
-
-$(STRESS_BUILDDIR)/gc_long_running: tests/stress/gc_long_running.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
-
-$(STRESS_BUILDDIR)/gc_many_cycles: tests/stress/gc_many_cycles.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
-
-$(STRESS_BUILDDIR)/gc_pause_time: tests/stress/gc_pause_time.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
-
-$(STRESS_BUILDDIR)/gc_barrier_throughput: tests/stress/gc_barrier_throughput.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
-
-$(STRESS_BUILDDIR)/stress_event_emit_loop: tests/stress/stress_event_emit_loop.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) -Isrc $< -L$(BUILDDIR) -lurbi -lm -o $@
-
-test-stress: $(STRESS_BUILDDIR)/gc_long_running \
-             $(STRESS_BUILDDIR)/gc_many_cycles \
-             $(STRESS_BUILDDIR)/gc_pause_time \
-             $(STRESS_BUILDDIR)/gc_barrier_throughput \
-             $(STRESS_BUILDDIR)/stress_event_emit_loop
-	$(STRESS_BUILDDIR)/gc_long_running
-	$(STRESS_BUILDDIR)/gc_many_cycles
-	$(STRESS_BUILDDIR)/gc_pause_time
-	$(STRESS_BUILDDIR)/gc_barrier_throughput
-	$(STRESS_BUILDDIR)/stress_event_emit_loop
-
-# --- GC pause-time regression gate (<1 ms per slice) --------------------
-#
-# test-gc-pause recompiles gc_pause_time.c with -DGC_PAUSE_ASSERT_NS=1000000
-# so that the binary self-asserts max slice < 1 ms and exits non-zero on
-# violation.  The standard test-stress target builds WITHOUT that flag so
-# the baseline stress run is always threshold-free.
-#
-# The gated binary lands as gc_pause_time_gated to avoid a stale-rule
-# conflict with the unasserted $(STRESS_BUILDDIR)/gc_pause_time above.
-
-$(STRESS_BUILDDIR)/gc_pause_time_gated: tests/stress/gc_pause_time.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) -DGC_PAUSE_ASSERT_NS=1000000 \
-	    $< -L$(BUILDDIR) -lurbi -lm -o $@
-
-test-gc-pause: $(STRESS_BUILDDIR)/gc_pause_time_gated
-	$(STRESS_BUILDDIR)/gc_pause_time_gated
-	@echo "test-gc-pause: max slice < 1 ms PASS"
-
-# --- Cross-strategy compile smoke (URBI_GC_NONE) ------------------------
-#
-# test-gc-none-build verifies that ugc_none.h (the M3 no-op stub) compiles
-# cleanly when URBI_GC=URBI_GC_NONE (==2) is set.  Compilation only; no
-# link against liburbi.a (real URBI_GC_NONE impl deferred to v2 per
-# REVIVAL §2.2 / Row 10 §2.1).
-#
-# Uses -fsyntax-only (parse + type-check; no object output) so no separate
-# build directory is needed.  Both build-smoke files are checked.
-
-test-gc-none-build:
-	$(CC) $(CFLAGS) $(CPPFLAGS) -DURBI_GC=2 -fsyntax-only \
-	    tests/build/test_gc_none_compile.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) -DURBI_GC=2 -fsyntax-only \
-	    tests/build/test_gc_none_no_barrier.c
-	@echo "test-gc-none-build: URBI_GC_NONE header smoke PASS"
-
 FUZZ_BUILDDIR := build/host-fuzz
 FUZZ_CC       ?= clang
 FUZZ_CFLAGS   := -std=c99 -Wall -Wextra -Wpedantic -O1 -g \
@@ -999,7 +562,7 @@ $(FUZZ_BUILDDIR):
 # refactor-3 TEST-GAP-02 fix: $(SRC) filters out the stdlib bytecode .gen.c
 # (the OBJ list adds its object separately), so passing bare $(SRC) here had
 # bit-rotted the fuzz link ("undefined reference to urbi_stdlib_bytecode_len").
-FUZZ_SRC := $(SRC) src/stdlib/urbi_stdlib_bytecode.gen.c
+FUZZ_SRC := $(SRC)
 
 $(FUZZ_BUILDDIR)/fuzz_lex: tests/fuzz/fuzz_lex.c $(FUZZ_SRC) | $(FUZZ_BUILDDIR)
 	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(FUZZ_SRC) tests/fuzz/fuzz_lex.c -lm
@@ -1009,12 +572,6 @@ $(FUZZ_BUILDDIR)/fuzz_parse: tests/fuzz/fuzz_parse.c $(FUZZ_SRC) | $(FUZZ_BUILDD
 
 $(FUZZ_BUILDDIR)/fuzz_vm: tests/fuzz/fuzz_vm.c $(FUZZ_SRC) | $(FUZZ_BUILDDIR)
 	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(FUZZ_SRC) tests/fuzz/fuzz_vm.c -lm
-
-# refactor-3 TEST-GAP-02: the network-facing JSON parsers.  Both TUs are
-# libc-self-contained, so the harness links exactly those two sources.
-$(FUZZ_BUILDDIR)/fuzz_json: tests/fuzz/fuzz_json.c src/repl/ujson.c src/repl/urepl_ndjson.c | $(FUZZ_BUILDDIR)
-	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ \
-	    tests/fuzz/fuzz_json.c src/repl/ujson.c src/repl/urepl_ndjson.c
 
 # refactor-4 REPL-N1: the bytecode chunk loader — the surface with the actual
 # stack-overflow finding (B3).  Links the full runtime like fuzz_vm/lex/parse.
@@ -1033,15 +590,11 @@ fuzz-vm: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_vm
 	@echo "running fuzz_vm (Ctrl-C to stop; use -runs=N for bounded)"
 	$(FUZZ_BUILDDIR)/fuzz_vm
 
-fuzz-json: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_json
-	@echo "running fuzz_json (Ctrl-C to stop; use -runs=N for bounded)"
-	$(FUZZ_BUILDDIR)/fuzz_json
-
 fuzz-chunk: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_chunk
 	@echo "running fuzz_chunk (Ctrl-C to stop; use -runs=N for bounded)"
 	$(FUZZ_BUILDDIR)/fuzz_chunk tests/fuzz/seeds/chunk/
 
-fuzz-build: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm $(FUZZ_BUILDDIR)/fuzz_json $(FUZZ_BUILDDIR)/fuzz_chunk
+fuzz-build: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm $(FUZZ_BUILDDIR)/fuzz_chunk
 
 # refactor-3 TEST-GAP-02: bounded fuzz smoke for releasetest Phase 1.
 # -runs=20000 per harness (sub-second each; -max_total_time bounds pathology).
@@ -1056,13 +609,12 @@ test-fuzz-smoke:
 	    echo "================================================================"; \
 	    exit 0; \
 	fi
-	@$(MAKE) --no-print-directory $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm $(FUZZ_BUILDDIR)/fuzz_json $(FUZZ_BUILDDIR)/fuzz_chunk
+	@$(MAKE) --no-print-directory $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm $(FUZZ_BUILDDIR)/fuzz_chunk
 	$(FUZZ_BUILDDIR)/fuzz_lex   -runs=20000 -max_total_time=120
 	$(FUZZ_BUILDDIR)/fuzz_parse -runs=20000 -max_total_time=120
 	$(FUZZ_BUILDDIR)/fuzz_vm    -runs=20000 -max_total_time=120
-	$(FUZZ_BUILDDIR)/fuzz_json  -runs=20000 -max_total_time=120
 	$(FUZZ_BUILDDIR)/fuzz_chunk -runs=20000 -max_total_time=120 tests/fuzz/seeds/chunk/
-	@echo "test-fuzz-smoke: 5 harnesses x 20000 bounded runs clean"
+	@echo "test-fuzz-smoke: 4 harnesses x 20000 bounded runs clean"
 
 fuzz-tools:
 	@command -v $(FUZZ_CC) >/dev/null 2>&1 || { \
@@ -1076,7 +628,7 @@ fuzz-tools:
 # adding/removing source files.
 compile_commands.json:
 	@printf '[\n' > $@
-	@first=1; for f in $(SRC) $(TEST_SRC) tools/urbi.c tools/linenoise.c; do \
+	@first=1; for f in $(SRC) tools/urbi.c tools/linenoise.c; do \
 		if [ $$first -eq 0 ]; then printf ',\n' >> $@; fi; \
 		first=0; \
 		printf '  {"directory": "%s", "file": "%s/%s", "command": "%s %s %s -Itools -c -o %s/%s/%s %s"}' \
@@ -1156,7 +708,7 @@ analyzer:
 # src/ (not tests/unit/).  Requires gcovr in PATH; clobbers prior .gcda
 # so repeated runs produce clean counts.
 coverage: coverage-tools
-	rm -f build/host-coverage/src/*.gcda build/host-coverage/tests/unit/*.gcda
+	find build/host-coverage -name '*.gcda' -delete 2>/dev/null || true
 	$(MAKE) TARGET=host-coverage \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g --coverage" \
 		test
@@ -1187,24 +739,6 @@ lint: tidy cppcheck analyzer
 
 clean:
 	rm -rf build compile_commands.json
-	rm -f tools/urbi-compile-stdlib tools/urbi-compile-stdlib-pico \
-	      tools/urbi-compile-stdlib-f[0-9]*
-
-# bake-clean — force the bake tool to regenerate
-# src/stdlib/urbi_stdlib_bytecode.gen.c from STDLIB_ORDER.txt + .u files.
-#
-# Routine builds do not need this — the dep-graph picks up .u changes
-# automatically.  Use this when the committed .gen.c drifts from what
-# the current sources would produce (e.g. a .u was edited but `make`
-# did not notice because the file timestamp regressed).
-#
-# Distinct from `make clean` — it does not touch build/ at all, only
-# the tracked .gen.c source.
-bake-clean: tools/urbi-compile-stdlib
-	./tools/urbi-compile-stdlib \
-	    src/stdlib/STDLIB_ORDER.txt \
-	    src/stdlib \
-	    src/stdlib/urbi_stdlib_bytecode.gen.c
 
 # ---- documentation verification ------------------------------------------
 #
@@ -1254,4 +788,4 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-bake-smoke test-bytecode-only test-freestanding-host test-api-manifest test-aux-symbols test-embedding-guide test-external-embed-iinclude test-stdlib-bytecode-fresh test-gc-stress unit-runner test-chk-runner test-fuzz-smoke test-o2 fuzz-json force-flagstamp
+.PHONY: all core test test-asan test-ubsan test-debug test-switch clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-fuzz-smoke test-o2 force-flagstamp

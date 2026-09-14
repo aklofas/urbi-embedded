@@ -110,9 +110,13 @@ trap 'rm -rf "$TMPDIR_LOCAL"' EXIT
 if grep -qE '^[[:space:]]*##[[:space:]]*host:' "$CHK"; then
     DRIVER="$(dirname "$URBI")/chk-host-driver"
     if [ ! -x "$DRIVER" ]; then
-        printf 'error: chk-host-driver not found or not executable: %s\n' \
-               "$DRIVER" >&2
-        exit 2
+        # The C host-driver is rewritten against the new core by its own
+        # task.  Until it exists, a `## host:` fixture is neither a pass
+        # nor a failure — report it distinctly and exit with the same
+        # code as a preset-gated skip so aggregators tally it apart from
+        # real results.
+        printf 'SKIP-NO-DRIVER %s (chk-host-driver not built)\n' "$CHK"
+        exit 3
     fi
 
     # Expected lines come from the same `[...]` frame the REPL path uses.

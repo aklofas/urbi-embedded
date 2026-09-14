@@ -58,6 +58,7 @@ struct UVM {
     URealm    *realms;             /* list; realms->... ; main_realm is the first created */
     URealm    *main_realm;
     UStrand   *spare;              /* free list of spare strands for synchronous runs */
+    UStrand   *spare_active;       /* spares currently handed out; a GC root (linked via UStrand.link) */
     UProtoCell *bound_protos;      /* every live bound chunk, for uvm_close teardown */
 
     /* host hooks */

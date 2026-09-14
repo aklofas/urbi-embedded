@@ -43,6 +43,7 @@ void uvm_gc_mark_fixed(UVM *vm)
     if (vm->root_globals) ugc_mark(vm, &vm->root_globals->cell);
     for (URealm *r = vm->realms; r; r = r->next) ugc_mark(vm, &r->cell);
     for (UStrand *s = vm->spare; s; s = s->link) ugc_mark(vm, &s->cell);
+    for (UStrand *s = vm->spare_active; s; s = s->link) ugc_mark(vm, &s->cell);
     for (UStrand *s = vm->sched.run_head; s; s = s->link) ugc_mark(vm, &s->cell);
     if (vm->sched.current) ugc_mark(vm, &vm->sched.current->cell);
     if (vm->test_mark_extra) vm->test_mark_extra(vm, vm->test_mark_ud);
@@ -153,6 +154,7 @@ void uvm_close(UVM *vm)
     vm->realms = NULL;
     vm->main_realm = NULL;
     vm->spare = NULL;
+    vm->spare_active = NULL;
     vm->sched.run_head = vm->sched.run_tail = vm->sched.current = NULL;
     vm->test_mark_extra = NULL;
     ugc_destroy(vm);
@@ -323,12 +325,20 @@ UStrand *uvm_spare_acquire(UVM *vm, URealm *realm)
     s->transfer = uv_nil();
     s->result = uv_nil();
     s->croots = NULL;
+    /* An acquired spare is off the free list and not yet on any realm or
+     * run queue, so nothing else keeps it alive: park it on the in-use
+     * list, which mark_fixed walks. */
+    s->link = vm->spare_active;
+    vm->spare_active = s;
     return s;
 }
 
 void uvm_spare_release(UVM *vm, UStrand *s)
 {
     if (!s) return;
+    for (UStrand **pp = &vm->spare_active; *pp; pp = &(*pp)->link) {
+        if (*pp == s) { *pp = s->link; break; }
+    }
     ustrand_close_upvals(s, 0);
     s->nframes = 0;
     s->ncleanup = 0;

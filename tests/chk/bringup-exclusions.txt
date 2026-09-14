@@ -1,0 +1,21 @@
+# bringup-exclusions.txt — fixtures inside a GATED directory that cannot
+# pass yet because the subsystem they exercise has not been re-founded.
+#
+# This file is a RATCHET, not a suppression list: chk_summary.sh fails if
+# an excluded fixture starts passing, so the task that unblocks one is
+# forced to delete its line here.  Entries are only ever removed.
+#
+# Each line: <path>  # <what it needs>
+
+# --- needs List (for-each iteration) — the stdlib boot table -----------
+tests/chk/control/for_basic.chk                   # `for (var x : [..])`
+tests/chk/control/for_break_continue.chk          # `for (var x : [..])`
+tests/chk/control/switch_break_in_loop.chk        # `for (var x : [..])`
+tests/chk/control/switch_continue_in_loop.chk     # `for (var x : [..])`
+tests/chk/control/while_in_branch_arm.chk         # one case iterates a list literal
+tests/chk/closure/loop_exit_capture.chk           # captures inside `for (var x : [..])`
+
+# --- needs try/catch — the cleanup-stack unwinder ---------------------
+tests/chk/closure/capture_shadowed.chk            # two cases capture a catch variable
+tests/chk/function/default_params.chk             # arity failures observed through try/catch,
+                                                  # plus Lobby.echo from the stdlib

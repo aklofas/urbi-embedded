@@ -1,598 +1,223 @@
 # urbi-embedded API surface tiers
 
-Authoritative manifest for v1.0 freeze planning. Every public symbol
-exported from `liburbi.a` MUST appear in this manifest. CI gate
-`test-api-manifest` (see `tests/scripts/check-api-manifest.sh`) verifies
-that no exported symbol is missing from this file.
+Authoritative manifest of everything `liburbi.a` exports. The CI gate
+`test-api-manifest` (`tests/scripts/check-api-manifest.sh`) fails if an
+exported symbol is missing from this file, and if a Tier 1 symbol stops
+being exported.
 
-Tiers:
+Two tiers while the core is being re-founded:
 
-- **Stable (T1)** — Frozen at v1.0. Removing requires a MAJOR bump.
-- **Advanced (T2)** — Stable but non-hot-path. Used by embedders who need
-  more than the basic API. Decorated with `URBI_ADVANCED` in the header.
-- **Experimental (T3)** — RESERVED for v1.x. Compiler emits a deprecation
-  warning when used. Do not depend on across releases. Decorated with
-  `URBI_EXPERIMENTAL`. Present only when `URBI_SCHED_HAS_PRIORITY != 0`
-  (cooperative builds hard-define to 0 so these symbols are absent).
-- **Internal-leak (T4)** — Symbol is exported from `liburbi.a` but not
-  declared in any `include/urbi/*.h` header. Should not be used by
-  embedders. Will be moved to `src/` visibility in a future cleanup.
+- **Stable (T1)** — declared in `include/urbi/urbi.h` or
+  `include/urbi/version.h`. This is the whole embedding surface.
+  Functions whose subsystem has not landed yet are already here with
+  their final signature; they return `URBI_ERR_INVALID_STATE` until it
+  does.
+- **Internal-leak (T4)** — exported from the archive but declared in no
+  public header. All of these belong to the kept compiler frontend
+  (lexer, parser, emitter, chunk loader). They are not for embedders and
+  lose their external linkage in the clean-up task.
 
-Note: Inline functions (`urbi_make_*`, `urbi_value_*`) and URBI_DEBUG-only
-functions (`urbi_in_isr`, `urbi_get_determinism_checksum`,
-`urbi_call_host_with_watchdog`) are declared in public headers but do not
-appear as `T` symbols in `nm` output. They are documented here for
-completeness but the CI gate only checks the "exported but undocumented"
-direction (see `tests/scripts/check-api-manifest.sh`).
-
-REPL symbols (`urbi_repl_serve`, `urbi_repl_stop`, etc.) are present only
-when the library is built with `URBI_ENABLE_REPL=1`; they are declared in
-`include/urbi/repl.h` but absent from the default build.
+Inline functions (`urbi_make_*`, `urbi_value_is_*`, `urbi_value_as_*` in
+`include/urbi/types.h`) are part of the stable surface but never appear
+as `T` symbols, so they are not listed here.
 
 New public symbols require a PR-review-touch on this manifest.
 
 ---
 
-## Tier 1 — Stable (frozen at v1.0)
+## Tier 1 — Stable
 
-### VM lifecycle
+### Lifecycle and host hooks
 
-- `urbi_vm_create`, `urbi_vm_free`, `urbi_vm_sizeof`, `urbi_vm_alignof`
-- `urbi_vm_has_live_work`, `urbi_vm_run`
+- `urbi_open`
+- `urbi_close`
+- `urbi_step`
+- `urbi_has_live_work`
+- `urbi_set_clock`
+- `urbi_set_diag`
+- `urbi_set_writer`
+- `urbi_set_wake`
 
-### Realm
+### Realms
 
-- `urbi_realm_global`, `urbi_realm_create`, `urbi_realm_create_repl`,
-  `urbi_realm_destroy`, `urbi_realm_set_global`,
-  `urbi_realm_set_global_const`, `urbi_realm_get_global`,
-  `urbi_realm_set_writer`, `urbi_realm_set_compile_budget`,
-  `urbi_realm_get_compile_budget`
+- `urbi_realm_new`
+- `urbi_realm_free`
+- `urbi_realm_main`
 
-### Run + compile
+### Code
 
-- `urbi_compile_source`, `urbi_run_chunk`, `urbi_run_script`,
-  `urbi_load_chunk`, `urbi_unload`, `urbi_repl_eval`
+- `urbi_compile`
+- `urbi_load`
+- `urbi_run`
+- `urbi_call`
+- `urbi_chunk_free`
 
-### Event
+### Values
 
-- `urbi_event_register`, `urbi_event_unregister`, `urbi_inject_event`
+- `urbi_make_string`
+- `urbi_value_to_string`
+- `urbi_ref`
+- `urbi_unref`
+
+### Globals and slots
+
+- `urbi_global_get`
+- `urbi_global_set`
+- `urbi_slot_get`
+- `urbi_slot_set`
 
 ### Host functions
 
-- `urbi_register`, `urbi_make_native_closure`
+- `urbi_register`
+- `urbi_throw`
 
-### Slots
+### Events and watchers
 
-- `urbi_slot_get`, `urbi_slot_set`
-
-### Watchers
-
-- `urbi_register_watcher`, `urbi_unregister_watcher`
+- `urbi_event_new`
+- `urbi_event_emit`
+- `urbi_inject_event`
+- `urbi_watch`
 
 ### Tags
 
-- `urbi_tag_create`, `urbi_tag_info`, `urbi_tag_stop`,
-  `urbi_tag_block`, `urbi_tag_unblock`,
-  `urbi_tag_freeze`, `urbi_tag_unfreeze`
+- `urbi_tag_new`
+- `urbi_tag_stop`
+- `urbi_tag_block`
+- `urbi_tag_unblock`
+- `urbi_tag_freeze`
+- `urbi_tag_unfreeze`
 
-### Strand
+### Errors
 
-- `urbi_strand_create`, `urbi_strand_spawn`, `urbi_strand_start`,
-  `urbi_strand_destroy`, `urbi_strand_state`
+- `urbi_last_error`
+- `urbi_clear_error`
 
-### Error inspection
+### Garbage collector
 
-- `urbi_last_error`, `urbi_clear_error`, `urbi_set_error`
-
-### References
-
-- `urbi_ref`, `urbi_ref_get`, `urbi_unref`
-
-### Atomic batching
-
-- `urbi_atomic_begin`, `urbi_atomic_end`
-
-### Stepping
-
-- `urbi_step`
-
-### Value constructors (inline — not exported as T symbols)
-
-- `urbi_make_nil`, `urbi_make_bool`, `urbi_make_int`, `urbi_make_float`,
-  `urbi_make_void`, `urbi_make_ptr`, `urbi_make_object`, `urbi_make_event`,
-  `urbi_make_closure`, `urbi_make_tag`
-
-### Value constructors (non-inline)
-
-- `urbi_make_str_interned`
-
-### Value accessors (inline — not exported as T symbols)
-
-- `urbi_value_kind`, `urbi_value_as_bool`, `urbi_value_as_int`,
-  `urbi_value_as_float`, `urbi_value_as_str`, `urbi_value_as_ptr`,
-  `urbi_value_as_object`, `urbi_value_as_event`, `urbi_value_as_closure`
-
-### Value predicates
-
-- `urbi_value_is_*` (see `include/urbi/types.h` for the full set)
+- `urbi_gc_collect`
+- `urbi_gc_stats`
 
 ### Version
 
-- `urbi_version`, `urbi_api_version`
-
-### Aux library (T1, in liburbi_aux.a)
-
-- `urbi_aux_check_version`, `urbi_aux_register_event_table`,
-  `urbi_aux_register_function_table`, `urbi_aux_set_error`,
-  `urbi_aux_load_and_run`, `urbi_aux_dump_value`,
-  `urbi_aux_diag_to_stderr`
-- `urbi_aux_value_to_int`, `urbi_aux_value_to_float`,
-  `urbi_aux_value_to_bool`, `urbi_aux_value_to_str`,
-  `urbi_aux_value_to_ptr`, `urbi_aux_value_to_object`,
-  `urbi_aux_value_to_event`, `urbi_aux_value_to_closure`,
-  `urbi_aux_value_to_tag`
-
-### REPL (T1, present only when URBI_ENABLE_REPL=1)
-
-- `urbi_repl_serve`, `urbi_repl_stop`, `urbi_repl_serve_init`,
-  `urbi_repl_serve_step`, `urbi_repl_serve_shutdown`,
-  `urbi_repl_register_transport`
-
-### Object (in include/urbi/object.h)
-
-- `urbi_object_root`, `urbi_object_atom`,
-  `urbi_object_add_proto`, `urbi_object_remove_proto`,
-  `urbi_object_set_protos`
-
-### Setters
-
-- `urbi_set_writer`, `urbi_set_diag_fn`, `urbi_set_clock_fn`,
-  `urbi_set_wake_fn`, `urbi_set_watcher_body_done_fn`,
-  `urbi_set_isr_check_fn`, `urbi_set_callback_watchdog_mode`
-
-### Control-transfer
-
-- `urbi_throw`, `urbi_return_val`, `urbi_tag_stop_local`,
-  `urbi_strand_cancel`, `urbi_strand_panic`,
-  `urbi_strand_unwind_status`, `urbi_strand_is_fatal`,
-  `urbi_strand_reset`
-
-### Chunk
-
-- `urbi_chunk_from_bytes`, `urbi_chunk_free`
-
-### Pinning
-
-- `urbi_pin`, `urbi_unpin`
-
-### Heap lock
-
-- `urbi_lock_heap`
-
-### Miscellaneous T1
-
-- `urbi_require_fail`, `urbi_set_require_fail_hook`,
-  `urbi_vm_write`, `urbi_vm_write_in_realm`
+- `urbi_version`
+- `urbi_api_version`
 
 ---
 
-## Tier 2 — Advanced (stable, non-hot-path)
+## Tier 4 — Internal-leak (compiler frontend)
 
-Decorated with `URBI_ADVANCED` in the respective header.
+Cross-translation-unit helpers of the kept frontend. Not declared in any
+public header; not for embedders.
 
-- `urbi_vm_init`, `urbi_vm_destroy` (static-allocation embedders; prefer
-  `urbi_vm_create`/`urbi_vm_free` from T1 for new code)
-- `urbi_in_isr` (URBI_DEBUG builds only — absent in release builds;
-  regular extern function, not inline, decorated with `URBI_ADVANCED`)
-- `urbi_get_determinism_checksum` (URBI_DEBUG builds only — absent in
-  release builds; used by test harnesses)
-- `urbi_chunk_instance_create`, `urbi_chunk_instance_destroy`
-- `urbi_call_host_with_watchdog` (URBI_DEBUG builds only — collapses to
-  a macro in non-debug builds)
-- `urbi_panic`
-- `urbi_chunk_translate_load_err`
-- `urbi_register_event_drain`
-- `urbi_gc_alloc`, `urbi_gc_slice`, `urbi_gc_walk_roots`,
-  `urbi_gc_register_root_provider`, `urbi_gc_init`, `urbi_gc_destroy`,
-  `urbi_gc_force_full`, `urbi_gc_bytes_allocated_inline`
-
----
-
-## Tier 3 — Experimental (RESERVED for v1.x)
-
-Decorated with `URBI_EXPERIMENTAL` in `include/urbi/sched.h`. Compiler
-emits a deprecation warning when these symbols are used directly. Present
-only when `URBI_SCHED_HAS_PRIORITY != 0`; the cooperative scheduler
-hard-defines this to 0, so these symbols are absent in all shipped builds.
-
-- `urbi_strand_set_priority`, `urbi_strand_get_priority`,
-  `urbi_strand_get_sched_class`
-
-### Trace subsystem (T3, EXPERIMENTAL — compile-gated by `URBI_TRACE`)
-
-New at v0.11.0 (`include/urbi/trace.h`). The control/drain/stats API is present
-in all builds (no-op stubs when `URBI_TRACE` is undefined) so embedder code
-links either way; the ring/emit internals exist only under `URBI_TRACE=1`.
-EXPERIMENTAL: the API may change before v1.0.
-
-- `urbi_trace_set_level`, `urbi_trace_get_level`, `urbi_trace_set_level_all`,
-  `urbi_trace_snapshot`, `urbi_trace_stats`, `urbi_trace_channel_name`
-  — present in all builds (no-op stubs when `URBI_TRACE` is off).
-- `urbi_trace_init`, `urbi_trace_emit`, `urbi_trace_emit_str`,
-  `urbi_trace_channel_level`, `urbi_trace_flush_to_writer`
-  — present only under `URBI_TRACE=1` (the `URBI_TP` macros call these).
-
-### ROS2 bridge (T3, EXPERIMENTAL — compile-gated by `URBI_ENABLE_ROS2`)
-
-New at v0.12.0 (`include/urbi/ros.h`). All three symbols exist only in
-`URBI_ENABLE_ROS2` builds; absent from the default `liburbi.a`. The bridge is a
-self-contained optional component; the core VM has no reference to it.
-EXPERIMENTAL: the API may change before v1.0.
-
-- `urbi_ros_register` — allocates and installs the `ros` native namespace proto on the VM.
-- `urbi_ros_register_globals` — binds `ros` as a realm global (post-bake hook).
-- `urbi_ros_pump` — drains the transport incoming queue once per `urbi_step`.
-
-### Standard Robotics API facet overlay (T3, EXPERIMENTAL — compile-gated by `URBI_ENABLE_UROBOTICS`)
-
-New at v0.12.2 (`include/urbi/urobotics.h`). Both symbols exist only in
-`URBI_ENABLE_UROBOTICS` builds; absent from the default `liburbi.a`. The overlay
-is a self-contained optional component (pure-urbiscript facets baked into a
-separate bytecode blob); the core VM has no reference to it. EXPERIMENTAL: the
-API may change before v1.0.
-
-- `urbi_urobotics_register` — deserializes the baked Robotics overlay blob and caches the module on the VM (stdlib-boot hook).
-- `urbi_urobotics_run` — runs the overlay root chunk so it installs the `Robotics` realm global (post-bake hook).
-
----
-
-## Tier 4 — Internal-leak
-
-These symbols are exported from `liburbi.a` but not declared in any
-`include/urbi/*.h` public header. Embedders MUST NOT use them — they are
-implementation details subject to change without notice. The `test-api-manifest`
-CI gate tracks this list to prevent silent growth.
-
-### Atom / proto init
-
-- `urbi_atom_family_name`, `urbi_atom_proto_for_value`,
-  `urbi_atom_protos_mark_readonly`, `urbi_atom_protos_register`,
-  `urbi_native_protos_init`
-
-### Deferred slot-change ring
-
-- `urbi_defer_slot_change`, `urbi_deferred_slot_changes_walk_roots`,
-  `urbi_drain_deferred_slot_changes`, `urbi_emit_slot_change_slow`
-
-### Emitter internals (v0.13.1 unwind-and-frontend)
-
-- `urbi_emit_abandon`, `urbi_emit_reserve_global_slot`,
-  `urbi_emit_scope_crossings`
-
-### Consistency-wave internals (v0.13.6)
-
-- `urbi_install_native_methods` — shared native-method table installer
-  (stdlib/event/tag/ros registration converged on it)
-- `urbi_emit_disasm_opnames_complete`, `urbi_vm_diag_opnames_complete` —
-  opcode name-table completeness probes for the unit suite
-- `urbi_chunk_decode_verify`, `urbi_chunk_verify_bounds` — bytecode verifier
-  passes split into `uchunk_verify.c`, driven by `uchunk_deserialize`
-  (renamed from the file-static `decode_verify` / `verify_chunk_bounds`)
-
-### Emitter arm dispatch (v0.13.6 namespace day)
-
-Per-AST-node emit functions renamed from unprefixed `emit_*_arm` symbols.
-
-- `urbi_emit_expr` — top-level AST dispatch (renamed from `emit_expr`)
-- `urbi_emit_instr`, `urbi_emit_instr_count`, `urbi_emit_patch_instr`, `urbi_emit_grow` — bytecode emission primitives
-- `urbi_emit_add_const_float`, `urbi_emit_add_const_int`, `urbi_emit_add_const_str` — constant-pool management (renamed from `add_const_*`)
-- `urbi_emit_fs_temp_floor` — frame-state temp-register floor (renamed from `fs_temp_floor`)
-- `urbi_emit_proto_grow` — proto-table growth (renamed from `proto_grow`)
-- `urbi_emit_binop_to_opcode` — binary operator → opcode mapping (renamed from `binop_to_opcode`)
-- `urbi_emit_cond_has_direct_side_effect` — side-effect predicate for at/whenever conditions (renamed from `cond_has_direct_side_effect`)
-- `urbi_emit_function_literal`, `urbi_emit_lazy_thunk` — closure/thunk emission
-- `urbi_emit_function_arm`, `urbi_emit_class_decl_arm`, `urbi_emit_property_decl_arm` — declaration arms
-- `urbi_emit_diag_free_all`, `urbi_emit_diag_warn` — emitter diagnostics (renamed from `emit_diag_*`)
-- `urbi_emit_assert_arm`, `urbi_emit_assign_arm`, `urbi_emit_at_event_arm`, `urbi_emit_at_slot_change_arm` — statement arms
-- `urbi_emit_binary_arm`, `urbi_emit_bin_sep_arm`, `urbi_emit_block_arm`, `urbi_emit_bool_arm` — expression arms
-- `urbi_emit_break_arm`, `urbi_emit_call_arm`, `urbi_emit_compare_arm`, `urbi_emit_continue_arm` — control flow arms
-- `urbi_emit_dict_lit_arm`, `urbi_emit_float_arm`, `urbi_emit_for_each_arm` — literal arms
-- `urbi_emit_ident_arm`, `urbi_emit_if_arm`, `urbi_emit_int_arm`, `urbi_emit_list_lit_arm` — identifier/literal arms
-- `urbi_emit_logical_arm`, `urbi_emit_member_get_arm`, `urbi_emit_member_set_arm`, `urbi_emit_nary_arm` — operator arms
-- `urbi_emit_nil_arm`, `urbi_emit_noop_arm`, `urbi_emit_return_arm`, `urbi_emit_string_arm` — value/control arms
-- `urbi_emit_subscript_get_arm`, `urbi_emit_subscript_set_arm`, `urbi_emit_switch_arm` — subscript/switch arms
-- `urbi_emit_tag_prefix_arm`, `urbi_emit_this_arm`, `urbi_emit_throw_arm`, `urbi_emit_try_arm` — tag/exception arms
-- `urbi_emit_unary_arm`, `urbi_emit_var_decl_arm`, `urbi_emit_waituntil_arm` — misc arms
-- `urbi_emit_watcher_arm`, `urbi_emit_while_arm` — reactive/loop arms
-
-### Emitter diagnostic helpers (v0.13.5 conformance-and-stdlib)
-
-- `urbi_emit_diag_error` — record an ERROR-level diagnostic with source position
-- `urbi_emit_diag_format_first_error` — format the first error as `<file>:<line>:<col>: <msg>`
-
-### Encoding
-
+- `urbi_chunk_decode_verify`
+- `urbi_chunk_verify_bounds`
+- `urbi_emit_abandon`
+- `urbi_emit_add_const_float`
+- `urbi_emit_add_const_int`
+- `urbi_emit_add_const_str`
+- `urbi_emit_assert_arm`
+- `urbi_emit_assign_arm`
+- `urbi_emit_at_event_arm`
+- `urbi_emit_at_slot_change_arm`
+- `urbi_emit_bin_sep_arm`
+- `urbi_emit_binary_arm`
+- `urbi_emit_binop_to_opcode`
+- `urbi_emit_block_arm`
+- `urbi_emit_bool_arm`
+- `urbi_emit_break_arm`
+- `urbi_emit_call_arm`
+- `urbi_emit_class_decl_arm`
+- `urbi_emit_compare_arm`
+- `urbi_emit_cond_has_direct_side_effect`
+- `urbi_emit_continue_arm`
+- `urbi_emit_diag_error`
+- `urbi_emit_diag_format_first_error`
+- `urbi_emit_diag_free_all`
+- `urbi_emit_diag_warn`
+- `urbi_emit_dict_lit_arm`
+- `urbi_emit_disasm_opnames_complete`
+- `urbi_emit_expr`
+- `urbi_emit_float_arm`
+- `urbi_emit_for_each_arm`
+- `urbi_emit_fs_temp_floor`
+- `urbi_emit_function_arm`
+- `urbi_emit_function_literal`
+- `urbi_emit_grow`
+- `urbi_emit_ident_arm`
+- `urbi_emit_if_arm`
+- `urbi_emit_instr`
+- `urbi_emit_instr_count`
+- `urbi_emit_int_arm`
+- `urbi_emit_lazy_thunk`
+- `urbi_emit_list_lit_arm`
+- `urbi_emit_logical_arm`
+- `urbi_emit_member_get_arm`
+- `urbi_emit_member_set_arm`
+- `urbi_emit_nary_arm`
+- `urbi_emit_nil_arm`
+- `urbi_emit_noop_arm`
+- `urbi_emit_patch_instr`
+- `urbi_emit_property_decl_arm`
+- `urbi_emit_proto_grow`
+- `urbi_emit_reserve_global_slot`
+- `urbi_emit_return_arm`
+- `urbi_emit_scope_crossings`
+- `urbi_emit_string_arm`
+- `urbi_emit_subscript_get_arm`
+- `urbi_emit_subscript_set_arm`
+- `urbi_emit_switch_arm`
+- `urbi_emit_tag_prefix_arm`
+- `urbi_emit_this_arm`
+- `urbi_emit_throw_arm`
+- `urbi_emit_try_arm`
+- `urbi_emit_unary_arm`
+- `urbi_emit_var_decl_arm`
+- `urbi_emit_waituntil_arm`
+- `urbi_emit_watcher_arm`
+- `urbi_emit_while_arm`
 - `urbi_encode_utf8`
-
-### Stdlib internals (v0.12.4 stdlib-completeness)
-
-- `urbi_regexp_search`, `urbi_stdlib_register_regexp`,
-  `urbi_stdlib_register_regexp_globals`, `urbi_stdlib_list_get`,
-  `urbi_stdlib_list_len`
-- `urbi_stdlib_list_storage_present` (v0.13.5 join consolidation)
-
-### Event internals
-
-- `urbi_event_create`
-
-### GC internals (beyond the T2 public surface)
-
-- `urbi_gc_bytes_allocated`, `urbi_gc_collect`, `urbi_gc_live_bytes`,
-  `urbi_gc_pause`, `urbi_gc_phase`, `urbi_gc_threshold`,
-  `urbi_gc_walk_all_cells`
-- `urbi_c_root_push`, `urbi_c_root_pop` — VM-level C-stack root chain
-  (refactor-3 VM-06a): runtime C code pins a UValue slot across allocating
-  calls; frames live on the C stack and chain through the current strand.
-- `urbi_gc_shade_gray` — GC write-barrier shade helper (internal; renamed from unprefixed `gc_shade_gray` in v0.13.6)
-- `urbi_gc_host_handle_walk_roots` — GC root provider: host-handle table (renamed from `host_handle_walk_roots` in v0.13.6)
-- `urbi_gc_intern_table_walk_roots` — GC root provider: intern string table (renamed from `intern_table_walk_roots` in v0.13.6)
-- `urbi_gc_realm_list_walk_roots` — GC root provider: realm list (renamed from `realm_list_walk_roots` in v0.13.6)
-- `urbi_gc_ref_table_walk_roots` — GC root provider: per-VM reference table (renamed from `ref_table_walk_roots` in v0.13.6)
-- `urbi_gc_watcher_table_walk_roots` — GC root provider: watcher pool (renamed from `watcher_table_walk_roots` in v0.13.6)
-- `urbi_gc_sched_walk_roots` — GC root provider: scheduler strand roots (renamed from `sched_walk_roots` in v0.13.6)
-
-### Chunk instance internals
-
-- `urbi_get_or_create_chunk_instance`
-
-### Host handle
-
-- `urbi_handle_create`, `urbi_handle_get`, `urbi_handle_release`
-
-### Intern-table internals
-
-- `urbi_intern_bytes` — total intern-subsystem bytes (live string blocks
-  plus the entries array); source of the `Debug.gc()` `intern_bytes` field.
-  Interned strings never evict at v1.0 (refactor-3 GC-08).
-
-### Lobby / session management
-
-- `urbi_lobby_invoke_handleDisconnect`, `urbi_lobby_native_register`,
-  `urbi_lobby_native_register_globals`, `urbi_lobby_register_session`,
-  `urbi_lobby_unregister_session`
-
-### Closure internals
-
-- `urbi_native_closure_create`, `urbi_run_closure_on_scratch`,
-  `urbi_run_closure_on_scratch_args`,
-  `urbi_run_closure_on_scratch_ex`,
-  `urbi_run_closure_on_scratch_with_payload`
-
-### Object internals
-
-- `urbi_object_alloc`, `urbi_object_builtin_types_init`,
-  `urbi_object_clone`, `urbi_object_get_or_create_change_event`,
-  `urbi_object_get_slot`, `urbi_object_install_property`,
-  `urbi_object_lookup`, `urbi_object_lookup_id_force_wrap`,
-  `urbi_object_register_gc_roots`, `urbi_object_remove_property`,
-  `urbi_object_remove_slot`, `urbi_object_resolve_slot`,
-  `urbi_object_root_register`, `urbi_object_set_local_slot`,
-  `urbi_object_set_property_value`, `urbi_object_set_protos_empty`,
-  `urbi_object_set_protos_heap`, `urbi_object_set_protos_single`
-- `urbi_object_next_id` — allocate the next monotonic object ID (renamed from `next_id` in v0.13.6)
-- `urbi_object_valid_proto` — validate a proto candidate for proto-list assignment (renamed from `valid_proto` in v0.13.6)
-
-### Periodic / temporal scheduler internals
-
-- `urbi_periodic_body_completed`, `urbi_periodic_destroy_all`,
-  `urbi_periodic_destroy_for_realm`, `urbi_periodic_earliest_wake_us`,
-  `urbi_periodic_pump`, `urbi_periodic_table_walk_roots`
-
-### Parser internals (v0.13.6 namespace day)
-
-Parser token helpers, AST constructors, and recursive-descent entry points
-renamed from unprefixed cross-TU names.
-
-- `urbi_parse_peek`, `urbi_parse_peek2`, `urbi_parse_consume` — token lookahead and advance (renamed from `peek`, `peek2`, `consume`)
-- `urbi_parse_kErrorMessages` — error-message string table (renamed from `kErrorMessages`)
-- `urbi_parse_kEmitMethodName` — postfix `!` desugar method name constant (renamed from `kEmitMethodName`)
-- `urbi_parse_ident_equals` — identifier byte-sequence comparison (renamed from `ident_equals`)
-- `urbi_parse_make_node`, `urbi_parse_make_int`, `urbi_parse_make_ident`, `urbi_parse_make_unary`, `urbi_parse_make_binary`, `urbi_parse_make_error`, `urbi_parse_make_nil_node` — AST node constructors (renamed from `make_*`)
-- `urbi_parse_arena_grow_node_array` — arena array growth (renamed from `arena_grow_node_array`)
-- `urbi_parse_expression`, `urbi_parse_expression_cont`, `urbi_parse_prefix`, `urbi_parse_atom` — Pratt expression parser entry points
-- `urbi_parse_pipe_amp_fold` — `|`/`&` separator left-fold (renamed from `pipe_amp_fold`)
-- `urbi_parse_inner_tier`, `urbi_parse_outer_tier` — separator-loop tiers
-- `urbi_parse_statement_or_expr`, `urbi_parse_block` — statement entry points
-- `urbi_parse_if`, `urbi_parse_while`, `urbi_parse_function`, `urbi_parse_throw`, `urbi_parse_try`, `urbi_parse_assert` — control-flow parsers
-- `urbi_parse_property_decl` — `get`/`set` property declaration parser
-- `urbi_parse_at`, `urbi_parse_whenever`, `urbi_parse_waituntil`, `urbi_parse_every` — reactive parsers
-- `urbi_parse_desugar_postfix_emit` — postfix `!` → `.emit()` desugar (renamed from `desugar_postfix_emit`)
-- `urbi_parse_tag_prefix`, `urbi_parse_tag_prefix_from_expr` — tag-scope prefix parsers
-
-### Scheduler internals (v0.13.6 namespace day)
-
-Core scheduler and strand management symbols renamed from unprefixed names.
-
-- `urbi_sched_init`, `urbi_sched_destroy` — scheduler lifecycle
-- `urbi_sched_dequeue_ready_head`, `urbi_sched_wake_due_sleepers`, `urbi_sched_earliest_wake_us` — run-queue management
-- `urbi_sched_quiescent`, `urbi_sched_post_dispatch` — quiescence and post-dispatch
-- `urbi_sched_strand_init`, `urbi_sched_strand_destroy`, `urbi_sched_strand_account_destroy` — strand lifecycle
-- `urbi_sched_strand_make_runnable`, `urbi_sched_strand_yield`, `urbi_sched_strand_block`, `urbi_sched_strand_unblock` — strand scheduling
-- `urbi_sched_strand_unbind_from_ready_queue`, `urbi_sched_strand_unbind_from_sleep_queue` — strand queue management
-- `urbi_sched_strand_cleanup_push`, `urbi_sched_strand_cleanup_pop`, `urbi_sched_strand_cleanup_stack_init`, `urbi_sched_strand_cleanup_stack_destroy` — strand cleanup stack (renamed from `strand_cleanup_*`)
-- `urbi_sched_strand_unlink_member_entry` — strand member-list management
-
-### Scheduler liveness internals (v0.13.3 scheduler-liveness)
-
-Liveness counter mutators and the quiescence formula.  All are internal to
-the scheduler; embedders use `urbi_vm_has_live_work` via the public API only.
-
-- `urbi_sched_runnable_inc`, `urbi_sched_runnable_dec`,
-  `urbi_sched_waiting_inc`, `urbi_sched_waiting_dec`,
-  `urbi_sched_suspended_inc`, `urbi_sched_suspended_dec`,
-  `urbi_sched_strand_unpark`, `urbi_vm_liveness`,
-  `urbi_tag_owns_periodic`, `urbi_periodics_stop_owned_by`
-
-### Realm internals
-
-- `urbi_populate_realm_globals`
-
-### VM internals (v0.13.6 namespace day)
-
-Renamed from unprefixed cross-TU VM symbols.
-
-- `urbi_vm_alloc_closure`, `urbi_vm_open_upvalue`, `urbi_vm_close_upvalues` — closure/upvalue lifecycle
-- `urbi_vm_find_or_install_upvalue` — upvalue capture during function emit
-- `urbi_vm_arith_method_fallback`, `urbi_vm_arith_method_fallback_unary` — arithmetic fallback dispatch
-- `urbi_vm_cmp_method_fallback` — comparison fallback dispatch
-- `urbi_vm_dispatch_getter`, `urbi_vm_dispatch_setter` — property getter/setter dispatch
-- `urbi_vm_dispatch_loop_until_yield` — inner dispatch loop (renamed from `dispatch_loop_until_yield`)
-- `urbi_vm_format_oom`, `urbi_vm_format_type_error_binary`, `urbi_vm_format_type_error_unary`, `urbi_vm_format_type_error_msg` — diagnostic formatters
-- `urbi_vm_getslot_slow`, `urbi_vm_getslot_value`, `urbi_vm_setslot_slow`, `urbi_vm_setslot_value` — slot access helpers
-- `urbi_vm_self_lookup` — `self` slot resolution
-- `urbi_vm_push_tag_scope`, `urbi_vm_pop_tag_scope`, `urbi_vm_tag_scope_teardown` — tag scope management
-- `urbi_vm_reactive_install` — reactive watcher installation from bytecode
-- `urbi_vm_fork_wake_joiners`, `urbi_vm_op_fork_detach`, `urbi_vm_op_fork_join`, `urbi_vm_op_join_wait` — fork/join primitives
-- `urbi_vm_op_name` — opcode mnemonic lookup (renamed from `op_name`)
-- `urbi_vm_diag_init`, `urbi_vm_diag_write_cstr`, `urbi_vm_diag_write_u32`, `urbi_vm_diag_write_prefix` — diagnostic writer helpers
-- `urbi_vm_watcher_eval_dirty` — re-evaluate dirty watcher condition
-
-### REPL introspection internals (URBI_ENABLE_REPL=1 only)
-
-- `urbi_introspect_coros`, `urbi_introspect_events`, `urbi_introspect_gc`,
-  `urbi_introspect_lobbies`, `urbi_introspect_profile`,
-  `urbi_introspect_slots`, `urbi_introspect_stack`, `urbi_introspect_tags`,
-  `urbi_introspect_watchers`
-
-### Proto / ref internals
-
-- `urbi_proto_list_create`, `urbi_proto_ref_acquire`,
-  `urbi_proto_ref_release`, `urbi_proto_strand_ref_acquire`,
-  `urbi_proto_strand_ref_release`, `urbi_protos_alloc`
-
-### Error raise helpers
-
-- `urbi_raise_arity`, `urbi_raise_lookup`, `urbi_raise_oom`,
-  `urbi_raise_type`, `urbi_raise_typed`
-- `urbi_raise_index`, `urbi_raise_range`, `urbi_raise_divzero` (v0.13.5
-  typed-subclass sites — IndexError / RangeError / DivByZero)
-
-### Type registry
-
-- `urbi_register_type`
-
-### Error internals
-
-- `urbi_set_error_internal`
-
-### Shape / IC internals
-
-- `urbi_shape_find_slot`, `urbi_shape_root`,
-  `urbi_shape_transition_add_slot`, `urbi_shape_transition_property`,
-  `urbi_shape_transition_remove_slot`
-
-### Slot fast-path internals
-
-- `urbi_slot_get_slow`, `urbi_slot_set_slow`
-
-### Slot handle
-
-- `urbi_slothandle_read_value`, `urbi_slothandle_write_value`
-
-### Stdlib init / teardown
-
-- `urbi_channel_proto_resolve`, `urbi_channel_register_globals`,
-  `urbi_isa_method_register`,
-  `urbi_job_make`, `urbi_job_proto_register`, `urbi_job_proto_register_globals`,
-  `urbi_stdlib_boot`, `urbi_stdlib_containers_destroy`,
-  `urbi_stdlib_containers_walk_roots`,
-  `urbi_stdlib_list_append_value`, `urbi_stdlib_list_new_empty`,
-  `urbi_stdlib_list_remove_first_equal`,
-  `urbi_stdlib_register_atom_methods`,
-  `urbi_stdlib_register_container_globals`,
-  `urbi_stdlib_register_containers`,
-  `urbi_stdlib_register_namespace_globals`,
-  `urbi_stdlib_register_namespaces`,
-  `urbi_stdlib_register_primitives`,
-  `urbi_stdlib_register_primitives_globals`,
-  `urbi_stdlib_register_runtime_globals`,
-  `urbi_stdlib_register_runtime_types`,
-  `urbi_exception_subclass_protos_resolve`
-
-### Strand internals
-
-- `urbi_strand_arm_from_closure`, `urbi_strand_arm_init`,
-  `urbi_strand_attach_ambient_tags`, `urbi_strand_capture_ambient_chain`,
-  `urbi_strand_create_for_module`, `urbi_strand_register_stack_alloc`,
-  `urbi_strand_register_stack_free`, `urbi_strand_register_stack_zero`,
-  `urbi_strand_suspend`, `urbi_strand_resume_if_ungated`,
-  `urbi_strand_scope_tag`
-
-### Control stdlib internals
-
-- `urbi_control_native_register_globals`
-
-### Tag globals stdlib internals
-
-- `urbi_tag_globals_register`, `urbi_tag_globals_register_globals`
-- `urbi_tag_native_register` — register native tag slots on a tag object (renamed from `tag_native_register` in v0.13.6)
-- `urbi_tag_enter_getter` — getter for the tag `.enter` event slot (renamed from `tag_enter_getter` in v0.13.6)
-- `urbi_tag_leave_getter` — getter for the tag `.leave` event slot (renamed from `tag_leave_getter` in v0.13.6)
-
-### Temporal stdlib internals
-
-- `urbi_temporal_native_register`, `urbi_temporal_native_register_globals`
-
-### Time default
-
-- `urbi_default_host_time_us`
-
-### Unwind internals
-
-- `urbi_unwind`
-
-### Watcher internals
-
-- `urbi_watcher_body_completed`, `urbi_watcher_unregister_internal`
-- `urbi_watcher_observer_dirty` — mark a watcher as having a dirty condition (renamed from `observer_dirty` in v0.13.6)
-- `urbi_watcher_install_at_event_runtime` — install an at-event watcher at runtime (renamed from `install_at_event_runtime` in v0.13.6)
-- `urbi_watcher_install_watcher_runtime` — install an at/whenever slot-change watcher at runtime (renamed from `install_watcher_runtime` in v0.13.6)
-- `urbi_watcher_pending_onleave_queue_push` — push a pending on-leave action (renamed from `pending_onleave_queue_push` in v0.13.6)
-- `urbi_watcher_drain_pending_onleave_queue` — drain the on-leave pending queue (renamed from `drain_pending_onleave_queue` in v0.13.6)
-- `urbi_watcher_do_spawn_body_coroutine` — low-level body-coroutine spawn (renamed from `do_spawn_body_coroutine` in v0.13.6)
-- `urbi_watcher_spawn_body_coroutine` — spawn a fresh body coroutine (renamed from `spawn_body_coroutine` in v0.13.6)
-- `urbi_watcher_respawn_body_coroutine` — respawn a body coroutine after condition re-triggers (renamed from `respawn_body_coroutine` in v0.13.6)
-- `urbi_watcher_resolve_owning_tag` — resolve the tag that owns a watcher (renamed from `resolve_owning_tag` in v0.13.6)
-- `urbi_watcher_invoke_condition_closure` — invoke a watcher's condition closure (renamed from `invoke_condition_closure` in v0.13.6)
-
-### Event internals (v0.13.6 namespace day)
-
-- `urbi_event_emit_async` — fan-out payload to subscribers asynchronously (renamed from `c_event_emit_async`)
-- `urbi_event_emit_sync` — as async but AT_EVENT_SYNC bodies run inline (renamed from `c_event_emit_sync`)
-- `urbi_event_waituntil` — block calling strand until event emitted (renamed from `c_event_waituntil`)
-- `urbi_event_native_register` — register native event slots on an event object (renamed from `event_native_register`)
-
-### Exported data symbols (refactor-3 GATE-04 inventory)
-
-Exported `[DRB]` data objects.  `urbi_stdlib_bytecode` / `urbi_stdlib_bytecode_len`
-are the baked stdlib blob (consumed by `urbi_stdlib_boot`; embedders replacing the
-blob link their own definitions).  The rest are internal tables that leak through
-the archive surface; they are Tier-4 internal-leak entries, not API.
-
-- `urbi_stdlib_bytecode` — baked stdlib bytecode blob (T2-adjacent: replaceable at link time)
-- `urbi_stdlib_bytecode_len` — blob length
-- `urbi_builtin_registry` — builtin native registration table (internal)
-- `urbi_builtin_registry_count` — table length (internal)
-- `urbi_opcode_shapes` — verifier opcode-shape table (internal)
-- `urbi_abi_requires_float_type_8` — link-time ABI guard symbol (internal)
-- `urbi_abi_requires_full_parser` — link-time ABI guard symbol (internal)
-- `urbi_abi_requires_repl_pthread` — link-time ABI guard symbol (internal)
-- `URBI_DEFAULT_REPL_BUDGET` — REPL default budget constant (REPL builds only)
-
----
-
-## CI gate
-
-`tests/scripts/check-api-manifest.sh` runs at `make releasetest` time.
-Fails if any symbol in `nm liburbi.a | grep ' T urbi_'` is not listed
-in this manifest. New public symbols require a PR-review-touch here.
+- `urbi_opcode_shapes`
+- `urbi_parse_arena_grow_node_array`
+- `urbi_parse_assert`
+- `urbi_parse_at`
+- `urbi_parse_atom`
+- `urbi_parse_block`
+- `urbi_parse_consume`
+- `urbi_parse_desugar_postfix_emit`
+- `urbi_parse_every`
+- `urbi_parse_expression`
+- `urbi_parse_expression_cont`
+- `urbi_parse_function`
+- `urbi_parse_ident_equals`
+- `urbi_parse_if`
+- `urbi_parse_inner_tier`
+- `urbi_parse_kEmitMethodName`
+- `urbi_parse_kErrorMessages`
+- `urbi_parse_make_binary`
+- `urbi_parse_make_error`
+- `urbi_parse_make_ident`
+- `urbi_parse_make_int`
+- `urbi_parse_make_nil_node`
+- `urbi_parse_make_node`
+- `urbi_parse_make_unary`
+- `urbi_parse_outer_tier`
+- `urbi_parse_peek`
+- `urbi_parse_peek2`
+- `urbi_parse_pipe_amp_fold`
+- `urbi_parse_prefix`
+- `urbi_parse_property_decl`
+- `urbi_parse_statement_or_expr`
+- `urbi_parse_tag_prefix`
+- `urbi_parse_tag_prefix_from_expr`
+- `urbi_parse_throw`
+- `urbi_parse_try`
+- `urbi_parse_waituntil`
+- `urbi_parse_whenever`
+- `urbi_parse_while`
+- `urbi_proto_ref_acquire`
+- `urbi_proto_ref_release`
+- `urbi_proto_strand_ref_acquire`
+- `urbi_proto_strand_ref_release`
+- `urbi_require_fail`
+- `urbi_set_require_fail_hook`
+- `urbi_vm_find_or_install_upvalue`
