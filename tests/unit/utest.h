@@ -24,6 +24,17 @@ extern int utest_cases_failed;
 /* Run one test case. Called from each test file's suite function. */
 void utest_run(const char *name, void (*fn)(void));
 
+/* The library never calls malloc on its own — the host's allocator is the
+ * only way it reaches memory, and urbi_open returns NULL without one.
+ * Suites that need a VM (the emitter, for its string table) open it with
+ * this plain realloc adaptor.  A suite measuring allocation behaviour
+ * brings its own counting allocator instead. */
+static inline void *utest_alloc(void *ptr, size_t nbytes, void *ud) {
+    (void)ud;
+    if (nbytes == 0) { free(ptr); return NULL; }
+    return realloc(ptr, nbytes);
+}
+
 #define UASSERT(cond)                                               \
     do {                                                            \
         utest_checks++;                                             \

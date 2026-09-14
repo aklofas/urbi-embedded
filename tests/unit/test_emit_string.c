@@ -10,7 +10,7 @@
 #include "emit/uintern.h"
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 #include "parse/uast.h"
 #include <string.h>
 
@@ -37,13 +37,13 @@ static void emit_str_through_pipeline(UVM *vm, UProto *module, UArena *arena,
 }
 
 UTEST(emit_string_loadk_with_uval_str_constant) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
 
-    emit_str_through_pipeline(&vm, &module, &arena, "hello", 5);
+    emit_str_through_pipeline(vm, &module, &arena, "hello", 5);
 
     /* Constant pool: one UVAL_STR slot pointing at the interned bytes. */
     UASSERT_EQ((size_t)1, module.const_count);
@@ -59,17 +59,17 @@ UTEST(emit_string_loadk_with_uval_str_constant) {
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 UTEST(emit_string_dedups_repeated_literal) {
     /* Two equal AST_STR literals share a single UVAL_STR pool slot
      * (intern returns the same pointer; urbi_emit_add_const_str dedups by pointer). */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
 
     char *buf1 = (char *)uarena_alloc(&arena, 3);
     buf1[0] = 'f'; buf1[1] = 'o'; buf1[2] = 'o';
@@ -84,7 +84,7 @@ UTEST(emit_string_dedups_repeated_literal) {
     b.u.str_lit.bytes = buf2; b.u.str_lit.len = 3;
 
     UEmitter e;
-    uemit_init(&e, &module, &arena, &vm, "test");
+    uemit_init(&e, &module, &arena, vm, "test");
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &a));
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &b));
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
@@ -95,7 +95,7 @@ UTEST(emit_string_dedups_repeated_literal) {
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 void test_emit_string_suite(void) {

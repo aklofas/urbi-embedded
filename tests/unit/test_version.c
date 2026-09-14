@@ -24,18 +24,19 @@ static void version_contains_milestone_suffix(void) {
     UASSERT(strchr(v, '-') != NULL);
 }
 
-static void urbi_bytecode_version_byte_is_v1_9(void) {
-    /* W0/v0.10.2-reactive: opcode space extension (OP_WHENEVER_EVENT_INSTALL at
-     * slot 48) bumps minor from 8 to 9 (wire format v1.9 / 0x19). */
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_BYTE, 0x19U);
+static void urbi_bytecode_version_byte_is_v1_10(void) {
+    /* The re-founded core added OP_SETSLOT_UPDATE, which is how a bare
+     * `x = 1` writes through to the slot the name resolves to; that takes
+     * the opcode count to 50 and the wire format to v1.10 / 0x1A. */
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_BYTE, 0x1AU);
     UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MAJOR, 1U);
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MINOR, 9U);
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MINOR, 10U);
 }
 
 void test_version_suite(void) {
     utest_run("version_is_nonempty", version_is_nonempty);
     utest_run("version_starts_with_zero", version_starts_with_zero);
     utest_run("version_contains_milestone_suffix", version_contains_milestone_suffix);
-    utest_run("urbi_bytecode_version_byte_is_v1_9",
-              urbi_bytecode_version_byte_is_v1_9);
+    utest_run("urbi_bytecode_version_byte_is_v1_10",
+              urbi_bytecode_version_byte_is_v1_10);
 }

@@ -15,7 +15,7 @@
 #include "lex/ulex.h"
 #include "chunk/uchunk.h"
 #include "parse/uparse.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
 
@@ -43,14 +43,14 @@ static void ctx_destroy(ParseCtx *c) {
 static UEmitError at_event_compile(const char *src,
                                    UProto    *mod_out,
                                    UArena     *arena_out,
-                                   UVM        *vm_out,
+                                   UVM        **vm_out,
                                    UEmitter   *e_out) {
-    urbi_vm_init(vm_out, NULL, NULL);
+    *vm_out = urbi_open(utest_alloc, NULL, NULL);
     uarena_init(arena_out, 4096);
 
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
-    uemit_init(e_out, mod_out, arena_out, vm_out, NULL);
+    uemit_init(e_out, mod_out, arena_out, *vm_out, NULL);
 
     UParser p;
     uparse_init(&p, &lex, arena_out);
@@ -67,7 +67,7 @@ static UEmitError at_event_compile(const char *src,
 static void at_event_cleanup(UProto *mod, UArena *arena, UVM *vm) {
     uchunk_destroy(mod, NULL);
     uarena_destroy(arena);
-    urbi_vm_destroy(vm);
+    urbi_close(vm);
 }
 
 /* Return true if any instruction in the module root has opcode == op. */
@@ -171,7 +171,7 @@ UTEST(parse_question_outside_at_standalone) {
 UTEST(emit_at_event_produces_OP_AT_EVENT_INSTALL) {
     UProto  module = {0};
     UArena   arena;
-    UVM      vm;
+    UVM      *vm = NULL;
     UEmitter e;
 
     UEmitError rc = at_event_compile(
@@ -180,14 +180,14 @@ UTEST(emit_at_event_produces_OP_AT_EVENT_INSTALL) {
     UASSERT_EQ(EMIT_OK, rc);
     UASSERT(bytecode_has_op(&module, OP_AT_EVENT_INSTALL));
 
-    at_event_cleanup(&module, &arena, &vm);
+    at_event_cleanup(&module, &arena, vm);
 }
 
 /* at sync (e?) body  →  bytecode contains OP_AT_EVENT_SYNC_INSTALL (=43) */
 UTEST(emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL) {
     UProto  module = {0};
     UArena   arena;
-    UVM      vm;
+    UVM      *vm = NULL;
     UEmitter e;
 
     UEmitError rc = at_event_compile(
@@ -196,7 +196,7 @@ UTEST(emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL) {
     UASSERT_EQ(EMIT_OK, rc);
     UASSERT(bytecode_has_op(&module, OP_AT_EVENT_SYNC_INSTALL));
 
-    at_event_cleanup(&module, &arena, &vm);
+    at_event_cleanup(&module, &arena, vm);
 }
 
 /* Regression: when event_expr routes through AST_IDENT global-fallback or
@@ -216,7 +216,7 @@ UTEST(emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL) {
 UTEST(emit_at_event_global_member_event_expr_disjoint_regs) {
     UProto  module = {0};
     UArena   arena;
-    UVM      vm;
+    UVM      *vm = NULL;
     UEmitter e;
 
     UEmitError rc = at_event_compile(
@@ -240,7 +240,7 @@ UTEST(emit_at_event_global_member_event_expr_disjoint_regs) {
     }
     UASSERT(found);
 
-    at_event_cleanup(&module, &arena, &vm);
+    at_event_cleanup(&module, &arena, vm);
 }
 
 /* Sibling check for the async install path (OP_AT_EVENT_INSTALL): same
@@ -248,7 +248,7 @@ UTEST(emit_at_event_global_member_event_expr_disjoint_regs) {
 UTEST(emit_at_event_async_global_member_event_expr_disjoint_regs) {
     UProto  module = {0};
     UArena   arena;
-    UVM      vm;
+    UVM      *vm = NULL;
     UEmitter e;
 
     UEmitError rc = at_event_compile(
@@ -270,7 +270,7 @@ UTEST(emit_at_event_async_global_member_event_expr_disjoint_regs) {
     }
     UASSERT(found);
 
-    at_event_cleanup(&module, &arena, &vm);
+    at_event_cleanup(&module, &arena, vm);
 }
 
 /* -----------------------------------------------------------------------

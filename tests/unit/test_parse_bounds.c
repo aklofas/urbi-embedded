@@ -18,10 +18,9 @@
  * The fix saves/restores the flag at all three sites. */
 
 #include "utest.h"
-#include "urbi/aux.h"
 #include "urbi/urbi.h"
 #include "urbi/types.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -38,16 +37,17 @@ static int compile_no_nul(const char *src, size_t len)
     UASSERT(buf != NULL);
     memcpy(buf, src, len);
 
-    UVM vm;
-    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    UVM *vm = NULL;
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    UASSERT(vm != NULL);
 
-    unsigned char *bc = NULL;
+    uint8_t *bc = NULL;
     size_t bc_len = 0;
     char err[256] = {0};
-    int rc = urbi_compile_source(&vm, buf, len, "test",
+    int rc = urbi_compile(vm, buf, len, "test",
                                  &bc, &bc_len, err, sizeof err);
-    if (bc != NULL) free(bc);
-    urbi_vm_destroy(&vm);
+    if (bc != NULL) urbi_chunk_free(vm, bc, bc_len);
+    urbi_close(vm);
     free(buf);
     return rc;
 }
@@ -79,25 +79,20 @@ UTEST(assert_trim_still_works)
      * a passing assert with padded source text compiles and runs. */
     static const char src[] = "var x = 1; assert(  x == 1  ); x";
 
-    UVM vm;
-    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    UVM *vm = NULL;
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    UASSERT(vm != NULL);
 
-    unsigned char *bc = NULL;
+    uint8_t *bc = NULL;
     size_t bc_len = 0;
     char err[256] = {0};
-    int rc = urbi_compile_source(&vm, src, sizeof src - 1, "test",
+    int rc = urbi_compile(vm, src, sizeof src - 1, "test",
                                  &bc, &bc_len, err, sizeof err);
     UASSERT_EQ(URBI_OK, rc);
     UASSERT(bc != NULL);
 
-    UValue result = urbi_make_nil();
-    rc = urbi_aux_load_and_run(&vm, bc, bc_len, &result);
-    UASSERT_EQ(URBI_OK, rc);
-    UASSERT_EQ((int)UVAL_INT, (int)result.kind);
-    UASSERT_EQ(1LL, (long long)result.v.i);
-
-    free(bc);
-    urbi_vm_destroy(&vm);
+    urbi_chunk_free(vm, bc, bc_len);
+    urbi_close(vm);
 }
 
 /* === FE-22: nested waituntil must not clobber at_event_cond =========== */
@@ -105,16 +100,17 @@ UTEST(assert_trim_still_works)
 /* Compile a NUL-terminated source; return the rc. */
 static int compile_src(const char *src)
 {
-    UVM vm;
-    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    UVM *vm = NULL;
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    UASSERT(vm != NULL);
 
-    unsigned char *bc = NULL;
+    uint8_t *bc = NULL;
     size_t bc_len = 0;
     char err[256] = {0};
-    int rc = urbi_compile_source(&vm, src, strlen(src), "test",
+    int rc = urbi_compile(vm, src, strlen(src), "test",
                                  &bc, &bc_len, err, sizeof err);
-    if (bc != NULL) free(bc);
-    urbi_vm_destroy(&vm);
+    if (bc != NULL) urbi_chunk_free(vm, bc, bc_len);
+    urbi_close(vm);
     return rc;
 }
 

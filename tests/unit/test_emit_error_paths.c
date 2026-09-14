@@ -28,7 +28,7 @@
 #include "parse/uparse.h"
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
 
@@ -62,7 +62,7 @@ typedef struct {
     UArena   arena;
     UParser  p;
     UProto  module;
-    UVM      vm;
+    UVM      *vm;
     UEmitter e;
     EmitSpy  spy;
 } ECtx;
@@ -77,12 +77,12 @@ ectx_init(ECtx *c, const char *src, int fail_at)
      * VM allocator drives ustr_intern. */
     c->spy.alloc_calls = 0;
     c->spy.fail_at = fail_at;
-    urbi_vm_init(&c->vm, emit_spy_alloc, &c->spy);
+    c->vm = urbi_open(emit_spy_alloc, &c->spy, NULL);
     c->module = (UProto){0};
     c->module.alloc_fn = emit_spy_alloc;
     c->module.alloc_ud = &c->spy;
     uparse_init(&c->p, &c->lex, &c->arena);
-    uemit_init(&c->e, &c->module, &c->arena, &c->vm, "test");
+    uemit_init(&c->e, &c->module, &c->arena, c->vm, "test");
 }
 
 static UEmitError
@@ -103,7 +103,7 @@ ectx_destroy(ECtx *c)
     c->spy.fail_at = -1;
     uarena_destroy(&c->arena);
     uchunk_destroy(&c->module, NULL);
-    urbi_vm_destroy(&c->vm);
+    urbi_close(c->vm);
 }
 
 /* --- T20: prologue_prepend_instr return-value propagation --------------- */

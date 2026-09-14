@@ -21,7 +21,7 @@
 #include "lex/ulex.h"
 #include "chunk/uchunk.h"
 #include "parse/uparse.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
 
@@ -31,7 +31,7 @@ typedef struct {
     UArena   arena;
     UParser  p;
     UProto  module;
-    UVM      vm;
+    UVM      *vm;
     UEmitter e;
 } GVCtx;
 
@@ -39,10 +39,10 @@ static void gv_ctx_init(GVCtx *c, const char *src)
 {
     ulex_init(&c->lex, src, strlen(src));
     uarena_init(&c->arena, 0);
-    urbi_vm_init(&c->vm, NULL, NULL);
+    c->vm = urbi_open(utest_alloc, NULL, NULL);
     c->module = (UProto){0};
     uparse_init(&c->p, &c->lex, &c->arena);
-    uemit_init(&c->e, &c->module, &c->arena, &c->vm, "test_gv");
+    uemit_init(&c->e, &c->module, &c->arena, c->vm, "test_gv");
 }
 
 static UEmitError gv_ctx_run(GVCtx *c)
@@ -59,7 +59,7 @@ static void gv_ctx_destroy(GVCtx *c)
 {
     uarena_destroy(&c->arena);
     uchunk_destroy(&c->module, NULL);
-    urbi_vm_destroy(&c->vm);
+    urbi_close(c->vm);
 }
 
 /* === Tests === */
@@ -132,7 +132,7 @@ UTEST(emit_top_level_var_decl_no_local_entry_created) {
     UFuncState *fs = c.e.current_fs;
     UASSERT(fs != NULL);
     /* No actvars entry named "x". */
-    const char *canonical = ustr_intern(&c.vm, "x", 1);
+    const char *canonical = ustr_intern(c.vm, "x", 1);
     bool found_local = false;
     int i;
     for (i = 0; i < fs->nactvar; i++) {

@@ -243,6 +243,22 @@ test-rt: $(BUILDDIR)/tests/rt/runner check-rt-layering
 check-rt-layering:
 	sh tests/scripts/check_rt_layering.sh
 
+# The frontend's own runner: lexer, parser, arena, emitter, chunk
+# writer/loader/verifier/disassembler, varint, intern, and the public
+# header's inline value constructors.  Nothing here starts a strand —
+# the runtime has tests/rt/ and the .chk corpus.  It reaches internal
+# frontend headers (-Isrc), which is why it links the archive rather
+# than being an embedder-facing example.
+UNIT_TEST_SRCS := $(wildcard tests/unit/test_*.c) tests/unit/runner.c
+
+$(BUILDDIR)/tests/unit/runner: $(UNIT_TEST_SRCS) $(LIB)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/unit -o $@ $(UNIT_TEST_SRCS) $(LIB) -lm
+
+.PHONY: test-unit
+test-unit: $(BUILDDIR)/tests/unit/runner
+	$(RUNNER_WRAPPER) $<
+
 # Core archive. Kept as its own target for cross-compile / freestanding
 # consumers that build the library without the host tools.
 core: $(LIB)
@@ -446,10 +462,9 @@ test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver $(BUILDDIR)/repl-chk-driv
 test-chk-runner:
 	@bash tests/integration/test_run_chk_runner.sh
 
-# `make test` on the re-founded core: the rt suites, the layering gate,
-# and the .chk corpus driven through the new urbi binary.  The old
-# unit-test runner is parked with the core it exercised.
-test: $(LIB) test-rt check-rt-layering test-chk
+# `make test`: the frontend runner, the runtime runner, the layering
+# gate, and the .chk corpus driven through the urbi binary.
+test: $(LIB) test-unit test-rt check-rt-layering test-chk
 
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi
@@ -903,4 +918,5 @@ docs-check-tools:
 check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
+.PHONY: test-unit
 .PHONY: all core test test-asan test-ubsan test-debug test-switch clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-fuzz-smoke test-o2 force-flagstamp

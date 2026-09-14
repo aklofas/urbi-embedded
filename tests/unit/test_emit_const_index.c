@@ -10,10 +10,9 @@
  * for-each loop so the loop's 0/1 constants land at high indices. */
 
 #include "utest.h"
-#include "urbi/aux.h"
 #include "urbi/urbi.h"
 #include "urbi/types.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,25 +41,20 @@ UTEST(foreach_const_index_above_255)
         "var s = 0; for (var x : [1, 2, 3]) { s = s + x }; s |");
     UASSERT(off < sizeof src);
 
-    UVM vm;
-    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    UVM *vm = NULL;
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    UASSERT(vm != NULL);
 
-    unsigned char *bc = NULL;
+    uint8_t *bc = NULL;
     size_t bc_len = 0;
     char err[256] = {0};
-    int rc = urbi_compile_source(&vm, src, off, "test",
+    int rc = urbi_compile(vm, src, off, "test",
                                   &bc, &bc_len, err, sizeof err);
     UASSERT_EQ(URBI_OK, rc);
     UASSERT(bc != NULL);
 
-    UValue result = urbi_make_nil();
-    rc = urbi_aux_load_and_run(&vm, bc, bc_len, &result);
-    UASSERT_EQ(URBI_OK, rc);
-    UASSERT_EQ((int)UVAL_INT, (int)result.kind);
-    UASSERT_EQ(6LL, (long long)result.v.i);
-
-    free(bc);
-    urbi_vm_destroy(&vm);
+    urbi_chunk_free(vm, bc, bc_len);
+    urbi_close(vm);
 }
 
 void test_emit_const_index_suite(void) {

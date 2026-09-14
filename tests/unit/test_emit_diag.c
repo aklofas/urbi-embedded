@@ -17,7 +17,7 @@
 #include "lex/ulex.h"
 #include "chunk/uchunk.h"
 #include "parse/uparse.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
 
@@ -28,14 +28,14 @@
 /* Emit source through the full pipeline.  Returns emit error. */
 static UEmitError diag_emit(const char *src, UEmitter *e_out,
                             UProto *mod_out, UArena *arena_out,
-                            UVM *vm_out) {
-    urbi_vm_init(vm_out, NULL, NULL);
+                            UVM **vm_out) {
+    *vm_out = urbi_open(utest_alloc, NULL, NULL);
     uarena_init(arena_out, 4096);
 
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
 
-    uemit_init(e_out, mod_out, arena_out, vm_out, NULL);
+    uemit_init(e_out, mod_out, arena_out, *vm_out, NULL);
 
     UParser p;
     uparse_init(&p, &lex, arena_out);
@@ -52,7 +52,7 @@ static UEmitError diag_emit(const char *src, UEmitter *e_out,
 static void diag_cleanup(UProto *mod, UArena *arena, UVM *vm) {
     uchunk_destroy(mod, NULL);
     uarena_destroy(arena);
-    urbi_vm_destroy(vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -61,14 +61,14 @@ static void diag_cleanup(UProto *mod, UArena *arena, UVM *vm) {
 
 /* urbi_emit_diag_warn records line, col, level, and message substring. */
 UTEST(emit_diag_warn_records_message) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     uarena_init(&arena, 4096);
 
     UEmitter e;
-    uemit_init(&e, &module, &arena, &vm, NULL);
+    uemit_init(&e, &module, &arena, vm, NULL);
 
     UAstNode dummy;
     memset(&dummy, 0, sizeof(dummy));
@@ -88,12 +88,12 @@ UTEST(emit_diag_warn_records_message) {
     urbi_emit_diag_free_all(&e);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* urbi_emit_diag_warn is non-fatal — bytecode is still produced after a warn. */
 UTEST(emit_diag_warn_does_not_block_emit) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
@@ -114,19 +114,19 @@ UTEST(emit_diag_warn_does_not_block_emit) {
     UASSERT(module.instr_count >= 1U);
 
     urbi_emit_diag_free_all(&e);
-    diag_cleanup(&module, &arena, &vm);
+    diag_cleanup(&module, &arena, vm);
 }
 
 /* Multiple warns accumulate in order. */
 UTEST(emit_diag_warn_accumulates_multiple) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     uarena_init(&arena, 4096);
 
     UEmitter e;
-    uemit_init(&e, &module, &arena, &vm, NULL);
+    uemit_init(&e, &module, &arena, vm, NULL);
 
     UAstNode dummy;
     memset(&dummy, 0, sizeof(dummy));
@@ -147,19 +147,19 @@ UTEST(emit_diag_warn_accumulates_multiple) {
     urbi_emit_diag_free_all(&e);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* NULL ast node — position defaults to 0,0; no crash. */
 UTEST(emit_diag_warn_null_node_uses_zero_position) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     uarena_init(&arena, 4096);
 
     UEmitter e;
-    uemit_init(&e, &module, &arena, &vm, NULL);
+    uemit_init(&e, &module, &arena, vm, NULL);
 
     urbi_emit_diag_warn(&e, NULL, "no node");
 
@@ -170,7 +170,7 @@ UTEST(emit_diag_warn_null_node_uses_zero_position) {
     urbi_emit_diag_free_all(&e);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -180,15 +180,17 @@ UTEST(emit_diag_warn_null_node_uses_zero_position) {
 /* T13: an undeclared-name assignment must record an error-level diagnostic
  * with the source position in the diag buffer. */
 UTEST(emit_diag_error_records_position) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
 
-    /* "x = 5" — x is never declared; triggers EMIT_UNRESOLVED_NAME at line 1. */
-    UEmitError rc = diag_emit("x = 5", &e, &module, &arena, &vm);
+    /* "this" outside a method is an emitter error at line 1.  (It used to
+     * be "x = 5"; a bare-name assignment compiles now, and raises
+     * LookupError when it runs.) */
+    UEmitError rc = diag_emit("this", &e, &module, &arena, &vm);
 
-    UASSERT_EQ(EMIT_UNRESOLVED_NAME, rc);
+    UASSERT_EQ(EMIT_NO_THIS_OUTSIDE_METHOD, rc);
     /* Must have recorded an error-level diagnostic. */
     UASSERT(e.diag_count >= 1);
     if (e.diag_count >= 1) {
@@ -199,19 +201,19 @@ UTEST(emit_diag_error_records_position) {
     }
 
     urbi_emit_diag_free_all(&e);
-    diag_cleanup(&module, &arena, &vm);
+    diag_cleanup(&module, &arena, vm);
 }
 
 /* T13: emit_diag_format_first_error formats the first error diagnostic as
  * "<source>:<line>:<col>: <message>" and returns true. */
 UTEST(emit_diag_format_first_error_includes_location) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
 
-    UEmitError rc = diag_emit("x = 5", &e, &module, &arena, &vm);
-    UASSERT_EQ(EMIT_UNRESOLVED_NAME, rc);
+    UEmitError rc = diag_emit("this", &e, &module, &arena, &vm);
+    UASSERT_EQ(EMIT_NO_THIS_OUTSIDE_METHOD, rc);
 
     char buf[256] = {0};
     bool found = urbi_emit_diag_format_first_error(&e, buf, sizeof(buf));
@@ -220,12 +222,12 @@ UTEST(emit_diag_format_first_error_includes_location) {
     UASSERT(strstr(buf, ":1:") != NULL);
 
     urbi_emit_diag_free_all(&e);
-    diag_cleanup(&module, &arena, &vm);
+    diag_cleanup(&module, &arena, vm);
 }
 
 /* T13: emit_diag_format_first_error returns false when no error was recorded. */
 UTEST(emit_diag_format_first_error_no_error_returns_false) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
@@ -239,7 +241,7 @@ UTEST(emit_diag_format_first_error_no_error_returns_false) {
     UASSERT(!found);
 
     urbi_emit_diag_free_all(&e);
-    diag_cleanup(&module, &arena, &vm);
+    diag_cleanup(&module, &arena, vm);
 }
 
 /* -----------------------------------------------------------------------

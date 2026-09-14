@@ -37,6 +37,7 @@ static void dump_rec(const UAstNode *n, char **cur, char *end) {
         case BOP_SUB: op = "-"; break;
         case BOP_MUL: op = "*"; break;
         case BOP_DIV: op = "/"; break;
+        default: break;
         }
         *cur += snprintf(*cur, (size_t)(end - *cur), "(%s ", op);
         dump_rec(n->u.binary.lhs, cur, end);
@@ -48,6 +49,12 @@ static void dump_rec(const UAstNode *n, char **cur, char *end) {
     case AST_ERROR:
         *cur += snprintf(*cur, (size_t)(end - *cur), "(error %s)",
                          uparse_error_name((UParseError)n->u.err.code));
+        return;
+    default:
+        /* These tests only dump the expression shapes they build; every
+         * other node kind prints as its number, which is enough to make a
+         * surprise visible in the expected-string diff. */
+        *cur += snprintf(*cur, (size_t)(end - *cur), "(kind %d)", (int)n->kind);
         return;
     }
 }

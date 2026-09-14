@@ -25,7 +25,7 @@
 #include "parse/uparse.h"
 #include "emit/uemit.h"
 #include "chunk/uchunk.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -35,14 +35,14 @@
 static void
 emit_empty_source_no_line_delta_underflow(void)
 {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
 
     UEmitter e;
-    uemit_init(&e, &module, &arena, &vm, "test");
+    uemit_init(&e, &module, &arena, vm, "test");
     UEmitError rc = uemit_finish(&e);
 
     UASSERT_EQ(EMIT_OK, rc);
@@ -58,14 +58,14 @@ emit_empty_source_no_line_delta_underflow(void)
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* (b): single-instruction emit yields exactly 1 line_delta entry. */
 static void
 emit_single_instr_one_line_delta(void)
 {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     ULexer  lex;
@@ -73,11 +73,11 @@ emit_single_instr_one_line_delta(void)
     const char *src = "1";
     ulex_init(&lex, src, strlen(src));
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     uparse_init(&p, &lex, &arena);
 
     UEmitter e;
-    uemit_init(&e, &module, &arena, &vm, "test");
+    uemit_init(&e, &module, &arena, vm, "test");
 
     UAstNode *stmt = uparse_next_statement(&p);
     UASSERT(stmt != NULL);
@@ -94,7 +94,7 @@ emit_single_instr_one_line_delta(void)
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 void test_emit_line_delta_suite(void)

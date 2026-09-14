@@ -8,18 +8,18 @@
 #include "util/uarena.h"
 #include "emit/uemit.h"
 #include "emit/uintern.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
 
 UTEST(uemit_init_zeros_emitter_and_does_not_touch_module) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     UEmitter e;
-    uemit_init(&e, &module, &arena, &vm,  "repl");
+    uemit_init(&e, &module, &arena, vm,  "repl");
 
     UASSERT_EQ((uint8_t)0, e.next_reg);
     UASSERT_EQ((uint8_t)0, e.max_reg_seen);
@@ -32,17 +32,17 @@ UTEST(uemit_init_zeros_emitter_and_does_not_touch_module) {
     UASSERT_EQ((size_t)0, module.instr_count);
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(uemit_finish_on_empty_module_emits_nothing_and_returns_ok) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     UEmitter e;
-    uemit_init(&e, &module, &arena, &vm,  NULL);
+    uemit_init(&e, &module, &arena, vm,  NULL);
     UEmitError rc = uemit_finish(&e);
     UASSERT_EQ(EMIT_OK, rc);
     UASSERT(e.finished == true);
@@ -50,17 +50,17 @@ UTEST(uemit_finish_on_empty_module_emits_nothing_and_returns_ok) {
     UASSERT_EQ((uint8_t)0, module.max_reg);
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(uemit_finish_is_idempotent_and_statement_after_finish_returns_finished) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     UEmitter e;
-    uemit_init(&e, &module, &arena, &vm,  NULL);
+    uemit_init(&e, &module, &arena, vm,  NULL);
     (void)uemit_finish(&e);
     UEmitError second = uemit_finish(&e);
     UASSERT_EQ(EMIT_OK, second);              /* finish is idempotent-OK */
@@ -71,7 +71,7 @@ UTEST(uemit_finish_is_idempotent_and_statement_after_finish_returns_finished) {
     UASSERT_EQ(EMIT_FINISHED, uemit_statement(&e, &dummy));
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(uemit_error_name_returns_sensible_strings) {
@@ -98,18 +98,18 @@ static UEmitError emit_single_statement(UProto *module, UArena *arena, UVM *vm, 
 }
 
 UTEST(emit_ast_int_single_literal_loadk_then_ret) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UAstNode n = {0};
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     n.kind = AST_INT;
     n.u.i  = 42;
     n.line = 1;
     n.col  = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &n));
 
     /* Two instructions: LOADK R1 K0 ; RET R1
      * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
@@ -128,13 +128,13 @@ UTEST(emit_ast_int_single_literal_loadk_then_ret) {
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
     /* Three statements: literal 1, literal 1, literal 2.
        Linear-scan dedup should yield a pool of size 2 (not 3). */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
@@ -142,8 +142,8 @@ UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
     UAstNode b = {0};
     UAstNode c = {0};
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm,  "test");
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm,  "test");
 
     a.kind = AST_INT; a.u.i = 1; a.line = 1;
     b.kind = AST_INT; b.u.i = 1; b.line = 1;
@@ -161,15 +161,15 @@ UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_ast_binary_1_plus_2) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
 
     UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
     UAstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
@@ -180,7 +180,7 @@ UTEST(emit_ast_binary_1_plus_2) {
     bin.u.binary.rhs = &rhs;
     bin.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &bin));
     /* LOADK R1 K0 ; LOADK R2 K1 ; ADD R1 R1 R2 ; RET R1
      * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
     UASSERT_EQ((size_t)4, module.instr_count);
@@ -198,11 +198,11 @@ UTEST(emit_ast_binary_1_plus_2) {
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
-    UVM vm;
+    UVM *vm = NULL;
     struct { UAstBinaryOp bop; int expected_op; } cases[] = {
         { BOP_SUB, (int)OP_SUB },
         { BOP_MUL, (int)OP_MUL },
@@ -213,7 +213,7 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
         UProto module = {0};
         UArena arena;
         uarena_init(&arena, 0);
-        urbi_vm_init(&vm, NULL, NULL);
+        vm = urbi_open(utest_alloc, NULL, NULL);
         UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
         UAstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
         UAstNode bin = {0};
@@ -222,21 +222,21 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
         bin.u.binary.lhs = &lhs;
         bin.u.binary.rhs = &rhs;
         bin.line = 1;
-        UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
+        UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &bin));
         UASSERT_EQ(cases[i].expected_op, (int)uinstr_op(module.instructions[2]));
         uarena_destroy(&arena);
         uchunk_destroy(&module, NULL);
-        urbi_vm_destroy(&vm);
+        urbi_close(vm);
     }
 }
 
 UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
     /* (1+2)+(3+4) — 6 UAstNodes.  Destination-reuse keeps max_reg==1. */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
 
     UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
     UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;
@@ -252,7 +252,7 @@ UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
     top.kind = AST_BINARY; top.u.binary.op = BOP_ADD;
     top.u.binary.lhs = &ab; top.u.binary.rhs = &cd; top.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &top));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &top));
     /* Destination-reuse recycles the lhs slot after each ADD, but the rhs
        child still needs its own register simultaneously.  For the two-level
        tree (ab)+(cd) the peak is R3: emitting `d` requires R1(ab-lhs),
@@ -262,16 +262,16 @@ UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
     /* AST_UNARY(UOP_NEG, AST_INT 5) -> LOADK R0 K0 ; NEG R0 R0 ; RET R0 */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
 
     UAstNode operand = {0};
     operand.kind = AST_INT;
@@ -284,7 +284,7 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
     unary.u.unary.operand = &operand;
     unary.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &unary));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &unary));
 
     /* LOADK R1 K0 ; NEG R1 R1 0 ; RET R1
      * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
@@ -306,7 +306,7 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 /* Custom allocator that fails after `fails_after` successful calls.
@@ -322,19 +322,19 @@ static void *limit_alloc(void *ptr, size_t nbytes, void *ud) {
 }
 
 UTEST(emit_ast_error_returns_emit_ast_error) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     UAstNode err = {0};
     err.kind = AST_ERROR;
     err.u.err.code = 1;
     err.u.err.message = "parser error";
-    UASSERT_EQ(EMIT_AST_ERROR, emit_single_statement(&module, &arena, &vm, &err));
+    UASSERT_EQ(EMIT_AST_ERROR, emit_single_statement(&module, &arena, vm, &err));
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_ast_ident_unresolved_name_returns_error) {
@@ -342,29 +342,29 @@ UTEST(emit_ast_ident_unresolved_name_returns_error) {
        falls through to the realm-global lookup and compiles successfully
        (emits OP_GETSLOT on the r_global_slot register).
        EMIT_UNRESOLVED_NAME is no longer raised for bare identifiers. */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     UAstNode id = {0};
     id.kind = AST_IDENT;
     id.u.ident.start = "ghost";
     id.u.ident.len = 5;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &id));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &id));
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_first_error_latches_and_subsequent_statements_short_circuit) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm,  NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm,  NULL);
 
     UAstNode err = {0};
     err.kind = AST_ERROR;
@@ -381,15 +381,15 @@ UTEST(emit_first_error_latches_and_subsequent_statements_short_circuit) {
     UASSERT_EQ(EMIT_AST_ERROR, uemit_finish(&e));
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_emit_oom_when_constant_pool_realloc_fails) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     LimitAlloc la;
     la.ok_calls = 0;
     la.fails_after = 0;
@@ -399,21 +399,21 @@ UTEST(emit_emit_oom_when_constant_pool_realloc_fails) {
     UAstNode n = {0};
     n.kind = AST_INT;
     n.u.i = 1;
-    UASSERT_EQ(EMIT_OOM, emit_single_statement(&module, &arena, &vm, &n));
+    UASSERT_EQ(EMIT_OOM, emit_single_statement(&module, &arena, vm, &n));
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_syncline_first_instruction_triggers_abs_line_checkpoint) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 10;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &n));
     UASSERT_EQ((size_t)2, module.instr_count);  /* LOADK ; RET */
     /* First instruction has INT8_MIN sentinel delta (triggers abs_line lookup). */
     UASSERT_EQ((int8_t)-128, module.line_deltas[0]);
@@ -424,17 +424,17 @@ UTEST(emit_syncline_first_instruction_triggers_abs_line_checkpoint) {
     UASSERT_EQ((int8_t)0, module.line_deltas[1]);
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_syncline_small_delta_between_statements_uses_delta_byte) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm,  NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm,  NULL);
 
     UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
     UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 3;
@@ -451,17 +451,17 @@ UTEST(emit_syncline_small_delta_between_statements_uses_delta_byte) {
     UASSERT_EQ((size_t)1, module.abs_line_count);
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm,  NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm,  NULL);
 
     UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
     UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 500;  /* delta +499, overflow */
@@ -478,17 +478,17 @@ UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
     UASSERT_EQ((int8_t)-128, module.line_deltas[1]);        /* sentinel */
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(disassemble_empty_module_produces_short_placeholder) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm,  NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm,  NULL);
     (void)uemit_finish(&e);
 
     char buf[256];
@@ -497,23 +497,23 @@ UTEST(disassemble_empty_module_produces_short_placeholder) {
     UASSERT(strstr(buf, "(empty)") != NULL || n <= 32);
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(disassemble_1_plus_2_produces_recognizable_text) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UAstNode lhs = {0};
     UAstNode rhs = {0};
     UAstNode bin = {0};
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
     rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
     bin.kind = AST_BINARY; bin.u.binary.op = BOP_ADD;
     bin.u.binary.lhs = &lhs; bin.u.binary.rhs = &rhs; bin.line = 1;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &bin));
 
     char buf[512];
     size_t n = uemit_disassemble(&module, buf, sizeof buf);
@@ -525,18 +525,18 @@ UTEST(disassemble_1_plus_2_produces_recognizable_text) {
     UASSERT(strstr(buf, "R1")    != NULL);
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(disassemble_truncates_cleanly_when_buf_is_too_small) {
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UAstNode n = {0};
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &n));
 
     char buf[8];
     size_t written = uemit_disassemble(&module, buf, sizeof buf);
@@ -544,7 +544,7 @@ UTEST(disassemble_truncates_cleanly_when_buf_is_too_small) {
     UASSERT_EQ('\0', buf[sizeof buf - 1]);
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 /* --- Additional coverage tests --- */
@@ -565,11 +565,11 @@ UTEST(uemit_error_name_covers_all_codes) {
 
 UTEST(disassemble_with_neg_instruction_shows_neg) {
     /* Emit a NEG instruction so the OP_NEG case in uemit_disassemble is hit. */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
 
     UAstNode operand = {0};
     operand.kind = AST_INT; operand.u.i = 7; operand.line = 1;
@@ -577,7 +577,7 @@ UTEST(disassemble_with_neg_instruction_shows_neg) {
     neg.kind = AST_UNARY; neg.u.unary.op = UOP_NEG; neg.u.unary.operand = &operand;
     neg.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &neg));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &neg));
 
     char buf[256];
     size_t n = uemit_disassemble(&module, buf, sizeof buf);
@@ -586,22 +586,22 @@ UTEST(disassemble_with_neg_instruction_shows_neg) {
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
     /* Use a constant value >= 128 so that uvarint_write_u and uvarint_write_zz
        emit multi-byte (continuation-bit) encoded varints. */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
 
     UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1000; n.line = 1;  /* 1000 > 63, zigzag = 2000 > 127 */
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &n));
 
     /* Serialize and round-trip to confirm multi-byte varint path works. */
     ptrdiff_t need = uchunk_serialize(&module, NULL, 0);
@@ -623,20 +623,20 @@ UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
     uchunk_destroy(dst, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(disassemble_module_with_all_arithmetic_opcodes) {
     /* Emit ADD, SUB, MUL, DIV to exercise all opname() paths.
        Also exercises the "; constants:" section of the disassembler
        which is reached by any instruction module. */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm,  NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm,  NULL);
 
     /* Each statement emits one binary op. */
     UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
@@ -668,7 +668,7 @@ UTEST(disassemble_module_with_all_arithmetic_opcodes) {
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(serialize_module_with_float_constant_round_trips) {
@@ -767,13 +767,13 @@ UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
     /* When the line delta is <= INT8_MIN (-128) — i.e. going more than 127
        lines *backward* — a new abs_line checkpoint is emitted instead of
        a delta.  Tests the `d <= INT8_MIN` branch in urbi_emit_instr. */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm,  NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm,  NULL);
 
     UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 500;
     UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;  /* delta = 1 - 500 = -499 */
@@ -789,7 +789,7 @@ UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
     UASSERT_EQ((int8_t)-128, module.line_deltas[1]);  /* sentinel on second LOADK */
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_oom_in_push_abs_line) {
@@ -798,11 +798,11 @@ UTEST(emit_oom_in_push_abs_line) {
        The first instruction always triggers emit_push_abs_line.
        Allocation order: (1) constants grow, (2) instructions grow,
        (3) abs_lines grow — fail this one. */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
 
     LimitAlloc la;
     la.ok_calls = 0;
@@ -812,12 +812,12 @@ UTEST(emit_oom_in_push_abs_line) {
 
     UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
-    UEmitError rc = emit_single_statement(&module, &arena, &vm, &n);
+    UEmitError rc = emit_single_statement(&module, &arena, vm, &n);
     UASSERT_EQ(EMIT_OOM, rc);
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 UTEST(emit_oom_in_push_line_delta) {
@@ -825,11 +825,11 @@ UTEST(emit_oom_in_push_line_delta) {
        and abs_lines allocs to succeed, then failing the line_deltas alloc.
        Allocation order: (1) constants grow, (2) instructions grow,
        (3) abs_lines grow, (4) line_deltas alloc — fail this one. */
-    UVM vm;
+    UVM *vm = NULL;
     UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, NULL);
 
     LimitAlloc la;
     la.ok_calls = 0;
@@ -839,12 +839,12 @@ UTEST(emit_oom_in_push_line_delta) {
 
     UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
-    UEmitError rc = emit_single_statement(&module, &arena, &vm, &n);
+    UEmitError rc = emit_single_statement(&module, &arena, vm, &n);
     UASSERT_EQ(EMIT_OOM, rc);
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
-urbi_vm_destroy(&vm);
+urbi_close(vm);
 }
 
 /* --- var-decl + local resolution emit tests (T10) --- */
@@ -858,17 +858,17 @@ typedef struct {
     UArena  arena;
     UParser p;
     UProto module;
-    UVM     vm;
+    UVM     *vm;
     UEmitter e;
 } EmitCtx;
 
 static void emit_ctx_init(EmitCtx *c, const char *src) {
     ulex_init(&c->lex, src, strlen(src));
     uarena_init(&c->arena, 0);
-    urbi_vm_init(&c->vm, NULL, NULL);
+    c->vm = urbi_open(utest_alloc, NULL, NULL);
     c->module = (UProto){0};
     uparse_init(&c->p, &c->lex, &c->arena);
-    uemit_init(&c->e, &c->module, &c->arena, &c->vm, "test");
+    uemit_init(&c->e, &c->module, &c->arena, c->vm, "test");
 }
 
 static UEmitError emit_ctx_run(EmitCtx *c) {
@@ -886,7 +886,7 @@ static void emit_ctx_destroy(EmitCtx *c) {
                                emit_ctx_run bailed early (FE-07) */
     uarena_destroy(&c->arena);
     uchunk_destroy(&c->module, NULL);
-    urbi_vm_destroy(&c->vm);
+    urbi_close(c->vm);
 }
 
 UTEST(emit_var_decl_basic_no_op_move) {
@@ -964,40 +964,50 @@ UTEST(emit_unresolved_name_is_error) {
 }
 
 UTEST(emit_assign_to_existing_local) {
-    /* "var x = 1; x = 42" — at chunk-top (T72), x is a global.
-     * The assignment x = 42 routes to OP_SETSLOT (global write), not OP_MOVE.
-     * Both the declaration and the assignment must compile cleanly. */
+    /* "var x = 1; x = 42" — at chunk-top x is a global.  `var x` creates
+     * the slot with OP_SETSLOT; the bare `x = 42` is an UPDATE of whatever
+     * slot the name resolves to at run time, which is its own opcode. */
     EmitCtx c;
     emit_ctx_init(&c, "var x = 1; x = 42");
     UEmitError rc = emit_ctx_run(&c);
     UASSERT_EQ(EMIT_OK, rc);
-    /* Both var-decl and assign emit OP_SETSLOT at chunk-top. */
-    int setslot_count = 0;
+    int create_count = 0, update_count = 0;
     for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT)
-            setslot_count++;
+        UOpcode op = uinstr_op(c.module.instructions[i]);
+        if (op == OP_SETSLOT)        create_count++;
+        if (op == OP_SETSLOT_UPDATE) update_count++;
     }
-    UASSERT(setslot_count >= 2);
+    UASSERT(create_count >= 1);
+    UASSERT(update_count >= 1);
     emit_ctx_destroy(&c);
 }
 
-UTEST(emit_assign_to_unresolved_is_error) {
-    /* "ghost = 7" — assigning to an undeclared name -> EMIT_UNRESOLVED_NAME */
+UTEST(emit_assign_to_unresolved_compiles_to_an_update) {
+    /* "ghost = 7" — a bare-name assignment is an UPDATE, and whether the
+     * name resolves is a question about the object graph, which only the
+     * runtime can answer.  So this compiles, and raises LookupError when
+     * it runs (pinned by tests/chk/globals/). */
     EmitCtx c;
     emit_ctx_init(&c, "ghost = 7");
     UEmitError rc = emit_ctx_run(&c);
-    UASSERT_EQ(EMIT_UNRESOLVED_NAME, rc);
+    UASSERT_EQ(EMIT_OK, rc);
+    bool found_update = false;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT_UPDATE)
+            found_update = true;
+    }
+    UASSERT(found_update);
     emit_ctx_destroy(&c);
 }
 
 /* --- Emit tests for bool/nil literals and comparison operator --- */
 
 UTEST(emit_ast_bool_true_emits_loadbool_1_0) {
-    UVM vm; UProto module = {0}; UArena arena;
-    uarena_init(&arena, 0); urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; UProto module = {0}; UArena arena;
+    uarena_init(&arena, 0); vm = urbi_open(utest_alloc, NULL, NULL);
     UAstNode n = {0};
     n.kind = AST_BOOL; n.u.b = true; n.line = 1;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &n));
     /* Instructions: LOADBOOL R1 1 0 ; RET R1
      * (T73: chunk-top pre-reserves R0 for r_global_slot) */
     UASSERT_EQ((size_t)2, module.instr_count);
@@ -1006,42 +1016,42 @@ UTEST(emit_ast_bool_true_emits_loadbool_1_0) {
     UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[0]));
     UASSERT_EQ((uint8_t)0, uinstr_c(module.instructions[0]));
     UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.instructions[1]));
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 UTEST(emit_ast_bool_false_emits_loadbool_0_0) {
-    UVM vm; UProto module = {0}; UArena arena;
-    uarena_init(&arena, 0); urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; UProto module = {0}; UArena arena;
+    uarena_init(&arena, 0); vm = urbi_open(utest_alloc, NULL, NULL);
     UAstNode n = {0};
     n.kind = AST_BOOL; n.u.b = false; n.line = 1;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &n));
     UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[0]));
     UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[0]));  /* 0 = false */
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 UTEST(emit_ast_nil_emits_loadnil) {
-    UVM vm; UProto module = {0}; UArena arena;
-    uarena_init(&arena, 0); urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; UProto module = {0}; UArena arena;
+    uarena_init(&arena, 0); vm = urbi_open(utest_alloc, NULL, NULL);
     UAstNode n = {0};
     n.kind = AST_NIL; n.line = 1;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &n));
     UASSERT_EQ((int)OP_LOADNIL, (int)uinstr_op(module.instructions[0]));
     /* T73: chunk-top pre-reserves R0; first temp is R1. */
     UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 UTEST(emit_ast_compare_eq_emits_4_instruction_pattern) {
     /* Build AST for "1 == 2" manually. */
-    UVM vm; UProto module = {0}; UArena arena;
-    uarena_init(&arena, 0); urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; UProto module = {0}; UArena arena;
+    uarena_init(&arena, 0); vm = urbi_open(utest_alloc, NULL, NULL);
     UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
     UAstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
     UAstNode cmp = {0};
     cmp.kind = AST_COMPARE; cmp.u.cmp.op = CMP_EQ;
     cmp.u.cmp.lhs = &lhs; cmp.u.cmp.rhs = &rhs; cmp.line = 1;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &cmp));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, vm, &cmp));
     /* 4-instruction pattern + RET = 5 instructions total */
     /* LOADK, LOADK, EQ, JMP, LOADBOOL(true+skip), LOADBOOL(false), RET */
     UASSERT(module.instr_count >= 7);
@@ -1061,7 +1071,7 @@ UTEST(emit_ast_compare_eq_emits_4_instruction_pattern) {
     UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[5]));
     UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[5]));
     UASSERT_EQ((uint8_t)0, uinstr_c(module.instructions[5]));
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 UTEST(emit_if_then_only) {
@@ -1263,10 +1273,10 @@ UTEST(disassemble_closure_with_prelude) {
  * ========================================================================= */
 
 UTEST(emit_row7_throw_round_trip) {
-    UVM vm; UProto module = {0}; UArena arena; UEmitter e;
+    UVM *vm = NULL; UProto module = {0}; UArena arena; UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm, "test");
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm, "test");
 
     uemit_throw(&e, /*reg_value=*/5, /*line=*/1);
 
@@ -1277,14 +1287,14 @@ UTEST(emit_row7_throw_round_trip) {
     UASSERT_EQ((uint8_t)5,    uinstr_a(w));
     UASSERT_EQ((uint16_t)0,   uinstr_bx(w));
 
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 UTEST(emit_row7_try_begin_round_trip) {
-    UVM vm; UProto module = {0}; UArena arena; UEmitter e;
+    UVM *vm = NULL; UProto module = {0}; UArena arena; UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm, "test");
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm, "test");
 
     /* flags=3 (has_catch|has_finally), handler_pc=1000 */
     uemit_try_begin(&e, /*flags=*/3, /*handler_pc=*/1000, /*line=*/1);
@@ -1296,14 +1306,14 @@ UTEST(emit_row7_try_begin_round_trip) {
     UASSERT_EQ((uint8_t)3,          uinstr_a(w));
     UASSERT_EQ((uint16_t)1000,      uinstr_bx(w));
 
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 UTEST(emit_row7_try_end_round_trip) {
-    UVM vm; UProto module = {0}; UArena arena; UEmitter e;
+    UVM *vm = NULL; UProto module = {0}; UArena arena; UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm, "test");
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm, "test");
 
     uemit_try_end(&e, /*line=*/1);
 
@@ -1315,14 +1325,14 @@ UTEST(emit_row7_try_end_round_trip) {
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
     UASSERT_EQ((uint8_t)0, uinstr_c(w));
 
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 UTEST(emit_row7_push_tag_round_trip) {
-    UVM vm; UProto module = {0}; UArena arena; UEmitter e;
+    UVM *vm = NULL; UProto module = {0}; UArena arena; UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm, "test");
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm, "test");
 
     /* reg_tag=2, flags=5, onleave_pc=300 */
     uemit_push_tag(&e, /*reg_tag=*/2, /*flags=*/5, /*onleave_pc=*/300, /*line=*/1);
@@ -1337,14 +1347,14 @@ UTEST(emit_row7_push_tag_round_trip) {
     UASSERT_EQ((uint8_t)5,  (uint8_t)((a >> 4) & 0x0FU));   /* flags */
     UASSERT_EQ((uint16_t)300, uinstr_bx(w));                 /* onleave_pc */
 
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 UTEST(emit_row7_pop_tag_round_trip) {
-    UVM vm; UProto module = {0}; UArena arena; UEmitter e;
+    UVM *vm = NULL; UProto module = {0}; UArena arena; UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm, "test");
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm, "test");
 
     uemit_pop_tag(&e, /*reg_tag=*/4, /*line=*/1);
 
@@ -1356,14 +1366,14 @@ UTEST(emit_row7_pop_tag_round_trip) {
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
     UASSERT_EQ((uint8_t)0, uinstr_c(w));
 
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 UTEST(emit_row7_resume_round_trip) {
-    UVM vm; UProto module = {0}; UArena arena; UEmitter e;
+    UVM *vm = NULL; UProto module = {0}; UArena arena; UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm, "test");
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm, "test");
 
     uemit_resume(&e, /*reg_state=*/9, /*line=*/1);
 
@@ -1375,15 +1385,15 @@ UTEST(emit_row7_resume_round_trip) {
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
     UASSERT_EQ((uint8_t)0, uinstr_c(w));
 
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 /* T10: OP_LOAD_CATCH_VALUE round-trip. */
 UTEST(emit_t10_load_catch_value_round_trip) {
-    UVM vm; UProto module = {0}; UArena arena; UEmitter e;
+    UVM *vm = NULL; UProto module = {0}; UArena arena; UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm, "test");
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm, "test");
 
     uemit_load_catch_value(&e, /*reg=*/5, /*line=*/1);
 
@@ -1395,15 +1405,15 @@ UTEST(emit_t10_load_catch_value_round_trip) {
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
     UASSERT_EQ((uint8_t)0, uinstr_c(w));
 
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 /* T10: AST_THROW emit produces OP_THROW after the value expression. */
 UTEST(emit_t10_throw_emits_op_throw) {
-    UVM vm; UProto module = {0}; UArena arena; UEmitter e;
+    UVM *vm = NULL; UProto module = {0}; UArena arena; UEmitter e;
     uarena_init(&arena, 0);
-    urbi_vm_init(&vm, NULL, NULL);
-    uemit_init(&e, &module, &arena, &vm, "test");
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    uemit_init(&e, &module, &arena, vm, "test");
 
     /* Build AST: throw 42 */
     UAstNode val = {0};
@@ -1435,7 +1445,7 @@ UTEST(emit_t10_throw_emits_op_throw) {
     UASSERT_EQ((uint8_t)1, uinstr_a(w));
 
     urbi_emit_abandon(&e);   /* this test never finishes the module (FE-07) */
-    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); uchunk_destroy(&module, NULL); urbi_close(vm);
 }
 
 /* --- M4 T20+T21 — AST_MEMBER_GET → OP_GETSLOT, AST_MEMBER_SET → OP_SETSLOT --- */
@@ -1470,7 +1480,7 @@ UTEST(emit_member_get_emits_op_getslot_with_ic_index_zero) {
     /* Verify "x" is recorded in the IC name table. */
     UASSERT(c.e.current_fs != NULL);
     UASSERT(c.e.current_fs->ic_names != NULL);
-    const char *xn = ustr_intern(&c.vm, "x", 1);
+    const char *xn = ustr_intern(c.vm, "x", 1);
     bool found_x = false;
     for (uint16_t i = 0; i < c.e.current_fs->ic_next; i++) {
         if (c.e.current_fs->ic_names[i] == (USymbol *)xn) {
@@ -1514,7 +1524,7 @@ UTEST(emit_member_set_emits_op_setslot_with_ic_index_zero) {
     /* "x" must appear in the IC name table. */
     UASSERT(c.e.current_fs != NULL);
     UASSERT(c.e.current_fs->ic_names != NULL);
-    const char *xn = ustr_intern(&c.vm, "x", 1);
+    const char *xn = ustr_intern(c.vm, "x", 1);
     bool found_x = false;
     for (uint16_t i = 0; i < c.e.current_fs->ic_next; i++) {
         if (c.e.current_fs->ic_names[i] == (USymbol *)xn) {
@@ -1544,7 +1554,7 @@ UTEST(emit_top_level_member_get_populates_module_ic_count) {
     UASSERT(c.module.ic_count >= 1U);
     UASSERT(c.module.ic_names != NULL);
     /* "x" must be present somewhere in the IC name table. */
-    const char *xn = ustr_intern(&c.vm, "x", 1);
+    const char *xn = ustr_intern(c.vm, "x", 1);
     bool found_x = false;
     for (uint16_t i = 0; i < c.module.ic_count; i++) {
         if (c.module.ic_names[i] == (USymbol *)xn) {
@@ -1626,10 +1636,10 @@ void test_emit_suite(void) {
               emit_var_redeclare_in_same_scope_is_error);
     utest_run("emit bare name 'ghost' -> global fallback (EMIT_OK after T71)",
               emit_unresolved_name_is_error);
-    utest_run("emit assign: 'var x = 1; x = 42' emits OP_MOVE to slot 0",
+    utest_run("emit assign: 'var x = 1; x = 42' creates then updates",
               emit_assign_to_existing_local);
-    utest_run("emit assign to unresolved name is EMIT_UNRESOLVED_NAME",
-              emit_assign_to_unresolved_is_error);
+    utest_run("emit assign to an unresolved name compiles to an update",
+              emit_assign_to_unresolved_compiles_to_an_update);
     utest_run("emit: AST_BOOL true → LOADBOOL R0 1 0",
               emit_ast_bool_true_emits_loadbool_1_0);
     utest_run("emit: AST_BOOL false → LOADBOOL R0 0 0",

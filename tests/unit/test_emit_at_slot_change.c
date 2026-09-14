@@ -20,7 +20,7 @@
 #include "lex/ulex.h"
 #include "chunk/uchunk.h"
 #include "parse/uparse.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
 
@@ -31,15 +31,15 @@
 static UEmitError slot_change_compile(const char *src,
                                       UProto    *mod_out,
                                       UArena     *arena_out,
-                                      UVM        *vm_out,
+                                      UVM        **vm_out,
                                       UEmitter   *e_out) {
-    urbi_vm_init(vm_out, NULL, NULL);
+    *vm_out = urbi_open(utest_alloc, NULL, NULL);
     uarena_init(arena_out, 4096);
 
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
 
-    uemit_init(e_out, mod_out, arena_out, vm_out, NULL);
+    uemit_init(e_out, mod_out, arena_out, *vm_out, NULL);
 
     UParser p;
     uparse_init(&p, &lex, arena_out);
@@ -56,7 +56,7 @@ static UEmitError slot_change_compile(const char *src,
 static void slot_change_cleanup(UProto *mod, UArena *arena, UVM *vm) {
     uchunk_destroy(mod, NULL);
     uarena_destroy(arena);
-    urbi_vm_destroy(vm);
+    urbi_close(vm);
 }
 
 /* Return true if the root chunk contains opcode `op`. */
@@ -88,7 +88,7 @@ UTEST(emit_at_slot_change_emits_getslot_then_at_event_install)
 {
     UProto  module = {0};
     UArena   arena;
-    UVM      vm;
+    UVM      *vm = NULL;
     UEmitter e;
 
     UEmitError rc = slot_change_compile(
@@ -106,7 +106,7 @@ UTEST(emit_at_slot_change_emits_getslot_then_at_event_install)
     /* GETSLOT_CHANGE_EVENT must appear before AT_EVENT_INSTALL */
     UASSERT(gi < ai);
 
-    slot_change_cleanup(&module, &arena, &vm);
+    slot_change_cleanup(&module, &arena, vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -117,7 +117,7 @@ UTEST(emit_at_sync_slot_change_uses_sync_install_op)
 {
     UProto  module = {0};
     UArena   arena;
-    UVM      vm;
+    UVM      *vm = NULL;
     UEmitter e;
 
     UEmitError rc = slot_change_compile(
@@ -130,7 +130,7 @@ UTEST(emit_at_sync_slot_change_uses_sync_install_op)
     /* The non-sync variant must NOT appear */
     UASSERT(!bytecode_has_op(&module, OP_AT_EVENT_INSTALL));
 
-    slot_change_cleanup(&module, &arena, &vm);
+    slot_change_cleanup(&module, &arena, vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -146,7 +146,7 @@ UTEST(emit_at_slot_change_global_receiver_disjoint_regs)
 {
     UProto  module = {0};
     UArena   arena;
-    UVM      vm;
+    UVM      *vm = NULL;
     UEmitter e;
 
     UEmitError rc = slot_change_compile(
@@ -169,7 +169,7 @@ UTEST(emit_at_slot_change_global_receiver_disjoint_regs)
     }
     UASSERT(found);
 
-    slot_change_cleanup(&module, &arena, &vm);
+    slot_change_cleanup(&module, &arena, vm);
 }
 
 /* -----------------------------------------------------------------------

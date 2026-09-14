@@ -21,7 +21,7 @@
 #include "lex/ulex.h"
 #include "chunk/uchunk.h"
 #include "parse/uparse.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
 
@@ -84,11 +84,11 @@ static int find_loadk_int(const uint32_t *instrs, size_t count,
  * ----------------------------------------------------------------------- */
 
 UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
                                 "5 | function() { 1 } | 2");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
@@ -104,7 +104,7 @@ UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -137,11 +137,11 @@ UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
  * tests use chunk-top form. */
 
 UTEST(emit_watcher_install_freereg_balanced_at) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var a = 1; var b = 2;"
         "at (Realm.a > Realm.b) Realm.a = Realm.a + 1;"
         "var c = function() { 99 };");
@@ -154,15 +154,15 @@ UTEST(emit_watcher_install_freereg_balanced_at) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 UTEST(emit_watcher_install_freereg_balanced_whenever) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var a = 1; var b = 2;"
         "whenever (Realm.a > Realm.b) Realm.a = Realm.a + 1;"
         "var c = function() { 99 };");
@@ -171,7 +171,7 @@ UTEST(emit_watcher_install_freereg_balanced_whenever) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* waituntil intentionally has no max_reg-observable test: it compiles a
@@ -183,14 +183,14 @@ UTEST(emit_watcher_install_freereg_balanced_whenever) {
  * tests) is sufficient. */
 
 UTEST(emit_watcher_install_freereg_balanced_at_event) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
     /* at-event leaks event_reg+body_reg+alt_reg slots (alt 0xFF skipped).
      * Stack two at-event installs to amplify the leak above the inner
      * body-closure compilation's natural max_reg. */
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var a = 1; var b = 2;"
         "at (Realm.evt?) Realm.a = Realm.a + 1;"
         "at (Realm.evt2?) Realm.b = Realm.b + 1;"
@@ -205,7 +205,7 @@ UTEST(emit_watcher_install_freereg_balanced_at_event) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -226,7 +226,7 @@ UTEST(emit_watcher_install_freereg_balanced_at_event) {
  * ----------------------------------------------------------------------- */
 
 UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
@@ -242,7 +242,7 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
      *
      * Post-fix: alloc_reg syncs fs->max_reg_seen, so proto.max_reg
      * tracks the actual peak. */
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var f = function() { return function () { return 1 + 2; }; }");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
@@ -275,7 +275,7 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -299,7 +299,7 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
  * private helper. */
 
 UTEST(emit_free_reg_respects_temp_floor) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
@@ -307,7 +307,7 @@ UTEST(emit_free_reg_respects_temp_floor) {
      * r_global pre-reserve).  The AST_BINARY's free_reg call after
      * OP_ADD must release the rhs temp without underflowing into a's
      * or b's local slot. */
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var f = function() { var a = 1; var b = 2; return a + b; }");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
@@ -346,7 +346,7 @@ UTEST(emit_free_reg_respects_temp_floor) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -365,11 +365,11 @@ UTEST(emit_free_reg_respects_temp_floor) {
  * the callee register and corrupting the OP_CALL target. */
 
 UTEST(emit_lazy_pass_through_does_not_alias) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var caller = function (lazy x) {"
         "  var consumer = function (lazy a, b) { return a; };"
         "  return consumer(x, function() { 99 });"
@@ -426,7 +426,7 @@ UTEST(emit_lazy_pass_through_does_not_alias) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -463,18 +463,18 @@ UTEST(emit_call_too_many_args_returns_error) {
     off += (size_t)snprintf(src + off, cap - off, ");");
     UASSERT(off < cap);
 
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 16384);
     UProto module; memset(&module, 0, sizeof(module));
 
-    UEmitError rc = compile_src(&vm, &arena, &module, src);
+    UEmitError rc = compile_src(vm, &arena, &module, src);
     /* Pre-fix: EMIT_OK (the wrap happens silently).
      * Post-fix: EMIT_TOO_MANY_ARGS. */
     UASSERT_EQ((int)EMIT_TOO_MANY_ARGS, (int)rc);
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
     free(src);
 }
 
@@ -497,7 +497,7 @@ UTEST(emit_call_too_many_args_returns_error) {
  * under T129/Phase 22). */
 
 UTEST(emit_tag_prefix_rejects_high_spill_register) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
@@ -505,7 +505,7 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
      * `var t = 0; var l1 = 1; ...; var l16 = 16; t: { 1 };` pushes the
      * hidden `\x01tag` local's declared slot >= 16, tripping the > 15
      * nibble check in urbi_emit_tag_prefix_arm. */
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var f = function() {"
         " var t = 0;"
         " var l1=1;  var l2=2;  var l3=3;  var l4=4;"
@@ -521,7 +521,7 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -548,11 +548,11 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
  * as a temp without bumping freereg). */
 
 UTEST(emit_if_arm_pops_nested_var_decl) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var f = function() {"
         " var a = 1;"
         " if (a > 0) { var x = 5; x };"
@@ -592,7 +592,7 @@ UTEST(emit_if_arm_pops_nested_var_decl) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -622,11 +622,11 @@ UTEST(emit_if_arm_pops_nested_var_decl) {
  * defensive guard preserves the legal behavior). */
 
 UTEST(emit_bare_return_does_not_clobber_local) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var helper = function() { 0 };"
         "var f = function() {"
         " var keep = 42;"
@@ -685,7 +685,7 @@ UTEST(emit_bare_return_does_not_clobber_local) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -707,11 +707,11 @@ UTEST(emit_bare_return_does_not_clobber_local) {
  * cluster-1 T11 precedent). */
 
 UTEST(emit_throw_does_not_clobber_local) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var helper = function() { 0 };"
         "var f = function() {"
         " var keep = 42;"
@@ -767,7 +767,7 @@ UTEST(emit_throw_does_not_clobber_local) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -788,14 +788,14 @@ UTEST(emit_throw_does_not_clobber_local) {
  * relation, i.e., that the helper and the inline arithmetic agree. */
 
 UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
     /* Canonical if/else shape: emits TEST + JMP + then-body + JMP +
      * else-body.  Verify each JMP's encoded Bx, when un-biased,
      * equals (target_pc - jmp_pc - 1). */
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var f = function() {"
         " var a = 1;"
         " if (a > 0) { a = 2 } else { a = 3 };"
@@ -844,7 +844,7 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -870,7 +870,7 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
  * ----------------------------------------------------------------------- */
 
 UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
-    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UVM *vm = NULL; vm = urbi_open(utest_alloc, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UProto module; memset(&module, 0, sizeof(module));
 
@@ -878,7 +878,7 @@ UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
      * args followed by an AST_FUNCTION literal.  `callee` doesn't need
      * to exist — urbi_emit_call_arm runs before any binding check, and a
      * realm-global lookup at call time is fine for emit's purposes. */
-    UEmitError rc = compile_src(&vm, &arena, &module,
+    UEmitError rc = compile_src(vm, &arena, &module,
         "var callee = function (a, b, fn) { 0 };"
         "callee(\"x\", \"y\", function() { 42 });");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
@@ -934,7 +934,7 @@ UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
+    urbi_close(vm);
 }
 
 /* -----------------------------------------------------------------------

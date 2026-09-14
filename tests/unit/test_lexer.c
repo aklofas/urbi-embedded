@@ -139,7 +139,8 @@ static void unterminated_block_comment_emits_error(void) {
  * full unterminated extent (from the opening "/" to end-of-source), not
  * just the hardcoded 2-byte "/" + "*" prefix. */
 static void unterminated_block_comment_error_span_full(void) {
-    /* "/* oops" — 7 bytes; the entire range is the unterminated comment. */
+    /* The source below opens a block comment and never closes it:
+     * 7 bytes, all of them inside the unterminated comment. */
     ULexer l;
     ulex_init(&l, "/* oops", 7);
     const UToken t = ulex_next(&l);

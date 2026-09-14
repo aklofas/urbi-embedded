@@ -19,7 +19,7 @@
 #include "lex/ulex.h"
 #include "chunk/uchunk.h"
 #include "parse/uparse.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
 
@@ -29,7 +29,7 @@ typedef struct {
     UArena   arena;
     UParser  p;
     UProto  module;
-    UVM      vm;
+    UVM      *vm;
     UEmitter e;
 } GlCtx;
 
@@ -37,10 +37,10 @@ static void gl_ctx_init(GlCtx *c, const char *src)
 {
     ulex_init(&c->lex, src, strlen(src));
     uarena_init(&c->arena, 0);
-    urbi_vm_init(&c->vm, NULL, NULL);
+    c->vm = urbi_open(utest_alloc, NULL, NULL);
     c->module = (UProto){0};
     uparse_init(&c->p, &c->lex, &c->arena);
-    uemit_init(&c->e, &c->module, &c->arena, &c->vm, "test_gl");
+    uemit_init(&c->e, &c->module, &c->arena, c->vm, "test_gl");
 }
 
 static UEmitError gl_ctx_run(GlCtx *c)
@@ -60,7 +60,7 @@ static void gl_ctx_destroy(GlCtx *c)
                                gl_ctx_run bailed early (FE-07) */
     uarena_destroy(&c->arena);
     uchunk_destroy(&c->module, NULL);
-    urbi_vm_destroy(&c->vm);
+    urbi_close(c->vm);
 }
 
 /* === Tests === */
@@ -189,16 +189,6 @@ UTEST(emit_local_still_resolves_before_global) {
     gl_ctx_destroy(&c);
 }
 
-UTEST(emit_assign_to_undeclared_name_still_errors) {
-    /* "ghost = 7" must still fail: assigning to an undeclared name
-     * that was never declared with `var` is an error (AST_ASSIGN path,
-     * not touched by T71). */
-    GlCtx c;
-    gl_ctx_init(&c, "ghost = 7");
-    UEmitError rc = gl_ctx_run(&c);
-    UASSERT_EQ(EMIT_UNRESOLVED_NAME, (int)rc);
-    gl_ctx_destroy(&c);
-}
 
 UTEST(emit_global_state_machine_distinct_flags) {
     /* EMIT-021 regression: global_slot_reserved and references_global are
@@ -304,8 +294,6 @@ test_emit_global_lookup_suite(void)
               emit_multiple_global_refs_reuse_same_r_global_slot);
     utest_run("emit local variable shadows global of same name",
               emit_local_still_resolves_before_global);
-    utest_run("emit assign to undeclared name is still EMIT_UNRESOLVED_NAME",
-              emit_assign_to_undeclared_name_still_errors);
     utest_run("emit global state machine: RESERVED_NO_REF distinct from REFERENCED (EMIT-021)",
               emit_global_state_machine_distinct_flags);
     utest_run("emit global state machine: advances to REFERENCED on first global ref (EMIT-021)",
