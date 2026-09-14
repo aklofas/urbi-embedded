@@ -106,9 +106,10 @@ static void t_realm_is_cheap(void)
     unsigned long cost = ca.allocs - before;
     RT_CHECK(r2 != NULL);
     printf("    realm creation: %lu allocations\n", cost);
-    /* The realm cell, its globals object, and the three parallel slot
-     * arrays the `Realm` self-reference forces into existence. */
-    RT_CHECK(cost <= 5);
+    /* The realm cell, its globals object, and the one slot block the
+     * `Realm` self-reference forces into existence.  Everything else a
+     * realm can see is shared through root_globals. */
+    RT_CHECK(cost < 5);
 
     urbi_close(vm);
 }

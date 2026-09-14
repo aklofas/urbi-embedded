@@ -19,23 +19,52 @@ int uobj_find_local(const UObject *o, const USym *name) {
     return -1;
 }
 
-/* Grows the three parallel slot arrays together, doubling from
- * UOBJ_INITIAL_CAP. On partial failure (one array grows, the next
- * doesn't) o->cap is left at its old value, so uobj_finalize still frees
- * exactly what it's told it owns -- the oversized array underneath just
- * never gets used past the old capacity. */
+/* Bytes the three parallel slot arrays occupy at a given capacity.  They
+ * share ONE block: values first (the strictest alignment), then names,
+ * then attrs.  Every capacity is a power of two at least
+ * UOBJ_INITIAL_CAP, so each array starts on a multiple of its own
+ * alignment on both 32- and 64-bit targets. */
+static size_t uobj_slots_bytes(uint16_t cap)
+{ return (size_t)cap * (sizeof(UValue) + sizeof(USym *) + 1u); }
+
+static void uobj_point_arrays(UObject *o, void *block, uint16_t cap)
+{
+    UValue *values = (UValue *)block;
+    o->values = values;
+    o->names  = (USym **)(values + cap);
+    o->attrs  = (uint8_t *)(o->names + cap);
+}
+
+/* Doubles the slot capacity, starting at UOBJ_INITIAL_CAP.
+ *
+ * ONE allocation, not three.  Three separate arrays cost an object with
+ * any slot at all three allocations and three headers, which at boot is
+ * most of the heap: the whole standard library is objects with a handful
+ * of slots each.  It also had a partial-failure path, where one array
+ * grew and the next did not; a single block cannot fail halfway.
+ *
+ * Growth cannot use realloc: the three regions move relative to each
+ * other as the capacity changes, so the old contents are copied into
+ * their new offsets explicitly, highest offset first is unnecessary
+ * because the blocks are disjoint. */
 static int uobj_grow(struct UVM *vm, UObject *o) {
     uint16_t old_cap = o->cap;
     uint16_t new_cap = old_cap ? (uint16_t)(old_cap * 2) : UOBJ_INITIAL_CAP;
-    USym **names = (USym **)ugc_raw_realloc(vm, (void *)o->names, (size_t)old_cap * sizeof(USym *), (size_t)new_cap * sizeof(USym *));
-    if (!names) return -1;
-    o->names = names;
-    UValue *values = (UValue *)ugc_raw_realloc(vm, o->values, (size_t)old_cap * sizeof(UValue), (size_t)new_cap * sizeof(UValue));
-    if (!values) return -1;
-    o->values = values;
-    uint8_t *attrs = (uint8_t *)ugc_raw_realloc(vm, o->attrs, (size_t)old_cap, (size_t)new_cap);
-    if (!attrs) return -1;
-    o->attrs = attrs;
+    void *block = ugc_raw_alloc(vm, uobj_slots_bytes(new_cap));
+    if (!block) return -1;
+
+    UValue *old_values = o->values;
+    if (o->count > 0) {
+        USym *const *old_names = o->names;
+        const uint8_t *old_attrs = o->attrs;
+        uobj_point_arrays(o, block, new_cap);
+        memcpy(o->values, old_values, (size_t)o->count * sizeof(UValue));
+        memcpy((void *)o->names, (const void *)old_names, (size_t)o->count * sizeof(USym *));
+        memcpy(o->attrs, old_attrs, (size_t)o->count);
+    } else {
+        uobj_point_arrays(o, block, new_cap);
+    }
+    if (old_values) ugc_raw_free(vm, old_values, uobj_slots_bytes(old_cap));
     o->cap = new_cap;
     return 0;
 }
@@ -201,8 +230,7 @@ void uobj_trace(struct UVM *vm, UObject *o) {
 }
 
 void uobj_finalize(struct UVM *vm, UObject *o) {
-    ugc_raw_free(vm, (void *)o->names, (size_t)o->cap * sizeof(USym *));
-    ugc_raw_free(vm, o->values, (size_t)o->cap * sizeof(UValue));
-    ugc_raw_free(vm, o->attrs, (size_t)o->cap);
+    /* One block behind all three arrays; `values` is its base. */
+    ugc_raw_free(vm, o->values, uobj_slots_bytes(o->cap));
     ugc_raw_free(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *));
 }
