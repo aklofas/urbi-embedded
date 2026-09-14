@@ -536,21 +536,50 @@ static void urbi_watch_calls_back_on_each_rising_edge(void)
     run(&fx, "x = 9");
     RT_EQ(hw.hits, 2);
     RT_EQ(hw.last, 9);
+
+    /* And a host can cancel its own watch on the MAIN realm, which
+     * urbi_realm_free refuses to touch: the watch is scoped to the realm's
+     * connection tag and urbi_realm_tag is how the host names it. */
+    UValue tag = urbi_realm_tag(fx.vm, urbi_realm_main(fx.vm));
+    RT_EQ(tag.kind, (uint8_t)UVAL_CELL);
+    RT_EQ(urbi_tag_stop(fx.vm, tag), URBI_OK);
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    run(&fx, "x = 0");
+    run(&fx, "x = 11");
+    RT_EQ(hw.hits, 2);
     fix_close(&fx);
     RT_EQ(fx.ca.live, 0u);
 }
 
 /* --- shape and footprint ------------------------------------------------- */
 
-/* A VM with the stdlib booted and no script loaded.  The number is
- * reported rather than pinned to the byte: it is a budget (72 KB on the
- * host), and a pin would fail on every unrelated stdlib row. */
-static void a_booted_vm_stays_within_its_heap_budget(void)
+/* What the reactive runtime costs a VM that never uses it: nothing on the
+ * heap, and one cell per watcher when it does.  The VM's own boot-heap
+ * budget is measured once, by tests/rt/test_realm.c's
+ * t_boot_heap_is_small -- duplicating the headline number here only
+ * produced two figures that drift apart under different build variants. */
+static void the_reactive_runtime_costs_an_unused_vm_nothing(void)
 {
     Fix fx; fix_open(&fx);
-    printf("    boot heap: %lu bytes, sizeof(UWatcher) = %lu\n",
-           (unsigned long)fx.ca.live, (unsigned long)sizeof(UWatcher));
-    RT_CHECK(fx.ca.live <= 72u * 1024u);
+    (void)urbi_realm_main(fx.vm);
+    size_t booted = fx.ca.live;
+    printf("    sizeof(UWatcher) = %lu; watcher list empty at boot\n",
+           (unsigned long)sizeof(UWatcher));
+    /* UWatchState is four words inside UVM and vm->watch.all starts NULL,
+     * so running a script that installs nothing adds no watcher bytes. */
+    run(&fx, "var x = 1");
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    urbi_gc_collect(fx.vm);
+
+    /* One `at` is one cell plus its two closures; a thousand of them stay
+     * proportional rather than quadratic. */
+    run(&fx, "var t = Tag.new()");
+    run(&fx, "var i = 0");
+    run(&fx, "t: { while (i < 200) { at (x == 99) { x = x } ; i = i + 1 } }");
+    RT_CHECK(urbi_has_live_work(fx.vm));
+    size_t with_watchers = fx.ca.live;
+    RT_CHECK(with_watchers > booted);
+    RT_CHECK(with_watchers - booted < 200u * 1024u);
     fix_close(&fx);
     RT_EQ(fx.ca.live, 0u);
 }
@@ -593,6 +622,6 @@ RT_SUITE(rt_watch_suite) {
     rt_run("a_condition_may_cancel_its_own_watcher", a_condition_may_cancel_its_own_watcher);
     rt_run("a_condition_that_throws_is_reported_once_and_disarmed", a_condition_that_throws_is_reported_once_and_disarmed);
     rt_run("urbi_watch_calls_back_on_each_rising_edge", urbi_watch_calls_back_on_each_rising_edge);
-    rt_run("a_booted_vm_stays_within_its_heap_budget", a_booted_vm_stays_within_its_heap_budget);
+    rt_run("the_reactive_runtime_costs_an_unused_vm_nothing", the_reactive_runtime_costs_an_unused_vm_nothing);
     rt_run("a_hundred_watchers_are_all_reclaimed", a_hundred_watchers_are_all_reclaimed);
 }

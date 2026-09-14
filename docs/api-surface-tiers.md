@@ -44,6 +44,7 @@ New public symbols require a PR-review-touch on this manifest.
 - `urbi_realm_new`
 - `urbi_realm_free`
 - `urbi_realm_main`
+- `urbi_realm_tag`
 
 ### Code
 

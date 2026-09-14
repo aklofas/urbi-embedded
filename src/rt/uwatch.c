@@ -28,12 +28,10 @@ void uwatch_trace(UVM *vm, UWatcher *w)
     ugc_mark_value(vm, w->payload);
 }
 
-/* --- the dirty count ------------------------------------------------------ */
-
-void uwatch_observe(const UVM *vm, UObject *o)
-{
-    if (o && vm->watch.observing) o->cell.flags |= UOBJ_F_WATCHED;
-}
+/* --- the dirty count ------------------------------------------------------
+ *
+ * uwatch_observe, the read half, is a static inline in rt/uexec.h: it sits
+ * on every resolved slot read and is one branch. */
 
 void uwatch_mark_dirty(UVM *vm, UObject *o)
 {
@@ -208,7 +206,9 @@ static UStrand *uwatch_spawn(UVM *vm, UWatcher *w, UClosure *cl, UValue payload)
 static void uwatch_fire(UVM *vm, UWatcher *w, UValue payload, bool force_inline)
 {
     w->fired = 1;
-    if (w->host_cb) { w->host_cb(vm, w->host_ud, payload); return; }
+    /* The callback's return value is ignored, and the public header says
+     * so: it is an int only to match the host-callback family's shape. */
+    if (w->host_cb) { (void)w->host_cb(vm, w->host_ud, payload); return; }
     if (w->mode == (uint8_t)UWATCH_AT_SYNC || force_inline) {
         uwatch_run_inline(vm, w, w->body, payload, "at sync body raised: ");
         return;

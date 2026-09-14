@@ -87,6 +87,13 @@ URealm *urbi_realm_main(UVM *vm)
 
 void urbi_realm_free(UVM *vm, URealm *realm) { urealm_free(vm, realm); }
 
+UValue urbi_realm_tag(UVM *vm, URealm *realm)
+{
+    if (!vm) return urbi_make_nil();
+    if (!realm) realm = urbi_realm_main(vm);
+    return (realm && realm->root_tag) ? uv_ptr(UV_CELL, realm->root_tag) : urbi_make_nil();
+}
+
 /* ===================================================================
  * Code
  * =================================================================== */
@@ -470,6 +477,8 @@ int urbi_watch(UVM *vm, URealm *realm, const char *expr,
     if (vm->protos[UP_CLOSURE]) cl->proto_obj = vm->protos[UP_CLOSURE];
 
     cl->cell.flags |= UCELL_F_PINNED;         /* reachable from nothing yet */
+    /* Tagged with the realm's connection tag, which urbi_realm_tag hands
+     * back, so a host can stop its own watches. */
     const UWatcher *w = uwatch_install_host(vm, realm, cl, cb, ud);
     cl->cell.flags &= (uint16_t)~UCELL_F_PINNED;
     return w ? URBI_OK : URBI_ERR_OOM;

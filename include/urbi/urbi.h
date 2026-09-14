@@ -121,6 +121,13 @@ URealm *urbi_realm_new(UVM *vm);
 void    urbi_realm_free(UVM *vm, URealm *realm);
 /* The realm created at urbi_open; never NULL for a live VM. */
 URealm *urbi_realm_main(UVM *vm);
+/* A realm's connection tag, as a Tag value, or nil when the realm has
+ * none.  Every strand the realm spawns inherits it, and every watch
+ * installed through urbi_watch is scoped to it, so
+ * `urbi_tag_stop(vm, urbi_realm_tag(vm, realm))` is how a host cancels a
+ * realm's reactive surface -- including the MAIN realm's, which
+ * urbi_realm_free refuses to touch. */
+UValue  urbi_realm_tag(UVM *vm, URealm *realm);
 
 /* ===================================================================
  * Code
@@ -242,9 +249,15 @@ int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *p
 /* Watch a condition expression; `cb` fires on each rising edge, with the
  * value the expression produced.  `expr` is compiled once against
  * `realm`'s globals and re-evaluated whenever a slot it reads is written,
- * so it costs nothing between writes.  A watch lives until the realm's
- * connection tag is stopped.  URBI_ERR_COMPILE (the diagnostic is in
- * urbi_last_error) or URBI_ERR_OOM. */
+ * so it costs nothing between writes.  URBI_ERR_COMPILE (the diagnostic
+ * is in urbi_last_error) or URBI_ERR_OOM.
+ *
+ * A watch lives until the realm's connection tag is stopped:
+ * `urbi_tag_stop(vm, urbi_realm_tag(vm, realm))`, which works for the
+ * main realm too.  `cb`'s return value is IGNORED -- it is an int only so
+ * the typedef matches the rest of the host-callback family, and a future
+ * meaning for it would be a new entry point, not a new reading of this
+ * one. */
 int urbi_watch(UVM *vm, URealm *realm, const char *expr,
                int (*cb)(UVM *vm, void *ud, UValue value), void *ud);
 

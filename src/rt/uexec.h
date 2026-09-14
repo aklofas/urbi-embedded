@@ -276,8 +276,15 @@ UWatcher *uwatch_install(UVM *vm, UStrand *s, uint8_t mode, UClosure *cond,
 int   uwatch_waituntil(UVM *vm, UStrand *s, UClosure *cond);
 /* A write landed on an object carrying UOBJ_F_WATCHED. */
 void  uwatch_mark_dirty(UVM *vm, UObject *o);
-/* A slot read, while a condition is running: `o` becomes watched. */
-void  uwatch_observe(const UVM *vm, UObject *o);
+/* A slot read while a condition is running marks its object, so a later
+ * write to it re-arms the dirty set.  Inline because every resolved slot
+ * read on every strand pays it and the answer is almost always no: the
+ * guard is one predictable branch on a field of the VM the caller is
+ * already holding. */
+static inline void uwatch_observe(const UVM *vm, UObject *o)
+{
+    if (vm->watch.observing && o) o->cell.flags |= UOBJ_F_WATCHED;
+}
 /* Evaluate every armed condition watcher once and act on the edges. */
 void  uwatch_drain(UVM *vm);
 /* Fan `payload` out to `e`'s watchers.  See uevent_emit_to. */
