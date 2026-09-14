@@ -9,7 +9,8 @@
 #          host-observation hooks (an enqueue-without-drive primitive) into the
 #          v1.0 embedding API purely so a .chk file can watch scheduler
 #          internals — rejected on API-minimalism grounds.  The step-budget
-#          exhaustion path is covered by C unit tests with internal access
-#          (tests/unit/test_pipe_budget_exhaust.c, test_dispatch_loop.c).
-#          Disposition: covered-by-unit-tests; not a chk target.
+#          exhaustion path was covered by C unit tests with internal access
+#          (tests/unit/test_pipe_budget_exhaust.c, test_dispatch_loop.c) until
+#          the Phase 0 runtime-internals test cleanup; no C-level coverage
+#          today.
 # matrix-row: scheduler-budget

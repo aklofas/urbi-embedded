@@ -14,8 +14,9 @@
 # Reason:
 #   Requires Object.new() T69 stdlib binding and inline subscriber dispatch.
 #   The deferred-slot-change ring (spec #4 §5.4) and sync subscriber walk
-#   (FIFO walk of obj.x.changed_watchers_head) are tested by
-#   test_slot_change_callsites.c and test_slot_change_reentrancy.c.
+#   (FIFO walk of obj.x.changed_watchers_head) were tested by
+#   test_slot_change_callsites.c and test_slot_change_reentrancy.c until the
+#   Phase 0 runtime-internals test cleanup; no C-level coverage today.
 #
 #   When active: 50 writes × 2 subs = 100 subscriber firings → 100-char log;
 #   byte-identical across 100 runs under each of the 3 tunable presets.
@@ -23,8 +24,9 @@
 #
 #   When v0.10.7-G ships: replace the source below with the activated
 #   keyword-form variant.  The audit confirmed the C-level deferred-ring
-#   drain + sync subscriber walk are tested by
-#   test_slot_change_callsites.c and test_slot_change_reentrancy.c.
+#   drain + sync subscriber walk were tested by test_slot_change_callsites.c
+#   and test_slot_change_reentrancy.c until the Phase 0 runtime-internals test
+#   cleanup; no C-level coverage today.
 #
 # Urbiscript source (activate when v0.10.7-G T39 ships):
 #   var obj = Object.new();

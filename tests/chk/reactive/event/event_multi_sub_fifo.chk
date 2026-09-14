@@ -7,8 +7,9 @@
 #
 # Reason:
 #   Same blockers as event_emit_async.chk.  The FIFO walk of event->at_watchers_head
-#   is exercised by test_uevent_subscribe.c and test_event_emit_async.c at the
-#   C-level unit tests.  The scripted fixture requires Event.new() T59 binding
+#   was exercised by test_uevent_subscribe.c and test_event_emit_async.c at the
+#   C level until the Phase 0 runtime-internals test cleanup; no C-level
+#   coverage today.  The scripted fixture requires Event.new() T59 binding
 #   and scratch-frame body dispatch.
 #
 # Activate when Event.new() + scratch-frame body dispatch are wired.

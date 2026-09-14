@@ -10,7 +10,8 @@
 #   globals via urbi_populate_realm_globals).  The at (e?) subscribe watcher
 #   uses OP_AT_EVENT_INSTALL (T47), which is wired.  The subscriber body
 #   dispatch requires spawn_body_coroutine (stub at M5-stub phase).  The
-#   urbi_event_emit_async path is exercised by test_event_emit_async.c.
+#   urbi_event_emit_async path was exercised by test_event_emit_async.c until
+#   the Phase 0 runtime-internals test cleanup; no C-level coverage today.
 #
 # Activate when Event.new() + scratch-frame body dispatch are wired.
 #

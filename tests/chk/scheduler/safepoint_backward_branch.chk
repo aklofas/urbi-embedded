@@ -4,8 +4,9 @@
 #         and the step budget, preventing infinite-loop starvation.
 #         Behavioral correctness: the loop completes and produces the
 #         expected result (5).  The budget-decrement itself is internal and
-#         not observable from pure urbiscript; that path is covered by
-#         tests/unit/test_step_driver.c.
+#         not observable from pure urbiscript; that path was covered by
+#         tests/unit/test_step_driver.c until the Phase 0 runtime-internals
+#         test cleanup; no C-level coverage today.
 
 var i = 0; while (i < 5) { i = i + 1 }; i
 [00000000] 5

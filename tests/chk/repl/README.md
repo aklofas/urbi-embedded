@@ -1,9 +1,11 @@
 # REPL .chk NDJSON corpus
 
 Golden fixtures driving the v0.9.1 REPL dispatcher end-to-end through
-the in-process buffer transport. Run by
-`tests/unit/test_repl_chk_corpus.c` (suite `repl_chk_corpus`); only
-present when `URBI_ENABLE_REPL=1`.
+the in-process buffer transport. Their driver,
+`tests/unit/test_repl_chk_corpus.c` (suite `repl_chk_corpus`), was
+removed in the Phase 0 runtime-internals test cleanup. The 16 fixtures
+in this directory are parked — they run nowhere — pending re-attachment
+of the REPL eval path.
 
 ## Format
 

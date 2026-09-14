@@ -14,7 +14,8 @@
 # not available there.  The single-strand sleep path is covered by
 # tests/chk/scheduler/wait_sleep_basic.chk; this test additionally requires
 # parallel execution to verify the "wake while running" timing contract.
-# Substantive coverage via test_step_driver.c (step_wake_at_with_wakeup_pending).
+# Substantive coverage via test_step_driver.c (step_wake_at_with_wakeup_pending)
+# until the Phase 0 runtime-internals test cleanup; no C-level coverage today.
 #
 # When M5 + urbi_step chk driver land, implement this by:
 #   # Two strands: first strand does work (loops 100 iters); second sleeps briefly.

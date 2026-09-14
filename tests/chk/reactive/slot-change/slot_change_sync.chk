@@ -19,7 +19,8 @@
 # Reason:
 #   Same blockers as slot_change_basic.chk.  The sync (AT_SYNC) vs async (AT)
 #   mode distinction for slot-change watchers is documented in spec #4 §5.3 and
-#   tested in test_slot_change_reentrancy.c at the C level.
+#   was tested in test_slot_change_reentrancy.c at the C level until the
+#   Phase 0 runtime-internals test cleanup; no C-level coverage today.
 #
 # Urbiscript source (activate when slot-change double-fire bug resolved):
 #   var obj = Object.new();

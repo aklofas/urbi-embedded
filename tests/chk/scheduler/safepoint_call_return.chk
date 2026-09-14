@@ -8,8 +8,9 @@
 #          around an OP_CALL/OP_RET safepoint would need a public
 #          safepoint_budget_remaining read accessor frozen into the v1.0 API
 #          solely to drive a golden-diff fixture — rejected on API-minimalism
-#          grounds.  Function-call frame push/pop correctness is already covered
+#          grounds.  Function-call frame push/pop correctness was covered
 #          by tests/unit/test_dispatch_loop.c::dispatch_nested_call_and_ret,
-#          which exercises the C urbi_vm_dispatch_loop_until_yield interface directly.
-#          Disposition: covered-by-unit-tests; not a chk target.
+#          which exercised the C urbi_vm_dispatch_loop_until_yield interface
+#          directly, until the Phase 0 runtime-internals test cleanup; no
+#          C-level coverage today.
 # matrix-row: scheduler-safepoint

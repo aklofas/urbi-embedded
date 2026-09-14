@@ -4,9 +4,10 @@
 # `Realm.handleDisconnect = function() { ... }`; the C dispatcher fires
 # it on session destroy.  This fixture verifies the install path
 # (the user function lands on the realm's lobby instance and is
-# invocable).  The actual on-destroy invocation is verified by
+# invocable).  The actual on-destroy invocation was verified by
 # tests/unit/test_repl_dispatcher.c::dispatcher_handleDisconnect_invoked_on_destroy
-# and end-to-end over TCP by tests/unit/test_repl_multi_client.c (Task 33).
+# and end-to-end over TCP by tests/unit/test_repl_multi_client.c (Task 33)
+# until the Phase 0 runtime-internals test cleanup; no C-level coverage today.
 
 # Install override, then call it directly to confirm it's wired up and
 # the body runs (mutates Global.dx to 42).

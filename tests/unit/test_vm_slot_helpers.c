@@ -324,8 +324,9 @@ UTEST(self_preserves_receiver_when_dst_aliases_recv_reg)
  * We verify end-to-end: install `at (Realm.wobj6.x > 5) { ... }` and
  * confirm the watcher fires after writing Realm.wobj6.x = 10.
  *
- * Mirror of test_at_scripted_e2e.c but with an Object slot (not a plain
- * Realm slot) so the trace path goes through OP_GETSLOT on a
+ * Mirror of what test_at_scripted_e2e.c covered before it was removed in
+ * the Phase 0 runtime-internals test cleanup, but with an Object slot
+ * (not a plain Realm slot) so the trace path goes through OP_GETSLOT on a
  * UProtoInstance rather than directly through the realm global slot. */
 UTEST(getslot_traces_read_during_watcher_install)
 {

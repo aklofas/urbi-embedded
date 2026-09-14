@@ -40,11 +40,11 @@ for bin in "$ASAN_URBI" "$UBSAN_URBI"; do
     fi
 done
 
-# tests/chk/repl/*.chk are NDJSON fixtures (v0.9.1 Phase 8) driven in-process
-# by tests/unit/test_repl_chk_corpus.c, not by run_chk.sh which expects
-# urbiscript-REPL input.  The in-process driver is itself built with -fsanitize
-# in the host-asan / host-ubsan variants of `make test`, so the REPL corpus is
-# already covered by both sanitizers there.  Exclude here to match `test-chk`.
+# tests/chk/repl/*.chk are NDJSON fixtures (v0.9.1 Phase 8) for the REPL
+# dispatcher, not urbiscript input consumable by run_chk.sh.  Their
+# in-process driver was removed in the Phase 0 runtime-internals test
+# cleanup; REPL is currently a parked feature pending v1.x re-attachment.
+# Exclude here to match `test-chk`.
 mapfile -t fixtures < <(find tests/chk -path tests/chk/repl -prune -o \
                              -type f -name '*.chk' -print | sort)
 echo "Discovered ${#fixtures[@]} fixtures (tests/chk/repl excluded)."

@@ -13,8 +13,9 @@
 #     - Tag.new() constructor (requires globals exposure + T59 stdlib binding)
 #     - at (t.enter?) / at (t.leave?) event-subscribe watchers (require globals
 #       access for `t`, plus T59 to wire Tag.enter / Tag.leave as resolvable names)
-#   The tier-2 hook itself (T55 OP_PUSH_TAG / OP_POP_TAG enter/leave emit) is
-#   exercised end-to-end in tests/unit/test_tag_enter_leave.c.
+#   The tier-2 hook itself (T55 OP_PUSH_TAG / OP_POP_TAG enter/leave emit) was
+#   exercised end-to-end in tests/unit/test_tag_enter_leave.c until the Phase 0
+#   runtime-internals test cleanup; no C-level coverage today.
 #
 # Activate at T59 by replacing the source below with the uncommented version.
 #

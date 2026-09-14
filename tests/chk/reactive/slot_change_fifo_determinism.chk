@@ -19,9 +19,10 @@
 #     - at (obj.x.changed?) event-subscribe watcher (globals for `obj`)
 #     - obj.x = N assignment (globals for `obj`)
 #   All of the above require the T69 globals-exposure task.  The underlying
-#   urbi_emit_slot_change_if_subscribed fast-path + slow-path chain walk are
+#   urbi_emit_slot_change_if_subscribed fast-path + slow-path chain walk were
 #   tested in unit/test_slot_change_emit.c and
-#   unit/test_slot_change_callsites.c.
+#   unit/test_slot_change_callsites.c until the Phase 0 runtime-internals test
+#   cleanup; no C-level coverage today.
 #
 # Activate at T69 by replacing the source below with the uncommented version.
 #

@@ -5,7 +5,8 @@
  * make test-trace — URBI_TRACE=1: full ring / gating / primitive / tap tests.
  *
  * The URBI_TRACE-gated tests use a stack UVM via urbi_vm_init/urbi_vm_destroy
- * (internal-header pattern, mirrors test_at_scripted_e2e.c). */
+ * (internal-header pattern, the same one test_at_scripted_e2e.c used before
+ * it was removed in the Phase 0 runtime-internals test cleanup). */
 
 #include "utest.h"
 #include "utest_e2e_helpers.h"

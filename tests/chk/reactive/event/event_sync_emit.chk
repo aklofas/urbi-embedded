@@ -1,4 +1,4 @@
-# Milestone: v0.13.6 (Phase 0 harvest activation)
+# Milestone: Phase 0 harvest activation
 # Covers: e.syncEmit(p) — synchronous event emit; a SYNC-registered
 #         (`at sync (e?)`) subscriber runs inline before syncEmit returns;
 #         spec #3 §6.2 AT_EVENT_SYNC watcher mode.

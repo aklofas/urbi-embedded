@@ -4,9 +4,10 @@
  * Bodies match the canonical copies that previously lived in
  * test_at_scripted_e2e.c (compile_and_run, run_to_no_runnable, make_int)
  * and test_tag_stop_onleave_scripted.c (make_nil).  The
- * _with_module variant comes from test_event_sync_emit_scripted.c, where
- * the caller needs to keep arena + module live to retain a returned
- * UVAL_CLOSURE.
+ * _with_module variant came from test_event_sync_emit_scripted.c, where
+ * the caller needed to keep arena + module live to retain a returned
+ * UVAL_CLOSURE.  All three source files were removed in the Phase 0
+ * runtime-internals test cleanup.
  */
 
 #include "utest_e2e_helpers.h"
@@ -16,7 +17,7 @@
 #include "parse/uparse.h"
 #include "emit/uemit.h"
 #include "realm/urealm.h"
-#include "runtime/umacros.h"
+#include "runtime/umacros.h"   /* urbi_zero/urbi_strlen only */
 
 #define UTEST_E2E_MAX_ITERS 1000
 

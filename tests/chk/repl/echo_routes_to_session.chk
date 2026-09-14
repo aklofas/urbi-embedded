@@ -10,7 +10,8 @@
 # with the eval id.
 #
 # The cross-session non-routing aspect (A's output NOT reaching B/C/D)
-# is verified by tests/unit/test_repl_multi_client.c (Task 33) over TCP.
+# was verified by tests/unit/test_repl_multi_client.c (Task 33) over TCP
+# until the Phase 0 runtime-internals test cleanup; no C-level coverage today.
 
 > {"id":16,"op":"eval","code":"Lobby.__builtin_lobby_send(\"from-session\", \"\", \"***\")"}
 < "id":16 | "kind":"output" | *** from-session

@@ -9,7 +9,8 @@
 #   Object.new() and slot-change event subscription via at (obj.x.changed?)
 #   require T69 globals exposure + stdlib.  The OP_GETSLOT_CHANGED fast-path
 #   probe (test_op_getslot_change_event.c) and urbi_emit_slot_change_if_subscribed
-#   chain walk (test_slot_change_callsites.c) are tested at the C level.
+#   chain walk (test_slot_change_callsites.c) were tested at the C level until
+#   the Phase 0 runtime-internals test cleanup; no C-level coverage today.
 #   The subscriber body dispatch requires scratch-frame execution.
 #
 # Activate when Object.new() + slot-change scripted subscribe + body dispatch wired.

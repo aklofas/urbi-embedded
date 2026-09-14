@@ -15,8 +15,9 @@
 #     - e!(1) event-emit postfix (requires globals access for `e`)
 #   All of these require the T59 globals-exposure task.  The tier-2 enter/leave
 #   emit hooks (T55), the GC walker amendments (T56), and the ISR drain handler
-#   (T57) are tested via unit tests in test_tag_enter_leave.c, test_event_gc.c,
-#   and test_isr_event_drain.c respectively.
+#   (T57) were tested via unit tests in test_tag_enter_leave.c, test_event_gc.c,
+#   and test_isr_event_drain.c respectively until the Phase 0 runtime-internals
+#   test cleanup; no C-level coverage today.
 #
 # Activate at T59 by replacing the source below with the uncommented version.
 #

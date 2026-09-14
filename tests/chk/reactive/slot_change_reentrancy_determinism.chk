@@ -19,7 +19,8 @@
 #     - at (obj.y.changed?) watcher
 #     - obj.x = N assignment (globals for `obj`)
 #   All require the T69 globals-exposure task.  The underlying deferred-ring
-#   drain and reentrancy degrade are tested in unit/test_slot_change_reentrancy.c.
+#   drain and reentrancy degrade were tested in unit/test_slot_change_reentrancy.c
+#   until the Phase 0 runtime-internals test cleanup; no C-level coverage today.
 #
 # Activate at T69 by replacing the source below with the uncommented version.
 #

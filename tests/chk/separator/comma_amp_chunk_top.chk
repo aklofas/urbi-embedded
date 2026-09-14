@@ -4,7 +4,8 @@
 # used a transient strand with no entry_closure and these opcodes produced
 # a runtime TypeError; that guard has been superseded by the persistent
 # strand path.  The unit tests in test_fork.c and test_loader_strand_persistence.c
-# exercise fork semantics in more depth.
+# exercised fork semantics in more depth until the Phase 0 runtime-internals
+# test cleanup; no C-level coverage today.
 
 1 , 2
 [00000000] 2

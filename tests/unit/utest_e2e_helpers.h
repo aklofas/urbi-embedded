@@ -3,22 +3,20 @@
  *
  * Shared end-to-end helpers for scripted-install reactive tests.
  *
- * Consumers (Phase 1 of v0.5.8-cleanup):
- *   - test_at_scripted_e2e.c
- *   - test_at_sync_scripted.c
- *   - test_tag_stop_onleave_scripted.c
- *   - test_event_sync_emit_scripted.c (uses the _with_module variant)
+ * Originally factored out (Phase 1 of v0.5.8-cleanup) from four per-file
+ * copies that had drifted slightly across the v0.5.0 .. v0.5.7 reactive-
+ * runtime landings (REACT-POLISH-001 backlog, docs/urbi-embedded-backlog.md
+ * L757): test_at_scripted_e2e.c, test_at_sync_scripted.c,
+ * test_tag_stop_onleave_scripted.c, and test_event_sync_emit_scripted.c
+ * (which used the _with_module variant).  All four were removed in the
+ * Phase 0 runtime-internals test cleanup; these helpers are now shared by
+ * the surviving unit tests that need a lex/parse/emit/run helper.
  *
- * Each helper is a thin wrapper around the public urbi API + the lex /
- * parse / emit pipeline, factored out from per-file copies that had
- * drifted slightly across the v0.5.0 .. v0.5.7 reactive-runtime landings
- * (REACT-POLISH-001 backlog, docs/urbi-embedded-backlog.md L757).
- *
- * Note: test_uwatcher_scratch.c is sometimes listed as a fifth consumer
- * but its `compile_source` helper is compile-only (it never runs the
- * chunk because the test drives urbi_run_closure_on_scratch directly).
- * That is a different operation, not a near-verbatim copy of these
- * helpers, and is left in place.
+ * Note: test_uwatcher_scratch.c (also removed in that cleanup) was
+ * sometimes listed as a fifth consumer, but its `compile_source` helper
+ * was compile-only (it never ran the chunk, since the test drove
+ * urbi_run_closure_on_scratch directly) — a different operation, not a
+ * near-verbatim copy of these helpers.
  */
 
 #ifndef URBI_TESTS_UTEST_E2E_HELPERS_H
@@ -49,9 +47,10 @@ int utest_e2e_compile_and_run(UVM *vm, const char *src, UValue *out_result);
  * `*out_result` stays live as long as the caller keeps them alive.
  *
  * Required by tests that capture a function-literal closure and call it
- * back later (e.g., test_event_sync_emit_scripted.c, where the body
- * closure is installed in an AT_EVENT_SYNC watcher and fired via
- * urbi_event_emit_sync after compile_and_run returns).
+ * back later (test_event_sync_emit_scripted.c used this for a body
+ * closure installed in an AT_EVENT_SYNC watcher and fired via
+ * urbi_event_emit_sync after compile_and_run returned, before that file
+ * was removed in the Phase 0 runtime-internals test cleanup).
  */
 int utest_e2e_compile_and_run_with_module(UVM *vm,
                                           UArena *arena,

@@ -23,7 +23,8 @@
 #define UTEST(name) static void name(void)
 
 /* -----------------------------------------------------------------------
- * Helpers (same pattern as test_function.c)
+ * Helpers (same pattern as test_function.c used, before it was removed
+ * in the Phase 0 runtime-internals test cleanup)
  * ----------------------------------------------------------------------- */
 
 static UVMError lazy_eval(const char *src, UValue *out) {

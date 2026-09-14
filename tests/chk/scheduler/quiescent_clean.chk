@@ -6,8 +6,9 @@
 # Driven by the chk-host-driver (## host: step): a freshly-created VM with no
 # loaded chunk, no spawned strands, no watchers, and no sleeping strands is
 # already quiescent.  urbi_step over a large budget finds no live work and
-# returns URBI_STEP_QUIESCENT.  Unit-level coverage of the same path lives in
-# tests/unit/test_step_driver.c; this fixture exercises it through the public
-# urbi_step entry point end-to-end.
+# returns URBI_STEP_QUIESCENT.  Unit-level coverage of the same path lived in
+# tests/unit/test_step_driver.c until the Phase 0 runtime-internals test
+# cleanup; no C-level coverage today.  This fixture exercises it through the
+# public urbi_step entry point end-to-end.
 ## host: step 1000000
 [00000001] step: QUIESCENT

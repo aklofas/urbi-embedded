@@ -9,8 +9,9 @@
 # Reason:
 #   Same blockers as tag_enter.chk.  Additionally, the ordering between tier-1
 #   onleave and tier-2 leave-event subscribers is specified in spec #3 §4.3:
-#   tier-1 fires first, then tier-2.  This ordering is verified in
-#   test_tag_enter_leave.c.  The scripted fixture additionally requires
+#   tier-1 fires first, then tier-2.  This ordering was verified in
+#   test_tag_enter_leave.c until the Phase 0 runtime-internals test cleanup;
+#   no C-level coverage today.  The scripted fixture additionally requires
 #   tag.stop() method dispatch (M4 dispatch path, already present).
 #
 # Activate when Tag.new() + leave-event wiring + body dispatch are complete.

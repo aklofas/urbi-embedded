@@ -12,12 +12,13 @@
  * and MUST pass identically before AND after the extraction (zero-delta gate).
  *
  * The per-mode variants and the irregular OP_WAITUNTIL_INSTALL park/fast-path
- * are already pinned at the dispatch level by test_at_install_dispatch.c
+ * were pinned at the dispatch level by test_at_install_dispatch.c
  * (at / whenever / at_sync / waituntil-cond-true), test_waituntil_install.c
  * (waituntil park-when-false + immediate-wake), and test_at_event_dispatch.c
- * (at_event / at_event_sync linkage); all run under the same zero-delta gate.
- * This file adds the high-level e2e confidence that the extracted switch routes
- * each entry point correctly. */
+ * (at_event / at_event_sync linkage) until the Phase 0 runtime-internals test
+ * cleanup removed all three; no C-level coverage of those per-mode variants
+ * today.  This file adds the high-level e2e confidence that the extracted
+ * switch routes each entry point correctly. */
 
 #include "utest.h"
 #include "utest_e2e_helpers.h"

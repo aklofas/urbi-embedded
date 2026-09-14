@@ -8,8 +8,9 @@
 #
 # Reason:
 #   Tag.new() requires T59 stdlib binding.  The tier-2 enter/leave event
-#   lazy-alloc and OP_PUSH_TAG emit path (T55) are tested by
-#   test_tag_enter_leave.c at the C level.  The at (mytag.enter?) subscribe
+#   lazy-alloc and OP_PUSH_TAG emit path (T55) were tested by
+#   test_tag_enter_leave.c at the C level until the Phase 0 runtime-internals
+#   test cleanup; no C-level coverage today.  The at (mytag.enter?) subscribe
 #   watcher requires OP_AT_EVENT_INSTALL with a tag-event UEvent source;
 #   the subscriber body requires scratch-frame execution.
 #

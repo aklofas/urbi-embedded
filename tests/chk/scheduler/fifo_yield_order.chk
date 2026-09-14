@@ -10,8 +10,9 @@
 #          freezing test-only host-observation hooks (an enqueue-without-drive
 #          primitive plus a per-strand yield-boundary emitter) into the v1.0
 #          embedding API — rejected on API-minimalism grounds; the final
-#          quiescent state is order-independent.  FIFO scheduling order is
+#          quiescent state is order-independent.  FIFO scheduling order was
 #          covered by tests/unit/test_sched_fifo.c and test_fork.c
-#          (fork_detach_basic_no_crash, fork_detach_quiescent_count_zero).
-#          Disposition: covered-by-unit-tests; not a chk target.
+#          (fork_detach_basic_no_crash, fork_detach_quiescent_count_zero) until
+#          the Phase 0 runtime-internals test cleanup; no C-level coverage
+#          today.
 # matrix-row: scheduler-fifo

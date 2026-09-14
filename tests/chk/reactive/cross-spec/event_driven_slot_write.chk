@@ -7,9 +7,10 @@
 #
 # Activation history: Cat. E re-audit D2 ratified at v0.10.12.  The original
 # 'blocked: chain does not propagate' label was unsubstantiated by C-level
-# evidence (c_event_emit_async is non-allocating + body-strand-safe + unit-
-# tested via test_event_emit_async.c).  Activated empirically via Realm.x = v
-# capture (the v0.10.10 W3 pattern).
+# evidence (c_event_emit_async is non-allocating + body-strand-safe + was
+# unit-tested via test_event_emit_async.c until the Phase 0 runtime-internals
+# test cleanup; no C-level coverage today).  Activated empirically via
+# Realm.x = v capture (the v0.10.10 W3 pattern).
 #
 # Uses Realm slots for both the trigger slot (Realm.x) and the counter
 # (Realm.chain_fired) to avoid nondeterministic <object 0x...> addresses.

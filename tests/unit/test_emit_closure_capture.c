@@ -231,8 +231,9 @@ UTEST(closure_capture_setProperty_oget)
     UASSERT_EQ(repl(&vm, "class Acc {}"), URBI_OK);
     /* Use property declaration syntax which desugars through the oget path. */
     UASSERT_EQ(repl(&vm, "var acc = Acc.new()"), URBI_OK);
-    /* Direct setSlot is the simpler path; the oget desugar is covered by
-     * the class-body property-decl test in test_class_decl_emit.c.
+    /* Direct setSlot is the simpler path; the oget desugar was covered by
+     * the class-body property-decl test in test_class_decl_emit.c until the
+     * Phase 0 runtime-internals test cleanup; no C-level coverage today.
      * Here we just verify the call-arg function captures correctly. */
     UASSERT_EQ(repl(&vm, "Acc.setSlot(\"get_val\", function() { val })"), URBI_OK);
     repl_int(&vm, "acc.get_val()", 77);
