@@ -424,7 +424,9 @@ test-integration: $(BUILDDIR)/urbi
 # sh+awk+sed pipeline adds noise, not signal.
 CHK_GATE_DIRS ?= arithmetic closure function control \
                  objects globals stdlib lobby operators \
-                 exceptions control_transfer
+                 exceptions control_transfer \
+                 separator scheduler tag temporal mutex semaphore \
+                 chunk_lifecycle
 
 test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
 	@CHK_GATE_DIRS="$(CHK_GATE_DIRS)" sh tests/integration/chk_summary.sh $(BUILDDIR)/urbi

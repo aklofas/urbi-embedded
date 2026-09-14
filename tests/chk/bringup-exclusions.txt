@@ -21,3 +21,24 @@ tests/chk/globals/const_builtin_global_rejects_write.chk  # constant is inherite
 # needs is `at (e?)`, i.e. an event watcher, which lands with the
 # reactive task.
 tests/chk/objects/event_new_emit.chk               # at (e?) needs a watcher
+
+# --- needs the reactive runtime: waituntil ------------------------------
+#
+# Each parks a strand on a condition or an event through
+# OP_WAITUNTIL_INSTALL, which is a watcher.  The scheduler half is done --
+# the wait lists, the wake, the gates and the stop that reaches a parked
+# strand all work; what these need is the thing that puts the strand on a
+# wait list in the first place.
+tests/chk/scheduler/host_write_wakes_waituntil.chk    # waituntil on a host-written slot
+tests/chk/scheduler/wait_event_basic.chk              # waituntil(e?)
+tests/chk/tag/block_freeze_independent_gates.chk      # two waituntil members
+tests/chk/tag/stop_straightline_ret.chk               # stop after a waituntil resumes
+tests/chk/tag/stop_waituntil_mid_eval.chk             # stop during a waituntil evaluation
+tests/chk/tag/stop_waituntil_nested.chk               # stop through nested waituntils
+tests/chk/tag/tag_stop_resumes_suspended_member.chk   # stop overrides a gate on a waiter
+
+# --- needs the reactive runtime: at / whenever --------------------------
+tests/chk/chunk_lifecycle/script_at_persists.chk      # at (cond) across checks
+tests/chk/tag/gc_pressure_watcher_in_scope.chk        # a watcher installed in a tag scope
+tests/chk/tag/tagged_watcher_persists.chk             # a tagged watcher outliving its scope
+tests/chk/tag/throw_through_tag_scope.chk             # at-watcher lifetime across a throw
