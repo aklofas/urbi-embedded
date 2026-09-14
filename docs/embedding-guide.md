@@ -149,9 +149,14 @@ void urbi_close(UVM *vm);
 ```
 
 `UVM` is opaque. `config` may be NULL for the defaults; the two knobs are
-`step_budget` (instructions per slice) and `boot_stdlib` (set it to 0 for
-a VM with no built-ins at all, which is only useful for measuring the
-bare core).
+`step_budget` and `boot_stdlib` (set the latter to 0 for a VM with no
+built-ins at all, which is only useful for measuring the bare core).
+
+`step_budget` is what `urbi_step` spends when its caller passes 0. Leave
+it unset and a zero budget keeps its plain meaning, run until nothing is
+runnable; set it and every unbudgeted step becomes a bounded slice, which
+is what a host on a fixed RTOS tick wants without repeating the number at
+each call. An explicit budget always wins.
 
 `urbi_open` returns NULL on out-of-memory **and on a NULL allocator**.
 There is no built-in default: a library that calls `malloc` behind an

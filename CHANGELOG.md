@@ -21,8 +21,8 @@ new opcode. There is no compatibility promise before 1.0.0.
 | idle strand | 615 bytes each; 61,568 for a hundred parked sleepers |
 | leak probes | zero growth over 10,000 iterations of five allocating shapes |
 | lookup benchmark | 1.47x the old core; mandelbrot 1.44x |
-| corpus | 325 passed, 0 failed, 77 placeholders, 9 skipped |
-| runners | frontend 636 cases / 6,406 checks; runtime 135 cases / 4,315 checks |
+| corpus | 331 passed, 0 failed, 73 placeholders, 9 skipped |
+| runners | frontend 636 cases / 6,406 checks; runtime 138 cases / 4,350 checks |
 | sanitizers | ASan, UBSan, `URBI_GC_STRESS`, valgrind memcheck: clean |
 
 The 48 KB boot-heap target is a 32-bit number and this branch has no
@@ -64,6 +64,26 @@ measured cost and prints the spec's target beside it.
   `{ throw "A" } , throw "B"` reported "A" twice and lost "B".
 - A thrown non-integral Float rendered as `<?>`. A hosted build now
   lends the runtime its formatter; freestanding keeps `<?>`.
+- `urbi -e` and `urbi -f` never drove the scheduler past the chunk. A
+  batch program that slept, armed an `every`, or joined a `&` across a
+  park was truncated where it first parked, and the process still exited
+  0. The CLI now steps to quiescence, sleeping on the next timer
+  deadline, and reports an uncaught throw raised while it pumps. A
+  periodic nobody stops keeps running; SIGINT ends it.
+- Two shell gates had left `make test` during the re-foundation:
+  `test-batch-errors` (the only coverage of the `-e` / `-f` entry point,
+  and red on the truncation above) and `test-integration`. Both are
+  prerequisites again.
+- The runtime borrowed `urbi_ref`'s pin bit for its own short-lived
+  holds and cleared it unconditionally. Script that took `x.changed?` on
+  an object an embedder had pinned released that pin, and the next
+  collection could free a value the host still held. The runtime has its
+  own bit now, and the header's guarantee is true.
+- `UVMConfig.step_budget` was accepted and ignored. It is now the budget
+  `urbi_step` spends when its caller passes 0.
+- A proto walk that outgrew the 64-entry resolution stack answered "not
+  found". For a legal deep or wide graph that is a wrong answer rather
+  than an answer; the lookup diagnostics now say which one they got.
 
 ### Retired
 

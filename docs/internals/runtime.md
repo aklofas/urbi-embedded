@@ -26,8 +26,15 @@ only to `chunk/` (the bytecode it runs), `urbi/` (the API it implements),
 compile entry point `load` needs; nothing else in the frontend); and it
 uses no libc beyond `stdint.h`, `stddef.h`, `stdbool.h`, `string.h` and
 `math.h`. The second rule is what lets the same source build for a
-microcontroller. Anything that needs `snprintf` or `malloc` lives in
-`src/host/`, which a freestanding build omits.
+microcontroller.
+
+The rule binds `src/rt/`, not the whole archive. Where a public entry point
+is inherently hosted it lives in `src/host/` instead — `urbi_value_to_string`
+needs `snprintf`'s `%.14g` — and a freestanding build omits that directory.
+Three other directories in the archive do use hosted libc today and are not
+covered by the rule: the cooperative eval service (`src/repl/`, four files,
+unconditional), the `Debug` namespace (`src/stdlib/debug_namespace.c`), and
+the AST arena (`src/util/uarena.c`). Narrowing those is Phase 5 work.
 
 `struct UVM` is completed in `rt/uexec.h` and holds every subsystem by
 value: the collector, the symbol table, the scheduler, the watcher state,
@@ -73,10 +80,19 @@ watchers, bound protos. A cell is reached from a root or it is not.
 
 Roots are: the realm list and each realm's globals, the run queue and the
 timer heap, every live strand's register stack and cleanup stack, the
-prototype table, the spare-strand free list, and the C-root stack a
-native pushes when it holds a value across an allocation. Pinned cells
-(`UCELL_F_PINNED`) are roots too — that is how a caller keeps an awaited
-strand addressable across a pump.
+prototype table, the spare-strand free list (capped at four, so one deep
+nesting does not become a permanent memory floor), and the C-root stack a
+native pushes when it holds a value across an allocation.
+
+Pinned cells are roots too, and there are two pin bits, deliberately kept
+apart. `UCELL_F_PINNED` is the HOST's, taken by `urbi_ref` and released
+only by `urbi_unref`; the runtime never touches it, which is what makes
+that guarantee in `<urbi/urbi.h>` true. `UCELL_F_RTPIN` is the runtime's
+own short-lived hold — a fresh chunk or closure reachable from nothing
+yet, an awaited strand kept addressable across a pump, a user object held
+across the two allocations that install its `changed?` event. It is one
+bit and therefore not nestable: every site releases it before returning,
+and a hold that must outlive a call goes on the C-root stack instead.
 
 Marking is tri-state with an explicit gray list, and the gray list can
 overflow: when it does the collector rescans until the graph is clean
@@ -143,8 +159,13 @@ One run queue, one timer heap, and `park`/`wake`, in `src/rt/usched.c`.
 `usched_step` gives one strand a slice of `USCHED_SLICE` (256)
 instructions and returns, so a host that wants to interleave the VM with
 its own work calls `urbi_step` in a loop and sleeps on `next_wake_us`
-in between. Only backward jumps and calls consume budget, so a
-straight-line strand runs to its next park or death regardless.
+in between. Only backward jumps consume budget, so a straight-line strand
+runs to its next park or death regardless.
+
+A host that wants every unbudgeted `urbi_step` to be a bounded slice sets
+`UVMConfig.step_budget` at `urbi_open` rather than repeating the number at
+each call; an explicit budget always wins, and leaving it unset keeps a
+zero budget meaning "until nothing is runnable".
 
 `urbi_step` returns one of three answers: it ran something, it is idle
 until a deadline, or it is quiescent — nothing will ever make it runnable
