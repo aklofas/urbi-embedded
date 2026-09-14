@@ -35,15 +35,15 @@
 
 var counter = 0
 var abort_flag = false
-at (Realm.counter > 3) Realm.abort_flag = true
-var compute = function() { var i = 0; while (i < 10) { if (Realm.abort_flag == false) { Realm.counter = Realm.counter + 1 } else { i = 10 }; i = i + 1 } }
+at (counter > 3) abort_flag = true
+var compute = function() { var i = 0; while (i < 10) { if (abort_flag == false) { counter = counter + 1 } else { i = 10 }; i = i + 1 } }
 compute()
-Realm.counter
-Realm.abort_flag
-Realm.counter = 0
-Realm.abort_flag = false
+counter
+abort_flag
+counter = 0
+abort_flag = false
 compute()
-Realm.counter
+counter
 [00000000] 0
 [00000000] false
 [00000000] nil

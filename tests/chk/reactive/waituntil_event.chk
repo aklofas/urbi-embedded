@@ -18,9 +18,9 @@
 var e = Event.new()
 var got = 0
 var myTag = Tag.new()
-myTag: { Realm.got = waituntil(e?) }
+myTag: { got = waituntil(e?) }
 e!(99)
-Realm.got
+got
 [00000000] <event>
 [00000000] 0
 [00000000] <Tag>

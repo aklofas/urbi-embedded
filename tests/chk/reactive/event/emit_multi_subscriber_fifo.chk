@@ -7,9 +7,9 @@
 
 var e = Event.new()
 Realm.seq = ""
-at (Realm.e?) { Realm.seq = Realm.seq + "A" }
-at (Realm.e?) { Realm.seq = Realm.seq + "B" }
-Realm.e!()
+at (e?) { Realm.seq = Realm.seq + "A" }
+at (e?) { Realm.seq = Realm.seq + "B" }
+e!()
 Realm.seq
 [00000001] <event>
 [00000002] ""

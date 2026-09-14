@@ -29,10 +29,10 @@
 # no-op lines drive the cooperative scheduler instead.
 
 var inner_count = 0
-every (1us) { every (1d) Realm.inner_count = Realm.inner_count + 1 }
+every (1us) { every (1d) inner_count = inner_count + 1 }
 0
 0
-Realm.inner_count
+inner_count
 [00000000] 0
 [00000000] nil
 [00000000] 0

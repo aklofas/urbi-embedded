@@ -2,22 +2,19 @@
 # Covers: at (cond) body — rising-edge fire; body runs once when cond
 #         transitions false→true; does not re-fire on same-direction writes.
 #
-# Activated 2026-05-05 as part of cond-closure unstub.
-# Cond evaluation goes through urbi_run_closure_on_scratch
-# (src/watcher/uwatcher_scratch.c); body fires through the M5-baseline
-# spawn_body_coroutine path.  The REPL drains spawned body strands with
-# urbi_step after each urbi_vm_run so the counter is updated before the next
-# line executes.
+# The condition is re-evaluated whenever a slot it reads is written, and
+# the body runs on a strand the emitting line's pump drains, so the
+# counter is settled by the time the next line reads it.
 #
-# The nested function pattern (trigger()) is required: urbi_vm_watcher_eval_dirty
-# fires at non-top-frame OP_RET safepoints, which a nested call provides.
-# A bare top-level assignment does not trigger the safepoint path.
+# The trigger() indirection is not required any more -- a bare top-level
+# `x = 10` reaches the same drain -- but it is kept because it is what the
+# fixture has always driven, and one less thing changing at a time.
 
 var x = 0;
 var fired = 0;
-at (Realm.x > 5) Realm.fired = Realm.fired + 1;
-var trigger = function() { Realm.x = 10 }; trigger();
-Realm.fired
+at (x > 5) fired = fired + 1;
+var trigger = function() { x = 10 }; trigger();
+fired
 [00000000] 0
 [00000000] 0
 [00000000] nil

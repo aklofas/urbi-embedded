@@ -10,13 +10,13 @@
 # evidence (c_event_emit_async is non-allocating + body-strand-safe + was
 # unit-tested via test_event_emit_async.c until the Phase 0 runtime-internals
 # test cleanup; no C-level coverage today).  Activated empirically via
-# Realm.x = v capture (the v0.10.10 W3 pattern).
+# top-level vars read back as values.
 #
-# Install order: threshold starts at 0 (cond false at install); at(threshold>3)
-# does not fire immediately.  Trigger sets Realm.threshold = 10 via a nested
-# call which provides the safepoint urbi_vm_watcher_eval_dirty needs.  The at-cond
-# body runs e! which enqueues the at(e?) subscriber body; that body runs and
-# sets Realm.log = "event" before Realm.log is read.
+# Install order: threshold starts at 0, so at(threshold > 3) does not fire
+# at install.  The trigger sets it to 10; the drain that follows evaluates
+# the condition and runs the at-cond body, which emits e!; the emission
+# spawns the at(e?) subscriber body, which sets Realm.log = "event" before
+# the next line reads it.
 
 var Realm.log = ""
 [00000000] ""
@@ -33,7 +33,7 @@ at (e?) Realm.log = "event"
 at (threshold > 3) e!
 [00000004] nil
 
-var trigger = function() { Realm.threshold = 10 }; trigger()
+var trigger = function() { threshold = 10 }; trigger()
 [00000005] 10
 
 Realm.log

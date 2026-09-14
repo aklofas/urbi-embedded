@@ -19,8 +19,8 @@
 
 var t = Tag.new()
 var caught = 0
-t: { try { t.stop() } catch (e) { Realm.caught = 1 } }
-Realm.caught
+t: { try { t.stop() } catch (e) { caught = 1 } }
+caught
 [00000000] <Tag>
 [00000000] 0
 [00000000] nil

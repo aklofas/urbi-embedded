@@ -6,11 +6,11 @@
 var e = Event.new()
 var t = Tag.new()
 Realm.hits = 0
-t: at (Realm.e?) { Realm.hits = Realm.hits + 1 }
-Realm.e!()
+t: at (e?) { Realm.hits = Realm.hits + 1 }
+e!()
 Realm.hits
 t.stop()
-Realm.e!()
+e!()
 Realm.hits
 [00000001] <event>
 [00000002] <Tag>

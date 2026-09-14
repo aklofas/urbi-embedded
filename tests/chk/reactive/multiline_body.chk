@@ -6,11 +6,11 @@ var e = Event.new()
 var n = 0
 [00000002] 0
 whenever (e?) {
-  Realm.n = Realm.n + 1;
-  Realm.n = Realm.n + 1
+  n = n + 1;
+  n = n + 1
 }
 [00000003] nil
 e!
 [00000004] nil
-Realm.n
+n
 [00000005] 2

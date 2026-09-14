@@ -18,8 +18,8 @@
 # `{ Realm.b = 2 }` runs inline as the chunk's value.
 
 var b = 0
-{ throw 1 } , { Realm.b = 2 }
-Realm.b
+{ throw 1 } , { b = 2 }
+b
 [00000000] 0
 [00000000] !!! 1
 [00000000] 2

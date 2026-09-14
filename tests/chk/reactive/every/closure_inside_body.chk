@@ -18,10 +18,10 @@
 # Activated: 2026-05-25 as part of v0.10.2-reactive W1.
 
 var result = 0
-every (1us) { var local_fn = function (x) { x * 2 } | Realm.result = local_fn(7) }
+every (1us) { var local_fn = function (x) { x * 2 } | result = local_fn(7) }
 0
 0
-Realm.result
+result
 [00000000] 0
 [00000000] nil
 [00000000] 0

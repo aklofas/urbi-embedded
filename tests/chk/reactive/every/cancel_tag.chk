@@ -27,10 +27,10 @@
 
 var fired = 0
 var mytag = Tag.new("p")
-mytag: { every (1us) Realm.fired = Realm.fired + 1 }
+mytag: { every (1us) fired = fired + 1 }
 0
 0
-Realm.fired > 0
+fired > 0
 [00000000] 0
 [00000015] <Tag: p>
 [00000015] nil

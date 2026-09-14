@@ -6,15 +6,15 @@
 # runtime + v0.6.1 stdlib).
 # Old label: M5
 #
-# Note: Realm.fired used as the observable output (bare echo not available
-# as a top-level name in single-session chk driver; use Lobby.echo).
+# The counter is read back as a value rather than echoed: `echo` is not a
+# bare name in the single-session chk driver.
 
 var e = Event.new()
 var t = Tag.new()
 var fired = 0
-t: { waituntil(e?) | Realm.fired = 1 }
+t: { waituntil(e?) | fired = 1 }
 e!
-Realm.fired
+fired
 [00000000] <event>
 [00000000] <Tag>
 [00000000] 0

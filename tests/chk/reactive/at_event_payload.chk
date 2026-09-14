@@ -11,9 +11,9 @@
 
 var e = Event.new()
 var result = 0
-at (e?(var payload)) { Realm.result = payload }
+at (e?(var payload)) { result = payload }
 e!(42)
-Realm.result
+result
 [00000000] <event>
 [00000000] 0
 [00000000] nil

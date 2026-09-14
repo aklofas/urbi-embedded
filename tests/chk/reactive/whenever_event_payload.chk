@@ -10,11 +10,11 @@
 
 var e = Event.new()
 var total = 0
-whenever (e?(var n)) { Realm.total = Realm.total + n }
+whenever (e?(var n)) { total = total + n }
 e!(10)
 e!(20)
 e!(30)
-Realm.total
+total
 [00000000] <event>
 [00000000] 0
 [00000000] nil

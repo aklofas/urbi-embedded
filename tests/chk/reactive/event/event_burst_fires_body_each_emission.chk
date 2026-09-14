@@ -6,8 +6,8 @@
 
 var e = Event.new()
 Realm.hits = 0
-at (Realm.e?) { Realm.hits = Realm.hits + 1 }
-Realm.e!(); Realm.e!(); Realm.e!(); Realm.e!(); Realm.e!()
+at (e?) { Realm.hits = Realm.hits + 1 }
+e!(); e!(); e!(); e!(); e!()
 Realm.hits
 [00000001] <event>
 [00000002] 0

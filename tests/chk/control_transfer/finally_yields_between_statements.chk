@@ -18,9 +18,9 @@
 # it can run is the yield inside the finally.
 
 var log = ""
-var f = function() { try { return 1 } finally { Realm.log = Realm.log + "F1"; Realm.log = Realm.log + "F2" } }
-__detach_strand(function() { Realm.log = Realm.log + "D" }) | Realm.r = f()
-Realm.log
+var f = function() { try { return 1 } finally { log = log + "F1"; log = log + "F2" } }
+__detach_strand(function() { log = log + "D" }) | Realm.r = f()
+log
 Realm.r
 [00000000] ""
 [00000000] <?>

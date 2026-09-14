@@ -3,23 +3,15 @@
 #         body has fired at least once.  The URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE
 #         flag guards onleave so it never fires without a preceding body fire.
 #
-# Activated 2026-05-05 as part of v0.5.2 scratch-frame follow-up (T3).
-# invoke_onleave_inline now routes through urbi_run_closure_on_scratch
-# (src/watcher/uwatcher_scratch.c) for real bytecode dispatch on the
-# falling edge.  The integer counter pattern (n += 1 on rise, n += 10
-# on fall) matches at_rising_edge.chk; M5 lacks string-literal lex so
-# "updown" string assembly is deferred to a later milestone.
-#
-# The nested function pattern (trigger_up/trigger_down) is required:
-# urbi_vm_watcher_eval_dirty fires at non-top-frame OP_RET safepoints, which a
-# nested call provides.  See at_rising_edge.chk for the safepoint detail.
+# The integer counter pattern (n += 1 on the rise, n += 10 on the fall)
+# matches at_rising_edge.chk and tells the two edges apart in one value.
 
 var x = 0;
 var n = 0;
-at (Realm.x > 5) Realm.n = Realm.n + 1 onleave Realm.n = Realm.n + 10;
-var trigger_up = function() { Realm.x = 10 }; trigger_up();
-var trigger_down = function() { Realm.x = 0 }; trigger_down();
-Realm.n
+at (x > 5) n = n + 1 onleave n = n + 10;
+var trigger_up = function() { x = 10 }; trigger_up();
+var trigger_down = function() { x = 0 }; trigger_down();
+n
 [00000000] 0
 [00000014] 0
 [00000014] nil

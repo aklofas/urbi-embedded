@@ -14,10 +14,10 @@
 # 0 to at-least-1 before the inspect line executes.
 
 var fired = 0;
-every (1us) Realm.fired = Realm.fired + 1;
+every (1us) fired = fired + 1;
 0;
 0;
-Realm.fired > 0
+fired > 0
 [00000000] 0
 [00000000] nil
 [00000000] 0
