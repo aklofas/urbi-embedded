@@ -5,18 +5,21 @@ Authoritative manifest of everything `liburbi.a` exports. The CI gate
 exported symbol is missing from this file, and if a Tier 1 symbol stops
 being exported.
 
-Two tiers while the core is being re-founded:
+Two tiers:
 
-- **Stable (T1)** — declared in `include/urbi/urbi.h` or
+- **Stable (T1)** — declared in `include/urbi/urbi.h`,
+  `include/urbi/repl.h`, `include/urbi/types.h` or
   `include/urbi/version.h`. This is the whole embedding surface.
-  Functions whose subsystem has not landed yet are already here with
-  their final signature; they return `URBI_ERR_INVALID_STATE` until it
-  does.
 - **Internal-leak (T4)** — exported from the archive but declared in no
-  public header. Two groups: the kept compiler frontend (lexer, parser,
+  public header. Two groups: the compiler frontend (lexer, parser,
   emitter, chunk loader), and the standard library's runtime glue, whose
   one header `src/rt/ustdlib_glue.h` is internal. Neither is for
-  embedders, and both lose their external linkage in the clean-up task.
+  embedders. They still have external linkage because they are genuinely
+  cross-translation-unit names; what stops one of them colliding in an
+  embedder's static link is the ratchet in
+  `tests/scripts/api-manifest-symbol-allowlist.txt`, which fails the
+  build on any new unprefixed global and shrinks as names become
+  internal.
 
 Inline functions (`urbi_make_*`, `urbi_value_is_*`, `urbi_value_as_*` in
 `include/urbi/types.h`) are part of the stable surface but never appear

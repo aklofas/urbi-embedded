@@ -1,17 +1,26 @@
-# api-manifest-symbol-allowlist.txt — ratchet for unprefixed exports.
+# api-manifest-symbol-allowlist.txt — the ratchet for unprefixed exports.
 #
 # Every entry is an exported [TDRBWVCu] symbol in liburbi.a that sits
-# outside the urbi_/URBI_ namespace (STYLE.md). -fvisibility=hidden
-# protects shared-object embedders, but a static-archive link sees all
-# of them, so each one is a potential duplicate-symbol collision in an
+# outside the urbi_/URBI_ namespace (STYLE.md).  -fvisibility=hidden
+# protects shared-object embedders, but a static-archive link sees all of
+# them, so each one is a potential duplicate-symbol collision in an
 # embedder's build.
 #
-# This file freezes today's inventory: check-api-manifest.sh fails on
-# any NEW unprefixed global. It grows only when a re-foundation task
-# adds a genuinely new cross-TU name in the runtime core or the standard
-# library, and shrinks whenever one is made static or renamed; it is
-# deleted once every remaining name is prefixed or internal. A name that
-# does not begin with u is never acceptable here.
+# This file freezes today's inventory: check-api-manifest.sh fails on any
+# NEW unprefixed global.  It grows only for a genuinely new cross-TU name
+# and shrinks whenever one is made static or renamed; it is deleted once
+# every remaining name is prefixed or internal.  A name that does not
+# begin with u is never acceptable here.
+#
+# Regenerated at the core re-foundation, against the archive the
+# re-founded tree produces.  Everything the old runtime exported is gone
+# with it; what is left is the compiler frontend (ulex_/uparse_/uemit_/
+# uchunk_/uarena_/uvarint_), the runtime core (ugc_/uobj_/ustr_/ustrand_/
+# usched_/uexec_/uwatch_/urealm_/uboot_/utag_), and the standard library's
+# install tables.  Regenerate with:
+#
+#   nm build/host/liburbi.a | grep -E ' [TDRBWVCu] ' | awk '{print $NF}' \
+#     | grep -vE '^(urbi|URBI)_' | sort -u
 
 uarena_alloc
 uarena_destroy
@@ -55,7 +64,6 @@ uemit_statement
 uemit_throw
 uemit_try_begin
 uemit_try_end
-uevent_emit
 uevent_emit_to
 uevent_new
 uevent_trace
@@ -64,6 +72,7 @@ uexec_current_line
 uexec_finish_run
 uexec_note_write
 uexec_position_prefix
+uexec_report_escape
 uexec_return
 uexec_run
 uexec_run_chunk
@@ -112,8 +121,8 @@ uparse_budget_leave
 uparse_error_name
 uparse_init
 uparse_next_statement
-uparse_set_budget
 uparser_oom_sentinel
+uparse_set_budget
 uproto_alloc_nested
 uproto_bind
 uproto_destroy_buffers
@@ -180,10 +189,6 @@ ustdlib_string_methods
 ustdlib_system_methods
 ustdlib_triplet_methods
 ustdlib_tuple_methods
-ustr_concat
-ustr_hash
-ustr_intern
-ustr_new
 ustrand_close_upvals
 ustrand_ensure_stack
 ustrand_finalize
@@ -195,6 +200,10 @@ ustrand_push_frame
 ustrand_push_frame_args
 ustrand_trace
 ustrand_want_payload
+ustr_concat
+ustr_hash
+ustr_intern
+ustr_new
 ustrtab_destroy
 ustrtab_init
 usym_intern
@@ -206,16 +215,14 @@ utag_leave_event
 utag_new
 utag_stop
 utag_trace
-uv_dispatch_proto
-uv_equal
-uv_str_equal
-uv_to_sym
 uvarint_decode_u
 uvarint_decode_zz
 uvarint_size_u
 uvarint_size_zz
 uvarint_write_u
 uvarint_write_zz
+uv_dispatch_proto
+uv_equal
 uvm_close
 uvm_current_realm
 uvm_current_strand
@@ -230,6 +237,8 @@ uvm_spare_acquire
 uvm_spare_release
 uvm_strings
 uvm_watch
+uv_str_equal
+uv_to_sym
 uwatch_body_done
 uwatch_drain
 uwatch_event_fired
@@ -238,10 +247,9 @@ uwatch_install
 uwatch_install_host
 uwatch_mark
 uwatch_mark_dirty
-uwatch_observe
 uwatch_realm_dropped
-uwatch_slot_change_event
 uwatch_slot_changed
+uwatch_slot_change_event
 uwatch_slot_installed
 uwatch_tag_stopped
 uwatch_trace
