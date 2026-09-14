@@ -556,11 +556,11 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
              * not be descheduled is inside somebody's synchronous call --
              * a comparator, a getter, a watcher body -- and drains
              * nothing, which is also what keeps a drain from nesting. */
-            if (usched_may_deschedule(s)) {
-                uwatch_drain(vm);
-                f = &s->frames[s->nframes - 1];
-                R = s->stack + f->base;
-            }
+            if (usched_may_deschedule(s)) uwatch_drain(vm);
+            /* No register refresh: the drain runs every condition and every
+             * sync body on a SPARE strand and spawns the rest, so it never
+             * grows THIS strand's stack, and nothing below reads R or f
+             * anyway. */
             /* A scheduled strand goes READY at the queue tail.  A strand
              * that may not be descheduled -- a spare, or one inside a
              * synchronous uexec_call -- treats the yield as the plain

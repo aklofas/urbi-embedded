@@ -470,7 +470,7 @@ int urbi_watch(UVM *vm, URealm *realm, const char *expr,
     if (vm->protos[UP_CLOSURE]) cl->proto_obj = vm->protos[UP_CLOSURE];
 
     cl->cell.flags |= UCELL_F_PINNED;         /* reachable from nothing yet */
-    UWatcher *w = uwatch_install_host(vm, realm, cl, cb, ud);
+    const UWatcher *w = uwatch_install_host(vm, realm, cl, cb, ud);
     cl->cell.flags &= (uint16_t)~UCELL_F_PINNED;
     return w ? URBI_OK : URBI_ERR_OOM;
 }

@@ -277,14 +277,14 @@ int   uwatch_waituntil(UVM *vm, UStrand *s, UClosure *cond);
 /* A write landed on an object carrying UOBJ_F_WATCHED. */
 void  uwatch_mark_dirty(UVM *vm, UObject *o);
 /* A slot read, while a condition is running: `o` becomes watched. */
-void  uwatch_observe(UVM *vm, UObject *o);
+void  uwatch_observe(const UVM *vm, UObject *o);
 /* Evaluate every armed condition watcher once and act on the edges. */
 void  uwatch_drain(UVM *vm);
 /* Fan `payload` out to `e`'s watchers.  See uevent_emit_to. */
 void  uwatch_event_fired(UVM *vm, UEvent *e, UValue payload, bool sync);
 /* A strand died: a `whenever` whose body it was re-evaluates and respawns
  * while the condition still holds. */
-void  uwatch_body_done(UVM *vm, UStrand *dead);
+void  uwatch_body_done(UVM *vm, const UStrand *dead);
 /* Cancel every watcher installed under `t`. */
 void  uwatch_tag_stopped(UVM *vm, const UTag *t);
 /* Cancel every watcher belonging to `r`, for realm teardown. */
@@ -301,7 +301,7 @@ void  uwatch_slot_changed(UVM *vm, UObject *o, const USym *name, UValue v);
  * itself a change, so this arms rather than fires. */
 void  uwatch_slot_installed(UVM *vm, UObject *o, const USym *name);
 /* Whether any armed watcher still has a subscriber that could run. */
-bool  uwatch_has_live_work(UVM *vm);
+bool  uwatch_has_live_work(const UVM *vm);
 /* GC: the watcher list (a fixed root) and one watcher's children. */
 void  uwatch_mark(UVM *vm);
 void  uwatch_trace(UVM *vm, UWatcher *w);

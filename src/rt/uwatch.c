@@ -30,7 +30,7 @@ void uwatch_trace(UVM *vm, UWatcher *w)
 
 /* --- the dirty count ------------------------------------------------------ */
 
-void uwatch_observe(UVM *vm, UObject *o)
+void uwatch_observe(const UVM *vm, UObject *o)
 {
     if (o && vm->watch.observing) o->cell.flags |= UOBJ_F_WATCHED;
 }
@@ -61,6 +61,8 @@ static void uwatch_unlink_from_event(UWatcher *w)
     w->event = NULL;
 }
 
+static void uwatch_wake_waiters(UWatcher *w, UValue payload);
+
 static void uwatch_sweep(UVM *vm)
 {
     UWatchState *ws = &vm->watch;
@@ -71,6 +73,12 @@ static void uwatch_sweep(UVM *vm)
         *pp = w->next;
         w->next = NULL;
         uwatch_unlink_from_event(w);
+        /* A watcher cancelled while somebody was still waiting on it --
+         * `t.stop()` on a tag holding a `waituntil` -- must not leave that
+         * strand's `waiting_on` pointing into a cell nothing roots any
+         * more.  In practice the stop has already woken it; this is what
+         * makes that ordering a convenience rather than a requirement. */
+        uwatch_wake_waiters(w, uv_nil());
     }
 }
 
@@ -278,7 +286,7 @@ void uwatch_drain(UVM *vm)
     uwatch_sweep(vm);
 }
 
-void uwatch_body_done(UVM *vm, UStrand *dead)
+void uwatch_body_done(UVM *vm, const UStrand *dead)
 {
     UWatchState *ws = &vm->watch;
     for (UWatcher *w = ws->all; w; w = w->next) {
@@ -480,7 +488,7 @@ UEvent *uwatch_slot_change_event(UVM *vm, UObject *o, const USym *name)
 
 void uwatch_slot_installed(UVM *vm, UObject *o, const USym *name)
 {
-    USym *hidden = uwatch_hidden_sym(vm, name);
+    const USym *hidden = uwatch_hidden_sym(vm, name);
     if (hidden == NULL || uobj_find_local(o, hidden) < 0) return;
     int si = uobj_find_local(o, name);
     if (si >= 0) o->attrs[si] |= USLOT_CHANGED_EVENT;
@@ -488,7 +496,7 @@ void uwatch_slot_installed(UVM *vm, UObject *o, const USym *name)
 
 void uwatch_slot_changed(UVM *vm, UObject *o, const USym *name, UValue v)
 {
-    USym *hidden = uwatch_hidden_sym(vm, name);
+    const USym *hidden = uwatch_hidden_sym(vm, name);
     if (hidden == NULL) return;
     int i = uobj_find_local(o, hidden);
     if (i < 0 || o->values[i].kind != UV_CELL
@@ -498,7 +506,7 @@ void uwatch_slot_changed(UVM *vm, UObject *o, const USym *name, UValue v)
 
 /* --- liveness ------------------------------------------------------------------ */
 
-bool uwatch_has_live_work(UVM *vm)
+bool uwatch_has_live_work(const UVM *vm)
 {
     for (const UWatcher *w = vm->watch.all; w; w = w->next) {
         if (!w->armed) continue;
