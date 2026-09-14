@@ -58,13 +58,14 @@ static void dict_set_get_remove_mixed_keys(void) {
     UCell *roots[1] = { NULL };
     struct UVM vm; fakevm_init(&vm, roots, 1);
     UDict *d = udict_new(&vm, NULL); roots[0] = &d->cell;
+    UValue out;
+    RT_CHECK(!udict_get(d, uv_int(1), &out));   /* empty dict: no NULL deref of keys/vals */
     RT_CHECK(udict_set(&vm, d, uv_int(1), uv_int(100)) == 0);
     UStr *str_a = ustr_new(&vm, "a", 1);
     RT_CHECK(udict_set(&vm, d, uv_str(str_a), uv_int(200)) == 0);
     USym *sym_b = usym_cstr(&vm, "b");
     RT_CHECK(udict_set(&vm, d, uv_sym(sym_b), uv_int(300)) == 0);
     RT_EQ(d->len, 3u);
-    UValue out;
     RT_CHECK(udict_get(d, uv_int(1), &out) && out.v.i == 100);
     /* stored under a STR key "a"; looked up via a SYM "a" -- cross-kind. */
     RT_CHECK(udict_get(d, uv_sym(usym_cstr(&vm, "a")), &out) && out.v.i == 200);
