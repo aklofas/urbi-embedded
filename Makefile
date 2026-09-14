@@ -318,9 +318,19 @@ $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
 
 urbi-bin: $(BUILDDIR)/urbi
 
-# The C .chk host-driver is parked with the old core; run_chk.sh reports
-# `## host:` fixtures as SKIP-NO-DRIVER until it is rewritten against the
-# new core.
+# --- .chk host driver ---------------------------------------------------
+#
+# The fixtures carrying `## host:` directives need more than one realm, a
+# clock the fixture controls, and urbi_step called where the fixture says.
+# run_chk.sh looks for this binary beside the urbi binary, so every
+# sanitizer variant picks up its own instrumented copy.
+
+$(BUILDDIR)/chk-host-driver: tests/integration/chk_host_driver.c $(LIB)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $< $(LIB) -lm
+
+.PHONY: chk-host-driver
+chk-host-driver: $(BUILDDIR)/chk-host-driver
 
 # --- Stdlib bake tool (host-only) ---------------------------------------
 #
@@ -416,7 +426,7 @@ CHK_GATE_DIRS ?= arithmetic closure function control \
                  objects globals stdlib lobby operators \
                  exceptions control_transfer
 
-test-chk: $(BUILDDIR)/urbi
+test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver
 	@CHK_GATE_DIRS="$(CHK_GATE_DIRS)" sh tests/integration/chk_summary.sh $(BUILDDIR)/urbi
 
 # refactor-3 CHK meta-gate: pins run_chk.sh's exit-code contract with stub

@@ -1,0 +1,38 @@
+# Covers: a `finally` body that sleeps PARKS the strand and resumes later,
+#         carrying the unwind it suspended through to the end.
+#
+# This fixture used to pin the opposite: the old core treated a yield
+# inside cleanup as an unrecoverable "cleanup overflow" fatal, because a
+# finally body ran there as a nested VM invocation and parking one had
+# nowhere to go back to.  In the re-founded runtime a finally is an
+# ordinary continuation of the same frame (core design section 9): the
+# walker leaves a marker holding the suspended unwind, the body runs as
+# normal code, and OP_RESUME hands the unwind back.  Parking in the middle
+# of that is no different from parking anywhere else, so the fatal is gone
+# and the cleanup is no longer truncated.
+#
+# The tag-scope block is forked off with `, 0` so the sleep lands on a
+# detached strand and the `## host: step` verdicts are about that strand
+# rather than about the driver's own run.
+#
+# Sequence: t.stop() raises a STOP; the walker finds the try's finally and
+# runs it; sleep(1s) parks, so the step reports a pending deadline.  Once
+# the clock passes it the body finishes (b9 becomes 2), OP_RESUME restores
+# the STOP, the tag scope matches it, and the strand runs off the end --
+# nothing left, so the VM is quiescent.
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run Realm.b9 = 0
+## host: run t: { try { t.stop() } finally { sleep(1s); Realm.b9 = 2 } }, 0
+## host: step 1000
+## host: run Realm.b9
+## host: advance-clock 1500
+## host: step 1000
+## host: run Realm.b9
+[00000001] <Tag>
+[00000002] 0
+[00000003] 0
+[00000004] step: WAKE_AT
+[00000005] 0
+[00000006] step: QUIESCENT
+[00000007] 2
