@@ -60,7 +60,7 @@ static int obj_setSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue
 static int obj_getSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)nargs;
-    USym *name = arg_name(vm, args[0]);
+    const USym *name = arg_name(vm, args[0]);
     if (!name) return urbi_raise_type(vm, "getSlot: name must be a String", out);
     UObject *recv = urbi_atom_proto_for_value(vm, self);
     UObjSlotRef ref;
@@ -80,7 +80,7 @@ static int obj_getSlotValue(UVM *vm, UValue self, UValue *args, uint8_t nargs, U
 static int obj_hasSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)nargs;
-    USym *name = arg_name(vm, args[0]);
+    const USym *name = arg_name(vm, args[0]);
     if (!name) return urbi_raise_type(vm, "hasSlot: name must be a String", out);
     UObject *recv = urbi_atom_proto_for_value(vm, self);
     UObjSlotRef ref;
@@ -95,7 +95,7 @@ static int obj_removeSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UVa
     (void)nargs;
     UObject *recv = self_object(self);
     if (!recv) return urbi_raise_type(vm, "removeSlot: self must be an Object", out);
-    USym *name = arg_name(vm, args[0]);
+    const USym *name = arg_name(vm, args[0]);
     if (!name) return urbi_raise_type(vm, "removeSlot: name must be a String", out);
     /* Idempotent, as the legacy semantics are: removing an absent slot is
      * a no-op, not an error. */
@@ -194,7 +194,7 @@ static int obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t na
     if (args[0].kind != UV_OBJ)
         return urbi_raise_type(vm, "insertFront: argument must be an Object", out);
 
-    USym *sym_owner = usym_cstr(vm, "_owner");
+    const USym *sym_owner = usym_cstr(vm, "_owner");
     UObjSlotRef ref;
     if (!sym_owner || !uobj_resolve(vm, list, sym_owner, &ref))
         return urbi_raise_type(vm, "insertFront: protos list is missing _owner", out);
@@ -333,9 +333,9 @@ static int obj_setProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UV
 static int obj_getProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)nargs;
-    UObject *recv = self_object(self);
+    const UObject *recv = self_object(self);
     if (!recv) return urbi_raise_type(vm, "getProperty: self must be an Object", out);
-    USym *name = arg_name(vm, args[0]);
+    const USym *name = arg_name(vm, args[0]);
     if (!name || !urbi_is_str(args[1]))
         return urbi_raise_type(vm, "getProperty: name and prop must be Strings", out);
     uint8_t bit = property_bit(vm, args[1]);
@@ -435,9 +435,9 @@ static int obj_slotNames(UVM *vm, UValue self, UValue *args, uint8_t nargs, UVal
 static int obj_hasLocalSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)nargs;
-    USym *name = arg_name(vm, args[0]);
+    const USym *name = arg_name(vm, args[0]);
     if (!name) return urbi_raise_type(vm, "hasLocalSlot: name must be a String", out);
-    UObject *recv = self_object(self);
+    const UObject *recv = self_object(self);
     *out = urbi_make_bool(recv != NULL && uobj_find_local(recv, name) >= 0);
     return UEXEC_OK;
 }
@@ -462,7 +462,7 @@ static int obj_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValu
 
 /* --- the table ---------------------------------------------------------- */
 
-const UMethodDef k_object_methods[K_OBJECT_NMETHODS] = {
+const UMethodDef ustdlib_object_methods[USTDLIB_OBJECT_NMETHODS] = {
     { "setSlot",         obj_setSlot,         2, 2 },
     { "getSlot",         obj_getSlot,         1, 1 },
     { "getSlotValue",    obj_getSlotValue,    1, 1 },   /* legacy alias */

@@ -10,8 +10,8 @@
 
 #include "rt/ustdlib_glue.h"
 
-enum { K_REGEXP_NMETHODS = 3 };
-extern const UMethodDef k_regexp_methods[K_REGEXP_NMETHODS];
+enum { USTDLIB_REGEXP_NMETHODS = 3 };
+extern const UMethodDef ustdlib_regexp_methods[USTDLIB_REGEXP_NMETHODS];
 
 int urbi_regexp_init(UVM *vm, UObject *proto);
 

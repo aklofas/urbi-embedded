@@ -1148,11 +1148,11 @@ str_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  * Arity is declared here and enforced by uexec before a body runs, which
  * is why none of the bodies above count their arguments. */
 
-const UMethodDef k_bool_methods[K_BOOL_NMETHODS] = {
+const UMethodDef ustdlib_bool_methods[USTDLIB_BOOL_NMETHODS] = {
     { "negate",   bool_negate,   0, 0 },
     { "toString", bool_toString, 0, 0 }
 };
-const UMethodDef k_int_methods[K_INT_NMETHODS] = {
+const UMethodDef ustdlib_int_methods[USTDLIB_INT_NMETHODS] = {
     { "asString",  int_asString,  0, 0 },
     { "asFloat",   int_asFloat,   0, 0 },
     { "asBoolean", int_asBoolean, 0, 0 },
@@ -1166,7 +1166,7 @@ const UMethodDef k_int_methods[K_INT_NMETHODS] = {
     { "ushr",      int_ushr,      1, 1 },
     { "%",         int_mod,       1, 1 }
 };
-const UMethodDef k_float_methods[K_FLOAT_NMETHODS] = {
+const UMethodDef ustdlib_float_methods[USTDLIB_FLOAT_NMETHODS] = {
     { "sqrt",  flt_sqrt,  0, 0 }, { "sin",   flt_sin,   0, 0 },
     { "cos",   flt_cos,   0, 0 }, { "tan",   flt_tan,   0, 0 },
     { "asin",  flt_asin,  0, 0 }, { "acos",  flt_acos,  0, 0 },
@@ -1183,7 +1183,7 @@ const UMethodDef k_float_methods[K_FLOAT_NMETHODS] = {
     { "%",          flt_mod,        1, 1 },
     { "random",     flt_random,     0, 0 }
 };
-const UMethodDef k_string_methods[K_STRING_NMETHODS] = {
+const UMethodDef ustdlib_string_methods[USTDLIB_STRING_NMETHODS] = {
     { "size",       str_size,       0, 0 },
     { "length",     str_size,       0, 0 },   /* legacy spelling of size */
     { "isEmpty",    str_isEmpty,    0, 0 },

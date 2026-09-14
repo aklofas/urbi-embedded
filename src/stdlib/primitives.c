@@ -377,21 +377,21 @@ duration_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === the tables ========================================================== */
 
-const UMethodDef k_mutex_methods[K_MUTEX_NMETHODS] = {
+const UMethodDef ustdlib_mutex_methods[USTDLIB_MUTEX_NMETHODS] = {
     { "new",     mutex_new,     0, 0 },
     { "locked",  mutex_locked,  0, 0 },
     { "lock",    mutex_lock,    0, 0 },
     { "unlock",  mutex_unlock,  0, 0 },
     { "tryLock", mutex_trylock, 0, 0 }
 };
-const UMethodDef k_date_methods[K_DATE_NMETHODS] = {
+const UMethodDef ustdlib_date_methods[USTDLIB_DATE_NMETHODS] = {
     { "now",         date_now,          0, 0 },
     { "fromSeconds", date_from_seconds, 1, 1 },
     { "seconds",     date_seconds,      0, 0 },
     { "asString",    date_as_string,    0, 0 },
     { "plus",        date_plus,         1, 1 }
 };
-const UMethodDef k_duration_methods[K_DURATION_NMETHODS] = {
+const UMethodDef ustdlib_duration_methods[USTDLIB_DURATION_NMETHODS] = {
     { "fromMicroseconds", duration_from_micros, 1, 1 },
     { "asMicroseconds",   duration_micros,      0, 0 },
     { "asMilliseconds",   duration_millis,      0, 0 },

@@ -185,7 +185,7 @@ global_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  * Math carries constants and no methods, so it has no table at all: its
  * whole content is installed by urbi_namespaces_init below. */
 
-const UMethodDef k_system_methods[K_SYSTEM_NMETHODS] = {
+const UMethodDef ustdlib_system_methods[USTDLIB_SYSTEM_NMETHODS] = {
     { "time",    sys_time,    0, 0 },
     { "time_us", sys_time_us, 0, 0 },
     { "cycle",   sys_cycle,   0, 0 },
@@ -193,7 +193,7 @@ const UMethodDef k_system_methods[K_SYSTEM_NMETHODS] = {
     { "gc",      sys_gc,      0, 0 }
 };
 
-const UMethodDef k_global_methods[K_GLOBAL_NMETHODS] = {
+const UMethodDef ustdlib_global_methods[USTDLIB_GLOBAL_NMETHODS] = {
     { "length", global_length, 0, 0 }
 };
 

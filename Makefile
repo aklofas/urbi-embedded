@@ -245,7 +245,7 @@ $(BUILDDIR)/tests/rt/runner: $(RT_TEST_SRCS) $(RT_LIB) $(FRONTEND_OBJS)
 
 .PHONY: test-rt check-rt-layering
 test-rt: $(BUILDDIR)/tests/rt/runner check-rt-layering
-	$<
+	$(RUNNER_WRAPPER) $<
 check-rt-layering:
 	sh tests/scripts/check_rt_layering.sh
 
@@ -529,7 +529,7 @@ test-corpus-sanitize:
 	@$(MAKE) TARGET=host-ubsan \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=undefined -fno-omit-frame-pointer" \
 		urbi-bin
-	bash tests/integration/test_full_corpus_sanitize.sh
+	CHK_GATE_DIRS="$(CHK_GATE_DIRS)" bash tests/integration/test_full_corpus_sanitize.sh
 
 # --- Release test aggregate --------------------------------------------
 #

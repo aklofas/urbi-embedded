@@ -24,6 +24,6 @@ static int isa_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue 
     return UEXEC_OK;
 }
 
-const UMethodDef k_isa_methods[K_ISA_NMETHODS] = {
+const UMethodDef ustdlib_isa_methods[USTDLIB_ISA_NMETHODS] = {
     { "isA", isa_native, 1, 1 }
 };

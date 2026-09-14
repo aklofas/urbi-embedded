@@ -104,13 +104,15 @@ constVariablePointer:src/stdlib/containers.c
 // Exception primitive's exc_new only reads args[0] so cppcheck flags it,
 // but the function-pointer signature is pinned and cannot be const-qualified
 // without breaking every callback registration site.
-constParameterPointer:src/stdlib/runtime_types.c
+// (retired at the re-foundation: cppcheck now reports these sites with the
+// Callback spelling, covered by the refound-task9 block at the end.)
 
 // audit:CPPCHK-Phase9 — src/stdlib/primitives.c native-method callbacks
 // (Mutex / Date / Duration .new / .fromSeconds / .fromMicroseconds / .plus)
 // expose UValue *args via the urbi_native_method_fn typedef; same rationale
 // as Phase 7 — the function-pointer signature is pinned.
-constParameterPointer:src/stdlib/primitives.c
+// (retired at the re-foundation: same Callback-spelling move as
+// runtime_types.c above.)
 
 // audit:CPPCHK-Phase-v091 — src/stdlib/debug_namespace.c native-method
 // callbacks (Debug.stack / Debug.slots / etc.) expose UValue *args via the
@@ -245,3 +247,20 @@ shadowVariable:src/parse/uparse_stmt.c:662
 // only the hosted one, reporting the check as always-false without
 // accounting for the freestanding configuration where it is not.
 knownConditionTrueFalse:src/chunk/uchunk_strand.c:424
+
+// audit:refound-task9 — every src/stdlib file and rt/uboot.c defines native
+// methods whose signature is pinned by the boot table's UMethodDef:
+//   int (*)(UVM *, UValue self, UValue *args, uint8_t nargs, UValue *out)
+// A body that only READS args[0] draws constParameterCallback, but
+// const-qualifying one body would need a cast at its table entry and
+// would then diverge from every other row.  Same rationale as the
+// per-file constParameterPointer entries above; cppcheck emits the
+// Callback spelling for these because it can see the function-pointer
+// table in the same translation unit or its header.
+constParameterCallback:src/rt/uboot.c
+constParameterCallback:src/stdlib/object_root.c
+constParameterCallback:src/stdlib/atoms.c
+constParameterCallback:src/stdlib/namespaces.c
+constParameterCallback:src/stdlib/primitives.c
+constParameterCallback:src/stdlib/regexp.c
+constParameterCallback:src/stdlib/runtime_types.c

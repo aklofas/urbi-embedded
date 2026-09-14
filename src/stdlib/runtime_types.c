@@ -41,7 +41,7 @@ static int exc_raise(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *
     return uexec_throw_value(vm, s, self);
 }
 
-const UMethodDef k_exception_methods[K_EXCEPTION_NMETHODS] = {
+const UMethodDef ustdlib_exception_methods[USTDLIB_EXCEPTION_NMETHODS] = {
     { "new",   exc_new,   1, 1 },
     { "raise", exc_raise, 0, 0 }
 };

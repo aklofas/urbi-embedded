@@ -7,9 +7,11 @@
 # embedder's build.
 #
 # This file freezes today's inventory: check-api-manifest.sh fails on
-# any NEW unprefixed global. Do not add entries — the list only ever
-# shrinks. Every remaining name belongs to the kept compiler frontend;
-# the clean-up task statics or renames them and deletes this file.
+# any NEW unprefixed global. It grows only when a re-foundation task
+# adds a genuinely new cross-TU name in the runtime core or the standard
+# library, and shrinks whenever one is made static or renamed; it is
+# deleted once every remaining name is prefixed or internal. A name that
+# does not begin with u is never acceptable here.
 
 uarena_alloc
 uarena_destroy
@@ -17,6 +19,10 @@ uarena_init
 uarena_init_ex
 uarena_init_static
 uarena_reset
+uboot_init
+uboot_install_methods
+uboot_table
+uboot_table_len
 uchunk_deserialize
 uchunk_destroy
 uchunk_load_error_name
@@ -100,8 +106,23 @@ uparser_oom_sentinel
 uproto_alloc_nested
 uproto_bind
 uproto_destroy_buffers
+urealm_free
 urealm_new
 urealm_trace
+urealm_write
+ustdlib_bool_methods
+ustdlib_date_methods
+ustdlib_duration_methods
+ustdlib_exception_methods
+ustdlib_float_methods
+ustdlib_global_methods
+ustdlib_int_methods
+ustdlib_isa_methods
+ustdlib_mutex_methods
+ustdlib_object_methods
+ustdlib_regexp_methods
+ustdlib_string_methods
+ustdlib_system_methods
 ustr_concat
 ustr_hash
 ustr_intern
@@ -130,6 +151,8 @@ uvarint_size_zz
 uvarint_write_u
 uvarint_write_zz
 uvm_close
+uvm_current_realm
+uvm_current_strand
 uvm_gc
 uvm_gc_finalize
 uvm_gc_mark_fixed

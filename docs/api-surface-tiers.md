@@ -13,9 +13,10 @@ Two tiers while the core is being re-founded:
   their final signature; they return `URBI_ERR_INVALID_STATE` until it
   does.
 - **Internal-leak (T4)** — exported from the archive but declared in no
-  public header. All of these belong to the kept compiler frontend
-  (lexer, parser, emitter, chunk loader). They are not for embedders and
-  lose their external linkage in the clean-up task.
+  public header. Two groups: the kept compiler frontend (lexer, parser,
+  emitter, chunk loader), and the standard library's runtime glue, whose
+  one header `src/rt/ustdlib_glue.h` is internal. Neither is for
+  embedders, and both lose their external linkage in the clean-up task.
 
 Inline functions (`urbi_make_*`, `urbi_value_is_*`, `urbi_value_as_*` in
 `include/urbi/types.h`) are part of the stable surface but never appear
@@ -104,10 +105,60 @@ New public symbols require a PR-review-touch on this manifest.
 
 ---
 
-## Tier 4 — Internal-leak (compiler frontend)
+## Tier 4 — Internal-leak (the frontend and the stdlib glue)
 
-Cross-translation-unit helpers of the kept frontend. Not declared in any
-public header; not for embedders.
+Cross-translation-unit helpers. Not declared in any public header; not
+for embedders.
+
+### The standard library's runtime glue
+
+Declared in `src/rt/ustdlib_glue.h`, the one header a `src/stdlib` file
+includes, plus the per-built-in init hooks the boot table calls and the
+baked overlay blob. They carry the `urbi_` prefix because the stdlib
+bodies they serve were written against the old public-looking names;
+none of them is part of the embedding surface.
+
+- `urbi_call_closure`
+- `urbi_dict_new`
+- `urbi_exception_init`
+- `urbi_list_append`
+- `urbi_list_get`
+- `urbi_list_len`
+- `urbi_list_new`
+- `urbi_make_str`
+- `urbi_make_str_interned`
+- `urbi_namespaces_init`
+- `urbi_object_add_proto`
+- `urbi_object_clone`
+- `urbi_object_find_local`
+- `urbi_object_install_property`
+- `urbi_object_new`
+- `urbi_object_proto_at`
+- `urbi_object_proto_count`
+- `urbi_object_remove_proto`
+- `urbi_object_remove_slot`
+- `urbi_object_resolve_slot`
+- `urbi_object_set_local_slot`
+- `urbi_object_set_protos`
+- `urbi_primitives_init`
+- `urbi_raise_arity`
+- `urbi_raise_divzero`
+- `urbi_raise_index`
+- `urbi_raise_lookup`
+- `urbi_raise_oom`
+- `urbi_raise_range`
+- `urbi_raise_type`
+- `urbi_raise_typed`
+- `urbi_realm_get_global`
+- `urbi_realm_set_global`
+- `urbi_regexp_init`
+- `urbi_regexp_search`
+- `urbi_stdlib_bytecode`
+- `urbi_stdlib_bytecode_len`
+- `urbi_stdlib_write`
+- `urbi_str_to_sym`
+
+### The kept compiler frontend
 
 - `urbi_chunk_decode_verify`
 - `urbi_chunk_verify_bounds`

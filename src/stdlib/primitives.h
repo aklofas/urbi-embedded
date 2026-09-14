@@ -7,12 +7,12 @@
 
 #include "rt/ustdlib_glue.h"
 
-enum { K_MUTEX_NMETHODS = 5 };
-extern const UMethodDef k_mutex_methods[K_MUTEX_NMETHODS];
-enum { K_DATE_NMETHODS = 5 };
-extern const UMethodDef k_date_methods[K_DATE_NMETHODS];
-enum { K_DURATION_NMETHODS = 4 };
-extern const UMethodDef k_duration_methods[K_DURATION_NMETHODS];
+enum { USTDLIB_MUTEX_NMETHODS = 5 };
+extern const UMethodDef ustdlib_mutex_methods[USTDLIB_MUTEX_NMETHODS];
+enum { USTDLIB_DATE_NMETHODS = 5 };
+extern const UMethodDef ustdlib_date_methods[USTDLIB_DATE_NMETHODS];
+enum { USTDLIB_DURATION_NMETHODS = 4 };
+extern const UMethodDef ustdlib_duration_methods[USTDLIB_DURATION_NMETHODS];
 
 int urbi_primitives_init(UVM *vm);
 

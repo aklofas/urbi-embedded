@@ -108,7 +108,7 @@ static int lobby_echo(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue 
     return lobby_send(vm, uv_nil(), a, 3, out);
 }
 
-static const UMethodDef k_lobby_methods[] = {
+static const UMethodDef ustdlib_lobby_methods[] = {
     { "__builtin_lobby_send", lobby_send, 3, 3 },
     { "echo",                 lobby_echo, 1, 3 }
 };
@@ -185,7 +185,7 @@ static int list_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UVal
     return UEXEC_OK;
 }
 
-static const UMethodDef k_list_methods[] = {
+static const UMethodDef ustdlib_list_methods[] = {
     { "new",      list_new,      0, UMETHOD_VARARGS },
     { "size",     list_size,     0, 0 },
     { "length",   list_size,     0, 0 },
@@ -240,7 +240,7 @@ static int dict_has(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *o
     return UEXEC_OK;
 }
 
-static const UMethodDef k_dict_methods[] = {
+static const UMethodDef ustdlib_dict_methods[] = {
     { "new",  dict_new,  0, 0 },
     { "set",  dict_set,  2, 2 },
     { "get",  dict_get,  1, 1 },
@@ -256,7 +256,7 @@ static const UMethodDef k_dict_methods[] = {
 /* A table exported by a src/stdlib file comes with its own count (the
  * array itself is an incomplete type here); one defined locally in this
  * file can be measured. */
-#define NML(t) k_##t##_methods, (uint16_t)(sizeof k_##t##_methods / sizeof k_##t##_methods[0])
+#define NML(t) ustdlib_##t##_methods, (uint16_t)(sizeof ustdlib_##t##_methods / sizeof ustdlib_##t##_methods[0])
 #define NONE   NULL, 0
 
 /* Every built-in, once.  Order is irrelevant: uboot_init allocates all
@@ -267,14 +267,14 @@ static const UMethodDef k_dict_methods[] = {
  * every realm shares.  Object is deliberately NOT readonly — extending
  * Object is a documented urbiscript idiom. */
 const UBuiltinDef uboot_table[] = {
-    { "Object",  UP_OBJECT,  -1,         k_object_methods, K_OBJECT_NMETHODS,    0 },
+    { "Object",  UP_OBJECT,  -1,         ustdlib_object_methods, USTDLIB_OBJECT_NMETHODS,    0 },
 
     /* Atoms.  Each inherits Object, so `1.clone()` and `"s".hasSlot(...)`
      * work without boxing. */
-    { "Integer", UP_INTEGER, UP_OBJECT,  k_int_methods, K_INT_NMETHODS,       UBOOT_F_READONLY },
-    { "Float",   UP_FLOAT,   UP_OBJECT,  k_float_methods, K_FLOAT_NMETHODS,     UBOOT_F_READONLY },
-    { "String",  UP_STRING,  UP_OBJECT,  k_string_methods, K_STRING_NMETHODS,    UBOOT_F_READONLY },
-    { "Boolean", UP_BOOLEAN, UP_OBJECT,  k_bool_methods, K_BOOL_NMETHODS,      UBOOT_F_READONLY },
+    { "Integer", UP_INTEGER, UP_OBJECT,  ustdlib_int_methods, USTDLIB_INT_NMETHODS,       UBOOT_F_READONLY },
+    { "Float",   UP_FLOAT,   UP_OBJECT,  ustdlib_float_methods, USTDLIB_FLOAT_NMETHODS,     UBOOT_F_READONLY },
+    { "String",  UP_STRING,  UP_OBJECT,  ustdlib_string_methods, USTDLIB_STRING_NMETHODS,    UBOOT_F_READONLY },
+    { "Boolean", UP_BOOLEAN, UP_OBJECT,  ustdlib_bool_methods, USTDLIB_BOOL_NMETHODS,      UBOOT_F_READONLY },
     { "Nil",     UP_NIL,     UP_OBJECT,  NONE,                    UBOOT_F_READONLY },
     { "Void",    UP_VOID,    UP_OBJECT,  NONE,                    UBOOT_F_READONLY },
     { "List",    UP_LIST,    UP_OBJECT,  NML(list),      UBOOT_F_READONLY },
@@ -292,7 +292,7 @@ const UBuiltinDef uboot_table[] = {
     /* The exception family.  It is C data rather than an overlay because
      * the runtime has to be able to throw a TypeError before any script
      * has run. */
-    { "Exception",        UP_EXCEPTION,  UP_OBJECT,    k_exception_methods, K_EXCEPTION_NMETHODS, 0 },
+    { "Exception",        UP_EXCEPTION,  UP_OBJECT,    ustdlib_exception_methods, USTDLIB_EXCEPTION_NMETHODS, 0 },
     { "TypeError",        UP_TYPEERROR,  UP_EXCEPTION, NONE, 0 },
     { "ArityError",       UP_ARITYERROR, UP_EXCEPTION, NONE, 0 },
     { "LookupError",      UP_LOOKUPERROR, UP_EXCEPTION, NONE, 0 },
@@ -308,18 +308,18 @@ const UBuiltinDef uboot_table[] = {
 
     /* Namespaces and primitives. */
     { "Math",     UP_MATH,     UP_OBJECT, NONE,                   UBOOT_F_READONLY },
-    { "System",   UP_SYSTEM,   UP_OBJECT, k_system_methods, K_SYSTEM_NMETHODS,   UBOOT_F_READONLY },
-    { "Date",     UP_DATE,     UP_OBJECT, k_date_methods, K_DATE_NMETHODS,     0 },
-    { "Duration", UP_DURATION, UP_OBJECT, k_duration_methods, K_DURATION_NMETHODS, 0 },
-    { "RegExp",   UP_REGEXP,   UP_OBJECT, k_regexp_methods, K_REGEXP_NMETHODS,   0 },
-    { "Mutex",    UP_MUTEX,    UP_OBJECT, k_mutex_methods, K_MUTEX_NMETHODS,    0 },
+    { "System",   UP_SYSTEM,   UP_OBJECT, ustdlib_system_methods, USTDLIB_SYSTEM_NMETHODS,   UBOOT_F_READONLY },
+    { "Date",     UP_DATE,     UP_OBJECT, ustdlib_date_methods, USTDLIB_DATE_NMETHODS,     0 },
+    { "Duration", UP_DURATION, UP_OBJECT, ustdlib_duration_methods, USTDLIB_DURATION_NMETHODS, 0 },
+    { "RegExp",   UP_REGEXP,   UP_OBJECT, ustdlib_regexp_methods, USTDLIB_REGEXP_NMETHODS,   0 },
+    { "Mutex",    UP_MUTEX,    UP_OBJECT, ustdlib_mutex_methods, USTDLIB_MUTEX_NMETHODS,    0 },
 
     /* Containers beyond List/Dict, and the Global reflection namespace.
      * Pair/Triplet/Tuple have no methods until containers.c lands. */
     { "Pair",    UP_PAIR,    UP_OBJECT,  NONE, 0 },
     { "Triplet", UP_TRIPLET, UP_OBJECT,  NONE, 0 },
     { "Tuple",   UP_TUPLE,   UP_OBJECT,  NONE, 0 },
-    { "Global",  UP_GLOBAL,  UP_OBJECT,  k_global_methods, K_GLOBAL_NMETHODS, 0 },
+    { "Global",  UP_GLOBAL,  UP_OBJECT,  ustdlib_global_methods, USTDLIB_GLOBAL_NMETHODS, 0 },
 
     /* Vestigial.  The legacy fallback() reflection mechanism is not
      * coming back, but the marker slot is what scripts test for, so the
@@ -440,7 +440,7 @@ int uboot_init(UVM *vm)
         if (rc != URBI_OK) return rc;
     }
     {
-        int rc = uboot_install_methods(vm, vm->protos[UP_OBJECT], k_isa_methods, K_ISA_NMETHODS);
+        int rc = uboot_install_methods(vm, vm->protos[UP_OBJECT], ustdlib_isa_methods, USTDLIB_ISA_NMETHODS);
         if (rc != URBI_OK) return rc;
     }
 

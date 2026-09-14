@@ -11,7 +11,7 @@
 
 #include "rt/ustdlib_glue.h"
 
-enum { K_OBJECT_NMETHODS = 19 };
-extern const UMethodDef k_object_methods[K_OBJECT_NMETHODS];
+enum { USTDLIB_OBJECT_NMETHODS = 19 };
+extern const UMethodDef ustdlib_object_methods[USTDLIB_OBJECT_NMETHODS];
 
 #endif

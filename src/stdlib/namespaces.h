@@ -8,10 +8,10 @@
 
 #include "rt/ustdlib_glue.h"
 
-enum { K_SYSTEM_NMETHODS = 5 };
-extern const UMethodDef k_system_methods[K_SYSTEM_NMETHODS];
-enum { K_GLOBAL_NMETHODS = 1 };
-extern const UMethodDef k_global_methods[K_GLOBAL_NMETHODS];
+enum { USTDLIB_SYSTEM_NMETHODS = 5 };
+extern const UMethodDef ustdlib_system_methods[USTDLIB_SYSTEM_NMETHODS];
+enum { USTDLIB_GLOBAL_NMETHODS = 1 };
+extern const UMethodDef ustdlib_global_methods[USTDLIB_GLOBAL_NMETHODS];
 
 int urbi_namespaces_init(UVM *vm);
 

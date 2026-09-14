@@ -326,7 +326,7 @@ regexp_match(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
 /* === the table =========================================================== */
 
-const UMethodDef k_regexp_methods[K_REGEXP_NMETHODS] = {
+const UMethodDef ustdlib_regexp_methods[USTDLIB_REGEXP_NMETHODS] = {
     { "new",   regexp_new,   1, 1 },
     { "test",  regexp_test,  1, 1 },
     { "match", regexp_match, 1, 1 }

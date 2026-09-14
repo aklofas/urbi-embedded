@@ -7,8 +7,8 @@
 
 #include "rt/ustdlib_glue.h"
 
-enum { K_EXCEPTION_NMETHODS = 2 };
-extern const UMethodDef k_exception_methods[K_EXCEPTION_NMETHODS];
+enum { USTDLIB_EXCEPTION_NMETHODS = 2 };
+extern const UMethodDef ustdlib_exception_methods[USTDLIB_EXCEPTION_NMETHODS];
 
 int urbi_exception_init(UVM *vm, UObject *proto);
 

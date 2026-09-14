@@ -10,13 +10,13 @@
 
 #include "rt/ustdlib_glue.h"
 
-enum { K_BOOL_NMETHODS = 2 };
-extern const UMethodDef k_bool_methods[K_BOOL_NMETHODS];
-enum { K_INT_NMETHODS = 12 };
-extern const UMethodDef k_int_methods[K_INT_NMETHODS];
-enum { K_FLOAT_NMETHODS = 23 };
-extern const UMethodDef k_float_methods[K_FLOAT_NMETHODS];
-enum { K_STRING_NMETHODS = 19 };
-extern const UMethodDef k_string_methods[K_STRING_NMETHODS];
+enum { USTDLIB_BOOL_NMETHODS = 2 };
+extern const UMethodDef ustdlib_bool_methods[USTDLIB_BOOL_NMETHODS];
+enum { USTDLIB_INT_NMETHODS = 12 };
+extern const UMethodDef ustdlib_int_methods[USTDLIB_INT_NMETHODS];
+enum { USTDLIB_FLOAT_NMETHODS = 23 };
+extern const UMethodDef ustdlib_float_methods[USTDLIB_FLOAT_NMETHODS];
+enum { USTDLIB_STRING_NMETHODS = 19 };
+extern const UMethodDef ustdlib_string_methods[USTDLIB_STRING_NMETHODS];
 
 #endif
