@@ -1,6 +1,11 @@
 #include "rtest.h"
 #include "fakevm.h"
+#include <stdlib.h>
 #include <string.h>
+
+#include "urbi/urbi.h"
+#include "emit/ufront.h"
+#include "chunk/uchunk.h"
 
 /* These suites drive the real entry point (uexec_run_source) end to end:
  * source in, value out, through the kept frontend and the new dispatch
@@ -150,6 +155,91 @@ static void unknown_opcode_throws(void) {
     fix_close(&fx);
 }
 
+/* Regression: the loader's OP_JMP bound check resolved forward and
+ * backward offsets with the same rule, so a forward jump landing on
+ * exactly instr_count passed every verifier pass and the dispatch loop
+ * then fetched instructions[instr_count] -- the uninitialised slack
+ * between instr_count and instr_cap. */
+static void forward_jmp_past_end_is_rejected(void) {
+    ExecFix fx; fix_open(&fx);
+    const char *src = "var i = 0; while (i < 3) { i = i + 1 } |";
+    char err[256] = {0};
+    UProto *root = NULL;
+    RT_EQ(ufront_compile(fx.vm, src, strlen(src), "<unit>", &root, err, sizeof err), URBI_OK);
+
+    /* Retarget the first forward JMP so it resolves to exactly
+     * instr_count.  Forward offsets are relative to the instruction after
+     * the jump, so the encoded offset is instr_count - k - 1. */
+    int patched = 0;
+    for (size_t k = 0; k < root->instr_count; k++) {
+        uint32_t ins = root->instructions[k];
+        if ((ins & 0xFFu) != (uint32_t)OP_JMP) continue;
+        int off = (int)((ins >> 16) & 0xFFFFu) - 32768;
+        if (off < 0) continue;                      /* a back-edge; leave it alone */
+        int want = (int)root->instr_count - (int)k - 1;
+        root->instructions[k] = (ins & 0x0000FFFFu) | ((uint32_t)(want + 32768) << 16);
+        patched = 1;
+        break;
+    }
+    RT_CHECK(patched);
+
+    ptrdiff_t need = ufront_serialize(root, NULL, 0);
+    RT_CHECK(need > 0);
+    unsigned char *buf = (unsigned char *)malloc((size_t)need);
+    RT_CHECK(buf != NULL);
+    RT_CHECK(ufront_serialize(root, buf, (size_t)need) == need);
+    uchunk_destroy(root, NULL);
+
+    UValue out;
+    int rc = urbi_load(fx.vm, fx.realm, buf, (size_t)need, &out);
+    RT_CHECK(rc != URBI_OK);
+    RT_CHECK(strstr(fx.vm->last_error, "OP_JMP") != NULL);
+    free(buf);
+    fix_close(&fx);
+}
+
+static int reg_probe(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) {
+    (void)vm; (void)self; (void)args; (void)nargs;
+    *out = uv_int(1);
+    return UEXEC_OK;
+}
+
+/* Regression: urbi_register used to pin its owner object through
+ * urbi_ref and unpin it unconditionally, which silently released a pin
+ * the embedder had taken.  It roots on a spare strand now, so a host pin
+ * survives the call and only the host's own urbi_unref clears it. */
+static void register_preserves_a_host_pin(void) {
+    ExecFix fx; fix_open(&fx);
+
+    /* An object reachable from nothing but this local. */
+    UObject *o = uobj_new(fx.vm, NULL);
+    RT_CHECK(o != NULL);
+    UValue ov = uv_obj(o);
+    urbi_ref(fx.vm, ov);
+
+    /* The pin alone keeps it alive across a collection. */
+    ugc_collect(fx.vm);
+    RT_CHECK((o->cell.flags & UCELL_F_PINNED) != 0);
+    RT_EQ(o->cell.type, (uint8_t)UCELL_OBJ);
+
+    /* Make it reachable by name so urbi_register's path walk finds it. */
+    RT_EQ(urbi_global_set(fx.vm, fx.realm, "Probe", ov), URBI_OK);
+    RT_EQ(urbi_register(fx.vm, "Probe.ping", reg_probe, 0, 0), URBI_OK);
+
+    /* The host's pin is still there. */
+    RT_CHECK((o->cell.flags & UCELL_F_PINNED) != 0);
+    ugc_collect(fx.vm);
+    RT_EQ(o->cell.type, (uint8_t)UCELL_OBJ);
+
+    UValue v;
+    RT_EQ(run(&fx, "Probe.ping() |", &v), URBI_OK);
+    RT_EQ(v.v.i, 1);
+
+    urbi_unref(fx.vm, ov);
+    RT_CHECK((o->cell.flags & UCELL_F_PINNED) == 0);
+    fix_close(&fx);
+}
+
 RT_SUITE(rt_exec_suite) {
     rt_run("int_arithmetic", int_arithmetic);
     rt_run("function_call_returns_value", function_call_returns_value);
@@ -160,4 +250,6 @@ RT_SUITE(rt_exec_suite) {
     rt_run("control_flow", control_flow);
     rt_run("deep_recursion_and_reclaim", deep_recursion_and_reclaim);
     rt_run("unknown_opcode_throws", unknown_opcode_throws);
+    rt_run("forward_jmp_past_end_is_rejected", forward_jmp_past_end_is_rejected);
+    rt_run("register_preserves_a_host_pin", register_preserves_a_host_pin);
 }
