@@ -7,7 +7,19 @@
 #include "chunk/uchunk.h"
 #include "emit/ufront.h"
 
-#include <stdio.h>    /* the value formatter's float/int rendering */
+/* src/rt/ is held to the freestanding rule (no libc beyond <stdint.h>,
+ * <stddef.h>, <stdbool.h>, <string.h>, <math.h>), which
+ * tests/scripts/check_rt_layering.sh enforces.  urbi_value_to_string
+ * needs snprintf's "%.14g" and therefore lives in src/host/uformat.c. */
+
+/* Copies a literal into a caller buffer, always NUL-terminating. */
+static void uapi_set_err(char *err, size_t errcap, const char *msg)
+{
+    if (!err || errcap == 0) return;
+    size_t i = 0;
+    while (msg[i] && i + 1 < errcap) { err[i] = msg[i]; i++; }
+    err[i] = '\0';
+}
 
 /* ===================================================================
  * Lifecycle
@@ -82,7 +94,7 @@ int urbi_compile(UVM *vm, const char *src, size_t n, const char *name,
 
     ptrdiff_t need = ufront_serialize(root, NULL, 0);
     if (need < 0) {
-        if (err && errcap) snprintf(err, errcap, "serialize size-query failed");
+        uapi_set_err(err, errcap, "serialize size-query failed");
         uchunk_destroy(root, NULL);
         return URBI_ERR_COMPILE;
     }
@@ -92,7 +104,7 @@ int urbi_compile(UVM *vm, const char *src, size_t n, const char *name,
     uchunk_destroy(root, NULL);
     if (wrote != need) {
         vm->gc.alloc(buf, 0, vm->gc.alloc_ud);
-        if (err && errcap) snprintf(err, errcap, "serialize produced an unexpected length");
+        uapi_set_err(err, errcap, "serialize produced an unexpected length");
         return URBI_ERR_COMPILE;
     }
     *out_bytes = buf;
@@ -187,6 +199,10 @@ UValue urbi_make_string(UVM *vm, const char *bytes, size_t n)
     return s ? uv_str(s) : urbi_make_nil();
 }
 
+/* One pin bit per cell, not a counter — see the header.  The runtime
+ * never touches it: anything the core needs to hold across an allocation
+ * goes on a strand's C-root stack instead, so a host's pin is only ever
+ * cleared by that host's own urbi_unref. */
 void urbi_ref(UVM *vm, UValue v)
 {
     (void)vm;
@@ -199,79 +215,6 @@ void urbi_unref(UVM *vm, UValue v)
     (void)vm;
     if (v.kind == UV_STR || v.kind == UV_OBJ || v.kind == UV_CELL)
         ((UCell *)v.v.p)->flags &= (uint16_t)~UCELL_F_PINNED;
-}
-
-/* Renders a value the way the REPL prints it.  The float rule is Lua's:
- * print with %.14g, then append ".0" when the result reads as an
- * integer, so 4/2 shows as 2.0 rather than 2.  The .chk corpus pins
- * this spelling. */
-size_t urbi_value_to_string(UVM *vm, UValue v, char *buf, size_t cap)
-{
-    (void)vm;
-    if (cap == 0) return 0;
-    int n = 0;
-    switch (v.kind) {
-    case UV_NIL:  n = snprintf(buf, cap, "nil"); break;
-    case UV_BOOL: n = snprintf(buf, cap, "%s", v.v.i ? "true" : "false"); break;
-    case UV_INT:  n = snprintf(buf, cap, "%lld", (long long)v.v.i); break;
-    case UV_FLOAT: {
-        n = snprintf(buf, cap, "%.14g", v.v.f);
-        if (n < 0 || (size_t)n >= cap) break;
-        int needs_dot_zero = 1;
-        for (int k = 0; k < n; k++) {
-            char c = buf[k];
-            if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'i') { needs_dot_zero = 0; break; }
-        }
-        if (needs_dot_zero && (size_t)n + 2U < cap) {
-            buf[n++] = '.'; buf[n++] = '0'; buf[n] = '\0';
-        }
-        break;
-    }
-    case UV_SYM: case UV_STR: {
-        uint32_t len;
-        const char *s = uv_str_bytes(v, &len);
-        size_t w = 0;
-        if (w + 1 >= cap) { buf[0] = '\0'; return 0; }
-        buf[w++] = '"';
-        for (uint32_t k = 0; k < len; k++) {
-            unsigned char c = (unsigned char)s[k];
-            const char *esc = NULL;
-            switch (c) {
-            case '\\': esc = "\\\\"; break;
-            case '"':  esc = "\\\""; break;
-            case '\n': esc = "\\n"; break;
-            case '\t': esc = "\\t"; break;
-            case '\r': esc = "\\r"; break;
-            default: break;
-            }
-            if (esc) {
-                if (w + 3 >= cap) break;
-                buf[w++] = esc[0]; buf[w++] = esc[1];
-            } else if (c >= 0x20 && c < 0x7f) {
-                if (w + 2 >= cap) break;
-                buf[w++] = (char)c;
-            } else {
-                static const char hex[] = "0123456789abcdef";
-                if (w + 5 >= cap) break;
-                buf[w++] = '\\'; buf[w++] = 'x';
-                buf[w++] = hex[(c >> 4) & 0xf]; buf[w++] = hex[c & 0xf];
-            }
-        }
-        if (w + 1 >= cap) { buf[w] = '\0'; return w; }
-        buf[w++] = '"';
-        buf[w] = '\0';
-        return w;
-    }
-    case UV_OBJ: n = snprintf(buf, cap, "<object %p>", v.v.p); break;
-    default:
-        /* Closures and void render as "<?>" — the spelling the corpus
-         * has pinned since the first REPL fixtures. */
-        n = snprintf(buf, cap, "<?>");
-        break;
-    }
-    if (n < 0) { buf[0] = '\0'; return 0; }
-    if ((size_t)n >= cap) return cap - 1;
-    return (size_t)n;
 }
 
 /* ===================================================================
@@ -357,10 +300,17 @@ int urbi_register(UVM *vm, const char *path, urbi_native_fn fn,
 
     USym *name = usym_cstr(vm, seg);
     if (!name) return URBI_ERR_OOM;
+    /* uclosure_native may collect, and `owner` is only reachable through
+     * a C local here.  Root it on a spare strand rather than through
+     * urbi_ref: the pin bit belongs to the host, and clearing it here
+     * would unpin an object the embedder had pinned itself. */
+    UStrand *s = uvm_spare_acquire(vm, realm);
+    if (!s) return URBI_ERR_OOM;
     UValue ownerv = uv_obj(owner);
-    urbi_ref(vm, ownerv);   /* uclosure_native may collect */
+    USTRAND_ROOT(s, ownerv);
     UClosure *cl = uclosure_native(vm, fn, min_args, max_args);
-    urbi_unref(vm, ownerv);
+    USTRAND_UNROOT(s, ownerv);
+    uvm_spare_release(vm, s);
     if (!cl) return URBI_ERR_OOM;
     return uobj_set_local(vm, owner, name, uv_ptr(UV_CELL, cl), 0) < 0 ? URBI_ERR_OOM : URBI_OK;
 }

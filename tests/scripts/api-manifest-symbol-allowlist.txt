@@ -100,7 +100,6 @@ uparser_oom_sentinel
 uproto_alloc_nested
 uproto_bind
 uproto_destroy_buffers
-uproto_strand_refcount_dec
 urealm_new
 urealm_trace
 ustr_concat

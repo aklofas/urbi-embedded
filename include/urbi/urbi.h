@@ -139,13 +139,25 @@ void urbi_chunk_free(UVM *vm, uint8_t *bytes, size_t n);
 UValue urbi_make_string(UVM *vm, const char *bytes, size_t n);
 
 /* Render any value the way the REPL prints it.  Returns the number of
- * bytes written (always NUL-terminated when cap > 0). */
+ * bytes written (always NUL-terminated when cap > 0).
+ *
+ * Hosted builds only: the Float rendering the .chk corpus pins needs
+ * snprintf, so this lives outside the freestanding core
+ * (src/host/uformat.c) and is absent from a freestanding build, the same
+ * way urbi_compile is absent without the compiler frontend. */
 size_t urbi_value_to_string(UVM *vm, UValue v, char *buf, size_t cap);
 
 /* Keep a heap value alive across calls that may collect, and release it
  * again.  A value held only in host C memory is invisible to the
- * collector; urbi_ref pins it until the matching urbi_unref.  Both are
- * no-ops for immediate values (numbers, booleans, nil, void). */
+ * collector; urbi_ref pins it and urbi_unref releases it.  Both are
+ * no-ops for immediate values (numbers, booleans, nil, void).
+ *
+ * This is ONE PIN BIT PER CELL, not a reference count: a second urbi_ref
+ * on an already-pinned value changes nothing, and the first urbi_unref
+ * releases it regardless of how many times it was pinned.  Nesting is
+ * not supported — a host that needs it must count on its own side.  The
+ * runtime never sets or clears this bit for its own purposes, so a pin
+ * is only ever released by the host that took it. */
 void urbi_ref(UVM *vm, UValue v);
 void urbi_unref(UVM *vm, UValue v);
 

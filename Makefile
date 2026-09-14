@@ -114,7 +114,13 @@ endif
 #                   varint codec).  src/value/uintern.c is NOT built: the
 #                   intern seam is implemented in src/emit/ufront.c over
 #                   the new core's USym table.
+#   src/host/     — public API whose implementation is inherently hosted
+#                   (the value formatter needs snprintf), kept out of
+#                   src/rt/ so the freestanding rule there stays true.
 #   RT_SRCS       — the new runtime core under src/rt/.
+#
+# src/chunk/uproto_ref.c is NOT built: the UProto refcount family served
+# the old core's lifetime model and has no caller left.
 #
 # Everything else (src/vm, src/sched, src/gc, src/object, src/realm,
 # src/watcher, src/event, src/tag, src/changed, src/runtime, src/repl,
@@ -128,10 +134,10 @@ FRONTEND_SRCS := \
        src/chunk/uchunk_io.c \
        src/chunk/uchunk_verify.c \
        src/chunk/uopcode_shape.c \
-       src/chunk/uproto_ref.c \
        src/runtime/urequire.c \
        src/value/uarena.c \
-       src/value/uvarint.c
+       src/value/uvarint.c \
+       $(wildcard src/host/*.c)
 
 SRC := $(FRONTEND_SRCS) $(wildcard src/rt/*.c)
 TEST_SRC :=

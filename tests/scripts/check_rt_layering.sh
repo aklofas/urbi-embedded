@@ -35,6 +35,19 @@ for f in src/rt/*.c src/rt/*.h; do
     if grep -qE '#include "(vm|sched|object|gc|runtime|watcher|event|tag|realm|changed|value)/' "$f"; then
         echo "LAYERING: $f includes an old-runtime header"; rc=1
     fi
+    # Freestanding rule (spec section 3): src/rt/ uses no libc beyond
+    # these five headers.  Anything hosted -- snprintf, malloc, assert --
+    # belongs in src/host/ or the frontend, not in the core that has to
+    # build for a microcontroller.  test-freestanding-host is parked with
+    # the old core, so without this check nothing catches a regression
+    # until a port task tries to compile.
+    for sys in $(grep -oE '#include[[:space:]]*<[a-z./]+>' "$f" |
+                 sed -E 's/.*<([a-z./]+)>/\1/'); do
+        case "$sys" in
+            stdint.h|stddef.h|stdbool.h|string.h|math.h) ;;
+            *) echo "LAYERING: $f includes <$sys> (src/rt may use only stdint.h stddef.h stdbool.h string.h math.h)"; rc=1 ;;
+        esac
+    done
 done
 for f in src/stdlib/*.c src/stdlib/*.h; do
     [ -f "$f" ] || continue
