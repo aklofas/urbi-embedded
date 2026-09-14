@@ -121,7 +121,13 @@ typedef enum {
 
 /* --- API --- */
 
-void uproto_strand_refcount_dec(UProto *root, struct UVM *vm);
+/* uproto_strand_refcount_dec and the whole UProto refcount family
+ * (urbi_proto_ref_* in src/chunk/uproto_ref.c) served the old core's
+ * strand/closure lifetime model.  The re-founded core owns a bound
+ * chunk through one GC cell, so nothing bumps a refcount any more:
+ * the helper is gone and uproto_ref.c has left the build.  The
+ * declarations in uproto.h stay until the clean-up task sweeps the
+ * parked tree. */
 
 /* Allocate a new UProto as parent_proto->nested[nested_count++].
  * Returns pointer to the new proto on success, NULL on OOM.

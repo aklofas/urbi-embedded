@@ -424,16 +424,25 @@ static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
             vi += nupvals;
 
         } else if (op == (uint8_t)OP_JMP) {
-            /* Bx encodes a signed offset biased by 32768:
-             *   target = pc + signed(Bx) - 32768
-             * where pc is the index of the OP_JMP instruction itself.
-             * After the jump, execution resumes at the target; valid range
-             * is [0, instr_count).  The bias means Bx=32768 is a no-op
-             * (target == vi), Bx<32768 jumps backward, Bx>32768 jumps forward. */
+            /* Bx encodes a signed offset biased by 32768, and the two
+             * directions resolve differently -- the emitter has two
+             * encoders for exactly this reason (uemit_jmp_offset /
+             * uemit_jmp_offset_backward):
+             *
+             *   forward  (off >= 0): target = pc + off + 1
+             *   backward (off <  0): target = pc + off
+             *
+             * because a forward offset is relative to the instruction
+             * AFTER the jump while a backward one is relative to the jump
+             * itself.  Resolving both with the backward rule left the
+             * accepted range one short at the top: a forward jump landing
+             * on exactly instr_count passed every pass and then executed
+             * the uninitialised slack between instr_count and instr_cap.
+             * Valid range is [0, instr_count). */
             uint16_t bx = (uint16_t)((ins >> 16) & 0xFFFFU);
             /* Compute target as signed arithmetic, guarding against underflow. */
-            int64_t signed_bx  = (int64_t)bx;
-            int64_t target_i64 = (int64_t)vi + signed_bx - (int64_t)32768;
+            int64_t signed_bx  = (int64_t)bx - (int64_t)32768;
+            int64_t target_i64 = (int64_t)vi + signed_bx + (signed_bx >= 0 ? 1 : 0);
             if (target_i64 < 0 || (size_t)target_i64 >= instr_count) {
                 set_errmsg(d->errmsg, d->errcap,
                            "OP_JMP at pc %zu: Bx=%u resolves to target=%lld"

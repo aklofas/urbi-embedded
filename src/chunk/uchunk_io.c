@@ -871,40 +871,6 @@ fail:
     return rc;
 }
 
-void
-uproto_strand_refcount_dec(UProto *root, struct UVM *vm)
-{
-    if (root == NULL) return;
-    urbi_proto_strand_ref_release(root, URBI_PROTO_REF_OWNER_STRAND);
-    /* Deferred-destroy trigger: self-link sentinel means uchunk_destroy was
-     * called with vm=NULL while a strand was still alive.  Now that the last
-     * strand-bind ref is gone and the sentinel is set, perform the actual
-     * internal free. */
-    if (root->refcount == 0U && root->next_alloc == root) {
-        /* Deferred-destroy triggered: clear sentinel first so
-         * uproto_destroy_buffers can walk nested[] cleanly.
-         * Capture alloc_fn/alloc_ud/heap_allocated BEFORE uproto_destroy_buffers
-         * zeroes the struct (uproto_destroy_buffers calls urbi_zero at the end). */
-        UChunkAllocFn fn    = root->alloc_fn;
-        void          *ud   = root->alloc_ud;
-        bool          heap  = root->heap_allocated;
-        root->next_alloc = NULL;
-        /* Free source_name before uproto_destroy_buffers zeroes the struct. */
-        if (fn != NULL && root->source_name != NULL) {
-            module_buf_free(fn, ud, root->source_name);
-            root->source_name = NULL;
-        }
-        uproto_destroy_buffers(root, fn, ud);
-        if (fn != NULL && heap) {
-            fn(root, 0, ud);
-        }
-        (void)vm;
-    }
-    /* When refcount hits 0 and no self-link sentinel: the root is still
-     * owned by the host.  Do not auto-destroy — the host is responsible for
-     * calling uchunk_destroy explicitly. */
-}
-
 /* nested[k] may be NULL by design:
  *   strand_closure_unlink (src/watcher/uwatcher_install.c) detaches a UProto
  *   from module->nested[] when its UClosure is captured by a watcher
