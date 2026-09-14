@@ -13,6 +13,7 @@ int ugc_init(UGc *g, UAllocFn alloc, void *ud) {
 
 void *ugc_raw_alloc(struct UVM *vm, size_t n) {
     UGc *g = uvm_gc(vm);
+    UGC_ASSERT(!g->in_collect);   /* finalize hooks must not allocate */
     void *p = g->alloc(NULL, n, g->alloc_ud);
     if (p) { memset(p, 0, n); g->bytes_since += n; g->bytes_live += n; g->raw_live += n; }
     return p;
@@ -37,6 +38,7 @@ void ugc_raw_free(struct UVM *vm, void *p, size_t n) {
 
 void *ugc_alloc(struct UVM *vm, UCellType type, size_t n) {
     UGc *g = uvm_gc(vm);
+    UGC_ASSERT(!g->in_collect);   /* finalize hooks must not allocate */
     ugc_maybe_collect(vm);
     UCell *c = (UCell *)g->alloc(NULL, n, g->alloc_ud);
     if (!c) { ugc_collect(vm); c = (UCell *)g->alloc(NULL, n, g->alloc_ud); if (!c) return NULL; }
@@ -55,12 +57,14 @@ void *ugc_alloc(struct UVM *vm, UCellType type, size_t n) {
 
 void ugc_mark(struct UVM *vm, UCell *c) {
     UGc *g = uvm_gc(vm);
-    if (!c || c->marked) return;
-    c->marked = 1;
+    if (!c || c->marked) return;      /* already gray(1) or black(2) */
+    c->marked = 1;                    /* gray: queued, not yet traced */
     if (g->gray_len == g->gray_cap) {
         uint32_t nc = g->gray_cap ? g->gray_cap * 2 : 64;
         UCell **ng = (UCell **)g->alloc(g->gray, nc * sizeof *ng, g->alloc_ud);
-        if (!ng) return;              /* mark stays set; cell traced conservatively as leaf */
+        if (!ng) { g->gray_overflow = 1; return; }   /* stays gray; the post-drain
+                                                       * fallback rescan in ugc_collect
+                                                       * finds and traces it instead. */
         g->gray = ng; g->gray_cap = nc;
     }
     g->gray[g->gray_len++] = c;
@@ -75,12 +79,44 @@ void ugc_collect(struct UVM *vm) {
     if (g->in_collect) return;
     g->in_collect = 1;
     g->gray_len = 0;
+    g->gray_overflow = 0;
     if (g->hooks.mark_fixed) g->hooks.mark_fixed(vm);
-    while (g->gray_len) { UCell *c = g->gray[--g->gray_len]; if (g->hooks.trace) g->hooks.trace(vm, c); }
+    /* A pinned cell survives sweep unconditionally (see below), but that
+     * must not let it also skip tracing -- otherwise a child reachable
+     * only through a pinned parent gets swept while the parent survives.
+     * Marking every pinned cell here queues it (and, once traced, its
+     * children) through the normal gray machinery. */
+    for (UCell *c = g->all; c; c = c->next) if (c->flags & UCELL_F_PINNED) ugc_mark(vm, c);
+    /* Cells that couldn't be pushed onto gray[] (OOM growing it) are still
+     * gray (marked == 1) but were never traced. Drain gray[] normally,
+     * then -- if anything overflowed -- rescan the whole heap once for
+     * leftover gray cells and trace them directly; that may push more
+     * cells onto gray[] (their own children) or overflow again, so loop
+     * back and drain fully before re-checking, rather than trusting the
+     * rescan's own traversal order to reach what it just grayed. Without
+     * this outer loop, a cell discovered only by the rescan would have its
+     * *children* left gray-but-undrained past the end of this function --
+     * harmless for a leaf (sweep keeps any nonzero mark) but wrong for
+     * anything with further descendants. */
+    for (;;) {
+        while (g->gray_len) {
+            UCell *c = g->gray[--g->gray_len];
+            if (g->hooks.trace) g->hooks.trace(vm, c);
+            c->marked = 2;             /* black: reached and traced */
+        }
+        if (!g->gray_overflow) break;
+        g->gray_overflow = 0;
+        for (UCell *c = g->all; c; c = c->next) {
+            if (c->marked == 1) {
+                if (g->hooks.trace) g->hooks.trace(vm, c);
+                c->marked = 2;
+            }
+        }
+    }
     UCell **pp = &g->all; size_t live = 0; uint32_t n = 0;
     while (*pp) {
         UCell *c = *pp;
-        if (c->marked || (c->flags & UCELL_F_PINNED)) { c->marked = 0; live += c->size; n++; pp = &c->next; }
+        if (c->marked) { c->marked = 0; live += c->size; n++; pp = &c->next; }
         else { *pp = c->next; if (g->hooks.finalize) g->hooks.finalize(vm, c); g->alloc(c, 0, g->alloc_ud); }
     }
     /* live counts only swept cell bytes; raw_live (arrays owned by the

@@ -15,7 +15,7 @@ typedef struct UCell {
     struct UCell *next;
     uint32_t size;
     uint8_t  type;       /* UCellType */
-    uint8_t  marked;
+    uint8_t  marked;      /* tri-state: 0 white, 1 gray (queued, not yet traced), 2 black (traced) */
     uint16_t flags;      /* per-type bits; UCELL_F_PINNED is reserved here */
 } UCell;
 #define UCELL_F_PINNED 0x8000
@@ -24,7 +24,13 @@ struct UVM;
 typedef struct UGcRoots {              /* fixed roots the VM registers once */
     void (*mark_fixed)(struct UVM *vm);           /* marks realms, run queue, timers, watchers, protos */
     void (*trace)(struct UVM *vm, UCell *c);      /* marks a cell's children by type */
-    void (*finalize)(struct UVM *vm, UCell *c);   /* frees a cell's owned non-cell memory */
+    /* finalize: frees a cell's owned non-cell memory (typically via
+     * ugc_raw_free). MUST NOT allocate -- directly, via ugc_alloc, or via
+     * ugc_raw_alloc/realloc -- because the collector is mid-sweep while
+     * finalize runs and reentrant allocation would corrupt the in-progress
+     * cell list and gray-stack bookkeeping. Debug builds enforce this with
+     * UGC_ASSERT(!g->in_collect) at the top of ugc_alloc/ugc_raw_alloc. */
+    void (*finalize)(struct UVM *vm, UCell *c);
 } UGcRoots;
 
 typedef struct UGc {
@@ -36,6 +42,7 @@ typedef struct UGc {
     uint32_t cycles, cells_live;
     uint8_t  pause_ratio;         /* percent; 200 = collect when since > 2x live */
     uint8_t  in_collect;
+    uint8_t  gray_overflow;       /* set when a push onto gray[] fails (OOM); cleared by the fallback rescan */
     UGcRoots hooks;
 } UGc;
 
@@ -43,6 +50,16 @@ typedef struct UGc {
  * tests/rt/fakevm.c for the stand-in used before that layer exists. Keeps
  * this header from depending on uexec.h, which would violate layering. */
 UGc *uvm_gc(struct UVM *vm);
+
+/* Debug-only trap for invariants that must never fire in a working build
+ * (e.g. reentrant allocation from a finalize hook). src/rt has no
+ * <assert.h> dependency by policy, so this is a minimal freestanding-safe
+ * substitute: a no-op unless URBI_DEBUG is defined. */
+#ifdef URBI_DEBUG
+#define UGC_ASSERT(cond) do { if (!(cond)) __builtin_trap(); } while (0)
+#else
+#define UGC_ASSERT(cond) do { } while (0)
+#endif
 
 int    ugc_init(UGc *g, UAllocFn alloc, void *ud);
 void   ugc_destroy(struct UVM *vm);                /* frees every cell via finalize + alloc(0) */
