@@ -1,0 +1,26 @@
+# Covers: an uncaught throw on a DETACHED strand is reported, not
+#         swallowed.  The chunk itself succeeds -- its value is the inline
+#         arm's -- so the return code cannot carry the failure, and the
+#         detached arm has no caller to return one to.  Core design
+#         section 9 routes it through the diag callback and the error
+#         channel both; the REPL installs a diag hook that frames it the
+#         same way it frames its own errors.
+#
+# Without that hook the detached arm here throws and the session prints
+# nothing but `2` -- the "errors vanish" shape, moved from the batch path
+# to the detached one.
+#
+# Ordering: the diag fires while the scheduler is still pumping, which is
+# inside the same urbi_run that later prints the chunk's value, so the
+# `!!!` line comes first.
+#
+# `,` detaches the LEFT arm, so `{ throw 1 }` is the detached one and
+# `{ Realm.b = 2 }` runs inline as the chunk's value.
+
+var b = 0
+{ throw 1 } , { Realm.b = 2 }
+Realm.b
+[00000000] 0
+[00000000] !!! 1
+[00000000] 2
+[00000000] 2

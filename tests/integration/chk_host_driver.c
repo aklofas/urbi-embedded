@@ -224,6 +224,16 @@ static void *chk_alloc(void *p, size_t n, void *ud)
     return realloc(p, n);
 }
 
+/* A strand's uncaught throw, framed like a result line.  A detached arm
+ * has no caller to return a code to, so this is the only way a fixture
+ * can pin one; the "!!!" spelling matches the `run` directive's own error
+ * frame because it means the same thing. */
+static void chk_diag(UVM *vm, void *ud, int level, const char *msg, size_t len)
+{
+    (void)vm; (void)ud; (void)level;
+    printf("[00000000] !!! %.*s\n", (int)len, msg);
+}
+
 /* Script output goes to stdout unframed, the way the REPL's writer does
  * it, so an `echo` in a fixture lands in the same stream as the framed
  * result lines. */
@@ -242,6 +252,7 @@ int main(int argc, char *argv[])
     UVM *vm = urbi_open(chk_alloc, NULL, NULL);
     if (!vm) { fclose(fp); fprintf(stderr, "chk-host-driver: urbi_open failed\n"); return 2; }
     urbi_set_writer(vm, chk_writer, NULL);
+    urbi_set_diag(vm, chk_diag, NULL);
     urbi_set_clock(vm, chk_clock, NULL);
     g_now_us = 0;
     g_hostcalls = 0;

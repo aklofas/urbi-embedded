@@ -83,6 +83,15 @@ static UValue run(Fix *fx, const char *src)
     return out;
 }
 
+static UValue run_on(Fix *fx, URealm *r, const char *src)
+{
+    UValue out = urbi_make_nil();
+    char err[256] = { 0 };
+    int rc = urbi_run(fx->vm, r, src, strlen(src), "<test>", &out, err, sizeof err);
+    if (rc != URBI_OK) printf("    run_on(%s) rc=%d err=%s\n", src, rc, err);
+    return out;
+}
+
 /* The value of a global, as an integer (-1 when it is not one). */
 static int64_t global_int(Fix *fx, const char *name)
 {
@@ -448,12 +457,198 @@ static void a_chunk_runs_under_the_connection_tag(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* --- C1/M8: a stopped tag drops EVERY periodic it owns ------------------
+ *
+ * One entry per tag cannot see this.  A scan that removed records one at a
+ * time filled each hole with the heap's last record and sifted it, and a
+ * sift UP carries that record above the scan position -- to an index
+ * already read -- so a victim landing there survived and went on firing.
+ * Seven periodics in this arming order, three of them under `t`, is the
+ * shape that produces the sift-up. */
+static void tag_stop_drops_every_periodic_it_owns(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var t = Tag.new(\"t\")");
+    run(&fx, "var u = Tag.new(\"u\")");
+    run(&fx, "var nt = 0");
+    run(&fx, "var nu = 0");
+    run(&fx, "u: every (12ms) { Realm.nu = Realm.nu + 1 }");
+    run(&fx, "t: every (50ms) { Realm.nt = Realm.nt + 1 }");
+    run(&fx, "t: every (29ms) { Realm.nt = Realm.nt + 1 }");
+    run(&fx, "u: every (23ms) { Realm.nu = Realm.nu + 1 }");
+    run(&fx, "u: every (51ms) { Realm.nu = Realm.nu + 1 }");
+    run(&fx, "u: every (10ms) { Realm.nu = Realm.nu + 1 }");
+    run(&fx, "t: every (14ms) { Realm.nt = Realm.nt + 1 }");
+    RT_EQ(sched(&fx)->heap_len, 7u);
+
+    run(&fx, "t.stop()");
+    /* Exactly the three t owns leave, and the four u owns stay. */
+    RT_EQ(sched(&fx)->heap_len, 4u);
+    for (uint32_t i = 0; i < sched(&fx)->heap_len; i++)
+        RT_CHECK(sched(&fx)->heap[i].tag != NULL);
+
+    /* The heap property survived the bulk removal, so the next deadline is
+     * u's 10 ms one and not whichever record happened to land at the root. */
+    uint64_t wake = 0;
+    RT_EQ(urbi_step(fx.vm, 0, &wake), URBI_STEP_IDLE_UNTIL);
+    RT_EQ(wake, 10000u);
+
+    /* Far past every original deadline: nothing t owned may fire. */
+    RT_EQ(tick(&fx, 200000), URBI_STEP_IDLE_UNTIL);
+    RT_EQ(global_int(&fx, "nt"), 0);
+    RT_EQ(global_int(&fx, "nu"), 4);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* --- I1: freeing a realm takes its timers with it ----------------------- */
+static void freeing_a_realm_drops_its_timers(void)
+{
+    Fix fx; fix_open(&fx);
+    /* The main realm first: the FIRST realm a VM creates becomes it, and
+     * freeing the main realm is refused. */
+    RT_CHECK(urbi_realm_main(fx.vm) != NULL);
+    URealm *r = urbi_realm_new(fx.vm);
+    RT_CHECK(r != NULL && r != urbi_realm_main(fx.vm));
+    /* Under a USER tag, which is the case realm teardown used to miss:
+     * stopping the connection tag reaches connection-tag periodics only. */
+    run_on(&fx, r, "var t = Tag.new()");
+    run_on(&fx, r, "var n = 0");
+    run_on(&fx, r, "t: every (10ms) { Realm.n = Realm.n + 1 }");
+    RT_EQ(sched(&fx)->heap_len, 1u);
+
+    urbi_realm_free(fx.vm, r);
+    RT_EQ(sched(&fx)->heap_len, 0u);
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    /* No body spawns into the dismantled realm, and the VM is done. */
+    RT_EQ(tick(&fx, 100000), URBI_STEP_QUIESCENT);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* --- M11 + I4: a newcomer to a gated scope is gated too ----------------- */
+
+/* A periodic's body is spawned under the tag that armed it, so blocking
+ * that tag has to hold the bodies as well as the members already in the
+ * scope -- otherwise `t.block()` stops nothing that matters. */
+static void spawning_into_a_gated_scope_parks_the_newcomer(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var t = Tag.new()");
+    run(&fx, "var n = 0");
+    run(&fx, "t: every (10ms) { Realm.n = Realm.n + 1 }");
+    run(&fx, "t.block()");
+
+    RT_EQ(tick(&fx, 10000), URBI_STEP_IDLE_UNTIL);
+    RT_EQ(global_int(&fx, "n"), 0);          /* the body spawned, gated */
+    UStrand *body = urbi_realm_main(fx.vm)->strands;
+    RT_CHECK(body != NULL);
+    RT_EQ(body->state, (uint8_t)USTRAND_PARKED);
+    RT_EQ(body->gates, (uint8_t)USTRAND_GATE_BLOCKED);
+
+    /* I4: asking for it to be queued anyway must not queue it.  This is
+     * the last line of defence for the one strand utag_gate cannot reach
+     * -- one that is RUNNING but not the dispatching one, the parent of a
+     * join whose child ran inline. */
+    usched_enqueue(body);
+    RT_EQ(body->state, (uint8_t)USTRAND_PARKED);
+    RT_CHECK(sched(&fx)->run_head == NULL);
+    RT_EQ(global_int(&fx, "n"), 0);
+
+    /* I4, the other guard: a strand already queued is not queued twice. */
+    body->gates = 0;
+    usched_enqueue(body);
+    usched_enqueue(body);
+    RT_CHECK(sched(&fx)->run_head == body);
+    RT_CHECK(sched(&fx)->run_tail == body);
+    RT_CHECK(body->link == NULL);
+
+    run(&fx, "t.unblock()");
+    RT_EQ(global_int(&fx, "n"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* Entering the scope through OP_PUSH_TAG is the other way in. */
+static void entering_a_gated_scope_parks_the_entrant(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var t = Tag.new()");
+    run(&fx, "var mark = 0");
+    run(&fx, "t.block()");
+    /* The chunk's own strand parks at the PUSH_TAG and hands back nil. */
+    UValue v = run(&fx, "t: { Realm.mark = 1 } | 9");
+    RT_EQ(v.kind, (uint8_t)UVAL_NIL);
+    RT_EQ(global_int(&fx, "mark"), 0);
+    RT_CHECK(!urbi_has_live_work(fx.vm));   /* gated, so not runnable */
+
+    run(&fx, "t.unblock()");
+    RT_EQ(global_int(&fx, "mark"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* --- I2: a detached strand's uncaught throw reaches both channels ------- */
+static int diag_hits;
+static char diag_last[128];
+static void count_diag(UVM *vm, void *ud, int level, const char *msg, size_t len)
+{
+    (void)vm; (void)ud; (void)level;
+    diag_hits++;
+    size_t n = len < sizeof diag_last - 1 ? len : sizeof diag_last - 1;
+    memcpy(diag_last, msg, n);
+    diag_last[n] = '\0';
+}
+
+static void a_detached_throw_reaches_both_channels(void)
+{
+    Fix fx; fix_open(&fx);
+    diag_hits = 0;
+    diag_last[0] = '\0';
+    urbi_set_diag(fx.vm, count_diag, NULL);
+    run(&fx, "var b = 0");
+
+    /* The chunk itself succeeds -- its value is the inline arm's -- so the
+     * return code cannot carry the detached arm's failure.  Both other
+     * channels must. */
+    UValue v = run(&fx, "{ throw 1 } , { Realm.b = 2 }");
+    RT_EQ(v.kind, (uint8_t)UVAL_INT);
+    RT_EQ(v.v.i, 2);
+    RT_EQ(diag_hits, 1);
+    RT_STREQ(diag_last, "1");
+    UErrorInfo info;
+    RT_EQ(urbi_last_error(fx.vm, &info), URBI_ERR_UNCAUGHT_THROW);
+    RT_STREQ(info.message, "1");
+
+    /* And the channel describes the CURRENT step, so the next one clears
+     * it rather than leaving a stale failure standing. */
+    RT_EQ(urbi_step(fx.vm, 0, NULL), URBI_STEP_QUIESCENT);
+    RT_EQ(urbi_last_error(fx.vm, &info), URBI_OK);
+
+    /* A chunk's OWN throw is not double-reported: its caller is handed the
+     * same failure as a return code. */
+    diag_hits = 0;
+    char err[256] = { 0 };
+    UValue out = urbi_make_nil();
+    const char *src = "throw 2";
+    RT_EQ(urbi_run(fx.vm, urbi_realm_main(fx.vm), src, strlen(src), NULL, &out, err, sizeof err),
+          URBI_ERR_UNCAUGHT_THROW);
+    RT_EQ(diag_hits, 0);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 RT_SUITE(rt_sched_suite) {
     rt_run("separators_run_both_arms", separators_run_both_arms);
     rt_run("join_waits_for_the_child", join_waits_for_the_child);
     rt_run("sleep_parks_until_its_deadline", sleep_parks_until_its_deadline);
     rt_run("every_fires_on_cadence_and_skips_missed_ticks", every_fires_on_cadence_and_skips_missed_ticks);
     rt_run("tag_stop_cancels_its_periodic", tag_stop_cancels_its_periodic);
+    rt_run("tag_stop_drops_every_periodic_it_owns", tag_stop_drops_every_periodic_it_owns);
+    rt_run("freeing_a_realm_drops_its_timers", freeing_a_realm_drops_its_timers);
+    rt_run("spawning_into_a_gated_scope_parks_the_newcomer", spawning_into_a_gated_scope_parks_the_newcomer);
+    rt_run("entering_a_gated_scope_parks_the_entrant", entering_a_gated_scope_parks_the_entrant);
+    rt_run("a_detached_throw_reaches_both_channels", a_detached_throw_reaches_both_channels);
     rt_run("block_holds_a_woken_sleeper", block_holds_a_woken_sleeper);
     rt_run("block_and_freeze_are_independent", block_and_freeze_are_independent);
     rt_run("a_hundred_sleepers_stay_small", a_hundred_sleepers_stay_small);

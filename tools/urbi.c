@@ -179,6 +179,20 @@ static void cli_writer(void *ud, const char *chan, size_t cl, const char *msg, s
     fflush(stdout);
 }
 
+/* Runtime diagnostics, framed like a result line.
+ *
+ * This is the ONLY way a strand that nobody is waiting on can report a
+ * failure: a detached arm's uncaught throw has no caller to return a code
+ * to, so without a diag hook `{ throw 1 } , { ok() }` succeeds silently.
+ * Same "!!!" spelling as the REPL's own error frame, because it means the
+ * same thing. */
+static void cli_diag(UVM *vm, void *ud, int level, const char *msg, size_t len)
+{
+    (void)vm; (void)ud; (void)level;
+    printf("[%08u] !!! %.*s\n", ms_since_start(), (int)len, msg);
+    fflush(stdout);
+}
+
 /* Monotonic microseconds since process start, so the timestamp the
  * Lobby frame carries and the one the REPL prints share an origin. */
 static uint64_t cli_clock(void *ud)
@@ -366,6 +380,7 @@ int main(int argc, char *argv[]) {
     UVM *vm = urbi_open(cli_alloc, NULL, NULL);
     if (!vm) { fprintf(stderr, "urbi: out of memory\n"); return 1; }
     urbi_set_writer(vm, cli_writer, NULL);
+    urbi_set_diag(vm, cli_diag, NULL);
     urbi_set_clock(vm, cli_clock, NULL);
     int rc = EXIT_SUCCESS;
 

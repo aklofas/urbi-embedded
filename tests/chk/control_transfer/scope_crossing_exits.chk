@@ -41,6 +41,11 @@ Realm.fin3
 #     into the loop tail, so the post-loop code ran TWICE.  The old
 #     expectation here was a "tag.stop with no active scope" fatal, which
 #     the re-founded runtime retires — see tag_stop_no_target.chk.)
+#
+#     WHICH LINE CATCHES THE REGRESSION: `n`, not post4.  Under the stale
+#     entry the resume re-entered the loop tail and post4 reached 2 as
+#     well, so post4 no longer tells the two apart; `n` would be 5 rather
+#     than 3.
 Realm.post4 = 0
 [00000005] 0
 var t4 = Tag.new("c"); var n = 0; while (n < 5) { t4: { n = n + 1; if (n == 3) { break } } }; Realm.post4 = Realm.post4 + 1; t4.stop(); Realm.post4 = Realm.post4 + 1; n

@@ -1,0 +1,29 @@
+# Covers: a cleanup body is ordinary code.  `;` inside a `finally` yields
+#         like `;` anywhere else, so another strand runs between the two
+#         statements, and the return the finally suspended is still
+#         delivered afterwards.
+#
+# The old core suppressed OP_YIELD inside a cleanup body, because a
+# finally ran there as a nested VM invocation and a yield inside one was
+# read as body completion.  The re-founded walker runs a finally as a
+# continuation of its own frame, holding the suspended unwind in a cleanup
+# marker that OP_RESUME hands back (core design section 9), so a yield
+# mid-body is just a yield.  Together with
+# control_transfer/finally_that_sleeps_parks.chk this retires the
+# cleanup-is-atomic rule in full: a cleanup body may yield, may park, and
+# is never a fatal.
+#
+# `|` rather than `;` between the spawn and the call, so the detached
+# strand is queued but has NOT run when f() is entered -- the only place
+# it can run is the yield inside the finally.
+
+var log = ""
+var f = function() { try { return 1 } finally { Realm.log = Realm.log + "F1"; Realm.log = Realm.log + "F2" } }
+__detach_strand(function() { Realm.log = Realm.log + "D" }) | Realm.r = f()
+Realm.log
+Realm.r
+[00000000] ""
+[00000000] <?>
+[00000000] 1
+[00000000] "F1DF2"
+[00000000] 1
