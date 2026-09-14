@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "urbi/urbi.h"
+#include "rt/urealm.h"
 #include "emit/ufront.h"
 #include "chunk/uchunk.h"
 

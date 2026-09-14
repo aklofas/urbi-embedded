@@ -162,28 +162,6 @@ void uvm_close(UVM *vm)
     alloc(vm, 0, ud);
 }
 
-/* --- realms ----------------------------------------------------------- */
-
-void urealm_trace(UVM *vm, URealm *r)
-{
-    if (r->globals) ugc_mark(vm, &r->globals->cell);
-    for (UStrand *s = r->strands; s; s = s->next_in_realm) ugc_mark(vm, &s->cell);
-}
-
-URealm *urealm_new(UVM *vm)
-{
-    URealm *r = (URealm *)ugc_alloc(vm, UCELL_REALM, sizeof(URealm));
-    if (!r) return NULL;
-    /* Link before allocating the globals object: uobj_new may collect, and
-     * the realm is only reachable through vm->realms. */
-    r->next = vm->realms;
-    vm->realms = r;
-    r->globals = uobj_new(vm, vm->root_globals);
-    if (!r->globals) { vm->realms = r->next; return NULL; }
-    if (!vm->main_realm) vm->main_realm = r;
-    return r;
-}
-
 /* --- closures --------------------------------------------------------- */
 
 UClosure *uclosure_native(UVM *vm, int (*fn)(UVM *, UValue, UValue *, uint8_t, UValue *),
@@ -200,13 +178,44 @@ UClosure *uclosure_native(UVM *vm, int (*fn)(UVM *, UValue, UValue *, uint8_t, U
 
 /* --- dispatch prototype for a receiver value -------------------------- */
 
+/* Every value kind resolves slots somewhere.  An object resolves on
+ * itself; every atom resolves on the shared prototype the boot table
+ * installed, so `1.clone()` and `"ab".size` reach Integer/String without
+ * boxing.  A cell that carries its own proto pointer (List, Dict) uses
+ * it when set — a list built before the boot table existed falls back to
+ * the VM's List proto.  NULL only before uboot_init has run, which is
+ * the one state in which a slot access legitimately has nowhere to go. */
 UObject *uv_dispatch_proto(UVM *vm, UValue recv)
 {
-    if (recv.kind == UV_OBJ) return (UObject *)recv.v.p;
-    /* The atom prototypes (Integer, String, List, ...) come online with
-     * the boot table; until then only object receivers dispatch. */
-    (void)vm;
-    return NULL;
+    switch (recv.kind) {
+    case UV_OBJ:   return (UObject *)recv.v.p;
+    case UV_INT:   return vm->protos[UP_INTEGER];
+    case UV_FLOAT: return vm->protos[UP_FLOAT];
+    case UV_STR: case UV_SYM: return vm->protos[UP_STRING];
+    case UV_BOOL:  return vm->protos[UP_BOOLEAN];
+    case UV_NIL:   return vm->protos[UP_NIL];
+    case UV_VOID:  return vm->protos[UP_VOID];
+    case UV_CELL:
+        switch (((UCell *)recv.v.p)->type) {
+        case UCELL_LIST: {
+            UList *l = (UList *)recv.v.p;
+            return l->proto ? l->proto : vm->protos[UP_LIST];
+        }
+        case UCELL_DICT: {
+            UDict *d = (UDict *)recv.v.p;
+            return d->proto ? d->proto : vm->protos[UP_DICT];
+        }
+        case UCELL_CLOSURE: {
+            UClosure *cl = (UClosure *)recv.v.p;
+            return cl->proto_obj ? cl->proto_obj : vm->protos[UP_CLOSURE];
+        }
+        case UCELL_TAG:    return vm->protos[UP_TAG];
+        case UCELL_EVENT:  return vm->protos[UP_EVENT];
+        case UCELL_STRAND: return vm->protos[UP_STRAND];
+        default:           return NULL;
+        }
+    default: return NULL;
+    }
 }
 
 /* --- throwing --------------------------------------------------------- */

@@ -20,13 +20,25 @@ enum { UP_OBJECT = 0, UP_INTEGER, UP_FLOAT, UP_STRING, UP_BOOLEAN, UP_NIL, UP_VO
 
 /* --- realm ----------------------------------------------------------
  *
- * Stub shape until the realm task moves it to rt/urealm.h.  It is a GC
- * cell because UStrand.realm is marked through as one (ustrand_trace). */
+ * One script world.  It is a GC cell because UStrand.realm is marked
+ * through as one (ustrand_trace).
+ *
+ * The struct is completed HERE rather than in rt/urealm.h because the
+ * dispatch loop dereferences `s->realm->globals` on the
+ * OP_LOAD_REALM_GLOBAL path, and uexec sits below urealm in the include
+ * order — uexec.h may not include rt/urealm.h.  The realm's behaviour
+ * (creation, teardown, the writer) lives in rt/urealm.h; only the shape
+ * is here. */
 struct URealm {
     UCell          cell;
-    UObject       *globals;        /* this realm's global object; protos[UP_OBJECT] is its proto */
+    UVM           *vm;             /* owning VM; lets a native reach the VM from a realm handle */
+    UObject       *globals;        /* this realm's globals; vm->root_globals is its proto */
+    struct UTag   *root_tag;       /* NULL until the scheduler task; stopping it kills the realm's strands */
     UStrand       *strands;        /* threaded via UStrand.next_in_realm */
     struct URealm *next;           /* vm->realms list */
+    /* Per-realm output sink.  NULL falls back to the VM-wide writer. */
+    void (*writer)(void *ud, const char *chan, size_t cl, const char *msg, size_t ml);
+    void  *writer_ud;
 };
 
 /* --- bound chunk ----------------------------------------------------
@@ -97,9 +109,10 @@ USched    *uvm_sched(UVM *vm);
 
 static inline uint8_t uproto_max_reg(const UProto *p) { return p ? p->max_reg : 0; }
 
-/* --- realms ---------------------------------------------------------- */
-
-URealm *urealm_new(UVM *vm);                 /* NULL on OOM; the first one becomes vm->main_realm */
+/* --- realms ----------------------------------------------------------
+ *
+ * Declared here only because uvm_gc_trace dispatches UCELL_REALM to it;
+ * defined in urealm.c, alongside the rest of the realm API (rt/urealm.h). */
 void    urealm_trace(UVM *vm, URealm *r);
 
 /* --- closures and chunks --------------------------------------------- */

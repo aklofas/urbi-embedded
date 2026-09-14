@@ -2,7 +2,7 @@
 /* src/rt/uapi.c — the public C API, implemented on the runtime core.
  * See include/urbi/urbi.h for the contract of every function here. */
 
-#include "rt/uexec.h"
+#include "rt/urealm.h"
 #include "urbi/urbi.h"
 #include "chunk/uchunk.h"
 #include "emit/ufront.h"
@@ -65,17 +65,17 @@ void urbi_set_wake(UVM *vm, void (*fn)(void *ud), void *ud)
 
 URealm *urbi_realm_new(UVM *vm) { return vm ? urealm_new(vm) : NULL; }
 
-URealm *urbi_realm_main(UVM *vm) { return vm ? vm->main_realm : NULL; }
-
-void urbi_realm_free(UVM *vm, URealm *realm)
+/* Lazily created: a host that only ever calls urbi_run(vm, NULL, ...)
+ * never names a realm, so the main one is built on first demand rather
+ * than at open. */
+URealm *urbi_realm_main(UVM *vm)
 {
-    if (!vm || !realm || realm == vm->main_realm) return;
-    for (URealm **pp = &vm->realms; *pp; pp = &(*pp)->next) {
-        if (*pp == realm) { *pp = realm->next; realm->next = NULL; break; }
-    }
-    /* The realm cell and everything below it are reclaimed by the next
-     * collection once nothing else refers to them. */
+    if (!vm) return NULL;
+    if (!vm->main_realm) (void)urealm_new(vm);
+    return vm->main_realm;
 }
+
+void urbi_realm_free(UVM *vm, URealm *realm) { urealm_free(vm, realm); }
 
 /* ===================================================================
  * Code

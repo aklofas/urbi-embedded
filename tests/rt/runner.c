@@ -15,6 +15,7 @@ extern void rt_list_suite(void);
 extern void rt_strand_suite(void);
 extern void rt_exec_suite(void);
 extern void rt_api_suite(void);
+extern void rt_realm_suite(void);
 int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);   /* a crashing suite must not lose the log */ 
     rt_run("value", rt_value_suite);
@@ -25,6 +26,7 @@ int main(void) {
     rt_run("strand", rt_strand_suite);
     rt_run("exec", rt_exec_suite);
     rt_run("api", rt_api_suite);
+    rt_run("realm", rt_realm_suite);
     printf("rt: %d cases, %d failed, %d checks\n", cases, failed, rt_checks);
     return failed ? 1 : 0;
 }
