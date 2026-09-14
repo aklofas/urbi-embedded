@@ -1,7 +1,7 @@
 # Milestone: M3
 # Covers: mytag.begin: / mytag.end: scoped hooks — body executes with begin and
 #         end callbacks firing on entry and exit; tag.stop() interrupts end-tagged strand.
-# blocked: v0.10.9-A (D4 deferred — 5 prereq primitives: Tag.clone-fresh-sub-tag, t.enter/t.leave-as-event-property, t.name-script-slot, top-level echo, % String format operator)
+# blocked: v0.10.9-A (D4 deferred — 2 prereq primitives left: Tag.clone-fresh-sub-tag and t.name as a script slot; t.enter/t.leave are event properties now, top-level echo works, and % String format shipped)
 # matrix-row: tag-begin-end
 #
 # Reason:

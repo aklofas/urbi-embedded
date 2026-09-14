@@ -1,22 +1,29 @@
-# Milestone: M3
-# Covers: 'at (trace.enter?)' and 'at (trace.leave?)' reactive watchers fire
-#         on tag entry and exit; works on normal exit, stop, and exception.
-# deferred: v1.x — at(tag.enter?)/at(tag.leave?) events not implemented (T55)
+# Covers: `at sync (trace.enter?)` and `at sync (trace.leave?)` fire on tag
+#         entry and exit, around the scope body.
 # matrix-row: tag-scope-events
+# Legacy: legacy/repos/aldebaran-urbi/tests/2.x/tag/enter-leave.chk
 #
-# Reason:
-#   'at (trace.enter?)' and 'at (trace.leave?)' are reactive watchers on tag-
-#   event pseudo-events — they require the full M5 reactive runtime (watcher
-#   eval loop, event-based firing).  tag.stop() method dispatch is M4.  The
-#   fixture also uses ',' for parallel observation (M5 chk driver).  Tag enter/
-#   leave event emission is part of the watcher subsystem activation in M5.
+# The legacy fixture wrote `at (trace.enter?)`, because the old runtime
+# ran a tag-event subscriber synchronously at the scope boundary and had
+# no other mode.  Here the two modes are spelled apart: a plain
+# `at (e?)` body is a spawned strand and lands after the installing strand
+# next yields, an `at sync (e?)` body runs inline.  Only the sync form can
+# bracket the scope body, which is what this fixture is about, so that is
+# the form it uses; reactive/tag_enter_leave_determinism.chk pins the
+# same ordering with a string accumulator instead of echo.
 #
-# Original urbiscript (activate at M5 with reactive runtime and tag events):
-# # var trace = Tag.new() | {};
-# # at(trace.enter?) echo("enter");
-# # at(trace.leave?) echo("leave");
-# # trace: echo("Say hi");
-# # [00000001] *** enter
-# # [00000002] *** Say hi
-# # [00000003] *** leave
-# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/tag/enter-leave.chk)
+# The legacy source also opened with `var trace = Tag.new() | {}`; the
+# trailing brace-block expression is not in the v1.0 parser and was never
+# load-bearing here.
+
+var trace = Tag.new()
+at sync (trace.enter?) echo("enter")
+at sync (trace.leave?) echo("leave")
+trace: echo("Say hi")
+[00000000] <Tag>
+[00000000] nil
+[00000000] nil
+[00000000] *** enter
+[00000000] *** Say hi
+[00000000] *** leave
+[00000000] nil
