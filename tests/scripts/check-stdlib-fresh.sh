@@ -24,7 +24,7 @@ fi
 
 if ! cmp -s "$BAKED" "$GENERATED"; then
     echo "stdlib bytecode drift — re-bake with:"
-    echo "    ./tools/urbi-compile-stdlib src/stdlib/stdlib.u $BAKED"
+    echo "    make bake-stdlib"
     diff "$BAKED" "$GENERATED" | head -40
     exit 1
 fi

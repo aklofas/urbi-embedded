@@ -361,17 +361,29 @@ tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(BAKE_OBJS) \
 	cc -std=c99 -Wall -Wextra -Wpedantic -Os -Iinclude -Isrc -o $@ $< \
 	    $(BAKE_OBJS) build/host/tools/stub_stdlib_bytecode.o -lm
 
-src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib src/stdlib/stdlib.u
-	./tools/urbi-compile-stdlib src/stdlib/stdlib.u $@
+# Re-baking is EXPLICIT, never a build prerequisite.  The blob and the
+# tool both live outside $(BUILDDIR), so a rule that fires during an
+# ordinary build fires in every sanitizer, coverage and analyzer
+# sub-make at once: under -j they race to link the tool and to rewrite a
+# tracked source, and one sub-make executes a binary another is still
+# writing ("Permission denied").  A stale blob is caught by the freshness
+# gate below instead, which is what a tracked generated file is for.
+.PHONY: bake-stdlib
+bake-stdlib: tools/urbi-compile-stdlib
+	./tools/urbi-compile-stdlib src/stdlib/stdlib.u src/stdlib/urbi_stdlib_bytecode.gen.c
 
 # Drift gate: re-bake and diff against the tracked file, so a stdlib.u
 # edit that was never baked fails the build rather than shipping stale
 # bytecode.  Determinism gate: three bakes of one input must be
 # byte-identical, or the wire-format hashes churn on every build.
+#
+# test-bake-smoke waits on the freshness gate rather than running beside
+# it: both need tools/urbi-compile-stdlib, and two parallel sub-makes
+# linking one out-of-BUILDDIR binary is the same race as above.
 .PHONY: test-stdlib-bytecode-fresh test-bake-smoke
 test-stdlib-bytecode-fresh: tools/urbi-compile-stdlib
 	@./tests/scripts/check-stdlib-fresh.sh
-test-bake-smoke: tools/urbi-compile-stdlib
+test-bake-smoke: test-stdlib-bytecode-fresh
 	@bash tests/scripts/bake_smoke.sh
 
 # --- Integration tests --------------------------------------------------
