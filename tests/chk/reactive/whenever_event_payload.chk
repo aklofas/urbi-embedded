@@ -6,7 +6,6 @@
 #   of e.  The named parameter `n` receives the emit payload each time.
 #   Multiple emits accumulate via Realm.total.
 #
-# Note: single-line body form required; REPL processes one line at a time.
 #
 # Activated: 2026-05-26 as part of v0.10.5-legacy-decisions W9.
 

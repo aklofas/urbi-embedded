@@ -1,0 +1,16 @@
+# Covers: a reactive body may span lines; the REPL reader continues a
+#         statement until braces balance.
+
+var e = Event.new()
+[00000001] <event>
+var n = 0
+[00000002] 0
+whenever (e?) {
+  Realm.n = Realm.n + 1;
+  Realm.n = Realm.n + 1
+}
+[00000003] nil
+e!
+[00000004] nil
+Realm.n
+[00000005] 2

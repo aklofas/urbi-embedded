@@ -609,6 +609,110 @@ static char *history_path(void) {
     return path;
 }
 
+/* Track bracket depth across lines, ignoring brackets inside string
+ * literals and comments, so a statement may span several input lines. */
+typedef struct {
+    int  depth;          /* net open ( [ { */
+    bool in_str;         /* inside "..." */
+    bool in_block;       /* inside slash-star comment */
+} UContState;
+
+static void cont_scan(UContState *st, const char *s, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        char c = s[i];
+        if (st->in_block) {
+            if (c == '*' && i + 1 < n && s[i + 1] == '/') { st->in_block = false; i++; }
+            continue;
+        }
+        if (st->in_str) {
+            if (c == '\\') { i++; continue; }
+            if (c == '"') st->in_str = false;
+            continue;
+        }
+        if (c == '/' && i + 1 < n && s[i + 1] == '/') return;          /* line comment */
+        if (c == '/' && i + 1 < n && s[i + 1] == '*') { st->in_block = true; i++; continue; }
+        if (c == '"') { st->in_str = true; continue; }
+        if (c == '(' || c == '[' || c == '{') st->depth++;
+        if (c == ')' || c == ']' || c == '}') st->depth--;
+    }
+}
+
+/* Accumulator shared by both eval loops in run_interactive() below (the
+ * multiplexed listen-mode loop and the plain/non-tty loop): each physical
+ * line is appended until the bracket depth returns to zero or below
+ * outside a string or block comment, so one statement may span several
+ * input lines. */
+static char     *pending;
+static size_t    pending_len;
+static size_t    pending_cap;
+static UContState cont;
+
+static bool cont_append(const char *line, size_t ll)
+{
+    if (pending_len + ll + 4 > pending_cap) {
+        size_t nc = (pending_cap ? pending_cap * 2 : 256);
+        while (nc < pending_len + ll + 4) nc *= 2;
+        char *np = realloc(pending, nc);
+        if (!np) return false;
+        pending = np; pending_cap = nc;
+    }
+    memcpy(pending + pending_len, line, ll);
+    pending_len += ll;
+    pending[pending_len++] = '\n';
+    cont_scan(&cont, line, ll);
+    return cont.depth <= 0 && !cont.in_str && !cont.in_block;   /* true = ready to eval */
+}
+
+/* Evaluate the accumulated `pending` buffer the same way the reader used
+ * to evaluate a single line: append " |" unless it already ends in '|',
+ * eval, print the [NNNNNNNN] frame, then reset the accumulator.
+ *
+ * cont_append() always appends a '\n' after the most recent physical
+ * line (including the one that completes the statement), so pending's
+ * last byte is always that separator.  Drop it here rather than in
+ * cont_append: it is bookkeeping between physical lines, not part of
+ * the statement text, and keeping it would shift the line/column of any
+ * lex/parse-error message the eval reports for a single-line statement. */
+static void cont_flush(UVM *vm, struct URealm *repl_realm)
+{
+    size_t ll = pending_len - 1;
+    size_t t  = ll;
+    while (t > 0 && (pending[t - 1] == ' ' || pending[t - 1] == '\t' ||
+                     pending[t - 1] == '\r' || pending[t - 1] == '\n')) {
+        t--;
+    }
+    size_t bufcap = ll + 3;
+    char *buf = malloc(bufcap);
+    if (buf != NULL) {
+        memcpy(buf, pending, ll);
+        size_t final_len;
+        if (t > 0 && pending[t - 1] == '|') {
+            buf[ll] = '\0';
+            final_len = ll;
+        } else {
+            buf[ll]     = ' ';
+            buf[ll + 1] = '|';
+            buf[ll + 2] = '\0';
+            final_len   = ll + 2;
+        }
+        char result_buf[512] = {0};
+        int eval_rc = urbi_repl_eval(vm, repl_realm, buf, final_len,
+                                     result_buf, sizeof result_buf);
+        if (eval_rc == URBI_OK) {
+            printf("[%08u] %s\n", ms_since_start(), result_buf);
+        } else {
+            const char *msg = result_buf[0] ? result_buf
+                            : (vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
+            printf("[%08u] !!! %s\n", ms_since_start(), msg);
+        }
+        fflush(stdout);
+        free(buf);
+    }
+    pending_len = 0;
+    cont = (UContState){0};
+}
+
 /* listen_addr_port: "[ADDR:]PORT" or "PORT".  NULL = no network listener.
  * listen_token:    NULL = no auth (loopback only).
  */
@@ -741,39 +845,7 @@ static int run_interactive(UVM *vm,
                 linenoiseHistoryAdd(line);
                 if (histpath) linenoiseHistorySave(histpath);
 
-                size_t ll = strlen(line);
-                size_t t  = ll;
-                while (t > 0 && (line[t - 1] == ' ' || line[t - 1] == '\t' ||
-                                 line[t - 1] == '\r' || line[t - 1] == '\n')) {
-                    t--;
-                }
-                size_t bufcap = ll + 3;
-                char *buf = malloc(bufcap);
-                if (buf != NULL) {
-                    memcpy(buf, line, ll);
-                    size_t final_len;
-                    if (t > 0 && line[t - 1] == '|') {
-                        buf[ll] = '\0';
-                        final_len = ll;
-                    } else {
-                        buf[ll]     = ' ';
-                        buf[ll + 1] = '|';
-                        buf[ll + 2] = '\0';
-                        final_len   = ll + 2;
-                    }
-                    char result_buf[512] = {0};
-                    int eval_rc = urbi_repl_eval(vm, repl_realm, buf, final_len,
-                                                 result_buf, sizeof result_buf);
-                    if (eval_rc == URBI_OK) {
-                        printf("[%08u] %s\n", ms_since_start(), result_buf);
-                    } else {
-                        const char *msg = result_buf[0] ? result_buf
-                                        : (vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
-                        printf("[%08u] !!! %s\n", ms_since_start(), msg);
-                    }
-                    fflush(stdout);
-                    free(buf);
-                }
+                if (cont_append(line, strlen(line))) cont_flush(vm, repl_realm);
             }
             linenoiseFree(line);
 
@@ -794,46 +866,20 @@ static int run_interactive(UVM *vm,
         linenoiseHistoryAdd(line);
         if (histpath) linenoiseHistorySave(histpath);
 
-        /* Append " |" if missing. */
-        size_t ll = strlen(line);
-        size_t t  = ll;
-        while (t > 0 && (line[t - 1] == ' ' || line[t - 1] == '\t' ||
-                         line[t - 1] == '\r' || line[t - 1] == '\n')) {
-            t--;
-        }
-        size_t bufcap = ll + 3;
-        char *buf = malloc(bufcap);
-        if (!buf) { free(line); continue; }
-        memcpy(buf, line, ll);
-        size_t final_len;
-        if (t > 0 && line[t - 1] == '|') {
-            buf[ll] = '\0';
-            final_len = ll;
-        } else {
-            buf[ll]     = ' ';
-            buf[ll + 1] = '|';
-            buf[ll + 2] = '\0';
-            final_len   = ll + 2;
-        }
-
-        char result_buf[512] = {0};
-        int eval_rc = urbi_repl_eval(vm, repl_realm, buf, final_len,
-                                     result_buf, sizeof result_buf);
-        if (eval_rc == URBI_OK) {
-            printf("[%08u] %s\n", ms_since_start(), result_buf);
-        } else {
-            const char *msg = result_buf[0] ? result_buf
-                            : (vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
-            printf("[%08u] !!! %s\n", ms_since_start(), msg);
-        }
-        fflush(stdout);
-
-        free(buf);
+        bool ready = cont_append(line, strlen(line));
         free(line);
+        if (ready) cont_flush(vm, repl_realm);
     }
+
+    /* An unbalanced tail at EOF is still evaluated as-is, so a genuine
+     * parse error (unclosed bracket) is reported rather than swallowed. */
+    if (pending_len > 0) cont_flush(vm, repl_realm);
 
     if (histpath) linenoiseHistorySave(histpath);
     free(histpath);
+    free(pending);
+    pending = NULL;
+    pending_cap = 0;
 #if defined(URBI_ENABLE_REPL)
     if (listen_server != NULL) {
         urbi_repl_stop(listen_server);

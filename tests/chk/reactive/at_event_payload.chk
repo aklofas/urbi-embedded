@@ -7,7 +7,6 @@
 #   passed into R[0] of the body strand before it runs.  The body can then
 #   reference `payload` as a local.
 #
-# Note: single-line body form required; REPL processes one line at a time.
 #
 # Activated: 2026-05-26 as part of v0.10.5-legacy-decisions W9.
 
