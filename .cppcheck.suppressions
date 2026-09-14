@@ -87,17 +87,13 @@ knownConditionTrueFalse:src/object/uobject_slot.c:728
 // rationale at CPPCHK-012 above.
 constParameterPointer:src/stdlib/atoms.c
 
-// audit:CPPCHK-Phase6 — src/stdlib/containers.c native-method callbacks
-// are bound by the same urbi_native_method_fn typedef as atoms.c
-// (CPPCHK-Phase5 above).  cppcheck flags `args` as constable plus
-// several local UList* / UDict* / UDictEntry* pointers loaded via
-// list_storage / dict_storage / dict_lookup that are read-only in their
-// branches; promoting those locals to `const` cascades into the helper
-// signatures, which the broader Phase 6 design keeps non-const so the
-// same locals can take a write-through path on the mutating method
-// branches (set / add / remove / dict_set / etc.).
-constParameterPointer:src/stdlib/containers.c
-constVariablePointer:src/stdlib/containers.c
+// audit:CPPCHK-Phase6 (retired at the containers re-foundation) — the
+// constParameterPointer / constVariablePointer entries covered locals
+// that list_storage / dict_storage / dict_lookup handed back out of the
+// `_storage` slot.  Those helpers and that slot are gone: a receiver is
+// a UList / UDict cell reached straight off the value, and every
+// read-only local is already const.  What is left is the callback
+// signature itself, covered by the audit:refound-task9 block below.
 
 // audit:CPPCHK-Phase7 — src/stdlib/runtime_types.c native-method callbacks
 // expose UValue *args as part of the urbi_native_method_fn typedef; the
@@ -260,6 +256,7 @@ knownConditionTrueFalse:src/chunk/uchunk_strand.c:424
 constParameterCallback:src/rt/uboot.c
 constParameterCallback:src/stdlib/object_root.c
 constParameterCallback:src/stdlib/atoms.c
+constParameterCallback:src/stdlib/containers.c
 constParameterCallback:src/stdlib/namespaces.c
 constParameterCallback:src/stdlib/primitives.c
 constParameterCallback:src/stdlib/regexp.c

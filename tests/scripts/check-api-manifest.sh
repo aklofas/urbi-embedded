@@ -71,8 +71,9 @@ if [ -n "$NEW_FOREIGN" ]; then
     echo "$NEW_FOREIGN" | sed 's/^/  - /' >&2
     echo "" >&2
     echo "  Internal symbols must be static or carry a u*/urbi_ prefix (STYLE.md)." >&2
-    echo "  Do NOT extend the allowlist — it is a shrinking ratchet scheduled for" >&2
-    echo "  deletion at v0.13.7 (refactor-3 XC-01 / API-23)." >&2
+    echo "  The allowlist grows only for a genuinely new cross-TU name in the" >&2
+    echo "  runtime core or the standard library, and is deleted once every" >&2
+    echo "  remaining name is prefixed or internal — see its own banner." >&2
     exit 1
 fi
 
