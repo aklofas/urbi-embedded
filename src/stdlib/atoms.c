@@ -171,7 +171,7 @@ int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     static int                                                               \
     int_##name(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) \
     {                                                                        \
-        if (nargs != 1) return urbi_raise_arity(vm, "Integer." #name, 1, nargs, out); \
+        (void)nargs;                                                         \
         if (self.kind != UV_INT)                                  \
             return urbi_raise_type(vm, "Integer." #name ": self must be Integer", out); \
         if (args[0].kind != UV_INT)                               \
@@ -307,8 +307,7 @@ flt_random(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     static int                                                               \
     flt_##name(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) \
     {                                                                        \
-        (void)args;                                                          \
-        if (nargs != 0) return urbi_raise_arity(vm, "Float." #name, 0, nargs, out); \
+        (void)args; (void)nargs;                                             \
         if (self.kind != UV_FLOAT)                                \
             return urbi_raise_type(vm, "Float." #name ": self must be Float", out); \
         *out = uv_float(libm_call((double)self.v.f));                       \

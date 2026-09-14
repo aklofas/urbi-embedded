@@ -65,8 +65,8 @@ install_const_slot(UVM *vm, UObject *proto, const char *name, UValue value)
 static int
 sys_time(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)self; (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "System.time", 0, nargs, out);
     uint64_t us = vm->clock_us ? vm->clock_us(vm->clock_ud) : 0U;
     *out = uv_float((double)us / 1000000.0);
     return UEXEC_OK;
@@ -85,8 +85,8 @@ sys_time(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 sys_time_us(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)self; (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "System.time_us", 0, nargs, out);
     uint64_t us = vm->clock_us ? vm->clock_us(vm->clock_ud) : 0U;
     *out = uv_int((int64_t)us);
     return UEXEC_OK;
@@ -103,8 +103,8 @@ sys_time_us(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 sys_cycle(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)self; (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "System.cycle", 0, nargs, out);
     *out = uv_int((int64_t)vm->objstats.visit_stamp);
     return UEXEC_OK;
 }
@@ -121,8 +121,8 @@ sys_cycle(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 sys_getenv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)self;
-    if (nargs != 1) return urbi_raise_arity(vm, "System.getenv", 1, nargs, out);
     if (!urbi_is_str(args[0]))
         return urbi_raise_type(vm, "System.getenv: name must be String", out);
 
@@ -149,8 +149,8 @@ sys_getenv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 sys_gc(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)self; (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "System.gc", 0, nargs, out);
     urbi_gc_collect(vm);
     *out = uv_nil();
     return UEXEC_OK;
@@ -166,8 +166,8 @@ sys_gc(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 static int
 global_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
+    (void)nargs;
     (void)self; (void)args;
-    if (nargs != 0) return urbi_raise_arity(vm, "Global.length", 0, nargs, out);
 
     /* Everything the realm resolves by bare name: its own slots plus the
      * shared built-ins it inherits.  Counting only the realm's own would
