@@ -409,6 +409,39 @@ static void tag_stop_unsubscribes_an_event_watcher(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* Cancelling a watcher from INSIDE its own condition.  The condition is
+ * arbitrary script and it runs while the reactive runtime is holding the
+ * watcher, so the cancel may only clear `armed` -- unlinking it from
+ * vm->watch.all, its one GC root, would let the next allocation inside
+ * that same condition free the cell the caller is still using.  Under
+ * URBI_GC_STRESS every allocation collects, which is what turns "may" into
+ * "does"; the trailing list literal is that allocation. */
+static void a_condition_may_cancel_its_own_watcher(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var t = Tag.new()");
+    run(&fx, "var n = 0");
+    run(&fx, "var k = 0");
+    run(&fx, "var c = function() { k = k + 1; if (k > 2) { t.stop(); var z = [1, 2, 3, 4, 5] }; true }");
+    /* A `whenever` re-asks its condition on body death, which is the path
+     * that runs a condition outside a drain. */
+    run(&fx, "t: whenever (c()) n = n + 1");
+    RT_EQ(global_int(&fx, "n"), 1);
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+
+    /* The same from inside a drain-time condition, for the `at` path. */
+    run(&fx, "var t2 = Tag.new()");
+    run(&fx, "var m = 0");
+    run(&fx, "var j = 0");
+    run(&fx, "var c2 = function() { j = j + 1; if (j > 1) { t2.stop(); var z2 = [1, 2, 3] }; j > 1 }");
+    run(&fx, "t2: at (c2()) m = m + 1");
+    run(&fx, "j = j");
+    urbi_gc_collect(fx.vm);
+    RT_EQ(global_int(&fx, "m"), 0);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 /* --- (i) a condition that throws kills nothing --------------------------- */
 
 static void a_condition_that_throws_is_reported_once_and_disarmed(void)
@@ -526,6 +559,7 @@ RT_SUITE(rt_watch_suite) {
     rt_run("changed_event_fires_on_a_write_but_not_on_the_install", changed_event_fires_on_a_write_but_not_on_the_install);
     rt_run("tag_stop_removes_the_watcher", tag_stop_removes_the_watcher);
     rt_run("tag_stop_unsubscribes_an_event_watcher", tag_stop_unsubscribes_an_event_watcher);
+    rt_run("a_condition_may_cancel_its_own_watcher", a_condition_may_cancel_its_own_watcher);
     rt_run("a_condition_that_throws_is_reported_once_and_disarmed", a_condition_that_throws_is_reported_once_and_disarmed);
     rt_run("urbi_watch_calls_back_on_each_rising_edge", urbi_watch_calls_back_on_each_rising_edge);
     rt_run("a_booted_vm_stays_within_its_heap_budget", a_booted_vm_stays_within_its_heap_budget);

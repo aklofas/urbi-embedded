@@ -289,21 +289,36 @@ void uwatch_drain(UVM *vm)
 void uwatch_body_done(UVM *vm, const UStrand *dead)
 {
     UWatchState *ws = &vm->watch;
-    for (UWatcher *w = ws->all; w; w = w->next) {
-        if (w->body_strand != dead) continue;
-        w->body_strand = NULL;
-        if (!w->armed || w->mode != (uint8_t)UWATCH_WHENEVER || w->cond == NULL) return;
-        /* `whenever` is a reactive loop: the body having finished is the
-         * question "does the condition still hold?", asked again. */
-        bool now = false;
-        if (uwatch_eval_cond(vm, w, &now) != 0) return;
-        if (!w->armed) return;
+    UWatcher *w = ws->all;
+    while (w && w->body_strand != dead) w = w->next;
+    if (w == NULL) return;
+    w->body_strand = NULL;
+    if (!w->armed || w->mode != (uint8_t)UWATCH_WHENEVER || w->cond == NULL) return;
+
+    /* THE SAME BRACKET uwatch_drain AND uwatch_event_fired USE, and for the
+     * same reason: the condition below is arbitrary script, and a cancel
+     * reached from inside it (`t.stop()`, or an emit whose fan-out sweeps
+     * on the way out) would otherwise unlink `w` from vm->watch.all -- its
+     * only GC root -- while this function still holds it.  The next
+     * allocation inside that same condition then frees it, and everything
+     * after the call here is a use-after-free.  Holding `draining` makes
+     * uwatch_sweep a no-op for the duration; the sweep at the bottom is
+     * what actually reclaims. */
+    uint8_t prev = ws->draining;
+    ws->draining = 1;
+
+    /* `whenever` is a reactive loop: the body having finished is the
+     * question "does the condition still hold?", asked again. */
+    bool now = false;
+    if (uwatch_eval_cond(vm, w, &now) == 0 && w->armed) {
         w->last = now ? 1u : 0u;
         if (now) uwatch_fire(vm, w, w->payload, false);
         else uwatch_leave(vm, w);
         w->payload = uv_nil();
-        return;
     }
+
+    ws->draining = prev;
+    uwatch_sweep(vm);
 }
 
 /* --- events ---------------------------------------------------------------- */
