@@ -193,7 +193,7 @@ RUNNER := $(BUILDDIR)/tests/unit/runner
 # src/rt/*.c and appends a suite + extern to tests/rt/runner.c.
 RT_SRCS   := $(wildcard src/rt/*.c)
 RT_OBJS   := $(patsubst %.c,$(BUILDDIR)/%.o,$(RT_SRCS))
-RT_TEST_SRCS := $(wildcard tests/rt/test_*.c) tests/rt/runner.c
+RT_TEST_SRCS := $(wildcard tests/rt/test_*.c) tests/rt/runner.c tests/rt/fakevm.c
 RT_LIB    := $(BUILDDIR)/liburbi-rt.a
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
