@@ -220,16 +220,38 @@ UObject *uv_dispatch_proto(UVM *vm, UValue recv)
 
 /* --- throwing --------------------------------------------------------- */
 
-int uexec_throw(UVM *vm, UStrand *s, int which_proto, const char *msg)
+/* The one raise site.  `with_position` prepends "line N: " -- see
+ * uexec_throw_here's declaration for which failures earn one.
+ *
+ * The message slot carries the type name ("TypeError: too few arguments")
+ * rather than leaving it implicit, because that string is what an
+ * uncaught throw prints and what `e.message` hands back to script; the
+ * separate `name` slot keeps the type available on its own. */
+static int uexec_throw_impl(UVM *vm, UStrand *s, int which_proto, const char *msg,
+                            int with_position)
 {
     const char *pname = (which_proto >= 0 && which_proto < UP_COUNT)
                       ? uexec_proto_names[which_proto] : "Exception";
-    /* Record the pending failure eagerly: uexec_unwind re-derives it from
+    char text[256];
+    size_t at = with_position ? uexec_position_prefix(s, text, sizeof text, 0) : 0;
+    if (!with_position) text[0] = '\0';
+    uint32_t line = 0;
+    if (with_position && s->nframes > 0) {
+        const UFrame *f = &s->frames[s->nframes - 1];
+        const UProto *p = f->closure ? f->closure->proto : NULL;
+        if (p && p->instructions && f->pc) {
+            size_t off = (size_t)(f->pc - p->instructions);
+            line = uproto_line_at(p, (uint32_t)(off ? off - 1 : 0));
+        }
+    }
+    at = uexec_str_append(text, sizeof text, at, pname);
+    at = uexec_str_append(text, sizeof text, at, ": ");
+    (void)uexec_str_append(text, sizeof text, at, msg ? msg : "");
+
+    /* Record the pending failure eagerly: the walker re-derives it from
      * the exception object, but a throw raised while allocation is failing
      * would otherwise have nothing to report. */
-    size_t at = uexec_str_append(vm->last_error, sizeof vm->last_error, 0, pname);
-    at = uexec_str_append(vm->last_error, sizeof vm->last_error, at, ": ");
-    (void)uexec_str_append(vm->last_error, sizeof vm->last_error, at, msg ? msg : "");
+    (void)uexec_str_append(vm->last_error, sizeof vm->last_error, 0, text);
     vm->last_error_code = URBI_ERR_UNCAUGHT_THROW;
 
     UObject *e = uobj_new(vm, (which_proto >= 0 && which_proto < UP_COUNT) ? vm->protos[which_proto] : NULL);
@@ -238,10 +260,12 @@ int uexec_throw(UVM *vm, UStrand *s, int which_proto, const char *msg)
         USTRAND_ROOT(s, ev);
         USym *kname = usym_cstr(vm, "name");
         USym *kmsg  = usym_cstr(vm, "message");
+        USym *kline = usym_cstr(vm, "line");
         USym *pn    = usym_cstr(vm, pname);
-        UStr *m     = msg ? ustr_new(vm, msg, strlen(msg)) : NULL;
+        UStr *m     = ustr_new(vm, text, strlen(text));
         if (kname && pn) (void)uobj_set_local(vm, e, kname, uv_sym(pn), 0);
         if (kmsg && m)   (void)uobj_set_local(vm, e, kmsg, uv_str(m), 0);
+        if (kline)       (void)uobj_set_local(vm, e, kline, uv_int((int64_t)line), 0);
         USTRAND_UNROOT(s, ev);
         s->transfer = ev;
     } else {
@@ -251,66 +275,18 @@ int uexec_throw(UVM *vm, UStrand *s, int which_proto, const char *msg)
     return UEXEC_THROW;
 }
 
+int uexec_throw(UVM *vm, UStrand *s, int which_proto, const char *msg)
+{ return uexec_throw_impl(vm, s, which_proto, msg, 0); }
+
+int uexec_throw_here(UVM *vm, UStrand *s, int which_proto, const char *msg)
+{ return uexec_throw_impl(vm, s, which_proto, msg, 1); }
+
 int uexec_throw_value(UVM *vm, UStrand *s, UValue v)
 {
     (void)vm;
     s->transfer = v;
     s->unwind = UUNWIND_THROW;
     return UEXEC_THROW;
-}
-
-/* Format whatever is in s->transfer into vm->last_error.  An exception
- * object built by uexec_throw carries `name` and `message` slots; any
- * other thrown value is rendered by kind. */
-static void uexec_format_thrown(UVM *vm, const UStrand *s)
-{
-    UValue v = s->transfer;
-    if (v.kind == UV_OBJ) {
-        UObject *o = (UObject *)v.v.p;
-        UObjSlotRef ref;
-        const char *name = NULL; uint32_t nlen = 0;
-        const char *msg = NULL;  uint32_t mlen = 0;
-        const USym *kname = usym_cstr(vm, "name");
-        const USym *kmsg  = usym_cstr(vm, "message");
-        if (kname && uobj_resolve(vm, o, kname, &ref)) {
-            UValue nv = uobj_slot_value(&ref);
-            if (nv.kind == UV_SYM || nv.kind == UV_STR) name = uv_str_bytes(nv, &nlen);
-        }
-        if (kmsg && uobj_resolve(vm, o, kmsg, &ref)) {
-            UValue mv = uobj_slot_value(&ref);
-            if (mv.kind == UV_SYM || mv.kind == UV_STR) msg = uv_str_bytes(mv, &mlen);
-        }
-        if (name || msg) {
-            size_t at = 0;
-            if (name) {
-                at = uexec_str_append(vm->last_error, sizeof vm->last_error, at, name);
-                at = uexec_str_append(vm->last_error, sizeof vm->last_error, at, ": ");
-            }
-            (void)uexec_str_append(vm->last_error, sizeof vm->last_error, at, msg ? msg : "");
-            return;
-        }
-        (void)uexec_str_append(vm->last_error, sizeof vm->last_error, 0, "uncaught throw: <object>");
-        return;
-    }
-    if (v.kind == UV_SYM || v.kind == UV_STR) {
-        uint32_t len; const char *b = uv_str_bytes(v, &len);
-        size_t at = uexec_str_append(vm->last_error, sizeof vm->last_error, 0, "uncaught throw: ");
-        (void)uexec_str_append(vm->last_error, sizeof vm->last_error, at, b);
-        return;
-    }
-    (void)uexec_str_append(vm->last_error, sizeof vm->last_error, 0, "uncaught throw");
-}
-
-int uexec_unwind(UVM *vm, UStrand *s)
-{
-    /* Placeholder for the cleanup-stack walker: until it lands, any
-     * pending unwind is terminal for the strand. */
-    if (s->unwind == UUNWIND_THROW) uexec_format_thrown(vm, s);
-    vm->last_error_code = URBI_ERR_UNCAUGHT_THROW;
-    s->state = USTRAND_DEAD;
-    s->nframes = 0;
-    ustrand_close_upvals(s, 0);
-    return 1;
 }
 
 /* --- spare strands ----------------------------------------------------- */

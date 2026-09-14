@@ -1,11 +1,17 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/rt/uexec_ops.c — the bytecode dispatch loop.
  *
- * Scope: the sequential subset of the 49-opcode set.  Concurrency
- * (YIELD, FORK_*, JOIN_WAIT), unwinding (TRY_*, PUSH_TAG, POP_TAG,
- * RESUME, LOAD_CATCH_VALUE) and the reactive installs land with their
- * own tasks; every opcode not handled here throws through `default:`
- * rather than silently doing nothing.
+ * Scope: the sequential subset of the 50-opcode set plus the cleanup
+ * stack (TRY_BEGIN, TRY_END, THROW, RESUME, LOAD_CATCH_VALUE, PUSH_TAG,
+ * POP_TAG), whose walker lives in rt/uunwind.c.  Concurrency (FORK_*,
+ * JOIN_WAIT, TAG_STOP) and the reactive installs land with their own
+ * tasks; every opcode not handled here throws through `default:` rather
+ * than silently doing nothing.
+ *
+ * The tag scope OP_PUSH_TAG opens is a cleanup entry and nothing more
+ * until the scheduler task gives it a tag object, an onleave body and a
+ * stop to match -- enough for a try nested inside a tagged block to
+ * unwind correctly, which is what the unwinder needs from it.
  *
  * Register addressing: R is recomputed from s->stack + f->base after
  * anything that can grow the stack, and f is re-fetched from
@@ -22,6 +28,43 @@
 #define OPBX(i) uinstr_bx(i)
 
 #define UEXEC_JMP_BIAS 32768
+
+/* --- message assembly ---------------------------------------------------
+ *
+ * src/rt has no <stdio.h> by policy, so diagnostics are concatenated.
+ * Both helpers always NUL-terminate and return the new length. */
+
+static size_t uexec_put(char *buf, size_t cap, size_t at, const char *s)
+{
+    while (*s && at + 1 < cap) buf[at++] = *s++;
+    buf[at] = '\0';
+    return at;
+}
+
+static size_t uexec_put_u8(char *buf, size_t cap, size_t at, uint8_t n)
+{
+    char tmp[4];
+    size_t k = 0;
+    do { tmp[k++] = (char)('0' + (n % 10u)); n = (uint8_t)(n / 10u); } while (n);
+    while (k && at + 1 < cap) buf[at++] = tmp[--k];
+    buf[at] = '\0';
+    return at;
+}
+
+/* The operand-type names the legacy diagnostics use.  Anything that is
+ * not one of the five atom kinds reads as "unknown", which is what the
+ * corpus pins for a user object. */
+static const char *uexec_kind_name(UValue v)
+{
+    switch (v.kind) {
+    case UV_NIL:   return "Nil";
+    case UV_INT:   return "Integer";
+    case UV_FLOAT: return "Float";
+    case UV_BOOL:  return "Bool";
+    case UV_STR: case UV_SYM: return "String";
+    default:       return "unknown";
+    }
+}
 
 /* --- slot helpers ------------------------------------------------------ */
 
@@ -92,29 +135,34 @@ static int object_binop(UVM *vm, UStrand *s, UValue lhs, UValue rhs, const char 
     return uexec_call(vm, s, (UClosure *)fn.v.p, lhs, &rhs, 1, out);
 }
 
+/* The operator's user-facing phrase, as uopcodes.def spells it. */
 static const char *arith_op_name(uint8_t op)
 {
     switch (op) {
-    case OP_ADD: return "+";
-    case OP_SUB: return "-";
-    case OP_MUL: return "*";
-    default:     return "/";
+    case OP_ADD: return "'+'";
+    case OP_SUB: return "'-'";
+    case OP_MUL: return "'*'";
+    case OP_LT:  return "'<'";
+    case OP_LE:  return "'<='";
+    default:     return "'/'";
     }
 }
 
-static int arith_type_error(UVM *vm, UStrand *s, uint8_t op)
+/* "<op> operands must be Integer or Float (got <Kind>, <Kind>)", carrying
+ * the source position -- the legacy shape, pinned by
+ * the operator fixtures under tests/chk.  The wording names only the numeric kinds
+ * even though String + String and String < String have their own fast
+ * paths, because that is the text the corpus fixed. */
+static int binop_type_error(UVM *vm, UStrand *s, uint8_t op, UValue b, UValue c)
 {
-    char msg[96]; size_t at = 0;
-    msg[at++] = '\'';
-    const char *p = arith_op_name(op);
-    while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
-    if (at + 1 < sizeof msg) msg[at++] = '\'';
-    p = " operands must be numbers, strings, or an object with a '";
-    while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
-    p = arith_op_name(op); while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
-    p = "' slot"; while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
-    msg[at] = '\0';
-    return uexec_throw(vm, s, UP_TYPEERROR, msg);
+    char msg[128]; size_t at = 0;
+    at = uexec_put(msg, sizeof msg, at, arith_op_name(op));
+    at = uexec_put(msg, sizeof msg, at, " operands must be Integer or Float (got ");
+    at = uexec_put(msg, sizeof msg, at, uexec_kind_name(b));
+    at = uexec_put(msg, sizeof msg, at, ", ");
+    at = uexec_put(msg, sizeof msg, at, uexec_kind_name(c));
+    (void)uexec_put(msg, sizeof msg, at, ")");
+    return uexec_throw_here(vm, s, UP_TYPEERROR, msg);
 }
 
 static int arith(UVM *vm, UStrand *s, uint8_t op, UValue b, UValue c, UValue *out)
@@ -126,7 +174,7 @@ static int arith(UVM *vm, UStrand *s, uint8_t op, UValue b, UValue c, UValue *ou
         case OP_SUB: if (!__builtin_sub_overflow(b.v.i, c.v.i, &r)) { *out = uv_int(r); return UEXEC_OK; } break;
         case OP_MUL: if (!__builtin_mul_overflow(b.v.i, c.v.i, &r)) { *out = uv_int(r); return UEXEC_OK; } break;
         default:
-            if (c.v.i == 0) return uexec_throw(vm, s, UP_DIVBYZERO, "division by zero");
+            if (c.v.i == 0) return uexec_throw_here(vm, s, UP_DIVBYZERO, "division by 0");
             *out = uv_float((double)b.v.i / (double)c.v.i);
             return UEXEC_OK;
         }
@@ -143,7 +191,7 @@ static int arith(UVM *vm, UStrand *s, uint8_t op, UValue b, UValue c, UValue *ou
         case OP_SUB: *out = uv_float(x - y); return UEXEC_OK;
         case OP_MUL: *out = uv_float(x * y); return UEXEC_OK;
         default:
-            if (y == 0.0) return uexec_throw(vm, s, UP_DIVBYZERO, "division by zero");
+            if (y == 0.0) return uexec_throw_here(vm, s, UP_DIVBYZERO, "division by 0");
             *out = uv_float(x / y); return UEXEC_OK;
         }
     }
@@ -165,10 +213,46 @@ static int arith(UVM *vm, UStrand *s, uint8_t op, UValue b, UValue c, UValue *ou
         return UEXEC_OK;
     }
     {
-        int rc = object_binop(vm, s, b, c, arith_op_name(op), out);
+        /* object_binop takes the bare glyph; arith_op_name quotes it for
+         * the diagnostic, so the slot name is spelled here. */
+        const char *slot = (op == OP_ADD) ? "+" : (op == OP_SUB) ? "-" : (op == OP_MUL) ? "*" : "/";
+        int rc = object_binop(vm, s, b, c, slot, out);
         if (rc != 1) return rc;
     }
-    return arith_type_error(vm, s, op);
+    return binop_type_error(vm, s, op, b, c);
+}
+
+/* Unary minus.  Numbers negate directly; anything else gets one chance at
+ * a zero-argument "-" slot on its prototype (the unary counterpart of
+ * object_binop; the neg operator fixture pins the overload) before
+ * the legacy diagnostic. */
+static int negate(UVM *vm, UStrand *s, UValue v, UValue *out)
+{
+    if (v.kind == UV_INT) {
+        int64_t r;
+        if (__builtin_sub_overflow((int64_t)0, v.v.i, &r)) *out = uv_float(-(double)v.v.i);
+        else *out = uv_int(r);
+        return UEXEC_OK;
+    }
+    if (v.kind == UV_FLOAT) { *out = uv_float(-v.v.f); return UEXEC_OK; }
+
+    UObject *proto = uv_dispatch_proto(vm, v);
+    if (proto) {
+        const USym *sym = usym_cstr(vm, "-");
+        UObjSlotRef ref;
+        if (sym && uobj_resolve(vm, proto, sym, &ref)) {
+            UValue fn = uv_nil();
+            int rc = slot_read(vm, s, &ref, v, &fn);
+            if (rc != UEXEC_OK) return rc;
+            if (fn.kind == UV_CELL && ((UCell *)fn.v.p)->type == UCELL_CLOSURE)
+                return uexec_call(vm, s, (UClosure *)fn.v.p, v, NULL, 0, out);
+        }
+    }
+    char msg[128]; size_t at = 0;
+    at = uexec_put(msg, sizeof msg, at, "unary '-' operand must be Integer or Float (got ");
+    at = uexec_put(msg, sizeof msg, at, uexec_kind_name(v));
+    (void)uexec_put(msg, sizeof msg, at, ")");
+    return uexec_throw_here(vm, s, UP_TYPEERROR, msg);
 }
 
 /* --- comparison -------------------------------------------------------- */
@@ -196,9 +280,18 @@ static int compare_lt_le(UVM *vm, UStrand *s, uint8_t op, UValue b, UValue c, bo
         if (rc == UEXEC_OK) { *out = uv_truthy(r); return UEXEC_OK; }
         if (rc != 1) return rc;
     }
-    return uexec_throw(vm, s, UP_TYPEERROR,
-                       op == OP_LT ? "'<' operands must be comparable"
-                                   : "'<=' operands must be comparable");
+    /* Mirror-operand retry.  The emitter compiles `a > b` as OP_LT(b, a),
+     * so a `>` overload declared on the SYNTACTIC left operand arrives
+     * here as the right one.  On a miss, ask the right operand for the
+     * mirrored operator with the arguments swapped back -- which is what
+     * `a > b` literally means. */
+    {
+        UValue r = uv_nil();
+        int rc = object_binop(vm, s, c, b, op == OP_LT ? ">" : ">=", &r);
+        if (rc == UEXEC_OK) { *out = uv_truthy(r); return UEXEC_OK; }
+        if (rc != 1) return rc;
+    }
+    return binop_type_error(vm, s, op, b, c);
 }
 
 static int compare_eq(UVM *vm, UStrand *s, UValue b, UValue c, bool *out)
@@ -215,24 +308,6 @@ static int compare_eq(UVM *vm, UStrand *s, UValue b, UValue c, bool *out)
 
 /* --- calls -------------------------------------------------------------- */
 
-/* Decimal into buf at `at`, NUL-terminating.  src/rt has no <stdio.h>. */
-static size_t arity_put_u8(char *buf, size_t cap, size_t at, uint8_t n)
-{
-    char tmp[4];
-    size_t k = 0;
-    do { tmp[k++] = (char)('0' + (n % 10u)); n = (uint8_t)(n / 10u); } while (n);
-    while (k && at + 1 < cap) buf[at++] = tmp[--k];
-    buf[at] = '\0';
-    return at;
-}
-
-static size_t arity_put(char *buf, size_t cap, size_t at, const char *s)
-{
-    while (*s && at + 1 < cap) buf[at++] = *s++;
-    buf[at] = '\0';
-    return at;
-}
-
 /* "<name>: expected N..M arguments, got K", or the same without the name
  * when the callee has none (a script function literal carries no name
  * through the wire format).  A single accepted count prints as "N"
@@ -243,19 +318,19 @@ static int arity_error(UVM *vm, UStrand *s, const char *name,
     char msg[128];
     size_t at = 0;
     if (name) {
-        at = arity_put(msg, sizeof msg, at, name);
-        at = arity_put(msg, sizeof msg, at, ": ");
+        at = uexec_put(msg, sizeof msg, at, name);
+        at = uexec_put(msg, sizeof msg, at, ": ");
     }
-    at = arity_put(msg, sizeof msg, at, "expected ");
-    at = arity_put_u8(msg, sizeof msg, at, lo);
+    at = uexec_put(msg, sizeof msg, at, "expected ");
+    at = uexec_put_u8(msg, sizeof msg, at, lo);
     if (hi != lo) {
-        at = arity_put(msg, sizeof msg, at, hi == UCLOSURE_ANY_ARGS ? " or more" : "..");
-        if (hi != UCLOSURE_ANY_ARGS) at = arity_put_u8(msg, sizeof msg, at, hi);
+        at = uexec_put(msg, sizeof msg, at, hi == UCLOSURE_ANY_ARGS ? " or more" : "..");
+        if (hi != UCLOSURE_ANY_ARGS) at = uexec_put_u8(msg, sizeof msg, at, hi);
     }
-    at = arity_put(msg, sizeof msg, at, " argument");
-    if (lo != 1 || hi != 1) at = arity_put(msg, sizeof msg, at, "s");
-    at = arity_put(msg, sizeof msg, at, ", got ");
-    (void)arity_put_u8(msg, sizeof msg, at, got);
+    at = uexec_put(msg, sizeof msg, at, " argument");
+    if (lo != 1 || hi != 1) at = uexec_put(msg, sizeof msg, at, "s");
+    at = uexec_put(msg, sizeof msg, at, ", got ");
+    (void)uexec_put_u8(msg, sizeof msg, at, got);
     return uexec_throw(vm, s, UP_ARITYERROR, msg);
 }
 
@@ -268,16 +343,16 @@ static int arity_error_proto(UVM *vm, UStrand *s, const UClosure *cl, uint8_t go
     char msg[128];
     size_t at = 0;
     if (cl->name) {
-        at = arity_put(msg, sizeof msg, at, cl->name);
-        at = arity_put(msg, sizeof msg, at, ": ");
+        at = uexec_put(msg, sizeof msg, at, cl->name);
+        at = uexec_put(msg, sizeof msg, at, ": ");
     }
     /* With no parameters the relaxed and exact checks coincide, so the
      * "at most" hedge would be noise. */
-    at = arity_put(msg, sizeof msg, at,
+    at = uexec_put(msg, sizeof msg, at,
                    (p->arity_prologue && p->nparams > 0) ? "expected at most " : "expected ");
-    at = arity_put_u8(msg, sizeof msg, at, p->nparams);
-    at = arity_put(msg, sizeof msg, at, p->nparams == 1 ? " argument, got " : " arguments, got ");
-    (void)arity_put_u8(msg, sizeof msg, at, got);
+    at = uexec_put_u8(msg, sizeof msg, at, p->nparams);
+    at = uexec_put(msg, sizeof msg, at, p->nparams == 1 ? " argument, got " : " arguments, got ");
+    (void)uexec_put_u8(msg, sizeof msg, at, got);
     return uexec_throw(vm, s, UP_ARITYERROR, msg);
 }
 
@@ -373,33 +448,25 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
         }
 
         case OP_NEG: {
-            UValue v = R[OPB(i)];
-            if (v.kind == UV_INT) {
-                int64_t r;
-                if (__builtin_sub_overflow((int64_t)0, v.v.i, &r)) R[OPA(i)] = uv_float(-(double)v.v.i);
-                else R[OPA(i)] = uv_int(r);
-            } else if (v.kind == UV_FLOAT) {
-                R[OPA(i)] = uv_float(-v.v.f);
-            } else {
-                (void)uexec_throw(vm, s, UP_TYPEERROR, "unary '-' operand must be a number");
-                goto unwind;
-            }
+            UValue res = uv_nil();
+            if (negate(vm, s, R[OPB(i)], &res) != UEXEC_OK) goto unwind;
+            f = &s->frames[s->nframes - 1];
+            s->stack[f->base + OPA(i)] = res;
             break;
         }
 
         case OP_RET: {
             UValue rv = R[OPA(i)];
-            ustrand_close_upvals(s, f->base);
-            uint8_t boundary = f->is_boundary;
-            uint8_t rr = f->ret_reg;
-            uint32_t caller_base = s->nframes > 1 ? s->frames[s->nframes - 2].base : 0;
-            ustrand_pop_frame(s);
-            /* The boundary test comes first: uexec_call's frame is often
-             * the only one on the strand, and returning from it means "the
-             * synchronous call finished", not "the strand died". */
-            if (boundary) { s->result = rv; return USTRAND_RUNNING; }
-            if (s->nframes == 0) { s->result = rv; s->state = USTRAND_DEAD; return s->state; }
-            s->stack[caller_base + rr] = rv;
+            /* `return` out of a try is a bare OP_RET -- the emitter plants
+             * scope crossings for break/continue but not for return -- so a
+             * frame that still owns cleanup entries hands the return to the
+             * walker, which runs the finallys and completes it. */
+            if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].frame >= (uint16_t)(s->nframes - 1)) {
+                s->transfer = rv;
+                s->unwind = UUNWIND_RETURN;
+                goto unwind;
+            }
+            if (uexec_return(vm, s, rv) != 0) return s->state;
             break;
         }
 
@@ -617,6 +684,81 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             (void)uexec_throw_value(vm, s, R[OPA(i)]);
             goto unwind;
 
+        /* --- the cleanup stack (see rt/uunwind.c for the layouts) ------ */
+
+        case OP_TRY_BEGIN: {
+            UCleanup c;
+            c.kind = (uint8_t)UCLEAN_TRY;
+            c.flags = OPA(i);              /* HAS_CATCH / HAS_FINALLY, as emitted */
+            c.saved_unwind = (uint8_t)UUNWIND_NONE;
+            c.frame = (uint16_t)(s->nframes - 1);
+            c.handler_pc = OPBX(i);        /* absolute instruction index */
+            c.onleave_pc = 0;
+            c.tag = NULL;
+            c.saved = uv_nil();
+            if (ustrand_push_cleanup(s, c) != 0) {
+                (void)uexec_throw(vm, s, UP_OOMERROR, "try begin: out of memory growing the cleanup stack");
+                goto unwind;
+            }
+            break;
+        }
+
+        case OP_TRY_END:
+            /* The normal-path pop.  A UCLEAN_F_RUNNING marker belongs to
+             * the walker, never to a TRY_END. */
+            if (s->ncleanup > 0
+                && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TRY
+                && (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) == 0) {
+                s->ncleanup--;
+            }
+            break;
+
+        case OP_PUSH_TAG: {
+            /* A[3:0] = the register holding the tag, A[7:4] = flags, Bx =
+             * the onleave handler.  The tag object and its enter/leave
+             * events land with the scheduler task; what the entry does
+             * today is keep the stack shaped correctly so a try nested
+             * inside a tagged block unwinds through it. */
+            UCleanup c;
+            c.kind = (uint8_t)UCLEAN_TAG_SCOPE;
+            c.flags = (uint8_t)(OPA(i) >> 4);
+            c.saved_unwind = (uint8_t)UUNWIND_NONE;
+            c.frame = (uint16_t)(s->nframes - 1);
+            c.handler_pc = OPBX(i);
+            c.onleave_pc = OPBX(i);
+            c.tag = NULL;
+            c.saved = uv_nil();
+            if (ustrand_push_cleanup(s, c) != 0) {
+                (void)uexec_throw(vm, s, UP_OOMERROR, "tag push: out of memory growing the cleanup stack");
+                goto unwind;
+            }
+            break;
+        }
+
+        case OP_POP_TAG:
+            if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TAG_SCOPE)
+                s->ncleanup--;
+            break;
+
+        case OP_LOAD_CATCH_VALUE:
+            R[OPA(i)] = s->transfer;
+            break;
+
+        case OP_RESUME: {
+            /* The end of a finally body the walker started.  Restore the
+             * unwind it suspended and hand control back to the walk.  The
+             * normal-path copy of a finally is jumped past, never resumed,
+             * so an unmatched RESUME means a malformed chunk. */
+            if (s->ncleanup == 0 || (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) == 0) {
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "unwind resume: no cleanup body in progress");
+                goto unwind;
+            }
+            UCleanup mark = s->cleanup[--s->ncleanup];
+            s->unwind = mark.saved_unwind;
+            s->transfer = mark.saved;
+            goto unwind;
+        }
+
         default:
             (void)uexec_throw(vm, s, UP_TYPEERROR, "opcode not available in this build");
             goto unwind;
@@ -684,6 +826,10 @@ int uexec_call(UVM *vm, UStrand *s, UClosure *cl, UValue recv, const UValue *arg
 
     uint8_t saved_state = s->state;
     int st = uexec_run(vm, s, 0);
+    /* An unwind that reached this boundary frame without finding a handler
+     * popped it and came back here with s->unwind still set, so the native
+     * that called in returns UEXEC_THROW and ITS caller keeps unwinding. */
+    if (s->unwind != UUNWIND_NONE) return UEXEC_THROW;
     if (st == USTRAND_DEAD) return UEXEC_THROW;
     s->state = saved_state;
     if (out) *out = s->result;
@@ -717,7 +863,18 @@ int uexec_run_source(UVM *vm, URealm *realm, const char *src, size_t n,
     UValue res = uv_nil();
     int crc = uexec_call(vm, s, cl, uv_obj(realm->globals), NULL, 0, &res);
     uvm_spare_release(vm, s);
-    if (crc != UEXEC_OK) return URBI_ERR_UNCAUGHT_THROW;
+    if (crc != UEXEC_OK) {
+        /* The walker cleared vm->last_error for a throw of something that
+         * is not an exception object: `throw 42` and `throw "x"` recover
+         * to nil rather than surfacing as an error, which is the contract
+         * control_transfer/throw_uncaught.chk pins. */
+        if (vm->last_error[0] == '\0') {
+            vm->last_error_code = URBI_OK;
+            return URBI_OK;
+        }
+        vm->last_error_code = URBI_ERR_UNCAUGHT_THROW;
+        return URBI_ERR_UNCAUGHT_THROW;
+    }
     if (out) *out = res;
     return URBI_OK;
 }

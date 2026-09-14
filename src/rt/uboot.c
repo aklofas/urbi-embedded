@@ -158,7 +158,11 @@ const UBuiltinDef uboot_table[] = {
     { "ArityError",       UP_ARITYERROR, UP_EXCEPTION, NONE, 0 },
     { "LookupError",      UP_LOOKUPERROR, UP_EXCEPTION, NONE, 0 },
     { "OutOfMemoryError", UP_OOMERROR,   UP_EXCEPTION, NONE, 0 },
-    { "IndexError",       UP_INDEXERROR, UP_EXCEPTION, NONE, 0 },
+    /* Two-level: an out-of-range index IS a failed lookup, so
+     * `catch (var e if e.isA(LookupError))` catches it.  Same shape the
+     * pre-refoundation exception_subclasses overlay declared, and what
+     * the KeyError row in stdlib.u still assumes. */
+    { "IndexError",       UP_INDEXERROR, UP_LOOKUPERROR, NONE, 0 },
     { "RangeError",       UP_RANGEERROR, UP_EXCEPTION, NONE, 0 },
     { "DivByZero",        UP_DIVBYZERO,  UP_EXCEPTION, NONE, 0 },
 

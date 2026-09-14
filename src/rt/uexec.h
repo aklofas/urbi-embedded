@@ -140,15 +140,37 @@ UObject *uv_dispatch_proto(UVM *vm, UValue recv);
 
 /* --- errors ---------------------------------------------------------- */
 
-/* Builds an exception object of protos[which] with a "message" slot,
- * deposits it in s->transfer and sets s->unwind = UUNWIND_THROW.
- * Always returns UEXEC_THROW so callers can `return uexec_throw(...)`. */
+/* Builds an exception object of protos[which] with "name", "message" and
+ * "line" slots, deposits it in s->transfer and sets s->unwind =
+ * UUNWIND_THROW.  The message slot reads "<TypeName>: <msg>", which is
+ * what an uncaught throw prints and what a catch handler sees in
+ * e.message.  Always returns UEXEC_THROW so callers can
+ * `return uexec_throw(...)`. */
 int uexec_throw(UVM *vm, UStrand *s, int which_proto, const char *msg);
+/* As uexec_throw, but the message also carries the source position of the
+ * instruction being executed ("line 7: TypeError: ...").  Reserved for the
+ * failures the corpus pins a position on: the arithmetic, comparison and
+ * division-by-zero raises the dispatch loop makes on its own behalf. */
+int uexec_throw_here(UVM *vm, UStrand *s, int which_proto, const char *msg);
 int uexec_throw_value(UVM *vm, UStrand *s, UValue v);
-/* Formats the pending throw into vm->last_error and kills the strand.
- * Returns 1 (the strand is no longer runnable).  The cleanup-stack
- * walker replaces the body of this in the unwind task. */
+
+/* The cleanup-stack walker (rt/uunwind.c).  Consumes s->unwind and
+ * s->transfer.  Returns 0 when dispatch can continue in the current frame
+ * (a catch was entered, a finally body was started, or a return completed
+ * into the caller), 1 when the strand is DEAD or control must go back to
+ * uexec_call. */
 int uexec_unwind(UVM *vm, UStrand *s);
+/* Completes a return out of the top frame: closes its upvalues, pops it
+ * and delivers `rv`.  0 = dispatch continues in the caller, 1 = the run
+ * is over (s->state and s->result are set). */
+int uexec_return(UVM *vm, UStrand *s, UValue rv);
+/* Source line for an instruction index within one proto, or 0 when the
+ * proto carries no line table.  Defined in rt/uunwind.c. */
+uint32_t uproto_line_at(const UProto *p, uint32_t pc);
+/* Appends "line N: " (or "<source>:N: ") for the instruction the top
+ * frame is executing, or nothing when there is no position.  Returns the
+ * new length. */
+size_t uexec_position_prefix(UStrand *s, char *buf, size_t cap, size_t at);
 
 /* --- running --------------------------------------------------------- */
 

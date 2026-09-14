@@ -55,11 +55,29 @@ typedef struct UFrame {
 } UFrame;
 
 typedef enum { UCLEAN_TRY = 1, UCLEAN_TAG_SCOPE = 2 } UCleanKind;
+
+/* UCLEAN_F_HAS_CATCH / _HAS_FINALLY are the bytecode's own flag bits:
+ * OP_TRY_BEGIN carries them verbatim in A, and OP_PUSH_TAG in A[7:4].
+ * They must keep the values the emitter writes (FLAG_HAS_CATCH /
+ * FLAG_HAS_FINALLY / FLAG_HAS_ONLEAVE in the emitter's ucleanup.h); the
+ * layering rule forbids src/rt from including that header, so the values
+ * are restated rather than shared.
+ *
+ * UCLEAN_F_RUNNING is the unwinder's own and never appears in bytecode:
+ * it marks the boundary entry the walker leaves behind while a finally
+ * body runs, holding the unwind that body suspended. */
+#define UCLEAN_F_HAS_CATCH   0x1u
+#define UCLEAN_F_HAS_FINALLY 0x2u
+#define UCLEAN_F_HAS_ONLEAVE 0x4u
+#define UCLEAN_F_RUNNING     0x20u
+
 typedef struct UCleanup {
     uint8_t   kind, flags;
-    uint16_t  frame;
+    uint8_t   saved_unwind;      /* UCLEAN_F_RUNNING only: the suspended UUnwindKind */
+    uint16_t  frame;             /* index into frames[] of the frame that pushed this */
     uint32_t  handler_pc, onleave_pc;
     struct UTag *tag;
+    UValue    saved;             /* UCLEAN_F_RUNNING only: the suspended transfer value */
 } UCleanup;
 
 /* Stored in UStrand.state (uint8_t) -- deliberately not a typedef'd

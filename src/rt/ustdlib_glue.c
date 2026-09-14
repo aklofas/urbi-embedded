@@ -19,8 +19,13 @@ URealm *uvm_current_realm(UVM *vm)
 
 /* Every raise funnels here.  Before the boot table has run, protos[which]
  * is NULL and uexec_throw builds a protoless exception object that still
- * carries name and message — enough for vm->last_error to be truthful. */
-int urbi_raise_typed(UVM *vm, int which, UValue *out, const char *msg)
+ * carries name and message — enough for vm->last_error to be truthful.
+ *
+ * `positioned` prefixes the source location of the call site (the top
+ * frame is the bytecode frame that called the native, and its pc still
+ * points just past the OP_CALL).  Only division/modulo by zero uses it,
+ * so a native `%` raise reads the same as the dispatch loop's own `/`. */
+static int glue_raise(UVM *vm, int which, UValue *out, const char *msg, int positioned)
 {
     if (out) *out = uv_nil();
     UStrand *s = uvm_current_strand(vm);
@@ -30,10 +35,14 @@ int urbi_raise_typed(UVM *vm, int which, UValue *out, const char *msg)
         if (vm) vm->last_error_code = URBI_ERR_UNCAUGHT_THROW;
         return UEXEC_THROW;
     }
-    int rc = uexec_throw(vm, s, which, msg);
+    int rc = positioned ? uexec_throw_here(vm, s, which, msg)
+                        : uexec_throw(vm, s, which, msg);
     if (out) *out = s->transfer;
     return rc;
 }
+
+int urbi_raise_typed(UVM *vm, int which, UValue *out, const char *msg)
+{ return glue_raise(vm, which, out, msg, 0); }
 
 int urbi_raise_type(UVM *vm, const char *msg, UValue *out)
 { return urbi_raise_typed(vm, UP_TYPEERROR, out, msg ? msg : "type error"); }
@@ -48,7 +57,7 @@ int urbi_raise_range(UVM *vm, const char *msg, UValue *out)
 { return urbi_raise_typed(vm, UP_RANGEERROR, out, msg ? msg : "value out of range"); }
 
 int urbi_raise_divzero(UVM *vm, const char *msg, UValue *out)
-{ return urbi_raise_typed(vm, UP_DIVBYZERO, out, msg ? msg : "division by zero"); }
+{ return glue_raise(vm, UP_DIVBYZERO, out, msg ? msg : "division by 0", 1); }
 
 int urbi_raise_lookup(UVM *vm, const USym *name, UValue *out)
 {
