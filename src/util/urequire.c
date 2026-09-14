@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* src/runtime/urequire.c — URBI_REQUIRE failure handler.
+/* src/util/urequire.c — URBI_REQUIRE failure handler.
  *
  * Implements the two public symbols declared in <urbi/require.h>:
  *   urbi_require_fail()          — called when URBI_REQUIRE fires

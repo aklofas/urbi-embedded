@@ -29,7 +29,7 @@ extern "C" {
 #endif
 
 /* urbi_require_fail — called when URBI_REQUIRE(cond, msg) fires (cond false).
- * Implementation in src/runtime/urequire.c.
+ * Implementation in src/util/urequire.c.
  * Must not return; either the hook must not return, or the default impl
  * abort()s / spins. */
 void urbi_require_fail(const char *file, int line,

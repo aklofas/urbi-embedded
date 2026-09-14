@@ -8,7 +8,8 @@
  * Embedders MUST link with the same URBI_REPL_COOPERATIVE_ONLY setting the
  * library was built with — struct layouts (UReplServer, UReplReader,
  * UReplQueue, UReplRingbuf) differ between modes. Same trap class as any
- * other build-flag mismatch guarded by src/runtime/uabi_guards.c. */
+ * other build-flag mismatch.  (This header is PARKED with the networked
+ * server; the cooperative service never starts a thread.) */
 #ifndef UREPL_THREADING_H
 #define UREPL_THREADING_H
 

@@ -4,7 +4,7 @@
  * The implementation lives in src/emit/ufront.c and is backed by the
  * runtime core's USym table (src/rt/ustr.h): one table per VM, immortal
  * entries, pointer equality implying content equality.  The old
- * open-addressing table in src/value/uintern.c is no longer built; this
+ * open-addressing table the old core kept beside this one is gone; this
  * header keeps the one declaration the emitter needs so none of the
  * src/emit/ translation units have to know where interning happens. */
 

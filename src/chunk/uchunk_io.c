@@ -872,12 +872,14 @@ fail:
 }
 
 /* nested[k] may be NULL by design:
- *   strand_closure_unlink (src/watcher/uwatcher_install.c) detaches a UProto
- *   from module->nested[] when its UClosure is captured by a watcher
- *   (transferring ownership from the module to the watcher pool).  After
- *   detach, nested[k] reads NULL.  This is the expected steady-state for any
- *   chunk that installed reactive watchers — uchunk_destroy must skip NULL
- *   slots without freeing them, since the watcher's pool_free now owns
+ *   the old core's watcher installer detached a UProto from module->nested[]
+ *   when its UClosure was captured, transferring ownership from the module to
+ *   the watcher pool, and nested[k] then read NULL.  The re-founded runtime
+ *   does not do that — a captured closure keeps its proto and the collector
+ *   owns both — but the loader still tolerates a NULL slot, because a chunk
+ *   that arrives off disk is not required to have been produced by this
+ *   build.  uchunk_destroy must skip NULL slots without freeing them, since
+ *   whoever nulled one now owns
  *   that proto and will free it on watcher recycle.
  *
  *   Detach only happens at `s->frame_count == 0` (chunk-top installs).

@@ -8,7 +8,7 @@ The runtime is new. `src/vm`, `src/sched`, `src/gc`, `src/object`,
 The compiler frontend, the bytecode format and the language are the
 same, and the conformance corpus is what says so.
 
-The public C API is replaced wholesale — 45 functions, opaque `UVM`,
+The public C API is replaced wholesale — 44 functions, opaque `UVM`,
 `urbi_open` / `urbi_run` / `urbi_step` / `urbi_close` — so ABI goes
 0/23/7 -> 0/24/0 and the wire format 0x19 -> 0x1A (v1.10) for the one
 new opcode. There is no compatibility promise before 1.0.0.

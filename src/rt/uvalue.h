@@ -38,7 +38,8 @@ static inline bool   uv_is_number(UValue v) { return v.kind == UV_INT || v.kind 
 static inline double uv_as_double(UValue v) { return v.kind == UV_INT ? (double)v.v.i : v.v.f; }
 /* Truthiness: nil, void, bool false, int 0, float 0.0 are false; every
  * other kind (including SYM/STR/OBJ/CELL and any legacy kind) is true.
- * Must match the old core's uvalue_truthy (src/value/uvalue.c). */
+ * Truthiness is pinned by the .chk corpus, which encodes what the old
+ * core answered here; tests/chk/ is the specification. */
 static inline bool uv_truthy(UValue v) {
     switch (v.kind) {
     case UV_NIL: case UV_VOID: return false;

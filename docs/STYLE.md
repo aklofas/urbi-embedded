@@ -106,27 +106,30 @@ Rules:
 - **Only C99-mandated freestanding headers are unconditional.** `<float.h>`, `<iso646.h>`, `<limits.h>`, `<stdarg.h>`, `<stdbool.h>`, `<stddef.h>`, `<stdint.h>`. These are provided by the compiler, not the libc, so they are always available.
 - **Hosted headers are guarded.** `<stdlib.h>`, `<string.h>`, `<stdio.h>`, `<time.h>`, `<assert.h>`, etc. Include them behind `#if __STDC_HOSTED__ / #endif`. GCC sets `__STDC_HOSTED__` to 0 under `-ffreestanding`.
 - **Any function that reaches a hosted-only feature is guarded the same way.** If a convenience wrapper calls `malloc`, it and its prototype in the public header both sit inside `#if __STDC_HOSTED__`. Freestanding callers are expected to use the injection-based API (custom allocator, static buffer) that the library already provides.
-- **Don't depend on libc for leaf utilities.** `memset`, `memcpy`, `strlen` are all hosted. Write small local replacements when needed (`arena_zero` in `src/value/uarena.c` is the pattern). Mark the buffer `volatile` to prevent the compiler from recognizing the loop and lowering it back to a libc call under `-Os`.
-- **Test files are exempt.** `tests/unit/*.c` link against the host toolchain and may freely use hosted headers. The library itself is what must stay freestanding.
+- **Don't depend on libc for leaf utilities.** `memset`, `memcpy`, `strlen` are all hosted. Write small local replacements when needed (`urbi_zero` in `src/util/umacros.h` is the pattern). Mark the buffer `volatile` to prevent the compiler from recognizing the loop and lowering it back to a libc call under `-Os`.
+- **Test files are exempt.** `tests/unit/*.c`, `tests/rt/*.c` and `tests/probes/*.c` link against the host toolchain and may freely use hosted headers. The library itself is what must stay freestanding.
 
-The RISC-V CI job is the acceptance test. If your change makes `make cross-riscv` fail, the change is wrong — not the test.
+The RISC-V and Cortex-M cross builds were the acceptance test; both are parked until Phase 5. Until they return, `tests/scripts/check_rt_layering.sh` is what enforces the rule on `src/rt/`, per file, on every `make test`.
 
-**Allocator discipline.** Core TUs use the `umacros.h` helpers (`urbi_malloc`, `urbi_free`, `urbi_memset`, `urbi_memcpy`) which route through the pluggable allocator and keep the freestanding discipline intact. Hosted or gated TUs — those compiled only under `__STDC_HOSTED__`, `URBI_INTERNAL_ASSERT`, `URBI_ENABLE_ROS2`, `URBI_MEM_DEBUG`, or `URBI_PERF_COUNTERS` — may use libc `mem*`/`str*` directly where it is the clearest choice.
+**Allocator discipline.** Frontend TUs use the `src/util/umacros.h` helpers (`urbi_zero`, `urbi_memcpy`, `urbi_memeq`, `urbi_strlen`, `urbi_strncpy_truncating`), which keep the freestanding discipline without a libc call. `src/rt/` has its own equivalents behind the layering gate. Hosted or gated TUs — those compiled only under `__STDC_HOSTED__`, or behind an optional-component flag — may use libc `mem*`/`str*` directly where it is the clearest choice.
 
-`src/value/uvalue.c` uses `<stdio.h>` for `snprintf` and is therefore gated
-behind `#if __STDC_HOSTED__`. The header `src/value/uvalue.h` declares the API
-unconditionally so callers can include it on any target; freestanding callers
-that attempt to link `uvalue_format` get a clear undefined-symbol error at link
-time rather than a silent miscompile. This is the same pattern as
-`src/value/uarena.c`'s `stdlib_alloc` gating: the header is unconditional, the
+`src/host/uformat.c` uses `<stdio.h>` for `snprintf` and is therefore a
+hosted-only translation unit, left out of a freestanding build entirely.
+`include/urbi/urbi.h` declares `urbi_value_to_string` unconditionally so
+callers can include it on any target; a freestanding caller that tries to
+link it gets a clear undefined-symbol error rather than a silent
+miscompile. This is the same pattern as
+`src/util/uarena.c`'s `stdlib_alloc` gating: the header is unconditional, the
 implementation symbols are hosted-only.
 
-The concurrency runtime (`v0.3.0-concurrency` and later) adds files across
-several subsystem directories, all of which must satisfy the same freestanding
-constraint. Every `.c` under `src/sched/`, `src/runtime/`, `src/tag/`,
-`src/watcher/`, `src/event/`, `src/gc/`, `src/chunk/`, `src/vm/`,
-`src/realm/`, and `src/changed/` must compile clean under `make cross-riscv`
-and `make cross-arm`.
+`src/rt/` is held to a stricter version of the same rule, and it is
+machine-checked rather than conventional: no libc beyond `stdint.h`,
+`stddef.h`, `stdbool.h`, `string.h` and `math.h`, enforced per file by
+`tests/scripts/check_rt_layering.sh` on every `make test`. Anything
+needing `snprintf`, `malloc` or `assert` belongs in `src/host/`, which a
+freestanding build omits. `src/chunk/` and `src/util/` follow the same
+discipline by hand, because the loader and the arena ship to the same
+targets.
 
 ---
 
@@ -209,7 +212,7 @@ Coverage targets: ≥ 90% line coverage, ≥ 80% branch coverage per subsystem. 
 - **No internal process IDs in comments.** Do not embed milestone (`M<n>`), task (`T<n>`), wave (`W<n>`), or audit-finding (`FOUND-<n>`, `refactor-<n>`) identifiers in source comments. These identifiers are meaningful only in the private planning context and become noise in the public repository. Cite the specific invariant or behavior instead. Exception: `include/urbi/version.h` is the ABI history ledger and may retain these IDs.
 - **File-header banner.** Every non-trivial translation unit should carry a 3–6 line what/why banner immediately after the SPDX line: `/* filename.c — one-line what. */ /* why: role in the system, non-obvious constraints. */` Single-function files may use the one-line form.
 
-**Cautionary tale:** A stale comment in `ugc_incremental.c` claimed the payload-walk path was unreachable ("At M3 no concrete types exist"). The comment was accurate when written but went stale when walkers were registered. A later reader trusted the comment over the code — this is the class of error (GC-03) that the "no process IDs, keep the rationale" rule prevents. Strip the ID token; always keep the *why*.
+**Cautionary tale:** a comment in the old collector claimed the payload-walk path was unreachable, because no concrete types existed when it was written. Walkers were registered later; the comment stayed. A reader trusted it over the code. That file is gone now, which is itself the point — the tale survives and its evidence does not, so keep the *why* in the comment and the *when* out of it, and a comment that names a file will eventually name one that no longer exists.
 
 ---
 
@@ -217,11 +220,13 @@ Coverage targets: ≥ 90% line coverage, ≥ 80% branch coverage per subsystem. 
 
 Commit hygiene is covered in `CONTRIBUTING.md`. Briefly:
 
-- Subsystem prefix: `lex:`, `parse:`, `emit:`, `vm:`, `intern:`, `module:`, `gc:`, `sched:`, `strand:`, `react:`, `tag:`, `unwind:`, `realm:`, `step:`, `event:`, `chk:`, `obj:`, `shape:`, `slot:`, `ic:`, `tests:`, `build:`, `ci:`, `docs:`, etc.
-  - `obj:` — `src/object/uobject.c/h` (UObject, prototype chain, lookup_inner, object_id)
-  - `shape:` — `src/object/ushape.c/h` (UShape, transition cache, props_table)
-  - `slot:` — `src/object/uslothandle.c/h` (USlotHandle, validate-and-refresh)
-  - `ic:` — `src/object/uic.c/h`, `src/object/umoduleinstance.c/h` (inline cache, UModuleInstance, slot_get/set_slow)
+- Subsystem prefix: `lex:`, `parse:`, `emit:`, `chunk:`, `util:`, `rt:`,
+  `stdlib:`, `host:`, `api:`, `repl:`, `chk:`, `tests:`, `build:`, `ci:`,
+  `docs:`, `tools:`. The full table is in `CONTRIBUTING.md`.
+  - The runtime is ONE prefix. Before the core re-foundation it was ten,
+    against ten directories; `src/rt/` replaced all of them, so a commit
+    touching the collector and the scheduler together is ordinary now
+    rather than a multi-subsystem split.
 - Imperative mood, ≤ 72-char subject, no trailing period.
 - Body explains WHY. One concern per commit.
 - Commits stand alone. Don't reference internal workflow artifacts that live outside the public repo.

@@ -14,7 +14,7 @@
  * there is exactly one string table in the process: a `const char *` an
  * emit-time constant holds is a USym's payload, and uproto_bind's
  * re-intern of those bytes returns that same USym.  The old
- * open-addressing table in src/value/uintern.c is no longer built. */
+ * open-addressing table the old core kept beside this one is gone. */
 
 #ifndef UFRONT_H
 #define UFRONT_H

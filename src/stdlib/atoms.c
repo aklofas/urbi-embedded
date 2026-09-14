@@ -16,11 +16,8 @@
  *
  * Note: Integer arithmetic, Integer comparison, Float arith, and String
  * concat are inline VM opcodes (OP_ADD / OP_LT / OP_EQ / etc. in
- * src/vm/uvm.c), not slot lookups, so registering them as slots would
- * VM opcodes (OP_ADD / OP_LT / OP_EQ / etc. in src/vm/uvm.c), not slot
- * lookups, so registering them as slots would have no effect on the
- * `1 + 2` source form.  The plan templated against an atom-method-only
- * dispatch model the shipped VM does not use.
+ * src/rt/uexec_ops.c), not slot lookups, so registering them as slots
+ * would have no effect on the `1 + 2` source form.
  */
 
 #include "rt/ustdlib_glue.h"
@@ -451,7 +448,7 @@ flt_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     /* Lua 5.4 trailing-.0: append .0 if the result looks integer-valued
      * (no '.', 'e', 'E', 'n' for nan, 'i' for inf).  Mirrors the REPL
-     * printer in src/value/uvalue.c. */
+     * printer, urbi_value_to_string in src/host/uformat.c. */
     int needs_dot_zero = 1;
     for (int k = 0; k < n; k++) {
         char c = buf[k];

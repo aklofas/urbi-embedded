@@ -1,5 +1,22 @@
 # urbi-embedded as an ESP-IDF managed component.
 #
+# ############################################################
+# # PARKED.  DO NOT BUILD THIS UNTIL PHASE 5 REBUILDS IT.    #
+# ############################################################
+#
+# The core re-foundation replaced the runtime these globs describe.  Ten of
+# the per-subsystem globs below (vm, gc, sched, watcher, event, tag,
+# changed, value, runtime, realm, object) name directories that no longer
+# exist, and src/rt/, src/util/ and src/host/ are missing entirely.  A glob
+# over a missing directory is EMPTY, not an error, so this file would
+# quietly build a component with no runtime in it and fail at link with a
+# wall of undefined symbols.
+#
+# idf_component.yml carries the current version because check-version-sync
+# pins it to the release tag; the version number is not a claim that this
+# file works.  Phase 5 rewrites the globs against the Makefile's source
+# lists and re-validates on silicon.
+#
 # Mirrors the host Makefile SRC variable: globs every src/ subdir that
 # contributes to liburbi.a (core), excludes src/urbi_aux.c (separate
 # liburbi_aux.a archive — embedders opt in independently via the aux

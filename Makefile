@@ -294,6 +294,11 @@ test-probes: $(PROBE_BINS) $(BUILDDIR)/urbi
 
 # Run this alone.  Under `make -j` beside anything else the number is the
 # machine's, not the interpreter's.
+#
+# URBI_BENCH_REQUIRED=1 turns the non-host SKIP into a failure.  releasetest
+# sets it, so a mistyped TARGET= cannot yield a green timing gate that
+# measured nothing; an interactive `make TARGET=host-asan test-bench` still
+# just says why it skipped.
 test-bench: $(PROBE_BINS) $(BUILDDIR)/urbi
 ifeq ($(TARGET),host)
 	@$(BUILDDIR)/tests/probes/lookup_bench $(BUILDDIR)/urbi tests/probes
@@ -301,6 +306,10 @@ else
 	@echo "lookup_bench: SKIP — $(TARGET) is instrumented or built at a"
 	@echo "  different optimization level, and the baseline it compares"
 	@echo "  against was recorded on the default host build."
+	@if [ "$(URBI_BENCH_REQUIRED)" = "1" ]; then \
+	    echo "lookup_bench: FAIL — URBI_BENCH_REQUIRED=1 but TARGET=$(TARGET)" >&2; \
+	    exit 1; \
+	fi
 endif
 
 # Core archive. Kept as its own target for cross-compile / freestanding
@@ -723,6 +732,10 @@ releasetest:
 # Internal aggregators for the two phases.  Not for direct use; invoke
 # `releasetest` instead.
 _releasetest_phase1: $(RELEASETEST_PHASE1)
+# Target-specific, so it reaches test-bench as a prerequisite and NOWHERE
+# else: an interactive `make TARGET=host-asan test-bench` still just says
+# why it skipped.
+_releasetest_phase2: URBI_BENCH_REQUIRED := 1
 _releasetest_phase2: $(RELEASETEST_PHASE2)
 
 # libFuzzer — clang-specific (uses libclang_rt.fuzzer, ships with clang's

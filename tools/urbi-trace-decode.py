@@ -5,7 +5,8 @@ Chrome Trace Event Format JSON (loadable in Perfetto / chrome://tracing).
   python3 tools/urbi-trace-decode.py DUMP.bin [--out trace.json]
   cat DUMP.bin | python3 tools/urbi-trace-decode.py -  > trace.json
 
-The CHANNELS / SCHEMAS tables mirror src/runtime/utrace_format.c
+The CHANNELS / SCHEMAS tables mirror the trace encoder, which is PARKED
+with the old runtime; this decoder returns to service in Phase 5.
 (k_schema_name[]) and urbi_trace_channel_name(); keep them in sync when a tag
 adds a channel or schema. Unknown ids degrade to chan_<n> / schema_<n>.
 """

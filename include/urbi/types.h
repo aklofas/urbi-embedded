@@ -5,9 +5,9 @@
  *
  * Public-facing type declarations needed by the rest of the public API.
  *
- * Internal headers (src/chunk/uchunk.h, src/sched/ustrand.h, src/vm/uvm.h)
- * include this file rather than redefining the types, ensuring single
- * source of truth.
+ * Internal headers (src/chunk/uproto.h, src/rt/uvalue.h) include this file
+ * rather than redefining the types, so the frontend, the runtime and the
+ * embedder all read one definition.
  *
  * Layout MUST match the internal canonical form byte-for-byte.  Any later
  * change to UValue layout requires updating this header, the internal
@@ -390,12 +390,11 @@ typedef uint16_t urbi_event_id_t;
  * any future change to URBI_EVENT_PAYLOAD_MAX or URBI_EVENT_PAYLOAD_ALIGN
  * is caught at compile time rather than silently breaking ISR-side code.
  *
- * URBI_EVENT_PAYLOAD_MAX is the authoritative definition; the internal
- * header src/event/uevent_ring.h defers to this value via an #ifndef guard.
+ * URBI_EVENT_PAYLOAD_MAX is the authoritative definition; the scheduler's
+ * ISR ring (src/rt/usched.h) sizes its records from it.
  *
  * Alignment is achieved with __attribute__((aligned(8))) rather than C11
- * _Alignas to preserve -std=c99 compatibility (project convention, see
- * uevent_ring.h alignment note). */
+ * _Alignas to preserve -std=c99 compatibility (project convention). */
 #define URBI_EVENT_PAYLOAD_MAX   16
 #define URBI_EVENT_PAYLOAD_ALIGN 8
 

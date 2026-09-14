@@ -116,8 +116,12 @@ compiler does not pretend to answer it.
 
 A strand is a coroutine: a growable register stack, an array of call
 frames, a list of open upvalues, and a cleanup stack. `sizeof(UStrand)`
-is 176 bytes and a strand parked on a `sleep` costs 615 bytes all in,
-which `tests/probes/strand_cost.c` measures on every build.
+is 192 bytes on a 64-bit host — the fixed struct, not counting the arrays
+it grows — and a strand parked on a `sleep` costs 615 bytes all in, which
+`tests/probes/strand_cost.c` measures on every build.
+`tests/rt/test_strand.c` pins the struct size exactly, so a field added
+without thinking about the idle-strand budget fails the build rather than
+drifting.
 
 The register stack grows on demand. The old core had a fixed per-VM cap
 (`UVM_STACK_CAP`) and overflowing it raised an out-of-memory error the
@@ -174,8 +178,9 @@ on the batch path.
 
 `vm->last_error` is ONE buffer, which has a consequence worth knowing: a
 detached strand dying later in the same pump would otherwise overwrite
-what an awaited strand left there, so `uexec_run_closure` renders the
-awaited strand's escape again once its pump is over. A detached strand's
+what an awaited strand left there, so `uexec_run_chunk` renders the
+awaited strand's escape again once its pump is over — at the one point
+where the strand is still pinned and the caller has not yet read. A detached strand's
 message goes to the diagnostic hook at the moment it dies.
 
 Rendering a thrown value happens under the freestanding rule, so the core
@@ -213,10 +218,20 @@ affordable.
 
 One table. `src/rt/uboot.c` has a row per built-in naming its global, its
 slot in `vm->protos[]`, its parent, and its method list, and `uboot_init`
-walks it three times: allocate every proto, link the parents, install the
-methods. No row can depend on another row's position. The old core booted
-through eighteen hand-ordered registration functions whose ordering
-constraints lived only in comments.
+walks it in six labelled passes:
+
+1. allocate every prototype, so no row can depend on another's position;
+2. link the parents;
+3. install the methods (`isA` goes on the Object root here);
+4. build the shared `root_globals` object every realm inherits from;
+5. install the constant and default SLOTS the table has no column for,
+   and run the six per-proto init hooks;
+6. run the `stdlib.u` script overlay, then apply the read-only seal.
+
+The seal is last for a reason: passes 1–5 and the overlay all need to
+write to objects that are read-only from the moment it lands. The old
+core booted through eighteen hand-ordered registration functions whose
+ordering constraints lived only in comments.
 
 The standard library reaches the runtime through exactly one header,
 `src/rt/ustdlib_glue.h`. A native method never includes `rt/uobj.h` or
@@ -230,8 +245,9 @@ there, where it needs no C rooting at all.
 
 ## The C API
 
-45 functions in `include/urbi/urbi.h`, plus the four-function eval
-service in `include/urbi/repl.h`. `docs/embedding-guide.md` walks a
+44 functions in `include/urbi/urbi.h`, plus the four-function eval
+service in `include/urbi/repl.h` and the inline value helpers in
+`include/urbi/types.h`. `docs/embedding-guide.md` walks a
 complete program; `docs/api-surface-tiers.md` is the manifest the
 `test-api-manifest` gate checks.
 

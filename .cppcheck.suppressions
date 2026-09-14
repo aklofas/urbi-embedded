@@ -2,6 +2,13 @@
 // Format: <id>:<file>:<line>  followed by `// audit:<ID> <rationale>`.
 // File-wide form `<id>:<file>` and project-wide `<id>:*` also accepted.
 //
+// Every entry names a file that $(SRC) actually compiles.  The core
+// re-foundation deleted nine blocks here whose files went with the old
+// runtime -- the computed-goto dispatch table, the object-model lookup
+// stamps, the unwinder's pattern stub, the watcher eval-pass counter, the
+// loader strand.  A suppression for a file cppcheck cannot see is not
+// harmless: it reads as a known exception when it is a fossil.
+//
 // Common categories to expect:
 //   missingIncludeSystem  — system includes intentionally not parsed
 //   unusedFunction        — public C API consumed by tests/ + external embedders
@@ -23,34 +30,8 @@
 unusedFunction
 
 // =============================================================================
-// src/vm/uvm.c — computed-goto dispatch table
-// =============================================================================
-// audit:CPPCHK-010 (Phase 19) — cppcheck cannot parse GCC's label-address
-// operator `&&label` (it sees `&&` as logical-and producing a bool), so it
-// flags every dispatch_table entry as `assignBoolToPointer` and every
-// `label_OP_*:` target as `unusedLabelConfiguration` (claiming the labels
-// only exist under preprocessor branches).  Both are correctness-stable
-// false positives: UVM_USE_COMPUTED_GOTO=1 is the host build mode, the
-// labels are jumped to via `goto *dispatch_table[opcode]` at the dispatch
-// hot loop (src/vm/uvm.c near line 290).  Suppressing file-wide because
-// every opcode handler is affected.
-assignBoolToPointer:src/vm/uvm.c
-unusedLabelConfiguration:src/vm/uvm.c
-
-// =============================================================================
 // Per-site suppressions
 // =============================================================================
-
-// audit:CPPCHK-002 lookup_id rollover guard — three sites where cppcheck's
-// static analysis assumes 32-bit lookup_id and reports the (uint32_t) cast on
-// (lookup_id + 1ULL) as always false.  vm->lookup_id is uint64_t; the cast
-// catches the actual u32 wrap (every ~4B lookups) where the stamp would
-// collide with the "no stamp" sentinel 0.  Guard is live correctness on
-// 64-bit hosts and required for stamp-uniqueness during DFS traversal.
-// Verified 2026-05-08 against src/vm/uvm.h:128 (uint64_t lookup_id field).
-knownConditionTrueFalse:src/object/uobject_lookup.c:82
-knownConditionTrueFalse:src/object/uobject_lookup.c:120
-knownConditionTrueFalse:src/object/uobject_slot.c:728
 
 // audit:CPPCHK-011 (Phase 19) — pattern_matches() is an M3 catch-everything
 // stub that always returns 1 (src/runtime/uunwind.c:65 docstring); cppcheck
@@ -113,34 +94,6 @@ constParameterPointer:src/stdlib/atoms.c
 // (src/stdlib/debug_namespace.c's entry retired at the re-foundation:
 // the namespace is one method now and its unused args are cast away.)
 
-// audit:S44-followup — src/runtime/uunwind.c pattern_matches() at TRY_FRAME
-// catch absorption is a documented M3 / FOUND-026 stub returning 1.  Wave 2
-// will refine to class-pattern dispatch and the condition will become
-// meaningful.  Cppcheck's flow analysis now detects the tautology — it was
-// unflagged pre-S44 because the surrounding control-flow exposed fewer paths.
-// File-wide suppression keeps the warning out of the gate until the Wave 2
-// refinement lands; revisit then.
-knownConditionTrueFalse:src/runtime/uunwind.c
-
-// audit:v0.10.9-W3 — src/runtime/uunwind.c urbi_tag_block / _unblock /
-// _freeze / _unfreeze use `vm` only for URBI_ASSERT_NOT_ISR and the
-// NULL-arg validity check, then walk tag->member_strands_head and forward
-// to urbi_strand_suspend / _resume (which themselves only read vm).
-// cppcheck suggests `const struct UVM *` for the parameter, but the
-// public C API surface in include/urbi/urbi.h pins `struct UVM *vm` to
-// match the broader API convention (urbi_tag_stop / urbi_strand_cancel /
-// urbi_throw etc.).  Const-qualifying would break ABI uniformity and
-// force every caller through a const-cast.
-constParameterPointer:src/runtime/uunwind.c
-
-// audit:v0.10.9-W3 — src/tag/utag_native.c tag_freeze_native /
-// tag_unfreeze_native and the new tag_frozen_native / tag_blocked_native
-// load `t` from self.v.p and only read it.  cppcheck suggests
-// `const UTag *`, but the helpers below (urbi_tag_freeze etc.) accept
-// non-const UTag*.  Cascading const into urbi_tag_* signatures would
-// break the public C API uniformity (see uunwind.c rationale above).
-constVariablePointer:src/tag/utag_native.c
-
 // audit:v094-repl-portability — src/repl/urepl_queue.c uses UREPL_MUTEX_LOCK /
 // UREPL_COND_WAIT / UREPL_COND_BROADCAST macros (from src/repl/urepl_threading.h)
 // that expand to pthread_mutex_lock / pthread_cond_wait / pthread_cond_broadcast
@@ -157,25 +110,14 @@ constVariablePointer:src/tag/utag_native.c
 // Surfaced by the v0.9.4 typedef-shim swap (commit a8f121c) which replaced
 // direct pthread_* calls with UREPL_* macros; the new indirection broke
 // cppcheck's flow analysis.
-constParameterPointer:src/repl/urepl_queue.c
-knownConditionTrueFalse:src/repl/urepl_queue.c
+// (src/repl/urepl_queue.c is PARKED and not in $(SRC), so cppcheck never
+// scans it; these two entries come back with the networked server.)
+// constParameterPointer:src/repl/urepl_queue.c
+// knownConditionTrueFalse:src/repl/urepl_queue.c
 
 // (src/repl/urepl_dispatch.c's entry retired at the re-foundation: the
 // handler it covered was dispatch_auth, which went with the networked
 // server, and the live handlers already take a const request.)
-
-// audit:v0_10_9_W2_D3 — src/runtime/umacros.h urbi_strncpy_truncating is a
-// bounded-copy helper whose loop condition `n + 1U < cap && src[n] != '\0'`
-// safely stops on either bound.  When called with a constant cap larger
-// than the literal string source (e.g., UVM_ERRMSG_CAP=128 with a 30-char
-// literal in src/tag/utag_native.c:tag_stop_native), cppcheck's
-// inter-procedural analysis flags the loop body as "out-of-bounds at
-// src[126]" — but the `src[n] != '\0'` short-circuit fires first.  Other
-// call sites pass variable cap (out_buf_size) so cppcheck cannot constant-
-// propagate and the warning silently stays clear.  File-wide suppression
-// because the helper itself is unchanged; every constant-cap caller would
-// otherwise need a per-site suppression.
-arrayIndexOutOfBoundsCond:src/runtime/umacros.h
 
 // audit:v0.12.5-m10-prep — src/stdlib/regexp.c native-method callbacks
 // (regexp_new / regexp_match / etc.) expose UValue *args via the
@@ -190,7 +132,8 @@ constParameterPointer:src/stdlib/regexp.c
 // practice cppcheck emits constParameterPointer for these sites (not
 // constParameterCallback); the entry never matched and cppcheck reports it
 // as unmatchedSuppression.  The constParameterPointer suppression below
-// (audit:v0.12.0-ros-R1 / constParameterPointer:src/ros/uros.c) already covers
+// (audit:v0.12.0-ros-R1 / // (PARKED with the rest of src/ros/; not in $(SRC).)
+// constParameterPointer:src/ros/uros.c) already covers
 // all live findings; this entry is deleted rather than corrected to avoid a
 // duplicate.
 
@@ -201,16 +144,8 @@ constParameterPointer:src/stdlib/regexp.c
 // uniformity (same rationale as the v0.10.9-W3 urbi_tag_block suppression for
 // uunwind.c above).  Const-qualifying would break API uniformity and force
 // callers through a const-cast.
-constParameterPointer:src/ros/uros.c
-
-// audit:v0.13.4-F2 — src/watcher/uwatcher_eval.c skip-zero guard on the
-// eval-pass generation counter.  After `eval_pass_gen = (uint8_t)(... + 1u)`
-// cppcheck concludes the assigned value is > 0 and flags the following
-// `eval_pass_gen == 0` check as always-false.  The false positive arises
-// because cppcheck does not model uint8_t wrap-around: when the field holds
-// 255 the cast truncates 256 to 0, making the check live.  The guard is the
-// two-fix for the pool-recycle stamp-collision bug (F2 in v0.13.4 review).
-knownConditionTrueFalse:src/watcher/uwatcher_eval.c:193
+// (PARKED with the rest of src/ros/; not in $(SRC).)
+// constParameterPointer:src/ros/uros.c
 
 // audit:v0.13.6-namespace-day — src/emit/uemit_internal.h patch_fwd_jmp_here(UEmitter *e, ...)
 // urbi_emit_patch_instr() mutates the emitter's instruction buffer; cppcheck cannot see through
@@ -224,18 +159,6 @@ constParameterPointer:src/emit/uemit_internal.h:196
 shadowVariable:src/parse/uparse_stmt.c:621
 shadowVariable:src/parse/uparse_stmt.c:638
 shadowVariable:src/parse/uparse_stmt.c:662
-
-// src/chunk/uchunk_strand.c urbi_compile's error-message fallback: the
-// __STDC_HOSTED__ branch's final `else` already excludes
-// `finish_rc != EMIT_OK || e.error != EMIT_OK` before reaching the shared
-// msg block, so `finish_rc != EMIT_OK` is dead there; the freestanding
-// (!__STDC_HOSTED__) build has no such preceding branch and reaches the
-// same shared block directly, where the check is live. cppcheck analyzes
-// a limited subset of this file's #ifdef configurations per run (see its
-// own "Too many #ifdef configurations" note) and this run happened to pick
-// only the hosted one, reporting the check as always-false without
-// accounting for the freestanding configuration where it is not.
-knownConditionTrueFalse:src/chunk/uchunk_strand.c:424
 
 // audit:refound-task9 — every src/stdlib file defines native
 // methods whose signature is pinned by the boot table's UMethodDef:

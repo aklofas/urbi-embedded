@@ -118,8 +118,14 @@ static void cleanup_stack_grows_past_initial_cap(void) {
 static void strand_struct_is_small(void) {
     /* Idle-strand footprint target (spec S7): the fixed struct itself,
      * not counting the lazily-allocated stack/frames/cleanup arrays.
-     * Assumes a 64-bit host, the only target `make test-rt` builds for. */
-    RT_CHECK(sizeof(UStrand) <= 200);
+     * Assumes a 64-bit host, the only target `make test-rt` builds for.
+     *
+     * Pinned EXACTLY, not bounded.  A `<= 200` bound let the struct grow
+     * from 176 to 192 without anything noticing, and docs/internals/
+     * runtime.md quoted the stale number for a whole task.  A field added
+     * here is a deliberate change to the idle-strand budget, so it should
+     * cost a line in this test and a line in that document. */
+    RT_CHECK(sizeof(UStrand) == 192);
 }
 
 static void gc_traces_live_registers_only(void) {

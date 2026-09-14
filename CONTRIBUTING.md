@@ -125,7 +125,7 @@ Source files live under per-subsystem folders:
 Public C API lives in `include/urbi/`:
 
     include/urbi/types.h     UValue, the error codes, the allocator signature, opaque forward declarations
-    include/urbi/urbi.h      The 45-function embedding API
+    include/urbi/urbi.h      The 44-function embedding API
     include/urbi/version.h   API and release version macros
     include/urbi/repl.h      The optional cooperative eval service
     include/urbi/require.h   URBI_REQUIRE and its embedder hook
@@ -178,20 +178,22 @@ Format:
 | `parse:` | Parser, AST (`src/parse/`) |
 | `desugar:` | Desugaring pass |
 | `emit:` | Bytecode emitter, register allocator (`src/emit/`) |
-| `module:` | Bytecode module format, serializer/deserializer (`src/module/`) |
-| `vm:` | Interpreter core, opcode dispatch (`src/vm/`) |
-| `value:` | Value representation, shape system (`src/value/`) |
-| `gc:` | Garbage collector (`src/gc/`) |
-| `sched:` | Coroutine scheduler (`src/sched/`) |
-| `react:` | Events, watchers, tags (`src/{event,watcher,tag,changed}/`) |
-| `runtime:` | Cross-cutting runtime (`src/runtime/`) |
-| `realm:` | Realms (`src/realm/`) |
-| `object:` | Object model (`src/object/`) |
-| `api:` | Public C API (`include/urbi/*.h`, `src/urbi.c`) |
+| `chunk:` | Bytecode container: writer, loader, verifier (`src/chunk/`) |
+| `util:` | Frontend-shared helpers: arena, varint, freestanding string ops (`src/util/`) |
+| `rt:` | The runtime: collector, objects, strands, scheduler, unwinder, watchers, realms, boot table (`src/rt/`) |
+| `stdlib:` | Built-in methods and `stdlib.u` (`src/stdlib/`) |
+| `host:` | Public API whose implementation needs libc (`src/host/`) |
+| `api:` | Public C API headers (`include/urbi/*.h`) |
+| `repl:` | The cooperative eval service (`src/repl/`) |
 | `tools:` | Anything under `tools/` |
-| `repl:` | REPL service |
-| `ros:` | micro-ROS bridge |
-| `port:` | ESP-IDF / STM32 / Xtensa integration |
+| `ros:` | micro-ROS bridge (`src/ros/`) — parked until Phase 5 |
+| `port:` | ESP-IDF / STM32 / Xtensa integration — parked until Phase 5 |
+
+The runtime is one prefix, not ten. Before the core re-foundation it was
+`vm:`, `gc:`, `sched:`, `object:`, `realm:`, `react:` and `runtime:`
+against seven directories; `src/rt/` replaced all of them, and a commit
+touching the collector and the scheduler together is now ordinary rather
+than a multi-subsystem split.
 
 Multi-subsystem commits: pick the dominant one, or split. Splitting is almost always right.
 
@@ -290,9 +292,8 @@ all stand at 0 violations against the v0.5.8-cleanup baseline:
   rationale per block.  Two structurally false-positive categories
   are blanket-suppressed: `unusedFunction` (cppcheck scans `src/`
   only, every public-API symbol looks unused from its perspective)
-  and `unusedLabelConfiguration` + `assignBoolToPointer` in
-  `src/vm/uvm.c` (cppcheck cannot parse GCC's computed-goto
-  `&&label` operator).
+  and a small set of per-file entries whose rationale is recorded
+  beside them in that file.
 - **`make test-tidy-strict`** — clang-tidy with bug-prone /
   cert-ish + readability checklist.  Promoted to all-categories
   hard-fail at v0.5.8-cleanup Phase 20 (was 23 informational at
