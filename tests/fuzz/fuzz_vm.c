@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* libFuzzer harness for the VM.
  *
- * Feeds raw bytes through uchunk_deserialize; any accepted module is
- * executed via urbi_vm_run. Sanitizers (ASan + UBSan) catch undefined
- * behavior, leaks, and crashes in both the dispatch loop and the
- * arithmetic helpers. Most random input is rejected by the loader;
- * only structurally valid modules reach the VM — which is where the
- * fuzz pressure is useful.
+ * Feeds raw bytes through the public bytecode-loading entry point; any
+ * chunk the loader and verifier accept is then executed.  Sanitizers
+ * (ASan + UBSan) catch undefined behaviour, leaks, and crashes in both
+ * the dispatch loop and the arithmetic helpers.  Most random input is
+ * rejected by the loader; only structurally valid chunks reach the VM,
+ * which is where the fuzz pressure is useful.
  *
  * Build:
  *   make fuzz-vm
@@ -18,27 +18,27 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
-#include "chunk/uchunk.h"
-#include "vm/uvm.h"
+#include "urbi/urbi.h"
+
+static void *fuzz_alloc(void *p, size_t n, void *ud) {
+    (void)ud;
+    if (n == 0) { free(p); return NULL; }
+    return realloc(p, n);
+}
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    UProto *module = NULL;
-    if (uchunk_deserialize(&module, data, size, NULL, NULL, NULL, 0) != UCHUNK_LOAD_OK) {
-        return 0;
-    }
-
-    UVM vm;
-    urbi_vm_init(&vm, /* alloc_fn = */ NULL, /* alloc_ud = */ NULL);
+    UVM *vm = urbi_open(fuzz_alloc, NULL, NULL);
+    if (vm == NULL) return 0;
 
     UValue result;
-    (void)urbi_vm_run(&vm, NULL, module, &result);
-    /* Touch result so the compiler keeps the run-path live. */
+    (void)urbi_load(vm, urbi_realm_main(vm), data, size, &result);
+    /* Touch result so the compiler keeps the run path live. */
     if ((int)result.kind < 0) {
-        /* unreachable; UValKind is unsigned */
+        /* unreachable; the kind byte is unsigned */
     }
 
-    urbi_vm_destroy(&vm);
-    uchunk_destroy(module, NULL);
+    urbi_close(vm);
     return 0;
 }

@@ -7,7 +7,7 @@
 #   - EVERY README.md urbi tag mention (vX.Y.Z[-name]) vs latest release tag
 #     (mentions on lines containing "ESP-IDF" are toolchain pins, not urbi
 #     tags, and are excluded)
-#   - the URBI_VERSION literal in src/urbi.c vs latest release tag
+#   - the URBI_RELEASE_STRING literal in include/urbi/version.h vs latest tag
 #
 # refactor-3 GATE-03: the previous version checked only the FIRST mention of
 # each string (head -1) — the known README-ordering trap was structural.
@@ -117,19 +117,19 @@ if [ "$README_TAG_FOUND" -eq 0 ]; then
     fail_msg "README.md contains no tag reference (vX.Y.Z[-name])"
 fi
 
-# === (5) urbi_version() literal in src/urbi.c vs latest tag ===
+# === (5) urbi_version() literal in include/urbi/version.h vs latest tag ===
 #
 # refactor-3 GATE-03 (new check): the runtime self-report drifted to
 # "0.5.7-fixes" for ~20 tags before refactor-3 API-04 caught it.  The
 # unit test pins the literal; this gate pins it against the TAG.
 
-URBI_VERSION_LIT=$(grep -E '^#define URBI_VERSION ' src/urbi.c | \
-                   sed -E 's/^#define URBI_VERSION[[:space:]]+"([^"]*)".*/\1/')
+URBI_VERSION_LIT=$(grep -E '^#define URBI_RELEASE_STRING ' include/urbi/version.h | \
+                   sed -E 's/^#define URBI_RELEASE_STRING[[:space:]]+"([^"]*)".*/\1/')
 if [ -z "$URBI_VERSION_LIT" ]; then
-    fail_msg "could not extract '#define URBI_VERSION \"...\"' from src/urbi.c"
+    fail_msg "could not extract '#define URBI_RELEASE_STRING \"...\"' from include/urbi/version.h"
 elif [ "$URBI_VERSION_LIT" != "$EXPECTED" ]; then
     fail_msg "urbi_version() literal drift"
-    echo "    src/urbi.c URBI_VERSION:        \"$URBI_VERSION_LIT\"" >&2
+    echo "    version.h URBI_RELEASE_STRING:  \"$URBI_VERSION_LIT\"" >&2
     echo "    latest git tag (stripped 'v'):  \"$EXPECTED\"" >&2
 fi
 

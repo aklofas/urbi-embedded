@@ -444,7 +444,7 @@ int urbi_gc_stats(UVM *vm, UGcStats *out)
     return URBI_OK;
 }
 
-const char *urbi_version(void) { return URBI_API_VERSION_STRING; }
+const char *urbi_version(void) { return URBI_RELEASE_STRING; }
 
 void urbi_api_version(int *out_major, int *out_minor, int *out_patch)
 {

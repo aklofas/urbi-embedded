@@ -751,13 +751,16 @@ static UChunkLoadError decode_proto(MDecCtx *d, UProto *p) {
     }
 
     UChunkLoadError rc;
+    /* Every UVAL_STR entry decode_constants_into writes is a fresh malloc'd
+     * buffer (see its UVAL_STR arm), so the pool is module-owned and
+     * uproto_destroy_buffers frees them.  The flag is set BEFORE the call,
+     * not after: a truncated pool returns partway through, and the entries
+     * already decoded (const_count only counts completed ones) would
+     * otherwise be skipped by the cleanup walk and leak. */
+    p->constants_owned = true;
     rc = decode_constants_into(d, &p->constants, &p->const_count, &p->const_cap,
                                alloc, alloc_ud);
     if (rc != UCHUNK_LOAD_OK) return rc;
-    /* Every UVAL_STR entry decode_constants_into just wrote is a fresh
-     * malloc'd buffer (see its UVAL_STR arm) — mark the whole pool
-     * module-owned so uproto_destroy_buffers frees them. */
-    p->constants_owned = true;
     rc = decode_instructions_into(d, &p->instructions, &p->instr_count, &p->instr_cap,
                                   alloc, alloc_ud);
     if (rc != UCHUNK_LOAD_OK) return rc;
