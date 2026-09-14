@@ -607,29 +607,20 @@ uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n) {
         upvalue_idx = urbi_vm_find_or_install_upvalue(e, fs, canonical,
                                               n->u.assign.name_len);
         if (upvalue_idx < 0) {
-            /* Check whether this name was declared via `var` at chunk-top
-             * (stored in the root funcstate's global_var_names).  Walk up the
-             * parent chain so fork thunks can write chunk-top vars via the same
-             * realm-slot path that reads already use.  Names that were never
-             * declared anywhere still produce EMIT_UNRESOLVED_NAME. */
-            {
-                UFuncState *root_fs = fs;
-                while (root_fs->parent != NULL) root_fs = root_fs->parent;
-                if (root_fs->references_global) {
-                    for (int gi = 0; gi < root_fs->n_global_vars; gi++) {
-                        if (root_fs->global_var_names[gi] == canonical) {
-                            is_global_assign = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!is_global_assign) {
-                e->error = EMIT_UNRESOLVED_NAME;
-                urbi_emit_diag_error(e, n, "undefined name '%.*s'",
-                                n->u.assign.name_len, n->u.assign.name_start);
-                return 0U;
-            }
+            /* Neither a local nor an upvalue: the target is a realm
+             * global.  This is the WRITE half of legacy top-level
+             * scoping, and it deliberately does not require the name to
+             * have been declared in THIS chunk -- the REPL compiles one
+             * chunk per line, so `var x = 5` and `x = 9` almost never
+             * share a compilation unit, and a fork thunk writing a
+             * chunk-top var is a nested funcstate that never saw the
+             * declaration either.
+             *
+             * Whether the slot exists is the runtime's question, not the
+             * compiler's: OP_SETSLOT on the realm globals behaves
+             * exactly as the explicit `Realm.x = v` form does. */
+            is_global_assign = true;
+            if (!urbi_emit_reserve_global_slot(e)) return 0U;
         }
     }
 

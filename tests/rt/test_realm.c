@@ -222,6 +222,16 @@ static void t_toplevel_var_from_a_closure(void)
     v = run(vm, r, "var peek = function () { k + 2 }; peek()");
     RT_EQ(v.v.i, 42);
 
+    /* And writes it, from a chunk that never saw the declaration.  This
+     * is the case the REPL hits constantly: `var x = 5` on one line,
+     * `x = 9` on the next. */
+    (void)run(vm, r, "k = 41");
+    v = run(vm, r, "k");
+    RT_EQ(v.v.i, 41);
+    (void)run(vm, r, "var poke = function () { k = 7 }; poke()");
+    v = run(vm, r, "k");
+    RT_EQ(v.v.i, 7);
+
     urbi_close(vm);
 }
 
