@@ -167,10 +167,18 @@ int uexec_return(UVM *vm, UStrand *s, UValue rv);
 /* Source line for an instruction index within one proto, or 0 when the
  * proto carries no line table.  Defined in rt/uunwind.c. */
 uint32_t uproto_line_at(const UProto *p, uint32_t pc);
-/* Appends "line N: " (or "<source>:N: ") for the instruction the top
- * frame is executing, or nothing when there is no position.  Returns the
- * new length. */
-size_t uexec_position_prefix(UStrand *s, char *buf, size_t cap, size_t at);
+/* Source line of the instruction the top frame is executing, or 0. */
+uint32_t uexec_current_line(UStrand *s);
+/* Appends "line N: " (or "<source>:N: ") for `line`, or nothing when it
+ * is 0.  Returns the new length. */
+size_t uexec_position_prefix(UStrand *s, uint32_t line, char *buf, size_t cap, size_t at);
+
+/* Maps a UEXEC_* result from a top-level entry point (urbi_run,
+ * urbi_call, urbi_load) onto the public URBI_* code, and settles
+ * vm->last_error: cleared on success, left holding the escaped value's
+ * rendering on a throw.  Every one of those entry points goes through
+ * this, so none of them can report the same failure differently. */
+int uexec_finish_run(UVM *vm, int exec_rc);
 
 /* --- running --------------------------------------------------------- */
 

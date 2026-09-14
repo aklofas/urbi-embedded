@@ -705,11 +705,15 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
 
         case OP_TRY_END:
             /* The normal-path pop.  A UCLEAN_F_RUNNING marker belongs to
-             * the walker, never to a TRY_END. */
+             * the walker, never to a TRY_END.  A mismatch means the
+             * emitter and the walker disagree about the stack's shape,
+             * which would leak an entry rather than announce itself. */
             if (s->ncleanup > 0
                 && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TRY
                 && (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) == 0) {
                 s->ncleanup--;
+            } else {
+                UGC_ASSERT(0);
             }
             break;
 
@@ -724,7 +728,10 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             c.flags = (uint8_t)(OPA(i) >> 4);
             c.saved_unwind = (uint8_t)UUNWIND_NONE;
             c.frame = (uint16_t)(s->nframes - 1);
-            c.handler_pc = OPBX(i);
+            /* handler_pc names a TRY's catch or finally entry and means
+             * nothing for a tag scope; the onleave body is the only
+             * target this entry has. */
+            c.handler_pc = 0;
             c.onleave_pc = OPBX(i);
             c.tag = NULL;
             c.saved = uv_nil();
@@ -738,10 +745,16 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
         case OP_POP_TAG:
             if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TAG_SCOPE)
                 s->ncleanup--;
+            else
+                UGC_ASSERT(0);   /* see OP_TRY_END */
             break;
 
         case OP_LOAD_CATCH_VALUE:
+            /* The handler owns the value from here.  Clearing the strand's
+             * copy drops the last root the walker held on it, so an
+             * exception the handler discards is collectable at once. */
             R[OPA(i)] = s->transfer;
+            s->transfer = uv_nil();
             break;
 
         case OP_RESUME: {
@@ -863,18 +876,7 @@ int uexec_run_source(UVM *vm, URealm *realm, const char *src, size_t n,
     UValue res = uv_nil();
     int crc = uexec_call(vm, s, cl, uv_obj(realm->globals), NULL, 0, &res);
     uvm_spare_release(vm, s);
-    if (crc != UEXEC_OK) {
-        /* The walker cleared vm->last_error for a throw of something that
-         * is not an exception object: `throw 42` and `throw "x"` recover
-         * to nil rather than surfacing as an error, which is the contract
-         * control_transfer/throw_uncaught.chk pins. */
-        if (vm->last_error[0] == '\0') {
-            vm->last_error_code = URBI_OK;
-            return URBI_OK;
-        }
-        vm->last_error_code = URBI_ERR_UNCAUGHT_THROW;
-        return URBI_ERR_UNCAUGHT_THROW;
-    }
-    if (out) *out = res;
-    return URBI_OK;
+    int rc2 = uexec_finish_run(vm, crc);
+    if (rc2 == URBI_OK && out) *out = res;
+    return rc2;
 }

@@ -125,21 +125,30 @@ static size_t uw_append_u32(char *buf, size_t cap, size_t at, uint32_t n)
     return at;
 }
 
-/* "line N: " for an unnamed chunk, "<name>:N: " for a named one, and
- * nothing at all when the position is unknown.  The REPL compiles with a
- * NULL source name, which is what makes the corpus's `line 1: ` prefix
- * the common shape. */
-size_t uexec_position_prefix(UStrand *s, char *buf, size_t cap, size_t at)
+/* The source line of the instruction the top frame is executing, or 0
+ * when the proto carries no line table. */
+uint32_t uexec_current_line(UStrand *s)
 {
-    if (s == NULL || s->nframes == 0) return at;
+    if (s == NULL || s->nframes == 0) return 0;
     const UFrame *f = &s->frames[s->nframes - 1];
     const UProto *p = (f->closure ? f->closure->proto : NULL);
-    if (p == NULL || f->pc == NULL || p->instructions == NULL) return at;
+    if (p == NULL || f->pc == NULL || p->instructions == NULL) return 0;
     /* f->pc has already been advanced past the faulting instruction. */
     size_t off = (size_t)(f->pc - p->instructions);
-    uint32_t line = uproto_line_at(p, (uint32_t)(off ? off - 1 : 0));
-    if (line == 0) return at;
-    const char *name = uproto_source_name(p);
+    return uproto_line_at(p, (uint32_t)(off ? off - 1 : 0));
+}
+
+/* "line N: " for an unnamed chunk, "<name>:N: " for a named one, and
+ * nothing at all when `line` is 0.  The REPL compiles with a NULL source
+ * name, which is what makes the corpus's `line 1: ` prefix the common
+ * shape.  Takes the line rather than re-deriving it, so the caller that
+ * also wants it for the exception's `line` slot computes it once. */
+size_t uexec_position_prefix(UStrand *s, uint32_t line, char *buf, size_t cap, size_t at)
+{
+    if (line == 0 || s == NULL || s->nframes == 0) return at;
+    const UFrame *f = &s->frames[s->nframes - 1];
+    const UProto *p = (f->closure ? f->closure->proto : NULL);
+    const char *name = p ? uproto_source_name(p) : NULL;
     if (name != NULL && name[0] != '\0') {
         at = uw_append(buf, cap, at, name);
         at = uw_append(buf, cap, at, ":");
@@ -150,38 +159,137 @@ size_t uexec_position_prefix(UStrand *s, char *buf, size_t cap, size_t at)
     return uw_append(buf, cap, at, ": ");
 }
 
-/* --- reporting what escaped --------------------------------------------
+/* --- rendering a thrown value -------------------------------------------
  *
- * The old core's contract, pinned by control_transfer/throw_uncaught.chk
- * and exceptions/exceptions.chk: a scalar or string throw that escapes
- * everything recovers to nil and reports URBI_OK, while an exception
- * OBJECT surfaces as URBI_ERR_UNCAUGHT_THROW carrying its `message`.
- * vm->last_error is the signal -- empty means "recover to nil" -- so
- * this deliberately CLEARS the text uexec_throw wrote eagerly when the
- * escaped value is not an object. */
+ * What escapes is reported through vm->last_error, which the REPL renders
+ * as "!!! <that>".  An exception object contributes its `message`; any
+ * other value is formatted the way the REPL prints a value.
+ *
+ * The shapes mirror urbi_value_to_string, which lives in src/host because
+ * a Float needs snprintf's "%.14g".  That is unavailable under the
+ * freestanding rule, so a Float whose value is not an exact integer
+ * renders as "<?>" here.  No fixture pins a non-integral Float throw. */
+
+static size_t uw_append_i64(char *buf, size_t cap, size_t at, int64_t n)
+{
+    /* Negated through the magnitude so INT64_MIN does not overflow. */
+    uint64_t mag = (n < 0) ? (uint64_t)(-(n + 1)) + 1u : (uint64_t)n;
+    char tmp[20];
+    size_t k = 0;
+    do { tmp[k++] = (char)('0' + (unsigned)(mag % 10u)); mag /= 10u; } while (mag);
+    if (n < 0 && at + 1 < cap) buf[at++] = '-';
+    while (k && at + 1 < cap) buf[at++] = tmp[--k];
+    buf[at] = '\0';
+    return at;
+}
+
+static size_t uw_append_quoted(char *buf, size_t cap, size_t at, UValue v)
+{
+    static const char hex[] = "0123456789abcdef";
+    uint32_t len;
+    const char *b = uv_str_bytes(v, &len);
+    if (at + 1 < cap) buf[at++] = '"';
+    for (uint32_t k = 0; k < len; k++) {
+        unsigned char c = (unsigned char)b[k];
+        const char *esc = NULL;
+        switch (c) {
+        case '\\': esc = "\\\\"; break;
+        case '"':  esc = "\\\""; break;
+        case '\n': esc = "\\n"; break;
+        case '\t': esc = "\\t"; break;
+        case '\r': esc = "\\r"; break;
+        default: break;
+        }
+        if (esc) {
+            if (at + 3 >= cap) break;
+            buf[at++] = esc[0]; buf[at++] = esc[1];
+        } else if (c >= 0x20 && c < 0x7f) {
+            if (at + 2 >= cap) break;
+            buf[at++] = (char)c;
+        } else {
+            if (at + 5 >= cap) break;
+            buf[at++] = '\\'; buf[at++] = 'x';
+            buf[at++] = hex[(c >> 4) & 0xf]; buf[at++] = hex[c & 0xf];
+        }
+    }
+    if (at + 1 < cap) buf[at++] = '"';
+    buf[at] = '\0';
+    return at;
+}
+
+static void uw_format_value(UVM *vm, char *buf, size_t cap, UValue v)
+{
+    buf[0] = '\0';
+    switch (v.kind) {
+    case UV_NIL:   (void)uw_append(buf, cap, 0, "nil"); return;
+    case UV_BOOL:  (void)uw_append(buf, cap, 0, v.v.i ? "true" : "false"); return;
+    case UV_INT:   (void)uw_append_i64(buf, cap, 0, v.v.i); return;
+    case UV_FLOAT: {
+        double x = v.v.f;
+        /* Every comparison is false for a NaN and the range test rejects
+         * the infinities, so both fall through to "<?>". */
+        if (x >= -9.0e18 && x <= 9.0e18 && (double)(int64_t)x == x) {
+            size_t at = uw_append_i64(buf, cap, 0, (int64_t)x);
+            (void)uw_append(buf, cap, at, ".0");   /* Lua's rule, as uformat.c has it */
+            return;
+        }
+        (void)uw_append(buf, cap, 0, "<?>");
+        return;
+    }
+    case UV_SYM: case UV_STR: (void)uw_append_quoted(buf, cap, 0, v); return;
+    case UV_OBJ: {
+        /* An exception contributes its message.  The address
+         * urbi_value_to_string would print is not reproducible across
+         * runs, so a plain object reports its kind instead. */
+        UObject *o = (UObject *)v.v.p;
+        const USym *kmsg = usym_cstr(vm, "message");
+        UObjSlotRef ref;
+        if (kmsg && o && uobj_resolve(vm, o, kmsg, &ref)) {
+            UValue mv = uobj_slot_value(&ref);
+            if (mv.kind == UV_SYM || mv.kind == UV_STR) {
+                uint32_t len;
+                (void)uw_append(buf, cap, 0, uv_str_bytes(mv, &len));
+                return;
+            }
+        }
+        (void)uw_append(buf, cap, 0, "<object>");
+        return;
+    }
+    default: (void)uw_append(buf, cap, 0, "<?>"); return;
+    }
+}
+
+/* --- reporting what escaped ---------------------------------------------
+ *
+ * Spec section 9: what escapes the top frame kills the strand and is
+ * reported.  Every value, not only an exception object -- the old core
+ * answered nil for a scalar throw, the "errors vanish" defect the
+ * refactor-4 audit named. */
 static void uexec_report_escape(UVM *vm, const UStrand *s)
 {
     vm->last_error[0] = '\0';
     vm->last_error_code = URBI_OK;
     if (s->unwind != UUNWIND_THROW) return;
-
-    UValue v = s->transfer;
-    if (v.kind != UV_OBJ) return;
-
     vm->last_error_code = URBI_ERR_UNCAUGHT_THROW;
-    UObject *o = (UObject *)v.v.p;
-    const USym *kmsg = usym_cstr(vm, "message");
-    UObjSlotRef ref;
-    if (kmsg && o && uobj_resolve(vm, o, kmsg, &ref)) {
-        UValue mv = uobj_slot_value(&ref);
-        if (mv.kind == UV_SYM || mv.kind == UV_STR) {
-            uint32_t len;
-            const char *b = uv_str_bytes(mv, &len);
-            (void)uw_append(vm->last_error, sizeof vm->last_error, 0, b);
-            return;
-        }
+    uw_format_value(vm, vm->last_error, sizeof vm->last_error, s->transfer);
+}
+
+/* --- the public return-code mapping --------------------------------------
+ *
+ * The one place a UEXEC_* result from a top-level entry point becomes a
+ * URBI_* code, so urbi_run, urbi_call and urbi_load cannot drift apart
+ * (spec section 9: "batch and REPL paths are the same path").  A clean
+ * run also clears the channel, because uexec_throw records into
+ * last_error eagerly and a caught throw must leave no trace there. */
+int uexec_finish_run(UVM *vm, int exec_rc)
+{
+    if (exec_rc == UEXEC_OK) {
+        vm->last_error[0] = '\0';
+        vm->last_error_code = URBI_OK;
+        return URBI_OK;
     }
-    (void)uw_append(vm->last_error, sizeof vm->last_error, 0, "<exception>");
+    vm->last_error_code = URBI_ERR_UNCAUGHT_THROW;
+    return URBI_ERR_UNCAUGHT_THROW;
 }
 
 /* --- completing a return ------------------------------------------------ */

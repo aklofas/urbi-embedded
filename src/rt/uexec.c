@@ -233,17 +233,12 @@ static int uexec_throw_impl(UVM *vm, UStrand *s, int which_proto, const char *ms
     const char *pname = (which_proto >= 0 && which_proto < UP_COUNT)
                       ? uexec_proto_names[which_proto] : "Exception";
     char text[256];
-    size_t at = with_position ? uexec_position_prefix(s, text, sizeof text, 0) : 0;
-    if (!with_position) text[0] = '\0';
-    uint32_t line = 0;
-    if (with_position && s->nframes > 0) {
-        const UFrame *f = &s->frames[s->nframes - 1];
-        const UProto *p = f->closure ? f->closure->proto : NULL;
-        if (p && p->instructions && f->pc) {
-            size_t off = (size_t)(f->pc - p->instructions);
-            line = uproto_line_at(p, (uint32_t)(off ? off - 1 : 0));
-        }
-    }
+    text[0] = '\0';
+    /* One derivation feeds both the message prefix and the `line` slot;
+     * the slot is filled for every throw, the prefix only for the raises
+     * that earn a position (see uexec_throw_here). */
+    uint32_t line = uexec_current_line(s);
+    size_t at = with_position ? uexec_position_prefix(s, line, text, sizeof text, 0) : 0;
     at = uexec_str_append(text, sizeof text, at, pname);
     at = uexec_str_append(text, sizeof text, at, ": ");
     (void)uexec_str_append(text, sizeof text, at, msg ? msg : "");
