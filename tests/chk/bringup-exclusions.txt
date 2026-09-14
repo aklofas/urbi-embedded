@@ -21,9 +21,6 @@ tests/chk/control_transfer/tag_stop_no_target.chk     # tag.stop() outside any s
 tests/chk/control_transfer/tag_stop_skips_catch.chk   # a STOP must pass a catch by
 tests/chk/control_transfer/tag_stop_with_finally.chk  # a STOP must still run finallys
 
-# --- needs the concurrency separators ----------------------------------
-tests/chk/control_transfer/unbraced_bodies.chk        # four cases bind `&` after an unbraced arm
-
 # --- needs slot-write constness through the prototype chain ------------
 #
 # `Realm.Object = 42` must raise: the CONSTANT attribute is on the

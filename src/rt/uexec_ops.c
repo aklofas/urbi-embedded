@@ -408,12 +408,27 @@ static int do_call(UVM *vm, UStrand *s, uint16_t fi, uint32_t instr)
     return UEXEC_OK;
 }
 
+/* The fork opcodes take a closure thunk the emitter built for the arm.
+ * A native closure has no bytecode to run on a strand of its own, so it
+ * is rejected here rather than deep inside usched_spawn. */
+static bool fork_closure(UValue v)
+{
+    if (v.kind != UV_CELL || ((const UCell *)v.v.p)->type != UCELL_CLOSURE) return false;
+    return ((const UClosure *)v.v.p)->proto != NULL;
+}
+
 /* --- the dispatch loop --------------------------------------------------- */
 
 static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
 {
     bool unbounded = (budget == 0);
     s->state = USTRAND_RUNNING;
+    /* The safepoint a cross-strand stop is consumed at.  utag_stop only
+     * marks (`unwind = STOP`, the tag in `transfer`) and wakes; the
+     * marked strand walks its own cleanup stack here, the first time the
+     * scheduler hands it back to dispatch.  Stop never runs on another
+     * strand's stack. */
+    if (s->unwind != UUNWIND_NONE && uexec_unwind(vm, s) != 0) return s->state;
     for (;;) {
         if (s->nframes == 0) {
             /* Nothing to dispatch.  Reachable only if a caller enters with
@@ -684,6 +699,59 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             (void)uexec_throw_value(vm, s, R[OPA(i)]);
             goto unwind;
 
+        /* --- concurrency ------------------------------------------------
+         *
+         * All three spawn through usched_spawn, the one spawn path: the
+         * child lands in the parent's realm under the parent's ambient
+         * tag, with the parent's receiver, so a forked arm resolves
+         * `Realm.x` and `this` exactly as the code around it does. */
+
+        case OP_FORK_DETACH: {
+            UValue cv = R[OPA(i)];
+            if (!fork_closure(cv)) {
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "',' (parallel fork): operand is not a closure");
+                goto unwind;
+            }
+            if (usched_spawn(vm, s->realm, (UClosure *)cv.v.p, s->tag, f->recv, NULL, 0) == NULL) {
+                (void)uexec_throw(vm, s, UP_OOMERROR, "',' (parallel fork): cannot spawn the child strand");
+                goto unwind;
+            }
+            break;
+        }
+
+        case OP_FORK_JOIN: {
+            UValue cv = R[OPA(i)];
+            if (!fork_closure(cv)) {
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "'&' (parallel join): operand is not a closure");
+                goto unwind;
+            }
+            UStrand *child = usched_spawn(vm, s->realm, (UClosure *)cv.v.p, s->tag, f->recv, NULL, 0);
+            if (child == NULL) {
+                (void)uexec_throw(vm, s, UP_OOMERROR, "'&' (parallel join): cannot spawn the child strand");
+                goto unwind;
+            }
+            /* The spawn allocated: both arrays may have moved. */
+            f = &s->frames[s->nframes - 1];
+            s->stack[f->base + OPB(i)] = uv_ptr(UV_CELL, child);
+            break;
+        }
+
+        case OP_JOIN_WAIT: {
+            UValue cv = R[OPA(i)];
+            if (cv.kind != UV_CELL || ((UCell *)cv.v.p)->type != UCELL_STRAND) {
+                (void)uexec_throw(vm, s, UP_TYPEERROR, "'&' (parallel join): join operand is not a strand");
+                goto unwind;
+            }
+            UStrand *child = (UStrand *)cv.v.p;
+            if (child->state == USTRAND_DEAD) break;      /* already finished */
+            if (usched_park(s, &child->joiners, 0) == 0) return s->state;
+            /* No scheduler to hand control back to (a spare strand, or
+             * inside a synchronous call): the join still has to wait, so
+             * the child runs nested on this stack instead. */
+            usched_run_inline(vm, child);
+            break;
+        }
+
         /* --- the cleanup stack (see rt/uunwind.c for the layouts) ------ */
 
         case OP_TRY_BEGIN: {
@@ -719,13 +787,28 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
 
         case OP_PUSH_TAG: {
             /* A[3:0] = the register holding the tag, A[7:4] = flags, Bx =
-             * the onleave handler.  The tag object and its enter/leave
-             * events land with the scheduler task; what the entry does
-             * today is keep the stack shaped correctly so a try nested
-             * inside a tagged block unwinds through it. */
+             * the onleave handler.  A register that does not hold a tag
+             * (and the explicit UCLEAN_F_FRESH_TAG request) opens a fresh
+             * anonymous one, so `mytag: { ... }` scopes whether or not
+             * `mytag` names a Tag. */
+            uint8_t flags = (uint8_t)(OPA(i) >> 4);
+            UTag *t = NULL;
+            if ((flags & UCLEAN_F_FRESH_TAG) == 0) {
+                UValue tv = R[OPA(i) & 0xFu];
+                if (tv.kind == UV_CELL && ((UCell *)tv.v.p)->type == UCELL_TAG)
+                    t = (UTag *)tv.v.p;
+            }
+            if (t == NULL) {
+                t = utag_new(vm, uv_nil());
+                if (t == NULL) {
+                    (void)uexec_throw(vm, s, UP_OOMERROR, "tag push: out of memory creating the scope tag");
+                    goto unwind;
+                }
+                f = &s->frames[s->nframes - 1];   /* the allocation may have collected */
+            }
             UCleanup c;
             c.kind = (uint8_t)UCLEAN_TAG_SCOPE;
-            c.flags = (uint8_t)(OPA(i) >> 4);
+            c.flags = flags;
             c.saved_unwind = (uint8_t)UUNWIND_NONE;
             c.frame = (uint16_t)(s->nframes - 1);
             /* handler_pc names a TRY's catch or finally entry and means
@@ -733,20 +816,25 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
              * target this entry has. */
             c.handler_pc = 0;
             c.onleave_pc = OPBX(i);
-            c.tag = NULL;
-            c.saved = uv_nil();
+            c.tag = t;
+            c.saved = s->tag ? uv_ptr(UV_CELL, s->tag) : uv_nil();
             if (ustrand_push_cleanup(s, c) != 0) {
                 (void)uexec_throw(vm, s, UP_OOMERROR, "tag push: out of memory growing the cleanup stack");
                 goto unwind;
             }
+            s->tag = t;
+            utag_fire(vm, t->enter);
             break;
         }
 
         case OP_POP_TAG:
-            if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TAG_SCOPE)
-                s->ncleanup--;
-            else
+            if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TAG_SCOPE) {
+                UCleanup c = s->cleanup[--s->ncleanup];
+                s->tag = (c.saved.kind == UV_CELL) ? (UTag *)c.saved.v.p : NULL;
+                if (c.tag) utag_fire(vm, c.tag->leave);
+            } else {
                 UGC_ASSERT(0);   /* see OP_TRY_END */
+            }
             break;
 
         case OP_LOAD_CATCH_VALUE:

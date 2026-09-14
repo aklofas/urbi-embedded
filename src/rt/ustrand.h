@@ -70,14 +70,27 @@ typedef enum { UCLEAN_TRY = 1, UCLEAN_TAG_SCOPE = 2 } UCleanKind;
 #define UCLEAN_F_HAS_FINALLY 0x2u
 #define UCLEAN_F_HAS_ONLEAVE 0x4u
 #define UCLEAN_F_RUNNING     0x20u
+/* OP_PUSH_TAG's flag nibble is its own namespace -- the walker reaches
+ * the CATCH/FINALLY tests only for a TRY entry -- and bit 0 there means
+ * "open a fresh anonymous tag, ignore the tag register".  A tag register
+ * that does not hold a tag (an undeclared name, a nil `var`) is treated
+ * the same way, which is what makes `heartbeat: { ... }` scope. */
+#define UCLEAN_F_FRESH_TAG   0x1u
 
 typedef struct UCleanup {
     uint8_t   kind, flags;
     uint8_t   saved_unwind;      /* UCLEAN_F_RUNNING only: the suspended UUnwindKind */
     uint16_t  frame;             /* index into frames[] of the frame that pushed this */
     uint32_t  handler_pc, onleave_pc;
+    /* TAG_SCOPE: the tag this scope OPENED -- what a cross-strand STOP
+     * matches against to find the scope it must unwind to. */
     struct UTag *tag;
-    UValue    saved;             /* UCLEAN_F_RUNNING only: the suspended transfer value */
+    /* UCLEAN_F_RUNNING: the transfer value the finally body suspended.
+     * TAG_SCOPE: the ambient tag this scope displaced, as a UV_CELL (nil
+     * when the strand had none), restored into s->tag on the way out.
+     * The two uses never meet -- a TAG_SCOPE entry is never a finally
+     * marker. */
+    UValue    saved;
 } UCleanup;
 
 /* Stored in UStrand.state (uint8_t) -- deliberately not a typedef'd

@@ -331,9 +331,29 @@ int uexec_unwind(UVM *vm, UStrand *s)
             UCleanup top = s->cleanup[--s->ncleanup];
 
             if (top.kind == UCLEAN_TAG_SCOPE) {
-                /* The tag object, its leave event and the STOP match land
-                 * with the scheduler task; popping the entry is the whole
-                 * of the scope's teardown until then. */
+                /* Leaving a tag scope tears it down the same way OP_POP_TAG
+                 * does, whatever brought us here: the ambient tag goes
+                 * back to what the scope displaced and `leave` fires.  A
+                 * throw crossing a tagged block must not skip that. */
+                s->tag = (top.saved.kind == UV_CELL) ? (UTag *)top.saved.v.p : NULL;
+                if (top.tag) utag_fire(vm, top.tag->leave);
+                /* A STOP stops exactly the scope it names.  Every other
+                 * scope on the way out is passed through, and a STOP that
+                 * names a tag this strand only INHERITED (no scope of its
+                 * own) runs off the bottom and kills the strand -- which
+                 * is what stopping a realm's connection tag means. */
+                if (s->unwind == UUNWIND_STOP && top.tag != NULL
+                    && s->transfer.kind == UV_CELL
+                    && (const UTag *)s->transfer.v.p == top.tag) {
+                    s->unwind = UUNWIND_NONE;
+                    s->transfer = uv_nil();
+                    UFrame *f = &s->frames[fi];
+                    /* The emitter lays the (empty) on-leave block and the
+                     * past-the-scope continuation at the same pc, so this
+                     * is "resume after the tagged block". */
+                    f->pc = f->closure->proto->instructions + top.onleave_pc;
+                    return 0;
+                }
                 continue;
             }
 
@@ -387,8 +407,8 @@ int uexec_unwind(UVM *vm, UStrand *s)
             return uexec_return(vm, s, rv);
         }
 
-        /* THROW (and, once the scheduler task lands, STOP) leaves the
-         * frame behind and keeps looking.  Crossing a boundary frame
+        /* THROW and STOP leave the frame behind and keep looking.
+         * Crossing a boundary frame
          * hands control back to the native that called in, with the
          * unwind still pending so ITS caller carries on unwinding. */
         {

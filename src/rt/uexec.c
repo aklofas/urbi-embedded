@@ -44,8 +44,7 @@ void uvm_gc_mark_fixed(UVM *vm)
     for (URealm *r = vm->realms; r; r = r->next) ugc_mark(vm, &r->cell);
     for (UStrand *s = vm->spare; s; s = s->link) ugc_mark(vm, &s->cell);
     for (UStrand *s = vm->spare_active; s; s = s->link) ugc_mark(vm, &s->cell);
-    for (UStrand *s = vm->sched.run_head; s; s = s->link) ugc_mark(vm, &s->cell);
-    if (vm->sched.current) ugc_mark(vm, &vm->sched.current->cell);
+    usched_mark(vm);
     if (vm->test_mark_extra) vm->test_mark_extra(vm, vm->test_mark_ud);
 }
 
@@ -91,6 +90,8 @@ void uvm_gc_trace(UVM *vm, UCell *c)
     case UCELL_REALM:
         urealm_trace(vm, (URealm *)c);
         break;
+    case UCELL_TAG:   utag_trace(vm, (UTag *)c); break;
+    case UCELL_EVENT: uevent_trace(vm, (UEvent *)c); break;
     default:
         /* Nothing else owns GC cells.  UCELL_PROTO in particular: binding
          * rewrote its constants to UV_SYM and its IC names to USym, both
@@ -156,6 +157,15 @@ void uvm_close(UVM *vm)
     vm->spare = NULL;
     vm->spare_active = NULL;
     vm->sched.run_head = vm->sched.run_tail = vm->sched.current = NULL;
+    vm->sched.dead = NULL;
+    /* The timer heap is raw (non-cell) memory the scheduler owns; its
+     * records only POINT at cells, so it is released here rather than by
+     * the sweep. */
+    ugc_raw_free(vm, vm->sched.heap, (size_t)vm->sched.heap_cap * sizeof(UTimer));
+    vm->sched.heap = NULL;
+    vm->sched.heap_len = vm->sched.heap_cap = 0;
+    for (uint16_t i = 0; i < vm->sched.event_count; i++) vm->sched.events[i] = NULL;
+    vm->sched.event_count = 0;
     vm->test_mark_extra = NULL;
     ugc_destroy(vm);
     ustrtab_destroy(vm, &vm->strings);

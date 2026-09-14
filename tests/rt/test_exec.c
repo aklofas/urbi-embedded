@@ -148,8 +148,9 @@ static void deep_recursion_and_reclaim(void) {
 static void unknown_opcode_throws(void) {
     ExecFix fx; fix_open(&fx);
     UValue out;
-    /* `,` compiles to OP_FORK_DETACH, which this build does not dispatch. */
-    int rc = run(&fx, "1 , 2 |", &out);
+    /* `at (cond) body` compiles to OP_AT_INSTALL, which this build does
+     * not dispatch -- the reactive runtime is its own task. */
+    int rc = run(&fx, "at (1 == 1) 2 |", &out);
     RT_CHECK(rc == URBI_ERR_UNCAUGHT_THROW || rc == URBI_ERR_COMPILE);
     if (rc == URBI_ERR_UNCAUGHT_THROW)
         RT_CHECK(strstr(fx.vm->last_error, "opcode not available") != NULL);

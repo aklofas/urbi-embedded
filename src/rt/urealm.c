@@ -6,6 +6,7 @@
 void urealm_trace(UVM *vm, URealm *r)
 {
     if (r->globals) ugc_mark(vm, &r->globals->cell);
+    if (r->root_tag) ugc_mark(vm, &r->root_tag->cell);
     for (UStrand *s = r->strands; s; s = s->next_in_realm) ugc_mark(vm, &s->cell);
 }
 
@@ -32,6 +33,14 @@ URealm *urealm_new(UVM *vm)
         return NULL;
     }
 
+    /* The realm's connection tag.  Every strand the realm spawns — the
+     * chunk a host runs, a REPL line, a forked arm — inherits it as its
+     * ambient tag, so `Lobby.connectionTag` names it and stopping it
+     * cancels the whole realm.  Created last: it is the only step that
+     * can be skipped without leaving a half-built realm behind. */
+    r->root_tag = utag_new(vm, uv_nil());
+    if (!r->root_tag) { vm->realms = r->next; return NULL; }
+
     if (!vm->main_realm) vm->main_realm = r;
     return r;
 }
@@ -39,14 +48,21 @@ URealm *urealm_new(UVM *vm)
 void urealm_free(UVM *vm, URealm *r)
 {
     if (!vm || !r || r == vm->main_realm) return;
+    /* Stop the connection tag BEFORE unlinking: utag_stop finds members
+     * by walking vm->realms, so a realm already off that list would leave
+     * its strands marked by nobody. */
+    if (r->root_tag) utag_stop(vm, r->root_tag);
     for (URealm **pp = &vm->realms; *pp; pp = &(*pp)->next) {
         if (*pp == r) { *pp = r->next; r->next = NULL; break; }
     }
-    /* root_tag is NULL until the scheduler task lands, so there is nothing
-     * to stop and no strand to kill; everything below the realm is
-     * reclaimed by the next collection once nothing else refers to it. */
+    /* The marked strands never get to run that cleanup -- nothing
+     * schedules them again -- but dropping the lists here makes the realm
+     * and everything below it unreachable, and the next collection takes
+     * the lot.  A strand still on the run queue is reached through the
+     * queue until it dies. */
     r->strands = NULL;
     r->globals = NULL;
+    r->root_tag = NULL;
 }
 
 void urealm_write(UVM *vm, URealm *r, const char *chan, size_t cl,

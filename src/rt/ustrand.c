@@ -150,9 +150,10 @@ void ustrand_trace(struct UVM *vm, UStrand *s) {
     for (UUpval *u = s->open_upvals; u; u = u->next_open) ugc_mark(vm, &u->cell);
     for (uint16_t i = 0; i < s->ncleanup; i++) {
         if (s->cleanup[i].tag) ugc_mark(vm, (UCell *)s->cleanup[i].tag);
-        /* A UCLEAN_F_RUNNING entry holds the unwind value the finally body
-         * suspended; it is live but reachable from nowhere else. */
-        if (s->cleanup[i].flags & UCLEAN_F_RUNNING) ugc_mark_value(vm, s->cleanup[i].saved);
+        /* `saved` carries either the unwind value a finally body
+         * suspended or the ambient tag a TAG_SCOPE displaced; both are
+         * live and reachable from nowhere else, and it is nil otherwise. */
+        ugc_mark_value(vm, s->cleanup[i].saved);
     }
     for (struct UCRoot *r = s->croots; r; r = r->prev) ugc_mark_value(vm, *r->slot);
     /* joiners is a wait list threaded via each waiting strand's own
