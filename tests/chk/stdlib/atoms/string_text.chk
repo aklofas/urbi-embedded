@@ -55,8 +55,8 @@ var p = "xyz".split(","); p.length()
 "".split("").length()
 [00000017] 0
 
-# join on a storage-less List object (bare clone of the proto carries no
-# _storage backing) raises the same TypeError as List.join — one shared
-# implementation, one contract.
+# join rejects a non-List argument with the same TypeError List.join
+# raises — one shared implementation, one contract.  A bare clone of the
+# List proto is an Object, not a List cell, so it lands here.
 ",".join(List.clone())
 [00000018] !!! TypeError: join: argument must be a List

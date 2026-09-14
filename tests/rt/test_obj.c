@@ -66,6 +66,51 @@ static void set_protos_three(void) {
     RT_CHECK(uobj_resolve(&vm, o, usym_cstr(&vm, "k"), &r) && r.owner == p0);
     fakevm_destroy(&vm);
 }
+/* addProto PREPENDS: the most recently added prototype wins the
+ * depth-first walk.  Legacy urbiscript does the same (Object::proto_add's
+ * push_front), and the whole `Target.addProto(TargetMethods)` pattern in
+ * the standard-library overlay depends on it -- under append, the Object
+ * root would answer `new` and `clone` ahead of every overlay. */
+static void add_proto_prepends(void) {
+    UCell *roots[4] = { NULL, NULL, NULL, NULL };
+    struct UVM vm; fakevm_init(&vm, roots, 4);
+    UObject *base = uobj_new(&vm, NULL);  roots[0] = &base->cell;
+    UObject *mid  = uobj_new(&vm, NULL);  roots[1] = &mid->cell;
+    UObject *top  = uobj_new(&vm, NULL);  roots[2] = &top->cell;
+    UObject *o    = uobj_new(&vm, NULL);  roots[3] = &o->cell;
+
+    USym *k = usym_cstr(&vm, "which");
+    uobj_set_local(&vm, base, k, uv_int(1), 0);
+    uobj_set_local(&vm, mid,  k, uv_int(2), 0);
+    uobj_set_local(&vm, top,  k, uv_int(3), 0);
+
+    /* First add: the single-proto representation. */
+    uobj_add_proto(&vm, o, base);
+    RT_EQ(o->nprotos, 1);
+    RT_EQ(o->proto0, base);
+
+    /* Second add: promotes to the array, newest FIRST. */
+    uobj_add_proto(&vm, o, mid);
+    RT_EQ(o->nprotos, 2);
+    RT_EQ(o->protos[0], mid);
+    RT_EQ(o->protos[1], base);
+    RT_EQ(o->proto0, mid);
+
+    /* Third add: still newest first, the rest shifted down. */
+    uobj_add_proto(&vm, o, top);
+    RT_EQ(o->nprotos, 3);
+    RT_EQ(o->protos[0], top);
+    RT_EQ(o->protos[1], mid);
+    RT_EQ(o->protos[2], base);
+
+    /* And resolution follows that order, which is the point. */
+    UObjSlotRef ref;
+    RT_CHECK(uobj_resolve(&vm, o, k, &ref));
+    RT_EQ(ref.owner, top);
+    RT_EQ(uobj_slot_value(&ref).v.i, 3);
+
+    fakevm_destroy(&vm);
+}
 static void remove_proto(void) {
     UCell *roots[3] = { NULL, NULL, NULL };
     struct UVM vm; fakevm_init(&vm, roots, 3);
@@ -123,6 +168,7 @@ RT_SUITE(rt_obj_suite) {
     rt_run("proto_resolution_and_diamond", proto_resolution_and_diamond);
     rt_run("gc_traces_values_and_protos", gc_traces_values_and_protos);
     rt_run("set_protos_three", set_protos_three);
+    rt_run("add_proto_prepends", add_proto_prepends);
     rt_run("remove_proto", remove_proto);
     rt_run("getter_slot_survives_gc", getter_slot_survives_gc);
     rt_run("resolve_depth_cap", resolve_depth_cap);

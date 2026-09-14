@@ -8,7 +8,7 @@
 # NOTE (v0.11.4): slot-not-found is now a CATCHABLE typed TypeError rather
 # than a fatal HALT (see tests/chk/exceptions/vm_typeerror_catchable.chk).
 # Uncaught at the REPL surface it surfaces the instance `message` slot as the
-# legacy "!!! TypeError: ..." diagnostic (D-F2 backward-compat).
+# legacy "!!! <Error>: ..." diagnostic (D-F2 backward-compat).
 #
 # v0.14 (re-foundation): a missing slot raises LookupError, not TypeError.
 # The runtime has had a LookupError prototype all along; the old core
