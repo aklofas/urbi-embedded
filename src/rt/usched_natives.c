@@ -109,7 +109,7 @@ static int tag_unfreeze(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out)
 static int tag_blocked(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out)
 {
     (void)a; (void)n;
-    UTag *t = as_tag(self);
+    const UTag *t = as_tag(self);
     if (!t) return urbi_raise_type(vm, "tag.blocked: receiver is not a Tag", out);
     *out = uv_bool((t->flags & UTAG_F_BLOCKED) != 0);
     return UEXEC_OK;
@@ -118,7 +118,7 @@ static int tag_blocked(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out)
 static int tag_frozen(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out)
 {
     (void)a; (void)n;
-    UTag *t = as_tag(self);
+    const UTag *t = as_tag(self);
     if (!t) return urbi_raise_type(vm, "tag.frozen: receiver is not a Tag", out);
     *out = uv_bool((t->flags & UTAG_F_FROZEN) != 0);
     return UEXEC_OK;
@@ -205,7 +205,7 @@ static int job_current(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out)
 static int job_uid(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out)
 {
     (void)a; (void)n;
-    UStrand *s = as_strand(self);
+    const UStrand *s = as_strand(self);
     if (!s) return urbi_raise_type(vm, "Job.uid: receiver is not a Job", out);
     *out = uv_int((int64_t)s->id);
     return UEXEC_OK;
@@ -214,7 +214,7 @@ static int job_uid(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out)
 static int job_status(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out)
 {
     (void)a; (void)n;
-    UStrand *s = as_strand(self);
+    const UStrand *s = as_strand(self);
     if (!s) return urbi_raise_type(vm, "Job.status: receiver is not a Job", out);
     const char *name;
     switch (s->state) {

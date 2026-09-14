@@ -808,7 +808,10 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                     (void)uexec_throw(vm, s, UP_OOMERROR, "tag push: out of memory creating the scope tag");
                     goto unwind;
                 }
-                f = &s->frames[s->nframes - 1];   /* the allocation may have collected */
+                /* The allocation may have moved the frame and register
+                 * arrays.  Nothing below reads `f` or `R` -- the entry is
+                 * built from s->nframes and the next dispatch iteration
+                 * re-derives both -- so there is nothing to refresh. */
             }
             UCleanup c;
             c.kind = (uint8_t)UCLEAN_TAG_SCOPE;

@@ -261,3 +261,6 @@ constParameterCallback:src/stdlib/namespaces.c
 constParameterCallback:src/stdlib/primitives.c
 constParameterCallback:src/stdlib/regexp.c
 constParameterCallback:src/stdlib/runtime_types.c
+// Same signature, same reason: rt/usched_natives.c holds the Tag, Event
+// and Job method tables and the scheduler globals.
+constParameterCallback:src/rt/usched_natives.c

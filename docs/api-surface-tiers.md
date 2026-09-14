@@ -76,6 +76,7 @@ New public symbols require a PR-review-touch on this manifest.
 
 - `urbi_event_new`
 - `urbi_event_emit`
+- `urbi_event_register`
 - `urbi_inject_event`
 - `urbi_watch`
 

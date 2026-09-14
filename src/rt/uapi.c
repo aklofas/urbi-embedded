@@ -392,7 +392,7 @@ int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_
      * roots the table), so an interrupt handler can never name one the
      * collector has taken. */
     for (uint16_t i = 0; i < sc->event_count; i++) {
-        UEvent *e = sc->events[i];
+        const UEvent *e = sc->events[i];
         if (e && urbi_is_str(e->name) && strcmp(urbi_str_cstr(e->name), name) == 0) {
             if (out_id) *out_id = (urbi_event_id_t)i;
             return URBI_OK;
@@ -445,6 +445,9 @@ int urbi_tag_new(UVM *vm, URealm *realm, const char *name, UValue *out)
     return URBI_OK;
 }
 
+/* The public signature takes a plain UVM handle like every other entry
+ * point; this helper only validates, but its callers mutate. */
+/* cppcheck-suppress constParameterPointer */
 static UTag *uapi_tag(UVM *vm, UValue tag)
 {
     if (!vm || tag.kind != UV_CELL || ((UCell *)tag.v.p)->type != UCELL_TAG) return NULL;
