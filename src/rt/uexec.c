@@ -362,9 +362,14 @@ void uvm_spare_release(UVM *vm, UStrand *s)
  * allocated here in that case. */
 static int uproto_bind_one(UVM *vm, UProto *p)
 {
+    /* Both branches below need the proto's allocator: one to allocate an
+     * ic_names array a deserialised chunk arrives without, the other to
+     * release the loader-owned constant buffers it has just interned.
+     * decode_proto tolerates a NULL alloc_fn through a hosted fallback,
+     * so neither may assume it is set. */
+    if (p->alloc_fn == NULL && (p->ic_count > 0 || p->const_count > 0)) return -1;
     if (p->ic_count > 0) {
         if (p->ic_names == NULL) {
-            if (!p->alloc_fn) return -1;
             p->ic_names = (USymbol **)p->alloc_fn(NULL, (size_t)p->ic_count * sizeof(USymbol *), p->alloc_ud);
             if (!p->ic_names) return -1;
         }

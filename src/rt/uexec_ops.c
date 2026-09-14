@@ -99,8 +99,9 @@ static int arith_type_error(UVM *vm, UStrand *s, uint8_t op)
 {
     char msg[96]; size_t at = 0;
     msg[at++] = '\'';
-    const char *p = arith_op_name(op); while (*p) msg[at++] = *p++;
-    msg[at++] = '\'';
+    const char *p = arith_op_name(op);
+    while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
+    if (at + 1 < sizeof msg) msg[at++] = '\'';
     p = " operands must be numbers, strings, or an object with a '";
     while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
     p = arith_op_name(op); while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
@@ -269,6 +270,15 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
     bool unbounded = (budget == 0);
     s->state = USTRAND_RUNNING;
     for (;;) {
+        if (s->nframes == 0) {
+            /* Nothing to dispatch.  Reachable only if a caller enters with
+             * an empty strand or the unwinder leaves one behind; both are
+             * bugs, so trap in debug builds and die cleanly otherwise
+             * rather than indexing frames[(uint16_t)-1]. */
+            UGC_ASSERT(0);
+            s->state = USTRAND_DEAD;
+            return s->state;
+        }
         UFrame *f = &s->frames[s->nframes - 1];
         UValue *R = s->stack + f->base;
         const UValue *K = f->closure->proto->constants;

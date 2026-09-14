@@ -120,12 +120,21 @@ void ustrand_close_upvals(UStrand *s, uint32_t from_index) {
 }
 
 void ustrand_trace(struct UVM *vm, UStrand *s) {
+    /* The live register range is the maximum over every frame's window,
+     * not just the top one's.  The top frame's top happens to dominate
+     * today -- a callee's base is the caller's A + 1 or + 2, and the
+     * emitter keeps no live value at or above a call's A -- but that is
+     * an emitter invariant, not something this layer can see.  Taking the
+     * max costs one pass over a handful of frames and removes the
+     * dependency. */
     uint32_t top = 0;
-    if (s->nframes > 0) {
-        UFrame *last = &s->frames[s->nframes - 1];
-        uint32_t max_reg = (last->closure && last->closure->proto) ? last->closure->proto->max_reg : 0;
-        top = last->base + max_reg + 1;
+    for (uint16_t i = 0; i < s->nframes; i++) {
+        UFrame *f = &s->frames[i];
+        uint32_t max_reg = (f->closure && f->closure->proto) ? f->closure->proto->max_reg : 0;
+        uint32_t end = f->base + max_reg + 1;
+        if (end > top) top = end;
     }
+    if (top > s->stack_cap) top = s->stack_cap;
     for (uint32_t i = 0; i < top; i++) ugc_mark_value(vm, s->stack[i]);
     for (uint16_t i = 0; i < s->nframes; i++) {
         UFrame *f = &s->frames[i];
