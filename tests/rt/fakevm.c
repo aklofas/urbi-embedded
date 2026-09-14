@@ -3,3 +3,4 @@
  * test runner links these definitions. Task 8 deletes this file. */
 UGc *uvm_gc(struct UVM *vm) { return &vm->gc; }
 UStrTab *uvm_strings(struct UVM *vm) { return &vm->strings; }
+UObjStats *uvm_objstats(struct UVM *vm) { return &vm->objstats; }

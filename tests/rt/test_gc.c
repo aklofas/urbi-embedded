@@ -15,8 +15,8 @@ static void rooted_survives(void) {
      * and mark_fixed dereferences every slot up to nroots. */
     struct UVM vm; UCell *roots[1] = { NULL };
     fakevm_init(&vm, roots, 1);
-    roots[0] = ugc_alloc(&vm, UCELL_OBJ, 32);
-    UCell *garbage = ugc_alloc(&vm, UCELL_OBJ, 32); (void)garbage;
+    roots[0] = ugc_alloc(&vm, UCELL_HOST, 32);
+    UCell *garbage = ugc_alloc(&vm, UCELL_HOST, 32); (void)garbage;
     ugc_collect(&vm);
     RT_EQ(vm.gc.cells_live, 1u);
     RT_CHECK(roots[0]->marked == 0);        /* marks are cleared by sweep */
@@ -50,7 +50,7 @@ static void threshold_triggers(void) {
 }
 static void mark_is_idempotent_and_iterative(void) {
     struct UVM vm; UCell *roots[1] = { NULL }; fakevm_init(&vm, roots, 1);
-    roots[0] = ugc_alloc(&vm, UCELL_OBJ, 16);
+    roots[0] = ugc_alloc(&vm, UCELL_HOST, 16);
     ugc_mark(&vm, roots[0]); ugc_mark(&vm, roots[0]);
     RT_EQ(vm.gc.gray_len, 1u);
     ugc_collect(&vm);  /* must not loop or double free */
