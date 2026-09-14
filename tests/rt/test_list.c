@@ -1,4 +1,5 @@
 #include <string.h>
+#include <math.h>
 #include "rtest.h"
 #include "fakevm.h"
 #include "rt/ulist.h"
@@ -135,11 +136,20 @@ static void gc_unrooted_list_reclaimed(void) {
 }
 
 static void uv_equal_table(void) {
-    UCell *roots[2] = { NULL, NULL };
-    struct UVM vm; fakevm_init(&vm, roots, 2);
+    UCell *roots[3] = { NULL, NULL, NULL };
+    struct UVM vm; fakevm_init(&vm, roots, 3);
     RT_CHECK(uv_equal(uv_int(1), uv_float(1.0)));
     RT_CHECK(uv_equal(uv_float(1.0), uv_int(1)));
     RT_CHECK(!uv_equal(uv_int(1), uv_int(2)));
+    /* INT and BOOL never compare equal, even at matching underlying
+     * value -- they're different kinds, not different representations
+     * of the same number the way INT/FLOAT are. */
+    RT_CHECK(!uv_equal(uv_int(1), uv_bool(true)));
+    RT_CHECK(!uv_equal(uv_bool(true), uv_int(1)));
+    RT_CHECK(!uv_equal(uv_int(0), uv_bool(false)));
+    /* NaN != NaN under IEEE 754; uv_equal must not special-case it into
+     * true via a raw bit/representation compare. */
+    RT_CHECK(!uv_equal(uv_float(NAN), uv_float(NAN)));
     USym *sym_a = usym_cstr(&vm, "a");
     UStr *str_a = ustr_new(&vm, "a", 1);
     RT_CHECK(uv_equal(uv_sym(sym_a), uv_str(str_a)));
@@ -148,6 +158,12 @@ static void uv_equal_table(void) {
     UObject *o2 = uobj_new(&vm, NULL); roots[1] = &o2->cell;
     RT_CHECK(!uv_equal(uv_obj(o1), uv_obj(o2)));
     RT_CHECK(uv_equal(uv_obj(o1), uv_obj(o1)));
+    /* OBJ and CELL (a list here) are different kinds even though both
+     * dispatch through a pointer-identity fallback -- must not compare
+     * equal just because the raw pointer bytes happen to differ-kind. */
+    UList *l = ulist_new(&vm, NULL, 0); roots[2] = &l->cell;
+    RT_CHECK(!uv_equal(uv_obj(o1), uv_list(l)));
+    RT_CHECK(!uv_equal(uv_list(l), uv_obj(o1)));
     RT_CHECK(!uv_equal(uv_nil(), uv_void()));
     RT_CHECK(uv_equal(uv_nil(), uv_nil()));
     RT_CHECK(uv_equal(uv_bool(true), uv_bool(true)));
