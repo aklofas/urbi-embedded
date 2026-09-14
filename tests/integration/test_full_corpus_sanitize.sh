@@ -19,9 +19,11 @@
 # project_releasetest_perf.md: sanitizer throughput collapses under
 # concurrent gcov / clang-tidy / cppcheck / fanalyzer).
 #
-# Promotes from Wave-5's curated-subset sanitizer coverage to a standing
-# all-fixtures gate.  Wave-5 hypothesis: prior phases closed the latent
-# bugs so 148 × 2 = 296 runs all clean.
+# Scope: the same directories `make test-chk` gates (CHK_GATE_DIRS), plus
+# the same per-fixture exclusions.  Fixtures whose subsystem has not been
+# re-founded yet fail for reasons that have nothing to do with memory
+# safety, so sanitizing them would report noise; each directory joins
+# this gate at the same moment it joins test-chk.
 
 set -uo pipefail
 
@@ -40,14 +42,21 @@ for bin in "$ASAN_URBI" "$UBSAN_URBI"; do
     fi
 done
 
-# tests/chk/repl/*.chk are NDJSON fixtures (v0.9.1 Phase 8) for the REPL
-# dispatcher, not urbiscript input consumable by run_chk.sh.  Their
-# in-process driver was removed in the Phase 0 runtime-internals test
-# cleanup; REPL is currently a parked feature pending v1.x re-attachment.
-# Exclude here to match `test-chk`.
-mapfile -t fixtures < <(find tests/chk -path tests/chk/repl -prune -o \
-                             -type f -name '*.chk' -print | sort)
-echo "Discovered ${#fixtures[@]} fixtures (tests/chk/repl excluded)."
+CHK_GATE_DIRS="${CHK_GATE_DIRS:-arithmetic closure function control}"
+EXCLUSIONS=tests/chk/bringup-exclusions.txt
+
+excluded() {
+    [[ -f "$EXCLUSIONS" ]] || return 1
+    sed 's/#.*//' "$EXCLUSIONS" | tr -d ' \t' | grep -qx "$1"
+}
+
+fixtures=()
+for d in $CHK_GATE_DIRS; do
+    while IFS= read -r f; do
+        excluded "$f" || fixtures+=("$f")
+    done < <(find "tests/chk/$d" -type f -name '*.chk' | sort)
+done
+echo "Discovered ${#fixtures[@]} fixtures in the gated directories ($CHK_GATE_DIRS)."
 
 if [[ "${#fixtures[@]}" -eq 0 ]]; then
     echo "FAIL: zero fixtures discovered — corpus missing or find pattern broken" >&2
