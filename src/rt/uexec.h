@@ -192,6 +192,12 @@ int uexec_run(UVM *vm, UStrand *s, uint32_t budget);
 UStrand *uvm_spare_acquire(UVM *vm, URealm *realm);
 void     uvm_spare_release(UVM *vm, UStrand *s);
 
+/* Run a bound chunk's root closure as a scheduled strand of `realm`,
+ * under the realm's connection tag, and pump the scheduler until nothing
+ * is READY.  *out is the chunk's value, or nil when its strand is still
+ * parked.  URBI_OK or URBI_ERR_OOM / URBI_ERR_UNCAUGHT_THROW. */
+int uexec_run_chunk(UVM *vm, URealm *realm, UClosure *cl, UValue *out);
+
 /* Compile + bind + run source on a realm's globals; *out is the value of
  * the last statement.  URBI_OK, URBI_ERR_COMPILE (err holds the
  * diagnostic), URBI_ERR_OOM, or URBI_ERR_UNCAUGHT_THROW (vm->last_error

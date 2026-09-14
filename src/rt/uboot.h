@@ -63,6 +63,12 @@ extern const uint16_t    uboot_table_len;
  * URBI_OK without doing anything.  Sets vm->stdlib_booted on success. */
 int uboot_init(UVM *vm);
 
+/* Installs the scheduler's script surface: the Tag, Event and Job
+ * method tables, the `sleep` / `every` / `scopeTag` / detach globals, and
+ * the Lobby's per-realm connectionTag getter.  Defined in
+ * rt/usched_natives.c, beside the scheduler state they all touch. */
+int usched_natives_init(UVM *vm);
+
 /* Installs `n` methods on `proto` as native closures.  Exposed because
  * the stdlib overlay and the ROS component install method tables of their
  * own; `proto` must already be reachable (the installer allocates). */

@@ -144,6 +144,15 @@ void usched_unqueue(UStrand *s);
  * request is a no-op the caller reports as an immediate return. */
 int  usched_park(UStrand *s, UStrand **waitlist, uint64_t wake_us);
 
+/* Whether `s` may be handed back to the scheduler at all right now.
+ * False for a spare strand and for any strand inside a synchronous
+ * uexec_call boundary: a C frame is waiting for that call's value, and
+ * returning to the scheduler mid-call would deliver a stale one.  Both
+ * park and OP_YIELD ask this -- a `;` inside a comparator, a getter or
+ * an operator overload has to be a plain sequence point, not a
+ * deschedule. */
+bool usched_may_deschedule(const UStrand *s);
+
 /* Take a strand off whatever it is waiting on and make it READY — unless
  * a gate bit still holds it, in which case it stays PARKED with nothing
  * to wait for and the gate's release enqueues it.  A non-nil payload is
@@ -171,7 +180,9 @@ void     usched_timers_drop_tag(struct UVM *vm, const UTag *tag);
 
 /* --- stepping ---------------------------------------------------------- */
 
-typedef enum { USTEP_RAN = 0, USTEP_IDLE_UNTIL = 1, USTEP_QUIESCENT = 2 } UStepResult;
+/* Named apart from the public UStepResult in <urbi/urbi.h>: same three
+ * values, but the core does not include the public header. */
+typedef enum { USTEP_RAN = 0, USTEP_IDLE_UNTIL = 1, USTEP_QUIESCENT = 2 } USchedStep;
 
 /* One scheduler slice: reap the dead, drain the ISR ring, fire every
  * timer due at the clock reading taken on entry, then run the run queue
@@ -182,7 +193,7 @@ typedef enum { USTEP_RAN = 0, USTEP_IDLE_UNTIL = 1, USTEP_QUIESCENT = 2 } UStepR
  * USTEP_IDLE_UNTIL — nothing READY, a timer pending; *next_wake_us gets
  *                    its deadline when the pointer is non-NULL.
  * USTEP_QUIESCENT  — no runnable strand and no timer. */
-UStepResult usched_step(struct UVM *vm, uint32_t budget, uint64_t *next_wake_us);
+USchedStep usched_step(struct UVM *vm, uint32_t budget, uint64_t *next_wake_us);
 
 /* Run queue non-empty || timer heap non-empty.  Wait lists do not count. */
 bool usched_has_live_work(struct UVM *vm);

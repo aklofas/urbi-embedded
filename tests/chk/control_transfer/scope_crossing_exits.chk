@@ -33,17 +33,20 @@ Realm.fin3
 
 # --- 4. break crossing a tag scope inside a while: the scope is torn down
 #     at the break site, so a later t4.stop() on the same strand sees no
-#     stale entry.  t4.stop() outside any active scope is the ratified D3
-#     fatal (§S5c), which ends the chunk — post4 must be exactly 1.
+#     stale entry.  The break's OP_POP_TAG tears the scope down on the way
+#     out, so by the time t4.stop() runs the strand is no longer in it: the
+#     stop covers nothing, answers nil, and the rest of the line runs
+#     normally — post4 reaches exactly 2 and the line's value is n.
 #     (pre-fix: the stale entry absorbed the stop and time-travel-resumed
-#     into the loop tail; the post-loop code ran TWICE — post4 was 2 —
-#     before the second stop hit the D3 fatal)
+#     into the loop tail, so the post-loop code ran TWICE.  The old
+#     expectation here was a "tag.stop with no active scope" fatal, which
+#     the re-founded runtime retires — see tag_stop_no_target.chk.)
 Realm.post4 = 0
 [00000005] 0
 var t4 = Tag.new("c"); var n = 0; while (n < 5) { t4: { n = n + 1; if (n == 3) { break } } }; Realm.post4 = Realm.post4 + 1; t4.stop(); Realm.post4 = Realm.post4 + 1; n
-[00000006] !!! tag.stop with no active scope
+[00000006] 3
 Realm.post4
-[00000007] 1
+[00000007] 2
 
 # --- 5. break crossing try/finally inside a while: finally runs exactly
 #     once for the break iteration; loop exits at n == 3

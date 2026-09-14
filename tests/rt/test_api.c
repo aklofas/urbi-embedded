@@ -193,20 +193,44 @@ static void globals_slots_and_call(void) {
     RT_EQ(api_live, 0L);
 }
 
-static void pending_subsystems_report_invalid_state(void) {
+static void scheduler_api_surface(void) {
     UVM *vm = api_open();
     UValue v = urbi_make_nil();
-    RT_EQ(urbi_step(vm, 100, NULL), URBI_ERR_INVALID_STATE);
-    RT_EQ(urbi_event_new(vm, NULL, "e", &v), URBI_ERR_INVALID_STATE);
-    RT_EQ(urbi_event_emit(vm, v, v), URBI_ERR_INVALID_STATE);
-    RT_EQ(urbi_inject_event(vm, 0, NULL, 0), URBI_ERR_INVALID_STATE);
+    /* An idle VM steps to quiescence and reports it. */
+    RT_EQ(urbi_step(vm, 100, NULL), URBI_STEP_QUIESCENT);
+    RT_CHECK(!urbi_has_live_work(vm));
+
+    /* Tags and events are live: created, named, gated, stopped. */
+    RT_EQ(urbi_tag_new(vm, NULL, "t", &v), URBI_OK);
+    RT_CHECK(v.kind == UVAL_CELL);
+    RT_EQ(urbi_tag_block(vm, v), URBI_OK);
+    RT_EQ(urbi_tag_unblock(vm, v), URBI_OK);
+    RT_EQ(urbi_tag_freeze(vm, v), URBI_OK);
+    RT_EQ(urbi_tag_unfreeze(vm, v), URBI_OK);
+    RT_EQ(urbi_tag_stop(vm, v), URBI_OK);
+    RT_EQ(urbi_tag_stop(vm, urbi_make_nil()), URBI_ERR_INVALID_ARG);
+
+    UValue e = urbi_make_nil();
+    RT_EQ(urbi_event_new(vm, NULL, "e", &e), URBI_OK);
+    RT_EQ(urbi_event_emit(vm, e, urbi_make_int(1)), URBI_OK);
+    RT_EQ(urbi_event_emit(vm, urbi_make_nil(), e), URBI_ERR_INVALID_ARG);
+
+    /* An id is the only thing an interrupt handler can name, and
+     * registering the same name twice hands back the same one. */
+    urbi_event_id_t id = URBI_EVENT_ID_INVALID, again = URBI_EVENT_ID_INVALID;
+    RT_EQ(urbi_event_register(vm, NULL, "isr", &id), URBI_OK);
+    RT_CHECK(id != URBI_EVENT_ID_INVALID);
+    RT_EQ(urbi_event_register(vm, NULL, "isr", &again), URBI_OK);
+    RT_EQ(id, again);
+    urbi_event_payload_t p;
+    memset(&p, 0, sizeof p);
+    p.u64[0] = 7;
+    RT_EQ(urbi_inject_event(vm, id, &p, sizeof p.u64[0]), URBI_OK);
+    RT_EQ(urbi_inject_event(vm, id, &p, sizeof p + 1), URBI_ERR_INVALID_ARG);
+    RT_EQ(urbi_step(vm, 100, NULL), URBI_STEP_QUIESCENT);   /* drained, nobody waiting */
+
+    /* The reactive runtime is the one entry still to come. */
     RT_EQ(urbi_watch(vm, NULL, "x", NULL, NULL), URBI_ERR_INVALID_STATE);
-    RT_EQ(urbi_tag_new(vm, NULL, "t", &v), URBI_ERR_INVALID_STATE);
-    RT_EQ(urbi_tag_stop(vm, v), URBI_ERR_INVALID_STATE);
-    RT_EQ(urbi_tag_block(vm, v), URBI_ERR_INVALID_STATE);
-    RT_EQ(urbi_tag_unblock(vm, v), URBI_ERR_INVALID_STATE);
-    RT_EQ(urbi_tag_freeze(vm, v), URBI_ERR_INVALID_STATE);
-    RT_EQ(urbi_tag_unfreeze(vm, v), URBI_ERR_INVALID_STATE);
     /* urbi_throw outside a running strand has nowhere to deposit. */
     RT_EQ(urbi_throw(vm, "TypeError", "nope"), URBI_ERR_INVALID_STATE);
     urbi_close(vm);
@@ -258,6 +282,6 @@ RT_SUITE(rt_api_suite) {
     rt_run("compile_then_load", compile_then_load);
     rt_run("host_functions", host_functions);
     rt_run("globals_slots_and_call", globals_slots_and_call);
-    rt_run("pending_subsystems_report_invalid_state", pending_subsystems_report_invalid_state);
+    rt_run("scheduler_api_surface", scheduler_api_surface);
     rt_run("version_and_null_arguments", version_and_null_arguments);
 }

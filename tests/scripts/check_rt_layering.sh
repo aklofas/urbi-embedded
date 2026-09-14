@@ -11,14 +11,17 @@ set -eu
 cd "$(dirname "$0")/../.."
 ORDER="uvalue ugc ustr uobj ulist ustrand usched uexec uwatch urealm uboot"
 TOP=99
-# Implementation files that sit ABOVE uexec even though their header sits
-# below it.  USched is a by-value member of UVM, so rt/usched.h must be
+# Implementation files whose layer is not their basename, as <path>=<layer>
+# ("top" = the top-of-core rank a file with no layer name gets, e.g.
+# uapi.c).  USched is a by-value member of UVM, so rt/usched.h must be
 # complete before rt/uexec.h and therefore ranks below it -- but the
 # scheduler DRIVES the exec core (usched_step calls uexec_run, utag_stop
-# walks vm->realms), so its .c files are exec-rank and include uexec.h.
-# The rule the gate still enforces on them: rt/usched.h itself may reach
-# no further than rt/ustrand.h, which the loop below checks as usual.
-EXEC_RANK_IMPLS="src/rt/usched.c src/rt/utag.c src/rt/usched_natives.c"
+# walks vm->realms), so its .c files are exec-rank.  usched_natives.c is
+# the boot-table half of the same subsystem and reaches the stdlib glue,
+# which puts it at the top with the other installers.  The rule the gate
+# still enforces on all of them: rt/usched.h itself may reach no further
+# than rt/ustrand.h, which the loop below checks as usual.
+LAYER_OVERRIDES="src/rt/usched.c=uexec src/rt/utag.c=uexec src/rt/usched_natives.c=top"
 rank() { i=0; for n in $ORDER; do i=$((i+1)); [ "$n" = "$1" ] && { echo $i; return; }; done; echo 0; }
 layer_of() {
     best=""
@@ -37,7 +40,12 @@ for f in src/rt/*.c src/rt/*.h; do
     base=$(basename "$f" | sed -E 's/\.(c|h)$//')
     self=$(layer_of "$base")
     if [ -z "$self" ]; then sr=$TOP; else sr=$(rank "$self"); fi
-    for e in $EXEC_RANK_IMPLS; do [ "$e" = "$f" ] && sr=$(rank uexec); done
+    for o in $LAYER_OVERRIDES; do
+        case "$o" in
+            "$f="*) ov=${o#*=}
+                    if [ "$ov" = top ]; then sr=$TOP; else sr=$(rank "$ov"); fi ;;
+        esac
+    done
     for inc in $(grep -oE '#include "rt/u[a-z_]+\.h"' "$f" | sed -E 's/.*rt\/(u[a-z_]+)\.h"/\1/'); do
         ir=$(rank "$inc")
         if [ "$ir" -gt "$sr" ]; then echo "LAYERING: $f includes rt/$inc.h (rank $ir > $sr)"; rc=1; fi

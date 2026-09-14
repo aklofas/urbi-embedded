@@ -8,6 +8,7 @@ UStrand *ustrand_new(struct UVM *vm, struct URealm *realm) {
     if (!s) return NULL;
     s->vm = vm;
     s->realm = realm;
+    s->id = ++uvm_objstats(vm)->next_id;
     s->state = USTRAND_PARKED;
     return s;
 }
@@ -23,7 +24,12 @@ UClosure *uclosure_new(struct UVM *vm, UProto *proto, uint8_t nupvals) {
 
 int ustrand_ensure_stack(UStrand *s, uint32_t needed) {
     if (needed <= s->stack_cap) return 0;
-    uint32_t new_cap = s->stack_cap ? s->stack_cap : 32;
+    /* Eight, not thirty-two: a parked strand's register stack is the
+     * single biggest thing it owns, and a hundred sleepers is a shape the
+     * runtime is meant to be good at.  A thunk or a small function fits in
+     * eight registers; anything larger doubles its way up in a handful of
+     * reallocations, all of them on the strand's first frame. */
+    uint32_t new_cap = s->stack_cap ? s->stack_cap : 8;
     while (new_cap < needed) new_cap *= 2;
     UValue *stack = (UValue *)ugc_raw_realloc(s->vm, s->stack, (size_t)s->stack_cap * sizeof(UValue), (size_t)new_cap * sizeof(UValue));
     if (!stack) return -1;

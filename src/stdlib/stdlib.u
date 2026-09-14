@@ -251,4 +251,26 @@ Channel.addProto(ChannelMethods);
 
 var cout = Channel.new("output") |
 var cerr = Channel.new("error") |
-var clog = Channel.new("clog");
+var clog = Channel.new("clog") |
+
+// === control (needs the scheduler's spawn primitives) =====================
+//
+// Lazy-argument wrappers around the C natives.  `lazy` makes the caller's
+// expression arrive as a closure instead of a value, which is the whole
+// point: `detach(f())` must spawn a strand that calls f, not call f and
+// spawn nothing.
+//
+// detach: the child keeps the caller's ambient tag, so a stop on an
+//   enclosing scope reaches it.
+// disown: the child keeps only the realm's connection tag, so it outlives
+//   the scope that spawned it but still dies with its realm.
+//
+// Legacy reference: legacy/repos/aldebaran-urbi/share/urbi/control.u.
+
+var detach = function(lazy fun) {
+    __detach_strand(fun)
+} |
+
+var disown = function(lazy fun) {
+    __disown_strand(fun)
+};

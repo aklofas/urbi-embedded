@@ -77,6 +77,25 @@ size_t urbi_value_to_string(UVM *vm, UValue v, char *buf, size_t cap)
         return w;
     }
     case UV_OBJ: n = snprintf(buf, cap, "<object %p>", v.v.p); break;
+    case UV_CELL:
+        /* The scheduler's cells print as themselves.  A tag shows its
+         * name when it has one, because a named tag is something the
+         * reader wrote down; everything else would only be an address. */
+        switch (((const UCell *)v.v.p)->type) {
+        case UCELL_TAG: {
+            const UTag *t = (const UTag *)v.v.p;
+            uint32_t nl = 0;
+            const char *nb = (t->name.kind == UV_STR || t->name.kind == UV_SYM)
+                           ? uv_str_bytes(t->name, &nl) : NULL;
+            n = (nb && nl) ? snprintf(buf, cap, "<Tag: %.*s>", (int)nl, nb)
+                           : snprintf(buf, cap, "<Tag>");
+            break;
+        }
+        case UCELL_EVENT:  n = snprintf(buf, cap, "<event>"); break;
+        case UCELL_STRAND: n = snprintf(buf, cap, "<Job %u>", ((const UStrand *)v.v.p)->id); break;
+        default:           n = snprintf(buf, cap, "<?>"); break;
+        }
+        break;
     default:
         /* Closures and void render as "<?>" — the spelling the corpus has
          * pinned since the first REPL fixtures. */

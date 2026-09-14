@@ -105,6 +105,10 @@ typedef enum { UUNWIND_NONE = 0, UUNWIND_RETURN, UUNWIND_THROW, UUNWIND_STOP } U
 typedef struct UStrand {
     UCell      cell;
     struct UVM *vm; struct URealm *realm;
+    /* Small, stable, monotonic -- what `Job.uid()` reports.  An address
+     * would be neither reproducible across runs nor safe to hand to
+     * script. */
+    uint32_t   id;
     UValue    *stack; uint32_t stack_cap;
     UFrame    *frames; uint16_t nframes, frames_cap;
     UUpval    *open_upvals;

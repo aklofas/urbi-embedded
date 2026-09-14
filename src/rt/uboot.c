@@ -142,9 +142,10 @@ const UBuiltinDef uboot_table[] = {
     { "Dict",    UP_DICT,    UP_OBJECT,  ustdlib_dict_methods, USTDLIB_DICT_NMETHODS, UBOOT_F_READONLY },
     { "Symbol",  UP_SYMBOL,  UP_OBJECT,  NONE,                    UBOOT_F_READONLY },
 
-    /* Runtime types.  Tag, Event and Job get their methods with the
-     * scheduler and reactive tasks; the protos exist now so the globals
-     * resolve and `isA` answers. */
+    /* Runtime types.  Tag, Event and Job take their methods from
+     * rt/usched_natives.c rather than a table column here: they are
+     * scheduler surface, installed alongside the globals that go with
+     * them. */
     { "Closure", UP_CLOSURE, UP_OBJECT,  NONE,                    UBOOT_F_READONLY },
     { "Tag",     UP_TAG,     UP_OBJECT,  NONE,                    UBOOT_F_READONLY },
     { "Event",   UP_EVENT,   UP_OBJECT,  NONE,                    UBOOT_F_READONLY },
@@ -349,6 +350,7 @@ int uboot_init(UVM *vm)
     }
     {
         int rc = urbi_namespaces_init(vm);
+        if (rc == URBI_OK) rc = usched_natives_init(vm);
         if (rc == URBI_OK) rc = urbi_primitives_init(vm);
         if (rc == URBI_OK) rc = urbi_exception_init(vm, vm->protos[UP_EXCEPTION]);
         if (rc == URBI_OK) rc = urbi_regexp_init(vm, vm->protos[UP_REGEXP]);

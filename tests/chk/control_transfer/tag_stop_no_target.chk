@@ -1,10 +1,16 @@
-# Milestone: v0.10.9-tag-state
-# Covers: tag.stop() called from outside any active scope for that tag
-#         escalates to fatal runtime error.  Workspace-root
-#         compatibility-decisions ledger §S5c (new row at W5).  Closes
-#         design-risks v0.10.7-D.
+# Covers: tag.stop() called from outside any active scope for that tag is
+#         an ordinary call.  It marks whatever strands the tag covers --
+#         here, none -- and answers nil.
 # matrix-row: tag-stop-outside-scope
+#
+# This fixture used to pin the opposite: a fatal "tag.stop with no active
+# scope".  The re-founded runtime retires that rule (core design section 9,
+# "stop from outside the scope is ordinary; the D3 fatal rule is retired").
+# Stop is a cancellation addressed to a scope, not to the caller: which
+# strands are in that scope is the tag's business, and "none" is a normal
+# answer, not a programming error.  A host that wants to know whether a
+# stop reached anything can ask before it stops.
 var t = Tag.new();
 t.stop();
 [00000000] <Tag>
-[00000001] !!! tag.stop with no active scope
+[00000001] nil

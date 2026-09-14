@@ -3,6 +3,7 @@
  * See include/urbi/urbi.h for the contract of every function here. */
 
 #include "rt/uboot.h"
+#include "rt/ustdlib_glue.h"
 #include "urbi/urbi.h"
 #include "chunk/uchunk.h"
 #include "emit/ufront.h"
@@ -43,14 +44,17 @@ void urbi_close(UVM *vm) { uvm_close(vm); }
 
 int urbi_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
 {
-    (void)vm; (void)budget; (void)next_wake_us;
-    return URBI_ERR_INVALID_STATE;
+    if (!vm) return URBI_ERR_INVALID_ARG;
+    /* USTEP_* and URBI_STEP_* are the same three values, declared apart
+     * so the core's header does not have to be the public one. */
+    switch (usched_step(vm, budget, next_wake_us)) {
+    case USTEP_IDLE_UNTIL: return URBI_STEP_IDLE_UNTIL;
+    case USTEP_QUIESCENT:  return URBI_STEP_QUIESCENT;
+    default:               return URBI_STEP_RAN;
+    }
 }
 
-bool urbi_has_live_work(UVM *vm)
-{
-    return vm != NULL && vm->sched.run_head != NULL;
-}
+bool urbi_has_live_work(UVM *vm) { return usched_has_live_work(vm); }
 
 void urbi_set_clock(UVM *vm, uint64_t (*fn)(void *ud), void *ud)
 { if (vm) { vm->clock_us = fn; vm->clock_ud = ud; } }
@@ -150,21 +154,17 @@ int urbi_load(UVM *vm, URealm *realm, const uint8_t *bytes, size_t n, UValue *ou
         return vm->last_error_code;
     }
 
-    UStrand *s = uvm_spare_acquire(vm, realm);
-    if (!s) { uchunk_destroy(root, NULL); return URBI_ERR_OOM; }
     UProtoCell *pc = uproto_bind(vm, root);
-    if (!pc) { uvm_spare_release(vm, s); return URBI_ERR_OOM; }
+    if (!pc) return URBI_ERR_OOM;
     pc->cell.flags |= UCELL_F_PINNED;
     UClosure *cl = uclosure_new(vm, root, 0);
     pc->cell.flags &= (uint16_t)~UCELL_F_PINNED;
-    if (!cl) { uvm_spare_release(vm, s); return URBI_ERR_OOM; }
+    if (!cl) return URBI_ERR_OOM;
+    if (vm->protos[UP_CLOSURE]) cl->proto_obj = vm->protos[UP_CLOSURE];
 
-    UValue res = urbi_make_nil();
-    int crc = uexec_call(vm, s, cl, uv_obj(realm->globals), NULL, 0, &res);
-    uvm_spare_release(vm, s);
-    int rc = uexec_finish_run(vm, crc);
-    if (rc == URBI_OK && out) *out = res;
-    return rc;
+    /* Same path as urbi_run: a loaded chunk is a chunk, and it gets the
+     * same scheduled strand and the same pump. */
+    return uexec_run_chunk(vm, realm, cl, out);
 }
 
 int urbi_run(UVM *vm, URealm *realm, const char *src, size_t n, const char *name,
@@ -344,30 +344,133 @@ int urbi_throw(UVM *vm, const char *proto, const char *msg)
 }
 
 /* ===================================================================
- * Events, watchers, tags — pending their own tasks
- * =================================================================== */
+ * Events, watchers, tags
+ * ===================================================================
+ *
+ * urbi_watch is the one entry still waiting on the reactive task; the
+ * rest run on the scheduler. */
+
+/* A name for a tag or an event arrives as an interned symbol so the cell
+ * holds no pointer into a host buffer it does not own. */
+static UValue uapi_name_value(UVM *vm, const char *name, int *oom)
+{
+    *oom = 0;
+    if (name == NULL || name[0] == '\0') return urbi_make_nil();
+    UValue v = urbi_make_str_interned(vm, name, strlen(name));
+    if (v.kind == UV_NIL) *oom = 1;
+    return v;
+}
 
 int urbi_event_new(UVM *vm, URealm *realm, const char *name, UValue *out)
-{ (void)vm; (void)realm; (void)name; if (out) *out = urbi_make_nil(); return URBI_ERR_INVALID_STATE; }
+{
+    (void)realm;
+    if (out) *out = urbi_make_nil();
+    if (!vm) return URBI_ERR_INVALID_ARG;
+    int oom = 0;
+    UValue nv = uapi_name_value(vm, name, &oom);
+    if (oom) return URBI_ERR_OOM;
+    UEvent *e = uevent_new(vm, nv);
+    if (!e) return URBI_ERR_OOM;
+    if (out) *out = uv_ptr(UV_CELL, e);
+    return URBI_OK;
+}
 
 int urbi_event_emit(UVM *vm, UValue event, UValue payload)
-{ (void)vm; (void)event; (void)payload; return URBI_ERR_INVALID_STATE; }
+{
+    if (!vm || event.kind != UV_CELL || ((UCell *)event.v.p)->type != UCELL_EVENT)
+        return URBI_ERR_INVALID_ARG;
+    uevent_emit(vm, (UEvent *)event.v.p, payload);
+    return URBI_OK;
+}
 
+int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_t *out_id)
+{
+    if (out_id) *out_id = URBI_EVENT_ID_INVALID;
+    if (!vm || !name) return URBI_ERR_INVALID_ARG;
+    USched *sc = uvm_sched(vm);
+    /* An id-registered event is held for the life of the VM (usched_mark
+     * roots the table), so an interrupt handler can never name one the
+     * collector has taken. */
+    for (uint16_t i = 0; i < sc->event_count; i++) {
+        UEvent *e = sc->events[i];
+        if (e && urbi_is_str(e->name) && strcmp(urbi_str_cstr(e->name), name) == 0) {
+            if (out_id) *out_id = (urbi_event_id_t)i;
+            return URBI_OK;
+        }
+    }
+    if (sc->event_count >= USCHED_MAX_EVENTS) return URBI_ERR_INVALID_STATE;
+    UValue ev = urbi_make_nil();
+    int rc = urbi_event_new(vm, realm, name, &ev);
+    if (rc != URBI_OK) return rc;
+    sc->events[sc->event_count] = (UEvent *)ev.v.p;
+    if (out_id) *out_id = (urbi_event_id_t)sc->event_count;
+    sc->event_count++;
+    return URBI_OK;
+}
+
+/* The one entry point an interrupt handler may call.  No allocation, no
+ * lock, no VM state touched beyond one ring slot: the release store on
+ * `isr_head` is what publishes the record to the next urbi_step. */
 int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *payload, size_t n)
-{ (void)vm; (void)id; (void)payload; (void)n; return URBI_ERR_INVALID_STATE; }
+{
+    if (!vm || n > URBI_EVENT_PAYLOAD_MAX) return URBI_ERR_INVALID_ARG;
+    USched *sc = &vm->sched;
+    uint32_t head = sc->isr_head;
+    uint32_t tail = __atomic_load_n(&sc->isr_tail, __ATOMIC_ACQUIRE);
+    if (head - tail >= USCHED_ISR_SLOTS) return URBI_ERR_OOM;   /* ring full: drop */
+    UIsrRec *r = &sc->isr[head % USCHED_ISR_SLOTS];
+    r->id = id;
+    r->n = (uint8_t)n;
+    if (payload && n) memcpy(&r->payload, payload, n);
+    __atomic_store_n(&sc->isr_head, head + 1u, __ATOMIC_RELEASE);
+    if (vm->wake) vm->wake(vm->wake_ud);
+    return URBI_OK;
+}
 
 int urbi_watch(UVM *vm, URealm *realm, const char *expr,
                int (*cb)(UVM *, void *, UValue), void *ud)
 { (void)vm; (void)realm; (void)expr; (void)cb; (void)ud; return URBI_ERR_INVALID_STATE; }
 
 int urbi_tag_new(UVM *vm, URealm *realm, const char *name, UValue *out)
-{ (void)vm; (void)realm; (void)name; if (out) *out = urbi_make_nil(); return URBI_ERR_INVALID_STATE; }
+{
+    (void)realm;
+    if (out) *out = urbi_make_nil();
+    if (!vm) return URBI_ERR_INVALID_ARG;
+    int oom = 0;
+    UValue nv = uapi_name_value(vm, name, &oom);
+    if (oom) return URBI_ERR_OOM;
+    UTag *t = utag_new(vm, nv);
+    if (!t) return URBI_ERR_OOM;
+    if (out) *out = uv_ptr(UV_CELL, t);
+    return URBI_OK;
+}
 
-int urbi_tag_stop(UVM *vm, UValue tag)     { (void)vm; (void)tag; return URBI_ERR_INVALID_STATE; }
-int urbi_tag_block(UVM *vm, UValue tag)    { (void)vm; (void)tag; return URBI_ERR_INVALID_STATE; }
-int urbi_tag_unblock(UVM *vm, UValue tag)  { (void)vm; (void)tag; return URBI_ERR_INVALID_STATE; }
-int urbi_tag_freeze(UVM *vm, UValue tag)   { (void)vm; (void)tag; return URBI_ERR_INVALID_STATE; }
-int urbi_tag_unfreeze(UVM *vm, UValue tag) { (void)vm; (void)tag; return URBI_ERR_INVALID_STATE; }
+static UTag *uapi_tag(UVM *vm, UValue tag)
+{
+    if (!vm || tag.kind != UV_CELL || ((UCell *)tag.v.p)->type != UCELL_TAG) return NULL;
+    return (UTag *)tag.v.p;
+}
+
+int urbi_tag_stop(UVM *vm, UValue tag)
+{
+    UTag *t = uapi_tag(vm, tag);
+    if (!t) return URBI_ERR_INVALID_ARG;
+    (void)utag_stop(vm, t);
+    return URBI_OK;
+}
+
+static int uapi_tag_gate(UVM *vm, UValue tag, uint8_t bit, bool on)
+{
+    UTag *t = uapi_tag(vm, tag);
+    if (!t) return URBI_ERR_INVALID_ARG;
+    utag_gate(vm, t, bit, on);
+    return URBI_OK;
+}
+
+int urbi_tag_block(UVM *vm, UValue tag)    { return uapi_tag_gate(vm, tag, USTRAND_GATE_BLOCKED, true); }
+int urbi_tag_unblock(UVM *vm, UValue tag)  { return uapi_tag_gate(vm, tag, USTRAND_GATE_BLOCKED, false); }
+int urbi_tag_freeze(UVM *vm, UValue tag)   { return uapi_tag_gate(vm, tag, USTRAND_GATE_FROZEN, true); }
+int urbi_tag_unfreeze(UVM *vm, UValue tag) { return uapi_tag_gate(vm, tag, USTRAND_GATE_FROZEN, false); }
 
 /* ===================================================================
  * Errors, GC, version

@@ -132,9 +132,9 @@ static void deep_recursion_and_reclaim(void) {
     RT_EQ(run(&fx, "r(10000) |", &out), URBI_OK);
     RT_EQ(out.kind, (uint8_t)UV_INT);
     RT_EQ(out.v.i, 0);
-    /* The register stack really did grow past 10000 frames' worth of
-     * windows, and the spare strand still holds that allocation. */
-    RT_CHECK(fx.vm->spare != NULL && fx.vm->spare->stack_cap >= 10000u);
+    /* The register stack that grew past 10000 frames' worth of windows
+     * belonged to the chunk's own scheduled strand and went with it; the
+     * `fx.live == 0` check below is what pins that it came back. */
     /* Dropping the recursive closure lets the whole chunk go: the chunk
      * cell is reachable only through the closure's root back-pointer. */
     RT_EQ(run(&fx, "var r = nil |", &out), URBI_OK);

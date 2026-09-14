@@ -56,18 +56,30 @@ UVM *urbi_open(UVMAllocFn alloc, void *ud, const UVMConfig *config);
  * chunks.  Every pointer obtained from this VM is invalid afterwards. */
 void urbi_close(UVM *vm);
 
-/* Run the scheduler for up to `budget` instructions.  Writes the next
- * timer deadline (in the clock's microseconds) through `next_wake_us`
- * when the VM is idle but has work pending; leaves it untouched
- * otherwise.  Returns URBI_OK when work was done or the VM is
- * quiescent.
+/* What one urbi_step slice ended in.  Non-negative, so an error (always
+ * negative, see URBI_OK and the URBI_ERR_* codes) is still distinguished
+ * by sign; URBI_STEP_RAN is URBI_OK, which is what a host that only
+ * checks for failure sees. */
+typedef enum {
+    URBI_STEP_RAN        = 0,   /* the budget ran out with strands still runnable */
+    URBI_STEP_IDLE_UNTIL = 1,   /* nothing runnable, a timer pending: see next_wake_us */
+    URBI_STEP_QUIESCENT  = 2    /* no runnable strand and no timer */
+} UStepResult;
+
+/* Run the scheduler for up to `budget` instructions (0 = until nothing
+ * is runnable).  One slice reaps dead strands, delivers anything an
+ * interrupt handler injected, fires every timer due at the clock reading
+ * taken on entry, then runs the run queue.
  *
- * NOT YET AVAILABLE: returns URBI_ERR_INVALID_STATE until the scheduler
- * task lands.  Synchronous urbi_run / urbi_call do not need it. */
+ * Returns a URBI_STEP_* value, or a negative URBI_ERR_* code.  On
+ * URBI_STEP_IDLE_UNTIL the next timer deadline is written through
+ * `next_wake_us` when that pointer is non-NULL; it is left untouched
+ * otherwise, so an event loop can sleep until then. */
 int urbi_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us);
 
-/* True when the VM has a runnable strand, a pending timer, or an armed
- * watcher.  Always false until the scheduler task lands. */
+/* True when the VM has a runnable strand or a pending timer.  Strands
+ * parked on an event nobody will emit do not count: a program with
+ * nothing left to drive it is quiescent, not live. */
 bool urbi_has_live_work(UVM *vm);
 
 /* Host hooks.  All are optional; each may be set at any time.
@@ -194,17 +206,24 @@ int urbi_throw(UVM *vm, const char *proto, const char *msg);
  * Events and watchers
  * ===================================================================
  *
- * NOT YET AVAILABLE: every function in this section returns
- * URBI_ERR_INVALID_STATE (or NULL) until the reactive-runtime task
- * lands.  The signatures are final. */
+ * urbi_watch is NOT YET AVAILABLE: it returns URBI_ERR_INVALID_STATE
+ * until the reactive-runtime task lands.  The rest of the section is
+ * live. */
 
 /* Create a named event object on `realm`. */
 int urbi_event_new(UVM *vm, URealm *realm, const char *name, UValue *out);
 /* Emit an event with an optional payload value. */
 int urbi_event_emit(UVM *vm, UValue event, UValue payload);
+/* Create-or-find a named event on `realm` and hand back the id an
+ * interrupt handler routes through.  This is the other half of
+ * urbi_inject_event: an id has no other source, and a registered event
+ * is held for the life of the VM so an ISR can never name a collected
+ * one.  URBI_ERR_INVALID_STATE once the id table is full. */
+int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_t *out_id);
 /* Deposit an event from an interrupt handler.  ISR-safe and
  * allocation-free: the payload is copied into a lock-free ring and
- * delivered at the next urbi_step. */
+ * delivered at the next urbi_step, where it reaches script as one
+ * integer -- the first eight bytes of the payload, zero-extended. */
 int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *payload, size_t n);
 /* Watch a condition expression; `cb` fires on each rising edge. */
 int urbi_watch(UVM *vm, URealm *realm, const char *expr,
@@ -214,8 +233,9 @@ int urbi_watch(UVM *vm, URealm *realm, const char *expr,
  * Tags
  * ===================================================================
  *
- * NOT YET AVAILABLE: returns URBI_ERR_INVALID_STATE (or NULL) until the
- * tag/scheduler task lands. */
+ * A tag names a cancellable scope.  Stopping one unwinds every strand
+ * inside it through its cleanup -- from wherever the caller is, inside
+ * the scope or out.  block and freeze are independent gates. */
 
 int urbi_tag_new(UVM *vm, URealm *realm, const char *name, UValue *out);
 int urbi_tag_stop(UVM *vm, UValue tag);

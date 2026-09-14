@@ -140,11 +140,7 @@ uint64_t usched_now(UVM *vm)
 
 /* --- park and wake ------------------------------------------------------ */
 
-/* A strand inside a synchronous uexec_call — a getter, an operator
- * overload, the stdlib blob — has a C frame waiting for its return and
- * cannot be descheduled without stranding that caller.  Spares are the
- * same case by construction. */
-static bool usched_may_park(const UStrand *s)
+bool usched_may_deschedule(const UStrand *s)
 {
     if (s->is_spare) return false;
     for (uint16_t i = 0; i < s->nframes; i++)
@@ -154,7 +150,7 @@ static bool usched_may_park(const UStrand *s)
 
 int usched_park(UStrand *s, UStrand **waitlist, uint64_t wake_us)
 {
-    if (s == NULL || !usched_may_park(s)) return -1;
+    if (s == NULL || !usched_may_deschedule(s)) return -1;
     s->state = USTRAND_PARKED;
     s->waiting_on = (void *)waitlist;
     s->wake_us = wake_us;
@@ -226,6 +222,12 @@ static void usched_on_death(UVM *vm, UStrand *s)
 {
     USched *sc = uvm_sched(vm);
     s->state = USTRAND_DEAD;
+    /* Spec section 9: what escapes the top frame kills the strand and is
+     * REPORTED.  The walker has already rendered it into vm->last_error;
+     * a detached strand has no caller to return a code to, so the diag
+     * hook is the only place the failure can surface. */
+    if (s->unwind == (uint8_t)UUNWIND_THROW && vm->diag && vm->last_error[0])
+        vm->diag(vm, vm->diag_ud, 3 /* syslog LOG_ERR */, vm->last_error, strlen(vm->last_error));
     /* Joiners first: usched_wake needs them still threaded on s->joiners. */
     while (s->joiners) {
         UStrand *j = s->joiners;
@@ -316,7 +318,7 @@ bool usched_has_live_work(UVM *vm)
     return sc->run_head != NULL || sc->heap_len > 0;
 }
 
-UStepResult usched_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
+USchedStep usched_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
 {
     USched *sc = uvm_sched(vm);
     if (vm->clock_us == NULL) sc->fallback_now_us++;

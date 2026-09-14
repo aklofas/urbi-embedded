@@ -486,10 +486,14 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
         }
 
         case OP_YIELD:
-            /* A strand running synchronously on a spare has no scheduler
-             * to hand control back to, so yielding is a no-op for it; a
-             * scheduled strand goes READY at the queue tail. */
-            if (!s->is_spare) { s->state = USTRAND_READY; return s->state; }
+            /* A scheduled strand goes READY at the queue tail.  A strand
+             * that may not be descheduled -- a spare, or one inside a
+             * synchronous uexec_call -- treats the yield as the plain
+             * sequence point it also is: its caller is a C frame waiting
+             * for a value, and returning here would hand back a stale
+             * one.  That is what a `;` inside a sort comparator, a getter
+             * or an operator overload compiles to. */
+            if (usched_may_deschedule(s)) { s->state = USTRAND_READY; return s->state; }
             break;
 
         case OP_GETUPVAL: {
@@ -937,6 +941,46 @@ int uexec_call(UVM *vm, UStrand *s, UClosure *cl, UValue recv, const UValue *arg
     return UEXEC_OK;
 }
 
+/* --- running a whole chunk ------------------------------------------------
+ *
+ * A chunk runs on a SCHEDULED strand of its realm, under the realm's
+ * connection tag -- not synchronously on a spare.  That is what makes the
+ * concurrency separators mean the same thing at chunk top as they do
+ * inside a function: `,` really detaches, `&` really joins, `sleep` and a
+ * tag scope really park.
+ *
+ * The pump runs until nothing is READY.  It deliberately does NOT wait
+ * for pending timers: a chunk that slept, or that armed an `every`, hands
+ * back nil and resumes on a later urbi_step, which is exactly the
+ * line-at-a-time model the REPL and the host driver need (and the only
+ * one under which an `every` does not mean "never return"). */
+int uexec_run_chunk(UVM *vm, URealm *realm, UClosure *cl, UValue *out)
+{
+    /* A realm whose globals are gone (urealm_free leaves it that way) is
+     * not short-circuited here: the chunk runs and OP_LOAD_REALM_GLOBAL
+     * throws, which is the one guard that also covers a realm freed while
+     * its strands are mid-run. */
+    UValue recv = realm->globals ? uv_obj(realm->globals) : uv_nil();
+    /* usched_spawn allocates; the closure is reachable from nothing yet. */
+    cl->cell.flags |= UCELL_F_PINNED;
+    UStrand *s = usched_spawn(vm, realm, cl, realm->root_tag, recv, NULL, 0);
+    cl->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+    if (!s) return URBI_ERR_OOM;
+
+    /* Held across the pump: the step that sees the strand die unlinks it
+     * from its realm, and then nothing else keeps the cell addressable. */
+    s->cell.flags |= UCELL_F_PINNED;
+    while (usched_step(vm, 0, NULL) == USTEP_RAN) { }
+    bool died = (s->state == USTRAND_DEAD);
+    bool threw = died && s->unwind == (uint8_t)UUNWIND_THROW;
+    UValue res = died ? s->result : uv_nil();
+    s->cell.flags &= (uint16_t)~UCELL_F_PINNED;
+
+    int rc = uexec_finish_run(vm, threw ? UEXEC_THROW : UEXEC_OK);
+    if (rc == URBI_OK && out) *out = res;
+    return rc;
+}
+
 int uexec_run_source(UVM *vm, URealm *realm, const char *src, size_t n,
                      const char *name, UValue *out, char *err, size_t errcap)
 {
@@ -947,24 +991,16 @@ int uexec_run_source(UVM *vm, URealm *realm, const char *src, size_t n,
     int rc = ufront_compile(vm, src, n, name, &root, err, errcap);
     if (rc != URBI_OK) return rc;
 
-    UStrand *s = uvm_spare_acquire(vm, realm);
-    if (!s) { uchunk_destroy(root, NULL); return URBI_ERR_OOM; }
-
     UProtoCell *pc = uproto_bind(vm, root);   /* takes ownership of root either way */
-    if (!pc) { uvm_spare_release(vm, s); return URBI_ERR_OOM; }
+    if (!pc) return URBI_ERR_OOM;
 
     /* Pin across the closure allocation: the chunk is not yet reachable
      * from any closure, frame or register, and uclosure_new may collect. */
     pc->cell.flags |= UCELL_F_PINNED;
     UClosure *cl = uclosure_new(vm, root, 0);
     pc->cell.flags &= (uint16_t)~UCELL_F_PINNED;
-    if (!cl) { uvm_spare_release(vm, s); return URBI_ERR_OOM; }
+    if (!cl) return URBI_ERR_OOM;
     if (vm->protos[UP_CLOSURE]) cl->proto_obj = vm->protos[UP_CLOSURE];
 
-    UValue res = uv_nil();
-    int crc = uexec_call(vm, s, cl, uv_obj(realm->globals), NULL, 0, &res);
-    uvm_spare_release(vm, s);
-    int rc2 = uexec_finish_run(vm, crc);
-    if (rc2 == URBI_OK && out) *out = res;
-    return rc2;
+    return uexec_run_chunk(vm, realm, cl, out);
 }

@@ -7,20 +7,6 @@
 #
 # Each line: <path>  # <what it needs>
 
-# --- needs tags and the scheduler --------------------------------------
-#
-# Each of these drives Tag.new() / tag.stop() through the unwinder.  The
-# cleanup stack already carries TAG_SCOPE entries and walks them; what is
-# missing is the tag object itself, the leave event, and the STOP unwind
-# kind that matches a scope against the tag being stopped.
-tests/chk/control_transfer/cross_frame_tag_stop.chk   # tag.stop() across a call frame
-tests/chk/control_transfer/finally_multi_statement.chk # case 0 stops a tag from inside its own scope
-tests/chk/control_transfer/scope_crossing_exits.chk   # two cases call tag.stop(); the rest pass
-tests/chk/control_transfer/tag_stop_basic.chk         # tag.stop()
-tests/chk/control_transfer/tag_stop_no_target.chk     # tag.stop() outside any scope
-tests/chk/control_transfer/tag_stop_skips_catch.chk   # a STOP must pass a catch by
-tests/chk/control_transfer/tag_stop_with_finally.chk  # a STOP must still run finallys
-
 # --- needs slot-write constness through the prototype chain ------------
 #
 # `Realm.Object = 42` must raise: the CONSTANT attribute is on the
@@ -29,9 +15,9 @@ tests/chk/control_transfer/tag_stop_with_finally.chk  # a STOP must still run fi
 # of the fixture works.
 tests/chk/globals/const_builtin_global_rejects_write.chk  # constant is inherited, not local
 
-# --- needs events ------------------------------------------------------
-tests/chk/objects/event_new_emit.chk               # Event.new / emit / the `!` postfix
-
-# --- needs Job and the scheduler ---------------------------------------
-tests/chk/stdlib/runtime/job_current_basic.chk     # Job.current
-tests/chk/stdlib/runtime/job_jobs_basic.chk        # Job.jobs
+# --- needs the reactive runtime ----------------------------------------
+#
+# Event.new / emit / the `!` postfix all work; what this fixture still
+# needs is `at (e?)`, i.e. an event watcher, which lands with the
+# reactive task.
+tests/chk/objects/event_new_emit.chk               # at (e?) needs a watcher

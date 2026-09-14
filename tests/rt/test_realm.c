@@ -298,7 +298,13 @@ static void t_boot_heap_is_small(void)
     size_t heap = ca.live;
     printf("    boot heap: %lu bytes live, %lu peak, %lu allocations\n",
            (unsigned long)ca.live, (unsigned long)ca.peak, ca.allocs);
-    RT_CHECK(heap < 64u * 1024u);
+    /* 72 KB on a 64-bit host (about 48 KB on 32-bit).  The scheduler
+     * task raised this from 64 KB: Tag, Event and Job bring 17 native
+     * methods, the five scheduler globals and the Lobby's connectionTag
+     * getter bring 6 more closures, and the stdlib overlay gained
+     * detach/disown -- about 6 KB in total, most of it closure cells and
+     * the slot blocks that hold them. */
+    RT_CHECK(heap < 72u * 1024u);
     urbi_close(vm);
     /* Nothing leaks: every byte the VM took is handed back at close. */
     RT_EQ(ca.live, 0u);
