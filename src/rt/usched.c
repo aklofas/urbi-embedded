@@ -342,17 +342,28 @@ USchedStep usched_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
     uint32_t remaining = budget;
     while (sc->run_head) {
         uint32_t slice = 0;
-        if (budget != 0) {
-            slice = remaining < USCHED_SLICE ? remaining : USCHED_SLICE;
-            remaining -= slice;
-        }
+        if (budget != 0) slice = remaining < USCHED_SLICE ? remaining : USCHED_SLICE;
         UStrand *s = usched_dequeue(sc);
         int st = uexec_run(vm, s, slice);
         if (st == USTRAND_DEAD) usched_on_death(vm, s);
         else if (st != USTRAND_PARKED) usched_enqueue(s);
-        /* The reactive task drains the watcher dirty set here. */
+        /* The strand is back on the run queue or the dead list, so it is
+         * rooted again and this is a safe place to collect. */
         ugc_maybe_collect(vm);
-        if (budget != 0 && remaining == 0) break;
+        /* The reactive task drains the watcher dirty set here.
+         *
+         * Charging.  uexec_run does not report how many instructions it
+         * actually ran, so the budget is spent by outcome: a strand that
+         * comes back READY used its whole slice or yielded, and is charged
+         * for it; one that parked or died is charged one, because it
+         * FINISHED and a queue of short-lived strands should not report
+         * "still runnable" just because there were many of them.  The
+         * budget still bounds the step either way. */
+        if (budget != 0) {
+            uint32_t spent = (st == USTRAND_READY) ? slice : 1u;
+            remaining = remaining > spent ? remaining - spent : 0u;
+            if (remaining == 0) break;
+        }
     }
     usched_reap(vm);
 
