@@ -96,10 +96,21 @@ and a hold that must outlive a call goes on the C-root stack instead.
 
 Marking is tri-state with an explicit gray list, and the gray list can
 overflow: when it does the collector rescans until the graph is clean
-rather than silently dropping work. Pacing is by bytes allocated since
-the last cycle, and `bytes_live` is a number the collector WRITES at the
-end of a cycle, not one the allocator maintains — read it without
-collecting first and you get the previous cycle's answer.
+rather than silently dropping work.
+
+Pacing: a cycle starts when the bytes allocated since the last one —
+cells and the raw arrays cells own (slot tables, list items, strand
+stacks and frames) alike — exceed twice the live size the last cycle
+left, or 16 KB if that is larger. The baseline is a snapshot
+(`pace_base`) and does not move between cycles. It used to be
+`bytes_live`, which a raw allocation raised as it was made; for garbage
+whose raw block is at least as big as its cell, which is every list,
+every object with slots and every strand, the limit then grew faster
+than the count it was compared with, and a loop making such garbage never
+collected at all. `bytes_live` itself is the cell bytes that survived the
+last cycle plus the raw arrays live now: the cell half is written only by
+a cycle, so read it without collecting first and you get the previous
+cycle's answer.
 
 `URBI_GC_STRESS=1` collects before every cell allocation. It is the
 highest-leverage way to find a rooting gap, and it runs the whole suite
@@ -307,6 +318,27 @@ rather than losing the bit when either one does.
 Forks are strands. `a , b` spawns and forgets; `a & b` spawns and joins.
 A strand nobody awaits reports an uncaught throw through the diagnostic
 hook, because there is no caller to return a code to.
+
+A strand that dies goes on the dead list, which roots it only until the
+scheduler reaps it: right after the slice it died in, before the
+collection check that follows every slice, and at both ends of a step.
+When a parent that cannot park (a spare, or a synchronous call) joins,
+the child runs to its end on the spot (`usched_run_inline`) and is reaped
+there. Reaping unlinks the
+strand from its realm; whatever still refers to it — the joining
+parent's register, a `Job` value, the pin `urbi_run` holds on the strand
+it awaits — keeps it, and the rest is garbage. Reaping only at the ends of
+a step kept every strand an unbudgeted step saw die, however often the
+collector ran.
+
+A watcher whose body or else arm cannot be spawned for want of memory
+says so the way a detached strand's uncaught throw does: through the
+diagnostic hook and `urbi_last_error`, with `URBI_ERR_OOM` and a message
+naming the watcher ("whenever body: out of memory"), cleared by the next
+step. The watcher stays armed. A condition watcher's body that could not
+start leaves its rising edge unserved, so the next drain sees the
+condition rise again and retries; an event's emission, and an else arm,
+are not retried.
 
 ## Errors
 

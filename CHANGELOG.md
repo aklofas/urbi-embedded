@@ -18,12 +18,12 @@ budgeted-stepping change under Changed) and the wire format 0x19 -> 0x1A
 
 | Number | Value |
 |---|---|
-| boot heap | 69,775 bytes live in 1,016 blocks, 64-bit host |
+| boot heap | 69,783 bytes live in 1,016 blocks, 64-bit host |
 | idle strand | 616 bytes each; 61,616 for a hundred parked sleepers |
-| leak probes | zero growth over 10,000 iterations of five allocating shapes |
+| leak probes | zero growth over 10,000 iterations of seven allocating shapes; peak while each loop runs at most 155,955 bytes |
 | lookup benchmark | 0.62x the old core; mandelbrot 0.84x |
-| corpus | 334 passed, 0 failed, 73 placeholders, 9 skipped |
-| runners | frontend 636 cases / 6,406 checks; runtime 201 cases / 4,979 checks |
+| corpus | 335 passed, 0 failed, 73 placeholders, 9 skipped |
+| runners | frontend 636 cases / 6,406 checks; runtime 212 cases / 7,061 checks |
 | sanitizers | ASan, UBSan, `URBI_GC_STRESS`, valgrind memcheck: clean |
 
 The 48 KB boot-heap target is a 32-bit number and this branch has no
@@ -109,6 +109,22 @@ core to 0.62x / 0.84x, through three mechanisms:
 - A `whenever` else arm could start while its own body was still
   running. It now waits for the body strand to die, and a fall, rise and
   fall again while the body runs still owes exactly one else arm.
+- Allocating loops — objects with slots, lists, forks, reactive loops —
+  ran without a single collection and grew without bound. The collector
+  paced itself against a baseline that every raw array raised as it was
+  allocated, so garbage owning an array at least as big as its cell never
+  crossed the limit; and a strand that died stayed rooted until its step
+  ended. The baseline is now the live size at the last collection, and
+  dead strands are reaped after every slice. Fifty thousand objects with
+  four slots peaked at 8,672,835 bytes and now peak at 153,919; twenty
+  thousand joined forks, 10,953,029 and now 154,821; a `whenever`
+  re-firing its own body ten thousand times in one step, 4,875,924 and now
+  153,824, the same for a million.
+- A watcher that could not start its body or else arm for want of memory
+  failed without a report: the step came back QUIESCENT with a clean
+  error channel. It now reports `URBI_ERR_OOM` through the diagnostic
+  hook and `urbi_last_error`, and a condition watcher's body that could
+  not start is retried by the next drain.
 
 ### Changed
 
