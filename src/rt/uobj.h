@@ -28,8 +28,9 @@
 /* Set when a cache-filling walk that ends on a proto searches this object:
  * the receiver, every object passed over, and the owner.  A structural change
  * (add/remove local slot, proto list edit) on a CACHED object has to bump
- * the slot epoch to retire whatever inherited entries pointed through it;
- * an uncached object never appears in a cache, so its own edits are free. */
+ * the slot epoch to retire whatever inherited entries pointed through it.
+ * An unflagged object is in no inherited entry's walk, so its edits are
+ * free; it may be the receiver of an own entry, which is checked live. */
 #define UOBJ_F_CACHED       0x0020
 
 /* Value-array entry for a slot with GETTER and/or SETTER set: values[i]
@@ -91,8 +92,8 @@ bool     uobj_remove_local(struct UVM *vm, UObject *o, const USym *name);
 typedef struct UObjSlotRef { UObject *owner; int index; } UObjSlotRef;
 bool     uobj_resolve(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out);
 /* As uobj_resolve, and marks UOBJ_F_CACHED on every object the walk
- * searched when the slot was found on a proto.  A slot found on `o`
- * itself marks nothing. */
+ * searched, unless the slot was found on `o` itself, which marks nothing.
+ * A walk that finds nothing marks everything it searched; harmless. */
 bool     uobj_resolve_flagging(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out);
 static inline UValue  uobj_slot_value(const UObjSlotRef *r) { return r->owner->values[r->index]; }
 static inline uint8_t uobj_slot_attrs(const UObjSlotRef *r) { return r->owner->attrs[r->index]; }

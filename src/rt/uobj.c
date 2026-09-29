@@ -96,7 +96,9 @@ int uobj_set_local(struct UVM *vm, UObject *o, USym *name, UValue v, uint8_t att
         uint8_t was = o->attrs[idx];
         o->attrs[idx] = (uint8_t)(attrs | (was & USLOT_CHANGED_EVENT));
         /* A plain value write leaves every inherited entry true; only a
-         * change of kind (a property appearing or going) is structural. */
+         * change of kind (a property appearing or going) is structural.
+         * Belt and braces: the read hit re-checks GETTER/SETTER live and
+         * CONSTANT never matters to a read, so no test can observe it. */
         if (o->attrs[idx] != was && (o->cell.flags & UOBJ_F_CACHED)) uobj_epoch_bump(vm);
         return idx;
     }
