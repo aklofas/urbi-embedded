@@ -20,7 +20,8 @@ TOP=99
 # the boot-table half of the same subsystem and reaches the stdlib glue,
 # which puts it at the top with the other installers.  The rule the gate
 # still enforces on all of them: rt/usched.h itself may reach no further
-# than rt/ustrand.h, which the loop below checks as usual.
+# than rt/ustrand.h, which the loop below checks as usual.  uslotcache.c
+# reads vm->stdlib_booted, so it too needs rt/uexec.h and is exec-rank.
 LAYER_OVERRIDES="src/rt/usched.c=uexec src/rt/utag.c=uexec src/rt/uslotcache.c=uexec src/rt/usched_natives.c=top"
 # The src/repl files the Makefile actually compiles, with their headers.
 # The parked networked server is left alone: it is held to the layering of
