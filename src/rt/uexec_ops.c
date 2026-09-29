@@ -19,6 +19,7 @@
  * reallocated in place by ustrand_ensure_stack / the frame grower). */
 
 #include "rt/uexec.h"
+#include "rt/uslotcache.h"
 #include "chunk/uchunk.h"
 #include "emit/ufront.h"
 
@@ -84,7 +85,8 @@ static int slot_read(UVM *vm, UStrand *s, const UObjSlotRef *ref, UValue recv, U
     return UEXEC_OK;
 }
 
-static int slot_get(UVM *vm, UStrand *s, UValue recv, const USym *name, const char *what, UValue *out)
+static int slot_get(UVM *vm, UStrand *s, UValue recv, const USym *name, const char *what,
+                    USlotCache *e, UValue *out)
 {
     UObject *o = uv_dispatch_proto(vm, recv);
     if (o == NULL) {
@@ -118,6 +120,7 @@ static int slot_get(UVM *vm, UStrand *s, UValue recv, const USym *name, const ch
      * on the owner the value actually came from. */
     uwatch_observe(vm, o);
     uwatch_observe(vm, ref.owner);
+    if (e != NULL && ref.owner == o) uslotcache_fill_own(vm, e, o, (uint16_t)ref.index);
     return slot_read(vm, s, &ref, recv, out);
 }
 
@@ -710,12 +713,24 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot access: no name table bound");
                 goto unwind;
             }
+            USym *name = names[OPC(i)];
             UValue recv = R[OPB(i)];
+            UObject *o = (recv.kind == UV_OBJ) ? (UObject *)recv.v.p : uv_dispatch_proto(vm, recv);
+            USlotCache *e = o ? uslotcache_site(vm, f->closure->proto, (uint16_t)OPC(i)) : NULL;
             UValue out = uv_nil();
-            const char *what = ((i & 0xFFu) == OP_SELF) ? "method call" : "slot access";
-            if (slot_get(vm, s, recv, names[OPC(i)], what, &out) != UEXEC_OK) goto unwind;
-            f = &s->frames[s->nframes - 1];
-            R = s->stack + f->base;
+            if (e != NULL && uslotcache_hit(&vm->objstats, e, o, name)
+                && (e->owner->attrs[e->index] & (USLOT_GETTER | USLOT_SETTER)) == 0) {
+                USLOTCACHE_VERIFY(vm, o, name, e);
+                vm->objstats.cache_hits++;
+                uwatch_observe(vm, o);
+                uwatch_observe(vm, e->owner);
+                out = e->owner->values[e->index];
+            } else {
+                const char *what = ((i & 0xFFu) == OP_SELF) ? "method call" : "slot access";
+                if (slot_get(vm, s, recv, name, what, e, &out) != UEXEC_OK) goto unwind;
+                f = &s->frames[s->nframes - 1];
+                R = s->stack + f->base;
+            }
             if ((i & 0xFFu) == OP_SELF) R[OPA(i) + 1u] = recv;   /* receiver first — dst may alias recv */
             R[OPA(i)] = out;
             break;
@@ -733,6 +748,20 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 goto unwind;
             }
             UObject *o = (UObject *)recv.v.p;
+            USym *name = names[OPC(i)];
+            USlotCache *e = uslotcache_site(vm, f->closure->proto, (uint16_t)OPC(i));
+            /* An own plain slot on a writable receiver: every check the
+             * long path makes below is one of these four, read live. */
+            if (e != NULL && e->owner == o && uslotcache_hit(&vm->objstats, e, o, name)
+                && (o->attrs[e->index] & (USLOT_CONSTANT | USLOT_GETTER | USLOT_SETTER)) == 0
+                && (o->cell.flags & UOBJ_F_READONLY) == 0) {
+                USLOTCACHE_VERIFY(vm, o, name, e);
+                vm->objstats.cache_hits++;
+                UValue written = R[OPA(i)];
+                o->values[e->index] = written;
+                uexec_note_write(vm, o, name, written, true);
+                break;
+            }
             /* UPDATE is the bare-name write, `x = 1`.  It rebinds an
              * existing name and never declares one, so a name that
              * resolves nowhere on the chain is a LookupError rather than
@@ -776,7 +805,6 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: receiver is read-only");
                 goto unwind;
             }
-            USym *name = names[OPC(i)];
             int idx = uobj_find_local(o, name);
             if (idx >= 0 && (o->attrs[idx] & USLOT_CONSTANT)) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: slot is constant");
@@ -794,10 +822,12 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 uexec_note_write(vm, o, name, written, true);
                 break;
             }
-            if (uobj_set_local(vm, o, name, written, 0) < 0) {
+            int at = uobj_set_local(vm, o, name, written, 0);
+            if (at < 0) {
                 (void)uexec_throw(vm, s, UP_OOMERROR, "slot write: out of memory");
                 goto unwind;
             }
+            if (e != NULL) uslotcache_fill_own(vm, e, o, (uint16_t)at);
             uexec_note_write(vm, o, name, written, idx >= 0);
             break;
         }
