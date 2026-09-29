@@ -645,6 +645,8 @@ fetch:
              * timers and the host pump: at most UEXEC_FAST_YIELD_CAP
              * statements late.  The scheduler zeroes the count each time it
              * dispatches the strand. */
+            /* The RUNNING test is defensive: nothing the drain does
+             * leaves the yielding strand in another state today. */
             if (vm->sched.run_head == NULL
                 && vm->watch.ndirty == 0
                 && s->unwind == (uint8_t)UUNWIND_NONE
@@ -1144,11 +1146,12 @@ fetch:
                 UCleanup c = s->cleanup[--s->ncleanup];
                 s->tag = (c.saved.kind == UV_CELL) ? (UTag *)c.saved.v.p : NULL;
                 if (c.tag) utag_fire(vm, c.tag->leave);
-                /* Recomputed, not left alone: a call-boundary strand (a
-                 * getter, a setter, an operator overload) cannot park
-                 * when PUSH_TAG gates it on entry, so it keeps running
-                 * with the bit set and reaches this pop while still
-                 * gated.  The tag it just left no longer covers it, and
+                /* Recomputed, not left alone: a strand that may not park
+                 * -- a spare running a condition or sync body, or one
+                 * inside a call boundary (a getter, a setter, an operator
+                 * overload) -- cannot park when PUSH_TAG gates it on
+                 * entry, so it keeps running with the bit set and reaches
+                 * this pop while still gated.  The tag it just left no longer covers it, and
                  * nothing else ever will -- leaving the bit stuck would
                  * strand it the next time it genuinely parks. */
                 s->gates = utag_strand_gate_bits(s);

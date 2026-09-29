@@ -354,10 +354,11 @@ int uexec_unwind(UVM *vm, UStrand *s)
             UCleanup top = s->cleanup[--s->ncleanup];
 
             if (top.kind == UCLEAN_TAG_SCOPE) {
-                /* Leaving a tag scope tears it down the same way OP_POP_TAG
-                 * does, whatever brought us here: the ambient tag goes
-                 * back to what the scope displaced and `leave` fires.  A
-                 * throw crossing a tagged block must not skip that. */
+                /* Leaving a tag scope, whatever brought us here, puts the
+                 * ambient tag back to what the scope displaced and fires
+                 * `leave`, as OP_POP_TAG does.  A throw crossing a tagged
+                 * block must not skip that.  Unlike OP_POP_TAG, this path
+                 * leaves the strand's gate bits as they are. */
                 s->tag = (top.saved.kind == UV_CELL) ? (UTag *)top.saved.v.p : NULL;
                 if (top.tag) utag_fire(vm, top.tag->leave);
                 /* A STOP stops exactly the scope it names.  Every other

@@ -870,8 +870,12 @@ static void a_lone_strand_still_returns_to_the_pump(void)
     int64_t n1 = global_int(&fx, "n");
     RT_CHECK(n1 > 1);
     RT_CHECK(n1 <= UEXEC_FAST_YIELD_CAP + 1);
-    for (UStrand *s = urbi_realm_main(fx.vm)->strands; s; s = s->next_in_realm)
-        RT_CHECK(s->fast_yields <= UEXEC_FAST_YIELD_CAP);
+    /* Exactly the cap: the `;` after the sleep is the first fast yield,
+     * each later one follows an increment, and the `;` after the 64th
+     * increment is the one that hands the slice back.  (Bounding each
+     * strand's fast_yields by the cap would prove nothing: the yield arm
+     * only ever increments it while it is below the cap.) */
+    RT_EQ(n1, UEXEC_FAST_YIELD_CAP);
     while (urbi_step(fx.vm, 0, NULL) == URBI_STEP_RAN) { }
     RT_EQ(global_int(&fx, "n"), 120);
     fix_close(&fx);

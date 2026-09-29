@@ -134,10 +134,11 @@ typedef struct USched {
     uint32_t default_budget;
 } USched;
 
-/* Instructions handed to one strand before the scheduler looks at the
- * queue again.  Only backward jumps consume budget (one decrement, in
- * uexec_ops.c), so a straight-line strand runs to its next park or death
- * regardless. */
+/* The most budget one dispatch of a strand gets before the scheduler
+ * looks at the queue again.  Only backward jumps consume it (one
+ * decrement, in uexec_ops.c).  A strand also hands the slice back at a
+ * `;` -- after up to UEXEC_FAST_YIELD_CAP fast yields when nothing else
+ * is ready -- and at a park or its death. */
 #define USCHED_SLICE 256u
 
 /* Accessor into the owning VM, defined by the layer above (uexec.c) —

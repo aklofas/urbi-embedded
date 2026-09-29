@@ -175,7 +175,10 @@ static void the_boundary_count_matches_the_frames(void) {
     char err[256] = {0};
     /* A comparator runs inside a synchronous call: a boundary frame.  The
      * `;` in its body is a yield inside that frame, which is where a debug
-     * build checks the count against a walk of the frames. */
+     * build checks the count against a walk of the frames.  That in-call
+     * check is a UGC_ASSERT, so it only bites under URBI_DEBUG (`make
+     * test-debug`, part of releasetest); every build checks the counts
+     * below, once the call has returned. */
     const char *src = "[3, 1, 2].sort(function(a, b) { var c = a; c < b }) |";
     int rc = urbi_run(vm, realm, src, strlen(src), NULL, &out, err, sizeof err);
     if (rc != URBI_OK) printf("    rc=%d err=%s last=%s\n", rc, err, vm->last_error);

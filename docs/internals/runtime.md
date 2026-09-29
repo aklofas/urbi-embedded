@@ -135,7 +135,10 @@ and refills the entry.
   against the VM's one slot epoch. The epoch is bumped by `src/rt/uobj.c`
   on a structural change — a slot added or removed, a slot's attributes
   changed, or the proto list edited — to any object flagged
-  `UOBJ_F_CACHED`. That flag is set on every object a cache-filling walk
+  `UOBJ_F_CACHED`. The one attribute set outside `uobj.c` bumps
+  nothing: the change-event bit `src/rt/uwatch.c` sets when a watcher
+  subscribes to a slot, or when the slot it subscribed to is created. No
+  hit's validity depends on it, and a write hit reads it live. That flag is set on every object a cache-filling walk
   passes through: the receiver, each intermediate proto, and the owner.
   An object no walk has visited is unflagged, so building and populating
   fresh objects in a loop bumps nothing. The flag is never cleared, and
@@ -155,7 +158,7 @@ and refills the entry.
   is ever cached and the boot-heap number does not move. Allocation
   failure is not an error: the site just runs uncached.
 - `URBI_SLOT_CACHE_VERIFY=1` makes every hit also run the uncached
-  resolve and trap if owner, index or value disagree with it; `make
+  resolve and trap if owner or index disagree with it; `make
   test-cache-verify` builds and runs the whole suite that way.
 
 `tests/probes/lookup_bench.c` is what the cache is for: it pins the
