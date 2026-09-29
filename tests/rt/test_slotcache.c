@@ -203,7 +203,23 @@ static void a_watcher_sees_a_cached_write(void)
     fix_close(&fx);
 }
 
-static void a_failed_cache_allocation_runs_uncached(void)
+static void a_watcher_sees_a_cached_read(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var o = Object.clone() | var o.n = 0 | var hits = 0");
+    run(&fx, "var rd = function() { o.n }");
+    run(&fx, "rd()"); run(&fx, "rd()"); run(&fx, "rd()");   /* rd's sites are warm */
+    /* The condition reads o.n only through rd's cached sites, so the
+     * watcher learns what to wake on from the hit path alone. */
+    run(&fx, "at (rd() == 2) hits = hits + 1");
+    run(&fx, "o.n = 1");
+    run(&fx, "o.n = 2");
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(run(&fx, "hits").v.i, 1);
+    fix_close(&fx);
+}
+
+static void a_refused_cache_array_is_retried_and_harmless(void)
 {
     Fix fx; fix_open(&fx);
     run(&fx, "var o = Object.clone() | var o.f = 7");
@@ -216,6 +232,8 @@ static void a_failed_cache_allocation_runs_uncached(void)
     fx.ca.fail_at = 16;
     RT_EQ(run(&fx, "rd()").v.i, 7);
     RT_EQ(fx.ca.refused, (size_t)body->ic_count * sizeof(USlotCache));
+    RT_CHECK(((USlotCache *)body->site_cache)[0].recv == NULL);   /* ran uncached */
+    RT_CHECK(((USlotCache *)body->site_cache)[1].recv != NULL);   /* retried, filled */
     RT_EQ(run(&fx, "rd()").v.i, 7);
     RT_CHECK(body->site_cache != NULL);
     fix_close(&fx);
@@ -235,5 +253,6 @@ RT_SUITE(rt_slotcache_suite)
     rt_run("a_slot_made_constant_refuses_a_cached_write", a_slot_made_constant_refuses_a_cached_write);
     rt_run("a_readonly_receiver_refuses_a_cached_write", a_readonly_receiver_refuses_a_cached_write);
     rt_run("a_watcher_sees_a_cached_write", a_watcher_sees_a_cached_write);
-    rt_run("a_failed_cache_allocation_runs_uncached", a_failed_cache_allocation_runs_uncached);
+    rt_run("a_watcher_sees_a_cached_read", a_watcher_sees_a_cached_read);
+    rt_run("a_refused_cache_array_is_retried_and_harmless", a_refused_cache_array_is_retried_and_harmless);
 }
