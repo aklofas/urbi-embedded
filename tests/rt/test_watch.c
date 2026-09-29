@@ -889,6 +889,51 @@ static void an_else_arm_with_no_body_in_flight_is_immediate(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* A pending else arm's debt is owned by the watcher's REALM, not by the
+ * tag that happens to govern it: uwatch_realm_dropped clears it on its
+ * own.  The watcher here is tagged with `t`, a tag of its own rather than
+ * the realm's connection tag, so its sleeping body is never woken by the
+ * realm's own tag-stop cascade and never dies -- the debt can only ever
+ * be served through uwatch_body_done, which never runs for it.  A debt
+ * left uncleared therefore does not show up as a spawned else arm; it
+ * shows up as uwatch_sweep's `leave_pending && body_strand` keeping the
+ * watcher -- and the zombie strand it still points at -- rooted on
+ * vm->watch.all forever, past the realm that owned them both.  Cleared,
+ * the watcher becomes sweepable and a collection takes the whole graph
+ * with it. */
+static void a_freed_realm_drops_a_pending_else_arm(void)
+{
+    Fix fx; fix_open(&fx);
+    (void)urbi_realm_main(fx.vm);
+    urbi_gc_collect(fx.vm);
+    size_t baseline = fx.ca.live;
+
+    URealm *r = urbi_realm_new(fx.vm);
+    RT_CHECK(r != NULL && r != urbi_realm_main(fx.vm));
+
+    UValue out = urbi_make_nil();
+    char err[256] = { 0 };
+    const char *setup = "var x = 0 | var t = Tag.new()";
+    RT_EQ(urbi_run(fx.vm, r, setup, strlen(setup), "<test>", &out, err, sizeof err), URBI_OK);
+    const char *body = "t: whenever (x > 0) { sleep(10ms) } else { x = x }";
+    RT_EQ(urbi_run(fx.vm, r, body, strlen(body), "<test>", &out, err, sizeof err), URBI_OK);
+
+    RT_EQ(urbi_global_set(fx.vm, r, "x", urbi_make_int(1)), URBI_OK);
+    for (int k = 0; k < 8; k++) (void)urbi_step(fx.vm, 1000, NULL);   /* body runs to its sleep */
+    RT_EQ(urbi_global_set(fx.vm, r, "x", urbi_make_int(0)), URBI_OK);
+    for (int k = 0; k < 8; k++) (void)urbi_step(fx.vm, 1000, NULL);   /* falling edge, body still asleep: else owed */
+
+    urbi_realm_free(fx.vm, r);            /* the debt is owed to a world that no longer exists */
+
+    fx.now_us += 20000;                   /* past the sleep, if anything still wanted to wake for it */
+    for (int k = 0; k < 8; k++) (void)urbi_step(fx.vm, 1000, NULL);
+
+    urbi_gc_collect(fx.vm);
+    RT_CHECK(fx.ca.live < baseline + 512u);   /* the watcher and its zombie body are gone */
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 RT_SUITE(rt_watch_suite) {
     rt_run("at_fires_once_per_rising_edge", at_fires_once_per_rising_edge);
     rt_run("at_fires_when_the_condition_already_holds", at_fires_when_the_condition_already_holds);
@@ -923,4 +968,5 @@ RT_SUITE(rt_watch_suite) {
     rt_run("a_raise_in_the_drain_keeps_the_owed_else_for_the_body_to_finish", a_raise_in_the_drain_keeps_the_owed_else_for_the_body_to_finish);
     rt_run("a_cancel_after_a_raise_drops_the_owed_else", a_cancel_after_a_raise_drops_the_owed_else);
     rt_run("a_sleeping_else_arm_is_overtaken_by_the_next_body", a_sleeping_else_arm_is_overtaken_by_the_next_body);
+    rt_run("a_freed_realm_drops_a_pending_else_arm", a_freed_realm_drops_a_pending_else_arm);
 }
