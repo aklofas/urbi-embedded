@@ -21,7 +21,7 @@ TOP=99
 # which puts it at the top with the other installers.  The rule the gate
 # still enforces on all of them: rt/usched.h itself may reach no further
 # than rt/ustrand.h, which the loop below checks as usual.
-LAYER_OVERRIDES="src/rt/usched.c=uexec src/rt/utag.c=uexec src/rt/usched_natives.c=top"
+LAYER_OVERRIDES="src/rt/usched.c=uexec src/rt/utag.c=uexec src/rt/uslotcache.c=uexec src/rt/usched_natives.c=top"
 # The src/repl files the Makefile actually compiles, with their headers.
 # The parked networked server is left alone: it is held to the layering of
 # the runtime it was written against, not this one.
