@@ -240,6 +240,182 @@ static void a_refused_cache_array_is_retried_and_harmless(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* --- inherited slots ------------------------------------------------------ */
+
+/* P <- M <- o, `v` on P, read through one site. */
+static void chain(Fix *fx)
+{
+    run(fx, "var P = Object.clone() | var P.v = 1");
+    run(fx, "var M = P.clone() | var o = M.clone()");
+    run(fx, "var rd = function() { o.v }");
+}
+
+static void a_repeated_inherited_read_hits(void)
+{
+    Fix fx; fix_open(&fx); chain(&fx);
+    RT_EQ(run(&fx, "rd()").v.i, 1);
+    uint32_t before = stats(&fx)->cache_hits;
+    RT_EQ(run(&fx, "rd() + rd()").v.i, 2);
+    /* Under URBI_GC_STRESS every allocation collects, and every
+     * collection bumps the epoch: the count only holds in paced mode. */
+#ifndef URBI_GC_STRESS
+    RT_CHECK(stats(&fx)->cache_hits - before >= 4u);
+#else
+    (void)before;
+#endif
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+static void a_shadow_on_the_receiver_wins(void)
+{
+    Fix fx; fix_open(&fx); chain(&fx);
+    run(&fx, "rd()"); run(&fx, "rd()");
+    run(&fx, "var o.v = 3");
+    RT_EQ(run(&fx, "rd()").v.i, 3);
+    fix_close(&fx);
+}
+
+static void a_shadow_on_an_intermediate_proto_wins(void)
+{
+    Fix fx; fix_open(&fx); chain(&fx);
+    run(&fx, "rd()"); run(&fx, "rd()");
+    run(&fx, "var M.v = 2");
+    RT_EQ(run(&fx, "rd()").v.i, 2);
+    fix_close(&fx);
+}
+
+static void remove_slot_native_invalidates(void)
+{
+    Fix fx; fix_open(&fx); chain(&fx);
+    run(&fx, "var M.v = 2");
+    run(&fx, "rd()"); run(&fx, "rd()");               /* cached on M */
+    run(&fx, "M.removeSlot(\"v\")");
+    RT_EQ(run(&fx, "rd()").v.i, 1);                   /* falls through to P */
+    run(&fx, "P.removeSlot(\"v\")");
+    UValue out = urbi_make_nil();
+    char err[64] = { 0 };
+    int rc = urbi_run(fx.vm, urbi_realm_main(fx.vm), "rd()", 4, "<test>", &out, err, sizeof err);
+    RT_EQ(rc, URBI_ERR_UNCAUGHT_THROW);
+    fix_close(&fx);
+}
+
+static void a_proto_list_change_re_resolves(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var o = Object.clone()");
+    run(&fx, "var Q = Object.clone() | var Q.w = 7");
+    run(&fx, "var R = Object.clone() | var R.w = 8");
+    run(&fx, "var rd = function() { o.w }");
+    run(&fx, "o.addProto(Q)");
+    RT_EQ(run(&fx, "rd()").v.i, 7);
+    RT_EQ(run(&fx, "rd()").v.i, 7);
+    run(&fx, "o.addProto(R)");                        /* prepends: R wins */
+    RT_EQ(run(&fx, "rd()").v.i, 8);
+    run(&fx, "o.removeProto(R)");
+    RT_EQ(run(&fx, "rd()").v.i, 7);
+    fix_close(&fx);
+}
+
+static void a_value_write_on_the_owner_does_not_bump(void)
+{
+    Fix fx; fix_open(&fx); chain(&fx);
+    run(&fx, "rd()");
+    uint32_t epoch = stats(&fx)->slot_epoch;
+    run(&fx, "P.v = 50");
+    /* Under URBI_GC_STRESS every allocation collects, and every
+     * collection bumps the epoch: this only holds in paced mode. */
+#ifndef URBI_GC_STRESS
+    RT_EQ(stats(&fx)->slot_epoch, epoch);
+#else
+    (void)epoch;
+#endif
+    RT_EQ(run(&fx, "rd()").v.i, 50);
+    fix_close(&fx);
+}
+
+static void building_fresh_objects_does_not_bump(void)
+{
+    Fix fx; fix_open(&fx); chain(&fx);
+    run(&fx, "rd()");
+    uint32_t epoch = stats(&fx)->slot_epoch;
+    UObject *a = uobj_new(fx.vm, NULL);
+    (void)uobj_set_local(fx.vm, a, usym_cstr(fx.vm, "k"), uv_int(1), 0);
+    /* Under URBI_GC_STRESS every allocation collects, and every
+     * collection bumps the epoch: this only holds in paced mode. */
+#ifndef URBI_GC_STRESS
+    RT_EQ(stats(&fx)->slot_epoch, epoch);
+#else
+    (void)epoch;
+#endif
+    fix_close(&fx);
+}
+
+static void a_collection_bumps_the_epoch(void)
+{
+    Fix fx; fix_open(&fx); chain(&fx);
+    run(&fx, "rd()");
+    uint32_t epoch = stats(&fx)->slot_epoch;
+    ugc_collect(fx.vm);
+    RT_CHECK(stats(&fx)->slot_epoch != epoch);
+    RT_EQ(run(&fx, "rd()").v.i, 1);
+    fix_close(&fx);
+}
+
+static void a_host_write_is_seen_through_a_cached_site(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var g = 1");
+    run(&fx, "var rd = function() { g }");
+    run(&fx, "rd()"); run(&fx, "rd()");
+    RT_EQ(urbi_global_set(fx.vm, urbi_realm_main(fx.vm), "g", urbi_make_int(9)), URBI_OK);
+    RT_EQ(run(&fx, "rd()").v.i, 9);
+    fix_close(&fx);
+}
+
+static void a_site_with_alternating_receivers_stays_correct(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var C = Object.clone() | var C.k = 1");
+    run(&fx, "var a = C.clone() | var b = C.clone() | var b.k = 2");
+    run(&fx, "var rd = function(x) { x.k }");
+    RT_EQ(run(&fx, "rd(a) * 1000 + rd(b) * 100 + rd(a) * 10 + rd(b)").v.i, 1212);
+    fix_close(&fx);
+}
+
+static void an_overflowed_walk_is_not_cached(void)
+{
+    Fix fx; fix_open(&fx);
+    /* 70 protos on one object: wider than the 64-entry walk stack. */
+    run(&fx, "var o = Object.clone() | var i = 0");
+    run(&fx, "while (i < 70) { o.addProto(Object.clone()) | i = i + 1 }");
+    run(&fx, "var rd = function() { o.nothingHere }");
+    UValue out = urbi_make_nil();
+    char err[64] = { 0 };
+    (void)urbi_run(fx.vm, urbi_realm_main(fx.vm), "rd()", 4, "<test>", &out, err, sizeof err);
+    /* The first call warmed rd's site for `o`.  On the second, the fresh
+     * call chunk's site for `rd` may fill; the failed one must not. */
+    uint32_t fills = stats(&fx)->cache_fills;
+    (void)urbi_run(fx.vm, urbi_realm_main(fx.vm), "rd()", 4, "<test>", &out, err, sizeof err);
+    RT_CHECK(stats(&fx)->cache_fills - fills <= 1u);
+    fix_close(&fx);
+}
+
+/* A value write on the owner does not bump the epoch, so the condition's
+ * read stays a cache hit: the watcher has to learn about the owner from
+ * the hit path itself. */
+static void a_watcher_sees_a_write_to_an_inherited_cached_slot(void)
+{
+    Fix fx; fix_open(&fx); chain(&fx);
+    run(&fx, "var hits = 0");
+    run(&fx, "rd()"); run(&fx, "rd()");               /* the site holds an inherited entry */
+    run(&fx, "at (rd() == 5) hits = hits + 1");
+    run(&fx, "P.v = 5");
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(run(&fx, "hits").v.i, 1);
+    fix_close(&fx);
+}
+
 RT_SUITE(rt_slotcache_suite)
 {
     rt_run("the_epoch_skips_zero", the_epoch_skips_zero);
@@ -255,4 +431,16 @@ RT_SUITE(rt_slotcache_suite)
     rt_run("a_watcher_sees_a_cached_write", a_watcher_sees_a_cached_write);
     rt_run("a_watcher_sees_a_cached_read", a_watcher_sees_a_cached_read);
     rt_run("a_refused_cache_array_is_retried_and_harmless", a_refused_cache_array_is_retried_and_harmless);
+    rt_run("a_repeated_inherited_read_hits", a_repeated_inherited_read_hits);
+    rt_run("a_shadow_on_the_receiver_wins", a_shadow_on_the_receiver_wins);
+    rt_run("a_shadow_on_an_intermediate_proto_wins", a_shadow_on_an_intermediate_proto_wins);
+    rt_run("remove_slot_native_invalidates", remove_slot_native_invalidates);
+    rt_run("a_proto_list_change_re_resolves", a_proto_list_change_re_resolves);
+    rt_run("a_value_write_on_the_owner_does_not_bump", a_value_write_on_the_owner_does_not_bump);
+    rt_run("building_fresh_objects_does_not_bump", building_fresh_objects_does_not_bump);
+    rt_run("a_collection_bumps_the_epoch", a_collection_bumps_the_epoch);
+    rt_run("a_host_write_is_seen_through_a_cached_site", a_host_write_is_seen_through_a_cached_site);
+    rt_run("a_site_with_alternating_receivers_stays_correct", a_site_with_alternating_receivers_stays_correct);
+    rt_run("an_overflowed_walk_is_not_cached", an_overflowed_walk_is_not_cached);
+    rt_run("a_watcher_sees_a_write_to_an_inherited_cached_slot", a_watcher_sees_a_write_to_an_inherited_cached_slot);
 }

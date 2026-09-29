@@ -25,8 +25,8 @@
  * so a write that INSTALLS a slot has to check whether that slot is the
  * subscribed one.  Writes to objects without the bit cost nothing. */
 #define UOBJ_F_CHANGE_EVENTS 0x0010
-/* Set the first time a cache-filling walk visits this object -- i.e. some
- * USlotCache entry now names it as recv or owner.  A structural change
+/* Set when a cache-filling walk that ends on a proto searches this object:
+ * the receiver, every object passed over, and the owner.  A structural change
  * (add/remove local slot, proto list edit) on a CACHED object has to bump
  * the slot epoch to retire whatever inherited entries pointed through it;
  * an uncached object never appears in a cache, so its own edits are free. */
@@ -90,6 +90,10 @@ bool     uobj_remove_local(struct UVM *vm, UObject *o, const USym *name);
 /* Resolution through protos (depth-first, diamond-safe). */
 typedef struct UObjSlotRef { UObject *owner; int index; } UObjSlotRef;
 bool     uobj_resolve(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out);
+/* As uobj_resolve, and marks UOBJ_F_CACHED on every object the walk
+ * searched when the slot was found on a proto.  A slot found on `o`
+ * itself marks nothing. */
+bool     uobj_resolve_flagging(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out);
 static inline UValue  uobj_slot_value(const UObjSlotRef *r) { return r->owner->values[r->index]; }
 static inline uint8_t uobj_slot_attrs(const UObjSlotRef *r) { return r->owner->attrs[r->index]; }
 bool     uobj_is_a(struct UVM *vm, UObject *o, UObject *proto);    /* o == proto or proto in o's ancestry */

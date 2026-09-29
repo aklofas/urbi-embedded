@@ -113,6 +113,7 @@ uobj_new
 uobj_remove_local
 uobj_remove_proto
 uobj_resolve
+uobj_resolve_flagging
 uobj_resolve_overflowed
 uobj_set_local
 uobj_set_protos

@@ -40,6 +40,10 @@ static const char *const uexec_proto_names[UP_COUNT] = {
 
 void uvm_gc_mark_fixed(UVM *vm)
 {
+    /* Cache entries are weak.  A collection may free a receiver or an
+     * owner and hand its address to something else, so every inherited
+     * entry is retired here rather than traced. */
+    uobj_epoch_bump(vm);
     for (int i = 0; i < UP_COUNT; i++) if (vm->protos[i]) ugc_mark(vm, &vm->protos[i]->cell);
     if (vm->root_globals) ugc_mark(vm, &vm->root_globals->cell);
     for (URealm *r = vm->realms; r; r = r->next) ugc_mark(vm, &r->cell);

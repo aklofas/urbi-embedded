@@ -93,18 +93,23 @@ int uobj_set_local(struct UVM *vm, UObject *o, USym *name, UValue v, uint8_t att
         /* USLOT_CHANGED_EVENT is a SUBSCRIPTION, not a property of the
          * value being written: `x = 2` after someone took `x.changed?`
          * must not silently unsubscribe them. */
-        o->attrs[idx] = (uint8_t)(attrs | (o->attrs[idx] & USLOT_CHANGED_EVENT));
+        uint8_t was = o->attrs[idx];
+        o->attrs[idx] = (uint8_t)(attrs | (was & USLOT_CHANGED_EVENT));
+        /* A plain value write leaves every inherited entry true; only a
+         * change of kind (a property appearing or going) is structural. */
+        if (o->attrs[idx] != was && (o->cell.flags & UOBJ_F_CACHED)) uobj_epoch_bump(vm);
         return idx;
     }
     if (o->count == o->cap && uobj_grow(vm, o) != 0) return -1;
     o->names[o->count] = name;
     o->values[o->count] = stored;
     o->attrs[o->count] = attrs;
-    return (int)o->count++;
+    o->count++;
+    if (o->cell.flags & UOBJ_F_CACHED) uobj_epoch_bump(vm);
+    return (int)o->count - 1;
 }
 
 bool uobj_remove_local(struct UVM *vm, UObject *o, const USym *name) {
-    (void)vm;
     int idx = uobj_find_local(o, name);
     if (idx < 0) return false;
     uint16_t last = (uint16_t)(o->count - 1);
@@ -114,6 +119,7 @@ bool uobj_remove_local(struct UVM *vm, UObject *o, const USym *name) {
         o->attrs[idx] = o->attrs[last];
     }
     o->count = last;
+    if (o->cell.flags & UOBJ_F_CACHED) uobj_epoch_bump(vm);
     return true;
 }
 
@@ -123,12 +129,13 @@ bool uobj_remove_local(struct UVM *vm, UObject *o, const USym *name) {
  * stdlib overlay rely on: an overlay method has to shadow the Object
  * root's, not sit behind it. */
 int uobj_add_proto(struct UVM *vm, UObject *o, UObject *p) {
-    if (o->nprotos == 0) { o->proto0 = p; o->nprotos = 1; return 0; }
+    if (o->nprotos == 0) { o->proto0 = p; o->nprotos = 1; if (o->cell.flags & UOBJ_F_CACHED) uobj_epoch_bump(vm); return 0; }
     if (o->nprotos == 1) {
         UObject **arr = (UObject **)ugc_raw_alloc(vm, 2 * sizeof(UObject *));
         if (!arr) return -1;
         arr[0] = p; arr[1] = o->proto0;
         o->protos = arr; o->proto0 = arr[0]; o->nprotos = 2;
+        if (o->cell.flags & UOBJ_F_CACHED) uobj_epoch_bump(vm);
         return 0;
     }
     UObject **arr = (UObject **)ugc_raw_realloc(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *), (size_t)(o->nprotos + 1) * sizeof(UObject *));
@@ -136,11 +143,12 @@ int uobj_add_proto(struct UVM *vm, UObject *o, UObject *p) {
     for (uint16_t i = o->nprotos; i > 0; i--) arr[i] = arr[i - 1];
     arr[0] = p;
     o->protos = arr; o->proto0 = arr[0]; o->nprotos++;
+    if (o->cell.flags & UOBJ_F_CACHED) uobj_epoch_bump(vm);
     return 0;
 }
 
 int uobj_remove_proto(struct UVM *vm, UObject *o, const UObject *p) {
-    if (o->nprotos == 1 && o->proto0 == p) { o->proto0 = NULL; o->nprotos = 0; return 0; }
+    if (o->nprotos == 1 && o->proto0 == p) { o->proto0 = NULL; o->nprotos = 0; if (o->cell.flags & UOBJ_F_CACHED) uobj_epoch_bump(vm); return 0; }
     if (o->nprotos <= 1) return -1;   /* not present (protos[] doesn't exist yet) */
     int idx = -1;
     for (uint16_t i = 0; i < o->nprotos; i++) if (o->protos[i] == p) { idx = (int)i; break; }
@@ -152,6 +160,7 @@ int uobj_remove_proto(struct UVM *vm, UObject *o, const UObject *p) {
         UObject *remaining = o->protos[idx == 0 ? 1 : 0];
         ugc_raw_free(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *));
         o->protos = NULL; o->proto0 = remaining; o->nprotos = 1;
+        if (o->cell.flags & UOBJ_F_CACHED) uobj_epoch_bump(vm);
         return 0;
     }
     o->protos[idx] = o->protos[n];   /* swap the last slot into the hole */
@@ -159,6 +168,7 @@ int uobj_remove_proto(struct UVM *vm, UObject *o, const UObject *p) {
     if (arr) o->protos = arr;        /* shrink failure just leaves it oversized -- harmless */
     o->proto0 = o->protos[0];
     o->nprotos = n;
+    if (o->cell.flags & UOBJ_F_CACHED) uobj_epoch_bump(vm);
     return 0;
 }
 
@@ -167,6 +177,7 @@ int uobj_set_protos(struct UVM *vm, UObject *o, UObject **ps, uint16_t n) {
         if (o->protos) { ugc_raw_free(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *)); o->protos = NULL; }
         o->proto0 = n ? ps[0] : NULL;
         o->nprotos = n;
+        if (o->cell.flags & UOBJ_F_CACHED) uobj_epoch_bump(vm);
         return 0;
     }
     UObject **arr = (UObject **)ugc_raw_alloc(vm, (size_t)n * sizeof(UObject *));
@@ -174,6 +185,7 @@ int uobj_set_protos(struct UVM *vm, UObject *o, UObject **ps, uint16_t n) {
     memcpy((void *)arr, (const void *)ps, (size_t)n * sizeof(UObject *));
     if (o->protos) ugc_raw_free(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *));
     o->protos = arr; o->proto0 = arr[0]; o->nprotos = n;
+    if (o->cell.flags & UOBJ_F_CACHED) uobj_epoch_bump(vm);
     return 0;
 }
 
@@ -206,7 +218,8 @@ bool uobj_resolve_overflowed(struct UVM *vm) {
     return uvm_objstats(vm)->resolve_overflow != 0;
 }
 
-bool uobj_resolve(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out) {
+static bool uobj_resolve_impl(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out,
+                              bool flagging) {
     uint32_t stamp = uobj_next_stamp(vm);
     UObject *stack[URESOLVE_STACK_CAP];
     int sp = 0;
@@ -216,10 +229,27 @@ bool uobj_resolve(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out
         if (cur->visit == stamp) continue;   /* diamond: already searched */
         cur->visit = stamp;
         int idx = uobj_find_local(cur, name);
-        if (idx >= 0) { out->owner = cur; out->index = idx; return true; }
+        if (idx >= 0) {
+            /* Found on a proto: the owner joins the set whose changes
+             * matter.  Found on `o` itself: nothing was walked. */
+            if (flagging && cur != o) cur->cell.flags |= UOBJ_F_CACHED;
+            out->owner = cur; out->index = idx;
+            return true;
+        }
+        /* Searched and passed over: a slot added here later would shadow
+         * whatever the walk goes on to find. */
+        if (flagging) cur->cell.flags |= UOBJ_F_CACHED;
         if (cur->nprotos > 0 && !uobj_push_protos(vm, cur, stack, &sp)) return false;   /* proto graph too deep */
     }
     return false;
+}
+
+bool uobj_resolve(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out) {
+    return uobj_resolve_impl(vm, o, name, out, false);
+}
+
+bool uobj_resolve_flagging(struct UVM *vm, UObject *o, const USym *name, UObjSlotRef *out) {
+    return uobj_resolve_impl(vm, o, name, out, true);
 }
 
 bool uobj_is_a(struct UVM *vm, UObject *o, UObject *proto) {

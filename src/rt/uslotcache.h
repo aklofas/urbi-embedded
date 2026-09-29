@@ -43,6 +43,14 @@ static inline void uslotcache_fill_own(struct UVM *vm, USlotCache *e, UObject *r
     uvm_objstats(vm)->cache_fills++;
 }
 
+static inline void uslotcache_fill_inherited(struct UVM *vm, USlotCache *e, UObject *recv,
+                                             const UObjSlotRef *ref) {
+    UObjStats *st = uvm_objstats(vm);
+    e->recv = recv; e->owner = ref->owner; e->index = (uint16_t)ref->index;
+    e->epoch = st->slot_epoch;
+    st->cache_fills++;
+}
+
 #if defined(URBI_SLOT_CACHE_VERIFY) && URBI_SLOT_CACHE_VERIFY
 #define USLOTCACHE_VERIFY(vm, o, name, e) do { \
         UObjSlotRef vr_; \

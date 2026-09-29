@@ -97,7 +97,9 @@ static int slot_get(UVM *vm, UStrand *s, UValue recv, const USym *name, const ch
         return uexec_throw(vm, s, UP_TYPEERROR, msg);
     }
     UObjSlotRef ref;
-    if (!uobj_resolve(vm, o, name, &ref)) {
+    bool found = (e != NULL) ? uobj_resolve_flagging(vm, o, name, &ref)
+                             : uobj_resolve(vm, o, name, &ref);
+    if (!found) {
         /* A miss is a read too: the condition `at (Realm.x > 5)` installed
          * before anything declared `x` has to notice the declaration. */
         uwatch_observe(vm, o);
@@ -120,7 +122,12 @@ static int slot_get(UVM *vm, UStrand *s, UValue recv, const USym *name, const ch
      * on the owner the value actually came from. */
     uwatch_observe(vm, o);
     uwatch_observe(vm, ref.owner);
-    if (e != NULL && ref.owner == o) uslotcache_fill_own(vm, e, o, (uint16_t)ref.index);
+    /* Filled before the read: a getter that runs script and bumps the
+     * epoch leaves an entry that simply fails its next check. */
+    if (e != NULL) {
+        if (ref.owner == o) uslotcache_fill_own(vm, e, o, (uint16_t)ref.index);
+        else uslotcache_fill_inherited(vm, e, o, &ref);
+    }
     return slot_read(vm, s, &ref, recv, out);
 }
 
