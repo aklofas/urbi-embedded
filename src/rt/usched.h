@@ -13,9 +13,10 @@
  * STATES.  READY (on the run queue, FIFO through UStrand.link), RUNNING
  * (the one strand in dispatch), PARKED (on the timer heap, on one wait
  * list, or nowhere at all when only a gate holds it), DEAD (on the dead
- * list until the next step reaps it).  There is no SUSPENDED state and
- * no reason nibble: block and freeze are gate BITS on the strand, and a
- * gated strand is simply PARKED with nothing to wait for.
+ * list until the scheduler reaps it, right after the slice it died in).
+ * There is no SUSPENDED state and no reason nibble: block and freeze are
+ * gate BITS on the strand, and a gated strand is simply PARKED with
+ * nothing to wait for.
  *
  * LIVENESS is derived, never counted: a VM has live work when the run
  * queue is non-empty or the timer heap holds a timer.  Wait lists do not
@@ -228,7 +229,7 @@ typedef enum { USTEP_RAN = 0, USTEP_IDLE_UNTIL = 1, USTEP_QUIESCENT = 2 } USched
 /* One scheduler slice: reap the dead, drain the ISR ring, fire every
  * timer due at the clock reading taken on entry, then run the run queue
  * until it empties or `budget` instructions have been handed out
- * (budget 0 = unbounded).
+ * (budget 0 = unbounded), reaping after every strand's slice.
  *
  * USTEP_RAN        — the budget ran out with strands still READY.
  * USTEP_IDLE_UNTIL — nothing READY, a timer pending; *next_wake_us gets

@@ -321,8 +321,9 @@ static void usched_on_death(UVM *vm, UStrand *s)
     uwatch_body_done(vm, s);
 }
 
-/* Unlink every strand that died since the last step from its realm, which
- * is the last thing holding it: the collector takes it from there. */
+/* Unlink every strand that died since the last reap from its realm, which
+ * is the last thing holding it: the collector takes it from there.  Runs
+ * at both ends of a step and after every slice inside it. */
 static void usched_reap(UVM *vm)
 {
     USched *sc = uvm_sched(vm);
@@ -443,8 +444,15 @@ USchedStep usched_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
         int st = uexec_run(vm, s, slice);
         if (st == USTRAND_DEAD) usched_on_death(vm, s);
         else if (st != USTRAND_PARKED) usched_enqueue(s);
-        /* The strand is back on the run queue or the dead list, so it is
-         * rooted again and this is a safe place to collect. */
+        /* Reaped here and not only when the step ends: one unbudgeted step
+         * can run a whole loop of strands that are born and die, and each
+         * would stay rooted until the step returned.  A dead strand that
+         * something still refers to -- a joiner's register, a Job value,
+         * the pin urbi_run holds on the strand it awaits -- is kept by that
+         * reference; the rest is garbage from here. */
+        usched_reap(vm);
+        /* The strand is back on the run queue or reaped, so it is rooted
+         * again or needs no root, and this is a safe place to collect. */
         ugc_maybe_collect(vm);
         /* Every armed condition is re-evaluated here, once, if anything
          * wrote to a watched object during that slice.  A write made by a
@@ -481,7 +489,11 @@ void usched_run_inline(UVM *vm, UStrand *s)
     while (s->state != USTRAND_DEAD) {
         s->fast_yields = 0;
         int st = uexec_run(vm, s, 0);
-        if (st == USTRAND_DEAD) { usched_on_death(vm, s); return; }
+        /* Reaped at once, for the step loop's reason: a parent that cannot
+         * be descheduled (a spare, a synchronous call) runs every join it
+         * makes through here, all inside one slice of the step.  The
+         * joiner still holds `s` in the register the fork left it in. */
+        if (st == USTRAND_DEAD) { usched_on_death(vm, s); usched_reap(vm); return; }
         if (st == USTRAND_PARKED) return;
     }
 }
