@@ -147,10 +147,23 @@ int utag_stop(UVM *vm, UTag *t)
 /* --- gates --------------------------------------------------------------------
  *
  * block and freeze are independent bits on each member strand.  A gated
- * strand sits PARKED with nothing to wait for; clearing the LAST bit is
- * what puts it back on the run queue, and only when it was not also
- * waiting for something else (a wait list, or a timer that has not
- * fired). */
+ * strand sits PARKED with nothing to wait for; a release recomputes the
+ * bits from every tag still covering the strand rather than clearing
+ * them, so a strand inside two blocked tags stays held until both let
+ * go.  It goes back on the run queue only once the recompute reaches
+ * zero, and only when it was not also waiting for something else (a
+ * wait list, or a timer that has not fired). */
+uint8_t utag_strand_gate_bits(const UStrand *s)
+{
+    uint8_t g = utag_gate_bits(s->tag);
+    for (uint16_t i = 0; i < s->ncleanup; i++) {
+        const UCleanup *c = &s->cleanup[i];
+        if (c->kind != (uint8_t)UCLEAN_TAG_SCOPE) continue;
+        if (c->saved.kind == UV_CELL) g = (uint8_t)(g | utag_gate_bits((const UTag *)c->saved.v.p));
+    }
+    return g;
+}
+
 void utag_gate(UVM *vm, UTag *t, uint8_t bit, bool on)
 {
     USched *sc = uvm_sched(vm);
@@ -173,7 +186,10 @@ void utag_gate(UVM *vm, UTag *t, uint8_t bit, bool on)
                     (void)usched_park(s, NULL, 0);
                 }
             } else {
-                s->gates = (uint8_t)(s->gates & ~bit);
+                /* Recomputed, not cleared: another tag covering this
+                 * strand may still hold the same bit.  t->flags was
+                 * updated above, so t itself no longer contributes. */
+                s->gates = utag_strand_gate_bits(s);
                 if (s->gates == 0 && s->state == USTRAND_PARKED
                     && s->waiting_on == NULL && !usched_has_timer(vm, s))
                     usched_enqueue(s);

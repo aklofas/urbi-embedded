@@ -220,6 +220,7 @@ utag_gate
 utag_leave_event
 utag_new
 utag_stop
+utag_strand_gate_bits
 utag_trace
 uvarint_decode_u
 uvarint_decode_zz

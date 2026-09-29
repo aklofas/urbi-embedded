@@ -291,6 +291,63 @@ static void block_and_freeze_are_independent(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* A strand inside two blocked tags is held by both.  Releasing one must
+ * not release the strand. */
+static void two_blocked_tags_need_both_released(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var done = 0");
+    run_ok(&fx, "var outer = Tag.new() | var inner = Tag.new()");
+    run_ok(&fx, "outer: { inner: { sleep(5ms); Realm.done = 1 } }");
+    run_ok(&fx, "outer.block() | inner.block()");
+    RT_EQ(tick(&fx, 10000), URBI_STEP_QUIESCENT);
+    RT_EQ(global_int(&fx, "done"), 0);
+    run_ok(&fx, "inner.unblock()");
+    RT_EQ(global_int(&fx, "done"), 0);
+    run_ok(&fx, "outer.unblock()");
+    RT_EQ(global_int(&fx, "done"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+static void two_frozen_tags_need_both_released(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var done = 0");
+    run_ok(&fx, "var outer = Tag.new() | var inner = Tag.new()");
+    run_ok(&fx, "outer: { inner: { sleep(5ms); Realm.done = 1 } }");
+    run_ok(&fx, "outer.freeze() | inner.freeze()");
+    RT_EQ(tick(&fx, 10000), URBI_STEP_QUIESCENT);
+    run_ok(&fx, "outer.unfreeze()");
+    RT_EQ(global_int(&fx, "done"), 0);
+    run_ok(&fx, "inner.unfreeze()");
+    RT_EQ(global_int(&fx, "done"), 1);
+    fix_close(&fx);
+}
+
+/* A property getter's call boundary cannot park (usched_may_deschedule
+ * is false while nboundary > 0), so the OP_PUSH_TAG that enters an
+ * already-blocked tag's scope inside it keeps running with the gate bit
+ * set instead of parking.  OP_POP_TAG must still drop that bit on the
+ * way out: the tag no longer covers the strand once its scope has
+ * closed, and nothing else ever will (the strand is no longer a member,
+ * so a later t.unblock() skips it).  Left stale, the strand's own real
+ * park below never wakes -- usched_wake refuses to enqueue a strand
+ * that still has any gate bit set. */
+static void a_call_boundary_leaving_a_gated_scope_drops_its_bit(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var t = Tag.new() | var o = Object.clone()");
+    run_ok(&fx, "o.get value() { t: { nil } }");
+    run_ok(&fx, "t.block()");
+    run_ok(&fx, "var done = 0");
+    run_ok(&fx, "o.value; sleep(5ms); Realm.done = 1");
+    RT_EQ(tick(&fx, 10000), URBI_STEP_QUIESCENT);
+    RT_EQ(global_int(&fx, "done"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 /* --- (g) + (k) what a parked strand costs -------------------------------- */
 
 static void a_hundred_sleepers_stay_small(void)
@@ -856,6 +913,9 @@ RT_SUITE(rt_sched_suite) {
     rt_run("a_detached_throw_reaches_both_channels", a_detached_throw_reaches_both_channels);
     rt_run("block_holds_a_woken_sleeper", block_holds_a_woken_sleeper);
     rt_run("block_and_freeze_are_independent", block_and_freeze_are_independent);
+    rt_run("two_blocked_tags_need_both_released", two_blocked_tags_need_both_released);
+    rt_run("two_frozen_tags_need_both_released", two_frozen_tags_need_both_released);
+    rt_run("a_call_boundary_leaving_a_gated_scope_drops_its_bit", a_call_boundary_leaving_a_gated_scope_drops_its_bit);
     rt_run("a_hundred_sleepers_stay_small", a_hundred_sleepers_stay_small);
     rt_run("wait_list_parkers_are_not_live_work", wait_list_parkers_are_not_live_work);
     rt_run("stop_from_a_sibling_runs_the_finally", stop_from_a_sibling_runs_the_finally);

@@ -1,0 +1,39 @@
+# Covers: a strand inside two blocked tags stays blocked until BOTH are
+#         unblocked.  Unblocking the inner tag alone leaves the outer
+#         tag's hold in place.
+#
+# The member parks on `waituntil` before either block() is called, so it
+# is an existing member of both scopes when the gates go on.
+## timeout: 30
+## host: run var outer = Tag.new()
+## host: run var inner = Tag.new()
+## host: run Realm.hits = 0
+## host: run Realm.go = 0
+## host: run outer: { inner: { waituntil(Realm.go == 1); Realm.hits = Realm.hits + 1 } }; 0
+## host: run outer.block()
+## host: run inner.block()
+## host: run Realm.go = 1
+## host: step 1000
+## host: run Realm.hits
+## host: run inner.unblock()
+## host: step 1000
+## host: run Realm.hits
+## host: run outer.unblock()
+## host: step 1000
+## host: run Realm.hits
+[00000000] <Tag>
+[00000000] <Tag>
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] 1
+[00000000] step: QUIESCENT
+[00000000] 0
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] 0
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] 1

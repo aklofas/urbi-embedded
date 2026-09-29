@@ -1144,6 +1144,14 @@ fetch:
                 UCleanup c = s->cleanup[--s->ncleanup];
                 s->tag = (c.saved.kind == UV_CELL) ? (UTag *)c.saved.v.p : NULL;
                 if (c.tag) utag_fire(vm, c.tag->leave);
+                /* Recomputed, not left alone: a call-boundary strand (a
+                 * getter, a setter, an operator overload) cannot park
+                 * when PUSH_TAG gates it on entry, so it keeps running
+                 * with the bit set and reaches this pop while still
+                 * gated.  The tag it just left no longer covers it, and
+                 * nothing else ever will -- leaving the bit stuck would
+                 * strand it the next time it genuinely parks. */
+                s->gates = utag_strand_gate_bits(s);
             } else {
                 UGC_ASSERT(0);   /* see OP_TRY_END */
             }

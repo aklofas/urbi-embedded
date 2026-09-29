@@ -267,6 +267,9 @@ void    utag_gate(struct UVM *vm, UTag *t, uint8_t bit, bool on);
  * headers and this is the one place that relies on it. */
 static inline uint8_t utag_gate_bits(const UTag *t)
 { return t ? (uint8_t)(t->flags & (UTAG_F_BLOCKED | UTAG_F_FROZEN)) : 0u; }
+/* Every gate bit `s` is under right now, read off the tags that cover
+ * it -- its ambient tag plus each tag an enclosing scope displaced. */
+uint8_t utag_strand_gate_bits(const UStrand *s);
 /* The tag's enter / leave event, allocated on first ask.  NULL on OOM. */
 UEvent *utag_enter_event(struct UVM *vm, UTag *t);
 UEvent *utag_leave_event(struct UVM *vm, UTag *t);
