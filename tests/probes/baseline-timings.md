@@ -120,3 +120,27 @@ ESP32-only host functions (`c_cam_fps`, `c_get_pixel_r/g/b`,
 host-injected events (`blob_seen?`, `button_pressed?`, `stats_tick?`,
 `scan_tick?`). Writing a host-stub harness for all of that is out of
 scope here; no timing recorded for this probe.
+
+## New core after the performance work
+
+Recorded 2026-09-29 against commit `e434e293` (`src/rt/`, after the slot
+cache (`src/rt/uslotcache.h`), threaded dispatch, and the yield fast path).
+Same machine as above. `make clean && make && make test-bench`, then
+`make test-bench` twice more, each run alone, nothing else building.
+
+| run | lookup_bench | mandelbrot_host |
+|-----|--------------|------------------|
+| 1   | 0.60x        | 0.83x            |
+| 2   | 0.60x        | 0.84x            |
+| 3   | 0.59x        | 0.83x            |
+
+All six ratios at or under the 1.20 spec ratio; the probe's ratchet
+ceilings are now pinned to that same 1.20.
+
+**Many-receivers case:** the script from Task 7's brief (64 receivers,
+2,000 rounds, 128,000 reads through a one-argument function call), run
+outside the repo, five runs each on `build/host/urbi` from this tree and
+on a scratch build of baseline commit `8253b960`:
+
+- new tree median: 0.0125 s
+- baseline median: 0.0209 s (about 40% faster, not slower)

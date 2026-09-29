@@ -9,33 +9,16 @@
  * numbers — and compares medians.
  *
  * ---------------------------------------------------------------------
- * The 20 percent gate is NOT met, and that is a design consequence
+ * The 20 percent gate
  * ---------------------------------------------------------------------
  *
- * The re-foundation spec asks for the lookup benchmark to land within 20
- * percent of the old core.  It does not: see the ratios this probe prints.
- * Two deliberate simplifications account for it, both visible in the
- * source rather than inferred:
- *
- *   - src/rt/uobj.h opens with "No shapes, transition trees, or inline
- *     caches: slots are a flat array searched by interned pointer."  The
- *     old core carried a per-call-site inline cache (proto->ic_names, the
- *     ic_index DFS numbering the chunk format still reserves).  A
- *     benchmark that reads one slot three hundred thousand times is the
- *     worst case for losing it.
- *
- *   - the dispatch loop in src/rt/uexec_ops.c is a plain switch.  The old
- *     uvm.c used computed goto, with a -DURBI_VM_FORCE_SWITCH build to
- *     keep the portable path honest.
- *
- * Neither is a bug and neither is Task 15's to fix: re-adding an inline
- * cache to an object model three weeks old, or threading the dispatch
- * loop, is a performance change with its own design and its own risk.
- * What this probe does is make the cost visible and stop it growing: the
- * ceilings below are a RATCHET pinned just above what the core measured
- * at the re-foundation, so a future change that makes lookup slower still
- * fails the build, while the spec's 1.2 is kept in view as the number the
- * performance work has to reach.
+ * The re-foundation spec asks for both programs to land within 20
+ * percent of the old core.  The core as first re-founded did not (it had
+ * no slot cache and dispatched through a plain switch); it does now,
+ * through a one-entry cache per slot-access site (src/rt/uslotcache.h),
+ * threaded dispatch, and a fast path for a yield with nobody to yield
+ * to.  The ceilings below ARE the spec's 1.2: a change that makes either
+ * program slower than that fails here.
  *
  * ---------------------------------------------------------------------
  * Run this alone
@@ -75,14 +58,14 @@ typedef struct {
     double      ceiling;    /* ratchet: fail above this multiple of baseline */
 } Bench;
 
-/* Spec target, for the report line.  Not enforced — see the banner. */
+/* Spec target, for the report line; the ceilings below are pinned to it. */
 #define SPEC_RATIO 1.20
 
 static const Bench BENCHES[] = {
     /* 3-deep proto chain, 200k reads + 100k read-modify-writes of one slot. */
-    { "lookup_bench",    "lookup_bench.u",    0.021, 1.75 },
+    { "lookup_bench",    "lookup_bench.u",    0.021, 1.20 },
     /* 320x125 Mandelbrot: arithmetic and calls, almost no allocation. */
-    { "mandelbrot_host", "mandelbrot_host.u", 0.209, 1.60 },
+    { "mandelbrot_host", "mandelbrot_host.u", 0.209, 1.20 },
 };
 #define NBENCH ((int)(sizeof BENCHES / sizeof BENCHES[0]))
 
@@ -166,10 +149,10 @@ int main(int argc, char **argv)
         double ratio  = median / BENCHES[b].baseline;
 
         printf("  %-16s old %.3f s -> new %.3f s  = %.2fx"
-               "  (ratchet %.2fx, spec %.2fx %s)\n",
+               "  (spec %.2fx %s)\n",
                BENCHES[b].name, BENCHES[b].baseline, median, ratio,
-               BENCHES[b].ceiling, SPEC_RATIO,
-               ratio <= SPEC_RATIO ? "met" : "MISSED");
+               SPEC_RATIO,
+               ratio <= BENCHES[b].ceiling ? "PASS" : "FAIL");
 
         if (ratio > BENCHES[b].ceiling) {
             fprintf(stderr, "lookup_bench: %s at %.2fx is above the %.2fx ratchet\n",
