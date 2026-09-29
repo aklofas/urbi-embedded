@@ -15,6 +15,11 @@ void *ugc_raw_alloc(struct UVM *vm, size_t nbytes) {
     UGc *g = uvm_gc(vm);
     UGC_ASSERT(!g->in_collect);   /* finalize hooks must not allocate */
     void *p = g->alloc(NULL, nbytes, g->alloc_ud);
+    /* bytes_live follows the raw bytes exactly; pace_base does not move
+     * until the next collection.  A baseline that grew with every raw
+     * block would outrun bytes_since for any garbage whose raw block is at
+     * least as big as its cell -- a list, an object with slots, a strand
+     * -- and a loop making such garbage would never collect. */
     if (p) { memset(p, 0, nbytes); g->bytes_since += nbytes; g->bytes_live += nbytes; g->raw_live += nbytes; }
     return p;
 }
@@ -45,12 +50,9 @@ void *ugc_alloc(struct UVM *vm, UCellType type, size_t nbytes) {
     memset(c, 0, nbytes);
     c->type = (uint8_t)type; c->size = (uint32_t)nbytes;
     c->next = g->all; g->all = c;
-    /* bytes_live is the live-set size as of the last collection (plus
-     * raw_live, which is exact without a sweep) -- it is the pacing
-     * baseline, so a fresh cell counts only toward bytes_since until the
-     * next collect folds it in. Bumping bytes_live here too would make it
-     * track bytes_since 1:1 and ugc_should_collect's 2x-live check could
-     * never fire from allocation alone. */
+    /* bytes_live is the cell bytes that survived the last collection plus
+     * raw_live, which is exact without a sweep; a fresh cell counts only
+     * toward bytes_since until the next collect folds it in. */
     g->cells_live++; g->bytes_since += nbytes;
     return c;
 }
@@ -123,12 +125,13 @@ void ugc_collect(struct UVM *vm) {
     /* live counts only swept cell bytes; raw_live (arrays owned by the
      * surviving cells, freed via their finalize -> ugc_raw_free) must be
      * added back or every collect would silently forget live raw memory. */
-    g->bytes_live = live + g->raw_live; g->cells_live = n; g->bytes_since = 0; g->cycles++;
+    g->bytes_live = live + g->raw_live; g->pace_base = g->bytes_live;
+    g->cells_live = n; g->bytes_since = 0; g->cycles++;
     g->in_collect = 0;
 }
 
 bool ugc_should_collect(const UGc *g) {
-    size_t limit = g->bytes_live * g->pause_ratio / 100;
+    size_t limit = g->pace_base * g->pause_ratio / 100;
     if (limit < g->threshold) limit = g->threshold;
     return g->bytes_since > limit;
 }

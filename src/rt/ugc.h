@@ -54,8 +54,9 @@ typedef struct UGc {
     UCell  **gray; uint32_t gray_len, gray_cap;   /* explicit mark stack (no recursion) */
     size_t   bytes_live, bytes_since, threshold;
     size_t   raw_live;            /* live bytes owned via ugc_raw_* (arrays etc.), not swept as cells */
+    size_t   pace_base;           /* bytes_live as the last collection left it; the pacing baseline */
     uint32_t cycles, cells_live;
-    uint8_t  pause_ratio;         /* percent; 200 = collect when since > 2x live */
+    uint8_t  pause_ratio;         /* percent; 200 = collect when since > 2x pace_base */
     uint8_t  in_collect;
     uint8_t  gray_overflow;       /* set when a push onto gray[] fails (OOM); cleared by the fallback rescan */
     UGcRoots hooks;
