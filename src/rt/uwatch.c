@@ -189,25 +189,51 @@ static void uwatch_run_inline(UVM *vm, UWatcher *w, UClosure *cl, UValue payload
     uvm_spare_release(vm, sp);
 }
 
-/* Spawn one of the watcher's closures as a scheduled strand under the
- * watcher's tag.  NULL when there is nothing to spawn. */
-static UStrand *uwatch_spawn(UVM *vm, UWatcher *w, UClosure *cl, UValue payload)
+/* A body or else arm that could not be spawned is reported the way a
+ * detached strand's uncaught throw is (see usched_on_death): through the
+ * diag hook and the error channel, with `threw` set so the next step
+ * clears it.  Nothing else would say anything: no strand exists to die,
+ * and the step comes back QUIESCENT either way. */
+static void uwatch_report_oom(UVM *vm, const char *what)
 {
-    if (cl == NULL || cl->proto == NULL || w->realm == NULL) return NULL;
+    size_t at = 0;
+    for (const char *p = what; *p && at + 1 < sizeof vm->last_error; p++) vm->last_error[at++] = *p;
+    vm->last_error[at] = '\0';
+    vm->last_error_code = URBI_ERR_OOM;
+    uvm_sched(vm)->threw = 1;
+    if (vm->diag) vm->diag(vm, vm->diag_ud, 3 /* syslog LOG_ERR */, vm->last_error, at);
+}
+
+/* Spawn one of the watcher's closures as a scheduled strand under the
+ * watcher's tag.  *out is NULL when there was nothing to spawn -- no
+ * closure, no realm, or a closure whose parameter list the payload does
+ * not fit, which usched_spawn refuses for that reason and not for want of
+ * memory.  -1 when the spawn ran out of memory, which has been reported
+ * as `what`; 0 otherwise. */
+static int uwatch_spawn(UVM *vm, UWatcher *w, UClosure *cl, UValue payload,
+                        const char *what, UStrand **out)
+{
+    *out = NULL;
+    if (cl == NULL || cl->proto == NULL || w->realm == NULL) return 0;
     uint8_t argc = uwatch_body_argc(cl);
+    const UProto *p = cl->proto;
+    if (p->arity_prologue ? (argc > p->nparams) : (argc != p->nparams)) return 0;
     /* usched_spawn allocates twice before it copies the argument window,
      * so the payload rides on the watcher (a GC root) rather than in a C
      * local. */
     w->payload = payload;
-    UStrand *c = usched_spawn(vm, w->realm, cl, w->tag, uwatch_recv(w),
-                              argc ? &w->payload : NULL, argc);
+    *out = usched_spawn(vm, w->realm, cl, w->tag, uwatch_recv(w),
+                        argc ? &w->payload : NULL, argc);
     w->payload = uv_nil();
-    return c;
+    if (*out != NULL) return 0;
+    uwatch_report_oom(vm, what);
+    return -1;
 }
 
 /* The rising-edge action, shared by the drain and the event fan-out. */
 static void uwatch_fire(UVM *vm, UWatcher *w, UValue payload, bool force_inline)
 {
+    uint8_t was_fired = w->fired;
     w->fired = 1;
     /* The callback's return value is ignored, and the public header says
      * so: it is an int only to match the host-callback family's shape. */
@@ -216,8 +242,22 @@ static void uwatch_fire(UVM *vm, UWatcher *w, UValue payload, bool force_inline)
         uwatch_run_inline(vm, w, w->body, payload, "at sync body raised: ");
         return;
     }
-    UStrand *c = uwatch_spawn(vm, w, w->body, payload);
-    if (w->mode == (uint8_t)UWATCH_WHENEVER && w->cond) w->body_strand = c;
+    bool whenever = w->mode == (uint8_t)UWATCH_WHENEVER;
+    UStrand *c = NULL;
+    if (uwatch_spawn(vm, w, w->body, payload,
+                     whenever ? "whenever body: out of memory" : "at body: out of memory", &c) != 0) {
+        /* The watcher stays armed and a condition's edge stays unserved:
+         * forgetting it, and marking the set dirty, is what has the next
+         * drain see the condition rise again and try once more.  An
+         * emission cannot be asked again; the report is all it gets. */
+        w->fired = was_fired;
+        if (w->cond) {
+            w->last = 0;
+            uwatch_mark_dirty(vm, NULL);
+        }
+        return;
+    }
+    if (whenever && w->cond) w->body_strand = c;
 }
 
 static void uwatch_leave(UVM *vm, UWatcher *w)
@@ -225,11 +265,17 @@ static void uwatch_leave(UVM *vm, UWatcher *w)
     if (w->onleave == NULL || !w->fired) return;
     w->fired = 0;
     /* An at-sync watcher's falling edge is as synchronous as its rising
-     * one; everything else spawns. */
-    if (w->mode == (uint8_t)UWATCH_AT_SYNC)
+     * one; everything else spawns.  An else arm that cannot be spawned is
+     * reported and not retried: the fall it answers has been seen, and
+     * the next rise starts a new round. */
+    if (w->mode == (uint8_t)UWATCH_AT_SYNC) {
         uwatch_run_inline(vm, w, w->onleave, uv_nil(), "at sync onleave raised: ");
-    else
-        (void)uwatch_spawn(vm, w, w->onleave, uv_nil());
+    } else {
+        UStrand *c = NULL;
+        (void)uwatch_spawn(vm, w, w->onleave, uv_nil(),
+                           w->mode == (uint8_t)UWATCH_WHENEVER ? "whenever else: out of memory"
+                                                                : "at onleave: out of memory", &c);
+    }
 }
 
 static void uwatch_wake_waiters(UWatcher *w, UValue payload)
