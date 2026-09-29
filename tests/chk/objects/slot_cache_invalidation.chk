@@ -1,8 +1,11 @@
 # Covers: a slot read through one site keeps giving the right answer
 #         while the objects behind it change: a shadowing slot appears
 #         on an intermediate prototype and then on the receiver, slots
-#         are removed again, the prototype list grows and shrinks, and a
-#         watcher observes a write made through a warm site.
+#         are removed again, the prototype list grows and shrinks, a
+#         watcher observes a write made through a warm site, and an
+#         accessor is installed on a slot that warm read and write sites
+#         already reach: a setter-only slot still reads its value, a
+#         setter runs, and a write to a getter-only slot keeps the getter.
 #
 # Each reader is a function so the SAME site runs every time.  Every
 # reader is called twice before the first change, which is what makes the
@@ -82,3 +85,41 @@ hits
 [00000000] 1
 o.n
 [00000000] 3
+var A = Object.clone() | var A.f = 0 | var St = Object.clone() | var St.n = 0 | 0
+[00000000] 0
+var rda = function() { A.f } | 0
+[00000000] 0
+var wra = function() { A.f = 5 } | 0
+[00000000] 0
+rda()
+[00000000] 0
+wra()
+[00000000] 5
+rda()
+[00000000] 5
+wra()
+[00000000] 5
+A.setProperty("f", "oset", function(v) { St.n = St.n + v }) | 0
+[00000000] 0
+rda()
+[00000000] 5
+wra()
+[00000000] 5
+St.n
+[00000000] 5
+rda()
+[00000000] 5
+var G = Object.clone() | var G.g = 0 | 0
+[00000000] 0
+var wrg = function() { G.g = 5 } | 0
+[00000000] 0
+wrg()
+[00000000] 5
+wrg()
+[00000000] 5
+G.setProperty("g", "oget", function() { 99 }) | 0
+[00000000] 0
+wrg()
+[00000000] 5
+G.g
+[00000000] 99

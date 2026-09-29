@@ -17,15 +17,30 @@
 
 /* fail_at > 0 refuses exactly the fail_at'th fresh block from here on,
  * records its size in `refused`, then disarms.  Fresh blocks only: a
- * refused grow would test something else. */
-typedef struct { size_t live; int fail_at; size_t refused; } CacheAlloc;
+ * refused grow would test something else.
+ *
+ * `hold` names a block whose free is kept back in `held` instead; with
+ * `give_back` set, the next fresh block of the same size is that one, so
+ * a test can put a new object at a freed object's address. */
+typedef struct {
+    size_t live; int fail_at; size_t refused;
+    void *hold, *held; bool give_back;
+} CacheAlloc;
 
 static void *cache_alloc(void *ptr, size_t n, void *ud)
 {
     CacheAlloc *ca = (CacheAlloc *)ud;
     size_t *hdr = ptr ? ((size_t *)ptr) - 2 : NULL;
     size_t old = hdr ? hdr[0] : 0;
+    if (n == 0 && ptr != NULL && ptr == ca->hold) {
+        ca->live -= old; ca->held = ptr; ca->hold = NULL; return NULL;
+    }
     if (n == 0) { if (hdr) { ca->live -= old; free(hdr); } return NULL; }
+    if (hdr == NULL && ca->give_back && ca->held && ((size_t *)ca->held)[-2] == n) {
+        void *p = ca->held;
+        ca->held = NULL; ca->give_back = false; ca->live += n;
+        return p;
+    }
     if (hdr == NULL && ca->fail_at > 0 && --ca->fail_at == 0) { ca->refused = n; return NULL; }
     size_t *nh = (size_t *)realloc(hdr, n + 2 * sizeof(size_t));
     if (!nh) return NULL;
@@ -41,7 +56,11 @@ static void fix_open(Fix *fx)
     memset(fx, 0, sizeof *fx);
     fx->vm = urbi_open(cache_alloc, &fx->ca, NULL);
 }
-static void fix_close(Fix *fx) { urbi_close(fx->vm); }
+static void fix_close(Fix *fx)
+{
+    urbi_close(fx->vm);
+    if (fx->ca.held) free(((size_t *)fx->ca.held) - 2);
+}
 
 static UValue run_rc(Fix *fx, const char *src, int *rc_out)
 {
@@ -169,6 +188,53 @@ static void a_getter_installed_after_caching_runs(void)
     RT_EQ(run_ok(&fx, "rd()").v.i, 1);
     run_ok(&fx, "o.setProperty(\"f\", \"oget\", function() { 99 })");
     RT_EQ(run_ok(&fx, "rd()").v.i, 99);
+    fix_close(&fx);
+}
+
+/* A slot carrying an accessor holds a property cell, not its value.  A
+ * setter-only slot reads back the stored value, never the cell. */
+static void a_setter_installed_after_caching_a_read_reads_the_value(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var o = Object.clone() | var o.f = 1 | var St = Object.clone() | var St.n = 0");
+    run_ok(&fx, "var rd = function() { o.f }");
+    RT_EQ(run_ok(&fx, "rd()").v.i, 1);
+    RT_EQ(run_ok(&fx, "rd()").v.i, 1);
+    run_ok(&fx, "o.setProperty(\"f\", \"oset\", function(v) { St.n = St.n + 1 })");
+    UValue v = run_ok(&fx, "rd()");
+    RT_EQ(v.kind, UV_INT);
+    RT_EQ(v.v.i, 1);
+    fix_close(&fx);
+}
+
+static void a_setter_installed_after_caching_a_write_runs(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var o = Object.clone() | var o.f = 0 | var St = Object.clone() | var St.n = 0");
+    run_ok(&fx, "var wr = function() { o.f = 5 }");
+    run_ok(&fx, "wr()"); run_ok(&fx, "wr()");
+    run_ok(&fx, "o.setProperty(\"f\", \"oset\", function(v) { St.n = St.n + v })");
+    run_ok(&fx, "wr()");
+    RT_EQ(run_ok(&fx, "St.n").v.i, 5);
+    fix_close(&fx);
+}
+
+/* A getter-only slot has no setter to call, so a write stores into the
+ * property cell; writing over the cell itself would leave the getter bit
+ * pointing at an integer. */
+static void a_getter_installed_after_caching_a_write_keeps_its_cell(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var o = Object.clone() | var o.f = 0");
+    run_ok(&fx, "var wr = function() { o.f = 5 }");
+    run_ok(&fx, "wr()"); run_ok(&fx, "wr()");
+    run_ok(&fx, "o.setProperty(\"f\", \"oget\", function() { 99 })");
+    run_ok(&fx, "wr()");
+    UObject *o = (UObject *)run_ok(&fx, "o").v.p;
+    int idx = uobj_find_local(o, usym_cstr(fx.vm, "f"));
+    RT_CHECK(idx >= 0);
+    RT_EQ(o->values[idx].kind, UV_CELL);
+    RT_EQ(run_ok(&fx, "o.f").v.i, 99);
     fix_close(&fx);
 }
 
@@ -371,6 +437,35 @@ static void a_collection_bumps_the_epoch(void)
     ugc_collect(fx.vm);
     RT_CHECK(stats(&fx)->slot_epoch != epoch);
     RT_EQ(run_ok(&fx, "rd()").v.i, 1);
+    fix_close(&fx);
+}
+
+/* Entries are weak, so a warm entry can outlive its receiver and meet a
+ * new object built at the same address.  The own entry must re-check the
+ * live object (b has `j` where a had `k`), and the inherited entry must
+ * be retired by the collection that freed a (b inherits from D, not C). */
+static void a_receiver_freed_and_its_address_reused_misses(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var C = Object.clone() | var C.m = 10 | var D = Object.clone() | var D.m = 30");
+    run_ok(&fx, "var a = C.clone() | var a.k = 1 | var b = nil");
+    run_ok(&fx, "var rd = function(x) { x.k } | var rdi = function(x) { x.m }");
+    RT_EQ(run_ok(&fx, "rd(a) + rdi(a)").v.i, 11);
+    RT_EQ(run_ok(&fx, "rd(a) + rdi(a)").v.i, 11);          /* both sites hold a */
+    UObject *a = (UObject *)run_ok(&fx, "a").v.p;
+    UObject *D = (UObject *)run_ok(&fx, "D").v.p;
+    fx.ca.hold = a;
+    run_ok(&fx, "a = nil");
+    ugc_collect(fx.vm);
+    RT_CHECK(fx.ca.held == a);                              /* a was swept */
+    fx.ca.give_back = true;
+    UObject *b = uobj_new(fx.vm, D);
+    RT_CHECK(b == a);
+    RT_EQ(urbi_global_set(fx.vm, urbi_realm_main(fx.vm), "b", uv_obj(b)), URBI_OK);
+    RT_CHECK(uobj_set_local(fx.vm, b, usym_cstr(fx.vm, "j"), uv_int(7), 0) == 0);
+    RT_CHECK(uobj_set_local(fx.vm, b, usym_cstr(fx.vm, "k"), uv_int(2), 0) == 1);
+    RT_EQ(run_ok(&fx, "rd(b)").v.i, 2);
+    RT_EQ(run_ok(&fx, "rdi(b)").v.i, 30);
     fix_close(&fx);
 }
 
@@ -589,6 +684,9 @@ RT_SUITE(rt_slotcache_suite)
     rt_run("a_bare_name_update_hits", a_bare_name_update_hits);
     rt_run("a_removed_slot_with_another_swapped_in_misses", a_removed_slot_with_another_swapped_in_misses);
     rt_run("a_getter_installed_after_caching_runs", a_getter_installed_after_caching_runs);
+    rt_run("a_setter_installed_after_caching_a_read_reads_the_value", a_setter_installed_after_caching_a_read_reads_the_value);
+    rt_run("a_setter_installed_after_caching_a_write_runs", a_setter_installed_after_caching_a_write_runs);
+    rt_run("a_getter_installed_after_caching_a_write_keeps_its_cell", a_getter_installed_after_caching_a_write_keeps_its_cell);
     rt_run("a_slot_made_constant_refuses_a_cached_write", a_slot_made_constant_refuses_a_cached_write);
     rt_run("a_readonly_receiver_refuses_a_cached_write", a_readonly_receiver_refuses_a_cached_write);
     rt_run("a_watcher_sees_a_cached_write", a_watcher_sees_a_cached_write);
@@ -602,6 +700,7 @@ RT_SUITE(rt_slotcache_suite)
     rt_run("a_value_write_on_the_owner_does_not_bump", a_value_write_on_the_owner_does_not_bump);
     rt_run("building_fresh_objects_does_not_bump", building_fresh_objects_does_not_bump);
     rt_run("a_collection_bumps_the_epoch", a_collection_bumps_the_epoch);
+    rt_run("a_receiver_freed_and_its_address_reused_misses", a_receiver_freed_and_its_address_reused_misses);
     rt_run("a_host_write_is_seen_through_a_cached_site", a_host_write_is_seen_through_a_cached_site);
     rt_run("a_site_with_alternating_receivers_stays_correct", a_site_with_alternating_receivers_stays_correct);
     rt_run("an_overflowed_walk_is_not_cached", an_overflowed_walk_is_not_cached);
