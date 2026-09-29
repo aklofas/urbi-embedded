@@ -26,3 +26,9 @@ void uslotcache_free_tree(struct UVM *vm, UProto *root) {
     }
     for (size_t k = 0; k < root->nested_count; k++) uslotcache_free_tree(vm, root->nested[k]);
 }
+
+void uslotcache_clear_tree(struct UVM *vm, UProto *root) {
+    if (root == NULL) return;
+    if (root->site_cache) memset(root->site_cache, 0, (size_t)root->ic_count * sizeof(USlotCache));
+    for (size_t k = 0; k < root->nested_count; k++) uslotcache_clear_tree(vm, root->nested[k]);
+}

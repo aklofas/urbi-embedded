@@ -24,6 +24,15 @@ typedef struct USlotCache {
 
 USlotCache *uslotcache_alloc(struct UVM *vm, UProto *p);
 void        uslotcache_free_tree(struct UVM *vm, UProto *root);
+/* Empties every entry in the tree without freeing the arrays. */
+void        uslotcache_clear_tree(struct UVM *vm, UProto *root);
+
+/* A collection that finds the epoch past this resets it to 1 and clears
+ * every entry, so a stale inherited entry can never meet its own epoch
+ * again after a wrap.  Half the range because the check runs only at
+ * collections: the structural bumps between two collections cannot
+ * plausibly reach 2^31, so the reset always fires before a wrap. */
+#define USLOTCACHE_EPOCH_RESET 0x80000000u
 
 static inline USlotCache *uslotcache_site(struct UVM *vm, UProto *p, uint16_t site) {
     USlotCache *a = (USlotCache *)p->site_cache;

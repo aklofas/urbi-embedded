@@ -416,6 +416,29 @@ static void a_watcher_sees_a_write_to_an_inherited_cached_slot(void)
     fix_close(&fx);
 }
 
+/* The epoch is reset at a collection long before it could wrap back to a
+ * value an idle entry still carries; the reset clears every entry. */
+static void an_epoch_near_the_top_is_reset_and_entries_cleared(void)
+{
+    Fix fx; fix_open(&fx); chain(&fx);
+    run(&fx, "rd()"); run(&fx, "rd()");
+    UProto *body = ((UClosure *)run(&fx, "rd").v.p)->proto;
+    USlotCache *a = (USlotCache *)body->site_cache;
+    RT_CHECK(a != NULL);
+    bool inherited = false;
+    for (uint16_t k = 0; k < body->ic_count; k++)
+        if (a[k].recv != NULL && a[k].owner != a[k].recv) inherited = true;
+    RT_CHECK(inherited);
+    stats(&fx)->slot_epoch = 0x80000001u;
+    ugc_collect(fx.vm);
+    RT_EQ(stats(&fx)->slot_epoch, 1u);
+    for (uint16_t k = 0; k < body->ic_count; k++) RT_CHECK(a[k].recv == NULL);
+    uint32_t fills = stats(&fx)->cache_fills;
+    RT_EQ(run(&fx, "rd()").v.i, 1);
+    RT_CHECK(stats(&fx)->cache_fills > fills);
+    fix_close(&fx);
+}
+
 RT_SUITE(rt_slotcache_suite)
 {
     rt_run("the_epoch_skips_zero", the_epoch_skips_zero);
@@ -443,4 +466,5 @@ RT_SUITE(rt_slotcache_suite)
     rt_run("a_site_with_alternating_receivers_stays_correct", a_site_with_alternating_receivers_stays_correct);
     rt_run("an_overflowed_walk_is_not_cached", an_overflowed_walk_is_not_cached);
     rt_run("a_watcher_sees_a_write_to_an_inherited_cached_slot", a_watcher_sees_a_write_to_an_inherited_cached_slot);
+    rt_run("an_epoch_near_the_top_is_reset_and_entries_cleared", an_epoch_near_the_top_is_reset_and_entries_cleared);
 }
