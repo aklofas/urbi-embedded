@@ -251,3 +251,10 @@ void uobj_finalize(struct UVM *vm, UObject *o) {
     ugc_raw_free(vm, o->values, uobj_slots_bytes(o->cap));
     ugc_raw_free(vm, (void *)o->protos, (size_t)o->nprotos * sizeof(UObject *));
 }
+
+/* Zero is what an empty entry carries, so the epoch never takes it. */
+void uobj_epoch_bump(struct UVM *vm) {
+    UObjStats *st = uvm_objstats(vm);
+    st->slot_epoch++;
+    if (st->slot_epoch == 0) st->slot_epoch = 1;
+}

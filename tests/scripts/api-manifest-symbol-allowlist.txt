@@ -105,6 +105,7 @@ ulist_push
 ulist_remove_at
 ulist_trace
 uobj_add_proto
+uobj_epoch_bump
 uobj_finalize
 uobj_find_local
 uobj_is_a
@@ -170,6 +171,8 @@ usched_timers_drop_realm
 usched_timers_drop_tag
 usched_unqueue
 usched_wake
+uslotcache_alloc
+uslotcache_free_tree
 ustdlib_bool_methods
 ustdlib_date_methods
 ustdlib_debug_methods

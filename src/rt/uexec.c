@@ -3,6 +3,7 @@
  * The dispatch loop itself lives in uexec_ops.c.  See rt/uexec.h. */
 
 #include "rt/uexec.h"
+#include "rt/uslotcache.h"
 #include "chunk/uchunk.h"   /* uchunk_destroy — the UCELL_PROTO finaliser */
 
 /* --- accessors (the four the lower layers reach the VM through) ------ */
@@ -119,6 +120,7 @@ void uvm_gc_finalize(UVM *vm, UCell *c)
         }
         if (pc->root) {
             pc->root->owning_module_instance = NULL;
+            uslotcache_free_tree(vm, pc->root);
             uchunk_destroy(pc->root, NULL);   /* refcount is always 0 here: the new core never bumps it */
             pc->root = NULL;
         }

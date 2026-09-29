@@ -25,6 +25,12 @@
  * so a write that INSTALLS a slot has to check whether that slot is the
  * subscribed one.  Writes to objects without the bit cost nothing. */
 #define UOBJ_F_CHANGE_EVENTS 0x0010
+/* Set the first time a cache-filling walk visits this object -- i.e. some
+ * USlotCache entry now names it as recv or owner.  A structural change
+ * (add/remove local slot, proto list edit) on a CACHED object has to bump
+ * the slot epoch to retire whatever inherited entries pointed through it;
+ * an uncached object never appears in a cache, so its own edits are free. */
+#define UOBJ_F_CACHED       0x0020
 
 /* Value-array entry for a slot with GETTER and/or SETTER set: values[i]
  * holds a UValue of kind UV_CELL pointing at one of these instead of the
@@ -56,8 +62,15 @@ typedef struct UObjStats {
      * raises has to say which of the two it got.  Cleared at the top of
      * every walk; read through uobj_resolve_overflowed. */
     uint8_t  resolve_overflow;
+    /* The slot cache's clock.  Bumped by GC and by any structural change
+     * to a CACHED object; an inherited USlotCache entry is only good for
+     * the epoch it was filled at.  Never zero -- see uobj_epoch_bump. */
+    uint32_t slot_epoch;
+    /* Observability for tests/rt; never read by the runtime. */
+    uint32_t cache_hits, cache_fills;
 } UObjStats;
 UObjStats *uvm_objstats(struct UVM *vm);      /* defined in uexec.c; see tests/rt/fakevm.c */
+void       uobj_epoch_bump(struct UVM *vm);
 
 static inline UValue uv_obj(UObject *o) { return uv_ptr(UV_OBJ, o); }
 

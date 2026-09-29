@@ -146,23 +146,10 @@ typedef struct UProto {
     size_t          nested_count;
     size_t          nested_cap;
 
-    /* [runtime-only, NOT serialized] Intrusive list link with dual Variant B
-     * semantics (spec §3.7 lifetime ordering invariant):
-     *
-     * (a) List link — when this proto is the root_proto of a rescued module,
-     *     next_alloc threads it onto vm->rescued_protos.
-     *     NULL while the proto is still owned by its originating UModule.
-     *
-     * (b) Self-link sentinel — set by uchunk_destroy(m, NULL) (the vm=NULL
-     *     defensive path) when root_proto->refcount > 0 but no vm is available
-     *     to rescue immediately.  next_alloc == root_proto itself signals
-     *     "destroy pending — promote to vm->rescued_protos when refcount hits 0
-     *     during vm_destroy's stdlib_closures sweep".  Unambiguous because an
-     *     in-module or in-list proto never points to itself.
-     *
-     * Zero-initialized alongside the rest of UProto at alloc time
-     * (uproto_alloc_nested). */
-    struct UProto *next_alloc;
+    /* The runtime's per-site slot cache: ic_count entries, allocated by
+     * src/rt on this proto's first slot operation and freed with the
+     * chunk.  Opaque here; the chunk layer only ever writes NULL to it. */
+    void          *site_cache;
 
     struct UProto *root;
 
