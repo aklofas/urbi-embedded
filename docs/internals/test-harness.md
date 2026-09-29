@@ -128,9 +128,11 @@ The timing probe is `make test-bench`, deliberately NOT part of `make
 test`: `make test` is one gate of a 20-way parallel releasetest sweep,
 and a wall-clock number taken while nineteen other compiles saturate the
 machine is the machine's number, not the interpreter's — the same probe
-read 4.99x under `-j32` and 1.46x solo. Releasetest runs it first in its
-sequential phase, for the same reason valgrind runs there. It also runs
-only on the default host build: comparing an instrumented binary against
+read 4.99x under `-j32` and 1.46x solo. It is not part of `make
+releasetest` either: the baseline is wall-clock seconds recorded on one
+machine, so anywhere else (a CI runner) the ratio compares two machines.
+Run it by hand, alone, on the machine that recorded the baseline. It
+also runs only on the default host build: comparing an instrumented binary against
 an uninstrumented baseline would measure the instrumentation.
 
 ## Running
@@ -145,8 +147,8 @@ an uninstrumented baseline would measure the instrumentation.
 | `make test-valgrind` | `-O1 -g` under memcheck | `build/host-valgrind/` | uninitialized reads ASan cannot see |
 | `make test-switch` | `-Os -DURBI_VM_FORCE_SWITCH=1` | `build/host-switch/` | keeps the portable dispatch path honest |
 | `make test-o2` | `-O2 -g` | `build/host-o2/` | the level desktop embedders actually use |
-| `make test-bench` | `-Os` | `build/host/` | the timing probe, alone |
-| `make releasetest` | all of the above: 20 gates in parallel, then 3 alone | — | before a tag |
+| `make test-bench` | `-Os` | `build/host/` | the timing probe, alone, on the baseline machine |
+| `make releasetest` | all of the above except `test-bench`: 20 gates in parallel, then 2 alone | — | before a tag |
 
 Build directories are disjoint, so the parallel sweep does not race.
 

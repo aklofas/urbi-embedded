@@ -41,11 +41,14 @@
  * Run this alone
  * ---------------------------------------------------------------------
  *
- * `make test-bench`, and releasetest runs it first in its SEQUENTIAL
- * phase -- not inside `make test`, which is itself one gate of a 20-way
- * parallel sweep.  Measured under -j32 beside nineteen other compiles
- * this probe reported 4.99x; solo, on the same tree, 1.46x.  A wall-clock
- * number taken on a saturated box is the box's number.
+ * `make test-bench` -- not inside `make test`, which is itself one gate
+ * of a 20-way parallel sweep.  Measured under -j32 beside nineteen other
+ * compiles this probe reported 4.99x; solo, on the same tree, 1.46x.  A
+ * wall-clock number taken on a saturated box is the box's number.
+ *
+ * Nor inside releasetest, which CI runs: the baseline is seconds on the
+ * machine that recorded it, and a slower runner fails the ratchet with
+ * nothing regressed.  Run it on that machine.
  *
  * Even solo it is noisy: a shared machine, a 21-millisecond workload.
  * The ceilings carry slack for that, which is why they are not pinned at

@@ -12,7 +12,7 @@ top-to-bottom; do not tag until every box is checked.
 - [ ] `make clean && make test` — both runners, the layering gate, the corpus and the probes, 0 failures
 - [ ] `make test-asan` / `make test-ubsan` / `make test-gc-stress` / `make test-valgrind` — clean
 - [ ] `make test-probes` — the memory numbers printed; nothing above its cap
-- [ ] `make test-bench` — the timing probe, on an otherwise idle machine
+- [ ] `make test-bench` — the timing probe, on an otherwise idle machine; NOT covered by `releasetest`, run it by hand on the machine that recorded the baseline
 - [ ] `make test-chk` — `0 vacuous, 0 failed`; SKIPs are parked-component fixtures only
 - [ ] `make test-api-manifest` — every exported `urbi_*` documented, frozen surface intact, no new unprefixed global
 - [ ] `make test-embedding-guide` — every C sample compiles, 0 skipped, and the complete program runs

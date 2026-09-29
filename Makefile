@@ -274,8 +274,9 @@ test-unit: $(BUILDDIR)/tests/unit/runner
 # of a 20-way parallel releasetest sweep, and a wall-clock measurement
 # taken while nineteen other compiles saturate the box measures the box
 # (observed: 4.99x under -j32 against 1.46x solo).  It gets its own
-# target, `test-bench`, which releasetest runs alone in its sequential
-# phase for the same reason valgrind runs there.  It takes the binary and
+# target, `test-bench`, which no aggregate runs: its baseline is wall-clock
+# seconds recorded on one machine, so on any other machine (a CI runner)
+# the ratio compares two machines.  It takes the binary and
 # the fixture directory as arguments and is never $(RUNNER_WRAPPER)'d:
 # timing an instrumented binary against an uninstrumented baseline would
 # compare nothing.
@@ -293,12 +294,8 @@ test-probes: $(PROBE_BINS) $(BUILDDIR)/urbi
 	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/leaks
 
 # Run this alone.  Under `make -j` beside anything else the number is the
-# machine's, not the interpreter's.
-#
-# URBI_BENCH_REQUIRED=1 turns the non-host SKIP into a failure.  releasetest
-# sets it, so a mistyped TARGET= cannot yield a green timing gate that
-# measured nothing; an interactive `make TARGET=host-asan test-bench` still
-# just says why it skipped.
+# machine's, not the interpreter's.  Run it on the machine that recorded
+# tests/probes/baseline-timings.md; it is not part of releasetest.
 test-bench: $(PROBE_BINS) $(BUILDDIR)/urbi
 ifeq ($(TARGET),host)
 	@$(BUILDDIR)/tests/probes/lookup_bench $(BUILDDIR)/urbi tests/probes
@@ -306,10 +303,6 @@ else
 	@echo "lookup_bench: SKIP — $(TARGET) is instrumented or built at a"
 	@echo "  different optimization level, and the baseline it compares"
 	@echo "  against was recorded on the default host build."
-	@if [ "$(URBI_BENCH_REQUIRED)" = "1" ]; then \
-	    echo "lookup_bench: FAIL — URBI_BENCH_REQUIRED=1 but TARGET=$(TARGET)" >&2; \
-	    exit 1; \
-	fi
 endif
 
 # Core archive. Kept as its own target for cross-compile / freestanding
@@ -709,9 +702,7 @@ RELEASETEST_PHASE1 := \
 # contention).  Phase 2 is sequential — the cumulative wall-clock with
 # Phase 1 first is still substantially faster than the original 15-min
 # fully-sequential design.
-# test-bench comes FIRST: it is the one gate whose answer depends on
-# how busy the machine is, so it runs before the two that make it busy.
-RELEASETEST_PHASE2 := test-bench test-valgrind test-corpus-sanitize
+RELEASETEST_PHASE2 := test-valgrind test-corpus-sanitize
 
 RELEASETEST_JOBS   ?= $(shell nproc)
 RELEASETEST_OUTPUT ?= target
@@ -745,10 +736,6 @@ releasetest:
 # Internal aggregators for the two phases.  Not for direct use; invoke
 # `releasetest` instead.
 _releasetest_phase1: $(RELEASETEST_PHASE1)
-# Target-specific, so it reaches test-bench as a prerequisite and NOWHERE
-# else: an interactive `make TARGET=host-asan test-bench` still just says
-# why it skipped.
-_releasetest_phase2: URBI_BENCH_REQUIRED := 1
 _releasetest_phase2: $(RELEASETEST_PHASE2)
 
 # libFuzzer — clang-specific (uses libclang_rt.fuzzer, ships with clang's
