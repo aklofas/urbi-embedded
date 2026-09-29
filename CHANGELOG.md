@@ -10,8 +10,9 @@ same, and the conformance corpus is what says so.
 
 The public C API is replaced wholesale — 44 functions, opaque `UVM`,
 `urbi_open` / `urbi_run` / `urbi_step` / `urbi_close` — so ABI goes
-0/23/7 -> 0/24/0 and the wire format 0x19 -> 0x1A (v1.10) for the one
-new opcode. There is no compatibility promise before 1.0.0.
+0/23/7 -> 0/24/1 (0/24/0 for the new API, then a PATCH for the
+budgeted-stepping change under Changed) and the wire format 0x19 -> 0x1A
+(v1.10) for the one new opcode. There is no compatibility promise before 1.0.0.
 
 ### Measured on this build
 
@@ -22,7 +23,7 @@ new opcode. There is no compatibility promise before 1.0.0.
 | leak probes | zero growth over 10,000 iterations of five allocating shapes |
 | lookup benchmark | 0.62x the old core; mandelbrot 0.84x |
 | corpus | 334 passed, 0 failed, 73 placeholders, 9 skipped |
-| runners | frontend 636 cases / 6,406 checks; runtime 197 cases / 4,931 checks |
+| runners | frontend 636 cases / 6,406 checks; runtime 201 cases / 4,979 checks |
 | sanitizers | ASan, UBSan, `URBI_GC_STRESS`, valgrind memcheck: clean |
 
 The 48 KB boot-heap target is a 32-bit number and this branch has no
@@ -111,10 +112,20 @@ core to 0.62x / 0.84x, through three mechanisms:
 
 ### Changed
 
-- A timer coming due while a single busy strand runs straight-line code
-  may now fire up to 64 statements later than it used to: the yield fast
-  path above only ever applies when no other strand is ready, but it can
-  still delay a due timer nobody was waiting to be woken by.
+- Budgeted stepping. With the yield fast path, a strand that has nobody
+  to yield to runs up to 64 more statements before returning to the
+  scheduler. Under `urbi_step` with a budget, a lone strand therefore
+  advances up to 65 statements per slice where it advanced one, in a
+  loop with a `;` in its body as well as in straight-line code (a loop
+  without a `;` is still bounded per slice by the backward-jump budget).
+  A timer that comes due meanwhile, and a host write made between steps,
+  are noticed up to 64 statements later. Strands that are ready together
+  keep their relative order; strands that become ready at different
+  times can interleave differently: two strands whose timers are 1 ms
+  apart logged `a1 a2 b1 a3 b2 a4 b3 a5 b4 b5` and now log
+  `a1 a2 a3 a4 a5 b1 b2 b3 b4 b5`. A pending interrupt injection still
+  ends the run at the next `;`. Unbudgeted stepping gives the same
+  results as before.
 
 ### Retired
 

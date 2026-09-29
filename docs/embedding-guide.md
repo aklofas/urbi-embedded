@@ -235,8 +235,8 @@ int urbi_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us);
 bool urbi_has_live_work(UVM *vm);
 ```
 
-One call runs one slice — by default 256 instructions handed to one
-strand — and returns one of three answers:
+One call runs the run queue until its budget is spent or nothing is
+runnable, and returns one of three answers:
 
 | Return | Meaning | What the host does |
 |---|---|---|
@@ -244,9 +244,26 @@ strand — and returns one of three answers:
 | `URBI_STEP_IDLE_UNTIL` | nothing runnable until `*next_wake_us` | sleep until then, or poll |
 | `URBI_STEP_QUIESCENT` | nothing will become runnable on its own | stop, or wait for host input |
 
-`budget` of 0 means the default. Only backward jumps and calls consume
-budget, so a straight-line strand runs to its next park or death whatever
-the number.
+`budget` of 0 means `UVMConfig.step_budget`, and when that is 0 too, run
+until nothing is runnable. Otherwise each strand the step dispatches gets
+a slice of at most 256, and is charged the whole slice if it comes back
+runnable, 1 if it parks or dies. Inside a slice only a backward jump
+spends budget; calls do not.
+
+A strand hands its slice back at a `;`, unless no other strand is ready
+and nothing is pending against it: then it keeps going through up to 64
+`;` in a row. So under a budget a lone busy strand advances up to 65
+statements per slice where it used to advance one, in a loop with a `;`
+in its body as well as in straight-line code; a loop without one is still
+cut off by the backward-jump count. A timer that comes due meanwhile, and
+a host write made between two steps, are noticed up to 64 statements
+later. Strands that are ready together keep their relative order, but
+strands that become ready at different times can interleave differently:
+two strands whose timers are 1 ms apart used to log
+`a1 a2 b1 a3 b2 a4 b3 a5 b4 b5` and now log
+`a1 a2 a3 a4 a5 b1 b2 b3 b4 b5`. A pending interrupt injection ends the
+run at the next `;`. An unbudgeted step runs until nothing is runnable
+and gives the same results as before.
 
 Quiescent does not mean finished. A VM waiting on an event the host has
 not emitted yet is quiescent, and stays that way until the host emits it:

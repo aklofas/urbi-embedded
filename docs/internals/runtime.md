@@ -237,21 +237,39 @@ watch state always gets first:
   row on this strand. The counter resets wherever the scheduler
   dispatches the strand (`usched_step`, `usched_run_inline`).
 
-The instruction budget is untouched — only a backward jump spends it —
-and strand ORDER never changes, because the fast path is only ever taken
-when no other strand is ready to take this one's place. Plainly stated
-consequence: a timer that comes due while a single busy strand runs
-straight-line code can fire up to 64 statements later than it would
-without the fast path.
+The instruction budget is untouched — only a backward jump spends it.
+The consequence is for budgeted stepping. A strand that has nobody to
+yield to runs up to 65 statements (64 fast yields, then the `;` that
+returns) before going back to the scheduler, where it used to go back
+at every `;`. Under `urbi_step` with a budget, a lone strand therefore
+advances up to 65 statements per slice where it advanced one. That holds
+for a loop with a `;` in its body as well as for straight-line code; a
+loop without a `;` is still bounded per slice by the backward-jump
+budget. A timer that comes due meanwhile and a host write made between
+steps are both noticed up to 64 statements later, because timers fire
+and host writes happen only between steps. A pending ISR injection is
+not delayed: the ring check refuses the fast path at the next `;`.
+
+Strands that are READY TOGETHER keep their relative order, because the
+fast path is only ever taken when no other strand is ready. Strands that
+become ready at different times can interleave differently than before:
+two strands whose timers are 1 ms apart logged
+`a1 a2 b1 a3 b2 a4 b3 a5 b4 b5` and now log
+`a1 a2 a3 a4 a5 b1 b2 b3 b4 b5`. Unbudgeted stepping runs until nothing
+is runnable and gives the same results as before.
 
 ## The scheduler
 
 One run queue, one timer heap, and `park`/`wake`, in `src/rt/usched.c`.
-`usched_step` gives one strand a slice of `USCHED_SLICE` (256)
-instructions and returns, so a host that wants to interleave the VM with
-its own work calls `urbi_step` in a loop and sleeps on `next_wake_us`
-in between. Only backward jumps consume budget, so a straight-line strand
-runs to its next park or death regardless.
+`usched_step` dispatches strands from the queue until its budget is
+spent or nothing is runnable, giving each dispatch a slice of at most
+`USCHED_SLICE` (256); a host that wants to interleave the VM with its own
+work calls `urbi_step` in a loop with a budget and sleeps on
+`next_wake_us` in between. Within a slice only backward jumps consume
+budget. A strand returns from its slice at a `;` (after the fast path
+above has let up to 64 of them pass), at a park, at its death, or when
+the slice's backward jumps run out; a `READY` return is charged the whole
+slice and a park or death is charged 1.
 
 A host that wants every unbudgeted `urbi_step` to be a bounded slice sets
 `UVMConfig.step_budget` at `urbi_open` rather than repeating the number at
