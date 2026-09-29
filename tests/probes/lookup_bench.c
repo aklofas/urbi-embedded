@@ -42,9 +42,10 @@
  * ---------------------------------------------------------------------
  *
  * `make test-bench` -- not inside `make test`, which is itself one gate
- * of a 20-way parallel sweep.  Measured under -j32 beside nineteen other
- * compiles this probe reported 4.99x; solo, on the same tree, 1.46x.  A
- * wall-clock number taken on a saturated box is the box's number.
+ * of releasetest's parallel sweep.  Measured under -j32 beside the other
+ * gates' compiles this probe reported 4.99x; solo, on the same tree,
+ * 1.46x.  A wall-clock number taken on a saturated box is the box's
+ * number.
  *
  * Nor inside releasetest, which CI runs: the baseline is seconds on the
  * machine that recorded it, and a slower runner fails the ratchet with

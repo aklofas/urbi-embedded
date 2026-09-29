@@ -271,8 +271,8 @@ test-unit: $(BUILDDIR)/tests/unit/runner
 # deterministic and a busy machine does not change them.
 #
 # The TIMING probe is not, and cannot be.  `make test` is itself one gate
-# of a 20-way parallel releasetest sweep, and a wall-clock measurement
-# taken while nineteen other compiles saturate the box measures the box
+# of releasetest's parallel sweep, and a wall-clock measurement taken
+# while the other gates' compiles saturate the box measures the box
 # (observed: 4.99x under -j32 against 1.46x solo).  It gets its own
 # target, `test-bench`, which no aggregate runs: its baseline is wall-clock
 # seconds recorded on one machine, so on any other machine (a CI runner)

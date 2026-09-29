@@ -125,10 +125,10 @@ rationale; `tests/probes/baseline-timings.md` holds the old core's
 numbers.
 
 The timing probe is `make test-bench`, deliberately NOT part of `make
-test`: `make test` is one gate of a 21-way parallel releasetest sweep,
-and a wall-clock number taken while twenty other compiles saturate the
-machine is the machine's number, not the interpreter's — the same probe
-read 4.99x under `-j32` and 1.46x solo. It is not part of `make
+test`: `make test` is itself one gate of releasetest's parallel sweep,
+and a wall-clock number taken while the other gates' compiles saturate
+the machine is the machine's number, not the interpreter's — the same
+probe read 4.99x under `-j32` and 1.46x solo. It is not part of `make
 releasetest` either: the baseline is wall-clock seconds recorded on one
 machine, so anywhere else (a CI runner) the ratio compares two machines.
 Run it by hand, alone, on the machine that recorded the baseline. It
