@@ -5,18 +5,20 @@
  * stack (TRY_BEGIN, TRY_END, THROW, RESUME, LOAD_CATCH_VALUE, PUSH_TAG,
  * POP_TAG), whose walker lives in rt/uunwind.c.  Concurrency (FORK_*,
  * JOIN_WAIT, TAG_STOP) and the reactive installs land with their own
- * tasks; every opcode not handled here throws through `default:` rather
- * than silently doing nothing.
+ * tasks; every opcode not handled here throws through the unknown-opcode
+ * arm rather than silently doing nothing.
  *
  * The tag scope OP_PUSH_TAG opens is a cleanup entry and nothing more
  * until the scheduler task gives it a tag object, an onleave body and a
  * stop to match -- enough for a try nested inside a tagged block to
  * unwind correctly, which is what the unwinder needs from it.
  *
- * Register addressing: R is recomputed from s->stack + f->base after
- * anything that can grow the stack, and f is re-fetched from
+ * Register addressing: f, R and K are held in locals across
+ * instructions.  R is recomputed from s->stack + f->base after anything
+ * that can grow the stack, and f is re-fetched from
  * s->frames[s->nframes - 1] for the same reason (both arrays are
- * reallocated in place by ustrand_ensure_stack / the frame grower). */
+ * reallocated in place by ustrand_ensure_stack / the frame grower); an
+ * arm that may have done either ends in NEXT_RELOAD. */
 
 #include "rt/uexec.h"
 #include "rt/uslotcache.h"
@@ -485,8 +487,53 @@ void ustrand_want_payload(UStrand *s)
 
 /* --- the dispatch loop --------------------------------------------------- */
 
+/* Two dispatch forms over ONE set of opcode bodies.  GCC and Clang get a
+ * label table; everything else, and any build with URBI_VM_FORCE_SWITCH,
+ * gets the switch.  The bodies are written against OPCASE / NEXT and do
+ * not know which they are in. */
+#if defined(__GNUC__) && !(defined(URBI_VM_FORCE_SWITCH) && URBI_VM_FORCE_SWITCH)
+#define UEXEC_THREADED 1
+#else
+#define UEXEC_THREADED 0
+#endif
+
+#define RELOAD() do { \
+        f = &s->frames[s->nframes - 1]; \
+        R = s->stack + f->base; \
+        K = f->closure->proto->constants; \
+    } while (0)
+
+#if UEXEC_THREADED
+#define OPCASE(n) L_##n
+#define FETCH() do { \
+        i = *f->pc++; \
+        op = i & 0xFFu; \
+        goto *(op < (uint32_t)OP_MAX ? labels[op] : &&L_unknown); \
+    } while (0)
+#else
+#define OPCASE(n) case OP_##n
+#define FETCH() goto fetch
+#endif
+
+/* NEXT: nothing the body did can have moved the frame or the stack.
+ * NEXT_RELOAD: it may have.  When in doubt, NEXT_RELOAD. */
+#define NEXT() FETCH()
+#define NEXT_RELOAD() do { if (s->nframes == 0) goto no_frames; RELOAD(); FETCH(); } while (0)
+
+#if UEXEC_THREADED
+/* Labels as values are a GNU extension. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
 static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
 {
+#if UEXEC_THREADED
+    static const void *const labels[OP_MAX] = {
+#define URBI_OP(n, u, s) &&L_##n,
+#include "chunk/uopcodes.def"
+#undef URBI_OP
+    };
+#endif
     bool unbounded = (budget == 0);
     s->state = USTRAND_RUNNING;
     /* The safepoint a cross-strand stop is consumed at.  utag_stop only
@@ -508,48 +555,51 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
         if (slot < s->stack_cap) s->stack[slot] = s->transfer;
         s->transfer = uv_nil();
     }
-    for (;;) {
-        if (s->nframes == 0) {
-            /* Nothing to dispatch.  Reachable only if a caller enters with
-             * an empty strand or the unwinder leaves one behind; both are
-             * bugs, so trap in debug builds and die cleanly otherwise
-             * rather than indexing frames[(uint16_t)-1]. */
-            UGC_ASSERT(0);
-            s->state = USTRAND_DEAD;
-            return s->state;
-        }
-        UFrame *f = &s->frames[s->nframes - 1];
-        UValue *R = s->stack + f->base;
-        const UValue *K = f->closure->proto->constants;
-        uint32_t i = *f->pc++;
-        switch (i & 0xFFu) {
+    /* The frame, its registers and its constants live in locals between
+     * instructions.  They are re-derived (NEXT_RELOAD) after any arm that
+     * can push or pop a frame or grow the register stack, which
+     * reallocates it; an arm that provably cannot ends with NEXT. */
+    UFrame *f;
+    UValue *R;
+    const UValue *K;
+    uint32_t i, op;
+    if (s->nframes == 0) goto no_frames;
+    RELOAD();
+#if UEXEC_THREADED
+    FETCH();
+#else
+fetch:
+    i = *f->pc++;
+    op = i & 0xFFu;
+    switch (op) {
+#endif
 
-        case OP_LOADK:    R[OPA(i)] = K[OPBX(i)]; break;
-        case OP_MOVE:     R[OPA(i)] = R[OPB(i)]; break;
-        case OP_LOADNIL:  R[OPA(i)] = uv_nil(); break;
-        case OP_LOADVOID: R[OPA(i)] = uv_void(); break;
-        case OP_LOADBOOL:
+        OPCASE(LOADK):    R[OPA(i)] = K[OPBX(i)]; NEXT();
+        OPCASE(MOVE):     R[OPA(i)] = R[OPB(i)]; NEXT();
+        OPCASE(LOADNIL):  R[OPA(i)] = uv_nil(); NEXT();
+        OPCASE(LOADVOID): R[OPA(i)] = uv_void(); NEXT();
+        OPCASE(LOADBOOL):
             R[OPA(i)] = uv_bool(OPB(i) != 0);
             if (OPC(i)) f->pc++;
-            break;
+            NEXT();
 
-        case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: {
+        OPCASE(ADD): OPCASE(SUB): OPCASE(MUL): OPCASE(DIV): {
             UValue res = uv_nil();
-            if (arith(vm, s, (uint8_t)(i & 0xFFu), R[OPB(i)], R[OPC(i)], &res) != UEXEC_OK) goto unwind;
+            if (arith(vm, s, (uint8_t)op, R[OPB(i)], R[OPC(i)], &res) != UEXEC_OK) goto unwind;
             f = &s->frames[s->nframes - 1];
             s->stack[f->base + OPA(i)] = res;
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_NEG: {
+        OPCASE(NEG): {
             UValue res = uv_nil();
             if (negate(vm, s, R[OPB(i)], &res) != UEXEC_OK) goto unwind;
             f = &s->frames[s->nframes - 1];
             s->stack[f->base + OPA(i)] = res;
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_RET: {
+        OPCASE(RET): {
             UValue rv = R[OPA(i)];
             /* `return` out of a try is a bare OP_RET -- the emitter plants
              * scope crossings for break/continue but not for return -- so a
@@ -561,10 +611,10 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 goto unwind;
             }
             if (uexec_return(vm, s, rv) != 0) return s->state;
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_YIELD:
+        OPCASE(YIELD):
             /* `;` is a sequence point, and a sequence point is where the
              * reactive runtime gets to look: an `at sync` body has to have
              * run before the NEXT statement of this strand, which is what
@@ -585,28 +635,28 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
              * one.  That is what a `;` inside a sort comparator, a getter
              * or an operator overload compiles to. */
             if (usched_may_deschedule(s)) { s->state = USTRAND_READY; return s->state; }
-            break;
+            NEXT_RELOAD();
 
-        case OP_GETUPVAL: {
+        OPCASE(GETUPVAL): {
             UClosure *cl = f->closure;
             if (OPB(i) >= cl->nupvals || cl->upvals[OPB(i)] == NULL) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "upvalue read: index out of range");
                 goto unwind;
             }
             R[OPA(i)] = *cl->upvals[OPB(i)]->ptr;
-            break;
+            NEXT();
         }
-        case OP_SETUPVAL: {
+        OPCASE(SETUPVAL): {
             UClosure *cl = f->closure;
             if (OPB(i) >= cl->nupvals || cl->upvals[OPB(i)] == NULL) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "upvalue write: index out of range");
                 goto unwind;
             }
             *cl->upvals[OPB(i)]->ptr = R[OPA(i)];
-            break;
+            NEXT();
         }
 
-        case OP_CLOSURE: {
+        OPCASE(CLOSURE): {
             UProto *parent = f->closure->proto;
             uint16_t bx = OPBX(i);
             if (parent->nested == NULL || (size_t)bx >= parent->nested_count) {
@@ -645,18 +695,18 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                     cl->upvals[k] = par->upvals[src];
                 }
             }
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_CLOSE: ustrand_close_upvals(s, f->base + OPA(i)); break;
+        OPCASE(CLOSE): ustrand_close_upvals(s, f->base + OPA(i)); NEXT_RELOAD();
 
-        case OP_CALL: {
+        OPCASE(CALL): {
             if (do_call(vm, s, (uint16_t)(s->nframes - 1), i) != UEXEC_OK) goto unwind;
             if (s->state != USTRAND_RUNNING) return s->state;
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_JMP: {
+        OPCASE(JMP): {
             int off = (int)OPBX(i) - UEXEC_JMP_BIAS;
             /* Forward offsets are encoded relative to the instruction
              * AFTER the jump; backward offsets relative to the jump
@@ -668,33 +718,33 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 f->pc += off - 1;
                 if (!unbounded && --budget == 0) { s->state = USTRAND_READY; return s->state; }
             }
-            break;
+            NEXT();
         }
 
-        case OP_TEST:
+        OPCASE(TEST):
             if ((int)uv_truthy(R[OPA(i)]) == (int)OPC(i)) f->pc++;
-            break;
-        case OP_TESTSET:
+            NEXT();
+        OPCASE(TESTSET):
             if ((int)uv_truthy(R[OPB(i)]) == (int)OPC(i)) f->pc++;
             else R[OPA(i)] = R[OPB(i)];
-            break;
+            NEXT();
 
-        case OP_EQ: {
+        OPCASE(EQ): {
             bool eq = false;
             if (compare_eq(vm, s, R[OPB(i)], R[OPC(i)], &eq) != UEXEC_OK) goto unwind;
             f = &s->frames[s->nframes - 1];
             if ((int)eq != (int)OPA(i)) f->pc++;
-            break;
+            NEXT_RELOAD();
         }
-        case OP_LT: case OP_LE: {
+        OPCASE(LT): OPCASE(LE): {
             bool r = false;
-            if (compare_lt_le(vm, s, (uint8_t)(i & 0xFFu), R[OPB(i)], R[OPC(i)], &r) != UEXEC_OK) goto unwind;
+            if (compare_lt_le(vm, s, (uint8_t)op, R[OPB(i)], R[OPC(i)], &r) != UEXEC_OK) goto unwind;
             f = &s->frames[s->nframes - 1];
             if ((int)r != (int)OPA(i)) f->pc++;
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_LOAD_REALM_GLOBAL: {
+        OPCASE(LOAD_REALM_GLOBAL): {
             UObject *g = (s->realm && s->realm->globals) ? s->realm->globals : NULL;
             /* Exactly one strand legitimately has no realm: the one
              * uboot_init runs the stdlib blob on, before any realm
@@ -710,17 +760,17 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             }
             uwatch_observe(vm, g);
             R[OPA(i)] = uv_obj(g);
-            break;
+            NEXT();
         }
-        case OP_LOAD_RECV: R[OPA(i)] = f->recv; break;
+        OPCASE(LOAD_RECV): R[OPA(i)] = f->recv; NEXT();
 
-        case OP_GETSLOT: case OP_SELF: {
+        OPCASE(GETSLOT): OPCASE(SELF): {
             USym **names = uproto_names(f->closure->proto);
             if (names == NULL || OPC(i) >= f->closure->proto->ic_count) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot access: no name table bound");
                 goto unwind;
             }
-            USym *name = names[OPC(i)];
+            const USym *name = names[OPC(i)];
             UValue recv = R[OPB(i)];
             UObject *o = (recv.kind == UV_OBJ) ? (UObject *)recv.v.p : uv_dispatch_proto(vm, recv);
             USlotCache *e = o ? uslotcache_site(vm, f->closure->proto, (uint16_t)OPC(i)) : NULL;
@@ -732,18 +782,20 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 uwatch_observe(vm, o);
                 uwatch_observe(vm, e->owner);
                 out = e->owner->values[e->index];
-            } else {
-                const char *what = ((i & 0xFFu) == OP_SELF) ? "method call" : "slot access";
-                if (slot_get(vm, s, recv, name, what, e, &out) != UEXEC_OK) goto unwind;
-                f = &s->frames[s->nframes - 1];
-                R = s->stack + f->base;
+                if (op == OP_SELF) R[OPA(i) + 1u] = recv;   /* receiver first — dst may alias recv */
+                R[OPA(i)] = out;
+                NEXT();
             }
-            if ((i & 0xFFu) == OP_SELF) R[OPA(i) + 1u] = recv;   /* receiver first — dst may alias recv */
+            const char *what = (op == OP_SELF) ? "method call" : "slot access";
+            if (slot_get(vm, s, recv, name, what, e, &out) != UEXEC_OK) goto unwind;
+            f = &s->frames[s->nframes - 1];
+            R = s->stack + f->base;
+            if (op == OP_SELF) R[OPA(i) + 1u] = recv;
             R[OPA(i)] = out;
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_SETSLOT: case OP_SETSLOT_UPDATE: {
+        OPCASE(SETSLOT): OPCASE(SETSLOT_UPDATE): {
             USym **names = uproto_names(f->closure->proto);
             if (names == NULL || OPC(i) >= f->closure->proto->ic_count) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: no name table bound");
@@ -767,7 +819,7 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 UValue written = R[OPA(i)];
                 o->values[e->index] = written;
                 uexec_note_write(vm, o, name, written, true);
-                break;
+                NEXT_RELOAD();
             }
             /* UPDATE is the bare-name write, `x = 1`.  It rebinds an
              * existing name and never declares one, so a name that
@@ -775,7 +827,7 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
              * a silent new global -- which is what makes a typo in an
              * assignment reportable.  `var x = 1` and the explicit
              * `Realm.x = 1` both emit plain SETSLOT and still create. */
-            if ((i & 0xFFu) == OP_SETSLOT_UPDATE) {
+            if (op == OP_SETSLOT_UPDATE) {
                 UObjSlotRef probe;
                 if (!uobj_resolve(vm, o, names[OPC(i)], &probe)) {
                     char msg[192]; size_t at = 0;
@@ -827,7 +879,7 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                     pr->value = written;
                 }
                 uexec_note_write(vm, o, name, written, true);
-                break;
+                NEXT_RELOAD();
             }
             int at = uobj_set_local(vm, o, name, written, 0);
             if (at < 0) {
@@ -836,10 +888,10 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             }
             if (e != NULL) uslotcache_fill_own(vm, e, o, (uint16_t)at);
             uexec_note_write(vm, o, name, written, idx >= 0);
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_THROW:
+        OPCASE(THROW):
             (void)uexec_throw_value(vm, s, R[OPA(i)]);
             goto unwind;
 
@@ -850,7 +902,7 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
          * tag, with the parent's receiver, so a forked arm resolves
          * `Realm.x` and `this` exactly as the code around it does. */
 
-        case OP_FORK_DETACH: {
+        OPCASE(FORK_DETACH): {
             UValue cv = R[OPA(i)];
             if (!fork_closure(cv)) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "',' (parallel fork): operand is not a closure");
@@ -860,10 +912,10 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 (void)uexec_throw(vm, s, UP_OOMERROR, "',' (parallel fork): cannot spawn the child strand");
                 goto unwind;
             }
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_FORK_JOIN: {
+        OPCASE(FORK_JOIN): {
             UValue cv = R[OPA(i)];
             if (!fork_closure(cv)) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "'&' (parallel join): operand is not a closure");
@@ -877,23 +929,23 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             /* The spawn allocated: both arrays may have moved. */
             f = &s->frames[s->nframes - 1];
             s->stack[f->base + OPB(i)] = uv_ptr(UV_CELL, child);
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_JOIN_WAIT: {
+        OPCASE(JOIN_WAIT): {
             UValue cv = R[OPA(i)];
             if (cv.kind != UV_CELL || ((UCell *)cv.v.p)->type != UCELL_STRAND) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "'&' (parallel join): join operand is not a strand");
                 goto unwind;
             }
             UStrand *child = (UStrand *)cv.v.p;
-            if (child->state == USTRAND_DEAD) break;      /* already finished */
+            if (child->state == USTRAND_DEAD) NEXT_RELOAD();   /* already finished */
             if (usched_park(s, &child->joiners, 0) == 0) return s->state;
             /* No scheduler to hand control back to (a spare strand, or
              * inside a synchronous call): the join still has to wait, so
              * the child runs nested on this stack instead. */
             usched_run_inline(vm, child);
-            break;
+            NEXT_RELOAD();
         }
 
         /* --- the reactive installs --------------------------------------
@@ -905,24 +957,24 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
          * installing strand's realm and its ambient tag, so `mytag: at (c)
          * body` is cancelled by `mytag.stop()`. */
 
-        case OP_AT_INSTALL: case OP_AT_SYNC_INSTALL: case OP_WHENEVER_INSTALL: {
+        OPCASE(AT_INSTALL): OPCASE(AT_SYNC_INSTALL): OPCASE(WHENEVER_INSTALL): {
             UClosure *cond = install_closure(R[OPA(i)]);
             if (cond == NULL) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "at watcher install: condition is not a closure");
                 goto unwind;
             }
-            uint8_t mode = ((i & 0xFFu) == OP_AT_SYNC_INSTALL)  ? (uint8_t)UWATCH_AT_SYNC
-                         : ((i & 0xFFu) == OP_WHENEVER_INSTALL) ? (uint8_t)UWATCH_WHENEVER
+            uint8_t mode = (op == OP_AT_SYNC_INSTALL)  ? (uint8_t)UWATCH_AT_SYNC
+                         : (op == OP_WHENEVER_INSTALL) ? (uint8_t)UWATCH_WHENEVER
                          :                                       (uint8_t)UWATCH_AT;
             if (uwatch_install(vm, s, mode, cond, NULL,
                                install_operand(R, OPB(i)), install_operand(R, OPC(i))) == NULL) {
                 (void)uexec_throw(vm, s, UP_OOMERROR, "at watcher install: out of memory");
                 goto unwind;
             }
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_AT_EVENT_INSTALL: case OP_AT_EVENT_SYNC_INSTALL: case OP_WHENEVER_EVENT_INSTALL: {
+        OPCASE(AT_EVENT_INSTALL): OPCASE(AT_EVENT_SYNC_INSTALL): OPCASE(WHENEVER_EVENT_INSTALL): {
             UValue ev = R[OPA(i)];
             if (ev.kind != UV_CELL || ((UCell *)ev.v.p)->type != UCELL_EVENT) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "at-event watcher install: operand is not an event");
@@ -931,17 +983,17 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             /* An event subscription fires per emission, so `whenever (e?)`
              * and `at (e?)` are the same watcher; only the SYNC form
              * differs, by running its body inline under syncEmit. */
-            uint8_t mode = ((i & 0xFFu) == OP_AT_EVENT_SYNC_INSTALL)
+            uint8_t mode = (op == OP_AT_EVENT_SYNC_INSTALL)
                          ? (uint8_t)UWATCH_AT_SYNC : (uint8_t)UWATCH_AT;
             if (uwatch_install(vm, s, mode, NULL, (UEvent *)ev.v.p,
                                install_operand(R, OPB(i)), install_operand(R, OPC(i))) == NULL) {
                 (void)uexec_throw(vm, s, UP_OOMERROR, "at-event watcher install: out of memory");
                 goto unwind;
             }
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_WAITUNTIL_INSTALL: {
+        OPCASE(WAITUNTIL_INSTALL): {
             UClosure *cond = install_closure(R[OPA(i)]);
             if (cond == NULL) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "waituntil install: condition is not a closure");
@@ -950,10 +1002,10 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             int rc = uwatch_waituntil(vm, s, cond);
             if (rc < 0) goto unwind;              /* the condition raised, or OOM */
             if (rc > 0) return s->state;          /* parked until it holds */
-            break;                                /* already true: carry straight on */
+            NEXT_RELOAD();                        /* already true: carry straight on */
         }
 
-        case OP_GETSLOT_CHANGE_EVENT: {
+        OPCASE(GETSLOT_CHANGE_EVENT): {
             USym **names = uproto_names(f->closure->proto);
             if (names == NULL || OPC(i) >= f->closure->proto->ic_count) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot-change event: no name table bound");
@@ -972,12 +1024,12 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             f = &s->frames[s->nframes - 1];       /* the lookup allocated */
             R = s->stack + f->base;
             R[OPA(i)] = uv_ptr(UV_CELL, e);
-            break;
+            NEXT_RELOAD();
         }
 
         /* --- the cleanup stack (see rt/uunwind.c for the layouts) ------ */
 
-        case OP_TRY_BEGIN: {
+        OPCASE(TRY_BEGIN): {
             UCleanup c;
             c.kind = (uint8_t)UCLEAN_TRY;
             c.flags = OPA(i);              /* HAS_CATCH / HAS_FINALLY, as emitted */
@@ -991,10 +1043,10 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 (void)uexec_throw(vm, s, UP_OOMERROR, "try begin: out of memory growing the cleanup stack");
                 goto unwind;
             }
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_TRY_END:
+        OPCASE(TRY_END):
             /* The normal-path pop.  A UCLEAN_F_RUNNING marker belongs to
              * the walker, never to a TRY_END.  A mismatch means the
              * emitter and the walker disagree about the stack's shape,
@@ -1006,9 +1058,9 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             } else {
                 UGC_ASSERT(0);
             }
-            break;
+            NEXT_RELOAD();
 
-        case OP_PUSH_TAG: {
+        OPCASE(PUSH_TAG): {
             /* A[3:0] = the register holding the tag, A[7:4] = flags, Bx =
              * the onleave handler.  A register that does not hold a tag
              * (and the explicit UCLEAN_F_FRESH_TAG request) opens a fresh
@@ -1029,8 +1081,8 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                 }
                 /* The allocation may have moved the frame and register
                  * arrays.  Nothing below reads `f` or `R` -- the entry is
-                 * built from s->nframes and the next dispatch iteration
-                 * re-derives both -- so there is nothing to refresh. */
+                 * built from s->nframes and the arm ends in NEXT_RELOAD --
+                 * so there is nothing to refresh. */
             }
             UCleanup c;
             c.kind = (uint8_t)UCLEAN_TAG_SCOPE;
@@ -1063,10 +1115,10 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
                     if (usched_park(s, NULL, 0) == 0) return s->state;
                 }
             }
-            break;
+            NEXT_RELOAD();
         }
 
-        case OP_POP_TAG:
+        OPCASE(POP_TAG):
             if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TAG_SCOPE) {
                 UCleanup c = s->cleanup[--s->ncleanup];
                 s->tag = (c.saved.kind == UV_CELL) ? (UTag *)c.saved.v.p : NULL;
@@ -1074,17 +1126,17 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             } else {
                 UGC_ASSERT(0);   /* see OP_TRY_END */
             }
-            break;
+            NEXT_RELOAD();
 
-        case OP_LOAD_CATCH_VALUE:
+        OPCASE(LOAD_CATCH_VALUE):
             /* The handler owns the value from here.  Clearing the strand's
              * copy drops the last root the walker held on it, so an
              * exception the handler discards is collectable at once. */
             R[OPA(i)] = s->transfer;
             s->transfer = uv_nil();
-            break;
+            NEXT();
 
-        case OP_RESUME: {
+        OPCASE(RESUME): {
             /* The end of a finally body the walker started.  Restore the
              * unwind it suspended and hand control back to the walk.  The
              * normal-path copy of a finally is jumped past, never resumed,
@@ -1099,15 +1151,45 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
             goto unwind;
         }
 
+        /* In the wire set, not implemented here. */
+        OPCASE(NEQ): OPCASE(TAG_STOP): OPCASE(PUSH_FRAME_GUARD):
+            goto L_unknown_arm;
+
+#if UEXEC_THREADED
+    L_unknown:
+#else
         default:
+#endif
+    L_unknown_arm:
             (void)uexec_throw(vm, s, UP_TYPEERROR, "opcode not available in this build");
             goto unwind;
-        }
-        continue;
-    unwind:
-        if (uexec_unwind(vm, s) != 0) return s->state;
+#if !UEXEC_THREADED
     }
+#endif
+
+unwind:
+    if (uexec_unwind(vm, s) != 0) return s->state;
+    NEXT_RELOAD();
+
+no_frames:
+    /* Nothing to dispatch.  Reachable only if a caller enters with an
+     * empty strand or the unwinder leaves one behind; both are bugs, so
+     * trap in debug builds and die cleanly otherwise rather than indexing
+     * frames[(uint16_t)-1]. */
+    UGC_ASSERT(0);
+    s->state = USTRAND_DEAD;
+    return s->state;
 }
+#if UEXEC_THREADED
+#pragma GCC diagnostic pop
+#endif
+
+#undef NEXT_RELOAD
+#undef NEXT
+#undef FETCH
+#undef OPCASE
+#undef RELOAD
+
 
 /* The strand in dispatch is published on the scheduler for the duration
  * of the run: urbi_throw reads it to find where to deposit a native's

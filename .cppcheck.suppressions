@@ -180,3 +180,12 @@ constParameterCallback:src/stdlib/runtime_types.c
 // Same signature, same reason: rt/usched_natives.c holds the Tag, Event
 // and Job method tables and the scheduler globals.
 constParameterCallback:src/rt/usched_natives.c
+
+// audit:rt-threaded-dispatch — src/rt/uexec_ops.c builds its computed-goto
+// label table by expanding src/chunk/uopcodes.def into `&&L_<op>,` rows.
+// cppcheck cannot parse a list of label addresses and reports a syntaxError
+// at the first row of the .def, which aborts only the __GNUC__ configuration
+// of that file; the switch configuration of the same opcode bodies is still
+// analysed in full.  The .def holds nothing but X-macro rows, so a real
+// syntax error in it would stop the compiler long before this gate.
+syntaxError:src/chunk/uopcodes.def

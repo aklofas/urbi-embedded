@@ -274,6 +274,22 @@ static void the_spare_free_list_is_capped(void)
     fix_close(&fx);
 }
 
+/* The frame state the loop keeps in locals has to be refreshed after
+ * anything that can move the stack.  A call deep enough to grow the
+ * register stack several times, returning through every frame into
+ * arithmetic on the caller's registers, reads freed memory if a refresh
+ * is missing -- which ASan reports and a plain build may not. */
+static void registers_survive_stack_growth(void) {
+    ExecFix fx; fix_open(&fx);
+    UValue out;
+    RT_EQ(run(&fx, "var deep = function(n) { if (n == 0) 1 else { var a = n; var r = deep(n - 1); a + r } } |", &out), URBI_OK);
+    RT_EQ(run(&fx, "var k = 5 |", &out), URBI_OK);
+    RT_EQ(run(&fx, "var x = 10; var y = deep(200); x + y + k |", &out), URBI_OK);
+    /* deep(200) = 1 + sum(1..200) = 20101 */
+    RT_EQ(out.v.i, 20116);
+    fix_close(&fx);
+}
+
 RT_SUITE(rt_exec_suite) {
     rt_run("int_arithmetic", int_arithmetic);
     rt_run("function_call_returns_value", function_call_returns_value);
@@ -287,4 +303,5 @@ RT_SUITE(rt_exec_suite) {
     rt_run("forward_jmp_past_end_is_rejected", forward_jmp_past_end_is_rejected);
     rt_run("register_preserves_a_host_pin", register_preserves_a_host_pin);
     rt_run("the_spare_free_list_is_capped", the_spare_free_list_is_capped);
+    rt_run("registers_survive_stack_growth", registers_survive_stack_growth);
 }
