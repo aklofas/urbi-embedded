@@ -137,10 +137,29 @@ Same machine as above. `make clean && make && make test-bench`, then
 All six ratios at or under the 1.20 spec ratio; the probe's ratchet
 ceilings are now pinned to that same 1.20.
 
-**Many-receivers case:** the script from Task 7's brief (64 receivers,
-2,000 rounds, 128,000 reads through a one-argument function call), run
-outside the repo, five runs each on `build/host/urbi` from this tree and
-on a scratch build of baseline commit `8253b960`:
+**Many-receivers case:** 64 clones of one prototype, read through a
+one-argument function call, 2,000 rounds (128,000 reads total). Written
+to a scratch file outside the repo and run five times each on
+`build/host/urbi` from this tree and on a scratch build of baseline
+commit `8253b960`, via `urbi -e "$(cat <file>)"`, each run timed with
+`date +%s.%N` before and after and subtracted with `awk`:
+
+```
+var C = Object.clone();
+var C.k = 1;
+var objs = [];
+var i = 0;
+while (i < 64) { objs << C.clone(); i = i + 1 };
+var rd = function(x) { x.k };
+var sum = 0;
+var r = 0;
+while (r < 2000) {
+    var j = 0;
+    while (j < 64) { sum = sum + rd(objs[j]); j = j + 1 };
+    r = r + 1
+};
+sum
+```
 
 - new tree median: 0.0125 s
 - baseline median: 0.0209 s (about 40% faster, not slower)
