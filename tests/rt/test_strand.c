@@ -2,6 +2,8 @@
 #include "rtest.h"
 #include "fakevm.h"
 #include "rt/ustrand.h"
+#include "rt/urealm.h"
+#include "urbi/urbi.h"
 
 /* Zero-initialised UProto: ustrand.c only reads max_reg, nparams, and
  * instructions, so every other field (all pointers/counts from the kept
@@ -166,6 +168,31 @@ static void c_root_macro_keeps_value_alive(void) {
     fakevm_destroy(&vm);
 }
 
+static void the_boundary_count_matches_the_frames(void) {
+    UVM *vm = urbi_open(fake_alloc, NULL, NULL);
+    URealm *realm = urbi_realm_main(vm);
+    UValue out;
+    char err[256] = {0};
+    /* A comparator runs inside a synchronous call: a boundary frame.  The
+     * `;` in its body is a yield inside that frame, which is where a debug
+     * build checks the count against a walk of the frames. */
+    const char *src = "[3, 1, 2].sort(function(a, b) { var c = a; c < b }) |";
+    int rc = urbi_run(vm, realm, src, strlen(src), NULL, &out, err, sizeof err);
+    if (rc != URBI_OK) printf("    rc=%d err=%s last=%s\n", rc, err, vm->last_error);
+    RT_EQ(rc, URBI_OK);
+    for (UStrand *s = realm->strands; s; s = s->next_in_realm) {
+        uint16_t n = 0;
+        for (uint16_t k = 0; k < s->nframes; k++) n = (uint16_t)(n + (s->frames[k].is_boundary ? 1 : 0));
+        RT_EQ(s->nboundary, n);
+    }
+    /* A released spare starts its next use with nothing counted. */
+    for (UStrand *s = vm->spare; s; s = s->link) {
+        RT_EQ(s->nboundary, 0u);
+        RT_EQ(s->fast_yields, 0u);
+    }
+    urbi_close(vm);
+}
+
 RT_SUITE(rt_strand_suite) {
     rt_run("push_frame_grows_stack_for_max_reg", push_frame_grows_stack_for_max_reg);
     rt_run("push_frame_native_closure_uses_single_register", push_frame_native_closure_uses_single_register);
@@ -173,6 +200,7 @@ RT_SUITE(rt_strand_suite) {
     rt_run("close_upvals_partitions_by_index", close_upvals_partitions_by_index);
     rt_run("pop_frame_closes_its_upvals", pop_frame_closes_its_upvals);
     rt_run("cleanup_stack_grows_past_initial_cap", cleanup_stack_grows_past_initial_cap);
+    rt_run("the_boundary_count_matches_the_frames", the_boundary_count_matches_the_frames);
     rt_run("strand_struct_is_small", strand_struct_is_small);
     rt_run("gc_traces_live_registers_only", gc_traces_live_registers_only);
     rt_run("c_root_macro_keeps_value_alive", c_root_macro_keeps_value_alive);

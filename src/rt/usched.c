@@ -191,10 +191,12 @@ uint64_t usched_now(UVM *vm)
 
 bool usched_may_deschedule(const UStrand *s)
 {
-    if (s->is_spare) return false;
-    for (uint16_t i = 0; i < s->nframes; i++)
-        if (s->frames[i].is_boundary) return false;
-    return true;
+#ifdef URBI_DEBUG
+    uint16_t n = 0;
+    for (uint16_t i = 0; i < s->nframes; i++) n = (uint16_t)(n + (s->frames[i].is_boundary ? 1 : 0));
+    UGC_ASSERT(n == s->nboundary);
+#endif
+    return !s->is_spare && s->nboundary == 0;
 }
 
 int usched_park(UStrand *s, UStrand **waitlist, uint64_t wake_us)
@@ -437,6 +439,7 @@ USchedStep usched_step(UVM *vm, uint32_t budget, uint64_t *next_wake_us)
         uint32_t slice = 0;
         if (budget != 0) slice = remaining < USCHED_SLICE ? remaining : USCHED_SLICE;
         UStrand *s = usched_dequeue(sc);
+        s->fast_yields = 0;
         int st = uexec_run(vm, s, slice);
         if (st == USTRAND_DEAD) usched_on_death(vm, s);
         else if (st != USTRAND_PARKED) usched_enqueue(s);
@@ -476,6 +479,7 @@ void usched_run_inline(UVM *vm, UStrand *s)
     if (s == NULL) return;
     usched_unqueue(s);
     while (s->state != USTRAND_DEAD) {
+        s->fast_yields = 0;
         int st = uexec_run(vm, s, 0);
         if (st == USTRAND_DEAD) { usched_on_death(vm, s); return; }
         if (st == USTRAND_PARKED) return;

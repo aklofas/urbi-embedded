@@ -101,6 +101,10 @@ enum { USTRAND_READY = 0, USTRAND_RUNNING, USTRAND_PARKED, USTRAND_DEAD };
 typedef enum { UUNWIND_NONE = 0, UUNWIND_RETURN, UUNWIND_THROW, UUNWIND_STOP } UUnwindKind;
 #define USTRAND_GATE_BLOCKED 0x1
 #define USTRAND_GATE_FROZEN  0x2
+/* How many yields in a row a lone strand may take without going back to
+ * the scheduler: the bound on how late a timer that comes due meanwhile
+ * can fire, counted in statements. */
+#define UEXEC_FAST_YIELD_CAP 64
 
 typedef struct UStrand {
     UCell      cell;
@@ -111,6 +115,8 @@ typedef struct UStrand {
     uint32_t   id;
     UValue    *stack; uint32_t stack_cap;
     UFrame    *frames; uint16_t nframes, frames_cap;
+    uint16_t   nboundary;        /* how many frames[] entries have is_boundary set */
+    uint8_t    fast_yields;      /* consecutive OP_YIELDs taken without a scheduler round trip */
     UUpval    *open_upvals;
     struct UTag *tag;
     UCleanup  *cleanup; uint16_t ncleanup, cleanup_cap;

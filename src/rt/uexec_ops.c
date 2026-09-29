@@ -622,11 +622,6 @@ fetch:
              * not be descheduled is inside somebody's synchronous call --
              * a comparator, a getter, a watcher body -- and drains
              * nothing, which is also what keeps a drain from nesting. */
-            if (usched_may_deschedule(s)) uwatch_drain(vm);
-            /* No register refresh: the drain runs every condition and every
-             * sync body on a SPARE strand and spawns the rest, so it never
-             * grows THIS strand's stack, and nothing below reads R or f
-             * anyway. */
             /* A scheduled strand goes READY at the queue tail.  A strand
              * that may not be descheduled -- a spare, or one inside a
              * synchronous uexec_call -- treats the yield as the plain
@@ -634,8 +629,34 @@ fetch:
              * for a value, and returning here would hand back a stale
              * one.  That is what a `;` inside a sort comparator, a getter
              * or an operator overload compiles to. */
-            if (usched_may_deschedule(s)) { s->state = USTRAND_READY; return s->state; }
-            NEXT_RELOAD();
+            if (!usched_may_deschedule(s)) NEXT();
+            if (vm->watch.ndirty != 0) uwatch_drain(vm);
+            /* No register refresh: the drain runs every condition and every
+             * sync body on a SPARE strand and spawns the rest, so it never
+             * grows THIS strand's stack. */
+            /* Nobody to yield to and nothing pending against this strand:
+             * the round trip through the scheduler would re-dispatch this
+             * same strand, so skip it.  "Nothing pending" is everything the
+             * scheduler would act on between the two runs -- a body the
+             * drain spawned, a write the drain made (the scheduler drains
+             * again before re-dispatching), a stop or a gate the drain
+             * applied to this strand, an ISR injection waiting for the next
+             * step.  The cap is what keeps a lone busy strand from starving
+             * timers and the host pump: at most UEXEC_FAST_YIELD_CAP
+             * statements late.  The scheduler zeroes the count each time it
+             * dispatches the strand. */
+            if (vm->sched.run_head == NULL
+                && vm->watch.ndirty == 0
+                && s->unwind == (uint8_t)UUNWIND_NONE
+                && s->gates == 0
+                && s->state == (uint8_t)USTRAND_RUNNING
+                && __atomic_load_n(&vm->sched.isr_head, __ATOMIC_RELAXED) == vm->sched.isr_tail
+                && s->fast_yields < UEXEC_FAST_YIELD_CAP) {
+                s->fast_yields++;
+                NEXT();
+            }
+            s->state = USTRAND_READY;
+            return s->state;
 
         OPCASE(GETUPVAL): {
             UClosure *cl = f->closure;
@@ -1245,6 +1266,7 @@ int uexec_call(UVM *vm, UStrand *s, UClosure *cl, UValue recv, const UValue *arg
     if (prc != 0) return uexec_throw(vm, s, UP_OOMERROR, "call: out of memory pushing a call frame");
     if (p->arity_prologue && p->nparams > 0) s->stack[base + p->nparams] = uv_int((int64_t)argc);
     s->frames[s->nframes - 1].is_boundary = 1;
+    s->nboundary++;
 
     uint8_t saved_state = s->state;
     int st = uexec_run(vm, s, 0);

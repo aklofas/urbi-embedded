@@ -326,6 +326,8 @@ UStrand *uvm_spare_acquire(UVM *vm, URealm *realm)
     s->state = USTRAND_READY;
     s->unwind = UUNWIND_NONE;
     s->nframes = 0;
+    s->nboundary = 0;
+    s->fast_yields = 0;
     s->ncleanup = 0;
     s->transfer = uv_nil();
     s->result = uv_nil();
@@ -347,6 +349,8 @@ void uvm_spare_release(UVM *vm, UStrand *s)
     }
     ustrand_close_upvals(s, 0);
     s->nframes = 0;
+    s->nboundary = 0;
+    s->fast_yields = 0;
     s->ncleanup = 0;
     s->state = USTRAND_PARKED;
     s->unwind = UUNWIND_NONE;

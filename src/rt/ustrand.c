@@ -82,6 +82,7 @@ void ustrand_pop_frame(UStrand *s) {
     if (s->nframes == 0) return;
     const UFrame *f = &s->frames[s->nframes - 1];
     ustrand_close_upvals(s, f->base);
+    if (f->is_boundary) s->nboundary--;
     s->nframes--;
 }
 

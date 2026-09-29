@@ -83,6 +83,19 @@ static UValue run(Fix *fx, const char *src)
     return out;
 }
 
+/* As run, but a setup statement that does not compile or throws fails
+ * the case instead of only printing. */
+static UValue run_ok(Fix *fx, const char *src)
+{
+    UValue out = urbi_make_nil();
+    char err[256] = { 0 };
+    int rc = urbi_run(fx->vm, urbi_realm_main(fx->vm), src, strlen(src), "<test>",
+                      &out, err, sizeof err);
+    if (rc != URBI_OK) printf("    run_ok(%s) rc=%d err=%s\n", src, rc, err);
+    RT_EQ(rc, URBI_OK);
+    return out;
+}
+
 static UValue run_on(Fix *fx, URealm *r, const char *src)
 {
     UValue out = urbi_make_nil();
@@ -638,6 +651,198 @@ static void a_detached_throw_reaches_both_channels(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* --- the yield fast path ------------------------------------------------- */
+
+/* `&` runs its left arm inline and forks the right one only when the
+ * left has finished, so the left arm's yields have nobody to yield to
+ * and the arms come out whole.  Pinned as it stands: the fast path must
+ * not change it either way. */
+static void a_join_runs_its_left_arm_before_forking_the_right(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var log = \"\"");
+    run_ok(&fx, "{ Realm.log = Realm.log + \"a1 \"; Realm.log = Realm.log + \"a2 \"; Realm.log = Realm.log + \"a3 \" } &"
+                " { Realm.log = Realm.log + \"b1 \"; Realm.log = Realm.log + \"b2 \"; Realm.log = Realm.log + \"b3 \" }");
+    while (urbi_step(fx.vm, 0, NULL) == URBI_STEP_RAN) { }
+    UValue lv = urbi_make_nil();
+    char buf[64];
+    RT_EQ(urbi_global_get(fx.vm, urbi_realm_main(fx.vm), "log", &lv), URBI_OK);
+    urbi_value_to_string(fx.vm, lv, buf, sizeof buf);
+    RT_STREQ(buf, "\"a1 a2 a3 b1 b2 b3 \"");
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* With a second strand ready, every yield is a real one and the two
+ * interleave statement by statement, as they always have. */
+static void a_ready_sibling_makes_the_next_yield_real(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var log = \"\"");
+    run_ok(&fx, "__detach_strand(function() { Realm.log = Realm.log + \"a1 \"; Realm.log = Realm.log + \"a2 \"; Realm.log = Realm.log + \"a3 \" }) |"
+                " __detach_strand(function() { Realm.log = Realm.log + \"b1 \"; Realm.log = Realm.log + \"b2 \"; Realm.log = Realm.log + \"b3 \" })");
+    while (urbi_step(fx.vm, 0, NULL) == URBI_STEP_RAN) { }
+    UValue lv = urbi_make_nil();
+    char buf[64];
+    RT_EQ(urbi_global_get(fx.vm, urbi_realm_main(fx.vm), "log", &lv), URBI_OK);
+    urbi_value_to_string(fx.vm, lv, buf, sizeof buf);
+    RT_STREQ(buf, "\"a1 b1 a2 b2 a3 b3 \"");
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* An `at sync` body runs inside the yield's drain.  If it stops the tag
+ * the yielding strand is in, the statement after the yield must not run. */
+static void a_stop_during_the_drain_is_honoured_at_that_yield(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var t = Tag.new() | var go = 0 | var after = 0");
+    run_ok(&fx, "at sync (go == 1) t.stop()");
+    run(&fx, "t: { Realm.go = 1; Realm.after = 1 }");
+    while (urbi_step(fx.vm, 0, NULL) == URBI_STEP_RAN) { }
+    RT_EQ(global_int(&fx, "go"), 1);
+    RT_EQ(global_int(&fx, "after"), 0);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* A `t.block()` from the drain gates the yielding strand: the statement
+ * after the yield waits for the unblock. */
+static void a_block_during_the_drain_is_honoured_at_that_yield(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var t = Tag.new() | var go = 0 | var after = 0");
+    run_ok(&fx, "at sync (go == 1) t.block()");
+    run(&fx, "__detach_strand(function() { t: { Realm.go = 1; Realm.after = 1 } })");
+    while (urbi_step(fx.vm, 0, NULL) == URBI_STEP_RAN) { }
+    RT_EQ(global_int(&fx, "go"), 1);
+    RT_EQ(global_int(&fx, "after"), 0);
+    run_ok(&fx, "t.unblock()");
+    while (urbi_step(fx.vm, 0, NULL) == URBI_STEP_RAN) { }
+    RT_EQ(global_int(&fx, "after"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* A sync body that writes a watched slot re-arms the drain, and the
+ * scheduler drains again before the yielding strand's next statement.
+ * The second watcher is installed first so the first drain's walk has
+ * already passed it when the write lands: only that second drain sees it. */
+static void a_write_made_in_the_drain_is_seen_before_the_next_statement(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var go = 0 | var x = 0 | var after = 0 | var seen = -1");
+    run_ok(&fx, "at sync (x == 1) Realm.seen = Realm.after");
+    run_ok(&fx, "at sync (go == 1) Realm.x = 1");
+    run_ok(&fx, "__detach_strand(function() { go = 1; after = 1; after = 2 })");
+    while (urbi_step(fx.vm, 0, NULL) == URBI_STEP_RAN) { }
+    RT_EQ(global_int(&fx, "after"), 2);
+    RT_EQ(global_int(&fx, "seen"), 0);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* A pending injection makes the next yield a real one, so a host that
+ * steps with a budget sees the ring at the end of that slice rather than
+ * a cap's worth of statements later.  __inject() stands in for an ISR
+ * that fires while the busy strand is running. */
+static urbi_event_id_t inject_id;
+static int inject_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)args; (void)nargs;
+    *out = urbi_make_nil();
+    urbi_event_payload_t p;
+    memset(&p, 0, sizeof p);
+    return urbi_inject_event(vm, inject_id, &p, 0);
+}
+
+static void a_pending_injection_makes_the_next_yield_real(void)
+{
+    Fix fx; fix_open(&fx);
+    RT_EQ(urbi_register(fx.vm, "__wait_event", wait_event_native, 1, 1), URBI_OK);
+    RT_EQ(urbi_register(fx.vm, "__inject", inject_native, 0, 0), URBI_OK);
+    inject_id = URBI_EVENT_ID_INVALID;
+    RT_EQ(urbi_event_register(fx.vm, NULL, "button", &inject_id), URBI_OK);
+    RT_EQ(urbi_global_set(fx.vm, urbi_realm_main(fx.vm), "button",
+                          uv_ptr(UV_CELL, uvm_sched(fx.vm)->events[inject_id])), URBI_OK);
+
+    run_ok(&fx, "var n = 0 | var woke = -1");
+    run_ok(&fx, "__detach_strand(function() { __wait_event(Realm.button); Realm.woke = Realm.n })");
+    char src[8192];
+    size_t at = (size_t)snprintf(src, sizeof src, "__detach_strand(function() { sleep(1ms); n = n + 1; __inject()");
+    for (int k = 0; k < 100; k++) at += (size_t)snprintf(src + at, sizeof src - at, "; n = n + 1");
+    (void)snprintf(src + at, sizeof src - at, " })");
+    run_ok(&fx, src);
+    fx.now_us += 2000;
+    RT_EQ(urbi_step(fx.vm, USCHED_SLICE, NULL), URBI_STEP_RAN);
+    RT_EQ(global_int(&fx, "n"), 1);
+    /* The next step drains the ring and wakes the waiter behind the busy
+     * strand.  From there the two alternate statement by statement -- the
+     * waiter's own `;` after the wait is one -- so the busy strand has
+     * counted twice more when the waiter reads it: FIFO, as ever. */
+    while (urbi_step(fx.vm, 0, NULL) == URBI_STEP_RAN) { }
+    RT_EQ(global_int(&fx, "n"), 101);
+    RT_EQ(global_int(&fx, "woke"), 3);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* The source of a detached function that sleeps `sleep_ms`, then adds one
+ * to the global n `count` times, one statement each. */
+static void busy_source(char *src, size_t cap, int sleep_ms, int count)
+{
+    size_t at = (size_t)snprintf(src, cap, "__detach_strand(function() { sleep(%dms)", sleep_ms);
+    for (int k = 0; k < count; k++) at += (size_t)snprintf(src + at, cap - at, "; n = n + 1");
+    (void)snprintf(src + at, cap - at, " })");
+}
+
+/* A lone strand running straight-line statements does not round-trip
+ * through the scheduler at every `;`, but it still hands control back:
+ * a step whose budget covers one slice runs more than one statement and
+ * well short of the whole body. */
+static void a_lone_strand_still_returns_to_the_pump(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var n = 0");
+    char src[8192];
+    busy_source(src, sizeof src, 1, 120);
+    run_ok(&fx, src);
+    RT_EQ(global_int(&fx, "n"), 0);
+    fx.now_us += 2000;
+    RT_EQ(urbi_step(fx.vm, USCHED_SLICE, NULL), URBI_STEP_RAN);
+    int64_t n1 = global_int(&fx, "n");
+    RT_CHECK(n1 > 1);
+    RT_CHECK(n1 <= UEXEC_FAST_YIELD_CAP + 1);
+    for (UStrand *s = urbi_realm_main(fx.vm)->strands; s; s = s->next_in_realm)
+        RT_CHECK(s->fast_yields <= UEXEC_FAST_YIELD_CAP);
+    while (urbi_step(fx.vm, 0, NULL) == URBI_STEP_RAN) { }
+    RT_EQ(global_int(&fx, "n"), 120);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* A sleeper that comes due while a lone strand is busy runs within the
+ * cap of the statement that was current when it came due. */
+static void a_due_timer_fires_within_the_cap(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var n = 0 | var seen = -1");
+    char src[8192];
+    busy_source(src, sizeof src, 1, 120);
+    run_ok(&fx, src);
+    run_ok(&fx, "__detach_strand(function() { sleep(2ms); Realm.seen = Realm.n })");
+    fx.now_us += 1000;                        /* the busy strand wakes */
+    RT_EQ(urbi_step(fx.vm, USCHED_SLICE, NULL), URBI_STEP_RAN);
+    int64_t due_at = global_int(&fx, "n");
+    fx.now_us += 1000;                        /* and now the sleeper is due */
+    while (urbi_step(fx.vm, USCHED_SLICE, NULL) == URBI_STEP_RAN) { }
+    RT_EQ(global_int(&fx, "n"), 120);
+    RT_CHECK(global_int(&fx, "seen") >= due_at);
+    RT_CHECK(global_int(&fx, "seen") <= due_at + UEXEC_FAST_YIELD_CAP + 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 RT_SUITE(rt_sched_suite) {
     rt_run("separators_run_both_arms", separators_run_both_arms);
     rt_run("join_waits_for_the_child", join_waits_for_the_child);
@@ -658,4 +863,12 @@ RT_SUITE(rt_sched_suite) {
     rt_run("an_isr_injection_wakes_a_waiter", an_isr_injection_wakes_a_waiter);
     rt_run("yield_round_robins_in_fifo_order", yield_round_robins_in_fifo_order);
     rt_run("a_chunk_runs_under_the_connection_tag", a_chunk_runs_under_the_connection_tag);
+    rt_run("a_join_runs_its_left_arm_before_forking_the_right", a_join_runs_its_left_arm_before_forking_the_right);
+    rt_run("a_ready_sibling_makes_the_next_yield_real", a_ready_sibling_makes_the_next_yield_real);
+    rt_run("a_stop_during_the_drain_is_honoured_at_that_yield", a_stop_during_the_drain_is_honoured_at_that_yield);
+    rt_run("a_block_during_the_drain_is_honoured_at_that_yield", a_block_during_the_drain_is_honoured_at_that_yield);
+    rt_run("a_write_made_in_the_drain_is_seen_before_the_next_statement", a_write_made_in_the_drain_is_seen_before_the_next_statement);
+    rt_run("a_pending_injection_makes_the_next_yield_real", a_pending_injection_makes_the_next_yield_real);
+    rt_run("a_lone_strand_still_returns_to_the_pump", a_lone_strand_still_returns_to_the_pump);
+    rt_run("a_due_timer_fires_within_the_cap", a_due_timer_fires_within_the_cap);
 }
