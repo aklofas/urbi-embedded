@@ -38,7 +38,8 @@
  * condition still holds, which makes it a reactive loop rather than a
  * per-safepoint counter.  `waituntil` wakes its waiters and deletes
  * itself.  A falling edge runs `onleave`, once, and only after a body has
- * run.
+ * run.  A `whenever` whose body is still running when the condition falls
+ * runs `onleave` when that body dies.
  *
  * A CONDITION THAT THROWS kills nothing.  The throw is absorbed at the
  * spare-strand boundary, reported once through the diag hook, and the
@@ -61,6 +62,7 @@ struct UWatcher {
     uint8_t   armed;        /* 0 once cancelled or spent; the sweep unlinks it */
     uint8_t   last;         /* the condition's truth at the previous drain */
     uint8_t   fired;        /* a body has run since the last onleave */
+    uint8_t   leave_pending; /* the condition fell while body_strand was alive; onleave runs when it dies */
 
     UClosure *cond;         /* NULL for an event watcher */
     UEvent   *event;        /* NULL for a condition watcher */

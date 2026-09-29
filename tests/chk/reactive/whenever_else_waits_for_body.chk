@@ -1,0 +1,30 @@
+# Covers: whenever (cond) body else else_body — when the condition falls
+#         while the body is still running, the else arm runs after the
+#         body has finished, never beside it.
+#
+# The body sleeps, so it is in flight when the condition is taken away.
+# The first read of the log is made while it sleeps and shows the body's
+# first half only; the second, after the clock has moved past the sleep,
+# shows the body's second half and then the else arm.
+## timeout: 30
+## host: run Realm.x = 0
+## host: run Realm.log = ""
+## host: run whenever (Realm.x > 0) { Realm.log = Realm.log + "b1 "; sleep(10ms); Realm.log = Realm.log + "b2 " } else { Realm.log = Realm.log + "else " }; 0
+## host: run Realm.x = 1
+## host: step 1000
+## host: run Realm.x = 0
+## host: step 1000
+## host: run Realm.log
+## host: advance-clock 20000
+## host: step 1000
+## host: run Realm.log
+[00000000] 0
+[00000000] ""
+[00000000] 0
+[00000000] 1
+[00000000] step: WAKE_AT
+[00000000] 0
+[00000000] step: WAKE_AT
+[00000000] "b1 "
+[00000000] step: QUIESCENT
+[00000000] "b1 b2 else "

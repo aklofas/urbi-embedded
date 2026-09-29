@@ -609,6 +609,7 @@ static void the_reactive_runtime_costs_an_unused_vm_nothing(void)
     size_t booted = fx.ca.live;
     printf("    sizeof(UWatcher) = %lu; watcher list empty at boot\n",
            (unsigned long)sizeof(UWatcher));
+    RT_EQ(sizeof(UWatcher), 136u);
     /* UWatchState is four words inside UVM and vm->watch.all starts NULL,
      * so running a script that installs nothing adds no watcher bytes. */
     run(&fx, "var x = 1");
@@ -645,6 +646,155 @@ static void a_hundred_watchers_are_all_reclaimed(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* --- whenever: the arms are serialised ------------------------------------
+ *
+ * These bodies sleep and do not take their own condition down, so while
+ * the condition holds nothing here may pump the scheduler without a
+ * budget: urbi_run and an unbudgeted urbi_step would keep a runaway loop
+ * running for as long as it keeps re-firing.  The condition is therefore
+ * raised by a host write, the scheduler is driven in bounded slices, and
+ * `run` is only ever called while the condition is false. */
+
+static UValue run_ok(Fix *fx, const char *src)
+{
+    UValue out = urbi_make_nil();
+    char err[256] = { 0 };
+    int rc = urbi_run(fx->vm, urbi_realm_main(fx->vm), src, strlen(src), "<test>",
+                      &out, err, sizeof err);
+    RT_EQ(rc, URBI_OK);
+    return out;
+}
+
+static void set_int(Fix *fx, const char *name, int64_t v)
+{
+    RT_EQ(urbi_global_set(fx->vm, urbi_realm_main(fx->vm), name, urbi_make_int(v)), URBI_OK);
+}
+
+/* A bounded number of bounded slices, after moving the clock by `us`. */
+static void slices(Fix *fx, uint64_t us)
+{
+    fx->now_us += us;
+    for (int k = 0; k < 8; k++) (void)urbi_step(fx->vm, 1000, NULL);
+}
+
+static const char *global_shown(Fix *fx, const char *name, char *buf, size_t cap)
+{
+    UValue v = urbi_make_nil();
+    RT_EQ(urbi_global_get(fx->vm, urbi_realm_main(fx->vm), name, &v), URBI_OK);
+    return shown(fx, v, buf, cap);
+}
+
+static void the_else_arm_waits_for_a_running_body(void)
+{
+    Fix fx; fix_open(&fx);
+    char buf[64];
+    run_ok(&fx, "var x = 0 | var log = \"\"");
+    run_ok(&fx, "whenever (x > 0) { log = log + \"b1 \"; sleep(10ms); log = log + \"b2 \" }"
+                " else { log = log + \"else \" }");
+    set_int(&fx, "x", 1);
+    slices(&fx, 0);                                   /* body runs to its sleep */
+    set_int(&fx, "x", 0);
+    slices(&fx, 0);                                   /* falling edge, body still asleep */
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 \"");
+    slices(&fx, 20000);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 b2 else \"");
+    RT_EQ(urbi_step(fx.vm, 1000, NULL), URBI_STEP_QUIESCENT);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* Falls and rises again while the body is still running: the else arm
+ * the fall earned runs first, then the body the rise earned.  The second
+ * body takes the condition down itself. */
+static void a_fall_and_rise_during_the_body_keep_edge_order(void)
+{
+    Fix fx; fix_open(&fx);
+    char buf[64];
+    run_ok(&fx, "var x = 0 | var n = 0 | var log = \"\"");
+    run_ok(&fx, "whenever (x > 0) { n = n + 1;"
+                " if (n == 1) log = log + \"b1 \" else log = log + \"b2 \"; sleep(10ms);"
+                " if (n >= 2) x = 0 } else { log = log + \"else \" }");
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    set_int(&fx, "x", 0); slices(&fx, 0);
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 \"");
+    for (int k = 0; k < 6; k++) slices(&fx, 20000);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 else b2 else \"");
+    RT_EQ(global_int(&fx, "n"), 2);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* Falls, rises and falls again while the body runs: one body, one else. */
+static void a_fall_rise_fall_during_the_body_owes_one_else(void)
+{
+    Fix fx; fix_open(&fx);
+    char buf[64];
+    run_ok(&fx, "var x = 0 | var log = \"\"");
+    run_ok(&fx, "whenever (x > 0) { log = log + \"b1 \"; sleep(10ms); log = log + \"b2 \" }"
+                " else { log = log + \"else \" }");
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    set_int(&fx, "x", 0); slices(&fx, 0);
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    set_int(&fx, "x", 0); slices(&fx, 0);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 \"");
+    slices(&fx, 20000);
+    slices(&fx, 20000);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 b2 else \"");
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+static void a_cancelled_watcher_drops_its_pending_else(void)
+{
+    Fix fx; fix_open(&fx);
+    char buf[64];
+    run_ok(&fx, "var x = 0 | var log = \"\" | var t = Tag.new()");
+    run_ok(&fx, "t: whenever (x > 0) { log = log + \"b1 \"; sleep(10ms); log = log + \"b2 \" }"
+                " else { log = log + \"else \" }");
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    set_int(&fx, "x", 0); slices(&fx, 0);
+    run_ok(&fx, "t.stop()");                          /* the condition is false here */
+    slices(&fx, 20000);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 \"");
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* A body that dies by a throw still ends its turn: the else arm owed to
+ * the fall runs after it. */
+static void a_body_that_throws_still_hands_over_to_its_else(void)
+{
+    Fix fx; fix_open(&fx);
+    char buf[64];
+    run_ok(&fx, "var x = 0 | var log = \"\"");
+    run_ok(&fx, "whenever (x > 0) { log = log + \"b1 \"; sleep(10ms); throw \"boom\" }"
+                " else { log = log + \"else \" }");
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    set_int(&fx, "x", 0); slices(&fx, 0);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 \"");
+    slices(&fx, 20000);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 else \"");
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* The arm that never overlapped is unchanged: a body that has already
+ * finished when the condition falls gets its else arm at once.  This body
+ * takes its own condition down, so an unbudgeted pump is bounded. */
+static void an_else_arm_with_no_body_in_flight_is_immediate(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var x = 10 | var on = 0 | var off = 0");
+    run_ok(&fx, "whenever (x > 5) { on = on + 1; x = x - 1 } else { off = off + 1 }");
+    for (int k = 0; k < 64 && urbi_step(fx.vm, 1000, NULL) == URBI_STEP_RAN; k++) { }
+    RT_EQ(global_int(&fx, "on"), 5);
+    RT_EQ(global_int(&fx, "off"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 RT_SUITE(rt_watch_suite) {
     rt_run("at_fires_once_per_rising_edge", at_fires_once_per_rising_edge);
     rt_run("at_fires_when_the_condition_already_holds", at_fires_when_the_condition_already_holds);
@@ -669,4 +819,10 @@ RT_SUITE(rt_watch_suite) {
     rt_run("urbi_watch_calls_back_on_each_rising_edge", urbi_watch_calls_back_on_each_rising_edge);
     rt_run("the_reactive_runtime_costs_an_unused_vm_nothing", the_reactive_runtime_costs_an_unused_vm_nothing);
     rt_run("a_hundred_watchers_are_all_reclaimed", a_hundred_watchers_are_all_reclaimed);
+    rt_run("the_else_arm_waits_for_a_running_body", the_else_arm_waits_for_a_running_body);
+    rt_run("a_fall_and_rise_during_the_body_keep_edge_order", a_fall_and_rise_during_the_body_keep_edge_order);
+    rt_run("a_fall_rise_fall_during_the_body_owes_one_else", a_fall_rise_fall_during_the_body_owes_one_else);
+    rt_run("a_cancelled_watcher_drops_its_pending_else", a_cancelled_watcher_drops_its_pending_else);
+    rt_run("a_body_that_throws_still_hands_over_to_its_else", a_body_that_throws_still_hands_over_to_its_else);
+    rt_run("an_else_arm_with_no_body_in_flight_is_immediate", an_else_arm_with_no_body_in_flight_is_immediate);
 }

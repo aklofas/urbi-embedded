@@ -16,7 +16,7 @@ appears here only because a tag stop cancels both kinds of thing at once.
 struct UWatcher {
     UCell     cell;
     uint8_t   mode;         /* AT, AT_SYNC, WHENEVER, WAITUNTIL, ONCE */
-    uint8_t   armed, last, fired;
+    uint8_t   armed, last, fired, leave_pending;
     UClosure *cond;         /* NULL for an event watcher */
     UEvent   *event;        /* NULL for a condition watcher */
     UClosure *body, *onleave;
@@ -104,7 +104,7 @@ Two call sites, both safepoints:
 |---|---|---|
 | `AT` | spawn `body` as a strand under `w->tag` | spawn `onleave`, once, and only after a body has run |
 | `AT_SYNC` | run `body` inline on a spare strand | run `onleave` inline |
-| `WHENEVER` | spawn `body`; re-fire on body death while the condition still holds | spawn `onleave` |
+| `WHENEVER` | spawn `body`; re-fire on body death while the condition still holds | spawn `onleave`; if a body is in flight, when that body dies |
 | `WAITUNTIL` | wake every waiter, disarm | — |
 | `ONCE` | wake every waiter, disarm | — |
 
@@ -114,6 +114,18 @@ and re-spawns while it holds. The legacy manual is explicit that this is the
 construct's meaning and that the number of body evaluations is not something a
 program may depend on, so a `whenever` whose body cannot falsify its guard does
 not terminate — exactly as `while (true)` does not.
+
+The two arms of a `whenever` never run side by side, as in the legacy runtime.
+A falling edge that finds a body still in flight (asleep, say) does not spawn
+the `else` arm; it sets `leave_pending`, and `uwatch_body_done` spawns the arm
+when that body dies. Edges are served in the order they happened: when the
+condition falls and rises again while the body runs, the body's death spawns
+the owed `else` arm first and then the next body; a fall, a rise and a second
+fall owe one `else` arm, not two. A body that dies by a throw hands over the
+same way. Cancelling the watcher (`tag.stop()`, a dropped realm) drops a
+pending `else` arm. The arm is spawned as its own strand and is not tracked as
+`body_strand`, so an `else` arm that itself sleeps can still be overtaken by
+the next body.
 
 A condition, a body and an onleave all run on a SPARE strand acquired from
 `uvm_spare_acquire`. A spare may not be descheduled, so a `;` inside one of

@@ -277,7 +277,13 @@ void uwatch_drain(UVM *vm)
                 uwatch_fire(vm, w, w->payload, false);
             }
         } else if (!now && was) {
-            uwatch_leave(vm, w);
+            /* The two arms of a `whenever` never run side by side.  A
+             * body still in flight keeps the floor; the else arm is
+             * remembered and runs when that body dies. */
+            if (w->mode == (uint8_t)UWATCH_WHENEVER && w->body_strand != NULL)
+                w->leave_pending = 1;
+            else
+                uwatch_leave(vm, w);
         }
         w->payload = uv_nil();
     }
@@ -293,6 +299,11 @@ void uwatch_body_done(UVM *vm, const UStrand *dead)
     while (w && w->body_strand != dead) w = w->next;
     if (w == NULL) return;
     w->body_strand = NULL;
+    /* Taken now, whatever happens below: an else arm is owed to this body
+     * only, and a watcher that is gone, or whose condition raises, owes
+     * nothing. */
+    bool owed = w->leave_pending != 0;
+    w->leave_pending = 0;
     if (!w->armed || w->mode != (uint8_t)UWATCH_WHENEVER || w->cond == NULL) return;
 
     /* THE SAME BRACKET uwatch_drain AND uwatch_event_fired USE, and for the
@@ -312,8 +323,12 @@ void uwatch_body_done(UVM *vm, const UStrand *dead)
     bool now = false;
     if (uwatch_eval_cond(vm, w, &now) == 0 && w->armed) {
         w->last = now ? 1u : 0u;
+        /* An else arm the condition earned while the body ran goes
+         * first, whatever the condition says now: edges are served in
+         * the order they happened. */
+        if (owed) uwatch_leave(vm, w);
         if (now) uwatch_fire(vm, w, w->payload, false);
-        else uwatch_leave(vm, w);
+        else if (!owed) uwatch_leave(vm, w);
         w->payload = uv_nil();
     }
 
@@ -440,7 +455,7 @@ void uwatch_tag_stopped(UVM *vm, const UTag *t)
 {
     if (t == NULL) return;
     for (UWatcher *w = vm->watch.all; w; w = w->next)
-        if (w->tag == t) w->armed = 0;
+        if (w->tag == t) { w->armed = 0; w->leave_pending = 0; }
     uwatch_sweep(vm);
 }
 
@@ -448,7 +463,7 @@ void uwatch_realm_dropped(UVM *vm, const URealm *r)
 {
     if (r == NULL) return;
     for (UWatcher *w = vm->watch.all; w; w = w->next)
-        if (w->realm == r) w->armed = 0;
+        if (w->realm == r) { w->armed = 0; w->leave_pending = 0; }
     uwatch_sweep(vm);
 }
 
