@@ -108,18 +108,58 @@ in CI.
 ## Objects
 
 A slot is a name and a value, and an object is a parallel array of them
-plus a list of prototypes. No shapes, no transition trees, no inline
-caches: lookup is a linear scan of the local slots by interned pointer,
-then a depth-first walk of the proto graph guarded by a per-VM visit
-stamp so a diamond is searched once.
-
-That is a deliberate simplification and it costs measurable speed — see
-`tests/probes/lookup_bench.c`, which pins the cost and says what it would
-take to get it back.
+plus a list of prototypes. No shapes, no transition trees: lookup itself
+is still a linear scan of the local slots by interned pointer, then a
+depth-first walk of the proto graph guarded by a per-VM visit stamp so a
+diamond is searched once. A per-site cache (below) sits in front of that
+walk; it does not replace it.
 
 Multiple prototypes are supported and `addProto` prepends, which is what
 the legacy implementation did. Slot flags carry constness and getter or
 setter behaviour.
+
+### The slot cache
+
+`OP_GETSLOT`, `OP_SELF`, `OP_SETSLOT` and `OP_SETSLOT_UPDATE` each carry
+a site index the chunk format assigns, and `src/rt/uslotcache.h` keeps
+one `USlotCache` entry per site: the receiver it was filled for, the
+object the slot was found on, and — for an inherited hit — the VM's
+slot epoch at fill time. A hit skips the walk; a miss falls back to it
+and refills the entry.
+
+- **Own slot** (the receiver holds it directly): the entry is checked
+  against the LIVE receiver — same object, the index still in range, the
+  name at that index unchanged — so it can never be stale and needs no
+  invalidation, even when a freed receiver's address is reused.
+- **Inherited slot** (found on a prototype): the entry is checked
+  against the VM's one slot epoch. The epoch is bumped by `src/rt/uobj.c`
+  on a structural change — a slot added or removed, a slot's attributes
+  changed, or the proto list edited — to any object flagged
+  `UOBJ_F_CACHED`. That flag is set on every object a cache-filling walk
+  passes through: the receiver, each intermediate proto, and the owner.
+  An object no walk has visited is unflagged, so building and populating
+  fresh objects in a loop bumps nothing. The flag is never cleared, and
+  a collection bumps the epoch too; once the epoch passes `0x80000000` a
+  collection resets it to 1 and clears every proto's cache array, so a
+  stale inherited entry can never meet its own epoch again after a wrap.
+- Either kind of hit reads the slot's attributes live: a slot carrying a
+  getter, a setter, or — on a write — a constant flag takes the walk
+  instead. A write hit is own-slot only (a write that resolves on a
+  proto still creates a local slot the existing way) and checks
+  `UOBJ_F_READONLY` on the receiver live.
+- Entries are **weak** — the collector does not trace them — which is
+  what makes the epoch bump enough: one bump retires every inherited
+  entry at once rather than needing each one visited.
+- The array is allocated lazily, on a proto's first slot operation
+  *after* `vm->stdlib_booted` is set, so nothing the boot table touches
+  is ever cached and the boot-heap number does not move. Allocation
+  failure is not an error: the site just runs uncached.
+- `URBI_SLOT_CACHE_VERIFY=1` makes every hit also run the uncached
+  resolve and trap if owner, index or value disagree with it; `make
+  test-cache-verify` builds and runs the whole suite that way.
+
+`tests/probes/lookup_bench.c` is what the cache is for: it pins the
+lookup cost against the old core's, on the dev box.
 
 The distinction between creating a slot and updating one is visible in
 the bytecode: `var x = 1` emits `OP_SETSLOT`, and a bare `x = 1` emits
@@ -133,7 +173,7 @@ compiler does not pretend to answer it.
 A strand is a coroutine: a growable register stack, an array of call
 frames, a list of open upvalues, and a cleanup stack. `sizeof(UStrand)`
 is 192 bytes on a 64-bit host — the fixed struct, not counting the arrays
-it grows — and a strand parked on a `sleep` costs 615 bytes all in, which
+it grows — and a strand parked on a `sleep` costs 616 bytes all in, which
 `tests/probes/strand_cost.c` measures on every build.
 `tests/rt/test_strand.c` pins the struct size exactly, so a field added
 without thinking about the idle-strand budget fails the build rather than
@@ -152,6 +192,57 @@ because the runtime sits below the chunk format in the include order.
 Upvalues are open until the frame that owns them is popped, then closed
 in place. `ustrand_pop_frame` closes at the popped base, so `OP_RET` must
 not close them a second time.
+
+## Dispatch
+
+`uexec_run_inner`, in `src/rt/uexec_ops.c`, dispatches through a label
+table on GCC and Clang — one address per opcode, generated from the
+`chunk/uopcodes.def` X-macro so a new opcode cannot be left out of it —
+and falls back to a plain `switch` everywhere else, and under
+`URBI_VM_FORCE_SWITCH`, which `make test-switch` builds so the portable
+path stays honest. One set of opcode bodies, written against
+`OPCASE`/`NEXT`/`NEXT_RELOAD`, serves both forms; there is nothing to
+drift apart because there is only one copy.
+
+The current frame, its register window and its constants pool live in
+three locals (`f`, `R`, `K`) between instructions. They are loaded once
+on entry and reloaded — `NEXT_RELOAD`, where a plain `NEXT` ends an arm
+that provably cannot have moved them — only after an instruction that
+can push or pop a frame, unwind, resume, or grow the strand's register
+stack, including a slot read that runs a getter.
+
+### The yield fast path
+
+`OP_YIELD` — the `;` sequence point — normally hands the strand back to
+the scheduler, which re-enqueues and re-dispatches it, even when it was
+the only runnable strand. A strand that may not be descheduled (a spare,
+or one inside a synchronous call such as a getter or a comparator) never
+reaches the fast path at all: for it a yield is the plain sequence point
+it also is, and nothing more.
+
+For everyone else, the arm stays on the same strand for the next
+instruction — instead of making the round trip through the scheduler —
+whenever ALL of the following hold, checked after the drain that a dirty
+watch state always gets first:
+
+- the ready queue is empty (`vm->sched.run_head == NULL`);
+- nothing is dirty (`vm->watch.ndirty == 0`), which is true either
+  because nothing was dirty to begin with or because the drain that just
+  ran cleared it;
+- the strand itself is not unwinding, carries no gate, and is still
+  `RUNNING` — nothing the drain (or anything else at this safepoint) did
+  left it with somewhere else to be;
+- the ISR injection ring is empty;
+- fewer than `UEXEC_FAST_YIELD_CAP` (64) fast yields have been taken in a
+  row on this strand. The counter resets wherever the scheduler
+  dispatches the strand (`usched_step`, `usched_run_inline`).
+
+The instruction budget is untouched — only a backward jump spends it —
+and strand ORDER never changes, because the fast path is only ever taken
+when no other strand is ready to take this one's place. Plainly stated
+consequence: a timer that comes due while a single busy strand runs
+straight-line code can fire up to 64 statements later than it would
+without the fast path.
 
 ## The scheduler
 
@@ -177,7 +268,10 @@ Tags are cancellation handles. A tag scope is a cleanup entry, so
 `tag.stop()` from another strand unwinds the target through its finallys
 and its leave handlers rather than dropping it. `block` and `freeze` are
 independent gate bits on the strand, checked when the scheduler is about
-to run it.
+to run it — RECOMPUTED, not merely cleared, on a release and on leaving a
+tag scope (`OP_POP_TAG`), from every tag still covering the strand. A
+strand inside two blocked tags therefore stays held until both let go
+rather than losing the bit when either one does.
 
 Forks are strands. `a , b` spawns and forgets; `a & b` spawns and joins.
 A strand nobody awaits reports an uncaught throw through the diagnostic

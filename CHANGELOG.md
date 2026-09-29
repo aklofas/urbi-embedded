@@ -17,21 +17,40 @@ new opcode. There is no compatibility promise before 1.0.0.
 
 | Number | Value |
 |---|---|
-| boot heap | 69,743 bytes live in 1,016 blocks, 64-bit host |
-| idle strand | 615 bytes each; 61,568 for a hundred parked sleepers |
+| boot heap | 69,775 bytes live in 1,016 blocks, 64-bit host |
+| idle strand | 616 bytes each; 61,616 for a hundred parked sleepers |
 | leak probes | zero growth over 10,000 iterations of five allocating shapes |
-| lookup benchmark | 1.47x the old core; mandelbrot 1.44x |
-| corpus | 331 passed, 0 failed, 73 placeholders, 9 skipped |
-| runners | frontend 636 cases / 6,406 checks; runtime 138 cases / 4,350 checks |
+| lookup benchmark | 0.62x the old core; mandelbrot 0.84x |
+| corpus | 334 passed, 0 failed, 73 placeholders, 9 skipped |
+| runners | frontend 636 cases / 6,406 checks; runtime 197 cases / 4,931 checks |
 | sanitizers | ASan, UBSan, `URBI_GC_STRESS`, valgrind memcheck: clean |
 
 The 48 KB boot-heap target is a 32-bit number and this branch has no
 cross toolchain, so the probe holds the host figure under a 72 KB cap and
-Phase 5 measures the real one. The lookup benchmark MISSES the spec's
-20 percent gate: the re-founded object model has no inline caches and
-the dispatch loop is a plain switch where the old one used computed
-goto. `tests/probes/lookup_bench.c` pins a ratchet just above the
-measured cost and prints the spec's target beside it.
+Phase 5 measures the real one. The lookup benchmark MET the spec's
+gate — a per-site slot cache, threaded dispatch, and a yield fast path
+together turned a 1.59x / 1.40x miss into the ratios above.
+`tests/probes/lookup_bench.c`'s ratchet is tightened to 1.20x now that
+it is met.
+
+### Performance
+
+The lookup and mandelbrot benchmarks went from 1.59x / 1.40x the old
+core to 0.62x / 0.84x, through three mechanisms:
+
+- A per-site slot cache in front of the proto walk: one entry per
+  `GETSLOT`/`SELF`/`SETSLOT`/`SETSLOT_UPDATE` site, hit live against the
+  receiver for an own slot and against a VM-wide epoch for an inherited
+  one.
+- Threaded dispatch — a label table on GCC and Clang, over the same
+  opcode bodies the portable `switch` (`URBI_VM_FORCE_SWITCH`) uses — and
+  hoisting the current frame, register window and constants pool out of
+  the per-instruction path, reloading them only where an arm can have
+  moved them.
+- A yield fast path: `OP_YIELD` stays on the same strand for the next
+  instruction, instead of round-tripping through the scheduler, when
+  nothing else is ready to run and nothing is pending against the
+  strand, up to 64 times in a row.
 
 ### What changed inside
 
@@ -84,6 +103,18 @@ measured cost and prints the spec's target beside it.
 - A proto walk that outgrew the 64-entry resolution stack answered "not
   found". For a legal deep or wide graph that is a wrong answer rather
   than an answer; the lookup diagnostics now say which one they got.
+- A strand inside two blocked or two frozen tags was released as soon as
+  either one released it, rather than staying held until both did.
+- A `whenever` else arm could start while its own body was still
+  running. It now waits for the body strand to die, and a fall, rise and
+  fall again while the body runs still owes exactly one else arm.
+
+### Changed
+
+- A timer coming due while a single busy strand runs straight-line code
+  may now fire up to 64 statements later than it used to: the yield fast
+  path above only ever applies when no other strand is ready, but it can
+  still delay a due timer nobody was waiting to be woken by.
 
 ### Retired
 
@@ -112,6 +143,9 @@ measured cost and prints the spec's target beside it.
 - The layering gate's ban on old-runtime directory names becomes the
   positive rule it stood in for: `src/rt` may reach `rt/`, `chunk/`,
   `stdlib/`, `urbi/` and `emit/ufront.h`, and nothing else.
+- Added `make test-cache-verify`: every slot-cache hit also runs the
+  uncached resolve and traps if they disagree. It joins the parallel
+  phase of `releasetest`.
 
 ### Parked until Phase 5
 

@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/rt/uobj.h — objects, slots, and prototype lookup for the refound/core
- * runtime. No shapes, transition trees, or inline caches: slots are a
- * linear-scanned parallel-array vector, and lookup through the proto chain
- * is a depth-first walk guarded by a per-VM visit stamp for diamonds. */
+ * runtime. No shapes, no transition trees: slots are a linear-scanned
+ * parallel-array vector, and lookup through the proto chain is a
+ * depth-first walk guarded by a per-VM visit stamp for diamonds. A
+ * per-site cache lives in rt/uslotcache.h, in front of that walk. */
 
 #ifndef URT_OBJ_H
 #define URT_OBJ_H
