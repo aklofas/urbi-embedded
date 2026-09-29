@@ -118,14 +118,20 @@ core to 0.62x / 0.84x, through three mechanisms:
   advances up to 65 statements per slice where it advanced one, in a
   loop with a `;` in its body as well as in straight-line code (a loop
   without a `;` is still bounded per slice by the backward-jump budget).
-  A timer that comes due meanwhile, and a host write made between steps,
-  are noticed up to 64 statements later. Strands that are ready together
-  keep their relative order; strands that become ready at different
-  times can interleave differently: two strands whose timers are 1 ms
-  apart logged `a1 a2 b1 a3 b2 a4 b3 a5 b4 b5` and now log
-  `a1 a2 a3 a4 a5 b1 b2 b3 b4 b5`. A pending interrupt injection still
-  ends the run at the next `;`. Unbudgeted stepping gives the same
-  results as before.
+  Timers are fired, and interrupt injections delivered, only at the
+  start of a step, and the host writes only between steps, so a step
+  with budget B, which runs a lone strand in ceil(B / 256) slices, now
+  runs up to 65 x ceil(B / 256) of its statements before a timer that
+  came due is fired or a host write is seen, where it ran
+  ceil(B / 256): 65 for a budget of 256, 130 for 512. A host that wants
+  timers noticed sooner passes a smaller budget. While an injection is
+  pending the strand stops at every `;` as before. Strands that are
+  ready together keep their relative order; strands that become ready
+  at different times can interleave differently: two strands whose
+  timers are 1 ms apart, stepped with a budget of 256 and the clock
+  advanced 1 ms per step, logged `a1 a2 b1 a3 b2 a4 b3 a5 b4 b5` and
+  now log `a1 a2 a3 a4 a5 b1 b2 b3 b4 b5`. Unbudgeted stepping gives
+  the same results as before.
 
 ### Retired
 

@@ -73,21 +73,26 @@ typedef enum {
  * strands, delivers anything an interrupt handler injected, fires every
  * timer due at the clock reading taken on entry, then runs the run queue.
  *
- * The budget is spent per dispatch: each strand the step runs gets a
- * slice of at most 256, and is charged the whole slice if it comes back
- * runnable, 1 if it parks or dies.  Within a slice only a backward jump
+ * Under a budget, the budget is spent per dispatch: each strand the step
+ * runs gets a slice of at most 256, and is charged the whole slice if it
+ * comes back runnable, 1 if it parks or dies.  Within a slice only a backward jump
  * spends anything.  A strand hands its slice back at a `;` -- unless no
  * other strand is ready and nothing is pending against it, in which case
  * it runs on through up to 64 `;` in a row first.  So under a budget a lone
  * busy strand advances up to 65 statements per slice, in a loop with a
  * `;` in its body as well as in straight-line code (a loop without one is
- * still cut off by the backward-jump count).  A timer that comes due
- * meanwhile, and a host write made between two steps, are noticed up to
- * 64 statements later than if the strand stopped at every `;`.  Strands
- * that are ready together keep their relative order; strands that become
- * ready at different times, by timers say, can interleave differently.
- * A pending interrupt injection ends the run at the next `;`.  An
- * unbudgeted step runs until nothing is runnable, as it always has.
+ * still cut off by the backward-jump count).  Timers are fired, and
+ * interrupt injections delivered, only at the start of a step, and the
+ * host can write only between steps.  A step with budget B runs a lone
+ * strand in ceil(B / 256) slices, so up to 65 x ceil(B / 256) of its
+ * statements run before a timer that came due is fired or a host write
+ * is seen (it was ceil(B / 256)): 65 for a budget of 256, 130 for 512.
+ * A host that wants timers noticed sooner passes a smaller budget.
+ * While an injection is pending the strand stops at every `;` as it
+ * used to.  Strands that are ready together keep their relative order;
+ * strands that become ready at different times, by timers say, can
+ * interleave differently.  An unbudgeted step runs until nothing is
+ * runnable, as it always has.
  *
  * Returns a URBI_STEP_* value, or a negative URBI_ERR_* code.  On
  * URBI_STEP_IDLE_UNTIL the next timer deadline is written through

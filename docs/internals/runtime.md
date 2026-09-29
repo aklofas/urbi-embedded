@@ -135,11 +135,12 @@ and refills the entry.
   against the VM's one slot epoch. The epoch is bumped by `src/rt/uobj.c`
   on a structural change — a slot added or removed, a slot's attributes
   changed, or the proto list edited — to any object flagged
-  `UOBJ_F_CACHED`. The one attribute set outside `uobj.c` bumps
+  `UOBJ_F_CACHED`. `UOBJ_F_CACHED` is set on every object a
+  cache-filling walk passes through: the receiver, each intermediate
+  proto, and the owner. The one attribute set outside `uobj.c` bumps
   nothing: the change-event bit `src/rt/uwatch.c` sets when a watcher
   subscribes to a slot, or when the slot it subscribed to is created. No
-  hit's validity depends on it, and a write hit reads it live. That flag is set on every object a cache-filling walk
-  passes through: the receiver, each intermediate proto, and the owner.
+  hit's validity depends on it, and a write hit reads it live.
   An object no walk has visited is unflagged, so building and populating
   fresh objects in a loop bumps nothing. The flag is never cleared, and
   a collection bumps the epoch too; once the epoch passes `0x80000000` a
@@ -248,15 +249,23 @@ at every `;`. Under `urbi_step` with a budget, a lone strand therefore
 advances up to 65 statements per slice where it advanced one. That holds
 for a loop with a `;` in its body as well as for straight-line code; a
 loop without a `;` is still bounded per slice by the backward-jump
-budget. A timer that comes due meanwhile and a host write made between
-steps are both noticed up to 64 statements later, because timers fire
-and host writes happen only between steps. A pending ISR injection is
-not delayed: the ring check refuses the fast path at the next `;`.
+budget.
+
+Timers are fired and the ISR ring drained only at the start of a step
+(`usched_step`, before its dispatch loop), and the host writes only
+between steps. A step with budget B dispatches a lone strand in
+ceil(B / 256) slices, so up to 65 × ceil(B / 256) of its statements run
+before a timer that came due is fired or a host write is seen, where it
+was ceil(B / 256): 65 for a budget of 256, 130 for 512. The bound is per
+slice, so it grows with the budget; a host that wants timers noticed
+sooner passes a smaller budget. While an injection is pending, the ring
+check refuses the fast path, so the strand stops at every `;` as before.
 
 Strands that are READY TOGETHER keep their relative order, because the
 fast path is only ever taken when no other strand is ready. Strands that
 become ready at different times can interleave differently than before:
-two strands whose timers are 1 ms apart logged
+two strands whose timers are 1 ms apart, stepped with a budget of 256 and
+the clock advanced 1 ms per step, logged
 `a1 a2 b1 a3 b2 a4 b3 a5 b4 b5` and now log
 `a1 a2 a3 a4 a5 b1 b2 b3 b4 b5`. Unbudgeted stepping runs until nothing
 is runnable and gives the same results as before.
@@ -265,9 +274,10 @@ is runnable and gives the same results as before.
 
 One run queue, one timer heap, and `park`/`wake`, in `src/rt/usched.c`.
 `usched_step` dispatches strands from the queue until its budget is
-spent or nothing is runnable, giving each dispatch a slice of at most
-`USCHED_SLICE` (256); a host that wants to interleave the VM with its own
-work calls `urbi_step` in a loop with a budget and sleeps on
+spent or nothing is runnable. Under a budget each dispatch gets a slice
+of at most `USCHED_SLICE` (256); an unbudgeted step's slices have no
+limit. A host that wants to interleave the VM with its own work calls
+`urbi_step` in a loop with a budget and sleeps on
 `next_wake_us` in between. Within a slice only backward jumps consume
 budget. A strand returns from its slice at a `;` (after the fast path
 above has let up to 64 of them pass), at a park, at its death, or when

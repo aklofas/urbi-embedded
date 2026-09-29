@@ -255,15 +255,24 @@ and nothing is pending against it: then it keeps going through up to 64
 `;` in a row. So under a budget a lone busy strand advances up to 65
 statements per slice where it used to advance one, in a loop with a `;`
 in its body as well as in straight-line code; a loop without one is still
-cut off by the backward-jump count. A timer that comes due meanwhile, and
-a host write made between two steps, are noticed up to 64 statements
-later. Strands that are ready together keep their relative order, but
-strands that become ready at different times can interleave differently:
-two strands whose timers are 1 ms apart used to log
+cut off by the backward-jump count.
+
+Timers are fired, and interrupt injections delivered, only at the start
+of a step, and the host can write only between steps. A step with budget
+B runs a lone strand in ceil(B / 256) slices, so up to 65 × ceil(B / 256)
+of its statements run before a timer that came due is fired or a host
+write is seen, where it used to be ceil(B / 256): 65 for a budget of
+256, 130 for 512. To have timers noticed sooner, pass a smaller budget.
+While an injection is pending the strand stops at every `;` as it used
+to.
+
+Strands that are ready together keep their relative order, but strands
+that become ready at different times can interleave differently: two
+strands whose timers are 1 ms apart, stepped with a budget of 256 and
+the clock advanced 1 ms per step, used to log
 `a1 a2 b1 a3 b2 a4 b3 a5 b4 b5` and now log
-`a1 a2 a3 a4 a5 b1 b2 b3 b4 b5`. A pending interrupt injection ends the
-run at the next `;`. An unbudgeted step runs until nothing is runnable
-and gives the same results as before.
+`a1 a2 a3 a4 a5 b1 b2 b3 b4 b5`. An unbudgeted step runs until nothing
+is runnable and gives the same results as before.
 
 Quiescent does not mean finished. A VM waiting on an event the host has
 not emitted yet is quiescent, and stays that way until the host emits it:
