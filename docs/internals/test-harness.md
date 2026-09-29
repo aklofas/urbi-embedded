@@ -125,8 +125,8 @@ rationale; `tests/probes/baseline-timings.md` holds the old core's
 numbers.
 
 The timing probe is `make test-bench`, deliberately NOT part of `make
-test`: `make test` is one gate of a 20-way parallel releasetest sweep,
-and a wall-clock number taken while nineteen other compiles saturate the
+test`: `make test` is one gate of a 21-way parallel releasetest sweep,
+and a wall-clock number taken while twenty other compiles saturate the
 machine is the machine's number, not the interpreter's — the same probe
 read 4.99x under `-j32` and 1.46x solo. It is not part of `make
 releasetest` either: the baseline is wall-clock seconds recorded on one
@@ -146,9 +146,10 @@ an uninstrumented baseline would measure the instrumentation.
 | `make test-gc-stress` | `-O1 -g -DURBI_GC_STRESS=1` | `build/host-gc-stress/` | rooting gaps — collects before every allocation |
 | `make test-valgrind` | `-O1 -g` under memcheck | `build/host-valgrind/` | uninitialized reads ASan cannot see |
 | `make test-switch` | `-Os -DURBI_VM_FORCE_SWITCH=1` | `build/host-switch/` | keeps the portable dispatch path honest |
+| `make test-cache-verify` | `-O1 -g -DURBI_SLOT_CACHE_VERIFY=1` | `build/host-cache-verify/` | a slot-cache hit that disagrees with the uncached lookup |
 | `make test-o2` | `-O2 -g` | `build/host-o2/` | the level desktop embedders actually use |
 | `make test-bench` | `-Os` | `build/host/` | the timing probe, alone, on the baseline machine |
-| `make releasetest` | all of the above except `test-bench`: 20 gates in parallel, then 2 alone | — | before a tag |
+| `make releasetest` | all of the above except `test-bench`: 21 gates in parallel, then 2 alone | — | before a tag |
 
 Build directories are disjoint, so the parallel sweep does not race.
 

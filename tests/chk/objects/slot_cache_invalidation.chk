@@ -1,0 +1,84 @@
+# Covers: a slot read through one site keeps giving the right answer
+#         while the objects behind it change: a shadowing slot appears
+#         on an intermediate prototype and then on the receiver, slots
+#         are removed again, the prototype list grows and shrinks, and a
+#         watcher observes a write made through a warm site.
+#
+# Each reader is a function so the SAME site runs every time.  Every
+# reader is called twice before the first change, which is what makes the
+# second call one the runtime may answer from memory.
+
+var P = Object.clone() | 0
+[00000000] 0
+var P.v = 1
+[00000000] 1
+var M = P.clone() | 0
+[00000000] 0
+var o = M.clone() | 0
+[00000000] 0
+var read = function() { o.v } | 0
+[00000000] 0
+read()
+[00000000] 1
+read()
+[00000000] 1
+var M.v = 2
+[00000000] 2
+read()
+[00000000] 2
+read()
+[00000000] 2
+var o.v = 3
+[00000000] 3
+read()
+[00000000] 3
+o.removeSlot("v") | 0
+[00000000] 0
+read()
+[00000000] 2
+M.removeSlot("v") | 0
+[00000000] 0
+read()
+[00000000] 1
+var Q = Object.clone() | 0
+[00000000] 0
+var Q.w = 7
+[00000000] 7
+var readw = function() { o.w } | 0
+[00000000] 0
+o.addProto(Q) | 0
+[00000000] 0
+readw()
+[00000000] 7
+readw()
+[00000000] 7
+var R = Object.clone() | 0
+[00000000] 0
+var R.w = 8
+[00000000] 8
+o.addProto(R) | 0
+[00000000] 0
+readw()
+[00000000] 8
+o.removeProto(R) | 0
+[00000000] 0
+readw()
+[00000000] 7
+var o.n = 0
+[00000000] 0
+var bump = function() { o.n = o.n + 1 } | 0
+[00000000] 0
+bump()
+[00000000] 1
+bump()
+[00000000] 2
+var hits = 0
+[00000000] 0
+at (o.n == 3) hits = hits + 1
+[00000000] nil
+bump()
+[00000000] 3
+hits
+[00000000] 1
+o.n
+[00000000] 3

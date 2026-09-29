@@ -568,6 +568,16 @@ test-switch:
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_VM_FORCE_SWITCH=1" \
 		test
 
+# test-cache-verify — every slot-cache hit also runs the uncached lookup
+# and traps when the two disagree.  The whole aggregate runs under it, so
+# a stale entry anywhere in the corpus is a crash with a fixture name on
+# it rather than a wrong value nobody compared.
+.PHONY: test-cache-verify
+test-cache-verify:
+	$(MAKE) TARGET=host-cache-verify \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_SLOT_CACHE_VERIFY=1" \
+		test
+
 # refactor-3 TEST-GAP-03: -O2 build variant.  The matrix was -Os/-O0/-O1
 # only; the v0.10.11 channel_proto bug was -Os-specific, proving the suite
 # is optimization-level sensitive.  Runs the full unit+integration+chk
@@ -688,7 +698,7 @@ test-corpus-sanitize:
 # hard-fail.
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
-    test-gc-stress \
+    test-gc-stress test-cache-verify \
     lint docs-check coverage \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism \
@@ -984,4 +994,4 @@ check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
 .PHONY: test-unit test-probes test-bench test-embedding-guide
-.PHONY: all core test test-asan test-ubsan test-debug test-switch clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-fuzz-smoke test-o2 force-flagstamp
+.PHONY: all core test test-asan test-ubsan test-debug test-switch test-cache-verify clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-fuzz-smoke test-o2 force-flagstamp
