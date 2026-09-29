@@ -123,7 +123,11 @@ condition falls and rises again while the body runs, the body's death spawns
 the owed `else` arm first and then the next body; a fall, a rise and a second
 fall owe one `else` arm, not two. A body that dies by a throw hands over the
 same way. Cancelling the watcher (`tag.stop()`, a dropped realm) drops a
-pending `else` arm. The arm is spawned as its own strand and is not tracked as
+pending `else` arm; that is the only thing that does. A condition that raises
+disarms the watcher for the edges still to come but not for one already seen:
+the owed arm is spawned at the body's death before the condition is asked
+again, and a watcher disarmed by a raise in a drain stays on `vm->watch.all`
+until its body dies and the arm is served. The arm is spawned as its own strand and is not tracked as
 `body_strand`, so an `else` arm that itself sleeps can still be overtaken by
 the next body.
 

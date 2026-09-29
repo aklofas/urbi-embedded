@@ -15,7 +15,7 @@
 ## host: run Realm.x = 0
 ## host: step 1000
 ## host: run Realm.log
-## host: advance-clock 20000
+## host: advance-clock 20
 ## host: step 1000
 ## host: run Realm.log
 [00000000] 0

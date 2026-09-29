@@ -67,7 +67,10 @@ static void uwatch_sweep(UVM *vm)
     if (ws->draining) return;
     for (UWatcher **pp = &ws->all; *pp; ) {
         UWatcher *w = *pp;
-        if (w->armed) { pp = &w->next; continue; }
+        /* A watcher disarmed by a raising condition may still owe an else
+         * arm to a body in flight; it stays on the list, its only root,
+         * until that body's death serves it.  A cancel clears the debt. */
+        if (w->armed || (w->leave_pending && w->body_strand)) { pp = &w->next; continue; }
         *pp = w->next;
         w->next = NULL;
         uwatch_unlink_from_event(w);
@@ -299,12 +302,14 @@ void uwatch_body_done(UVM *vm, const UStrand *dead)
     while (w && w->body_strand != dead) w = w->next;
     if (w == NULL) return;
     w->body_strand = NULL;
-    /* Taken now, whatever happens below: an else arm is owed to this body
-     * only, and a watcher that is gone, or whose condition raises, owes
-     * nothing. */
+    if (w->mode != (uint8_t)UWATCH_WHENEVER || w->cond == NULL) return;
+    /* An else arm owed here was earned by a fall a successful evaluation
+     * saw.  A cancel clears the debt (uwatch_tag_stopped,
+     * uwatch_realm_dropped); a raise only disarms, so a debt that
+     * survives to here is served even on a disarmed watcher. */
     bool owed = w->leave_pending != 0;
     w->leave_pending = 0;
-    if (!w->armed || w->mode != (uint8_t)UWATCH_WHENEVER || w->cond == NULL) return;
+    if (!w->armed && !owed) return;
 
     /* THE SAME BRACKET uwatch_drain AND uwatch_event_fired USE, and for the
      * same reason: the condition below is arbitrary script, and a cancel
@@ -319,14 +324,15 @@ void uwatch_body_done(UVM *vm, const UStrand *dead)
     ws->draining = 1;
 
     /* `whenever` is a reactive loop: the body having finished is the
-     * question "does the condition still hold?", asked again. */
+     * question "does the condition still hold?", asked again.  The else
+     * arm the condition earned while the body ran goes first, before the
+     * condition is asked again and whatever it answers: edges
+     * are served in the order they happened, and a raise now cannot take
+     * back a fall already seen. */
+    if (owed) uwatch_leave(vm, w);
     bool now = false;
-    if (uwatch_eval_cond(vm, w, &now) == 0 && w->armed) {
+    if (w->armed && uwatch_eval_cond(vm, w, &now) == 0 && w->armed) {
         w->last = now ? 1u : 0u;
-        /* An else arm the condition earned while the body ran goes
-         * first, whatever the condition says now: edges are served in
-         * the order they happened. */
-        if (owed) uwatch_leave(vm, w);
         if (now) uwatch_fire(vm, w, w->payload, false);
         else if (!owed) uwatch_leave(vm, w);
         w->payload = uv_nil();

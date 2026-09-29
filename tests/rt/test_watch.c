@@ -780,6 +780,100 @@ static void a_body_that_throws_still_hands_over_to_its_else(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* A raise disarms a watcher for the edges still to come; it does not take
+ * back an edge already seen.  The fall is seen while the body sleeps, the
+ * body's last statement makes the condition raise, and the re-evaluation
+ * at the body's death is the raise: the else arm the fall earned still
+ * runs. */
+static void a_raising_condition_still_serves_the_else_it_owed(void)
+{
+    Fix fx; fix_open(&fx);
+    char buf[64];
+    run_ok(&fx, "var x = 0 | var boom = 0 | var log = \"\"");
+    run_ok(&fx, "var c = function() { if (boom > 0) throw \"raised\"; x > 0 }");
+    run_ok(&fx, "whenever (c()) { log = log + \"b1 \"; sleep(10ms); log = log + \"b2 \"; boom = 1 }"
+                " else { log = log + \"else \" }");
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    set_int(&fx, "x", 0); slices(&fx, 0);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 \"");
+    RT_EQ(fx.diag_hits, 0);
+    slices(&fx, 20000);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 b2 else \"");
+    RT_EQ(fx.diag_hits, 1);
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* The same raise, but in a drain while the body is still asleep: the
+ * watcher is disarmed at once, yet the else arm it owes still waits for
+ * the body and runs when it finishes. */
+static void a_raise_in_the_drain_keeps_the_owed_else_for_the_body_to_finish(void)
+{
+    Fix fx; fix_open(&fx);
+    char buf[64];
+    run_ok(&fx, "var x = 0 | var boom = 0 | var log = \"\"");
+    run_ok(&fx, "var c = function() { if (boom > 0) throw \"raised\"; x > 0 }");
+    run_ok(&fx, "whenever (c()) { log = log + \"b1 \"; sleep(10ms); log = log + \"b2 \" }"
+                " else { log = log + \"else \" }");
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    set_int(&fx, "x", 0); slices(&fx, 0);
+    set_int(&fx, "boom", 1); slices(&fx, 0);          /* the drain raises */
+    RT_EQ(fx.diag_hits, 1);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 \"");
+    slices(&fx, 20000);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 b2 else \"");
+    RT_EQ(fx.diag_hits, 1);
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* A cancel after such a raise still drops the owed arm: cancelling is the
+ * one thing that takes an earned else arm back.  The raise has already
+ * disarmed the watcher, so it is the cancel's clearing of the owed arm,
+ * not the disarm, that keeps the body's death from serving it. */
+static void a_cancel_after_a_raise_drops_the_owed_else(void)
+{
+    Fix fx; fix_open(&fx);
+    char buf[64];
+    run_ok(&fx, "var x = 0 | var boom = 0 | var log = \"\" | var t = Tag.new()");
+    run_ok(&fx, "var c = function() { if (boom > 0) throw \"raised\"; x > 0 }");
+    run_ok(&fx, "t: whenever (c()) { log = log + \"b1 \"; sleep(10ms); log = log + \"b2 \" }"
+                " else { log = log + \"else \" }");
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    set_int(&fx, "x", 0); slices(&fx, 0);
+    set_int(&fx, "boom", 1); slices(&fx, 0);          /* disarmed, arm still owed */
+    run_ok(&fx, "t.stop()");
+    slices(&fx, 20000);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b1 \"");
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* THE RECORDED RESIDUAL, pinned so that a change to it is deliberate.  The
+ * else arm is a strand of its own and is not tracked as the body, so an
+ * else arm that sleeps is overtaken by the body the next rise earned: the
+ * arms start in edge order but still overlap here. */
+static void a_sleeping_else_arm_is_overtaken_by_the_next_body(void)
+{
+    Fix fx; fix_open(&fx);
+    char buf[64];
+    run_ok(&fx, "var x = 0 | var n = 0 | var log = \"\"");
+    run_ok(&fx, "whenever (x > 0) { n = n + 1; log = log + \"b \"; sleep(10ms); log = log + \"B \";"
+                " if (n >= 2) x = 0 } else { log = log + \"e \"; sleep(5ms); log = log + \"E \" }");
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    set_int(&fx, "x", 0); slices(&fx, 0);
+    set_int(&fx, "x", 1); slices(&fx, 0);
+    slices(&fx, 11000);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b B e b \"");
+    for (int k = 0; k < 3; k++) slices(&fx, 11000);
+    RT_STREQ(global_shown(&fx, "log", buf, sizeof buf), "\"b B e b E B e E \"");
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 /* The arm that never overlapped is unchanged: a body that has already
  * finished when the condition falls gets its else arm at once.  This body
  * takes its own condition down, so an unbudgeted pump is bounded. */
@@ -825,4 +919,8 @@ RT_SUITE(rt_watch_suite) {
     rt_run("a_cancelled_watcher_drops_its_pending_else", a_cancelled_watcher_drops_its_pending_else);
     rt_run("a_body_that_throws_still_hands_over_to_its_else", a_body_that_throws_still_hands_over_to_its_else);
     rt_run("an_else_arm_with_no_body_in_flight_is_immediate", an_else_arm_with_no_body_in_flight_is_immediate);
+    rt_run("a_raising_condition_still_serves_the_else_it_owed", a_raising_condition_still_serves_the_else_it_owed);
+    rt_run("a_raise_in_the_drain_keeps_the_owed_else_for_the_body_to_finish", a_raise_in_the_drain_keeps_the_owed_else_for_the_body_to_finish);
+    rt_run("a_cancel_after_a_raise_drops_the_owed_else", a_cancel_after_a_raise_drops_the_owed_else);
+    rt_run("a_sleeping_else_arm_is_overtaken_by_the_next_body", a_sleeping_else_arm_is_overtaken_by_the_next_body);
 }

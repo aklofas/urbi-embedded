@@ -44,7 +44,10 @@
  * A CONDITION THAT THROWS kills nothing.  The throw is absorbed at the
  * spare-strand boundary, reported once through the diag hook, and the
  * watcher is DISARMED -- a condition that raises would otherwise raise
- * again on every drain for the life of the VM.
+ * again on every drain for the life of the VM.  Disarming stops the edges
+ * still to come, not one already seen: a `whenever` else arm owed to a
+ * body in flight is still run when that body dies.  Only a cancel drops
+ * it.
  *
  * Layering: uwatch ranks above uexec and below urealm.  The exec core and
  * the scheduler reach it through the declarations in rt/uexec.h. */
