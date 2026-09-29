@@ -21,7 +21,7 @@
 
 int main(void)
 {
-    ProbeAlloc a = { 0, 0, 0 };
+    ProbeAlloc a = { 0, 0, 0, 0, 0 };
     UVM *vm = urbi_open(probe_alloc, &a, NULL);
     if (!vm) { fprintf(stderr, "boot_heap: urbi_open failed\n"); return 1; }
 

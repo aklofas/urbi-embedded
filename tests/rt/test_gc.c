@@ -159,6 +159,66 @@ static void gray_overflow_all_survive(void) {
     RT_EQ(vm.gc.cells_live, 200u);
     fakevm_destroy(&vm);
 }
+/* A counting allocator with a ceiling: a pacing regression then fails by
+ * refusal instead of by growing without bound. */
+typedef struct { size_t live, peak, cap; unsigned long refused; } GcAlloc;
+static void *gc_counting_alloc(void *ptr, size_t n, void *ud) {
+    GcAlloc *a = (GcAlloc *)ud;
+    size_t *hdr = ptr ? ((size_t *)ptr) - 2 : NULL;
+    size_t old = hdr ? hdr[0] : 0;
+    if (n == 0) {
+        if (hdr) { a->live -= old; free(hdr); }
+        return NULL;
+    }
+    if (a->cap && a->live - old + n > a->cap) { a->refused++; return NULL; }
+    size_t *nh = (size_t *)realloc(hdr, n + 2 * sizeof(size_t));
+    if (!nh) return NULL;
+    nh[0] = n;
+    a->live += n - old;
+    if (a->live > a->peak) a->peak = a->live;
+    return (void *)(nh + 2);
+}
+/* Garbage whose raw block is bigger than its cell: every iteration adds
+ * both to the allocation count, and a baseline that grew with the raw
+ * bytes would stay ahead of that count for ever. */
+static void pacing_triggers_for_garbage_that_owns_raw_memory(void) {
+    GcAlloc a = { 0, 0, (size_t)1024 * 1024, 0 };
+    struct UVM vm; fakevm_init_with(&vm, NULL, 0, gc_counting_alloc, &a);
+    uint32_t cycles0 = vm.gc.cycles;
+    for (int i = 0; i < 2000; i++) {
+        UList *l = (UList *)ugc_alloc(&vm, UCELL_LIST, 64);
+        RT_CHECK(l != NULL);
+        if (!l) break;
+        l->cap = (uint32_t)(256 / sizeof(UValue));
+        l->items = (UValue *)ugc_raw_alloc(&vm, (size_t)l->cap * sizeof(UValue));   /* freed by ulist_finalize */
+        if (!l->items) l->cap = 0;
+        ugc_maybe_collect(&vm);
+    }
+    RT_CHECK(vm.gc.cycles > cycles0);
+    RT_EQ(a.refused, 0ul);
+    if (a.peak >= 64u * 1024u) printf("    peak %lu bytes\n", (unsigned long)a.peak);
+    RT_CHECK(a.peak < 64u * 1024u);
+    fakevm_destroy(&vm);
+    RT_EQ(a.live, 0u);
+}
+static void the_pacing_baseline_does_not_move_between_collections(void) {
+    struct UVM vm; fakevm_init(&vm, NULL, 0);
+    ugc_collect(&vm);
+    size_t base = vm.gc.pace_base, since = vm.gc.bytes_since, raw = vm.gc.raw_live;
+    void *p = ugc_raw_alloc(&vm, 10 * 1024);
+    RT_CHECK(p != NULL);
+    RT_EQ(vm.gc.pace_base, base);
+    RT_EQ(vm.gc.bytes_since, since + 10 * 1024);
+    RT_EQ(vm.gc.raw_live, raw + 10 * 1024);
+    /* And so the raw bytes alone can start a cycle: ten kilobytes is more
+     * than twice what a bare VM keeps live. */
+    vm.gc.threshold = 1024;
+    RT_CHECK(base * 2 < 10 * 1024);
+    RT_CHECK(ugc_should_collect(&vm.gc));
+    ugc_raw_free(&vm, p, 10 * 1024);
+    RT_EQ(vm.gc.pace_base, base);
+    fakevm_destroy(&vm);
+}
 RT_SUITE(rt_gc_suite) {
     rt_run("alloc_and_collect_unrooted", alloc_and_collect_unrooted);
     rt_run("rooted_survives", rooted_survives);
@@ -168,4 +228,6 @@ RT_SUITE(rt_gc_suite) {
     rt_run("pacing_triggers_mid_loop", pacing_triggers_mid_loop);
     rt_run("pinned_cell_traces_child", pinned_cell_traces_child);
     rt_run("gray_overflow_all_survive", gray_overflow_all_survive);
+    rt_run("pacing_triggers_for_garbage_that_owns_raw_memory", pacing_triggers_for_garbage_that_owns_raw_memory);
+    rt_run("the_pacing_baseline_does_not_move_between_collections", the_pacing_baseline_does_not_move_between_collections);
 }

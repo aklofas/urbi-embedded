@@ -1,0 +1,30 @@
+# Covers: allocating loops -- objects with slots, lists, joined forks and a
+#         `whenever` re-firing its own body -- run to completion and leave
+#         the right count.  Each of these shapes owns memory beside its
+#         cell (a slot array, an item array, a strand's stack and frames),
+#         and every iteration's garbage has to be collected while the loop
+#         runs rather than after it.
+#
+#         This fixture pins RESULTS, not memory: a golden diff cannot see a
+#         heap's high-water mark.  The memory half lives in the runtime's
+#         own cases (tests/rt: the object, list, fork and whenever loops run
+#         under an allocator ceiling) and in the leak probe's peak column.
+#
+#         The `whenever` is raised by the host and clears its own condition
+#         after 5000 rounds, so the one step that follows runs the whole
+#         reactive loop and returns.
+
+## host: run var i = 0; while (i < 5000) { var o = Object.new(); var o.a = i; var o.b = i; var o.c = i; var o.d = i; i = i + 1 }; i
+## host: run var j = 0; while (j < 5000) { var l = [j, j, j, j, j, j, j, j]; j = j + 1 }; j
+## host: run var k = 0; var n = 0; while (k < 5000) { { n = n + 1 } & { n = n + 1 }; k = k + 1 }; n
+## host: run var g = 0; var c = 0; whenever (g == 1) { c = c + 1; if (c >= 5000) g = 0 }; c
+## host: set-global g 1
+## host: step 0
+## host: run c
+[00000000] 5000
+[00000000] 5000
+[00000000] 10000
+[00000000] 0
+[00000000] set-global: ok
+[00000000] step: QUIESCENT
+[00000000] 5000

@@ -19,7 +19,9 @@
 
 /* --- fixture ------------------------------------------------------------ */
 
-typedef struct { size_t live, peak; } WatchAlloc;
+/* `cap`, when set, refuses any request that would take the live total
+ * past it -- see the bounded-memory cases. */
+typedef struct { size_t live, peak, cap; unsigned long refused; } WatchAlloc;
 
 static void *watch_alloc(void *ptr, size_t n, void *ud)
 {
@@ -30,6 +32,7 @@ static void *watch_alloc(void *ptr, size_t n, void *ud)
         if (hdr) { ca->live -= old; free(hdr); }
         return NULL;
     }
+    if (ca->cap && ca->live - old + n > ca->cap) { ca->refused++; return NULL; }
     size_t *nh = (size_t *)realloc(hdr, n + 2 * sizeof(size_t));
     if (!nh) return NULL;
     nh[0] = n;
@@ -934,6 +937,110 @@ static void a_freed_realm_drops_a_pending_else_arm(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* --- bounded memory ------------------------------------------------------
+ *
+ * A `whenever` whose condition keeps holding is a loop: each body that
+ * finishes asks the condition again and spawns the next.  The condition
+ * is raised by the host and cleared by the body itself after N rounds, so
+ * ONE unbudgeted step runs the whole loop and returns.  Every case sets a
+ * ceiling before the loop starts. */
+
+#define WATCH_BOUND   ((size_t)256 * 1024)
+#define WATCH_CEILING ((size_t)1024 * 1024)
+
+static void whenever_loop_setup(Fix *fx, long rounds)
+{
+    char src[160];
+    run_ok(fx, "var g = 0");
+    run_ok(fx, "var c = 0");
+    snprintf(src, sizeof src, "whenever (g == 1) { c = c + 1; if (c >= %ld) g = 0 }", rounds);
+    run_ok(fx, src);
+}
+
+static void a_whenever_loop_runs_in_bounded_memory(void)
+{
+    Fix fx; fix_open(&fx);
+    whenever_loop_setup(&fx, 100000);
+    size_t base = fx.ca.live;
+    fx.ca.cap = base + WATCH_CEILING;
+    fx.ca.peak = fx.ca.live;
+    set_int(&fx, "g", 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "c"), 100000);
+    if (fx.ca.peak - base >= WATCH_BOUND || fx.ca.refused)
+        printf("    peak %lu over a base of %lu, %lu refused\n",
+               (unsigned long)fx.ca.peak, (unsigned long)base, fx.ca.refused);
+    RT_EQ(fx.ca.refused, 0ul);
+    RT_CHECK(fx.ca.peak - base < WATCH_BOUND);
+    fx.ca.cap = 0;
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+static void a_whenever_loop_completes_under_a_small_heap(void)
+{
+    Fix fx; fix_open(&fx);
+    whenever_loop_setup(&fx, 20000);
+    fx.ca.cap = fx.ca.live + (size_t)128 * 1024;
+    set_int(&fx, "g", 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "c"), 20000);
+    RT_EQ(fx.ca.refused, 0ul);
+    fx.ca.cap = 0;
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* The body's spawn is refused: the step must say so, not come back
+ * QUIESCENT with a clean error channel.  The ceiling sits a few bytes
+ * above what raising and evaluating the condition needs (a dry run on a
+ * second VM measures that), so the first thing refused is the body's
+ * strand. */
+static size_t whenever_fire_margin(void)
+{
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var g = 0");
+    run_ok(&fx, "var c = 0");
+    run_ok(&fx, "whenever (g == 1) { c = c + 1; g = 0 }");
+    urbi_gc_collect(fx.vm);
+    size_t base = fx.ca.live;
+    fx.ca.peak = base;
+    set_int(&fx, "g", 1);
+    size_t after_set = fx.ca.peak;
+    fix_close(&fx);
+    return after_set - base;
+}
+
+static void a_watcher_that_cannot_spawn_reports_it(void)
+{
+    size_t margin = whenever_fire_margin();
+    Fix fx; fix_open(&fx);
+    run_ok(&fx, "var g = 0");
+    run_ok(&fx, "var c = 0");
+    run_ok(&fx, "whenever (g == 1) { c = c + 1; g = 0 }");
+    urbi_gc_collect(fx.vm);
+    fx.diag_hits = 0;
+    fx.ca.cap = fx.ca.live + margin + 16;
+    set_int(&fx, "g", 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_CHECK(fx.ca.refused > 0);
+    UErrorInfo info;
+    RT_EQ(urbi_last_error(fx.vm, &info), URBI_ERR_OOM);
+    RT_CHECK(info.message && strstr(info.message, "whenever body") != NULL);
+    RT_EQ(fx.diag_hits, 1);
+    RT_CHECK(strstr(fx.diag_last, "whenever body") != NULL);
+    RT_EQ(global_int(&fx, "c"), 0);
+
+    /* Memory back: the watcher is still armed, and the next step runs the
+     * body the refused one could not. */
+    fx.ca.cap = 0;
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "c"), 1);
+    RT_EQ(urbi_last_error(fx.vm, &info), URBI_OK);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 RT_SUITE(rt_watch_suite) {
     rt_run("at_fires_once_per_rising_edge", at_fires_once_per_rising_edge);
     rt_run("at_fires_when_the_condition_already_holds", at_fires_when_the_condition_already_holds);
@@ -969,4 +1076,7 @@ RT_SUITE(rt_watch_suite) {
     rt_run("a_cancel_after_a_raise_drops_the_owed_else", a_cancel_after_a_raise_drops_the_owed_else);
     rt_run("a_sleeping_else_arm_is_overtaken_by_the_next_body", a_sleeping_else_arm_is_overtaken_by_the_next_body);
     rt_run("a_freed_realm_drops_a_pending_else_arm", a_freed_realm_drops_a_pending_else_arm);
+    rt_run("a_whenever_loop_runs_in_bounded_memory", a_whenever_loop_runs_in_bounded_memory);
+    rt_run("a_whenever_loop_completes_under_a_small_heap", a_whenever_loop_completes_under_a_small_heap);
+    rt_run("a_watcher_that_cannot_spawn_reports_it", a_watcher_that_cannot_spawn_reports_it);
 }

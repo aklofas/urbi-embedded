@@ -1,6 +1,7 @@
 #include "rtest.h"
 #include "fakevm.h"
 #include "rt/uobj.h"
+#include "urbi/urbi.h"
 static void local_slots_grow(void) {
     struct UVM vm; fakevm_init(&vm, NULL, 0);
     UObject *o = uobj_new(&vm, NULL);
@@ -163,6 +164,74 @@ static void resolve_depth_cap(void) {
     RT_CHECK(!uobj_resolve(&vm, chain, usym_cstr(&vm, "nope"), &r));
     fakevm_destroy(&vm);
 }
+/* --- allocating loops, through the public API -----------------------------
+ *
+ * An object with slots and a list both own a raw array beside their cell.
+ * Fifty thousand of each, dropped as soon as they are made, must be
+ * collected as the loop goes, not held until it ends.  The allocator has a
+ * ceiling so that a regression fails by refusal. */
+
+typedef struct { size_t live, peak, cap; unsigned long refused; } LoopAlloc;
+
+static void *loop_alloc(void *ptr, size_t n, void *ud)
+{
+    LoopAlloc *a = (LoopAlloc *)ud;
+    size_t *hdr = ptr ? ((size_t *)ptr) - 2 : NULL;
+    size_t old = hdr ? hdr[0] : 0;
+    if (n == 0) {
+        if (hdr) { a->live -= old; free(hdr); }
+        return NULL;
+    }
+    if (a->cap && a->live - old + n > a->cap) { a->refused++; return NULL; }
+    size_t *nh = (size_t *)realloc(hdr, n + 2 * sizeof(size_t));
+    if (!nh) return NULL;
+    nh[0] = n;
+    a->live += n - old;
+    if (a->live > a->peak) a->peak = a->live;
+    return (void *)(nh + 2);
+}
+
+static void loop_in_bounded_memory(const char *what, const char *src)
+{
+    LoopAlloc a = { 0, 0, 0, 0 };
+    UVM *vm = urbi_open(loop_alloc, &a, NULL);
+    RT_CHECK(vm != NULL);
+    if (!vm) return;
+    size_t base = a.live;
+    a.cap = base + (size_t)1024 * 1024;
+    UGcStats st;
+    urbi_gc_stats(vm, &st);
+    uint32_t cycles0 = st.cycles;
+    UValue out = urbi_make_nil();
+    char err[256] = { 0 };
+    int rc = urbi_run(vm, urbi_realm_main(vm), src, strlen(src), "<test>", &out, err, sizeof err);
+    RT_EQ(rc, URBI_OK);
+    RT_CHECK(out.kind == UVAL_INT && out.v.i == 50000);
+    urbi_gc_stats(vm, &st);
+    RT_CHECK(st.cycles > cycles0);
+    if (a.peak - base >= (size_t)256 * 1024 || a.refused)
+        printf("    %s: rc=%d peak %lu over a base of %lu, %lu refused, %u cycles\n", what, rc,
+               (unsigned long)a.peak, (unsigned long)base, a.refused, st.cycles - cycles0);
+    RT_EQ(a.refused, 0ul);
+    RT_CHECK(a.peak - base < (size_t)256 * 1024);
+    a.cap = 0;
+    urbi_close(vm);
+    RT_EQ(a.live, 0u);
+}
+
+static void an_object_loop_runs_in_bounded_memory(void)
+{
+    loop_in_bounded_memory("object loop",
+        "var i = 0; while (i < 50000) { var o = Object.new();"
+        " var o.a = i; var o.b = i; var o.c = i; var o.d = i; i = i + 1 }; i");
+}
+
+static void a_list_loop_runs_in_bounded_memory(void)
+{
+    loop_in_bounded_memory("list loop",
+        "var i = 0; while (i < 50000) { var l = [i, i, i, i, i, i, i, i]; i = i + 1 }; i");
+}
+
 RT_SUITE(rt_obj_suite) {
     rt_run("local_slots_grow", local_slots_grow);
     rt_run("proto_resolution_and_diamond", proto_resolution_and_diamond);
@@ -172,4 +241,6 @@ RT_SUITE(rt_obj_suite) {
     rt_run("remove_proto", remove_proto);
     rt_run("getter_slot_survives_gc", getter_slot_survives_gc);
     rt_run("resolve_depth_cap", resolve_depth_cap);
+    rt_run("an_object_loop_runs_in_bounded_memory", an_object_loop_runs_in_bounded_memory);
+    rt_run("a_list_loop_runs_in_bounded_memory", a_list_loop_runs_in_bounded_memory);
 }

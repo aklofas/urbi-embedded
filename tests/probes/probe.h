@@ -35,6 +35,8 @@ typedef struct {
     size_t live;        /* bytes currently out on loan */
     size_t peak;        /* high-water mark */
     size_t blocks;
+    size_t cap;         /* when nonzero, a request past it is refused */
+    size_t refused;
 } ProbeAlloc;
 
 /* Each block is handed back with its size in a header, since realloc-shaped
@@ -50,6 +52,7 @@ static inline void *probe_alloc(void *ptr, size_t n, void *ud)
         return NULL;
     }
     size_t old = h ? h->n : 0;
+    if (a->cap && a->live - old + n > a->cap) { a->refused++; return NULL; }
     ProbeHdr *nh = (ProbeHdr *)realloc(h, sizeof(ProbeHdr) + n);
     if (!nh) return NULL;
     nh->n = n;

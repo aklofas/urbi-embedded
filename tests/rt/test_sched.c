@@ -24,7 +24,10 @@
 
 /* --- fixture ------------------------------------------------------------ */
 
-typedef struct { size_t live, peak; unsigned long allocs; } SchedAlloc;
+/* `cap`, when set, refuses any request that would take the live total
+ * past it: a case about bounded memory then fails by refusal rather than
+ * by exhausting the machine. */
+typedef struct { size_t live, peak; unsigned long allocs; size_t cap; unsigned long refused; } SchedAlloc;
 
 static void *sched_alloc(void *ptr, size_t n, void *ud)
 {
@@ -35,6 +38,7 @@ static void *sched_alloc(void *ptr, size_t n, void *ud)
         if (hdr) { ca->live -= old; free(hdr); }
         return NULL;
     }
+    if (ca->cap && ca->live - old + n > ca->cap) { ca->refused++; return NULL; }
     size_t *nh = (size_t *)realloc(hdr, n + 2 * sizeof(size_t));
     if (!nh) return NULL;
     nh[0] = n;
@@ -904,6 +908,117 @@ static void a_due_timer_fires_within_the_cap(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* --- bounded memory ------------------------------------------------------
+ *
+ * Every strand that dies is garbage the moment nothing points at it.  Each
+ * case runs its loop under a ceiling well above what it should need, so a
+ * regression fails by refusal and not by taking the machine, and asserts
+ * the high-water mark against a much lower bound. */
+
+#define BOUND_BYTES   ((size_t)256 * 1024)
+#define CEILING_BYTES ((size_t)1024 * 1024)
+
+static uint32_t gc_cycles(Fix *fx)
+{
+    UGcStats st;
+    urbi_gc_stats(fx->vm, &st);
+    return st.cycles;
+}
+
+static void report_peak(const char *what, const Fix *fx, size_t base)
+{
+    if (fx->ca.peak - base >= BOUND_BYTES || fx->ca.refused)
+        printf("    %s: peak %lu over a base of %lu, %lu refused\n", what,
+               (unsigned long)fx->ca.peak, (unsigned long)base, fx->ca.refused);
+}
+
+static void a_fork_loop_runs_in_bounded_memory(void)
+{
+    Fix fx; fix_open(&fx);
+    size_t base = fx.ca.live;
+    fx.ca.cap = base + CEILING_BYTES;
+    uint32_t cycles0 = gc_cycles(&fx);
+    run_ok(&fx, "var i = 0; var n = 0;"
+                " while (i < 20000) { { n = n + 1 } & { n = n + 1 }; i = i + 1 }");
+    RT_EQ(global_int(&fx, "n"), 40000);
+    RT_CHECK(gc_cycles(&fx) > cycles0);
+    report_peak("fork loop", &fx, base);
+    RT_EQ(fx.ca.refused, 0ul);
+    RT_CHECK(fx.ca.peak - base < BOUND_BYTES);
+    fx.ca.cap = 0;
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* Five thousand strands are born and die inside the one unbudgeted step
+ * the chunk's pump opens with.  Kept until the step ended, they would all
+ * be live at once however often the collector ran.  The `;` after each
+ * fork is a real yield -- the forked child is a ready sibling -- so each
+ * child runs and dies before the next is spawned; without it the loop
+ * would spawn all five thousand before any ran, and they would be live
+ * strands, not dead ones. */
+static void dead_strands_are_reaped_inside_a_step(void)
+{
+    Fix fx; fix_open(&fx);
+    size_t base = fx.ca.live;
+    fx.ca.cap = base + CEILING_BYTES;
+    run_ok(&fx, "var d = 0; var j = 0; while (j < 5000) { { { d = d + 1 } , 0 }; j = j + 1 }");
+    RT_EQ(global_int(&fx, "d"), 5000);
+    report_peak("detached strands", &fx, base);
+    RT_EQ(fx.ca.refused, 0ul);
+    RT_CHECK(fx.ca.peak - base < BOUND_BYTES);
+    fx.ca.cap = 0;
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* The same joins made by a parent that cannot be descheduled -- an
+ * `at sync` body runs on a spare -- are run to completion on the spot
+ * rather than parked for, so all twenty thousand children die inside the
+ * one slice that runs the body. */
+static void an_inline_join_loop_runs_in_bounded_memory(void)
+{
+    Fix fx; fix_open(&fx);
+    size_t base = fx.ca.live;
+    fx.ca.cap = base + CEILING_BYTES;
+    run_ok(&fx, "var n = 0; var go = 0");
+    run_ok(&fx, "at sync (go == 1) { var i = 0;"
+                " while (i < 20000) { { n = n + 1 } & { n = n + 1 }; i = i + 1 } }");
+    run_ok(&fx, "go = 1");
+    RT_EQ(global_int(&fx, "n"), 40000);
+    report_peak("inline joins", &fx, base);
+    RT_EQ(fx.ca.refused, 0ul);
+    RT_CHECK(fx.ca.peak - base < BOUND_BYTES);
+    fx.ca.cap = 0;
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* The chunk's strand computes its value and dies first; the detached arm
+ * then goes on spawning and dropping strands and lists for long enough to
+ * force several collections.  urbi_run reads the value only once the pump
+ * stops, from a strand that is by then off every list -- so it must still
+ * be there to read. */
+static void an_awaited_strand_survives_reaping(void)
+{
+    Fix fx; fix_open(&fx);
+    size_t base = fx.ca.live;
+    fx.ca.cap = base + CEILING_BYTES;
+    run_ok(&fx, "var w = 0");
+    uint32_t cycles0 = gc_cycles(&fx);
+    UValue v = run_ok(&fx, "{ var j = 0; while (j < 3000) { { { var t = [j, j, j]; w = w + 1 } , 0 }; j = j + 1 } }"
+                           " , \"kept\" + 42.asString()");
+    char buf[64] = { 0 };
+    (void)urbi_value_to_string(fx.vm, v, buf, sizeof buf);
+    RT_STREQ(buf, "\"kept42\"");
+    RT_EQ(global_int(&fx, "w"), 3000);
+    RT_CHECK(gc_cycles(&fx) >= cycles0 + 2u);
+    RT_EQ(fx.ca.refused, 0ul);
+    fx.ca.cap = 0;
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 RT_SUITE(rt_sched_suite) {
     rt_run("separators_run_both_arms", separators_run_both_arms);
     rt_run("join_waits_for_the_child", join_waits_for_the_child);
@@ -935,4 +1050,8 @@ RT_SUITE(rt_sched_suite) {
     rt_run("a_pending_injection_makes_the_next_yield_real", a_pending_injection_makes_the_next_yield_real);
     rt_run("a_lone_strand_still_returns_to_the_pump", a_lone_strand_still_returns_to_the_pump);
     rt_run("a_due_timer_fires_within_the_cap", a_due_timer_fires_within_the_cap);
+    rt_run("a_fork_loop_runs_in_bounded_memory", a_fork_loop_runs_in_bounded_memory);
+    rt_run("dead_strands_are_reaped_inside_a_step", dead_strands_are_reaped_inside_a_step);
+    rt_run("an_inline_join_loop_runs_in_bounded_memory", an_inline_join_loop_runs_in_bounded_memory);
+    rt_run("an_awaited_strand_survives_reaping", an_awaited_strand_survives_reaping);
 }

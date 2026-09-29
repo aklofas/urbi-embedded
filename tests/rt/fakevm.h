@@ -23,9 +23,10 @@ static void fake_mark_extra(struct UVM *vm, void *ud) {
     for (int i = 0; i < fr->n; i++) ugc_mark(vm, fr->roots[i]);
 }
 
-static inline void fakevm_init(struct UVM *vm, UCell **roots, int n) {
+/* As fakevm_init, over a caller's allocator -- one that counts, say. */
+static inline void fakevm_init_with(struct UVM *vm, UCell **roots, int n, UAllocFn alloc, void *ud) {
     memset(vm, 0, sizeof *vm);
-    ugc_init(&vm->gc, fake_alloc, NULL);
+    ugc_init(&vm->gc, alloc, ud);
     vm->gc.hooks.mark_fixed = uvm_gc_mark_fixed;
     vm->gc.hooks.trace      = uvm_gc_trace;
     vm->gc.hooks.finalize   = uvm_gc_finalize;
@@ -34,6 +35,10 @@ static inline void fakevm_init(struct UVM *vm, UCell **roots, int n) {
     fakevm_roots.n = n;
     vm->test_mark_extra = fake_mark_extra;
     vm->test_mark_ud = &fakevm_roots;
+}
+
+static inline void fakevm_init(struct UVM *vm, UCell **roots, int n) {
+    fakevm_init_with(vm, roots, n, fake_alloc, NULL);
 }
 
 static inline void fakevm_destroy(struct UVM *vm) {
