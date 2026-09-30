@@ -507,7 +507,7 @@ CHK_GATE_DIRS ?= arithmetic closure function control \
                  objects globals stdlib lobby operators repl \
                  exceptions control_transfer \
                  separator scheduler tag temporal mutex semaphore \
-                 chunk_lifecycle reactive lazy migration
+                 chunk_lifecycle reactive lazy migration gc
 
 test-chk: $(BUILDDIR)/urbi $(BUILDDIR)/chk-host-driver $(BUILDDIR)/repl-chk-driver
 	@CHK_GATE_DIRS="$(CHK_GATE_DIRS)" sh tests/integration/chk_summary.sh $(BUILDDIR)/urbi
