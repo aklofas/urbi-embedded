@@ -70,7 +70,7 @@ typedef struct UWatcher UWatcher;
 typedef enum {
     UWATCH_AT = 1,      /* at (cond) / at (e?) -- the body spawns on the rising edge */
     UWATCH_AT_SYNC,     /* at sync (...) -- the body runs inline on a spare strand */
-    UWATCH_WHENEVER,    /* whenever (cond) -- re-fires while the condition holds */
+    UWATCH_WHENEVER,    /* whenever (cond) -- re-fires while the condition holds; whenever (e?) is an at (e?) */
     UWATCH_WAITUNTIL,   /* waituntil (cond) -- wakes its waiters once, then dies */
     UWATCH_ONCE         /* one-shot event subscription; dies on its first fire */
 } UWatchMode;

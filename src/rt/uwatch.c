@@ -196,6 +196,15 @@ static void uwatch_run_inline(UVM *vm, UWatcher *w, UClosure *cl, UValue payload
  * and the step comes back QUIESCENT either way. */
 static void uwatch_report_oom(UVM *vm, const char *what)
 {
+    /* A refused spawn is retried by the next drain, and under a lasting
+     * shortage that is every slice.  The same report is made once per
+     * step: while the channel still holds it (the next step clears it),
+     * a repeat says nothing new. */
+    if (uvm_sched(vm)->threw && vm->last_error_code == URBI_ERR_OOM) {
+        size_t k = 0;
+        while (what[k] && vm->last_error[k] == what[k]) k++;
+        if (what[k] == '\0' && vm->last_error[k] == '\0') return;
+    }
     size_t at = 0;
     for (const char *p = what; *p && at + 1 < sizeof vm->last_error; p++) vm->last_error[at++] = *p;
     vm->last_error[at] = '\0';
@@ -248,8 +257,10 @@ static void uwatch_fire(UVM *vm, UWatcher *w, UValue payload, bool force_inline)
                      whenever ? "whenever body: out of memory" : "at body: out of memory", &c) != 0) {
         /* The watcher stays armed and a condition's edge stays unserved:
          * forgetting it, and marking the set dirty, is what has the next
-         * drain see the condition rise again and try once more.  An
-         * emission cannot be asked again; the report is all it gets. */
+         * drain see the condition rise again and try once more.  `fired`
+         * goes back to what it was, because this body never ran: an else
+         * arm is owed only if an earlier one did.  An emission cannot be
+         * asked again; the report is all it gets. */
         w->fired = was_fired;
         if (w->cond) {
             w->last = 0;
@@ -265,16 +276,23 @@ static void uwatch_leave(UVM *vm, UWatcher *w)
     if (w->onleave == NULL || !w->fired) return;
     w->fired = 0;
     /* An at-sync watcher's falling edge is as synchronous as its rising
-     * one; everything else spawns.  An else arm that cannot be spawned is
-     * reported and not retried: the fall it answers has been seen, and
-     * the next rise starts a new round. */
+     * one; everything else spawns. */
     if (w->mode == (uint8_t)UWATCH_AT_SYNC) {
         uwatch_run_inline(vm, w, w->onleave, uv_nil(), "at sync onleave raised: ");
-    } else {
-        UStrand *c = NULL;
-        (void)uwatch_spawn(vm, w, w->onleave, uv_nil(),
-                           w->mode == (uint8_t)UWATCH_WHENEVER ? "whenever else: out of memory"
-                                                                : "at onleave: out of memory", &c);
+        return;
+    }
+    UStrand *c = NULL;
+    if (uwatch_spawn(vm, w, w->onleave, uv_nil(),
+                     w->mode == (uint8_t)UWATCH_WHENEVER ? "whenever else: out of memory"
+                                                          : "at onleave: out of memory", &c) != 0) {
+        /* Refused for want of memory: the arm is still owed.  `fired`
+         * says so, and the next drain that finds the condition false runs
+         * it (see uwatch_drain); marking the set dirty is what makes that
+         * drain happen.  A condition that has risen again by then has
+         * fallen and risen unseen, and the pair collapses: the rise is
+         * served, the fall it answered is not. */
+        w->fired = 1;
+        uwatch_mark_dirty(vm, NULL);
     }
 }
 
@@ -325,8 +343,14 @@ void uwatch_drain(UVM *vm)
             } else {
                 uwatch_fire(vm, w, w->payload, false);
             }
-        } else if (!now && was) {
-            /* The two arms of a `whenever` never run side by side.  A
+        } else if (!now && (was || w->fired)) {
+            /* A fall, or a condition found false while a body has run
+             * since the last else arm.  The second is where a refusal
+             * leaves a watcher: an else arm whose spawn was refused (see
+             * uwatch_leave), or a `whenever` whose re-fire was (see
+             * uwatch_fire) -- the bodies that did run have earned theirs.
+             *
+             * The two arms of a `whenever` never run side by side.  A
              * body still in flight keeps the floor; the else arm is
              * remembered and runs when that body dies. */
             if (w->mode == (uint8_t)UWATCH_WHENEVER && w->body_strand != NULL)

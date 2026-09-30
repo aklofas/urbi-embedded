@@ -1004,10 +1004,14 @@ fetch:
                 goto unwind;
             }
             /* An event subscription fires per emission, so `whenever (e?)`
-             * and `at (e?)` are the same watcher; only the SYNC form
-             * differs, by running its body inline under syncEmit. */
-            uint8_t mode = (op == OP_AT_EVENT_SYNC_INSTALL)
-                         ? (uint8_t)UWATCH_AT_SYNC : (uint8_t)UWATCH_AT;
+             * and `at (e?)` behave as the same watcher: every WHENEVER
+             * rule that differs asks for a condition, which an event
+             * watcher has none of.  The mode is kept as written so a
+             * report names the construct the script used.  Only the SYNC
+             * form differs, by running its body inline under syncEmit. */
+            uint8_t mode = (op == OP_AT_EVENT_SYNC_INSTALL)    ? (uint8_t)UWATCH_AT_SYNC
+                         : (op == OP_WHENEVER_EVENT_INSTALL) ? (uint8_t)UWATCH_WHENEVER
+                         :                                     (uint8_t)UWATCH_AT;
             if (uwatch_install(vm, s, mode, NULL, (UEvent *)ev.v.p,
                                install_operand(R, OPB(i)), install_operand(R, OPC(i))) == NULL) {
                 (void)uexec_throw(vm, s, UP_OOMERROR, "at-event watcher install: out of memory");
