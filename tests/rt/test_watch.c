@@ -20,8 +20,10 @@
 /* --- fixture ------------------------------------------------------------ */
 
 /* `cap`, when set, refuses any request that would take the live total
- * past it -- see the bounded-memory cases. */
-typedef struct { size_t live, peak, cap; unsigned long refused; } WatchAlloc;
+ * past it -- see the bounded-memory cases.  `refuse_size`, when set,
+ * refuses every NEW block of exactly that size: aimed at sizeof(UStrand),
+ * it refuses a spawn and nothing else -- see the reporting cases. */
+typedef struct { size_t live, peak, cap; unsigned long refused; size_t refuse_size; } WatchAlloc;
 
 static void *watch_alloc(void *ptr, size_t n, void *ud)
 {
@@ -33,6 +35,7 @@ static void *watch_alloc(void *ptr, size_t n, void *ud)
         return NULL;
     }
     if (ca->cap && ca->live - old + n > ca->cap) { ca->refused++; return NULL; }
+    if (ca->refuse_size && !hdr && n == ca->refuse_size) { ca->refused++; return NULL; }
     size_t *nh = (size_t *)realloc(hdr, n + 2 * sizeof(size_t));
     if (!nh) return NULL;
     nh[0] = n;
@@ -1041,6 +1044,215 @@ static void a_watcher_that_cannot_spawn_reports_it(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* --- every reporting path -------------------------------------------------
+ *
+ * Each case refuses exactly the strand a watcher spawns (no other block is
+ * that size while the refusal is armed), and asserts the four things a
+ * report is: a refusal happened, the code, a message naming the construct
+ * the script wrote, and one diag call.  `refuse()` arms the refusal from
+ * script, so it can land between two spawns of the same step. */
+
+static Fix *refusing_fx;
+
+static int refuse_native(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out)
+{
+    (void)vm; (void)self; (void)a; (void)n;
+    refusing_fx->ca.refuse_size = sizeof(UStrand);
+    *out = urbi_make_nil();
+    return URBI_OK;
+}
+
+static void refusing_open(Fix *fx)
+{
+    fix_open(fx);
+    refusing_fx = fx;
+    RT_EQ(urbi_register(fx->vm, "refuse", refuse_native, 0, 0), URBI_OK);
+}
+
+static void refuse(Fix *fx)
+{
+    fx->ca.refused = 0;
+    fx->diag_hits = 0;
+    fx->ca.refuse_size = sizeof(UStrand);
+}
+
+static void allow(Fix *fx) { fx->ca.refuse_size = 0; }
+
+static void expect_oom_report(Fix *fx, const char *what)
+{
+    RT_CHECK(fx->ca.refused > 0);
+    UErrorInfo info;
+    RT_EQ(urbi_last_error(fx->vm, &info), URBI_ERR_OOM);
+    RT_CHECK(info.message && strstr(info.message, what) != NULL);
+    RT_EQ(fx->diag_hits, 1);
+    RT_CHECK(strstr(fx->diag_last, what) != NULL);
+    if (!info.message || strstr(info.message, what) == NULL || fx->diag_hits != 1)
+        printf("    wanted \"%s\": last=\"%s\" diag=%d \"%s\"\n", what,
+               info.message ? info.message : "", fx->diag_hits, fx->diag_last);
+}
+
+static void a_refused_at_body_is_reported_and_retried(void)
+{
+    Fix fx; refusing_open(&fx);
+    run_ok(&fx, "var g = 0; var c = 0; var e = 0");
+    run_ok(&fx, "at (g == 1) { c = c + 1 } onleave { e = e + 1 }");
+    refuse(&fx);
+    set_int(&fx, "g", 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    expect_oom_report(&fx, "at body: out of memory");
+    RT_EQ(global_int(&fx, "c"), 0);
+    allow(&fx);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "c"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* The body never ran, so the fall that follows owes no onleave. */
+static void a_refused_at_body_earns_no_onleave(void)
+{
+    Fix fx; refusing_open(&fx);
+    run_ok(&fx, "var g = 0; var c = 0; var e = 0");
+    run_ok(&fx, "at (g == 1) { c = c + 1 } onleave { e = e + 1 }");
+    refuse(&fx);
+    set_int(&fx, "g", 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    expect_oom_report(&fx, "at body: out of memory");
+    allow(&fx);
+    set_int(&fx, "g", 0);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "c"), 0);
+    RT_EQ(global_int(&fx, "e"), 0);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* An onleave refused on the fall is still owed: the next drain runs it,
+ * once. */
+static void a_refused_onleave_is_reported_and_retried_once(void)
+{
+    Fix fx; refusing_open(&fx);
+    run_ok(&fx, "var g = 0; var c = 0; var e = 0");
+    run_ok(&fx, "at (g == 1) { c = c + 1 } onleave { e = e + 1 }");
+    set_int(&fx, "g", 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "c"), 1);
+    refuse(&fx);
+    set_int(&fx, "g", 0);
+    (void)urbi_step(fx.vm, 0, NULL);
+    expect_oom_report(&fx, "at onleave: out of memory");
+    RT_EQ(global_int(&fx, "e"), 0);
+    allow(&fx);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "e"), 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "e"), 1);
+    RT_EQ(global_int(&fx, "c"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* The body clears the condition and arms the refusal, so the else arm
+ * uwatch_body_done spawns as the body dies is the one refused. */
+static void a_refused_whenever_else_is_reported_and_retried_once(void)
+{
+    Fix fx; refusing_open(&fx);
+    run_ok(&fx, "var g = 0; var c = 0; var e = 0");
+    run_ok(&fx, "whenever (g == 1) { c = c + 1; refuse(); g = 0 } else { e = e + 1 }");
+    fx.ca.refused = 0;
+    fx.diag_hits = 0;
+    set_int(&fx, "g", 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    expect_oom_report(&fx, "whenever else: out of memory");
+    RT_EQ(global_int(&fx, "c"), 1);
+    RT_EQ(global_int(&fx, "e"), 0);
+    allow(&fx);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "e"), 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "e"), 1);
+    RT_EQ(global_int(&fx, "c"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* The fall is seen while the body is parked, so the else arm is owed to
+ * that body and refused when it dies; the next drain serves it, once. */
+static void a_refused_else_owed_to_a_running_body_is_retried_once(void)
+{
+    Fix fx; refusing_open(&fx);
+    run_ok(&fx, "var g = 0; var h = 0; var c = 0; var e = 0");
+    run_ok(&fx, "whenever (g == 1) { c = c + 1; waituntil (h == 1); g = 0 } else { e = e + 1 }");
+    set_int(&fx, "g", 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "c"), 1);
+    set_int(&fx, "g", 0);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "e"), 0);          /* owed, the body still runs */
+    refuse(&fx);
+    set_int(&fx, "h", 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    expect_oom_report(&fx, "whenever else: out of memory");
+    RT_EQ(global_int(&fx, "e"), 0);
+    allow(&fx);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "e"), 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "e"), 1);
+    RT_EQ(global_int(&fx, "c"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* A body refused on a re-fire, after one body has run, still owes the
+ * else arm that body earned when the condition then falls. */
+static void a_refused_refire_keeps_the_else_arm_earned_before_it(void)
+{
+    Fix fx; refusing_open(&fx);
+    run_ok(&fx, "var g = 0; var c = 0; var e = 0");
+    run_ok(&fx, "whenever (g == 1) { c = c + 1; refuse() } else { e = e + 1 }");
+    fx.ca.refused = 0;
+    fx.diag_hits = 0;
+    set_int(&fx, "g", 1);
+    (void)urbi_step(fx.vm, 0, NULL);
+    expect_oom_report(&fx, "whenever body: out of memory");
+    RT_EQ(global_int(&fx, "c"), 1);
+    allow(&fx);
+    set_int(&fx, "g", 0);
+    (void)urbi_step(fx.vm, 0, NULL);
+    RT_EQ(global_int(&fx, "e"), 1);
+    RT_EQ(global_int(&fx, "c"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
+/* An emission cannot be asked again: reported under the name the script
+ * used, and not retried. */
+static void a_refused_event_body_is_reported_under_its_own_name(void)
+{
+    static const struct { const char *install, *what; } forms[] = {
+        { "at (ev?) { c = c + 1 }",       "at body: out of memory" },
+        { "whenever (ev?) { c = c + 1 }", "whenever body: out of memory" },
+    };
+    for (int k = 0; k < 2; k++) {
+        Fix fx; refusing_open(&fx);
+        run_ok(&fx, "var ev = Event.new(); var c = 0");
+        run_ok(&fx, forms[k].install);
+        fx.ca.refused = 0;
+        fx.diag_hits = 0;
+        run_ok(&fx, "refuse(); ev.emit()");
+        expect_oom_report(&fx, forms[k].what);
+        RT_EQ(global_int(&fx, "c"), 0);
+        allow(&fx);
+        (void)urbi_step(fx.vm, 0, NULL);
+        RT_EQ(global_int(&fx, "c"), 0);
+        run_ok(&fx, "ev.emit()");
+        RT_EQ(global_int(&fx, "c"), 1);
+        fix_close(&fx);
+        RT_EQ(fx.ca.live, 0u);
+    }
+}
+
 RT_SUITE(rt_watch_suite) {
     rt_run("at_fires_once_per_rising_edge", at_fires_once_per_rising_edge);
     rt_run("at_fires_when_the_condition_already_holds", at_fires_when_the_condition_already_holds);
@@ -1079,4 +1291,11 @@ RT_SUITE(rt_watch_suite) {
     rt_run("a_whenever_loop_runs_in_bounded_memory", a_whenever_loop_runs_in_bounded_memory);
     rt_run("a_whenever_loop_completes_under_a_small_heap", a_whenever_loop_completes_under_a_small_heap);
     rt_run("a_watcher_that_cannot_spawn_reports_it", a_watcher_that_cannot_spawn_reports_it);
+    rt_run("a_refused_at_body_is_reported_and_retried", a_refused_at_body_is_reported_and_retried);
+    rt_run("a_refused_at_body_earns_no_onleave", a_refused_at_body_earns_no_onleave);
+    rt_run("a_refused_onleave_is_reported_and_retried_once", a_refused_onleave_is_reported_and_retried_once);
+    rt_run("a_refused_whenever_else_is_reported_and_retried_once", a_refused_whenever_else_is_reported_and_retried_once);
+    rt_run("a_refused_else_owed_to_a_running_body_is_retried_once", a_refused_else_owed_to_a_running_body_is_retried_once);
+    rt_run("a_refused_refire_keeps_the_else_arm_earned_before_it", a_refused_refire_keeps_the_else_arm_earned_before_it);
+    rt_run("a_refused_event_body_is_reported_under_its_own_name", a_refused_event_body_is_reported_under_its_own_name);
 }
