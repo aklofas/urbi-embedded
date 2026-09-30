@@ -23,7 +23,7 @@ budgeted-stepping change under Changed) and the wire format 0x19 -> 0x1A
 | leak probes | zero growth over 10,000 iterations of seven allocating shapes; peak while each loop runs at most 155,955 bytes |
 | lookup benchmark | 0.62x the old core; mandelbrot 0.84x |
 | corpus | 335 passed, 0 failed, 73 placeholders, 9 skipped |
-| runners | frontend 636 cases / 6,406 checks; runtime 212 cases / 7,061 checks |
+| runners | frontend 636 cases / 6,406 checks; runtime 219 cases / 7,177 checks |
 | sanitizers | ASan, UBSan, `URBI_GC_STRESS`, valgrind memcheck: clean |
 
 The 48 KB boot-heap target is a 32-bit number and this branch has no
@@ -123,8 +123,10 @@ core to 0.62x / 0.84x, through three mechanisms:
 - A watcher that could not start its body or else arm for want of memory
   failed without a report: the step came back QUIESCENT with a clean
   error channel. It now reports `URBI_ERR_OOM` through the diagnostic
-  hook and `urbi_last_error`, and a condition watcher's body that could
-  not start is retried by the next drain.
+  hook and `urbi_last_error`, once per step, naming the construct the
+  script wrote (`whenever (e?)` is no longer reported as an `at`). A
+  condition watcher's body or else arm that could not start is retried by
+  the drains that follow; an event's emission is only reported.
 
 ### Changed
 

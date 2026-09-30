@@ -98,10 +98,13 @@ Marking is tri-state with an explicit gray list, and the gray list can
 overflow: when it does the collector rescans until the graph is clean
 rather than silently dropping work.
 
-Pacing: a cycle starts when the bytes allocated since the last one —
-cells and the raw arrays cells own (slot tables, list items, strand
-stacks and frames) alike — exceed twice the live size the last cycle
-left, or 16 KB if that is larger. The baseline is a snapshot
+Pacing: the bytes allocated since the last cycle — cells and the raw
+arrays cells own (slot tables, list items, strand stacks and frames)
+alike — are compared with twice the live size the last cycle left, or
+16 KB if that is larger. The comparison is made at each cell allocation
+and after each scheduler slice, and a cycle starts there when the count
+is over; a raw allocation counts but never starts a cycle itself, because
+its callers hold unrooted cells across it. The baseline is a snapshot
 (`pace_base`) and does not move between cycles. It used to be
 `bytes_live`, which a raw allocation raised as it was made; for garbage
 whose raw block is at least as big as its cell, which is every list,
@@ -323,9 +326,10 @@ A strand that dies goes on the dead list, which roots it only until the
 scheduler reaps it: right after the slice it died in, before the
 collection check that follows every slice, and at both ends of a step.
 When a parent that cannot park (a spare, or a synchronous call) joins,
-the child runs to its end on the spot (`usched_run_inline`) and is reaped
-there. Reaping unlinks the
-strand from its realm; whatever still refers to it — the joining
+the child runs on the spot (`usched_run_inline`) until it ends or parks;
+one that ended is reaped there, one that parked is neither finished nor
+reaped, and the join goes on without it. Reaping unlinks the strand from
+its realm; whatever still refers to it — the joining
 parent's register, a `Job` value, the pin `urbi_run` holds on the strand
 it awaits — keeps it, and the rest is garbage. Reaping only at the ends of
 a step kept every strand an unbudgeted step saw die, however often the
@@ -334,11 +338,20 @@ collector ran.
 A watcher whose body or else arm cannot be spawned for want of memory
 says so the way a detached strand's uncaught throw does: through the
 diagnostic hook and `urbi_last_error`, with `URBI_ERR_OOM` and a message
-naming the watcher ("whenever body: out of memory"), cleared by the next
-step. The watcher stays armed. A condition watcher's body that could not
-start leaves its rising edge unserved, so the next drain sees the
-condition rise again and retries; an event's emission, and an else arm,
-are not retried.
+naming the construct as the script wrote it and the arm ("at body",
+"at onleave", "whenever body", "whenever else": out of memory), cleared by
+the next step. The same report is made once per step however often the
+spawn is refused again. The watcher stays armed, and every drain that
+follows retries:
+
+- a condition watcher's body that could not start leaves its rising edge
+  unserved, so the next drain sees the condition rise again;
+- an else arm that could not start is still owed: the next drain that
+  finds the condition false runs it. A condition that has risen again by
+  then has fallen and risen unseen, and the pair collapses into the rise.
+  A `whenever` whose re-fire was refused keeps, the same way, the else
+  arm its earlier bodies earned;
+- an event's emission cannot be asked again, and is only reported.
 
 ## Errors
 
