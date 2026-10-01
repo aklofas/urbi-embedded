@@ -21,7 +21,7 @@ budgeted-stepping change under Changed) and the wire format 0x19 -> 0x1A
 | boot heap | 69,783 bytes live in 1,016 blocks, 64-bit host |
 | idle strand | 616 bytes each; 61,616 for a hundred parked sleepers |
 | leak probes | zero growth over 10,000 iterations of seven allocating shapes; peak while each loop runs at most 155,955 bytes |
-| lookup benchmark | 0.62x the old core; mandelbrot 0.84x |
+| lookup benchmark | 0.60x the old core; mandelbrot 0.84x |
 | corpus | 335 passed, 0 failed, 73 placeholders, 9 skipped |
 | runners | frontend 636 cases / 6,406 checks; runtime 219 cases / 7,177 checks |
 | sanitizers | ASan, UBSan, `URBI_GC_STRESS`, valgrind memcheck: clean |
@@ -37,7 +37,7 @@ it is met.
 ### Performance
 
 The lookup and mandelbrot benchmarks went from 1.59x / 1.40x the old
-core to 0.62x / 0.84x, through three mechanisms:
+core to 0.60x / 0.84x, through three mechanisms:
 
 - A per-site slot cache in front of the proto walk: one entry per
   `GETSLOT`/`SELF`/`SETSLOT`/`SETSLOT_UPDATE` site, hit live against the
