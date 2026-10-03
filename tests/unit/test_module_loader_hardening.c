@@ -158,14 +158,49 @@ UTEST(deeply_nested_closure_verifier) {
     uchunk_destroy(m, NULL);
 }
 
+/* --- site_names cross-validation ---
+ *
+ * A proto whose site_count exceeds the number of site-bearing
+ * instructions in its stream is rejected with UCHUNK_LOAD_CORRUPT: the
+ * surplus names are indexed by no instruction, and a corrupt chunk could
+ * otherwise ship names for a later confusion attack.  Here: two names,
+ * no slot instruction (OP_RET only). */
+UTEST(site_names_beyond_the_slot_instructions_rejected) {
+    uint8_t buf[256];
+    hard_build_good_header(buf);
+    size_t off = 24;
+    off = hard_put_varint(buf, off, 0);      /* source_name_len = 0 */
+    buf[off++] = 0;                          /* max_reg */
+    buf[off++] = 0;                          /* nupvals */
+    buf[off++] = 0;                          /* nparams */
+    off = hard_put_varint(buf, off, 0);      /* n_const */
+    off = hard_put_varint(buf, off, 1);      /* n_instr */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    uint32_t ret = (uint32_t)OP_RET;
+    buf[off++] = (uint8_t)(ret & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 8) & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 16) & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 24) & 0xFFU);
+    off = hard_put_varint(buf, off, 1);      /* n_deltas */
+    buf[off++] = 0;
+    off = hard_put_varint(buf, off, 0);      /* n_abs_lines */
+    off = hard_put_varint(buf, off, 2);      /* site_count = 2, no sites used */
+    off = hard_put_varint(buf, off, 1); buf[off++] = 'a';
+    off = hard_put_varint(buf, off, 1); buf[off++] = 'b';
+    off = hard_put_varint(buf, off, 0);      /* nested_count */
+
+    UProto *m = NULL;
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, NULL, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
+    uchunk_destroy(m, NULL);
+}
+
 /* --- site-name table cap ---
  *
  * A site index is a C byte widened to 16 bits by OP_EXTARG and
  * site_count is a uint16_t, so a table of 65,536 names can never be
  * addressed and must not be allocated: the decoder rejects the count
- * before reading a single name.  (A table larger than the number of
- * slot instructions is accepted -- the count sizes a table, it does not
- * count uses.) */
+ * before reading a single name. */
 UTEST(site_name_count_above_65535_rejected) {
     uint8_t buf[256];
     hard_build_good_header(buf);
@@ -363,6 +398,8 @@ void test_module_loader_hardening_suite(void) {
               deserialize_rejects_n_abs_exceeding_instr_count);
     utest_run("deserialize n_const cap is strictly > UINT16_MAX (T76: MOD-019)",
               deserialize_n_const_cap_is_strictly_greater_than);
+    utest_run("site names beyond the slot instructions rejected",
+              site_names_beyond_the_slot_instructions_rejected);
     utest_run("site name count above 65535 rejected",
               site_name_count_above_65535_rejected);
     utest_run("deeply-nested closure verifier (T78: W4 carry, regression)",

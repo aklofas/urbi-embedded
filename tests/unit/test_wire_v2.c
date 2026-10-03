@@ -44,20 +44,31 @@ static UChunkLoadError roundtrip(UProto *p, char *err, size_t cap) {
     return rc;
 }
 
+/* 301 GETSLOT R1, R0, site k (k = 0..300), each k >= 256 behind an EXTARG
+ * carrying k >> 8, then RET.  Returns the instruction count (347). */
+static size_t sites_0_to_300(uint32_t *ins) {
+    size_t n = 0;
+    for (uint32_t k = 0; k <= 300; k++) {
+        if (k >= 256) ins[n++] = uinstr_enc_abx(OP_EXTARG, 0, (uint16_t)(k >> 8));
+        ins[n++] = uinstr_enc_abc(OP_GETSLOT, 1, 0, (uint8_t)(k & 0xFFu));
+    }
+    ins[n++] = uinstr_enc_abc(OP_RET, 1, 0, 0);
+    return n;
+}
+
 UTEST(a_site_index_above_255_needs_extarg_and_round_trips) {
-    uint32_t ins[] = {
-        uinstr_enc_abx(OP_EXTARG, 0, 1),                 /* high byte 1 */
-        uinstr_enc_abc(OP_GETSLOT, 1, 0, 44),            /* site 300 */
-        uinstr_enc_abc(OP_RET, 1, 0, 0),
-    };
-    UProto *p = make_proto(ins, 3, 301);
+    uint32_t ins[301 + 45 + 1];
+    size_t n = sites_0_to_300(ins);
+    UASSERT_EQ(347, n);
+    UProto *p = make_proto(ins, n, 301);
     char err[128] = {0};
     UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)roundtrip(p, err, sizeof err));
     free_proto(p);
 }
 UTEST(a_site_index_at_or_past_site_count_is_rejected) {
-    uint32_t ins[] = { uinstr_enc_abx(OP_EXTARG, 0, 1), uinstr_enc_abc(OP_GETSLOT, 1, 0, 44), uinstr_enc_abc(OP_RET, 1, 0, 0) };
-    UProto *p = make_proto(ins, 3, 300);          /* 300 names: index 300 is out of range */
+    uint32_t ins[301 + 45 + 1];
+    size_t n = sites_0_to_300(ins);
+    UProto *p = make_proto(ins, n, 300);          /* 300 names: index 300 is out of range */
     char err[128] = {0};
     UASSERT_EQ((int)UCHUNK_LOAD_CORRUPT, (int)roundtrip(p, err, sizeof err));
     free_proto(p);

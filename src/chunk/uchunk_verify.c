@@ -237,6 +237,7 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                                           const uint32_t *instructions) {
     uint32_t ext = 0;
     bool ext_pending = false;
+    size_t sites_seen = 0;
     size_t vi;
     for (vi = 0; vi < instr_count; vi++) {
         uint32_t ins = instructions[vi];
@@ -283,6 +284,7 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                                (unsigned)site, (unsigned)site_count, vi, (unsigned)op);
                     return UCHUNK_LOAD_CORRUPT;
                 }
+                sites_seen++;
             }
             rc = verify_abc_rules(d, op, a, b, c, instructions, vi, max_reg);
             if (rc != UCHUNK_LOAD_OK) return rc;
@@ -309,6 +311,16 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
             set_errmsg(d->errmsg, d->errcap, "last instruction is not OP_RET");
             return UCHUNK_LOAD_CORRUPT;
         }
+    }
+    /* site_count must not exceed the number of site-bearing instructions.
+     * Every name is keyed to an emitted slot instruction; a table that
+     * claims more sites than the stream uses carries names no instruction
+     * indexes, which a confused or hostile chunk could later have bound. */
+    if ((size_t)site_count > sites_seen) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "site_count=%u exceeds %zu site-bearing instructions",
+                   (unsigned)site_count, sites_seen);
+        return UCHUNK_LOAD_CORRUPT;
     }
     return UCHUNK_LOAD_OK;
 }
