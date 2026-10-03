@@ -90,12 +90,9 @@ uint8_t urbi_emit_throw_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_try_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_tag_prefix_arm(UEmitter *e, UAstNode *n);
 
-/* Reactive AST arm helpers (defined in uemit_react.c).
- * Called from urbi_emit_expr via forwarding stubs; bodies live in uemit_react.c. */
+/* Reactive AST arm helper (defined in uemit_react.c).
+ * Called from urbi_emit_expr via a forwarding stub; body lives in uemit_react.c. */
 uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_waituntil_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_at_slot_change_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_member_get_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_member_set_arm(UEmitter *e, UAstNode *n);
 
@@ -181,7 +178,7 @@ static inline int emit_fwd_jmp(UEmitter *e, uint32_t line) {
     urbi_emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), line);
     return pc;
 }
-static inline void patch_fwd_jmp_here(UEmitter *e, int jmp_pc) {
+static inline void patch_fwd_jmp_here(const UEmitter *e, int jmp_pc) {
     urbi_emit_patch_instr(e, jmp_pc, uinstr_enc_abx(OP_JMP, 0U,
         uemit_jmp_offset(jmp_pc, (int)urbi_emit_instr_count(e))));
 }

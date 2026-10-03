@@ -182,6 +182,20 @@ UToken urbi_parse_consume(UParser *p) {
     return t;
 }
 
+/* --- Function-boundary save/restore. --- */
+
+void urbi_parse_enter_function_boundary(UParser *p, UParseFuncBoundary *saved) {
+    saved->loop_depth = p->loop_depth;
+    saved->switch_depth = p->switch_depth;
+    p->loop_depth = 0;
+    p->switch_depth = 0;
+}
+
+void urbi_parse_leave_function_boundary(UParser *p, const UParseFuncBoundary *saved) {
+    p->loop_depth = saved->loop_depth;
+    p->switch_depth = saved->switch_depth;
+}
+
 /* --- AST constructors.  Return NULL on arena OOM. --- */
 
 UAstNode *urbi_parse_make_node(UParser *p, UAstKind k, int line, int col) {

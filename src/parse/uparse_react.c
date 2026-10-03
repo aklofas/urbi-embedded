@@ -171,37 +171,20 @@ static UAstNode *parse_event_payload_binding(UParser *p,
     return NULL;  /* success */
 }
 
-/* --- parse_at_slot_change_form: `at (obj.x.changed?) body [onleave h]`
+/* --- parse_event_form: shared event-arm parse for `at (e?) body`,
+ * `at sync (e?) body`, and `whenever (e?) body` — one AST_WATCHER node
+ * with source=UWSRC_EVENT, or source=UWSRC_SLOT_CHANGE when the receiver
+ * disambiguates to the 3+-segment `.changed?` form.
  *
- * Called when cond is a ≥3-segment `obj.x.changed` MEMBER_GET chain.
- * kw is the `at` token (for node position); cond, body, onleave, is_sync
- * are already parsed by parse_at_event_form. */
-static UAstNode *parse_at_slot_change_form(UParser *p, UToken kw,
-                                            UAstNode *cond,
-                                            UAstNode *body, UAstNode *onleave,
-                                            bool is_sync) {
-    UAstNode *slot_node = cond->u.member.recv;  /* the .x MEMBER_GET */
-    UAstNode *node = urbi_parse_make_node(p, AST_AT_SLOT_CHANGE, kw.line, kw.col);
-    if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.at_slot_change.receiver      = slot_node->u.member.recv;
-    node->u.at_slot_change.slot_name     = slot_node->u.member.name_start;
-    node->u.at_slot_change.slot_name_len = (size_t)slot_node->u.member.name_len;
-    node->u.at_slot_change.body          = body;
-    node->u.at_slot_change.onleave       = onleave;
-    node->u.at_slot_change.is_sync       = is_sync;
-    return node;
-}
-
-/* --- parse_at_event_form: `at [sync] (e?) body [onleave h]`
- *
- * Called after `?` has been consumed.  kw is `at` position; cond is
- * the expression before `?`; is_sync reflects the `at sync` modifier.
- * Expects `)` as the next token, then body, optional onleave.
- * Disambiguates slot-change vs plain event form. */
-static UAstNode *parse_at_event_form(UParser *p, UToken kw,
-                                      UAstNode *cond, bool is_sync) {
+ * Called after `?` has been consumed.  kw is the keyword token (for node
+ * position); cond is the expression before `?`; mode is UWATCHER_AT,
+ * UWATCHER_AT_SYNC or UWATCHER_WHENEVER.  allow_slot_change enables the
+ * receiver disambiguation below — `whenever` never slot-change-dispatches
+ * (matching the pre-merge behaviour: only `at`/`at sync` did). */
+static UAstNode *parse_event_form(UParser *p, UToken kw, UAstNode *cond,
+                                   int mode, bool allow_slot_change) {
     /* Optional `(var x)` payload binding immediately after `?` and
-     * before the `)` that closes the at-condition. */
+     * before the `)` that closes the condition. */
     const char *pname = NULL;
     int         plen  = 0;
     UAstNode *perr = parse_event_payload_binding(p, &pname, &plen);
@@ -209,44 +192,81 @@ static UAstNode *parse_at_event_form(UParser *p, UToken kw,
 
     { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
+    /* The body and onleave each become a closure: break/continue do not
+     * reach through either into an enclosing loop. */
+    UParseFuncBoundary saved_boundary;
+    urbi_parse_enter_function_boundary(p, &saved_boundary);
+
     UAstNode *body = urbi_parse_statement_or_expr(p);
-    if (!body) return (UAstNode *)&uparser_oom_sentinel;
-    if (body->kind == AST_ERROR) return body;
+    if (!body) {
+        urbi_parse_leave_function_boundary(p, &saved_boundary);
+        return (UAstNode *)&uparser_oom_sentinel;
+    }
+    if (body->kind == AST_ERROR) {
+        urbi_parse_leave_function_boundary(p, &saved_boundary);
+        return body;
+    }
 
     /* Optional `onleave` handler. */
     UAstNode *onleave = NULL;
     if (urbi_parse_peek(p).type == TOK_KW_ONLEAVE) {
         urbi_parse_consume(p);
         onleave = urbi_parse_statement_or_expr(p);
-        if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
-        if (onleave->kind == AST_ERROR) return onleave;
+        if (!onleave) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return (UAstNode *)&uparser_oom_sentinel;
+        }
+        if (onleave->kind == AST_ERROR) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return onleave;
+        }
     }
 
+    urbi_parse_leave_function_boundary(p, &saved_boundary);
+
     /* Spec #4 §4.3–§4.5: disambiguate slot-change form.
-     * at (obj.x.changed?) → AST_AT_SLOT_CHANGE when:
+     * at (obj.x.changed?) → SLOT_CHANGE when:
      *   cond is AST_MEMBER_GET with name=="changed"
      *   AND cond->recv is also AST_MEMBER_GET (≥3 path segments)
-     * at (obj.changed?)   → AST_AT_EVENT (2 segments, falls through) */
-    if (cond->kind == AST_MEMBER_GET
+     * at (obj.changed?)   → EVENT (2 segments, falls through) */
+    if (allow_slot_change
+        && cond->kind == AST_MEMBER_GET
         && urbi_parse_ident_equals(cond->u.member.name_start,
                         cond->u.member.name_len,
                         "changed", 7)
         && cond->u.member.recv != NULL
         && cond->u.member.recv->kind == AST_MEMBER_GET) {
-        /* 3+ segments: slot-change form. */
-        return parse_at_slot_change_form(p, kw, cond, body, onleave, is_sync);
+        /* 3+ segments: slot-change form.  The payload binding is kept on
+         * this path — the baseline dropped it here. */
+        UAstNode *slot_node = cond->u.member.recv;  /* the .x MEMBER_GET */
+        UAstNode *node = urbi_parse_make_node(p, AST_WATCHER, kw.line, kw.col);
+        if (!node) return (UAstNode *)&uparser_oom_sentinel;
+        node->u.watcher.mode            = mode;
+        node->u.watcher.source          = UWSRC_SLOT_CHANGE;
+        node->u.watcher.cond            = slot_node->u.member.recv;
+        node->u.watcher.slot_name       = slot_node->u.member.name_start;
+        node->u.watcher.slot_name_len   = slot_node->u.member.name_len;
+        node->u.watcher.body            = body;
+        node->u.watcher.else_body       = NULL;
+        node->u.watcher.onleave         = onleave;
+        node->u.watcher.payload_var     = pname;
+        node->u.watcher.payload_var_len = plen;
+        return node;
     }
 
-    /* 2 segments or non-"changed" final segment: event form. */
-    UAstNode *node = urbi_parse_make_node(p, AST_AT_EVENT, kw.line, kw.col);
+    /* 2 segments or non-"changed" final segment (or whenever): event form. */
+    UAstNode *node = urbi_parse_make_node(p, AST_WATCHER, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.at_event.event_expr      = cond;
-    node->u.at_event.body            = body;
-    node->u.at_event.onleave         = onleave;
-    node->u.at_event.is_sync         = is_sync;
-    node->u.at_event.is_whenever     = false;  /* At (e?) is not whenever */
-    node->u.at_event.payload_var_name = pname;  /* User name or NULL */
-    node->u.at_event.payload_var_len  = plen;
+    node->u.watcher.mode            = mode;
+    node->u.watcher.source          = UWSRC_EVENT;
+    node->u.watcher.cond            = cond;
+    node->u.watcher.slot_name       = NULL;
+    node->u.watcher.slot_name_len   = 0;
+    node->u.watcher.body            = body;
+    node->u.watcher.else_body       = NULL;
+    node->u.watcher.onleave         = onleave;
+    node->u.watcher.payload_var     = pname;
+    node->u.watcher.payload_var_len = plen;
     return node;
 }
 
@@ -259,51 +279,73 @@ static UAstNode *parse_at_cond_form(UParser *p, UToken kw,
                                      UAstNode *cond, int mode) {
     { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
+    /* The body and onleave each become a closure: break/continue do not
+     * reach through either into an enclosing loop. */
+    UParseFuncBoundary saved_boundary;
+    urbi_parse_enter_function_boundary(p, &saved_boundary);
+
     UAstNode *body = urbi_parse_statement_or_expr(p);
-    if (!body) return (UAstNode *)&uparser_oom_sentinel;
-    if (body->kind == AST_ERROR) return body;
+    if (!body) {
+        urbi_parse_leave_function_boundary(p, &saved_boundary);
+        return (UAstNode *)&uparser_oom_sentinel;
+    }
+    if (body->kind == AST_ERROR) {
+        urbi_parse_leave_function_boundary(p, &saved_boundary);
+        return body;
+    }
 
     UAstNode *onleave = NULL;
     if (urbi_parse_peek(p).type == TOK_KW_ONLEAVE) {
         if (mode == UWATCHER_AT_SYNC) {
             UToken ol = urbi_parse_consume(p);
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
             return urbi_parse_make_error(p, PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE,
                               urbi_parse_kErrorMessages[PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE],
                               ol.line, ol.col);
         }
         urbi_parse_consume(p);
         onleave = urbi_parse_statement_or_expr(p);
-        if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
-        if (onleave->kind == AST_ERROR) return onleave;
+        if (!onleave) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return (UAstNode *)&uparser_oom_sentinel;
+        }
+        if (onleave->kind == AST_ERROR) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return onleave;
+        }
     }
+
+    urbi_parse_leave_function_boundary(p, &saved_boundary);
 
     UAstNode *node = urbi_parse_make_node(p, AST_WATCHER, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.watcher.cond      = cond;
-    node->u.watcher.body      = body;
-    node->u.watcher.onleave   = onleave;
-    node->u.watcher.else_body = NULL;   /* Only WHENEVER sets else_body */
-    node->u.watcher.mode      = mode;
+    node->u.watcher.mode            = mode;
+    node->u.watcher.source          = UWSRC_COND;
+    node->u.watcher.cond            = cond;
+    node->u.watcher.slot_name       = NULL;
+    node->u.watcher.slot_name_len   = 0;
+    node->u.watcher.body            = body;
+    node->u.watcher.else_body       = NULL;   /* Only WHENEVER sets else_body */
+    node->u.watcher.onleave         = onleave;
+    node->u.watcher.payload_var     = NULL;
+    node->u.watcher.payload_var_len = 0;
     return node;
 }
 
 /* --- urbi_parse_at: `at` [`sync`|`async`] `(` cond[?] `)` body [`onleave` handler]
  *
- * Postfix `?` inside the parentheses selects the event-subscribe form:
- *   at (e?) body            → AST_AT_EVENT (sync_flag=false)
- *   at sync (e?) body       → AST_AT_EVENT (sync_flag=true)
- * Without `?`, produces AST_WATCHER as before. */
+ * Postfix `?` inside the parentheses selects the event-subscribe form
+ * (source=UWSRC_EVENT, or UWSRC_SLOT_CHANGE on receiver disambiguation).
+ * Without `?`, produces source=UWSRC_COND as before. */
 UAstNode *urbi_parse_at(UParser *p) {
     UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_AT */
 
     /* Optional `sync` or `async` modifier. */
     int mode = UWATCHER_AT;
-    bool is_sync = false;
     UToken mod = urbi_parse_peek(p);
     if (mod.type == TOK_KW_SYNC) {
         urbi_parse_consume(p);
         mode = UWATCHER_AT_SYNC;
-        is_sync = true;
     } else if (mod.type == TOK_KW_ASYNC) {
         urbi_parse_consume(p);
         /* `at async` is accepted as `at` (redundant modifier); silent at v1.0. */
@@ -327,7 +369,7 @@ UAstNode *urbi_parse_at(UParser *p) {
     /* Check for trailing `?` — event-subscribe or slot-change form. */
     if (urbi_parse_peek(p).type == TOK_QUESTION) {
         urbi_parse_consume(p);  /* urbi_parse_consume '?' */
-        return parse_at_event_form(p, kw, cond, is_sync);
+        return parse_event_form(p, kw, cond, mode, /*allow_slot_change=*/true);
     }
 
     /* No `?` — conditional watcher form. */
@@ -352,52 +394,42 @@ UAstNode *urbi_parse_whenever(UParser *p) {
     /* Event-arm branch — mirror urbi_parse_at's TOK_QUESTION handling.
      * `whenever (e?) body` is a perpetual event subscriber: the body
      * re-fires on every emission of e, without one-shot teardown.
-     * Optional `(var x)` payload binding after `?`. */
+     * Never slot-change-dispatches (pre-merge behaviour). */
     if (urbi_parse_peek(p).type == TOK_QUESTION) {
         urbi_parse_consume(p);  /* urbi_parse_consume '?' */
-
-        /* Optional payload binding. */
-        const char *pname = NULL;
-        int         plen  = 0;
-        UAstNode *perr = parse_event_payload_binding(p, &pname, &plen);
-        if (perr) return perr;
-
-        { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
-        UAstNode *body = urbi_parse_statement_or_expr(p);
-        if (!body) return (UAstNode *)&uparser_oom_sentinel;
-        if (body->kind == AST_ERROR) return body;
-        UAstNode *onleave = NULL;
-        if (urbi_parse_peek(p).type == TOK_KW_ONLEAVE) {
-            urbi_parse_consume(p);
-            onleave = urbi_parse_statement_or_expr(p);
-            if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
-            if (onleave->kind == AST_ERROR) return onleave;
-        }
-        UAstNode *node = urbi_parse_make_node(p, AST_AT_EVENT, kw.line, kw.col);
-        if (!node) return (UAstNode *)&uparser_oom_sentinel;
-        node->u.at_event.event_expr       = cond;
-        node->u.at_event.body             = body;
-        node->u.at_event.onleave          = onleave;
-        node->u.at_event.is_sync          = false;  /* whenever has no sync form */
-        node->u.at_event.is_whenever      = true;   /* Distinguishes from at (e?) */
-        node->u.at_event.payload_var_name = pname;  /* User name or NULL */
-        node->u.at_event.payload_var_len  = plen;
-        return node;
+        return parse_event_form(p, kw, cond, UWATCHER_WHENEVER, /*allow_slot_change=*/false);
     }
 
     { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
+    /* The body, onleave and else each become a closure: break/continue
+     * do not reach through any of them into an enclosing loop. */
+    UParseFuncBoundary saved_boundary;
+    urbi_parse_enter_function_boundary(p, &saved_boundary);
+
     UAstNode *body = urbi_parse_statement_or_expr(p);
-    if (!body) return (UAstNode *)&uparser_oom_sentinel;
-    if (body->kind == AST_ERROR) return body;
+    if (!body) {
+        urbi_parse_leave_function_boundary(p, &saved_boundary);
+        return (UAstNode *)&uparser_oom_sentinel;
+    }
+    if (body->kind == AST_ERROR) {
+        urbi_parse_leave_function_boundary(p, &saved_boundary);
+        return body;
+    }
 
     /* Optional `onleave` handler. */
     UAstNode *onleave = NULL;
     if (urbi_parse_peek(p).type == TOK_KW_ONLEAVE) {
         urbi_parse_consume(p);
         onleave = urbi_parse_statement_or_expr(p);
-        if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
-        if (onleave->kind == AST_ERROR) return onleave;
+        if (!onleave) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return (UAstNode *)&uparser_oom_sentinel;
+        }
+        if (onleave->kind == AST_ERROR) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return onleave;
+        }
     }
 
     /* `whenever (cond) body else else_body` — falling-edge handler.
@@ -406,17 +438,30 @@ UAstNode *urbi_parse_whenever(UParser *p) {
     if (urbi_parse_peek(p).type == TOK_KW_ELSE) {
         urbi_parse_consume(p);
         else_body = urbi_parse_statement_or_expr(p);
-        if (!else_body) return (UAstNode *)&uparser_oom_sentinel;
-        if (else_body->kind == AST_ERROR) return else_body;
+        if (!else_body) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return (UAstNode *)&uparser_oom_sentinel;
+        }
+        if (else_body->kind == AST_ERROR) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return else_body;
+        }
     }
+
+    urbi_parse_leave_function_boundary(p, &saved_boundary);
 
     UAstNode *node = urbi_parse_make_node(p, AST_WATCHER, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.watcher.cond      = cond;
-    node->u.watcher.body      = body;
-    node->u.watcher.onleave   = onleave;
-    node->u.watcher.else_body = else_body;  /* Nullable falling-edge handler */
-    node->u.watcher.mode      = UWATCHER_WHENEVER;
+    node->u.watcher.mode            = UWATCHER_WHENEVER;
+    node->u.watcher.source          = UWSRC_COND;
+    node->u.watcher.cond            = cond;
+    node->u.watcher.slot_name       = NULL;
+    node->u.watcher.slot_name_len   = 0;
+    node->u.watcher.body            = body;
+    node->u.watcher.else_body       = else_body;  /* Nullable falling-edge handler */
+    node->u.watcher.onleave         = onleave;
+    node->u.watcher.payload_var     = NULL;
+    node->u.watcher.payload_var_len = 0;
     return node;
 }
 
@@ -453,13 +498,10 @@ UAstNode *urbi_parse_every(UParser *p) {
 
     /* The body becomes a function literal (below): break/continue do not
      * reach through it into an enclosing loop. */
-    int saved_loop_depth = p->loop_depth;
-    int saved_switch_depth = p->switch_depth;
-    p->loop_depth = 0;
-    p->switch_depth = 0;
+    UParseFuncBoundary saved_boundary;
+    urbi_parse_enter_function_boundary(p, &saved_boundary);
     UAstNode *body = urbi_parse_statement_or_expr(p);
-    p->loop_depth = saved_loop_depth;
-    p->switch_depth = saved_switch_depth;
+    urbi_parse_leave_function_boundary(p, &saved_boundary);
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 
@@ -512,12 +554,12 @@ UAstNode *urbi_parse_waituntil(UParser *p) {
     if (cond->kind == AST_ERROR) return cond;
 
     /* Detect trailing `?` — event form. */
-    bool is_event_form = false;
+    UAstWatchSource source = UWSRC_COND;
     const char *pname = NULL;
     int         plen  = 0;
     if (urbi_parse_peek(p).type == TOK_QUESTION) {
         urbi_parse_consume(p);  /* urbi_parse_consume '?' */
-        is_event_form = true;
+        source = UWSRC_EVENT;
 
         /* Optional payload binding `(var x)`. */
         UAstNode *perr = parse_event_payload_binding(p, &pname, &plen);
@@ -526,11 +568,17 @@ UAstNode *urbi_parse_waituntil(UParser *p) {
 
     { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
-    UAstNode *node = urbi_parse_make_node(p, AST_WAITUNTIL, kw.line, kw.col);
+    UAstNode *node = urbi_parse_make_node(p, AST_WATCHER, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.waituntil.cond             = cond;
-    node->u.waituntil.is_event_form    = is_event_form;
-    node->u.waituntil.payload_var_name = pname;
-    node->u.waituntil.payload_var_len  = plen;
+    node->u.watcher.mode            = UWATCHER_WAITUNTIL;
+    node->u.watcher.source          = source;
+    node->u.watcher.cond            = cond;
+    node->u.watcher.slot_name       = NULL;
+    node->u.watcher.slot_name_len   = 0;
+    node->u.watcher.body            = NULL;
+    node->u.watcher.else_body       = NULL;
+    node->u.watcher.onleave         = NULL;
+    node->u.watcher.payload_var     = pname;
+    node->u.watcher.payload_var_len = plen;
     return node;
 }

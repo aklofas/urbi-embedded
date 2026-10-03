@@ -25,6 +25,23 @@
 /* --- OOM sentinel (defined in uparse.c residual). --- */
 extern const UAstNode uparser_oom_sentinel;
 
+/* --- Function-boundary save/restore (defined in uparse.c residual).
+ *
+ * A function literal's body is a loop/switch boundary: break/continue
+ * inside it must not reach through into a loop or switch the literal is
+ * nested in.  Save p->loop_depth/switch_depth, zero them for the nested
+ * parse, then restore.  Every site that parses a body which becomes a
+ * closure (function literals, getter/setter bodies, `every` bodies, and
+ * every AST_WATCHER body/else/onleave) routes through this pair instead
+ * of repeating the save/zero/restore inline. */
+typedef struct {
+    int loop_depth;
+    int switch_depth;
+} UParseFuncBoundary;
+
+void urbi_parse_enter_function_boundary(UParser *p, UParseFuncBoundary *saved);
+void urbi_parse_leave_function_boundary(UParser *p, const UParseFuncBoundary *saved);
+
 /* Postfix precedence level — `expr(args)`, `expr.x`, `expr->x`,
  * `expr!`, `expr?`, `expr[i]` all bind tighter than any infix operator
  * (multiplicative=7 is the tightest infix; postfix=9 sits above).

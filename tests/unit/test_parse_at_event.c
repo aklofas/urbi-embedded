@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* T45: AST_AT_EVENT parse + emit tests.
+/* AST_WATCHER (source=UWSRC_EVENT) parse + emit tests.
  *
  * Covers postfix `?` recognition inside at(...) and the emit arm that
  * produces OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL.
@@ -84,27 +84,29 @@ static bool bytecode_has_op(const UProto *m, UOpcode op) {
  * T45 parse tests
  * ----------------------------------------------------------------------- */
 
-/* at (e?) body  →  AST_AT_EVENT, sync_flag = false */
+/* at (e?) body  →  AST_WATCHER, source=UWSRC_EVENT, mode=UWATCHER_AT */
 UTEST(parse_at_event_with_question_postfix) {
     ParseCtx c;
     ctx_init(&c, "at (e?) body");
     UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
-    UASSERT_EQ(AST_AT_EVENT, n->kind);
-    UASSERT_EQ(0, (int)n->u.at_event.is_sync);
-    UASSERT(n->u.at_event.event_expr != NULL);
-    UASSERT_EQ(AST_IDENT, n->u.at_event.event_expr->kind);
+    UASSERT_EQ(AST_WATCHER, n->kind);
+    UASSERT_EQ((int)UWSRC_EVENT, (int)n->u.watcher.source);
+    UASSERT_EQ(UWATCHER_AT, n->u.watcher.mode);
+    UASSERT(n->u.watcher.cond != NULL);
+    UASSERT_EQ(AST_IDENT, n->u.watcher.cond->kind);
     ctx_destroy(&c);
 }
 
-/* at sync (e?) body  →  AST_AT_EVENT, sync_flag = true */
+/* at sync (e?) body  →  AST_WATCHER, source=UWSRC_EVENT, mode=UWATCHER_AT_SYNC */
 UTEST(parse_at_sync_event) {
     ParseCtx c;
     ctx_init(&c, "at sync (e?) body");
     UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
-    UASSERT_EQ(AST_AT_EVENT, n->kind);
-    UASSERT_EQ(1, (int)n->u.at_event.is_sync);
+    UASSERT_EQ(AST_WATCHER, n->kind);
+    UASSERT_EQ((int)UWSRC_EVENT, (int)n->u.watcher.source);
+    UASSERT_EQ(UWATCHER_AT_SYNC, n->u.watcher.mode);
     ctx_destroy(&c);
 }
 
@@ -114,8 +116,8 @@ UTEST(parse_at_event_with_onleave) {
     ctx_init(&c, "at (e?) body onleave handler");
     UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
-    UASSERT_EQ(AST_AT_EVENT, n->kind);
-    UASSERT(n->u.at_event.onleave != NULL);
+    UASSERT_EQ(AST_WATCHER, n->kind);
+    UASSERT(n->u.watcher.onleave != NULL);
     ctx_destroy(&c);
 }
 
@@ -125,8 +127,8 @@ UTEST(parse_at_event_no_onleave) {
     ctx_init(&c, "at (e?) body");
     UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
-    UASSERT_EQ(AST_AT_EVENT, n->kind);
-    UASSERT(n->u.at_event.onleave == NULL);
+    UASSERT_EQ(AST_WATCHER, n->kind);
+    UASSERT(n->u.watcher.onleave == NULL);
     ctx_destroy(&c);
 }
 
@@ -201,14 +203,15 @@ UTEST(emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL) {
 
 /* Regression: when event_expr routes through AST_IDENT global-fallback or
  * AST_MEMBER_GET, those arms only bump e->next_reg without bumping
- * fs->freereg.  AST_AT_EVENT's subsequent urbi_emit_function_literal then
- * allocates body_reg from the stale freereg, colliding with event_reg.
+ * fs->freereg.  The event source form's subsequent urbi_emit_function_literal
+ * then allocates body_reg from the stale freereg, colliding with event_reg.
  * OP_CLOSURE clobbers the event pointer at runtime; the install opcode
  * trips R[A] == R[B] (type confusion: closure interpreted as event).
  *
  * The fix syncs freereg to next_reg after urbi_emit_expr for the event
- * expression.  AST_WATCHER does not have this bug because cond is wrapped
- * in a closure (which routes through urbi_emit_function_literal symmetrically).
+ * expression.  The cond source form does not have this bug because cond is
+ * wrapped in a closure (which routes through urbi_emit_function_literal
+ * symmetrically).
  *
  * This test compiles `at sync (Realm.evt?) body_val` and asserts the
  * emitted OP_AT_EVENT_SYNC_INSTALL has distinct event/body registers.

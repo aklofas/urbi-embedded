@@ -12,16 +12,24 @@
 extern "C" {
 #endif
 
-/* Watcher modes — the value AST_WATCHER carries in `u.watcher.mode`, and
- * the only thing the emitter needs to pick between OP_AT_INSTALL,
- * OP_AT_SYNC_INSTALL and OP_WHENEVER_INSTALL.  The runtime does not read
- * these: each mode has its own opcode, and src/rt/uwatch.h keeps its own
- * representation of what an installed watcher is.  (They used to live in
- * the old runtime's watcher header, which also enumerated event-watcher
- * and waituntil modes the frontend never named.) */
+/* Watcher modes — the value AST_WATCHER carries in `u.watcher.mode`.
+ * Combined with `u.watcher.source` (UAstWatchSource, below) this is the
+ * only thing the emitter needs to pick an install opcode.  The runtime
+ * does not read either field: each (mode, source) pair has its own
+ * opcode, and src/rt/uwatch.h keeps its own representation of what an
+ * installed watcher is. */
 #define UWATCHER_AT        1   /* at (cond) body       — edge-triggered  */
 #define UWATCHER_WHENEVER  2   /* whenever (cond) body — level-triggered */
 #define UWATCHER_AT_SYNC   3   /* at sync (cond) body  — synchronous     */
+#define UWATCHER_WAITUNTIL 4   /* waituntil (cond)     — one-shot strand-block */
+
+/* AST_WATCHER's source discriminator — what `u.watcher.cond` actually
+ * holds, and (with `mode`) which install opcode the emitter selects:
+ *   COND:        cond is the boolean condition expression.
+ *   EVENT:       cond is the event expression (the `e` in `e?`).
+ *   SLOT_CHANGE: cond is the receiver (the `obj` in `obj.x.changed?`);
+ *                `slot_name`/`slot_name_len` name the watched slot. */
+typedef enum { UWSRC_COND = 0, UWSRC_EVENT = 1, UWSRC_SLOT_CHANGE = 2 } UAstWatchSource;
 
 /* Node kinds. */
 typedef enum {
@@ -71,19 +79,20 @@ typedef enum {
     AST_MEMBER_SET = 24,    /* obj.x = v     — recv + name + value */
 
     /* reactive constructs */
-    AST_WATCHER      = 25,  /* at / at sync / whenever — mode discriminator in
-                             * u.watcher.mode (UWATCHER_AT, UWATCHER_AT_SYNC,
-                             * UWATCHER_WHENEVER); also carries optional onleave.
-                             * spec #2 §3.10. Emits OP_AT_INSTALL / OP_AT_SYNC_INSTALL
-                             * / OP_WHENEVER_INSTALL depending on mode. */
-    AST_WAITUNTIL    = 26,  /* waituntil (cond) — structurally distinct cond-only node.
-                             * spec #2. Emits OP_WAITUNTIL_INSTALL. */
-    AST_AT_EVENT     = 27,  /* at (e?) / at sync (e?) — event-subscribe form.
-                             * spec #3. Distinct from AST_WATCHER because dispatch goes
-                             * through OP_AT_EVENT_INSTALL (=42), not OP_AT_INSTALL. */
-    AST_AT_SLOT_CHANGE = 28, /* at (obj.x.changed?) / sync variant — slot-change subscribe.
-                             * spec #4. Install needs OP_GETSLOT_CHANGE_EVENT (=44) prefix
-                             * followed by OP_AT_EVENT_INSTALL. */
+    AST_WATCHER      = 25,  /* at / at sync / whenever / waituntil — one node
+                             * for every reactive form.  `u.watcher.mode`
+                             * (UWATCHER_AT, UWATCHER_AT_SYNC, UWATCHER_WHENEVER,
+                             * UWATCHER_WAITUNTIL) and `u.watcher.source`
+                             * (UWSRC_COND, UWSRC_EVENT, UWSRC_SLOT_CHANGE)
+                             * together select the install opcode: OP_AT_INSTALL /
+                             * OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL (COND);
+                             * OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL /
+                             * OP_WHENEVER_EVENT_INSTALL (EVENT); the same EVENT
+                             * opcodes prefixed with OP_GETSLOT_CHANGE_EVENT
+                             * (SLOT_CHANGE); OP_WAITUNTIL_INSTALL (WAITUNTIL +
+                             * COND) or a desugared `e.waituntil()` call
+                             * (WAITUNTIL + EVENT).  spec #2 §3.10, spec #3,
+                             * spec #4. */
 
     /* string literal */
     AST_STR     = 29,       /* string literal — escape-resolved + adjacent-concat
@@ -262,10 +271,8 @@ typedef enum {
  *   u.throw_expr  — AST_THROW:  value expression to throw
  *   u.tag_prefix  — AST_TAG_PREFIX: tag-scope (mytag: { body }); onleave is v1.x
  *   u.member      — AST_MEMBER_GET, AST_MEMBER_SET: slot read / slot assignment
- *   u.watcher     — AST_WATCHER:         at/at sync/whenever + optional onleave
- *   u.waituntil   — AST_WAITUNTIL:       cond-only waituntil
- *   u.at_event    — AST_AT_EVENT:        at (e?) event-subscribe form
- *   u.at_slot_change — AST_AT_SLOT_CHANGE: at (obj.x.changed?) slot-change form
+ *   u.watcher     — AST_WATCHER: at/at sync/whenever/waituntil, every source
+ *                   form (cond/event/slot-change), + optional onleave
  *   u.str_lit     — AST_STR:             escape-resolved string bytes view
  *   [none]        — AST_BREAK:           no payload (exits innermost loop)
  *   [none]        — AST_CONTINUE:        no payload (next iteration)
@@ -410,44 +417,22 @@ struct UAstNode {
             UAstNode   *value;             /* SET only; NULL for GET */
         } member;
         struct {                                            /* AST_WATCHER */
-            UAstNode *cond;
-            UAstNode *body;
-            UAstNode *onleave;             /* nullable */
-            UAstNode *else_body;           /* nullable; fires on falling edge
-                                            * (WHENEVER mode only).  NULL for AT/AT_SYNC.
-                                            * When non-NULL, takes precedence over onleave
-                                            * as the alt closure passed to OP_WHENEVER_INSTALL. */
-            int       mode;               /* UWATCHER_AT / UWATCHER_AT_SYNC /
-                                           * UWATCHER_WHENEVER — int for now;
-                                           * UWatcherMode enum lands */
+            int             mode;            /* UWATCHER_* */
+            UAstWatchSource source;
+            UAstNode       *cond;            /* COND: the condition; EVENT: the event expression; SLOT_CHANGE: the receiver */
+            const char     *slot_name;       /* SLOT_CHANGE only */
+            int             slot_name_len;
+            UAstNode       *body;            /* NULL for WAITUNTIL */
+            UAstNode       *else_body;       /* WHENEVER only, nullable; fires on falling
+                                              * edge.  When non-NULL, takes precedence over
+                                              * onleave as the alt closure passed to
+                                              * OP_WHENEVER_INSTALL. */
+            UAstNode       *onleave;         /* nullable; never with AT_SYNC */
+            const char     *payload_var;     /* EVENT forms: `(var x)` name or NULL;
+                                              * also set for SLOT_CHANGE (merged-node
+                                              * behaviour — the baseline dropped it there) */
+            int             payload_var_len;
         } watcher;
-        struct {                                            /* AST_WAITUNTIL */
-            UAstNode *cond;
-            bool      is_event_form;       /* True when `waituntil (e?)` form */
-            const char *payload_var_name;  /* User-given name from `(var x)`, or NULL */
-            int         payload_var_len;
-        } waituntil;
-        struct {                                            /* AST_AT_EVENT */
-            UAstNode *event_expr;          /* the `e` in `at (e?)` or `whenever (e?)` */
-            UAstNode *body;
-            UAstNode *onleave;             /* nullable */
-            bool      is_sync;             /* `at sync (e?)` */
-            bool      is_whenever;         /* whenever (e?) — re-fires on each emission;
-                                            * no one-shot teardown (vs at (e?) which
-                                            * fires once per emission but does not reset
-                                            * cond state).  v0.10.2. */
-            const char *payload_var_name;  /* User-given name from `at (e?(var x))`,
-                                            * or NULL (body param name defaults to __payload) */
-            int         payload_var_len;
-        } at_event;
-        struct {                                            /* AST_AT_SLOT_CHANGE */
-            UAstNode   *receiver;          /* the `obj` in `at (obj.x.changed?)` */
-            const char *slot_name;         /* zero-copy lexeme view */
-            size_t      slot_name_len;
-            UAstNode   *body;
-            UAstNode   *onleave;           /* nullable */
-            bool        is_sync;           /* `at sync (obj.x.changed?)` */
-        } at_slot_change;
         struct {                                            /* AST_STR */
             const char *bytes;             /* arena-allocated escape-resolved
                                             * + concat-folded buffer; NOT

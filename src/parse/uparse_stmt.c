@@ -813,13 +813,10 @@ UAstNode *urbi_parse_function(UParser *p) {
 
     /* A function literal is a loop/switch boundary: break/continue do not
      * reach through it into an enclosing loop. */
-    int saved_loop_depth = p->loop_depth;
-    int saved_switch_depth = p->switch_depth;
-    p->loop_depth = 0;
-    p->switch_depth = 0;
+    UParseFuncBoundary saved_boundary;
+    urbi_parse_enter_function_boundary(p, &saved_boundary);
     UAstNode *body = urbi_parse_block(p);
-    p->loop_depth = saved_loop_depth;
-    p->switch_depth = saved_switch_depth;
+    urbi_parse_leave_function_boundary(p, &saved_boundary);
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 
@@ -891,13 +888,10 @@ UAstNode *urbi_parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
 
     /* A getter/setter body is a function literal: break/continue do not
      * reach through it into an enclosing loop. */
-    int saved_loop_depth = p->loop_depth;
-    int saved_switch_depth = p->switch_depth;
-    p->loop_depth = 0;
-    p->switch_depth = 0;
+    UParseFuncBoundary saved_boundary;
+    urbi_parse_enter_function_boundary(p, &saved_boundary);
     UAstNode *body = urbi_parse_block(p);
-    p->loop_depth = saved_loop_depth;
-    p->switch_depth = saved_switch_depth;
+    urbi_parse_leave_function_boundary(p, &saved_boundary);
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 

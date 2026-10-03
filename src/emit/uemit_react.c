@@ -1,17 +1,17 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Contains urbi_emit_expr arm helpers for:
  *   AST_MEMBER_GET, AST_MEMBER_SET   — slot access
- *   AST_WATCHER                      — at/whenever/at-sync installs
- *   AST_WAITUNTIL                    — waituntil install
- *   AST_AT_EVENT                     — event-driven at/at-sync
- *   AST_AT_SLOT_CHANGE               — slot-change at/at-sync
+ *   AST_WATCHER                      — every reactive form: at / at sync /
+ *                                      whenever / waituntil, each crossed
+ *                                      with source cond / event / slot-change
  *
- * IMPORTANT: AST_AT_EVENT and AST_AT_SLOT_CHANGE carry a freereg-sync
- * fix.  The two `if (e->current_fs->freereg < e->next_reg)` guards at
- * the urbi_emit_function_literal call sites in urbi_emit_at_event_arm
- * and urbi_emit_at_slot_change_arm MUST NOT be removed.  Dropping them
- * allows urbi_emit_function_literal to allocate body_reg on top of
- * event_reg, causing OP_CLOSURE to clobber the event pointer at
+ * IMPORTANT: the event (UWSRC_EVENT) and slot-change (UWSRC_SLOT_CHANGE)
+ * source forms carry a freereg-sync fix.  The `if (e->current_fs->freereg
+ * < e->next_reg)` guards in emit_watcher_event_form and
+ * emit_watcher_slot_change_form, right after the event register is
+ * computed and before the body closure is built, MUST NOT be removed.
+ * Dropping them allows urbi_emit_function_literal to allocate body_reg on
+ * top of event_reg, causing OP_CLOSURE to clobber the event pointer at
  * runtime.
  */
 
@@ -101,26 +101,56 @@ uint8_t urbi_emit_member_set_arm(UEmitter *e, UAstNode *n) {
 }
 
 /* =========================================================================
- * AST_WATCHER — at (cond) body [onleave] / at sync / whenever
+ * AST_WATCHER — at / at sync / whenever / waituntil, every source form
  * ========================================================================= */
 
-uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n) {
-    /* at (cond) body [onleave] / at sync (cond) body /
-     *      whenever (cond) body [onleave]
-     *
-     * Build cond/body/onleave closures via urbi_emit_function_literal,
-     * then emit the appropriate install opcode (ABC-encoded).
-     * Side-effect check on cond per spec #2 §9.1. */
-    if (e->current_fs == NULL || e->vm == NULL) {
-        e->error = EMIT_UNSUPPORTED_AST;
-        return 0U;
-    }
+/* Shared tail: emit a nil register as a reactive install's expression
+ * value (watchers are statements, but urbi_emit_expr must return a
+ * register). */
+static uint8_t emit_watcher_nil_result(UEmitter *e, int line) {
+    uint8_t rd = e->next_reg;
+    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)line);
+    e->next_reg++;
+    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    if (e->current_fs->freereg < e->next_reg)
+        e->current_fs->freereg = e->next_reg;
+    return rd;
+}
 
+/* Shared: a 0-param closure for a body/else/onleave AST, or the 0xFF
+ * "absent" sentinel the install opcodes read when body_ast is NULL. */
+static uint8_t emit_watcher_closure_or_absent(UEmitter *e, UAstNode *body_ast) {
+    if (body_ast == NULL) return 0xFFU;
+    return urbi_emit_function_literal(e, NULL, 0, body_ast, /*as_expression=*/false);
+}
+
+/* Shared: a 1-param closure (the event/slot-change payload parameter)
+ * for an EVENT- or SLOT_CHANGE-source body, or 0xFF if absent. */
+static uint8_t emit_watcher_payload_closure_or_absent(UEmitter *e, UAstNode *body_ast,
+                                                       const char *pname, int plen) {
+    if (body_ast == NULL) return 0xFFU;
+    UAstNode payload_param;
+    urbi_zero(&payload_param, sizeof payload_param);
+    payload_param.kind               = AST_PARAM;
+    payload_param.line               = body_ast->line;
+    payload_param.col                = 1;
+    payload_param.u.param.name_start = pname;
+    payload_param.u.param.name_len   = plen;
+    UAstNode *params_arr[1] = { &payload_param };
+    return urbi_emit_function_literal(e, params_arr, 1, body_ast, /*as_expression=*/false);
+}
+
+/* --- UWSRC_COND: at (cond) body [onleave] / at sync (cond) body /
+ * whenever (cond) body [onleave] [else else_body]
+ *
+ * Build cond/body/alt closures via urbi_emit_function_literal, then emit
+ * the appropriate install opcode (ABC-encoded).  Side-effect check on
+ * cond per spec #2 §9.1. */
+static uint8_t emit_watcher_cond_form(UEmitter *e, UAstNode *n, int mode) {
     UAstNode *cond_ast      = n->u.watcher.cond;
     UAstNode *body_ast      = n->u.watcher.body;
-    UAstNode *onleave_ast   = n->u.watcher.onleave;  /* NULL if absent */
+    UAstNode *onleave_ast   = n->u.watcher.onleave;   /* NULL if absent */
     UAstNode *else_body_ast = n->u.watcher.else_body; /* Nullable; WHENEVER only */
-    int       mode          = n->u.watcher.mode;
 
     /* For WHENEVER mode, else_body takes precedence over onleave as the
      * alt closure stored in register C of OP_WHENEVER_INSTALL.  The runtime
@@ -168,108 +198,53 @@ uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n) {
     if (body_ast != NULL) free_reg_freereg_synced(e);
     free_reg_freereg_synced(e);  /* cond_reg */
 
-    /* Return a nil register as the install expression's value. */
-    uint8_t rd = e->next_reg;
-    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
-    e->next_reg++;
-    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-    if (e->current_fs->freereg < e->next_reg)
-        e->current_fs->freereg = e->next_reg;
-    return rd;
+    return emit_watcher_nil_result(e, n->line);
 }
 
-/* =========================================================================
- * AST_WAITUNTIL — waituntil (cond)
- * ========================================================================= */
+/* Shared tail for UWSRC_EVENT and UWSRC_SLOT_CHANGE: given an already-
+ * computed event_reg and the install opcode to use, build the 1-param
+ * body closure (R[0] receives the emit payload per spec #3 §5.5) and the
+ * optional 0-param onleave closure, emit the install, and free temps.
+ * 0xFF in the alt_reg slot signals "no onleave" to the runtime. */
+static uint8_t emit_watcher_event_install(UEmitter *e, UAstNode *n,
+                                           uint8_t event_reg, UOpcode op) {
+    UAstNode *body_ast    = n->u.watcher.body;
+    UAstNode *onleave_ast = n->u.watcher.onleave;
 
-uint8_t urbi_emit_waituntil_arm(UEmitter *e, UAstNode *n) {
-    /* waituntil (cond) — one-shot strand-block primitive.
-     * Build a cond closure, emit OP_WAITUNTIL_INSTALL (=41).
-     * Side-effect check per spec #2 §9.2.
-     */
-    if (e->current_fs == NULL || e->vm == NULL) {
-        e->error = EMIT_UNSUPPORTED_AST;
-        return 0U;
-    }
+    /* Body closure: 1 param (payload).  Use the user-specified name from
+     * `(var x)` if present; fall back to `__payload` for anonymous
+     * payload (legacy default). */
+    const char *pname = (n->u.watcher.payload_var != NULL)
+                      ? n->u.watcher.payload_var
+                      : "__payload";
+    int plen = (n->u.watcher.payload_var != NULL)
+             ? n->u.watcher.payload_var_len
+             : 9;
 
-    /* Event form — desugar waituntil (e?) to e.waituntil(). */
-    if (n->u.waituntil.is_event_form) {
-        UAstNode *event_ast = n->u.waituntil.cond;
-
-        /* Build stack-allocated AST: member_node = AST_MEMBER_GET(event_ast, "waituntil") */
-        UAstNode member_node;
-        urbi_zero(&member_node, sizeof member_node);
-        member_node.kind                 = AST_MEMBER_GET;
-        member_node.line                 = n->line;
-        member_node.col                  = n->col;
-        member_node.u.member.recv        = event_ast;
-        member_node.u.member.name_start  = "waituntil";
-        member_node.u.member.name_len    = 9;
-        member_node.u.member.value       = NULL;
-
-        /* Build stack-allocated AST: call_node = AST_CALL(member_node, args=NULL, 0) */
-        UAstNode call_node;
-        urbi_zero(&call_node, sizeof call_node);
-        call_node.kind            = AST_CALL;
-        call_node.line            = n->line;
-        call_node.col             = n->col;
-        call_node.u.call.callee   = &member_node;
-        call_node.u.call.args     = NULL;
-        call_node.u.call.arg_count = 0;
-
-        /* Emit the desugared call — result is the payload value returned
-         * by urbi_event_waituntil / the strand's last_event_payload on resume. */
-        uint8_t rd = urbi_emit_expr(e, &call_node);
-        return rd;
-    }
-
-    UAstNode *cond_ast = n->u.waituntil.cond;
-
-    if (urbi_emit_cond_has_direct_side_effect(cond_ast)) {
-        urbi_emit_diag_warn(e, cond_ast,
-                       "watcher condition has direct write/assignment; "
-                       "may cause feedback loop at runtime");
-    }
-
-    uint8_t cond_reg = urbi_emit_function_literal(e, NULL, 0,
-                                             cond_ast, /*as_expression=*/true);
+    uint8_t body_reg = emit_watcher_payload_closure_or_absent(e, body_ast, pname, plen);
     if (e->error != EMIT_OK) return 0U;
 
-    urbi_emit_instr(e, uinstr_enc_abc(OP_WAITUNTIL_INSTALL, cond_reg, 0U, 0U),
-               (uint32_t)n->line);
-    free_reg_freereg_synced(e);  /* cond_reg — EMIT-010 */
+    uint8_t alt_reg = emit_watcher_closure_or_absent(e, onleave_ast);
+    if (e->error != EMIT_OK) return 0U;
 
-    uint8_t rd = e->next_reg;
-    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
-    e->next_reg++;
-    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-    if (e->current_fs->freereg < e->next_reg)
-        e->current_fs->freereg = e->next_reg;
-    return rd;
+    urbi_emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
+               (uint32_t)n->line);
+
+    if (alt_reg  != 0xFFU) free_reg_freereg_synced(e);
+    if (body_reg != 0xFFU) free_reg_freereg_synced(e);
+    free_reg_freereg_synced(e);  /* event_reg */
+
+    return emit_watcher_nil_result(e, n->line);
 }
 
-/* =========================================================================
- * AST_AT_EVENT — at (e?) body [onleave] / at sync (e?) body [onleave]
- * ========================================================================= */
-
-uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
-    /* at (e?) body [onleave] / at sync (e?) body [onleave]
-     *
-     * Emit the event-expression into a register, build a 1-param body
-     * closure (R[0] receives the emit payload per spec #3 §5.5) and an
-     * optional 0-param onleave closure, then emit the appropriate install
-     * opcode: OP_AT_EVENT_INSTALL (=42) or OP_AT_EVENT_SYNC_INSTALL (=43).
-     * 0xFF in the alt_reg slot signals "no onleave" to the runtime. */
-    if (e->current_fs == NULL || e->vm == NULL) {
-        e->error = EMIT_UNSUPPORTED_AST;
-        return 0U;
-    }
-
-    UAstNode *event_ast     = n->u.at_event.event_expr;
-    UAstNode *body_ast      = n->u.at_event.body;
-    UAstNode *onleave_ast   = n->u.at_event.onleave;
-    bool      sync_flag     = n->u.at_event.is_sync;
-    bool      whenever_flag = n->u.at_event.is_whenever;
+/* --- UWSRC_EVENT: at (e?) body [onleave] / at sync (e?) body [onleave] /
+ * whenever (e?) body [onleave]
+ *
+ * Emit the event-expression into a register, then build the body/onleave
+ * closures and the install opcode: OP_AT_EVENT_INSTALL (=42),
+ * OP_AT_EVENT_SYNC_INSTALL (=43), or OP_WHENEVER_EVENT_INSTALL. */
+static uint8_t emit_watcher_event_form(UEmitter *e, UAstNode *n, int mode) {
+    UAstNode *event_ast = n->u.watcher.cond;
 
     uint8_t event_reg = urbi_emit_expr(e, event_ast);
     if (e->error != EMIT_OK) return 0U;
@@ -279,86 +254,33 @@ uint8_t urbi_emit_at_event_arm(UEmitter *e, UAstNode *n) {
      * et al.) bump only e->next_reg, leaving freereg stale.
      * urbi_emit_function_literal allocates body_reg from freereg, so
      * without this sync body_reg can land on top of event_reg —
-     * OP_CLOSURE then clobbers the event pointer at runtime.
-     * AST_WATCHER avoids this by routing cond through
+     * OP_CLOSURE then clobbers the event pointer at runtime.  The COND
+     * source form avoids this by routing cond through
      * urbi_emit_function_literal symmetrically.  Do NOT remove. */
     if (e->current_fs->freereg < e->next_reg)
         e->current_fs->freereg = e->next_reg;
 
-    /* Body closure: 1 param (payload).
-     * Use user-specified name from `at (e?(var x))` if present;
-     * fall back to `__payload` for anonymous payload (legacy default). */
-    const char *pname = (n->u.at_event.payload_var_name != NULL)
-                      ? n->u.at_event.payload_var_name
-                      : "__payload";
-    int plen = (n->u.at_event.payload_var_name != NULL)
-             ? n->u.at_event.payload_var_len
-             : 9;
-
-    UAstNode payload_param;
-    urbi_zero(&payload_param, sizeof payload_param);
-    payload_param.kind               = AST_PARAM;
-    payload_param.line               = body_ast ? body_ast->line : n->line;
-    payload_param.col                = 1;
-    payload_param.u.param.name_start = pname;
-    payload_param.u.param.name_len   = plen;
-    UAstNode *params_arr[1] = { &payload_param };
-
-    uint8_t body_reg = (body_ast != NULL)
-        ? urbi_emit_function_literal(e, params_arr, 1, body_ast, /*as_expression=*/false)
-        : 0xFFU;
-    if (e->error != EMIT_OK) return 0U;
-
-    uint8_t alt_reg = (onleave_ast != NULL)
-        ? urbi_emit_function_literal(e, NULL, 0, onleave_ast, /*as_expression=*/false)
-        : 0xFFU;
-    if (e->error != EMIT_OK) return 0U;
-
-    UOpcode op = whenever_flag ? OP_WHENEVER_EVENT_INSTALL
-               : sync_flag    ? OP_AT_EVENT_SYNC_INSTALL
-               :                OP_AT_EVENT_INSTALL;
-    urbi_emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
-               (uint32_t)n->line);
-
-    if (alt_reg  != 0xFFU) free_reg_freereg_synced(e);
-    if (body_reg != 0xFFU) free_reg_freereg_synced(e);
-    free_reg_freereg_synced(e);  /* event_reg */
-
-    uint8_t rd = e->next_reg;
-    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
-    e->next_reg++;
-    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-    if (e->current_fs->freereg < e->next_reg)
-        e->current_fs->freereg = e->next_reg;
-    return rd;
+    UOpcode op = (mode == UWATCHER_WHENEVER) ? OP_WHENEVER_EVENT_INSTALL
+               : (mode == UWATCHER_AT_SYNC)  ? OP_AT_EVENT_SYNC_INSTALL
+               :                               OP_AT_EVENT_INSTALL;
+    return emit_watcher_event_install(e, n, event_reg, op);
 }
 
-/* =========================================================================
- * AST_AT_SLOT_CHANGE — at (obj.x.changed?) body [onleave] / at sync variant
- * ========================================================================= */
-
-uint8_t urbi_emit_at_slot_change_arm(UEmitter *e, UAstNode *n) {
-    /* at (obj.x.changed?) body [onleave] / at sync variant.
-     * Spec #4 §4.2: emit GETSLOT_CHANGE_EVENT then AT_EVENT_INSTALL.
-     *
-     *   recv_reg  := emit receiver expression
-     *   ic_idx    := uemit_assign_ic_index for slot name
-     *   event_reg := OP_GETSLOT_CHANGE_EVENT(event_reg, recv_reg, ic_idx)
-     *   body_reg  := urbi_emit_function_literal(body, 1 param)
-     *   alt_reg   := urbi_emit_function_literal(onleave, 0 params) or 0xFF
-     *                OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL
-     */
-    if (e->current_fs == NULL || e->vm == NULL) {
-        e->error = EMIT_UNSUPPORTED_AST;
-        return 0U;
-    }
-
-    UAstNode *recv_ast    = n->u.at_slot_change.receiver;
-    const char *sname     = n->u.at_slot_change.slot_name;
-    size_t      sname_len = n->u.at_slot_change.slot_name_len;
-    UAstNode *body_ast    = n->u.at_slot_change.body;
-    UAstNode *onleave_ast = n->u.at_slot_change.onleave;
-    bool      sync_flag   = n->u.at_slot_change.is_sync;
+/* --- UWSRC_SLOT_CHANGE: at (obj.x.changed?) body [onleave] / at sync
+ * variant.  Spec #4 §4.2: emit GETSLOT_CHANGE_EVENT then AT_EVENT_INSTALL.
+ *
+ *   recv_reg  := emit receiver expression (n->u.watcher.cond)
+ *   ic_idx    := uemit_assign_ic_index for slot name
+ *   event_reg := OP_GETSLOT_CHANGE_EVENT(event_reg, recv_reg, ic_idx)
+ *   body_reg  := urbi_emit_function_literal(body, 1 param)
+ *   alt_reg   := urbi_emit_function_literal(onleave, 0 params) or 0xFF
+ *                OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL
+ *
+ * Never reached in WHENEVER mode: `whenever` never slot-change-dispatches. */
+static uint8_t emit_watcher_slot_change_form(UEmitter *e, UAstNode *n, int mode) {
+    UAstNode   *recv_ast    = n->u.watcher.cond;
+    const char *sname       = n->u.watcher.slot_name;
+    size_t      sname_len   = (size_t)n->u.watcher.slot_name_len;
 
     uint8_t recv_reg = urbi_emit_expr(e, recv_ast);
     if (e->error != EMIT_OK) return 0U;
@@ -377,46 +299,90 @@ uint8_t urbi_emit_at_slot_change_arm(UEmitter *e, UAstNode *n) {
                (uint32_t)n->line);
 
     /* Sync freereg up to next_reg before allocating the body closure
-     * (mirrors AST_AT_EVENT).  AST_IDENT global-fallback feeding
+     * (mirrors the EVENT source form).  AST_IDENT global-fallback feeding
      * recv_ast bumps next_reg only, leaving freereg stale, so
      * urbi_emit_function_literal can otherwise allocate body_reg on top
      * of event_reg.  Do NOT remove. */
     if (e->current_fs->freereg < e->next_reg)
         e->current_fs->freereg = e->next_reg;
 
-    /* Body closure: 1 param (payload value on event fire). */
-    UAstNode payload_param;
-    urbi_zero(&payload_param, sizeof payload_param);
-    payload_param.kind               = AST_PARAM;
-    payload_param.line               = body_ast ? body_ast->line : n->line;
-    payload_param.col                = 1;
-    payload_param.u.param.name_start = "__payload";
-    payload_param.u.param.name_len   = 9;
-    UAstNode *params_arr[1] = { &payload_param };
+    UOpcode op = (mode == UWATCHER_AT_SYNC) ? OP_AT_EVENT_SYNC_INSTALL : OP_AT_EVENT_INSTALL;
+    return emit_watcher_event_install(e, n, event_reg, op);
+}
 
-    uint8_t body_reg = (body_ast != NULL)
-        ? urbi_emit_function_literal(e, params_arr, 1, body_ast, /*as_expression=*/false)
-        : 0xFFU;
+/* --- UWATCHER_WAITUNTIL + UWSRC_COND: waituntil (cond) — one-shot
+ * strand-block primitive.  Build a cond closure, emit
+ * OP_WAITUNTIL_INSTALL (=41).  Side-effect check per spec #2 §9.2. */
+static uint8_t emit_watcher_waituntil_cond_form(UEmitter *e, UAstNode *n) {
+    UAstNode *cond_ast = n->u.watcher.cond;
+
+    if (urbi_emit_cond_has_direct_side_effect(cond_ast)) {
+        urbi_emit_diag_warn(e, cond_ast,
+                       "watcher condition has direct write/assignment; "
+                       "may cause feedback loop at runtime");
+    }
+
+    uint8_t cond_reg = urbi_emit_function_literal(e, NULL, 0,
+                                             cond_ast, /*as_expression=*/true);
     if (e->error != EMIT_OK) return 0U;
 
-    uint8_t alt_reg = (onleave_ast != NULL)
-        ? urbi_emit_function_literal(e, NULL, 0, onleave_ast, /*as_expression=*/false)
-        : 0xFFU;
-    if (e->error != EMIT_OK) return 0U;
-
-    UOpcode op = sync_flag ? OP_AT_EVENT_SYNC_INSTALL : OP_AT_EVENT_INSTALL;
-    urbi_emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
+    urbi_emit_instr(e, uinstr_enc_abc(OP_WAITUNTIL_INSTALL, cond_reg, 0U, 0U),
                (uint32_t)n->line);
+    free_reg_freereg_synced(e);  /* cond_reg — EMIT-010 */
 
-    if (alt_reg  != 0xFFU) free_reg_freereg_synced(e);
-    if (body_reg != 0xFFU) free_reg_freereg_synced(e);
-    free_reg_freereg_synced(e);  /* event_reg */
+    return emit_watcher_nil_result(e, n->line);
+}
 
-    uint8_t rd = e->next_reg;
-    urbi_emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
-    e->next_reg++;
-    if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-    if (e->current_fs->freereg < e->next_reg)
-        e->current_fs->freereg = e->next_reg;
-    return rd;
+/* --- UWATCHER_WAITUNTIL + UWSRC_EVENT: desugar waituntil (e?) to
+ * e.waituntil(). */
+static uint8_t emit_watcher_waituntil_event_form(UEmitter *e, UAstNode *n) {
+    UAstNode *event_ast = n->u.watcher.cond;
+
+    /* Build stack-allocated AST: member_node = AST_MEMBER_GET(event_ast, "waituntil") */
+    UAstNode member_node;
+    urbi_zero(&member_node, sizeof member_node);
+    member_node.kind                 = AST_MEMBER_GET;
+    member_node.line                 = n->line;
+    member_node.col                  = n->col;
+    member_node.u.member.recv        = event_ast;
+    member_node.u.member.name_start  = "waituntil";
+    member_node.u.member.name_len    = 9;
+    member_node.u.member.value       = NULL;
+
+    /* Build stack-allocated AST: call_node = AST_CALL(member_node, args=NULL, 0) */
+    UAstNode call_node;
+    urbi_zero(&call_node, sizeof call_node);
+    call_node.kind            = AST_CALL;
+    call_node.line            = n->line;
+    call_node.col             = n->col;
+    call_node.u.call.callee   = &member_node;
+    call_node.u.call.args     = NULL;
+    call_node.u.call.arg_count = 0;
+
+    /* Emit the desugared call — result is the payload value returned
+     * by urbi_event_waituntil / the strand's last_event_payload on resume. */
+    return urbi_emit_expr(e, &call_node);
+}
+
+uint8_t urbi_emit_watcher_arm(UEmitter *e, UAstNode *n) {
+    if (e->current_fs == NULL || e->vm == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+
+    int             mode   = n->u.watcher.mode;
+    UAstWatchSource source = n->u.watcher.source;
+
+    if (mode == UWATCHER_WAITUNTIL) {
+        return (source == UWSRC_EVENT)
+            ? emit_watcher_waituntil_event_form(e, n)
+            : emit_watcher_waituntil_cond_form(e, n);
+    }
+
+    switch (source) {
+        case UWSRC_EVENT:       return emit_watcher_event_form(e, n, mode);
+        case UWSRC_SLOT_CHANGE: return emit_watcher_slot_change_form(e, n, mode);
+        case UWSRC_COND:
+        default:                return emit_watcher_cond_form(e, n, mode);
+    }
 }

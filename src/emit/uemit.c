@@ -427,9 +427,6 @@ uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     case AST_MEMBER_GET:     return urbi_emit_member_get_arm(e, n);
     case AST_MEMBER_SET:     return urbi_emit_member_set_arm(e, n);
     case AST_WATCHER:        return urbi_emit_watcher_arm(e, n);
-    case AST_WAITUNTIL:      return urbi_emit_waituntil_arm(e, n);
-    case AST_AT_EVENT:       return urbi_emit_at_event_arm(e, n);
-    case AST_AT_SLOT_CHANGE: return urbi_emit_at_slot_change_arm(e, n);
     case AST_BREAK:           return urbi_emit_break_arm(e, n);
     case AST_CONTINUE:        return urbi_emit_continue_arm(e, n);
     case AST_SWITCH:          return urbi_emit_switch_arm(e, n);
