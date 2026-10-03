@@ -186,6 +186,25 @@ UTEST(an_emit_error_names_its_line_and_column) {
     urbi_close(vm);
 }
 
+/* The break/continue patch list per loop is a fixed-size array; past its
+ * cap a further break latches a diagnostic instead of overflowing it.
+ * Built with a loop rather than typed out, since the count is the
+ * point, not any particular break site. */
+UTEST(the_break_patch_list_caps_at_sixteen_sites) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    char src[4096]; size_t at; uint8_t *bytes = NULL; size_t n = 0; char err[256] = {0};
+    at = (size_t)snprintf(src, sizeof src, "while (true) { ");
+    for (int k = 0; k < 16; k++) at += (size_t)snprintf(src + at, sizeof src - at, "break; ");
+    (void)snprintf(src + at, sizeof src - at, "}");
+    UASSERT_EQ(URBI_OK, urbi_compile(vm, src, strlen(src), NULL, &bytes, &n, err, sizeof err));
+    at = (size_t)snprintf(src, sizeof src, "while (true) { ");
+    for (int k = 0; k < 17; k++) at += (size_t)snprintf(src + at, sizeof src - at, "break; ");
+    (void)snprintf(src + at, sizeof src - at, "}");
+    UASSERT_EQ(URBI_ERR_COMPILE, urbi_compile(vm, src, strlen(src), NULL, &bytes, &n, err, sizeof err));
+    UASSERT(strstr(err, "max 16") != NULL);
+    urbi_close(vm);
+}
+
 /* A line delta is one signed byte (-128 is the absolute-checkpoint
  * sentinel), so a gap past 127 lines between two instructions forces an
  * abs_lines checkpoint instead of a running delta.  Line 1 and line 200
@@ -452,6 +471,7 @@ void test_emit_bytecode_suite(void) {
     utest_run("default_parameters_fill_omitted_arguments", default_parameters_fill_omitted_arguments);
     utest_run("logical_operators_short_circuit", logical_operators_short_circuit);
     utest_run("an_emit_error_names_its_line_and_column", an_emit_error_names_its_line_and_column);
+    utest_run("the_break_patch_list_caps_at_sixteen_sites", the_break_patch_list_caps_at_sixteen_sites);
     utest_run("a_line_table_checkpoint_survives_a_128_line_gap", a_line_table_checkpoint_survives_a_128_line_gap);
     utest_run("the_diag_buffer_keeps_warnings_and_errors_in_order", the_diag_buffer_keeps_warnings_and_errors_in_order);
     utest_run("finally_is_emitted_once", finally_is_emitted_once);
