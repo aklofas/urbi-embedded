@@ -384,43 +384,32 @@ static UAstNode *parse_bracket_literal(UParser *p) {
     { UAstNode *err = NULL; if (!expect(p, TOK_RBRACKET, PARSE_EXPECTED_RBRACKET, &err)) return err; }  /* urbi_parse_consume ']' */
 
     if (is_dict) {
-        /* BLOCK { var $d = Dict.new(); $d.set(k0, v0); ...; $d } — the
-         * hidden local keeps a dict literal nested inside another
-         * expression (or a second dict literal in the same scope) from
-         * colliding with any user name. */
-        int dname_len;
-        const char *dname = urbi_parse_hidden_name(p, "d", &dname_len);
-        if (!dname) return (UAstNode *)&uparser_oom_sentinel;
-
-        UAstNode *new_call = desugar_new_call(p, "Dict", 4, NULL, 0, lbr.line, lbr.col);
-        if (!new_call) return NULL;
-        UAstNode *var_d = urbi_parse_desugar_var_decl(p, dname, dname_len, new_call,
-                                                       lbr.line, lbr.col);
-        if (!var_d) return NULL;
-
-        int total = count + 2;  /* var-decl + one .set() per pair + trailing ident */
-        UAstNode **stmts = (UAstNode **)uarena_alloc(p->arena,
-                                                      (size_t)total * sizeof(UAstNode *));
-        if (!stmts) return (UAstNode *)&uparser_oom_sentinel;
-        int si = 0;
-        stmts[si++] = var_d;
+        /* Dict.new().set(k0, v0).set(k1, v1)... — dict_set returns self
+         * (src/stdlib/containers.c), so the chain's value is the dict.
+         * No block, no hidden local: nesting each .set() call as the
+         * next receiver is an ordinary expression tree, so this works
+         * anywhere an expression can go.  A BLOCK with a declared local
+         * does not: urbi_emit_block_arm's between-statement register
+         * reset only knows about its OWN declared locals, so in
+         * expression position (an argument to a call, an operand of a
+         * binary, an earlier element of an enclosing list literal) it
+         * would hand an enclosing expression's still-live temporary
+         * register to one of this dict's own statements and corrupt
+         * it. */
+        UAstNode *result = desugar_new_call(p, "Dict", 4, NULL, 0, lbr.line, lbr.col);
+        if (!result) return NULL;
         for (int i = 0; i < count; i++) {
-            UAstNode *d_ref = urbi_parse_desugar_ident(p, dname, dname_len, lbr.line, lbr.col);
-            if (!d_ref) return NULL;
-            UAstNode *set_mg = urbi_parse_desugar_member_get(p, d_ref, "set", 3, lbr.line, lbr.col);
+            UAstNode *set_mg = urbi_parse_desugar_member_get(p, result, "set", 3,
+                                                              lbr.line, lbr.col);
             if (!set_mg) return NULL;
             UAstNode **set_args = (UAstNode **)uarena_alloc(p->arena, 2U * sizeof(UAstNode *));
             if (!set_args) return (UAstNode *)&uparser_oom_sentinel;
             set_args[0] = keys[i];
             set_args[1] = vals[i];
-            UAstNode *set_call = urbi_parse_desugar_call(p, set_mg, set_args, 2, lbr.line, lbr.col);
-            if (!set_call) return NULL;
-            stmts[si++] = set_call;
+            result = urbi_parse_desugar_call(p, set_mg, set_args, 2, lbr.line, lbr.col);
+            if (!result) return NULL;
         }
-        UAstNode *d_final = urbi_parse_desugar_ident(p, dname, dname_len, lbr.line, lbr.col);
-        if (!d_final) return NULL;
-        stmts[si++] = d_final;
-        return urbi_parse_desugar_block(p, stmts, total, lbr.line, lbr.col);
+        return result;
     } else {
         return desugar_new_call(p, "List", 4, elems, count, lbr.line, lbr.col);
     }

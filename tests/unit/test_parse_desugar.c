@@ -45,16 +45,50 @@ UTEST(empty_list_literal_is_list_new_with_no_args) {
     pfix_close(&f);
 }
 
-UTEST(dict_literal_is_a_block_that_builds_and_yields_the_dict) {
+/* A dict literal is a chained `.set()` call, not a BLOCK with a
+ * declared local: dict_set returns self (src/stdlib/containers.c), so
+ * the chain's value is the dict, and an ordinary expression tree works
+ * anywhere an expression can go — including as part of a larger
+ * expression, where a BLOCK's declared-local machinery would corrupt
+ * an enclosing temporary (see tests/chk/objects/literals_in_expressions.chk). */
+UTEST(dict_literal_is_a_chained_set_call_on_dict_new) {
     PFix f; UAstNode *n = parse_one(&f, "[\"a\" => 1, \"b\" => 2]");
-    UASSERT(n && n->kind == AST_BLOCK);
-    UASSERT_EQ(4, n->u.block.count);                 /* var $d = Dict.new(); set; set; $d */
-    UASSERT_EQ((int)AST_VAR_DECL, (int)n->u.block.stmts[0]->kind);
-    UASSERT_EQ((int)AST_CALL,     (int)n->u.block.stmts[1]->kind);
-    UASSERT(member_is(n->u.block.stmts[1]->u.call.callee, "set"));
-    UASSERT_EQ(2, n->u.block.stmts[1]->u.call.arg_count);
-    UASSERT_EQ((int)AST_IDENT,    (int)n->u.block.stmts[3]->kind);
-    UASSERT_EQ('\x01', n->u.block.stmts[3]->u.ident.start[0]);
+    UASSERT(n && n->kind == AST_CALL);
+    UASSERT(member_is(n->u.call.callee, "set"));
+    UASSERT_EQ(2, n->u.call.arg_count);
+    /* Outermost call is the LAST pair: ("b", 2). */
+    UASSERT_EQ((int)AST_STR, (int)n->u.call.args[0]->kind);
+    UASSERT(memcmp(n->u.call.args[0]->u.str_lit.bytes, "b", 1) == 0);
+    UASSERT_EQ((int)AST_INT, (int)n->u.call.args[1]->kind);
+    UASSERT_EQ((int64_t)2, n->u.call.args[1]->u.i);
+    /* Its receiver is the FIRST pair's .set() call: ("a", 1). */
+    UAstNode *inner = n->u.call.callee->u.member.recv;
+    UASSERT(inner && inner->kind == AST_CALL);
+    UASSERT(member_is(inner->u.call.callee, "set"));
+    UASSERT_EQ(2, inner->u.call.arg_count);
+    UASSERT(memcmp(inner->u.call.args[0]->u.str_lit.bytes, "a", 1) == 0);
+    /* Whose receiver bottoms out in Dict.new(). */
+    UAstNode *dict_new = inner->u.call.callee->u.member.recv;
+    UASSERT(dict_new && dict_new->kind == AST_CALL);
+    UASSERT(member_is(dict_new->u.call.callee, "new"));
+    UASSERT(ident_is(dict_new->u.call.callee->u.member.recv, "Dict"));
+    UASSERT_EQ(0, dict_new->u.call.arg_count);
+    pfix_close(&f);
+}
+
+UTEST(empty_dict_literal_is_a_parse_error) {
+    /* `[=>]` was never admitted by the bracket-literal grammar (the
+     * dict/list choice is only made after seeing a first element), and
+     * that is unchanged by the chained-call lowering. */
+    PFix f; UAstNode *n = parse_one(&f, "[=>]");
+    UASSERT(n && n->kind == AST_ERROR);
+    pfix_close(&f);
+}
+
+UTEST(class_body_statement_that_is_not_a_var_or_property_is_a_parse_error) {
+    PFix f; UAstNode *n = parse_one(&f, "class Foo { return 1 }");
+    UASSERT(n && n->kind == AST_ERROR);
+    UASSERT_EQ((int)PARSE_CLASS_BODY_STATEMENT, n->u.err.code);
     pfix_close(&f);
 }
 
@@ -174,7 +208,8 @@ UTEST(pipe_amp_pair_is_a_two_child_seq) {
 void test_parse_desugar_suite(void) {
     utest_run("list_literal_is_a_call_to_list_new", list_literal_is_a_call_to_list_new);
     utest_run("empty_list_literal_is_list_new_with_no_args", empty_list_literal_is_list_new_with_no_args);
-    utest_run("dict_literal_is_a_block_that_builds_and_yields_the_dict", dict_literal_is_a_block_that_builds_and_yields_the_dict);
+    utest_run("dict_literal_is_a_chained_set_call_on_dict_new", dict_literal_is_a_chained_set_call_on_dict_new);
+    utest_run("empty_dict_literal_is_a_parse_error", empty_dict_literal_is_a_parse_error);
     utest_run("subscript_get_is_recv_get", subscript_get_is_recv_get);
     utest_run("subscript_set_is_recv_set", subscript_set_is_recv_set);
     utest_run("compound_subscript_evaluates_receiver_and_index_once", compound_subscript_evaluates_receiver_and_index_once);
@@ -182,6 +217,7 @@ void test_parse_desugar_suite(void) {
     utest_run("assert_block_form_throws_the_bare_message", assert_block_form_throws_the_bare_message);
     utest_run("class_declaration_is_a_block_of_clone_protos_and_slot_sets", class_declaration_is_a_block_of_clone_protos_and_slot_sets);
     utest_run("property_declaration_with_receiver_is_set_property", property_declaration_with_receiver_is_set_property);
+    utest_run("class_body_statement_that_is_not_a_var_or_property_is_a_parse_error", class_body_statement_that_is_not_a_var_or_property_is_a_parse_error);
     utest_run("arrow_access_is_a_parse_error", arrow_access_is_a_parse_error);
     utest_run("semicolon_sequence_is_one_seq_node", semicolon_sequence_is_one_seq_node);
     utest_run("pipe_amp_pair_is_a_two_child_seq", pipe_amp_pair_is_a_two_child_seq);

@@ -1,0 +1,15 @@
+# Covers: a class body statement that is neither a var declaration nor
+# a getter/setter is a parse-time error (PARSE_CLASS_BODY_STATEMENT),
+# not a runtime one — the parser flattens and validates every class
+# body leaf while lowering the whole declaration to a BLOCK.
+
+class Foo { return 1 }
+[00000000] !!! <stdin>:1:13: class body: only var declarations and getters/setters are allowed
+
+class Bar { 1 + 1 }
+[00000001] !!! <stdin>:1:15: class body: only var declarations and getters/setters are allowed
+
+# A legitimate var declaration alongside an illegal statement still
+# reports the illegal one, not a cascade.
+class Baz { var x = 1; throw "boom" }
+[00000002] !!! <stdin>:1:24: class body: only var declarations and getters/setters are allowed
