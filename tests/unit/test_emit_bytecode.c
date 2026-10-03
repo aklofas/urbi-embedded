@@ -283,6 +283,39 @@ UTEST(a_continue_across_a_finally_closes_the_iteration_cells) {
     urbi_close(vm);
 }
 
+/* A closure made in a scope the walker abandons keeps its own value: the
+ * handler, the finally body and the code after a stopped tag scope reuse
+ * the abandoned body's registers, so the cells must be closed first. */
+UTEST(a_cell_from_an_abandoned_try_body_survives_the_catch) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var f = function() { var g = nil; try { var x = 1; g = function() { x }; throw 7 } catch (var e) { var y = 4 }; g() }; f()", 1);
+    urbi_close(vm);
+}
+UTEST(a_cell_from_a_body_left_by_break_survives_the_finally) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var f = function() { var g = nil; while (true) { try { var x = 1; g = function() { x }; break } finally { var y = 4 } }; g() }; f()", 1);
+    urbi_close(vm);
+}
+UTEST(a_cell_from_a_stopped_tag_scope_survives_it) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var f = function() { var t = Tag.new(); var g = nil; t: { var x = 1; g = function() { x }; t.stop() }; var y = 4; g() }; f()", 1);
+    urbi_close(vm);
+}
+
+/* A break counts only the scopes opened inside its loop: the catch or tag
+ * scope around the loop is still in place after it. */
+UTEST(a_break_leaves_the_scope_around_its_loop_in_place) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var r = 0; try { while (true) { try { break } finally { r = r + 1 } }; throw 5 } catch (var e) { r = r + e * 10 }; r", 51);
+    urbi_close(vm);
+}
+UTEST(a_break_leaves_the_tag_scope_around_its_loop_in_place) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    /* t.stop() after the loop resumes after t's scope, skipping r = 1. */
+    run_int(vm, "var t = Tag.new(); var u = Tag.new(); var r = 0; t: { while (true) { u: { break } }; t.stop(); r = 1 }; r * 10 + 2", 2);
+    urbi_close(vm);
+}
+
 void test_emit_bytecode_suite(void) {
     utest_run("every_function_loads_the_globals_object_first", every_function_loads_the_globals_object_first);
     utest_run("a_local_read_emits_no_move", a_local_read_emits_no_move);
@@ -312,4 +345,9 @@ void test_emit_bytecode_suite(void) {
     utest_run("the_try_value_is_the_body_or_the_catch", the_try_value_is_the_body_or_the_catch);
     utest_run("a_continue_closes_the_iteration_cells", a_continue_closes_the_iteration_cells);
     utest_run("a_continue_across_a_finally_closes_the_iteration_cells", a_continue_across_a_finally_closes_the_iteration_cells);
+    utest_run("a_cell_from_an_abandoned_try_body_survives_the_catch", a_cell_from_an_abandoned_try_body_survives_the_catch);
+    utest_run("a_cell_from_a_body_left_by_break_survives_the_finally", a_cell_from_a_body_left_by_break_survives_the_finally);
+    utest_run("a_cell_from_a_stopped_tag_scope_survives_it", a_cell_from_a_stopped_tag_scope_survives_it);
+    utest_run("a_break_leaves_the_scope_around_its_loop_in_place", a_break_leaves_the_scope_around_its_loop_in_place);
+    utest_run("a_break_leaves_the_tag_scope_around_its_loop_in_place", a_break_leaves_the_tag_scope_around_its_loop_in_place);
 }

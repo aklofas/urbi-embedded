@@ -117,6 +117,7 @@ typedef struct UFuncState {
     const char **site_names;      /* interned names; grows by doubling through the module allocator */
     uint16_t  site_cap;
     uint32_t  prev_line;          /* 0 until this function's first instruction */
+    uint32_t  ncaptures;          /* bumped each time a nested function captures one of these locals */
 } UFuncState;
 
 struct UEmitter {

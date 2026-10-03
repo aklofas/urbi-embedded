@@ -147,6 +147,7 @@ int uupval_find_or_install(UEmitter *e, UFuncState *fs, const char *name) {
         /* The innermost block holding the local closes its cell when the
          * block ends; the function's own return closes the rest. */
         parent->locals[li].flags |= ULOCAL_CAPTURED;
+        parent->ncaptures++;
         for (int b = parent->nblocks - 1; b >= 0; b--) {
             if (parent->blocks[b].nactvar_on_enter <= li) {
                 parent->blocks[b].has_captured = true;
