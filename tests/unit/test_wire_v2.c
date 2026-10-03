@@ -227,6 +227,121 @@ UTEST(a_closure_prelude_word_is_not_an_instruction) {
                (int)closure_with_prelude(uinstr_enc_abc(OP_GETSLOT, 0, 1, 0), 1));
 }
 
+/* A root of `ins` over one child with one upvalue, so the word after the
+ * root's OP_CLOSURE is a prelude word. */
+static UChunkLoadError root_over_one_upvalue_child(const uint32_t *ins, size_t n) {
+    UProto *p = make_proto(ins, n, 0);
+    UProto *child = uproto_alloc_nested(p, p);
+    uint32_t cins[] = { uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    child->instructions = malloc(sizeof cins); memcpy(child->instructions, cins, sizeof cins);
+    child->instr_count = child->instr_cap = 2; child->line_deltas = calloc(2, 1);
+    child->max_reg = 1; child->nupvals = 1;
+    char err[160] = {0};
+    UChunkLoadError rc = roundtrip(p, err, sizeof err);
+    uchunk_destroy(p, NULL);
+    return rc;
+}
+/* The prelude word reads as `MOVE R250, R1`: run as an instruction it
+ * would write far past a seven-register frame. */
+#define HOSTILE_PRELUDE uinstr_enc_abc(OP_MOVE, 250, 1, 0)
+
+UTEST(a_jump_into_a_closure_prelude_is_rejected) {
+    uint32_t ins[] = {
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0),
+        uinstr_enc_abx(OP_JMP, 0, 32768 + 1),            /* forward 1: lands on pc 3 */
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),
+        HOSTILE_PRELUDE,                                  /* pc 3 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    UASSERT_EQ((int)UCHUNK_LOAD_BAD_TARGET, (int)root_over_one_upvalue_child(ins, 5));
+    /* The same jump one word further, onto the RET, loads. */
+    ins[1] = uinstr_enc_abx(OP_JMP, 0, 32768 + 2);
+    UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)root_over_one_upvalue_child(ins, 5));
+}
+UTEST(a_backward_jump_into_a_closure_prelude_is_rejected) {
+    uint32_t ins[] = {
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),
+        HOSTILE_PRELUDE,                                  /* pc 1 */
+        uinstr_enc_abx(OP_JMP, 0, 32768 - 1),            /* backward 1: lands on pc 1 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    UASSERT_EQ((int)UCHUNK_LOAD_BAD_TARGET, (int)root_over_one_upvalue_child(ins, 4));
+}
+UTEST(a_scope_try_handler_into_a_closure_prelude_is_rejected) {
+    uint32_t ins[] = {
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_CATCH, 2),
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),
+        HOSTILE_PRELUDE,                                  /* pc 2 */
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0, 0),
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    UASSERT_EQ((int)UCHUNK_LOAD_BAD_TARGET, (int)root_over_one_upvalue_child(ins, 5));
+}
+UTEST(a_scope_tag_resume_pc_into_a_closure_prelude_is_rejected) {
+    uint32_t ins[] = {
+        uinstr_enc_abx(OP_SCOPE_TAG, USCOPE_NO_REG, 2),
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),
+        HOSTILE_PRELUDE,                                  /* pc 2 */
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TAG, 0, 0),
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    UASSERT_EQ((int)UCHUNK_LOAD_BAD_TARGET, (int)root_over_one_upvalue_child(ins, 5));
+}
+UTEST(an_unwind_to_target_into_a_closure_prelude_is_rejected) {
+    uint32_t ins[] = {
+        uinstr_enc_abx(OP_UNWIND_TO, 0, 2),
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),
+        HOSTILE_PRELUDE,                                  /* pc 2 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    UASSERT_EQ((int)UCHUNK_LOAD_BAD_TARGET, (int)root_over_one_upvalue_child(ins, 4));
+}
+UTEST(a_skip_over_a_closure_into_its_prelude_is_rejected) {
+    /* TEST steps over exactly one word: over a CLOSURE it lands on the
+     * prelude word. */
+    uint32_t ins[] = {
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0),
+        uinstr_enc_abc(OP_TEST, 0, 0, 0),
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),
+        HOSTILE_PRELUDE,                                  /* pc 3 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    UASSERT_EQ((int)UCHUNK_LOAD_BAD_TARGET, (int)root_over_one_upvalue_child(ins, 5));
+}
+UTEST(a_target_one_past_the_end_is_rejected) {
+    char err[128] = {0};
+    /* A forward jump onto instr_count. */
+    uint32_t j[] = { uinstr_enc_abx(OP_JMP, 0, 32768 + 1), uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    UProto *pj = make_proto(j, 2, 0);
+    UASSERT_EQ((int)UCHUNK_LOAD_JMP_OUT_OF_BOUNDS, (int)roundtrip(pj, err, sizeof err)); free_proto(pj);
+    /* A handler pc of instr_count. */
+    uint32_t h[] = { uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_CATCH, 3),
+                     uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    UProto *ph = make_proto(h, 3, 0);
+    UASSERT_EQ((int)UCHUNK_LOAD_CORRUPT, (int)roundtrip(ph, err, sizeof err)); free_proto(ph);
+    /* An UNWIND_TO target of instr_count. */
+    uint32_t u[] = { uinstr_enc_abx(OP_UNWIND_TO, 0, 2), uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    UProto *pu = make_proto(u, 2, 0);
+    UASSERT_EQ((int)UCHUNK_LOAD_CORRUPT, (int)roundtrip(pu, err, sizeof err)); free_proto(pu);
+    /* A skip over the final RET. */
+    uint32_t s[] = { uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_TEST, 0, 0, 0),
+                     uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    UProto *ps = make_proto(s, 3, 0);
+    UASSERT_EQ((int)UCHUNK_LOAD_BAD_TARGET, (int)roundtrip(ps, err, sizeof err)); free_proto(ps);
+}
+UTEST(a_prelude_word_with_an_extarg_opcode_byte_does_not_guard_a_target) {
+    /* Pass 1 and pass 2 agree a prelude word is not an instruction: an
+     * EXTARG opcode byte in one does not make the next instruction an
+     * EXTARG operand, so a jump onto that instruction loads. */
+    uint32_t ins[] = {
+        uinstr_enc_abx(OP_JMP, 0, 32768 + 2),            /* forward 2: lands on pc 3 */
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),
+        (uint32_t)OP_EXTARG | (1u << 16),                 /* prelude word */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),                  /* pc 3 */
+    };
+    UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)root_over_one_upvalue_child(ins, 4));
+}
+
 void test_wire_v2_suite(void) {
     utest_run("a_site_index_above_255_needs_extarg_and_round_trips",
               a_site_index_above_255_needs_extarg_and_round_trips);
@@ -256,4 +371,20 @@ void test_wire_v2_suite(void) {
               the_dry_run_size_equals_the_written_size_for_a_nested_chunk);
     utest_run("an_old_version_byte_is_rejected",
               an_old_version_byte_is_rejected);
+    utest_run("a_jump_into_a_closure_prelude_is_rejected",
+              a_jump_into_a_closure_prelude_is_rejected);
+    utest_run("a_backward_jump_into_a_closure_prelude_is_rejected",
+              a_backward_jump_into_a_closure_prelude_is_rejected);
+    utest_run("a_scope_try_handler_into_a_closure_prelude_is_rejected",
+              a_scope_try_handler_into_a_closure_prelude_is_rejected);
+    utest_run("a_scope_tag_resume_pc_into_a_closure_prelude_is_rejected",
+              a_scope_tag_resume_pc_into_a_closure_prelude_is_rejected);
+    utest_run("an_unwind_to_target_into_a_closure_prelude_is_rejected",
+              an_unwind_to_target_into_a_closure_prelude_is_rejected);
+    utest_run("a_skip_over_a_closure_into_its_prelude_is_rejected",
+              a_skip_over_a_closure_into_its_prelude_is_rejected);
+    utest_run("a_target_one_past_the_end_is_rejected",
+              a_target_one_past_the_end_is_rejected);
+    utest_run("a_prelude_word_with_an_extarg_opcode_byte_does_not_guard_a_target",
+              a_prelude_word_with_an_extarg_opcode_byte_does_not_guard_a_target);
 }

@@ -949,6 +949,7 @@ const char *uchunk_load_error_name(UChunkLoadError code) {
     case UCHUNK_LOAD_CALL_NRESULTS_ZERO:  return "UCHUNK_LOAD_CALL_NRESULTS_ZERO";
     case UCHUNK_LOAD_RESERVED_OPCODE:     return "UCHUNK_LOAD_RESERVED_OPCODE";
     case UCHUNK_LOAD_BAD_EXTARG:          return "UCHUNK_LOAD_BAD_EXTARG";
+    case UCHUNK_LOAD_BAD_TARGET:          return "UCHUNK_LOAD_BAD_TARGET";
     }
     return "UCHUNK_LOAD_UNKNOWN";
 }

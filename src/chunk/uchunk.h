@@ -142,7 +142,8 @@ typedef enum {
     UCHUNK_LOAD_JMP_OUT_OF_BOUNDS,      /* OP_JMP Bx target pc outside [0, instr_count) */
     UCHUNK_LOAD_CALL_NRESULTS_ZERO,     /* OP_CALL C low-7 == 0 (nresults+1 must be >= 1) */
     UCHUNK_LOAD_RESERVED_OPCODE,        /* opcode is reserved/unimplemented at this wire version */
-    UCHUNK_LOAD_BAD_EXTARG              /* OP_EXTARG misplaced: last, doubled, before a non-site opcode, or a jump/handler lands after it */
+    UCHUNK_LOAD_BAD_EXTARG,             /* OP_EXTARG misplaced: last, doubled, before a non-site opcode, or a jump/handler lands after it */
+    UCHUNK_LOAD_BAD_TARGET              /* a skip or handler target lies past the end, or any control transfer lands inside an OP_CLOSURE upvalue prelude */
 } UChunkLoadError;
 
 /* Per-proto cap on instruction count.  Bytecode-encoded as varint;

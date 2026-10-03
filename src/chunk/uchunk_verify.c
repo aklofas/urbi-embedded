@@ -230,7 +230,8 @@ static UChunkLoadError verify_bx(MDecCtx *d, uint8_t op, uint16_t bx,
    nested_count / site_count).  An OP_EXTARG sets the high bits of the
    next instruction's site index; that instruction must take one.  The
    upvalue prelude words after an OP_CLOSURE are not instructions: they
-   are skipped here, as dispatch skips them, and checked by pass 2. */
+   are skipped here, as dispatch skips them, and pass 2 checks their
+   encoding and refuses any control transfer that lands on one. */
 static UChunkLoadError verify_walk_block(MDecCtx *d,
                                           uint8_t max_reg,
                                           size_t const_count,
@@ -307,7 +308,18 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                            (unsigned)a, vi);
                 return UCHUNK_LOAD_CORRUPT;
             }
-            if (op == (uint8_t)OP_CLOSURE && nested != NULL && nested[bx] != NULL) {
+            if (op == (uint8_t)OP_CLOSURE) {
+                /* verify_bx has bounded bx by nested_count, so nested is
+                 * non-NULL here.  A decoded chunk never holds a NULL child;
+                 * one here could not say how many prelude words follow, so
+                 * pass 1 and pass 2 could disagree on what is an
+                 * instruction.  Refuse it rather than guess zero. */
+                if (nested == NULL || nested[bx] == NULL) {
+                    set_errmsg(d->errmsg, d->errcap,
+                               "OP_CLOSURE at pc %zu names nested proto %u, which is absent",
+                               vi, (unsigned)bx);
+                    return UCHUNK_LOAD_CORRUPT;
+                }
                 size_t nupvals = nested[bx]->nupvals;
                 if (vi + nupvals >= instr_count) {
                     set_errmsg(d->errmsg, d->errcap,
@@ -386,98 +398,142 @@ UChunkLoadError urbi_chunk_decode_verify(MDecCtx *d) {
  *       in_stack = B in {0, 1}
  *       src_idx  = C; if in_stack==1, C <= proto->max_reg (local register);
  *                     if in_stack==0, C < proto->nupvals (re-capture from parent)
- *   OP_JMP target — Bx is a signed offset biased by 32768; the resolved
- *     target must satisfy 0 <= target < instr_count.
  *   OP_CALL C low-7 — encodes nresults+1; must be >= 1 (0 means 0 results
  *     which is legal at runtime but the emitter never produces it; a
  *     hand-crafted module with C & 0x7F == 0 is malformed per the wire spec).
- *   No control transfer lands between an OP_EXTARG and the instruction it
- *     widens: neither a JMP target nor a SCOPE_TRY / SCOPE_TAG / UNWIND_TO
- *     target may be the instruction right after an EXTARG, or that
- *     instruction would run with its high site bits dropped. */
-static bool lands_after_extarg(const uint32_t *ins, size_t target) {
-    return target > 0U && uinstr_op(ins[target - 1U]) == OP_EXTARG;
+ *   Control-transfer targets — every place execution can resume other than
+ *     the next instruction: an OP_JMP target, the pc after the one word a
+ *     skip (LOADBOOL with C set, TEST, TESTSET, EQ, LT, LE) steps over, and
+ *     the Bx of SCOPE_TRY / SCOPE_TAG / UNWIND_TO.  Each must lie in
+ *     [0, instr_count), must not be a prelude word (pass 1 and dispatch
+ *     never shape-check those as instructions, so landing on one would run
+ *     an unchecked instruction), and must not be the instruction right
+ *     after an OP_EXTARG (it would run with its high site bits dropped).
+ *
+ * The walk is two sweeps over the proto: the first validates the preludes
+ * and marks their words in a bitmap, the second checks every real
+ * instruction's targets against it.  The bitmap is only allocated when the
+ * proto has a non-empty prelude. */
+
+static bool is_prelude_word(const uint8_t *prelude, size_t pc) {
+    return prelude != NULL && (prelude[pc >> 3] & (uint8_t)(1U << (pc & 7U))) != 0U;
 }
 
-static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
-    if (p == NULL) return UCHUNK_LOAD_OK;
+/* One control-transfer target, already known to be >= 0.  `what` names the
+ * transfer for the diagnostic. */
+static UChunkLoadError verify_target(MDecCtx *d, const uint32_t *instructions,
+                                     size_t instr_count, const uint8_t *prelude,
+                                     uint8_t op, size_t vi, size_t target,
+                                     const char *what) {
+    if (target >= instr_count) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "%s at pc %zu (op %u) lands on pc %zu, outside [0, %zu)",
+                   what, vi, (unsigned)op, target, instr_count);
+        return op == (uint8_t)OP_JMP ? UCHUNK_LOAD_JMP_OUT_OF_BOUNDS
+                                     : UCHUNK_LOAD_BAD_TARGET;
+    }
+    if (is_prelude_word(prelude, target)) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "%s at pc %zu (op %u) lands on pc %zu, inside a closure's upvalue prelude",
+                   what, vi, (unsigned)op, target);
+        return UCHUNK_LOAD_BAD_TARGET;
+    }
+    /* A prelude word is never an EXTARG, whatever its opcode byte says. */
+    if (target > 0U && !is_prelude_word(prelude, target - 1U)
+        && uinstr_op(instructions[target - 1U]) == OP_EXTARG) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "%s at pc %zu (op %u) lands on pc %zu, right after an EXTARG",
+                   what, vi, (unsigned)op, target);
+        return UCHUNK_LOAD_BAD_EXTARG;
+    }
+    return UCHUNK_LOAD_OK;
+}
 
+/* The opcodes that may step over the one word after them. */
+static bool op_may_skip(uint32_t ins) {
+    switch (uinstr_op(ins)) {
+        case OP_LOADBOOL: return uinstr_c(ins) != 0U;
+        case OP_TEST: case OP_TESTSET: case OP_EQ: case OP_LT: case OP_LE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/* Sweep 1: validate each OP_CLOSURE's prelude and mark its words.  Pass 1
+ * has already bounded every prelude inside the array and refused a missing
+ * child; the bound is re-checked here because it guards the reads below. */
+static UChunkLoadError verify_preludes(MDecCtx *d, const UProto *p, uint8_t **prelude_out) {
     const uint32_t *instructions = p->instructions;
     size_t instr_count = p->instr_count;
-    uint8_t max_reg    = p->max_reg;
-
+    uint8_t *prelude = NULL;
     size_t vi = 0;
     while (vi < instr_count) {
         uint32_t ins = instructions[vi];
-        uint8_t  op  = (uint8_t)(ins & 0xFFU);
-
-        if (op == (uint8_t)OP_CLOSURE) {
-            /* Read the child proto index (Bx) — already bounds-checked by
-             * verify_walk_block against nested_count; no re-check needed.
-             * What we verify here is the upvalue prelude that follows. */
-            uint16_t bx = (uint16_t)((ins >> 16) & 0xFFFFU);
-            /* Fetch nupvals from the referenced child proto. */
-            size_t nupvals = 0;
-            if ((size_t)bx < p->nested_count && p->nested[bx] != NULL) {
-                nupvals = p->nested[bx]->nupvals;
-            }
-            /* The prelude is nupvals pseudo-instructions immediately after. */
+        if (uinstr_op(ins) == OP_CLOSURE) {
+            uint16_t bx = uinstr_bx(ins);
+            size_t nupvals = p->nested[bx]->nupvals;   /* pass 1: bx in range, child present */
             if (vi + nupvals >= instr_count) {
-                /* Last instruction is always OP_RET; vi + nupvals must point
-                 * AT or BEFORE the last instruction (which is OP_RET at
-                 * instr_count - 1).  The prelude occupies slots vi+1 .. vi+nupvals;
-                 * the slot vi+nupvals+1 is the next real instruction (or the OP_RET).
-                 * If vi + nupvals >= instr_count the prelude would read past the end. */
                 set_errmsg(d->errmsg, d->errcap,
                            "OP_CLOSURE at pc %zu: upvalue prelude (%zu entries)"
                            " extends past bytecode end (instr_count=%zu)",
                            vi, nupvals, instr_count);
+                *prelude_out = prelude;
                 return UCHUNK_LOAD_TRUNCATED_UPVALUES;
             }
-            /* Validate each upvalue pseudo-instruction. */
+            if (nupvals > 0U && prelude == NULL) {
+                size_t nbytes = (instr_count + 7U) / 8U;
+                prelude = (uint8_t *)d->root_proto->alloc_fn(NULL, nbytes, d->root_proto->alloc_ud);
+                if (prelude == NULL) return UCHUNK_LOAD_OOM;
+                for (size_t k = 0; k < nbytes; k++) prelude[k] = 0U;
+            }
             for (size_t k = 1; k <= nupvals; k++) {
                 uint32_t pv = instructions[vi + k];
-                /* Only bits [8..15] (A), [16..23] (B = in_stack), [24..31] (C = src_idx)
-                 * matter.  The opcode byte is not checked — the emitter sets it to
-                 * OP_MOVE but the VM ignores it; accepting any opcode byte here
-                 * avoids a future compat issue if a different encoder is used. */
-                uint8_t in_stack = (uint8_t)((pv >> 16) & 0xFFU);  /* B */
-                uint8_t src_idx  = (uint8_t)((pv >> 24) & 0xFFU);  /* C */
+                /* Only B (in_stack) and C (src_idx) matter.  The opcode byte
+                 * is not checked: the emitter writes OP_MOVE but nothing
+                 * reads it, and no control transfer may land here. */
+                uint8_t in_stack = uinstr_b(pv);
+                uint8_t src_idx  = uinstr_c(pv);
+                prelude[(vi + k) >> 3] |= (uint8_t)(1U << ((vi + k) & 7U));
                 if (in_stack > 1U) {
                     set_errmsg(d->errmsg, d->errcap,
                                "OP_CLOSURE at pc %zu: upvalue[%zu] in_stack=%u is not 0 or 1",
                                vi, k - 1U, (unsigned)in_stack);
+                    *prelude_out = prelude;
                     return UCHUNK_LOAD_MALFORMED_UPVALUE;
                 }
-                if (in_stack) {
-                    /* Local register capture: src_idx must be a valid register. */
-                    if (src_idx > max_reg) {
-                        set_errmsg(d->errmsg, d->errcap,
-                                   "OP_CLOSURE at pc %zu: upvalue[%zu] in_stack=1"
-                                   " src_idx=%u > max_reg=%u",
-                                   vi, k - 1U, (unsigned)src_idx, (unsigned)max_reg);
-                        return UCHUNK_LOAD_MALFORMED_UPVALUE;
-                    }
-                } else {
-                    /* Re-capture from parent closure: src_idx must be a valid
-                     * parent upvalue index.  p->nupvals is the parent's count.
-                     * If the parent has no upvalues at all, any src_idx is
-                     * out of range (there is nothing to re-capture). */
-                    if (src_idx >= p->nupvals) {
-                        set_errmsg(d->errmsg, d->errcap,
-                                   "OP_CLOSURE at pc %zu: upvalue[%zu] in_stack=0"
-                                   " src_idx=%u >= parent nupvals=%u",
-                                   vi, k - 1U, (unsigned)src_idx,
-                                   (unsigned)p->nupvals);
-                        return UCHUNK_LOAD_MALFORMED_UPVALUE;
-                    }
+                if (in_stack ? src_idx > p->max_reg : src_idx >= p->nupvals) {
+                    /* in_stack=1 captures a local register; in_stack=0
+                     * re-captures one of this proto's own upvalues (none
+                     * at all means nothing is in range). */
+                    set_errmsg(d->errmsg, d->errcap,
+                               "OP_CLOSURE at pc %zu: upvalue[%zu] in_stack=%u"
+                               " src_idx=%u out of range (max_reg=%u, nupvals=%u)",
+                               vi, k - 1U, (unsigned)in_stack, (unsigned)src_idx,
+                               (unsigned)p->max_reg, (unsigned)p->nupvals);
+                    *prelude_out = prelude;
+                    return UCHUNK_LOAD_MALFORMED_UPVALUE;
                 }
             }
-            /* Skip past the prelude: the outer loop increments vi once for the
-             * OP_CLOSURE itself; advance by nupvals more. */
             vi += nupvals;
+        }
+        vi++;
+    }
+    *prelude_out = prelude;
+    return UCHUNK_LOAD_OK;
+}
 
-        } else if (op == (uint8_t)OP_JMP) {
+/* Sweep 2: the per-instruction sequence rules, over real instructions. */
+static UChunkLoadError verify_transfers(MDecCtx *d, const UProto *p, const uint8_t *prelude) {
+    const uint32_t *instructions = p->instructions;
+    size_t instr_count = p->instr_count;
+    UChunkLoadError rc = UCHUNK_LOAD_OK;
+    for (size_t vi = 0; vi < instr_count && rc == UCHUNK_LOAD_OK; vi++) {
+        if (is_prelude_word(prelude, vi)) continue;
+        uint32_t ins = instructions[vi];
+        uint8_t  op  = (uint8_t)uinstr_op(ins);
+
+        if (op == (uint8_t)OP_JMP) {
             /* Bx encodes a signed offset biased by 32768, and the two
              * directions resolve differently -- the emitter has two
              * encoders for exactly this reason (uemit_jmp_offset /
@@ -491,59 +547,59 @@ static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
              * itself.  Resolving both with the backward rule left the
              * accepted range one short at the top: a forward jump landing
              * on exactly instr_count passed every pass and then executed
-             * the uninitialised slack between instr_count and instr_cap.
-             * Valid range is [0, instr_count). */
-            uint16_t bx = (uint16_t)((ins >> 16) & 0xFFFFU);
-            /* Compute target as signed arithmetic, guarding against underflow. */
-            int64_t signed_bx  = (int64_t)bx - (int64_t)32768;
+             * the uninitialised slack between instr_count and instr_cap. */
+            int64_t signed_bx  = (int64_t)uinstr_bx(ins) - (int64_t)32768;
             int64_t target_i64 = (int64_t)vi + signed_bx + (signed_bx >= 0 ? 1 : 0);
-            if (target_i64 < 0 || (size_t)target_i64 >= instr_count) {
+            if (target_i64 < 0) {
                 set_errmsg(d->errmsg, d->errcap,
                            "OP_JMP at pc %zu: Bx=%u resolves to target=%lld"
                            " outside [0, %zu)",
-                           vi, (unsigned)bx,
+                           vi, (unsigned)uinstr_bx(ins),
                            (long long)target_i64, instr_count);
                 return UCHUNK_LOAD_JMP_OUT_OF_BOUNDS;
             }
-            if (lands_after_extarg(instructions, (size_t)target_i64)) {
-                set_errmsg(d->errmsg, d->errcap,
-                           "OP_JMP at pc %zu lands on pc %lld, right after an EXTARG",
-                           vi, (long long)target_i64);
-                return UCHUNK_LOAD_BAD_EXTARG;
-            }
-
+            rc = verify_target(d, instructions, instr_count, prelude, op, vi,
+                               (size_t)target_i64, "OP_JMP target");
         } else if (op == (uint8_t)OP_CALL) {
             /* C encodes: bit 7 = method-call flag; low 7 bits = nresults+1.
              * nresults+1 == 0 is nonsensical (zero results slots allocated
              * but the call tries to write at least one result).  The emitter
              * never produces 0 here; reject as malformed. */
-            uint8_t c = (uint8_t)((ins >> 24) & 0xFFU);
-            if ((c & 0x7FU) == 0U) {
+            if ((uinstr_c(ins) & 0x7FU) == 0U) {
                 set_errmsg(d->errmsg, d->errcap,
                            "OP_CALL at pc %zu: C low-7=0 (nresults+1 must be >= 1)",
                            vi);
                 return UCHUNK_LOAD_CALL_NRESULTS_ZERO;
             }
-        } else if (op < (uint8_t)OP_MAX
-                   && urbi_opcode_shapes[op].format == UOPF_ABX
+        } else if (op_may_skip(ins)) {
+            /* A skip advances the pc by exactly one word, so the word it
+             * steps over must be a whole instruction (never an OP_CLOSURE
+             * with a prelude) and the word after it a real one. */
+            rc = verify_target(d, instructions, instr_count, prelude, op, vi,
+                               vi + 2U, "skip landing");
+        } else if (urbi_opcode_shapes[op].format == UOPF_ABX
                    && urbi_opcode_shapes[op].bx_kind == UBXK_HANDLER_PC) {
             /* SCOPE_TRY / SCOPE_TAG / UNWIND_TO: pass 1 has range-checked
-             * Bx against instr_count. */
-            size_t target = (size_t)uinstr_bx(ins);
-            if (lands_after_extarg(instructions, target)) {
-                set_errmsg(d->errmsg, d->errcap,
-                           "op %u at pc %zu targets pc %zu, right after an EXTARG",
-                           (unsigned)op, vi, target);
-                return UCHUNK_LOAD_BAD_EXTARG;
-            }
+             * Bx against instr_count; verify_target re-checks it. */
+            rc = verify_target(d, instructions, instr_count, prelude, op, vi,
+                               (size_t)uinstr_bx(ins), "handler target");
         }
-
-        vi++;
     }
+    return rc;
+}
+
+static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
+    if (p == NULL) return UCHUNK_LOAD_OK;
+
+    uint8_t *prelude = NULL;
+    UChunkLoadError rc = verify_preludes(d, p, &prelude);
+    if (rc == UCHUNK_LOAD_OK) rc = verify_transfers(d, p, prelude);
+    if (prelude != NULL) (void)d->root_proto->alloc_fn(prelude, 0, d->root_proto->alloc_ud);
+    if (rc != UCHUNK_LOAD_OK) return rc;
 
     /* Recurse into nested protos (DFS, matching verify_proto_recursive order). */
     for (size_t i = 0; i < p->nested_count; i++) {
-        UChunkLoadError rc = verify_bounds_proto(d, p->nested[i]);
+        rc = verify_bounds_proto(d, p->nested[i]);
         if (rc != UCHUNK_LOAD_OK) return rc;
     }
     return UCHUNK_LOAD_OK;
