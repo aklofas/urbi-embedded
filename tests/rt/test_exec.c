@@ -103,7 +103,9 @@ static void division_by_zero_is_a_throw(void) {
 static void string_concat_and_compare(void) {
     ExecFix fx; fix_open(&fx);
     UValue out;
-    RT_EQ(run(&fx, "\"ab\" + \"cd\" |", &out), URBI_OK);
+    int rc = run(&fx, "\"ab\" + \"cd\" |", &out);
+    RT_EQ(rc, URBI_OK);
+    if (rc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
     RT_EQ(out.kind, (uint8_t)UV_STR);
     uint32_t len; const char *b = uv_str_bytes(out, &len);
     RT_EQ(len, 4u);
@@ -172,7 +174,9 @@ static void forward_jmp_past_end_is_rejected(void) {
     const char *src = "var i = 0; while (i < 3) { i = i + 1 } |";
     char err[256] = {0};
     UProto *root = NULL;
-    RT_EQ(ufront_compile(fx.vm, src, strlen(src), "<unit>", NULL, &root, err, sizeof err), URBI_OK);
+    int crc = ufront_compile(fx.vm, src, strlen(src), "<unit>", NULL, &root, err, sizeof err);
+    RT_EQ(crc, URBI_OK);
+    if (crc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
 
     /* Retarget the first forward JMP so it resolves to exactly
      * instr_count.  Forward offsets are relative to the instruction after

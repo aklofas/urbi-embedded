@@ -187,6 +187,7 @@ static void sleep_parks_until_its_deadline(void)
     RT_EQ(global_int(&fx, "done"), 0);
     /* One sleeper on the heap, due exactly now + 5 ms. */
     RT_EQ(sched(&fx)->heap_len, 1u);
+    if (sched(&fx)->heap_len == 0) { RT_CHECK(0); fix_close(&fx); return; }
     RT_EQ(sched(&fx)->heap[0].due_us, 1000u + 5000u);
     RT_EQ(sched(&fx)->heap[0].period_us, 0u);
     RT_EQ(sched(&fx)->heap[0].strand->state, (uint8_t)USTRAND_PARKED);
@@ -258,6 +259,7 @@ static void block_holds_a_woken_sleeper(void)
     run(&fx, "var t = Tag.new()");
     run(&fx, "t: { sleep(5ms); Realm.done = 1 }");
     RT_EQ(sched(&fx)->heap_len, 1u);
+    if (sched(&fx)->heap_len == 0) { RT_CHECK(0); fix_close(&fx); return; }
     UStrand *sleeper = sched(&fx)->heap[0].strand;
     RT_CHECK(sleeper != NULL);
 
@@ -617,6 +619,7 @@ static void spawning_into_a_gated_scope_parks_the_newcomer(void)
     RT_EQ(global_int(&fx, "n"), 0);          /* the body spawned, gated */
     UStrand *body = urbi_realm_main(fx.vm)->strands;
     RT_CHECK(body != NULL);
+    if (body == NULL) { RT_CHECK(0); fix_close(&fx); return; }
     RT_EQ(body->state, (uint8_t)USTRAND_PARKED);
     RT_EQ(body->gates, (uint8_t)USTRAND_GATE_BLOCKED);
 

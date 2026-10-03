@@ -230,7 +230,10 @@ static void a_getter_installed_after_caching_a_write_keeps_its_cell(void)
     run_ok(&fx, "wr()"); run_ok(&fx, "wr()");
     run_ok(&fx, "o.setProperty(\"f\", \"oget\", function() { 99 })");
     run_ok(&fx, "wr()");
-    UObject *o = (UObject *)run_ok(&fx, "o").v.p;
+    int rc;
+    UValue ov = run_rc(&fx, "o", &rc);
+    if (rc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UObject *o = (UObject *)ov.v.p;
     int idx = uobj_find_local(o, usym_cstr(fx.vm, "f"));
     RT_CHECK(idx >= 0);
     RT_EQ(o->values[idx].kind, UV_CELL);
@@ -258,7 +261,9 @@ static void a_readonly_receiver_refuses_a_cached_write(void)
     run_ok(&fx, "var o = Object.clone() | var o.f = 1");
     run_ok(&fx, "var wr = function() { o.f = 5 }");
     run_ok(&fx, "wr()"); run_ok(&fx, "wr()");
-    UValue ov = run_ok(&fx, "o");
+    int orc;
+    UValue ov = run_rc(&fx, "o", &orc);
+    if (orc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
     ((UObject *)ov.v.p)->cell.flags |= UOBJ_F_READONLY;
     UValue out = urbi_make_nil();
     char err[64] = { 0 };
@@ -302,7 +307,10 @@ static void a_refused_cache_array_is_retried_and_harmless(void)
     Fix fx; fix_open(&fx);
     run_ok(&fx, "var o = Object.clone() | var o.f = 7");
     run_ok(&fx, "var rd = function() { o.f }");
-    UProto *body = ((UClosure *)run_ok(&fx, "rd").v.p)->proto;
+    int rc;
+    UValue rdv = run_rc(&fx, "rd", &rc);
+    if (rc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UProto *body = ((UClosure *)rdv.v.p)->proto;
     /* The 16th fresh block of the first `rd()` is rd's cache array: 15
      * for compiling and running the call chunk, then the body's.  Pinned
      * by a dry run; the `refused` check says so if it drifts.  The body's
@@ -499,7 +507,10 @@ static void an_overflowed_walk_is_not_cached(void)
      * uobj_add_proto's raw allocation never collects, so each new proto
      * is reachable before anything can sweep it. */
     run_ok(&fx, "var o = Object.clone()");
-    UObject *o = (UObject *)run_ok(&fx, "o").v.p;
+    int orc;
+    UValue ov = run_rc(&fx, "o", &orc);
+    if (orc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UObject *o = (UObject *)ov.v.p;
     for (int k = 0; k < 70; k++) {
         UObject *p = uobj_new(fx.vm, NULL);
         RT_CHECK(p != NULL && uobj_add_proto(fx.vm, o, p) == 0);
@@ -542,7 +553,10 @@ static void an_epoch_near_the_top_is_reset_and_entries_cleared(void)
 {
     Fix fx; fix_open(&fx); chain(&fx);
     run_ok(&fx, "rd()"); run_ok(&fx, "rd()");
-    UProto *body = ((UClosure *)run_ok(&fx, "rd").v.p)->proto;
+    int rc;
+    UValue rdv = run_rc(&fx, "rd", &rc);
+    if (rc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UProto *body = ((UClosure *)rdv.v.p)->proto;
     USlotCache *a = (USlotCache *)body->site_cache;
     RT_CHECK(a != NULL);
     bool inherited = false;
@@ -578,7 +592,10 @@ static void two_protos_below_r(Fix *fx)
 static void an_intermediate_gaining_its_first_proto_re_resolves(void)
 {
     Fix fx; fix_open(&fx); two_protos_below_r(&fx);
-    UObject *o = obj(&fx, "o");
+    int rc;
+    UValue ov = run_rc(&fx, "o", &rc);
+    if (rc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UObject *o = (UObject *)ov.v.p;
     RT_EQ(uobj_set_protos(fx.vm, o, NULL, 0), 0);
     RT_EQ(run_ok(&fx, "rd()").v.i, 1); RT_EQ(run_ok(&fx, "rd()").v.i, 1);
     RT_CHECK(o->cell.flags & UOBJ_F_CACHED);
@@ -591,7 +608,10 @@ static void an_intermediate_gaining_its_first_proto_re_resolves(void)
 static void an_intermediate_gaining_a_second_proto_re_resolves(void)
 {
     Fix fx; fix_open(&fx); two_protos_below_r(&fx);
-    UObject *o = obj(&fx, "o");
+    int rc;
+    UValue ov = run_rc(&fx, "o", &rc);
+    if (rc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UObject *o = (UObject *)ov.v.p;
     RT_EQ(run_ok(&fx, "rd()").v.i, 1); RT_EQ(run_ok(&fx, "rd()").v.i, 1);
     RT_EQ(o->nprotos, 1);
     RT_EQ(uobj_add_proto(fx.vm, o, obj(&fx, "X")), 0);          /* 1 -> 2 */
@@ -602,7 +622,10 @@ static void an_intermediate_gaining_a_second_proto_re_resolves(void)
 static void an_intermediate_losing_its_only_proto_re_resolves(void)
 {
     Fix fx; fix_open(&fx); two_protos_below_r(&fx);
-    UObject *o = obj(&fx, "o"); UObject *w = obj(&fx, "W");
+    int rc;
+    UValue ov = run_rc(&fx, "o", &rc);
+    if (rc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UObject *o = (UObject *)ov.v.p; UObject *w = obj(&fx, "W");
     RT_EQ(uobj_set_protos(fx.vm, o, &w, 1), 0);
     RT_EQ(run_ok(&fx, "rd()").v.i, 5); RT_EQ(run_ok(&fx, "rd()").v.i, 5);
     RT_EQ(uobj_remove_proto(fx.vm, o, w), 0);                   /* 1 -> 0 */
@@ -614,7 +637,10 @@ static void an_intermediate_losing_its_only_proto_re_resolves(void)
 static void an_intermediate_dropping_to_one_proto_re_resolves(void)
 {
     Fix fx; fix_open(&fx); two_protos_below_r(&fx);
-    UObject *o = obj(&fx, "o"); UObject *w = obj(&fx, "W");
+    int rc;
+    UValue ov = run_rc(&fx, "o", &rc);
+    if (rc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UObject *o = (UObject *)ov.v.p; UObject *w = obj(&fx, "W");
     RT_EQ(uobj_add_proto(fx.vm, o, w), 0);
     RT_EQ(run_ok(&fx, "rd()").v.i, 5); RT_EQ(run_ok(&fx, "rd()").v.i, 5);
     RT_EQ(uobj_remove_proto(fx.vm, o, w), 0);                   /* 2 -> 1 */
@@ -626,7 +652,10 @@ static void an_intermediate_dropping_to_one_proto_re_resolves(void)
 static void an_intermediate_given_one_proto_wholesale_re_resolves(void)
 {
     Fix fx; fix_open(&fx); two_protos_below_r(&fx);
-    UObject *o = obj(&fx, "o"); UObject *x = obj(&fx, "X");
+    int rc;
+    UValue ov = run_rc(&fx, "o", &rc);
+    if (rc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UObject *o = (UObject *)ov.v.p; UObject *x = obj(&fx, "X");
     RT_EQ(run_ok(&fx, "rd()").v.i, 1); RT_EQ(run_ok(&fx, "rd()").v.i, 1);
     RT_EQ(uobj_set_protos(fx.vm, o, &x, 1), 0);                 /* n <= 1 */
     RT_EQ(run_ok(&fx, "rd()").v.i, 2);
@@ -636,7 +665,10 @@ static void an_intermediate_given_one_proto_wholesale_re_resolves(void)
 static void an_intermediate_given_two_protos_wholesale_re_resolves(void)
 {
     Fix fx; fix_open(&fx); two_protos_below_r(&fx);
-    UObject *o = obj(&fx, "o");
+    int rc;
+    UValue ov = run_rc(&fx, "o", &rc);
+    if (rc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UObject *o = (UObject *)ov.v.p;
     UObject *ps[2] = { obj(&fx, "X"), obj(&fx, "W") };
     RT_EQ(run_ok(&fx, "rd()").v.i, 1); RT_EQ(run_ok(&fx, "rd()").v.i, 1);
     RT_EQ(uobj_set_protos(fx.vm, o, ps, 2), 0);                 /* n > 1 */
@@ -662,7 +694,10 @@ static void an_owner_found_directly_is_flagged(void)
     run_ok(&fx, "var P = Object.clone() | var P.v = 1 | var P.w = 2");
     run_ok(&fx, "var o = Object.clone() | o.addProto(P)");
     run_ok(&fx, "var rd = function() { o.v }");
-    UObject *P = obj(&fx, "P");
+    int prc;
+    UValue pv = run_rc(&fx, "P", &prc);
+    if (prc != URBI_OK) { RT_CHECK(0); fix_close(&fx); return; }
+    UObject *P = (UObject *)pv.v.p;
     RT_CHECK((P->cell.flags & UOBJ_F_CACHED) == 0);
     RT_EQ(run_ok(&fx, "rd()").v.i, 1); RT_EQ(run_ok(&fx, "rd()").v.i, 1);
     RT_CHECK(P->cell.flags & UOBJ_F_CACHED);

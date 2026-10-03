@@ -422,6 +422,7 @@ static void a_host_pin_survives_a_changed_subscription(void)
 
     UValue ov = run(&fx, "Object.new()");
     RT_EQ(ov.kind, (uint8_t)UV_OBJ);
+    if (ov.kind != (uint8_t)UV_OBJ) { RT_CHECK(0); fix_close(&fx); return; }
     urbi_ref(fx.vm, ov);
 
     RT_EQ(urbi_global_set(fx.vm, realm, "Probe", ov), URBI_OK);
