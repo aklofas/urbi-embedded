@@ -32,8 +32,11 @@ void uparse_init(UParser *p, ULexer *lex, UArena *arena) {
     p->have_peek2 = false;
     p->at_event_cond = false;
     p->class_body_depth = 0;
+    p->class_body_name_start = NULL;
+    p->class_body_name_len   = 0;
     p->loop_depth   = 0;
     p->switch_depth = 0;
+    p->hidden_serial = 0U;
 
     p->budget          = NULL;
     p->cur_depth       = 0U;

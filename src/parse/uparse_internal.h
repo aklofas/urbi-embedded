@@ -122,4 +122,30 @@ UAstNode *urbi_parse_every(UParser *p);
 UAstNode *urbi_parse_tag_prefix(UParser *p, UToken name_tok);
 UAstNode *urbi_parse_tag_prefix_from_expr(UParser *p, UAstNode *tag_expr);
 
+/* --- Desugar node builders (defined in uparse_desugar.c). ---
+ *
+ * Every sugar form in the grammar lowers through these before it ever
+ * reaches the emitter: list/dict literals, subscripts, assert, class
+ * declarations, and get/set property sugar.  The emitter sees only the
+ * 32 core AST kinds these builders produce (CALL, MEMBER_GET/SET,
+ * VAR_DECL, BLOCK, IDENT, STR). */
+
+/* Hidden-local names begin with 0x01, which no lexeme can contain. The
+ * suffix keeps two desugars in one scope apart; the emitter sees an
+ * ordinary local. */
+#define UPARSE_HIDDEN_PREFIX '\x01'
+
+UAstNode *urbi_parse_desugar_ident(UParser *p, const char *name, int len, int line, int col);
+UAstNode *urbi_parse_desugar_str(UParser *p, const char *bytes, int len, int line, int col);
+UAstNode *urbi_parse_desugar_member_get(UParser *p, UAstNode *recv, const char *name, int len, int line, int col);
+UAstNode *urbi_parse_desugar_member_set(UParser *p, UAstNode *recv, const char *name, int len, UAstNode *value, int line, int col);
+/* args is an arena array of argc nodes; the callee is any expression. */
+UAstNode *urbi_parse_desugar_call(UParser *p, UAstNode *callee, UAstNode **args, int argc, int line, int col);
+UAstNode *urbi_parse_desugar_var_decl(UParser *p, const char *name, int len, UAstNode *init, int line, int col);
+/* A BLOCK holding `count` statements; the emitter gives it the value of
+ * the last one. */
+UAstNode *urbi_parse_desugar_block(UParser *p, UAstNode **stmts, int count, int line, int col);
+/* "\x01<tag><n>" interned nowhere: an arena copy, unique per call. */
+const char *urbi_parse_hidden_name(UParser *p, const char *tag, int *out_len);
+
 #endif /* UPARSE_INTERNAL_H */

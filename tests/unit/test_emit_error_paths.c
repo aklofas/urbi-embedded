@@ -8,8 +8,10 @@
  *                 intern OOM (no half-initialised proto in module->nested[]).
  * T22 (EMIT-005): uemit_close_function propagates IC-array OOM rather than
  *                 silently zeroing p->ic_count.
- * T23 (SCAN-001): urbi_emit_expr explicitly handles AST_PROP_GET / AST_PROP_SET
- *                 (closes scan-build -Wswitch concern).
+ * T23 (SCAN-001): arrow access (`obj.x->y`) is rejected at parse time
+ *                 as a plain AST_ERROR; an embedded parse error anywhere
+ *                 in the tree surfaces as EMIT_AST_ERROR from urbi_emit_expr's
+ *                 AST_ERROR case (no dedicated AST kind needed any more).
  *
  * The OOM-injection tests sweep failure points across the alloc range and
  * assert (a) some injection produces EMIT_OOM and (b) no injection produces
@@ -226,31 +228,31 @@ UTEST(emit_close_function_propagates_ic_array_oom)
     UASSERT(saw_oom);
 }
 
-/* --- T23: AST_PROP_GET / AST_PROP_SET handling -------------------------- */
+/* --- T23: arrow access rejected at parse time ---------------------------- */
 
 UTEST(emit_expr_rejects_arrow_prop_get)
 {
-    /* Arrow-access syntax `obj.x->y` parses to AST_PROP_GET.  v0.5.7 has
-     * no runtime support for arrow-access semantics; the emit path
-     * rejects with EMIT_UNSUPPORTED_AST via an explicit case arm rather
-     * than the prior NOLINT-suppressed default fall-through.  This test
+    /* Arrow-access syntax `obj.x->y` is rejected by the parser as a plain
+     * AST_ERROR (no AST_PROP_GET kind exists any more).  Emitting a tree
+     * with an embedded AST_ERROR surfaces as EMIT_AST_ERROR.  This test
      * locks in that behaviour as a regression seat. */
     ECtx c;
     ectx_init(&c, "var f = function(o) { return o.x->y }", -1);
     UEmitError rc = ectx_run(&c);
-    UASSERT_EQ(EMIT_UNSUPPORTED_AST, rc);
-    UASSERT_EQ(EMIT_UNSUPPORTED_AST, c.e.error);
+    UASSERT_EQ(EMIT_AST_ERROR, rc);
+    UASSERT_EQ(EMIT_AST_ERROR, c.e.error);
     ectx_destroy(&c);
 }
 
 UTEST(emit_expr_rejects_arrow_prop_set)
 {
-    /* Arrow-access assignment `obj.x->y = v` parses to AST_PROP_SET. */
+    /* Arrow-access assignment `obj.x->y = v` is rejected the same way —
+     * the parser never gets far enough to see the `= v`. */
     ECtx c;
     ectx_init(&c, "var f = function(o, v) { o.x->y = v }", -1);
     UEmitError rc = ectx_run(&c);
-    UASSERT_EQ(EMIT_UNSUPPORTED_AST, rc);
-    UASSERT_EQ(EMIT_UNSUPPORTED_AST, c.e.error);
+    UASSERT_EQ(EMIT_AST_ERROR, rc);
+    UASSERT_EQ(EMIT_AST_ERROR, c.e.error);
     ectx_destroy(&c);
 }
 

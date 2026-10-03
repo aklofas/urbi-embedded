@@ -41,8 +41,22 @@ typedef struct {
      * at parse time when this is zero — the implicit-receiver form has no
      * v1.0 resolver outside a class body (deferred to v1.x implicit-this). */
     int class_body_depth;
+    /* The receiver name the class-body desugar binds while its body
+     * parses — a hidden per-declaration name (see UPARSE_HIDDEN_PREFIX),
+     * not the class's own source name.  Read by urbi_parse_property_decl
+     * when an implicit-receiver get/set sugar (recv == NULL) needs
+     * something to call setProperty on.  Saved/restored around each
+     * class body parse in parse_class_declaration, mirroring
+     * class_body_depth's scope. */
+    const char *class_body_name_start;
+    int         class_body_name_len;
     int loop_depth;
     int switch_depth;  /* for parse_break accept-set; parse_continue uses loop_depth only */
+
+    /* Serial counter for urbi_parse_hidden_name — every desugar that
+     * needs a compiler-introduced local draws the next number here, so
+     * two hidden locals in the same parse never collide. */
+    unsigned hidden_serial;
 
     /* budget — borrowed pointer to a UCompileBudget supplied by the caller
      *   (typically realm->compile_budget when urbi_repl_eval drives the

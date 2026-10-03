@@ -538,7 +538,7 @@ int uemit_assign_ic_index(struct UEmitter *e, USymbol *name);
 
 /* Test-friend export — see uemit.c for full documentation.
  * Best-effort compile-time walker: returns true when n contains a direct
- * write (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET, AST_PROP_SET).
+ * write (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET).
  * AST_CALL is treated as opaque (returns false). */
 bool urbi_emit_cond_has_direct_side_effect(UAstNode *n);
 

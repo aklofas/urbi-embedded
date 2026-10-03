@@ -35,7 +35,21 @@ static UAstNode *parse_sep_operand(UParser *p) {
     return urbi_parse_expression(p, 0);
 }
 
+/* Folds `|`/`&` left-associatively into AST_SEQ.  A run of the SAME
+ * separator flattens into one SEQ (`a | b | c` → SEQ(PIPE, [a,b,c]));
+ * switching separator nests instead, left-assoc as before
+ * (`a | b & c` → SEQ(AMP, [SEQ(PIPE,[a,b]), c])).
+ *
+ * `children`/`count`/`cap` track the array THIS call is building for the
+ * current run — they are only valid (and only grown in place) while
+ * `lhs` is that same freshly-built SEQ node; switching separator starts
+ * a brand new array rather than appending to the old one. */
 UAstNode *urbi_parse_pipe_amp_fold(UParser *p, UAstNode *lhs) {
+    UAstNode **children = NULL;
+    int count = 0;
+    int cap = 0;
+    UAstSeparator cur_sep = SEP_PIPE;  /* meaningful only while children != NULL */
+
     for (;;) {
         UToken sep = urbi_parse_peek(p);
         if (sep.type != TOK_PIPE && sep.type != TOK_AMP) break;
@@ -60,12 +74,36 @@ UAstNode *urbi_parse_pipe_amp_fold(UParser *p, UAstNode *lhs) {
         if (!rhs) return NULL;
         if (rhs->kind == AST_ERROR) return rhs;
 
-        UAstNode *node = urbi_parse_make_node(p, AST_BIN_SEP, sep.line, sep.col);
-        if (!node) return NULL;
-        node->u.bin_sep.separator = s;
-        node->u.bin_sep.lhs = lhs;
-        node->u.bin_sep.rhs = rhs;
-        lhs = node;
+        if (children != NULL && cur_sep == s) {
+            /* Same separator as the run we are already building — extend it. */
+            if (count == cap) {
+                if (!urbi_parse_arena_grow_node_array(p, &children, &cap, count))
+                    return (UAstNode *)&uparser_oom_sentinel;
+                lhs->u.seq.children = children;
+            }
+            children[count++] = rhs;
+            lhs->u.seq.count = count;
+        } else {
+            /* First separator, or a switch from the other kind — start a
+               fresh run with the current lhs (whatever it is) as its
+               first child. */
+            int new_cap = 4;
+            UAstNode **arr = (UAstNode **)uarena_alloc(p->arena,
+                                                        (size_t)new_cap * sizeof(UAstNode *));
+            if (!arr) return (UAstNode *)&uparser_oom_sentinel;
+            arr[0] = lhs;
+            arr[1] = rhs;
+            UAstNode *node = urbi_parse_make_node(p, AST_SEQ, sep.line, sep.col);
+            if (!node) return NULL;
+            node->u.seq.separator = s;
+            node->u.seq.children  = arr;
+            node->u.seq.count     = 2;
+            lhs      = node;
+            children = arr;
+            cap      = new_cap;
+            count    = 2;
+            cur_sep  = s;
+        }
     }
     return lhs;
 }
@@ -82,7 +120,7 @@ UAstNode *urbi_parse_inner_tier(UParser *p) {
 }
 
 /* Outer-tier: parse one or more inner-tier expressions joined by `;` or `,`.
-   Returns a single node (no Nary) if only one inner-tier child exists.
+   Returns a single node (no AST_SEQ) if only one inner-tier child exists.
    Trailing `;` or `,` at statement-end is silently dropped.
    Mixing `;` and `,` in the same outer-tier group is an error.
    OOM convention: returns NULL on child OOM (preferred), but a few
@@ -141,10 +179,10 @@ UAstNode *urbi_parse_outer_tier(UParser *p) {
         if (at_statement_end(p)) break;
     }
 
-    UAstNode *node = urbi_parse_make_node(p, AST_NARY, first->line, first->col);
+    UAstNode *node = urbi_parse_make_node(p, AST_SEQ, first->line, first->col);
     if (!node) return NULL;
-    node->u.nary.separator = sep_kind;
-    node->u.nary.children  = children;
-    node->u.nary.count     = count;
+    node->u.seq.separator = sep_kind;
+    node->u.seq.children  = children;
+    node->u.seq.count     = count;
     return node;
 }

@@ -99,18 +99,6 @@ uint8_t urbi_emit_at_slot_change_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_member_get_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_member_set_arm(UEmitter *e, UAstNode *n);
 
-/* Class-decl AST arm helper (defined in uemit_class.c).
- * Called from urbi_emit_expr via forwarding stub; body lives in uemit_class.c. */
-uint8_t urbi_emit_class_decl_arm(UEmitter *e, UAstNode *n);
-
-/* Getter/setter parse sugar.  AST_PROPERTY_DECL emits a
- * `recv.setProperty(name, "oget"|"oset", function() body)` call sequence;
- * runtime `oget`/`oset` slot-property dispatch (member-access baseline) handles the
- * trigger on subsequent slot reads/writes.  When `recv` is NULL the emit
- * arm uses the implicit class receiver (class body) or the realm-global
- * `this` lookup (top-level form).  Lives in uemit_class.c. */
-uint8_t urbi_emit_property_decl_arm(UEmitter *e, UAstNode *n);
-
 /* Closure + thunk builders (defined in uemit.c).
  * Promoted from static so that uemit_react.c can build closures for
  * reactive arms without duplicating the logic. */
@@ -371,11 +359,6 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_call_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_return_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_function_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_assert_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_list_lit_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_dict_lit_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_subscript_get_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_subscript_set_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_for_each_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_break_arm(UEmitter *e, const UAstNode *n);
 uint8_t urbi_emit_continue_arm(UEmitter *e, const UAstNode *n);
@@ -397,8 +380,7 @@ uint8_t urbi_emit_logical_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_ident_arm(UEmitter *e, const UAstNode *n);
 uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_nary_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_bin_sep_arm(UEmitter *e, UAstNode *n);
+uint8_t urbi_emit_seq_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_block_arm(UEmitter *e, UAstNode *n);
 
 /* Constant-pool helpers (defined in uemit.c).

@@ -346,9 +346,9 @@ UOpcode urbi_emit_binop_to_opcode(const UAstBinaryOp op) {
 uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n);
 
 /* Best-effort compile-time check — returns true when `n` contains a
- * direct write operation (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET,
- * AST_PROP_SET).  Used to warn when a watcher condition silently mutates
- * state.  AST_CALL is treated as opaque (returns false) to avoid false
+ * direct write operation (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET).
+ * Used to warn when a watcher condition silently mutates state.
+ * AST_CALL is treated as opaque (returns false) to avoid false
  * positives on read-only methods.  Recurses through compound nodes;
  * the parser already caps nesting so stack overflow is not a concern.
  * Exported for unit tests via uemit.h test-friend section. */
@@ -358,17 +358,13 @@ bool urbi_emit_cond_has_direct_side_effect(UAstNode *n) {
         case AST_ASSIGN:
         case AST_VAR_DECL:
         case AST_MEMBER_SET:
-        case AST_PROP_SET:
             return true;
-        case AST_NARY: {
+        case AST_SEQ: {
             int i;
-            for (i = 0; i < n->u.nary.count; i++)
-                if (urbi_emit_cond_has_direct_side_effect(n->u.nary.children[i])) return true;
+            for (i = 0; i < n->u.seq.count; i++)
+                if (urbi_emit_cond_has_direct_side_effect(n->u.seq.children[i])) return true;
             return false;
         }
-        case AST_BIN_SEP:
-            return urbi_emit_cond_has_direct_side_effect(n->u.bin_sep.lhs)
-                || urbi_emit_cond_has_direct_side_effect(n->u.bin_sep.rhs);
         case AST_BINARY:
             return urbi_emit_cond_has_direct_side_effect(n->u.binary.lhs)
                 || urbi_emit_cond_has_direct_side_effect(n->u.binary.rhs);
@@ -400,10 +396,7 @@ bool urbi_emit_cond_has_direct_side_effect(UAstNode *n) {
 /* AST walker — returns the register holding the result of the expression.
    Returns 0 and sets e->error on any failure.
    Every UAstKind has an explicit case arm so the switch is exhaustive
-   without a NOLINT.  Forms that are not yet supported (arrow-access
-   AST_PROP_GET / AST_PROP_SET) reject with EMIT_UNSUPPORTED_AST;
-   lowering arrow-access to OP_GETSLOT / OP_SETSLOT is deferred until the
-   arrow-vs-dot semantic distinction is pinned. */
+   without a NOLINT. */
 uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0U;
     switch (n->kind) {
@@ -421,8 +414,7 @@ uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     case AST_IDENT:      return urbi_emit_ident_arm(e, n);
     case AST_VAR_DECL:   return urbi_emit_var_decl_arm(e, n);
     case AST_ASSIGN:     return urbi_emit_assign_arm(e, n);
-    case AST_NARY:       return urbi_emit_nary_arm(e, n);
-    case AST_BIN_SEP:    return urbi_emit_bin_sep_arm(e, n);
+    case AST_SEQ:        return urbi_emit_seq_arm(e, n);
     case AST_BLOCK:      return urbi_emit_block_arm(e, n);
     case AST_IF:         return urbi_emit_if_arm(e, n);
     case AST_WHILE:    return urbi_emit_while_arm(e, n);
@@ -438,40 +430,15 @@ uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     case AST_WAITUNTIL:      return urbi_emit_waituntil_arm(e, n);
     case AST_AT_EVENT:       return urbi_emit_at_event_arm(e, n);
     case AST_AT_SLOT_CHANGE: return urbi_emit_at_slot_change_arm(e, n);
-    case AST_CLASS_DECL:     return urbi_emit_class_decl_arm(e, n);
-    case AST_PROPERTY_DECL:  return urbi_emit_property_decl_arm(e, n);
-    case AST_ASSERT:         return urbi_emit_assert_arm(e, n);
-    case AST_LIST_LIT:        return urbi_emit_list_lit_arm(e, n);
-    case AST_DICT_LIT:        return urbi_emit_dict_lit_arm(e, n);
-    case AST_SUBSCRIPT_GET:   return urbi_emit_subscript_get_arm(e, n);
-    case AST_SUBSCRIPT_SET:   return urbi_emit_subscript_set_arm(e, n);
     case AST_FOR_EACH:        return urbi_emit_for_each_arm(e, n);
     case AST_BREAK:           return urbi_emit_break_arm(e, n);
     case AST_CONTINUE:        return urbi_emit_continue_arm(e, n);
     case AST_SWITCH:          return urbi_emit_switch_arm(e, n);
-    case AST_REG_REF: {
-        /* Emit a reference to a previously-allocated register.
-         * If the target register differs from source, emit OP_MOVE.
-         * If they are the same, this is a no-op (register is already there). */
-        uint8_t dst = alloc_reg(e);
-        if (e->error != EMIT_OK) return 0U;
-        if (dst != n->u.reg_ref.reg) {
-            urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, dst, n->u.reg_ref.reg, 0U), n->line);
-        }
-        return dst;
-    }
-    case AST_PROP_GET:
-    case AST_PROP_SET:
-    case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
-        /* AST_LOCAL_REF / AST_PARAM / AST_LAZY_PARAM: produced by
-         * parser/emitter internally and consumed before urbi_emit_expr is
-         * called (AST_PARAM/AST_LAZY_PARAM in the AST_FUNCTION arm;
-         * AST_LOCAL_REF as an optimised AST_IDENT).  Reaching this arm
-         * means a malformed AST.
-         *
-         * All five forms reject as EMIT_UNSUPPORTED_AST. */
+        /* AST_PARAM / AST_LAZY_PARAM: produced by the parser and consumed
+         * before urbi_emit_expr is called (inside the AST_FUNCTION arm).
+         * Reaching this arm means a malformed AST. */
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     case AST_ERROR:

@@ -66,7 +66,9 @@ const char * const urbi_parse_kErrorMessages[] = {
 
     "event payload binding requires 'var' keyword (e.g. at (e?(var x)) body)",
     "event payload binding requires an identifier after 'var' (e.g. at (e?(var x)) body)",
-    "event payload binding is missing closing ')' (e.g. at (e?(var x)) body)"
+    "event payload binding is missing closing ')' (e.g. at (e?(var x)) body)",
+
+    "class body: only var declarations and getters/setters are allowed"
 };
 
 static const char * const kErrorNames[] = {
@@ -110,15 +112,17 @@ static const char * const kErrorNames[] = {
     "PARSE_SWITCH_DUPLICATE_DEFAULT",
     "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR",
     "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_IDENT",
-    "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN"
+    "PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN",
+
+    "PARSE_CLASS_BODY_STATEMENT"
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
 
-URBI_STATIC_ASSERT(N_PARSE_ERROR_CODES == (int)PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN + 1,
+URBI_STATIC_ASSERT(N_PARSE_ERROR_CODES == (int)PARSE_CLASS_BODY_STATEMENT + 1,
                "kErrorNames length must match UParseError enum count");
 URBI_STATIC_ASSERT((int)(sizeof urbi_parse_kErrorMessages / sizeof urbi_parse_kErrorMessages[0])
-               == (int)PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN + 1,
+               == (int)PARSE_CLASS_BODY_STATEMENT + 1,
                "urbi_parse_kErrorMessages length must match UParseError enum count");
 
 const char urbi_parse_kEmitMethodName[] = "emit";

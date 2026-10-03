@@ -33,60 +33,64 @@ static UAstNode *parse_one(const char *src, SepCtx *c) {
 }
 
 UTEST(parse_pipe_left_assoc) {
-    /* "1 | 2 | 3" must parse as (1|2)|3 — left-associative inner-tier. */
+    /* "1 | 2 | 3" is one flat SEQ(PIPE, [1,2,3]) — a run of the same
+     * separator no longer nests; left-associativity is still honored
+     * (each child runs in source order), just not via nesting. */
     SepCtx c;
     UAstNode *n = parse_one("1 | 2 | 3", &c);
     UASSERT(n != NULL);
-    UASSERT_EQ((int)AST_BIN_SEP, (int)n->kind);
-    UASSERT_EQ((int)SEP_PIPE, (int)n->u.bin_sep.separator);
-    /* lhs is itself a BIN_SEP: (1|2) */
-    UASSERT_EQ((int)AST_BIN_SEP, (int)n->u.bin_sep.lhs->kind);
-    UASSERT_EQ((int)SEP_PIPE, (int)n->u.bin_sep.lhs->u.bin_sep.separator);
-    /* rhs is the leaf 3 */
-    UASSERT_EQ((int)AST_INT, (int)n->u.bin_sep.rhs->kind);
-    UASSERT_EQ((int64_t)3, n->u.bin_sep.rhs->u.i);
+    UASSERT_EQ((int)AST_SEQ, (int)n->kind);
+    UASSERT_EQ((int)SEP_PIPE, (int)n->u.seq.separator);
+    UASSERT_EQ(3, n->u.seq.count);
+    UASSERT_EQ((int)AST_INT, (int)n->u.seq.children[0]->kind);
+    UASSERT_EQ((int)AST_INT, (int)n->u.seq.children[1]->kind);
+    UASSERT_EQ((int)AST_INT, (int)n->u.seq.children[2]->kind);
+    UASSERT_EQ((int64_t)1, n->u.seq.children[0]->u.i);
+    UASSERT_EQ((int64_t)3, n->u.seq.children[2]->u.i);
     sep_ctx_destroy(&c);
 }
 
 UTEST(parse_amp_left_assoc) {
-    /* "1 & 2 & 3" parses as (1&2)&3. */
+    /* "1 & 2 & 3" is one flat SEQ(AMP, [1,2,3]). */
     SepCtx c;
     UAstNode *n = parse_one("1 & 2 & 3", &c);
     UASSERT(n != NULL);
-    UASSERT_EQ((int)AST_BIN_SEP, (int)n->kind);
-    UASSERT_EQ((int)SEP_AMP, (int)n->u.bin_sep.separator);
-    UASSERT_EQ((int)AST_BIN_SEP, (int)n->u.bin_sep.lhs->kind);
-    UASSERT_EQ((int)SEP_AMP, (int)n->u.bin_sep.lhs->u.bin_sep.separator);
+    UASSERT_EQ((int)AST_SEQ, (int)n->kind);
+    UASSERT_EQ((int)SEP_AMP, (int)n->u.seq.separator);
+    UASSERT_EQ(3, n->u.seq.count);
     sep_ctx_destroy(&c);
 }
 
 UTEST(parse_pipe_amp_same_tier) {
-    /* "1 | 2 & 3" — both inner-tier, left-associative: ((1|2)&3). */
+    /* "1 | 2 & 3" — switching separator nests, left-assoc: a two-child
+     * SEQ(AMP, [SEQ(PIPE,[1,2]), 3]). */
     SepCtx c;
     UAstNode *n = parse_one("1 | 2 & 3", &c);
     UASSERT(n != NULL);
-    UASSERT_EQ((int)AST_BIN_SEP, (int)n->kind);
-    UASSERT_EQ((int)SEP_AMP, (int)n->u.bin_sep.separator);
-    /* lhs = 1|2 */
-    UASSERT_EQ((int)AST_BIN_SEP, (int)n->u.bin_sep.lhs->kind);
-    UASSERT_EQ((int)SEP_PIPE, (int)n->u.bin_sep.lhs->u.bin_sep.separator);
-    /* rhs = 3 */
-    UASSERT_EQ((int)AST_INT, (int)n->u.bin_sep.rhs->kind);
+    UASSERT_EQ((int)AST_SEQ, (int)n->kind);
+    UASSERT_EQ((int)SEP_AMP, (int)n->u.seq.separator);
+    UASSERT_EQ(2, n->u.seq.count);
+    /* children[0] = 1|2 */
+    UASSERT_EQ((int)AST_SEQ, (int)n->u.seq.children[0]->kind);
+    UASSERT_EQ((int)SEP_PIPE, (int)n->u.seq.children[0]->u.seq.separator);
+    UASSERT_EQ(2, n->u.seq.children[0]->u.seq.count);
+    /* children[1] = 3 */
+    UASSERT_EQ((int)AST_INT, (int)n->u.seq.children[1]->kind);
     sep_ctx_destroy(&c);
 }
 
 UTEST(parse_semi_two_children) {
-    /* "1; 2" is one AST_NARY with two children. */
+    /* "1; 2" is one AST_SEQ with two children. */
     SepCtx c;
     UAstNode *n = parse_one("1; 2", &c);
     UASSERT(n != NULL);
-    UASSERT_EQ((int)AST_NARY, (int)n->kind);
-    UASSERT_EQ((int)SEP_SEMI, (int)n->u.nary.separator);
-    UASSERT_EQ(2, n->u.nary.count);
-    UASSERT_EQ((int)AST_INT, (int)n->u.nary.children[0]->kind);
-    UASSERT_EQ((int)AST_INT, (int)n->u.nary.children[1]->kind);
-    UASSERT_EQ((int64_t)1, n->u.nary.children[0]->u.i);
-    UASSERT_EQ((int64_t)2, n->u.nary.children[1]->u.i);
+    UASSERT_EQ((int)AST_SEQ, (int)n->kind);
+    UASSERT_EQ((int)SEP_SEMI, (int)n->u.seq.separator);
+    UASSERT_EQ(2, n->u.seq.count);
+    UASSERT_EQ((int)AST_INT, (int)n->u.seq.children[0]->kind);
+    UASSERT_EQ((int)AST_INT, (int)n->u.seq.children[1]->kind);
+    UASSERT_EQ((int64_t)1, n->u.seq.children[0]->u.i);
+    UASSERT_EQ((int64_t)2, n->u.seq.children[1]->u.i);
     sep_ctx_destroy(&c);
 }
 

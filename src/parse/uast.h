@@ -37,148 +37,90 @@ typedef enum {
     AST_NIL     = 6,
 
     /* separators */
-    AST_NARY    = 7,        /* outer-tier: ;-or-,-joined sequence */
-    AST_BIN_SEP = 8,        /* inner-tier: |-or-&-joined pair    */
-    AST_NOOP    = 9,        /* singleton; legacy compat (see separator spec §3) */
+    AST_SEQ     = 7,        /* a separator-joined sequence: `;` `,` `|` `&` */
+    AST_NOOP    = 8,        /* singleton; legacy compat (see separator spec §3) */
 
     /* declarations + scope */
-    AST_VAR_DECL  = 10,     /* var x = expr; locals registered in FuncState */
-    AST_LOCAL_REF = 11,     /* resolved local reference (parser produces AST_IDENT;
-                               emit converts to AST_LOCAL_REF after FuncState lookup) */
-    AST_BLOCK     = 12,     /* { stmt; stmt; ... } */
+    AST_VAR_DECL  = 9,      /* var x = expr; locals registered in FuncState */
+    AST_BLOCK     = 10,     /* { stmt; stmt; ... } */
 
     /* control flow */
-    AST_IF      = 13,       /* if (cond) then-block [else else-block] */
-    AST_WHILE   = 14,       /* while (cond) body */
-    AST_COMPARE = 15,       /* ==, !=, <, <=, >, >= */
+    AST_IF      = 11,       /* if (cond) then-block [else else-block] */
+    AST_WHILE   = 12,       /* while (cond) body */
+    AST_COMPARE = 13,       /* ==, !=, <, <=, >, >= */
 
     /* functions */
-    AST_FUNCTION   = 16,    /* function (params) { body } */
-    AST_CALL       = 17,    /* callee(args) */
-    AST_RETURN     = 18,    /* return [expr] */
-    AST_PARAM      = 19,    /* formal parameter (eager, no `lazy`) */
-    AST_LAZY_PARAM = 20,    /* formal parameter (`lazy x`) */
+    AST_FUNCTION   = 14,    /* function (params) { body } */
+    AST_CALL       = 15,    /* callee(args) */
+    AST_RETURN     = 16,    /* return [expr] */
+    AST_PARAM      = 17,    /* formal parameter (eager, no `lazy`) */
+    AST_LAZY_PARAM = 18,    /* formal parameter (`lazy x`) */
 
     /* assignment */
-    AST_ASSIGN     = 21,    /* x = expr; assignment to existing local/upvalue */
+    AST_ASSIGN     = 19,    /* x = expr; assignment to existing local/upvalue */
 
     /* control transfer */
-    AST_TRY        = 22,    /* try { body } [catch (e) { handler }] [finally { cleanup }] */
-    AST_THROW      = 23,    /* throw expr */
+    AST_TRY        = 20,    /* try { body } [catch (e) { handler }] [finally { cleanup }] */
+    AST_THROW      = 21,    /* throw expr */
 
     /* tag scope */
-    AST_TAG_PREFIX = 24,    /* mytag: { body } — tag-scope syntax; tag-prefix
+    AST_TAG_PREFIX = 22,    /* mytag: { body } — tag-scope syntax; tag-prefix
                                onleave clause is v1.x (PARSE-033 closure) */
 
     /* slot member access */
-    AST_MEMBER_GET = 25,    /* obj.x         — recv + name */
-    AST_MEMBER_SET = 26,    /* obj.x = v     — recv + name + value */
-    AST_PROP_GET   = 27,    /* obj.x->prop   — recv + prop_name */
-    AST_PROP_SET   = 28,    /* obj.x->prop = v — recv + prop_name + value */
+    AST_MEMBER_GET = 23,    /* obj.x         — recv + name */
+    AST_MEMBER_SET = 24,    /* obj.x = v     — recv + name + value */
 
     /* reactive constructs */
-    AST_WATCHER      = 29,  /* at / at sync / whenever — mode discriminator in
+    AST_WATCHER      = 25,  /* at / at sync / whenever — mode discriminator in
                              * u.watcher.mode (UWATCHER_AT, UWATCHER_AT_SYNC,
                              * UWATCHER_WHENEVER); also carries optional onleave.
                              * spec #2 §3.10. Emits OP_AT_INSTALL / OP_AT_SYNC_INSTALL
                              * / OP_WHENEVER_INSTALL depending on mode. */
-    AST_WAITUNTIL    = 30,  /* waituntil (cond) — structurally distinct cond-only node.
+    AST_WAITUNTIL    = 26,  /* waituntil (cond) — structurally distinct cond-only node.
                              * spec #2. Emits OP_WAITUNTIL_INSTALL. */
-    AST_AT_EVENT     = 31,  /* at (e?) / at sync (e?) — event-subscribe form.
+    AST_AT_EVENT     = 27,  /* at (e?) / at sync (e?) — event-subscribe form.
                              * spec #3. Distinct from AST_WATCHER because dispatch goes
                              * through OP_AT_EVENT_INSTALL (=42), not OP_AT_INSTALL. */
-    AST_AT_SLOT_CHANGE = 32, /* at (obj.x.changed?) / sync variant — slot-change subscribe.
+    AST_AT_SLOT_CHANGE = 28, /* at (obj.x.changed?) / sync variant — slot-change subscribe.
                              * spec #4. Install needs OP_GETSLOT_CHANGE_EVENT (=44) prefix
                              * followed by OP_AT_EVENT_INSTALL. */
 
     /* string literal */
-    AST_STR     = 33,       /* string literal — escape-resolved + adjacent-concat
+    AST_STR     = 29,       /* string literal — escape-resolved + adjacent-concat
                              * folded view into an arena-allocated buffer.  Emit
                              * routes through OP_LOADK with a UVAL_STR constant
                              * (interning happens at emit time, not parse time,
                              * matching the AST_IDENT pattern). */
 
-    /* class declaration */
-    AST_CLASS_DECL = 34,    /* class Foo [: public A, B] { body }
-                             * Carries the class name (zero-copy lexeme view),
-                             * an optional declaration-order proto array, and
-                             * the body block.  Per S-class-name-scope, the
-                             * class name is NOT in scope while protos and
-                             * body parse — `class a : public a { ... }`
-                             * resolves the proto `a` to the outer binding.
-                             * Per S-mro-declaration-order, the proto array
-                             * preserves left-to-right declaration order;
-                             * emit reverses during insertFront so the chain
-                             * ends up [P1, P2, Object] for `: public P1, P2`. */
-
-    /* get/set parse sugar */
-    AST_PROPERTY_DECL = 35, /* get name() { body } / set name(v) { body }
-                             * Parse-only desugar — emit installs the closure
-                             * as the slot's `oget` (URBI_SLOT_FLAG_OGET) or
-                             * `oset` (URBI_SLOT_FLAG_OSET) property.  The
-                             * runtime slot-property dispatch path is the IC-sites
-                             * baseline; this feature only adds the parse sugar.
-                             *
-                             * `recv` is NULL when the property-decl appears
-                             * at the start of a class body — emit treats the
-                             * implicit receiver as the class object.  When
-                             * `recv` is non-NULL (e.g. `Foo.get value() {}`)
-                             * the receiver is emitted explicitly. */
-
-    AST_FLOAT_LIT = 36,     /* floating-point literal — 1.5, .5, 1.5e3, 1e3.
+    AST_FLOAT_LIT = 30,     /* floating-point literal — 1.5, .5, 1.5e3, 1e3.
                              * Parsed from TOK_FLOAT; emit routes through
                              * OP_LOADK with a UVAL_FLOAT constant. */
 
-    AST_THIS = 37,          /* `this` keyword — resolves to receiver (R0) in
+    AST_THIS = 31,          /* `this` keyword — resolves to receiver (R0) in
                              * method bodies.  Carries no payload; line+col
                              * are inherited from the base node.  Top-level
                              * `this` (lobby alias) is deferred to v1.x;
                              * emitter raises EMIT_NO_THIS_OUTSIDE_METHOD when
                              * fs->parent == NULL. */
 
-    AST_ASSERT = 38,        /* assert(expr) / assert { block }
-                             * Lowered to: if (!expr) throw "assertion failed: <src>"
-                             * No new opcode needed.  src_text/src_len is the
-                             * zero-copy source span of the expression (paren form);
-                             * NULL/0 for block form. */
-
-    AST_LIST_LIT = 39,      /* [e1, e2, e3]
-                             * Lowered to: List.new(e1, e2, e3)
-                             * No new opcode needed. */
-    AST_DICT_LIT = 40,      /* ["a" => 1, "b" => 2]
-                             * Lowered to: var _d = Dict.new(); _d.set("a", 1); ...
-                             * No new opcode needed. */
-    AST_SUBSCRIPT_GET = 41, /* l[i]  → l.get(i)
-                             * No new opcode needed. */
-    AST_SUBSCRIPT_SET = 42, /* l[i] = v  → l.set(i, v)
-                             * l[i] += v  → tmp=recv, tmpi=idx, tmp.set(tmpi, tmp.get(tmpi)+v)
-                             *              recv and idx evaluated exactly once (v0.10.7).
-                             * No new opcode needed. */
-
-    AST_FOR_EACH = 43,  /* for (var x : iter) body  / for (var x in iter) body
+    AST_FOR_EACH = 32,  /* for (var x : iter) body  / for (var x in iter) body
                          * Lowered to a while loop using list.length() + list.get(i).
                          * Also handles for (var x : list_expr) where list_expr is
                          * evaluated once before the loop.  No new opcode needed. */
-    AST_BREAK    = 44,  /* break — exits innermost for/while loop.
+    AST_BREAK    = 33,  /* break — exits innermost for/while loop.
                          * Lowered to OP_JMP with the exit address patched after the loop.
                          * No new opcode needed. */
-    AST_CONTINUE = 45,  /* continue — jumps to next iteration of innermost for/while.
+    AST_CONTINUE = 34,  /* continue — jumps to next iteration of innermost for/while.
                          * Lowered to OP_JMP with the continue address patched after the loop.
                          * No new opcode needed. */
-    AST_SWITCH   = 46,  /* switch (expr) { case v1: body1; case v2: body2; }
+    AST_SWITCH   = 35,  /* switch (expr) { case v1: body1; case v2: body2; }
                          * Equality-based dispatch only (no pattern matching).
                          * Lowered to a chain of if (expr == vN) { bodyN }.
                          * No new opcode needed. */
 
-    AST_REG_REF  = 47   /* synthetic emit-only: reference to a previously-allocated
-                         * register.  Never produced by the parser; created inside
-                         * urbi_emit_subscript_set_arm to pin recv/index temps so the
-                         * compound-subscript lowering evaluates each exactly once.
-                         * Lowers to OP_MOVE (or no-op when target == source).
-                         * Not serialised; not visible to the parser. */
-    ,
     /* === v1.0-rc stdlib-completeness: short-circuit logical operators === */
-    AST_LOGICAL  = 48   /* a && b / a || b — short-circuit.  Distinct from
+    AST_LOGICAL  = 36   /* a && b / a || b — short-circuit.  Distinct from
                          * AST_BINARY (eager both operands).  Lowers to
                          * OP_TESTSET + OP_JMP; RHS skipped when LHS settles
                          * the result.  is_or selects && vs ||. No new opcode. */
@@ -286,7 +228,10 @@ typedef enum {
 
     PARSE_EVENT_PAYLOAD_BIND_EXPECTED_VAR,    /* `at (e?(x))` — must be `(var x)` */
     PARSE_EVENT_PAYLOAD_BIND_EXPECTED_IDENT,  /* `at (e?(var))` — identifier missing */
-    PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN  /* `at (e?(var x` — missing `)` */
+    PARSE_EVENT_PAYLOAD_BIND_EXPECTED_RPAREN, /* `at (e?(var x` — missing `)` */
+
+    PARSE_CLASS_BODY_STATEMENT /* class body statement is neither a var
+                                   declaration nor a getter/setter */
 } UParseError;
 
 /*
@@ -306,11 +251,9 @@ typedef enum {
  *   u.err         — AST_ERROR:      UParseError + static message string
  *   u.b           — AST_BOOL:       boolean value
  *   [none]        — AST_NIL:        no payload (sentinel type)
- *   u.nary        — AST_NARY:       separator + ordered array of children
- *   u.bin_sep     — AST_BIN_SEP:    binary separator node
+ *   u.seq         — AST_SEQ:        separator + ordered array of children
  *   [none]        — AST_NOOP:       no payload (identity; legacy compat)
  *   u.var_decl    — AST_VAR_DECL:   variable declaration with init
- *   u.local_ref   — AST_LOCAL_REF:  resolved local binding
  *   u.block       — AST_BLOCK:      scoped sequence of statements
  *   u.if_stmt     — AST_IF:         conditional statement
  *   u.while_stmt  — AST_WHILE:      iterative loop
@@ -324,27 +267,17 @@ typedef enum {
  *   u.throw_expr  — AST_THROW:  value expression to throw
  *   u.tag_prefix  — AST_TAG_PREFIX: tag-scope (mytag: { body }); onleave is v1.x
  *   u.member      — AST_MEMBER_GET, AST_MEMBER_SET: slot read / slot assignment
- *   u.prop        — AST_PROP_GET, AST_PROP_SET: slot-property read / assignment
  *   u.watcher     — AST_WATCHER:         at/at sync/whenever + optional onleave
  *   u.waituntil   — AST_WAITUNTIL:       cond-only waituntil
  *   u.at_event    — AST_AT_EVENT:        at (e?) event-subscribe form
  *   u.at_slot_change — AST_AT_SLOT_CHANGE: at (obj.x.changed?) slot-change form
  *   u.str_lit     — AST_STR:             escape-resolved string bytes view
- *   u.class_decl  — AST_CLASS_DECL:      class name + protos + body block
- *   u.property_decl — AST_PROPERTY_DECL: get/set sugar — receiver + slot
- *                                        name + getter/setter kind + params
- *                                        + body
- *   u.assert_stmt — AST_ASSERT:          expression/block + source text span
  *   u.for_each    — AST_FOR_EACH:        var name + iterable + body block
  *   [none]        — AST_BREAK:           no payload (exits innermost loop)
  *   [none]        — AST_CONTINUE:        no payload (next iteration)
  *   u.switch_stmt — AST_SWITCH:          expr + parallel arrays of vals + bodies
- *   u.list_lit    — AST_LIST_LIT:        arena array of element nodes
- *   u.dict_lit    — AST_DICT_LIT:        arena arrays of key + value nodes
- *   u.subscript   — AST_SUBSCRIPT_GET, AST_SUBSCRIPT_SET:
- *                                        recv + index + (SET: value + compound_op)
  *
- * Slot/prop name storage: zero-copy lexeme view (name_start + name_len), as
+ * Slot name storage: zero-copy lexeme view (name_start + name_len), as
  * with var_decl/assign/param.  The parser has no UVM and therefore cannot
  * intern; emit will canonicalize via ustr_intern when it has VM access.
  *
@@ -387,26 +320,16 @@ struct UAstNode {
         /* AST_NIL has no payload */
         /* AST_NOOP has no payload (singleton in arena) */
 
-        struct {                                            /* AST_NARY */
-            UAstSeparator separator;        /* SEP_SEMI or SEP_COMMA */
-            UAstNode    **children;         /* arena array */
+        struct {                                            /* AST_SEQ */
+            UAstSeparator separator;        /* SEP_SEMI, SEP_COMMA, SEP_PIPE, SEP_AMP */
+            UAstNode    **children;         /* arena array, count >= 2 */
             int           count;
-        } nary;
-        struct {                                            /* AST_BIN_SEP */
-            UAstSeparator separator;        /* SEP_PIPE or SEP_AMP */
-            UAstNode    *lhs;
-            UAstNode    *rhs;
-        } bin_sep;
+        } seq;
         struct {                                            /* AST_VAR_DECL */
             const char *name_start;        /* zero-copy lexeme view */
             int         name_len;
             UAstNode   *init;              /* may be NULL — `var x;` not legal at v1.0 */
         } var_decl;
-        struct {                                            /* AST_LOCAL_REF */
-            const char *name_start;        /* zero-copy lexeme view */
-            int         name_len;
-            int         slot;              /* set by FuncState resolver; -1 = unresolved */
-        } local_ref;
         struct {                                            /* AST_BLOCK */
             UAstNode  **stmts;
             int         count;
@@ -490,12 +413,6 @@ struct UAstNode {
             int         name_len;
             UAstNode   *value;             /* SET only; NULL for GET */
         } member;
-        struct {                                            /* AST_PROP_GET, AST_PROP_SET */
-            UAstNode   *recv;              /* the obj.x sub-expression (typically AST_MEMBER_GET) */
-            const char *prop_name_start;   /* zero-copy lexeme view */
-            int         prop_name_len;
-            UAstNode   *value;             /* SET only; NULL for GET */
-        } prop;
         struct {                                            /* AST_WATCHER */
             UAstNode *cond;
             UAstNode *body;
@@ -542,27 +459,6 @@ struct UAstNode {
                                             * to the parser's UArena */
             int         len;               /* byte count (excluding any NUL) */
         } str_lit;
-        struct {                                            /* AST_CLASS_DECL */
-            const char *name_start;        /* zero-copy lexeme view of class name */
-            int         name_len;
-            UAstNode  **protos;            /* arena array; NULL when no protos */
-            int         proto_count;       /* number of protos in declaration order */
-            UAstNode   *body;              /* AST_BLOCK */
-        } class_decl;
-        struct {                                            /* AST_PROPERTY_DECL */
-            UAstNode      *recv;           /* explicit receiver (e.g. `Foo.`)
-                                            * or NULL for class-body implicit-self */
-            const char    *name_start;     /* slot name (zero-copy lexeme view) */
-            int            name_len;
-            UAstMethodKind kind;           /* UAST_METHOD_GETTER / UAST_METHOD_SETTER */
-            UAstNode      *func;           /* AST_FUNCTION carrying params + body */
-        } property_decl;
-        struct {                                            /* AST_ASSERT */
-            UAstNode   *expr;              /* expression or block to assert */
-            const char *src_text;          /* zero-copy source span (paren form);
-                                            * NULL for block form */
-            int         src_len;           /* byte count; 0 for block form */
-        } assert_stmt;
         struct {                                            /* AST_FOR_EACH */
             const char *var_name_start;  /* zero-copy lexeme view of loop variable */
             int         var_name_len;
@@ -577,26 +473,6 @@ struct UAstNode {
             int         case_count;
             UAstNode   *default_body;    /* catch-all arm body; NULL if absent */
         } switch_stmt;
-
-        struct {                                            /* AST_LIST_LIT */
-            UAstNode  **elems;             /* arena array of element expressions */
-            int         count;             /* number of elements (0 for []) */
-        } list_lit;
-        struct {                                            /* AST_DICT_LIT */
-            UAstNode  **keys;              /* arena array of key expressions */
-            UAstNode  **vals;              /* arena array of value expressions */
-            int         count;             /* number of key-value pairs (0 for [=>]) */
-        } dict_lit;
-        struct {                           /* AST_SUBSCRIPT_GET, AST_SUBSCRIPT_SET */
-            UAstNode   *recv;              /* the list/dict expression */
-            UAstNode   *index;             /* the subscript index */
-            UAstNode   *value;             /* SET only: rhs value; NULL for GET */
-            bool        is_compound_add;   /* true when desugared from `l[i] += v` */
-        } subscript;
-
-        struct {                           /* AST_REG_REF */
-            uint8_t reg;                   /* register index to reference */
-        } reg_ref;
     } u;
 };
 

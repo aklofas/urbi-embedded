@@ -5,6 +5,7 @@
 #include "lex/ulex.h"
 #include "parse/uast.h"
 #include "util/uarena.h"
+#include "util/umacros.h"   /* urbi_memcpy */
 #include <stddef.h>
 
 /* Forward declarations for static helpers defined later in this file. */
@@ -146,12 +147,12 @@ static UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
    OUTSIDE the unbraced arm per ugrammar.y :374-378 cstmt tier). */
 static UAstNode *parse_assign_or_expr_impl(UParser *p, UToken name, bool fold) {
     /* Getter/setter statement-start sugar: `get IDENT (...)` or
-     * `set IDENT (...)` produces an AST_PROPERTY_DECL.  Recognized only
-     * in the strict 3-token shape `get|set IDENT (`; outside that
-     * pattern, `get`/`set` remain plain identifiers (no keyword
-     * reservation breakage).  The receiver is implicit (NULL); emit
-     * resolves it from the enclosing class body or top-level realm
-     * scope. */
+     * `set IDENT (...)` desugars to a `setProperty` call (see
+     * urbi_parse_property_decl).  Recognized only in the strict 3-token
+     * shape `get|set IDENT (`; outside that pattern, `get`/`set` remain
+     * plain identifiers (no keyword reservation breakage).  The
+     * receiver is implicit (NULL); urbi_parse_property_decl resolves it
+     * from the enclosing class body's hidden receiver name. */
     if ((urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "get", 3) ||
          urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "set", 3))
         && urbi_parse_peek(p).type == TOK_IDENT && urbi_parse_peek2(p).type == TOK_LPAREN) {
@@ -203,14 +204,67 @@ static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
     return parse_assign_or_expr_impl(p, name, /*fold=*/true);
 }
 
+/* Flatten `;`/`,`/`|`/`&`-folded statements (AST_SEQ, any separator) in
+ * a class body into one leaf-statement list, growing *out via the
+ * arena as needed.  Mirrors the recursion the old hand-rolled class
+ * emitter did over AST_BIN_SEP/AST_NARY, now unified as one AST_SEQ
+ * kind. */
+static bool flatten_class_body_stmt(UParser *p, UAstNode *stmt,
+                                     UAstNode ***out, int *count, int *cap) {
+    if (stmt->kind == AST_SEQ) {
+        for (int i = 0; i < stmt->u.seq.count; i++) {
+            if (!flatten_class_body_stmt(p, stmt->u.seq.children[i], out, count, cap))
+                return false;
+        }
+        return true;
+    }
+    if (*count == *cap) {
+        if (!urbi_parse_arena_grow_node_array(p, out, cap, *count)) return false;
+    }
+    (*out)[(*count)++] = stmt;
+    return true;
+}
+
+/* True when `n` is the CALL shape urbi_parse_property_decl produces:
+ * recv.setProperty(name, "oget"|"oset", function). */
+static bool is_setproperty_call(const UAstNode *n) {
+    if (n->kind != AST_CALL || n->u.call.arg_count != 3) return false;
+    const UAstNode *callee = n->u.call.callee;
+    return callee->kind == AST_MEMBER_GET
+        && urbi_parse_ident_equals(callee->u.member.name_start,
+                                    callee->u.member.name_len,
+                                    "setProperty", 11);
+}
+
 /* --- parse_class_declaration: `class Name [: public P1, P2, ...] { body }`.
  *
- * Per S-class-name-scope: the class name is NOT in scope while parsing
- * either the proto list or the body.  Any name binding for the class
- * happens at emit time as part of the desugar (the emit arm allocates a
- * local and writes the cloned-Object value into it AFTER body emit).
- * That deferral makes `class a : public a { ... }` resolve the proto
- * `a` to the OUTER `a` (legacy class.chk shadow case).
+ * Lowers to:
+ *   BLOCK {
+ *     var $cls = Object.clone();
+ *     $cls.protos.insertFront(Pn); ...; $cls.protos.insertFront(P1);
+ *     <one statement per body leaf, $cls as receiver>;
+ *     Realm.Name = $cls;
+ *   }
+ *
+ * `$cls` is a hidden per-declaration name (urbi_parse_hidden_name), not
+ * the class's own source name — every proto and body reference inside
+ * this BLOCK goes through $cls, never through `Name`.  `Name` is bound
+ * exactly once, LAST, via an explicit member-set on Realm.
+ *
+ * Both halves of that split matter:
+ *   - Per S-class-name-scope, `class a : public a { ... }` must resolve
+ *     the proto `a` to the OUTER `a`.  Binding `Name` only after every
+ *     proto/body reference has already resolved (against $cls, which
+ *     can never collide with a user name) is what keeps the outer `a`
+ *     visible while the inner one is under construction.
+ *   - This whole declaration is itself a BLOCK, which opens its own
+ *     local scope — a plain `var Name = ...` declared inside it would
+ *     be popped when the block closes and would never reach a sibling
+ *     statement like `Name.x`.  `Realm.x = v` is the one write form
+ *     that is NOT scope-dependent (REVIVAL.md's explicit "declared
+ *     global" mechanism): it resolves `Realm` by ordinary lookup and
+ *     then does a plain slot-set on it, so the name durably survives
+ *     past this block regardless of nesting.
  *
  * The `public` keyword is required after the colon for syntactic
  * compatibility with legacy urbi 2.x (which had access modifiers); v1.0
@@ -265,32 +319,128 @@ static UAstNode *parse_class_declaration(UParser *p) {
         }
     }
 
-    /* Body — block.  Class name is NOT yet in scope; the body parses
-     * with whatever outer binding `name` has (per S-class-name-scope).
-     * Bump class_body_depth around the parse so statement-start
-     * `get`/`set` inside the body skip the top-level rejection in
-     * parse_assign_or_expr (implicit-receiver form is legal in
-     * class bodies, illegal at statement-start). */
+    /* Body — block.  class_body_name is the hidden $cls receiver every
+     * implicit get/set sugar inside the body resolves against (see
+     * urbi_parse_property_decl); class_body_depth gates the
+     * implicit-receiver form itself (illegal outside a class body).
+     * Both are saved/restored around the body parse so a nested class
+     * declaration layers correctly. */
     UToken body_tok = urbi_parse_peek(p);
     if (body_tok.type != TOK_LBRACE) {
         return urbi_parse_make_error(p, PARSE_EXPECTED_LBRACE,
                           urbi_parse_kErrorMessages[PARSE_EXPECTED_LBRACE],
                           body_tok.line, body_tok.col);
     }
+
+    int cls_len;
+    const char *cls_name = urbi_parse_hidden_name(p, "cls", &cls_len);
+    if (!cls_name) return (UAstNode *)&uparser_oom_sentinel;
+
+    const char *saved_name_start = p->class_body_name_start;
+    int         saved_name_len   = p->class_body_name_len;
+    p->class_body_name_start = cls_name;
+    p->class_body_name_len   = cls_len;
     p->class_body_depth++;
     UAstNode *body = urbi_parse_block(p);
     p->class_body_depth--;
+    p->class_body_name_start = saved_name_start;
+    p->class_body_name_len   = saved_name_len;
     if (body == NULL) return NULL;
     if (body->kind == AST_ERROR) return body;
 
-    UAstNode *node = urbi_parse_make_node(p, AST_CLASS_DECL, kw.line, kw.col);
-    if (node == NULL) return NULL;
-    node->u.class_decl.name_start  = name.u.str.start;
-    node->u.class_decl.name_len    = name.u.str.len;
-    node->u.class_decl.protos      = protos;
-    node->u.class_decl.proto_count = proto_count;
-    node->u.class_decl.body        = body;
-    return node;
+    int leaf_cap = 8, leaf_count = 0;
+    UAstNode **leaves = (UAstNode **)uarena_alloc(p->arena,
+                                                   (size_t)leaf_cap * sizeof(UAstNode *));
+    if (!leaves) return (UAstNode *)&uparser_oom_sentinel;
+    for (int i = 0; i < body->u.block.count; i++) {
+        if (!flatten_class_body_stmt(p, body->u.block.stmts[i], &leaves, &leaf_count, &leaf_cap))
+            return (UAstNode *)&uparser_oom_sentinel;
+    }
+
+    int total = 1 + proto_count + leaf_count + 1;
+    UAstNode **out = (UAstNode **)uarena_alloc(p->arena, (size_t)total * sizeof(UAstNode *));
+    if (!out) return (UAstNode *)&uparser_oom_sentinel;
+    int oi = 0;
+
+    /* var $cls = Object.clone(); */
+    {
+        UAstNode *obj_ident = urbi_parse_desugar_ident(p, "Object", 6, kw.line, kw.col);
+        if (!obj_ident) return NULL;
+        UAstNode *clone_mg = urbi_parse_desugar_member_get(p, obj_ident, "clone", 5,
+                                                            kw.line, kw.col);
+        if (!clone_mg) return NULL;
+        UAstNode *clone_call = urbi_parse_desugar_call(p, clone_mg, NULL, 0, kw.line, kw.col);
+        if (!clone_call) return NULL;
+        UAstNode *var_cls = urbi_parse_desugar_var_decl(p, cls_name, cls_len, clone_call,
+                                                         kw.line, kw.col);
+        if (!var_cls) return NULL;
+        out[oi++] = var_cls;
+    }
+
+    /* $cls.protos().insertFront(Pn); ...; $cls.protos().insertFront(P1);
+     * (reverse declaration order so the final chain reads [P1, P2, ...]).
+     * `protos` is a native method (returns the synthetic proto-list
+     * object) — it must be CALLED, not read as a plain slot. */
+    for (int i = proto_count - 1; i >= 0; i--) {
+        UAstNode *cls_ref = urbi_parse_desugar_ident(p, cls_name, cls_len, kw.line, kw.col);
+        if (!cls_ref) return NULL;
+        UAstNode *protos_mg = urbi_parse_desugar_member_get(p, cls_ref, "protos", 6,
+                                                             kw.line, kw.col);
+        if (!protos_mg) return NULL;
+        UAstNode *protos_call = urbi_parse_desugar_call(p, protos_mg, NULL, 0, kw.line, kw.col);
+        if (!protos_call) return NULL;
+        UAstNode *insert_mg = urbi_parse_desugar_member_get(p, protos_call, "insertFront", 11,
+                                                             kw.line, kw.col);
+        if (!insert_mg) return NULL;
+        UAstNode **args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+        if (!args) return (UAstNode *)&uparser_oom_sentinel;
+        args[0] = protos[i];
+        UAstNode *call = urbi_parse_desugar_call(p, insert_mg, args, 1, kw.line, kw.col);
+        if (!call) return NULL;
+        out[oi++] = call;
+    }
+
+    /* Body leaves: `var x = e` -> $cls.x = e; `get`/`set` sugar already
+     * built the setProperty call against $cls (urbi_parse_property_decl)
+     * and passes through unchanged; anything else is not allowed here. */
+    for (int i = 0; i < leaf_count; i++) {
+        UAstNode *leaf = leaves[i];
+        if (leaf->kind == AST_VAR_DECL) {
+            UAstNode *cls_ref = urbi_parse_desugar_ident(p, cls_name, cls_len,
+                                                          leaf->line, leaf->col);
+            if (!cls_ref) return NULL;
+            UAstNode *ms = urbi_parse_desugar_member_set(p, cls_ref,
+                                                          leaf->u.var_decl.name_start,
+                                                          leaf->u.var_decl.name_len,
+                                                          leaf->u.var_decl.init,
+                                                          leaf->line, leaf->col);
+            if (!ms) return NULL;
+            out[oi++] = ms;
+        } else if (is_setproperty_call(leaf)) {
+            out[oi++] = leaf;
+        } else {
+            return urbi_parse_make_error(p, PARSE_CLASS_BODY_STATEMENT,
+                              urbi_parse_kErrorMessages[PARSE_CLASS_BODY_STATEMENT],
+                              leaf->line, leaf->col);
+        }
+    }
+
+    /* Realm.Name = $cls — see the function header for why this must be
+     * both an explicit Realm member-set (not a `var`) and the LAST
+     * statement. */
+    {
+        UAstNode *realm_ident = urbi_parse_desugar_ident(p, "Realm", 5, kw.line, kw.col);
+        if (!realm_ident) return NULL;
+        UAstNode *cls_ref = urbi_parse_desugar_ident(p, cls_name, cls_len, kw.line, kw.col);
+        if (!cls_ref) return NULL;
+        UAstNode *export_set = urbi_parse_desugar_member_set(p, realm_ident,
+                                                              name.u.str.start, name.u.str.len,
+                                                              cls_ref, kw.line, kw.col);
+        if (!export_set) return NULL;
+        out[oi++] = export_set;
+    }
+
+    return urbi_parse_desugar_block(p, out, total, kw.line, kw.col);
 }
 
 /* --- urbi_parse_statement_or_expr: var-decl, assign, or inner-tier expression.
@@ -308,7 +458,7 @@ UAstNode *urbi_parse_statement_or_expr(UParser *p) {
     switch (t.type) {
     /* After parsing a block or block-like statement form, fold any following
      * `|` / `&` separator so that `{a} & {b}` and `if (c) {b} & {e}` parse
-     * as AST_BIN_SEP nodes.  Parallel var-declare (`var a = 1 & var b = 2`)
+     * as AST_SEQ nodes.  Parallel var-declare (`var a = 1 & var b = 2`)
      * stays rejected — var is not in this set. */
     case TOK_KW_WHILE: {
         UAstNode *node = urbi_parse_while(p);
@@ -679,11 +829,13 @@ UAstNode *urbi_parse_function(UParser *p) {
  * (`get`/`set`) and the following slot-name IDENT — `name_tok` carries
  * the slot-name token.  The current urbi_parse_peek is `(`.
  *
- * The desugar is parse-only: no new opcodes.  The emit arm walks the
- * AST_FUNCTION inside u.property_decl.func and routes the resulting
- * closure to install_property (URBI_SLOT_FLAG_OGET / OSET) instead of
- * a plain setSlot.  Parses the same `(params) { body }` shape as
- * `urbi_parse_function`. --- */
+ * Desugars directly to `recv.setProperty(name, "oget"|"oset", function)`
+ * — no new opcode, no AST_PROPERTY_DECL kind.  `recv` is NULL only for
+ * the implicit-receiver form at the start of a class body; that case
+ * substitutes the class-body desugar's hidden receiver name
+ * (p->class_body_name_start/len, set by parse_class_declaration around
+ * its body parse) rather than leaving a dangling receiver, so the
+ * result is always a complete, self-contained CALL. --- */
 UAstNode *urbi_parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
                               UAstMethodKind kind, int line, int col) {
     { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }  /* urbi_parse_consume '(' */
@@ -740,15 +892,29 @@ UAstNode *urbi_parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
     func->u.func.param_count = count;
     func->u.func.body        = body;
 
-    /* Wrap in AST_PROPERTY_DECL. */
-    UAstNode *node = urbi_parse_make_node(p, AST_PROPERTY_DECL, line, col);
-    if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.property_decl.recv       = recv;        /* may be NULL */
-    node->u.property_decl.name_start = name_tok.u.str.start;
-    node->u.property_decl.name_len   = name_tok.u.str.len;
-    node->u.property_decl.kind       = kind;
-    node->u.property_decl.func       = func;
-    return node;
+    UAstNode *actual_recv = recv;
+    if (actual_recv == NULL) {
+        actual_recv = urbi_parse_desugar_ident(p, p->class_body_name_start,
+                                                p->class_body_name_len, line, col);
+        if (!actual_recv) return NULL;
+    }
+
+    const char *prop_kind = (kind == UAST_METHOD_GETTER) ? "oget" : "oset";
+    UAstNode *name_str = urbi_parse_desugar_str(p, name_tok.u.str.start,
+                                                 name_tok.u.str.len, line, col);
+    if (!name_str) return NULL;
+    UAstNode *kind_str = urbi_parse_desugar_str(p, prop_kind, 4, line, col);
+    if (!kind_str) return NULL;
+    UAstNode *setprop_mg = urbi_parse_desugar_member_get(p, actual_recv, "setProperty",
+                                                          11, line, col);
+    if (!setprop_mg) return NULL;
+
+    UAstNode **args = (UAstNode **)uarena_alloc(p->arena, 3U * sizeof(UAstNode *));
+    if (!args) return (UAstNode *)&uparser_oom_sentinel;
+    args[0] = name_str;
+    args[1] = kind_str;
+    args[2] = func;
+    return urbi_parse_desugar_call(p, setprop_mg, args, 3, line, col);
 }
 
 /* --- parse_return: `return [expr]` --- */
@@ -809,59 +975,91 @@ UAstNode *urbi_parse_assert(UParser *p) {
 
     UToken next = urbi_parse_peek(p);
 
+    UAstNode  *cond_expr;
+    const char *msg_bytes;
+    int         msg_len;
+
     if (next.type == TOK_LBRACE) {
-        /* Block form: assert { stmts } */
+        /* Block form: assert { stmts } — the diagnostic carries no source
+         * span, just the bare "assertion failed". */
         UAstNode *block = urbi_parse_block(p);
         if (!block) return (UAstNode *)&uparser_oom_sentinel;
         if (block->kind == AST_ERROR) return block;
 
-        UAstNode *node = urbi_parse_make_node(p, AST_ASSERT, kw.line, kw.col);
-        if (!node) return (UAstNode *)&uparser_oom_sentinel;
-        node->u.assert_stmt.expr     = block;
-        node->u.assert_stmt.src_text = NULL;
-        node->u.assert_stmt.src_len  = 0;
-        return node;
+        static const char kMsgBase[] = "assertion failed";
+        cond_expr = block;
+        msg_bytes = kMsgBase;
+        msg_len   = (int)(sizeof(kMsgBase) - 1U);
+    } else {
+        { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }  /* urbi_parse_consume '(' */
+
+        /* Capture source text start: p->lex->cur is now right after '('.
+         * Trim leading whitespace so the diagnostic text starts at the expression.
+         * The source buffer is guaranteed to outlive the AST node.
+         * Bound the walk at p->lex->end — `assert(` at the very
+         * end of a non-NUL-terminated buffer put cur one past the end, and the
+         * unbounded loop read past the allocation. */
+        const char *src_start = p->lex->cur;
+        while (src_start < p->lex->end &&
+               (*src_start == ' ' || *src_start == '\t'
+                || *src_start == '\r' || *src_start == '\n')) {
+            src_start++;
+        }
+
+        UAstNode *expr = urbi_parse_inner_tier(p);
+        if (!expr) return (UAstNode *)&uparser_oom_sentinel;
+        if (expr->kind == AST_ERROR) return expr;
+
+        /* Compute source text end: after urbi_parse_inner_tier, the parser has peeked
+         * the first token after the expression.  That peeked token (')') was
+         * produced by ulex_next which advanced p->lex->cur past ')'.
+         * The ')' starts at (p->lex->cur - p->urbi_parse_peek.len) when have_peek is set. */
+        const char *src_end = p->have_peek ? (p->lex->cur - (size_t)p->urbi_parse_peek.len)
+                                           : p->lex->cur;
+        /* Trim trailing whitespace so the diagnostic text is clean. */
+        while (src_end > src_start && (src_end[-1] == ' ' || src_end[-1] == '\t'
+                                        || src_end[-1] == '\r' || src_end[-1] == '\n')) {
+            src_end--;
+        }
+
+        { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }  /* urbi_parse_consume ')' */
+
+        static const char kMsgPrefix[] = "assertion failed: ";
+        size_t prefix_len = sizeof(kMsgPrefix) - 1U;
+        size_t span_len   = (size_t)(src_end - src_start);
+        char *buf = (char *)uarena_alloc(p->arena, prefix_len + span_len);
+        if (!buf) return (UAstNode *)&uparser_oom_sentinel;
+        urbi_memcpy(buf, kMsgPrefix, prefix_len);
+        urbi_memcpy(buf + prefix_len, src_start, span_len);
+
+        cond_expr = expr;
+        msg_bytes = buf;
+        msg_len   = (int)(prefix_len + span_len);
     }
 
-    { UAstNode *err = NULL; if (!expect(p, TOK_LPAREN, PARSE_EXPECTED_LPAREN, &err)) return err; }  /* urbi_parse_consume '(' */
+    /* if (!cond_expr) throw "<message>" */
+    UAstNode *cond = urbi_parse_make_unary(p, UOP_NOT, cond_expr, kw.line, kw.col);
+    if (!cond) return NULL;
 
-    /* Capture source text start: p->lex->cur is now right after '('.
-     * Trim leading whitespace so the diagnostic text starts at the expression.
-     * The source buffer is guaranteed to outlive the AST node.
-     * Bound the walk at p->lex->end — `assert(` at the very
-     * end of a non-NUL-terminated buffer put cur one past the end, and the
-     * unbounded loop read past the allocation. */
-    const char *src_start = p->lex->cur;
-    while (src_start < p->lex->end &&
-           (*src_start == ' ' || *src_start == '\t'
-            || *src_start == '\r' || *src_start == '\n')) {
-        src_start++;
-    }
+    UAstNode *msg_node = urbi_parse_desugar_str(p, msg_bytes, msg_len, kw.line, kw.col);
+    if (!msg_node) return NULL;
 
-    UAstNode *expr = urbi_parse_inner_tier(p);
-    if (!expr) return (UAstNode *)&uparser_oom_sentinel;
-    if (expr->kind == AST_ERROR) return expr;
+    UAstNode *throw_node = urbi_parse_make_node(p, AST_THROW, kw.line, kw.col);
+    if (!throw_node) return NULL;
+    throw_node->u.throw_expr.value = msg_node;
 
-    /* Compute source text end: after urbi_parse_inner_tier, the parser has peeked
-     * the first token after the expression.  That peeked token (')') was
-     * produced by ulex_next which advanced p->lex->cur past ')'.
-     * The ')' starts at (p->lex->cur - p->urbi_parse_peek.len) when have_peek is set. */
-    const char *src_end = p->have_peek ? (p->lex->cur - (size_t)p->urbi_parse_peek.len)
-                                       : p->lex->cur;
-    /* Trim trailing whitespace so the diagnostic text is clean. */
-    while (src_end > src_start && (src_end[-1] == ' ' || src_end[-1] == '\t'
-                                    || src_end[-1] == '\r' || src_end[-1] == '\n')) {
-        src_end--;
-    }
+    UAstNode **then_stmts = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+    if (!then_stmts) return (UAstNode *)&uparser_oom_sentinel;
+    then_stmts[0] = throw_node;
+    UAstNode *then_block = urbi_parse_desugar_block(p, then_stmts, 1, kw.line, kw.col);
+    if (!then_block) return NULL;
 
-    { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }  /* urbi_parse_consume ')' */
-
-    UAstNode *node = urbi_parse_make_node(p, AST_ASSERT, kw.line, kw.col);
-    if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.assert_stmt.expr     = expr;
-    node->u.assert_stmt.src_text = src_start;
-    node->u.assert_stmt.src_len  = (int)(src_end - src_start);
-    return node;
+    UAstNode *if_node = urbi_parse_make_node(p, AST_IF, kw.line, kw.col);
+    if (!if_node) return NULL;
+    if_node->u.if_stmt.cond       = cond;
+    if_node->u.if_stmt.then_block = then_block;
+    if_node->u.if_stmt.else_block = NULL;
+    return if_node;
 }
 
 /* --- urbi_parse_try: `try { body } [catch ([var] e [if guard]) { handler }] [else { body }] [finally { cleanup }]`

@@ -328,31 +328,33 @@ UTEST(parse_trailing_tokens_without_separator_rejected) {
 
 UTEST(parse_pipe_inner_tier_single_statement) {
     /* '|' is now an inner-tier separator: "1 + 2 | 3 * 4 |" is one statement
-       (AST_BIN_SEP) followed by a trailing '|' that is consumed as the
+       (AST_SEQ) followed by a trailing '|' that is consumed as the
        REPL statement-boundary marker, leaving EOF. */
     ParseCtx c;
     ctx_init(&c, "1 + 2 | 3 * 4 |");
     UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
-    UASSERT_EQ(a->kind, AST_BIN_SEP);
-    UASSERT_EQ(a->u.bin_sep.separator, SEP_PIPE);
-    UASSERT_EQ(a->u.bin_sep.lhs->kind, AST_BINARY);
-    UASSERT_EQ(a->u.bin_sep.rhs->kind, AST_BINARY);
+    UASSERT_EQ(a->kind, AST_SEQ);
+    UASSERT_EQ(a->u.seq.separator, SEP_PIPE);
+    UASSERT_EQ(2, a->u.seq.count);
+    UASSERT_EQ(a->u.seq.children[0]->kind, AST_BINARY);
+    UASSERT_EQ(a->u.seq.children[1]->kind, AST_BINARY);
     UAstNode *eof = uparse_next_statement(&c.p);
     UASSERT(eof == NULL);
     ctx_destroy(&c);
 }
 
 UTEST(parse_pipe_no_trailing_pipe_is_one_stmt) {
-    /* "1 | 2" — inner-tier '|'; one statement AST_BIN_SEP(1, 2). */
+    /* "1 | 2" — inner-tier '|'; one statement AST_SEQ(PIPE, [1, 2]). */
     ParseCtx c;
     ctx_init(&c, "1 | 2");
     UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
-    UASSERT_EQ(a->kind, AST_BIN_SEP);
-    UASSERT_EQ(a->u.bin_sep.separator, SEP_PIPE);
-    UASSERT_EQ(a->u.bin_sep.lhs->kind, AST_INT);
-    UASSERT_EQ(a->u.bin_sep.rhs->kind, AST_INT);
+    UASSERT_EQ(a->kind, AST_SEQ);
+    UASSERT_EQ(a->u.seq.separator, SEP_PIPE);
+    UASSERT_EQ(2, a->u.seq.count);
+    UASSERT_EQ(a->u.seq.children[0]->kind, AST_INT);
+    UASSERT_EQ(a->u.seq.children[1]->kind, AST_INT);
     UAstNode *eof = uparse_next_statement(&c.p);
     UASSERT(eof == NULL);
     ctx_destroy(&c);
@@ -1054,33 +1056,25 @@ UTEST(parse_member_set_basic) {
 }
 
 UTEST(parse_prop_get_basic) {
-    /* "obj.x->prop" — yields AST_PROP_GET wrapping an AST_MEMBER_GET. */
+    /* "obj.x->prop" — arrow access is not supported; yields AST_ERROR. */
     ParseCtx c;
     ctx_init(&c, "obj.x->prop");
     UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
-    UASSERT_EQ((int)AST_PROP_GET, (int)n->kind);
-    UASSERT(n->u.prop.recv != NULL);
-    UASSERT_EQ((int)AST_MEMBER_GET, (int)n->u.prop.recv->kind);
-    UASSERT_EQ(4, n->u.prop.prop_name_len);
-    UASSERT_EQ('p', n->u.prop.prop_name_start[0]);
-    UASSERT(n->u.prop.value == NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_UNEXPECTED_TOKEN, n->u.err.code);
     ctx_destroy(&c);
 }
 
 UTEST(parse_prop_set_basic) {
-    /* "obj.x->prop = 1" — yields AST_PROP_SET with value=AST_INT(1). */
+    /* "obj.x->prop = 1" — arrow access is not supported; yields AST_ERROR
+       before the '=' is even reached. */
     ParseCtx c;
     ctx_init(&c, "obj.x->prop = 1");
     UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
-    UASSERT_EQ((int)AST_PROP_SET, (int)n->kind);
-    UASSERT(n->u.prop.recv != NULL);
-    UASSERT_EQ((int)AST_MEMBER_GET, (int)n->u.prop.recv->kind);
-    UASSERT_EQ(4, n->u.prop.prop_name_len);
-    UASSERT(n->u.prop.value != NULL);
-    UASSERT_EQ((int)AST_INT, (int)n->u.prop.value->kind);
-    UASSERT_EQ(1, (int)n->u.prop.value->u.i);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_UNEXPECTED_TOKEN, n->u.err.code);
     ctx_destroy(&c);
 }
 
@@ -1211,8 +1205,8 @@ void test_parser_suite(void) {
        access (obj.x->prop, obj.x->prop = v). */
     utest_run("parse: 'obj.x' → AST_MEMBER_GET",                parse_member_get_basic);
     utest_run("parse: 'obj.x = 42' → AST_MEMBER_SET",           parse_member_set_basic);
-    utest_run("parse: 'obj.x->prop' → AST_PROP_GET on MEMBER_GET", parse_prop_get_basic);
-    utest_run("parse: 'obj.x->prop = 1' → AST_PROP_SET on MEMBER_GET", parse_prop_set_basic);
+    utest_run("parse: 'obj.x->prop' is a parse error", parse_prop_get_basic);
+    utest_run("parse: 'obj.x->prop = 1' is a parse error", parse_prop_set_basic);
     utest_run("parse: 'obj.method()' preserved as AST_CALL{callee=MEMBER_GET}",
               parse_method_call_preserved);
     /* audit-2 #1 */

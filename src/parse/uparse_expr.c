@@ -290,9 +290,21 @@ UAstNode *urbi_parse_prefix(UParser *p) {
 
  /* Caller has confirmed urbi_parse_peek() is TOK_LBRACKET.  Consumes `[` + contents + `]`.
  *
- * List:   AST_LIST_LIT { elems[], count }
- * Dict:   AST_DICT_LIT { keys[], vals[], count }
+ * List: `[e1, e2, e3]`    → CALL List.new(e1, e2, e3)
+ * Dict: `[k1 => v1, ...]` → BLOCK { var $d = Dict.new(); $d.set(k1, v1); ...; $d }
  * ========================================================================== */
+
+/* Build `recv.new(args[0..argc))` — shared by the list desugar (recv is
+ * the parsed element array) and the dict desugar's `Dict.new()` step
+ * (argc == 0). */
+static UAstNode *desugar_new_call(UParser *p, const char *recv_name, int recv_len,
+                                   UAstNode **args, int argc, int line, int col) {
+    UAstNode *recv = urbi_parse_desugar_ident(p, recv_name, recv_len, line, col);
+    if (!recv) return NULL;
+    UAstNode *mg = urbi_parse_desugar_member_get(p, recv, "new", 3, line, col);
+    if (!mg) return NULL;
+    return urbi_parse_desugar_call(p, mg, args, argc, line, col);
+}
 
 static UAstNode *parse_bracket_literal(UParser *p) {
     UToken lbr = urbi_parse_consume(p);  /* urbi_parse_consume '[' */
@@ -310,14 +322,10 @@ static UAstNode *parse_bracket_literal(UParser *p) {
     UAstNode **keys = NULL;
     UAstNode **vals = NULL;
 
-    /* Empty list: `[]` */
+    /* Empty list: `[]` -> List.new() */
     if (urbi_parse_peek(p).type == TOK_RBRACKET) {
         urbi_parse_consume(p);
-        UAstNode *n = urbi_parse_make_node(p, AST_LIST_LIT, lbr.line, lbr.col);
-        if (!n) return NULL;
-        n->u.list_lit.elems = elems;  /* empty; valid pointer */
-        n->u.list_lit.count = 0;
-        return n;
+        return desugar_new_call(p, "List", 4, NULL, 0, lbr.line, lbr.col);
     }
 
     while (urbi_parse_peek(p).type != TOK_RBRACKET && urbi_parse_peek(p).type != TOK_EOF) {
@@ -376,18 +384,45 @@ static UAstNode *parse_bracket_literal(UParser *p) {
     { UAstNode *err = NULL; if (!expect(p, TOK_RBRACKET, PARSE_EXPECTED_RBRACKET, &err)) return err; }  /* urbi_parse_consume ']' */
 
     if (is_dict) {
-        UAstNode *n = urbi_parse_make_node(p, AST_DICT_LIT, lbr.line, lbr.col);
-        if (!n) return NULL;
-        n->u.dict_lit.keys  = keys;
-        n->u.dict_lit.vals  = vals;
-        n->u.dict_lit.count = count;
-        return n;
+        /* BLOCK { var $d = Dict.new(); $d.set(k0, v0); ...; $d } — the
+         * hidden local keeps a dict literal nested inside another
+         * expression (or a second dict literal in the same scope) from
+         * colliding with any user name. */
+        int dname_len;
+        const char *dname = urbi_parse_hidden_name(p, "d", &dname_len);
+        if (!dname) return (UAstNode *)&uparser_oom_sentinel;
+
+        UAstNode *new_call = desugar_new_call(p, "Dict", 4, NULL, 0, lbr.line, lbr.col);
+        if (!new_call) return NULL;
+        UAstNode *var_d = urbi_parse_desugar_var_decl(p, dname, dname_len, new_call,
+                                                       lbr.line, lbr.col);
+        if (!var_d) return NULL;
+
+        int total = count + 2;  /* var-decl + one .set() per pair + trailing ident */
+        UAstNode **stmts = (UAstNode **)uarena_alloc(p->arena,
+                                                      (size_t)total * sizeof(UAstNode *));
+        if (!stmts) return (UAstNode *)&uparser_oom_sentinel;
+        int si = 0;
+        stmts[si++] = var_d;
+        for (int i = 0; i < count; i++) {
+            UAstNode *d_ref = urbi_parse_desugar_ident(p, dname, dname_len, lbr.line, lbr.col);
+            if (!d_ref) return NULL;
+            UAstNode *set_mg = urbi_parse_desugar_member_get(p, d_ref, "set", 3, lbr.line, lbr.col);
+            if (!set_mg) return NULL;
+            UAstNode **set_args = (UAstNode **)uarena_alloc(p->arena, 2U * sizeof(UAstNode *));
+            if (!set_args) return (UAstNode *)&uparser_oom_sentinel;
+            set_args[0] = keys[i];
+            set_args[1] = vals[i];
+            UAstNode *set_call = urbi_parse_desugar_call(p, set_mg, set_args, 2, lbr.line, lbr.col);
+            if (!set_call) return NULL;
+            stmts[si++] = set_call;
+        }
+        UAstNode *d_final = urbi_parse_desugar_ident(p, dname, dname_len, lbr.line, lbr.col);
+        if (!d_final) return NULL;
+        stmts[si++] = d_final;
+        return urbi_parse_desugar_block(p, stmts, total, lbr.line, lbr.col);
     } else {
-        UAstNode *n = urbi_parse_make_node(p, AST_LIST_LIT, lbr.line, lbr.col);
-        if (!n) return NULL;
-        n->u.list_lit.elems = elems;
-        n->u.list_lit.count = count;
-        return n;
+        return desugar_new_call(p, "List", 4, elems, count, lbr.line, lbr.col);
     }
 }
 
@@ -528,8 +563,7 @@ static UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
    Shape produced:
      obj.x        → AST_MEMBER_GET
      obj.x = v    → AST_MEMBER_SET   (consumes `= v`)
-     obj.x->y     → AST_PROP_GET
-     obj.x->y = v → AST_PROP_SET     (consumes `= v`)
+     obj.x->y     → AST_ERROR        (arrow access is not supported)
 
    The caller's postfix loop should `break` after a SET arm (assignment
    terminates further chaining) and `continue` after a GET arm so that
@@ -544,18 +578,24 @@ static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
     UToken op = urbi_parse_consume(p);  /* TOK_DOT or TOK_ARROW */
     *out_is_assign = false;
 
+    if (op.type == TOK_ARROW) {
+        /* `expr->name` carried urbi 2.x's slot-property read, distinct
+         * from a plain slot; v1.0 has no such layer, so the form is
+         * simply not supported. */
+        return urbi_parse_make_error(p, PARSE_UNEXPECTED_TOKEN,
+                          "arrow access is not supported",
+                          op.line, op.col);
+    }
+
     UToken name = urbi_parse_peek(p);
     { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
-    const bool is_arrow = (op.type == TOK_ARROW);
-
     /* `Foo.get value(...)` / `Foo.set value(...)` getter/setter sugar.
-     * Only triggers on dot-access (not arrow), where the consumed IDENT is
-     * `get` or `set`, AND the next two tokens are IDENT followed by `(`.
-     * Outside that strict shape, `get` / `set` remain plain slot names. */
-    if (!is_arrow
-        && (urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "get", 3) ||
-            urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "set", 3))
+     * Triggers when the consumed IDENT is `get` or `set` AND the next
+     * two tokens are IDENT followed by `(`.  Outside that strict shape,
+     * `get` / `set` remain plain slot names. */
+    if ((urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "get", 3) ||
+         urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "set", 3))
         && urbi_parse_peek(p).type == TOK_IDENT && urbi_parse_peek2(p).type == TOK_LPAREN) {
         UAstMethodKind kind =
             urbi_parse_ident_equals(name.u.str.start, name.u.str.len, "get", 3)
@@ -574,39 +614,16 @@ static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
         UAstNode *value = urbi_parse_expression(p, 0);
         if (!value) return NULL;
         if (value->kind == AST_ERROR) return value;
-        UAstNode *node = urbi_parse_make_node(p, is_arrow ? AST_PROP_SET : AST_MEMBER_SET,
-                                   op.line, op.col);
+        UAstNode *node = urbi_parse_desugar_member_set(p, recv, name.u.str.start,
+                                                        name.u.str.len, value,
+                                                        op.line, op.col);
         if (!node) return NULL;
-        if (is_arrow) {
-            node->u.prop.recv            = recv;
-            node->u.prop.prop_name_start = name.u.str.start;
-            node->u.prop.prop_name_len   = name.u.str.len;
-            node->u.prop.value           = value;
-        } else {
-            node->u.member.recv       = recv;
-            node->u.member.name_start = name.u.str.start;
-            node->u.member.name_len   = name.u.str.len;
-            node->u.member.value      = value;
-        }
         *out_is_assign = true;
         return node;
     }
 
-    UAstNode *node = urbi_parse_make_node(p, is_arrow ? AST_PROP_GET : AST_MEMBER_GET,
-                               op.line, op.col);
-    if (!node) return NULL;
-    if (is_arrow) {
-        node->u.prop.recv            = recv;
-        node->u.prop.prop_name_start = name.u.str.start;
-        node->u.prop.prop_name_len   = name.u.str.len;
-        node->u.prop.value           = NULL;
-    } else {
-        node->u.member.recv       = recv;
-        node->u.member.name_start = name.u.str.start;
-        node->u.member.name_len   = name.u.str.len;
-        node->u.member.value      = NULL;
-    }
-    return node;
+    return urbi_parse_desugar_member_get(p, recv, name.u.str.start, name.u.str.len,
+                                          op.line, op.col);
 }
 
 /* --- urbi_parse_expression_cont: Pratt infix/postfix loop starting from lhs.
@@ -675,41 +692,85 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
             /* Peek for assignment or compound-assign. */
             UToken nxt = urbi_parse_peek(p);
             if (nxt.type == TOK_EQ) {
+                /* l[i] = v -> CALL l.set(i, v) */
                 urbi_parse_consume(p);  /* urbi_parse_consume '=' */
                 UAstNode *val = urbi_parse_expression(p, 0);
                 if (!val) return NULL;
                 if (val->kind == AST_ERROR) return val;
-                UAstNode *ss = urbi_parse_make_node(p, AST_SUBSCRIPT_SET, op.line, op.col);
-                if (!ss) return NULL;
-                ss->u.subscript.recv            = lhs;
-                ss->u.subscript.index           = index;
-                ss->u.subscript.value           = val;
-                ss->u.subscript.is_compound_add = false;
-                lhs = ss;
+                UAstNode *mg = urbi_parse_desugar_member_get(p, lhs, "set", 3, op.line, op.col);
+                if (!mg) return NULL;
+                UAstNode **args = (UAstNode **)uarena_alloc(p->arena, 2U * sizeof(UAstNode *));
+                if (!args) return (UAstNode *)&uparser_oom_sentinel;
+                args[0] = index;
+                args[1] = val;
+                lhs = urbi_parse_desugar_call(p, mg, args, 2, op.line, op.col);
+                if (!lhs) return NULL;
                 break;  /* assignment terminates postfix chain */
             }
             if (nxt.type == TOK_PLUS_EQ) {
+                /* l[i] += v -> BLOCK { var $r = l; var $idx = i;
+                 *                      $r.set($idx, $r.get($idx) + v) }
+                 * $r/$idx pin the receiver and index so each is
+                 * evaluated exactly once even when either is
+                 * side-effectful (e.g. makeList()[nextIdx()] += v). */
                 urbi_parse_consume(p);  /* urbi_parse_consume '+=' */
                 UAstNode *rhs = urbi_parse_expression(p, 0);
                 if (!rhs) return NULL;
                 if (rhs->kind == AST_ERROR) return rhs;
-                UAstNode *ss = urbi_parse_make_node(p, AST_SUBSCRIPT_SET, op.line, op.col);
-                if (!ss) return NULL;
-                ss->u.subscript.recv            = lhs;
-                ss->u.subscript.index           = index;
-                ss->u.subscript.value           = rhs;
-                ss->u.subscript.is_compound_add = true;
-                lhs = ss;
+
+                int rlen, ilen;
+                const char *rname = urbi_parse_hidden_name(p, "r", &rlen);
+                const char *iname = urbi_parse_hidden_name(p, "idx", &ilen);
+                if (!rname || !iname) return (UAstNode *)&uparser_oom_sentinel;
+
+                UAstNode *var_r = urbi_parse_desugar_var_decl(p, rname, rlen, lhs, op.line, op.col);
+                UAstNode *var_i = urbi_parse_desugar_var_decl(p, iname, ilen, index, op.line, op.col);
+                if (!var_r || !var_i) return NULL;
+
+                UAstNode *r_ref1 = urbi_parse_desugar_ident(p, rname, rlen, op.line, op.col);
+                UAstNode *i_ref1 = urbi_parse_desugar_ident(p, iname, ilen, op.line, op.col);
+                if (!r_ref1 || !i_ref1) return NULL;
+                UAstNode *get_mg = urbi_parse_desugar_member_get(p, r_ref1, "get", 3, op.line, op.col);
+                if (!get_mg) return NULL;
+                UAstNode **get_args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+                if (!get_args) return (UAstNode *)&uparser_oom_sentinel;
+                get_args[0] = i_ref1;
+                UAstNode *get_call = urbi_parse_desugar_call(p, get_mg, get_args, 1, op.line, op.col);
+                if (!get_call) return NULL;
+                UAstNode *add = urbi_parse_make_binary(p, BOP_ADD, get_call, rhs, op.line, op.col);
+                if (!add) return NULL;
+
+                UAstNode *r_ref2 = urbi_parse_desugar_ident(p, rname, rlen, op.line, op.col);
+                UAstNode *i_ref2 = urbi_parse_desugar_ident(p, iname, ilen, op.line, op.col);
+                if (!r_ref2 || !i_ref2) return NULL;
+                UAstNode *set_mg = urbi_parse_desugar_member_get(p, r_ref2, "set", 3, op.line, op.col);
+                if (!set_mg) return NULL;
+                UAstNode **set_args = (UAstNode **)uarena_alloc(p->arena, 2U * sizeof(UAstNode *));
+                if (!set_args) return (UAstNode *)&uparser_oom_sentinel;
+                set_args[0] = i_ref2;
+                set_args[1] = add;
+                UAstNode *set_call = urbi_parse_desugar_call(p, set_mg, set_args, 2, op.line, op.col);
+                if (!set_call) return NULL;
+
+                UAstNode **blk = (UAstNode **)uarena_alloc(p->arena, 3U * sizeof(UAstNode *));
+                if (!blk) return (UAstNode *)&uparser_oom_sentinel;
+                blk[0] = var_r;
+                blk[1] = var_i;
+                blk[2] = set_call;
+                lhs = urbi_parse_desugar_block(p, blk, 3, op.line, op.col);
+                if (!lhs) return NULL;
                 break;  /* assignment terminates postfix chain */
             }
-            /* Plain get. */
-            UAstNode *sg = urbi_parse_make_node(p, AST_SUBSCRIPT_GET, op.line, op.col);
-            if (!sg) return NULL;
-            sg->u.subscript.recv            = lhs;
-            sg->u.subscript.index           = index;
-            sg->u.subscript.value           = NULL;
-            sg->u.subscript.is_compound_add = false;
-            lhs = sg;
+            /* Plain get: l[i] -> CALL l.get(i) */
+            {
+                UAstNode *mg = urbi_parse_desugar_member_get(p, lhs, "get", 3, op.line, op.col);
+                if (!mg) return NULL;
+                UAstNode **args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+                if (!args) return (UAstNode *)&uparser_oom_sentinel;
+                args[0] = index;
+                lhs = urbi_parse_desugar_call(p, mg, args, 1, op.line, op.col);
+                if (!lhs) return NULL;
+            }
             continue;
         }
 
