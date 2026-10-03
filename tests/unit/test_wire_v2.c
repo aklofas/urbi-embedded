@@ -160,6 +160,67 @@ UTEST(an_old_version_byte_is_rejected) {
     free(buf); free_proto(p);
 }
 
+UTEST(scope_try_takes_exactly_one_of_catch_or_finally) {
+    /* The walker's private RUNNING bit, both kinds at once, and neither
+     * are all refused; each single kind loads. */
+    static const uint8_t bad[] = { 0x00, USCOPE_F_HAS_CATCH | USCOPE_F_HAS_FINALLY, 0x20, 0x21, 0x80 };
+    static const uint8_t good[] = { USCOPE_F_HAS_CATCH, USCOPE_F_HAS_FINALLY };
+    char err[128] = {0};
+    for (size_t k = 0; k < sizeof bad + sizeof good; k++) {
+        uint8_t a = (k < sizeof bad) ? bad[k] : good[k - sizeof bad];
+        uint32_t ins[] = {
+            uinstr_enc_abx(OP_SCOPE_TRY, a, 2),
+            uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0, 0),
+            uinstr_enc_abc(OP_RET, 0, 0, 0),
+        };
+        UProto *p = make_proto(ins, 3, 0);
+        UASSERT_EQ((int)(k < sizeof bad ? UCHUNK_LOAD_CORRUPT : UCHUNK_LOAD_OK),
+                   (int)roundtrip(p, err, sizeof err));
+        free_proto(p);
+    }
+}
+UTEST(scope_pop_admits_only_the_defined_bits) {
+    static const uint8_t bad[] = {
+        USCOPE_POP_TRY | 0x08, USCOPE_POP_TAG | 0x80, 0x00, 0x03,
+        USCOPE_POP_TAG | USCOPE_POP_RUN_FINALLY,
+    };
+    static const uint8_t good[] = { USCOPE_POP_TRY, USCOPE_POP_TAG, USCOPE_POP_TRY | USCOPE_POP_RUN_FINALLY };
+    char err[128] = {0};
+    for (size_t k = 0; k < sizeof bad + sizeof good; k++) {
+        uint8_t a = (k < sizeof bad) ? bad[k] : good[k - sizeof bad];
+        uint32_t ins[] = { uinstr_enc_abc(OP_SCOPE_POP, a, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0) };
+        UProto *p = make_proto(ins, 2, 0);
+        UASSERT_EQ((int)(k < sizeof bad ? UCHUNK_LOAD_CORRUPT : UCHUNK_LOAD_OK),
+                   (int)roundtrip(p, err, sizeof err));
+        free_proto(p);
+    }
+}
+/* A root of CLOSURE P0, one upvalue prelude word `pre`, RET, over a child
+ * with one upvalue; `nsites` names on the root. */
+static UChunkLoadError closure_with_prelude(uint32_t pre, uint16_t nsites) {
+    uint32_t ins[] = { uinstr_enc_abx(OP_CLOSURE, 0, 0), pre, uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    UProto *p = make_proto(ins, 3, nsites);
+    UProto *child = uproto_alloc_nested(p, p);
+    uint32_t cins[] = { uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    child->instructions = malloc(sizeof cins); memcpy(child->instructions, cins, sizeof cins);
+    child->instr_count = child->instr_cap = 2; child->line_deltas = calloc(2, 1);
+    child->max_reg = 1; child->nupvals = 1;
+    char err[128] = {0};
+    UChunkLoadError rc = roundtrip(p, err, sizeof err);
+    uchunk_destroy(p, NULL);   /* owns the nested child and the site names */
+    return rc;
+}
+UTEST(a_closure_prelude_word_is_not_an_instruction) {
+    /* Its opcode byte means nothing: an out-of-range one loads... */
+    UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)closure_with_prelude(0xFFu | (1u << 16), 0));
+    /* ...an EXTARG one does not widen the RET after it... */
+    UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)closure_with_prelude((uint32_t)OP_EXTARG | (1u << 16), 0));
+    /* ...and a GETSLOT one does not count as a site-bearing instruction,
+     * so it cannot vouch for a site name nothing indexes. */
+    UASSERT_EQ((int)UCHUNK_LOAD_CORRUPT,
+               (int)closure_with_prelude(uinstr_enc_abc(OP_GETSLOT, 0, 1, 0), 1));
+}
+
 void test_wire_v2_suite(void) {
     utest_run("a_site_index_above_255_needs_extarg_and_round_trips",
               a_site_index_above_255_needs_extarg_and_round_trips);
@@ -173,6 +234,12 @@ void test_wire_v2_suite(void) {
               a_jump_may_not_land_between_extarg_and_its_operand);
     utest_run("a_handler_pc_may_not_land_after_an_extarg",
               a_handler_pc_may_not_land_after_an_extarg);
+    utest_run("scope_try_takes_exactly_one_of_catch_or_finally",
+              scope_try_takes_exactly_one_of_catch_or_finally);
+    utest_run("scope_pop_admits_only_the_defined_bits",
+              scope_pop_admits_only_the_defined_bits);
+    utest_run("a_closure_prelude_word_is_not_an_instruction",
+              a_closure_prelude_word_is_not_an_instruction);
     utest_run("scope_tag_accepts_a_register_above_fifteen_and_the_no_reg_sentinel",
               scope_tag_accepts_a_register_above_fifteen_and_the_no_reg_sentinel);
     utest_run("install_needs_three_registers_and_a_mode",

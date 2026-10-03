@@ -48,7 +48,7 @@ static UChunkLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
                                             uint8_t max_reg) {
     switch (kind) {
         case UOPK_UNUSED:
-        case UOPK_IMM_FLAGS:      /* per-opcode rules below constrain the bits */
+        case UOPK_IMM_FLAGS:      /* SCOPE_TRY, SCOPE_POP, INSTALL: constrained in verify_walk_block / verify_abc_rules */
         case UOPK_UPVAL_IDX:      /* runtime-checked: UClosure carries the count */
         case UOPK_IMM_SITE:       /* checked by verify_walk_block */
         case UOPK_IMM_DEPTH:      /* a scope count; any byte */
@@ -170,7 +170,8 @@ static UChunkLoadError verify_abc_rules(MDecCtx *d, uint8_t op,
         }
         case OP_SCOPE_POP: {
             uint8_t kind = (uint8_t)(a & 0x3U);
-            if ((kind != USCOPE_POP_TRY && kind != USCOPE_POP_TAG)
+            if ((a & ~(0x3U | USCOPE_POP_RUN_FINALLY)) != 0U
+                || (kind != USCOPE_POP_TRY && kind != USCOPE_POP_TAG)
                 || ((a & USCOPE_POP_RUN_FINALLY) != 0U && kind != USCOPE_POP_TRY)) {
                 set_errmsg(d->errmsg, d->errcap,
                            "OP_SCOPE_POP A=0x%02x names no valid scope kind at pc %zu",
@@ -227,14 +228,17 @@ static UChunkLoadError verify_bx(MDecCtx *d, uint8_t op, uint16_t bx,
 /* Pass 1: walk one proto's instructions against the opcode-shape table,
    applying the proto's bounds (max_reg / const_count / instr_count /
    nested_count / site_count).  An OP_EXTARG sets the high bits of the
-   next instruction's site index; that instruction must take one. */
+   next instruction's site index; that instruction must take one.  The
+   upvalue prelude words after an OP_CLOSURE are not instructions: they
+   are skipped here, as dispatch skips them, and checked by pass 2. */
 static UChunkLoadError verify_walk_block(MDecCtx *d,
                                           uint8_t max_reg,
                                           size_t const_count,
                                           size_t instr_count,
                                           size_t nested_count,
                                           uint16_t site_count,
-                                          const uint32_t *instructions) {
+                                          const uint32_t *instructions,
+                                          struct UProto *const *nested) {
     uint32_t ext = 0;
     bool ext_pending = false;
     size_t sites_seen = 0;
@@ -289,9 +293,31 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
             rc = verify_abc_rules(d, op, a, b, c, instructions, vi, max_reg);
             if (rc != UCHUNK_LOAD_OK) return rc;
         } else {
-            rc = verify_bx(d, op, uinstr_bx(ins), sh->bx_kind, vi,
+            uint16_t bx = uinstr_bx(ins);
+            rc = verify_bx(d, op, bx, sh->bx_kind, vi,
                            const_count, instr_count, nested_count);
             if (rc != UCHUNK_LOAD_OK) return rc;
+            /* A scope entry is exactly one of the two kinds.  The
+             * walker's private UCLEAN_F_RUNNING bit, or both kinds at
+             * once, would reach it straight from bytecode. */
+            if (op == (uint8_t)OP_SCOPE_TRY
+                && a != USCOPE_F_HAS_CATCH && a != USCOPE_F_HAS_FINALLY) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_SCOPE_TRY flags A=0x%02x are not exactly one of catch or finally at pc %zu",
+                           (unsigned)a, vi);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            if (op == (uint8_t)OP_CLOSURE && nested != NULL && nested[bx] != NULL) {
+                size_t nupvals = nested[bx]->nupvals;
+                if (vi + nupvals >= instr_count) {
+                    set_errmsg(d->errmsg, d->errcap,
+                               "OP_CLOSURE at pc %zu: upvalue prelude (%zu entries)"
+                               " extends past bytecode end (instr_count=%zu)",
+                               vi, nupvals, instr_count);
+                    return UCHUNK_LOAD_TRUNCATED_UPVALUES;
+                }
+                vi += nupvals;
+            }
         }
         ext = 0;
         ext_pending = false;
@@ -333,7 +359,8 @@ static UChunkLoadError verify_proto_recursive(MDecCtx *d, const UProto *p) {
                                             p->instr_count,
                                             p->nested_count,
                                             p->site_count,
-                                            p->instructions);
+                                            p->instructions,
+                                            p->nested);
     if (rc != UCHUNK_LOAD_OK) return rc;
     for (size_t i = 0; i < p->nested_count; i++) {
         rc = verify_proto_recursive(d, p->nested[i]);

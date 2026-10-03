@@ -590,6 +590,46 @@ UTEST(new_error_codes_have_names)
  * Suite registration
  * ========================================================================= */
 
+/* =========================================================================
+ * A site-name count larger than the bytes left is refused before the
+ * name array is allocated: each name needs at least its length byte.
+ * ========================================================================= */
+
+static size_t vcb_largest_request;
+static void *vcb_tracking_alloc(void *p, size_t n, void *ud) {
+    (void)ud;
+    if (n == 0) { free(p); return NULL; }
+    if (n > vcb_largest_request) vcb_largest_request = n;
+    return realloc(p, n);
+}
+
+UTEST(site_name_count_past_the_remaining_bytes_rejected)
+{
+    uint8_t buf[256];
+    vcb_build_good_header(buf);
+    size_t off = 24;
+    off = vcb_put_varint(buf, off, 0);   /* source_name_len */
+    buf[off++] = 0;                      /* max_reg */
+    buf[off++] = 0;                      /* nupvals */
+    buf[off++] = 0;                      /* nparams */
+    off = vcb_put_varint(buf, off, 0);   /* n_const */
+    off = vcb_put_varint(buf, off, 1);   /* n_instr */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    off = vcb_put_instr(buf, off, (uint32_t)OP_RET);
+    off = vcb_put_varint(buf, off, 1);   /* n_deltas */
+    buf[off++] = 0;
+    off = vcb_put_varint(buf, off, 0);   /* n_abs_lines */
+    off = vcb_put_varint(buf, off, 60000);   /* site_count: three bytes ask for 480 KB */
+    off = vcb_put_varint(buf, off, 0);   /* one name's worth of bytes */
+
+    vcb_largest_request = 0;
+    UProto *m = NULL;
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, off, vcb_tracking_alloc, NULL, NULL, 0);
+    UASSERT_EQ((int)UCHUNK_LOAD_CORRUPT, (int)rc);
+    UASSERT(vcb_largest_request < 4096U);
+    if (m) uchunk_destroy(m, NULL);
+}
+
 void test_verify_chunk_bounds_suite(void) {
     utest_run("verify_well_formed_chunk_loads",
               verify_well_formed_chunk_loads);
@@ -619,4 +659,6 @@ void test_verify_chunk_bounds_suite(void) {
               closure_upvalue_recapture_src_idx_out_of_range);
     utest_run("new_error_codes_have_names",
               new_error_codes_have_names);
+    utest_run("site_name_count_past_the_remaining_bytes_rejected",
+              site_name_count_past_the_remaining_bytes_rejected);
 }

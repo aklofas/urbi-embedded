@@ -10,7 +10,8 @@
  *   UOPK_REG           : R[k] register reference; must be <= max_reg
  *   UOPK_IMM_BOOL      : immediate 0/1; reject if > 1
  *   UOPK_IMM_FLAGS     : flag byte; any value at the shape level (the
- *                        per-opcode rules constrain SCOPE_POP and INSTALL)
+ *                        per-opcode rules constrain SCOPE_TRY, SCOPE_POP
+ *                        and INSTALL)
  *   UOPK_UPVAL_IDX     : upvalue index; runtime-checked, no static range
  *                        (UClosure carries the upvalue array length)
  *   UOPK_REG_OR_NONE   : a register (<= max_reg), or 0xFF meaning none

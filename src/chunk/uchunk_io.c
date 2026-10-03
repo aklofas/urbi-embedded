@@ -620,6 +620,14 @@ static UChunkLoadError decode_site_names_into(MDecCtx *d,
                    (unsigned long long)count);
         return UCHUNK_LOAD_CORRUPT;
     }
+    /* Each name costs at least its length byte, so a count the rest of
+     * the buffer cannot hold is refused before the pointer array is
+     * allocated rather than after a few input bytes asked for 512 KB. */
+    if (count > (uint64_t)(d->size - d->off)) {
+        set_errmsg(d->errmsg, d->errcap, "n_site_names=%llu exceeds the %zu bytes remaining",
+                   (unsigned long long)count, d->size - d->off);
+        return UCHUNK_LOAD_CORRUPT;
+    }
     *out_count = (uint16_t)count;
     if (count == 0U) {
         *out_strs = NULL;
