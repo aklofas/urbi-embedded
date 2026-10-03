@@ -97,27 +97,39 @@ static int64_t global_int(Fix *f, const char *name) {
     return g->values[idx].v.i;
 }
 
-/* EXTARG: site 300 on the realm globals: write, then read it back. */
+/* EXTARG: site 300 on the realm globals, written and read back.  Each
+ * site-taking arm family (SETSLOT, GETSLOT, GETSLOT_CHANGE_EVENT) is
+ * followed by a plain op on a low site: an arm that kept the high bits
+ * would address site | 0x100 instead (s263 / s261), which either lands
+ * the write on the wrong name or reads a name that is not there. */
 static void extarg_addresses_a_site_above_255(void) {
     Fix f; fix_open(&f);
     const char *names[301]; char store[301][8];
     for (int i = 0; i < 301; i++) { snprintf(store[i], 8, "s%d", i); names[i] = store[i]; }
-    /* R0 = globals; R1 = 7; EXTARG; SETSLOT R1 -> R0.s300; EXTARG; GETSLOT R2 = R0.s300; RET R2 */
-    int64_t k[] = { 7 };
+    int64_t k[] = { 7, 9 };
     uint32_t ins[] = {
         uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, 0, 0, 0),
-        uinstr_enc_abx(OP_LOADK, 1, 0),
-        uinstr_enc_abx(OP_EXTARG, 0, 1), uinstr_enc_abc(OP_SETSLOT, 1, 0, 44),
-        uinstr_enc_abx(OP_EXTARG, 0, 1), uinstr_enc_abc(OP_GETSLOT, 2, 0, 44),
-        uinstr_enc_abc(OP_RET, 2, 0, 0),
+        uinstr_enc_abx(OP_LOADK, 1, 0),                     /* R1 = 7 */
+        uinstr_enc_abx(OP_LOADK, 4, 1),                     /* R4 = 9 */
+        uinstr_enc_abc(OP_SETSLOT, 4, 0, 5),                /* s5 = 9 */
+        uinstr_enc_abx(OP_EXTARG, 0, 1), uinstr_enc_abc(OP_SETSLOT, 1, 0, 44),   /* s300 = 7 */
+        uinstr_enc_abc(OP_SETSLOT, 1, 0, 7),                /* s7 = 7, not s263 */
+        uinstr_enc_abx(OP_EXTARG, 0, 1), uinstr_enc_abc(OP_GETSLOT, 2, 0, 44),   /* R2 = s300 */
+        uinstr_enc_abc(OP_GETSLOT, 3, 0, 5),                /* R3 = s5, not s261 */
+        uinstr_enc_abx(OP_EXTARG, 0, 1), uinstr_enc_abc(OP_GETSLOT_CHANGE_EVENT, 5, 0, 44),
+        uinstr_enc_abc(OP_GETSLOT, 6, 0, 5),                /* R6 = s5, not s261 */
+        uinstr_enc_abc(OP_ADD, 2, 2, 3),
+        uinstr_enc_abc(OP_ADD, 2, 2, 6),
+        uinstr_enc_abc(OP_RET, 2, 0, 0),                    /* 7 + 9 + 9 */
     };
-    UClosure *cl = build(&f, ins, 7, k, 1, names, 301, 3);
+    UClosure *cl = build(&f, ins, sizeof ins / sizeof ins[0], k, 2, names, 301, 6);
     UValue out = uv_nil();
     RT_EQ(run_chunk(&f, cl, &out), URBI_OK);
-    RT_EQ(out.kind, (uint8_t)UV_INT); RT_EQ(out.v.i, 7);
-    /* The write landed on site 300's name, not on site 44's. */
+    RT_EQ(out.kind, (uint8_t)UV_INT); RT_EQ(out.v.i, 25);
     RT_EQ(global_int(&f, "s300"), 7);
     RT_EQ(global_int(&f, "s44"), -1);
+    RT_EQ(global_int(&f, "s7"), 7);
+    RT_EQ(global_int(&f, "s263"), -1);
     fix_close(&f);
 }
 
@@ -254,39 +266,211 @@ static void fork_modes_spawn_and_join(void) {
     fix_close(&f);
 }
 
-/* INSTALL without an alternate body: R[A+2] holds an int and is not read. */
-static void an_install_without_an_alternate_body_leaves_r_a_plus_2_alone(void) {
+/* The condition proto: the realm global `on`. */
+static UProto *flag_proto(void) {
+    const char *sites[] = { "on" };
+    uint32_t ins[] = {
+        uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, 0, 0, 0),
+        uinstr_enc_abc(OP_GETSLOT, 0, 0, 0),
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    return proto(ins, 3, NULL, 0, sites, 1, 1);
+}
+
+/* `at (on) hits++ [onleave alts++]` with a real closure in R[A+2] either
+ * way; `flags` says whether the install may read it.  The condition goes
+ * true, then false: the body runs on the rising edge, the alternate (if
+ * installed) on the falling one. */
+static void install_at_flag(uint8_t flags, int64_t *hits, int64_t *alts) {
     Fix f; fix_open(&f);
-    const char *sites[] = { "hits" };
-    int64_t k[] = { 0, 42 };
-    /* R5 = globals; hits = 0; R1 = cond P0; R2 = body P1; R3 = 42;
-     * INSTALL base=1 AT_COND HAS_BODY; R0 = void; RET R0 */
+    const char *sites[] = { "on", "hits", "alts" };
+    int64_t k[] = { 0 };
     uint32_t ins[] = {
         uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, 5, 0, 0),
         uinstr_enc_abx(OP_LOADK, 6, 0),
-        uinstr_enc_abc(OP_SETSLOT, 6, 5, 0),
-        uinstr_enc_abx(OP_CLOSURE, 1, 0),
-        uinstr_enc_abx(OP_CLOSURE, 2, 1),
-        uinstr_enc_abx(OP_LOADK, 3, 1),
-        uinstr_enc_abc(OP_INSTALL, 1, UINSTALL_AT_COND, UINSTALL_F_HAS_BODY),
+        uinstr_enc_abc(OP_SETSLOT, 6, 5, 1),                /* hits = 0 */
+        uinstr_enc_abc(OP_SETSLOT, 6, 5, 2),                /* alts = 0 */
+        uinstr_enc_abc(OP_LOADBOOL, 6, 1, 0),
+        uinstr_enc_abc(OP_SETSLOT, 6, 5, 0),                /* on = true */
+        uinstr_enc_abx(OP_CLOSURE, 1, 0),                   /* R1 = condition */
+        uinstr_enc_abx(OP_CLOSURE, 2, 1),                   /* R2 = body */
+        uinstr_enc_abx(OP_CLOSURE, 3, 2),                   /* R3 = alternate */
+        uinstr_enc_abc(OP_INSTALL, 1, UINSTALL_AT_COND, flags),
         uinstr_enc_abc(OP_LOADVOID, 0, 0, 0),
         uinstr_enc_abc(OP_RET, 0, 0, 0),
     };
-    uint32_t cond_ins[] = {
-        uinstr_enc_abc(OP_LOADBOOL, 0, 1, 0),
-        uinstr_enc_abc(OP_RET, 0, 0, 0),
-    };
-    UProto *root = proto(ins, 9, k, 2, sites, 1, 7);
-    UProto *nested[2] = { proto(cond_ins, 2, NULL, 0, NULL, 0, 1), bump_proto("hits") };
-    adopt(root, nested, 2);
+    UProto *root = proto(ins, sizeof ins / sizeof ins[0], k, 1, sites, 3, 7);
+    UProto *nested[3] = { flag_proto(), bump_proto("hits"), bump_proto("alts") };
+    adopt(root, nested, 3);
     UClosure *cl = bind(&f, root);
     UValue out = uv_nil();
     RT_EQ(run_chunk(&f, cl, &out), URBI_OK);
     RT_EQ(out.kind, (uint8_t)UV_VOID);
     for (int n = 0; n < 8 && urbi_step(f.vm, 0, NULL) == URBI_STEP_RAN; n++) { }
-    RT_EQ(f.vm->last_error[0], '\0');      /* no TypeError from R[A+2] */
-    RT_EQ(global_int(&f, "hits"), 1);      /* the body ran, once */
+    RT_EQ(urbi_global_set(f.vm, f.realm, "on", uv_bool(false)), URBI_OK);
+    for (int n = 0; n < 8 && urbi_step(f.vm, 0, NULL) == URBI_STEP_RAN; n++) { }
+    RT_EQ(f.vm->last_error[0], '\0');
+    *hits = global_int(&f, "hits");
+    *alts = global_int(&f, "alts");
     fix_close(&f);
+}
+
+/* INSTALL without HAS_ALT: R[A+2] holds a closure left there (as register
+ * reuse would leave one) and is not read. */
+static void an_install_without_an_alternate_body_leaves_r_a_plus_2_alone(void) {
+    int64_t hits = -1, alts = -1;
+    install_at_flag(UINSTALL_F_HAS_BODY, &hits, &alts);
+    RT_EQ(hits, 1);      /* the body ran, once */
+    RT_EQ(alts, 0);      /* the stale closure in R[A+2] was never installed */
+}
+
+/* The same chunk with HAS_ALT: the alternate runs on the falling edge. */
+static void an_install_with_an_alternate_body_runs_it_on_the_falling_edge(void) {
+    int64_t hits = -1, alts = -1;
+    install_at_flag(UINSTALL_F_HAS_BODY | UINSTALL_F_HAS_ALT, &hits, &alts);
+    RT_EQ(hits, 1);
+    RT_EQ(alts, 1);
+}
+
+/* UNWIND_TO depth 2 over two finally scopes: the inner body, then the
+ * outer, each once, then the jump lands once. */
+static void unwind_to_chains_through_two_finally_bodies(void) {
+    Fix f; fix_open(&f);
+    int64_t k[] = { 0, 10, 100, 1000 };
+    uint32_t ins[] = {
+        uinstr_enc_abx(OP_LOADK, 0, 0),
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_FINALLY, 11),   /* outer */
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_FINALLY, 8),    /* inner */
+        uinstr_enc_abx(OP_UNWIND_TO, 2, 5),
+        uinstr_enc_abc(OP_RET, 0, 0, 0),                          /* skipped */
+        uinstr_enc_abx(OP_LOADK, 1, 3), uinstr_enc_abc(OP_ADD, 0, 0, 1),   /* 5: target */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+        uinstr_enc_abx(OP_LOADK, 1, 1), uinstr_enc_abc(OP_ADD, 0, 0, 1),   /* 8: inner finally */
+        uinstr_enc_abc(OP_RESUME, 0, 0, 0),
+        uinstr_enc_abx(OP_LOADK, 1, 2), uinstr_enc_abc(OP_ADD, 0, 0, 1),   /* 11: outer finally */
+        uinstr_enc_abc(OP_RESUME, 0, 0, 0),
+    };
+    UClosure *cl = build(&f, ins, sizeof ins / sizeof ins[0], k, 4, NULL, 0, 2);
+    UValue out = uv_nil();
+    RT_EQ(run_chunk(&f, cl, &out), URBI_OK);
+    RT_EQ(out.kind, (uint8_t)UV_INT); RT_EQ(out.v.i, 1110);
+    fix_close(&f);
+}
+
+/* What the probe native saw, call by call: the calling strand's ambient
+ * tag and cleanup depth. */
+static struct { UTag *tag[4]; uint16_t ncleanup[4]; int n; } seen;
+static int probe_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) {
+    (void)self; (void)args; (void)nargs;
+    UStrand *s = vm->sched.current;
+    if (seen.n < 4) { seen.tag[seen.n] = s->tag; seen.ncleanup[seen.n] = s->ncleanup; seen.n++; }
+    *out = uv_nil();
+    return UEXEC_OK;
+}
+
+/* UNWIND_TO depth 2 over [tag scope, finally]: the finally runs inside the
+ * tag, then the tag scope is left on the way -- ambient tag restored,
+ * leave fired -- and the jump lands with the cleanup stack empty. */
+static void unwind_to_leaves_a_tag_scope_on_the_way(void) {
+    Fix f; fix_open(&f);
+    UTag *t = utag_new(f.vm, uv_nil());
+    RT_CHECK(t != NULL);
+    RT_EQ(urbi_global_set(f.vm, f.realm, "t", uv_ptr(UV_CELL, t)), URBI_OK);
+    UEvent *leave = utag_leave_event(f.vm, t);
+    RT_CHECK(leave != NULL);
+    RT_EQ(urbi_global_set(f.vm, f.realm, "tl", uv_ptr(UV_CELL, leave)), URBI_OK);
+    UClosure *probe = uclosure_native(f.vm, probe_native, 0, 0);
+    RT_EQ(urbi_global_set(f.vm, f.realm, "probe", uv_ptr(UV_CELL, probe)), URBI_OK);
+    seen.n = 0;
+
+    const char *sites[] = { "t", "tl", "probe", "leaves" };
+    int64_t k[] = { 0, 1000, 10 };
+    uint32_t ins[] = {
+        uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, 0, 0, 0),
+        uinstr_enc_abx(OP_LOADK, 1, 0),
+        uinstr_enc_abc(OP_SETSLOT, 1, 0, 3),                /* leaves = 0 */
+        uinstr_enc_abc(OP_GETSLOT, 3, 0, 1),                /* R3 = t's leave event */
+        uinstr_enc_abx(OP_CLOSURE, 4, 0),                   /* R4 = leaves++ */
+        uinstr_enc_abc(OP_INSTALL, 3, UINSTALL_AT_EVENT, UINSTALL_F_HAS_BODY),
+        uinstr_enc_abc(OP_GETSLOT, 6, 0, 2),
+        uinstr_enc_abc(OP_CALL, 6, 1, 2),                   /* probe: before the scope */
+        uinstr_enc_abc(OP_GETSLOT, 2, 0, 0),                /* R2 = t */
+        uinstr_enc_abx(OP_SCOPE_TAG, 2, 20),
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_FINALLY, 16),
+        uinstr_enc_abx(OP_UNWIND_TO, 2, 13),
+        uinstr_enc_abc(OP_RET, 0, 0, 0),                    /* skipped */
+        uinstr_enc_abc(OP_GETSLOT, 6, 0, 2),                /* 13: target */
+        uinstr_enc_abc(OP_CALL, 6, 1, 2),                   /* probe: after landing */
+        uinstr_enc_abc(OP_RET, 1, 0, 0),
+        uinstr_enc_abc(OP_GETSLOT, 6, 0, 2),                /* 16: finally */
+        uinstr_enc_abc(OP_CALL, 6, 1, 2),                   /* probe: inside the finally */
+        uinstr_enc_abc(OP_RESUME, 0, 0, 0),
+        uinstr_enc_abc(OP_RET, 0, 0, 0),                    /* padding */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),                    /* 20: onleave target, unused */
+    };
+    UProto *root = proto(ins, sizeof ins / sizeof ins[0], k, 3, sites, 4, 7);
+    UProto *child = bump_proto("leaves");
+    adopt(root, &child, 1);
+    UClosure *cl = bind(&f, root);
+    UValue out = uv_nil();
+    RT_EQ(run_chunk(&f, cl, &out), URBI_OK);
+    for (int n = 0; n < 8 && urbi_step(f.vm, 0, NULL) == URBI_STEP_RAN; n++) { }
+    RT_EQ(seen.n, 3);
+    RT_CHECK(seen.tag[0] != t);                 /* before: the realm's ambient tag */
+    RT_CHECK(seen.tag[1] == t);                 /* the finally ran inside the tag scope */
+    RT_EQ(seen.ncleanup[1], 2);                 /* tag scope + the RUNNING marker */
+    RT_CHECK(seen.tag[2] == seen.tag[0]);       /* landing restored the ambient tag */
+    RT_EQ(seen.ncleanup[2], 0);                 /* both entries popped */
+    RT_EQ(global_int(&f, "leaves"), 1);         /* leave fired, once */
+    fix_close(&f);
+}
+
+/* UNWIND_TO depth 1 from inside a finally body counts that body's RUNNING
+ * marker as its one entry: the marker is dropped with the unwind it
+ * suspended, and the jump lands.  Once for a body the walker started on a
+ * throw (the throw must not resume), once for one a run-finally pop
+ * started (execution must not return after the pop). */
+static void a_jump_out_of_a_finally_body_drops_its_marker(void) {
+    {
+        Fix f; fix_open(&f);
+        int64_t k[] = { 0, 5, 1000, 10 };
+        uint32_t ins[] = {
+            uinstr_enc_abx(OP_LOADK, 0, 0),
+            uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_FINALLY, 7),
+            uinstr_enc_abx(OP_LOADK, 1, 1),
+            uinstr_enc_abc(OP_THROW, 1, 0, 0),
+            uinstr_enc_abx(OP_LOADK, 1, 2), uinstr_enc_abc(OP_ADD, 0, 0, 1),   /* 4: target */
+            uinstr_enc_abc(OP_RET, 0, 0, 0),
+            uinstr_enc_abx(OP_LOADK, 1, 3), uinstr_enc_abc(OP_ADD, 0, 0, 1),   /* 7: finally */
+            uinstr_enc_abx(OP_UNWIND_TO, 1, 4),
+            uinstr_enc_abc(OP_RESUME, 0, 0, 0),
+        };
+        UClosure *cl = build(&f, ins, sizeof ins / sizeof ins[0], k, 4, NULL, 0, 2);
+        UValue out = uv_nil();
+        RT_EQ(run_chunk(&f, cl, &out), URBI_OK);          /* the suspended throw is gone */
+        RT_EQ(out.kind, (uint8_t)UV_INT); RT_EQ(out.v.i, 1010);
+        fix_close(&f);
+    }
+    {
+        Fix f; fix_open(&f);
+        int64_t k[] = { 0, 1, 1000, 10 };
+        uint32_t ins[] = {
+            uinstr_enc_abx(OP_LOADK, 0, 0),
+            uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_FINALLY, 8),
+            uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY | USCOPE_POP_RUN_FINALLY, 0, 0),
+            uinstr_enc_abx(OP_LOADK, 1, 1), uinstr_enc_abc(OP_ADD, 0, 0, 1),   /* after the pop: skipped */
+            uinstr_enc_abx(OP_LOADK, 1, 2), uinstr_enc_abc(OP_ADD, 0, 0, 1),   /* 5: target */
+            uinstr_enc_abc(OP_RET, 0, 0, 0),
+            uinstr_enc_abx(OP_LOADK, 1, 3), uinstr_enc_abc(OP_ADD, 0, 0, 1),   /* 8: finally */
+            uinstr_enc_abx(OP_UNWIND_TO, 1, 5),
+            uinstr_enc_abc(OP_RESUME, 0, 0, 0),
+        };
+        UClosure *cl = build(&f, ins, sizeof ins / sizeof ins[0], k, 4, NULL, 0, 2);
+        UValue out = uv_nil();
+        RT_EQ(run_chunk(&f, cl, &out), URBI_OK);
+        RT_EQ(out.kind, (uint8_t)UV_INT); RT_EQ(out.v.i, 1010);
+        fix_close(&f);
+    }
 }
 
 RT_SUITE(rt_ops_v2_suite) {
@@ -298,4 +482,9 @@ RT_SUITE(rt_ops_v2_suite) {
     rt_run("fork_modes_spawn_and_join", fork_modes_spawn_and_join);
     rt_run("an_install_without_an_alternate_body_leaves_r_a_plus_2_alone",
            an_install_without_an_alternate_body_leaves_r_a_plus_2_alone);
+    rt_run("an_install_with_an_alternate_body_runs_it_on_the_falling_edge",
+           an_install_with_an_alternate_body_runs_it_on_the_falling_edge);
+    rt_run("unwind_to_chains_through_two_finally_bodies", unwind_to_chains_through_two_finally_bodies);
+    rt_run("unwind_to_leaves_a_tag_scope_on_the_way", unwind_to_leaves_a_tag_scope_on_the_way);
+    rt_run("a_jump_out_of_a_finally_body_drops_its_marker", a_jump_out_of_a_finally_body_drops_its_marker);
 }
