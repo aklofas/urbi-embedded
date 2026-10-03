@@ -220,6 +220,69 @@ UTEST(the_diag_buffer_keeps_warnings_and_errors_in_order) {
     urbi_close(vm);
 }
 
+/* --- try, finally, tag scopes, and jumps across them --- */
+
+UTEST(finally_is_emitted_once) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "var r = 0; try { r = 1 } finally { r = r + 100 }; r");
+    UASSERT(d && count_of(d, "RESUME") == 1 && count_of(d, "SCOPE_POP try+finally") == 1);
+    /* the constant 100 is loaded by exactly one instruction */
+    UASSERT(d && 1 == count_of(d, "LOADK R1, K2") + count_of(d, "LOADK R2, K2") + count_of(d, "LOADK R3, K2"));
+    urbi_close(vm);
+}
+UTEST(finally_runs_once_on_the_normal_path) { UVM *vm = urbi_open(utest_alloc, NULL, NULL); run_int(vm, "var r = 0; try { r = 1 } finally { r = r + 100 }; r", 101); urbi_close(vm); }
+UTEST(finally_runs_once_on_a_throw_then_the_catch) { UVM *vm = urbi_open(utest_alloc, NULL, NULL); run_int(vm, "var r = 0; try { try { throw 1 } finally { r = r + 1 } } catch (var e) { r = r + 10 }; r", 11); urbi_close(vm); }
+UTEST(break_across_a_finally_runs_it_and_leaves_the_loop) { UVM *vm = urbi_open(utest_alloc, NULL, NULL); run_int(vm, "var r = 0; var i = 0; while (i < 5) { i = i + 1; try { if (i == 2) break; r = r + 1 } finally { r = r + 10 } }; r + i * 100", 221); urbi_close(vm); }
+UTEST(continue_across_a_tag_scope_lands_and_pops) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *src = "var t = Tag.new(); var i = 0; var n = 0; while (i < 3) { i = i + 1; t: { if (i < 10) continue; n = n + 100 } }; i * 10 + n";
+    run_int(vm, src, 30);
+    const char *d = disasm_of(vm, src);
+    UASSERT(d && count_of(d, "UNWIND_TO") == 1 && count_of(d, "UNWIND_TO depth=1 ->") == 1);
+    urbi_close(vm);
+}
+UTEST(return_through_a_finally_in_a_function) { UVM *vm = urbi_open(utest_alloc, NULL, NULL); run_int(vm, "var r = 0; var f = function() { try { return 5 } finally { r = 7 } }; f() + r", 12); urbi_close(vm); }
+UTEST(catch_guard_rethrows_when_false) { UVM *vm = urbi_open(utest_alloc, NULL, NULL); run_int(vm, "var r = 0; try { try { throw 3 } catch (var e if e == 4) { r = 1 } } catch (var e) { r = e * 10 }; r", 30); urbi_close(vm); }
+UTEST(try_else_runs_only_without_a_throw) { UVM *vm = urbi_open(utest_alloc, NULL, NULL); run_int(vm, "var r = 0; try { 1 } catch (var e) { r = 1 } else { r = 2 }; r", 2); urbi_close(vm); }
+UTEST(a_tag_scope_above_register_fifteen) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var f = function() { var a1=1; var a2=1; var a3=1; var a4=1; var a5=1; var a6=1; var a7=1; var a8=1; var a9=1; var a10=1; var a11=1; var a12=1; var a13=1; var a14=1; var a15=1; var a16=1; var a17=1; var a18=1; var t = Tag.new(); var r = 0; t: { r = 42 }; r }; f()", 42);
+    const char *d = disasm_of(vm, "var f = function() { var a1=1; var a2=1; var a3=1; var a4=1; var a5=1; var a6=1; var a7=1; var a8=1; var a9=1; var a10=1; var a11=1; var a12=1; var a13=1; var a14=1; var a15=1; var a16=1; var a17=1; var a18=1; var t = Tag.new(); t: { 1 } }");
+    const char *st = d ? strstr(d, "SCOPE_TAG R") : NULL;
+    UASSERT(st && atoi(st + strlen("SCOPE_TAG R")) > 15);   /* the tag register is well above the old nibble cap */
+    urbi_close(vm);
+}
+UTEST(the_try_value_is_the_body_or_the_catch) { UVM *vm = urbi_open(utest_alloc, NULL, NULL); run_int(vm, "(try { 1 } catch (var e) { 2 }) + (try { throw 0 } catch (var e) { 20 })", 21); urbi_close(vm); }
+
+/* A `continue` lands on the back-edge CLOSE, so each iteration's captured
+ * local gets a cell of its own: a jump past the CLOSE would leave the
+ * three closures sharing one cell, all reading 2. */
+UTEST(a_continue_closes_the_iteration_cells) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm,
+        "var k0 = 0; var k1 = 0; var k2 = 0; var i = 0;"
+        "while (i < 3) { var j = i; i = i + 1;"
+        "  if (j == 0) { k0 = function() { j } }; if (j == 1) { k1 = function() { j } }; if (j == 2) { k2 = function() { j } };"
+        "  if (i < 10) continue; i = 99 };"
+        "k0() + k1() * 10 + k2() * 100", 210);
+    urbi_close(vm);
+}
+/* The same, with the continue crossing a finally: an UNWIND_TO whose
+ * target is the same back-edge CLOSE. */
+UTEST(a_continue_across_a_finally_closes_the_iteration_cells) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *src =
+        "var k0 = 0; var k1 = 0; var k2 = 0; var i = 0; var n = 0;"
+        "while (i < 3) { var j = i; i = i + 1;"
+        "  if (j == 0) { k0 = function() { j } }; if (j == 1) { k1 = function() { j } }; if (j == 2) { k2 = function() { j } };"
+        "  try { if (i < 10) continue } finally { n = n + 1 }; i = 99 };"
+        "k0() + k1() * 10 + k2() * 100 + n * 1000";
+    run_int(vm, src, 3210);
+    const char *d = disasm_of(vm, src);
+    UASSERT(d && count_of(d, "UNWIND_TO depth=1 ->") == 1);
+    urbi_close(vm);
+}
+
 void test_emit_bytecode_suite(void) {
     utest_run("every_function_loads_the_globals_object_first", every_function_loads_the_globals_object_first);
     utest_run("a_local_read_emits_no_move", a_local_read_emits_no_move);
@@ -237,4 +300,16 @@ void test_emit_bytecode_suite(void) {
     utest_run("logical_operators_short_circuit", logical_operators_short_circuit);
     utest_run("an_emit_error_names_its_line_and_column", an_emit_error_names_its_line_and_column);
     utest_run("the_diag_buffer_keeps_warnings_and_errors_in_order", the_diag_buffer_keeps_warnings_and_errors_in_order);
+    utest_run("finally_is_emitted_once", finally_is_emitted_once);
+    utest_run("finally_runs_once_on_the_normal_path", finally_runs_once_on_the_normal_path);
+    utest_run("finally_runs_once_on_a_throw_then_the_catch", finally_runs_once_on_a_throw_then_the_catch);
+    utest_run("break_across_a_finally_runs_it_and_leaves_the_loop", break_across_a_finally_runs_it_and_leaves_the_loop);
+    utest_run("continue_across_a_tag_scope_lands_and_pops", continue_across_a_tag_scope_lands_and_pops);
+    utest_run("return_through_a_finally_in_a_function", return_through_a_finally_in_a_function);
+    utest_run("catch_guard_rethrows_when_false", catch_guard_rethrows_when_false);
+    utest_run("try_else_runs_only_without_a_throw", try_else_runs_only_without_a_throw);
+    utest_run("a_tag_scope_above_register_fifteen", a_tag_scope_above_register_fifteen);
+    utest_run("the_try_value_is_the_body_or_the_catch", the_try_value_is_the_body_or_the_catch);
+    utest_run("a_continue_closes_the_iteration_cells", a_continue_closes_the_iteration_cells);
+    utest_run("a_continue_across_a_finally_closes_the_iteration_cells", a_continue_across_a_finally_closes_the_iteration_cells);
 }

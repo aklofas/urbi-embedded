@@ -92,7 +92,13 @@ typedef struct { int nactvar_on_enter; uint8_t freereg_on_enter; bool is_loop; b
  * tells the patch which one it is writing. */
 typedef struct { int pcs[UEMIT_PATCH_MAX]; uint8_t is_unwind[UEMIT_PATCH_MAX]; int count; } UPatchList;
 typedef struct { UPatchList breaks, continues; bool is_switch; int scope_depth_on_enter; } ULoop;
-typedef struct { uint8_t kind; /* 1 try, 2 tag */ uint8_t tag_reg; } UScope;
+/* One record per cleanup-stack entry the frame has open at the point
+ * being compiled.  A finally body counts as one: it runs under the
+ * walker's RUNNING marker. */
+typedef struct { uint8_t kind; /* UEMIT_SCOPE_* */ uint8_t tag_reg; } UScope;
+#define UEMIT_SCOPE_TRY     1U
+#define UEMIT_SCOPE_TAG     2U
+#define UEMIT_SCOPE_FINALLY 3U
 
 typedef struct UFuncState {
     struct UFuncState *parent;
@@ -198,8 +204,14 @@ uint8_t uctrl_break(UEmitter *e, const UAstNode *n, int want);
 uint8_t uctrl_continue(UEmitter *e, const UAstNode *n, int want);
 uint8_t uctrl_return(UEmitter *e, UAstNode *n, int want);
 uint8_t uctrl_throw(UEmitter *e, UAstNode *n, int want);
-/* Kinds the scope and reactive arms compile; refused here. */
+/* Kinds the reactive arms compile; refused here. */
 uint8_t uctrl_unsupported(UEmitter *e, UAstNode *n);
+
+/* --- try and tag scopes (uemit_scope.c) --- same `want` contract. */
+
+uint8_t uscope_try(UEmitter *e, UAstNode *n, int want);   /* AST_TRY */
+uint8_t uscope_tag(UEmitter *e, UAstNode *n, int want);   /* AST_TAG_PREFIX */
+int     uscope_depth(const UEmitter *e);                  /* cleanup entries this frame has open */
 
 /* `want` when it names a register, else a fresh temporary. */
 static inline uint8_t uemit_target(UEmitter *e, int want) {

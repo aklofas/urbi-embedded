@@ -615,8 +615,8 @@ static uint8_t dispatch(UEmitter *e, UAstNode *n, int want) {
     case AST_CONTINUE:   return uctrl_continue(e, n, want);
     case AST_RETURN:     return uctrl_return(e, n, want);
     case AST_THROW:      return uctrl_throw(e, n, want);
-    case AST_TRY:
-    case AST_TAG_PREFIX:
+    case AST_TRY:        return uscope_try(e, n, want);
+    case AST_TAG_PREFIX: return uscope_tag(e, n, want);
     case AST_WATCHER:    return uctrl_unsupported(e, n);
     case AST_ERROR:      (void)uemit_fail(e, EMIT_AST_ERROR); return 0U;
     case AST_PARAM:      break;

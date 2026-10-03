@@ -197,6 +197,9 @@ usched_timers_drop_realm
 usched_timers_drop_tag
 usched_unqueue
 usched_wake
+uscope_depth
+uscope_tag
+uscope_try
 usite
 uslotcache_alloc
 uslotcache_clear_tree

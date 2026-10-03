@@ -121,7 +121,7 @@ static ULoop *loop_push(UEmitter *e, bool is_switch) {
     ULoop *lp = &fs->loops[fs->nloops++];
     urbi_zero(lp, sizeof *lp);
     lp->is_switch = is_switch;
-    lp->scope_depth_on_enter = fs->nscopes;
+    lp->scope_depth_on_enter = uscope_depth(e);
     return lp;
 }
 
@@ -151,7 +151,7 @@ static void jump_out(UEmitter *e, const ULoop *lp, UPatchList *l, const UAstNode
         (void)uemit_fail(e, EMIT_PATCH_LIST_FULL);
         return;
     }
-    int depth = e->fs->nscopes - lp->scope_depth_on_enter;
+    int depth = uscope_depth(e) - lp->scope_depth_on_enter;
     int pc;
     if (depth > 0) pc = uinstr_emit(e, uinstr_enc_abx(OP_UNWIND_TO, (uint8_t)depth, 0U), line_of(n));
     else pc = ujmp_emit(e, line_of(n));
@@ -284,8 +284,8 @@ uint8_t uctrl_throw(UEmitter *e, UAstNode *n, int want) {
 
 /* --- refused kinds ---------------------------------------------------------- */
 
-/* try, tag scopes, watchers and the `,` / `&` separators have their own
- * arms; until those are in, a program using them does not compile. */
+/* Watchers and the `,` / `&` separators have their own arms; until
+ * those are in, a program using them does not compile. */
 uint8_t uctrl_unsupported(UEmitter *e, UAstNode *n) {
     (void)n;
     (void)uemit_fail(e, EMIT_UNSUPPORTED_AST);
