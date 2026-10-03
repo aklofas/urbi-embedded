@@ -51,7 +51,6 @@ uctrl_return
 uctrl_seq
 uctrl_switch
 uctrl_throw
-uctrl_unsupported
 uctrl_while
 udict_finalize
 udict_get
@@ -88,6 +87,7 @@ uexec_throw_value
 uexec_unwind
 uexpr_any
 uexpr_function
+uexpr_function_to
 uexpr_next
 uexpr_to
 ufront_compile
@@ -200,6 +200,8 @@ usched_wake
 uscope_depth
 uscope_tag
 uscope_try
+useq_amp
+useq_comma
 usite
 uslotcache_alloc
 uslotcache_clear_tree
@@ -285,6 +287,7 @@ uwatch_event_fired
 uwatch_has_live_work
 uwatch_install
 uwatch_install_host
+uwatch_install_node
 uwatch_mark
 uwatch_mark_dirty
 uwatch_realm_dropped

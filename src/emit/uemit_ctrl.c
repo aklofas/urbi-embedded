@@ -36,8 +36,8 @@ static uint8_t load_nil(UEmitter *e, int want, uint32_t line) {
 /* --- sequences and blocks ------------------------------------------------- */
 
 uint8_t uctrl_seq(UEmitter *e, UAstNode *n, int want) {
-    if (n->u.seq.separator == SEP_COMMA || n->u.seq.separator == SEP_AMP)
-        return uctrl_unsupported(e, n);
+    if (n->u.seq.separator == SEP_COMMA) return useq_comma(e, n, want);
+    if (n->u.seq.separator == SEP_AMP) return useq_amp(e, n, want);
     int count = n->u.seq.count;
     for (int i = 0; i < count - 1; i++) {
         ustmt(e, n->u.seq.children[i]);
@@ -280,14 +280,4 @@ uint8_t uctrl_throw(UEmitter *e, UAstNode *n, int want) {
     uint8_t r = uexpr_any(e, n->u.throw_expr.value);
     (void)uinstr_emit(e, uinstr_enc_abc(OP_THROW, r, 0U, 0U), line_of(n));
     return want >= 0 ? (uint8_t)want : r;
-}
-
-/* --- refused kinds ---------------------------------------------------------- */
-
-/* Watchers and the `,` / `&` separators have their own arms; until
- * those are in, a program using them does not compile. */
-uint8_t uctrl_unsupported(UEmitter *e, UAstNode *n) {
-    (void)n;
-    (void)uemit_fail(e, EMIT_UNSUPPORTED_AST);
-    return 0U;
 }

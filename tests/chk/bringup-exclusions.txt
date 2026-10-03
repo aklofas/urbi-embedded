@@ -8,27 +8,6 @@
 #
 # Each line: <path>  # <what it needs>
 
-# The emitter is being rewritten: watchers (at, waituntil) and the `,`
-# and `&` separators do not compile yet, and these gated fixtures use
-# one of them.
-tests/chk/objects/event_new_emit.chk                    # at
-tests/chk/objects/slot_cache_invalidation.chk           # at
-tests/chk/control_transfer/finally_that_sleeps_parks.chk # `,`
-tests/chk/control_transfer/unbraced_bodies.chk           # `&`
-tests/chk/exceptions/two_throws_one_pump.chk             # `,`
-tests/chk/tag/block_freeze_independent_gates.chk         # waituntil
-tests/chk/tag/enter-leave.chk                            # at
-tests/chk/tag/gc_pressure_watcher_in_scope.chk           # at
-tests/chk/tag/start-and-stop.chk                         # `&`
-tests/chk/tag/stop_join_parked.chk                       # `&`
-tests/chk/tag/stop_straightline_ret.chk                  # waituntil
-tests/chk/tag/stop_waituntil_mid_eval.chk                # waituntil
-tests/chk/tag/stop_waituntil_nested.chk                  # waituntil
-tests/chk/tag/tag_stop_resumes_suspended_member.chk      # waituntil
-tests/chk/tag/tagged_watcher_persists.chk                # at
-tests/chk/tag/throw_through_tag_scope.chk                # at
-tests/chk/tag/two_blocked_tags.chk                       # waituntil
-
 # The stdlib overlay is empty until it is rebuilt; these use a class it
 # defines.
 tests/chk/exceptions/subclasses_complete.chk             # stdlib (RuntimeError and siblings)

@@ -316,6 +316,75 @@ UTEST(a_break_leaves_the_tag_scope_around_its_loop_in_place) {
     urbi_close(vm);
 }
 
+UTEST(continue_across_a_tag_scope_fires_leave_each_time) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    UValue out; char err[256] = {0};
+    const char *src = "var t = Tag.new(); var n = 0; at (t.leave?) n = n + 1; var i = 0; while (i < 3) { i = i + 1; t: { if (i < 10) continue; n = n + 100 } }; 0";
+    UASSERT_EQ(URBI_OK, urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err));
+    uint64_t wake = 0; (void)urbi_step(vm, 1000, &wake);   /* the at body runs when the scheduler steps */
+    run_int(vm, "n", 3);
+    urbi_close(vm);
+}
+
+UTEST(comma_forks_all_but_the_last) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "a(), b(), c()");
+    UASSERT(d && count_of(d, "FORK R") == 2 && count_of(d, "detach") == 2);
+    /* the last child runs inline after both forks and is the value */
+    const char *f1 = d ? strstr(d, "FORK R") : NULL;
+    const char *f2 = f1 ? strstr(f1 + 1, "FORK R") : NULL;
+    const char *p0 = d ? strstr(d, "; proto P0") : NULL;
+    const char *call = f2 ? strstr(f2, "CALL R") : NULL;
+    UASSERT(call && p0 && call < p0 && !strstr(d, "LOADVOID"));
+    urbi_close(vm);
+    vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "1, 7", 7);
+    urbi_close(vm);
+}
+UTEST(amp_forks_the_rhs_and_joins) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "a() & b()");
+    UASSERT(d && count_of(d, "join") == 1 && count_of(d, "JOIN_WAIT") == 1);
+    const char *fk = d ? strstr(d, "FORK R") : NULL, *jw = d ? strstr(d, "JOIN_WAIT R") : NULL;
+    const char *arrow = fk ? strstr(fk, "-> R") : NULL;
+    UASSERT(arrow && jw && atoi(arrow + 4) == atoi(jw + strlen("JOIN_WAIT R")));   /* same handle register */
+    urbi_close(vm);
+}
+UTEST(an_install_without_an_alternate_body_leaves_r_a_plus_2_alone) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "whenever (x > 1) echo(1)");
+    UASSERT(d && strstr(d, "INSTALL R") && strstr(d, "mode=3 flags=1"));
+    int nclosures = d ? count_of(d, "CLOSURE R") : -1;
+    UASSERT_EQ(2, nclosures);   /* cond and body only */
+    const char *d2 = disasm_of(vm, "at (x > 1) echo(1) onleave echo(2)");
+    UASSERT(d2 && strstr(d2, "mode=1 flags=3") && count_of(d2, "CLOSURE R") == 3);
+    urbi_close(vm);
+}
+UTEST(event_bodies_take_the_payload_parameter) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    UValue out; char err[256] = {0};
+    const char *src = "var e = Event.new(); var got = 0; at (e?(var v)) got = v; e!(7); got";
+    /* at fires after the emitting statement yields; drive a step */
+    int rc = urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err);
+    UASSERT_EQ(URBI_OK, rc);
+    uint64_t wake = 0; (void)urbi_step(vm, 1000, &wake);
+    rc = urbi_run(vm, urbi_realm_main(vm), "got", 3, NULL, &out, err, sizeof err);
+    UASSERT_EQ(URBI_OK, rc); UASSERT_EQ(7, (int)out.v.i);
+    urbi_close(vm);
+}
+UTEST(slot_change_source_uses_getslot_change_event) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "var o = Object.new(); var o.x = 1; at (o.x.changed?) echo(1)");
+    UASSERT(d && strstr(d, "GETSLOT_CHANGE_EVENT") && strstr(d, "mode=4"));
+    urbi_close(vm);
+}
+UTEST(waituntil_installs_with_the_waituntil_mode) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "waituntil (x > 1)");
+    UASSERT(d && strstr(d, "mode=7 flags=0"));
+    urbi_close(vm);
+}
+
 void test_emit_bytecode_suite(void) {
     utest_run("every_function_loads_the_globals_object_first", every_function_loads_the_globals_object_first);
     utest_run("a_local_read_emits_no_move", a_local_read_emits_no_move);
@@ -350,4 +419,11 @@ void test_emit_bytecode_suite(void) {
     utest_run("a_cell_from_a_stopped_tag_scope_survives_it", a_cell_from_a_stopped_tag_scope_survives_it);
     utest_run("a_break_leaves_the_scope_around_its_loop_in_place", a_break_leaves_the_scope_around_its_loop_in_place);
     utest_run("a_break_leaves_the_tag_scope_around_its_loop_in_place", a_break_leaves_the_tag_scope_around_its_loop_in_place);
+    utest_run("continue_across_a_tag_scope_fires_leave_each_time", continue_across_a_tag_scope_fires_leave_each_time);
+    utest_run("comma_forks_all_but_the_last", comma_forks_all_but_the_last);
+    utest_run("amp_forks_the_rhs_and_joins", amp_forks_the_rhs_and_joins);
+    utest_run("an_install_without_an_alternate_body_leaves_r_a_plus_2_alone", an_install_without_an_alternate_body_leaves_r_a_plus_2_alone);
+    utest_run("event_bodies_take_the_payload_parameter", event_bodies_take_the_payload_parameter);
+    utest_run("slot_change_source_uses_getslot_change_event", slot_change_source_uses_getslot_change_event);
+    utest_run("waituntil_installs_with_the_waituntil_mode", waituntil_installs_with_the_waituntil_mode);
 }

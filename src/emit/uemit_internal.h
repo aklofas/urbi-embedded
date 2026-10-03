@@ -188,6 +188,9 @@ void    ustmt(UEmitter *e, UAstNode *n);
  * false makes the function return nil instead of its body's value. */
 uint8_t uexpr_function(UEmitter *e, UAstNode **params, int nparams,
                        UAstNode *body, bool as_expression);
+/* The same, into `dst`. */
+void    uexpr_function_to(UEmitter *e, UAstNode **params, int nparams,
+                          UAstNode *body, bool as_expression, uint8_t dst);
 /* The lazy mask a FUNCTION literal's parameter list implies. */
 uint16_t ufunc_lazy_mask(const UAstNode *fn);
 
@@ -205,14 +208,18 @@ uint8_t uctrl_break(UEmitter *e, const UAstNode *n, int want);
 uint8_t uctrl_continue(UEmitter *e, const UAstNode *n, int want);
 uint8_t uctrl_return(UEmitter *e, UAstNode *n, int want);
 uint8_t uctrl_throw(UEmitter *e, UAstNode *n, int want);
-/* Kinds the reactive arms compile; refused here. */
-uint8_t uctrl_unsupported(UEmitter *e, UAstNode *n);
 
 /* --- try and tag scopes (uemit_scope.c) --- same `want` contract. */
 
 uint8_t uscope_try(UEmitter *e, UAstNode *n, int want);   /* AST_TRY */
 uint8_t uscope_tag(UEmitter *e, UAstNode *n, int want);   /* AST_TAG_PREFIX */
 int     uscope_depth(const UEmitter *e);                  /* cleanup entries this frame has open */
+
+/* --- separators and watchers (uemit_react.c) --- same `want` contract. */
+
+uint8_t useq_comma(UEmitter *e, UAstNode *n, int want);           /* SEQ `,`: the last child's value */
+uint8_t useq_amp(UEmitter *e, UAstNode *n, int want);             /* SEQ `&`: value void */
+uint8_t uwatch_install_node(UEmitter *e, UAstNode *n, int want);  /* AST_WATCHER */
 
 /* `want` when it names a register, else a fresh temporary. */
 static inline uint8_t uemit_target(UEmitter *e, int want) {

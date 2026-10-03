@@ -571,6 +571,11 @@ uint8_t uexpr_function(UEmitter *e, UAstNode **params, int nparams,
     return t;
 }
 
+void uexpr_function_to(UEmitter *e, UAstNode **params, int nparams,
+                       UAstNode *body, bool as_expression, uint8_t dst) {
+    func_literal(e, params, nparams, body, as_expression, dst);
+}
+
 /* --- dispatch ----------------------------------------------------------- */
 
 static uint8_t dispatch(UEmitter *e, UAstNode *n, int want) {
@@ -617,7 +622,7 @@ static uint8_t dispatch(UEmitter *e, UAstNode *n, int want) {
     case AST_THROW:      return uctrl_throw(e, n, want);
     case AST_TRY:        return uscope_try(e, n, want);
     case AST_TAG_PREFIX: return uscope_tag(e, n, want);
-    case AST_WATCHER:    return uctrl_unsupported(e, n);
+    case AST_WATCHER:    return uwatch_install_node(e, n, want);
     case AST_ERROR:      (void)uemit_fail(e, EMIT_AST_ERROR); return 0U;
     case AST_PARAM:      break;
     }
