@@ -180,73 +180,24 @@ none of them is part of the embedding surface.
 
 ### The kept compiler frontend
 
+The frontend's own entry points carry the short `u` prefix rather than
+`urbi_` — `ufront_compile`, `ufront_serialize`, `ufront_disassemble`, and
+below them `uemit_new`, `uemit_statement`, `uemit_finish`, `uemit_error`,
+`uemit_disassemble` and `uchunk_serialize` — so they are tracked by the
+unprefixed-export ratchet in
+`tests/scripts/api-manifest-symbol-allowlist.txt`, not listed here. The
+`urbi_`-prefixed names that remain are below. A name that stops being
+exported is deleted from this list.
+
 - `urbi_chunk_decode_verify`
 - `urbi_chunk_verify_bounds`
 - `urbi_emit_abandon`
-- `urbi_emit_add_const_float`
-- `urbi_emit_add_const_int`
-- `urbi_emit_add_const_str`
-- `urbi_emit_assert_arm`
-- `urbi_emit_assign_arm`
-- `urbi_emit_at_event_arm`
-- `urbi_emit_at_slot_change_arm`
-- `urbi_emit_bin_sep_arm`
-- `urbi_emit_binary_arm`
-- `urbi_emit_binop_to_opcode`
-- `urbi_emit_block_arm`
-- `urbi_emit_bool_arm`
-- `urbi_emit_break_arm`
-- `urbi_emit_call_arm`
-- `urbi_emit_class_decl_arm`
-- `urbi_emit_compare_arm`
 - `urbi_emit_cond_has_direct_side_effect`
-- `urbi_emit_continue_arm`
 - `urbi_emit_diag_error`
 - `urbi_emit_diag_format_first_error`
 - `urbi_emit_diag_free_all`
 - `urbi_emit_diag_warn`
-- `urbi_emit_dict_lit_arm`
 - `urbi_emit_disasm_opnames_complete`
-- `urbi_emit_expr`
-- `urbi_emit_float_arm`
-- `urbi_emit_for_each_arm`
-- `urbi_emit_fs_temp_floor`
-- `urbi_emit_function_arm`
-- `urbi_emit_function_literal`
-- `urbi_emit_grow`
-- `urbi_emit_ident_arm`
-- `urbi_emit_if_arm`
-- `urbi_emit_instr`
-- `urbi_emit_instr_count`
-- `urbi_emit_int_arm`
-- `urbi_emit_lazy_thunk`
-- `urbi_emit_list_lit_arm`
-- `urbi_emit_logical_arm`
-- `urbi_emit_member_get_arm`
-- `urbi_emit_member_set_arm`
-- `urbi_emit_nary_arm`
-- `urbi_emit_nil_arm`
-- `urbi_emit_noop_arm`
-- `urbi_emit_patch_instr`
-- `urbi_emit_property_decl_arm`
-- `urbi_emit_proto_grow`
-- `urbi_emit_reserve_global_slot`
-- `urbi_emit_return_arm`
-- `urbi_emit_scope_crossings`
-- `urbi_emit_seq_arm`
-- `urbi_emit_string_arm`
-- `urbi_emit_subscript_get_arm`
-- `urbi_emit_subscript_set_arm`
-- `urbi_emit_switch_arm`
-- `urbi_emit_tag_prefix_arm`
-- `urbi_emit_this_arm`
-- `urbi_emit_throw_arm`
-- `urbi_emit_try_arm`
-- `urbi_emit_unary_arm`
-- `urbi_emit_var_decl_arm`
-- `urbi_emit_waituntil_arm`
-- `urbi_emit_watcher_arm`
-- `urbi_emit_while_arm`
 - `urbi_encode_utf8`
 - `urbi_opcode_shapes`
 - `urbi_parse_arena_grow_node_array`
@@ -301,4 +252,3 @@ none of them is part of the embedding surface.
 - `urbi_parse_while`
 - `urbi_require_fail`
 - `urbi_set_require_fail_hook`
-- `urbi_vm_find_or_install_upvalue`

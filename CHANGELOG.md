@@ -4,21 +4,24 @@
 
 The compiler frontend is rewritten on top of the re-founded runtime core.
 The parser now does every desugar — a class declaration, `detach`/`disown`,
-list/dict literals, subscripts, `for`/`switch`/the logical operators all
-lower to a simpler AST shape before the emitter sees them — so the AST
-shrinks from 49 live kinds to 32, none of which need a second lowering pass.
+list/dict literals, subscripts and `for` all lower to a simpler AST shape
+before the emitter sees them, while `switch` and the logical operators keep
+their own AST kinds and compile directly — so the AST shrinks from 49 live
+kinds to 32, none of which need a second lowering pass.
 The emitter is a fresh one-cursor design: one register cursor per function
 (`freereg`), with **pins** replacing the previous emitters' separate
 temporary-stack/scratch-frame machinery for a value that has to survive a
 nested statement. Bytecode moves to wire v2.0 (version byte `0x20`): 41
-opcodes (down from 50), the six reactive install opcodes collapsed into one
+opcodes (down from 50), the seven reactive install opcodes collapsed into one
 `OP_INSTALL` with a mode operand, the control-transfer family collapsed into
 `OP_SCOPE_TRY` / `OP_SCOPE_TAG` / `OP_SCOPE_POP` / `OP_UNWIND_TO` walked by
 the runtime's unwinder, and a new `OP_EXTARG` prefix widening a function's
-slot-site cap from 256 to 65,535. The unwinder runs `finally` bodies on both
-the normal path and a jump across one. ABI goes 0/24/1 -> 0/25/0 (new
-emit-time error codes and parser-level grammar surface); the public C API's
-44 functions are unchanged. There is no compatibility promise before 1.0.0.
+slot-site cap from 256 to 65,535. A `finally` body is emitted once and run
+on the normal path, on a throw, and on a `break`/`continue`/`return` across
+it. ABI goes 0/24/1 -> 0/25/0: no public header changes, but the wire break
+invalidates every existing `.urb` blob, which this project versions as a
+MINOR bump; the public C API's 44 functions are unchanged. There is no
+compatibility promise before 1.0.0.
 
 ### Measured on this build
 
@@ -27,9 +30,9 @@ emit-time error codes and parser-level grammar surface); the public C API's
 | boot heap | 67,642 bytes live in 994 blocks, 64-bit host (peak 68,114) |
 | idle strand | 616 bytes each; 61,616 for a hundred parked sleepers |
 | leak probes | zero growth over 10,000 iterations of seven allocating shapes; peak while each loop runs at most 153,442 bytes |
-| lookup benchmark | 0.62x-0.64x the old core across three runs; mandelbrot 0.74x-0.75x |
+| lookup benchmark | 0.60x-0.68x the old core across every serial run on this build; mandelbrot 0.72x-0.77x; the bench gate fails above 1.20x |
 | corpus | 348 passed, 0 failed |
-| runners | frontend (unit) 562 cases / 0 failed; runtime (rt) 231 cases / 0 failed; integration 32/32 |
+| runners | frontend (unit) 572 cases / 0 failed; runtime (rt) 236 cases / 0 failed; integration 32/32 |
 | sanitizers | ASan, UBSan, `URBI_GC_STRESS`, valgrind memcheck: clean |
 | `UFuncState` | 5,928 bytes, 64-bit host (the spec's under-5,120-byte target is missed by eight `ULoop` records, 176 B each — two 84-B patch lists; see the backlog) |
 | AST kinds | 32 live (down from 49) |
@@ -47,42 +50,58 @@ emit-time error codes and parser-level grammar surface); the public C API's
   are parser-level grammar forms, not a stdlib lazy-arg wrapper.
 - One register cursor, pins instead of a temporary stack. `src/emit/uemit_internal.h`
   documents the discipline in full.
-- `OP_INSTALL` replaces the six per-construct reactive opcodes
+- `OP_INSTALL` replaces the seven per-construct reactive opcodes
   (`OP_AT_INSTALL`, `OP_AT_SYNC_INSTALL`, `OP_WHENEVER_INSTALL`,
   `OP_WAITUNTIL_INSTALL`, `OP_AT_EVENT_INSTALL`, `OP_AT_EVENT_SYNC_INSTALL`,
   `OP_WHENEVER_EVENT_INSTALL`) with one opcode and a mode operand (1-7).
 - `OP_SCOPE_TRY` / `OP_SCOPE_TAG` / `OP_SCOPE_POP` / `OP_UNWIND_TO` replace
   `OP_TRY_BEGIN` / `OP_TRY_END` / `OP_PUSH_TAG` / `OP_POP_TAG` /
-  `OP_PUSH_FRAME_GUARD`. The walker runs a `finally` body on the normal
-  path (falling off the end of a `try`) and on a jump that crosses one
-  (`break`/`continue`/`return` through an open `try`), from the same
-  `UNWIND_TO` mechanism.
+  `OP_PUSH_FRAME_GUARD` / `OP_TAG_STOP`; `OP_FORK` with a mode operand
+  replaces `OP_FORK_DETACH` / `OP_FORK_JOIN`; `OP_NEQ` is gone (`!=` is
+  `OP_EQ` with the opposite polarity). A `finally` body is emitted once.
+  On the normal path (falling off the end of a `try`) a `SCOPE_POP` with
+  its run-finally flag runs it; a `break`/`continue` that crosses it is an
+  `OP_UNWIND_TO`, and a `return` is a plain `OP_RET`, both of which the
+  runtime's unwinder carries through the frame's open scopes, running each
+  `finally` body and firing each tag scope's `leave` on the way.
+- The load-time verifier refuses a jump, a conditional skip, or a
+  handler target that lands inside an `OP_CLOSURE`'s upvalue prelude or
+  past the end of the function (`UCHUNK_LOAD_BAD_TARGET`). At run time a
+  scope close or a finally `RESUME` that does not match the current
+  frame's own scope entry, or an `OP_UNWIND_TO` deeper than the frame's
+  scopes, fails the strand with an uncatchable chunk-integrity error in
+  every build. Before, such a mismatch was a debug-build assertion, a
+  catchable `TypeError`, or not checked at all.
 - `OP_EXTARG` widens a function's slot-site cap from 256 to 65,535: a
   function with more than 255 distinct slot sites now compiles instead of
   hitting `EMIT_TOO_MANY_SITES` (see `tests/chk/objects/many_sites.chk`,
   300 sites).
-- The float flavor byte in the `.urb` header is pinned to 8 (`double`) on
-  every target; the old per-target `f32` flavor (`URBI_FLOAT_TYPE`) is
-  gone from the bytecode format (it had already been gone from `UValue`
-  since the re-foundation).
-- `break`/`continue` compile through a per-loop/switch patch list (capped
-  at 16 pending sites) rather than a dedicated opcode.
+- `break`/`continue` still compile through a per-loop/switch patch list
+  (16 pending sites per loop, as before); one that leaves a `try` or tag
+  scope is now an `OP_UNWIND_TO` naming how many of the frame's scope
+  entries it pops.
 
 ### Fixed
 
-- A `lazy`-parameter function called twice in one frame miscompiled
-  (`var f = function(lazy x) { x }; f(1); f(2)` raised "callee is not a
-  closure") — a register-reuse defect in the previous emitter's temporary
-  allocator; the one-cursor design with pins is structurally immune. See
+- A chunk-top function with a `lazy` parameter, called twice from one
+  nested function (`var f = function(lazy x) { x }; var g = function() {
+  f(1) + f(2) }; g()`), miscompiled — the two calls' argument thunks
+  shared a register in the previous emitter's temporary allocator, and the
+  second call raised "callee is not a closure". The one-cursor design with
+  pins gives each call site its own thunk register. See
   `tests/chk/lazy/twice_from_nested.chk`.
 - A reactive construct's body swallowed the statement after it when the
   separator was `|`: `every (1ms) { n = n + 1 } | echo("after")` compiled
   `echo("after")` INTO the periodic body instead of running it once,
   alongside the `every`, as legacy urbiscript's `|`-is-a-sibling rule
   requires. See `tests/chk/reactive/body_binds_one_statement.chk`.
-- `detach({ ... })` did not parse, and `detach(function ...)` never called
-  its function; both forms, and `disown`, are now parser-level grammar.
-  See `tests/chk/separator/detach_basic.chk` and `detach_forms.chk`.
+- The block forms `detach { ... }` and `disown { ... }` did not parse;
+  they now do, and both `detach` forms (the block and `detach(expr)`,
+  whose written expression runs in the child) are parser-level grammar
+  rather than a stdlib lazy-argument wrapper. `detach({ ... })` is still
+  not accepted, and `detach(f)` evaluates `f` in the child without
+  calling it. See `tests/chk/separator/detach_basic.chk` and
+  `detach_forms.chk`.
 - A function touching more than 256 distinct slots on one object hit a
   hard compile-time cap. See `tests/chk/objects/many_sites.chk`.
 

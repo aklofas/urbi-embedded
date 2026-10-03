@@ -248,7 +248,7 @@ the full encoding specification.
 
 The `UEmitter` maintains a sticky error field. The first error latches;
 subsequent `uemit_statement` calls return the same error without touching
-the chunk. 17 error codes (`EMIT_OOM` through `EMIT_JUMP_TOO_FAR`) cover the
+the chunk. 16 error codes (`EMIT_OOM` through `EMIT_JUMP_TOO_FAR`, besides `EMIT_OK`) cover the
 observable failure modes, including the language-level ones the parser
 leaves for the emitter to catch: `lazy` used on a method or assigned to a
 lazy parameter (`EMIT_LAZY_ON_METHOD` / `EMIT_LAZY_PARAM_ASSIGN`), a
@@ -258,15 +258,17 @@ comment per code, is the `UEmitError` enum in `src/emit/uemit.h`.
 
 ### Opcode set and control transfer
 
-Wire v2.0 has 41 opcodes (down from 50): `at`/`whenever`/`waituntil`'s six
+Wire v2.0 has 41 opcodes (down from 50): `at`/`whenever`/`waituntil`'s seven
 separate install opcodes collapsed into one `OP_INSTALL` with a mode
-operand, and the control-transfer family (`try`/`catch`/`finally`, tag
+operand, the two fork opcodes into one `OP_FORK` with a mode operand, and the control-transfer family (`try`/`catch`/`finally`, tag
 scopes, `break`/`continue`/`return` across open scopes) collapsed into
 `OP_SCOPE_TRY` / `OP_SCOPE_TAG` / `OP_SCOPE_POP` / `OP_UNWIND_TO`, walked
 by the runtime's unwinder rather than by a frame-guard primitive the
 emitter used to install separately. `break`/`continue` compile through a
 per-loop patch list of pending jumps, patched once the loop's exit (or
-back-edge) address is known — not a dedicated opcode. The full set, with
+back-edge) address is known; a jump that leaves a `try` or tag scope is an
+`OP_UNWIND_TO`, and `return` is a plain `OP_RET` that hands the frame's
+open scopes to the walker. The full set, with
 every operand and the `EXTARG` wide-site-index mechanism, is
 [opcodes.md](opcodes.md).
 

@@ -251,26 +251,36 @@ because an armed watcher is permanently live while `urbi_step` keeps returning
 `tests/chk/scheduler/waituntil_is_not_live_work.chk` pins the two predicates
 apart.
 
-## The install opcodes
+## The install opcode
 
-| Opcode | Operands | Mode |
-|---|---|---|
-| `OP_AT_INSTALL` | A = cond closure, B = body, C = onleave | `AT` |
-| `OP_AT_SYNC_INSTALL` | same | `AT_SYNC` |
-| `OP_WHENEVER_INSTALL` | same; C doubles as the `else` body | `WHENEVER` |
-| `OP_WAITUNTIL_INSTALL` | A = cond closure | `WAITUNTIL` |
-| `OP_AT_EVENT_INSTALL` | A = event, B = body, C = onleave | `AT` |
-| `OP_AT_EVENT_SYNC_INSTALL` | same | `AT_SYNC` |
-| `OP_WHENEVER_EVENT_INSTALL` | same | `AT` |
-| `OP_GETSLOT_CHANGE_EVENT` | A = dst, B = receiver, C = IC index | — |
+One opcode, `OP_INSTALL`, arms every watcher. `R[A]` holds the source,
+`R[A+1]` the body closure and `R[A+2]` the alternate; `B` is the mode and
+`C` the flags (`UINSTALL_F_HAS_BODY` 0x1 for `R[A+1]`, `UINSTALL_F_HAS_ALT`
+0x2 for `R[A+2]`). A register whose flag is clear is not read.
 
-`0xFF` in B or C means "absent". An event subscription fires per emission, so
-`whenever (e?)` and `at (e?)` are the same watcher; only the SYNC form differs,
-by running its body inline under `syncEmit`.
+| Mode (`B`) | Constant | Construct | `R[A]` | Alternate (`R[A+2]`) |
+|---|---|---|---|---|
+| 1 | `UINSTALL_AT_COND` | `at (cond)` | condition closure | `onleave` |
+| 2 | `UINSTALL_AT_SYNC_COND` | `at sync (cond)` | condition closure | `onleave` |
+| 3 | `UINSTALL_WHENEVER_COND` | `whenever (cond)` | condition closure | the `else` body, or else `onleave` |
+| 4 | `UINSTALL_AT_EVENT` | `at (e?)` | event | `onleave` |
+| 5 | `UINSTALL_AT_SYNC_EVENT` | `at sync (e?)` | event | `onleave` |
+| 6 | `UINSTALL_WHENEVER_EVENT` | `whenever (e?)` | event | the `else` body, or else `onleave` |
+| 7 | `UINSTALL_WAITUNTIL` | `waituntil (cond)` | condition closure | — (`C` must be 0) |
 
-`OP_WAITUNTIL_INSTALL` evaluates its condition on the WAITING strand rather
-than a spare, because it is the caller's own code in the caller's own
-statement: a throw there propagates instead of being absorbed. A condition that
+`waituntil (e?)` does not install anything: it compiles to a call of the
+event's `waituntil` method, whose value is the payload. A slot-change
+watcher (`at (o.x.changed?)` and its kin) is an event
+watcher whose `R[A]` is the change event `OP_GETSLOT_CHANGE_EVENT`
+(A = dst, B = receiver, C = slot site) produced. An event subscription
+fires per emission, so `whenever (e?)` and `at (e?)` behave alike; only
+the SYNC form differs, by running its body inline under `syncEmit`.
+[opcodes.md](opcodes.md#install-modes) has the verifier's rules for the
+operands.
+
+`waituntil` evaluates its condition on the WAITING strand rather than a
+spare, because it is the caller's own code in the caller's own statement:
+a throw there propagates instead of being absorbed. A condition that
 already holds does not park. A strand that may not park treats the wait as
 already satisfied rather than wedging a C frame that is waiting for a value.
 

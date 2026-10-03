@@ -314,7 +314,7 @@ Tags are cancellation handles. A tag scope is a cleanup entry, so
 and its leave handlers rather than dropping it. `block` and `freeze` are
 independent gate bits on the strand, checked when the scheduler is about
 to run it — RECOMPUTED, not merely cleared, on a release and on leaving a
-tag scope (`OP_POP_TAG`), from every tag still covering the strand. A
+tag scope (`OP_SCOPE_POP`), from every tag still covering the strand. A
 strand inside two blocked tags therefore stays held until both let go
 rather than losing the bit when either one does.
 
@@ -361,6 +361,16 @@ walker in `src/rt/uunwind.c` is the only mechanism that moves control
 anywhere else. `return` and a tag stop travel the same stack, which is
 what makes a `return` out of a `try` run its `finally` and a stopped tag
 scope fire its `leave`.
+
+A chunk-integrity failure is the one throw a script cannot handle. The
+load-time verifier checks one proto at a time, so a callee that closes or
+resumes a scope its caller opened, or an `OP_UNWIND_TO` deeper than its
+frame's scopes, is caught at run time instead, in every build:
+`uexec_fatal` builds the same exception object a `TypeError` would, with a
+message starting `chunk integrity:`, and sets `s->unwind` to
+`UUNWIND_FATAL`. The walker carries it out through every frame without
+letting a `catch` take it or running a `finally` body or a tag `leave`,
+and it is reported like any uncaught throw.
 
 Nothing is swallowed. An uncaught throw sets `URBI_ERR_UNCAUGHT_THROW`
 and renders the value into `vm->last_error`, whatever the value was — the

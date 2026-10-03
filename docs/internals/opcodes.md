@@ -79,12 +79,12 @@ removing a row is a bytecode version bump.
 | `OP_EXTARG`                   | 30 | ABX | Bx             | Not an instruction in its own right: widens the **next** instruction's site index. `Bx` supplies that index's high 16 bits (`site := C \| (Bx << 8)`). See [EXTARG](#extarg-wide-site-indices) below |
 | `OP_THROW`                    | 31 | ABC | A              | Throw `R[A]`; triggers the unwind walker |
 | `OP_SCOPE_TRY`                | 32 | ABX | A, Bx          | Open a try scope. `A` is exactly one of `USCOPE_F_HAS_CATCH` (0x1) or `USCOPE_F_HAS_FINALLY` (0x2) — never both, never neither; `Bx` is the handler PC (the catch or finally entry) |
-| `OP_SCOPE_TAG`                | 33 | ABX | A, Bx          | Open a tag scope. `A` is the tag's register, or `USCOPE_NO_REG` (0xFF) for a fresh anonymous scope tag; `Bx` is the `onleave` handler PC, or an unreachable placeholder when there is none |
-| `OP_SCOPE_POP`                | 34 | ABC | A              | Close the innermost scope. `A`'s low two bits name the entry kind it expects (`USCOPE_POP_TRY` 0x1 or `USCOPE_POP_TAG` 0x2); for a TRY entry, bit `USCOPE_POP_RUN_FINALLY` (0x4) additionally runs the finally body and resumes after this instruction |
-| `OP_UNWIND_TO`                | 35 | ABX | A, Bx          | A structured jump: pop exactly `A` scopes (running any `finally` bodies they own along the way) and land at PC `Bx`. Emitted for `break`/`continue`/`return` that cross one or more open scopes |
-| `OP_RESUME`                   | 36 | ABC | —              | Resume the pending unwind that a `finally` body's own completion (falling off the end, or a `return`) had deferred |
-| `OP_LOAD_CATCH_VALUE`         | 37 | ABC | A              | `R[A] := the pending thrown value`; emitted as the first instruction of a catch-handler body with a bound variable |
-| `OP_INSTALL`                  | 38 | ABC | A, B, C        | Install a reactive watcher. `R[A]` is the source (condition/event closure or slot receiver), `R[A+1]` the body closure (if `UINSTALL_F_HAS_BODY`), `R[A+2]` the alternate — `onleave`, or the `whenever ... else` arm (if `UINSTALL_F_HAS_ALT`). `B` selects the mode (1–7, see [INSTALL modes](#install-modes)); `C` is the flags byte (`UINSTALL_F_HAS_BODY` 0x1, `UINSTALL_F_HAS_ALT` 0x2 — unused bits must be zero, and `UINSTALL_WAITUNTIL` requires `C == 0`) |
+| `OP_SCOPE_TAG`                | 33 | ABX | A, Bx          | Open a tag scope. `A` is the tag's register, or `USCOPE_NO_REG` (0xFF) for a fresh anonymous scope tag; `Bx` is the PC a stop naming this scope resumes at — the instruction after the scope's `OP_SCOPE_POP` |
+| `OP_SCOPE_POP`                | 34 | ABC | A              | Close the innermost scope. `A`'s low two bits name the entry kind it expects (`USCOPE_POP_TRY` 0x1 or `USCOPE_POP_TAG` 0x2); for a TRY entry, bit `USCOPE_POP_RUN_FINALLY` (0x4) additionally runs the finally body and resumes after this instruction. The top entry must be of that kind and belong to the current frame; anything else is a chunk-integrity failure (see [Runtime integrity checks](#runtime-integrity-checks)) |
+| `OP_UNWIND_TO`                | 35 | ABX | A, Bx          | A structured jump: pop exactly `A` of this frame's scope entries (running the `finally` bodies and firing the tag `leave` events they own along the way) and land at PC `Bx`. Emitted for a `break`/`continue` that crosses one or more open scopes. `return` is a plain `OP_RET`, which hands the frame's open scopes to the same walker |
+| `OP_RESUME`                   | 36 | ABC | —              | End a `finally` body: pop its running marker and either resume the unwind (throw, return, jump or stop) it suspended or, for a body a run-finally `OP_SCOPE_POP` started, continue after that pop. The marker must belong to the current frame; anything else is a chunk-integrity failure |
+| `OP_LOAD_CATCH_VALUE`         | 37 | ABC | A              | `R[A] := the pending thrown value`; emitted as the first instruction of every catch handler — into the catch variable, or into a nameless pinned register when there is none, which still drops the strand's reference to the value |
+| `OP_INSTALL`                  | 38 | ABC | A, B, C        | Install a reactive watcher. `R[A]` is the source (the condition closure, the event, or for a slot-change watcher the change event `OP_GETSLOT_CHANGE_EVENT` produced), `R[A+1]` the body closure (if `UINSTALL_F_HAS_BODY`), `R[A+2]` the alternate — `onleave`, or the `whenever ... else` arm (if `UINSTALL_F_HAS_ALT`). `B` selects the mode (1–7, see [INSTALL modes](#install-modes)); `C` is the flags byte (`UINSTALL_F_HAS_BODY` 0x1, `UINSTALL_F_HAS_ALT` 0x2 — unused bits must be zero, and `UINSTALL_WAITUNTIL` requires `C == 0`) |
 | `OP_LOAD_REALM_GLOBAL`        | 39 | ABC | A              | `R[A] := the current realm's globals object` |
 | `OP_LOAD_RECV`                | 40 | ABC | A              | `R[A] := the current frame's receiver` (`this`); nil outside a method body |
 
@@ -98,7 +98,8 @@ The emitter has one encoder per direction for exactly this reason. The
 load-time verifier resolves and range-checks the target
 (`UCHUNK_LOAD_JMP_OUT_OF_BOUNDS` if it falls outside `[0, instr_count)`,
 `UCHUNK_LOAD_BAD_EXTARG` if it lands on the instruction right after an
-`OP_EXTARG`).
+`OP_EXTARG`, `UCHUNK_LOAD_BAD_TARGET` if it lands on an `OP_CLOSURE`
+upvalue prelude word).
 
 ### EXTARG (wide site indices)
 
@@ -136,12 +137,13 @@ each value pairs with a fixed reading of `C`'s flag bits (`UINSTALL_F_HAS_BODY`,
 | 4 | `UINSTALL_AT_EVENT` | `at (event?) body` | the event expression |
 | 5 | `UINSTALL_AT_SYNC_EVENT` | `at sync (event?) body` | the event expression |
 | 6 | `UINSTALL_WHENEVER_EVENT` | `whenever (event?) body` | the event expression |
-| 7 | `UINSTALL_WAITUNTIL` | `waituntil (cond\|event?)` | the condition or event expression; no body, no alt (`C` must be 0) |
+| 7 | `UINSTALL_WAITUNTIL` | `waituntil (cond)` | the condition closure; no body, no alt (`C` must be 0). The emitter compiles `waituntil (event?)` to a call of the event's `waituntil` method instead |
 
 A reactive construct's body — in every mode above — is exactly one
-statement; legacy urbiscript's rule, carried forward unchanged. A `|`
-immediately after the construct binds OUTSIDE it, as a sibling statement,
-not into the body (see `tests/chk/reactive/body_binds_one_statement.chk`).
+statement, as in legacy urbiscript. This release adopts that rule: before
+it, a `|` after the body was compiled into the body. A `|` immediately
+after the construct now binds OUTSIDE it, as a sibling statement (see
+`tests/chk/reactive/body_binds_one_statement.chk`).
 
 ## Register file
 
@@ -177,14 +179,32 @@ The verifier walks the root chunk plus every non-NULL nested proto in two
 passes (`src/chunk/uchunk_verify.c`): pass 1 checks each instruction's
 operand bytes against `urbi_opcode_shapes[]` and the per-opcode cross-byte
 rules (`OP_SELF`, `OP_CALL`, `OP_INSTALL`, `OP_FORK`, `OP_JOIN_WAIT`,
-`OP_SCOPE_POP`, `OP_SCOPE_TRY`'s flag-exclusivity rule above); pass 2
-resolves every jump and handler target and the `OP_CLOSURE` upvalue
-prelude. The full enumeration, including the `EXTARG` rules above and the
+`OP_SCOPE_POP`, `OP_SCOPE_TRY`'s flag-exclusivity rule above), skipping
+the upvalue prelude words after each `OP_CLOSURE`, which are not
+instructions; pass 2 checks each prelude word's encoding and resolves
+every control-transfer target — a jump, the landing of a conditional skip
+(`OP_LOADBOOL` with `C` set, `OP_TEST`, `OP_TESTSET`, `OP_EQ`, `OP_LT`,
+`OP_LE`), and the `OP_SCOPE_TRY` / `OP_SCOPE_TAG` / `OP_UNWIND_TO` PCs —
+which must land inside the function, off every prelude word, and not
+right after an `OP_EXTARG`. The full enumeration, including the `EXTARG` rules above and the
 65,535 site-name cap, is in [bytecode-format.md](bytecode-format.md#loader-verification).
 
 Adding a new opcode requires adding exactly one row to `src/chunk/uopcodes.def`
 and one entry to `urbi_opcode_shapes[]`; `OP_MAX` is the enum sentinel and
 advances automatically. There is no per-opcode `switch` in the verifier.
+
+### Runtime integrity checks
+
+The verifier sees one proto at a time, so it cannot rule out a callee
+closing a scope its caller opened. The runtime checks what it cannot, in
+every build: an `OP_SCOPE_POP` whose top entry is not of the kind named or
+not the current frame's, a run-finally pop of an entry with no finally, an
+`OP_RESUME` with no running marker of the current frame on top, and an
+`OP_UNWIND_TO` deeper than the current frame's entries. Each fails the
+strand with a chunk-integrity error (`uexec_fatal`, `src/rt/uexec.c`): it
+is reported through the ordinary error channel like an uncaught throw, but
+no `catch` takes it and no `finally` body or tag `leave` runs on the way
+out.
 
 **The in-memory compile-and-run path does not run this verifier.**
 `ufront_compile` (`src/emit/ufront.c`) hands its freshly emitted `UProto`

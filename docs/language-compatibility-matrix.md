@@ -50,7 +50,7 @@
 | `for (init; cond; step)` | deferred (v1.x) | C-style three-part form; use `while` instead; see `docs/migration/control-flow-migration.md` |
 | `break` | implemented | Wave 6 W1; exits innermost loop or switch |
 | `continue` | implemented | Wave 6 W1; skips to next iteration of for-each or while |
-| `switch` | implemented | Wave 6 W1; equality-dispatch only; no fall-through; break exits switch. v0.13.1: case bodies get real scopes and the subject is evaluated once into a hidden local (FE-02 follow-on); more than 64 cases is a latched compile error (FE-06). **v0.15.0-frontend**: re-emitted on the one-cursor frontend with no behavior change; `break`/`continue` now compile through a per-loop/switch patch list (capped at 16 pending sites) patched once the exit or back-edge address is known, instead of a dedicated opcode |
+| `switch` | implemented | Wave 6 W1; equality-dispatch only; no fall-through; break exits switch. v0.13.1: case bodies get real scopes and the subject is evaluated once into a hidden local (FE-02 follow-on); more than 64 cases is a latched compile error (FE-06). **v0.15.0-frontend**: re-emitted on the one-cursor frontend with no behavior change; `break`/`continue` still compile through a per-loop/switch patch list (16 pending sites) patched once the exit or back-edge address is known, and one that leaves a `try` or tag scope is an `OP_UNWIND_TO` |
 | `switch ... default:` catch-all arm | implemented | **v0.13.5** — runs when no case matches; dispatch is source-position-independent (a `default` listed first still loses to a matching case); a second `default` arm is a compile error; lowered onto the existing patch-list jump machinery, no new opcode. `switch` (and for-each) inside a `try` body works: the try result register is anchored as a declared hidden local so body-declared locals keep their registers (fixed in v0.13.5; was a pre-existing first-arm-always miscompile), see `tests/chk/control_transfer/try_body_hidden_local_collision.chk`. See `tests/chk/control_transfer/switch_default.chk`; matrix-row: syntax-switch-default |
 | `do (receiver) { ... }` | deferred (v1.x) | receiver-bound block form; uncommon in practice |
 | `loop` | deferred (v1.x) | infinite loop sugar; use `while (true)` instead |
@@ -72,7 +72,7 @@
 
 | Construct | Status | Reason / fix milestone |
 |---|---|---|
-| `at (cond) body` | partial | core form works; missing `~ duration`, `sync`, `onleave` per legacy F4 / Wave 6 W9. **v0.15.0-frontend**: `body` is exactly one statement — a `\|` immediately after the construct binds OUTSIDE it as a sibling, not into the body (legacy rule, carried forward unchanged by the frontend rewrite); see `tests/chk/reactive/body_binds_one_statement.chk`; matrix-row: reactive-body-one-statement |
+| `at (cond) body` | partial | core form works; missing `~ duration`, `sync`, `onleave` per legacy F4 / Wave 6 W9. **v0.15.0-frontend**: `body` is exactly one statement — a `\|` immediately after the construct binds OUTSIDE it as a sibling, not into the body (the legacy rule, adopted by the frontend rewrite: before it, the `\|` sibling was compiled into the body); see `tests/chk/reactive/body_binds_one_statement.chk`; matrix-row: reactive-body-one-statement |
 | `at (event?) body` | implemented | payload binding with named var: `at (e?(var x)) body`; shipped v0.10.5 W9 |
 | `at (event?(var x)) body` | implemented | legacy F4; shipped v0.10.5 W9 |
 | `at sync (cond) body` | implemented | M5 / §S-watcher-3 — `at sync` keyword form is canonical (shipped M5); the `at.sync` dot-syntax variant was a fixture-authoring error from M5 era and never existed in urbiscript.  v0.10.12 W2 normalized 4 fixture headers/bodies (Cat. E re-audit Cluster #15 verdict A) |
@@ -85,7 +85,7 @@
 | `waituntil (cond)` | implemented | — |
 | `waituntil (event?)` | implemented | payload delivered on resume; shipped v0.10.5 W9 |
 | `watch (expr)` returns event | NOT implemented | legacy F4; Wave 6 W9 |
-| `every (duration) body` | implemented | the `OP_CLOSURE`-in-nested-body defect (reactive F4 / Wave 3 W1) predates the re-founded core and does not reproduce on it; see `tests/chk/temporal/batch_every_until_tag_stop.chk` (multi-statement block body with a nested `if` and a `tag.stop()` call). **v0.15.0-frontend**: `body` is exactly one statement, same rule as `at`/`whenever` — see `tests/chk/reactive/body_binds_one_statement.chk`; matrix-row: temporal-every |
+| `every (duration) body` | implemented | the `OP_CLOSURE`-in-nested-body defect (reactive F4 / Wave 3 W1) predates the re-founded core and does not reproduce on it; see `tests/chk/temporal/batch_every_until_tag_stop.chk` (multi-statement block body with a nested `if` and a `tag.stop()` call). **v0.15.0-frontend**: `body` is exactly one statement, the legacy rule `at`/`whenever` also adopted in this release (before it, a `\|` sibling was compiled into the body) — see `tests/chk/reactive/body_binds_one_statement.chk`; matrix-row: temporal-every |
 | `sleep (duration)` | implemented | v0.10.2 W6; legacy F15 closed; `tests/chk/temporal/sleep_basic.chk` + `sleep_in_strand.chk` |
 
 ### Tags
@@ -98,9 +98,9 @@
 | `tag : body onleave handler` | deferred-v1.x | PARSE-033: AST field retained; scheduler tag-stack lifecycle design open; Wave 6 W8 ruling |
 | `Tag.new()` (script-side constructor) | implemented | v0.10.2 W4; UVAL_TAG + Tag.new(name) returns a Tag value; `tests/chk/control_transfer/tag_stop_basic.chk` |
 | `mytag.stop()` (script-side cancellation) | implemented | v0.10.2 W4; native method on Tag proto. v0.10.15 (v0.10.9-B): `t.stop()` from inside `t: { }` is now a clean in-scope tag-stop (binding wired) instead of a D3 "no active scope" fatal; `tests/chk/control_transfer/tag_stop_skips_catch.chk` + `tag_stop_basic.chk` |
-| `t: { }` user-tag scope binding | implemented (v0.10.15, v0.10.9-B) — OP_PUSH_TAG honors the `R[tag_reg]` nibble: the scope binds to the user tag (strand becomes a member); FLAG_TAG_USER_OWNED keeps the tag alive past scope exit; `tests/chk/tag/scope_binds_user_tag.chk` | tag-scope-binding |
+| `t: { }` user-tag scope binding | implemented (v0.10.15, v0.10.9-B) — the tag-scope opcode (`OP_SCOPE_TAG` since v0.15.0-frontend, `A` = the tag's register) binds the scope to the user tag (strand becomes a member); FLAG_TAG_USER_OWNED keeps the tag alive past scope exit; `tests/chk/tag/scope_binds_user_tag.chk` | tag-scope-binding |
 | `t: at (cond) body` watcher lifetime | implemented (v0.13.5, closes design-risks v0.13.4-A) — a watcher installed under a user-owned tag persists past the lexical scope close and stays armed until `t.stop()` (legacy at-control.chk semantics); anonymous scope-tag watchers still cascade at scope exit; `t.stop()` on a watcher-only tag no longer false-alarms the outside-scope fatal; `tests/chk/tag/tagged_watcher_persists.chk` | tagged-watcher-persists |
-| `tag.stop()` inside `try`/`finally` runs finally | implemented (v0.10.15, v0.10.7-B) — the unwind walker runs the finally during the TAG_STOP unwind (latent-fixed by the v0.10.9-B binding); `tests/chk/control_transfer/tag_stop_with_finally.chk` | tag-stop |
+| `tag.stop()` inside `try`/`finally` runs finally | implemented (v0.10.15, v0.10.7-B) — the unwind walker runs the finally during the stop unwind (latent-fixed by the v0.10.9-B binding); `tests/chk/control_transfer/tag_stop_with_finally.chk` | tag-stop |
 | `tag.block()` | implemented (v0.10.9 W3b) — sets UTAG_FLAG_BLOCKED + suspends member strands via urbi_strand_suspend(REASON_BLOCK) | tag-block |
 | `tag.unblock()` | implemented (v0.10.9 W3b) | tag-block |
 | `tag.block(value)` valued-block | partial (v0.10.9): C API urbi_tag_block accepts resume_value; script-side return-on-resume defers v1.x | tag-block-valued |

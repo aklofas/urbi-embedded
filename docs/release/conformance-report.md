@@ -50,7 +50,7 @@ scope decision.
 | Separators / concurrency (`;` `\|` `,` `&`) | FULL | the defining feature; persistent loader strand |
 | Reactive (`at` / `whenever` / `waituntil` / events / slot-change) | FULL | `~duration`, `watch(expr)`, `$wheneverOn/Off` deferred-v1.x |
 | Tags (scope, `stop`/`block`/`freeze`, enter/leave) | ≈ FULL (~95%) | tag-stop absorption fixed at v1.0; `Tag.begin`/`.end` overlay deferred-v1.x |
-| Exceptions (`try`/`catch`/`finally`, guards, `else`, subclasses) | FULL | `finally`-on-normal-path fixed at v1.0; `catch` never catches TAG_STOP/CANCEL (S5a) |
+| Exceptions (`try`/`catch`/`finally`, guards, `else`, subclasses) | FULL | `finally`-on-normal-path fixed at v1.0; `catch` never catches a tag stop or cancel (S5a) |
 | Prototype OOP (multi-proto MRO, COW, getters/setters, `isA`) | FULL | hidden-class + IC; `UObject` C++ binding intentionally OUT |
 | Operators (`+ - * / %`, comparison, `&&` / `\|\|`, Kotlin bitwise methods) | FULL | symbolic bitwise → methods by design (S14); Comparable/Orderable operator-derivation deferred-v1.x |
 | Literals (numbers, strings, durations, angles, `pi`) | FULL | adjacent-string-concat + synclines verified at v1.0 |

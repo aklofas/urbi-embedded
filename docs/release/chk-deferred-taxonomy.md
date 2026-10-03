@@ -134,8 +134,8 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 | `onleave_normal_exit.chk` | T29 | deferred: v1.x | Requires onleave clause (PARSE-033, deferred-v1.x) |
 | `onleave_on_stop.chk` | T29 | deferred: v1.x | Requires onleave clause (PARSE-033, deferred-v1.x) |
 | `tag_stop_no_target.chk` | T29 | blocked | tag.stop() outside scope is silent (not fatal); expected semantics not implemented |
-| `tag_stop_skips_catch.chk` | T29 | **active** | TAG_STOP skips catch correctly; updated v0.10.15 for bound-scope (clean nil, no D3 fatal) |
-| `tag_stop_with_finally.chk` | T29 | **active** | Activated v0.10.15: finally runs during TAG_STOP unwind (closes v0.10.7-B, latent-fixed by v0.10.9-B binding) |
+| `tag_stop_skips_catch.chk` | T29 | **active** | a tag stop skips catch correctly; updated v0.10.15 for bound-scope (clean nil, no D3 fatal) |
+| `tag_stop_with_finally.chk` | T29 | **active** | Activated v0.10.15: finally runs during the tag-stop unwind (closes v0.10.7-B, latent-fixed by v0.10.9-B binding) |
 | `scope_binds_user_tag.chk` | v0.10.9-B | **active** | New v0.10.15: `t: {}` binds the user tag; t.stop() inside is a clean in-scope stop (closes v0.10.9-B) |
 
 ### exceptions/

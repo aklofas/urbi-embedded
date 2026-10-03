@@ -88,8 +88,8 @@ older chunk is a hard error (`UCHUNK_LOAD_UNSUPPORTED_VERSION`).
 
 | Byte | Version | Wire-format change |
 |------|---------|---------------------|
-| 0x1A | v1.10   | Last byte of the pre-refoundation wire format (50 opcodes, `OP_SETSLOT_UPDATE` at slot 49, per-target float flavor). |
-| 0x20 | v2.0    | The frontend rewrite. Opcode set replaced wholesale: 41 opcodes (down from 50), the control-transfer family collapsed to `SCOPE_TRY` / `SCOPE_TAG` / `SCOPE_POP` / `UNWIND_TO` (replacing `TRY_BEGIN` / `TRY_END` / `PUSH_TAG` / `POP_TAG` / `PUSH_FRAME_GUARD`), the six reactive install opcodes collapsed to one `OP_INSTALL` with a mode operand, a new `OP_EXTARG` prefix widens slot-site indices past 255, the IC name table is renamed `site_names` (same wire shape: count + length-prefixed UTF-8 strings, cap raised from 256 to 65,535), and the float flavor byte is pinned to 8 (double) on every target. Header layout, varint encoding, the constant pool, the instruction/syncline section shapes, and the nested-proto recursion are byte-for-byte unchanged from v1.10. |
+| 0x1A | v1.10   | Last byte of the pre-refoundation wire format (50 opcodes, `OP_SETSLOT_UPDATE` at slot 49; the float flavor byte already fixed at 8). |
+| 0x20 | v2.0    | The frontend rewrite. Opcode set replaced wholesale: 41 opcodes (down from 50), the control-transfer family collapsed to `SCOPE_TRY` / `SCOPE_TAG` / `SCOPE_POP` / `UNWIND_TO` (replacing `TRY_BEGIN` / `TRY_END` / `PUSH_TAG` / `POP_TAG` / `PUSH_FRAME_GUARD` / `TAG_STOP`), `FORK_DETACH` / `FORK_JOIN` collapsed to one `OP_FORK` with a mode operand, `NEQ` retired (`OP_EQ` with the opposite polarity), the seven reactive install opcodes collapsed to one `OP_INSTALL` with a mode operand, a new `OP_EXTARG` prefix widens slot-site indices past 255, the IC name table is renamed `site_names` (same wire shape: count + length-prefixed UTF-8 strings, cap raised from 256 to 65,535). Header layout, the float flavor byte (8), varint encoding, the constant pool, the instruction/syncline section shapes, and the nested-proto recursion are byte-for-byte unchanged from v1.10. |
 
 The wire-format history before v1.10 — the eight bumps from the walking
 skeleton through the reactive-opcode renumbering, `OP_SELF`, the UModule
@@ -353,10 +353,12 @@ express:
   `USCOPE_POP_RUN_FINALLY` legal only on a TRY entry.
 - `OP_EXTARG` may only precede a site-bearing opcode, may not be the last
   instruction, and a widened site index must be `< site_count`.
-- An `OP_CLOSURE`'s upvalue prelude (`nupvals` pseudo-instructions) must lie
-  within the instruction array; pass 1 skips over the prelude words rather
-  than treating them as real instructions (so they do not spuriously
-  satisfy the "instruction after EXTARG" or site-counting rules).
+- An `OP_CLOSURE` must name a nested proto that is present, and its upvalue
+  prelude (`nupvals` pseudo-instructions) must lie within the instruction
+  array; pass 1 skips over the prelude words rather than treating them as
+  real instructions (so they do not spuriously satisfy the "instruction
+  after EXTARG" or site-counting rules), and pass 2 refuses any control
+  transfer that lands on one.
 - The last instruction of the block must be `OP_RET`.
 - `site_count` must not exceed the number of site-bearing instructions seen.
 
@@ -367,13 +369,22 @@ context pass 1's single-instruction table cannot express:
 - Each `OP_CLOSURE` upvalue pseudo-instruction's `in_stack` is 0 or 1; if 1,
   `src_idx <= max_reg`; if 0, `src_idx < nupvals` of the *enclosing* proto
   (re-capturing a parent upvalue that must itself exist).
-- `OP_JMP`'s resolved target (see [opcodes.md](opcodes.md#jump-encoding))
-  lies in `[0, instr_count)`, and does not land on the instruction right
-  after an `OP_EXTARG`.
 - `OP_CALL`'s `C` low 7 bits (`nresults+1`) must not be 0.
-- Every `OP_SCOPE_TRY` / `OP_SCOPE_TAG` / `OP_UNWIND_TO` handler/target PC
-  (already range-checked by pass 1) does not land right after an `OP_EXTARG`
-  either.
+- Every control-transfer target lies in `[0, instr_count)`, is not an
+  `OP_CLOSURE` upvalue prelude word, and is not the instruction right after
+  an `OP_EXTARG` (a prelude word whose opcode byte happens to read
+  `OP_EXTARG` does not count as one). The targets are `OP_JMP`'s resolved
+  target (see [opcodes.md](opcodes.md#jump-encoding)); the landing of a
+  conditional skip, two words on from `OP_LOADBOOL` with `C` set,
+  `OP_TEST`, `OP_TESTSET`, `OP_EQ`, `OP_LT` and `OP_LE`; and the
+  `OP_SCOPE_TRY` / `OP_SCOPE_TAG` / `OP_UNWIND_TO` PC. A jump past the end
+  is `UCHUNK_LOAD_JMP_OUT_OF_BOUNDS`, a scope PC past the end is already
+  `UCHUNK_LOAD_CORRUPT` from pass 1, and a skip past the end or any target
+  on a prelude word is `UCHUNK_LOAD_BAD_TARGET`.
+
+Pass 2 marks prelude words in a bitmap of `instr_count` bits, allocated
+through the chunk's allocator only for a proto that has a non-empty
+prelude and freed before the pass moves on.
 
 On success both passes return `UCHUNK_LOAD_OK`.
 
@@ -410,6 +421,7 @@ All error codes are returned by `uchunk_deserialize` and named by
 | `UCHUNK_LOAD_CALL_NRESULTS_ZERO`   | `OP_CALL`'s `C` low 7 bits are 0 |
 | `UCHUNK_LOAD_RESERVED_OPCODE`      | Opcode reserved/unimplemented at this wire version |
 | `UCHUNK_LOAD_BAD_EXTARG`           | `OP_EXTARG` misplaced: last, doubled, before a non-site opcode, or a jump/handler lands right after it |
+| `UCHUNK_LOAD_BAD_TARGET`           | A conditional skip lands past the end, or any control transfer lands on an `OP_CLOSURE` upvalue prelude word |
 
 ---
 
