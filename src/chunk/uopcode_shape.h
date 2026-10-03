@@ -25,16 +25,16 @@
  *   UBXK_UNUSED        : Bx ignored
  *   UBXK_POOL_INDEX    : OP_LOADK Bx must be < const_count
  *   UBXK_NESTED_INDEX  : OP_CLOSURE Bx must be < nested_count
- *   UBXK_JUMP_SIGNED   : OP_JMP Bx is biased signed offset; no range check
- *                        (target out-of-range surfaces at runtime)
+ *   UBXK_JUMP_SIGNED   : OP_JMP Bx is biased signed offset; pass 1 takes
+ *                        any value, pass 2 resolves the target and rejects
+ *                        one outside the instruction array or right after
+ *                        an OP_EXTARG
  *   UBXK_HANDLER_PC    : OP_SCOPE_TRY / OP_SCOPE_TAG / OP_UNWIND_TO
  *                        target PC; must be < instr_count
  *   UBXK_EXTARG        : OP_EXTARG's high site bits; any value
- *   UBXK_SYMBOL_ID     : OP_LOAD_REALM_GLOBAL packs a 16-bit symbol id.
- *                        At v1.5 we accept the full 0..65535 range; the
- *                        runtime resolves against the realm's symbol
- *                        table at OP_LOAD_REALM_GLOBAL dispatch time and
- *                        reports unknown symbols there.
+ *   UBXK_SYMBOL_ID     : no row uses this kind at wire v2 (the realm's
+ *                        globals load, OP_LOAD_REALM_GLOBAL, is ABC and
+ *                        takes no symbol); the verifier accepts any value.
  */
 
 #ifndef URBI_UOPCODE_SHAPE_H
