@@ -105,7 +105,7 @@ void uvm_gc_trace(UVM *vm, UCell *c)
     case UCELL_WATCHER: uwatch_trace(vm, (UWatcher *)c); break;
     default:
         /* Nothing else owns GC cells.  UCELL_PROTO in particular: binding
-         * rewrote its constants to UV_SYM and its IC names to USym, both
+         * rewrote its constants to UV_SYM and its site names to USym, both
          * immortal, so a bound chunk has no children to mark. */
         break;
     }
@@ -372,30 +372,30 @@ void uvm_spare_release(UVM *vm, UStrand *s)
 
 /* --- chunk binding ------------------------------------------------------ */
 
-/* Intern one proto's IC names in place: proto->ic_names is a pointer array
- * sized ic_count and owned by the proto's allocator (freed by
+/* Intern one proto's site names in place: proto->site_names is a pointer
+ * array sized site_count and owned by the proto's allocator (freed by
  * uproto_destroy_buffers), so it is rewritten to hold USym* rather than a
  * second array being allocated.  Deserialised chunks arrive with
- * ic_names == NULL and only ic_name_strs populated, so the array is
+ * site_names == NULL and only site_name_strs populated, so the array is
  * allocated here in that case. */
 static int uproto_bind_one(UVM *vm, UProto *p)
 {
     /* Both branches below need the proto's allocator: one to allocate an
-     * ic_names array a deserialised chunk arrives without, the other to
+     * site_names array a deserialised chunk arrives without, the other to
      * release the loader-owned constant buffers it has just interned.
      * decode_proto tolerates a NULL alloc_fn through a hosted fallback,
      * so neither may assume it is set. */
-    if (p->alloc_fn == NULL && (p->ic_count > 0 || p->const_count > 0)) return -1;
-    if (p->ic_count > 0) {
-        if (p->ic_names == NULL) {
-            p->ic_names = (USymbol **)p->alloc_fn(NULL, (size_t)p->ic_count * sizeof(USymbol *), p->alloc_ud);
-            if (!p->ic_names) return -1;
+    if (p->alloc_fn == NULL && (p->site_count > 0 || p->const_count > 0)) return -1;
+    if (p->site_count > 0) {
+        if (p->site_names == NULL) {
+            p->site_names = (USymbol **)p->alloc_fn(NULL, (size_t)p->site_count * sizeof(USymbol *), p->alloc_ud);
+            if (!p->site_names) return -1;
         }
-        for (uint16_t i = 0; i < p->ic_count; i++) {
-            const char *nm = (p->ic_name_strs && p->ic_name_strs[i]) ? p->ic_name_strs[i] : "";
+        for (uint16_t i = 0; i < p->site_count; i++) {
+            const char *nm = (p->site_name_strs && p->site_name_strs[i]) ? p->site_name_strs[i] : "";
             USym *sym = usym_intern(vm, nm, strlen(nm));
             if (!sym) return -1;
-            p->ic_names[i] = (USymbol *)sym;
+            p->site_names[i] = (USymbol *)sym;
         }
     }
     for (size_t i = 0; i < p->const_count; i++) {

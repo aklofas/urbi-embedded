@@ -309,7 +309,7 @@ static void a_refused_cache_array_is_retried_and_harmless(void)
      * first site runs uncached and its next site retries the array. */
     fx.ca.fail_at = 16;
     RT_EQ(run_ok(&fx, "rd()").v.i, 7);
-    RT_EQ(fx.ca.refused, (size_t)body->ic_count * sizeof(USlotCache));
+    RT_EQ(fx.ca.refused, (size_t)body->site_count * sizeof(USlotCache));
     RT_CHECK(((USlotCache *)body->site_cache)[0].recv == NULL);   /* ran uncached */
     RT_CHECK(((USlotCache *)body->site_cache)[1].recv != NULL);   /* retried, filled */
     RT_EQ(run_ok(&fx, "rd()").v.i, 7);
@@ -546,13 +546,13 @@ static void an_epoch_near_the_top_is_reset_and_entries_cleared(void)
     USlotCache *a = (USlotCache *)body->site_cache;
     RT_CHECK(a != NULL);
     bool inherited = false;
-    for (uint16_t k = 0; k < body->ic_count; k++)
+    for (uint16_t k = 0; k < body->site_count; k++)
         if (a[k].recv != NULL && a[k].owner != a[k].recv) inherited = true;
     RT_CHECK(inherited);
     stats(&fx)->slot_epoch = 0x80000001u;
     ugc_collect(fx.vm);
     RT_EQ(stats(&fx)->slot_epoch, 1u);
-    for (uint16_t k = 0; k < body->ic_count; k++) RT_CHECK(a[k].recv == NULL);
+    for (uint16_t k = 0; k < body->site_count; k++) RT_CHECK(a[k].recv == NULL);
     uint32_t fills = stats(&fx)->cache_fills;
     RT_EQ(run_ok(&fx, "rd()").v.i, 1);
     RT_CHECK(stats(&fx)->cache_fills > fills);

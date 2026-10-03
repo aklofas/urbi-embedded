@@ -84,7 +84,7 @@ typedef struct UWatchState {
 
 /* --- bound chunk ----------------------------------------------------
  *
- * One cell per loaded chunk root.  Binding interns the chunk's IC names
+ * One cell per loaded chunk root.  Binding interns the chunk's site names
  * and its string constants into USym, so nothing in a bound proto tree
  * points at the frontend's arena or at loader-owned bytes any more.
  *
@@ -173,16 +173,16 @@ void    urealm_trace(UVM *vm, URealm *r);
 UClosure  *uclosure_native(UVM *vm, int (*fn)(UVM *, UValue, UValue *, uint8_t, UValue *),
                            uint8_t min_args, uint8_t max_args);
 
-/* Bind a loaded chunk root to this VM: interns every proto's ic names
- * into USym (rewriting proto->ic_names in place), rewrites every UVAL_STR
+/* Bind a loaded chunk root to this VM: interns every proto's site names
+ * into USym (rewriting proto->site_names in place), rewrites every UVAL_STR
  * constant into a UV_SYM value, and wraps the root in a UCELL_PROTO cell
  * whose finaliser calls uchunk_destroy.  Takes ownership of `root`
  * unconditionally: on OOM it returns NULL having already released (or
  * handed to a soon-collected cell) the chunk, so the caller must never
  * destroy `root` itself after calling this. */
 UProtoCell *uproto_bind(UVM *vm, UProto *root);
-/* The USym array for a proto's IC sites, or NULL when it has none. */
-static inline USym **uproto_names(const UProto *p) { return (USym **)p->ic_names; }
+/* The USym array for a proto's slot sites, or NULL when it has none. */
+static inline USym **uproto_site_names(const UProto *p) { return (USym **)p->site_names; }
 
 /* The object slot lookups start from, for any value kind.  Task 8 rule:
  * OBJ receivers only; every other kind returns NULL and the caller
@@ -300,9 +300,9 @@ void uexec_note_write(UVM *vm, UObject *o, const USym *name, UValue v, bool exis
  * opcode.  `body` and `onleave` may be NULL.  NULL on OOM. */
 UWatcher *uwatch_install(UVM *vm, UStrand *s, uint8_t mode, UClosure *cond,
                          UEvent *event, UClosure *body, UClosure *onleave);
-/* OP_WAITUNTIL_INSTALL: 0 = the condition already held (or the strand may
- * not park) and dispatch continues, 1 = the strand is parked, -1 = the
- * condition threw and s is unwinding. */
+/* OP_INSTALL in waituntil mode: 0 = the condition already held (or the
+ * strand may not park) and dispatch continues, 1 = the strand is parked,
+ * -1 = the condition threw and s is unwinding. */
 int   uwatch_waituntil(UVM *vm, UStrand *s, UClosure *cond);
 /* A write landed on an object carrying UOBJ_F_WATCHED. */
 void  uwatch_mark_dirty(UVM *vm, UObject *o);

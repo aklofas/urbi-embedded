@@ -10,9 +10,13 @@
 
 #define UTEST(name) static void name(void)
 
+/* The intern table is the VM's own; the standard library is not needed
+ * to exercise it, so these VMs open without booting it. */
+static const UVMConfig no_stdlib = { 0, 0 };
+
 UTEST(intern_returns_canonical_pointer) {
     UVM *vm = NULL;
-    vm = urbi_open(utest_alloc, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, &no_stdlib);
 
     const char *a = ustr_intern(vm, "hello", 5);
     const char *b = ustr_intern(vm, "hello", 5);
@@ -25,7 +29,7 @@ UTEST(intern_returns_canonical_pointer) {
 
 UTEST(intern_distinguishes_different_strings) {
     UVM *vm = NULL;
-    vm = urbi_open(utest_alloc, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, &no_stdlib);
 
     const char *a = ustr_intern(vm, "foo", 3);
     const char *b = ustr_intern(vm, "bar", 3);
@@ -36,7 +40,7 @@ UTEST(intern_distinguishes_different_strings) {
 
 UTEST(intern_treats_substrings_as_distinct) {
     UVM *vm = NULL;
-    vm = urbi_open(utest_alloc, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, &no_stdlib);
 
     const char *full = ustr_intern(vm, "foobar", 6);
     const char *part = ustr_intern(vm, "foo", 3);
@@ -47,7 +51,7 @@ UTEST(intern_treats_substrings_as_distinct) {
 
 UTEST(intern_handles_zero_length) {
     UVM *vm = NULL;
-    vm = urbi_open(utest_alloc, NULL, NULL);
+    vm = urbi_open(utest_alloc, NULL, &no_stdlib);
     const char *empty = ustr_intern(vm, "", 0);
     UASSERT(empty != NULL);
     UASSERT_EQ((char)0, empty[0]);
@@ -56,8 +60,8 @@ UTEST(intern_handles_zero_length) {
 
 
 UTEST(intern_two_vms_have_independent_tables) {
-    UVM *vm_a = urbi_open(utest_alloc, NULL, NULL);
-    UVM *vm_b = urbi_open(utest_alloc, NULL, NULL);
+    UVM *vm_a = urbi_open(utest_alloc, NULL, &no_stdlib);
+    UVM *vm_b = urbi_open(utest_alloc, NULL, &no_stdlib);
 
     const char *sa = ustr_intern(vm_a, "shared", 6);
     const char *sb = ustr_intern(vm_b, "shared", 6);

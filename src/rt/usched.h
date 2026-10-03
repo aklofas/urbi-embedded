@@ -43,7 +43,7 @@ struct UWatcher;   /* completed by rt/uwatch.h, which sits above this header */
  * strand pushes, pops, unwinds or dies. */
 typedef struct UTag {
     UCell    cell;
-    struct UEvent *enter, *leave;   /* allocated on first use, not at PUSH_TAG */
+    struct UEvent *enter, *leave;   /* allocated on first use, not at SCOPE_TAG */
     UValue   name;                  /* a string, or nil for an anonymous tag */
     uint8_t  flags;                 /* UTAG_F_* */
 } UTag;

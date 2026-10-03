@@ -84,13 +84,11 @@ typedef enum {
                              * (UWATCHER_AT, UWATCHER_AT_SYNC, UWATCHER_WHENEVER,
                              * UWATCHER_WAITUNTIL) and `u.watcher.source`
                              * (UWSRC_COND, UWSRC_EVENT, UWSRC_SLOT_CHANGE)
-                             * together select the install opcode: OP_AT_INSTALL /
-                             * OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL (COND);
-                             * OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL /
-                             * OP_WHENEVER_EVENT_INSTALL (EVENT); the same EVENT
-                             * opcodes prefixed with OP_GETSLOT_CHANGE_EVENT
-                             * (SLOT_CHANGE); OP_WAITUNTIL_INSTALL (WAITUNTIL +
-                             * COND) or a desugared `e.waituntil()` call
+                             * together select the OP_INSTALL mode: AT /
+                             * AT_SYNC / WHENEVER on a condition (COND) or on
+                             * an event (EVENT); the same EVENT modes after an
+                             * OP_GETSLOT_CHANGE_EVENT (SLOT_CHANGE); WAITUNTIL
+                             * (WAITUNTIL + COND) or a desugared `e.waituntil()` call
                              * (WAITUNTIL + EVENT).  spec #2 §3.10, spec #3,
                              * spec #4. */
 

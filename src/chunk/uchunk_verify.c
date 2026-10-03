@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uchunk_verify.c — bytecode verifier passes (F2 bounds + F3 ic-index).
+/* uchunk_verify.c — the two load-time bytecode verifier passes.
  *
  * The security-load-bearing load-time verifier, split out of uchunk_io.c so
- * the shape-table operand check, per-sequence bounds pass, and ic-index DFS
- * mirror check are independently readable.  Driven by uchunk_deserialize via
+ * the per-instruction shape check (pass 1) and the per-sequence bounds pass
+ * (pass 2) are independently readable.  Driven by uchunk_deserialize via
  * the entry points declared in uchunk_internal.h.  Freestanding. */
 
 #include "chunk/uchunk.h"
@@ -40,19 +40,32 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
 #endif  /* __STDC_HOSTED__ */
 
 /* Verify a single byte field per its UOperandKind.  max_reg is the
-   per-block bound (root chunk uses module->max_reg; nested protos use
-   p->max_reg). */
+   per-block bound.  UOPK_IMM_SITE is checked by the caller, which holds
+   the pending OP_EXTARG bits and the block's site_count. */
 static UChunkLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
                                             uint8_t value, UOperandKind kind,
                                             const char *which, size_t pc,
                                             uint8_t max_reg) {
     switch (kind) {
         case UOPK_UNUSED:
+        case UOPK_IMM_FLAGS:      /* per-opcode rules below constrain the bits */
+        case UOPK_UPVAL_IDX:      /* runtime-checked: UClosure carries the count */
+        case UOPK_IMM_SITE:       /* checked by verify_walk_block */
+        case UOPK_IMM_DEPTH:      /* a scope count; any byte */
             return UCHUNK_LOAD_OK;
         case UOPK_REG:
             if (value > max_reg) {
                 set_errmsg(d->errmsg, d->errcap,
                            "register %s=%u > max_reg=%u at pc %zu (op=%u)",
+                           which, (unsigned)value,
+                           (unsigned)max_reg, pc, (unsigned)op);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            return UCHUNK_LOAD_OK;
+        case UOPK_REG_OR_NONE:
+            if (value != 0xFFU && value > max_reg) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "register %s=%u > max_reg=%u (and not 0xFF) at pc %zu (op=%u)",
                            which, (unsigned)value,
                            (unsigned)max_reg, pc, (unsigned)op);
                 return UCHUNK_LOAD_CORRUPT;
@@ -66,77 +79,164 @@ static UChunkLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
                 return UCHUNK_LOAD_CORRUPT;
             }
             return UCHUNK_LOAD_OK;
-        case UOPK_IMM_FLAGS:
-            return UCHUNK_LOAD_OK;  /* full byte accepted; flag bits unconstrained */
-        case UOPK_IMM_REG_NIBBLE: {
-            /* The byte packs flags (high nibble) + reg_idx (low nibble).
-             * tag_reg is constrained to [0,15] AND <= max_reg. */
-            uint8_t reg_idx = value & 0x0FU;
-            if (reg_idx > max_reg) {
+        case UOPK_IMM_MODE:
+            if (value < 1U || value > 7U) {
                 set_errmsg(d->errmsg, d->errcap,
-                           "%s tag_reg=%u > max_reg=%u at pc %zu (op=%u)",
-                           which, (unsigned)reg_idx,
-                           (unsigned)max_reg, pc, (unsigned)op);
+                           "%s=%u not a mode in 1..7 at pc %zu (op=%u)",
+                           which, (unsigned)value, pc, (unsigned)op);
                 return UCHUNK_LOAD_CORRUPT;
             }
-            return UCHUNK_LOAD_OK;
-        }
-        case UOPK_UPVAL_IDX:
-            /* Runtime-checked at OP_GETUPVAL/OP_SETUPVAL dispatch (UClosure
-             * carries the upvalue array length).  No static range. */
-            return UCHUNK_LOAD_OK;
-        case UOPK_FRAME_REG_BASE:
-            /* OP_PUSH_FRAME_GUARD A is base register; <= max_reg. */
-            if (value > max_reg) {
-                set_errmsg(d->errmsg, d->errcap,
-                           "%s frame guard base=%u > max_reg=%u at pc %zu (op=%u)",
-                           which, (unsigned)value, (unsigned)max_reg,
-                           pc, (unsigned)op);
-                return UCHUNK_LOAD_CORRUPT;
-            }
-            return UCHUNK_LOAD_OK;
-        case UOPK_FRAME_REG_COUNT:
-            /* No standalone range check — OP_PUSH_FRAME_GUARD A+B
-             * boundary check happens at the per-instruction arm below
-             * because we need both bytes simultaneously. */
             return UCHUNK_LOAD_OK;
     }
     return UCHUNK_LOAD_OK;
 }
 
-/* Return true if `op` is an IC-bearing opcode (carries an ic_idx in C).
- * Mirror at v1.10: OP_GETSLOT, OP_SETSLOT, OP_SETSLOT_UPDATE,
- * OP_GETSLOT_CHANGE_EVENT, OP_SELF.
- * Mirror discipline: any new IC-bearing opcode added in a future
- * milestone must be added here AND in uemit_assign_ic_index call sites. */
-static bool op_carries_ic_index(uint8_t op) {
-    return op == (uint8_t)OP_GETSLOT
-        || op == (uint8_t)OP_SETSLOT
-        || op == (uint8_t)OP_SETSLOT_UPDATE
-        || op == (uint8_t)OP_GETSLOT_CHANGE_EVENT
-        || op == (uint8_t)OP_SELF;
+/* The opcodes whose C operand is a site index, and so the only ones an
+ * OP_EXTARG may precede. */
+static bool op_takes_site(uint8_t op) {
+    return op == (uint8_t)OP_GETSLOT || op == (uint8_t)OP_SETSLOT
+        || op == (uint8_t)OP_SETSLOT_UPDATE || op == (uint8_t)OP_SELF
+        || op == (uint8_t)OP_GETSLOT_CHANGE_EVENT;
 }
 
-/* Walk one block of instructions (root chunk OR a nested proto) against
-   the opcode-shape table, applying per-block bounds (max_reg /
-   const_count / instr_count / nested_count / ic_count).  Callers pass
-   the root-level nested_count for both root and per-proto walks since
-   the v1.5 emitter allocates all function literals as flat siblings
-   under the root UModule's nested[] (an OP_CLOSURE inside a nested
-   proto refers to a sibling slot in the same root array). */
+/* The cross-byte rules a shape row cannot express, for the ABC opcodes
+ * that have one.  `instructions` and `vi` are there for JOIN_WAIT, whose
+ * rule is about its predecessor. */
+static UChunkLoadError verify_abc_rules(MDecCtx *d, uint8_t op,
+                                         uint8_t a, uint8_t b, uint8_t c,
+                                         const uint32_t *instructions,
+                                         size_t vi, uint8_t max_reg) {
+    switch (op) {
+        case OP_SELF:
+            if ((unsigned)a + 1U > (unsigned)max_reg) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_SELF A+1=%u exceeds max_reg=%u at pc %zu",
+                           (unsigned)a + 1U, (unsigned)max_reg, vi);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            break;
+        case OP_CALL:
+            if ((unsigned)a + (unsigned)b > (unsigned)max_reg + 1U) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_CALL A+B=%u exceeds max_reg+1=%u at pc %zu"
+                           " (register window overflow)",
+                           (unsigned)a + (unsigned)b,
+                           (unsigned)max_reg + 1U, vi);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            break;
+        case OP_INSTALL:
+            /* Source, body and alternate sit in R[A], R[A+1], R[A+2]
+             * whether or not the flags say the last two are present. */
+            if ((unsigned)a + 2U > (unsigned)max_reg) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_INSTALL A+2=%u exceeds max_reg=%u at pc %zu",
+                           (unsigned)a + 2U, (unsigned)max_reg, vi);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            if ((c & ~(UINSTALL_F_HAS_BODY | UINSTALL_F_HAS_ALT)) != 0U
+                || (b == UINSTALL_WAITUNTIL && c != 0U)) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_INSTALL flags C=0x%02x invalid for mode %u at pc %zu",
+                           (unsigned)c, (unsigned)b, vi);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            break;
+        case OP_FORK:
+            /* A detached child has no handle; a joined one writes its
+             * handle into R[B]. */
+            if ((c == UFORK_DETACH && b != 0xFFU) || (c == UFORK_JOIN && b == 0xFFU)) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_FORK mode %u with handle register B=%u at pc %zu",
+                           (unsigned)c, (unsigned)b, vi);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            break;
+        case OP_JOIN_WAIT: {
+            /* JOIN_WAIT's dead-child fast path reads a strand handle that
+             * eager DEAD-reap may have freed; the adjacency invariant (a
+             * joining FORK immediately before, FORK.B == JOIN_WAIT.A) is
+             * the only pin.  Enforce it at load time so corrupt or
+             * hand-built chunks cannot exploit the use-after-free. */
+            uint32_t prev = (vi > 0U) ? instructions[vi - 1U] : 0U;
+            if (vi == 0U || uinstr_op(prev) != OP_FORK
+                || uinstr_c(prev) != UFORK_JOIN || uinstr_b(prev) != a) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_JOIN_WAIT at pc %zu not adjacent to its joining OP_FORK",
+                           vi);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            break;
+        }
+        case OP_SCOPE_POP: {
+            uint8_t kind = (uint8_t)(a & 0x3U);
+            if ((kind != USCOPE_POP_TRY && kind != USCOPE_POP_TAG)
+                || ((a & USCOPE_POP_RUN_FINALLY) != 0U && kind != USCOPE_POP_TRY)) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_SCOPE_POP A=0x%02x names no valid scope kind at pc %zu",
+                           (unsigned)a, vi);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    return UCHUNK_LOAD_OK;
+}
+
+/* Bx range check for one ABX instruction, per its shape row. */
+static UChunkLoadError verify_bx(MDecCtx *d, uint8_t op, uint16_t bx,
+                                 UBxKind kind, size_t vi,
+                                 size_t const_count, size_t instr_count,
+                                 size_t nested_count) {
+    switch (kind) {
+        case UBXK_UNUSED:
+        case UBXK_SYMBOL_ID:
+        case UBXK_EXTARG:
+        case UBXK_JUMP_SIGNED:   /* the target is resolved and range-checked by pass 2 */
+            break;
+        case UBXK_POOL_INDEX:
+            if ((size_t)bx >= const_count) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "Bx=%u >= const_count=%zu at pc %zu (op=%u)",
+                           (unsigned)bx, const_count, vi, (unsigned)op);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            break;
+        case UBXK_NESTED_INDEX:
+            if ((size_t)bx >= nested_count) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "Bx=%u >= nested_count=%zu at pc %zu (op=%u)",
+                           (unsigned)bx, nested_count, vi, (unsigned)op);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            break;
+        case UBXK_HANDLER_PC:
+            if ((size_t)bx >= instr_count) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "target-PC Bx=%u >= instr_count=%zu at pc %zu (op=%u)",
+                           (unsigned)bx, instr_count, vi, (unsigned)op);
+                return UCHUNK_LOAD_CORRUPT;
+            }
+            break;
+    }
+    return UCHUNK_LOAD_OK;
+}
+
+/* Pass 1: walk one proto's instructions against the opcode-shape table,
+   applying the proto's bounds (max_reg / const_count / instr_count /
+   nested_count / site_count).  An OP_EXTARG sets the high bits of the
+   next instruction's site index; that instruction must take one. */
 static UChunkLoadError verify_walk_block(MDecCtx *d,
                                           uint8_t max_reg,
                                           size_t const_count,
                                           size_t instr_count,
                                           size_t nested_count,
-                                          uint16_t ic_count,
+                                          uint16_t site_count,
                                           const uint32_t *instructions) {
-    /* Count IC-bearing opcodes seen during the walk so we can
-     * cross-validate ic_count after the loop.  Every ic_idx must be
-     * < ic_count (per-instruction); ic_count must be <= ic_seen
-     * (count check; rejects modules that lie about ic_count without
-     * emitting matching IC sites). */
-    size_t ic_seen = 0;
+    uint32_t ext = 0;
+    bool ext_pending = false;
     size_t vi;
     for (vi = 0; vi < instr_count; vi++) {
         uint32_t ins = instructions[vi];
@@ -146,23 +246,27 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                        (unsigned)op, vi);
             return UCHUNK_LOAD_CORRUPT;
         }
+        if (ext_pending && !op_takes_site(op)) {
+            set_errmsg(d->errmsg, d->errcap,
+                       "EXTARG at pc %zu precedes op %u, which takes no site index",
+                       vi - 1U, (unsigned)op);
+            return UCHUNK_LOAD_BAD_EXTARG;
+        }
+        if (op == (uint8_t)OP_EXTARG) {
+            if (vi + 1U >= instr_count) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "EXTARG at pc %zu is the last instruction", vi);
+                return UCHUNK_LOAD_BAD_EXTARG;
+            }
+            ext = (uint32_t)uinstr_bx(ins) << 8;
+            ext_pending = true;
+            continue;
+        }
         const UOpcodeShape *sh = &urbi_opcode_shapes[op];
 
         uint8_t a = uinstr_a(ins);
         UChunkLoadError rc = verify_byte_operand(d, op, a, sh->a_kind, "A", vi, max_reg);
         if (rc != UCHUNK_LOAD_OK) return rc;
-
-        /* Cross-validate IC index for IC-bearing opcodes. */
-        if (op_carries_ic_index(op)) {
-            uint8_t ic_idx = uinstr_c(ins);
-            if ((uint16_t)ic_idx >= ic_count) {
-                set_errmsg(d->errmsg, d->errcap,
-                           "ic_idx=%u >= ic_count=%u at pc %zu (op=%u)",
-                           (unsigned)ic_idx, (unsigned)ic_count, vi, (unsigned)op);
-                return UCHUNK_LOAD_CORRUPT;
-            }
-            ic_seen++;
-        }
 
         if (sh->format == UOPF_ABC) {
             uint8_t b = uinstr_b(ins);
@@ -171,99 +275,24 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
             if (rc != UCHUNK_LOAD_OK) return rc;
             rc = verify_byte_operand(d, op, c, sh->c_kind, "C", vi, max_reg);
             if (rc != UCHUNK_LOAD_OK) return rc;
-
-            /* OP_PUSH_FRAME_GUARD: cross-byte invariant base+count <= max_reg+1. */
-            if (op == (uint8_t)OP_PUSH_FRAME_GUARD) {
-                if ((unsigned)a + (unsigned)b > (unsigned)max_reg + 1U) {
+            if (sh->c_kind == UOPK_IMM_SITE) {
+                uint32_t site = (uint32_t)c | ext;
+                if (site >= (uint32_t)site_count) {
                     set_errmsg(d->errmsg, d->errcap,
-                               "frame guard base+count=%u exceeds max_reg+1=%u at pc %zu",
-                               (unsigned)a + (unsigned)b,
-                               (unsigned)max_reg + 1U, vi);
+                               "site %u >= site_count %u at pc %zu (op=%u)",
+                               (unsigned)site, (unsigned)site_count, vi, (unsigned)op);
                     return UCHUNK_LOAD_CORRUPT;
                 }
             }
-            /* OP_JOIN_WAIT's dead-child fast path reads a strand handle
-             * that eager DEAD-reap may have freed; the adjacency
-             * invariant (OP_FORK_JOIN immediately before, FORK_JOIN.B ==
-             * JOIN_WAIT.A) is the only pin.  Enforce at load time so
-             * corrupt or hand-built chunks cannot exploit the UAF. */
-            if (op == (uint8_t)OP_JOIN_WAIT) {
-                if (vi == 0U) {
-                    set_errmsg(d->errmsg, d->errcap,
-                               "OP_JOIN_WAIT at pc 0: no preceding OP_FORK_JOIN");
-                    return UCHUNK_LOAD_CORRUPT;
-                }
-                uint32_t prev = instructions[vi - 1U];
-                uint8_t  pop  = (uint8_t)uinstr_op(prev);
-                if (pop != (uint8_t)OP_FORK_JOIN || uinstr_b(prev) != a) {
-                    set_errmsg(d->errmsg, d->errcap,
-                               "OP_JOIN_WAIT at pc %zu not adjacent to its"
-                               " OP_FORK_JOIN (prev op=%u, prev B=%u,"
-                               " JOIN_WAIT A=%u)",
-                               vi, (unsigned)pop,
-                               (unsigned)uinstr_b(prev), (unsigned)a);
-                    return UCHUNK_LOAD_CORRUPT;
-                }
-            }
-            if (op == (uint8_t)OP_SELF) {
-                if ((unsigned)a + 1U > (unsigned)max_reg) {
-                    set_errmsg(d->errmsg, d->errcap,
-                               "OP_SELF A+1=%u exceeds max_reg=%u at pc %zu",
-                               (unsigned)a + 1U, (unsigned)max_reg, vi);
-                    return UCHUNK_LOAD_CORRUPT;
-                }
-            }
-            if (op == (uint8_t)OP_CALL) {
-                if ((unsigned)a + (unsigned)b > (unsigned)max_reg + 1U) {
-                    set_errmsg(d->errmsg, d->errcap,
-                               "OP_CALL A+B=%u exceeds max_reg+1=%u at pc %zu"
-                               " (register window overflow)",
-                               (unsigned)a + (unsigned)b,
-                               (unsigned)max_reg + 1U, vi);
-                    return UCHUNK_LOAD_CORRUPT;
-                }
-            }
+            rc = verify_abc_rules(d, op, a, b, c, instructions, vi, max_reg);
+            if (rc != UCHUNK_LOAD_OK) return rc;
         } else {
-            /* UOPF_ABX — Bx range check per shape table. */
-            uint16_t bx = uinstr_bx(ins);
-            switch (sh->bx_kind) {
-                case UBXK_UNUSED:
-                    break;
-                case UBXK_POOL_INDEX:
-                    if ((size_t)bx >= const_count) {
-                        set_errmsg(d->errmsg, d->errcap,
-                                   "Bx=%u >= const_count=%zu at pc %zu (op=%u)",
-                                   (unsigned)bx, const_count, vi, (unsigned)op);
-                        return UCHUNK_LOAD_CORRUPT;
-                    }
-                    break;
-                case UBXK_NESTED_INDEX:
-                    if ((size_t)bx >= nested_count) {
-                        set_errmsg(d->errmsg, d->errcap,
-                                   "Bx=%u >= nested_count=%zu at pc %zu (op=%u)",
-                                   (unsigned)bx, nested_count, vi, (unsigned)op);
-                        return UCHUNK_LOAD_CORRUPT;
-                    }
-                    break;
-                case UBXK_JUMP_SIGNED:
-                    /* No static range check; OP_JMP target out-of-range
-                     * surfaces at runtime when pc + signed(Bx) - 32768
-                     * leaves [0, instr_count). */
-                    break;
-                case UBXK_HANDLER_PC:
-                    if ((size_t)bx >= instr_count) {
-                        set_errmsg(d->errmsg, d->errcap,
-                                   "handler-PC Bx=%u >= instr_count=%zu at pc %zu (op=%u)",
-                                   (unsigned)bx, instr_count, vi, (unsigned)op);
-                        return UCHUNK_LOAD_CORRUPT;
-                    }
-                    break;
-                case UBXK_SYMBOL_ID:
-                    /* At v1.5 the verifier accepts the full 0..65535
-                     * symbol-id range; runtime resolves at dispatch. */
-                    break;
-            }
+            rc = verify_bx(d, op, uinstr_bx(ins), sh->bx_kind, vi,
+                           const_count, instr_count, nested_count);
+            if (rc != UCHUNK_LOAD_OK) return rc;
         }
+        ext = 0;
+        ext_pending = false;
     }
     /* Last instruction must be OP_RET.
      *
@@ -281,20 +310,6 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
             return UCHUNK_LOAD_CORRUPT;
         }
     }
-    /* ic_count must not exceed the count of IC-bearing opcodes in the
-     * instruction stream.  Each ic_name (and the corresponding runtime
-     * UIC entry) is keyed off an emitted GETSLOT/SETSLOT/
-     * GETSLOT_CHANGE_EVENT site; lying about ic_count would either
-     * leave UIC entries unused (waste) or — worse — leave
-     * ic_name_strs[k>=ic_seen] holding a name that no instruction
-     * indexes (eligible for confusion attacks if ic_index ever
-     * widens). */
-    if ((size_t)ic_count > ic_seen) {
-        set_errmsg(d->errmsg, d->errcap,
-                   "ic_count=%u exceeds %zu IC-bearing opcodes seen",
-                   (unsigned)ic_count, ic_seen);
-        return UCHUNK_LOAD_CORRUPT;
-    }
     return UCHUNK_LOAD_OK;
 }
 
@@ -305,7 +320,7 @@ static UChunkLoadError verify_proto_recursive(MDecCtx *d, const UProto *p) {
                                             p->const_count,
                                             p->instr_count,
                                             p->nested_count,
-                                            p->ic_count,
+                                            p->site_count,
                                             p->instructions);
     if (rc != UCHUNK_LOAD_OK) return rc;
     for (size_t i = 0; i < p->nested_count; i++) {
@@ -319,12 +334,12 @@ UChunkLoadError urbi_chunk_decode_verify(MDecCtx *d) {
     return verify_proto_recursive(d, d->rp);
 }
 
-/* --- bytecode F2: deserialize-time per-instruction operand bounds pass ---
+/* --- pass 2: per-sequence bounds ---
  *
- * verify_chunk_bounds walks every UProto in the tree (DFS, mirrors
- * verify_proto_recursive above) and applies bounds checks that require
- * understanding instruction *sequences* or cross-instruction context, which
- * is more than the per-opcode shape table in verify_walk_block can express:
+ * verify_bounds_proto walks every UProto in the tree (DFS, mirroring
+ * verify_proto_recursive above) and applies the checks that need
+ * instruction *sequences* or cross-instruction context, which is more
+ * than the per-opcode shape table in verify_walk_block can express:
  *
  *   OP_CLOSURE upvalue prelude — the nupvals pseudo-instructions that follow
  *     an OP_CLOSURE must lie within the instruction array, and each must
@@ -332,21 +347,19 @@ UChunkLoadError urbi_chunk_decode_verify(MDecCtx *d) {
  *       in_stack = B in {0, 1}
  *       src_idx  = C; if in_stack==1, C <= proto->max_reg (local register);
  *                     if in_stack==0, C < proto->nupvals (re-capture from parent)
- *   OP_JMP target — Bx is a signed offset biased by 32768; the resolved target
- *     pc' = pc + signed(Bx) - 32768 must satisfy 0 <= pc' < instr_count.
- *     (The bias means Bx=32768 is a no-op jump; Bx=0 jumps backward 32768.)
+ *   OP_JMP target — Bx is a signed offset biased by 32768; the resolved
+ *     target must satisfy 0 <= target < instr_count.
  *   OP_CALL C low-7 — encodes nresults+1; must be >= 1 (0 means 0 results
  *     which is legal at runtime but the emitter never produces it; a
  *     hand-crafted module with C & 0x7F == 0 is malformed per the wire spec).
- *   OP_TAG_STOP — has full VM dispatch (label_op_tag_stop in uvm.c).  The
- *     compiler never emits it (scripted tag.stop() routes through the C
- *     API), but hand-built chunks may contain it.  Accepted at load time;
- *     pinned by test_verify_chunk_bounds.c (tag_stop_roundtrips_ok).
- *
- * Design note: add ic_index DFS pre-order check here.  The function
- * receives the proto tree already decoded; a future pass can walk the tree and verify
- * that each proto's ic_index equals its DFS visit index without touching
- * the existing shape-table verifier. */
+ *   No control transfer lands between an OP_EXTARG and the instruction it
+ *     widens: neither a JMP target nor a SCOPE_TRY / SCOPE_TAG / UNWIND_TO
+ *     target may be the instruction right after an EXTARG, or that
+ *     instruction would run with its high site bits dropped. */
+static bool lands_after_extarg(const uint32_t *ins, size_t target) {
+    return target > 0U && uinstr_op(ins[target - 1U]) == OP_EXTARG;
+}
+
 static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
     if (p == NULL) return UCHUNK_LOAD_OK;
 
@@ -453,6 +466,12 @@ static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
                            (long long)target_i64, instr_count);
                 return UCHUNK_LOAD_JMP_OUT_OF_BOUNDS;
             }
+            if (lands_after_extarg(instructions, (size_t)target_i64)) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "OP_JMP at pc %zu lands on pc %lld, right after an EXTARG",
+                           vi, (long long)target_i64);
+                return UCHUNK_LOAD_BAD_EXTARG;
+            }
 
         } else if (op == (uint8_t)OP_CALL) {
             /* C encodes: bit 7 = method-call flag; low 7 bits = nresults+1.
@@ -466,7 +485,18 @@ static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
                            vi);
                 return UCHUNK_LOAD_CALL_NRESULTS_ZERO;
             }
-
+        } else if (op < (uint8_t)OP_MAX
+                   && urbi_opcode_shapes[op].format == UOPF_ABX
+                   && urbi_opcode_shapes[op].bx_kind == UBXK_HANDLER_PC) {
+            /* SCOPE_TRY / SCOPE_TAG / UNWIND_TO: pass 1 has range-checked
+             * Bx against instr_count. */
+            size_t target = (size_t)uinstr_bx(ins);
+            if (lands_after_extarg(instructions, target)) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "op %u at pc %zu targets pc %zu, right after an EXTARG",
+                           (unsigned)op, vi, target);
+                return UCHUNK_LOAD_BAD_EXTARG;
+            }
         }
 
         vi++;
@@ -480,43 +510,7 @@ static UChunkLoadError verify_bounds_proto(MDecCtx *d, const UProto *p) {
     return UCHUNK_LOAD_OK;
 }
 
-/* Entry point: run verify_chunk_bounds from the root proto. */
+/* Entry point: run pass 2 from the root proto. */
 UChunkLoadError urbi_chunk_verify_bounds(MDecCtx *d) {
     return verify_bounds_proto(d, d->rp);
-}
-
-/* --- bytecode F3: ic_index DFS pre-order verifier ---
- *
- * verify_ic_index_dfs walks the tree in DFS pre-order, matching each proto's
- * ic_index against a running counter.  Root must be 0; children are visited
- * left-to-right (nested[0] before nested[1]) and recursed depth-first,
- * matching the DFS pre-order assignment that emit uses. */
-static UChunkLoadError verify_ic_index_dfs(const UProto *proto,
-                                           uint16_t *next_idx,
-                                           char *errmsg, size_t errcap) {
-    if (proto == NULL) return UCHUNK_LOAD_OK;
-    if (proto->ic_index != *next_idx) {
-        set_errmsg(errmsg, errcap,
-                   "ic_index mismatch: proto->ic_index=%u expected %u"
-                   " (DFS pre-order invariant violated; bytecode F3)",
-                   (unsigned)proto->ic_index, (unsigned)*next_idx);
-        return UCHUNK_LOAD_IC_INDEX_MISMATCH;
-    }
-    (*next_idx)++;
-    for (uint16_t i = 0U; i < (uint16_t)proto->nested_count; i++) {
-        UChunkLoadError err = verify_ic_index_dfs(proto->nested[i],
-                                                  next_idx, errmsg, errcap);
-        if (err != UCHUNK_LOAD_OK) return err;
-    }
-    return UCHUNK_LOAD_OK;
-}
-
-UChunkLoadError uchunk_verify_ic_index(const UProto *root,
-                                       char *errmsg, size_t errcap) {
-    if (root == NULL) {
-        set_errmsg(errmsg, errcap, "uchunk_verify_ic_index: root is NULL");
-        return UCHUNK_LOAD_INVALID_ARG;
-    }
-    uint16_t next_idx = 0U;
-    return verify_ic_index_dfs(root, &next_idx, errmsg, errcap);
 }

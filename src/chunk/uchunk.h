@@ -15,11 +15,11 @@ extern "C" {
    Version-mismatch policy: exact-match.  Any byte other than VERSION_BYTE is
    a hard UCHUNK_LOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
    forward/backward compatibility.  Older modules silently loading would
-   produce unknown opcodes, misread GC state, or wrongly-sized IC tables.
+   produce unknown opcodes, misread GC state, or wrongly-sized site tables.
    Re-emit from source to migrate. */
 
-#define URBI_BYTECODE_VERSION_MAJOR  1U
-#define URBI_BYTECODE_VERSION_MINOR  10U
+#define URBI_BYTECODE_VERSION_MAJOR  2U
+#define URBI_BYTECODE_VERSION_MINOR  0U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- Header canary bytes (offsets 6-11) ---
@@ -55,11 +55,12 @@ static const uint8_t URBI_BYTECODE_CANARY[URBI_BYTECODE_CANARY_LEN] = {
 #define URBI_ENDIANNESS 0         /* 0 = little, 1 = big; v1 ships little-only */
 #endif
 
-/* --- opcode set — generated from src/chunk/uopcodes.def (50 opcodes, v1.10) ---
+/* --- opcode set — generated from src/chunk/uopcodes.def (41 opcodes, v2.0) ---
  *
  * Row order is wire-format frozen; do NOT reorder.  Operand encoding notes
  * live in docs/internals/opcodes.md and individual comments in uopcodes.def.
- * The computed-goto dispatch in uvm.c is NOT generated (hottest path). */
+ * The computed-goto label table in rt/uexec_ops.c is generated from the
+ * same file; the arms themselves are written by hand. */
 
 typedef enum {
 #define URBI_OP(n, u, s) OP_##n,
@@ -68,18 +69,37 @@ typedef enum {
     OP_MAX
 } UOpcode;
 
-/* --- cleanup-boundary flag bits (wire-format frozen) ---
+/* --- operand constants (wire-format frozen) ---
  *
- * OP_TRY_BEGIN carries these verbatim in operand A; OP_PUSH_TAG carries
- * them in A[7:4].  They say what the boundary the instruction opens is
- * able to do, which is what the unwind walker consults on the way out.
- * src/rt/ustrand.h restates the same three values as UCLEAN_F_* — the
+ * src/rt/ustrand.h restates the scope flag values as UCLEAN_F_*: the
  * runtime is not allowed to reach into the frontend, and these bits are
  * part of the bytecode contract rather than either side's private
- * business, so both ends spell them out against this comment. */
-#define FLAG_HAS_CATCH    0x1U    /* the try frame has a catch handler   */
-#define FLAG_HAS_FINALLY  0x2U    /* the try frame has a finally body    */
-#define FLAG_HAS_ONLEAVE  0x4U    /* the tag scope has an onleave body   */
+ * business, so both ends spell them out against this block. */
+
+/* SCOPE_TRY A, and SCOPE_POP A for a TRY entry */
+#define USCOPE_F_HAS_CATCH    0x1U
+#define USCOPE_F_HAS_FINALLY  0x2U
+/* SCOPE_POP A: low two bits name the entry kind the pop expects */
+#define USCOPE_POP_TRY        0x1U
+#define USCOPE_POP_TAG        0x2U
+#define USCOPE_POP_RUN_FINALLY 0x4U   /* TRY only: run the finally body, then continue after this instruction */
+/* SCOPE_TAG A == USCOPE_NO_REG opens a fresh anonymous tag */
+#define USCOPE_NO_REG         0xFFU
+/* FORK C */
+#define UFORK_DETACH          0U
+#define UFORK_JOIN            1U
+/* INSTALL B (mode) and C (flags) */
+#define UINSTALL_AT_COND        1U
+#define UINSTALL_AT_SYNC_COND   2U
+#define UINSTALL_WHENEVER_COND  3U
+#define UINSTALL_AT_EVENT       4U
+#define UINSTALL_AT_SYNC_EVENT  5U
+#define UINSTALL_WHENEVER_EVENT 6U
+#define UINSTALL_WAITUNTIL      7U
+#define UINSTALL_F_HAS_BODY     0x1U   /* R[A+1] */
+#define UINSTALL_F_HAS_ALT      0x2U   /* R[A+2]: onleave, or the whenever else arm */
+/* CALL C: bit 7 = method call (R[A+1] is the receiver); low 7 bits = nresults + 1 */
+#define UCALL_C_METHOD          0x80U
 
 /* --- instruction decode helpers (static inline; byte-aligned fields) --- */
 
@@ -122,7 +142,7 @@ typedef enum {
     UCHUNK_LOAD_JMP_OUT_OF_BOUNDS,      /* OP_JMP Bx target pc outside [0, instr_count) */
     UCHUNK_LOAD_CALL_NRESULTS_ZERO,     /* OP_CALL C low-7 == 0 (nresults+1 must be >= 1) */
     UCHUNK_LOAD_RESERVED_OPCODE,        /* opcode is reserved/unimplemented at this wire version */
-    UCHUNK_LOAD_IC_INDEX_MISMATCH       /* proto->ic_index does not match its DFS pre-order visit index */
+    UCHUNK_LOAD_BAD_EXTARG              /* OP_EXTARG misplaced: last, doubled, before a non-site opcode, or a jump/handler lands after it */
 } UChunkLoadError;
 
 /* Per-proto cap on instruction count.  Bytecode-encoded as varint;
@@ -171,16 +191,16 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
  *     If a root was partially allocated before the failure, it is cleaned
  *     up internally — callers do not need to call uchunk_destroy on error.
  *
- * Coverage at v1.7:
+ * Coverage at v2.0:
  *   - Header (24 bytes), source_name, root_proto block (recursive UProto:
  *     max_reg, nupvals, nparams, constants, instructions, synclines,
- *     ic_name_strs, nested_count, nested[]).
+ *     site_name_strs, nested_count, nested[]).
  *   - Verifier walks every instruction against the opcode-shape table
  *     (urbi_opcode_shapes[]); register operands < max_reg+1, Bx fields
- *     range-checked per UBxKind, last instruction must be OP_RET.
- *   - ic_names interning is deferred to urbi_chunk_instance_create
- *     (see object/uchunk_instance.h); deserialize itself does not need
- *     a VM. */
+ *     range-checked per UBxKind, site indices (with any OP_EXTARG
+ *     prefix) checked against site_count, last instruction must be OP_RET.
+ *   - site_names interning is deferred to the runtime's chunk bind
+ *     (rt/uexec.c); deserialize itself does not need a VM. */
 UChunkLoadError uchunk_deserialize(UProto **out_root,
                                    const uint8_t *buf, size_t size,
                                    UChunkAllocFn alloc_fn, void *alloc_ud,
@@ -203,21 +223,6 @@ void uchunk_destroy(UProto *root, struct UVM *vm);
 
 /* Return a static string such as "UCHUNK_LOAD_BAD_MAGIC" for debug. */
 const char *uchunk_load_error_name(UChunkLoadError code);
-
-/* uchunk_verify_ic_index — Walk the UProto tree rooted at `root` in DFS
- * pre-order, verifying that every proto's ic_index matches its expected visit
- * index (root = 0, then children left-to-right, recursing depth-first).
- *
- * Returns UCHUNK_LOAD_OK on success, UCHUNK_LOAD_IC_INDEX_MISMATCH on the
- * first violation, UCHUNK_LOAD_INVALID_ARG if root is NULL.  `errmsg`/`errcap`
- * receive a human-readable diagnostic on failure; pass (NULL,0) to suppress.
- *
- * Called internally by uchunk_deserialize (Pass 3).  Also exposed for unit
- * tests that construct UProto trees via uproto_alloc_nested and patch ic_index
- * directly (the wire-format path cannot produce mismatches since the
- * deserializer assigns ic_index by construction). */
-UChunkLoadError uchunk_verify_ic_index(const UProto *root,
-                                       char *errmsg, size_t errcap);
 
 #ifdef __cplusplus
 }

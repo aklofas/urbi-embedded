@@ -176,15 +176,15 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
     if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
     if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
     if (proto->abs_lines    != NULL) alloc(proto->abs_lines,    0, alloc_ud);
-    if (proto->ic_names     != NULL) alloc((void *)proto->ic_names,     0, alloc_ud);
-    if (proto->ic_name_strs != NULL) {
+    if (proto->site_names     != NULL) alloc((void *)proto->site_names,     0, alloc_ud);
+    if (proto->site_name_strs != NULL) {
         /* Each entry is a NUL-terminated string allocated separately. */
-        for (uint16_t k = 0; k < proto->ic_count; k++) {
-            if (proto->ic_name_strs[k] != NULL) {
-                alloc(proto->ic_name_strs[k], 0, alloc_ud);
+        for (uint16_t k = 0; k < proto->site_count; k++) {
+            if (proto->site_name_strs[k] != NULL) {
+                alloc(proto->site_name_strs[k], 0, alloc_ud);
             }
         }
-        alloc((void *)proto->ic_name_strs, 0, alloc_ud);
+        alloc((void *)proto->site_name_strs, 0, alloc_ud);
     }
     /* Zero the proto struct but do not free proto itself (owned by parent). */
     urbi_zero(proto, sizeof(*proto));
@@ -227,7 +227,7 @@ UProto *uproto_alloc_nested(UProto *root, UProto *parent_proto) {
 
     proto->refcount = 0U;
 
-    proto->ic_index = ++root->next_proto_serial;
+    proto->proto_index = ++root->next_proto_serial;
 
     parent_proto->nested[parent_proto->nested_count++] = proto;
     return proto;
@@ -596,10 +596,12 @@ static UChunkLoadError decode_line_table_into(MDecCtx *d,
     return UCHUNK_LOAD_OK;
 }
 
-/* Decode an IC name table: count + N length-prefixed UTF-8 strings.
+/* Decode a site name table: count + N length-prefixed UTF-8 strings.
  * Stores into *out_count + *out_strs (caller-owned).
- * Used for both the root chunk (writes to module->...) and per-proto. */
-static UChunkLoadError decode_ic_names_into(MDecCtx *d,
+ * Used for both the root chunk and every nested proto.  The count is
+ * capped at 65,535: a site index is a C byte widened by OP_EXTARG to
+ * 16 bits, and site_count itself is a uint16_t. */
+static UChunkLoadError decode_site_names_into(MDecCtx *d,
                                               uint16_t *out_count,
                                               char ***out_strs,
                                               UChunkAllocFn alloc,
@@ -609,12 +611,12 @@ static UChunkLoadError decode_ic_names_into(MDecCtx *d,
     UChunkLoadError rc = module_decode_varint_u(d->buf + d->off, d->size - d->off,
                                                   &count, &consumed);
     if (rc != UCHUNK_LOAD_OK) {
-        set_errmsg(d->errmsg, d->errcap, "bad varint at n_ic_names");
+        set_errmsg(d->errmsg, d->errcap, "bad varint at n_site_names");
         return rc;
     }
     d->off += consumed;
-    if (count > 256U) {
-        set_errmsg(d->errmsg, d->errcap, "n_ic_names=%llu exceeds cap (256)",
+    if (count > 65535U) {
+        set_errmsg(d->errmsg, d->errcap, "n_site_names=%llu exceeds cap (65535)",
                    (unsigned long long)count);
         return UCHUNK_LOAD_CORRUPT;
     }
@@ -635,18 +637,18 @@ static UChunkLoadError decode_ic_names_into(MDecCtx *d,
         rc = module_decode_varint_u(d->buf + d->off, d->size - d->off,
                                      &nlen, &consumed);
         if (rc != UCHUNK_LOAD_OK) {
-            set_errmsg(d->errmsg, d->errcap, "bad varint at ic_name[%llu] length",
+            set_errmsg(d->errmsg, d->errcap, "bad varint at site_name[%llu] length",
                        (unsigned long long)k);
             return rc;
         }
         d->off += consumed;
         if (nlen > 256U) {
-            set_errmsg(d->errmsg, d->errcap, "ic_name[%llu] length=%llu exceeds cap (256)",
+            set_errmsg(d->errmsg, d->errcap, "site_name[%llu] length=%llu exceeds cap (256)",
                        (unsigned long long)k, (unsigned long long)nlen);
             return UCHUNK_LOAD_CORRUPT;
         }
         if (d->off + nlen > d->size) {
-            set_errmsg(d->errmsg, d->errcap, "truncated at ic_name[%llu] body",
+            set_errmsg(d->errmsg, d->errcap, "truncated at site_name[%llu] body",
                        (unsigned long long)k);
             return UCHUNK_LOAD_TRUNCATED;
         }
@@ -705,7 +707,7 @@ static UChunkLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
         urbi_zero(child, sizeof(*child));
         child->alloc_fn = d->root_proto->alloc_fn;
         child->alloc_ud = d->root_proto->alloc_ud;
-        child->ic_index = ++d->root_proto->next_proto_serial;
+        child->proto_index = ++d->root_proto->next_proto_serial;
         parent->nested[parent->nested_count++] = child;
         rc = decode_proto(d, child);
         --d->depth;
@@ -768,7 +770,7 @@ static UChunkLoadError decode_proto(MDecCtx *d, UProto *p) {
                                 p->instr_count, &p->abs_line_count, &p->abs_line_cap,
                                 alloc, alloc_ud);
     if (rc != UCHUNK_LOAD_OK) return rc;
-    rc = decode_ic_names_into(d, &p->ic_count, &p->ic_name_strs, alloc, alloc_ud);
+    rc = decode_site_names_into(d, &p->site_count, &p->site_name_strs, alloc, alloc_ud);
     if (rc != UCHUNK_LOAD_OK) return rc;
 
     /* v1.7: nested_count + recursive nested[] children. */
@@ -845,12 +847,11 @@ UChunkLoadError uchunk_deserialize(UProto **out_root, const uint8_t *buf, size_t
     if ((rc = decode_metadata(&d))       != UCHUNK_LOAD_OK) goto fail;
     if ((rc = decode_proto(&d, rp))      != UCHUNK_LOAD_OK) goto fail;
     if ((rc = decode_trailer(&d))        != UCHUNK_LOAD_OK) goto fail;
-    /* Pass 1: opcode-shape table, register bounds, ic_count cross-check. */
+    /* Pass 1: opcode-shape table, register bounds, site indices, EXTARG. */
     if ((rc = urbi_chunk_decode_verify(&d)) != UCHUNK_LOAD_OK) goto fail;
-    /* Pass 2 (bytecode F2): per-instruction sequence bounds. */
+    /* Pass 2: per-sequence bounds (closure preludes, jump and handler
+     * targets). */
     if ((rc = urbi_chunk_verify_bounds(&d)) != UCHUNK_LOAD_OK) goto fail;
-    /* Pass 3 (bytecode F3): ic_index DFS pre-order mirror check. */
-    if ((rc = uchunk_verify_ic_index(rp, errmsg, errcap)) != UCHUNK_LOAD_OK) goto fail;
 
     set_root_backptr_recursive(rp, rp);
 
@@ -939,7 +940,7 @@ const char *uchunk_load_error_name(UChunkLoadError code) {
     case UCHUNK_LOAD_JMP_OUT_OF_BOUNDS:   return "UCHUNK_LOAD_JMP_OUT_OF_BOUNDS";
     case UCHUNK_LOAD_CALL_NRESULTS_ZERO:  return "UCHUNK_LOAD_CALL_NRESULTS_ZERO";
     case UCHUNK_LOAD_RESERVED_OPCODE:     return "UCHUNK_LOAD_RESERVED_OPCODE";
-    case UCHUNK_LOAD_IC_INDEX_MISMATCH:   return "UCHUNK_LOAD_IC_INDEX_MISMATCH";
+    case UCHUNK_LOAD_BAD_EXTARG:          return "UCHUNK_LOAD_BAD_EXTARG";
     }
     return "UCHUNK_LOAD_UNKNOWN";
 }

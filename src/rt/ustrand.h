@@ -57,11 +57,10 @@ typedef struct UFrame {
 typedef enum { UCLEAN_TRY = 1, UCLEAN_TAG_SCOPE = 2 } UCleanKind;
 
 /* UCLEAN_F_HAS_CATCH / _HAS_FINALLY are the bytecode's own flag bits:
- * OP_TRY_BEGIN carries them verbatim in A, and OP_PUSH_TAG in A[7:4].
- * They must keep the values the emitter writes (FLAG_HAS_CATCH /
- * FLAG_HAS_FINALLY / FLAG_HAS_ONLEAVE in src/chunk/uchunk.h); this
- * header sits below the chunk format in the include order, so the values
- * are restated rather than shared.
+ * OP_SCOPE_TRY carries them verbatim in A.  They must keep the values the
+ * emitter writes (USCOPE_F_HAS_CATCH / USCOPE_F_HAS_FINALLY in
+ * src/chunk/uchunk.h); this header sits below the chunk format in the
+ * include order, so the values are restated rather than shared.
  *
  * UCLEAN_F_RUNNING is the unwinder's own and never appears in bytecode:
  * it marks the boundary entry the walker leaves behind while a finally
@@ -70,12 +69,6 @@ typedef enum { UCLEAN_TRY = 1, UCLEAN_TAG_SCOPE = 2 } UCleanKind;
 #define UCLEAN_F_HAS_FINALLY 0x2u
 #define UCLEAN_F_HAS_ONLEAVE 0x4u
 #define UCLEAN_F_RUNNING     0x20u
-/* OP_PUSH_TAG's flag nibble is its own namespace -- the walker reaches
- * the CATCH/FINALLY tests only for a TRY entry -- and bit 0 there means
- * "open a fresh anonymous tag, ignore the tag register".  A tag register
- * that does not hold a tag (an undeclared name, a nil `var`) is treated
- * the same way, which is what makes `heartbeat: { ... }` scope. */
-#define UCLEAN_F_FRESH_TAG   0x1u
 
 typedef struct UCleanup {
     uint8_t   kind, flags;

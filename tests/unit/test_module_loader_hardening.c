@@ -65,7 +65,7 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
     off = hard_put_varint(buf, off, 1);   /* n_deltas = 1 */
     buf[off++] = 0;                       /* line delta */
     off = hard_put_varint(buf, off, 0);   /* n_abs_lines */
-    off = hard_put_varint(buf, off, 0);   /* root ic_count */
+    off = hard_put_varint(buf, off, 0);   /* root site_count */
     off = hard_put_varint(buf, off, 0);   /* nested_count */
     return off;
 }
@@ -101,7 +101,7 @@ UTEST(deserialize_rejects_unbounded_nupvals_nparams) {
     off = hard_put_varint(buf, off, 1);      /* root n_deltas */
     buf[off++] = 0;
     off = hard_put_varint(buf, off, 0);      /* root n_abs_lines */
-    off = hard_put_varint(buf, off, 0);      /* root ic_count */
+    off = hard_put_varint(buf, off, 0);      /* root site_count */
     off = hard_put_varint(buf, off, 1);      /* nested_count = 1 */
     /* nested[0]: max_reg=0, nupvals=200, nparams=0  -- sum > max_reg+1. */
     buf[off++] = 0;                          /* nested.max_reg */
@@ -149,7 +149,7 @@ UTEST(deeply_nested_closure_verifier) {
     off = hard_put_varint(buf, off, 2);      /* n_deltas */
     buf[off++] = 0; buf[off++] = 0;
     off = hard_put_varint(buf, off, 0);      /* n_abs_lines */
-    off = hard_put_varint(buf, off, 0);      /* ic_count */
+    off = hard_put_varint(buf, off, 0);      /* site_count */
     off = hard_put_varint(buf, off, 0);      /* nested_count = 0 */
 
     UProto *m = NULL;
@@ -158,31 +158,25 @@ UTEST(deeply_nested_closure_verifier) {
     uchunk_destroy(m, NULL);
 }
 
-/* --- T77 (Wave-4): ic_names cross-validation ---
+/* --- site-name table cap ---
  *
- * Build a v1.5 module whose root-chunk ic_count exceeds the count of
- * actual OP_GETSLOT / OP_SETSLOT / OP_GETSLOT_CHANGE_EVENT IC sites
- * in the instruction stream.  decode_verify must reject with
- * UCHUNK_LOAD_CORRUPT.
- *
- * Strategy: claim ic_count=2 with ic_name_strs ["a", "b"] but emit
- * zero IC-bearing opcodes (OP_RET only).  The mismatch exposes a
- * forward-confusion-attack surface where a corrupt module could ship
- * extra ic_name_strs that no instruction references — at a later
- * milestone (string interning attack, IC-index widening) those
- * unreferenced names could be mis-bound. */
-UTEST(ic_names_with_invalid_indices_rejected) {
+ * A site index is a C byte widened to 16 bits by OP_EXTARG and
+ * site_count is a uint16_t, so a table of 65,536 names can never be
+ * addressed and must not be allocated: the decoder rejects the count
+ * before reading a single name.  (A table larger than the number of
+ * slot instructions is accepted -- the count sizes a table, it does not
+ * count uses.) */
+UTEST(site_name_count_above_65535_rejected) {
     uint8_t buf[256];
     hard_build_good_header(buf);
     size_t off = 24;
-    off = hard_put_varint(buf, off, 0);      /* source_name_len = 0 (v1.7) */
+    off = hard_put_varint(buf, off, 0);      /* source_name_len = 0 */
     buf[off++] = 0;                          /* max_reg */
     buf[off++] = 0;                          /* nupvals */
     buf[off++] = 0;                          /* nparams */
     off = hard_put_varint(buf, off, 0);      /* n_const */
     off = hard_put_varint(buf, off, 1);      /* n_instr */
     while ((off & 3U) != 0U) buf[off++] = 0;
-    /* OP_RET — no IC site. */
     uint32_t ret = (uint32_t)OP_RET;
     buf[off++] = (uint8_t)(ret & 0xFFU);
     buf[off++] = (uint8_t)((ret >> 8) & 0xFFU);
@@ -191,11 +185,7 @@ UTEST(ic_names_with_invalid_indices_rejected) {
     off = hard_put_varint(buf, off, 1);      /* n_deltas */
     buf[off++] = 0;
     off = hard_put_varint(buf, off, 0);      /* n_abs_lines */
-    /* Root ic_count = 2 (lying — no IC sites in instr stream). */
-    off = hard_put_varint(buf, off, 2);
-    off = hard_put_varint(buf, off, 1); buf[off++] = 'a';
-    off = hard_put_varint(buf, off, 1); buf[off++] = 'b';
-    off = hard_put_varint(buf, off, 0);      /* nested_count */
+    off = hard_put_varint(buf, off, 65536);  /* site_count: one past the cap */
 
     UProto *m = NULL;
     UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, NULL, NULL, 0);
@@ -373,8 +363,8 @@ void test_module_loader_hardening_suite(void) {
               deserialize_rejects_n_abs_exceeding_instr_count);
     utest_run("deserialize n_const cap is strictly > UINT16_MAX (T76: MOD-019)",
               deserialize_n_const_cap_is_strictly_greater_than);
-    utest_run("ic_names with invalid indices rejected (T77: W4 carry)",
-              ic_names_with_invalid_indices_rejected);
+    utest_run("site name count above 65535 rejected",
+              site_name_count_above_65535_rejected);
     utest_run("deeply-nested closure verifier (T78: W4 carry, regression)",
               deeply_nested_closure_verifier);
     utest_run("deserialize bounds nupvals + nparams (T79: W4 carry)",

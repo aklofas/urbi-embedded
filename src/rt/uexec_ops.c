@@ -1,17 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/rt/uexec_ops.c — the bytecode dispatch loop.
  *
- * Scope: the sequential subset of the 50-opcode set plus the cleanup
- * stack (TRY_BEGIN, TRY_END, THROW, RESUME, LOAD_CATCH_VALUE, PUSH_TAG,
- * POP_TAG), whose walker lives in rt/uunwind.c.  Concurrency (FORK_*,
- * JOIN_WAIT, TAG_STOP) and the reactive installs land with their own
- * tasks; every opcode not handled here throws through the unknown-opcode
- * arm rather than silently doing nothing.
- *
- * The tag scope OP_PUSH_TAG opens is a cleanup entry and nothing more
- * until the scheduler task gives it a tag object, an onleave body and a
- * stop to match -- enough for a try nested inside a tagged block to
- * unwind correctly, which is what the unwinder needs from it.
+ * Every opcode of the wire set has an arm here: arithmetic and calls,
+ * slot access, concurrency (FORK, JOIN_WAIT), the reactive INSTALL, and
+ * the cleanup stack (SCOPE_TRY, SCOPE_TAG, SCOPE_POP, THROW, RESUME,
+ * LOAD_CATCH_VALUE), whose walker lives in rt/uunwind.c.  An opcode this
+ * build does not implement throws through the unknown-opcode arm rather
+ * than silently doing nothing.
  *
  * Register addressing: f, R and K are held in locals across
  * instructions.  R is recomputed from s->stack + f->base after anything
@@ -465,13 +460,6 @@ static UClosure *install_closure(UValue v)
     return (UClosure *)v.v.p;
 }
 
-/* An OPTIONAL install operand: the emitter writes 0xFF into B or C when
- * the source had no body / no onleave. */
-static UClosure *install_operand(const UValue *R, uint8_t reg)
-{
-    return reg == 0xFFu ? NULL : install_closure(R[reg]);
-}
-
 /* See rt/uexec.h.  `resume_slot` is biased by one so that zero reads as
  * "nothing pending" on a freshly zeroed strand. */
 void ustrand_want_payload(UStrand *s)
@@ -788,8 +776,8 @@ fetch:
         OPCASE(LOAD_RECV): R[OPA(i)] = f->recv; NEXT();
 
         OPCASE(GETSLOT): OPCASE(SELF): {
-            USym **names = uproto_names(f->closure->proto);
-            if (names == NULL || OPC(i) >= f->closure->proto->ic_count) {
+            USym **names = uproto_site_names(f->closure->proto);
+            if (names == NULL || OPC(i) >= f->closure->proto->site_count) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot access: no name table bound");
                 goto unwind;
             }
@@ -819,8 +807,8 @@ fetch:
         }
 
         OPCASE(SETSLOT): OPCASE(SETSLOT_UPDATE): {
-            USym **names = uproto_names(f->closure->proto);
-            if (names == NULL || OPC(i) >= f->closure->proto->ic_count) {
+            USym **names = uproto_site_names(f->closure->proto);
+            if (names == NULL || OPC(i) >= f->closure->proto->site_count) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: no name table bound");
                 goto unwind;
             }
@@ -925,33 +913,30 @@ fetch:
          * tag, with the parent's receiver, so a forked arm resolves
          * `Realm.x` and `this` exactly as the code around it does. */
 
-        OPCASE(FORK_DETACH): {
+        OPCASE(FORK): {
+            /* C selects the mode: a detached child is fire-and-forget,
+             * a joined one leaves its strand handle in R[B] for the
+             * JOIN_WAIT the verifier pins right after it. */
+            const bool join = (OPC(i) == UFORK_JOIN);
             UValue cv = R[OPA(i)];
             if (!fork_closure(cv)) {
-                (void)uexec_throw(vm, s, UP_TYPEERROR, "',' (parallel fork): operand is not a closure");
-                goto unwind;
-            }
-            if (usched_spawn(vm, s->realm, (UClosure *)cv.v.p, s->tag, f->recv, NULL, 0) == NULL) {
-                (void)uexec_throw(vm, s, UP_OOMERROR, "',' (parallel fork): cannot spawn the child strand");
-                goto unwind;
-            }
-            NEXT_RELOAD();
-        }
-
-        OPCASE(FORK_JOIN): {
-            UValue cv = R[OPA(i)];
-            if (!fork_closure(cv)) {
-                (void)uexec_throw(vm, s, UP_TYPEERROR, "'&' (parallel join): operand is not a closure");
+                (void)uexec_throw(vm, s, UP_TYPEERROR, join
+                                  ? "'&' (parallel join): operand is not a closure"
+                                  : "',' (parallel fork): operand is not a closure");
                 goto unwind;
             }
             UStrand *child = usched_spawn(vm, s->realm, (UClosure *)cv.v.p, s->tag, f->recv, NULL, 0);
             if (child == NULL) {
-                (void)uexec_throw(vm, s, UP_OOMERROR, "'&' (parallel join): cannot spawn the child strand");
+                (void)uexec_throw(vm, s, UP_OOMERROR, join
+                                  ? "'&' (parallel join): cannot spawn the child strand"
+                                  : "',' (parallel fork): cannot spawn the child strand");
                 goto unwind;
             }
-            /* The spawn allocated: both arrays may have moved. */
-            f = &s->frames[s->nframes - 1];
-            s->stack[f->base + OPB(i)] = uv_ptr(UV_CELL, child);
+            if (join) {
+                /* The spawn allocated: both arrays may have moved. */
+                f = &s->frames[s->nframes - 1];
+                s->stack[f->base + OPB(i)] = uv_ptr(UV_CELL, child);
+            }
             NEXT_RELOAD();
         }
 
@@ -971,70 +956,67 @@ fetch:
             NEXT_RELOAD();
         }
 
-        /* --- the reactive installs --------------------------------------
+        /* --- the reactive install -----------------------------------------
          *
-         * All six carry their operands the same way: A is the condition
-         * closure or the event, B the body and C the onleave (or the
-         * `else` body, which the emitter puts in the same register), with
-         * 0xFF in B or C meaning "absent".  The watcher takes the
-         * installing strand's realm and its ambient tag, so `mytag: at (c)
-         * body` is cancelled by `mytag.stop()`. */
+         * One opcode for every watcher: R[A] is the condition closure or
+         * the event, R[A+1] the body and R[A+2] the onleave (or the
+         * `else` body, which shares the slot), each read only when its
+         * flag in C says it is present.  B is the mode.  The watcher takes
+         * the installing strand's realm and its ambient tag, so `mytag: at
+         * (c) body` is cancelled by `mytag.stop()`. */
 
-        OPCASE(AT_INSTALL): OPCASE(AT_SYNC_INSTALL): OPCASE(WHENEVER_INSTALL): {
-            UClosure *cond = install_closure(R[OPA(i)]);
+        OPCASE(INSTALL): {
+            const uint8_t base = OPA(i), mode = OPB(i), flags = OPC(i);
+            UClosure *body = (flags & UINSTALL_F_HAS_BODY) ? install_closure(R[base + 1u]) : NULL;
+            UClosure *alt  = (flags & UINSTALL_F_HAS_ALT)  ? install_closure(R[base + 2u]) : NULL;
+            if (mode == UINSTALL_WAITUNTIL) {
+                UClosure *cond = install_closure(R[base]);
+                if (cond == NULL) {
+                    (void)uexec_throw(vm, s, UP_TYPEERROR, "waituntil install: condition is not a closure");
+                    goto unwind;
+                }
+                int rc = uwatch_waituntil(vm, s, cond);
+                if (rc < 0) goto unwind;              /* the condition raised, or OOM */
+                if (rc > 0) return s->state;          /* parked until it holds */
+                NEXT_RELOAD();                        /* already true: carry straight on */
+            }
+            uint8_t wmode = (mode == UINSTALL_AT_SYNC_COND || mode == UINSTALL_AT_SYNC_EVENT) ? (uint8_t)UWATCH_AT_SYNC
+                          : (mode == UINSTALL_WHENEVER_COND || mode == UINSTALL_WHENEVER_EVENT) ? (uint8_t)UWATCH_WHENEVER
+                          :                                                                       (uint8_t)UWATCH_AT;
+            if (mode >= UINSTALL_AT_EVENT) {
+                UValue ev = R[base];
+                if (ev.kind != UV_CELL || ((UCell *)ev.v.p)->type != UCELL_EVENT) {
+                    (void)uexec_throw(vm, s, UP_TYPEERROR, "at-event watcher install: operand is not an event");
+                    goto unwind;
+                }
+                /* An event subscription fires per emission, so `whenever
+                 * (e?)` and `at (e?)` behave as the same watcher: every
+                 * WHENEVER rule that differs asks for a condition, which an
+                 * event watcher has none of.  The mode is kept as written
+                 * so a report names the construct the script used.  Only
+                 * the SYNC form differs, by running its body inline under
+                 * syncEmit. */
+                if (uwatch_install(vm, s, wmode, NULL, (UEvent *)ev.v.p, body, alt) == NULL) {
+                    (void)uexec_throw(vm, s, UP_OOMERROR, "at-event watcher install: out of memory");
+                    goto unwind;
+                }
+                NEXT_RELOAD();
+            }
+            UClosure *cond = install_closure(R[base]);
             if (cond == NULL) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "at watcher install: condition is not a closure");
                 goto unwind;
             }
-            uint8_t mode = (op == OP_AT_SYNC_INSTALL)  ? (uint8_t)UWATCH_AT_SYNC
-                         : (op == OP_WHENEVER_INSTALL) ? (uint8_t)UWATCH_WHENEVER
-                         :                                       (uint8_t)UWATCH_AT;
-            if (uwatch_install(vm, s, mode, cond, NULL,
-                               install_operand(R, OPB(i)), install_operand(R, OPC(i))) == NULL) {
+            if (uwatch_install(vm, s, wmode, cond, NULL, body, alt) == NULL) {
                 (void)uexec_throw(vm, s, UP_OOMERROR, "at watcher install: out of memory");
                 goto unwind;
             }
             NEXT_RELOAD();
         }
 
-        OPCASE(AT_EVENT_INSTALL): OPCASE(AT_EVENT_SYNC_INSTALL): OPCASE(WHENEVER_EVENT_INSTALL): {
-            UValue ev = R[OPA(i)];
-            if (ev.kind != UV_CELL || ((UCell *)ev.v.p)->type != UCELL_EVENT) {
-                (void)uexec_throw(vm, s, UP_TYPEERROR, "at-event watcher install: operand is not an event");
-                goto unwind;
-            }
-            /* An event subscription fires per emission, so `whenever (e?)`
-             * and `at (e?)` behave as the same watcher: every WHENEVER
-             * rule that differs asks for a condition, which an event
-             * watcher has none of.  The mode is kept as written so a
-             * report names the construct the script used.  Only the SYNC
-             * form differs, by running its body inline under syncEmit. */
-            uint8_t mode = (op == OP_AT_EVENT_SYNC_INSTALL)    ? (uint8_t)UWATCH_AT_SYNC
-                         : (op == OP_WHENEVER_EVENT_INSTALL) ? (uint8_t)UWATCH_WHENEVER
-                         :                                     (uint8_t)UWATCH_AT;
-            if (uwatch_install(vm, s, mode, NULL, (UEvent *)ev.v.p,
-                               install_operand(R, OPB(i)), install_operand(R, OPC(i))) == NULL) {
-                (void)uexec_throw(vm, s, UP_OOMERROR, "at-event watcher install: out of memory");
-                goto unwind;
-            }
-            NEXT_RELOAD();
-        }
-
-        OPCASE(WAITUNTIL_INSTALL): {
-            UClosure *cond = install_closure(R[OPA(i)]);
-            if (cond == NULL) {
-                (void)uexec_throw(vm, s, UP_TYPEERROR, "waituntil install: condition is not a closure");
-                goto unwind;
-            }
-            int rc = uwatch_waituntil(vm, s, cond);
-            if (rc < 0) goto unwind;              /* the condition raised, or OOM */
-            if (rc > 0) return s->state;          /* parked until it holds */
-            NEXT_RELOAD();                        /* already true: carry straight on */
-        }
-
         OPCASE(GETSLOT_CHANGE_EVENT): {
-            USym **names = uproto_names(f->closure->proto);
-            if (names == NULL || OPC(i) >= f->closure->proto->ic_count) {
+            USym **names = uproto_site_names(f->closure->proto);
+            if (names == NULL || OPC(i) >= f->closure->proto->site_count) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot-change event: no name table bound");
                 goto unwind;
             }
@@ -1056,7 +1038,7 @@ fetch:
 
         /* --- the cleanup stack (see rt/uunwind.c for the layouts) ------ */
 
-        OPCASE(TRY_BEGIN): {
+        OPCASE(SCOPE_TRY): {
             UCleanup c;
             c.kind = (uint8_t)UCLEAN_TRY;
             c.flags = OPA(i);              /* HAS_CATCH / HAS_FINALLY, as emitted */
@@ -1073,30 +1055,14 @@ fetch:
             NEXT_RELOAD();
         }
 
-        OPCASE(TRY_END):
-            /* The normal-path pop.  A UCLEAN_F_RUNNING marker belongs to
-             * the walker, never to a TRY_END.  A mismatch means the
-             * emitter and the walker disagree about the stack's shape,
-             * which would leak an entry rather than announce itself. */
-            if (s->ncleanup > 0
-                && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TRY
-                && (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) == 0) {
-                s->ncleanup--;
-            } else {
-                UGC_ASSERT(0);
-            }
-            NEXT_RELOAD();
-
-        OPCASE(PUSH_TAG): {
-            /* A[3:0] = the register holding the tag, A[7:4] = flags, Bx =
-             * the onleave handler.  A register that does not hold a tag
-             * (and the explicit UCLEAN_F_FRESH_TAG request) opens a fresh
-             * anonymous one, so `mytag: { ... }` scopes whether or not
-             * `mytag` names a Tag. */
-            uint8_t flags = (uint8_t)(OPA(i) >> 4);
+        OPCASE(SCOPE_TAG): {
+            /* A = the register holding the tag, or USCOPE_NO_REG; Bx = the
+             * onleave handler.  The sentinel, and a register that does not
+             * hold a tag, open a fresh anonymous one, so `mytag: { ... }`
+             * scopes whether or not `mytag` names a Tag. */
             UTag *t = NULL;
-            if ((flags & UCLEAN_F_FRESH_TAG) == 0) {
-                UValue tv = R[OPA(i) & 0xFu];
+            if (OPA(i) != USCOPE_NO_REG) {
+                UValue tv = R[OPA(i)];
                 if (tv.kind == UV_CELL && ((UCell *)tv.v.p)->type == UCELL_TAG)
                     t = (UTag *)tv.v.p;
             }
@@ -1113,7 +1079,7 @@ fetch:
             }
             UCleanup c;
             c.kind = (uint8_t)UCLEAN_TAG_SCOPE;
-            c.flags = flags;
+            c.flags = 0;
             c.saved_unwind = (uint8_t)UUNWIND_NONE;
             c.frame = (uint16_t)(s->nframes - 1);
             /* handler_pc names a TRY's catch or finally entry and means
@@ -1145,22 +1111,40 @@ fetch:
             NEXT_RELOAD();
         }
 
-        OPCASE(POP_TAG):
-            if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TAG_SCOPE) {
-                UCleanup c = s->cleanup[--s->ncleanup];
-                s->tag = (c.saved.kind == UV_CELL) ? (UTag *)c.saved.v.p : NULL;
-                if (c.tag) utag_fire(vm, c.tag->leave);
-                /* Recomputed, not left alone: a strand that may not park
-                 * -- a spare running a condition or sync body, or one
-                 * inside a call boundary (a getter, a setter, an operator
-                 * overload) -- cannot park when PUSH_TAG gates it on
-                 * entry, so it keeps running with the bit set and reaches
-                 * this pop while still gated.  The tag it just left no longer covers it, and
-                 * nothing else ever will -- leaving the bit stuck would
-                 * strand it the next time it genuinely parks. */
-                s->gates = utag_strand_gate_bits(s);
+        OPCASE(SCOPE_POP):
+            /* A & 0x3 names the entry kind the pop expects (the verifier
+             * admits only TRY and TAG).  The run-finally form is not
+             * available in this build. */
+            if ((OPA(i) & USCOPE_POP_RUN_FINALLY) != 0) goto L_unknown_arm;
+            if ((OPA(i) & 0x3u) == USCOPE_POP_TAG) {
+                if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TAG_SCOPE) {
+                    UCleanup c = s->cleanup[--s->ncleanup];
+                    s->tag = (c.saved.kind == UV_CELL) ? (UTag *)c.saved.v.p : NULL;
+                    if (c.tag) utag_fire(vm, c.tag->leave);
+                    /* Recomputed, not left alone: a strand that may not park
+                     * -- a spare running a condition or sync body, or one
+                     * inside a call boundary (a getter, a setter, an operator
+                     * overload) -- cannot park when SCOPE_TAG gates it on
+                     * entry, so it keeps running with the bit set and reaches
+                     * this pop while still gated.  The tag it just left no longer covers it, and
+                     * nothing else ever will -- leaving the bit stuck would
+                     * strand it the next time it genuinely parks. */
+                    s->gates = utag_strand_gate_bits(s);
+                } else {
+                    UGC_ASSERT(0);   /* see the TRY pop below */
+                }
             } else {
-                UGC_ASSERT(0);   /* see OP_TRY_END */
+                /* The normal-path pop.  A UCLEAN_F_RUNNING marker belongs to
+                 * the walker, never to this pop.  A mismatch means the
+                 * emitter and the walker disagree about the stack's shape,
+                 * which would leak an entry rather than announce itself. */
+                if (s->ncleanup > 0
+                    && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TRY
+                    && (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) == 0) {
+                    s->ncleanup--;
+                } else {
+                    UGC_ASSERT(0);
+                }
             }
             NEXT_RELOAD();
 
@@ -1187,8 +1171,8 @@ fetch:
             goto unwind;
         }
 
-        /* In the wire set, not implemented here. */
-        OPCASE(NEQ): OPCASE(TAG_STOP): OPCASE(PUSH_FRAME_GUARD):
+        /* In the wire set, not implemented in this build. */
+        OPCASE(EXTARG): OPCASE(UNWIND_TO):
             goto L_unknown_arm;
 
 #if UEXEC_THREADED

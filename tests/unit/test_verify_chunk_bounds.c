@@ -54,7 +54,7 @@ static size_t vcb_put_instr(uint8_t *buf, size_t offset, uint32_t instr) {
 }
 
 /* Helper: emit the root proto header + a given instruction array + empty
- * line-table + ic_count=0 + nested_count=N, then return offset.
+ * line-table + site_count=0 + nested_count=N, then return offset.
  * Caller sets up nested protos after. */
 static size_t vcb_emit_root_header(uint8_t *buf, size_t off,
                                     uint8_t max_reg, uint8_t nupvals,
@@ -75,7 +75,7 @@ static size_t vcb_emit_root_header(uint8_t *buf, size_t off,
     off = vcb_put_varint(buf, off, n_instr);   /* n_deltas */
     for (size_t i = 0; i < n_instr; i++) buf[off++] = 0;
     off = vcb_put_varint(buf, off, 0);         /* n_abs_lines */
-    off = vcb_put_varint(buf, off, 0);         /* ic_count */
+    off = vcb_put_varint(buf, off, 0);         /* site_count */
     off = vcb_put_varint(buf, off, nested_count);
     return off;
 }
@@ -252,30 +252,25 @@ UTEST(call_nresults_one_loads_ok)
 }
 
 /* =========================================================================
- * Test 8: OP_TAG_STOP round-trips at load time (refactor-3 VM-13)
+ * Test 8: an opcode byte past OP_MAX is rejected
  *
- * OP_TAG_STOP (opcode 30) has full VM dispatch since v0.10.2.  The stale
- * "reserved" reject (from wire v1.8 when the dispatch arm was absent) is
- * removed; the loader must now accept it.  The compiler still never emits
- * it — tag.stop() routes through the C API — but hand-built chunks may
- * contain it.  Pinned here alongside test_verifier_cross_byte.c.
+ * Wire v2 renumbered the set to 41 rows; bytes 41..49 named v1 opcodes
+ * (TAG_STOP, the separate installs, ...) and must not load as anything.
  * ========================================================================= */
 
-UTEST(tag_stop_roundtrips_ok)
+UTEST(opcode_past_op_max_rejected)
 {
     uint8_t buf[512];
     vcb_build_good_header(buf);
     size_t off = 24;
     off = vcb_put_varint(buf, off, 0);
 
-    /* OP_TAG_STOP A=0 B=0 C=0: not IC-bearing, ic_count=0 is valid. */
-    uint32_t tag_stop = (uint32_t)OP_TAG_STOP;
-    uint32_t instrs[] = { tag_stop, (uint32_t)OP_RET };
+    uint32_t instrs[] = { (uint32_t)OP_MAX, (uint32_t)OP_RET };
     off = vcb_emit_root_header(buf, off, 0, 0, 0, instrs, 2, 0);
 
     UProto *m = NULL;
     UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, NULL, NULL, 0);
-    UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)rc);
+    UASSERT_EQ((int)UCHUNK_LOAD_CORRUPT, (int)rc);
     uchunk_destroy(m, NULL);
 }
 
@@ -322,7 +317,7 @@ UTEST(closure_upvalue_prelude_truncated)
     off = vcb_put_varint(buf, off, 2);
     buf[off++] = 0; buf[off++] = 0;
     off = vcb_put_varint(buf, off, 0);   /* n_abs_lines */
-    off = vcb_put_varint(buf, off, 0);   /* root ic_count */
+    off = vcb_put_varint(buf, off, 0);   /* root site_count */
     off = vcb_put_varint(buf, off, 1);   /* nested_count = 1 */
 
     /* Nested child: max_reg=0, nupvals=2, nparams=0; one OP_RET. */
@@ -340,7 +335,7 @@ UTEST(closure_upvalue_prelude_truncated)
     off = vcb_put_varint(buf, off, 1);   /* child n_deltas */
     buf[off++] = 0;
     off = vcb_put_varint(buf, off, 0);   /* child n_abs_lines */
-    off = vcb_put_varint(buf, off, 0);   /* child ic_count */
+    off = vcb_put_varint(buf, off, 0);   /* child site_count */
     off = vcb_put_varint(buf, off, 0);   /* child nested_count */
 
     UProto *m = NULL;
@@ -388,7 +383,7 @@ UTEST(closure_upvalue_in_stack_invalid)
     off = vcb_put_varint(buf, off, 3);
     buf[off++] = 0; buf[off++] = 0; buf[off++] = 0;
     off = vcb_put_varint(buf, off, 0);  /* n_abs_lines */
-    off = vcb_put_varint(buf, off, 0);  /* ic_count */
+    off = vcb_put_varint(buf, off, 0);  /* site_count */
     off = vcb_put_varint(buf, off, 1);  /* nested_count = 1 */
 
     /* Child: max_reg=5, nupvals=1, nparams=0 (nupvals+nparams=1 <= max_reg+1=6) */
@@ -400,7 +395,7 @@ UTEST(closure_upvalue_in_stack_invalid)
     off = vcb_put_varint(buf, off, 1);
     buf[off++] = 0;
     off = vcb_put_varint(buf, off, 0);  /* n_abs_lines */
-    off = vcb_put_varint(buf, off, 0);  /* ic_count */
+    off = vcb_put_varint(buf, off, 0);  /* site_count */
     off = vcb_put_varint(buf, off, 0);  /* nested_count */
 
     UProto *m = NULL;
@@ -439,7 +434,7 @@ UTEST(closure_upvalue_in_stack_src_idx_out_of_range)
     off = vcb_put_varint(buf, off, 3);
     buf[off++] = 0; buf[off++] = 0; buf[off++] = 0;
     off = vcb_put_varint(buf, off, 0);  /* n_abs_lines */
-    off = vcb_put_varint(buf, off, 0);  /* ic_count */
+    off = vcb_put_varint(buf, off, 0);  /* site_count */
     off = vcb_put_varint(buf, off, 1);  /* nested_count = 1 */
 
     /* Child: max_reg=0, nupvals=1, nparams=0 */
@@ -575,6 +570,7 @@ UTEST(new_error_codes_have_names)
     UASSERT(uchunk_load_error_name(UCHUNK_LOAD_JMP_OUT_OF_BOUNDS)  != NULL);
     UASSERT(uchunk_load_error_name(UCHUNK_LOAD_CALL_NRESULTS_ZERO) != NULL);
     UASSERT(uchunk_load_error_name(UCHUNK_LOAD_RESERVED_OPCODE)    != NULL);
+    UASSERT(uchunk_load_error_name(UCHUNK_LOAD_BAD_EXTARG)         != NULL);
     /* None should map to the generic fallback. */
     UASSERT(strcmp(uchunk_load_error_name(UCHUNK_LOAD_TRUNCATED_UPVALUES),
                    "UCHUNK_LOAD_UNKNOWN") != 0);
@@ -586,6 +582,8 @@ UTEST(new_error_codes_have_names)
                    "UCHUNK_LOAD_UNKNOWN") != 0);
     UASSERT(strcmp(uchunk_load_error_name(UCHUNK_LOAD_RESERVED_OPCODE),
                    "UCHUNK_LOAD_UNKNOWN") != 0);
+    UASSERT_STR_EQ(uchunk_load_error_name(UCHUNK_LOAD_BAD_EXTARG),
+                   "UCHUNK_LOAD_BAD_EXTARG");
 }
 
 /* =========================================================================
@@ -607,8 +605,8 @@ void test_verify_chunk_bounds_suite(void) {
               call_method_flag_nresults_zero_rejected);
     utest_run("call_nresults_one_loads_ok",
               call_nresults_one_loads_ok);
-    utest_run("tag_stop_roundtrips_ok (refactor-3 VM-13)",
-              tag_stop_roundtrips_ok);
+    utest_run("opcode_past_op_max_rejected",
+              opcode_past_op_max_rejected);
     utest_run("closure_upvalue_prelude_truncated",
               closure_upvalue_prelude_truncated);
     utest_run("closure_upvalue_in_stack_invalid",

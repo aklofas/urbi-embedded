@@ -1,4 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+/* uemit_serialize.c — the chunk writer.
+ *
+ * One walker, write_proto, does both jobs: with buf == NULL it only
+ * advances the offset, so the size query and the write are the same code
+ * and cannot drift apart.  uchunk_serialize runs it once to size the
+ * chunk and once to fill the caller's buffer. */
 
 #include "uemit_internal.h"
 #include "util/uvarint.h"
@@ -7,217 +13,137 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Compute serialized byte size of a single UProto starting at absolute
- * offset `start_off`.  Returns the number of bytes the proto occupies
- * from start_off onward.  The starting-offset parameter is required
- * because the 4-byte instruction-stream alignment pad depends on the
- * proto's absolute position in the stream — alignment relative to a
- * local 0 would diverge from write_proto's runtime offset.
- *
- * v1.7: includes nested_count varint + recursive nested[] children at end. */
-static size_t proto_wire_size(const UProto *p, size_t start_off) {
-    size_t i;
-    size_t off = start_off;
-
-    off += 1U;                                          /* max_reg */
-    off += 1U;                                          /* nupvals */
-    off += 1U;                                          /* nparams */
-
-    off += uvarint_size_u((uint64_t)p->const_count);
-    for (i = 0U; i < p->const_count; i++) {
-        off += 1U;
-        if (p->constants[i].kind == (uint8_t)UVAL_INT) {
-            off += uvarint_size_zz(p->constants[i].v.i);
-        } else if (p->constants[i].kind == (uint8_t)UVAL_FLOAT) {
-            off += 8U;   /* float constants are always 8-byte doubles */
-        } else if (p->constants[i].kind == (uint8_t)UVAL_STR) {
-            const char *s = (const char *)p->constants[i].v.p;
-            const size_t n = (s != NULL) ? urbi_strlen(s) : 0U;
-            off += uvarint_size_u((uint64_t)n);
-            off += n;
-        }
-    }
-
-    off += uvarint_size_u((uint64_t)p->instr_count);
-    while ((off & 3U) != 0U) off++;                     /* aligns absolute offset */
-    off += p->instr_count * 4U;
-
-    off += uvarint_size_u((uint64_t)p->instr_count);    /* n_deltas == n_instr */
-    off += p->instr_count;
-    off += uvarint_size_u((uint64_t)p->abs_line_count);
-    for (i = 0U; i < p->abs_line_count; i++) {
-        off += uvarint_size_u((uint64_t)p->abs_lines[i].pc);
-        off += uvarint_size_u((uint64_t)p->abs_lines[i].line);
-    }
-
-    off += uvarint_size_u((uint64_t)p->ic_count);
-    for (uint16_t k = 0; k < p->ic_count; k++) {
-        const char *name = (p->ic_name_strs != NULL) ? p->ic_name_strs[k] : "";
-        size_t nlen = (name != NULL) ? urbi_strlen(name) : 0U;
-        off += uvarint_size_u((uint64_t)nlen);
-        off += nlen;
-    }
-
-    off += uvarint_size_u((uint64_t)p->nested_count);
-    for (i = 0U; i < p->nested_count; i++) {
-        if (p->nested[i] != NULL) {
-            off += proto_wire_size(p->nested[i], off);
-        } else {
-            /* watcher-detached slot: stub proto (max_reg=0, nupvals=0,
-             * nparams=0, all counts = 0, nested_count = 0). */
-            off += 3U;            /* three zero bytes for max_reg/nupvals/nparams */
-            off += 1U;            /* uvarint zero const_count */
-            off += 1U;            /* uvarint zero instr_count */
-            while ((off & 3U) != 0U) off++;
-            off += 1U;            /* uvarint zero n_deltas */
-            off += 1U;            /* uvarint zero n_abs_lines */
-            off += 1U;            /* uvarint zero ic_count */
-            off += 1U;            /* uvarint zero nested_count (v1.7) */
-        }
-    }
-
-    return off - start_off;
+/* Every store goes through these, so a NULL buffer counts and writes
+   nothing. */
+static inline void put(uint8_t *buf, size_t off, uint8_t v) {
+    if (buf) buf[off] = v;
 }
 
-/* Write per-proto IC names (count + N length-prefixed UTF-8 strings). */
-static size_t write_ic_names(uint8_t *buf, size_t off, uint16_t count,
-                             char *const *names) {
-    off = uvarint_write_u(buf, off, (uint64_t)count);
+static inline size_t put_bytes(uint8_t *buf, size_t off, const void *src, size_t n) {
+    if (buf && n > 0U) emit_memcpy(buf + off, src, n);
+    return off + n;
+}
+
+static inline size_t put_varint_u(uint8_t *buf, size_t off, uint64_t v) {
+    return buf ? uvarint_write_u(buf, off, v) : off + uvarint_size_u(v);
+}
+
+static inline size_t put_varint_zz(uint8_t *buf, size_t off, int64_t v) {
+    return buf ? uvarint_write_zz(buf, off, v) : off + uvarint_size_zz(v);
+}
+
+/* The 4-byte instruction-stream alignment depends on the absolute offset,
+   which is why the walker carries `off` rather than a proto-local size. */
+static inline size_t put_align4(uint8_t *buf, size_t off) {
+    while ((off & 3U) != 0U) put(buf, off++, 0U);
+    return off;
+}
+
+/* Per-proto site names: count + N length-prefixed UTF-8 strings. */
+static size_t write_site_names(uint8_t *buf, size_t off, uint16_t count,
+                               char *const *names) {
+    off = put_varint_u(buf, off, (uint64_t)count);
     for (uint16_t k = 0; k < count; k++) {
         const char *name = (names != NULL) ? names[k] : "";
         size_t nlen = (name != NULL) ? urbi_strlen(name) : 0U;
-        off = uvarint_write_u(buf, off, (uint64_t)nlen);
-        if (nlen > 0U) {
-            emit_memcpy(buf + off, name, nlen);
-            off += nlen;
-        }
+        off = put_varint_u(buf, off, (uint64_t)nlen);
+        off = put_bytes(buf, off, name, nlen);
     }
     return off;
 }
 
-/* Write a single UProto's serialized form starting at buf+off. */
+/* Write a single UProto's serialized form (recursively, nested protos
+   last) starting at buf+off; returns the offset past it. */
 static size_t write_proto(uint8_t *buf, size_t off, const UProto *p) {
     size_t i;
 
-    buf[off++] = p->max_reg;
-    buf[off++] = p->nupvals;
-    buf[off++] = p->nparams;
+    put(buf, off++, p->max_reg);
+    put(buf, off++, p->nupvals);
+    put(buf, off++, p->nparams);
 
-    off = uvarint_write_u(buf, off, (uint64_t)p->const_count);
+    off = put_varint_u(buf, off, (uint64_t)p->const_count);
     for (i = 0U; i < p->const_count; i++) {
-        buf[off++] = p->constants[i].kind;
+        put(buf, off++, p->constants[i].kind);
         if (p->constants[i].kind == (uint8_t)UVAL_INT) {
-            off = uvarint_write_zz(buf, off, p->constants[i].v.i);
+            off = put_varint_zz(buf, off, p->constants[i].v.i);
         } else if (p->constants[i].kind == (uint8_t)UVAL_FLOAT) {
-            emit_memcpy(buf + off, &p->constants[i].v.f, 8U);
-            off += 8U;
+            off = put_bytes(buf, off, &p->constants[i].v.f, 8U);  /* always an 8-byte double */
         } else if (p->constants[i].kind == (uint8_t)UVAL_STR) {
             const char *s = (const char *)p->constants[i].v.p;
             const size_t n = (s != NULL) ? urbi_strlen(s) : 0U;
-            off = uvarint_write_u(buf, off, (uint64_t)n);
-            if (n > 0U) {
-                emit_memcpy(buf + off, s, n);
-                off += n;
-            }
+            off = put_varint_u(buf, off, (uint64_t)n);
+            off = put_bytes(buf, off, s, n);
         }
     }
 
-    off = uvarint_write_u(buf, off, (uint64_t)p->instr_count);
-    while ((off & 3U) != 0U) buf[off++] = 0U;
+    off = put_varint_u(buf, off, (uint64_t)p->instr_count);
+    off = put_align4(buf, off);
     for (i = 0U; i < p->instr_count; i++) {
         const uint32_t ins = p->instructions[i];
-        buf[off + 0U] = (uint8_t)(ins         & 0xFFU);
-        buf[off + 1U] = (uint8_t)((ins >>  8) & 0xFFU);
-        buf[off + 2U] = (uint8_t)((ins >> 16) & 0xFFU);
-        buf[off + 3U] = (uint8_t)((ins >> 24) & 0xFFU);
+        put(buf, off + 0U, (uint8_t)(ins         & 0xFFU));
+        put(buf, off + 1U, (uint8_t)((ins >>  8) & 0xFFU));
+        put(buf, off + 2U, (uint8_t)((ins >> 16) & 0xFFU));
+        put(buf, off + 3U, (uint8_t)((ins >> 24) & 0xFFU));
         off += 4U;
     }
 
-    off = uvarint_write_u(buf, off, (uint64_t)p->instr_count);
-    if (p->instr_count > 0U) {
-        emit_memcpy(buf + off, p->line_deltas, p->instr_count);
-        off += p->instr_count;
-    }
-    off = uvarint_write_u(buf, off, (uint64_t)p->abs_line_count);
+    off = put_varint_u(buf, off, (uint64_t)p->instr_count);   /* n_deltas == n_instr */
+    off = put_bytes(buf, off, p->line_deltas, p->instr_count);
+    off = put_varint_u(buf, off, (uint64_t)p->abs_line_count);
     for (i = 0U; i < p->abs_line_count; i++) {
-        off = uvarint_write_u(buf, off, (uint64_t)p->abs_lines[i].pc);
-        off = uvarint_write_u(buf, off, (uint64_t)p->abs_lines[i].line);
+        off = put_varint_u(buf, off, (uint64_t)p->abs_lines[i].pc);
+        off = put_varint_u(buf, off, (uint64_t)p->abs_lines[i].line);
     }
 
-    off = write_ic_names(buf, off, p->ic_count, p->ic_name_strs);
+    off = write_site_names(buf, off, p->site_count, p->site_name_strs);
 
-    off = uvarint_write_u(buf, off, (uint64_t)p->nested_count);
+    off = put_varint_u(buf, off, (uint64_t)p->nested_count);
     for (size_t ni = 0U; ni < p->nested_count; ni++) {
         const UProto *child = p->nested[ni];
         if (child != NULL) {
             off = write_proto(buf, off, child);
         } else {
-            /* stub proto for watcher-detached slots; mirrors proto_wire_size. */
-            buf[off++] = 0U; buf[off++] = 0U; buf[off++] = 0U;
-            off = uvarint_write_u(buf, off, 0U);  /* const_count */
-            off = uvarint_write_u(buf, off, 0U);  /* instr_count */
-            while ((off & 3U) != 0U) buf[off++] = 0U;
-            off = uvarint_write_u(buf, off, 0U);  /* n_deltas */
-            off = uvarint_write_u(buf, off, 0U);  /* n_abs_lines */
-            off = uvarint_write_u(buf, off, 0U);  /* ic_count */
-            off = uvarint_write_u(buf, off, 0U);  /* nested_count (v1.7) */
+            /* An empty slot (the loader tolerates one) goes out as a stub
+             * proto: max_reg/nupvals/nparams 0 and every count 0. */
+            put(buf, off++, 0U); put(buf, off++, 0U); put(buf, off++, 0U);
+            off = put_varint_u(buf, off, 0U);  /* const_count */
+            off = put_varint_u(buf, off, 0U);  /* instr_count */
+            off = put_align4(buf, off);
+            off = put_varint_u(buf, off, 0U);  /* n_deltas */
+            off = put_varint_u(buf, off, 0U);  /* n_abs_lines */
+            off = put_varint_u(buf, off, 0U);  /* site_count */
+            off = put_varint_u(buf, off, 0U);  /* nested_count */
         }
     }
 
     return off;
 }
 
-/* Compute total serialized byte count.  Must match the write path
-   in uchunk_serialize byte-for-byte.
-   v1.7: chunk body = header + source_name + root UProto block. */
-static size_t module_wire_size(const UProto *c) {
-    size_t n = 24U;                                   /* fixed header */
-    size_t src_len;
+/* The whole chunk: 24-byte header, source name, root proto block. */
+static size_t write_chunk(uint8_t *buf, const UProto *root) {
+    size_t off = 0U;
+    put(buf, off++, 'U'); put(buf, off++, 'R'); put(buf, off++, 'B'); put(buf, off++, 'I');
+    put(buf, off++, (uint8_t)URBI_BYTECODE_VERSION_BYTE);
+    put(buf, off++, (root->arity_prologue != 0U) ? 0x01U : 0x00U);
+    off = put_bytes(buf, off, URBI_BYTECODE_CANARY, URBI_BYTECODE_CANARY_LEN);
+    put(buf, off++, (uint8_t)URBI_INT_WIDTH);
+    put(buf, off++, 8U);   /* float flavor is fixed at f64/double */
+    put(buf, off++, (uint8_t)URBI_INSTR_WIDTH);
+    put(buf, off++, (uint8_t)URBI_ENDIANNESS);
+    while (off < 24U) put(buf, off++, 0U);   /* reserved */
 
-    src_len = (c->source_name != NULL) ? urbi_strlen(c->source_name) : 0U;
-    n += uvarint_size_u((uint64_t)src_len);
-    n += src_len;
+    const size_t src_len = (root->source_name != NULL) ? urbi_strlen(root->source_name) : 0U;
+    off = put_varint_u(buf, off, (uint64_t)src_len);
+    off = put_bytes(buf, off, root->source_name, src_len);
 
-    /* root UProto block: recursive UProto serialization.
-     * proto_wire_size includes nested_count + recursive nested[]. */
-    n += proto_wire_size(c, n);
-
-    return n;
+    return write_proto(buf, off, root);
 }
 
 ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap) {
-    size_t off;
-    size_t src_len;
-    const size_t need = module_wire_size(root);
+    const size_t need = write_chunk(NULL, root);
 
     /* Size query: buf == NULL means "how many bytes would you write?" */
     if (buf == NULL) return (ptrdiff_t)need;
     if (cap < need)  return -(ptrdiff_t)UCHUNK_LOAD_TRUNCATED;
-
-    /* --- 24-byte header --- */
-    buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';
-    buf[4] = (uint8_t)URBI_BYTECODE_VERSION_BYTE;  /* wire-format version byte (see include/urbi/version.h) */
-    buf[5] = (root->arity_prologue != 0U) ? 0x01U : 0x00U;
-    emit_memcpy(buf + 6, URBI_BYTECODE_CANARY, URBI_BYTECODE_CANARY_LEN);
-    buf[12] = (uint8_t)URBI_INT_WIDTH;
-    buf[13] = 8U;   /* float flavor is fixed at f64/double */
-    buf[14] = (uint8_t)URBI_INSTR_WIDTH;
-    buf[15] = (uint8_t)URBI_ENDIANNESS;
-    buf[16] = 0U; buf[17] = 0U; buf[18] = 0U; buf[19] = 0U;  /* reserved */
-    buf[20] = 0U; buf[21] = 0U; buf[22] = 0U; buf[23] = 0U;  /* reserved */
-
-    off = 24U;
-
-    /* --- source_name --- */
-    src_len = (root->source_name != NULL) ? urbi_strlen(root->source_name) : 0U;
-    off = uvarint_write_u(buf, off, (uint64_t)src_len);
-    if (src_len > 0U) {
-        emit_memcpy(buf + off, root->source_name, src_len);
-        off += src_len;
-    }
-
-    /* --- root UProto block (recursive UProto serialization) --- */
-    off = write_proto(buf, off, root);
-
-    return (ptrdiff_t)off;
+    return (ptrdiff_t)write_chunk(buf, root);
 }

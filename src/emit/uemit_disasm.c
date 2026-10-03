@@ -182,14 +182,6 @@ static bool fmt_eq(char *buf, size_t cap, size_t *off,
                       (unsigned)uinstr_c(ins));
 }
 
-static bool fmt_neq(char *buf, size_t cap, size_t *off,
-                    size_t *ip, uint32_t ins, const UProto *module) {
-    (void)module;
-    return dis_printf(buf, cap, off, "%04zu  NEQ R%u, R%u\n",
-                      *ip, (unsigned)uinstr_b(ins),
-                      (unsigned)uinstr_c(ins));
-}
-
 static bool fmt_lt(char *buf, size_t cap, size_t *off,
                    size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
@@ -214,110 +206,89 @@ static bool fmt_yield(char *buf, size_t cap, size_t *off,
     return dis_printf(buf, cap, off, "%04zu  YIELD\n", *ip);
 }
 
-static bool fmt_fork_detach(char *buf, size_t cap, size_t *off,
-                            size_t *ip, uint32_t ins, const UProto *module) {
-    (void)ins; (void)module;
-    return dis_printf(buf, cap, off, "%04zu  FORK_DETACH (reserved)\n", *ip);
-}
-
-static bool fmt_fork_join(char *buf, size_t cap, size_t *off,
-                          size_t *ip, uint32_t ins, const UProto *module) {
-    (void)ins; (void)module;
-    return dis_printf(buf, cap, off, "%04zu  FORK_JOIN (reserved)\n", *ip);
+static bool fmt_fork(char *buf, size_t cap, size_t *off,
+                     size_t *ip, uint32_t ins, const UProto *module) {
+    (void)module;
+    if (uinstr_c(ins) == UFORK_JOIN)
+        return dis_printf(buf, cap, off, "%04zu  FORK R%u -> R%u join\n",
+                          *ip, (unsigned)uinstr_a(ins), (unsigned)uinstr_b(ins));
+    return dis_printf(buf, cap, off, "%04zu  FORK R%u detach\n",
+                      *ip, (unsigned)uinstr_a(ins));
 }
 
 static bool fmt_join_wait(char *buf, size_t cap, size_t *off,
                           size_t *ip, uint32_t ins, const UProto *module) {
-    (void)ins; (void)module;
-    return dis_printf(buf, cap, off, "%04zu  JOIN_WAIT (reserved)\n", *ip);
-}
-
-static bool fmt_getslot(char *buf, size_t cap, size_t *off,
-                        size_t *ip, uint32_t ins, const UProto *module) {
-    (void)ins; (void)module;
-    return dis_printf(buf, cap, off, "%04zu  GETSLOT (reserved IC-sites)\n", *ip);
-}
-
-static bool fmt_setslot(char *buf, size_t cap, size_t *off,
-                        size_t *ip, uint32_t ins, const UProto *module) {
-    (void)ins; (void)module;
-    return dis_printf(buf, cap, off, "%04zu  SETSLOT (reserved IC-sites)\n", *ip);
-}
-
-/* reactive runtime — spec #2: at/whenever/waituntil */
-
-static bool fmt_at_install(char *buf, size_t cap, size_t *off,
-                           size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
-    return dis_printf(buf, cap, off, "%04zu  AT_INSTALL R%u, R%u, R%u\n",
-                      *ip, (unsigned)uinstr_a(ins),
-                      (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
-}
-
-static bool fmt_at_sync_install(char *buf, size_t cap, size_t *off,
-                                size_t *ip, uint32_t ins,
-                                const UProto *module) {
-    (void)module;
-    return dis_printf(buf, cap, off, "%04zu  AT_SYNC_INSTALL R%u, R%u, R%u\n",
-                      *ip, (unsigned)uinstr_a(ins),
-                      (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
-}
-
-static bool fmt_whenever_install(char *buf, size_t cap, size_t *off,
-                                 size_t *ip, uint32_t ins,
-                                 const UProto *module) {
-    (void)module;
-    return dis_printf(buf, cap, off,
-                      "%04zu  WHENEVER_INSTALL R%u, R%u, R%u\n",
-                      *ip, (unsigned)uinstr_a(ins),
-                      (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
-}
-
-static bool fmt_waituntil_install(char *buf, size_t cap, size_t *off,
-                                  size_t *ip, uint32_t ins,
-                                  const UProto *module) {
-    (void)module;
-    /* cond_reg only; B and C are unused (zero). */
-    return dis_printf(buf, cap, off, "%04zu  WAITUNTIL_INSTALL R%u\n",
+    return dis_printf(buf, cap, off, "%04zu  JOIN_WAIT R%u\n",
                       *ip, (unsigned)uinstr_a(ins));
 }
 
-/* reactive runtime — spec #3: event syncEmit + tag.enter/leave */
+/* The five slot opcodes share one format and print the resolved site
+ * index, folding in the high bits of an OP_EXTARG right before them. */
+static bool fmt_site(char *buf, size_t cap, size_t *off,
+                     size_t *ip, uint32_t ins, const UProto *module) {
+    uint32_t site = uinstr_c(ins);
+    if (module != NULL && *ip > 0U
+        && uinstr_op(module->instructions[*ip - 1U]) == OP_EXTARG)
+        site |= (uint32_t)uinstr_bx(module->instructions[*ip - 1U]) << 8;
+    const UOpcode op = uinstr_op(ins);
+    const char *name = op == OP_GETSLOT        ? "GETSLOT"
+                     : op == OP_SETSLOT        ? "SETSLOT"
+                     : op == OP_SETSLOT_UPDATE ? "SETSLOT_UPDATE"
+                     : op == OP_SELF           ? "SELF"
+                     :                           "GETSLOT_CHANGE_EVENT";
+    return dis_printf(buf, cap, off, "%04zu  %s R%u, R%u, site %u\n",
+                      *ip, name, (unsigned)uinstr_a(ins),
+                      (unsigned)uinstr_b(ins), (unsigned)site);
+}
 
-static bool fmt_at_event_install(char *buf, size_t cap, size_t *off,
-                                 size_t *ip, uint32_t ins,
-                                 const UProto *module) {
+static bool fmt_extarg(char *buf, size_t cap, size_t *off,
+                       size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
-    return dis_printf(buf, cap, off,
-                      "%04zu  AT_EVENT_INSTALL R%u, R%u, R%u\n",
+    return dis_printf(buf, cap, off, "%04zu  EXTARG hi=%u\n",
+                      *ip, (unsigned)uinstr_bx(ins));
+}
+
+static bool fmt_scope_try(char *buf, size_t cap, size_t *off,
+                          size_t *ip, uint32_t ins, const UProto *module) {
+    (void)module;
+    return dis_printf(buf, cap, off, "%04zu  SCOPE_TRY flags=%u -> %u\n",
+                      *ip, (unsigned)uinstr_a(ins), (unsigned)uinstr_bx(ins));
+}
+
+static bool fmt_scope_tag(char *buf, size_t cap, size_t *off,
+                          size_t *ip, uint32_t ins, const UProto *module) {
+    (void)module;
+    if (uinstr_a(ins) == USCOPE_NO_REG)
+        return dis_printf(buf, cap, off, "%04zu  SCOPE_TAG fresh -> %u\n",
+                          *ip, (unsigned)uinstr_bx(ins));
+    return dis_printf(buf, cap, off, "%04zu  SCOPE_TAG R%u -> %u\n",
+                      *ip, (unsigned)uinstr_a(ins), (unsigned)uinstr_bx(ins));
+}
+
+static bool fmt_scope_pop(char *buf, size_t cap, size_t *off,
+                          size_t *ip, uint32_t ins, const UProto *module) {
+    (void)module;
+    const uint8_t a = uinstr_a(ins);
+    return dis_printf(buf, cap, off, "%04zu  SCOPE_POP %s%s\n", *ip,
+                      (a & 0x3U) == USCOPE_POP_TAG ? "tag" : "try",
+                      (a & USCOPE_POP_RUN_FINALLY) != 0U ? "+finally" : "");
+}
+
+static bool fmt_unwind_to(char *buf, size_t cap, size_t *off,
+                          size_t *ip, uint32_t ins, const UProto *module) {
+    (void)module;
+    return dis_printf(buf, cap, off, "%04zu  UNWIND_TO depth=%u -> %u\n",
+                      *ip, (unsigned)uinstr_a(ins), (unsigned)uinstr_bx(ins));
+}
+
+static bool fmt_install(char *buf, size_t cap, size_t *off,
+                        size_t *ip, uint32_t ins, const UProto *module) {
+    (void)module;
+    return dis_printf(buf, cap, off, "%04zu  INSTALL R%u mode=%u flags=%u\n",
                       *ip, (unsigned)uinstr_a(ins),
                       (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
 }
-
-static bool fmt_at_event_sync_install(char *buf, size_t cap, size_t *off,
-                                      size_t *ip, uint32_t ins,
-                                      const UProto *module) {
-    (void)module;
-    return dis_printf(buf, cap, off,
-                      "%04zu  AT_EVENT_SYNC_INSTALL R%u, R%u, R%u\n",
-                      *ip, (unsigned)uinstr_a(ins),
-                      (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
-}
-
-/* reactive runtime — spec #4: slot-change events */
-
-static bool fmt_getslot_change_event(char *buf, size_t cap, size_t *off,
-                                     size_t *ip, uint32_t ins,
-                                     const UProto *module) {
-    (void)module;
-    /* C is a symbol-table index (not a register); display as Kn. */
-    return dis_printf(buf, cap, off,
-                      "%04zu  GETSLOT_CHANGE_EVENT R%u, R%u, K%u\n",
-                      *ip, (unsigned)uinstr_a(ins),
-                      (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
-}
-
-/* reactive runtime — spec #5: globals exposure */
 
 static bool fmt_load_realm_global(char *buf, size_t cap, size_t *off,
                                   size_t *ip, uint32_t ins,
@@ -338,21 +309,8 @@ static bool fmt_load_recv(char *buf, size_t cap, size_t *off,
                       *ip, (unsigned)uinstr_a(ins));
 }
 
-static bool fmt_self(char *buf, size_t cap, size_t *off,
-                     size_t *ip, uint32_t ins,
-                     const UProto *module) {
-    (void)module;
-    return dis_printf(buf, cap, off,
-                      "%04zu  SELF R%u, R%u, ic[%u]   ; R%u := lookup, R%u := R%u\n",
-                      *ip, (unsigned)uinstr_a(ins), (unsigned)uinstr_b(ins),
-                      (unsigned)uinstr_c(ins),
-                      (unsigned)uinstr_a(ins),
-                      (unsigned)(uinstr_a(ins) + 1U),
-                      (unsigned)uinstr_b(ins));
-}
-
 /* --- opname helper (used by the generic fallback in uemit_disassemble) ---
- * Generated from uopcodes.def; covers all 50 opcodes. */
+ * Generated from uopcodes.def; covers every opcode. */
 
 static const char * const opname_table[OP_MAX] = {
 #define URBI_OP(n, u, s) #n,
@@ -367,99 +325,99 @@ static const char *opname(const UOpcode op) {
 
 /* --- Dispatch table (indexed by UOpcode value 0..OP_MAX-1) ---
  *
- * NULL entries fall through to the generic R%u, R%u, R%u fallback in
- * uemit_disassemble.  Opcodes not listed in the original switch (MOVE,
- * ADD, SUB, MUL, DIV, THROW, TAG_STOP, TRY_BEGIN, TRY_END, PUSH_TAG,
- * POP_TAG, PUSH_FRAME_GUARD, RESUME, LOAD_CATCH_VALUE) keep the generic
- * three-register format from the original default arm. */
+ * NULL entries fall through to the generic "NAME R%u, R%u, R%u" format
+ * in dis_proto. */
 static const UDisFormatFn op_disasm[OP_MAX] = {
-    /* 0  OP_LOADK              */ fmt_loadk,
-    /* 1  OP_MOVE               */ NULL,
-    /* 2  OP_ADD                */ NULL,
-    /* 3  OP_SUB                */ NULL,
-    /* 4  OP_MUL                */ NULL,
-    /* 5  OP_DIV                */ NULL,
-    /* 6  OP_NEG                */ fmt_neg,
-    /* 7  OP_RET                */ fmt_ret,
-    /* 8  OP_LOADNIL            */ fmt_loadnil,
-    /* 9  OP_LOADBOOL           */ fmt_loadbool,
-    /* 10 OP_LOADVOID           */ fmt_loadvoid,
-    /* 11 OP_GETUPVAL           */ fmt_getupval,
-    /* 12 OP_SETUPVAL           */ fmt_setupval,
-    /* 13 OP_CLOSURE            */ fmt_closure,
-    /* 14 OP_CLOSE              */ fmt_close,
-    /* 15 OP_CALL               */ fmt_call,
-    /* 16 OP_JMP                */ fmt_jmp,
-    /* 17 OP_TEST               */ fmt_test,
-    /* 18 OP_TESTSET            */ fmt_testset,
-    /* 19 OP_EQ                 */ fmt_eq,
-    /* 20 OP_NEQ                */ fmt_neq,
-    /* 21 OP_LT                 */ fmt_lt,
-    /* 22 OP_LE                 */ fmt_le,
-    /* 23 OP_YIELD              */ fmt_yield,
-    /* 24 OP_FORK_DETACH        */ fmt_fork_detach,
-    /* 25 OP_FORK_JOIN          */ fmt_fork_join,
-    /* 26 OP_JOIN_WAIT          */ fmt_join_wait,
-    /* 27 OP_GETSLOT            */ fmt_getslot,
-    /* 28 OP_SETSLOT            */ fmt_setslot,
-    /* 29 OP_THROW              */ NULL,
-    /* 30 OP_TAG_STOP           */ NULL,
-    /* 31 OP_TRY_BEGIN          */ NULL,
-    /* 32 OP_TRY_END            */ NULL,
-    /* 33 OP_PUSH_TAG           */ NULL,
-    /* 34 OP_POP_TAG            */ NULL,
-    /* 35 OP_PUSH_FRAME_GUARD   */ NULL,
-    /* 36 OP_RESUME             */ NULL,
-    /* 37 OP_LOAD_CATCH_VALUE   */ NULL,
-    /* 38 OP_AT_INSTALL         */ fmt_at_install,
-    /* 39 OP_AT_SYNC_INSTALL    */ fmt_at_sync_install,
-    /* 40 OP_WHENEVER_INSTALL   */ fmt_whenever_install,
-    /* 41 OP_WAITUNTIL_INSTALL  */ fmt_waituntil_install,
-    /* 42 OP_AT_EVENT_INSTALL   */ fmt_at_event_install,
-    /* 43 OP_AT_EVENT_SYNC_INSTALL */ fmt_at_event_sync_install,
-    /* 44 OP_GETSLOT_CHANGE_EVENT  */ fmt_getslot_change_event,
-    /* 45 OP_LOAD_REALM_GLOBAL  */ fmt_load_realm_global,
-    /* 46 OP_LOAD_RECV          */ fmt_load_recv,
-    /* 47 OP_SELF               */ fmt_self,
-    /* 48 OP_WHENEVER_EVENT_INSTALL */ NULL,  /* generic ABC format */
-    /* 49 OP_SETSLOT_UPDATE     */ fmt_setslot,
+    [OP_LOADK]                = fmt_loadk,
+    [OP_NEG]                  = fmt_neg,
+    [OP_RET]                  = fmt_ret,
+    [OP_LOADNIL]              = fmt_loadnil,
+    [OP_LOADBOOL]             = fmt_loadbool,
+    [OP_LOADVOID]             = fmt_loadvoid,
+    [OP_GETUPVAL]             = fmt_getupval,
+    [OP_SETUPVAL]             = fmt_setupval,
+    [OP_CLOSURE]              = fmt_closure,
+    [OP_CLOSE]                = fmt_close,
+    [OP_CALL]                 = fmt_call,
+    [OP_JMP]                  = fmt_jmp,
+    [OP_TEST]                 = fmt_test,
+    [OP_TESTSET]              = fmt_testset,
+    [OP_EQ]                   = fmt_eq,
+    [OP_LT]                   = fmt_lt,
+    [OP_LE]                   = fmt_le,
+    [OP_YIELD]                = fmt_yield,
+    [OP_FORK]                 = fmt_fork,
+    [OP_JOIN_WAIT]            = fmt_join_wait,
+    [OP_GETSLOT]              = fmt_site,
+    [OP_SETSLOT]              = fmt_site,
+    [OP_SETSLOT_UPDATE]       = fmt_site,
+    [OP_SELF]                 = fmt_site,
+    [OP_GETSLOT_CHANGE_EVENT] = fmt_site,
+    [OP_EXTARG]               = fmt_extarg,
+    [OP_SCOPE_TRY]            = fmt_scope_try,
+    [OP_SCOPE_TAG]            = fmt_scope_tag,
+    [OP_SCOPE_POP]            = fmt_scope_pop,
+    [OP_UNWIND_TO]            = fmt_unwind_to,
+    [OP_INSTALL]              = fmt_install,
+    [OP_LOAD_REALM_GLOBAL]    = fmt_load_realm_global,
+    [OP_LOAD_RECV]            = fmt_load_recv,
+    /* MOVE, ADD, SUB, MUL, DIV, THROW, RESUME, LOAD_CATCH_VALUE: generic */
 };
 
-size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
-    size_t off;
+/* One proto's instructions, then its constant pool. */
+static bool dis_proto(char *buf, size_t cap, size_t *off, const UProto *p) {
     size_t i;
-    if (cap == 0 || buf == NULL) return 0;
-    buf[0] = '\0';
-    off = 0;
-    const UProto *rp = root;
-    if (rp == NULL || rp->instr_count == 0) {
-        dis_printf(buf, cap, &off, "(empty)\n");
-        return off;
-    }
-    for (i = 0; i < rp->instr_count; i++) {
-        const uint32_t ins = rp->instructions[i];
+    if (p->instr_count == 0) return dis_printf(buf, cap, off, "(empty)\n");
+    for (i = 0; i < p->instr_count; i++) {
+        const uint32_t ins = p->instructions[i];
         const UOpcode  op  = uinstr_op(ins);
         bool ok;
         if ((unsigned)op < (unsigned)OP_MAX && op_disasm[op] != NULL) {
-            ok = op_disasm[op](buf, cap, &off, &i, ins, root);
+            ok = op_disasm[op](buf, cap, off, &i, ins, p);
         } else {
-            ok = dis_printf(buf, cap, &off, "%04zu  %s R%u, R%u, R%u\n",
+            ok = dis_printf(buf, cap, off, "%04zu  %s R%u, R%u, R%u\n",
                             i, opname(op), (unsigned)uinstr_a(ins),
                             (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
         }
-        if (!ok) return off;
+        if (!ok) return false;
     }
-    if (!dis_printf(buf, cap, &off, "; constants:\n")) return off;
-    for (i = 0; i < rp->const_count; i++) {
+    if (!dis_printf(buf, cap, off, "; constants:\n")) return false;
+    for (i = 0; i < p->const_count; i++) {
         bool ok;
-        if (rp->constants[i].kind == (uint8_t)UVAL_INT) {
-            ok = dis_printf(buf, cap, &off, ";   K%zu = INT %" PRId64 "\n",
-                            i, rp->constants[i].v.i);
+        if (p->constants[i].kind == (uint8_t)UVAL_INT) {
+            ok = dis_printf(buf, cap, off, ";   K%zu = INT %" PRId64 "\n",
+                            i, p->constants[i].v.i);
         } else {
-            ok = dis_printf(buf, cap, &off, ";   K%zu = ?\n", i);
+            ok = dis_printf(buf, cap, off, ";   K%zu = ?\n", i);
         }
-        if (!ok) return off;
+        if (!ok) return false;
     }
+    return true;
+}
+
+/* Every nested proto below `p`, depth-first, numbered in visit order. */
+static bool dis_nested(char *buf, size_t cap, size_t *off,
+                       const UProto *p, unsigned *serial) {
+    for (size_t k = 0; k < p->nested_count; k++) {
+        const UProto *child = p->nested[k];
+        if (child == NULL) continue;
+        if (!dis_printf(buf, cap, off, "; proto P%u\n", (*serial)++)) return false;
+        if (!dis_proto(buf, cap, off, child)) return false;
+        if (!dis_nested(buf, cap, off, child, serial)) return false;
+    }
+    return true;
+}
+
+size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
+    size_t off = 0;
+    unsigned serial = 0;
+    if (cap == 0 || buf == NULL) return 0;
+    buf[0] = '\0';
+    if (root == NULL || root->instr_count == 0) {
+        dis_printf(buf, cap, &off, "(empty)\n");
+        return off;
+    }
+    if (dis_proto(buf, cap, &off, root)) (void)dis_nested(buf, cap, &off, root, &serial);
     return off;
 }
 

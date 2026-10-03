@@ -24,19 +24,20 @@ static void version_contains_milestone_suffix(void) {
     UASSERT(strchr(v, '-') != NULL);
 }
 
-static void urbi_bytecode_version_byte_is_v1_10(void) {
-    /* The re-founded core added OP_SETSLOT_UPDATE, which is how a bare
-     * `x = 1` writes through to the slot the name resolves to; that takes
-     * the opcode count to 50 and the wire format to v1.10 / 0x1A. */
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_BYTE, 0x1AU);
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MAJOR, 1U);
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MINOR, 10U);
+static void urbi_bytecode_version_byte_is_v2_0(void) {
+    /* Wire v2 renumbered the opcode set to 41 rows (EXTARG site
+     * widening, the scope / fork / install folds), so the format is
+     * v2.0 / 0x20 and every v1.x blob is rejected at the version byte. */
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_BYTE, 0x20U);
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MAJOR, 2U);
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MINOR, 0U);
+    UASSERT_EQ((int)OP_MAX, 41);
 }
 
 void test_version_suite(void) {
     utest_run("version_is_nonempty", version_is_nonempty);
     utest_run("version_starts_with_zero", version_starts_with_zero);
     utest_run("version_contains_milestone_suffix", version_contains_milestone_suffix);
-    utest_run("urbi_bytecode_version_byte_is_v1_10",
-              urbi_bytecode_version_byte_is_v1_10);
+    utest_run("urbi_bytecode_version_byte_is_v2_0",
+              urbi_bytecode_version_byte_is_v2_0);
 }

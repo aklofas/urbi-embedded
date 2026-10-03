@@ -330,9 +330,9 @@ static void two_frozen_tags_need_both_released(void)
 }
 
 /* A property getter's call boundary cannot park (usched_may_deschedule
- * is false while nboundary > 0), so the OP_PUSH_TAG that enters an
+ * is false while nboundary > 0), so the OP_SCOPE_TAG that enters an
  * already-blocked tag's scope inside it keeps running with the gate bit
- * set instead of parking.  OP_POP_TAG must still drop that bit on the
+ * set instead of parking.  OP_SCOPE_POP must still drop that bit on the
  * way out: the tag no longer covers the strand once its scope has
  * closed, and nothing else ever will (the strand is no longer a member,
  * so a later t.unblock() skips it).  Left stale, the strand's own real
@@ -643,7 +643,7 @@ static void spawning_into_a_gated_scope_parks_the_newcomer(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
-/* Entering the scope through OP_PUSH_TAG is the other way in. */
+/* Entering the scope through OP_SCOPE_TAG is the other way in. */
 static void entering_a_gated_scope_parks_the_entrant(void)
 {
     Fix fx; fix_open(&fx);

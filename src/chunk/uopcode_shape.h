@@ -9,13 +9,16 @@
  *   UOPK_UNUSED        : field is ignored; arbitrary byte values accepted
  *   UOPK_REG           : R[k] register reference; must be <= max_reg
  *   UOPK_IMM_BOOL      : immediate 0/1; reject if > 1
- *   UOPK_IMM_FLAGS     : flags nibble high (A[7:4]); flags-only opcodes use this
- *   UOPK_IMM_REG_NIBBLE: register index in the low nibble (A[3:0]);
- *                        must be <= max_reg AND <= 15
+ *   UOPK_IMM_FLAGS     : flag byte; any value at the shape level (the
+ *                        per-opcode rules constrain SCOPE_POP and INSTALL)
  *   UOPK_UPVAL_IDX     : upvalue index; runtime-checked, no static range
  *                        (UClosure carries the upvalue array length)
- *   UOPK_FRAME_REG_BASE: OP_PUSH_FRAME_GUARD A is base register; <= max_reg
- *   UOPK_FRAME_REG_COUNT: OP_PUSH_FRAME_GUARD B is count; A+B <= max_reg+1
+ *   UOPK_REG_OR_NONE   : a register (<= max_reg), or 0xFF meaning none
+ *   UOPK_IMM_MODE      : INSTALL mode, 1..7
+ *   UOPK_IMM_SITE      : the low byte of a site index; the full index is
+ *                        this byte OR'd with a preceding OP_EXTARG's
+ *                        Bx << 8, and must be < site_count
+ *   UOPK_IMM_DEPTH     : a scope count; any byte
  *
  * UBxKind — how the verifier interprets the Bx field of UOPF_ABX opcodes:
  *   UBXK_UNUSED        : Bx ignored
@@ -23,8 +26,9 @@
  *   UBXK_NESTED_INDEX  : OP_CLOSURE Bx must be < nested_count
  *   UBXK_JUMP_SIGNED   : OP_JMP Bx is biased signed offset; no range check
  *                        (target out-of-range surfaces at runtime)
- *   UBXK_HANDLER_PC    : OP_TRY_BEGIN / OP_PUSH_TAG handler/onleave PC;
- *                        must be < instr_count
+ *   UBXK_HANDLER_PC    : OP_SCOPE_TRY / OP_SCOPE_TAG / OP_UNWIND_TO
+ *                        target PC; must be < instr_count
+ *   UBXK_EXTARG        : OP_EXTARG's high site bits; any value
  *   UBXK_SYMBOL_ID     : OP_LOAD_REALM_GLOBAL packs a 16-bit symbol id.
  *                        At v1.5 we accept the full 0..65535 range; the
  *                        runtime resolves against the realm's symbol
@@ -49,10 +53,11 @@ typedef enum {
     UOPK_REG,
     UOPK_IMM_BOOL,
     UOPK_IMM_FLAGS,
-    UOPK_IMM_REG_NIBBLE,
     UOPK_UPVAL_IDX,
-    UOPK_FRAME_REG_BASE,
-    UOPK_FRAME_REG_COUNT
+    UOPK_REG_OR_NONE,
+    UOPK_IMM_MODE,
+    UOPK_IMM_SITE,
+    UOPK_IMM_DEPTH
 } UOperandKind;
 
 typedef enum {
@@ -61,7 +66,8 @@ typedef enum {
     UBXK_NESTED_INDEX,
     UBXK_JUMP_SIGNED,
     UBXK_HANDLER_PC,
-    UBXK_SYMBOL_ID
+    UBXK_SYMBOL_ID,
+    UBXK_EXTARG
 } UBxKind;
 
 typedef struct {

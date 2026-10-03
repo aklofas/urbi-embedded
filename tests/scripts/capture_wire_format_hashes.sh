@@ -3,7 +3,7 @@
 # tests/scripts/capture_wire_format_hashes.sh
 # Capture sha256 of on-disk wire-format bytes for every tests/chk/**/*.chk
 # fixture. Detects wire-format changes (header byte, opcode-shape table,
-# nested[]/ic_names round-trip, varint encoding). Used by
+# nested[]/site_names round-trip, varint encoding). Used by
 # check_wire_format_determinism.sh to verify two captures of the same
 # build are byte-identical.
 #

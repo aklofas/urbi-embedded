@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UProto — nested function prototype and per-proto helpers.  Freestanding.
  *
- *   1. UProto.ic_count / UProto.ic_names — per-proto (both root and nested).
- *      Populated by uemit at compile time, persisted in bytecode v1.3+,
- *      freed by uproto_destroy_buffers.
- *   2. UProtoInstance.ic_count + UIC entries[] — runtime IC table per
- *      (vm, proto) pair (object/uchunk_instance.h).  Sized from #1 at
- *      module-instance creation; UIC.name is copied from ic_names.
+ * Slot sites: every GETSLOT / SETSLOT / SETSLOT_UPDATE / SELF /
+ * GETSLOT_CHANGE_EVENT instruction names its slot through a per-proto
+ * site index.  UProto.site_count sizes the site table; site_name_strs
+ * carries the names on the wire and site_names holds them interned once
+ * the runtime binds the chunk (rt/uexec.c).  The runtime's per-site slot
+ * cache (site_cache) is sized from the same count.
  *
- * Mirror discipline: any change to UProto IC field naming or layout must
- * be applied to all readers and to the wire-format encoder/decoder in
- * uemit.c / uchunk_io.c. */
+ * Mirror discipline: any change to the site fields must be applied to all
+ * readers and to the wire-format writer/decoder in uemit_serialize.c /
+ * uchunk_io.c. */
 
 #ifndef UPROTO_H
 #define UPROTO_H
@@ -33,7 +33,7 @@ extern "C" {
  *   UVAL_NIL/INT/FLOAT/BOOL/STR — bytecode-pool kinds (constants)
  *   UVAL_CLOSURE — function closure; runtime-only
  *   UVAL_VOID    — result of `&` separator; runtime-only
- *   UVAL_STRAND  — strand handle (OP_FORK_JOIN -> OP_JOIN_WAIT).
+ *   UVAL_STRAND  — strand handle (joining OP_FORK -> OP_JOIN_WAIT).
  *                  Stores a UStrand* in v.p.  GC root walker skips
  *                  (strands are sched-managed, not GC cells).
  *   UVAL_OBJECT  — UObject pointer; runtime-only.  Receivers for
@@ -122,21 +122,22 @@ typedef struct UProto {
                                     the deserializer from the header flag byte
                                     to every proto in the chunk. */
 
-    /* === v1.3 additions (encoding spec §5.1) === */
-    /* Number of GETSLOT/SETSLOT IC sites in this function.  Populated by the
-     * emitter; the parallel ic_names[] array is sized to this count.  Capped
-     * at 256 by the encoding spec §3.4 (an IC site index lives in a uint8). */
-    uint16_t       ic_count;
-    /* Parallel array, length == ic_count; set at emit time and consumed at
-     * module-instance load to populate UIC.name for each IC site.  Owned by
-     * the proto's allocator; freed in uproto_destroy_buffers. */
-    USymbol      **ic_names;
-    /* Parallel string array; one entry per IC site; UTF-8, NUL-terminated.
-     * Populated by the emitter (mirroring ic_names) and by the deserializer
-     * (in lieu of ic_names, which stays NULL until module-instance create
-     * interns the strings).  Owned by the proto's allocator; each entry and
-     * the array itself are freed in uproto_destroy_buffers. */
-    char         **ic_name_strs;
+    /* Number of slot sites in this function; site_names[] and
+     * site_name_strs[] are sized to it.  An instruction's C operand holds
+     * the low byte of a site index and a preceding OP_EXTARG the high
+     * bits, so the cap is 65,535. */
+    uint16_t       site_count;
+    /* Parallel array, length == site_count: the interned name of each
+     * site.  Set by the emitter, or by the runtime's chunk bind for a
+     * deserialized chunk.  Owned by the proto's allocator; freed in
+     * uproto_destroy_buffers. */
+    USymbol      **site_names;
+    /* Parallel string array; one entry per site; UTF-8, NUL-terminated.
+     * Populated by the emitter and by the deserializer (in lieu of
+     * site_names, which stays NULL until the runtime interns the
+     * strings).  Owned by the proto's allocator; each entry and the array
+     * itself are freed in uproto_destroy_buffers. */
+    char         **site_name_strs;
 
     /* Allocator hook inherited from the owning module. */
     UChunkAllocFn alloc_fn;
@@ -146,7 +147,7 @@ typedef struct UProto {
     size_t          nested_count;
     size_t          nested_cap;
 
-    /* The runtime's per-site slot cache: ic_count entries, allocated by
+    /* The runtime's per-site slot cache: site_count entries, allocated by
      * src/rt on this proto's first slot operation and freed with the
      * chunk.  Opaque here; the chunk layer only ever writes NULL to it. */
     void          *site_cache;
@@ -165,18 +166,18 @@ typedef struct UProto {
     uint16_t       refcount;
 
     /* [runtime-only, NOT serialized] DFS pre-order serial assigned at
-     * UProto construction.  Root proto gets ic_index = 0; subsequent
+     * UProto construction.  Root proto gets proto_index = 0; subsequent
      * UProto allocations get module->next_proto_serial++ via either the
      * emit path (uproto_alloc_nested) or the deserialize path
      * (decode_nested_protos_into).  Both paths walk the tree in DFS pre-order
      * so serial assignment is identical regardless of load source. */
-    uint16_t       ic_index;
+    uint16_t       proto_index;
 
     /* [runtime-only, NOT serialized] Back-pointer to the UChunkInstance
      * this UProto was first instantiated under.  Populated once at
      * urbi_chunk_instance_create time (tree walk over every proto).  Used
      * by OP_CLOSURE to bind cl->proto_inst without a fallback chain:
-     * cl->proto_inst = &owning_module_instance->proto_instances->entries[ic_index].
+     * cl->proto_inst = &owning_module_instance->proto_instances->entries[proto_index].
      *
      * Lifetime contract: owning_module_instance is GC-managed and remains
      * valid as long as this UProto exists (the instance is kept reachable

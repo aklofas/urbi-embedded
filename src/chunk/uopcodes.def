@@ -1,16 +1,17 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uopcodes.def — single source of truth for the 50-opcode set (v1.10/OP_MAX=50).
+/* uopcodes.def — the wire v2 opcode set (OP_MAX = 41).
  *
  * URBI_OP(enum_suffix, user_phrase, form)
  *   enum_suffix  OP_##suffix is the UOpcode enumerator; value = row position.
  *   user_phrase  user-facing error-message phrase (lowercase, no mnemonic).
- *   form         instruction encoding: ABC or ABX (informational; Phase 2 use).
+ *   form         instruction encoding: ABC or ABX (informational).
  *
- * ROW ORDER IS WIRE-FORMAT FROZEN (v1.10).  Do NOT reorder or insert rows.
- * Adding an opcode requires a wire-format version bump and ABI MINOR bump. */
+ * Rows are numbered densely in this order and the order is part of the
+ * wire format: reordering, inserting or removing a row is a bytecode
+ * version bump.  The shape table in uopcode_shape.c carries one entry per
+ * row and is pinned to the row count. */
 
-/* Core arithmetic and return opcodes 0-7 */
-URBI_OP(LOADK,               "load constant",              ABX)
+URBI_OP(LOADK,               "load constant",              ABX)   /* 0 */
 URBI_OP(MOVE,                "register copy",              ABC)
 URBI_OP(ADD,                 "'+'",                        ABC)
 URBI_OP(SUB,                 "'-'",                        ABC)
@@ -18,9 +19,7 @@ URBI_OP(MUL,                 "'*'",                        ABC)
 URBI_OP(DIV,                 "'/'",                        ABC)
 URBI_OP(NEG,                 "unary '-'",                  ABC)
 URBI_OP(RET,                 "return",                     ABC)
-
-/* Literal, upvalue, call, jump, and comparison opcodes 8-23 */
-URBI_OP(LOADNIL,             "nil literal",                ABC)
+URBI_OP(LOADNIL,             "nil literal",                ABC)   /* 8 */
 URBI_OP(LOADBOOL,            "bool literal",               ABC)
 URBI_OP(LOADVOID,            "void literal",               ABC)
 URBI_OP(GETUPVAL,            "upvalue read",               ABC)
@@ -28,59 +27,31 @@ URBI_OP(SETUPVAL,            "upvalue write",              ABC)
 URBI_OP(CLOSURE,             "closure creation",           ABX)
 URBI_OP(CLOSE,               "upvalue close",              ABC)
 URBI_OP(CALL,                "function call",              ABC)
-URBI_OP(JMP,                 "jump",                       ABX)
+URBI_OP(JMP,                 "jump",                       ABX)   /* 16 */
 URBI_OP(TEST,                "conditional test",           ABC)
 URBI_OP(TESTSET,             "conditional test-set",       ABC)
 URBI_OP(EQ,                  "'=='",                       ABC)
-URBI_OP(NEQ,                 "'!='",                       ABC)
 URBI_OP(LT,                  "'<'",                        ABC)
 URBI_OP(LE,                  "'<='",                       ABC)
 URBI_OP(YIELD,               "yield",                      ABC)
-
-/* Fork/join separator opcodes 24-26 */
-URBI_OP(FORK_DETACH,         "parallel fork",              ABC)
-URBI_OP(FORK_JOIN,           "join fork",                  ABC)
+URBI_OP(FORK,                "parallel fork",              ABC)   /* 23: A=closure B=handle dst or 0xFF C=mode 0 detach / 1 join */
 URBI_OP(JOIN_WAIT,           "join wait",                  ABC)
-
-/* Slot access opcodes 27-28 */
-URBI_OP(GETSLOT,             "slot access",                ABC)
-URBI_OP(SETSLOT,             "slot write",                 ABC)
-
-/* Control-transfer opcodes (throw/tag/try/unwind) 29-37 */
+URBI_OP(GETSLOT,             "slot access",                ABC)   /* 25: A=dst B=recv C=site */
+URBI_OP(SETSLOT,             "slot write",                 ABC)   /* A=value B=recv C=site */
+/* Same operands and write as SETSLOT, but the name is resolved through
+ * the prototype chain first and a miss raises LookupError: a bare
+ * `x = 1` updates a binding, it does not declare one. */
+URBI_OP(SETSLOT_UPDATE,      "slot update",                ABC)
+URBI_OP(SELF,                "method call",                ABC)   /* A=dst (A+1 gets recv) B=recv C=site */
+URBI_OP(GETSLOT_CHANGE_EVENT,"slot-change event",          ABC)
+URBI_OP(EXTARG,              "extended operand",           ABX)   /* 30: Bx = high 16 bits of the next instruction's C */
 URBI_OP(THROW,               "throw",                      ABC)
-URBI_OP(TAG_STOP,            "tag stop",                   ABC)
-URBI_OP(TRY_BEGIN,           "try begin",                  ABX)
-URBI_OP(TRY_END,             "try end",                    ABC)
-URBI_OP(PUSH_TAG,            "tag push",                   ABX)
-URBI_OP(POP_TAG,             "tag pop",                    ABC)
-URBI_OP(PUSH_FRAME_GUARD,    "frame guard install",        ABC)
+URBI_OP(SCOPE_TRY,           "try scope open",             ABX)   /* A=flags Bx=handler pc */
+URBI_OP(SCOPE_TAG,           "tag scope open",             ABX)   /* A=tag reg or 0xFF Bx=onleave pc */
+URBI_OP(SCOPE_POP,           "scope close",                ABC)   /* A=kind|flags */
+URBI_OP(UNWIND_TO,           "unwind and jump",            ABX)   /* A=scope depth Bx=target pc */
 URBI_OP(RESUME,              "unwind resume",              ABC)
 URBI_OP(LOAD_CATCH_VALUE,    "catch value load",           ABC)
-
-/* Reactive watcher-install opcodes 38-45 */
-URBI_OP(AT_INSTALL,              "at watcher install",         ABC)
-URBI_OP(AT_SYNC_INSTALL,         "at sync watcher install",    ABC)
-URBI_OP(WHENEVER_INSTALL,        "whenever watcher install",   ABC)
-URBI_OP(WAITUNTIL_INSTALL,       "waituntil install",          ABC)
-URBI_OP(AT_EVENT_INSTALL,        "at-event watcher install",   ABC)
-URBI_OP(AT_EVENT_SYNC_INSTALL,   "at-event sync install",      ABC)
-URBI_OP(GETSLOT_CHANGE_EVENT,    "slot-change event",          ABC)
-URBI_OP(LOAD_REALM_GLOBAL,       "realm global load",          ABC)
-
-/* Receiver load — `this` keyword (46) */
-URBI_OP(LOAD_RECV,           "receiver load",              ABC)
-
-/* Method-call opcode (47) */
-URBI_OP(SELF,                "method call",                ABC)
-
-/* Whenever-event install (48) */
-URBI_OP(WHENEVER_EVENT_INSTALL, "whenever-event install",  ABC)
-
-/* Bare-name write to a realm global (49) --------------------------------
- *
- * Same operands as SETSLOT (A=value, B=receiver, C=ic index) and the same
- * write, but it first resolves the name THROUGH the prototype chain and
- * raises LookupError when it is nowhere: `x = 1` updates a binding, it
- * does not declare one.  `var x = 1` and the explicit `Realm.x = 1` keep
- * SETSLOT's create semantics. */
-URBI_OP(SETSLOT_UPDATE,      "slot update",                ABC)
+URBI_OP(INSTALL,             "watcher install",            ABC)   /* 38: A=base B=mode C=flags */
+URBI_OP(LOAD_REALM_GLOBAL,   "realm global load",          ABC)
+URBI_OP(LOAD_RECV,           "receiver load",              ABC)   /* 40 */

@@ -1,11 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Disassembler coverage for M5 reactive opcodes 38..45.
+/* Disassembler coverage for the wire v2 opcode set.
  *
- * Each test hand-builds a one-instruction UProto, calls uemit_disassemble,
- * and verifies the exact mnemonic and operand formatting that each case
- * emits.  This catches opcodes that fall through to the generic default arm
- * (which misrepresents WAITUNTIL's one-operand encoding, GETSLOT_CHANGE_EVENT's
- * K-prefixed name operand, and LOAD_REALM_GLOBAL's sym() encoding). */
+ * Each case hand-builds a small UProto, calls uemit_disassemble, and checks
+ * the exact mnemonic and operand formatting the opcode's formatter emits,
+ * so an opcode that falls through to the generic "R%u, R%u, R%u" arm (and
+ * misrepresents its operands) shows up here. */
 
 #include "utest.h"
 
@@ -17,322 +16,111 @@
 
 #define UTEST(name) static void name(void)
 
-/* Build a minimal one-instruction module; instructions array is heap-
-   allocated so uchunk_destroy() can free it.  m IS the root. */
-static UProto make_one_instr_module(uint32_t instr) {
+static char dis[1024];
+
+/* Disassemble a stack root holding a copy of `ins`; uchunk_destroy frees
+   the instruction buffer (heap_allocated = false keeps the struct). */
+static const char *dis_n(const uint32_t *ins, size_t n) {
     UProto m = {0};
-    m.instructions = (uint32_t *)malloc(sizeof(uint32_t));
-    m.instr_cap   = 1;
-    m.instr_count = 1;
-    m.instructions[0] = instr;
-    /* heap_allocated = false: struct is stack-allocated; destroy frees buffers only */
-    return m;
-}
-
-/* -------------------------------------------------------------------------
- * OP_AT_INSTALL (38): ABC: cond_reg, body_reg, onleave_or_FF
- * Expected: "AT_INSTALL R5, R6, R255"
- * ------------------------------------------------------------------------- */
-UTEST(disasm_at_install) {
-    UProto m = make_one_instr_module(uinstr_enc_abc(OP_AT_INSTALL, 5U, 6U, 0xFFU));
-    char buf[256];
-    size_t n = uemit_disassemble(&m, buf, sizeof buf);
-    UASSERT(n > 0);
-    UASSERT(strstr(buf, "AT_INSTALL") != NULL);
-    UASSERT(strstr(buf, "R5") != NULL);
-    UASSERT(strstr(buf, "R6") != NULL);
-    UASSERT(strstr(buf, "R255") != NULL);
+    m.instructions = (uint32_t *)malloc(n * sizeof(uint32_t));
+    memcpy(m.instructions, ins, n * sizeof(uint32_t));
+    m.instr_cap = m.instr_count = n;
+    UASSERT(uemit_disassemble(&m, dis, sizeof dis) > 0);
     uchunk_destroy(&m, NULL);
+    return dis;
 }
 
-/* -------------------------------------------------------------------------
- * OP_AT_SYNC_INSTALL (39): ABC: cond_reg, body_reg, onleave_or_FF
- * Expected: "AT_SYNC_INSTALL R2, R3, R255"
- * ------------------------------------------------------------------------- */
-UTEST(disasm_at_sync_install) {
-    UProto m = make_one_instr_module(uinstr_enc_abc(OP_AT_SYNC_INSTALL, 2U, 3U, 0xFFU));
-    char buf[256];
-    size_t n = uemit_disassemble(&m, buf, sizeof buf);
-    UASSERT(n > 0);
-    UASSERT(strstr(buf, "AT_SYNC_INSTALL") != NULL);
-    UASSERT(strstr(buf, "R2") != NULL);
-    UASSERT(strstr(buf, "R3") != NULL);
-    UASSERT(strstr(buf, "R255") != NULL);
-    uchunk_destroy(&m, NULL);
+static const char *dis1(uint32_t ins) { return dis_n(&ins, 1); }
+
+#define HAS(text) UASSERT(strstr(dis, (text)) != NULL)
+
+UTEST(disasm_every_opcode_has_a_name) {
+    UASSERT_EQ(1, urbi_emit_disasm_opnames_complete());
 }
 
-/* -------------------------------------------------------------------------
- * OP_WHENEVER_INSTALL (40): ABC: cond_reg, body_reg, onleave_or_FF
- * Expected: "WHENEVER_INSTALL R1, R2, R255"
- * ------------------------------------------------------------------------- */
-UTEST(disasm_whenever_install) {
-    UProto m = make_one_instr_module(uinstr_enc_abc(OP_WHENEVER_INSTALL, 1U, 2U, 0xFFU));
-    char buf[256];
-    size_t n = uemit_disassemble(&m, buf, sizeof buf);
-    UASSERT(n > 0);
-    UASSERT(strstr(buf, "WHENEVER_INSTALL") != NULL);
-    UASSERT(strstr(buf, "R1") != NULL);
-    UASSERT(strstr(buf, "R2") != NULL);
-    UASSERT(strstr(buf, "R255") != NULL);
-    uchunk_destroy(&m, NULL);
+UTEST(disasm_loadk_neg_ret_jmp) {
+    dis1(uinstr_enc_abx(OP_LOADK, 0U, 1U));   HAS("LOADK R0, K1");
+    dis1(uinstr_enc_abc(OP_NEG, 1U, 2U, 0U)); HAS("NEG R1, R2");
+    dis1(uinstr_enc_abc(OP_RET, 3U, 0U, 0U)); HAS("RET R3");
+    dis1(uinstr_enc_abx(OP_JMP, 0U, 0x8005U)); HAS("JMP 5");
+    dis1(uinstr_enc_abx(OP_JMP, 0U, 32760U));  HAS("JMP -8");
 }
 
-/* -------------------------------------------------------------------------
- * OP_WAITUNTIL_INSTALL (41): ABC: cond_reg, 0, 0  (cond only)
- * Expected: "WAITUNTIL_INSTALL R7" — no spurious R0 operands
- * ------------------------------------------------------------------------- */
-UTEST(disasm_waituntil_install) {
-    UProto m = make_one_instr_module(uinstr_enc_abc(OP_WAITUNTIL_INSTALL, 7U, 0U, 0U));
-    char buf[256];
-    size_t n = uemit_disassemble(&m, buf, sizeof buf);
-    UASSERT(n > 0);
-    UASSERT(strstr(buf, "WAITUNTIL_INSTALL") != NULL);
-    UASSERT(strstr(buf, "R7") != NULL);
-    /* Must NOT show two extra R0 operands — confirm no comma after R7. */
-    {
-        const char *p = strstr(buf, "R7");
-        UASSERT(p != NULL);
-        if (p != NULL) UASSERT(p[2] != ',');
-    }
-    uchunk_destroy(&m, NULL);
-}
-
-/* -------------------------------------------------------------------------
- * OP_AT_EVENT_INSTALL (42): ABC: event_reg, body_reg, onleave_or_FF
- * Expected: "AT_EVENT_INSTALL R4, R5, R255"
- * ------------------------------------------------------------------------- */
-UTEST(disasm_at_event_install) {
-    UProto m = make_one_instr_module(uinstr_enc_abc(OP_AT_EVENT_INSTALL, 4U, 5U, 0xFFU));
-    char buf[256];
-    size_t n = uemit_disassemble(&m, buf, sizeof buf);
-    UASSERT(n > 0);
-    UASSERT(strstr(buf, "AT_EVENT_INSTALL") != NULL);
-    UASSERT(strstr(buf, "R4") != NULL);
-    UASSERT(strstr(buf, "R5") != NULL);
-    UASSERT(strstr(buf, "R255") != NULL);
-    uchunk_destroy(&m, NULL);
-}
-
-/* -------------------------------------------------------------------------
- * OP_AT_EVENT_SYNC_INSTALL (43): ABC: event_reg, body_reg, onleave_or_FF
- * Expected: "AT_EVENT_SYNC_INSTALL R8, R9, R255"
- * ------------------------------------------------------------------------- */
-UTEST(disasm_at_event_sync_install) {
-    UProto m = make_one_instr_module(uinstr_enc_abc(OP_AT_EVENT_SYNC_INSTALL, 8U, 9U, 0xFFU));
-    char buf[256];
-    size_t n = uemit_disassemble(&m, buf, sizeof buf);
-    UASSERT(n > 0);
-    UASSERT(strstr(buf, "AT_EVENT_SYNC_INSTALL") != NULL);
-    UASSERT(strstr(buf, "R8") != NULL);
-    UASSERT(strstr(buf, "R9") != NULL);
-    UASSERT(strstr(buf, "R255") != NULL);
-    uchunk_destroy(&m, NULL);
-}
-
-/* -------------------------------------------------------------------------
- * OP_GETSLOT_CHANGE_EVENT (44): ABC: dst_reg, recv_reg, name_sym_id
- * Expected: "GETSLOT_CHANGE_EVENT R0, R1, K3"
- * (C encodes a symbol-table index — displayed as Kn to distinguish from reg)
- * ------------------------------------------------------------------------- */
-UTEST(disasm_getslot_change_event) {
-    UProto m = make_one_instr_module(uinstr_enc_abc(OP_GETSLOT_CHANGE_EVENT, 0U, 1U, 3U));
-    char buf[256];
-    size_t n = uemit_disassemble(&m, buf, sizeof buf);
-    UASSERT(n > 0);
-    UASSERT(strstr(buf, "GETSLOT_CHANGE_EVENT") != NULL);
-    UASSERT(strstr(buf, "R0") != NULL);
-    UASSERT(strstr(buf, "R1") != NULL);
-    UASSERT(strstr(buf, "K3") != NULL);
-    uchunk_destroy(&m, NULL);
-}
-
-/* -------------------------------------------------------------------------
- * OP_LOAD_REALM_GLOBAL (45): ABC: dst_reg, sym_id_hi, sym_id_lo
- * Expected: "LOAD_REALM_GLOBAL R2, sym(0,7)"
- * (B and C are a 16-bit symbol id split into hi/lo bytes)
- * ------------------------------------------------------------------------- */
-UTEST(disasm_load_realm_global) {
-    UProto m = make_one_instr_module(uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, 2U, 0U, 7U));
-    char buf[256];
-    size_t n = uemit_disassemble(&m, buf, sizeof buf);
-    UASSERT(n > 0);
-    UASSERT(strstr(buf, "LOAD_REALM_GLOBAL") != NULL);
-    UASSERT(strstr(buf, "R2") != NULL);
-    UASSERT(strstr(buf, "sym(") != NULL);
-    uchunk_destroy(&m, NULL);
-}
-
-/* ===================================================================
- * T122 / COV-004: disasm coverage for the remaining fmt_* opcodes.
- * ===================================================================
- *
- * Each per-opcode formatter at src/emit/uemit_disasm.c is exercised below.
- * Together with the M5 reactive tests above they cover the dispatch
- * table at uemit_disasm.c:387-433.  Pre-T122 src/emit/uemit_disasm.c
- * was 48 % line-covered. */
-
-UTEST(disasm_loadk) {
-    UProto m = make_one_instr_module(uinstr_enc_abx(OP_LOADK, 0U, 1U));
-    char buf[256];
-    UASSERT(uemit_disassemble(&m, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "LOADK") != NULL);
-    UASSERT(strstr(buf, "R0") != NULL);
-    uchunk_destroy(&m, NULL);
-}
-
-UTEST(disasm_neg) {
-    UProto m = make_one_instr_module(uinstr_enc_abc(OP_NEG, 1U, 2U, 0U));
-    char buf[256];
-    UASSERT(uemit_disassemble(&m, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "NEG R1, R2") != NULL);
-    uchunk_destroy(&m, NULL);
-}
-
-UTEST(disasm_ret) {
-    UProto m = make_one_instr_module(uinstr_enc_abc(OP_RET, 3U, 0U, 0U));
-    char buf[256];
-    UASSERT(uemit_disassemble(&m, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "RET") != NULL);
-    uchunk_destroy(&m, NULL);
-}
-
-UTEST(disasm_jmp) {
-    UProto m = make_one_instr_module(uinstr_enc_abx(OP_JMP, 0U, 0x8005U));
-    char buf[256];
-    UASSERT(uemit_disassemble(&m, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "JMP") != NULL);
-    uchunk_destroy(&m, NULL);
-}
-
-UTEST(disasm_loadnil_loadbool_loadvoid) {
-    UProto m1 = make_one_instr_module(uinstr_enc_abc(OP_LOADNIL, 1U, 0U, 0U));
-    char buf[256];
-    UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "LOADNIL R1") != NULL);
-    uchunk_destroy(&m1, NULL);
-
-    UProto m2 = make_one_instr_module(uinstr_enc_abc(OP_LOADBOOL, 2U, 1U, 1U));
-    UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "LOADBOOL R2, true (skip)") != NULL);
-    uchunk_destroy(&m2, NULL);
-
-    UProto m3 = make_one_instr_module(uinstr_enc_abc(OP_LOADVOID, 3U, 0U, 0U));
-    UASSERT(uemit_disassemble(&m3, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "LOADVOID R3") != NULL);
-    uchunk_destroy(&m3, NULL);
+UTEST(disasm_literals) {
+    dis1(uinstr_enc_abc(OP_LOADNIL, 1U, 0U, 0U));  HAS("LOADNIL R1");
+    dis1(uinstr_enc_abc(OP_LOADBOOL, 2U, 1U, 1U)); HAS("LOADBOOL R2, true (skip)");
+    dis1(uinstr_enc_abc(OP_LOADVOID, 3U, 0U, 0U)); HAS("LOADVOID R3");
 }
 
 UTEST(disasm_upval_ops) {
-    UProto m1 = make_one_instr_module(uinstr_enc_abc(OP_GETUPVAL, 0U, 1U, 0U));
-    char buf[256];
-    UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "GETUPVAL R0, U1") != NULL);
-    uchunk_destroy(&m1, NULL);
-
-    UProto m2 = make_one_instr_module(uinstr_enc_abc(OP_SETUPVAL, 2U, 3U, 0U));
-    UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "SETUPVAL U3, R2") != NULL);
-    uchunk_destroy(&m2, NULL);
-
-    UProto m3 = make_one_instr_module(uinstr_enc_abc(OP_CLOSE, 4U, 0U, 0U));
-    UASSERT(uemit_disassemble(&m3, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "CLOSE R4") != NULL);
-    uchunk_destroy(&m3, NULL);
+    dis1(uinstr_enc_abc(OP_GETUPVAL, 0U, 1U, 0U)); HAS("GETUPVAL R0, U1");
+    dis1(uinstr_enc_abc(OP_SETUPVAL, 2U, 3U, 0U)); HAS("SETUPVAL U3, R2");
+    dis1(uinstr_enc_abc(OP_CLOSE, 4U, 0U, 0U));    HAS("CLOSE R4");
 }
 
 UTEST(disasm_call_test_testset) {
-    UProto m1 = make_one_instr_module(uinstr_enc_abc(OP_CALL, 1U, 3U, 2U));
-    char buf[256];
-    UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "CALL R1, 2 args, 1 results") != NULL);
-    uchunk_destroy(&m1, NULL);
-
-    UProto m2 = make_one_instr_module(uinstr_enc_abc(OP_TEST, 5U, 0U, 1U));
-    UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "TEST R5, skip-if-truthy") != NULL);
-    uchunk_destroy(&m2, NULL);
-
-    UProto m3 = make_one_instr_module(uinstr_enc_abc(OP_TESTSET, 0U, 1U, 1U));
-    UASSERT(uemit_disassemble(&m3, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "TESTSET R0, R1, 1") != NULL);
-    uchunk_destroy(&m3, NULL);
+    dis1(uinstr_enc_abc(OP_CALL, 1U, 3U, 2U));    HAS("CALL R1, 2 args, 1 results");
+    dis1(uinstr_enc_abc(OP_CALL, 1U, 4U, UCALL_C_METHOD | 2U)); HAS("CALL [method] R1, 2 args, 1 results");
+    dis1(uinstr_enc_abc(OP_TEST, 5U, 0U, 1U));    HAS("TEST R5, skip-if-truthy");
+    dis1(uinstr_enc_abc(OP_TESTSET, 0U, 1U, 1U)); HAS("TESTSET R0, R1, 1");
 }
 
 UTEST(disasm_compare_ops) {
-    /* OP_EQ A=true: == form */
-    UProto m1 = make_one_instr_module(uinstr_enc_abc(OP_EQ, 1U, 2U, 3U));
-    char buf[256];
-    UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "EQ ==") != NULL);
-    uchunk_destroy(&m1, NULL);
-
-    /* OP_EQ A=false: != form */
-    UProto m1n = make_one_instr_module(uinstr_enc_abc(OP_EQ, 0U, 2U, 3U));
-    UASSERT(uemit_disassemble(&m1n, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "EQ !=") != NULL);
-    uchunk_destroy(&m1n, NULL);
-
-    UProto m2 = make_one_instr_module(uinstr_enc_abc(OP_NEQ, 0U, 4U, 5U));
-    UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "NEQ R4, R5") != NULL);
-    uchunk_destroy(&m2, NULL);
-
-    UProto m3 = make_one_instr_module(uinstr_enc_abc(OP_LT, 0U, 1U, 2U));
-    UASSERT(uemit_disassemble(&m3, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "LT R1, R2") != NULL);
-    uchunk_destroy(&m3, NULL);
-
-    UProto m4 = make_one_instr_module(uinstr_enc_abc(OP_LE, 0U, 1U, 2U));
-    UASSERT(uemit_disassemble(&m4, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "LE") != NULL);
-    uchunk_destroy(&m4, NULL);
+    dis1(uinstr_enc_abc(OP_EQ, 1U, 2U, 3U)); HAS("EQ == R2, R3");
+    dis1(uinstr_enc_abc(OP_EQ, 0U, 2U, 3U)); HAS("EQ != R2, R3");
+    dis1(uinstr_enc_abc(OP_LT, 1U, 1U, 2U)); HAS("LT R1, R2 (<)");
+    dis1(uinstr_enc_abc(OP_LE, 0U, 1U, 2U)); HAS("LE R1, R2 (>)");
 }
 
-UTEST(disasm_yield_fork_join) {
-    UProto m1 = make_one_instr_module(uinstr_enc_abc(OP_YIELD, 0U, 0U, 0U));
-    char buf[256];
-    UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "YIELD") != NULL);
-    uchunk_destroy(&m1, NULL);
-
-    UProto m2 = make_one_instr_module(uinstr_enc_abc(OP_FORK_DETACH, 1U, 0U, 0U));
-    UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "FORK_DETACH") != NULL);
-    uchunk_destroy(&m2, NULL);
-
-    UProto m3 = make_one_instr_module(uinstr_enc_abc(OP_FORK_JOIN, 1U, 2U, 0U));
-    UASSERT(uemit_disassemble(&m3, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "FORK_JOIN") != NULL);
-    uchunk_destroy(&m3, NULL);
-
-    UProto m4 = make_one_instr_module(uinstr_enc_abc(OP_JOIN_WAIT, 1U, 0U, 0U));
-    UASSERT(uemit_disassemble(&m4, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "JOIN_WAIT") != NULL);
-    uchunk_destroy(&m4, NULL);
+UTEST(disasm_generic_three_register_format) {
+    dis1(uinstr_enc_abc(OP_MOVE, 1U, 2U, 0U));             HAS("MOVE R1, R2, R0");
+    dis1(uinstr_enc_abc(OP_ADD, 0U, 1U, 2U));              HAS("ADD R0, R1, R2");
+    dis1(uinstr_enc_abc(OP_THROW, 4U, 0U, 0U));            HAS("THROW R4");
+    dis1(uinstr_enc_abc(OP_LOAD_CATCH_VALUE, 6U, 0U, 0U)); HAS("LOAD_CATCH_VALUE R6");
+    dis1(uinstr_enc_abc(OP_RESUME, 0U, 0U, 0U));           HAS("RESUME");
 }
 
-UTEST(disasm_slot_ops) {
-    UProto m1 = make_one_instr_module(uinstr_enc_abc(OP_GETSLOT, 0U, 1U, 2U));
-    char buf[256];
-    UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "GETSLOT") != NULL);
-    uchunk_destroy(&m1, NULL);
-
-    UProto m2 = make_one_instr_module(uinstr_enc_abc(OP_SETSLOT, 0U, 1U, 2U));
-    UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "SETSLOT") != NULL);
-    uchunk_destroy(&m2, NULL);
+UTEST(disasm_yield_fork_join_wait) {
+    dis1(uinstr_enc_abc(OP_YIELD, 0U, 0U, 0U));            HAS("YIELD");
+    dis1(uinstr_enc_abc(OP_FORK, 1U, 2U, UFORK_JOIN));     HAS("FORK R1 -> R2 join");
+    dis1(uinstr_enc_abc(OP_FORK, 3U, 0xFFU, UFORK_DETACH)); HAS("FORK R3 detach");
+    dis1(uinstr_enc_abc(OP_JOIN_WAIT, 2U, 0U, 0U));        HAS("JOIN_WAIT R2");
 }
 
-/* CLOSURE with embedded upvalue prelude: builds a 3-instruction module
- * (OP_CLOSURE + 2 upvalue-prelude pseudo-instrs) plus a UProto stub at
- * module->nested[0] with nupvals=2.  Exercises uemit_disasm.c:73-87
- * (the "upval[%u]: ..." prelude printer).
- *
- * uchunk_destroy frees the nested[] array entries via the module's
- * alloc_fn — to keep the alloc/free round-trip safe, the UProto and
- * the nested[] array are allocated with the default allocator (which
- * is just realloc — std-malloc-compatible). */
+UTEST(disasm_slot_ops_print_their_site) {
+    dis1(uinstr_enc_abc(OP_GETSLOT, 0U, 1U, 2U));              HAS("GETSLOT R0, R1, site 2");
+    dis1(uinstr_enc_abc(OP_SETSLOT, 0U, 1U, 3U));              HAS("SETSLOT R0, R1, site 3");
+    dis1(uinstr_enc_abc(OP_SETSLOT_UPDATE, 4U, 5U, 6U));       HAS("SETSLOT_UPDATE R4, R5, site 6");
+    dis1(uinstr_enc_abc(OP_SELF, 2U, 3U, 7U));                 HAS("SELF R2, R3, site 7");
+    dis1(uinstr_enc_abc(OP_GETSLOT_CHANGE_EVENT, 0U, 1U, 3U)); HAS("GETSLOT_CHANGE_EVENT R0, R1, site 3");
+}
+
+UTEST(disasm_extarg_folds_into_the_site) {
+    const uint32_t ins[] = { uinstr_enc_abx(OP_EXTARG, 0U, 1U), uinstr_enc_abc(OP_GETSLOT, 1U, 0U, 44U) };
+    dis_n(ins, 2);
+    HAS("0000  EXTARG hi=1");
+    HAS("0001  GETSLOT R1, R0, site 300");
+}
+
+UTEST(disasm_scope_ops) {
+    dis1(uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_CATCH, 9U)); HAS("SCOPE_TRY flags=1 -> 9");
+    dis1(uinstr_enc_abx(OP_SCOPE_TAG, 17U, 4U));                HAS("SCOPE_TAG R17 -> 4");
+    dis1(uinstr_enc_abx(OP_SCOPE_TAG, USCOPE_NO_REG, 4U));      HAS("SCOPE_TAG fresh -> 4");
+    dis1(uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0U, 0U)); HAS("SCOPE_POP try\n");
+    dis1(uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY | USCOPE_POP_RUN_FINALLY, 0U, 0U)); HAS("SCOPE_POP try+finally");
+    dis1(uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TAG, 0U, 0U)); HAS("SCOPE_POP tag");
+    dis1(uinstr_enc_abx(OP_UNWIND_TO, 2U, 12U));                HAS("UNWIND_TO depth=2 -> 12");
+}
+
+UTEST(disasm_install_and_globals) {
+    dis1(uinstr_enc_abc(OP_INSTALL, 5U, UINSTALL_WHENEVER_EVENT, UINSTALL_F_HAS_BODY | UINSTALL_F_HAS_ALT));
+    HAS("INSTALL R5 mode=6 flags=3");
+    dis1(uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, 2U, 0U, 7U)); HAS("LOAD_REALM_GLOBAL R2, sym(0,7)");
+    dis1(uinstr_enc_abc(OP_LOAD_RECV, 3U, 0U, 0U));         HAS("LOAD_RECV R3");
+}
+
+/* CLOSURE with a 2-upvalue child: covers the prelude printer, and the
+ * nested proto section that follows the root. */
 UTEST(disasm_closure_with_upval_prelude) {
     UProto m = {0};
     m.instructions = (uint32_t *)malloc(3 * sizeof(uint32_t));
@@ -348,49 +136,71 @@ UTEST(disasm_closure_with_upval_prelude) {
     m.nested = (UProto **)malloc(sizeof(UProto *));
     m.nested[0] = child;
     m.nested_count = 1;
-    /* heap_allocated = false: struct is stack-allocated; destroy frees buffers only */
 
-    char buf[512];
-    UASSERT(uemit_disassemble(&m, buf, sizeof buf) > 0);
-    UASSERT(strstr(buf, "CLOSURE R1, P0") != NULL);
-    UASSERT(strstr(buf, "upval[0]: in_stack parent_idx=4") != NULL);
-    UASSERT(strstr(buf, "upval[1]: from_upval parent_idx=7") != NULL);
+    UASSERT(uemit_disassemble(&m, dis, sizeof dis) > 0);
+    HAS("CLOSURE R1, P0");
+    HAS("upval[0]: in_stack parent_idx=4");
+    HAS("upval[1]: from_upval parent_idx=7");
+    HAS("; proto P0\n(empty)");
 
-    /* uchunk_destroy frees buffers (instructions, nested[], nested[0]);
-     * struct m is stack-allocated so heap_allocated=false skips struct free. */
+    uchunk_destroy(&m, NULL);
+}
+
+/* The whole chunk: the root first with no header, then every nested proto
+ * depth-first under a numbered header. */
+UTEST(disasm_recurses_into_nested_protos) {
+    UProto m = {0};
+    m.instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    m.instr_cap = m.instr_count = 1;
+    m.instructions[0] = uinstr_enc_abc(OP_RET, 0U, 0U, 0U);
+    m.nested = (UProto **)malloc(2 * sizeof(UProto *));
+    m.nested_count = 2;
+    for (int k = 0; k < 2; k++) {
+        UProto *c = (UProto *)calloc(1, sizeof(UProto));
+        c->instructions = (uint32_t *)malloc(sizeof(uint32_t));
+        c->instr_cap = c->instr_count = 1;
+        c->instructions[0] = uinstr_enc_abc(OP_LOADNIL, (uint8_t)(k + 5), 0U, 0U);
+        m.nested[k] = c;
+    }
+
+    UASSERT(uemit_disassemble(&m, dis, sizeof dis) > 0);
+    UASSERT(strncmp(dis, "0000  RET R0", 12) == 0);
+    const char *p0 = strstr(dis, "; proto P0");
+    const char *p1 = strstr(dis, "; proto P1");
+    UASSERT(p0 != NULL && p1 != NULL && p0 < p1);
+    UASSERT(p0 != NULL && strstr(p0, "LOADNIL R5") != NULL);
+    UASSERT(p1 != NULL && strstr(p1, "LOADNIL R6") != NULL);
+
+    uchunk_destroy(&m, NULL);
+}
+
+UTEST(disasm_truncates_cleanly) {
+    const uint32_t ins[] = { uinstr_enc_abc(OP_LOADNIL, 1U, 0U, 0U), uinstr_enc_abc(OP_RET, 1U, 0U, 0U) };
+    UProto m = {0};
+    m.instructions = (uint32_t *)malloc(sizeof ins);
+    memcpy(m.instructions, ins, sizeof ins);
+    m.instr_cap = m.instr_count = 2;
+    char small[8];
+    size_t n = uemit_disassemble(&m, small, sizeof small);
+    UASSERT(n < sizeof small);
+    UASSERT_EQ('\0', small[n]);
     uchunk_destroy(&m, NULL);
 }
 
 void test_disasm_suite(void) {
-    utest_run("disasm: AT_INSTALL shows mnemonic and registers",
-              disasm_at_install);
-    utest_run("disasm: AT_SYNC_INSTALL shows mnemonic and registers",
-              disasm_at_sync_install);
-    utest_run("disasm: WHENEVER_INSTALL shows mnemonic and registers",
-              disasm_whenever_install);
-    utest_run("disasm: WAITUNTIL_INSTALL shows cond-only (no trailing R0 operands)",
-              disasm_waituntil_install);
-    utest_run("disasm: AT_EVENT_INSTALL shows mnemonic and registers",
-              disasm_at_event_install);
-    utest_run("disasm: AT_EVENT_SYNC_INSTALL shows mnemonic and registers",
-              disasm_at_event_sync_install);
-    utest_run("disasm: GETSLOT_CHANGE_EVENT shows K-prefix for sym operand",
-              disasm_getslot_change_event);
-    utest_run("disasm: LOAD_REALM_GLOBAL shows sym() encoding",
-              disasm_load_realm_global);
-    /* T122 / COV-004 — additional fmt_* coverage */
-    utest_run("disasm: LOADK", disasm_loadk);
-    utest_run("disasm: NEG", disasm_neg);
-    utest_run("disasm: RET", disasm_ret);
-    utest_run("disasm: JMP", disasm_jmp);
-    utest_run("disasm: LOADNIL/LOADBOOL/LOADVOID",
-              disasm_loadnil_loadbool_loadvoid);
+    utest_run("disasm: every opcode has a name", disasm_every_opcode_has_a_name);
+    utest_run("disasm: LOADK/NEG/RET/JMP", disasm_loadk_neg_ret_jmp);
+    utest_run("disasm: LOADNIL/LOADBOOL/LOADVOID", disasm_literals);
     utest_run("disasm: GETUPVAL/SETUPVAL/CLOSE", disasm_upval_ops);
     utest_run("disasm: CALL/TEST/TESTSET", disasm_call_test_testset);
-    utest_run("disasm: EQ/NEQ/LT/LE", disasm_compare_ops);
-    utest_run("disasm: YIELD/FORK_DETACH/FORK_JOIN/JOIN_WAIT",
-              disasm_yield_fork_join);
-    utest_run("disasm: GETSLOT/SETSLOT", disasm_slot_ops);
-    utest_run("disasm: CLOSURE with upval prelude",
-              disasm_closure_with_upval_prelude);
+    utest_run("disasm: EQ/LT/LE", disasm_compare_ops);
+    utest_run("disasm: generic three-register format", disasm_generic_three_register_format);
+    utest_run("disasm: YIELD/FORK/JOIN_WAIT", disasm_yield_fork_join_wait);
+    utest_run("disasm: slot opcodes print their site", disasm_slot_ops_print_their_site);
+    utest_run("disasm: EXTARG folds into the site", disasm_extarg_folds_into_the_site);
+    utest_run("disasm: SCOPE_TRY/SCOPE_TAG/SCOPE_POP/UNWIND_TO", disasm_scope_ops);
+    utest_run("disasm: INSTALL/LOAD_REALM_GLOBAL/LOAD_RECV", disasm_install_and_globals);
+    utest_run("disasm: CLOSURE with upval prelude", disasm_closure_with_upval_prelude);
+    utest_run("disasm: recurses into nested protos", disasm_recurses_into_nested_protos);
+    utest_run("disasm: truncates cleanly", disasm_truncates_cleanly);
 }
