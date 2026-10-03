@@ -262,11 +262,10 @@ static bool is_setproperty_call(const UAstNode *n) {
  *   - `var Name = <block>` is an ordinary variable declaration — at
  *     chunk top it becomes a realm global through the same write path
  *     every other top-level `var` in stdlib.u already uses; inside a
- *     function it is a plain local.  A `Realm.Name = $cls` member-set
- *     (the previous lowering) requires the identifier `Realm` to
- *     already resolve to something before the class can export itself,
- *     which is unavailable while stdlib.u itself is booting (no realm
- *     exists yet) — `var Name = ...` has no such dependency.
+ *     function it is a plain local.  Neither path depends on the
+ *     identifier `Realm` resolving to anything, so a class can declare
+ *     itself even while stdlib.u itself is still booting (no realm
+ *     exists yet).
  *
  * The `public` keyword is required after the colon for syntactic
  * compatibility with legacy urbi 2.x (which had access modifiers); v1.0

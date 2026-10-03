@@ -1,0 +1,15 @@
+# Covers: a class declaration (`var Name = BLOCK {...}`) compiles outside
+#         chunk top too — inside a function body, an `if` arm, and a tag
+#         scope.  The block initializer declares its own hidden `$cls`
+#         local, which can land exactly where the outer local is reserved
+#         and push the block's own result one register above it; the
+#         var-decl arm must collapse that back down with a MOVE instead
+#         of raising EMIT_UNSUPPORTED_AST.
+var f = function() { class Loc { var v = 9 }; Loc.v }; f();
+[00000000] 9
+if (true) { class T1 { var w = 5 }; T1.w } else { 0 };
+[00000000] 5
+var t = Tag.new();
+[00000000] <Tag>
+t: { class T2 { var w = 3 }; T2.w };
+[00000000] 3

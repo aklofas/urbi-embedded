@@ -529,10 +529,18 @@ uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n) {
     uint8_t init_reg = urbi_emit_expr(e, n->u.var_decl.init);
     if (e->error != EMIT_OK) return 0U;
 
-    /* Sanity: init must have landed at exactly reg_before. */
+    /* An initializer that is itself a scoped construct (a BLOCK, used in
+     * expression position — a class declaration's desugar is the current
+     * example) opens and closes its own local scope around the init: any
+     * locals IT declares (the class desugar's hidden $cls, say) can land
+     * exactly at reg_before, pushing the block's own result above it.
+     * Nothing runs between the block's close and here, so the value at
+     * init_reg is still intact — collapse it down into the slot this
+     * local will occupy instead of erroring. */
     if (init_reg != reg_before) {
-        e->error = EMIT_UNSUPPORTED_AST;
-        return 0U;
+        urbi_emit_instr(e, uinstr_enc_abc(OP_MOVE, reg_before, init_reg, 0U),
+                   (uint32_t)n->line);
+        e->next_reg = (uint8_t)(reg_before + 1);
     }
 
     /* Absorb the temp into the local zone: register at reg_before is
