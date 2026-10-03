@@ -7,6 +7,14 @@
 #
 # Each line: <path>  # <what it needs>
 
-# EMPTY.  The reactive runtime was the last subsystem any gated fixture
-# was waiting on; the thirteen entries that stood here are all live.
-# Keep the file: the next gated directory to be widened will want it.
+# The emitter is being rewritten: try, tag scopes and watchers do not
+# compile yet, and these gated fixtures use one of them.
+tests/chk/closure/capture_shadowed.chk                  # try
+tests/chk/function/default_params.chk                   # try
+tests/chk/globals/const_builtin_global_rejects_write.chk  # try
+tests/chk/globals/shadow_vs_rebind_builtin.chk          # try
+tests/chk/objects/class_in_nested_positions.chk         # tag scope
+tests/chk/objects/event_new_emit.chk                    # at
+tests/chk/objects/slot_cache_invalidation.chk           # at
+tests/chk/operators/compare_overload_mirror.chk         # try
+tests/chk/operators/operator_overload_throw.chk         # try
