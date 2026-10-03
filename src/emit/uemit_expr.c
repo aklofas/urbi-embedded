@@ -939,6 +939,45 @@ uint8_t urbi_emit_block_arm(UEmitter *e, UAstNode *n) {
     }
     if (!uemit_open_block(e, false)) return 0U;
 
+    /* Adopt every register already live above the local-zone floor as a
+     * hidden declared local for the duration of this block.  A block
+     * used anywhere but as a bare top-level statement (the parser's
+     * subscript/list-literal desugars can put one in arbitrary
+     * expression position) can be entered with an ENCLOSING
+     * expression's pending temporaries still above the floor — a
+     * call's callee, a binary's LHS, an earlier element of a list
+     * literal under construction.  urbi_emit_fs_temp_floor() only knows
+     * about declared locals (it is nactvar-based), so without this the
+     * between-statement floor reset below would hand those live
+     * registers to this block's OWN temporaries and silently corrupt
+     * them.  Same trick as emit_seq_amp's closure-register adoption
+     * above; uemit_close_block restores nactvar from the snapshot it
+     * took at open, above, regardless of how this function returns, so
+     * no matching decrement is needed here. */
+    if (e->vm != NULL) {
+        uint8_t floor_before = urbi_emit_fs_temp_floor(e->current_fs);
+        for (uint8_t reg = floor_before; reg < e->next_reg; reg++) {
+            if (e->current_fs->nactvar >= UFS_MAX_LOCALS) {
+                e->error = EMIT_REG_EXHAUSTED;
+                uemit_close_block(e);
+                return 0U;
+            }
+            const char *hidden_name = ustr_intern(e->vm, "\x01blk", 4);
+            if (hidden_name == NULL) {
+                e->error = EMIT_OOM;
+                uemit_close_block(e);
+                return 0U;
+            }
+            ULocalVar *lv = &e->current_fs->actvars[e->current_fs->nactvar];
+            lv->name        = hidden_name;
+            lv->name_len    = 4;
+            lv->slot        = reg;
+            lv->is_captured = false;
+            lv->is_lazy     = false;
+            e->current_fs->nactvar++;
+        }
+    }
+
     uint8_t r = 0U;
     for (int i = 0; i < n->u.block.count; i++) {
         r = urbi_emit_expr(e, n->u.block.stmts[i]);

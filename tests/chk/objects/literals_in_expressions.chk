@@ -1,0 +1,44 @@
+# Covers: list/dict literals and the compound-subscript BLOCK form used
+# as part of a larger expression, not as a standalone statement.
+#
+# Both desugars used to corrupt an enclosing expression's live
+# temporaries: a dict literal built `var $d = Dict.new(); ...; $d` as
+# a BLOCK, and `l[i] += v` built `var $r = l; var $i = i; $r.set(...)`
+# the same way. urbi_emit_block_arm's between-statement register reset
+# only knew about the block's OWN declared locals (urbi_emit_fs_temp_floor
+# is nactvar-based), so it would hand an already-live register — a
+# pending call's callee, a binary's LHS, an earlier list element — to
+# one of the block's own statements the moment the block was used
+# anywhere but a bare top-level statement.
+#
+# Fix: dict literals no longer use a block at all — they lower to a
+# chained `Dict.new().set(k0, v0).set(k1, v1)...` expression (dict_set
+# returns self), which is an ordinary expression tree with no declared
+# locals to clobber anything. The compound-subscript form still needs
+# two locals ($r and $i), so urbi_emit_block_arm itself now adopts any
+# register already live above the floor as a hidden declared local for
+# the block's duration, which raises the floor above them instead of
+# resetting through them.
+
+# A dict literal as a call argument, summed with another call result.
+# (x.size() is 3 for the 3-element list, 1 for the 1-entry dict: 3+1=4.)
+var g = function(x) { x.size() }; g([1, 2, 3]) + g(["k" => 1])
+[00000000] 4
+
+# A dict literal nested inside a list literal, round-tripped through an
+# identity function and read back out.
+var h = function(x) { x }; var r = [h(1), h(["k" => 7])]; r.get(1).get("k")
+[00000001] 7
+
+# A compound-subscript assignment as one operand of a binary expression.
+# list_set returns the list itself (not the new element), so the
+# updated value is read back via .get(0): 100 + 11 = 111.
+var g2 = function(x) { x }; var l = [1, 2, 3]; g2(100) + (l[0] += 10).get(0)
+[00000002] 111
+
+# The same shape without the trailing .get(0): adding an Integer and a
+# List (what `l[0] += 10` itself evaluates to) is a genuine type error,
+# not the register corruption this used to be (which surfaced as an
+# unrelated "slot 'set' not found" LookupError instead).
+var g3 = function(x) { x }; var l2 = [1, 2, 3]; g3(100) + (l2[0] += 10)
+[00000003] !!! line 1: TypeError: '+' operands must be Integer or Float (got Integer, unknown)
