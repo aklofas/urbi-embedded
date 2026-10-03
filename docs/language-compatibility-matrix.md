@@ -50,7 +50,7 @@
 | `for (init; cond; step)` | deferred (v1.x) | C-style three-part form; use `while` instead; see `docs/migration/control-flow-migration.md` |
 | `break` | implemented | Wave 6 W1; exits innermost loop or switch |
 | `continue` | implemented | Wave 6 W1; skips to next iteration of for-each or while |
-| `switch` | implemented | Wave 6 W1; equality-dispatch only; no fall-through; break exits switch. v0.13.1: case bodies get real scopes and the subject is evaluated once into a hidden local (FE-02 follow-on); more than 64 cases is a latched compile error (FE-06) |
+| `switch` | implemented | Wave 6 W1; equality-dispatch only; no fall-through; break exits switch. v0.13.1: case bodies get real scopes and the subject is evaluated once into a hidden local (FE-02 follow-on); more than 64 cases is a latched compile error (FE-06). **v0.15.0-frontend**: re-emitted on the one-cursor frontend with no behavior change; `break`/`continue` now compile through a per-loop/switch patch list (capped at 16 pending sites) patched once the exit or back-edge address is known, instead of a dedicated opcode |
 | `switch ... default:` catch-all arm | implemented | **v0.13.5** — runs when no case matches; dispatch is source-position-independent (a `default` listed first still loses to a matching case); a second `default` arm is a compile error; lowered onto the existing patch-list jump machinery, no new opcode. `switch` (and for-each) inside a `try` body works: the try result register is anchored as a declared hidden local so body-declared locals keep their registers (fixed in v0.13.5; was a pre-existing first-arm-always miscompile), see `tests/chk/control_transfer/try_body_hidden_local_collision.chk`. See `tests/chk/control_transfer/switch_default.chk`; matrix-row: syntax-switch-default |
 | `do (receiver) { ... }` | deferred (v1.x) | receiver-bound block form; uncommon in practice |
 | `loop` | deferred (v1.x) | infinite loop sugar; use `while (true)` instead |
@@ -72,7 +72,7 @@
 
 | Construct | Status | Reason / fix milestone |
 |---|---|---|
-| `at (cond) body` | partial | core form works; missing `~ duration`, `sync`, `onleave` per legacy F4 / Wave 6 W9 |
+| `at (cond) body` | partial | core form works; missing `~ duration`, `sync`, `onleave` per legacy F4 / Wave 6 W9. **v0.15.0-frontend**: `body` is exactly one statement — a `\|` immediately after the construct binds OUTSIDE it as a sibling, not into the body (legacy rule, carried forward unchanged by the frontend rewrite); see `tests/chk/reactive/body_binds_one_statement.chk`; matrix-row: reactive-body-one-statement |
 | `at (event?) body` | implemented | payload binding with named var: `at (e?(var x)) body`; shipped v0.10.5 W9 |
 | `at (event?(var x)) body` | implemented | legacy F4; shipped v0.10.5 W9 |
 | `at sync (cond) body` | implemented | M5 / §S-watcher-3 — `at sync` keyword form is canonical (shipped M5); the `at.sync` dot-syntax variant was a fixture-authoring error from M5 era and never existed in urbiscript.  v0.10.12 W2 normalized 4 fixture headers/bodies (Cat. E re-audit Cluster #15 verdict A) |
@@ -85,7 +85,7 @@
 | `waituntil (cond)` | implemented | — |
 | `waituntil (event?)` | implemented | payload delivered on resume; shipped v0.10.5 W9 |
 | `watch (expr)` returns event | NOT implemented | legacy F4; Wave 6 W9 |
-| `every (duration) body` | partial | core form works; OP_CLOSURE in nested body broken per reactive F4 / Wave 3 W1 |
+| `every (duration) body` | implemented | the `OP_CLOSURE`-in-nested-body defect (reactive F4 / Wave 3 W1) predates the re-founded core and does not reproduce on it; see `tests/chk/temporal/batch_every_until_tag_stop.chk` (multi-statement block body with a nested `if` and a `tag.stop()` call). **v0.15.0-frontend**: `body` is exactly one statement, same rule as `at`/`whenever` — see `tests/chk/reactive/body_binds_one_statement.chk`; matrix-row: temporal-every |
 | `sleep (duration)` | implemented | v0.10.2 W6; legacy F15 closed; `tests/chk/temporal/sleep_basic.chk` + `sleep_in_strand.chk` |
 
 ### Tags

@@ -163,3 +163,23 @@ sum
 
 - new tree median: 0.0125 s
 - baseline median: 0.0209 s (about 40% faster, not slower)
+
+## Frontend rewrite (`refound/frontend`, wire v2)
+
+Recorded 2026-10-03 against commit `a1debad4` (the frontend rewrite:
+parser-only desugar, one-cursor emitter with pinned temporaries, wire v2
+bytecode). Same machine as above (`AMD RYZEN AI MAX+ 395 w/ Radeon
+8060S`, 32 logical CPUs). `make clean && make`, then `make test-bench`
+three times, each run alone, nothing else building.
+
+| run | lookup_bench | mandelbrot_host |
+|-----|--------------|------------------|
+| 1   | 0.63x        | 0.75x            |
+| 2   | 0.62x        | 0.74x            |
+| 3   | 0.64x        | 0.75x            |
+
+All six ratios at or under the 1.20 spec ratio. The frontend rewrite
+changes codegen shape (new opcodes, EXTARG, pinned temporaries) but the
+measured ratios stay in the same band as the Phase 3 core numbers above
+(0.59x-0.64x / 0.74x-0.84x) — the new emitter does not regress the
+lookup or mandelbrot hot paths.

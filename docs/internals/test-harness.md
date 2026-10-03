@@ -63,6 +63,18 @@ urbi_close(vm);
 Nothing here starts a strand or collects a heap. A suite that wanted to
 belongs in `tests/rt/` or the corpus.
 
+**Frontend tests go through the public entry point.** `tests/unit/test_emit_bytecode.c`
+pins the emitter's output two ways: the bytecode shape of a construct
+(compiled through `urbi_compile`, loaded back with the real loader, and
+disassembled with `uemit_disassemble`) and what a program evaluates to (run
+through `urbi_run`). Every case compiles through the public API, never by
+driving a `UEmitter` directly — `src/emit/uemit.h` is private to `src/emit/`,
+and a test that called `uemit_new`/`uemit_statement` itself would be pinning
+the driver's internals rather than what the frontend promises a caller. The
+one exception is the diagnostic-buffer ordering case, which has no public
+surface to observe through (nothing in `urbi.h` exposes warn/error diagnostic
+order) and so drives `UEmitter` directly as a narrow, documented carve-out.
+
 ## The runtime runner — `tests/rt/`
 
 Same shape, different harness (`tests/rt/rtest.h`: `RT_CHECK`, `RT_EQ`,

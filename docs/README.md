@@ -40,7 +40,6 @@ For contributors building or modifying the C99 implementation.
 - [The runtime](internals/runtime.md) — values, the collector, objects, strands, the scheduler, errors, realms, booting
 - [Reactive runtime](internals/reactive-runtime.md) — watchers in full: modes, the dirty set, the drain
 - [Error channels](internals/error-channels.md) — where a failure goes and who can see it
-- [Emit correctness notes](internals/emit-correctness-notes.md) — verified emit invariants
 - [Embedded ports](internals/ports.md) — per-target record; all parked until Phase 5
 - [Design decisions](internals/design-decisions.md) — rationale log for implementation choices
 - [Test harness](internals/test-harness.md) — the four runners and how to add to each
@@ -133,7 +132,6 @@ The "Since" column is the first release where the doc ships. Rows without a link
 | [REPL service](internals/repl-service.md) | The NDJSON eval protocol and the cooperative service | `v0.9.1-repl-service` |
 | [Assertion discipline](internals/assertion-discipline.md) | `URBI_REQUIRE` vs `URBI_INTERNAL_ASSERT`: which fires where, and when to use which | `v0.10.1-invariants` |
 | [Build system](internals/build-system.md) | Targets, build directories, flag stamping, the stdlib bake cycle | `v0.6.1-stdlib` |
-| [Emit correctness notes](internals/emit-correctness-notes.md) | Verified emit invariants that don't fit in source comments | `v0.5.2-scratch-frame-followup` |
 
 ### reference/
 

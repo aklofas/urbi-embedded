@@ -19,18 +19,18 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  24
-#define URBI_API_VERSION_PATCH  1
+#define URBI_API_VERSION_MINOR  25
+#define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
-#define URBI_API_VERSION_STRING "0.24.1"
+#define URBI_API_VERSION_STRING "0.25.0"
 
 /* Release version — the latest tag with its leading "v" stripped.  This
  * is what urbi_version() reports and what `urbi --version` prints; it
  * moves with every tag, unlike the API version above.  The
  * check-version-sync gate pins it against that tag. */
-#define URBI_RELEASE_STRING "0.14.0-refoundation"
+#define URBI_RELEASE_STRING "0.15.0-frontend"
 
 /* Runtime getter. NULL-tolerant per arg. */
 void urbi_api_version(int *out_major, int *out_minor, int *out_patch);

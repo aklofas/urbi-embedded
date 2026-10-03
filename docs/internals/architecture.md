@@ -4,19 +4,25 @@
 
 The urbi-embedded compiler and runtime are organized as a linear pipeline: a
 source buffer enters at one end; a tagged-value result exits at the other.
-Each stage is a single C translation unit. Each stage produces an owned data
-structure that the next stage consumes. Ownership boundaries are explicit — no
-stage calls directly into another stage's internals — which makes every stage
-independently testable.
+Each stage is a small cluster of C translation units under its own
+`src/<stage>/` directory. Each stage produces an owned data structure that
+the next stage consumes. Ownership boundaries are explicit — no stage calls
+directly into another stage's internals — which makes every stage
+independently testable. `src/emit/ufront.c` is the one function
+(`ufront_compile`) the runtime core calls to run all three front-end stages
+without touching any of their internals; see [Emitter](#emitter) below.
 
 ```text
 source (const char *)
      │
-     ▼  [ulex.c]     produces  UToken stream with line/col synclines
+     ▼  [src/lex/]    produces  UToken stream with line/col synclines
      │
-     ▼  [uparse.c]   produces  UAstNode statements (UArena-allocated)
+     ▼  [src/parse/]  produces  UAstNode statements (UArena-allocated), every
+     │                 desugar already applied — 32 AST kinds, none of which
+     │                 need a second lowering pass in the emitter
      │
-     ▼  [uemit.c]    produces  compiled chunk (root UProto: bytecode, constants, synclines, max_reg)
+     ▼  [src/emit/]   produces  compiled chunk (root UProto: bytecode, constants,
+     │                 synclines, site names, max_reg) — wire v2.0, 41 opcodes
      │
      ▼  [rt/uexec_ops.c] produces  result (UValue tagged value)
      │
@@ -84,7 +90,9 @@ Eleven token types cover the walking-skeleton grammar: `TOK_EOF`, `TOK_INT`,
 
 ## Parser
 
-**Source:** `src/uparse.c` / `src/uparse.h` / `src/uast.h`
+**Source:** `src/parse/uparse.c` (+ `uparse_stmt.c`, `uparse_expr.c`,
+`uparse_react.c`, `uparse_separators.c`, `uparse_top.c`, `uparse_desugar.c`)
+/ `src/parse/uparse.h` / `src/parse/uast.h`
 
 The parser consumes a `ULexer` and a caller-provided `UArena`, and produces one
 `UAstNode *` per statement via `uparse_next_statement`. It is streaming: each
@@ -96,27 +104,28 @@ The `UParser` struct is stack-allocated by the caller and initialized with
 `uparse_init`. It borrows both the `ULexer` and the `UArena`; both must outlive
 the `UParser` and any `UAstNode` returned from it.
 
+**The parser does every desugar.** A class declaration, a `detach`/`disown`
+form, a list or dict literal, a subscript, a `for`/`switch`/logical-operator
+construct — every one of these lowers to a simpler `UAstNode` shape (a
+`BLOCK` with a hidden local, a chained stdlib call, a chain of `if`s, and so
+on) before the emitter ever sees it. The emitter therefore never desugars:
+it is a mechanical AST-to-bytecode pass over a fixed, already-simplified set
+of 32 live `UAstKind` values (down from 49 before this split). The full enum,
+with each kind's payload and the watcher-mode/separator discriminators it
+carries, is the comment block in `src/parse/uast.h`; it is not duplicated
+here because it is exactly as authoritative there and changes with every
+language feature.
+
 ### Expression parsing
 
-Expressions use a Pratt-style precedence climber. Precedence levels are
-statically encoded in the parser; at the walking-skeleton stage the hierarchy
-is: additive (`+`, `-`) < multiplicative (`*`, `/`). Parentheses group via
-standard recursive descent. Unary negation (`-`) is handled as a prefix
-operator at the right-associative unary binding power.
-
-The five `UAstKind` values in the tagged union are:
-
-| Kind | Active union field | Contents |
-|---|---|---|
-| `AST_INT` | `u.i` | Parsed `int64_t` value |
-| `AST_IDENT` | `u.ident` | Zero-copy `(start, len)` into source buffer |
-| `AST_UNARY` | `u.unary` | `UAstUnaryOp` + pointer to operand node |
-| `AST_BINARY` | `u.binary` | `UAstBinaryOp` + pointers to left and right operand nodes |
-| `AST_ERROR` | `u.err` | `UParseError` + static message string |
+Expressions use a Pratt-style precedence climber; precedence levels are
+statically encoded in the parser. Parentheses group via standard recursive
+descent. Unary negation (`-`) is handled as a prefix operator at the
+right-associative unary binding power.
 
 Position fields `line` and `col` are 1-based on every node, matching the
-lexer. For `AST_BINARY` the position points at the operator token; for
-`AST_ERROR` it points at the detection site.
+lexer. For a binary-operator node the position points at the operator
+token; for `AST_ERROR` it points at the detection site.
 
 ### Parse error handling
 
@@ -180,77 +189,94 @@ sufficient for `long double` and SIMD on all v1.0 targets.
 
 ## Emitter
 
-**Source:** `src/emit/uemit.c` / `src/emit/uemit.h`
+**Source:** `src/emit/uemit.c` (+ `uemit_ctrl.c`, `uemit_diag.c`,
+`uemit_disasm.c`, `uemit_expr.c`, `uemit_react.c`, `uemit_reg.c`,
+`uemit_scope.c`, `uemit_serialize.c`) / `src/emit/uemit.h` /
+`src/emit/uemit_internal.h` / `src/emit/ufront.c` + `ufront.h`
 
-The emitter consumes an `UAstNode` tree and writes bytecode into the compiled
-chunk (root `UProto`). It is initialized once per module with `uemit_init`,
-then driven with one `uemit_statement(e, stmt)` call per top-level statement,
-and finalized with `uemit_finish(e)`. After `uemit_finish`, the caller owns a
-fully populated chunk ready for the VM or for serialization.
+The runtime core never touches `ULexer`, `UParser` or `UEmitter` directly.
+`ufront_compile` (`src/emit/ufront.h`) is the single entry point: lex, parse
+and emit behind one function, so the frontend can be swapped or stripped
+(`URBI_BYTECODE_ONLY`) without the core noticing. Underneath, a driver
+creates a `UEmitter` with `uemit_new`, feeds it one `uemit_statement(e,
+stmt)` call per top-level statement — AST already fully desugared by the
+parser, so emit is purely mechanical AST-to-bytecode — and finishes it with
+`uemit_finish(e)`, which returns a fully populated chunk ready for the VM or
+for serialization. The `UEmitter` struct is heap-allocated through the
+arena's allocator and is opaque outside `src/emit/`.
 
-The `UEmitter` struct is stack-allocated by the caller. It borrows the root
-`UProto` and the `UArena`; both must outlive the `UEmitter`.
+### Register allocation: one cursor, pins
 
-### Register allocation
+Every function has exactly one register cursor, `freereg` — not a separate
+temporary-stack and scratch-frame pair, which is what every emitter before
+this rewrite used. Locals (named variables, and nameless **pins**) are
+declared at `freereg` and own their register until their scope ends; the
+newest local's register plus one is `ureg_top`. Everything from `ureg_top`
+up to `freereg` is the temporaries of the statement currently compiling, and
+every statement finishes with `freereg == ureg_top`.
 
-The emitter uses a stack-discipline allocator: registers are assigned from
-slot 0 upward as expression nodes are recursively compiled; when a subtree
-is complete, its destination register slot is available for reuse by the
-enclosing expression. This means the register count at any point equals the
-depth of the expression tree, not the total number of nodes visited.
+A **pin** is how a value survives a nested statement without becoming a
+named local: pinning turns a temporary into a nameless local, so a nested
+statement's own register resets land above it with no arithmetic needed to
+protect it. This is what replaced the old "adopt every live temporary as a
+hidden declared local at block entry" workaround — the earlier emitters
+needed that trick (and its own bugs) because they had no single cursor to
+pin against.
 
-A sticky `max_reg_seen` watermark tracks the highest register index used.
-After `uemit_finish`, this value is written into the chunk's `max_reg`; the VM
-allocates exactly `max_reg + 1` tagged-value slots — no waste, no guessing.
+`max_reg` tracks the highest register index any statement has used. After
+`uemit_finish`, this value is written into the chunk's `max_reg`; the VM
+allocates exactly `max_reg + 1` tagged-value slots.
 
 ### Constant pool
 
-Integer and float constants are stored in the module's constant pool, not
-inlined into instructions. Before emitting a `LOADK` instruction the emitter
-scans the existing pool for a duplicate; if found, it reuses the existing
-index. The scan is linear, which is efficient for the constant-pool sizes that
-arise in expression compilation. The 16-bit Bx field in `OP_LOADK` supports
-up to 65 536 constants per module; see [opcodes.md](opcodes.md) for the
-encoding.
+Integer, float and string constants are stored in the proto's constant pool,
+not inlined into instructions. Before emitting a `LOADK` instruction the
+emitter scans the existing pool for a duplicate and reuses the index if
+found. The 16-bit `Bx` field in `OP_LOADK` supports up to 65,536 constants
+per proto; see [opcodes.md](opcodes.md) for the encoding.
 
 ### Synclines
 
-The emitter tracks source line numbers via a Lua-5.5-style delta encoding.
-One signed byte is emitted per instruction: a delta from the previous
-instruction's source line. When the delta would overflow an `int8_t`, the
-value `INT8_MIN` is emitted as a sentinel and an absolute-line checkpoint is
-written into a parallel table. The result is a compact per-instruction line
-table with a constant one-byte overhead per instruction and bounded overhead
-for absolute checkpoints. See [bytecode-format.md](bytecode-format.md#synclines-delta-encoding)
-for the full encoding specification.
+The emitter tracks source line numbers via a delta encoding: one signed byte
+per instruction, a delta from the previous instruction's source line. When
+the delta would overflow an `int8_t`, the value `INT8_MIN` is emitted as a
+sentinel and an absolute-line checkpoint is written into a parallel table.
+See [bytecode-format.md](bytecode-format.md#synclines-delta-encoding) for
+the full encoding specification.
 
 ### Emit error handling
 
 The `UEmitter` maintains a sticky error field. The first error latches;
-subsequent `uemit_statement` calls return the same error without touching the
-chunk. After `uemit_finish` the accumulated error is returned. Seven error
-codes cover the observable failure modes: `EMIT_OOM`, `EMIT_AST_ERROR`,
-`EMIT_UNSUPPORTED_AST`, `EMIT_REG_EXHAUSTED`, `EMIT_CONSTANT_POOL_FULL`,
-`EMIT_LINE_OVERFLOW`, and `EMIT_FINISHED`.
+subsequent `uemit_statement` calls return the same error without touching
+the chunk. 17 error codes (`EMIT_OOM` through `EMIT_JUMP_TOO_FAR`) cover the
+observable failure modes, including the language-level ones the parser
+leaves for the emitter to catch: `lazy` used on a method or assigned to a
+lazy parameter (`EMIT_LAZY_ON_METHOD` / `EMIT_LAZY_PARAM_ASSIGN`), a
+function needing more than 65,535 slot sites (`EMIT_TOO_MANY_SITES`), `this`
+outside a method (`EMIT_NO_THIS_OUTSIDE_METHOD`). The full list, with one
+comment per code, is the `UEmitError` enum in `src/emit/uemit.h`.
 
-### Opcode set
+### Opcode set and control transfer
 
-The eight opcodes at the walking-skeleton stage are described in full in
-[opcodes.md](opcodes.md). Summary:
+Wire v2.0 has 41 opcodes (down from 50): `at`/`whenever`/`waituntil`'s six
+separate install opcodes collapsed into one `OP_INSTALL` with a mode
+operand, and the control-transfer family (`try`/`catch`/`finally`, tag
+scopes, `break`/`continue`/`return` across open scopes) collapsed into
+`OP_SCOPE_TRY` / `OP_SCOPE_TAG` / `OP_SCOPE_POP` / `OP_UNWIND_TO`, walked
+by the runtime's unwinder rather than by a frame-guard primitive the
+emitter used to install separately. `break`/`continue` compile through a
+per-loop patch list of pending jumps, patched once the loop's exit (or
+back-edge) address is known — not a dedicated opcode. The full set, with
+every operand and the `EXTARG` wide-site-index mechanism, is
+[opcodes.md](opcodes.md).
 
-| Opcode | Form | Semantics |
-|--------|------|-----------|
-| `OP_LOADK` | ABx | `R[A] := K[Bx]` |
-| `OP_MOVE` | ABC | `R[A] := R[B]` |
-| `OP_ADD` | ABC | `R[A] := R[B] + R[C]` |
-| `OP_SUB` | ABC | `R[A] := R[B] - R[C]` |
-| `OP_MUL` | ABC | `R[A] := R[B] * R[C]` |
-| `OP_DIV` | ABC | `R[A] := R[B] / R[C]` (always Float) |
-| `OP_NEG` | ABC | `R[A] := -R[B]` |
-| `OP_RET` | ABC | `return R[A]` |
-
-**Public API:** `uemit_init`, `uemit_statement`, `uemit_finish`,
-`uemit_error_name`, `uemit_disassemble`, `uchunk_serialize`.
+**Public API (`src/emit/ufront.h`):** `ufront_compile`, `ufront_serialize`,
+`ufront_disassemble`. The lower-level driver (`uemit_new`, `uemit_statement`,
+`uemit_finish`, `uemit_disassemble`, `uchunk_serialize`, the diagnostic
+calls) lives in `src/emit/uemit.h` and is private to `src/emit/`; the only
+caller outside the directory that reaches for it is
+`tests/unit/test_emit_bytecode.c`, documented in
+[test-harness.md](test-harness.md).
 
 ---
 
@@ -274,14 +300,18 @@ and the pluggable allocator pair `(alloc_fn, alloc_ud)`. The absorbed root-only
 metadata includes `origin_vm`, `next_proto_serial`, `total_proto_count`,
 `next_in_realm`, and `owning_realm`.
 
-The root `UProto` can be populated in two ways: by the emitter (in-process, no
-serialize/deserialize round-trip) or by `uchunk_deserialize` (loading a
-serialized `.urb` file). Both paths produce the same layout with the same
-ownership contract — every array, including `source_name`, is allocated through
-the chunk's own allocator and freed by `uchunk_destroy`. The `uemit_init`
-`source_name` parameter is borrowed and copied into the root `UProto` at init
-time; the caller's string does not need to outlive the chunk. The VM does not
-distinguish between the two population paths.
+The root `UProto` can be populated in two ways: by the emitter via
+`ufront_compile` (in-process, no serialize/deserialize round-trip) or by
+`uchunk_deserialize` (loading a serialized `.urb` file). Both paths produce
+the same layout with the same ownership contract — every array, including
+`source_name`, is allocated through the chunk's own allocator and freed by
+`uchunk_destroy`. `ufront_compile`'s `name` parameter is borrowed and copied
+into the root `UProto`; the caller's string does not need to outlive the
+chunk. The VM does not distinguish between the two population paths for
+layout or lifetime — but only the deserialize path runs the load-time
+verifier (see [Loader and verifier](#loader-and-verifier) below and
+[opcodes.md](opcodes.md#loader-verification)); an in-process compile is
+trusted on the strength of the emitter alone.
 
 ### On-disk format
 

@@ -1,5 +1,108 @@
 # Changelog
 
+## v0.15.0-frontend — 2026-10-03
+
+The compiler frontend is rewritten on top of the re-founded runtime core.
+The parser now does every desugar — a class declaration, `detach`/`disown`,
+list/dict literals, subscripts, `for`/`switch`/the logical operators all
+lower to a simpler AST shape before the emitter sees them — so the AST
+shrinks from 49 live kinds to 32, none of which need a second lowering pass.
+The emitter is a fresh one-cursor design: one register cursor per function
+(`freereg`), with **pins** replacing the previous emitters' separate
+temporary-stack/scratch-frame machinery for a value that has to survive a
+nested statement. Bytecode moves to wire v2.0 (version byte `0x20`): 41
+opcodes (down from 50), the six reactive install opcodes collapsed into one
+`OP_INSTALL` with a mode operand, the control-transfer family collapsed into
+`OP_SCOPE_TRY` / `OP_SCOPE_TAG` / `OP_SCOPE_POP` / `OP_UNWIND_TO` walked by
+the runtime's unwinder, and a new `OP_EXTARG` prefix widening a function's
+slot-site cap from 256 to 65,535. The unwinder runs `finally` bodies on both
+the normal path and a jump across one. ABI goes 0/24/1 -> 0/25/0 (new
+emit-time error codes and parser-level grammar surface); the public C API's
+44 functions are unchanged. There is no compatibility promise before 1.0.0.
+
+### Measured on this build
+
+| Number | Value |
+|---|---|
+| boot heap | 67,642 bytes live in 994 blocks, 64-bit host (peak 68,114) |
+| idle strand | 616 bytes each; 61,616 for a hundred parked sleepers |
+| leak probes | zero growth over 10,000 iterations of seven allocating shapes; peak while each loop runs at most 153,442 bytes |
+| lookup benchmark | 0.62x-0.64x the old core across three runs; mandelbrot 0.74x-0.75x |
+| corpus | 348 passed, 0 failed |
+| runners | frontend (unit) 562 cases / 0 failed; runtime (rt) 231 cases / 0 failed; integration 32/32 |
+| sanitizers | ASan, UBSan, `URBI_GC_STRESS`, valgrind memcheck: clean |
+| `UFuncState` | 5,928 bytes, 64-bit host (the spec's under-5,120-byte target is missed by eight `ULoop` records, 176 B each — two 84-B patch lists; see the backlog) |
+| AST kinds | 32 live (down from 49) |
+| opcodes | 41 (down from 50) |
+| `src/emit/` | 3,326 lines across 14 files (`.c` + `.h`) |
+| stdlib blob | 7,823 bytes, re-baked against the new emitter |
+
+### What changed
+
+- Parser-only desugar. Every language-surface form that used to need a
+  second lowering pass in the emitter now arrives at `src/emit/` already
+  reduced to a BLOCK, a chained stdlib call, or a patch-listed jump — a
+  class declaration lowers to a `var` with a block initializer binding a
+  hidden `$cls` local before assigning the class name; `detach`/`disown`
+  are parser-level grammar forms, not a stdlib lazy-arg wrapper.
+- One register cursor, pins instead of a temporary stack. `src/emit/uemit_internal.h`
+  documents the discipline in full.
+- `OP_INSTALL` replaces the six per-construct reactive opcodes
+  (`OP_AT_INSTALL`, `OP_AT_SYNC_INSTALL`, `OP_WHENEVER_INSTALL`,
+  `OP_WAITUNTIL_INSTALL`, `OP_AT_EVENT_INSTALL`, `OP_AT_EVENT_SYNC_INSTALL`,
+  `OP_WHENEVER_EVENT_INSTALL`) with one opcode and a mode operand (1-7).
+- `OP_SCOPE_TRY` / `OP_SCOPE_TAG` / `OP_SCOPE_POP` / `OP_UNWIND_TO` replace
+  `OP_TRY_BEGIN` / `OP_TRY_END` / `OP_PUSH_TAG` / `OP_POP_TAG` /
+  `OP_PUSH_FRAME_GUARD`. The walker runs a `finally` body on the normal
+  path (falling off the end of a `try`) and on a jump that crosses one
+  (`break`/`continue`/`return` through an open `try`), from the same
+  `UNWIND_TO` mechanism.
+- `OP_EXTARG` widens a function's slot-site cap from 256 to 65,535: a
+  function with more than 255 distinct slot sites now compiles instead of
+  hitting `EMIT_TOO_MANY_SITES` (see `tests/chk/objects/many_sites.chk`,
+  300 sites).
+- The float flavor byte in the `.urb` header is pinned to 8 (`double`) on
+  every target; the old per-target `f32` flavor (`URBI_FLOAT_TYPE`) is
+  gone from the bytecode format (it had already been gone from `UValue`
+  since the re-foundation).
+- `break`/`continue` compile through a per-loop/switch patch list (capped
+  at 16 pending sites) rather than a dedicated opcode.
+
+### Fixed
+
+- A `lazy`-parameter function called twice in one frame miscompiled
+  (`var f = function(lazy x) { x }; f(1); f(2)` raised "callee is not a
+  closure") — a register-reuse defect in the previous emitter's temporary
+  allocator; the one-cursor design with pins is structurally immune. See
+  `tests/chk/lazy/twice_from_nested.chk`.
+- A reactive construct's body swallowed the statement after it when the
+  separator was `|`: `every (1ms) { n = n + 1 } | echo("after")` compiled
+  `echo("after")` INTO the periodic body instead of running it once,
+  alongside the `every`, as legacy urbiscript's `|`-is-a-sibling rule
+  requires. See `tests/chk/reactive/body_binds_one_statement.chk`.
+- `detach({ ... })` did not parse, and `detach(function ...)` never called
+  its function; both forms, and `disown`, are now parser-level grammar.
+  See `tests/chk/separator/detach_basic.chk` and `detach_forms.chk`.
+- A function touching more than 256 distinct slots on one object hit a
+  hard compile-time cap. See `tests/chk/objects/many_sites.chk`.
+
+### Known gaps (see `docs/urbi-embedded-design-risks.md`)
+
+- Static `lazy` resolution is per compile unit: a chunk-top `lazy`
+  function declared in one REPL chunk and called from a later chunk gets
+  an eager argument with no compile-time rejection, and reading the
+  parameter then throws "callee is not a closure".
+- An upvalue read of a lazy parameter is not forced, unlike a bare
+  lazy-parameter read in the defining function.
+- A local function cannot see itself by name inside its own initializer
+  (`var f = function() { f() }`): the initializer compiles before the
+  declaration's name is bound. The class desugar above depends on this
+  same ordering.
+- The in-memory compile-and-run path (`urbi_compile`/`urbi_run`, the REPL,
+  the CLI's `-e`/`-f`) never runs the load-time bytecode verifier; only
+  loading a serialized `.urb` blob does. A chunk compiled in-process is
+  trusted on the strength of the emitter alone.
+
 ## v0.14.0-refoundation — 2026-09-14
 
 The runtime is new. `src/vm`, `src/sched`, `src/gc`, `src/object`,
