@@ -20,7 +20,11 @@ if [ ! -x "tools/urbi-compile-stdlib" ]; then
     exit 1
 fi
 
-./tools/urbi-compile-stdlib src/stdlib/stdlib.u "$GENERATED" >/dev/null 2>&1
+if ! BAKE_OUT=$(./tools/urbi-compile-stdlib src/stdlib/stdlib.u "$GENERATED" 2>&1); then
+    echo "stdlib-fresh: the bake of src/stdlib/stdlib.u failed:"
+    printf '%s\n' "$BAKE_OUT" | head -20
+    exit 1
+fi
 
 if ! cmp -s "$BAKED" "$GENERATED"; then
     echo "stdlib bytecode drift — re-bake with:"
