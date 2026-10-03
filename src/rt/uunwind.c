@@ -57,11 +57,15 @@
  * A throw raised INSIDE a catch body finds the outer HAS_FINALLY entry
  * still on the stack, which is what makes that case work.
  *
- * break/continue out of a try need nothing here: the emitter's
- * urbi_emit_scope_crossings plants TRY_END plus its own inline finally
- * copy (and OP_POP_TAG for a tag scope) ahead of the jump.  `return`
- * does NOT -- it emits a bare OP_RET -- so OP_RET routes through this
- * walker whenever the current frame still owns cleanup entries.
+ * A jump out of scopes (break, continue) is OP_UNWIND_TO: UUNWIND_JUMP
+ * with the count of this frame's entries to pop in s->jump_depth and the
+ * target pc in s->transfer.  The walker pops exactly that many, running
+ * finally bodies and firing tag leaves, and lands on the target; a catch
+ * entry is passed through.  `return` emits a bare OP_RET, which routes
+ * through this walker whenever the current frame still owns cleanup
+ * entries.  OP_SCOPE_POP with USCOPE_POP_RUN_FINALLY runs a finally on
+ * the normal path under the same marker, suspending no unwind; its RESUME
+ * continues after the pop.
  *
  * ---------------------------------------------------------------------
  * Running a finally
@@ -350,8 +354,52 @@ int uexec_unwind(UVM *vm, UStrand *s)
         }
 
         uint16_t fi = (uint16_t)(s->nframes - 1);
+        /* UNWIND_TO with every entry it named popped: land on the target.
+         * Checked before popping, because a jump resumed out of a finally
+         * body can come back with nothing left to pop. */
+        if (s->unwind == UUNWIND_JUMP && s->jump_depth == 0) {
+            UFrame *f = &s->frames[fi];
+            f->pc = f->closure->proto->instructions + (uint32_t)s->transfer.v.i;
+            s->unwind = UUNWIND_NONE;
+            s->transfer = uv_nil();
+            return 0;
+        }
         if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].frame >= fi) {
             UCleanup top = s->cleanup[--s->ncleanup];
+
+            if (s->unwind == UUNWIND_JUMP) {
+                /* UNWIND_TO: pop exactly jump_depth entries of this frame,
+                 * running finally bodies and firing tag leaves on the way,
+                 * then land on the target.  A catch entry is passed
+                 * through; a jump does not throw. */
+                if (top.kind == UCLEAN_TAG_SCOPE) {
+                    s->tag = (top.saved.kind == UV_CELL) ? (UTag *)top.saved.v.p : NULL;
+                    if (top.tag) utag_fire(vm, top.tag->leave);
+                    s->gates = utag_strand_gate_bits(s);
+                } else if ((top.flags & UCLEAN_F_RUNNING) == 0 && (top.flags & UCLEAN_F_HAS_FINALLY) != 0) {
+                    UCleanup mark = top;
+                    mark.flags = (uint8_t)(top.flags | UCLEAN_F_RUNNING);
+                    mark.saved_unwind = (uint8_t)UUNWIND_JUMP;
+                    mark.saved = s->transfer;                          /* the target pc */
+                    mark.onleave_pc = (uint32_t)(s->jump_depth - 1u);  /* entries still to pop after this one */
+                    if (ustrand_push_cleanup(s, mark) != 0) {
+                        /* As for a throw below: skip the body rather
+                         * than lose the jump.  Allocation failure only. */
+                        s->jump_depth--;
+                        continue;
+                    }
+                    s->unwind = UUNWIND_NONE;
+                    s->transfer = uv_nil();
+                    UFrame *f = &s->frames[fi];
+                    f->pc = f->closure->proto->instructions + top.handler_pc;
+                    return 0;
+                }
+                /* A RUNNING marker here means the jump was raised inside a
+                 * finally body: it replaces the unwind that body
+                 * suspended, as a throw would. */
+                s->jump_depth--;
+                continue;
+            }
 
             if (top.kind == UCLEAN_TAG_SCOPE) {
                 /* Leaving a tag scope, whatever brought us here, puts the
@@ -423,7 +471,14 @@ int uexec_unwind(UVM *vm, UStrand *s)
             continue;
         }
 
-        /* No handler left in this frame. */
+        /* No handler left in this frame.  A jump never leaves its frame:
+         * running out of entries means the emitter counted wrong. */
+        if (s->unwind == UUNWIND_JUMP) {
+            UGC_ASSERT(0);
+            s->unwind = UUNWIND_NONE;
+            s->transfer = uv_nil();
+            return 0;
+        }
         if (s->unwind == UUNWIND_RETURN) {
             UValue rv = s->transfer;
             s->unwind = UUNWIND_NONE;

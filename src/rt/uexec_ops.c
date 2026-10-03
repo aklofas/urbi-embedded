@@ -551,6 +551,9 @@ static int uexec_run_inner(UVM *vm, UStrand *s, uint32_t budget)
     UValue *R;
     const UValue *K;
     uint32_t i, op;
+    /* The high bits of the next instruction's site operand, set by a
+     * preceding OP_EXTARG and consumed (reset) by the site-taking arm. */
+    uint32_t ext = 0;
     if (s->nframes == 0) goto no_frames;
     RELOAD();
 #if UEXEC_THREADED
@@ -776,15 +779,16 @@ fetch:
         OPCASE(LOAD_RECV): R[OPA(i)] = f->recv; NEXT();
 
         OPCASE(GETSLOT): OPCASE(SELF): {
+            uint32_t site = OPC(i) | ext; ext = 0;
             USym **names = uproto_site_names(f->closure->proto);
-            if (names == NULL || OPC(i) >= f->closure->proto->site_count) {
+            if (names == NULL || site >= f->closure->proto->site_count) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot access: no name table bound");
                 goto unwind;
             }
-            const USym *name = names[OPC(i)];
+            const USym *name = names[site];
             UValue recv = R[OPB(i)];
             UObject *o = (recv.kind == UV_OBJ) ? (UObject *)recv.v.p : uv_dispatch_proto(vm, recv);
-            USlotCache *e = o ? uslotcache_site(vm, f->closure->proto, (uint16_t)OPC(i)) : NULL;
+            USlotCache *e = o ? uslotcache_site(vm, f->closure->proto, (uint16_t)site) : NULL;
             UValue out = uv_nil();
             if (e != NULL && uslotcache_hit(&vm->objstats, e, o, name)
                 && (e->owner->attrs[e->index] & (USLOT_GETTER | USLOT_SETTER)) == 0) {
@@ -807,8 +811,9 @@ fetch:
         }
 
         OPCASE(SETSLOT): OPCASE(SETSLOT_UPDATE): {
+            uint32_t site = OPC(i) | ext; ext = 0;
             USym **names = uproto_site_names(f->closure->proto);
-            if (names == NULL || OPC(i) >= f->closure->proto->site_count) {
+            if (names == NULL || site >= f->closure->proto->site_count) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot write: no name table bound");
                 goto unwind;
             }
@@ -818,8 +823,8 @@ fetch:
                 goto unwind;
             }
             UObject *o = (UObject *)recv.v.p;
-            USym *name = names[OPC(i)];
-            USlotCache *e = uslotcache_site(vm, f->closure->proto, (uint16_t)OPC(i));
+            USym *name = names[site];
+            USlotCache *e = uslotcache_site(vm, f->closure->proto, (uint16_t)site);
             /* An own plain slot on a writable receiver: every check the
              * long path makes below is one of these four, read live. */
             if (e != NULL && e->owner == o && uslotcache_hit(&vm->objstats, e, o, name)
@@ -840,11 +845,11 @@ fetch:
              * `Realm.x = 1` both emit plain SETSLOT and still create. */
             if (op == OP_SETSLOT_UPDATE) {
                 UObjSlotRef probe;
-                if (!uobj_resolve(vm, o, names[OPC(i)], &probe)) {
+                if (!uobj_resolve(vm, o, names[site], &probe)) {
                     char msg[192]; size_t at = 0;
                     const char *p = "slot write: slot '";
                     while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
-                    p = names[OPC(i)]->bytes;
+                    p = names[site]->bytes;
                     while (*p && at + 1 < sizeof msg) msg[at++] = *p++;
                     p = uobj_resolve_overflowed(vm)
                         ? "' unreachable: proto graph exceeds the 64-entry resolution stack"
@@ -1015,8 +1020,9 @@ fetch:
         }
 
         OPCASE(GETSLOT_CHANGE_EVENT): {
+            uint32_t site = OPC(i) | ext; ext = 0;
             USym **names = uproto_site_names(f->closure->proto);
-            if (names == NULL || OPC(i) >= f->closure->proto->site_count) {
+            if (names == NULL || site >= f->closure->proto->site_count) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot-change event: no name table bound");
                 goto unwind;
             }
@@ -1025,7 +1031,7 @@ fetch:
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "slot-change event: receiver is not an Object");
                 goto unwind;
             }
-            UEvent *e = uwatch_slot_change_event(vm, (UObject *)recv.v.p, names[OPC(i)]);
+            UEvent *e = uwatch_slot_change_event(vm, (UObject *)recv.v.p, names[site]);
             if (e == NULL) {
                 (void)uexec_throw(vm, s, UP_OOMERROR, "slot-change event: out of memory");
                 goto unwind;
@@ -1111,12 +1117,11 @@ fetch:
             NEXT_RELOAD();
         }
 
-        OPCASE(SCOPE_POP):
+        OPCASE(SCOPE_POP): {
             /* A & 0x3 names the entry kind the pop expects (the verifier
-             * admits only TRY and TAG).  The run-finally form is not
-             * available in this build. */
-            if ((OPA(i) & USCOPE_POP_RUN_FINALLY) != 0) goto L_unknown_arm;
-            if ((OPA(i) & 0x3u) == USCOPE_POP_TAG) {
+             * admits only TRY and TAG, and RUN_FINALLY only with TRY). */
+            const uint8_t a = OPA(i);
+            if ((a & 0x3u) == USCOPE_POP_TAG) {
                 if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TAG_SCOPE) {
                     UCleanup c = s->cleanup[--s->ncleanup];
                     s->tag = (c.saved.kind == UV_CELL) ? (UTag *)c.saved.v.p : NULL;
@@ -1133,20 +1138,36 @@ fetch:
                 } else {
                     UGC_ASSERT(0);   /* see the TRY pop below */
                 }
-            } else {
-                /* The normal-path pop.  A UCLEAN_F_RUNNING marker belongs to
-                 * the walker, never to this pop.  A mismatch means the
-                 * emitter and the walker disagree about the stack's shape,
-                 * which would leak an entry rather than announce itself. */
-                if (s->ncleanup > 0
-                    && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TRY
-                    && (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) == 0) {
-                    s->ncleanup--;
-                } else {
-                    UGC_ASSERT(0);
-                }
+                NEXT_RELOAD();
             }
+            /* The normal-path pop.  A UCLEAN_F_RUNNING marker belongs to
+             * the walker, never to this pop.  A mismatch means the
+             * emitter and the walker disagree about the stack's shape,
+             * which would leak an entry rather than announce itself. */
+            if (s->ncleanup == 0
+                || s->cleanup[s->ncleanup - 1].kind != (uint8_t)UCLEAN_TRY
+                || (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) != 0) {
+                UGC_ASSERT(0);
+                NEXT_RELOAD();
+            }
+            UCleanup top = s->cleanup[--s->ncleanup];
+            if ((a & USCOPE_POP_RUN_FINALLY) == 0) NEXT_RELOAD();
+            /* Run-finally: the body runs as the walker would run it, under
+             * a marker that suspends no unwind, and its RESUME continues at
+             * the instruction after this pop. */
+            UGC_ASSERT((top.flags & UCLEAN_F_HAS_FINALLY) != 0);
+            UCleanup mark = top;
+            mark.flags = (uint8_t)(top.flags | UCLEAN_F_RUNNING);
+            mark.saved_unwind = (uint8_t)UUNWIND_NONE;
+            mark.saved = uv_nil();
+            mark.onleave_pc = (uint32_t)(f->pc - f->closure->proto->instructions);
+            if (ustrand_push_cleanup(s, mark) != 0) {
+                (void)uexec_throw(vm, s, UP_OOMERROR, "try end: out of memory growing the cleanup stack");
+                goto unwind;
+            }
+            f->pc = f->closure->proto->instructions + top.handler_pc;
             NEXT_RELOAD();
+        }
 
         OPCASE(LOAD_CATCH_VALUE):
             /* The handler owns the value from here.  Clearing the strand's
@@ -1157,30 +1178,47 @@ fetch:
             NEXT();
 
         OPCASE(RESUME): {
-            /* The end of a finally body the walker started.  Restore the
-             * unwind it suspended and hand control back to the walk.  The
-             * normal-path copy of a finally is jumped past, never resumed,
-             * so an unmatched RESUME means a malformed chunk. */
+            /* The end of a finally body, started either by the walker or
+             * by a run-finally SCOPE_POP.  Restore the unwind the body
+             * suspended and hand control back to the walk, or, when it
+             * suspended none, continue after the pop.  Without a marker on
+             * top an unmatched RESUME means a malformed chunk. */
             if (s->ncleanup == 0 || (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) == 0) {
                 (void)uexec_throw(vm, s, UP_TYPEERROR, "unwind resume: no cleanup body in progress");
                 goto unwind;
             }
             UCleanup mark = s->cleanup[--s->ncleanup];
+            if (mark.saved_unwind == (uint8_t)UUNWIND_NONE) {
+                /* A finally SCOPE_POP ran on the normal path: carry on
+                 * after that pop. */
+                f->pc = f->closure->proto->instructions + mark.onleave_pc;
+                NEXT_RELOAD();
+            }
             s->unwind = mark.saved_unwind;
             s->transfer = mark.saved;
+            if (mark.saved_unwind == (uint8_t)UUNWIND_JUMP) s->jump_depth = (uint8_t)mark.onleave_pc;
             goto unwind;
         }
 
-        /* In the wire set, not implemented in this build. */
-        OPCASE(EXTARG): OPCASE(UNWIND_TO):
-            goto L_unknown_arm;
+        OPCASE(EXTARG):
+            ext = (uint32_t)OPBX(i) << 8;
+            NEXT();
+
+        OPCASE(UNWIND_TO):
+            /* A break, continue or similar jump out of A scope entries of
+             * this frame, to the absolute instruction index Bx.  The walker
+             * pops the entries, running their finally bodies and tag
+             * leaves on the way. */
+            s->unwind = (uint8_t)UUNWIND_JUMP;
+            s->jump_depth = OPA(i);
+            s->transfer = uv_int((int64_t)OPBX(i));
+            goto unwind;
 
 #if UEXEC_THREADED
     L_unknown:
 #else
         default:
 #endif
-    L_unknown_arm:
             (void)uexec_throw(vm, s, UP_TYPEERROR, "opcode not available in this build");
             goto unwind;
 #if !UEXEC_THREADED

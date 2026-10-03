@@ -67,13 +67,16 @@ typedef enum { UCLEAN_TRY = 1, UCLEAN_TAG_SCOPE = 2 } UCleanKind;
  * body runs, holding the unwind that body suspended. */
 #define UCLEAN_F_HAS_CATCH   0x1u
 #define UCLEAN_F_HAS_FINALLY 0x2u
-#define UCLEAN_F_HAS_ONLEAVE 0x4u
 #define UCLEAN_F_RUNNING     0x20u
 
 typedef struct UCleanup {
     uint8_t   kind, flags;
     uint8_t   saved_unwind;      /* UCLEAN_F_RUNNING only: the suspended UUnwindKind */
     uint16_t  frame;             /* index into frames[] of the frame that pushed this */
+    /* onleave_pc on a UCLEAN_F_RUNNING marker: with saved_unwind NONE
+     * (a finally run by SCOPE_POP on the normal path), the instruction
+     * index RESUME continues at; with saved_unwind JUMP, the entries the
+     * suspended UNWIND_TO still has to pop. */
     uint32_t  handler_pc, onleave_pc;
     /* TAG_SCOPE: the tag this scope OPENED -- what a cross-strand STOP
      * matches against to find the scope it must unwind to. */
@@ -91,7 +94,8 @@ typedef struct UCleanup {
  * already binds that name to the public urbi_strand_state() enum (a
  * different, unrelated set of values). */
 enum { USTRAND_READY = 0, USTRAND_RUNNING, USTRAND_PARKED, USTRAND_DEAD };
-typedef enum { UUNWIND_NONE = 0, UUNWIND_RETURN, UUNWIND_THROW, UUNWIND_STOP } UUnwindKind;
+typedef enum { UUNWIND_NONE = 0, UUNWIND_RETURN, UUNWIND_THROW, UUNWIND_STOP,
+               UUNWIND_JUMP /* UNWIND_TO: pop jump_depth entries, then jump to the pc in transfer */ } UUnwindKind;
 #define USTRAND_GATE_BLOCKED 0x1
 #define USTRAND_GATE_FROZEN  0x2
 /* How many yields in a row a lone strand may take without going back to
@@ -110,6 +114,7 @@ typedef struct UStrand {
     UFrame    *frames; uint16_t nframes, frames_cap;
     uint16_t   nboundary;        /* how many frames[] entries have is_boundary set */
     uint8_t    fast_yields;      /* consecutive OP_YIELDs taken without a scheduler round trip */
+    uint8_t    jump_depth;       /* UUNWIND_JUMP: scope entries still to pop (fills the byte before open_upvals) */
     UUpval    *open_upvals;
     struct UTag *tag;
     UCleanup  *cleanup; uint16_t ncleanup, cleanup_cap;

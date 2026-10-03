@@ -206,9 +206,10 @@ int uexec_throw_here(UVM *vm, UStrand *s, int which_proto, const char *msg);
 int uexec_throw_value(UVM *vm, UStrand *s, UValue v);
 
 /* The cleanup-stack walker (rt/uunwind.c).  Consumes s->unwind and
- * s->transfer.  Returns 0 when dispatch can continue in the current frame
- * (a catch was entered, a finally body was started, or a return completed
- * into the caller), 1 when the strand is DEAD or control must go back to
+ * s->transfer (and s->jump_depth for a UUNWIND_JUMP).  Returns 0 when
+ * dispatch can continue in the current frame (a catch was entered, a
+ * finally body was started, a jump landed, or a return completed into the
+ * caller), 1 when the strand is DEAD or control must go back to
  * uexec_call. */
 int uexec_unwind(UVM *vm, UStrand *s);
 /* Renders what escaped `s` into vm->last_error and sets last_error_code,
