@@ -1,14 +1,18 @@
 # Covers: `detach` has a paren form and a block form; both are grammar,
 #         not a stdlib lazy-arg wrapper.  `detach(f())` runs `f` in the
-#         child (the written expression is the thunk's body verbatim);
-#         `detach(f)` evaluates `f` without calling it, for the same
-#         reason.  The child strand gets a turn before the caller's own
-#         next statement resumes (`;` is a yield point), so the trace
-#         reads "fc", not "cf".
+#         child (the written expression is the thunk's body verbatim),
+#         not eagerly in the caller — `detach(f())` is joined to the
+#         caller's own log write with `|` (sequential, no yield), so if
+#         `f` ran inline while evaluating `detach(f())` it would land
+#         before the caller's "c" regardless of what follows; the trace
+#         instead reads "cf", proving the caller's write runs first and
+#         `f` only runs later, once something yields (the trailing `;`
+#         before `0`).  `detach(f)` evaluates `f` without calling it, for
+#         the same written-expression-is-the-body reason.
 ## timeout: 30
 ## host: run Realm.log = ""
 ## host: run var f = function() { Realm.log = Realm.log + "f" }
-## host: run detach(f()); Realm.log = Realm.log + "c"; 0
+## host: run detach(f()) | Realm.log = Realm.log + "c"; 0
 ## host: step 1000
 ## host: run Realm.log
 ## host: run detach { Realm.log = Realm.log + "B" }; 0
@@ -21,10 +25,10 @@
 [00000000] <?>
 [00000000] 0
 [00000000] step: QUIESCENT
-[00000000] "fc"
+[00000000] "cf"
 [00000000] 0
 [00000000] step: QUIESCENT
-[00000000] "fcB"
+[00000000] "cfB"
 [00000000] 0
 [00000000] step: QUIESCENT
-[00000000] "fcB"
+[00000000] "cfB"
