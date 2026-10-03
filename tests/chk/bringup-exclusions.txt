@@ -8,6 +8,5 @@
 #
 # Each line: <path>  # <what it needs>
 
-# The stdlib overlay is empty until it is rebuilt; these use a class it
-# defines.
-tests/chk/exceptions/subclasses_complete.chk             # stdlib (RuntimeError and siblings)
+# EMPTY.  Keep the file: the next gated directory to be widened will
+# want it.
