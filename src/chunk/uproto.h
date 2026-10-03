@@ -128,9 +128,9 @@ typedef struct UProto {
      * bits, so the cap is 65,535. */
     uint16_t       site_count;
     /* Parallel array, length == site_count: the interned name of each
-     * site.  Set by the emitter, or by the runtime's chunk bind for a
-     * deserialized chunk.  Owned by the proto's allocator; freed in
-     * uproto_destroy_buffers. */
+     * site.  NULL until the runtime's chunk bind interns site_name_strs,
+     * whether the chunk came from the emitter or the loader.  Owned by
+     * the proto's allocator; freed in uproto_destroy_buffers. */
     USymbol      **site_names;
     /* Parallel string array; one entry per site; UTF-8, NUL-terminated.
      * Populated by the emitter and by the deserializer (in lieu of
