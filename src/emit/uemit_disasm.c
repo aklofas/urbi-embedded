@@ -395,29 +395,37 @@ static bool dis_proto(char *buf, size_t cap, size_t *off, const UProto *p) {
     return true;
 }
 
-/* Every nested proto below `p`, depth-first, numbered in visit order. */
+/* Every nested proto below `p`, depth-first.  Each header names the
+ * proto by its index in its parent's nested list -- the index a CLOSURE
+ * in the parent prints -- after the parent's own path: P0, P1 below the
+ * root, P0.0, P0.1 below P0.  `path` holds the parent's path ("" for the
+ * root) and is extended in place for the children. */
 static bool dis_nested(char *buf, size_t cap, size_t *off,
-                       const UProto *p, unsigned *serial) {
+                       const UProto *p, char *path, size_t plen, size_t pcap) {
     for (size_t k = 0; k < p->nested_count; k++) {
         const UProto *child = p->nested[k];
         if (child == NULL) continue;
-        if (!dis_printf(buf, cap, off, "; proto P%u\n", (*serial)++)) return false;
+        int n = snprintf(path + plen, pcap - plen, "%s%zu", plen > 0 ? "." : "", k);
+        size_t clen = (n < 0 || (size_t)n >= pcap - plen) ? pcap - 1U : plen + (size_t)n;
+        if (!dis_printf(buf, cap, off, "; proto P%s\n", path)) return false;
         if (!dis_proto(buf, cap, off, child)) return false;
-        if (!dis_nested(buf, cap, off, child, serial)) return false;
+        if (!dis_nested(buf, cap, off, child, path, clen, pcap)) return false;
+        path[plen] = '\0';
     }
     return true;
 }
 
 size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
     size_t off = 0;
-    unsigned serial = 0;
+    char path[128];
     if (cap == 0 || buf == NULL) return 0;
     buf[0] = '\0';
+    path[0] = '\0';
     if (root == NULL || root->instr_count == 0) {
         dis_printf(buf, cap, &off, "(empty)\n");
         return off;
     }
-    if (dis_proto(buf, cap, &off, root)) (void)dis_nested(buf, cap, &off, root, &serial);
+    if (dis_proto(buf, cap, &off, root)) (void)dis_nested(buf, cap, &off, root, path, 0U, sizeof path);
     return off;
 }
 

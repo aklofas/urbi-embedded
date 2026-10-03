@@ -121,9 +121,12 @@ void urbi_emit_diag_free_all(UEmitter *e);
 
 /* Write a human-readable disassembly of the chunk rooted at `root` into
    buf: the root proto's instructions first, then every nested proto in
-   depth-first order under a "; proto P<n>" header, each followed by its
-   constant pool.  Returns bytes written (excluding the terminator).
-   Truncates if cap is too small; always null-terminates when cap > 0. */
+   depth-first order under a "; proto P<path>" header, each followed by
+   its constant pool.  <path> is the proto's index in its parent's nested
+   list, prefixed by its parent's path and a dot below the root (P0,
+   P0.1, ...), so it names the index a CLOSURE in the parent prints.
+   Returns bytes written (excluding the terminator).  Truncates if cap is
+   too small; always null-terminates when cap > 0. */
 size_t uemit_disassemble(const UProto *root, char *buf, size_t cap);
 
 /* Completeness check: returns 1 if every opcode in [0, OP_MAX) has a

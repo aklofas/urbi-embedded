@@ -174,6 +174,48 @@ UTEST(disasm_recurses_into_nested_protos) {
     uchunk_destroy(&m, NULL);
 }
 
+/* A header names a proto by its parent's path and its index in the
+ * parent's nested list, so it matches the index the parent's CLOSURE
+ * prints even when an earlier sibling has children of its own. */
+static UProto *one_ins_proto(uint32_t ins) {
+    UProto *c = (UProto *)calloc(1, sizeof(UProto));
+    c->instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    c->instr_cap = c->instr_count = 1;
+    c->instructions[0] = ins;
+    return c;
+}
+
+static void adopt_nested(UProto *parent, UProto **kids, size_t n) {
+    parent->nested = (UProto **)malloc(n * sizeof(UProto *));
+    for (size_t k = 0; k < n; k++) parent->nested[k] = kids[k];
+    parent->nested_count = n;
+}
+
+UTEST(disasm_proto_headers_follow_the_closure_index) {
+    UProto m = {0};
+    m.instructions = (uint32_t *)malloc(2 * sizeof(uint32_t));
+    m.instr_cap = m.instr_count = 2;
+    m.instructions[0] = uinstr_enc_abx(OP_CLOSURE, 1U, 1U);
+    m.instructions[1] = uinstr_enc_abc(OP_RET, 1U, 0U, 0U);
+    UProto *a = one_ins_proto(uinstr_enc_abx(OP_CLOSURE, 2U, 0U));
+    UProto *a0 = one_ins_proto(uinstr_enc_abc(OP_LOADNIL, 7U, 0U, 0U));
+    UProto *b = one_ins_proto(uinstr_enc_abc(OP_LOADNIL, 8U, 0U, 0U));
+    adopt_nested(a, &a0, 1);
+    UProto *kids[2] = { a, b };
+    adopt_nested(&m, kids, 2);
+
+    UASSERT(uemit_disassemble(&m, dis, sizeof dis) > 0);
+    HAS("CLOSURE R1, P1");
+    const char *pa = strstr(dis, "; proto P0\n");
+    const char *pa0 = strstr(dis, "; proto P0.0\n");
+    const char *pb = strstr(dis, "; proto P1\n");
+    UASSERT(pa != NULL && pa0 != NULL && pb != NULL && pa < pa0 && pa0 < pb);
+    UASSERT(pa0 != NULL && strncmp(pa0 + strlen("; proto P0.0\n"), "0000  LOADNIL R7", 16) == 0);
+    UASSERT(pb != NULL && strncmp(pb + strlen("; proto P1\n"), "0000  LOADNIL R8", 16) == 0);
+
+    uchunk_destroy(&m, NULL);
+}
+
 UTEST(disasm_truncates_cleanly) {
     const uint32_t ins[] = { uinstr_enc_abc(OP_LOADNIL, 1U, 0U, 0U), uinstr_enc_abc(OP_RET, 1U, 0U, 0U) };
     UProto m = {0};
@@ -202,5 +244,6 @@ void test_disasm_suite(void) {
     utest_run("disasm: INSTALL/LOAD_REALM_GLOBAL/LOAD_RECV", disasm_install_and_globals);
     utest_run("disasm: CLOSURE with upval prelude", disasm_closure_with_upval_prelude);
     utest_run("disasm: recurses into nested protos", disasm_recurses_into_nested_protos);
+    utest_run("disasm: proto headers follow the closure index", disasm_proto_headers_follow_the_closure_index);
     utest_run("disasm: truncates cleanly", disasm_truncates_cleanly);
 }
