@@ -151,6 +151,26 @@ UTEST(a_block_with_locals_yields_its_value) {
     urbi_close(vm);
 }
 
+/* An expression-position block's value is moved down to the register the
+ * block started at, so whatever the enclosing expression compiles next
+ * reuses the block's locals.  `o[0] += 1` lowers to a block with two
+ * hidden locals; nested a hundred deep as left operands, each level holds
+ * one register with the move and three without it, which is past the
+ * 255-register cap. */
+UTEST(a_block_value_moves_below_its_locals) {
+    static char src[8192];
+    size_t at = (size_t)snprintf(src, sizeof src,
+        "var o = Object.new(); var o.get = function(k) { 0 }; var o.set = function(k, v) { v };"
+        "(function() { ");
+    for (int d = 0; d < 100; d++) at += (size_t)snprintf(src + at, sizeof src - at, "(o[0] += 1) + (");
+    at += (size_t)snprintf(src + at, sizeof src - at, "0");
+    for (int d = 0; d < 100; d++) at += (size_t)snprintf(src + at, sizeof src - at, ")");
+    (void)snprintf(src + at, sizeof src - at, " })()");
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, src, 100);
+    urbi_close(vm);
+}
+
 /* The switch subject is pinned: a case body's own locals and
  * temporaries go above it. */
 UTEST(a_switch_subject_survives_its_case_bodies) {
@@ -468,6 +488,7 @@ void test_emit_bytecode_suite(void) {
     utest_run("a_closure_keeps_the_loop_variable_of_its_own_iteration", a_closure_keeps_the_loop_variable_of_its_own_iteration);
     utest_run("return_leaves_nested_blocks", return_leaves_nested_blocks);
     utest_run("a_block_with_locals_yields_its_value", a_block_with_locals_yields_its_value);
+    utest_run("a_block_value_moves_below_its_locals", a_block_value_moves_below_its_locals);
     utest_run("a_switch_subject_survives_its_case_bodies", a_switch_subject_survives_its_case_bodies);
     utest_run("default_parameters_fill_omitted_arguments", default_parameters_fill_omitted_arguments);
     utest_run("logical_operators_short_circuit", logical_operators_short_circuit);
