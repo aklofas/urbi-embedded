@@ -395,8 +395,10 @@ int uexec_unwind(UVM *vm, UStrand *s)
                     return 0;
                 }
                 /* A RUNNING marker here means the jump was raised inside a
-                 * finally body: it replaces the unwind that body
-                 * suspended, as a throw would. */
+                 * finally body.  The marker counts as ONE of jump_depth's
+                 * entries, whether the walker or a run-finally SCOPE_POP
+                 * started the body; dropping it discards the unwind the
+                 * body suspended, as a throw would. */
                 s->jump_depth--;
                 continue;
             }
