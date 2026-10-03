@@ -239,32 +239,34 @@ static bool is_setproperty_call(const UAstNode *n) {
 /* --- parse_class_declaration: `class Name [: public P1, P2, ...] { body }`.
  *
  * Lowers to:
- *   BLOCK {
+ *   var Name = BLOCK {
  *     var $cls = Object.clone();
  *     $cls.protos.insertFront(Pn); ...; $cls.protos.insertFront(P1);
  *     <one statement per body leaf, $cls as receiver>;
- *     Realm.Name = $cls;
+ *     $cls
  *   }
  *
  * `$cls` is a hidden per-declaration name (urbi_parse_hidden_name), not
  * the class's own source name — every proto and body reference inside
  * this BLOCK goes through $cls, never through `Name`.  `Name` is bound
- * exactly once, LAST, via an explicit member-set on Realm.
+ * exactly once, by the OUTER var-decl, to the block's value — the block's
+ * last statement is the bare `$cls` reference, so the finished object is
+ * what `Name` ends up holding.
  *
  * Both halves of that split matter:
  *   - Per S-class-name-scope, `class a : public a { ... }` must resolve
- *     the proto `a` to the OUTER `a`.  Binding `Name` only after every
- *     proto/body reference has already resolved (against $cls, which
- *     can never collide with a user name) is what keeps the outer `a`
- *     visible while the inner one is under construction.
- *   - This whole declaration is itself a BLOCK, which opens its own
- *     local scope — a plain `var Name = ...` declared inside it would
- *     be popped when the block closes and would never reach a sibling
- *     statement like `Name.x`.  `Realm.x = v` is the one write form
- *     that is NOT scope-dependent (REVIVAL.md's explicit "declared
- *     global" mechanism): it resolves `Realm` by ordinary lookup and
- *     then does a plain slot-set on it, so the name durably survives
- *     past this block regardless of nesting.
+ *     the proto `a` to the OUTER `a`.  The initializer (the whole BLOCK,
+ *     built entirely against $cls) is fully evaluated before the outer
+ *     var-decl binds `Name`, so the outer `a` stays visible while the
+ *     inner one is under construction.
+ *   - `var Name = <block>` is an ordinary variable declaration — at
+ *     chunk top it becomes a realm global through the same write path
+ *     every other top-level `var` in stdlib.u already uses; inside a
+ *     function it is a plain local.  A `Realm.Name = $cls` member-set
+ *     (the previous lowering) requires the identifier `Realm` to
+ *     already resolve to something before the class can export itself,
+ *     which is unavailable while stdlib.u itself is booting (no realm
+ *     exists yet) — `var Name = ...` has no such dependency.
  *
  * The `public` keyword is required after the colon for syntactic
  * compatibility with legacy urbi 2.x (which had access modifiers); v1.0
@@ -425,22 +427,18 @@ static UAstNode *parse_class_declaration(UParser *p) {
         }
     }
 
-    /* Realm.Name = $cls — see the function header for why this must be
-     * both an explicit Realm member-set (not a `var`) and the LAST
-     * statement. */
+    /* $cls — the block's value is the finished object; the outer
+     * var-decl built below binds `Name` to it. */
     {
-        UAstNode *realm_ident = urbi_parse_desugar_ident(p, "Realm", 5, kw.line, kw.col);
-        if (!realm_ident) return NULL;
         UAstNode *cls_ref = urbi_parse_desugar_ident(p, cls_name, cls_len, kw.line, kw.col);
         if (!cls_ref) return NULL;
-        UAstNode *export_set = urbi_parse_desugar_member_set(p, realm_ident,
-                                                              name.u.str.start, name.u.str.len,
-                                                              cls_ref, kw.line, kw.col);
-        if (!export_set) return NULL;
-        out[oi++] = export_set;
+        out[oi++] = cls_ref;
     }
 
-    return urbi_parse_desugar_block(p, out, total, kw.line, kw.col);
+    UAstNode *inner_block = urbi_parse_desugar_block(p, out, total, kw.line, kw.col);
+    if (!inner_block) return NULL;
+    return urbi_parse_desugar_var_decl(p, name.u.str.start, name.u.str.len,
+                                        inner_block, kw.line, kw.col);
 }
 
 /* --- urbi_parse_statement_or_expr: var-decl, assign, or inner-tier expression.

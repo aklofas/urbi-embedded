@@ -162,26 +162,30 @@ UTEST(assert_block_form_throws_the_bare_message) {
  * construction. */
 UTEST(class_declaration_is_a_block_of_clone_protos_and_slot_sets) {
     PFix f; UAstNode *n = parse_one(&f, "class Foo : public A, B { var x = 1; get y() { 2 } }");
-    UASSERT(n && n->kind == AST_BLOCK);
-    UASSERT_EQ(6, n->u.block.count);
-    UASSERT_EQ((int)AST_VAR_DECL, (int)n->u.block.stmts[0]->kind);
-    UASSERT(member_is(n->u.block.stmts[1]->u.call.callee, "insertFront"));
-    UASSERT(ident_is(n->u.block.stmts[1]->u.call.args[0], "B"));
-    UASSERT_EQ((int)AST_MEMBER_SET, (int)n->u.block.stmts[3]->kind);
-    UASSERT(member_is(n->u.block.stmts[4]->u.call.callee, "setProperty"));
-    UASSERT_EQ(3, n->u.block.stmts[4]->u.call.arg_count);
-    UASSERT_EQ((int)AST_FUNCTION, (int)n->u.block.stmts[4]->u.call.args[2]->kind);
-    UAstNode *export_stmt = n->u.block.stmts[5];
-    UASSERT_EQ((int)AST_MEMBER_SET, (int)export_stmt->kind);
-    UASSERT(ident_is(export_stmt->u.member.recv, "Realm"));
-    UASSERT_EQ(3, export_stmt->u.member.name_len);
-    UASSERT(memcmp(export_stmt->u.member.name_start, "Foo", 3) == 0);
+    UASSERT(n && n->kind == AST_VAR_DECL);
+    UASSERT_EQ(3, n->u.var_decl.name_len);
+    UASSERT(memcmp(n->u.var_decl.name_start, "Foo", 3) == 0);
+    UAstNode *block = n->u.var_decl.init;
+    UASSERT(block && block->kind == AST_BLOCK);
+    UASSERT_EQ(6, block->u.block.count);
+    UASSERT_EQ((int)AST_VAR_DECL, (int)block->u.block.stmts[0]->kind);
+    UASSERT(member_is(block->u.block.stmts[1]->u.call.callee, "insertFront"));
+    UASSERT(ident_is(block->u.block.stmts[1]->u.call.args[0], "B"));
+    UASSERT_EQ((int)AST_MEMBER_SET, (int)block->u.block.stmts[3]->kind);
+    UASSERT(member_is(block->u.block.stmts[4]->u.call.callee, "setProperty"));
+    UASSERT_EQ(3, block->u.block.stmts[4]->u.call.arg_count);
+    UASSERT_EQ((int)AST_FUNCTION, (int)block->u.block.stmts[4]->u.call.args[2]->kind);
+    /* The block's last statement is the bare hidden $cls reference — its
+     * value is what the outer var-decl binds `Foo` to. */
+    UAstNode *cls_ref = block->u.block.stmts[5];
+    UASSERT_EQ((int)AST_IDENT, (int)cls_ref->kind);
+    UASSERT_EQ('\x01', cls_ref->u.ident.start[0]);
     pfix_close(&f);
 }
 
 UTEST(property_declaration_with_receiver_is_set_property) {
     PFix f; UAstNode *n = parse_one(&f, "class K { set v(x) { x } }");
-    UAstNode *call = n->u.block.stmts[1];
+    UAstNode *call = n->u.var_decl.init->u.block.stmts[1];
     UASSERT(call->kind == AST_CALL && member_is(call->u.call.callee, "setProperty"));
     UASSERT(memcmp(call->u.call.args[1]->u.str_lit.bytes, "oset", 4) == 0);
     pfix_close(&f);
