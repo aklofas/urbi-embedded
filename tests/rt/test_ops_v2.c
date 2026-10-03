@@ -60,10 +60,13 @@ static UProto *proto(const uint32_t *ins, size_t n, const int64_t *k, size_t nk,
     return p;
 }
 
-/* Hands `nested[]` to `root` as its CLOSURE table P0, P1, ... */
+/* Hands `nested[]` to `root` as its CLOSURE table P0, P1, ...  Each
+ * nested proto names its root, as the emitter and the loader do: a
+ * closure over a nested proto keeps the chunk alive through that link,
+ * so a child strand still running it outlives the strand that built it. */
 static void adopt(UProto *root, UProto **nested, size_t n) {
     root->nested = chunk_alloc(NULL, n * sizeof(UProto *), NULL);
-    for (size_t i = 0; i < n; i++) root->nested[i] = nested[i];
+    for (size_t i = 0; i < n; i++) { root->nested[i] = nested[i]; nested[i]->root = root; }
     root->nested_count = root->nested_cap = n;
 }
 
