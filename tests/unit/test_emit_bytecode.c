@@ -186,6 +186,28 @@ UTEST(an_emit_error_names_its_line_and_column) {
     urbi_close(vm);
 }
 
+/* A line delta is one signed byte (-128 is the absolute-checkpoint
+ * sentinel), so a gap past 127 lines between two instructions forces an
+ * abs_lines checkpoint instead of a running delta.  Line 1 and line 200
+ * sit on opposite sides of that boundary, so the second checkpoint is
+ * the one `uproto_line_at` has to find for the proto's last
+ * instruction -- the "line 200: " prefix on the thrown error proves the
+ * lookup walked both checkpoints, not just the first. */
+UTEST(a_line_table_checkpoint_survives_a_128_line_gap) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    char src[4096]; size_t at = 0;
+    at += (size_t)snprintf(src + at, sizeof src - at, "var a = 1;\n");
+    for (int i = 0; i < 198; i++) at += (size_t)snprintf(src + at, sizeof src - at, "\n");
+    at += (size_t)snprintf(src + at, sizeof src - at, "1 + \"x\"");
+    UValue out; char err[256] = {0};
+    int rc = urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err);
+    UASSERT_EQ(URBI_ERR_UNCAUGHT_THROW, rc);
+    UErrorInfo info = {0};
+    (void)urbi_last_error(vm, &info);
+    UASSERT(info.message && strncmp(info.message, "line 200: ", 10) == 0);
+    urbi_close(vm);
+}
+
 UTEST(the_diag_buffer_keeps_warnings_and_errors_in_order) {
     UVM *vm = urbi_open(utest_alloc, NULL, NULL);
     UProto root;
@@ -360,6 +382,35 @@ UTEST(an_install_without_an_alternate_body_leaves_r_a_plus_2_alone) {
     UASSERT(d2 && strstr(d2, "mode=1 flags=3") && count_of(d2, "CLOSURE R") == 3);
     urbi_close(vm);
 }
+/* The case above pins HAS_ALT absence by disassembly text only; this one
+ * pins the behaviour.  A call argument leaves a closure sitting in R3
+ * (the watcher's base+2, its else-arm slot) right before a `whenever`
+ * with no else installs at the same base register -- the VM must never
+ * read that slot without HAS_ALT, so the leftover closure (which would
+ * bump a counter if called) must never run, neither at install time nor
+ * across the watcher's own rising and falling edges.  (Confirmed
+ * sensitive: unconditionally reading R[base+2] regardless of HAS_ALT
+ * makes this fail with bumped == 1 after the falling edge.) */
+UTEST(an_install_without_an_alternate_never_calls_the_leftover_in_r_a_plus_2) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *src =
+        "Realm.bumped = 0; Realm.c = 0; var ignore2 = function(a, b) { 0 };"
+        "ignore2(0, function() { Realm.bumped = Realm.bumped + 1 });"
+        "whenever (Realm.c == 1) { echo(1); Realm.c = 0 }";
+    const char *d = disasm_of(vm, src);
+    UASSERT(d && strstr(d, "INSTALL R1 mode=3 flags=1"));
+    UASSERT(d && strstr(d, "CLOSURE R3, P1"));   /* the leftover lands at base+2 = R3 */
+
+    UValue out; char err[256] = {0};
+    UASSERT_EQ(URBI_OK, urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err));
+    uint64_t wake = 0;
+    for (int i = 0; i < 5; i++) (void)urbi_step(vm, 1000, &wake);
+    run_int(vm, "Realm.bumped", 0);   /* install alone must not call it */
+    UASSERT_EQ(URBI_OK, urbi_run(vm, urbi_realm_main(vm), "Realm.c = 1", 11, NULL, &out, err, sizeof err));
+    for (int i = 0; i < 5; i++) (void)urbi_step(vm, 1000, &wake);
+    run_int(vm, "Realm.bumped", 0);   /* nor the rising edge (body) and its own falling edge */
+    urbi_close(vm);
+}
 UTEST(event_bodies_take_the_payload_parameter) {
     UVM *vm = urbi_open(utest_alloc, NULL, NULL);
     UValue out; char err[256] = {0};
@@ -401,6 +452,7 @@ void test_emit_bytecode_suite(void) {
     utest_run("default_parameters_fill_omitted_arguments", default_parameters_fill_omitted_arguments);
     utest_run("logical_operators_short_circuit", logical_operators_short_circuit);
     utest_run("an_emit_error_names_its_line_and_column", an_emit_error_names_its_line_and_column);
+    utest_run("a_line_table_checkpoint_survives_a_128_line_gap", a_line_table_checkpoint_survives_a_128_line_gap);
     utest_run("the_diag_buffer_keeps_warnings_and_errors_in_order", the_diag_buffer_keeps_warnings_and_errors_in_order);
     utest_run("finally_is_emitted_once", finally_is_emitted_once);
     utest_run("finally_runs_once_on_the_normal_path", finally_runs_once_on_the_normal_path);
@@ -423,6 +475,7 @@ void test_emit_bytecode_suite(void) {
     utest_run("comma_forks_all_but_the_last", comma_forks_all_but_the_last);
     utest_run("amp_forks_the_rhs_and_joins", amp_forks_the_rhs_and_joins);
     utest_run("an_install_without_an_alternate_body_leaves_r_a_plus_2_alone", an_install_without_an_alternate_body_leaves_r_a_plus_2_alone);
+    utest_run("an_install_without_an_alternate_never_calls_the_leftover_in_r_a_plus_2", an_install_without_an_alternate_never_calls_the_leftover_in_r_a_plus_2);
     utest_run("event_bodies_take_the_payload_parameter", event_bodies_take_the_payload_parameter);
     utest_run("slot_change_source_uses_getslot_change_event", slot_change_source_uses_getslot_change_event);
     utest_run("waituntil_installs_with_the_waituntil_mode", waituntil_installs_with_the_waituntil_mode);

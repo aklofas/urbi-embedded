@@ -1,0 +1,14 @@
+# Covers: continue across a tag scope fires the tag's leave each time.
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run Realm.n = 0
+## host: run at (t.leave?) Realm.n = Realm.n + 1
+## host: run var i = 0; while (i < 3) { i = i + 1; t: { if (i < 10) continue; Realm.n = Realm.n + 100 } }; 0
+## host: step 1000
+## host: run Realm.n
+[00000000] <Tag>
+[00000000] 0
+[00000000] nil
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] 3

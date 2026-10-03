@@ -1,0 +1,5 @@
+# Covers: break out of a try/finally inside a loop runs the finally once
+#         per iteration it leaves, including the one that breaks.
+
+var r = 0; var i = 0; while (i < 5) { i = i + 1; try { if (i == 3) break; r = r + 1 } finally { r = r + 100 } }; r + i * 1000
+[00000000] 3302

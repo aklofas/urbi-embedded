@@ -1,0 +1,17 @@
+# Covers: a chunk-top function with a lazy parameter called twice from a
+#         nested function, once through `+` and once through `|`.  Each
+#         call site wraps its argument in its own thunk register, so the
+#         two thunks for one call never alias each other's register.
+#
+# `lazy` is resolved statically against a callee declared with a literal
+# function in the same chunk (the ratified pre-M2 rule), so `f`, `g`, and
+# `h` are declared together on one input line; `g()` and `h()` can then
+# run from later, separate lines because the thunk-wrapping decision is
+# already baked into their bytecode.
+
+var f = function(lazy x) { x }; var g = function() { f(1) + f(2) }; var h = function() { f(10) | f(20) }
+[00000000] <?>
+g()
+[00000000] 3
+h()
+[00000000] 20

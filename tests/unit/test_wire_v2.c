@@ -121,6 +121,12 @@ UTEST(scope_tag_accepts_a_register_above_fifteen_and_the_no_reg_sentinel) {
     UProto *pa = make_proto(a, 3, 0); UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)roundtrip(pa, err, sizeof err)); free_proto(pa);
     UProto *pb = make_proto(b, 3, 0); UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)roundtrip(pb, err, sizeof err)); free_proto(pb);
     UProto *pc = make_proto(c, 3, 0); UASSERT_EQ((int)UCHUNK_LOAD_CORRUPT, (int)roundtrip(pc, err, sizeof err)); free_proto(pc);  /* 8 > max_reg 7 */
+    /* The accept cases above only exercise register 7, still inside the
+     * old 4-bit tag-nibble's range (0..15) -- a register truly above
+     * fifteen needs a wider proto to hold it. */
+    uint32_t d[] = { uinstr_enc_abx(OP_SCOPE_TAG, 20, 2), uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TAG, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    UProto *pd = make_proto(d, 3, 0); pd->max_reg = 40;
+    UASSERT_EQ((int)UCHUNK_LOAD_OK, (int)roundtrip(pd, err, sizeof err)); free_proto(pd);
 }
 UTEST(install_needs_three_registers_and_a_mode) {
     uint32_t ok[]  = { uinstr_enc_abc(OP_INSTALL, 5, UINSTALL_AT_COND, UINSTALL_F_HAS_BODY), uinstr_enc_abc(OP_RET, 0, 0, 0) };
