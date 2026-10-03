@@ -92,6 +92,10 @@ typedef enum {
     TOK_KW_SYNC,
     TOK_KW_ASYNC,
 
+    /* keywords — concurrency */
+    TOK_KW_DETACH,
+    TOK_KW_DISOWN,
+
     /* event postfix sugar */
     TOK_QUESTION,      /* ? — event-subscribe postfix inside at(...) */
     TOK_BANG,          /* ! — event-emit postfix (e.g. `e!`) */

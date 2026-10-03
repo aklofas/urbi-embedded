@@ -1,0 +1,23 @@
+# Covers: a reactive body is exactly one statement; a `|` after it binds
+#         OUTSIDE the construct, as a sibling, instead of folding into the
+#         periodic body.  `Realm.after` must increment exactly once (it
+#         runs alongside the every(), not inside it), while `Realm.n`
+#         increments on every tick.
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run Realm.n = 0
+## host: run Realm.after = 0
+## host: run t: every (1ms) { Realm.n = Realm.n + 1 } | Realm.after = Realm.after + 1
+## host: advance-clock 5
+## host: step 1000
+## host: run t.stop()
+## host: run Realm.after
+## host: run Realm.n > 0
+[00000000] <Tag>
+[00000000] 0
+[00000000] 0
+[00000000] 1
+[00000000] step: WAKE_AT
+[00000000] nil
+[00000000] 1
+[00000000] true

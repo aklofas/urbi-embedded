@@ -106,6 +106,11 @@ UAstNode *urbi_parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec);
 UAstNode *urbi_parse_expression(UParser *p, int min_prec);
 UAstNode *urbi_parse_prefix(UParser *p);
 UAstNode *urbi_parse_atom(UParser *p);
+/* `detach`/`disown` — legacy makes both primary-exp forms (an atom), so
+ * each is usable anywhere an expression is, not only at statement
+ * position; see uparse_expr.c for the shared lowering. */
+UAstNode *urbi_parse_detach(UParser *p);
+UAstNode *urbi_parse_disown(UParser *p);
 
 /* --- Separator loop (defined in uparse_separators.c). --- */
 UAstNode *urbi_parse_pipe_amp_fold(UParser *p, UAstNode *lhs);
@@ -114,6 +119,12 @@ UAstNode *urbi_parse_outer_tier(UParser *p);
 
 /* --- Statement parser (defined in uparse_stmt.c). --- */
 UAstNode *urbi_parse_statement_or_expr(UParser *p);
+/* urbi_parse_arm_stmt: parse exactly ONE statement without folding any
+ * trailing `|`/`&` separator — see the function's own doc comment in
+ * uparse_stmt.c.  Used by every unbraced if/while/else arm, and (as of
+ * the reactive-body fix) by every at/whenever/every body, onleave and
+ * else arm in uparse_react.c. */
+UAstNode *urbi_parse_arm_stmt(UParser *p);
 UAstNode *urbi_parse_block(UParser *p);
 UAstNode *urbi_parse_if(UParser *p);
 UAstNode *urbi_parse_while(UParser *p);

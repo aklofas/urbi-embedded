@@ -22,6 +22,18 @@ static const char kModSelector[] = "%";
 URBI_STATIC_ASSERT(sizeof kModSelector - 1U == (size_t)kModSelectorLen,
                "kModSelectorLen must equal strlen(kModSelector)");
 
+/* `detach`/`disown` lower to a one-arg call to a hidden spawn native
+ * (src/rt/usched_natives.c); these are the native global names. */
+static const char kDetachStrandName[] = "__detach_strand";
+#define kDetachStrandNameLen 15  /* strlen("__detach_strand") */
+URBI_STATIC_ASSERT(sizeof kDetachStrandName - 1U == (size_t)kDetachStrandNameLen,
+               "kDetachStrandNameLen must equal strlen(kDetachStrandName)");
+
+static const char kDisownStrandName[] = "__disown_strand";
+#define kDisownStrandNameLen 15  /* strlen("__disown_strand") */
+URBI_STATIC_ASSERT(sizeof kDisownStrandName - 1U == (size_t)kDisownStrandNameLen,
+               "kDisownStrandNameLen must equal strlen(kDisownStrandName)");
+
 /* Return the left-binding precedence of an infix token, or 0 if not
    an infix operator (terminates the Pratt climb).
    Logical operators bind loosest; comparison binds looser than arithmetic:
@@ -415,6 +427,91 @@ static UAstNode *parse_bracket_literal(UParser *p) {
     }
 }
 
+/* --- parse_detach_or_disown: `detach`/`disown`, each either
+ *   `detach ( expr )`   or   `detach { block }`
+ * (and likewise for `disown`).  Legacy makes both primary-exp forms — an
+ * atom, usable anywhere an expression is, not only at statement position
+ * (mirrors urbi_parse_waituntil).
+ *
+ * Both lower to a one-arg call to a hidden spawn native, wrapping
+ * whatever was written as the thunk's body verbatim:
+ *   detach(f())  →  __detach_strand(function () { f() })  — f runs in the child
+ *   detach(f)    →  __detach_strand(function () { f })    — f is evaluated,
+ *                                                            never called
+ * so "call vs. reference" is exactly what the written expression says —
+ * no special-casing here.
+ *
+ * loop_depth/switch_depth are zeroed for the thunk body: break/continue
+ * do not reach through it into an enclosing loop (same boundary every
+ * function literal gets). */
+static UAstNode *parse_detach_or_disown(UParser *p, const char *strand_name,
+                                         int strand_name_len) {
+    UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_DETACH/DISOWN */
+
+    UParseFuncBoundary saved_boundary;
+    urbi_parse_enter_function_boundary(p, &saved_boundary);
+
+    UAstNode *body;
+    if (urbi_parse_peek(p).type == TOK_LPAREN) {
+        urbi_parse_consume(p);  /* urbi_parse_consume '(' */
+        body = urbi_parse_expression(p, 0);
+        if (!body) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return (UAstNode *)&uparser_oom_sentinel;
+        }
+        if (body->kind == AST_ERROR) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return body;
+        }
+        UAstNode *err = NULL;
+        if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return err;
+        }
+    } else {
+        body = urbi_parse_block(p);
+        if (!body) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return (UAstNode *)&uparser_oom_sentinel;
+        }
+        if (body->kind == AST_ERROR) {
+            urbi_parse_leave_function_boundary(p, &saved_boundary);
+            return body;
+        }
+    }
+
+    urbi_parse_leave_function_boundary(p, &saved_boundary);
+
+    UAstNode *fn = urbi_parse_make_node(p, AST_FUNCTION, kw.line, kw.col);
+    if (!fn) return (UAstNode *)&uparser_oom_sentinel;
+    fn->u.func.params      = NULL;
+    fn->u.func.param_count = 0;
+    fn->u.func.body        = body;
+
+    UAstNode *callee = urbi_parse_make_ident(p, strand_name, strand_name_len,
+                                              kw.line, kw.col);
+    if (!callee) return (UAstNode *)&uparser_oom_sentinel;
+
+    UAstNode **args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+    if (!args) return (UAstNode *)&uparser_oom_sentinel;
+    args[0] = fn;
+
+    UAstNode *call = urbi_parse_make_node(p, AST_CALL, kw.line, kw.col);
+    if (!call) return (UAstNode *)&uparser_oom_sentinel;
+    call->u.call.callee    = callee;
+    call->u.call.args      = args;
+    call->u.call.arg_count = 1;
+    return call;
+}
+
+UAstNode *urbi_parse_detach(UParser *p) {
+    return parse_detach_or_disown(p, kDetachStrandName, kDetachStrandNameLen);
+}
+
+UAstNode *urbi_parse_disown(UParser *p) {
+    return parse_detach_or_disown(p, kDisownStrandName, kDisownStrandNameLen);
+}
+
 /* --- urbi_parse_atom: INT | IDENT | true | false | nil | ( expr ) | error.
  */
 
@@ -465,6 +562,10 @@ UAstNode *urbi_parse_atom(UParser *p) {
         return urbi_parse_throw(p);
     case TOK_KW_WAITUNTIL:
         return urbi_parse_waituntil(p);
+    case TOK_KW_DETACH:
+        return urbi_parse_detach(p);
+    case TOK_KW_DISOWN:
+        return urbi_parse_disown(p);
     case TOK_KW_CLOSURE:
         urbi_parse_consume(p);
         return urbi_parse_make_error(p, PARSE_CLOSURE_KEYWORD,

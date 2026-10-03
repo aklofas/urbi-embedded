@@ -127,36 +127,6 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
             fs->max_reg_seen = fs->freereg;
     }
 
-    /* Only seeds the root FuncState (parent == NULL) when a VM is present
-     * (vm->intern_table is required for ustr_intern). */
-    if (parent == NULL && e->vm != NULL) {
-        struct {
-            const char *name;
-            int         nparams;
-            bool        lazy[16];
-        } kKnownLazyGlobals[] = {
-            { "detach", 1, { true } },
-            { "disown", 1, { true } }
-        };
-        int ki;
-        int ntable = (int)(sizeof kKnownLazyGlobals / sizeof kKnownLazyGlobals[0]);
-        for (ki = 0; ki < ntable && fs->n_global_vars < UFS_MAX_LOCALS; ki++) {
-            const char *interned = ustr_intern(e->vm,
-                                               kKnownLazyGlobals[ki].name,
-                                               urbi_strlen(kKnownLazyGlobals[ki].name));
-            if (interned == NULL) continue;  /* OOM — skip gracefully */
-            UFuncSig *gsig = &fs->global_var_sigs[fs->n_global_vars];
-            int pi;
-            gsig->resolved = true;
-            gsig->nparams  = kKnownLazyGlobals[ki].nparams;
-            for (pi = 0; pi < kKnownLazyGlobals[ki].nparams && pi < 16; pi++) {
-                gsig->param_is_lazy[pi] = kKnownLazyGlobals[ki].lazy[pi];
-            }
-            fs->global_var_names[fs->n_global_vars] = interned;
-            fs->n_global_vars++;
-        }
-    }
-
     /* Drop prev_line to the sentinel so the child proto's first
      * instruction bootstraps its own absolute checkpoint instead of
      * encoding a delta against the PARENT's last line.  Each proto owns

@@ -349,6 +349,19 @@ static inline void uemit_unwind_scope_pop(UEmitter *e) {
 int urbi_emit_scope_crossings(UEmitter *e, int down_to_depth, uint32_t line);
 /* === end unwind-scope stack === */
 
+/* True when an AST_FUNCTION literal has at least one `lazy` parameter.
+ * Shared by urbi_emit_member_set_arm (uemit_react.c) and urbi_emit_call_arm
+ * (uemit_stmt.c): a function literal stored as a method or installed as a
+ * property via setProperty cannot carry a lazy parameter — the call site
+ * cannot see the signature through dynamic dispatch, so the argument
+ * would arrive eager regardless of the annotation. */
+static inline bool fn_has_lazy_param(const UAstNode *fn) {
+    for (int i = 0; i < fn->u.func.param_count; i++) {
+        if (fn->u.func.params[i]->u.param.is_lazy) return true;
+    }
+    return false;
+}
+
 /* Statement / control-flow AST arm helpers (defined in uemit_stmt.c).
  * Called from urbi_emit_expr via forwarding stubs; bodies live in uemit_stmt.c. */
 uint8_t urbi_emit_if_arm(UEmitter *e, UAstNode *n);

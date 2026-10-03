@@ -1,0 +1,30 @@
+# Covers: `detach` has a paren form and a block form; both are grammar,
+#         not a stdlib lazy-arg wrapper.  `detach(f())` runs `f` in the
+#         child (the written expression is the thunk's body verbatim);
+#         `detach(f)` evaluates `f` without calling it, for the same
+#         reason.  The child strand gets a turn before the caller's own
+#         next statement resumes (`;` is a yield point), so the trace
+#         reads "fc", not "cf".
+## timeout: 30
+## host: run Realm.log = ""
+## host: run var f = function() { Realm.log = Realm.log + "f" }
+## host: run detach(f()); Realm.log = Realm.log + "c"; 0
+## host: step 1000
+## host: run Realm.log
+## host: run detach { Realm.log = Realm.log + "B" }; 0
+## host: step 1000
+## host: run Realm.log
+## host: run detach(f); 0
+## host: step 1000
+## host: run Realm.log
+[00000000] ""
+[00000000] <?>
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] "fc"
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] "fcB"
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] "fcB"

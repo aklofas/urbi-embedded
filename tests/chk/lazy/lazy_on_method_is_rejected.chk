@@ -1,0 +1,12 @@
+# Covers: a function literal with a lazy parameter cannot be stored as a
+#         method or installed as a property: the call site cannot see the
+#         signature through dynamic dispatch, so the argument would be eager.
+#         Object.new()'s own value is never printed (nondeterministic
+#         `<object 0x...>`, see tests/chk/objects/inheritance.chk) — each
+#         setup line is chained with a deterministic trailing literal.
+var o = Object.new(); 0;
+[00000000] 0
+var o.m = function(lazy x) { 1 };
+[00000000] !!! <stdin>:1:11: lazy parameters are not allowed on methods
+class K { get g(lazy x) { 1 } }
+[00000000] !!! <stdin>:1:11: lazy parameters are not allowed on methods

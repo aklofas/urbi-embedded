@@ -251,6 +251,39 @@ UTEST(continue_inside_a_getter_inside_a_loop_is_a_parse_error) {
     pfix_close(&f);
 }
 
+UTEST(pipe_after_a_braced_every_body_binds_outside) {
+    PFix f; UAstNode *n = parse_one(&f, "every (1s) { a() } | b()");
+    UASSERT(n && n->kind == AST_SEQ && n->u.seq.separator == SEP_PIPE && n->u.seq.count == 2);
+    UASSERT_EQ((int)AST_CALL, (int)n->u.seq.children[0]->kind);   /* every(period, fn) */
+    UASSERT(ident_is(n->u.seq.children[1]->u.call.callee, "b"));
+    pfix_close(&f);
+}
+UTEST(pipe_after_an_unbraced_at_body_binds_outside) {
+    PFix f; UAstNode *n = parse_one(&f, "at (e?) 1.print() | e!");
+    UASSERT(n && n->kind == AST_SEQ && n->u.seq.count == 2);
+    UASSERT_EQ((int)AST_WATCHER, (int)n->u.seq.children[0]->kind);
+    pfix_close(&f);
+}
+UTEST(detach_paren_form_wraps_the_expression_in_a_thunk) {
+    PFix f; UAstNode *n = parse_one(&f, "detach(f())");
+    UASSERT(n && n->kind == AST_CALL && ident_is(n->u.call.callee, "__detach_strand"));
+    UASSERT_EQ(1, n->u.call.arg_count);
+    UASSERT_EQ((int)AST_FUNCTION, (int)n->u.call.args[0]->kind);
+    UASSERT_EQ(0, n->u.call.args[0]->u.func.param_count);
+    pfix_close(&f);
+}
+UTEST(detach_block_form_and_disown) {
+    PFix f; UAstNode *n = parse_one(&f, "disown { a(); b() }");
+    UASSERT(n && n->kind == AST_CALL && ident_is(n->u.call.callee, "__disown_strand"));
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.call.args[0]->u.func.body->kind);
+    pfix_close(&f);
+}
+UTEST(detach_is_an_expression) {
+    PFix f; UAstNode *n = parse_one(&f, "var j = detach(f())");
+    UASSERT(n && n->kind == AST_VAR_DECL && n->u.var_decl.init->kind == AST_CALL);
+    pfix_close(&f);
+}
+
 void test_parse_desugar_suite(void) {
     utest_run("list_literal_is_a_call_to_list_new", list_literal_is_a_call_to_list_new);
     utest_run("empty_list_literal_is_list_new_with_no_args", empty_list_literal_is_list_new_with_no_args);
@@ -272,4 +305,9 @@ void test_parse_desugar_suite(void) {
     utest_run("break_inside_a_closure_inside_a_loop_is_a_parse_error", break_inside_a_closure_inside_a_loop_is_a_parse_error);
     utest_run("continue_inside_an_every_body_inside_a_loop_is_a_parse_error", continue_inside_an_every_body_inside_a_loop_is_a_parse_error);
     utest_run("continue_inside_a_getter_inside_a_loop_is_a_parse_error", continue_inside_a_getter_inside_a_loop_is_a_parse_error);
+    utest_run("pipe_after_a_braced_every_body_binds_outside", pipe_after_a_braced_every_body_binds_outside);
+    utest_run("pipe_after_an_unbraced_at_body_binds_outside", pipe_after_an_unbraced_at_body_binds_outside);
+    utest_run("detach_paren_form_wraps_the_expression_in_a_thunk", detach_paren_form_wraps_the_expression_in_a_thunk);
+    utest_run("detach_block_form_and_disown", detach_block_form_and_disown);
+    utest_run("detach_is_an_expression", detach_is_an_expression);
 }

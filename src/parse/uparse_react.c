@@ -181,6 +181,39 @@ static UAstNode *parse_event_payload_binding(UParser *p,
  * UWATCHER_AT_SYNC or UWATCHER_WHENEVER.  allow_slot_change enables the
  * receiver disambiguation below — `whenever` never slot-change-dispatches
  * (matching the pre-merge behaviour: only `at`/`at sync` did). */
+
+/* parse_reactive_body: parse the body (or onleave/else arm) of an
+ * at/whenever/every construct as exactly ONE statement, without folding
+ * any trailing `|`/`&` into it.  A reactive body sits at the same `stmt`
+ * grammar tier as an unbraced if/while arm (urbi_parse_arm_stmt's own doc
+ * comment in uparse_stmt.c), so `at (e?) body | sibling` must reach
+ * `sibling` as a SIBLING of the watcher rather than absorb it into the
+ * body — the enclosing urbi_parse_statement_or_expr case (TOK_KW_AT /
+ * TOK_KW_WHENEVER / TOK_KW_EVERY) applies that fold OUTSIDE the
+ * construct, exactly as it does for TOK_KW_IF / TOK_KW_WHILE.
+ *
+ * Same shape parse_single_stmt_as_block produces for an unbraced
+ * if/while arm: a braced body is returned as the block itself; an
+ * unbraced one is wrapped in a synthetic one-element BLOCK. */
+static UAstNode *parse_reactive_body(UParser *p) {
+    if (urbi_parse_peek(p).type == TOK_LBRACE) return urbi_parse_block(p);
+
+    UToken pos = urbi_parse_peek(p);
+    UAstNode *stmt = urbi_parse_arm_stmt(p);
+    if (!stmt) return (UAstNode *)&uparser_oom_sentinel;
+    if (stmt->kind == AST_ERROR) return stmt;
+
+    UAstNode **stmts = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+    if (!stmts) return (UAstNode *)&uparser_oom_sentinel;
+    stmts[0] = stmt;
+
+    UAstNode *block = urbi_parse_make_node(p, AST_BLOCK, pos.line, pos.col);
+    if (!block) return (UAstNode *)&uparser_oom_sentinel;
+    block->u.block.stmts = stmts;
+    block->u.block.count = 1;
+    return block;
+}
+
 static UAstNode *parse_event_form(UParser *p, UToken kw, UAstNode *cond,
                                    int mode, bool allow_slot_change) {
     /* Optional `(var x)` payload binding immediately after `?` and
@@ -197,7 +230,7 @@ static UAstNode *parse_event_form(UParser *p, UToken kw, UAstNode *cond,
     UParseFuncBoundary saved_boundary;
     urbi_parse_enter_function_boundary(p, &saved_boundary);
 
-    UAstNode *body = urbi_parse_statement_or_expr(p);
+    UAstNode *body = parse_reactive_body(p);
     if (!body) {
         urbi_parse_leave_function_boundary(p, &saved_boundary);
         return (UAstNode *)&uparser_oom_sentinel;
@@ -211,7 +244,7 @@ static UAstNode *parse_event_form(UParser *p, UToken kw, UAstNode *cond,
     UAstNode *onleave = NULL;
     if (urbi_parse_peek(p).type == TOK_KW_ONLEAVE) {
         urbi_parse_consume(p);
-        onleave = urbi_parse_statement_or_expr(p);
+        onleave = parse_reactive_body(p);
         if (!onleave) {
             urbi_parse_leave_function_boundary(p, &saved_boundary);
             return (UAstNode *)&uparser_oom_sentinel;
@@ -284,7 +317,7 @@ static UAstNode *parse_at_cond_form(UParser *p, UToken kw,
     UParseFuncBoundary saved_boundary;
     urbi_parse_enter_function_boundary(p, &saved_boundary);
 
-    UAstNode *body = urbi_parse_statement_or_expr(p);
+    UAstNode *body = parse_reactive_body(p);
     if (!body) {
         urbi_parse_leave_function_boundary(p, &saved_boundary);
         return (UAstNode *)&uparser_oom_sentinel;
@@ -304,7 +337,7 @@ static UAstNode *parse_at_cond_form(UParser *p, UToken kw,
                               ol.line, ol.col);
         }
         urbi_parse_consume(p);
-        onleave = urbi_parse_statement_or_expr(p);
+        onleave = parse_reactive_body(p);
         if (!onleave) {
             urbi_parse_leave_function_boundary(p, &saved_boundary);
             return (UAstNode *)&uparser_oom_sentinel;
@@ -407,7 +440,7 @@ UAstNode *urbi_parse_whenever(UParser *p) {
     UParseFuncBoundary saved_boundary;
     urbi_parse_enter_function_boundary(p, &saved_boundary);
 
-    UAstNode *body = urbi_parse_statement_or_expr(p);
+    UAstNode *body = parse_reactive_body(p);
     if (!body) {
         urbi_parse_leave_function_boundary(p, &saved_boundary);
         return (UAstNode *)&uparser_oom_sentinel;
@@ -421,7 +454,7 @@ UAstNode *urbi_parse_whenever(UParser *p) {
     UAstNode *onleave = NULL;
     if (urbi_parse_peek(p).type == TOK_KW_ONLEAVE) {
         urbi_parse_consume(p);
-        onleave = urbi_parse_statement_or_expr(p);
+        onleave = parse_reactive_body(p);
         if (!onleave) {
             urbi_parse_leave_function_boundary(p, &saved_boundary);
             return (UAstNode *)&uparser_oom_sentinel;
@@ -437,7 +470,7 @@ UAstNode *urbi_parse_whenever(UParser *p) {
     UAstNode *else_body = NULL;
     if (urbi_parse_peek(p).type == TOK_KW_ELSE) {
         urbi_parse_consume(p);
-        else_body = urbi_parse_statement_or_expr(p);
+        else_body = parse_reactive_body(p);
         if (!else_body) {
             urbi_parse_leave_function_boundary(p, &saved_boundary);
             return (UAstNode *)&uparser_oom_sentinel;
@@ -500,7 +533,7 @@ UAstNode *urbi_parse_every(UParser *p) {
      * reach through it into an enclosing loop. */
     UParseFuncBoundary saved_boundary;
     urbi_parse_enter_function_boundary(p, &saved_boundary);
-    UAstNode *body = urbi_parse_statement_or_expr(p);
+    UAstNode *body = parse_reactive_body(p);
     urbi_parse_leave_function_boundary(p, &saved_boundary);
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;

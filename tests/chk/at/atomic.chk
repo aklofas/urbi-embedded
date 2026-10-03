@@ -1,0 +1,8 @@
+# Covers: the body of `at` is one statement; a `|` after it is a sibling,
+#         so the emit on the same line reaches the watcher.
+# Origin: legacy tests/2.x/at/atomic.chk
+var e = Event.new();
+[00000000] <event>
+at(e?) echo(1) | e!;
+[00000000] *** 1
+[00000000] nil

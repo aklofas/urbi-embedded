@@ -474,16 +474,37 @@ UAstNode *urbi_parse_statement_or_expr(UParser *p) {
     case TOK_KW_RETURN:   return parse_return(p);
     case TOK_KW_TRY:      return urbi_parse_try(p);
     case TOK_KW_THROW:    return urbi_parse_throw(p);
-    case TOK_KW_AT:       return urbi_parse_at(p);
-    case TOK_KW_WHENEVER: return urbi_parse_whenever(p);
+    /* at/whenever/every each parse their body (and onleave/else) through
+     * urbi_parse_arm_stmt now — fold-free, same as an if/while arm — so a
+     * trailing `|`/`&` is left for THIS fold to bind outside the watcher,
+     * exactly like the TOK_KW_IF/TOK_KW_WHILE cases above. */
+    case TOK_KW_AT: {
+        UAstNode *node = urbi_parse_at(p);
+        if (!node || node->kind == AST_ERROR) return node;
+        return urbi_parse_pipe_amp_fold(p, node);
+    }
+    case TOK_KW_WHENEVER: {
+        UAstNode *node = urbi_parse_whenever(p);
+        if (!node || node->kind == AST_ERROR) return node;
+        return urbi_parse_pipe_amp_fold(p, node);
+    }
     case TOK_KW_WAITUNTIL: return urbi_parse_waituntil(p);
-    case TOK_KW_EVERY:    return urbi_parse_every(p);
+    case TOK_KW_EVERY: {
+        UAstNode *node = urbi_parse_every(p);
+        if (!node || node->kind == AST_ERROR) return node;
+        return urbi_parse_pipe_amp_fold(p, node);
+    }
     case TOK_KW_CLASS:    return parse_class_declaration(p);
     case TOK_KW_ASSERT:   return urbi_parse_assert(p);
     case TOK_KW_FOR:      return parse_for(p);
     case TOK_KW_BREAK:    return parse_break(p);
     case TOK_KW_CONTINUE: return parse_continue(p);
     case TOK_KW_SWITCH:   return parse_switch(p);
+    /* detach/disown are primary-exp atoms (see uparse_expr.c); listed here
+     * explicitly, same as TOK_KW_WAITUNTIL above, rather than relying on
+     * the default case to reach them through urbi_parse_atom. */
+    case TOK_KW_DETACH:   return urbi_parse_detach(p);
+    case TOK_KW_DISOWN:   return urbi_parse_disown(p);
     case TOK_LBRACE: {
         UAstNode *block = urbi_parse_block(p);
         if (!block || block->kind == AST_ERROR) return block;
@@ -564,8 +585,14 @@ UAstNode *urbi_parse_block(UParser *p) {
  * urbi_parse_pipe_amp_fold on if/while/block results and parse_assign_or_expr calls it
  * on the expression path — both would absorb `&`/`|` into the arm.
  * parse_arm_stmt skips those folds so the enclosing urbi_parse_statement_or_expr
- * call (which wraps the whole if/while node) performs the fold instead. */
-static UAstNode *parse_arm_stmt(UParser *p) {
+ * call (which wraps the whole if/while node) performs the fold instead.
+ *
+ * Exported as urbi_parse_arm_stmt: uparse_react.c reuses it for every
+ * at/whenever/every body, onleave and else arm, for the same reason —
+ * the reactive construct's own enclosing urbi_parse_statement_or_expr case
+ * applies the fold, so a trailing `|`/`&` binds OUTSIDE the body instead
+ * of being absorbed into it. */
+UAstNode *urbi_parse_arm_stmt(UParser *p) {
     UToken t = urbi_parse_peek(p);
     switch (t.type) {
     /* Nested control-flow: return the node directly without urbi_parse_pipe_amp_fold.
@@ -587,6 +614,10 @@ static UAstNode *parse_arm_stmt(UParser *p) {
     case TOK_KW_BREAK:    return parse_break(p);
     case TOK_KW_CONTINUE: return parse_continue(p);
     case TOK_KW_SWITCH:   return parse_switch(p);
+    /* detach/disown are primary-exp atoms (see uparse_expr.c); listed here
+     * explicitly, same as TOK_KW_WAITUNTIL above. */
+    case TOK_KW_DETACH:   return urbi_parse_detach(p);
+    case TOK_KW_DISOWN:   return urbi_parse_disown(p);
     /* Braced block: return without urbi_parse_pipe_amp_fold (same as TOK_KW_IF above).
      * Defensive only — every callsite (urbi_parse_if then/else arms, urbi_parse_while
      * body) routes TOK_LBRACE to urbi_parse_block directly and never enters
@@ -630,7 +661,7 @@ static UAstNode *parse_arm_stmt(UParser *p) {
  * returning. */
 static UAstNode *parse_single_stmt_as_block(UParser *p) {
     UToken pos = urbi_parse_peek(p);
-    UAstNode *stmt = parse_arm_stmt(p);
+    UAstNode *stmt = urbi_parse_arm_stmt(p);
     if (!stmt) return (UAstNode *)&uparser_oom_sentinel;
     if (stmt->kind == AST_ERROR) return stmt;
 

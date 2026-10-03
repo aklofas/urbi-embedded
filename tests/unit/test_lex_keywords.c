@@ -50,6 +50,20 @@ static void lex_async_keyword(void) {
     UASSERT_EQ(t.len, 5);
 }
 
+static void lex_detach_keyword(void) {
+    ULexer l; ulex_init(&l, "detach", 6);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_KW_DETACH);
+    UASSERT_EQ(t.len, 6);
+}
+
+static void lex_disown_keyword(void) {
+    ULexer l; ulex_init(&l, "disown", 6);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_KW_DISOWN);
+    UASSERT_EQ(t.len, 6);
+}
+
 /* --- T4: reserved-keyword-as-variable-name diagnostics --- */
 
 /* Helper: parse one statement from src, return the AST_ERROR parse code.
@@ -154,6 +168,8 @@ void test_lex_keywords_suite(void) {
     utest_run("lex_onleave_keyword",   lex_onleave_keyword);
     utest_run("lex_sync_keyword",      lex_sync_keyword);
     utest_run("lex_async_keyword",     lex_async_keyword);
+    utest_run("lex_detach_keyword",    lex_detach_keyword);
+    utest_run("lex_disown_keyword",    lex_disown_keyword);
 
     /* T4: reserved-keyword-as-variable-name diagnostics */
     utest_run("var at as ident: PARSE_RESERVED_KEYWORD_AS_IDENT",      var_at_as_ident_fails);

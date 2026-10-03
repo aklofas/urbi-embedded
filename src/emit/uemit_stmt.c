@@ -695,6 +695,22 @@ uint8_t urbi_emit_call_arm(UEmitter *e, UAstNode *n) {
     UAstNode *callee = n->u.call.callee;
     bool is_method   = (callee->kind == AST_MEMBER_GET);
 
+    /* recv.setProperty(name, "oget"|"oset", function) installs a method —
+     * same lazy-parameter restriction as a direct `obj.m = function(...)`
+     * (urbi_emit_member_set_arm): the call site cannot see the signature
+     * through dynamic dispatch, so the argument would arrive eager
+     * regardless of the annotation. */
+    if (is_method && n->u.call.arg_count == 3
+        && callee->u.member.name_len == 11
+        && urbi_memeq(callee->u.member.name_start, "setProperty", 11)
+        && n->u.call.args[2]->kind == AST_FUNCTION
+        && fn_has_lazy_param(n->u.call.args[2])) {
+        e->error = EMIT_LAZY_ON_METHOD;
+        urbi_emit_diag_error(e, n->u.call.args[2],
+                        "lazy parameters are not allowed on methods");
+        return 0U;
+    }
+
     /* Look up callee's function signature when the callee is a
      * statically-visible local declared with a function literal.
      * Used below to decide whether to wrap each arg as a lazy thunk.

@@ -71,6 +71,17 @@ uint8_t urbi_emit_member_set_arm(UEmitter *e, UAstNode *n) {
         return 0U;
     }
 
+    /* A function literal with a lazy parameter cannot be stored as a
+     * method: the call site cannot see the signature through dynamic
+     * dispatch, so the argument would arrive eager regardless. */
+    if (n->u.member.value->kind == AST_FUNCTION
+        && fn_has_lazy_param(n->u.member.value)) {
+        e->error = EMIT_LAZY_ON_METHOD;
+        urbi_emit_diag_error(e, n->u.member.value,
+                        "lazy parameters are not allowed on methods");
+        return 0U;
+    }
+
     /* Emit receiver into a temp, then RHS value into the next temp. */
     uint8_t recv_reg = urbi_emit_expr(e, n->u.member.recv);
     if (e->error != EMIT_OK) return 0U;

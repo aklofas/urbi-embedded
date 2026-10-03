@@ -95,8 +95,12 @@ UTEST(parse_every_desugars_to_call) {
     ctx_destroy(&c);
 }
 
-/* every (E) S accepts any statement form as the body.  `f()` body parses
- * as an AST_CALL; verify the wrapped body is the same call. */
+/* every (E) S accepts any statement form as the body.  An unbraced body
+ * is parsed through urbi_parse_arm_stmt and wrapped in a one-element
+ * BLOCK — the same shape an unbraced if/while arm gets from
+ * parse_single_stmt_as_block — so that a trailing `|`/`&` binds OUTSIDE
+ * the every (as a sibling) rather than folding into the body.  `f()`
+ * body therefore parses as BLOCK{ CALL f() }, not a bare AST_CALL. */
 UTEST(parse_every_body_is_user_statement) {
     ParseCtx c;
     ctx_init(&c, "every (100) f()");
@@ -112,13 +116,14 @@ UTEST(parse_every_body_is_user_statement) {
     UAstNode *body_fn = n->u.call.args[1];
     UASSERT(body_fn != NULL);
     if (body_fn != NULL && body_fn->kind == AST_FUNCTION) {
-        /* The function body is whatever shape urbi_emit_function_literal can
-         * compile (does not need to be AST_BLOCK).  For `f()` the body
-         * is the call expression itself. */
         UAstNode *body = body_fn->u.func.body;
         UASSERT(body != NULL);
         if (body != NULL) {
-            UASSERT_EQ(AST_CALL, body->kind);
+            UASSERT_EQ(AST_BLOCK, body->kind);
+            if (body->kind == AST_BLOCK) {
+                UASSERT_EQ(1, body->u.block.count);
+                UASSERT_EQ(AST_CALL, body->u.block.stmts[0]->kind);
+            }
         }
     } else {
         if (body_fn != NULL) UASSERT_EQ(AST_FUNCTION, body_fn->kind);
