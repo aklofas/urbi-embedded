@@ -912,6 +912,12 @@ static void a_freed_realm_drops_a_pending_else_arm(void)
 {
     Fix fx; fix_open(&fx);
     (void)urbi_realm_main(fx.vm);
+    /* The scheduler's timer heap is allocated on the first sleep and kept
+     * for the VM's life.  Sleep once on the main realm before measuring,
+     * so the bound below sees what the freed realm left behind and not
+     * that one-time growth. */
+    run_ok(&fx, "sleep(1ms), 0");
+    slices(&fx, 2000);
     urbi_gc_collect(fx.vm);
     size_t baseline = fx.ca.live;
 
