@@ -197,6 +197,7 @@ UTEST(the_break_patch_list_caps_at_sixteen_sites) {
     for (int k = 0; k < 16; k++) at += (size_t)snprintf(src + at, sizeof src - at, "break; ");
     (void)snprintf(src + at, sizeof src - at, "}");
     UASSERT_EQ(URBI_OK, urbi_compile(vm, src, strlen(src), NULL, &bytes, &n, err, sizeof err));
+    urbi_chunk_free(vm, bytes, n);
     at = (size_t)snprintf(src, sizeof src, "while (true) { ");
     for (int k = 0; k < 17; k++) at += (size_t)snprintf(src + at, sizeof src - at, "break; ");
     (void)snprintf(src + at, sizeof src - at, "}");
