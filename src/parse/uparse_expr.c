@@ -303,7 +303,7 @@ UAstNode *urbi_parse_prefix(UParser *p) {
  /* Caller has confirmed urbi_parse_peek() is TOK_LBRACKET.  Consumes `[` + contents + `]`.
  *
  * List: `[e1, e2, e3]`    → CALL List.new(e1, e2, e3)
- * Dict: `[k1 => v1, ...]` → BLOCK { var $d = Dict.new(); $d.set(k1, v1); ...; $d }
+ * Dict: `[k1 => v1, ...]` → CALL chain Dict.new().set(k1, v1)...
  * ========================================================================== */
 
 /* Build `recv.new(args[0..argc))` — shared by the list desugar (recv is
@@ -399,15 +399,9 @@ static UAstNode *parse_bracket_literal(UParser *p) {
         /* Dict.new().set(k0, v0).set(k1, v1)... — dict_set returns self
          * (src/stdlib/containers.c), so the chain's value is the dict.
          * No block, no hidden local: nesting each .set() call as the
-         * next receiver is an ordinary expression tree, so this works
-         * anywhere an expression can go.  A BLOCK with a declared local
-         * does not: urbi_emit_block_arm's between-statement register
-         * reset only knows about its OWN declared locals, so in
-         * expression position (an argument to a call, an operand of a
-         * binary, an earlier element of an enclosing list literal) it
-         * would hand an enclosing expression's still-live temporary
-         * register to one of this dict's own statements and corrupt
-         * it. */
+         * next receiver is an ordinary expression tree, which keeps
+         * the literal one expression wherever it appears and costs no
+         * local register. */
         UAstNode *result = desugar_new_call(p, "Dict", 4, NULL, 0, lbr.line, lbr.col);
         if (!result) return NULL;
         for (int i = 0; i < count; i++) {

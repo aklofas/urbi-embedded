@@ -539,9 +539,8 @@ UAstNode *urbi_parse_every(UParser *p) {
     if (body->kind == AST_ERROR) return body;
 
     /* Wrap the body in a zero-parameter function literal — params=NULL,
-     * param_count=0.  urbi_emit_function_literal accepts any node shape for
-     * the body (it routes through urbi_emit_expr internally), so single-
-     * statement bodies need no AST_BLOCK wrapping. */
+     * param_count=0.  The emitter compiles any node shape as a function
+     * body, so single-statement bodies need no AST_BLOCK wrapping. */
     UAstNode *body_fn = urbi_parse_make_node(p, AST_FUNCTION, kw.line, kw.col);
     if (!body_fn) return (UAstNode *)&uparser_oom_sentinel;
     body_fn->u.func.params      = NULL;
