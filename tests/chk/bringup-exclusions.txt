@@ -3,7 +3,8 @@
 #
 # This file is a RATCHET, not a suppression list: chk_summary.sh fails if
 # an excluded fixture starts passing, so the task that unblocks one is
-# forced to delete its line here.  Entries are only ever removed.
+# forced to delete its line here.  Entries are removed, or added only
+# when a directory joins the gate.
 #
 # Each line: <path>  # <what it needs>
 
