@@ -9,6 +9,8 @@
 #   - src/lex/*.c          (lexer; parser-coupled)
 #   - src/parse/*.c        (parser + AST builder)
 #   - src/emit/*.c         (bytecode emitter + disasm)
+#   - src/host/*.c         (hosted-only public API helpers, e.g. the
+#                           snprintf-based urbi_value_to_string)
 #   - src/repl/*.c         (REPL service; hosted transports / parses via
 #                           urbi_repl_eval)
 #   - src/ros/*.c          (ROS2 bridge; opt-in hosted component)
@@ -24,15 +26,13 @@
 
 # KEPT subdir set: sources under these directories are compiled into the
 # freestanding / bytecode-only build.
-BYTECODE_ONLY_KEEP_DIRS="src/vm src/gc src/sched src/watcher src/event src/tag \
-                         src/changed src/chunk src/value src/runtime src/realm \
-                         src/object src/stdlib"
+BYTECODE_ONLY_KEEP_DIRS="src/rt src/chunk src/util src/stdlib"
 
 # EXCLUDED subdir set: deliberately kept OUT of the freestanding /
 # bytecode-only build (parser/emitter front-end + hosted opt-in components).
 # Every src/*/ dir with C sources must appear in exactly one of these two
 # lists; check_all_src_dirs_classified enforces that (BLD-CI-5).
-BYTECODE_ONLY_EXCLUDE_DIRS="src/lex src/parse src/emit src/repl src/ros src/urobotics"
+BYTECODE_ONLY_EXCLUDE_DIRS="src/lex src/parse src/emit src/host src/repl src/ros src/urobotics"
 
 list_kept_tus() {
     local keep_dirs="$BYTECODE_ONLY_KEEP_DIRS"
