@@ -63,8 +63,13 @@ int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
     root->alloc_ud       = vm;
     root->heap_allocated = true;
 
-    UEmitter e;
-    uemit_init(&e, root, &arena, vm, name);
+    UEmitter *e = uemit_new(root, &arena, vm, name);
+    if (e == NULL) {
+        if (err && errcap) snprintf(err, errcap, "out of memory");
+        uchunk_destroy(root, NULL);
+        uarena_destroy(&arena);
+        return URBI_ERR_OOM;
+    }
 
     UParser p;
     uparse_init(&p, &lex, &arena);
@@ -82,14 +87,30 @@ int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
             has_error = true;
             break;
         }
-        if (uemit_statement(&e, node) != EMIT_OK) { has_error = true; break; }
+        if (uemit_statement(e, node) != EMIT_OK) { has_error = true; break; }
         uarena_reset(&arena);
     }
 
-    UEmitError finish_rc = EMIT_OK;
+    /* Warnings go to the diag channel the same way the old REPL printed
+     * them.  They are read before uemit_finish, which frees the emitter
+     * and its diagnostics with it. */
     if (!has_error) {
-        finish_rc = uemit_finish(&e);
-        if (finish_rc != EMIT_OK) has_error = true;
+        const char *warn_src = uproto_source_name(root);
+        if (warn_src == NULL) warn_src = "<stdin>";
+        for (int di = 0; di < uemit_diag_count(e); di++) {
+            const UEmitDiag *d = uemit_diag_at(e, di);
+            if (d->level == UEMIT_DIAG_WARN)
+                fprintf(stderr, "%s:%d:%d: warning: %s\n", warn_src, d->line, d->col, d->message);
+        }
+    }
+
+    UEmitError emit_rc = EMIT_OK;
+    if (!has_error) {
+        emit_rc = uemit_finish(e);
+        e = NULL;
+        if (emit_rc != EMIT_OK) has_error = true;
+    } else {
+        emit_rc = uemit_error(e);
     }
 
     if (has_error) {
@@ -104,33 +125,19 @@ int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
             } else if (parse_errmsg && (parse_err_line > 0 || parse_err_col > 0)) {
                 snprintf(err, errcap, "%s:%d:%d: %s", ulex_current_source(&lex),
                          parse_err_line, parse_err_col, parse_errmsg);
-            } else if (!urbi_emit_diag_format_first_error(&e, err, errcap)) {
+            } else if (e == NULL || !urbi_emit_diag_format_first_error(e, err, errcap)) {
                 snprintf(err, errcap, "%s: %s",
                          name ? name : "<stdin>",
-                         parse_errmsg ? parse_errmsg
-                                      : uemit_error_name(e.error != EMIT_OK ? e.error : finish_rc));
+                         parse_errmsg ? parse_errmsg : uemit_error_name(emit_rc));
             }
         }
-        urbi_emit_diag_free_all(&e);
-        urbi_emit_abandon(&e);
+        urbi_emit_abandon(e);
         uchunk_destroy(root, NULL);   /* heap_allocated: frees the struct too */
         uarena_destroy(&arena);
         if (budget_err != URBI_OK) return budget_err;
-        return (finish_rc == EMIT_OOM || e.error == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
+        return emit_rc == EMIT_OOM ? URBI_ERR_OOM : URBI_ERR_COMPILE;
     }
 
-    /* Warnings go to the diag channel the same way the old REPL printed
-     * them; errors were handled above. */
-    {
-        const char *warn_src = uproto_source_name(root);
-        if (warn_src == NULL) warn_src = "<stdin>";
-        for (int di = 0; di < e.diag_count; di++) {
-            if (e.diag_buf[di].level == UEMIT_DIAG_WARN)
-                fprintf(stderr, "%s:%d:%d: warning: %s\n", warn_src,
-                        e.diag_buf[di].line, e.diag_buf[di].col, e.diag_buf[di].message);
-        }
-    }
-    urbi_emit_diag_free_all(&e);
     uarena_destroy(&arena);
     *out = root;
     return URBI_OK;

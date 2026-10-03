@@ -1,0 +1,240 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* The emitter's output, pinned two ways: the bytecode shape of a
+ * construct (compiled through urbi_compile, loaded back with the real
+ * loader and disassembled), and what a program evaluates to (run through
+ * urbi_run on a fresh VM).  The shape cases hold the register
+ * discipline to its promises; the run cases hold the shapes to their
+ * meaning.  The last cases drive the diagnostic buffer. */
+
+#include "utest.h"
+#include "urbi/urbi.h"
+#include "chunk/uchunk.h"
+#include "emit/uemit.h"
+#include <string.h>
+#include <stdlib.h>
+#define UTEST(name) static void name(void)
+
+static char dis[65536];
+/* Returns the disassembly of `src`'s chunk, or NULL (and prints the error). */
+static const char *disasm_of(UVM *vm, const char *src) {
+    uint8_t *bytes = NULL; size_t n = 0; char err[256] = {0};
+    if (urbi_compile(vm, src, strlen(src), NULL, &bytes, &n, err, sizeof err) != URBI_OK) { printf("    compile: %s\n", err); return NULL; }
+    UProto *root = NULL;
+    if (uchunk_deserialize(&root, bytes, n, NULL, NULL, err, sizeof err) != UCHUNK_LOAD_OK) { printf("    load: %s\n", err); urbi_chunk_free(vm, bytes, n); return NULL; }
+    uemit_disassemble(root, dis, sizeof dis);
+    uchunk_destroy(root, NULL); urbi_chunk_free(vm, bytes, n);
+    return dis;
+}
+static int count_of(const char *hay, const char *needle) { int c = 0; for (const char *p = hay; (p = strstr(p, needle)) != NULL; p += strlen(needle)) c++; return c; }
+
+/* Runs `src` on the main realm and checks it evaluates to the integer `want`. */
+static void run_int(UVM *vm, const char *src, int64_t want) {
+    UValue out; char err[256] = {0};
+    int rc = urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err);
+    if (rc != URBI_OK) {
+        UErrorInfo info = {0};
+        (void)urbi_last_error(vm, &info);
+        printf("    run: rc %d: %s %s\n", rc, err, info.message ? info.message : "");
+    }
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT_EQ(out.kind, URBI_VALUE_INT);
+    UASSERT_EQ(out.v.i, want);
+}
+
+UTEST(every_function_loads_the_globals_object_first) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "var f = function(a) { a }");
+    UASSERT(d && strncmp(d, "0000  LOAD_REALM_GLOBAL", 22) == 0);
+    UASSERT(d && strstr(d, "; proto P0") && strstr(strstr(d, "; proto P0"), "LOAD_REALM_GLOBAL"));
+    urbi_close(vm);
+}
+
+UTEST(a_local_read_emits_no_move) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "var f = function() { var x = 1; x + x }");
+    const char *p0 = d ? strstr(d, "; proto P0") : NULL;
+    UASSERT(p0 != NULL);
+    if (p0) {
+        UASSERT_EQ(0, count_of(p0, "MOVE"));
+        UASSERT_EQ(1, count_of(p0, "ADD"));
+    }
+    urbi_close(vm);
+}
+
+UTEST(statement_temporaries_are_released_between_statements) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "var f = function() { 1 + 2; 3 + 4; 5 + 6 }");
+    const char *p0 = d ? strstr(d, "; proto P0") : NULL;
+    UASSERT(p0 != NULL);
+    /* three ADDs into the same destination register */
+    const char *a1 = p0 ? strstr(p0, "ADD R") : NULL;
+    const char *a2 = a1 ? strstr(a1 + 1, "ADD R") : NULL;
+    const char *a3 = a2 ? strstr(a2 + 1, "ADD R") : NULL;
+    UASSERT(a1 && a2 && a3 && strncmp(a1, a3, 7) == 0 && strncmp(a1, a2, 7) == 0);
+    urbi_close(vm);
+}
+
+UTEST(a_method_call_uses_self_and_the_method_bit) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "var o = Object.new(); o.m(1, 2)");
+    UASSERT(d && strstr(d, "SELF R") && strstr(d, "CALL [method] R"));
+    UASSERT(d && strstr(d, "2 args, 1 results"));
+    urbi_close(vm);
+}
+
+UTEST(a_lazy_callee_wraps_the_flagged_argument_in_a_closure) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "var f = function(lazy x, y) { x }; f(1 + 1, 2)");
+    UASSERT(d != NULL);
+    /* root: CLOSURE for f, then CLOSURE for the thunk, then a LOADK 2 for y, then CALL */
+    if (d) UASSERT_EQ(2, count_of(d, "CLOSURE R"));   /* f itself and one thunk */
+    run_int(vm, "var g = function(lazy x, y) { x * 10 + y }; g(1 + 1, 2)", 22);
+    /* A lazy parameter passed on travels as its thunk, whatever the callee. */
+    run_int(vm, "var inner = function(t) { t() }; var outer = function(lazy y) { inner(y) }; outer(5 + 1)", 6);
+    /* A function body calling a chunk-top lazy function wraps too. */
+    run_int(vm, "var lz = function(lazy x) { x }; var w = function() { lz(2 + 3) }; w()", 5);
+    urbi_close(vm);
+}
+
+UTEST(the_256th_site_emits_extarg) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    char src[8192]; size_t at = 0;
+    at += (size_t)snprintf(src + at, sizeof src - at, "var o = Object.new(); ");
+    for (int i = 0; i < 300; i++) at += (size_t)snprintf(src + at, sizeof src - at, "o.s%d = %d; ", i, i);
+    const char *d = disasm_of(vm, src);
+    UASSERT(d && count_of(d, "EXTARG") >= 44);         /* sites 256..299 */
+    UASSERT(d && strstr(d, "site 299"));
+    /* and the high sites address the right slots */
+    at += (size_t)snprintf(src + at, sizeof src - at, "o.s299 * 1000 + o.s3");
+    run_int(vm, src, 299003);
+    urbi_close(vm);
+}
+
+UTEST(switch_break_exits_the_switch_and_continue_reaches_the_loop) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var i = 0; var seen = 0; while (i < 3) { i = i + 1; switch (i) { case 2: break; }; seen = seen + 1 }; seen", 3);
+    run_int(vm, "var j = 0; var hits = 0; while (j < 3) { j = j + 1; switch (j) { case 2: continue; }; hits = hits + 1 }; hits", 2);
+    urbi_close(vm);
+}
+
+UTEST(multiplication_binds_tighter_than_addition) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "1 + 2 * 3", 7);
+    urbi_close(vm);
+}
+
+UTEST(a_closure_keeps_the_loop_variable_of_its_own_iteration) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm,
+        "var o = Object.new(); var i = 0;"
+        "while (i < 3) { var j = i; o.f = function() { j }; if (i == 1) { o.g = o.f }; i = i + 1 };"
+        "o.g() * 10 + o.f()", 12);
+    urbi_close(vm);
+}
+
+UTEST(return_leaves_nested_blocks) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var f = function(x) { if (x > 0) { { var y = 1; return y } }; 2 }; f(1) * 10 + f(0)", 12);
+    urbi_close(vm);
+}
+
+/* A block with locals of its own whose value is used: as a class
+ * declaration's initializer in the middle of a function, as a function's
+ * last statement, and as an if arm.  Its value has to land where the
+ * enclosing code expects it, above nothing it clobbers. */
+UTEST(a_block_with_locals_yields_its_value) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var f = function(a, b) { a * 10 + b };"
+                "var g = function() { var q = 7; class K { var v = q + 1 }; f(q, K.v) }; g()", 78);
+    run_int(vm, "var h = function() { var k = 1; { var c = 5; c * 2 + k } }; h()", 11);
+    run_int(vm, "var i = function(p) { if (p > 0) { var r = p * 3; r + 1 } else { 0 } }; i(2) * 10 + i(0)", 70);
+    urbi_close(vm);
+}
+
+/* The switch subject is pinned: a case body's own locals and
+ * temporaries go above it. */
+UTEST(a_switch_subject_survives_its_case_bodies) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var f = function(x) { var acc = 0; switch (x * 1) { case 1: { var t = 10; acc = acc + t + x }; case 2: acc = 2 }; acc * 100 + x };"
+                "f(1) * 1000 + f(2)", 1101202);
+    urbi_close(vm);
+}
+
+UTEST(default_parameters_fill_omitted_arguments) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var f = function(a, b = a + 1) { a * 10 + b }; f(4) * 100 + f(4, 9)", 4549);
+    urbi_close(vm);
+}
+
+UTEST(logical_operators_short_circuit) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var n = 0; var bump = function() { n = n + 1; true }; (false && bump()); (true || bump()); (true && bump()); n", 1);
+    urbi_close(vm);
+}
+
+/* --- diagnostics --------------------------------------------------------- */
+
+UTEST(an_emit_error_names_its_line_and_column) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    uint8_t *bytes = NULL; size_t n = 0; char err[256] = {0};
+    const char *src = "1;\n  this";
+    UASSERT_EQ(URBI_ERR_COMPILE, urbi_compile(vm, src, strlen(src), NULL, &bytes, &n, err, sizeof err));
+    UASSERT_STR_EQ("<stdin>:2:3: this used outside a method or nested closure", err);
+    const char *src2 = "var f = function(lazy x) { x = 1 }";
+    UASSERT_EQ(URBI_ERR_COMPILE, urbi_compile(vm, src2, strlen(src2), NULL, &bytes, &n, err, sizeof err));
+    UASSERT_STR_EQ("<stdin>:1:28: cannot assign to lazy parameter 'x'", err);
+    urbi_close(vm);
+}
+
+UTEST(the_diag_buffer_keeps_warnings_and_errors_in_order) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    UProto root;
+    memset(&root, 0, sizeof root);
+    UArena arena;
+    uarena_init(&arena, 0);
+    UEmitter *e = uemit_new(&root, &arena, vm, "probe.u");
+    UASSERT(e != NULL);
+    if (e) {
+        UAstNode at;
+        memset(&at, 0, sizeof at);
+        at.line = 3; at.col = 7;
+        char buf[128] = {0};
+        UASSERT(!urbi_emit_diag_format_first_error(e, buf, sizeof buf));   /* a warning alone is not an error */
+        urbi_emit_diag_warn(e, &at, "careful: %d", 1);
+        UASSERT(!urbi_emit_diag_format_first_error(e, buf, sizeof buf));
+        urbi_emit_diag_error(e, &at, "broken: %s", "x");
+        urbi_emit_diag_error(e, NULL, "unpositioned");
+        UASSERT_EQ(3, uemit_diag_count(e));
+        const UEmitDiag *w = uemit_diag_at(e, 0), *x = uemit_diag_at(e, 1), *y = uemit_diag_at(e, 2);
+        UASSERT(w && w->level == UEMIT_DIAG_WARN && w->line == 3 && w->col == 7 && strcmp(w->message, "careful: 1") == 0);
+        UASSERT(x && x->level == UEMIT_DIAG_ERROR && strcmp(x->message, "broken: x") == 0);
+        UASSERT(y && y->line == 0 && y->col == 0);
+        UASSERT(uemit_diag_at(e, 3) == NULL);
+        UASSERT(urbi_emit_diag_format_first_error(e, buf, sizeof buf));
+        UASSERT_STR_EQ("probe.u:3:7: broken: x", buf);
+        UASSERT_EQ(EMIT_OK, uemit_error(e));
+        urbi_emit_abandon(e);
+    }
+    uchunk_destroy(&root, NULL);
+    uarena_destroy(&arena);
+    urbi_close(vm);
+}
+
+void test_emit_bytecode_suite(void) {
+    utest_run("every_function_loads_the_globals_object_first", every_function_loads_the_globals_object_first);
+    utest_run("a_local_read_emits_no_move", a_local_read_emits_no_move);
+    utest_run("statement_temporaries_are_released_between_statements", statement_temporaries_are_released_between_statements);
+    utest_run("a_method_call_uses_self_and_the_method_bit", a_method_call_uses_self_and_the_method_bit);
+    utest_run("a_lazy_callee_wraps_the_flagged_argument_in_a_closure", a_lazy_callee_wraps_the_flagged_argument_in_a_closure);
+    utest_run("the_256th_site_emits_extarg", the_256th_site_emits_extarg);
+    utest_run("switch_break_exits_the_switch_and_continue_reaches_the_loop", switch_break_exits_the_switch_and_continue_reaches_the_loop);
+    utest_run("multiplication_binds_tighter_than_addition", multiplication_binds_tighter_than_addition);
+    utest_run("a_closure_keeps_the_loop_variable_of_its_own_iteration", a_closure_keeps_the_loop_variable_of_its_own_iteration);
+    utest_run("return_leaves_nested_blocks", return_leaves_nested_blocks);
+    utest_run("a_block_with_locals_yields_its_value", a_block_with_locals_yields_its_value);
+    utest_run("a_switch_subject_survives_its_case_bodies", a_switch_subject_survives_its_case_bodies);
+    utest_run("default_parameters_fill_omitted_arguments", default_parameters_fill_omitted_arguments);
+    utest_run("logical_operators_short_circuit", logical_operators_short_circuit);
+    utest_run("an_emit_error_names_its_line_and_column", an_emit_error_names_its_line_and_column);
+    utest_run("the_diag_buffer_keeps_warnings_and_errors_in_order", the_diag_buffer_keeps_warnings_and_errors_in_order);
+}

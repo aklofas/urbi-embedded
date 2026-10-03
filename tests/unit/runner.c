@@ -46,6 +46,7 @@ extern void test_ast_alloc_suite(void);
 extern void test_ast_string_suite(void);
 extern void test_class_decl_parse_suite(void);
 extern void test_disasm_suite(void);
+extern void test_emit_bytecode_suite(void);
 extern void test_intern_suite(void);
 extern void test_lex_every_suite(void);
 extern void test_lex_float_literals_suite(void);
@@ -87,6 +88,7 @@ int main(void) {
     test_ast_string_suite();
     test_class_decl_parse_suite();
     test_disasm_suite();
+    test_emit_bytecode_suite();
     test_intern_suite();
     test_lex_every_suite();
     test_lex_float_literals_suite();

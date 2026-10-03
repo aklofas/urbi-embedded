@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Bytecode emitter driver interface, diagnostics, disassembler and chunk
- * writer.  AST -> root UProto.  Hosted.
+ * writer.  AST -> root UProto.
  *
- * The emitter itself is being rewritten against wire v2; until it lands,
- * src/emit/uemit_stub.c provides the driver entry points and refuses
- * every statement.  UEmitter below carries only what the driver, the
- * diagnostic buffer (uemit_diag.c) and the stub need. */
+ * The emitter is opaque outside src/emit: a driver creates one with
+ * uemit_new, feeds it statements, and either finishes it (which frees
+ * it) or abandons it on an error path.  Diagnostics are read through
+ * uemit_diag_count / uemit_diag_at while the emitter is alive. */
 
 #ifndef UEMIT_H
 #define UEMIT_H
@@ -36,58 +36,57 @@ typedef struct {
 
 typedef enum {
     EMIT_OK = 0,
-    EMIT_OOM,                     /* module buffer grow failed */
+    EMIT_OOM,                     /* a buffer grow failed */
     EMIT_AST_ERROR,               /* input AST contained AST_ERROR */
     EMIT_UNSUPPORTED_AST,         /* AST kind not emittable */
-    EMIT_REG_EXHAUSTED,           /* > 255 registers needed — deep expression */
+    EMIT_REG_EXHAUSTED,           /* a function needs more than 255 registers or 200 locals */
     EMIT_CONSTANT_POOL_FULL,      /* > 65535 constants — Bx overflow */
-    EMIT_LINE_OVERFLOW,           /* source line > UINT32_MAX (effectively unreachable) */
     EMIT_FINISHED,                /* uemit_statement called after uemit_finish */
     EMIT_UPVAL_EXHAUSTED,         /* too many captures */
-    EMIT_LOCAL_REDECLARE,         /* duplicate `var x` in same block */
-    EMIT_UNRESOLVED_NAME,         /* identifier not local/upvalue/global */
-    EMIT_NESTING_TOO_DEEP,        /* block or function nesting cap exceeded */
-    EMIT_BARE_LAZY_FUNCTION,      /* `function name { body }` */
-    EMIT_CLOSURE_KEYWORD,         /* `closure(x){...}` */
-    EMIT_LAZY_ON_METHOD,          /* Lazy on method-bound function */
-    EMIT_LAZY_PARAM_ASSIGN,       /* Assignment to lazy param */
+    EMIT_LOCAL_REDECLARE,         /* duplicate `var x` in one scope */
+    EMIT_NESTING_TOO_DEEP,        /* block or loop nesting cap exceeded */
+    EMIT_LAZY_ON_METHOD,          /* a function with a lazy parameter stored as a method */
+    EMIT_LAZY_PARAM_ASSIGN,       /* assignment to a lazy parameter */
     EMIT_TOO_MANY_SITES,          /* a function needs more than 65,535 slot sites */
-    EMIT_RESERVED_KEYWORD_AS_IDENT, /* `var at = 1` — hard keyword as variable name */
-    EMIT_TOO_MANY_ARGS,           /* call with >= 254 args (B encodes nargs+1) */
-    EMIT_NO_THIS_OUTSIDE_METHOD,  /* `this` used at top level */
-    EMIT_PATCH_LIST_FULL          /* too many break/continue sites in one loop */
+    EMIT_NO_THIS_OUTSIDE_METHOD,  /* `this` used at chunk top */
+    EMIT_TOO_MANY_ARGS,           /* call with more than 252 arguments */
+    EMIT_PATCH_LIST_FULL,         /* too many break/continue sites in one loop */
+    EMIT_JUMP_TOO_FAR             /* a jump offset does not fit 16 signed bits */
 } UEmitError;
 
-/* --- UEmitter state (caller stack-allocates, emitter fills) --- */
-
-typedef struct UEmitter {
-    UProto      *module;          /* non-owning root UProto; caller supplies */
-    UEmitError   error;           /* sticky: first error latches */
-    /* Diagnostic buffer.  urbi_emit_diag_warn / _error append here;
-     * diag_buf is module-allocator-owned and grows by doubling. */
-    UEmitDiag   *diag_buf;
-    int          diag_count;
-    int          diag_cap;
-} UEmitter;
+typedef struct UEmitter UEmitter;
 
 /* --- driver API --- */
 
-void uemit_init(UEmitter *e, UProto *root, UArena *arena,
-                struct UVM *vm, const char *source_name);
+/* A fresh emitter compiling into `root`, allocated through the arena's
+ * allocator.  `arena` is the per-statement AST arena the driver resets;
+ * the emitter only borrows it.  Copies `source_name` into the root.
+ * Returns NULL when the allocation fails. */
+UEmitter *uemit_new(UProto *root, UArena *arena, struct UVM *vm, const char *source_name);
 
-/* Emit one statement's bytecode into the module.  On first error, the
-   error latches; subsequent calls return it without touching the module. */
+/* Emit one statement's bytecode.  The first error latches; later calls
+   return it without touching the chunk. */
 UEmitError uemit_statement(UEmitter *e, UAstNode *stmt);
 
-/* Finalize the module.  Returns the first accumulated error, or EMIT_OK. */
+/* Return the last statement's value (nil when there was none), close the
+   root function and free the emitter.  Returns the first error, or
+   EMIT_OK.  `e` is invalid afterwards. */
 UEmitError uemit_finish(UEmitter *e);
 
-/* Driver error-path teardown: free emitter-owned storage without
-   finishing the module.  Idempotent, and safe after uemit_finish. */
+/* Error-path teardown: free the emitter and everything it owns.  The
+   root and the protos already hanging from it are left for
+   uchunk_destroy.  `e` is invalid afterwards; NULL is a no-op. */
 void urbi_emit_abandon(UEmitter *e);
 
 /* Debug helper. */
 const char *uemit_error_name(UEmitError code);
+
+/* The latched error, or EMIT_OK. */
+UEmitError uemit_error(const UEmitter *e);
+
+/* The recorded diagnostics, in order. */
+int uemit_diag_count(const UEmitter *e);
+const UEmitDiag *uemit_diag_at(const UEmitter *e, int i);
 
 /* Best-effort compile-time walker: returns true when n contains a direct
  * write (assignment, declaration, member set).  Calls are opaque. */
@@ -97,13 +96,13 @@ bool urbi_emit_cond_has_direct_side_effect(UAstNode *n);
 
 /* Append a warn-level diagnostic to the emitter's diag buffer.
  * n may be NULL (position will be 0,0).  fmt is a printf-style format
- * string.  Does not set e->error; emit continues normally.
+ * string.  Does not set the error; emit continues normally.
  * If the buffer cannot grow (OOM), the diagnostic is silently dropped. */
 void urbi_emit_diag_warn(UEmitter *e, const UAstNode *n, const char *fmt, ...);
 
 /* Append an error-level diagnostic to the emitter's diag buffer.
- * Callers MUST still set e->error — this only enriches the record with
- * source position and a human message; it does not latch the error. */
+ * Callers MUST still latch the error — this only enriches the record with
+ * source position and a human message. */
 void urbi_emit_diag_error(UEmitter *e, const UAstNode *n, const char *fmt, ...);
 
 /* Format the first ERROR-level diagnostic as "<source>:<line>:<col>: <msg>"
@@ -113,8 +112,8 @@ void urbi_emit_diag_error(UEmitter *e, const UAstNode *n, const char *fmt, ...);
  * No-op / returns false on freestanding builds. */
 bool urbi_emit_diag_format_first_error(const UEmitter *e, char *buf, size_t cap);
 
-/* Free all diagnostic message strings and the diag_buf array itself.
- * Resets diag_count/diag_cap to 0.  No-op on freestanding builds. */
+/* Free all diagnostic message strings and the diag buffer itself.
+ * No-op on freestanding builds. */
 void urbi_emit_diag_free_all(UEmitter *e);
 
 /* --- disassembler and writer --- */
