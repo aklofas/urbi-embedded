@@ -427,7 +427,11 @@ struct UAstNode {
                                               * edge.  When non-NULL, takes precedence over
                                               * onleave as the alt closure passed to
                                               * OP_WHENEVER_INSTALL. */
-            UAstNode       *onleave;         /* nullable; never with AT_SYNC */
+            UAstNode       *onleave;         /* nullable; rejected only for an
+                                              * AT_SYNC watcher over a COND
+                                              * source (parse_at_cond_form) —
+                                              * AT_SYNC + EVENT/SLOT_CHANGE
+                                              * does accept onleave */
             const char     *payload_var;     /* EVENT forms: `(var x)` name or NULL;
                                               * also set for SLOT_CHANGE (merged-node
                                               * behaviour — the baseline dropped it there) */

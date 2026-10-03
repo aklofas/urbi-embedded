@@ -69,6 +69,20 @@ UTEST(slot_change_payload_binding_is_kept) {
     UASSERT(n && n->u.watcher.source == UWSRC_SLOT_CHANGE && n->u.watcher.payload_var_len == 2);
     pfix_close(&f);
 }
+UTEST(at_sync_event_form_accepts_onleave) {
+    /* onleave is rejected only for an AT_SYNC watcher over a COND source
+     * (parse_at_cond_form); AT_SYNC + EVENT does accept it. */
+    PFix f; UAstNode *n = parse_one(&f, "at sync (e?) echo(1) onleave echo(2)");
+    UASSERT(n && n->kind == AST_WATCHER && n->u.watcher.mode == UWATCHER_AT_SYNC
+          && n->u.watcher.source == UWSRC_EVENT && n->u.watcher.onleave != NULL);
+    pfix_close(&f);
+}
+UTEST(at_sync_cond_form_rejects_onleave) {
+    PFix f; UAstNode *n = parse_one(&f, "at sync (x > 1) echo(1) onleave echo(2)");
+    UASSERT(n && n->kind == AST_ERROR
+          && (UParseError)n->u.err.code == PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE);
+    pfix_close(&f);
+}
 
 void test_parse_watcher_suite(void) {
     utest_run("at_cond_form", at_cond_form);
@@ -79,4 +93,6 @@ void test_parse_watcher_suite(void) {
     utest_run("waituntil_is_a_watcher_without_a_body", waituntil_is_a_watcher_without_a_body);
     utest_run("waituntil_event_form_keeps_the_payload_name", waituntil_event_form_keeps_the_payload_name);
     utest_run("slot_change_payload_binding_is_kept", slot_change_payload_binding_is_kept);
+    utest_run("at_sync_event_form_accepts_onleave", at_sync_event_form_accepts_onleave);
+    utest_run("at_sync_cond_form_rejects_onleave", at_sync_cond_form_rejects_onleave);
 }

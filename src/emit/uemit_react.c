@@ -171,17 +171,13 @@ static uint8_t emit_watcher_cond_form(UEmitter *e, UAstNode *n, int mode) {
                                              cond_ast, /*as_expression=*/true);
     if (e->error != EMIT_OK) return 0U;
 
-    uint8_t body_reg = (body_ast != NULL)
-        ? urbi_emit_function_literal(e, NULL, 0, body_ast, /*as_expression=*/false)
-        : 0xFFU;
+    uint8_t body_reg = emit_watcher_closure_or_absent(e, body_ast);
     if (e->error != EMIT_OK) return 0U;
 
     /* alt_reg: compiled from else_body_ast (WHENEVER) or onleave_ast.
      * alt_ast is pre-selected above; when both else_body and onleave are
      * absent alt_ast is NULL → 0xFF sentinel. */
-    uint8_t alt_reg = (alt_ast != NULL)
-        ? urbi_emit_function_literal(e, NULL, 0, alt_ast, /*as_expression=*/false)
-        : 0xFFU;
+    uint8_t alt_reg = emit_watcher_closure_or_absent(e, alt_ast);
     if (e->error != EMIT_OK) return 0U;
 
     UOpcode op;
