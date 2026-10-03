@@ -138,6 +138,10 @@ struct UEmitter {
     ULocal       lazy_globals[UEMIT_LAZY_GLOBALS_MAX];
     int          nlazy_globals;
     UEmitDiag   *diag_buf; int diag_count, diag_cap;
+    /* The innermost node being compiled, set around every dispatch: the
+     * position a diagnostic raised below it without a node of its own
+     * (a register, local, upvalue, block or site cap) reports. */
+    const UAstNode *cur_node;
 };
 
 /* --- register discipline (uemit_reg.c) --- */

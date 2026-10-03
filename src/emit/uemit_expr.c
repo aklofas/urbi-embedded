@@ -633,7 +633,10 @@ static uint8_t dispatch(UEmitter *e, UAstNode *n, int want) {
 static uint8_t uexpr_want(UEmitter *e, UAstNode *n, int want) {
     if (e->error != EMIT_OK) return want >= 0 ? (uint8_t)want : 0U;
     uint8_t entry = e->fs->freereg;
+    const UAstNode *outer = e->cur_node;
+    e->cur_node = n;
     uint8_t r = dispatch(e, n, want);
+    e->cur_node = outer;
     if (e->error != EMIT_OK) return want >= 0 ? (uint8_t)want : 0U;
     /* Release what the arm used: everything above `want`'s caller frame,
      * or everything above the value when it is a temporary. */

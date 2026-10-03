@@ -47,6 +47,8 @@ static void append_diag(UEmitter *e, const UAstNode *n, int level,
     if (msg == NULL) return;  /* OOM — drop silently */
     emit_memcpy(msg, buf, msg_len + 1U);
 
+    /* No node of its own: report the node being compiled. */
+    if (n == NULL) n = e->cur_node;
     e->diag_buf[e->diag_count].level   = level;
     e->diag_buf[e->diag_count].line    = n ? n->line : 0;
     e->diag_buf[e->diag_count].col     = n ? n->col  : 0;

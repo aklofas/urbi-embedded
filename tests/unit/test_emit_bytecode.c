@@ -206,6 +206,22 @@ UTEST(an_emit_error_names_its_line_and_column) {
     urbi_close(vm);
 }
 
+/* A cap the emitter hits below a statement -- here the local-variable
+ * cap, one `var` per line -- reports the position of the node being
+ * compiled, not a bare file name. */
+UTEST(a_too_many_locals_error_names_its_line) {
+    static char src[8192];
+    size_t at = (size_t)snprintf(src, sizeof src, "var f = function() {\n");
+    for (int i = 0; i < 201; i++) at += (size_t)snprintf(src + at, sizeof src - at, "  var a%d = 0;\n", i);
+    (void)snprintf(src + at, sizeof src - at, "}");
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    uint8_t *bytes = NULL; size_t n = 0; char err[256] = {0};
+    UASSERT_EQ(URBI_ERR_COMPILE, urbi_compile(vm, src, strlen(src), NULL, &bytes, &n, err, sizeof err));
+    /* Line 201 is `var a199`: the function has one hidden local already. */
+    UASSERT_STR_EQ("<stdin>:201:3: too many local variables in function (max 200)", err);
+    urbi_close(vm);
+}
+
 /* The break/continue patch list per loop is a fixed-size array; past its
  * cap a further break latches a diagnostic instead of overflowing it.
  * Built with a loop rather than typed out, since the count is the
@@ -493,6 +509,7 @@ void test_emit_bytecode_suite(void) {
     utest_run("default_parameters_fill_omitted_arguments", default_parameters_fill_omitted_arguments);
     utest_run("logical_operators_short_circuit", logical_operators_short_circuit);
     utest_run("an_emit_error_names_its_line_and_column", an_emit_error_names_its_line_and_column);
+    utest_run("a_too_many_locals_error_names_its_line", a_too_many_locals_error_names_its_line);
     utest_run("the_break_patch_list_caps_at_sixteen_sites", the_break_patch_list_caps_at_sixteen_sites);
     utest_run("a_line_table_checkpoint_survives_a_128_line_gap", a_line_table_checkpoint_survives_a_128_line_gap);
     utest_run("the_diag_buffer_keeps_warnings_and_errors_in_order", the_diag_buffer_keeps_warnings_and_errors_in_order);

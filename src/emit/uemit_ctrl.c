@@ -244,7 +244,12 @@ uint8_t uctrl_switch(UEmitter *e, UAstNode *n, int want) {
 
 uint8_t uctrl_break(UEmitter *e, const UAstNode *n, int want) {
     UFuncState *fs = e->fs;
-    if (fs->nloops == 0) { (void)uemit_fail(e, EMIT_UNSUPPORTED_AST); return 0U; }
+    if (fs->nloops == 0) {
+        /* The parser refuses this first; kept for an AST built by hand. */
+        if (e->error == EMIT_OK) urbi_emit_diag_error(e, n, "break outside a loop");
+        (void)uemit_fail(e, EMIT_UNSUPPORTED_AST);
+        return 0U;
+    }
     ULoop *lp = &fs->loops[fs->nloops - 1];
     jump_out(e, lp, &lp->breaks, n);
     /* Nothing after the jump runs; the register only keeps the caller's
@@ -261,6 +266,7 @@ uint8_t uctrl_continue(UEmitter *e, const UAstNode *n, int want) {
             return uemit_target(e, want);
         }
     }
+    if (e->error == EMIT_OK) urbi_emit_diag_error(e, n, "continue outside a loop");
     (void)uemit_fail(e, EMIT_UNSUPPORTED_AST);
     return 0U;
 }
