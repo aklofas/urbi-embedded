@@ -204,6 +204,16 @@ int uexec_throw(UVM *vm, UStrand *s, int which_proto, const char *msg);
  * division-by-zero raises the dispatch loop makes on its own behalf. */
 int uexec_throw_here(UVM *vm, UStrand *s, int which_proto, const char *msg);
 int uexec_throw_value(UVM *vm, UStrand *s, UValue v);
+/* A chunk-integrity failure: bytecode the verifier could not rule out
+ * statically asked for something only a malformed chunk asks for (a scope
+ * close or a resume that names another frame's entry, a jump out of more
+ * scopes than its frame holds).  Builds the same exception object as
+ * uexec_throw(UP_TYPEERROR, msg) but sets s->unwind = UUNWIND_FATAL: the
+ * walker passes every catch and every finally, runs no script code, and
+ * the strand dies reporting it through the ordinary error channel
+ * (last_error, URBI_ERR_UNCAUGHT_THROW, the diag hook).  Returns
+ * UEXEC_THROW. */
+int uexec_fatal(UVM *vm, UStrand *s, const char *msg);
 
 /* The cleanup-stack walker (rt/uunwind.c).  Consumes s->unwind and
  * s->transfer (and s->jump_depth for a UUNWIND_JUMP).  Returns 0 when

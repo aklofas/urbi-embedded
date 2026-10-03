@@ -300,6 +300,13 @@ int uexec_throw(UVM *vm, UStrand *s, int which_proto, const char *msg)
 int uexec_throw_here(UVM *vm, UStrand *s, int which_proto, const char *msg)
 { return uexec_throw_impl(vm, s, which_proto, msg, 1); }
 
+int uexec_fatal(UVM *vm, UStrand *s, const char *msg)
+{
+    (void)uexec_throw_impl(vm, s, UP_TYPEERROR, msg, 0);
+    s->unwind = UUNWIND_FATAL;
+    return UEXEC_THROW;
+}
+
 int uexec_throw_value(UVM *vm, UStrand *s, UValue v)
 {
     (void)vm;

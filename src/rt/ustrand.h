@@ -95,7 +95,9 @@ typedef struct UCleanup {
  * different, unrelated set of values). */
 enum { USTRAND_READY = 0, USTRAND_RUNNING, USTRAND_PARKED, USTRAND_DEAD };
 typedef enum { UUNWIND_NONE = 0, UUNWIND_RETURN, UUNWIND_THROW, UUNWIND_STOP,
-               UUNWIND_JUMP /* UNWIND_TO: pop jump_depth entries, then jump to the pc in transfer */ } UUnwindKind;
+               UUNWIND_JUMP, /* UNWIND_TO: pop jump_depth entries, then jump to the pc in transfer */
+               UUNWIND_FATAL /* a chunk-integrity failure (uexec_fatal): a throw no catch takes and no finally runs for */
+             } UUnwindKind;
 /* A jump raised inside a finally body counts that body's UCLEAN_F_RUNNING
  * marker as one of its jump_depth entries, whether the walker or a
  * run-finally SCOPE_POP started the body. */

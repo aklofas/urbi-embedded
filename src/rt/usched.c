@@ -301,7 +301,8 @@ static void usched_on_death(UVM *vm, UStrand *s)
      * awaited strand is excluded from both: its caller is about to be
      * handed the same failure as a return value, and reporting it twice
      * is how the same throw ends up printed twice. */
-    if (s->unwind == (uint8_t)UUNWIND_THROW && vm->last_error[0] && s != sc->awaited) {
+    if ((s->unwind == (uint8_t)UUNWIND_THROW || s->unwind == (uint8_t)UUNWIND_FATAL)
+        && vm->last_error[0] && s != sc->awaited) {
         sc->threw = 1;
         if (vm->diag)
             vm->diag(vm, vm->diag_ud, 3 /* syslog LOG_ERR */, vm->last_error, strlen(vm->last_error));

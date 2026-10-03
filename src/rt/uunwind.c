@@ -8,54 +8,32 @@
  * a stopped tag scope fires its leave before the frame goes.
  *
  * ---------------------------------------------------------------------
- * The three shapes the emitter actually produces
+ * The shapes the emitter produces
  * ---------------------------------------------------------------------
  *
- * Read off `build/host/urbi --dump-bytecode` at the time this was
- * written; uemit_unwind.c's emit_try_frame is the producer.  handler_pc
- * (TRY_BEGIN's Bx) is an ABSOLUTE instruction index into the frame's own
- * proto, and flags (TRY_BEGIN's A) carries exactly ONE of
- * UCLEAN_F_HAS_CATCH / UCLEAN_F_HAS_FINALLY -- never both, because the
- * catch+finally source form is emitted as two nested entries.
+ * uemit_scope.c is the producer and carries the instruction-level layout.
+ * handler_pc (SCOPE_TRY's Bx) is an ABSOLUTE instruction index into the
+ * frame's own proto, and flags (SCOPE_TRY's A) carries exactly ONE of
+ * UCLEAN_F_HAS_CATCH / UCLEAN_F_HAS_FINALLY -- the verifier refuses
+ * anything else -- because catch plus finally is two nested entries: the
+ * outer HAS_FINALLY, the inner HAS_CATCH.
  *
  *   try { a } catch (var e) { b }
- *     0  LOADNIL     rd
- *     1  TRY_BEGIN   flags=HAS_CATCH  Bx=5
- *     2  <body> ; MOVE rd, body
- *     3  TRY_END                       <- normal path pops the entry
- *     4  JMP past_handler
- *     5  LOAD_CATCH_VALUE e            <- handler_pc
- *     .  [guard: <expr>; TEST; JMP rethrow]
- *     .  <catch body> ; MOVE rd, catch
- *     .  [guard: JMP past; rethrow: THROW e; past:]
- *     6  past_handler:
+ *     SCOPE_TRY has_catch -> handler ; <a> ; SCOPE_POP try ; JMP past
+ *     handler: LOAD_CATCH_VALUE e ; <b>
+ *     past:
  *
  *   try { a } finally { c }
- *     0  LOADNIL     rd
- *     1  TRY_BEGIN   flags=HAS_FINALLY Bx=6
- *     2  <body> ; MOVE rd, body
- *     3  TRY_END
- *     4  <finally body>                <- inline copy, normal path only
- *     5  JMP past_finally
- *     6  <finally body>                <- handler_pc: the unwind copy
- *     7  RESUME                        <- hands control back to the walker
- *     8  past_finally:
+ *     SCOPE_TRY has_finally -> fin ; <a>
+ *     SCOPE_POP try+finally          <- the normal path runs c under a marker
+ *     JMP end
+ *     fin: <c> ; RESUME              <- the only copy of c
+ *     end:
  *
- *   try { a } catch (var e) { b } finally { c }
- *     0  LOADNIL     rd
- *     1  TRY_BEGIN   flags=HAS_FINALLY Bx=<finally handler>   (outer)
- *     2  TRY_BEGIN   flags=HAS_CATCH   Bx=<catch handler>     (inner)
- *     .  <body> ; TRY_END (pops the inner) ; [else body] ; JMP past_catch
- *     .  catch handler: LOAD_CATCH_VALUE ... ; MOVE rd, catch
- *     .  past_catch: TRY_END (pops the outer)
- *     .  <finally inline copy> ; JMP past_finally
- *     .  finally handler: <finally unwind copy> ; RESUME
- *     .  past_finally:
- *
- * So a catch handler reaches its finally by falling through to the outer
- * TRY_END and the inline copy -- the walker never chains the two itself.
- * A throw raised INSIDE a catch body finds the outer HAS_FINALLY entry
- * still on the stack, which is what makes that case work.
+ * A catch handler falls through to the outer entry's run-finally pop, so
+ * a caught exception still runs the finally on the normal path, and a
+ * throw raised INSIDE a catch body finds the outer HAS_FINALLY entry still
+ * on the stack.
  *
  * A jump out of scopes (break, continue) is OP_UNWIND_TO: UUNWIND_JUMP
  * with the count of this frame's entries to pop in s->jump_depth and the
@@ -66,6 +44,10 @@
  * entries.  OP_SCOPE_POP with USCOPE_POP_RUN_FINALLY runs a finally on
  * the normal path under the same marker, suspending no unwind; its RESUME
  * continues after the pop.
+ *
+ * A chunk-integrity failure (uexec_fatal, UUNWIND_FATAL) walks the same
+ * stack but runs nothing: no catch takes it, no finally body or tag leave
+ * runs, and the strand dies reporting it.
  *
  * ---------------------------------------------------------------------
  * Running a finally
@@ -290,7 +272,7 @@ void uexec_report_escape(UVM *vm, const UStrand *s)
 {
     vm->last_error[0] = '\0';
     vm->last_error_code = URBI_OK;
-    if (s->unwind != UUNWIND_THROW) return;
+    if (s->unwind != UUNWIND_THROW && s->unwind != UUNWIND_FATAL) return;
     vm->last_error_code = URBI_ERR_UNCAUGHT_THROW;
     uw_format_value(vm, vm->last_error, sizeof vm->last_error, s->transfer);
 }
@@ -367,6 +349,15 @@ int uexec_unwind(UVM *vm, UStrand *s)
         if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].frame >= fi) {
             UCleanup top = s->cleanup[--s->ncleanup];
 
+            if (s->unwind == UUNWIND_FATAL) {
+                /* A chunk-integrity failure runs nothing on its way out:
+                 * no catch takes it, no finally body or tag leave runs.
+                 * Only the ambient tag a scope displaced is put back. */
+                if (top.kind == UCLEAN_TAG_SCOPE)
+                    s->tag = (top.saved.kind == UV_CELL) ? (UTag *)top.saved.v.p : NULL;
+                continue;
+            }
+
             if (s->unwind == UUNWIND_JUMP) {
                 /* UNWIND_TO: pop exactly jump_depth entries of this frame,
                  * running finally bodies and firing tag leaves on the way,
@@ -406,8 +397,8 @@ int uexec_unwind(UVM *vm, UStrand *s)
             if (top.kind == UCLEAN_TAG_SCOPE) {
                 /* Leaving a tag scope, whatever brought us here, puts the
                  * ambient tag back to what the scope displaced and fires
-                 * `leave`, as OP_POP_TAG does.  A throw crossing a tagged
-                 * block must not skip that.  Unlike OP_POP_TAG, this path
+                 * `leave`, as a SCOPE_POP of a tag does.  A throw crossing a tagged
+                 * block must not skip that.  Unlike that pop, this path
                  * leaves the strand's gate bits as they are. */
                 s->tag = (top.saved.kind == UV_CELL) ? (UTag *)top.saved.v.p : NULL;
                 if (top.tag) utag_fire(vm, top.tag->leave);
@@ -474,12 +465,11 @@ int uexec_unwind(UVM *vm, UStrand *s)
         }
 
         /* No handler left in this frame.  A jump never leaves its frame:
-         * running out of entries means the emitter counted wrong. */
+         * an UNWIND_TO deeper than the frame's entries is a malformed
+         * chunk, and it fails the strand in every build. */
         if (s->unwind == UUNWIND_JUMP) {
-            UGC_ASSERT(0);
-            s->unwind = UUNWIND_NONE;
-            s->transfer = uv_nil();
-            return 0;
+            (void)uexec_fatal(vm, s, "chunk integrity: unwind deeper than this frame's scopes");
+            continue;
         }
         if (s->unwind == UUNWIND_RETURN) {
             UValue rv = s->transfer;
@@ -488,7 +478,7 @@ int uexec_unwind(UVM *vm, UStrand *s)
             return uexec_return(vm, s, rv);
         }
 
-        /* THROW and STOP leave the frame behind and keep looking.
+        /* THROW, STOP and FATAL leave the frame behind and keep looking.
          * Crossing a boundary frame
          * hands control back to the native that called in, with the
          * unwind still pending so ITS caller carries on unwinding. */

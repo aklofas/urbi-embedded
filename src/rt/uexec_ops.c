@@ -356,7 +356,7 @@ static int arity_error(UVM *vm, UStrand *s, const char *name,
 }
 
 /* A bytecode closure with default parameters checks its own MINIMUM in
- * an emitted prologue (uemit_stmt.c), so all the VM can say is that too
+ * an emitted prologue (uemit_expr.c), so all the VM can say is that too
  * many arrived; without defaults it owns both bounds. */
 static int arity_error_proto(UVM *vm, UStrand *s, const UClosure *cl, uint8_t got)
 {
@@ -1120,9 +1120,21 @@ fetch:
         OPCASE(SCOPE_POP): {
             /* A & 0x3 names the entry kind the pop expects (the verifier
              * admits only TRY and TAG, and RUN_FINALLY only with TRY). */
+            /* The entry on top must be of the kind the pop names AND
+             * belong to this frame.  The verifier sees one proto at a time
+             * and cannot rule out a callee closing its caller's scope,
+             * whose handler pc indexes the caller's instructions; every
+             * mismatch is a malformed chunk, refused in every build. */
             const uint8_t a = OPA(i);
+            const uint16_t fi = (uint16_t)(s->nframes - 1);
             if ((a & 0x3u) == USCOPE_POP_TAG) {
-                if (s->ncleanup > 0 && s->cleanup[s->ncleanup - 1].kind == (uint8_t)UCLEAN_TAG_SCOPE) {
+                if (s->ncleanup == 0
+                    || s->cleanup[s->ncleanup - 1].kind != (uint8_t)UCLEAN_TAG_SCOPE
+                    || s->cleanup[s->ncleanup - 1].frame != fi) {
+                    (void)uexec_fatal(vm, s, "chunk integrity: tag scope close matches no tag scope of this frame");
+                    goto unwind;
+                }
+                {
                     UCleanup c = s->cleanup[--s->ncleanup];
                     s->tag = (c.saved.kind == UV_CELL) ? (UTag *)c.saved.v.p : NULL;
                     if (c.tag) utag_fire(vm, c.tag->leave);
@@ -1135,27 +1147,26 @@ fetch:
                      * nothing else ever will -- leaving the bit stuck would
                      * strand it the next time it genuinely parks. */
                     s->gates = utag_strand_gate_bits(s);
-                } else {
-                    UGC_ASSERT(0);   /* see the TRY pop below */
                 }
                 NEXT_RELOAD();
             }
             /* The normal-path pop.  A UCLEAN_F_RUNNING marker belongs to
-             * the walker, never to this pop.  A mismatch means the
-             * emitter and the walker disagree about the stack's shape,
-             * which would leak an entry rather than announce itself. */
+             * the walker, never to this pop, and a run-finally pop needs
+             * an entry that has a finally to run. */
             if (s->ncleanup == 0
                 || s->cleanup[s->ncleanup - 1].kind != (uint8_t)UCLEAN_TRY
-                || (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) != 0) {
-                UGC_ASSERT(0);
-                NEXT_RELOAD();
+                || (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) != 0
+                || s->cleanup[s->ncleanup - 1].frame != fi
+                || ((a & USCOPE_POP_RUN_FINALLY) != 0
+                    && (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_HAS_FINALLY) == 0)) {
+                (void)uexec_fatal(vm, s, "chunk integrity: try scope close matches no try scope of this frame");
+                goto unwind;
             }
             UCleanup top = s->cleanup[--s->ncleanup];
             if ((a & USCOPE_POP_RUN_FINALLY) == 0) NEXT_RELOAD();
             /* Run-finally: the body runs as the walker would run it, under
              * a marker that suspends no unwind, and its RESUME continues at
              * the instruction after this pop. */
-            UGC_ASSERT((top.flags & UCLEAN_F_HAS_FINALLY) != 0);
             UCleanup mark = top;
             mark.flags = (uint8_t)(top.flags | UCLEAN_F_RUNNING);
             mark.saved_unwind = (uint8_t)UUNWIND_NONE;
@@ -1181,10 +1192,14 @@ fetch:
             /* The end of a finally body, started either by the walker or
              * by a run-finally SCOPE_POP.  Restore the unwind the body
              * suspended and hand control back to the walk, or, when it
-             * suspended none, continue after the pop.  Without a marker on
-             * top an unmatched RESUME means a malformed chunk. */
-            if (s->ncleanup == 0 || (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) == 0) {
-                (void)uexec_throw(vm, s, UP_TYPEERROR, "unwind resume: no cleanup body in progress");
+             * suspended none, continue after the pop.  The marker on top
+             * must be this frame's: a callee resuming its caller's marker
+             * would continue at a pc into the caller's instructions.
+             * Anything else means a malformed chunk. */
+            if (s->ncleanup == 0
+                || (s->cleanup[s->ncleanup - 1].flags & UCLEAN_F_RUNNING) == 0
+                || s->cleanup[s->ncleanup - 1].frame != (uint16_t)(s->nframes - 1)) {
+                (void)uexec_fatal(vm, s, "chunk integrity: unwind resume matches no finally body of this frame");
                 goto unwind;
             }
             UCleanup mark = s->cleanup[--s->ncleanup];
@@ -1354,7 +1369,7 @@ int uexec_run_chunk(UVM *vm, URealm *realm, UClosure *cl, UValue *out)
     while (usched_step(vm, 0, NULL) == USTEP_RAN) { }
     sc->awaited = prev_awaited;
     bool died = (s->state == USTRAND_DEAD);
-    bool threw = died && s->unwind == (uint8_t)UUNWIND_THROW;
+    bool threw = died && (s->unwind == (uint8_t)UUNWIND_THROW || s->unwind == (uint8_t)UUNWIND_FATAL);
     UValue res = died ? s->result : uv_nil();
     /* vm->last_error is one buffer and this pump may have outlived the
      * strand: any detached strand that died after it left ITS message

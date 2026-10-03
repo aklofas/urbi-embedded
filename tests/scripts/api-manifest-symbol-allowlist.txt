@@ -73,6 +73,7 @@ uevent_new
 uevent_trace
 uexec_call
 uexec_current_line
+uexec_fatal
 uexec_finish_run
 uexec_note_write
 uexec_position_prefix

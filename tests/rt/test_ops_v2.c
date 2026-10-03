@@ -476,6 +476,165 @@ static void a_jump_out_of_a_finally_body_drops_its_marker(void) {
     }
 }
 
+/* --- chunk integrity: cleanup entries belong to their frame ---------------
+ *
+ * The verifier checks one proto at a time, so it cannot see a callee close
+ * or resume a scope its caller opened.  Each shape below loads; the run
+ * must end in an uncatchable chunk-integrity error -- the root's own
+ * catch (handler: return 99) must not take it -- and never touch memory
+ * outside the frame's instructions (these run under ASan in test-asan). */
+
+#define JFWD(from, to) uinstr_enc_abx(OP_JMP, 0, (uint16_t)(32768 + (to) - (from) - 1))
+
+/* Builds `root` over one child proto and runs it, expecting the failure. */
+static void expect_integrity_failure(const uint32_t *ins, size_t n,
+                                     const uint32_t *cins, size_t cn) {
+    Fix f; fix_open(&f);
+    int64_t k[] = { 99 };
+    UProto *root = proto(ins, n, k, 1, NULL, 0, 1);
+    UProto *child = cins ? proto(cins, cn, NULL, 0, NULL, 0, 0) : NULL;
+    if (child) adopt(root, &child, 1);
+    UClosure *cl = bind(&f, root);
+    RT_CHECK(cl != NULL);
+    UValue out = uv_nil();
+    int rc = uexec_run_chunk(f.vm, f.realm, cl, &out);
+    RT_EQ(rc, URBI_ERR_UNCAUGHT_THROW);
+    RT_CHECK(strstr(f.vm->last_error, "chunk integrity") != NULL);
+    fix_close(&f);
+}
+
+/* A callee pops its caller's finally entry with RUN_FINALLY: the handler
+ * pc it would jump to indexes the caller's instructions. */
+static void a_callee_may_not_pop_its_callers_try_entry(void) {
+    uint32_t ins[] = {
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_CATCH, 9),     /* 0 */
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_FINALLY, 7),   /* 1 */
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),                        /* 2 */
+        uinstr_enc_abc(OP_CALL, 0, 1, 2),                        /* 3 */
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY | USCOPE_POP_RUN_FINALLY, 0, 0),
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0, 0),      /* 5 */
+        JFWD(6, 11),                                             /* 6 */
+        uinstr_enc_abc(OP_LOADNIL, 1, 0, 0),                     /* 7: finally */
+        uinstr_enc_abc(OP_RESUME, 0, 0, 0),                      /* 8 */
+        uinstr_enc_abx(OP_LOADK, 0, 0),                          /* 9: catch */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),                         /* 10 */
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0),                     /* 11 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    uint32_t c[] = {
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY | USCOPE_POP_RUN_FINALLY, 0, 0),
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    expect_integrity_failure(ins, sizeof ins / sizeof ins[0], c, 3);
+}
+
+/* A callee closes its caller's tag scope. */
+static void a_callee_may_not_pop_its_callers_tag_entry(void) {
+    uint32_t ins[] = {
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_CATCH, 7),     /* 0 */
+        uinstr_enc_abx(OP_SCOPE_TAG, USCOPE_NO_REG, 5),          /* 1 */
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),                        /* 2 */
+        uinstr_enc_abc(OP_CALL, 0, 1, 2),                        /* 3 */
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TAG, 0, 0),      /* 4 */
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0, 0),      /* 5 */
+        JFWD(6, 9),                                              /* 6 */
+        uinstr_enc_abx(OP_LOADK, 0, 0),                          /* 7: catch */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),                         /* 8 */
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0),                     /* 9 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    uint32_t c[] = {
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TAG, 0, 0),
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    expect_integrity_failure(ins, sizeof ins / sizeof ins[0], c, 3);
+}
+
+/* A finally body started by a run-finally pop calls a callee that RESUMEs
+ * the caller's marker: the resume pc indexes the caller's instructions. */
+static void a_callee_may_not_resume_its_callers_marker(void) {
+    uint32_t ins[] = {
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_CATCH, 8),     /* 0 */
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_FINALLY, 5),   /* 1 */
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY | USCOPE_POP_RUN_FINALLY, 0, 0),
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0, 0),      /* 3 */
+        JFWD(4, 10),                                             /* 4 */
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),                        /* 5: finally */
+        uinstr_enc_abc(OP_CALL, 0, 1, 2),                        /* 6 */
+        uinstr_enc_abc(OP_RESUME, 0, 0, 0),                      /* 7 */
+        uinstr_enc_abx(OP_LOADK, 0, 0),                          /* 8: catch */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),                         /* 9 */
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0),                     /* 10 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    uint32_t c[] = {
+        uinstr_enc_abc(OP_RESUME, 0, 0, 0),
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    expect_integrity_failure(ins, sizeof ins / sizeof ins[0], c, 3);
+}
+
+/* An UNWIND_TO deeper than its frame's entries: a jump never leaves its
+ * frame, so the caller's catch entry must not count, nor catch it.  Then
+ * the bare shape: no scopes at all. */
+static void an_unwind_to_deeper_than_the_frame_fails(void) {
+    uint32_t ins[] = {
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_CATCH, 6),     /* 0 */
+        uinstr_enc_abx(OP_CLOSURE, 0, 0),                        /* 1 */
+        uinstr_enc_abc(OP_CALL, 0, 1, 2),                        /* 2 */
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0, 0),      /* 3 */
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0),                     /* 4 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),                         /* 5 */
+        uinstr_enc_abx(OP_LOADK, 0, 0),                          /* 6: catch */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    uint32_t c[] = {
+        uinstr_enc_abx(OP_UNWIND_TO, 1, 1),
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    expect_integrity_failure(ins, sizeof ins / sizeof ins[0], c, 3);
+    uint32_t bare[] = {
+        uinstr_enc_abx(OP_UNWIND_TO, 200, 1),
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    expect_integrity_failure(bare, 3, NULL, 0);
+}
+
+/* A scope close that names the wrong kind, or finds nothing to close. */
+static void a_scope_pop_of_the_wrong_kind_fails(void) {
+    uint32_t tag_over_try[] = {
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_CATCH, 5),     /* 0 */
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TAG, 0, 0),      /* 1: top is the TRY */
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0, 0),      /* 2 */
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0),                     /* 3 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),                         /* 4 */
+        uinstr_enc_abx(OP_LOADK, 0, 0),                          /* 5: catch */
+        uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    expect_integrity_failure(tag_over_try, sizeof tag_over_try / sizeof tag_over_try[0], NULL, 0);
+    uint32_t try_over_tag[] = {
+        uinstr_enc_abx(OP_SCOPE_TAG, USCOPE_NO_REG, 2),
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0, 0),      /* top is the TAG */
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    expect_integrity_failure(try_over_tag, 4, NULL, 0);
+    uint32_t catch_run_finally[] = {
+        uinstr_enc_abx(OP_SCOPE_TRY, USCOPE_F_HAS_CATCH, 2),
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY | USCOPE_POP_RUN_FINALLY, 0, 0),
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    expect_integrity_failure(catch_run_finally, 4, NULL, 0);
+    uint32_t empty[] = {
+        uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TAG, 0, 0),
+        uinstr_enc_abc(OP_LOADNIL, 0, 0, 0), uinstr_enc_abc(OP_RET, 0, 0, 0),
+    };
+    expect_integrity_failure(empty, 3, NULL, 0);
+    empty[0] = uinstr_enc_abc(OP_SCOPE_POP, USCOPE_POP_TRY, 0, 0);
+    expect_integrity_failure(empty, 3, NULL, 0);
+    empty[0] = uinstr_enc_abc(OP_RESUME, 0, 0, 0);
+    expect_integrity_failure(empty, 3, NULL, 0);
+}
+
 RT_SUITE(rt_ops_v2_suite) {
     rt_run("extarg_addresses_a_site_above_255", extarg_addresses_a_site_above_255);
     rt_run("a_run_finally_pop_runs_the_body_and_continues", a_run_finally_pop_runs_the_body_and_continues);
@@ -490,4 +649,9 @@ RT_SUITE(rt_ops_v2_suite) {
     rt_run("unwind_to_chains_through_two_finally_bodies", unwind_to_chains_through_two_finally_bodies);
     rt_run("unwind_to_leaves_a_tag_scope_on_the_way", unwind_to_leaves_a_tag_scope_on_the_way);
     rt_run("a_jump_out_of_a_finally_body_drops_its_marker", a_jump_out_of_a_finally_body_drops_its_marker);
+    rt_run("a_callee_may_not_pop_its_callers_try_entry", a_callee_may_not_pop_its_callers_try_entry);
+    rt_run("a_callee_may_not_pop_its_callers_tag_entry", a_callee_may_not_pop_its_callers_tag_entry);
+    rt_run("a_callee_may_not_resume_its_callers_marker", a_callee_may_not_resume_its_callers_marker);
+    rt_run("an_unwind_to_deeper_than_the_frame_fails", an_unwind_to_deeper_than_the_frame_fails);
+    rt_run("a_scope_pop_of_the_wrong_kind_fails", a_scope_pop_of_the_wrong_kind_fails);
 }
