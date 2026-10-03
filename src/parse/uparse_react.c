@@ -451,7 +451,15 @@ UAstNode *urbi_parse_every(UParser *p) {
 
     { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }
 
+    /* The body becomes a function literal (below): break/continue do not
+     * reach through it into an enclosing loop. */
+    int saved_loop_depth = p->loop_depth;
+    int saved_switch_depth = p->switch_depth;
+    p->loop_depth = 0;
+    p->switch_depth = 0;
     UAstNode *body = urbi_parse_statement_or_expr(p);
+    p->loop_depth = saved_loop_depth;
+    p->switch_depth = saved_switch_depth;
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 

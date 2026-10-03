@@ -99,8 +99,8 @@ uint8_t urbi_emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
 
 /* Urbi_emit_function_literal — shared helper for AST_FUNCTION and (nested protos)
  * watcher/waituntil cond/body/onleave closures.
- * params/nparams describe the formal parameter list (AST_PARAM or
- * AST_LAZY_PARAM nodes).  body must be an AST_BLOCK.  When as_expression
+ * params/nparams describe the formal parameter list (AST_PARAM nodes;
+ * is_lazy flags `lazy x`).  body must be an AST_BLOCK.  When as_expression
  * is true, the child proto returns its last expression's register value
  * (cond-closure semantics); when false, the child proto returns nil
  * regardless of its last statement (body/onleave closure semantics).
@@ -172,7 +172,7 @@ uint8_t urbi_emit_function_literal(UEmitter *e,
             int slot = uemit_declare_local(e, param_names[pi],
                                            pn->u.param.name_len);
             if (slot < 0) { uemit_close_function(e); return 0U; }
-            if (pn->kind == AST_LAZY_PARAM) {
+            if (pn->u.param.is_lazy) {
                 child_fs->actvars[slot].is_lazy = true;
             }
         }

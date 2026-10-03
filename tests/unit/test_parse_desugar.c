@@ -205,6 +205,46 @@ UTEST(pipe_amp_pair_is_a_two_child_seq) {
     pfix_close(&f);
 }
 
+UTEST(for_each_is_a_block_with_three_hidden_locals_and_a_while) {
+    PFix f; UAstNode *n = parse_one(&f, "for (var x : xs) { echo(x) }");
+    UASSERT(n && n->kind == AST_BLOCK && n->u.block.count == 4);
+    UASSERT_EQ((int)AST_VAR_DECL, (int)n->u.block.stmts[0]->kind);   /* var $it = xs */
+    UASSERT_EQ('\x01', n->u.block.stmts[0]->u.var_decl.name_start[0]);
+    UASSERT(member_is(n->u.block.stmts[1]->u.var_decl.init->u.call.callee, "length"));
+    UASSERT_EQ((int)AST_INT, (int)n->u.block.stmts[2]->u.var_decl.init->kind); /* var $i = 0 */
+    UAstNode *w = n->u.block.stmts[3];
+    UASSERT_EQ((int)AST_WHILE, (int)w->kind);
+    UASSERT_EQ((int)AST_COMPARE, (int)w->u.while_stmt.cond->kind);
+    UAstNode *body = w->u.while_stmt.body;
+    UASSERT_EQ(3, body->u.block.count);                 /* var x = $it.get($i); $i = $i + 1; <user body> */
+    UASSERT_EQ((int)AST_VAR_DECL, (int)body->u.block.stmts[0]->kind);
+    UASSERT_EQ((int)AST_ASSIGN,   (int)body->u.block.stmts[1]->kind);
+    UASSERT_EQ((int)AST_BLOCK,    (int)body->u.block.stmts[2]->kind);
+    pfix_close(&f);
+}
+
+UTEST(lazy_is_a_flag_on_param) {
+    PFix f; UAstNode *n = parse_one(&f, "var f = function(lazy a, b) { a }");
+    UAstNode *fn = n->u.var_decl.init;
+    UASSERT(fn->kind == AST_FUNCTION && fn->u.func.param_count == 2);
+    UASSERT_EQ((int)AST_PARAM, (int)fn->u.func.params[0]->kind);
+    UASSERT(fn->u.func.params[0]->u.param.is_lazy);
+    UASSERT(!fn->u.func.params[1]->u.param.is_lazy);
+    pfix_close(&f);
+}
+
+UTEST(break_inside_a_closure_inside_a_loop_is_a_parse_error) {
+    PFix f; UAstNode *n = parse_one(&f, "while (true) { var g = function() { break } }");
+    UASSERT(n && n->kind == AST_ERROR && n->u.err.code == PARSE_BREAK_OUTSIDE_LOOP);
+    pfix_close(&f);
+}
+
+UTEST(continue_inside_an_every_body_inside_a_loop_is_a_parse_error) {
+    PFix f; UAstNode *n = parse_one(&f, "while (true) { every (1s) { continue } }");
+    UASSERT(n && n->kind == AST_ERROR && n->u.err.code == PARSE_CONTINUE_OUTSIDE_LOOP);
+    pfix_close(&f);
+}
+
 void test_parse_desugar_suite(void) {
     utest_run("list_literal_is_a_call_to_list_new", list_literal_is_a_call_to_list_new);
     utest_run("empty_list_literal_is_list_new_with_no_args", empty_list_literal_is_list_new_with_no_args);
@@ -221,4 +261,8 @@ void test_parse_desugar_suite(void) {
     utest_run("arrow_access_is_a_parse_error", arrow_access_is_a_parse_error);
     utest_run("semicolon_sequence_is_one_seq_node", semicolon_sequence_is_one_seq_node);
     utest_run("pipe_amp_pair_is_a_two_child_seq", pipe_amp_pair_is_a_two_child_seq);
+    utest_run("for_each_is_a_block_with_three_hidden_locals_and_a_while", for_each_is_a_block_with_three_hidden_locals_and_a_while);
+    utest_run("lazy_is_a_flag_on_param", lazy_is_a_flag_on_param);
+    utest_run("break_inside_a_closure_inside_a_loop_is_a_parse_error", break_inside_a_closure_inside_a_loop_is_a_parse_error);
+    utest_run("continue_inside_an_every_body_inside_a_loop_is_a_parse_error", continue_inside_an_every_body_inside_a_loop_is_a_parse_error);
 }

@@ -787,11 +787,11 @@ UAstNode *urbi_parse_function(UParser *p) {
         UToken name = urbi_parse_peek(p);
         { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
-        UAstNode *pn = urbi_parse_make_node(p, is_lazy ? AST_LAZY_PARAM : AST_PARAM,
-                                 name.line, name.col);
+        UAstNode *pn = urbi_parse_make_node(p, AST_PARAM, name.line, name.col);
         if (!pn) return (UAstNode *)&uparser_oom_sentinel;
         pn->u.param.name_start = name.u.str.start;
         pn->u.param.name_len   = name.u.str.len;
+        pn->u.param.is_lazy    = is_lazy;
 
         UAstNode *derr = parse_optional_param_default(p, pn, is_lazy);
         if (derr) return derr;
@@ -811,7 +811,15 @@ UAstNode *urbi_parse_function(UParser *p) {
 
     { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }  /* urbi_parse_consume ')' */
 
+    /* A function literal is a loop/switch boundary: break/continue do not
+     * reach through it into an enclosing loop. */
+    int saved_loop_depth = p->loop_depth;
+    int saved_switch_depth = p->switch_depth;
+    p->loop_depth = 0;
+    p->switch_depth = 0;
     UAstNode *body = urbi_parse_block(p);
+    p->loop_depth = saved_loop_depth;
+    p->switch_depth = saved_switch_depth;
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 
@@ -857,11 +865,11 @@ UAstNode *urbi_parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
         UToken pname = urbi_parse_peek(p);
         { UAstNode *err = NULL; if (!expect(p, TOK_IDENT, PARSE_EXPECTED_IDENT, &err)) return err; }
 
-        UAstNode *pn = urbi_parse_make_node(p, is_lazy ? AST_LAZY_PARAM : AST_PARAM,
-                                 pname.line, pname.col);
+        UAstNode *pn = urbi_parse_make_node(p, AST_PARAM, pname.line, pname.col);
         if (!pn) return (UAstNode *)&uparser_oom_sentinel;
         pn->u.param.name_start = pname.u.str.start;
         pn->u.param.name_len   = pname.u.str.len;
+        pn->u.param.is_lazy    = is_lazy;
 
         UAstNode *derr = parse_optional_param_default(p, pn, is_lazy);
         if (derr) return derr;
@@ -881,7 +889,15 @@ UAstNode *urbi_parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
 
     { UAstNode *err = NULL; if (!expect(p, TOK_RPAREN, PARSE_EXPECTED_RPAREN, &err)) return err; }  /* urbi_parse_consume ')' */
 
+    /* A getter/setter body is a function literal: break/continue do not
+     * reach through it into an enclosing loop. */
+    int saved_loop_depth = p->loop_depth;
+    int saved_switch_depth = p->switch_depth;
+    p->loop_depth = 0;
+    p->switch_depth = 0;
     UAstNode *body = urbi_parse_block(p);
+    p->loop_depth = saved_loop_depth;
+    p->switch_depth = saved_switch_depth;
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 
@@ -1154,19 +1170,20 @@ UAstNode *urbi_parse_try(UParser *p) {
  * migration (see docs/migration/control-flow-migration.md).  Count-form
  * `for (N) body` and flavoured `for|`/`for&` are deferred-v1.x.
  *
- * Produces AST_FOR_EACH with:
- *   var_name_start / var_name_len — the loop variable name
- *   iter_expr                     — the iterable (evaluated once)
- *   body                          — AST_BLOCK (loop body)
- *
- * The emitter lowers AST_FOR_EACH to a while-loop index pattern:
- *   var _iter = iter_expr;
- *   var _n    = _iter.length();
- *   var _i    = 0;
- *   while (_i < _n) { var x = _iter.get(_i); body; _i = _i + 1 }
- *
- * break/continue work inside AST_FOR_EACH bodies because the emitter
- * tracks the break/continue patch-lists in the loop context. */
+ * Lowered directly to core AST kinds — no AST_FOR_EACH node, no new
+ * opcode:
+ *   BLOCK {
+ *     var $it = iter_expr;
+ *     var $n  = $it.length();
+ *     var $i  = 0;
+ *     while ($i < $n) {
+ *       var x = $it.get($i);
+ *       $i = $i + 1;
+ *       body
+ *     }
+ *   }
+ * `$it`/`$n`/`$i` are hidden locals (urbi_parse_hidden_name).  break/continue
+ * work inside the body because it is an ordinary AST_WHILE loop body. */
 static UAstNode *parse_for(UParser *p) {
     UToken kw = urbi_parse_consume(p);  /* urbi_parse_consume TOK_KW_FOR */
 
@@ -1204,13 +1221,90 @@ static UAstNode *parse_for(UParser *p) {
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 
-    UAstNode *node = urbi_parse_make_node(p, AST_FOR_EACH, kw.line, kw.col);
-    if (!node) return (UAstNode *)&uparser_oom_sentinel;
-    node->u.for_each.var_name_start = name_tok.u.str.start;
-    node->u.for_each.var_name_len   = name_tok.u.str.len;
-    node->u.for_each.iter_expr      = iter;
-    node->u.for_each.body           = body;
-    return node;
+    int it_len, n_len, i_len;
+    const char *it_name = urbi_parse_hidden_name(p, "it", &it_len);
+    const char *n_name  = urbi_parse_hidden_name(p, "n", &n_len);
+    const char *i_name  = urbi_parse_hidden_name(p, "i", &i_len);
+    if (!it_name || !n_name || !i_name) return (UAstNode *)&uparser_oom_sentinel;
+
+    /* var $it = iter_expr */
+    UAstNode *var_it = urbi_parse_desugar_var_decl(p, it_name, it_len, iter, kw.line, kw.col);
+    if (!var_it) return NULL;
+
+    /* var $n = $it.length() */
+    UAstNode *it_ref1 = urbi_parse_desugar_ident(p, it_name, it_len, kw.line, kw.col);
+    if (!it_ref1) return NULL;
+    UAstNode *len_mg = urbi_parse_desugar_member_get(p, it_ref1, "length", 6, kw.line, kw.col);
+    if (!len_mg) return NULL;
+    UAstNode *len_call = urbi_parse_desugar_call(p, len_mg, NULL, 0, kw.line, kw.col);
+    if (!len_call) return NULL;
+    UAstNode *var_n = urbi_parse_desugar_var_decl(p, n_name, n_len, len_call, kw.line, kw.col);
+    if (!var_n) return NULL;
+
+    /* var $i = 0 */
+    UAstNode *zero = urbi_parse_make_int(p, 0, kw.line, kw.col);
+    if (!zero) return NULL;
+    UAstNode *var_i = urbi_parse_desugar_var_decl(p, i_name, i_len, zero, kw.line, kw.col);
+    if (!var_i) return NULL;
+
+    /* while ($i < $n) */
+    UAstNode *i_ref1 = urbi_parse_desugar_ident(p, i_name, i_len, kw.line, kw.col);
+    UAstNode *n_ref  = urbi_parse_desugar_ident(p, n_name, n_len, kw.line, kw.col);
+    if (!i_ref1 || !n_ref) return NULL;
+    UAstNode *cond = urbi_parse_make_node(p, AST_COMPARE, kw.line, kw.col);
+    if (!cond) return NULL;
+    cond->u.cmp.op  = CMP_LT;
+    cond->u.cmp.lhs = i_ref1;
+    cond->u.cmp.rhs = n_ref;
+
+    /* var x = $it.get($i) */
+    UAstNode *it_ref2 = urbi_parse_desugar_ident(p, it_name, it_len, kw.line, kw.col);
+    UAstNode *i_ref2  = urbi_parse_desugar_ident(p, i_name, i_len, kw.line, kw.col);
+    if (!it_ref2 || !i_ref2) return NULL;
+    UAstNode *get_mg = urbi_parse_desugar_member_get(p, it_ref2, "get", 3, kw.line, kw.col);
+    if (!get_mg) return NULL;
+    UAstNode **get_args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+    if (!get_args) return (UAstNode *)&uparser_oom_sentinel;
+    get_args[0] = i_ref2;
+    UAstNode *get_call = urbi_parse_desugar_call(p, get_mg, get_args, 1, kw.line, kw.col);
+    if (!get_call) return NULL;
+    UAstNode *var_x = urbi_parse_desugar_var_decl(p, name_tok.u.str.start, name_tok.u.str.len,
+                                                  get_call, name_tok.line, name_tok.col);
+    if (!var_x) return NULL;
+
+    /* $i = $i + 1 */
+    UAstNode *i_ref3 = urbi_parse_desugar_ident(p, i_name, i_len, kw.line, kw.col);
+    if (!i_ref3) return NULL;
+    UAstNode *one = urbi_parse_make_int(p, 1, kw.line, kw.col);
+    if (!one) return NULL;
+    UAstNode *inc = urbi_parse_make_binary(p, BOP_ADD, i_ref3, one, kw.line, kw.col);
+    if (!inc) return NULL;
+    UAstNode *assign_i = urbi_parse_make_node(p, AST_ASSIGN, kw.line, kw.col);
+    if (!assign_i) return NULL;
+    assign_i->u.assign.name_start = i_name;
+    assign_i->u.assign.name_len   = i_len;
+    assign_i->u.assign.value      = inc;
+
+    UAstNode **inner_stmts = (UAstNode **)uarena_alloc(p->arena, 3U * sizeof(UAstNode *));
+    if (!inner_stmts) return (UAstNode *)&uparser_oom_sentinel;
+    inner_stmts[0] = var_x;
+    inner_stmts[1] = assign_i;
+    inner_stmts[2] = body;
+    UAstNode *while_body = urbi_parse_desugar_block(p, inner_stmts, 3, kw.line, kw.col);
+    if (!while_body) return NULL;
+
+    UAstNode *while_node = urbi_parse_make_node(p, AST_WHILE, kw.line, kw.col);
+    if (!while_node) return NULL;
+    while_node->u.while_stmt.cond = cond;
+    while_node->u.while_stmt.body = while_body;
+
+    UAstNode **outer_stmts = (UAstNode **)uarena_alloc(p->arena, 4U * sizeof(UAstNode *));
+    if (!outer_stmts) return (UAstNode *)&uparser_oom_sentinel;
+    outer_stmts[0] = var_it;
+    outer_stmts[1] = var_n;
+    outer_stmts[2] = var_i;
+    outer_stmts[3] = while_node;
+    return urbi_parse_desugar_block(p, outer_stmts, 4, kw.line, kw.col);
 }
 
 static UAstNode *parse_break(UParser *p) {

@@ -430,14 +430,12 @@ uint8_t urbi_emit_expr(UEmitter *e, UAstNode *n) {
     case AST_WAITUNTIL:      return urbi_emit_waituntil_arm(e, n);
     case AST_AT_EVENT:       return urbi_emit_at_event_arm(e, n);
     case AST_AT_SLOT_CHANGE: return urbi_emit_at_slot_change_arm(e, n);
-    case AST_FOR_EACH:        return urbi_emit_for_each_arm(e, n);
     case AST_BREAK:           return urbi_emit_break_arm(e, n);
     case AST_CONTINUE:        return urbi_emit_continue_arm(e, n);
     case AST_SWITCH:          return urbi_emit_switch_arm(e, n);
     case AST_PARAM:
-    case AST_LAZY_PARAM:
-        /* AST_PARAM / AST_LAZY_PARAM: produced by the parser and consumed
-         * before urbi_emit_expr is called (inside the AST_FUNCTION arm).
+        /* AST_PARAM: produced by the parser and consumed before
+         * urbi_emit_expr is called (inside the AST_FUNCTION arm).
          * Reaching this arm means a malformed AST. */
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;

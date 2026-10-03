@@ -53,8 +53,7 @@ typedef enum {
     AST_FUNCTION   = 14,    /* function (params) { body } */
     AST_CALL       = 15,    /* callee(args) */
     AST_RETURN     = 16,    /* return [expr] */
-    AST_PARAM      = 17,    /* formal parameter (eager, no `lazy`) */
-    AST_LAZY_PARAM = 18,    /* formal parameter (`lazy x`) */
+    AST_PARAM      = 17,    /* formal parameter; u.param.is_lazy flags `lazy x` */
 
     /* assignment */
     AST_ASSIGN     = 19,    /* x = expr; assignment to existing local/upvalue */
@@ -104,10 +103,6 @@ typedef enum {
                              * emitter raises EMIT_NO_THIS_OUTSIDE_METHOD when
                              * fs->parent == NULL. */
 
-    AST_FOR_EACH = 32,  /* for (var x : iter) body  / for (var x in iter) body
-                         * Lowered to a while loop using list.length() + list.get(i).
-                         * Also handles for (var x : list_expr) where list_expr is
-                         * evaluated once before the loop.  No new opcode needed. */
     AST_BREAK    = 33,  /* break — exits innermost for/while loop.
                          * Lowered to OP_JMP with the exit address patched after the loop.
                          * No new opcode needed. */
@@ -261,7 +256,7 @@ typedef enum {
  *   u.func        — AST_FUNCTION:   function definition
  *   u.call        — AST_CALL:       function application
  *   u.ret         — AST_RETURN:     early exit with value
- *   u.param       — AST_PARAM, AST_LAZY_PARAM: formal parameters
+ *   u.param       — AST_PARAM: formal parameter (is_lazy flags `lazy x`)
  *   u.assign      — AST_ASSIGN: assignment to existing local/upvalue
  *   u.try_stmt    — AST_TRY:    try body + optional catch/finally
  *   u.throw_expr  — AST_THROW:  value expression to throw
@@ -272,7 +267,6 @@ typedef enum {
  *   u.at_event    — AST_AT_EVENT:        at (e?) event-subscribe form
  *   u.at_slot_change — AST_AT_SLOT_CHANGE: at (obj.x.changed?) slot-change form
  *   u.str_lit     — AST_STR:             escape-resolved string bytes view
- *   u.for_each    — AST_FOR_EACH:        var name + iterable + body block
  *   [none]        — AST_BREAK:           no payload (exits innermost loop)
  *   [none]        — AST_CONTINUE:        no payload (next iteration)
  *   u.switch_stmt — AST_SWITCH:          expr + parallel arrays of vals + bodies
@@ -349,7 +343,7 @@ struct UAstNode {
             UAstNode *rhs;
         } cmp;
         struct {                                            /* AST_FUNCTION */
-            UAstNode  **params;            /* AST_PARAM or AST_LAZY_PARAM */
+            UAstNode  **params;            /* AST_PARAM */
             int         param_count;
             UAstNode   *body;              /* AST_BLOCK */
         } func;
@@ -361,7 +355,7 @@ struct UAstNode {
         struct {                                            /* AST_RETURN */
             UAstNode *value;               /* may be NULL — `return;` returns void */
         } ret;
-        struct {                                            /* AST_PARAM, AST_LAZY_PARAM */
+        struct {                                            /* AST_PARAM */
             const char *name_start;
             int         name_len;
             UAstNode   *default_expr;      /* `= expr` default value or NULL
@@ -369,6 +363,8 @@ struct UAstNode {
                                               evaluated at call time in the
                                               callee scope when the caller
                                               omits the argument) */
+            bool        is_lazy;           /* `lazy x` — caller-side thunk
+                                              instead of eager evaluation */
         } param;
         struct {                                            /* AST_ASSIGN */
             const char *name_start;        /* zero-copy lexeme view */
@@ -459,12 +455,6 @@ struct UAstNode {
                                             * to the parser's UArena */
             int         len;               /* byte count (excluding any NUL) */
         } str_lit;
-        struct {                                            /* AST_FOR_EACH */
-            const char *var_name_start;  /* zero-copy lexeme view of loop variable */
-            int         var_name_len;
-            UAstNode   *iter_expr;       /* iterable expression (evaluated once) */
-            UAstNode   *body;            /* AST_BLOCK — loop body */
-        } for_each;
         /* AST_BREAK and AST_CONTINUE carry no payload beyond line/col */
         struct {                                            /* AST_SWITCH */
             UAstNode   *expr;            /* switch expression (evaluated once) */

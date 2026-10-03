@@ -485,7 +485,7 @@ uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n) {
                     int pi;
                     for (pi = 0; pi < fn->u.func.param_count && pi < 16; pi++) {
                         gsig->param_is_lazy[pi] =
-                            (fn->u.func.params[pi]->kind == AST_LAZY_PARAM);
+                            fn->u.func.params[pi]->u.param.is_lazy;
                     }
                 }
             }
@@ -556,7 +556,7 @@ uint8_t urbi_emit_var_decl_arm(UEmitter *e, UAstNode *n) {
             int pi;
             for (pi = 0; pi < fn->u.func.param_count && pi < 16; pi++) {
                 sig->param_is_lazy[pi] =
-                    (fn->u.func.params[pi]->kind == AST_LAZY_PARAM);
+                    fn->u.func.params[pi]->u.param.is_lazy;
             }
         }
     }
@@ -669,7 +669,7 @@ uint8_t urbi_emit_assign_arm(UEmitter *e, UAstNode *n) {
                         int pi;
                         for (pi = 0; pi < fn->u.func.param_count && pi < 16; pi++) {
                             gsig->param_is_lazy[pi] =
-                                (fn->u.func.params[pi]->kind == AST_LAZY_PARAM);
+                                fn->u.func.params[pi]->u.param.is_lazy;
                         }
                     }
                 }

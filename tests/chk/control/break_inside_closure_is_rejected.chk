@@ -1,0 +1,4 @@
+# Covers: a loop does not reach into a function literal declared inside it;
+#         `break` there has no loop to leave and is rejected at parse time.
+while (true) { var g = function() { break } }
+[00000000] !!! <stdin>:1:37: 'break' is only valid inside a 'for' or 'while' loop

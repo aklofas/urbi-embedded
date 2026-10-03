@@ -359,7 +359,6 @@ uint8_t urbi_emit_while_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_call_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_return_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_function_arm(UEmitter *e, UAstNode *n);
-uint8_t urbi_emit_for_each_arm(UEmitter *e, UAstNode *n);
 uint8_t urbi_emit_break_arm(UEmitter *e, const UAstNode *n);
 uint8_t urbi_emit_continue_arm(UEmitter *e, const UAstNode *n);
 uint8_t urbi_emit_switch_arm(UEmitter *e, UAstNode *n);
