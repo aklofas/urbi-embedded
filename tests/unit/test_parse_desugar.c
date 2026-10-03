@@ -245,6 +245,12 @@ UTEST(continue_inside_an_every_body_inside_a_loop_is_a_parse_error) {
     pfix_close(&f);
 }
 
+UTEST(continue_inside_a_getter_inside_a_loop_is_a_parse_error) {
+    PFix f; UAstNode *n = parse_one(&f, "while (true) { o.get foo() { continue } }");
+    UASSERT(n && n->kind == AST_ERROR && n->u.err.code == PARSE_CONTINUE_OUTSIDE_LOOP);
+    pfix_close(&f);
+}
+
 void test_parse_desugar_suite(void) {
     utest_run("list_literal_is_a_call_to_list_new", list_literal_is_a_call_to_list_new);
     utest_run("empty_list_literal_is_list_new_with_no_args", empty_list_literal_is_list_new_with_no_args);
@@ -265,4 +271,5 @@ void test_parse_desugar_suite(void) {
     utest_run("lazy_is_a_flag_on_param", lazy_is_a_flag_on_param);
     utest_run("break_inside_a_closure_inside_a_loop_is_a_parse_error", break_inside_a_closure_inside_a_loop_is_a_parse_error);
     utest_run("continue_inside_an_every_body_inside_a_loop_is_a_parse_error", continue_inside_an_every_body_inside_a_loop_is_a_parse_error);
+    utest_run("continue_inside_a_getter_inside_a_loop_is_a_parse_error", continue_inside_a_getter_inside_a_loop_is_a_parse_error);
 }

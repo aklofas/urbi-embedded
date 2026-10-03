@@ -2,3 +2,8 @@
 #         `break` there has no loop to leave and is rejected at parse time.
 while (true) { var g = function() { break } }
 [00000000] !!! <stdin>:1:37: 'break' is only valid inside a 'for' or 'while' loop
+
+# --- same boundary for a getter body (urbi_parse_property_decl, explicit
+#     receiver): the getter's AST_FUNCTION is its own loop/switch scope too.
+while (true) { o.get foo() { continue } }
+[00000001] !!! <stdin>:1:30: 'continue' is only valid inside a 'for' or 'while' loop
