@@ -161,10 +161,12 @@ static void a_script_string_literal_is_a_string_to_the_host(void)
 static void closures_events_and_tags_are_recognised_as_such(void)
 {
     UVM *vm = urbi_open(utest_alloc, NULL, NULL);
-    UValue f = run_value(vm, "function() { 42 } |");
-    UValue e = run_value(vm, "Event.new() |");
-    UValue t = run_value(vm, "Tag.new() |");
-    UValue l = run_value(vm, "List.new() |");
+    /* Each value is pinned as soon as it is produced: the next urbi_run
+     * may collect, and a host-held value is invisible to the collector. */
+    UValue f = run_value(vm, "function() { 42 } |"); urbi_ref(vm, f);
+    UValue e = run_value(vm, "Event.new() |");       urbi_ref(vm, e);
+    UValue t = run_value(vm, "Tag.new() |");         urbi_ref(vm, t);
+    UValue l = run_value(vm, "List.new() |");        urbi_ref(vm, l);
     UASSERT(urbi_value_is_closure(f) && !urbi_value_is_event(f) && !urbi_value_is_tag(f));
     UASSERT(urbi_value_is_event(e) && !urbi_value_is_closure(e));
     UASSERT(urbi_value_is_tag(t) && !urbi_value_is_event(t));
@@ -183,6 +185,7 @@ static void closures_events_and_tags_are_recognised_as_such(void)
     UASSERT_EQ(out.v.i, 42);
     UASSERT(urbi_value_is_tag(urbi_make_tag(urbi_value_as_tag(t))));
     UASSERT(urbi_value_is_event(urbi_make_event(urbi_value_as_event(e))));
+    urbi_unref(vm, f); urbi_unref(vm, e); urbi_unref(vm, t); urbi_unref(vm, l);
     urbi_close(vm);
 }
 

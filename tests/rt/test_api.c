@@ -328,9 +328,11 @@ static void compile_then_load_keeps_a_many_upvalue_closure(void) {
     UValue cl = urbi_make_nil();
     RT_EQ(urbi_load(vm, urbi_realm_main(vm), bytes, n, &cl), URBI_OK);
     urbi_chunk_free(vm, bytes, n);
+    urbi_ref(vm, cl);                      /* a host-held value must be pinned across a call that may collect */
     UValue out = urbi_make_nil();
     RT_EQ(urbi_call(vm, urbi_realm_main(vm), cl, urbi_make_nil(), NULL, 0, &out), URBI_OK);
     RT_EQ(out.v.i, 10);
+    urbi_unref(vm, cl);
     urbi_close(vm);
     RT_EQ(api_live, 0L);
 }
