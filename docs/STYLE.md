@@ -99,7 +99,7 @@ vice versa.
 
 ## Freestanding discipline
 
-Every file under `src/` compiles under `-ffreestanding`, including on toolchains that ship no C library at all (e.g. `gcc-riscv64-unknown-elf` on Ubuntu). CI enforces this via the `cross-riscv` job.
+Every file under `src/` compiles under `-ffreestanding`, including on toolchains that ship no C library at all (e.g. `riscv-none-elf-gcc`). CI enforces this via the `cross` job's `riscv32` preset, and `make test-freestanding-host` / `make test-freestanding` check it without needing a cross toolchain.
 
 Rules:
 
@@ -109,7 +109,7 @@ Rules:
 - **Don't depend on libc for leaf utilities.** `memset`, `memcpy`, `strlen` are all hosted. Write small local replacements when needed (`urbi_zero` in `src/util/umacros.h` is the pattern). Mark the buffer `volatile` to prevent the compiler from recognizing the loop and lowering it back to a libc call under `-Os`.
 - **Test files are exempt.** `tests/unit/*.c`, `tests/rt/*.c` and `tests/probes/*.c` link against the host toolchain and may freely use hosted headers. The library itself is what must stay freestanding.
 
-The RISC-V and Cortex-M cross builds were the acceptance test; both are parked until Phase 5. Until they return, `tests/scripts/check_rt_layering.sh` is what enforces the rule on `src/rt/`, per file, on every `make test`.
+The RISC-V and Cortex-M cross builds are the acceptance test; the four generic presets (`arm-cortex-m0plus`, `arm-cortex-m4f`, `arm-cortex-m7`, `riscv32`) run them in CI on every push. `tests/scripts/check_rt_layering.sh` additionally enforces the rule on `src/rt/`, per file, on every `make test`.
 
 **Allocator discipline.** Frontend TUs use the `src/util/umacros.h` helpers (`urbi_zero`, `urbi_memcpy`, `urbi_memeq`, `urbi_strlen`, `urbi_strncpy_truncating`), which keep the freestanding discipline without a libc call. `src/rt/` has its own equivalents behind the layering gate. Hosted or gated TUs — those compiled only under `__STDC_HOSTED__`, or behind an optional-component flag — may use libc `mem*`/`str*` directly where it is the clearest choice.
 

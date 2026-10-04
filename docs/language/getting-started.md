@@ -135,8 +135,8 @@ the `v0.2.0-expressions` release adds on top.
 ## Cross-compiling for embedded targets
 
 ```sh
-make cross-arm    # produces build/arm-cortex-m7/liburbi.a   (Cortex-M7)
-make cross-riscv  # produces build/riscv-rv32imc/liburbi.a   (ESP32-C3)
+make cross-arm-cortex-m7   # produces build/arm-cortex-m7/liburbi.a   (generic Cortex-M7)
+make cross-riscv32         # produces build/riscv32/liburbi.a         (generic rv32imc)
 ```
 
 The host has no execution environment for those architectures, so there is no

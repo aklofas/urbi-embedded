@@ -26,7 +26,16 @@ make test
 - Coverage: `coverage` (`--fail-under-line 80` hard gate in Phase 1; see Makefile `coverage` target. Lowered from 85% in Phase 0 of the core re-foundation — the deleted runtime-internals unit tests covered code that the refound/core branch replaces; re-baseline for the new core when it lands. GitHub Actions runs the same target with `continue-on-error: true` so a regression does not block CI on already-merged code, but pre-tag `make releasetest` hard-fails. Condition coverage is not measured — v1.x target.)
 - Build hygiene: `test-bytecode-only`, `test-freestanding-host`, `test-bake-smoke`
 - API surface: `test-api-manifest`, `test-aux-symbols`, `test-embedding-guide`, `test-external-embed-iinclude`
-- Cross-compile (when toolchains present): pico, esp32s3, stm32f4, arm, riscv
+- Cross-compile: `cross-all` builds every preset (`arm-cortex-m0plus`,
+  `arm-cortex-m4f`, `arm-cortex-m7`, `riscv32`) full and bytecode-only,
+  running `test-freestanding`'s archive-self-containedness check on each
+  bytecode-only shape as it builds; `test-cross-missing-toolchain`
+  checks the failure mode for a preset whose compiler is absent. A
+  preset's toolchain not being on `PATH` is a hard error, not a skip.
+
+`make test-probes-32bit` (the qemu Cortex-M4 memory probes) is CI-only —
+it needs `arm-none-eabi-gcc` and `qemu-system-arm`, neither of which
+`releasetest` requires.
 
 **Phase 2** (sequential, after Phase 1 completes):
 

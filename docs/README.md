@@ -40,7 +40,7 @@ For contributors building or modifying the C99 implementation.
 - [The runtime](internals/runtime.md) — values, the collector, objects, strands, the scheduler, errors, realms, booting
 - [Reactive runtime](internals/reactive-runtime.md) — watchers in full: modes, the dirty set, the drain
 - [Error channels](internals/error-channels.md) — where a failure goes and who can see it
-- [Embedded ports](internals/ports.md) — per-target record; all parked until Phase 5
+- [Embedded ports](internals/ports.md) — per-target record; all parked until their own tag
 - [Design decisions](internals/design-decisions.md) — rationale log for implementation choices
 - [Test harness](internals/test-harness.md) — the four runners and how to add to each
 - [Code style](STYLE.md) — C naming, memory model, freestanding discipline, const-correctness
@@ -59,7 +59,7 @@ For contributors building or modifying the C99 implementation.
 
 Hardware-in-loop validation on physical STM32H7 and ESP32-C3 is a gate for the `v1.0.0` release. Cross-compile CI jobs verify that the code compiles clean for ARM and RISC-V on every commit; they do not run the test suite on hardware.
 
-CI runs eight jobs on every push: host release, host debug, host ASan, host UBSan, cross-arm, cross-riscv, lint (clang-tidy + cppcheck + GCC `-fanalyzer`), and docs-check. All eight must be green before merge. See `../.github/workflows/ci.yml` for the full matrix.
+CI runs a `host` matrix (release, debug, ASan, UBSan, switch-dispatch), a `cross` matrix over the four cross presets, a `probe-32bit` job (the qemu memory probes), `lint` (clang-tidy + cppcheck + GCC `-fanalyzer`), `docs-check`, `coverage` and `version-sync`. All must be green before merge. See `../.github/workflows/ci.yml` for the full matrix.
 
 ---
 
@@ -73,8 +73,8 @@ make test         # run unit tests (host, release)
 make test-asan    # run unit tests with AddressSanitizer
 make test-ubsan   # run unit tests with UBSan
 make test-debug   # run unit tests (debug build, no optimisation)
-make cross-arm    # sanity cross-compile for ARM Cortex-M7
-make cross-riscv  # sanity cross-compile for RISC-V rv32imc
+make cross-arm-cortex-m7    # sanity cross-compile, generic Cortex-M7 archive
+make cross-riscv32          # sanity cross-compile, generic RISC-V rv32imc archive
 make lint         # run clang-tidy + cppcheck + GCC -fanalyzer
 make docs-check   # lint all Markdown docs (markdownlint + link check)
 make releasetest  # full pre-release sweep (~2 min, two-stage parallel)

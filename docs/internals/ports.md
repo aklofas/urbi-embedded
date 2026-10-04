@@ -11,23 +11,26 @@ target Make recipes are in [`build-system.md`](./build-system.md).
 The host build is not a port — `make` (POSIX glibc) is the canonical
 development target. Ports below cover bare-metal + RTOS silicon.
 
-**Every port on this page is PARKED.** The core re-foundation replaced
-the runtime these ports were brought up against, and none of them has
-been rebuilt on it: the component manifests, the `components/` trees and
-the `examples/` workloads are all in the tree and all out of the build.
-Phase 5 re-attaches them.  The 32-bit memory figures are measured now,
-on a Cortex-M4 under qemu's MPS2-AN386 model: a booted VM holds 48,968
-bytes live (cap 48 KB), an idle sleeping strand costs 466 bytes, and the
-leak probes stay flat.  `make test-probes-32bit` regenerates them (it
-needs `arm-none-eabi-gcc` with newlib and `qemu-system-arm`; CI runs it).
-Read what follows as a record of what each target needed last time, not
-as a claim about today.
+**Every port on this page is parked until its own tag.** The core
+re-foundation replaced the runtime these ports were brought up against,
+and none of them has been rebuilt on it: the component manifests, the
+`components/` trees and the `examples/` workloads are all in the tree
+and all out of the build.  The 32-bit memory figures are measured now,
+on a generic Cortex-M4 under qemu's MPS2-AN386 model, through the
+`arm-cortex-m4f` cross preset: a booted VM holds 48,980 bytes live (cap
+49,152), an idle sleeping strand costs 466 bytes, and the leak probes
+stay flat.  `make test-probes-32bit` regenerates them (it needs
+`arm-none-eabi-gcc` with newlib and `qemu-system-arm`; CI runs it) — but
+that preset is generic silicon, not any board below, so the number is
+real without being a claim about one of these ports.  Read what follows
+as a record of what each target needed last time, not as a claim about
+today.
 
 ## ESP32-S3 (Espressif, Xtensa LX7)
 
-- **Status:** Shipped at `v0.7.2-esp32` (2026-05-16). Validated on
-  ESP32-S3-EYE silicon with the `eye_demo` workload (LED + on-die
-  temperature + AOV blob tracking).
+- **Status:** Shipped at `v0.7.2-esp32` (2026-05-16); parked until its
+  own tag. Validated on ESP32-S3-EYE silicon with the `eye_demo`
+  workload (LED + on-die temperature + AOV blob tracking).
 - **Toolchain:** ESP-IDF v6.0.1 (`xtensa-esp32s3-elf-gcc`); hosted
   newlib (do NOT pass `-ffreestanding` to the `urbi` component;
   `urbi_aux` separately).
@@ -56,10 +59,10 @@ as a claim about today.
 
 ## STM32F429I-DISC1 (STMicroelectronics, Cortex-M4F)
 
-- **Status:** Shipped at `v0.8.2-stm32f4-mandelbrot` (2026-05-17).
-  First non-RTOS port; bare-metal `Reset_Handler` + custom linker
-  script. Validated with a Mandelbrot rendering workload on the
-  240×320 onboard ILI9341 LCD.
+- **Status:** Shipped at `v0.8.2-stm32f4-mandelbrot` (2026-05-17);
+  parked until its own tag. First non-RTOS port; bare-metal
+  `Reset_Handler` + custom linker script. Validated with a Mandelbrot
+  rendering workload on the 240×320 onboard ILI9341 LCD.
 - **Toolchain:** `arm-none-eabi-gcc` 12+; ARMv7E-M Thumb-2 with
   hardware FPU (`-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard`).
 - **Footprint:** ~110 KB liburbi.a text; ~140 KB bytecode-only.
@@ -83,8 +86,9 @@ as a claim about today.
 
 ## Raspberry Pi Pico (RP2040, Cortex-M0+)
 
-- **Status:** Shipped at `v0.9.4-pico-example` (2026-05-24). Hardware
-  verified on a real Raspberry Pi Pico (RP2040, Cortex-M0+, 264 KB SRAM)
+- **Status:** Shipped at `v0.9.4-pico-example` (2026-05-24); parked
+  until its own tag. Hardware verified on a real Raspberry Pi Pico
+  (RP2040, Cortex-M0+, 264 KB SRAM)
   with the `repl_demo` workload: BOOTSEL press → QSPI_SS bit-bang →
   debounce → `urbi_inject_event` → event ring → `urbi_step` → C-side
   `urbi_register_watcher` callback → `gpio_xor_mask` toggles GP25 LED.
@@ -111,7 +115,8 @@ as a claim about today.
   repl_demo.uf2 on-flash footprint measured during hardware bring-up.
   Calibration commands:
   `arm-none-eabi-size build/arm-cortex-m0plus/liburbi.a` (full) and
-  `arm-none-eabi-size build/cross-pico-bytecode-only/liburbi.a` (BO).
+  `arm-none-eabi-size build/arm-cortex-m0plus-bytecode-only/liburbi.a`
+  (BO) — the Pico's own preset once it is rebuilt on the current core.
   Caps documented in CHANGELOG entry `v0.9.4-pico-example` footprint table.
 - **Numeric:** Float values are always double (f64); the M0+ has no
   FPU so all float arithmetic goes through libgcc soft-float helpers.
@@ -161,8 +166,10 @@ as a claim about today.
 
 ## See also
 
-- [`build-system.md`](./build-system.md) — per-target Make recipes
-  (`cross-arm`, `cross-riscv`, `cross-esp32s3`, `cross-pico`, ...).
+- [`build-system.md`](./build-system.md) — the cross presets
+  (`arm-cortex-m0plus`, `arm-cortex-m4f`, `arm-cortex-m7`, `riscv32`)
+  and their `cross-<preset>` / `cross-<preset>-bytecode-only` /
+  `cross-<preset>-hosted` Make recipes.
 - [`../cross-toolchain-setup.md`](../cross-toolchain-setup.md) —
   installing cross toolchains; the probe-compile model used by
   `releasetest`.

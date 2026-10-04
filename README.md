@@ -6,7 +6,7 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** tagged `v0.15.1-core-hardening`, a hardening pass over the previous tag (eleven defects found by a post-ship review of the runtime core, each fixed with a regression test) — the compiler frontend has been rebuilt on top of the re-founded runtime core, so there is no pre-1.0 compatibility promise and the numbers below are current-build facts, not commitments. The language is intact: separators-encode-concurrency (`;` `|` `,` `&`), the reactive trio (`at` / `whenever` / `waituntil`), first-class tags with `stop` / `block` / `freeze`, prototype OOP, and `try` / `catch` / `finally`. The parser now does every desugar (32 AST kinds, down from 49) and the emitter is a single-cursor design with pinned temporaries, writing a new bytecode format (41 opcodes, an `EXTARG` prefix for slot sites above 255) that the unwinder walks directly to run `finally` bodies on both the normal path and a jump. 351 conformance fixtures pass against it with none failing. Measured on this build: a booted VM costs 67,642 bytes on a 64-bit host, an idle strand 616 bytes, and a ten-thousand-iteration loop gives every byte back. The ROS2 bridge, the networked REPL server and every hardware port are parked and return in a later phase. ABI 0/26/0; wire v2.0 / 0x20.
+**Status:** tagged `v0.16.0-shell`, which builds the shell around the re-founded core: four generic cross-compile presets exercised in CI, a host-declared heap budget the collector paces against, a scheduler fix for a strand that survives an inner `stop` under an outer `block` or `freeze`, and a single-threaded `urbi-server` tool that takes over the eval service's TCP and Unix transports from the library. The language is intact: separators-encode-concurrency (`;` `|` `,` `&`), the reactive trio (`at` / `whenever` / `waituntil`), first-class tags with `stop` / `block` / `freeze`, prototype OOP, and `try` / `catch` / `finally`. The parser does every desugar (32 AST kinds, down from 49) and the emitter is a single-cursor design with pinned temporaries, writing a bytecode format (41 opcodes, an `EXTARG` prefix for slot sites above 255) that the unwinder walks directly to run `finally` bodies on both the normal path and a jump. 369 conformance fixtures pass against it with none failing. Measured on this build: a booted VM costs 67,702 bytes on a 64-bit host, an idle strand 616 bytes, and a ten-thousand-iteration loop gives every byte back. The ROS2 bridge and every hardware board are parked and return at their own tag; the networked eval service returns in this one, as the separate tool below. ABI 0/27/0; wire v2.0 / 0x20.
 
 ## 30-second quickstart
 
@@ -33,16 +33,23 @@ Embedding a VM in your own C program is one header and a handful of calls — th
 | Target | Status | Note |
 |---|---|---|
 | Linux x86_64 (host) | shipped | the canonical development target; the whole CI matrix runs here |
-| Raspberry Pi Pico (RP2040 / Cortex-M0+) | parked | brought up and hardware-validated against the previous core |
-| ESP32-S3 (Xtensa LX7) | parked | brought up and hardware-validated (eye_demo) |
-| STM32F4 (Cortex-M4F) | parked | brought up and hardware-validated (Mandelbrot demo) |
-| ARM Cortex-M7 (generic) | parked | archive build only |
-| RISC-V rv32imc (generic) | parked | archive build only |
+| Raspberry Pi Pico (RP2040 / Cortex-M0+) | parked | brought up and hardware-validated against the previous core; re-attached at its own tag |
+| ESP32-S3 (Xtensa LX7) | parked | brought up and hardware-validated (eye_demo); re-attached at its own tag |
+| STM32F4 (Cortex-M4F) | parked | brought up and hardware-validated (Mandelbrot demo); re-attached at its own tag |
+| ARM Cortex-M7 (generic) | archive build (CI) | cross-compiled, archive-gated, and footprint-measured on every push; no board attached |
+| RISC-V rv32imc (generic) | archive build (CI) | cross-compiled, archive-gated, and footprint-measured on every push; no board attached |
 
-Every cross target is parked: the runtime they were brought up against
-has been replaced, and none has been rebuilt on the new one. Phase 5
-re-attaches them, and that is when the 32-bit footprint figure gets
-measured for real.
+Cortex-M7 and RISC-V are generic silicon with no board behind them: four
+presets (`arm-cortex-m0plus`, `arm-cortex-m4f`, `arm-cortex-m7`,
+`riscv32`), each built full and bytecode-only, compile clean and pass
+the freestanding-archive gate on every push — see
+[the build system doc](docs/internals/build-system.md) for the preset
+names and shapes. The `arm-cortex-m4f` preset also boots and runs under qemu's
+Cortex-M4 model, where a booted VM now measures 48,980 bytes and an idle
+strand 466 bytes: the 32-bit figure this page used to promise for later
+is measured for real. The three real boards above were brought up and
+hardware-validated against a runtime this core has since replaced; none
+has been rebuilt on the new one yet, and each returns at its own tag.
 
 ## Build
 
@@ -121,9 +128,12 @@ Two ops: `eval` and `introspect`. The compile budget in the config is
 applied to every session's realm and caps source bytes, parser depth and
 AST nodes, because the text arrives from outside.
 
-The networked server — a listener, per-connection threads, bearer-token
-auth, rate limiting and the TCP / Unix / UART transports — is not in this
-build. It returns in a later phase, on the same `UTransport` vtable.
+The networked half lives outside the library now, as the `urbi-server`
+tool: one `poll()` loop, no threads, `--tcp HOST:PORT` and/or `--unix
+PATH`, an optional `--token` bearer check it speaks itself, and a
+`--max-clients` cap, with each accepted socket registered as the same
+`UTransport` the cooperative core above already uses. `make urbi-server`
+builds it; `urbi-send` is its command-line client.
 
 ## Source layout
 
@@ -138,10 +148,10 @@ src/
 ├── rt/         the runtime — see docs/internals/runtime.md
 ├── stdlib/     built-in methods in C, plus stdlib.u baked to bytecode
 ├── host/       public API whose implementation needs libc (the value formatter)
-├── repl/       the cooperative NDJSON eval service; the networked server is parked
-├── ros/        parked until Phase 5
-└── urobotics/  parked until Phase 5
-tools/          host binaries (urbi, the stdlib bake tool) + vendored linenoise
+├── repl/       the cooperative NDJSON eval service; the networked server is tools/urbi-server.c
+├── ros/        parked; returns at its own tag
+└── urobotics/  parked; returns at its own tag
+tools/          host binaries (urbi, urbi-server, urbi-send, the stdlib bake tool) + vendored linenoise
 ```
 
 `src/rt/` holds to a strict include order and a freestanding rule —

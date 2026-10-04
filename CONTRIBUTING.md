@@ -33,8 +33,8 @@ they coexist and no `make clean` is required when switching between them.
 
 If you have `arm-none-eabi-gcc` or `riscv64-unknown-elf-gcc` installed:
 
-    make cross-arm     # → build/arm-cortex-m7/liburbi.a
-    make cross-riscv   # → build/riscv-rv32imc/liburbi.a
+    make cross-arm-cortex-m7   # → build/arm-cortex-m7/liburbi.a
+    make cross-riscv32         # → build/riscv32/liburbi.a
 
 These verify portability; they don't run tests (no target execution environment on the build host).
 
@@ -187,7 +187,7 @@ Format:
 | `repl:` | The cooperative eval service (`src/repl/`) |
 | `tools:` | Anything under `tools/` |
 | `ros:` | micro-ROS bridge (`src/ros/`) — parked until Phase 5 |
-| `port:` | ESP-IDF / STM32 / Xtensa integration — parked until Phase 5 |
+| `port:` | ESP-IDF / STM32 / Xtensa integration — parked until its own tag |
 
 The runtime is one prefix, not ten. Before the core re-foundation it was
 `vm:`, `gc:`, `sched:`, `object:`, `realm:`, `react:` and `runtime:`
@@ -234,8 +234,8 @@ For `src/*.c` changes:
 
 For public-API or opcode-semantics changes:
 
-    make cross-arm    # if arm-none-eabi-gcc installed
-    make cross-riscv  # if riscv*-elf-gcc installed
+    make cross-arm-cortex-m7   # if arm-none-eabi-gcc installed
+    make cross-riscv32         # if riscv-none-elf-gcc installed
 
 Or push and let CI catch it.
 

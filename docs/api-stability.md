@@ -12,7 +12,10 @@ Per the leading comment in `version.h`:
   enum value, struct-layout change visible across the boundary, removed
   `URBI_ERR_*` slot.
 - **MINOR bump:** additive — new function, new enum value appended at the
-  next free index, new `URBI_ERR_*` slot, new build flag.
+  next free index, new `URBI_ERR_*` slot, new build flag, or a new
+  trailing field appended to a config or stats struct (`v0.16.0-shell`
+  added `heap_budget` to both `UVMConfig` and `UGcStats` this way, with
+  no symbol change).
 - **PATCH bump:** bug fix only, no header change.
 
 Pre-v1.0 escape clause: while `URBI_API_VERSION_MAJOR == 0`, MINOR or PATCH

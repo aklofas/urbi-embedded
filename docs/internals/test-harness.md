@@ -131,10 +131,16 @@ uses the host driver.
 Not tests. Each one measures a number the project committed to, prints
 it, and exits non-zero when it moved the wrong way: the boot heap, the
 cost of an idle strand, whether a ten-thousand-iteration loop gives its
-memory back, and how the runtime compares to the one it replaced.
+memory back, whether a heap budget holds a VM inside its cap
+(`small_heap`), and how the runtime compares to the one it replaced.
 `tests/probes/probe.h` has the shared counting allocator and the
 rationale; `tests/probes/baseline-timings.md` holds the old core's
 numbers.
+
+`make test-probes-32bit` rebuilds the probes for a Cortex-M4 preset and
+runs them under qemu's MPS2-AN386 model, including `small_heap` at a 64
+KB budget; it needs `arm-none-eabi-gcc` and `qemu-system-arm`, so it
+runs in CI only, not in `make test` or `make releasetest`.
 
 The timing probe is `make test-bench`, deliberately NOT part of `make
 test`: `make test` is itself one gate of releasetest's parallel sweep,
@@ -161,7 +167,7 @@ an uninstrumented baseline would measure the instrumentation.
 | `make test-cache-verify` | `-O1 -g -DURBI_SLOT_CACHE_VERIFY=1` | `build/host-cache-verify/` | a slot-cache hit that disagrees with the uncached lookup |
 | `make test-o2` | `-O2 -g` | `build/host-o2/` | the level desktop embedders actually use |
 | `make test-bench` | `-Os` | `build/host/` | the timing probe, alone, on the baseline machine |
-| `make releasetest` | all of the above except `test-bench`: 21 gates in parallel, then 2 alone | — | before a tag |
+| `make releasetest` | all of the above except `test-bench`, plus `cross-all` and `test-cross-missing-toolchain`: 24 gates in parallel, then 2 alone | — | before a tag |
 
 Build directories are disjoint, so the parallel sweep does not race.
 

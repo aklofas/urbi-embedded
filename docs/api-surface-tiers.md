@@ -46,6 +46,10 @@ New public symbols require a PR-review-touch on this manifest.
 - `urbi_set_writer`
 - `urbi_set_wake`
 
+`UVMConfig`, the `urbi_open` config struct, gained a trailing
+`heap_budget` field (bytes; 0 = unbounded) that the collector paces
+against — see the Garbage collector section below.
+
 ### Realms
 
 - `urbi_realm_new`
@@ -124,6 +128,10 @@ server is parked; these four are the cooperative core.
 
 - `urbi_gc_collect`
 - `urbi_gc_stats`
+
+`UGcStats`, the struct `urbi_gc_stats` fills in, gained a trailing
+`heap_budget` field reporting back what the host declared at `urbi_open`
+(0 = unbounded).
 
 ### Version
 

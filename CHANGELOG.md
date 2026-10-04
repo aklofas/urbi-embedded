@@ -1,5 +1,115 @@
 # Changelog
 
+## v0.16.0-shell — 2026-10-04
+
+The build shell, the cross-compile presets, and the networked eval
+service return around the re-founded core, plus a GC heap budget, a
+scheduler fix, and a corpus triage round. No new language surface. ABI
+0/26/0 -> 0/27/0 (two trailing struct fields; no symbol change). Wire
+format unchanged at v2.0 / `0x20`.
+
+### Added
+
+- Four generic cross-compile presets (`arm-cortex-m0plus`,
+  `arm-cortex-m4f`, `arm-cortex-m7`, `riscv32`), each buildable in three
+  shapes: the full freestanding archive, a bytecode-only archive with no
+  compiler frontend and no `host`/`repl` code, and a hosted archive that
+  drops `-ffreestanding` for parts that link a libc.
+- Two freestanding gates: one compiles every translation unit a
+  bytecode-only archive keeps under the host compiler and checks its
+  undefined symbols against the forbidden libc set, needing no cross
+  toolchain; the other builds every preset's bytecode-only archive under
+  its real cross toolchain and checks the archive is self-contained,
+  referencing no project symbol it does not itself define.
+- A 32-bit memory probe under qemu's Cortex-M4 model, gating a booted VM
+  at 48,980 bytes against a 49,152-byte cap, with an idle strand costing
+  466 bytes and the leak probes staying flat.
+- `UVMConfig.heap_budget`: the host can declare a heap budget in bytes
+  (0 means unbounded) that the collector paces against, collecting
+  before three quarters of the budget is used, with a floor of
+  budget/32; a refused allocation of any kind requests a collection at
+  the next safepoint, and a bound chunk tree counts toward the budget
+  for as long as it stays reachable. `UGcStats.heap_budget` reports the
+  declared budget back.
+- A `small_heap` probe confirming the pacing holds a VM inside a 64 KB
+  budget under qemu and a 96 KB or 128 KB budget on the host, with zero
+  refused allocations in any of the three.
+- A single-threaded `urbi-server` tool: one `poll()` loop with no
+  threads, `--tcp HOST:PORT` and/or `--unix PATH`, an optional `--token`
+  bearer check with a two-second overall deadline on the handshake,
+  `--boot FILE.u`, `--budget N`, `--max-clients N` and `--quiet`, a
+  `{"kind":"hello","version":"..."}` line spoken on every accept, and a
+  matching `urbi-send` command-line client. Nine smoke-test cases run in
+  `test-integration`.
+
+### Changed (public C API, ABI 0/27/0)
+
+- `UVMConfig` and `UGcStats` each gained the trailing `heap_budget`
+  field described above. No symbol changed, so this is a pure additive
+  MINOR bump.
+
+### Removed
+
+- Twenty-four parked files from `src/repl/`: the listener, bearer-token
+  auth, connection queue, session state, introspection and NDJSON
+  halves, and eight per-platform transport adapters (TCP, PTY, UART on
+  Linux/FreeRTOS/ESP-IDF/Pico, USB CDC on Pico). The library now keeps
+  only the cooperative eval core; the networked half returns as the
+  `urbi-server` tool above. The Raspberry Pi Pico example's build still
+  names two of the deleted transport files and is rewritten at its own
+  tag.
+
+### Fixed
+
+- A strand that survives an inner tag's `stop` while still covered by an
+  outer `block` or `freeze` now stays held: the `stop` landing
+  recomputes the strand's gate bits from the tags still covering it,
+  matching what a normal scope pop already did.
+- A session's output buffer is allocated on first write and doubles from
+  256 bytes up to its cap, instead of being allocated up front.
+- The emitter treats an upvalue read as a pure right operand, so an
+  expression like `x + f()` no longer snapshots `x` into a temporary
+  before evaluating `f()` when `f` only reads an enclosing function's
+  local.
+
+### Documentation
+
+- A shared-reload-label change to the bytecode dispatch loop was
+  measured and not adopted: it shrank the loop by about a fifth on both
+  the host and a Cortex-M7 build, but cost the lookup benchmark more
+  than the 5% tolerance against the baseline, most likely because the
+  one shared indirect jump it introduces predicts worse than the roughly
+  thirty separate ones it replaces.
+- Stale `cross-arm` / `cross-riscv` / `cross-pico` / `cross-esp32s3` /
+  `cross-stm32f4` references across the docs were swept to the preset
+  names or to the build-system doc.
+- Seventeen corpus fixtures were activated, thirty-five deferred to
+  v1.x, thirteen dropped with a compatibility-ledger row each, and nine
+  stay blocked pending further work or an owner ruling, bringing the
+  corpus to 369 passing fixtures and 57 placeholders, none failing.
+
+### Measured on this build
+
+| Number | Value |
+|---|---|
+| boot heap, 64-bit host | 67,702 bytes live in 994 blocks (peak 68,174) |
+| boot heap, 32-bit (qemu, Cortex-M4) | 48,980 bytes live in 994 blocks (peak 50,628), cap 49,152 |
+| idle strand | 616 bytes (host), 466 bytes (32-bit) |
+| `small_heap` probe | 64 KB budget (qemu): peak 54,204, 0 refused; 96 KB (host): peak 76,828, 0 refused; 128 KB (host): peak 101,016, 0 refused |
+| lookup / mandelbrot benchmark | 0.62x / 0.75x of the old core (gate fails above 1.20x) |
+| corpus | 369 passed, 57 placeholders, 9 preset-gated skips, 0 failed |
+| runners | frontend (unit) 577 cases / 0 failed; runtime (rt) 252 cases / 0 failed |
+| stdlib blob | 8,003 bytes (unchanged; re-baked byte-identical) |
+
+Archive footprints (`size --totals`, text+data+bss, full / bytecode-only):
+
+| Preset | Full | Bytecode-only |
+|---|---|---|
+| `arm-cortex-m0plus` | 135,194 | 85,810 |
+| `arm-cortex-m4f` | 134,887 | 85,982 |
+| `arm-cortex-m7` | 134,431 | 85,596 |
+| `riscv32` | 167,712 | 104,406 |
+
 ## v0.15.1-core-hardening — 2026-10-03
 
 A fix pass over the runtime core as shipped at `v0.15.0-frontend`, driven by
