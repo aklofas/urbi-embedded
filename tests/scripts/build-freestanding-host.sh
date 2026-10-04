@@ -45,6 +45,37 @@ command -v "$NM" >/dev/null 2>&1 || {
     exit 1
 }
 
+# Self-check: a fortifying host cc (-D_FORTIFY_SOURCE default at -Os/-O2)
+# rewrites snprintf to __snprintf_chk, which an un-widened regex would
+# miss — prove the detector still works on THIS toolchain, against a
+# scratch TU outside the tree, before trusting any clean run below.
+cat > "$WORK/_selfcheck.c" <<'EOF'
+#include <stdio.h>
+int urbi_freestanding_gate_selfcheck(int n)
+{
+    /* A fixed-size local, not a pointer parameter: fortify only
+     * emits the __snprintf_chk rewrite when __builtin_object_size
+     * can see a compile-time bound on the destination. */
+    char buf[64];
+    return snprintf(buf, sizeof buf, "%d", n);
+}
+EOF
+if ! $CC $CFLAGS_BASE $CFLAGS_FREESTANDING $CPPFLAGS_BASE \
+        -c -o "$WORK/_selfcheck.o" "$WORK/_selfcheck.c" 2>/dev/null; then
+    echo "FAIL: the gate self-check TU failed to compile — cannot trust the gate." >&2
+    exit 1
+fi
+selfcheck_leaks=$($NM -u "$WORK/_selfcheck.o" 2>/dev/null \
+        | awk -v re="$FORBIDDEN_LIBC_REGEX" '$1 == "U" && $2 ~ re {print $2}')
+if [ -z "$selfcheck_leaks" ]; then
+    echo "FAIL: gate self-check did not detect a known snprintf leak —" >&2
+    echo "      FORBIDDEN_LIBC_REGEX cannot catch this toolchain's symbol" >&2
+    echo "      naming (e.g. a fortify-wrapped __snprintf_chk).  Fix the" >&2
+    echo "      regex in tests/scripts/_freestanding-forbidden.sh before" >&2
+    echo "      trusting any PASS below." >&2
+    exit 1
+fi
+
 fail_count=0
 fail_report=""
 
