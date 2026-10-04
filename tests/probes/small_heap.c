@@ -13,7 +13,8 @@ int main(int argc, char **argv)
     /* Under qemu semihosting the command line is not ours to set, and
      * whatever arrives does not parse as a number: that run gets 64 KB. */
     size_t budget = 64u * 1024u;
-    if (argc > 1 && strtoul(argv[1], NULL, 10) > 0) budget = (size_t)strtoul(argv[1], NULL, 10);
+    unsigned long arg = (argc > 1) ? strtoul(argv[1], NULL, 10) : 0;
+    if (arg > 0) budget = (size_t)arg;
     ProbeAlloc a = { 0, 0, 0, 0, 0 };
     a.cap = budget;
     UVMConfig cfg; memset(&cfg, 0, sizeof cfg);

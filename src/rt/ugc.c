@@ -27,8 +27,9 @@ void *ugc_raw_alloc(struct UVM *vm, size_t nbytes) {
 void *ugc_raw_realloc(struct UVM *vm, void *p, size_t old, size_t nbytes) {
     UGc *g = uvm_gc(vm);
     void *q = g->alloc(p, nbytes, g->alloc_ud);
-    if (!q) g->collect_requested = 1;
-    if (q) {
+    if (!q) {
+        g->collect_requested = 1;
+    } else {
         if (nbytes > old) {
             memset((char *)q + old, 0, nbytes - old);
             g->bytes_since += nbytes - old; g->bytes_live += nbytes - old; g->raw_live += nbytes - old;

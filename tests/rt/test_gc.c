@@ -247,6 +247,38 @@ static void a_refused_raw_allocation_requests_a_collection(void) {
     RT_CHECK(!ugc_should_collect(&vm.gc));
     fakevm_destroy(&vm);
 }
+/* The real path: each allocation kind, refused by the host allocator,
+ * leaves a collection requested, and the collection clears it. */
+static void a_refused_allocation_of_each_kind_requests_a_collection(void) {
+    struct UVM vm; fakevm_init(&vm, NULL, 0);
+    vm.gc.alloc = capped_alloc;             /* refuses anything over GRAY_CAP_BYTES */
+    ugc_collect(&vm);
+    RT_CHECK(!ugc_should_collect(&vm.gc));
+
+    RT_CHECK(ugc_raw_alloc(&vm, GRAY_CAP_BYTES * 2) == NULL);
+    RT_EQ(vm.gc.collect_requested, (uint8_t)1);
+    RT_CHECK(ugc_should_collect(&vm.gc));
+    ugc_collect(&vm);
+    RT_EQ(vm.gc.collect_requested, (uint8_t)0);
+
+    void *small = ugc_raw_alloc(&vm, 64);
+    RT_CHECK(small != NULL);
+    RT_EQ(vm.gc.collect_requested, (uint8_t)0);
+    RT_CHECK(ugc_raw_realloc(&vm, small, 64, GRAY_CAP_BYTES * 2) == NULL);
+    RT_EQ(vm.gc.collect_requested, (uint8_t)1);
+    RT_CHECK(ugc_should_collect(&vm.gc));
+    ugc_raw_free(&vm, small, 64);           /* a refused realloc leaves the block as it was */
+    ugc_collect(&vm);
+    RT_EQ(vm.gc.collect_requested, (uint8_t)0);
+
+    RT_CHECK(ugc_alloc(&vm, UCELL_HOST, GRAY_CAP_BYTES * 2) == NULL);
+    RT_EQ(vm.gc.collect_requested, (uint8_t)1);
+    RT_CHECK(ugc_should_collect(&vm.gc));
+    ugc_collect(&vm);
+    RT_EQ(vm.gc.collect_requested, (uint8_t)0);
+    RT_CHECK(!ugc_should_collect(&vm.gc));
+    fakevm_destroy(&vm);
+}
 RT_SUITE(rt_gc_suite) {
     rt_run("alloc_and_collect_unrooted", alloc_and_collect_unrooted);
     rt_run("rooted_survives", rooted_survives);
@@ -260,4 +292,5 @@ RT_SUITE(rt_gc_suite) {
     rt_run("the_pacing_baseline_does_not_move_between_collections", the_pacing_baseline_does_not_move_between_collections);
     rt_run("a_budget_caps_the_pace", a_budget_caps_the_pace);
     rt_run("a_refused_raw_allocation_requests_a_collection", a_refused_raw_allocation_requests_a_collection);
+    rt_run("a_refused_allocation_of_each_kind_requests_a_collection", a_refused_allocation_of_each_kind_requests_a_collection);
 }
