@@ -15,6 +15,10 @@
 # `,` detaches its LEFT arm, so in `f, 0` the failing lookup is the
 # detached strand, reported through the diag hook, and `0` is the
 # chunk's value.
+#
+# The legacy corner cases and the "code is really stopped for & and ,
+# nodes" checks fail on this tree and live, blocked, in
+# separator/detach-error-stops-siblings.chk.
 ## timeout: 30
 ## host: run var x = 0
 ## host: run f

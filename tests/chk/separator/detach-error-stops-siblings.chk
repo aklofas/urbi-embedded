@@ -1,0 +1,56 @@
+# Milestone: v0.10.10-job-introspection
+# Covers: a failing arm of `&` or `,` stops its sibling arms and the block
+#         that joins them, wherever in the join tree the failure happens.
+# blocked: a failing `&` or `,` arm does not stop its sibling or the joining block; this tree lets the sibling run to completion.
+# matrix-row: separator-detach
+#
+# The two legacy sections of tests/2.x/detach-error.chk that
+# separator/detach-error.chk leaves out, copied below unaltered: the
+# corner cases, and the checks that code is really stopped for `&` and
+# `,` nodes.  On this tree `{ f, {x=0;sleep(100ms);x=1}}` leaves x at 1
+# and `{ {x=0;x=4}& f}` leaves x at 4, where legacy asserts 0.  The
+# diagnostics are the legacy `input.u:@.N: lookup failed: f` spelling,
+# so activating this record also means re-spelling them as this core's
+# `LookupError: slot access: slot 'f' not found`.
+//corner cases
+1 & f,
+[00000022:error] !!! input.u:@.5: lookup failed: f
+sleep(300ms);
+
+f & 1,
+[00000023:error] !!! input.u:@.1: lookup failed: f
+sleep(300ms);
+
+{1 & f} & 1,
+[00000024:error] !!! input.u:@.6: lookup failed: f
+sleep(300ms);
+
+{f & 1} & 1,
+[00000025:error] !!! input.u:@.2: lookup failed: f
+sleep(300ms);
+
+1 & {1 & f},
+[00000026:error] !!! input.u:@.10: lookup failed: f
+sleep(300ms);
+
+1 & {f & 1},
+[00000027:error] !!! input.u:@.6: lookup failed: f
+
+// test that code is realy stopped for & and , nodes
+x = 0|;
+
+{ f, {x=0;sleep(100ms);x=1}};
+[00000028:error] !!! input.u:@.3: lookup failed: f
+assert { x == 0 };
+
+{ {x=0;sleep(100ms);x=2}, f};
+[00000030:error] !!! input.u:@.27: lookup failed: f
+assert { x == 0 };
+
+{ f& {x=0;x=3}};
+[00000032:error] !!! input.u:@.3: lookup failed: f
+assert { x == 0 };
+
+{ {x=0;x=4}& f};
+[00000034:error] !!! input.u:@.14: lookup failed: f
+assert { x == 0 };

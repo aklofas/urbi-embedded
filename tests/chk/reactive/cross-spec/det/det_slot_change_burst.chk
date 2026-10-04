@@ -4,11 +4,6 @@
 #         across 100x3 preset runs; D-slotchange-2 FIFO sub walk confirmed.
 # dropped: the multi-preset determinism runner this record needs was retired (REVIVAL §14 S-multi-preset-determinism)
 #
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
 # matrix-row: reactive-slot-change
 #
 # Reason:

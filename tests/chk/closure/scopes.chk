@@ -4,10 +4,10 @@
 #         outer global i, not inner block-local i.
 # matrix-row: object-slot-install
 #
-# Legacy tests/2.x/scopes.chk expected `lookup failed: i` from the call,
-# because a legacy top-level `var` was a Lobby slot that a function
-# installed on Object could not see.  Here a chunk-top `var` is a realm
-# global, so the body's `i` is the outer one: the call adds to it, and a
+# Legacy tests/2.x/closure/scopes.chk expected `lookup failed: i` from
+# the call, because a legacy top-level `var` was a Lobby slot that a
+# function installed on Object could not see.  Here a chunk-top `var` is
+# a realm global (REVIVAL §14 T14), so the body's `i` is the outer one: the call adds to it, and a
 # block-local `i` at the call site is neither read nor written.  Compound
 # assignment is not parsed, so the body spells `i += x` out.  A closure
 # value renders as `<?>`.

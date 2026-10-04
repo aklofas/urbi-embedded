@@ -319,12 +319,12 @@ this pass.
 
 | Outcome | Count |
 |---------|-------|
-| activated | 19 |
+| activated | 17 |
 | deferred: v1.x | 35 (20 already so labelled, 15 relabelled) |
 | dropped | 13 (2 already so labelled, 11 relabelled) |
-| blocked | 6 |
+| blocked | 9 (8 of the old records, plus one new record split out of an activated one) |
 
-`make test-chk`: `PASS=352 PLACEHOLDER=73` before, `PASS=371 PLACEHOLDER=54`
+`make test-chk`: `PASS=352 PLACEHOLDER=73` before, `PASS=369 PLACEHOLDER=57`
 after; `SKIP=9`, `VACUOUS=0`, `FAIL=0` both times.
 
 Most activations are rewrites onto the host driver (one statement per
@@ -348,17 +348,22 @@ Activated:
 12. `separator/detach-error.chk`
 13. `separator/detach-many.chk`
 14. `tag/ambient_inherit_separator.chk`
-15. `tag/block.chk`
-16. `tag/block-propagation.chk`
-17. `tag/connection.chk`
-18. `tag/freeze.chk`
-19. `tag/stop-depth.chk`
+15. `tag/connection.chk`
+16. `tag/freeze.chk`
+17. `tag/stop-depth.chk`
+
+`separator/detach-error.chk` runs the legacy cases that hold; the legacy
+sections that fail on this tree moved, unaltered, into the new blocked
+record `separator/detach-error-stops-siblings.chk`.
 
 Still blocked:
 
 | Fixture | Reason |
 |---------|--------|
+| `separator/detach-error-stops-siblings.chk` | A failing `&` or `,` arm does not stop its sibling or the joining block; this tree lets the sibling run to completion. |
 | `separator/disown.chk` | `Job.current().tags()` in a detach()ed strand omits the scope tags it inherited (stopping them does still stop it), so the detach count reads -1, not 0. |
+| `tag/block.chk` | The ledger disagrees with the core on what block() does: stop running code and skip newcomers (REVIVAL §3 and legacy), or a pause gate released by unblock (the core and the shipped tag-state rows). Awaiting an owner ruling. |
+| `tag/block-propagation.chk` | Same ruling as `tag/block.chk`. |
 | `tag/blocked.chk` | Tags have no hierarchy: a tag made by `t.new("t.u")` is not stopped by `t.stop()`, and a Tag cannot hold it as the slot `t.u`. |
 | `tag/hierarchical.chk` | Tags have no hierarchy: `a.new("a.b")` makes a tag that `a.stop()` does not reach, and a Tag cannot hold it as the slot `a.b`. |
 | `tag/scope-tag.chk` | A function's scope tag is not stopped when the function returns, so `t: every(20ms) ...` under `scopeTag()` goes on firing after the call. |
@@ -366,8 +371,11 @@ Still blocked:
 | `tag/stop.chk` | `a & b` runs `b` only after `a` has finished, so in `{sleep(100ms); echo("No")} & t.stop()` the echo happens before the stop. |
 
 `tag/stop.chk` and `separator/disown.chk` already carry their host-driver
-rewrite with the expected output; deleting the label line is the whole
-activation once the gap closes.
+rewrite with the expected output, and `tag/block.chk` and
+`tag/block-propagation.chk` carry a host body that pins the pause-gate
+reading.  Deleting the label line is the whole activation once the gap
+closes; for the two block records, only if the ruling keeps the pause
+gate.
 
 ### Post-v0.10.14 W3b (historical)
 

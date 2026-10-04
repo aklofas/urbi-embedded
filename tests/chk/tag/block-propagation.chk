@@ -1,6 +1,7 @@
 # Milestone: M3
 # Covers: tag.block() called inside a tagged scope; block propagates from
 #         the scope tag to the outer join ('&'); no deadlock.
+# blocked: the ledger disagrees with the core on what block() does (REVIVAL §3 and legacy: stop running code and skip newcomers; the core and the shipped tag-state rows: a pause gate released by unblock) — awaiting an owner ruling
 # matrix-row: tag-block
 #
 # Rewritten from legacy tests/2.x/block-propagation.chk, whose `a` was an

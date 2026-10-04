@@ -1,13 +1,15 @@
 # Milestone: M3
 # Covers: t.block() pauses all strands tagged with t; t.unblock() resumes them;
 #         new strand started while tag is blocked also stays paused.
+# blocked: the ledger disagrees with the core on what block() does (REVIVAL §3 and legacy: stop running code and skip newcomers; the core and the shipped tag-state rows: a pause gate released by unblock) — awaiting an owner ruling
 # matrix-row: tag-block
 #
 # Host-driver form, so the tag is declared in its own `run` and the clock
-# is virtual.  This core's block is a gate (REVIVAL §14 S-tag-state-full):
-# a blocked strand is held, not killed, and runs on from where it was
-# once unblocked.  The legacy tests/2.x/tag/block.chk is written against
-# a block that kills, so its expectations are not these.
+# is virtual.  The expected block below is this core's block, a gate
+# (REVIVAL §14 S-tag-state-full): a blocked strand is held, not killed,
+# and runs on from where it was once unblocked.  The legacy
+# tests/2.x/tag/block.chk is written against a block that kills, so its
+# expectations are not these.
 #
 # 1. A loop under `t` echoes once per second.
 # 2. While `t` is blocked two seconds pass and nothing echoes.
