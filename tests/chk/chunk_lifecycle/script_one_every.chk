@@ -1,4 +1,4 @@
-# Milestone: v0.9.4 (originally drafted at M3; reactivated at Phase 5 Task 5.4)
+# Milestone: v0.9.4 (originally drafted at M3; reactivated for the stdlib completion wave)
 # Covers: chunk that registers a periodic via every() keeps the periodic alive
 #         across subsequent REPL lines; the body fires repeatedly so a
 #         later-sampled count strictly exceeds an earlier one.

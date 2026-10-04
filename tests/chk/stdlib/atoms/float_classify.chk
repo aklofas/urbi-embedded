@@ -1,5 +1,5 @@
 # Milestone: M6 Wave 2
-# Covers: Phase 5 Float.isNaN / isInfinite predicates.
+# Covers: Float.isNaN / isInfinite predicates.
 #
 # Float.nan / Float.infinity constants land in Phase 8 (Math namespace).
 # Until then, NaN/Inf can be constructed via libm: log(-1) = NaN,

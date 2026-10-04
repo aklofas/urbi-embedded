@@ -34,7 +34,7 @@ needs `snprintf`'s `%.14g` — and a freestanding build omits that directory.
 Three other directories in the archive do use hosted libc today and are not
 covered by the rule: the cooperative eval service (`src/repl/`, four files,
 unconditional), the `Debug` namespace (`src/stdlib/debug_namespace.c`), and
-the AST arena (`src/util/uarena.c`). Narrowing those is Phase 5 work.
+the AST arena (`src/util/uarena.c`). Narrowing those waits for a later tag.
 
 `struct UVM` is completed in `rt/uexec.h` and holds every subsystem by
 value: the collector, the symbol table, the scheduler, the watcher state,
@@ -473,13 +473,15 @@ one slice, `urbi_register` binds a C function to a name, and
 
 ## What is not here
 
-Parked until Phase 5, in the tree but out of the build: the networked
-REPL server and its transports (`src/repl/`, all but four files), the
+In the tree but out of the build, parked until each one's own tag: the
 ROS2 bridge (`src/ros/`), the Standard Robotics overlay
 (`src/urobotics/`), and every hardware port under `examples/` and
-`components/`. See [ports.md](ports.md).
+`components/`. See [ports.md](ports.md). The networked REPL server is no
+longer in `src/repl/` at all — it returned as the separate `urbi-server`
+tool (`tools/urbi-server.c`), built on the same `UTransport` the
+cooperative service already uses.
 
 Gone with the old runtime and not parked: the trace spine, the
-performance counters and the memory-debug sidecar. Phase 5 re-derives
+performance counters and the memory-debug sidecar. A later tag re-derives
 whatever the new core wants of them from git history rather than from a
 translation unit that no longer compiles.

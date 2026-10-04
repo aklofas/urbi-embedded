@@ -186,7 +186,7 @@ Format:
 | `api:` | Public C API headers (`include/urbi/*.h`) |
 | `repl:` | The cooperative eval service (`src/repl/`) |
 | `tools:` | Anything under `tools/` |
-| `ros:` | micro-ROS bridge (`src/ros/`) — parked until Phase 5 |
+| `ros:` | micro-ROS bridge (`src/ros/`) — parked; it returns with its own tag once a ROS environment is available |
 | `port:` | ESP-IDF / STM32 / Xtensa integration — parked until its own tag |
 
 The runtime is one prefix, not ten. Before the core re-foundation it was

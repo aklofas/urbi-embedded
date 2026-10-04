@@ -654,5 +654,6 @@ static int serve_over_uart(UVM *vm, void *uart)
 The protocol is newline-delimited JSON, one request per line. See
 [internals/repl-service.md](internals/repl-service.md).
 
-The networked server that used to ship with this, and its socket and PTY
-transports, are parked until Phase 5.
+The networked server that used to ship inside the library is now the
+separate `urbi-server` tool (`tools/urbi-server.c`), registering each
+accepted socket as a `UTransport`; it is not part of `liburbi.a`.

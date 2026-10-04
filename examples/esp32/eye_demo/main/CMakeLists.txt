@@ -3,8 +3,8 @@
 # SRCS list grows phase-by-phase:
 #   Phase 3:               eye_camera.c
 #   Phase 4:               eye_display.c
-#   Phase 5 (T36):         eye_button.c
-#   Phase 5 (T38):         eye_demo_main.c (stub; T40 fills in app_main)
+#   T36:                   eye_button.c
+#   T38:                   eye_demo_main.c (stub; T40 fills in app_main)
 
 idf_component_register(
     SRCS

@@ -1,5 +1,5 @@
-# Milestone: M6 Wave 3 (v0.6.2 — Phase 5 / Gap #1)
-# Covers: closure cross-session call stability; the regression fixed in Phase 5:
+# Milestone: M6 Wave 3 (v0.6.2 — closure cross-session fix / Gap #1)
+# Covers: closure cross-session call stability; the regression fixed in that pass:
 #         a closure compiled in one REPL session and installed as a realm-global
 #         must remain callable in subsequent REPL sessions after its originating
 #         UModule is destroyed.

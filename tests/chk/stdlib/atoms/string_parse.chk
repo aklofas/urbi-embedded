@@ -1,5 +1,5 @@
 # Milestone: M6 Wave 2
-# Covers: Phase 5 String parse methods.
+# Covers: String parse methods.
 #
 # asInteger — base-10 strtoll-style; whitespace + leading sign tolerated.
 # asFloat   — strtod-style.

@@ -43,6 +43,6 @@ Math.sqr(2)
 [00000003] !!! LookupError: method call: slot 'sqr' not found
 
 # Math.nan exists; Math.nan.isNaN() routes through the Float atom-
-# proto installed at Phase 5.
+# proto's own isNaN() method.
 Math.nan.isNaN()
 [00000004] true

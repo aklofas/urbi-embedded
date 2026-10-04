@@ -1,5 +1,5 @@
 # Milestone: M6 Wave 2
-# Covers: Phase 5 Float conversion methods.
+# Covers: Float conversion methods.
 #
 # asString — UVALUE_FLOAT_FMT (%.14g + Lua trailing-.0 rule)
 # asInteger — truncate toward zero (legacy: drops fractional part)

@@ -89,7 +89,7 @@ endif
 
 # liburbi.a is exactly four source groups, and every src/ directory that
 # is not one of them is either the compiler frontend feeding one or an
-# optional component parked for Phase 5 (src/ros and src/urobotics):
+# optional component parked until its own tag (src/ros and src/urobotics):
 #
 #   FRONTEND_SRCS — the compiler frontend (lexer, parser, emitter) and the
 #                   bytecode container it produces (src/chunk: writer,

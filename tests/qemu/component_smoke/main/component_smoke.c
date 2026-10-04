@@ -3,7 +3,7 @@
  *
  * Only calls urbi_api_version() (NULL-tolerant getter). Does not exercise any
  * VM functionality — that lands in tests/qemu/reactive_smoke/ later in the
- * v0.7.2-esp32 plan (Phase 5).
+ * v0.7.2-esp32 plan.
  */
 
 #include <stdio.h>

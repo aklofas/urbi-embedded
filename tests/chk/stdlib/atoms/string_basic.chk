@@ -1,5 +1,5 @@
 # Milestone: M6 Wave 2
-# Covers: Phase 5 String basic methods.
+# Covers: String basic methods.
 #
 # length already exists from Wave 1; size is an alias (same byte count).
 # isEmpty — boolean predicate.  charAt — single-byte access (no `[]`

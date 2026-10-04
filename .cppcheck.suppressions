@@ -59,7 +59,7 @@ unusedFunction
 // no longer triggers unreadVariable warnings; modern cppcheck tracks
 // configuration-conditional paths more precisely.  Suppressions removed.
 
-// audit:CPPCHK-Phase5 — src/stdlib/atoms.c's DEF_INT_BINOP macro
+// audit:CPPCHK-atoms — src/stdlib/atoms.c's DEF_INT_BINOP macro
 // expands to native-method callbacks whose signature is pinned by the
 // urbi_native_method_fn typedef (UVM *vm, UValue self, UValue *args,
 // uint8_t nargs, UValue *out).  cppcheck flags `args` as constable
@@ -121,7 +121,8 @@ constParameterPointer:src/stdlib/atoms.c
 
 // audit:v0.12.5-m10-prep — src/stdlib/regexp.c native-method callbacks
 // (regexp_new / regexp_match / etc.) expose UValue *args via the
-// urbi_native_method_fn typedef.  Same rationale as Phase 5/6/7/9 above —
+// urbi_native_method_fn typedef.  Same rationale as the four native-method
+// suppressions above —
 // the function-pointer signature is pinned and cannot be const-qualified
 // without breaking every native-method registration site.
 constParameterPointer:src/stdlib/regexp.c

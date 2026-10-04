@@ -1,4 +1,4 @@
-# Milestone: v0.9.4 (originally drafted at M3; reactivated at Phase 5 Task 5.4)
+# Milestone: v0.9.4 (originally drafted at M3; reactivated for the stdlib completion wave)
 # Covers: every() installed inside an ambient tag scope (mytag: { ... })
 #         survives the scope unwind and continues firing.  The tag prefix
 #         pushes a UTag onto the cleanup stack at OP_PUSH_TAG and pops it at

@@ -1,5 +1,5 @@
 # Milestone: M6
-# Covers: Phase 5 (T55, T56, T59) — .new() and .clone() semantics + COW
+# Covers: .new() and .clone() semantics + COW (T55, T56, T59)
 # on derived + atom .new() returning self (S-atom-clone-perf).
 #
 # T39 idiom: Foo.new() is shorthand for Foo.clone() at v1.0.  Both yield

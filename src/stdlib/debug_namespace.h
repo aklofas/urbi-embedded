@@ -11,8 +11,8 @@
  * The other eight introspection primitives the old REPL carried (tags,
  * watchers, events, profile, gc, lobbies, stack, slots) are not here:
  * each walked a runtime structure that no longer exists in that shape,
- * and nothing in the corpus asks for them.  They return with the REPL
- * server in Phase 5. */
+ * and nothing in the corpus asks for them.  Nothing in this tree
+ * promises when, or whether, they come back. */
 
 #ifndef URBI_STDLIB_DEBUG_NAMESPACE_H
 #define URBI_STDLIB_DEBUG_NAMESPACE_H

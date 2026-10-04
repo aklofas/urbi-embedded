@@ -13,7 +13,7 @@
 #   "unknown" — fallback
 #
 # This fixture asserts the kind is non-empty.  The Boolean atom-proto's
-# isEmpty() landed in Phase 5 — call it on the kind String.
+# isEmpty() landed with the atom methods — call it on the kind String.
 
 # Platform is reachable through System.
 System.Platform.kind.size() > 0

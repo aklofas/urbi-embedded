@@ -21,14 +21,17 @@ top-to-bottom; do not tag until every box is checked.
 
 ## 3. Cross builds and hardware
 
-PARKED. Every cross target and every hardware port is out of the build
-until Phase 5 re-attaches them to the re-founded runtime. When they come
-back, so do these boxes: the cross archive builds, a re-flash of each
-board's demo, and the evidence appended to
-`docs/release/hardware-validation.md`.
+The generic cross-compile presets (`arm-cortex-m0plus`, `arm-cortex-m4f`,
+`arm-cortex-m7`, `riscv32`) are not parked: `make cross-all` builds every
+one of them, full and bytecode-only, with the archive gate, on every
+push. Every hardware port (Pico, ESP32-S3, STM32F4) is still out of the
+build, parked until each is rebuilt on the re-founded runtime at its own
+tag. When a board comes back, so do these boxes: a re-flash of its demo
+and the evidence appended to `docs/release/hardware-validation.md`.
 
-The boot-heap probe holds a 64-bit host figure for the same reason. The
-32-bit number the spec targets gets measured on the first cross build.
+The boot-heap probe now has a real 32-bit number too, from the
+`arm-cortex-m4f` preset under qemu (`make test-probes-32bit`), alongside
+the 64-bit host figure.
 
 ## 4. Documentation current
 

@@ -1,5 +1,5 @@
 # Milestone: M6 Wave 2
-# Covers: Phase 5 String case methods.
+# Covers: String case methods.
 #
 # toUpper / toLower — ASCII-only at v1.0 (delta §3.2 Unicode is Wave 2
 # backlog).  Non-ASCII bytes pass through unchanged.

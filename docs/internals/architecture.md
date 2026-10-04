@@ -382,8 +382,8 @@ src/
   host/               Public API whose implementation is inherently hosted: the
                       value formatter needs snprintf, which src/rt may not use
   repl/               The cooperative NDJSON eval service (four files built);
-                      the networked server and its transports are parked
-  ros/  urobotics/    Parked for Phase 5
+                      the networked server is tools/urbi-server.c instead
+  ros/  urobotics/    Parked; each returns at its own tag
 
 tools/
   urbi.c              The CLI: -i (interactive), -e, -f / positional file,

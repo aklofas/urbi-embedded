@@ -27,7 +27,7 @@ For application developers linking urbi-embedded into firmware or a host process
 - [Embedding guide](embedding-guide.md) — the 44-function API, with one complete program
 - [API surface tiers](api-surface-tiers.md) — the manifest the `test-api-manifest` gate checks
 - [REPL protocol](internals/repl-service.md) — the NDJSON eval service
-- ROS2 bridge — parked until Phase 5
+- ROS2 bridge — parked; it returns with its own tag once a ROS environment is available
 - Footprint guide — planned
 
 ### Working on the runtime
@@ -113,7 +113,7 @@ The "Since" column is the first release where the doc ships. Rows without a link
 | Embedding guide | Step-by-step: link the library, plug in allocator and time source, push urbiscript, read results | `v0.7.0-C-API` |
 | [Embedding guide](embedding-guide.md) | The 44-function API with one complete program: open, register a native, run a script with an `at`, step to quiescence, close | `v0.14.0-refoundation` |
 | [API surface tiers](api-surface-tiers.md) | Every symbol the archive exports, by tier; the `test-api-manifest` gate checks it | `v0.10.3-api-opacity` |
-| ROS2 bridge | micro-ROS integration; parked until Phase 5 | — |
+| ROS2 bridge | micro-ROS integration; parked until its own tag | — |
 | Footprint guide | Flash and RAM breakdown by subsystem; trim strategies for deeply constrained targets | `v0.7.0-C-API` (initial), refresh at `v1.0.0` |
 
 ### internals/
@@ -128,7 +128,7 @@ The "Since" column is the first release where the doc ships. Rows without a link
 | [Design decisions](internals/design-decisions.md) | Rationale log: choices made during implementation with the alternatives that were rejected | `v0.1.0-skeleton` |
 | [Reactive runtime](internals/reactive-runtime.md) | One watcher type: modes, the dirty set, the drain, what an `at` edge means and why `whenever` is level-triggered | `v0.5.0-reactive` |
 | [Error channels](internals/error-channels.md) | Where a runtime failure goes and who can observe it | `v0.13.6-consistency` |
-| [Embedded ports](internals/ports.md) | Per-target bring-up record; every port is parked until Phase 5 | `v0.7.2-esp32` |
+| [Embedded ports](internals/ports.md) | Per-target bring-up record; every port is parked until its own tag | `v0.7.2-esp32` |
 | [REPL service](internals/repl-service.md) | The NDJSON eval protocol and the cooperative service | `v0.9.1-repl-service` |
 | [Assertion discipline](internals/assertion-discipline.md) | `URBI_REQUIRE` vs `URBI_INTERNAL_ASSERT`: which fires where, and when to use which | `v0.10.1-invariants` |
 | [Build system](internals/build-system.md) | Targets, build directories, flag stamping, the stdlib bake cycle | `v0.6.1-stdlib` |

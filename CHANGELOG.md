@@ -329,7 +329,7 @@ budgeted-stepping change under Changed) and the wire format 0x19 -> 0x1A
 
 The 48 KB boot-heap target is a 32-bit number and this branch has no
 cross toolchain, so the probe holds the host figure under a 72 KB cap and
-Phase 5 measures the real one. The lookup benchmark MET the spec's
+a later tag measures the real one. The lookup benchmark MET the spec's
 gate — a per-site slot cache, threaded dispatch, and a yield fast path
 together turned a 1.59x / 1.40x miss into the ratios above.
 `tests/probes/lookup_bench.c`'s ratchet is tightened to 1.20x now that
@@ -483,13 +483,13 @@ core to 0.60x / 0.84x, through three mechanisms:
   uncached resolve and traps if they disagree. It joins the parallel
   phase of `releasetest`.
 
-### Parked until Phase 5
+### Parked, pending a later tag
 
 The networked REPL server and its transports, the ROS2 bridge, the
 Standard Robotics overlay, and every hardware port under `examples/` and
 `components/`. The trace spine, the performance counters and the
-memory-debug sidecar were part of the old runtime and went with it;
-Phase 5 re-derives what the new core wants of them from git history.
+memory-debug sidecar were part of the old runtime and went with it; a
+later tag re-derives what the new core wants of them from git history.
 
 ### Documentation
 
@@ -4373,9 +4373,9 @@ All four hard-fail strict-tooling gates green at ship: cppcheck-strict 0 / tidy-
 ### Process notes
 
 - Wave 3 used `superpowers:subagent-driven-development` with one implementer per phase (autonomous mode after Phase 0).
-- Phase order: 0 → 1 → 3 → 4 → 2 → 5 → 6 → 7 (sequential, smallest-first within parallel-eligible set; Phase 5 last because it was largest).
+- Phase order: 0 → 1 → 3 → 4 → 2 → 5 → 6 → 7 (sequential, smallest-first within parallel-eligible set; the cross-session-closure phase last because it was largest).
 - urbiforge oracle stood up at Phase 0 via native CMake build inside this sandbox; `urbi-launch -s --` is the invocation pattern. Advisory only — not in releasetest gate set.
-- Plan-precondition Rule 3 caught two drifts mid-execution: Phase 2's `OP_MOVE dst, R0` was wrong (calling convention shifts R-base on OP_CALL); Phase 5's audit found the real bug was cross-session UClosure lifetime, not parent-funcstate linkage. Both corrections landed inline; both retrospectively confirm the precondition discipline.
+- Plan-precondition Rule 3 caught two drifts mid-execution: Phase 2's `OP_MOVE dst, R0` was wrong (calling convention shifts R-base on OP_CALL); the cross-session-closure phase's own audit found the real bug was cross-session UClosure lifetime, not parent-funcstate linkage. Both corrections landed inline; both retrospectively confirm the precondition discipline.
 
 ### Wire format
 
@@ -4392,14 +4392,14 @@ All four hard-fail strict-tooling gates green at ship: cppcheck-strict 0 / tidy-
 - **Emit (Phase 3):** Multi-slot class body via AST_BIN_SEP / AST_NARY recursion in `emit_class_body_stmt` (~33 LOC).
 - **VM (Phase 2):** New opcode `OP_LOAD_RECV = 46` reads `UCallFrame.recv` (new 16-byte UValue field snapshotting `vm->last_recv` at every bytecode frame push). UCallFrame grew 40 → 56 B; UStrand size pin 2880 → 3904.
 - **VM (Phase 4):** `vm_arith_method_fallback` / `_unary` / `vm_cmp_method_fallback` helpers in new file `src/vm/uvm_op_overload.{h,c}` (~282 LOC). 9 dispatch arms (OP_ADD/SUB/MUL/DIV/NEG/EQ/NEQ/LT/LE) call the helper on UVM_TYPE_ERROR. `UOpOverloadIC` table on UVM (4 entries × 64 sites max) caches the operator-method lookup; allocated in `urbi_vm_init`, freed in destroy.
-- **VM (Phase 5):** `urbi_steal_repl_protos` (in `src/module/uchunk.c`) — before `umodule_destroy`, scans `vm->stdlib_closures` for closures rooted in the session module and steals the entire `nested[]` array onto `vm->stdlib_nested_arrays`. `OP_CLOSURE` uses `current_frame.closure->origin_nested[bx]` for cross-session resolution. New UClosure fields: `origin_nested` / `origin_nested_count` / `origin_module_instance`. New UVM fields: `stdlib_protos` / `stdlib_nested_arrays`. New UProto field: `next_alloc`.
+- **VM (cross-session closures):** `urbi_steal_repl_protos` (in `src/module/uchunk.c`) — before `umodule_destroy`, scans `vm->stdlib_closures` for closures rooted in the session module and steals the entire `nested[]` array onto `vm->stdlib_nested_arrays`. `OP_CLOSURE` uses `current_frame.closure->origin_nested[bx]` for cross-session resolution. New UClosure fields: `origin_nested` / `origin_nested_count` / `origin_module_instance`. New UVM fields: `stdlib_protos` / `stdlib_nested_arrays`. New UProto field: `next_alloc`.
 - **GC (Phase 6):** `mark_root_callback` now shades `UVAL_OBJECT` and `UVAL_EVENT` cells (M4-era latent bug fixed inline at commit `57566ec`). Likely class of use-after-free hazards that would have surfaced at M9 (ROS2 integration) without this fix.
 - **Stdlib (Phase 6):** 5 new `.u` overlays — `singleton.u`, `number.u`, `list_overlay.u`, `dict_overlay.u`, `string_overlay.u`. Bytecode blob 1071 B → 4205 B (3.9×).
 - **Stdlib (Phase 6):** `Integer.even` / `Integer.odd` fixed to use `bitand(1)` instead of float division (Wave-2 carry-forward bug).
 - **Value (Phase 4):** `ustr_op_name(vm, op)` helper interning operator slot names (`"+"`, `"-"`, `"*"`, `"/"`, `"=="`, `"!="`, `"<"`, `"<="`).
 - **Build (Phase 0):** `make oracle-diff` target + `tests/scripts/oracle-diff.sh` harness (urbiforge oracle parity check; advisory only, NOT in releasetest).
 - **Tests (Phases 1-6):** ~70 new unit cases, 21 new `.chk` fixtures, 4 legacy-corpus subset ports.
-- **Docs:** Plan-precondition evidence file; Phase 5 audit doc; compatibility-ledger entries S29-S32; this CHANGELOG; m6-wave3-language-completion retrospective.
+- **Docs:** Plan-precondition evidence file; cross-session-closure audit doc; compatibility-ledger entries S29-S32; this CHANGELOG; m6-wave3-language-completion retrospective.
 
 ### Wire format / bytecode
 
@@ -4483,7 +4483,7 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
   documented in `PORT_NOTES.md`.
 - **Footprint vs Phase 1 (host):** +0.5 % (+970 B text).
 
-### Phase 5 — Closure upvalue capture across sessions (Gap #1)
+### Closure upvalue capture across sessions (Gap #1)
 
 - **Root cause fixed:** `UClosure` objects migrated to `vm->stdlib_closures`
   at run-end held a `UProto *` into the originating REPL-session `UModule`.
@@ -4601,11 +4601,11 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
   variables + suppression table updated to new line numbers; `uvm.c`
   `bugprone-branch-clone` fix (merged redundant else to else-only); `uvm_init.c`
   explicit `(void *)` cast for multilevel-pointer-to-void conversion.
-- **Markdown:** v0.6.2 Phase 5 audit doc — 8
+- **Markdown:** v0.6.2 cross-session-closure audit doc — 8
   MD031/MD040/MD026 lint errors fixed (blank lines around fences, language tags,
   removed trailing punctuation in heading).
 - **Test corpus:** 1483 unit / 8232 checks; **236 .chk fixtures** (was 215 at
-  v0.6.1; was 231 at Phase 5).
+  v0.6.1; was 231 after the cross-session-closure phase).
 
 ## v0.6.1-stdlib — 2026-05-10 (Wave 2 of M6 stdlib)
 
@@ -4681,7 +4681,7 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
   in `UErrCode`).  Returned by `urbi_stdlib_boot` when deserialize
   or bind fails; distinct from `URBI_ERR_OOM` (allocation) and
   `URBI_ERR_BYTECODE_VERSION_MISMATCH` (file-load surface).
-- (Phase 5) **C-native methods on Boolean / Integer / Float / String
+- (atom methods) **C-native methods on Boolean / Integer / Float / String
   atom protos.**  New `src/stdlib/atoms.c` registers Tier 1 named
   methods through the Wave 1 atom-method dispatch pathway:
   - `Boolean.negate()` — unary inverse (named-method form of legacy
@@ -4706,13 +4706,13 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
 
   Symbolic operators (`+`, `-`, `*`, `/`, `==`, `<`, …) stay inline
   VM opcodes (OP_ADD / OP_LT / OP_EQ / etc. in `src/vm/uvm.c`); only
-  named methods land here.  Phase 5 plan tasks T37 (Integer arith),
+  named methods land here.  This pass's plan tasks T37 (Integer arith),
   T38 (Integer comparison), T41 (Float arith), T46 (String concat),
   T36 `&&`/`||`/`!` symbolic forms are dropped because the v1.0 VM
   does not dispatch those forms via slot lookup (no lex tokens for
   `&&` / `||` / `!`; arithmetic and comparison are inline opcodes
   emitted by the parser).
-- (Phase 5) **11 `tests/chk/stdlib/atoms/` fixtures** covering each
+- (atom methods) **11 `tests/chk/stdlib/atoms/` fixtures** covering each
   method group (boolean / integer_conversion / integer_bitops /
   float_math / float_classify / float_conversion / string_basic /
   string_case / string_search / string_parse / string_char).
@@ -4807,7 +4807,7 @@ All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan
   - `Math`: IEEE-754 constants `pi`, `e`, `nan`, `infinity` (the
     method surface — `sin` / `cos` / `sqrt` / etc. — defers to
     Phase 10's `.u` overlay, which bounces to the Float atom-proto
-    methods Phase 5 installed).
+    methods already installed).
   - `System`: host primitives `time` (monotonic-microseconds → Float
     seconds via `vm->host_time_us`), `cycle` (per-VM `lookup_id`
     counter as Integer), `getenv(name)` (libc shim, freestanding-
@@ -5125,7 +5125,7 @@ cleanup IDs.
   declaration-local class binding shadows an outer same-name binding
   for the duration of the enclosing scope. New keywords `class` and
   `public` (lex). New AST node `AST_CLASS_DECL = 34`.
-- (Phase 5) **`Class.new()` / `.clone()` semantics.** `Object.new`
+- **`Class.new()` / `.clone()` semantics.** `Object.new`
   C-native method implements the `Class.new()` idiom (closes T39):
   allocates a fresh clone of the receiver, returns it, no const-slot
   inheritance from the proto's locals (COW-cloned slots are mutable on
@@ -5173,7 +5173,7 @@ cleanup IDs.
   `URBI_ATOM_BOOLEAN` / `URBI_ATOM_NIL` / `URBI_ATOM_VOID`. C-native
   method registration extended for atom protos. **Compatibility
   rename:** `Bool` → `Boolean` (v1.0 atom-proto naming convention).
-- (Phase 5) **`Object.protos.insertFront`.** Synthetic protos-list
+- **`Object.protos.insertFront`.** Synthetic protos-list
   surface gains `insertFront` (mutates the proto chain non-
   destructively from the front). Wave 1 stub — full `List`-shaped
   protos surface lands in Wave 2.
@@ -5329,7 +5329,7 @@ reaches a coherent state. Cleanup-ramp retrospective at
 
 ### Unsafe-pattern hardening
 
-Phase 5 used a "contract-pin TDD" pattern: each fix pins documented
+This pass used a "contract-pin TDD" pattern: each fix pins documented
 post-condition behavior with a regression test rather than chasing a
 crash. All six findings were benign-but-undocumented at audit time.
 
@@ -5678,7 +5678,7 @@ Wave 5 of v0.5.x cleanup ramp.
   closed via the M2-NaryEmit pattern (replace `next_reg--` with
   `next_reg = freereg`). New helper `free_reg_freereg_synced` for
   watcher-install teardowns; new `uemit_jmp_offset` PC-based helper.
-- VM dispatch ownership (Phase 5): VM-001/002/003/005/012/013 closed; new
+- VM dispatch ownership: VM-001/002/003/005/012/013 closed; new
   `vm_install_check_closure_operand` / `vm_install_check_event_operand` /
   `vm_install_fault` helpers centralize kind-checking and fault propagation.
 - Object-model fixes (Phase 13): in-place barrier writes (OBJ-003), shape-clone

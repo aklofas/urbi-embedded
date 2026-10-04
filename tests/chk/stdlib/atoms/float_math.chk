@@ -1,5 +1,5 @@
 # Milestone: M6 Wave 2 (updated v0.6.2: float literals now available)
-# Covers: Phase 5 Float math methods.
+# Covers: Float math methods.
 #
 # Float literals (Gap #5) closed at v0.6.2, so tests now use direct float
 # syntax alongside the original asFloat() construction form.

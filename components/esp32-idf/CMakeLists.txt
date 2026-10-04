@@ -1,7 +1,7 @@
 # urbi-embedded as an ESP-IDF managed component.
 #
 # ############################################################
-# # PARKED.  DO NOT BUILD THIS UNTIL PHASE 5 REBUILDS IT.    #
+# # PARKED.  DO NOT BUILD THIS UNTIL ITS TAG REBUILDS IT.    #
 # ############################################################
 #
 # The core re-foundation replaced the runtime these globs describe.  Ten of
@@ -14,7 +14,7 @@
 #
 # idf_component.yml carries the current version because check-version-sync
 # pins it to the release tag; the version number is not a claim that this
-# file works.  Phase 5 rewrites the globs against the Makefile's source
+# file works.  Its own tag rewrites the globs against the Makefile's source
 # lists and re-validates on silicon.
 #
 # Mirrors the host Makefile SRC variable: globs every src/ subdir that

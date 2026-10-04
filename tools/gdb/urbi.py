@@ -10,7 +10,7 @@
 #           urbi-trace [VM] [N], urbi-dump [VM].   VM defaults to `vm` in scope.
 #
 # The CHANNELS/SCHEMAS tables mirror the trace encoder, which is PARKED with the old runtime -
-# this decoder returns to service in Phase 5.
+# this decoder returns to service once the trace spine comes back.
 import gdb
 import gdb.printing
 
