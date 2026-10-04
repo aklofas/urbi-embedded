@@ -12,7 +12,7 @@
 
 /* The intern table is the VM's own; the standard library is not needed
  * to exercise it, so these VMs open without booting it. */
-static const UVMConfig no_stdlib = { 0, 0 };
+static const UVMConfig no_stdlib = { 0, 0, 0 };
 
 UTEST(intern_returns_canonical_pointer) {
     UVM *vm = NULL;
