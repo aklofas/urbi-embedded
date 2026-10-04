@@ -1,16 +1,43 @@
 # Milestone: M3
 # Covers: stopping an outer tag terminates nested tag scopes; stopping an inner
 #         tag leaves the outer scope running; echo traces enter/leave ordering.
-# blocked: complex concurrent fixture; tag.stop() in parallel `,` strands needs chk step driver
 # matrix-row: tag-stop
 #
-# Reason:
-#   The fixture calls t.stop() and u.stop() as urbiscript method calls on UTag
-#   values — M4 object-method dispatch.  It also uses ',' (OP_FORK_DETACH) to
-#   run f() concurrently while observing its output — M5 chk driver.  Nested
-#   scope termination semantics with echo tracing require multi-strand scheduling.
-#
-# Original urbiscript (activate at M4 with tag method dispatch and M5 chk driver):
-# # var t = Tag.new() | var u = Tag.new() | function f() { ... } | {};
-# # f(), sleep(100ms); ... t.stop() | u.stop(); ...
-# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/stop-depth.chk)
+# Rewritten from legacy tests/2.x/stop-depth.chk for the host driver; the
+# echo trace is the legacy one line for line.  Named-function declarations
+# are not parsed, so `f` is a `var` holding a function.  The 3600s sleep
+# never comes due: the last step finds no live work left.
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run var u = Tag.new()
+## host: run var f = function() { echo("Entering f"); t: { echo("Entering t"); u: { echo("Entering u"); sleep(3600s); echo("Leaving u") }; echo("Leaving t") }; echo("Leaving f") }
+## host: run f(), 0
+## host: step 1000
+## host: run t.stop(); u.stop()
+## host: step 1000
+## host: run f(), 0
+## host: step 1000
+## host: run u.stop()
+## host: step 1000
+## host: live-work
+[00000000] <Tag>
+[00000000] <Tag>
+[00000000] <?>
+[00000000] *** Entering f
+[00000000] *** Entering t
+[00000000] *** Entering u
+[00000000] 0
+[00000000] step: WAKE_AT
+[00000000] *** Leaving f
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] *** Entering f
+[00000000] *** Entering t
+[00000000] *** Entering u
+[00000000] 0
+[00000000] step: WAKE_AT
+[00000000] *** Leaving t
+[00000000] *** Leaving f
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] live-work: false

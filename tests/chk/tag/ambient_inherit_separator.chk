@@ -1,23 +1,31 @@
 # Milestone: M3
 # Covers: ambient tag chain is inherited by strands spawned via the `,`
 #         (fork-detach) separator; tag.stop() on the ambient tag cascades to
-#         the parallel strand (row 11 §4.3 + T38 separator runtime).
-#
-# blocked: compile error — `,` fork-detach separator inside tag-scope body not supported
+#         the parallel strand.
 # matrix-row: tag-ambient
 #
-# Reason (updated v0.13.5 probe):
-#   v0.13.5 fixed `&`/`|` block operands in the PARSER.  That fix is
-#   irrelevant here: the blocker is the EMITTER refusing `,` inside a
-#   `t: { ... }` tag-scope body with a compile error.  OP_FORK_DETACH guard
-#   was removed by the v0.13.4 loader-strand work; the remaining gap is that the emitter's
-#   fork-detach emit path does not track the tag-scope nesting context, so
-#   `t: { expr , expr }` fails to compile.  Unchanged since v0.13.4.
-#
-# Urbiscript source (re-activate when , inside tag-scope emitter path works):
-#   var t = Tag.new;
-#   var log = "";
-#   t: { log = log + "outer", { log = log + "inner" | t.stop() } };
-#   log
-#   --- expected output ---
-#   [00000001] "outer"
+# Host-driver form, with a virtual clock.  Inside each tag scope the `,`
+# detaches its LEFT arm, a sleeper, and runs the right arm inline.  Under
+# `c`, which nobody stops, the sleeper logs when the clock moves; under
+# `u`, the stop issued after the scope has returned still reaches the
+# detached sleeper, which therefore never logs.
+## timeout: 30
+## host: run var c = Tag.new()
+## host: run var u = Tag.new()
+## host: run var log = ""
+## host: run c: { { sleep(1s); log = log + "C" }, { log = log + "c" } }; 0
+## host: run u: { { sleep(1s); log = log + "U" }, { log = log + "u" } }; 0
+## host: run u.stop()
+## host: advance-clock 2000
+## host: step 1000
+## host: run log
+## host: live-work
+[00000000] <Tag>
+[00000000] <Tag>
+[00000000] ""
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] "cuC"
+[00000000] live-work: false

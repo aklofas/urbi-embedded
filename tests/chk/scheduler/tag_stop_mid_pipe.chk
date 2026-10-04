@@ -1,31 +1,26 @@
 # Milestone: M3
-# Covers: a tag stop delivered at an internal safepoint inside a `|`-chain
-#         unwinds the current strand through the cleanup stack, executing
-#         finally bodies and popping TAG_SCOPE entries in order (row 12 §5.3
-#         — safepoint delivery of pending UEXEC_TAG_STOP unwind).
-#
-# blocked: parse — `t: { try { ... } finally { ... } }` does not parse; a
-#          try/finally is not accepted where the tag-scope body wants a
-#          statement
+# Covers: a tag stop delivered inside a `|`-chain unwinds the current
+#         strand through the cleanup stack, executing finally bodies and
+#         popping TAG_SCOPE entries in order.
 # matrix-row: tag-stop
 #
-# Reason (re-probed on the re-founded core):
-#   The blocker this fixture used to name — "method call syntax requires
-#   the M4 object model" — has been false for a long time: `t.stop()`
-#   resolves and runs.  What actually stops it is the parse.  A bare
-#   `t: { try { 1 } finally { 2 } }` is accepted, but the body below is
-#   not; the parser rejects it at the `finally`.  Whether that is the
-#   `|`-chain inside the try or the try-as-tag-scope-body shape is the
-#   thing to establish before rewriting, and it is a frontend question
-#   rather than a fixture one.
-#
-# The body, once it parses:
-#   var log = ""
-#   var t = Tag.new()
-#   t: {
-#     try { log = log + "a" | t.stop() | log = log + "c" }
-#     finally { log = log + "F" }
-#   }
-#   log
-#   --- expected output ---
-#   [00000001] "aF"
+# The links that write `log` are blocks: an assignment cannot be the
+# right operand of a `|` whose left is not an assignment, so the legacy
+# spelling `log = log + "a" | t.stop() | log = log + "c"` does not parse.
+# The control runs the same chain under a tag nobody stops and sees every
+# link and the finally; the stopped chain sees the link before the stop
+# and the finally, never the link after.
+var log = ""
+var t = Tag.new()
+var u = Tag.new()
+u: { try { { log = log + "a" } | { log = log + "b" } | { log = log + "c" } } finally { log = log + "F" } }; log
+log = ""
+t: { try { { log = log + "a" } | t.stop() | { log = log + "c" } } finally { log = log + "F" } }; log
+log
+[00000001] ""
+[00000002] <Tag>
+[00000003] <Tag>
+[00000004] "abcF"
+[00000005] ""
+[00000006] "aF"
+[00000007] "aF"

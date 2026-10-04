@@ -1,27 +1,32 @@
 # Milestone: v0.10.10-job-introspection
 # Covers: no strand leak after a block containing '&'-joined strands; Job.jobs
 #         count returns to baseline after completion.
-# blocked: `Job.jobs` has no `size`.  Probed: `Job.jobs` renders as an
-#          opaque value and `Job.jobs.size` raises
-#          `LookupError: slot access: slot 'size' not found`, so the
-#          baseline-vs-final comparison the fixture is built on cannot be
-#          written.  Per-feature coverage in
-#          tests/chk/stdlib/runtime/job_jobs_basic.chk.
-#
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
 # matrix-row: scheduler-jobs
 #
-# Reason:
-#   Job.jobs() shipped v0.10.10 (D7-B ratify; full-ship variant). The
-#   fixture requires the T39 chk driver for `&` inside a block repeated
-#   10 times via `for` + multi-strand lifecycle observation. Per-feature
-#   coverage in tests/chk/stdlib/runtime/job_jobs_basic.chk.
-#
-# Original urbiscript (activate when T39 chk driver lands):
-# # var njobs = Job.jobs.size|;
-# # { for(var i: 10) {1&2&3}, };
-# # assert(njobs == Job.jobs.size);
+# Rewritten from legacy tests/2.x/jobs-destruction.chk for the host
+# driver.  `Job.jobs` is a method here, so the count is
+# `Job.jobs().size()`; integer ranges are not iterable, so the ten
+# rounds are a `while`.  The control first proves the count sees a live
+# strand -- a detached sleeper raises it, and it drops back once the
+# sleeper is woken and reaped -- so the baseline comparison after the
+# `&` rounds can fail.
+## timeout: 30
+## host: run var njobs = Job.jobs().size()
+## host: run { sleep(1s) }, 0
+## host: step 1000
+## host: run Job.jobs().size() == njobs + 1
+## host: advance-clock 1000
+## host: step 1000
+## host: run Job.jobs().size() == njobs
+## host: run { var i = 0; while (i < 10) { 1 & 2 & 3; i = i + 1 } }, 0
+## host: step 1000
+## host: run Job.jobs().size() == njobs
+[00000000] 1
+[00000000] 0
+[00000000] step: WAKE_AT
+[00000000] true
+[00000000] step: QUIESCENT
+[00000000] true
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] true

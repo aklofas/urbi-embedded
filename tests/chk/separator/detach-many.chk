@@ -1,28 +1,26 @@
 # Milestone: v0.10.10-job-introspection
 # Covers: spawning 100 detached strands via detach(); each increments counter
 #         twice with a 1s sleep in between; final value is 200 after 2s wait.
-# blocked: named-function declarations are not supported at v1.0.
-#          Probed: `function add2() { ... }` raises "use 'var name =
-#          function(...){...}'".  Rewriting the body is most of the
-#          activation; the 100-strand timing it needs is available now
-#          that `## mode: file` pumps the scheduler on the real clock.
 #
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
+# Rewritten from legacy tests/2.x/detach-many.chk for the host driver.
+# Named-function declarations are not parsed, so `add2` is a `var`
+# holding a function; `x++` and the C-style `for` are spelled out.  All
+# hundred first increments land before any sleeper wakes; one unbudgeted
+# step after the clock passes the one-second sleep finishes all hundred.
+## timeout: 30
+## host: run var x = 0
+## host: run var add2 = function() { x = x + 1; sleep(1s); x = x + 1 }
+## host: run var i = 0; while (i < 100) { detach(add2()); i = i + 1 }; i
+## host: run x
+## host: advance-clock 1000
+## host: step 0
+## host: run x
+## host: live-work
 # matrix-row: separator-detach
-#
-# Reason:
-#   detach() shipped v0.10.10 (D7-C ratify). The fixture requires the
-#   T39 chk driver for wall-clock timing (sleep 1s / sleep 2s) across
-#   100 concurrent strands. Per-feature coverage in detach_basic.chk.
-#
-# Original urbiscript (activate when T39 chk driver lands):
-# # var x = 0 | {};
-# # function add2() { x++; sleep(1s); x++ } | {};
-# # for (var i = 0; i < 100; i++) detach(add2());
-# # sleep(2s);
-# # x;
-# # [00000001] 200
+[00000000] 0
+[00000000] <?>
+[00000000] 100
+[00000000] 100
+[00000000] step: QUIESCENT
+[00000000] 200
+[00000000] live-work: false

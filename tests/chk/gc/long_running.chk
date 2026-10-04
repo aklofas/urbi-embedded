@@ -2,28 +2,15 @@
 # Covers: 100k allocate-and-drop cycles complete within a bounded heap;
 #         the GC reclaims dead cells and gc_live_bytes remains small relative
 #         to gc_total_allocated.
-#
-# dropped: bare {} brace-block expression not in v1.0 parser; use Object.new()
 # matrix-row: object-model
 #
-# Reason: the {} object literal syntax used by the alloc-and-drop loop body
-# does not exist until M4 (object model).  The equivalent C-level stress test
-# (tests/stress/gc_long_running.c) exercises the same GC path at M3 via the
-# urbi_gc_alloc / urbi_gc_slice / urbi_gc_force_full C API directly.
-#
-# When M4 lands and object literals are parseable, activate this fixture by
-# uncommenting the urbiscript source below and removing this defer-to block.
-# Expected behaviour: alloc_drop() completes without OOM; the runtime heap
-# is bounded (live_bytes ≪ total_allocated at end of run).
-#
-# Urbiscript source (activate at M4):
-#   function alloc_drop() {
-#     var i = 0;
-#     while (i < 100000) {
-#       var x = {}|  x = nil;
-#       i = i + 1
-#     }
-#   };
-#   alloc_drop();
-#   --- expected output ---
-#   (no output — side-effect-free computation)
+# `{}` is a block here, not an object literal, so the loop allocates with
+# `Object.new()`.  What a fixture can see is the loop completing all
+# 100000 rounds without an out-of-memory error; the bounded-heap half --
+# the peak staying small while the total allocated grows -- is pinned in
+# C, under a counting allocator, by
+# tests/rt/test_obj.c::an_object_loop_runs_in_bounded_memory.
+var alloc_drop = function() { var i = 0; while (i < 100000) { var x = Object.new(); x = nil; i = i + 1 }; i }
+alloc_drop()
+[00000001] <?>
+[00000002] 100000

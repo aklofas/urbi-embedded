@@ -1,30 +1,30 @@
 # Milestone: M3
 # Covers: tag.freeze() suspends all strands under that tag; the strand stays
 #         frozen until t2.stop() terminates the outer scope.
-# blocked: a chunk-top `,` group cannot share a declaration with its
-#          arms.  t.freeze() / t.unfreeze() work from script (probed), but
-#          the fixture needs the frozen strand and its observer in one
-#          program, which means `;` before `,` -- and the parser refuses
-#          to mix the two in one group.  Freeze semantics are covered in C
-#          by tests/rt/test_sched.c::block_and_freeze_are_independent.
-#
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
 # matrix-row: tag-freeze
 #
-# Reason:
-#   tag.freeze() requires two M4/M5 features: (1) method dispatch on a UTag
-#   value (M4), and (2) the SUSPENDED strand-state machinery that actually
-#   halts instruction dispatch for tagged strands (M5).  The ',' separator for
-#   concurrent "freeze vs echo" observation also requires the M5 chk driver.
-#
-# Original urbiscript (activate at M5 with freeze/unfreeze machinery):
-# # var t1 = Tag.new() | {};
-# # var t2 = Tag.new() | {};
-# # t2: { t1: t1.freeze(); echo("You don't see me") }, sleep(1s);
-# # echo("I am the only one");
-# # [00000001] *** I am the only one
-# # t2.stop();
+# Rewritten from legacy tests/2.x/freeze.chk for the host driver: each
+# declaration is its own `run`, and the second's sleep is moved past by
+# the virtual clock.  The frozen strand never echoes, a stop of the
+# outer tag ends it, and no work is left.
+## timeout: 30
+## host: run var t1 = Tag.new()
+## host: run var t2 = Tag.new()
+## host: run t2: { t1: t1.freeze(); echo("You don't see me") }, 0
+## host: run sleep(1s); echo("I am the only one")
+## host: advance-clock 1000
+## host: step 1000
+## host: step 1000
+## host: run t2.stop()
+## host: step 1000
+## host: live-work
+[00000000] <Tag>
+[00000000] <Tag>
+[00000000] 0
+[00000000] nil
+[00000000] *** I am the only one
+[00000000] step: QUIESCENT
+[00000000] step: QUIESCENT
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] live-work: false

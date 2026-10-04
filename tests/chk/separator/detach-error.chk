@@ -1,30 +1,72 @@
 # Milestone: v0.10.10-job-introspection
-# Covers: errors in detached code are displayed; parent block is stopped on
-#         error in sequential code; detach() call propagation semantics.
-# blocked: the script-side diagnostic no longer matches.  The core says
-#          `LookupError: slot access: slot 'f' not found`, not the legacy
-#          `input.u:@.1: lookup failed: f` this fixture expects.  The
-#          detached-throw REPORTING it is really about is covered by
-#          separator/detached_throw_is_reported.chk.
-#
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
+# Covers: an error is displayed wherever it happens -- inline, in a `,`
+#         arm, in a detach() body; a failure in one top-level task does
+#         not disturb another; an error in sequential code stops the
+#         rest of its block; a detached failure does not.
 # matrix-row: separator-detach
 #
-# Reason:
-#   detach() shipped v0.10.10 (D7-C ratify). The fixture still needs:
-#   (1) T39 chk driver for `,`/`&` separators + error-strand interleaving;
-#   (2) the script-side error-format `!!! input.u:@.1: lookup failed: f`
-#   (canonical legacy diagnostic; v1.0 script-side error message remains
-#   to be aligned). Per-feature coverage in detach_basic.chk.
+# Rewritten from legacy tests/2.x/detach-error.chk for the host driver,
+# whose clock is virtual, so the "does not impact other top-level tasks"
+# case is ordered by advance-clock rather than by a real sleep.  The
+# diagnostic text is this core's (`LookupError: slot access: ...`), not
+# the legacy `input.u:@.1: lookup failed: f`; the legacy `called from:`
+# backtrace lines have no counterpart.
 #
-# Original urbiscript (activate when T39 chk driver + error-format land):
-# # f;
-# # [00000001:error] !!! input.u:@.1: lookup failed: f
-# # f,
-# # [00000002:error] !!! input.u:@.1: lookup failed: f
-# # detach(f)|;
-# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/detach-error.chk)
+# `,` detaches its LEFT arm, so in `f, 0` the failing lookup is the
+# detached strand, reported through the diag hook, and `0` is the
+# chunk's value.
+## timeout: 30
+## host: run var x = 0
+## host: run f
+## host: run f, 0
+## host: run detach(f); 0
+## host: step 1000
+## host: run { sleep(500ms); f }, { sleep(1s); x = 1 }
+## host: step 1000
+## host: advance-clock 500
+## host: step 1000
+## host: run x
+## host: advance-clock 500
+## host: step 1000
+## host: run x
+## host: run { f ; x = 2 }
+## host: run x
+## host: run { detach(f) ; x = 3 }; 0
+## host: step 1000
+## host: run x
+## host: run x = 0
+## host: run detach { f ; x = 4 }; 0
+## host: step 1000
+## host: run x
+## host: run detach { detach(f) ; x = 5 }; 0
+## host: step 1000
+## host: run x
+[00000000] 0
+[00000000] !!! LookupError: slot access: slot 'f' not found
+[00000000] !!! LookupError: slot access: slot 'f' not found
+[00000000] 0
+[00000000] !!! LookupError: slot access: slot 'f' not found
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] nil
+[00000000] step: WAKE_AT
+[00000000] !!! LookupError: slot access: slot 'f' not found
+[00000000] step: WAKE_AT
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] 1
+[00000000] !!! LookupError: slot access: slot 'f' not found
+[00000000] 1
+[00000000] !!! LookupError: slot access: slot 'f' not found
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] 3
+[00000000] 0
+[00000000] !!! LookupError: slot access: slot 'f' not found
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] 0
+[00000000] !!! LookupError: slot access: slot 'f' not found
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] 5

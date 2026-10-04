@@ -1,24 +1,30 @@
 # Milestone: M3
 # Covers: tag.block() called inside a tagged scope; block propagates from
 #         the scope tag to the outer join ('&'); no deadlock.
-# blocked: a chunk-top `,` group cannot share a declaration with its
-#          arms, so the tag cannot be both created and named by a sibling
-#          strand in one program.  tag.block() itself works (probed) and
-#          the gate semantics are covered in C by
-#          tests/rt/test_sched.c::block_and_freeze_are_independent.
-#
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
 # matrix-row: tag-block
 #
-# Reason:
-#   The fixture calls a.block on a tag — tag.block() is an object method that
-#   requires M4 prototype-OOP dispatch.  At M3 we have the UTag data structure
-#   and urbi_tag_stop (C API) but no urbiscript method dispatch infrastructure.
-#   Also uses '&' separator (M5 chk driver).
-#
-# Original urbiscript (activate at M4 with tag method dispatch):
-# # a: { 1 & a.block };
+# Rewritten from legacy tests/2.x/block-propagation.chk, whose `a` was an
+# implicitly created tag; here it is declared in its own `run`.  This
+# core's block is a gate (REVIVAL §14 S-tag-state-full), so the arm that
+# blocks `a` holds the whole scope, the joining chunk included: the `run`
+# hands back nil and `done` stays 0.  Nothing is wedged -- an unblock
+# lets the join finish and the statement after the scope run.
+## timeout: 30
+## host: run var a = Tag.new()
+## host: run var done = 0
+## host: run a: { 1 & a.block() }; done = 1
+## host: run done
+## host: step 1000
+## host: run a.unblock()
+## host: run done
+## host: step 1000
+## host: live-work
+[00000000] <Tag>
+[00000000] 0
+[00000000] nil
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] nil
+[00000000] 1
+[00000000] step: QUIESCENT
+[00000000] live-work: false

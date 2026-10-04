@@ -1,29 +1,58 @@
 # Milestone: M3
 # Covers: t.block() pauses all strands tagged with t; t.unblock() resumes them;
 #         new strand started while tag is blocked also stays paused.
-# blocked: a chunk-top `,` group cannot share a declaration with its
-#          arms.  t.block() / t.unblock() work from script (probed), but
-#          the fixture needs a loop under the tag AND an observer that
-#          blocks it partway, which means `;` before `,` -- and the parser
-#          refuses to mix the two in one group.  Gate semantics are
-#          covered in C by tests/rt/test_sched.c (block_holds_a_woken_sleeper,
-#          block_and_freeze_are_independent).
-#
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
 # matrix-row: tag-block
 #
-# Reason:
-#   t.block() and t.unblock() are object methods on a UTag value — M4 prototype-
-#   OOP dispatch.  The fixture also uses detach() builtin (M4) and ',' separator
-#   for concurrent loop + block observation (M5 chk driver).  At M3 we have
-#   urbi_tag_stop() C API but no block()/unblock() urbiscript surface.
+# Host-driver form, so the tag is declared in its own `run` and the clock
+# is virtual.  This core's block is a gate (REVIVAL §14 S-tag-state-full):
+# a blocked strand is held, not killed, and runs on from where it was
+# once unblocked.  The legacy tests/2.x/tag/block.chk is written against
+# a block that kills, so its expectations are not these.
 #
-# Original urbiscript (activate at M4 with tag block/unblock and detach()):
-# # var t = Tag.new()|;
-# # t: detach({loop {echo("1"); sleep(1s)}})|; sleep(2.5s);
-# # ... t.block(); ... t.unblock(); ...
-# # (see legacy/repos/aldebaran-urbi/tests/2.x/tag/block.chk)
+# 1. A loop under `t` echoes once per second.
+# 2. While `t` is blocked two seconds pass and nothing echoes.
+# 3. A second loop entered under the blocked `t` is held before its first
+#    echo -- and so is the chunk that entered it, which is why that `run`
+#    hands back nil, not its trailing 0.
+# 4. After unblock both loops echo; a stop ends them and leaves no work.
+## timeout: 30
+## host: run var t = Tag.new()
+## host: run t: detach { while (true) { echo("1"); sleep(1s) } }; 0
+## host: advance-clock 1000
+## host: step 1000
+## host: run t.block()
+## host: advance-clock 1000
+## host: step 1000
+## host: advance-clock 1000
+## host: step 1000
+## host: run t: detach { while (true) { echo("2"); sleep(1s) } }; 0
+## host: advance-clock 1000
+## host: step 1000
+## host: run t.unblock()
+## host: step 1000
+## host: advance-clock 1000
+## host: step 1000
+## host: run t.stop()
+## host: advance-clock 1000
+## host: step 1000
+## host: live-work
+[00000000] <Tag>
+[00000000] *** 1
+[00000000] 0
+[00000000] *** 1
+[00000000] step: WAKE_AT
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] step: QUIESCENT
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] *** 1
+[00000000] *** 2
+[00000000] nil
+[00000000] step: WAKE_AT
+[00000000] *** 1
+[00000000] *** 2
+[00000000] step: WAKE_AT
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] live-work: false

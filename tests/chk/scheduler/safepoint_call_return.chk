@@ -1,19 +1,46 @@
 # Milestone: M3
-# Covers: a function call (OP_CALL) hits a safepoint at call-frame-push;
-#         a non-top-level OP_RET hits a safepoint at frame-pop; both
-#         decrement safepoint_budget_remaining correctly.
-#
-# blocked: per-call budget-decrement is a scheduler internal, verified by C
-#          unit tests, not a chk target.  Asserting the before/after decrement
-#          around an OP_CALL/OP_RET safepoint would need a public
-#          safepoint_budget_remaining read accessor frozen into the v1.0 API
-#          solely to drive a golden-diff fixture — rejected on API-minimalism
-#          grounds.  Function-call frame push/pop correctness IS covered in
-#          C, by tests/rt/test_strand.c (push_frame_grows_stack_for_max_reg,
-#          nested_frames_grow_stack_and_preserve_upvals,
-#          pop_frame_closes_its_upvals) and end to end by
-#          tests/rt/test_exec.c::deep_recursion_and_reclaim at 10000
-#          frames.  There is no C-level coverage of the BUDGET accounting
-#          around a call, which is the half this fixture was about -- and
-#          there is nothing to cover: only backward jumps spend budget.
+# Covers: a call and its return inside a loop body do not let a strand run
+#         past its step's budget -- the loop's backward jump is still the
+#         safepoint -- and a call chain with no loop spends no budget.
 # matrix-row: scheduler-safepoint
+#
+# The legacy record claimed a safepoint at every call-frame push and pop.
+# This core spends the instruction budget on backward jumps only
+# (docs/internals/runtime.md), so what is observable, and pinned here, is
+# the two halves of that rule.  The work runs in an `at` body so that it
+# starts in a `step` the fixture sizes, as budget_step_exhausted.chk does.
+#
+# 1. A 20000-round loop whose body is a call: a budget of 1 comes back
+#    RUNNING with the work unfinished; a large budget finishes it.
+# 2. A 200-deep recursion with no loop: a budget of 1 finishes it.
+## timeout: 30
+## host: run var x = 0
+## host: run var y = 0
+## host: run var done = 0
+## host: run var f = function(n) { n + 1 }
+## host: run var r = function(n) { if (n == 0) 0 else r(n - 1) }
+## host: run at (x > 0) { var i = 0; while (i < 20000) { i = f(i) }; done = 1 }
+## host: run at (y > 0) { r(200); done = 2 }
+## host: set-global x 1
+## host: step 1
+## host: run done
+## host: step 1000000
+## host: run done
+## host: set-global y 1
+## host: step 1
+## host: run done
+[00000000] 0
+[00000000] 0
+[00000000] 0
+[00000000] <?>
+[00000000] <?>
+[00000000] nil
+[00000000] nil
+[00000000] set-global: ok
+[00000000] step: RUNNING
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] 1
+[00000000] set-global: ok
+[00000000] step: QUIESCENT
+[00000000] 2

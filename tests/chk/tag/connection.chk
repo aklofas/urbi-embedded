@@ -1,27 +1,42 @@
 # Milestone: v0.10.10-job-introspection
 # Covers: connection tag is always present in Job.current.tags; tagged blocks
 #         add their tag to the ambient tag list visible via Job.current.tags.
-# blocked: `Job.current.tags` does not exist.  Probed: the slot raises
-#          `LookupError: slot access: slot 'tags' not found`, and the
-#          fixture reads the ambient tag list off it.  That a chunk runs
-#          under its realm's connection tag IS covered, in C, by
-#          tests/rt/test_sched.c::a_chunk_runs_under_the_connection_tag.
-#
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
 # matrix-row: scheduler-jobs
 #
-# Reason:
-#   Job.current() + Job.tags() + Lobby.connectionTag all shipped v0.10.10
-#   (D7-A / D7-E ratifications). The fixture relies on `&` separator + the
-#   T39 chk driver's strand-tag scope-stack observation across multi-step
-#   timelines. Per-feature regression coverage already lives in
-#   tests/chk/stdlib/runtime/job_current_basic.chk + connection_tag_basic.chk.
-#
-# Original urbiscript (activate when T39 chk driver lands):
-# # assert(Job.current.tags == [connectionTag]);
-# # var t = Tag.new() & assert({t: Job.current.tags} == [connectionTag, t]);
-# # ...
+# Rewritten from legacy tests/2.x/tag/connection.chk.  `Job.current` and
+# `tags` are methods here.  Lists render opaquely and `==` on two lists
+# does not compare their elements, so the legacy `tags == [connectionTag,
+# t]` is spelled as a size plus membership.  The list order is not
+# pinned: this core lists the scope tags before the connection tag, the
+# legacy one after it.  The last case is the legacy `&` pair: each arm
+# sees its own scope tag and not its sibling's.
+var l = Job.current().tags()
+l.size()
+l.has(connectionTag)
+var t = Tag.new()
+var u = Tag.new()
+t: { var l = Job.current().tags(); l.size() }
+t: { var l = Job.current().tags(); l.has(t) && l.has(connectionTag) }
+t: { u: { var l = Job.current().tags(); l.size() } }
+t: { u: { var l = Job.current().tags(); l.has(t) && l.has(u) && l.has(connectionTag) } }
+var r1 = nil
+var r2 = nil
+{ t: { r1 = Job.current().tags().has(u) } } & { u: { r2 = Job.current().tags().has(t) } }
+r1
+r2
+Job.current().tags().size()
+[00000001] <?>
+[00000002] 1
+[00000003] true
+[00000004] <Tag>
+[00000005] <Tag>
+[00000006] 2
+[00000007] true
+[00000008] 3
+[00000009] true
+[00000010] nil
+[00000011] nil
+[00000012] <?>
+[00000014] false
+[00000015] false
+[00000016] 1

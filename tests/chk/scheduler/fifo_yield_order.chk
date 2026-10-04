@@ -1,20 +1,25 @@
 # Milestone: M3
 # Covers: two strands enqueued FIFO; after a soft yield the first strand
 #         goes to the tail and the second strand runs next (FIFO ordering
-#         across yield boundaries — row 12 §3.4 single-entry make_runnable
-#         invariant).
-#
-# blocked: cross-strand FIFO ordering across a yield boundary is a scheduler
-#          internal, verified by C unit tests, not a chk target.  Distinguishing
-#          a-then-b from b-then-a from a golden-diff fixture would require
-#          freezing test-only host-observation hooks (an enqueue-without-drive
-#          primitive plus a per-strand yield-boundary emitter) into the v1.0
-#          embedding API — rejected on API-minimalism grounds; the final
-#          quiescent state is order-independent.  FIFO scheduling order IS
-#          covered in C, by
-#          tests/rt/test_sched.c::yield_round_robins_in_fifo_order, which
-#          detaches three strands that each append their own letter twice
-#          across a yield and asserts the interleaving is ABCABC; the fork
-#          half is separators_run_both_arms and join_waits_for_the_child
-#          in the same file.
+#         across yield boundaries).
 # matrix-row: scheduler-fifo
+#
+# The `;` between two statements is the soft yield: with another strand
+# ready, the strand goes back on the ready queue behind every strand
+# already there.  Three `,` arms each print twice across a `;`, so FIFO
+# order is the interleaving A1 B1 C1 A2 B2 C2; a strand that kept running
+# past its yield would print A1 A2 first.  The script-side twin of
+# tests/rt/test_sched.c::yield_round_robins_in_fifo_order.
+## timeout: 30
+## host: run { echo("A1"); echo("A2") }, { echo("B1"); echo("B2") }, { echo("C1"); echo("C2") }, 0
+## host: step 1000
+## host: live-work
+[00000000] *** A1
+[00000000] *** B1
+[00000000] *** C1
+[00000000] *** A2
+[00000000] *** B2
+[00000000] *** C2
+[00000000] 0
+[00000000] step: QUIESCENT
+[00000000] live-work: false

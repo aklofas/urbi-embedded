@@ -1,37 +1,28 @@
 # Milestone: M3
-# Covers: a long `|`-chain (many sequential statements) triggers a soft yield
-#         when the per-strand safepoint_budget_remaining reaches zero; the
-#         VM yields the strand back to the tail of the FIFO ready queue so
-#         other strands can run, then resumes at the next instruction on the
-#         next dispatch turn (row 12 §3.2 budget-exhaustion safepoint).
-#
-# blocked: a `|` chain is not a statement sequence the parser accepts
-#          inside a body.  Probed: `{ 1 | 2 | 3 }` is a parse error, so
-#          the long chain this fixture is named for cannot be written.
-#          The budget-exhaustion claim underneath it is now covered
-#          without a chain, by scheduler/budget_step_exhausted.chk and
-#          budget_soft_yield.chk, both activated at the re-foundation.
-#
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
+# Covers: a long `|`-chain whose strand runs out of instruction budget
+#         comes back from the step RUNNING, unfinished, and resumes where
+#         it stopped on the next step until the chain completes.
 # matrix-row: scheduler-pipe
 #
-# Reason: the chk runner executes under urbi_vm_run which drives the entire REPL
-# input as a single transient strand without going through urbi_step or the
-# cooperative scheduler ready queue.  Budget-exhaustion soft yield is only
-# observable via urbi_step (the VM-wide step_budget_remaining > 0 check in
-# ustep.c).  The substantive single-strand budget path was covered by
-# test_pipe_budget_exhaust.c (unit test, which drove via urbi_step) until the
-# Phase 0 runtime-internals test cleanup; no C-level coverage today.
-# A proper chk fixture needs the ## host: driver mechanism to call urbi_step
-# with a small budget and assert URBI_STEP_RUNNING before completion.
-#
-# When M5 + urbi_step chk driver land, implement this by running:
-#   # tunables: default
-#   var i = 0 | while (i < 10000) { i = i + 1 }
-#   i
-#   --- expected output (loop completes across multiple urbi_step turns) ---
-#   [00000001] 10000
+# The chain runs in an `at` body so that it starts inside a `step` the
+# fixture sizes, as budget_step_exhausted.chk does.  Between the two
+# steps only `live-work` is asked: a `run` would pump the unfinished
+# strand itself.  An assignment cannot be the right operand of a `|`
+# whose left is not an assignment, so the last link is a block.
+## timeout: 30
+## host: run var x = 0
+## host: run var done = 0
+## host: run at (x > 0) { var i = 0 | while (i < 20000) { i = i + 1 } | { done = i } }
+## host: set-global x 1
+## host: step 1
+## host: live-work
+## host: step 1000000
+## host: run done
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] set-global: ok
+[00000000] step: RUNNING
+[00000000] live-work: true
+[00000000] step: QUIESCENT
+[00000000] 20000
