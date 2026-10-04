@@ -106,14 +106,30 @@ void urealm_free(UVM *vm, URealm *r)
     /* And every watcher: a condition whose realm has no globals left
      * would raise on every drain for the life of the VM. */
     uwatch_realm_dropped(vm, r);
+    /* Every strand the realm owns, named directly: the connection tag only
+     * covers strands under it, and a child detached under a user tag is
+     * not.  Each one is stopped so it dies on its next slice, and its open
+     * upvalues are closed NOW -- a closure the host still holds may point
+     * at this strand's register stack, which the collector frees with the
+     * strand. */
+    for (UStrand *s = r->strands; s; s = s->next_in_realm) {
+        if (s->state != USTRAND_DEAD && s->unwind == (uint8_t)UUNWIND_NONE) {
+            s->unwind = (uint8_t)UUNWIND_STOP;
+            s->transfer = r->root_tag ? uv_ptr(UV_CELL, r->root_tag) : uv_nil();
+            if (s != vm->sched.current) {
+                s->gates = 0;
+                if (s->state == USTRAND_PARKED) usched_wake(s, uv_nil());
+            }
+        }
+        ustrand_close_upvals(s, 0);
+    }
     for (URealm **pp = &vm->realms; *pp; pp = &(*pp)->next) {
         if (*pp == r) { *pp = r->next; r->next = NULL; break; }
     }
-    /* The marked strands never get to run that cleanup -- nothing
-     * schedules them again -- but dropping the lists here makes the realm
-     * and everything below it unreachable, and the next collection takes
-     * the lot.  A strand still on the run queue is reached through the
-     * queue until it dies. */
+    /* Dropping the lists here makes the realm and everything below it
+     * unreachable once the stopped strands have died, and the next
+     * collection takes the lot.  A strand still on the run queue is
+     * reached through the queue until it dies. */
     r->strands = NULL;
     r->globals = NULL;
     r->root_tag = NULL;

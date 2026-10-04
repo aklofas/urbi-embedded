@@ -509,6 +509,37 @@ static void t_lobby_echo_reaches_the_writer(void)
     urbi_close(vm);
 }
 
+/* A closure the host keeps past its realm must not read the realm's
+ * freed register stack: the captured local is closed at teardown and
+ * the call returns its value. */
+static void t_a_retained_closure_survives_its_realm(void)
+{
+    CountAlloc ca; UVM *vm = open_counted(&ca);
+    (void)urbi_realm_main(vm);                 /* so the next realm is NOT the main one */
+    URealm *r2 = urbi_realm_new(vm);
+    RT_CHECK(r2 != NULL && r2 != urbi_realm_main(vm));
+    (void)run(vm, r2, "var t = Tag.new(); t: detach { var x = 42; Realm.saved = function() { x }; sleep(1000000) }; 0");
+    uint64_t wake = 0;
+    (void)urbi_step(vm, 0, &wake);            /* the child runs to its sleep and stores `saved` */
+    UValue saved = urbi_make_nil();
+    RT_EQ(urbi_global_get(vm, r2, "saved", &saved), URBI_OK);
+    RT_EQ(saved.kind, (uint8_t)UVAL_CELL);
+    urbi_ref(vm, saved);
+    urbi_realm_free(vm, r2);
+    /* Teardown stops the detached child; it dies on its next slice. */
+    (void)urbi_step(vm, 0, &wake);
+    RT_CHECK(!urbi_has_live_work(vm));
+    urbi_gc_collect(vm);
+    urbi_gc_collect(vm);
+    UValue out = urbi_make_nil();
+    RT_EQ(urbi_call(vm, urbi_realm_main(vm), saved, urbi_make_nil(), NULL, 0, &out), URBI_OK);
+    RT_EQ(out.kind, (uint8_t)UVAL_INT);
+    RT_EQ(out.v.i, 42);
+    urbi_unref(vm, saved);
+    urbi_close(vm);
+    RT_EQ(ca.live, (size_t)0);
+}
+
 void rt_realm_suite(void)
 {
     t_realm_shape();
@@ -525,4 +556,5 @@ void rt_realm_suite(void)
     t_realmless_globals_are_boot_only();
     t_arity_errors_name_and_count();
     t_lobby_echo_reaches_the_writer();
+    t_a_retained_closure_survives_its_realm();
 }
