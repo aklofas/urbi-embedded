@@ -234,9 +234,38 @@ static uint8_t ex_member_get(UEmitter *e, const UAstNode *n, int want) {
     return d;
 }
 
+/* Whether compiling `n` can run user code (a call, a getter, a thunk of a
+ * lazy parameter, an assignment) and so could rebind a local whose
+ * register an enclosing operator has already read. */
+static bool expr_is_pure(UEmitter *e, const UAstNode *n) {
+    switch (n->kind) {
+    case AST_INT: case AST_FLOAT_LIT: case AST_STR: case AST_BOOL: case AST_NIL:
+        return true;
+    case AST_IDENT: {
+        const char *name = uemit_intern(e, n->u.ident.start, n->u.ident.len);
+        int li = name != NULL ? ulocal_find(e->fs, name) : -1;
+        return li >= 0 && (e->fs->locals[li].flags & ULOCAL_LAZY_PARAM) == 0U;
+    }
+    default:
+        return false;
+    }
+}
+
+/* Operands are read left to right: a local's own register is used in
+ * place, so when the next operand can run code that rebinds that local
+ * the value is copied to a temporary first.  Pins keep a register alive;
+ * this keeps its contents. */
+static uint8_t snapshot_if_local(UEmitter *e, uint8_t r, const UAstNode *next, uint32_t line) {
+    if (r >= ureg_top(e) || expr_is_pure(e, next)) return r;
+    uint8_t t = ureg_alloc(e);
+    (void)uinstr_emit(e, uinstr_enc_abc(OP_MOVE, t, r, 0U), line);
+    return t;
+}
+
 static uint8_t ex_member_set(UEmitter *e, const UAstNode *n, int want) {
     if (reject_lazy_method(e, n->u.member.value)) return 0U;
     uint8_t r = uexpr_any(e, n->u.member.recv);
+    r = snapshot_if_local(e, r, n->u.member.value, line_of(n));
     uint8_t v = uexpr_any(e, n->u.member.value);
     const char *name = uemit_intern(e, n->u.member.name_start, n->u.member.name_len);
     if (name == NULL) return 0U;
@@ -264,6 +293,7 @@ static uint8_t ex_unary(UEmitter *e, const UAstNode *n, int want) {
 
 static uint8_t ex_binary(UEmitter *e, const UAstNode *n, int want) {
     uint8_t l = uexpr_any(e, n->u.binary.lhs);
+    l = snapshot_if_local(e, l, n->u.binary.rhs, line_of(n));
     uint8_t r = uexpr_any(e, n->u.binary.rhs);
     uint8_t d = result_reg(e, want, l, r);
     UOpcode op = n->u.binary.op == BOP_SUB ? OP_SUB
@@ -277,6 +307,7 @@ static uint8_t ex_binary(UEmitter *e, const UAstNode *n, int want) {
 static uint8_t ex_compare(UEmitter *e, const UAstNode *n, int want) {
     uint32_t line = line_of(n);
     uint8_t l = uexpr_any(e, n->u.cmp.lhs);
+    l = snapshot_if_local(e, l, n->u.cmp.rhs, line);
     uint8_t r = uexpr_any(e, n->u.cmp.rhs);
     uint8_t d = result_reg(e, want, l, r);
     /* The compare skips the next instruction when its result differs

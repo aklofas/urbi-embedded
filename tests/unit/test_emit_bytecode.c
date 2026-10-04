@@ -492,6 +492,31 @@ UTEST(waituntil_installs_with_the_waituntil_mode) {
     urbi_close(vm);
 }
 
+UTEST(a_local_operand_is_copied_before_a_call_in_the_right_operand) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    run_int(vm, "var g = function() { var x = 1; var bump = function() { x = 2; 10 }; x + bump() }; g()", 11);
+    run_int(vm, "var h = function() { var x = 1; var bump = function() { x = 5; 3 }; if (x < bump()) { 1 } else { 0 } }; h()", 1);
+    run_int(vm, "var k = function() { var o = Object.new(); o.v = 0; var o1 = o; var swap = function() { o = Object.new(); 9 }; o.v = swap(); o1.v }; k()", 9);
+    urbi_close(vm);
+}
+UTEST(a_local_operand_is_not_copied_before_a_pure_right_operand) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    const char *d = disasm_of(vm, "var f = function() { var x = 1; var y = 2; x + 1; x + y; x < y }");
+    const char *p0 = d ? strstr(d, "; proto P0") : NULL;
+    UASSERT(p0 != NULL);
+    if (p0) UASSERT_EQ(0, count_of(p0, "MOVE"));
+    /* A global callee loads straight into a fresh temporary, so the one
+     * MOVE is the snapshot of x, emitted before the CALL. */
+    d = disasm_of(vm, "var g = function() { var x = 1; x + h() }");
+    p0 = d ? strstr(d, "; proto P0") : NULL;
+    UASSERT(p0 != NULL);
+    if (p0) {
+        UASSERT_EQ(1, count_of(p0, "MOVE"));
+        UASSERT(strstr(p0, "MOVE") < strstr(p0, "CALL"));
+    }
+    urbi_close(vm);
+}
+
 void test_emit_bytecode_suite(void) {
     utest_run("every_function_loads_the_globals_object_first", every_function_loads_the_globals_object_first);
     utest_run("a_local_read_emits_no_move", a_local_read_emits_no_move);
@@ -538,4 +563,6 @@ void test_emit_bytecode_suite(void) {
     utest_run("event_bodies_take_the_payload_parameter", event_bodies_take_the_payload_parameter);
     utest_run("slot_change_source_uses_getslot_change_event", slot_change_source_uses_getslot_change_event);
     utest_run("waituntil_installs_with_the_waituntil_mode", waituntil_installs_with_the_waituntil_mode);
+    utest_run("a_local_operand_is_copied_before_a_call_in_the_right_operand", a_local_operand_is_copied_before_a_call_in_the_right_operand);
+    utest_run("a_local_operand_is_not_copied_before_a_pure_right_operand", a_local_operand_is_not_copied_before_a_pure_right_operand);
 }
