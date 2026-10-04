@@ -1,6 +1,8 @@
 #include "rtest.h"
 #include "fakevm.h"
 #include "rt/ustr.h"
+#include "stdlib/stdlib_join_core.h"
+#include <stdint.h>
 static void intern_is_pointer_equal(void) {
     struct UVM vm; fakevm_init(&vm, NULL, 0);
     USym *a = usym_cstr(&vm, "hello"), *b = usym_intern(&vm, "hellox", 5);
@@ -40,7 +42,21 @@ static void concat_produces_correct_bytes(void) {
     RT_CHECK(ab->len == 6 && memcmp(ab->bytes, "abcdef", 6) == 0 && ab->bytes[6] == '\0');
     ustrtab_destroy(&vm, &vm.strings); ugc_destroy(&vm);
 }
+/* The join size accumulator refuses to wrap: a sum that would not leave
+ * room for the terminator is reported instead of under-allocating. */
+static void join_size_accumulation_refuses_to_wrap(void) {
+    size_t t = 0;
+    RT_CHECK(join_size_add(&t, 10));
+    RT_EQ(t, (size_t)10);
+    RT_CHECK(!join_size_add(&t, SIZE_MAX - 5));         /* 10 + (SIZE_MAX-5) wraps */
+    RT_EQ(t, (size_t)10);                                /* untouched on refusal */
+    RT_CHECK(!join_size_add(&t, SIZE_MAX - 10));         /* exactly SIZE_MAX: no room for NUL */
+    RT_CHECK(join_size_add(&t, SIZE_MAX - 11));          /* SIZE_MAX - 1: the largest allowed */
+    RT_EQ(t, SIZE_MAX - 1);
+}
+
 RT_SUITE(rt_str_suite) {
+    rt_run("join_size_accumulation_refuses_to_wrap", join_size_accumulation_refuses_to_wrap);
     rt_run("intern_is_pointer_equal", intern_is_pointer_equal);
     rt_run("strings_are_collected", strings_are_collected);
     rt_run("sym_str_equality", sym_str_equality);

@@ -12,13 +12,25 @@
 #ifndef URBI_STDLIB_JOIN_CORE_H
 #define URBI_STDLIB_JOIN_CORE_H
 
+#include <stdint.h>
 #include "rt/ustdlib_glue.h"
+
+/* Adds n to *total unless the sum would leave no room for the trailing
+ * NUL (the fill pass writes total + 1 bytes).  On a 32-bit size_t a list
+ * of a few thousand references to one large string reaches this. */
+static inline bool join_size_add(size_t *total, size_t n)
+{
+    if (n > (SIZE_MAX - 1u) - *total) return false;
+    *total += n;
+    return true;
+}
 
 /* Concatenates `list`'s String elements with `sep` between them.
  * UEXEC_OK with the result in *out, or UEXEC_THROW: TypeError when an
- * element is not a String, OutOfMemoryError when the working buffer or
- * the result cannot be allocated. */
-static int join_core(UVM *vm, UValue sep, UValue list, UValue *out)
+ * element is not a String, RangeError when the result would not fit a
+ * size_t, OutOfMemoryError when the working buffer or the result cannot
+ * be allocated. */
+static inline int join_core(UVM *vm, UValue sep, UValue list, UValue *out)
 {
     uint32_t count = urbi_list_len(list);
     size_t seplen = urbi_str_size(sep);
@@ -28,8 +40,9 @@ static int join_core(UVM *vm, UValue sep, UValue list, UValue *out)
         UValue e = urbi_list_get(list, i);
         if (!urbi_is_str(e))
             return urbi_raise_type(vm, "join: all elements must be String", out);
-        total += urbi_str_size(e);
-        if (i + 1u < count) total += seplen;
+        if (!join_size_add(&total, urbi_str_size(e))
+            || (i + 1u < count && !join_size_add(&total, seplen)))
+            return urbi_raise_range(vm, "join: result would exceed the maximum string size", out);
     }
 
     char *buf = (char *)vm->gc.alloc(NULL, total + 1u, vm->gc.alloc_ud);
