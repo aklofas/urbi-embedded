@@ -121,6 +121,12 @@ void urealm_free(UVM *vm, URealm *r)
                 if (s->state == USTRAND_PARKED) usched_wake(s, uv_nil());
             }
         }
+        /* The current strand is included on purpose: a host freeing a
+         * realm from inside one of its natives finishes this slice with
+         * its captured locals already closed, which is safe (its globals
+         * are gone and it dies at its next slice).  A stopped strand also
+         * closes its upvalues when it dies; closing them here as well
+         * means no retained closure points at a stack whose realm is gone. */
         ustrand_close_upvals(s, 0);
     }
     for (URealm **pp = &vm->realms; *pp; pp = &(*pp)->next) {

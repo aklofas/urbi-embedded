@@ -517,6 +517,27 @@ UTEST(a_local_operand_is_not_copied_before_a_pure_right_operand) {
     urbi_close(vm);
 }
 
+UTEST(an_upvalue_read_is_a_pure_right_operand) {
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    /* The inner function reads y through GETUPVAL, which runs no code, so
+     * the register of x is used in place with no snapshot. */
+    const char *d = disasm_of(vm, "var f = function(y) { function(x) { x + y } }");
+    const char *up = d ? strstr(d, "GETUPVAL") : NULL;
+    UASSERT(up != NULL);
+    if (up) {
+        const char *start = up;
+        while (start > d && strncmp(start, "; proto", 7) != 0) start--;
+        const char *end = strstr(up, "; proto");
+        size_t len = end ? (size_t)(end - start) : strlen(start);
+        char inner[2048] = {0};
+        if (len >= sizeof inner) len = sizeof inner - 1U;
+        memcpy(inner, start, len);
+        UASSERT(strstr(inner, "ADD") != NULL);
+        UASSERT_EQ(0, count_of(inner, "MOVE"));
+    }
+    urbi_close(vm);
+}
+
 void test_emit_bytecode_suite(void) {
     utest_run("every_function_loads_the_globals_object_first", every_function_loads_the_globals_object_first);
     utest_run("a_local_read_emits_no_move", a_local_read_emits_no_move);
@@ -565,4 +586,5 @@ void test_emit_bytecode_suite(void) {
     utest_run("waituntil_installs_with_the_waituntil_mode", waituntil_installs_with_the_waituntil_mode);
     utest_run("a_local_operand_is_copied_before_a_call_in_the_right_operand", a_local_operand_is_copied_before_a_call_in_the_right_operand);
     utest_run("a_local_operand_is_not_copied_before_a_pure_right_operand", a_local_operand_is_not_copied_before_a_pure_right_operand);
+    utest_run("an_upvalue_read_is_a_pure_right_operand", an_upvalue_read_is_a_pure_right_operand);
 }

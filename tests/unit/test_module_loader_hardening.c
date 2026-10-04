@@ -1,11 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Phase-15 (T71-T79) module-loader hardening tests.
+/* Module-loader hardening tests.
  *
- * Tests target audit-cited holes in the bytecode deserializer.  Helpers
- * (build_good_header, put_varint, build_module_bytes) are deliberately
- * duplicated from test_module.c rather than refactored into a shared
- * header — see plan §3.3 (touch-only-what-you-must); shared helpers can
- * be hoisted in a follow-up. */
+ * Each case feeds the bytecode deserializer a malformed or boundary
+ * chunk.  The helpers (build_good_header, put_varint, build_module_bytes)
+ * are duplicated from test_module.c rather than shared through a header. */
 
 #include "utest.h"
 
@@ -70,7 +68,7 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
     return off;
 }
 
-/* --- T79 (Wave-4): nupvals / nparams range check at proto decode ---
+/* --- nupvals / nparams range check at proto decode ---
  *
  * Each of nupvals and nparams is a single byte (capped at 255 by wire
  * format).  The proto header is cross-checked so that the parameters
@@ -116,9 +114,9 @@ UTEST(deserialize_rejects_unbounded_nupvals_nparams) {
     uchunk_destroy(m, NULL);
 }
 
-/* --- T78 (Wave-4): deeply-nested closure verifier sanity (regression) ---
+/* --- deeply-nested closure verifier sanity (regression) ---
  *
- * v0.5.6 T5 added Bx range check against nested_count.  Construct a
+ * The verifier range-checks a CLOSURE's Bx against nested_count.  Construct a
  * v1.5 module with OP_CLOSURE referencing nested[Bx] >= root
  * nested_count and verify the gate is preserved.
  *
@@ -230,7 +228,7 @@ UTEST(site_name_count_above_65535_rejected) {
     uchunk_destroy(m, NULL);
 }
 
-/* --- T76 (MOD-019): n_const cap is strictly `> UINT16_MAX + 1` (not `>=`) ---
+/* --- n_const cap is strictly `> UINT16_MAX + 1` (not `>=`) ---
  *
  * Boundary regression: the cap formula in decode_constants_into is
  * `n_const > (uint64_t)UINT16_MAX + 1U`.  UINT16_MAX = 65535, so cap is
@@ -260,7 +258,7 @@ UTEST(deserialize_n_const_cap_is_strictly_greater_than) {
     uchunk_destroy(m, NULL);
 }
 
-/* --- T75 (MOD-018): n_abs capped at <= instr_count --- */
+/* --- n_abs capped at <= instr_count --- */
 UTEST(deserialize_rejects_n_abs_exceeding_instr_count) {
     /* Build a 1-instruction module where n_abs claims 2 (exceeds n_instr). */
     uint8_t buf[256];
@@ -288,17 +286,17 @@ UTEST(deserialize_rejects_n_abs_exceeding_instr_count) {
     uchunk_destroy(m, NULL);
 }
 
-/* --- T72 (MOD-004): module_grow rejects target * elem_size overflow ---
+/* --- module_grow rejects target * elem_size overflow ---
  *
  * module_grow_with_alloc is file-private; the public surface that drives
  * it is the section-decoders.  The wire-format-reachable overflow risk
  * was the n_instr * sizeof(uint32_t) and n_abs * sizeof(UAbsLine)
- * multiplications.  T74 now caps n_instr; T75 caps n_abs.  T72 adds
- * defense-in-depth at the helper boundary so any future call site
+ * multiplications.  n_instr and n_abs are capped by their decoders;
+ * module_grow adds defense-in-depth at the helper boundary so any future call site
  * (or removed cap) cannot regress.
  *
  * This test exercises the helper indirectly via n_instr=UINT64_MAX-1
- * (rejected at caller-side T74 cap with UCHUNK_LOAD_OVERSIZED — never reaches
+ * (rejected at the caller-side n_instr cap with UCHUNK_LOAD_OVERSIZED — never reaches
  * the helper) and asserts no crash.  ASan / UBSan in releasetest
  * exercise the helper-level multiply guard directly. */
 UTEST(module_grow_rejects_overflow) {
@@ -314,12 +312,12 @@ UTEST(module_grow_rejects_overflow) {
 
     UProto *m = NULL;
     UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, NULL, NULL, 0);
-    /* T74 caps the count first; T72 fallback is also acceptable. */
+    /* The n_instr cap fires first; the module_grow guard is also acceptable. */
     UASSERT(rc == UCHUNK_LOAD_OVERSIZED || rc == UCHUNK_LOAD_OOM);
     uchunk_destroy(m, NULL);
 }
 
-/* --- T74 (MOD-017): instr_count uint64 -> size_t demotion guard ---
+/* --- instr_count uint64 -> size_t demotion guard ---
  *
  * Build a bytecode whose n_instr varint decodes to UINT64_MAX-1.  The
  * loader must reject with UCHUNK_LOAD_OVERSIZED rather than silently truncate
@@ -342,7 +340,7 @@ UTEST(deserialize_rejects_oversized_instr_count_on_32bit) {
     uchunk_destroy(m, NULL);
 }
 
-/* --- T73 (MOD-007): deserialize NULL buf returns UCHUNK_LOAD_INVALID_ARG --- */
+/* --- deserialize NULL buf returns UCHUNK_LOAD_INVALID_ARG --- */
 UTEST(deserialize_null_buf_returns_invalid_arg) {
     UProto *m = NULL;
     UChunkLoadError rc = uchunk_deserialize(&m, NULL, 64, NULL, NULL, NULL, 0);
@@ -350,11 +348,11 @@ UTEST(deserialize_null_buf_returns_invalid_arg) {
     uchunk_destroy(m, NULL);
 }
 
-/* --- T71 (MOD-001 + MOD-002): partial-failure destroy idempotent ---
+/* --- partial-failure destroy idempotent ---
  *
  * Truncate a serialized module mid-decode at multiple offsets; on
  * deserialize failure call uchunk_destroy.  Run under ASan / valgrind
- * to catch double-free or leaks.  The v0.5.6 MOD-039 docstring claims:
+ * to catch double-free or leaks.  The loader's contract is:
  *   "module may hold partial buffers on error; uchunk_destroy is safe
  *    in either case."
  * This test verifies the implementation matches that claim. */
@@ -363,7 +361,7 @@ UTEST(deserialize_partial_failure_destroy_idempotent) {
     size_t total = hard_build_minimal_module(buf);
 
     /* Walk every truncation length [1..total) — exercises every section
-     * boundary the v0.5.6 audit cited (5 named sites: header / metadata
+     * boundary (5 named sites: header / metadata
      * / constants / instructions / line-table) plus the gaps between. */
     size_t i;
     for (i = 1; i < total; i++) {
@@ -388,23 +386,23 @@ UTEST(deserialize_partial_failure_destroy_idempotent) {
 void test_module_loader_hardening_suite(void);
 
 void test_module_loader_hardening_suite(void) {
-    utest_run("deserialize partial-failure destroy idempotent (T71: MOD-001+002)",
+    utest_run("deserialize partial-failure destroy idempotent",
               deserialize_partial_failure_destroy_idempotent);
-    utest_run("deserialize NULL buf returns UCHUNK_LOAD_INVALID_ARG (T73: MOD-007)",
+    utest_run("deserialize NULL buf returns UCHUNK_LOAD_INVALID_ARG",
               deserialize_null_buf_returns_invalid_arg);
-    utest_run("deserialize rejects oversized instr_count (T74: MOD-017)",
+    utest_run("deserialize rejects oversized instr_count",
               deserialize_rejects_oversized_instr_count_on_32bit);
-    utest_run("module_grow rejects target * elem_size overflow (T72: MOD-004)",
+    utest_run("module_grow rejects target * elem_size overflow",
               module_grow_rejects_overflow);
-    utest_run("deserialize rejects n_abs > instr_count (T75: MOD-018)",
+    utest_run("deserialize rejects n_abs > instr_count",
               deserialize_rejects_n_abs_exceeding_instr_count);
-    utest_run("deserialize n_const cap is strictly > UINT16_MAX (T76: MOD-019)",
+    utest_run("deserialize n_const cap is strictly > UINT16_MAX",
               deserialize_n_const_cap_is_strictly_greater_than);
     utest_run("site names beyond the slot instructions rejected",
               site_names_beyond_the_slot_instructions_rejected);
     utest_run("site name count above 65535 rejected",
               site_name_count_above_65535_rejected);
-    utest_run("deeply-nested closure verifier (T78: W4 carry, regression)",
+    utest_run("deeply-nested closure verifier (regression)",
               deeply_nested_closure_verifier);
     utest_run("deserialize bounds nparams against the register window",
               deserialize_rejects_unbounded_nupvals_nparams);

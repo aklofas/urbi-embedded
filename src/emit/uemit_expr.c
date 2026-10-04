@@ -242,9 +242,16 @@ static bool expr_is_pure(UEmitter *e, const UAstNode *n) {
     case AST_INT: case AST_FLOAT_LIT: case AST_STR: case AST_BOOL: case AST_NIL:
         return true;
     case AST_IDENT: {
+        /* A local of this or any enclosing function is read by a register
+         * or upvalue load, which runs no code.  A lazy parameter is a
+         * thunk; a global is a lookup that can run a getter. */
         const char *name = uemit_intern(e, n->u.ident.start, n->u.ident.len);
-        int li = name != NULL ? ulocal_find(e->fs, name) : -1;
-        return li >= 0 && (e->fs->locals[li].flags & ULOCAL_LAZY_PARAM) == 0U;
+        if (name == NULL) return false;
+        for (const UFuncState *fs = e->fs; fs != NULL; fs = fs->parent) {
+            int li = ulocal_find(fs, name);
+            if (li >= 0) return (fs->locals[li].flags & ULOCAL_LAZY_PARAM) == 0U;
+        }
+        return false;
     }
     default:
         return false;
