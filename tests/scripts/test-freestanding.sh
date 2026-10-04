@@ -24,7 +24,11 @@ fi
 # The second argument names the preset; its nm is the one that reads the
 # archive.  Without a preset the host nm is used.
 PRESET=${2:-}
-if [ -n "$PRESET" ] && [ -f "presets/$PRESET.mk" ]; then
+if [ -n "$PRESET" ]; then
+    if [ ! -f "presets/$PRESET.mk" ]; then
+        echo "FAIL: preset $PRESET has no presets/$PRESET.mk" >&2
+        exit 1
+    fi
     NM_CMD=$(sed -n 's/^CROSS_NM *:= *//p' "presets/$PRESET.mk")
 else
     NM_CMD=nm
@@ -51,6 +55,28 @@ if [ -n "$LIBC_SYMS" ]; then
     echo "URBI_BYTECODE_ONLY=1 builds must be freestanding-clean."
     echo "Either remove the dep, guard it under #if !defined(URBI_BYTECODE_ONLY),"
     echo "or (last resort) document an exception in docs/freestanding-exceptions.md."
+    exit 1
+fi
+
+# Self-containedness: every project symbol the archive references must
+# be defined inside it.  A libc denylist cannot see a call into a
+# directory the build left out; an unresolved project-prefixed name is
+# exactly that.  libgcc helpers (__aeabi_*, __udivdi3) and the embedder's
+# mem*/str* carry no project prefix and are not matched.
+DEFINED=$(mktemp)
+trap 'rm -f "$DEFINED"' EXIT
+$NM_CMD --defined-only "$ARCHIVE" 2>/dev/null \
+    | awk 'NF == 3 {print $3}' | LC_ALL=C sort -u > "$DEFINED"
+MISSING=$($NM_CMD "$ARCHIVE" 2>/dev/null \
+          | awk '$1 == "U" && $2 ~ /^(urbi_|u[a-z]+_)/ {print $2}' \
+          | LC_ALL=C sort -u | LC_ALL=C comm -23 - "$DEFINED")
+
+if [ -n "$MISSING" ]; then
+    echo "FAIL: $ARCHIVE references project symbols it does not define:"
+    echo "$MISSING" | sed 's/^/  /'
+    echo ""
+    echo "A bytecode-only archive must be self-contained: guard the caller"
+    echo "under URBI_BYTECODE_ONLY or route it through a hook the host sets."
     exit 1
 fi
 
