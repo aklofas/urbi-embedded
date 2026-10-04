@@ -21,9 +21,13 @@ Two tiers:
   build on any new unprefixed global and shrinks as names become
   internal.
 
-Inline functions (`urbi_make_*`, `urbi_value_is_*`, `urbi_value_as_*` in
-`include/urbi/types.h`) are part of the stable surface but never appear
-as `T` symbols, so they are not listed here.
+Inline functions (`urbi_make_*` and the scalar `urbi_value_is_*` /
+`urbi_value_as_*` in `include/urbi/types.h`) are part of the stable
+surface but never appear as `T` symbols, so they are not listed here.
+The value helpers that read a runtime cell's subtype or a string's bytes
+(`urbi_value_kind`, `urbi_value_as_str`, `urbi_value_is_closure`,
+`urbi_value_is_event`, `urbi_value_is_tag`, `urbi_value_is_strand`) are
+exported and listed under Values.
 
 New public symbols require a PR-review-touch on this manifest.
 
@@ -73,6 +77,12 @@ server is parked; these four are the cooperative core.
 
 - `urbi_make_string`
 - `urbi_value_to_string`
+- `urbi_value_kind`
+- `urbi_value_as_str`
+- `urbi_value_is_closure`
+- `urbi_value_is_event`
+- `urbi_value_is_tag`
+- `urbi_value_is_strand`
 - `urbi_ref`
 - `urbi_unref`
 

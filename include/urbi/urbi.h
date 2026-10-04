@@ -202,9 +202,11 @@ void urbi_chunk_free(UVM *vm, uint8_t *bytes, size_t n);
  * Values
  * ===================================================================
  *
- * Constructors, predicates and accessors are the inlines in
- * <urbi/types.h> (urbi_make_*, urbi_value_is_*, urbi_value_as_*).  The
- * two functions here are the ones that need a live VM. */
+ * Constructors, predicates and accessors are declared in <urbi/types.h>
+ * (urbi_make_*, urbi_value_is_*, urbi_value_as_*, urbi_value_kind); most
+ * are inlines, the ones that read a cell's subtype or a string's bytes
+ * are exported.  The two functions here are the ones that need a live
+ * VM. */
 
 /* Intern bytes as a script string value.  The result is a UValue of
  * kind URBI_VALUE_STR. */

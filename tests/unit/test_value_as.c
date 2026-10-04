@@ -1,23 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* tests/unit/test_value_as.c — Gap O: urbi_value_kind + urbi_value_as_* round-trip
+/* tests/unit/test_value_as.c — urbi_value_kind + urbi_value_as_* round-trips.
  *
- * Sub-tests:
- *   1. urbi_value_kind returns the expected URBI_VALUE_* for each constructor.
- *   2. Each urbi_value_as_* accessor returns the original input value.
- *   3. bool round-trip: both true and false.
- *   4. int64_t round-trip: 0, -1, 42, INT64_MIN, INT64_MAX.
- *   5. double round-trip: 0.0, 3.14, checked via bit-exact comparison.
- *   6. ptr round-trip: arbitrary host pointer + NULL.
- *   7. object/event/closure round-trip: synthetic non-NULL pointers.
- *   8. str round-trip: synthetic interned-string pointer (a string literal);
- *      verifies pointer identity + length computation.
- *
- * For the str test, T24's urbi_make_str_interned is not yet available here;
- * the test uses a string literal cast to void* in urbi_make_ptr-style, then
- * stores it directly by building a UVAL_STR UValue with known content. */
+ * Scalar kinds are checked on constructed values; strings, closures,
+ * events and tags on values a real VM produced, because those helpers
+ * read the runtime's own cell layout. */
 
 #include "utest.h"
 #include "urbi/types.h"
+#include "urbi/urbi.h"
 
 #include <string.h>
 #include <stdint.h>
@@ -25,17 +15,6 @@
 /* -------------------------------------------------------------------------
  * Helpers
  * ------------------------------------------------------------------------- */
-
-/* Build a synthetic UVAL_STR UValue pointing to a string literal.
- * This bypasses interning — used only in test_value_as to exercise the
- * accessor before urbi_make_str_interned lands. */
-static UValue synthetic_str(const char *literal)
-{
-    UValue v = urbi_make_nil();
-    v.kind = (uint8_t)UVAL_STR;
-    v.v.p = (void *)literal;
-    return v;
-}
 
 /* -------------------------------------------------------------------------
  * Kind tests
@@ -80,18 +59,6 @@ static void kind_of_object(void)
 {
     struct UObject *fake = (struct UObject *)0x1000UL;
     UASSERT_EQ((int)urbi_value_kind(urbi_make_object(fake)), (int)URBI_VALUE_OBJECT);
-}
-
-static void kind_of_event(void)
-{
-    struct UEvent *fake = (struct UEvent *)0x2000UL;
-    UASSERT_EQ((int)urbi_value_kind(urbi_make_event(fake)), (int)URBI_VALUE_EVENT);
-}
-
-static void kind_of_closure(void)
-{
-    struct UClosure *fake = (struct UClosure *)0x3000UL;
-    UASSERT_EQ((int)urbi_value_kind(urbi_make_closure(fake)), (int)URBI_VALUE_CLOSURE);
 }
 
 /* -------------------------------------------------------------------------
@@ -157,55 +124,73 @@ static void as_object_roundtrip(void)
     UASSERT(urbi_value_as_object(v) == fake);
 }
 
-static void as_event_roundtrip(void)
+static UValue run_value(UVM *vm, const char *src)
 {
-    struct UEvent *fake = (struct UEvent *)0xdef0UL;
-    UValue v = urbi_make_event(fake);
-    UASSERT(urbi_value_as_event(v) == fake);
+    UValue out = urbi_make_nil(); char err[256] = {0};
+    if (urbi_run(vm, NULL, src, strlen(src), NULL, &out, err, sizeof err) != URBI_OK) printf("    run: %s\n", err);
+    return out;
 }
 
-static void as_closure_roundtrip(void)
+static void a_host_made_string_reads_back_its_bytes(void)
 {
-    struct UClosure *fake = (struct UClosure *)0xfed0UL;
-    UValue v = urbi_make_closure(fake);
-    UASSERT(urbi_value_as_closure(v) == fake);
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    UValue s = urbi_make_string(vm, "abc", 3);
+    UASSERT_EQ((int)urbi_value_kind(s), (int)URBI_VALUE_STR);
+    UASSERT(urbi_value_is_str(s));
+    size_t n = 99; const char *p = urbi_value_as_str(s, &n);
+    UASSERT_EQ(n, 3);
+    UASSERT(p && memcmp(p, "abc", 3) == 0 && p[3] == '\0');
+    UASSERT(urbi_value_as_str(s, NULL) == p);          /* out_len may be NULL */
+    urbi_close(vm);
 }
 
-static void as_str_roundtrip(void)
+static void a_script_string_literal_is_a_string_to_the_host(void)
 {
-    /* Synthetic interned-string pointer — bypasses urbi_make_str_interned.
-     * Verifies pointer identity and length computation. */
-    const char *literal = "hello";
-    UValue v = synthetic_str(literal);
-    UASSERT_EQ((int)urbi_value_kind(v), (int)URBI_VALUE_STR);
-
-    size_t len = 0;
-    const char *got = urbi_value_as_str(v, &len);
-    UASSERT(got == literal);
-    UASSERT_EQ((int)len, 5);
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    UValue s = run_value(vm, "\"hello\" |");
+    UASSERT(urbi_value_is_str(s));
+    UASSERT_EQ((int)urbi_value_kind(s), (int)URBI_VALUE_STR);
+    size_t n = 0; const char *p = urbi_value_as_str(s, &n);
+    UASSERT_EQ(n, 5);
+    UASSERT(p && strcmp(p, "hello") == 0);
+    UASSERT(urbi_value_as_str(urbi_make_int(1), &n) == NULL);
+    UASSERT_EQ(n, 0);
+    urbi_close(vm);
 }
 
-static void as_str_empty(void)
+static void closures_events_and_tags_are_recognised_as_such(void)
 {
-    const char *empty = "";
-    UValue v = synthetic_str(empty);
-    size_t len = 99;
-    const char *got = urbi_value_as_str(v, &len);
-    UASSERT(got == empty);
-    UASSERT_EQ((int)len, 0);
-}
-
-static void as_str_null_out_len(void)
-{
-    /* out_len may be NULL — must not crash. */
-    const char *literal = "test";
-    UValue v = synthetic_str(literal);
-    const char *got = urbi_value_as_str(v, NULL);
-    UASSERT(got == literal);
+    UVM *vm = urbi_open(utest_alloc, NULL, NULL);
+    UValue f = run_value(vm, "function() { 42 } |");
+    UValue e = run_value(vm, "Event.new() |");
+    UValue t = run_value(vm, "Tag.new() |");
+    UValue l = run_value(vm, "List.new() |");
+    UASSERT(urbi_value_is_closure(f) && !urbi_value_is_event(f) && !urbi_value_is_tag(f));
+    UASSERT(urbi_value_is_event(e) && !urbi_value_is_closure(e));
+    UASSERT(urbi_value_is_tag(t) && !urbi_value_is_event(t));
+    UASSERT_EQ((int)urbi_value_kind(f), (int)URBI_VALUE_CLOSURE);
+    UASSERT_EQ((int)urbi_value_kind(e), (int)URBI_VALUE_EVENT);
+    UASSERT_EQ((int)urbi_value_kind(t), (int)URBI_VALUE_TAG);
+    UASSERT_EQ((int)urbi_value_kind(l), (int)URBI_VALUE_CELL);
+    UASSERT(!urbi_value_is_closure(l) && !urbi_value_is_closure(urbi_make_int(3)));
+    UASSERT(!urbi_value_is_strand(f));
+    /* The constructors round-trip through the accessors and are what the
+     * runtime accepts back. */
+    UValue f2 = urbi_make_closure(urbi_value_as_closure(f));
+    UASSERT(urbi_value_is_closure(f2));
+    UValue out = urbi_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_call(vm, NULL, f2, urbi_make_nil(), NULL, 0, &out));
+    UASSERT_EQ(out.v.i, 42);
+    UASSERT(urbi_value_is_tag(urbi_make_tag(urbi_value_as_tag(t))));
+    UASSERT(urbi_value_is_event(urbi_make_event(urbi_value_as_event(e))));
+    urbi_close(vm);
 }
 
 void test_value_as_suite(void)
 {
+    utest_run("a_host_made_string_reads_back_its_bytes", a_host_made_string_reads_back_its_bytes);
+    utest_run("a_script_string_literal_is_a_string_to_the_host", a_script_string_literal_is_a_string_to_the_host);
+    utest_run("closures_events_and_tags_are_recognised_as_such", closures_events_and_tags_are_recognised_as_such);
     utest_run("kind_of_nil",          kind_of_nil);
     utest_run("kind_of_bool",         kind_of_bool);
     utest_run("kind_of_int",          kind_of_int);
@@ -213,8 +198,6 @@ void test_value_as_suite(void)
     utest_run("kind_of_void",         kind_of_void);
     utest_run("kind_of_ptr",          kind_of_ptr);
     utest_run("kind_of_object",       kind_of_object);
-    utest_run("kind_of_event",        kind_of_event);
-    utest_run("kind_of_closure",      kind_of_closure);
     utest_run("as_bool_true",         as_bool_true);
     utest_run("as_bool_false",        as_bool_false);
     utest_run("as_int_roundtrip",     as_int_roundtrip);
@@ -222,9 +205,4 @@ void test_value_as_suite(void)
     utest_run("as_ptr_roundtrip",     as_ptr_roundtrip);
     utest_run("as_ptr_null",          as_ptr_null);
     utest_run("as_object_roundtrip",  as_object_roundtrip);
-    utest_run("as_event_roundtrip",   as_event_roundtrip);
-    utest_run("as_closure_roundtrip", as_closure_roundtrip);
-    utest_run("as_str_roundtrip",     as_str_roundtrip);
-    utest_run("as_str_empty",         as_str_empty);
-    utest_run("as_str_null_out_len",  as_str_null_out_len);
 }

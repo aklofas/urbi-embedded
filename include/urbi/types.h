@@ -100,7 +100,7 @@ typedef enum {
     UVAL_STRAND  = 7,
     UVAL_OBJECT  = 8,
     UVAL_EVENT   = 9,
-    UVAL_HOST_FN = 10,
+    UVAL_HOST_FN = 10,  /* retired: never produced by the runtime; the number stays reserved */
     /* slot 11 reserved for the public-only URBI_VALUE_PTR mirror */
     UVAL_TAG     = 12,  /* runtime-only (v0.10.2) — not serialized into
                            constant pools (loader rejects > UVAL_STR per
@@ -142,10 +142,13 @@ typedef enum {
     URBI_VALUE_STR     = 4,   /* == UVAL_STR */
     URBI_VALUE_CLOSURE = 5,   /* == UVAL_CLOSURE */
     URBI_VALUE_VOID    = 6,   /* == UVAL_VOID */
+    URBI_VALUE_STRAND  = 7,   /* == UVAL_STRAND */
     URBI_VALUE_OBJECT  = 8,   /* == UVAL_OBJECT */
     URBI_VALUE_EVENT   = 9,   /* == UVAL_EVENT */
     URBI_VALUE_PTR     = 11,  /* public-only: host opaque pointer, no UVAL_* mirror */
-    URBI_VALUE_TAG     = 12   /* == UVAL_TAG; runtime-only UTag* (v0.10.2) */
+    URBI_VALUE_TAG     = 12,  /* == UVAL_TAG */
+    URBI_VALUE_CELL    = 14   /* == UVAL_CELL: a runtime cell with no public kind of
+                                 its own (a List, a Dictionary, ...) */
 } urbi_value_kind_t;
 
 URBI_STATIC_ASSERT((int)URBI_VALUE_INT     == (int)UVAL_INT,     "urbi_value_kind_t/UVAL_* drift: INT");
@@ -155,6 +158,8 @@ URBI_STATIC_ASSERT((int)URBI_VALUE_OBJECT  == (int)UVAL_OBJECT,  "urbi_value_kin
 URBI_STATIC_ASSERT((int)URBI_VALUE_EVENT   == (int)UVAL_EVENT,   "urbi_value_kind_t/UVAL_* drift: EVENT");
 URBI_STATIC_ASSERT((int)URBI_VALUE_CLOSURE == (int)UVAL_CLOSURE, "urbi_value_kind_t/UVAL_* drift: CLOSURE");
 URBI_STATIC_ASSERT((int)URBI_VALUE_TAG     == (int)UVAL_TAG,     "urbi_value_kind_t/UVAL_* drift: TAG");
+URBI_STATIC_ASSERT((int)URBI_VALUE_STRAND  == (int)UVAL_STRAND,  "urbi_value_kind_t/UVAL_* drift: STRAND");
+URBI_STATIC_ASSERT((int)URBI_VALUE_CELL    == (int)UVAL_CELL,    "urbi_value_kind_t/UVAL_* drift: CELL");
 
 /* === Gap N: urbi_make_* value constructors (inline) ===
  *
@@ -163,9 +168,12 @@ URBI_STATIC_ASSERT((int)URBI_VALUE_TAG     == (int)UVAL_TAG,     "urbi_value_kin
  * union arm.  urbi_make_str_interned is declared in <urbi/urbi.h> (requires
  * a live UVM for interning).
  *
- * Pointer-bearing constructors (object/event/closure/ptr) store via v.p.
- * Boolean uses v.i with 0/1 (same convention as internal val_bool).
- * Numeric kinds (int, float) use v.i and v.f respectively. */
+ * Pointer-bearing constructors store via v.p.  A closure, an event and a
+ * tag are runtime cells and travel as UVAL_CELL -- the cell's own subtype
+ * is what urbi_value_is_closure/event/tag and urbi_value_kind read -- so
+ * the value these constructors build is the one urbi_call, urbi_event_emit
+ * and urbi_tag_stop accept back.  Boolean uses v.i with 0/1; the numeric
+ * kinds use v.i and v.f. */
 static inline UValue urbi_make_nil(void)
 {
     UValue v;
@@ -225,7 +233,7 @@ static inline UValue urbi_make_object(struct UObject *o)
 static inline UValue urbi_make_event(struct UEvent *e)
 {
     UValue v;
-    v.kind = (uint8_t)UVAL_EVENT;
+    v.kind = (uint8_t)UVAL_CELL;
     v.v.p = (void *)e;
     return v;
 }
@@ -233,7 +241,7 @@ static inline UValue urbi_make_event(struct UEvent *e)
 static inline UValue urbi_make_closure(struct UClosure *c)
 {
     UValue v;
-    v.kind = (uint8_t)UVAL_CLOSURE;
+    v.kind = (uint8_t)UVAL_CELL;
     v.v.p = (void *)c;
     return v;
 }
@@ -241,34 +249,36 @@ static inline UValue urbi_make_closure(struct UClosure *c)
 static inline UValue urbi_make_tag(struct UTag *tag)
 {
     UValue v;
-    v.kind = (uint8_t)UVAL_TAG;
+    v.kind = (uint8_t)UVAL_CELL;
     v.v.p = (void *)tag;
     return v;
 }
 
-/* === Gap O: urbi_value_kind + urbi_value_as_* typed accessors (inline) ===
+/* === urbi_value_kind + urbi_value_as_* typed accessors ===
  *
- * urbi_value_kind: extract the public kind enum from a UValue.
+ * urbi_value_kind: the kind an embedder dispatches on.  Strings come back
+ * as URBI_VALUE_STR whether the runtime holds them interned or on the
+ * heap; closures, events, tags and strands come back by their own kind
+ * although the tag byte says UVAL_CELL; any other runtime cell is
+ * URBI_VALUE_CELL.  The raw tag byte is still `v.kind`.
  *
  * urbi_value_as_*: access the payload without any kind check.  Caller MUST
- * verify kind first via urbi_value_kind(); mismatched access is undefined
- * behaviour.  No checked variants are provided — same pattern as Lua's
- * lua_type + lua_to* (caller performs the guard).
+ * verify kind first via urbi_value_kind() or urbi_value_is_*(); mismatched
+ * access is undefined behaviour.  No checked variants are provided -- same
+ * pattern as Lua's lua_type + lua_to* (caller performs the guard).
  *
- * urbi_value_as_str: the interned string stored in UVAL_STR values is a
- * NUL-terminated const char* held in v.p.  The inline returns the pointer
- * directly and computes length via an inline NUL-scan loop (no <string.h>
- * dependency — freestanding compatible).  No USymbol struct layout is
- * exposed because USymbol is an opaque typedef (the intern table stores
- * raw const char* blocks, not a struct-with-len); this is simpler and
- * avoids adding struct layout to the public ABI.
+ * urbi_value_as_str: the bytes of a string value (NUL-terminated; an
+ * embedded NUL is preserved and counted in *out_len), valid until the next
+ * collection unless the value is pinned with urbi_ref.  NULL with
+ * *out_len = 0 for a non-string.  out_len may be NULL.
+ *
+ * urbi_value_kind and urbi_value_as_str read the runtime's cell layout and
+ * are exported functions; the rest are inlines.
  *
  * urbi_value_as_bool: returns true/false from the v.i payload (0=false,
  * non-zero=true), consistent with internal val_bool convention. */
-static inline urbi_value_kind_t urbi_value_kind(UValue v)
-{
-    return (urbi_value_kind_t)v.kind;
-}
+urbi_value_kind_t urbi_value_kind(UValue v);
+const char *urbi_value_as_str(UValue v, size_t *out_len);
 
 static inline bool urbi_value_as_bool(UValue v)
 {
@@ -290,17 +300,6 @@ static inline void *urbi_value_as_ptr(UValue v)
     return v.v.p;
 }
 
-static inline const char *urbi_value_as_str(UValue v, size_t *out_len)
-{
-    const char *s = (const char *)v.v.p;
-    if (out_len) {
-        size_t n = 0;
-        if (s) { while (s[n] != '\0') n++; }
-        *out_len = n;
-    }
-    return s;
-}
-
 static inline struct UObject *urbi_value_as_object(UValue v)
 {
     return (struct UObject *)v.v.p;
@@ -316,11 +315,15 @@ static inline struct UClosure *urbi_value_as_closure(UValue v)
     return (struct UClosure *)v.v.p;
 }
 
-/* Pure tag comparison; no validation of the payload.  Header-only static
- * inlines — zero-overhead at any optimisation level.
- *
- * Ordered by UValKind numeric value (not by urbi_make_* declaration order,
- * which is lexical; not by urbi_value_as_* declaration order).
+static inline struct UTag *urbi_value_as_tag(UValue v)
+{
+    return (struct UTag *)v.v.p;
+}
+
+/* Kind predicates.  The scalar ones are pure tag-byte comparisons and
+ * inline; is_str accepts both string representations the runtime uses;
+ * is_closure/is_event/is_tag/is_strand read the cell's subtype and are
+ * exported functions.
  *
  * Embedders use these to dispatch on UValue kind without reaching for
  * urbi_value_kind() comparisons or internal UVAL_* constants.  Example:
@@ -329,27 +332,20 @@ static inline struct UClosure *urbi_value_as_closure(UValue v)
  *   else if (urbi_value_is_float(v)) { double  f = urbi_value_as_float(v); }
  *   else if (urbi_value_is_str(v))   { size_t len; const char *s = urbi_value_as_str(v, &len); }
  *
- * Closes api-ergonomics F1 (value-ctor / accessor asymmetry).
- *
- * urbi_value_is_strand and urbi_value_is_host_fn are diagnostic-only
- * predicates: the corresponding kinds (UVAL_STRAND / UVAL_HOST_FN) can
- * appear in slots visible to callbacks but have no public constructors.
- * The section marker helps merge-conflict resolution when other worktrees
- * touch adjacent regions of this header. */
+ * UVAL_HOST_FN has no predicate: the runtime never produces that kind. */
 
 static inline bool urbi_value_is_nil    (UValue v) { return v.kind == (uint8_t)UVAL_NIL;        }
 static inline bool urbi_value_is_bool   (UValue v) { return v.kind == (uint8_t)UVAL_BOOL;       }
 static inline bool urbi_value_is_int    (UValue v) { return v.kind == (uint8_t)UVAL_INT;        }
 static inline bool urbi_value_is_float  (UValue v) { return v.kind == (uint8_t)UVAL_FLOAT;      }
-static inline bool urbi_value_is_str    (UValue v) { return v.kind == (uint8_t)UVAL_STR;        }
-static inline bool urbi_value_is_closure(UValue v) { return v.kind == (uint8_t)UVAL_CLOSURE;    }
+static inline bool urbi_value_is_str    (UValue v) { return v.kind == (uint8_t)UVAL_STR || v.kind == (uint8_t)UVAL_SYM; }
 static inline bool urbi_value_is_void   (UValue v) { return v.kind == (uint8_t)UVAL_VOID;       }
-static inline bool urbi_value_is_strand (UValue v) { return v.kind == (uint8_t)UVAL_STRAND;     }
 static inline bool urbi_value_is_object (UValue v) { return v.kind == (uint8_t)UVAL_OBJECT;     }
-static inline bool urbi_value_is_event  (UValue v) { return v.kind == (uint8_t)UVAL_EVENT;      }
-static inline bool urbi_value_is_host_fn(UValue v) { return v.kind == (uint8_t)UVAL_HOST_FN;   }
 static inline bool urbi_value_is_ptr    (UValue v) { return v.kind == (uint8_t)URBI_VALUE_PTR;  }
-static inline bool urbi_value_is_tag    (UValue v) { return v.kind == (uint8_t)UVAL_TAG;        }
+bool urbi_value_is_closure(UValue v);
+bool urbi_value_is_event  (UValue v);
+bool urbi_value_is_tag    (UValue v);
+bool urbi_value_is_strand (UValue v);
 
 /* Per-realm limits enforced during source-text compilation. Zero in any
  * field means "unlimited" for that limit. urbi_realm_create_repl auto-

@@ -49,6 +49,16 @@ static void value_kind_event_matches_uval(void)
     UASSERT_EQ(URBI_VALUE_EVENT, UVAL_EVENT);
 }
 
+static void value_kind_strand_matches_uval(void)
+{
+    UASSERT_EQ(URBI_VALUE_STRAND, UVAL_STRAND);
+}
+
+static void value_kind_cell_matches_uval(void)
+{
+    UASSERT_EQ(URBI_VALUE_CELL, UVAL_CELL);
+}
+
 static void value_kind_nil_matches_uval(void)
 {
     UASSERT_EQ(URBI_VALUE_NIL, UVAL_NIL);
@@ -57,6 +67,8 @@ static void value_kind_nil_matches_uval(void)
 void test_value_kind_drift_suite(void)
 {
     utest_run("value_kind_int_matches_uval",     value_kind_int_matches_uval);
+    utest_run("value_kind_strand_matches_uval",  value_kind_strand_matches_uval);
+    utest_run("value_kind_cell_matches_uval",    value_kind_cell_matches_uval);
     utest_run("value_kind_float_matches_uval",   value_kind_float_matches_uval);
     utest_run("value_kind_bool_matches_uval",    value_kind_bool_matches_uval);
     utest_run("value_kind_str_matches_uval",     value_kind_str_matches_uval);

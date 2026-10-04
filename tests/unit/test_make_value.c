@@ -105,7 +105,7 @@ static void make_event_roundtrip(void)
 {
     struct UEvent *fake = (struct UEvent *)0x50607080UL;
     UValue v = urbi_make_event(fake);
-    UASSERT_EQ((int)v.kind, (int)UVAL_EVENT);
+    UASSERT_EQ((int)v.kind, (int)UVAL_CELL);       /* an event is a runtime cell */
     UASSERT(v.v.p == (void *)fake);
 }
 
@@ -113,7 +113,7 @@ static void make_closure_roundtrip(void)
 {
     struct UClosure *fake = (struct UClosure *)0x90a0b0c0UL;
     UValue v = urbi_make_closure(fake);
-    UASSERT_EQ((int)v.kind, (int)UVAL_CLOSURE);
+    UASSERT_EQ((int)v.kind, (int)UVAL_CELL);       /* a closure is a runtime cell */
     UASSERT(v.v.p == (void *)fake);
 }
 

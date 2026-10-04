@@ -112,44 +112,6 @@ static void is_object_matches_make_object(void)
     /* Synthetic non-NULL pointer — never dereferenced. */
     UValue v = urbi_make_object((struct UObject *)0x1000UL);
     UASSERT(urbi_value_is_object(v));
-    UASSERT(!urbi_value_is_event(v));
-    UASSERT(!urbi_value_is_closure(v));
-}
-
-/* =========================================================================
- * Predicate: is_event
- * ========================================================================= */
-
-static void is_event_matches_make_event(void)
-{
-    UValue v = urbi_make_event((struct UEvent *)0x2000UL);
-    UASSERT(urbi_value_is_event(v));
-    UASSERT(!urbi_value_is_object(v));
-    UASSERT(!urbi_value_is_closure(v));
-}
-
-/* =========================================================================
- * Predicate: is_closure
- * ========================================================================= */
-
-static void is_closure_matches_make_closure(void)
-{
-    UValue v = urbi_make_closure((struct UClosure *)0x3000UL);
-    UASSERT(urbi_value_is_closure(v));
-    UASSERT(!urbi_value_is_event(v));
-    UASSERT(!urbi_value_is_object(v));
-}
-
-/* =========================================================================
- * Predicate: is_tag
- * ========================================================================= */
-
-static void is_tag_matches_make_tag(void)
-{
-    UValue v = urbi_make_tag((struct UTag *)0x4000UL);
-    UASSERT(urbi_value_is_tag(v));
-    UASSERT(!urbi_value_is_object(v));
-    UASSERT(!urbi_value_is_nil(v));
 }
 
 /* =========================================================================
@@ -194,7 +156,7 @@ static void is_tag_matches_make_tag(void)
 
 
 /* =========================================================================
- * Predicates: is_strand + is_host_fn — negative cases
+ * Predicate: is_strand — negative cases
  * (no public constructor exists; positive cases require synthetic build)
  * ========================================================================= */
 
@@ -202,12 +164,6 @@ static void is_strand_rejects_int(void)
 {
     UASSERT(urbi_value_is_strand(urbi_make_int(0)) == false);
     UASSERT(urbi_value_is_strand(urbi_make_nil()) == false);
-}
-
-static void is_host_fn_rejects_object(void)
-{
-    UASSERT(urbi_value_is_host_fn(urbi_make_object((struct UObject *)0x1000)) == false);
-    UASSERT(urbi_value_is_host_fn(urbi_make_nil()) == false);
 }
 
 /* =========================================================================
@@ -224,9 +180,5 @@ void test_value_predicates_suite(void)
     utest_run("is_ptr_matches_make_ptr",       is_ptr_matches_make_ptr);
     utest_run("is_ptr_null",                   is_ptr_null);
     utest_run("is_object_matches_make_object", is_object_matches_make_object);
-    utest_run("is_event_matches_make_event",   is_event_matches_make_event);
-    utest_run("is_closure_matches_make_closure", is_closure_matches_make_closure);
-    utest_run("is_tag_matches_make_tag",       is_tag_matches_make_tag);
     utest_run("is_strand_rejects_int",               is_strand_rejects_int);
-    utest_run("is_host_fn_rejects_object",           is_host_fn_rejects_object);
 }

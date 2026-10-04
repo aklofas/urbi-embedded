@@ -233,6 +233,36 @@ UValue urbi_make_string(UVM *vm, const char *bytes, size_t n)
     return s ? uv_str(s) : urbi_make_nil();
 }
 
+static bool uapi_cell_is(UValue v, UCellType t)
+{ return v.kind == UV_CELL && ((const UCell *)v.v.p)->type == (uint8_t)t; }
+
+bool urbi_value_is_closure(UValue v) { return uapi_cell_is(v, UCELL_CLOSURE); }
+bool urbi_value_is_event(UValue v)   { return uapi_cell_is(v, UCELL_EVENT); }
+bool urbi_value_is_tag(UValue v)     { return uapi_cell_is(v, UCELL_TAG); }
+bool urbi_value_is_strand(UValue v)  { return uapi_cell_is(v, UCELL_STRAND); }
+
+urbi_value_kind_t urbi_value_kind(UValue v)
+{
+    if (v.kind == UV_SYM) return URBI_VALUE_STR;
+    if (v.kind != UV_CELL) return (urbi_value_kind_t)v.kind;
+    switch (((const UCell *)v.v.p)->type) {
+    case UCELL_CLOSURE: return URBI_VALUE_CLOSURE;
+    case UCELL_EVENT:   return URBI_VALUE_EVENT;
+    case UCELL_TAG:     return URBI_VALUE_TAG;
+    case UCELL_STRAND:  return URBI_VALUE_STRAND;
+    default:            return URBI_VALUE_CELL;
+    }
+}
+
+const char *urbi_value_as_str(UValue v, size_t *out_len)
+{
+    if (v.kind != UV_STR && v.kind != UV_SYM) { if (out_len) *out_len = 0; return NULL; }
+    uint32_t n = 0;
+    const char *p = uv_str_bytes(v, &n);
+    if (out_len) *out_len = n;
+    return p;
+}
+
 /* One pin bit per cell, not a counter — see the header.  The runtime
  * never touches THIS bit: what the core needs to hold across an
  * allocation goes on a strand's C-root stack, or on the separate
