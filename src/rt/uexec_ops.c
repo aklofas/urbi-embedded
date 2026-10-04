@@ -1290,7 +1290,13 @@ int uexec_call(UVM *vm, UStrand *s, UClosure *cl, UValue recv, const UValue *arg
             return arity_error(vm, s, cl->name, cl->min_args, cl->max_args, argc);
         UValue res = uv_nil(), self = recv;
         USTRAND_ROOT(s, res); USTRAND_ROOT(s, self);
+        /* Published exactly as uexec_run publishes a bytecode callee: the
+         * native's URBI_ROOT, urbi_throw and realm lookups all read the
+         * current strand, and a synchronous entry has not set one. */
+        UStrand *prev = vm->sched.current;
+        vm->sched.current = s;
         int rc = cl->native(vm, self, (UValue *)argv, argc, &res);
+        vm->sched.current = prev;
         /* Unrooting in reverse order writes s->croots twice in a row and
          * the first write is dead, but the pairing is the macro protocol. */
         /* cppcheck-suppress redundantAssignment */

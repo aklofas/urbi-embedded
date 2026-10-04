@@ -335,12 +335,81 @@ static void compile_then_load_keeps_a_many_upvalue_closure(void) {
     RT_EQ(api_live, 0L);
 }
 
+static int throw_rc;
+static int throwing_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) {
+    (void)self; (void)args; (void)nargs; (void)out;
+    throw_rc = urbi_throw(vm, "TypeError", "from a host function");
+    return throw_rc;
+}
+
+/* urbi_throw inside a host function reached through urbi_call deposits on
+ * the calling strand and reports UEXEC_THROW, not "no strand". */
+static void a_host_function_can_throw_from_inside_urbi_call(void) {
+    UVM *vm = api_open();
+    RT_EQ(urbi_register(vm, "hostThrows", throwing_native, 0, 0), URBI_OK);
+    UValue fn = urbi_make_nil();
+    RT_EQ(urbi_global_get(vm, urbi_realm_main(vm), "hostThrows", &fn), URBI_OK);
+    UValue out = urbi_make_nil();
+    throw_rc = 0;
+    int rc = urbi_call(vm, urbi_realm_main(vm), fn, urbi_make_nil(), NULL, 0, &out);
+    RT_EQ(throw_rc, UEXEC_THROW);
+    RT_EQ(rc, URBI_ERR_UNCAUGHT_THROW);
+    urbi_close(vm);
+    RT_EQ(api_live, 0L);
+}
+
+/* The allocator refuses one fresh block after `armed` is set; ugc_alloc then
+ * collects and retries, so a collection happens at a chosen allocation
+ * inside the native.  Swept over the first few allocations of `protos`,
+ * which roots a fresh list and allocates again: the list must survive. */
+static long refuse_nth, fresh_seen; static int armed;
+static void *refusing_alloc(void *p, size_t n, void *ud) {
+    (void)ud;
+    if (n == 0) { if (p) api_live--; free(p); return NULL; }
+    if (!p && armed && ++fresh_seen == refuse_nth) return NULL;
+    void *q = realloc(p, n);
+    if (q && !p) api_live++;
+    return q;
+}
+static void an_allocating_native_keeps_its_roots_across_a_collection(void) {
+    for (refuse_nth = 1; refuse_nth <= 8; refuse_nth++) {
+        api_live = 0; armed = 0; fresh_seen = 0;
+        UVM *vm = urbi_open(refusing_alloc, NULL, NULL);
+        UValue obj = urbi_make_nil();
+        RT_EQ(run_ok(vm, "Object.new() |", &obj), URBI_OK);
+        urbi_ref(vm, obj);
+        UValue protos = urbi_make_nil();
+        RT_EQ(urbi_slot_get(vm, obj, "protos", &protos), URBI_OK);
+        urbi_ref(vm, protos);
+        UValue out = urbi_make_nil();
+        armed = 1;
+        int rc = urbi_call(vm, urbi_realm_main(vm), protos, obj, NULL, 0, &out);
+        armed = 0;
+        /* A refusal that lands on a plain (non-collecting) allocation is
+         * reported as an OutOfMemoryError; one that lands on a cell
+         * allocation is absorbed by the collect-and-retry and the call
+         * succeeds.  Either way the rooted list must not be freed under
+         * the native -- the sanitized build is what sees that. */
+        RT_CHECK(rc == URBI_OK || rc == URBI_ERR_UNCAUGHT_THROW);
+        if (rc == URBI_OK) {
+            UValue sz = urbi_make_nil();
+            RT_EQ(urbi_slot_get(vm, out, "size", &sz), URBI_OK);
+            RT_EQ(sz.v.i, 1);
+        }
+        urbi_close(vm);
+        if (api_live != 0) printf("    refusal %ld: rc=%d, %ld blocks still live after close\n", refuse_nth, rc, api_live);
+        RT_EQ(api_live, 0L);
+    }
+}
+
 RT_SUITE(rt_api_suite) {
     rt_run("lifecycle_and_realms", lifecycle_and_realms);
     rt_run("run_and_format", run_and_format);
     rt_run("compile_then_load", compile_then_load);
     rt_run("compile_then_load_keeps_a_many_upvalue_closure", compile_then_load_keeps_a_many_upvalue_closure);
     rt_run("host_functions", host_functions);
+    rt_run("a_host_function_can_throw_from_inside_urbi_call", a_host_function_can_throw_from_inside_urbi_call);
+    rt_run("an_allocating_native_keeps_its_roots_across_a_collection", an_allocating_native_keeps_its_roots_across_a_collection);
     rt_run("globals_slots_and_call", globals_slots_and_call);
     rt_run("scheduler_api_surface", scheduler_api_surface);
     rt_run("the_configured_step_budget_bounds_an_unbudgeted_step", the_configured_step_budget_bounds_an_unbudgeted_step);

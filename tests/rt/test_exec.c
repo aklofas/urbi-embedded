@@ -294,6 +294,38 @@ static void registers_survive_stack_growth(void) {
     fix_close(&fx);
 }
 
+static UStrand *seen_strand;
+static int record_strand_native(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) {
+    (void)self; (void)args; (void)nargs;
+    seen_strand = vm->sched.current;
+    *out = uv_int(7);
+    return UEXEC_OK;
+}
+
+/* A native reached through the synchronous entry runs with its strand
+ * published, exactly as a bytecode callee does, and the entry restores
+ * whatever was current before it. */
+static void a_native_called_synchronously_sees_its_strand(void) {
+    ExecFix fx; fix_open(&fx);
+    UStrand *s = uvm_spare_acquire(fx.vm, fx.realm);
+    UClosure *cl = uclosure_new(fx.vm, NULL, 0);
+    cl->native = record_strand_native; cl->min_args = 0; cl->max_args = 0;
+    UValue clv = uv_ptr(UV_CELL, cl);
+    urbi_ref(fx.vm, clv);
+    UStrand *outer = (UStrand *)(void *)&fx;          /* a sentinel the call must restore */
+    fx.vm->sched.current = outer;
+    seen_strand = NULL;
+    UValue out = uv_nil();
+    RT_EQ(uexec_call(fx.vm, s, cl, uv_nil(), NULL, 0, &out), UEXEC_OK);
+    RT_CHECK(seen_strand == s);
+    RT_CHECK(fx.vm->sched.current == outer);
+    fx.vm->sched.current = NULL;
+    RT_EQ(out.v.i, 7);
+    urbi_unref(fx.vm, clv);
+    uvm_spare_release(fx.vm, s);
+    fix_close(&fx);
+}
+
 RT_SUITE(rt_exec_suite) {
     rt_run("int_arithmetic", int_arithmetic);
     rt_run("function_call_returns_value", function_call_returns_value);
@@ -308,4 +340,5 @@ RT_SUITE(rt_exec_suite) {
     rt_run("register_preserves_a_host_pin", register_preserves_a_host_pin);
     rt_run("the_spare_free_list_is_capped", the_spare_free_list_is_capped);
     rt_run("registers_survive_stack_growth", registers_survive_stack_growth);
+    rt_run("a_native_called_synchronously_sees_its_strand", a_native_called_synchronously_sees_its_strand);
 }
