@@ -171,6 +171,9 @@ void    urbi_realm_set_writer(UVM *vm, URealm *realm,
  * Code
  * =================================================================== */
 
+#ifndef URBI_BYTECODE_ONLY
+/* Requires the compiler frontend: this takes source, and a bytecode-only
+ * archive has no compiler, so it is not declared under URBI_BYTECODE_ONLY. */
 /* Compile source to a serialized bytecode chunk.  On success writes a
  * freshly allocated buffer through `out_bytes`/`out_len`; release it
  * with urbi_chunk_free.  On failure writes a positioned diagnostic into
@@ -178,18 +181,23 @@ void    urbi_realm_set_writer(UVM *vm, URealm *realm,
  * URBI_ERR_OOM. */
 int  urbi_compile(UVM *vm, const char *src, size_t n, const char *name,
                   uint8_t **out_bytes, size_t *out_len, char *err, size_t errcap);
+#endif /* !URBI_BYTECODE_ONLY */
 
 /* Load a serialized chunk and run it on `realm`, exactly as urbi_run
  * does for source.  Returns URBI_ERR_BYTECODE_VERSION_MISMATCH for a
  * chunk from an incompatible build. */
 int  urbi_load(UVM *vm, URealm *realm, const uint8_t *bytes, size_t n, UValue *out);
 
+#ifndef URBI_BYTECODE_ONLY
+/* Requires the compiler frontend: this takes source, and a bytecode-only
+ * archive has no compiler, so it is not declared under URBI_BYTECODE_ONLY. */
 /* Compile and run source on `realm`.  *out receives the value of the
  * last statement (void for a statement that produces none).  Returns
  * URBI_ERR_COMPILE with `err` filled in, or URBI_ERR_UNCAUGHT_THROW
  * with urbi_last_error filled in. */
 int  urbi_run(UVM *vm, URealm *realm, const char *src, size_t n, const char *name,
               UValue *out, char *err, size_t errcap);
+#endif /* !URBI_BYTECODE_ONLY */
 
 /* Call a closure value synchronously and collect its result. */
 int  urbi_call(UVM *vm, URealm *realm, UValue callee, UValue recv,
@@ -311,6 +319,9 @@ int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_
  * URBI_ERR_OOM when the ring is full (the injection is dropped, which is
  * the only thing available without blocking an interrupt). */
 int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *payload, size_t n);
+#ifndef URBI_BYTECODE_ONLY
+/* Requires the compiler frontend: this takes source, and a bytecode-only
+ * archive has no compiler, so it is not declared under URBI_BYTECODE_ONLY. */
 /* Watch a condition expression; `cb` fires on each rising edge, with the
  * value the expression produced.  `expr` is compiled once against
  * `realm`'s globals and re-evaluated whenever a slot it reads is written,
@@ -325,6 +336,7 @@ int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *p
  * one. */
 int urbi_watch(UVM *vm, URealm *realm, const char *expr,
                int (*cb)(UVM *vm, void *ud, UValue value), void *ud);
+#endif /* !URBI_BYTECODE_ONLY */
 
 /* ===================================================================
  * Tags

@@ -48,6 +48,8 @@ never runs in a cross build.
 - `src/stdlib` may call hosted libc (`snprintf`, `strtod`, `strtoll`, `<math.h>`) only under `#if __STDC_HOSTED__`, with a fallback that raises a `TypeError` naming the method. `atoms.c` already does this; `debug_namespace.c` gets the same guard. A freestanding build therefore has no `Float.asString`; a part that wants it links a libc and builds hosted.
 - `src/host` (the value formatter) and `src/repl` (the eval service: `malloc`, `realloc`, `memchr`) are hosted-only and are excluded from `-bytecode-only` builds. A hosted cross build (the Pico, with newlib) includes them.
 - A cross preset builds with `-ffreestanding` by default; `URBI_HOSTED=1` on the recursive make drops the flag for parts with a libc.
+- The value formatter is wired in only on a hosted build, so on a freestanding build `Object.asString` and `echo` of a non-String raise a `TypeError` naming the method, even in the full `cross-<preset>` archive that contains `src/host`.
+- `urbi_compile`, `urbi_run` and `urbi_watch` take source, so under `URBI_BYTECODE_ONLY` they are neither declared in `<urbi/urbi.h>` nor defined in the archive.
 
 ### Gates
 
