@@ -14,6 +14,9 @@
 #                server down: the next client still gets 3
 #   max-clients  with --max-clients 2, a third concurrent connection is
 #                closed without a hello
+#   nested       an eval 10,000 parentheses deep gets a budget_depth
+#                error instead of overflowing the parser's stack, and the
+#                same connection then still gets 3
 #
 # Skips cleanly if the server is not built or python3 is missing.
 
@@ -177,6 +180,17 @@ elif mode == 'leave':
     if b'"kind":"output"' not in got:
         raise SystemExit('no output before leaving: %r' % got)
     s.close()
+elif mode == 'nested':
+    s = connect()
+    rest = hello(s)
+    code = '(' * 10000 + '1' + ')' * 10000
+    s.sendall(b'{"id":2,"op":"eval","code":"' + code.encode() + b'"}\n')
+    got, closed = read_until(s, b'"kind":"done"', rest)
+    if b'"code":"budget_depth"' not in got:
+        raise SystemExit('no budget_depth error: closed=%s %r' % (closed, got[:200]))
+    # Whatever follows the done line belongs to the next request.
+    eval_three(s, got[got.index(b'"kind":"done"'):].partition(b'\n')[2])
+    s.close()
 elif mode == 'maxclients':
     a = connect(); hello(a)
     b = connect(); hello(b)
@@ -243,7 +257,15 @@ else
 fi
 stop_server leave
 
-# 5. --max-clients 2.
+# 5. A deeply nested expression.
+if start_server --tcp 127.0.0.1:0; then
+    check "nested: a 10,000-deep expression is refused, then 1+2 gives 3" nested "$PORT"
+else
+    fail "nested: server start"
+fi
+stop_server nested
+
+# 6. --max-clients 2.
 if start_server --max-clients 2 --tcp 127.0.0.1:0; then
     check "max-clients: a third connection is closed without a hello" maxclients "$PORT"
 else

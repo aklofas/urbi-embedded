@@ -5,7 +5,6 @@
  * never sees a socket. */
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
-#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -28,6 +27,12 @@
  * poll: the handshake runs inline, so a per-byte timeout would let a peer
  * dripping one byte at a time freeze every session for as long as it likes. */
 #define AUTH_LINE_TIMEOUT_MS 2000
+/* Compile limits for every session: the text arrives off a socket, and
+ * without a depth cap one deeply nested expression exhausts the parser's
+ * C stack and takes the whole server down. */
+#define SESSION_MAX_PARSER_DEPTH 256u
+#define SESSION_MAX_AST_NODES    100000u
+#define SESSION_MAX_SOURCE_BYTES (64u * 1024u)
 
 static volatile sig_atomic_t g_stop = 0;
 static void on_signal(int sig) { (void)sig; g_stop = 1; }
@@ -235,8 +240,12 @@ int main(int argc, char **argv)
     if (!vm) { fprintf(stderr, "urbi-server: urbi_open failed\n"); return 1; }
     urbi_set_clock(vm, host_clock_us, NULL);
     if (boot && run_boot(vm, boot) != 0) { urbi_close(vm); return 1; }
+    UReplConfig cfg = { 0 };                     /* output_buf_cap 0: library default */
+    cfg.default_budget.max_parser_depth = SESSION_MAX_PARSER_DEPTH;
+    cfg.default_budget.max_ast_nodes    = SESSION_MAX_AST_NODES;
+    cfg.default_budget.max_source_bytes = SESSION_MAX_SOURCE_BYTES;
     UReplServer *srv = NULL;
-    if (urbi_repl_serve_init(vm, NULL, &srv) != URBI_OK) { urbi_close(vm); return 1; }
+    if (urbi_repl_serve_init(vm, &cfg, &srv) != URBI_OK) { urbi_close(vm); return 1; }
 
     int rc = 1;
     int ltcp = -1, lunix = -1, bound_port = port;
@@ -305,7 +314,7 @@ int main(int argc, char **argv)
         int timeout_ms = 1000;
         if (st == URBI_STEP_IDLE_UNTIL) {
             uint64_t now_us = host_clock_us(NULL);
-            timeout_ms = wake_us > now_us ? (int)((wake_us - now_us) / 1000u) : 0;
+            timeout_ms = wake_us > now_us ? (int)((wake_us - now_us + 999u) / 1000u) : 0;
             if (timeout_ms > 1000) timeout_ms = 1000;
         } else if (st != URBI_STEP_QUIESCENT) {
             timeout_ms = 0;
