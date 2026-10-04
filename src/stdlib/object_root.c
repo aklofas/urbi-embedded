@@ -460,13 +460,17 @@ static int obj_hasLocalSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, U
  * The universal fallback.  Integer, Float and String shadow it with their
  * own conversions, so anything that reaches here is an object (or an
  * atom kind with no conversion of its own) and renders as its identity.
- * Rendering goes through urbi_value_to_string, which is the same
- * formatter the REPL prints with, so the two never disagree. */
+ * Rendering goes through vm->render_value, which a hosted build points at
+ * the same formatter the REPL prints with, so the two never disagree.  A
+ * build without the formatter leaves the hook NULL, and asString raises
+ * a TypeError naming itself rather than inventing a spelling. */
 static int obj_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)args; (void)nargs;
+    if (vm->render_value == NULL)
+        return urbi_raise_type(vm, "asString: this build has no value formatter", out);
     char buf[96];
-    size_t n = urbi_value_to_string(vm, self, buf, sizeof buf);
+    size_t n = vm->render_value(vm, self, buf, sizeof buf);
     UValue v = urbi_make_str(vm, buf, n);
     if (v.kind == UV_NIL) return urbi_raise_oom(vm, out);
     *out = v;

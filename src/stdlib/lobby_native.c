@@ -13,7 +13,7 @@
 
 #include "stdlib/lobby_native.h"
 
-#include "urbi/urbi.h"   /* urbi_value_to_string — the one hosted call, see below */
+#include "urbi/urbi.h"
 
 /* Appends into buf[*off..cap) when there is room and advances *off by
  * what the full value WOULD take, the way snprintf reports length. */
@@ -95,9 +95,9 @@ static int lobby_send_to(UVM *vm, UValue self, UValue *args, uint8_t nargs, UVal
  * A native rather than a script wrapper so the defaults do not depend on
  * default-parameter lowering, and so `echo(1)` prints `1` rather than
  * raising: a non-String argument is rendered the way the REPL renders a
- * value.  That is urbi_value_to_string, the same function Object.asString
- * calls, which is why this file lives in src/stdlib and not in the
- * freestanding core. */
+ * value.  That goes through vm->render_value, the same hook
+ * Object.asString uses; a build without the formatter leaves it NULL, and
+ * echo of a non-String then raises a TypeError, as asString does. */
 static int lobby_echo(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     UValue empty = urbi_make_str_interned(vm, "", 0);
@@ -109,8 +109,10 @@ static int lobby_echo(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue 
     a[1] = nargs > 1 ? args[1] : empty;
     a[2] = nargs > 2 ? args[2] : stars;
     if (!urbi_is_str(a[0])) {
+        if (vm->render_value == NULL)
+            return urbi_raise_type(vm, "echo: this build has no value formatter for a non-String message", out);
         char rendered[512];
-        size_t n = urbi_value_to_string(vm, a[0], rendered, sizeof rendered);
+        size_t n = vm->render_value(vm, a[0], rendered, sizeof rendered);
         a[0] = urbi_make_str(vm, rendered, n);
         if (a[0].kind == UV_NIL) return urbi_raise_oom(vm, out);
     }
