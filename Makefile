@@ -292,10 +292,16 @@ $(BUILDDIR)/tests/probes/%: tests/probes/%.c $(LIB)
 	$(CC) $(CFLAGS) -Iinclude -Isrc -Itests/probes -o $@ $< $(LIB) -lm
 
 .PHONY: test-probes test-bench
+# small_heap runs at 96 KB and 128 KB here.  A booted 64-bit VM already
+# holds more than 64 KB, so the 64 KB part is measured where it is real:
+# the 32-bit gate below runs small_heap at its 64 KB default.  96 KB is
+# that 64 KB scaled by the same 1.5 the boot-heap cap uses (48 KB -> 72 KB).
 test-probes: $(PROBE_BINS) $(BUILDDIR)/urbi
 	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/boot_heap
 	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/strand_cost
 	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/leaks
+	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/small_heap 98304
+	@$(RUNNER_WRAPPER) $(BUILDDIR)/tests/probes/small_heap 131072
 
 # Run this alone.  Under `make -j` beside anything else the number is the
 # machine's, not the interpreter's.  Run it on the machine that recorded
@@ -309,8 +315,9 @@ else
 	@echo "  against was recorded on the default host build."
 endif
 
-# The three memory probes built for Cortex-M4 and run under qemu: the
-# 32-bit boot-heap, idle-strand and leak numbers the design targets name.
+# The memory probes built for Cortex-M4 and run under qemu: the 32-bit
+# boot-heap, idle-strand and leak numbers the design targets name, and a
+# loop that must live inside a 64 KB heap.
 # Hosted shape of the preset because the probes print through newlib's
 # semihosting stdio.
 PROBE32_DIR := build/arm-cortex-m4f-hosted/tests/probes
@@ -318,7 +325,7 @@ PROBE32_LD  := tests/probes/cortex-m/mps2-an386.ld
 .PHONY: test-probes-32bit
 test-probes-32bit: cross-arm-cortex-m4f-hosted
 	@mkdir -p $(PROBE32_DIR)
-	@for p in boot_heap strand_cost leaks; do \
+	@for p in boot_heap strand_cost leaks small_heap; do \
 	    arm-none-eabi-gcc -std=c99 -Os -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
 	        -nostartfiles --specs=rdimon.specs -T $(PROBE32_LD) \
 	        -Iinclude -Itests/probes \

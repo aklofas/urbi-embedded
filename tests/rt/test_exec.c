@@ -326,8 +326,29 @@ static void a_native_called_synchronously_sees_its_strand(void) {
     fix_close(&fx);
 }
 
+/* A bound chunk's buffers come from the host allocator, not the
+ * collector, so the budget counts them separately: binding adds the
+ * chunk's bytes and collecting its cell gives the same figure back. */
+static void a_bound_chunk_counts_its_buffers_until_it_is_collected(void) {
+    ExecFix fx; fix_open(&fx);
+    const char *src = "var i = 0; while (i < 3) { i = i + 1 } |";
+    char err[256] = {0};
+    UProto *root = NULL;
+    size_t before = fx.vm->gc.chunk_bytes;
+    int crc = ufront_compile(fx.vm, src, strlen(src), "<unit>", NULL, &root, err, sizeof err);
+    RT_EQ(crc, URBI_OK);
+    if (crc != URBI_OK) { fix_close(&fx); return; }
+    UProtoCell *pc = uproto_bind(fx.vm, root);
+    RT_CHECK(pc != NULL);
+    RT_CHECK(fx.vm->gc.chunk_bytes > before + root->instr_count * sizeof(uint32_t));
+    ugc_collect(fx.vm);                     /* nothing refers to the cell */
+    RT_EQ(fx.vm->gc.chunk_bytes, before);
+    fix_close(&fx);
+}
+
 RT_SUITE(rt_exec_suite) {
     rt_run("int_arithmetic", int_arithmetic);
+    rt_run("a_bound_chunk_counts_its_buffers_until_it_is_collected", a_bound_chunk_counts_its_buffers_until_it_is_collected);
     rt_run("function_call_returns_value", function_call_returns_value);
     rt_run("upvalue_outlives_defining_frame", upvalue_outlives_defining_frame);
     rt_run("type_error_is_a_throw", type_error_is_a_throw);

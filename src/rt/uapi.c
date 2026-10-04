@@ -34,8 +34,13 @@ UVM *urbi_open(UVMAllocFn alloc, void *ud, const UVMConfig *config)
     UVM *vm = uvm_open((UAllocFn)alloc, ud);
     if (!vm) return NULL;
     /* config->step_budget is what urbi_step spends when its caller passes
-     * 0; leaving it unset keeps 0 meaning "until nothing is runnable". */
-    if (config) uvm_sched(vm)->default_budget = config->step_budget;
+     * 0; leaving it unset keeps 0 meaning "until nothing is runnable".
+     * The heap budget is set before boot so the stdlib install already
+     * paces against it. */
+    if (config) {
+        uvm_sched(vm)->default_budget = config->step_budget;
+        vm->gc.heap_budget = config->heap_budget;
+    }
 #if __STDC_HOSTED__ && !defined(URBI_BYTECODE_ONLY)
     /* src/host is in this archive on a hosted build, so the unwinder and
      * the stdlib can borrow its formatter for the values the core cannot
@@ -627,6 +632,7 @@ int urbi_gc_stats(UVM *vm, UGcStats *out)
     out->bytes_since = vm->gc.bytes_since;
     out->cells_live  = vm->gc.cells_live;
     out->cycles      = vm->gc.cycles;
+    out->heap_budget = vm->gc.heap_budget;
     return URBI_OK;
 }
 

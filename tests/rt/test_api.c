@@ -404,6 +404,23 @@ static void an_allocating_native_keeps_its_roots_across_a_collection(void) {
     }
 }
 
+/* The budget is pacing advice, never a cap: a VM told it has one byte
+ * still boots and runs. */
+static void a_tiny_budget_is_advisory_not_fatal(void)
+{
+    UVMConfig cfg; memset(&cfg, 0, sizeof cfg);
+    cfg.boot_stdlib = 1; cfg.heap_budget = 1;
+    UVM *vm = urbi_open(api_alloc, NULL, &cfg);
+    RT_CHECK(vm != NULL);
+    if (!vm) return;
+    UValue out = urbi_make_nil(); char err[128] = { 0 };
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), "1+1", 3, "<t>", &out, err, sizeof err), URBI_OK);
+    RT_EQ(out.v.i, 2);
+    UGcStats st; RT_EQ(urbi_gc_stats(vm, &st), URBI_OK);
+    RT_EQ(st.heap_budget, (size_t)1);
+    urbi_close(vm);
+}
+
 RT_SUITE(rt_api_suite) {
     rt_run("lifecycle_and_realms", lifecycle_and_realms);
     rt_run("run_and_format", run_and_format);
@@ -416,4 +433,5 @@ RT_SUITE(rt_api_suite) {
     rt_run("scheduler_api_surface", scheduler_api_surface);
     rt_run("the_configured_step_budget_bounds_an_unbudgeted_step", the_configured_step_budget_bounds_an_unbudgeted_step);
     rt_run("version_and_null_arguments", version_and_null_arguments);
+    rt_run("a_tiny_budget_is_advisory_not_fatal", a_tiny_budget_is_advisory_not_fatal);
 }

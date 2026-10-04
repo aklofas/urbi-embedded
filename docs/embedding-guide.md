@@ -148,9 +148,10 @@ UVM *urbi_open(UVMAllocFn alloc, void *ud, const UVMConfig *config);
 void urbi_close(UVM *vm);
 ```
 
-`UVM` is opaque. `config` may be NULL for the defaults; the two knobs are
-`step_budget` and `boot_stdlib` (set the latter to 0 for a VM with no
-built-ins at all, which is only useful for measuring the bare core).
+`UVM` is opaque. `config` may be NULL for the defaults; the knobs are
+`step_budget`, `boot_stdlib` (set it to 0 for a VM with no built-ins at
+all, which is only useful for measuring the bare core) and `heap_budget`,
+described under [The allocator](#the-allocator).
 
 `step_budget` is what `urbi_step` spends when its caller passes 0. Leave
 it unset and a zero budget keeps its plain meaning, run until nothing is
@@ -185,6 +186,34 @@ static void *fixed_heap_alloc(void *ptr, size_t nbytes, void *ud)
 On a target with no `malloc`, back it with a static array and a simple
 allocator of your choosing. The VM does not care what is underneath, only
 that the three cases behave.
+
+When the heap behind the allocator is fixed, tell the VM its size in
+`heap_budget`. The collector then runs before three quarters of it is in
+use, counting loaded chunks as well as objects, so a loop that makes
+garbage is collected before the allocator starts refusing. Zero, the
+default, keeps the collector pacing by growth alone. The budget is
+advice, not a cap: the VM never refuses an allocation on its own account,
+and a refusal from your allocator makes the collector run at the next
+safepoint.
+
+```c
+/* FRAGMENT — opening a VM on a fixed 64 KB arena.  arena_alloc stands
+ * for whatever allocator hands out that arena. */
+void *arena_alloc(void *ptr, size_t nbytes, void *ud);
+
+static UVM *open_on_arena(void *arena_state)
+{
+    UVMConfig cfg;
+    memset(&cfg, 0, sizeof cfg);
+    cfg.boot_stdlib = 1;
+    cfg.heap_budget = 64u * 1024u;   /* the size of the arena */
+    return urbi_open(arena_alloc, arena_state, &cfg);
+}
+```
+
+A loop making objects, lists, strings and strands runs inside a 64 KB
+heap on a 32-bit part with no refusal; `tests/probes/small_heap.c`
+measures it under qemu in the 32-bit probe gate.
 
 ## Running script
 

@@ -59,6 +59,10 @@ typedef struct UGc {
     uint8_t  pause_ratio;         /* percent; 200 = collect when since > 2x pace_base */
     uint8_t  in_collect;
     uint8_t  gray_overflow;       /* set when a push onto gray[] fails (OOM); cleared by the fallback rescan */
+    uint8_t  collect_requested;   /* the host allocator refused a request; collect at the next safepoint */
+    size_t   heap_budget;         /* bytes the host can give, 0 = unbounded */
+    size_t   chunk_bytes;         /* bound chunks' buffers: from the host allocator, not collector cells;
+                                   * only the budget counts them, so growth pacing is unchanged */
     UGcRoots hooks;
 } UGc;
 

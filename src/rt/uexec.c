@@ -131,6 +131,8 @@ void uvm_gc_finalize(UVM *vm, UCell *c)
             uslotcache_free_tree(vm, pc->root);
             uchunk_destroy(pc->root, NULL);   /* refcount is always 0 here: the new core never bumps it */
             pc->root = NULL;
+            vm->gc.chunk_bytes -= pc->tree_bytes;
+            pc->tree_bytes = 0;
         }
         break;
     }
@@ -422,6 +424,30 @@ static int uproto_bind_one(UVM *vm, UProto *p)
     return 0;
 }
 
+/* What a bound chunk's buffers cost the host: the proto structs and every
+ * array hanging off them, as allocated.  They come from the VM's
+ * allocator but not through the collector, so without this count a heap
+ * budget would pace against a figure that leaves out the stdlib and
+ * every compiled chunk.  An estimate in the allocator's own units; the
+ * cell remembers it and gives the same figure back when finalised. */
+static size_t uproto_owned_bytes(const UProto *p)
+{
+    size_t n = (p->instr_cap > p->instr_count ? p->instr_cap : p->instr_count) * sizeof(uint32_t)
+             + (p->const_cap > p->const_count ? p->const_cap : p->const_count) * sizeof(UValue)
+             + (p->abs_line_cap > p->abs_line_count ? p->abs_line_cap : p->abs_line_count) * sizeof(UAbsLine)
+             + (p->nested_cap > p->nested_count ? p->nested_cap : p->nested_count) * sizeof(UProto *);
+    if (p->line_deltas) n += p->instr_count;
+    if (p->site_names) n += (size_t)p->site_count * sizeof(USymbol *);
+    if (p->site_name_strs) {
+        n += (size_t)p->site_count * sizeof(char *);
+        for (uint16_t i = 0; i < p->site_count; i++)
+            if (p->site_name_strs[i]) n += strlen(p->site_name_strs[i]) + 1;
+    }
+    for (size_t i = 0; i < p->nested_count; i++)
+        if (p->nested[i]) n += sizeof(UProto) + uproto_owned_bytes(p->nested[i]);
+    return n;
+}
+
 UProtoCell *uproto_bind(UVM *vm, UProto *root)
 {
     if (!root) return NULL;
@@ -435,5 +461,7 @@ UProtoCell *uproto_bind(UVM *vm, UProto *root)
     vm->bound_protos = pc;
     root->owning_module_instance = (struct UChunkInstance *)pc;
     if (uproto_bind_one(vm, root) != 0) return NULL;
+    pc->tree_bytes = sizeof(UProto) + uproto_owned_bytes(root);
+    vm->gc.chunk_bytes += pc->tree_bytes;
     return pc;
 }

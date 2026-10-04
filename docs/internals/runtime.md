@@ -115,6 +115,19 @@ last cycle plus the raw arrays live now: the cell half is written only by
 a cycle, so read it without collecting first and you get the previous
 cycle's answer.
 
+A host with a fixed heap declares its size as `UVMConfig.heap_budget`.
+The limit is then also capped at the room left below three quarters of
+the budget, where what is held is the pacing baseline plus the bound
+chunks' buffers (`chunk_bytes`): a chunk's protos and arrays come from
+the host allocator, not from collector cells, and the stdlib chunk
+alone is a large share of a booted VM. The room never falls below a
+thirty-second of the budget, so a nearly full heap does not collect on
+every allocation. Chunk bytes count only toward the budget; growth
+pacing is what it was. When the host allocator refuses a request, the
+collector sets `collect_requested` and the next safepoint collects
+whatever the counts say. The budget is advice: nothing in the VM refuses
+an allocation because of it.
+
 `URBI_GC_STRESS=1` collects before every cell allocation. It is the
 highest-leverage way to find a rooting gap, and it runs the whole suite
 in CI.

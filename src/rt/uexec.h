@@ -97,6 +97,7 @@ typedef struct UProtoCell {
     UCell              cell;
     UProto            *root;
     struct UProtoCell *next_bound;   /* vm->bound_protos list */
+    size_t             tree_bytes;   /* the chunk's buffers, counted in gc.chunk_bytes while bound */
 } UProtoCell;
 
 /* --- the VM ---------------------------------------------------------- */

@@ -15,17 +15,19 @@ void *ugc_raw_alloc(struct UVM *vm, size_t nbytes) {
     UGc *g = uvm_gc(vm);
     UGC_ASSERT(!g->in_collect);   /* finalize hooks must not allocate */
     void *p = g->alloc(NULL, nbytes, g->alloc_ud);
+    if (!p) { g->collect_requested = 1; return NULL; }
     /* bytes_live follows the raw bytes exactly; pace_base does not move
      * until the next collection.  A baseline that grew with every raw
      * block would outrun bytes_since for any garbage whose raw block is at
      * least as big as its cell -- a list, an object with slots, a strand
      * -- and a loop making such garbage would never collect. */
-    if (p) { memset(p, 0, nbytes); g->bytes_since += nbytes; g->bytes_live += nbytes; g->raw_live += nbytes; }
+    memset(p, 0, nbytes); g->bytes_since += nbytes; g->bytes_live += nbytes; g->raw_live += nbytes;
     return p;
 }
 void *ugc_raw_realloc(struct UVM *vm, void *p, size_t old, size_t nbytes) {
     UGc *g = uvm_gc(vm);
     void *q = g->alloc(p, nbytes, g->alloc_ud);
+    if (!q) g->collect_requested = 1;
     if (q) {
         if (nbytes > old) {
             memset((char *)q + old, 0, nbytes - old);
@@ -46,7 +48,7 @@ void *ugc_alloc(struct UVM *vm, UCellType type, size_t nbytes) {
     UGC_ASSERT(!g->in_collect);   /* finalize hooks must not allocate */
     ugc_maybe_collect(vm);
     UCell *c = (UCell *)g->alloc(NULL, nbytes, g->alloc_ud);
-    if (!c) { ugc_collect(vm); c = (UCell *)g->alloc(NULL, nbytes, g->alloc_ud); if (!c) return NULL; }
+    if (!c) { ugc_collect(vm); c = (UCell *)g->alloc(NULL, nbytes, g->alloc_ud); if (!c) { g->collect_requested = 1; return NULL; } }
     memset(c, 0, nbytes);
     c->type = (uint8_t)type; c->size = (uint32_t)nbytes;
     c->next = g->all; g->all = c;
@@ -127,12 +129,27 @@ void ugc_collect(struct UVM *vm) {
      * added back or every collect would silently forget live raw memory. */
     g->bytes_live = live + g->raw_live; g->pace_base = g->bytes_live;
     g->cells_live = n; g->bytes_since = 0; g->cycles++;
+    g->collect_requested = 0;
     g->in_collect = 0;
 }
 
 bool ugc_should_collect(const UGc *g) {
+    if (g->collect_requested) return true;
     size_t limit = g->pace_base * g->pause_ratio / 100;
     if (limit < g->threshold) limit = g->threshold;
+    if (g->heap_budget) {
+        /* Collect before three quarters of the budget is reached.  What
+         * is held counts the loaded chunks too: they come from the same
+         * host heap, and the stdlib chunk alone is a large share of it.  The
+         * floor keeps a nearly-full heap from collecting on every
+         * allocation; past it the next refusal requests a collection. */
+        size_t soft = g->heap_budget / 4 * 3;
+        size_t held = g->pace_base + g->chunk_bytes;
+        size_t room = soft > held ? soft - held : 0;
+        size_t floor = g->heap_budget / 32;
+        if (room < floor) room = floor;
+        if (room < limit) limit = room;
+    }
     return g->bytes_since > limit;
 }
 

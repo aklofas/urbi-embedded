@@ -47,6 +47,14 @@ typedef struct UVMConfig {
      * repeat the number at each call.  An explicit budget always wins. */
     uint32_t step_budget;
     uint8_t  boot_stdlib;   /* 1 = install the standard library at open (default 1) */
+    /* How much heap the host can give this VM, in bytes.  Zero means
+     * unbounded, which keeps the collector pacing by growth alone.  A
+     * number makes the collector run before what the VM holds (objects,
+     * their arrays and loaded code) plus what it allocated since the
+     * last cycle crosses three quarters of it, so a part with 64 KB sees
+     * a collection before its allocator starts refusing.  Advisory: the
+     * VM never refuses an allocation on its own account. */
+    size_t   heap_budget;
 } UVMConfig;
 
 /* Create a VM.  `alloc` is realloc-shaped (see UVMAllocFn) and is the
@@ -379,6 +387,7 @@ typedef struct UGcStats {
     size_t   bytes_since;   /* bytes allocated since the last cycle */
     uint32_t cells_live;    /* live cells as of the last cycle */
     uint32_t cycles;        /* completed collections */
+    size_t   heap_budget;   /* what the host declared at open, 0 = unbounded */
 } UGcStats;
 
 /* Run one full collection now. */

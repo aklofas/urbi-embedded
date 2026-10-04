@@ -219,6 +219,34 @@ static void the_pacing_baseline_does_not_move_between_collections(void) {
     RT_EQ(vm.gc.pace_base, base);
     fakevm_destroy(&vm);
 }
+static void a_budget_caps_the_pace(void) {
+    struct UVM vm; fakevm_init(&vm, NULL, 0);
+    ugc_collect(&vm);
+    vm.gc.pace_base = 40u * 1024u;          /* as if 40 KB survived the last cycle */
+    vm.gc.bytes_since = 9u * 1024u;
+    RT_CHECK(!ugc_should_collect(&vm.gc));  /* unbounded: 9 KB is under 2 x 40 KB */
+    vm.gc.heap_budget = 64u * 1024u;        /* room = 48 KB - 40 KB = 8 KB */
+    RT_CHECK(ugc_should_collect(&vm.gc));
+    vm.gc.pace_base = 30u * 1024u;          /* room = 48 KB - 30 KB = 18 KB */
+    RT_CHECK(!ugc_should_collect(&vm.gc));
+    vm.gc.chunk_bytes = 10u * 1024u;        /* loaded chunks count: room = 8 KB */
+    RT_CHECK(ugc_should_collect(&vm.gc));
+    vm.gc.heap_budget = 0;                  /* but not toward growth pacing */
+    RT_CHECK(!ugc_should_collect(&vm.gc));
+    vm.gc.pace_base = 0; vm.gc.bytes_since = 0; vm.gc.chunk_bytes = 0;
+    fakevm_destroy(&vm);
+}
+static void a_refused_raw_allocation_requests_a_collection(void) {
+    struct UVM vm; fakevm_init(&vm, NULL, 0);
+    ugc_collect(&vm);
+    RT_CHECK(!ugc_should_collect(&vm.gc));
+    vm.gc.collect_requested = 1;            /* what a refused ugc_raw_alloc sets */
+    RT_CHECK(ugc_should_collect(&vm.gc));
+    ugc_collect(&vm);
+    RT_EQ(vm.gc.collect_requested, (uint8_t)0);
+    RT_CHECK(!ugc_should_collect(&vm.gc));
+    fakevm_destroy(&vm);
+}
 RT_SUITE(rt_gc_suite) {
     rt_run("alloc_and_collect_unrooted", alloc_and_collect_unrooted);
     rt_run("rooted_survives", rooted_survives);
@@ -230,4 +258,6 @@ RT_SUITE(rt_gc_suite) {
     rt_run("gray_overflow_all_survive", gray_overflow_all_survive);
     rt_run("pacing_triggers_for_garbage_that_owns_raw_memory", pacing_triggers_for_garbage_that_owns_raw_memory);
     rt_run("the_pacing_baseline_does_not_move_between_collections", the_pacing_baseline_does_not_move_between_collections);
+    rt_run("a_budget_caps_the_pace", a_budget_caps_the_pace);
+    rt_run("a_refused_raw_allocation_requests_a_collection", a_refused_raw_allocation_requests_a_collection);
 }
