@@ -189,11 +189,26 @@ static void closures_events_and_tags_are_recognised_as_such(void)
     urbi_close(vm);
 }
 
+static void a_null_cell_pointer_is_no_kind_at_all(void)
+{
+    /* The constructors accept NULL; a kind query is what an embedder runs
+     * before validating anything, so it must answer, not dereference. */
+    UValue c = urbi_make_closure(NULL), e = urbi_make_event(NULL), t = urbi_make_tag(NULL);
+    UASSERT(!urbi_value_is_closure(c) && !urbi_value_is_event(e) && !urbi_value_is_tag(t));
+    UASSERT(!urbi_value_is_strand(c));
+    UASSERT_EQ((int)urbi_value_kind(c), (int)URBI_VALUE_NIL);
+    UValue s = urbi_make_nil(); s.kind = (uint8_t)UVAL_STR; s.v.p = NULL;
+    size_t n = 7;
+    UASSERT(urbi_value_as_str(s, &n) == NULL);
+    UASSERT_EQ(n, 0);
+}
+
 void test_value_as_suite(void)
 {
     utest_run("a_host_made_string_reads_back_its_bytes", a_host_made_string_reads_back_its_bytes);
     utest_run("a_script_string_literal_is_a_string_to_the_host", a_script_string_literal_is_a_string_to_the_host);
     utest_run("closures_events_and_tags_are_recognised_as_such", closures_events_and_tags_are_recognised_as_such);
+    utest_run("a_null_cell_pointer_is_no_kind_at_all", a_null_cell_pointer_is_no_kind_at_all);
     utest_run("kind_of_nil",          kind_of_nil);
     utest_run("kind_of_bool",         kind_of_bool);
     utest_run("kind_of_int",          kind_of_int);

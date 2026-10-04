@@ -233,8 +233,11 @@ UValue urbi_make_string(UVM *vm, const char *bytes, size_t n)
     return s ? uv_str(s) : urbi_make_nil();
 }
 
+/* The public constructors accept a NULL pointer, and a kind query is what
+ * an embedder runs before validating anything, so a NULL cell answers
+ * "no" / "nil" rather than being dereferenced. */
 static bool uapi_cell_is(UValue v, UCellType t)
-{ return v.kind == UV_CELL && ((const UCell *)v.v.p)->type == (uint8_t)t; }
+{ return v.kind == UV_CELL && v.v.p != NULL && ((const UCell *)v.v.p)->type == (uint8_t)t; }
 
 bool urbi_value_is_closure(UValue v) { return uapi_cell_is(v, UCELL_CLOSURE); }
 bool urbi_value_is_event(UValue v)   { return uapi_cell_is(v, UCELL_EVENT); }
@@ -245,6 +248,7 @@ urbi_value_kind_t urbi_value_kind(UValue v)
 {
     if (v.kind == UV_SYM) return URBI_VALUE_STR;
     if (v.kind != UV_CELL) return (urbi_value_kind_t)v.kind;
+    if (v.v.p == NULL) return URBI_VALUE_NIL;
     switch (((const UCell *)v.v.p)->type) {
     case UCELL_CLOSURE: return URBI_VALUE_CLOSURE;
     case UCELL_EVENT:   return URBI_VALUE_EVENT;
@@ -256,7 +260,7 @@ urbi_value_kind_t urbi_value_kind(UValue v)
 
 const char *urbi_value_as_str(UValue v, size_t *out_len)
 {
-    if (v.kind != UV_STR && v.kind != UV_SYM) { if (out_len) *out_len = 0; return NULL; }
+    if ((v.kind != UV_STR && v.kind != UV_SYM) || v.v.p == NULL) { if (out_len) *out_len = 0; return NULL; }
     uint32_t n = 0;
     const char *p = uv_str_bytes(v, &n);
     if (out_len) *out_len = n;
