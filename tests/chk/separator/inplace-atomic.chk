@@ -1,15 +1,11 @@
 # Milestone: v0.10.11-channel-and-isA
 # Covers: compound assignment operators (+=, *=, /=, -=) are evaluated atomically;
 #         target expression is not evaluated twice even with side effects.
-# blocked: compound assignment is not parsed.  Probed: `v += 2` is
-#          `unexpected token`, and the single-evaluation claim this
-#          fixture makes is about exactly those operators.  cout and
-#          class/method dispatch, the other prerequisites this header used
-#          to name, both work now.
+# deferred: v1.x — compound assignment operators (`+=`, `-=`, `*=`, `/=`); `v += 2` does not parse.
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
+# what stands in the way has been superseded by the `deferred:` line
 # above, which was probed against this branch.  Kept for the
 # original urbiscript it carries.
 # matrix-row: separator-pipe

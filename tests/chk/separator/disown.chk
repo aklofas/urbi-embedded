@@ -1,30 +1,24 @@
 # Milestone: v0.10.10-job-introspection
 # Covers: detach() vs disown() tag-inheritance semantics; detach() inherits tags,
 #         disown() strips all tags; Job.current.tags inspection.
-# blocked: `Job.current.tags` does not exist.  Probed: the slot raises
-#          `LookupError: slot access: slot 'tags' not found`, and the
-#          fixture's whole distinction between detach() and disown() is
-#          read off that list.  Per-feature coverage in
-#          separator/detach_basic.chk + disown_basic.chk.
-#
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
+# blocked: `Job.current().tags()` in a detach()ed strand omits the scope tags it inherited (stopping them does still stop it), so the detach count reads -1, not 0.
 # matrix-row: separator-detach
 #
-# Reason:
-#   detach() + disown() + Job.current() shipped v0.10.10 (D7-C + D7-A
-#   ratifications). The fixture requires the T39 chk driver for the
-#   tag-inheritance distinction across `Tag.new():` block-tagged scope +
-#   multi-step `sleep(10ms)` observation. Per-feature coverage in
-#   tests/chk/separator/detach_basic.chk + disown_basic.chk.
-#
-# Original urbiscript (activate when T39 chk driver lands):
-# # Tag.new(): { var ntags = Job.current.tags.size | {};
-# #   assert(ntags >= 1);
-# #   detach(echo(Job.current.tags.size - ntags)); sleep(10ms);
-# # [00000001] *** 0
-# #   disown(echo(Job.current.tags.size)); sleep(10ms);
-# # [00000002] *** 0 };
+# Rewritten from legacy tests/2.x/disown.chk for the host driver.
+# `Job.current` and `tags` are methods here.  By decision (REVIVAL §14
+# S-detach-disown) disown keeps the realm's connection tag, so the
+# disowned strand sees one tag where the legacy one saw none; the expected
+# `*** 1` below is that, not the legacy `*** 0`.
+## timeout: 30
+## host: run Tag.new(): { var ntags = Job.current().tags().size(); detach(echo(Job.current().tags().size() - ntags)); sleep(10ms); disown(echo(Job.current().tags().size())); sleep(10ms); ntags >= 1 }
+## host: step 1000
+## host: advance-clock 10
+## host: step 1000
+## host: advance-clock 10
+## host: step 1000
+[00000000] *** 0
+[00000000] nil
+[00000000] step: WAKE_AT
+[00000000] *** 1
+[00000000] step: WAKE_AT
+[00000000] step: QUIESCENT

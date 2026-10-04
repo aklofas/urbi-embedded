@@ -4,12 +4,7 @@
 #         maintain that order across all M firings.  Run under all 3 tunable
 #         presets × 100 runs each to assert byte-identical output.
 #
-# blocked: no multi-preset runner mode.  The language half is live --
-#          Event.new(), `at (e?)`, `e!(1)` and the registration-order walk
-#          are covered by reactive/event/event_multi_sub_fifo.chk.  What is
-#          missing is the RUNNER feature this fixture exists for: running
-#          one source under every tunable preset, many times, and asserting
-#          byte-identical output.  There is no directive to write.
+# dropped: the multi-preset determinism runner this record needs was retired (REVIVAL §14 S-multi-preset-determinism)
 # matrix-row: reactive-event
 #
 # Reason:

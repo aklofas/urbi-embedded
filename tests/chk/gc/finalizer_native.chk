@@ -2,7 +2,7 @@
 # Covers: a host-registered finalizable type runs its destroy callback when
 #         the last reference is dropped and the GC collects the cell.
 #
-# blocked: no finalizer->host-fn bridge for a script-creatable type
+# deferred: v1.x — host-registered finalizable types; the embedding API has no type-registration entry point.
 # matrix-row: gc-finalizer
 #
 # The `## host: expect-host-call <n>` directive exists and its generic

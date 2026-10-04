@@ -1,7 +1,7 @@
 # Milestone: v0.10.11-channel-and-isA
 # Covers: stack-exhausted exception is catchable; caught exception matches
 #         Exception.Scheduling type via isA(); message includes location.
-# blocked: Exception structured-throw + stack-depth diagnostics (defer-v1.x)
+# deferred: v1.x — the `Exception.Scheduling` type; stack exhaustion is catchable but raises a plain Exception ("call depth limit reached").
 # matrix-row: exceptions-scheduling
 #
 # Reason:

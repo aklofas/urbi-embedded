@@ -1,7 +1,7 @@
 # Milestone: M3
 # Covers: stats() returns cycle-count dictionary; resetStats() resets the cycle
 #         counter to 1; resetStats() | stats().isNil() shows nil during reset.
-# blocked: requires stats() / resetStats() stdlib functions (not implemented)
+# dropped: `stats()` / `resetStats()` cycle statistics are not part of the language (REVIVAL §14 S-system-introspection)
 # matrix-row: stdlib-system
 #
 # Reason:

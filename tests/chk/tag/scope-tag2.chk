@@ -1,12 +1,7 @@
 # Milestone: v0.10.10-job-introspection
 # Covers: scopeTag with explicit tag label kills ',' strands when function
 #         exits; without scopeTag the comma strand outlives the function call.
-# blocked: a function's scope tag is not stopped when the function
-#          returns -- the same missing semantic as scope-tag.chk, probed
-#          the same way.  `scopeTag` itself resolves both bare-name and
-#          call-style now, so the getter bridge this header used to name
-#          is no longer the blocker.  Single-strand cousin
-#          scope_tag_basic.chk covers the resolution half.
+# blocked: a function's scope tag is not stopped when the function returns, so a `,` strand under `scopeTag()` outlives the call.
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of

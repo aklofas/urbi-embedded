@@ -2,7 +2,7 @@
 # Covers: memory-leak regression for 'at (e?)' watchers holding a reference
 #         on their creator object; Foo instances created in a loop should be
 #         collectible after the loop (no hidden watcher root).
-# blocked: requires System.memCheck() (System not implemented); the Event type and at(e?) halves are live
+# dropped: the leak check is made with `System.memCheck`, which is not part of the language (REVIVAL §14 S-system-introspection)
 # matrix-row: stdlib-system
 #
 # Reason:

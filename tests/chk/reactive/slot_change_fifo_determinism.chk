@@ -5,12 +5,7 @@
 #         maintain that order across all firings.  Run under all 3 tunable
 #         presets × 100 runs to assert byte-identical output.
 #
-# blocked: no multi-preset runner mode.  The four prerequisites this
-#          header used to list -- top-level `var`, Object.new(),
-#          `at (obj.x.changed?)`, `obj.x = N` -- all work now; the
-#          single-run form of the claim is covered by
-#          reactive/slot-change/.  What is missing is the repetition and
-#          preset sweep the determinism claim needs.
+# dropped: the multi-preset determinism runner this record needs was retired (REVIVAL §14 S-multi-preset-determinism)
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of

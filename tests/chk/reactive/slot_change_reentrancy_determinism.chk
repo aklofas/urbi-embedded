@@ -4,10 +4,7 @@
 #         (deferred ring); the deferred entry is dispatched at the next
 #         safepoint before urbi_vm_watcher_eval_dirty, producing deterministic output.
 #
-# blocked: no multi-preset runner mode.  The prerequisites this header
-#          used to list -- top-level `var`, Object.new(), `at sync`, and
-#          slot-change subscription -- all work now.  What is missing is
-#          the repetition and preset sweep the determinism claim needs.
+# dropped: the multi-preset determinism runner this record needs was retired (REVIVAL §14 S-multi-preset-determinism)
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of

@@ -1,7 +1,7 @@
 # Milestone: M3
 # Covers: atomicity of single-cycle operations under the urbiscript scheduler;
 #         'atomic' pattern using call.evalArgAt(0) and System.cycle comparison.
-# blocked: requires System.cycle + CallMessage (permanently dropped) + & runtime
+# dropped: built on `System.cycle` and `call.evalArgAt` (REVIVAL §14 S-system-cycle, L15)
 # matrix-row: separator-pipe
 #
 # Reason:

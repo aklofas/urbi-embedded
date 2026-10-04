@@ -1,14 +1,11 @@
 # Milestone: M3
 # Covers: tag.stop(42) injects a return value into all sleeping strands under
 #         that tag; echo of the stopped block shows the injected value.
-# blocked: stop() takes no value.  Probed: `t.stop(42)` raises
-#          `ArityError: stop: expected 0 arguments, got 1`, so the injected
-#          return value this fixture is entirely about cannot be produced.
-#          Plain tag.stop() works and is covered by temporal/sleep_tag_stop.chk.
+# deferred: v1.x — the script-side valued stop; `Tag.stop` refuses an argument, so `t.stop(42)` cannot hand a value to the stopped strands.
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
+# what stands in the way has been superseded by the `deferred:` line
 # above, which was probed against this branch.  Kept for the
 # original urbiscript it carries.
 # matrix-row: tag-stop

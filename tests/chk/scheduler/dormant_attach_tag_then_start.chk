@@ -2,14 +2,11 @@
 # Covers: a strand created in DORMANT state has a tag attached before start;
 #         when tag.stop() is called before start, the strand never runs.
 #
-# blocked: there is no DORMANT strand state and no create-then-start
-#          surface.  usched_spawn enqueues a strand READY; nothing can
-#          hold one un-started, from script or from the host driver.  The
-#          fixture describes a scheduler that was not re-founded.
+# deferred: v1.x — a DORMANT strand state with create-then-start, so a tag can be attached before the strand first runs.
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
+# what stands in the way has been superseded by the `deferred:` line
 # above, which was probed against this branch.  Kept for the
 # original urbiscript it carries.
 # matrix-row: scheduler-strand

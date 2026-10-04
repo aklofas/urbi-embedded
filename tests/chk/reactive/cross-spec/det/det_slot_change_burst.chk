@@ -2,13 +2,7 @@
 # Covers: determinism rule D-cross-2 — slot-change burst with 2 sync subs;
 #         50 sequential obj.x = i writes; subscriber walk order is byte-stable
 #         across 100x3 preset runs; D-slotchange-2 FIFO sub walk confirmed.
-# blocked: no multi-preset runner mode.  The claim is byte-identical
-#          output across 100 runs under each of three tunable presets, and
-#          there is no directive that asks for repetition or for a preset
-#          sweep -- `# tunables: <preset>` selects ONE and skips otherwise.
-#          The language half works: Object.new(), slot-change subscription
-#          and the sync subscriber walk are all live (see
-#          reactive/slot-change/).
+# dropped: the multi-preset determinism runner this record needs was retired (REVIVAL §14 S-multi-preset-determinism)
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of

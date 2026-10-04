@@ -4,9 +4,7 @@
 #         first order through nested scopes, executing each onleave body before
 #         continuing outward.
 #
-# blocked: `onleave` keyword not yet supported on tag-scope — parse error (deferred-v1.x)
-#   (T39 chk-driver reason stale; the chk driver uses urbi -i / urbi_repl_eval
-#   which has always handled fork separators; the real blocker is `onleave`)
+# deferred: v1.x — `onleave` on a tag scope; `t: { ... } onleave { ... }` does not parse.
 # matrix-row: tag-stop
 #
 # Reason (updated v0.13.5 probe):

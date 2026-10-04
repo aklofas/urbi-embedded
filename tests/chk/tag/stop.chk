@@ -1,31 +1,40 @@
 # Milestone: M3
 # Covers: tag.stop() stops a sleeping strand tagged with that tag;
 #         concurrent variants: stop before vs after strand starts sleeping.
-# blocked: needs a `## host:` rewrite — on the line-at-a-time path the
-#          sleeper never wakes whether it is stopped or not, so the fixture
-#          would pass without testing anything
+# blocked: `a & b` runs `b` only after `a` has finished, so in `{sleep(100ms); echo("No")} & t.stop()` the echo happens before the stop.
 # matrix-row: tag-stop
 #
-# Reason (re-probed on the re-founded core):
-#   The two blockers this fixture used to name are gone.  `{expr} & stmt`
-#   parses inside a tag-scope body, and `echo` resolves unqualified from
-#   any realm now that the Lobby is in every realm's prototype chain.
+# Rewritten from legacy tests/2.x/stop.chk for the host driver, with one
+# tag per case so neither case can be stopped by the other's stop.  On
+# the line-at-a-time path a strand parked on sleep(100ms) is still parked
+# when the line returns, so `echo("No")` would be absent whether or not
+# the stop worked.  Here the virtual clock is moved past the sleep and the
+# scheduler stepped: the control scope, which nobody stops, DOES echo,
+# and the two stopped ones must not.  The expected block below is the
+# legacy behaviour; on this tree the first stopped case prints `*** No a`
+# after the clock moves, because its stop arm only starts once the
+# sleeping arm is done.
 #
-#   What remains is not a gap in the language, it is the wrong runner.  A
-#   chunk runs until nothing is READY and then hands back, which is what
-#   makes line-at-a-time input work at all; a strand parked on
-#   sleep(100ms) is therefore still parked when the line returns.  So
-#   `echo("No")` is absent from the output EITHER WAY — with the stop and
-#   without it.  Activating the fixture as written would produce a green
-#   result that proves nothing, which is the one outcome worse than a
-#   placeholder.
-#
-#   The rewrite it wants is the host driver: `## host: run` the tag scope,
-#   `## host: advance-clock 200`, `## host: step`, and assert that nothing
-#   was echoed — against a control that advances the clock with no stop
-#   and DOES see the echo.
-#
-# Original urbiscript (kept for the rewrite):
-# # var tag = Tag.new()
-# # tag: { {sleep(100ms); echo("No")} & tag.stop() };
-# # tag: { tag.stop() & {sleep(100ms); echo("No")} };
+# A chunk hands back once nothing is READY, so a chunk still parked in
+# its tag scope returns nil rather than its trailing value.
+## timeout: 30
+## host: run var a = Tag.new()
+## host: run var b = Tag.new()
+## host: run var ctl = Tag.new()
+## host: run ctl: { {sleep(100ms); echo("Yes")} & 1 }; 0
+## host: run a: { {sleep(100ms); echo("No a")} & a.stop() }; 0
+## host: run b: { b.stop() & {sleep(100ms); echo("No b")} }; 0
+## host: step 1000
+## host: advance-clock 200
+## host: step 1000
+## host: live-work
+[00000000] <Tag>
+[00000000] <Tag>
+[00000000] <Tag>
+[00000000] nil
+[00000000] 0
+[00000000] 0
+[00000000] step: WAKE_AT
+[00000000] *** Yes
+[00000000] step: QUIESCENT
+[00000000] live-work: false

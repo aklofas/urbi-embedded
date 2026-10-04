@@ -2,7 +2,7 @@
 # Covers: exception regressions: uninitialized var += in catch; asString exception
 #         in asTopLevelPrintable; 1:1 non-tag colon error; scheduler stuck on
 #         concurrent throw + freeze scenario.
-# blocked: compound-assign / bare-catch / named-function-decl (defer-v1.x)
+# deferred: v1.x — compound assignment (`test += 3`), with the bare `catch { ... }` and named-function declarations the other cases also use.
 # matrix-row: exceptions-try-catch
 #
 # Reason:

@@ -1,11 +1,7 @@
 # Milestone: M3
 # Covers: tags[n].block(result) — blocks the strand under that tag with a
 #         return value injected on unblock; used to implement parallel memoized Fibonacci.
-# blocked: block() takes no value.  Probed: the arity guard refuses an
-#          argument, so `tags[n].block(result)` -- the whole memoization
-#          mechanism -- cannot be written.  List indexing and method
-#          dispatch on the element both work (`l[0].stop()` probed OK), so
-#          valued block is the only gap.
+# deferred: v1.x — the script-side valued block; `Tag.block` refuses an argument, so `tags[n].block(result)` cannot hand a value to the strands it releases.
 # matrix-row: tag-block
 #
 # Reason:

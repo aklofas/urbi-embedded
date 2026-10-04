@@ -2,7 +2,7 @@
 # Covers: Lobby is an alias for the global Realm; bindings in Lobby are visible
 #         globally and vice versa.
 #
-# blocked: Lobby is read-only, deliberately and still
+# dropped: Lobby stays read-only, so it cannot alias the realm's globals (REVIVAL §14 S-object-unfreeze)
 # matrix-row: stdlib-lobby
 #
 # Reason: the Lobby prototype carries `lobbies`, the registry of every live

@@ -2,14 +2,11 @@
 # Covers: a strand created in DORMANT state is not dispatched until
 #         urbi_strand_start transitions it to READY; after start it runs.
 #
-# blocked: there is no DORMANT strand state and no create-then-start
-#          surface.  usched_spawn enqueues a strand READY; `Strand` is not
-#          a script-visible name and there is no C entry that creates a
-#          strand without scheduling it.
+# deferred: v1.x — a DORMANT strand state with create-then-start; every spawned strand is READY at once.
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
+# what stands in the way has been superseded by the `deferred:` line
 # above, which was probed against this branch.  Kept for the
 # original urbiscript it carries.
 # matrix-row: scheduler-strand

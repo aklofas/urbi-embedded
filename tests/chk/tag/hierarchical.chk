@@ -1,11 +1,7 @@
 # Milestone: M3
 # Covers: deep tag hierarchy (a.b.c.k); stopping any ancestor cascades to all
 #         descendants; 'at sync (a.enter?)' reactive enter/leave tracing; freeze.
-# blocked: a Tag is not an Object, so it carries no child slots.  Probed:
-#          `var a.b = Tag.new("a.b")` raises
-#          `TypeError: slot write: receiver is not an Object`, which takes
-#          the whole a.b.c.k hierarchy with it.  Tag hierarchy is filed as
-#          design-risk refound-A.
+# blocked: tags have no hierarchy: `a.new("a.b")` makes a tag that `a.stop()` does not reach, and a Tag cannot hold it as the slot `a.b`.
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of

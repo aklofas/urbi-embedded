@@ -1,14 +1,10 @@
 # Milestone: M3
 # Covers: nested '&' and '|' separator combinations; complex join-tree evaluation.
-# blocked: `&` is a statement separator, not an expression operator.
-#          Probed: `var r = 42 & 51` is a parse error, so the join-tree
-#          VALUE this fixture asserts cannot be captured or echoed.  The
-#          nested-fork EXECUTION works (see separator/block_operands.chk);
-#          what is missing is the value of a join.
+# deferred: v1.x — `&` as an expression operator with the join's value; `var r = 42 & 51` does not parse.
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
+# what stands in the way has been superseded by the `deferred:` line
 # above, which was probed against this branch.  Kept for the
 # original urbiscript it carries.
 # matrix-row: separator-and

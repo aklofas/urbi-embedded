@@ -1,13 +1,10 @@
 # Milestone: M3
 # Covers: '&' join of two empty blocks; result is the last expression value (2).
-# blocked: `{}` is not an expression and `&` is not an expression
-#          operator.  Probed: both `echo({}&{})` and `var r = {} & {}`
-#          are parse errors, so the VALUE of a join of two empty blocks --
-#          the entire claim -- cannot be written.
+# deferred: v1.x — `&` as an expression operator, and `{}` as an expression; `echo({} & {})` does not parse.
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
+# what stands in the way has been superseded by the `deferred:` line
 # above, which was probed against this branch.  Kept for the
 # original urbiscript it carries.
 # matrix-row: separator-and

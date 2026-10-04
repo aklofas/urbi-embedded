@@ -2,13 +2,7 @@
 # Covers: scopeTag builtin returns the implicit scope tag for the current
 #         function call; used with every() to auto-cancel a loop when
 #         function exits.
-# blocked: a function's scope tag is not stopped when the function
-#          returns.  Probed: `scopeTag` resolves bare-name AND call-style
-#          now -- the native-closure getter bridge this header used to
-#          name is no longer the blocker -- but
-#          `var t = scopeTag; t: every(20ms) echo("foobar")` goes on
-#          firing after the function has returned.  Auto-cancel at scope
-#          exit is the missing semantic.
+# blocked: a function's scope tag is not stopped when the function returns, so `t: every(20ms) ...` under `scopeTag()` goes on firing after the call.
 #
 # Everything below this line predates the re-foundation: it names
 # tasks and entry points that no longer exist, and its account of

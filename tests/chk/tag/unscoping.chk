@@ -1,8 +1,7 @@
 # Milestone: M3
 # Covers: variables declared in '&' and ',' branches are unscoped into the
 #         parent environment (not local to the branch block).
-# blocked: `var a & var b` parallel-declare not supported — parse error (deferred-v1.x)
-#   (T39 chk-driver reason stale; the chk driver handles fork separators fine)
+# deferred: v1.x — declarations as `&` / `,` operands (`var a & var b`) and their unscoping into the enclosing block.
 # matrix-row: separator-and
 #
 # Reason (updated v0.13.5 probe):

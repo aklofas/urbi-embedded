@@ -1,10 +1,7 @@
 # Milestone: M3
 # Covers: loader rejects v1.1 (M2) bytecode modules at v1.2 runtime
 #
-# blocked: no way to feed a pre-baked binary chunk.  The runner has source
-#          text and the host driver has no verb for loading bytes, so the
-#          version byte under test cannot be presented to the loader at
-#          all.  The gap is a `## host: load-bytes <hex>` directive.
+# deferred: v1.x — a host-driver verb that loads raw chunk bytes, without which an old version byte cannot reach the loader.
 # matrix-row: wire-format
 #
 # Reason: the chk runner (tests/integration/run_chk.sh) feeds .u source text
