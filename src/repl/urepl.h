@@ -29,13 +29,19 @@ typedef struct UReplSession UReplSession;
  * only thing wraparound would buy is a memmove saved on a buffer that is
  * usually empty.
  *
+ * `buf` is NULL until the first write, then doubles from 256 bytes as
+ * output arrives, never past `cap_limit` (the server config's
+ * output_buf_cap, 64 KiB when that is zero).  A session that never
+ * speaks holds no buffer at all.
+ *
  * An envelope that does not fit is DROPPED, and `dropped` latches so the
  * client is told a gap happened rather than silently receiving a
  * truncated stream.  Dropping beats blocking: the alternative is stalling
  * the VM on a client that has stopped reading. */
 typedef struct UReplOutBuf {
     char   *buf;
-    size_t  cap;      /* allocated */
+    size_t  cap;      /* allocated; 0 until the first write */
+    size_t  cap_limit; /* never grow past this */
     size_t  fill;     /* bytes held */
     size_t  off;      /* bytes already handed to the transport */
     bool    dropped;  /* an envelope was lost; report once, then clear */

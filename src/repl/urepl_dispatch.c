@@ -19,18 +19,35 @@
  * drains completely every sweep never memmoves at all. */
 static void outbuf_compact(UReplOutBuf *o)
 {
-    if (o->off == 0) return;
+    if (o->buf == NULL || o->off == 0) return;
     if (o->off >= o->fill) { o->fill = 0; o->off = 0; return; }
     memmove(o->buf, o->buf + o->off, o->fill - o->off);
     o->fill -= o->off;
     o->off = 0;
 }
 
+/* Grows the buffer to hold `need` more bytes, doubling from 256 up to the
+ * session's cap.  false means the cap cannot hold it, or the allocation
+ * failed; either way the caller reports the write dropped. */
+static bool outbuf_reserve(UReplOutBuf *o, size_t need)
+{
+    if (o->fill + need <= o->cap) return true;
+    size_t cap = o->cap ? o->cap : 256u;
+    while (cap < o->fill + need && cap < o->cap_limit) cap *= 2u;
+    if (cap > o->cap_limit) cap = o->cap_limit;
+    if (o->fill + need > cap) return false;
+    char *n = (char *)realloc(o->buf, cap);
+    if (n == NULL) return false;
+    o->buf = n;
+    o->cap = cap;
+    return true;
+}
+
 void urepl_session_push(UReplSession *s, const char *bytes, size_t n)
 {
     UReplOutBuf *o = &s->out;
     if (o->fill + n > o->cap) outbuf_compact(o);
-    if (o->fill + n > o->cap) { o->dropped = true; return; }
+    if (!outbuf_reserve(o, n)) { o->dropped = true; return; }
     memcpy(o->buf + o->fill, bytes, n);
     o->fill += n;
 }
@@ -113,16 +130,16 @@ UReplSession *urepl_session_create(UReplServer *server, const UTransport *transp
     UReplSession *s = (UReplSession *)calloc(1, sizeof *s);
     if (s == NULL) return NULL;
 
-    size_t cap = server->cfg.output_buf_cap ? server->cfg.output_buf_cap
-                                            : UREPL_DEFAULT_OUTPUT_CAP;
-    s->out.buf = (char *)malloc(cap);
-    if (s->out.buf == NULL) { free(s); return NULL; }
-    s->out.cap = cap;
+    /* The output buffer is made on the first write and grows to the cap;
+     * a session that never speaks costs nothing, which is what a part
+     * with a few sessions and a few hundred kilobytes needs. */
+    s->out.cap_limit = server->cfg.output_buf_cap ? server->cfg.output_buf_cap
+                                                  : UREPL_DEFAULT_OUTPUT_CAP;
 
     /* One realm per session is the whole isolation story: its globals
      * object is its own, and the built-ins below it are shared. */
     s->realm = urbi_realm_new(server->vm);
-    if (s->realm == NULL) { free(s->out.buf); free(s); return NULL; }
+    if (s->realm == NULL) { free(s); return NULL; }
 
     s->vm = server->vm;
     s->transport = *transport;

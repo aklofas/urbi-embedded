@@ -1,27 +1,3 @@
-# Parked sources: in the tree, never in the build, waiting for Phase 5 to
-# re-attach them.  The four files of the cooperative eval service are in
-# REPL_CORE_SRCS below; every other src/repl file is here.  The listener,
-# auth and queue exist only to coordinate with threads that no longer run;
-# urepl_state.c was a vm->repl back-pointer whose only reader was the
-# job-queue drain hook in urbi_step; urepl_introspect.c's one live
-# primitive now lives in src/stdlib/debug_namespace.c so the dependency
-# runs repl -> stdlib; ujson.c was a general JSON reader for the Debug
-# namespace, which now hands its answer over as a String.  src/ros/ and
-# src/urobotics/ are parked the same way, behind the $(error)s below.
-#
-# The trace, perf-counter and memory-debug tooling is NOT parked: it was
-# part of the old runtime and went with it.  Phase 5 re-derives whatever
-# of it the new core wants from git history rather than from a stale
-# translation unit that no longer compiles.
-REPL_PARKED_SRCS := \
-    src/repl/urepl_listener.c \
-    src/repl/urepl_auth.c \
-    src/repl/urepl_queue.c \
-    src/repl/urepl_state.c \
-    src/repl/urepl_introspect.c \
-    src/repl/ujson.c \
-    $(wildcard src/repl/urepl_transport_*.c)
-
 # URBI_BYTECODE_ONLY=1 promotes the v0.6.1 smoke approximation to a real
 # pure-strip build: src/lex/, src/parse/, src/emit/ are removed from the
 # source list.  Source-taking public entry points (urbi_compile_source,
@@ -113,8 +89,7 @@ endif
 
 # liburbi.a is exactly four source groups, and every src/ directory that
 # is not one of them is either the compiler frontend feeding one or an
-# optional component parked for Phase 5 (src/ros, src/urobotics, and the
-# networked half of src/repl):
+# optional component parked for Phase 5 (src/ros and src/urobotics):
 #
 #   FRONTEND_SRCS — the compiler frontend (lexer, parser, emitter) and the
 #                   bytecode container it produces (src/chunk: writer,
@@ -130,7 +105,7 @@ endif
 #   RT_SRCS       — the runtime core under src/rt/ plus the standard
 #                   library that boots on top of it.
 #   REPL_CORE_SRCS — the cooperative NDJSON eval service (four files;
-#                   the networked server is parked, see above).
+#                   the networked server is tools/urbi-server.c).
 #
 # The standard library reaches the core through exactly one header
 # (src/rt/ustdlib_glue.h).  Each file exports one or more UMethodDef
@@ -732,9 +707,7 @@ test-corpus-sanitize:
 # --- Release test aggregate --------------------------------------------
 #
 # releasetest runs every host-side gate the CI matrix runs, in parallel.
-# Cross-compile, REPL-server, ROS2, urobotics, trace, perf-counters, and
-# mem-debug gates are parked (refound/core) and excluded — see
-# REPL_PARKED_SRCS above.
+# ROS2 and urobotics gates are parked; see the URBI_ENABLE_ROS2 block above.
 #
 # Runtime: ~5 minutes on a 32-core / 64 GB box (dominated by the two
 # valgrind passes; sanitizer variants and analysis run alongside them).

@@ -23,9 +23,7 @@ TOP=99
 # than rt/ustrand.h, which the loop below checks as usual.  uslotcache.c
 # reads vm->stdlib_booted, so it too needs rt/uexec.h and is exec-rank.
 LAYER_OVERRIDES="src/rt/usched.c=uexec src/rt/utag.c=uexec src/rt/uslotcache.c=uexec src/rt/usched_natives.c=top"
-# The src/repl files the Makefile actually compiles, with their headers.
-# The parked networked server is left alone: it is held to the layering of
-# the runtime it was written against, not this one.
+# The src/repl files the Makefile compiles, with their headers.
 REPL_CORE_FILES="src/repl/urepl.c src/repl/urepl.h \
 src/repl/urepl_dispatch.c src/repl/urepl_dispatch.h \
 src/repl/urepl_ndjson.c src/repl/urepl_ndjson.h \
