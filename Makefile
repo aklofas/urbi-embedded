@@ -207,7 +207,7 @@ RUNNER_WRAPPER ?=
 # from another TARGET shadowing a header rule in this one.
 sinclude $(shell find $(BUILDDIR) -name '*.d' 2>/dev/null)
 
-all: $(LIB) $(BUILDDIR)/urbi
+all: $(LIB) $(BUILDDIR)/urbi $(BUILDDIR)/urbi-server $(BUILDDIR)/urbi-send
 
 $(LIB): $(OBJ)
 	$(AR) rcs $@ $^
@@ -414,6 +414,18 @@ $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
 
 urbi-bin: $(BUILDDIR)/urbi
 
+# urbi-server and urbi-send: the socket side of the eval service.  POSIX
+# only; never built on a cross target.
+$(BUILDDIR)/tools/urbi-server.o: tools/urbi-server.c $(FLAGSTAMP) | $(BUILDDIR)/tools
+	$(CC) $(CFLAGS) $(URBI_VIS_FLAGS) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+$(BUILDDIR)/urbi-server: $(BUILDDIR)/tools/urbi-server.o $(LIB)
+	$(CC) $(CFLAGS) -o $@ $< $(LIB) -lm
+$(BUILDDIR)/urbi-send: tools/urbi-send.c $(FLAGSTAMP) | $(BUILDDIR)/tools
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -Itools -o $@ $<
+.PHONY: urbi-server urbi-send
+urbi-server: $(BUILDDIR)/urbi-server
+urbi-send: $(BUILDDIR)/urbi-send
+
 # --- .chk host driver ---------------------------------------------------
 #
 # The fixtures carrying `## host:` directives need more than one realm, a
@@ -514,8 +526,9 @@ test-bake-smoke: test-stdlib-bytecode-fresh
 # by $(RUNNER_WRAPPER) because dash's own "still-reachable" blocks break
 # valgrind; the urbi binary is memory-clean when invoked directly.
 
-test-integration: $(BUILDDIR)/urbi
+test-integration: $(BUILDDIR)/urbi $(BUILDDIR)/urbi-server $(BUILDDIR)/urbi-send
 	tests/integration/repl_smoke.sh $(BUILDDIR)/urbi
+	BUILD=$(BUILDDIR) tests/integration/urbi_server_smoke.sh
 
 # test-batch-errors is the gate for the OTHER entry point.  Every .chk
 # fixture but one runs through `urbi -i` or the host driver, so nothing in
