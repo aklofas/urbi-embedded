@@ -67,6 +67,9 @@ DEFINED=$(mktemp)
 trap 'rm -f "$DEFINED"' EXIT
 $NM_CMD --defined-only "$ARCHIVE" 2>/dev/null \
     | awk 'NF == 3 {print $3}' | LC_ALL=C sort -u > "$DEFINED"
+# An nm that cannot read the archive (a host nm on a foreign target)
+# prints nothing, which would make both checks above and below pass.
+[ -s "$DEFINED" ] || { echo "FAIL: $NM_CMD read no symbols from $ARCHIVE"; exit 1; }
 MISSING=$($NM_CMD "$ARCHIVE" 2>/dev/null \
           | awk '$1 == "U" && $2 ~ /^(urbi_|u[a-z]+_)/ {print $2}' \
           | LC_ALL=C sort -u | LC_ALL=C comm -23 - "$DEFINED")
