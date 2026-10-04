@@ -14,6 +14,7 @@
  * tests/scripts/check_rt_layering.sh enforces.  urbi_value_to_string
  * needs snprintf's "%.14g" and therefore lives in src/host/uformat.c. */
 
+#ifndef URBI_BYTECODE_ONLY
 /* Copies a literal into a caller buffer, always NUL-terminating. */
 static void uapi_set_err(char *err, size_t errcap, const char *msg)
 {
@@ -22,6 +23,7 @@ static void uapi_set_err(char *err, size_t errcap, const char *msg)
     while (msg[i] && i + 1 < errcap) { err[i] = msg[i]; i++; }
     err[i] = '\0';
 }
+#endif /* !URBI_BYTECODE_ONLY */
 
 /* ===================================================================
  * Lifecycle
@@ -34,12 +36,12 @@ UVM *urbi_open(UVMAllocFn alloc, void *ud, const UVMConfig *config)
     /* config->step_budget is what urbi_step spends when its caller passes
      * 0; leaving it unset keeps 0 meaning "until nothing is runnable". */
     if (config) uvm_sched(vm)->default_budget = config->step_budget;
-#if __STDC_HOSTED__
-    /* src/host is in this archive on a hosted build, so the unwinder can
-     * borrow its formatter for the values the core cannot spell on its
-     * own.  A freestanding build omits that directory and leaves the hook
-     * NULL; nothing here reaches into src/host directly, the symbol is
-     * the public one from <urbi/urbi.h>. */
+#if __STDC_HOSTED__ && !defined(URBI_BYTECODE_ONLY)
+    /* src/host is in this archive on a hosted build, so the unwinder and
+     * the stdlib can borrow its formatter for the values the core cannot
+     * spell on its own.  A freestanding or bytecode-only build has no
+     * formatter and leaves the hook NULL; nothing here reaches into
+     * src/host directly, the symbol is the public one from <urbi/urbi.h>. */
     vm->render_value = urbi_value_to_string;
 #endif
     /* config->boot_stdlib defaults to 1; a host that passes a config
@@ -117,6 +119,11 @@ UValue urbi_realm_tag(UVM *vm, URealm *realm)
  * Code
  * =================================================================== */
 
+/* The source-taking entry points (urbi_compile, urbi_run, urbi_watch)
+ * need the compiler frontend, which a bytecode-only build does not have.
+ * They are absent from that archive rather than stubbed, so a call to one
+ * fails at link time instead of at run time. */
+#ifndef URBI_BYTECODE_ONLY
 int urbi_compile(UVM *vm, const char *src, size_t n, const char *name,
                  uint8_t **out_bytes, size_t *out_len, char *err, size_t errcap)
 {
@@ -149,6 +156,7 @@ int urbi_compile(UVM *vm, const char *src, size_t n, const char *name,
     *out_len = (size_t)need;
     return URBI_OK;
 }
+#endif /* !URBI_BYTECODE_ONLY */
 
 void urbi_chunk_free(UVM *vm, uint8_t *bytes, size_t n)
 {
@@ -196,6 +204,7 @@ int urbi_load(UVM *vm, URealm *realm, const uint8_t *bytes, size_t n, UValue *ou
     return uexec_run_chunk(vm, realm, cl, out);
 }
 
+#ifndef URBI_BYTECODE_ONLY
 int urbi_run(UVM *vm, URealm *realm, const char *src, size_t n, const char *name,
              UValue *out, char *err, size_t errcap)
 {
@@ -203,6 +212,7 @@ int urbi_run(UVM *vm, URealm *realm, const char *src, size_t n, const char *name
     if (!realm) realm = urbi_realm_main(vm);
     return uexec_run_source(vm, realm, src, n, name, out, err, errcap);
 }
+#endif /* !URBI_BYTECODE_ONLY */
 
 int urbi_call(UVM *vm, URealm *realm, UValue callee, UValue recv,
               const UValue *argv, uint8_t argc, UValue *out)
@@ -513,6 +523,7 @@ int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *p
  * becomes the watcher's condition: a chunk's value is its last statement's
  * value, which for a one-expression source is the expression.  The
  * callback takes the place of a body closure -- see rt/uwatch.h. */
+#ifndef URBI_BYTECODE_ONLY
 int urbi_watch(UVM *vm, URealm *realm, const char *expr,
                int (*cb)(UVM *, void *, UValue), void *ud)
 {
@@ -540,6 +551,7 @@ int urbi_watch(UVM *vm, URealm *realm, const char *expr,
     cl->cell.flags &= (uint16_t)~UCELL_F_RTPIN;
     return w ? URBI_OK : URBI_ERR_OOM;
 }
+#endif /* !URBI_BYTECODE_ONLY */
 
 int urbi_tag_new(UVM *vm, URealm *realm, const char *name, UValue *out)
 {

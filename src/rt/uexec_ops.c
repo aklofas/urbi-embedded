@@ -1392,6 +1392,8 @@ int uexec_run_chunk(UVM *vm, URealm *realm, UClosure *cl, UValue *out)
     return rc;
 }
 
+/* Compiles first, so it exists only where the frontend does. */
+#ifndef URBI_BYTECODE_ONLY
 int uexec_run_source(UVM *vm, URealm *realm, const char *src, size_t n,
                      const char *name, UValue *out, char *err, size_t errcap)
 {
@@ -1415,3 +1417,4 @@ int uexec_run_source(UVM *vm, URealm *realm, const char *src, size_t n,
 
     return uexec_run_chunk(vm, realm, cl, out);
 }
+#endif /* !URBI_BYTECODE_ONLY */
