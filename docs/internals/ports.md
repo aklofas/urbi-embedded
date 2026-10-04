@@ -15,9 +15,11 @@ development target. Ports below cover bare-metal + RTOS silicon.
 the runtime these ports were brought up against, and none of them has
 been rebuilt on it: the component manifests, the `components/` trees and
 the `examples/` workloads are all in the tree and all out of the build.
-Phase 5 re-attaches them, and that is also when the 32-bit boot-heap
-figure gets measured for real — `tests/probes/boot_heap.c` currently
-holds a 64-bit host number because this branch has no cross toolchain.
+Phase 5 re-attaches them.  The 32-bit memory figures are measured now,
+on a Cortex-M4 under qemu's MPS2-AN386 model: a booted VM holds 48,968
+bytes live (cap 48 KB), an idle sleeping strand costs 466 bytes, and the
+leak probes stay flat.  `make test-probes-32bit` regenerates them (it
+needs `arm-none-eabi-gcc` with newlib and `qemu-system-arm`; CI runs it).
 Read what follows as a record of what each target needed last time, not
 as a claim about today.
 

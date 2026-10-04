@@ -309,6 +309,25 @@ else
 	@echo "  against was recorded on the default host build."
 endif
 
+# The three memory probes built for Cortex-M4 and run under qemu: the
+# 32-bit boot-heap, idle-strand and leak numbers the design targets name.
+# Hosted shape of the preset because the probes print through newlib's
+# semihosting stdio.
+PROBE32_DIR := build/arm-cortex-m4f-hosted/tests/probes
+PROBE32_LD  := tests/probes/cortex-m/mps2-an386.ld
+.PHONY: test-probes-32bit
+test-probes-32bit: cross-arm-cortex-m4f-hosted
+	@mkdir -p $(PROBE32_DIR)
+	@for p in boot_heap strand_cost leaks; do \
+	    arm-none-eabi-gcc -std=c99 -Os -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
+	        -nostartfiles --specs=rdimon.specs -T $(PROBE32_LD) \
+	        -Iinclude -Itests/probes \
+	        tests/probes/cortex-m/start.c tests/probes/$$p.c \
+	        build/arm-cortex-m4f-hosted/liburbi.a -lc -lrdimon -lm \
+	        -o $(PROBE32_DIR)/$$p.elf || exit 1; \
+	    sh tests/probes/cortex-m/run-qemu.sh $(PROBE32_DIR)/$$p.elf || exit 1; \
+	done
+
 # Core archive. Kept as its own target for cross-compile / freestanding
 # consumers that build the library without the host tools.
 core: $(LIB)
