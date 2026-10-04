@@ -1,0 +1,13 @@
+# Covers: recursion deep enough to exhaust the per-strand frame table
+#         raises a catchable error instead of corrupting the frame array;
+#         recursion well inside the limit still returns its value.
+#         The frame table is capped at 32768 entries (see ustrand.h).
+
+var f = function (n) { if (n > 0) { f(n - 1) } else { 0 } }; f(5000)
+[00000000] 0
+
+try { f(40000) } catch (var e) { "caught" }
+[00000001] "caught"
+
+f(10)
+[00000002] 0

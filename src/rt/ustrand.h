@@ -107,6 +107,13 @@ typedef enum { UUNWIND_NONE = 0, UUNWIND_RETURN, UUNWIND_THROW, UUNWIND_STOP,
  * the scheduler: the bound on how late a timer that comes due meanwhile
  * can fire, counted in statements. */
 #define UEXEC_FAST_YIELD_CAP 64
+/* Caps on the per-strand frame and cleanup tables.  Both counters are
+ * uint16_t, and each table grows by doubling from 4: 32768 is the last
+ * doubling that fits, so the cap is also what keeps a doubling from
+ * wrapping to zero (realloc(p, 0) frees the live table).  A push past
+ * the cap fails cleanly and the caller raises. */
+#define USTRAND_MAX_FRAMES  32768u
+#define USTRAND_MAX_CLEANUP 32768u
 
 typedef struct UStrand {
     UCell      cell;
@@ -158,7 +165,8 @@ UClosure *uclosure_new(struct UVM *vm, UProto *proto, uint8_t nupvals);
 /* Grows frames[] (from 4, doubling) and the register stack (via
  * ustrand_ensure_stack) to fit base + proto->max_reg + 1 registers (just
  * base + 1 for a native closure), zero-fills that frame's register window
- * to nil, and pushes the frame. 0 ok, -1 OOM (no frame pushed). */
+ * to nil, and pushes the frame. 0 ok, -1 OOM, -2 frame depth already at
+ * USTRAND_MAX_FRAMES (no frame pushed either way). */
 int      ustrand_push_frame(UStrand *s, UClosure *cl, UValue recv, uint32_t base, uint8_t ret_reg);
 /* As ustrand_push_frame, but leaves the first `nkeep` registers of the
  * new window untouched instead of nil-filling them.  OP_CALL places the
@@ -176,7 +184,8 @@ void     ustrand_pop_frame(UStrand *s);
  * Newly grown capacity reads as nil (ugc_raw_realloc zero-fills it).
  * 0 ok (including when already big enough), -1 OOM. */
 int      ustrand_ensure_stack(UStrand *s, uint32_t needed);
-/* Appends to the cleanup stack (from 4, doubling). 0 ok, -1 OOM. */
+/* Appends to the cleanup stack (from 4, doubling). 0 ok, -1 OOM or
+ * USTRAND_MAX_CLEANUP entries already held. */
 int      ustrand_push_cleanup(UStrand *s, UCleanup c);
 /* Finds an already-open upvalue at stack_index, or opens a new one
  * pointing at stack + stack_index, keeping open_upvals sorted by

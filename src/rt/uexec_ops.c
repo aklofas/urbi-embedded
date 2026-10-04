@@ -424,6 +424,7 @@ static int do_call(UVM *vm, UStrand *s, uint16_t fi, uint32_t instr)
     USTRAND_ROOT(s, clv);
     int prc = ustrand_push_frame_args(s, callee, self_value, new_base, a, nargs);
     USTRAND_UNROOT(s, clv);
+    if (prc == -2) return uexec_throw(vm, s, UP_OOMERROR, "function call: call depth limit reached");
     if (prc != 0) return uexec_throw(vm, s, UP_OOMERROR, "function call: out of memory pushing a call frame");
     if (p->arity_prologue && p->nparams > 0) s->stack[new_base + p->nparams] = uv_int((int64_t)nargs);
     return UEXEC_OK;
@@ -1315,6 +1316,7 @@ int uexec_call(UVM *vm, UStrand *s, UClosure *cl, UValue recv, const UValue *arg
     USTRAND_ROOT(s, clv);
     int prc = ustrand_push_frame_args(s, cl, recv, base, 0, argc);
     USTRAND_UNROOT(s, clv);
+    if (prc == -2) return uexec_throw(vm, s, UP_OOMERROR, "call: call depth limit reached");
     if (prc != 0) return uexec_throw(vm, s, UP_OOMERROR, "call: out of memory pushing a call frame");
     if (p->arity_prologue && p->nparams > 0) s->stack[base + p->nparams] = uv_int((int64_t)argc);
     s->frames[s->nframes - 1].is_boundary = 1;

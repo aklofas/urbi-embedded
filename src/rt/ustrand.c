@@ -45,6 +45,7 @@ int ustrand_ensure_stack(UStrand *s, uint32_t needed) {
 
 static int ustrand_grow_frames(UStrand *s) {
     uint16_t old_cap = s->frames_cap;
+    if (old_cap >= USTRAND_MAX_FRAMES) return -2;
     uint16_t new_cap = old_cap ? (uint16_t)(old_cap * 2) : 4;
     UFrame *frames = (UFrame *)ugc_raw_realloc(s->vm, s->frames, (size_t)old_cap * sizeof(UFrame), (size_t)new_cap * sizeof(UFrame));
     if (!frames) return -1;
@@ -59,7 +60,10 @@ int ustrand_push_frame(UStrand *s, UClosure *cl, UValue recv, uint32_t base, uin
 
 int ustrand_push_frame_args(UStrand *s, UClosure *cl, UValue recv, uint32_t base,
                             uint8_t ret_reg, uint8_t nkeep) {
-    if (s->nframes == s->frames_cap && ustrand_grow_frames(s) != 0) return -1;
+    if (s->nframes == s->frames_cap) {
+        int grc = ustrand_grow_frames(s);
+        if (grc != 0) return grc;
+    }
     uint32_t max_reg = cl->proto ? cl->proto->max_reg : 0;
     uint32_t needed = base + max_reg + 1;
     if (ustrand_ensure_stack(s, needed) != 0) return -1;
@@ -88,6 +92,7 @@ void ustrand_pop_frame(UStrand *s) {
 
 int ustrand_push_cleanup(UStrand *s, UCleanup c) {
     if (s->ncleanup == s->cleanup_cap) {
+        if (s->cleanup_cap >= USTRAND_MAX_CLEANUP) return -1;
         uint16_t new_cap = s->cleanup_cap ? (uint16_t)(s->cleanup_cap * 2) : 4;
         UCleanup *cleanup = (UCleanup *)ugc_raw_realloc(s->vm, s->cleanup, (size_t)s->cleanup_cap * sizeof(UCleanup), (size_t)new_cap * sizeof(UCleanup));
         if (!cleanup) return -1;

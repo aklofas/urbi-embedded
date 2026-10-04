@@ -196,6 +196,44 @@ static void the_boundary_count_matches_the_frames(void) {
     urbi_close(vm);
 }
 
+/* Native closures take one register each, so the whole run stays small.
+ * frames_cap is a uint16_t: without a cap the doubling past 32768 wraps
+ * to 0, and realloc(frames, 0) frees the live array under the strand. */
+static void frame_depth_stops_at_the_cap_instead_of_wrapping(void) {
+    UCell *roots[2] = { NULL, NULL };
+    struct UVM vm; fakevm_init(&vm, roots, 2);
+    UStrand *s = ustrand_new(&vm, NULL); roots[0] = &s->cell;
+    UClosure *cl = uclosure_new(&vm, NULL, 0); roots[1] = &cl->cell;
+    uint32_t depth = 0;
+    int rc = 0;
+    while (depth < USTRAND_MAX_FRAMES && (rc = ustrand_push_frame(s, cl, uv_nil(), depth, 0)) == 0) depth++;
+    RT_EQ(rc, 0);
+    RT_EQ(depth, USTRAND_MAX_FRAMES);
+    RT_EQ(s->nframes, (uint16_t)USTRAND_MAX_FRAMES);
+    UFrame *before = s->frames;
+    RT_EQ(ustrand_push_frame(s, cl, uv_nil(), depth, 0), -2);
+    RT_CHECK(s->frames == before);                 /* nothing freed, nothing moved */
+    RT_EQ(s->nframes, (uint16_t)USTRAND_MAX_FRAMES);
+    RT_EQ(s->frames_cap, (uint16_t)USTRAND_MAX_FRAMES);
+    while (s->nframes) ustrand_pop_frame(s);
+    fakevm_destroy(&vm);
+}
+
+static void cleanup_depth_stops_at_the_cap_instead_of_wrapping(void) {
+    UCell *roots[1] = { NULL };
+    struct UVM vm; fakevm_init(&vm, roots, 1);
+    UStrand *s = ustrand_new(&vm, NULL); roots[0] = &s->cell;
+    UCleanup c; memset(&c, 0, sizeof c);
+    uint32_t n = 0;
+    while (n < USTRAND_MAX_CLEANUP && ustrand_push_cleanup(s, c) == 0) n++;
+    RT_EQ(n, USTRAND_MAX_CLEANUP);
+    UCleanup *before = s->cleanup;
+    RT_EQ(ustrand_push_cleanup(s, c), -1);
+    RT_CHECK(s->cleanup == before);
+    RT_EQ(s->cleanup_cap, (uint16_t)USTRAND_MAX_CLEANUP);
+    fakevm_destroy(&vm);
+}
+
 RT_SUITE(rt_strand_suite) {
     rt_run("push_frame_grows_stack_for_max_reg", push_frame_grows_stack_for_max_reg);
     rt_run("push_frame_native_closure_uses_single_register", push_frame_native_closure_uses_single_register);
@@ -203,6 +241,8 @@ RT_SUITE(rt_strand_suite) {
     rt_run("close_upvals_partitions_by_index", close_upvals_partitions_by_index);
     rt_run("pop_frame_closes_its_upvals", pop_frame_closes_its_upvals);
     rt_run("cleanup_stack_grows_past_initial_cap", cleanup_stack_grows_past_initial_cap);
+    rt_run("frame_depth_stops_at_the_cap_instead_of_wrapping", frame_depth_stops_at_the_cap_instead_of_wrapping);
+    rt_run("cleanup_depth_stops_at_the_cap_instead_of_wrapping", cleanup_depth_stops_at_the_cap_instead_of_wrapping);
     rt_run("the_boundary_count_matches_the_frames", the_boundary_count_matches_the_frames);
     rt_run("strand_struct_is_small", strand_struct_is_small);
     rt_run("gc_traces_live_registers_only", gc_traces_live_registers_only);
