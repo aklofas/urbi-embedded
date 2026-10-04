@@ -31,8 +31,8 @@ as a claim about today.
   `urbi_aux` separately).
 - **Footprint:** ~120 KB liburbi.a text (cap revised from 105 KB during
   bring-up). PSRAM available on the EYE variant.
-- **Numeric:** URBI_FLOAT_TYPE=4 (single precision); the Xtensa LX7
-  has hardware single-precision FPU.
+- **Numeric:** Float values are always double (f64); the Xtensa LX7's
+  hardware FPU is single-precision, so double arithmetic is in software.
 - **REPL transports:** UART0 console + USB CDC (via TinyUSB ESP-IDF
   managed component). `UREPL_ESP_IDF_UART_TRANSPORT` is the primary;
   cooperative drive via `urbi_repl_serve_step` from v0.9.4 onwards.
@@ -63,17 +63,16 @@ as a claim about today.
 - **Footprint:** ~110 KB liburbi.a text; ~140 KB bytecode-only.
   STM32F429 ships with 2 MB flash + 256 KB SRAM (192 KB main + 64 KB
   CCM).
-- **Numeric:** URBI_FLOAT_TYPE=4 (single precision); hardware FPU.
+- **Numeric:** Float values are always double (f64); the Cortex-M4F FPU
+  is single-precision, so double arithmetic is in software.
 - **REPL transports:** None at v0.8.2 (pre-M8). Embedder drives
   `urbi_step` from the main loop; output flows via the ILI9341.
 - **Build system:** Plain `arm-none-eabi-gcc` Makefile under
   `examples/stm32f4-disc/`; no STM32CubeMX / CubeIDE / CMSIS layer
   beyond hand-written reset + clock init.
 - **Idiosyncrasies:**
-  - **`URBI_FLOAT_TYPE` link-time mismatch silently zeros every
-    `UVAL_FLOAT` to 0.0** — discovered during bring-up. The embedder
-    application must pass `-DURBI_FLOAT_TYPE=4` matching the liburbi.a
-    it links against. v1.0-rc weak-symbol guard sketched; filed.
+  - The float layout is fixed (always f64), so there is no float-type
+    build flag to keep in step between the application and liburbi.a.
   - No DCache on the F429 (Cortex-M4F has no D-cache controller).
     Bytecode reads from flash are deterministically slow but
     predictable; no need for cache-coherency dances.
@@ -97,11 +96,8 @@ as a claim about today.
   `__gnu_thumb1_case_uqi` for Thumb1 switch tables, plus `memcpy` /
   `memset` / `strlen`). Full archive symbol set pinned in
   `tests/golden/v0.9.4-pico-nm-bytecode-only.txt`. The `__aeabi_d*`
-  double-precision helpers are not from urbiscript code paths exercising
-  double; UVAL_FLOAT arithmetic on `URBI_FLOAT_TYPE=4` builds currently
-  promotes through C `double` and narrows back — a true-f32 path is on
-  the v1.x
-  roadmap.
+  double-precision helpers are what UVAL_FLOAT arithmetic uses: floats
+  are always `double`, which on an FPU-less core is libgcc soft-float.
 - **Footprint:** Full **114 713 B** / **112.0 KB** (88.2 % of the
   **130 KB** cap; xpack `arm-none-eabi-gcc` 14.2.1 @ `-Os`, calibrated
   2026-05-24 from `7fbb17d` on main). Bytecode-only **82 599 B** /
@@ -115,7 +111,7 @@ as a claim about today.
   `arm-none-eabi-size build/arm-cortex-m0plus/liburbi.a` (full) and
   `arm-none-eabi-size build/cross-pico-bytecode-only/liburbi.a` (BO).
   Caps documented in CHANGELOG entry `v0.9.4-pico-example` footprint table.
-- **Numeric:** URBI_FLOAT_TYPE=4 (single precision); the M0+ has no
+- **Numeric:** Float values are always double (f64); the M0+ has no
   FPU so all float arithmetic goes through libgcc soft-float helpers.
 - **REPL transports:** USB CDC (primary, via TinyUSB) on the native
   USB pins, UART0 (secondary, GP0/GP1). Both have

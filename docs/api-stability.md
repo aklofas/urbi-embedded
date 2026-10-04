@@ -28,45 +28,25 @@ be header-stable.
 
 The pre-v1.0 escape clause expires at v1.0.0.
 
-## 5. Argument count types
+## 5. The native-function protocol
 
-The public C API uses two calling conventions for argument counts,
-depending on the callback type.
-
-**`urbi_native_method_fn` (internal native-method protocol):**
+There is one callback type for host code that script can call,
+`urbi_native_fn` in `include/urbi/urbi.h`:
 
 ```c
-typedef int (*urbi_native_method_fn)(struct UVM *vm,
-                                     UValue self,
-                                     UValue *args,
-                                     uint8_t nargs,
-                                     UValue *out);
+typedef int (*urbi_native_fn)(UVM *vm, UValue self, UValue *args,
+                              uint8_t nargs, UValue *out);
 ```
 
-The argument count is `uint8_t nargs` (range 0–255).  This matches
-urbiscript's internal arity limit.  Functions registered via
-`urbi_install_native_methods` use this signature.
+The argument count is `uint8_t nargs` (range 0–255), matching the
+bytecode CALL opcode, which packs the count into a single byte.  A native
+returns `UEXEC_OK` with its result in `*out`, or raises with `urbi_throw`
+and returns what it returned (`UEXEC_THROW`).
 
-**`UHostFn` (host-callable function protocol):**
-
-```c
-typedef UValue (*UHostFn)(struct UStrand *s, int argc, UValue *argv);
-```
-
-The argument count is `int argc`.  This matches the POSIX `main()`
-convention and is used by `urbi_make_native_closure` and
-`urbi_strand_call_host`.
-
-**Which to use for new code:**
-
-- Registering methods on a script-visible prototype: use
-  `urbi_native_method_fn` / `urbi_install_native_methods`.
-- Wrapping a C function as a first-class script callable: use
-  `UHostFn` / `urbi_make_native_closure`.
-
-The two signatures are not interchangeable.  The `uint8_t` truncation
-in `urbi_native_method_fn` is intentional: the bytecode CALL opcode
-packs argument count into a single byte, so nargs ≤ 255 by construction.
+A native becomes a script-visible value by being installed under a path
+with `urbi_register`; the host reads it back as a first-class callable
+with `urbi_global_get` / `urbi_slot_get` and may pass it to `urbi_call`.
+There is no separate "wrap a C function as a closure" constructor.
 
 ## 6. References
 

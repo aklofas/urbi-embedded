@@ -28,7 +28,7 @@ deprecation note in `types.h`).
 
 ### 2. `UCallbackSignal` — positive host-callback returns
 
-Host callbacks (`urbi_native_method_fn`, `urbi_watcher_fn`) return a
+Host callbacks (`urbi_native_fn`, `urbi_watcher_fn`) return a
 **positive** `UCallbackSignal`: `URBI_CB_OK` (`0`), `URBI_CB_UNREGISTER` (`1`,
 watcher auto-unregister after this firing), or `URBI_CB_THROW` (`2`, the host
 wants to raise a script exception). The sign convention keeps callback signals

@@ -68,9 +68,9 @@ st-flash write build/mandelbrot.bin 0x8000000
 
 Reset; connect the ST-Link VCP (115200 8N1). The ILI9341 LCD renders the
 Mandelbrot set with progressive 32→1 tile refinement; tilting the board pans the
-view (gyro) and the USER button zooms 2×. This port runs `URBI_FLOAT_TYPE=4`
-(f32) — the embedder MUST keep the float-type macro consistent or every
-`UVAL_FLOAT` silently truncates to 0.0 (link-time-guarded since v0.8.2).
+view (gyro) and the USER button zooms 2×. Float values are `double` on every
+target, so there is no float-width build flag to keep consistent between the
+application and the library.
 
 ## Notes
 

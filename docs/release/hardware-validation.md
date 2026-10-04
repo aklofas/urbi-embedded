@@ -80,9 +80,9 @@
   renders on the LCD; serial console (ST-Link VCP, 115200 8N1) reports
   per-level timing.
 - **Known limitations:**
-  - `URBI_FLOAT_TYPE` link-time mismatch silently zeros every UVAL_FLOAT;
-    the embedder application must pass `-DURBI_FLOAT_TYPE=4` to match
-    the liburbi.a it links against. See `docs/embedding-guide.md` §FLOAT.
+  - Validated when the port carried a per-target float width; the float
+    layout has since been fixed at f64 on every target, so that build
+    flag no longer exists and the run is due a re-validation.
   - Button zoom is one-way (no zoom-out); gyro pan axes are rotated 90°
     from natural. Demo-only cosmetic issues.
 - **Verifier:** aklofas.

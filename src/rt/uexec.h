@@ -169,7 +169,7 @@ void    urealm_trace(UVM *vm, URealm *r);
 
 /* --- closures and chunks --------------------------------------------- */
 
-/* Native closure.  `fn` keeps the stdlib's urbi_native_method_fn shape. */
+/* Native closure.  `fn` keeps the stdlib's urbi_native_fn shape. */
 UClosure  *uclosure_native(UVM *vm, int (*fn)(UVM *, UValue, UValue *, uint8_t, UValue *),
                            uint8_t min_args, uint8_t max_args);
 

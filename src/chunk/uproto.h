@@ -41,9 +41,8 @@ extern "C" {
  *                  UVAL_OBJECT.  Heap-bearing — UObject embeds UCell.
  *   UVAL_EVENT   — UEvent pointer; runtime-only.  Heap-bearing.
  *                  Used by tag.enter / tag.leave getters.
- *   UVAL_HOST_FN — native host function slot; UHostFn cast to void*.
- *                  Used by uevent_native_register / utag_native_register.
- *                  NOT heap-bearing — function pointers are not GC cells.
+ *   UVAL_HOST_FN — retired; the runtime never produces it.  The number
+ *                  stays reserved so later kinds keep their values.
  *   The loader rejects any bytecode constant-pool kind greater than
  *   UVAL_STR; the runtime-only kinds above never appear on disk. */
 #include "urbi/types.h"
