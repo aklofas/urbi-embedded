@@ -15,12 +15,7 @@
 #                           urbi_repl_eval)
 #   - src/ros/*.c          (ROS2 bridge; opt-in hosted component)
 #   - src/urobotics/*.c    (Standard Robotics facet overlay; opt-in)
-#   - src/urbi.c           (urbi_compile_source — parses + emits)
-#   - src/urbi_aux.c       (optional liburbi_aux.a convenience layer;
-#                           uses <stdio.h>/snprintf by design;
-#                           skipped by cross-build freestanding targets
-#                           per commit 3a9e939)
-#   - src/chunk/uchunk_strand.c  (urbi_repl_eval — parses + emits)
+# Generated data TUs carry no code and are skipped.
 #
 # Sourced — not executable.  Leading underscore marks the convention.
 
@@ -35,26 +30,12 @@ BYTECODE_ONLY_KEEP_DIRS="src/rt src/chunk src/util src/stdlib"
 BYTECODE_ONLY_EXCLUDE_DIRS="src/lex src/parse src/emit src/host src/repl src/ros src/urobotics"
 
 list_kept_tus() {
-    local keep_dirs="$BYTECODE_ONLY_KEEP_DIRS"
-
-    # Sources at src/ root: keep everything except urbi.c (parser-coupled)
-    # and urbi_aux.c (optional liburbi_aux.a layer; uses <stdio.h>/snprintf
-    # by design; already skipped by cross-build freestanding targets per
-    # commit 3a9e939).
-    for f in src/*.c; do
-        [ -f "$f" ] || continue
-        case "$(basename "$f")" in
-            urbi.c|urbi_aux.c) ;;
-            *) echo "$f" ;;
-        esac
-    done
-
-    # Subdir sources: keep all except chunk/uchunk_strand.c.
-    for d in $keep_dirs; do
+    local d f
+    for d in $BYTECODE_ONLY_KEEP_DIRS; do
         for f in "$d"/*.c; do
             [ -f "$f" ] || continue
             case "$f" in
-                src/chunk/uchunk_strand.c) ;;
+                src/stdlib/urbi_stdlib_bytecode.gen.c) ;;   # generated data, no code
                 *) echo "$f" ;;
             esac
         done

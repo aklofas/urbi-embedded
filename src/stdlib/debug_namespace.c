@@ -3,9 +3,12 @@
 
 #include "stdlib/debug_namespace.h"
 
-#include <stdio.h>    /* snprintf — src/stdlib is hosted, unlike src/rt */
+#if __STDC_HOSTED__
+#  include <stdio.h>    /* snprintf — the only hosted call in this file */
+#endif
 #include <string.h>
 
+#if __STDC_HOSTED__
 /* One appender with an overflow latch.  `at` is the bytes written so far;
  * once a write would not fit, `*ok` goes false and every later call is a
  * no-op, so the caller checks once at the end instead of at each step.
@@ -36,13 +39,14 @@ static const char *dbg_state_name(const UStrand *s)
     default:              return "dead";
     }
 }
+#endif
 
 int urbi_introspect_coros(UVM *vm, char *buf, size_t cap, size_t *out_n)
 {
     if (!vm || !buf || cap == 0 || !out_n) return URBI_ERR_INVALID_ARG;
     *out_n = 0;
     buf[0] = '\0';
-
+#if __STDC_HOSTED__
     bool ok = true;
     size_t at = dbg_add(buf, cap, 0, &ok, "{\"coros\":[");
     unsigned realm_index = 0;
@@ -63,6 +67,13 @@ int urbi_introspect_coros(UVM *vm, char *buf, size_t cap, size_t *out_n)
     if (!ok) { buf[0] = '\0'; return URBI_ERR_INVALID_ARG; }
     *out_n = at;
     return URBI_OK;
+#else
+    /* No formatter without a hosted libc: the Debug namespace reports an
+     * empty listing rather than linking snprintf into a freestanding
+     * archive. */
+    (void)vm;
+    return URBI_ERR_INVALID_ARG;
+#endif
 }
 
 /* Debug.coros() -> String.  The same bytes the NDJSON introspect op
@@ -73,6 +84,11 @@ static int debug_coros(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue
     (void)self; (void)args; (void)nargs;
     char json[4096];
     size_t n = 0;
+    /* cppcheck evaluates an undefined __STDC_HOSTED__ as 0 in #if, so it
+     * only sees the freestanding branch of urbi_introspect_coros (always
+     * URBI_ERR_INVALID_ARG) and calls this check always-true; the hosted
+     * branch, which real hosted builds take, can return URBI_OK. */
+    /* cppcheck-suppress knownConditionTrueFalse */
     if (urbi_introspect_coros(vm, json, sizeof json, &n) != URBI_OK)
         return urbi_raise_range(vm, "Debug.coros: too many strands to report", out);
     UValue v = urbi_make_str(vm, json, n);

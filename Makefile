@@ -525,6 +525,14 @@ test-embedding-guide: $(LIB)
 test-chk-runner:
 	@bash tests/integration/test_run_chk_runner.sh
 
+# Host-side freestanding gate: every TU a bytecode-only archive keeps is
+# compiled under -ffreestanding -DURBI_BYTECODE_ONLY=1 with the host
+# compiler and its undefined symbols are matched against the forbidden
+# libc set.  No cross toolchain needed, so it runs everywhere.
+.PHONY: test-freestanding-host
+test-freestanding-host:
+	@sh tests/scripts/build-freestanding-host.sh
+
 # `make test`: the frontend runner, the runtime runner, the layering
 # gate, the .chk corpus driven through the urbi binary, and the two shell
 # harnesses that cover what the corpus cannot see -- the REPL smoke run
@@ -704,7 +712,7 @@ RELEASETEST_PHASE1 := \
     test-wire-format-determinism \
     test-stdlib-bytecode-fresh test-bake-smoke \
     test-api-manifest \
-    test-chk-runner test-fuzz-smoke test-o2 test-embedding-guide
+    test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 test-embedding-guide
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -994,4 +1002,4 @@ check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
 .PHONY: test-unit test-probes test-bench test-embedding-guide
-.PHONY: all core test test-asan test-ubsan test-debug test-switch test-cache-verify clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-fuzz-smoke test-o2 force-flagstamp
+.PHONY: all core test test-asan test-ubsan test-debug test-switch test-cache-verify clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 force-flagstamp
