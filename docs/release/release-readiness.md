@@ -69,7 +69,7 @@ STM32H7 and ESP32-C3 are deferred to v1.x; not in the v1.0 hardware-support clai
 | Public headers self-contained (no `-Isrc`) | **done (v0.10.x arc)** | `make test-external-embed-iinclude` — passes | **passing-evidence** — closed at v0.10.3-api-opacity W2 |
 | External-embedder minimal compile test | **gated** | `make test-external-embed-iinclude` | **passing-evidence** — continuous since v0.10.3 |
 | API surface tiered (URBI_EXPERIMENTAL) | **done (v0.10.3)** | `include/urbi/version.h` URBI_EXPERIMENTAL/URBI_ADVANCED macros | **passing-evidence** — closed at v0.10.3-api-opacity W7 |
-| Build-flag mismatch link-time guards (URBI_FLOAT_TYPE, URBI_REPL_COOPERATIVE_ONLY, URBI_BYTECODE_ONLY) | done — v0.10.1-invariants W1-W3 | `make test` — invariant checks compile in | **passing-evidence** — continuous since v0.10.1 |
+| Build-flag mismatch link-time guards (URBI_REPL_COOPERATIVE_ONLY, URBI_BYTECODE_ONLY; the float-width flag is retired, floats are always f64) | done — v0.10.1-invariants W1-W3 | `make test` — invariant checks compile in | **passing-evidence** — continuous since v0.10.1 |
 | Error model unified | **done (v0.10.3)** | `src/runtime/uabi_guards.c` unified return-int model | **passing-evidence** — closed at v0.10.3-api-opacity W3 |
 | ABI freeze pin | **retired** | n/a | The pre-1.0 ABI/wire freeze machinery (`_Static_assert` pin, `test-abi-freeze`) was removed ahead of the runtime re-foundation; see `docs/api-stability.md`. No API/ABI compatibility promise exists before 1.0.0. |
 | Wire format freeze pin | **retired** | n/a | The wire-format freeze machinery (`_Static_assert` pin, `test-wire-freeze`) was removed alongside the ABI freeze pin; see `docs/api-stability.md`. |

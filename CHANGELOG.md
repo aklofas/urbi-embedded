@@ -53,8 +53,12 @@ unchanged at v2.0 / `0x20`.
 ### Documentation
 
 - `docs/api-stability.md` no longer recommends the removed `UHostFn` /
-  `urbi_make_native_closure`; `docs/internals/ports.md` and the release docs
-  no longer name the retired float-type build flag.
+  `urbi_make_native_closure`; `docs/internals/ports.md`, `docs/release/`
+  and `error-channels.md` no longer name the retired float-type build flag
+  or the retired callback type. The parked example ports and the parked ROS
+  bridge keep their text until they are reattached.
+- `urbi_value_kind`, `urbi_value_as_str` and the cell predicates answer
+  "nil" / "no" for a NULL cell pointer instead of dereferencing it.
 
 ### Measured on this build
 
