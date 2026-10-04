@@ -67,7 +67,7 @@ unchanged at v2.0 / `0x20`.
 | stdlib blob | 8,003 bytes (was 7,823; the operand snapshot adds a copy before an impure right operand) |
 | lookup / mandelbrot | 0.58x / 0.75x of the old core (gate fails above 1.20x) |
 | corpus | 351 passed, 0 failed |
-| runners | frontend (unit) 572 cases / 0 failed; runtime (rt) 245 cases / 0 failed |
+| runners | frontend (unit) 573 cases / 0 failed; runtime (rt) 245 cases / 0 failed |
 
 ## v0.15.0-frontend — 2026-10-03
 
