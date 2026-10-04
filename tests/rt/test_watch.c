@@ -1286,6 +1286,18 @@ static void a_false_waituntil_whose_watcher_is_refused_raises(void)
     fix_close(&fx);
 }
 
+/* A slot write made by the setSlot native re-evaluates the watchers a
+ * plain assignment would. */
+static void a_native_slot_write_marks_the_dirty_set(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var o = Object.new(); o.x = 0; var fired = 0; at (o.x == 1) { fired = 1 }");
+    RT_EQ(global_int(&fx, "fired"), 0);
+    run(&fx, "o.setSlot(\"x\", 1)");
+    RT_EQ(global_int(&fx, "fired"), 1);
+    fix_close(&fx);
+}
+
 RT_SUITE(rt_watch_suite) {
     rt_run("at_fires_once_per_rising_edge", at_fires_once_per_rising_edge);
     rt_run("at_fires_when_the_condition_already_holds", at_fires_when_the_condition_already_holds);
@@ -1332,4 +1344,5 @@ RT_SUITE(rt_watch_suite) {
     rt_run("a_refused_refire_keeps_the_else_arm_earned_before_it", a_refused_refire_keeps_the_else_arm_earned_before_it);
     rt_run("a_refused_event_body_is_reported_under_its_own_name", a_refused_event_body_is_reported_under_its_own_name);
     rt_run("a_false_waituntil_whose_watcher_is_refused_raises", a_false_waituntil_whose_watcher_is_refused_raises);
+    rt_run("a_native_slot_write_marks_the_dirty_set", a_native_slot_write_marks_the_dirty_set);
 }

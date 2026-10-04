@@ -50,7 +50,12 @@ static int obj_setSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue
     if (!recv) return urbi_raise_type(vm, "setSlot: self must be an Object", out);
     USym *name = arg_name(vm, args[0]);
     if (!name) return urbi_raise_type(vm, "setSlot: name must be a String", out);
+    /* The same notification seam a bytecode slot write and a host
+     * urbi_slot_set go through: watchers on this object re-evaluate, and
+     * `x.changed?` fires on an update (or is armed by a declaration). */
+    bool existed = uobj_find_local(recv, name) >= 0;
     if (uobj_set_local(vm, recv, name, args[1], 0) < 0) return urbi_raise_oom(vm, out);
+    uexec_note_write(vm, recv, name, args[1], existed);
     *out = args[1];
     return UEXEC_OK;
 }
@@ -98,8 +103,11 @@ static int obj_removeSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UVa
     const USym *name = arg_name(vm, args[0]);
     if (!name) return urbi_raise_type(vm, "removeSlot: name must be a String", out);
     /* Idempotent, as the legacy semantics are: removing an absent slot is
-     * a no-op, not an error. */
-    (void)uobj_remove_local(vm, recv, name);
+     * a no-op, not an error.  A removal that did happen on a watched
+     * object re-evaluates its watchers; there is no `changed?` to fire
+     * for a slot that no longer exists. */
+    if (uobj_remove_local(vm, recv, name) && (recv->cell.flags & UOBJ_F_WATCHED))
+        uwatch_mark_dirty(vm, recv);
     *out = self;
     return UEXEC_OK;
 }

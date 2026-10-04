@@ -1,0 +1,36 @@
+# Covers: a slot written through Object.setSlot wakes the same watchers a
+#         plain slot assignment does -- an `at` on the slot's value and
+#         an `x.changed?` subscription -- and removing a watched slot
+#         re-evaluates conditions.  Each write is its own statement, so
+#         the drain after it is what the next line observes.
+
+var o = Object.new(); o.x = 0
+var fired = 0
+at (o.x == 1) fired = 1
+o.setSlot("x", 1)
+fired
+var p = Object.new(); p.y = 0
+var hits = 0
+at (p.y.changed?) hits = hits + 1
+p.setSlot("y", 5)
+hits
+var q = Object.new(); q.z = 1
+var gone = 0
+at (!q.hasSlot("z")) gone = 1
+q.removeSlot("z"); 0
+gone
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] 1
+[00000000] 1
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] 5
+[00000000] 1
+[00000000] 1
+[00000000] 0
+[00000000] nil
+[00000000] 0
+[00000000] 1
