@@ -298,10 +298,11 @@ endif
 PROBE32_DIR := build/arm-cortex-m4f-hosted/tests/probes
 PROBE32_LD  := tests/probes/cortex-m/mps2-an386.ld
 .PHONY: test-probes-32bit
+PROBE32_CPUFLAGS := $(shell sed -n 's/^CROSS_CPUFLAGS *:= *//p' presets/arm-cortex-m4f.mk)
 test-probes-32bit: cross-arm-cortex-m4f-hosted
 	@mkdir -p $(PROBE32_DIR)
 	@for p in boot_heap strand_cost leaks small_heap; do \
-	    arm-none-eabi-gcc -std=c99 -Os -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
+	    arm-none-eabi-gcc -std=c99 -Os $(PROBE32_CPUFLAGS) \
 	        -nostartfiles --specs=rdimon.specs -T $(PROBE32_LD) \
 	        -Iinclude -Itests/probes \
 	        tests/probes/cortex-m/start.c tests/probes/$$p.c \
@@ -342,7 +343,7 @@ cross-all: $(foreach p,$(PRESETS),cross-$(p) cross-$(p)-bytecode-only)
 	    echo "== $$p-bytecode-only"; $$sz --totals build/$$p-bytecode-only/liburbi.a | tail -1; \
 	done
 
-# The archive gate over every bytecode-only preset that has been built.
+# The archive gate over all four bytecode-only presets, building each first.
 test-freestanding: $(foreach p,$(PRESETS),cross-$(p)-bytecode-only)
 
 # A preset whose compiler is not on PATH fails with the compiler's name.
