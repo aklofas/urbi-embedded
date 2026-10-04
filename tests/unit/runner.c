@@ -78,6 +78,7 @@ extern void test_verifier_cross_byte_suite(void);
 extern void test_verify_chunk_bounds_suite(void);
 extern void test_version_suite(void);
 extern void test_wire_v2_suite(void);
+extern void test_loader_frame_layout_suite(void);
 
 int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);   /* a crashing suite must not lose the log */
@@ -120,6 +121,7 @@ int main(void) {
     test_verify_chunk_bounds_suite();
     test_version_suite();
     test_wire_v2_suite();
+    test_loader_frame_layout_suite();
 
     printf("\nunit: %d cases, %d failed, %d checks\n",
            utest_cases_run, utest_cases_failed, utest_checks);

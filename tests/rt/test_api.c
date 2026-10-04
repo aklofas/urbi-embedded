@@ -318,10 +318,28 @@ static void version_and_null_arguments(void) {
     RT_EQ(urbi_value_to_string(NULL, urbi_make_int(1), NULL, 0), 0u);
 }
 
+/* A closure that captures more variables than it has registers round-trips
+ * through the wire format: urbi_compile, urbi_load, then a call. */
+static void compile_then_load_keeps_a_many_upvalue_closure(void) {
+    UVM *vm = api_open();
+    const char *src = "var make = function(a,b,c,d){ function(){ a + b + c + d } }; make(1,2,3,4)";
+    uint8_t *bytes = NULL; size_t n = 0; char err[256] = {0};
+    RT_EQ(urbi_compile(vm, src, strlen(src), NULL, &bytes, &n, err, sizeof err), URBI_OK);
+    UValue cl = urbi_make_nil();
+    RT_EQ(urbi_load(vm, urbi_realm_main(vm), bytes, n, &cl), URBI_OK);
+    urbi_chunk_free(vm, bytes, n);
+    UValue out = urbi_make_nil();
+    RT_EQ(urbi_call(vm, urbi_realm_main(vm), cl, urbi_make_nil(), NULL, 0, &out), URBI_OK);
+    RT_EQ(out.v.i, 10);
+    urbi_close(vm);
+    RT_EQ(api_live, 0L);
+}
+
 RT_SUITE(rt_api_suite) {
     rt_run("lifecycle_and_realms", lifecycle_and_realms);
     rt_run("run_and_format", run_and_format);
     rt_run("compile_then_load", compile_then_load);
+    rt_run("compile_then_load_keeps_a_many_upvalue_closure", compile_then_load_keeps_a_many_upvalue_closure);
     rt_run("host_functions", host_functions);
     rt_run("globals_slots_and_call", globals_slots_and_call);
     rt_run("scheduler_api_surface", scheduler_api_surface);

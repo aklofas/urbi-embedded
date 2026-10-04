@@ -175,6 +175,15 @@ int      ustrand_push_frame(UStrand *s, UClosure *cl, UValue recv, uint32_t base
  * arguments it is being handed. */
 int      ustrand_push_frame_args(UStrand *s, UClosure *cl, UValue recv, uint32_t base,
                                  uint8_t ret_reg, uint8_t nkeep);
+/* Writes the hidden argument-count register a proto with the arity
+ * prologue reads: R[nparams], only when it has parameters.  The loader
+ * rejects a proto whose R[nparams] lies outside R[0..max_reg]; the bound
+ * is re-checked here so no chunk, verified or not, can write past the
+ * frame window. */
+static inline void ustrand_store_nargs(UStrand *s, const UProto *p, uint32_t base, uint8_t nargs) {
+    if (p->arity_prologue && p->nparams > 0 && p->nparams <= p->max_reg)
+        s->stack[base + p->nparams] = uv_int((int64_t)nargs);
+}
 /* Closes any upvalues opened within the top frame's register window, then
  * pops it. No-op on an empty strand. */
 void     ustrand_pop_frame(UStrand *s);

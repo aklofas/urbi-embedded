@@ -73,13 +73,13 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
 /* --- T79 (Wave-4): nupvals / nparams range check at proto decode ---
  *
  * Each of nupvals and nparams is a single byte (capped at 255 by wire
- * format).  T79 adds a cross-check that nupvals + nparams <= max_reg+1
- * so the runtime can address every captured upvalue and parameter via
- * a register slot.  emit_init_funcstate guarantees this; the check
- * guards against hand-crafted bytecode that overflows R[0..max_reg].
+ * format).  The proto header is cross-checked so that the parameters
+ * (plus the hidden argument-count register) fit R[0..max_reg]; the
+ * emitter guarantees this and the check guards against hand-crafted
+ * bytecode that would write past the frame.
  *
- * Test exercises a nested proto with nupvals=200 + nparams=0 against
- * max_reg=0 — sum 200 > max_reg+1=1 — expect rejection. */
+ * Test exercises a nested proto with nparams=200 against max_reg=0 —
+ * 200 > max_reg+1=1 — expect rejection. */
 UTEST(deserialize_rejects_unbounded_nupvals_nparams) {
     /* Build a root module with one nested proto whose nupvals overflows
      * the register frame. */
@@ -103,10 +103,12 @@ UTEST(deserialize_rejects_unbounded_nupvals_nparams) {
     off = hard_put_varint(buf, off, 0);      /* root n_abs_lines */
     off = hard_put_varint(buf, off, 0);      /* root site_count */
     off = hard_put_varint(buf, off, 1);      /* nested_count = 1 */
-    /* nested[0]: max_reg=0, nupvals=200, nparams=0  -- sum > max_reg+1. */
+    /* nested[0]: max_reg=0, nupvals=0, nparams=200 -- the parameters alone
+     * overflow R[0..max_reg].  Upvalues are deliberately not part of this
+     * rule: they live in the closure, not in registers. */
     buf[off++] = 0;                          /* nested.max_reg */
-    buf[off++] = 200;                        /* nested.nupvals */
-    buf[off++] = 0;                          /* nested.nparams */
+    buf[off++] = 0;                          /* nested.nupvals */
+    buf[off++] = 200;                        /* nested.nparams */
 
     UProto *m = NULL;
     UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, NULL, NULL, 0);
@@ -404,6 +406,6 @@ void test_module_loader_hardening_suite(void) {
               site_name_count_above_65535_rejected);
     utest_run("deeply-nested closure verifier (T78: W4 carry, regression)",
               deeply_nested_closure_verifier);
-    utest_run("deserialize bounds nupvals + nparams (T79: W4 carry)",
+    utest_run("deserialize bounds nparams against the register window",
               deserialize_rejects_unbounded_nupvals_nparams);
 }

@@ -275,7 +275,7 @@ UStrand *usched_spawn(UVM *vm, URealm *realm, UClosure *cl, UTag *tag,
     for (uint8_t k = 0; k < argc; k++) c->stack[k] = argv[k];
     if (ustrand_push_frame_args(c, cl, recv, 0, 0, argc) != 0)
         return usched_spawn_failed(realm, c);
-    if (p->arity_prologue && p->nparams > 0) c->stack[p->nparams] = uv_int((int64_t)argc);
+    ustrand_store_nargs(c, p, 0, argc);
 
     /* Newcomers are gated.  A strand entering the scope of a blocked or
      * frozen tag takes that tag's bits, so it parks on its first

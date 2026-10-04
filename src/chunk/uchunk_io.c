@@ -744,20 +744,20 @@ static UChunkLoadError decode_proto(MDecCtx *d, UProto *p) {
     p->nupvals = d->buf[d->off++];
     p->nparams = d->buf[d->off++];
     p->arity_prologue = d->arity_flag;
-    /* nupvals + nparams cross-check.  Each occupies one byte
-     * (capped at 255 by the wire format) but the sum must fit in the
-     * register frame so the runtime can address every captured upvalue
-     * and parameter via a register slot.  emit_init_funcstate guarantees
-     * this; the check guards against hand-crafted bytecode that
-     * overflows R[0..max_reg].  Forward-looking: if either field is
-     * widened to varint at a future bytecode break, the byte-width cap
-     * goes away and an explicit `<= 256` check is needed. */
-    if ((unsigned)p->nupvals + (unsigned)p->nparams > (unsigned)p->max_reg + 1U) {
-        set_errmsg(d->errmsg, d->errcap,
-                   "proto header: nupvals=%u + nparams=%u exceeds max_reg+1=%u",
-                   (unsigned)p->nupvals, (unsigned)p->nparams,
-                   (unsigned)p->max_reg + 1U);
-        return UCHUNK_LOAD_CORRUPT;
+    /* Frame layout.  Parameters occupy R[0..nparams-1]; a proto with the
+     * arity prologue also receives the hidden argument count in
+     * R[nparams] (only when it has parameters at all), so both must fit
+     * in R[0..max_reg].  Upvalues live in the closure's own upvals[]
+     * array, not in registers, and are not counted here: a closure may
+     * capture more variables than it has registers. */
+    {
+        unsigned hidden = (p->arity_prologue && p->nparams > 0) ? 1U : 0U;
+        if ((unsigned)p->nparams + hidden > (unsigned)p->max_reg + 1U) {
+            set_errmsg(d->errmsg, d->errcap,
+                       "proto header: nparams=%u plus %u hidden count register exceeds max_reg+1=%u",
+                       (unsigned)p->nparams, hidden, (unsigned)p->max_reg + 1U);
+            return UCHUNK_LOAD_CORRUPT;
+        }
     }
 
     UChunkLoadError rc;
