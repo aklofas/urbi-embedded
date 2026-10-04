@@ -516,7 +516,13 @@ int uwatch_waituntil(UVM *vm, UStrand *s, UClosure *cond)
     if (!usched_may_deschedule(s)) return 0;
 
     UWatcher *w = uwatch_new(vm, (uint8_t)UWATCH_WAITUNTIL, s->realm, s->tag);
-    if (w == NULL) return -1;
+    /* A wait that cannot be installed must not fall through to the
+     * statement after it: the caller unwinds on -1 only when a throw is
+     * pending, so one is raised here. */
+    if (w == NULL) {
+        (void)uexec_throw(vm, s, UP_OOMERROR, "waituntil: out of memory installing the watcher");
+        return -1;
+    }
     w->cond = cond;
     /* The wait list lives inside a watcher, which vm->watch.all roots, so
      * `waiting_on` is not the dangling pointer the park contract warns

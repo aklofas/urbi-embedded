@@ -1260,6 +1260,32 @@ static void a_refused_event_body_is_reported_under_its_own_name(void)
     }
 }
 
+static int interlock_marks;
+static int mark_native(UVM *vm, UValue self, UValue *a, uint8_t n, UValue *out) {
+    (void)vm; (void)self; (void)a; (void)n; interlock_marks++; *out = urbi_make_nil(); return UEXEC_OK;
+}
+
+/* `waituntil (false); act()` must never run `act` because the watcher could
+ * not be allocated: the wait raises OutOfMemoryError and the statement
+ * after it is unreachable. */
+static void a_false_waituntil_whose_watcher_is_refused_raises(void)
+{
+    Fix fx; fix_open(&fx);
+    RT_EQ(urbi_register(fx.vm, "act", mark_native, 0, 0), URBI_OK);
+    interlock_marks = 0;
+    fx.ca.refuse_size = sizeof(UWatcher);
+    UValue out = urbi_make_nil(); char err[256] = {0};
+    const char *src = "waituntil (false); act()";
+    int rc = urbi_run(fx.vm, urbi_realm_main(fx.vm), src, strlen(src), "<test>", &out, err, sizeof err);
+    fx.ca.refuse_size = 0;
+    RT_EQ(rc, URBI_ERR_UNCAUGHT_THROW);
+    RT_EQ(interlock_marks, 0);
+    UErrorInfo info; RT_EQ(urbi_last_error(fx.vm, &info), URBI_ERR_UNCAUGHT_THROW);
+    RT_CHECK(info.message && strstr(info.message, "OutOfMemoryError") != NULL);
+    RT_CHECK(fx.ca.refused >= 1);
+    fix_close(&fx);
+}
+
 RT_SUITE(rt_watch_suite) {
     rt_run("at_fires_once_per_rising_edge", at_fires_once_per_rising_edge);
     rt_run("at_fires_when_the_condition_already_holds", at_fires_when_the_condition_already_holds);
@@ -1305,4 +1331,5 @@ RT_SUITE(rt_watch_suite) {
     rt_run("a_refused_else_owed_to_a_running_body_is_retried_once", a_refused_else_owed_to_a_running_body_is_retried_once);
     rt_run("a_refused_refire_keeps_the_else_arm_earned_before_it", a_refused_refire_keeps_the_else_arm_earned_before_it);
     rt_run("a_refused_event_body_is_reported_under_its_own_name", a_refused_event_body_is_reported_under_its_own_name);
+    rt_run("a_false_waituntil_whose_watcher_is_refused_raises", a_false_waituntil_whose_watcher_is_refused_raises);
 }
