@@ -31,6 +31,20 @@ static void *ufront_chunk_alloc(void *ptr, size_t nbytes, void *ud)
     return vm->gc.alloc(ptr, nbytes, vm->gc.alloc_ud);
 }
 
+#if !__STDC_HOSTED__
+/* A freestanding build has no malloc behind uarena_init, so the parse
+ * arena draws on the embedder's allocator instead. */
+static void *ufront_arena_alloc(size_t nbytes, void *ud)
+{
+    return ufront_chunk_alloc(NULL, nbytes, ud);
+}
+
+static void ufront_arena_free(void *ptr, void *ud)
+{
+    (void)ufront_chunk_alloc(ptr, 0, ud);
+}
+#endif /* !__STDC_HOSTED__ */
+
 int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
                    const UCompileBudget *budget,
                    struct UProto **out, char *err, size_t errcap)
@@ -50,7 +64,11 @@ int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
     ulex_init(&lex, src, n);
 
     UArena arena;
+#if __STDC_HOSTED__
     uarena_init(&arena, 4096);
+#else
+    uarena_init_ex(&arena, 4096, ufront_arena_alloc, ufront_arena_free, vm);
+#endif
 
     UProto *root = (UProto *)ufront_chunk_alloc(NULL, sizeof(UProto), vm);
     if (root == NULL) {

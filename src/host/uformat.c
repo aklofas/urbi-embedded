@@ -92,7 +92,7 @@ size_t urbi_value_to_string(UVM *vm, UValue v, char *buf, size_t cap)
             break;
         }
         case UCELL_EVENT:  n = snprintf(buf, cap, "<event>"); break;
-        case UCELL_STRAND: n = snprintf(buf, cap, "<Job %u>", ((const UStrand *)v.v.p)->id); break;
+        case UCELL_STRAND: n = snprintf(buf, cap, "<Job %u>", (unsigned)((const UStrand *)v.v.p)->id); break;
         default:           n = snprintf(buf, cap, "<?>"); break;
         }
         break;

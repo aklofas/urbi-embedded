@@ -5,61 +5,65 @@
 The urbi-embedded build is a single top-level `Makefile` that produces
 `build/<target>/liburbi.a` from `src/` plus optional auxiliaries
 (`build/<target>/urbi` REPL binary, fuzzer harnesses, stress drivers,
-test runners). Cross-compilation is selected via `make cross-arm` or
-`make cross-riscv`, which invoke the same Makefile with a per-target
-`TARGET=<dir>` and a swapped toolchain — every target gets its own
-`build/$(TARGET)/` tree, so concurrent builds never race.
+test runners). Cross-compilation is selected with `make cross-<preset>`,
+which invokes the same Makefile with a per-target `TARGET=<dir>` and the
+preset's toolchain. Every target gets its own `build/$(TARGET)/` tree, so
+concurrent builds never race.
 
-## Cross-compile toolchain prerequisites
+## Cross presets
 
-The host-side `make test` does not require any cross toolchain. Cross-compile
-targets (`make cross-arm`, `make cross-riscv`, `make cross-esp32s3-*`, `make cross-stm32f4*`)
-require the corresponding toolchain on PATH.
+A cross preset is a file under `presets/` (a tracked directory, because
+`make clean` wipes `build/`) naming the compiler, archiver, `nm`, `size`
+and CPU flags for one part. `presets/preset.mk` turns it into the
+ordinary build: it sets `CC`, `AR` and `CFLAGS` to
+`-std=c99 -Wall -Wextra -Wpedantic -Os <cpu flags> -ffreestanding`. A
+preset whose compiler is not on PATH is a hard error naming the
+compiler, never a skip. The host-side `make test` needs no cross
+toolchain; [cross-toolchain-setup.md](../cross-toolchain-setup.md)
+gives the install.
 
-### Ubuntu (24.04+) install commands
-
-| Cross target | Toolchain | Package |
+| Preset | CPU flags | Toolchain |
 |---|---|---|
-| `cross-arm` (Cortex-M7) | arm-none-eabi-gcc | `apt install gcc-arm-none-eabi` |
-| `cross-stm32f4` (Cortex-M4F, full)         | arm-none-eabi-gcc (same) | `apt install gcc-arm-none-eabi` |
-| `cross-stm32f4-bytecode-only` (Cortex-M4F) | arm-none-eabi-gcc (same) | `apt install gcc-arm-none-eabi` |
-| `cross-riscv` (rv32imc) | riscv64-unknown-elf-gcc | `apt install gcc-riscv64-unknown-elf` |
-| `cross-esp32s3-*` (Xtensa LX7) | xtensa-esp-elf-gcc (bundled with ESP-IDF) | source `$IDF_PATH/export.sh` |
+| `arm-cortex-m0plus` | `-mcpu=cortex-m0plus -mthumb -mfloat-abi=soft` | `arm-none-eabi-gcc` |
+| `arm-cortex-m4f` | `-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard` | `arm-none-eabi-gcc` |
+| `arm-cortex-m7` | `-mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard` | `arm-none-eabi-gcc` |
+| `riscv32` | `-march=rv32imc -mabi=ilp32` | `riscv-none-elf-gcc` |
 
-### ESP-IDF environment
+Each preset builds in three shapes. Every shape builds `core`, the
+archive only; host tools are never cross-built.
 
-ESP32 cross-compile targets and the ESP-IDF managed-component build require
-ESP-IDF v6.0.1 sourced into the shell:
+| Target | Archive | What it is |
+|---|---|---|
+| `make cross-<preset>` | `build/<preset>/liburbi.a` | the full library under `-ffreestanding` |
+| `make cross-<preset>-bytecode-only` | `build/<preset>-bytecode-only/liburbi.a` | `URBI_BYTECODE_ONLY=1`: no compiler, no `src/host`, no `src/repl`; the archive gate runs on it |
+| `make cross-<preset>-hosted` | `build/<preset>-hosted/liburbi.a` | `URBI_HOSTED=1` drops `-ffreestanding`, for parts that link a libc |
 
-```sh
-. /opt/esp/idf/export.sh    # CI container layout (espressif/idf:v6.0.1)
-. ~/Tools/esp-idf/export.sh # local-clone layout (alternative path)
-```
+The cross build compiles the tracked `src/stdlib/urbi_stdlib_bytecode.gen.c`
+like any other source. The bake tool that produces it is host-only and
+never runs in a cross build.
 
-This puts `xtensa-esp-elf-gcc`, `xtensa-esp-elf-ar`, `xtensa-esp-elf-nm`, and
-`idf.py` on PATH. The Makefile's `cross-esp32s3-*` targets assume the env is
-already sourced; they do not source it themselves.
+### Freestanding contract
 
-### Fresh-clone verification
+- `src/rt`, `src/chunk`, `src/util` include no `<stdio.h>` or `<stdlib.h>`; their libc use is `memcpy`, `memmove`, `memset`, `memcmp`, `strlen`, `strcmp`, which the embedder provides (newlib, or stubs as the STM32 example does).
+- `src/stdlib` may call hosted libc (`snprintf`, `strtod`, `strtoll`, `<math.h>`) only under `#if __STDC_HOSTED__`, with a fallback that raises a `TypeError` naming the method. `atoms.c` already does this; `debug_namespace.c` gets the same guard. A freestanding build therefore has no `Float.asString`; a part that wants it links a libc and builds hosted.
+- `src/host` (the value formatter) and `src/repl` (the eval service: `malloc`, `realloc`, `memchr`) are hosted-only and are excluded from `-bytecode-only` builds. A hosted cross build (the Pico, with newlib) includes them.
+- A cross preset builds with `-ffreestanding` by default; `URBI_HOSTED=1` on the recursive make drops the flag for parts with a libc.
 
-The cross-compile targets are designed to work from a fresh clone with no
-prior build state. To verify after toolchain changes:
+### Gates
 
-```sh
-git clone <repo> urbi-embedded-test
-cd urbi-embedded-test
-# Source ESP-IDF env (if testing cross-esp32s3-*)
-. ~/Tools/esp-idf/export.sh
-make cross-arm
-make cross-riscv
-make cross-stm32f4
-make cross-stm32f4-bytecode-only
-make cross-esp32s3-bytecode-only
-make cross-esp32s3-full
-```
+- `make test-freestanding-host` compiles every TU a bytecode-only
+  archive keeps under `-ffreestanding -DURBI_BYTECODE_ONLY=1` with the
+  host compiler and matches its undefined symbols against the forbidden
+  libc set. It needs no cross toolchain.
+- `make test-freestanding` builds every `cross-<preset>-bytecode-only`
+  archive and runs `tests/scripts/test-freestanding.sh` on it with the
+  preset's `nm`.
 
-All six should succeed without intermediate `make` runs. CI exercises this
-via fresh containers per job.
+`make cross-all` builds every preset, full and bytecode-only, and prints
+`size --totals` for each archive. The footprint is recorded in the
+CHANGELOG, not capped. `cross-all` and `test-cross-missing-toolchain`
+are in `releasetest`; CI runs each preset's two shapes in its `cross`
+matrix.
 
 ## Stdlib bake (M6 Wave 2)
 
@@ -155,32 +159,6 @@ the wire-format-hash CI gate (`tests/golden/*-wire-format-hashes.txt`).
 Phase 4 wires `urbi_module_load(stdlib_blob, len)` into the
 `urbi_open` boot path after the C-native protos are installed. Single
 ordered module load; no parser/emit involvement at boot.
-
-### Cross-arch builds
-
-`tools/urbi-compile-stdlib` is a HOST-ONLY tool — it is compiled
-against the host `liburbi.a` and run on the host. Cross-arch builds
-(`make cross-arm`, `make cross-riscv`) consume the resulting
-`urbi_stdlib_bytecode.gen.c` source file and compile it for the
-target like any other `src/stdlib/*.c`. There is no chicken-and-egg:
-the bake tool runs once on the host, its output ships as portable
-C source.
-
-The Makefile rule for `tools/urbi-compile-stdlib` hard-pins the host
-toolchain (`-std=c99 -Wall -Wextra -Wpedantic -Os`) instead of
-inheriting the cross compiler's `CFLAGS`. The same `make cross-arm`
-invocation that builds `liburbi.a` for Cortex-M7 still produces a
-host-architecture bake-tool binary that links against the host
-`liburbi.a` (which it produced earlier in the same invocation, or
-which already exists from a prior `make`). The cross-target
-`build/<target>/liburbi.a` is built without ever invoking the bake
-tool — the tracked `.gen.c` is sufficient, and the cross compiler
-just compiles it for the target.
-
-Embedded targets that strip the parser/emitter (M7
-`URBI_BYTECODE_ONLY`) still load the same blob via
-`urbi_module_load`; the parser-free boot path is verified by
-`tests/scripts/build-bytecode-only.sh` (Phase 13).
 
 ### Force-regenerate
 

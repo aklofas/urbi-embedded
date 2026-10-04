@@ -35,24 +35,28 @@ ifeq ($(URBI_BYTECODE_ONLY),1)
   COMPILER_FRONTEND_DIRS_EXCLUDED := 1
 endif
 
+ifdef CROSS_PRESET
+  include presets/preset.mk
+endif
+
 # The cooperative NDJSON eval service is UNCONDITIONAL, not opt-in.  The
 # spec keeps "only the eval path, the NDJSON framing it needs, and the
 # cooperative step" in the build during the re-foundation, and a service
 # that never starts a thread or opens a socket has nothing an embedded
-# target needs protecting from.  The networked SERVER is what
-# URBI_ENABLE_REPL used to gate, and it is parked with its transports.
+# target needs protecting from.  The networked server is a tool, not part
+# of the library, so nothing here gates it.
+#
+# Under bytecode-only there is no compiler and so no eval service.
+# urbi/repl.h says so with an #error, and the source list has to agree or
+# the link fails on ufront_compile.
+ifeq ($(URBI_BYTECODE_ONLY),1)
+REPL_CORE_SRCS :=
+else
 REPL_CORE_SRCS := \
        src/repl/urepl.c \
        src/repl/urepl_dispatch.c \
        src/repl/urepl_ndjson.c \
        src/repl/urepl_buffer_transport.c
-ifeq ($(URBI_ENABLE_REPL),1)
-  $(error URBI_ENABLE_REPL=1 gates the networked REPL server, which is parked during the refound/core re-foundation; the cooperative eval service is in every build)
-endif
-ifeq ($(URBI_BYTECODE_ONLY),1)
-  # No compiler, no eval service.  urbi/repl.h says so with an #error, and
-  # the source list has to agree or the link fails on ufront_compile.
-  REPL_CORE_SRCS :=
 endif
 
 # v0.12.0: opt-in ROS2 bridge component (URBI_ENABLE_ROS2=1).
@@ -155,7 +159,7 @@ FRONTEND_SRCS := \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/emit/*.c)) \
        $(wildcard src/chunk/*.c) \
        $(wildcard src/util/*.c) \
-       $(wildcard src/host/*.c)
+       $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/host/*.c))
 
 SRC := $(FRONTEND_SRCS) $(wildcard src/rt/*.c) $(STDLIB_SRCS) $(STDLIB_BLOB_SRC) $(REPL_CORE_SRCS)
 TEST_SRC :=
@@ -308,6 +312,41 @@ endif
 # Core archive. Kept as its own target for cross-compile / freestanding
 # consumers that build the library without the host tools.
 core: $(LIB)
+
+# --- cross presets ------------------------------------------------------
+#
+# One rule per shape, driven by presets/<name>.mk.  GNU make picks the rule
+# with the shortest stem, so cross-arm-cortex-m4f-bytecode-only reaches the
+# bytecode-only rule and not the plain one.  Each shape has its own
+# build/<target>/ so the three never share objects.
+PRESETS := arm-cortex-m0plus arm-cortex-m4f arm-cortex-m7 riscv32
+
+.PHONY: cross-all test-freestanding test-cross-missing-toolchain
+cross-%-bytecode-only:
+	$(MAKE) --no-print-directory TARGET=$*-bytecode-only CROSS_PRESET=$* URBI_BYTECODE_ONLY=1 core
+	@sh tests/scripts/test-freestanding.sh build/$*-bytecode-only/liburbi.a $*
+
+cross-%-hosted:
+	$(MAKE) --no-print-directory TARGET=$*-hosted CROSS_PRESET=$* URBI_HOSTED=1 core
+
+cross-%:
+	$(MAKE) --no-print-directory TARGET=$* CROSS_PRESET=$* core
+
+# Every preset, full and bytecode-only, with the archive gate on the
+# latter and the footprint of each printed for the release notes.
+cross-all: $(foreach p,$(PRESETS),cross-$(p) cross-$(p)-bytecode-only)
+	@for p in $(PRESETS); do \
+	    sz=$$(sed -n 's/^CROSS_SIZE *:= *//p' presets/$$p.mk); \
+	    echo "== $$p"; $$sz --totals build/$$p/liburbi.a | tail -1; \
+	    echo "== $$p-bytecode-only"; $$sz --totals build/$$p-bytecode-only/liburbi.a | tail -1; \
+	done
+
+# The archive gate over every bytecode-only preset that has been built.
+test-freestanding: $(foreach p,$(PRESETS),cross-$(p)-bytecode-only)
+
+# A preset whose compiler is not on PATH fails with the compiler's name.
+test-cross-missing-toolchain:
+	@sh tests/scripts/test-cross-missing-toolchain.sh
 
 # refactor-3 BLD-04: flag-stamp rules (variables defined above, before the
 # first prerequisite-list use).
@@ -712,7 +751,8 @@ RELEASETEST_PHASE1 := \
     test-wire-format-determinism \
     test-stdlib-bytecode-fresh test-bake-smoke \
     test-api-manifest \
-    test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 test-embedding-guide
+    test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 test-embedding-guide \
+    cross-all test-cross-missing-toolchain
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer

@@ -1,41 +1,34 @@
 #!/bin/sh
-# T18 / Wave 1 — freestanding CI gate for URBI_BYTECODE_ONLY=1.
-# Asserts the resulting liburbi.a has no unresolved libc symbols (printf,
-# malloc, fopen, etc.). Reads liburbi.a built by cross-arm or cross-riscv
-# under URBI_BYTECODE_ONLY=1.
+# Freestanding archive gate for URBI_BYTECODE_ONLY=1.
+# Asserts a bytecode-only liburbi.a has no unresolved libc symbols
+# (printf, malloc, fopen, etc.).  Usage:
 #
-# Closes REVIVAL §6 acceptance criterion #1 / #8 in CI: a freestanding
-# liburbi.a must link cleanly against an embedded RTOS image without
-# pulling in a hosted libc.  Any unresolved hosted-libc symbol on the
-# strip target indicates a freestanding-discipline regression — the
-# new dependency either belongs guarded behind URBI_BYTECODE_ONLY,
-# routed through urbi_panic / vm->host_log_fn, or documented as an
-# accepted exception in docs/freestanding-exceptions.md.
+#   test-freestanding.sh <archive> [<preset>]
+#
+# `make cross-<preset>-bytecode-only` runs it on the archive it builds.
+#
+# A freestanding liburbi.a must link cleanly against an embedded RTOS
+# image without pulling in a hosted libc.  Any unresolved hosted-libc
+# symbol on the strip target indicates a freestanding-discipline
+# regression: the new dependency either belongs guarded behind
+# URBI_BYTECODE_ONLY, routed through urbi_panic / vm->host_log_fn, or
+# documented as an accepted exception in docs/freestanding-exceptions.md.
 set -eu
 
-ARCHIVE=${1:-build/cross-arm-bytecode-only/liburbi.a}
+ARCHIVE=${1:-build/arm-cortex-m4f-bytecode-only/liburbi.a}
 if [ ! -f "$ARCHIVE" ]; then
-    echo "FAIL: $ARCHIVE not found. Run cross-arm-bytecode-only target first."
+    echo "FAIL: $ARCHIVE not found. Run a cross-<preset>-bytecode-only target first."
     exit 1
 fi
 
-# Which nm to use? Cross-arm needs arm-none-eabi-nm; cross-riscv uses
-# riscv64-unknown-elf-nm (matches the Makefile's riscv64-unknown-elf-gcc
-# CC for rv32imc); esp32s3 uses the unified ESP-IDF xtensa-esp-elf-nm;
-# otherwise use plain nm.
-case "$ARCHIVE" in
-    *esp32s3*)     NM_CMD=xtensa-esp-elf-nm ;;
-    *stm32f4*)     NM_CMD=arm-none-eabi-nm ;;
-    *cross-arm*)   NM_CMD=arm-none-eabi-nm ;;
-    *cross-riscv*) if command -v riscv64-unknown-elf-nm >/dev/null 2>&1; then
-                       NM_CMD=riscv64-unknown-elf-nm
-                   else
-                       # xpack ships gcc/ar under both prefixes but binutils
-                       # extras (nm) only as riscv-none-elf-*.
-                       NM_CMD=riscv-none-elf-nm
-                   fi ;;
-    *)             NM_CMD=nm ;;
-esac
+# The second argument names the preset; its nm is the one that reads the
+# archive.  Without a preset the host nm is used.
+PRESET=${2:-}
+if [ -n "$PRESET" ] && [ -f "presets/$PRESET.mk" ]; then
+    NM_CMD=$(sed -n 's/^CROSS_NM *:= *//p' "presets/$PRESET.mk")
+else
+    NM_CMD=nm
+fi
 
 # A missing cross-nm must fail loudly, not pass vacuously (the nm stderr
 # redirect below would otherwise swallow command-not-found into an empty
