@@ -111,7 +111,9 @@ int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
 
     /* Warnings go to the diag channel the same way the old REPL printed
      * them.  They are read before uemit_finish, which frees the emitter
-     * and its diagnostics with it. */
+     * and its diagnostics with it.  A freestanding build has no stderr,
+     * so its warnings stay silent. */
+#if __STDC_HOSTED__
     if (!has_error) {
         const char *warn_src = uproto_source_name(root);
         if (warn_src == NULL) warn_src = "<stdin>";
@@ -121,6 +123,7 @@ int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
                 fprintf(stderr, "%s:%d:%d: warning: %s\n", warn_src, d->line, d->col, d->message);
         }
     }
+#endif /* __STDC_HOSTED__ */
 
     UEmitError emit_rc = EMIT_OK;
     if (!has_error) {
@@ -161,13 +164,19 @@ int ufront_compile(struct UVM *vm, const char *src, size_t n, const char *name,
     return URBI_OK;
 }
 
+/* A host-tool feature: a freestanding build has no stdout to print to,
+ * so there the call writes nothing. */
 void ufront_disassemble(const struct UProto *root, const char *name)
 {
+#if __STDC_HOSTED__
     char buf[16384];
     size_t n = uemit_disassemble(root, buf, sizeof buf);
     if (name) printf("; %s\n", name);
     fwrite(buf, 1, n, stdout);
     if (n > 0 && buf[n - 1] != '\n') fputc('\n', stdout);
+#else
+    (void)root; (void)name;
+#endif
 }
 
 ptrdiff_t ufront_serialize(const struct UProto *root, unsigned char *buf, size_t cap)
