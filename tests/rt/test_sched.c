@@ -316,6 +316,41 @@ static void two_blocked_tags_need_both_released(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* Stopping an inner tag releases the strand only from that tag's own
+ * hold: it is still inside the outer scope, and the outer gate keeps it. */
+static void an_inner_stop_leaves_an_outer_block_in_place(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var done = 0");
+    run(&fx, "var outer = Tag.new()");
+    run(&fx, "var inner = Tag.new()");
+    run(&fx, "outer: { inner: { sleep(5ms) }; Realm.done = 1 }");
+    run(&fx, "outer.block()");
+    run(&fx, "inner.stop()");
+    RT_EQ(tick(&fx, 10000), URBI_STEP_QUIESCENT);
+    RT_EQ(global_int(&fx, "done"), 0);
+    run(&fx, "outer.unblock()");
+    RT_EQ(global_int(&fx, "done"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+static void an_inner_stop_leaves_an_outer_freeze_in_place(void)
+{
+    Fix fx; fix_open(&fx);
+    run(&fx, "var done = 0");
+    run(&fx, "var outer = Tag.new()");
+    run(&fx, "var inner = Tag.new()");
+    run(&fx, "outer: { inner: { sleep(5ms) }; Realm.done = 1 }");
+    run(&fx, "outer.freeze()");
+    run(&fx, "inner.stop()");
+    RT_EQ(tick(&fx, 10000), URBI_STEP_QUIESCENT);
+    RT_EQ(global_int(&fx, "done"), 0);
+    run(&fx, "outer.unfreeze()");
+    RT_EQ(global_int(&fx, "done"), 1);
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, 0u);
+}
+
 static void two_frozen_tags_need_both_released(void)
 {
     Fix fx; fix_open(&fx);
@@ -1036,6 +1071,8 @@ RT_SUITE(rt_sched_suite) {
     rt_run("block_holds_a_woken_sleeper", block_holds_a_woken_sleeper);
     rt_run("block_and_freeze_are_independent", block_and_freeze_are_independent);
     rt_run("two_blocked_tags_need_both_released", two_blocked_tags_need_both_released);
+    rt_run("an_inner_stop_leaves_an_outer_block_in_place", an_inner_stop_leaves_an_outer_block_in_place);
+    rt_run("an_inner_stop_leaves_an_outer_freeze_in_place", an_inner_stop_leaves_an_outer_freeze_in_place);
     rt_run("two_frozen_tags_need_both_released", two_frozen_tags_need_both_released);
     rt_run("a_call_boundary_leaving_a_gated_scope_drops_its_bit", a_call_boundary_leaving_a_gated_scope_drops_its_bit);
     rt_run("a_hundred_sleepers_stay_small", a_hundred_sleepers_stay_small);

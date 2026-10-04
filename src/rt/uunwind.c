@@ -398,8 +398,9 @@ int uexec_unwind(UVM *vm, UStrand *s)
                 /* Leaving a tag scope, whatever brought us here, puts the
                  * ambient tag back to what the scope displaced and fires
                  * `leave`, as a SCOPE_POP of a tag does.  A throw crossing a tagged
-                 * block must not skip that.  Unlike that pop, this path
-                 * leaves the strand's gate bits as they are. */
+                 * block must not skip that.  The STOP landing below
+                 * recomputes the strand's gate bits the same way that pop
+                 * does. */
                 s->tag = (top.saved.kind == UV_CELL) ? (UTag *)top.saved.v.p : NULL;
                 if (top.tag) utag_fire(vm, top.tag->leave);
                 /* A STOP stops exactly the scope it names.  Every other
@@ -417,6 +418,12 @@ int uexec_unwind(UVM *vm, UStrand *s)
                      * past-the-scope continuation at the same pc, so this
                      * is "resume after the tagged block". */
                     f->pc = f->closure->proto->instructions + top.onleave_pc;
+                    /* Leaving the stopped scope puts the strand back under
+                     * whatever gates the scopes around it still hold.
+                     * stop() cleared the bits so the cleanup could run;
+                     * the scheduler parks the strand at its next turn if
+                     * an outer block or freeze is still on. */
+                    s->gates = utag_strand_gate_bits(s);
                     return 0;
                 }
                 continue;

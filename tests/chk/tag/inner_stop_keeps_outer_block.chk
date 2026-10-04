@@ -1,0 +1,27 @@
+# Covers: stopping an inner tag while an outer tag is blocked leaves the
+#         surviving strand parked until the outer tag is unblocked.
+## timeout: 30
+## host: run var outer = Tag.new()
+## host: run var inner = Tag.new()
+## host: run Realm.done = 0
+## host: run Realm.go = 0
+## host: run outer: { inner: { waituntil(Realm.go == 1) }; Realm.done = 1 }; 0
+## host: run outer.block()
+## host: run inner.stop()
+## host: step 1000
+## host: run Realm.done
+## host: run outer.unblock()
+## host: step 1000
+## host: run Realm.done
+[00000000] <Tag>
+[00000000] <Tag>
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] nil
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] 0
+[00000000] nil
+[00000000] step: QUIESCENT
+[00000000] 1
