@@ -243,6 +243,7 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
     uint32_t ext = 0;
     bool ext_pending = false;
     size_t sites_seen = 0;
+    uint8_t last_op = (uint8_t)OP_MAX;   /* the last REAL instruction: never an EXTARG or a prelude word */
     size_t vi;
     for (vi = 0; vi < instr_count; vi++) {
         uint32_t ins = instructions[vi];
@@ -331,6 +332,7 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
                 vi += nupvals;
             }
         }
+        last_op = op;
         ext = 0;
         ext_pending = false;
     }
@@ -342,13 +344,19 @@ static UChunkLoadError verify_walk_block(MDecCtx *d,
      * (e.g. an implicit RET, or a tail-call that elides RET), this
      * check will need to widen.  Every chunk the emitter currently
      * produces ends in OP_RET, so the strict form catches
-     * truncated/corrupt bytecode early. */
-    if (instr_count > 0U) {
-        uint32_t last = instructions[instr_count - 1U];
-        if (uinstr_op(last) != OP_RET) {
-            set_errmsg(d->errmsg, d->errcap, "last instruction is not OP_RET");
-            return UCHUNK_LOAD_CORRUPT;
-        }
+     * truncated/corrupt bytecode early.
+     *
+     * An empty proto has nothing to fetch (its instruction pointer is
+     * NULL), and a CLOSURE's upvalue-prelude words are data: a prelude
+     * word whose low byte happens to read as OP_RET does not end the
+     * stream, the fetch after the CLOSURE would run off the end. */
+    if (instr_count == 0U) {
+        set_errmsg(d->errmsg, d->errcap, "proto has no instructions");
+        return UCHUNK_LOAD_CORRUPT;
+    }
+    if (last_op != (uint8_t)OP_RET) {
+        set_errmsg(d->errmsg, d->errcap, "last instruction is not OP_RET");
+        return UCHUNK_LOAD_CORRUPT;
     }
     /* site_count must not exceed the number of site-bearing instructions.
      * Every name is keyed to an emitted slot instruction; a table that
