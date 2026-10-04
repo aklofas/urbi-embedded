@@ -2,46 +2,44 @@
 # Covers: destroying a Realm cancels all periodics/watchers registered in
 #         that Realm; pending bodies do not fire after destruction.
 #
-# blocked: no driver verb frees a realm.  The action under test is
-#          urbi_realm_free, a C entry with no urbiscript surface; the host
-#          driver can create and select realms (`## host: realm <name>`)
-#          but has no verb for tearing one down.  Adding it is the whole
-#          activation.
-#
-# Everything below this line predates the re-foundation: it names
-# tasks and entry points that no longer exist, and its account of
-# what stands in the way has been superseded by the `blocked:` line
-# above, which was probed against this branch.  Kept for the
-# original urbiscript it carries.
-#
-# Status at v0.9.4: SKIPPED — no urbiscript surface for the action.
-#
-# urbi_realm_destroy is a C-API entry only.  A urbiscript chunk running
-# inside realm R cannot legally destroy R (would yank the rug out from
-# under itself).  The chk runner (tests/integration/run_chk.sh) drives one
-# REPL session against build/host/urbi and does not provide a C host-
-# driver hook to instantiate or destroy realms out-of-band.
-#
-# Where the two halves stand at the re-foundation:
-#   - the TIMER half is covered in C by
-#     tests/rt/test_sched.c::freeing_a_realm_drops_its_timers, which arms a
-#     periodic in a second realm, frees the realm, and asserts the heap is
-#     empty and the VM quiescent.
-#   - the WATCHER half has no C-level case today.  urealm_free calls
-#     uwatch_realm_dropped (src/rt/urealm.c), which disarms every watcher
-#     whose realm is the one going away; nothing asserts it.
-#
-# The C entry point is urbi_realm_free, not the urbi_realm_destroy this
-# header was written against -- that name went with the old core.
-#
-# To activate this fixture a host-driver tunable would have to be added to
-# the chk runner (parallels tests/chk/chunk_lifecycle/realm_isolation.chk —
-# both fixtures need T39 chk-runner-host-driver-extension to land).  Until
-# then this file stays as a comment-only stub documenting the gap.
-#
-# Urbyscript sketch (pseudo, activate when T39 + host driver land):
-#   [host: create realm R, drive script in R]
-#   var called = 0
-#   every (1ms) Realm.called = Realm.called + 1
-#   [host: urbi_realm_destroy(R)]
-#   [host: drive urbi_step a few times; assert no further increment]
+# The action under test is urbi_realm_free, a C entry with no urbiscript
+# surface, so the fixture runs on the host driver and frees the realm with
+# `## host: free-realm`.  In realm `r` an `at` and an `every` are armed
+# and both are first shown firing.  Then `x` is written so that the
+# watcher's condition rises again -- and the realm is freed before any
+# step can serve that edge.  No body fires after the free, the periodic
+# never ticks again, and nothing is left as live work.  The C twin of the
+# timer half is tests/rt/test_sched.c::freeing_a_realm_drops_its_timers.
+## timeout: 30
+## host: realm r
+## host: run var x = 0
+## host: run at (x > 0) echo("at fired")
+## host: run every(10ms) { echo("tick") }
+## host: advance-clock 10
+## host: step 1000
+## host: set-global x 1
+## host: step 1000
+## host: set-global x 0
+## host: step 1000
+## host: set-global x 2
+## host: free-realm r
+## host: step 1000
+## host: advance-clock 100
+## host: step 1000
+## host: live-work
+## host: run 1 + 1
+[00000000] 0
+[00000000] nil
+[00000000] nil
+[00000000] *** tick
+[00000000] step: WAKE_AT
+[00000000] set-global: ok
+[00000000] *** at fired
+[00000000] step: WAKE_AT
+[00000000] set-global: ok
+[00000000] step: WAKE_AT
+[00000000] set-global: ok
+[00000000] step: QUIESCENT
+[00000000] step: QUIESCENT
+[00000000] live-work: false
+[00000000] 2

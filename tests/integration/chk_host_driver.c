@@ -21,6 +21,8 @@
  *                               and `set-global` target it.
  *   ## host: run <source>       run one chunk on the current realm and
  *                               print its value, or "!!! <message>".
+ *   ## host: free-realm <name>  urbi_realm_free a realm `realm` created;
+ *                               later directives target the main realm.
  *   ## host: step <budget>      one urbi_step, printing "step: <RESULT>"
  *                               (RUNNING / WAKE_AT / QUIESCENT).
  *   ## host: advance-clock <ms> move the fixture's virtual clock forward.
@@ -116,6 +118,19 @@ static int select_realm(UVM *vm, const char *name)
     return 0;
 }
 
+static int free_realm(UVM *vm, const char *name)
+{
+    for (int i = 0; i < g_realm_count; i++) {
+        if (strcmp(g_realms[i].name, name) != 0) continue;
+        urbi_realm_free(vm, g_realms[i].realm);
+        g_realms[i] = g_realms[--g_realm_count];
+        g_current = urbi_realm_main(vm);
+        return 0;
+    }
+    fprintf(stderr, "chk-host-driver: `free-realm`: no realm named '%s'\n", name);
+    return -1;
+}
+
 static int do_run(UVM *vm, const char *src)
 {
     UValue out = urbi_make_nil();
@@ -167,6 +182,7 @@ static int run_directive(UVM *vm, const char *verb, const char *rest)
         if (rest[0] == '\0') { fprintf(stderr, "chk-host-driver: `realm` needs a name\n"); return -1; }
         return select_realm(vm, rest);
     }
+    if (strcmp(verb, "free-realm") == 0) return free_realm(vm, rest);
     if (strcmp(verb, "run") == 0) return do_run(vm, rest);
     if (strcmp(verb, "set-global") == 0) return do_set_global(vm, rest);
 
