@@ -31,7 +31,7 @@ they coexist and no `make clean` is required when switching between them.
 
 ## Cross-compile sanity
 
-If you have `arm-none-eabi-gcc` or `riscv64-unknown-elf-gcc` installed:
+If you have `arm-none-eabi-gcc` or `riscv-none-elf-gcc` installed:
 
     make cross-arm-cortex-m7   # → build/arm-cortex-m7/liburbi.a
     make cross-riscv32         # → build/riscv32/liburbi.a

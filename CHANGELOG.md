@@ -12,7 +12,8 @@ format unchanged at v2.0 / `0x20`.
 
 - Four generic cross-compile presets (`arm-cortex-m0plus`,
   `arm-cortex-m4f`, `arm-cortex-m7`, `riscv32`), each buildable in three
-  shapes: the full freestanding archive, a bytecode-only archive with no
+  shapes: the full archive under `-ffreestanding` (its compiler frontend
+  and eval service still need a libc), a bytecode-only archive with no
   compiler frontend and no `host`/`repl` code, and a hosted archive that
   drops `-ffreestanding` for parts that link a libc.
 - Two freestanding gates: one compiles every translation unit a
@@ -52,7 +53,7 @@ format unchanged at v2.0 / `0x20`.
 
 - Twenty-four parked files from `src/repl/`: the listener, bearer-token
   auth, connection queue, session state, introspection and NDJSON
-  halves, and eight per-platform transport adapters (TCP, PTY, UART on
+  halves, and seven transport adapters and their two shared headers (TCP, PTY, UART on
   Linux/FreeRTOS/ESP-IDF/Pico, USB CDC on Pico). The library now keeps
   only the cooperative eval core; the networked half returns as the
   `urbi-server` tool above. The Raspberry Pi Pico example's build still
