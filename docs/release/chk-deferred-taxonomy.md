@@ -308,7 +308,68 @@ Columns: **fixture** | **old label** | **new bucket** | **notes**
 > `grep -rln '^# deferred:' tests/chk/` (deferred). Updated each time
 > fixtures activate or deferred decisions are locked.
 
-### Post-v0.10.14 W3b (current)
+### Corpus triage, 2026-10-04 (current)
+
+Every placeholder record was re-probed against the re-founded runtime and
+the rewritten frontend.  Each one now either runs, carries
+`deferred: v1.x — <feature>`, carries `dropped: <reason> (REVIVAL §14 <row>)`,
+or stays `blocked:` with a one-sentence reason that is true on this tree.
+The fixture header is authoritative; the per-fixture table above predates
+this pass.
+
+| Outcome | Count |
+|---------|-------|
+| activated | 19 |
+| deferred: v1.x | 35 (20 already so labelled, 15 relabelled) |
+| dropped | 13 (2 already so labelled, 11 relabelled) |
+| blocked | 6 |
+
+`make test-chk`: `PASS=352 PLACEHOLDER=73` before, `PASS=371 PLACEHOLDER=54`
+after; `SKIP=9`, `VACUOUS=0`, `FAIL=0` both times.
+
+Most activations are rewrites onto the host driver (one statement per
+`## host: run`, the virtual clock moved with `advance-clock`, the scheduler
+stepped with `step`), which sidesteps the chunk-top `,`-group declaration
+limit.  The driver gained one verb for this, `free-realm <name>`.
+
+Activated:
+
+1. `chunk_lifecycle/realm_destroy_cancels_watchers.chk`
+2. `closure/scopes.chk`
+3. `gc/long_running.chk`
+4. `scheduler/cross_strand_cancel.chk`
+5. `scheduler/fifo_yield_order.chk`
+6. `scheduler/flat_fifo_basic.chk`
+7. `scheduler/jobs-destruction.chk`
+8. `scheduler/long_pipe_chain_yields.chk`
+9. `scheduler/safepoint_call_return.chk`
+10. `scheduler/tag_stop_mid_pipe.chk`
+11. `scheduler/wake_after_currently_running.chk`
+12. `separator/detach-error.chk`
+13. `separator/detach-many.chk`
+14. `tag/ambient_inherit_separator.chk`
+15. `tag/block.chk`
+16. `tag/block-propagation.chk`
+17. `tag/connection.chk`
+18. `tag/freeze.chk`
+19. `tag/stop-depth.chk`
+
+Still blocked:
+
+| Fixture | Reason |
+|---------|--------|
+| `separator/disown.chk` | `Job.current().tags()` in a detach()ed strand omits the scope tags it inherited (stopping them does still stop it), so the detach count reads -1, not 0. |
+| `tag/blocked.chk` | Tags have no hierarchy: a tag made by `t.new("t.u")` is not stopped by `t.stop()`, and a Tag cannot hold it as the slot `t.u`. |
+| `tag/hierarchical.chk` | Tags have no hierarchy: `a.new("a.b")` makes a tag that `a.stop()` does not reach, and a Tag cannot hold it as the slot `a.b`. |
+| `tag/scope-tag.chk` | A function's scope tag is not stopped when the function returns, so `t: every(20ms) ...` under `scopeTag()` goes on firing after the call. |
+| `tag/scope-tag2.chk` | A function's scope tag is not stopped when the function returns, so a `,` strand under `scopeTag()` outlives the call. |
+| `tag/stop.chk` | `a & b` runs `b` only after `a` has finished, so in `{sleep(100ms); echo("No")} & t.stop()` the echo happens before the stop. |
+
+`tag/stop.chk` and `separator/disown.chk` already carry their host-driver
+rewrite with the expected output; deleting the label line is the whole
+activation once the gap closes.
+
+### Post-v0.10.14 W3b (historical)
 
 > Counts verified against `grep -rln '^# blocked:' tests/chk/` etc.  The prior
 > "Post-v0.10.14" entry recorded blocked=65; the true count at that point was
