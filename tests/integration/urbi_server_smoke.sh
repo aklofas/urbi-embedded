@@ -7,8 +7,9 @@
 #
 #   tcp          hello, then `1+2` gives "value":"3" and "kind":"done"
 #   unix         the same exchange over a Unix socket
-#   token        without auth an eval gets an error and a closed socket;
-#                with auth the client gets auth_ok, then 3
+#   token        without auth an eval gets an error and a closed socket,
+#                so does a wrong token and an auth line dripped past the
+#                deadline; with auth the client gets auth_ok, then 3
 #   leave        a client that disconnects mid-output does not take the
 #                server down: the next client still gets 3
 #   max-clients  with --max-clients 2, a third concurrent connection is
@@ -138,6 +139,27 @@ elif mode == 'noauth':
     if b'"kind":"error"' not in got or not closed:
         raise SystemExit('expected error and close: closed=%s %r' % (closed, got))
     s.close()
+elif mode == 'badtoken':
+    s = connect()
+    rest = hello(s)
+    s.sendall(b'{"id":1,"op":"auth","token":"s3cretXX"}\n')
+    got, closed = read_until(s, b'\x00', rest)   # read to end of stream
+    if b'"kind":"error"' not in got or not closed:
+        raise SystemExit('expected error and close: closed=%s %r' % (closed, got))
+    s.close()
+elif mode == 'drip':
+    s = connect()
+    rest = hello(s)
+    s.sendall(b'{')
+    time.sleep(2.5)                  # past the server's auth deadline
+    try:
+        s.sendall(b'"id":1,"op":"auth","token":"s3cret"}\n')
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+    got, closed = read_until(s, b'\x00', rest)
+    if b'"kind":"auth_ok"' in got or not closed:
+        raise SystemExit('slow auth line not cut off: closed=%s %r' % (closed, got))
+    s.close()
 elif mode == 'auth':
     s = connect()
     rest = hello(s)
@@ -197,6 +219,8 @@ stop_server unix
 # 3. Token required.
 if start_server --token s3cret --tcp 127.0.0.1:0; then
     check "token: unauthenticated eval is refused and closed" noauth "$PORT"
+    check "token: a wrong token is refused and closed" badtoken "$PORT"
+    check "token: a client that drips the auth line slowly is cut off" drip "$PORT"
     check "token: authenticated eval gives 3" auth "$PORT"
 else
     fail "token: server start"

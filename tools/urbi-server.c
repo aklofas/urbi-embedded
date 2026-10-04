@@ -24,6 +24,10 @@
 
 #define MAX_CLIENTS_DEFAULT 16
 #define AUTH_LINE_MAX 1024
+/* The whole auth line must arrive within this, measured from the first
+ * poll: the handshake runs inline, so a per-byte timeout would let a peer
+ * dripping one byte at a time freeze every session for as long as it likes. */
+#define AUTH_LINE_TIMEOUT_MS 2000
 
 static volatile sig_atomic_t g_stop = 0;
 static void on_signal(int sig) { (void)sig; g_stop = 1; }
@@ -68,17 +72,23 @@ static bool send_all(int fd, const char *s, size_t n, int timeout_ms)
     }
     return true;
 }
-/* Reads one line (up to AUTH_LINE_MAX) with a deadline; false on timeout,
- * overflow or disconnect.  `buf` is NUL-terminated either way.  Reads a
- * byte at a time so whatever follows the line stays in the socket for
- * the library.  Only used for the auth handshake. */
+static uint64_t host_clock_us(void *ud);
+/* Reads one line (up to AUTH_LINE_MAX) within one overall deadline of
+ * timeout_ms; false on timeout, overflow or disconnect.  `buf` is
+ * NUL-terminated either way.  Reads a byte at a time so whatever follows
+ * the line stays in the socket for the library.  Only used for the auth
+ * handshake. */
 static bool read_line(int fd, char *buf, size_t cap, int timeout_ms)
 {
     size_t n = 0;
+    const uint64_t deadline_us = host_clock_us(NULL) + (uint64_t)timeout_ms * 1000u;
     buf[0] = '\0';
     while (n + 1 < cap) {
+        uint64_t now_us = host_clock_us(NULL);
+        if (now_us >= deadline_us) break;
         struct pollfd p = { fd, POLLIN, 0 };
-        if (poll(&p, 1, timeout_ms) <= 0) break;
+        int remaining_ms = (int)((deadline_us - now_us + 999u) / 1000u);
+        if (poll(&p, 1, remaining_ms) <= 0) break;
         ssize_t r = recv(fd, buf + n, 1, 0);
         if (r <= 0) break;
         if (buf[n] == '\n') { buf[n] = '\0'; return true; }
@@ -269,7 +279,7 @@ int main(int argc, char **argv)
                 if (!send_all(fd, hello, strlen(hello), 1000)) { close(fd); continue; }
                 if (token && token[0]) {
                     char line[AUTH_LINE_MAX];
-                    bool ok = read_line(fd, line, sizeof line, 5000) && strstr(line, "\"op\":\"auth\"") && token_matches(line, token);
+                    bool ok = read_line(fd, line, sizeof line, AUTH_LINE_TIMEOUT_MS) && strstr(line, "\"op\":\"auth\"") && token_matches(line, token);
                     unsigned long id = extract_id(line);
                     char reply[160];
                     if (ok) snprintf(reply, sizeof reply, "{\"id\":%lu,\"kind\":\"auth_ok\"}\n", id);
