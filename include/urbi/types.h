@@ -348,9 +348,10 @@ bool urbi_value_is_tag    (UValue v);
 bool urbi_value_is_strand (UValue v);
 
 /* Per-realm limits enforced during source-text compilation. Zero in any
- * field means "unlimited" for that limit. urbi_realm_create_repl auto-
- * applies URBI_DEFAULT_REPL_BUDGET; the global Realm has no budget by
- * default (trusted host code).
+ * field means "unlimited" for that limit. The eval service applies
+ * UReplConfig.default_budget to every session's realm; the library has
+ * no default of its own, so each tool that serves sessions picks one.
+ * The global Realm has no budget (trusted host code).
  *
  * Three limits, evaluated in order:
  *   max_parser_depth  — recursive-descent stack ceiling
