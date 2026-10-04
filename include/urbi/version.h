@@ -30,7 +30,7 @@ extern "C" {
  * is what urbi_version() reports and what `urbi --version` prints; it
  * moves with every tag, unlike the API version above.  The
  * check-version-sync gate pins it against that tag. */
-#define URBI_RELEASE_STRING "0.15.0-frontend"
+#define URBI_RELEASE_STRING "0.15.1-core-hardening"
 
 /* Runtime getter. NULL-tolerant per arg. */
 void urbi_api_version(int *out_major, int *out_minor, int *out_patch);

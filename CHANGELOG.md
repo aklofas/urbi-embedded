@@ -1,5 +1,70 @@
 # Changelog
 
+## v0.15.1-core-hardening — 2026-10-03
+
+A fix pass over the runtime core as shipped at `v0.15.0-frontend`, driven by
+a static review of that tag whose findings were each reproduced before being
+fixed. No new language surface; ABI 0/25/0 -> 0/26/0 because the public value
+helpers moved from header inlines to exported functions. Wire format
+unchanged at v2.0 / `0x20`.
+
+### Fixed
+
+- A strand's frame and cleanup tables are capped at 32768 entries; recursion
+  past the cap raises a catchable `OutOfMemoryError` ("call depth limit
+  reached") instead of a doubling that wrapped the 16-bit capacity to zero and
+  freed the live table under the running strand.
+- The loader counts a proto's parameters plus its hidden argument-count
+  register against the register window, and no longer counts upvalues: a
+  crafted chunk could write one value past the frame, and a valid closure with
+  more captured variables than registers was rejected on load although it ran
+  from source.
+- The verifier rejects a proto with no instructions and a stream whose last
+  real instruction is not a return (a closure's upvalue-prelude word no longer
+  counts as one).
+- A native function reached through `urbi_call` now runs with its strand
+  published: values it roots across an allocation stay rooted, and
+  `urbi_throw` from inside it works.
+- Freeing a realm stops every strand the realm owns, not only those under its
+  connection tag, and closes their open upvalues first, so a closure the host
+  kept no longer points into a freed register stack.
+- A `waituntil` whose watcher could not be allocated raises
+  `OutOfMemoryError`; it used to continue into the statement after the wait.
+- `List.join` / `String.join` refuse a result size that would wrap `size_t`
+  (`RangeError`) instead of under-allocating.
+- Operands are read left to right even when the right operand runs a closure
+  that rebinds the left operand's local (`x + bump()` where `bump` assigns
+  `x`); the same for comparisons and the receiver of a slot assignment.
+- `Object.setSlot` wakes watchers and fires `x.changed?` like a plain slot
+  write; `removeSlot` on a watched object re-evaluates its watchers.
+
+### Changed (public C API, ABI 0/26/0)
+
+- `urbi_value_as_str` returns the bytes of a string value (interned or heap)
+  instead of reinterpreting the cell header; it is an exported function now.
+- `urbi_value_kind`, `urbi_value_is_closure`, `urbi_value_is_event`,
+  `urbi_value_is_tag`, `urbi_value_is_strand` are exported functions that read
+  the runtime's cell subtypes; `urbi_make_closure/event/tag` build the
+  `UVAL_CELL` values the runtime accepts. `urbi_value_is_str` also accepts an
+  interned string. New kinds `URBI_VALUE_STRAND` and `URBI_VALUE_CELL`; new
+  inline accessor `urbi_value_as_tag`.
+- Removed: `urbi_value_is_host_fn` (nothing produced that kind).
+
+### Documentation
+
+- `docs/api-stability.md` no longer recommends the removed `UHostFn` /
+  `urbi_make_native_closure`; `docs/internals/ports.md` and the release docs
+  no longer name the retired float-type build flag.
+
+### Measured on this build
+
+| Number | Value |
+|---|---|
+| stdlib blob | 8,003 bytes (was 7,823; the operand snapshot adds a copy before an impure right operand) |
+| lookup / mandelbrot | 0.58x / 0.75x of the old core (gate fails above 1.20x) |
+| corpus | 351 passed, 0 failed |
+| runners | frontend (unit) 572 cases / 0 failed; runtime (rt) 245 cases / 0 failed |
+
 ## v0.15.0-frontend — 2026-10-03
 
 The compiler frontend is rewritten on top of the re-founded runtime core.
