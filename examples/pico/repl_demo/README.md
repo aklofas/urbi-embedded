@@ -1,201 +1,169 @@
-# urbi-embedded v0.9.4 — Raspberry Pi Pico interactive REPL demo
+# Raspberry Pi Pico eval-service demo
 
-A complete bring-up of urbi-embedded on the Raspberry Pi Pico (RP2040 /
-Cortex-M0+).  Connects an interactive urbiscript REPL over **USB CDC**
-or **UART0** to a stock Pico with no extra wiring beyond the BOOTSEL
-button (already on the board) and the on-board user LED on GPIO 25.
+## What this is
 
-## What you get on the board
-
-A 264 KB SRAM Cortex-M0+ running:
-
-- the full urbi-embedded interpreter and stdlib,
-- an NDJSON REPL service on USB CDC (`/dev/ttyACM0`) and UART0
-  (`GP0` = TX, `GP1` = RX, 115200 8N1),
-- four BSP fixtures exposed to script:
-  - **LED** — `led_on()`, `led_off()`, `led_toggle()`, `led_pwm(duty)`
-  - **Temperature** — `temp_celsius()` returns the on-die ADC4 reading
-  - **Button** — `button_pressed()` queries BOOTSEL; `pressed` event
-    fires on each rising edge (debounced @ 10 Hz)
-  - **Tick** — `tick` event fires every 100 ms (TIMER_IRQ_0)
-- the default-installed `repl_demo.u` workload (LED-on-button +
-  temperature-threshold watchers).
-
-> The v0.7.1 embedding API only exposes **flat** top-level realm-globals
-> via `urbi_register`.  Sub-object syntax like `Lobby.led.on()` is a
-> v1.x property-installer item.  All BSP verbs are flat names.
+This example runs the urbiscript eval service on a stock Raspberry Pi Pico (RP2040, Cortex-M0+), with one session on USB CDC and one on UART0.
+The board exposes six verbs (`led_on()`, `led_off()`, `led_toggle()`, `led_pwm(duty)`, `temp_celsius()`, `button_pressed()`), two events (`pressed` on each BOOTSEL press and `tick` every 100 ms), and the `boot` tag that covers everything the boot workload installs.
+The boot workload is [`repl_demo.u`](repl_demo.u); it is compiled on the host at build time, baked into the firmware as bytecode, and loaded into the main realm before the service starts.
 
 ## Build
 
-### Prerequisites
+Prerequisites:
 
-1. **Pico SDK** somewhere on disk; point `PICO_SDK_PATH` at it (env
-   var or `-DPICO_SDK_PATH=...` on the cmake invocation).  The default
-   in `CMakeLists.txt` looks four levels up from the example —
-   `../../../../tools/pico-sdk`, i.e. alongside the `urbi-embedded/`
-   tree in the urbi workspace.
-2. **arm-none-eabi-gcc** on `$PATH`.
-3. **cmake** ≥ 3.13 and a recent **make** (`gmake` on \*BSD).
+- xpack `arm-none-eabi-gcc` 14.2.1 on `PATH`.
+- CMake 3.13 or later, and `make`.
+- pico-sdk 2.2.0, either at `PICO_SDK_PATH` or at `../tools/pico-sdk` beside the repository.
+- Network access for the first configure: pico-sdk fetches and builds `picotool` once.
 
-### Cross-build `liburbi.a`
-
-From the repo root:
+From the repository root:
 
 ```sh
-make cross-pico URBI_ENABLE_REPL=1
+make pico-repl-demo
 ```
 
-This produces `build/arm-cortex-m0plus/liburbi.a` (the IMPORTED target
-the example's `CMakeLists.txt` references) and also builds
-`tools/urbi-compile-stdlib-pico` as a side-effect (the bake tool that
-turns `repl_demo.u` into a C header at example-configure time).
+That one command builds the host `urbi` (which compiles `repl_demo.u` to bytecode), the hosted Cortex-M0+ `liburbi.a` (newlib present, so floats print), and then configures and builds this example with CMake.
+It ends by printing the firmware's `size` line.
 
-> **Why `URBI_ENABLE_REPL=1`?**  Without it, the compiler frontend
-> (`src/lex`, `src/parse`, `src/emit`) and the REPL infrastructure
-> aren't linked into `liburbi.a`, and the example would link-error on
-> `urbi_repl_serve_init` / `urbi_repl_eval`.
+Outputs, under `examples/pico/repl_demo/`:
 
-### Build the example
-
-```sh
-cd examples/pico/repl_demo
-mkdir build && cd build
-cmake ..
-make
-```
-
-Outputs:
-
-- `repl_demo.elf` — symbol-bearing ELF (gdb / openocd).
-- `repl_demo.uf2` — drag-drop-flashable image for BOOTSEL mode.
-- `repl_demo.hex` / `.bin` / `.dis` — convenience artifacts.
+- `build/repl_demo.elf`, the ELF with symbols, for a debug probe.
+- `build/repl_demo.uf2`, the image to copy onto the board.
 
 ## Flash
 
-1. Hold **BOOTSEL** on the Pico while plugging USB in (or pressing the
-   RESET line if you have a debug probe).
-2. The Pico enumerates as a USB mass-storage volume (`RPI-RP2`).
-3. Drag `repl_demo.uf2` onto it.
-4. The Pico reboots, USB re-enumerates as a CDC ACM device, and the
-   demo is live.
+1. Hold **BOOTSEL** while plugging the Pico into USB.
+2. The board mounts as a mass-storage volume named `RPI-RP2`.
+3. Copy `build/repl_demo.uf2` onto it.
+4. The board reboots into the demo and enumerates as a USB CDC device, usually `/dev/ttyACM0`.
 
 ## Connect
 
-### Option A: USB CDC (`/dev/ttyACM0`)
-
 ```sh
 picocom -b 115200 --omap crlf --imap lfcrlf /dev/ttyACM0
-# or:
-screen /dev/ttyACM0 115200
-# or, with NDJSON awareness, the urbi-send / urbi-recv host tools shipped
-# built from the urbi-embedded tools/ directory.
 ```
 
-### Option B: UART0 via USB-serial adapter
+`--omap crlf` turns Enter into the newline the service frames requests on.
+`--imap lfcrlf` renders the board's bare newlines as line breaks.
 
-Wire a 3.3V USB-serial adapter:
+After USB enumerates, the LED stays on for three seconds before the banner prints.
+Start picocom inside that window to see the whole boot.
+Leave picocom with C-a C-x.
 
-| Pico pin | Adapter |
-|---------:|:--------|
-| GP0      | RX      |
-| GP1      | TX      |
-| GND      | GND     |
+UART0 is a second, independent session, live from boot for the life of the firmware.
+Wire a 3.3 V USB-serial adapter to GP0 (Pico TX), GP1 (Pico RX) and GND, at 115200 8N1.
 
-```sh
-picocom -b 115200 --omap crlf --imap lfcrlf /dev/ttyUSB0
+## The wire
+
+Each request is one JSON object on one line, with an `id`, an `op` of `eval`, and the urbiscript text in `code`.
+An eval answers with zero or more `output` lines, then one `result` line carrying the value as a JSON string (or an `error` line with a `code` and `message`), then a `done` line.
+Output a watcher or timer prints after its eval's `done` arrives without an `id`.
+
+Copy-paste lines:
+
+```json
+{"id":1,"op":"eval","code":"echo(\"hi\")"}
+{"id":2,"op":"eval","code":"1+1"}
+{"id":3,"op":"eval","code":"temp_celsius()"}
+{"id":4,"op":"eval","code":"boot.stop()"}
+{"id":5,"op":"eval","code":"at (pressed?) led_toggle()"}
+{"id":6,"op":"eval","code":"var t = Tag.new(\"t\") | t: every (1s) echo(temp_celsius())"}
+{"id":7,"op":"eval","code":"t.stop()"}
 ```
 
-Either path lands on the same NDJSON REPL — the urbi-embedded REPL
-service treats each connected transport as an independent session.
+## Console lines
 
-## Sample session
-
-Lines starting with `>` are typed by you; the response immediately
-follows.  All REPL lines are NDJSON-framed on the wire; the surface
-shown here is the human-friendly form a frontend would render.
+The shim prints its own lines on UART0 and, when a host holds the USB port open, on USB CDC too.
+They interleave with the session's JSON on the same stream; a machine client skips any line that does not start with `{`.
 
 ```text
-urbi v0.9.4-pico booting
-urbi-embedded v0.9.4 on Raspberry Pi Pico
-verbs: led_on/off/toggle, led_pwm(d), temp_celsius(), button_pressed()
-events: tick / pressed
-idiom: heartbeat: { every (P) X }; heartbeat.stop()  (Tag.new deferred v1.x)
-type 'greet.stop()' / 'temp_watch_hot.stop()' to disable defaults
-
-> led_on()
-nil
-> temp_celsius()
-22.4
-> button_pressed()
-false
-> heartbeat: { every (500ms) led_toggle() }
-nil
-> // ... LED blinks at 2 Hz, observed visually ...
-> heartbeat.stop()
-nil
-> at (temp_celsius() > 30.0) echo("warm!")
-nil
-> // ... touching the chip with a finger warms it past 30 within seconds ...
-warm!
-> greet.stop()        // disable the default LED-on-button watcher
-nil
+boot heap: live <n> B, heap break <n> B, budget <n> B, cycles <n>
+ready: live <n> B, heap break <n> B, budget <n> B, cycles <n>
+session open: live <n> B, heap break <n> B, budget <n> B, cycles <n>
+session closed: live <n> B, heap break <n> B, budget <n> B, cycles <n>
+idle: live <n> B, heap break <n> B, budget <n> B, cycles <n>
 ```
 
-## Footprint expectations
+- `live` is the bytes the collector holds live, read right after a full collection.
+- `heap break` is how far newlib's heap has grown, its high-water mark.
+- `budget` is the heap figure the collector paces against.
+- `cycles` is the number of completed collections.
 
-| component                  | Flash | SRAM |
-|----------------------------|------:|-----:|
-| pico-sdk + TinyUSB         | ~64 K | ~12 K |
-| urbi-embedded core         | ~80 K | ~20 K |
-| Baked `repl_demo.u`        |  ~1 K |     — |
-| BSP + main                 |  ~6 K |  ~1 K |
-| Runtime heap (newlib pool) |     — | ~200 K available |
+`boot heap:` prints once the VM is open with its standard library, and `ready:` once the workload, the service and the tick are up.
+`session open:` and `session closed:` print when a host opens and drops the USB port.
+`idle:` prints every 30 s.
 
-Numbers are approximate from a `-Os` build with the v0.9.4 cross-pico
-defaults.  Exact figures depend on which urbi features the workload
-exercises (every-loop tags allocate; watchers use a 16-slot pool).
+## Definition of done for this port
 
-## Known issues / v1.x deferrals
+Run these in picocom on `/dev/ttyACM0`, in order.
 
-- **Sub-object slot installers** (`Lobby.led.on()` style).  The v0.7.1
-  embedding API exposes only flat top-level globals; binding a host-fn
-  as `Lobby.led.on()` requires a property-installer API that's slated
-  for v1.x.  The demo uses flat names instead (`led_on()` etc.).
-- **`Tag.new()`** for script-side dynamic tag creation.  v0.9.4 supports
-  label-prefix tag binding (`mytag: { ... }`) and runtime cancel via
-  `.stop()`, but the `Tag.new()` constructor isn't wired yet — tag
-  variables are introduced solely via the label-prefix surface.
-- **Bare-prefix tag labels** require brace-block bodies — `mytag:
-  whenever (E) ...` parses as a no-op label followed by a top-level
-  watcher (the watcher is created, but the tag never binds to it).
-  Always use `mytag: { whenever (E) ... }`.  v1.x lexer-level dangling-
-  statement lookahead is design-risks-backlog.
-- **Closure-body capture in `every (P) body`** has a v0.9.1 closure-
-  bare-name resolution gap (`Lobby.echo` inside an `every` body can't
-  resolve unqualified `__builtin_lobby_send`; explicit `Lobby.` prefix
-  workaround).  Surfaces with REPL-installed `every` loops that try to
-  print via `echo` — affected idioms aren't load-bearing in the demo
-  defaults.
-- **Two-transport simultaneity untested.**  Each transport is wired
-  independently and the dispatcher supports multiple sessions per
-  v0.9.1, but the demo has only been driven through one transport at
-  a time during bring-up.  Mixing USB CDC and UART concurrently may
-  surface latent ordering bugs.
+1. **Boot heap.** The `boot heap:` line shows `live` under 49,152 B.
+2. **Three evals.** Type each line and look for its answer:
+   - `{"id":1,"op":"eval","code":"echo(\"hi\")"}` gives an `output` line whose `msg` ends in `hi`, then `"value":"nil"` and `done`.
+   - `{"id":2,"op":"eval","code":"1+1"}` gives `"value":"2"`.
+   - `{"id":3,"op":"eval","code":"temp_celsius()"}` gives a float, such as `"value":"27.4"`.
+3. **Watcher from the session.** Send `{"id":4,"op":"eval","code":"boot.stop()"}` and press BOOTSEL: the LED does not toggle.
+   Then send `{"id":5,"op":"eval","code":"at (pressed?) led_toggle()"}` and press BOOTSEL: the LED toggles on each press.
+4. **Periodic print.** Send `{"id":6,"op":"eval","code":"var t = Tag.new(\"t\") | t: every (1s) echo(temp_celsius())"}`: an `output` line with a temperature arrives once a second.
+   Send `{"id":7,"op":"eval","code":"t.stop()"}`: the lines stop.
+5. **Session reopen.** Note the `live` figure on the `session open:` line, leave picocom with C-a C-x, and start it again.
+   The new `session open:` line's `live` is within 1,024 B of the first.
+6. **Idle.** Leave the board alone for a minute: two consecutive `idle:` lines, 30 s apart, show the same `live`.
+
+## Memory layout
+
+[`memmap_repl_demo.ld`](memmap_repl_demo.ld) puts a 32 KB stack at the top of SRAM, from `__StackLimit` (0x20038000) to `__StackTop` (0x20040000).
+newlib's heap runs from `end`, just past the statics, up to `__StackLimit`, and the VM allocates from it through `realloc`.
+
+The collector's budget is that heap less a 16 KB session reserve.
+The reserve covers what the eval service and newlib allocate outside the VM's allocator: each session's 4 KB output staging, its input line, and the service's own structures.
+
+Every session compiles under a budget of 24 parser levels, 2,000 AST nodes and 4 KB of source.
+One parser level costs about 1 KB of stack on this core, so 24 levels leave 8 KB of the 32 KB stack for everything else.
+An AST node is 56 bytes, so 2,000 nodes is a 112 KB transient at worst, which the 4 KB source cap makes unreachable in practice.
+
+## Measured
+
+| What | Figure |
+| --- | --- |
+| Session boot, host 64-bit build | 71,273 B |
+| After the first session close, host 64-bit build | 71,420 B |
+| After the second session close, host 64-bit build | 71,420 B |
+| Hosted Cortex-M0+ `liburbi.a`, text+data+bss | 146,760 B |
+| Firmware `repl_demo.elf`, text / data / bss | 277,088 / 0 / 4,144 B |
+| Firmware `repl_demo.uf2` | 546,304 B |
+| Boot heap (board) | from the board log |
+| Session open (board) | from the board log |
+| Idle growth (board) | from the board log |
+
+The firmware's initialized data is counted under text by `arm-none-eabi-size`, because the SDK's `.data` section carries code flags.
+
+## Known limits
+
+- The service refuses a request line only past its 1 MiB framing cap, which is not configurable, so a single line that long exhausts the heap first; connect only over trusted serial links.
+- TinyUSB exposes one CDC interface, so there is one USB session at a time.
+- While the VM is idle, UART input is noticed within the 100 ms tick.
+- Floats are `double`, computed through libgcc's soft-float routines on this core.
 
 ## File layout
 
 ```text
 examples/pico/repl_demo/
-├── CMakeLists.txt            # build script (pico-sdk + urbi)
-├── pico_sdk_import.cmake     # vendored from pico-sdk/external/
-├── repl_demo.u               # default workload (baked into header)
+├── CMakeLists.txt            # the build: pico-sdk, the bake step, the link
+├── bake.cmake                # compiles repl_demo.u to repl_demo_baked.h
+├── memmap_repl_demo.ld       # linker script: 32 KB stack at the top of SRAM
+├── pico_sdk_import.cmake     # copied from pico-sdk/external/
+├── repl_demo.u               # the boot workload
 ├── README.md                 # this file
 └── main/
-    ├── main.c                # entry point + main loop
+    ├── main.c                # boot, console, main loop
+    ├── tusb_config.h         # TinyUSB device configuration
+    ├── usb_descriptors.c     # one CDC interface
+    ├── transport_usb_cdc.{c,h}   # the USB CDC session transport
+    ├── transport_uart.{c,h}      # the UART0 session transport
     └── bsp/
-        ├── bsp_register.{c,h}    # wires all four fixtures
-        ├── bsp_led.{c,h}         # GPIO 25 + PWM slice
-        ├── bsp_temp.{c,h}        # on-die ADC4
-        ├── bsp_button.{c,h}      # BOOTSEL polling + debounce
-        └── bsp_tick.{c,h}        # TIMER_IRQ_0 @ 100 ms
+        ├── bsp_register.{c,h}    # installs the verbs and events
+        ├── bsp_led.{c,h}         # GPIO 25 and its PWM slice
+        ├── bsp_temp.{c,h}        # on-die temperature sensor (ADC4)
+        ├── bsp_button.{c,h}      # BOOTSEL polling and debounce
+        └── bsp_tick.{c,h}        # the 100 ms timer tick
 ```
